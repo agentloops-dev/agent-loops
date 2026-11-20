@@ -53,20 +53,6 @@ public struct RuntimeAccount: Codable, Hashable, Sendable, Identifiable {
         self.checkedAt = checkedAt
     }
 
-    /// What a handshake told us. Signing in is not proved by having auth methods:
-    /// Copilot advertises `copilot-login` while perfectly signed in, which is why the
-    /// state only changes to `needsSignIn` when a call actually refuses.
-    public init(runtimeID: String, handshake: ACP.InitializeResult) {
-        self.init(runtimeID: runtimeID,
-                  state: .ready,
-                  authMethods: handshake.authMethods ?? [],
-                  canLogOut: handshake.supportsLogout,
-                  providers: [],
-                  currentProviderID: nil,
-                  promptCapabilities: handshake.accepts,
-                  canSteer: handshake.supportsSteering)
-    }
-
     /// Absent is false: an account from a daemon that predates steering never offers it.
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)

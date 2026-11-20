@@ -79,9 +79,6 @@ struct FakeDeviceLiveTests {
         }
     }
 
-    /// The move's own live test (US7) still uses this name for the first build's link.
-    typealias Fixed = FixedLink
-
     struct FixedLink: DaemonLink {
         let make: @Sendable () async throws -> any LineTransport
         func transport() async throws -> any LineTransport { try await make() }

@@ -8,7 +8,6 @@ export interface DeployColumn { name: string; tier: EnvironmentTier }
 export interface DeployRow { id: string; name: string; cells: DeployTargetNow[][] }
 export interface DeployGrid { columns: DeployColumn[]; rows: DeployRow[] }
 
-export const deploysTitle = "Deploys";
 export const emptyTitle = "No deploys yet";
 export const emptyLine = "A deploy shows here once a forge's job deploys, as GitHub's and GitLab's environments record it.";
 export const noMachine = "No machine keeps deploys yet. Update Agents on a machine to see them.";

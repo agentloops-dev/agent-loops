@@ -102,22 +102,39 @@ func (s *Service) scopeLineageKeys(ctx context.Context, keep func(person string)
 // readLineage is the nodes of the objects read, of the listing keys, each node once, its
 // machines' copies added up.
 func (s *Service) readLineage(ctx context.Context, keys, read []store.Key) ([]wire.LineageCostNode, error) {
+	nodes, _, err := s.readLineageTouched(ctx, keys, read, nil)
+	return nodes, err
+}
+
+// readLineageTouched is readLineage, and the nodes that the objects changed says hold
+// (reports/changes, #6350): nil when changed is nil.
+func (s *Service) readLineageTouched(ctx context.Context, keys, read []store.Key,
+	changed func(store.Key) bool) ([]wire.LineageCostNode, map[wire.LineageNode]bool, error) {
 	// By entity tag and storeReadsAtOnce at a time (#2975), not one machine after another.
 	objects, err := s.storeReads.read(ctx, s.cfg.Store, lineagePrefix, keys, read)
 	if err != nil {
-		return nil, fail(storeUnavailable, "The reports could not be read: %v", err)
+		return nil, nil, fail(storeUnavailable, "The reports could not be read: %v", err)
+	}
+	s.lineageMerges.Add(1)
+	var touched map[wire.LineageNode]bool
+	if changed != nil {
+		touched = map[wire.LineageNode]bool{}
 	}
 	byNode := map[wire.LineageNode]*wire.LineageCostNode{}
 	var names lineage.Names
-	for _, data := range objects {
+	for i, data := range objects {
 		var kept storedLineage
 		if data == nil || json.Unmarshal(data, &kept) != nil {
 			continue
 		}
+		mark := changed != nil && changed(read[i])
 		for _, n := range kept.Nodes {
 			// A copy from a release before #4800 holds the old ref form.
 			n = lineage.FullCostNode(n, nil)
 			n.Node = names.Name(n.Node)
+			if mark {
+				touched[n.Node] = true
+			}
 			if have := byNode[n.Node]; have != nil {
 				mergeNode(have, n)
 				continue
@@ -139,7 +156,7 @@ func (s *Service) readLineage(ctx context.Context, keys, read []store.Key) ([]wi
 		}
 		return out[i].Node.Ref < out[j].Node.Ref
 	})
-	return out, nil
+	return out, touched, nil
 }
 
 // mergeNode adds another machine's copy of a node to have: the cost adds up, the links and

@@ -147,11 +147,6 @@ public enum ControlDial {
         }
         return try NIOSSLContext(configuration: tls)
     }
-
-    /// The pin of a certificate: base64url of the SHA-256 of its public key (R6).
-    public static func pin(of certificate: NIOSSLCertificate) throws -> String {
-        ControlCode.base64url(ControlAgreement.sha256(Data(try certificate.extractPublicKey().toSPKIBytes())))
-    }
 }
 
 /// Sends the upgrade request once the channel is up; TLS holds it until its handshake.
@@ -241,23 +236,21 @@ public enum ControlWebSocketServer {
     /// (`/healthz`, `/readyz`). `opened` is called with each WebSocket as lines.
     public static func configure(_ channel: any Channel, tls: NIOSSLContext?,
                                  plain: @escaping @Sendable (HTTPRequestHead) -> (HTTPResponseStatus, String),
-                                 unproven: UnprovenGate? = nil,
                                  opened: @escaping @Sendable (WebSocketLineTransport) -> Void) -> EventLoopFuture<Void> {
         configure(channel, tls: tls, reply: { head in let (status, text) = plain(head); return PlainReply(status, text: text) },
-                  unproven: unproven, opened: opened)
+                  opened: opened)
     }
 
     /// `upgrade` may refuse an upgrade at `/v1/connect` after reading its head (the web
     /// remote's `Host` and `Origin`, 071); a refused one is answered by `plain` instead.
     ///
     /// Until the WebSocket's owner calls `proven()` on it, the connection is held to
-    /// `UnprovenGuard`'s limits and holds a place in `unproven` (#206).
+    /// `UnprovenGuard`'s limits (#206).
     public static func configure(_ channel: any Channel, tls: NIOSSLContext?,
                                  reply plain: @escaping @Sendable (HTTPRequestHead) -> PlainReply,
                                  upgrade: (@Sendable (HTTPRequestHead) -> Bool)? = nil,
-                                 unproven: UnprovenGate? = nil,
                                  opened: @escaping @Sendable (WebSocketLineTransport) -> Void) -> EventLoopFuture<Void> {
-        let guarding = UnprovenGuard(gate: unproven)
+        let guarding = UnprovenGuard()
         do {
             try channel.pipeline.syncOperations.addHandler(guarding)
             if let tls { try channel.pipeline.syncOperations.addHandler(NIOSSLServerHandler(context: tls)) }

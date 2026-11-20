@@ -31,7 +31,6 @@ var goroutinesNotCounted = map[string]int{
 	"screencalls.go (*driveProcess).call":       1, // a write to agents-drive; stop closes its stdin
 	"screencalls.go (*driveProcess).stop":       1,
 	"watch_darwin.go (*folderWatch).stop":       1,
-	"workfeatures.go (*Daemon).workFeatures":    1,
 	// They end when a value they alone own closes, and Shutdown closes it (stopFolderWatches,
 	// stopScreenDrives, stopMCPEvents, the socket's and the page's close).
 	"pagerelay.go newPageOut":                 1,

@@ -50,15 +50,6 @@ public enum WorkflowTrigger: Hashable, Sendable {
         }
     }
 
-    /// Whether an event fires this trigger. A schedule fires from the clock instead.
-    public func matches(_ event: Event) -> Bool {
-        switch self {
-        case .event(let pattern): return pattern.matches(event)
-        case .serverEvent(let trigger): return trigger.matches(event)
-        default: return false
-        }
-    }
-
     /// Whether this version can act on it at all.
     public var isSupported: Bool {
         if case .unrecognised = self { return false }

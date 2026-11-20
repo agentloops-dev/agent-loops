@@ -367,8 +367,8 @@ extension RemoteModel {
         startAutoPreview = try? await askForStart(DaemonAPI.Method.autoPreview, request, returning: AutoPreview.self)
     }
 
-    func refreshDailySummarySettings() async {
-        dailySummarySettings = try? await client.call(DaemonAPI.Method.dailySummarySettings, DaemonAPI.Empty(),
-                                                      returning: DailySummarySettings.self)
+    func refreshDailyChecksSettings() async {
+        dailyChecksSettings = try? await client.call(DaemonAPI.Method.dailyChecksSettings, DaemonAPI.Empty(),
+                                                     returning: DailyChecksSettings.self)
     }
 }

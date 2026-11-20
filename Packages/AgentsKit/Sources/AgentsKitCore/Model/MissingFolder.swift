@@ -10,10 +10,6 @@ public struct MissingFolder: Codable, Hashable, Sendable {
     /// Its worktree's branch is still in the folder's repository, so the worktree can be
     /// made again from it. False for an agent that was never in a worktree.
     public var branchKept: Bool
-
-    public init(branchKept: Bool) {
-        self.branchKept = branchKept
-    }
 }
 
 /// The words every app uses for a missing folder, so the Mac, the Remote and the page say

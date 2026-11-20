@@ -13,6 +13,7 @@
 // arrows move, Return or Tab takes one, Escape puts the list away for that word.
 import { giveBackInto, quoteInto } from "../model/promptQuote";
 import { recall } from "../model/promptHistory";
+import { carryOnOffers } from "../model/carryOn";
 import { useSignal } from "@preact/signals";
 import { useEffect, useRef } from "preact/hooks";
 import type { ComponentChildren } from "preact";
@@ -31,7 +32,7 @@ const slowSend = 400;
 const mentionPause = 150;
 
 export function Prompt({ store, draftKey, placeholder, capabilities, runtimeName, onAttachments, disabled, send, recipient, starting = false, focusFirst = false, where, runtime, onTyping, children,
-  stop, acting, queues = false, suggestion, commands = [], findFiles, sent = [] }: {
+  stop, acting, queues = false, suggestion, commands = [], findFiles, sent = [], carryOn }: {
   store: Store;
   /** Where the draft is kept: a session, or a new-agent form. */
   draftKey: string;
@@ -68,6 +69,8 @@ export function Prompt({ store, draftKey, placeholder, capabilities, runtimeName
   queues?: boolean;
   /** What the agent offers to be asked next (031). */
   suggestion?: SuggestedPrompt | undefined;
+  /** The stop that puts "Carry on" in an empty bar (`carryOnStop`): set while an error stopped the agent. */
+  carryOn?: string | undefined;
   /** What the runtime takes after a slash: the agent's, or the new session's draft's. */
   commands?: readonly SlashCommand[] | undefined;
   /** Files under the agent's folders matching what follows an `@`, found by its host. */
@@ -138,6 +141,15 @@ export function Prompt({ store, draftKey, placeholder, capabilities, runtimeName
   }, [draftKey]);
 
   const keep = () => store.drafts.set(draftKey, { text: text.value, attachments: attachments.value });
+
+  // After an error stop, "Carry on" waits in an empty bar, once for each stop, as in the window.
+  // After the draft above, so what is typed is never written over.
+  useEffect(() => {
+    const words = carryOnOffers.words(carryOn, text.value);
+    if (words === null) return;
+    text.value = words;
+    keep();
+  }, [carryOn, draftKey]);
 
   // Words offered from elsewhere in the chat (#1552): they land in the field, unsent, after what
   // is typed, never over it (#1665).

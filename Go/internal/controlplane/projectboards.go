@@ -16,7 +16,7 @@ import (
 // Projects board, a Jira board, a Linear team, a GitLab group board or an Azure Boards board (a
 // team's, #3816), each with a name (the team's). The person gives a board's address; the control plane reads from it which forge
 // it is on and which board, and keeps the address in one form, which names the board in
-// forge/issues' board. Work's Issues and Features lists narrow to one board on the machines.
+// forge/issues' board. Work's Issues and Timeline narrow to one board on the machines.
 
 const (
 	// mostBoards bounds a project's boards.

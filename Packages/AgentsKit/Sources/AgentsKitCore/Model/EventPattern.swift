@@ -194,11 +194,6 @@ public enum EventPatternProblem: Error, Hashable, Sendable {
         return false
     }
 
-    public var isRetiredCustom: Bool {
-        if case .retiredCustom = self { return true }
-        return false
-    }
-
     public var message: String {
         switch self {
         case .unknown(let name):

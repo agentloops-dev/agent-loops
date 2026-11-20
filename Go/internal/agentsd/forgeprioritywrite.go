@@ -53,8 +53,7 @@ func (d *Daemon) forgePriority(ctx context.Context, r wire.ForgePriorityRequest)
 	if err := t.forge.SetPriority(ctx, t.ref, p); err != nil {
 		return wire.ForgeDone{}, forgeCannotErr(method, t.forge, err)
 	}
-	d.forgeWrote()
-	return wire.ForgeDone{}, nil
+	return d.forgeWroteOn(ctx, r.Node, wire.ForgeDone{}), nil
 }
 
 func (d *Daemon) forgeHold(ctx context.Context, r wire.ForgeHoldRequest) (wire.ForgeDone, error) {
@@ -66,8 +65,7 @@ func (d *Daemon) forgeHold(ctx context.Context, r wire.ForgeHoldRequest) (wire.F
 	if err := t.forge.SetHold(ctx, t.ref, r.On); err != nil {
 		return wire.ForgeDone{}, forgeCannotErr(method, t.forge, err)
 	}
-	d.forgeWrote()
-	return wire.ForgeDone{}, nil
+	return d.forgeWroteOn(ctx, r.Node, wire.ForgeDone{}), nil
 }
 
 // planFieldTarget is node's forge for a priority or a hold: an issue's only, as forge/next

@@ -30,9 +30,6 @@ public extension DaemonAPI {
 
         /// Whether it gives its people the admin role (FR-020).
         public var givesAdmin: Bool { role == "admin" }
-
-        /// Says a user is in it.
-        public func has(_ user: String) -> Bool { everyone || members.contains(user) }
     }
 
     /// Where a group comes from (#1002, FR-019): an org provider's SCIM, which alone changes its members.
@@ -51,8 +48,6 @@ public extension DaemonAPI {
     /// `groups/list`: every group for an admin; for a member, the groups they are in.
     struct GroupList: Codable, Sendable, Hashable {
         public var groups: [Group]
-
-        public init(groups: [Group] = []) { self.groups = groups }
     }
 
     /// `groups/set`: makes a group, or with `id` changes one.
@@ -116,8 +111,6 @@ public extension DaemonAPI {
     /// `bots/make`'s answer: the bot's user id.
     struct BotMade: Codable, Sendable, Hashable {
         public var user: String
-
-        public init(user: String) { self.user = user }
     }
 
     /// `bots/setCaps`: the bot's caps, and optionally its group.

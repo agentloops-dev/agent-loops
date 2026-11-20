@@ -145,3 +145,33 @@ func TestSignInWaitsForTheClientThenNeedsYouThenFails(t *testing.T) {
 		t.Fatalf("report %+v", r)
 	}
 }
+
+// #6340: a daemon that answers slower than KeyWait and SignInWait still gets running, then
+// needs you, then failed, so the person is told before the step fails.
+func TestSignInSaysEachStateInOrderWhenTheDaemonIsSlow(t *testing.T) {
+	h := &smokeHost{}
+	o, l := options(t)
+	o.Runtimes = []string{"claude"}
+	rep, err := NewReporter(l.Root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	slow := func(method string, params any) (json.RawMessage, error) {
+		time.Sleep(15 * time.Millisecond)
+		return h.call(method, params)
+	}
+	d := Deps{Call: slow, Poll: time.Millisecond, KeyWait: time.Millisecond, SignInWait: 10 * time.Millisecond}
+	if err := SignIn(context.Background(), o, d, rep, func(string, ...any) {}); err == nil {
+		t.Fatal("a runtime nobody signed in passed")
+	}
+	var states []wire.MachineSetupState
+	for _, r := range reports(t, l) {
+		if r.Step == wire.MachineSetupStepIDSignIn {
+			states = append(states, r.State)
+		}
+	}
+	want := []wire.MachineSetupState{wire.MachineSetupStateRunning, wire.MachineSetupStateNeedsYou, wire.MachineSetupStateFailed}
+	if fmt.Sprint(states) != fmt.Sprint(want) {
+		t.Fatalf("states %v, want %v", states, want)
+	}
+}

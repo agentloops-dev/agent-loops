@@ -119,11 +119,11 @@ func TestEveryAppToolIsOneMethodNamedAfterIt(t *testing.T) {
 	// cancel_wait cancels a wait for an event.
 	// hang_up hangs up a voice call (#2375), notify tells the person (#2805), and bring_back
 	// brings back a branch (#2947). drive_screen's noun, the screen, is singular: there is
-	// one of it (#3004). write_daily_summary writes summaries (#3192), and check_folders checks the
-	// quiet folders (#3355). docs_search and docs_read name their noun first, as the docs/search
-	// and docs/read methods they are over (#3317). make_app_repository and make_public_repository make
+	// one of it (#3004). check_folders checks the quiet folders (#3355). docs_search and
+	// docs_read name their noun first, as the docs/search and docs/read methods they are over
+	// (#3317). make_app_repository and make_public_repository make
 	// repositories, whose plural is not the noun with an s (#3708, #4921).
-	nouns := map[string]string{"bring_back": "branches", "notify": "people", "ask_question": "questions", "cancel_wait": "events", "wait_for_event": "events", "hang_up": "calls", "cancel_message": "sessions", "drive_screen": "screen", "write_daily_summary": "summaries", "docs_search": "docs", "docs_read": "docs", "make_app_repository": "repositories", "make_public_repository": "repositories"}
+	nouns := map[string]string{"bring_back": "branches", "notify": "people", "ask_question": "questions", "cancel_wait": "events", "wait_for_event": "events", "hang_up": "calls", "cancel_message": "sessions", "drive_screen": "screen", "docs_search": "docs", "docs_read": "docs", "make_app_repository": "repositories", "make_public_repository": "repositories"}
 	verbs := map[string]string{"docs_search": "search", "docs_read": "read"}
 	seen := map[string]string{}
 	for _, tool := range appToolCalls() {

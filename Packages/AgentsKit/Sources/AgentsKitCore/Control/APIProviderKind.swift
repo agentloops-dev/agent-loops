@@ -155,50 +155,12 @@ public enum APIProviderKind: String, CaseIterable, Identifiable, Sendable {
 
 /// Settings ▸ Machine providers' words on a phone and on the web (#1808, #1819).
 public enum MachineProviderWords {
-    public static let heading = "Machine providers"
-    public static let footer = "A provider starts and stops your machines: DigitalOcean Droplets, GitHub Codespaces, Coder workspaces, "
-        + "Google Compute Engine VMs or AWS EC2 instances, through their API. One of your machines carries it: it runs there and keeps its tokens, and the control plane keeps none. "
-        + "Docker, Cloud Workstations, your own commands and MCP servers are added in the Mac app."
-    public static let add = "Add Provider…"
-    public static let secretsFoot = ProviderCarrier.secretsFoot(nil)
-    public static func removeTitle(_ name: String) -> String { "Remove \(name)?" }
     public static let notAHostYet = "Not joined yet: add it as a machine in the Mac app, in Settings ▸ Machine Providers."
 
     /// What a workspace with no host says when no host is free to link to it (#1931): this
     /// device can't install Agents on it, so the person is told where to (the Mac's Add as Host…).
     public static func noHostLine(_ workspace: DaemonAPI.MachineInfo, hosts: [DaemonAPI.ControlMachine]) -> String? {
         workspace.host == nil && linkableHosts(workspace, hosts: hosts).isEmpty ? notAHostYet : nil
-    }
-
-    /// The chip on a card: "command provider · digitalocean-api · API".
-    public static func kindChip(_ provider: DaemonAPI.ProviderSummary) -> String {
-        if let preset = provider.preset {
-            return "command provider · \(preset) · \(preset.hasSuffix("-api") ? "API" : "CLI")"
-        }
-        return provider.kind == "commands" ? "command provider" : provider.mapped ? "MCP server · mapped" : "MCP server"
-    }
-
-    /// The grey line under a provider's name.
-    public static func providerLine(_ provider: DaemonAPI.ProviderSummary, time: (Date) -> String) -> String {
-        var parts: [String] = []
-        if let problem = provider.problem, !provider.current || provider.listedAt == nil { parts.append("Couldn’t list: \(problem)") }
-        if let at = provider.listedAt { parts.append("\(provider.current ? "Listed" : "Showing what it listed at") \(time(at))") }
-        if provider.workspaces.isEmpty, provider.listedAt != nil { parts.append("No machines") }
-        // Only when the machine that runs it has no such CLI (#3367).
-        if let tool = provider.sshToolMissing { parts.append("needs \(tool) for ssh") }
-        return parts.joined(separator: " · ")
-    }
-
-    /// The grey line under a workspace.
-    public static func workspaceLine(_ workspace: DaemonAPI.MachineInfo, hosts: [DaemonAPI.ControlMachine]) -> String {
-        var parts = [workspace.state.prefix(1).uppercased() + workspace.state.dropFirst()]
-        if let host = workspace.host {
-            parts.append("linked to \(hosts.first { $0.id == host }?.name ?? "a machine")")
-        } else {
-            parts.append("not joined")
-        }
-        if let cost = workspace.cost { parts.append(cost) }
-        return parts.joined(separator: " · ")
     }
 
     /// Whether a host named `hostName` may be this workspace (MachineInfo.mayBe, #976).

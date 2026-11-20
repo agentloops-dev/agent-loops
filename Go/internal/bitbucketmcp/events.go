@@ -107,6 +107,15 @@ var events = append([]event{
 			// What the run deployed: its successful deployments (#4217).
 			"deploys": map[string]any{"type": "array", "items": str},
 		})},
+	// The github server's checks.passed (#6293): one event per status that passed at a head.
+	{Name: "checks.passed", Title: "Checks passed",
+		Description: "One of an open pull request's checks passed at its head commit: one of its commit statuses (Bitbucket Pipelines or any CI that sets one) is SUCCESSFUL. One event per status and time, so a lane waiting on CI going green wakes without polling, and a check run again that passes again is a new one. run is the Pipelines run the status links to, by its build number (id 0 for another CI); completedAt is when the status last changed." + ownPRs,
+		Input:       schema{repoProperty, branchProperty("Only checks of the pull request from this branch."), prProperty, fixesProperty, anyoneProperty, mineProperty, anyProperty},
+		Payload: object(map[string]any{
+			"pr": prSchema(nil), "headSha": str,
+			"run":         object(map[string]any{"id": integer, "name": str, "url": str}),
+			"completedAt": str,
+		})},
 	deployEvent("deploy.started", "Deploy started",
 		"A Bitbucket deployment went IN_PROGRESS: a step with deployment: began to deploy, whatever started its run. One event per deployment."),
 	deployEvent("deploy.succeeded", "Deploy succeeded",
@@ -128,9 +137,20 @@ var events = append([]event{
 		Input:       namedInput(),
 		Payload:     object(map[string]any{"pr": prSchema(nil), "conflictedAt": str})},
 	{Name: "pr.blocked", Title: "Pull request blocked",
-		Description: mcpevents.BlockedDescription("On Bitbucket: only conflict, from the same read as pr.conflicted; Bitbucket's listing says nothing of required checks, changes requested or auto-merge."+ownPRs),
+		Description: mcpevents.BlockedDescription("On Bitbucket: conflict, from the same read as pr.conflicted; required_check_failed, a FAILED commit status at the head (Bitbucket's API does not say which checks its merge checks require, so every one counts); and changes_requested, a participant whose state is changes_requested (reviewUrl is the pull request's, as Bitbucket's review has no page of its own). Bitbucket has no auto-merge and no rule that a branch be up to date, so never automerge_disabled or behind. Read for the 50 open pull requests updated last." + ownPRs),
 		Input:       namedInput(),
 		Payload:     mcpevents.BlockedPayload(prSchema(nil))},
+	// The github server's pr.reviewed and pr.commented (#6293).
+	{Name: "pr.reviewed", Title: "Pull request reviewed",
+		Description: "A participant of an open pull request approved it (state approved) or asked for changes (changes_requested). Bitbucket keeps only each participant's last answer, with no words: so body is always empty, url is the pull request's, commit is its head when the poll saw the answer, and reviewedAt is that poll's time. Once per answer: an approval taken back and given again is a new one. Only answers by people with write access to the repository or more, never an app or a bot, unless anyone is true." + ownPRs,
+		Input:       schema{repoProperty, branchProperty("Only the pull request from this branch."), prProperty, fixesProperty, anyoneProperty, mineProperty, anyProperty},
+		Payload: object(map[string]any{"pr": prSchema(nil),
+			"review": object(map[string]any{"author": str, "state": str, "body": str, "url": str, "commit": str}), "reviewedAt": str})},
+	{Name: "pr.commented", Title: "Pull request commented on",
+		Description: "A comment was left on a pull request itself (not on a line of its diff, which review.comment covers). Its body is the first 4000 characters. A comment whose body starts with <!-- agent --> is left out: an agent's, not a person's, where agents post as the person's account. Only comments by people with write access to the repository or more, never an app or a bot, and only on the repository's own pull requests, unless anyone is true.",
+		Input:       schema{repoProperty, prProperty, fixesProperty, anyoneProperty, mineProperty, anyProperty},
+		Payload: object(map[string]any{"pr": prSchema(nil),
+			"comment": object(map[string]any{"author": str, "url": str, "body": str}), "commentedAt": str})},
 	// For the person, not the repository (#2034): what asks the token's owner for something.
 	{Name: "review.requested", Title: "Review requested from me",
 		Description: "The Bitbucket account whose token this server has was asked to review an open pull request: once per request, so one taken off and put back is a new one. Anyone's pull request, a fork's too.",
@@ -288,6 +308,7 @@ var diffKeys = map[string]string{
 	"pr.blocked":       "blockedAt",
 	"pr.conflicted":    "conflictedAt",
 	"pr.opened":        "openedAt",
+	"pr.reviewed":      "reviewedAt",
 }
 
 // stateFinder is the function that finds the states of an event that pollDiff raises, or nil
@@ -313,6 +334,11 @@ func (s *Events) stateFinder(ctx context.Context, name string, a args, p pollPar
 		return func() ([]state, error) {
 			prs, err := s.Bitbucket.OpenPRs(ctx, a.repo, false)
 			return openedStates(a, prs), err
+		}
+	case "pr.reviewed":
+		return func() ([]state, error) {
+			reviews, err := s.Bitbucket.Reviews(ctx, a.repo)
+			return reviewedStates(a, yours, reviews), err
 		}
 	}
 	return nil
@@ -351,6 +377,20 @@ func blockedStates(name string, a args, yours *Yours, prs []OpenPR, was []string
 		}
 		bs := mcpevents.Blocked(fmt.Sprintf("%s:%s:%d", name, a.repo, m.PR.Number), m.blocking(), was)
 		out = append(out, state{mr: m.PR, on: &bs.On, key: bs.Key, json: m.PR.json(), extra: bs.Data})
+	}
+	return out
+}
+
+// reviewedStates is pr.reviewed's: each answer (approved or changes_requested) on an open pull
+// request the poll wants, on while it stands, keyed by its author and state (#6293).
+func reviewedStates(a args, yours *Yours, reviews []Review) []state {
+	var out []state
+	for _, r := range reviews {
+		if !a.wanted(r.PR, r.PRTrusted, yours) || (!a.anyone && !r.Trusted) {
+			continue
+		}
+		out = append(out, state{mr: r.PR, on: new(true), key: r.Author + ":" + r.State, json: r.PR.json(),
+			extra: map[string]any{"review": map[string]any{"author": r.Author, "state": r.State, "body": "", "url": r.PR.URL, "commit": r.HeadSHA}}})
 	}
 	return out
 }
@@ -470,6 +510,10 @@ func candidates(ctx context.Context, f Bitbucket, name string, a args, yours *Yo
 		return runCandidates(ctx, f, a, since)
 	case "checks.failed":
 		return failedCheckCandidates(ctx, f, a, yours, since)
+	case "checks.passed":
+		return passedCheckCandidates(ctx, f, a, yours, since)
+	case "pr.commented":
+		return prCommentCandidates(ctx, f, a, yours, since)
 	}
 	return closedCandidates(ctx, f, name, a, yours, since)
 }
@@ -573,6 +617,49 @@ func failedCheckCandidates(ctx context.Context, f Bitbucket, a args, yours *Your
 			list = append(list, candidate{EventID: fmt.Sprintf("checks.failed:%s:%s:%s", repo, d.HeadSHA, at), Time: at,
 				Data:    func() (map[string]any, error) { return d.json(), nil },
 				Subject: prRef(repo, d.PR.Number), Key: d.HeadSHA + ":" + at})
+		}
+	}
+	return list, listed, nil
+}
+
+// passedCheckCandidates is checks.passed's: one a status, at its time (#6293).
+func passedCheckCandidates(ctx context.Context, f Bitbucket, a args, yours *Yours, since string) ([]candidate, Listed, error) {
+	repo := a.repo
+	passed, listed, err := f.PassedChecks(ctx, repo, since)
+	if err != nil {
+		return nil, Listed{}, err
+	}
+	var list []candidate
+	for _, d := range passed {
+		if at := mcpevents.Normalized(d.At); at != "" && a.wanted(d.PR, d.Trusted, yours) {
+			key := d.HeadSHA + ":" + d.Key + ":" + at
+			list = append(list, candidate{EventID: fmt.Sprintf("checks.passed:%s:%s", repo, key), Time: at,
+				Data:    func() (map[string]any, error) { return d.json(), nil },
+				Subject: prRef(repo, d.PR.Number), Key: key})
+		}
+	}
+	return list, listed, nil
+}
+
+// agentMarker starts a comment an agent posted as the person (#3860): pr.commented leaves it out.
+const agentMarker = "<!-- agent -->"
+
+// prCommentCandidates is pr.commented's (#6293).
+func prCommentCandidates(ctx context.Context, f Bitbucket, a args, yours *Yours, since string) ([]candidate, Listed, error) {
+	repo := a.repo
+	comments, listed, err := f.PRComments(ctx, repo, since)
+	if err != nil {
+		return nil, Listed{}, err
+	}
+	var list []candidate
+	for _, c := range comments {
+		// Trust is the commenter's; mine only narrows the pull request, as review.comment's.
+		m := c.PR
+		if at := mcpevents.Normalized(c.At); at != "" && a.wantsPR(m.Number) && a.closesOne(m) && a.byMe(m, yours) &&
+			(a.anyone || c.Trusted) && !strings.HasPrefix(strings.TrimSpace(c.Body), agentMarker) {
+			list = append(list, candidate{EventID: fmt.Sprintf("pr.commented:%s:%d", repo, c.ID), Time: at,
+				Data:    func() (map[string]any, error) { return c.data(), nil },
+				Subject: prRef(repo, m.Number), Key: fmt.Sprint(c.ID)})
 		}
 	}
 	return list, listed, nil

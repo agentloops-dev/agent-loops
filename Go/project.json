@@ -85,7 +85,7 @@
     "lint": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "scripts/lint.sh go govulncheck",
+        "command": "scripts/lint.sh go govulncheck deadcode",
         "cwd": "{workspaceRoot}"
       },
       "inputs": [

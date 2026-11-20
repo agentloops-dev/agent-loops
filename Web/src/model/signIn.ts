@@ -119,7 +119,6 @@ export function required(name: string): string {
 /** The failures of the org flow, as the wire numbers them. */
 export const orgSignInRequired = -32077;
 export const personSuspended = -32078;
-export const managedByProvider = -32079;
 
 /** The org provider an `orgSignInRequired` refusal asks for, from its data `{provider, name}`. */
 export function requiredProvider(code: number, data: unknown): SignInOrgProvider | null {

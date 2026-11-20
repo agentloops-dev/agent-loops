@@ -98,12 +98,6 @@ public struct TimeChart: Sendable, Hashable {
     /// The figure above the bars, as Health words it.
     public var headline: String { range == .day ? "Total" : "Daily average" }
 
-    /// A share of the whole, as a whole percent: "42%".
-    public func percent(_ seconds: Double) -> String {
-        guard time.total > 0 else { return "0%" }
-        return "\(Int((seconds / time.total * 100).rounded()))%"
-    }
-
     /// A length of time read at a glance: 45s, 12m, 3h 20m, 140h.
     public static func words(_ seconds: Double) -> String {
         let seconds = max(0, seconds)

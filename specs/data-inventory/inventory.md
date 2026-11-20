@@ -133,7 +133,7 @@ from the root (`agentsd/backups.go:69,72`). It holds nothing else.
 | Store | Holds | Bound | Swept |
 |---|---|---|---|
 | `~/.agents/settings/*.json` | Settings that follow the person (see `docs/reference/agents-folder.md`) | fixed shape | n/a |
-| `~/.agents/summaries/*` | Daily summaries | newest 3 (`dailysummary.go:25`) | on write |
+| `~/.agents/summaries/*` | Daily summaries, none written since #5853 | the newest 3 that were kept | n/a |
 | `~/.agents/checks/suggestions.json` | Daily-check findings | 50 suggestions, 200 dismissals (`dailychecks.go:38,48`) | on write |
 | `~/.agents-secrets/secrets.env`, `connections.json`, `provider-secrets.json` | Personal secrets, OAuth connections (Linux; the Keychain on a Mac), machine provider secrets | one per entry | the person edits them |
 | `~/.agents-secrets/sessions/<agent>.json` | Session-only secrets | Values go at archive; the file goes at delete; orphans are swept at start (`sessionsecrets.go:221-275`) | archive, delete, start |

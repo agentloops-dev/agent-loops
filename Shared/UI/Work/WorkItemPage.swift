@@ -154,8 +154,8 @@ struct WorkItemPage: View {
     // MARK: Toolbar (Mac)
 
     #if os(macOS)
-    /// The place, *Issues › #4331* (Issues opens the list), or the trail through the feature and
-    /// the epic, *Features › Work › Epic #5448 › #5452* (#5452), then Previous and Next and Refresh
+    /// The place, *Issues › #4331* (Issues opens the list), or the trail through the epic,
+    /// *Issues › Epic #5448 › #5452* (#5452), then Previous and Next and Refresh
     /// at the toolbar's end, as the list has Refresh (#4400 notes 1 to 3).
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
@@ -209,7 +209,7 @@ struct WorkItemPage: View {
     private var backWords: String {
         let history = model.workHistory
         guard history.canGoBack else { return place.kind.title }
-        // The place before: an item by its number, a page by its name (‹ Timeline, ‹ Features; #6044).
+        // The place before: an item by its number, a page by its name (‹ Timeline; #6044).
         let before = history.places[history.at - 1]
         return before.ref.map(WorkList.shortRef) ?? before.kind.title
     }

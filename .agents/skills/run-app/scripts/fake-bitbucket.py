@@ -8,7 +8,7 @@ outside account.
   or with an email (Basic), except "wrong-token", which gets a 401. /user says Kim Lee (kim).
 - The workspace acme, whose members are kim and sam, and its repository acme/app (main branch main,
   merge commit or squash): four issues (kinds and components for labels, one feature:wallet
-  component for Work ▸ Features), their comments and changes; three pull requests (open with a
+  component), their comments and changes; three pull requests (open with a
   failing Pipelines status, a draft in conflict, merged), their comments, activity, diffstat,
   diff and statuses; a failed Pipelines run with two steps and a log; the commits and tags
   v1.0.0 and v1.1.0, so the release v1.1.0 has the pull request 5 (lineage, #3879).

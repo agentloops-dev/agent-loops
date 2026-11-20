@@ -46,7 +46,7 @@ struct LevelPill: View {
                         } else {
                             Text(LevelWords.level(field, level))
                         }
-                        if let line = line(level, c) { Text(line) }
+                        if let line = line(c) { Text(line) }
                     }
                     .disabled(!possible)
                 }
@@ -98,7 +98,7 @@ struct LevelPill: View {
 
     /// "Sonnet 5 on Claude", or why the runtime cannot give it. A value the runtime gives
     /// only by a safer one says so: "Default on Codex · nearest safer: …" (#2893).
-    private func line(_ level: String, _ cell: AutoMapping?) -> String? {
+    private func line(_ cell: AutoMapping?) -> String? {
         guard let cell else { return nil }
         let on = runtimeName.map { " on \($0)" } ?? ""
         switch cell.mark {

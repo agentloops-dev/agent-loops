@@ -254,7 +254,7 @@ func TestForgeSearchWhere(t *testing.T) {
 }
 
 // #3939: the label epic finds the Epic work items, with or without the tag, and a story tagged
-// epic, for Work ▸ Features; a feature narrows them.
+// epic; a feature narrows them.
 func TestForgeSearchFindsEpicsByTheirType(t *testing.T) {
 	f, b := forgeFake(t)
 	f.item(4, "Invoices", "Epic", "New", alex, 4, obj{fieldTags: "feature:billing"})

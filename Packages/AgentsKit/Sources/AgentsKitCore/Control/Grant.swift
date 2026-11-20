@@ -200,34 +200,6 @@ public enum HostState: Codable, Hashable, Sendable {
     public var isOnline: Bool { self == .online }
 }
 
-/// A one-time code the control plane shows, and what it lets its holder become.
-public struct PairingCode: Codable, Hashable, Sendable {
-    public enum Purpose: Codable, Hashable, Sendable {
-        case client
-        case host
-    }
-
-    public var purpose: Purpose
-    /// The pre-shared secret for the first connection: identity `p:` for a client, `e:`
-    /// for a host.
-    public var secret: Data
-    public var expires: Date
-    /// Where the control plane may be reached: a Bonjour name, `host:port`.
-    public var addresses: [String]
-    /// The control plane's own key, so the new party can derive its PSK afterwards.
-    public var controlKey: Data
-
-    public init(purpose: Purpose, secret: Data, expires: Date, addresses: [String], controlKey: Data) {
-        self.purpose = purpose
-        self.secret = secret
-        self.expires = expires
-        self.addresses = addresses
-        self.controlKey = controlKey
-    }
-
-    public static let lifetime: TimeInterval = 5 * 60
-}
-
 /// `control.json`: what the control plane is.
 public struct ControlSettings: Codable, Hashable, Sendable {
     public var name: String
@@ -304,39 +276,6 @@ public struct Person: Codable, Hashable, Sendable {
         self.id = id
         self.name = name
     }
-}
-
-/// `leases/<host>.json`: which copy holds a host's uplink (R5, data-model.md "Lease").
-public struct HostLease: Codable, Hashable, Sendable {
-    public var host: MachineRef
-    public var copy: String
-    /// Bumped on every takeover, so a lease never repeats its bytes (rule 10).
-    public var epoch: Int
-    public var expires: Date
-    public init(host: MachineRef, copy: String, epoch: Int, expires: Date) {
-        self.host = host
-        self.copy = copy
-        self.epoch = epoch
-        self.expires = expires
-    }
-    public static let lifetime: TimeInterval = 30
-    public static let renewEvery: TimeInterval = 10
-}
-
-/// `copies/<id>.json`: a live copy of the control plane, and where the others reach it.
-public struct CopyRecord: Codable, Hashable, Sendable {
-    public var id: String
-    public var peerURL: String
-    public var started: Date
-    public var heartbeat: Date
-    public init(id: String, peerURL: String, started: Date, heartbeat: Date) {
-        self.id = id
-        self.peerURL = peerURL
-        self.started = started
-        self.heartbeat = heartbeat
-    }
-    public static let beatEvery: TimeInterval = 10
-    public static let goneAfter: TimeInterval = 30
 }
 
 /// `events/<day>/<ulid>.json`: a change, for a copy that missed its broadcast.

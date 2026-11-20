@@ -94,10 +94,6 @@ public struct EventKind: Hashable, Sendable {
     /// The keys of the details it carries.
     public var details: [String] { detailDescriptions.map(\.key) }
 
-    public func detail(_ key: String) -> EventDetail? {
-        detailDescriptions.first { $0.key == key }
-    }
-
     /// The details a wait or a trigger may narrow it by (#574).
     public var filters: [EventDetail] { detailDescriptions.filter(\.isFilter) }
 

@@ -84,8 +84,6 @@ final class ControlSettingsModel {
     var carriers: [DaemonAPI.ControlMachine] {
         ProviderCarrier.choices(hosts, person: status?.person?.id, own: thisMacHost?.id)
     }
-    /// Every other host.
-    var otherHosts: [DaemonAPI.ControlMachine] { hosts.filter { $0.machineID != MachineID.current } }
 
     var onlineCount: Int { hosts.filter(\.answers).count }
 
@@ -301,33 +299,6 @@ final class ControlSettingsModel {
                       DaemonAPI.ProviderWorkspaceRequest(id: provider, workspace: workspace))
     }
 
-    func unlink(_ host: MachineRef) async {
-        await perform(DaemonAPI.Method.hostsUnlink, DaemonAPI.MachineRequest(host: host))
-    }
-
-    func start(_ host: MachineRef) async {
-        await perform(DaemonAPI.Method.hostsStart, DaemonAPI.MachineRequest(host: host))
-    }
-
-    /// Stop. Unconfirmed while agents are working there, the control plane says who they are
-    /// (US4 AS4), and that is answered for the question; nil once it is stopping or refused.
-    func stop(_ host: MachineRef, confirmed: Bool = false) async -> [String]? {
-        do {
-            _ = try await client.call(DaemonAPI.Method.hostsStop, DaemonAPI.MachineStop(host: host, confirmRunning: confirmed ? true : nil))
-            problem = nil
-        } catch let error as JSONRPCError where error.code == DaemonAPI.Failure.agentsWorking {
-            let names = error.data?["running"]?.arrayValue?.compactMap(\.stringValue) ?? []
-            if !names.isEmpty { return names }
-            problem = HostProblem.controlRefusal(error)
-        } catch let error as JSONRPCError {
-            problem = HostProblem.controlRefusal(error)
-        } catch {
-            problem = "The control plane can’t be reached."
-        }
-        await refresh()
-        return nil
-    }
-
     // MARK: Making and deleting workspaces (US5)
 
     /// Workspaces made here that install on their first boot, as `provider/workspace`, shown
@@ -375,11 +346,6 @@ final class ControlSettingsModel {
 
     func isJoining(_ provider: ProviderID, _ workspace: DaemonAPI.MachineInfo) -> Bool {
         workspace.host == nil && joiningWorkspaces.contains("\(provider.rawValue)/\(workspace.id)")
-    }
-
-    /// Delete Machine…: the provider deletes it, then the host goes as Remove does.
-    func deleteMachine(_ host: MachineRef) async {
-        await perform(DaemonAPI.Method.hostsDeleteMachine, DaemonAPI.MachineRequest(host: host))
     }
 
     /// Links a server added from a workspace once it joins under `name` (Add as Host…).
@@ -438,14 +404,6 @@ final class ControlSettingsModel {
         problem = nil
         ControlConfig.forget()
         return true
-    }
-
-    func checkAgain(_ host: MachineRef) async {
-        await perform(DaemonAPI.Method.hostsCheckAgain, DaemonAPI.MachineRequest(host: host))
-    }
-
-    func remove(_ host: MachineRef) async {
-        await perform(DaemonAPI.Method.hostsRemove, DaemonAPI.MachineRequest(host: host))
     }
 
     /// The step the control plane says an install is at (`control/installProgress`).

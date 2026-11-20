@@ -409,12 +409,6 @@ extension DaemonAPI {
         public var message: String?
         /// The events it declares, such as slack.message.
         public var events: [String]?
-
-        public init(name: String, word: String, state: MessagingServerState, proof: ConnectorProof? = nil,
-                    message: String? = nil, events: [String]? = nil) {
-            self.name = name; self.word = word; self.state = state; self.proof = proof
-            self.message = message; self.events = events
-        }
     }
 
     public enum MessagingServerState: String, Codable, Sendable, Hashable {
@@ -430,10 +424,6 @@ extension DaemonAPI {
         public var proof: ConnectorProof?
         /// failed: why, in a sentence.
         public var message: String?
-
-        public init(name: String, state: DocsServerState, proof: ConnectorProof? = nil, message: String? = nil) {
-            self.name = name; self.state = state; self.proof = proof; self.message = message
-        }
     }
 
     public enum DocsServerState: String, Codable, Sendable, Hashable {
@@ -454,7 +444,6 @@ extension DaemonAPI {
     public struct ConnectorWorkflow: Codable, Sendable, Hashable, Identifiable {
         public var id: String
         public var name: String
-        public init(id: String, name: String) { self.id = id; self.name = name }
     }
 
     /// The github events the set-up turned on, and the workflows that start on one of them.

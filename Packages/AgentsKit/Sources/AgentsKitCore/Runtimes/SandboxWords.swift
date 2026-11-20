@@ -5,14 +5,14 @@ import Foundation
 public enum SandboxWords {
     /// A choice, in the words every runtime shares (#2658): **Default sandbox**, **Runtime
     /// sandbox**, **No sandbox**. What it does on the runtime is its explanation.
-    public static func choice(_ choice: SandboxChoice, runtimeID: String) -> String {
+    public static func choice(_ choice: SandboxChoice) -> String {
         LevelWords.sandbox(choice)
     }
 
     /// One agent's pill: its own choice, else the one Settings gives. In the menu, that one
     /// is marked **follows Settings** (`LevelWords.followsSettings`); there is no fourth value.
-    public static func override(_ choice: SandboxChoice?, runtimeDefault: SandboxChoice, runtimeID: String) -> String {
-        Self.choice(choice ?? runtimeDefault, runtimeID: runtimeID)
+    public static func override(_ choice: SandboxChoice?, runtimeDefault: SandboxChoice) -> String {
+        Self.choice(choice ?? runtimeDefault)
     }
 
     /// The state an agent's conversation shows (FR-010).
@@ -68,9 +68,6 @@ public enum SandboxWords {
             : "Your prompt is sent again."
         return "\(access) \(resend) \(foldersStillApply)"
     }
-
-    public static func continuedNote(_ name: String) -> String { "Carried on without \(name)’s sandbox." }
-    public static func keptStoppedNote(_ name: String) -> String { "Kept stopped rather than run without \(name)’s sandbox." }
 
     public static let continueWithout = "Continue without sandbox"
     public static let startWithout = "Start without sandbox"

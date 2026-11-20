@@ -53,8 +53,6 @@ public struct ControlCode: Sendable, Hashable {
         self.pin = pin
     }
 
-    public static let lifetime: TimeInterval = 5 * 60
-
     public var text: String {
         let kind: String
         switch purpose {
@@ -171,9 +169,5 @@ public extension DaemonAPI {
     struct Admitted: Codable, Sendable, Hashable {
         public var client: UUID?
         public var host: MachineRef?
-        public init(client: UUID? = nil, host: MachineRef? = nil) {
-            self.client = client
-            self.host = host
-        }
     }
 }

@@ -5,7 +5,6 @@ import { fromWireDate } from "../protocol/dates";
 import { planeNeedsUpdate } from "./capabilities";
 import { age, hint, type Part, stamp } from "./secretInfo";
 
-export const accountsTitle = "Accounts";
 export const noSecrets = "No secret goes here: give a card or a token by its name in Secrets.";
 
 /**
@@ -36,10 +35,6 @@ export function money(usd: number): string {
   return Number.isInteger(usd) ? `$${usd}` : `$${usd.toFixed(2)}`;
 }
 
-export function accountCost(a: OutsideAccount): string {
-  return a.monthlyCostUsd === undefined ? "" : `${money(a.monthlyCostUsd)}/month`;
-}
-
 export const noDescription = "No description";
 
 /** Ask before use (#4163): absent is on, as agentsd reads it. */
@@ -59,10 +54,6 @@ export const askField = "askBeforeUse";
 /** The description (#4164), under the address; an account made before it has none. */
 export function accountAbout(a: OutsideAccount): string {
   return a.description?.trim() || noDescription;
-}
-
-export function accountDetail(a: OutsideAccount): string {
-  return [a.address, a.plan].filter((v) => v).join(" · ");
 }
 
 export function accountsFoot(shown: OutsideAccount[]): string {
@@ -141,10 +132,6 @@ export function accountNotBackedUp(a: OutsideAccount, rows: readonly Row[], name
     return `Its ${kind}, ${name}, is only on ${names[id] ?? "one machine"}. Not backed up.`;
   }
   return null;
-}
-
-export function sameAccount(a: OutsideAccount, b: OutsideAccount): boolean {
-  return a.service.toLowerCase() === b.service.toLowerCase() && (a.address ?? "").toLowerCase() === (b.address ?? "").toLowerCase();
 }
 
 export type AccountFields = Record<string, string>;

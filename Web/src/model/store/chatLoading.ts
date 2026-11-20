@@ -110,11 +110,12 @@ export const chatLoadingMethods = {
       const copy = await this.readCopy(session).catch(() => undefined);
       if (copy && current()) this.drawTranscriptCopy(copy);
     }
-    // What was written since the end held (#4794), one page from it, in place of the whole opening;
-    // a page that leaves a gap, or no answer, opens it whole.
-    const end = this.chatEnd();
-    if (end !== null) {
-      const resumed = await this.link.call("agents/transcript", { agentID, limit: turnPage, from: end }, host).catch(() => null);
+    // The held page again and what was written since (#4794, #6282), one page, in place of the
+    // whole opening: an entry held can have changed in place. A page that leaves a gap, or no
+    // answer, opens it whole.
+    const start = this.chatResumeStart();
+    if (start !== null) {
+      const resumed = await this.link.call("agents/transcript", { agentID, limit: turnPage, from: start }, host).catch(() => null);
       if (!current()) return false;
       if (resumed && this.takeResumed(resumed)) return true;
     }

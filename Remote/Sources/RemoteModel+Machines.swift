@@ -497,8 +497,8 @@ extension RemoteModel {
             let id = host.id
             reachableHosts.insert(id)
             // A start there with no key of its own asks this device for one (#344).
-            await other.setCredentialLender { [weak self] wanted in
-                await self?.answerCredentialWanted(wanted, on: id) ?? false
+            await other.setCredentialLender { [weak self] _ in
+                await self?.answerCredentialWanted() ?? false
             }
             if let folders = try? await other.call(DaemonAPI.Method.foldersList,
                                                     DaemonAPI.FoldersListRequest(includeArchived: false),
@@ -665,13 +665,9 @@ extension RemoteModel {
            let change = try? notification.params?.decode(DaemonAPI.MoveNotification.self) {
             moveChanged(change)
         }
-        if notification.method == DaemonAPI.Notification.dailySummaryChanged,
-           let settings = try? notification.params?.decode(DailySummarySettings.self) {
-            self.dailySummarySettings = settings
-        }
-        if notification.method == DaemonAPI.Notification.summariesChanged,
-           let pages = try? notification.params?.decode([SummaryPage].self) {
-            self.summaryPages = pages
+        if notification.method == DaemonAPI.Notification.dailyChecksChanged,
+           let settings = try? notification.params?.decode(DailyChecksSettings.self) {
+            self.dailyChecksSettings = settings
         }
         if notification.method == DaemonAPI.Notification.preferencesChanged,
            let preferences = try? notification.params?.decode(DaemonAPI.DisplayPreferences.self) {

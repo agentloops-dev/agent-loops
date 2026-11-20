@@ -927,20 +927,8 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
 // MARK: Slim (051)
 
 extension Agent {
-    /// This agent without the lists that are nearly all of its record, for holding an
-    /// archived agent nobody is reading. Everything the list, the counts and deletion by
-    /// age need is still here.
-    public func slimmed() -> Agent {
-        var slim = self
-        slim.advertisedOptions = []
-        slim.availableCommands = []
-        slim.plans = []
-        slim.isSlim = true
-        return slim
-    }
-
     /// This agent as a lean `agents/list` sends it (#107): the slim lists, for a client's
-    /// sessions column. Unlike `slimmed()` it is a copy on the wire, not a held state, so
+    /// sessions column. It is a copy on the wire, not a held state, so
     /// `isSlim` is not set; `listsLeftOut` is, so the reader knows the empty lists are not
     /// the agent's (#203).
     public func leaned() -> Agent {

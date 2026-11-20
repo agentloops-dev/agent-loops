@@ -11,10 +11,6 @@ public struct RuntimeLaunch: Hashable, Sendable {
     /// one in the daemon's own environment is never used by accident. `<root>` in a value
     /// is the daemon's root (a server's is its `~/.agents-server`).
     public var environment: [String: String?] = [:]
-    /// What the runtime reads from the person's environment beyond what every program gets
-    /// (#727): its own keys and settings. Nothing else of the daemon's reaches it. A name
-    /// ending in `*` is a prefix.
-    public var passedVariables: [String] = []
     /// Sign-in methods the runtime offers that the app does not (049: Antigravity's API key
     /// and Agent Platform, because Antigravity signs in with a Google account only). Left
     /// off every sign-in sheet, the Mac's and the phone's.
@@ -22,17 +18,11 @@ public struct RuntimeLaunch: Hashable, Sendable {
     /// The starts of an agent message that mean the turn failed, for a runtime that says
     /// so in words and then ends the turn normally. First match wins.
     public var turnErrorPrefixes: [String] = []
-    /// The first of `turnErrorPrefixes`, for callers that only need to know whether any
-    /// failure prefix is configured (so they collect turn text).
-    public var turnErrorPrefix: String? { turnErrorPrefixes.first }
     /// An anchored runtime notice that may precede a failure in the concatenated
     /// message chunks. Never search arbitrary assistant prose for error words.
     public var turnNoticePattern: String?
     /// Words the sign-in sheet shows beside some of the runtime's own sign-in methods.
     public var signInNotice: SignInNotice?
-    /// Whether the handshake asks for the runtime's sign-in command the older way,
-    /// `clientCapabilities._meta["terminal-auth"]` (049: OpenCode names its command only then).
-    public var asksForTerminalAuthCommand: Bool = false
     /// For a runtime whose sign-in adds one provider at a time and works with none (049:
     /// OpenCode's free models): the sign-in stays on the sheet while it is ready, and the
     /// sheet names how to sign a provider out — the sign-in command with its last word
@@ -40,8 +30,6 @@ public struct RuntimeLaunch: Hashable, Sendable {
     public var providerSignOutWord: String? = nil
     /// The Mac's sign-in a server run of this runtime borrows (049 D7: OpenCode's `auth.json`).
     public var lentSignIn: LentFileSignIn? = nil
-    /// How long it is given to answer, start, pick up and go quiet in a turn (#166).
-    public var deadlines: RuntimeDeadlines = .standard
 
     /// The command that signs a provider out, from the command that signs one in.
     public func providerSignOutCommand(from signIn: String) -> String? {
@@ -65,22 +53,18 @@ public struct RuntimeLaunch: Hashable, Sendable {
         }
     }
 
-    public init(runtimeID: String, environment: [String: String?] = [:], passedVariables: [String] = [],
+    public init(runtimeID: String, environment: [String: String?] = [:],
                 hiddenAuthMethods: [String] = [],
                 turnErrorPrefix: String? = nil, turnErrorPrefixes: [String] = [],
                 turnNoticePattern: String? = nil, signInNotice: SignInNotice? = nil,
-                asksForTerminalAuthCommand: Bool = false, providerSignOutWord: String? = nil,
-                lentSignIn: LentFileSignIn? = nil, deadlines: RuntimeDeadlines = .standard) {
+                providerSignOutWord: String? = nil, lentSignIn: LentFileSignIn? = nil) {
         self.runtimeID = runtimeID
-        self.deadlines = deadlines
         self.environment = environment
-        self.passedVariables = passedVariables
         self.hiddenAuthMethods = hiddenAuthMethods
         self.turnErrorPrefixes = !turnErrorPrefixes.isEmpty ? turnErrorPrefixes
             : turnErrorPrefix.map { [$0] } ?? []
         self.turnNoticePattern = turnNoticePattern
         self.signInNotice = signInNotice
-        self.asksForTerminalAuthCommand = asksForTerminalAuthCommand
         self.providerSignOutWord = providerSignOutWord
         self.lentSignIn = lentSignIn
     }
@@ -119,65 +103,19 @@ public struct RuntimeLaunch: Hashable, Sendable {
         }
         return said.isEmpty ? text : said
     }
-
-    /// Where `<root>` stands in an environment value.
-    public static let rootPlaceholder = "<root>"
-    /// Where `<cache>` stands: the root's cache folder (#1030), for what is made again.
-    public static let cachePlaceholder = "<cache>"
-
-    /// `value` with `<root>` and `<cache>` replaced.
-    static func expand(_ value: String, root: String, cache: String) -> String {
-        value.replacingOccurrences(of: rootPlaceholder, with: root)
-            .replacingOccurrences(of: cachePlaceholder, with: cache)
-    }
-
-    /// `environment` applied on top of `base`, with `<root>` replaced by `root` and
-    /// `<cache>` by `cache`.
-    public func environment(over base: [String: String], root: String, cache: String) -> [String: String] {
-        var result = base
-        for (name, value) in environment {
-            if let value {
-                result[name] = Self.expand(value, root: root, cache: cache)
-            } else {
-                result.removeValue(forKey: name)
-            }
-        }
-        return result
-    }
-
-    /// The folders `environment` names under `<root>` or `<cache>`, which the daemon makes (0700)
-    /// before launch: a runtime whose home or temporary folder is missing may refuse to
-    /// start or make it world-readable.
-    public func folders(root: String, cache: String) -> [String] {
-        environment.compactMap { name, value in
-            guard name.hasSuffix("_HOME") || name == "TMPDIR", let value,
-                  value.hasPrefix(Self.rootPlaceholder) || value.hasPrefix(Self.cachePlaceholder) else { return nil }
-            return Self.expand(value, root: root, cache: cache)
-        }
-        .sorted()
-    }
 }
 
 public enum RuntimeLaunchCatalog {
-    /// Its key, a gateway's address and model choices; Bedrock and Vertex are passed through
-    /// by the person (#727), as they are cloud credentials.
-    public static let claude = RuntimeLaunch(
-        runtimeID: "claude",
-        passedVariables: ["ANTHROPIC_*", "CLAUDE_CONFIG_DIR"])
+    public static let claude = RuntimeLaunch(runtimeID: "claude")
 
-    public static let codex = RuntimeLaunch(
-        runtimeID: "codex",
-        passedVariables: ["OPENAI_*", "CODEX_HOME"])
+    public static let codex = RuntimeLaunch(runtimeID: "codex")
 
-    public static let grok = RuntimeLaunch(
-        runtimeID: "grok",
-        passedVariables: ["GROK_*", "XAI_*"])
+    public static let grok = RuntimeLaunch(runtimeID: "grok")
 
     /// Cursor's subscription exhaustion is an ordinary assistant message ending in
     /// `end_turn`, not an ACP failure. Captured from the prompt refusal on 2026-09-28.
     public static let cursor = RuntimeLaunch(
         runtimeID: "cursor",
-        passedVariables: ["CURSOR_*"],
         turnErrorPrefix: LimitRecognition.cursorPlanExhausted)
 
     /// Google's Antigravity ACP server (049, research R5–R10).
@@ -223,8 +161,6 @@ public enum RuntimeLaunchCatalog {
     /// Observed on 2026-09-26 for its exhausted monthly quota.
     public static let copilot = RuntimeLaunch(
         runtimeID: "copilot",
-        // Its own GitHub sign-in, in the order it reads them.
-        passedVariables: ["COPILOT_*", "GH_TOKEN", "GITHUB_TOKEN"],
         turnErrorPrefix: "Error:",
         // ACP sends this notice without a trailing newline, before any error chunks.
         turnNoticePattern: #"^Info: Disabled tools: [a-z_][a-z_0-9]*(?:, [a-z_][a-z_0-9]*)*"#)
@@ -256,18 +192,13 @@ public enum RuntimeLaunchCatalog {
             "OPENCODE_AUTH_CONTENT": nil,
             "OPENCODE_ENABLE_QUESTION_TOOL": nil,
         ],
-        // Its own settings, and the keys of the providers it most often signs in with.
-        passedVariables: ["OPENCODE_*", "ANTHROPIC_*", "OPENAI_*", "GEMINI_*", "GOOGLE_GENERATIVE_AI_API_KEY",
-                          "OPENROUTER_*", "XAI_*", "GROQ_*", "MISTRAL_*", "DEEPSEEK_*"],
-        // Without it OpenCode offers "Login with opencode" and no command (R6).
-        asksForTerminalAuthCommand: true,
         // `opencode auth login` adds a provider; `opencode auth logout` takes one away.
         providerSignOutWord: "logout",
         // A server run borrows the Mac's keys (D7). `oauth` entries rotate and stay (R7).
-        lentSignIn: LentFileSignIn(variable: "OPENCODE_AUTH_CONTENT", dataHomeVariable: "XDG_DATA_HOME",
+        lentSignIn: LentFileSignIn(dataHomeVariable: "XDG_DATA_HOME",
                                    dataHomePath: "opencode/auth.json",
                                    defaultPath: ".local/share/opencode/auth.json",
-                                   lendableTypes: ["api", "wellknown"], signInCommand: "opencode auth login"))
+                                   lendableTypes: ["api", "wellknown"]))
 
     public static let builtIn: [RuntimeLaunch] = [claude, codex, grok, antigravity, copilot, cursor, opencode]
 

@@ -56,42 +56,4 @@ public enum POSIX {
         Glibc.connect(fd, address, length)
         #endif
     }
-
-    @inline(__always) @discardableResult
-    public static func kill(_ pid: pid_t, _ signal: Int32) -> Int32 {
-        #if canImport(Darwin)
-        Darwin.kill(pid, signal)
-        #elseif canImport(Musl)
-        Musl.kill(pid, signal)
-        #else
-        Glibc.kill(pid, signal)
-        #endif
-    }
-
-    /// `socket(AF_UNIX, SOCK_STREAM, 0)`. glibc spells the type as an enum wrapper; Darwin and musl do not.
-    public static func unixStreamSocket() -> Int32 {
-        #if canImport(Glibc) && !canImport(Musl)
-        socket(AF_UNIX, Int32(SOCK_STREAM.rawValue), 0)
-        #else
-        socket(AF_UNIX, SOCK_STREAM, 0)
-        #endif
-    }
-
-    /// What `sockaddr_un.sun_path` holds, terminator included: 104 on the Mac, 108 on
-    /// Linux. Paths are held to the Mac's limit everywhere, so a root that works on one
-    /// works on the other.
-    public static let socketPathLimit = 104
-
-    /// A `sockaddr_un` for `path`, which must already be under `socketPathLimit`.
-    public static func unixAddress(_ path: String) -> sockaddr_un {
-        var address = sockaddr_un()
-        address.sun_family = sa_family_t(AF_UNIX)
-        _ = withUnsafeMutablePointer(to: &address.sun_path) { pointer in
-            path.withCString { source in
-                strncpy(UnsafeMutableRawPointer(pointer).assumingMemoryBound(to: CChar.self), source,
-                        socketPathLimit - 1)
-            }
-        }
-        return address
-    }
 }

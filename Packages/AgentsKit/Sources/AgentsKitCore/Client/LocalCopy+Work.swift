@@ -14,8 +14,6 @@ extension LocalCopy {
         case item
         /// An epic's plan (`forge/plan`).
         case plan
-        /// Work ▸ Features (`work/features`).
-        case features
         /// Work ▸ Timeline (`work/timeline`; Core since #6044).
         case timeline
         /// Work ▸ Deploys (`deploys/targets`, the Mac's).
@@ -32,7 +30,6 @@ extension LocalCopy {
             case .list: 30
             case .item: 50
             case .plan: 50
-            case .features: 10
             case .timeline: 20
             case .deploys: 5
             case .boards: 10
