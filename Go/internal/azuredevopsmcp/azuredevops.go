@@ -74,12 +74,28 @@ type OpenPR struct {
 	// ChangesRequested is a reviewer asking its author for changes, where the forge says it.
 	SkipsBlocked     bool
 	ChangesRequested bool
+	// FailedChecks are its head's failed builds and statuses and ChecksRunning says one still
+	// runs, read for pr.blocked for the maxChecked newest (#6295).
+	FailedChecks  []Check
+	ChecksRunning bool
+	// Votes are its reviewers' answers: approved or changes_requested (#6295).
+	Votes []Vote
+}
+
+// Vote is a reviewer's answer to a pull request, as pr.reviewed gives it (#6295): State is
+// approved (a vote of approved, or approved with suggestions) or changes_requested (waiting
+// for author, or rejected). Azure DevOps keeps only each reviewer's last vote, with no words.
+// Trusted is the reviewer's: not a bot.
+type Vote struct {
+	Author  string
+	State   string
+	Trusted bool
 }
 
 // blocking is why it cannot merge until its author acts (pr.blocked, #5321): a conflict not
 // yet worked out keeps the state it had.
 func (o OpenPR) blocking() mcpevents.Blocking {
-	b := mcpevents.Blocking{HeadSHA: o.HeadSHA, ChangesRequested: o.ChangesRequested}
+	b := mcpevents.Blocking{HeadSHA: o.HeadSHA, ChangesRequested: o.ChangesRequested, ChecksRunning: o.ChecksRunning, FailedChecks: o.FailedChecks}
 	if o.Conflicts == nil {
 		b.Unknown = true
 	} else {
@@ -107,8 +123,8 @@ type ClosedPR struct {
 }
 
 // Check is one Azure Pipelines build, or one status another service set: its pipeline's
-// name or the status's genre/name, and its page.
-type Check struct{ Name, URL string }
+// name or the status's genre/name, and its page. It is pr.blocked's failed check as it is (#6295).
+type Check = mcpevents.FailedCheck
 
 // FailedChecks is a checks.failed event's data: an active pull request whose head commit's
 // builds or statuses failed, and those. At is the newest of their times, so a build run
@@ -180,8 +196,9 @@ func (b CompletedBuild) data(deploys []string) map[string]any {
 	}, "completedAt": b.At, "deploys": deploys}
 }
 
-// ReviewComment is a comment on a line of a pull request's diff, or an answer in its thread.
-// ID is the comment's number in its thread, ThreadID the thread's.
+// ReviewComment is a comment on a line of a pull request's diff, or an answer in its thread;
+// or, for pr.commented, one on the pull request itself, with no path or line (#6295). ID is
+// the comment's number in its thread, ThreadID the thread's.
 type ReviewComment struct {
 	ID       int
 	ThreadID int
@@ -201,6 +218,12 @@ func (c ReviewComment) data() map[string]any {
 			"body": c.Body, "url": c.URL}}
 }
 
+// prData is pr.commented's payload, the github server's with the thread to answer in (#6295).
+func (c ReviewComment) prData() map[string]any {
+	return map[string]any{"pr": c.PR.json(), "commentedAt": c.At,
+		"comment": map[string]any{"author": c.Author, "url": c.URL, "body": c.Body, "threadId": c.ThreadID}}
+}
+
 // Listed is how far a listing read (mcpevents.Listed): Newest is the newest time of anything it
 // listed, wanted or not (in mcpevents.TimeLayout, "" when it listed nothing), and Truncated says
 // it stopped at maxPages before it reached since.
@@ -210,8 +233,9 @@ type Listed = mcpevents.Listed
 type AzureDevOps interface {
 	// DefaultRepo is the repository the server's folder pushes to, as organization/project/name.
 	DefaultRepo(ctx context.Context) (string, error)
-	// OpenPRs are the active pull requests, drafts too, with whether each conflicts.
-	OpenPRs(ctx context.Context, repo string) ([]OpenPR, error)
+	// OpenPRs are the active pull requests, drafts too, with whether each conflicts, and with
+	// checks the maxChecked newest's head checks (#6295).
+	OpenPRs(ctx context.Context, repo string, checks bool) ([]OpenPR, error)
 	// ClosedPRs are pull requests completed, and abandoned, at or after since.
 	ClosedPRs(ctx context.Context, repo, since string) (merged []MergedPR, closed []ClosedPR, listed Listed, err error)
 	// FailedChecks are the active pull requests whose head commit failed a build or a status
@@ -236,6 +260,9 @@ type AzureDevOps interface {
 	DeployBuild(ctx context.Context, repo string, build int) (ours bool, sha, ref string, err error)
 	// ReviewComments are the comments on pull requests' diffs made at or after since.
 	ReviewComments(ctx context.Context, repo, since string) (comments []ReviewComment, listed Listed, err error)
+	// PRComments are the comments on pull requests themselves (not on their files or lines)
+	// made at or after since (#6295).
+	PRComments(ctx context.Context, repo, since string) (comments []ReviewComment, listed Listed, err error)
 	// Yours is what the token's owner has in the repository (#2034).
 	Yours(ctx context.Context, repo string) (Yours, error)
 }

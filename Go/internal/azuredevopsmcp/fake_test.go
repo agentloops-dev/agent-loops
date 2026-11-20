@@ -404,8 +404,10 @@ func (f *fakeAzureDevOps) buildsOf(q url.Values) []obj {
 	out := []obj{}
 	for i := len(f.builds) - 1; i >= 0; i-- { // newest first
 		b := f.builds[i]
+		finished, _ := b["finishTime"].(string)
 		if (q.Get("resultFilter") != "" && b["result"] != q.Get("resultFilter")) ||
-			(q.Get("minTime") != "" && mcpevents.Before(b["finishTime"].(string), q.Get("minTime"))) ||
+			(q.Get("statusFilter") != "" && b["status"] != q.Get("statusFilter")) ||
+			(q.Get("minTime") != "" && mcpevents.Before(finished, q.Get("minTime"))) ||
 			(q.Get("branchName") != "" && b["sourceBranch"] != q.Get("branchName")) {
 			continue
 		}

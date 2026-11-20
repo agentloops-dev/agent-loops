@@ -13,12 +13,8 @@ import (
 // The forge contract (#6191) over the fake Azure DevOps: pull request 1 is the story's, pull
 // request 2 the one that closes.
 
-// azureDevOpsMissing are the contract's events this server does not give, with their bugs.
-var azureDevOpsMissing = map[string]string{
-	"pr.reviewed":                      "#6295: no event for a review (a vote for or against)",
-	"pr.commented":                     "#6295: no event for a comment on a pull request",
-	"pr.blocked/required_check_failed": "#6295: OpenPRs reads no failed builds or statuses",
-}
+// azureDevOpsMissing are the contract's events this server does not give: none (#6295).
+var azureDevOpsMissing = map[string]string{}
 
 func TestForgeContract(t *testing.T) {
 	f := newFake(t)
