@@ -2980,8 +2980,6 @@ Go/internal/controlplane/hosttunnels/tunnels.go: Error return value of `t.store.
 Go/internal/controlplane/hosttunnels/tunnels.go: Error return value of `t.store.Put` is not checked (errcheck)
 Go/internal/controlplane/hosttunnels/tunnels.go: G104: Errors unhandled (gosec)
 Go/internal/controlplane/hosttunnels/tunnels.go: G104: Errors unhandled (gosec)
-Go/internal/controlplane/hosttunnels/tunnels.go: cognitive complexity of func `(*Tunnels).Reconcile` is high (> 30) (gocognit)
-Go/internal/controlplane/hosttunnels/tunnels.go: cognitive complexity of func `(*Tunnels).holdLocked` is high (> 30) (gocognit)
 Go/internal/controlplane/hosttunnels/tunnels_test.go: Error return value of `memory.Put` is not checked (errcheck)
 Go/internal/controlplane/hosttunnels/tunnels_test.go: Error return value of `memory.Put` is not checked (errcheck)
 Go/internal/controlplane/hosttunnels/tunnels_test.go: Error return value of `memory.Put` is not checked (errcheck)
