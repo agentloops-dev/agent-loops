@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"runtime/pprof"
 	"strings"
 	"testing"
 	"time"
@@ -43,7 +44,10 @@ func (m *mcpClient) post(method string, params any, id int) (int, map[string]jso
 	}
 	res, err := m.client.Do(req)
 	if err != nil {
-		m.t.Fatal(err)
+		// A call that gets no answer is a daemon goroutine blocked somewhere: say where (#6395).
+		var stacks bytes.Buffer
+		_ = pprof.Lookup("goroutine").WriteTo(&stacks, 2) // a bytes.Buffer does not fail
+		m.t.Fatalf("%s %s: %v\n%s", method, m.url, err, stacks.String())
 	}
 	defer res.Body.Close()
 	if s := res.Header.Get("Mcp-Session-Id"); s != "" {

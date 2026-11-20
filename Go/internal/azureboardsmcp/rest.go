@@ -641,39 +641,66 @@ func (f *RealBoards) Activity(ctx context.Context, kind Kind, since string) ([]A
 	}
 	var out []Activity
 	for _, w := range list {
-		item := f.workItem(project, w, states)
-		switch kind {
-		case Opened:
-			out = append(out, Activity{ID: itoa(item.ID), At: item.CreatedAt, WorkItem: item, Kind: Opened, By: item.Creator})
-		case Commented:
-			comments, err := f.comments(ctx, project, item.ID, perPage, true)
-			if err != nil {
-				return nil, false, err
-			}
-			for _, c := range comments {
-				if mcpevents.Normalized(c.CreatedDate) < since {
-					break // newest first: the rest are older
-				}
-				out = append(out, Activity{ID: itoa(item.ID) + "/" + itoa(c.ID), At: c.CreatedDate, WorkItem: item, Kind: Commented,
-					By: c.CreatedBy.person(), CommentURL: item.URL, CommentBody: clip(c.Text, commentChars)})
-			}
-		default:
-			updates, more, err := f.updates(ctx, project, item.ID)
-			if err != nil {
-				return nil, false, err
-			}
-			truncated = truncated || more
-			for _, u := range updates {
-				if at := u.at(); mcpevents.Normalized(at) >= since {
-					out = append(out, fromUpdate(kind, item, u, at, me, states)...)
-				}
-			}
+		found, more, err := f.activityOf(ctx, kind, project, f.workItem(project, w, states), since, me, states)
+		if err != nil {
+			return nil, false, err
 		}
+		truncated = truncated || more
+		out = append(out, found...)
 	}
 	for i := range out {
 		out[i].Project = project
 	}
 	return out, truncated, nil
+}
+
+// activityOf is what happened to one work item at or after since, of one kind, and whether
+// its updates went past what one read gives.
+func (f *RealBoards) activityOf(ctx context.Context, kind Kind, project string, item WorkItem, since, me string,
+	states map[string]map[string]string) ([]Activity, bool, error) {
+	switch kind {
+	case Opened:
+		return []Activity{{ID: itoa(item.ID), At: item.CreatedAt, WorkItem: item, Kind: Opened, By: item.Creator}}, false, nil
+	case Commented:
+		out, err := f.commentActivity(ctx, project, item, since)
+		return out, false, err
+	default:
+		return f.updateActivity(ctx, kind, project, item, since, me, states)
+	}
+}
+
+// commentActivity is the comments on one work item at or after since.
+func (f *RealBoards) commentActivity(ctx context.Context, project string, item WorkItem, since string) ([]Activity, error) {
+	comments, err := f.comments(ctx, project, item.ID, perPage, true)
+	if err != nil {
+		return nil, err
+	}
+	var out []Activity
+	for _, c := range comments {
+		if mcpevents.Normalized(c.CreatedDate) < since {
+			break // newest first: the rest are older
+		}
+		out = append(out, Activity{ID: itoa(item.ID) + "/" + itoa(c.ID), At: c.CreatedDate, WorkItem: item, Kind: Commented,
+			By: c.CreatedBy.person(), CommentURL: item.URL, CommentBody: clip(c.Text, commentChars)})
+	}
+	return out, nil
+}
+
+// updateActivity is what the updates to one work item at or after since did of kind, and
+// whether there were more updates than one read gives.
+func (f *RealBoards) updateActivity(ctx context.Context, kind Kind, project string, item WorkItem, since, me string,
+	states map[string]map[string]string) ([]Activity, bool, error) {
+	updates, more, err := f.updates(ctx, project, item.ID)
+	if err != nil {
+		return nil, false, err
+	}
+	var out []Activity
+	for _, u := range updates {
+		if at := u.at(); mcpevents.Normalized(at) >= since {
+			out = append(out, fromUpdate(kind, item, u, at, me, states)...)
+		}
+	}
+	return out, more, nil
 }
 
 // fromUpdate is what one update did of kind: the tags it added, a move to a closed state, or
