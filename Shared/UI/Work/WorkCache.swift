@@ -7,8 +7,9 @@ import AgentsKitCore
 /// items, one row per item, and a sync fills it in the background. The cache can be deleted at any time: the next sync
 /// fills it again. Off unless the default `WorkLocalCachePoC` is on.
 ///
-/// The sync needs no new wire method: `forge/listAll` gives each machine's items newest `updatedAt` first, so a read
-/// that stops at the first page older than the cursor (less one minute of overlap) is a "changed since" read.
+/// Each list keeps the answer to its own query (Alex, 2026-11-19): it draws the kept answer at once, then asks the
+/// machines the same query again, one request of at most 100 items with no pages, and keeps the new answer. Nothing
+/// syncs in the background. The items are kept once each, by ref, so a change to one shows in every list.
 actor WorkCache {
     /// The default that turns the proof of concept on: `defaults write <bundle id> WorkLocalCachePoC -bool YES`.
     static let flag = "WorkLocalCachePoC"
@@ -31,17 +32,6 @@ actor WorkCache {
         #endif
         return try? WorkCache(file: folder.appendingPathComponent(name))
     }()
-
-    /// What the cache knows of one machine's list of one kind.
-    struct Sync: Sendable {
-        /// The newest `updatedAt` the machine sent: the forge's time, not this device's clock.
-        var cursor: Date?
-        /// The first fill read to the end.
-        var filled: Bool
-        /// When this device last finished a sync of it.
-        var syncedAt: Date?
-        var forges: [DaemonAPI.ForgeCapabilities]?
-    }
 
     /// The open database, closed when the cache goes.
     private final class Handle: @unchecked Sendable {
@@ -74,10 +64,7 @@ actor WorkCache {
               updated REAL NOT NULL, synced REAL NOT NULL, json BLOB NOT NULL, PRIMARY KEY(kind, host, ref))
             """,
             "CREATE INDEX IF NOT EXISTS item_updated ON item(kind, updated DESC)",
-            """
-            CREATE TABLE IF NOT EXISTS sync(kind TEXT NOT NULL, host TEXT NOT NULL, cursor REAL, filled INTEGER NOT NULL,
-              synced REAL, forges BLOB, PRIMARY KEY(kind, host))
-            """,
+            "CREATE TABLE IF NOT EXISTS answer(query TEXT PRIMARY KEY, kind TEXT NOT NULL, read REAL NOT NULL, json BLOB NOT NULL)",
         ] where sqlite3_exec(opened, sql, nil, nil, nil) != SQLITE_OK {
             throw CacheError(message: String(cString: sqlite3_errmsg(opened)))
         }
@@ -114,15 +101,6 @@ actor WorkCache {
         return Data(bytes: bytes, count: Int(sqlite3_column_bytes(s, i)))
     }
 
-    /// Every cached item of a kind, as one list per machine, newest first. No forge call.
-    func lists(_ kind: WorkList.Kind) -> [(host: MachineRef, list: DaemonAPI.ForgeList)] {
-        let byHost = items(kind)
-        return byHost.keys.sorted { $0.rawValue < $1.rawValue }.map { host in
-            let items = (byHost[host] ?? [:]).values.sorted { $0.updatedAt > $1.updatedAt }
-            return (host, DaemonAPI.ForgeList(items: items, forges: sync(kind, host).forges, total: items.count))
-        }
-    }
-
     /// The kind's items from memory, read from the database the first time.
     private func items(_ kind: WorkList.Kind) -> [MachineRef: [String: DaemonAPI.ForgeItem]] {
         if let had = memo[kind] { return had }
@@ -140,11 +118,46 @@ actor WorkCache {
         return byHost
     }
 
-    func count(_ kind: WorkList.Kind) -> Int {
-        guard let s = try? prepare("SELECT count(*) FROM item WHERE kind = ?") else { return 0 }
+    /// A query's answer as this device keeps it: each machine's items in the machine's order, by ref (the items
+    /// themselves are kept once, in `item`), its total, its forges and what could not be read.
+    struct Answer: Codable, Sendable {
+        var hosts: [MachineRef]
+        var refs: [[String]]
+        var totals: [Int?]
+        var forges: [[DaemonAPI.ForgeCapabilities]?]
+        var errors: [[DaemonAPI.ForgeListError]?]
+    }
+
+    /// The kept answer to a query, as one list per machine, with when it was read; nil when it was never asked.
+    func answer(_ query: String, kind: WorkList.Kind) -> (lists: [(host: MachineRef, list: DaemonAPI.ForgeList)], read: Date)? {
+        guard let s = try? prepare("SELECT read, json FROM answer WHERE query = ?") else { return nil }
         defer { sqlite3_finalize(s) }
-        bind(s, 1, kind.rawValue)
-        return sqlite3_step(s) == SQLITE_ROW ? Int(sqlite3_column_int64(s, 0)) : 0
+        bind(s, 1, query)
+        guard sqlite3_step(s) == SQLITE_ROW,
+              let kept = try? decoder.decode(Answer.self, from: column(s, 1)) else { return nil }
+        let read = Date(timeIntervalSince1970: sqlite3_column_double(s, 0))
+        let byHost = items(kind)
+        let lists = kept.hosts.indices.map { i in
+            let host = kept.hosts[i]
+            let items = kept.refs[i].compactMap { byHost[host]?[$0] }
+            return (host, DaemonAPI.ForgeList(items: items, errors: kept.errors[i], forges: kept.forges[i], total: kept.totals[i]))
+        }
+        return (lists, read)
+    }
+
+    /// Keeps a query's answer: its items in `item` (a newer one is never replaced by an older), the refs in order here.
+    func keep(_ query: String, kind: WorkList.Kind, lists: [(host: MachineRef, list: DaemonAPI.ForgeList)], read: Date) {
+        for entry in lists { apply(kind, host: entry.host, items: entry.list.items) }
+        let kept = Answer(hosts: lists.map(\.host), refs: lists.map { $0.list.items.map(\.node.ref) },
+                          totals: lists.map(\.list.total), forges: lists.map(\.list.forges), errors: lists.map(\.list.errors))
+        guard let json = try? encoder.encode(kept),
+              let s = try? prepare("INSERT OR REPLACE INTO answer(query, kind, read, json) VALUES(?, ?, ?, ?)") else { return }
+        defer { sqlite3_finalize(s) }
+        bind(s, 1, query)
+        bind(s, 2, kind.rawValue)
+        sqlite3_bind_double(s, 3, read.timeIntervalSince1970)
+        bind(s, 4, json)
+        sqlite3_step(s)
     }
 
     /// Writes the items a machine sent. An item's row is replaced only by one as new or newer, so a late answer does
@@ -196,46 +209,5 @@ actor WorkCache {
         bind(u, 3, host.rawValue)
         bind(u, 4, ref)
         sqlite3_step(u)
-    }
-
-    func sync(_ kind: WorkList.Kind, _ host: MachineRef) -> Sync {
-        guard let s = try? prepare("SELECT cursor, filled, synced, forges FROM sync WHERE kind = ? AND host = ?") else {
-            return Sync(filled: false)
-        }
-        defer { sqlite3_finalize(s) }
-        bind(s, 1, kind.rawValue)
-        bind(s, 2, host.rawValue)
-        guard sqlite3_step(s) == SQLITE_ROW else { return Sync(filled: false) }
-        func date(_ i: Int32) -> Date? {
-            sqlite3_column_type(s, i) == SQLITE_NULL ? nil : Date(timeIntervalSince1970: sqlite3_column_double(s, i))
-        }
-        let forges = sqlite3_column_type(s, 3) == SQLITE_NULL ? nil
-            : try? decoder.decode([DaemonAPI.ForgeCapabilities].self, from: column(s, 3))
-        return Sync(cursor: date(0), filled: sqlite3_column_int(s, 1) != 0, syncedAt: date(2), forges: forges)
-    }
-
-    func setSync(_ kind: WorkList.Kind, _ host: MachineRef, _ sync: Sync) {
-        guard let s = try? prepare("""
-        INSERT OR REPLACE INTO sync(kind, host, cursor, filled, synced, forges) VALUES(?, ?, ?, ?, ?, ?)
-        """) else { return }
-        defer { sqlite3_finalize(s) }
-        bind(s, 1, kind.rawValue)
-        bind(s, 2, host.rawValue)
-        if let cursor = sync.cursor { sqlite3_bind_double(s, 3, cursor.timeIntervalSince1970) } else { sqlite3_bind_null(s, 3) }
-        sqlite3_bind_int(s, 4, sync.filled ? 1 : 0)
-        if let at = sync.syncedAt { sqlite3_bind_double(s, 5, at.timeIntervalSince1970) } else { sqlite3_bind_null(s, 5) }
-        if let forges = sync.forges, let json = try? encoder.encode(forges) { bind(s, 6, json) } else { sqlite3_bind_null(s, 6) }
-        sqlite3_step(s)
-    }
-
-    /// The overlap before the cursor: forge times have a precision of one second, and items can share one.
-    static let overlap: TimeInterval = 60
-    /// At most this many pages of 100 in one sync, so a first fill of a big project goes on in the next one.
-    static let pagesPerSync = 20
-
-    /// Whether a machine's page reached what the cache has: its oldest item is older than the cursor less the overlap.
-    nonisolated static func reachedCursor(_ items: [DaemonAPI.ForgeItem], cursor: Date?) -> Bool {
-        guard let cursor, let oldest = items.map(\.updatedAt).min() else { return false }
-        return oldest < cursor.addingTimeInterval(-overlap)
     }
 }

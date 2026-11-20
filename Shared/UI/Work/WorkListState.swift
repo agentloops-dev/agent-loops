@@ -69,9 +69,14 @@ final class WorkListState {
         var asked: Int
         var board: String
         var source: String
+        /// The label and assignee, which the cache proof of concept asks the forge for (#6358); empty otherwise.
+        var narrowedBy = ""
     }
 
-    var ask: Ask { Ask(state: filter.state.forge, sort: nodesSort, asked: asked, board: filter.board, source: source) }
+    var ask: Ask {
+        Ask(state: filter.state.forge, sort: nodesSort, asked: asked, board: filter.board, source: source,
+            narrowedBy: kind.fromForge && WorkCache.enabled ? [filter.label, filter.assignee].joined(separator: "|") : "")
+    }
 
     /// A read for what is asked now is on its way: another would read the same again.
     var readingAsk: Bool { reading && read == ask }
@@ -285,132 +290,110 @@ final class WorkListState {
 
     // MARK: The local cache proof of concept (#6358, epic #6348)
 
-    /// The items synced into this device's cache in the sync that runs now, for the footer; nil when none runs.
+    /// A read of the list's query runs, for the footer; nil when none runs.
     var cacheRead: Int?
-    /// When the last sync of the cache ended, for "Last update".
+    /// When the answer on screen was read, for "Last update".
     var cacheSynced: Date?
-    /// How long the last draw from the cache took, and the forge calls the last sync made: the PoC's figures.
-    var cacheDrawn: TimeInterval?
-    var cacheCalls = 0
-    private var cacheSyncing = false
 
-    /// The list from this device's cache only: drawn at once, with no forge call, whatever the filter, state or sort
-    /// (they are applied to the cached rows). A sync then runs in the background unless one ran in the last minute, and
-    /// Refresh (`asked`) always syncs. The lineage figures are read after the rows, and never hold them up.
+    /// What a list's query is kept under: what the machines are asked (the kind, state and board). The label,
+    /// assignee, words and sort are applied to the answer's rows, as before.
+    private var cacheQuery: String {
+        [kind.rawValue, filter.state.forge, filter.board, filter.label, filter.assignee].joined(separator: "|")
+    }
+
+    /// The list from this device's kept answer to its query, drawn at once with no forge call; then the same query is
+    /// asked again, one request of at most 100 items with no pages, and its answer is kept and drawn. Refresh asks again.
+    /// Nothing syncs in the background (Alex, 2026-11-19).
     private func loadFromCache(_ cache: WorkCache, model: any WorkModel) async {
         let mine = ask
-        let refresh = read.map { $0.asked != mine.asked || $0.source != mine.source } ?? false
         read = mine
         problem = nil
         pageProblem = nil
-        await drawCache(cache)
-        let synced = await cache.sync(kind, model.workMachines(board: "").first?.id ?? .mac).syncedAt
-        if refresh || lists?.isEmpty != false || synced.map({ Date().timeIntervalSince($0) > 60 }) ?? true {
-            await syncCache(cache, model: model)
-        } else {
-            cacheSynced = synced
-        }
-    }
-
-    private func drawCache(_ cache: WorkCache) async {
+        let query = cacheQuery
         let start = Date()
-        let cached = await cache.lists(kind)
-        lists = cached
-        cacheGeneration += 1
-        cacheDrawn = Date().timeIntervalSince(start)
-        shownFor = copyAsk
-        fromDeviceRead = nil
-        keptRead = nil
-        WorkCache.note("work cache: drew \(cached.reduce(0) { $0 + $1.list.items.count }) \(self.kind.rawValue) in \(Int((self.cacheDrawn ?? 0) * 1000)) ms, 0 forge calls")
+        if let kept = await cache.answer(query, kind: kind), ask == mine {
+            lists = kept.lists
+            cacheGeneration += 1
+            cacheSynced = kept.read
+            shownFor = copyAsk
+            WorkCache.note("work cache: drew \(query) from its kept answer, \(kept.lists.reduce(0) { $0 + $1.list.items.count }) items, \(Int(Date().timeIntervalSince(start) * 1000)) ms, 0 forge calls")
+        }
+        await askAgain(cache, query: query, mine: mine, model: model)
     }
 
-    /// Brings the cache up to date from each machine: its items newest first, page by page, until a page reaches the
-    /// machine's cursor (a "changed since" read), or to the end on a first fill. The rows draw again after each page.
-    func syncCache(_ cache: WorkCache, model: any WorkModel) async {
-        guard !cacheSyncing else { return }
-        cacheSyncing = true
+    /// Asks the machines the list's query once, keeps the answer and draws it.
+    private func askAgain(_ cache: WorkCache, query: String, mine: Ask, model: any WorkModel) async {
         reading = true
         cacheRead = 0
-        cacheCalls = 0
-        let started = Date()
         defer {
-            cacheSyncing = false
-            reading = false
+            if ask == mine { reading = false }
             cacheRead = nil
         }
         let kind = kind
-        let hosts = model.workMachines(board: "").map(\.id)
+        let hosts = model.workMachines(board: filter.board).map(\.id)
         guard !hosts.isEmpty else { return }
-        var before: [MachineRef: WorkCache.Sync] = [:]
-        for host in hosts { before[host] = await cache.sync(kind, host) }
-        var newest: [MachineRef: Date] = [:]
-        var forges: [MachineRef: [DaemonAPI.ForgeCapabilities]] = [:]
-        var ended = Set<MachineRef>()
-        var failed: [String] = []
-        var pages: [DaemonAPI.MachineCursor]?
-        for _ in 0 ..< WorkCache.pagesPerSync {
-            let all: [(machine: MachineRef, list: DaemonAPI.ForgeList)]
-            do {
-                cacheCalls += 1
-                all = try await cachePage(kind, hosts: hosts, pages: pages, model: model)
-            } catch {
-                failed.append(WorkList.failureWords(error))
-                break
-            }
-            var next: [DaemonAPI.MachineCursor] = []
-            for entry in all {
-                let host = entry.machine
-                let list = entry.list
-                failed += (list.errors ?? []).map(\.message)
-                await cache.apply(kind, host: host, items: list.items)
-                cacheRead = (cacheRead ?? 0) + list.items.count
-                if let top = list.items.map(\.updatedAt).max() { newest[host] = max(newest[host] ?? top, top) }
-                if let f = list.forges { forges[host] = WorkList.joinForges(forges[host], f) }
-                let had = before[host] ?? WorkCache.Sync(filled: false)
-                let reached = had.filled && WorkCache.reachedCursor(list.items, cursor: had.cursor)
-                if let cursor = list.cursor, !reached {
-                    next.append(.init(machine: host, cursor: cursor))
-                } else {
-                    ended.insert(host)
-                }
-            }
-            await drawCache(cache)
-            guard !next.isEmpty else { break }
-            pages = next
+        let start = Date()
+        var got: [(host: MachineRef, list: DaemonAPI.ForgeList)]
+        do {
+            got = try await cacheAsk(kind, filter: filter, hosts: hosts, model: model)
+        } catch {
+            got = hosts.map { ($0, .init(errors: [.init(forge: "", message: WorkList.failureWords(error))])) }
         }
-        // A machine's cursor moves only when its read reached the end or the old cursor: a sync cut short reads again.
+        let took = Date().timeIntervalSince(start)
+        guard ask == mine else { return }
+        let failed = got.allSatisfy { $0.list.items.isEmpty && !($0.list.errors ?? []).isEmpty }
+        if failed, let had = lists, had.contains(where: { !$0.list.items.isEmpty }) {
+            // The kept answer stays, dimmed under what the forges said, with when it was read (as the copy of #4930).
+            let said = got.flatMap { $0.list.errors ?? [] }
+            lists = had.enumerated().map { i, entry in
+                var list = entry.list
+                list.errors = i == 0 ? said : nil
+                return (entry.host, list)
+            }
+            keptRead = cacheSynced
+            WorkCache.note("work cache: asked \(query) again: failed in \(Int(took * 1000)) ms; the kept answer stays")
+            return
+        }
         let now = Date()
-        for host in hosts where ended.contains(host) {
-            let had = before[host] ?? WorkCache.Sync(filled: false)
-            let cursor = [had.cursor, newest[host]].compactMap(\.self).max()
-            await cache.setSync(kind, host, .init(cursor: cursor, filled: true, syncedAt: now, forges: forges[host] ?? had.forges))
-        }
-        await drawCache(cache)
+        if !failed { await cache.keep(query, kind: kind, lists: got, read: now) }
+        lists = got
+        cacheGeneration += 1
         cacheSynced = now
-        problem = failed.isEmpty || !(lists ?? []).allSatisfy({ $0.list.items.isEmpty }) ? nil : failed.joined(separator: "\n")
-        let count = await cache.count(kind)
-        WorkCache.note("work cache: synced \(kind.rawValue): \(self.cacheCalls) listAll calls, \(self.cacheRead ?? 0) items read, \(count) cached, \(Int(now.timeIntervalSince(started) * 1000)) ms\(failed.isEmpty ? "" : ", failed: " + failed.joined(separator: "; "))")
-        // The figures after the rows, in the background of the sync: they never hold up a row.
-        if let known = try? await readLineage(model) {
+        keptRead = nil
+        shownFor = copyAsk
+        let count = got.reduce(0) { $0 + $1.list.items.count }
+        let total = got.compactMap(\.list.total).max().map { " of \($0)" } ?? ""
+        WorkCache.note("work cache: asked \(query) again: 1 request a machine (\(got.count)), \(count) items\(total), \(Int(took * 1000)) ms")
+        // The figures after the rows: they never hold up a row.
+        if let known = try? await readLineage(model), ask == mine {
             lineage = known.nodes
             lineageCursor = known.cursor
         }
     }
 
-    /// One page of every machine's items, newest `updatedAt` first: one forge/listAll call, or, with one machine (the
-    /// control plane is not asked then), a forge/issues or forge/pulls call to each. `pages` nil is the first page.
-    private func cachePage(_ kind: WorkList.Kind, hosts: [MachineRef], pages: [DaemonAPI.MachineCursor]?,
-                           model: any WorkModel) async throws -> [(machine: MachineRef, list: DaemonAPI.ForgeList)] {
-        if let got = try await model.controlAll(DaemonAPI.Method.forgeListAll,
-                                                Self.listAllRequest(kind, state: "all", board: "", pages: pages),
+    /// The list's query, asked once: forge/listAll (one call to the control plane, one request on each machine), or,
+    /// with one machine, forge/issues or forge/pulls on it. At most 100 items, and no next page.
+    private func cacheAsk(_ kind: WorkList.Kind, filter: WorkList.Filter, hosts: [MachineRef],
+                          model: any WorkModel) async throws -> [(host: MachineRef, list: DaemonAPI.ForgeList)] {
+        let state = filter.state.forge
+        let board = filter.board
+        // forge/listAll takes no label or assignee yet: with one of them, each machine is asked on its own.
+        let narrowed = !filter.label.isEmpty || !filter.assignee.isEmpty
+        if !narrowed, let all = try await model.controlAll(DaemonAPI.Method.forgeListAll, Self.listAllRequest(kind, state: state, board: board),
                                                 returning: DaemonAPI.ForgeListAll.self) {
-            return got.lists.map { ($0.machine, $0.list) }
+            return WorkList.hostLists(all, hosts: hosts).map { entry in
+                var list = entry.list
+                list.cursor = nil
+                return (entry.host, list)
+            }
         }
-        var out: [(machine: MachineRef, list: DaemonAPI.ForgeList)] = []
+        var out: [(host: MachineRef, list: DaemonAPI.ForgeList)] = []
         for host in hosts {
-            let cursor = pages?.first { $0.machine == host }?.cursor
-            if pages != nil, cursor == nil { continue }
-            out.append((host, try await model.forgeList(kind, .init(state: "all", cursor: cursor, limit: 100), on: host)))
+            var list = try await model.forgeList(kind, .init(state: state, label: filter.label.isEmpty ? nil : filter.label,
+                                                             assignee: filter.assignee.isEmpty ? nil : filter.assignee,
+                                                             limit: 100, board: board.isEmpty ? nil : board), on: host)
+            list.cursor = nil
+            out.append((host, list))
         }
         return out
     }
