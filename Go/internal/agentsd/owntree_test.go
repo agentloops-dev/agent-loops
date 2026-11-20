@@ -12,7 +12,9 @@ func TestOwnTreeHasTheHeadOrNoCommitYet(t *testing.T) {
 	t.Parallel()
 
 	src := repo(t)
-	os.WriteFile(filepath.Join(src, "a.txt"), []byte("a\n"), 0o644)
+	if err := os.WriteFile(filepath.Join(src, "a.txt"), []byte("a\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	head, tree, err := ownTree(src)
 	if err != nil || head != sendGit(t, src, nil, "rev-parse", "HEAD") || tree == "" {
 		t.Fatalf("with a commit: %q %q %v", head, tree, err)
@@ -20,7 +22,9 @@ func TestOwnTreeHasTheHeadOrNoCommitYet(t *testing.T) {
 
 	unborn := canonical(t.TempDir())
 	sendGit(t, unborn, nil, "init", "-q", "-b", "main")
-	os.WriteFile(filepath.Join(unborn, "a.txt"), []byte("a\n"), 0o644)
+	if err := os.WriteFile(filepath.Join(unborn, "a.txt"), []byte("a\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	head, tree, err = ownTree(unborn)
 	if err != nil || head != "" || tree == "" {
 		t.Fatalf("with no commit: %q %q %v", head, tree, err)
