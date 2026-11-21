@@ -3,6 +3,7 @@ package agentsd
 import (
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -11,7 +12,6 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
-	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -191,7 +191,6 @@ func (c *conn) callHearing(t *testing.T, id int, method string, params any, what
 }
 
 func TestATerminal(t *testing.T) {
-	flaky.UnderLoad(t, "#6396")
 	t.Setenv("SHELL", "/bin/sh")
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -202,6 +201,13 @@ func TestATerminal(t *testing.T) {
 	// call's answer (#3613).
 	in := base64.StdEncoding.EncodeToString([]byte("echo hello-$((40+2)) && pwd\n"))
 	var seen strings.Builder
+	// A failure says what the shell printed and what it and its children wait on (#6396):
+	// a lost input, a stopped shell and a slow profile then look different in the log.
+	defer func() {
+		if t.Failed() {
+			shellPostmortem(t, d.shellFor(id, 0))
+		}
+	}()
 	c.callHearing(t, 2, "shell/input", map[string]any{"agentID": id, "shell": 0, "bytes": in}, "the shell's output", func(method string, p json.RawMessage) bool {
 		var o struct {
 			Bytes []byte `json:"bytes"`
@@ -214,4 +220,39 @@ func TestATerminal(t *testing.T) {
 	c.callHearing(t, 3, "shell/close", map[string]any{"agentID": id, "shell": 0}, "released", func(method string, p json.RawMessage) bool {
 		return method == "shell/stateChanged" && strings.Contains(string(p), "released")
 	})
+}
+
+// shellPostmortem logs a shell's scrollback (its whole output, also what came before the
+// test read it) and, where there is a /proc, the state, wait channel and command line of
+// the shell and of each process below it.
+func shellPostmortem(t *testing.T, s *shell) {
+	t.Helper()
+	if s == nil {
+		t.Log("the shell is gone")
+		return
+	}
+	r := s.replay(nil, nil)
+	t.Logf("the shell printed %q; its state is %+v", r.Scrollback, r.State)
+	if s.cmd.Process == nil {
+		return
+	}
+	pids := []int{s.cmd.Process.Pid}
+	for i := 0; i < len(pids); i++ {
+		pid := pids[i]
+		stat, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
+		if err != nil {
+			t.Logf("process %d: %v", pid, err)
+			continue
+		}
+		wchan, _ := os.ReadFile(fmt.Sprintf("/proc/%d/wchan", pid))
+		cmdline, _ := os.ReadFile(fmt.Sprintf("/proc/%d/cmdline", pid))
+		t.Logf("process %d: %s; waits in %q; %q", pid, strings.TrimSpace(string(stat)), wchan, strings.ReplaceAll(string(cmdline), "\x00", " "))
+		children, _ := os.ReadFile(fmt.Sprintf("/proc/%d/task/%d/children", pid, pid))
+		for _, f := range strings.Fields(string(children)) {
+			var child int
+			if _, err := fmt.Sscan(f, &child); err == nil {
+				pids = append(pids, child)
+			}
+		}
+	}
 }

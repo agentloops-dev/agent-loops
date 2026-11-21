@@ -374,70 +374,91 @@ func (u Updates) CheckPersonas(ctx context.Context, managed map[string]wire.Mana
 		if !ok {
 			continue
 		}
-		u.Cache.mu.Lock()
-		if u.Cache.answers == nil {
-			u.Cache.answers = map[string]updateAnswer{}
-		}
-		answer, had := u.Cache.answers[source]
-		u.Cache.mu.Unlock()
-		if !had || now.Sub(answer.at) > updateInterval {
-			head, err := u.GitHub.Head(ctx, owner, repo)
-			if err != nil {
-				for _, p := range personas {
-					out[p.ID] = unknown
-				}
-				continue
-			}
-			answer = updateAnswer{at: now, head: head.Commit}
-		}
-		moved := false
-		for _, p := range personas {
-			if p.Commit == nil || *p.Commit != answer.head {
-				moved = true
-			}
-		}
-		if moved && answer.blobs == nil {
-			if tree, err := u.GitHub.Tree(ctx, owner, repo, answer.head); err == nil {
-				answer.blobs, answer.folders = map[string]string{}, map[string]string{}
-				for _, e := range tree {
-					switch e.Type {
-					case "blob":
-						answer.blobs[e.Path] = e.SHA
-					case "tree":
-						answer.folders[e.Path] = e.SHA
-					}
-				}
-			}
-		}
-		u.Cache.mu.Lock()
-		u.Cache.answers[source] = answer
-		u.Cache.mu.Unlock()
-		written := false
-		for _, p := range personas {
-			e, _ := lock.Persona(p.ID)
-			if p.Commit != nil && *p.Commit == answer.head {
-				out[p.ID] = wire.UpdateState{Current: &struct{}{}}
-				continue
-			}
-			sha, ok := answer.blobs[p.Path]
-			switch {
-			case !ok:
+		answer, ok := u.personaAnswer(ctx, source, owner, repo, personas, now)
+		if !ok {
+			for _, p := range personas {
 				out[p.ID] = unknown
-			case sha == e.BlobSHA:
-				// The file is the same at the new HEAD: the next check needs no tree.
-				out[p.ID] = wire.UpdateState{Current: &struct{}{}}
-				e.Commit = answer.head
-				lock.UpsertPersona(p.ID, e, now)
-				written = true
-			default:
-				out[p.ID] = wire.UpdateState{Available: &wire.UpdateStateAvailable{Commit: answer.head}}
 			}
+			continue
 		}
-		if written {
+		if personaUpdateStates(personas, answer, lock, now, out) {
 			lock.Write()
 		}
 	}
 	return out
+}
+
+// personaAnswer is source's answer for personas: the cached HEAD if it is under an hour
+// old, else its HEAD now; and, when a persona is not at that HEAD, each file's blob SHA
+// there, read once. It is false when the HEAD cannot be read.
+func (u Updates) personaAnswer(ctx context.Context, source, owner, repo string, personas []wire.ManagedPersona, now time.Time) (updateAnswer, bool) {
+	answer, had := u.Cache.cached(source)
+	if !had || now.Sub(answer.at) > updateInterval {
+		head, err := u.GitHub.Head(ctx, owner, repo)
+		if err != nil {
+			return updateAnswer{}, false
+		}
+		answer = updateAnswer{at: now, head: head.Commit}
+	}
+	if personasMoved(personas, answer.head) && answer.blobs == nil {
+		if tree, err := u.GitHub.Tree(ctx, owner, repo, answer.head); err == nil {
+			answer.blobs, answer.folders = treeBlobsAndFolders(tree)
+		}
+	}
+	u.Cache.remember(source, answer)
+	return answer, true
+}
+
+// personasMoved is whether a persona is not at commit.
+func personasMoved(personas []wire.ManagedPersona, commit string) bool {
+	for _, p := range personas {
+		if p.Commit == nil || *p.Commit != commit {
+			return true
+		}
+	}
+	return false
+}
+
+// treeBlobsAndFolders is the SHA of each blob and each folder of tree, by path.
+func treeBlobsAndFolders(tree []TreeEntry) (blobs, folders map[string]string) {
+	blobs, folders = map[string]string{}, map[string]string{}
+	for _, e := range tree {
+		switch e.Type {
+		case "blob":
+			blobs[e.Path] = e.SHA
+		case "tree":
+			folders[e.Path] = e.SHA
+		}
+	}
+	return blobs, folders
+}
+
+// personaUpdateStates puts each persona's update state against answer in out. A persona
+// whose file has the same blob at the new HEAD is current, and its lock entry moves to
+// that HEAD; it is true when it changed the lock.
+func personaUpdateStates(personas []wire.ManagedPersona, answer updateAnswer, lock *Lock, now time.Time, out map[string]wire.UpdateState) bool {
+	written := false
+	for _, p := range personas {
+		e, _ := lock.Persona(p.ID)
+		if p.Commit != nil && *p.Commit == answer.head {
+			out[p.ID] = wire.UpdateState{Current: &struct{}{}}
+			continue
+		}
+		sha, ok := answer.blobs[p.Path]
+		switch {
+		case !ok:
+			out[p.ID] = wire.UpdateState{Unknown: &struct{}{}}
+		case sha == e.BlobSHA:
+			// The file is the same at the new HEAD: the next check needs no tree.
+			out[p.ID] = wire.UpdateState{Current: &struct{}{}}
+			e.Commit = answer.head
+			lock.UpsertPersona(p.ID, e, now)
+			written = true
+		default:
+			out[p.ID] = wire.UpdateState{Available: &wire.UpdateStateAvailable{Commit: answer.head}}
+		}
+	}
+	return written
 }
 
 // PersonaSettingChanges is each of runtime and permission-mode that differs between the

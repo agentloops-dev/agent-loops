@@ -64,7 +64,7 @@ func same(t *testing.T, got, want []string) {
 }
 
 func TestTheEventsAreTheGitHubServersNames(t *testing.T) {
-	same(t, EventNames(), []string{"checks.failed", "run.completed", "deploy.waiting", "deploy.started", "deploy.succeeded", "deploy.failed", "pr.opened", "pr.merged", "pr.closed", "pr.conflicted", "pr.blocked", "review.requested", "review.comment",
+	same(t, EventNames(), []string{"checks.failed", "checks.passed", "run.completed", "deploy.waiting", "deploy.started", "deploy.succeeded", "deploy.failed", "pr.opened", "pr.merged", "pr.closed", "pr.conflicted", "pr.blocked", "pr.reviewed", "pr.commented", "review.requested", "review.comment",
 		"issue.opened", "issue.labelled", "issue.commented", "issue.closed", "issue.assigned"})
 }
 
@@ -615,7 +615,8 @@ func TestClosingRefs(t *testing.T) {
 // #3797: every event about one merge request names it by pr, branch, fixes or mine, or takes
 // any; an issue event takes one issue or a list of them.
 func TestEventsListGivesWhichArgumentsNameOne(t *testing.T) {
-	named := map[string]bool{"checks.failed": true, "pr.merged": true, "pr.closed": true, "pr.conflicted": true, "pr.blocked": true, "review.comment": true}
+	named := map[string]bool{"checks.failed": true, "checks.passed": true, "pr.merged": true, "pr.closed": true, "pr.conflicted": true,
+		"pr.blocked": true, "review.comment": true, "pr.reviewed": true, "pr.commented": true}
 	for _, e := range eventsList()["events"].([]any) {
 		e := e.(map[string]any)
 		name := e["name"].(string)
@@ -721,4 +722,108 @@ func envelopeOf(result map[string]any, i int) (subject, key string) {
 	subject, _ = e["subject"].(string)
 	key, _ = e["key"].(string)
 	return subject, key
+}
+
+// #6296: checks.passed is a merge request's pipeline that passed, once per pipeline and update.
+func TestChecksPassedForAMergeRequestsPipelines(t *testing.T) {
+	f := newFake(t)
+	f.addMembers()
+	f.mrs = []obj{mrJSON(3, "feature", dev, nil), mrJSON(5, "fork", alex, obj{"source_project_id": 99})}
+	p := newPoller(t, f, "checks.passed", nil)
+	p.poll()
+	f.set(func() {
+		f.pipes = []obj{
+			{"id": 100, "status": "success", "ref": "refs/merge-requests/3/head", "sha": "s3", "web_url": "https://gitlab.test/p/100", "updated_at": at(1), "name": "CI"},
+			{"id": 101, "status": "failed", "ref": "refs/merge-requests/3/head", "sha": "s3", "web_url": "https://gitlab.test/p/101", "updated_at": at(2)},
+			{"id": 102, "status": "success", "ref": "main", "sha": "s0", "web_url": "https://gitlab.test/p/102", "updated_at": at(2)},
+			{"id": 103, "status": "success", "ref": "refs/merge-requests/5/head", "sha": "s5", "web_url": "https://gitlab.test/p/103", "updated_at": at(3)},
+		}
+	})
+	ids, result := p.poll()
+	same(t, ids, []string{"checks.passed:group/app:100:" + at(1)})
+	d := data(t, result, 0)
+	if d["headSha"] != "s3" || d["completedAt"] != at(1) || d["pr"].(map[string]any)["number"] != 3 ||
+		d["run"].(map[string]any)["name"] != "CI" || d["failedJobs"] != nil {
+		t.Fatalf("data %v", d)
+	}
+	for _, r := range f.asked() {
+		if strings.Contains(r, "/jobs") {
+			t.Fatalf("a passed pipeline's jobs were read: %s", r)
+		}
+	}
+	// Retried and passed again: a new event.
+	f.set(func() { f.pipes[0]["updated_at"] = at(5) })
+	ids, _ = p.poll()
+	same(t, ids, []string{"checks.passed:group/app:100:" + at(5)})
+}
+
+// #6296: pr.reviewed is each approval and request for changes, once while it stands, never a
+// bot's or an outsider's; an approver who is no reviewer counts too.
+func TestReviewedIsEachAnswerOnce(t *testing.T) {
+	f := newFake(t)
+	f.addMembers()
+	f.mrs = []obj{mrJSON(3, "feature", dev, nil)}
+	p := newPoller(t, f, "pr.reviewed", map[string]any{"pr": []int{3}})
+	p.poll()
+	f.set(func() {
+		f.reviewers[3] = []obj{{"user": alex, "state": "requested_changes"}, {"user": tokenBot, "state": "approved"},
+			{"user": stranger, "state": "approved"}, {"user": guest, "state": "unreviewed"}}
+	})
+	ids, result := p.poll()
+	same(t, untimed(ids), []string{"pr.reviewed:group/app:3:alex:changes_requested"})
+	if r := data(t, result, 0)["review"].(map[string]any); r["author"] != "alex" || r["state"] != "changes_requested" || r["body"] != "" ||
+		r["commit"] != "head3" || r["url"] != "https://gitlab.test/group/app/-/merge_requests/3" {
+		t.Fatalf("review %v", r)
+	}
+	ids, _ = p.poll()
+	same(t, ids, nil)
+	// Alex approves; dev, who is no reviewer, approves too.
+	f.set(func() {
+		f.reviewers[3] = []obj{{"user": alex, "state": "approved"}}
+		f.approvers[3] = []obj{{"user": alex}, {"user": dev}}
+	})
+	ids, _ = p.poll()
+	same(t, untimed(ids), []string{"pr.reviewed:group/app:3:alex:approved", "pr.reviewed:group/app:3:dev:approved"})
+}
+
+// #6296: pr.commented is a comment on the merge request itself: not on a line of its diff, not
+// GitLab's own, a bot's, an outsider's or an agent's.
+func TestCommentedIsOnTheMergeRequestItself(t *testing.T) {
+	f := newFake(t)
+	f.addMembers()
+	f.mrs = []obj{mrJSON(3, "feature", dev, nil)}
+	p := newPoller(t, f, "pr.commented", nil)
+	p.poll()
+	note := func(id int, kind, body string, author obj) obj {
+		return obj{"created_at": at(1), "note": obj{"id": id, "type": kind, "body": body, "author": author, "noteable_type": "MergeRequest", "noteable_iid": 3}}
+	}
+	f.set(func() {
+		f.activity = []obj{
+			note(30, "", "Ship it.", alex),
+			note(31, "DiscussionNote", "A thread on the overview.", dev),
+			note(32, "DiffNote", "A line.", alex),
+			note(33, "", "<!-- agent -->\nDone.", alex),
+			note(34, "", "From a bot.", tokenBot),
+			note(35, "", "From outside.", stranger),
+			{"created_at": at(1), "note": obj{"id": 36, "body": "approved this merge request", "system": true, "author": alex, "noteable_type": "MergeRequest", "noteable_iid": 3}},
+		}
+	})
+	ids, result := p.poll()
+	same(t, ids, []string{"pr.commented:group/app:30", "pr.commented:group/app:31"})
+	d := data(t, result, 0)
+	if c := d["comment"].(map[string]any); c["author"] != "alex" || c["body"] != "Ship it." || c["id"] != 30 ||
+		c["url"] != "https://gitlab.test/group/app/-/merge_requests/3#note_30" || d["commentedAt"] != at(1) {
+		t.Fatalf("data %v", d)
+	}
+	ids, _ = p.poll()
+	same(t, ids, nil)
+}
+
+// untimed are a diff event's ids without the poll time they end with.
+func untimed(ids []string) []string {
+	out := make([]string, len(ids))
+	for i, id := range ids {
+		out[i], _, _ = strings.Cut(id, ":"+start.Format("2006-"))
+	}
+	return out
 }

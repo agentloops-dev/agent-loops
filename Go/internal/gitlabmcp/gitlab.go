@@ -90,13 +90,15 @@ type ClosedMR struct {
 	Trusted  bool
 }
 
-// Pipeline is a failed pipeline as listed, before its merge request and jobs are looked up.
+// Pipeline is a failed or passed pipeline as listed, before its merge request and jobs are
+// looked up. Status is GitLab's: failed or success.
 type Pipeline struct {
 	ID        int
 	Name      string
 	URL       string
 	SHA       string
 	Ref       string
+	Status    string
 	UpdatedAt string
 	// Listed is its name as the listing gave it: "" when GitLab did not say (an older GitLab).
 	Listed string
@@ -109,7 +111,7 @@ type Pipeline struct {
 type Job struct{ Name, URL string }
 
 // FailedPipelineData is a checks.failed event's data: the pipeline's merge request and its
-// failed jobs.
+// failed jobs; for checks.passed (#6296), none.
 type FailedPipelineData struct {
 	MR         MR
 	Pipeline   Pipeline
@@ -126,6 +128,16 @@ func (d FailedPipelineData) json() map[string]any {
 		"pr": d.MR.json(), "headSha": d.Pipeline.SHA,
 		"run":        map[string]any{"id": d.Pipeline.ID, "name": d.Pipeline.Name, "url": d.Pipeline.URL},
 		"failedJobs": jobs,
+	}
+}
+
+// passedJSON is checks.passed's data (#6296), the github server's shape: completedAt is when
+// GitLab last updated the pipeline, which is when it finished.
+func (d FailedPipelineData) passedJSON() map[string]any {
+	return map[string]any{
+		"pr": d.MR.json(), "headSha": d.Pipeline.SHA,
+		"run":         map[string]any{"id": d.Pipeline.ID, "name": d.Pipeline.Name, "url": d.Pipeline.URL},
+		"completedAt": d.Pipeline.UpdatedAt,
 	}
 }
 
@@ -191,7 +203,8 @@ func (a IssueActivity) data() map[string]any {
 	return d
 }
 
-// ReviewComment is a comment on a line of a merge request's diff, or an answer in its thread.
+// ReviewComment is a comment on a line of a merge request's diff, or an answer in its thread;
+// or, for pr.commented, one on the merge request itself, with no path or line (#6296).
 type ReviewComment struct {
 	ID      int
 	At      string
@@ -209,6 +222,25 @@ func (c ReviewComment) data() map[string]any {
 		"comment": map[string]any{"id": c.ID, "author": c.Author, "path": c.Path, "line": c.Line, "body": c.Body, "url": c.URL}}
 }
 
+// prData is pr.commented's payload, the github server's with the note's id (#6296).
+func (c ReviewComment) prData() map[string]any {
+	return map[string]any{"pr": c.MR.json(), "commentedAt": c.At,
+		"comment": map[string]any{"id": c.ID, "author": c.Author, "url": c.URL, "body": c.Body}}
+}
+
+// Review is a reviewer's or an approver's answer to an open merge request, as pr.reviewed gives
+// it (#6296): State is approved (an approval) or changes_requested (a reviewer who asked for
+// changes). GitLab keeps only each one's last answer, with no words. MRTrusted is the merge
+// request's trust (#728), Trusted the reviewer's.
+type Review struct {
+	MR        MR
+	HeadSHA   string
+	Author    string
+	State     string
+	MRTrusted bool
+	Trusted   bool
+}
+
 // Listed is how far a listing read (mcpevents.Listed): Newest is the newest time of anything it
 // listed, wanted or not (in mcpevents.TimeLayout, "" when it listed nothing), and Truncated says
 // it stopped at maxPages before it reached since.
@@ -224,7 +256,10 @@ type GitLab interface {
 	ClosedMRs(ctx context.Context, project, since string) (merged []MergedMR, closed []ClosedMR, listed Listed, err error)
 	// FailedPipelines are failed pipelines updated at or after since, in any order.
 	FailedPipelines(ctx context.Context, project, since string) (pipelines []Pipeline, listed Listed, err error)
-	// PipelineDetails is the pipeline's merge request and failed jobs, or nil when it belongs to none.
+	// PassedPipelines are pipelines that passed (success), updated at or after since, in any order (#6296).
+	PassedPipelines(ctx context.Context, project, since string) (pipelines []Pipeline, listed Listed, err error)
+	// PipelineDetails is the pipeline's merge request and, for a failed one, its failed jobs, or
+	// nil when it belongs to none.
 	PipelineDetails(ctx context.Context, project string, p Pipeline) (*FailedPipelineData, error)
 	// FinishedPipelines are the finished pipelines updated at or after since, of branch (or a
 	// tag) and run (a pipeline's id) when each is set, in any order (#4217).
@@ -244,6 +279,12 @@ type GitLab interface {
 	IssueActivity(ctx context.Context, project string, kind IssueKind, since string) (items []IssueActivity, listed Listed, err error)
 	// ReviewComments are the comments on merge requests' diffs made at or after since.
 	ReviewComments(ctx context.Context, project, since string) (comments []ReviewComment, listed Listed, err error)
+	// MRComments are the comments on merge requests themselves (not on lines of their diffs)
+	// made at or after since (#6296).
+	MRComments(ctx context.Context, project, since string) (comments []ReviewComment, listed Listed, err error)
+	// Reviews are the approvals and requests for changes on the maxReviewed newest open merge
+	// requests (#6296).
+	Reviews(ctx context.Context, project string) ([]Review, error)
 	// Yours is what the connection's owner has in the project (#2034).
 	Yours(ctx context.Context, project string) (Yours, error)
 }

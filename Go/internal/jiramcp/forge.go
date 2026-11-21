@@ -491,28 +491,36 @@ func (r restIssue) events() []Event {
 		}
 		actor := h.Author.person().name()
 		for _, it := range h.Items {
-			switch strings.ToLower(it.Field) {
-			case "labels":
-				for _, l := range added(it.FromString, it.ToString) {
-					out = append(out, Event{Kind: "labeled", Actor: actor, At: at, Label: l})
-				}
-				for _, l := range added(it.ToString, it.FromString) {
-					out = append(out, Event{Kind: "unlabeled", Actor: actor, At: at, Label: l})
-				}
-			case "assignee":
-				if it.FromString != "" {
-					out = append(out, Event{Kind: "unassigned", Actor: actor, At: at, Assignee: it.FromString})
-				}
-				if it.ToString != "" {
-					out = append(out, Event{Kind: "assigned", Actor: actor, At: at, Assignee: it.ToString})
-				}
-			case "resolution":
-				if it.To != "" || it.ToString != "" {
-					out = append(out, Event{Kind: "closed", Actor: actor, At: at})
-				} else {
-					out = append(out, Event{Kind: "reopened", Actor: actor, At: at})
-				}
-			}
+			out = append(out, changeEvents(it.Field, it.FromString, it.To, it.ToString, actor, at)...)
+		}
+	}
+	return out
+}
+
+// changeEvents are the events of one changelog item: a label, assignee or resolution change;
+// none for another field.
+func changeEvents(field, fromString, to, toString, actor, at string) []Event {
+	var out []Event
+	switch strings.ToLower(field) {
+	case "labels":
+		for _, l := range added(fromString, toString) {
+			out = append(out, Event{Kind: "labeled", Actor: actor, At: at, Label: l})
+		}
+		for _, l := range added(toString, fromString) {
+			out = append(out, Event{Kind: "unlabeled", Actor: actor, At: at, Label: l})
+		}
+	case "assignee":
+		if fromString != "" {
+			out = append(out, Event{Kind: "unassigned", Actor: actor, At: at, Assignee: fromString})
+		}
+		if toString != "" {
+			out = append(out, Event{Kind: "assigned", Actor: actor, At: at, Assignee: toString})
+		}
+	case "resolution":
+		if to != "" || toString != "" {
+			out = append(out, Event{Kind: "closed", Actor: actor, At: at})
+		} else {
+			out = append(out, Event{Kind: "reopened", Actor: actor, At: at})
 		}
 	}
 	return out

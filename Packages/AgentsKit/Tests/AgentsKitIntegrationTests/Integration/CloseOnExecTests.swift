@@ -158,7 +158,7 @@ struct CloseOnExecTests {
     /// 021 T051: a connection is a window until it says it is a device, and then it
     /// is that device for every request after — as the handler sees it, never as the
     /// request's own parameters claim.
-    @Test(.flakyUnderLoad) func aConnectionBecomesTheDeviceItIdentifiesAs() async throws {
+    @Test func aConnectionBecomesTheDeviceItIdentifiesAs() async throws {
         let url = temporaryFile()
         defer { try? FileManager.default.removeItem(at: url) }
         let seen = SeenContexts()
@@ -203,6 +203,46 @@ struct CloseOnExecTests {
         try server.start()
         defer { server.stop() }
         #expect(isCloseOnExec(server.listenFD))
+    }
+
+    /// A server that has stopped takes nothing from the next one (#5852).
+    ///
+    /// `stop` closed the listener under the accept thread, and the thread went on to
+    /// `accept` on the number it had. The next socket opened takes the lowest free
+    /// number, so the next server's listener was often that number: the old thread
+    /// took its first client, saw it had stopped, and closed it unread. The client's
+    /// request was never handled, and it waited for good. One round is a race; fifty
+    /// in a row lose one nearly every time when the bug is back.
+    @Test func aStoppedServerTakesNoClientOfTheNextOne() async throws {
+        let ping = #"{"jsonrpc":"2.0","id":1,"method":"daemon/ping"}"# + "\n"
+        for round in 0..<50 {
+            let gone = temporaryFile()
+            let url = temporaryFile()
+            defer {
+                try? FileManager.default.removeItem(at: gone)
+                try? FileManager.default.removeItem(at: url)
+            }
+            let old = DaemonServer(url: gone) { _, _, _ in .success([:]) }
+            try old.start()
+            old.stop()
+
+            let seen = SeenContexts()
+            let server = DaemonServer(url: url) { context, _, _ in
+                seen.append(context)
+                return .success([:])
+            }
+            try server.start()
+            defer { server.stop() }
+            let mine = try connect(to: url)
+            defer { close(mine) }
+            _ = ping.withCString { write(mine, $0, strlen($0)) }
+            // Seconds, not `Eventually`'s 45: a stolen client is never handled, and
+            // fifty rounds must fit in the suite's minute.
+            let handled = await eventually("round \(round): the request was handled", within: .seconds(5)) {
+                seen.contexts.count == 1
+            }
+            if !handled { break }
+        }
     }
 
     /// A connection `server` has counted, dialled again for as long as it is turned away.

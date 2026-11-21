@@ -79,18 +79,7 @@ func TestADeviceOnARealChromium(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer tabs.Close()
-	// A page made for phones (with no viewport meta, a phone lays a page out 980 wide), on
-	// 127.0.0.1, a secure origin, so the page reads client hints and is sent them.
-	hints := make(chan http.Header, 8)
-	site := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		select {
-		case hints <- r.Header.Clone():
-		default:
-		}
-		w.Header().Set("Content-Type", "text/html")
-		w.Write([]byte(`<meta name=viewport content="width=device-width"><p>a page`))
-	}))
-	defer site.Close()
+	site, hints := servePhonePage(t)
 	tab, err := tabs.Open(site.URL)
 	if err != nil {
 		t.Fatal(err)
@@ -104,29 +93,11 @@ func TestADeviceOnARealChromium(t *testing.T) {
 	if _, err := chromedp.CallBrowser(root, target.GetTargets, target.GetTargetsParams{}); err != nil {
 		t.Fatal(err)
 	}
-	other, cancelOther := chromedp.NewContext(root, chromedp.WithTargetID(tab), chromedp.WithDetachOnCancel())
+	other, cancelOther := attachToTab(t, root, tab)
 	defer cancelOther()
-	if err := chromedp.Do(other); err != nil {
-		t.Fatal(err)
-	}
-	type seen struct {
-		Width, Touch int64
-		Ratio        float64
-		Agent        string
-		Mobile       bool
-		Platform     string
-	}
-	look := func() seen {
+	look := func() seenOnPage {
 		t.Helper()
-		ctx, cancel := context.WithTimeout(other, 10*time.Second)
-		defer cancel()
-		s, err := chromedp.Run(ctx, chromedp.Evaluate[seen](`({width: innerWidth, touch: navigator.maxTouchPoints, ratio: devicePixelRatio,
-			agent: navigator.userAgent, mobile: !!(navigator.userAgentData && navigator.userAgentData.mobile),
-			platform: navigator.userAgentData ? navigator.userAgentData.platform : ""})`))
-		if err != nil {
-			t.Fatal(err)
-		}
-		return s
+		return lookAtThePage(t, other)
 	}
 	before := look()
 	if strings.Contains(before.Agent, "Android") || before.Width == 412 {
@@ -137,7 +108,77 @@ func TestADeviceOnARealChromium(t *testing.T) {
 	if err := tabs.Emulate(tab, phone); err != nil {
 		t.Fatal(err)
 	}
-	s := look()
+	checkItIsThePhone(t, look(), before)
+
+	castAsThePhone(t, p.endpoint, tab, phone, site.URL, hints, look)
+
+	// Playwright's session ends with the agent's turn: the phone stays.
+	cancelOther()
+	other, cancelOther = attachToTab(t, root, tab)
+	defer cancelOther()
+	if s := look(); s.Width != 412 {
+		t.Fatalf("Playwright's end took the phone away: %+v", s)
+	}
+
+	castGivesUpItsSize(t, p.endpoint, tabs, tab, phone, look)
+}
+
+// seenOnPage is what a page says of the device it is laid out on.
+type seenOnPage struct {
+	Width, Touch int64
+	Ratio        float64
+	Agent        string
+	Mobile       bool
+	Platform     string
+}
+
+// servePhonePage serves a page made for phones (with no viewport meta, a phone lays a page
+// out 980 wide), on 127.0.0.1, a secure origin, so the page reads client hints and is sent
+// them. Each request's headers go to the channel.
+func servePhonePage(t *testing.T) (*httptest.Server, chan http.Header) {
+	t.Helper()
+	hints := make(chan http.Header, 8)
+	site := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case hints <- r.Header.Clone():
+		default:
+		}
+		w.Header().Set("Content-Type", "text/html")
+		w.Write([]byte(`<meta name=viewport content="width=device-width"><p>a page`))
+	}))
+	t.Cleanup(site.Close)
+	return site, hints
+}
+
+// attachToTab opens a session of its own on the tab, which detaches when it is cancelled.
+func attachToTab(t *testing.T, root context.Context, tab target.ID) (context.Context, context.CancelFunc) {
+	t.Helper()
+	other, cancel := chromedp.NewContext(root, chromedp.WithTargetID(tab), chromedp.WithDetachOnCancel())
+	if err := chromedp.Do(other); err != nil {
+		cancel()
+		t.Fatal(err)
+	}
+	return other, cancel
+}
+
+// lookAtThePage reads what the page in the session says of its device.
+func lookAtThePage(t *testing.T, other context.Context) seenOnPage {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(other, 10*time.Second)
+	defer cancel()
+	s, err := chromedp.Run(ctx, chromedp.Evaluate[seenOnPage](`({width: innerWidth, touch: navigator.maxTouchPoints, ratio: devicePixelRatio,
+			agent: navigator.userAgent, mobile: !!(navigator.userAgentData && navigator.userAgentData.mobile),
+			platform: navigator.userAgentData ? navigator.userAgentData.platform : ""})`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+
+// checkItIsThePhone checks that the page is laid out as the phone, with the browser's own
+// Chrome in its user agent and hints that agree.
+func checkItIsThePhone(t *testing.T, s, before seenOnPage) {
+	t.Helper()
 	if s.Width != 412 || s.Ratio != 2.625 || s.Touch == 0 || !strings.Contains(s.Agent, "Android 14; Pixel 7") ||
 		strings.Contains(s.Agent, "Headless") {
 		t.Fatalf("not a phone: %+v", s)
@@ -148,10 +189,14 @@ func TestADeviceOnARealChromium(t *testing.T) {
 	if before.Platform == "" || !s.Mobile || s.Platform != "Android" {
 		t.Fatalf("the hints do not agree: %+v, before %+v", s, before)
 	}
+}
 
-	// A cast of the session lays the page out as the phone, and leaves it so when it ends.
+// castAsThePhone checks that a cast of the session lays the page out as the phone, and
+// leaves it so when it ends.
+func castAsThePhone(t *testing.T, endpoint string, tab target.ID, phone *Device, url string, hints chan http.Header, look func() seenOnPage) {
+	t.Helper()
 	frames := make(chan Frame, 4)
-	cast, err := Watch(p.endpoint, tab, 800, 600, phone, func(f Frame) {
+	cast, err := Watch(endpoint, tab, 800, 600, phone, func(f Frame) {
 		select {
 		case frames <- f:
 		default:
@@ -166,18 +211,10 @@ func TestADeviceOnARealChromium(t *testing.T) {
 	for len(hints) > 0 {
 		<-hints
 	}
-	if err := cast.Navigate("go", site.URL+"/again"); err != nil {
+	if err := cast.Navigate("go", url+"/again"); err != nil {
 		t.Fatal(err)
 	}
-	select {
-	case h := <-hints:
-		if !strings.Contains(h.Get("User-Agent"), "Pixel 7") || h.Get("Sec-CH-UA-Mobile") != "?1" ||
-			h.Get("Sec-CH-UA-Platform") != `"Android"` || h.Get("Sec-CH-UA") == "" {
-			t.Fatalf("the request does not agree: %v", h)
-		}
-	case <-time.After(10 * time.Second):
-		t.Fatal("no request")
-	}
+	checkThePhoneRequest(t, hints)
 	select {
 	case f := <-frames:
 		if f.Width != 412 {
@@ -191,23 +228,30 @@ func TestADeviceOnARealChromium(t *testing.T) {
 	if s := look(); s.Width != 412 || !strings.Contains(s.Agent, "Pixel 7") {
 		t.Fatalf("the cast's end took the phone away: %+v", s)
 	}
+}
 
-	// Playwright's session ends with the agent's turn: the phone stays.
-	cancelOther()
-	other, cancelOther = chromedp.NewContext(root, chromedp.WithTargetID(tab), chromedp.WithDetachOnCancel())
-	defer cancelOther()
-	if err := chromedp.Do(other); err != nil {
-		t.Fatal(err)
+// checkThePhoneRequest checks that the next request says it is from the phone.
+func checkThePhoneRequest(t *testing.T, hints <-chan http.Header) {
+	t.Helper()
+	select {
+	case h := <-hints:
+		if !strings.Contains(h.Get("User-Agent"), "Pixel 7") || h.Get("Sec-CH-UA-Mobile") != "?1" ||
+			h.Get("Sec-CH-UA-Platform") != `"Android"` || h.Get("Sec-CH-UA") == "" {
+			t.Fatalf("the request does not agree: %v", h)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("no request")
 	}
-	if s := look(); s.Width != 412 {
-		t.Fatalf("Playwright's end took the phone away: %+v", s)
-	}
+}
 
-	// A cast that watched at the pane's size gives it up for a device the session takes.
+// castGivesUpItsSize checks that a cast that watched at the pane's size gives it up for a
+// device the session takes, and takes it back when the session is a desktop again.
+func castGivesUpItsSize(t *testing.T, endpoint string, tabs *Tabs, tab target.ID, phone *Device, look func() seenOnPage) {
+	t.Helper()
 	if err := tabs.Emulate(tab, nil); err != nil {
 		t.Fatal(err)
 	}
-	cast, err = Watch(p.endpoint, tab, 800, 600, nil, func(Frame) {}, func(Page) {}, nil)
+	cast, err := Watch(endpoint, tab, 800, 600, nil, func(Frame) {}, func(Page) {}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -224,7 +268,6 @@ func TestADeviceOnARealChromium(t *testing.T) {
 	if s := look(); s.Width != 412 {
 		t.Fatalf("the cast kept its size: %+v", s)
 	}
-	// And takes it back when the session is a desktop again.
 	if err := tabs.Emulate(tab, nil); err != nil {
 		t.Fatal(err)
 	}

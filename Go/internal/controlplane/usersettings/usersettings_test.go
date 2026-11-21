@@ -111,23 +111,10 @@ func TestASecretIsKeptAsEnvelopesNothingHereOpens(t *testing.T) {
 		t.Fatalf("%+v %v %v", got, waiting, err)
 	}
 	for _, secret := range got.Secrets {
-		if value, err := opens(t, box, "sam", secret); err != nil || secrets[string(secret.Name)] != value {
-			t.Fatalf("%s came back as something else: %v", secret.Name, err)
-		}
-		if _, err := opens(t, other, "sam", secret); err == nil {
-			t.Fatal("another machine's key opens it")
-		}
+		opensOnlyFor(t, box, other, secret, secrets[string(secret.Name)])
 	}
 	// SC-007: no file under the prefix holds a secret, nor its base64, nor any part of it.
-	for key, data := range everyObject(t, s) {
-		for _, value := range secrets {
-			for _, form := range []string{value, base64.StdEncoding.EncodeToString([]byte(value)), value[:12]} {
-				if bytes.Contains(data, []byte(form)) {
-					t.Fatalf("%s holds a secret", key)
-				}
-			}
-		}
-	}
+	holdsNoSecret(t, s, secrets)
 	// A machine with no copy waits for both; another person has none of them.
 	if got, waiting, _ := b.Delivery(ctx, "sam", other.id); len(got.Secrets) != 0 || strings.Join(waiting, ",") != "GITHUB_TOKEN|1,LINEAR_KEY|1" {
 		t.Fatalf("%+v %v", got, waiting)
@@ -141,18 +128,7 @@ func TestASecretIsKeptAsEnvelopesNothingHereOpens(t *testing.T) {
 		t.Fatalf("%+v %v %v", items, lacks, err)
 	}
 	for _, item := range items {
-		value, err := opens(t, mac, "sam", wire.SealedUserSecret{Name: wire.UserSecretName(item.ID), Version: item.Version, Sealed: item.Mine["value"]})
-		if err != nil {
-			t.Fatal(err)
-		}
-		again := sealed(t, "sam", item.ID, item.Version, value, other)
-		if added, err := b.AddSealed(ctx, "sam", item.ID, item.Version, again.Values, allowing(box, mac, other)); err != nil || !added {
-			t.Fatal(added, err)
-		}
-		// At an older version, or for one that is not a recipient now, nothing is added.
-		if added, _ := b.AddSealed(ctx, "sam", item.ID, item.Version+1, again.Values, allowing(box, mac, other)); added {
-			t.Fatal("added at another version")
-		}
+		sealsForOther(t, b, item, mac, other, allowing(box, mac, other))
 	}
 	if got, waiting, _ := b.Delivery(ctx, "sam", other.id); len(got.Secrets) != 2 || len(waiting) != 0 {
 		t.Fatalf("%+v %v", got, waiting)
@@ -160,6 +136,51 @@ func TestASecretIsKeptAsEnvelopesNothingHereOpens(t *testing.T) {
 	// A client with no copy says so, for the person's other clients to seal it.
 	if _, lacks, _ := b.Work(ctx, "sam", "c:PHONE", nil); len(lacks) != 2 {
 		t.Fatal(lacks)
+	}
+}
+
+// opensOnlyFor says secret opens as want with mine's key, and not with other's.
+func opensOnlyFor(t *testing.T, mine, other recipient, secret wire.SealedUserSecret, want string) {
+	t.Helper()
+	if value, err := opens(t, mine, "sam", secret); err != nil || want != value {
+		t.Fatalf("%s came back as something else: %v", secret.Name, err)
+	}
+	if _, err := opens(t, other, "sam", secret); err == nil {
+		t.Fatal("another machine's key opens it")
+	}
+}
+
+// holdsNoSecret says no object in s holds a value of secrets, nor its base64, nor its
+// first 12 characters.
+func holdsNoSecret(t *testing.T, s store.Store, secrets map[string]string) {
+	t.Helper()
+	for key, data := range everyObject(t, s) {
+		for _, value := range secrets {
+			for _, form := range []string{value, base64.StdEncoding.EncodeToString([]byte(value)), value[:12]} {
+				if bytes.Contains(data, []byte(form)) {
+					t.Fatalf("%s holds a secret", key)
+				}
+			}
+		}
+	}
+}
+
+// sealsForOther is the person's client (mac) sealing item again for other: it is added
+// at the item's version, and not at another.
+func sealsForOther(t *testing.T, b *Book, item wire.SealingItem, mac, other recipient, allowed map[string]bool) {
+	t.Helper()
+	ctx := context.Background()
+	value, err := opens(t, mac, "sam", wire.SealedUserSecret{Name: wire.UserSecretName(item.ID), Version: item.Version, Sealed: item.Mine["value"]})
+	if err != nil {
+		t.Fatal(err)
+	}
+	again := sealed(t, "sam", item.ID, item.Version, value, other)
+	if added, err := b.AddSealed(ctx, "sam", item.ID, item.Version, again.Values, allowed); err != nil || !added {
+		t.Fatal(added, err)
+	}
+	// At an older version, or for one that is not a recipient now, nothing is added.
+	if added, _ := b.AddSealed(ctx, "sam", item.ID, item.Version+1, again.Values, allowed); added {
+		t.Fatal("added at another version")
 	}
 }
 

@@ -235,13 +235,7 @@ const valued = "BbcDEeFIiJLlmOopQRSWw"
 // program (nc, cloudflared) names none.
 func proxyCommandHosts(command string) []string {
 	words := strings.Fields(command)
-	start := -1
-	for i, w := range words {
-		if path.Base(w) == "ssh" {
-			start = i
-			break
-		}
-	}
+	start := sshWord(words)
 	if start < 0 {
 		return nil
 	}
@@ -255,28 +249,9 @@ func proxyCommandHosts(command string) []string {
 			break
 		}
 		if strings.HasPrefix(word, "-") && len(word) >= 2 {
-			flag := word[1]
-			if strings.IndexByte(valued, flag) >= 0 {
-				// -J hop or -Jhop; any other value is skipped.
-				value := ""
-				if len(word) > 2 {
-					value = word[2:]
-				} else if i+1 < len(words) {
-					value = words[i+1]
-				}
-				if flag == 'J' {
-					for _, hop := range strings.Split(value, ",") {
-						hosts = append(hosts, hostPart(hop))
-					}
-				}
-				if len(word) > 2 {
-					i++
-				} else {
-					i += 2
-				}
-			} else {
-				i++
-			}
+			hops, next := optionHops(words, i)
+			hosts = append(hosts, hops...)
+			i = next
 			continue
 		}
 		if !strings.Contains(word, "%h") {
@@ -285,4 +260,39 @@ func proxyCommandHosts(command string) []string {
 		break
 	}
 	return hosts
+}
+
+// sshWord is the index of the word that runs ssh, or -1 when none does.
+func sshWord(words []string) int {
+	for i, w := range words {
+		if path.Base(w) == "ssh" {
+			return i
+		}
+	}
+	return -1
+}
+
+// optionHops reads the option at words[i]: the hosts of a -J hop or -Jhop, and the
+// index of the word after the option and its value. Any other value is skipped.
+func optionHops(words []string, i int) (hops []string, next int) {
+	word := words[i]
+	flag := word[1]
+	if strings.IndexByte(valued, flag) < 0 {
+		return nil, i + 1
+	}
+	value := ""
+	if len(word) > 2 {
+		value = word[2:]
+	} else if i+1 < len(words) {
+		value = words[i+1]
+	}
+	if flag == 'J' {
+		for _, hop := range strings.Split(value, ",") {
+			hops = append(hops, hostPart(hop))
+		}
+	}
+	if len(word) > 2 {
+		return hops, i + 1
+	}
+	return hops, i + 2
 }

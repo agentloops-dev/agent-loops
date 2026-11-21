@@ -119,15 +119,7 @@ func (p Previewer) Stage(ctx context.Context, result wire.CatalogResult, staging
 	work := filepath.Join(staging, ".work")
 	defer os.RemoveAll(work)
 
-	tree, err := p.GitHub.Tree(ctx, owner, repo, head.Commit)
-	unpacked := ""
-	if errors.Is(err, ErrRateLimited) {
-		unpacked, tree, err = p.GitHub.TarballTree(ctx, owner, repo, head.Commit, work)
-		var ce *Error
-		if errors.As(err, &ce) && ce.Why.Unreachable != nil {
-			return Staged{}, RateLimited(nil)
-		}
-	}
+	unpacked, tree, err := p.stageTree(ctx, owner, repo, head.Commit, work)
 	if err != nil {
 		return Staged{}, err
 	}
@@ -137,123 +129,37 @@ func (p Previewer) Stage(ctx context.Context, result wire.CatalogResult, staging
 		return empty(result, id, head, []wire.PreviewProblem{{NotFoundInRepo: &struct{}{}}}, staging, now, "", nil), nil
 	}
 	folderPath := strings.Trim(strings.TrimSuffix(skillMD, "SKILL.md"), "/")
-	prefix := ""
-	if folderPath != "" {
-		prefix = folderPath + "/"
-	}
-	type want struct {
-		rel   string
-		entry TreeEntry
-	}
-	var wanted []want
-	var skipped []string
-	declared := int64(0)
-	for _, e := range tree {
-		if e.Type != "blob" || !strings.HasPrefix(e.Path, prefix) {
-			continue
-		}
-		rel := e.Path[len(prefix):]
-		if e.Mode == "120000" || !IsSafe(rel) {
-			skipped = append(skipped, rel)
-			continue
-		}
-		wanted = append(wanted, want{rel, e})
-		if e.Size != nil {
-			declared += *e.Size
-		}
-	}
+	wanted, skipped, declared := wantedFiles(tree, folderPath)
 	if len(wanted) > maxFiles || declared > maxBytes {
 		return empty(result, id, head, []wire.PreviewProblem{{TooLarge: &wire.PreviewProblemTooLarge{Bytes: declared, Files: int64(len(wanted))}}},
 			staging, now, "", nil), nil
 	}
 
-	// The bytes: skills.sh's copy where each file's blob matches the commit's, GitHub's
-	// own otherwise, and each file from GitHub checked too.
-	var copies map[string][]byte
-	if unpacked == "" && p.Catalog != nil {
-		copies = p.Catalog.Snapshot(ctx, owner, repo, result.SkillID)
-	}
-	sort.Slice(wanted, func(i, j int) bool { return wanted[i].rel < wanted[j].rel })
-	files := []wire.PreviewFile{}
-	var inMemory []File
-	total := int64(0)
-	for _, w := range wanted {
-		var data []byte
-		var via string
-		if unpacked != "" {
-			if data, err = os.ReadFile(filepath.Join(unpacked, w.entry.Path)); err != nil {
-				return Staged{}, Failed("could not read the unpacked " + w.rel)
-			}
-			via = "tarball"
-		} else if c, ok := copies[w.rel]; ok && BlobSHA(c) == w.entry.SHA {
-			data, via = c, "snapshot"
-		} else {
-			if data, err = p.GitHub.Raw(ctx, owner, repo, head.Commit, w.entry.Path, w.entry.SHA, head.SignedIn); err != nil {
-				return Staged{}, err
-			}
-			via = "raw"
-			if head.SignedIn {
-				via = "gh"
-			}
-			if BlobSHA(data) != w.entry.SHA {
-				if head.SignedIn {
-					return Staged{}, Unreachable("github.com")
-				}
-				return Staged{}, Unreachable(host(p.GitHub.Endpoints.Raw))
-			}
-		}
-		total += int64(len(data))
-		runnable := w.entry.Mode == "100755" || strings.HasPrefix(w.rel, "scripts/") || bytes.HasPrefix(data, []byte("#!"))
-		files = append(files, wire.PreviewFile{Path: w.rel, Bytes: int64(len(data)), Runnable: runnable, Via: via})
-		inMemory = append(inMemory, File{w.rel, data})
+	files, inMemory, total, err := p.fetchFiles(ctx, result, head, unpacked, wanted)
+	if err != nil {
+		return Staged{}, err
 	}
 	if total > maxBytes {
 		return empty(result, id, head, []wire.PreviewProblem{{TooLarge: &wire.PreviewProblemTooLarge{Bytes: total, Files: int64(len(files))}}},
 			staging, now, "", nil), nil
 	}
-	markdown := ""
-	for _, f := range inMemory {
-		if f.Path == "SKILL.md" {
-			markdown = string(f.Data)
-		}
-	}
+	markdown := skillMarkdown(inMemory)
 	front := ParseSkillFile(markdown)
 	if front.Name == "" || front.Description == "" {
 		return empty(result, id, head, []wire.PreviewProblem{{NoSkillFile: &struct{}{}}}, staging, now, markdown, files), nil
 	}
 	name := FolderName(front.Name)
 	folder := filepath.Join(staging, name)
-	os.RemoveAll(folder)
-	for i, f := range inMemory {
-		path := filepath.Join(folder, f.Path)
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			return Staged{}, Failed("could not stage " + f.Path)
-		}
-		mode := os.FileMode(0o644)
-		if wanted[i].entry.Mode == "100755" {
-			mode = 0o755
-		}
-		if err := os.WriteFile(path, f.Data, mode); err != nil {
-			return Staged{}, Failed("could not stage " + f.Path)
-		}
-		os.Chmod(path, mode)
+	if err := writeStaged(folder, inMemory, wanted); err != nil {
+		return Staged{}, err
 	}
 	problems := []wire.PreviewProblem{}
 	if len(skipped) > 0 {
 		problems = append(problems, wire.PreviewProblem{Skipped: &wire.PreviewProblemSkipped{Value: skipped}})
 	}
-	// The CLI records GitHub's own tree SHA for the folder; the staged copy's is the same
-	// unless something was skipped, and is the fallback when the tree came from a tarball.
-	treeSHA := ""
-	for _, e := range tree {
-		if e.Type == "tree" && e.Path == folderPath && e.SHA != "" {
-			treeSHA = e.SHA
-		}
-	}
-	if treeSHA == "" {
-		if treeSHA, err = TreeSHA(folder); err != nil {
-			return Staged{}, Failed("could not hash the staged folder")
-		}
+	treeSHA, err := stagedTreeSHA(tree, folderPath, folder)
+	if err != nil {
+		return Staged{}, err
 	}
 	preview := wire.SkillPreview{PreviewID: id, Result: result, Name: name, Description: front.Description, SkillPath: skillMD,
 		Commit: head.Commit, TreeSHA: treeSHA, ComputedHash: ComputedHashOf(inMemory), Files: files, SkillMarkdown: markdown,
@@ -263,6 +169,155 @@ func (p Previewer) Stage(ctx context.Context, result wire.CatalogResult, staging
 		preview.CommittedAt = &d
 	}
 	return Staged{Preview: preview, Folder: folder, LockKey: front.Name, CreatedAt: now}, nil
+}
+
+// wantedFile is one file of the skill's folder: its path in the folder and its tree entry.
+type wantedFile struct {
+	rel   string
+	entry TreeEntry
+}
+
+// stageTree is the repository's tree at commit: GitHub's tree, or, when that is rate
+// limited, the tarball's, unpacked into work (the folder it is unpacked in comes first).
+func (p Previewer) stageTree(ctx context.Context, owner, repo, commit, work string) (string, []TreeEntry, error) {
+	tree, err := p.GitHub.Tree(ctx, owner, repo, commit)
+	unpacked := ""
+	if errors.Is(err, ErrRateLimited) {
+		unpacked, tree, err = p.GitHub.TarballTree(ctx, owner, repo, commit, work)
+		var ce *Error
+		if errors.As(err, &ce) && ce.Why.Unreachable != nil {
+			return "", nil, RateLimited(nil)
+		}
+	}
+	return unpacked, tree, err
+}
+
+// wantedFiles is the blobs under folderPath that can be staged, the paths skipped (links
+// and unsafe paths) and the bytes the tree says the wanted ones have.
+func wantedFiles(tree []TreeEntry, folderPath string) (wanted []wantedFile, skipped []string, declared int64) {
+	prefix := ""
+	if folderPath != "" {
+		prefix = folderPath + "/"
+	}
+	for _, e := range tree {
+		if e.Type != "blob" || !strings.HasPrefix(e.Path, prefix) {
+			continue
+		}
+		rel := e.Path[len(prefix):]
+		if e.Mode == "120000" || !IsSafe(rel) {
+			skipped = append(skipped, rel)
+			continue
+		}
+		wanted = append(wanted, wantedFile{rel, e})
+		if e.Size != nil {
+			declared += *e.Size
+		}
+	}
+	return wanted, skipped, declared
+}
+
+// fetchFiles is the bytes of each wanted file, sorted by path: skills.sh's copy where each
+// file's blob matches the commit's, GitHub's own otherwise, and each file from GitHub
+// checked too. It sorts wanted in place, so wanted[i] is the entry of the i-th file.
+func (p Previewer) fetchFiles(ctx context.Context, result wire.CatalogResult, head Head, unpacked string, wanted []wantedFile) (files []wire.PreviewFile, inMemory []File, total int64, err error) {
+	var copies map[string][]byte
+	if unpacked == "" && p.Catalog != nil {
+		copies = p.Catalog.Snapshot(ctx, result.Owner, result.Repo, result.SkillID)
+	}
+	sort.Slice(wanted, func(i, j int) bool { return wanted[i].rel < wanted[j].rel })
+	files = []wire.PreviewFile{}
+	for _, w := range wanted {
+		data, via, err := p.fileBytes(ctx, result, head, unpacked, copies, w)
+		if err != nil {
+			return nil, nil, 0, err
+		}
+		total += int64(len(data))
+		runnable := w.entry.Mode == "100755" || strings.HasPrefix(w.rel, "scripts/") || bytes.HasPrefix(data, []byte("#!"))
+		files = append(files, wire.PreviewFile{Path: w.rel, Bytes: int64(len(data)), Runnable: runnable, Via: via})
+		inMemory = append(inMemory, File{w.rel, data})
+	}
+	return files, inMemory, total, nil
+}
+
+// fileBytes is one wanted file's bytes and where they came from: the unpacked tarball,
+// skills.sh's snapshot when its blob matches, else GitHub, whose bytes must match the blob.
+func (p Previewer) fileBytes(ctx context.Context, result wire.CatalogResult, head Head, unpacked string, copies map[string][]byte, w wantedFile) ([]byte, string, error) {
+	if unpacked != "" {
+		data, err := os.ReadFile(filepath.Join(unpacked, w.entry.Path))
+		if err != nil {
+			return nil, "", Failed("could not read the unpacked " + w.rel)
+		}
+		return data, "tarball", nil
+	}
+	if c, ok := copies[w.rel]; ok && BlobSHA(c) == w.entry.SHA {
+		return c, "snapshot", nil
+	}
+	data, err := p.GitHub.Raw(ctx, result.Owner, result.Repo, head.Commit, w.entry.Path, w.entry.SHA, head.SignedIn)
+	if err != nil {
+		return nil, "", err
+	}
+	via := "raw"
+	if head.SignedIn {
+		via = "gh"
+	}
+	if BlobSHA(data) != w.entry.SHA {
+		if head.SignedIn {
+			return nil, "", Unreachable("github.com")
+		}
+		return nil, "", Unreachable(host(p.GitHub.Endpoints.Raw))
+	}
+	return data, via, nil
+}
+
+// skillMarkdown is the text of the folder's SKILL.md, or "" when it has none.
+func skillMarkdown(inMemory []File) string {
+	markdown := ""
+	for _, f := range inMemory {
+		if f.Path == "SKILL.md" {
+			markdown = string(f.Data)
+		}
+	}
+	return markdown
+}
+
+// writeStaged writes the files into a new folder, each runnable one (by its tree mode) 0755.
+func writeStaged(folder string, inMemory []File, wanted []wantedFile) error {
+	os.RemoveAll(folder)
+	for i, f := range inMemory {
+		path := filepath.Join(folder, f.Path)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			return Failed("could not stage " + f.Path)
+		}
+		mode := os.FileMode(0o644)
+		if wanted[i].entry.Mode == "100755" {
+			mode = 0o755
+		}
+		if err := os.WriteFile(path, f.Data, mode); err != nil {
+			return Failed("could not stage " + f.Path)
+		}
+		os.Chmod(path, mode)
+	}
+	return nil
+}
+
+// stagedTreeSHA is the tree SHA to record for the folder. The CLI records GitHub's own tree
+// SHA for the folder; the staged copy's is the same unless something was skipped, and is
+// the fallback when the tree came from a tarball.
+func stagedTreeSHA(tree []TreeEntry, folderPath, folder string) (string, error) {
+	treeSHA := ""
+	for _, e := range tree {
+		if e.Type == "tree" && e.Path == folderPath && e.SHA != "" {
+			treeSHA = e.SHA
+		}
+	}
+	if treeSHA != "" {
+		return treeSHA, nil
+	}
+	treeSHA, err := TreeSHA(folder)
+	if err != nil {
+		return "", Failed("could not hash the staged folder")
+	}
+	return treeSHA, nil
 }
 
 // findSkill is which SKILL.md is the skill: the one the marketplace named, if it is still

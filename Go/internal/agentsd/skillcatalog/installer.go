@@ -258,32 +258,8 @@ func (in Installer) Recover() string {
 // staged one renamed in, the lock written; a step that fails undoes the ones before it.
 func (in Installer) Add(st Staged, place Place, replace bool, now time.Time) (wire.ManagedSkill, error) {
 	p := st.Preview
-	if !CanAdd(p) {
-		var blocking []wire.PreviewProblem
-		for _, x := range p.Problems {
-			if x.Skipped == nil {
-				blocking = append(blocking, x)
-			}
-		}
-		return wire.ManagedSkill{}, CannotAdd(blocking)
-	}
-	switch s := in.State(p, place); {
-	case s.Free != nil:
-		if replace {
-			return wire.ManagedSkill{}, ReplaceMismatch()
-		}
-	case s.SameSkill != nil:
-		if s.SameSkill.Update && !replace {
-			return wire.ManagedSkill{}, ReplaceMismatch()
-		}
-	case s.ManagedOther != nil:
-		if !replace {
-			return wire.ManagedSkill{}, ReplaceMismatch()
-		}
-	case s.Unmanaged != nil:
-		return wire.ManagedSkill{}, Unmanaged(s.Unmanaged.Path)
-	case s.Unavailable != nil:
-		return wire.ManagedSkill{}, &Error{s.Unavailable.Value}
+	if err := in.checkAdd(p, place, replace); err != nil {
+		return wire.ManagedSkill{}, err
 	}
 	lock, err := LoadLock(place.LockKind, place.Lock)
 	if err != nil {
@@ -344,6 +320,48 @@ func (in Installer) Add(st Staged, place Place, replace bool, now time.Time) (wi
 		linkClaudeSkills(place.Folder)
 	}
 	// 5. The sidecar: worth having, not worth failing for.
+	catalogue := in.recordSidecar(p, place, target, now)
+	return wire.ManagedSkill{Destination: place.Destination, Name: p.Name, Source: p.Result.Owner + "/" + p.Result.Repo,
+		SkillPath: optional(p.SkillPath), RecordedHash: optional(hash), Commit: optional(p.Commit), CommittedAt: p.CommittedAt,
+		Catalogue: &catalogue, Update: wire.UpdateState{Current: &struct{}{}}}, nil
+}
+
+// checkAdd is why p cannot be added at place, or nil: a blocking problem, an answer to
+// replace that does not fit what is there, or a folder that is not ours.
+func (in Installer) checkAdd(p wire.SkillPreview, place Place, replace bool) error {
+	if !CanAdd(p) {
+		var blocking []wire.PreviewProblem
+		for _, x := range p.Problems {
+			if x.Skipped == nil {
+				blocking = append(blocking, x)
+			}
+		}
+		return CannotAdd(blocking)
+	}
+	switch s := in.State(p, place); {
+	case s.Free != nil:
+		if replace {
+			return ReplaceMismatch()
+		}
+	case s.SameSkill != nil:
+		if s.SameSkill.Update && !replace {
+			return ReplaceMismatch()
+		}
+	case s.ManagedOther != nil:
+		if !replace {
+			return ReplaceMismatch()
+		}
+	case s.Unmanaged != nil:
+		return Unmanaged(s.Unmanaged.Path)
+	case s.Unavailable != nil:
+		return &Error{s.Unavailable.Value}
+	}
+	return nil
+}
+
+// recordSidecar notes the added skill's commit, tree, catalogue and folder hash in the
+// sidecar, and is its catalogue. A failure to save is not an error.
+func (in Installer) recordSidecar(p wire.SkillPreview, place Place, target string, now time.Time) string {
 	catalogue := SkillsShID
 	if p.Result.Marketplace != nil {
 		catalogue = *p.Result.Marketplace
@@ -359,9 +377,7 @@ func (in Installer) Add(st Staged, place Place, replace bool, now time.Time) (wi
 	}
 	side.Skills[SidecarKey(place.Destination, p.Name)] = record
 	side.Save(in.Sidecar)
-	return wire.ManagedSkill{Destination: place.Destination, Name: p.Name, Source: p.Result.Owner + "/" + p.Result.Repo,
-		SkillPath: optional(p.SkillPath), RecordedHash: optional(hash), Commit: optional(p.Commit), CommittedAt: p.CommittedAt,
-		Catalogue: &catalogue, Update: wire.UpdateState{Current: &struct{}{}}}, nil
+	return catalogue
 }
 
 // linkClaudeSkills is .claude/skills -> ../.agents/skills, only where nothing is there.

@@ -244,71 +244,88 @@ func (u *Uplink) Run(ctx context.Context) {
 		}
 		l, at, err := u.join(ctx, key, last)
 		if err != nil {
-			problem := u.problem(err)
-			log.Printf("uplink: could not reach the control plane: %s", problem)
-			if r := (*Refusal)(nil); errors.As(err, &r) && u.OnRefused != nil {
-				u.OnRefused(r.Reason)
-			}
-			if u.OnChange != nil {
-				u.OnChange(false, problem)
-			}
-			select {
-			case <-ctx.Done():
+			u.unreachable(err)
+			if !sleep(ctx, wait) {
 				return
-			case <-time.After(wait):
 			}
 			wait = min(wait*2, longest)
 			continue
 		}
 		last = at
 		connected := time.Now()
-		out := newSender(l, cmp.Or(u.pingEvery, upPing))
-		u.mu.Lock()
-		u.out = out
-		u.channels = map[int]*channel{}
-		u.mu.Unlock()
-		hello := u.Hello
-		hello.Host = new(wire.MachineRef(u.Member.Host))
-		u.hello(ctx, hello)
-		log.Printf("uplink: connected to the control plane as %s", u.Member.Host)
-		if u.OnChange != nil {
-			u.timed("saying the link is up", func() { u.OnChange(true, "") })
-		}
-		// Nothing on this loop waits (#6260): while it does, no pong is read, and the link
-		// drops. What can wait runs off it (told, Asked, Accept).
-		for {
-			line, err := l.Read(ctx)
-			if err != nil {
-				break
-			}
-			u.timed("a line on the read loop", func() { u.receive(line) })
-		}
-		out.drop()
-		u.mu.Lock()
-		open := u.channels
-		u.channels = nil
-		u.out = nil
-		u.mu.Unlock()
-		u.control.Store(nil)
-		for _, c := range open {
-			c.end(false)
-		}
-		log.Printf("uplink: the control plane went; %d channels closed", len(open))
-		if u.OnChange != nil {
-			u.OnChange(false, "")
-		}
+		u.serve(ctx, l)
 		// A copy that lets go at once, such as one forwarding to a place this host can't
 		// reach yet, is dialled again only after a wait, never in a tight loop.
 		if time.Since(connected) < steady {
-			select {
-			case <-ctx.Done():
+			if !sleep(ctx, wait) {
 				return
-			case <-time.After(wait):
 			}
 			wait = min(wait*2, longest)
 		} else {
 			wait = first
 		}
+	}
+}
+
+// sleep waits for d; false when ctx ends first.
+func sleep(ctx context.Context, d time.Duration) bool {
+	select {
+	case <-ctx.Done():
+		return false
+	case <-time.After(d):
+		return true
+	}
+}
+
+// unreachable says that a join failed: in the log, to OnRefused when the control plane
+// refused this host, and to OnChange.
+func (u *Uplink) unreachable(err error) {
+	problem := u.problem(err)
+	log.Printf("uplink: could not reach the control plane: %s", problem)
+	if r := (*Refusal)(nil); errors.As(err, &r) && u.OnRefused != nil {
+		u.OnRefused(r.Reason)
+	}
+	if u.OnChange != nil {
+		u.OnChange(false, problem)
+	}
+}
+
+// serve runs one link from hello until the control plane goes, then closes its channels.
+func (u *Uplink) serve(ctx context.Context, l *Lines) {
+	out := newSender(l, cmp.Or(u.pingEvery, upPing))
+	u.mu.Lock()
+	u.out = out
+	u.channels = map[int]*channel{}
+	u.mu.Unlock()
+	hello := u.Hello
+	hello.Host = new(wire.MachineRef(u.Member.Host))
+	u.hello(ctx, hello)
+	log.Printf("uplink: connected to the control plane as %s", u.Member.Host)
+	if u.OnChange != nil {
+		u.timed("saying the link is up", func() { u.OnChange(true, "") })
+	}
+	// Nothing on this loop waits (#6260): while it does, no pong is read, and the link
+	// drops. What can wait runs off it (told, Asked, Accept).
+	for {
+		line, err := l.Read(ctx)
+		if err != nil {
+			break
+		}
+		u.timed("a line on the read loop", func() { u.receive(line) })
+	}
+	out.drop()
+	u.mu.Lock()
+	open := u.channels
+	u.channels = nil
+	u.out = nil
+	u.mu.Unlock()
+	u.control.Store(nil)
+	for _, c := range open {
+		c.end(false)
+	}
+	log.Printf("uplink: the control plane went; %d channels closed", len(open))
+	if u.OnChange != nil {
+		u.OnChange(false, "")
 	}
 }
 
@@ -520,17 +537,8 @@ func channelLine(n int, message string) string {
 }
 
 func (u *Uplink) receive(line string) {
-	// The fast path: {"c":N,"m":…} written by the Swift side with m last.
-	if strings.HasPrefix(line, `{"c":`) {
-		rest := line[5:]
-		i := 0
-		for i < len(rest) && rest[i] >= '0' && rest[i] <= '9' {
-			i++
-		}
-		if n, err := strconv.Atoi(rest[:i]); err == nil && strings.HasPrefix(rest[i:], `,"m":`) && strings.HasSuffix(rest, "}") {
-			u.message(n, rest[i+5:len(rest)-1])
-			return
-		}
+	if u.receiveFast(line) {
+		return
 	}
 	var frame struct {
 		C     *int              `json:"c"`
@@ -550,60 +558,10 @@ func (u *Uplink) receive(line string) {
 		}
 		c := &channel{number: *frame.C, up: u, in: make(chan string, 1024)}
 		if frame.Open.Tunnel != nil {
-			ref := ""
-			if frame.Open.TunnelRef != nil {
-				ref = *frame.Open.TunnelRef
-			}
-			u.mu.Lock()
-			wait := u.tunnels[ref]
-			delete(u.tunnels, ref)
-			port := 0
-			if wait == nil && u.Lend != nil {
-				port = u.Lend(*frame.Open.Tunnel)
-			}
-			if (wait != nil || port > 0) && u.channels != nil {
-				u.channels[c.number] = c
-			}
-			u.mu.Unlock()
-			if wait != nil {
-				wait <- c
-				return
-			}
-			if port <= 0 {
-				log.Printf("uplink: a tunnel for %s was opened that this host did not ask for; it lends no sign-in", *frame.Open.Tunnel)
-				_ = u.write(`{"c":` + strconv.Itoa(*frame.C) + `,"close":true}`)
-				return
-			}
-			// The lender's end: the tunnel to its relay on loopback.
-			runtime := *frame.Open.Tunnel
-			safe.Go("relay lend", func() {
-				conn, err := net.DialTimeout("tcp", "127.0.0.1:"+strconv.Itoa(port), 10*time.Second)
-				if err != nil {
-					log.Printf("relay: %v", err)
-					c.end(true)
-					return
-				}
-				log.Printf("relay: a tunnel for %s opened", runtime)
-				Pipe(conn, c)
-			})
+			u.openTunnel(c, frame.Open)
 			return
 		}
-		if frame.Open.Device != nil {
-			c.device = string(*frame.Open.Device)
-		}
-		c.fanOut = frame.Open.FanOut != nil && *frame.Open.FanOut
-		c.fanOutLock = frame.Open.FanOutLock != nil && *frame.Open.FanOutLock
-		c.actor = frame.Open.Actor
-		u.mu.Lock()
-		old := u.channels[c.number]
-		if u.channels != nil {
-			u.channels[c.number] = c
-		}
-		u.mu.Unlock()
-		if old != nil {
-			old.end(false)
-		}
-		safe.Go("channel", func() { u.Accept(c) })
+		u.openChannel(c, frame.Open)
 	case frame.Close:
 		u.mu.Lock()
 		c := u.channels[*frame.C]
@@ -613,6 +571,87 @@ func (u *Uplink) receive(line string) {
 			c.end(false)
 		}
 	}
+}
+
+// receiveFast takes {"c":N,"m":…} as the Swift side writes it, with m last, without
+// decoding the message; false when the line is not that.
+func (u *Uplink) receiveFast(line string) bool {
+	if !strings.HasPrefix(line, `{"c":`) {
+		return false
+	}
+	rest := line[5:]
+	i := 0
+	for i < len(rest) && rest[i] >= '0' && rest[i] <= '9' {
+		i++
+	}
+	n, err := strconv.Atoi(rest[:i])
+	if err != nil || !strings.HasPrefix(rest[i:], `,"m":`) || !strings.HasSuffix(rest, "}") {
+		return false
+	}
+	u.message(n, rest[i+5:len(rest)-1])
+	return true
+}
+
+// openTunnel takes a channel the control plane opened as a tunnel: one this host asked
+// for, or one it lends a sign-in on, to its relay on loopback; any other it closes.
+func (u *Uplink) openTunnel(c *channel, open *wire.ChannelOpen) {
+	ref := ""
+	if open.TunnelRef != nil {
+		ref = *open.TunnelRef
+	}
+	u.mu.Lock()
+	wait := u.tunnels[ref]
+	delete(u.tunnels, ref)
+	port := 0
+	if wait == nil && u.Lend != nil {
+		port = u.Lend(*open.Tunnel)
+	}
+	if (wait != nil || port > 0) && u.channels != nil {
+		u.channels[c.number] = c
+	}
+	u.mu.Unlock()
+	if wait != nil {
+		wait <- c
+		return
+	}
+	if port <= 0 {
+		log.Printf("uplink: a tunnel for %s was opened that this host did not ask for; it lends no sign-in", *open.Tunnel)
+		_ = u.write(`{"c":` + strconv.Itoa(c.number) + `,"close":true}`)
+		return
+	}
+	// The lender's end: the tunnel to its relay on loopback.
+	runtime := *open.Tunnel
+	safe.Go("relay lend", func() {
+		conn, err := net.DialTimeout("tcp", "127.0.0.1:"+strconv.Itoa(port), 10*time.Second)
+		if err != nil {
+			log.Printf("relay: %v", err)
+			c.end(true)
+			return
+		}
+		log.Printf("relay: a tunnel for %s opened", runtime)
+		Pipe(conn, c)
+	})
+}
+
+// openChannel takes a channel the control plane opened for a device, in place of any
+// channel of the same number, and hands it to Accept.
+func (u *Uplink) openChannel(c *channel, open *wire.ChannelOpen) {
+	if open.Device != nil {
+		c.device = string(*open.Device)
+	}
+	c.fanOut = open.FanOut != nil && *open.FanOut
+	c.fanOutLock = open.FanOutLock != nil && *open.FanOutLock
+	c.actor = open.Actor
+	u.mu.Lock()
+	old := u.channels[c.number]
+	if u.channels != nil {
+		u.channels[c.number] = c
+	}
+	u.mu.Unlock()
+	if old != nil {
+		old.end(false)
+	}
+	safe.Go("channel", func() { u.Accept(c) })
 }
 
 func (u *Uplink) message(n int, message string) {

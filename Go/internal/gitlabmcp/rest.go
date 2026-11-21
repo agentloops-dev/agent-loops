@@ -753,7 +753,7 @@ func (p pipelineJSON) pipeline() Pipeline {
 	if name == "" {
 		name = fmt.Sprintf("Pipeline #%d", p.ID)
 	}
-	out := Pipeline{ID: p.ID, Name: name, URL: p.WebURL, SHA: p.SHA, Ref: p.Ref, UpdatedAt: p.UpdatedAt, Listed: p.Name}
+	out := Pipeline{ID: p.ID, Name: name, URL: p.WebURL, SHA: p.SHA, Ref: p.Ref, Status: p.Status, UpdatedAt: p.UpdatedAt, Listed: p.Name}
 	if m := mrRef.FindStringSubmatch(p.Ref); m != nil {
 		out.MRNumber, _ = strconv.Atoi(m[1])
 	}
@@ -761,15 +761,24 @@ func (p pipelineJSON) pipeline() Pipeline {
 }
 
 func (g *RealGitLab) FailedPipelines(ctx context.Context, project, since string) ([]Pipeline, Listed, error) {
-	path := fmt.Sprintf("projects/%s/pipelines?status=failed&order_by=updated_at&sort=desc&updated_after=%s",
-		pid(project), url.QueryEscape(since))
+	return g.pipelinesOf(ctx, project, "failed", since)
+}
+
+func (g *RealGitLab) PassedPipelines(ctx context.Context, project, since string) ([]Pipeline, Listed, error) {
+	return g.pipelinesOf(ctx, project, "success", since)
+}
+
+// pipelinesOf are the pipelines of one status updated at or after since.
+func (g *RealGitLab) pipelinesOf(ctx context.Context, project, status, since string) ([]Pipeline, Listed, error) {
+	path := fmt.Sprintf("projects/%s/pipelines?status=%s&order_by=updated_at&sort=desc&updated_after=%s",
+		pid(project), status, url.QueryEscape(since))
 	list, listed, err := newest(ctx, g, path, since, func(p pipelineJSON) string { return p.UpdatedAt })
 	if err != nil {
 		return nil, Listed{}, err
 	}
 	out := make([]Pipeline, 0, len(list))
 	for _, p := range list {
-		if p.Status == "failed" {
+		if p.Status == status {
 			out = append(out, p.pipeline())
 		}
 	}
@@ -809,15 +818,9 @@ func (g *RealGitLab) PipelineDetails(ctx context.Context, project string, p Pipe
 	if err := g.get(ctx, fmt.Sprintf("projects/%s/merge_requests/%d", pid(project), number), false, &m); err != nil {
 		return nil, err
 	}
-	var jobs []jobJSON
-	if err := g.get(ctx, fmt.Sprintf("projects/%s/pipelines/%d/jobs?scope[]=failed&per_page=100", pid(project), p.ID), false, &jobs); err != nil {
+	failed, err := g.failedJobs(ctx, project, p)
+	if err != nil {
 		return nil, err
-	}
-	failed := []Job{}
-	for _, j := range jobs {
-		if j.Status == "failed" && !j.AllowFailure {
-			failed = append(failed, Job{Name: j.Name, URL: j.WebURL})
-		}
 	}
 	trusted, err := g.trustedMR(ctx, project, m)
 	if err != nil {
@@ -828,6 +831,24 @@ func (g *RealGitLab) PipelineDetails(ctx context.Context, project string, p Pipe
 		mr.Number = number
 	}
 	return &FailedPipelineData{MR: mr, Pipeline: p, FailedJobs: failed, Trusted: trusted}, nil
+}
+
+// failedJobs are a failed pipeline's failed jobs that may not fail; none for one that passed.
+func (g *RealGitLab) failedJobs(ctx context.Context, project string, p Pipeline) ([]Job, error) {
+	failed := []Job{}
+	if p.Status == "success" {
+		return failed, nil
+	}
+	var jobs []jobJSON
+	if err := g.get(ctx, fmt.Sprintf("projects/%s/pipelines/%d/jobs?scope[]=failed&per_page=100", pid(project), p.ID), false, &jobs); err != nil {
+		return nil, err
+	}
+	for _, j := range jobs {
+		if j.Status == "failed" && !j.AllowFailure {
+			failed = append(failed, Job{Name: j.Name, URL: j.WebURL})
+		}
+	}
+	return failed, nil
 }
 
 func (g *RealGitLab) IssueActivity(ctx context.Context, project string, kind IssueKind, since string) ([]IssueActivity, Listed, error) {
@@ -919,6 +940,16 @@ func (g *RealGitLab) issuesCommented(ctx context.Context, project, since string)
 }
 
 func (g *RealGitLab) ReviewComments(ctx context.Context, project, since string) ([]ReviewComment, Listed, error) {
+	return g.mrNotes(ctx, project, since, true)
+}
+
+func (g *RealGitLab) MRComments(ctx context.Context, project, since string) ([]ReviewComment, Listed, error) {
+	return g.mrNotes(ctx, project, since, false)
+}
+
+// mrNotes are the comments on merge requests made at or after since: with onDiff those on
+// lines of their diffs (DiffNote), else those on the merge requests themselves (#6296).
+func (g *RealGitLab) mrNotes(ctx context.Context, project, since string, onDiff bool) ([]ReviewComment, Listed, error) {
 	notes, listed, err := g.notes(ctx, project, since)
 	if err != nil {
 		return nil, Listed{}, err
@@ -927,7 +958,7 @@ func (g *RealGitLab) ReviewComments(ctx context.Context, project, since string) 
 	// A merge request is read as an issue is in IssueActivity.
 	mrs := map[int]mergeRequest{}
 	for _, n := range notes {
-		if n.NoteableType != "MergeRequest" || n.Type != "DiffNote" {
+		if n.NoteableType != "MergeRequest" || (n.Type == "DiffNote") != onDiff {
 			continue
 		}
 		m, ok := mrs[n.NoteableIID]
@@ -954,6 +985,79 @@ func (g *RealGitLab) ReviewComments(ctx context.Context, project, since string) 
 		out = append(out, c)
 	}
 	return out, listed, nil
+}
+
+// maxReviewed bounds the open merge requests whose reviewers and approvals pr.reviewed reads each poll.
+const maxReviewed = 50
+
+// Reviews reads, for each of the maxReviewed newest open merge requests, its reviewers (each
+// one's state: requested_changes is a request for changes, approved an approval) and its
+// approvals, which may be from someone who is no reviewer (#6296).
+func (g *RealGitLab) Reviews(ctx context.Context, project string) ([]Review, error) {
+	path := fmt.Sprintf("projects/%s/merge_requests?state=opened&order_by=created_at&sort=desc", pid(project))
+	list, err := g.openPage(ctx, query(path, 1))
+	if err != nil {
+		return nil, err
+	}
+	var out []Review
+	for _, m := range list[:min(len(list), maxReviewed)] {
+		mrTrusted, err := g.trustedMR(ctx, project, m)
+		if err != nil {
+			return nil, err
+		}
+		answers, err := g.answers(ctx, project, m.IID)
+		if err != nil {
+			return nil, err
+		}
+		for _, a := range answers {
+			trusted, err := g.trusted(ctx, project, &a.user)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, Review{MR: m.mr(), HeadSHA: m.SHA, Author: a.user.Username, State: a.state, MRTrusted: mrTrusted, Trusted: trusted})
+		}
+	}
+	return out, nil
+}
+
+// verdict is one person's answer to a merge request: approved or changes_requested.
+type verdict struct {
+	user  user
+	state string
+}
+
+// answers are a merge request's reviewers who asked for changes or approved, then its approvers
+// who are no such reviewer, each person once.
+func (g *RealGitLab) answers(ctx context.Context, project string, iid int) ([]verdict, error) {
+	var reviewers []struct {
+		User  user   `json:"user"`
+		State string `json:"state"`
+	}
+	if err := g.get(ctx, fmt.Sprintf("projects/%s/merge_requests/%d/reviewers", pid(project), iid), true, &reviewers); err != nil {
+		return nil, err
+	}
+	var approvals struct {
+		ApprovedBy []struct {
+			User user `json:"user"`
+		} `json:"approved_by"`
+	}
+	if err := g.get(ctx, fmt.Sprintf("projects/%s/merge_requests/%d/approvals", pid(project), iid), true, &approvals); err != nil {
+		return nil, err
+	}
+	var out []verdict
+	seen := map[string]bool{}
+	for _, r := range reviewers {
+		state := map[string]string{"requested_changes": "changes_requested", "approved": "approved"}[r.State]
+		if state != "" && r.User.Username != "" {
+			out, seen[r.User.Username] = append(out, verdict{r.User, state}), true
+		}
+	}
+	for _, a := range approvals.ApprovedBy {
+		if a.User.Username != "" && !seen[a.User.Username] {
+			out, seen[a.User.Username] = append(out, verdict{a.User, "approved"}), true
+		}
+	}
+	return out, nil
 }
 
 type noteJSON struct {

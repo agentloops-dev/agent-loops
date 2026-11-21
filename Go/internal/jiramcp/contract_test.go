@@ -14,9 +14,7 @@ import (
 // The forge contract (#6191) over the fake Jira: issue PROJ-1 is the story's.
 
 // jiraMissing are the contract's events this server does not give, with their bugs.
-var jiraMissing = map[string]string{
-	"issue.closed": "#6297: no event for an issue that moves to a Done status (its status category done)",
-}
+var jiraMissing = map[string]string{}
 
 func TestForgeContract(t *testing.T) {
 	f := &fakeJira{}
@@ -63,8 +61,8 @@ func TestForgeContract(t *testing.T) {
 				one.Labels = []string{"bug"}
 				add(Labelled, func(a *Activity) { a.Label = "bug" })
 			case forgecontract.IssueClose:
-				// Jira gives no issue.closed (jiraMissing): the issue only moves to Done.
 				one.Status, one.StatusCategory = "Done", "done"
+				add(Closed, func(a *Activity) { a.Status = "Done" })
 			case forgecontract.IssueRefused:
 				f.mu.Lock()
 				f.err = &JiraError{Kind: RateLimited, Message: "Jira's rate limit is reached", RetryAfterMs: 60000}
