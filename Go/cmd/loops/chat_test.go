@@ -234,7 +234,7 @@ func (f *chatFake) note(method string, v any) {
 	f.ch <- controllink.Note{Host: "H", Method: method, Params: b}
 }
 
-var here = place{machine: wire.ControlMachine{ID: "H", Name: "Alex's MacBook Pro"}, folder: "file:///src/agent-loops/"}
+var chatHere = place{machine: wire.ControlMachine{ID: "H", Name: "Alex's MacBook Pro"}, folder: "file:///src/agent-loops/"}
 
 func waitFor(t *testing.T, what string, ok func() bool) {
 	t.Helper()
@@ -253,11 +253,11 @@ func TestAPromptStartsASessionFromTheCLIAndAScriptFollowsItToTheEndOfItsTurn(t *
 	out := &syncBuffer{}
 	done := make(chan error, 1)
 	go func() {
-		done <- runChat(context.Background(), f, here, options{}, chatArgs{text: "update the parity table"}, terminal{out: out, st: plain})
+		done <- runChat(context.Background(), f, chatHere, options{}, chatArgs{text: "update the parity table"}, terminal{out: out, st: plain})
 	}()
 	waitFor(t, "the start", func() bool { return len(f.called("presence/report")) == 1 })
 	start := f.called("agents/start")[0].(wire.StartRequest)
-	if start.RuntimeID != autoRuntime || start.Cwd != here.folder || start.Prompt != "update the parity table" || start.StartedVia == nil || *start.StartedVia != wire.StartedViaCLI {
+	if start.RuntimeID != autoRuntime || start.Cwd != chatHere.folder || start.Prompt != "update the parity table" || start.StartedVia == nil || *start.StartedVia != wire.StartedViaCLI {
 		t.Fatalf("the start: %+v", start)
 	}
 	if r := f.called("presence/report")[0].(wire.PresenceReport); r.Showing == nil || *r.Showing != "B21E9000-0000-0000-0000-000000000000" {
@@ -311,7 +311,7 @@ func TestContinuingShowsTheLastEntriesAndAnswersAWaitingCardInTheTerminal(t *tes
 	out := &syncBuffer{}
 	done := make(chan error, 1)
 	go func() {
-		done <- runChat(context.Background(), f, here, options{}, chatArgs{}, terminal{out: out, st: plain, keys: keys, raw: true, width: func() int { return 80 }})
+		done <- runChat(context.Background(), f, chatHere, options{}, chatArgs{}, terminal{out: out, st: plain, keys: keys, raw: true, width: func() int { return 80 }})
 	}()
 	waitFor(t, "the card", func() bool { return strings.Contains(out.String(), "Allow once") })
 	keys <- key{kind: keyText, text: "1"}
@@ -358,7 +358,7 @@ func TestControlCStopsTheTurnAndASecondOneLeaves(t *testing.T) {
 	out := &syncBuffer{}
 	done := make(chan error, 1)
 	go func() {
-		done <- runChat(context.Background(), f, here, options{}, chatArgs{text: "go"}, terminal{out: out, st: plain, keys: keys, raw: true})
+		done <- runChat(context.Background(), f, chatHere, options{}, chatArgs{text: "go"}, terminal{out: out, st: plain, keys: keys, raw: true})
 	}()
 	keys <- key{kind: keyInterrupt}
 	waitFor(t, "the stop", func() bool { return len(f.called("agents/stop")) == 1 })

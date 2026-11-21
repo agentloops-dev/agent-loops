@@ -12,5 +12,7 @@
 set -eu
 [ $# -ge 1 ] || { echo "usage: scale-fixture.sh STORE_DIR [N]" >&2; exit 2; }
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-cd "$root/Go"
-exec go run ./cmd/scale-seed -store "$1" -n "${2:-1000}"
+# go.sh runs in Go/: a relative STORE_DIR is from the caller's folder.
+case $1 in /*) store=$1 ;; *) store=$PWD/$1 ;; esac
+# Through go.sh, so a Mac run uses the shared, bounded caches and not Go's default one (#6462).
+exec "$root/Go/scripts/go.sh" run ./cmd/scale-seed -store "$store" -n "${2:-1000}"

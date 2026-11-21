@@ -189,6 +189,7 @@ func turn(ctx context.Context, s *controllink.Session, host, rt, cwd, prompt str
 	var id string
 	json.Unmarshal(r, &id)
 	fmt.Println("agent", id)
+	w := turnWatch{ctx: ctx, s: s, host: host, id: id, allow: allow}
 	deadline := time.After(wait)
 	for {
 		select {
@@ -199,109 +200,147 @@ func turn(ctx context.Context, s *controllink.Session, host, rt, cwd, prompt str
 			if n.Host != host {
 				continue
 			}
-			switch n.Method {
-			case "agent/entry":
-				var e struct {
-					AgentID string `json:"agentID"`
-					Entry   struct {
-						Kind map[string]json.RawMessage `json:"kind"`
-					} `json:"entry"`
-				}
-				json.Unmarshal(n.Params, &e)
-				if !strings.EqualFold(e.AgentID, id) {
-					continue
-				}
-				for k, v := range e.Entry.Kind {
-					switch k {
-					case "agentMessage":
-						var m struct{ Text string }
-						json.Unmarshal(v, &m)
-						fmt.Print(m.Text)
-					default:
-						t := string(v)
-						if len(t) > 160 {
-							t = t[:160] + "…"
-						}
-						fmt.Printf("\n[%s] %s\n", k, t)
-					}
-				}
-			case "agent/permission":
-				var p struct {
-					AgentID string `json:"agentID"`
-					Request *struct {
-						ID      string `json:"id"`
-						Options []struct {
-							OptionID string `json:"optionID"`
-							Kind     string `json:"kind"`
-						} `json:"options"`
-					} `json:"request"`
-				}
-				json.Unmarshal(n.Params, &p)
-				if p.Request == nil || !strings.EqualFold(p.AgentID, id) {
-					continue
-				}
-				if !allow {
-					fmt.Printf("\n[card] waiting for an answer in the window (permission %s)\n", p.Request.ID)
-					continue
-				}
-				for _, o := range p.Request.Options {
-					if strings.HasPrefix(o.Kind, "allow") {
-						fmt.Printf("\n[card] answering %s\n", o.OptionID)
-						if _, err := s.Call(ctx, host, "permissions/answer", map[string]any{"permissionID": p.Request.ID, "optionID": o.OptionID}); err != nil {
-							fmt.Fprintf(os.Stderr, "permissions/answer: %v\n", err)
-						}
-						break
-					}
-				}
-			case "agent/elicitation":
-				var f struct {
-					AgentID string                   `json:"agentID"`
-					Request *wire.ElicitationRequest `json:"request"`
-				}
-				json.Unmarshal(n.Params, &f)
-				if f.Request == nil || !strings.EqualFold(f.AgentID, id) {
-					continue
-				}
-				b, _ := json.Marshal(f.Request.Mode)
-				fmt.Printf("\n[form] %s\n", b)
-				if !allow || f.Request.Mode.Form == nil {
-					fmt.Printf("[form] waiting for an answer in the window (form %s)\n", f.Request.ID)
-					continue
-				}
-				// The first choice of each question; yes to a yes or no.
-				content := map[string]any{}
-				for _, p := range f.Request.Mode.Form.Value.Properties {
-					switch k := p.Kind; {
-					case k.String != nil && len(k.String.Choices) > 0:
-						content[p.Name] = k.String.Choices[0].Value
-					case k.MultiSelect != nil && len(k.MultiSelect.Items) > 0:
-						content[p.Name] = []string{k.MultiSelect.Items[0].Value}
-					case k.Boolean != nil:
-						content[p.Name] = true
-					case p.IsRequired:
-						content[p.Name] = "yes"
-					}
-				}
-				fmt.Printf("[form] answering %v\n", content)
-				if _, err := s.Call(ctx, host, "elicitations/answer", map[string]any{"requestID": f.Request.ID, "action": "accept",
-					"content": content}); err != nil {
-					fmt.Fprintf(os.Stderr, "elicitations/answer: %v\n", err)
-				}
-			case "agent/changed":
-				var a struct {
-					ID          string          `json:"id"`
-					State       string          `json:"state"`
-					EndedReason string          `json:"endedReason"`
-					Report      json.RawMessage `json:"report"`
-				}
-				json.Unmarshal(n.Params, &a)
-				if strings.EqualFold(a.ID, id) && (a.State == "finished" || a.State == "stopped") {
-					fmt.Printf("\n== %s (%s) %s\n", a.State, a.EndedReason, a.Report)
-					return
-				}
+			if w.note(n.Method, n.Params) {
+				return
 			}
 		case <-deadline:
 			die("\nstill going after %s", wait)
 		}
 	}
+}
+
+// turnWatch prints one agent's notes and answers its cards and forms.
+type turnWatch struct {
+	ctx   context.Context
+	s     *controllink.Session
+	host  string
+	id    string
+	allow bool
+}
+
+// note handles one note from the host; it says true when the agent ended.
+func (w turnWatch) note(method string, params json.RawMessage) bool {
+	switch method {
+	case "agent/entry":
+		w.entry(params)
+	case "agent/permission":
+		w.permission(params)
+	case "agent/elicitation":
+		w.elicitation(params)
+	case "agent/changed":
+		return w.changed(params)
+	}
+	return false
+}
+
+func (w turnWatch) entry(params json.RawMessage) {
+	var e struct {
+		AgentID string `json:"agentID"`
+		Entry   struct {
+			Kind map[string]json.RawMessage `json:"kind"`
+		} `json:"entry"`
+	}
+	json.Unmarshal(params, &e)
+	if !strings.EqualFold(e.AgentID, w.id) {
+		return
+	}
+	for k, v := range e.Entry.Kind {
+		if k == "agentMessage" {
+			var m struct{ Text string }
+			json.Unmarshal(v, &m)
+			fmt.Print(m.Text)
+			continue
+		}
+		t := string(v)
+		if len(t) > 160 {
+			t = t[:160] + "…"
+		}
+		fmt.Printf("\n[%s] %s\n", k, t)
+	}
+}
+
+func (w turnWatch) permission(params json.RawMessage) {
+	var p struct {
+		AgentID string `json:"agentID"`
+		Request *struct {
+			ID      string `json:"id"`
+			Options []struct {
+				OptionID string `json:"optionID"`
+				Kind     string `json:"kind"`
+			} `json:"options"`
+		} `json:"request"`
+	}
+	json.Unmarshal(params, &p)
+	if p.Request == nil || !strings.EqualFold(p.AgentID, w.id) {
+		return
+	}
+	if !w.allow {
+		fmt.Printf("\n[card] waiting for an answer in the window (permission %s)\n", p.Request.ID)
+		return
+	}
+	for _, o := range p.Request.Options {
+		if strings.HasPrefix(o.Kind, "allow") {
+			fmt.Printf("\n[card] answering %s\n", o.OptionID)
+			if _, err := w.s.Call(w.ctx, w.host, "permissions/answer", map[string]any{"permissionID": p.Request.ID, "optionID": o.OptionID}); err != nil {
+				fmt.Fprintf(os.Stderr, "permissions/answer: %v\n", err)
+			}
+			return
+		}
+	}
+}
+
+func (w turnWatch) elicitation(params json.RawMessage) {
+	var f struct {
+		AgentID string                   `json:"agentID"`
+		Request *wire.ElicitationRequest `json:"request"`
+	}
+	json.Unmarshal(params, &f)
+	if f.Request == nil || !strings.EqualFold(f.AgentID, w.id) {
+		return
+	}
+	b, _ := json.Marshal(f.Request.Mode)
+	fmt.Printf("\n[form] %s\n", b)
+	if !w.allow || f.Request.Mode.Form == nil {
+		fmt.Printf("[form] waiting for an answer in the window (form %s)\n", f.Request.ID)
+		return
+	}
+	content := formAnswer(f.Request.Mode.Form.Value.Properties)
+	fmt.Printf("[form] answering %v\n", content)
+	if _, err := w.s.Call(w.ctx, w.host, "elicitations/answer", map[string]any{"requestID": f.Request.ID, "action": "accept",
+		"content": content}); err != nil {
+		fmt.Fprintf(os.Stderr, "elicitations/answer: %v\n", err)
+	}
+}
+
+func (w turnWatch) changed(params json.RawMessage) bool {
+	var a struct {
+		ID          string          `json:"id"`
+		State       string          `json:"state"`
+		EndedReason string          `json:"endedReason"`
+		Report      json.RawMessage `json:"report"`
+	}
+	json.Unmarshal(params, &a)
+	if strings.EqualFold(a.ID, w.id) && (a.State == "finished" || a.State == "stopped") {
+		fmt.Printf("\n== %s (%s) %s\n", a.State, a.EndedReason, a.Report)
+		return true
+	}
+	return false
+}
+
+// formAnswer takes the first choice of each question, and yes to a yes or no.
+func formAnswer(props []wire.ElicitationSchemaProperty) map[string]any {
+	content := map[string]any{}
+	for _, p := range props {
+		switch k := p.Kind; {
+		case k.String != nil && len(k.String.Choices) > 0:
+			content[p.Name] = k.String.Choices[0].Value
+		case k.MultiSelect != nil && len(k.MultiSelect.Items) > 0:
+			content[p.Name] = []string{k.MultiSelect.Items[0].Value}
+		case k.Boolean != nil:
+			content[p.Name] = true
+		case p.IsRequired:
+			content[p.Name] = "yes"
+		}
+	}
+	return content
 }

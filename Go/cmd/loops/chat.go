@@ -113,8 +113,8 @@ func openTerminal() (terminal, func(), error) {
 	return t, func() { _ = term.Restore(int(os.Stdin.Fd()), old) }, nil
 }
 
-// follow is one chat with one session: its state, what it shows and the cards that wait.
-type follow struct {
+// live is one chat with one session: its state, what it shows and the cards that wait.
+type live struct {
 	c       noter
 	p       place
 	o       options
@@ -134,7 +134,7 @@ type follow struct {
 }
 
 func runChat(ctx context.Context, c noter, p place, o options, a chatArgs, t terminal) error {
-	f := &follow{c: c, p: p, o: o, t: t, sc: &screen{w: t.out, raw: t.raw, width: t.width}}
+	f := &live{c: c, p: p, o: o, t: t, sc: &screen{w: t.out, raw: t.raw, width: t.width}}
 	if t.askTheme {
 		f.askTheme(ctx)
 	}
@@ -167,7 +167,7 @@ func runChat(ctx context.Context, c noter, p place, o options, a chatArgs, t ter
 }
 
 // askTheme asks the terminal for its background, and waits a moment for the answer.
-func (f *follow) askTheme(ctx context.Context) {
+func (f *live) askTheme(ctx context.Context) {
 	_, _ = io.WriteString(f.t.out, askBackground)
 	select {
 	case k, ok := <-f.t.keys:
@@ -182,7 +182,7 @@ func (f *follow) askTheme(ctx context.Context) {
 // pick is the session to continue, or nil to start one: -r names one, -c and a bare
 // loops take the newest, a prompt alone starts a new one. others counts the folder's other
 // sessions.
-func (f *follow) pick(ctx context.Context, a chatArgs) (*wire.Agent, int, error) {
+func (f *live) pick(ctx context.Context, a chatArgs) (*wire.Agent, int, error) {
 	if a.resume != "" {
 		got, err := f.find(ctx, a.resume)
 		return got, 0, err
@@ -202,7 +202,7 @@ func (f *follow) pick(ctx context.Context, a chatArgs) (*wire.Agent, int, error)
 
 // find is the session -r names: an id or the start of one (as loops ls shows it), or a
 // title, whole or a part that only one has.
-func (f *follow) find(ctx context.Context, want string) (*wire.Agent, error) {
+func (f *live) find(ctx context.Context, want string) (*wire.Agent, error) {
 	p := f.p
 	limit := int64(pageSize)
 	req := wire.ListRequest{Limit: &limit, Lean: true, IncludeArchived: true}
@@ -267,11 +267,11 @@ func match(list []wire.Agent, want string) (*wire.Agent, error) {
 	}
 }
 
-func (f *follow) host() string { return string(f.p.machine.ID) }
+func (f *live) host() string { return string(f.p.machine.ID) }
 
 // show says to the session's machine that this terminal shows the session, so its
 // entries come here (presence/report, as a client's open page says it).
-func (f *follow) show(ctx context.Context) error {
+func (f *live) show(ctx context.Context) error {
 	id := f.id
 	if _, err := f.c.Call(ctx, f.host(), "presence/report", wire.PresenceReport{Active: true, Showing: &id}); err != nil {
 		return unreachable(f.p.machineName(), err)
@@ -280,7 +280,7 @@ func (f *follow) show(ctx context.Context) error {
 }
 
 // attach is wireframe 1: the header, the last entries, the cards that wait.
-func (f *follow) attach(ctx context.Context, a wire.Agent, others int) error {
+func (f *live) attach(ctx context.Context, a wire.Agent, others int) error {
 	f.id, f.state, f.title = a.ID, a.State, titleOf(a)
 	if err := f.show(ctx); err != nil {
 		return err
@@ -324,12 +324,12 @@ func (f *follow) attach(ctx context.Context, a wire.Agent, others int) error {
 }
 
 // pending reads the cards that wait for this session, as it attaches.
-func (f *follow) pending(ctx context.Context) {
+func (f *live) pending(ctx context.Context) {
 	if r, err := f.c.Call(ctx, f.host(), "permissions/pending", wire.Empty{}); err == nil {
 		var list []wire.PermissionRequest
 		if json.Unmarshal(r, &list) == nil {
 			for i := range list {
-				if sameID(list[i].AgentID, f.id) {
+				if sameUUID(list[i].AgentID, f.id) {
 					f.ask(&card{permission: &list[i]})
 				}
 			}
@@ -339,7 +339,7 @@ func (f *follow) pending(ctx context.Context) {
 		var list []wire.ElicitationRequest
 		if json.Unmarshal(r, &list) == nil {
 			for i := range list {
-				if sameID(list[i].AgentID, f.id) {
+				if sameUUID(list[i].AgentID, f.id) {
 					f.ask(&card{elicitation: &list[i]})
 				}
 			}
@@ -347,7 +347,7 @@ func (f *follow) pending(ctx context.Context) {
 	}
 }
 
-func sameID(a, b wire.UUID) bool { return strings.EqualFold(string(a), string(b)) }
+func sameUUID(a, b wire.UUID) bool { return strings.EqualFold(string(a), string(b)) }
 
 // modelOf is the model the session's start chose, when it says one.
 func modelOf(a wire.Agent) string {
@@ -363,7 +363,7 @@ func modelOf(a wire.Agent) string {
 }
 
 // start is wireframe 2: a new session here with the prompt.
-func (f *follow) start(ctx context.Context, text string) error {
+func (f *live) start(ctx context.Context, text string) error {
 	runtime := f.o.runtime
 	if runtime == "" {
 		runtime = autoRuntime
@@ -406,7 +406,7 @@ func titleLine(text string) string {
 }
 
 // send is a prompt to the session (agents/prompt; it waits in line when a turn runs).
-func (f *follow) send(ctx context.Context, text string) error {
+func (f *live) send(ctx context.Context, text string) error {
 	if f.id == "" {
 		return f.start(ctx, text)
 	}
@@ -421,7 +421,7 @@ func (f *follow) send(ctx context.Context, text string) error {
 }
 
 // ask puts a card in line; the first in line is shown.
-func (f *follow) ask(c *card) {
+func (f *live) ask(c *card) {
 	for _, have := range f.cards {
 		if have.id() == c.id() {
 			return
@@ -433,7 +433,7 @@ func (f *follow) ask(c *card) {
 	}
 }
 
-func (f *follow) showCard() {
+func (f *live) showCard() {
 	if len(f.cards) == 0 {
 		return
 	}
@@ -449,7 +449,7 @@ func (f *follow) showCard() {
 }
 
 // answered takes a card out of line: answered here, or on another client.
-func (f *follow) answered(id wire.UUID, here bool) {
+func (f *live) answered(id wire.UUID, here bool) {
 	for i, c := range f.cards {
 		if c.id() != id {
 			continue
@@ -466,7 +466,7 @@ func (f *follow) answered(id wire.UUID, here bool) {
 }
 
 // answer is what the person typed for the card in front.
-func (f *follow) answer(ctx context.Context, text string) error {
+func (f *live) answer(ctx context.Context, text string) error {
 	c := f.cards[0]
 	if !c.answerable() {
 		f.print(indent + f.t.st.paint(roleQuiet, "Answer this one on a client (Needs you); ^D leaves."))
@@ -503,7 +503,7 @@ func (f *follow) answer(ctx context.Context, text string) error {
 var spinner = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 
 // status is the live line under the chat: working, waiting in line, needs you.
-func (f *follow) status() string {
+func (f *live) status() string {
 	st := f.t.st
 	switch {
 	case len(f.cards) > 0 || f.state == wire.AgentStateWaitingOnUser:
@@ -518,7 +518,7 @@ func (f *follow) status() string {
 }
 
 // print puts lines in the scrollback; the live part under them is drawn as it is now.
-func (f *follow) print(lines ...string) {
+func (f *live) print(lines ...string) {
 	f.tr.width = f.cols()
 	f.sc.partial = f.tr.partial()
 	f.sc.status = f.status()
@@ -527,14 +527,14 @@ func (f *follow) print(lines ...string) {
 }
 
 // cols is the terminal's width, or 0 when it has none.
-func (f *follow) cols() int {
+func (f *live) cols() int {
 	if f.t.width == nil || !f.t.raw {
 		return 0
 	}
 	return f.t.width()
 }
 
-func (f *follow) redraw() {
+func (f *live) redraw() {
 	f.tr.width = f.cols()
 	f.sc.partial = f.tr.partial()
 	f.sc.status = f.status()
@@ -545,7 +545,7 @@ func (f *follow) redraw() {
 // errLeave ends the loop with no error: ^D, or ^C twice.
 var errLeave = errors.New("leave")
 
-func (f *follow) loop(ctx context.Context) error {
+func (f *live) loop(ctx context.Context) error {
 	tick := time.NewTicker(100 * time.Millisecond)
 	defer tick.Stop()
 	notes := f.c.notes()
@@ -593,7 +593,7 @@ func (f *follow) loop(ctx context.Context) error {
 	}
 }
 
-func (f *follow) short() string {
+func (f *live) short() string {
 	if f.id == "" {
 		return ""
 	}
@@ -601,7 +601,7 @@ func (f *follow) short() string {
 }
 
 // hint is the keys' line, once, before the live chat.
-func (f *follow) hint() {
+func (f *live) hint() {
 	if f.t.keys == nil || f.hinted {
 		return
 	}
@@ -610,7 +610,7 @@ func (f *follow) hint() {
 }
 
 // leave is ^D: the terminal goes, the session goes on.
-func (f *follow) leave() {
+func (f *live) leave() {
 	f.sc.end()
 	if f.id == "" {
 		return
@@ -619,7 +619,7 @@ func (f *follow) leave() {
 }
 
 // key is one key at the prompt.
-func (f *follow) key(ctx context.Context, k key) error {
+func (f *live) key(ctx context.Context, k key) error {
 	switch k.kind {
 	case keyText:
 		f.sc.input += k.text
@@ -661,7 +661,7 @@ func (f *follow) key(ctx context.Context, k key) error {
 
 // interrupt is ^C: with words typed, they go; in a turn, it stops (as Stop in the
 // window); a second ^C soon after, or one with no turn, leaves.
-func (f *follow) interrupt(ctx context.Context) error {
+func (f *live) interrupt(ctx context.Context) error {
 	if f.sc.input != "" {
 		f.sc.input = ""
 		return nil
@@ -681,20 +681,20 @@ func (f *follow) interrupt(ctx context.Context) error {
 
 // note is one notification; it says true when the chat ends: a turn ended and there is
 // no prompt to type the next one in.
-func (f *follow) note(n controllink.Note) bool {
+func (f *live) note(n controllink.Note) bool {
 	if n.Host != f.host() || f.id == "" {
 		return false
 	}
 	switch n.Method {
 	case wire.NotifyAgentEntry.Name:
 		var e wire.EntryNotification
-		if json.Unmarshal(n.Params, &e) != nil || !sameID(e.AgentID, f.id) {
+		if json.Unmarshal(n.Params, &e) != nil || !sameUUID(e.AgentID, f.id) {
 			return false
 		}
 		f.print(f.tr.entry(e.Entry)...)
 	case wire.NotifyAgentPermission.Name:
 		var p wire.PermissionNotification
-		if json.Unmarshal(n.Params, &p) != nil || !sameID(p.AgentID, f.id) {
+		if json.Unmarshal(n.Params, &p) != nil || !sameUUID(p.AgentID, f.id) {
 			return false
 		}
 		if p.Request != nil {
@@ -704,7 +704,7 @@ func (f *follow) note(n controllink.Note) bool {
 		}
 	case wire.NotifyAgentElicitation.Name:
 		var e wire.ElicitationNotification
-		if json.Unmarshal(n.Params, &e) != nil || !sameID(e.AgentID, f.id) {
+		if json.Unmarshal(n.Params, &e) != nil || !sameUUID(e.AgentID, f.id) {
 			return false
 		}
 		if e.Request != nil {
@@ -714,7 +714,7 @@ func (f *follow) note(n controllink.Note) bool {
 		}
 	case wire.NotifyAgentChanged.Name:
 		var a wire.Agent
-		if json.Unmarshal(n.Params, &a) != nil || !sameID(a.ID, f.id) {
+		if json.Unmarshal(n.Params, &a) != nil || !sameUUID(a.ID, f.id) {
 			return false
 		}
 		return f.changed(a)
@@ -723,7 +723,7 @@ func (f *follow) note(n controllink.Note) bool {
 }
 
 // changed is the session's new state: a turn that began, or one that ended.
-func (f *follow) changed(a wire.Agent) bool {
+func (f *live) changed(a wire.Agent) bool {
 	f.state = a.State
 	if a.Title != nil {
 		f.title = titleOf(a)
