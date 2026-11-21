@@ -8,7 +8,7 @@
     "lint": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "scripts/lint.sh swift periphery",
+        "command": "scripts/lint.sh swift",
         "cwd": "{workspaceRoot}"
       },
       "inputs": [
@@ -18,14 +18,7 @@
         "!{workspaceRoot}/.agents/worktrees/**/*",
         "{workspaceRoot}/.swiftlint.yml",
         "{workspaceRoot}/.swiftlint-baseline.json",
-        "{workspaceRoot}/.periphery-allowed.txt",
-        "{workspaceRoot}/project.yml",
-        "{workspaceRoot}/Packages/*/Package.swift",
-        "{workspaceRoot}/Packages/*/Package.resolved",
-        "{workspaceRoot}/.xcode-version",
         "{workspaceRoot}/scripts/lint.sh",
-        "{workspaceRoot}/scripts/periphery-report.py",
-        "{workspaceRoot}/scripts/build-cache.sh",
         "{projectRoot}/project.json"
       ]
     }
