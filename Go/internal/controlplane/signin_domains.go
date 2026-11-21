@@ -293,8 +293,9 @@ func (si *signIns) sweepOIDC(ctx context.Context) {
 				continue
 			}
 			base := strings.TrimSuffix(k.Key, ".json")
-			si.s.cfg.Store.Delete(ctx, base+usedSuffix)
-			si.s.cfg.Store.Delete(ctx, k.Key)
+			// A key left is deleted by the next sweep.
+			_ = si.s.cfg.Store.Delete(ctx, base+usedSuffix)
+			_ = si.s.cfg.Store.Delete(ctx, k.Key)
 		}
 	}
 }

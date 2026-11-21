@@ -51,7 +51,8 @@ func NewIssuer(t *testing.T, iss string) *Issuer {
 			set = append(set, map[string]string{"kty": "RSA", "kid": kid, "use": "sig", "alg": "RS256",
 				"n": b64(k.N.Bytes()), "e": b64(big.NewInt(int64(k.E)).Bytes())})
 		}
-		json.NewEncoder(w).Encode(map[string]any{"keys": set})
+		// The client has gone; there is nobody to tell.
+		_ = json.NewEncoder(w).Encode(map[string]any{"keys": set})
 	}))
 	t.Cleanup(i.Server.Close)
 	return i
@@ -160,12 +161,14 @@ func NewGitHub(t *testing.T) *GitHub {
 		}
 		switch {
 		case r.URL.Path == "/user":
-			json.NewEncoder(w).Encode(map[string]any{"id": u.id, "login": u.login, "type": "User"})
+			// The client has gone; there is nobody to tell.
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": u.id, "login": u.login, "type": "User"})
 		case strings.HasPrefix(r.URL.Path, "/user/memberships/orgs/"):
 			org := strings.TrimPrefix(r.URL.Path, "/user/memberships/orgs/")
 			for _, o := range u.orgs {
 				if strings.EqualFold(o, org) {
-					json.NewEncoder(w).Encode(map[string]any{"state": "active"})
+					// The client has gone; there is nobody to tell.
+					_ = json.NewEncoder(w).Encode(map[string]any{"state": "active"})
 					return
 				}
 			}

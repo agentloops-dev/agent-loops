@@ -378,7 +378,8 @@ func (i *Installer) putFiles(ctx context.Context, server installer, found *facts
 	// The MCP servers Agents ships (#700), beside agentsd. One that fails to copy leaves
 	// the host without it, not without a host.
 	for _, shipped := range shippedFor(arch, files) {
-		server.installServer(ctx, shipped.name, shipped.file, shipped.sha256)
+		// One that fails to copy leaves the host without it, not without a host.
+		_ = server.installServer(ctx, shipped.name, shipped.file, shipped.sha256)
 	}
 	// The runtimes' toolsets (#1136), as the window's ToolsetInstaller puts them on a server
 	// it holds. One that cannot be installed leaves the host without that runtime, not

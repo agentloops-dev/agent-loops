@@ -131,7 +131,8 @@ func (s *Secrets) write(all map[string]map[string]string) error {
 		return err
 	}
 	ok = true
-	os.Chmod(s.file, 0o600)
+	// The scratch file was 0600 already: this only keeps an older file's mode right.
+	_ = os.Chmod(s.file, 0o600)
 	s.held = all
 	return nil
 }

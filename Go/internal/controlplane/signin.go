@@ -694,10 +694,10 @@ func (si *signIns) answerSignInLine(in signInLine, m *message) bool {
 	case "signIn/providers":
 		settings, _, err := si.settings(context.Background())
 		if err != nil {
-			conn.SendNow(replyError(m.ID, fail(storeUnavailable, "The sign-in settings could not be read.")))
+			conn.Reply(replyError(m.ID, fail(storeUnavailable, "The sign-in settings could not be read.")))
 			return false
 		}
-		conn.SendNow(reply(m.ID, si.providers(settings, false, in.helloNonce)))
+		conn.Reply(reply(m.ID, si.providers(settings, false, in.helloNonce)))
 	case "signIn/pair":
 		si.answerSignInPair(in, m)
 		return true
@@ -712,12 +712,12 @@ func (si *signIns) answerSignInLine(in signInLine, m *message) bool {
 	case "signIn/discover":
 		d, err := require[wire.SignInDiscover](m.Params, "SignInDiscover")
 		if err != nil {
-			conn.SendNow(replyError(m.ID, err))
+			conn.Reply(replyError(m.ID, err))
 			return false
 		}
-		conn.SendNow(reply(m.ID, si.discover(context.Background(), d)))
+		conn.Reply(reply(m.ID, si.discover(context.Background(), d)))
 	default:
-		conn.SendNow(replyError(m.ID, fail(notPermitted, "Only signIn/providers, signIn/discover, signIn/pair, signIn/ask, signIn/orgStart and signIn/ticket are answered on a sign-in connection.")))
+		conn.Reply(replyError(m.ID, fail(notPermitted, "Only signIn/providers, signIn/discover, signIn/pair, signIn/ask, signIn/orgStart and signIn/ticket are answered on a sign-in connection.")))
 	}
 	return false
 }
@@ -730,12 +730,12 @@ func (si *signIns) answerSignInPair(in signInLine, m *message) {
 		var admitted *wire.Admitted
 		admitted, err = si.pair(context.Background(), conn, in.client, in.public, in.helloNonce, p)
 		if err == nil {
-			conn.SendNow(reply(m.ID, admitted))
+			conn.Reply(reply(m.ID, admitted))
 			return
 		}
 	}
 	si.s.log("a sign-in with " + signin.Title(p.Provider) + " from " + in.source + " was refused: " + asRPC(err).Message)
-	conn.SendNow(replyError(m.ID, err))
+	conn.Reply(replyError(m.ID, err))
 }
 
 // answerSignInAsk answers signIn/ask: a browser admitted by approval, or the refusal,
@@ -747,12 +747,12 @@ func (si *signIns) answerSignInAsk(in signInLine, m *message) {
 		var admitted *wire.Admitted
 		admitted, err = si.ask(context.Background(), conn, in.client, in.public, a)
 		if err == nil {
-			conn.SendNow(reply(m.ID, admitted))
+			conn.Reply(reply(m.ID, admitted))
 			return
 		}
 	}
 	si.s.log("a browser's sign-in by approval from " + in.source + " was refused: " + asRPC(err).Message)
-	conn.SendNow(replyError(m.ID, err))
+	conn.Reply(replyError(m.ID, err))
 }
 
 // answerSignInOrgStart answers signIn/orgStart. An org provider's flow (#1002): the
@@ -763,11 +763,11 @@ func (si *signIns) answerSignInOrgStart(in signInLine, m *message) {
 	if err == nil {
 		var started wire.SignInOrgStarted
 		if started, err = si.orgStart(context.Background(), o, binding{hello: in.helloNonce, client: in.client, public: in.public}); err == nil {
-			conn.SendNow(reply(m.ID, started))
+			conn.Reply(reply(m.ID, started))
 			return
 		}
 	}
-	conn.SendNow(replyError(m.ID, err))
+	conn.Reply(replyError(m.ID, err))
 }
 
 // answerSignInTicket answers signIn/ticket: the org sign-in paired, or the refusal,
@@ -778,12 +778,12 @@ func (si *signIns) answerSignInTicket(in signInLine, m *message) {
 	if err == nil {
 		var paired *wire.SignInTicketResult
 		if paired, err = si.ticketPair(context.Background(), in.client, in.public, in.helloNonce, t); err == nil {
-			conn.SendNow(reply(m.ID, paired))
+			conn.Reply(reply(m.ID, paired))
 			return
 		}
 	}
 	si.s.log("an org sign-in from " + in.source + " was refused: " + asRPC(err).Message)
-	conn.SendNow(replyError(m.ID, err))
+	conn.Reply(replyError(m.ID, err))
 }
 
 // pair is signIn/pair: check the sign-in, find its person, and pair the client as theirs.

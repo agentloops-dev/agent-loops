@@ -237,8 +237,9 @@ func timeouts(srv *http.Server) *http.Server {
 // noDeadlines clears a request's timeouts, for one that becomes a WebSocket.
 func noDeadlines(w http.ResponseWriter) {
 	rc := http.NewResponseController(w)
-	rc.SetReadDeadline(time.Time{})
-	rc.SetWriteDeadline(time.Time{})
+	// A writer without deadlines has none to clear.
+	_ = rc.SetReadDeadline(time.Time{})
+	_ = rc.SetWriteDeadline(time.Time{})
 }
 
 // refusedRate answers a line over its client key's rate: a request with tooManyRequests,

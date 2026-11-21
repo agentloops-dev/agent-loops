@@ -390,7 +390,8 @@ func (b *Book) SetPolicy(ctx context.Context, user string, signed wire.SignedYou
 			var currentSigned wire.SignedYourPolicy
 			if json.Unmarshal(s.Policy, &currentSigned) == nil {
 				if decoded, err := base64.StdEncoding.DecodeString(currentSigned.Policy); err == nil {
-					json.Unmarshal(decoded, &current)
+					// A policy that does not read is none.
+					_ = json.Unmarshal(decoded, &current)
 				}
 			}
 		}
@@ -438,7 +439,8 @@ func (b *Book) TakeNotice(ctx context.Context, user string, given wire.NoticeLim
 		var bucket noticebucket.Bucket
 		if raw != nil {
 			// A record that will not read is a full bucket, not a person who can be told nothing.
-			json.Unmarshal(raw, &bucket)
+			// A record that will not read is a full bucket.
+			_ = json.Unmarshal(raw, &bucket)
 		}
 		left, next, ok := bucket.Take(b.now(), burst, cooldown)
 		out = wire.NoticeTaken{Sent: ok, Left: int64(left), NextAt: wire.DateOf(next)}
