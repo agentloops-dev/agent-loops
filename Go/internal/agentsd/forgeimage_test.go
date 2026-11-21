@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/connections"
-	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -266,7 +265,6 @@ func TestForgeImageCacheIsBounded(t *testing.T) {
 // Forgejo's (on http too, its own root), Azure DevOps' and a Jira Data Center's. Only Azure
 // DevOps and Jira get a token, each its own; a host or path off the lists asks nothing.
 func TestForgeImageReadsEachForgesAvatars(t *testing.T) {
-	flaky.UnderLoad(t, "#6359")
 	t.Parallel()
 
 	d, c, _, file := forgeDaemon(t)
