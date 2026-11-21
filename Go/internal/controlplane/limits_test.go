@@ -17,7 +17,6 @@ import (
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/records"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
-	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 	"github.com/coder/websocket"
 )
@@ -45,11 +44,16 @@ func TestABucketRefillsAtItsRate(t *testing.T) {
 }
 
 // A client over its rate for a costly method is answered tooManyRequests, and its socket
-// stays open: the next cheap call goes.
+// stays open: the next cheap call goes. The rates' clock stands still (#6555): on the wall
+// clock a slow run gave tokens back while the calls ran, and too few were refused.
 func TestACostlyMethodOverItsRateIsRefusedAndTheSocketStays(t *testing.T) {
-	flaky.UnderLoad(t, "#6555")
 	t.Parallel()
 	p := startPlane(t, store.NewMemory(), controllink.NewPrivateKey())
+	rates := p.s.router.rates
+	still := time.Unix(1000, 0)
+	rates.mu.Lock()
+	rates.now = func() time.Time { return still }
+	rates.mu.Unlock()
 	_, s := p.client("Window")
 	ctx := context.Background()
 	refused := 0
@@ -59,8 +63,8 @@ func TestACostlyMethodOverItsRateIsRefusedAndTheSocketStays(t *testing.T) {
 			refused++
 		}
 	}
-	if refused < 5 {
-		t.Fatalf("%d of %d costly calls refused; want at least 5", refused, costlyBurst+5)
+	if refused != 5 {
+		t.Fatalf("%d of %d costly calls refused; want 5", refused, costlyBurst+5)
 	}
 	if _, err := s.Call(ctx, "", "control/status", nil); err != nil {
 		t.Fatalf("the socket did not stay: %v", err)
