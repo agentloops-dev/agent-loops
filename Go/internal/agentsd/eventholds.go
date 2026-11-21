@@ -5,7 +5,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -43,7 +42,8 @@ func (d *Daemon) checkEventWaitServersWithin(limit time.Duration, serverNames []
 		err     error
 	}
 	done := make(chan checked, 1)
-	safe.Go("wait's servers", func() {
+	// Counted, so Shutdown waits for it: stopping ends the connections it may wait on.
+	d.goJob("wait's servers", func() {
 		servers, warning, err := d.checkEventWaitServers(serverNames, req, folder, appTaken)
 		done <- checked{servers, warning, err}
 	})
