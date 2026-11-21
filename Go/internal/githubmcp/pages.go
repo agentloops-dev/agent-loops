@@ -237,7 +237,13 @@ func (e gqlError) aboutIssueFields() bool {
 
 // graphql runs query with vars, and reads its data into into.
 func (g *RealGitHub) graphql(ctx context.Context, query string, vars map[string]any, into any) error {
-	answer, err := g.graphqlAnswer(ctx, query, vars)
+	return g.graphqlRead(ctx, query, vars, into, false)
+}
+
+// graphqlRead is graphql; with join, an ask of the same query and vars already running is waited for, not asked
+// again (#6538). Only a read may join.
+func (g *RealGitHub) graphqlRead(ctx context.Context, query string, vars map[string]any, into any, join bool) error {
+	answer, err := g.graphqlAnswerJoined(ctx, query, vars, join)
 	if err != nil {
 		return err
 	}
@@ -261,8 +267,17 @@ func (g *RealGitHub) graphql(ctx context.Context, query string, vars map[string]
 // runs it again without them; when the GitHub has no issue fields at all, it leaves them out
 // from then on.
 func (g *RealGitHub) graphqlFields(ctx context.Context, query string, vars map[string]any, into any) error {
+	return g.graphqlFieldsRead(ctx, query, vars, into, false)
+}
+
+// searchFields is graphqlFields for a list's read: an ask of the same list already running is waited for (#6538).
+func (g *RealGitHub) searchFields(ctx context.Context, query string, vars map[string]any, into any) error {
+	return g.graphqlFieldsRead(ctx, query, vars, into, true)
+}
+
+func (g *RealGitHub) graphqlFieldsRead(ctx context.Context, query string, vars map[string]any, into any, join bool) error {
 	if !g.noIssueFields.Load() {
-		err := g.graphql(ctx, query, vars, into)
+		err := g.graphqlRead(ctx, query, vars, into, join)
 		var gerr *GitHubError
 		if err == nil || !errors.As(err, &gerr) || !gerr.issueFields {
 			return err
@@ -271,7 +286,7 @@ func (g *RealGitHub) graphqlFields(ctx context.Context, query string, vars map[s
 			g.noIssueFields.Store(true)
 		}
 	}
-	return g.graphql(ctx, strings.Replace(query, priorityFields, "", 1), vars, into)
+	return g.graphqlRead(ctx, strings.Replace(query, priorityFields, "", 1), vars, into, join)
 }
 
 // gqlAnswer is GraphQL's answer: its data and its errors.
@@ -282,8 +297,20 @@ type gqlAnswer struct {
 
 // graphqlAnswer runs query and reads GitHub's answer, errors and all.
 func (g *RealGitHub) graphqlAnswer(ctx context.Context, query string, vars map[string]any) (gqlAnswer, error) {
+	return g.graphqlAnswerJoined(ctx, query, vars, false)
+}
+
+// graphqlAnswerJoined is graphqlAnswer; with join, it waits for the same request already running.
+func (g *RealGitHub) graphqlAnswerJoined(ctx context.Context, query string, vars map[string]any, join bool) (gqlAnswer, error) {
 	request, _ := json.Marshal(map[string]any{"query": query, "variables": vars})
-	body, err := g.do(ctx, http.MethodPost, "graphql", request, false)
+	post := func() ([]byte, error) { return g.do(ctx, http.MethodPost, "graphql", request, false) }
+	var body []byte
+	var err error
+	if join {
+		body, err = g.joined("graphql "+string(request), post)
+	} else {
+		body, err = post()
+	}
 	if err != nil {
 		return gqlAnswer{}, err
 	}
