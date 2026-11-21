@@ -88,7 +88,8 @@ func (d *Daemon) askLease(ctx context.Context, polls, release []string) *wire.Bu
 }
 
 // mcpMayPoll says whether this machine polls s now: it holds the lease, there is none, or
-// s cannot stand by. Asking fails open: the machine polls.
+// s cannot stand by. Asking fails open: the machine polls. Once ctx has ended it is false
+// and changes nothing, and the caller stops.
 func (d *Daemon) mcpMayPoll(ctx context.Context, s *mcpSubscription) bool {
 	b := &d.mcpLeases
 	b.mu.Lock()
@@ -97,6 +98,11 @@ func (d *Daemon) mcpMayPoll(ctx context.Context, s *mcpSubscription) bool {
 	polls := func(holds string) bool {
 		b.mu.Lock()
 		defer b.mu.Unlock()
+		if ctx.Err() != nil {
+			// It ended while it asked (#5742): mcpLetGo has forgotten it, and a new
+			// subscription may have the same id now. Write nothing over either.
+			return false
+		}
 		delete(b.standing, s.id)
 		if holds != "" {
 			if b.held == nil {
@@ -127,6 +133,9 @@ func (d *Daemon) mcpMayPoll(ctx context.Context, s *mcpSubscription) bool {
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	if ctx.Err() != nil {
+		return false
+	}
 	delete(b.held, s.id)
 	if b.standing == nil {
 		b.standing = map[string]string{}
