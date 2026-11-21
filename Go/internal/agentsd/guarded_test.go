@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	goruntime "runtime"
 	"strings"
 	"testing"
 	"time"
@@ -195,6 +196,88 @@ func TestThePersonsOwnEditInARepositoryIsTheirsAfterTheSettle(t *testing.T) {
 func approvedSoon(t *testing.T, d *Daemon, dir, path string) {
 	t.Helper()
 	until(t, path+" approved", func() bool { return d.settled(dir, path) })
+}
+
+// A guarded file first seen while it is written (empty, or half of it) is not approved
+// as it stands: the whole copy is then a change like any other, and a pull's waits (#6525).
+func TestAFileFirstSeenHalfWrittenIsNotApproved(t *testing.T) {
+	t.Parallel()
+
+	d, _ := start(t, t.TempDir())
+	defer d.Shutdown()
+	for _, half := range []string{"", `{"diskSpace":{"lowPer`} {
+		// A folder the app has not added, so no watch: only the test checks the file.
+		dir := repo(t)
+		file := filepath.Join(dir, ".agents", "folder.json")
+		must(t, os.MkdirAll(filepath.Dir(file), 0o755))  //nolint:gosec // G301: the mode .agents always has
+		must(t, os.WriteFile(file, []byte(half), 0o644)) //nolint:gosec // G306: the mode folder.json always has
+		d.checkGuarded(dir, ".agents/folder.json", nil)
+		if s := guardedStateOf(d, dir, ".agents/folder.json"); s.ApprovedDigest != nil || s.ApprovedContent != nil {
+			t.Fatalf("%q was approved", half)
+		}
+		// The whole copy, as a pull brings it: in HEAD, then on disk.
+		must(t, store.WriteAtomically(file, []byte(`{"diskSpace":{"lowPercent":50}}`), 0o644))
+		must(t, errOnly(git(dir, "add", ".agents/folder.json")))
+		must(t, errOnly(git(dir, "commit", "-q", "-m", "pulled")))
+		d.checkGuarded(dir, ".agents/folder.json", nil)
+		if s := guardedStateOf(d, dir, ".agents/folder.json"); s.Pending == nil || !s.Pending.ByGit || s.ApprovedDigest != nil {
+			t.Fatalf("after %q: %+v", half, s)
+		}
+	}
+}
+
+// A check reads the file with guardedMu held (#6521, #6525): a check that waits for the
+// lock records the copy on disk when it gets it, not an older one it read before.
+func TestACheckReadsTheFileUnderTheLock(t *testing.T) {
+	t.Parallel()
+
+	d, _ := start(t, t.TempDir())
+	defer d.Shutdown()
+	for _, tc := range []struct{ path, first, next string }{
+		{".agents/folder.json", `{"diskSpace":{"lowPercent":30}}`, `{"diskSpace":{"lowPercent":50}}`},
+		{folderPolicyFile, `{"helpers":{"mostRunning":2}}`, `{"helpers":{"mostRunning":1}}`}, // tighter: applies at once
+	} {
+		// Not a repository, with nothing running: the person's own edit is approved at once.
+		dir := t.TempDir()
+		file := filepath.Join(dir, tc.path)
+		must(t, os.MkdirAll(filepath.Dir(file), 0o755)) //nolint:gosec // G301: the mode .agents always has
+		must(t, store.WriteAtomically(file, []byte(tc.first), 0o644))
+		d.checkGuarded(dir, tc.path, nil)
+		if s := guardedStateOf(d, dir, tc.path); string(s.ApprovedContent) != tc.first {
+			t.Fatalf("%s first seen: %+v", tc.path, s)
+		}
+		d.guardedMu.Lock()
+		done := make(chan struct{})
+		go func() { d.checkGuarded(dir, tc.path, nil); close(done) }()
+		until(t, tc.path+"'s check waits for the lock", checkWaitsForTheLock)
+		must(t, store.WriteAtomically(file, []byte(tc.next), 0o644))
+		d.guardedMu.Unlock()
+		<-done
+		if s := guardedStateOf(d, dir, tc.path); string(s.ApprovedContent) != tc.next || s.Pending != nil {
+			t.Fatalf("%s: the check recorded the copy it read before the lock: %q %+v", tc.path, s.ApprovedContent, s.Pending)
+		}
+	}
+}
+
+// checkWaitsForTheLock is whether a goroutine in a guarded check is blocked on a mutex.
+// Another test's check can be too, so it can say yes early: the test then passes for a
+// check that had not begun, never fails for one that has.
+func checkWaitsForTheLock() bool {
+	buf := make([]byte, 1<<20)
+	for _, g := range strings.Split(string(buf[:goruntime.Stack(buf, true)]), "\n\n") {
+		if strings.Contains(g, "[sync.Mutex.Lock") && strings.Contains(g, ".checkGuarded(") {
+			return true
+		}
+	}
+	return false
+}
+
+// guardedStateOf is a copy of a guarded file's record in dir.
+func guardedStateOf(d *Daemon, dir, path string) guardedState {
+	d.guardedMu.Lock()
+	defer d.guardedMu.Unlock()
+	s, _ := d.stateOf(dir, path)
+	return *s
 }
 
 func TestDiffLines(t *testing.T) {

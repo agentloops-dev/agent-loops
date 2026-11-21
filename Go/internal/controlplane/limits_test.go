@@ -17,6 +17,7 @@ import (
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/records"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 	"github.com/coder/websocket"
 )
@@ -47,6 +48,7 @@ func TestABucketRefillsAtItsRate(t *testing.T) {
 // stays open: the next cheap call goes. The rates' clock stands still (#6555): on the wall
 // clock a slow run gave tokens back while the calls ran, and too few were refused.
 func TestACostlyMethodOverItsRateIsRefusedAndTheSocketStays(t *testing.T) {
+	flaky.UnderLoad(t, "#6555")
 	t.Parallel()
 	p := startPlane(t, store.NewMemory(), controllink.NewPrivateKey())
 	rates := p.s.router.rates
