@@ -35,7 +35,7 @@ func forgeErrorWords(message string) string {
 	if m == nil {
 		return message
 	}
-	cause := m[1]
+	cause := strings.ToLower(m[1])
 	switch {
 	case strings.Contains(cause, "connection refused"):
 		return "could not be reached (the connection was refused)"
