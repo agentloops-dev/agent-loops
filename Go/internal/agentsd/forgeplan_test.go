@@ -2,7 +2,6 @@ package agentsd
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -153,7 +152,7 @@ func TestForgePlanStepsAndLead(t *testing.T) {
 	gh.plan.Epic.SubTotal, gh.plan.Epic.SubDone = 2, 1
 	epic := wire.LineageNode{Kind: "issue", Ref: "github:issue:alexec/agents#3265"}
 	var plan wire.ForgePlan
-	json.Unmarshal(c.call(t, 1, "forge/plan", wire.ForgePlanRequest{Node: epic}), &plan)
+	mustUnmarshal(t, c.call(t, 1, "forge/plan", wire.ForgePlanRequest{Node: epic}), &plan)
 	if plan.Item.Node != epic || plan.Item.Progress == nil || plan.Item.Progress.Done != 1 || len(plan.Children) != 2 ||
 		plan.Children[0].Item.Node.Ref != "github:issue:alexec/agents#3267" || plan.Children[1].Step != 2 || plan.Lead != nil {
 		t.Fatalf("plan: %+v", plan)
@@ -176,7 +175,7 @@ func TestForgePlanStepsAndLead(t *testing.T) {
 	d.noteLineage(nil, lane)
 	d.lineageSettle(5 * time.Second)
 	plan = wire.ForgePlan{}
-	json.Unmarshal(c.call(t, 2, "forge/plan", wire.ForgePlanRequest{Node: epic}), &plan)
+	mustUnmarshal(t, c.call(t, 2, "forge/plan", wire.ForgePlanRequest{Node: epic}), &plan)
 	if plan.Lead == nil || plan.Lead.Session != lead.ID || deref(plan.Lead.Title) != "Plans lead" || plan.Lead.State != wire.AgentStateRunning {
 		t.Fatalf("lead: %+v", plan.Lead)
 	}
@@ -197,14 +196,14 @@ func TestForgePlanOnGitLabAndLinear(t *testing.T) {
 
 	_, c, _, _, _, _ := allForgesDaemon(t)
 	var plan wire.ForgePlan
-	json.Unmarshal(c.call(t, 1, "forge/plan", wire.ForgePlanRequest{Node: wire.LineageNode{Kind: "issue", Ref: "gitlab:issue:group/app#5"}}), &plan)
+	mustUnmarshal(t, c.call(t, 1, "forge/plan", wire.ForgePlanRequest{Node: wire.LineageNode{Kind: "issue", Ref: "gitlab:issue:group/app#5"}}), &plan)
 	if len(plan.Children) != 2 || plan.Children[0].Item.Node.Ref != "gitlab:issue:group/app#7" || plan.Children[1].Step != 2 ||
 		plan.Children[0].Item.Parent == nil || plan.Children[0].Item.Parent.Ref != "gitlab:issue:group/app#5" || deref(plan.Item.Level) != "epic" ||
 		plan.Item.Progress == nil || plan.Item.Progress.Total != 2 {
 		t.Fatalf("GitLab plan: %+v", plan)
 	}
 	plan = wire.ForgePlan{}
-	json.Unmarshal(c.call(t, 2, "forge/plan", wire.ForgePlanRequest{Node: wire.LineageNode{Kind: "issue", Ref: "linear:issue:eng#ENG-5"}}), &plan)
+	mustUnmarshal(t, c.call(t, 2, "forge/plan", wire.ForgePlanRequest{Node: wire.LineageNode{Kind: "issue", Ref: "linear:issue:eng#ENG-5"}}), &plan)
 	if deref(plan.Item.Feature) != "Billing" || deref(plan.Item.Level) != "epic" || len(plan.Children) != 1 ||
 		len(plan.Children[0].BlockedOutside) != 1 || plan.Children[0].BlockedOutside[0].Ref != "linear:issue:ops#OPS-1" || plan.Children[0].Step != 1 {
 		t.Fatalf("Linear plan: %+v", plan)

@@ -3,7 +3,6 @@
 package agentsd
 
 import (
-	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -61,19 +60,19 @@ func raised(d *Daemon, name string) []wire.Event {
 func TestAWorkflowFileOnDiskIsToldAtOnce(t *testing.T) {
 	folder := canonical(t.TempDir())
 	_, c := watched(t, folder)
-	os.MkdirAll(workflowsFolder(folder), 0o755)
-	os.WriteFile(filepath.Join(workflowsFolder(folder), "pulled.md"), []byte("---\nname: Pulled\non: agent.finished\n---\nGo.\n"), 0o644)
+	must(t, os.MkdirAll(workflowsFolder(folder), 0o755))                                                                                           //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(workflowsFolder(folder), "pulled.md"), []byte("---\nname: Pulled\non: agent.finished\n---\nGo.\n"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	deadline := afterLimit(t)
 	for {
 		select {
 		case line := <-c.out:
 			var m message
-			json.Unmarshal([]byte(line), &m)
+			mustUnmarshal(t, []byte(line), &m)
 			if m.Method != wire.NotifyWorkflowChanged.Name {
 				continue
 			}
 			var s wire.WorkflowSummary
-			json.Unmarshal(m.Params, &s)
+			mustUnmarshal(t, m.Params, &s)
 			if s.Workflow.WorkflowID == "pulled" {
 				if s.AwaitingApproval == nil {
 					t.Fatalf("a new file is not waiting for approval: %+v", s)
@@ -105,8 +104,8 @@ func TestAWorkflowFileAReaderScannedFirstIsStillTold(t *testing.T) {
 	d, c := watched(t, folder)
 	// The watch's own look is the one this test makes, after the reader's.
 	d.stopFolderWatches()
-	os.MkdirAll(workflowsFolder(folder), 0o755)
-	os.WriteFile(filepath.Join(workflowsFolder(folder), "pulled.md"), []byte("---\nname: Pulled\non: agent.finished\n---\nGo.\n"), 0o644)
+	must(t, os.MkdirAll(workflowsFolder(folder), 0o755))                                                                                           //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(workflowsFolder(folder), "pulled.md"), []byte("---\nname: Pulled\non: agent.finished\n---\nGo.\n"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	d.workflowSummaries("")
 	d.rescanWorkflows(folder)
 	deadline := time.After(5 * time.Second)
@@ -127,17 +126,17 @@ func TestAWorkflowFileAReaderScannedFirstIsStillTold(t *testing.T) {
 func TestADropboxArrivalIsAFileAddedOnlyWhereItsPathsSay(t *testing.T) {
 	folder := canonical(t.TempDir())
 	box := filepath.Join(folder, ".agents", "dropbox")
-	os.MkdirAll(filepath.Join(box, "review"), 0o755)
-	os.WriteFile(filepath.Join(box, "review", "before.txt"), []byte("old"), 0o644)
+	must(t, os.MkdirAll(filepath.Join(box, "review"), 0o755))                               //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(box, "review", "before.txt"), []byte("old"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	d, _ := watched(t, folder)
 	_, answered := fileWait(t, d, folder, "file.added", ".agents/dropbox/review/**")
-	os.MkdirAll(filepath.Join(box, "notes"), 0o755)
-	os.WriteFile(filepath.Join(box, "notes", "skip.md"), []byte("x"), 0o644)
+	must(t, os.MkdirAll(filepath.Join(box, "notes"), 0o755))                          //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(box, "notes", "skip.md"), []byte("x"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	time.Sleep(3 * fileSettle)
 	if got := raised(d, "file.added"); len(got) != 0 {
 		t.Fatalf("notes/: %+v", got)
 	}
-	os.WriteFile(filepath.Join(box, "review", "Report.PDF"), []byte("hello"), 0o644)
+	must(t, os.WriteFile(filepath.Join(box, "review", "Report.PDF"), []byte("hello"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	if text := answer(t, answered); !strings.Contains(text, ".agents/dropbox/review/Report.PDF") || strings.Contains(text, "before.txt") {
 		t.Fatal(text)
 	}

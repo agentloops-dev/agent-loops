@@ -31,8 +31,8 @@ func tarGz(t *testing.T, files map[string]string) []byte {
 		if strings.HasSuffix(name, "*") {
 			name, mode = strings.TrimSuffix(name, "*"), 0o755
 		}
-		w.WriteHeader(&tar.Header{Name: name, Mode: mode, Size: int64(len(text)), Typeflag: tar.TypeReg})
-		w.Write([]byte(text))
+		must(t, w.WriteHeader(&tar.Header{Name: name, Mode: mode, Size: int64(len(text)), Typeflag: tar.TypeReg}))
+		must(t, errOnly(w.Write([]byte(text))))
 	}
 	w.Close()
 	z.Close()
@@ -76,9 +76,9 @@ mkdir -p "$p/node_modules/@x/adapter/dist" && echo 'ok' > "$p/node_modules/@x/ad
 	dist = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case strings.HasSuffix(r.URL.Path, ".tar.gz") && strings.Contains(r.URL.Path, "node-v1"):
-			w.Write(node)
+			check(t, errOnly(w.Write(node)))
 		case strings.HasSuffix(r.URL.Path, "/opencode.tar.gz"):
-			w.Write(archive)
+			check(t, errOnly(w.Write(archive)))
 		default:
 			http.NotFound(w, r)
 		}
@@ -86,18 +86,18 @@ mkdir -p "$p/node_modules/@x/adapter/dist" && echo 'ok' > "$p/node_modules/@x/ad
 	t.Cleanup(dist.Close)
 	bundle = t.TempDir()
 	codex := filepath.Join(bundle, "codex")
-	os.MkdirAll(codex, 0o755)
-	os.WriteFile(filepath.Join(codex, "manifest.json"), []byte(`{"runtimeID":"codex","package":"@x/adapter","entry":"dist/index.js"}`), 0o644)
-	os.WriteFile(filepath.Join(codex, "package.json"), []byte(`{}`), 0o644)
-	os.WriteFile(filepath.Join(codex, "package-lock.json"), []byte(`{}`), 0o644)
+	must(t, os.MkdirAll(codex, 0o755))                                                                                                                  //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(codex, "manifest.json"), []byte(`{"runtimeID":"codex","package":"@x/adapter","entry":"dist/index.js"}`), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(codex, "package.json"), []byte(`{}`), 0o644))                                                                    //nolint:gosec // G306: the mode this file always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(codex, "package-lock.json"), []byte(`{}`), 0o644))                                                               //nolint:gosec // G306: the mode this file always had; only its error is new
 	pin, _ := json.Marshal(map[string]any{"version": "v1", "sha256": map[string]string{macArch(): sha(node)}})
-	os.WriteFile(filepath.Join(codex, "mac-node.json"), pin, 0o644)
+	must(t, os.WriteFile(filepath.Join(codex, "mac-node.json"), pin, 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	oc := filepath.Join(bundle, "opencode")
-	os.MkdirAll(oc, 0o755)
+	must(t, os.MkdirAll(oc, 0o755)) //nolint:gosec // G301: the mode this folder always had; only its error is new
 	m, _ := json.Marshal(map[string]any{"kind": "archive", "runtimeID": "opencode", "version": "1", "minFreeBytes": 1,
 		"platforms": map[string]any{macPlatform(): map[string]any{"url": dist.URL + "/opencode.tar.gz", "sha256": sha(archive),
 			"size": len(archive), "command": "opencode", "arguments": []string{"acp"}}}})
-	os.WriteFile(filepath.Join(oc, "manifest.json"), m, 0o644)
+	must(t, os.WriteFile(filepath.Join(oc, "manifest.json"), m, 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	old := nodeDistURL
 	nodeDistURL = dist.URL + "/"
 	t.Cleanup(func() { nodeDistURL = old; macToolsHome = "" })
@@ -135,13 +135,13 @@ func installAnswered(t *testing.T, c *conn, n int, id string) (answer, end wire.
 				Error  *Error             `json:"error"`
 				Params wire.RuntimeStatus `json:"params"`
 			}
-			json.Unmarshal([]byte(line), &m)
+			mustUnmarshal(t, []byte(line), &m)
 			switch {
 			case string(m.ID) == strconv.Itoa(n):
 				if m.Error != nil {
 					t.Fatalf("%s: %v", id, m.Error)
 				}
-				json.Unmarshal(m.Result, &answer)
+				mustUnmarshal(t, m.Result, &answer)
 				answered = true
 			case m.Method == "runtime/changed" && m.Params.Runtime.ID == id && m.Params.Availability.Installing == nil:
 				end, ended = m.Params, true
@@ -163,7 +163,7 @@ func waitInstalled(t *testing.T, c *conn, id string) wire.RuntimeStatus {
 				Method string             `json:"method"`
 				Params wire.RuntimeStatus `json:"params"`
 			}
-			json.Unmarshal([]byte(line), &m)
+			mustUnmarshal(t, []byte(line), &m)
 			if m.Method == "runtime/changed" && m.Params.Runtime.ID == id && m.Params.Availability.Installing == nil {
 				return m.Params
 			}
@@ -215,7 +215,7 @@ func TestInstallTheAppsOwnCopies(t *testing.T) {
 		t.Fatal(err)
 	}
 	os.Remove(current)
-	os.Symlink("old", current)
+	must(t, os.Symlink("old", current))
 	if s := d.statusOf(runtimeByID("codex")); !s.Outdated {
 		t.Fatalf("an older copy listed as %+v", s)
 	}
@@ -285,7 +285,7 @@ func (deviceConn) Device() string { return "11111111-2222-3333-4444-555555555555
 func TestAnInstallThatFailsSaysWhy(t *testing.T) {
 	dist, bundle := fakeVendors(t)
 	// A pin that does not match.
-	os.WriteFile(filepath.Join(bundle, "codex", "mac-node.json"), []byte(`{"version":"v1","sha256":{"`+macArch()+`":"00"}}`), 0o644)
+	must(t, os.WriteFile(filepath.Join(bundle, "codex", "mac-node.json"), []byte(`{"version":"v1","sha256":{"`+macArch()+`":"00"}}`), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	d, c := start(t, t.TempDir())
 	tools := filepath.Join(t.TempDir(), "tools")
 	d.serveInstall(tools, bundle)
@@ -326,15 +326,15 @@ func tarXZ(t *testing.T, files map[string]string) []byte {
 	w := tar.NewWriter(z)
 	for name, text := range files {
 		if link, ok := strings.CutPrefix(name, "@"); ok {
-			w.WriteHeader(&tar.Header{Name: link, Linkname: text, Typeflag: tar.TypeSymlink, Mode: 0o777})
+			must(t, w.WriteHeader(&tar.Header{Name: link, Linkname: text, Typeflag: tar.TypeSymlink, Mode: 0o777}))
 			continue
 		}
 		mode := int64(0o644)
 		if strings.HasSuffix(name, "*") {
 			name, mode = strings.TrimSuffix(name, "*"), 0o755
 		}
-		w.WriteHeader(&tar.Header{Name: name, Mode: mode, Size: int64(len(text)), Typeflag: tar.TypeReg})
-		w.Write([]byte(text))
+		must(t, w.WriteHeader(&tar.Header{Name: name, Mode: mode, Size: int64(len(text)), Typeflag: tar.TypeReg}))
+		must(t, errOnly(w.Write([]byte(text))))
 	}
 	w.Close()
 	z.Close()
@@ -351,7 +351,7 @@ mkdir -p "$p/node_modules/@x/adapter/dist" && echo 'ok' > "$p/node_modules/@x/ad
 	node := tarXZ(t, map[string]string{"node-v1/lib/npm-cli*": npm, "@node-v1/bin/npm": "../lib/npm-cli", "node-v1/bin/node*": "#!/bin/sh\n"})
 	dist := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/v1/node-v1-linux-"+macArch()+".tar.xz" {
-			w.Write(node)
+			check(t, errOnly(w.Write(node)))
 			return
 		}
 		http.NotFound(w, r)
@@ -360,12 +360,12 @@ mkdir -p "$p/node_modules/@x/adapter/dist" && echo 'ok' > "$p/node_modules/@x/ad
 	toolsets := t.TempDir()
 	// Codex, not Claude: a CI runner has an npx on its PATH, which is Claude already there.
 	codex := filepath.Join(toolsets, "codex")
-	os.MkdirAll(codex, 0o755)
+	must(t, os.MkdirAll(codex, 0o755)) //nolint:gosec // G301: the mode this folder always had; only its error is new
 	m, _ := json.Marshal(map[string]any{"runtimeID": "codex", "package": "@x/adapter", "entry": "dist/index.js",
 		"node": map[string]any{"version": "v1", "sha256": map[string]string{serverArch(): sha(node)}}})
-	os.WriteFile(filepath.Join(codex, "manifest.json"), m, 0o644)
-	os.WriteFile(filepath.Join(codex, "package.json"), []byte(`{}`), 0o644)
-	os.WriteFile(filepath.Join(codex, "package-lock.json"), []byte(`{}`), 0o644)
+	must(t, os.WriteFile(filepath.Join(codex, "manifest.json"), m, 0o644))                //nolint:gosec // G306: the mode this file always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(codex, "package.json"), []byte(`{}`), 0o644))      //nolint:gosec // G306: the mode this file always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(codex, "package-lock.json"), []byte(`{}`), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -419,7 +419,7 @@ func TestUntarXZStaysInside(t *testing.T) {
 
 	for _, files := range []map[string]string{{"n/../../escape*": "x"}, {"@n/bin/out": "../../../etc"}} {
 		file := filepath.Join(t.TempDir(), "a.tar.xz")
-		os.WriteFile(file, tarXZ(t, files), 0o644)
+		must(t, os.WriteFile(file, tarXZ(t, files), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 		if err := untarXZ(file, t.TempDir()); err == nil {
 			t.Fatalf("%v unpacked", files)
 		}
@@ -446,13 +446,13 @@ func TestAServerTakesNPXAsNoClaude(t *testing.T) {
 		t.Fatal("npx alone is taken as Claude installed")
 	}
 	shim := filepath.Join(toolsetFolder("claude"), "current", "bin", "npx")
-	os.MkdirAll(filepath.Dir(shim), 0o755)
-	os.WriteFile(shim, []byte("#!/bin/sh\n"), 0o755)
-	os.WriteFile(filepath.Join(filepath.Dir(filepath.Dir(shim)), "ok"), nil, 0o644)
+	must(t, os.MkdirAll(filepath.Dir(shim), 0o755))                                          //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(shim, []byte("#!/bin/sh\n"), 0o755))                                //nolint:gosec // G306: the mode this file always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(filepath.Dir(filepath.Dir(shim)), "ok"), nil, 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	if !installedAt(claude, shim) {
 		t.Fatal("Claude's toolset is not taken as Claude installed")
 	}
-	os.WriteFile(filepath.Join(own, "claude"), []byte("#!/bin/sh\n"), 0o755)
+	must(t, os.WriteFile(filepath.Join(own, "claude"), []byte("#!/bin/sh\n"), 0o755)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	if !installedAt(claude, "/usr/bin/npx") {
 		t.Fatal("the person's own claude is not taken as Claude installed")
 	}
@@ -480,20 +480,20 @@ func TestClaudesFirstUseInstallsTheAppsCopy(t *testing.T) {
 	t.Cleanup(openGate) // before held.Close, which waits for the held download
 	nodeDistURL = held.URL + "/"
 	own := t.TempDir()
-	os.WriteFile(filepath.Join(own, "npx"), []byte("#!/bin/sh\n"), 0o755)
+	must(t, os.WriteFile(filepath.Join(own, "npx"), []byte("#!/bin/sh\n"), 0o755)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	oldShell := loginShellPath
 	loginShellPath = func(string) []string { return []string{own} }
 	resetShellPath := func() { shellPath.Lock(); shellPath.key = ""; shellPath.Unlock() }
 	resetShellPath()
 	t.Cleanup(func() { loginShellPath = oldShell; resetShellPath() })
 	claude := filepath.Join(bundle, "claude")
-	os.MkdirAll(claude, 0o755)
+	must(t, os.MkdirAll(claude, 0o755)) //nolint:gosec // G301: the mode this folder always had; only its error is new
 	for name, text := range map[string]string{"package.json": `{}`, "package-lock.json": `{}`,
 		"manifest.json": `{"runtimeID":"claude","package":"@x/adapter","entry":"dist/index.js"}`} {
-		os.WriteFile(filepath.Join(claude, name), []byte(text), 0o644)
+		must(t, os.WriteFile(filepath.Join(claude, name), []byte(text), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	}
 	pin, _ := os.ReadFile(filepath.Join(bundle, "codex", "mac-node.json"))
-	os.WriteFile(filepath.Join(claude, "mac-node.json"), pin, 0o644)
+	must(t, os.WriteFile(filepath.Join(claude, "mac-node.json"), pin, 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	d, c := start(t, t.TempDir())
 	d.serveInstall(filepath.Join(t.TempDir(), "tools"), bundle)
 	r := runtimeByID("claude")

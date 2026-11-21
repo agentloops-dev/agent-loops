@@ -2,7 +2,6 @@ package agentsd
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"slices"
@@ -150,9 +149,9 @@ func bitbucketDaemon(t *testing.T) (*Daemon, *conn, *fakeForgeBitbucket, *connec
 	for i, remote := range []string{"git@bitbucket.org:walkalex/App.git", "git@github.com:alexec/agents.git"} {
 		c.call(t, 100+i, "folders/add", map[string]any{"folder": "file://" + gitFolder(t, remote)})
 	}
-	file.Put(connections.BitbucketConnection(connections.BitbucketAPI, "me@example.com", "bb-secret", "walkalex", time.Now()))
-	file.Put(connections.Connection{Provider: connections.GitHub, Login: "alexec", Access: "ghu_secret",
-		AccessExpiresAt: time.Now().Add(time.Hour), ConnectedAt: time.Now()})
+	must(t, file.Put(connections.BitbucketConnection(connections.BitbucketAPI, "me@example.com", "bb-secret", "walkalex", time.Now())))
+	must(t, file.Put(connections.Connection{Provider: connections.GitHub, Login: "alexec", Access: "ghu_secret",
+		AccessExpiresAt: time.Now().Add(time.Hour), ConnectedAt: time.Now()}))
 	return d, c, bb, file
 }
 
@@ -163,7 +162,7 @@ func TestForgeListsBitbucketRepositories(t *testing.T) {
 
 	_, c, bb, _ := bitbucketDaemon(t)
 	var list wire.ForgeList
-	json.Unmarshal(c.call(t, 1, "forge/issues", wire.ForgeListRequest{Label: new("bug")}), &list)
+	mustUnmarshal(t, c.call(t, 1, "forge/issues", wire.ForgeListRequest{Label: new("bug")}), &list)
 	if len(bb.searches) != 1 || bb.searches[0] != "[walkalex/App] prs=false label=bug after= first=50" {
 		t.Fatalf("Bitbucket was asked %v", bb.searches)
 	}
@@ -178,7 +177,7 @@ func TestForgeListsBitbucketRepositories(t *testing.T) {
 		t.Fatalf("the Bitbucket item: %+v in %+v", item, list)
 	}
 	var pulls wire.ForgeList
-	json.Unmarshal(c.call(t, 2, "forge/pulls", wire.ForgeListRequest{}), &pulls)
+	mustUnmarshal(t, c.call(t, 2, "forge/pulls", wire.ForgeListRequest{}), &pulls)
 	found := false
 	for _, i := range pulls.Items {
 		if i.Node.Ref == "bitbucket:pr:walkalex/app#7" {
@@ -198,9 +197,9 @@ func TestForgeListSaysBitbucketIsNotConnected(t *testing.T) {
 	t.Parallel()
 
 	_, c, bb, file := bitbucketDaemon(t)
-	file.Delete(connections.Bitbucket)
+	must(t, file.Delete(connections.Bitbucket))
 	var list wire.ForgeList
-	json.Unmarshal(c.call(t, 1, "forge/issues", wire.ForgeListRequest{}), &list)
+	mustUnmarshal(t, c.call(t, 1, "forge/issues", wire.ForgeListRequest{}), &list)
 	if len(bb.searches) != 0 || len(list.Errors) != 1 || list.Errors[0].Forge != "bitbucket" || list.Errors[0].Message != bitbucketmcp.NotConnected {
 		t.Fatalf("list: %+v", list)
 	}
@@ -214,13 +213,13 @@ func TestForgeReadsABitbucketIssueAndPullRequest(t *testing.T) {
 
 	_, c, bb, _ := bitbucketDaemon(t)
 	var issue wire.ForgeItemDetail
-	json.Unmarshal(c.call(t, 1, "forge/issue", wire.ForgeItemRequest{Node: wire.LineageNode{Kind: "issue", Ref: "bitbucket:issue:walkalex/app#7"}}), &issue)
+	mustUnmarshal(t, c.call(t, 1, "forge/issue", wire.ForgeItemRequest{Node: wire.LineageNode{Kind: "issue", Ref: "bitbucket:issue:walkalex/app#7"}}), &issue)
 	if issue.Body != "The body." || deref(issue.Cursor) != "2" || len(issue.Comments) != 1 || issue.Start == nil ||
 		!strings.Contains(issue.Start.Prompt, "Work on this Bitbucket issue: https://bitbucket.org/walkalex/App/issues/7") || issue.Start.Labels[0] != "#7" {
 		t.Fatalf("issue: %+v", issue)
 	}
 	var pr wire.ForgeItemDetail
-	json.Unmarshal(c.call(t, 2, "forge/pull", wire.ForgeItemRequest{Node: wire.LineageNode{Kind: "pr", Ref: "bitbucket:pr:walkalex/app#8"}}), &pr)
+	mustUnmarshal(t, c.call(t, 2, "forge/pull", wire.ForgeItemRequest{Node: wire.LineageNode{Kind: "pr", Ref: "bitbucket:pr:walkalex/app#8"}}), &pr)
 	if deref(pr.Head) != "abc123def456" || len(pr.Checks) != 4 || *pr.FilesChanged != 2 || len(pr.MergeMethods) != 2 || pr.MergeMethods[0] != "squash" ||
 		deref(pr.Item.Review) != "approved" || pr.Start != nil {
 		t.Fatalf("pull: %+v", pr)
@@ -249,7 +248,7 @@ func TestForgeWritesOnABitbucketItem(t *testing.T) {
 	issue := wire.LineageNode{Kind: "issue", Ref: "bitbucket:issue:walkalex/app#7"}
 	pr := wire.LineageNode{Kind: "pr", Ref: "bitbucket:pr:walkalex/app#8"}
 	var done wire.ForgeDone
-	json.Unmarshal(c.call(t, 1, "forge/comment", wire.ForgeCommentRequest{Node: issue, Body: "Done"}), &done)
+	mustUnmarshal(t, c.call(t, 1, "forge/comment", wire.ForgeCommentRequest{Node: issue, Body: "Done"}), &done)
 	if deref(done.URL) != "https://bitbucket.org/c/1" {
 		t.Fatalf("comment: %+v", done)
 	}
@@ -260,7 +259,7 @@ func TestForgeWritesOnABitbucketItem(t *testing.T) {
 	c.call(t, 6, "forge/merge", wire.ForgeMergeRequest{Node: pr, Sha: "abc123def456"})
 	c.call(t, 7, "forge/approve", wire.ForgeApproveRequest{Node: pr, Sha: "abc123def456"})
 	var rerun wire.ForgeDone
-	json.Unmarshal(c.call(t, 8, "forge/rerun", wire.ForgeNodeRequest{Node: pr}), &rerun)
+	mustUnmarshal(t, c.call(t, 8, "forge/rerun", wire.ForgeNodeRequest{Node: pr}), &rerun)
 	want := []string{"comment walkalex/App#7 pr=false Done", "comment walkalex/App#8 pr=true LGTM",
 		"labels walkalex/App#7 +[enhancement] -[bug]", "state walkalex/App#7 pr=false closed=true", "state walkalex/App#8 pr=true closed=true",
 		"merge walkalex/App#8 abc123def456 squash", "approve walkalex/App#8 abc123def456", "retry walkalex/App 12"}
@@ -282,11 +281,11 @@ func TestForgeWritesOnABitbucketItem(t *testing.T) {
 		t.Fatalf("a pull request's label: %v", e)
 	}
 	var log wire.ForgeLog
-	json.Unmarshal(c.call(t, 12, "forge/log", wire.ForgeLogRequest{Node: pr}), &log)
+	mustUnmarshal(t, c.call(t, 12, "forge/log", wire.ForgeLogRequest{Node: pr}), &log)
 	if log.Text != `log of walkalex/App 12 ""` {
 		t.Fatalf("log: %+v", log)
 	}
-	json.Unmarshal(c.call(t, 13, "forge/log", wire.ForgeLogRequest{Node: pr, Check: new("jenkins")}), &log)
+	mustUnmarshal(t, c.call(t, 13, "forge/log", wire.ForgeLogRequest{Node: pr, Check: new("jenkins")}), &log)
 	if !strings.Contains(log.Text, "jenkins is not a Bitbucket Pipelines run") {
 		t.Fatalf("another CI's log: %+v", log)
 	}
@@ -297,12 +296,12 @@ func TestForgeWritesOnABitbucketItem(t *testing.T) {
 		t.Fatalf("a pull request's labels: %v", e)
 	}
 	var labels wire.ForgeLabels
-	json.Unmarshal(c.call(t, 14, "forge/labels", wire.ForgeNodeRequest{Node: issue}), &labels)
+	mustUnmarshal(t, c.call(t, 14, "forge/labels", wire.ForgeNodeRequest{Node: issue}), &labels)
 	if len(labels.Labels) != 3 || labels.Labels[2].Name != "ui" {
 		t.Fatalf("labels: %+v", labels)
 	}
 	var diff wire.ForgeDiff
-	json.Unmarshal(c.call(t, 15, "forge/diff", wire.ForgeNodeRequest{Node: pr}), &diff)
+	mustUnmarshal(t, c.call(t, 15, "forge/diff", wire.ForgeNodeRequest{Node: pr}), &diff)
 	if len(diff.Files) != 1 || diff.Files[0].Path != "hello.txt" || len(diff.Files[0].Hunks[0].Lines) != 1 {
 		t.Fatalf("diff: %+v", diff)
 	}
@@ -349,7 +348,7 @@ func TestForgeFeatureOfABitbucketComponent(t *testing.T) {
 	_, c, bb, _ := bitbucketDaemon(t)
 	bb.labels = []string{"task", "feature:Export"}
 	var list wire.ForgeList
-	json.Unmarshal(c.call(t, 2, "forge/issues", wire.ForgeListRequest{Feature: new("Export")}), &list)
+	mustUnmarshal(t, c.call(t, 2, "forge/issues", wire.ForgeListRequest{Feature: new("Export")}), &list)
 	if len(list.Items) == 0 || deref(list.Items[0].Feature) != "Export" || deref(list.Items[0].Level) != "task" {
 		t.Fatalf("the feature's issues: %+v", list)
 	}

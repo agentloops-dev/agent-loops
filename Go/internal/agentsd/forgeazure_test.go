@@ -2,7 +2,6 @@ package agentsd
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -139,13 +138,13 @@ func boardsDaemon(t *testing.T) (*Daemon, *conn, *fakeForgeBoards, string) {
 		return b
 	}
 	app := gitFolder(t, "git@github.com:acme/app.git")
-	os.MkdirAll(filepath.Join(app, ".agents"), 0o755)
-	os.WriteFile(filepath.Join(app, ".agents", "folder.json"), []byte(`{"azureBoardsProjects": ["acme/Web App", "not a project", "a/b/c"]}`), 0o644)
+	must(t, os.MkdirAll(filepath.Join(app, ".agents"), 0o755))                                                                                                //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(app, ".agents", "folder.json"), []byte(`{"azureBoardsProjects": ["acme/Web App", "not a project", "a/b/c"]}`), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	c.call(t, 300, "folders/add", map[string]any{"folder": "file://" + app})
 	home := d.personalHome()
-	os.MkdirAll(filepath.Join(home, ".agents-secrets"), 0o700)
-	os.WriteFile(filepath.Join(home, ".agents-secrets", "secrets.env"),
-		[]byte("AZURE_DEVOPS_URL=https://tfs.acme.test/\nAZURE_DEVOPS_TOKEN=tok\n"), 0o600)
+	must(t, os.MkdirAll(filepath.Join(home, ".agents-secrets"), 0o700))
+	must(t, os.WriteFile(filepath.Join(home, ".agents-secrets", "secrets.env"),
+		[]byte("AZURE_DEVOPS_URL=https://tfs.acme.test/\nAZURE_DEVOPS_TOKEN=tok\n"), 0o600))
 	return d, c, b, app
 }
 
@@ -162,7 +161,7 @@ func TestForgeIssuesReadsTheFoldersAzureBoardsProjects(t *testing.T) {
 		t.Fatalf("projects: %q", got)
 	}
 	var list wire.ForgeList
-	json.Unmarshal(c.call(t, 1, "forge/issues", wire.ForgeListRequest{Label: new("billing")}), &list)
+	mustUnmarshal(t, c.call(t, 1, "forge/issues", wire.ForgeListRequest{Label: new("billing")}), &list)
 	searches, _ := b.asked()
 	if len(searches) != 1 || searches[0] != `[System.TeamProject] IN ('web app') AND [System.State] NOT IN ('Closed') AND [System.Tags] CONTAINS 'billing' after=` {
 		t.Fatalf("Azure Boards searches: %q", searches)
@@ -180,7 +179,7 @@ func TestForgeIssuesReadsTheFoldersAzureBoardsProjects(t *testing.T) {
 		item.Comments != 2 || item.Parent == nil || item.Parent.Ref != "azureboards:issue:acme/web app#3" || len(item.Labels) != 1 {
 		t.Fatalf("Azure Boards item: %+v", *item)
 	}
-	json.Unmarshal(c.call(t, 2, "forge/pulls", wire.ForgeListRequest{}), &list)
+	mustUnmarshal(t, c.call(t, 2, "forge/pulls", wire.ForgeListRequest{}), &list)
 	if searches, _ = b.asked(); len(searches) != 1 {
 		t.Fatalf("forge/pulls asked Azure Boards: %q", searches)
 	}
@@ -193,7 +192,7 @@ func TestForgeReadsAnAzureBoardsWorkItem(t *testing.T) {
 
 	_, c, _, app := boardsDaemon(t)
 	var i wire.ForgeItemDetail
-	json.Unmarshal(c.call(t, 1, "forge/issue", wire.ForgeItemRequest{Node: boardsItem}), &i)
+	mustUnmarshal(t, c.call(t, 1, "forge/issue", wire.ForgeItemRequest{Node: boardsItem}), &i)
 	if i.Body != "**Bold** words." || deref(i.Cursor) != "token-2" || len(i.Comments) != 1 || i.Comments[0].Bot == nil ||
 		deref(i.Item.Status) != "New" || deref(i.Item.Folder) != app || i.Item.Progress == nil {
 		t.Fatalf("work item: %+v", i)
@@ -223,13 +222,13 @@ func TestForgeWritesOnAnAzureBoardsWorkItem(t *testing.T) {
 
 	_, c, b, _ := boardsDaemon(t)
 	var done wire.ForgeDone
-	json.Unmarshal(c.call(t, 1, "forge/comment", wire.ForgeCommentRequest{Node: boardsItem, Body: "On it."}), &done)
+	mustUnmarshal(t, c.call(t, 1, "forge/comment", wire.ForgeCommentRequest{Node: boardsItem, Body: "On it."}), &done)
 	if deref(done.URL) != "https://dev.azure.com/acme/web%20app/_workitems/edit/12" {
 		t.Fatalf("comment: %+v", done)
 	}
 	c.call(t, 2, "forge/label", wire.ForgeLabelRequest{Node: boardsItem, Add: []string{"ux"}, Remove: []string{"billing"}})
 	var labels wire.ForgeLabels
-	json.Unmarshal(c.call(t, 3, "forge/labels", wire.ForgeNodeRequest{Node: boardsItem}), &labels)
+	mustUnmarshal(t, c.call(t, 3, "forge/labels", wire.ForgeNodeRequest{Node: boardsItem}), &labels)
 	if len(labels.Labels) != 2 || labels.Labels[1].Name != "ux" {
 		t.Fatalf("labels: %+v", labels)
 	}
@@ -251,7 +250,7 @@ func TestForgeAzureBoardsNotSignedIn(t *testing.T) {
 	d, c, _, _ := boardsDaemon(t)
 	os.Remove(filepath.Join(d.personalHome(), ".agents-secrets", "secrets.env"))
 	var list wire.ForgeList
-	json.Unmarshal(c.call(t, 1, "forge/issues", wire.ForgeListRequest{}), &list)
+	mustUnmarshal(t, c.call(t, 1, "forge/issues", wire.ForgeListRequest{}), &list)
 	if len(list.Errors) != 1 || list.Errors[0].Forge != "azureboards" || !strings.Contains(list.Errors[0].Message, "Azure DevOps is not connected") {
 		t.Fatalf("errors: %+v", list.Errors)
 	}
@@ -264,7 +263,7 @@ func TestForgePlanOfAnAzureBoardsWorkItem(t *testing.T) {
 
 	_, c, b, _ := boardsDaemon(t)
 	var plan wire.ForgePlan
-	json.Unmarshal(c.call(t, 1, "forge/plan", wire.ForgePlanRequest{Node: boardsItem}), &plan)
+	mustUnmarshal(t, c.call(t, 1, "forge/plan", wire.ForgePlanRequest{Node: boardsItem}), &plan)
 	if plan.Item.Node != boardsItem || len(plan.Children) != 2 || plan.Children[1].Item.Node.Ref != "azureboards:issue:acme/web app#14" || plan.Children[1].Step != 2 {
 		t.Fatalf("plan: %+v", plan)
 	}
@@ -341,7 +340,7 @@ func TestAnAzureBoardsBoardNarrowsWorkToItsTeam(t *testing.T) {
 	}})
 
 	var list wire.ForgeList
-	json.Unmarshal(c.call(t, 1, "forge/issues", wire.ForgeListRequest{Board: &payments.URL}), &list)
+	mustUnmarshal(t, c.call(t, 1, "forge/issues", wire.ForgeListRequest{Board: &payments.URL}), &list)
 	searches, wrote := b.asked()
 	if !slices.Equal(wrote, []string{"areas acme/web app Payments"}) || len(searches) != 1 ||
 		searches[0] != `[System.TeamProject] IN ('web app') AND [System.State] NOT IN ('Closed') AND `+
@@ -353,14 +352,14 @@ func TestAnAzureBoardsBoardNarrowsWorkToItsTeam(t *testing.T) {
 	}
 
 	// A project no folder names: its work items act from the board's folder.
-	json.Unmarshal(c.call(t, 2, "forge/issues", wire.ForgeListRequest{Board: &shop.URL}), &list)
+	mustUnmarshal(t, c.call(t, 2, "forge/issues", wire.ForgeListRequest{Board: &shop.URL}), &list)
 	searches, wrote = b.asked()
 	if wrote[len(wrote)-1] != "areas acme/shop Shop Team" || !strings.HasPrefix(searches[len(searches)-1], "[System.TeamProject] IN ('shop')") {
 		t.Fatalf("areas %q searches %q", wrote, searches)
 	}
 
 	// On another Azure DevOps than the connected one: not read, and the list says why.
-	json.Unmarshal(c.call(t, 3, "forge/issues", wire.ForgeListRequest{Board: &cloud.URL}), &list)
+	mustUnmarshal(t, c.call(t, 3, "forge/issues", wire.ForgeListRequest{Board: &cloud.URL}), &list)
 	if after, _ := b.asked(); len(after) != len(searches) || len(list.Errors) != 1 || list.Errors[0].Forge != "azureboards" ||
 		!strings.Contains(list.Errors[0].Message, "connected at tfs.acme.test") {
 		t.Fatalf("searches %q list %+v", after, list)
@@ -386,7 +385,7 @@ func TestEpicsOfAnAzureBoardsBoard(t *testing.T) {
 		{ID: id, Name: "App", Slots: []wire.ProjectSlot{}, Boards: []wire.ProjectBoard{payments}},
 	}})
 	var list wire.ForgeList
-	json.Unmarshal(c.call(t, 1, "forge/issues", wire.ForgeListRequest{Board: &payments.URL, Label: new("epic"), State: new("all")}), &list)
+	mustUnmarshal(t, c.call(t, 1, "forge/issues", wire.ForgeListRequest{Board: &payments.URL, Label: new("epic"), State: new("all")}), &list)
 	if len(list.Items) != 1 || deref(list.Items[0].Level) != "epic" || deref(list.Items[0].Feature) != "billing" {
 		t.Fatalf("list %+v", list.Items)
 	}

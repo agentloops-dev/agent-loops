@@ -66,7 +66,7 @@ func TestTheBotsKeyReachesTheOtherMachineSealedToIt(t *testing.T) {
 		}
 		b, _ := json.Marshal(params)
 		var call wire.MachineWorkspaceCall
-		json.Unmarshal(b, &call)
+		mustUnmarshal(t, b, &call)
 		mu.Lock()
 		calls = append(calls, call)
 		mu.Unlock()
@@ -88,7 +88,7 @@ func TestTheBotsKeyReachesTheOtherMachineSealedToIt(t *testing.T) {
 	}
 	call := calls[0]
 	var r wire.MachineBotKey
-	json.Unmarshal(call.Params, &r)
+	mustUnmarshal(t, call.Params, &r)
 	if call.Method != wire.CallMachinesBotKey.Name || r.Host != "h-2" || r.Copy == nil || call.Deliver == nil ||
 		call.Deliver.Method != wire.CallConnectionsBotTake.Name {
 		t.Fatalf("call: %+v", call)
@@ -106,7 +106,7 @@ func TestTheBotsKeyReachesTheOtherMachineSealedToIt(t *testing.T) {
 		t.Fatal("the copy for h-2 checks for another machine")
 	}
 	var sealed wire.ConnectionBotCopy
-	json.Unmarshal([]byte(call.Deliver.Params), &sealed)
+	mustUnmarshal(t, []byte(call.Deliver.Params), &sealed)
 
 	// h-2 opens it with its own key.
 	got, err := openBot(rawKey(peer), "sam", "h-2", sealed)
@@ -236,13 +236,13 @@ func TestForgettingAndRemovingTakeTheBotsKeyAway(t *testing.T) {
 	d, _, _, _ := lockedMachine(t)
 	defer d.Shutdown()
 	file := botStore(t, d)
-	file.Put(theBot().Connection())
+	must(t, file.Put(theBot().Connection()))
 	var mu sync.Mutex
 	var drops []string
 	ask := askControl(func(_ context.Context, method string, params any) (json.RawMessage, error) {
 		b, _ := json.Marshal(params)
 		var call wire.MachineWorkspaceCall
-		json.Unmarshal(b, &call)
+		mustUnmarshal(t, b, &call)
 		if call.Deliver != nil && call.Deliver.Method == wire.CallConnectionsBotDrop.Name {
 			mu.Lock()
 			drops = append(drops, call.Deliver.Params)
@@ -251,7 +251,7 @@ func TestForgettingAndRemovingTakeTheBotsKeyAway(t *testing.T) {
 		return json.RawMessage(`{}`), nil
 	})
 	d.askControl.Store(&ask)
-	file.Delete(connections.GitHubBot)
+	must(t, file.Delete(connections.GitHubBot))
 	d.botRound.Lock()
 	d.forgetBotEverywhere(42)
 	d.shareBotKey(false, time.Now())
@@ -268,7 +268,7 @@ func TestForgettingAndRemovingTakeTheBotsKeyAway(t *testing.T) {
 		t.Fatalf("still to tell: %v", tell)
 	}
 
-	file.Put(theBot().Connection())
+	must(t, file.Put(theBot().Connection()))
 	d.BotMachineRemoved()
 	if _, ok, _ := file.Get(connections.GitHubBot); ok {
 		t.Fatal("a removed machine kept the bot's key")

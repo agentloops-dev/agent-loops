@@ -42,7 +42,7 @@ func serveLocal(t *testing.T, d *Daemon, role Role) string {
 	path := filepath.Join(dir, LocalSocketName([]byte("control key")))
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	go d.ServeLocal(ctx, path, "mac", controllink.NewPrivateKey())
+	go func() { _ = d.ServeLocal(ctx, path, "mac", controllink.NewPrivateKey()) }() // it ends with ctx; one that does not listen fails the dial
 	return path
 }
 
@@ -69,7 +69,7 @@ func prove(t *testing.T, path string, w window) (net.Conn, *bufio.Reader, contro
 	t.Helper()
 	c := dialUnix(t, path)
 	t.Cleanup(func() { c.Close() })
-	c.SetDeadline(time.Now().Add(5 * time.Second))
+	must(t, c.SetDeadline(time.Now().Add(5*time.Second)))
 	r := bufio.NewReader(c)
 	line, err := r.ReadString('\n')
 	if err != nil {
@@ -88,7 +88,7 @@ func prove(t *testing.T, path string, w window) (net.Conn, *bufio.Reader, contro
 	if err != nil {
 		t.Fatal(err)
 	}
-	c.Write([]byte(controllink.Message{Auth: auth}.Line() + "\n"))
+	must(t, errOnly(c.Write([]byte(controllink.Message{Auth: auth}.Line()+"\n"))))
 	line, err = r.ReadString('\n')
 	if err != nil {
 		return c, r, controllink.Message{Refused: "closed"}
@@ -102,7 +102,7 @@ func prove(t *testing.T, path string, w window) (net.Conn, *bufio.Reader, contro
 			t.Fatal("the host's proof:", err)
 		}
 	}
-	c.SetDeadline(time.Time{})
+	must(t, c.SetDeadline(time.Time{}))
 	return c, r, reply
 }
 
@@ -119,8 +119,8 @@ func TestAPairedWindowReachesTheHostDirectly(t *testing.T) {
 	if reply.OK == nil || reply.OK.Host == nil || *reply.OK.Host != "mac" {
 		t.Fatalf("%+v", reply)
 	}
-	c.Write([]byte(`{"jsonrpc":"2.0","id":7,"method":"daemon/status"}` + "\n"))
-	c.SetDeadline(time.Now().Add(5 * time.Second))
+	must(t, errOnly(c.Write([]byte(`{"jsonrpc":"2.0","id":7,"method":"daemon/status"}`+"\n"))))
+	must(t, c.SetDeadline(time.Now().Add(5*time.Second)))
 	line, err := r.ReadString('\n')
 	if err != nil || !strings.Contains(line, `"id":7`) || !strings.Contains(line, `"result"`) {
 		t.Fatal(line, err)
@@ -160,7 +160,7 @@ func TestAStrangerGetsNoHello(t *testing.T) {
 	path := serveLocal(t, d, RoleStranger)
 	c := dialUnix(t, path)
 	defer c.Close()
-	c.SetDeadline(time.Now().Add(5 * time.Second))
+	must(t, c.SetDeadline(time.Now().Add(5*time.Second)))
 	if line, err := bufio.NewReader(c).ReadString('\n'); err == nil {
 		t.Fatal(line)
 	}
@@ -181,7 +181,7 @@ func TestAForgottenWindowIsCutOff(t *testing.T) {
 		t.Fatalf("%+v", reply)
 	}
 	d.Told(wire.NotifyMachineClients.Name, []byte(`{"clients":[]}`))
-	c.SetDeadline(time.Now().Add(5 * time.Second))
+	must(t, c.SetDeadline(time.Now().Add(5*time.Second)))
 	if _, err := r.ReadString('\n'); err == nil {
 		t.Fatal("a forgotten window is still connected")
 	}

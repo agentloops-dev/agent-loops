@@ -1,7 +1,6 @@
 package agentsd
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -37,7 +36,7 @@ func adoServerDaemon(t *testing.T) (*Daemon, *conn, *fakeForgeAzureDevOps, *conn
 func pulls(t *testing.T, c *conn, id int) wire.ForgeList {
 	t.Helper()
 	var list wire.ForgeList
-	json.Unmarshal(c.call(t, id, "forge/pulls", wire.ForgeListRequest{}), &list)
+	mustUnmarshal(t, c.call(t, id, "forge/pulls", wire.ForgeListRequest{}), &list)
 	return list
 }
 
@@ -49,7 +48,7 @@ func TestAzureDevOpsConnectedAfterTheFolderListsItsPullRequests(t *testing.T) {
 	if len(ado.searches) != 0 {
 		t.Fatalf("Azure DevOps was asked before it was connected: %v", ado.searches)
 	}
-	file.Put(connections.AzureDevOpsConnection("https://tfs.example.com/tfs/", "Main", "ado-secret", "Agents Test", time.Now()))
+	must(t, file.Put(connections.AzureDevOpsConnection("https://tfs.example.com/tfs/", "Main", "ado-secret", "Agents Test", time.Now())))
 	pulls(t, c, 2)
 	if len(ado.searches) != 1 || ado.searches[0] != "[Main/proj/app] state= label= after= first=50" {
 		t.Fatalf("Azure DevOps was asked %v", ado.searches)
@@ -63,9 +62,9 @@ func TestAzureDevOpsSecretsAfterTheFolderListItsPullRequests(t *testing.T) {
 	d, c, ado, _ := adoServerDaemon(t)
 	pulls(t, c, 1)
 	home := d.personalHome()
-	os.MkdirAll(filepath.Join(home, ".agents-secrets"), 0o700)
-	os.WriteFile(filepath.Join(home, ".agents-secrets", "secrets.env"),
-		[]byte("AZURE_DEVOPS_URL=https://tfs.example.com/tfs\nAZURE_DEVOPS_TOKEN=ado-secret\n"), 0o600)
+	must(t, os.MkdirAll(filepath.Join(home, ".agents-secrets"), 0o700))
+	must(t, os.WriteFile(filepath.Join(home, ".agents-secrets", "secrets.env"),
+		[]byte("AZURE_DEVOPS_URL=https://tfs.example.com/tfs\nAZURE_DEVOPS_TOKEN=ado-secret\n"), 0o600))
 	pulls(t, c, 2)
 	if len(ado.searches) != 1 || ado.searches[0] != "[Main/proj/app] state= label= after= first=50" {
 		t.Fatalf("Azure DevOps was asked %v", ado.searches)
@@ -77,12 +76,12 @@ func TestForgejoConnectedAfterTheFolderListsItsPullRequests(t *testing.T) {
 
 	_, c, fj, file := forgejoDaemon(t)
 	forgejo, _, _ := file.Get(connections.Forgejo)
-	file.Delete(connections.Forgejo)
+	must(t, file.Delete(connections.Forgejo))
 	pulls(t, c, 1)
 	if len(fj.searches) != 0 {
 		t.Fatalf("Forgejo was asked before it was connected: %v", fj.searches)
 	}
-	file.Put(forgejo)
+	must(t, file.Put(forgejo))
 	pulls(t, c, 2)
 	if len(fj.searches) != 1 || fj.searches[0] != "[walkalex/App] prs=true label= after= first=50" {
 		t.Fatalf("Forgejo was asked %v", fj.searches)
@@ -94,13 +93,13 @@ func TestGitLabConnectedAfterTheFolderListsItsMergeRequests(t *testing.T) {
 
 	d, c, _, gl, _, file := allForgesDaemon(t)
 	d.newForgeGitLab = func(string, string) forgeGitLab { return gl }
-	file.Delete(connections.GitLab)
+	must(t, file.Delete(connections.GitLab))
 	pulls(t, c, 1)
 	if len(gl.searches) != 0 {
 		t.Fatalf("GitLab was asked before it was connected: %v", gl.searches)
 	}
-	file.Put(connections.Connection{Provider: connections.GitLab, Login: "kim", Access: "gloas-secret", URL: "https://gitlab.example.com/",
-		AccessExpiresAt: time.Now().Add(time.Hour), ConnectedAt: time.Now()})
+	must(t, file.Put(connections.Connection{Provider: connections.GitLab, Login: "kim", Access: "gloas-secret", URL: "https://gitlab.example.com/",
+		AccessExpiresAt: time.Now().Add(time.Hour), ConnectedAt: time.Now()}))
 	pulls(t, c, 2)
 	if len(gl.searches) != 1 || gl.searches[0] != "ops/tool after=" {
 		t.Fatalf("GitLab was asked %v", gl.searches)
@@ -112,12 +111,12 @@ func TestBitbucketConnectedAfterTheFolderListsItsPullRequests(t *testing.T) {
 
 	_, c, bb, file := bitbucketDaemon(t)
 	bitbucket, _, _ := file.Get(connections.Bitbucket)
-	file.Delete(connections.Bitbucket)
+	must(t, file.Delete(connections.Bitbucket))
 	pulls(t, c, 1)
 	if len(bb.searches) != 0 {
 		t.Fatalf("Bitbucket was asked before it was connected: %v", bb.searches)
 	}
-	file.Put(bitbucket)
+	must(t, file.Put(bitbucket))
 	pulls(t, c, 2)
 	if len(bb.searches) != 1 || bb.searches[0] != "[walkalex/App] prs=true label= after= first=50" {
 		t.Fatalf("Bitbucket was asked %v", bb.searches)
@@ -137,7 +136,7 @@ func TestLineageOnASelfHostedGitLabOfAnyName(t *testing.T) {
 	}
 	gitlab := connections.Connection{Provider: connections.GitLab, Login: "kim", Access: "gloas-secret", URL: "https://git.corp.example/",
 		AccessExpiresAt: time.Now().Add(time.Hour), ConnectedAt: time.Now()}
-	file.Put(gitlab)
+	must(t, file.Put(gitlab))
 	if r := d.folderRepo(folder); r != (forgeRepo{"gitlab", "platform/api"}) {
 		t.Fatalf("on the connected GitLab: %+v", r)
 	}
@@ -148,11 +147,11 @@ func TestLineageOnASelfHostedGitLabOfAnyName(t *testing.T) {
 	// Another GitLab connected, or none: the folder is on no forge lineage knows.
 	other := gitlab
 	other.URL = connections.GitLabCom
-	file.Put(other)
+	must(t, file.Put(other))
 	if r := d.folderRepo(folder); r.forge != "" {
 		t.Fatalf("with gitlab.com connected: %+v", r)
 	}
-	file.Delete(connections.GitLab)
+	must(t, file.Delete(connections.GitLab))
 	if r := d.folderRepo(folder); r.forge != "" {
 		t.Fatalf("with no GitLab connection: %+v", r)
 	}
