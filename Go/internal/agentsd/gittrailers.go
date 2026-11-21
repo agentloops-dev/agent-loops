@@ -42,9 +42,14 @@ var trailerBlockOrder = []string{"Made-by", "Session", "Fixes", "Epic", "Request
 	"Cost", "Tokens", "Duration", "Co-authored-by"}
 
 // trailerItem reads an issue or a PR for the block, from the forge cache within its minute.
-// Tests replace it.
-var trailerItem = func(ctx context.Context, d *Daemon, kind string, n wire.LineageNode) (wire.ForgeItemDetail, error) {
-	return d.forgeItem(ctx, kind, wire.ForgeItemRequest{Node: n})
+// Tests replace it. Set in init: its own value reaches back to it through the app tools
+// (commit_trailers), which a package variable's initialiser may not.
+var trailerItem func(ctx context.Context, d *Daemon, kind string, n wire.LineageNode) (wire.ForgeItemDetail, error)
+
+func init() {
+	trailerItem = func(ctx context.Context, d *Daemon, kind string, n wire.LineageNode) (wire.ForgeItemDetail, error) {
+		return d.forgeItem(ctx, kind, wire.ForgeItemRequest{Node: n})
+	}
 }
 
 func (d *Daemon) registerGitTrailers() {
