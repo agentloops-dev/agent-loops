@@ -16,7 +16,7 @@ func TestACarriedProviderIsCalledOnItsMachine(t *testing.T) {
 	router.setOnline(carrier, true)
 	var seen wire.ProviderCarry
 	router.asking = func(host, method string, params json.RawMessage) json.RawMessage {
-		json.Unmarshal(params, &seen)
+		must(t, json.Unmarshal(params, &seen))
 		return rawOf(wire.ProviderCarried{Result: rawOf(MachineInfo{ID: "ws-1", Name: "ws-1", State: "running"})})
 	}
 	machine := carrier
@@ -133,7 +133,7 @@ func TestAProvidersSecretsGoToItsMachineAndNowhereElse(t *testing.T) {
 	}
 	var record ProviderRecord
 	object, _ := h.store.Get(context.Background(), ProviderKey(id))
-	json.Unmarshal(object.Data, &record)
+	must(t, json.Unmarshal(object.Data, &record))
 	if deref(record.Machine) != carrier {
 		t.Fatalf("%+v", record)
 	}

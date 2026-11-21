@@ -34,7 +34,9 @@ func TestEntriesAreListedNewestFirst(t *testing.T) {
 		}
 	}
 	// One of the control plane's own events is not an entry.
-	s.Put(ctx, Prefix+now.Format(dayLayout)+"/0000000000000-x.json", []byte(`{"kind":"hostRemoved","subject":"box","at":"2026-10-20T00:00:00.000Z","by":"code"}`), store.Absent)
+	if _, err := s.Put(ctx, Prefix+now.Format(dayLayout)+"/0000000000000-x.json", []byte(`{"kind":"hostRemoved","subject":"box","at":"2026-10-20T00:00:00.000Z","by":"code"}`), store.Absent); err != nil {
+		t.Fatal(err)
+	}
 
 	all, more, err := l.List(ctx, NewQuery(wire.AuditQuery{}, 90, now, false), owner)
 	if err != nil || more || len(all) != 5 {
@@ -140,7 +142,7 @@ func TestAMembersListReadsOnlyTheirOwnEntries(t *testing.T) {
 			}
 		}
 		if d%10 == 0 {
-			l.Write(ctx, wire.AuditActor{User: "sam"}, "agents/stop", "Stopped an agent", "", nil)
+			must(t, l.Write(ctx, wire.AuditActor{User: "sam"}, "agents/stop", "Stopped an agent", "", nil))
 		}
 	}
 
