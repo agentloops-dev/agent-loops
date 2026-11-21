@@ -114,6 +114,28 @@ trailer the rule turns off is not worked out, so it costs no forge call.
 The daemon knows no such setting for the other runtimes; the worktree's `commit-msg` hook
 (#6372) takes out a trailer that the rule turns off, whoever wrote it.
 
+### Commit trailers on main
+
+The app's tool `commit_trailers {pr?}` (#6362) is `git/trailers` for the session that calls
+it: a script on the socket is a stranger and cannot call `git/trailers`, so an agent asks with
+its own token. It gives the lines, one a line, to write as they come as the message's last
+paragraph. A person or a script then reads them with no API call:
+`git log --format='%(trailers:key=Cost,valueonly)'`.
+
+GitHub's squash runs no hook, so in this repo a lane writes the squash message itself:
+`scripts/automerge.sh <pr> <file>`, with the lines `commit_trailers` gave for the PR in
+`<file>`, turns on squash auto-merge with each commit's message (its own trailers taken out,
+merges of the base left out) and one block at the end. To that block it adds each commit's
+`Co-authored-by` and each commit author but the PR's own, as GitHub's own squash message names
+them. It fails on a key that is not a `commitTrailers.<key>` of the wire schema, or `Refs`, so
+the keys do not drift. `scripts/rearm-automerge.sh` keeps the message when it turns auto-merge
+off and on again; a lane that did more work runs `commit_trailers` and `scripts/automerge.sh`
+again, so the totals count it. A PR that a person makes with no agent gets no block.
+
+This repo's `.agents/policy.json` sets `"commitTrailers": {"Cost": "on"}` (Alex, 2026-11-19):
+`Cost` shows on its commits unless a person's or the organisation's layer sets it off, which
+is tighter.
+
 ## The signature
 
 `v1/policy.sig` is `{version, keyID, alg: "es256", sig}`:
