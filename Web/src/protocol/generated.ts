@@ -13673,6 +13673,12 @@ export interface SecretOperation {
   at: WireDate;
   /** How many times in the minute from at, when more than one. */
   count?: number;
+  /**
+   * The machine's id for this operation (#6464). A machine keeps an operation until the control
+   * plane answers, and sends it again after a stop or a failed send; the control plane keeps an id
+   * it has kept already only once. Left out by an older machine.
+   */
+  id?: string;
 }
 
 /**
@@ -18994,7 +19000,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   SecretOffer: { required: ["offer", "name", "machine", "machineName", "savedAt"], optional: ["agent", "needsApproval", "description", "conflict", "mine"] },
   SecretOfferRequest: { required: ["offer"], optional: [] },
   SecretOffers: { required: ["offers"], optional: ["user"] },
-  SecretOperation: { required: ["name", "what", "at"], optional: ["use", "place", "agent", "count"] },
+  SecretOperation: { required: ["name", "what", "at"], optional: ["use", "place", "agent", "count", "id"] },
   SecretRelease: { required: ["name", "encapsulated", "approval"], optional: [] },
   SecretReleaseKey: { required: ["publicKey"], optional: [] },
   SecretReleased: { required: ["key"], optional: [] },
