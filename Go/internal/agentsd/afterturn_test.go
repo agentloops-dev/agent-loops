@@ -88,12 +88,10 @@ func TestShutdownEndsTheWritesInLineForAClientThatReadsNothing(t *testing.T) {
 		})
 	}
 	waitFor(t, "three writes in line for the client", func() bool { return writesToClients() >= 3 })
-	// Once Shutdown has begun, the client reads one line: the write that held the lock goes,
-	// and each one after it would wait the conn's 5 s again.
+	// When Shutdown waits for the goroutines, the client reads one line: the write that held
+	// the lock goes, and each one after it would wait the conn's 5 s again.
 	go func() {
-		for !d.going() {
-			time.Sleep(time.Millisecond)
-		}
+		<-d.hostCtx().Done()
 		<-c.out
 	}()
 
