@@ -312,10 +312,7 @@ func (d *Daemon) removeClient(c *Client) {
 // the host goes is not heard, and a client that reads nothing would hold each write that
 // follows a turn up to its own limit, past Shutdown's wait for them.
 func (d *Daemon) clientsToTell() []*Client {
-	d.afterTurnMu.Lock()
-	closed := d.afterTurnClosed
-	d.afterTurnMu.Unlock()
-	if closed {
+	if d.shuttingDown() {
 		return nil
 	}
 	d.mu.Lock()
@@ -345,7 +342,7 @@ func Broadcast[P any](d *Daemon, n wire.Notification[P], params P) {
 				continue
 			}
 		}
-		c.write(string(b))
+		c.writeUnasked(string(b))
 	}
 	for up, fs := range routed {
 		fanOut(up, fs, string(b))
