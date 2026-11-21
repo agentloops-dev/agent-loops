@@ -31,11 +31,14 @@ type sendsHeard struct {
 // keep holds line when it is a send/changed, and is its id when it is an answer.
 func (h *sendsHeard) keep(line string) (message, bool) {
 	var m message
-	json.Unmarshal([]byte(line), &m)
+	if json.Unmarshal([]byte(line), &m) != nil {
+		return m, false
+	}
 	if m.Method == wire.NotifySendChanged.Name {
 		var n wire.SendNotification
-		json.Unmarshal(m.Params, &n)
-		h.held = append(h.held, n)
+		if json.Unmarshal(m.Params, &n) == nil {
+			h.held = append(h.held, n)
+		}
 	}
 	return m, m.Method == ""
 }
@@ -109,7 +112,9 @@ func (p *sendPeer) ask(ctx context.Context, method string, params any) (json.Raw
 	}
 	p.mu.Unlock()
 	var s wire.MachineFolderSend
-	json.Unmarshal(b, &s)
+	if err := json.Unmarshal(b, &s); err != nil {
+		return nil, err
+	}
 	out, err := p.step(ctx, s)
 	if err != nil {
 		return nil, err
@@ -169,10 +174,10 @@ func TestFoldersSendSendsOnItsOwn(t *testing.T) {
 	// More than one part of machines/sendFolder, so the send says how far it is.
 	big := make([]byte, sendThereParts+sendThereParts/2)
 	rand.Read(big)
-	os.WriteFile(filepath.Join(src, "big.bin"), big, 0o644)
+	must(t, os.WriteFile(filepath.Join(src, "big.bin"), big, 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	sendGit(t, src, nil, "add", "-A")
 	sendGit(t, src, nil, "commit", "-q", "-m", "big")
-	os.WriteFile(filepath.Join(src, "notes.txt"), []byte("not committed\n"), 0o644)
+	must(t, os.WriteFile(filepath.Join(src, "notes.txt"), []byte("not committed\n"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	head := sendGit(t, src, nil, "rev-parse", "HEAD")
 	// The other machine is this one, at another path: the steps go to its own methods.
 	there := filepath.Join(canonical(t.TempDir()), "app")
@@ -196,7 +201,7 @@ func TestFoldersSendSendsOnItsOwn(t *testing.T) {
 	// It answers before the send is done.
 	heard := &sendsHeard{c: c}
 	var s wire.SendSummary
-	json.Unmarshal(heard.call(t, 2, "folders/send", send), &s)
+	mustUnmarshal(t, heard.call(t, 2, "folders/send", send), &s)
 	if s.Machine != "pc-id" || s.MachineName != "pc" || s.Destination != there || s.Folder != store.PathURL(src) {
 		t.Fatalf("%+v", s)
 	}
@@ -214,7 +219,7 @@ func TestFoldersSendSendsOnItsOwn(t *testing.T) {
 	}
 	// A window that connects now finds it, and a second send to the same folder is refused.
 	var under []wire.SendNotification
-	json.Unmarshal(c.call(t, 3, "folders/sends", nil), &under)
+	mustUnmarshal(t, c.call(t, 3, "folders/sends", nil), &under)
 	if len(under) != 1 || under[0].Send.ID != s.ID || under[0].Sent != last.Sent {
 		t.Fatalf("%+v", under)
 	}
@@ -249,13 +254,13 @@ func TestFoldersSendSendsOnItsOwn(t *testing.T) {
 	if left, _ := os.ReadDir(d.outgoingFolder()); len(left) != 0 {
 		t.Fatalf("left in Outgoing: %v", left)
 	}
-	json.Unmarshal(c.call(t, 5, "folders/sends", nil), &under)
+	mustUnmarshal(t, c.call(t, 5, "folders/sends", nil), &under)
 	if len(under) != 0 {
 		t.Fatalf("still under way: %+v", under)
 	}
 
 	// Work of its own there: refused at once, and nothing goes.
-	os.WriteFile(filepath.Join(there, "mine.txt"), []byte("mine\n"), 0o644)
+	must(t, os.WriteFile(filepath.Join(there, "mine.txt"), []byte("mine\n"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	if e := c.callError(t, 6, "folders/send", send); e.Message != "Nothing was sent to pc: "+there+" has changes of its own there." {
 		t.Fatal(e.Message)
 	}

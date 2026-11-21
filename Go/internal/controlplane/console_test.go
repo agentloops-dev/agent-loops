@@ -23,7 +23,7 @@ func TestConsoleFleetIsEveryMachineForAnAdmin(t *testing.T) {
 	beas := p.machine(bea, "BEAS-MAC")
 
 	var board wire.FleetBoard
-	json.Unmarshal(call(t, admin, "", "console/fleet", map[string]any{}), &board)
+	must(t, json.Unmarshal(call(t, admin, "", "console/fleet", map[string]any{}), &board))
 	if len(board.Machines) != 2 {
 		t.Fatalf("%+v", board)
 	}
@@ -68,9 +68,9 @@ func TestConsoleTeamWorkflowsIsEachBotsRuns(t *testing.T) {
 	_, admin := p.client("Alex's Mac")
 	sam := p.invite(admin, "Sam", wire.UserRoleMember)
 	var platform wire.Group
-	json.Unmarshal(call(t, admin, "", "groups/set", wire.GroupSet{Name: "Platform", Members: []string{sam.id}}), &platform)
+	must(t, json.Unmarshal(call(t, admin, "", "groups/set", wire.GroupSet{Name: "Platform", Members: []string{sam.id}}), &platform))
 	var made wire.BotMade
-	json.Unmarshal(call(t, admin, "", "bots/make", wire.BotMake{Name: "review-bot", Group: platform.ID}), &made)
+	must(t, json.Unmarshal(call(t, admin, "", "bots/make", wire.BotMake{Name: "review-bot", Group: platform.ID}), &made))
 	box := p.botMachine(admin, made.User, "MACHINE-B1")
 	host := box.member.Host
 
@@ -80,12 +80,14 @@ func TestConsoleTeamWorkflowsIsEachBotsRuns(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	p.s.claimRun(context.Background(), host, wire.WorkflowClaim{Workflow: "deps", Trigger: "schedule"}, now)
+	if _, err := p.s.claimRun(context.Background(), host, wire.WorkflowClaim{Workflow: "deps", Trigger: "schedule"}, now); err != nil {
+		t.Fatal(err)
+	}
 	p.s.copies.take(host, "agents/list", `{"result":[{"id":"A1","state":"running","title":"secret words","startedByWorkflow":"review","createdAt":800000000},{"id":"A2","state":"finished"}]}`)
 
 	var board wire.TeamWorkflows
 	raw := call(t, admin, "", "console/teamWorkflows", map[string]any{})
-	json.Unmarshal(raw, &board)
+	must(t, json.Unmarshal(raw, &board))
 	if len(board.Bots) != 1 {
 		t.Fatalf("%s", raw)
 	}
@@ -119,7 +121,7 @@ func TestConsoleLiveIsEveryRunningAgent(t *testing.T) {
 
 	var board wire.LiveBoard
 	raw := call(t, admin, "", "console/live", map[string]any{})
-	json.Unmarshal(raw, &board)
+	must(t, json.Unmarshal(raw, &board))
 	ids := []string{}
 	for _, a := range board.Agents {
 		ids = append(ids, string(a.Agent))

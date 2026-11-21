@@ -36,7 +36,7 @@ func (d *driver) call(method string, params any) (json.RawMessage, string) {
 	d.next++
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	d.lines.Write(ctx, request(itoa(d.next), method, params))
+	must(d.t, d.lines.Write(ctx, request(itoa(d.next), method, params)))
 	line, err := d.lines.Read(ctx)
 	if err != nil {
 		d.t.Fatal(err)
@@ -45,7 +45,7 @@ func (d *driver) call(method string, params any) (json.RawMessage, string) {
 		Result json.RawMessage `json:"result"`
 		Error  *RPCError       `json:"error"`
 	}
-	json.Unmarshal([]byte(line), &r)
+	must(d.t, json.Unmarshal([]byte(line), &r))
 	if r.Error != nil {
 		return nil, r.Error.Message
 	}
@@ -63,7 +63,7 @@ func (d *driver) must(method string, params any) json.RawMessage {
 
 func phaseOf(raw json.RawMessage) string {
 	var s wire.HandoverStatus
-	json.Unmarshal(raw, &s)
+	fakeMust(json.Unmarshal(raw, &s))
 	return s.Phase
 }
 
@@ -122,13 +122,13 @@ func TestAHandoverMovesAMemberWithoutPairingAgain(t *testing.T) {
 	// Hosts that never said an epoch would be left behind: none here.
 	from.must("handover/freeze", nil)
 	var keys []struct{ Key string }
-	json.Unmarshal(from.must("store/list", map[string]string{"prefix": "v1/"}), &keys)
+	must(t, json.Unmarshal(from.must("store/list", map[string]string{"prefix": "v1/"}), &keys))
 	for _, k := range keys {
 		if strings.HasPrefix(k.Key, "v1/leases/") || strings.HasPrefix(k.Key, "v1/copies/") {
 			continue
 		}
 		var object struct{ Data string }
-		json.Unmarshal(from.must("store/get", map[string]string{"key": k.Key}), &object)
+		must(t, json.Unmarshal(from.must("store/get", map[string]string{"key": k.Key}), &object))
 		to.must("store/put", map[string]string{"key": k.Key, "data": object.Data})
 	}
 	if phaseOf(to.must("handover/take", nil)) != phaseServing {
@@ -160,7 +160,7 @@ func TestAHandoverMovesAMemberWithoutPairingAgain(t *testing.T) {
 	var status struct {
 		Name string `json:"name"`
 	}
-	json.Unmarshal(call(t, window, "", "control/status", nil), &status)
+	must(t, json.Unmarshal(call(t, window, "", "control/status", nil), &status))
 	if status.Name == "" {
 		t.Fatal("no status")
 	}

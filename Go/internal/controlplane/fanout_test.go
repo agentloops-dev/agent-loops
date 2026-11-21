@@ -24,13 +24,15 @@ func (p *plane) docsHost(machine string) *fakeHost {
 func docsPaging(updated []float64, asks *int, mu *sync.Mutex) func(json.RawMessage) any {
 	return func(params json.RawMessage) any {
 		var r wire.DocsListRequest
-		json.Unmarshal(params, &r)
+		fakeMust(json.Unmarshal(params, &r))
 		mu.Lock()
 		*asks++
 		mu.Unlock()
 		from := 0
 		if r.Cursor != nil {
-			fmt.Sscan(*r.Cursor, &from)
+			if _, err := fmt.Sscan(*r.Cursor, &from); err != nil {
+				fakeMust(err)
+			}
 		}
 		size := int(*r.Limit)
 		to := min(from+size, len(updated))
@@ -74,7 +76,7 @@ func TestDocsListAllMergesMachinesWithACursor(t *testing.T) {
 			ask["cursor"] = cursor
 		}
 		var got wire.DocsListAll
-		json.Unmarshal(call(t, window, "", "docs/listAll", ask), &got)
+		must(t, json.Unmarshal(call(t, window, "", "docs/listAll", ask), &got))
 		if len(got.Docs) > 2 {
 			t.Fatalf("a page of %d", len(got.Docs))
 		}
@@ -143,7 +145,7 @@ func TestConversationsAllMergesMachines(t *testing.T) {
 	}}
 	box.mu.Unlock()
 	var got wire.MessagesConversationsAll
-	json.Unmarshal(call(t, window, "", "messages/conversationsAll", map[string]any{"limit": 20}), &got)
+	must(t, json.Unmarshal(call(t, window, "", "messages/conversationsAll", map[string]any{"limit": 20}), &got))
 	var ids []string
 	for _, c := range got.Conversations {
 		ids = append(ids, c.Conversation.Conversation.ID)

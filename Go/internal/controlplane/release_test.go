@@ -23,7 +23,7 @@ func TestAMachineIsToldTheRelease(t *testing.T) {
 			return
 		}
 		var r wire.MachineRelease
-		json.Unmarshal(params, &r)
+		must(t, json.Unmarshal(params, &r))
 		mu.Lock()
 		told[host] = r.Version
 		mu.Unlock()

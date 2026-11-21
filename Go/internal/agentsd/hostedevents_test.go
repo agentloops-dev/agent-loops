@@ -20,9 +20,9 @@ func TestAHostedServersEventsComeThroughItsOneCopy(t *testing.T) {
 	defer d.Shutdown()
 	home := t.TempDir()
 	d.PersonalHome = home
-	os.MkdirAll(filepath.Join(home, ".agents"), 0o755)
+	must(t, os.MkdirAll(filepath.Join(home, ".agents"), 0o755)) //nolint:gosec // G301: the mode this folder always had; only its error is new
 	entry, _ := json.Marshal(map[string]any{"mcpServers": map[string]any{"gh": map[string]any{"command": self, "hosted": true}}})
-	os.WriteFile(filepath.Join(home, ".agents", "mcp.json"), entry, 0o644)
+	must(t, os.WriteFile(filepath.Join(home, ".agents", "mcp.json"), entry, 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	s, problem := d.eventServerNamed("gh", t.TempDir(), nil)
 	if problem != "" || !s.hosted {
 		t.Fatalf("the hosted entry's event server: %q, %+v", problem, s)

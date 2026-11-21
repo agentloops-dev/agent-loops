@@ -33,11 +33,21 @@ set -euo pipefail
 me=$(basename "$0")
 die() { echo "$me: $*" >&2; exit 1; }
 
-# The repository only allows squash merges.
+# The repository only allows squash merges. The squash message that auto-merge was turned on
+# with, such as the commit trailers of scripts/automerge.sh (#6362), is kept: read first, then
+# given again. With none read, GitHub's own message.
 rearm() {
-	local pr=$1
+	local pr=$1 body file
+	body=$(gh pr view "$pr" --json autoMergeRequest --jq '.autoMergeRequest.commitBody // ""' 2>/dev/null) || body=""
 	gh pr merge "$pr" --disable-auto >/dev/null 2>&1 || true
-	gh pr merge "$pr" --auto --squash >/dev/null || die "could not turn auto-merge on again for #$pr"
+	if [[ -n $body ]]; then
+		file=$(mktemp "${TMPDIR:-/tmp}/rearm-$pr.XXXXXX")
+		printf '%s\n' "$body" >"$file"
+		gh pr merge "$pr" --auto --squash --body-file "$file" >/dev/null || { rm -f "$file"; die "could not turn auto-merge on again for #$pr"; }
+		rm -f "$file"
+	else
+		gh pr merge "$pr" --auto --squash >/dev/null || die "could not turn auto-merge on again for #$pr"
+	fi
 	echo "$me: re-armed auto-merge on #$pr"
 }
 

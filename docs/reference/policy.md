@@ -114,6 +114,55 @@ trailer the rule turns off is not worked out, so it costs no forge call.
 The daemon knows no such setting for the other runtimes; the worktree's `commit-msg` hook
 (#6372) takes out a trailer that the rule turns off, whoever wrote it.
 
+### Commit trailers on main
+
+The app's tool `commit_trailers {pr?}` (#6362) is `git/trailers` for the session that calls
+it: a script on the socket is a stranger and cannot call `git/trailers`, so an agent asks with
+its own token. It gives the lines, one a line, to write as they come as the message's last
+paragraph. A person or a script then reads them with no API call:
+`git log --format='%(trailers:key=Cost,valueonly)'`.
+
+GitHub's squash runs no hook, so in this repo a lane writes the squash message itself:
+`scripts/automerge.sh <pr> <file>`, with the lines `commit_trailers` gave for the PR in
+`<file>`, turns on squash auto-merge with each commit's message (its own trailers taken out,
+merges of the base left out) and one block at the end. To that block it adds each commit's
+`Co-authored-by` and each commit author but the PR's own, as GitHub's own squash message names
+them. It fails on a key that is not a `commitTrailers.<key>` of the wire schema, or `Refs`, so
+the keys do not drift. `scripts/rearm-automerge.sh` keeps the message when it turns auto-merge
+off and on again; a lane that did more work runs `commit_trailers` and `scripts/automerge.sh`
+again, so the totals count it. A PR that a person makes with no agent gets no block.
+
+This repo's `.agents/policy.json` sets `"commitTrailers": {"Cost": "on"}` (Alex, 2026-11-19):
+`Cost` shows on its commits unless a person's or the organisation's layer sets it off, which
+is tighter.
+
+### The worktree's commit-msg hook
+
+Each worktree that the app makes (new, on a branch, made again, or an older one that an agent
+starts in) gets a hooks folder of its own, `.git/worktrees/<name>/agents-hooks/`. The daemon
+turns on `extensions.worktreeConfig` and sets `core.hooksPath` with `--worktree`, so the main
+checkout and the folder's other worktrees do not change. A repository that keeps `core.bare`
+or `core.worktree` in its shared config gets no hook, as git asks. It is a git hook, not a
+runtime hook: it never holds an agent's tool use.
+
+- **The folder's own hooks still run.** Each hook in the folder (every hook git runs in a
+  checkout) runs the folder's hook of the same name: the last `core.hooksPath` of a scope other
+  than the worktree's (as Husky sets it), else the repository's `hooks` folder (where lefthook
+  and pre-commit write theirs). It finds it at each run, so a hook the folder adds later runs
+  too.
+- **`commit-msg`** runs the folder's own `commit-msg` first; when that refuses the commit, it
+  stays refused. Then, in a session, `agents-trailers MSGFILE` (`agentsd trailers`, beside
+  `agents-secret` on the session's PATH, with the same grant) asks agentsd for the session's
+  `git/trailers` and writes the block as the message's last paragraph: it takes out a trailer
+  of a key the rule turns off (`Fixes` also takes out `Refs`), puts the block's `Made-by`,
+  `Session`, `Epic`, `Attested`, `Cost`, `Tokens` and `Duration` in place of one already
+  there, and adds each other line that is not there yet. Other trailers, such as a person's
+  `Signed-off-by`, stay. An editor's comments and `commit -v`'s scissors stay after it.
+- **A person's own commit** (no session's grant in the environment) gets no block.
+- **When agentsd does not answer**, the message stays as it is and the hook prints one line.
+  It never refuses a commit of its own.
+- **`git commit --no-verify`** skips it. The squash message (#6362) still applies the rule.
+
 ## The signature
 
 `v1/policy.sig` is `{version, keyID, alg: "es256", sig}`:

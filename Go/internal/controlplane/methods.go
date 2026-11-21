@@ -1409,8 +1409,6 @@ func (m *Methods) HostSaid(host, method string, params json.RawMessage) (any, er
 		}
 		// What this control plane can do, so the host asks only what it answers (#4100).
 		return wire.MachineHelloAnswer{Capabilities: capabilities()}, m.hello(ctx, host, hello)
-	case "folders/detected":
-		return m.foldersDetected(ctx, host)
 	case "attention/need":
 		m.s.heard(host, params)
 		return map[string]any{}, nil
@@ -1582,18 +1580,6 @@ func (m *Methods) hostReported(ctx context.Context, host, method string, params 
 		return answer, true, err
 	}
 	return nil, false, nil
-}
-
-// foldersDetected is folders/detected, said once: from now on the machine's folders are
-// the person's to add and remove (#429).
-func (m *Methods) foldersDetected(ctx context.Context, host string) (any, error) {
-	if record := m.records.Host(host); record != nil && record.DetectFolders != nil && *record.DetectFolders {
-		record.DetectFolders = nil
-		if err := m.records.SaveHost(ctx, *record); err != nil {
-			return nil, err
-		}
-	}
-	return map[string]any{}, nil
 }
 
 // takeNotice is notices/take: the person's one bucket of notices, for every machine of
@@ -1803,7 +1789,6 @@ func (m *Methods) hello(ctx context.Context, host string, hello wire.MachineHell
 	}
 	m.s.tellHostClients(host)
 	m.sendAtJoin(host)
-	m.clearDetectFolders(ctx, host)
 	return nil
 }
 
@@ -1887,19 +1872,6 @@ func (m *Methods) sendAtJoin(host string) {
 			m.s.botMachineJoined(host)
 		}
 	}()
-}
-
-// clearDetectFolders drops the mark of a host marked before #656 to add the folders it
-// found: the mark goes, unsaid.
-func (m *Methods) clearDetectFolders(ctx context.Context, host string) {
-	// The mark is dropped again on the next detect.
-	_ = m.records.ChangeHost(ctx, host, func(r *records.MachineRecord) bool {
-		if r.DetectFolders == nil || !*r.DetectFolders {
-			return false
-		}
-		r.DetectFolders = nil
-		return true
-	})
 }
 
 func sameHost(a, b records.MachineRecord) bool {

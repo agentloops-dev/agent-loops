@@ -2,7 +2,6 @@ package agentsd
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"slices"
 	"testing"
@@ -65,7 +64,7 @@ func TestLineageSessionsOnAnEpic(t *testing.T) {
 	})
 	d.lineageSettle(2 * time.Second)
 	var got wire.LineageSessions
-	json.Unmarshal(c.call(t, 1, "lineage/sessions", wire.LineageSessionsRequest{Number: 3465}), &got)
+	mustUnmarshal(t, c.call(t, 1, "lineage/sessions", wire.LineageSessionsRequest{Number: 3465}), &got)
 	want := map[string]string{"1": epic.Ref, "2": child.Ref, "3": child.Ref}
 	if len(got.Matches) != len(want) || got.Limited != nil {
 		t.Fatalf("%+v", got)
@@ -76,7 +75,7 @@ func TestLineageSessionsOnAnEpic(t *testing.T) {
 			t.Errorf("session %s on %s, want %s", n, m.On.Ref, want[n])
 		}
 	}
-	json.Unmarshal(c.call(t, 2, "lineage/sessions", wire.LineageSessionsRequest{Number: 1}), &got)
+	mustUnmarshal(t, c.call(t, 2, "lineage/sessions", wire.LineageSessionsRequest{Number: 1}), &got)
 	if len(got.Matches) != 0 {
 		t.Fatalf("an issue lineage does not know: %+v", got)
 	}
@@ -102,7 +101,7 @@ func TestListQueryForAnIssue(t *testing.T) {
 	d.lineageDo(func() { d.link(sessionNode(on), d.repos[folder].issue(3465), lineage.RelWorksOn, lineage.SourceStart) })
 	d.lineageSettle(2 * time.Second)
 	var listed []wire.Agent
-	json.Unmarshal(c.call(t, 2, "agents/list", map[string]any{"includeArchived": true, "query": "#3465 words"}), &listed)
+	mustUnmarshal(t, c.call(t, 2, "agents/list", map[string]any{"includeArchived": true, "query": "#3465 words"}), &listed)
 	got := map[wire.UUID]bool{}
 	for _, a := range listed {
 		got[a.ID] = true
@@ -143,7 +142,7 @@ func TestLineageSessionsIssuesInTheEpicsOrder(t *testing.T) {
 	})
 	d.lineageSettle(2 * time.Second)
 	var got wire.LineageSessions
-	json.Unmarshal(c.call(t, 1, "lineage/sessions", wire.LineageSessionsRequest{Number: 3897}), &got)
+	mustUnmarshal(t, c.call(t, 1, "lineage/sessions", wire.LineageSessionsRequest{Number: 3897}), &got)
 	var order []string
 	for _, i := range got.Issues {
 		order = append(order, i.Node.Ref)

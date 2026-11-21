@@ -1,7 +1,6 @@
 package agentsd
 
 import (
-	"encoding/json"
 	"testing"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
@@ -22,7 +21,7 @@ func lostForm(t *testing.T, d *Daemon, asker wire.UUID, msg string) wire.Elicita
 func pendingIDs(t *testing.T, c *conn, id int) map[wire.UUID]bool {
 	t.Helper()
 	var got []wire.ElicitationRequest
-	json.Unmarshal(c.call(t, id, "elicitations/pending", map[string]any{}), &got)
+	mustUnmarshal(t, c.call(t, id, "elicitations/pending", map[string]any{}), &got)
 	out := map[wire.UUID]bool{}
 	for _, e := range got {
 		out[e.ID] = true

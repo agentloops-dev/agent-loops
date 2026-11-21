@@ -6563,6 +6563,10 @@
         "count": {
           "type": "integer",
           "description": "How many times in the minute from at, when more than one."
+        },
+        "id": {
+          "type": "string",
+          "description": "The machine's id for this operation (#6464). A machine keeps an operation until the control plane answers, and sends it again after a stop or a failed send; the control plane keeps an id it has kept already only once. Left out by an older machine."
         }
       },
       "required": [

@@ -758,7 +758,12 @@ It is read only.
   (`GITHUB_TOKEN · fill · github.com`) and the machine's person and the machine as who did it.
   Reads are kept at most once per secret, session, place and minute, with the count
   (`· 12 times`). A person's Set and Remove in Settings ▸ Secrets are their own entries ("Set a
-  secret", "Removed a secret", `user/setSecret` and `user/removeSecret`). Never a value. Each
+  secret", "Removed a secret", `user/setSecret` and `user/removeSecret`). Never a value. An
+  operation stays in `secret-ops-pending.json` on the machine, with an `id`, until the control
+  plane answers (#6464): a stop, or a send that failed, loses none. The machine sends what waits
+  each time its link comes up, and again a minute after a failed send. The file keeps at most
+  1,000, and drops the oldest with a log line. The control plane keeps an `id` it has kept
+  already only once (it remembers the last 20,000, in memory). Each
   machine also keeps each secret's last operation in `secret-ops.json`, for the names it holds,
   and a removed secret's goes with it. It sends that last operation, and the hint of each copy
   (the last 4 of a value of 16 characters or more, or of a card's number), with what it holds

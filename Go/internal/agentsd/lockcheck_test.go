@@ -63,7 +63,7 @@ func (c *conn) answer(t *testing.T, id int) string {
 		select {
 		case line := <-c.out:
 			var m message
-			json.Unmarshal([]byte(line), &m)
+			mustUnmarshal(t, []byte(line), &m)
 			if string(m.ID) == string(mustJSON(id)) {
 				return line
 			}
@@ -93,7 +93,7 @@ func hello(t *testing.T, c *conn, state *machinelock.State, signer *ecdsa.Privat
 		Result *wire.LockHelloReply `json:"result"`
 		Error  *Error               `json:"error"`
 	}
-	json.Unmarshal([]byte(c.answer(t, 100)), &m)
+	mustUnmarshal(t, []byte(c.answer(t, 100)), &m)
 	if m.Result == nil {
 		t.Fatalf("lock/hello: %+v", m.Error)
 	}
@@ -306,7 +306,7 @@ func TestLockResetOnDaemonSockAsksForTheLockAgain(t *testing.T) {
 	var mu sync.Mutex
 	var said []string
 	d.SetControl(func(method string, _ any) { mu.Lock(); said = append(said, method); mu.Unlock() })
-	os.WriteFile(d.lockPinPath(), []byte(`{"person":"sam","count":1,"head":"AA=="}`), 0o644)
+	must(t, os.WriteFile(d.lockPinPath(), []byte(`{"person":"sam","count":1,"head":"AA=="}`), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	if m := socketCall(t, path, wire.CallDaemonLockReset.Name); m == nil || m.Error != nil {
 		t.Fatalf("this account's reset: %+v", m)
 	}

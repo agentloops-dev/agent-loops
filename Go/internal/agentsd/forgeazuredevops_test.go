@@ -2,7 +2,6 @@ package agentsd
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -144,9 +143,9 @@ func azureDevOpsDaemon(t *testing.T) (*Daemon, *conn, *fakeForgeAzureDevOps, *co
 	for i, remote := range []string{"https://acme@dev.azure.com/acme/Web%20App/_git/App", "git@github.com:alexec/agents.git"} {
 		c.call(t, 100+i, "folders/add", map[string]any{"folder": "file://" + gitFolder(t, remote)})
 	}
-	file.Put(connections.AzureDevOpsConnection(connections.AzureDevOpsServices, "acme", "ado-secret", "Agents Test", time.Now()))
-	file.Put(connections.Connection{Provider: connections.GitHub, Login: "alexec", Access: "ghu_secret",
-		AccessExpiresAt: time.Now().Add(time.Hour), ConnectedAt: time.Now()})
+	must(t, file.Put(connections.AzureDevOpsConnection(connections.AzureDevOpsServices, "acme", "ado-secret", "Agents Test", time.Now())))
+	must(t, file.Put(connections.Connection{Provider: connections.GitHub, Login: "alexec", Access: "ghu_secret",
+		AccessExpiresAt: time.Now().Add(time.Hour), ConnectedAt: time.Now()}))
 	return d, c, ado, file
 }
 
@@ -157,7 +156,7 @@ func TestForgeListsAzureDevOpsPullRequests(t *testing.T) {
 
 	_, c, ado, _ := azureDevOpsDaemon(t)
 	var pulls wire.ForgeList
-	json.Unmarshal(c.call(t, 1, "forge/pulls", wire.ForgeListRequest{Label: new("ui")}), &pulls)
+	mustUnmarshal(t, c.call(t, 1, "forge/pulls", wire.ForgeListRequest{Label: new("ui")}), &pulls)
 	if len(ado.searches) != 1 || ado.searches[0] != "[acme/Web App/App] state= label=ui after= first=50" {
 		t.Fatalf("Azure DevOps was asked %v", ado.searches)
 	}
@@ -173,7 +172,7 @@ func TestForgeListsAzureDevOpsPullRequests(t *testing.T) {
 		t.Fatalf("the Azure DevOps pull request: %+v in %+v", item, pulls)
 	}
 	var issues wire.ForgeList
-	json.Unmarshal(c.call(t, 2, "forge/issues", wire.ForgeListRequest{}), &issues)
+	mustUnmarshal(t, c.call(t, 2, "forge/issues", wire.ForgeListRequest{}), &issues)
 	if len(ado.searches) != 1 {
 		t.Fatalf("issues asked Azure Repos: %v", ado.searches)
 	}
@@ -184,9 +183,9 @@ func TestForgeListSaysAzureDevOpsIsNotConnected(t *testing.T) {
 	t.Parallel()
 
 	_, c, ado, file := azureDevOpsDaemon(t)
-	file.Delete(connections.AzureDevOps)
+	must(t, file.Delete(connections.AzureDevOps))
 	var list wire.ForgeList
-	json.Unmarshal(c.call(t, 1, "forge/pulls", wire.ForgeListRequest{}), &list)
+	mustUnmarshal(t, c.call(t, 1, "forge/pulls", wire.ForgeListRequest{}), &list)
 	if len(ado.searches) != 0 || len(list.Errors) != 1 || list.Errors[0].Forge != "azuredevops" || list.Errors[0].Message != azuredevopsmcp.NotConnected {
 		t.Fatalf("list: %+v", list)
 	}
@@ -199,7 +198,7 @@ func TestForgeReadsAnAzureDevOpsPullRequest(t *testing.T) {
 
 	_, c, ado, _ := azureDevOpsDaemon(t)
 	var pr wire.ForgeItemDetail
-	json.Unmarshal(c.call(t, 1, "forge/pull", wire.ForgeItemRequest{Node: wire.LineageNode{Kind: "pr", Ref: "azuredevops:pr:acme/web app/app#3"}}), &pr)
+	mustUnmarshal(t, c.call(t, 1, "forge/pull", wire.ForgeItemRequest{Node: wire.LineageNode{Kind: "pr", Ref: "azuredevops:pr:acme/web app/app#3"}}), &pr)
 	if pr.Body != "The body." || deref(pr.Cursor) != "4" || len(pr.Comments) != 1 || pr.Comments[0].Bot == nil || deref(pr.Head) != "abc123" ||
 		len(pr.Checks) != 4 || *pr.FilesChanged != 2 || *pr.ReviewThreads != 1 || len(pr.MergeMethods) != 2 || pr.MergeMethods[0] != "squash" ||
 		deref(pr.Item.Checks) != "failing" || pr.Item.AutoMerge == nil || !*pr.Item.AutoMerge || pr.Start != nil {
@@ -227,7 +226,7 @@ func TestForgeWritesOnAnAzureDevOpsPullRequest(t *testing.T) {
 	_, c, ado, _ := azureDevOpsDaemon(t)
 	pr := wire.LineageNode{Kind: "pr", Ref: "azuredevops:pr:acme/web app/app#3"}
 	var done wire.ForgeDone
-	json.Unmarshal(c.call(t, 1, "forge/comment", wire.ForgeCommentRequest{Node: pr, Body: "LGTM"}), &done)
+	mustUnmarshal(t, c.call(t, 1, "forge/comment", wire.ForgeCommentRequest{Node: pr, Body: "LGTM"}), &done)
 	if deref(done.URL) != "https://dev.azure.com/c/1" {
 		t.Fatalf("comment: %+v", done)
 	}
@@ -235,13 +234,13 @@ func TestForgeWritesOnAnAzureDevOpsPullRequest(t *testing.T) {
 	c.call(t, 3, "forge/close", wire.ForgeCloseRequest{Node: pr})
 	c.call(t, 4, "forge/merge", wire.ForgeMergeRequest{Node: pr, Sha: "abc123"})
 	var auto wire.ForgeDone
-	json.Unmarshal(c.call(t, 5, "forge/merge", wire.ForgeMergeRequest{Node: pr, Sha: "abc123", Method: new(wire.ForgeMergeMethodRebase), Auto: new(true)}), &auto)
+	mustUnmarshal(t, c.call(t, 5, "forge/merge", wire.ForgeMergeRequest{Node: pr, Sha: "abc123", Method: new(wire.ForgeMergeMethodRebase), Auto: new(true)}), &auto)
 	if auto.Auto == nil || !*auto.Auto {
 		t.Fatalf("auto: %+v", auto)
 	}
 	c.call(t, 6, "forge/approve", wire.ForgeApproveRequest{Node: pr, Sha: "abc123"})
 	var rerun wire.ForgeDone
-	json.Unmarshal(c.call(t, 7, "forge/rerun", wire.ForgeNodeRequest{Node: pr}), &rerun)
+	mustUnmarshal(t, c.call(t, 7, "forge/rerun", wire.ForgeNodeRequest{Node: pr}), &rerun)
 	want := []string{"comment acme/Web App/App#3 LGTM", "labels acme/Web App/App#3 +[docs] -[ui]", "state acme/Web App/App#3 closed=true",
 		"merge acme/Web App/App#3 abc123 squash auto=false", "merge acme/Web App/App#3 abc123 rebase auto=true",
 		"approve acme/Web App/App#3 abc123", "retry acme/Web App/App 70"}
@@ -256,21 +255,21 @@ func TestForgeWritesOnAnAzureDevOpsPullRequest(t *testing.T) {
 		t.Fatalf("a method the branch does not allow: %v", e)
 	}
 	var log wire.ForgeLog
-	json.Unmarshal(c.call(t, 9, "forge/log", wire.ForgeLogRequest{Node: pr}), &log)
+	mustUnmarshal(t, c.call(t, 9, "forge/log", wire.ForgeLogRequest{Node: pr}), &log)
 	if log.Text != "log of acme/Web App/App 70" {
 		t.Fatalf("log: %+v", log)
 	}
-	json.Unmarshal(c.call(t, 10, "forge/log", wire.ForgeLogRequest{Node: pr, Check: new("scan/secrets")}), &log)
+	mustUnmarshal(t, c.call(t, 10, "forge/log", wire.ForgeLogRequest{Node: pr, Check: new("scan/secrets")}), &log)
 	if !strings.Contains(log.Text, "scan/secrets is not an Azure Pipelines build") {
 		t.Fatalf("another service's log: %+v", log)
 	}
 	var labels wire.ForgeLabels
-	json.Unmarshal(c.call(t, 11, "forge/labels", wire.ForgeNodeRequest{Node: pr}), &labels)
+	mustUnmarshal(t, c.call(t, 11, "forge/labels", wire.ForgeNodeRequest{Node: pr}), &labels)
 	if len(labels.Labels) != 2 || labels.Labels[1].Name != "ui" {
 		t.Fatalf("labels: %+v", labels)
 	}
 	var diff wire.ForgeDiff
-	json.Unmarshal(c.call(t, 12, "forge/diff", wire.ForgeNodeRequest{Node: pr}), &diff)
+	mustUnmarshal(t, c.call(t, 12, "forge/diff", wire.ForgeNodeRequest{Node: pr}), &diff)
 	if len(diff.Files) != 1 || diff.Files[0].Path != "hello.txt" || len(diff.Files[0].Hunks[0].Lines) != 1 {
 		t.Fatalf("diff: %+v", diff)
 	}

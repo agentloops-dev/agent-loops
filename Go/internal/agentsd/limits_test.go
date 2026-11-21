@@ -50,13 +50,13 @@ func TestACreditGoneStopsTheAgent(t *testing.T) {
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	var id wire.UUID
-	json.Unmarshal(c.call(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(), "prompt": "spend it all"}), &id)
+	mustUnmarshal(t, c.call(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(), "prompt": "spend it all"}), &id)
 	c.until(t, "stopped", ended(id, wire.AgentStateStopped))
 	if r := d.Store.Agent(id).EndedReason; r == nil || *r != wire.EndedReasonAllowanceSpent {
 		t.Fatal(r)
 	}
 	var allow wire.RuntimeAllowances
-	json.Unmarshal(c.call(t, 2, "runtimes/allowances", nil), &allow)
+	mustUnmarshal(t, c.call(t, 2, "runtimes/allowances", nil), &allow)
 	b, _ := json.Marshal(allow)
 	if !strings.Contains(string(b), `"why":"creditUsedUp"`) {
 		t.Fatalf("%s", b)
@@ -121,14 +121,14 @@ func TestARateLimitIsSentAgain(t *testing.T) {
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	var id wire.UUID
-	json.Unmarshal(c.call(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(), "prompt": "rate limit me"}), &id)
+	mustUnmarshal(t, c.call(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(), "prompt": "rate limit me"}), &id)
 	c.until(t, "finished", ended(id, wire.AgentStateFinished))
 	users, notes := saidIn(d, id)
 	if len(users) != 1 || !strings.Contains(strings.Join(notes, "\n"), "is rate limited. Trying again at") {
 		t.Fatal(users, notes)
 	}
 	var allow wire.RuntimeAllowances
-	json.Unmarshal(c.call(t, 2, "runtimes/allowances", nil), &allow)
+	mustUnmarshal(t, c.call(t, 2, "runtimes/allowances", nil), &allow)
 	if b, _ := json.Marshal(allow); strings.Contains(string(b), `"rateLimited"`) {
 		t.Fatalf("still rate limited after it worked: %s", b)
 	}
@@ -141,7 +141,7 @@ func TestATypedLimitStopsTheAgentUntilItsReset(t *testing.T) {
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	var id wire.UUID
-	json.Unmarshal(c.call(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(), "prompt": "typed limit"}), &id)
+	mustUnmarshal(t, c.call(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(), "prompt": "typed limit"}), &id)
 	c.until(t, "stopped", ended(id, wire.AgentStateStopped))
 	if r := d.Store.Agent(id).EndedReason; r == nil || *r != wire.EndedReasonAllowanceSpent {
 		t.Fatal(r)
@@ -151,7 +151,7 @@ func TestATypedLimitStopsTheAgentUntilItsReset(t *testing.T) {
 		t.Fatal(notes)
 	}
 	var allow wire.RuntimeAllowances
-	json.Unmarshal(c.call(t, 2, "runtimes/allowances", nil), &allow)
+	mustUnmarshal(t, c.call(t, 2, "runtimes/allowances", nil), &allow)
 	if b, _ := json.Marshal(allow); !strings.Contains(string(b), `"why":"allowanceSpent"`) || !strings.Contains(string(b), `"until":`) ||
 		!strings.Contains(string(b), `"window":"five_hour"`) {
 		t.Fatalf("%s", b)
@@ -165,10 +165,10 @@ func TestPaidOverageTakesTheRuntimeOutAndTheTurnStands(t *testing.T) {
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	var id wire.UUID
-	json.Unmarshal(c.call(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(), "prompt": "pay extra"}), &id)
+	mustUnmarshal(t, c.call(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(), "prompt": "pay extra"}), &id)
 	c.until(t, "finished", ended(id, wire.AgentStateFinished))
 	var allow wire.RuntimeAllowances
-	json.Unmarshal(c.call(t, 2, "runtimes/allowances", nil), &allow)
+	mustUnmarshal(t, c.call(t, 2, "runtimes/allowances", nil), &allow)
 	if b, _ := json.Marshal(allow); !strings.Contains(string(b), `"why":"overage"`) {
 		t.Fatalf("%s", b)
 	}

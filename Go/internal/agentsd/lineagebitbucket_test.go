@@ -100,7 +100,7 @@ func TestLineageOnABitbucketFolder(t *testing.T) {
 	d.lineageSettle(2 * time.Second)
 	d.resolveSettle(2 * time.Second)
 	// With no connection the folder is still on Bitbucket, by its host.
-	file.Delete(connections.Bitbucket)
+	must(t, file.Delete(connections.Bitbucket))
 	if r := d.folderRepo(folder); r != (forgeRepo{"bitbucket", "walkalex/app"}) {
 		t.Fatalf("with no Bitbucket connection: %+v", r)
 	}

@@ -95,7 +95,7 @@ func TestLanguageServerDiagnostics(t *testing.T) {
 	defer pool.stopAll()
 	root := t.TempDir()
 	file := filepath.Join(root, "main.go")
-	os.WriteFile(file, []byte("package main\n// TODO on disk\n"), 0o644)
+	must(t, os.WriteFile(file, []byte("package main\n// TODO on disk\n"), 0o644))
 
 	got := pool.diagnose(root, file, nil)
 	if len(got.Diagnostics) != 1 || got.Diagnostics[0].Line != 2 || got.Diagnostics[0].Column != 4 ||
@@ -133,7 +133,7 @@ func TestLanguageServerStartingIsNotNoProblems(t *testing.T) {
 	defer pool.stopAll()
 	root := t.TempDir()
 	file := filepath.Join(root, "main.go")
-	if err := os.WriteFile(file, []byte("package main\n"), 0o644); err != nil {
+	if err := os.WriteFile(file, []byte("package main\n"), 0o644); err != nil { //nolint:gosec // G306: the mode this file always had; only its error is new
 		t.Fatal(err)
 	}
 

@@ -612,12 +612,12 @@ func conformJiraDaemon(t *testing.T) (*Daemon, *conn) {
 	fake := conformJira{&fakeForgeJira{}}
 	d.newForgeJira = func(jiramcp.Auth) forgeJira { return fake }
 	folder := gitFolder(t, "")
-	os.MkdirAll(filepath.Join(folder, ".agents"), 0o755)
-	os.WriteFile(filepath.Join(folder, ".agents", "folder.json"), []byte(`{"jiraProjects": ["PROJ"]}`), 0o644)
+	must(t, os.MkdirAll(filepath.Join(folder, ".agents"), 0o755))                                                       //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(folder, ".agents", "folder.json"), []byte(`{"jiraProjects": ["PROJ"]}`), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	c.call(t, 100, "folders/add", map[string]any{"folder": "file://" + folder})
-	os.MkdirAll(filepath.Join(home, ".agents-secrets"), 0o700)
-	os.WriteFile(filepath.Join(home, ".agents-secrets", "secrets.env"),
-		[]byte("JIRA_URL=https://acme.atlassian.net/\nJIRA_EMAIL=kim@acme.com\nJIRA_API_TOKEN=tok\n"), 0o600)
+	must(t, os.MkdirAll(filepath.Join(home, ".agents-secrets"), 0o700))
+	must(t, os.WriteFile(filepath.Join(home, ".agents-secrets", "secrets.env"),
+		[]byte("JIRA_URL=https://acme.atlassian.net/\nJIRA_EMAIL=kim@acme.com\nJIRA_API_TOKEN=tok\n"), 0o600))
 	return d, c
 }
 
@@ -677,12 +677,12 @@ func conformBoardsDaemon(t *testing.T) (*Daemon, *conn) {
 	fake := conformBoards{&fakeForgeBoards{}}
 	d.newForgeAzureBoards = func(string, string) forgeAzureBoards { return fake }
 	folder := gitFolder(t, "")
-	os.MkdirAll(filepath.Join(folder, ".agents"), 0o755)
-	os.WriteFile(filepath.Join(folder, ".agents", "folder.json"), []byte(`{"azureBoardsProjects": ["acme/web"]}`), 0o644)
+	must(t, os.MkdirAll(filepath.Join(folder, ".agents"), 0o755))                                                                  //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(folder, ".agents", "folder.json"), []byte(`{"azureBoardsProjects": ["acme/web"]}`), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	c.call(t, 100, "folders/add", map[string]any{"folder": "file://" + folder})
-	os.MkdirAll(filepath.Join(home, ".agents-secrets"), 0o700)
-	os.WriteFile(filepath.Join(home, ".agents-secrets", "secrets.env"),
-		[]byte("AZURE_DEVOPS_URL=https://dev.azure.com/\nAZURE_DEVOPS_TOKEN=tok\n"), 0o600)
+	must(t, os.MkdirAll(filepath.Join(home, ".agents-secrets"), 0o700))
+	must(t, os.WriteFile(filepath.Join(home, ".agents-secrets", "secrets.env"),
+		[]byte("AZURE_DEVOPS_URL=https://dev.azure.com/\nAZURE_DEVOPS_TOKEN=tok\n"), 0o600))
 	return d, c
 }
 

@@ -130,6 +130,10 @@ func subcommand(args []string) bool {
 		// agents-secret NAME: a secret that does not ask, through this host (#4178); from a
 		// terminal, with no session's grant, once a person allows it (#4179).
 		os.Exit(agentsd.SecretCommand(args[1:], os.Getenv, secretSocket(), os.Stdout, os.Stderr))
+	case "trailers":
+		// agents-trailers MSGFILE: an app worktree's commit-msg hook writes the session's
+		// trailer block (#6372). It never refuses a commit.
+		os.Exit(agentsd.TrailersCommand(args[1:], os.Getenv, os.Stderr))
 	case "install":
 		// The one installer (#5356): steps 3 to 6 of a machine's set-up, on this machine.
 		os.Exit(installCommand(args[1:]))

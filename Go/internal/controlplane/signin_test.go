@@ -75,7 +75,7 @@ func (p *plane) signInAs(provider string, make func(nonce string) string, waitin
 func addToMe(t *testing.T, s *controllink.Session, m *controllink.ClientMembership, provider string, make func(nonce string) string) (json.RawMessage, string) {
 	t.Helper()
 	var providers wire.SignInProviders
-	json.Unmarshal(call(t, s, "", "signIn/providers", map[string]any{}), &providers)
+	must(t, json.Unmarshal(call(t, s, "", "signIn/providers", map[string]any{}), &providers))
 	challenge, err := controllink.FromB64URL(deref(providers.Challenge))
 	if err != nil || len(challenge) != 32 {
 		t.Fatalf("challenge %v", providers.Challenge)
@@ -97,7 +97,7 @@ func personOf(t *testing.T, p *plane, m *controllink.ClientMembership) string {
 	}
 	defer s.Close()
 	var status wire.ControlStatus
-	json.Unmarshal(call(t, s, "", "control/status", nil), &status)
+	must(t, json.Unmarshal(call(t, s, "", "control/status", nil), &status))
 	return status.Person.ID
 }
 
@@ -128,7 +128,7 @@ func TestASignInPairsAKnownPersonWithNoCode(t *testing.T) {
 	}
 	// Still one person, with three sign-ins (FR-005).
 	var people wire.PeopleList
-	json.Unmarshal(call(t, owner, "", "people/list", nil), &people)
+	must(t, json.Unmarshal(call(t, owner, "", "people/list", nil), &people))
 	if len(people.People) != 1 || len(people.People[0].SignIns) != 3 {
 		t.Fatalf("%+v", people.People)
 	}
@@ -154,7 +154,9 @@ func TestEveryRefusedSignInPairsNothing(t *testing.T) {
 	}
 	// A token made on an earlier connection, for this control plane.
 	var earlier string
-	p.signInAs(signin.Google, func(n string) string { earlier = f.mint(signin.Google, "alex", n, nil); return "not a token" }, nil)
+	if _, err := p.signInAs(signin.Google, func(n string) string { earlier = f.mint(signin.Google, "alex", n, nil); return "not a token" }, nil); err == nil {
+		t.Fatal("a sign-in with no ID token was taken")
+	}
 
 	cases := map[string]struct {
 		provider string
@@ -243,7 +245,7 @@ func TestASignInSentToAnotherControlPlanePairsNothing(t *testing.T) {
 	go func() {
 		w := <-waited
 		requests := []wire.SignInRequest{}
-		json.Unmarshal(call(t, bOwner, "", "signIn/requests", nil), &requests)
+		must(t, json.Unmarshal(call(t, bOwner, "", "signIn/requests", nil), &requests))
 		if len(requests) != 1 || requests[0].Code != w.Code {
 			t.Errorf("%+v %+v", requests, w)
 		}
@@ -271,13 +273,13 @@ func TestAGitHubSignInWaitsForThePersonsApprove(t *testing.T) {
 	token := f.github.Token(4242, "sam")
 	got, e := addToMe(t, sam.window, sam.member, signin.GitHub, func(string) string { return token })
 	var in wire.SignIn
-	json.Unmarshal(got, &in)
+	must(t, json.Unmarshal(got, &in))
 	if e != "" || deref(in.Account) != "4242" || deref(in.Login) != "sam" {
 		t.Fatalf("%s %+v", e, in)
 	}
 	// people/list never says an invite code's id, which is part of its secret.
 	var list wire.PeopleList
-	json.Unmarshal(call(t, sam.window, "", "people/list", nil), &list)
+	must(t, json.Unmarshal(call(t, sam.window, "", "people/list", nil), &list))
 	for _, in := range list.People[0].SignIns {
 		if in.Provider == "code" && in.Account != nil {
 			t.Fatalf("a code's account is listed: %+v", in)
@@ -304,7 +306,7 @@ func TestAGitHubSignInWaitsForThePersonsApprove(t *testing.T) {
 	}()
 	note := waitNote(t, sam.window, "control/signInRequested")
 	var asked wire.SignInRequest
-	json.Unmarshal(note.Params, &asked)
+	must(t, json.Unmarshal(note.Params, &asked))
 	// The new client reads its code on its own connection, maybe after the card came.
 	code := ""
 	p.waitFor(func() bool {
@@ -321,7 +323,7 @@ func TestAGitHubSignInWaitsForThePersonsApprove(t *testing.T) {
 			t.Fatal(e)
 		}
 		var requests []wire.SignInRequest
-		json.Unmarshal(call(t, s, "", "signIn/requests", nil), &requests)
+		must(t, json.Unmarshal(call(t, s, "", "signIn/requests", nil), &requests))
 		if len(requests) != 0 {
 			t.Fatalf("someone else sees %+v", requests)
 		}
@@ -377,7 +379,7 @@ func TestABrowserPairsByApprovalWithItsCode(t *testing.T) {
 	p.waitFor(func() bool { return shownNobody() != "" }, "the code for an account nobody has")
 	var requests []wire.SignInRequest
 	for _, s := range []*controllink.Session{sam.window, owner} {
-		json.Unmarshal(call(t, s, "", "signIn/requests", nil), &requests)
+		must(t, json.Unmarshal(call(t, s, "", "signIn/requests", nil), &requests))
 		if len(requests) != 0 {
 			t.Fatalf("an account nobody has asked %+v", requests)
 		}
@@ -388,7 +390,7 @@ func TestABrowserPairsByApprovalWithItsCode(t *testing.T) {
 	defer cancel()
 	note := waitNote(t, sam.window, "control/signInRequested")
 	var asked wire.SignInRequest
-	json.Unmarshal(note.Params, &asked)
+	must(t, json.Unmarshal(note.Params, &asked))
 	p.waitFor(func() bool { return shown() != "" }, "the code in the browser")
 	if asked.Code != "" || asked.Provider != "browser" || asked.Kind != "browser" || deref(asked.Login) != "SAM@example.com" {
 		t.Fatalf("the card is %+v", asked)
@@ -417,7 +419,7 @@ func TestAllowedGitHubOrganisations(t *testing.T) {
 	f := newProvidersFake(t)
 	p, m, owner := signInPlane(t, f)
 	var shown wire.SignInProviders
-	json.Unmarshal(call(t, owner, "", "signIn/configure", wire.SignInConfigure{Provider: signin.GitHub, Organisations: []string{"acme", " acme "}}), &shown)
+	must(t, json.Unmarshal(call(t, owner, "", "signIn/configure", wire.SignInConfigure{Provider: signin.GitHub, Organisations: []string{"acme", " acme "}}), &shown))
 	if len(shown.Organisations) != 1 || shown.Organisations[0] != "acme" {
 		t.Fatalf("%+v", shown)
 	}
@@ -465,7 +467,7 @@ func TestAnAllowedGoogleDomainJoinsWithNoInvite(t *testing.T) {
 	}
 	defer s.Close()
 	var status wire.ControlStatus
-	json.Unmarshal(call(t, s, "", "control/status", nil), &status)
+	must(t, json.Unmarshal(call(t, s, "", "control/status", nil), &status))
 	if status.Person.Name != "Kim" || status.Person.Role != wire.UserRoleMember {
 		t.Fatalf("%+v", status.Person)
 	}
@@ -512,7 +514,7 @@ func TestSignInSettingsAndChallenges(t *testing.T) {
 		t.Fatal(e)
 	}
 	var shown wire.SignInProviders
-	json.Unmarshal(call(t, owner, "", "signIn/configure", wire.SignInConfigure{Provider: signin.Google, On: new(true), Domains: []string{"example.com"}}), &shown)
+	must(t, json.Unmarshal(call(t, owner, "", "signIn/configure", wire.SignInConfigure{Provider: signin.Google, On: new(true), Domains: []string{"example.com"}}), &shown))
 	if len(shown.Providers) != 3 || shown.Domains[0] != "example.com" {
 		t.Fatalf("%+v", shown)
 	}
@@ -533,13 +535,13 @@ func TestSignInSettingsAndChallenges(t *testing.T) {
 		t.Fatal(e)
 	}
 	var seen wire.SignInProviders
-	json.Unmarshal(call(t, sam.window, "", "signIn/providers", nil), &seen)
+	must(t, json.Unmarshal(call(t, sam.window, "", "signIn/providers", nil), &seen))
 	if seen.Domains != nil || seen.Challenge == nil {
 		t.Fatalf("a member sees %+v", seen)
 	}
 	// A challenge is used once.
 	var providers wire.SignInProviders
-	json.Unmarshal(call(t, owner, "", "signIn/providers", nil), &providers)
+	must(t, json.Unmarshal(call(t, owner, "", "signIn/providers", nil), &providers))
 	challenge, _ := controllink.FromB64URL(deref(providers.Challenge))
 	token := f.mint(signin.Google, "alex", controllink.SignInNonce(m.ControlKey, challenge), nil)
 	call(t, owner, "", "signIn/addToMe", wire.SignInAdd{Provider: signin.Google, Token: token})

@@ -58,7 +58,7 @@ func TestAProjectsBoardsGoToItsMachines(t *testing.T) {
 			return
 		}
 		var m wire.MachineProjects
-		json.Unmarshal(params, &m)
+		must(t, json.Unmarshal(params, &m))
 		mu.Lock()
 		heard = append(heard, m)
 		mu.Unlock()
@@ -68,7 +68,7 @@ func TestAProjectsBoardsGoToItsMachines(t *testing.T) {
 	mac := p.host("MAC")
 
 	var made wire.Project
-	json.Unmarshal(call(t, owner, "", "projects/set", wire.ProjectSet{Name: "Agents"}), &made)
+	must(t, json.Unmarshal(call(t, owner, "", "projects/set", wire.ProjectSet{Name: "Agents"}), &made))
 	params, _ := json.Marshal(wire.ProjectsJoined{Folders: []wire.JoinedFolder{{Folder: "file:///Users/a/Agents/", Name: "Agents", Project: made.ID}}})
 	if _, err := p.s.methods.HostSaid(mac.member.Host, "projects/joined", params); err != nil {
 		t.Fatal(err)
@@ -82,7 +82,7 @@ func TestAProjectsBoardsGoToItsMachines(t *testing.T) {
 		t.Fatal(e)
 	}
 	var got wire.Project
-	json.Unmarshal(call(t, owner, "", "projects/setBoards", set), &got)
+	must(t, json.Unmarshal(call(t, owner, "", "projects/setBoards", set), &got))
 	if len(got.Boards) != 2 || got.Boards[0].Name != "Web" || got.Boards[0].URL != "https://github.com/orgs/acme/projects/7" ||
 		*got.Boards[1].Key != "PLAT" {
 		t.Fatalf("%+v", got)
@@ -112,7 +112,7 @@ func TestAProjectsBoardsGoToItsMachines(t *testing.T) {
 
 	// None leaves Tasks with no boards.
 	var none wire.Project
-	json.Unmarshal(call(t, owner, "", "projects/setBoards", wire.ProjectBoardsSet{ID: made.ID, Boards: []wire.ProjectBoard{}}), &none)
+	must(t, json.Unmarshal(call(t, owner, "", "projects/setBoards", wire.ProjectBoardsSet{ID: made.ID, Boards: []wire.ProjectBoard{}}), &none))
 	if none.ID != made.ID || len(none.Boards) != 0 || len(listedProjects(t, owner)[0].Boards) != 0 {
 		t.Fatalf("%+v", none)
 	}

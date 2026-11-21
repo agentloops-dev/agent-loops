@@ -162,9 +162,6 @@ public struct MachineRecord: Codable, Hashable, Sendable, Identifiable {
     public var forgottenAt: Date?
     /// As `ClientRecord.knownEpoch`.
     public var knownEpoch: Int?
-    /// Set before #656 on a host that was to add the folders it found (#429). Never set
-    /// now; one left over is cleared when that host next says hello, and it is not told.
-    public var detectFolders: Bool?
     /// The provider's workspace this host runs on, which the control plane can start and stop
     /// (#691). Nil for a host nothing can start.
     public var workspace: WorkspaceLink?

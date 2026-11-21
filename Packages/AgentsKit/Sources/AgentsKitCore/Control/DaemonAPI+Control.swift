@@ -79,12 +79,6 @@ public extension DaemonAPI.Method {
 
     // A host, on its channel 0.
     static let hostHello = "machine/hello"
-    /// To a host just added, on its channel 0 (#429), never answered: `FolderDetection`.
-    /// Sent only by a control plane before #656; a host since says `folders/detected` with
-    /// nothing added.
-    static let foldersDetect = "folders/detect"
-    /// A host, on its channel 0 (#429): its answer to `folders/detect`. `{added}`.
-    static let foldersDetected = "folders/detected"
 }
 
 public extension DaemonAPI.Notification {

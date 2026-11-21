@@ -28,8 +28,8 @@ func TestABrowserThroughThePublicPage(t *testing.T) {
 	dist := t.TempDir()
 	index := []byte("<html></html>")
 	sum := sha256.Sum256(index)
-	os.WriteFile(filepath.Join(dist, "index.html"), index, 0o644)
-	os.WriteFile(filepath.Join(dist, "MANIFEST"), []byte("agents-web 1\nout "+hex.EncodeToString(sum[:])+" Web/dist/index.html\n"), 0o644)
+	must(t, os.WriteFile(filepath.Join(dist, "index.html"), index, 0o600))
+	must(t, os.WriteFile(filepath.Join(dist, "MANIFEST"), []byte("agents-web 1\nout "+hex.EncodeToString(sum[:])+" Web/dist/index.html\n"), 0o600))
 
 	port := freePort(t)
 	// Caddy's side: the listener is plain HTTP on loopback, and the address is the domain's.
@@ -163,7 +163,7 @@ func pairThroughThePage(t *testing.T, s *Service, direct, address string, browse
 	public, _ := controllink.PublicKey(private)
 	id := records.NewUUID()
 	params, _ := json.Marshal(wire.ClientAnnounce{ID: wire.UUID(id), PublicKey: public, Name: "Chrome", Kind: wire.ClientKind(kind)})
-	l.Write(context.Background(), `{"jsonrpc":"2.0","id":1,"method":"clients/announce","params":`+string(params)+`}`)
+	must(t, l.Write(context.Background(), `{"jsonrpc":"2.0","id":1,"method":"clients/announce","params":`+string(params)+`}`))
 	line, err := l.Read(context.Background())
 	if err != nil {
 		return "", nil, err
@@ -181,8 +181,8 @@ func TestThePublicPagesViewsName(t *testing.T) {
 	dist := t.TempDir()
 	index := []byte("<html></html>")
 	sum := sha256.Sum256(index)
-	os.WriteFile(filepath.Join(dist, "index.html"), index, 0o644)
-	os.WriteFile(filepath.Join(dist, "MANIFEST"), []byte("agents-web 1\nout "+hex.EncodeToString(sum[:])+" Web/dist/index.html\n"), 0o644)
+	must(t, os.WriteFile(filepath.Join(dist, "index.html"), index, 0o600))
+	must(t, os.WriteFile(filepath.Join(dist, "MANIFEST"), []byte("agents-web 1\nout "+hex.EncodeToString(sum[:])+" Web/dist/index.html\n"), 0o600))
 	s, err := New(Config{Store: store.NewMemory(), PrivateKey: controllink.NewPrivateKey(), URL: "https://agents.test:8444",
 		Bind: "127.0.0.1", Port: freePort(t), Name: "Test plane", PublicWeb: dist, PublicViews: "https://views.test:8444"})
 	if err != nil {

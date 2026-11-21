@@ -52,16 +52,16 @@ func TestWalkObservability(t *testing.T) {
 
 	token := env("WALK_HTTP_TOKEN", "walk-3417-token")
 	var state wire.AuditSinksState
-	json.Unmarshal(call(t, admin, "", "audit/setSinks", wire.AuditSinks{Sinks: []wire.AuditSink{
+	must(t, json.Unmarshal(call(t, admin, "", "audit/setSinks", wire.AuditSinks{Sinks: []wire.AuditSink{
 		{Kind: wire.AuditSinkKindSyslog, Address: env("WALK_SYSLOG", "tls://graylog:6514")},
 		{Kind: wire.AuditSinkKindHttp, Address: env("WALK_HTTP", "https://graylog:8090/raw"), Token: &token},
-	}}), &state)
+	}}), &state))
 	for days := int64(30); days <= 32; days++ {
 		call(t, admin, "", "control/setAuditDays", wire.AuditDays{Days: days})
 	}
 	// Once a second: a device that asks faster is told to wait.
 	sent := func() bool {
-		json.Unmarshal(call(t, admin, "", "audit/sinks", wire.Empty{}), &state)
+		must(t, json.Unmarshal(call(t, admin, "", "audit/sinks", wire.Empty{}), &state))
 		for _, s := range state.Sinks {
 			if s.Queued > 0 || s.SentAt == nil {
 				return false
@@ -99,9 +99,9 @@ func TestWalkObservability(t *testing.T) {
 	}
 
 	var made wire.ReadTokenMade
-	json.Unmarshal(call(t, admin, "", "readApi/make", wire.ReadTokenMake{Name: "Grafana"}), &made)
+	must(t, json.Unmarshal(call(t, admin, "", "readApi/make", wire.ReadTokenMake{Name: "Grafana"}), &made))
 	var listed wire.ReadAPI
-	json.Unmarshal(call(t, admin, "", "readApi/list", wire.Empty{}), &listed)
+	must(t, json.Unmarshal(call(t, admin, "", "readApi/list", wire.Empty{}), &listed))
 	t.Logf("read API: %s", mustMarshal(listed))
 	out, _ := json.Marshal(map[string]string{"url": "http://" + env("WALK_PLANE_HOST", "walk") + ":" + port,
 		"made": made.URL, "token": made.Value, "tokenId": made.Token.ID})
@@ -120,7 +120,7 @@ func TestWalkObservability(t *testing.T) {
 		}
 		if _, err := os.Stat(filepath.Join(folder, "revoke")); err == nil && !revoked {
 			call(t, admin, "", "readApi/revoke", wire.ReadTokenRevoke{ID: made.Token.ID})
-			os.WriteFile(filepath.Join(folder, "revoked"), nil, 0o600)
+			must(t, os.WriteFile(filepath.Join(folder, "revoked"), nil, 0o600)) //nolint:gosec // G703: the walk's own folder, from its own variable
 			revoked = true
 		}
 		time.Sleep(500 * time.Millisecond)

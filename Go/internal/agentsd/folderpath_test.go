@@ -19,9 +19,9 @@ func TestALinkedWorkflowFolderIsRefused(t *testing.T) {
 	defer d.Shutdown()
 	dir := folder(t, c, 1)
 	outside := t.TempDir()
-	os.WriteFile(filepath.Join(outside, "CLAUDE.md"), []byte("keep\n"), 0o644)
+	must(t, os.WriteFile(filepath.Join(outside, "CLAUDE.md"), []byte("keep\n"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	os.RemoveAll(workflowsFolder(dir))
-	os.MkdirAll(filepath.Join(dir, ".agents"), 0o755)
+	must(t, os.MkdirAll(filepath.Join(dir, ".agents"), 0o755)) //nolint:gosec // G301: the mode this folder always had; only its error is new
 	if err := os.Symlink(outside, workflowsFolder(dir)); err != nil {
 		t.Fatal(err)
 	}
@@ -48,8 +48,8 @@ func TestALinkedWorkflowFolderIsRefused(t *testing.T) {
 
 	// The folder of its own again, with a workflow file that is a link out.
 	os.Remove(workflowsFolder(dir))
-	os.MkdirAll(workflowsFolder(dir), 0o755)
-	os.Symlink(filepath.Join(outside, "CLAUDE.md"), filepath.Join(workflowsFolder(dir), "secret.md"))
+	must(t, os.MkdirAll(workflowsFolder(dir), 0o755)) //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.Symlink(filepath.Join(outside, "CLAUDE.md"), filepath.Join(workflowsFolder(dir), "secret.md")))
 	if text, isErr := m.tool(6, "manage_workflows", map[string]any{"action": "read", "id": "secret"}); !isErr || strings.Contains(text, "keep") {
 		t.Fatal(text)
 	}

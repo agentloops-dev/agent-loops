@@ -2,7 +2,6 @@ package agentsd
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -120,13 +119,13 @@ func jiraDaemon(t *testing.T) (*Daemon, *conn, *fakeForgeJira, string) {
 		return j
 	}
 	app := gitFolder(t, "git@github.com:acme/app.git")
-	os.MkdirAll(filepath.Join(app, ".agents"), 0o755)
-	os.WriteFile(filepath.Join(app, ".agents", "folder.json"), []byte(`{"jiraProjects": ["proj", "not a project"]}`), 0o644)
+	must(t, os.MkdirAll(filepath.Join(app, ".agents"), 0o755))                                                                        //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(app, ".agents", "folder.json"), []byte(`{"jiraProjects": ["proj", "not a project"]}`), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	c.call(t, 300, "folders/add", map[string]any{"folder": "file://" + app})
 	home := d.personalHome()
-	os.MkdirAll(filepath.Join(home, ".agents-secrets"), 0o700)
-	os.WriteFile(filepath.Join(home, ".agents-secrets", "secrets.env"),
-		[]byte("JIRA_URL=https://acme.atlassian.net/\nJIRA_EMAIL=kim@acme.com\nJIRA_API_TOKEN=tok\n"), 0o600)
+	must(t, os.MkdirAll(filepath.Join(home, ".agents-secrets"), 0o700))
+	must(t, os.WriteFile(filepath.Join(home, ".agents-secrets", "secrets.env"),
+		[]byte("JIRA_URL=https://acme.atlassian.net/\nJIRA_EMAIL=kim@acme.com\nJIRA_API_TOKEN=tok\n"), 0o600))
 	return d, c, j, app
 }
 
@@ -138,7 +137,7 @@ func TestForgeIssuesReadsTheFoldersJiraProjects(t *testing.T) {
 
 	d, c, j, _ := jiraDaemon(t)
 	var list wire.ForgeList
-	json.Unmarshal(c.call(t, 1, "forge/issues", wire.ForgeListRequest{Label: new("billing")}), &list)
+	mustUnmarshal(t, c.call(t, 1, "forge/issues", wire.ForgeListRequest{Label: new("billing")}), &list)
 	searches, _ := j.asked()
 	if len(searches) != 1 || searches[0] != `project in ("PROJ") AND statusCategory != 3 AND labels = "billing" ORDER BY updated DESC after=` {
 		t.Fatalf("Jira searches: %q", searches)
@@ -160,7 +159,7 @@ func TestForgeIssuesReadsTheFoldersJiraProjects(t *testing.T) {
 	if d.jiraFolder("PROJ") != deref(jira.Folder) {
 		t.Fatalf("folder %q, not %q", deref(jira.Folder), d.jiraFolder("PROJ"))
 	}
-	json.Unmarshal(c.call(t, 2, "forge/pulls", wire.ForgeListRequest{}), &list)
+	mustUnmarshal(t, c.call(t, 2, "forge/pulls", wire.ForgeListRequest{}), &list)
 	if searches, _ = j.asked(); len(searches) != 1 {
 		t.Fatalf("forge/pulls asked Jira: %q", searches)
 	}
@@ -173,7 +172,7 @@ func TestForgeReadsAJiraIssue(t *testing.T) {
 
 	_, c, _, _ := jiraDaemon(t)
 	var i wire.ForgeItemDetail
-	json.Unmarshal(c.call(t, 1, "forge/issue", wire.ForgeItemRequest{Node: wire.LineageNode{Kind: "issue", Ref: "jira:issue:proj#PROJ-7"}}), &i)
+	mustUnmarshal(t, c.call(t, 1, "forge/issue", wire.ForgeItemRequest{Node: wire.LineageNode{Kind: "issue", Ref: "jira:issue:proj#PROJ-7"}}), &i)
 	if i.Body != "**Bold** words." || deref(i.Cursor) != "3" || len(i.Comments) != 1 || i.Comments[0].Bot == nil ||
 		deref(i.Item.Status) != "To Do" || deref(i.Item.Folder) == "" || i.Item.Progress == nil {
 		t.Fatalf("Jira issue: %+v", i)
@@ -200,13 +199,13 @@ func TestForgeWritesOnAJiraIssue(t *testing.T) {
 	_, c, j, _ := jiraDaemon(t)
 	node := wire.LineageNode{Kind: "issue", Ref: "jira:issue:proj#PROJ-7"}
 	var done wire.ForgeDone
-	json.Unmarshal(c.call(t, 1, "forge/comment", wire.ForgeCommentRequest{Node: node, Body: "On it."}), &done)
+	mustUnmarshal(t, c.call(t, 1, "forge/comment", wire.ForgeCommentRequest{Node: node, Body: "On it."}), &done)
 	if deref(done.URL) != "https://acme.atlassian.net/browse/PROJ-7?focusedCommentId=9" {
 		t.Fatalf("comment: %+v", done)
 	}
 	c.call(t, 2, "forge/label", wire.ForgeLabelRequest{Node: node, Add: []string{"ux"}, Remove: []string{"billing"}})
 	var labels wire.ForgeLabels
-	json.Unmarshal(c.call(t, 3, "forge/labels", wire.ForgeNodeRequest{Node: node}), &labels)
+	mustUnmarshal(t, c.call(t, 3, "forge/labels", wire.ForgeNodeRequest{Node: node}), &labels)
 	if len(labels.Labels) != 2 || labels.Labels[1].Name != "ux" {
 		t.Fatalf("labels: %+v", labels)
 	}
@@ -231,7 +230,7 @@ func TestForgeJiraNotSignedIn(t *testing.T) {
 	d, c, _, _ := jiraDaemon(t)
 	os.Remove(filepath.Join(d.personalHome(), ".agents-secrets", "secrets.env"))
 	var list wire.ForgeList
-	json.Unmarshal(c.call(t, 1, "forge/issues", wire.ForgeListRequest{}), &list)
+	mustUnmarshal(t, c.call(t, 1, "forge/issues", wire.ForgeListRequest{}), &list)
 	if len(list.Errors) != 1 || list.Errors[0].Forge != "jira" || !strings.Contains(list.Errors[0].Message, "Jira is not signed in") {
 		t.Fatalf("errors: %+v", list.Errors)
 	}
@@ -267,7 +266,7 @@ func TestForgePlanReadsAJiraParent(t *testing.T) {
 
 	_, c, _, _ := jiraDaemon(t)
 	var plan wire.ForgePlan
-	json.Unmarshal(c.call(t, 1, "forge/plan", wire.ForgePlanRequest{Node: wire.LineageNode{Kind: "issue", Ref: "jira:issue:proj#PROJ-7"}}), &plan)
+	mustUnmarshal(t, c.call(t, 1, "forge/plan", wire.ForgePlanRequest{Node: wire.LineageNode{Kind: "issue", Ref: "jira:issue:proj#PROJ-7"}}), &plan)
 	if plan.Item.Node.Ref != "jira:issue:proj#PROJ-7" || len(plan.Children) != 2 || plan.Children[1].Item.Node.Ref != "jira:issue:proj#PROJ-9" || plan.Children[1].Step != 2 {
 		t.Fatalf("plan: %+v", plan)
 	}

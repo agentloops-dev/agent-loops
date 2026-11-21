@@ -24,11 +24,11 @@ import (
 
 // fakeForgeGitHub is GitHub's search and item reads, and what each was asked.
 type fakeForgeGitHub struct {
-	mu       sync.Mutex
+	mu sync.Mutex
 	// priorityField says its repos have the Priority issue field (#6091).
 	priorityField bool
-	searches []string
-	items    int
+	searches      []string
+	items         int
 	// wrote are the writes asked for (#3130).
 	wrote []string
 	// epics are what a list of the label epic gives, and plan what Plan gives (#3267).
@@ -180,8 +180,8 @@ func forgeDaemon(t *testing.T) (*Daemon, *conn, *fakeForgeGitHub, *connections.F
 	for i, remote := range []string{"git@github.com:alexec/agents.git", "https://github.com/alexec/agents", "git@github.com:alexec/web.git"} {
 		c.call(t, 100+i, "folders/add", map[string]any{"folder": "file://" + gitFolder(t, remote)})
 	}
-	file.Put(connections.Connection{Provider: connections.GitHub, Login: "alexec", Access: "ghu_secret",
-		AccessExpiresAt: time.Now().Add(time.Hour), ConnectedAt: time.Now()})
+	must(t, file.Put(connections.Connection{Provider: connections.GitHub, Login: "alexec", Access: "ghu_secret",
+		AccessExpiresAt: time.Now().Add(time.Hour), ConnectedAt: time.Now()}))
 	return d, c, gh, file
 }
 
@@ -193,7 +193,7 @@ func TestForgePullsListsEveryRepoInOneSearch(t *testing.T) {
 
 	d, c, gh, _ := forgeDaemon(t)
 	var list wire.ForgeList
-	json.Unmarshal(c.call(t, 1, "forge/pulls", wire.ForgeListRequest{Label: new("enhancement")}), &list)
+	mustUnmarshal(t, c.call(t, 1, "forge/pulls", wire.ForgeListRequest{Label: new("enhancement")}), &list)
 	searches, _ := gh.asked()
 	if len(searches) != 1 || !strings.HasPrefix(searches[0], "alexec/agents,alexec/web is:pr is:open repo:alexec/agents repo:alexec/web label:\"enhancement\"") {
 		t.Fatalf("searches: %q", searches)
@@ -217,13 +217,13 @@ func TestForgePullsListsEveryRepoInOneSearch(t *testing.T) {
 		t.Fatalf("folder %q is not on alexec/agents", *i.Folder)
 	}
 
-	json.Unmarshal(c.call(t, 2, "forge/pulls", wire.ForgeListRequest{Label: new("enhancement")}), &list)
+	mustUnmarshal(t, c.call(t, 2, "forge/pulls", wire.ForgeListRequest{Label: new("enhancement")}), &list)
 	if searches, _ = gh.asked(); len(searches) != 1 {
 		t.Fatalf("the same list within a minute asked again: %q", searches)
 	}
 
 	var next wire.ForgeList
-	json.Unmarshal(c.call(t, 3, "forge/pulls", wire.ForgeListRequest{Label: new("enhancement"), Cursor: list.Cursor}), &next)
+	mustUnmarshal(t, c.call(t, 3, "forge/pulls", wire.ForgeListRequest{Label: new("enhancement"), Cursor: list.Cursor}), &next)
 	if searches, _ = gh.asked(); len(searches) != 2 || !strings.HasSuffix(searches[1], "after=Y3Vyc29y") {
 		t.Fatalf("next page: %q", searches)
 	}
@@ -263,15 +263,15 @@ func TestForgeListSaysGitHubIsNotConnected(t *testing.T) {
 	t.Parallel()
 
 	_, c, gh, file := forgeDaemon(t)
-	file.Delete(connections.GitHub)
+	must(t, file.Delete(connections.GitHub))
 	var list wire.ForgeList
-	json.Unmarshal(c.call(t, 1, "forge/issues", wire.ForgeListRequest{}), &list)
+	mustUnmarshal(t, c.call(t, 1, "forge/issues", wire.ForgeListRequest{}), &list)
 	if len(list.Items) != 0 || len(list.Errors) != 1 || list.Errors[0].Forge != "github" || list.Errors[0].Message != githubmcp.NotConnected {
 		t.Fatalf("list: %+v", list)
 	}
-	file.Put(connections.Connection{Provider: connections.GitHub, Access: "ghu_secret", ConnectedAt: time.Now()})
+	must(t, file.Put(connections.Connection{Provider: connections.GitHub, Access: "ghu_secret", ConnectedAt: time.Now()}))
 	var connected wire.ForgeList
-	json.Unmarshal(c.call(t, 2, "forge/issues", wire.ForgeListRequest{}), &connected)
+	mustUnmarshal(t, c.call(t, 2, "forge/issues", wire.ForgeListRequest{}), &connected)
 	if searches, _ := gh.asked(); len(searches) != 1 || len(connected.Errors) != 0 || len(connected.Items) != 1 {
 		t.Fatalf("after connecting: %q %+v", searches, connected)
 	}
@@ -301,7 +301,7 @@ func TestForgePullReadsOne(t *testing.T) {
 	_, c, gh, _ := forgeDaemon(t)
 	pr := wire.LineageNode{Kind: "pr", Ref: "github:pr:alexec/agents#12"}
 	var p wire.ForgeItemDetail
-	json.Unmarshal(c.call(t, 1, "forge/pull", wire.ForgeItemRequest{Node: pr}), &p)
+	mustUnmarshal(t, c.call(t, 1, "forge/pull", wire.ForgeItemRequest{Node: pr}), &p)
 	if p.Item.Node != pr || p.Body != "The body." || deref(p.Cursor) != "b2xkZXI=" || deref(p.Item.Folder) == "" {
 		t.Fatalf("pull: %+v", p)
 	}
@@ -435,14 +435,14 @@ func allForgesDaemon(t *testing.T) (*Daemon, *conn, *fakeForgeGitHub, *fakeForge
 		return ln
 	}
 	app := gitFolder(t, "git@gitlab.com:Group/App.git")
-	os.MkdirAll(filepath.Join(app, ".agents"), 0o755)
-	os.WriteFile(filepath.Join(app, ".agents", "folder.json"), []byte(`{"linearTeams": ["eng", "not a team", "OPS"]}`), 0o644)
+	must(t, os.MkdirAll(filepath.Join(app, ".agents"), 0o755)) //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(app, ".agents", "folder.json"), []byte(`{"linearTeams": ["eng", "not a team", "OPS"]}`), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	c.call(t, 200, "folders/add", map[string]any{"folder": "file://" + app})
 	c.call(t, 201, "folders/add", map[string]any{"folder": "file://" + gitFolder(t, "git@gitlab.example.com:ops/tool.git")})
-	file.Put(connections.Connection{Provider: connections.GitLab, Login: "kim", Access: "gloas-secret", URL: connections.GitLabCom,
-		AccessExpiresAt: time.Now().Add(time.Hour), ConnectedAt: time.Now()})
-	file.Put(connections.Connection{Provider: connections.Linear, Login: "kim", Access: "lin_oauth", AccessExpiresAt: time.Now().Add(time.Hour),
-		ConnectedAt: time.Now()})
+	must(t, file.Put(connections.Connection{Provider: connections.GitLab, Login: "kim", Access: "gloas-secret", URL: connections.GitLabCom,
+		AccessExpiresAt: time.Now().Add(time.Hour), ConnectedAt: time.Now()}))
+	must(t, file.Put(connections.Connection{Provider: connections.Linear, Login: "kim", Access: "lin_oauth", AccessExpiresAt: time.Now().Add(time.Hour),
+		ConnectedAt: time.Now()}))
 	return d, c, gh, gl, ln, file
 }
 
@@ -454,7 +454,7 @@ func TestForgeIssuesMergesEveryForgeByTime(t *testing.T) {
 
 	_, c, gh, gl, ln, _ := allForgesDaemon(t)
 	var list wire.ForgeList
-	json.Unmarshal(c.call(t, 1, "forge/issues", wire.ForgeListRequest{Limit: new(int64(3))}), &list)
+	mustUnmarshal(t, c.call(t, 1, "forge/issues", wire.ForgeListRequest{Limit: new(int64(3))}), &list)
 	var refs []string
 	for _, i := range list.Items {
 		refs = append(refs, i.Node.Ref)
@@ -483,7 +483,7 @@ func TestForgeIssuesMergesEveryForgeByTime(t *testing.T) {
 	}
 
 	var next wire.ForgeList
-	json.Unmarshal(c.call(t, 2, "forge/issues", wire.ForgeListRequest{Limit: new(int64(3)), Cursor: list.Cursor}), &next)
+	mustUnmarshal(t, c.call(t, 2, "forge/issues", wire.ForgeListRequest{Limit: new(int64(3)), Cursor: list.Cursor}), &next)
 	if len(ln.searches) != 1 || len(gl.searches) != 2 || gl.searches[1] != "Group/App after=gl-1" {
 		t.Fatalf("next page: GitLab %q, Linear %q", gl.searches, ln.searches)
 	}
@@ -499,7 +499,7 @@ func TestForgePullsHasNoLinear(t *testing.T) {
 
 	_, c, _, _, ln, _ := allForgesDaemon(t)
 	var list wire.ForgeList
-	json.Unmarshal(c.call(t, 1, "forge/pulls", wire.ForgeListRequest{}), &list)
+	mustUnmarshal(t, c.call(t, 1, "forge/pulls", wire.ForgeListRequest{}), &list)
 	if len(ln.searches) != 0 || len(list.Items) != 3 || list.Items[0].Node != (wire.LineageNode{Kind: "pr", Ref: "gitlab:mr:group/app#4"}) ||
 		!*list.Items[0].Draft || *list.Items[0].Review != "review_required" {
 		t.Fatalf("pulls: %+v (Linear %q)", list.Items, ln.searches)
@@ -511,9 +511,9 @@ func TestForgeListSaysGitLabIsNotConnected(t *testing.T) {
 	t.Parallel()
 
 	_, c, _, gl, _, file := allForgesDaemon(t)
-	file.Delete(connections.GitLab)
+	must(t, file.Delete(connections.GitLab))
 	var list wire.ForgeList
-	json.Unmarshal(c.call(t, 1, "forge/issues", wire.ForgeListRequest{}), &list)
+	mustUnmarshal(t, c.call(t, 1, "forge/issues", wire.ForgeListRequest{}), &list)
 	if len(gl.searches) != 0 || len(list.Errors) != 1 || list.Errors[0].Forge != "gitlab" || list.Errors[0].Message != gitlabmcp.NotConnected ||
 		len(list.Items) != 2 {
 		t.Fatalf("list: %+v", list)
@@ -529,7 +529,7 @@ func TestForgeReadsAGitLabAndALinearItem(t *testing.T) {
 	_, c, _, gl, _, _ := allForgesDaemon(t)
 	mr := wire.LineageNode{Kind: "pr", Ref: "gitlab:mr:group/app#4"}
 	var p wire.ForgeItemDetail
-	json.Unmarshal(c.call(t, 1, "forge/pull", wire.ForgeItemRequest{Node: mr}), &p)
+	mustUnmarshal(t, c.call(t, 1, "forge/pull", wire.ForgeItemRequest{Node: mr}), &p)
 	if p.Item.Node != mr || p.Body != "The body." || deref(p.Cursor) != "2" || p.Item.State != "merged" || deref(p.Item.Folder) == "" ||
 		len(p.Comments) != 1 || len(p.Checks) != 1 || *p.ReviewThreads != 1 || *p.FilesChanged != 3 {
 		t.Fatalf("merge request: %+v", p)
@@ -539,7 +539,7 @@ func TestForgeReadsAGitLabAndALinearItem(t *testing.T) {
 	}
 
 	var i wire.ForgeItemDetail
-	json.Unmarshal(c.call(t, 2, "forge/issue", wire.ForgeItemRequest{Node: wire.LineageNode{Kind: "issue", Ref: "linear:issue:eng#ENG-4"}}), &i)
+	mustUnmarshal(t, c.call(t, 2, "forge/issue", wire.ForgeItemRequest{Node: wire.LineageNode{Kind: "issue", Ref: "linear:issue:eng#ENG-4"}}), &i)
 	if i.Body != "Linear's body." || i.Item.State != "closed" || deref(i.Item.Folder) != deref(p.Item.Folder) || len(i.Comments) != 1 ||
 		i.Comments[0].Bot == nil || i.Checks != nil {
 		t.Fatalf("Linear issue: %+v", i)
@@ -570,14 +570,14 @@ func TestForgeIssuesListsTheLinearWorkspace(t *testing.T) {
 	ln := &fakeForgeLinear{}
 	d.newForgeLinear = func(string) forgeLinear { return ln }
 	var list wire.ForgeList
-	json.Unmarshal(c.call(t, 1, "forge/issues", wire.ForgeListRequest{}), &list)
+	mustUnmarshal(t, c.call(t, 1, "forge/issues", wire.ForgeListRequest{}), &list)
 	if len(ln.searches) != 0 || len(list.Errors) != 0 {
 		t.Fatalf("no Linear: %q %+v", ln.searches, list.Errors)
 	}
 
-	file.Put(connections.Connection{Provider: connections.Linear, Login: "kim", Access: "lin_oauth", AccessExpiresAt: time.Now().Add(time.Hour),
-		ConnectedAt: time.Now()})
-	json.Unmarshal(c.call(t, 2, "forge/issues", wire.ForgeListRequest{}), &list)
+	must(t, file.Put(connections.Connection{Provider: connections.Linear, Login: "kim", Access: "lin_oauth", AccessExpiresAt: time.Now().Add(time.Hour),
+		ConnectedAt: time.Now()}))
+	mustUnmarshal(t, c.call(t, 2, "forge/issues", wire.ForgeListRequest{}), &list)
 	if len(ln.searches) != 1 || ln.searches[0] != " after=" || len(list.Errors) != 0 {
 		t.Fatalf("Linear asked %q, errors %+v", ln.searches, list.Errors)
 	}
@@ -591,12 +591,12 @@ func TestForgeIssuesListsTheLinearWorkspace(t *testing.T) {
 		t.Fatalf("Linear item: %+v (folders %v)", l, d.folderPaths())
 	}
 	var i wire.ForgeItemDetail
-	json.Unmarshal(c.call(t, 3, "forge/issue", wire.ForgeItemRequest{Node: wire.LineageNode{Kind: "issue", Ref: "linear:issue:eng#ENG-4"}}), &i)
+	mustUnmarshal(t, c.call(t, 3, "forge/issue", wire.ForgeItemRequest{Node: wire.LineageNode{Kind: "issue", Ref: "linear:issue:eng#ENG-4"}}), &i)
 	if deref(i.Item.Folder) != deref(l.Folder) || i.Start == nil {
 		t.Fatalf("Linear issue: %+v", i)
 	}
 
-	json.Unmarshal(c.call(t, 4, "forge/pulls", wire.ForgeListRequest{}), &list)
+	mustUnmarshal(t, c.call(t, 4, "forge/pulls", wire.ForgeListRequest{}), &list)
 	if len(ln.searches) != 1 {
 		t.Fatalf("pulls asked Linear: %q", ln.searches)
 	}
