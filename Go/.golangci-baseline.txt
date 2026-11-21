@@ -27,7 +27,6 @@ Go/cmd/agentsctl/main.go: Error return value of `os.MkdirAll` is not checked (er
 Go/cmd/agentsctl/main.go: Error return value of `os.WriteFile` is not checked (errcheck)
 Go/cmd/agentsctl/main.go: Error return value of `s.Call` is not checked (errcheck)
 Go/cmd/agentsctl/main.go: G117: Marshaled struct field "Private" (JSON key "privateKey") matches secret pattern (gosec)
-Go/cmd/agentsctl/main.go: cognitive complexity of func `turn` is high (> 30) (gocognit)
 Go/cmd/agentsd/enrol.go: Error return value of `os.Rename` is not checked (errcheck)
 Go/cmd/agentsd/install.go: G204: Subprocess launched with a potential tainted input or cmd arguments (gosec)
 Go/cmd/agentsd/lockreset.go: Error return value of `c.SetDeadline` is not checked (errcheck)
