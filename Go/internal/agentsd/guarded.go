@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/diskjson"
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
@@ -56,7 +57,27 @@ type guardedRecords struct {
 type guardedStateHolder struct {
 	guardedMu sync.Mutex
 	guarded   *guardedRecords
+	// guardedUnsure is each change, with nothing running in a repository, that is not yet
+	// what HEAD has, by folder and path (#6523): a pull writes the work tree before it moves
+	// HEAD, so it is checked again after the branch settle, not approved at once. Held by
+	// guardedMu.
+	guardedUnsure map[guardedKey]*guardedUnsureChange
 }
+
+type guardedKey struct{ folder, path string }
+
+// guardedUnsureChange is a change that may still be a pull's: the copy first seen, when, and
+// the timer that checks it again.
+type guardedUnsureChange struct {
+	digest *string
+	since  time.Time
+	timer  *time.Timer
+}
+
+// guardedGitWait is how long a change is held while git still holds .git/index.lock, past
+// the branch settle: a long pull. A lock left behind by a git that died does not hold the
+// person's own edit for ever.
+const guardedGitWait = 30 * time.Second
 
 func (d *Daemon) guardedFile() string { return filepath.Join(d.Store.Loc.Root, "guarded-files.json") }
 
@@ -116,6 +137,18 @@ func (d *Daemon) stateOf(folder, path string) (*guardedState, bool) {
 	return &r.States[len(r.States)-1], false
 }
 
+// lookupState is a file's record, if it has one: a read that makes none, so a file the app
+// has not checked yet is still first seen when it is (#6523). Called with guardedMu held.
+func (d *Daemon) lookupState(folder, path string) *guardedState {
+	r := d.guardedRecs()
+	for i := range r.States {
+		if store.FolderPath(r.States[i].Folder) == folder && r.States[i].Path == path {
+			return &r.States[i]
+		}
+	}
+	return nil
+}
+
 // diskRead is the file's digest and bytes, a nil digest for no file.
 func diskRead(folder, path string) (*string, []byte) {
 	if !ownFolders(folder, filepath.Dir(path)) {
@@ -162,13 +195,14 @@ func (d *Daemon) checkGuarded(folder, path string, ended *wire.UUID) {
 	case !known:
 		s.ApprovedDigest, s.ApprovedContent, moved = digest, data, true
 	case same(s.ApprovedDigest, digest):
+		d.dropUnsureLocked(folder, path)
 		if s.Pending != nil {
 			s.Pending, moved = nil, true
 		}
 	case s.Pending != nil && same(s.Pending.Digest, digest):
+		d.dropUnsureLocked(folder, path)
 	default:
-		d.guardedChangedLocked(folder, path, s, digest, data, ended)
-		moved = true
+		moved = d.guardedChangedLocked(folder, path, s, digest, data, ended)
 	}
 	if moved {
 		d.saveGuarded()
@@ -181,11 +215,14 @@ func (d *Daemon) checkGuarded(folder, path string, ended *wire.UUID) {
 
 // guardedChangedLocked records a change to a file that is not the approved copy and not
 // the change that waits: it waits when an agent works in the folder or when a pull made
-// it, else it is the person's own edit and is approved. Call it with guardedMu held.
-func (d *Daemon) guardedChangedLocked(folder, path string, s *guardedState, digest *string, data []byte, ended *wire.UUID) {
+// it, else it is the person's own edit and is approved. In a repository, a change that is
+// not what HEAD has is approved only once git has had the branch settle to move HEAD
+// (#6523); until then it is false, and nothing is recorded. Call it with guardedMu held.
+func (d *Daemon) guardedChangedLocked(folder, path string, s *guardedState, digest *string, data []byte, ended *wire.UUID) bool {
 	working := d.guardedWorkingAgents(folder, ended)
 	switch {
 	case len(working) > 0:
+		d.dropUnsureLocked(folder, path)
 		if s.Pending == nil {
 			s.Pending = &guardedPending{Since: now(), ChangedByIDs: []wire.UUID{}, ChangedBy: []string{}}
 		}
@@ -198,12 +235,80 @@ func (d *Daemon) guardedChangedLocked(folder, path string, s *guardedState, dige
 	default:
 		// With nothing running: a pull's, when it is what HEAD has.
 		head, err := gitRaw(folder, nil, "show", "HEAD:./"+path)
-		if err == nil && bytes.Equal(head, data) {
+		switch {
+		case err == nil && bytes.Equal(head, data):
+			d.dropUnsureLocked(folder, path)
 			s.Pending = &guardedPending{Digest: digest, Since: now(), ByGit: true, ChangedByIDs: []wire.UUID{}, ChangedBy: []string{}}
-		} else {
-			s.ApprovedDigest, s.ApprovedContent, s.Pending = digest, data, nil
+		case d.mayBeAPullLocked(folder, path, digest):
+			return false // checked again after the branch settle
+		default:
+			d.dropUnsureLocked(folder, path)
+			s.ApprovedDigest, s.ApprovedContent, s.Pending = digest, data, nil // the person's own edit
 		}
 	}
+	return true
+}
+
+// mayBeAPullLocked is whether a change that is not what HEAD has may still be a pull's, which
+// has not moved HEAD yet: it was first seen less than the branch settle ago, or git still
+// holds the index lock (for at most guardedGitWait). While it may, a timer checks it again.
+// Call it with guardedMu held.
+func (d *Daemon) mayBeAPullLocked(folder, path string, digest *string) bool {
+	key := guardedKey{folder, path}
+	u := d.guardedUnsure[key]
+	if u == nil || !same(u.digest, digest) {
+		d.dropUnsureLocked(folder, path)
+		u = &guardedUnsureChange{digest: digest, since: time.Now()}
+		if d.guardedUnsure == nil {
+			d.guardedUnsure = map[guardedKey]*guardedUnsureChange{}
+		}
+		d.guardedUnsure[key] = u
+		d.recheckGuardedLocked(u, folder, path)
+		return true
+	}
+	waited := time.Since(u.since)
+	switch {
+	case waited < branchSettle:
+		return true // its timer is set
+	case waited < branchSettle+guardedGitWait && gitIndexLocked(folder):
+		d.recheckGuardedLocked(u, folder, path)
+		return true
+	}
+	return false
+}
+
+// recheckGuardedLocked checks a change again after the branch settle. Holds guardedMu.
+func (d *Daemon) recheckGuardedLocked(u *guardedUnsureChange, folder, path string) {
+	if u.timer != nil {
+		u.timer.Stop()
+	}
+	u.timer = time.AfterFunc(branchSettle, d.jobFunc("guarded settle", func() { d.checkGuarded(folder, path, nil) }))
+}
+
+// dropUnsureLocked forgets a change that is settled one way or the other. Holds guardedMu.
+func (d *Daemon) dropUnsureLocked(folder, path string) {
+	key := guardedKey{folder, path}
+	if u := d.guardedUnsure[key]; u != nil {
+		if u.timer != nil {
+			u.timer.Stop()
+		}
+		delete(d.guardedUnsure, key)
+	}
+}
+
+// gitIndexLocked is whether a git command holds the folder's index lock now: a pull or a
+// merge that writes the work tree and has not moved HEAD yet.
+func gitIndexLocked(folder string) bool {
+	out, err := gitRaw(folder, nil, "rev-parse", "--git-path", "index.lock")
+	if err != nil {
+		return false
+	}
+	lock := strings.TrimSpace(string(out))
+	if !filepath.IsAbs(lock) {
+		lock = filepath.Join(folder, lock)
+	}
+	_, err = os.Stat(lock) //nolint:gosec // G703: the path is git's own, from rev-parse in a folder the app keeps
+	return err == nil
 }
 
 // guardedWorkingAgents gives the folder's agents that run or wait on the person, and the
@@ -245,7 +350,8 @@ func (d *Daemon) guardedContent(folder, path string) ([]byte, bool) {
 	d.guardedMu.Lock()
 	defer d.guardedMu.Unlock()
 	s, _ := d.stateOf(folder, path)
-	if s.Pending != nil {
+	// A change that may still be a pull's (#6523) is not used yet either.
+	if s.Pending != nil || d.guardedUnsure[guardedKey{folder, path}] != nil {
 		return s.ApprovedContent, s.ApprovedDigest != nil
 	}
 	_, data := diskRead(folder, path)
@@ -272,6 +378,7 @@ func (d *Daemon) approveWrite(folder, path string) {
 	digest, data := diskRead(folder, path)
 	s, _ := d.stateOf(folder, path)
 	s.ApprovedDigest, s.ApprovedContent, s.Pending = digest, data, nil
+	d.dropUnsureLocked(folder, path)
 	d.saveGuarded()
 	d.guardedMu.Unlock()
 }
