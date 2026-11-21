@@ -2,7 +2,6 @@ package agentsd
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -44,12 +43,12 @@ func TestConnectingForgejoWithAnAccessToken(t *testing.T) {
 	d.forgejoHTTP = fj.Client()
 
 	var refused wire.ConnectionTokenAnswer
-	json.Unmarshal(c.call(t, 1, "connections/sign-in/token", map[string]any{"provider": "forgejo", "url": fj.URL, "token": "fj-wrong"}), &refused)
+	mustUnmarshal(t, c.call(t, 1, "connections/sign-in/token", map[string]any{"provider": "forgejo", "url": fj.URL, "token": "fj-wrong"}), &refused)
 	if refused.Error == nil || refused.Connection != nil || strings.Contains(*refused.Error, "fj-wrong") || !strings.Contains(*refused.Error, "did not take") {
 		t.Fatalf("a wrong token: %+v", refused)
 	}
 	var plain wire.ConnectionTokenAnswer
-	json.Unmarshal(c.call(t, 2, "connections/sign-in/token", map[string]any{"provider": "forgejo", "url": "http://git.example.com", "token": "fj-secret"}), &plain)
+	mustUnmarshal(t, c.call(t, 2, "connections/sign-in/token", map[string]any{"provider": "forgejo", "url": "http://git.example.com", "token": "fj-secret"}), &plain)
 	if plain.Error == nil || !strings.Contains(*plain.Error, "https://") {
 		t.Fatalf("a token over http: %+v", plain)
 	}
@@ -59,7 +58,7 @@ func TestConnectingForgejoWithAnAccessToken(t *testing.T) {
 		t.Fatalf("the token went back to the client: %s", raw)
 	}
 	var made wire.ConnectionTokenAnswer
-	json.Unmarshal(raw, &made)
+	mustUnmarshal(t, raw, &made)
 	host := strings.TrimPrefix(fj.URL, "http://")
 	if made.Error != nil || made.Connection == nil || made.Connection.Provider != wire.ConnectionProviderForgejo ||
 		deref(made.Connection.Login) != "agentstest" || deref(made.Connection.Workspace) != host || made.Connection.ExpiresAt != nil {
@@ -70,7 +69,7 @@ func TestConnectingForgejoWithAnAccessToken(t *testing.T) {
 		t.Fatalf("kept: %+v", kept)
 	}
 	var list wire.ConnectionsList
-	json.Unmarshal(c.call(t, 4, "connections/list", map[string]any{}), &list)
+	mustUnmarshal(t, c.call(t, 4, "connections/list", map[string]any{}), &list)
 	if len(list.Connections) != 1 || list.Connections[0].Provider != wire.ConnectionProviderForgejo {
 		t.Fatalf("list: %+v", list)
 	}
@@ -150,7 +149,7 @@ func TestAForgejoFoldersConnectorSetUp(t *testing.T) {
 	c.call(t, 1, "folders/add", map[string]any{"folder": "file://" + folder})
 
 	var setup wire.ConnectorSetup
-	json.Unmarshal(c.call(t, 2, "connectors/setup", map[string]any{"folder": folder}), &setup)
+	mustUnmarshal(t, c.call(t, 2, "connectors/setup", map[string]any{"folder": folder}), &setup)
 	slots := slotsByKind(setup)
 	if setup.Forge == nil || *setup.Forge != wire.ConnectionProviderForgejo || deref(setup.Site) != "codeberg.org" ||
 		deref(setup.Repository) != "agentstest/agents-walk" || deref(setup.RepositoryURL) != "https://codeberg.org/agentstest/agents-walk" ||
@@ -160,19 +159,19 @@ func TestAForgejoFoldersConnectorSetUp(t *testing.T) {
 	}
 
 	// A connection to another Forgejo is not sent to codeberg.org.
-	file.Put(connections.Connection{Provider: connections.Forgejo, Login: "agentstest", Access: "fj-other",
-		URL: "https://git.example.com/", Workspace: "git.example.com", ConnectedAt: time.Now()})
-	json.Unmarshal(c.call(t, 3, "connectors/setup", map[string]any{"folder": folder, "reading": "fresh"}), &setup)
+	must(t, file.Put(connections.Connection{Provider: connections.Forgejo, Login: "agentstest", Access: "fj-other",
+		URL: "https://git.example.com/", Workspace: "git.example.com", ConnectedAt: time.Now()}))
+	mustUnmarshal(t, c.call(t, 3, "connectors/setup", map[string]any{"folder": folder, "reading": "fresh"}), &setup)
 	if setup.Connection != nil || fj.reads != 0 || slotsByKind(setup)[wire.ConnectorSlotKindCi].State != wire.ConnectorSlotStateNotConnected {
 		t.Fatalf("another Forgejo's connection: %+v", setup)
 	}
 
-	file.Put(connections.ForgejoConnection(connections.Codeberg, "fj-secret", "agentstest", time.Now()))
+	must(t, file.Put(connections.ForgejoConnection(connections.Codeberg, "fj-secret", "agentstest", time.Now())))
 	raw := c.call(t, 4, "connectors/setup", map[string]any{"folder": folder, "reading": "fresh"})
 	if strings.Contains(string(raw), "fj-secret") {
 		t.Fatalf("a token went to the client: %s", raw)
 	}
-	json.Unmarshal(raw, &setup)
+	mustUnmarshal(t, raw, &setup)
 	slots = slotsByKind(setup)
 	tasks, review, ci := slots[wire.ConnectorSlotKindTasks], slots[wire.ConnectorSlotKindCodeReview], slots[wire.ConnectorSlotKindCi]
 	if tasks.State != wire.ConnectorSlotStateRead || tasks.Proof == nil || *tasks.Proof.Number != 4 ||
@@ -213,7 +212,7 @@ func TestAForgejoRemoteOfOnesOwn(t *testing.T) {
 	if f, _, _ := forgeAtOK(t, d, ctx, own); f.provider != wire.ConnectionProviderGithub {
 		t.Fatalf("an unknown host before connecting: %+v", f)
 	}
-	file.Put(connections.ForgejoConnection("https://git.example.com/", "fj-secret", "agentstest", time.Now()))
+	must(t, file.Put(connections.ForgejoConnection("https://git.example.com/", "fj-secret", "agentstest", time.Now())))
 	if f, c, connected := forgeAtOK(t, d, ctx, own); f.provider != wire.ConnectionProviderForgejo || f.repo != "team/app" ||
 		!connected || c.Access != "fj-secret" {
 		t.Fatalf("the connected Forgejo: %+v %v", f, connected)
@@ -237,7 +236,7 @@ func TestAProjectsForgejoSlotUsesTheConnectionsRoot(t *testing.T) {
 	if f.root != "https://localhost:3752/" {
 		t.Fatalf("before connecting: %+v", f)
 	}
-	file.Put(connections.ForgejoConnection("http://localhost:3752/", "fj-secret", "agentstest", time.Now()))
+	must(t, file.Put(connections.ForgejoConnection("http://localhost:3752/", "fj-secret", "agentstest", time.Now())))
 	f = d.atConnectedRoot(f)
 	if c, ok := d.connectionFor(f); f.root != "http://localhost:3752/" || !ok || c.Access != "fj-secret" {
 		t.Fatalf("connected: %+v %v", f, ok)

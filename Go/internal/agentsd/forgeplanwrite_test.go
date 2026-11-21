@@ -2,7 +2,6 @@ package agentsd
 
 import (
 	"context"
-	"encoding/json"
 	"slices"
 	"strings"
 	"testing"
@@ -52,7 +51,7 @@ func TestPlanWritesGoToGitHub(t *testing.T) {
 	epic := wire.LineageNode{Kind: "issue", Ref: "github:issue:alexec/agents#3265"}
 	child := wire.LineageNode{Kind: "issue", Ref: "github:issue:alexec/agents#3271"}
 	var done wire.ForgeDone
-	json.Unmarshal(c.call(t, 1, "forge/add-child", wire.ForgeAddChildRequest{Node: epic, Title: new("  Add a child  "), Level: new("Task")}), &done)
+	mustUnmarshal(t, c.call(t, 1, "forge/add-child", wire.ForgeAddChildRequest{Node: epic, Title: new("  Add a child  "), Level: new("Task")}), &done)
 	if done.URL == nil || *done.URL != "https://github.com/alexec/agents/issues/50" {
 		t.Fatalf("done: %+v", done)
 	}

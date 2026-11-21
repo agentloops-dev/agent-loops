@@ -40,14 +40,14 @@ func TestAnAgentsGitAndGhAskForTheAppsToken(t *testing.T) {
 	d.connStoreFor = func() (connections.Store, error) { return file, nil }
 	gh := &fakeSetupGitHub{}
 	d.newSetupReader = func(string) setupReader { return gh }
-	file.Put(connections.Connection{Provider: connections.GitHub, Login: "alexec", Access: "ghu_one",
-		AccessExpiresAt: time.Now().Add(time.Hour), ConnectedAt: time.Now()})
+	must(t, file.Put(connections.Connection{Provider: connections.GitHub, Login: "alexec", Access: "ghu_one",
+		AccessExpiresAt: time.Now().Add(time.Hour), ConnectedAt: time.Now()}))
 
 	// A stand-in agentsd for the gh that Agents writes, and a gh that says its token.
 	tools := t.TempDir()
 	stub := filepath.Join(tools, "agentsd")
-	os.WriteFile(stub, []byte("#!/bin/sh\necho ghu_from_host\n"), 0o700)
-	os.WriteFile(filepath.Join(tools, "gh"), []byte("#!/bin/sh\necho \"token=$GH_TOKEN args=$*\"\n"), 0o700)
+	must(t, os.WriteFile(stub, []byte("#!/bin/sh\necho ghu_from_host\n"), 0o700))                                     //nolint:gosec // G306: the mode this file always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(tools, "gh"), []byte("#!/bin/sh\necho \"token=$GH_TOKEN args=$*\"\n"), 0o700)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	d.credentialSelf = stub
 	agent := wire.UUID("agent-1")
 	base := []string{"PATH=" + tools + ":/usr/bin:/bin", "GH_TOKEN=ghp_persons", "GIT_CONFIG_COUNT=1",
@@ -99,8 +99,8 @@ func TestAnAgentsGitAndGhAskForTheAppsToken(t *testing.T) {
 	if got := ask(); got != "username=x-access-token\npassword=ghu_one\n" {
 		t.Fatalf("first ask: %q", got)
 	}
-	file.Put(connections.Connection{Provider: connections.GitHub, Login: "alexec", Access: "ghu_two",
-		AccessExpiresAt: time.Now().Add(8 * time.Hour), ConnectedAt: time.Now()})
+	must(t, file.Put(connections.Connection{Provider: connections.GitHub, Login: "alexec", Access: "ghu_two",
+		AccessExpiresAt: time.Now().Add(8 * time.Hour), ConnectedAt: time.Now()}))
 	if got := ask(); got != "username=x-access-token\npassword=ghu_two\n" {
 		t.Fatalf("after the host renewed the token: %q", got)
 	}
@@ -161,7 +161,8 @@ func TestAnAgentsGhRunsAgainAsThePersonWhenGitHubRefusesTheApp(t *testing.T) {
 	}
 	// A gh that GitHub refuses with the App's token, and that says how it ran.
 	gh := filepath.Join(t.TempDir(), "gh")
-	os.WriteFile(gh, []byte(`#!/bin/sh
+	//nolint:gosec // G306: the mode this file always had; only its error is new
+	must(t, os.WriteFile(gh, []byte(`#!/bin/sh
 echo "ran token=$GH_TOKEN" >>"$(dirname "$0")/log"
 if [ -n "$GH_TOKEN" ]; then
 	case "$1" in
@@ -172,7 +173,7 @@ if [ -n "$GH_TOKEN" ]; then
 	exit 1
 fi
 echo "done as the person"
-`), 0o700)
+`), 0o700))
 	for _, c := range []struct {
 		args  []string
 		code  int

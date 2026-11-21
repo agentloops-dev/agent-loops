@@ -53,7 +53,9 @@ func TestAHostedServerIsSharedRestartedAndLetGo(t *testing.T) {
 		}
 		defer resp.Body.Close()
 		var out map[string]json.RawMessage
-		json.NewDecoder(resp.Body).Decode(&out)
+		if err := json.NewDecoder(resp.Body).Decode(&out); err != nil && resp.StatusCode == http.StatusOK {
+			t.Fatal(err)
+		}
 		return resp, out
 	}
 	initialize := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26"}}`
@@ -62,7 +64,7 @@ func TestAHostedServerIsSharedRestartedAndLetGo(t *testing.T) {
 	var init struct {
 		ProtocolVersion string `json:"protocolVersion"`
 	}
-	json.Unmarshal(out["result"], &init)
+	mustUnmarshal(t, out["result"], &init)
 	if session == "" || init.ProtocolVersion != "2025-03-26" {
 		t.Fatalf("initialize: session %q, %s", session, out["result"])
 	}
@@ -72,7 +74,7 @@ func TestAHostedServerIsSharedRestartedAndLetGo(t *testing.T) {
 		var r struct {
 			Tools []any `json:"tools"`
 		}
-		json.Unmarshal(out["result"], &r)
+		mustUnmarshal(t, out["result"], &r)
 		if string(out["id"]) != "7" {
 			t.Fatalf("the client's id is not given back: %s", out["id"])
 		}
@@ -100,13 +102,13 @@ func TestAHostedServerIsSharedRestartedAndLetGo(t *testing.T) {
 		t.Fatalf("a session it does not know: %d", resp.StatusCode)
 	}
 	var snap wire.HostedMCPSnapshot
-	json.Unmarshal(c.call(t, 1, "mcp/hosted", nil), &snap)
+	mustUnmarshal(t, c.call(t, 1, "mcp/hosted", nil), &snap)
 	if len(snap.Servers) != 1 || snap.Servers[0].State != wire.HostedMCPStateRunning || snap.Servers[0].Users != 2 {
 		t.Fatalf("mcp/hosted: %+v", snap.Servers)
 	}
 
 	// It stops while in use: restarting, then running again, as a new process.
-	syscall.Kill(pid, syscall.SIGKILL)
+	must(t, syscall.Kill(pid, syscall.SIGKILL))
 	waitFor(t, "restarting", func() bool { return d.hostedState(pathA) == wire.HostedMCPStateRestarting })
 	waitFor(t, "running again", func() bool { return d.hostedState(pathA) == wire.HostedMCPStateRunning })
 	if p := d.hostedPid(pathA); p == pid || p == 0 {

@@ -118,7 +118,7 @@ func TestAgentsTakeTurnsWithAResource(t *testing.T) {
 func checkBuildLineCallOpen(t *testing.T, c *conn) {
 	t.Helper()
 	var snap wire.LeaseSnapshot
-	json.Unmarshal(c.call(t, 1, "resources/snapshot", nil), &snap)
+	mustUnmarshal(t, c.call(t, 1, "resources/snapshot", nil), &snap)
 	for _, r := range snap.Resources {
 		if r.Name == "build" && (len(r.Line) != 1 || !r.Line[0].IsCallOpen) {
 			t.Fatalf("%+v", r)
@@ -230,7 +230,7 @@ func TestALineOutlivesARestart(t *testing.T) {
 			"grantedAt": stamp, "expiresAt": at.Add(20 * time.Minute).Format("2006-01-02T15:04:05.000Z"), "warned": false}},
 		"line": []any{map[string]any{"agentID": placed, "askedAt": stamp}}}}, "notices": map[string]any{}}
 	b, _ := json.Marshal(book)
-	os.WriteFile(filepath.Join(root, "leases.json"), b, 0o644)
+	must(t, os.WriteFile(filepath.Join(root, "leases.json"), b, 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 
 	d, c := start(t, root)
 	defer d.Shutdown()
@@ -364,7 +364,7 @@ func TestALostPlaceIsKeptOverARestart(t *testing.T) {
 			"grantedAt": stamp(at), "expiresAt": stamp(at.Add(20 * time.Minute)), "warned": false}},
 		"line": []any{map[string]any{"agentID": late, "askedAt": stamp(at.Add(-time.Minute))}}}}, "notices": map[string]any{}}
 	b, _ := json.Marshal(book)
-	os.WriteFile(filepath.Join(root, "leases.json"), b, 0o644)
+	must(t, os.WriteFile(filepath.Join(root, "leases.json"), b, 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 
 	d, _ := start(t, root)
 	defer d.Shutdown()

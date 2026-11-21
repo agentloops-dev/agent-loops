@@ -2,7 +2,6 @@ package agentsd
 
 import (
 	"context"
-	"encoding/json"
 	"slices"
 	"strings"
 	"testing"
@@ -102,12 +101,12 @@ func TestForgeItemsBecomeRequestsAndTheChecklistGoesBack(t *testing.T) {
 	}
 	// One line ticked: the issue's line is ticked, and the request stays open.
 	var u wire.RequestUpdate
-	json.Unmarshal(c.call(t, 2, "requests/answer", map[string]any{"id": todo.ID, "answer": map[string]any{"checklist": map[string]any{"done": []int{0}}}}), &u)
+	mustUnmarshal(t, c.call(t, 2, "requests/answer", map[string]any{"id": todo.ID, "answer": map[string]any{"checklist": map[string]any{"done": []int{0}}}}), &u)
 	if u.Request.State != wire.RequestStateOpen || !u.Request.Forge.Checklist[0].Done || u.Request.Forge.Checklist[2].Done {
 		t.Fatalf("%+v", u.Request.Forge)
 	}
 	// The last line: the label and the person come off, a comment says it, and it is answered.
-	json.Unmarshal(c.call(t, 3, "requests/answer", map[string]any{"id": todo.ID, "answer": map[string]any{"checklist": map[string]any{"done": []int{2}}}}), &u)
+	mustUnmarshal(t, c.call(t, 3, "requests/answer", map[string]any{"id": todo.ID, "answer": map[string]any{"checklist": map[string]any{"done": []int{2}}}}), &u)
 	if u.Request.State != wire.RequestStateAnswered {
 		t.Fatalf("%+v", u.Request)
 	}
@@ -117,7 +116,7 @@ func TestForgeItemsBecomeRequestsAndTheChecklistGoesBack(t *testing.T) {
 		t.Fatalf("%q", w)
 	}
 	// The approval (#5803): only the person's review of the head; no comment, no label.
-	json.Unmarshal(c.call(t, 4, "requests/answer", map[string]any{"id": review.ID, "answer": map[string]any{"approval": map[string]any{"action": "approve"}}}), &u)
+	mustUnmarshal(t, c.call(t, 4, "requests/answer", map[string]any{"id": review.ID, "answer": map[string]any{"approval": map[string]any{"action": "approve"}}}), &u)
 	if u.Request.State != wire.RequestStateAnswered || deref(u.Request.Answer) != "approve: Approved in Agent Loops." {
 		t.Fatalf("%+v", u.Request)
 	}
@@ -211,7 +210,7 @@ func TestAnApprovalOfTheBotsPRIsARealReview(t *testing.T) {
 		}
 	}
 	var u wire.RequestUpdate
-	json.Unmarshal(c.call(t, 2, "requests/answer", map[string]any{"id": review.ID, "answer": map[string]any{"approval": map[string]any{"action": "changes", "note": "Move it left"}}}), &u)
+	mustUnmarshal(t, c.call(t, 2, "requests/answer", map[string]any{"id": review.ID, "answer": map[string]any{"approval": map[string]any{"action": "changes", "note": "Move it left"}}}), &u)
 	if u.Request.State != wire.RequestStateAnswered {
 		t.Fatalf("%+v", u.Request)
 	}

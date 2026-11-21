@@ -22,14 +22,14 @@ func TestAChangeWhileAnAgentWorksWaitsForKeepOrUndo(t *testing.T) {
 	defer d.Shutdown()
 	dir := folder(t, c, 1)
 	folder := store.FolderURL(dir)
-	os.WriteFile(filepath.Join(dir, "a.md"), nil, 0o644)
+	must(t, os.WriteFile(filepath.Join(dir, "a.md"), nil, 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	c.call(t, 2, "pins/pin", map[string]any{"folder": folder, "path": "a.md"})
 	approved, _ := os.ReadFile(filepath.Join(dir, ".agents", "pins.json"))
 	worker := seeded(t, d, dir, func(a *wire.Agent) {
 		title := "Tidy"
 		a.State, a.EndedReason, a.Title = wire.AgentStateRunning, nil, &title
 	})
-	os.WriteFile(filepath.Join(dir, ".agents", "pins.json"), []byte(`{"pins":[]}`), 0o644)
+	must(t, os.WriteFile(filepath.Join(dir, ".agents", "pins.json"), []byte(`{"pins":[]}`), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	if f := d.readPins(dir); len(f.pins) != 1 {
 		t.Fatalf("the change was used: %+v", f.pins)
 	}
@@ -45,7 +45,7 @@ func TestAChangeWhileAnAgentWorksWaitsForKeepOrUndo(t *testing.T) {
 		t.Fatalf("%+v", n)
 	}
 	var reading wire.GuardedChangeReading
-	json.Unmarshal(c.call(t, 4, "folders/readGuardedChange", map[string]any{"folder": folder, "path": ".agents/pins.json"}), &reading)
+	mustUnmarshal(t, c.call(t, 4, "folders/readGuardedChange", map[string]any{"folder": folder, "path": ".agents/pins.json"}), &reading)
 	if reading.Approved == nil || *reading.Approved != string(approved) || reading.Current == nil || len(reading.Lines) == 0 {
 		t.Fatalf("%+v", reading)
 	}
@@ -61,9 +61,9 @@ func TestAChangeWhileAnAgentWorksWaitsForKeepOrUndo(t *testing.T) {
 		t.Fatalf("%+v", s.GuardedChanges)
 	}
 	// Changed again and kept: the change is used from now on.
-	os.WriteFile(filepath.Join(dir, ".agents", "pins.json"), []byte(`{"pins":[]}`), 0o644)
+	must(t, os.WriteFile(filepath.Join(dir, ".agents", "pins.json"), []byte(`{"pins":[]}`), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	d.readPins(dir)
-	json.Unmarshal(c.call(t, 7, "folders/readGuardedChange", map[string]any{"folder": folder, "path": ".agents/pins.json"}), &reading)
+	mustUnmarshal(t, c.call(t, 7, "folders/readGuardedChange", map[string]any{"folder": folder, "path": ".agents/pins.json"}), &reading)
 	c.call(t, 8, "folders/keepGuardedChange", map[string]any{"folder": folder, "path": ".agents/pins.json", "digest": reading.Digest})
 	if f := d.readPins(dir); len(f.pins) != 0 {
 		t.Fatalf("%+v", f.pins)
@@ -76,9 +76,9 @@ func TestThePersonsOwnEditIsTheirs(t *testing.T) {
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := folder(t, c, 1)
-	os.WriteFile(filepath.Join(dir, "a.md"), nil, 0o644)
+	must(t, os.WriteFile(filepath.Join(dir, "a.md"), nil, 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	c.call(t, 2, "pins/pin", map[string]any{"folder": store.FolderURL(dir), "path": "a.md"})
-	os.WriteFile(filepath.Join(dir, ".agents", "pins.json"), []byte(`{"pins":[]}`), 0o644)
+	must(t, os.WriteFile(filepath.Join(dir, ".agents", "pins.json"), []byte(`{"pins":[]}`), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	if f := d.readPins(dir); len(f.pins) != 0 {
 		t.Fatal("an edit with nothing running, outside a repository, is the person's")
 	}
@@ -91,13 +91,13 @@ func TestAPullsChangeWaits(t *testing.T) {
 	defer d.Shutdown()
 	dir := repo(t)
 	c.call(t, 1, "folders/add", map[string]any{"folder": store.FolderURL(dir)})
-	os.MkdirAll(filepath.Join(dir, ".agents"), 0o755)
-	os.WriteFile(filepath.Join(dir, ".agents", "folder.json"), []byte(`{"diskSpace":{"lowPercent":30}}`), 0o644)
-	d.checkGuarded(dir, ".agents/folder.json", nil) // first seen: approved
+	must(t, os.MkdirAll(filepath.Join(dir, ".agents"), 0o755))                                                            //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(dir, ".agents", "folder.json"), []byte(`{"diskSpace":{"lowPercent":30}}`), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
+	d.checkGuarded(dir, ".agents/folder.json", nil)                                                                       // first seen: approved
 	pulled := []byte(`{"diskSpace":{"lowPercent":50}}`)
-	os.WriteFile(filepath.Join(dir, ".agents", "folder.json"), pulled, 0o644)
-	git(dir, "add", ".agents/folder.json")
-	git(dir, "commit", "-q", "-m", "pulled")
+	must(t, os.WriteFile(filepath.Join(dir, ".agents", "folder.json"), pulled, 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
+	must(t, errOnly(git(dir, "add", ".agents/folder.json")))
+	must(t, errOnly(git(dir, "commit", "-q", "-m", "pulled")))
 	d.checkGuarded(dir, ".agents/folder.json", nil)
 	s, _ := d.summaryFor(dir)
 	if len(s.GuardedChanges) != 1 || !s.GuardedChanges[0].ByGit || s.Approvals[0].Line != "Changed with the last pull" ||
@@ -134,7 +134,7 @@ func TestAFileTheAppNoLongerKeepsWaitsForNothing(t *testing.T) {
 		{Folder: store.FolderURL(dir), Path: ".agents/pins.json", Pending: &guardedPending{ChangedByIDs: []wire.UUID{}, ChangedBy: []string{"Tidy"}}},
 	}}
 	b, _ := json.Marshal(recs)
-	os.WriteFile(d.guardedFile(), b, 0o644)
+	must(t, os.WriteFile(d.guardedFile(), b, 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	d.guardedMu.Lock()
 	d.guarded = nil
 	d.guardedMu.Unlock()

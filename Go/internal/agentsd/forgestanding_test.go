@@ -2,7 +2,6 @@ package agentsd
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -110,7 +109,7 @@ func TestForgePlanOfAStandingEpic(t *testing.T) {
 		9: {{Repo: "alexec/web", Number: 3, Open: true}}}
 	epic := wire.LineageNode{Kind: "issue", Ref: "github:issue:alexec/agents#3659"}
 	var plan wire.ForgePlan
-	json.Unmarshal(c.call(t, 1, "forge/plan", wire.ForgePlanRequest{Node: epic}), &plan)
+	mustUnmarshal(t, c.call(t, 1, "forge/plan", wire.ForgePlanRequest{Node: epic}), &plan)
 	got := []string{}
 	for _, ch := range plan.Children {
 		got = append(got, strings.TrimPrefix(ch.Item.Node.Ref, "github:issue:alexec/agents#"))
@@ -146,7 +145,7 @@ func TestForgePlanOfAStandingEpic(t *testing.T) {
 	if searches, _ := gh.asked(); len(searches) != 1 || !strings.Contains(searches[0], `label:"bug"`) || !strings.Contains(searches[0], "is:open") {
 		t.Fatalf("searches: %q", searches)
 	}
-	json.Unmarshal(c.call(t, 2, "forge/plan", wire.ForgePlanRequest{Node: epic}), &plan)
+	mustUnmarshal(t, c.call(t, 2, "forge/plan", wire.ForgePlanRequest{Node: epic}), &plan)
 	if searches, _ := gh.asked(); gh.plans != 1 || len(searches) != 1 || len(gh.blocked) != 1 || plan.Standing == nil || len(plan.Children) != 3 {
 		t.Fatalf("again: %d plans, %q, %+v", gh.plans, searches, plan)
 	}
@@ -155,7 +154,7 @@ func TestForgePlanOfAStandingEpic(t *testing.T) {
 	gh.plan.Epic.Number = 3700
 	gh.bodies[3700] = "No block."
 	plan = wire.ForgePlan{}
-	json.Unmarshal(c.call(t, 3, "forge/plan", wire.ForgePlanRequest{Node: wire.LineageNode{Kind: "issue", Ref: "github:issue:alexec/agents#3700"}}), &plan)
+	mustUnmarshal(t, c.call(t, 3, "forge/plan", wire.ForgePlanRequest{Node: wire.LineageNode{Kind: "issue", Ref: "github:issue:alexec/agents#3700"}}), &plan)
 	if plan.Standing == nil || plan.Standing.Error == nil || len(plan.Children) != 0 || plan.Children == nil || len(plan.Steps) != 0 {
 		t.Fatalf("no block: %+v", plan)
 	}
@@ -240,7 +239,7 @@ func TestForgePlanOfAStandingEpicWithNoParent(t *testing.T) {
 	child.ParentRepo, child.ParentNumber = "alexec/Agents", 3265
 	gh.labeled = map[string][]githubmcp.Item{"enhancement": {planIssue(10, "open", "enhancement"), child, planIssue(14, "open", "enhancement")}}
 	var plan wire.ForgePlan
-	json.Unmarshal(c.call(t, 1, "forge/plan", wire.ForgePlanRequest{Node: wire.LineageNode{Kind: "issue", Ref: "github:issue:alexec/agents#4208"}}), &plan)
+	mustUnmarshal(t, c.call(t, 1, "forge/plan", wire.ForgePlanRequest{Node: wire.LineageNode{Kind: "issue", Ref: "github:issue:alexec/agents#4208"}}), &plan)
 	got := []string{}
 	for _, ch := range plan.Children {
 		got = append(got, strings.TrimPrefix(ch.Item.Node.Ref, "github:issue:alexec/agents#"))

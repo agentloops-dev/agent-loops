@@ -34,14 +34,14 @@ func TestOnlyTheNamedWorkflowCopiesAreKept(t *testing.T) {
 	defer d.Shutdown()
 	dir := folder(t, c, 1)
 	folder := store.FolderURL(dir)
-	os.MkdirAll(workflowsFolder(dir), 0o755)
+	must(t, os.MkdirAll(workflowsFolder(dir), 0o755)) //nolint:gosec // G301: the mode this folder always had; only its error is new
 	file := filepath.Join(workflowsFolder(dir), "nightly.md")
 	stray := strings.Repeat("ab", 32)
-	os.MkdirAll(d.workflowCopies(), 0o755)
-	os.WriteFile(filepath.Join(d.workflowCopies(), stray), []byte("an old version"), 0o644)
+	must(t, os.MkdirAll(d.workflowCopies(), 0o755))                                                  //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(d.workflowCopies(), stray), []byte("an old version"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	var first []string
 	for i := range 3 {
-		os.WriteFile(file, fmt.Appendf(nil, "---\non:\n  - schedule:\n      at: \":00\"\n---\nTidy up %d.\n", i), 0o644)
+		must(t, os.WriteFile(file, fmt.Appendf(nil, "---\non:\n  - schedule:\n      at: \":00\"\n---\nTidy up %d.\n", i), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 		approveAll(t, c, folder)
 		copies := dirNames(t, d.workflowCopies())
 		if len(copies) != 1 {
@@ -63,18 +63,18 @@ func TestTheNewestAssessmentsAreKept(t *testing.T) {
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := d.assessmentsPath()
-	os.MkdirAll(dir, 0o755)
+	must(t, os.MkdirAll(dir, 0o755)) //nolint:gosec // G301: the mode this folder always had; only its error is new
 	old := time.Now().Add(-time.Hour)
 	for i := range assessmentsKept + 1 {
 		id := fmt.Sprintf("agent-%02d", i)
 		scope := filepath.Join(dir, "scope-"+id+".txt")
-		os.WriteFile(scope, []byte("scope"), 0o644)
-		os.WriteFile(filepath.Join(dir, id+".json"), []byte("{}"), 0o644)
+		must(t, os.WriteFile(scope, []byte("scope"), 0o644))                       //nolint:gosec // G306: the mode this file always had; only its error is new
+		must(t, os.WriteFile(filepath.Join(dir, id+".json"), []byte("{}"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 		kept := filepath.Join(dir, id+".start.json")
-		writeStore(kept, assessStart{AgentID: "x", ScopePath: scope})
+		must(t, writeStore(kept, assessStart{AgentID: "x", ScopePath: scope}))
 		// agent-00 is the oldest.
 		at := old.Add(time.Duration(i) * time.Second)
-		os.Chtimes(kept, at, at)
+		must(t, os.Chtimes(kept, at, at))
 	}
 	d.dropOldAssessments()
 	got := dirNames(t, dir)
@@ -96,10 +96,10 @@ func TestTheNewestServerLogsAreKept(t *testing.T) {
 	old := time.Now().Add(-time.Hour)
 	for i := range hostedLogsKept + 1 {
 		p := filepath.Join(dir, fmt.Sprintf("server-%02d.log", i))
-		os.WriteFile(p, []byte("x"), 0o600)
-		os.WriteFile(p+".1", []byte("x"), 0o600)
+		must(t, os.WriteFile(p, []byte("x"), 0o600))
+		must(t, os.WriteFile(p+".1", []byte("x"), 0o600))
 		at := old.Add(time.Duration(i) * time.Second)
-		os.Chtimes(p, at, at)
+		must(t, os.Chtimes(p, at, at))
 	}
 	// The one opened is the oldest, and stays.
 	dropOldHostedLogs(dir, "server-00.log")

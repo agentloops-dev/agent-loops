@@ -47,7 +47,7 @@ func TestAnAgentStartsASessionOnAnotherMachine(t *testing.T) {
 		case "machines/startSession":
 			var s wire.MachineSessionStart
 			b, _ := json.Marshal(call.Params)
-			json.Unmarshal(b, &s)
+			mustUnmarshal(t, b, &s)
 			mu.Lock()
 			defer mu.Unlock()
 			starts = append(starts, s)
@@ -89,7 +89,7 @@ func TestAnAgentStartsASessionOnAnotherMachine(t *testing.T) {
 	card := func(n int) {
 		t.Helper()
 		waitFor(t, "the card", func() bool {
-			json.Unmarshal(c.call(t, n, "elicitations/pending", nil), &pending)
+			mustUnmarshal(t, c.call(t, n, "elicitations/pending", nil), &pending)
 			return len(pending) == 1
 		})
 	}
@@ -150,7 +150,7 @@ func TestASessionStartedFromAnotherMachineSaysWho(t *testing.T) {
 	defer d.Shutdown()
 	dir := folder(t, c, 1)
 	var id wire.UUID
-	json.Unmarshal(c.call(t, 2, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + dir, "prompt": "Check the Windows bug",
+	mustUnmarshal(t, c.call(t, 2, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + dir, "prompt": "Check the Windows bug",
 		"labels": []string{"windows"}, "startedFrom": map[string]any{"machine": "Alex's Mac", "agent": "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE",
 			"who": "Claude (fix-login)"}}), &id)
 	a := d.Store.Agent(id)
@@ -200,7 +200,7 @@ func TestTheFolderSwitchStartsOnAnotherMachineWithoutAsking(t *testing.T) {
 	}
 	mu.Unlock()
 	var pending []wire.ElicitationRequest
-	json.Unmarshal(c.call(t, 3, "elicitations/pending", nil), &pending)
+	mustUnmarshal(t, c.call(t, 3, "elicitations/pending", nil), &pending)
 	if len(pending) != 0 {
 		t.Fatalf("asked anyway: %+v", pending)
 	}
@@ -229,7 +229,7 @@ func TestASessionAutoPickedSaysSoFirst(t *testing.T) {
 	defer d.Shutdown()
 	dir := folder(t, c, 1)
 	var id wire.UUID
-	json.Unmarshal(c.call(t, 2, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + dir, "prompt": "Check it",
+	mustUnmarshal(t, c.call(t, 2, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + dir, "prompt": "Check it",
 		"labels": []string{}, "autoChose": "Auto chose Mac mini: you last started here."}), &id)
 	if n := notes(d, id); len(n) == 0 || n[0] != "Auto chose Mac mini: you last started here." {
 		t.Fatalf("%q", n)
