@@ -80,7 +80,9 @@ func (d *Daemon) botCopiesPath() string { return filepath.Join(d.Store.Loc.Root,
 func (d *Daemon) loadBotCopiesLocked() botCopies {
 	var c botCopies
 	if b, err := os.ReadFile(d.botCopiesPath()); err == nil {
-		json.Unmarshal(b, &c)
+		if err := json.Unmarshal(b, &c); err != nil {
+			log.Printf("bot copies: could not read %s: %v", d.botCopiesPath(), err)
+		}
 	}
 	if c.Machines == nil {
 		c.Machines = map[string]string{}

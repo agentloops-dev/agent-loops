@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -40,7 +41,9 @@ func readJSONMap(path string) map[string]wire.JSONValue {
 	}
 	var m map[string]wire.JSONValue
 	if json.Unmarshal(b, &m) != nil || m == nil {
-		os.Rename(path, fmt.Sprintf("%s.corrupt-%d", path, time.Now().Unix()))
+		if err := os.Rename(path, fmt.Sprintf("%s.corrupt-%d", path, time.Now().Unix())); err != nil {
+			log.Printf("settings: could not set the unreadable %s aside: %v", filepath.Base(path), err)
+		}
 		store.TrimSetAsides(path)
 		return map[string]wire.JSONValue{}
 	}
@@ -75,8 +78,9 @@ func (d *Daemon) setPreferences(change map[string]wire.JSONValue) (map[string]wi
 	}
 	b, err := storeJSON(m)
 	if err == nil {
-		os.MkdirAll(d.SettingsDir, 0o700)
-		err = store.WriteAtomically(d.displayFile(), b, 0o600)
+		if err = os.MkdirAll(d.SettingsDir, 0o700); err == nil {
+			err = store.WriteAtomically(d.displayFile(), b, 0o600)
+		}
 	}
 	tell := !reflect.DeepEqual(normalized(m), normalized(d.seenDisplay))
 	d.seenDisplay = m
@@ -140,7 +144,8 @@ func (d *Daemon) rememberMode(runtimeID, optionID string, v wire.JSONValue, opti
 	var old struct {
 		Mode wire.JSONValue `json:"mode"`
 	}
-	json.Unmarshal(all[runtimeID], &old)
+	// No mode yet, or one not readable, is none: the new one is written.
+	_ = json.Unmarshal(all[runtimeID], &old)
 	if reflect.DeepEqual(value(old.Mode), value(v)) {
 		d.settingsMu.Unlock()
 		return
@@ -149,8 +154,9 @@ func (d *Daemon) rememberMode(runtimeID, optionID string, v wire.JSONValue, opti
 	all[runtimeID] = entry
 	b, err := storeJSON(all)
 	if err == nil {
-		os.MkdirAll(d.SettingsDir, 0o700)
-		err = store.WriteAtomically(d.modesFile(), b, 0o600)
+		if err = os.MkdirAll(d.SettingsDir, 0o700); err == nil {
+			err = store.WriteAtomically(d.modesFile(), b, 0o600)
+		}
 	}
 	d.settingsMu.Unlock()
 	if err != nil {
@@ -412,7 +418,9 @@ func (d *Daemon) registerSettings() {
 			if v, ok := r[agentsMayArchiveMyChatsKey]; ok {
 				var on bool
 				if json.Unmarshal(v, &on) == nil {
-					d.setYourArchiveMyChats(on)
+					if err := d.setYourArchiveMyChats(on); err != nil {
+						log.Printf("settings: could not save agentsMayArchiveMyChats into your policy: %v", err)
+					}
 				}
 			}
 		}

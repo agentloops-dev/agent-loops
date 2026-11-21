@@ -260,7 +260,9 @@ func sortedGrants(g []string) []string {
 func readSealedSecrets(home string) sealedSecretsFile {
 	f := sealedSecretsFile{V: sealedSecretsVersion}
 	if b, err := os.ReadFile(sealedSecretsPath(home)); err == nil {
-		json.Unmarshal(b, &f)
+		if err := json.Unmarshal(b, &f); err != nil {
+			log.Printf("sealed secrets: %s is unreadable: %v", sealedSecretsPath(home), err)
+		}
 	}
 	return f
 }

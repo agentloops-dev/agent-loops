@@ -172,8 +172,9 @@ func readSelfUpdateSettings(path string) selfUpdateSettings {
 	if b, err := os.ReadFile(path); err == nil {
 		var m map[string]json.RawMessage
 		if json.Unmarshal(b, &m) == nil {
-			json.Unmarshal(m["autoUpdate"], &s.AutoUpdate)
-			json.Unmarshal(m["rolledBack"], &s.RolledBack)
+			// A value that is missing or of the wrong kind leaves its default.
+			_ = json.Unmarshal(m["autoUpdate"], &s.AutoUpdate)
+			_ = json.Unmarshal(m["rolledBack"], &s.RolledBack)
 		}
 	}
 	return s
@@ -381,7 +382,9 @@ func (u *selfUpdater) putInPlace(version, work, next string) error {
 		return fmt.Errorf("Agent Loops could not move itself aside: %w", err)
 	}
 	if err := os.Rename(next, u.app); err != nil {
-		os.Rename(old, u.app)
+		if back := os.Rename(old, u.app); back != nil {
+			return fmt.Errorf("Agent Loops could not put the new copy in its place (%w), nor itself back from %s: %v", err, old, back) //nolint:staticcheck // ST1005: it starts with the app's name
+		}
 		return fmt.Errorf("Agent Loops could not put the new copy in its place: %w", err)
 	}
 	return nil
@@ -633,7 +636,9 @@ func swapBack(app, old string, swap func(a, b string) error) error {
 		return err
 	}
 	if err := os.Rename(old, app); err != nil {
-		os.Rename(aside, app)
+		if back := os.Rename(aside, app); back != nil {
+			return fmt.Errorf("%w; and could not put %s back: %v", err, aside, back)
+		}
 		return err
 	}
 	return nil

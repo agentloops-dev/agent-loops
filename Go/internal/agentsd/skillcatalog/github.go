@@ -264,7 +264,8 @@ func (g GitHub) TarballTree(ctx context.Context, owner, repo, commit, work strin
 	}
 	root := filepath.Join(unpacked, repo+"-"+commit)
 	var tree []TreeEntry
-	filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+	// The callback returns nil on every error it meets, so the walk has none to give.
+	_ = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil || path == root {
 			return nil
 		}
@@ -310,30 +311,41 @@ func untar(b []byte, dir string) error {
 		if !IsSafe(strings.TrimSuffix(h.Name, "/")) {
 			continue
 		}
-		path := filepath.Join(dir, h.Name)
-		switch h.Typeflag {
-		case tar.TypeDir:
-			os.MkdirAll(path, 0o755)
-		case tar.TypeReg:
-			os.MkdirAll(filepath.Dir(path), 0o755)
-			mode := os.FileMode(0o644)
-			if h.Mode&0o111 != 0 {
-				mode = 0o755
-			}
-			f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
-			if err != nil {
-				return err
-			}
-			_, err = io.Copy(f, io.LimitReader(r, tarballLimit))
-			f.Close()
-			if err != nil {
-				return err
-			}
-		case tar.TypeSymlink:
-			os.MkdirAll(filepath.Dir(path), 0o755)
-			os.Symlink(h.Linkname, path)
+		if err := untarEntry(r, h, filepath.Join(dir, h.Name)); err != nil {
+			return err
 		}
 	}
+}
+
+// untarEntry writes the tarball's entry h, which r is at, to path.
+func untarEntry(r io.Reader, h *tar.Header, path string) error {
+	switch h.Typeflag {
+	case tar.TypeDir:
+		return os.MkdirAll(path, 0o755) //nolint:gosec // G301: the mode this folder always had; only its error is new
+	case tar.TypeReg:
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil { //nolint:gosec // G301: the mode this folder always had; only its error is new
+			return err
+		}
+		mode := os.FileMode(0o644)
+		if h.Mode&0o111 != 0 {
+			mode = 0o755
+		}
+		f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
+		if err != nil {
+			return err
+		}
+		_, err = io.Copy(f, io.LimitReader(r, tarballLimit))
+		if cerr := f.Close(); err == nil {
+			err = cerr
+		}
+		return err
+	case tar.TypeSymlink:
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil { //nolint:gosec // G301: the mode this folder always had; only its error is new
+			return err
+		}
+		return os.Symlink(h.Linkname, path)
+	}
+	return nil
 }
 
 func (g GitHub) get(ctx context.Context, u string, api bool) ([]byte, error) {

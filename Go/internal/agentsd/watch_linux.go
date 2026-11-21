@@ -72,7 +72,8 @@ const watchMask = unix.IN_CREATE | unix.IN_DELETE | unix.IN_MODIFY | unix.IN_MOV
 // as it is not heard (#6248).
 func (w *folderWatch) addTree(dir string) error {
 	var rootErr error
-	filepath.WalkDir(dir, func(p string, e os.DirEntry, err error) error {
+	// The walk returns no error of its own: the function returns none, and the root's is rootErr.
+	_ = filepath.WalkDir(dir, func(p string, e os.DirEntry, err error) error {
 		if err != nil || !e.IsDir() {
 			return nil
 		}

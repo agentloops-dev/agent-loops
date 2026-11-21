@@ -1301,7 +1301,7 @@ func firstSentence(s string) string {
 func toolCall(v any) wire.ToolCall {
 	b, _ := json.Marshal(v)
 	var u map[string]json.RawMessage
-	json.Unmarshal(b, &u)
+	_ = json.Unmarshal(b, &u) // b is v marshalled; one that is not an object leaves every field empty
 	str := func(k string) *string {
 		var s string
 		if json.Unmarshal(u[k], &s) == nil {
@@ -1570,7 +1570,9 @@ func (l *live) updatePlan(p *sdk.SessionUpdatePlan) {
 	d := l.d
 	b, _ := json.Marshal(p.Entries)
 	var entries []wire.PlanEntry
-	json.Unmarshal(b, &entries)
+	if err := json.Unmarshal(b, &entries); err != nil {
+		log.Printf("plan: could not read the runtime's entries: %v", err)
+	}
 	if entries == nil {
 		entries = []wire.PlanEntry{}
 	}

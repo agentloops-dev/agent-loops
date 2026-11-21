@@ -65,7 +65,7 @@ func mcpServerName(s wire.MCPServer) string {
 	var v struct {
 		Name string `json:"name"`
 	}
-	json.Unmarshal(b, &v)
+	_ = json.Unmarshal(b, &v) // b is our own Marshal of s
 	return v.Name
 }
 
@@ -109,7 +109,7 @@ func (d *Daemon) remember(key string, e optionEntry) {
 	defer d.optionMu.Unlock()
 	cache := map[string]optionEntry{}
 	if b, err := os.ReadFile(d.optionCachePath()); err == nil {
-		diskjson.Unmarshal(b, &cache)
+		_ = diskjson.Unmarshal(b, &cache) // a cache that cannot be read starts again
 	}
 	e.SavedAt = now()
 	cache[key] = e
@@ -123,7 +123,7 @@ func (d *Daemon) remember(key string, e optionEntry) {
 			delete(cache, k)
 		}
 	}
-	os.MkdirAll(d.Store.Loc.Cache, 0o755)
+	_ = os.MkdirAll(d.Store.Loc.Cache, 0o755) //nolint:gosec // G301: the mode this folder always had; only its error is new; writeStore below fails, and says so, with no folder
 	if err := writeStore(d.optionCachePath(), cache); err != nil {
 		log.Printf("option-cache.json: could not save: %v", err)
 	}

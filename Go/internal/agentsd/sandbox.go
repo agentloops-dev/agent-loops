@@ -152,7 +152,7 @@ func codexStartMode(runtimeID string, choice wire.SandboxChoice, mode string) (s
 
 func stringValue(v wire.JSONValue) string {
 	var s string
-	json.Unmarshal(v, &s)
+	_ = json.Unmarshal(v, &s) // a value that is not a string reads as ""
 	return s
 }
 

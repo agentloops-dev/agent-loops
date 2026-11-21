@@ -155,7 +155,7 @@ func inputSchemaFor(name string) jsonSchema {
 	closed := false
 	if k := kindNamed(name); k != nil {
 		var s jsonSchema
-		json.Unmarshal(k.InputSchema, &s)
+		_ = json.Unmarshal(k.InputSchema, &s) // the catalogue's own schema; a bad one has no properties
 		return s
 	}
 	out := jsonSchema{Properties: map[string]jsonSchema{}, AdditionalProperties: &closed}
@@ -164,7 +164,7 @@ func inputSchemaFor(name string) jsonSchema {
 		for _, k := range kinds {
 			if strings.HasPrefix(k.Name, subject+".") {
 				var s jsonSchema
-				json.Unmarshal(k.InputSchema, &s)
+				_ = json.Unmarshal(k.InputSchema, &s) // the catalogue's own schema; a bad one has no properties
 				for key, p := range s.Properties {
 					if _, had := out.Properties[key]; !had {
 						out.Properties[key] = p

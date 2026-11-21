@@ -381,7 +381,9 @@ func (d *Daemon) applyLimit(l *live, lim limit, worked bool) (why wire.EndedReas
 		l.mu.Unlock()
 		// So does a workflow's run or a helper set to (#1918): nobody watches those.
 		if sentToContinue(sent) || d.continuesByItself(a) {
-			d.waitForAllowance(l.id, key)
+			if _, err := d.waitForAllowance(l.id, key); err != nil {
+				log.Printf("limits: %s cannot wait for its allowance: %v", l.id, err)
+			}
 		}
 		return wire.EndedReasonAllowanceSpent, true, time.Time{}
 	case limitCreditGone:
@@ -638,6 +640,8 @@ func (l *live) retryLater(at time.Time) {
 		l.mu.Lock()
 		l.resend = q.ID
 		l.mu.Unlock()
-		l.d.enqueue(l.id, q, true)
+		if err := l.d.enqueue(l.id, q, true); err != nil {
+			log.Printf("limits: could not send %s again: %v", l.id, err)
+		}
 	})
 }

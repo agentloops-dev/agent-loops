@@ -2,6 +2,7 @@ package agentsd
 
 import (
 	"context"
+	"log"
 	"os"
 	"strings"
 	"sync"
@@ -117,7 +118,9 @@ func bringBackCheckBranches(r wire.BringBackRequest, patch string) (string, erro
 func bringBackDropRefs(path string) {
 	if out, _ := git(path, "for-each-ref", "--format=%(refname)", "refs/agents-back"); out != "" {
 		for _, ref := range strings.Split(out, "\n") {
-			git(path, "update-ref", "-d", ref)
+			if _, err := git(path, "update-ref", "-d", ref); err != nil {
+				log.Printf("bring back: could not remove %s: %v", ref, err) //nolint:gosec // G706: a ref this daemon made
+			}
 		}
 	}
 }

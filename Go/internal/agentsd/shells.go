@@ -122,7 +122,7 @@ func (s *shell) isLive() bool {
 
 func (s *shell) resize(rows, cols *int64) {
 	if rows != nil && cols != nil && *rows > 0 && *cols > 0 {
-		pty.Setsize(s.pty, &pty.Winsize{Rows: uint16(*rows), Cols: uint16(*cols)})
+		_ = pty.Setsize(s.pty, &pty.Winsize{Rows: uint16(*rows), Cols: uint16(*cols)}) //nolint:gosec // G115: a terminal size, far below 65536; a closed shell has no size
 	}
 }
 
@@ -248,7 +248,7 @@ func (d *Daemon) registerShells() {
 	})
 	On(d, wire.CallShellSignal, func(ctx context.Context, c *Client, r wire.ShellSignalRequest) (wire.Empty, error) {
 		if s := d.shellFor(r.AgentID, number(r.Shell)); s != nil && s.cmd.Process != nil {
-			syscall.Kill(-s.cmd.Process.Pid, syscall.Signal(r.Signal))
+			_ = syscall.Kill(-s.cmd.Process.Pid, syscall.Signal(r.Signal)) // its group may have ended already
 		}
 		return wire.Empty{}, nil
 	})
@@ -261,7 +261,7 @@ func (d *Daemon) registerShells() {
 		s.state = wire.ShellState{Released: &wire.ShellStateReleased{Reason: "This shell was closed."}}
 		s.mu.Unlock()
 		if s.cmd.Process != nil {
-			s.cmd.Process.Kill()
+			_ = s.cmd.Process.Kill() // it may have ended already
 		}
 		s.pty.Close()
 		d.mu.Lock()
@@ -294,7 +294,7 @@ func (d *Daemon) stopShells() {
 	d.mu.Unlock()
 	for _, s := range ss {
 		if s.cmd.Process != nil {
-			syscall.Kill(-s.cmd.Process.Pid, syscall.SIGHUP)
+			_ = syscall.Kill(-s.cmd.Process.Pid, syscall.SIGHUP) // its group may have ended already
 		}
 	}
 }

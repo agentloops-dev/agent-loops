@@ -339,7 +339,7 @@ func verifyMCP(ctx context.Context, s sdk.McpServer, cwd string, timeout time.Du
 			Version *string `json:"version"`
 		} `json:"serverInfo"`
 	}
-	json.Unmarshal(raw, &info)
+	_ = json.Unmarshal(raw, &info) // optional: a reply with no server info leaves name and version nil
 	if err := c.notify(ctx, "notifications/initialized"); err != nil {
 		return nil, nil, nil, timedOut(err)
 	}
@@ -518,7 +518,9 @@ func (d *Daemon) mcpAddByHand(r wire.MCPAddByHandRequest) (wire.MCPAddAnswer, er
 	byHand := true
 	side := mcpcatalog.LoadSidecar(d.mcpSidecarPath())
 	side.Servers[mcpcatalog.Key(r.Destination, name)] = mcpcatalog.Record{Run: string(v.built.run), AddedAt: addedAt, ByHand: &byHand}
-	side.Save(d.mcpSidecarPath())
+	if err := side.Save(d.mcpSidecarPath()); err != nil {
+		log.Printf("mcp: could not save %s: %v", d.mcpSidecarPath(), err)
+	}
 	if r.Destination.Kind == wire.SkillDestinationKindFolder {
 		d.recordMCPApproval(*r.Destination.Folder, name, json.RawMessage(v.built.entry.Stringified()))
 	}

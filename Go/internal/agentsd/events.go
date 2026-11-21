@@ -172,9 +172,13 @@ func (d *Daemon) applyEventLineLocked(line eventLine) bool {
 func (d *Daemon) setAsideUnreadableEventsLocked(data []byte, unreadable int) {
 	aside := fmt.Sprintf("%s.unreadable-%d", d.eventsPath(), time.Now().Unix())
 	if len(d.eventList) == 0 {
-		os.Rename(d.eventsPath(), aside)
+		if err := os.Rename(d.eventsPath(), aside); err != nil {
+			log.Printf("events.jsonl: could not set it aside: %v", err)
+		}
 	} else {
-		os.WriteFile(aside, data, 0o644)
+		if err := os.WriteFile(aside, data, 0o644); err != nil { //nolint:gosec // G306: the mode this file always had; only its error is new
+			log.Printf("events.jsonl: could not keep a copy: %v", err)
+		}
 	}
 	store.TrimSetAsides(d.eventsPath())
 	log.Printf("events.jsonl: skipped %d unreadable line(s); the whole file is kept as %s", unreadable, filepath.Base(aside))
@@ -327,14 +331,17 @@ func (d *Daemon) appendEventLocked(l eventLine) {
 	}
 	if d.eventFile == nil {
 		path := d.eventsPath()
-		os.MkdirAll(filepath.Dir(path), 0o755)
-		f, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o644)
+		// A folder that cannot be made fails the open below, which logs.
+		_ = os.MkdirAll(filepath.Dir(path), 0o755) //nolint:gosec // G301: the mode this folder always had; only its error is new
+		f, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o644) //nolint:gosec // G302: the mode events.jsonl always had
 		if err != nil {
 			log.Printf("events.jsonl: could not append: %v", err)
 			return
 		}
 		if endsTorn(path) {
-			f.Write([]byte("\n"))
+			if _, err := f.Write([]byte("\n")); err != nil {
+				log.Printf("events.jsonl: could not end the torn line: %v", err)
+			}
 		}
 		d.eventFile = f
 	}

@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"io/fs"
+	"log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -162,7 +163,9 @@ func (d *Daemon) catchUp(r wire.CatchUpRequest) wire.CatchUpSnapshot {
 
 func (d *Daemon) readSetting(name string, v any) {
 	if b, err := os.ReadFile(filepath.Join(d.SettingsDir, name)); err == nil {
-		json.Unmarshal(b, v)
+		if err := json.Unmarshal(b, v); err != nil {
+			log.Printf("settings: could not read %s: %v", name, err)
+		}
 	}
 }
 
@@ -320,7 +323,8 @@ func (d *Daemon) retentionState() wire.RetentionState {
 // folderBytes is the size of the regular files under a folder (ArchiveIndex on Linux).
 func folderBytes(folder string) int64 {
 	var n int64
-	filepath.WalkDir(folder, func(_ string, e os.DirEntry, err error) error {
+	// The walk counts what it can read and goes on, so WalkDir returns no error.
+	_ = filepath.WalkDir(folder, func(_ string, e os.DirEntry, err error) error {
 		if err == nil && e.Type().IsRegular() {
 			if fi, err := e.Info(); err == nil {
 				n += fi.Size()
@@ -688,7 +692,8 @@ const dropboxTotal = 500 * 1024 * 1024
 // put replaces.
 func dropboxBytes(dir, but string) int64 {
 	var n int64
-	filepath.WalkDir(dir, func(p string, e fs.DirEntry, err error) error {
+	// The walk counts what it can read and goes on, so WalkDir returns no error.
+	_ = filepath.WalkDir(dir, func(p string, e fs.DirEntry, err error) error {
 		if err == nil && e.Type().IsRegular() && p != but {
 			if fi, err := e.Info(); err == nil {
 				n += fi.Size()
@@ -704,7 +709,8 @@ func dropboxBytes(dir, but string) int64 {
 func (d *Daemon) sweepDropboxParts() {
 	for _, p := range d.folders(true) {
 		root := filepath.Join(store.FolderPath(p.Folder.Folder), ".agents", "dropbox")
-		filepath.WalkDir(root, func(path string, e fs.DirEntry, err error) error {
+		// The walk sweeps what it can read and goes on, so WalkDir returns no error.
+		_ = filepath.WalkDir(root, func(path string, e fs.DirEntry, err error) error {
 			if err == nil && e.Type().IsRegular() && strings.HasPrefix(e.Name(), ".") && strings.HasSuffix(e.Name(), ".part") {
 				if fi, err := e.Info(); err == nil && nowFunc().Sub(fi.ModTime()) > 24*time.Hour {
 					os.Remove(path)

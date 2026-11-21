@@ -123,7 +123,9 @@ func (d *Daemon) readOrgPolicyLocked() {
 	d.orgNow, d.orgLost = nil, false
 	d.orgWas = orgPolicySeen{}
 	if b, err := os.ReadFile(d.orgPath(orgPolicySeenFile)); err == nil {
-		json.Unmarshal(b, &d.orgWas)
+		if err := json.Unmarshal(b, &d.orgWas); err != nil {
+			log.Printf("policy: could not read %s: %v", orgPolicySeenFile, err)
+		}
 	}
 	if len(d.orgKey) == 0 {
 		return
@@ -907,7 +909,7 @@ func (d *Daemon) effectiveSandboxOn(folder string) (bool, *wire.PolicyLayerRef) 
 		return false, nil
 	}
 	var v wire.SandboxChoice
-	json.Unmarshal(r.Value, &v)
+	_ = json.Unmarshal(r.Value, &v) // not a choice: off
 	return v == wire.SandboxChoiceOn, r.Decides
 }
 

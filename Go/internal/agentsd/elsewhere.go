@@ -125,9 +125,12 @@ func (d *Daemon) saveElsewhereLocked() {
 	}
 	f.Watched, f.Watchers = watched[max(0, len(watched)-elsewhereKept):], watchers[max(0, len(watchers)-elsewhereKept):]
 	f.Messengers = messengers[max(0, len(messengers)-elsewhereKept):]
-	writeStore(d.elsewherePath(), elsewhereFile{Started: append([]startedThere{}, f.Started...), From: append([]startedHere{}, f.From...),
+	err := writeStore(d.elsewherePath(), elsewhereFile{Started: append([]startedThere{}, f.Started...), From: append([]startedHere{}, f.From...),
 		Watched: append([]startedThere{}, f.Watched...), Watchers: append([]startedHere{}, f.Watchers...),
 		Messengers: append([]startedHere{}, f.Messengers...)})
+	if err != nil {
+		log.Printf("elsewhere: could not keep %s: %v", d.elsewherePath(), err)
+	}
 }
 
 // noteWatched keeps a session of the project on another machine that an agent here waits
@@ -620,7 +623,9 @@ func (d *Daemon) archiveForStarter(t *wire.Agent) string {
 	name := quotedTitle(t.Title)
 	may := d.agentsMayArchive(folderPath(t))
 	if may && !helperBusy(t) {
-		d.archiveBy(t.ID, wire.AgentArchivedReasonByAgent)
+		if err := d.archiveBy(t.ID, wire.AgentArchivedReasonByAgent); err != nil {
+			return "Could not archive " + name + ": " + err.Error()
+		}
 		return "Archived " + name + ", freeing its place; the person can unarchive it."
 	}
 	if r := t.ArchiveRequest; r != nil && (r.Requested != nil || r.WhenTurnEnds != nil) {

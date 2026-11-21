@@ -543,7 +543,7 @@ func toolFieldPhrase(p map[string]any, required bool) string {
 func (d *Daemon) declaredResources() []wire.DeclaredResource {
 	var declared []wire.DeclaredResource
 	if b, err := os.ReadFile(d.resourcesFile()); err == nil {
-		diskjson.Unmarshal(b, &declared)
+		_ = diskjson.Unmarshal(b, &declared) // an unreadable file declares none, as a missing one does
 	}
 	return declared
 }

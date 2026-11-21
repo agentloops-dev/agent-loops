@@ -286,7 +286,9 @@ func (d *Daemon) ServeLocal(ctx context.Context, path, host string, private []by
 	if err != nil {
 		return err
 	}
-	os.Chmod(path, 0o600)
+	if err := os.Chmod(path, 0o600); err != nil {
+		log.Printf("local: could not make %s private: %v", path, err)
+	}
 	policy := d.socketPolicy()
 	log.Printf("local: a window on this Mac may connect at %s", path)
 	d.goJob("local close", func() { <-ctx.Done(); l.Close(); os.Remove(path) })
@@ -306,7 +308,7 @@ func (d *Daemon) acceptLocal(c net.Conn, policy SocketPolicy, host string, priva
 		c.Close()
 		return
 	}
-	c.SetDeadline(time.Now().Add(localExchangeWait))
+	_ = c.SetDeadline(time.Now().Add(localExchangeWait)) // fails only on a closed conn, and then the exchange fails
 	r := bufio.NewReaderSize(c, 1<<20)
 	client, err := d.localExchange(c, r, host, private)
 	if errors.Is(err, io.EOF) {
@@ -319,12 +321,12 @@ func (d *Daemon) acceptLocal(c net.Conn, policy SocketPolicy, host string, priva
 		if refusal, ok := err.(*controllink.Refusal); ok {
 			reason = refusal.Reason
 		}
-		c.Write([]byte(controllink.Message{Refused: reason}.Line() + "\n"))
+		_, _ = c.Write([]byte(controllink.Message{Refused: reason}.Line() + "\n")) // best effort: the window may have gone
 		log.Printf("local: a window was refused: %v", err)
 		c.Close()
 		return
 	}
-	c.SetDeadline(time.Time{})
+	_ = c.SetDeadline(time.Time{}) // fails only on a closed conn, and then the first read fails
 	// A Mac's window is the Mac, as on the control plane's channel: it names no device.
 	sc := newSockConn(c, RoleControl)
 	sc.local = true

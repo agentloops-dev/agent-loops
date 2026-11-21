@@ -99,7 +99,9 @@ func (d *Daemon) userMarkLocked() userSettingsSyncState {
 			b, _ = os.ReadFile(filepath.Join(d.Store.Loc.Root, "from-control-plane.json"))
 		}
 		if len(b) > 0 {
-			json.Unmarshal(b, &m)
+			if err := json.Unmarshal(b, &m); err != nil {
+				log.Printf("user settings: could not read the sync state: %v", err)
+			}
 		}
 		d.userMark = &m
 	}
@@ -230,7 +232,13 @@ func writeMCPServers(home string, servers wire.JSONValue) error {
 	}
 	file := map[string]json.RawMessage{}
 	if b, err := os.ReadFile(path); err == nil {
-		json.Unmarshal(b, &file)
+		// Its other keys are kept, so a file that cannot be read is not written over.
+		if err := json.Unmarshal(b, &file); err != nil {
+			return fmt.Errorf("%s could not be read: %w", path, err)
+		}
+		if file == nil {
+			file = map[string]json.RawMessage{}
+		}
 	}
 	file["mcpServers"] = json.RawMessage(servers)
 	b, err := json.MarshalIndent(file, "", "  ")

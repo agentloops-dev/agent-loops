@@ -156,27 +156,41 @@ func ReadPinFile(path string, owner uint32) (*MachinePin, error) {
 	for k, v := range doc {
 		switch k {
 		case "controlPlane":
-			var cp map[string]json.RawMessage
-			if err := json.Unmarshal(v, &cp); err != nil {
-				return nil, fmt.Errorf("%s: controlPlane: %v", path, err)
-			}
-			for ck, cv := range cp {
-				switch ck {
-				case "address":
-					json.Unmarshal(cv, &pin.Address)
-				case "key":
-					json.Unmarshal(cv, &pin.Key)
-				default:
-					sayOnce(fmt.Sprintf("pin: %s: controlPlane.%s is ignored; rules come only from the control plane", path, ck))
-				}
+			if err := readPinControlPlane(path, v, pin); err != nil {
+				return nil, err
 			}
 		case "mustJoin":
-			json.Unmarshal(v, &pin.MustJoin)
+			if err := json.Unmarshal(v, &pin.MustJoin); err != nil {
+				return nil, fmt.Errorf("%s: mustJoin: %v", path, err)
+			}
 		default:
 			sayOnce(fmt.Sprintf("pin: %s: %s is ignored; rules come only from the control plane", path, k))
 		}
 	}
 	return pin, nil
+}
+
+// readPinControlPlane reads the pin file's controlPlane object into pin.
+func readPinControlPlane(path string, v json.RawMessage, pin *MachinePin) error {
+	var cp map[string]json.RawMessage
+	if err := json.Unmarshal(v, &cp); err != nil {
+		return fmt.Errorf("%s: controlPlane: %v", path, err)
+	}
+	for ck, cv := range cp {
+		switch ck {
+		case "address":
+			if err := json.Unmarshal(cv, &pin.Address); err != nil {
+				return fmt.Errorf("%s: controlPlane.address: %v", path, err)
+			}
+		case "key":
+			if err := json.Unmarshal(cv, &pin.Key); err != nil {
+				return fmt.Errorf("%s: controlPlane.key: %v", path, err)
+			}
+		default:
+			sayOnce(fmt.Sprintf("pin: %s: controlPlane.%s is ignored; rules come only from the control plane", path, ck))
+		}
+	}
+	return nil
 }
 
 // PinFromFlags is the pin Agents Host gives from the Mac's managed preferences, or nil.

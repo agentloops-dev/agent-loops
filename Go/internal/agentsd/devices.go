@@ -74,7 +74,7 @@ func (r deviceRecord) MarshalJSON() ([]byte, error) {
 		return b, err
 	}
 	var all map[string]json.RawMessage
-	json.Unmarshal(b, &all)
+	_ = json.Unmarshal(b, &all) // b is a wire.Device just marshalled, so always an object
 	for k, v := range r.extra {
 		all[k] = v
 	}
@@ -96,7 +96,9 @@ func (d *Daemon) loadDevices() {
 	}
 	var raws []json.RawMessage
 	if json.Unmarshal(b, &raws) != nil {
-		os.Rename(d.devicesFile(), fmt.Sprintf("%s.corrupt-%d", d.devicesFile(), time.Now().Unix()))
+		if err := os.Rename(d.devicesFile(), fmt.Sprintf("%s.corrupt-%d", d.devicesFile(), time.Now().Unix())); err != nil {
+			log.Printf("devices.json: could not set it aside: %v", err)
+		}
 		store.TrimSetAsides(d.devicesFile())
 		log.Print("devices.json: could not read it; starting with no paired devices")
 		return

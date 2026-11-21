@@ -135,7 +135,8 @@ func (d *Daemon) StartProjects() {
 		for _, p := range d.Store.Folders() {
 			folder := store.FolderPath(p.Folder)
 			if d.ensureProject(folder) {
-				d.sendFolder(folder)
+				// A folder gone since Folders has nothing to say.
+				_, _ = d.sendFolder(folder)
 			}
 		}
 		d.sendJoinedSoon()

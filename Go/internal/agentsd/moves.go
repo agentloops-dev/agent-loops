@@ -73,7 +73,7 @@ func moveCall(args map[string]json.RawMessage) (*wire.PendingMove, error) {
 	worktree := strings.TrimSpace(argString(args, "worktree"))
 	leaving := strings.TrimSpace(argString(args, "leave_worktree"))
 	var discard bool
-	json.Unmarshal(args["discard_changes"], &discard)
+	_ = json.Unmarshal(args["discard_changes"], &discard) // optional: missing or not a bool keeps the changes
 	onlyRemove := Invalid("Nothing was recorded: discard_changes only goes with leave_worktree remove.")
 	switch {
 	case worktree != "" && leaving != "":

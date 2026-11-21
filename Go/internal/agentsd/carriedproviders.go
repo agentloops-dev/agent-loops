@@ -187,7 +187,9 @@ func (c *carriedProviders) call(request wire.ProviderCarry) wire.ProviderCarried
 		}
 		var options any
 		if len(request.Options) > 0 {
-			json.Unmarshal(request.Options, &options)
+			if err := json.Unmarshal(request.Options, &options); err != nil {
+				return carriedError("The options are not JSON: " + err.Error())
+			}
 		}
 		made, runs, err := connection.Create(name, options, request.FirstBoot)
 		return carriedResult(providers.CarriedCreate{Made: made, Runs: runs}, err)
@@ -207,7 +209,9 @@ func (c *carriedProviders) call(request wire.ProviderCarry) wire.ProviderCarried
 // changed. With a draft's secrets, a new one that is not kept: true.
 func (c *carriedProviders) connection(record providers.ProviderRecord, raw []byte, draft map[string]string) (*providers.Connection, bool, error) {
 	folder := filepath.Join(c.home, ".agents", "providers")
-	os.MkdirAll(folder, 0o700)
+	if err := os.MkdirAll(folder, 0o700); err != nil {
+		return nil, false, err
+	}
 	logf := func(s string) { log.Print(s) }
 	if len(draft) > 0 {
 		values := c.store.Values(record.ID)
