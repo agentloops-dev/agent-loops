@@ -29,7 +29,7 @@ func checkAskedMethods(t *testing.T, got []string, n int, last string) {
 func workflowSummaryOf(t *testing.T, c *conn, id int, folder wire.URL, workflowID string) *wire.WorkflowSummary {
 	t.Helper()
 	var list []wire.WorkflowSummary
-	json.Unmarshal(c.call(t, id, "workflows/list", map[string]any{"folder": folder}), &list)
+	mustUnmarshal(t, c.call(t, id, "workflows/list", map[string]any{"folder": folder}), &list)
 	for i := range list {
 		if list[i].Workflow.WorkflowID == workflowID {
 			return &list[i]
@@ -141,9 +141,9 @@ func TestABotsMachineSendsTeamEventsAndKeepsItsOwn(t *testing.T) {
 	// it matches the server's event; an app event, or a trigger id the event does not name,
 	// is not run.
 	dir := folder(t, c, 1)
-	os.MkdirAll(workflowsFolder(dir), 0o755)
-	os.WriteFile(filepath.Join(workflowsFolder(dir), "review.md"), []byte("---\nname: Review\non:\n  - pr.merged:\n      server: ci\nruns-on: [review-bot]\n---\nLook.\n"), 0o644)
-	os.WriteFile(filepath.Join(workflowsFolder(dir), "leases.md"), []byte("---\nname: Leases\non: lease.granted\nruns-on: [review-bot]\n---\nLook.\n"), 0o644)
+	must(t, os.MkdirAll(workflowsFolder(dir), 0o755))                                                                                                                                       //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(workflowsFolder(dir), "review.md"), []byte("---\nname: Review\non:\n  - pr.merged:\n      server: ci\nruns-on: [review-bot]\n---\nLook.\n"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(workflowsFolder(dir), "leases.md"), []byte("---\nname: Leases\non: lease.granted\nruns-on: [review-bot]\n---\nLook.\n"), 0o644))                     //nolint:gosec // G306: the mode this file always had; only its error is new
 	approveAll(t, c, store.FolderURL(dir))
 	sendFire := func(workflow, trigger string, e wire.Event) bool {
 		params, _ := json.Marshal(wire.TeamTrigger{Workflow: workflow, Trigger: trigger, RunsOn: w.RunsOn, Event: &e})
@@ -195,8 +195,8 @@ func TestAPersonsMachineSendsABotsSchedule(t *testing.T) {
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := folder(t, c, 1)
-	os.MkdirAll(workflowsFolder(dir), 0o755)
-	os.WriteFile(filepath.Join(workflowsFolder(dir), "nightly.md"), []byte("---\nname: Nightly\non:\n  - schedule:\n      at: \":00\"\nruns-on: [review-bot]\n---\nTidy up.\n"), 0o644)
+	must(t, os.MkdirAll(workflowsFolder(dir), 0o755))                                                                                                                                            //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(workflowsFolder(dir), "nightly.md"), []byte("---\nname: Nightly\non:\n  - schedule:\n      at: \":00\"\nruns-on: [review-bot]\n---\nTidy up.\n"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	var mu sync.Mutex
 	var sent []wire.TeamTrigger
 	d.SetControlAsk(askControl(func(_ context.Context, method string, params any) (json.RawMessage, error) {
@@ -248,8 +248,8 @@ func TestAPersonsMachineHearsABotsServerEventsAndOnlySendsThem(t *testing.T) {
 	defer d.Shutdown()
 	dir := folder(t, c, 1)
 	folder := store.FolderURL(dir)
-	os.MkdirAll(workflowsFolder(dir), 0o755)
-	os.WriteFile(filepath.Join(workflowsFolder(dir), "merged.md"), []byte("---\nname: Merged\non:\n  - pr.merged:\n      server: ci\nruns-on: [review-bot]\n---\nTidy up.\n"), 0o644)
+	must(t, os.MkdirAll(workflowsFolder(dir), 0o755))                                                                                                                                          //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(workflowsFolder(dir), "merged.md"), []byte("---\nname: Merged\non:\n  - pr.merged:\n      server: ci\nruns-on: [review-bot]\n---\nTidy up.\n"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	var mu sync.Mutex
 	var sent []wire.TeamTrigger
 	d.SetControlAsk(askControl(func(_ context.Context, method string, params any) (json.RawMessage, error) {

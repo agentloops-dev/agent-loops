@@ -38,15 +38,15 @@ func newSelfUpdateRig(t *testing.T, zip []byte) *selfUpdateRig {
 	t.Helper()
 	dir := t.TempDir()
 	r := &selfUpdateRig{app: filepath.Join(dir, appName)}
-	os.MkdirAll(r.app, 0o755)
-	os.WriteFile(filepath.Join(r.app, "which"), []byte("old"), 0o644)
+	must(t, os.MkdirAll(r.app, 0o755)) //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(r.app, "which"), []byte("old"), 0o644))
 	sum := sha256.Sum256(zip)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		switch req.URL.Path {
 		case "/v0.12.0/SHA256SUMS":
-			w.Write([]byte(hex.EncodeToString(sum[:]) + "  Agent-Loops-0.12.0.zip\n"))
+			check(t, errOnly(w.Write([]byte(hex.EncodeToString(sum[:])+"  Agent-Loops-0.12.0.zip\n"))))
 		case "/v0.12.0/Agent-Loops-0.12.0.zip":
-			w.Write(zip)
+			check(t, errOnly(w.Write(zip)))
 		default:
 			http.NotFound(w, req)
 		}
@@ -58,8 +58,8 @@ func newSelfUpdateRig(t *testing.T, zip []byte) *selfUpdateRig {
 	u.turns = func() int { return int(r.turns.Load()) }
 	u.unpack = func(zip, out string) error {
 		next := filepath.Join(out, appName)
-		os.MkdirAll(next, 0o755)
-		return os.WriteFile(filepath.Join(next, "which"), []byte("new"), 0o644)
+		must(t, os.MkdirAll(next, 0o755))                                       //nolint:gosec // G301: the mode this folder always had; only its error is new
+		return os.WriteFile(filepath.Join(next, "which"), []byte("new"), 0o644) //nolint:gosec // G306: the mode this file always had; only its error is new
 	}
 	u.version = func(string) (string, error) { return "0.12.0", nil }
 	u.verify = func(next, running string) error { return nil }
@@ -179,7 +179,7 @@ func TestSelfUpdateWithNoSwapTakesTwoRenames(t *testing.T) {
 func TestSelfUpdateCutBetweenRenamesPutsTheOldCopyBack(t *testing.T) {
 	r := newSelfUpdateRig(t, []byte("zip"))
 	work := filepath.Join(filepath.Dir(r.app), updateFolderPrefix+"cut")
-	os.MkdirAll(work, 0o755)
+	must(t, os.MkdirAll(work, 0o755)) //nolint:gosec // G301: the mode this folder always had; only its error is new
 	if err := writeSelfUpdateMark(work, selfUpdateMarkFile{From: "0.11.0", To: "0.12.0", Old: "old.app"}); err != nil {
 		t.Fatal(err)
 	}
@@ -228,7 +228,7 @@ func TestSelfUpdateRollsBackACopyThatDoesNotStayUp(t *testing.T) {
 		t.Fatalf("the release that rolled back would be taken again: %+v", s)
 	}
 	// Setting updating keeps the release that rolled back.
-	again.Set(wire.SelfUpdateSet{AutoUpdate: true})
+	must(t, errOnly(again.Set(wire.SelfUpdateSet{AutoUpdate: true})))
 	if s := readSelfUpdateSettings(r.u.file); s.RolledBack != "0.12.0" {
 		t.Fatalf("%+v", s)
 	}
@@ -238,7 +238,7 @@ func TestSelfUpdateRollsBackACopyThatDoesNotStayUp(t *testing.T) {
 func TestSelfUpdateStartTakesAwayWhatItNoLongerNeeds(t *testing.T) {
 	r := newSelfUpdateRig(t, []byte("zip"))
 	r.updated(t)
-	os.MkdirAll(filepath.Join(filepath.Dir(r.app), updateFolderPrefix+"cut", "new"), 0o755)
+	must(t, os.MkdirAll(filepath.Join(filepath.Dir(r.app), updateFolderPrefix+"cut", "new"), 0o755)) //nolint:gosec // G301: the mode this folder always had; only its error is new
 	if keep, back := r.settle("0.11.0"); len(keep) != 0 || back || len(r.leftovers()) != 0 {
 		t.Fatalf("%v %v %v", keep, back, r.leftovers())
 	}
@@ -302,7 +302,7 @@ func TestSelfUpdateOffIsKept(t *testing.T) {
 		t.Fatalf("not kept: %+v", again.Status())
 	}
 	// Turned on, the release named before is taken up.
-	r.u.Set(wire.SelfUpdateSet{AutoUpdate: true})
+	must(t, errOnly(r.u.Set(wire.SelfUpdateSet{AutoUpdate: true})))
 	r.until(t, wire.SelfUpdateStateRestarting)
 	r.restarted(t)
 }
@@ -312,7 +312,9 @@ func TestSelfUpdateTurnedOffWhileWaitingChangesNothing(t *testing.T) {
 	r.turns.Store(1)
 	r.u.Named("0.12.0")
 	r.until(t, wire.SelfUpdateStateWaiting)
-	r.u.Set(wire.SelfUpdateSet{AutoUpdate: false})
+	if _, err := r.u.Set(wire.SelfUpdateSet{AutoUpdate: false}); err != nil {
+		t.Fatal(err)
+	}
 	r.until(t, wire.SelfUpdateStateOff)
 	deadline := time.Now().Add(5 * time.Second)
 	for len(r.leftovers()) != 0 && time.Now().Before(deadline) {
@@ -359,7 +361,7 @@ func TestTakeNewName(t *testing.T) {
 		t.Run(oldName, func(t *testing.T) {
 			dir := t.TempDir()
 			old := filepath.Join(dir, oldName)
-			os.MkdirAll(old, 0o755)
+			must(t, os.MkdirAll(old, 0o755)) //nolint:gosec // G301: the mode this folder always had; only its error is new
 			now, moved := takeNewName(old, os.Rename)
 			if !moved || now != filepath.Join(dir, appName) {
 				t.Fatalf("not renamed: %s %v", now, moved)
@@ -372,7 +374,7 @@ func TestTakeNewName(t *testing.T) {
 				t.Fatalf("renamed again: %s", again)
 			}
 			// Another Agent Loops.app beside it: it keeps its name.
-			os.MkdirAll(old, 0o755)
+			must(t, os.MkdirAll(old, 0o755)) //nolint:gosec // G301: the mode this folder always had; only its error is new
 			if kept, moved := takeNewName(old, os.Rename); moved || kept != old {
 				t.Fatalf("took the name of the app beside it: %s", kept)
 			}
@@ -395,7 +397,7 @@ func TestTakeNewName(t *testing.T) {
 func TestSelfUpdateSettlesAgentsHostsUpdateFolder(t *testing.T) {
 	r := newSelfUpdateRig(t, []byte("zip"))
 	work := filepath.Join(filepath.Dir(r.app), oldUpdateFolderPrefix+"x")
-	os.MkdirAll(filepath.Join(work, "new"), 0o755)
+	must(t, os.MkdirAll(filepath.Join(work, "new"), 0o755)) //nolint:gosec // G301: the mode this folder always had; only its error is new
 	if err := writeSelfUpdateMark(work, selfUpdateMarkFile{From: "0.11.0", To: "0.12.0", Old: filepath.Join("new", "Agents Host.app")}); err != nil {
 		t.Fatal(err)
 	}

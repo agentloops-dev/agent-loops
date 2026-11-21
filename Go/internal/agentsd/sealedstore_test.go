@@ -84,7 +84,7 @@ func TestAnUnflaggedRecordsFlagChangedByHandDoesNotOpen(t *testing.T) {
 	plain, asked := f.Secrets["PLAIN_TOKEN"], f.Secrets["ASKED_TOKEN"]
 	plain.NoAsk, asked.NoAsk = false, true
 	f.Secrets["PLAIN_TOKEN"], f.Secrets["ASKED_TOKEN"] = plain, asked
-	writeSealedSecrets(home, f)
+	must(t, writeSealedSecrets(home, f))
 	if got := d.secrets(); got["ASKED_TOKEN"] != "" || got["PLAIN_TOKEN"] != "" {
 		t.Fatalf("a flag changed by hand opened: %v", got)
 	}
@@ -231,7 +231,7 @@ func TestNoSecretsEnvAfterAStart(t *testing.T) {
 
 	// A file that comes back (a hand edit) is moved at the next start; the store's record
 	// of a name wins over the file's line, as every reader read it first.
-	os.WriteFile(path, []byte("KEPT_TOKEN=stale-line\nNEW_TOKEN=new-4177-not-real\n"), 0o600)
+	must(t, os.WriteFile(path, []byte("KEPT_TOKEN=stale-line\nNEW_TOKEN=new-4177-not-real\n"), 0o600))
 	d2, _ := start(t, root)
 	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
 		t.Fatal("secrets.env came back and stayed")
@@ -254,8 +254,8 @@ func TestAMoveWithNoKeyKeepsTheFile(t *testing.T) {
 	home := t.TempDir()
 	personalHomeFor(t, home)
 	path := skillcatalog.SecretsPath(home)
-	os.MkdirAll(filepath.Dir(path), 0o700)
-	os.WriteFile(path, []byte("OLD_TOKEN=old-value\n"), 0o600)
+	must(t, os.MkdirAll(filepath.Dir(path), 0o700))
+	must(t, os.WriteFile(path, []byte("OLD_TOKEN=old-value\n"), 0o600))
 	d, err := newWith(context.Background(), t.TempDir(), testHooksOf(t).options())
 	if err != nil {
 		t.Fatal(err)

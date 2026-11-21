@@ -44,15 +44,15 @@ func TestUndoPutsBackWhatATurnChanged(t *testing.T) {
 	defer d.Shutdown()
 	dir := repo(t)
 	path := filepath.Join(dir, "a.txt")
-	os.WriteFile(path, []byte("one\n"), 0o644)
-	git(dir, "add", "a.txt")
-	git(dir, "commit", "-q", "-m", "a")
+	must(t, os.WriteFile(path, []byte("one\n"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
+	must(t, errOnly(git(dir, "add", "a.txt")))
+	must(t, errOnly(git(dir, "commit", "-q", "-m", "a")))
 	id, tc := runTurn(t, d, c, dir, path)
 	if len(tc.Files) != 1 || tc.Files[0].Path != path || tc.Files[0].State != wire.ChangeStateModified || tc.Before == nil || tc.After == nil {
 		t.Fatalf("%+v", tc)
 	}
 	var r wire.UndoTurnResult
-	json.Unmarshal(c.call(t, 2, "changes/undoTurn", map[string]any{"agentID": id, "turn": tc.Turn}), &r)
+	mustUnmarshal(t, c.call(t, 2, "changes/undoTurn", map[string]any{"agentID": id, "turn": tc.Turn}), &r)
 	if b, _ := os.ReadFile(path); string(b) != "one\n" || len(r.PutBack) != 1 || r.PutBack[0] != path || len(r.ChangedSince) != 0 {
 		t.Fatalf("%q %+v", b, r)
 	}
@@ -95,18 +95,18 @@ func TestUndoAsksFirstWhenAFileChangedAgain(t *testing.T) {
 	defer d.Shutdown()
 	dir := repo(t)
 	path := filepath.Join(dir, "a.txt")
-	os.WriteFile(path, []byte("one\n"), 0o644)
-	git(dir, "add", "a.txt")
-	git(dir, "commit", "-q", "-m", "a")
+	must(t, os.WriteFile(path, []byte("one\n"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
+	must(t, errOnly(git(dir, "add", "a.txt")))
+	must(t, errOnly(git(dir, "commit", "-q", "-m", "a")))
 	id, tc := runTurn(t, d, c, dir, path)
-	os.WriteFile(path, []byte("person's\n"), 0o644)
+	must(t, os.WriteFile(path, []byte("person's\n"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	var r wire.UndoTurnResult
-	json.Unmarshal(c.call(t, 2, "changes/undoTurn", map[string]any{"agentID": id, "turn": tc.Turn}), &r)
+	mustUnmarshal(t, c.call(t, 2, "changes/undoTurn", map[string]any{"agentID": id, "turn": tc.Turn}), &r)
 	if b, _ := os.ReadFile(path); string(b) != "person's\n" || len(r.ChangedSince) != 1 || len(r.PutBack) != 0 {
 		t.Fatalf("%q %+v", b, r)
 	}
 	r = wire.UndoTurnResult{}
-	json.Unmarshal(c.call(t, 3, "changes/undoTurn", map[string]any{"agentID": id, "turn": tc.Turn, "confirmed": true}), &r)
+	mustUnmarshal(t, c.call(t, 3, "changes/undoTurn", map[string]any{"agentID": id, "turn": tc.Turn, "confirmed": true}), &r)
 	if b, _ := os.ReadFile(path); string(b) != "one\n" || len(r.PutBack) != 1 {
 		t.Fatalf("%q %+v", b, r)
 	}
@@ -119,12 +119,12 @@ func TestATurnOutsideTheFolderCannotBeUndone(t *testing.T) {
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := repo(t)
-	os.WriteFile(filepath.Join(dir, ".gitignore"), []byte("build/\n"), 0o644)
-	git(dir, "add", ".gitignore")
-	git(dir, "commit", "-q", "-m", "ignore")
+	must(t, os.WriteFile(filepath.Join(dir, ".gitignore"), []byte("build/\n"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
+	must(t, errOnly(git(dir, "add", ".gitignore")))
+	must(t, errOnly(git(dir, "commit", "-q", "-m", "ignore")))
 	ignored := filepath.Join(dir, "build", "out.txt")
-	os.MkdirAll(filepath.Dir(ignored), 0o755)
-	os.WriteFile(ignored, []byte("old\n"), 0o644)
+	must(t, os.MkdirAll(filepath.Dir(ignored), 0o755))     //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(ignored, []byte("old\n"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	id := startAgent(t, c, 1, dir, "write the file "+ignored)
 	c.until(t, "the turn", ended(id, wire.AgentStateFinished))
 	// The snapshots hold no ignored file, so the trees are the same and no card is made.

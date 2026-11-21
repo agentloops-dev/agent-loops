@@ -171,7 +171,7 @@ func TestOnLinuxAFlaggedValueOpensOnlyForASignedApproval(t *testing.T) {
 	layer := readSealedSecrets(home).Secrets["GITLAB_PASSWORD"]
 	outer, _ := d.openOuter(sealedLocal, "GITLAB_PASSWORD", layer)
 	var l secretrelease.Layer
-	json.Unmarshal(outer, &l)
+	mustUnmarshal(t, outer, &l)
 	if _, err := (*d.askControl.Load())(context.Background(), wire.CallMachineSecretRelease.Name,
 		wire.SecretRelease{Name: "GITLAB_PASSWORD", Encapsulated: l.Encapsulated, Approval: *once.Approval}); err == nil {
 		t.Fatal("the control plane took an approval twice")

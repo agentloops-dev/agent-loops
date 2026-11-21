@@ -36,7 +36,7 @@ func laneWorktree(t *testing.T, d *Daemon, dir, name string) (wire.Agent, string
 	a := seeded(t, d, root, inWorktree(dir, root, branchPrefix+name))
 	base := "main"
 	a.Worktree.Base = &base
-	d.Store.Save(a)
+	must(t, d.Store.Save(a))
 	return a, root
 }
 
@@ -71,7 +71,7 @@ func deleteAndSweep(t *testing.T, d *Daemon, id wire.UUID) {
 
 func commitIn(t *testing.T, root, file string) {
 	t.Helper()
-	os.WriteFile(filepath.Join(root, file), []byte(file), 0o644)
+	must(t, os.WriteFile(filepath.Join(root, file), []byte(file), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	sweepGit(t, root, "add", file)
 	sweepGit(t, root, "commit", "-q", "-m", file)
 }
@@ -120,11 +120,11 @@ func TestAWorktreeWithChangesGoesOnArchiveAndDelete(t *testing.T) {
 	dir := repo(t)
 	commitIn(t, dir, "tracked.txt")
 	untracked, uRoot := laneWorktree(t, d, dir, "untracked")
-	os.WriteFile(filepath.Join(uRoot, "notes.txt"), []byte("x"), 0o644)
+	must(t, os.WriteFile(filepath.Join(uRoot, "notes.txt"), []byte("x"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	edited, eRoot := laneWorktree(t, d, dir, "edited")
-	os.WriteFile(filepath.Join(eRoot, "tracked.txt"), []byte("changed"), 0o644)
+	must(t, os.WriteFile(filepath.Join(eRoot, "tracked.txt"), []byte("changed"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	staged, sRoot := laneWorktree(t, d, dir, "staged")
-	os.WriteFile(filepath.Join(sRoot, "new.txt"), []byte("x"), 0o644)
+	must(t, os.WriteFile(filepath.Join(sRoot, "new.txt"), []byte("x"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	sweepGit(t, sRoot, "add", "new.txt")
 	archiveAndSweep(t, d, untracked.ID)
 	archiveAndSweep(t, d, edited.ID)

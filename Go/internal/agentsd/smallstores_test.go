@@ -122,13 +122,13 @@ func TestApprovalsLetGoOfFoldersThatAreGone(t *testing.T) {
 	onDisk := t.TempDir()
 	gone := filepath.Join(t.TempDir(), "gone")
 	root := d.Store.Loc.Root
-	os.WriteFile(filepath.Join(root, "mcp-approvals.json"), []byte(`{"approvalsBegan":1,"approved":{`+
+	must(t, os.WriteFile(filepath.Join(root, "mcp-approvals.json"), []byte(`{"approvalsBegan":1,"approved":{`+ //nolint:gosec // G306: the mode this file always had; only its error is new
 		`"`+onDisk+`|.agents/mcp.json|a":"x","`+gone+`|.agents/mcp.json|b":"x","`+listed+`|.agents/mcp.json|c":"x"},`+
-		`"views":{"user|s|ui://v":"show:h","`+gone+`|s|ui://v":"show:h"}}`), 0o644)
-	os.WriteFile(filepath.Join(root, "plugin-approvals.json"), []byte(`{"approvalsBegan":1,"approved":{`+
-		`"`+onDisk+`/.agents/plugins/p":"x","`+gone+`/.agents/plugins/p":"x"},"denied":{"`+gone+`/.agents/plugins/q":"y"}}`), 0o644)
-	os.WriteFile(filepath.Join(root, "review-dismissals.json"), []byte(`{"`+onDisk+`":["u1"],"`+gone+`":["u2"]}`), 0o644)
-	os.WriteFile(filepath.Join(root, "review-opened.json"), []byte(`{"`+gone+`":["u3"]}`), 0o644)
+		`"views":{"user|s|ui://v":"show:h","`+gone+`|s|ui://v":"show:h"}}`), 0o644))
+	must(t, os.WriteFile(filepath.Join(root, "plugin-approvals.json"), []byte(`{"approvalsBegan":1,"approved":{`+ //nolint:gosec // G306: the mode this file always had; only its error is new
+		`"`+onDisk+`/.agents/plugins/p":"x","`+gone+`/.agents/plugins/p":"x"},"denied":{"`+gone+`/.agents/plugins/q":"y"}}`), 0o644))
+	must(t, os.WriteFile(filepath.Join(root, "review-dismissals.json"), []byte(`{"`+onDisk+`":["u1"],"`+gone+`":["u2"]}`), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(root, "review-opened.json"), []byte(`{"`+gone+`":["u3"]}`), 0o644))                         //nolint:gosec // G306: the mode this file always had; only its error is new
 	d.mcpMu.Lock()
 	d.mcpLoaded = false
 	d.mcpMu.Unlock()
@@ -167,9 +167,9 @@ func TestDevicesNotSeenForNinetyDaysAreForgotten(t *testing.T) {
 	at := time.Date(2026, 11, 6, 12, 0, 0, 0, time.UTC)
 	date := func(ago time.Duration) string { return fmt.Sprint(float64(wire.DateOf(at.Add(-ago)))) }
 	old := "AAAAAAAA-2222-3333-4444-555555555555"
-	os.WriteFile(d.devicesFile(), []byte(`[`+
+	must(t, os.WriteFile(d.devicesFile(), []byte(`[`+ //nolint:gosec // G306: the mode this file always had; only its error is new
 		`{"id":"`+old+`","publicKey":"AQE=","name":"Old","kind":"iPad","announcedAt":`+date(200*24*time.Hour)+`,"lastSeenAt":`+date(91*24*time.Hour)+`},`+
-		`{"id":"`+phone+`","publicKey":"AQE=","name":"Phone","kind":"iPhone","announcedAt":`+date(200*24*time.Hour)+`,"lastSeenAt":`+date(89*24*time.Hour)+`}]`), 0o644)
+		`{"id":"`+phone+`","publicKey":"AQE=","name":"Phone","kind":"iPhone","announcedAt":`+date(200*24*time.Hour)+`,"lastSeenAt":`+date(89*24*time.Hour)+`}]`), 0o644))
 	d.devMu.Lock()
 	d.devLoaded, d.devRecords = false, nil
 	d.devMu.Unlock()

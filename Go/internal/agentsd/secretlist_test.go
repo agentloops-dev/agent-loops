@@ -40,7 +40,7 @@ func TestListSecretsGivesNamesAndDescriptionsNeverAValue(t *testing.T) {
 	}()
 	var pending []wire.ElicitationRequest
 	waitFor(t, "the card", func() bool {
-		json.Unmarshal(c.call(t, 1, "elicitations/pending", nil), &pending)
+		mustUnmarshal(t, c.call(t, 1, "elicitations/pending", nil), &pending)
 		return len(pending) == 1
 	})
 	if s := pending[0].Secret; s == nil || s.Description == nil || *s.Description != "A token for alexec/Agents." {
@@ -79,7 +79,7 @@ func TestListSecretsGivesNamesAndDescriptionsNeverAValue(t *testing.T) {
 		}
 	}
 	var listed wire.SessionSecrets
-	json.Unmarshal(c.call(t, 3, "secrets/sessionList", nil), &listed)
+	mustUnmarshal(t, c.call(t, 3, "secrets/sessionList", nil), &listed)
 	if len(listed.Secrets) != 1 || listed.Secrets[0].Description == nil || *listed.Secrets[0].Description != "The shop's sign-in." {
 		t.Fatalf("%+v", listed)
 	}

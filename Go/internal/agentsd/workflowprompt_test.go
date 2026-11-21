@@ -1,7 +1,6 @@
 package agentsd
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -61,11 +60,11 @@ func TestAQueuedRunSaysWhyItStarted(t *testing.T) {
 	defer d.Shutdown()
 	dir := folder(t, c, 1)
 	folder := store.FolderURL(dir)
-	os.MkdirAll(workflowsFolder(dir), 0o755)
-	os.WriteFile(filepath.Join(workflowsFolder(dir), "slow.md"), []byte("---\nname: Slow\non: manual\n---\nwait for me\n"), 0o644)
+	must(t, os.MkdirAll(workflowsFolder(dir), 0o755))                                                                                       //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(workflowsFolder(dir), "slow.md"), []byte("---\nname: Slow\non: manual\n---\nwait for me\n"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	approveAll(t, c, folder)
 	var s wire.WorkflowSummary
-	json.Unmarshal(c.call(t, 2, "workflows/run", map[string]any{"folder": folder, "workflowID": "slow"}), &s)
+	mustUnmarshal(t, c.call(t, 2, "workflows/run", map[string]any{"folder": folder, "workflowID": "slow"}), &s)
 	first := s.LastOutcome.Ran.AgentID
 	waitFor(t, "it working", func() bool { return d.Store.Agent(first).State == wire.AgentStateRunning })
 	if u := userMessages(d, first); len(u) != 1 || !strings.HasPrefix(u[0], "(You were started by the workflow \"Slow\" because the person ran it by hand, with Run now.)\n\n") {

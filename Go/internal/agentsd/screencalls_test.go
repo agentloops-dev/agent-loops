@@ -100,7 +100,7 @@ func prepareDrive(t *testing.T) {
 // not also have to drive desktopControl/set.
 func enableDesktopControl(t *testing.T, d *Daemon) {
 	t.Helper()
-	os.MkdirAll(d.SettingsDir, 0o700)
+	must(t, os.MkdirAll(d.SettingsDir, 0o700))
 	if err := os.WriteFile(filepath.Join(d.SettingsDir, "desktop-control.json"), []byte(`{"enabled":true}`), 0o600); err != nil {
 		t.Fatal(err)
 	}

@@ -1,7 +1,6 @@
 package agentsd
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -61,7 +60,7 @@ func TestWorkflowLimitsArePerFolderAndDoNotLimitApprovals(t *testing.T) {
 func workflowLimitsCheckOneOver(t *testing.T, c *conn, dir string, id int) {
 	t.Helper()
 	var summaries []wire.WorkflowSummary
-	json.Unmarshal(c.call(t, id, "workflows/list", map[string]any{"folder": store.FolderURL(dir)}), &summaries)
+	mustUnmarshal(t, c.call(t, id, "workflows/list", map[string]any{"folder": store.FolderURL(dir)}), &summaries)
 	if len(summaries) != 21 {
 		t.Fatalf("got %d workflows", len(summaries))
 	}
@@ -85,7 +84,7 @@ func workflowLimitsCheckOneOver(t *testing.T, c *conn, dir string, id int) {
 func workflowLimitsApproveWaiting(t *testing.T, c *conn, dir string) int {
 	t.Helper()
 	var summaries []wire.WorkflowSummary
-	json.Unmarshal(c.call(t, 202, "workflows/list", map[string]any{"folder": store.FolderURL(dir)}), &summaries)
+	mustUnmarshal(t, c.call(t, 202, "workflows/list", map[string]any{"folder": store.FolderURL(dir)}), &summaries)
 	waiting := 0
 	for _, s := range summaries {
 		if s.AwaitingApproval == nil {
@@ -96,7 +95,7 @@ func workflowLimitsApproveWaiting(t *testing.T, c *conn, dir string) int {
 			t.Fatalf("pending workflow was marked over limit: %+v", s)
 		}
 		var approved wire.WorkflowSummary
-		json.Unmarshal(c.call(t, 203+waiting, "workflows/approve", map[string]any{
+		mustUnmarshal(t, c.call(t, 203+waiting, "workflows/approve", map[string]any{
 			"folder": store.FolderURL(dir), "workflowID": s.Workflow.WorkflowID, "digest": s.AwaitingApproval.Digest,
 		}), &approved)
 		if approved.AwaitingApproval != nil {
@@ -184,24 +183,24 @@ func TestWorkflowsWaitForThePersonsOK(t *testing.T) {
 	defer d.Shutdown()
 	dir := folder(t, c, 1)
 	folder := store.FolderURL(dir)
-	os.MkdirAll(workflowsFolder(dir), 0o755)
-	os.WriteFile(filepath.Join(workflowsFolder(dir), "nightly.md"), []byte("---\non:\n  - schedule:\n      at: \":00\"\n---\nTidy up.\n"), 0o644)
+	must(t, os.MkdirAll(workflowsFolder(dir), 0o755))
+	must(t, os.WriteFile(filepath.Join(workflowsFolder(dir), "nightly.md"), []byte("---\non:\n  - schedule:\n      at: \":00\"\n---\nTidy up.\n"), 0o644))
 	// The host's first look approved what was there then; this came after, and waits.
 	var list []wire.WorkflowSummary
-	json.Unmarshal(c.call(t, 2, "workflows/list", map[string]any{"folder": folder}), &list)
+	mustUnmarshal(t, c.call(t, 2, "workflows/list", map[string]any{"folder": folder}), &list)
 	if len(list) != 1 || list[0].AwaitingApproval == nil || list[0].NextFireAt != nil {
 		t.Fatalf("%+v", list)
 	}
 	approveAll(t, c, folder)
 	list = nil
-	json.Unmarshal(c.call(t, 20, "workflows/list", map[string]any{"folder": folder}), &list)
+	mustUnmarshal(t, c.call(t, 20, "workflows/list", map[string]any{"folder": folder}), &list)
 	if len(list) != 1 || list[0].Workflow.Name != "Nightly" || list[0].AwaitingApproval != nil || list[0].NextFireAt == nil || !list[0].IsEnabled {
 		t.Fatalf("%+v", list)
 	}
 	// A new one waits for the person.
-	os.WriteFile(filepath.Join(workflowsFolder(dir), "added.md"), []byte("---\non: agent.finished\n---\nReview it.\n"), 0o644)
+	must(t, os.WriteFile(filepath.Join(workflowsFolder(dir), "added.md"), []byte("---\non: agent.finished\n---\nReview it.\n"), 0o644))
 	list = nil
-	json.Unmarshal(c.call(t, 3, "workflows/list", map[string]any{"folder": folder}), &list)
+	mustUnmarshal(t, c.call(t, 3, "workflows/list", map[string]any{"folder": folder}), &list)
 	added := list[0]
 	if added.Workflow.WorkflowID != "added" || added.AwaitingApproval == nil || !added.AwaitingApproval.IsNew {
 		t.Fatalf("%+v", list)
@@ -210,19 +209,19 @@ func TestWorkflowsWaitForThePersonsOK(t *testing.T) {
 		t.Fatalf("%+v", e)
 	}
 	var s wire.WorkflowSummary
-	json.Unmarshal(c.call(t, 5, "workflows/approve", map[string]any{"folder": folder, "workflowID": "added", "digest": added.AwaitingApproval.Digest}), &s)
+	mustUnmarshal(t, c.call(t, 5, "workflows/approve", map[string]any{"folder": folder, "workflowID": "added", "digest": added.AwaitingApproval.Digest}), &s)
 	if s.AwaitingApproval != nil {
 		t.Fatalf("%+v", s)
 	}
 	// Turned off by the person: the file says so, and the approval goes with it.
 	s = wire.WorkflowSummary{}
-	json.Unmarshal(c.call(t, 6, "workflows/enable", map[string]any{"folder": folder, "workflowID": "added", "enabled": false}), &s)
+	mustUnmarshal(t, c.call(t, 6, "workflows/enable", map[string]any{"folder": folder, "workflowID": "added", "enabled": false}), &s)
 	b, _ := os.ReadFile(filepath.Join(workflowsFolder(dir), "added.md"))
 	if s.IsEnabled || *s.OffReason != wire.WorkflowOffReasonPerson || s.AwaitingApproval != nil || !strings.Contains(string(b), "enabled: false\n---") {
 		t.Fatalf("%+v %s", s, b)
 	}
 	s = wire.WorkflowSummary{}
-	json.Unmarshal(c.call(t, 7, "workflows/archive", map[string]any{"folder": folder, "workflowID": "added", "archived": true}), &s)
+	mustUnmarshal(t, c.call(t, 7, "workflows/archive", map[string]any{"folder": folder, "workflowID": "added", "archived": true}), &s)
 	if !s.IsArchived {
 		t.Fatalf("%+v", s)
 	}
@@ -234,7 +233,7 @@ func TestWorkflowsWaitForThePersonsOK(t *testing.T) {
 	}
 	c.call(t, 9, "workflows/delete", map[string]any{"folder": folder, "workflowID": "added"})
 	list = nil
-	json.Unmarshal(c.call(t, 10, "workflows/list", map[string]any{"folder": folder}), &list)
+	mustUnmarshal(t, c.call(t, 10, "workflows/list", map[string]any{"folder": folder}), &list)
 	if len(list) != 1 || list[0].AwaitingApproval != nil {
 		t.Fatalf("%+v", list)
 	}
@@ -250,10 +249,10 @@ func TestClearingMissedEventsLeavesTheWorkflow(t *testing.T) {
 	defer d.Shutdown()
 	dir := folder(t, c, 1)
 	folder := store.FolderURL(dir)
-	os.MkdirAll(workflowsFolder(dir), 0o755)
-	os.WriteFile(filepath.Join(workflowsFolder(dir), "watch.md"), []byte("---\non: agent.finished\n---\nLook.\n"), 0o644)
+	must(t, os.MkdirAll(workflowsFolder(dir), 0o755))
+	must(t, os.WriteFile(filepath.Join(workflowsFolder(dir), "watch.md"), []byte("---\non: agent.finished\n---\nLook.\n"), 0o644))
 	var s wire.WorkflowSummary
-	json.Unmarshal(c.call(t, 2, "workflows/mcpTrigger/clearMissed", map[string]any{"folder": folder, "workflowID": "watch", "name": "pr.merged", "server": "ci"}), &s)
+	mustUnmarshal(t, c.call(t, 2, "workflows/mcpTrigger/clearMissed", map[string]any{"folder": folder, "workflowID": "watch", "name": "pr.merged", "server": "ci"}), &s)
 	if s.Workflow.WorkflowID != "watch" {
 		t.Fatalf("%+v", s)
 	}
@@ -359,9 +358,9 @@ func TestAWorkflowWaitsWhenTheSkillItFollowsChanges(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	must(os.MkdirAll(workflowsFolder(dir), 0o755))
+	must(os.MkdirAll(workflowsFolder(dir), 0o755)) //nolint:gosec // G301: the mode this folder always had; only its error is new
 	skill := filepath.Join(dir, ".agents", "skills", "tidy", "SKILL.md")
-	must(os.MkdirAll(filepath.Dir(skill), 0o755))
+	must(os.MkdirAll(filepath.Dir(skill), 0o755)) //nolint:gosec // G301: the mode this folder always had; only its error is new
 	path := filepath.Join(workflowsFolder(dir), "nightly.md")
 	workflow := "---\non:\n  - schedule:\n      at: \":00\"\npermission-mode: auto\n---\nFollow the `tidy` skill (`.agents/skills/tidy/SKILL.md`).\n"
 	must(os.WriteFile(path, []byte(workflow), 0o644))
@@ -389,7 +388,7 @@ func TestAWorkflowWaitsWhenTheSkillItFollowsChanges(t *testing.T) {
 		t.Fatalf("changed skill: %+v", r)
 	}
 	var ran wire.WorkflowSummary
-	json.Unmarshal(c.call(t, 2, "workflows/run", map[string]any{"folder": folder, "workflowID": "nightly"}), &ran)
+	mustUnmarshal(t, c.call(t, 2, "workflows/run", map[string]any{"folder": folder, "workflowID": "nightly"}), &ran)
 	if o := ran.LastOutcome; o == nil || o.Refused == nil || o.Refused.Value.AwaitingApproval == nil {
 		t.Fatalf("ran: %+v", ran)
 	}
@@ -401,7 +400,7 @@ func TestAWorkflowWaitsWhenTheSkillItFollowsChanges(t *testing.T) {
 	}
 	// What is shown is what is approved: the workflow and the skill it names.
 	var reading wire.GuardedChangeReading
-	json.Unmarshal(c.call(t, 3, "approvals/read", map[string]any{"folder": folder, "kind": "workflow", "key": "nightly"}), &reading)
+	mustUnmarshal(t, c.call(t, 3, "approvals/read", map[string]any{"folder": folder, "kind": "workflow", "key": "nightly"}), &reading)
 	if reading.Current == nil || !strings.Contains(*reading.Current, workflow) || !strings.Contains(*reading.Current, ".agents/skills/tidy/SKILL.md") ||
 		!strings.Contains(*reading.Current, "Push to main.") || reading.Approved == nil || !strings.Contains(*reading.Approved, "Tidy the tree.") ||
 		*reading.Digest != *s.Approvals[0].Digest {
@@ -416,7 +415,7 @@ func TestAWorkflowWaitsWhenTheSkillItFollowsChanges(t *testing.T) {
 		t.Fatalf("undone: %+v", r)
 	}
 	// Approved as it is now, it runs as it is now.
-	must(os.WriteFile(skill, []byte("Tidy the tree twice.\n"), 0o644))
+	must(os.WriteFile(skill, []byte("Tidy the tree twice.\n"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	approveAll(t, c, folder)
 	if r := refusal(); r != nil {
 		t.Fatalf("approved again: %+v", r)
@@ -424,7 +423,7 @@ func TestAWorkflowWaitsWhenTheSkillItFollowsChanges(t *testing.T) {
 
 	// A skill that is a link out of .agents/skills is not read, and the workflow never runs.
 	outside := filepath.Join(t.TempDir(), "SKILL.md")
-	must(os.WriteFile(outside, []byte("Tidy the tree twice.\n"), 0o644))
+	must(os.WriteFile(outside, []byte("Tidy the tree twice.\n"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	must(os.Remove(skill))
 	must(os.Symlink(outside, skill))
 	if r := refusal(); r == nil || r.Unreadable == nil {
@@ -438,7 +437,7 @@ func TestAWorkflowWaitsWhenTheSkillItFollowsChanges(t *testing.T) {
 	}
 	// Nor is a skill named by a path that leaves .agents/skills, or one that is not there.
 	for _, named := range []string{".agents/skills/../workflows/SKILL.md", ".agents/skills/a/b/SKILL.md", ".agents/skills/gone/SKILL.md"} {
-		must(os.WriteFile(path, []byte("---\non: agent.finished\n---\nFollow `"+named+"`.\n"), 0o644))
+		must(os.WriteFile(path, []byte("---\non: agent.finished\n---\nFollow `"+named+"`.\n"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 		if r := refusal(); r == nil || r.Unreadable == nil {
 			t.Fatalf("%s: %+v", named, r)
 		}

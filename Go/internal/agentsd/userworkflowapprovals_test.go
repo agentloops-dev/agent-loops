@@ -20,8 +20,8 @@ func TestAUserWorkflowWaitsAfterAChangeOutsideSettings(t *testing.T) {
 	home := t.TempDir()
 	d.PersonalHome = home
 	dir := folder(t, c, 1)
-	os.MkdirAll(filepath.Join(dir, ".git"), 0o755)
-	os.WriteFile(filepath.Join(dir, ".git", "config"), []byte("[remote \"origin\"]\n\turl = git@github.com:o/n.git\n"), 0o644)
+	must(t, os.MkdirAll(filepath.Join(dir, ".git"), 0o755))                                                                             //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(dir, ".git", "config"), []byte("[remote \"origin\"]\n\turl = git@github.com:o/n.git\n"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	url := store.FolderURL(dir)
 	id := "work-an-issue"
 	workflowFile := filepath.Join(workflowsFolder(home), id+".md")
@@ -43,7 +43,7 @@ func TestAUserWorkflowWaitsAfterAChangeOutsideSettings(t *testing.T) {
 	c.call(t, 3, "workflows/enable", map[string]any{"folder": url, "workflowID": id, "enabled": true})
 
 	// Its skill changed outside Settings: it waits here and in the user's folder, and asks.
-	os.WriteFile(skillFile, []byte("---\nname: work-an-issue\ndescription: x\n---\nOther steps.\n"), 0o644)
+	must(t, os.WriteFile(skillFile, []byte("---\nname: work-an-issue\ndescription: x\n---\nOther steps.\n"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	d.rescanWorkflows(dir)
 	a := awaiting(dir)
 	if a == nil || a.IsNew || awaiting(home) == nil {
@@ -82,7 +82,7 @@ func TestAUserWorkflowWaitsAfterAChangeOutsideSettings(t *testing.T) {
 	}
 
 	// The workflow's own file changed outside Settings: it waits.
-	os.WriteFile(workflowFile, []byte(string(text)+"\nChanged.\n"), 0o644)
+	must(t, os.WriteFile(workflowFile, []byte(string(text)+"\nChanged.\n"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	d.rescanWorkflows(dir)
 	if awaiting(dir) == nil {
 		t.Fatal("a changed workflow file did not wait")
@@ -90,7 +90,7 @@ func TestAUserWorkflowWaitsAfterAChangeOutsideSettings(t *testing.T) {
 
 	// A new one saved in Settings is approved; one written another way is not.
 	c.call(t, 8, "workflows/write", map[string]any{"workflowID": "mine", "content": "---\non: manual\n---\nMine.\n"})
-	os.WriteFile(filepath.Join(workflowsFolder(home), "theirs.md"), []byte("---\non: manual\n---\nTheirs.\n"), 0o644)
+	must(t, os.WriteFile(filepath.Join(workflowsFolder(home), "theirs.md"), []byte("---\non: manual\n---\nTheirs.\n"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	d.rescanWorkflows(dir)
 	if s, _ := d.oneWorkflow(home, "mine"); s.AwaitingApproval != nil {
 		t.Fatalf("mine: %+v", s.AwaitingApproval)
@@ -114,7 +114,7 @@ func TestAReadyMadeWorkflowWaitsWhenItsSkillIsNotTheAppsOwn(t *testing.T) {
 	d.workflowMu.Unlock()
 	id := "fix-failed-checks"
 	os.Remove(filepath.Join(workflowsFolder(home), id+".md"))
-	os.WriteFile(filepath.Join(home, ".agents", "skills", id, "SKILL.md"), []byte("---\nname: x\ndescription: x\n---\nOther.\n"), 0o644)
+	must(t, os.WriteFile(filepath.Join(home, ".agents", "skills", id, "SKILL.md"), []byte("---\nname: x\ndescription: x\n---\nOther.\n"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	c.call(t, 1, "workflows/list", map[string]any{"scope": "user"})
 	if s, _ := d.oneWorkflow(home, id); s.AwaitingApproval == nil {
 		t.Fatal("approved with a skill that is not the app's own")
