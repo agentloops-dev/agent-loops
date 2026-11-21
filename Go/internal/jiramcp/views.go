@@ -126,67 +126,12 @@ func AddViews(server *mcp.Server, jira Views) {
 			"A project key, a status category (new for To Do, indeterminate for In Progress) or a label narrows it. " +
 			"Its view is the Jira issues page, where a person expands a row for its description or chooses Start Agent.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true}, Meta: uiMeta(issuesURI, "model", "app")},
-		func(ctx context.Context, req *mcp.CallToolRequest, in issuesArgs) (*mcp.CallToolResult, any, error) {
-			if in.Category != "" && !slices.Contains(openCategories, in.Category) {
-				return failed(fmt.Errorf("category must be one of %s", strings.Join(openCategories, ", "))), nil, nil
-			}
-			if in.Project != "" && !projectKey.MatchString(in.Project) {
-				return failed(fmt.Errorf("project must be a project key, as PROJ")), nil, nil
-			}
-			list, viewer, err := jira.OpenIssues(ctx, strings.ToUpper(in.Project), in.Category, in.Label)
-			if err != nil {
-				return failed(err), nil, nil
-			}
-			projects, err := jira.Projects(ctx)
-			if err != nil {
-				return failed(err), nil, nil
-			}
-			// The control plane's people (#2951): names a row, tells Team from Others.
-			people := teamMetaOf(req.Params.Meta, "jira")
-			issues := make([]any, len(list))
-			// The count on the sidebar's row (#2033): the issues that need the viewer (#2453).
-			needsYou := 0
-			for i, l := range list {
-				j := l.json()
-				section := issueSection(l.Issue, viewer, people)
-				j["section"] = section
-				if tp, on := people.of(l.Creator); on {
-					j["authorName"] = tp.Name
-					if tp.Bot {
-						j["authorBot"] = true
-					}
-				}
-				if section == sectionNeedsYou {
-					needsYou++
-				}
-				if section == sectionNeedsYou || section == sectionYours {
-					if who := agentOnOf(req.Params.Meta, l.Key); who != "" {
-						j["agentOn"] = who
-					}
-				}
-				issues[i] = j
-			}
-			names := make([]any, len(projects))
-			for i, p := range projects {
-				names[i] = map[string]any{"key": p.Key, "name": p.Name}
-			}
-			return structured(map[string]any{"project": in.Project, "category": in.Category, "label": in.Label, "viewer": viewer.name(),
-				"projects": names, "categories": openCategories, "issues": issues, "count": len(issues), "attention": needsYou}), nil, nil
-		})
+		showIssues(jira))
 
 	mcp.AddTool(server, &mcp.Tool{Name: "show_issue_details", Title: "Show issue details",
 		Description: "One issue's description, rendered as rich text for the Issues page.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true}, Meta: uiMeta("", "model", "app")},
-		func(ctx context.Context, _ *mcp.CallToolRequest, in issueDetailsArgs) (*mcp.CallToolResult, any, error) {
-			if strings.TrimSpace(in.Key) == "" {
-				return failed(fmt.Errorf("issue key is required")), nil, nil
-			}
-			details, err := jira.IssueDetails(ctx, strings.TrimSpace(in.Key))
-			if err != nil {
-				return failed(err), nil, nil
-			}
-			return structured(details), nil, nil
-		})
+		showIssueDetails(jira))
 
 	// No network at all: an empty csp, so the host draws it under its strictest policy.
 	meta := mcp.Meta{"ui": map[string]any{"csp": map[string]any{}, "prefersBorder": true}}
@@ -197,6 +142,78 @@ func AddViews(server *mcp.Server, jira Views) {
 		func(context.Context, *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
 			return &mcp.ReadResourceResult{Contents: []*mcp.ResourceContents{{URI: issuesURI, MIMEType: viewMime, Text: html, Meta: meta}}}, nil
 		})
+}
+
+// showIssues is show_issues' handler: the open issues, each with its section for the viewer.
+func showIssues(jira Views) mcp.ToolHandlerFor[issuesArgs, any] {
+	return func(ctx context.Context, req *mcp.CallToolRequest, in issuesArgs) (*mcp.CallToolResult, any, error) {
+		if in.Category != "" && !slices.Contains(openCategories, in.Category) {
+			return failed(fmt.Errorf("category must be one of %s", strings.Join(openCategories, ", "))), nil, nil
+		}
+		if in.Project != "" && !projectKey.MatchString(in.Project) {
+			return failed(fmt.Errorf("project must be a project key, as PROJ")), nil, nil
+		}
+		list, viewer, err := jira.OpenIssues(ctx, strings.ToUpper(in.Project), in.Category, in.Label)
+		if err != nil {
+			return failed(err), nil, nil
+		}
+		projects, err := jira.Projects(ctx)
+		if err != nil {
+			return failed(err), nil, nil
+		}
+		// The control plane's people (#2951): names a row, tells Team from Others.
+		people := teamMetaOf(req.Params.Meta, "jira")
+		issues := make([]any, len(list))
+		// The count on the sidebar's row (#2033): the issues that need the viewer (#2453).
+		needsYou := 0
+		for i, l := range list {
+			j, section := issueRow(req.Params.Meta, l, viewer, people)
+			if section == sectionNeedsYou {
+				needsYou++
+			}
+			issues[i] = j
+		}
+		names := make([]any, len(projects))
+		for i, p := range projects {
+			names[i] = map[string]any{"key": p.Key, "name": p.Name}
+		}
+		return structured(map[string]any{"project": in.Project, "category": in.Category, "label": in.Label, "viewer": viewer.name(),
+			"projects": names, "categories": openCategories, "issues": issues, "count": len(issues), "attention": needsYou}), nil, nil
+	}
+}
+
+// issueRow is one issue's row for show_issues: its section for the viewer, the control plane's
+// name for its author, and who is on it when it is the viewer's own.
+func issueRow(meta mcp.Meta, l ListedIssue, viewer *Person, people teamMeta) (map[string]any, string) {
+	j := l.json()
+	section := issueSection(l.Issue, viewer, people)
+	j["section"] = section
+	if tp, on := people.of(l.Creator); on {
+		j["authorName"] = tp.Name
+		if tp.Bot {
+			j["authorBot"] = true
+		}
+	}
+	if section == sectionNeedsYou || section == sectionYours {
+		if who := agentOnOf(meta, l.Key); who != "" {
+			j["agentOn"] = who
+		}
+	}
+	return j, section
+}
+
+// showIssueDetails is show_issue_details' handler: one issue's description.
+func showIssueDetails(jira Views) mcp.ToolHandlerFor[issueDetailsArgs, any] {
+	return func(ctx context.Context, _ *mcp.CallToolRequest, in issueDetailsArgs) (*mcp.CallToolResult, any, error) {
+		if strings.TrimSpace(in.Key) == "" {
+			return failed(fmt.Errorf("issue key is required")), nil, nil
+		}
+		details, err := jira.IssueDetails(ctx, strings.TrimSpace(in.Key))
+		if err != nil {
+			return failed(err), nil, nil
+		}
+		return structured(details), nil, nil
+	}
 }
 
 // MARK: Read from Jira

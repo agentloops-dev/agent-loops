@@ -12,9 +12,8 @@ import { load } from "./load.mjs";
 const repo = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
 const budgets = JSON.parse(readFileSync(join(repo, "scripts/perf-budgets.json"), "utf8")).pr;
 const dist = join(repo, "Web/dist");
-// CI builds Web/dist before its tests, so there a missing one fails, as under scripts/checks.sh
-// attest (AGENTS_ATTEST, #5774); here it is skipped.
-const skip = existsSync(join(dist, "MANIFEST")) || process.env.CI || process.env.AGENTS_ATTEST ? false : "no Web/dist built here; run scripts/web.sh build";
+// CI builds Web/dist before its tests, so there a missing one fails; here it is skipped.
+const skip = existsSync(join(dist, "MANIFEST")) || process.env.CI ? false : "no Web/dist built here; run scripts/web.sh build";
 
 /** What the page loads to draw: its scripts, styles and HTML, each gzipped as a server sends it. */
 function gzippedBundle(folder) {

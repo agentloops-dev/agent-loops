@@ -119,9 +119,12 @@ func globsCouldHold(dir string, globs []string) bool {
 }
 
 // fileGlobs is every glob this folder's running waits and turned-on workflow triggers
-// watch, sorted, each once.
-func (d *Daemon) fileGlobs(folder string) []string {
+// watch, and more, sorted, each once.
+func (d *Daemon) fileGlobs(folder string, more ...string) []string {
 	set := map[string]bool{}
+	for _, g := range more {
+		set[g] = true
+	}
 	add := func(p waitPattern) {
 		if isFileEvent(p.name) {
 			for _, g := range p.filters["paths"] {
@@ -225,10 +228,22 @@ func (d *Daemon) kickFileWatches() {
 	})
 }
 
+// waitFileGlobs is every glob a wait's file events watch.
+func waitFileGlobs(patterns []waitPattern) []string {
+	var globs []string
+	for _, p := range patterns {
+		if isFileEvent(p.name) {
+			globs = append(globs, p.filters["paths"]...)
+		}
+	}
+	return globs
+}
+
 // followFileGlobs looks at a folder's matching files again when its globs changed, so what is
-// there now is not raised as added; with no globs it forgets them.
-func (d *Daemon) followFileGlobs(folder string) {
-	globs := d.fileGlobs(folder)
+// there now is not raised as added; with no globs it forgets them. more is the globs of a wait
+// not yet recorded (#6410).
+func (d *Daemon) followFileGlobs(folder string, more ...string) {
+	globs := d.fileGlobs(folder, more...)
 	d.fileMu.Lock()
 	st := d.fileWatches[folder]
 	if st != nil && strings.Join(st.globs, "\x00") == strings.Join(globs, "\x00") {

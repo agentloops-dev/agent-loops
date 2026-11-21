@@ -168,6 +168,20 @@ worktrees left:
 du -sk "$P"/.agents/worktrees/* 2>/dev/null | sort -rn | head -5
 ```
 
+Then report what `du` cannot see (#5725):
+
+```sh
+scripts/free-disk.sh hidden
+```
+
+On 2026-11-20, about 120 GB of the Data volume was not visible to `du`. The main suspect
+is `/System/Volumes/Data/.fseventsd`, with about 138,000 log files that only root can read.
+`hidden` deletes nothing. Clearing `.fseventsd` is Alex's step, because it needs root and
+a restart, and Spotlight and Time Machine scan again after it. Do not do it: name the file
+count in the report. When the count is high and the target is not reached, ask Alex (with
+`ask_question`, once) whether to run `sudo rm -rf /System/Volumes/Data/.fseventsd` and
+restart. #6426 tracks a way to measure these folders without Alex.
+
 End with one line per worktree touched (`freed <GB> from <name>` or `removed <name>,
 branch <branch> kept`), then the build cache before and after (with the Go temp folders
 removed), the Chromes ended and clones removed, the Xcode folders, DerivedData folders,

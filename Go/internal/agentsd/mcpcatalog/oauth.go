@@ -190,37 +190,15 @@ func (o OAuth) Discover(ctx context.Context, server, resourceMetadata string) (P
 	if !ok {
 		return Plan{}, oauthFailure("noMetadata")
 	}
-	var protected map[string]any
-	for _, u := range resourceMetadataURLs(server, resourceMetadata) {
-		if j, err := o.getJSON(ctx, u); err != nil {
-			return Plan{}, err
-		} else if j != nil {
-			protected = j
-			break
-		}
-	}
-	strs := func(v any) []string {
-		var out []string
-		if list, ok := v.([]any); ok {
-			for _, x := range list {
-				if s, ok := x.(string); ok {
-					out = append(out, s)
-				}
-			}
-		}
-		return out
+	protected, err := o.protectedResource(ctx, server, resourceMetadata)
+	if err != nil {
+		return Plan{}, err
 	}
 	named, _ := protected["resource"].(string)
-	if named != "" {
-		mine, _ := url.Parse(resource)
-		theirsText, _ := Canonical(named)
-		theirs, err := url.Parse(theirsText)
-		if err != nil || theirsText == "" || mine.Scheme != theirs.Scheme || mine.Host != theirs.Host ||
-			!strings.HasPrefix(mine.Path, strings.TrimSuffix(theirs.Path, "/")) {
-			return Plan{}, oauthFailure("resourceMismatch")
-		}
+	if named != "" && !resourceMatches(resource, named) {
+		return Plan{}, oauthFailure("resourceMismatch")
 	}
-	issuers := strs(protected["authorization_servers"])
+	issuers := stringList(protected["authorization_servers"])
 	if len(issuers) == 0 {
 		u, _ := url.Parse(resource)
 		issuers = []string{origin(u)}
@@ -231,32 +209,14 @@ func (o OAuth) Discover(ctx context.Context, server, resourceMetadata string) (P
 			if err != nil {
 				return Plan{}, err
 			}
-			authorize, _ := j["authorization_endpoint"].(string)
-			token, _ := j["token_endpoint"].(string)
-			if j == nil || authorize == "" || token == "" {
+			found, ok, err := authorizationServer(issuer, j)
+			if err != nil {
+				return Plan{}, err
+			}
+			if !ok {
 				continue
 			}
-			// RFC 8414 §3.3: the document's issuer is the one it was fetched for, exactly. A
-			// server that names another issuer could be given that issuer's client and code.
-			if named, _ := j["issuer"].(string); named != issuer {
-				return Plan{}, oauthFailure("issuerMismatch")
-			}
-			found := AuthorizationServer{Issuer: issuer, AuthorizationEndpoint: authorize, TokenEndpoint: token,
-				CodeChallengeMethods: strs(j["code_challenge_methods_supported"]), Scopes: strs(j["scopes_supported"])}
-			if s, ok := j["registration_endpoint"].(string); ok {
-				found.RegistrationEndpoint = &s
-			}
-			if s, ok := j["revocation_endpoint"].(string); ok {
-				found.RevocationEndpoint = &s
-			}
-			s256 := false
-			for _, m := range found.CodeChallengeMethods {
-				s256 = s256 || m == "S256"
-			}
-			if !s256 {
-				return Plan{}, oauthFailure("noPKCE")
-			}
-			scopes := strs(protected["scopes_supported"])
+			scopes := stringList(protected["scopes_supported"])
 			if len(scopes) > 0 && contains(found.Scopes, "offline_access") && !contains(scopes, "offline_access") {
 				scopes = append(scopes, "offline_access")
 			}
@@ -270,6 +230,69 @@ func (o OAuth) Discover(ctx context.Context, server, resourceMetadata string) (P
 		}
 	}
 	return Plan{}, oauthFailure("noMetadata")
+}
+
+// protectedResource is the first protected-resource metadata document found, or nil.
+func (o OAuth) protectedResource(ctx context.Context, server, resourceMetadata string) (map[string]any, error) {
+	for _, u := range resourceMetadataURLs(server, resourceMetadata) {
+		j, err := o.getJSON(ctx, u)
+		if err != nil {
+			return nil, err
+		}
+		if j != nil {
+			return j, nil
+		}
+	}
+	return nil, nil
+}
+
+// resourceMatches says whether the metadata's resource covers the server's own.
+func resourceMatches(resource, named string) bool {
+	mine, _ := url.Parse(resource)
+	theirsText, _ := Canonical(named)
+	theirs, err := url.Parse(theirsText)
+	return err == nil && theirsText != "" && mine.Scheme == theirs.Scheme && mine.Host == theirs.Host &&
+		strings.HasPrefix(mine.Path, strings.TrimSuffix(theirs.Path, "/"))
+}
+
+// authorizationServer reads one authorization-server metadata document. ok is false when
+// the document is missing or has no endpoints, so the next one is tried.
+func authorizationServer(issuer string, j map[string]any) (found AuthorizationServer, ok bool, err error) {
+	authorize, _ := j["authorization_endpoint"].(string)
+	token, _ := j["token_endpoint"].(string)
+	if j == nil || authorize == "" || token == "" {
+		return AuthorizationServer{}, false, nil
+	}
+	// RFC 8414 §3.3: the document's issuer is the one it was fetched for, exactly. A
+	// server that names another issuer could be given that issuer's client and code.
+	if named, _ := j["issuer"].(string); named != issuer {
+		return AuthorizationServer{}, false, oauthFailure("issuerMismatch")
+	}
+	found = AuthorizationServer{Issuer: issuer, AuthorizationEndpoint: authorize, TokenEndpoint: token,
+		CodeChallengeMethods: stringList(j["code_challenge_methods_supported"]), Scopes: stringList(j["scopes_supported"])}
+	if s, ok := j["registration_endpoint"].(string); ok {
+		found.RegistrationEndpoint = &s
+	}
+	if s, ok := j["revocation_endpoint"].(string); ok {
+		found.RevocationEndpoint = &s
+	}
+	if !contains(found.CodeChallengeMethods, "S256") {
+		return AuthorizationServer{}, false, oauthFailure("noPKCE")
+	}
+	return found, true, nil
+}
+
+// stringList is the strings in a JSON array; anything else is left out.
+func stringList(v any) []string {
+	var out []string
+	if list, ok := v.([]any); ok {
+		for _, x := range list {
+			if s, ok := x.(string); ok {
+				out = append(out, s)
+			}
+		}
+	}
+	return out
 }
 
 func contains(xs []string, x string) bool {

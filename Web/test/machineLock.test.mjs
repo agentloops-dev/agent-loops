@@ -6,7 +6,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { load } from "./load.mjs";
-import { flakyUnderLoad } from "./flaky.mjs";
+import { eventually } from "./eventually.mjs";
 
 const m = await load("src/wire/machineLock.ts");
 const model = await load("src/model/machineLock.ts");
@@ -301,27 +301,25 @@ test("another signer sees that one is comparing; a deny ends the ask, and Ask Ag
   assert.equal(mac.lock.cards.value[0].view.kind, "compare");
 });
 
-// Quarantined (#5819): it reads the digits before they arrive under load.
-test("digits come from this signer's nonce, and a reveal that breaks its promise is refused", { skip: flakyUnderLoad("#5819") }, async () => {
+// Each step waits for the card's state, not a fixed time: under load the digits came after 50 ms (#5819).
+test("digits come from this signer's nonce, and a reveal that breaks its promise is refused", async () => {
   const plane = controlPlane();
   const mac = plane.connect("AAAA-1111", "Mac");
   await mac.lock.run();
   const web = plane.connect("BBBB-2222", "A browser");
   await web.lock.run();
-  await wait();
-  const request = mac.lock.cards.value[0].request.request;
+  const request = await eventually(() => mac.lock.cards.value[0]?.request.request);
   await mac.lock.compare(request);
-  await wait(50);
-  const honest = mac.lock.cards.value[0].view.digits;
+  const honest = await eventually(() => mac.lock.cards.value[0]?.view.digits);
   // A control plane that puts its own nonce in the row does not change the signer's digits.
   const r = plane.requests.get(request);
-  mac.lock.notify("control/lockJoinRequested", { ...r, nonce: b64(new Uint8Array(16).fill(9)) });
-  await wait();
-  assert.equal(mac.lock.cards.value[0].view.digits, honest);
+  const nonce = b64(new Uint8Array(16).fill(9));
+  mac.lock.notify("control/lockJoinRequested", { ...r, nonce });
+  const card = await eventually(() => mac.lock.cards.value.find((c) => c.request.nonce === nonce));
+  assert.equal(card.view.digits, honest);
   // One that shows another reveal than the commitment named is caught.
   mac.lock.notify("control/lockJoinRequested", { ...r, reveal: b64(new Uint8Array(16).fill(7)) });
-  await wait();
-  assert.equal(mac.lock.cards.value[0].view.kind, "notPromised");
+  await eventually(() => mac.lock.cards.value[0]?.view.kind === "notPromised");
   await mac.lock.approve(request);
   assert.equal(plane.lock.entries.length, 2);
 });

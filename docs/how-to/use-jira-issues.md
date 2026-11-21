@@ -13,8 +13,8 @@ Two connectors (MCP servers) work together:
 - **The Jira issues page and the events** come from `jira-mcp`, a small server that Agent Loops
   ships. Its tools feed the **Jira issues** page: the open issues, narrowed by project, status
   or label, with **Start Agent** on each. Click a row to expand its description and its
-  Lineage section. Its events are `issue.opened`, `issue.labelled`, `issue.commented` and
-  `issue.assigned`. A workflow or a wait can use them. See
+  Lineage section. Its events are `issue.opened`, `issue.labelled`, `issue.commented`,
+  `issue.closed` (moved to a Done status) and `issue.assigned`. A workflow or a wait can use them. See
   [Start a workflow from an MCP event](start-a-workflow-from-an-mcp-event.md).
 
 Agent Loops on the Mac carries `jira-mcp`, and every Linux host installs it beside agentsd. It works with

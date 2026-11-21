@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -22,10 +23,6 @@ import (
 func TestAWaitStandsByWhileAnotherMachinePollsAndTakesOverFromNow(t *testing.T) {
 	t.Parallel()
 
-	// Quarantined: it waits for states that can pass by ("the second wait stands by",
-	// "the cursor gone") and failed under load on a PR and on main. #5742 fixes it and
-	// removes this skip.
-	t.Skip("flaky under load (#5742)")
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	ci := newEventsServer(t)
@@ -70,6 +67,7 @@ func TestAWaitStandsByWhileAnotherMachinePollsAndTakesOverFromNow(t *testing.T) 
 		return sub != nil && d.mcpLeases.standing[sub.id] != ""
 	})
 	poll := d.producerPoll(sub.folder, sub.key)
+	firstWait := d.Store.Agent(a.ID).EventWait.ID
 	d.mcpLeases.mu.Lock()
 	standing := d.mcpLeases.standing[sub.id]
 	d.mcpLeases.mu.Unlock()
@@ -101,10 +99,21 @@ func TestAWaitStandsByWhileAnotherMachinePollsAndTakesOverFromNow(t *testing.T) 
 		text, _ := m.tool(22, "wait_for_event", map[string]any{"events": "pr.merged", "where": map[string]any{"repo": "alexec/Agents", "pr": 5}, "until_minutes": 10})
 		answered2 <- text
 	}()
+	// The second wait's own subscription, not the first's stand-by before its unsubscribe
+	// (#5742): that passed by, and the second wait's start then cleared the record below.
+	// Once a subscription holds the second wait, it stays, and so does its stand-by.
 	waitFor(t, "the second wait stands by", func() bool {
+		w := d.Store.Agent(a.ID).EventWait
+		if w == nil || w.ID == firstWait {
+			return false
+		}
+		d.mcpEvMu.Lock()
+		s := d.mcpSubs[sub.id]
+		holds := s != nil && slices.Contains(s.waitIDs, w.ID)
+		d.mcpEvMu.Unlock()
 		d.mcpLeases.mu.Lock()
 		defer d.mcpLeases.mu.Unlock()
-		return d.mcpLeases.standing[sub.id] == poll
+		return holds && d.mcpLeases.standing[sub.id] == poll
 	})
 	old := "old"
 	ci.mu.Lock()

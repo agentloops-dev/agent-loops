@@ -13,12 +13,8 @@ import (
 // The forge contract (#6191) over the fake GitLab: merge request 1 is the story's, merge
 // request 2 the one that closes.
 
-// gitlabMissing are the contract's events this server does not give, with their bugs.
-var gitlabMissing = map[string]string{ //nolint:gosec // G101: event names and bugs, not credentials
-	"checks.passed": "#6296: no event for a merge request's pipeline that passed",
-	"pr.reviewed":   "#6296: no event for a review (an approval or a request for changes)",
-	"pr.commented":  "#6296: no event for a comment on a merge request",
-}
+// gitlabMissing are the contract's events this server does not give: none (#6296).
+var gitlabMissing = map[string]string{}
 
 func TestForgeContract(t *testing.T) {
 	f := newFake(t)
@@ -57,8 +53,11 @@ func TestForgeContract(t *testing.T) {
 				case forgecontract.ChangesAsked:
 					mr()["sha"], mr()["has_conflicts"], mr()["merge_status"] = "head1c", false, "can_be_merged"
 					mr()["detailed_merge_status"], mr()["updated_at"] = "requested_changes", at()
+					f.reviewers[1] = []obj{{"user": dev, "state": "requested_changes"}}
 				case forgecontract.Comment:
-					f.discuss[1] = append(f.discuss[1], obj{"id": "d1", "notes": []obj{{"id": 70, "body": "Looks close.", "author": dev, "created_at": at(), "system": false}}})
+					note := obj{"id": 70, "body": "Looks close.", "author": dev, "created_at": at(), "system": false, "noteable_type": "MergeRequest", "noteable_iid": 1}
+					f.discuss[1] = append(f.discuss[1], obj{"id": "d1", "notes": []obj{note}})
+					f.activity = append([]obj{{"created_at": at(), "note": note}}, f.activity...)
 					mr()["updated_at"] = at()
 				case forgecontract.Merge:
 					mr()["state"], mr()["merged_at"], mr()["updated_at"], mr()["merge_commit_sha"] = "merged", at(), at(), "merged1"

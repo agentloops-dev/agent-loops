@@ -192,130 +192,148 @@ func handover() {
 	if step == "" || strings.HasPrefix(step, "-") {
 		fail("%s", handoverUsage)
 	}
-	var key []byte
-	link := func(flag, pinFlag string) *handoverLink {
-		text, pin := value(flag), value(pinFlag)
-		if text == "" {
-			fail("say %s https://… (or self) for the copy", flag)
-		}
-		if text == "self" {
-			text, pin = ownCopy()
-		}
-		if key == nil {
-			key = privateKey(openStore(""))
-		}
-		l, err := dialHandover(context.Background(), text, pin, key)
-		if err != nil {
-			fail("couldn't reach %s as this control plane: %v", text, err)
-		}
-		return l
-	}
-	endpoints := func() []records.Endpoint {
-		text := value("--endpoint")
-		if text == "" {
-			fail("say --endpoint https://… (or self) [--endpoint-pin PIN]")
-		}
-		pin := value("--endpoint-pin")
-		if text == "self" {
-			text, pin = ownCopy()
-		}
-		e := records.Endpoint{URL: text}
-		if pin != "" {
-			e.Pin = &pin
-		}
-		return []records.Endpoint{e}
-	}
-	show := func(result json.RawMessage, err error) {
-		if err != nil {
-			fail("%v", err)
-		}
-		var status wire.HandoverStatus
-		if json.Unmarshal(result, &status) != nil || status.Phase == "" {
-			fmt.Println(string(result))
-			return
-		}
-		if has("--json") {
-			fmt.Println(string(result))
-			return
-		}
-		fmt.Printf("phase\t%s\n", status.Phase)
-		if status.ForwardingUntil != nil {
-			fmt.Printf("until\t%s\n", status.ForwardingUntil.Time().UTC().Format(time.RFC3339))
-		}
-		records := "none"
-		if status.HasRecords {
-			records = "yes"
-		}
-		fmt.Printf("records\t%s\n", records)
-		epoch := "-"
-		if status.Epoch != nil {
-			epoch = strconv.FormatInt(*status.Epoch, 10)
-		}
-		fmt.Printf("epoch\t%s\n", epoch)
-		for _, e := range status.Endpoints {
-			pin := "-"
-			if e.Pin != nil {
-				pin = *e.Pin
-			}
-			fmt.Printf("endpoint\t%s\t%s\n", e.URL, pin)
-		}
-		for _, m := range status.Members {
-			known, online := "-", "-"
-			if m.KnownEpoch != nil {
-				known = strconv.FormatInt(*m.KnownEpoch, 10)
-			}
-			if m.Online != nil && *m.Online {
-				online = "online"
-			}
-			fmt.Printf("member\t%s\t%s\t%s\t%s\t%s\n", m.ID, m.Name, m.Kind, known, online)
-		}
-	}
+	h := &handoverLinks{}
 	switch step {
 	case "status", "freeze", "unfreeze", "withdraw", "take", "stop":
-		show(link("--at", "--pin").call("handover/"+step, nil))
+		showHandoverStatus(h.link("--at", "--pin").call("handover/"+step, nil))
 	case "announce":
-		show(link("--at", "--pin").call("handover/announce", map[string]any{"endpoint": endpoints()[0], "force": has("--force")}))
+		showHandoverStatus(h.link("--at", "--pin").call("handover/announce", map[string]any{"endpoint": handoverEndpoints()[0], "force": has("--force")}))
 	case "forward":
 		// 30 days at most, the copy's own rule; --days for fewer.
-		params := map[string]any{"endpoints": endpoints()}
+		params := map[string]any{"endpoints": handoverEndpoints()}
 		if days, err := strconv.ParseFloat(value("--days"), 64); err == nil {
 			params["until"] = wire.DateOf(time.Now().Add(time.Duration(days * 24 * float64(time.Hour))))
 		}
-		show(link("--at", "--pin").call("handover/forward", params))
+		showHandoverStatus(h.link("--at", "--pin").call("handover/forward", params))
 	case "shares":
-		// Whether two copies read one store (a bucket, R16 3): a mark left at one is found
-		// at the other.
-		at, with := link("--at", "--pin"), link("--with", "--with-pin")
-		nonce := make([]byte, 16)
-		rand.Read(nonce)
-		mark := hex.EncodeToString(nonce)
-		if _, err := at.call("handover/mark", map[string]any{"nonce": mark, "leave": true}); err != nil {
-			fail("%v", err)
-		}
-		reply, err := with.call("handover/mark", map[string]any{"nonce": mark})
-		var found struct{ Found bool }
-		if err != nil || json.Unmarshal(reply, &found) != nil || !found.Found {
-			fail("not the same store: %s doesn't see what %s wrote", value("--with"), value("--at"))
-		}
-		fmt.Println("the same store")
+		h.shares()
 	case "copy":
-		// Either end a copy (https://… or self, over its handover session) or a store this
-		// machine opens (file://…, s3://…).
-		end := func(flag, pinFlag string) store.Store {
-			text := value(flag)
-			if text == "" {
-				fail("say %s", flag)
-			}
-			if text == "self" || strings.HasPrefix(text, "https://") || strings.HasPrefix(text, "http://") {
-				return peerStore{link(flag, pinFlag)}
-			}
-			return openStore(text)
-		}
-		from := end("--from", "--from-pin")
-		to := end("--to", "--to-pin")
-		reportCopy(controlplane.CopyStore(context.Background(), from, to))
+		h.copy()
 	default:
 		fail("%s", handoverUsage)
+	}
+}
+
+// handoverLinks dials the copies a handover step names, with the control plane's key,
+// read from the store the first time a step needs it.
+type handoverLinks struct {
+	key []byte
+}
+
+func (h *handoverLinks) link(flag, pinFlag string) *handoverLink {
+	text, pin := value(flag), value(pinFlag)
+	if text == "" {
+		fail("say %s https://… (or self) for the copy", flag)
+	}
+	if text == "self" {
+		text, pin = ownCopy()
+	}
+	if h.key == nil {
+		h.key = privateKey(openStore(""))
+	}
+	l, err := dialHandover(context.Background(), text, pin, h.key)
+	if err != nil {
+		fail("couldn't reach %s as this control plane: %v", text, err)
+	}
+	return l
+}
+
+// shares says whether two copies read one store (a bucket, R16 3): a mark left at one is
+// found at the other.
+func (h *handoverLinks) shares() {
+	at, with := h.link("--at", "--pin"), h.link("--with", "--with-pin")
+	nonce := make([]byte, 16)
+	rand.Read(nonce)
+	mark := hex.EncodeToString(nonce)
+	if _, err := at.call("handover/mark", map[string]any{"nonce": mark, "leave": true}); err != nil {
+		fail("%v", err)
+	}
+	reply, err := with.call("handover/mark", map[string]any{"nonce": mark})
+	var found struct{ Found bool }
+	if err != nil || json.Unmarshal(reply, &found) != nil || !found.Found {
+		fail("not the same store: %s doesn't see what %s wrote", value("--with"), value("--at"))
+	}
+	fmt.Println("the same store")
+}
+
+// copy copies every record from --from to --to.
+func (h *handoverLinks) copy() {
+	from := h.end("--from", "--from-pin")
+	to := h.end("--to", "--to-pin")
+	reportCopy(controlplane.CopyStore(context.Background(), from, to))
+}
+
+// end is either end of a copy: a copy (https://… or self, over its handover session) or a
+// store this machine opens (file://…, s3://…).
+func (h *handoverLinks) end(flag, pinFlag string) store.Store {
+	text := value(flag)
+	if text == "" {
+		fail("say %s", flag)
+	}
+	if text == "self" || strings.HasPrefix(text, "https://") || strings.HasPrefix(text, "http://") {
+		return peerStore{h.link(flag, pinFlag)}
+	}
+	return openStore(text)
+}
+
+// handoverEndpoints is the one endpoint that --endpoint and --endpoint-pin give.
+func handoverEndpoints() []records.Endpoint {
+	text := value("--endpoint")
+	if text == "" {
+		fail("say --endpoint https://… (or self) [--endpoint-pin PIN]")
+	}
+	pin := value("--endpoint-pin")
+	if text == "self" {
+		text, pin = ownCopy()
+	}
+	e := records.Endpoint{URL: text}
+	if pin != "" {
+		e.Pin = &pin
+	}
+	return []records.Endpoint{e}
+}
+
+// showHandoverStatus prints a handover step's reply: a status as lines of tab-separated
+// fields, or the raw reply with --json or when it is no status.
+func showHandoverStatus(result json.RawMessage, err error) {
+	if err != nil {
+		fail("%v", err)
+	}
+	var status wire.HandoverStatus
+	if json.Unmarshal(result, &status) != nil || status.Phase == "" || has("--json") {
+		fmt.Println(string(result))
+		return
+	}
+	fmt.Printf("phase\t%s\n", status.Phase)
+	if status.ForwardingUntil != nil {
+		fmt.Printf("until\t%s\n", status.ForwardingUntil.Time().UTC().Format(time.RFC3339))
+	}
+	recordsText := "none"
+	if status.HasRecords {
+		recordsText = "yes"
+	}
+	fmt.Printf("records\t%s\n", recordsText)
+	epoch := "-"
+	if status.Epoch != nil {
+		epoch = strconv.FormatInt(*status.Epoch, 10)
+	}
+	fmt.Printf("epoch\t%s\n", epoch)
+	for _, e := range status.Endpoints {
+		pin := "-"
+		if e.Pin != nil {
+			pin = *e.Pin
+		}
+		fmt.Printf("endpoint\t%s\t%s\n", e.URL, pin)
+	}
+	for _, m := range status.Members {
+		known, online := "-", "-"
+		if m.KnownEpoch != nil {
+			known = strconv.FormatInt(*m.KnownEpoch, 10)
+		}
+		if m.Online != nil && *m.Online {
+			online = "online"
+		}
+		fmt.Printf("member\t%s\t%s\t%s\t%s\t%s\n", m.ID, m.Name, m.Kind, known, online)
 	}
 }
 

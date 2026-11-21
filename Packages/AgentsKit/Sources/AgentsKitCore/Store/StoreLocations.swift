@@ -33,9 +33,6 @@ public struct StoreLocations: Sendable {
     /// build never rearranges somebody's `~/.claude` (research R4). Settable, so a test
     /// hands one in directly rather than through the environment.
     public var personalHome: URL?
-    /// Where `personalSettings` is when there is no personal home to put it in: a server's
-    /// daemon sets `$HOME/.agents/settings` (#1033). Nil, and it is the root's own.
-    public var personalSettingsOverride: URL?
 
     public init(root: URL) {
         self.root = root
@@ -128,20 +125,8 @@ public struct StoreLocations: Sendable {
     }
     public static let rootArgument = "--root"
 
-    /// The person's settings (#1033), one file each: `~/.agents/settings`, which moves with
-    /// the person rather than with this machine. The Agents app writes it; the top of
-    /// `~/.agents` stays the hand-written config other tools read too.
-    ///
-    /// A root with no personal home (a scratch copy, a test) keeps its own, in
-    /// `<root>/settings`, so it never writes the real `~/.agents`; a server's daemon is
-    /// given `$HOME/.agents/settings` through `personalSettingsOverride`.
-    public var personalSettings: URL {
-        if let personalSettingsOverride { return personalSettingsOverride }
-        if let personalHome { return Self.settings(inHome: personalHome) }
-        return root.appendingPathComponent("settings", isDirectory: true)
-    }
-
-    /// `<home>/.agents/settings`.
+    /// The person's settings (#1033), `<home>/.agents/settings`: they move with the person
+    /// rather than with this machine.
     public static func settings(inHome home: URL) -> URL {
         home.appendingPathComponent(".agents/settings", isDirectory: true)
     }
@@ -185,76 +170,17 @@ public struct StoreLocations: Sendable {
     public var name: String { root.lastPathComponent }
 
     public var socket: URL { root.appendingPathComponent("daemon.sock") }
-    public var lock: URL { root.appendingPathComponent("daemon.lock") }
     /// The daemon's log, rolled to `daemon.previous.log` beside it (#1030: in `logRoot`).
     public var log: URL { logRoot.appendingPathComponent("daemon.log") }
-    /// Each hosted MCP server's stderr, `<name>-<scope digest>.log`, rolled at 1 MB.
-    public var mcpLogs: URL { logRoot.appendingPathComponent("mcp-logs", isDirectory: true) }
-    /// What each host sign-in relay was asked and how it answered (#211), rolled at 1 MB.
-    public var hostRelayLog: URL { logRoot.appendingPathComponent("host-relay.log") }
-    /// Where each subscription to a server's events has got to (#383). The daemon's alone.
-    public var mcpEvents: URL { root.appendingPathComponent("mcp-events.json") }
-    /// Which root this is (#228): an id made the first time a daemon starts here, and
-    /// the path it was made at, so a whole root copied elsewhere is a new root rather
-    /// than the old one. Every agent record is stamped with the id.
-    public var rootIdentity: URL { root.appendingPathComponent("root-id.json") }
-    /// The links the app placed in the personal home, so one the person removed is not
-    /// put back (054, FR-009). Per root, like everything else the daemon remembers.
-    public var personalLayout: URL { root.appendingPathComponent("personal-layout.json") }
     /// What the app installs for this daemon (048): `tools/<runtime>/<id>/`, with
     /// `current` pointing at the one in use. Per root, so a scratch copy installs its own.
     /// A cache (#1030): a toolset that is missing is downloaded again.
     public var tools: URL { cacheRoot.appendingPathComponent("tools", isDirectory: true) }
-    /// The files a runtime's policy names, written again at every launch (064), and each
-    /// runtime's own temporary folder (`<cache>` in `RuntimeLaunch`).
-    public var runtimeFiles: URL { cacheRoot.appendingPathComponent("runtimes", isDirectory: true) }
-    /// Where copies of the daemon's binary were kept for runtimes to start as the MCP
-    /// helper, until #185. Only named so a daemon starting can remove it.
-    public var helpers: URL { root.appendingPathComponent("helpers", isDirectory: true) }
-    public var agents: URL { root.appendingPathComponent("agents", isDirectory: true) }
-    /// Skill previews fetched and not yet added (059). Held in memory, so a daemon starting
-    /// removes what an earlier one left.
-    public var catalogStaging: URL { cacheRoot.appendingPathComponent("catalog-staging", isDirectory: true) }
-    /// Every folder we have been told about. One file, because the only things in it
-    /// are the two a folder cannot tell us: that it is archived, and that it
-    /// was added before anything ran in it.
-    public var folders: URL { root.appendingPathComponent("folders.json") }
-    /// What the app remembers about workflows, which is everything their files cannot
-    /// say: that one is paused, which agent is a standing workflow's, and what happened
-    /// the last time each fired. One file, for the same reason `folders` is one.
-    ///
-    /// Deliberately not in the repository. Writing a pause back to the folder would
-    /// raise a confirmation every time and fill its history with state nobody wants to
-    /// review.
-    public var workflows: URL { root.appendingPathComponent("workflows.json") }
-    /// The approved copy of each workflow file (#569), one file each, named by its
-    /// SHA-256 (#931). Beside `workflows`, not in it, so the heartbeat that rewrites that
-    /// file does not rewrite every workflow with it.
-    public var workflowCopies: URL { root.appendingPathComponent("workflow-copies", isDirectory: true) }
-    /// Which folder plugins the person has approved, by the digest of their folders
-    /// (security review, S2). Outside the folder for the reason `workflows` is: a thing
-    /// an agent can write to the folder must not be able to approve itself.
-    public var pluginApprovals: URL { root.appendingPathComponent("plugin-approvals.json") }
-    /// The last approved copy of each app-owned file in a folder's `.agents` (#502):
-    /// `folder.json` and `pins.json`, with a change made outside the app that waits for
-    /// the person's Keep or Undo. Outside the folder for the reason `workflows` is.
-    public var guardedFiles: URL { root.appendingPathComponent("guarded-files.json") }
-    /// Every device that has announced itself to this daemon.
-    /// One file beside `folders.json`, because a device is a fact about this root
-    /// rather than about any folder or agent in it.
-    public var devices: URL { root.appendingPathComponent("devices.json") }
-    /// The servers the window reaches over ssh (037). Written by the window only; the
-    /// daemon at this root never reads it.
-    public var hosts: URL { root.appendingPathComponent("hosts.json") }
     /// A host of a control plane elsewhere (058): what enrolling told it, and its own key.
     /// Written by the daemon given `--control-code`, or by the window's Run a Host Here.
     public var controlHostMembership: URL { root.appendingPathComponent("control-host.json") }
     /// The invite this host joins the lock with (#3491, #4248), Go's `controllink.LockInviteFile`.
     public var lockInvite: URL { root.appendingPathComponent("lock-invite.json") }
-    /// Where the control plane went, once this root's set-up has moved to it (058, T085):
-    /// told to every device that connects the old way.
-    public var controlMoved: URL { root.appendingPathComponent("control-moved.json") }
-    public var controlHostKey: URL { root.appendingPathComponent("control-host-key") }
     /// A host code left for this daemon by Agents Host (058, T055): its launch agent's
     /// arguments are fixed, so the one-time code comes this way. Read on every try, and
     /// removed once the join has saved a membership (#113).
@@ -262,111 +188,6 @@ public struct StoreLocations: Sendable {
     /// How this host's joining its control plane stands (#113): `HostJoinFile`, written by
     /// the daemon, read by Agents Host and by the control plane on this Mac.
     public var controlJoinStatus: URL { root.appendingPathComponent(HostJoinFile.name) }
-    /// Each connected server's ssh control socket and forwarded daemon socket,
-    /// `<id>.ctl` and `<id>.sock`. Short names, because both count against the same
-    /// 104 bytes as `daemon.sock`.
-    public var hostsFolder: URL { root.appendingPathComponent("hosts", isDirectory: true) }
-    /// What each runtime last advertised. A cache: safe to delete, and deleting it
-    /// costs the next start form the wait it used to have every time.
-    public var optionCache: URL { cacheRoot.appendingPathComponent("option-cache.json") }
-    /// The mode last chosen for each runtime, so every window and phone offers the
-    /// same one first (029). The person's, in `personalSettings` (#1033).
-    public var modes: URL { personalSettings.appendingPathComponent("modes.json") }
-    /// What the daemon has already told somebody about: which outstanding needs have
-    /// been delivered, where each is showing, when the person was last alerted, and
-    /// when each need was first raised.
-    ///
-    /// One file, for the same reason `devices.json` is one, and the daemon is its only
-    /// writer. It holds **nothing about what a need says** — no headline, no title, no
-    /// tool name. A `Need` is derived from the agents and the pending questions every
-    /// time it is asked for, and a second copy of it here would be the one thing 021's
-    /// FR-001 forbids.
-    ///
-    /// Safe to delete, and safe to lose: a daemon that cannot read it raises every
-    /// outstanding need afresh and may alert about one twice, which is exactly what
-    /// every daemon did before this file existed.
-    public var attention: URL { root.appendingPathComponent("attention.json") }
-    /// The two limits the reader set: the most any one agent may spend, and the most
-    /// a day may. One file, because there are two facts in it and both belong to the
-    /// person rather than to any agent or folder: in `personalSettings` (#1033).
-    public var limits: URL { personalSettings.appendingPathComponent("limits.json") }
-    /// Every resource lease on the Mac and every line waiting for one (036). One file
-    /// for the root, like the limits: a lease is the Mac's, not a folder's.
-    public var leases: URL { root.appendingPathComponent("leases.json") }
-    /// The resources the person declared, with what each is for (#116). The host's,
-    /// beside its leases: how many builds a machine can take is that machine's.
-    public var declaredResources: URL { root.appendingPathComponent("resources.json") }
-    /// What happened (042): one event, consequence or repeat per line, appended, and
-    /// rewritten only when the oldest are dropped.
-    public var events: URL { root.appendingPathComponent("events.jsonl") }
-    /// How long archived agents are kept (051): the person's, in `personalSettings` (#1033).
-    public var retention: URL { personalSettings.appendingPathComponent("retention.json") }
-    /// The clock that counts it (051): this machine's, so in the root.
-    public var retentionClock: URL { root.appendingPathComponent("retention-clock.json") }
-    /// Whether this Mac stays awake for agents, and for how long after they stop.
-    public var wakeSettings: URL { root.appendingPathComponent("wake.json") }
-    /// The person's total for workflows turned on (#506).
-    public var workflowLimit: URL { personalSettings.appendingPathComponent("workflow-limit.json") }
-    /// What agents call the person (#121).
-    public var person: URL { personalSettings.appendingPathComponent("person.json") }
-    /// Each runtime's permission mode (061).
-    public var clientPermissions: URL { personalSettings.appendingPathComponent("client-permissions.json") }
-    /// Each runtime's sandbox (064).
-    public var sandbox: URL { personalSettings.appendingPathComponent("sandbox.json") }
-    /// The names of the variables passed through to runtimes (`RuntimePassThrough`): names
-    /// only, never values, so it is configuration and not a secret (#1035).
-    public var runtimeEnvironment: URL { personalSettings.appendingPathComponent("runtime-environment.json") }
-    /// The display choices every client shares (#1033): `DisplayPreference`.
-    public var displayPreferences: URL { personalSettings.appendingPathComponent("display.json") }
-    /// Which credentials are out, until when, and what credit has been spent (052).
-    /// The Mac's is the one that counts: a relayed plan is one allowance (R6).
-    public var allowances: URL { root.appendingPathComponent("allowances.json") }
-    /// Every archived agent, slim, with its size: what start reads instead of each
-    /// record (051). A cache, rebuilt when it is missing or unreadable.
-    public var archiveIndex: URL { cacheRoot.appendingPathComponent("archive.json") }
-    /// The little the event sources remember between runs (042): the next position,
-    /// branch tips, cost crossings.
-    public var eventState: URL { root.appendingPathComponent("events-state.json") }
-    /// When the daemon was last alive, and when it stopped cleanly (#1219): what a
-    /// restart works out how long it was down from.
-    public var alive: URL { root.appendingPathComponent("alive.json") }
-    /// What each of the last few local days cost, per currency. One file, so a daemon
-    /// restarted part-way through a day comes back having counted the money rather
-    /// than starting the day again from zero.
-    ///
-    /// Not a history and must never be shown as one: what is kept beyond today exists
-    /// only so every boundary question has an unambiguous answer.
-    public var spend: URL { root.appendingPathComponent("spend.json") }
-    /// What the work used by hour and by day, per runtime (#823), for the usage charts.
-    /// Bounded: 168 hours and 90 days (`UsageHistory`).
-    public var usageHistory: URL { root.appendingPathComponent("usage-history.json") }
-    /// Where the time of running chats went by hour and by day, per runtime (#852), for
-    /// the Time page. Bounded as the usage history is (`TimeHistory`).
-    public var timeHistory: URL { root.appendingPathComponent("time-history.json") }
-    /// The achievements the person has earned (#984): one entry each, never more (`Achievements`).
-    public var achievements: URL { root.appendingPathComponent("achievements.json") }
-
-    public func agent(_ id: UUID) -> URL {
-        agents.appendingPathComponent(id.uuidString, isDirectory: true)
-    }
-
-    public func record(_ id: UUID) -> URL { agent(id).appendingPathComponent("agent.json") }
-    public func transcript(_ id: UUID) -> URL { agent(id).appendingPathComponent("transcript.jsonl") }
-    /// Each finished turn of the transcript, as the chat shows it by default. Derived,
-    /// so it may be deleted at any time and is built again from the transcript: in the
-    /// cache (#1030), one file per agent, removed with the agent.
-    public func turns(_ id: UUID) -> URL { turnsFolder.appendingPathComponent("\(id.uuidString).jsonl") }
-    public var turnsFolder: URL { cacheRoot.appendingPathComponent("turns", isDirectory: true) }
-    /// Every call the agent made to the app's own tools, as the daemon answered it (#47).
-    public func appTools(_ id: UUID) -> URL { agent(id).appendingPathComponent("app-tools.jsonl") }
-    /// What the daemon made of each runtime assessment it scored (#47), by agent.
-    public var assessments: URL { root.appendingPathComponent("assessments", isDirectory: true) }
-
-    public func createDirectories() throws {
-        try FileManager.default.createDirectory(at: agents, withIntermediateDirectories: true)
-        try FileManager.default.createDirectory(at: turnsFolder, withIntermediateDirectories: true)
-        try FileManager.default.createDirectory(at: logRoot, withIntermediateDirectories: true)
-    }
 }
 
 public enum StoreCoding {

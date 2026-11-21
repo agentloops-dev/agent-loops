@@ -73,7 +73,7 @@
       "server": {
         "name": "agents/jira",
         "title": "Jira",
-        "description": "Jira issues on Jira Cloud or Data Center: a page of open issues with Start Agent, and events when one is opened, labelled, commented on or assigned to you"
+        "description": "Jira issues on Jira Cloud or Data Center: a page of open issues with Start Agent, and events when one is opened, labelled, commented on, closed or assigned to you"
       },
       "_meta": {
         "dev.agentloops/connector": {
@@ -85,6 +85,7 @@
               "issue.opened",
               "issue.labelled",
               "issue.commented",
+              "issue.closed",
               "issue.assigned"
             ],
             "views": true
@@ -106,6 +107,7 @@
             "tools": true,
             "events": [
               "checks.failed",
+              "checks.passed",
               "run.completed",
               "deploy.waiting",
               "deploy.started",
@@ -116,6 +118,8 @@
               "pr.closed",
               "pr.conflicted",
               "pr.blocked",
+              "pr.reviewed",
+              "pr.commented",
               "review.requested",
               "review.comment",
               "issue.opened",

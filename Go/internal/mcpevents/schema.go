@@ -113,7 +113,6 @@ func (s Schema) Check(raw json.RawMessage) (Values, *Error) {
 	sort.Strings(keys)
 	v := Values{}
 	for _, key := range keys {
-		value := given[key]
 		p, ok := s.Lookup(key)
 		if !ok {
 			names := make([]string, len(s))
@@ -122,82 +121,105 @@ func (s Schema) Check(raw json.RawMessage) (Values, *Error) {
 			}
 			return nil, InvalidParams("unknown argument %s; takes %s", key, strings.Join(names, ", "))
 		}
-		switch p.Kind {
-		case "integers":
-			var list []json.RawMessage
-			if strings.HasPrefix(strings.TrimSpace(string(value)), "[") {
-				if json.Unmarshal(value, &list) != nil || len(list) == 0 {
-					return nil, InvalidParams("%s must be a positive integer or a list of them", key)
-				}
-			} else {
-				list = []json.RawMessage{value}
-			}
-			var ints []int
-			for _, item := range list {
-				n, ok := Positive(item)
-				if !ok {
-					return nil, InvalidParams("%s must be a positive integer or a list of them", key)
-				}
-				ints = append(ints, n)
-			}
-			v[key] = ints
-		case "refs":
-			var list []string
-			if json.Unmarshal(value, &list) != nil || len(list) == 0 {
-				return nil, InvalidParams(`%s must be a list of %s`, key, p.LooksLike)
-			}
-			var refs []string
-			for _, ref := range list {
-				if p.Pattern != nil && !p.Pattern.MatchString(strings.TrimSpace(ref)) {
-					return nil, InvalidParams(`%s must be a list of %s, not %q`, key, p.LooksLike, ref)
-				}
-				refs = append(refs, strings.TrimSpace(ref))
-			}
-			v[key] = refs
-		case "ids":
-			// One id, or a list of them (#3797): a lead waits on all its open children at once.
-			var list []string
-			if strings.HasPrefix(strings.TrimSpace(string(value)), "[") {
-				if json.Unmarshal(value, &list) != nil || len(list) == 0 {
-					return nil, InvalidParams("%s must be %s, or a list of them", key, p.LooksLike)
-				}
-			} else {
-				var text string
-				if json.Unmarshal(value, &text) != nil || string(value) == "null" {
-					return nil, InvalidParams("%s must be %s, or a list of them", key, p.LooksLike)
-				}
-				list = []string{text}
-			}
-			for _, text := range list {
-				if !p.Pattern.MatchString(text) {
-					return nil, InvalidParams("%s must be %s, or a list of them", key, p.LooksLike)
-				}
-			}
-			v[key] = list
-		case "integer":
-			i, ok := Positive(value)
-			if !ok {
-				return nil, InvalidParams("%s must be a positive integer", key)
-			}
-			v[key] = i
-		case "boolean":
-			var b bool
-			if err := json.Unmarshal(value, &b); err != nil || string(value) == "null" {
-				return nil, InvalidParams("%s must be true or false", key)
-			}
-			v[key] = b
-		default:
-			var text string
-			if err := json.Unmarshal(value, &text); err != nil || string(value) == "null" {
-				return nil, InvalidParams("%s must be a string", key)
-			}
-			if p.Pattern != nil && !p.Pattern.MatchString(text) {
-				return nil, InvalidParams("%s must look like %s", key, p.LooksLike)
-			}
-			v[key] = text
+		checked, err := p.check(key, given[key])
+		if err != nil {
+			return nil, err
 		}
+		v[key] = checked
 	}
 	return v, nil
+}
+
+// check is value, the argument key, checked against p's Kind.
+func (p Property) check(key string, value json.RawMessage) (any, *Error) {
+	switch p.Kind {
+	case "integers":
+		return checkIntegers(key, value)
+	case "refs":
+		return p.checkRefs(key, value)
+	case "ids":
+		return p.checkIDs(key, value)
+	case "integer":
+		i, ok := Positive(value)
+		if !ok {
+			return nil, InvalidParams("%s must be a positive integer", key)
+		}
+		return i, nil
+	case "boolean":
+		var b bool
+		if err := json.Unmarshal(value, &b); err != nil || string(value) == "null" {
+			return nil, InvalidParams("%s must be true or false", key)
+		}
+		return b, nil
+	}
+	var text string
+	if err := json.Unmarshal(value, &text); err != nil || string(value) == "null" {
+		return nil, InvalidParams("%s must be a string", key)
+	}
+	if p.Pattern != nil && !p.Pattern.MatchString(text) {
+		return nil, InvalidParams("%s must look like %s", key, p.LooksLike)
+	}
+	return text, nil
+}
+
+// checkIntegers is an "integers" argument: a positive integer, or a list of them.
+func checkIntegers(key string, value json.RawMessage) ([]int, *Error) {
+	var list []json.RawMessage
+	if strings.HasPrefix(strings.TrimSpace(string(value)), "[") {
+		if json.Unmarshal(value, &list) != nil || len(list) == 0 {
+			return nil, InvalidParams("%s must be a positive integer or a list of them", key)
+		}
+	} else {
+		list = []json.RawMessage{value}
+	}
+	var ints []int
+	for _, item := range list {
+		n, ok := Positive(item)
+		if !ok {
+			return nil, InvalidParams("%s must be a positive integer or a list of them", key)
+		}
+		ints = append(ints, n)
+	}
+	return ints, nil
+}
+
+// checkRefs is a "refs" argument: a list of references, each matching p's Pattern.
+func (p Property) checkRefs(key string, value json.RawMessage) ([]string, *Error) {
+	var list []string
+	if json.Unmarshal(value, &list) != nil || len(list) == 0 {
+		return nil, InvalidParams(`%s must be a list of %s`, key, p.LooksLike)
+	}
+	var refs []string
+	for _, ref := range list {
+		if p.Pattern != nil && !p.Pattern.MatchString(strings.TrimSpace(ref)) {
+			return nil, InvalidParams(`%s must be a list of %s, not %q`, key, p.LooksLike, ref)
+		}
+		refs = append(refs, strings.TrimSpace(ref))
+	}
+	return refs, nil
+}
+
+// checkIDs is an "ids" argument: one id, or a list of them (#3797), as a lead waits on all its
+// open children at once.
+func (p Property) checkIDs(key string, value json.RawMessage) ([]string, *Error) {
+	var list []string
+	if strings.HasPrefix(strings.TrimSpace(string(value)), "[") {
+		if json.Unmarshal(value, &list) != nil || len(list) == 0 {
+			return nil, InvalidParams("%s must be %s, or a list of them", key, p.LooksLike)
+		}
+	} else {
+		var text string
+		if json.Unmarshal(value, &text) != nil || string(value) == "null" {
+			return nil, InvalidParams("%s must be %s, or a list of them", key, p.LooksLike)
+		}
+		list = []string{text}
+	}
+	for _, text := range list {
+		if !p.Pattern.MatchString(text) {
+			return nil, InvalidParams("%s must be %s, or a list of them", key, p.LooksLike)
+		}
+	}
+	return list, nil
 }
 
 // Positive is value as a positive integer, never one quoted.

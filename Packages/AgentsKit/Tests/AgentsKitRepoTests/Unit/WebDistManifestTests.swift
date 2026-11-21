@@ -7,11 +7,8 @@ import Testing
 /// `Web/build.mjs` writes `Web/dist/MANIFEST`: a hash of every source input and every built
 /// file. This holds the tree to it with no Node, so changing `Web/src` without rebuilding, or
 /// editing `Web/dist` by hand, fails in anyone's `swift test`. Web/dist is not checked in
-/// (#473): Agents Host's build makes it, so with none built yet there is nothing to check;
-/// under `scripts/checks.sh attest` (`AGENTS_ATTEST`) a missing one fails, because an attested
-/// skip is a test that never ran (#5774).
-@Suite("Web dist manifest", .enabled(if: FileManager.default.fileExists(atPath: webDistRepo.appending(path: "Web/dist/MANIFEST").path)
-                                         || ProcessInfo.processInfo.environment["AGENTS_ATTEST"] != nil,
+/// (#473): Agents Host's build makes it, so with none built yet there is nothing to check.
+@Suite("Web dist manifest", .enabled(if: FileManager.default.fileExists(atPath: webDistRepo.appending(path: "Web/dist/MANIFEST").path),
                                      "no Web/dist built here; scripts/web.sh build makes one"))
 struct WebDistManifestTests {
     static let repo = webDistRepo

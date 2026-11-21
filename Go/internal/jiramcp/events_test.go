@@ -194,7 +194,6 @@ func TestArgumentsAreChecked(t *testing.T) {
 	e := &Events{Jira: &fakeJira{}}
 	for _, c := range []struct{ params, want string }{
 		{`{"name":"issue.reopened"}`, "no event issue.reopened"},
-		{`{"name":"issue.closed"}`, "no event issue.closed"},
 		{`{"name":"issue.opened","arguments":{"team":"ENG"}}`, "unknown argument team; takes project, label, anyone"},
 		{`{"name":"issue.opened","arguments":{"issue":"ENG-1"}}`, "unknown argument issue"},
 		{`{"name":"issue.labelled","arguments":{"issue":"12"}}`, "issue must look like an issue key"},
@@ -236,7 +235,7 @@ func TestEventsListOffersTheFour(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	same(t, names, []string{"issue.opened", "issue.labelled", "issue.commented", "issue.assigned"})
+	same(t, names, []string{"issue.opened", "issue.labelled", "issue.commented", "issue.closed", "issue.assigned"})
 }
 
 // issue.assigned (#2034) is the person's own: a customer or an app assigning it counts.

@@ -10,8 +10,6 @@ public struct HostStore: Sendable {
 
     public init(file: URL) { self.file = file }
 
-    public init(locations: StoreLocations) { self.file = locations.hosts }
-
     /// No file is no servers. One that cannot be read is set aside beside itself
     /// (`hosts.json.unreadable-<time>`) rather than read as none and then written over
     /// by the next save: the servers in it are the person's, and a build that can read
