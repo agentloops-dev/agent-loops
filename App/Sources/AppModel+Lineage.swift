@@ -90,7 +90,7 @@ extension AppModel {
     /// this window's copy, so a scratch root or a walk has its own (#6358, finding 4). Nil when the file does not
     /// open: the pages then read as before.
     var workCache: (any WorkCaching)? {
-        guard WorkCacheFlag.isOn else { return nil }
+        guard FeatureFlag.workCache.isOn(in: WindowDefaults.store) else { return nil }
         if let openedWorkCache { return openedWorkCache }
         let root = ControlConfig.walkFolder ?? StoreLocations.default.cacheRoot
         let file = root.appendingPathComponent("work-cache.sqlite")

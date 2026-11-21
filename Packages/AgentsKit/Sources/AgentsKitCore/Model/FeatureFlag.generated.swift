@@ -6,11 +6,14 @@
 public enum FeatureFlag: String, CaseIterable, Sendable {
     /// Commit trailers (#6373).
     case commitTrailers = "commit-trailers"
+    /// Work from this Mac's cache (#6353).
+    case workCache = "work-cache"
 
     /// What Settings calls it.
     public var title: String {
         switch self {
         case .commitTrailers: "Commit trailers"
+        case .workCache: "Work from this Mac's cache"
         }
     }
 
@@ -18,6 +21,7 @@ public enum FeatureFlag: String, CaseIterable, Sendable {
     public var about: String {
         switch self {
         case .commitTrailers: "The Commit trailers group in Agents ▸ Policy: the trailers on each agent's commits."
+        case .workCache: "Work's Issues, Pull requests and an item's page draw what this Mac kept at once, then ask the forge once."
         }
     }
 
@@ -25,6 +29,7 @@ public enum FeatureFlag: String, CaseIterable, Sendable {
     public var issue: Int {
         switch self {
         case .commitTrailers: 6373
+        case .workCache: 6353
         }
     }
 }
