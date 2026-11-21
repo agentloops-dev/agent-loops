@@ -667,11 +667,18 @@ func (f *fakeRuntime) form(ctx context.Context, session sdk.SessionId, withdraw 
 	case r.Decline != nil:
 		say("You would not say.")
 	default:
-		// Cancelled by a stop: session/cancel follows the answer.
+		// Cancelled by a stop: session/cancel follows the answer, and the turn waits for it,
+		// as a runtime that keeps to ACP does. 300 ms was too short under CI's load, and the
+		// turn ended finished before the stop came (#6551). A withdrawn link has no stop to
+		// wait for.
+		wait := 10 * time.Second
+		if withdraw {
+			wait = 300 * time.Millisecond
+		}
 		select {
 		case <-ctx.Done():
 			return sdk.PromptResponse{StopReason: sdk.StopReasonCancelled}, nil
-		case <-time.After(300 * time.Millisecond):
+		case <-time.After(wait):
 		}
 		say("The form was closed.")
 	}

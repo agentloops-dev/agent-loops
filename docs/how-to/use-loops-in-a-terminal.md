@@ -35,6 +35,10 @@ When the app is in `~/Applications`, use that path, and a directory of your own 
 such as `~/.local/bin`, with no `sudo`. The link goes to the app, so when the app updates
 itself, `loops` updates too.
 
+**From a checkout of this repository.** `.agents/skills/ship-app/scripts/ship.sh
+--install-cli` makes the same link in `~/.local/bin` when it installs the app. With
+`--no-mac`, it builds `loops` and copies it there.
+
 **From a release download, on any Mac or Linux computer.** Each release has
 `loops-<os>-<arch>-<version>.tar.gz` for `darwin` and `linux`, `arm64` and `amd64`, on the
 [releases page](https://github.com/agentloops-dev/agents-releases/releases/latest).
