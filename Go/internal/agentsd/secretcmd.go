@@ -125,6 +125,9 @@ func (d *Daemon) withSecretCommand(env []string, agent wire.UUID) []string {
 		log.Printf("agents-secret: could not write the command: %v", err)
 		return env
 	}
+	if err := writeTrailersShim(bin, self); err != nil {
+		log.Printf("agents-trailers: could not write the command: %v", err)
+	}
 	return prependPath(env, bin)
 }
 

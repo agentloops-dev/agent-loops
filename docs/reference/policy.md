@@ -136,6 +136,33 @@ This repo's `.agents/policy.json` sets `"commitTrailers": {"Cost": "on"}` (Alex,
 `Cost` shows on its commits unless a person's or the organisation's layer sets it off, which
 is tighter.
 
+### The worktree's commit-msg hook
+
+Each worktree that the app makes (new, on a branch, made again, or an older one that an agent
+starts in) gets a hooks folder of its own, `.git/worktrees/<name>/agents-hooks/`. The daemon
+turns on `extensions.worktreeConfig` and sets `core.hooksPath` with `--worktree`, so the main
+checkout and the folder's other worktrees do not change. A repository that keeps `core.bare`
+or `core.worktree` in its shared config gets no hook, as git asks. It is a git hook, not a
+runtime hook: it never holds an agent's tool use.
+
+- **The folder's own hooks still run.** Each hook in the folder (every hook git runs in a
+  checkout) runs the folder's hook of the same name: the last `core.hooksPath` of a scope other
+  than the worktree's (as Husky sets it), else the repository's `hooks` folder (where lefthook
+  and pre-commit write theirs). It finds it at each run, so a hook the folder adds later runs
+  too.
+- **`commit-msg`** runs the folder's own `commit-msg` first; when that refuses the commit, it
+  stays refused. Then, in a session, `agents-trailers MSGFILE` (`agentsd trailers`, beside
+  `agents-secret` on the session's PATH, with the same grant) asks agentsd for the session's
+  `git/trailers` and writes the block as the message's last paragraph: it takes out a trailer
+  of a key the rule turns off (`Fixes` also takes out `Refs`), puts the block's `Made-by`,
+  `Session`, `Epic`, `Attested`, `Cost`, `Tokens` and `Duration` in place of one already
+  there, and adds each other line that is not there yet. Other trailers, such as a person's
+  `Signed-off-by`, stay. An editor's comments and `commit -v`'s scissors stay after it.
+- **A person's own commit** (no session's grant in the environment) gets no block.
+- **When agentsd does not answer**, the message stays as it is and the hook prints one line.
+  It never refuses a commit of its own.
+- **`git commit --no-verify`** skips it. The squash message (#6362) still applies the rule.
+
 ## The signature
 
 `v1/policy.sig` is `{version, keyID, alg: "es256", sig}`:
