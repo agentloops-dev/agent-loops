@@ -1422,6 +1422,12 @@ final class AppModel {
         controlPlaneHosts?.first { $0.id == host }?.has(capability) ?? true
     }
 
+    /// The online machines that do not follow the commitTrailers rule yet (#6373), by name: their
+    /// agents' commits get no trailers until they update.
+    var machinesNotFollowingCommitTrailers: [String] {
+        hosts.hosts.all.filter { !hosts.isOffline($0.id) && !host($0.id, has: Capability.hostCommitTrailers1) }.map(\.label)
+    }
+
     /// Whether the host of an agent can do what `capability` names.
     func agent(_ id: UUID?, has capability: String) -> Bool {
         host(host(ofAgent: id), has: capability)

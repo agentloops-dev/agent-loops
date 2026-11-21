@@ -42,6 +42,8 @@ public enum DisplayPreference {
     public static let multiplierPRsPerWeekDefault = 1.4
     public static let multiplierPRsPerWeekRange = 0.1...100.0
     public static let multiplierLine = "multiplierLine"
+    /// The feature flags the person turned on (`FeatureFlag`, #6373), comma-separated.
+    public static let features = "features"
 
     /// The ones kept as a plain value in a client's defaults, and the kind of each.
     public enum Kind: Sendable { case bool, string, int }
@@ -51,6 +53,7 @@ public enum DisplayPreference {
         startRuntimeID: .string, skillsMarketplace: .string, mcpMarketplace: .string,
         agentsMayArchiveMyChats: .bool,
         noticeBurst: .int, noticeCooldownMinutes: .int,
+        features: .string,
     ]
 }
 
