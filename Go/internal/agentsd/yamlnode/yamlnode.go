@@ -174,32 +174,9 @@ func (r *reader) sequence(indent int) ([]Node, error) {
 			}
 			items = append(items, n)
 		case isKey:
-			pairs := map[string]Node{}
-			if value == "" {
-				n, err := r.block(indent + 1)
-				if err != nil {
-					return nil, err
-				}
-				pairs[key] = n
-			} else {
-				n, err := inline(value, l.number)
-				if err != nil {
-					return nil, err
-				}
-				pairs[key] = n
-				// `- type: pr.merged` with more keys under it, in line with type (#4730).
-				if next, ok := r.current(); ok && next.indent == indent+2 && !isDash(next.text) {
-					more, err := r.mapping(indent + 2)
-					if err != nil {
-						return nil, err
-					}
-					for k, v := range more {
-						if _, dup := pairs[k]; dup {
-							return nil, fail("Line %d: \"%s\" is given twice", next.number, k)
-						}
-						pairs[k] = v
-					}
-				}
+			pairs, err := r.sequenceMapping(indent, key, value, l.number)
+			if err != nil {
+				return nil, err
 			}
 			items = append(items, Node{Mapping: pairs})
 		default:
@@ -210,6 +187,41 @@ func (r *reader) sequence(indent int) ([]Node, error) {
 			items = append(items, n)
 		}
 	}
+}
+
+// sequenceMapping is the mapping of a sequence item that starts with `key: value` on
+// its dash line, with any more keys under it.
+func (r *reader) sequenceMapping(indent int, key, value string, number int) (map[string]Node, error) {
+	pairs := map[string]Node{}
+	if value == "" {
+		n, err := r.block(indent + 1)
+		if err != nil {
+			return nil, err
+		}
+		pairs[key] = n
+		return pairs, nil
+	}
+	n, err := inline(value, number)
+	if err != nil {
+		return nil, err
+	}
+	pairs[key] = n
+	// `- type: pr.merged` with more keys under it, in line with type (#4730).
+	next, ok := r.current()
+	if !ok || next.indent != indent+2 || isDash(next.text) {
+		return pairs, nil
+	}
+	more, err := r.mapping(indent + 2)
+	if err != nil {
+		return nil, err
+	}
+	for k, v := range more {
+		if _, dup := pairs[k]; dup {
+			return nil, fail("Line %d: \"%s\" is given twice", next.number, k)
+		}
+		pairs[k] = v
+	}
+	return pairs, nil
 }
 
 func (r *reader) mapping(indent int) (map[string]Node, error) {
