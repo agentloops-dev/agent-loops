@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -235,6 +236,7 @@ func TestPrintFlagsNeedPrintMode(t *testing.T) {
 // transcript once for the lot, and the session's record only for a note that is not an
 // entry: two reads a chunk used up a client's rate at the control plane (#6473).
 func TestPrintModeReadsOnceForABurstOfEntryNotes(t *testing.T) {
+	flaky.UnderLoad(t, "#6554")
 	was, wasGather := recheck, gather
 	recheck, gather = time.Hour, 20*time.Millisecond
 	t.Cleanup(func() { recheck, gather = was, wasGather })

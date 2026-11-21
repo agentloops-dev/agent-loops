@@ -381,6 +381,9 @@ type forgeFilter struct {
 	Reviewer string
 	// Board is the project board the list is of, nil for none; each forge reads its own.
 	Board *forgeBoard
+	// Sort is the order: "priority" (#6538), else the last updated first. A forge that cannot (GitLab, whose cursor is a time)
+	// sort by priority lists the last updated first.
+	Sort string
 	// UpdatedSince and UpdatedBefore bound the items by their updatedAt, at or after and at or
 	// before (#6349); zero for no bound. A forge narrows its read by them where its API can
 	// (GitHub both; GitLab, Jira and Linear since), and sinceBounded drops what is left over, so

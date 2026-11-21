@@ -1,6 +1,7 @@
 package agentsd
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -79,5 +80,46 @@ func TestATestDaemonReadsItsOwnDisk(t *testing.T) {
 	d.checkDisk()
 	if got := diskNotices(t, c, 3); len(got) != 0 {
 		t.Fatalf("still posted with room: %+v", got)
+	}
+}
+
+// A daemon a test makes with New, as a restart on the same root does, reads a disk with room
+// too (#6497): a Mac whose own disk is low adds no machine.disk_low event to it. The same
+// critical reading, given to a daemon as its own, is low.
+func TestADaemonATestMakesWithNewReadsARoomyDisk(t *testing.T) {
+	t.Parallel()
+
+	critical := func(wire.DiskReading) int64 { return 100_000_000 }
+	low, err := newWith(context.Background(), t.TempDir(), startOptions{diskFree: critical})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer low.Shutdown()
+	low.checkDisk()
+	if alarms := low.diskState().Alarms; len(alarms) == 0 || alarms[0].Level != wire.DiskLevelCritical {
+		t.Fatalf("100 MB free is not critical: %+v", alarms)
+	}
+
+	d, err := New(context.Background(), t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Shutdown()
+	free := d.startOpts().diskFree
+	if free == nil {
+		t.Fatal("a daemon made with New reads the Mac's own disk")
+	}
+	full := wire.DiskReading{FreeBytes: 100_000_000, TotalBytes: 500e9}
+	if got := free(full); got != roomyDisk(full) {
+		t.Fatalf("a critical disk reads %d free, not the roomy %d", got, roomyDisk(full))
+	}
+	d.checkDisk()
+	if alarms := d.diskState().Alarms; len(alarms) != 0 {
+		t.Fatalf("a daemon made with New has a low disk: %+v", alarms)
+	}
+	for _, e := range d.eventsPage(wire.EventsListRequest{}).Events {
+		if e.Name == "machine.disk_low" {
+			t.Fatalf("a daemon made with New raised %+v", e)
+		}
 	}
 }

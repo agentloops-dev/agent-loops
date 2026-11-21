@@ -1174,6 +1174,11 @@
         },
         "updatedSince": {
           "$ref": "core.schema.json#/definitions/WireDate"
+        },
+        "sort": {
+          "description": "The order (#6538): priority (High, then Medium, then Low, then none, each newest first; GitHub by the priority labels, Jira by its priority field), else the last updated first. A forge that cannot sort by priority (GitLab) lists the last updated first; an older daemon too.",
+          "type": "string",
+          "enum": ["updated", "priority"]
         }
       },
       "additionalProperties": false
