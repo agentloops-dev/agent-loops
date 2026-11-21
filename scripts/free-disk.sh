@@ -91,8 +91,12 @@
 #   - that path is under <main checkout>/.agents/worktrees/;
 #   - that path does not exist;
 #   - no running xcodebuild names the folder or that worktree.
-# A folder with no info.plist, a folder of another project, and Xcode's shared caches
-# (ModuleCache.noindex, SDK*) are kept. --dry-run says what it would remove.
+# An Agents-* folder with no info.plist goes too, when it holds only Logs and SourcePackages
+# and no file in it changed in the last hour: an `xcodebuild -list` or a package resolve with
+# no -derivedDataPath leaves one (0.9 GB each, 47 of them on 2026-11-20, #6456), and nothing
+# builds in it. Any other folder with no info.plist, a folder of another project, and
+# Xcode's shared caches (ModuleCache.noindex, SDK*) are kept. --dry-run says what it would
+# remove.
 set -euo pipefail
 
 die() { echo "free-disk.sh: $*" >&2; exit 1; }
@@ -202,6 +206,20 @@ xcode() {
 	xcrun simctl delete unavailable || echo "simctl delete unavailable failed: left as it is"
 }
 
+# resolve_only DIR: DIR holds nothing but Logs and SourcePackages (and Finder's .DS_Store).
+resolve_only() {
+	local e n=0
+	for e in "$1"/* "$1"/.[!.]*; do
+		[ -e "$e" ] || continue
+		case ${e##*/} in
+		Logs | SourcePackages) n=$((n + 1)) ;;
+		.DS_Store) ;;
+		*) return 1 ;;
+		esac
+	done
+	[ "$n" -gt 0 ]
+}
+
 deriveddata() {
 	local dry=0
 	while [ $# -gt 0 ]; do
@@ -219,6 +237,22 @@ deriveddata() {
 	builds=$(pgrep -fl xcodebuild || true)
 	while IFS= read -r d; do
 		name=$(basename "$d")
+		if [ ! -e "$d/info.plist" ]; then
+			if ! resolve_only "$d"; then
+				echo "kept $name: no info.plist, and it holds more than Logs and SourcePackages"
+			elif [ -n "$(find "$d" -mmin -60 -print -quit 2>/dev/null)" ]; then
+				echo "kept $name: no info.plist, and a file in it changed in the last hour"
+			elif [ -n "$builds" ] && grep -qF "$name" <<<"$builds"; then
+				echo "kept $name: an xcodebuild uses it"
+			else
+				k=$(du -sk "$d" | cut -f1)
+				echo "$verb $name ($(gb "$k") GB): no info.plist, only a package resolve's Logs and SourcePackages"
+				[ "$dry" = 1 ] || rm -rf -- "$d"
+				freed=$((freed + k))
+				removed=$((removed + 1))
+			fi
+			continue
+		fi
 		if ! ws=$(plutil -extract WorkspacePath raw "$d/info.plist" 2>/dev/null) || [ -z "$ws" ]; then
 			echo "kept $name: no WorkspacePath"
 			continue
