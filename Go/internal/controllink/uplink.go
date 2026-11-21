@@ -656,13 +656,8 @@ func (u *Uplink) openChannel(c *channel, open *wire.ChannelOpen) {
 
 func (u *Uplink) message(n int, message string) {
 	if n == 0 {
-		// A reply to an Ask; folders/detect from an older control plane is said done.
-		// Replies to Tell are not waited on.
+		// A reply to an Ask. Replies to Tell are not waited on.
 		if u.answered(message) {
-			return
-		}
-		if strings.Contains(message, `"folders/detect"`) {
-			u.Tell("folders/detected", map[string]int{"added": 0})
 			return
 		}
 		var told struct {

@@ -160,8 +160,6 @@ type MachineRecord struct {
 	Forgotten   *bool
 	ForgottenAt *Stamp
 	KnownEpoch  *int
-	// Set before #656; cleared when the host next says hello.
-	DetectFolders *bool
 	// The provider's workspace this host runs on (#691), as it was written.
 	Workspace json.RawMessage
 	// When its key stops being accepted (#997), as ClientRecord.Expires.
@@ -187,7 +185,6 @@ type hostJSON struct {
 	Forgotten     *bool             `json:"forgotten,omitempty"`
 	ForgottenAt   *Stamp            `json:"forgottenAt,omitempty"`
 	KnownEpoch    *int              `json:"knownEpoch,omitempty"`
-	DetectFolders *bool             `json:"detectFolders,omitempty"`
 	Workspace     json.RawMessage   `json:"workspace,omitempty"`
 	Expires       *Stamp            `json:"expires,omitempty"`
 	Labels        []string          `json:"labels,omitempty"`
@@ -199,7 +196,7 @@ var dialOut = json.RawMessage(`{"dialOut":{}}`)
 
 func (h MachineRecord) MarshalJSON() ([]byte, error) {
 	return encodeKeeping(hostJSON{h.ID, h.Name, h.PublicKey, dialOut, h.Platform, h.Version, h.Installed, h.MachineID,
-		h.SignInFrom, h.GitFrom, h.Owner, h.Rev, h.Forgotten, h.ForgottenAt, h.KnownEpoch, h.DetectFolders,
+		h.SignInFrom, h.GitFrom, h.Owner, h.Rev, h.Forgotten, h.ForgottenAt, h.KnownEpoch,
 		h.Workspace, h.Expires, h.Labels}, h.Extra)
 }
 
@@ -210,7 +207,7 @@ func (h *MachineRecord) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	*h = MachineRecord{j.ID, j.Name, j.PublicKey, j.Platform, j.Version, j.Installed, j.MachineID, j.SignInFrom,
-		j.GitFrom, j.Owner, j.Rev, j.Forgotten, j.ForgottenAt, j.KnownEpoch, j.DetectFolders, j.Workspace, j.Expires, j.Labels, extra}
+		j.GitFrom, j.Owner, j.Rev, j.Forgotten, j.ForgottenAt, j.KnownEpoch, j.Workspace, j.Expires, j.Labels, extra}
 	return nil
 }
 
