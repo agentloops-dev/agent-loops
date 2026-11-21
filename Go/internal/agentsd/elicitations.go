@@ -127,6 +127,7 @@ func (l *live) showForm(req wire.ElicitationRequest) *pendingElicitation {
 	l.elicitations[req.ID] = pe
 	if r != nil {
 		c := d.keepFormRequest(r)
+		d.holdFormRequest(r.ID)
 		opened = &c
 	}
 	l.mu.Unlock()
