@@ -257,6 +257,10 @@ func (d *Daemon) serveAppTools(w http.ResponseWriter, r *http.Request) {
 		d.serveSecretValue(w, r)
 		return
 	}
+	if r.URL.Path == trailersCommandPath {
+		d.serveTrailers(w, r)
+		return
+	}
 	if r.URL.Path != appToolsPath {
 		w.WriteHeader(http.StatusNotFound)
 		return
