@@ -70,7 +70,7 @@ func TestTheChainLinksEachCopysEntries(t *testing.T) {
 
 	o, _ := s.Get(context.Background(), keyOf(t, s, "aaaa1111", 2))
 	var second stored
-	json.Unmarshal(o.Data, &second)
+	must(t, json.Unmarshal(o.Data, &second))
 	first, _ := s.Get(context.Background(), keyOf(t, s, "aaaa1111", 1))
 	if second.Seq != 2 || second.Prev != Hash(first.Data) {
 		t.Fatalf("entry 2 %+v, want prev %s", second, Hash(first.Data))
@@ -92,7 +92,9 @@ func TestVerifyFindsAChangedEntry(t *testing.T) {
 	chained(t, s, NewChain("aaaa1111"), at, 4)
 	key := keyOf(t, s, "aaaa1111", 2)
 	o, _ := s.Get(context.Background(), key)
-	s.Put(context.Background(), key, []byte(strings.Replace(string(o.Data), "Stopped", "Started", 1)), store.Always)
+	if _, err := s.Put(context.Background(), key, []byte(strings.Replace(string(o.Data), "Stopped", "Started", 1)), store.Always); err != nil {
+		t.Fatal(err)
+	}
 	r := verified(t, s)
 	if r.OK() || len(r.Problems) != 1 || !strings.Contains(r.Problems[0], "entry 2") || !strings.Contains(r.Problems[0], "changed") {
 		t.Fatalf("%+v", r)
@@ -103,7 +105,9 @@ func TestVerifyFindsAChangedEntry(t *testing.T) {
 	chained(t, s2, NewChain("cccc3333"), at, 3)
 	last := keyOf(t, s2, "cccc3333", 3)
 	o, _ = s2.Get(context.Background(), last)
-	s2.Put(context.Background(), last, []byte(strings.Replace(string(o.Data), "\"C\"", "\"Z\"", 1)), store.Always)
+	if _, err := s2.Put(context.Background(), last, []byte(strings.Replace(string(o.Data), "\"C\"", "\"Z\"", 1)), store.Always); err != nil {
+		t.Fatal(err)
+	}
 	if r := verified(t, s2); r.OK() || !strings.Contains(r.Problems[0], "entry 3") {
 		t.Fatalf("%+v", r)
 	}
@@ -115,14 +119,14 @@ func TestVerifyFindsARemovedEntry(t *testing.T) {
 	at := time.Date(2026, 10, 22, 9, 0, 0, 0, time.UTC)
 	s := store.NewMemory()
 	chained(t, s, NewChain("aaaa1111"), at, 4)
-	s.Delete(ctx, keyOf(t, s, "aaaa1111", 2))
+	must(t, s.Delete(ctx, keyOf(t, s, "aaaa1111", 2)))
 	if r := verified(t, s); r.OK() || !strings.Contains(r.Problems[0], "entries 2 to 2 were removed") {
 		t.Fatalf("%+v", r)
 	}
 
 	s2 := store.NewMemory()
 	chained(t, s2, NewChain("bbbb2222"), at, 3)
-	s2.Delete(ctx, keyOf(t, s2, "bbbb2222", 3))
+	must(t, s2.Delete(ctx, keyOf(t, s2, "bbbb2222", 3)))
 	if r := verified(t, s2); r.OK() || !strings.Contains(r.Problems[0], "entry 3, its head on 2026-10-22, was removed") {
 		t.Fatalf("%+v", r)
 	}
@@ -140,12 +144,12 @@ func TestSweptDaysAndOldEntriesAreNotProblems(t *testing.T) {
 	if o, _ := s.Get(ctx, sealKey("2026-10-20", "aaaa1111")); o == nil {
 		t.Fatal("the 20th was not sealed")
 	}
-	(&Log{Store: s, Now: func() time.Time { return day1 }}).Write(ctx, wire.AuditActor{User: "alex"}, "agents/stop", "Stopped an agent", "", nil)
+	must(t, (&Log{Store: s, Now: func() time.Time { return day1 }}).Write(ctx, wire.AuditActor{User: "alex"}, "agents/stop", "Stopped an agent", "", nil))
 
 	// The sweep takes the 20th: its entries and its seal.
 	keys, _ := s.List(ctx, DayFolder("2026-10-20"))
 	for _, k := range keys {
-		s.Delete(ctx, k.Key)
+		must(t, s.Delete(ctx, k.Key))
 	}
 	if n, err := SweepSeals(ctx, s, "2026-10-21"); err != nil || n != 1 {
 		t.Fatalf("swept %d seals: %v", n, err)
@@ -155,7 +159,7 @@ func TestSweptDaysAndOldEntriesAreNotProblems(t *testing.T) {
 	}
 
 	s2 := store.NewMemory()
-	(&Log{Store: s2, Now: func() time.Time { return day1 }}).Write(ctx, wire.AuditActor{User: "alex"}, "agents/stop", "Stopped an agent", "", nil)
+	must(t, (&Log{Store: s2, Now: func() time.Time { return day1 }}).Write(ctx, wire.AuditActor{User: "alex"}, "agents/stop", "Stopped an agent", "", nil))
 	chained(t, s2, NewChain("bbbb2222"), day1.Add(time.Hour), 1)
 	if r := verified(t, s2); !r.OK() || r.Unchained != 1 || r.Entries != 2 {
 		t.Fatalf("%+v", r)
@@ -170,11 +174,11 @@ func TestConcurrentWritesMakeOneChain(t *testing.T) {
 	var wg sync.WaitGroup
 	for range 40 {
 		wg.Go(func() {
-			l.Write(context.Background(), wire.AuditActor{User: "alex"}, "agents/stop", "Stopped an agent", "", nil)
+			must(t, l.Write(context.Background(), wire.AuditActor{User: "alex"}, "agents/stop", "Stopped an agent", "", nil))
 		})
 	}
 	wg.Wait()
-	c.Seal(context.Background(), s, time.Now())
+	must(t, c.Seal(context.Background(), s, time.Now()))
 	if r := verified(t, s); !r.OK() || r.Entries != 40 {
 		t.Fatalf("%+v", r)
 	}

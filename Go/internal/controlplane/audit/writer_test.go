@@ -107,7 +107,7 @@ func TestAWriterTriesAFailedPutAgain(t *testing.T) {
 		w.Add(pending(i))
 	}
 	w.Close(context.Background())
-	c.Seal(context.Background(), s, time.Now())
+	must(t, c.Seal(context.Background(), s, time.Now()))
 	if r, err := Verify(context.Background(), s); err != nil || !r.OK() || r.Entries != 10 {
 		t.Fatalf("verify %+v %v", r, err)
 	}
@@ -171,8 +171,10 @@ func TestASealNamesOnlyALandedEntry(t *testing.T) {
 		t.Fatal(err)
 	}
 	c.landed(context.Background(), s, one)
-	c.link(&second, Key(at, "alex"), at)
-	c.Seal(context.Background(), s, at)
+	if _, err := c.link(&second, Key(at, "alex"), at); err != nil {
+		t.Fatal(err)
+	}
+	must(t, c.Seal(context.Background(), s, at))
 	object, _ := s.Get(context.Background(), sealKey("2026-10-22", "copy1"))
 	if object == nil || !strings.Contains(string(object.Data), `"seq":1,`) {
 		t.Fatalf("seal %v", object)

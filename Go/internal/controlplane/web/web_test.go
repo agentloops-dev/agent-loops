@@ -324,7 +324,7 @@ func writeManifest(t *testing.T, folder string, lines ...string) {
 func TestFilesLoadOnlyWhenTheyMatchTheirManifest(t *testing.T) {
 	folder := t.TempDir()
 	index := []byte("<!doctype html>")
-	os.WriteFile(filepath.Join(folder, "index.html"), index, 0o644)
+	must(t, os.WriteFile(filepath.Join(folder, "index.html"), index, 0o600))
 	writeManifest(t, folder, "agents-web 1", "src abc Web/src/main.tsx", "out "+hashOf(index)+" Web/dist/index.html")
 	files, err := LoadFiles(folder)
 	if err != nil || len(files) != 1 || files["/index.html"].ContentType != "text/html; charset=utf-8" {
@@ -343,7 +343,7 @@ func TestFilesLoadOnlyWhenTheyMatchTheirManifest(t *testing.T) {
 		t.Errorf("unreadable: %v", err)
 	}
 
-	os.WriteFile(filepath.Join(folder, "run.sh"), []byte("x"), 0o644)
+	must(t, os.WriteFile(filepath.Join(folder, "run.sh"), []byte("x"), 0o600))
 	writeManifest(t, folder, "out "+hashOf(index)+" Web/dist/index.html", "out "+hashOf([]byte("x"))+" Web/dist/run.sh")
 	if _, err := LoadFiles(folder); !errors.As(err, &failure) || err.Error() != "run.sh has a type the web remote never serves" {
 		t.Errorf("run.sh: %v", err)
@@ -375,7 +375,7 @@ func dist(t *testing.T) string {
 	names := []string{"app.js", "index.html"}
 	lines := []string{"agents-web 1"}
 	for _, name := range names {
-		os.WriteFile(filepath.Join(folder, name), []byte(files[name]), 0o644)
+		must(t, os.WriteFile(filepath.Join(folder, name), []byte(files[name]), 0o600))
 		lines = append(lines, "out "+hashOf([]byte(files[name]))+" Web/dist/"+name)
 	}
 	writeManifest(t, folder, lines...)
@@ -543,13 +543,15 @@ func TestTheSocketIsAcceptedFromThePageOnly(t *testing.T) {
 	type arrival struct{ remote, origin string }
 	arrived := make(chan arrival, 1)
 	l := start(t, Config{Folder: dist(t), Accept: func(ws *websocket.Conn, remote, origin string) {
-		defer ws.CloseNow()
+		defer func() { _ = ws.CloseNow() }() // the test has its answer by then
 		arrived <- arrival{remote, origin}
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_, data, err := ws.Read(ctx)
 		if err == nil {
-			ws.Write(ctx, websocket.MessageText, append([]byte("echo "), data...))
+			if err := ws.Write(ctx, websocket.MessageText, append([]byte("echo "), data...)); err != nil {
+				t.Error(err)
+			}
 		}
 	}})
 	port := l.Port()
@@ -568,7 +570,7 @@ func TestTheSocketIsAcceptedFromThePageOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ws.CloseNow()
+	defer func() { _ = ws.CloseNow() }() // the test has its answer by then
 	select {
 	case a := <-arrived:
 		if a.origin != fmt.Sprintf("http://localhost:%d", port) || !strings.HasPrefix(a.remote, "127.0.0.1:") {
@@ -579,7 +581,7 @@ func TestTheSocketIsAcceptedFromThePageOnly(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	ws.Write(ctx, websocket.MessageText, []byte("hello"))
+	must(t, ws.Write(ctx, websocket.MessageText, []byte("hello")))
 	if _, data, err := ws.Read(ctx); err != nil || string(data) != "echo hello" {
 		t.Errorf("echo: %q %v", data, err)
 	}
@@ -596,7 +598,7 @@ func TestTheSocketIsAcceptedFromThePageOnly(t *testing.T) {
 
 // An upgrade the gate lets through but that is not a WebSocket handshake gets a 400.
 func TestABrokenHandshakeIsBad(t *testing.T) {
-	l := start(t, Config{Folder: dist(t), Accept: func(ws *websocket.Conn, _, _ string) { ws.CloseNow() }})
+	l := start(t, Config{Folder: dist(t), Accept: func(ws *websocket.Conn, _, _ string) { _ = ws.CloseNow() }}) // the handshake broke before it
 	r, _ := http.NewRequest("GET", fmt.Sprintf("http://127.0.0.1:%d/v1/connect", l.Port()), nil)
 	r.Host = fmt.Sprintf("localhost:%d", l.Port())
 	r.Header.Set("Origin", l.Origin())
@@ -616,7 +618,7 @@ func TestABrokenHandshakeIsBad(t *testing.T) {
 
 func TestABuildThatDoesNotMatchItsManifestLeavesTheListenerOff(t *testing.T) {
 	folder := dist(t)
-	os.WriteFile(filepath.Join(folder, "app.js"), []byte("/* edited */"), 0o644)
+	must(t, os.WriteFile(filepath.Join(folder, "app.js"), []byte("/* edited */"), 0o600))
 	log := &lines{}
 	l, err := Start(Config{Folder: folder, Port: 0, Log: log.add})
 	if l != nil || err == nil {
