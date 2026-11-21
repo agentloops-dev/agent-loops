@@ -326,7 +326,7 @@ func running(file string, patience time.Duration) bool {
 	defer f.Close()
 	for until := time.Now().Add(patience); ; {
 		if syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB) == nil {
-			syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+			_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN) // the deferred Close lets it go too
 			return false
 		}
 		if time.Now().After(until) {
@@ -347,8 +347,13 @@ func takeLock(file string) (*os.File, error) {
 		f.Close()
 		return nil, err
 	}
-	f.Truncate(0)
-	f.WriteAt([]byte(fmt.Sprintf("%d\n", os.Getpid())), 0)
+	// The lock is what keeps a second host out; the pid is only for the install script, so a
+	// failed write is logged, not fatal.
+	if err := f.Truncate(0); err != nil {
+		log.Printf("%s: %v", file, err)
+	} else if _, err := f.WriteAt([]byte(fmt.Sprintf("%d\n", os.Getpid())), 0); err != nil {
+		log.Printf("%s: %v", file, err)
+	}
 	return f, nil
 }
 
@@ -514,7 +519,9 @@ func keepUplink(ctx context.Context, cl commandLine, d *agentsd.Daemon, member *
 func askToJoin(ctx context.Context, root string, ask controllink.JoinAsk, private []byte, hello controllink.MachineHello) *controllink.Membership {
 	for {
 		member, err := controllink.AskToJoin(ctx, root, ask, private, hello, func(code string) {
-			os.WriteFile(filepath.Join(root, "control-join-shown"), []byte(code+"\n"), 0o600)
+			if err := os.WriteFile(filepath.Join(root, "control-join-shown"), []byte(code+"\n"), 0o600); err != nil {
+				log.Printf("control-join-shown: %v", err)
+			}
 			log.Printf("asking to join %s as %s: approve it on a client; the code is %s", ask.URL, ask.Person, code)
 		})
 		if err == nil {

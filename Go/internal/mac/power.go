@@ -70,13 +70,13 @@ func HoldAwake() (*Hold, error) {
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
-	go cmd.Wait()
+	go func() { _ = cmd.Wait() }() // only to reap it: Release kills it
 	return &Hold{cmd: cmd}, nil
 }
 
 // Release lets the Mac sleep again.
 func (h *Hold) Release() {
 	if h != nil && h.cmd.Process != nil {
-		h.cmd.Process.Kill()
+		_ = h.cmd.Process.Kill() // it may have ended already, and then holds nothing
 	}
 }

@@ -137,7 +137,8 @@ func (s *Relays) write(line string) {
 	defer s.logMu.Unlock()
 	file := filepath.Join(s.Logs, "host-relay.log")
 	if fi, err := os.Stat(file); err == nil && fi.Size() > logLimit {
-		os.Rename(file, filepath.Join(s.Logs, "host-relay.previous.log"))
+		// This is the log, so a failed roll has nowhere to be said; the log grows until one works.
+		_ = os.Rename(file, filepath.Join(s.Logs, "host-relay.previous.log"))
 	}
 	f, err := os.OpenFile(file, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {

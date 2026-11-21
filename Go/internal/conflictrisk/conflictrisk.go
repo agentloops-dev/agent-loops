@@ -291,7 +291,9 @@ func fetchAll(ctx context.Context, r runner, remote, refs string, prs []PR) {
 		return
 	}
 	for _, s := range specs {
-		r.git(ctx, "fetch", "--no-tags", "--quiet", "--no-write-fetch-head", remote, s)
+		// One by one, so one request whose ref is gone does not stop the others; a ref
+		// that did not come is missing later, where its entry says so.
+		_, _, _ = r.git(ctx, "fetch", "--no-tags", "--quiet", "--no-write-fetch-head", remote, s)
 	}
 }
 
@@ -446,8 +448,13 @@ func headOf(ctx context.Context, r runner, given string) (string, error) {
 	idx.Close()
 	defer os.Remove(idx.Name())
 	if src := filepath.Join(gitDir, "index"); fileExists(src) {
-		b, _ := os.ReadFile(src)
-		os.WriteFile(idx.Name(), b, 0o600)
+		b, err := os.ReadFile(src)
+		if err != nil {
+			return "", err
+		}
+		if err := os.WriteFile(idx.Name(), b, 0o600); err != nil { //nolint:gosec // G703: our own CreateTemp file
+			return "", err
+		}
 	}
 	w := runner{dir: r.dir, env: []string{"GIT_INDEX_FILE=" + idx.Name()}}
 	if _, _, err := w.git(ctx, "add", "-A", "--", "."); err != nil {
