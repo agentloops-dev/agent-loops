@@ -67,7 +67,7 @@ func TestGitTrailersWritesTheBlockByTheRule(t *testing.T) {
 		return got.Lines
 	}
 
-	// The defaults: Cost off, every other trailer on; Requested-by and Attested have no value.
+	// The defaults: Cost off, every other trailer on; Requested-by has no value.
 	got := lines(2, map[string]any{"session": a.ID, "pr": 10})
 	want := []string{
 		"Made-by: claude-code:claude-opus-5-5",

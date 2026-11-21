@@ -23,7 +23,6 @@ export const trailers: readonly Trailer[] = [
   { key: "Epic", kind: "record", on: true, example: "#5627" },
   { key: "Requested-by", kind: "record", on: true, example: "alexec" },
   { key: "Approved-by", kind: "record", on: true, example: "alexec" },
-  { key: "Attested", kind: "record", on: true, example: "no value now, so left out" },
   { key: "Co-authored-by", kind: "record", on: true, example: "Claude Opus 5.5 <noreply@anthropic.com>" },
   { key: "Cost", kind: "spend", on: false, example: "$1.84" },
   { key: "Tokens", kind: "spend", on: true, example: "in=412.0k out=38.0k" },

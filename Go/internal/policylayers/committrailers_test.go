@@ -24,7 +24,7 @@ func TestCommitTrailersDefaults(t *testing.T) {
 			t.Errorf("%s: %v, not %v", t0.Key, on[t0.Key], want)
 		}
 	}
-	if len(on) != 11 {
+	if len(on) != 10 {
 		t.Fatalf("%d keys", len(on))
 	}
 }
@@ -47,10 +47,13 @@ func TestCommitTrailersTighterByKind(t *testing.T) {
 	if tokens.Decides == nil || tokens.Decides.Kind != "you" || !tokens.Layers[2].Kept {
 		t.Fatalf("Tokens: %+v", tokens)
 	}
-	// A key this machine does not know is kept in the layer and has no effect.
-	unknown := Resolve([]Layer{{Ref: youRef, Rules: trailers("Signed-off-by", "on")}})
-	if got := TrailersOn(unknown); len(got) != 11 {
-		t.Fatalf("%v", got)
+	// A key this machine does not know is kept in the layer and has no effect: also Attested,
+	// a key until #6545, in a layer written before it.
+	for _, key := range []string{"Signed-off-by", "Attested"} {
+		unknown := Resolve([]Layer{{Ref: youRef, Rules: trailers(key, "on")}})
+		if got := TrailersOn(unknown); len(got) != 10 || got[key] {
+			t.Fatalf("%s: %v", key, got)
+		}
 	}
 }
 

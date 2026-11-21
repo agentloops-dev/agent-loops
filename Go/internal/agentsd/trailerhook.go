@@ -354,7 +354,7 @@ func commentChar() string {
 // one already there. The others (Fixes, Refs, Requested-by, Approved-by, Co-authored-by) add
 // a line that is not there yet.
 var singleTrailers = map[string]bool{
-	"made-by": true, "session": true, "epic": true, "attested": true,
+	"made-by": true, "session": true, "epic": true,
 	"cost": true, "tokens": true, "duration": true,
 }
 

@@ -3004,7 +3004,7 @@ type CommitTrailerValue string
 const CommitTrailerValueOn CommitTrailerValue = "on"
 const CommitTrailerValueOff CommitTrailerValue = "off"
 
-// The trailers of an agent's commits, each on or off, by the trailer's key (#6365): Made-by, Cost, Tokens, Duration, Session, Fixes, Epic, Requested-by, Approved-by, Attested, Co-authored-by. Fixes also writes Refs. A key the machine does not know is kept and has no effect; a key no layer sets has its default (every key on, Cost off). Record trailers (Made-by, Session, Fixes, Epic, Requested-by, Approved-by, Attested, Co-authored-by): on is tighter. Spend trailers (Cost, Tokens, Duration): off is tighter. Its rules in policy/effective are commitTrailers.<key>.
+// The trailers of an agent's commits, each on or off, by the trailer's key (#6365): Made-by, Cost, Tokens, Duration, Session, Fixes, Epic, Requested-by, Approved-by, Co-authored-by. Fixes also writes Refs. A key the machine does not know is kept and has no effect; a key no layer sets has its default (every key on, Cost off). Record trailers (Made-by, Session, Fixes, Epic, Requested-by, Approved-by, Co-authored-by): on is tighter. Spend trailers (Cost, Tokens, Duration): off is tighter. Its rules in policy/effective are commitTrailers.<key>.
 type CommitTrailers map[string]CommitTrailerValue
 
 type ConfigChoice struct {
@@ -12014,7 +12014,6 @@ const PolicyRuleNameCommitTrailersFixes PolicyRuleName = "commitTrailers.Fixes"
 const PolicyRuleNameCommitTrailersEpic PolicyRuleName = "commitTrailers.Epic"
 const PolicyRuleNameCommitTrailersRequestedBy PolicyRuleName = "commitTrailers.Requested-by"
 const PolicyRuleNameCommitTrailersApprovedBy PolicyRuleName = "commitTrailers.Approved-by"
-const PolicyRuleNameCommitTrailersAttested PolicyRuleName = "commitTrailers.Attested"
 const PolicyRuleNameCommitTrailersCoAuthoredBy PolicyRuleName = "commitTrailers.Co-authored-by"
 
 // The rules a layer sets (#2957, data-model.md "PolicyRules"): the same shape on the organisation, your and a folder's layer (FR-002). Every field is optional: absent sets nothing.

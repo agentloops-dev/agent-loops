@@ -47,8 +47,6 @@ public enum CommitTrailerWords {
     /// writes it (`spendTrailers`: `$1.84`, `in=412.0k out=38.0k`, `47m`).
         public var example: String
         public var id: String { key }
-        /// Whether the daemon writes a line for it now: Attested has no value since #6438.
-        public var isWritten: Bool { key != "Attested" }
         /// The rule's name in `policy/effective`.
         public var rule: String { "commitTrailers.\(key)" }
 
@@ -66,7 +64,6 @@ public enum CommitTrailerWords {
         Trailer(key: "Epic", kind: .record, isOnByDefault: true, example: "#5627"),
         Trailer(key: "Requested-by", kind: .record, isOnByDefault: true, example: "alexec"),
         Trailer(key: "Approved-by", kind: .record, isOnByDefault: true, example: "alexec"),
-        Trailer(key: "Attested", kind: .record, isOnByDefault: true, example: "no value now, so left out"),
         Trailer(key: "Cost", kind: .spend, isOnByDefault: false, example: "$1.84"),
         Trailer(key: "Tokens", kind: .spend, isOnByDefault: true, example: "in=412.0k out=38.0k"),
         Trailer(key: "Duration", kind: .spend, isOnByDefault: true, example: "47m"),
@@ -106,10 +103,10 @@ public enum CommitTrailerWords {
     }
 
     /// The block a pull request's squash commit gets (`commit_trailers` with `pr`), with each trailer
-    /// that is on and written, and its example value in the daemon's format (#6532). A commit on a
+    /// that is on, and its example value in the daemon's format (#6532). A commit on a
     /// branch gets `Refs` in place of `Fixes`, and no `Approved-by`: only the squash has those.
     public static func preview(_ isOn: (Trailer) -> Bool) -> [String] {
-        trailers.filter { $0.isWritten && isOn($0) }.map { "\($0.key): \($0.example)" }
+        trailers.filter(isOn).map { "\($0.key): \($0.example)" }
     }
 
     /// The line above the folders whose own rule changes the block (#6534).
@@ -130,14 +127,14 @@ public enum CommitTrailerWords {
         }
     }
 
-    /// What a folder's rule changes: each written trailer whose value in force for an agent in
+    /// What a folder's rule changes: each trailer whose value in force for an agent in
     /// the folder is not its value outside any folder. Nil when it changes none.
     public static func folderChange(folder: String, name: String, inFolder: DaemonAPI.EffectivePolicy,
                                     outside: DaemonAPI.EffectivePolicy) -> FolderChange? {
         func rule(_ policy: DaemonAPI.EffectivePolicy, _ trailer: Trailer) -> DaemonAPI.EffectiveRule? {
             policy.rules.first { $0.rule == trailer.rule }
         }
-        let changes = trailers.filter(\.isWritten).compactMap { trailer -> String? in
+        let changes = trailers.compactMap { trailer -> String? in
             let on = isOn(trailer, rule(inFolder, trailer))
             guard on != isOn(trailer, rule(outside, trailer)) else { return nil }
             return "\(trailer.key) \(on ? "on" : "off")"
