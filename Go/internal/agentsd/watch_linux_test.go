@@ -61,7 +61,9 @@ func TestAGoneWatchTakesNoOtherFilesBytes(t *testing.T) {
 			if err := w.Close(); err != nil {
 				t.Fatal(err)
 			}
-			time.Sleep(60 * time.Millisecond) // longer than the reader's nap
+			// It waits for something not to happen: the reader naps 50 ms between reads, so 60 ms
+			// gives a reader that kept the number its read of the pipe.
+			time.Sleep(60 * time.Millisecond) //nolint:forbidigo // a wait for no event; no channel says it did not come
 			b, err := io.ReadAll(r)
 			_ = r.Close()
 			if err != nil || !strings.HasPrefix(string(b), "origin\t") {
