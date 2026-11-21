@@ -13,7 +13,7 @@ struct CommitTrailerWordsTests {
     }
 
     @Test func everyTrailerIsOnByDefaultButCost() {
-        #expect(CommitTrailerWords.trailers.count == 11)
+        #expect(CommitTrailerWords.trailers.count == 10)
         #expect(CommitTrailerWords.trailers.filter { !$0.isOnByDefault }.map(\.key) == ["Cost"])
         #expect(CommitTrailerWords.trailers(.spend).map(\.key) == ["Cost", "Tokens", "Duration"])
         #expect(CommitTrailerWords.trailers.last?.key == "Co-authored-by")
@@ -52,7 +52,6 @@ struct CommitTrailerWordsTests {
     @Test func thePreviewHasTheTrailersThatAreOnInTheBlocksOrder() {
         let lines = CommitTrailerWords.preview { $0.isOnByDefault }
         #expect(lines.count == 9)
-        #expect(!lines.contains { $0.hasPrefix("Attested:") })
         #expect(lines.first == "Made-by: claude-code:claude-opus-5-5")
         #expect(!lines.contains { $0.hasPrefix("Cost:") })
         #expect(lines.last?.hasPrefix("Co-authored-by: ") == true)
@@ -98,11 +97,11 @@ struct CommitTrailerWordsTests {
         #expect(change == CommitTrailerWords.FolderChange(folder: "/src/agents", name: "Agents", changes: "Cost on, Tokens off"))
         // A folder whose rule sets only what applies outside it changes nothing.
         #expect(CommitTrailerWords.folderChange(folder: "/src/x", name: "x", inFolder: outside, outside: outside) == nil)
-        // Attested has no value, so a folder that turns it off changes no commit.
-        let attested = try trailer("Attested")
-        let offAttested = DaemonAPI.EffectivePolicy(rules: [DaemonAPI.EffectiveRule(rule: attested.rule, value: .bool(false),
+        // Attested is no trailer since #6545: a folder that still turns it off changes no commit.
+        let offAttested = DaemonAPI.EffectivePolicy(rules: [DaemonAPI.EffectiveRule(rule: "commitTrailers.Attested", value: .bool(false),
                                                                                      words: "Off", decides: folder)])
         #expect(CommitTrailerWords.folderChange(folder: "/src/x", name: "x", inFolder: offAttested, outside: outside) == nil)
+        #expect(CommitTrailerWords.trailers.map(\.key).contains("Attested") == false)
     }
 
     @Test func aFlagIsOnOnlyWhenItsNameIsInTheList() {

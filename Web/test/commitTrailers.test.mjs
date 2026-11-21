@@ -7,8 +7,8 @@ import { load } from "./load.mjs";
 const c = await load("src/model/commitTrailers.ts");
 
 test("the keys and defaults are the daemon's: every trailer on, Cost off", () => {
-  assert.deepEqual(c.trailers.map((t) => t.key).sort(), ["Approved-by", "Attested", "Co-authored-by", "Cost", "Duration", "Epic",
-    "Fixes", "Made-by", "Requested-by", "Session", "Tokens"]);
+  assert.deepEqual(c.trailers.map((t) => t.key).sort(), ["Approved-by", "Co-authored-by", "Cost", "Duration", "Epic", "Fixes",
+    "Made-by", "Requested-by", "Session", "Tokens"]);
   assert.deepEqual(c.trailers.filter((t) => !t.on).map((t) => t.key), ["Cost"]);
   assert.deepEqual(c.trailers.filter((t) => t.kind === "spend").map((t) => t.key), ["Cost", "Tokens", "Duration"]);
 });

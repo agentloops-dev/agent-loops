@@ -29,8 +29,7 @@ import (
 //     the issue from the forge cache. Approved-by is each login whose newest review of the PR
 //     approves it, one read of the PR. At most two forge calls, at the same time (#6530).
 //   - Requested-by is the login the person's forge connection has.
-//   - Attested has no value since #6438 removed the attestations, so it is left out, as is any
-//     trailer with no value.
+//   - A trailer with no value is left out.
 //   - Co-authored-by is the runtime's own line for GitHub's commit page, where it is known
 //     (Claude's); the daemon turns the runtime's own attribution off (sessionMeta), so this is
 //     the only copy, and the rule can turn it off.
@@ -40,7 +39,7 @@ const trailerForgeWait = 5 * time.Second
 
 // trailerBlockOrder is the order of the block's lines: the records, then the spend, then
 // Co-authored-by last, where GitHub reads it (the Preview of the gate 2 wireframes).
-var trailerBlockOrder = []string{"Made-by", "Session", "Fixes", "Epic", "Requested-by", "Approved-by", "Attested",
+var trailerBlockOrder = []string{"Made-by", "Session", "Fixes", "Epic", "Requested-by", "Approved-by",
 	"Cost", "Tokens", "Duration", "Co-authored-by"}
 
 // trailerItem reads an issue or a PR for the block, from the forge cache within its minute.

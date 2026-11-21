@@ -29,7 +29,7 @@ tighter, a longer wait after a burst of notices is tighter, and **Off** is tight
 name that one layer leaves out is not allowed.
 
 **Commit trailers** (#6365) have two directions, by the kind of trailer. For a record trailer
-(`Made-by`, `Session`, `Fixes`, `Epic`, `Requested-by`, `Approved-by`, `Attested`,
+(`Made-by`, `Session`, `Fixes`, `Epic`, `Requested-by`, `Approved-by`,
 `Co-authored-by`), **On** is tighter: a folder or your organisation can make a record of agent
 work required, and you cannot remove it. For a spend trailer (`Cost`, `Tokens`, `Duration`),
 **Off** is tighter: a folder or your organisation can keep spend out of git history, and you

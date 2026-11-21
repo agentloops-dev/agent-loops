@@ -2725,11 +2725,11 @@ export type CommitTrailerValue =
 
 /**
  * The trailers of an agent's commits, each on or off, by the trailer's key (#6365): Made-by, Cost,
- * Tokens, Duration, Session, Fixes, Epic, Requested-by, Approved-by, Attested, Co-authored-by.
- * Fixes also writes Refs. A key the machine does not know is kept and has no effect; a key no layer
- * sets has its default (every key on, Cost off). Record trailers (Made-by, Session, Fixes, Epic,
- * Requested-by, Approved-by, Attested, Co-authored-by): on is tighter. Spend trailers (Cost,
- * Tokens, Duration): off is tighter. Its rules in policy/effective are commitTrailers.<key>.
+ * Tokens, Duration, Session, Fixes, Epic, Requested-by, Approved-by, Co-authored-by. Fixes also
+ * writes Refs. A key the machine does not know is kept and has no effect; a key no layer sets has
+ * its default (every key on, Cost off). Record trailers (Made-by, Session, Fixes, Epic,
+ * Requested-by, Approved-by, Co-authored-by): on is tighter. Spend trailers (Cost, Tokens,
+ * Duration): off is tighter. Its rules in policy/effective are commitTrailers.<key>.
  */
 export type CommitTrailers = Record<string, CommitTrailerValue>;
 
@@ -11407,7 +11407,6 @@ export type PolicyRuleName =
   | "commitTrailers.Epic"
   | "commitTrailers.Requested-by"
   | "commitTrailers.Approved-by"
-  | "commitTrailers.Attested"
   | "commitTrailers.Co-authored-by";
 
 /**
