@@ -89,22 +89,7 @@ func runAdmin(ctx context.Context, a hosted.Admin, args []string, out io.Writer)
 	}
 	switch verb {
 	case "invite":
-		days := 0
-		if len(rest) > 0 {
-			n, err := strconv.Atoi(rest[0])
-			if err != nil || n <= 0 {
-				return errUsage
-			}
-			days = n
-		}
-		if a.Domain == "" {
-			return errors.New("say where the pages are: AGENTS_HOSTED_DOMAIN")
-		}
-		link, err := a.Invite(ctx, time.Duration(days)*24*time.Hour)
-		if err == nil {
-			fmt.Fprintln(out, link)
-		}
-		return err
+		return adminInvite(ctx, a, rest, out)
 	case "allow", "admit":
 		if err := need(1); err != nil {
 			return err
@@ -116,34 +101,9 @@ func runAdmin(ctx context.Context, a hosted.Admin, args []string, out io.Writer)
 		}
 		return a.Disallow(ctx, rest[0])
 	case "waitlist":
-		list, err := a.Waitlist(ctx)
-		if err != nil {
-			return err
-		}
-		tw := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
-		fmt.Fprintln(tw, "PLACE\tSIGN-IN\tLOGIN\tSINCE\tWHY")
-		for i, w := range list {
-			fmt.Fprintf(tw, "%d\t%s\t%s\t%s\t%s\n", i+1, w.SignIn, w.SignIn.Login, w.At.Format(time.RFC3339), w.Why)
-		}
-		return tw.Flush()
+		return adminWaitlist(ctx, a, out)
 	case "accounts":
-		list, err := a.Accounts(ctx)
-		if err != nil {
-			return err
-		}
-		tw := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
-		fmt.Fprintln(tw, "ACCOUNT\tSIGN-IN\tLOGIN\tPLAN\tSTATE\tCREATED")
-		for _, acc := range list {
-			plan, state := acc.Plan, "active"
-			if plan == "" {
-				plan = "free"
-			}
-			if acc.Suspended != nil {
-				state = "suspended: " + acc.Suspended.Reason
-			}
-			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", acc.ID, acc.SignIn, acc.SignIn.Login, plan, state, acc.Created.Format(time.RFC3339))
-		}
-		return tw.Flush()
+		return adminAccounts(ctx, a, out)
 	case "suspend":
 		if err := need(2); err != nil {
 			return err
@@ -158,52 +118,14 @@ func runAdmin(ctx context.Context, a hosted.Admin, args []string, out io.Writer)
 		if err := need(1); err != nil {
 			return err
 		}
-		user, err := a.Block(ctx, rest[0], strings.Join(rest[1:], " "))
-		if err == nil && user.Provider == "" {
-			fmt.Fprintln(out, "blocked that email")
-		} else if err == nil {
-			fmt.Fprintf(out, "blocked %s\n", user)
-		}
-		return err
+		return adminBlock(ctx, a, rest, out)
 	case "plan":
 		if err := need(2); err != nil {
 			return err
 		}
 		return a.SetPlan(ctx, rest[0], rest[1])
 	case "backup":
-		// Kept bounded unless the operator says otherwise (#3648).
-		keep := backupKeepDefault
-		if len(rest) > 0 && (rest[0] == "--keep" || strings.HasPrefix(rest[0], "--keep=")) {
-			n := strings.TrimPrefix(rest[0], "--keep=")
-			rest = rest[1:]
-			if n == "--keep" {
-				if len(rest) == 0 {
-					return errUsage
-				}
-				n, rest = rest[0], rest[1:]
-			}
-			k, err := strconv.Atoi(n)
-			if err != nil || k < 0 {
-				return errUsage
-			}
-			keep = k
-		}
-		if err := need(1); err != nil {
-			return err
-		}
-		done, err := a.Backup(ctx, rest[0], rest[1:])
-		for _, id := range done {
-			fmt.Fprintln(out, "backed up "+id)
-		}
-		if err != nil || keep == 0 {
-			return err
-		}
-		// Only after a whole backup, so a failed one never costs an older one.
-		gone, err := hosted.PruneBackups(rest[0], keep)
-		for _, p := range gone {
-			fmt.Fprintln(out, "deleted "+p)
-		}
-		return err
+		return adminBackup(ctx, a, rest, out)
 	case "delete":
 		if err := need(1); err != nil {
 			return err
@@ -213,11 +135,7 @@ func runAdmin(ctx context.Context, a hosted.Admin, args []string, out io.Writer)
 		if err := need(2); err != nil {
 			return err
 		}
-		n, err := a.Restore(ctx, rest[0], rest[1])
-		if err == nil {
-			fmt.Fprintf(out, "restored %s: %d records\n", rest[1], n)
-		}
-		return err
+		return adminRestore(ctx, a, rest, out)
 	case "unblock":
 		if err := need(1); err != nil {
 			return err
@@ -229,4 +147,125 @@ func runAdmin(ctx context.Context, a hosted.Admin, args []string, out io.Writer)
 		return err
 	}
 	return errUsage
+}
+
+// adminInvite prints a new invite link: invite [days].
+func adminInvite(ctx context.Context, a hosted.Admin, rest []string, out io.Writer) error {
+	days := 0
+	if len(rest) > 0 {
+		n, err := strconv.Atoi(rest[0])
+		if err != nil || n <= 0 {
+			return errUsage
+		}
+		days = n
+	}
+	if a.Domain == "" {
+		return errors.New("say where the pages are: AGENTS_HOSTED_DOMAIN")
+	}
+	link, err := a.Invite(ctx, time.Duration(days)*24*time.Hour)
+	if err == nil {
+		fmt.Fprintln(out, link)
+	}
+	return err
+}
+
+// adminWaitlist prints everyone waiting, in order.
+func adminWaitlist(ctx context.Context, a hosted.Admin, out io.Writer) error {
+	list, err := a.Waitlist(ctx)
+	if err != nil {
+		return err
+	}
+	tw := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
+	fmt.Fprintln(tw, "PLACE\tSIGN-IN\tLOGIN\tSINCE\tWHY")
+	for i, w := range list {
+		fmt.Fprintf(tw, "%d\t%s\t%s\t%s\t%s\n", i+1, w.SignIn, w.SignIn.Login, w.At.Format(time.RFC3339), w.Why)
+	}
+	return tw.Flush()
+}
+
+// adminAccounts prints every account.
+func adminAccounts(ctx context.Context, a hosted.Admin, out io.Writer) error {
+	list, err := a.Accounts(ctx)
+	if err != nil {
+		return err
+	}
+	tw := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
+	fmt.Fprintln(tw, "ACCOUNT\tSIGN-IN\tLOGIN\tPLAN\tSTATE\tCREATED")
+	for _, acc := range list {
+		plan, state := acc.Plan, "active"
+		if plan == "" {
+			plan = "free"
+		}
+		if acc.Suspended != nil {
+			state = "suspended: " + acc.Suspended.Reason
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", acc.ID, acc.SignIn, acc.SignIn.Login, plan, state, acc.Created.Format(time.RFC3339))
+	}
+	return tw.Flush()
+}
+
+// adminBlock blocks a sign-in or an email: block <sign-in> [why].
+func adminBlock(ctx context.Context, a hosted.Admin, rest []string, out io.Writer) error {
+	user, err := a.Block(ctx, rest[0], strings.Join(rest[1:], " "))
+	if err == nil && user.Provider == "" {
+		fmt.Fprintln(out, "blocked that email")
+	} else if err == nil {
+		fmt.Fprintf(out, "blocked %s\n", user)
+	}
+	return err
+}
+
+// backupKeep takes backup's --keep N (or --keep=N) off the front of rest, and is the
+// number to keep and the arguments after it.
+func backupKeep(rest []string) (int, []string, error) {
+	// Kept bounded unless the operator says otherwise (#3648).
+	if len(rest) == 0 || (rest[0] != "--keep" && !strings.HasPrefix(rest[0], "--keep=")) {
+		return backupKeepDefault, rest, nil
+	}
+	n := strings.TrimPrefix(rest[0], "--keep=")
+	rest = rest[1:]
+	if n == "--keep" {
+		if len(rest) == 0 {
+			return 0, nil, errUsage
+		}
+		n, rest = rest[0], rest[1:]
+	}
+	k, err := strconv.Atoi(n)
+	if err != nil || k < 0 {
+		return 0, nil, errUsage
+	}
+	return k, rest, nil
+}
+
+// adminBackup copies accounts into a folder: backup [--keep N] <dir> [account…].
+func adminBackup(ctx context.Context, a hosted.Admin, rest []string, out io.Writer) error {
+	keep, rest, err := backupKeep(rest)
+	if err != nil {
+		return err
+	}
+	if len(rest) < 1 {
+		return errUsage
+	}
+	done, err := a.Backup(ctx, rest[0], rest[1:])
+	for _, id := range done {
+		fmt.Fprintln(out, "backed up "+id)
+	}
+	if err != nil || keep == 0 {
+		return err
+	}
+	// Only after a whole backup, so a failed one never costs an older one.
+	gone, err := hosted.PruneBackups(rest[0], keep)
+	for _, p := range gone {
+		fmt.Fprintln(out, "deleted "+p)
+	}
+	return err
+}
+
+// adminRestore puts one account back from a folder: restore <dir> <account>.
+func adminRestore(ctx context.Context, a hosted.Admin, rest []string, out io.Writer) error {
+	n, err := a.Restore(ctx, rest[0], rest[1])
+	if err == nil {
+		fmt.Fprintf(out, "restored %s: %d records\n", rest[1], n)
+	}
+	return err
 }
