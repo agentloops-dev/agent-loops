@@ -29,10 +29,6 @@ type noter interface {
 	notes() <-chan controllink.Note
 }
 
-type linkSession struct{ *controllink.Session }
-
-func (l linkSession) notes() <-chan controllink.Note { return l.Notes }
-
 // terminal is where the chat is drawn and read: stdout and stdin, and whether each is a
 // terminal. A test gives its own.
 type terminal struct {
@@ -53,11 +49,12 @@ type chatArgs struct {
 
 // chat is loops, loops "…", loops -c and loops -r (wireframes 1 to 3).
 func chat(ctx context.Context, o options, a chatArgs) error {
-	s, p, err := connect(ctx, o)
+	s, p, err := connect(ctx, &o)
 	if err != nil {
 		return err
 	}
-	defer s.Close()
+	l := newLink(s, o)
+	defer l.Close()
 	if p.folder == "" && a.resume == "" {
 		return notInFolder(p)
 	}
@@ -66,7 +63,7 @@ func chat(ctx context.Context, o options, a chatArgs) error {
 		return err
 	}
 	defer restore()
-	err = runChat(ctx, linkSession{s}, p, o, a, t)
+	err = runChat(ctx, l, p, o, a, t)
 	if t.raw {
 		_, _ = io.WriteString(t.out, "\x1b[?2004l")
 	}
@@ -130,7 +127,8 @@ type live struct {
 	working bool      // the turn of sent began
 	stopAt  time.Time // when ^C last stopped the turn: a second ^C soon after leaves
 	frame   int
-	hinted  bool // the keys' line is shown
+	hinted  bool  // the keys' line is shown
+	next    int64 // the index after the last entry read, where a relink reads from (#6478)
 }
 
 func runChat(ctx context.Context, c noter, p place, o options, a chatArgs, t terminal) error {
@@ -341,6 +339,7 @@ func (f *live) attach(ctx context.Context, a wire.Agent, others int) error {
 	if page.FirstIndex > 0 {
 		f.print(st.paint(roleQuiet, fmt.Sprintf("  … %d earlier entries", page.FirstIndex)))
 	}
+	f.next = page.FirstIndex + int64(len(page.Entries))
 	for _, e := range page.Entries {
 		f.print(f.tr.entry(e)...)
 	}
@@ -352,17 +351,24 @@ func (f *live) attach(ctx context.Context, a wire.Agent, others int) error {
 	return nil
 }
 
-// pending reads the cards that wait for this session, as it attaches.
-func (f *live) pending(ctx context.Context) {
+// pending reads the cards that wait for this session, as it attaches. all says both
+// lists were read, so waiting holds every card that waits.
+func (f *live) pending(ctx context.Context) (waiting map[wire.UUID]bool, all bool) {
+	waiting, all = map[wire.UUID]bool{}, true
 	if r, err := f.c.Call(ctx, f.host(), "permissions/pending", wire.Empty{}); err == nil {
 		var list []wire.PermissionRequest
 		if json.Unmarshal(r, &list) == nil {
 			for i := range list {
 				if sameUUID(list[i].AgentID, f.id) {
 					f.ask(&card{permission: &list[i]})
+					waiting[list[i].ID] = true
 				}
 			}
+		} else {
+			all = false
 		}
+	} else {
+		all = false
 	}
 	if r, err := f.c.Call(ctx, f.host(), "elicitations/pending", wire.Empty{}); err == nil {
 		var list []wire.ElicitationRequest
@@ -370,10 +376,16 @@ func (f *live) pending(ctx context.Context) {
 			for i := range list {
 				if sameUUID(list[i].AgentID, f.id) {
 					f.ask(&card{elicitation: &list[i]})
+					waiting[list[i].ID] = true
 				}
 			}
+		} else {
+			all = false
 		}
+	} else {
+		all = false
 	}
+	return waiting, all
 }
 
 func sameUUID(a, b wire.UUID) bool { return strings.EqualFold(string(a), string(b)) }
@@ -440,6 +452,11 @@ func (f *live) send(ctx context.Context, text string) error {
 		return f.start(ctx, text)
 	}
 	if _, err := f.c.Call(ctx, f.host(), "agents/prompt", wire.PromptRequest{AgentID: f.id, Text: text, Attachments: []wire.Attachment{}, From: wire.PromptOriginPerson}); err != nil {
+		if lost(err) {
+			// The notes end too, and the loop dials again; the person sends it again then.
+			f.print(indent + f.t.st.paint(roleFailure, "Not sent: the link to the control plane dropped. Send it again once it is back."))
+			return nil
+		}
 		return &exit{code: exitError, msg: fmt.Sprintf("Could not send it: %v", err)}
 	}
 	if !f.sent {
@@ -588,8 +605,13 @@ func (f *live) loop(ctx context.Context) error {
 			return ctx.Err()
 		case n, ok := <-notes:
 			if !ok {
-				f.sc.end()
-				return &exit{code: exitError, msg: "The control plane closed the connection. The session goes on: loops -r " + f.short()}
+				ended, err := f.relink(ctx)
+				if err != nil || ended {
+					f.sc.end()
+					return err
+				}
+				notes = f.c.notes()
+				continue
 			}
 			if f.note(n) {
 				f.sc.end()
@@ -720,6 +742,9 @@ func (f *live) note(n controllink.Note) bool {
 		if json.Unmarshal(n.Params, &e) != nil || !sameUUID(e.AgentID, f.id) {
 			return false
 		}
+		if e.Index != nil {
+			f.next = max(f.next, *e.Index+1)
+		}
 		f.print(f.tr.entry(e.Entry)...)
 	case wire.NotifyAgentPermission.Name:
 		var p wire.PermissionNotification
@@ -779,4 +804,75 @@ func (f *live) changed(a wire.Agent) bool {
 		return f.t.keys == nil
 	}
 	return false
+}
+
+// relink is a dropped link in the chat (#6478): say "reconnecting…", dial again for up to
+// relinkFor, show the session again, and read what came while it was away: the entries
+// from the last index read (the transcript shows each entry once), the session's state
+// and its cards. ended says the turn ended while it was away and there is no prompt.
+func (f *live) relink(ctx context.Context) (ended bool, err error) {
+	rl, ok := f.c.(relinker)
+	if ok {
+		err = rl.relink(ctx, relinkFor, func() {
+			f.print(indent + f.t.st.paint(roleWarning, "Lost the link to the control plane; reconnecting…"))
+		})
+	}
+	if !ok || err != nil {
+		return false, lostForGood(f.o.controlName, relinkFor, f.short(), err)
+	}
+	if f.id != "" {
+		// The host joins the control plane again after it, so it may be offline a while.
+		hctx, cancel := context.WithTimeout(ctx, relinkFor)
+		id := f.id
+		err := waitHost(hctx, f.c, f.host(), wire.PresenceReport{Active: true, Showing: &id})
+		cancel()
+		if lost(err) || hostOffline(err) {
+			return false, lostForGood(f.p.machineName(), relinkFor, f.short(), err)
+		}
+		if ended, err = f.catchUp(ctx); err != nil {
+			return false, err
+		}
+	}
+	f.print(indent + f.t.st.paint(roleDone, "✓ reconnected"))
+	return ended, nil
+}
+
+// catchUp reads the entries from f.next on, the session's record and its cards.
+func (f *live) catchUp(ctx context.Context) (bool, error) {
+	for {
+		page, err := readFrom(ctx, f.c, f.host(), f.id, f.next)
+		if err != nil {
+			return false, unreachable(f.p.machineName(), err)
+		}
+		for _, e := range page.Entries {
+			f.print(f.tr.entry(e)...)
+		}
+		f.next = page.FirstIndex + int64(len(page.Entries))
+		if len(page.Entries) == 0 || f.next >= page.Total {
+			break
+		}
+	}
+	waiting, all := f.pending(ctx)
+	if all {
+		for _, c := range append([]*card(nil), f.cards...) {
+			if !waiting[c.id()] {
+				f.answered(c.id(), false)
+			}
+		}
+	}
+	id := f.id
+	r, err := f.c.Call(ctx, f.host(), "agents/list", wire.ListRequest{AgentID: &id, Lean: true, IncludeArchived: true})
+	if err != nil {
+		return false, unreachable(f.p.machineName(), err)
+	}
+	var list []wire.Agent
+	if err := json.Unmarshal(r, &list); err != nil {
+		return false, err
+	}
+	for _, a := range list {
+		if sameUUID(a.ID, f.id) {
+			return f.changed(a), nil
+		}
+	}
+	return false, nil
 }

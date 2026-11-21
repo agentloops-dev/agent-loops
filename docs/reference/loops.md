@@ -55,7 +55,7 @@ name one by its id.
 | `--json` | `-p`, `--detach` | One JSON object on each line (below). |
 | `--on-ask=wait` | `-p` | When a card waits, waits for an answer on any client. This is the default. |
 | `--on-ask=fail` | `-p` | When a card waits, stops with exit code 3. |
-| `--timeout <duration>` | `-p` | Stops waiting after this time, as `90s` or `10m`, with exit code 4. The time starts when the session starts. The session continues. |
+| `--timeout <duration>` | `-p` | Stops waiting after this time, as `90s` or `10m`, with exit code 4. The time starts when the session starts. The session continues. It is also the longest time that `loops` tries to connect again (exit code 6). |
 
 `--json`, `--on-ask` and `--timeout` without `-p` or `--detach` are an error. `-p` always
 starts a new session: it does not take `-c` or `-r`.
@@ -84,6 +84,18 @@ Other errors keep their own words. `--debug` adds the full error.
 | 3 | A card waits for an answer, with `--on-ask=fail`. |
 | 4 | The time of `--timeout` went by. |
 | 5 | This terminal is not paired, or not with the control plane of `--control`. |
+| 6 | The connection to the control plane, or from it to the session's machine, was lost and did not come back (below). The session continues. |
+
+## When the connection is lost
+
+When the connection to the control plane is lost during a turn, the chat and print mode
+write "reconnecting…" (print mode on standard error) and connect again. The time between
+two tries starts at 0.25 seconds and doubles, to 5 seconds at most. When the machine of the
+session is offline, as it is for a short time after the control plane starts again, they
+wait for it in the same way. They try for the time of `--timeout`, or for 1 minute without
+it. When the connection comes back, they read the transcript from the first entry that
+they did not read, so no entry is lost and no entry shows two times. When it does not come
+back, `loops` stops with exit code 6.
 
 ## Print mode's JSON
 
@@ -104,7 +116,8 @@ The `state` of `end`:
 | `stopped` | 1 | The session stopped with an error. `reason` says why. |
 | `needs-you` | 3 | A card waits, with `--on-ask=fail`. `card` says which. |
 | `timed-out` | 4 | The time of `--timeout` went by. |
-| `gone` | 1 | The connection to the control plane or the machine ended, or the session was deleted. |
+| `lost` | 6 | The connection was lost and did not come back. |
+| `gone` | 1 | The machine refused a read, or the session was deleted. |
 
 With `--detach --json`, `loops` writes only the `session` line. Without `--json`, `--detach`
 writes only the id. When a command does not end with 0, its message is on standard error.

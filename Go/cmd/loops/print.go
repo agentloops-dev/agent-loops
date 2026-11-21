@@ -91,15 +91,16 @@ func printMode(ctx context.Context, w io.Writer, o options, rest []string) error
 	if err != nil {
 		return err
 	}
-	s, p, err := connect(ctx, o)
+	s, p, err := connect(ctx, &o)
 	if err != nil {
 		return err
 	}
-	defer s.Close()
+	l := newLink(s, o)
+	defer l.Close()
 	if p.folder == "" {
 		return notInFolder(p)
 	}
-	return startAndFollow(ctx, w, s, s.Notes, p, o, prompt)
+	return startAndFollow(ctx, w, l, l.notes(), p, o, prompt)
 }
 
 // startAndFollow starts the session and, unless --detach, follows its turn to the end.
@@ -121,7 +122,11 @@ func startAndFollow(ctx context.Context, w io.Writer, c caller, notes <-chan con
 	if _, err := c.Call(ctx, string(p.machine.ID), "presence/report", wire.PresenceReport{Active: false, Showing: &id}); err != nil {
 		fmt.Fprintf(os.Stderr, "loops: the host may not send this session's entries as they come: %v\n", err)
 	}
-	f := &follow{c: c, host: string(p.machine.ID), id: id, out: out, onAsk: o.onAsk}
+	f := &follow{c: c, host: string(p.machine.ID), id: id, out: out, onAsk: o.onAsk, control: o.controlName, relinkFor: relinkFor}
+	f.rl, _ = c.(relinker)
+	if o.timeout > 0 {
+		f.relinkFor = o.timeout
+	}
 	fctx := ctx
 	if o.timeout > 0 {
 		var cancel context.CancelFunc
@@ -165,6 +170,11 @@ type follow struct {
 	out   *printer
 	onAsk string
 
+	// rl dials again when the link drops, for up to relinkFor (#6478); nil: exit 6 at once.
+	rl        relinker
+	relinkFor time.Duration
+	control   string // the control plane's host name, for the words
+
 	next     int64  // the index of the first entry not read
 	card     string // the open card's words, from its permissionAsked or elicitationAsked
 	toldCard string // the card the person was last told of, so each is told once
@@ -176,20 +186,68 @@ func (f *follow) run(ctx context.Context, notes <-chan controllink.Note, timeout
 	state := true
 	for {
 		done, err := f.check(ctx, state)
-		if done || err != nil && !errors.Is(err, context.DeadlineExceeded) {
+		if done {
+			return err
+		}
+		away := lost(err) || hostOffline(err)
+		if err != nil && !away && !errors.Is(err, context.DeadlineExceeded) {
 			return err
 		}
 		if ctx.Err() != nil {
 			return f.timedOut(timeout)
+		}
+		if away {
+			if notes, err = f.relink(ctx, notes, err); err != nil {
+				return err
+			}
+			state = true
+			continue
 		}
 		var ok bool
 		if ok, state = f.wait(ctx, notes, tick.C); !ok {
 			if ctx.Err() != nil {
 				return f.timedOut(timeout)
 			}
-			return f.end("gone", exitError, "The control plane closed the connection. The session goes on: loops -r "+short(f.id))
+			// The notes ended: the link dropped.
+			if notes, err = f.relink(ctx, notes, controllink.ErrLinkLost); err != nil {
+				return err
+			}
+			state = true
 		}
 	}
+}
+
+// relink is a dropped link (cause is controllink.ErrLinkLost) or a host gone offline
+// (#6478): say "reconnecting…", dial again when the link dropped, and show the session
+// again until its host answers, all within relinkFor, so its entries come here; the next
+// check reads the transcript from f.next, so no entry is lost or printed twice. A link
+// that does not come back is exit 6.
+func (f *follow) relink(ctx context.Context, notes <-chan controllink.Note, cause error) (<-chan controllink.Note, error) {
+	until := time.Now().Add(f.relinkFor)
+	fmt.Fprintln(os.Stderr, "loops: lost the link to the session's host; reconnecting…")
+	err := cause
+	if !hostOffline(cause) && f.rl != nil {
+		if err = f.rl.relink(ctx, f.relinkFor, func() {}); err == nil {
+			notes = f.rl.notes()
+		}
+	}
+	if err == nil || hostOffline(err) {
+		hctx, cancel := context.WithDeadline(ctx, until)
+		id := f.id
+		err = waitHost(hctx, f.c, f.host, wire.PresenceReport{Active: false, Showing: &id})
+		cancel()
+		if err != nil && !lost(err) && !hostOffline(err) {
+			fmt.Fprintf(os.Stderr, "loops: the host may not send this session's entries as they come: %v\n", err)
+			err = nil
+		}
+	}
+	if err != nil {
+		f.out.flush()
+		e := lostForGood(f.control, f.relinkFor, short(f.id), err)
+		return nil, f.end("lost", exitLinkLost, e.Error())
+	}
+	fmt.Fprintln(os.Stderr, "loops: reconnected.")
+	return notes, nil
 }
 
 // wait is until the notes about this session have come for gather since the first, a
@@ -255,23 +313,35 @@ func (f *follow) check(ctx context.Context, state bool) (bool, error) {
 // read prints the entries from next on, a page at a time.
 func (f *follow) read(ctx context.Context) error {
 	for {
-		from := f.next
-		r, err := f.c.Call(ctx, f.host, "agents/transcript", wire.TranscriptRequest{AgentID: f.id, From: &from, Limit: pageLimit})
+		page, err := readFrom(ctx, f.c, f.host, f.id, f.next)
 		if err != nil {
 			return f.unreachable(err)
-		}
-		var page wire.TranscriptPage
-		if err := json.Unmarshal(r, &page); err != nil {
-			return err
 		}
 		for _, e := range page.Entries {
 			f.take(e)
 		}
 		f.next = page.FirstIndex + int64(len(page.Entries))
-		if len(page.Entries) < pageLimit || f.next >= page.Total {
+		if len(page.Entries) == 0 || f.next >= page.Total {
 			return nil
 		}
 	}
+}
+
+// readFrom is the page of a session's transcript that begins at from. The daemon gives
+// the last limit entries before before, and from only bounds them below; so a read with
+// from alone skipped the middle when more than a page had come since (#6478): the page is
+// [from, from+pageLimit).
+func readFrom(ctx context.Context, c caller, host string, id wire.UUID, from int64) (wire.TranscriptPage, error) {
+	before := from + pageLimit
+	r, err := c.Call(ctx, host, "agents/transcript", wire.TranscriptRequest{AgentID: id, From: &from, Before: &before, Limit: pageLimit})
+	if err != nil {
+		return wire.TranscriptPage{}, err
+	}
+	var page wire.TranscriptPage
+	if err := json.Unmarshal(r, &page); err != nil {
+		return wire.TranscriptPage{}, err
+	}
+	return page, nil
 }
 
 // take is one entry: the printer keeps it, and a card opens or closes.
@@ -382,7 +452,7 @@ func (f *follow) end(state string, code int, msg string, extra ...string) error 
 }
 
 func (f *follow) unreachable(err error) error {
-	if errors.Is(err, context.DeadlineExceeded) {
+	if errors.Is(err, context.DeadlineExceeded) || lost(err) || hostOffline(err) {
 		return err
 	}
 	f.out.flush()

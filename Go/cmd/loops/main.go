@@ -17,7 +17,7 @@
 //	loops --detach "…"       start a session here, print its id and exit
 //
 // Exit codes (Stage 3): 0 done; 1 an error; 2 not in a folder; 3 a card waits and
-// --on-ask=fail; 4 timed out; 5 not paired.
+// --on-ask=fail; 4 timed out; 5 not paired; 6 the link was lost and did not come back.
 package main
 
 import (
@@ -48,6 +48,7 @@ const (
 	exitAsked    = 3 // a card waits and --on-ask=fail: print mode (#6447)
 	exitTimedOut = 4 // --timeout: print mode (#6447)
 	exitNotPair  = 5
+	exitLinkLost = 6 // the link to the control plane dropped and did not come back (#6478)
 )
 
 // exit is an error with the code the program ends with and the words it says.
@@ -119,6 +120,7 @@ var exitCodes = []struct {
 }{
 	{exitOK, "done"}, {exitError, "an error"}, {exitNoFolder, "not in a folder"},
 	{exitAsked, "a card waits for an answer (--on-ask=fail)"}, {exitTimedOut, "timed out"}, {exitNotPair, "not paired"},
+	{exitLinkLost, "lost the link to the control plane, and it did not come back"},
 }
 
 func usageText() string {
@@ -160,6 +162,10 @@ Print mode (-p, --detach):
   --on-ask=wait|fail       a card waits: wait for an answer on any client (the default),
                            or end with exit 3; loops never answers a card itself
   --timeout <duration>     end with exit 4 after this long (as 10m); the session goes on
+
+When the link to the control plane drops, loops says "reconnecting…" and dials again for
+up to --timeout (or a minute), then goes on from the last entry it read. A link that does
+not come back ends it with exit 6; the session goes on.
 `
 
 // options are the flags, which may come before or after the command.
@@ -288,6 +294,16 @@ func isCommand(word string) bool {
 
 // dial is the paired control plane's socket; it keeps a key the control plane rotated.
 func dial(ctx context.Context, o *options) (*controllink.Session, error) {
+	s, err := dialLink(ctx, o)
+	var e *exit
+	if err != nil && !errors.As(err, &e) {
+		return nil, unreachable(o.controlName, err)
+	}
+	return s, err
+}
+
+// dialLink is dial with the dial's own error, as a relink says it (#6478).
+func dialLink(ctx context.Context, o *options) (*controllink.Session, error) {
 	h, err := readHosts()
 	if err != nil {
 		return nil, &exit{code: exitError, msg: err.Error()}
@@ -303,7 +319,7 @@ func dial(ctx context.Context, o *options) (*controllink.Session, error) {
 	key := string(m.ControlKey)
 	s, err := controllink.DialClient(ctx, m)
 	if err != nil {
-		return nil, unreachable(o.controlName, err)
+		return nil, err
 	}
 	if string(m.ControlKey) != key {
 		if err := h.write(); err != nil {
@@ -314,8 +330,9 @@ func dial(ctx context.Context, o *options) (*controllink.Session, error) {
 }
 
 // connect dials and finds the place: the machine and the folder of the current directory.
-func connect(ctx context.Context, o options) (*controllink.Session, place, error) {
-	s, err := dial(ctx, &o)
+// It sets o.controlName, for the words.
+func connect(ctx context.Context, o *options) (*controllink.Session, place, error) {
+	s, err := dial(ctx, o)
 	if err != nil {
 		return nil, place{}, err
 	}
@@ -324,7 +341,7 @@ func connect(ctx context.Context, o options) (*controllink.Session, place, error
 		s.Close()
 		return nil, place{}, err
 	}
-	p, err := locate(ctx, s, o, dir)
+	p, err := locate(ctx, s, *o, dir)
 	if err != nil {
 		s.Close()
 		return nil, place{}, err
@@ -414,7 +431,7 @@ func status(ctx context.Context, w io.Writer, o options) error {
 			}
 		}
 	}
-	s, p, err := connect(ctx, o)
+	s, p, err := connect(ctx, &o)
 	if err != nil {
 		return err
 	}
@@ -429,7 +446,7 @@ func status(ctx context.Context, w io.Writer, o options) error {
 }
 
 func ls(ctx context.Context, w io.Writer, o options) error {
-	s, p, err := connect(ctx, o)
+	s, p, err := connect(ctx, &o)
 	if err != nil {
 		return err
 	}

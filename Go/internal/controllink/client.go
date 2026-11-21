@@ -171,7 +171,11 @@ func (s *Session) Call(ctx context.Context, host, method string, params any) (js
 	s.waiting[id] = w
 	s.mu.Unlock()
 	if err := s.l.Write(ctx, line); err != nil {
-		return nil, err
+		s.forget(id)
+		if ctx.Err() != nil {
+			return nil, err
+		}
+		return nil, fmt.Errorf("%w (%v)", ErrLinkLost, err)
 	}
 	select {
 	case raw := <-w:
@@ -185,12 +189,24 @@ func (s *Session) Call(ctx context.Context, host, method string, params any) (js
 		}
 		return r.Result, nil
 	case <-s.done:
-		return nil, errors.New("the control plane closed the connection")
+		return nil, ErrLinkLost
 	case <-ctx.Done():
+		s.forget(id)
 		return nil, ctx.Err()
 	case <-time.After(120 * time.Second):
+		s.forget(id)
 		return nil, errors.New("no answer in 120 s")
 	}
+}
+
+// ErrLinkLost is a call that failed because the socket to the control plane ended, not
+// because its host refused it: a client may dial again and read again (#6478).
+var ErrLinkLost = errors.New("the control plane closed the connection")
+
+func (s *Session) forget(id int64) {
+	s.mu.Lock()
+	delete(s.waiting, id)
+	s.mu.Unlock()
 }
 
 func (s *Session) Close() { s.l.Close() }

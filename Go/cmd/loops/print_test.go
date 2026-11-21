@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -51,9 +52,7 @@ func hostFake(t *testing.T, steps []step) (*fake, *wire.StartRequest) {
 	f.answer["presence/report"] = func(string, any) (any, error) { return wire.Empty{}, nil }
 	f.answer["agents/transcript"] = func(_ string, params any) (any, error) {
 		all = steps[min(at, len(steps)-1)].entries
-		from := *params.(wire.TranscriptRequest).From
-		end := min(int(from)+pageLimit, len(all))
-		return wire.TranscriptPage{FirstIndex: from, Total: int64(len(all)), Entries: all[from:end]}, nil
+		return daemonPage(all, params.(wire.TranscriptRequest)), nil
 	}
 	f.answer["agents/list"] = func(string, any) (any, error) {
 		s := steps[min(at, len(steps)-1)]
@@ -65,6 +64,22 @@ func hostFake(t *testing.T, steps []step) (*fake, *wire.StartRequest) {
 		return []wire.Agent{a}, nil
 	}
 	return f, &started
+}
+
+// daemonPage is a transcript page as agentsd's transcript gives it: the last limit entries
+// before before (or the end), no earlier than from.
+func daemonPage(all []wire.TranscriptEntry, r wire.TranscriptRequest) wire.TranscriptPage {
+	total := int64(len(all))
+	end := total
+	if r.Before != nil {
+		end = min(*r.Before, total)
+	}
+	limit := r.Limit
+	if r.From != nil {
+		limit = max(0, min(limit, end-*r.From))
+	}
+	start := end - min(limit, end)
+	return wire.TranscriptPage{FirstIndex: start, Total: total, Entries: all[start:end]}
 }
 
 var here = place{machine: wire.ControlMachine{ID: "h1", Name: "Alex's MacBook Pro"}, folder: "file:///src/agent-loops/"}
@@ -251,5 +266,23 @@ func TestPrintModeReadsOnceForABurstOfEntryNotes(t *testing.T) {
 	}
 	if reads > 3 || lists > 2 {
 		t.Fatalf("1001 notes, %d transcript reads and %d record reads: %v", reads, lists, f.calls)
+	}
+}
+
+// More than a page of entries since the last read: print mode reads them forward from the
+// first not read, so none in the middle is skipped. The daemon's page with from alone is
+// the last page, which skipped 57 lines of a reply on a relink (#6478).
+func TestPrintModeReadsEveryEntryWhenMoreThanAPageCame(t *testing.T) {
+	var all []wire.TranscriptEntry
+	want := ""
+	for i := range 3*pageLimit + 7 {
+		text := fmt.Sprintf("%d ", i)
+		all = append(all, chunk("m1", text))
+		want += text
+	}
+	f, _ := hostFake(t, []step{{state: wire.AgentStateRunning}, {entries: all, state: wire.AgentStateFinished}})
+	out, err := printRun(t, f, options{print: true})
+	if err != nil || out != strings.TrimSpace(want)+"\n" {
+		t.Fatalf("got %q %v", out, err)
 	}
 }
