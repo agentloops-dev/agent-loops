@@ -15,6 +15,15 @@
 #   free-disk.sh simulators [--dry-run]   erase the walk simulators that are shut down
 #   free-disk.sh colima [--dry-run] [--days N]  Colima data disks no instance has
 #   free-disk.sh caches [--dry-run]    uv's and npm's package caches
+#   free-disk.sh hidden                what du cannot see: fseventsd's logs, local snapshots
+#
+# hidden: about 120 GB of the Data volume was not visible to du on 2026-11-20 (#5725).
+# The main suspect is /System/Volumes/Data/.fseventsd, the file-event logs that only root
+# can read: it had about 137,000 log files, and builds add to them. On APFS a folder's
+# size is 32 bytes for each entry, so its stat size gives the number of files with no
+# sudo. This prints that number, the Time Machine local snapshots, and, when `sudo -n`
+# works (#6426), the true size of the root-only folders. It deletes nothing: clearing
+# .fseventsd needs root and a restart, so it is Alex's step (the free-disk-space skill).
 #
 # None of them needs the app or its session list (#5722): each decides by what is on disk
 # and what runs, so a person or any agent can run it.
@@ -101,6 +110,25 @@ status() {
 	else
 		echo "free $(gb "$avail") GB, target $(gb "$target") GB ($pct%): $(gb $((target - avail))) GB short"
 		return 1
+	fi
+}
+
+hidden() {
+	local data=/System/Volumes/Data ev entries snaps
+	ev=$data/.fseventsd
+	if [ -d "$ev" ]; then
+		entries=$(($(stat -f %z "$ev") / 32))
+		echo "fseventsd: about $entries files in $ev (root only)"
+	fi
+	snaps=$(tmutil listlocalsnapshots / 2>/dev/null | grep -c 'com.apple' || true)
+	echo "local snapshots: $snaps"
+	if sudo -n true 2>/dev/null; then
+		sudo -n du -xsk "$ev" "$data/.Spotlight-V100" "$data/.DocumentRevisions-V100" \
+			/private/var/db 2>/dev/null | while read -r k path; do
+			echo "$(gb "$k") GB $path"
+		done
+	else
+		echo "root-only folders: not measured (needs sudo; #6426)"
 	fi
 }
 
@@ -491,6 +519,7 @@ coredevice() {
 
 case ${1:-} in
 status) status ;;
+hidden) hidden ;;
 chromes) shift; chromes "$@" ;;
 xcode) xcode ;;
 deriveddata) shift; deriveddata "$@" ;;
