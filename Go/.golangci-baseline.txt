@@ -1,5 +1,4 @@
 Go/cmd/agents-control/handover.go: Error return value of `json.Unmarshal` is not checked (errcheck)
-Go/cmd/agents-control/handover.go: cognitive complexity of func `handover` is high (> 30) (gocognit)
 Go/cmd/agents-control/main.go: Error return value of `advertiser.Process.Kill` is not checked (errcheck)
 Go/cmd/agents-control/main.go: Error return value of `os.Rename` is not checked (errcheck)
 Go/cmd/agents-control/main.go: G104: Errors unhandled (gosec)
@@ -11,7 +10,6 @@ Go/cmd/agents-control/main.go: G306: Expect WriteFile permissions to be 0600 or 
 Go/cmd/agents-control/main.go: G703: Path traversal via taint analysis (gosec)
 Go/cmd/agents-control/main.go: G703: Path traversal via taint analysis (gosec)
 Go/cmd/agents-control/main.go: G703: Path traversal via taint analysis (gosec)
-Go/cmd/agents-control/main.go: cognitive complexity of func `serve` is high (> 30) (gocognit)
 Go/cmd/agents-hosted/admin.go: cognitive complexity of func `runAdmin` is high (> 30) (gocognit)
 Go/cmd/agents-hosted/hostedup_test.go: G101: Potential hardcoded credentials (gosec)
 Go/cmd/agents-hosted/hostedup_test.go: G306: Expect WriteFile permissions to be 0600 or less (gosec)
