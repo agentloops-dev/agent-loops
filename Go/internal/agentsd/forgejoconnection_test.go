@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/connections"
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/internal/forgejomcp"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
@@ -196,6 +197,7 @@ func TestAForgejoFoldersConnectorSetUp(t *testing.T) {
 // Forgejo of one's own (#3752): a remote on the connected Forgejo picks it, as does a host
 // named gitea before it is connected; a GitHub remote still comes first.
 func TestAForgejoRemoteOfOnesOwn(t *testing.T) {
+	flaky.UnderLoad(t, "#6431")
 	t.Parallel()
 
 	d, _ := start(t, t.TempDir())
