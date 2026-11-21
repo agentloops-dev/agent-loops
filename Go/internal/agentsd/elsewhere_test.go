@@ -8,7 +8,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
@@ -133,11 +132,18 @@ func TestListThereAsksEveryMachineAtOnce(t *testing.T) {
 			Folder: dir, There: "/home/me/app", Title: fmt.Sprintf("session %d", i), At: now()})
 	}
 	// Count the asks in flight at once, not the time the call takes, so a busy machine
-	// cannot fail it (#6262). Each ask waits until all n are in flight, or for a while: asked
+	// cannot fail it (#6262). Each ask waits until all n are in flight, or for the test's limit: asked
 	// at once, all n meet; asked in turn, only one is ever in flight.
 	var mu sync.Mutex
-	inFlight, most := 0, 0
+	inFlight, most, met := 0, 0, false
 	all := make(chan struct{})
+	meet := func() { // with mu held
+		if !met {
+			met = true
+			close(all)
+		}
+	}
+	limit := afterLimit(t)
 	d.SetControlAsk(func(_ context.Context, method string, params any) (json.RawMessage, error) {
 		call, _ := params.(wire.MachineWorkspaceCall)
 		if call.Method != "machines/sessionCall" {
@@ -147,12 +153,15 @@ func TestListThereAsksEveryMachineAtOnce(t *testing.T) {
 		inFlight++
 		most = max(most, inFlight)
 		if inFlight == n {
-			close(all)
+			meet()
 		}
 		mu.Unlock()
 		select {
 		case <-all:
-		case <-time.After(2 * time.Second):
+		case <-limit: // asked in turn: let every ask go, and the count fails the test
+			mu.Lock()
+			meet()
+			mu.Unlock()
 		}
 		mu.Lock()
 		inFlight--
