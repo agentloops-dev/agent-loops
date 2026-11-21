@@ -233,10 +233,12 @@ func TestPrintFlagsNeedPrintMode(t *testing.T) {
 
 // A streamed reply sends a note for each chunk. Print mode gathers them and reads the
 // transcript once for the lot, and the session's record only for a note that is not an
-// entry: two reads a chunk used up a client's rate at the control plane (#6473).
+// entry: two reads a chunk used up a client's rate at the control plane (#6473). The
+// gather ends long before the burst is taken (a nanosecond), as under load (#6554): the
+// notes queued by then are still the same read.
 func TestPrintModeReadsOnceForABurstOfEntryNotes(t *testing.T) {
 	was, wasGather := recheck, gather
-	recheck, gather = time.Hour, 20*time.Millisecond
+	recheck, gather = time.Hour, time.Nanosecond
 	t.Cleanup(func() { recheck, gather = was, wasGather })
 	id := wire.UUID("AB12CD34-0000-0000-0000-000000000000")
 	running := step{entries: []wire.TranscriptEntry{chunk("m1", "Line 1. ")}, state: wire.AgentStateRunning}
@@ -264,7 +266,7 @@ func TestPrintModeReadsOnceForABurstOfEntryNotes(t *testing.T) {
 			lists++
 		}
 	}
-	if reads > 3 || lists > 2 {
+	if reads > 2 || lists > 2 {
 		t.Fatalf("1001 notes, %d transcript reads and %d record reads: %v", reads, lists, f.calls)
 	}
 }

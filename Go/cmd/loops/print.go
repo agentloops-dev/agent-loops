@@ -253,7 +253,9 @@ func (f *follow) relink(ctx context.Context, notes <-chan controllink.Note, caus
 // wait is until the notes about this session have come for gather since the first, a
 // tick, or the end of ctx. state says the session's record may have changed (a note other
 // than an entry, or a tick), so it is read again; an entry alone needs only the
-// transcript. ok is false when the connection ended or ctx did.
+// transcript. ok is false when the connection ended or ctx did. When gather ends, the
+// notes already queued are taken too, so a burst that came at once is one read, also
+// when taking it outlasts gather (#6554).
 func (f *follow) wait(ctx context.Context, notes <-chan controllink.Note, tick <-chan time.Time) (ok, state bool) {
 	var gathered <-chan time.Time
 	for {
@@ -270,13 +272,28 @@ func (f *follow) wait(ctx context.Context, notes <-chan controllink.Note, tick <
 				gathered = time.After(gather)
 			}
 		case <-gathered:
-			return true, state
+			return f.drain(notes, state)
 		case <-tick:
 			return true, true
 		case <-ctx.Done():
 			return false, false
 		}
 	}
+}
+
+// drain takes the notes queued when gather ended, and no more: notes that keep coming
+// wait for the next gather, so a long reply is still read at most once a gather.
+func (f *follow) drain(notes <-chan controllink.Note, state bool) (bool, bool) {
+	for range len(notes) {
+		n, open := <-notes
+		if !open {
+			return false, false
+		}
+		if f.about(n) {
+			state = state || n.Method != wire.NotifyAgentEntry.Name
+		}
+	}
+	return true, state
 }
 
 // about is whether a note is this session's.
