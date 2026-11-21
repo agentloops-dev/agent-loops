@@ -17,6 +17,10 @@ surface looks for them:
                                         and the org OIDC page, inlined in each (#4617)
     deploy/site/www/oauth/tokens.css    the OAuth hand-back pages (#4617)
 
+and the colours as Go, for the terminal client (#6446):
+
+    Go/cmd/loops/tokens_gen.go      each colour's light and dark value; loops maps them to ANSI
+
 and the token tables on the docs' design-system page (#4604), docs/reference/design-system.md:
 gen writes each table between its `<!-- design.sh gen: NAME -->` and `<!-- /design.sh gen -->`
 lines and leaves the rest of the page as it is.
@@ -126,6 +130,35 @@ OUTPUTS = {
     "Go/internal/paperpage/tokens.css": {"groups": ("color", "shadow", "focus", "radius", "font", "type"), "dark": "media"},
     "deploy/site/www/oauth/tokens.css": {"groups": ("color", "shadow", "focus", "radius", "font", "type"), "dark": "media"},
 }
+
+
+GO_OUTPUT = "Go/cmd/loops/tokens_gen.go"
+
+
+def go_string(text):
+    return json.dumps(text, ensure_ascii=False)
+
+
+def render_go(source):
+    """The colours as a Go table for loops (#6446): its name (the path under color, by dots),
+    its light value and its dark value (the light one when it has none). A slice, not a map,
+    so gofmt aligns nothing and the order is the JSON's."""
+    out = ["// Made by scripts/design.sh gen from design/tokens.json (#4602, #6446). Do not edit:\n",
+           "// change the JSON and run gen again.\n\n",
+           "package main\n\n",
+           "// paletteTokens is every colour token: name, light, dark.\n",
+           "var paletteTokens = []paletteToken{\n"]
+    for path, token, kind in tokens(source):
+        if path[0] != "color" or kind != "color":
+            continue
+        light = token["$value"]
+        dark = token.get("$extensions", {}).get(DARK, light)
+        text = token.get("$description")
+        if text:
+            out.append(f"\t// {' '.join(text.split())}\n")
+        out.append(f"\t{{{go_string('.'.join(path[1:]))}, {go_string(light)}, {go_string(dark)}}},\n")
+    out.append("}\n")
+    return "".join(out)
 
 
 def render(source, spec):
@@ -264,6 +297,7 @@ def splice(text, blocks):
 def outputs():
     source = json.loads(SOURCE.read_text(encoding="utf-8"))
     made = {path: render(source, spec) for path, spec in OUTPUTS.items()}
+    made[GO_OUTPUT] = render_go(source)
     page = ROOT / PAGE
     made[PAGE] = splice(page.read_text(encoding="utf-8"), tables(source))
     return made
@@ -296,6 +330,11 @@ def selftest():
     assert "@media" not in pairs, pairs
     docs = render(source, OUTPUTS["docs/stylesheets/tokens.css"])
     assert '[data-md-color-scheme="slate"] {\n  --paper-ground: #000000;' in docs, docs
+    go = render_go(source)
+    assert '\t{"ground", "#ffffff", "#000000"},\n' in go, go
+    assert '\t{"tint.failure", "#b4232b", "#f08086"},\n' in go, go
+    assert '\t{"forge.fill.open", "#1f883d", "#238636"},\n' in go, go
+    assert "floating" not in go, go
     blocks = tables(source)
     assert "| ground | `--paper-ground` | — | `#ffffff` | `#000000` |  |" in blocks["colour"], blocks
     assert "| shadow | `--paper-shadow` | — | `#20242a` at 10% | `#000000` at 10% |  |" in blocks["colour"], blocks

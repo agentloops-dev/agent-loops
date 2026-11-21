@@ -3,6 +3,10 @@
 // grows from agentsctl's pairing (controllink). It keeps one file, the pairing, in
 // ~/.config/loops/hosts.json (0600), and no cache: every command reads fresh.
 //
+//	loops                    continue this folder's newest session, or start one, in the terminal
+//	loops "…"                start a session here with this prompt, and follow it
+//	loops -c ["…"]           continue the newest session here (with a prompt)
+//	loops -r <id|title> ["…"]  continue one session
 //	loops pair '<code>'      pair this terminal with a control plane
 //	loops unpair             forget the pairing, here and on the control plane
 //	loops status             the pairing, this machine and the folder here
@@ -22,6 +26,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
@@ -92,6 +97,10 @@ func usageText() string {
 
 const usage = `loops: Agent Loops in a terminal
 
+  loops                    continue this folder's newest session, or start one
+  loops "…"                start a session here with this prompt, and follow it
+  loops -c ["…"]           continue the newest session here (with a prompt)
+  loops -r <id|title> ["…"]  continue one session (an id as loops ls shows it, or its title)
   loops pair '<code>'      pair this terminal with a control plane
   loops unpair             forget the pairing, here and on the control plane
   loops status             the pairing, this machine and the folder here
@@ -102,12 +111,20 @@ Flags:
   --folder <name|path>     work in this folder, not the one of the current directory
   --machine <name>         the folder's machine, when it is not this computer
   --control <host>         the control plane, when this terminal is paired with several
+  --runtime <id>           the runtime a new session starts on (claude, codex, …); Auto by default
+
+In the chat: ⏎ sends, ⌥⏎ adds a line, ^C stops the turn (twice leaves), ^D leaves; the
+session goes on. A card (a question, a permission) is answered here or on any client.
+Colour only on a terminal; NO_COLOR turns it off, LOOPS_THEME=light|dark picks the palette.
 `
 
 // options are the flags, which may come before or after the command.
 type options struct {
 	folder, machine, control string
 	all                      bool
+	// cont (-c), resume (-r) and runtime are the chat's (#6446).
+	cont            bool
+	resume, runtime string
 	// controlName is the paired control plane's host name, for the words.
 	controlName string
 }
@@ -120,6 +137,11 @@ func parse(args []string) (options, []string, error) {
 	fs.StringVar(&o.machine, "machine", "", "")
 	fs.StringVar(&o.control, "control", "", "")
 	fs.BoolVar(&o.all, "all", false, "")
+	fs.BoolVar(&o.cont, "c", false, "")
+	fs.BoolVar(&o.cont, "continue", false, "")
+	fs.StringVar(&o.resume, "r", "", "")
+	fs.StringVar(&o.resume, "resume", "", "")
+	fs.StringVar(&o.runtime, "runtime", "", "")
 	var rest []string
 	for {
 		if err := fs.Parse(args); err != nil {
@@ -153,6 +175,9 @@ func run(ctx context.Context, args []string, w io.Writer) error {
 	if len(rest) > 0 {
 		cmd = rest[0]
 	}
+	if o.cont || o.resume != "" || !isCommand(cmd) {
+		return chat(ctx, o, chatArgs{text: strings.Join(rest, " "), cont: o.cont, resume: o.resume})
+	}
 	switch cmd {
 	case "help", "-h", "--help":
 		fmt.Fprint(w, usageText())
@@ -177,18 +202,17 @@ func run(ctx context.Context, args []string, w io.Writer) error {
 			dir = rest[2]
 		}
 		return folderAdd(ctx, w, o, dir)
-	default:
-		// Starting and continuing a session here (#6446) and print mode (#6447) come next;
-		// until then the folder is found as they will find it, so its states and codes hold.
-		_, p, err := connect(ctx, o)
-		if err != nil {
-			return err
-		}
-		if p.folder == "" {
-			return notInFolder(p)
-		}
-		return &exit{code: exitError, msg: fmt.Sprintf("In %s on %s. Starting a session from the terminal is not in this build yet.\nSee this folder's sessions: loops ls", p.folderName(), p.machineName())}
 	}
+	return &exit{code: exitError, msg: usageText()}
+}
+
+// isCommand says a first word is one of loops' own commands, not a prompt.
+func isCommand(word string) bool {
+	switch word {
+	case "help", "-h", "--help", "pair", "unpair", "status", "ls", "folder":
+		return true
+	}
+	return false
 }
 
 // dial is the paired control plane's socket; it keeps a key the control plane rotated.
