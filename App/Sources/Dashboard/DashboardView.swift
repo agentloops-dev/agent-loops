@@ -47,8 +47,10 @@ struct DashboardView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .navigationTitle("Dashboard")
-        .task {
-            // Each minute while the page is open: the forge's state moves with no event here.
+        .task(id: model.firstListDrawn) {
+            // Each minute while the page is open: the forge's state moves with no event here. The first read waits
+            // for the sessions' first list (#6311): the Dashboard is the page a window opens on.
+            guard model.firstListDrawn else { return }
             while !Task.isCancelled {
                 await forge.read(model)
                 try? await Task.sleep(for: .seconds(60))

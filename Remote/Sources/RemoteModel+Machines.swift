@@ -383,6 +383,9 @@ extension RemoteModel {
                 if (try? await control.connect(startIfNeeded: false, timeout: .seconds(5))) != nil {
                     backoff.connected()
                     self?.controlPlane = control
+                    // The lock first (#6311): until this device is in it, every machine refuses its calls, the
+                    // machines' reads below among them, so it asks to join before them.
+                    if let client = RemoteControl.membership?.client { await self?.lock.connected(control, client: client) }
                     await self?.syncOtherHosts(control, link: link)
                     await self?.loadMachineProviders()
                     await self?.loadKept(control)
@@ -390,7 +393,6 @@ extension RemoteModel {
                     await self?.signIn.connected(control)
                     // Status ▸ Secrets and Accounts' rows say when the newest operation was (#4161).
                     await self?.userScope.load(control)
-                    if let client = RemoteControl.membership?.client { await self?.lock.connected(control, client: client) }
                     await Self.sealWaiting(on: control, lock: self?.lock)
                     for await change in control.notifications() {
                         guard let self, !Task.isCancelled else { return }
