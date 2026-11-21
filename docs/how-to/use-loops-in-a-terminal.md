@@ -18,14 +18,35 @@ page show it at once. You can start it in a terminal and answer it on your phone
 - A control plane that your other clients use, and a paired window or web page.
 - A folder on a machine of that control plane. The directory you run `loops` in is that
   folder, or a directory in it (a worktree in it is also correct).
-- The `loops` program. Until Agent Loops ships it, build it from a copy of the source with
-  Go, from the `Go` directory:
+- The `loops` program on your `PATH`. See [Install loops](#install-loops), below.
 
-  ```sh
-  go build -o ~/.local/bin/loops ./cmd/loops
-  ```
+## Install loops
 
-  Put that directory on your `PATH`.
+Do one of these.
+
+**From Agent Loops.app, on a Mac that has it.** The app has `loops` in it. Link it into a
+directory on your `PATH`:
+
+```sh
+sudo ln -sf "/Applications/Agent Loops.app/Contents/Helpers/loops" /usr/local/bin/loops
+```
+
+When the app is in `~/Applications`, use that path, and a directory of your own on `PATH`,
+such as `~/.local/bin`, with no `sudo`. The link goes to the app, so when the app updates
+itself, `loops` updates too.
+
+**From a release download, on any Mac or Linux computer.** Each release has
+`loops-<os>-<arch>-<version>.tar.gz` for `darwin` and `linux`, `arm64` and `amd64`, on the
+[releases page](https://github.com/agentloops-dev/agents-releases/releases/latest).
+Download the one for your computer, compare it with the release's `SHA256SUMS`, and put
+`loops` on your `PATH`:
+
+```sh
+tar -xzf loops-linux-amd64-<version>.tar.gz
+install -m 755 loops ~/.local/bin/loops
+```
+
+The macOS programs are signed with Developer ID and notarized.
 
 ## Pair the terminal
 

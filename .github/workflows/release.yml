@@ -10,6 +10,9 @@
 #                                          (#5297, #4225)
 #   agentsd-linux-<arch>-<version>.tar.gz  the Linux agentsd (Go, #1136), with the MCP
 #                                          servers Agents ships (#700)
+#   loops-<os>-<arch>-<version>.tar.gz    loops, the command-line client (#6448), for darwin and
+#                                          linux, arm64 and amd64; the macOS ones signed and
+#                                          notarized (scripts/build-loops.sh)
 #   SHA256SUMS
 #
 # and the control plane's image, ghcr.io/<owner>/agents-control:<version> (#2140, #4958), signed.
