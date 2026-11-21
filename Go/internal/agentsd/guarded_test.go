@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
@@ -94,12 +95,11 @@ func TestAPullsChangeWaits(t *testing.T) {
 	c.call(t, 1, "folders/add", map[string]any{"folder": store.FolderURL(dir)})
 	// The folder's watcher checks folder.json too, whenever it hears it (#6521). So each write
 	// is atomic, and the pulled copy is in HEAD before it is on disk: whenever the watcher
-	// looks, it sees the approved copy or the pull's, never a half-written file or a change
-	// that is not in HEAD yet (which is the person's own edit, and approved).
+	// looks, it sees the approved copy or the pull's, never a half-written file.
 	file := filepath.Join(dir, ".agents", "folder.json")
 	must(t, os.MkdirAll(filepath.Dir(file), 0o755)) //nolint:gosec // G301: the mode this folder always had; only its error is new
 	must(t, store.WriteAtomically(file, []byte(`{"diskSpace":{"lowPercent":30}}`), 0o644))
-	d.checkGuarded(dir, ".agents/folder.json", nil) // first seen: approved
+	approvedSoon(t, d, dir, ".agents/folder.json")
 	pulled := []byte(`{"diskSpace":{"lowPercent":50}}`)
 	blob, err := gitRaw(dir, pulled, "hash-object", "-w", "--stdin")
 	must(t, err)
@@ -115,6 +115,86 @@ func TestAPullsChangeWaits(t *testing.T) {
 	if e := c.callError(t, 2, "folders/setDiskSpace", map[string]any{"folder": store.FolderURL(dir), "diskSpace": map[string]any{"lowPercent": 40}}); !strings.HasPrefix(e.Message, "The disk space lines were not changed: ") {
 		t.Fatal(e.Message)
 	}
+}
+
+// A pull writes the work tree before it moves HEAD (#6523): its change, seen in between,
+// is not the person's own edit. It is not used while git holds the index lock, also past
+// the branch settle, and once HEAD has it, it waits for Keep or Undo.
+func TestAPullsChangeSeenBeforeHEADMovesWaits(t *testing.T) {
+	t.Parallel()
+
+	d, c := start(t, t.TempDir())
+	defer d.Shutdown()
+	dir := repo(t)
+	c.call(t, 1, "folders/add", map[string]any{"folder": store.FolderURL(dir)})
+	file := filepath.Join(dir, ".agents", "folder.json")
+	must(t, os.MkdirAll(filepath.Dir(file), 0o755)) //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, store.WriteAtomically(file, []byte(`{"diskSpace":{"lowPercent":30}}`), 0o644))
+	approvedSoon(t, d, dir, ".agents/folder.json")
+	// The pull: git holds the index lock, writes the work tree, then moves HEAD.
+	lock := filepath.Join(dir, ".git", "index.lock")
+	must(t, os.WriteFile(lock, nil, 0o644)) //nolint:gosec // G306: git's own mode for its lock
+	pulled := []byte(`{"diskSpace":{"lowPercent":50}}`)
+	must(t, store.WriteAtomically(file, pulled, 0o644))
+	d.checkGuarded(dir, ".agents/folder.json", nil)
+	until(t, "held past the branch settle", func() bool {
+		d.checkGuarded(dir, ".agents/folder.json", nil)
+		d.guardedMu.Lock()
+		defer d.guardedMu.Unlock()
+		u := d.guardedUnsure[guardedKey{dir, ".agents/folder.json"}]
+		return u != nil && time.Since(u.since) > branchSettle*3/2
+	})
+	if s, _ := d.summaryFor(dir); len(s.GuardedChanges) != 0 || s.Folder.DiskSpace == nil || *s.Folder.DiskSpace.LowPercent != 30 {
+		t.Fatalf("before HEAD moved: %+v %+v", s.GuardedChanges, s.Folder.DiskSpace)
+	}
+	// HEAD moves while the lock is still held: the commit goes through an index of its own.
+	index := []string{"GIT_INDEX_FILE=" + filepath.Join(dir, ".git", "pull-index")}
+	for _, args := range [][]string{{"read-tree", "HEAD"}, {"add", ".agents/folder.json"}, {"commit", "-q", "-m", "pulled"}} {
+		_, err := gitRawEnv(dir, index, nil, args...)
+		must(t, err)
+	}
+	must(t, os.Remove(lock))
+	until(t, "the pull's change waits", func() bool {
+		s, _ := d.summaryFor(dir)
+		return len(s.GuardedChanges) == 1 && s.GuardedChanges[0].ByGit
+	})
+	if s, _ := d.summaryFor(dir); s.Approvals[0].Line != "Changed with the last pull" || *s.Folder.DiskSpace.LowPercent != 30 {
+		t.Fatalf("%+v %+v", s.Approvals, s.Folder.DiskSpace)
+	}
+}
+
+// The person's own edit in a repository, which HEAD never gets, is theirs once the branch
+// settle has passed (#6523).
+func TestThePersonsOwnEditInARepositoryIsTheirsAfterTheSettle(t *testing.T) {
+	t.Parallel()
+
+	d, c := start(t, t.TempDir())
+	defer d.Shutdown()
+	dir := repo(t)
+	c.call(t, 1, "folders/add", map[string]any{"folder": store.FolderURL(dir)})
+	file := filepath.Join(dir, ".agents", "folder.json")
+	must(t, os.MkdirAll(filepath.Dir(file), 0o755)) //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, store.WriteAtomically(file, []byte(`{"diskSpace":{"lowPercent":30}}`), 0o644))
+	approvedSoon(t, d, dir, ".agents/folder.json")
+	must(t, store.WriteAtomically(file, []byte(`{"diskSpace":{"lowPercent":50}}`), 0o644))
+	d.checkGuarded(dir, ".agents/folder.json", nil)
+	if d.settled(dir, ".agents/folder.json") {
+		t.Fatal("approved before the branch settle")
+	}
+	until(t, "the person's edit is used", func() bool {
+		s, _ := d.summaryFor(dir)
+		return len(s.GuardedChanges) == 0 && s.Folder.DiskSpace != nil && *s.Folder.DiskSpace.LowPercent == 50
+	})
+	if !d.settled(dir, ".agents/folder.json") {
+		t.Fatal("the person's edit is not settled")
+	}
+}
+
+// approvedSoon waits until a guarded file is the approved copy: in a repository, with nothing
+// running, the person's edit is approved once the branch settle has passed (#6523).
+func approvedSoon(t *testing.T, d *Daemon, dir, path string) {
+	t.Helper()
+	until(t, path+" approved", func() bool { return d.settled(dir, path) })
 }
 
 func TestDiffLines(t *testing.T) {
