@@ -118,9 +118,10 @@ jobs:
             grep -qE '^(design/logo/blob/final/|scripts/design\.sh$|App/Resources/Assets\.xcassets/|Remote/Resources/Assets\.xcassets/AppIcon|Web/assets/|docs/assets/|docs/favicon\.ico$|www/assets/|\.github/workflows/ci\.yml$)' <<<"$changed" || marks=skip
             # SwiftLint and Periphery (swift-lint:lint, the `swift-lint` job): any Swift file, their
             # rules, baseline and allowlist, what the index builds read (project.yml, a package's
-            # manifest, build-cache.sh, the Xcode) or lint.sh. swift-lint is affected by every
+            # manifest, build-cache.sh, the Xcode), lint.sh, or this file, whose swift-lint job a
+            # change must run to measure (#6454). swift-lint is affected by every
             # change, so its own files say when.
-            grep -qE '(\.swift$|^\.swiftlint(\.yml|-baseline\.json)$|^\.periphery-allowed\.txt$|^project\.yml$|^Packages/[^/]+/Package\.resolved$|^\.xcode-version$|^scripts/(lint\.sh|periphery-report\.py|build-cache\.sh)$|^lint/swift/)' <<<"$changed" || swiftlint=skip
+            grep -qE '(\.swift$|^\.swiftlint(\.yml|-baseline\.json)$|^\.periphery-allowed\.txt$|^project\.yml$|^Packages/[^/]+/Package\.resolved$|^\.xcode-version$|^scripts/(lint\.sh|periphery-report\.py|build-cache\.sh)$|^lint/swift/|^\.github/workflows/ci\.yml$)' <<<"$changed" || swiftlint=skip
           fi
           # gomac is `test`'s Go on a Mac: the same as go.
           gomac=$go
@@ -972,6 +973,13 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ inputs.sha || github.event.pull_request.head.sha || github.sha }}
+      # Each tracked file's time from its content, as in `go` (#5677), here for Xcode's and
+      # SwiftPM's incremental builds (#6454). The index builds have no compilation cache
+      # (AGENTS_BUILD_CACHE_INDEX=1), so a restored build/periphery saves time only when an
+      # unchanged source is older than its object. With the checkout's own times every file
+      # was newer, and a warm Periphery run compiled everything again: 1109 s of the job's 20 min.
+      - name: Content times
+        run: python3 scripts/ci-mtimes.py
       - name: Xcode
         run: echo "DEVELOPER_DIR=/Applications/Xcode_$(cat .xcode-version).app/Contents/Developer" >> "$GITHUB_ENV"
       - name: Toolchain fingerprint
