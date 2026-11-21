@@ -382,10 +382,8 @@ export function shownErrors(answers: readonly ForgeAnswer[]): ForgeListError[][]
 
 /** A forge that could not be read: "GitHub on Studio: not connected". */
 export function errorWords(e: ForgeListError, machine: string | undefined): string {
-  const forge = forgeTitle[e.forge] ?? e.forge;
-  // A forge's message can name the forge already: "Forgejo: Get …".
-  const message = forge && e.message.startsWith(`${forge}: `) ? e.message.slice(forge.length + 2) : e.message;
-  return `${forge}${machine ? ` on ${machine}` : ""}: ${message}`;
+  // agentsd's message does not name the forge (#6536): the line names it once, here.
+  return `${forgeTitle[e.forge] ?? e.forge}${machine ? ` on ${machine}` : ""}: ${e.message}`;
 }
 
 export const forgeTitle: Record<string, string> = { github: "GitHub", gitlab: "GitLab", linear: "Linear", jira: "Jira",

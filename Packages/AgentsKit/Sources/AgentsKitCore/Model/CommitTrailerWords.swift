@@ -8,7 +8,7 @@ public enum CommitTrailerWords {
     public static let title = "Commit trailers"
     public static let intro = "Lines at the end of each commit that an agent makes."
     public static let previewTitle = "Preview"
-    public static let previewScope = "a commit in a folder with no rules of its own"
+    public static let previewScope = "the squash commit of a pull request, in a folder with no rules of its own"
     public static let tryAgain = "Try Again"
     /// This Mac's host, when it is the one that does not follow the rule yet.
     public static let thisMac = "This Mac"
@@ -43,7 +43,8 @@ public enum CommitTrailerWords {
         public var kind: Kind
         /// What applies when no layer sets it: every trailer on but Cost.
         public var isOnByDefault: Bool
-        /// An example value, in the mono font under the name, and in the Preview.
+        /// An example value, in the mono font under the name, and in the Preview: as the daemon
+    /// writes it (`spendTrailers`: `$1.84`, `in=412.0k out=38.0k`, `47m`).
         public var example: String
         public var id: String { key }
         /// Whether the daemon writes a line for it now: Attested has no value since #6438.
@@ -66,8 +67,8 @@ public enum CommitTrailerWords {
         Trailer(key: "Requested-by", kind: .record, isOnByDefault: true, example: "alexec"),
         Trailer(key: "Approved-by", kind: .record, isOnByDefault: true, example: "alexec"),
         Trailer(key: "Attested", kind: .record, isOnByDefault: true, example: "no value now, so left out"),
-        Trailer(key: "Cost", kind: .spend, isOnByDefault: false, example: "USD 1.84"),
-        Trailer(key: "Tokens", kind: .spend, isOnByDefault: true, example: "in=412k out=38k"),
+        Trailer(key: "Cost", kind: .spend, isOnByDefault: false, example: "$1.84"),
+        Trailer(key: "Tokens", kind: .spend, isOnByDefault: true, example: "in=412.0k out=38.0k"),
         Trailer(key: "Duration", kind: .spend, isOnByDefault: true, example: "47m"),
         Trailer(key: "Co-authored-by", kind: .record, isOnByDefault: true, example: "Claude Opus 5.5 <noreply@anthropic.com>"),
     ]
@@ -104,7 +105,9 @@ public enum CommitTrailerWords {
         return r
     }
 
-    /// The block a commit gets, with each trailer that is on and written, and its example value.
+    /// The block a pull request's squash commit gets (`commit_trailers` with `pr`), with each trailer
+    /// that is on and written, and its example value in the daemon's format (#6532). A commit on a
+    /// branch gets `Refs` in place of `Fixes`, and no `Approved-by`: only the squash has those.
     public static func preview(_ isOn: (Trailer) -> Bool) -> [String] {
         trailers.filter { $0.isWritten && isOn($0) }.map { "\($0.key): \($0.example)" }
     }

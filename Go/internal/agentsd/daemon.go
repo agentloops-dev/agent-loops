@@ -121,6 +121,7 @@ type Daemon struct {
 	restartBook
 	adoptedBook
 	machineBook
+	sleepBook
 	hostStatusBook
 	elsewhereBook
 	idleBook
@@ -294,6 +295,8 @@ func newWith(ctx context.Context, root string, opts startOptions) (*Daemon, erro
 	// The deploys waiting for the person, in Needs You (#3587).
 	d.startDeploys()
 	d.installDefaultToolsets()
+	// Each app worktree's hooks folder, as this build writes it (#6529).
+	d.refreshTrailerHooks()
 	return d, nil
 }
 

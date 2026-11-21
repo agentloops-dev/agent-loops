@@ -1,6 +1,6 @@
 ---
 name: dead-code-review
-description: Search the code changed since its last run in Go, Swift and the web app for compatibility code from old builds (unreachable code is gated at PR time, by deadcode in go:lint, #6334, Periphery in swift-lint:lint, #6336, and Knip in web:lint, #6337), record false positives, and remove only code proven dead. Use when the Dead code review workflow runs on its schedule (#2161, #3715), or when Alex asks for a dead-code review.
+description: Search the code changed since its last run in Go, Swift and the web app for compatibility code from old builds (unreachable Go and web code is gated at PR time, by deadcode in go:lint, #6334, and Knip in web:lint, #6337; Swift has no gate since #6526), record false positives, and remove only code proven dead. Use when the Dead code review workflow runs on its schedule (#2161, #3715), or when Alex asks for a dead-code review.
 ---
 
 # Dead-code review
@@ -18,10 +18,9 @@ the keyboard, that is true only of a workflow run.
   helper branch and pull request. A helper must explain why the finding cannot be reached
   through reflection, generated code, a runtime entry point, a test hook or an external
   consumer. Leave uncertain findings in the report.
-- Do not run Periphery: Swift's dead declarations fail `swift-lint:lint` on every PR
-  (`scripts/lint.sh periphery`, #6336), so `main` has none. A Swift declaration kept on
-  purpose is a line in `.periphery-allowed.txt`, with its reason, on a PR. The compatibility
-  search in step 1.3 still reads Swift, as it reads Go.
+- Swift has no dead-code gate: Periphery was removed from `swift-lint:lint` (#6526). The
+  compatibility search in step 1.3 reads Swift, as it reads Go; a Swift declaration is dead
+  only when a search of the repo finds no use of it and the build passes without it.
 - Do not run `deadcode`: Go's unreachable functions fail `go:lint` on every PR
   (`scripts/lint.sh deadcode`, #6334), so `main` has none. The compatibility search in
   step 1.3 still reads Go, because deadcode cannot see a live function that only an old
@@ -60,9 +59,9 @@ Generated code is excluded unless a handwritten reference is dead.
 
 For every false positive, add a durable baseline entry with the exact declaration or
 path and the reason it is live. A Go function kept on purpose is a line in
-`Go/.deadcode-allowed.txt`, a Swift declaration a line in `.periphery-allowed.txt`, and a web
-file, export or dependency an entry in `Web/knip.config.js`, with its reason, on a PR, not in
-`baseline.md`.
+`Go/.deadcode-allowed.txt`, and a web file, export or dependency an entry in
+`Web/knip.config.js`, with its reason, on a PR, not in `baseline.md`. A Swift declaration,
+which no linter checks (#6526), is a line in `baseline.md`.
 Include the baseline update in the report branch.
 
 For every likely-dead finding, give severity (critical, high, medium or low), the exact

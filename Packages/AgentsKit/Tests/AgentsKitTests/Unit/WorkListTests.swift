@@ -54,6 +54,9 @@ struct WorkListTests {
         #expect(WorkList.failureWords(JSONRPCError(code: -32602, message: "forge/rerun: open the check on Forgejo")) ==
             "forge/rerun: open the check on Forgejo")
         #expect(WorkList.errorWords(.init(forge: "forgejo", message: "not connected"), machine: "Studio") == "Forgejo on Studio: not connected")
+        // agentsd's message does not name the forge, so the line names it once (#6536).
+        #expect(WorkList.errorWords(.init(forge: "github", message: "could not be reached (the connection was refused)"), machine: nil) ==
+            "GitHub: could not be reached (the connection was refused)")
     }
 
     @Test func oneMachinesAnswerForAForgeIsEnough() {

@@ -341,7 +341,9 @@ test("a forge that could not be read keeps its last rows, dimmed; a fresh read h
   const machine = carryStale({ host: "mac", items: [], errors: [{ forge: "", message: "offline" }] }, had);
   assert.equal(machine.items.length, 2);
   assert.equal(carryStale({ host: "mac", items: [], errors: [] }, had).items.length, 0);
-  assert.equal(w.errorWords({ forge: "forgejo", message: "Forgejo: Get …: refused" }, undefined), "Forgejo: Get …: refused");
+  // agentsd's message does not name the forge, so the line names it once (#6536).
+  assert.equal(w.errorWords({ forge: "github", message: "could not be reached (the connection was refused)" }, undefined),
+    "GitHub: could not be reached (the connection was refused)");
 });
 
 test("one machine's answer for a forge is enough: the others' errors for it do not show (#5449)", async () => {

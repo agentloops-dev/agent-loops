@@ -58,6 +58,17 @@ struct CommitTrailerWordsTests {
         #expect(lines.last?.hasPrefix("Co-authored-by: ") == true)
     }
 
+    @Test func thePreviewIsTheSquashBlockInTheDaemonsFormat() {
+        // A branch commit gets Refs and no Approved-by, so the Preview is the squash's block (#6532).
+        #expect(CommitTrailerWords.previewScope.hasPrefix("the squash commit of a pull request"))
+        let lines = CommitTrailerWords.preview { _ in true }
+        #expect(lines.contains("Fixes: #6334"))
+        #expect(lines.contains("Approved-by: alexec"))
+        #expect(lines.contains("Cost: $1.84"))
+        #expect(lines.contains("Tokens: in=412.0k out=38.0k"))
+        #expect(lines.contains("Duration: 47m"))
+    }
+
     @Test func aMachineThatDoesNotSayTheRuleDoesNotFollowIt() {
         #expect(!CommitTrailerWords.isFollowed(DaemonAPI.EffectivePolicy(rules: [DaemonAPI.EffectiveRule(rule: "sandbox", words: "On")])))
         #expect(CommitTrailerWords.isFollowed(DaemonAPI.EffectivePolicy(rules: [DaemonAPI.EffectiveRule(rule: "commitTrailers.Cost", words: "Off")])))

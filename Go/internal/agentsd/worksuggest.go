@@ -199,7 +199,7 @@ func (d *Daemon) workSuggestLeads(ctx context.Context, r wire.WorkSuggestLeadsRe
 	for n, row := range rows {
 		if errs[n] != nil {
 			f, _ := d.forgeOwningName(open[n].Node)
-			out.Errors = append(out.Errors, wire.ForgeListError{Forge: f, Message: open[n].Node.Ref + ": " + errs[n].Error()})
+			out.Errors = append(out.Errors, wire.ForgeListError{Forge: f, Message: open[n].Node.Ref + ": " + forgeErrorWords(errs[n].Error())})
 			row = suggestableOf(open[n], wire.ForgePlan{})
 		}
 		ranked = append(ranked, row)
