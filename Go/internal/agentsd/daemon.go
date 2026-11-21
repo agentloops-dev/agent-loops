@@ -207,6 +207,10 @@ type startOptions struct {
 	// attach, when set, reaches each runtime in place of starting its process (acp.Launch.Attach):
 	// a test's fake runtime in the test's own process (#6143).
 	attach func(acp.Launch) (acp.Attached, error)
+	// diskFree, when set, is each volume's free space in place of what the disk says, from
+	// its real reading: a test's daemon reads a disk with room (#6390), so a full Mac puts no
+	// disk notice in its Needs you; a disk test sets its own.
+	diskFree func(wire.DiskReading) int64
 }
 
 // startOpts are the daemon's start options now: none for a Daemon made without New.

@@ -53,3 +53,31 @@ func TestACriticalDiskIsOneNoticeUntilItClimbsBack(t *testing.T) {
 		t.Fatalf("%+v", got)
 	}
 }
+
+// A test's daemon reads a disk with room (#6390): the Mac's own disk, however full, puts no
+// notice in its Needs you. A test that names a full disk gets the notice from the disk check
+// itself, and loses it when the disk has room again.
+func TestATestDaemonReadsItsOwnDisk(t *testing.T) {
+	t.Parallel()
+
+	d, c := start(t, t.TempDir())
+	d.checkDisk()
+	if alarms := d.diskState().Alarms; len(alarms) != 0 {
+		t.Fatalf("a test daemon's disk is low: %+v", alarms)
+	}
+	if got := diskNotices(t, c, 1); len(got) != 0 {
+		t.Fatalf("a disk notice on a roomy disk: %+v", got)
+	}
+
+	diskFreeFor(t, 100_000_000)
+	d.checkDisk()
+	if got := diskNotices(t, c, 2); len(got) != 1 || got[0].Headline.H2 != diskNoticeTitle {
+		t.Fatalf("no disk notice at 100 MB free: %+v", got)
+	}
+
+	testHooksOf(t).change(func(h *testHooks) { h.opts.diskFree = roomyDisk })
+	d.checkDisk()
+	if got := diskNotices(t, c, 3); len(got) != 0 {
+		t.Fatalf("still posted with room: %+v", got)
+	}
+}

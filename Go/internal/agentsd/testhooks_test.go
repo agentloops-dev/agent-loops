@@ -5,6 +5,8 @@ import (
 	"slices"
 	"sync"
 	"testing"
+
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // testHooks is what a test changed in the package's variables, put back only once each of
@@ -64,7 +66,28 @@ func (h *testHooks) options() startOptions {
 	if !h.homeNamed {
 		o.namedHome = os.Getenv("AGENTS_PERSONAL_HOME")
 	}
+	o.diskFree = h.diskFreeLocked()
 	return o
+}
+
+// diskFreeLocked is the free space the test's daemons read: a disk with room unless the
+// test named its own (#6390), so the Mac's own full disk adds no notice to Needs you. Call
+// it with mu held.
+func (h *testHooks) diskFreeLocked() func(wire.DiskReading) int64 {
+	if h.opts.diskFree != nil {
+		return h.opts.diskFree
+	}
+	return roomyDisk
+}
+
+// roomyDisk is a disk with nine tenths of it free: far above the low line.
+func roomyDisk(r wire.DiskReading) int64 { return r.TotalBytes / 10 * 9 }
+
+// diskFreeFor makes every volume of t's daemons read free bytes free, as a full or a
+// roomy disk would (#6390), in place of the Mac's own disk.
+func diskFreeFor(t testing.TB, free int64) {
+	t.Helper()
+	testHooksOf(t).change(func(h *testHooks) { h.opts.diskFree = func(wire.DiskReading) int64 { return free } })
 }
 
 // change changes the options of the test's daemons: those it starts next, and those that
@@ -74,13 +97,14 @@ func (h *testHooks) change(f func(*testHooks)) {
 	f(h)
 	running := slices.Clone(h.running)
 	named, home, locate, env, attach := h.homeNamed, h.opts.namedHome, h.opts.locate, h.opts.runtimeEnv, h.opts.attach
+	diskFree := h.diskFreeLocked()
 	h.mu.Unlock()
 	for _, d := range running {
 		o := d.startOpts()
 		if named {
 			o.namedHome = home
 		}
-		o.locate, o.runtimeEnv, o.attach = locate, env, attach
+		o.locate, o.runtimeEnv, o.attach, o.diskFree = locate, env, attach, diskFree
 		d.opts.Store(&o)
 	}
 }
