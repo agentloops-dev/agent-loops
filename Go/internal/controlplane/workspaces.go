@@ -114,7 +114,8 @@ func (s *Service) backUpBeforeDelete(host string, caller providers.Caller) (bool
 	}
 	if len(m.Error) > 0 {
 		var refusal providers.Failure
-		json.Unmarshal(m.Error, &refusal)
+		// An error that does not read is still a refusal, with no words.
+		_ = json.Unmarshal(m.Error, &refusal)
 		return false, &refusal
 	}
 	return true, nil
@@ -167,7 +168,8 @@ func providerReply(m *message) *providers.Reply {
 	reply := &providers.Reply{Result: m.Result}
 	if len(m.Error) > 0 {
 		var refusal providers.Failure
-		json.Unmarshal(m.Error, &refusal)
+		// An error that does not read is still a refusal, with no words.
+		_ = json.Unmarshal(m.Error, &refusal)
 		reply.Error = &refusal
 	}
 	return reply

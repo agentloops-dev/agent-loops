@@ -55,7 +55,9 @@ func callSocketResult(path, method string, params any) (json.RawMessage, error) 
 		return nil, err
 	}
 	defer c.Close()
-	c.SetDeadline(time.Now().Add(30 * time.Second))
+	if err := c.SetDeadline(time.Now().Add(30 * time.Second)); err != nil {
+		return nil, err
+	}
 	b, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": method, "params": params})
 	if _, err := c.Write(append(b, '\n')); err != nil {
 		return nil, err

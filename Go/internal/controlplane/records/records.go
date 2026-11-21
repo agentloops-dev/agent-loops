@@ -446,7 +446,8 @@ func (r *Records) SettingsOrMake(ctx context.Context, makeSettings func() Settin
 		r.mu.Lock()
 		r.settings = &held[Settings]{kept, etag}
 		r.mu.Unlock()
-		r.savePerson(ctx, r.localOwner(kept))
+		// Migrate makes the owner's person again on the next start.
+		_ = r.savePerson(ctx, r.localOwner(kept))
 		return &kept, nil
 	}
 }
@@ -886,6 +887,7 @@ func same(a, b any) bool {
 func clone(s Settings) Settings {
 	var c Settings
 	data, _ := json.Marshal(s)
-	json.Unmarshal(data, &c)
+	// A round trip of its own type does not fail.
+	_ = json.Unmarshal(data, &c)
 	return c
 }

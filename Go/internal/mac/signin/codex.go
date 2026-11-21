@@ -169,7 +169,9 @@ func claims(jwt string) map[string]any {
 		return nil
 	}
 	var object map[string]any
-	json.Unmarshal(b, &object)
+	if json.Unmarshal(b, &object) != nil {
+		return nil
+	}
 	return object
 }
 

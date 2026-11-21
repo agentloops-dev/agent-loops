@@ -114,7 +114,8 @@ func (m *Methods) setUserSettingsPart(ctx context.Context, params json.RawMessag
 		return nil, err
 	}
 	var fields map[string]json.RawMessage
-	json.Unmarshal(params, &fields)
+	// Request read these params already: they are an object.
+	_ = json.Unmarshal(params, &fields)
 	var envBefore json.RawMessage
 	if request.Part == wire.UserSettingsPartNameEnvironment {
 		if had, err := book.Settings(ctx, user); err == nil {

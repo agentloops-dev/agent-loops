@@ -910,7 +910,9 @@ func (g *RealGitHub) CommentOnPR(ctx context.Context, repo string, number int, w
 	var c struct {
 		HTMLURL string `json:"html_url"`
 	}
-	json.Unmarshal(answer, &c)
+	if err := json.Unmarshal(answer, &c); err != nil {
+		return nil, err
+	}
 	return map[string]any{"url": c.HTMLURL}, nil
 }
 

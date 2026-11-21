@@ -130,14 +130,16 @@ func (m *Machine) keepBelow(p *process) {
 		return
 	}
 	opened := make(chan struct{}, 1)
-	chromedp.ListenBrowser(ctx, func(ev any) {
+	if err := chromedp.ListenBrowser(ctx, func(ev any) {
 		if e, ok := ev.(*target.EventTargetCreated); ok && e.TargetInfo != nil && e.TargetInfo.Type == "page" {
 			select {
 			case opened <- struct{}{}:
 			default:
 			}
 		}
-	})
+	}); err != nil {
+		log.Printf("browser: the window keeper hears no new pages, so it looks every %s only: %v", keepEvery, err)
+	}
 	// Discovery is what sends targetCreated on this connection; tabs.go and the screencast
 	// turn it on for their own.
 	if _, err := chromedp.CallBrowser(ctx, target.SetDiscoverTargets, target.SetDiscoverTargetsParams{Discover: true}); err != nil {

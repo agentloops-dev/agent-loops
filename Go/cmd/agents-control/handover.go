@@ -120,7 +120,9 @@ func (p peerStore) Put(_ context.Context, key string, data []byte, when store.Co
 		return "", err
 	}
 	var tag string
-	json.Unmarshal(reply, &tag)
+	if err := json.Unmarshal(reply, &tag); err != nil {
+		return "", fmt.Errorf("store/put: the tag: %w", err)
+	}
 	return tag, nil
 }
 

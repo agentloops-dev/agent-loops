@@ -170,7 +170,7 @@ func (p *PeerChecker) stopLocked() {
 		return
 	}
 	p.in.Close()
-	p.cmd.Process.Kill()
-	p.cmd.Wait()
+	_ = p.cmd.Process.Kill() // it may have ended already
+	_ = p.cmd.Wait()         // only to reap it: a killed process ends with an error
 	p.cmd, p.in, p.out = nil, nil, nil
 }

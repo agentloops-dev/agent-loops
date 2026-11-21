@@ -56,7 +56,7 @@ func (r *Relay) Start() (int, error) {
 	}
 	r.listener = l
 	r.server = &http.Server{Handler: r, ReadHeaderTimeout: 30 * time.Second}
-	go r.server.Serve(l)
+	go func() { _ = r.server.Serve(l) }() // it ends with ErrServerClosed when Stop closes it
 	return l.Addr().(*net.TCPAddr).Port, nil
 }
 

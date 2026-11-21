@@ -27,5 +27,5 @@ func End(cmd *exec.Cmd) {
 	if cmd.Process == nil || cmd.Process.Pid <= 1 {
 		return
 	}
-	syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+	_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) // ESRCH when the group is empty already
 }

@@ -318,7 +318,9 @@ func (t *Tunnels) letGoLocked(ctx context.Context, destination, name string) {
 	t.mu.Unlock()
 	for _, old := range olds {
 		t.log("tunnel to " + old.Name + ": " + name + " was installed on that server; letting go")
-		t.store.Delete(ctx, Key(old.ID))
+		if err := t.store.Delete(ctx, Key(old.ID)); err != nil {
+			t.log("tunnel to " + old.Name + ": could not be deleted: " + err.Error())
+		}
 		t.mu.Lock()
 		t.forgetLocked(old.ID)
 		t.mu.Unlock()
@@ -464,7 +466,9 @@ func (t *Tunnels) Reconcile(ctx context.Context) {
 		read[id] = record
 		if gone(record, known) {
 			t.log("tunnel to " + record.Name + ": no longer a host; letting go")
-			t.store.Delete(ctx, Key(record.ID))
+			if err := t.store.Delete(ctx, Key(record.ID)); err != nil {
+				t.log("tunnel to " + record.Name + ": could not be deleted: " + err.Error())
+			}
 			delete(read, id)
 		}
 	}
@@ -517,7 +521,9 @@ func (t *Tunnels) learnHost(ctx context.Context, record Record, known []records.
 	record.Host = host
 	// Only this copy writes tunnels, so nobody else's write can be lost.
 	if data, err := records.Encode(record); err == nil {
-		t.store.Put(ctx, Key(record.ID), data, store.Always)
+		if _, err := t.store.Put(ctx, Key(record.ID), data, store.Always); err != nil {
+			t.log("tunnel to " + record.Name + ": could not be written: " + err.Error())
+		}
 	}
 	return record
 }

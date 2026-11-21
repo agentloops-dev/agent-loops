@@ -59,7 +59,8 @@ func page(w http.ResponseWriter, status int, text string) {
 	// On Paper (#4617): the style is inline, and the policy lets in only its hash.
 	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src "+paperpage.StyleSource)
 	w.WriteHeader(status)
-	w.Write([]byte("<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width, initial-scale=1\"><title>Agent Loops</title><style>" +
+	// The client has gone; there is nobody to tell.
+	_, _ = w.Write([]byte("<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width, initial-scale=1\"><title>Agent Loops</title><style>" +
 		paperpage.Style + "</style><p>" + html.EscapeString(text) + "</p>\n"))
 }
 

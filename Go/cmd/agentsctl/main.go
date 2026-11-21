@@ -45,7 +45,9 @@ func session(ctx context.Context) *controllink.Session {
 		die("not paired: agentsctl pair '<client code>' (%v)", err)
 	}
 	var m controllink.ClientMembership
-	json.Unmarshal(b, &m)
+	if err := json.Unmarshal(b, &m); err != nil {
+		die("not paired: %s is not a membership (%v)", file(), err)
+	}
 	s, err := controllink.DialClient(ctx, &m)
 	if err != nil {
 		die("dial: %v", err)
@@ -68,25 +70,11 @@ func main() {
 	wait := fs.Int("wait", 300, "seconds to follow a turn")
 	kind := fs.String("kind", "mac", "pair as this kind of client: mac, iPhone or iPad")
 	token := fs.String("token", "", "a push token, for device")
-	fs.Parse(args)
+	_ = fs.Parse(args) // ExitOnError: a bad flag exits before Parse returns
 	rest := fs.Args()
 	switch cmd {
 	case "pair":
-		if len(rest) != 1 {
-			die("agentsctl pair '<client code>'")
-		}
-		code, err := controllink.ParseCode(rest[0])
-		if err != nil {
-			die("%v", err)
-		}
-		m, err := controllink.PairClientAs(ctx, code, "agentsctl", *kind)
-		if err != nil {
-			die("pair: %v", err)
-		}
-		b, _ := json.MarshalIndent(m, "", "  ")
-		os.MkdirAll(filepath.Dir(file()), 0o700)
-		os.WriteFile(file(), b, 0o600)
-		fmt.Println("paired as", m.Client)
+		pair(ctx, rest, *kind)
 	case "hosts":
 		s := session(ctx)
 		r, err := s.Call(ctx, "", "machines/list", nil)
@@ -106,7 +94,9 @@ func main() {
 		s := session(ctx)
 		// A client hears a host only once it has a channel there: open one.
 		if *host != "" {
-			s.Call(ctx, *host, "daemon/ping", nil)
+			if _, err := s.Call(ctx, *host, "daemon/ping", nil); err != nil {
+				fmt.Fprintf(os.Stderr, "daemon/ping: %v\n", err)
+			}
 		}
 		for n := range s.Notes {
 			if *host == "" || n.Host == *host {
@@ -138,12 +128,37 @@ func main() {
 	}
 }
 
+// pair pairs as a client with a client code and keeps the membership in file().
+func pair(ctx context.Context, rest []string, kind string) {
+	if len(rest) != 1 {
+		die("agentsctl pair '<client code>'")
+	}
+	code, err := controllink.ParseCode(rest[0])
+	if err != nil {
+		die("%v", err)
+	}
+	m, err := controllink.PairClientAs(ctx, code, "agentsctl", kind)
+	if err != nil {
+		die("pair: %v", err)
+	}
+	b, _ := json.MarshalIndent(m, "", "  ")
+	if err := os.MkdirAll(filepath.Dir(file()), 0o700); err != nil {
+		die("pair: %v", err)
+	}
+	if err := os.WriteFile(file(), b, 0o600); err != nil { //nolint:gosec // G703: agentsctl's own membership file
+		die("pair: %v", err)
+	}
+	fmt.Println("paired as", m.Client)
+}
+
 func out(r json.RawMessage, err error) {
 	if err != nil {
 		die("%v", err)
 	}
 	var v any
-	json.Unmarshal(r, &v)
+	if err := json.Unmarshal(r, &v); err != nil {
+		die("reply is not JSON: %v", err)
+	}
 	b, _ := json.MarshalIndent(v, "", "  ")
 	fmt.Println(string(b))
 }
@@ -162,7 +177,9 @@ func lend(ctx context.Context, s *controllink.Session, host, from, runtime strin
 		CACertificate string `json:"caCertificate"`
 		StandIn       string `json:"standIn"`
 	}
-	json.Unmarshal(g, &grant)
+	if err := json.Unmarshal(g, &grant); err != nil {
+		die("relay/grant on %s: %v", from, err)
+	}
 	if _, err := s.Call(ctx, host, "relay/offer", map[string]any{"runtime": runtime, "socketPath": "tunnel",
 		"caCertificate": grant.CACertificate, "standIn": grant.StandIn}); err != nil {
 		die("relay/offer on %s: %v", host, err)
@@ -187,7 +204,9 @@ func turn(ctx context.Context, s *controllink.Session, host, rt, cwd, prompt str
 		die("agents/start: %v", err)
 	}
 	var id string
-	json.Unmarshal(r, &id)
+	if err := json.Unmarshal(r, &id); err != nil {
+		die("agents/start: %v", err)
+	}
 	fmt.Println("agent", id)
 	w := turnWatch{ctx: ctx, s: s, host: host, id: id, allow: allow}
 	deadline := time.After(wait)
@@ -240,14 +259,20 @@ func (w turnWatch) entry(params json.RawMessage) {
 			Kind map[string]json.RawMessage `json:"kind"`
 		} `json:"entry"`
 	}
-	json.Unmarshal(params, &e)
+	if err := json.Unmarshal(params, &e); err != nil {
+		fmt.Fprintf(os.Stderr, "agent/entry: %v\n", err)
+		return
+	}
 	if !strings.EqualFold(e.AgentID, w.id) {
 		return
 	}
 	for k, v := range e.Entry.Kind {
 		if k == "agentMessage" {
 			var m struct{ Text string }
-			json.Unmarshal(v, &m)
+			if err := json.Unmarshal(v, &m); err != nil {
+				fmt.Fprintf(os.Stderr, "agentMessage: %v\n", err)
+				continue
+			}
 			fmt.Print(m.Text)
 			continue
 		}
@@ -270,7 +295,10 @@ func (w turnWatch) permission(params json.RawMessage) {
 			} `json:"options"`
 		} `json:"request"`
 	}
-	json.Unmarshal(params, &p)
+	if err := json.Unmarshal(params, &p); err != nil {
+		fmt.Fprintf(os.Stderr, "agent/permission: %v\n", err)
+		return
+	}
 	if p.Request == nil || !strings.EqualFold(p.AgentID, w.id) {
 		return
 	}
@@ -294,7 +322,10 @@ func (w turnWatch) elicitation(params json.RawMessage) {
 		AgentID string                   `json:"agentID"`
 		Request *wire.ElicitationRequest `json:"request"`
 	}
-	json.Unmarshal(params, &f)
+	if err := json.Unmarshal(params, &f); err != nil {
+		fmt.Fprintf(os.Stderr, "agent/elicitation: %v\n", err)
+		return
+	}
 	if f.Request == nil || !strings.EqualFold(f.AgentID, w.id) {
 		return
 	}
@@ -319,7 +350,10 @@ func (w turnWatch) changed(params json.RawMessage) bool {
 		EndedReason string          `json:"endedReason"`
 		Report      json.RawMessage `json:"report"`
 	}
-	json.Unmarshal(params, &a)
+	if err := json.Unmarshal(params, &a); err != nil {
+		fmt.Fprintf(os.Stderr, "agent/changed: %v\n", err)
+		return false
+	}
 	if strings.EqualFold(a.ID, w.id) && (a.State == "finished" || a.State == "stopped") {
 		fmt.Printf("\n== %s (%s) %s\n", a.State, a.EndedReason, a.Report)
 		return true

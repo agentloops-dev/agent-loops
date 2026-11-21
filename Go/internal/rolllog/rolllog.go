@@ -86,7 +86,10 @@ func (f *File) Write(p []byte) (int, error) {
 	now, err := os.Stat(f.path)
 	switch {
 	case err != nil || !os.SameFile(now, f.info):
-		f.reopen()
+		// On a failure the open file stays; with none, the error is Write's.
+		if err := f.reopen(); err != nil && f.out == nil {
+			return 0, err
+		}
 	case now.Size() > 0 && now.Size()+int64(len(p)) > f.limit:
 		f.roll()
 	}
@@ -121,8 +124,10 @@ func (f *File) Close() error {
 
 // roll makes the log the previous one, replacing the one before, and starts a new one.
 func (f *File) roll() {
-	os.Rename(f.path, Previous(f.path))
-	f.reopen()
+	// This is the log, so a failure has nowhere to be said: a failed rename leaves the log
+	// growing until a later roll works, and a failed reopen keeps the open file.
+	_ = os.Rename(f.path, Previous(f.path))
+	_ = f.reopen()
 }
 
 func (f *File) reopen() error {
@@ -136,8 +141,10 @@ func (f *File) reopen() error {
 		return err
 	}
 	if f.std {
-		dupTo(int(out.Fd()), 1)
-		dupTo(int(out.Fd()), 2)
+		// A failure leaves stdout or stderr where it was, and this is the log, so there is
+		// nowhere to say it.
+		_ = dupTo(int(out.Fd()), 1)
+		_ = dupTo(int(out.Fd()), 2)
 	}
 	if f.out != nil {
 		f.out.Close()

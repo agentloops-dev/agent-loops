@@ -363,7 +363,9 @@ func (k *Kept) Answer(method string, params json.RawMessage, person string) (any
 		key, record := entry.key, entry.record
 		k.mu.Unlock()
 		if data, err := records.Encode(record); err == nil {
-			k.store.Put(context.Background(), key, data, store.Always)
+			if _, err := k.store.Put(context.Background(), key, data, store.Always); err != nil {
+				k.log("kept request " + key + ": could not be written: " + err.Error())
+			}
 		}
 		k.changed()
 		if k.router.Online(host) {
@@ -392,7 +394,7 @@ func (k *Kept) Forget(host string) {
 	delete(k.kept, host)
 	k.mu.Unlock()
 	for _, e := range entries {
-		k.store.Delete(context.Background(), e.key)
+		k.forget(e.key)
 	}
 	k.changed()
 }
@@ -411,7 +413,9 @@ func (k *Kept) fail(host, only, reason string) {
 	k.mu.Unlock()
 	for _, e := range writes {
 		if data, err := records.Encode(e.record); err == nil {
-			k.store.Put(context.Background(), e.key, data, store.Always)
+			if _, err := k.store.Put(context.Background(), e.key, data, store.Always); err != nil {
+				k.log("kept request " + e.key + ": could not be written: " + err.Error())
+			}
 		}
 	}
 }
@@ -466,7 +470,7 @@ func (k *Kept) dropFailed(host string, drop func(left int, r keptRecord) bool) i
 	}
 	k.mu.Unlock()
 	for _, key := range keys {
-		k.store.Delete(context.Background(), key)
+		k.forget(key)
 	}
 	return len(keys)
 }
@@ -489,7 +493,14 @@ func (k *Kept) remove(host, id string) {
 	}
 	k.mu.Unlock()
 	if key != "" {
-		k.store.Delete(context.Background(), key)
+		k.forget(key)
+	}
+}
+
+// forget deletes a kept request's record, and logs when it could not.
+func (k *Kept) forget(key string) {
+	if err := k.store.Delete(context.Background(), key); err != nil {
+		k.log("kept request " + key + ": could not be deleted: " + err.Error())
 	}
 }
 
@@ -527,7 +538,8 @@ func once(method string, params json.RawMessage) json.RawMessage {
 // summary is KeptRequests.summary.
 func summary(r keptRecord) KeptRequest {
 	var object map[string]any
-	decodeJSON(r.Params, &object)
+	// Params that do not read are a summary with no fields.
+	_ = decodeJSON(r.Params, &object)
 	start := r.Method == MethodAgentsStart
 	out := KeptRequest{ID: wire.UUID(r.ID), Host: wire.MachineRef(r.Host), Kind: r.kind(), At: *dateOf(r.At.Time),
 		Failed: optional(r.Failed)}
