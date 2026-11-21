@@ -78,6 +78,7 @@
 .org-policy input[type="text"].wide, .org-policy textarea { width: 100%; box-sizing: border-box; }
 .org-policy .budget-field input { width: 9em; text-align: right; }
 .org-policy .runtime-models { width: 16em; }
+.org-policy .trailer-example { font-family: var(--font-mono); }
 .org-policy .preview { margin: 4px 0; padding-left: 18px; }
 .model-access { display: flex; flex-direction: column; gap: 8px; }
 .model-access .sheet-actions { display: flex; gap: 8px; align-items: center; justify-content: flex-end; max-width: 520px; }
