@@ -27,7 +27,7 @@ func TestARuntimeAssessedFromTheRecord(t *testing.T) {
 	c.call(t, 1, "folders/add", map[string]any{"folder": "file://" + folder})
 
 	var started wire.AssessRuntimeResult
-	json.Unmarshal(c.call(t, 2, "runtimes/assess", map[string]any{"runtimeID": "claude", "folder": "file://" + folder, "model": "default"}), &started)
+	mustUnmarshal(t, c.call(t, 2, "runtimes/assess", map[string]any{"runtimeID": "claude", "folder": "file://" + folder, "model": "default"}), &started)
 	a := d.Store.Agent(started.AgentID)
 	if a == nil || started.Model != nil || !strings.Contains(started.ReportPath, filepath.Join(folder, ".agents", "reviews", "runtimes", "claude-")) {
 		t.Fatalf("%+v %+v", started, a)
@@ -58,7 +58,7 @@ func TestARuntimeAssessedFromTheRecord(t *testing.T) {
 	for _, s := range assessSteps {
 		steps = append(steps, "| "+s.id+" | passed |")
 	}
-	os.WriteFile(started.ReportPath, []byte(strings.Join(steps, "\n")), 0o644)
+	must(t, os.WriteFile(started.ReportPath, []byte(strings.Join(steps, "\n")), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 
 	calls := d.appToolCalls(a.ID)
 	if len(calls) != 4 || calls[0].Method != "files/show" || !calls[0].Ok || !strings.Contains(*calls[0].Answer, "open, empty") ||
@@ -67,7 +67,7 @@ func TestARuntimeAssessedFromTheRecord(t *testing.T) {
 	}
 
 	var score wire.RuntimeAssessmentScore
-	json.Unmarshal(c.call(t, 3, "runtimes/assessment", map[string]any{"agentID": a.ID}), &score)
+	mustUnmarshal(t, c.call(t, 3, "runtimes/assessment", map[string]any{"agentID": a.ID}), &score)
 	verdicts := map[string]wire.RuntimeAssessmentCheck{}
 	for _, ch := range score.Checks {
 		verdicts[ch.ID] = ch

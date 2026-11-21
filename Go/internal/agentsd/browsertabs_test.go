@@ -125,12 +125,12 @@ func TestAPaneSaysWhichSessionHoldsTheBrowser(t *testing.T) {
 		select {
 		case line := <-watcher.out:
 			var msg message
-			json.Unmarshal([]byte(line), &msg)
+			mustUnmarshal(t, []byte(line), &msg)
 			if msg.Method != wire.NotifyBrowserPageChanged.Name {
 				continue
 			}
 			var s wire.BrowserPageState
-			json.Unmarshal(msg.Params, &s)
+			mustUnmarshal(t, msg.Params, &s)
 			heard = s.Holder != nil && *s.Holder == holder.ID && s.HolderTitle != nil && *s.HolderTitle == title
 		case <-deadline:
 			t.Fatal("the pane did not hear who holds the browser")
@@ -180,7 +180,9 @@ func (p *tabsPlaywright) callTool(_ context.Context, name string, args map[strin
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	var action string
-	json.Unmarshal(args["action"], &action)
+	if err := json.Unmarshal(args["action"], &action); err != nil {
+		return nil, err
+	}
 	if i, ok := args["index"]; ok {
 		action += " " + string(i)
 	}

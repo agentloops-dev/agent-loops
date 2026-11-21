@@ -25,7 +25,7 @@ func callError(t *testing.T, c *conn, id int, method string, params any) Error {
 				ID    json.RawMessage `json:"id"`
 				Error *Error          `json:"error"`
 			}
-			json.Unmarshal([]byte(line), &m)
+			mustUnmarshal(t, []byte(line), &m)
 			if string(m.ID) != string(mustJSON(id)) {
 				continue
 			}
@@ -51,7 +51,7 @@ func TestFirstBuildStart(t *testing.T) {
 	d, c := start(t, t.TempDir())
 	params := map[string]any{"idea": "  An iPhone app that logs my runs ", "starter": "iphone-app", "runtimeID": "claude"}
 	var id wire.UUID
-	json.Unmarshal(c.call(t, 1, "firstBuild/start", params), &id)
+	mustUnmarshal(t, c.call(t, 1, "firstBuild/start", params), &id)
 
 	folder, _ := store.Resolve(filepath.Join(home, ".agents", "first-build"))
 	if fi, err := os.Stat(folder); err != nil || !fi.IsDir() {
@@ -94,7 +94,7 @@ func TestFirstBuildStart(t *testing.T) {
 	// Archived, a new first build starts, in the same folder, added once.
 	c.call(t, 3, "agents/archive", map[string]any{"agentID": id})
 	var again wire.UUID
-	json.Unmarshal(c.call(t, 4, "firstBuild/start", map[string]any{"idea": "A website for my book club",
+	mustUnmarshal(t, c.call(t, 4, "firstBuild/start", map[string]any{"idea": "A website for my book club",
 		"starter": "web-service", "runtimeID": "claude"}), &again)
 	if again == "" || again == id || added() != 1 {
 		t.Fatalf("again %q, added %d", again, added())
@@ -102,7 +102,7 @@ func TestFirstBuildStart(t *testing.T) {
 
 	// New App… (#5132): another first build starts while one is there, in the same folder.
 	var another wire.UUID
-	json.Unmarshal(c.call(t, 5, "firstBuild/start", map[string]any{"idea": "An iPhone app that logs my runs",
+	mustUnmarshal(t, c.call(t, 5, "firstBuild/start", map[string]any{"idea": "An iPhone app that logs my runs",
 		"starter": "iphone-app", "runtimeID": "claude", "another": true}), &another)
 	if another == "" || another == again || added() != 1 || d.Store.Agent(again).ArchivedAt != nil {
 		t.Fatalf("another %q, added %d", another, added())
@@ -155,7 +155,7 @@ func TestFirstBuildOnAScratchRootStaysInTheRoot(t *testing.T) {
 	root := t.TempDir()
 	d, c := start(t, root)
 	var id wire.UUID
-	json.Unmarshal(c.call(t, 1, "firstBuild/start", map[string]any{"idea": "An iPhone app that reminds me to water my plants",
+	mustUnmarshal(t, c.call(t, 1, "firstBuild/start", map[string]any{"idea": "An iPhone app that reminds me to water my plants",
 		"starter": "iphone-app", "runtimeID": "claude"}), &id)
 	want, _ := store.Resolve(filepath.Join(d.Store.Loc.Root, "first-build"))
 	if got := store.FolderPath(d.Store.Agent(id).Cwd); got != want {

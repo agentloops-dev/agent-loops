@@ -1,7 +1,6 @@
 package agentsd
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -24,12 +23,12 @@ func TestAllowancesOnAServer(t *testing.T) {
 	d, c := start(t, root)
 	defer d.Shutdown()
 	var accounts []wire.RuntimeAccount
-	json.Unmarshal(c.call(t, 1, "runtimes/accounts", nil), &accounts)
+	mustUnmarshal(t, c.call(t, 1, "runtimes/accounts", nil), &accounts)
 	if len(accounts) != len(catalog) || accounts[0].State != wire.RuntimeAccountStateUnknown {
 		t.Fatalf("%+v", accounts)
 	}
 	var al wire.RuntimeAllowances
-	json.Unmarshal(c.call(t, 2, "runtimes/allowances", nil), &al)
+	mustUnmarshal(t, c.call(t, 2, "runtimes/allowances", nil), &al)
 	if len(al.Rows) != len(catalog) || al.Rows[0].State.Status.Available == nil {
 		t.Fatalf("%+v", al)
 	}
@@ -37,7 +36,7 @@ func TestAllowancesOnAServer(t *testing.T) {
 	until := wire.DateOf(time.Now().Add(time.Hour))
 	out.Status = wire.AllowanceStateStatus{Out: &wire.AllowanceStateStatusOut{Until: &until, Why: "allowanceSpent"}}
 	var changed bool
-	json.Unmarshal(c.call(t, 3, "pool/applyAllowances", map[string]any{"states": []any{out}}), &changed)
+	mustUnmarshal(t, c.call(t, 3, "pool/applyAllowances", map[string]any{"states": []any{out}}), &changed)
 	if !changed {
 		t.Fatal("not taken")
 	}
@@ -45,12 +44,12 @@ func TestAllowancesOnAServer(t *testing.T) {
 	if !strings.Contains(string(b), `"credentialKey":"claude:sign-in"`) {
 		t.Fatalf("%s", b)
 	}
-	json.Unmarshal(c.call(t, 4, "pool/applyAllowances", map[string]any{"states": []any{out}}), &changed)
+	mustUnmarshal(t, c.call(t, 4, "pool/applyAllowances", map[string]any{"states": []any{out}}), &changed)
 	if changed {
 		t.Fatal("the same state taken twice")
 	}
 	al = wire.RuntimeAllowances{}
-	json.Unmarshal(c.call(t, 5, "runtimes/markAvailable", map[string]any{"credentialKey": "claude:sign-in"}), &al)
+	mustUnmarshal(t, c.call(t, 5, "runtimes/markAvailable", map[string]any{"credentialKey": "claude:sign-in"}), &al)
 	for _, r := range al.Rows {
 		if r.CredentialKey == "claude:sign-in" && r.State.Status.Available == nil {
 			t.Fatalf("%+v", r)
@@ -82,9 +81,9 @@ func TestAllowancesLocateOnceAndReadSignInOnce(t *testing.T) {
 	var folders []string
 	for i, name := range []string{"One", "Two", "Three"} {
 		var p wire.AccountProfile
-		json.Unmarshal(c.call(t, i+1, "runtimes/addAccount", map[string]any{"runtimeID": "claude", "name": name}), &p)
+		mustUnmarshal(t, c.call(t, i+1, "runtimes/addAccount", map[string]any{"runtimeID": "claude", "name": name}), &p)
 		folders = append(folders, accountFolder(p))
-		os.WriteFile(filepath.Join(accountFolder(p), ".claude.json"), []byte(`{"oauthAccount":{"emailAddress":"a@example.com"}}`), 0o600)
+		must(t, os.WriteFile(filepath.Join(accountFolder(p), ".claude.json"), []byte(`{"oauthAccount":{"emailAddress":"a@example.com"}}`), 0o600))
 	}
 
 	d.runtimeAllowances()
@@ -112,7 +111,7 @@ func TestAllowancesLocateOnceAndReadSignInOnce(t *testing.T) {
 	}
 
 	// A changed file is read again, and says what it says now.
-	os.WriteFile(filepath.Join(folders[0], ".claude.json"), []byte(`{"oauthAccount":{"emailAddress":"someone.else@example.com"}}`), 0o600)
+	must(t, os.WriteFile(filepath.Join(folders[0], ".claude.json"), []byte(`{"oauthAccount":{"emailAddress":"someone.else@example.com"}}`), 0o600))
 	reads = d.signIns.reads.Load()
 	for _, p := range d.accountProfiles() {
 		if accountFolder(p) == folders[0] && (p.SignedInAs == nil || *p.SignedInAs != "someone.else@example.com") {
@@ -142,7 +141,7 @@ func TestSignInCacheBounded(t *testing.T) {
 	var c signInCache
 	for i := range signInCacheSize + 10 {
 		path := filepath.Join(dir, strconv.Itoa(i))
-		os.WriteFile(path, []byte("{}"), 0o600)
+		must(t, os.WriteFile(path, []byte("{}"), 0o600))
 		c.read(path, func([]byte) signIn { return signIn{signedIn: true} })
 		c.Lock()
 		n := len(c.m)

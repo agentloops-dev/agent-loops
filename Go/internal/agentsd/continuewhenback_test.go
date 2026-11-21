@@ -1,7 +1,6 @@
 package agentsd
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,10 +20,10 @@ func TestAPausedChatContinuesWhenItsAllowanceIsBack(t *testing.T) {
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	var id wire.UUID
-	json.Unmarshal(c.call(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(), "prompt": "typed limit"}), &id)
+	mustUnmarshal(t, c.call(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(), "prompt": "typed limit"}), &id)
 	c.until(t, "stopped", ended(id, wire.AgentStateStopped))
 	var a wire.Agent
-	json.Unmarshal(c.call(t, 2, "agents/continueWhenBack", map[string]any{"agentID": id}), &a)
+	mustUnmarshal(t, c.call(t, 2, "agents/continueWhenBack", map[string]any{"agentID": id}), &a)
 	w := a.ContinueWhenBack
 	if w == nil || !w.At.Time().After(time.Now()) {
 		t.Fatalf("not waiting for a time ahead: %+v", w)
@@ -69,12 +68,12 @@ func TestAWaitThatIsDueGoesAndCancelStopsOne(t *testing.T) {
 	d.allowancesLocked()[ownKey("claude")] = s
 	d.allowMu.Unlock()
 	var a wire.Agent
-	json.Unmarshal(c.call(t, 2, "agents/continueWhenBack", map[string]any{"agentID": waiting.ID}), &a)
+	mustUnmarshal(t, c.call(t, 2, "agents/continueWhenBack", map[string]any{"agentID": waiting.ID}), &a)
 	if a.ContinueWhenBack == nil || a.ContinueWhenBack.At != until {
 		t.Fatalf("%+v", a.ContinueWhenBack)
 	}
 	a = wire.Agent{}
-	json.Unmarshal(c.call(t, 3, "agents/cancelContinue", map[string]any{"agentID": waiting.ID}), &a)
+	mustUnmarshal(t, c.call(t, 3, "agents/cancelContinue", map[string]any{"agentID": waiting.ID}), &a)
 	if a.ContinueWhenBack != nil {
 		t.Fatalf("still waiting after Cancel: %+v", a.ContinueWhenBack)
 	}

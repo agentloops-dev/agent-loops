@@ -1,7 +1,6 @@
 package agentsd
 
 import (
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -29,7 +28,7 @@ func serveCatalog(t *testing.T) *catalogStub {
 	t.Helper()
 	var meta struct{ Owner, Repo, Commit, Next string }
 	b, _ := os.ReadFile(filepath.Join(catalogFixtures, "http", "meta.json"))
-	json.Unmarshal(b, &meta)
+	mustUnmarshal(t, b, &meta)
 	stub := &catalogStub{}
 	file := func(w http.ResponseWriter, name string) {
 		b, err := os.ReadFile(filepath.Join(catalogFixtures, "http", name))
@@ -37,7 +36,7 @@ func serveCatalog(t *testing.T) *catalogStub {
 			http.NotFound(w, nil)
 			return
 		}
-		w.Write(b)
+		check(t, errOnly(w.Write(b))) //nolint:gosec // G705: the test server's own fixture; only its error is new
 	}
 	repo := "/" + meta.Owner + "/" + meta.Repo
 	skillsSh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -78,17 +77,17 @@ func serveCatalog(t *testing.T) *catalogStub {
 		case strings.HasPrefix(p, "/raw"+repo+"/"+meta.Next+"/"):
 			rel := strings.TrimPrefix(p, "/raw"+repo+"/"+meta.Next+"/")
 			if b, err := os.ReadFile(filepath.Join(catalogFixtures, "http", "next", "raw", rel)); err == nil {
-				w.Write(b)
+				check(t, errOnly(w.Write(b))) //nolint:gosec // G705: the test server's own fixture; only its error is new
 				return
 			}
 			if b, err := os.ReadFile(filepath.Join(catalogFixtures, rel)); err == nil {
-				w.Write(b)
+				check(t, errOnly(w.Write(b))) //nolint:gosec // G705: the test server's own fixture; only its error is new
 				return
 			}
 			http.NotFound(w, r)
 		case strings.HasPrefix(p, "/raw"+repo+"/"+meta.Commit+"/"):
 			if b, err := os.ReadFile(filepath.Join(catalogFixtures, strings.TrimPrefix(p, "/raw"+repo+"/"+meta.Commit+"/"))); err == nil {
-				w.Write(b)
+				check(t, errOnly(w.Write(b))) //nolint:gosec // G705: the test server's own fixture; only its error is new
 				return
 			}
 			http.NotFound(w, r)
@@ -115,14 +114,14 @@ func TestASkillSearchedPreviewedAddedAndUpdated(t *testing.T) {
 	personal := map[string]any{"kind": "personal"}
 
 	var found wire.CatalogSearchAnswer
-	json.Unmarshal(c.call(t, 1, "catalog/search", map[string]any{"query": "fixture"}), &found)
+	mustUnmarshal(t, c.call(t, 1, "catalog/search", map[string]any{"query": "fixture"}), &found)
 	if found.Error != nil || len(found.Results) < 2 || found.Results[0].SkillID != "nested" || found.Results[0].Installs != 5120 ||
 		*found.Results[0].Marketplace != skillcatalog.SkillsShID {
 		t.Fatalf("%+v", found)
 	}
 
 	var preview wire.CatalogPreviewAnswer
-	json.Unmarshal(c.call(t, 2, "catalog/preview", map[string]any{"result": found.Results[0], "destination": personal}), &preview)
+	mustUnmarshal(t, c.call(t, 2, "catalog/preview", map[string]any{"result": found.Results[0], "destination": personal}), &preview)
 	p := preview.Preview
 	if preview.Error != nil || p == nil || p.Name != "nested" || len(p.Files) != 4 || p.DestinationState.Free == nil ||
 		p.TreeSHA != "b4146b99df32f406302cf36ff69949f3b394ea01" ||
@@ -138,7 +137,7 @@ func TestASkillSearchedPreviewedAddedAndUpdated(t *testing.T) {
 	}
 
 	var added wire.SkillAddAnswer
-	json.Unmarshal(c.call(t, 3, "skills/add", map[string]any{"previewID": p.PreviewID, "destination": personal, "replace": false}), &added)
+	mustUnmarshal(t, c.call(t, 3, "skills/add", map[string]any{"previewID": p.PreviewID, "destination": personal, "replace": false}), &added)
 	if added.Skill.Name != "nested" || added.Skill.Source != "fixture-owner/fixture-skills" || added.Skill.Update.Current == nil {
 		t.Fatalf("%+v", added)
 	}
@@ -155,13 +154,13 @@ func TestASkillSearchedPreviewedAddedAndUpdated(t *testing.T) {
 	}
 
 	// The same skill again is the same skill, with nothing to update.
-	json.Unmarshal(c.call(t, 5, "catalog/preview", map[string]any{"result": found.Results[0], "destination": personal}), &preview)
+	mustUnmarshal(t, c.call(t, 5, "catalog/preview", map[string]any{"result": found.Results[0], "destination": personal}), &preview)
 	if s := preview.Preview.DestinationState.SameSkill; s == nil || s.Update {
 		t.Fatalf("%+v", preview.Preview.DestinationState)
 	}
 
 	var updates wire.SkillUpdatesAnswer
-	json.Unmarshal(c.call(t, 6, "skills/check-updates", map[string]any{"destination": personal}), &updates)
+	mustUnmarshal(t, c.call(t, 6, "skills/check-updates", map[string]any{"destination": personal}), &updates)
 	if updates.Updates["nested"].Current == nil {
 		t.Fatalf("%+v", updates)
 	}
@@ -170,12 +169,12 @@ func TestASkillSearchedPreviewedAddedAndUpdated(t *testing.T) {
 	stub.movedOn.Store(true)
 	d.catalog().updates = &skillcatalog.UpdateCache{}
 	updates = wire.SkillUpdatesAnswer{}
-	json.Unmarshal(c.call(t, 7, "skills/check-updates", map[string]any{"destination": personal}), &updates)
+	mustUnmarshal(t, c.call(t, 7, "skills/check-updates", map[string]any{"destination": personal}), &updates)
 	if a := updates.Updates["nested"].Available; a == nil || a.Commit != "9ca8b5441cc3bfe5f3a6c20e5eda0119083b7c4f" {
 		t.Fatalf("%+v", updates)
 	}
 	var update wire.SkillUpdatePreviewAnswer
-	json.Unmarshal(c.call(t, 8, "skills/update-preview", map[string]any{"destination": personal, "name": "nested"}), &update)
+	mustUnmarshal(t, c.call(t, 8, "skills/update-preview", map[string]any{"destination": personal, "name": "nested"}), &update)
 	if strings.Join(update.Changes.Added, ",") != "references/y.md" || strings.Join(update.Changes.Changed, ",") != "SKILL.md" ||
 		update.Edited || update.Preview.DestinationState.SameSkill == nil || !update.Preview.DestinationState.SameSkill.Update {
 		t.Fatalf("%+v", update)
@@ -194,7 +193,7 @@ func TestASkillPreviewedFromTheTarballWhenGitHubLimitsRequests(t *testing.T) {
 	result := wire.CatalogResult{ID: "fixture-owner/fixture-skills/plain", Name: "plain", Owner: "fixture-owner",
 		Repo: "fixture-skills", SkillID: "plain"}
 	var preview wire.CatalogPreviewAnswer
-	json.Unmarshal(c.call(t, 1, "catalog/preview", map[string]any{"result": result, "destination": map[string]any{"kind": "personal"}}), &preview)
+	mustUnmarshal(t, c.call(t, 1, "catalog/preview", map[string]any{"result": result, "destination": map[string]any{"kind": "personal"}}), &preview)
 	if preview.Preview == nil || preview.Preview.Files[0].Via != "tarball" || preview.Preview.TreeSHA != "23d62e67393a5c2fea8e704ecd9d15f6541312c8" {
 		t.Fatalf("%+v %+v", preview.Error, preview.Preview)
 	}
@@ -208,14 +207,14 @@ func TestThePersonsOwnMarketplaces(t *testing.T) {
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	var list wire.MarketplacesListAnswer
-	json.Unmarshal(c.call(t, 1, "marketplaces/list", map[string]any{"kind": "skills"}), &list)
+	mustUnmarshal(t, c.call(t, 1, "marketplaces/list", map[string]any{"kind": "skills"}), &list)
 	if len(list.Marketplaces) != 2 || list.Marketplaces[0].ID != skillcatalog.SkillsShID || !list.Marketplaces[0].Enabled {
 		t.Fatalf("%+v", list)
 	}
 	if e := c.callError(t, 2, "marketplaces/add", map[string]any{"name": "Acme", "format": "mcp-registry", "url": "http://acme.example"}); e.Message != "The address must be https (http only for localhost)." {
 		t.Fatalf("%+v", e)
 	}
-	json.Unmarshal(c.call(t, 3, "marketplaces/add", map[string]any{"name": "Acme", "format": "mcp-registry", "url": "https://mcp.acme.example/",
+	mustUnmarshal(t, c.call(t, 3, "marketplaces/add", map[string]any{"name": "Acme", "format": "mcp-registry", "url": "https://mcp.acme.example/",
 		"token": "ACME_TOKEN", "tokenValue": "s3cret"}), &list)
 	var acme *wire.Marketplace
 	for i, m := range list.Marketplaces {
@@ -237,7 +236,7 @@ func TestThePersonsOwnMarketplaces(t *testing.T) {
 	if string(file) != "{\n  \"marketplaces\" : [\n    {\n      \"format\" : \"mcp-registry\",\n      \"name\" : \"Acme\",\n      \"token\" : \"ACME_TOKEN\",\n      \"url\" : \"https://mcp.acme.example\"\n    }\n  ]\n}\n" {
 		t.Fatal(string(file))
 	}
-	json.Unmarshal(c.call(t, 4, "marketplaces/set-enabled", map[string]any{"id": "provided:official-mcp", "enabled": false}), &list)
+	mustUnmarshal(t, c.call(t, 4, "marketplaces/set-enabled", map[string]any{"id": "provided:official-mcp", "enabled": false}), &list)
 	for _, m := range list.Marketplaces {
 		if m.ID == "provided:official-mcp" && m.Enabled {
 			t.Fatal("still on")
@@ -247,7 +246,7 @@ func TestThePersonsOwnMarketplaces(t *testing.T) {
 		t.Fatalf("%+v", e)
 	}
 	list = wire.MarketplacesListAnswer{}
-	json.Unmarshal(c.call(t, 6, "marketplaces/remove", map[string]any{"id": "personal:https://mcp.acme.example"}), &list)
+	mustUnmarshal(t, c.call(t, 6, "marketplaces/remove", map[string]any{"id": "personal:https://mcp.acme.example"}), &list)
 	if len(list.Marketplaces) != 5 {
 		t.Fatalf("%+v", list)
 	}

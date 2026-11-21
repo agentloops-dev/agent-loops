@@ -212,7 +212,7 @@ func TestDailyChecksIsTheHomeFolders(t *testing.T) {
 func suggestionsIn(t *testing.T, c *conn, id int, folder string) []wire.CheckSuggestion {
 	t.Helper()
 	var listed []wire.FolderPins
-	json.Unmarshal(c.call(t, id, "pins/list", wire.Empty{}), &listed)
+	mustUnmarshal(t, c.call(t, id, "pins/list", wire.Empty{}), &listed)
 	for _, pp := range listed {
 		if filepath.Clean(store.FolderPath(pp.Folder)) == filepath.Clean(folder) {
 			return pp.Suggestions
@@ -257,7 +257,7 @@ func TestForReviewListsTheChecksSuggestionsWithStartAndDismiss(t *testing.T) {
 		t.Fatalf("an id changed between two reads: %s %s", again[0].ID, got[0].ID)
 	}
 	var snapshot wire.CatchUpSnapshot
-	json.Unmarshal(c.call(t, 3, "client/catchUp", wire.CatchUpRequest{Parts: []string{"pins"}}), &snapshot)
+	mustUnmarshal(t, c.call(t, 3, "client/catchUp", wire.CatchUpRequest{Parts: []string{"pins"}}), &snapshot)
 	caught := 0
 	for _, pp := range snapshot.Pins {
 		caught += len(pp.Suggestions)
@@ -284,7 +284,7 @@ func TestForReviewListsTheChecksSuggestionsWithStartAndDismiss(t *testing.T) {
 
 	// Start: a session in its folder with its prompt, and the suggestion goes.
 	var id wire.UUID
-	json.Unmarshal(c.call(t, 8, "suggestions/start", wire.SuggestionRequest{Folder: folder, ID: got[0].ID}), &id)
+	mustUnmarshal(t, c.call(t, 8, "suggestions/start", wire.SuggestionRequest{Folder: folder, ID: got[0].ID}), &id)
 	a := d.Store.Agent(id)
 	if a == nil || filepath.Clean(folderPath(a)) != filepath.Clean(quiet) {
 		t.Fatalf("the started session: %+v", a)

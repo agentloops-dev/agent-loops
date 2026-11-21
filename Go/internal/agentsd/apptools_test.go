@@ -55,7 +55,9 @@ func (m *mcpClient) post(method string, params any, id int) (int, map[string]jso
 	}
 	b, _ := io.ReadAll(res.Body)
 	var out map[string]json.RawMessage
-	json.Unmarshal(b, &out)
+	if err := json.Unmarshal(b, &out); err != nil && len(b) > 0 {
+		m.t.Fatalf("%s %s: %d %s: %v", method, m.url, res.StatusCode, b, err)
+	}
 	return res.StatusCode, out
 }
 
@@ -102,7 +104,7 @@ func TestTheAppsToolsAreServedToEachRuntime(t *testing.T) {
 			InputSchema map[string]json.RawMessage `json:"inputSchema"`
 		} `json:"tools"`
 	}
-	json.Unmarshal(list["result"], &tools)
+	mustUnmarshal(t, list["result"], &tools)
 	// drive_screen is the one tool this host may not offer at all: on a host with no
 	// agents-drive beside it (#3004, host.desktop-control/1), and on every host while desktop
 	// control is Off (FR-004), as it is here. Nor is check_folders, but in the person's home
@@ -127,7 +129,7 @@ func TestTheAppsToolsAreServedToEachRuntime(t *testing.T) {
 			Content []struct{ Text string } `json:"content"`
 			IsError bool                    `json:"isError"`
 		}
-		json.Unmarshal(r["result"], &res)
+		mustUnmarshal(t, r["result"], &res)
 		return res.Content[0].Text, res.IsError
 	}
 	if text, isErr := call(3, map[string]any{"add": "review"}); isErr || text != "This session's labels: Mine, review." {

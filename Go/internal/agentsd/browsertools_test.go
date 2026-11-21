@@ -137,7 +137,7 @@ func TestTheBrowserToolsAreListed(t *testing.T) {
 			InputSchema json.RawMessage `json:"inputSchema"`
 		} `json:"tools"`
 	}
-	json.Unmarshal(list["result"], &tools)
+	mustUnmarshal(t, list["result"], &tools)
 	got := map[string]string{}
 	for _, tool := range tools.Tools {
 		if strings.HasPrefix(tool.Name, "browser_") {
@@ -311,7 +311,7 @@ func TestTheBrowserToolsMatchThePin(t *testing.T) {
 		Package        string `json:"package"`
 		PackageVersion string `json:"packageVersion"`
 	}
-	json.Unmarshal(b, &manifest)
+	mustUnmarshal(t, b, &manifest)
 	if list.Package != manifest.Package || list.Version != manifest.PackageVersion {
 		t.Fatalf("browsertools.json is %s %s, the pin %s %s: run scripts/browser-tools.sh", list.Package, list.Version, manifest.Package, manifest.PackageVersion)
 	}
