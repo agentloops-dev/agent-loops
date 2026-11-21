@@ -4,10 +4,10 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/yamlnode"
-	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -266,7 +266,6 @@ func TestTheMappingsAreThePersons(t *testing.T) {
 // since, or a record from before levels were kept, said Custom for a mode a cell now gives
 // (#5730). auto/set and a branch match them again.
 func TestLevelsFollowTheMappings(t *testing.T) {
-	flaky.UnderLoad(t, "#6432")
 	t.Parallel()
 
 	fakeRuntimes(t)
@@ -288,7 +287,17 @@ func TestLevelsFollowTheMappings(t *testing.T) {
 	auto := map[string]any{"options": map[string]any{"mode": "auto"}}
 	c.call(t, 1, "auto/set", map[string]any{"order": []string{}, "excluded": []string{},
 		"overrides": []any{map[string]any{"runtimeID": "claude", "field": "permission", "level": "approveForMe", "native": auto}}})
-	until(t, "Approve for me", func() bool {
+	// On a miss it says what the record, the saved settings and their match were (#6432),
+	// before the daemon shuts down; waitFor's failure gives every goroutine's stack.
+	defer func() {
+		if t.Failed() {
+			r := d.Store.Agent(a.ID)
+			s := d.autoSettings()
+			t.Logf("levels %s, settings %s, they match %s; still running: %v",
+				mustJSON(r.Levels), mustJSON(s), mustJSON(d.matchLevelsWith(r, s)), d.liveJobs())
+		}
+	}()
+	waitFor(t, "Approve for me", func() bool {
 		p := permission(a.ID)
 		return p != nil && *p == wire.PermissionLevelApproveForMe
 	})
@@ -305,6 +314,49 @@ func TestLevelsFollowTheMappings(t *testing.T) {
 	}
 	if p := permission(id); p == nil || *p != wire.PermissionLevelPlan {
 		t.Fatalf("branch: %v", p)
+	}
+}
+
+// A pass that matches levels again, and an auto/set while it runs: the new settings are
+// saved, and their own pass ends, before this pass gets to a record. That record follows the
+// settings saved, not the ones the pass read when it began (#6432).
+func TestARematchTakesTheSettingsSavedSinceItBegan(t *testing.T) {
+	t.Parallel()
+
+	d, _ := start(t, t.TempDir())
+	defer d.Shutdown()
+	d.SettingsDir = t.TempDir()
+	dir := t.TempDir()
+	mode := func(a *wire.Agent) { a.StartOptions.Values["mode"] = jsonString("auto") }
+	// The pass takes the newest first: first, then second.
+	second := seeded(t, d, dir, mode)
+	first := seeded(t, d, dir, func(a *wire.Agent) {
+		mode(a)
+		a.LastActivityAt = wire.DateOf(time.Now().Add(time.Minute))
+	})
+	auto := wire.AutoSettings{Order: []string{}, Excluded: []string{}, Overrides: []wire.AutoOverride{{RuntimeID: "claude",
+		Field: wire.AutoFieldPermission, Level: string(wire.PermissionLevelApproveForMe),
+		Native: wire.NativeSetting{Options: map[string]wire.JSONValue{"mode": jsonString("auto")}}}}}
+	if err := d.writeSetting("auto.json", auto); err != nil {
+		t.Fatal(err)
+	}
+	// The person takes the cell back once the pass has changed the first record. The pass of
+	// that auto/set finds the second record Custom already, so it changes nothing.
+	once := false
+	d.changeTold = func(a wire.Agent) {
+		if a.ID == first.ID && !once {
+			once = true
+			if err := d.writeSetting("auto.json", wire.AutoSettings{Order: []string{}, Excluded: []string{}, Overrides: []wire.AutoOverride{}}); err != nil {
+				t.Error(err)
+			}
+		}
+	}
+	d.rematchLevels()
+	if !once {
+		t.Fatal("the pass did not change the first record")
+	}
+	if l := d.Store.Agent(second.ID).Levels; l != nil && l.Permission != nil {
+		t.Fatalf("the second record took the old cell: %v", *l.Permission)
 	}
 }
 
