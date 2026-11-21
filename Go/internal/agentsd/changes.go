@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -880,7 +881,10 @@ func (d *Daemon) fork(ctx context.Context, id wire.UUID) (wire.UUID, error) {
 	}
 	entries, _, _ := d.Store.Transcript(a.ID, 0)
 	for _, e := range entries[:min(len(entries), 10000)] {
-		d.Store.Append(b.ID, e)
+		if _, err := d.Store.Append(b.ID, e); err != nil {
+			log.Printf("fork: could not copy the transcript to %s: %v", b.ID, err)
+			break
+		}
 	}
 	from := "another agent"
 	if a.Title != nil {

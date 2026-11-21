@@ -618,7 +618,7 @@ func (d *Daemon) setOption(ctx context.Context, r wire.SetOptionRequest) ([]wire
 	options := []wire.ConfigOption{}
 	if s != nil {
 		var v any
-		json.Unmarshal(r.Value, &v)
+		_ = json.Unmarshal(r.Value, &v) // a value that is not JSON sets nil, the option's default
 		cctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		defer cancel()
 		got, err := s.SetOption(cctx, r.OptionID, v)

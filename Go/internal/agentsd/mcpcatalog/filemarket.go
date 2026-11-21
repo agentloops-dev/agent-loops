@@ -79,7 +79,7 @@ func parseFileMarketplace(b []byte) ([]fileEntry, error) {
 		if json.Unmarshal(it.Server, &s) != nil || strings.TrimSpace(s.Name) == "" {
 			continue
 		}
-		json.Unmarshal(it.Server, &inner)
+		_ = json.Unmarshal(it.Server, &inner) // it decoded as s above; its _meta is optional
 		e := fileEntry{Server: s}
 		for _, meta := range []map[string]json.RawMessage{it.Meta, inner.Meta} {
 			if raw, ok := meta[connectorMeta]; ok {

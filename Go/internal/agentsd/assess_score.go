@@ -602,7 +602,8 @@ func questionsOf(c appToolCall) []formQuestion {
 		Prompt  string            `json:"prompt"`
 		Options []json.RawMessage `json:"options"`
 	}
-	json.Unmarshal(c.Arguments["questions"], &qs)
+	// No questions, or not a list of them, is an empty form.
+	_ = json.Unmarshal(c.Arguments["questions"], &qs)
 	var out []formQuestion
 	for _, q := range qs {
 		if q.ID != "" && q.Prompt != "" {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
 	"slices"
 	"strconv"
 	"strings"
@@ -284,7 +285,9 @@ func (d *Daemon) fillSecret(ctx context.Context, drive *browserDrive, fill secre
 		for k, v := range field {
 			cleared[k] = v
 		}
-		drive.call(ctx, "browser_type", cleared)
+		if _, err := drive.call(ctx, "browser_type", cleared); err != nil {
+			log.Printf("browser: could not take %s out of the field again: %v", name, err)
+		}
 		return fillWords("Nothing was filled: " + name + " could not be hidden in that field, so it was taken out again.")
 	}
 	if submit := args["submit"]; string(submit) == "true" {

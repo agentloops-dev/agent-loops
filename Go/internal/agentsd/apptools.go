@@ -391,7 +391,7 @@ func writeJSON(w http.ResponseWriter, v any, session string) {
 	}
 	b, _ := json.Marshal(v) // Go sorts map keys, so the same tools are the same bytes
 	w.WriteHeader(http.StatusOK)
-	w.Write(b)
+	_, _ = w.Write(b) // a client that has gone cannot be told
 }
 
 // offeredTools is the tools this host lists to a session: the Swift host's, those it does,
@@ -409,7 +409,7 @@ func offeredTools(movesItself, bot, desktopControl, checks bool) []json.RawMessa
 	out := []json.RawMessage{}
 	for _, t := range all {
 		var name string
-		json.Unmarshal(t["name"], &name)
+		_ = json.Unmarshal(t["name"], &name) // a tool with no name keeps ""
 		// A bot's machine has no ask tools: nobody answers there (#1761, FR-032). A host
 		// with no agents-drive beside it, or with desktop control Off, has no drive_screen
 		// (#3004, host.desktop-control/1, FR-004). Only a session in the person's home
@@ -431,7 +431,7 @@ func (d *Daemon) appToolsHandle(ctx context.Context, g *appGrant, method string,
 		var p struct {
 			ProtocolVersion string `json:"protocolVersion"`
 		}
-		json.Unmarshal(params, &p)
+		_ = json.Unmarshal(params, &p) // no version, or a bad one, takes ours below
 		version := p.ProtocolVersion
 		if version == "" {
 			version = mcpProtocol
@@ -449,7 +449,7 @@ func (d *Daemon) appToolsHandle(ctx context.Context, g *appGrant, method string,
 		var p struct {
 			URI string `json:"uri"`
 		}
-		json.Unmarshal(params, &p)
+		_ = json.Unmarshal(params, &p) // a bad request gets the same refusal
 		return nil, Invalid("No resource at %s.", p.URI)
 	case "tools/call":
 		return d.appToolsCall(ctx, g, params)
@@ -481,7 +481,7 @@ func (d *Daemon) appToolsCall(ctx context.Context, g *appGrant, params json.RawM
 		Name      string                     `json:"name"`
 		Arguments map[string]json.RawMessage `json:"arguments"`
 	}
-	json.Unmarshal(params, &p)
+	_ = json.Unmarshal(params, &p) // bad params leave no name, which no tool has
 	if name, ok := browserToolNamed(p.Name); ok && d.browserAvailable() {
 		return d.callBrowserTool(ctx, g.agent, name, p.Arguments), nil
 	}

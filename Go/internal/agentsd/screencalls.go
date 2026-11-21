@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -115,13 +116,14 @@ func (p *driveProcess) call(req map[string]any) (map[string]any, error) {
 		select {
 		case r = <-p.replies:
 		case <-deadline:
-			p.cmd.Process.Kill()
+			// A helper that has already ended has nothing to stop.
+			_ = p.cmd.Process.Kill()
 			return nil, fmt.Errorf("agents-drive: no answer to %v in %s, so it was stopped", req["action"], driveCallDeadline)
 		}
 	case <-deadline:
 		// Killed, so the write above ends too; every caller drops this helper on an error
 		// (releaseScreenDrive), and the next call starts a fresh one.
-		p.cmd.Process.Kill()
+		_ = p.cmd.Process.Kill()
 		return nil, fmt.Errorf("agents-drive: no answer to %v in %s, so it was stopped", req["action"], driveCallDeadline)
 	}
 	if r.err != nil {
@@ -134,11 +136,12 @@ func (p *driveProcess) stop() {
 	close(p.done)
 	p.stdin.Close()
 	done := make(chan struct{})
-	go func() { p.cmd.Wait(); close(done) }()
+	// It is stopping: how it ended does not matter, only that it did.
+	go func() { _ = p.cmd.Wait(); close(done) }()
 	select {
 	case <-done:
 	case <-time.After(2 * time.Second):
-		p.cmd.Process.Kill()
+		_ = p.cmd.Process.Kill()
 	}
 }
 
@@ -226,7 +229,9 @@ func (d *Daemon) letGoOfScreen(agent wire.UUID) {
 	d.releaseScreenDrive(agent)
 	// holdsScreen loads the book: every other turn ends without ever leasing anything.
 	if d.holdsScreen(agent) {
-		d.releaseResource(agent, screenLeaseName)
+		if _, err := d.releaseResource(agent, screenLeaseName); err != nil {
+			log.Printf("screen: could not give back the lease of %s: %v", agent, err)
+		}
 	}
 }
 
@@ -329,12 +334,13 @@ func driveScreenRequest(args map[string]json.RawMessage, action, app string) map
 	}
 	if raw, ok := args["x"]; ok {
 		var x float64
-		json.Unmarshal(raw, &x)
+		// A value that is not a number is 0, as when it is not given.
+		_ = json.Unmarshal(raw, &x)
 		req["x"] = x
 	}
 	if raw, ok := args["y"]; ok {
 		var y float64
-		json.Unmarshal(raw, &y)
+		_ = json.Unmarshal(raw, &y)
 		req["y"] = y
 	}
 	if text := argString(args, "text"); text != "" {

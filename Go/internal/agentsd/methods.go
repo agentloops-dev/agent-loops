@@ -2,6 +2,7 @@ package agentsd
 
 import (
 	"context"
+	"log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -211,7 +212,8 @@ func (d *Daemon) registerAgentCalls() {
 		d.actedOn(r.AgentID, c.actor())
 		d.noteAdminStop(r.AgentID, r.ByAdmin != nil && *r.ByAdmin)
 		d.live(r.AgentID).cancel()
-		d.cancelContinue(r.AgentID)
+		// It fails only for an agent that is gone, checked above.
+		_, _ = d.cancelContinue(r.AgentID)
 		d.dropLeases(r.AgentID, "holderStopped")
 		d.endWait(r.AgentID, "stopped", false)
 		return wire.Empty{}, nil
@@ -502,7 +504,9 @@ func (d *Daemon) archiveSweeping(id wire.UUID, by wire.AgentArchivedReason, swee
 	d.forgetAgentInMemory(id)
 	// An archived session is not kept pinned (unpinArchived).
 	if a := d.Store.Agent(id); a != nil {
-		d.unpinSession(folderPath(a), id)
+		if err := d.unpinSession(folderPath(a), id); err != nil {
+			log.Printf("archive %s: could not unpin it: %v", id, err)
+		}
 		d.sweepWorktreeSoon(*a, sweep)
 	}
 	return nil

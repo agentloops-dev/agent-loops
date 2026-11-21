@@ -90,9 +90,13 @@ func (d *Daemon) loadPluginApprovals() (r pluginApprovals, unreadable bool) {
 		}
 		began := now()
 		r.ApprovalsBegan = &began
-		d.savePluginApprovals(r)
+		if err := d.savePluginApprovals(r); err != nil {
+			log.Printf("plugins: could not save approvals: %v", err)
+		}
 	} else if !marked {
-		os.WriteFile(beganMarker(path), []byte(approvalsBeganNote), 0o644)
+		if err := os.WriteFile(beganMarker(path), []byte(approvalsBeganNote), 0o644); err != nil { //nolint:gosec // G306: the mode this file always had; only its error is new
+			log.Printf("plugins: could not write %s: %v", beganMarker(path), err)
+		}
 	}
 	return r, false
 }
@@ -106,7 +110,9 @@ func (d *Daemon) savePluginApprovals(r pluginApprovals) error {
 	}
 	if r.ApprovalsBegan != nil {
 		if _, err := os.Stat(beganMarker(path)); err != nil {
-			os.WriteFile(beganMarker(path), []byte(approvalsBeganNote), 0o644)
+			if err := os.WriteFile(beganMarker(path), []byte(approvalsBeganNote), 0o644); err != nil { //nolint:gosec // G306: the mode this file always had; only its error is new
+				log.Printf("plugins: could not write %s: %v", beganMarker(path), err)
+			}
 		}
 	}
 	return nil
@@ -170,7 +176,9 @@ func (d *Daemon) approvePlugin(r wire.PluginApproveRequest) (wire.PluginsList, e
 	if unreadable {
 		path := d.pluginApprovalsPath()
 		if b, err := os.ReadFile(path); err == nil {
-			os.WriteFile(fmt.Sprintf("%s.unreadable-%d", path, time.Now().Unix()), b, 0o644)
+			if err := os.WriteFile(fmt.Sprintf("%s.unreadable-%d", path, time.Now().Unix()), b, 0o644); err != nil { //nolint:gosec // G306: the mode this file always had; only its error is new
+				log.Printf("plugins: could not keep a copy of %s: %v", path, err)
+			}
 			store.TrimSetAsides(path)
 		}
 		began := now()
@@ -274,7 +282,8 @@ func pluginStamp(plugin string) (string, bool) {
 		return "", false
 	}
 	fmt.Fprintln(h, statLine(root, false))
-	filepath.WalkDir(root, func(path string, e fs.DirEntry, err error) error {
+	// The callback always returns nil, so the walk has no error to give.
+	_ = filepath.WalkDir(root, func(path string, e fs.DirEntry, err error) error {
 		if err != nil || path == root || e.Name() == ".DS_Store" {
 			return nil
 		}
@@ -315,7 +324,8 @@ func computePluginDigest(plugin string) (string, bool) {
 	}
 	type entry struct{ rel, path string }
 	var entries []entry
-	filepath.WalkDir(root, func(path string, e fs.DirEntry, err error) error {
+	// The callback returns only nil or SkipDir, so the walk has no error to give.
+	_ = filepath.WalkDir(root, func(path string, e fs.DirEntry, err error) error {
 		if path == root {
 			return nil
 		}

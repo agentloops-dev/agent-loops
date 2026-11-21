@@ -294,7 +294,7 @@ func (d *Daemon) personZone() string {
 	}
 	var m userSettingsSyncState
 	if b, err := os.ReadFile(d.userSettingsSyncPath()); err == nil {
-		json.Unmarshal(b, &m)
+		_ = json.Unmarshal(b, &m) // unreadable settings have no time zone: this Mac's is used
 	}
 	d.personTZ.CompareAndSwap(nil, &m.TimeZone)
 	return *d.personTZ.Load()

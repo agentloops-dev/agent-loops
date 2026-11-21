@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"time"
@@ -62,8 +63,10 @@ func (d *Daemon) setPerson(p wire.PersonSettings) (wire.PersonSettings, error) {
 		if had, readErr := os.ReadFile(d.personFile()); readErr == nil && bytes.Equal(had, b) {
 			return p, nil
 		}
-		os.MkdirAll(d.SettingsDir, 0o700)
-		err = store.WriteAtomically(d.personFile(), b, 0o644)
+		err = os.MkdirAll(d.SettingsDir, 0o700)
+		if err == nil {
+			err = store.WriteAtomically(d.personFile(), b, 0o644)
+		}
 	}
 	if err != nil {
 		return wire.PersonSettings{}, &Error{Code: wire.FailureCouldNotSave, Message: "person.json: " + err.Error()}
@@ -81,7 +84,9 @@ func readPerson(path string) wire.PersonSettings {
 		return p
 	}
 	if json.Unmarshal(b, &p) != nil {
-		os.Rename(path, fmt.Sprintf("%s.corrupt-%d", path, time.Now().Unix()))
+		if err := os.Rename(path, fmt.Sprintf("%s.corrupt-%d", path, time.Now().Unix())); err != nil {
+			log.Printf("%s: unreadable, and could not be set aside: %v", filepath.Base(path), err)
+		}
 		store.TrimSetAsides(path)
 		return wire.PersonSettings{}
 	}

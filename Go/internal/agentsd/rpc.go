@@ -283,7 +283,7 @@ func (s *sockConn) writeAll() {
 		case <-s.done:
 			return
 		case line := <-s.out:
-			s.c.SetWriteDeadline(time.Now().Add(sockWriteDeadline))
+			_ = s.c.SetWriteDeadline(time.Now().Add(sockWriteDeadline)) // it fails only on a closed socket, and so does the write
 			_, err := w.WriteString(line + "\n")
 			for more := true; more && err == nil; {
 				select {
@@ -319,7 +319,10 @@ func (d *Daemon) ServeSocket(ctx context.Context, path string) error {
 	if err != nil {
 		return err
 	}
-	os.Chmod(path, 0o600)
+	if err := os.Chmod(path, 0o600); err != nil {
+		_ = l.Close() // the socket is not served
+		return err
+	}
 	policy := d.socketPolicy()
 	log.Printf("socket: %s", policy.Summary())
 	// Shutdown ends the accept loop too, not only the caller's ctx (#5812): a loop left

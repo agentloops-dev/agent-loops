@@ -219,11 +219,13 @@ func (w *folderWatch) stop() {
 		if w.cmd != nil {
 			w.stdin.Close()
 			done := make(chan struct{})
-			go func() { w.cmd.Wait(); close(done) }()
+			// It is stopping: how it ended does not matter, only that it did.
+			go func() { _ = w.cmd.Wait(); close(done) }()
 			select {
 			case <-done:
 			case <-time.After(2 * time.Second):
-				w.cmd.Process.Kill()
+				// A watcher that has already ended has nothing to stop.
+				_ = w.cmd.Process.Kill()
 			}
 		}
 	})

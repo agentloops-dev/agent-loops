@@ -202,7 +202,7 @@ func (d *Daemon) leaseResource(agent wire.UUID, args map[string]json.RawMessage)
 	by := leaseBy(args["by"], now().Time())
 	wait := true
 	if raw, ok := args["wait"]; ok {
-		json.Unmarshal(raw, &wait)
+		_ = json.Unmarshal(raw, &wait) // not a bool: it waits, the default
 	}
 
 	// A simulator by its name, found before the lock: simctl takes a moment.
@@ -591,6 +591,6 @@ func (d *Daemon) listResources(agent wire.UUID, _ map[string]json.RawMessage) (s
 // argString is a tool's string argument, or "".
 func argString(args map[string]json.RawMessage, key string) string {
 	var s string
-	json.Unmarshal(args[key], &s)
+	_ = json.Unmarshal(args[key], &s) // absent or not a string: ""
 	return s
 }

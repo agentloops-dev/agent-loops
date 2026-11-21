@@ -313,7 +313,9 @@ func (d *Daemon) clearPickUps() {
 			d.agentMu.Lock()
 			if b := d.Store.Agent(a.ID); b != nil {
 				b.RestartPickUps = nil
-				d.Store.Save(*b)
+				if err := d.Store.Save(*b); err != nil {
+					log.Printf("recovery: could not save %s: %v", b.ID, err)
+				}
 			}
 			d.agentMu.Unlock()
 		}

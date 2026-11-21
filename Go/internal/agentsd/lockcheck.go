@@ -316,7 +316,9 @@ func (d *Daemon) seeSigned(id string, at int64, now time.Time) bool {
 	if d.lockSeen == nil {
 		d.lockSeen = map[string]int64{}
 		if b, err := os.ReadFile(path); err == nil {
-			json.Unmarshal(b, &d.lockSeen)
+			if err := json.Unmarshal(b, &d.lockSeen); err != nil {
+				log.Printf("lock check: could not read %s: %v", lockSeenFile, err)
+			}
 		}
 	}
 	if _, seen := d.lockSeen[id]; seen {

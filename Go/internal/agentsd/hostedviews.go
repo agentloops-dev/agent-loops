@@ -149,7 +149,7 @@ func withoutViewOnlyTools(result json.RawMessage, only map[string]bool) json.Raw
 		var named struct {
 			Name string `json:"name"`
 		}
-		json.Unmarshal(t, &named)
+		_ = json.Unmarshal(t, &named) // a tool with no name is kept
 		if !only[named.Name] {
 			kept = append(kept, t)
 		}
@@ -180,7 +180,7 @@ func (d *Daemon) hostedSessionCall(h *hostedServer, method string, params json.R
 		var call struct {
 			Name string `json:"name"`
 		}
-		json.Unmarshal(params, &call)
+		_ = json.Unmarshal(params, &call) // a bad call goes on to the server, which says so
 		d.hostedMu.Lock()
 		only := h.viewOnly
 		d.hostedMu.Unlock()

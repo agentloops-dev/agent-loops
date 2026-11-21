@@ -33,8 +33,9 @@ func (d *Daemon) multiplierBaseline() wire.MultiplierBaseline {
 	prefs := d.preferences()
 	var prs float64
 	var line string
-	json.Unmarshal(prefs[multiplierPRsPerWeekKey], &prs)
-	json.Unmarshal(prefs[multiplierLineKey], &line)
+	// Absent, or of the wrong kind, is the default (above).
+	_ = json.Unmarshal(prefs[multiplierPRsPerWeekKey], &prs)
+	_ = json.Unmarshal(prefs[multiplierLineKey], &line)
 	return lineage.BaselineOf(prs, line)
 }
 

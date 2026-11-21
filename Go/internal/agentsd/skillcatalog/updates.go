@@ -2,6 +2,8 @@ package skillcatalog
 
 import (
 	"context"
+	"log"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -61,7 +63,9 @@ func (u Updates) Check(ctx context.Context, managed map[string]wire.ManagedSkill
 			out[s.Name] = skillUpdateState(s, answer, place, side)
 		}
 	}
-	side.Save(u.Sidecar)
+	if err := side.Save(u.Sidecar); err != nil {
+		log.Printf("skills: could not write %s: %v", filepath.Base(u.Sidecar), err)
+	}
 	return out
 }
 

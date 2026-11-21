@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -375,7 +376,9 @@ func (d *Daemon) linkShared(p wire.AccountProfile) {
 		if _, err := os.Lstat(dst); err == nil {
 			continue
 		}
-		os.Symlink(src, dst)
+		if err := os.Symlink(src, dst); err != nil {
+			log.Printf("accounts: could not link %s: %v", dst, err)
+		}
 	}
 }
 

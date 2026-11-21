@@ -570,7 +570,7 @@ func (m *viewSession) list(method, key string) ([]json.RawMessage, error) {
 			return nil, &mcpCheckFailure{kind: "notMCP"}
 		}
 		var items []json.RawMessage
-		json.Unmarshal(p[key], &items)
+		_ = json.Unmarshal(p[key], &items) // optional: a page with no list adds none
 		all = append(all, items...)
 		cursor, _ = stringOf(p["nextCursor"])
 		if cursor == "" {

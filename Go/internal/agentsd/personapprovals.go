@@ -290,7 +290,8 @@ func (d *Daemon) adoptSharedMCPFolder(folder string) bool {
 		return false
 	}
 	from := map[string]string{}
-	json.Unmarshal(d.mcpApprovals["from"], &from)
+	// None yet, or not a map, is none.
+	_ = json.Unmarshal(d.mcpApprovals["from"], &from)
 	changed := false
 	for _, e := range entries {
 		digest, key := entryDigest(e.raw), mcpApprovalKey(folder, e.name)
@@ -324,7 +325,8 @@ func (d *Daemon) mcpApprovedFromLocked(folder, name, digest string) *string {
 		return nil
 	}
 	from := map[string]string{}
-	json.Unmarshal(d.mcpApprovals["from"], &from)
+	// None yet, or not a map, is none.
+	_ = json.Unmarshal(d.mcpApprovals["from"], &from)
 	if v, ok := from[mcpApprovalKey(folder, name)]; ok {
 		if d, words, found := strings.Cut(v, "|"); found && d == digest {
 			return &words

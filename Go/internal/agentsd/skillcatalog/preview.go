@@ -295,7 +295,9 @@ func writeStaged(folder string, inMemory []File, wanted []wantedFile) error {
 		if err := os.WriteFile(path, f.Data, mode); err != nil {
 			return Failed("could not stage " + f.Path)
 		}
-		os.Chmod(path, mode)
+		if err := os.Chmod(path, mode); err != nil {
+			return Failed("could not stage " + f.Path)
+		}
 	}
 	return nil
 }

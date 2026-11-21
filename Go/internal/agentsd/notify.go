@@ -103,13 +103,16 @@ func (d *Daemon) takeNoticeOnControl(burst int, cooldown time.Duration) (taken w
 func (d *Daemon) mirrorNoticeLimitsFrom(m map[string]wire.JSONValue) {
 	var burst, cooldown float64
 	if v, ok := m[noticeBurstKey]; ok {
-		json.Unmarshal(v, &burst)
+		// A value that is not a number is 0, which Limits takes as the default.
+		_ = json.Unmarshal(v, &burst)
 	}
 	if v, ok := m[noticeCooldownKey]; ok {
-		json.Unmarshal(v, &cooldown)
+		_ = json.Unmarshal(v, &cooldown)
 	}
 	b, c := noticebucket.Limits(int64(burst), cooldown)
-	d.setYourNoticeLimits(int64(b), c)
+	if err := d.setYourNoticeLimits(int64(b), c); err != nil {
+		log.Printf("notices: could not save the limits into your policy: %v", err)
+	}
 }
 
 // setYourNoticeLimits saves burst and cooldown into your layer's noticeLimits rule

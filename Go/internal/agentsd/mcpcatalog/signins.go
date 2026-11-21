@@ -93,7 +93,8 @@ func (f SignInFile) save(path string) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
-	os.Chmod(dir, 0o700)
+	// Only tightens a folder made before; the file itself is 0600 whatever the folder is.
+	_ = os.Chmod(dir, 0o700) //nolint:gosec // G302: a folder, which needs x to be opened
 	return store.WriteAtomically(path, b, 0o600)
 }
 
@@ -360,7 +361,7 @@ func (s *SignIns) renew(ctx context.Context, key, name string, g Grant) Bearer {
 	t, err := s.OAuth.Refresh(ctx, *g.Refresh, g.TokenEndpoint, g.Client, key)
 	if err == nil {
 		at := s.now()
-		s.change(func(f *SignInFile) {
+		if err := s.change(func(f *SignInFile) {
 			kept, ok := f.Grants[key]
 			if !ok {
 				return
@@ -377,7 +378,9 @@ func (s *SignIns) renew(ctx context.Context, key, name string, g Grant) Bearer {
 				kept.ExpiresAt = &e
 			}
 			f.Grants[key] = kept
-		})
+		}); err != nil {
+			s.log("mcp sign-in: " + name + " refreshed, but could not be saved: " + err.Error())
+		}
 		s.log("mcp sign-in: " + name + " refreshed")
 		return Bearer{Kind: "token", Token: t.Access}
 	}
@@ -399,10 +402,12 @@ func (s *SignIns) renew(ctx context.Context, key, name string, g Grant) Bearer {
 }
 
 func (s *SignIns) expire(key, name, why string) Bearer {
-	s.change(func(f *SignInFile) {
+	if err := s.change(func(f *SignInFile) {
 		delete(f.Grants, key)
 		f.NeedsSignIn[key] = NeedsSignIn{SeenAt: s.now()}
-	})
+	}); err != nil {
+		s.log("mcp sign-in: " + name + " could not be saved as needing sign-in: " + err.Error())
+	}
 	s.log("mcp sign-in: " + name + " needs sign-in: " + why)
 	return Bearer{Kind: "needsSignIn"}
 }

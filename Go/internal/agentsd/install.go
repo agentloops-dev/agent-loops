@@ -170,7 +170,9 @@ func loadToolsets(folder string) map[string]*macToolset {
 			}
 			sum.Write(lock)
 			if b, err := os.ReadFile(filepath.Join(dir, "mac-node.json")); err == nil {
-				json.Unmarshal(b, &t.node)
+				if err := json.Unmarshal(b, &t.node); err != nil {
+					log.Printf("install: could not read %s: %v", filepath.Join(dir, "mac-node.json"), err)
+				}
 			}
 		}
 		t.id = hex.EncodeToString(sum.Sum(nil))[:16]

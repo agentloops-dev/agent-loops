@@ -422,7 +422,10 @@ func (d *Daemon) writeTurns(id wire.UUID, turns []wire.TurnSummary) {
 		os.Remove(path)
 		return
 	}
-	os.MkdirAll(filepath.Dir(path), 0o755)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil { //nolint:gosec // G301: the mode this folder always had; only its error is new
+		log.Printf("agent %s: turns not kept: %v", id, err)
+		return
+	}
 	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, encodeTurns(turns), 0o644); err != nil {
 		log.Printf("agent %s: turns not kept: %v", id, err)
@@ -435,14 +438,17 @@ func (d *Daemon) writeTurns(id wire.UUID, turns []wire.TurnSummary) {
 
 func (d *Daemon) appendTurns(id wire.UUID, turns []wire.TurnSummary) {
 	path := d.Store.Loc.Turns(string(id))
-	os.MkdirAll(filepath.Dir(path), 0o755)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil { //nolint:gosec // G301: the mode this folder always had; only its error is new
+		log.Printf("agent %s: turns not kept: %v", id, err)
+		return
+	}
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
 		log.Printf("agent %s: turns not kept: %v", id, err)
 		return
 	}
 	w := bufio.NewWriter(f)
-	w.Write(encodeTurns(turns))
+	_, _ = w.Write(encodeTurns(turns)) // a bufio.Writer keeps its error for Flush, below
 	if err := w.Flush(); err != nil {
 		log.Printf("agent %s: turns not kept: %v", id, err)
 	}

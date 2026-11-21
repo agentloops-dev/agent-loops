@@ -97,14 +97,17 @@ func readWakeSettings(path string) wire.WakeSettings {
 	}
 	var m map[string]json.RawMessage
 	if json.Unmarshal(b, &m) != nil {
-		os.Rename(path, fmt.Sprintf("%s.corrupt-%d", path, time.Now().Unix()))
+		if err := os.Rename(path, fmt.Sprintf("%s.corrupt-%d", path, time.Now().Unix())); err != nil {
+			log.Printf("wake settings: could not set aside %s: %v", path, err)
+		}
 		store.TrimSetAsides(path)
 		return s
 	}
-	json.Unmarshal(m["keepsAwake"], &s.KeepsAwake)
-	json.Unmarshal(m["graceHours"], &s.GraceHours)
-	json.Unmarshal(m["warmRuntimes"], &s.WarmRuntimes)
-	json.Unmarshal(m["awakeOnPower"], &s.AwakeOnPower)
+	// A key missing or of the wrong kind takes its default (above).
+	_ = json.Unmarshal(m["keepsAwake"], &s.KeepsAwake)
+	_ = json.Unmarshal(m["graceHours"], &s.GraceHours)
+	_ = json.Unmarshal(m["warmRuntimes"], &s.WarmRuntimes)
+	_ = json.Unmarshal(m["awakeOnPower"], &s.AwakeOnPower)
 	var hours int64
 	if json.Unmarshal(m["backgroundHours"], &hours) == nil && hours != 0 {
 		s.BackgroundHours = &hours

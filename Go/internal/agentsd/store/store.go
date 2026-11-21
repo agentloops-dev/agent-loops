@@ -677,7 +677,9 @@ func (s *Store) writeTranscript(id wire.UUID, buf []byte) error {
 	}
 	if _, err := f.Write(buf); err != nil {
 		if size >= 0 {
-			f.Truncate(size)
+			if terr := f.Truncate(size); terr != nil {
+				log.Printf("store: could not take a torn write out of %s: %v", f.Name(), terr)
+			}
 		}
 		return err
 	}
@@ -895,7 +897,7 @@ func quote(s string) string {
 	var buf bytes.Buffer
 	e := json.NewEncoder(&buf)
 	e.SetEscapeHTML(false)
-	e.Encode(s)
+	_ = e.Encode(s) // a string always encodes
 	return strings.ReplaceAll(strings.TrimSuffix(buf.String(), "\n"), "/", `\/`)
 }
 
