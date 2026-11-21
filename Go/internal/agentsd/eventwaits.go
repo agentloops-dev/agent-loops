@@ -1023,6 +1023,9 @@ func defaultBranch(dir string) string {
 
 // waitForEvent is wait_for_event on events. The call is held open up to eventHoldLimit.
 func (d *Daemon) waitForEvent(agent wire.UUID, args map[string]json.RawMessage) (string, error) {
+	// The hold counts from the call's start, not from the end of its checks (#6310): the
+	// client counts from when it asked.
+	entered := time.Now()
 	a := d.Store.Agent(agent)
 	if a == nil {
 		return "", &Error{Code: CodeNoSuchAgent, Message: leaseNoCall}
@@ -1051,7 +1054,7 @@ func (d *Daemon) waitForEvent(agent wire.UUID, args map[string]json.RawMessage) 
 		return "", err
 	}
 	warning := warning0 + neverHereWarning
-	servers, serverWarning, err := d.checkEventWaitServers(serverNames, req, folderPath(a), appTaken)
+	servers, serverWarning, err := d.checkEventWaitServersWithin(eventHoldLimit, serverNames, req, folderPath(a), appTaken)
 	if err != nil {
 		return "", err
 	}
@@ -1104,7 +1107,7 @@ func (d *Daemon) waitForEvent(agent wire.UUID, args map[string]json.RawMessage) 
 	if prev != nil {
 		prefix += replacedWords(prev)
 	}
-	hold := time.AfterFunc(eventHoldLimit, d.jobFunc("eventwaits timer", func() { d.eventHoldReached(agent, wait.ID) }))
+	hold := time.AfterFunc(max(0, eventHoldLimit-time.Since(entered)), d.jobFunc("eventwaits timer", func() { d.eventHoldReached(agent, wait.ID) }))
 	defer hold.Stop()
 	select {
 	case text := <-call.answer:
