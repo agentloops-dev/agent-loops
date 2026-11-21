@@ -174,7 +174,7 @@ type Daemon struct {
 	undoNotes  undoNotes
 	policyOnce sync.Once
 	policy     SocketPolicy
-	// SettingsDir is the person's settings on this host (StoreLocations.personalSettings):
+	// SettingsDir is the person's settings on this host (#1033):
 	// <root>/settings, or $HOME/.agents/settings for a server, as the Swift host's --serve.
 	SettingsDir string
 	// RaiseByHand lets events/raise make an event: an unreleased build on a scratch root.
