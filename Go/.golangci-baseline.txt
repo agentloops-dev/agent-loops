@@ -2628,7 +2628,6 @@ Go/internal/agentsd/worktreesweep_test.go: Error return value of `os.WriteFile` 
 Go/internal/agentsd/worktreesweep_test.go: Error return value of `os.WriteFile` is not checked (errcheck)
 Go/internal/agentsd/worktreesweep_test.go: Error return value of `os.WriteFile` is not checked (errcheck)
 Go/internal/agentsd/writefailed_test.go: Error return value of `json.Unmarshal` is not checked (errcheck)
-Go/internal/agentsd/yamlnode/yamlnode.go: cognitive complexity of func `(*reader).sequence` is high (> 30) (gocognit)
 Go/internal/azureboardsmcp/fake_test.go: G101: Potential hardcoded credentials (gosec)
 Go/internal/azuredevopsmcp/events.go: S1016: should convert listed (type Listed) to github.com/agentloops-dev/agent-loops/Go/internal/mcpevents.Listed instead of using struct literal (staticcheck)
 Go/internal/azuredevopsmcp/fake_test.go: G101: Potential hardcoded credentials (gosec)
