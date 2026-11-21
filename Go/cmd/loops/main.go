@@ -78,7 +78,7 @@ func unreachable(what string, err error) error {
 }
 
 var errNotPaired = &exit{code: exitNotPair, msg: "This terminal is not paired with a control plane.\n" +
-	"Get a code: Agent Loops ▸ Settings ▸ Devices ▸ Pair a Device (or the web page)\n" +
+	"Get a code: Agent Loops ▸ Settings ▸ Control plane ▸ Clients ▸ Pair a Mac… (or the web page)\n" +
 	"Then:       loops pair '<code>'"}
 
 // exitCodes is what the usage says of each code.
@@ -145,6 +145,9 @@ type options struct {
 	controlName string
 }
 
+// errHelp is -h or --help among the flags: the usage, on stdout, with exit 0.
+var errHelp = errors.New("help")
+
 func parse(args []string) (options, []string, error) {
 	var o options
 	fs := flag.NewFlagSet("loops", flag.ContinueOnError)
@@ -167,7 +170,10 @@ func parse(args []string) (options, []string, error) {
 	var rest []string
 	for {
 		if err := fs.Parse(args); err != nil {
-			return o, nil, &exit{code: exitError, msg: err.Error() + "\n\n" + usageText()}
+			if errors.Is(err, flag.ErrHelp) {
+				return o, nil, errHelp
+			}
+			return o, nil, &exit{code: exitError, msg: err.Error() + "\nSee: loops --help"}
 		}
 		args = fs.Args()
 		if len(args) == 0 {
@@ -190,6 +196,10 @@ func main() {
 
 func run(ctx context.Context, args []string, w io.Writer) error {
 	o, rest, err := parse(args)
+	if errors.Is(err, errHelp) {
+		fmt.Fprint(w, usageText())
+		return nil
+	}
 	if err != nil {
 		return err
 	}
@@ -344,7 +354,7 @@ func unpair(ctx context.Context, w io.Writer, o options) error {
 	if forgot {
 		fmt.Fprintf(w, "Unpaired from %s.\n", hostOf(u))
 	} else {
-		fmt.Fprintf(w, "Unpaired here. %s did not answer: remove this terminal in its Devices list.\n", hostOf(u))
+		fmt.Fprintf(w, "Unpaired here. %s did not answer: forget this terminal in Settings ▸ Control plane ▸ Clients.\n", hostOf(u))
 	}
 	return nil
 }
@@ -358,7 +368,12 @@ func status(ctx context.Context, w io.Writer, o options) error {
 	if m == nil {
 		return errNotPaired
 	}
-	fmt.Fprintf(w, "Paired with %s as %q (%s)\n", hostOf(m.URL), m.Name, hostsFile())
+	// m.Name is the control plane's own name, from the code, not this terminal's.
+	at := hostOf(m.URL)
+	if m.Name != "" && m.Name != at {
+		at = fmt.Sprintf("%s at %s", m.Name, at)
+	}
+	fmt.Fprintf(w, "Paired with %s (%s)\n", at, tilde(hostsFile()))
 	if len(h.Hosts) > 1 {
 		for _, other := range h.Hosts {
 			if other.URL != m.URL {

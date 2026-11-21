@@ -31,6 +31,11 @@ const (
 // can be dropped (controllink keeps 4096), and a host may say little while it works.
 var recheck = 15 * time.Second
 
+// gather is how long print mode collects notes before it reads: a streamed reply sends a
+// note for each chunk, and a read for each note (two calls) used up a client's rate at the
+// control plane in a few seconds of a long reply (#6473). At most four reads a second.
+var gather = 250 * time.Millisecond
+
 // pageLimit is the entries one agents/transcript read asks for (bounds, Stage 3).
 const pageLimit = 50
 
@@ -168,39 +173,50 @@ type follow struct {
 func (f *follow) run(ctx context.Context, notes <-chan controllink.Note, timeout time.Duration) error {
 	tick := time.NewTicker(recheck)
 	defer tick.Stop()
+	state := true
 	for {
-		done, err := f.check(ctx)
+		done, err := f.check(ctx, state)
 		if done || err != nil && !errors.Is(err, context.DeadlineExceeded) {
 			return err
 		}
 		if ctx.Err() != nil {
 			return f.timedOut(timeout)
 		}
-		if !f.wait(ctx, notes, tick.C) {
+		var ok bool
+		if ok, state = f.wait(ctx, notes, tick.C); !ok {
 			if ctx.Err() != nil {
 				return f.timedOut(timeout)
 			}
-			return f.end("gone", exitError, "The control plane closed the connection. The session goes on: loops ls")
+			return f.end("gone", exitError, "The control plane closed the connection. The session goes on: loops -r "+short(f.id))
 		}
 	}
 }
 
-// wait is until a note about this session, a tick or the end of ctx. False when the
-// connection ended or ctx did.
-func (f *follow) wait(ctx context.Context, notes <-chan controllink.Note, tick <-chan time.Time) bool {
+// wait is until the notes about this session have come for gather since the first, a
+// tick, or the end of ctx. state says the session's record may have changed (a note other
+// than an entry, or a tick), so it is read again; an entry alone needs only the
+// transcript. ok is false when the connection ended or ctx did.
+func (f *follow) wait(ctx context.Context, notes <-chan controllink.Note, tick <-chan time.Time) (ok, state bool) {
+	var gathered <-chan time.Time
 	for {
 		select {
-		case n, ok := <-notes:
-			if !ok {
-				return false
+		case n, open := <-notes:
+			if !open {
+				return false, false
 			}
-			if f.about(n) {
-				return true
+			if !f.about(n) {
+				continue
 			}
+			state = state || n.Method != wire.NotifyAgentEntry.Name
+			if gathered == nil {
+				gathered = time.After(gather)
+			}
+		case <-gathered:
+			return true, state
 		case <-tick:
-			return true
+			return true, true
 		case <-ctx.Done():
-			return false
+			return false, false
 		}
 	}
 }
@@ -220,10 +236,14 @@ func (f *follow) about(n controllink.Note) bool {
 	return strings.EqualFold(string(p.AgentID), string(f.id)) || n.Method == "agent/changed" && strings.EqualFold(string(p.ID), string(f.id))
 }
 
-// check reads the new entries, then the state, and says whether the command is over.
-func (f *follow) check(ctx context.Context) (bool, error) {
+// check reads the new entries, then (with state) the session's record, and says whether
+// the command is over.
+func (f *follow) check(ctx context.Context, state bool) (bool, error) {
 	if err := f.read(ctx); err != nil {
 		return false, err
+	}
+	if !state {
+		return false, nil
 	}
 	a, err := f.agent(ctx)
 	if err != nil {

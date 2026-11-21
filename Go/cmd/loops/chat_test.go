@@ -375,3 +375,59 @@ func TestControlCStopsTheTurnAndASecondOneLeaves(t *testing.T) {
 		t.Fatal("the second ^C leaves; it stops nothing more")
 	}
 }
+
+// A bare loops in a script (no terminal, no prompt) on an idle session prints its last
+// entries and ends; it waited for ever (#6473). A full first page says the others are more.
+func TestWithNoTerminalAnIdleSessionPrintsItsLastEntriesAndEnds(t *testing.T) {
+	f := newChatFake()
+	f.answer["agents/list"] = func(any) any {
+		list := []wire.Agent{{ID: "C40D1100-0000-0000-0000-000000000003", Title: ptr("Fix the flaky stop test"), State: wire.AgentStateFinished}}
+		for len(list) < pageSize {
+			list = append(list, wire.Agent{ID: wire.UUID(fmt.Sprintf("%08X-0000-0000-0000-000000000000", len(list)))})
+		}
+		return list
+	}
+	f.answer["agents/transcript"] = func(any) any {
+		return wire.TranscriptPage{Total: 1, Entries: []wire.TranscriptEntry{{ID: "1", Kind: wire.TranscriptEntryKind{AgentMessage: &wire.TranscriptEntryKindAgentMessage{Text: "Tests pass 20 of 20."}}}}}
+	}
+	out := &syncBuffer{}
+	done := make(chan error, 1)
+	go func() {
+		done <- runChat(context.Background(), f, chatHere, options{}, chatArgs{}, terminal{out: out, st: plain})
+	}()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("loops with no terminal waited on an idle session")
+	}
+	got := out.String()
+	for _, want := range []string{"Tests pass 20 of 20.", "19+ other sessions here (loops ls)"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("no %q in\n%s", want, got)
+		}
+	}
+}
+
+// -r with a whole id, as a script has it from -p --json, is one agents/list by that id.
+func TestResumingByAWholeIDIsOneRead(t *testing.T) {
+	f := newChatFake()
+	id := wire.UUID("B21E9061-C89B-4511-9842-7374C9FAD876")
+	f.answer["agents/list"] = func(any) any {
+		return []wire.Agent{{ID: id, Title: ptr("Summarise CI"), State: wire.AgentStateFinished}}
+	}
+	f.answer["agents/transcript"] = func(any) any { return wire.TranscriptPage{} }
+	err := runChat(context.Background(), f, chatHere, options{}, chatArgs{resume: "b21e9061c89b45119842-7374c9fad876"}, terminal{out: &syncBuffer{}, st: plain})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reqs := f.called("agents/list")
+	if len(reqs) != 1 {
+		t.Fatalf("one read, not every page: %d", len(reqs))
+	}
+	if r := reqs[0].(wire.ListRequest); r.AgentID == nil || *r.AgentID != id || r.Folder == nil {
+		t.Fatalf("by the id, in this folder: %+v", r)
+	}
+}

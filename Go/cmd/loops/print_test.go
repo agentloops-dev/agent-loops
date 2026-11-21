@@ -215,3 +215,41 @@ func TestPrintFlagsNeedPrintMode(t *testing.T) {
 		t.Fatalf("no prompt: %v", err)
 	}
 }
+
+// A streamed reply sends a note for each chunk. Print mode gathers them and reads the
+// transcript once for the lot, and the session's record only for a note that is not an
+// entry: two reads a chunk used up a client's rate at the control plane (#6473).
+func TestPrintModeReadsOnceForABurstOfEntryNotes(t *testing.T) {
+	was, wasGather := recheck, gather
+	recheck, gather = time.Hour, 20*time.Millisecond
+	t.Cleanup(func() { recheck, gather = was, wasGather })
+	id := wire.UUID("AB12CD34-0000-0000-0000-000000000000")
+	running := step{entries: []wire.TranscriptEntry{chunk("m1", "Line 1. ")}, state: wire.AgentStateRunning}
+	f, _ := hostFake(t, []step{running, {entries: []wire.TranscriptEntry{chunk("m1", "Line 1. "), chunk("m1", "Line 2.")}, state: wire.AgentStateFinished}})
+	notes := make(chan controllink.Note, 1024)
+	for range 1000 {
+		b, _ := json.Marshal(wire.EntryNotification{AgentID: id})
+		notes <- controllink.Note{Host: "h1", Method: wire.NotifyAgentEntry.Name, Params: b}
+	}
+	b, _ := json.Marshal(wire.Agent{ID: id, State: wire.AgentStateFinished})
+	notes <- controllink.Note{Host: "h1", Method: wire.NotifyAgentChanged.Name, Params: b}
+	var out bytes.Buffer
+	if err := startAndFollow(context.Background(), &out, f, notes, here, options{print: true}, "go"); err != nil {
+		t.Fatal(err)
+	}
+	if out.String() != "Line 1. Line 2.\n" {
+		t.Fatalf("got %q", out.String())
+	}
+	reads, lists := 0, 0
+	for _, c := range f.calls {
+		switch c {
+		case "h1 agents/transcript":
+			reads++
+		case "h1 agents/list":
+			lists++
+		}
+	}
+	if reads > 3 || lists > 2 {
+		t.Fatalf("1001 notes, %d transcript reads and %d record reads: %v", reads, lists, f.calls)
+	}
+}
