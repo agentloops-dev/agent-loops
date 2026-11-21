@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -378,5 +380,28 @@ func end(t testing.TB, f *Files, r wire.LineageEndRequest, at time.Time) {
 	t.Helper()
 	if _, err := f.End(r, at); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// ActiveFrom finds an issue's part-of link under more than MostAnswer newer links, where Links
+// stops (#6530), and leaves out an ended one and one to the node.
+func TestActiveFromIsNotLimitedToTheNewestLinks(t *testing.T) {
+	f := openAt(t, filepath.Join(t.TempDir(), "lineage.jsonl"), t0)
+	defer f.Close()
+	link(t, f, issue("7"), issue("1"), RelPartOf, t0)
+	link(t, f, issue("9"), issue("7"), RelPartOf, t0)
+	old := link(t, f, issue("7"), issue("2"), RelPartOf, t0)
+	if _, err := f.End(wire.LineageEndRequest{From: old.From, To: old.To, Rel: old.Rel}, t0.Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	for i := range MostAnswer + 100 {
+		link(t, f, session(strconv.Itoa(i)), issue("7"), RelWorksOn, t0.Add(time.Duration(i+2)*time.Second))
+	}
+	if got := f.Links(issue("7")); got.Limited == nil || slices.ContainsFunc(got.Links, func(l wire.LineageLink) bool { return l.Rel == RelPartOf }) {
+		t.Fatalf("Links should stop before the part-of link: limited %v", got.Limited)
+	}
+	got := f.ActiveFrom(issue("7"), RelPartOf)
+	if len(got) != 1 || got[0].To != issue("1") {
+		t.Fatalf("%+v", got)
 	}
 }
