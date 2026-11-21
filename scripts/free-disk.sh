@@ -11,7 +11,8 @@
 #                                      worktrees nobody has changed for a while
 #   free-disk.sh coredevice [--dry-run]   the app install deltas CoreDevice keeps
 #   free-disk.sh buildoutput [--dry-run] [--hours N]
-#                                      build output in worktrees nobody builds in
+#                                      build output in worktrees nobody builds in,
+#                                      the nightly runtime check's tree too
 #   free-disk.sh simulators [--dry-run]   erase the walk simulators that are shut down
 #   free-disk.sh colima [--dry-run] [--days N]  Colima data disks no instance has
 #   free-disk.sh caches [--dry-run]    uv's and npm's package caches
@@ -45,8 +46,9 @@
 # main checkout. The branch stays, with every commit. --dry-run says what it would remove.
 #
 # buildoutput: the build output (build, .build, DerivedData, node_modules) of each
-# worktree under <main checkout>/.agents/worktrees that the worktrees checks below keep
-# for no other reason, when no process works in it and no file in it, build output too,
+# worktree under <main checkout>/.agents/worktrees, and of the nightly runtime check's
+# tree ($AGENTS_NIGHTLY_HOME/tree, default ~/Library/Caches/Agents Nightly Runtimes/tree;
+# #6461), that the worktrees checks below keep for no other reason, when no process works in it and no file in it, build output too,
 # changed for N hours (--hours, 1). A folder goes only when git ignores it and tracks
 # nothing in it: the worktree's own .gitignore says it is build output (#5722).
 #
@@ -385,14 +387,19 @@ buildoutput() {
 		esac
 		shift
 	done
-	local main
+	local main nightly
 	main=$(main_checkout)
-	[ -d "$main/.agents/worktrees" ] || { echo "no worktrees"; return 0; }
+	nightly=${AGENTS_NIGHTLY_HOME:-"$HOME/Library/Caches/Agents Nightly Runtimes"}/tree
+	local trees=()
+	[ ! -d "$main/.agents/worktrees" ] || trees+=("$main"/.agents/worktrees/*/)
+	[ ! -d "$nightly" ] || trees+=("$nightly/")
+	[ ${#trees[@]} -gt 0 ] || { echo "no worktrees"; return 0; }
 	local listed cwds w d r k freed=0 verb=freed
 	[ "$dry" = 0 ] || verb="would free"
 	listed=$(git -C "$main" worktree list --porcelain)
 	cwds=$(working_folders)
-	for w in "$main"/.agents/worktrees/*/; do
+	for w in "${trees[@]}"; do
+		[ -d "$w" ] || continue
 		movable "$w" "$main" "$listed" "$cwds" || continue
 		w=$W
 		# Build output counts here: a build started from another folder writes in it.
