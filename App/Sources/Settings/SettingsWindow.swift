@@ -188,7 +188,8 @@ struct SettingsWindow: View {
         case .agentsPolicy:
             FormColumn {
                 PolicyPane(host: model.policyHost, revision: model.policyRevision,
-                           openOrganisationPolicy: control == nil ? nil : { pane.wrappedValue = .policy })
+                           openOrganisationPolicy: control == nil ? nil : { pane.wrappedValue = .policy },
+                           trailersBehind: model.machinesNotFollowingCommitTrailers)
             }
         case .voice: FormColumn { Form { VoiceSettingsSection() }.paperForm() }
         case .account: FormColumn { AccountSettingsView() }

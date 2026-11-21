@@ -1,0 +1,80 @@
+import Foundation
+import Testing
+import AgentsKitCore
+
+/// The Commit trailers group of Agents ▸ Policy (#6373) and its feature flag.
+@Suite("Commit trailers words")
+struct CommitTrailerWordsTests {
+    private let you = DaemonAPI.PolicyLayerRef(kind: "you", name: "You")
+    private let folder = DaemonAPI.PolicyLayerRef(kind: "folder", name: "agent-loops", folder: "/src/agent-loops")
+
+    private func trailer(_ key: String) throws -> CommitTrailerWords.Trailer {
+        try #require(CommitTrailerWords.trailers.first { $0.key == key })
+    }
+
+    @Test func everyTrailerIsOnByDefaultButCost() {
+        #expect(CommitTrailerWords.trailers.count == 11)
+        #expect(CommitTrailerWords.trailers.filter { !$0.isOnByDefault }.map(\.key) == ["Cost"])
+        #expect(CommitTrailerWords.trailers(.spend).map(\.key) == ["Cost", "Tokens", "Duration"])
+        #expect(CommitTrailerWords.trailers.last?.key == "Co-authored-by")
+    }
+
+    @Test func aRuleNoLayerSetsHasItsDefault() throws {
+        let cost = try trailer("Cost")
+        let unset = DaemonAPI.EffectiveRule(rule: cost.rule, value: .bool(false), words: "Off")
+        #expect(!CommitTrailerWords.isOn(cost, unset))
+        #expect(!CommitTrailerWords.isOn(cost, nil))
+        let set = DaemonAPI.EffectiveRule(rule: cost.rule, value: .bool(true), words: "On", decides: you)
+        #expect(CommitTrailerWords.isOn(cost, set))
+    }
+
+    @Test func onlyTheTightValueAboveCapsYourSwitch() throws {
+        let madeBy = try trailer("Made-by"), tokens = try trailer("Tokens")
+        let required = DaemonAPI.EffectiveRule(rule: madeBy.rule, value: .bool(true), words: "On", decides: folder,
+                                               cap: .bool(true), capLine: "This folder (agent-loops): Made-by is required")
+        #expect(CommitTrailerWords.isCapped(madeBy, required))
+        let offAbove = DaemonAPI.EffectiveRule(rule: madeBy.rule, value: .bool(false), words: "Off", decides: folder, cap: .bool(false))
+        #expect(!CommitTrailerWords.isCapped(madeBy, offAbove))
+        let keptOut = DaemonAPI.EffectiveRule(rule: tokens.rule, value: .bool(false), words: "Off", decides: folder, cap: .bool(false))
+        #expect(CommitTrailerWords.isCapped(tokens, keptOut))
+        #expect(!CommitTrailerWords.isCapped(tokens, nil))
+    }
+
+    @Test func settingATrailerKeepsTheKeysThisBuildDoesNotKnow() throws {
+        let json = #"{"commitTrailers":{"Signed-off":"on","Cost":"off"}}"#
+        let rules = try JSONDecoder().decode(DaemonAPI.PolicyRules.self, from: Data(json.utf8))
+        let next = CommitTrailerWords.setting(rules, try trailer("Cost"), on: true)
+        #expect(next.commitTrailers == ["Signed-off": .on, "Cost": .on])
+        #expect(CommitTrailerWords.yours(try trailer("Cost"), in: next) == true)
+        #expect(CommitTrailerWords.yours(try trailer("Tokens"), in: next) == nil)
+    }
+
+    @Test func thePreviewHasTheTrailersThatAreOnInTheBlocksOrder() {
+        let lines = CommitTrailerWords.preview { $0.isOnByDefault }
+        #expect(lines.count == 9)
+        #expect(!lines.contains { $0.hasPrefix("Attested:") })
+        #expect(lines.first == "Made-by: claude-code:claude-opus-5-5")
+        #expect(!lines.contains { $0.hasPrefix("Cost:") })
+        #expect(lines.last?.hasPrefix("Co-authored-by: ") == true)
+    }
+
+    @Test func aMachineThatDoesNotSayTheRuleDoesNotFollowIt() {
+        #expect(!CommitTrailerWords.isFollowed(DaemonAPI.EffectivePolicy(rules: [DaemonAPI.EffectiveRule(rule: "sandbox", words: "On")])))
+        #expect(CommitTrailerWords.isFollowed(DaemonAPI.EffectivePolicy(rules: [DaemonAPI.EffectiveRule(rule: "commitTrailers.Cost", words: "Off")])))
+        #expect(CommitTrailerWords.behindLine([]) == nil)
+        #expect(CommitTrailerWords.behindLine(["Studio Mac"])
+            == "Studio Mac does not follow Commit trailers yet. Its agents’ commits get no trailers until it updates.")
+    }
+
+    @Test func aFailedSaveSaysTheSwitchIsBack() throws {
+        #expect(CommitTrailerWords.failed(try trailer("Requested-by"), wasOn: true, reason: "The Mac did not answer.")
+            == "Not saved: The Mac did not answer. Requested-by is On again.")
+    }
+
+    @Test func aFlagIsOnOnlyWhenItsNameIsInTheList() {
+        #expect(FeatureFlag.on(in: nil).isEmpty)
+        #expect(FeatureFlag.on(in: "other, commit-trailers") == [.commitTrailers])
+        #expect(FeatureFlag.on(in: "commit-trailer").isEmpty)
+        #expect(DisplayPreference.mirrored[DisplayPreference.features] == .string)
+    }
+}
