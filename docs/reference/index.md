@@ -57,5 +57,7 @@ something up, not for reading through.
 - [Gestures on the iPhone and iPad](remote-gestures.md): every swipe, long press, pull and
   menu in the iPhone and iPad app.
 - [Keyboard shortcuts](keyboard-shortcuts.md): every shortcut and menu command on the Mac.
+- [The `loops` command](loops.md): every command, flag, exit code and JSON object of the
+  command line client.
 - [Feature matrix of coding-agent apps](feature-matrix.md): which apps for running several
   coding agents have which features, Agent Loops included.
