@@ -298,7 +298,10 @@ func TestTheKillSwitchReachesEveryone(t *testing.T) {
 	p.waitFor(func() bool {
 		line, _ := told.last(box.member.Host)
 		var policy wire.OrgPolicy
-		must(t, json.Unmarshal(line.Policy, &policy))
+		// No policy yet (told "none" at its join), or one not yet whole: poll again (#6509).
+		if line.Policy == nil || json.Unmarshal(line.Policy, &policy) != nil {
+			return false
+		}
 		return policy.StopAll != nil && policy.StopAll.On
 	}, "the machine told the switch is on")
 
