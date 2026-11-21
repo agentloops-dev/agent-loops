@@ -145,11 +145,16 @@ checkout and the folder's other worktrees do not change. A repository that keeps
 or `core.worktree` in its shared config gets no hook, as git asks. It is a git hook, not a
 runtime hook: it never holds an agent's tool use.
 
-- **The folder's own hooks still run.** Each hook in the folder (every hook git runs in a
-  checkout) runs the folder's hook of the same name: the last `core.hooksPath` of a scope other
-  than the worktree's (as Husky sets it), else the repository's `hooks` folder (where lefthook
-  and pre-commit write theirs). It finds it at each run, so a hook the folder adds later runs
-  too.
+- **The folder's own hooks still run.** The folder links `commit-msg`, and each hook's name
+  that the folder's own hooks folder has as a program: the last `core.hooksPath` of a scope
+  other than the worktree's (as Husky sets it), else the repository's `hooks` folder (where
+  lefthook and pre-commit write theirs). Each of those runs the folder's hook of the same name.
+  The daemon reads that folder when it puts the hook in, when a session starts in the
+  worktree and when it starts (for each worktree that an agent not archived works in), so a
+  hook the folder adds later runs from the next session. A name the folder does not have gets
+  no link (#6529): git runs `reference-transaction` three times for each ref that a fetch or a
+  rebase changes, and with a link each run started four processes, so a fetch of 300 branches
+  took 28 s, not 0.15 s.
 - **`commit-msg`** runs the folder's own `commit-msg` first; when that refuses the commit, it
   stays refused. Then, in a session, `agents-trailers MSGFILE` (`agentsd trailers`, beside
   `agents-secret` on the session's PATH, with the same grant) asks agentsd for the session's

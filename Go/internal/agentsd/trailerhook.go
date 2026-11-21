@@ -45,8 +45,12 @@ const (
 	trailersCommandName = "agents-trailers"
 )
 
-// gitHookNames is every hook git runs in a checkout (githooks(5)), so the folder's own still
-// run while core.hooksPath names the worktree's folder. The server-side hooks never run here.
+// gitHookNames is every hook git runs in a checkout (githooks(5)). The worktree's folder links
+// commit-msg, and each of these that the folder's own hooks folder has (#6529), so the
+// folder's own still run while core.hooksPath names the worktree's folder. A name the folder
+// does not have gets no link: git runs reference-transaction three times for each ref a fetch
+// or a rebase updates, and each run of agents-hook starts four processes. The server-side
+// hooks never run here.
 var gitHookNames = []string{
 	"applypatch-msg", "pre-applypatch", "post-applypatch", "pre-commit", "pre-merge-commit",
 	"prepare-commit-msg", "commit-msg", "post-commit", "pre-rebase", "post-checkout", "post-merge",
@@ -105,7 +109,7 @@ func installTrailerHook(root string) error {
 		return fmt.Errorf("the repository is bare")
 	}
 	dir := filepath.Join(gitDir, trailerHooksDir)
-	if err := writeTrailerHooks(dir); err != nil {
+	if err := writeTrailerHooks(dir, trailerHookNames(ownHooksDir(root, common, dir))); err != nil {
 		return err
 	}
 	if v, _ := git(root, "config", "--bool", "--get", "extensions.worktreeConfig"); v != "true" {
@@ -122,8 +126,49 @@ func installTrailerHook(root string) error {
 	return nil
 }
 
-// writeTrailerHooks writes agents-hook in dir and a link to it for each hook's name.
-func writeTrailerHooks(dir string) error {
+// ownHooksDir is the folder's own hooks folder, as agents-hook finds it at each run: the last
+// core.hooksPath of a scope other than this worktree's, else the repository's hooks folder.
+// It is "" when that is the worktree's own folder (mine).
+func ownHooksDir(root, common, mine string) string {
+	own := ""
+	out, _ := git(root, "config", "--show-scope", "--get-all", "core.hooksPath")
+	for _, l := range strings.Split(out, "\n") {
+		if scope, v, ok := strings.Cut(l, "\t"); ok && scope != "worktree" {
+			own = v
+		}
+	}
+	switch {
+	case own == "":
+		own = filepath.Join(common, "hooks")
+	case strings.HasPrefix(own, "~/"):
+		home, _ := os.UserHomeDir()
+		own = filepath.Join(home, own[2:])
+	case !filepath.IsAbs(own):
+		own = filepath.Join(root, own) // git runs a hook at the worktree's top
+	}
+	if filepath.Clean(own) == filepath.Clean(mine) {
+		return ""
+	}
+	return own
+}
+
+// trailerHookNames is commit-msg and each hook's name that own has as a program git runs.
+func trailerHookNames(own string) map[string]bool {
+	names := map[string]bool{"commit-msg": true}
+	if own == "" {
+		return names
+	}
+	for _, name := range gitHookNames {
+		if fi, err := os.Stat(filepath.Join(own, name)); err == nil && fi.Mode().IsRegular() && fi.Mode()&0o111 != 0 {
+			names[name] = true
+		}
+	}
+	return names
+}
+
+// writeTrailerHooks writes agents-hook in dir, a link to it for each of names, and takes out
+// a link of an older install that names does not have (#6529).
+func writeTrailerHooks(dir string, names map[string]bool) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil { //nolint:gosec // G301: git's own hooks folder's mode
 		return err
 	}
@@ -139,11 +184,19 @@ func writeTrailerHooks(dir string) error {
 	}
 	for _, name := range gitHookNames {
 		path := filepath.Join(dir, name)
-		if target, err := os.Readlink(path); err == nil && target == trailerHookScript {
+		target, err := os.Readlink(path)
+		linked := err == nil && target == trailerHookScript
+		if !names[name] {
+			if linked {
+				_ = os.Remove(path)
+			}
+			continue
+		}
+		if linked {
 			continue
 		}
 		_ = os.Remove(path) // a file of an older install, or none
-		if err := os.Symlink(trailerHookScript, path); err != nil {
+		if err := os.Symlink(trailerHookScript, path); err != nil && !os.IsExist(err) {
 			return err
 		}
 	}
@@ -159,6 +212,31 @@ func installTrailerHookAt(wt *wire.AgentWorktree) {
 	if err := installTrailerHook(canonical(store.FolderPath(wt.Root))); err != nil {
 		log.Printf("commit-msg hook: not in %s: %v", wt.Name, err)
 	}
+}
+
+// refreshTrailerHooks installs the hook again, off the caller, in each worktree the app made
+// that an agent not archived works in: a worktree from before #6529 loses the links of every
+// hook's name, and each gets the names its folder's hooks folder has now.
+func (d *Daemon) refreshTrailerHooks() {
+	var wts []*wire.AgentWorktree
+	seen := map[wire.URL]bool{}
+	for _, a := range d.Store.Agents() {
+		if a.State == wire.AgentStateArchived || a.Worktree == nil || !a.Worktree.MadeByApp || seen[a.Worktree.Root] {
+			continue
+		}
+		seen[a.Worktree.Root] = true
+		wts = append(wts, a.Worktree)
+	}
+	if len(wts) == 0 {
+		return
+	}
+	d.goJob("commit-msg hooks", func() {
+		for _, wt := range wts {
+			if isDir(store.FolderPath(wt.Root)) {
+				installTrailerHookAt(wt)
+			}
+		}
+	})
 }
 
 // trailersAnswer is the endpoint's answer to agents-trailers: git/trailers' lines, and the
