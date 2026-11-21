@@ -90,6 +90,14 @@ func TestForgeListAllGivesEachMachinesList(t *testing.T) {
 	if len(got.Lists) != 1 || got.Lists[0].Machine != wire.MachineRef(mac.member.Host) || len(asked["box"]) != 1 {
 		t.Fatalf("%+v %+v", got, asked)
 	}
+	// #6383: a label and an assignee go to each machine, so a narrowed list is one call.
+	decodeInto(t, call(t, window, "", "forge/listAll", map[string]any{"kind": "issues", "label": "bug", "assignee": "alex"}), &got)
+	for _, name := range []string{"mac", "box"} {
+		last := asked[name][len(asked[name])-1]
+		if deref(last.Label) != "bug" || deref(last.Assignee) != "alex" {
+			t.Fatalf("%s asked %+v", name, last)
+		}
+	}
 	if e := callError(t, window, "", "forge/listAll", map[string]any{"kind": "epics"}); !strings.Contains(e, "issues or pulls") {
 		t.Fatal(e)
 	}

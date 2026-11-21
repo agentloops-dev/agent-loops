@@ -16,18 +16,24 @@ public extension DaemonAPI {
         }
     }
 
-    /// forge/listAll (#5592): kind is issues or pulls; pages names the machines of a next page.
+    /// forge/listAll (#5592): kind is issues or pulls; pages names the machines of a next page. label and assignee (a
+    /// login) narrow each machine's list, as in forge/issues (#6383).
     struct ForgeListAllRequest: Codable, Sendable, Hashable {
         public var kind: String
         public var state: String?
         public var board: String?
+        public var label: String?
+        public var assignee: String?
         public var limit: Int?
         public var pages: [MachineCursor]?
 
-        public init(kind: String, state: String? = nil, board: String? = nil, limit: Int? = nil, pages: [MachineCursor]? = nil) {
+        public init(kind: String, state: String? = nil, board: String? = nil, label: String? = nil, assignee: String? = nil,
+                    limit: Int? = nil, pages: [MachineCursor]? = nil) {
             self.kind = kind
             self.state = state
             self.board = board
+            self.label = label
+            self.assignee = assignee
             self.limit = limit
             self.pages = pages
         }

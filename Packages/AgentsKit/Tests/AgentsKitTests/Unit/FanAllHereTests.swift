@@ -42,6 +42,16 @@ struct FanAllHereTests {
         #expect(asked.all.allSatisfy { $0.method == "forge/pulls" && $0.params["limit"]?.intValue == 100 })
     }
 
+    @Test("forge/listAll gives each machine the label and the assignee, so a narrowed list is one call (#6383)")
+    func forgeListNarrowed() async throws {
+        let asked = Asked()
+        _ = try await Self.answer(DaemonAPI.Method.forgeListAll,
+                                  DaemonAPI.ForgeListAllRequest(kind: "issues", label: "bug", assignee: "alex"),
+                                  returning: DaemonAPI.ForgeListAll.self, asked: asked, answers: [:])
+        #expect(asked.all.count == 3)
+        #expect(asked.all.allSatisfy { $0.params["label"]?.stringValue == "bug" && $0.params["assignee"]?.stringValue == "alex" })
+    }
+
     @Test("docs/listAll merges the machines' docs newest first, and its cursor goes on from where each machine was")
     func docsPages() async throws {
         func doc(_ ref: String, _ updated: Double) -> JSONValue {
