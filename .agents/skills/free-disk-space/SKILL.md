@@ -1,6 +1,6 @@
 ---
 name: free-disk-space
-description: Free disk space on this Mac (#199, #1796) until 20% of the disk is free. Bound the shared build cache (Swift, Go and the Go temp folders that killed runs leave), delete the build output in worktrees nobody builds in, remove the worktrees nobody has changed for hours, end leaked headless Chromes and their clones, remove old Xcode device support, unavailable simulators, CoreDevice's install deltas and the Xcode DerivedData of removed worktrees, erase the walk simulators, and, when the disk is critical, remove Colima data disks no instance has and prune uv's and npm's caches. Nothing else. It needs no app tools. Use when the Free disk space workflow runs on machine.disk_low, or when Alex asks to free disk space.
+description: Free disk space on this Mac (#199, #1796) until 20% of the disk is free. Bound the shared build cache (Swift, Go and the Go temp folders that killed runs leave) and Go's default build cache, delete the build output in worktrees nobody builds in, remove the worktrees nobody has changed for hours, end leaked headless Chromes and their clones, remove old Xcode device support, unavailable simulators, CoreDevice's install deltas and the Xcode DerivedData of removed worktrees, erase the walk simulators, and, when the disk is critical, remove Colima data disks no instance has and prune uv's and npm's caches. Nothing else. It needs no app tools. Use when the Free disk space workflow runs on machine.disk_low, or when Alex asks to free disk space.
 ---
 
 # Free disk space
@@ -78,6 +78,19 @@ scripts/build-cache.sh prune --max-gb 6 --go-max-gb 1       # critical
 Each build also prunes it to 15 GB behind itself (#2346). The last line says
 `after: <GB>; freed <GB>`: put both in the report. If it exits non-zero, say so with its
 output in the report, and go on.
+
+Then Go's default build cache (#6462). A `go` that runs without `Go/scripts/go.sh` or
+`scripts/lint.sh` (by hand, or gopls) writes to `$(go env GOCACHE)`,
+`~/Library/Caches/go-build`, which the prune above does not bound (28 GB on 2026-11-20).
+When it is not the shared cache, is over 2 GB and no `go` runs, `gocache` empties it with
+`go clean -cache`:
+
+```sh
+scripts/free-disk.sh gocache --dry-run
+scripts/free-disk.sh gocache                                # --max-gb N moves the 2 GB
+```
+
+Put its line in the report.
 
 ## 3. Free build output in worktrees nobody builds in
 

@@ -15,6 +15,7 @@
 #   free-disk.sh simulators [--dry-run]   erase the walk simulators that are shut down
 #   free-disk.sh colima [--dry-run] [--days N]  Colima data disks no instance has
 #   free-disk.sh caches [--dry-run]    uv's and npm's package caches
+#   free-disk.sh gocache [--dry-run] [--max-gb N]  Go's default build cache, over N GB
 #   free-disk.sh hidden                what du cannot see: fseventsd's logs, local snapshots
 #
 # hidden: about 120 GB of the Data volume was not visible to du on 2026-11-20 (#5725).
@@ -64,6 +65,13 @@
 #
 # caches: `uv cache prune` (the entries no package uses) and `npm cache clean --force`.
 # Both caches are filled again by the next install.
+#
+# gocache: Go/scripts/go.sh and scripts/lint.sh put Go's build cache in the shared build
+# cache, which scripts/build-cache.sh prune bounds. A `go` run without them (by hand, or
+# gopls) uses Go's default cache, `go env GOCACHE` (~/Library/Caches/go-build), which
+# nothing bounds: 28 GB on 2026-11-20 (#6462). When that cache is not the shared one, is
+# over N GB (--max-gb, 2) and no go process runs, `go clean -cache` empties it. The next
+# build compiles again.
 #
 # coredevice: CoreDevice keeps a delta of each app it installs on a device
 # (AppInstallationBinaryDeltas, 15 GB here on 2026-11-11), so the next install sends only
@@ -527,6 +535,43 @@ caches() {
 	fi
 }
 
+gocache() {
+	local dry=0 max=2
+	while [ $# -gt 0 ]; do
+		case $1 in
+		--dry-run) dry=1 ;;
+		--max-gb) max=$2; shift ;;
+		*) die "gocache [--dry-run] [--max-gb N]" ;;
+		esac
+		shift
+	done
+	command -v go >/dev/null 2>&1 || { echo "no go command: no Go build cache"; return 0; }
+	local dir shared k
+	dir=$(go env GOCACHE 2>/dev/null) || dir=
+	[ -n "$dir" ] && [ -d "$dir" ] || { echo "no Go build cache"; return 0; }
+	dir=$(cd "$dir" && pwd -P)
+	shared="${AGENTS_BUILD_CACHE:-$HOME/Library/Caches/Agents-build}/go/gocache"
+	if [ -d "$shared" ] && [ "$dir" = "$(cd "$shared" && pwd -P)" ]; then
+		echo "kept $dir: the shared build cache, which build-cache.sh prune bounds"
+		return 0
+	fi
+	k=$(du -sk "$dir" | cut -f1)
+	if [ "$k" -le $((max * 1048576)) ]; then
+		echo "kept $dir ($(gb "$k") GB): under $max GB"
+		return 0
+	fi
+	if pgrep -qx go || pgrep -qf 'Go/scripts/go.sh|golangci'; then
+		echo "kept $dir ($(gb "$k") GB): go runs"
+		return 0
+	fi
+	if [ "$dry" = 1 ]; then
+		echo "would clean Go's build cache $dir ($(gb "$k") GB)"
+	else
+		go clean -cache
+		echo "cleaned Go's build cache $dir ($(gb "$k") GB)"
+	fi
+}
+
 coredevice() {
 	local dry=0
 	while [ $# -gt 0 ]; do
@@ -563,5 +608,6 @@ buildoutput) shift; buildoutput "$@" ;;
 simulators) shift; simulators "$@" ;;
 colima) shift; colima "$@" ;;
 caches) shift; caches "$@" ;;
+gocache) shift; gocache "$@" ;;
 *) awk 'NR > 1 && /^set -euo/ { exit } NR > 1' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
 esac

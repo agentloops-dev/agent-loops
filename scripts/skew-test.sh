@@ -7,7 +7,7 @@
 #   2. the last release's control plane with this tree's client: control/status and
 #      machines/list answer, with no wrongProtocolVersion (-32008).
 #
-# Needs Go on the PATH (CI's ubuntu runner). The last release is the newest tag reachable
+# Needs Go on the PATH (CI's ubuntu runner); it runs it through Go/scripts/go.sh. The last release is the newest tag reachable
 # from HEAD, or SKEW_TAG; its Go module is taken with git archive, or from SKEW_OLD_SRC (a
 # folder holding that tag's Go/), for a run with no git history.
 #
@@ -41,8 +41,11 @@ echo "skew-test: $tag against $(git -C "$root" rev-parse --short HEAD 2>/dev/nul
 # Each side's agentsd, agents-control and agentsctl. The old tree may have no agentsctl;
 # the client is always this tree's.
 mkdir -p "$work/new" "$work/oldbin"
-(cd "$root/Go" && CGO_ENABLED=0 go build -o "$work/new/" ./cmd/agentsd ./cmd/agents-control ./cmd/agentsctl)
-(cd "$old/Go" && CGO_ENABLED=0 go build -o "$work/oldbin/" ./cmd/agentsd ./cmd/agents-control)
+# Through go.sh, so a Mac run uses the shared, bounded caches and not Go's default one
+# (#6462); -C builds the old module with this tree's go.sh.
+go_sh="$root/Go/scripts/go.sh"
+CGO_ENABLED=0 "$go_sh" build -o "$work/new/" ./cmd/agentsd ./cmd/agents-control ./cmd/agentsctl
+CGO_ENABLED=0 "$go_sh" -C "$old/Go" build -o "$work/oldbin/" ./cmd/agentsd ./cmd/agents-control
 
 # A control plane of `bin`, on `port`, its store and key in `dir`.
 start_control() {
