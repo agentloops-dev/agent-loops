@@ -145,7 +145,7 @@ func TestAChangedSealedRecordDoesNotOpen(t *testing.T) {
 	if v, ok := d.sealedLocalSecret(home, "GITLAB_PASSWORD"); !ok || v != "sealed-value" {
 		t.Fatalf("%q", v)
 	}
-	f := readSealedSecrets(home)
+	f, _ := readSealedSecrets(home)
 	s := f.Secrets["GITLAB_PASSWORD"]
 	s.Grants = []string{"github.com"}
 	f.Secrets["GITLAB_PASSWORD"] = s

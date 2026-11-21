@@ -132,7 +132,11 @@ func (d *Daemon) noteOffer(name, offer string) {
 	}
 	d.sealedSecretsMu.Lock()
 	defer d.sealedSecretsMu.Unlock()
-	f := readSealedSecrets(home)
+	f, err := readSealedSecrets(home)
+	if err != nil {
+		log.Printf("agent secrets: %s's offer was not kept: %v", name, err)
+		return
+	}
 	s, ok := f.Secrets[name]
 	if !ok || s.From != sealedFromAgent && s.From != "" {
 		return
@@ -160,7 +164,7 @@ func (d *Daemon) offerWaitingAgentSecrets() {
 		yours[n] = true
 	}
 	var names []string
-	held := readSealedSecrets(home).Secrets
+	held := sealedSecretsHere(home)
 	for name, s := range held {
 		switch {
 		case !secretNameHere.MatchString(name) || s.Offer != "" || s.Release:

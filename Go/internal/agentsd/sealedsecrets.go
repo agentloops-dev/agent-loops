@@ -256,15 +256,38 @@ func sortedGrants(g []string) []string {
 	return slices.Compact(out)
 }
 
-// readSealedSecrets is sealed.json; missing or unreadable reads as nothing.
-func readSealedSecrets(home string) sealedSecretsFile {
+// errSealedUnreadable is a sealed.json that is there but does not read or decode (#6486). A
+// writer that gets it does not write: a write over it keeps only the secrets it adds, and
+// every other secret in the file is lost.
+var errSealedUnreadable = errors.New("sealed.json is unreadable")
+
+// readSealedSecrets is sealed.json. A file that is not there reads as empty. A file that is
+// there and does not read or decode is errSealedUnreadable, with an empty set: each writer
+// stops on it, and leaves the file as it is.
+func readSealedSecrets(home string) (sealedSecretsFile, error) {
 	f := sealedSecretsFile{V: sealedSecretsVersion}
-	if b, err := os.ReadFile(sealedSecretsPath(home)); err == nil {
-		if err := json.Unmarshal(b, &f); err != nil {
-			log.Printf("sealed secrets: %s is unreadable: %v", sealedSecretsPath(home), err)
-		}
+	p := sealedSecretsPath(home)
+	b, err := os.ReadFile(p)
+	if errors.Is(err, os.ErrNotExist) {
+		return f, nil
 	}
-	return f
+	if err == nil {
+		err = json.Unmarshal(b, &f)
+	}
+	if err != nil {
+		return sealedSecretsFile{V: sealedSecretsVersion}, fmt.Errorf("%w (%s: %v). It was not changed, so no secret in it is lost. Repair or move the file, then try again", errSealedUnreadable, p, err)
+	}
+	return f, nil
+}
+
+// sealedSecretsHere is sealed.json's secrets, for a look that writes nothing: an unreadable
+// file is in the log and looks empty.
+func sealedSecretsHere(home string) map[string]sealedValue {
+	f, err := readSealedSecrets(home)
+	if err != nil {
+		log.Printf("sealed secrets: %v", err)
+	}
+	return f.Secrets
 }
 
 func writeSealedSecrets(home string, f sealedSecretsFile) error {
@@ -288,7 +311,7 @@ func writeSealedSecrets(home string, f sealedSecretsFile) error {
 
 // sealedLocalSecret is the value of a secret in this machine's store, opened: flag on or off.
 func (d *Daemon) sealedLocalSecret(home, name string) (string, bool) {
-	s, ok := readSealedSecrets(home).Secrets[name]
+	s, ok := sealedSecretsHere(home)[name]
 	if !ok {
 		return "", false
 	}
@@ -313,13 +336,13 @@ func (d *Daemon) secretIsSealed(agent wire.UUID, name string) bool {
 // isSealedSecret is whether name has Ask before use here, without opening it. A record in
 // the store with the flag off (#4176) is not.
 func isSealedSecret(home, name string) bool {
-	s, ok := readSealedSecrets(home).Secrets[name]
+	s, ok := sealedSecretsHere(home)[name]
 	return ok && !s.NoAsk
 }
 
 // secretIsSet is whether name is set here: in the store, flag on or off, or in secrets.env.
 func secretIsSet(home, name string) bool {
-	if _, ok := readSealedSecrets(home).Secrets[name]; ok {
+	if _, ok := sealedSecretsHere(home)[name]; ok {
 		return true
 	}
 	return skillcatalog.LoadSecrets(skillcatalog.SecretsPath(home)).IsSet(name)
@@ -354,7 +377,10 @@ func (d *Daemon) plainStoreSecrets(home string) map[string]string {
 	wasFailing := same && !c.failed.IsZero()
 	*c = plainStoreCache{home: home, info: info}
 	var names []string
-	f := readSealedSecrets(home)
+	f, err := readSealedSecrets(home)
+	if err != nil {
+		log.Printf("sealed secrets: %v; its secrets with Ask before use off are not set until then", err)
+	}
 	for name, s := range f.Secrets {
 		if s.NoAsk {
 			names = append(names, name)
@@ -419,12 +445,14 @@ func (d *Daemon) localSecret(agent wire.UUID, name string) (value string, ok, ex
 func (d *Daemon) saveSealedSecret(home, name, value, from string, ask bool) error {
 	d.sealedSecretsMu.Lock()
 	defer d.sealedSecretsMu.Unlock()
-	f := readSealedSecrets(home)
+	f, err := readSealedSecrets(home)
+	if err != nil {
+		return err
+	}
 	if f.Secrets == nil {
 		f.Secrets = map[string]sealedValue{}
 	}
 	var s sealedValue
-	var err error
 	if ask {
 		s, err = d.sealSecret(sealedLocal, name, value, f.Secrets[name].Grants)
 	} else {
@@ -452,7 +480,10 @@ func (d *Daemon) setPlainSecrets(home string, values map[string]string, from str
 	}
 	d.sealedSecretsMu.Lock()
 	defer d.sealedSecretsMu.Unlock()
-	f := readSealedSecrets(home)
+	f, err := readSealedSecrets(home)
+	if err != nil {
+		return err
+	}
 	if f.Secrets == nil {
 		f.Secrets = map[string]sealedValue{}
 	}
@@ -483,9 +514,8 @@ func (d *Daemon) setPlainSecrets(home string, values map[string]string, from str
 // in secrets.env. One with the flag on stays.
 func (d *Daemon) forgetPlainSecret(home, name string) error {
 	d.sealedSecretsMu.Lock()
-	f := readSealedSecrets(home)
-	var err error
-	if s, ok := f.Secrets[name]; ok && s.NoAsk {
+	f, err := readSealedSecrets(home)
+	if s, ok := f.Secrets[name]; err == nil && ok && s.NoAsk {
 		delete(f.Secrets, name)
 		if writeSealedSecrets(home, f) != nil {
 			err = errors.New("sealed.json could not be written")
@@ -529,7 +559,10 @@ func (d *Daemon) moveSecretsFile(home, path string) (int, error) {
 	}
 	d.sealedSecretsMu.Lock()
 	defer d.sealedSecretsMu.Unlock()
-	f := readSealedSecrets(home)
+	f, err := readSealedSecrets(home)
+	if err != nil {
+		return 0, err
+	}
 	if f.Secrets == nil {
 		f.Secrets = map[string]sealedValue{}
 	}
@@ -597,7 +630,10 @@ func (d *Daemon) syncUserSecrets(home string, plain, flagged []wire.UserSecret, 
 	}
 	d.sealedSecretsMu.Lock()
 	defer d.sealedSecretsMu.Unlock()
-	f := readSealedSecrets(home)
+	f, err := readSealedSecrets(home)
+	if err != nil {
+		return nil, err
+	}
 	if f.Secrets == nil {
 		f.Secrets = map[string]sealedValue{}
 	}
@@ -682,7 +718,7 @@ func hasOfferedSecrets(home string) bool {
 	if home == "" {
 		return false
 	}
-	for _, s := range readSealedSecrets(home).Secrets {
+	for _, s := range sealedSecretsHere(home) {
 		if s.From == sealedFromAgent && s.Offer != "" {
 			return true
 		}
@@ -721,12 +757,12 @@ func (d *Daemon) setNeedsApproval(r wire.SecretNeedsApprovalRequest) error {
 		d.mcpChanged()
 		return nil
 	}
-	if s, ok := readSealedSecrets(home).Secrets[r.Name]; ok && s.NoAsk {
+	if s, ok := sealedSecretsHere(home)[r.Name]; ok && s.NoAsk {
 		return nil
 	}
 	v, ok := d.sealedLocalSecret(home, r.Name)
 	if !ok {
-		if s, sealed := readSealedSecrets(home).Secrets[r.Name]; sealed && s.Release {
+		if s, sealed := sealedSecretsHere(home)[r.Name]; sealed && s.Release {
 			return Invalid("%s was left as it is: on this machine it opens only for a use a person approved on one of their devices. Approve a use first, or set its value again with Ask before use off.", r.Name)
 		}
 		if isSealedSecret(home, r.Name) {

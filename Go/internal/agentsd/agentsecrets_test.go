@@ -83,7 +83,7 @@ func TestAnAgentsSecretIsOfferedToThePersonsApps(t *testing.T) {
 	if err := d.saveAgentSecret("", "GITLAB_TOKEN", "glpat-agent-saved", false); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, "the offer", func() bool { return readSealedSecrets(home).Secrets["GITLAB_TOKEN"].Offer != "" })
+	waitFor(t, "the offer", func() bool { return sealedSecretsHere(home)["GITLAB_TOKEN"].Offer != "" })
 	offers := app.offered()
 	if len(offers) != 1 || offers[0].Name != "GITLAB_TOKEN" || len(offers[0].Sealed) != 1 || app.open(t, offers[0]) != "glpat-agent-saved" {
 		t.Fatalf("%+v", offers)
@@ -94,7 +94,7 @@ func TestAnAgentsSecretIsOfferedToThePersonsApps(t *testing.T) {
 		}
 	}
 	offer := offers[0].Offer
-	if s := readSealedSecrets(home).Secrets["GITLAB_TOKEN"]; s.From != sealedFromAgent || string(offer) != s.Offer {
+	if s := sealedSecretsHere(home)["GITLAB_TOKEN"]; s.From != sealedFromAgent || string(offer) != s.Offer {
 		t.Fatalf("%+v", s)
 	}
 	send := func(waiting []wire.WaitingOffer, secrets ...wire.SealedUserSecret) {
@@ -107,19 +107,19 @@ func TestAnAgentsSecretIsOfferedToThePersonsApps(t *testing.T) {
 	if v, _, _ := d.localSecret("", "GITLAB_TOKEN"); v != "glpat-agent-saved" {
 		t.Fatalf("%q", v)
 	}
-	if rows := d.localSecretList().Secrets; len(rows) != 1 || rows[0].Name != "GITLAB_TOKEN" {
+	if rows := localRows(t, d).Secrets; len(rows) != 1 || rows[0].Name != "GITLAB_TOKEN" {
 		t.Fatalf("%+v", rows)
 	}
 
 	// Taken (Use the Agent's, or Keep Yours): the person's copy replaces this machine's.
 	send(nil, sealedSecret(t, public, "sam", "GITLAB_TOKEN", 2, "glpat-agent-saved"))
-	if s := readSealedSecrets(home).Secrets["GITLAB_TOKEN"]; s.From != sealedFromUser {
+	if s := sealedSecretsHere(home)["GITLAB_TOKEN"]; s.From != sealedFromUser {
 		t.Fatalf("%+v", s)
 	}
 	if v, _, _ := d.localSecret("", "GITLAB_TOKEN"); v != "glpat-agent-saved" {
 		t.Fatalf("%q", v)
 	}
-	if rows := d.localSecretList().Secrets; len(rows) != 0 {
+	if rows := localRows(t, d).Secrets; len(rows) != 0 {
 		t.Fatalf("%+v", rows)
 	}
 
@@ -127,9 +127,9 @@ func TestAnAgentsSecretIsOfferedToThePersonsApps(t *testing.T) {
 	if err := d.saveAgentSecret("", "NPM_TOKEN", "npm_agent_saved", true); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, "the second offer", func() bool { return readSealedSecrets(home).Secrets["NPM_TOKEN"].Offer != "" })
+	waitFor(t, "the second offer", func() bool { return sealedSecretsHere(home)["NPM_TOKEN"].Offer != "" })
 	send(nil, sealedSecret(t, public, "sam", "GITLAB_TOKEN", 2, "glpat-agent-saved"))
-	if _, ok := readSealedSecrets(home).Secrets["NPM_TOKEN"]; ok {
+	if _, ok := sealedSecretsHere(home)["NPM_TOKEN"]; ok {
 		t.Fatal("a dropped offer's copy stayed")
 	}
 	assertNotUnder(t, root, "npm_agent_saved")
@@ -170,7 +170,7 @@ func TestOldSavesAreOfferedButNotPasskeysOrConnectorSecrets(t *testing.T) {
 	if len(offers) != 1 || offers[0].Name != "OLD_TOKEN" || app.open(t, offers[0]) != "old-agent-save-1234" {
 		t.Fatalf("%+v", offers)
 	}
-	if s := readSealedSecrets(home).Secrets["OLD_TOKEN"]; s.From != sealedFromAgent || s.Offer == "" {
+	if s := sealedSecretsHere(home)["OLD_TOKEN"]; s.From != sealedFromAgent || s.Offer == "" {
 		t.Fatalf("%+v", s)
 	}
 	// Offered once: the next delivery does not offer it again.

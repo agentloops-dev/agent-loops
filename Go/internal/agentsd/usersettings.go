@@ -176,7 +176,7 @@ func (d *Daemon) ApplyUserSettings(u wire.MachineUserSettings) error {
 	if err == nil && before.User == u.User {
 		changes = userSecretChanges(before, mark)
 		// A name an agent's secret keeps here while its offer waits (#5308) was not removed.
-		held := readSealedSecrets(home).Secrets
+		held := sealedSecretsHere(home)
 		changes = slices.DeleteFunc(changes, func(c secretChange) bool {
 			_, ok := held[c.name]
 			return c.what == wire.SecretOperationWhatRemoved && ok

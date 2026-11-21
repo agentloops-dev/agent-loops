@@ -168,7 +168,7 @@ func TestOnLinuxAFlaggedValueOpensOnlyForASignedApproval(t *testing.T) {
 		t.Fatalf("%+v %q %d", got, page.value, plane.released)
 	}
 	// The control plane takes that approval once.
-	layer := readSealedSecrets(home).Secrets["GITLAB_PASSWORD"]
+	layer := sealedSecretsHere(home)["GITLAB_PASSWORD"]
 	outer, _ := d.openOuter(sealedLocal, "GITLAB_PASSWORD", layer)
 	var l secretrelease.Layer
 	json.Unmarshal(outer, &l)
