@@ -131,8 +131,8 @@ func TestReadyMadeWorkflowsLiveInUserFolderAndFoldersUseThem(t *testing.T) {
 	first := folder(t, c, 1)
 	second := folder(t, c, 2)
 	for _, dir := range []string{first, second} {
-		os.MkdirAll(filepath.Join(dir, ".git"), 0o755)
-		os.WriteFile(filepath.Join(dir, ".git", "config"), []byte("[remote \"origin\"]\n\turl = git@github.com:o/n.git\n"), 0o644)
+		must(t, os.MkdirAll(filepath.Join(dir, ".git"), 0o755))
+		must(t, os.WriteFile(filepath.Join(dir, ".git", "config"), []byte("[remote \"origin\"]\n\turl = git@github.com:o/n.git\n"), 0o644))
 	}
 	folderURL := store.FolderURL(first)
 	userFolder := filepath.Join(home, ".agents", "workflows")
@@ -140,13 +140,13 @@ func TestReadyMadeWorkflowsLiveInUserFolderAndFoldersUseThem(t *testing.T) {
 	// A normal folder has no workflows from the user's folder.
 	plain := folder(t, c, 3)
 	var list []wire.WorkflowSummary
-	json.Unmarshal(c.call(t, 3, "workflows/list", map[string]any{"folder": store.FolderURL(plain)}), &list)
+	mustUnmarshal(t, c.call(t, 3, "workflows/list", map[string]any{"folder": store.FolderURL(plain)}), &list)
 	if len(list) != 0 {
 		t.Fatalf("%+v", list)
 	}
 	// A forge folder lists the built-ins as user workflows, off by default: all but the daily
 	// checks, which are the person's, not a folder's (#3192, #3355).
-	json.Unmarshal(c.call(t, 4, "workflows/list", map[string]any{"folder": folderURL}), &list)
+	mustUnmarshal(t, c.call(t, 4, "workflows/list", map[string]any{"folder": folderURL}), &list)
 	if len(list) != 7 || list[0].IsEnabled || list[0].AwaitingApproval != nil || list[6].Workflow.Name != "Work an issue" || list[0].Scope == nil || *list[0].Scope != "user" {
 		t.Fatalf("%+v", list)
 	}
@@ -156,7 +156,7 @@ func TestReadyMadeWorkflowsLiveInUserFolderAndFoldersUseThem(t *testing.T) {
 		}
 	}
 	var userList []wire.WorkflowSummary
-	json.Unmarshal(c.call(t, 5, "workflows/list", map[string]any{"scope": "user"}), &userList)
+	mustUnmarshal(t, c.call(t, 5, "workflows/list", map[string]any{"scope": "user"}), &userList)
 	if len(userList) != 8 || userList[0].Content == nil || userList[0].Scope == nil || *userList[0].Scope != "user" {
 		t.Fatalf("user workflows: %+v", userList)
 	}
@@ -164,7 +164,7 @@ func TestReadyMadeWorkflowsLiveInUserFolderAndFoldersUseThem(t *testing.T) {
 	// Enabling a folder copy changes only that folder's record.
 	var s wire.WorkflowSummary
 	original, _ := os.ReadFile(filepath.Join(userFolder, "work-an-issue.md"))
-	json.Unmarshal(c.call(t, 6, "workflows/enable", map[string]any{"folder": folderURL, "workflowID": "work-an-issue", "enabled": true}), &s)
+	mustUnmarshal(t, c.call(t, 6, "workflows/enable", map[string]any{"folder": folderURL, "workflowID": "work-an-issue", "enabled": true}), &s)
 	if !s.IsEnabled || s.AwaitingApproval != nil || s.DeniedHere != nil {
 		t.Fatalf("%+v", s)
 	}
@@ -180,8 +180,8 @@ func TestReadyMadeWorkflowsLiveInUserFolderAndFoldersUseThem(t *testing.T) {
 	// A folder file with the same ID takes precedence.
 	folderCopy := "---\nname: Folder copy\non: manual\n---\nFolder-only prompt.\n"
 	folderPath := filepath.Join(workflowsFolder(first), "work-an-issue.md")
-	os.MkdirAll(filepath.Dir(folderPath), 0o755)
-	os.WriteFile(folderPath, []byte(folderCopy), 0o644)
+	must(t, os.MkdirAll(filepath.Dir(folderPath), 0o755)) //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(folderPath, []byte(folderCopy), 0o644))
 	d.rescanWorkflows(first)
 	folderSummary, err := d.oneWorkflow(first, "work-an-issue")
 	if err != nil || folderSummary.Scope == nil || *folderSummary.Scope != "folder" || folderSummary.Workflow.Name != "Folder copy" {
@@ -206,7 +206,7 @@ func TestReadyMadeWorkflowsLiveInUserFolderAndFoldersUseThem(t *testing.T) {
 	if custom.Content == nil || *custom.Content != content || custom.Scope == nil || *custom.Scope != "user" {
 		t.Fatalf("new user workflow: %+v", custom)
 	}
-	json.Unmarshal(c.call(t, 9, "workflows/list", map[string]any{"folder": folderURL}), &list)
+	mustUnmarshal(t, c.call(t, 9, "workflows/list", map[string]any{"folder": folderURL}), &list)
 	for _, summary := range list {
 		if summary.Workflow.WorkflowID == "custom-workflow" {
 			if summary.IsEnabled || summary.Scope == nil || *summary.Scope != "user" {
@@ -234,10 +234,10 @@ func TestReadyMadeSkillIsInstalledWhenItsWorkflowAlreadyExists(t *testing.T) {
 	id := "work-an-issue"
 	path := filepath.Join(workflowsFolder(home), id+".md")
 	original := []byte("---\non: manual\n---\nMy workflow.\n")
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil { //nolint:gosec // G301: the mode this folder always had; only its error is new
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, original, 0o644); err != nil {
+	if err := os.WriteFile(path, original, 0o644); err != nil { //nolint:gosec // G306: the mode this file always had; only its error is new
 		t.Fatal(err)
 	}
 	c.call(t, 1, "workflows/list", map[string]any{"scope": "user"})
@@ -254,10 +254,10 @@ func TestPushesToAForgeInAWorktree(t *testing.T) {
 	t.Parallel()
 
 	main, wt := t.TempDir(), t.TempDir()
-	os.MkdirAll(filepath.Join(main, ".git", "worktrees", "x"), 0o755)
-	os.WriteFile(filepath.Join(main, ".git", "config"), []byte("[remote \"origin\"]\n\turl = https://github.com/o/n\n"), 0o644)
-	os.WriteFile(filepath.Join(main, ".git", "worktrees", "x", "commondir"), []byte("../..\n"), 0o644)
-	os.WriteFile(filepath.Join(wt, ".git"), []byte("gitdir: "+filepath.Join(main, ".git", "worktrees", "x")+"\n"), 0o644)
+	must(t, os.MkdirAll(filepath.Join(main, ".git", "worktrees", "x"), 0o755))                                                           //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(main, ".git", "config"), []byte("[remote \"origin\"]\n\turl = https://github.com/o/n\n"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(main, ".git", "worktrees", "x", "commondir"), []byte("../..\n"), 0o644))                          //nolint:gosec // G306: the mode this file always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(wt, ".git"), []byte("gitdir: "+filepath.Join(main, ".git", "worktrees", "x")+"\n"), 0o644))       //nolint:gosec // G306: the mode this file always had; only its error is new
 	if !pushesToForge(main) || !pushesToForge(wt) || pushesToForge(t.TempDir()) {
 		t.Fatal("pushesToForge")
 	}
@@ -265,8 +265,8 @@ func TestPushesToAForgeInAWorktree(t *testing.T) {
 	for remote, want := range map[string]bool{"git@gitlab.com:g/app.git": true, "https://gitlab.example.com/g/app": true,
 		"https://code.example.org/g/app": false} {
 		dir := t.TempDir()
-		os.MkdirAll(filepath.Join(dir, ".git"), 0o755)
-		os.WriteFile(filepath.Join(dir, ".git", "config"), []byte("[remote \"origin\"]\n\turl = "+remote+"\n"), 0o644)
+		must(t, os.MkdirAll(filepath.Join(dir, ".git"), 0o755))                                                                 //nolint:gosec // G301: the mode this folder always had; only its error is new
+		must(t, os.WriteFile(filepath.Join(dir, ".git", "config"), []byte("[remote \"origin\"]\n\turl = "+remote+"\n"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 		if pushesToForge(dir) != want {
 			t.Errorf("%s: %v", remote, !want)
 		}
@@ -346,7 +346,7 @@ func TestReadyMadeUpdatesOnlyTheUneditedCopy(t *testing.T) {
 	path := func(id string) string { return filepath.Join(workflowsFolder(home), id+".md") }
 	approve := func(id, text string) {
 		t.Helper()
-		if err := os.WriteFile(path(id), []byte(text), 0o644); err != nil {
+		if err := os.WriteFile(path(id), []byte(text), 0o644); err != nil { //nolint:gosec // G306: the mode this file always had; only its error is new
 			t.Fatal(err)
 		}
 		d.workflowMu.Lock()
@@ -377,7 +377,7 @@ func TestReadyMadeUpdatesOnlyTheUneditedCopy(t *testing.T) {
 	approve("work-an-issue", madeEarlier)
 
 	var list []wire.WorkflowSummary
-	json.Unmarshal(c.call(t, 2, "workflows/list", map[string]any{"scope": "user"}), &list)
+	mustUnmarshal(t, c.call(t, 2, "workflows/list", map[string]any{"scope": "user"}), &list)
 	wantOn, _ := setFrontMatter("enabled", nil, summary)
 	if !fileHas(t, path("fix-failed-checks"), wantOn) || !fileHas(t, path("daily-checks"), edited) || !fileHas(t, path("work-an-issue"), work) {
 		t.Fatal("the unedited copies were not updated, or the edited one was")
@@ -398,7 +398,7 @@ func TestReadyMadeUpdatesOnlyTheUneditedCopy(t *testing.T) {
 	notices := func() map[string]wire.WorkflowSummary {
 		t.Helper()
 		var list []wire.WorkflowSummary
-		json.Unmarshal(c.call(t, 3, "workflows/list", map[string]any{"scope": "user"}), &list)
+		mustUnmarshal(t, c.call(t, 3, "workflows/list", map[string]any{"scope": "user"}), &list)
 		by := map[string]wire.WorkflowSummary{}
 		for _, s := range list {
 			by[s.Workflow.WorkflowID] = s
@@ -420,13 +420,13 @@ func TestReadyMadeUpdatesOnlyTheUneditedCopy(t *testing.T) {
 	// over the copy with its state keys.
 	userURL := store.FolderURL(home)
 	var kept wire.WorkflowSummary
-	json.Unmarshal(c.call(t, 4, "workflows/readyMade/keep", map[string]any{"folder": userURL, "workflowID": "daily-checks"}), &kept)
+	mustUnmarshal(t, c.call(t, 4, "workflows/readyMade/keep", map[string]any{"folder": userURL, "workflowID": "daily-checks"}), &kept)
 	if kept.NewerReadyMade != nil || notices()["daily-checks"].NewerReadyMade != nil || !fileHas(t, path("daily-checks"), edited) {
 		t.Fatalf("kept: %+v", kept)
 	}
 	os.Remove(keptReadyMadePath(home))
 	var taken wire.WorkflowSummary
-	json.Unmarshal(c.call(t, 5, "workflows/readyMade/take", map[string]any{"folder": userURL, "workflowID": "daily-checks"}), &taken)
+	mustUnmarshal(t, c.call(t, 5, "workflows/readyMade/take", map[string]any{"folder": userURL, "workflowID": "daily-checks"}), &taken)
 	want, _ := withStateKeys(edited, checks, "daily-checks", home)
 	if taken.NewerReadyMade != nil || !fileHas(t, path("daily-checks"), want) {
 		t.Fatalf("taken: %+v", taken)

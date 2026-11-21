@@ -59,20 +59,20 @@ func TestRetentionDeletesOldArchivedAgents(t *testing.T) {
 	}
 
 	// Forever deletes nothing, however old.
-	os.MkdirAll(d.SettingsDir, 0o700)
-	os.WriteFile(filepath.Join(d.SettingsDir, "retention.json"), []byte(`{"keepFor":"forever"}`), 0o600)
+	must(t, os.MkdirAll(d.SettingsDir, 0o700))
+	must(t, os.WriteFile(filepath.Join(d.SettingsDir, "retention.json"), []byte(`{"keepFor":"forever"}`), 0o600))
 	clock.add(365 * 24 * time.Hour)
 	if n := d.sweepArchived(); n != 0 || d.Store.Agent(recent.ID) == nil {
 		t.Fatalf("forever deleted %d", n)
 	}
 
 	// Seven days: the recent one goes too; a value this build cannot read is 30 days.
-	os.WriteFile(filepath.Join(d.SettingsDir, "retention.json"), []byte(`{"keepFor":"days7"}`), 0o600)
+	must(t, os.WriteFile(filepath.Join(d.SettingsDir, "retention.json"), []byte(`{"keepFor":"days7"}`), 0o600))
 	clock.set(time.Date(2026, 10, 19, 12, 0, 0, 0, time.UTC))
 	if n := d.sweepArchived(); n != 1 || d.Store.Agent(recent.ID) != nil || d.Store.Agent(pinned.ID) == nil || d.Store.Agent(noTime.ID) == nil {
 		t.Fatalf("days7 deleted %d", n)
 	}
-	os.WriteFile(filepath.Join(d.SettingsDir, "retention.json"), []byte(`{"keepFor":"days1000"}`), 0o600)
+	must(t, os.WriteFile(filepath.Join(d.SettingsDir, "retention.json"), []byte(`{"keepFor":"days1000"}`), 0o600))
 	if d.keepFor() != wire.RetentionKeepForDays30 {
 		t.Fatal(d.keepFor())
 	}
@@ -90,7 +90,7 @@ func TestStartSweepsCrashLeftovers(t *testing.T) {
 		if err := os.MkdirAll(path, 0o700); err != nil {
 			t.Fatal(err)
 		}
-		os.Chtimes(path, at, at)
+		must(t, os.Chtimes(path, at, at))
 		return path
 	}
 	restore := made(filepath.Join(d.Store.Loc.Root, ".restore-123"), old)
@@ -125,10 +125,10 @@ func TestTheHourlySweepAppliesLateBounds(t *testing.T) {
 	d.workflowMu.Unlock()
 	transfer := func(dir, name string, at time.Time) string {
 		t.Helper()
-		os.MkdirAll(dir, 0o700)
+		must(t, os.MkdirAll(dir, 0o700))
 		path := filepath.Join(dir, name)
-		os.WriteFile(path, []byte("x"), 0o600)
-		os.Chtimes(path, at, at)
+		must(t, os.WriteFile(path, []byte("x"), 0o600))
+		must(t, os.Chtimes(path, at, at))
 		return path
 	}
 	stale := transfer(d.incomingFolder(), "stale", time.Now().Add(-2*transferLimit))

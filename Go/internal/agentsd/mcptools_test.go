@@ -24,9 +24,9 @@ func withGitHubConnector(t *testing.T) *Daemon {
 	d, _ := start(t, t.TempDir())
 	home := t.TempDir()
 	d.PersonalHome = home
-	os.MkdirAll(filepath.Join(home, ".agents"), 0o755)
+	must(t, os.MkdirAll(filepath.Join(home, ".agents"), 0o755)) //nolint:gosec // G301: the mode this folder always had; only its error is new
 	b, _ := json.Marshal(map[string]any{"mcpServers": map[string]any{"github": map[string]any{"command": "/bin/cat"}}})
-	os.WriteFile(filepath.Join(home, ".agents", "mcp.json"), b, 0o644)
+	must(t, os.WriteFile(filepath.Join(home, ".agents", "mcp.json"), b, 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	raw := []json.RawMessage{
 		json.RawMessage(`{"name":"get_issue","title":"Get an issue","annotations":{"readOnlyHint":true}}`),
 		json.RawMessage(`{"name":"create_issue"}`),
@@ -114,8 +114,8 @@ func TestSetToolLevelWritesYourLayer(t *testing.T) {
 		t.Fatalf("your layer: %+v", rules)
 	}
 	// Cleared, it is the default again, and nothing is left in your layer.
-	d.mcpSetToolLevel(mac, wire.MCPSetToolLevelRequest{Destination: personal, Name: "github", Tool: &tool})
-	d.mcpSetToolLevel(mac, wire.MCPSetToolLevelRequest{Destination: personal, Name: "github"})
+	must(t, errOnly(d.mcpSetToolLevel(mac, wire.MCPSetToolLevelRequest{Destination: personal, Name: "github", Tool: &tool})))
+	must(t, errOnly(d.mcpSetToolLevel(mac, wire.MCPSetToolLevelRequest{Destination: personal, Name: "github"})))
 	if got := d.yourPolicyRules().ConnectorTools; got != nil {
 		t.Fatalf("left: %+v", got)
 	}
@@ -133,7 +133,7 @@ func TestAFoldersLayerOnlyMakesAToolTighter(t *testing.T) {
 	folder := repo(t)
 	seeded(t, d, folder, nil)
 	tool := "get_issue"
-	d.mcpSetToolLevel(mac, wire.MCPSetToolLevelRequest{Destination: personal, Name: "github", Tool: &tool, Level: levelOf(wire.ConnectorToolLevelAsk)})
+	must(t, errOnly(d.mcpSetToolLevel(mac, wire.MCPSetToolLevelRequest{Destination: personal, Name: "github", Tool: &tool, Level: levelOf(wire.ConnectorToolLevelAsk)})))
 	here := wire.SkillDestination{Kind: wire.SkillDestinationKindFolder, Folder: &folder}
 	d.healthMu.Lock()
 	d.results[healthID(&folder, "github")] = d.results[healthID(nil, "github")]
@@ -157,7 +157,7 @@ func TestAToolsLevelAnswersItsPermissionRequest(t *testing.T) {
 	d := withGitHubConnector(t)
 	mac := &Client{Role: RoleControl}
 	tool := "delete_repo"
-	d.mcpSetToolLevel(mac, wire.MCPSetToolLevelRequest{Destination: personal, Name: "github", Tool: &tool, Level: levelOf(wire.ConnectorToolLevelOff)})
+	must(t, errOnly(d.mcpSetToolLevel(mac, wire.MCPSetToolLevelRequest{Destination: personal, Name: "github", Tool: &tool, Level: levelOf(wire.ConnectorToolLevelOff)})))
 	a := seeded(t, d, t.TempDir(), func(a *wire.Agent) { a.RuntimeID = "claude" })
 	l := &live{d: d, id: a.ID, pending: map[wire.UUID]*pendingPermission{}}
 	ask := func(title string) sdk.RequestPermissionRequest {

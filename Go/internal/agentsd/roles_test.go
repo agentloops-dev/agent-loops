@@ -70,14 +70,14 @@ func socketCall(t *testing.T, path, method string) *message {
 	c := dialUnix(t, path)
 	defer c.Close()
 	b, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": method})
-	c.Write(append(b, '\n'))
-	c.SetReadDeadline(time.Now().Add(5 * time.Second))
+	must(t, errOnly(c.Write(append(b, '\n'))))
+	must(t, c.SetReadDeadline(time.Now().Add(5*time.Second)))
 	line, err := bufio.NewReader(c).ReadString('\n')
 	if err != nil {
 		return nil
 	}
 	var m message
-	json.Unmarshal([]byte(line), &m)
+	mustUnmarshal(t, []byte(line), &m)
 	return &m
 }
 
@@ -97,7 +97,7 @@ func serveWith(t *testing.T, p SocketPolicy) (*Daemon, string) {
 	}
 	t.Cleanup(func() { os.RemoveAll(dir) })
 	path := filepath.Join(dir, "d.sock")
-	go d.ServeSocket(ctx, path)
+	go func() { _ = d.ServeSocket(ctx, path) }() // it ends with ctx; a socket that does not listen fails the dial
 	// Return only once it listens (#5071): a caller that dials once, as agents-secret
 	// does, failed at once under load when it dialled before the goroutine had run.
 	dialUnix(t, path).Close()
@@ -168,7 +168,7 @@ func (r *roledConn) ask(t *testing.T, method string) message {
 	select {
 	case line := <-r.out:
 		var m message
-		json.Unmarshal([]byte(line), &m)
+		mustUnmarshal(t, []byte(line), &m)
 		return m
 	case <-time.After(5 * time.Second):
 		t.Fatalf("%s: no answer", method)

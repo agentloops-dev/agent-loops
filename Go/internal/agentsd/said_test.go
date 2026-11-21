@@ -1,7 +1,6 @@
 package agentsd
 
 import (
-	"encoding/json"
 	"os"
 	"strings"
 	"testing"
@@ -23,7 +22,7 @@ func TestSaidSearch(t *testing.T) {
 	first := seeded(t, d, dir, func(a *wire.Agent) { a.Title = &title }).ID
 	other := seeded(t, d, dir, nil).ID
 	say := func(id wire.UUID, kind wire.TranscriptEntryKind) {
-		d.Store.Append(id, wire.TranscriptEntry{ID: store.NewUUID(), At: now(), Kind: kind})
+		must(t, errOnly(d.Store.Append(id, wire.TranscriptEntry{ID: store.NewUUID(), At: now(), Kind: kind})))
 	}
 	reply := func(text string) wire.TranscriptEntryKind {
 		m := "m1"
@@ -36,7 +35,7 @@ func TestSaidSearch(t *testing.T) {
 
 	search := func(n int, text string) wire.SaidSearchResult {
 		var r wire.SaidSearchResult
-		json.Unmarshal(c.call(t, n, "agents/said", map[string]any{"text": text}), &r)
+		mustUnmarshal(t, c.call(t, n, "agents/said", map[string]any{"text": text}), &r)
 		return r
 	}
 	got := search(1, "build is WARM")
@@ -54,11 +53,11 @@ func TestSaidSearch(t *testing.T) {
 	}
 	// agents/list's query keeps a session for its title or for what it said.
 	var listed []wire.Agent
-	json.Unmarshal(c.call(t, 3, "agents/list", map[string]any{"includeArchived": true, "query": "docs"}), &listed)
+	mustUnmarshal(t, c.call(t, 3, "agents/list", map[string]any{"includeArchived": true, "query": "docs"}), &listed)
 	if len(listed) != 1 || listed[0].ID != other {
 		t.Fatalf("listed %+v", listed)
 	}
-	json.Unmarshal(c.call(t, 4, "agents/list", map[string]any{"includeArchived": true, "query": "parser"}), &listed)
+	mustUnmarshal(t, c.call(t, 4, "agents/list", map[string]any{"includeArchived": true, "query": "parser"}), &listed)
 	if len(listed) != 1 || listed[0].ID != first {
 		t.Fatalf("by title %+v", listed)
 	}
@@ -91,11 +90,11 @@ func TestSaidSearchKeepsTheOpenChatsLineIndex(t *testing.T) {
 	}
 	for range 40 {
 		id := seeded(t, d, dir, nil).ID
-		d.Store.Append(id, user("Make the build faster"))
+		must(t, errOnly(d.Store.Append(id, user("Make the build faster"))))
 	}
 	open := seeded(t, d, dir, nil).ID
-	d.Store.Append(open, user("Write the docs"))
-	d.Store.Append(open, user("And the tests"))
+	must(t, errOnly(d.Store.Append(open, user("Write the docs"))))
+	must(t, errOnly(d.Store.Append(open, user("And the tests"))))
 	ends, err := d.Store.LineEnds(open)
 	if err != nil || len(ends) != 2 {
 		t.Fatalf("ends %v %v", ends, err)
@@ -107,9 +106,9 @@ func TestSaidSearchKeepsTheOpenChatsLineIndex(t *testing.T) {
 		t.Fatal(err)
 	}
 	var said wire.SaidSearchResult
-	json.Unmarshal(c.call(t, 1, "agents/said", map[string]any{"text": "build"}), &said)
+	mustUnmarshal(t, c.call(t, 1, "agents/said", map[string]any{"text": "build"}), &said)
 	var listed []wire.Agent
-	json.Unmarshal(c.call(t, 2, "agents/list", map[string]any{"includeArchived": true, "query": "build"}), &listed)
+	mustUnmarshal(t, c.call(t, 2, "agents/list", map[string]any{"includeArchived": true, "query": "build"}), &listed)
 	if len(said.Matches) != 40 || len(listed) != 40 {
 		t.Fatalf("%d said, %d listed", len(said.Matches), len(listed))
 	}

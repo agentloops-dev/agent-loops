@@ -1,7 +1,6 @@
 package agentsd
 
 import (
-	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,7 +15,7 @@ func publicCard(t *testing.T, c *conn, id int, answer string) wire.ElicitationRe
 	t.Helper()
 	var pending []wire.ElicitationRequest
 	waitFor(t, "the card", func() bool {
-		json.Unmarshal(c.call(t, id, "elicitations/pending", nil), &pending)
+		mustUnmarshal(t, c.call(t, id, "elicitations/pending", nil), &pending)
 		return len(pending) == 1
 	})
 	c.call(t, id+1, "elicitations/answer", map[string]any{"requestID": pending[0].ID, "action": "accept", "content": map[string]any{"go": answer}})
@@ -48,12 +47,12 @@ func TestMakePublicRepositoryWaitsForThePersonsYes(t *testing.T) {
 	l.mu.Unlock()
 
 	src := t.TempDir()
-	os.MkdirAll(filepath.Join(src, ".github", "workflows"), 0o755)
-	os.MkdirAll(filepath.Join(src, ".git"), 0o755)
-	os.WriteFile(filepath.Join(src, "README.md"), []byte("# A starter\n"), 0o644)
-	os.WriteFile(filepath.Join(src, "setup.sh"), []byte("#!/bin/sh\n"), 0o755)
-	os.WriteFile(filepath.Join(src, ".github", "workflows", "ci.yml"), []byte("on: push\n"), 0o644)
-	os.WriteFile(filepath.Join(src, ".git", "config"), []byte("[core]\n"), 0o644)
+	must(t, os.MkdirAll(filepath.Join(src, ".github", "workflows"), 0o755))                                  //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.MkdirAll(filepath.Join(src, ".git"), 0o755))                                                  //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(src, "README.md"), []byte("# A starter\n"), 0o644))                   //nolint:gosec // G306: the mode this file always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(src, "setup.sh"), []byte("#!/bin/sh\n"), 0o755))                      //nolint:gosec // G306: the mode this file always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(src, ".github", "workflows", "ci.yml"), []byte("on: push\n"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(src, ".git", "config"), []byte("[core]\n"), 0o644))                   //nolint:gosec // G306: the mode this file always had; only its error is new
 	args := ciArgs("name", "app-starter", "folder", src, "template", true, "about", "A starter")
 
 	// A no makes nothing.
@@ -76,10 +75,10 @@ func TestMakePublicRepositoryWaitsForThePersonsYes(t *testing.T) {
 	go func() { text, _ := d.makePublicRepository(a.ID, args); said <- text }()
 	var pending []wire.ElicitationRequest
 	waitFor(t, "the second card", func() bool {
-		json.Unmarshal(c.call(t, 3, "elicitations/pending", nil), &pending)
+		mustUnmarshal(t, c.call(t, 3, "elicitations/pending", nil), &pending)
 		return len(pending) == 1
 	})
-	os.WriteFile(filepath.Join(src, "late.txt"), []byte("not on the card\n"), 0o644)
+	must(t, os.WriteFile(filepath.Join(src, "late.txt"), []byte("not on the card\n"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	c.call(t, 4, "elicitations/answer", map[string]any{"requestID": pending[0].ID, "action": "accept", "content": map[string]any{"go": "yes"}})
 	text := <-said
 	if !strings.Contains(text, "Made alexec/app-starter on GitHub, public, a template repository") || !strings.Contains(text, "pushed the 3 files") ||
@@ -126,9 +125,9 @@ func TestMakePublicRepositoryWaitsForThePersonsYes(t *testing.T) {
 	// Refused before the card: no folder, the home folder, keys, a link.
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	os.MkdirAll(filepath.Join(home, ".ssh"), 0o700)
+	must(t, os.MkdirAll(filepath.Join(home, ".ssh"), 0o700))
 	linked := t.TempDir()
-	os.Symlink(filepath.Join(home, ".ssh"), filepath.Join(linked, "keys"))
+	must(t, os.Symlink(filepath.Join(home, ".ssh"), filepath.Join(linked, "keys")))
 	for folder, want := range map[string]string{
 		"":                            "folder is the folder",
 		"relative/path":               "folder is the folder",
