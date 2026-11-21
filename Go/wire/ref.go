@@ -218,94 +218,140 @@ func RefFromLineage(kind, old string, c RefContext) (Ref, bool) {
 	if !ok || rest == "" || !refWord.MatchString(scheme) {
 		return Ref{}, false
 	}
-	topic := strings.ToLower(c.Topic)
-	var r Ref
-	switch {
-	case kind == "session" && scheme == "session":
-		r = Ref{Provider: "agents", Type: "session", Topic: topic, ID: rest}
-	case kind == "workflow" && scheme == "workflow":
-		r = Ref{Provider: "agents", Type: "workflow", Topic: topic, ID: rest}
-	case kind == "workflow-run" && scheme == "run":
-		r = Ref{Provider: "agents", Type: "workflow-run", Topic: topic, ID: rest}
-	case kind == "issue" && (scheme == "linear" || scheme == "jira"):
-		team, _, ok := strings.Cut(rest, "-")
-		if !ok || team == "" {
-			return Ref{}, false
-		}
-		r = Ref{Provider: scheme, Type: "issue", Topic: strings.ToLower(team), ID: rest}
-	case kind == "pr" && scheme == "gitlab" && strings.Contains(rest, "!"):
-		i := strings.LastIndex(rest, "!")
-		r = Ref{Provider: scheme, Type: "mr", Topic: strings.ToLower(rest[:i]), ID: rest[i+1:]}
-	case kind == "issue" || kind == "pr":
-		i := strings.LastIndex(rest, "#")
-		if i < 0 {
-			return Ref{}, false
-		}
-		typ := kind
-		if kind == "pr" {
-			typ = PullType(scheme)
-		}
-		r = Ref{Provider: scheme, Type: typ, Topic: strings.ToLower(rest[:i]), ID: rest[i+1:]}
-	case kind == "release" || kind == "milestone":
+	r, ok := lineageRef(kind, scheme, rest, strings.ToLower(c.Topic))
+	if !ok || r.Check() != nil {
+		return Ref{}, false
+	}
+	return r, true
+}
+
+// lineageRef gives the full ref of an old lineage ref, cut into its scheme and the rest,
+// by the node's kind. It does not check the ref.
+func lineageRef(kind, scheme, rest, topic string) (Ref, bool) {
+	switch kind {
+	case "session", "workflow", "workflow-run":
+		return lineageAgentsRef(kind, scheme, rest, topic)
+	case "issue", "pr":
+		return lineageItemRef(kind, scheme, rest)
+	case "release", "milestone":
 		path, id, ok := cutLast(rest, "/"+kind+"/")
 		if !ok {
 			return Ref{}, false
 		}
-		r = Ref{Provider: scheme, Type: kind, Topic: strings.ToLower(path), ID: id}
-	case kind == "doc" && scheme == "file":
-		r = Ref{Provider: "file", Type: "doc", ID: rest}
-	case kind == "doc" && (scheme == "https" || scheme == "http"):
-		host, path, _ := strings.Cut(strings.TrimPrefix(rest, "//"), "/")
-		if host == "" {
-			return Ref{}, false
-		}
-		r = Ref{Provider: "web", Type: "doc", Topic: strings.ToLower(host), ID: "/" + path}
-	case kind == "doc":
-		path, rel, ok := strings.Cut(rest, "/doc/")
-		if !ok {
-			return Ref{}, false
-		}
-		r = Ref{Provider: scheme, Type: "doc", Topic: strings.ToLower(path), ID: rel}
-	case kind == "ci-run":
-		var path, id string
-		for _, mark := range []string{"/actions/run/", "/pipelines/", "/builds/"} {
-			if path, id, ok = cutLast(rest, mark); ok {
-				break
-			}
-		}
-		if !ok {
-			return Ref{}, false
-		}
-		r = Ref{Provider: scheme, Type: "run", Topic: strings.ToLower(path), ID: id}
-	case kind == "deploy":
+		return Ref{Provider: scheme, Type: kind, Topic: strings.ToLower(path), ID: id}, true
+	case "doc":
+		return lineageDocRef(scheme, rest)
+	case "ci-run":
+		return lineageRunRef(scheme, rest)
+	case "deploy":
 		i := strings.LastIndex(rest, "/")
 		if i <= 0 {
 			return Ref{}, false
 		}
-		r = Ref{Provider: scheme, Type: "deploy", Topic: strings.ToLower(rest[:i]), ID: rest[i+1:]}
-	case kind == "target" && scheme == "target":
-		provider, id, ok := strings.Cut(rest, ":")
-		if !ok {
+		return Ref{Provider: scheme, Type: "deploy", Topic: strings.ToLower(rest[:i]), ID: rest[i+1:]}, true
+	case "target":
+		return lineageTargetRef(scheme, rest)
+	case "health":
+		return lineageHealthRef(scheme, rest)
+	case "repo":
+		if strings.Contains(rest, "#") {
 			return Ref{}, false
 		}
-		r = Ref{Provider: provider, Type: "target", ID: strings.ToLower(id)}
-	case kind == "health" && scheme == "sentry":
-		org, id, ok := strings.Cut(rest, "/")
-		if !ok {
+		return Ref{Provider: scheme, Type: "repo", ID: strings.ToLower(rest)}, true
+	}
+	return Ref{}, false
+}
+
+// lineageAgentSchemes is the old scheme of each kind of node that this app makes.
+var lineageAgentSchemes = map[string]string{"session": "session", "workflow": "workflow", "workflow-run": "run"}
+
+// lineageAgentsRef reads an old session, workflow or workflow run ref (session:<id>), in
+// the project topic.
+func lineageAgentsRef(kind, scheme, rest, topic string) (Ref, bool) {
+	if lineageAgentSchemes[kind] != scheme {
+		return Ref{}, false
+	}
+	return Ref{Provider: "agents", Type: kind, Topic: topic, ID: rest}, true
+}
+
+// lineageItemRef reads an old issue or pull request ref: linear:ENG-4, gitlab:group/repo!45
+// or github:alexec/agents#123.
+func lineageItemRef(kind, scheme, rest string) (Ref, bool) {
+	if kind == "issue" && (scheme == "linear" || scheme == "jira") {
+		team, _, ok := strings.Cut(rest, "-")
+		if !ok || team == "" {
 			return Ref{}, false
 		}
-		r = Ref{Provider: scheme, Type: "issue", Topic: strings.ToLower(org), ID: id}
-	case kind == "health":
-		r = Ref{Provider: scheme, Type: "incident", ID: rest}
-	case kind == "repo" && !strings.Contains(rest, "#"):
-		r = Ref{Provider: scheme, Type: "repo", ID: strings.ToLower(rest)}
-	default:
+		return Ref{Provider: scheme, Type: "issue", Topic: strings.ToLower(team), ID: rest}, true
+	}
+	if kind == "pr" && scheme == "gitlab" && strings.Contains(rest, "!") {
+		i := strings.LastIndex(rest, "!")
+		return Ref{Provider: scheme, Type: "mr", Topic: strings.ToLower(rest[:i]), ID: rest[i+1:]}, true
+	}
+	i := strings.LastIndex(rest, "#")
+	if i < 0 {
 		return Ref{}, false
 	}
-	if r.Check() != nil {
+	typ := kind
+	if kind == "pr" {
+		typ = PullType(scheme)
+	}
+	return Ref{Provider: scheme, Type: typ, Topic: strings.ToLower(rest[:i]), ID: rest[i+1:]}, true
+}
+
+// lineageDocRef reads an old doc ref: a file, a web page or a doc in a repo.
+func lineageDocRef(scheme, rest string) (Ref, bool) {
+	switch scheme {
+	case "file":
+		return Ref{Provider: "file", Type: "doc", ID: rest}, true
+	case "https", "http":
+		host, path, _ := strings.Cut(strings.TrimPrefix(rest, "//"), "/")
+		if host == "" {
+			return Ref{}, false
+		}
+		return Ref{Provider: "web", Type: "doc", Topic: strings.ToLower(host), ID: "/" + path}, true
+	}
+	path, rel, ok := strings.Cut(rest, "/doc/")
+	if !ok {
 		return Ref{}, false
 	}
-	return r, true
+	return Ref{Provider: scheme, Type: "doc", Topic: strings.ToLower(path), ID: rel}, true
+}
+
+// lineageRunRef reads an old CI run ref: a GitHub Actions run, a GitLab pipeline or an
+// Azure DevOps build.
+func lineageRunRef(scheme, rest string) (Ref, bool) {
+	for _, mark := range []string{"/actions/run/", "/pipelines/", "/builds/"} {
+		if path, id, ok := cutLast(rest, mark); ok {
+			return Ref{Provider: scheme, Type: "run", Topic: strings.ToLower(path), ID: id}, true
+		}
+	}
+	return Ref{}, false
+}
+
+// lineageTargetRef reads an old deploy target ref: target:<provider>:<id>.
+func lineageTargetRef(scheme, rest string) (Ref, bool) {
+	if scheme != "target" {
+		return Ref{}, false
+	}
+	provider, id, ok := strings.Cut(rest, ":")
+	if !ok {
+		return Ref{}, false
+	}
+	return Ref{Provider: provider, Type: "target", ID: strings.ToLower(id)}, true
+}
+
+// lineageHealthRef reads an old health ref: a Sentry issue (sentry:<org>/<id>) or another
+// provider's incident.
+func lineageHealthRef(scheme, rest string) (Ref, bool) {
+	if scheme != "sentry" {
+		return Ref{Provider: scheme, Type: "incident", ID: rest}, true
+	}
+	org, id, ok := strings.Cut(rest, "/")
+	if !ok {
+		return Ref{}, false
+	}
+	return Ref{Provider: scheme, Type: "issue", Topic: strings.ToLower(org), ID: id}, true
 }
 
 // cutLast cuts s around the last sep: the text before it and after it, neither empty.

@@ -4033,5 +4033,4 @@ Go/internal/workspacecommands/provider.go: cognitive complexity of func `(*Provi
 Go/internal/workspacecommands/workspacecommands_test.go: G301: Expect directory permissions to be 0750 or less (gosec)
 Go/internal/workspacecommands/workspacecommands_test.go: G306: Expect WriteFile permissions to be 0600 or less (gosec)
 Go/wire/project.go: QF1001: could apply De Morgan's law (staticcheck)
-Go/wire/ref.go: cognitive complexity of func `RefFromLineage` is high (> 30) (gocognit)
 Go/wire/roundtrip_test.go: G122: Filesystem operation in filepath.Walk/WalkDir callback uses race-prone path; consider root-scoped APIs (e.g. os.Root) to prevent symlink TOCTOU traversal (gosec)
