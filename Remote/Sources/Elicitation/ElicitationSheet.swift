@@ -105,7 +105,7 @@ struct ElicitationSheet: View {
             if let choice = Self.oneTapChoice(in: schema) {
                 oneTap(schema, choice)
             } else {
-                FormPages(request: request, schema: schema, send: { what, action, content in
+                FormPages(schema: schema, send: { what, action, content in
                     send(what, action: action, content: content)
                 }, dismiss: dismiss)
                 .disabled(isStale)

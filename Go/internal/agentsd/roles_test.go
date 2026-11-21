@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"net"
 	"os"
 	"path/filepath"
@@ -221,5 +222,29 @@ func TestNothingAnAgentStartsIsAnSSHSession(t *testing.T) {
 		if isSSHSession(c.peer, c.parent) {
 			t.Errorf("%+v under %+v", c.peer, c.parent)
 		}
+	}
+}
+
+// A socket served on a host that has stopped closes at once (#6487): its close job cannot
+// start any more, so an accept left waiting would wait for ever.
+func TestASocketOnAStoppedHostCloses(t *testing.T) {
+	t.Parallel()
+
+	d, _ := start(t, t.TempDir())
+	d.Shutdown()
+	dir, err := os.MkdirTemp("", "sock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	done := make(chan error, 1)
+	go func() { done <- d.ServeSocket(context.Background(), filepath.Join(dir, "d.sock")) }()
+	select {
+	case err := <-done:
+		if !errors.Is(err, net.ErrClosed) {
+			t.Fatalf("ServeSocket ended with %v", err)
+		}
+	case <-afterLimit(t):
+		t.Fatal("ServeSocket still accepts on a stopped host")
 	}
 }

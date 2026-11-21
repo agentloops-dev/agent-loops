@@ -3,6 +3,7 @@ package agentsd
 import (
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -34,16 +35,16 @@ func TestFilesAreKeptToTheAgentsFolder(t *testing.T) {
 
 	d, c := start(t, t.TempDir())
 	work, _ := store.Resolve(t.TempDir())
-	os.Mkdir(filepath.Join(work, "sub"), 0o755)
-	os.WriteFile(filepath.Join(work, "README.md"), []byte("# hello\n"), 0o644)
-	os.WriteFile(filepath.Join(work, "pic.png"), []byte{0x89, 'P', 'N', 'G'}, 0o644)
+	must(t, os.Mkdir(filepath.Join(work, "sub"), 0o755))                                      //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(work, "README.md"), []byte("# hello\n"), 0o644))       //nolint:gosec // G306: the mode this file always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(work, "pic.png"), []byte{0x89, 'P', 'N', 'G'}, 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	outside := filepath.Join(t.TempDir(), "secret")
-	os.WriteFile(outside, []byte("no"), 0o644)
-	os.Symlink(outside, filepath.Join(work, "link"))
+	must(t, os.WriteFile(outside, []byte("no"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
+	must(t, os.Symlink(outside, filepath.Join(work, "link")))
 	id := anAgentIn(t, d, work)
 
 	var l wire.DirectoryListing
-	json.Unmarshal(c.call(t, 1, "files/list", map[string]any{"agentID": id, "folder": work}), &l)
+	mustUnmarshal(t, c.call(t, 1, "files/list", map[string]any{"agentID": id, "folder": work}), &l)
 	var names []string
 	for _, e := range l.Entries {
 		names = append(names, e.Name)
@@ -52,15 +53,15 @@ func TestFilesAreKeptToTheAgentsFolder(t *testing.T) {
 		t.Fatalf("entries %v", names)
 	}
 	var r wire.FileReading
-	json.Unmarshal(c.call(t, 2, "files/read", map[string]any{"agentID": id, "path": filepath.Join(work, "README.md")}), &r)
+	mustUnmarshal(t, c.call(t, 2, "files/read", map[string]any{"agentID": id, "path": filepath.Join(work, "README.md")}), &r)
 	if r.Kind != "text" || *r.Text != "# hello\n" {
 		t.Fatalf("%+v", r)
 	}
-	json.Unmarshal(c.call(t, 3, "files/read", map[string]any{"agentID": id, "path": filepath.Join(work, "README.md"), "knownStamp": r.Stamp}), &r)
+	mustUnmarshal(t, c.call(t, 3, "files/read", map[string]any{"agentID": id, "path": filepath.Join(work, "README.md"), "knownStamp": r.Stamp}), &r)
 	if r.Kind != "unchanged" {
 		t.Fatalf("kind %s for a file read before", r.Kind)
 	}
-	json.Unmarshal(c.call(t, 4, "files/read", map[string]any{"agentID": id, "path": filepath.Join(work, "pic.png")}), &r)
+	mustUnmarshal(t, c.call(t, 4, "files/read", map[string]any{"agentID": id, "path": filepath.Join(work, "pic.png")}), &r)
 	if r.Kind != "image" || len(r.Bytes) != 4 {
 		t.Fatalf("image %+v", r)
 	}
@@ -81,15 +82,15 @@ func TestBrowseListsALinkUnderItsOwnPath(t *testing.T) {
 
 	_, c := start(t, t.TempDir())
 	real, _ := store.Resolve(t.TempDir())
-	os.WriteFile(filepath.Join(real, "AGENTS.md"), []byte("# hi\n"), 0o644)
-	os.Mkdir(filepath.Join(real, "docs"), 0o755)
-	os.Symlink(filepath.Join(real, "AGENTS.md"), filepath.Join(real, "CLAUDE.md"))
-	os.Symlink(filepath.Join(real, "docs"), filepath.Join(real, "notes"))
+	must(t, os.WriteFile(filepath.Join(real, "AGENTS.md"), []byte("# hi\n"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
+	must(t, os.Mkdir(filepath.Join(real, "docs"), 0o755))                            //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.Symlink(filepath.Join(real, "AGENTS.md"), filepath.Join(real, "CLAUDE.md")))
+	must(t, os.Symlink(filepath.Join(real, "docs"), filepath.Join(real, "notes")))
 	via := filepath.Join(t.TempDir(), "via")
-	os.Symlink(real, via)
+	must(t, os.Symlink(real, via))
 
 	var l wire.DirectoryListing
-	json.Unmarshal(c.call(t, 1, "files/browse", map[string]any{"path": via}), &l)
+	mustUnmarshal(t, c.call(t, 1, "files/browse", map[string]any{"path": via}), &l)
 	if l.URL != store.FolderURL(real)+"/" {
 		t.Fatalf("folder %s", l.URL)
 	}
@@ -115,12 +116,12 @@ func TestAWatchSaysWhichFoldersChanged(t *testing.T) {
 	prepareWatch(t)
 	d, c := start(t, t.TempDir())
 	work, _ := store.Resolve(t.TempDir())
-	os.MkdirAll(filepath.Join(work, "src"), 0o755)
-	os.MkdirAll(filepath.Join(work, "node_modules", "x"), 0o755)
+	must(t, os.MkdirAll(filepath.Join(work, "src"), 0o755))               //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.MkdirAll(filepath.Join(work, "node_modules", "x"), 0o755)) //nolint:gosec // G301: the mode this folder always had; only its error is new
 	id := anAgentIn(t, d, work)
 	c.call(t, 1, "files/watch", map[string]any{"agentID": id, "folder": work})
-	os.WriteFile(filepath.Join(work, "node_modules", "x", "ignored.js"), []byte("x"), 0o644)
-	os.WriteFile(filepath.Join(work, "src", "main.go"), []byte("package main"), 0o644)
+	must(t, os.WriteFile(filepath.Join(work, "node_modules", "x", "ignored.js"), []byte("x"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(work, "src", "main.go"), []byte("package main"), 0o644))       //nolint:gosec // G306: the mode this file always had; only its error is new
 	// Under load FSEvents can say a change many seconds late, or a write go unsaid for a
 	// while: src is written again until it is heard (#1411).
 	heard := make(chan struct{})
@@ -131,7 +132,7 @@ func TestAWatchSaysWhichFoldersChanged(t *testing.T) {
 			case <-heard:
 				return
 			case <-time.After(time.Second):
-				os.WriteFile(filepath.Join(work, "src", "main.go"), []byte("package main // again"), 0o644)
+				check(t, os.WriteFile(filepath.Join(work, "src", "main.go"), []byte("package main // again"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 			}
 		}
 	}()
@@ -172,7 +173,7 @@ func (c *conn) callHearing(t *testing.T, id int, method string, params any, what
 		select {
 		case line := <-c.out:
 			var m message
-			json.Unmarshal([]byte(line), &m)
+			mustUnmarshal(t, []byte(line), &m)
 			switch {
 			case string(m.ID) == strings.TrimSpace(string(mustJSON(id))):
 				if m.Error != nil {
@@ -200,6 +201,13 @@ func TestATerminal(t *testing.T) {
 	// call's answer (#3613).
 	in := base64.StdEncoding.EncodeToString([]byte("echo hello-$((40+2)) && pwd\n"))
 	var seen strings.Builder
+	// A failure says what the shell printed and what it and its children wait on (#6396):
+	// a lost input, a stopped shell and a slow profile then look different in the log.
+	defer func() {
+		if t.Failed() {
+			shellPostmortem(t, d.shellFor(id, 0))
+		}
+	}()
 	c.callHearing(t, 2, "shell/input", map[string]any{"agentID": id, "shell": 0, "bytes": in}, "the shell's output", func(method string, p json.RawMessage) bool {
 		var o struct {
 			Bytes []byte `json:"bytes"`
@@ -212,4 +220,39 @@ func TestATerminal(t *testing.T) {
 	c.callHearing(t, 3, "shell/close", map[string]any{"agentID": id, "shell": 0}, "released", func(method string, p json.RawMessage) bool {
 		return method == "shell/stateChanged" && strings.Contains(string(p), "released")
 	})
+}
+
+// shellPostmortem logs a shell's scrollback (its whole output, also what came before the
+// test read it) and, where there is a /proc, the state, wait channel and command line of
+// the shell and of each process below it.
+func shellPostmortem(t *testing.T, s *shell) {
+	t.Helper()
+	if s == nil {
+		t.Log("the shell is gone")
+		return
+	}
+	r := s.replay(nil, nil)
+	t.Logf("the shell printed %q; its state is %+v", r.Scrollback, r.State)
+	if s.cmd.Process == nil {
+		return
+	}
+	pids := []int{s.cmd.Process.Pid}
+	for i := 0; i < len(pids); i++ {
+		pid := pids[i]
+		stat, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
+		if err != nil {
+			t.Logf("process %d: %v", pid, err)
+			continue
+		}
+		wchan, _ := os.ReadFile(fmt.Sprintf("/proc/%d/wchan", pid))
+		cmdline, _ := os.ReadFile(fmt.Sprintf("/proc/%d/cmdline", pid))
+		t.Logf("process %d: %s; waits in %q; %q", pid, strings.TrimSpace(string(stat)), wchan, strings.ReplaceAll(string(cmdline), "\x00", " "))
+		children, _ := os.ReadFile(fmt.Sprintf("/proc/%d/task/%d/children", pid, pid))
+		for _, f := range strings.Fields(string(children)) {
+			var child int
+			if _, err := fmt.Sscan(f, &child); err == nil {
+				pids = append(pids, child)
+			}
+		}
+	}
 }

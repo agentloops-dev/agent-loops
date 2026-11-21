@@ -102,6 +102,6 @@ func sendEach[P any](d *Daemon, n wire.Notification[P], pick func(c *Client) (P,
 			return
 		}
 		b, _ := json.Marshal(message{JSONRPC: "2.0", Method: n.Name, Params: p})
-		c.write(string(b))
+		c.writeUnasked(string(b))
 	}
 }

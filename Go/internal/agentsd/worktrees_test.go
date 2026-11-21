@@ -3,6 +3,7 @@ package agentsd
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -267,6 +268,25 @@ func TestARepositoryGitCannotReadIsNotCalledNone(t *testing.T) {
 	}
 	if words := repositoryWords(err, "not in one", "Git said:"); !strings.HasPrefix(words, "Git said: ") || !strings.Contains(words, "config") {
 		t.Fatal(words)
+	}
+}
+
+// A send's facts say "no branch" only when git says HEAD is detached, and a patch's git that
+// cannot start says why (#6341): a git that did not run to its end is not a fact.
+func TestASendSaysNoBranchOnlyWhenGitSaysSo(t *testing.T) {
+	t.Parallel()
+
+	d := &Daemon{}
+	dir := repo(t)
+	if f, err := d.sendFacts(wire.SendFactsRequest{Folder: store.FolderURL(dir)}); err != nil || f.Current == nil || *f.Current != "main" {
+		t.Fatalf("on main: %+v %v", f, err)
+	}
+	run(t, dir, "git", "checkout", "-q", "--detach")
+	if f, err := d.sendFacts(wire.SendFactsRequest{Folder: store.FolderURL(dir)}); err != nil || f.Current != nil {
+		t.Fatalf("detached: %+v %v", f, err)
+	}
+	if err := gitTo(filepath.Join(dir, "gone"), io.Discard, "diff"); err == nil || !strings.Contains(err.Error(), "git diff could not start: ") {
+		t.Fatalf("a git that did not start: %v", err)
 	}
 }
 

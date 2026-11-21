@@ -167,7 +167,9 @@ func (d *Daemon) loadLeases() []leaseEvent {
 		}
 	}
 	if b, err := os.ReadFile(d.resourcesFile()); err == nil {
-		diskjson.Unmarshal(b, &d.declared)
+		if err := diskjson.Unmarshal(b, &d.declared); err != nil {
+			log.Printf("leases: could not read %s: %v", d.resourcesFile(), err)
+		}
 	}
 	d.noteCapacityLine()
 	var events []leaseEvent

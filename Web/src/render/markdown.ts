@@ -164,9 +164,11 @@ function build(tokens: readonly Token[], images?: PageImages, openFile?: OpenFil
         const first = token.children?.[0];
         const box = item?.tag === "li" && item.children.length === 0 && top().children.length === 0
           && first?.type === "text" ? /^\[([ xX])\]\s+/.exec(first.content) : null;
+        let children = token.children ?? [];
         if (box && first) {
           const done = box[1] !== " ";
-          first.content = first.content.slice(box[0].length);
+          // A copy without the box: the tokens are kept and drawn again (#6328), so they are not changed.
+          children = [Object.assign(Object.create(first) as Token, { content: first.content.slice(box[0].length) }), ...children.slice(1)];
           item!.props["class"] = "task";
           push(h("span", { class: `task-box${done ? " done" : ""}`, role: "img", "aria-label": done ? "Done" : "Not done" },
             done ? "☑" : "☐"));
@@ -174,7 +176,7 @@ function build(tokens: readonly Token[], images?: PageImages, openFile?: OpenFil
         }
         // A cell of more than a few words may wrap, but not under 12em, as the Mac's TableColumns (#3943).
         if ((top().tag === "td" || top().tag === "th") && token.content.length > 16) top().props["class"] = "long";
-        top().children.push(...build(token.children ?? [], images, openFile, forgeImages, links));
+        top().children.push(...build(children, images, openFile, forgeImages, links));
         break;
       }
       case "text":
@@ -241,36 +243,73 @@ const fenceOpen = /^ {0,3}(`{3,}|~{3,})/;
 const listMarker = /^([-+*]|\d{1,9}[.)])(\s|$)/;
 /** A link reference is the whole text's: one anywhere and the text is one block. */
 const linkReference = /^ {0,3}\[[^\]]+\]:/m;
+/** A table's delimiter row at the left edge, such as `| --- | :-: |`. */
+const delimiterRow = /^\|?[ \t]*:?-+:?[ \t]*(\|[ \t]*:?-+:?[ \t]*)*\|?[ \t]*$/;
+/** A table is cut before a row once its part is this long (#6328), as on the Mac (#6299). */
+const tablePart = 2_000;
 
-/** The blocks of the text last split, all but the last finished: a longer text starting with them is split from there. */
-let lastSplit: { done: string; blocks: string[]; linked: boolean } = { done: "", blocks: [], linked: false };
+/**
+ * A part of a text (`markdownParts`): its words, and, for a part cut inside a table, the table's
+ * header and delimiter rows, parsed before them so the part reads as a table too (#6328).
+ */
+export interface MarkdownPart {
+  text: string;
+  head?: string;
+}
+
+/** Where the cutting stood at a cut: the line before was blank, and the table it is in. */
+interface CutState {
+  blank: boolean;
+  table: { head: string; rows: boolean } | null;
+  head: string | undefined;
+}
+
+/** The parts of the text last cut, all but the last finished: a longer text starting with them is cut from there. */
+let lastSplit: { done: string; parts: MarkdownPart[]; linked: boolean; state: CutState } =
+  { done: "", parts: [], linked: false, state: { blank: false, table: null, head: undefined } };
 
 /**
  * Markdown cut where it parses the same in pieces as whole (#214): before a line that starts at
  * the margin after a blank one, outside a fence, and that is no list item or quote, so no list,
- * quote, indented code or paragraph runs across the cut. Every block but the last is finished: a
- * message growing chunk by chunk parses only its last block again.
+ * quote, indented code or paragraph runs across the cut. Every part but the last is finished: a
+ * message growing chunk by chunk parses only its last part again.
+ *
+ * A long table has no blank line, so it is also cut before a row (#6328, as #6299 on the Mac): a
+ * table at the left edge after a blank line, whose rows each start with `|`, once the part is
+ * `tablePart` long. The part after the cut gets the table's head, and `Markdown` draws its rows
+ * in the table before it.
  *
  * A cut is remembered only once the line it cuts before has ended. Until then a longer line may
  * become a list item ("2" becoming "2. item"), and keeping the cut would parse differently from
  * the whole text.
  */
-export function markdownBlocks(source: string): string[] {
+export function markdownParts(source: string): MarkdownPart[] {
   const continues = lastSplit.done !== "" && source.startsWith(lastSplit.done);
   // A link reference is resolved from anywhere, so once one is in the text it stays one block.
-  if (lastSplit.linked && continues) return [source];
+  if (lastSplit.linked && continues) return [{ text: source }];
   if (linkReference.test(continues ? source.slice(lastSplit.done.length) : source)) {
-    lastSplit = { done: source, blocks: [], linked: true };
-    return [source];
+    lastSplit = { done: source, parts: [], linked: true, state: { blank: false, table: null, head: undefined } };
+    return [{ text: source }];
   }
-  const reuse = continues;
-  const blocks = reuse ? [...lastSplit.blocks] : [];
-  let start = reuse ? lastSplit.done.length : 0;
+  const parts: MarkdownPart[] = continues ? [...lastSplit.parts] : [];
+  let start = continues ? lastSplit.done.length : 0;
   let remembered = start;
-  const rememberedBlocks = [...blocks];
+  const rememberedParts = [...parts];
+  let { blank, table, head } = continues ? lastSplit.state : { blank: false, table: null, head: undefined } as CutState;
+  let rememberedState: CutState = { blank, table, head };
+  // The line before, when it could be a table's header row: at the left edge after a blank line.
+  let header: string | null = null;
   let fence: string | null = null;
-  let blank = false;
   let at = start;
+  const part = (text: string): MarkdownPart => head === undefined ? { text } : { text, head };
+  const cut = (ended: boolean) => {
+    parts.push(part(source.slice(start, at)));
+    start = at;
+    if (ended) {
+      rememberedParts.push(parts[parts.length - 1]!);
+      remembered = at;
+    }
+  };
   while (at < source.length) {
     const end = source.indexOf("\n", at);
     const next = end < 0 ? source.length : end + 1;
@@ -280,35 +319,134 @@ export function markdownBlocks(source: string): string[] {
       if (ended && line.trimStart().startsWith(fence) && line.trim().replaceAll(fence[0]!, "") === "" && line.length - line.trimStart().length < 4) fence = null;
     } else {
       const isBlank = line.trim() === "";
-      if (blank && !isBlank && at > start && !/^\s/.test(line) && !line.startsWith(">") && !listMarker.test(line)) {
-        blocks.push(source.slice(start, at));
-        start = at;
-        if (ended) {
-          rememberedBlocks.push(blocks[blocks.length - 1]!);
-          remembered = at;
+      if (table) {
+        if (line.startsWith("|")) {
+          if (table.rows && at - start >= tablePart) {
+            cut(ended);
+            head = table.head;
+            if (ended) rememberedState = { blank: false, table, head };
+          }
+          table = { head: table.head, rows: true };
+        } else {
+          table = null;
         }
+      } else if (header !== null && ended && delimiterRow.test(line)) {
+        table = { head: `${header}\n${line}\n`, rows: false };
       }
+      if (blank && !isBlank && at > start && !/^\s/.test(line) && !line.startsWith(">") && !listMarker.test(line)) {
+        cut(ended);
+        head = undefined;
+        if (ended) rememberedState = { blank, table: null, head };
+      }
+      header = (blank || at === 0) && ended && line.startsWith("|") ? line : null;
       blank = isBlank;
       const opened = fenceOpen.exec(line);
       if (opened) fence = opened[1]!;
     }
     at = next;
   }
-  lastSplit = { done: source.slice(0, remembered), blocks: rememberedBlocks, linked: false };
-  blocks.push(source.slice(start));
-  return blocks;
+  lastSplit = { done: source.slice(0, remembered), parts: rememberedParts, linked: false, state: rememberedState };
+  parts.push(part(source.slice(start)));
+  return parts;
+}
+
+/** The texts of `markdownParts`, without the heads: joined, they are the source. */
+export function markdownBlocks(source: string): string[] {
+  return markdownParts(source).map((part) => part.text);
+}
+
+/** Each part's tokens, parsed once while it is drawn (#6328): a growing reply parses its last part. */
+const parsedParts = new Map<string, Token[]>();
+const parsedLimit = 256;
+/** The characters parsed for parts, for a test to bound (#6328). */
+export const markdownParsed = { characters: 0 };
+
+function parsed(source: string): Token[] {
+  let tokens = parsedParts.get(source);
+  if (tokens) {
+    // Kept as the newest, so a long reply's parts stay while older replies' go.
+    parsedParts.delete(source);
+  } else {
+    tokens = parser.parse(source, {});
+    markdownParsed.characters += source.length;
+    if (parsedParts.size >= parsedLimit) parsedParts.delete(parsedParts.keys().next().value!);
+  }
+  parsedParts.set(source, tokens);
+  return tokens;
+}
+
+/** The index after the top-level close of the block that opens at `from`. */
+function closeOf(tokens: readonly Token[], from: number): number {
+  let depth = 0;
+  for (let at = from; at < tokens.length; at++) {
+    depth += tokens[at]!.nesting;
+    if (depth === 0) return at + 1;
+  }
+  return tokens.length;
+}
+
+/** A part's place in a table cut by rows: what of its tokens it draws. */
+type TablePiece = "first" | "rows" | "after";
+
+/** Whether a part reads as the table it is cut from: it starts with that table, and only its last part has more after it. */
+function readsAsTable(source: string, last: boolean): boolean {
+  const tokens = parsed(source);
+  if (tokens[0]?.type !== "table_open") return false;
+  return last || closeOf(tokens, 0) === tokens.length;
+}
+
+/** The tokens of a part that a piece draws: the first part's table inside, a later part's body rows, or what follows the table. */
+function pieceTokens(tokens: readonly Token[], piece: TablePiece): readonly Token[] {
+  const close = closeOf(tokens, 0);
+  if (piece === "after") return tokens.slice(close);
+  if (piece === "first") return tokens.slice(1, close - 1);
+  const body = tokens.findIndex((token, at) => at < close && token.type === "tbody_open");
+  return body < 0 ? [] : tokens.slice(body, closeOf(tokens, body));
+}
+
+interface DrawProps {
+  images?: PageImages | undefined; openFile?: OpenFile | undefined; forgeImages?: ForgeImages | undefined; links?: PageLinks | undefined;
 }
 
 /** One finished block, parsed once. */
-const MarkdownBlock = memo(function MarkdownBlock({ text, images, openFile, forgeImages, links }: {
-  text: string; images?: PageImages | undefined; openFile?: OpenFile | undefined; forgeImages?: ForgeImages | undefined; links?: PageLinks | undefined;
-}): ComponentChildren {
-  return h(Fragment, null, ...renderMarkdown(text, images, openFile, forgeImages, links));
+const MarkdownBlock = memo(function MarkdownBlock({ text, images, openFile, forgeImages, links }: DrawProps & { text: string }): ComponentChildren {
+  return h(Fragment, null, ...build(parsed(text), images, openFile, forgeImages, links));
 });
 
-/** A message's text, drawn; only a block whose text changed is parsed again (#170, #214). */
-export const Markdown = memo(function Markdown({ text, images, openFile, forgeImages, links }: {
-  text: string; images?: PageImages | undefined; openFile?: OpenFile | undefined; forgeImages?: ForgeImages | undefined; links?: PageLinks | undefined;
-}): ComponentChildren {
-  return h("div", { class: "markdown" }, ...markdownBlocks(text).map((block, index) => h(MarkdownBlock, { key: index, text: block, images, openFile, forgeImages, links })));
+/** A piece of a table cut by rows, drawn again only when its part changes (#6328). */
+const TablePart = memo(function TablePart({ source, piece, images, openFile, forgeImages, links }: DrawProps & { source: string; piece: TablePiece }): ComponentChildren {
+  return h(Fragment, null, ...build(pieceTokens(parsed(source), piece), images, openFile, forgeImages, links));
+});
+
+/**
+ * A table cut by rows, drawn as one table so its columns line up (#6328): the first part's head and
+ * rows, then each later part's rows as a body of its own, then what follows the table. When a part
+ * does not read as the same table, the parts are drawn as one block, as before the cut.
+ */
+function MarkdownTable({ parts, ...draw }: DrawProps & { parts: MarkdownPart[] }): ComponentChildren {
+  const sources = parts.map((part) => (part.head ?? "") + part.text);
+  if (!sources.every((source, index) => readsAsTable(source, index === sources.length - 1))) {
+    return h(MarkdownBlock, { text: parts.map((part) => part.text).join(""), ...draw });
+  }
+  const last = sources[sources.length - 1]!;
+  return h(Fragment, null,
+    h("div", { class: "table-scroll" }, h("table", null,
+      h(TablePart, { source: sources[0]!, piece: "first", ...draw }),
+      ...sources.slice(1).map((source, index) => h(TablePart, { key: index, source, piece: "rows", ...draw })))),
+    h(TablePart, { source: last, piece: "after", ...draw }));
+}
+
+/** A message's text, drawn; only a part whose text changed is parsed again (#170, #214, #6328). */
+export const Markdown = memo(function Markdown({ text, ...draw }: DrawProps & { text: string }): ComponentChildren {
+  const parts = markdownParts(text);
+  const nodes: ComponentChildren[] = [];
+  for (let index = 0; index < parts.length;) {
+    let end = index + 1;
+    while (parts[end]?.head !== undefined) end++;
+    nodes.push(end > index + 1
+      ? h(MarkdownTable, { key: `t${index}`, parts: parts.slice(index, end), ...draw })
+      : h(MarkdownBlock, { key: index, text: parts[index]!.text, ...draw }));
+    index = end;
+  }
+  return h("div", { class: "markdown" }, ...nodes);
 });

@@ -64,7 +64,9 @@ func withoutEmptyLists(v any) any {
 
 func compact(b []byte) string {
 	var buf bytes.Buffer
-	json.Compact(&buf, b)
+	if err := json.Compact(&buf, b); err != nil {
+		return "not JSON: " + err.Error()
+	}
 	return buf.String()
 }
 

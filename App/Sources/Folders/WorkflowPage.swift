@@ -766,7 +766,7 @@ struct WorkflowPage: View {
                             .disabled(workflow.mode == .triggering || workflow.settingsLocked)
                     } else if let runtime = RuntimeCatalog.runtime(id: runtimeID(workflow)) {
                         HStack(alignment: .top, spacing: 10) {
-                            settingControl(summary, name: "Permission mode",
+                            settingControl(name: "Permission mode",
                                            setting: WorkflowSettings.Setting.permissionMode,
                                            value: workflow.settings.permissionMode,
                                            option: remembered.flatMap(ModeMemory.modeOption(in:)),
@@ -972,7 +972,7 @@ struct WorkflowPage: View {
     /// One of the settings the runtime itself defines, in the four states the
     /// contract names.
     @ViewBuilder
-    private func settingControl(_ summary: WorkflowSummary, name: String, setting: String,
+    private func settingControl(name: String, setting: String,
                                 value: String?, option: ConfigOption?, runtime: Runtime,
                                 chosen: Binding<JSONValue?>) -> some View {
         VStack(alignment: .leading, spacing: 4) {

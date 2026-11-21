@@ -48,28 +48,7 @@ func setLog(w io.Writer) {
 
 func main() {
 	setLog(os.Stderr)
-	if len(os.Args) > 1 && os.Args[1] == "supervise" {
-		supervise(os.Args[2:])
-		return
-	}
-	// An agent's git and gh asking for the GitHub App's token (#3926).
-	if len(os.Args) > 1 && os.Args[1] == "credential" {
-		os.Exit(agentsd.CredentialCommand(os.Args[2:], os.Getenv, os.Stdin, os.Stdout))
-	}
-	// agents-secret NAME: a secret that does not ask, through this host (#4178); from a
-	// terminal, with no session's grant, once a person allows it (#4179).
-	if len(os.Args) > 1 && os.Args[1] == "secret" {
-		os.Exit(agentsd.SecretCommand(os.Args[2:], os.Getenv, secretSocket(), os.Stdout, os.Stderr))
-	}
-	// The one installer (#5356): steps 3 to 6 of a machine's set-up, on this machine.
-	if len(os.Args) > 1 && os.Args[1] == "install" {
-		os.Exit(installCommand(os.Args[2:]))
-	}
-	if len(os.Args) > 1 && os.Args[1] == "lock" {
-		os.Exit(lockCommand(os.Args[2:]))
-	}
-	if len(os.Args) > 1 && (os.Args[1] == "--version" || os.Args[1] == "version") {
-		fmt.Println(buildinfo.String())
+	if subcommand(os.Args[1:]) {
 		return
 	}
 	cl := parse(os.Args[1:])
@@ -105,6 +84,67 @@ func main() {
 		log.Fatal(err)
 	}
 	d.Quit = stop // daemon/quit
+	configure(d, cl, loc)
+	// No secrets.env (#4177): one found here, from before the update or written by hand, is
+	// sealed into sealed.json and removed, before any call can read it.
+	d.MoveSecretsFile()
+	// The old sign-up passwords in the Keychain (#5043), copied into the store for fill_secret.
+	safe.Go("signup-keychain", d.MoveSignupKeychain)
+	safe.Go("socket", func() {
+		if err := d.ServeSocket(ctx, loc.Socket()); err != nil && ctx.Err() == nil {
+			log.Printf("socket: %v", err)
+		}
+	})
+	if cl.controlNetwork() {
+		join(ctx, cl, d)
+	}
+	log.Printf("agentsd %s on %s, root %s", buildinfo.String(), platform(), cl.root)
+	d.WaitForMembership()
+	startWork(d)
+	<-ctx.Done()
+	log.Printf("shutting down")
+	d.Shutdown()
+	if d.RestartWanted() {
+		// A self-update put a new copy in bin/current (#5788): the service or the
+		// supervisor starts it.
+		_ = lock.Close()
+		log.Printf("restarting to run the update")
+		os.Exit(agentsd.ExitRestart)
+	}
+}
+
+// subcommand runs the command named first in args, when there is one, and says whether it
+// did: supervise and version return, the others exit with their own status.
+func subcommand(args []string) bool {
+	if len(args) == 0 {
+		return false
+	}
+	switch args[0] {
+	case "supervise":
+		supervise(args[1:])
+		return true
+	case "credential":
+		// An agent's git and gh asking for the GitHub App's token (#3926).
+		os.Exit(agentsd.CredentialCommand(args[1:], os.Getenv, os.Stdin, os.Stdout))
+	case "secret":
+		// agents-secret NAME: a secret that does not ask, through this host (#4178); from a
+		// terminal, with no session's grant, once a person allows it (#4179).
+		os.Exit(agentsd.SecretCommand(args[1:], os.Getenv, secretSocket(), os.Stdout, os.Stderr))
+	case "install":
+		// The one installer (#5356): steps 3 to 6 of a machine's set-up, on this machine.
+		os.Exit(installCommand(args[1:]))
+	case "lock":
+		os.Exit(lockCommand(args[1:]))
+	case "--version", "version":
+		fmt.Println(buildinfo.String())
+		return true
+	}
+	return false
+}
+
+// configure gives the daemon this machine's keys, the person's home and the policy it
+// follows, before any connection can read them.
+func configure(d *agentsd.Daemon, cl commandLine, loc store.Locations) {
 	// This machine's key: in a Keychain item only agentsd reads on a Mac (the root's own
 	// service, so a scratch root has its own), control-host-key on Linux.
 	d.HostKey = controllink.HostKeyFor(cl.root)
@@ -128,29 +168,25 @@ func main() {
 	// started without the control network (#998, FR-013): only its control plane's key
 	// checks the policy it keeps. join sets it again after a new enrolment.
 	d.SetPin(machinePin(cl))
-	if member, err := controllink.LoadMembership(loc.Root); err == nil && member.Host != "" {
-		if err := d.Pin().AdmitsMember(member); err != nil {
-			log.Printf("pin: the membership kept here is for another control plane, and is not used: %v", err)
-		} else {
-			d.SetControlKey(member.ControlKey)
-			d.SetMember(member)
-		}
+	loadMembership(d, loc)
+}
+
+// loadMembership takes the membership kept in the root, when the pin admits it.
+func loadMembership(d *agentsd.Daemon, loc store.Locations) {
+	member, err := controllink.LoadMembership(loc.Root)
+	if err != nil || member.Host == "" {
+		return
 	}
-	// No secrets.env (#4177): one found here, from before the update or written by hand, is
-	// sealed into sealed.json and removed, before any call can read it.
-	d.MoveSecretsFile()
-	// The old sign-up passwords in the Keychain (#5043), copied into the store for fill_secret.
-	safe.Go("signup-keychain", d.MoveSignupKeychain)
-	safe.Go("socket", func() {
-		if err := d.ServeSocket(ctx, loc.Socket()); err != nil && ctx.Err() == nil {
-			log.Printf("socket: %v", err)
-		}
-	})
-	if cl.controlNetwork() {
-		join(ctx, cl, d)
+	if err := d.Pin().AdmitsMember(member); err != nil {
+		log.Printf("pin: the membership kept here is for another control plane, and is not used: %v", err)
+		return
 	}
-	log.Printf("agentsd %s on %s, root %s", buildinfo.String(), platform(), cl.root)
-	d.WaitForMembership()
+	d.SetControlKey(member.ControlKey)
+	d.SetMember(member)
+}
+
+// startWork starts what a host does once it runs.
+func startWork(d *agentsd.Daemon) {
 	// The restart itself, for a wait or a workflow that names it (#1219), and from now on
 	// a word once a minute that this host is alive.
 	d.SayRestarted()
@@ -165,16 +201,6 @@ func main() {
 	d.StartRepoAliases()
 	d.StartCITimings()
 	d.StartMachineWatch()
-	<-ctx.Done()
-	log.Printf("shutting down")
-	d.Shutdown()
-	if d.RestartWanted() {
-		// A self-update put a new copy in bin/current (#5788): the service or the
-		// supervisor starts it.
-		_ = lock.Close()
-		log.Printf("restarting to run the update")
-		os.Exit(agentsd.ExitRestart)
-	}
 }
 
 // commandLine is DaemonCommandLine: the flags the install script and ssh pass.
@@ -300,7 +326,7 @@ func running(file string, patience time.Duration) bool {
 	defer f.Close()
 	for until := time.Now().Add(patience); ; {
 		if syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB) == nil {
-			syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+			_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN) // the deferred Close lets it go too
 			return false
 		}
 		if time.Now().After(until) {
@@ -321,30 +347,22 @@ func takeLock(file string) (*os.File, error) {
 		f.Close()
 		return nil, err
 	}
-	f.Truncate(0)
-	f.WriteAt([]byte(fmt.Sprintf("%d\n", os.Getpid())), 0)
+	// The lock is what keeps a second host out; the pid is only for the install script, so a
+	// failed write is logged, not fatal.
+	if err := f.Truncate(0); err != nil {
+		log.Printf("%s: %v", file, err)
+	} else if _, err := f.WriteAt([]byte(fmt.Sprintf("%d\n", os.Getpid())), 0); err != nil {
+		log.Printf("%s: %v", file, err)
+	}
 	return f, nil
 }
 
 // join enrols with a code once (control-join-code, or --control), then keeps the uplink.
 func join(ctx context.Context, cl commandLine, d *agentsd.Daemon) {
 	loc := d.Store.Loc
-	name := cl.hostName
-	if name == "" {
-		name, _ = os.Hostname()
-	}
-	hello := controllink.MachineHello{Version: buildinfo.Version, Platform: platform(), MachineID: machine.ID(),
-		Implementation: new(buildinfo.Implementation), Capabilities: d.Capabilities()}
-	if name != "" {
-		hello.Name = &name
-	}
-	code := cl.code
+	hello := machineHello(cl, d)
 	codeFile := filepath.Join(loc.Root, "control-join-code")
-	if code == "" {
-		if b, err := os.ReadFile(codeFile); err == nil {
-			code = strings.TrimSpace(string(b))
-		}
-	}
+	code := joinCode(cl, codeFile)
 	private, err := controllink.HostPrivateKey(d.HostKey)
 	if err != nil {
 		log.Fatal(err)
@@ -355,41 +373,16 @@ func join(ctx context.Context, cl commandLine, d *agentsd.Daemon) {
 		// Joined another control plane before the pin: it is not dialled (FR-027).
 		member = nil
 	}
-	askFile := filepath.Join(loc.Root, "control-join-ask")
 	if code == "" && (member == nil || member.Host == "") {
-		if b, err := os.ReadFile(askFile); err == nil {
-			var ask controllink.JoinAsk
-			if err := json.Unmarshal(b, &ask); err != nil {
-				log.Fatalf("control-join-ask: %v", err)
-			}
-			if err := pin.Admits(nil, ask.URL); err != nil {
-				log.Printf("pin: not asking to join %s: %v", ask.URL, err)
-				return
-			}
-			if member = askToJoin(ctx, loc.Root, ask, private, hello); member == nil {
-				return
-			}
-			os.Remove(askFile)
-			os.Remove(filepath.Join(loc.Root, "control-join-shown"))
+		var asked bool
+		if member, asked = askIfAsked(ctx, loc.Root, pin, private, hello); asked && member == nil {
+			return
 		}
 	}
 	if code != "" || member == nil || member.Host == "" {
-		if code == "" {
-			log.Printf("no membership in the root and no code to enrol with: not joining a control plane")
+		if member = enrolWithCode(ctx, loc.Root, code, codeFile, pin, private, hello); member == nil {
 			return
 		}
-		member = enrol(ctx, code, codeFile, func(ctx context.Context, c *controllink.Code) (*controllink.Membership, error) {
-			// A code for another control plane is refused here, before it is used (FR-027).
-			if err := pin.Admits(c.ControlKey, c.URL); err != nil {
-				return nil, err
-			}
-			return controllink.Enroll(ctx, loc.Root, c, private, hello)
-		})
-		if member == nil {
-			return
-		}
-		os.Remove(codeFile)
-		log.Printf("enrolled as host %s with %s", member.Host, member.Name)
 	}
 	if err := pin.AdmitsMember(member); err != nil {
 		// An approved ask that turned out to be another control plane's key.
@@ -399,6 +392,85 @@ func join(ctx context.Context, cl commandLine, d *agentsd.Daemon) {
 	// The organisation's policy is checked with the control key (#998).
 	d.SetControlKey(member.ControlKey)
 	d.SetMember(member)
+	keepUplink(ctx, cl, d, member, private, hello)
+}
+
+// machineHello is what this machine tells the control plane about itself.
+func machineHello(cl commandLine, d *agentsd.Daemon) controllink.MachineHello {
+	name := cl.hostName
+	if name == "" {
+		name, _ = os.Hostname()
+	}
+	hello := controllink.MachineHello{Version: buildinfo.Version, Platform: platform(), MachineID: machine.ID(),
+		Implementation: new(buildinfo.Implementation), Capabilities: d.Capabilities()}
+	if name != "" {
+		hello.Name = &name
+	}
+	return hello
+}
+
+// joinCode is the code to enrol with: --control, else the one in codeFile.
+func joinCode(cl commandLine, codeFile string) string {
+	if cl.code != "" {
+		return cl.code
+	}
+	if b, err := os.ReadFile(codeFile); err == nil {
+		return strings.TrimSpace(string(b))
+	}
+	return ""
+}
+
+// askIfAsked asks to join with no code when control-join-ask says to, and says whether it
+// did; a nil membership after an ask means not to join.
+func askIfAsked(ctx context.Context, root string, pin *agentsd.MachinePin, private []byte, hello controllink.MachineHello) (*controllink.Membership, bool) {
+	askFile := filepath.Join(root, "control-join-ask")
+	b, err := os.ReadFile(askFile)
+	if err != nil {
+		return nil, false
+	}
+	var ask controllink.JoinAsk
+	if err := json.Unmarshal(b, &ask); err != nil {
+		log.Fatalf("control-join-ask: %v", err)
+	}
+	if err := pin.Admits(nil, ask.URL); err != nil {
+		log.Printf("pin: not asking to join %s: %v", ask.URL, err)
+		return nil, true
+	}
+	member := askToJoin(ctx, root, ask, private, hello)
+	if member == nil {
+		return nil, true
+	}
+	os.Remove(askFile)
+	os.Remove(filepath.Join(root, "control-join-shown"))
+	return member, true
+}
+
+// enrolWithCode enrols with code, when the pin admits its control plane, and removes the
+// code's file once it is used.
+func enrolWithCode(ctx context.Context, root, code, codeFile string, pin *agentsd.MachinePin, private []byte, hello controllink.MachineHello) *controllink.Membership {
+	if code == "" {
+		log.Printf("no membership in the root and no code to enrol with: not joining a control plane")
+		return nil
+	}
+	member := enrol(ctx, code, codeFile, func(ctx context.Context, c *controllink.Code) (*controllink.Membership, error) {
+		// A code for another control plane is refused here, before it is used (FR-027).
+		if err := pin.Admits(c.ControlKey, c.URL); err != nil {
+			return nil, err
+		}
+		return controllink.Enroll(ctx, root, c, private, hello)
+	})
+	if member == nil {
+		return nil
+	}
+	os.Remove(codeFile)
+	log.Printf("enrolled as host %s with %s", member.Host, member.Name)
+	return member
+}
+
+// keepUplink connects this host to its control plane, and to the window and browser on
+// this Mac, and dials again for as long as ctx lasts.
+func keepUplink(ctx context.Context, cl commandLine, d *agentsd.Daemon, member *controllink.Membership, private []byte, hello controllink.MachineHello) {
+	loc := d.Store.Loc
 	up := &controllink.Uplink{Root: loc.Root, Member: member, Private: private, Hello: hello, Accept: d.Accept,
 		Lend: d.LendingPort, Rotated: func(key []byte) { d.ControlKeyRotated(key); d.MoveLocal(key) }}
 	d.Tunneler = up
@@ -447,11 +519,13 @@ func join(ctx context.Context, cl commandLine, d *agentsd.Daemon) {
 func askToJoin(ctx context.Context, root string, ask controllink.JoinAsk, private []byte, hello controllink.MachineHello) *controllink.Membership {
 	for {
 		member, err := controllink.AskToJoin(ctx, root, ask, private, hello, func(code string) {
-			os.WriteFile(filepath.Join(root, "control-join-shown"), []byte(code+"\n"), 0o600)
+			if err := os.WriteFile(filepath.Join(root, "control-join-shown"), []byte(code+"\n"), 0o600); err != nil {
+				log.Printf("control-join-shown: %v", err)
+			}
 			log.Printf("asking to join %s as %s: approve it on a client; the code is %s", ask.URL, ask.Person, code)
 		})
 		if err == nil {
-			log.Printf("joined as host %s with %s, by approval", member.Host, member.Name)
+			log.Printf("joined as host %s with %s, by approval", member.Host, member.Name) //nolint:gosec // G706: the membership the control plane gave, one line, and logLine redacts it
 			return member
 		}
 		if ctx.Err() != nil {

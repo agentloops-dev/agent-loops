@@ -229,8 +229,11 @@ struct FolderListView: View {
                         .appText(.supporting).sidebarInk(.work(kind)).tag(SidebarItem.work(kind))
                 }
                 // Work shown: its first list read ahead, so the page draws at once (#4930), and again when a machine
-                // joins or a folder is added (#6152).
-                .task(id: model.workSource) { await model.prefetchWork() }
+                // joins or a folder is added (#6152); after the sessions' first list, not before it (#6311).
+                .task(id: model.firstListDrawn ? model.workSource : nil) {
+                    guard model.firstListDrawn else { return }
+                    await model.prefetchWork()
+                }
             } header: {
                 Text("Work").appText(.supporting)
             }
@@ -307,13 +310,6 @@ struct FolderListView: View {
                     .appText(.supporting).sidebarInk(.time).tag(SidebarItem.time)
                 VelocityRow().activityIcon("arrow.triangle.merge")
                     .appText(.supporting).sidebarInk(.velocity).tag(SidebarItem.velocity)
-                // The daily summary's page (#3721), a report too, while the daily summary is on.
-                if model.dailySummarySettings?.mode.writesPages == true {
-                    SummaryRowLabel(newest: model.summaryPages.first)
-                        .help("Your daily summary: what landed, what failed and what waits on you")
-                        .activityIcon(SummaryRowLabel.systemImage)
-                        .appText(.supporting).sidebarInk(.summary).tag(SidebarItem.summary)
-                }
             } header: {
                 // The size of every other group's heading (#495). Reports (Alex, 2026-11-12): every
                 // page that reports on the work, Multiplier and Velocity among them; was Usage.
@@ -678,7 +674,6 @@ struct FolderFold: View {
     @Environment(AppModel.self) private var model
     @Environment(\.openWindow) private var openWindow
     @AppStorage(SidebarSmartRow.offDefaultsKey, store: WindowDefaults.store) private var smartOff = SidebarSmartRow.offAtFirst
-    @Environment(WindowRequests.self) private var requests
     let summary: DaemonAPI.FolderSummary
     let folds: SidebarFolds
     /// The search's words, already trimmed; empty when there is no search.
@@ -1440,7 +1435,7 @@ private struct GoneFolderRows: View {
                     Text("Gone from \(model.hosts.label(host))").appText(.fine).foregroundStyle(.tertiary)
                 }
                 Spacer()
-                Button("Remove") { model.hosts.forgetGoneFolder(host, path: path) }
+                Button("Remove") { model.hosts.forgetGoneFolder() }
                     .controlSize(.small)
             }
             .appText(.supporting)

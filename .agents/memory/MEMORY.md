@@ -86,8 +86,9 @@ What agents learnt about this repo: its code, tools, process and decisions. One 
 - [Scratch first-open take](scratch-first-open-take.md) — question page needs --walk + AGENTS_ROOT, not launch.sh; host env, own browser, Keychain connection, SecureField; #5563/#5564 block it
 - [agentsd goroutines go through goJob](agentsd-goroutines-go-through-gojob.md) — #5653: d.goJob/d.jobFunc so Shutdown waits; tests use setFor, not a deferred restore
 - [Go baseline from Linux](go-baseline-from-linux.md) — golangci-lint differs Mac vs Linux; --baseline on a Mac drops Linux-only entries (#5682)
-- [Homebrew Node is not the pinned Node](homebrew-node-is-not-the-pinned-node.md) — system zlib gzips to other sizes than CI; checks.sh attest does not attest web tasks with it (#5774)
 - [A press on a sidebar header breaks layout](sidebar-section-header-press-breaks-layout.md) — #5567: AXPress on a Section header stood the window 41,378 pt tall; open pages from a tagged row
 - [A split column's least size is measured at no width](split-column-least-size-measured-at-no-width.md) — #5932: a foot banner's fixed-height text stood the split view 2116 pt tall; `.columnFloor()` on every column; repro: kill the scratch daemon
 - [Task tuples miscompile at -O](task-tuple-returns-miscompile.md) — #5946: a tuple returned from both a do that awaits and its catch loses its key in Swift 6.4.2 -O and crashed the window in completeFuture/TaskGroup::offer; use Result.catching, one return
 - [agentsd stacks on SIGUSR1](agentsd-stacks-on-sigusr1.md) — #6260: `kill -USR1` logs every goroutine to daemon.log, no stop; uplink logs handlers over 2 s
+- [Periphery index rules](periphery-index-rules.md) — one build per file per index or the answer changes; it misses $binding, \( ) and init-as-value uses
+- [Held calls and Mac sleep](held-calls-and-mac-sleep.md) — a call open over a sleep ends in the client's timeout; match timeouts to `pmset -g log` first (#6310)

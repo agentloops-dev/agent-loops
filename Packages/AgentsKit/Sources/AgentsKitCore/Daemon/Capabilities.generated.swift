@@ -57,7 +57,7 @@ public enum Capability {
     public static let cost1 = "cost/1"
     public static let credentials1 = "credentials/1"
     public static let daemon1 = "daemon/1"
-    public static let dailySummary1 = "daily-summary/1"
+    public static let dailyChecks1 = "daily-checks/1"
     public static let deploysCopy1 = "deploys.copy/1"
     public static let deploysDelivery1 = "deploys.delivery/1"
     public static let deploysRead1 = "deploys.read/1"
@@ -85,6 +85,7 @@ public enum Capability {
     public static let foldersToMachine1 = "folders.to-machine/1"
     public static let foldersWorkingHours1 = "folders.working-hours/1"
     public static let folders1 = "folders/1"
+    public static let forgeSync1 = "forge-sync/1"
     public static let forgeWrite1 = "forge-write/1"
     public static let forgeAssign1 = "forge.assign/1"
     public static let forgeBoards1 = "forge.boards/1"
@@ -98,9 +99,11 @@ public enum Capability {
     public static let groups1 = "groups/1"
     public static let handover1 = "handover/1"
     public static let hostBrowserSettings1 = "host.browser-settings/1"
+    public static let hostCommitTrailers1 = "host.commit-trailers/1"
     public static let hostDesktopControl1 = "host.desktop-control/1"
     public static let hostDriveApproval1 = "host.drive-approval/1"
     public static let hostLocalSecrets1 = "host.local-secrets/1"
+    public static let hostLocalSecrets2 = "host.local-secrets/2"
     public static let hostLock1 = "host.lock/1"
     public static let hostLock2 = "host.lock/2"
     public static let hostLock3 = "host.lock/3"
@@ -191,6 +194,7 @@ public enum Capability {
     public static let providers2 = "providers/2"
     public static let readapi1 = "readapi/1"
     public static let relay1 = "relay/1"
+    public static let reportsChanges1 = "reports.changes/1"
     public static let reportsNodes2 = "reports.nodes/2"
     public static let reportsProblem1 = "reports.problem/1"
     public static let reportsScope1 = "reports.scope/1"
@@ -228,8 +232,6 @@ public enum Capability {
     public static let storage1 = "storage/1"
     public static let store1 = "store/1"
     public static let suggestions1 = "suggestions/1"
-    public static let summaries1 = "summaries/1"
-    public static let summaryMachines1 = "summary.machines/1"
     public static let surface1 = "surface/1"
     public static let time1 = "time/1"
     public static let tunnel1 = "tunnel/1"
@@ -243,7 +245,6 @@ public enum Capability {
     public static let velocity1 = "velocity/1"
     public static let views1 = "views/1"
     public static let wake1 = "wake/1"
-    public static let workFeatures1 = "work.features/1"
     public static let workSuggestLeads1 = "work.suggest-leads/1"
     public static let workTimeline1 = "work.timeline/1"
     public static let workflow1 = "workflow/1"
@@ -301,7 +302,6 @@ public enum Capability {
         "agents/startNow": "agents.start-now/1",
         "agents/stop": "agents/1",
         "agents/stopBackground": "agents/1",
-        "agents/summaryFacts": "summary.machines/1",
         "agents/touchedPaths": "agents/1",
         "agents/transcript": "agents/1",
         "agents/turns": "agents/1",
@@ -366,8 +366,8 @@ public enum Capability {
         "daemon/policyState": "host.policy/1",
         "daemon/quit": "daemon/1",
         "daemon/status": "daemon/1",
-        "dailySummary/setSettings": "daily-summary/1",
-        "dailySummary/settings": "daily-summary/1",
+        "dailyChecks/setSettings": "daily-checks/1",
+        "dailyChecks/settings": "daily-checks/1",
         "deploys/delivery": "deploys.delivery/1",
         "deploys/targets": "deploys.targets/1",
         "desktopControl/resume": "host.desktop-control/1",
@@ -439,11 +439,13 @@ public enum Capability {
         "forge/blocked-by": "forge-write/1",
         "forge/boards": "forge.boards/1",
         "forge/cancel-auto-merge": "forge.cancel-auto-merge/1",
+        "forge/changes": "forge-sync/1",
+        "forge/checks": "forge-sync/1",
         "forge/close": "forge-write/1",
         "forge/comment": "forge-write/1",
         "forge/diff": "forge-write/1",
-        "forge/features": "forge/1",
         "forge/hold": "forge-write/1",
+        "forge/ids": "forge-sync/1",
         "forge/image": "forge.image/1",
         "forge/issue": "forge/1",
         "forge/issues": "forge/1",
@@ -461,7 +463,9 @@ public enum Capability {
         "forge/releases": "forge.releases/1",
         "forge/request-changes": "forge-write/1",
         "forge/rerun": "forge-write/1",
+        "forge/sources": "forge-sync/1",
         "git/fill": "git/1",
+        "git/trailers": "host.commit-trailers/1",
         "lineage/cost": "lineage/1",
         "lineage/end": "lineage/1",
         "lineage/estimate": "lineage.estimate/1",
@@ -596,6 +600,7 @@ public enum Capability {
         "secrets/addGrant": "host.secret-grants/1",
         "secrets/grants": "host.secret-grants/1",
         "secrets/localList": "host.local-secrets/1",
+        "secrets/localRemove": "host.local-secrets/2",
         "secrets/removeGrant": "host.secret-grants/1",
         "secrets/sessionList": "host.session-secrets/1",
         "secrets/sessionRemove": "host.session-secrets/1",
@@ -633,8 +638,6 @@ public enum Capability {
         "store/notes": "store/1",
         "suggestions/dismiss": "suggestions/1",
         "suggestions/start": "suggestions/1",
-        "summaries/list": "summaries/1",
-        "summaries/read": "summaries/1",
         "surface/identify": "surface/1",
         "time/history": "time/1",
         "usage/history": "usage/1",
@@ -649,7 +652,6 @@ public enum Capability {
         "wake/settings": "wake/1",
         "wake/state": "wake/1",
         "work/dismiss-lead": "work.suggest-leads/1",
-        "work/features": "work.features/1",
         "work/suggest-leads": "work.suggest-leads/1",
         "work/timeline": "work.timeline/1",
         "workflows/approve": "workflows/1",
@@ -692,7 +694,7 @@ public enum Capability {
         "clone/changed": "clone/1",
         "cost/changed": "cost/1",
         "daemon/policyStateChanged": "host.policy/1",
-        "dailySummary/changed": "daily-summary/1",
+        "dailyChecks/changed": "daily-checks/1",
         "desktopControl/liveFrame": "host.desktop-control/1",
         "device/changed": "device/1",
         "disk/changed": "disk/1",
@@ -727,7 +729,6 @@ public enum Capability {
         "shell/stateChanged": "shell/1",
         "storage/writeFailed": "storage/1",
         "store/notesChanged": "store/1",
-        "summaries/changed": "summaries/1",
         "wake/changed": "wake/1",
         "workflow/changed": "workflow/1",
         "workflow/removed": "workflow/1",
@@ -882,7 +883,6 @@ public enum Capability {
         "machines/startEnroll": "machines/1",
         "machines/startSession": "sessions.on-machine/1",
         "machines/stop": "machines/1",
-        "machines/summaryFacts": "summary.machines/1",
         "machines/unlink": "machines/1",
         "machines/update": "machines/1",
         "machines/versions": "machines/1",
@@ -942,6 +942,7 @@ public enum Capability {
         "readApi/list": "readapi/1",
         "readApi/make": "readapi/1",
         "readApi/revoke": "readapi/1",
+        "reports/changes": "reports.changes/1",
         "reports/deleteView": "reports.views/1",
         "reports/export": "reports/2",
         "reports/featuresAll": "machines.all/1",

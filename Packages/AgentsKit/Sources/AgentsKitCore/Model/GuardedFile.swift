@@ -14,8 +14,6 @@ public enum GuardedFile: String, Codable, CaseIterable, Sendable {
     /// Relative to the folder.
     public var path: String { rawValue }
 
-    public func url(in folder: URL) -> URL { folder.appending(path: path) }
-
     /// What the file holds, in a person's words.
     public var holds: String {
         switch self {

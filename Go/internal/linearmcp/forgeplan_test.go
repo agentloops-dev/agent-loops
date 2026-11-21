@@ -32,12 +32,12 @@ func TestPlanReadsChildrenAndBlockers(t *testing.T) {
 			Variables map[string]any `json:"variables"`
 		}
 		body, _ := io.ReadAll(r.Body)
-		json.Unmarshal(body, &req)
+		unmarshal(t, body, &req)
 		if !strings.Contains(req.Query, "ForgePlan") || req.Variables["id"] != "ENG-5" {
-			io.WriteString(w, `{"data":{"issue":null}}`)
+			reply(t, w, `{"data":{"issue":null}}`)
 			return
 		}
-		io.WriteString(w, planAnswer)
+		reply(t, w, planAnswer)
 	}))
 	t.Cleanup(s.Close)
 	l := NewRealLinear(s.URL, func() string { return "Bearer t" })
@@ -83,13 +83,13 @@ func TestBlockersReadManyIssues(t *testing.T) {
 			Variables map[string]any `json:"variables"`
 		}
 		body, _ := io.ReadAll(r.Body)
-		json.Unmarshal(body, &req)
+		unmarshal(t, body, &req)
 		queries = append(queries, req.Query)
 		if req.Variables["i0"] != "ENG-7" || req.Variables["i1"] != "ENG-404" {
-			io.WriteString(w, `{"data":{}}`)
+			reply(t, w, `{"data":{}}`)
 			return
 		}
-		io.WriteString(w, `{"data":{"i0":{"inverseRelations":{"nodes":[
+		reply(t, w, `{"data":{"i0":{"inverseRelations":{"nodes":[
  {"type":"blocks","issue":{"identifier":"ENG-6","state":{"type":"completed"}}},
  {"type":"related","issue":{"identifier":"ENG-9","state":{"type":"started"}}},
  {"type":"blocks","issue":{"identifier":"OPS-1","state":{"type":"started"}}}]}},"i1":null}}`)

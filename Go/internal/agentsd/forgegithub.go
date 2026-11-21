@@ -34,6 +34,8 @@ func (githubForge) Caps() forgeCaps {
 		Issue: forgeActions{Comment: true, Label: true, Assign: true, Close: true, Reopen: true, CloseNotPlanned: true},
 		PR: forgeActions{Comment: true, Label: true, Assign: true, Close: true, Reopen: true, Merge: true, AutoMerge: true, Approve: true,
 			RequestChanges: true, Rerun: true, Log: true, Diff: true, CancelAutoMerge: true, Ready: true},
+		// GitHub's search gives the first 1,000 results of a query, and no more (#6349).
+		SearchMost:  1000,
 		LabelColors: true,
 		Avatars:     true,
 		StateReason: true,
@@ -109,7 +111,7 @@ func (g githubForge) List(ctx context.Context, scope forgeScope, f forgeFilter, 
 		return forgePage{}, err
 	}
 	sf := githubmcp.SearchFilter{PRs: f.PRs, State: f.State, Label: f.Label, Assignee: f.Assignee, Query: f.Query, Feature: f.Feature,
-		Reviewer: f.Reviewer}
+		Reviewer: f.Reviewer, UpdatedSince: f.since(), UpdatedBefore: f.before()}
 	if f.Board != nil {
 		sf.Project = f.Board.project
 	}

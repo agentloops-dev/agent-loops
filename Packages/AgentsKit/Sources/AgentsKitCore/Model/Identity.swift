@@ -273,11 +273,6 @@ public extension DaemonAPI {
     struct SignInDecided: Codable, Sendable, Hashable {
         public var request: String
         public var result: String
-
-        public init(request: String, result: String) {
-            self.request = request
-            self.result = result
-        }
     }
 }
 
@@ -298,8 +293,6 @@ public extension DaemonAPI.Method {
     static let signInApprove = "signIn/approve"
     /// `SignInDecide` → `{}` (#995).
     static let signInDeny = "signIn/deny"
-    /// `SignInAsk` → `Admitted`, on an `s:` connection only: a browser by approval (#2097).
-    static let signInAsk = "signIn/ask"
     /// `SignInOrgStart` → `SignInOrgStarted` (#1002).
     static let signInOrgStart = "signIn/orgStart"
     /// `SignInTicket` → `SignInTicketResult` (#1002).
@@ -463,7 +456,6 @@ public enum SignInWords {
 
     public static let orgSignInRequired = -32077
     public static let personSuspended = -32078
-    public static let managedByProvider = -32079
 
     /// The org provider a refusal asks for: `orgSignInRequired` with `{provider, name}`.
     public static func requiredProvider(_ error: any Error) -> DaemonAPI.SignInOrgProvider? {

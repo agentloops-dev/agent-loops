@@ -318,7 +318,9 @@ func (t *Tunnels) letGoLocked(ctx context.Context, destination, name string) {
 	t.mu.Unlock()
 	for _, old := range olds {
 		t.log("tunnel to " + old.Name + ": " + name + " was installed on that server; letting go")
-		t.store.Delete(ctx, Key(old.ID))
+		if err := t.store.Delete(ctx, Key(old.ID)); err != nil {
+			t.log("tunnel to " + old.Name + ": could not be deleted: " + err.Error())
+		}
 		t.mu.Lock()
 		t.forgetLocked(old.ID)
 		t.mu.Unlock()
@@ -449,21 +451,9 @@ func (t *Tunnels) Unjoined() []Changed {
 func (t *Tunnels) Reconcile(ctx context.Context) {
 	t.work.Lock()
 	defer t.work.Unlock()
-	keys, err := t.store.List(ctx, Prefix)
+	read, err := t.readRecords(ctx)
 	if err != nil {
 		return
-	}
-	read := map[string]Record{}
-	for _, key := range keys {
-		object, err := t.store.Get(ctx, key.Key)
-		if err != nil || object == nil {
-			continue
-		}
-		var record Record
-		if json.Unmarshal(object.Data, &record) != nil || record.ID == "" {
-			continue
-		}
-		read[record.ID] = record
 	}
 	known := t.hosts(ctx)
 	ids := make([]string, 0, len(read))
@@ -472,32 +462,13 @@ func (t *Tunnels) Reconcile(ctx context.Context) {
 	}
 	sort.Strings(ids)
 	for _, id := range ids {
-		record := read[id]
-		if record.Host == nil {
-			if host := t.joined(ctx, record, known); host != nil {
-				record.Host = host
-				// Only this copy writes tunnels, so nobody else's write can be lost.
-				if data, err := records.Encode(record); err == nil {
-					t.store.Put(ctx, Key(record.ID), data, store.Always)
-				}
-				read[id] = record
-			}
-		}
-		var gone bool
-		if record.Host != nil {
-			gone = true
-			for _, h := range known {
-				if h.ID == *record.Host {
-					gone = false
-					break
-				}
-			}
-		} else {
-			gone = time.Since(record.Made.Time) > UnjoinedKept
-		}
-		if gone {
+		record := t.learnHost(ctx, read[id], known)
+		read[id] = record
+		if gone(record, known) {
 			t.log("tunnel to " + record.Name + ": no longer a host; letting go")
-			t.store.Delete(ctx, Key(record.ID))
+			if err := t.store.Delete(ctx, Key(record.ID)); err != nil {
+				t.log("tunnel to " + record.Name + ": could not be deleted: " + err.Error())
+			}
 			delete(read, id)
 		}
 	}
@@ -514,6 +485,61 @@ func (t *Tunnels) Reconcile(ctx context.Context) {
 	for _, record := range read {
 		t.holdLocked(record, nil)
 	}
+}
+
+// readRecords reads every tunnel record in the store, by id. One that does not read or
+// has no id is left out.
+func (t *Tunnels) readRecords(ctx context.Context) (map[string]Record, error) {
+	keys, err := t.store.List(ctx, Prefix)
+	if err != nil {
+		return nil, err
+	}
+	read := map[string]Record{}
+	for _, key := range keys {
+		object, err := t.store.Get(ctx, key.Key)
+		if err != nil || object == nil {
+			continue
+		}
+		var record Record
+		if json.Unmarshal(object.Data, &record) != nil || record.ID == "" {
+			continue
+		}
+		read[record.ID] = record
+	}
+	return read, nil
+}
+
+// learnHost gives a record with no host the host that joined with its code, and keeps it.
+func (t *Tunnels) learnHost(ctx context.Context, record Record, known []records.MachineRecord) Record {
+	if record.Host != nil {
+		return record
+	}
+	host := t.joined(ctx, record, known)
+	if host == nil {
+		return record
+	}
+	record.Host = host
+	// Only this copy writes tunnels, so nobody else's write can be lost.
+	if data, err := records.Encode(record); err == nil {
+		if _, err := t.store.Put(ctx, Key(record.ID), data, store.Always); err != nil {
+			t.log("tunnel to " + record.Name + ": could not be written: " + err.Error())
+		}
+	}
+	return record
+}
+
+// gone says whether nobody needs a record: its host is no longer known, or it has no
+// host and was made longer than UnjoinedKept ago.
+func gone(record Record, known []records.MachineRecord) bool {
+	if record.Host == nil {
+		return time.Since(record.Made.Time) > UnjoinedKept
+	}
+	for _, h := range known {
+		if h.ID == *record.Host {
+			return false
+		}
+	}
+	return true
 }
 
 // joined is HostTunnels.joined: the host that spent this record's code. When the code
@@ -567,58 +593,74 @@ func (t *Tunnels) holdLocked(record Record, after *holding) {
 				return
 			}
 		}
-		wait := 2 * time.Second
-		for ctx.Err() == nil {
-			// The record as it is now: Reconcile and Repin change it under a held session.
-			t.mu.Lock()
-			if now, ok := t.records[record.ID]; ok {
-				record = now
-			}
-			t.mu.Unlock()
-			// A stopped workspace is not dialled, or the dial would start it again (#864).
-			if record.Host != nil && t.asleep(*record.Host) {
-				words := "Its workspace is stopped: the tunnel waits for Start."
-				t.sayState(ctx, record.ID, Tunnel{Up: false, Problem: &words})
-				select {
-				case <-ctx.Done():
-					return
-				case <-time.After(asleepCheck):
-				}
-				wait = 2 * time.Second
-				continue
-			}
-			ssh := t.ssh
-			ssh.name = record.Destination
-			if record.Host != nil {
-				if listed := t.listed(*record.Host); listed != "" {
-					ssh.name = listed
-				}
-			}
-			started := time.Now()
-			var problem string
-			if more, err := t.prepare(ctx, ssh.name); err != nil {
-				problem = err.Error()
-			} else {
-				ssh.env = append(append([]string{}, ssh.env...), more...)
-				problem = session(ctx, record, ssh, t.folder, func() { t.sayState(ctx, record.ID, Tunnel{Up: true}) })
-			}
-			if ctx.Err() != nil {
-				return
-			}
-			words := worded(problem)
-			t.sayState(ctx, record.ID, Tunnel{Up: false, Problem: &words})
-			if time.Since(started) > 60*time.Second {
-				wait = 2 * time.Second
-			} else {
-				wait = min(wait*2, 60*time.Second)
-			}
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(wait):
-			}
-		}
+		t.hold(ctx, record)
 	}()
+}
+
+// hold runs one session after another for a record until ctx ends.
+func (t *Tunnels) hold(ctx context.Context, record Record) {
+	wait := 2 * time.Second
+	for ctx.Err() == nil {
+		// The record as it is now: Reconcile and Repin change it under a held session.
+		t.mu.Lock()
+		if now, ok := t.records[record.ID]; ok {
+			record = now
+		}
+		t.mu.Unlock()
+		// A stopped workspace is not dialled, or the dial would start it again (#864).
+		if record.Host != nil && t.asleep(*record.Host) {
+			words := "Its workspace is stopped: the tunnel waits for Start."
+			t.sayState(ctx, record.ID, Tunnel{Up: false, Problem: &words})
+			if !pause(ctx, asleepCheck) {
+				return
+			}
+			wait = 2 * time.Second
+			continue
+		}
+		started := time.Now()
+		problem := t.dial(ctx, record)
+		if ctx.Err() != nil {
+			return
+		}
+		words := worded(problem)
+		t.sayState(ctx, record.ID, Tunnel{Up: false, Problem: &words})
+		if time.Since(started) > 60*time.Second {
+			wait = 2 * time.Second
+		} else {
+			wait = min(wait*2, 60*time.Second)
+		}
+		if !pause(ctx, wait) {
+			return
+		}
+	}
+}
+
+// dial runs one session for a record, to the destination its workspace is listed with
+// when it has one, and says why it ended.
+func (t *Tunnels) dial(ctx context.Context, record Record) string {
+	ssh := t.ssh
+	ssh.name = record.Destination
+	if record.Host != nil {
+		if listed := t.listed(*record.Host); listed != "" {
+			ssh.name = listed
+		}
+	}
+	more, err := t.prepare(ctx, ssh.name)
+	if err != nil {
+		return err.Error()
+	}
+	ssh.env = append(append([]string{}, ssh.env...), more...)
+	return session(ctx, record, ssh, t.folder, func() { t.sayState(ctx, record.ID, Tunnel{Up: true}) })
+}
+
+// pause waits for d, and says false when ctx ends first.
+func pause(ctx context.Context, d time.Duration) bool {
+	select {
+	case <-ctx.Done():
+		return false
+	case <-time.After(d):
+		return true
+	}
 }
 
 // sayState is HostTunnels.say: a new state is kept, logged and told.

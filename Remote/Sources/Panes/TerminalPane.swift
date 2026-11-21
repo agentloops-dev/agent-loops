@@ -183,7 +183,6 @@ private struct PhoneTerminalView: UIViewRepresentable {
     let isEnabled: Bool
     let onFocus: (Bool) -> Void
     let onSize: (Int, Int) -> Void
-    @Environment(\.colorScheme) private var colorScheme
 
     func makeCoordinator() -> Coordinator {
         Coordinator(client: client, onSize: onSize, onFocus: onFocus)

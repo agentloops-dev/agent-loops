@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -129,14 +130,16 @@ func (in Installer) Remove(name string, place Place, now time.Time) (string, err
 	lock.Remove(key)
 	if err := lock.Write(); err != nil {
 		if trashed != "" {
-			os.Rename(trashed, folder)
+			putBack(trashed, folder)
 		}
 		return "", Failed("could not write " + filepath.Base(place.Lock))
 	}
 	side := LoadSidecar(in.Sidecar)
 	if _, ok := side.Skills[SidecarKey(place.Destination, name)]; ok {
 		delete(side.Skills, SidecarKey(place.Destination, name))
-		side.Save(in.Sidecar)
+		if err := side.Save(in.Sidecar); err != nil {
+			log.Printf("skills: could not write %s: %v", filepath.Base(in.Sidecar), err)
+		}
 	}
 	if trashed == "" {
 		return folder, nil
@@ -249,7 +252,7 @@ func (in Installer) Recover() string {
 	}
 	os.RemoveAll(p.Target)
 	if p.Trashed != nil {
-		os.Rename(*p.Trashed, p.Target)
+		putBack(*p.Trashed, p.Target)
 	}
 	return "undid an unfinished add of " + filepath.Base(p.Target)
 }
@@ -258,32 +261,8 @@ func (in Installer) Recover() string {
 // staged one renamed in, the lock written; a step that fails undoes the ones before it.
 func (in Installer) Add(st Staged, place Place, replace bool, now time.Time) (wire.ManagedSkill, error) {
 	p := st.Preview
-	if !CanAdd(p) {
-		var blocking []wire.PreviewProblem
-		for _, x := range p.Problems {
-			if x.Skipped == nil {
-				blocking = append(blocking, x)
-			}
-		}
-		return wire.ManagedSkill{}, CannotAdd(blocking)
-	}
-	switch s := in.State(p, place); {
-	case s.Free != nil:
-		if replace {
-			return wire.ManagedSkill{}, ReplaceMismatch()
-		}
-	case s.SameSkill != nil:
-		if s.SameSkill.Update && !replace {
-			return wire.ManagedSkill{}, ReplaceMismatch()
-		}
-	case s.ManagedOther != nil:
-		if !replace {
-			return wire.ManagedSkill{}, ReplaceMismatch()
-		}
-	case s.Unmanaged != nil:
-		return wire.ManagedSkill{}, Unmanaged(s.Unmanaged.Path)
-	case s.Unavailable != nil:
-		return wire.ManagedSkill{}, &Error{s.Unavailable.Value}
+	if err := in.checkAdd(p, place, replace); err != nil {
+		return wire.ManagedSkill{}, err
 	}
 	lock, err := LoadLock(place.LockKind, place.Lock)
 	if err != nil {
@@ -301,7 +280,9 @@ func (in Installer) Add(st Staged, place Place, replace bool, now time.Time) (wi
 	j := pending{Lock: place.Lock, Personal: place.LockKind == Personal, Key: st.LockKey, Hash: hash, Target: target}
 	writeJournal := func() error {
 		b, _ := json.Marshal(j)
-		os.MkdirAll(filepath.Dir(in.journal()), 0o755)
+		if err := os.MkdirAll(filepath.Dir(in.journal()), 0o755); err != nil { //nolint:gosec // G301: the mode this folder always had; only its error is new
+			return err
+		}
 		return os.WriteFile(in.journal(), b, 0o644)
 	}
 	if writeJournal() != nil {
@@ -315,12 +296,14 @@ func (in Installer) Add(st Staged, place Place, replace bool, now time.Time) (wi
 			return wire.ManagedSkill{}, Failed("could not move the old copy to the Trash")
 		}
 		j.Trashed = &trashed
-		writeJournal()
+		if err := writeJournal(); err != nil {
+			log.Printf("skills: could not note where the old copy of %s went: %v", p.Name, err)
+		}
 	}
 	// 2. The staged folder into place.
 	if err := os.Rename(st.Folder, target); err != nil {
 		if trashed != "" {
-			os.Rename(trashed, target)
+			putBack(trashed, target)
 		}
 		os.Remove(in.journal())
 		return wire.ManagedSkill{}, Failed("could not move the skill into " + place.Skills)
@@ -333,7 +316,7 @@ func (in Installer) Add(st Staged, place Place, replace bool, now time.Time) (wi
 	if err := lock.Write(); err != nil {
 		os.RemoveAll(target)
 		if trashed != "" {
-			os.Rename(trashed, target)
+			putBack(trashed, target)
 		}
 		os.Remove(in.journal())
 		return wire.ManagedSkill{}, Failed("could not write " + filepath.Base(place.Lock))
@@ -344,6 +327,48 @@ func (in Installer) Add(st Staged, place Place, replace bool, now time.Time) (wi
 		linkClaudeSkills(place.Folder)
 	}
 	// 5. The sidecar: worth having, not worth failing for.
+	catalogue := in.recordSidecar(p, place, target, now)
+	return wire.ManagedSkill{Destination: place.Destination, Name: p.Name, Source: p.Result.Owner + "/" + p.Result.Repo,
+		SkillPath: optional(p.SkillPath), RecordedHash: optional(hash), Commit: optional(p.Commit), CommittedAt: p.CommittedAt,
+		Catalogue: &catalogue, Update: wire.UpdateState{Current: &struct{}{}}}, nil
+}
+
+// checkAdd is why p cannot be added at place, or nil: a blocking problem, an answer to
+// replace that does not fit what is there, or a folder that is not ours.
+func (in Installer) checkAdd(p wire.SkillPreview, place Place, replace bool) error {
+	if !CanAdd(p) {
+		var blocking []wire.PreviewProblem
+		for _, x := range p.Problems {
+			if x.Skipped == nil {
+				blocking = append(blocking, x)
+			}
+		}
+		return CannotAdd(blocking)
+	}
+	switch s := in.State(p, place); {
+	case s.Free != nil:
+		if replace {
+			return ReplaceMismatch()
+		}
+	case s.SameSkill != nil:
+		if s.SameSkill.Update && !replace {
+			return ReplaceMismatch()
+		}
+	case s.ManagedOther != nil:
+		if !replace {
+			return ReplaceMismatch()
+		}
+	case s.Unmanaged != nil:
+		return Unmanaged(s.Unmanaged.Path)
+	case s.Unavailable != nil:
+		return &Error{s.Unavailable.Value}
+	}
+	return nil
+}
+
+// recordSidecar notes the added skill's commit, tree, catalogue and folder hash in the
+// sidecar, and is its catalogue. A failure to save is not an error.
+func (in Installer) recordSidecar(p wire.SkillPreview, place Place, target string, now time.Time) string {
 	catalogue := SkillsShID
 	if p.Result.Marketplace != nil {
 		catalogue = *p.Result.Marketplace
@@ -358,10 +383,10 @@ func (in Installer) Add(st Staged, place Place, replace bool, now time.Time) (wi
 		record.FolderHash = &h
 	}
 	side.Skills[SidecarKey(place.Destination, p.Name)] = record
-	side.Save(in.Sidecar)
-	return wire.ManagedSkill{Destination: place.Destination, Name: p.Name, Source: p.Result.Owner + "/" + p.Result.Repo,
-		SkillPath: optional(p.SkillPath), RecordedHash: optional(hash), Commit: optional(p.Commit), CommittedAt: p.CommittedAt,
-		Catalogue: &catalogue, Update: wire.UpdateState{Current: &struct{}{}}}, nil
+	if err := side.Save(in.Sidecar); err != nil {
+		log.Printf("skills: could not write %s: %v", filepath.Base(in.Sidecar), err)
+	}
+	return catalogue
 }
 
 // linkClaudeSkills is .claude/skills -> ../.agents/skills, only where nothing is there.
@@ -370,8 +395,20 @@ func linkClaudeSkills(folder string) {
 	if exists(link) {
 		return
 	}
-	os.MkdirAll(filepath.Dir(link), 0o755)
-	os.Symlink("../.agents/skills", link)
+	if err := os.MkdirAll(filepath.Dir(link), 0o755); err != nil { //nolint:gosec // G301: the mode this folder always had; only its error is new
+		log.Printf("skills: could not make %s: %v", filepath.Dir(link), err)
+		return
+	}
+	if err := os.Symlink("../.agents/skills", link); err != nil {
+		log.Printf("skills: could not link %s: %v", link, err)
+	}
+}
+
+// putBack moves a folder from the Trash back to where it was, when a step after it failed.
+func putBack(trashed, target string) {
+	if err := os.Rename(trashed, target); err != nil {
+		log.Printf("skills: could not put %s back from the Trash (it is still there, at %s): %v", filepath.Base(target), trashed, err)
+	}
 }
 
 // Changes is the files added, changed and removed going from the installed folder to a
@@ -399,7 +436,8 @@ func Changes(installed, staged string) wire.SkillChanges {
 
 func blobs(folder string) map[string]string {
 	out := map[string]string{}
-	filepath.Walk(folder, func(path string, info os.FileInfo, err error) error {
+	// The walk skips what it cannot read, so Walk returns no error.
+	_ = filepath.Walk(folder, func(path string, info os.FileInfo, err error) error {
 		if err != nil || !info.Mode().IsRegular() {
 			return nil
 		}

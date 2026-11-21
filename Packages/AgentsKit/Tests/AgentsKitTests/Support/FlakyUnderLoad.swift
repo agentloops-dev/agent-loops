@@ -9,8 +9,8 @@ extension Trait where Self == ConditionTrait {
     /// `.github/workflows/slow-tests.yml` runs them again on their own, allowed to fail,
     /// with `AGENTS_RUN_FLAKY=1`.
     ///
-    /// Not for a race. A test that races a fake runtime's turn holds the turn with a
-    /// `TurnGate` instead, and one that acts as soon as an agent's turn ends waits with
+    /// Not for a race. A test that races a fake runtime's turn holds the turn open until it
+    /// is done instead, and one that acts as soon as an agent's turn ends waits with
     /// `settled`, past the question about a silent ending (2026-09-26).
     ///
     /// Written on the same line as `@Test`: `scripts/flaky-tests.sh` finds them by that
@@ -52,9 +52,6 @@ extension Trait where Self == ConditionTrait {
     ///   RuntimeExitTests.aSessionWhoseRuntimeDiesGivesBackEveryDescriptor and
     ///   tenDeathsLeaveNothingBehind;
     ///   GitBoundsTests.aChildWhoseGrandchildHoldsItsPipeEndsWithItsOwnStatus.
-    /// - CloseOnExecTests.aConnectionBecomesTheDeviceItIdentifiesAs — the identify request
-    ///   was not handled within 45 s, past the 60 s limit, on main at 587caf85a
-    ///   (2026-11-16, #5852).
     ///
     /// Slow quarantine, run manually from `.github/workflows/slow-tests.yml`:
     /// - RelayCarryingTests.aReplyOfFiveMegabytesArrivesWhole — 62 s on the shared
@@ -67,14 +64,5 @@ extension Trait where Self == ConditionTrait {
         return .disabled(if: (environment["CI"] != nil || environment["AGENTS_QUARANTINE"] == "1")
                          && environment["AGENTS_RUN_FLAKY"] != "1",
                          "flaky under load; quarantined in CI (see FlakyUnderLoad.swift)")
-    }
-
-    /// A slow test that does not belong on the main CI path. Run it with
-    /// `AGENTS_RUN_SLOW=1` through `.github/workflows/slow-tests.yml`.
-    static var slowUnderLoad: Self {
-        let environment = ProcessInfo.processInfo.environment
-        return .disabled(if: (environment["CI"] != nil || environment["AGENTS_QUARANTINE"] == "1")
-                         && environment["AGENTS_RUN_SLOW"] != "1",
-                         "slow under load; quarantined from main CI")
     }
 }

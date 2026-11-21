@@ -73,7 +73,7 @@ struct RemoteFolderSheet: View {
         }
         .padding(20)
         .frame(width: 520)
-        .task { await load(model.hosts.host(host)?.facts?.home ?? "~") }
+        .task { await load(model.hosts.host()?.facts?.home ?? "~") }
         .task { projects = await NewFolderProjectChoice.projects(on: model.controlRequests) }
     }
 

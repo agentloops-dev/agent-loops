@@ -119,7 +119,9 @@ func (s Secrets) Save(path string) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
-	os.Chmod(dir, 0o700)
+	if err := os.Chmod(dir, 0o700); err != nil { //nolint:gosec // G302: a folder, which needs x to be opened
+		return err
+	}
 	text := strings.Join(s.lines, "\n")
 	if text != "" && !strings.HasSuffix(text, "\n") {
 		text += "\n"

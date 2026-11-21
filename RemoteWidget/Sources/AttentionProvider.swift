@@ -21,7 +21,7 @@ struct AttentionProvider: TimelineProvider {
             AttentionSnapshotSession(id: UUID(), folder: "api", title: "Fix the widget",
                                      wanted: "which branch should this go on",
                                      kind: .elicitation, since: Date()),
-        ]), isPlaceholder: true)
+        ]))
     }
 
     func getSnapshot(in context: Context, completion: @escaping (AttentionEntry) -> Void) {
@@ -58,21 +58,12 @@ struct AttentionEntry: TimelineEntry {
     let date: Date
     /// Nil when there is no file, which the widget says rather than showing a zero.
     let snapshot: AttentionSnapshot?
-    /// A gallery or a redraw placeholder, drawn greyed and never counted.
-    let isPlaceholder: Bool
-
-    init(date: Date, snapshot: AttentionSnapshot?, isPlaceholder: Bool = false) {
-        self.date = date
-        self.snapshot = snapshot
-        self.isPlaceholder = isPlaceholder
-    }
 
     /// Nothing waiting, or nothing known: the two are different and must not look alike.
     var isEmpty: Bool { snapshot?.total == 0 }
     var isUnknown: Bool { snapshot == nil }
     var count: Int { snapshot?.total ?? 0 }
 
-    /// The rows a size draws, newest first, and how many waiting are left undrawn there.
+    /// The rows a size draws, newest first.
     func rows(for size: AttentionSnapshot.Size) -> [AttentionSnapshotSession] { snapshot?.rows(for: size) ?? [] }
-    func leftover(for size: AttentionSnapshot.Size) -> Int { snapshot?.leftover(for: size) ?? 0 }
 }

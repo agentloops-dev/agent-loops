@@ -453,8 +453,8 @@ func (d *Daemon) fire(fr fireRequest) {
 			return
 		}
 	}
-	// The daily summary is the person's, not a machine's (#3192): of their machines, the one
-	// that claims its schedule first writes it.
+	// The daily checks are the person's, not a machine's (#3192, #3355): of their machines,
+	// the one that claims its schedule first runs them.
 	if fr.dueAt != nil && !fr.fromQueue && fr.folder == d.personalHome() && oneMachineWorkflows[fr.id] {
 		d.workflowMu.Unlock()
 		if !d.claimRun(personalWorkflowFolder, fr.id, triggerID(fr, fr.event)) {
@@ -967,7 +967,9 @@ func (d *Daemon) workflowRunFinished(agent wire.UUID) {
 		asked := a.ArchiveRequest != nil && a.ArchiveRequest.Requested != nil
 		if *whenDone == wire.WorkflowWhenDoneArchive || *whenDone == wire.WorkflowWhenDoneArchiveAllowed && asked {
 			d.record(agent, runtimeNote("Archived when its run was done, as the workflow “"+name+"” allows."))
-			d.archiveBy(agent, wire.AgentArchivedReasonByAgent)
+			if err := d.archiveBy(agent, wire.AgentArchivedReasonByAgent); err != nil {
+				log.Printf("workflow %s: could not archive %s: %v", name, agent, err)
+			}
 		}
 	}
 	d.releaseQueued(folder, run.WorkflowID)

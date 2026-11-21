@@ -23,6 +23,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/buildinfo"
@@ -268,6 +269,9 @@ type Service struct {
 	bus eventBus
 	// What Reports and the Console read from the store, by entity tag (#2054, #2056).
 	storeReads readCache
+	// lineageMerges counts the reads that decoded and merged the machines' lineage, so a
+	// test can see that reports/changes with no change merges none (#6350).
+	lineageMerges atomic.Int64
 	// buildsChanges is each repository's change points over the build timings' copy (#5232).
 	buildsChanges buildsChangesCache
 	// What each machine here was last sent of its projects (#2735).
@@ -570,6 +574,13 @@ func (s *Service) takeUpStore(ctx context.Context) error {
 	return nil
 }
 
+// serve is srv.Serve, with why it stopped logged when it was not Shutdown or Close.
+func (s *Service) serve(srv *http.Server, ln net.Listener, what string) {
+	if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		s.log(what + ": stopped serving on " + ln.Addr().String() + ": " + err.Error())
+	}
+}
+
 // serveOn serves HTTP on each listener, with TLS when configured, in the background.
 func (s *Service) serveOn(listeners []net.Listener) {
 	mux := http.NewServeMux()
@@ -578,9 +589,9 @@ func (s *Service) serveOn(listeners []net.Listener) {
 		srv := timeouts(&http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second, ErrorLog: nil})
 		s.servers = append(s.servers, srv)
 		if s.cfg.TLS != nil {
-			go srv.Serve(tls.NewListener(ln, s.cfg.TLS))
+			go s.serve(srv, tls.NewListener(ln, s.cfg.TLS), "control")
 		} else {
-			go srv.Serve(ln)
+			go s.serve(srv, ln, "control")
 		}
 	}
 }
@@ -1128,7 +1139,8 @@ func (s *Service) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		plain(w, http.StatusTooManyRequests, "too many downloads from this address; try again in a minute\n")
 	case path == "/v1/install.sh":
 		w.Header().Set("Content-Type", "text/x-shellscript")
-		w.Write([]byte(InstallScript))
+		// The client has gone; there is nobody to tell.
+		_, _ = w.Write([]byte(InstallScript))
 	case strings.HasPrefix(path, "/v1/servers/"):
 		data, ok := serverFile(strings.TrimPrefix(path, "/v1/servers/"), s.cfg.ServerFolder)
 		if !ok {
@@ -1136,8 +1148,10 @@ func (s *Service) serveHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/octet-stream")
-		http.NewResponseController(w).SetWriteDeadline(time.Now().Add(downloadWriteTimeout))
-		w.Write(data)
+		// A writer without deadlines writes under the server's own.
+		_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(downloadWriteTimeout))
+		// The client has gone; there is nobody to tell.
+		_, _ = w.Write(data)
 	case strings.HasPrefix(path, "/v1/releases/"):
 		s.releases.serve(w, r)
 	case strings.HasPrefix(path, "/v1/toolsets/"):
@@ -1147,7 +1161,8 @@ func (s *Service) serveHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		w.Write(data)
+		// The client has gone; there is nobody to tell.
+		_, _ = w.Write(data)
 	case strings.HasPrefix(path, "/v1/oidc/"):
 		s.signIns.serveOIDC(w, r)
 	case path == scim.Base || strings.HasPrefix(path, scim.Base+"/"):
@@ -1206,7 +1221,8 @@ func (s *Service) serveHTTP(w http.ResponseWriter, r *http.Request) {
 func plain(w http.ResponseWriter, status int, text string) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.WriteHeader(status)
-	w.Write([]byte(text))
+	// The client has gone; there is nobody to tell.
+	_, _ = w.Write([]byte(text)) //nolint:gosec // G705: served as text/plain, never HTML
 }
 
 // full says as many sockets are open as this copy holds (#2150).
@@ -1357,7 +1373,7 @@ func (s *Service) acceptVia(conn *Conn, webOrigin string, proved func(failed boo
 		var theirs notTheirs
 		settle(refused && !errors.As(err, &theirs))
 		if refused {
-			conn.SendNow(controllink.Message{Refused: r.Reason}.Line())
+			conn.Reply(controllink.Message{Refused: r.Reason}.Line())
 			s.log(fmt.Sprintf("refused a connection from %s: %s%s", conn.Remote, r.Reason, why))
 		} else {
 			s.log(fmt.Sprintf("a connection from %s ended: %v", conn.Remote, err))
@@ -1416,7 +1432,7 @@ func (s *Service) acceptVia(conn *Conn, webOrigin string, proved func(failed boo
 	// unavailable, so a page can tell its person to close a tab (#2194).
 	if client != nil && s.router.Crowded(client.ID) {
 		settle(false)
-		conn.SendNow(controllink.Message{Refused: controllink.Crowded}.Line())
+		conn.Reply(controllink.Message{Refused: controllink.Crowded}.Line())
 		s.refusals.note("crowded", client.ID, fmt.Sprintf("refused a connection from %s: client %s holds as many sockets as it may", conn.Remote, client.ID))
 		conn.Close()
 		return
@@ -1991,10 +2007,10 @@ func (s *Service) spend(conn *Conn, id string, webOrigin string) {
 			}
 		}
 		s.log("a " + m.Method + " with a code failed: " + asRPC(err).Message)
-		conn.SendNow(replyError(m.ID, err))
+		conn.Reply(replyError(m.ID, err))
 		return
 	}
-	conn.SendNow(reply(m.ID, result))
+	conn.Reply(reply(m.ID, result))
 }
 
 func (s *Service) spendCode(id, method string, params json.RawMessage, webOrigin string) (*wire.Admitted, error) {

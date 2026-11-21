@@ -368,6 +368,11 @@ func (d *Daemon) matchLevels(a *wire.Agent) *wire.Levels {
 // (#5730): a record keeps the levels it was given when it last changed, so a mapping the
 // person changed since, or a record from before levels were kept, said Custom for a mode
 // that a cell gives.
+//
+// The settings read at the start only say which records may have moved. Each change reads
+// them again, under the save's lock (#6432): an auto/set while this pass runs starts a pass
+// of its own, and when that one ends first, a level made from the settings this pass read
+// would put the old mapping back, with nothing to match it again.
 func (d *Daemon) rematchLevels() {
 	settings := d.autoSettings()
 	for _, a := range d.Store.LiveAgents() {
@@ -375,7 +380,7 @@ func (d *Daemon) rematchLevels() {
 		if a.RuntimeID == autoRuntimeID || a.State == wire.AgentStateQueued || reflect.DeepEqual(a.Levels, d.matchLevelsWith(&a, settings)) {
 			continue
 		}
-		d.changeAgent(a.ID, false, func(a *wire.Agent) { a.Levels = d.matchLevelsWith(a, settings) })
+		d.changeAgent(a.ID, false, func(a *wire.Agent) { a.Levels = d.matchLevels(a) })
 	}
 }
 

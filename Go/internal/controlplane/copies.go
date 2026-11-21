@@ -197,7 +197,8 @@ func (c *hostCopies) take(host, method, reply string) {
 		return
 	}
 	if data, err := records.Encode(next); err == nil {
-		c.store.Put(ctx, copyKey(host), data, store.Always)
+		// A copy not written is written again at the next due beat.
+		_, _ = c.store.Put(ctx, copyKey(host), data, store.Always)
 	}
 }
 
@@ -226,7 +227,8 @@ func (c *hostCopies) forget(host string) {
 	delete(c.written, host)
 	c.read[host] = true
 	c.mu.Unlock()
-	c.store.Delete(context.Background(), copyKey(host))
+	// A removed host's copy left in the store is never read again.
+	_ = c.store.Delete(context.Background(), copyKey(host))
 }
 
 func (c *hostCopies) current(ctx context.Context, host string) *hostCopy {

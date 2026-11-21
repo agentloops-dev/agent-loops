@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/execfile"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -23,17 +24,17 @@ func TestAchievementsEarned(t *testing.T) {
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	var id wire.UUID
-	json.Unmarshal(c.call(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(), "prompt": "hello"}), &id)
+	mustUnmarshal(t, c.call(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(), "prompt": "hello"}), &id)
 	c.until(t, "the first agent earned", func(m string, p json.RawMessage) bool {
 		return m == "achievements/changed" && strings.Contains(string(p), `"firstAgent"`)
 	})
 	dir := folder(t, c, 2)
-	os.MkdirAll(workflowsFolder(dir), 0o755)
-	os.WriteFile(filepath.Join(workflowsFolder(dir), "tidy.md"), []byte("---\non: agent.finished\n---\nTidy.\n"), 0o644)
+	must(t, os.MkdirAll(workflowsFolder(dir), 0o755))                                                                             //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(workflowsFolder(dir), "tidy.md"), []byte("---\non: agent.finished\n---\nTidy.\n"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	c.call(t, 3, "workflows/list", map[string]any{"folder": store.FolderURL(dir)})
 	waitFor(t, "the first workflow", func() bool {
 		var m wire.Achievements
-		json.Unmarshal(c.call(t, 4, "achievements/state", map[string]any{}), &m)
+		mustUnmarshal(t, c.call(t, 4, "achievements/state", map[string]any{}), &m)
 		return hasAchievement(&m, firstWorkflow) && hasAchievement(&m, firstAgent)
 	})
 	b, _ := os.ReadFile(d.achievementsPath())
@@ -85,8 +86,8 @@ func TestAPairedDeviceIsBackFilled(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
-	os.WriteFile(filepath.Join(root, "devices.json"), []byte(`[{"id":"11111111-2222-3333-4444-555555555555","publicKey":"AAAA",`+
-		`"name":"Phone","kind":"iPhone","announcedAt":1}]`), 0o644)
+	must(t, os.WriteFile(filepath.Join(root, "devices.json"), []byte(`[{"id":"11111111-2222-3333-4444-555555555555","publicKey":"AAAA",`+ //nolint:gosec // G306: the mode this file always had; only its error is new
+		`"name":"Phone","kind":"iPhone","announcedAt":1}]`), 0o644))
 	d, _ := start(t, root)
 	defer d.Shutdown()
 	waitFor(t, "the pairing back-filled", func() bool { return earned(d, firstPairing) })
@@ -139,13 +140,19 @@ func TestALandedPullRequestIsCounted(t *testing.T) {
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := folder(t, c, 1)
-	os.Mkdir(filepath.Join(dir, ".git"), 0o755)
+	if err := os.Mkdir(filepath.Join(dir, ".git"), 0o750); err != nil {
+		t.Fatal(err)
+	}
 	day := time.Now().AddDate(0, 0, -2)
 	merged := day.UTC().Format(time.RFC3339)
 	pulls := `[{"url":"https://github.com/o/r/pull/1","mergedAt":"` + merged + `","headRefName":"agents/fix-1"},` +
 		`{"url":"https://github.com/o/r/pull/2","mergedAt":"` + merged + `","headRefName":"someone-else"}]`
 	gh := filepath.Join(t.TempDir(), "gh")
-	os.WriteFile(gh, []byte("#!/bin/sh\ncat <<'END'\n"+pulls+"\nEND\n"), 0o755)
+	// execfile.Write, not os.WriteFile: a fork by another test while the script is open
+	// fails its exec with "text file busy" on Linux (#6369).
+	if err := execfile.Write(gh, []byte("#!/bin/sh\ncat <<'END'\n"+pulls+"\nEND\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	d.countMergedPRsWith(context.Background(), gh)
 	h := d.timeHistory()
 	if r := h.Recap[dayStamp(day)]; r.PrsMerged == nil || *r.PrsMerged != 1 {

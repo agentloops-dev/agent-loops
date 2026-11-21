@@ -63,11 +63,12 @@ public extension DaemonAPI {
     struct PolicyConnectorRule: Codable, Sendable, Hashable {
         public var writes: ConnectorToolLevel?
         public var tools: [String: ConnectorToolLevel]?
+    }
 
-        public init(writes: ConnectorToolLevel? = nil, tools: [String: ConnectorToolLevel]? = nil) {
-            self.writes = writes
-            self.tools = tools
-        }
+    /// One trailer's value in a layer's `commitTrailers` (#6365). Record trailers (Made-by,
+    /// Session, Fixes, …): on is tighter. Spend trailers (Cost, Tokens, Duration): off is tighter.
+    enum CommitTrailerValue: String, Codable, Sendable, Hashable, CaseIterable {
+        case on, off
     }
 
     /// The rules a layer sets (#2957, data-model.md "PolicyRules"): the same shape on the
@@ -87,12 +88,16 @@ public extension DaemonAPI {
         public var environment: PolicyEnvironment?
         /// The level of each connector's tools, by the connector's name (#4099).
         public var connectorTools: [String: PolicyConnectorRule]?
+        /// Which trailers an agent's commits carry, by the trailer's key (#6365). A key this
+        /// build does not know is kept.
+        public var commitTrailers: [String: CommitTrailerValue]?
 
         public init(permissionMode: PermissionLevel? = nil, permissionRequests: ClientPermissionMode? = nil,
                     sandbox: SandboxChoice? = nil, budgets: PolicyRuleBudgets? = nil, helpers: PolicyHelpers? = nil,
                     workflows: PolicyWorkflows? = nil, noticeLimits: PolicyNoticeLimits? = nil, archiveMyChats: Bool? = nil,
                     runtimes: [String: PolicyRuntimeRule]? = nil, marketplaces: PolicyMarketplaces? = nil,
-                    environment: PolicyEnvironment? = nil, connectorTools: [String: PolicyConnectorRule]? = nil) {
+                    environment: PolicyEnvironment? = nil, connectorTools: [String: PolicyConnectorRule]? = nil,
+                    commitTrailers: [String: CommitTrailerValue]? = nil) {
             self.permissionMode = permissionMode
             self.permissionRequests = permissionRequests
             self.sandbox = sandbox
@@ -105,6 +110,7 @@ public extension DaemonAPI {
             self.marketplaces = marketplaces
             self.environment = environment
             self.connectorTools = connectorTools
+            self.commitTrailers = commitTrailers
         }
     }
 
@@ -130,12 +136,6 @@ public extension DaemonAPI {
         public var folder: String
         public var name: String
         public var count: Int
-
-        public init(folder: String, name: String, count: Int) {
-            self.folder = folder
-            self.name = name
-            self.count = count
-        }
     }
 
     /// A machine of the person's that does not say `host.policy-layers/1` (Edge Cases, "A
@@ -242,12 +242,6 @@ public extension DaemonAPI {
         public var pending: GuardedChange?
         /// Why the file on disk cannot be read as a layer, when that is why a change is pending.
         public var invalid: String?
-
-        public init(rules: PolicyRules, pending: GuardedChange? = nil, invalid: String? = nil) {
-            self.rules = rules
-            self.pending = pending
-            self.invalid = invalid
-        }
     }
 
     /// `policy/setFolder` (#2957): writes `.agents/policy.json` in a stable order and approves

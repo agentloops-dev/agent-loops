@@ -242,17 +242,6 @@ public struct NeedRequest: Codable, Sendable, Hashable, Identifiable {
         /// approves only that entry.
         public var digest: String?
 
-        public init(name: String, use: String, place: String, sessionOnly: Bool? = nil, needsSignature: Bool? = nil, call: String? = nil, app: String? = nil, digest: String? = nil) {
-            self.name = name
-            self.use = use
-            self.place = place
-            self.sessionOnly = sessionOnly
-            self.needsSignature = needsSignature
-            self.call = call
-            self.app = app
-            self.digest = digest
-        }
-
         /// The row's title (#4017): the secret first, as its banner says it. A workflow or a
         /// connector (#4538) names the change the agent asks the person to make.
         public var title: String {

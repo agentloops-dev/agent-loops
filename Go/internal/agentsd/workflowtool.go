@@ -544,7 +544,10 @@ func (d *Daemon) writeWorkflow(folder, id, content string) (string, error) {
 		d.workflowMu.Unlock()
 		return "", &Error{Code: wire.FailureWorkflowUnreadable, Message: "Nothing was written: " + err.Error() + "."}
 	}
-	os.MkdirAll(workflowsFolder(folder), 0o755)
+	if err := os.MkdirAll(workflowsFolder(folder), 0o755); err != nil { //nolint:gosec // G301: the mode this folder always had; only its error is new
+		d.workflowMu.Unlock()
+		return "", &Error{Code: wire.FailureCouldNotSave, Message: "Nothing was written: " + err.Error()}
+	}
 	if _, ok := workflowPath(folder, id); !ok {
 		d.workflowMu.Unlock()
 		return "", notInFolder(id)

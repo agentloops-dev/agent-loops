@@ -141,7 +141,7 @@ func restartLaunchAgents() error {
 	domain := fmt.Sprintf("gui/%d/", os.Getuid())
 	for _, job := range []string{"control", "relay"} {
 		// One not loaded (no control plane here, no relay) answers an error, and is left.
-		exec.Command("/bin/launchctl", "kickstart", "-k", domain+prefix+"."+job).Run()
+		_ = exec.Command("/bin/launchctl", "kickstart", "-k", domain+prefix+"."+job).Run() //nolint:gosec // G204: launchctl with this app's own job labels
 	}
 	// launchd stops this process (a SIGTERM, which ends it as a stop does) and starts it again.
 	return exec.Command("/bin/launchctl", "kickstart", "-k", domain+label).Start()

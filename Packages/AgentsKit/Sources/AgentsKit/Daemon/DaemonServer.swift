@@ -18,25 +18,14 @@ public final class DaemonServer: @unchecked Sendable {
     public struct ConnectionContext: Hashable, Sendable {
         public var id: UUID
         public var surface: Surface?
-        /// The process that connected, as the kernel said when it did. What ties an
-        /// agent's token to the helper its own runtime started, rather than to anything
-        /// that read the token off `ps`.
-        public var peer: Int32?
         /// What the connection is, as the server has it now: a device's rights, or a
         /// pairing phone's, reach the daemon with the request so it can tell them apart.
         public var role: ConnectionRole
-        /// A device's channel the control plane opened (058): the control plane paired the
-        /// device and vouches for it, so it may record itself here without this Mac's
-        /// code (#232).
-        public var vouched: Bool
 
-        public init(id: UUID, surface: Surface?, peer: Int32? = nil, role: ConnectionRole = .control,
-                    vouched: Bool = false) {
+        public init(id: UUID, surface: Surface?, role: ConnectionRole = .control) {
             self.id = id
             self.surface = surface
-            self.peer = peer
             self.role = role
-            self.vouched = vouched
         }
     }
 
@@ -75,14 +64,8 @@ public final class DaemonServer: @unchecked Sendable {
     /// sees a surface a caller merely claimed in some other request's parameters.
     final class ConnectionIdentity: @unchecked Sendable {
         let id = UUID()
-        let peer: Int32?
 
-        /// Set once, before a line is read, by the uplink alone.
-        let vouched: Bool
-
-        init(peer: Int32?, role: ConnectionRole = .control, vouched: Bool = false) {
-            self.peer = peer
-            self.vouched = vouched
+        init(role: ConnectionRole = .control) {
             _role = role
         }
 
@@ -128,7 +111,7 @@ public final class DaemonServer: @unchecked Sendable {
         }
 
         var context: ConnectionContext {
-            ConnectionContext(id: id, surface: surface, peer: peer, role: role, vouched: vouched)
+            ConnectionContext(id: id, surface: surface, role: role)
         }
     }
 
@@ -138,6 +121,11 @@ public final class DaemonServer: @unchecked Sendable {
     /// Readable inside the module so a test can ask whether it would survive an exec.
     /// There is no other way to see the flag: it only shows itself in a child.
     private(set) var listenFD: Int32 = -1
+    /// The write end of the accept thread's wake-up pipe: `stop` closes it, and the
+    /// thread, waking, closes the listener as it leaves (#5852). `stop` never closes the
+    /// listener itself. A thread on its way back to `accept` would then wait on a number
+    /// the process may since have given to another listener, and take that one's clients.
+    private var wakeFD: Int32 = -1
     private let connections = ConnectionSet()
     private let stopped = ManagedAtomicFlag()
     /// Lines a caller could have said every few seconds: once, then a count (#168).
@@ -210,12 +198,39 @@ public final class DaemonServer: @unchecked Sendable {
             close(listenFD)
             throw DaemonServerError.cannotListen(errno: errno)
         }
+        // The thread waits on the listener and on this pipe. Closing the pipe's write end
+        // wakes it, where closing the listener under it did not, and left it free to
+        // `accept` on a number that was by then another server's (#5852).
+        var wake: [Int32] = [-1, -1]
+        guard pipe(&wake) == 0 else {
+            let error = errno
+            close(listenFD)
+            throw DaemonServerError.cannotCreateSocket(errno: error)
+        }
+        for fd in wake { _ = setCloseOnExec(fd) }
+        wakeFD = wake[1]
 
         let listenFD = self.listenFD
+        let wakeRead = wake[0]
         let stopped = self.stopped
         let thread = Thread { [weak self] in
+            // The listener is this thread's: closed only once nothing will `accept` on it.
+            defer {
+                close(listenFD)
+                close(wakeRead)
+            }
             let failures = AcceptFailures(name: "socket")
             while true {
+                var fds = [pollfd(fd: listenFD, events: Int16(POLLIN), revents: 0),
+                           pollfd(fd: wakeRead, events: Int16(POLLIN), revents: 0)]
+                let ready = poll(&fds, 2, -1)
+                if stopped.isSet || fds[1].revents != 0 { return }
+                if ready < 0 {
+                    let error = errno
+                    if error == EINTR || error == EAGAIN { continue }
+                    DaemonLog.shared.write("socket: waiting for connections failed (\(String(cString: strerror(error)))); no more connections")
+                    return
+                }
                 let fd = accept(listenFD, nil, nil)
                 if fd < 0 {
                     // Not the end of the listener unless it was closed (#201): one
@@ -262,7 +277,7 @@ public final class DaemonServer: @unchecked Sendable {
         // exists to say otherwise: helpers and probes that connect here never report
         // presence, and a window that does is the Mac.
         serve(FDTransport(socket: fd, maximumLine: FDTransport.clientLineLimit),
-              identity: ConnectionIdentity(peer: peer, role: role))
+              identity: ConnectionIdentity(role: role))
     }
 
     /// `line` the first time, then how many more times it came, at most once an hour.
@@ -292,7 +307,7 @@ public final class DaemonServer: @unchecked Sendable {
     /// `fanOut`, when the control plane reads fan-out frames: how broadcasts reach it.
     public func acceptVirtual(_ transport: any LineTransport, device: UUID?, fanOut: FanOutRoute? = nil,
                               ended: @escaping @Sendable () -> Void = {}) {
-        let identity = ConnectionIdentity(peer: nil, role: .control, vouched: device != nil)
+        let identity = ConnectionIdentity(role: .control)
         if let device { _ = identity.bindDevice(device) }
         DaemonLog.shared.write("uplink: a channel opened for \(device.map { "device \($0.uuidString)" } ?? "a window")")
         serve(transport, identity: identity, fanOut: fanOut, ended: ended)
@@ -467,14 +482,6 @@ public final class DaemonServer: @unchecked Sendable {
 
     private let encoding = DispatchQueue(label: "com.alexecollins.agents.broadcast.encode")
 
-    /// End the connections `wanted` picks. The other end sees its connection go, as it
-    /// would if the daemon had quit, and a bridge takes the device's link down with it.
-    public func closeConnections(where wanted: @escaping @Sendable (ConnectionContext) -> Bool) {
-        for target in connections.allAddressed where wanted(target.context) {
-            Task { await target.connection.close() }
-        }
-    }
-
     /// How long a write to one client may block before that client is given up on.
     /// Long enough for a window busy for a moment; a client that has read nothing for
     /// this long has stopped.
@@ -488,12 +495,10 @@ public final class DaemonServer: @unchecked Sendable {
 
     public var connectionCount: Int { connections.count }
 
-    /// Bytes queued for each connection and not yet written, for tests (#167).
-    var backlogs: [Int] { connections.backlogs }
-
     public func stop() {
         guard stopped.set() else { return }
-        if listenFD >= 0 { close(listenFD) }
+        // Wakes the accept thread, which closes the listener as it leaves (#5852).
+        if wakeFD >= 0 { close(wakeFD) }
         unlink(url.path)
         for connection in connections.all {
             Task { await connection.close() }
@@ -561,12 +566,6 @@ final class ConnectionSet: @unchecked Sendable {
     func release(_ size: Int, for connection: JSONRPCConnection) {
         lock.lock(); defer { lock.unlock() }
         entries[ObjectIdentifier(connection)]?.backlog -= size
-    }
-
-    /// Bytes waiting for each connection, for tests.
-    var backlogs: [Int] {
-        lock.lock(); defer { lock.unlock() }
-        return entries.values.map(\.backlog)
     }
 
     var allAddressed: [Addressed] {

@@ -2998,6 +2998,15 @@ type CloneSummary struct {
 	StartedAt Date `json:"startedAt"`
 }
 
+// One trailer's value in commitTrailers (#6365).
+type CommitTrailerValue string
+
+const CommitTrailerValueOn CommitTrailerValue = "on"
+const CommitTrailerValueOff CommitTrailerValue = "off"
+
+// The trailers of an agent's commits, each on or off, by the trailer's key (#6365): Made-by, Cost, Tokens, Duration, Session, Fixes, Epic, Requested-by, Approved-by, Attested, Co-authored-by. Fixes also writes Refs. A key the machine does not know is kept and has no effect; a key no layer sets has its default (every key on, Cost off). Record trailers (Made-by, Session, Fixes, Epic, Requested-by, Approved-by, Attested, Co-authored-by): on is tighter. Spend trailers (Cost, Tokens, Duration): off is tighter. Its rules in policy/effective are commitTrailers.<key>.
+type CommitTrailers map[string]CommitTrailerValue
+
 type ConfigChoice struct {
 	Value JSONValue `json:"value"`
 
@@ -3931,22 +3940,13 @@ type DaemonStatus struct {
 	AgentsLive int64 `json:"agentsLive"`
 }
 
-// How much the daily summary does (#3351, #3395): off, the summary only, or the summary and the read-only checks between summaries (the home folder's Daily checks workflow).
-type DailySummaryMode string
+// The daily checks' one control, for all folders (#3355, #5853). It is the home folder's ready-made Daily checks workflow: enabled turns it on or off, and every is how many hours apart its schedules run, from midnight.
+type DailyChecksSettings struct {
+	// The Daily checks workflow is on.
+	Enabled bool `json:"enabled"`
 
-const DailySummaryModeOff DailySummaryMode = "off"
-const DailySummaryModeSummary DailySummaryMode = "summary"
-const DailySummaryModeSummaryAndChecks DailySummaryMode = "summaryAndChecks"
-
-// The daily summary's one control, for all folders (#3351). It is the home folder's ready-made Daily summary workflow: the mode turns it on or off, and the time is its schedule's. The days stay as the workflow says (weekdays by default).
-type DailySummarySettings struct {
-	Mode DailySummaryMode `json:"mode"`
-
-	// The time it runs, HH:MM in this machine's time zone, on the hour or the half hour. 08:00 by default.
-	At string `json:"at"`
-
-	// With summaryAndChecks, how many hours apart the checks run, counted from the summary's time and never at it (#3395): 2, 3, 4, 6, 8 or 12. 4 by default.
-	ChecksEvery *int64 `json:"checksEvery,omitzero"`
+	// How many hours apart the checks run, from midnight: 2, 3, 4, 6, 8 or 12. 4 by default.
+	Every int64 `json:"every"`
 }
 
 type DayRecap struct {
@@ -6013,6 +6013,32 @@ type ForgeCapabilities struct {
 	CommentsMost *int64 `json:"commentsMost,omitzero"`
 }
 
+// forge/changes (#6349, epic #6348): a page of the items that changed at or after the request's updatedSince, each a whole ForgeItem with its updatedAt, newest first within each source. nextPageCursor is the next page, absent at the end. highWater is the latest updatedAt of the read so far, carried from page to page, so the last page's is the read's: a client keeps it as its cursor for the next read (and asks from a minute before it). While a source in the read could not be read (errors), highWater does not move past updatedSince, so the next read asks again from there; with no item, highWater is updatedSince (0 for none), so a client keeps the later of it and its cursor. errors says a source that could not be read, and the items of the others still come; forges says what each forge on the page fills, as ForgeList's does.
+type ForgeChanges struct {
+	Items []ForgeItem `json:"items"`
+
+	NextPageCursor *string `json:"nextPageCursor,omitzero"`
+
+	HighWater Date `json:"highWater"`
+
+	Errors []ForgeListError `json:"errors,omitzero"`
+
+	Forges []ForgeCapabilities `json:"forges,omitzero"`
+}
+
+// forge/changes (#6349): the issues and pull requests of one source (a ForgeSource's source; every source on this machine when not said) that changed at or after updatedSince, in every state (open, closed and merged); every item when not said, for a first fill. kinds is issue, pr or both. limit is 1 to 100, 100 when not said; pageCursor is the last page's nextPageCursor, with the same source, kinds and updatedSince.
+type ForgeChangesRequest struct {
+	Source *string `json:"source,omitzero"`
+
+	Kinds []string `json:"kinds"`
+
+	UpdatedSince *Date `json:"updatedSince,omitzero"`
+
+	PageCursor *string `json:"pageCursor,omitzero"`
+
+	Limit *int64 `json:"limit,omitzero"`
+}
+
 // One of a pull request's checks (#3129): a check run or a commit status. state is passing, failing, running or skipped; url is its page on the forge. startedAt and finishedAt are when it started and ended (#4409), where the forge says them (ForgeCapabilities.checkTimes): absent on a check that has not started, and finishedAt on one still running; a commit status has neither.
 type ForgeCheck struct {
 	Name string `json:"name"`
@@ -6024,6 +6050,35 @@ type ForgeCheck struct {
 	StartedAt *Date `json:"startedAt,omitzero"`
 
 	FinishedAt *Date `json:"finishedAt,omitzero"`
+}
+
+// forge/checks (#6349): the checks summary of each pull request asked for that the forge still has, in one call on GitHub; on another forge from its list of open pull requests, so one that is no longer open is left out. at is when they were read. A pull request's checks do not move its updatedAt, so a changed-since read does not see them.
+type ForgeChecks struct {
+	Pulls []ForgeChecksRow `json:"pulls"`
+
+	At Date `json:"at"`
+}
+
+// forge/checks (#6349): the pull requests of one source (a ForgeSource's source), by their numbers, 1 to 100 of them.
+type ForgeChecksRequest struct {
+	Source string `json:"source"`
+
+	Numbers []int64 `json:"numbers"`
+}
+
+// One pull request's checks summary (#6349), in ForgeItem's words: state is open, closed or merged; checks is passing, failing, running or none; review is approved, changes_requested or review_required; mergeable is mergeable, conflicting or unknown; autoMerge says auto-merge is on. Each is absent where the forge does not say it.
+type ForgeChecksRow struct {
+	Node LineageNode `json:"node"`
+
+	State *string `json:"state,omitzero"`
+
+	Checks *string `json:"checks,omitzero"`
+
+	Review *string `json:"review,omitzero"`
+
+	Mergeable *string `json:"mergeable,omitzero"`
+
+	AutoMerge *bool `json:"autoMerge,omitzero"`
 }
 
 // Why forge/close closes an issue (#4404): completed, or not_planned where the forge has it (the action closeNotPlanned).
@@ -6107,13 +6162,15 @@ type ForgeDiffHunk struct {
 	Lines []DiffLine `json:"lines"`
 }
 
-// What a forge write did (#3130): url is the comment or the item on the forge; auto says a merge waits for the checks; reran is how many runs or pipelines were run again.
+// What a forge write did (#3130): url is the comment or the item on the forge; auto says a merge waits for the checks; reran is how many runs or pipelines were run again. item is the item the write was on, as the forge has it after the write, with its updatedAt (#6351, epic #6348): a client cache replaces its optimistic value with it. On forge/add-child it is the epic. Absent when the read after the write failed (the write still happened), and from an earlier daemon.
 type ForgeDone struct {
 	URL *string `json:"url,omitzero"`
 
 	Auto *bool `json:"auto,omitzero"`
 
 	Reran *int64 `json:"reran,omitzero"`
+
+	Item *ForgeItem `json:"item,omitzero"`
 }
 
 // One event on an issue's timeline (#4373), as its forge says it: kind is what happened; actor is who did it, absent when the forge says nobody (a deleted account); label is the label that labelled and unlabelled name; assignee is the person that assigned and unassigned name; source is the issue or pull request that referenced names, or the pull request that closed closed it with.
@@ -6142,47 +6199,31 @@ const ForgeEventKindClosed ForgeEventKind = "closed"
 const ForgeEventKindReopened ForgeEventKind = "reopened"
 const ForgeEventKindReferenced ForgeEventKind = "referenced"
 
-// A feature (#3267): name is its label's after feature:, with the label's colour where the forge gives one; epics counts its epics, open the open ones. issues counts its open issues that are not epics, of the newest 500 open issues (#3741); a feature with no open epic and no such issue is finished. refs are the lineage refs of its open issues and open epics, waiting the ones labelled alex-todo, and updatedAt the newest update of any of them (#4115), so a client finds the sessions labelled #<n> for them and which wait for Alex.
-type ForgeFeature struct {
-	Name string `json:"name"`
-
-	Color *string `json:"color,omitzero"`
-
-	Epics int64 `json:"epics"`
-
-	Open int64 `json:"open"`
-
-	Issues *int64 `json:"issues,omitzero"`
-
-	Refs []string `json:"refs,omitzero"`
-
-	Waiting []string `json:"waiting,omitzero"`
-
-	UpdatedAt *Date `json:"updatedAt,omitzero"`
-}
-
-// forge/features (#3267): the feature:<name> labels of the epics (the issues labelled epic, open or closed, the newest 500), by name; approvals are the lineage refs of the newest 100 open pull requests with a review requested from the person (#4115, #5803), so a client finds the sessions labelled P#<n> for them; errors says a forge that could not be read, as in ForgeList.
-type ForgeFeatures struct {
-	Features []ForgeFeature `json:"features"`
-
-	Approvals []string `json:"approvals,omitzero"`
-
-	Errors []ForgeListError `json:"errors,omitzero"`
-}
-
-// forge/features (#3267): the features of every folder on this machine, or of one folder's repo.
-type ForgeFeaturesRequest struct {
-	Folder *string `json:"folder,omitzero"`
-
-	// A board's url, from forge/boards (#3282): only the epics on that board.
-	Board *string `json:"board,omitzero"`
-}
-
 // forge/hold (#6091): put an issue on hold (on) or take it off hold. The daemon writes the forge's own field where it has one (Bitbucket: the state on hold; Jira: a status named On hold where the workflow has one), else the label on hold.
 type ForgeHoldRequest struct {
 	Node LineageNode `json:"node"`
 
 	On bool `json:"on"`
+}
+
+// forge/ids (#6349): a page of the nodes of the items the source has now in the states asked, at most 1,000 a page. nextPageCursor is the next page, absent at the end. A client removes from its cache an item of those kinds and states that no page named: it was deleted, moved, or the person can no longer see it. A read that fails is an error, never a short list. at is when the read began (the first page's time, on every page): an item that changed after it can be missing from the pages, so a client keeps a cached item whose updatedAt is at or after at.
+type ForgeIds struct {
+	At Date `json:"at"`
+
+	Nodes []LineageNode `json:"nodes"`
+
+	NextPageCursor *string `json:"nextPageCursor,omitzero"`
+}
+
+// forge/ids (#6349): the ids of one source's items (a ForgeSource's source) of kinds (issue, pr or both) in states: open, closed (a closed pull request includes a merged one), or both when not said. pageCursor is the last page's nextPageCursor, with the same source, kinds and states.
+type ForgeIdsRequest struct {
+	Source string `json:"source"`
+
+	Kinds []string `json:"kinds"`
+
+	States []string `json:"states,omitzero"`
+
+	PageCursor *string `json:"pageCursor,omitzero"`
 }
 
 // forge/image (#4009): an image's bytes, so that a client never loads a forge page's remote URL. mimeType is image/png, image/jpeg, image/gif or image/webp, read from the bytes.
@@ -6381,13 +6422,17 @@ type ForgeListAll struct {
 	NotAsked int64 `json:"notAsked"`
 }
 
-// forge/listAll (#5592): forge/issues (kind issues) or forge/pulls (kind pulls) of the caller's machines in one call. state, board and limit are as in ForgeListRequest, for each machine. pages, for a next page, names the machines to ask and each one's cursor, as its last list gave it; without pages every machine is asked for its first page.
+// forge/listAll (#5592): forge/issues (kind issues) or forge/pulls (kind pulls) of the caller's machines in one call. state, board, label, assignee (a login) and limit are as in ForgeListRequest, for each machine (label and assignee: #6383). pages, for a next page, names the machines to ask and each one's cursor, as its last list gave it; without pages every machine is asked for its first page.
 type ForgeListAllRequest struct {
 	Kind string `json:"kind"`
 
 	State *string `json:"state,omitzero"`
 
 	Board *string `json:"board,omitzero"`
+
+	Label *string `json:"label,omitzero"`
+
+	Assignee *string `json:"assignee,omitzero"`
 
 	Limit *int64 `json:"limit,omitzero"`
 
@@ -6401,7 +6446,7 @@ type ForgeListError struct {
 	Message string `json:"message"`
 }
 
-// forge/issues and forge/pulls (#3129): the issues or pull requests of every folder on this machine, or of one folder's repo. state is open (when not said), closed or all; a closed pull request includes a merged one. label, assignee (a login) and query (words in the title or body) narrow the list. limit is 1 to 100, 50 when not said; cursor is the last page's. feature (a name: work for the label feature:work) narrows it to one feature's items (#3267). board (a board's url, from forge/boards) narrows it to one board's items (#3282).
+// forge/issues and forge/pulls (#3129): the issues or pull requests of every folder on this machine, or of one folder's repo. state is open (when not said), closed or all; a closed pull request includes a merged one. label, assignee (a login) and query (words in the title or body) narrow the list. limit is 1 to 100, 50 when not said; cursor is the last page's. feature (a name: work for the label feature:work) narrows it to one feature's items (#3267). board (a board's url, from forge/boards) narrows it to one board's items (#3282). updatedSince narrows it to the items that changed at or after that time (#6349); an earlier daemon leaves it out and lists every item.
 type ForgeListRequest struct {
 	Folder *string `json:"folder,omitzero"`
 
@@ -6420,6 +6465,8 @@ type ForgeListRequest struct {
 	Feature *string `json:"feature,omitzero"`
 
 	Board *string `json:"board,omitzero"`
+
+	UpdatedSince *Date `json:"updatedSince,omitzero"`
 }
 
 // forge/log (#3130): the last lines of each failed check's log, as plain text.
@@ -6659,6 +6706,24 @@ const ForgeReviewerStateChangesRequested ForgeReviewerState = "changes_requested
 const ForgeReviewerStateCommented ForgeReviewerState = "commented"
 const ForgeReviewerStatePending ForgeReviewerState = "pending"
 
+// A forge source this machine reads (#6349): source is the forge's name and the repository, project or team in lower case, as its nodes' refs name it (github:agentloops-dev/agent-loops, gitlab:group/project, jira:proj, linear:eng; linear for a whole Linear workspace), the key of a client cache's records. kinds is what it has: issue, pr or both. folder is a folder on this machine on it.
+type ForgeSource struct {
+	Source string `json:"source"`
+
+	Forge string `json:"forge"`
+
+	Kinds []string `json:"kinds"`
+
+	Folder *string `json:"folder,omitzero"`
+}
+
+// forge/sources (#6349): the forge sources this machine reads, from its folders, so a client asks one machine for each source, not every machine. errors says a forge whose sources could not all be found (not connected).
+type ForgeSources struct {
+	Sources []ForgeSource `json:"sources"`
+
+	Errors []ForgeListError `json:"errors,omitzero"`
+}
+
 // A standing epic's query (#3659, #3661), as the daemon read it from the standing block in the epic's body. labels: the issue has all of them; any: at least one of them; not: none of them; milestone: none, any or a milestone's name; parent: none, only issues that are no other issue's sub-issue (#4335, #4348). lanes is how many lanes its lead runs at once, 1 when the block does not say. error says why there is no query: no block, a second block, or an unknown or bad field; with an error, the plan has no children.
 type ForgeStanding struct {
 	Labels []string `json:"labels"`
@@ -6726,6 +6791,19 @@ type GitCredentialRequest struct {
 	Host string `json:"host"`
 
 	Path *string `json:"path,omitzero"`
+}
+
+// The trailer block for a commit or a squash message (#6365), in order, one "Key: value" line each; empty when the rule turns every trailer off.
+type GitTrailers struct {
+	Lines []string `json:"lines"`
+}
+
+// git/trailers (#6365): the session whose folder's effective commitTrailers rule applies, and the pull request whose totals Cost, Tokens and Duration give.
+type GitTrailersRequest struct {
+	Session UUID `json:"session"`
+
+	// The pull request's number. Absent: the totals are the session's own, and Approved-by is left out.
+	Pr *int64 `json:"pr,omitzero"`
 }
 
 // GitView (Model/AgentChanges.swift): `{ shared: { since } }`, `{ unavailable: … }` and so on.
@@ -8125,6 +8203,11 @@ type LocalSecret struct {
 
 	// A secret's description (#4167): one or two sentences on what it is and what it is for, such as which account and scopes. Not secret, and not sealed: the control plane may keep it. Never a value. Left out when it has none.
 	Description *string `json:"description,omitzero"`
+}
+
+// secrets/localRemove (#6335): take one secret this machine keeps for itself out of its store. Not one of the person's (user/removeSecret) and not a session's own (secrets/sessionRemove).
+type LocalSecretRemoveRequest struct {
+	Name string `json:"name"`
 }
 
 // secrets/localList (#5122): every secret this machine keeps for itself, by name. No value.
@@ -9593,17 +9676,6 @@ type MachineStop struct {
 	ConfirmRunning *bool `json:"confirmRunning,omitzero"`
 }
 
-// One of the person's other machines in machines/summaryFacts (#3354): its facts, or, when it is off or did not answer, unreached, the words that say why.
-type MachineSummaryFacts struct {
-	Machine MachineRef `json:"machine"`
-
-	MachineName string `json:"machineName"`
-
-	Facts *SummaryFacts `json:"facts,omitzero"`
-
-	Unreached *string `json:"unreached,omitzero"`
-}
-
 type MachineTunnel struct {
 	Up bool `json:"up"`
 
@@ -9766,11 +9838,6 @@ type MachineWorkspaceCall struct {
 	Params JSONValue `json:"params"`
 
 	Deliver *LockDelivery `json:"deliver,omitzero"`
-}
-
-// machines/summaryFacts (#3354): the daily summary's facts from each of the person's other machines, by name.
-type MachinesSummaryFacts struct {
-	Machines []MachineSummaryFacts `json:"machines"`
 }
 
 type ManagedMCPServer struct {
@@ -10558,6 +10625,9 @@ type OrgPolicy struct {
 	Groups *Empty `json:"groups,omitzero"`
 
 	Notices *PolicyNotices `json:"notices,omitzero"`
+
+	// #6365: which trailers an agent's commits carry, each on or off. On is tighter for a record trailer, off for a spend trailer (Cost, Tokens, Duration).
+	CommitTrailers CommitTrailers `json:"commitTrailers,omitzero"`
 }
 
 // An org sign-in provider (#1002, D1, FR-001): an OIDC issuer that an organisation registered for this control plane. Kept at v1/signin/providers/<id>.json; its client secret is sealed beside it and never returned. The control plane sets version, secret, created, changed and redirectURI.
@@ -11935,6 +12005,17 @@ const PolicyRuleNameMarketplacesAllowed PolicyRuleName = "marketplaces.allowed"
 const PolicyRuleNameMarketplacesCustomServers PolicyRuleName = "marketplaces.customServers"
 const PolicyRuleNameEnvironment PolicyRuleName = "environment"
 const PolicyRuleNameConnectorTools PolicyRuleName = "connectorTools"
+const PolicyRuleNameCommitTrailersMadeBy PolicyRuleName = "commitTrailers.Made-by"
+const PolicyRuleNameCommitTrailersCost PolicyRuleName = "commitTrailers.Cost"
+const PolicyRuleNameCommitTrailersTokens PolicyRuleName = "commitTrailers.Tokens"
+const PolicyRuleNameCommitTrailersDuration PolicyRuleName = "commitTrailers.Duration"
+const PolicyRuleNameCommitTrailersSession PolicyRuleName = "commitTrailers.Session"
+const PolicyRuleNameCommitTrailersFixes PolicyRuleName = "commitTrailers.Fixes"
+const PolicyRuleNameCommitTrailersEpic PolicyRuleName = "commitTrailers.Epic"
+const PolicyRuleNameCommitTrailersRequestedBy PolicyRuleName = "commitTrailers.Requested-by"
+const PolicyRuleNameCommitTrailersApprovedBy PolicyRuleName = "commitTrailers.Approved-by"
+const PolicyRuleNameCommitTrailersAttested PolicyRuleName = "commitTrailers.Attested"
+const PolicyRuleNameCommitTrailersCoAuthoredBy PolicyRuleName = "commitTrailers.Co-authored-by"
 
 // The rules a layer sets (#2957, data-model.md "PolicyRules"): the same shape on the organisation, your and a folder's layer (FR-002). Every field is optional: absent sets nothing.
 type PolicyRules struct {
@@ -11963,6 +12044,8 @@ type PolicyRules struct {
 
 	// The level of each connector's tools, by the connector's name (#4099). A tool no layer names is ask when it writes and allow when it only reads.
 	ConnectorTools map[string]PolicyConnectorRule `json:"connectorTools,omitzero"`
+
+	CommitTrailers CommitTrailers `json:"commitTrailers,omitzero"`
 }
 
 // One allowed runtime in a policy (#998).
@@ -12190,7 +12273,7 @@ type Project struct {
 	Boards []ProjectBoard `json:"boards,omitzero"`
 }
 
-// One board in a project's Tasks slot (#3282): a GitHub Projects board, a Jira board, a Linear team, a GitLab group board or an Azure Boards board (a team's, #3816), by its address and a name (the team's). Work's Issues and Features lists narrow to one. A client sends name and url; the control plane reads forge, key and site from the url.
+// One board in a project's Tasks slot (#3282): a GitHub Projects board, a Jira board, a Linear team, a GitLab group board or an Azure Boards board (a team's, #3816), by its address and a name (the team's). Work's Issues and Timeline narrow to one. A client sends name and url; the control plane reads forge, key and site from the url.
 type ProjectBoard struct {
 	Name string `json:"name"`
 
@@ -12912,6 +12995,34 @@ type RenameRequest struct {
 	AgentID UUID `json:"agentID"`
 
 	Title string `json:"title"`
+}
+
+// reports/changes' answer (#6350): a page of at most 100 rows, by ref, each as reports/nodes gives it. nextPageCursor asks for the next page of the same change; absent on the last. cursor is on the last page only: send it as since next time. reset says the rows are every row of the kind, not only those that changed: the client replaces the figures it holds of the kind with the rows of all the pages. An empty last page with a cursor says nothing changed.
+type ReportChanges struct {
+	Nodes []ReportNode `json:"nodes"`
+
+	NextPageCursor *string `json:"nextPageCursor,omitzero"`
+
+	Cursor *string `json:"cursor,omitzero"`
+
+	Reset bool `json:"reset"`
+}
+
+// reports/changes (#6350): the rows of one kind whose lineage figures changed since a cursor, for a client's local cache (#6348). kind, repo and scope are as reports/nodes'. since is the cursor of the last answer's last page, opaque; absent asks for every row (a reset). pageCursor is the last page's nextPageCursor. limit is 1 to 100, 100 when absent.
+type ReportChangesQuery struct {
+	// issue, pr or release.
+	Kind string `json:"kind"`
+
+	Repo *string `json:"repo,omitzero"`
+
+	// Me or the organisation (#1804).
+	Scope *ReportScope `json:"scope,omitzero"`
+
+	Since *string `json:"since,omitzero"`
+
+	PageCursor *string `json:"pageCursor,omitzero"`
+
+	Limit *int64 `json:"limit,omitzero"`
 }
 
 // What a machine's agents did in an hour or a day (#2019, R2 to R6), counted from its own event log and its time ledger: never a conversation's words. Absent from a machine before #2019.
@@ -15746,6 +15857,9 @@ type StartRequest struct {
 	// An agent on another machine started it, through the control plane (#2887): its chat says who.
 	StartedFrom *StartedFrom `json:"startedFrom,omitzero"`
 
+	// The loops CLI started it (#6444); absent from the Mac window, the Remote and the web page. It is not startedFrom, which the control plane signs and the host trusts for agents/fromStarter.
+	StartedVia *StartedVia `json:"startedVia,omitzero"`
+
 	// The line the control plane made when Auto picked this machine (#5375), "Auto chose Mac mini: you last started here.": the session's chat says it first. A client sends what sessions/previewStart gave in text.
 	AutoChose *string `json:"autoChose,omitzero"`
 }
@@ -15771,6 +15885,12 @@ type StartedMachinePreview struct {
 
 	Unknown *string `json:"unknown,omitzero"`
 }
+
+// The loops CLI started the session (#6444, epic #6443): cli from a terminal that follows the chat; cli-print from -p or --detach, a script that reads only the end.
+type StartedVia string
+
+const StartedViaCLI StartedVia = "cli"
+const StartedViaCLIPrint StartedVia = "cli-print"
 
 type StartingPoint struct {
 	Repository URL `json:"repository"`
@@ -15802,55 +15922,6 @@ type SuggestionRequest struct {
 
 	// The suggestion's id, as its CheckSuggestion says it.
 	ID string `json:"id"`
-}
-
-// agents/summaryFacts (#3354): one machine's lines for the daily summary since a time, each list at most 40 lines, newest last; folders is how many folders it has.
-type SummaryFacts struct {
-	Folders int64 `json:"folders"`
-
-	Landed []string `json:"landed"`
-
-	Failed []string `json:"failed"`
-
-	Waiting []string `json:"waiting"`
-
-	Suggested []string `json:"suggested"`
-
-	Checked []string `json:"checked"`
-}
-
-// agents/summaryFacts and machines/summaryFacts (#3354): the facts since this time.
-type SummaryFactsRequest struct {
-	Since Date `json:"since"`
-}
-
-// One saved page of the daily summary (#3721), in ~/.agents/summaries on this machine: the sidebar's Summary row and the Summary page.
-type SummaryPage struct {
-	// The file's name without .md, such as 2026-11-06-1810: what summaries/read names.
-	Name string `json:"name"`
-
-	// The page's first heading, such as "Daily summary, Fri 6 Nov"; the name when it has none.
-	Title string `json:"title"`
-
-	SavedAt Date `json:"savedAt"`
-
-	// Nobody has read it with summaries/read since it was saved.
-	Unread bool `json:"unread"`
-
-	// The Daily summary workflow's session that wrote it: the page's "How this was written". Absent for a page saved before #3721.
-	Writer *UUID `json:"writer,omitzero"`
-}
-
-// summaries/read (#3721): a saved page of the daily summary and its Markdown.
-type SummaryPageText struct {
-	Page SummaryPage `json:"page"`
-
-	Markdown string `json:"markdown"`
-}
-
-// summaries/read (#3721): the page to read, as SummaryPage.name says it.
-type SummaryReadRequest struct {
-	Name string `json:"name"`
 }
 
 // Surface (Attention/Surface.swift): a tagged object, `{ mac: {} }` or `{ device: "<uuid>" }`.
@@ -17326,47 +17397,6 @@ const WeekdaySat Weekday = "sat"
 // work/dismiss-lead (#5458): hide an epic from the suggestions until the epic changes or a lead of it ends. The list is the person's, kept on this machine.
 type WorkDismissLeadRequest struct {
 	Node LineageNode `json:"node"`
-}
-
-// A feature in work/features (#4586): feature is it as forge/features says it. epics are its open epics, the newest first, each with where it is in its plan and its children. loose are its open issues that are not epics and have no parent (of the newest 500 open issues), the newest update first, as children are: when each started, and whether it waits for a person.
-type WorkFeature struct {
-	Feature ForgeFeature `json:"feature"`
-
-	Epics []WorkFeatureEpic `json:"epics"`
-
-	Loose []WorkTimelineChild `json:"loose"`
-}
-
-// An open epic in work/features (#4586), from forge/plan and work/timeline. steps is the number of steps in its plan (ForgePlan.steps), and step the first of them with an open child, absent when none is open. blockedOutside are the open blockers outside the plan of that step's open children (an issue of another epic), each once. forecast is its open line's close as work/timeline forecasts it, on GitHub only; absent when there is too little history or nothing to forecast. children are its sub-issues in the plan's order (at most 100), each with its start, close and wait as in work/timeline; absent when its plan could not be read (errors says why).
-type WorkFeatureEpic struct {
-	Item ForgeItem `json:"item"`
-
-	Step *int64 `json:"step,omitzero"`
-
-	Steps int64 `json:"steps"`
-
-	BlockedOutside []LineageNode `json:"blockedOutside,omitzero"`
-
-	Forecast *WorkTimelineForecast `json:"forecast,omitzero"`
-
-	Children []WorkTimelineChild `json:"children,omitzero"`
-}
-
-// work/features (#4586, specs/4328-work-look/features-delivery.md): the Features page's one read. features are forge/features' features, by name, each with its open epics and its loose open issues, so an open feature's epics and children draw with no second read. approvals are as in forge/features. errors say a forge, a plan or a timeline that could not be read.
-type WorkFeatures struct {
-	Features []WorkFeature `json:"features"`
-
-	Approvals []string `json:"approvals,omitzero"`
-
-	Errors []ForgeListError `json:"errors,omitzero"`
-}
-
-// work/features (#4586): the features of every folder on this machine, or of one folder's repo, as forge/features.
-type WorkFeaturesRequest struct {
-	Folder *string `json:"folder,omitzero"`
-
-	// A board's url, from forge/boards (#3282): only the epics on that board.
-	Board *string `json:"board,omitzero"`
 }
 
 // An open epic with no lead, as work/suggest-leads says it (#5458, epic #5457). node, title and url are the epic's; folder is a folder on this machine on its repo; milestone is its name and due its due date (YYYY-MM-DD) where the forge says them. done and total are its children closed and all (0 and 0 for a standing epic, whose plan is a query). high says an open child has the label priority:high, and ui that an open child is a story (a person can see or use it: a client changes); the order says why. start is the new-agent form Start lead fills: the prompt, the labels #<n> and lead, and no worktree. It starts nothing.

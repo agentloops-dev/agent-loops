@@ -154,7 +154,6 @@ final class AppModel {
     var permissions: [PermissionRequest] { work.permissions }
     var elicitations: [ElicitationRequest] { work.elicitations }
     var entries: [TranscriptEntry] { work.entries }
-    var transcriptItems: [TranscriptItem] { work.transcriptItems }
     var filesToShow: [UUID: ShownFile] { work.filesToShow }
     var chartHints: [String: ChartHint] { work.chartHints }
     /// What the reader will allow and what today has cost. Nil until the daemon has
@@ -162,7 +161,6 @@ final class AppModel {
     var costState: DaemonAPI.CostState? { work.costState }
     /// Every resource an agent can lease and who holds it (036).
     var leases: DaemonAPI.LeaseSnapshot? { work.leases }
-    var hostedMCP: DaemonAPI.HostedMCPSnapshot? { work.hostedMCP }
     var costLimits: CostLimits { work.costState?.limits ?? CostLimits() }
     /// How long archived agents are kept (051). Nil until the daemon has said.
     var retentionState: DaemonAPI.RetentionState? { work.retentionState }
@@ -200,13 +198,10 @@ final class AppModel {
     /// This Mac). Nil until the daemon has said, including a daemon too old to know the
     /// method, which Settings draws as Off.
     private(set) var desktopControlSettings: DesktopControlSettings?
-    /// The daily summary's Off / Summary control and its time (#3351, Settings ▸ Agent
+    /// The daily checks' Off / On control and how often (#3355, #5853, Settings ▸ Agent
     /// Configuration ▸ Workflows). Nil until the daemon has said, including a daemon too old
     /// to know the method, which Settings leaves out.
-    private(set) var dailySummarySettings: DailySummarySettings?
-    /// The daily summary's saved pages on this Mac's host, newest first (#3721): the Summary
-    /// row and page. Empty from a host too old to know `summaries/list`.
-    private(set) var summaryPages: [SummaryPage] = []
+    private(set) var dailyChecksSettings: DailyChecksSettings?
     /// How this Mac's host updates Agents Host by itself (#2178). Nil from a host that
     /// cannot (a test's, or one older than the method), and Settings draws nothing for it.
     private(set) var selfUpdate: DaemonAPI.SelfUpdate?
@@ -262,7 +257,6 @@ final class AppModel {
             showsWork = false
             showsDocs = false
             showsMessages = false
-            showsSummary = false
             showsAchievements = false
             // The same rule as picking a folder: what you picked is what you see,
             // and a conversation or a workflow left open underneath would be waiting
@@ -291,7 +285,6 @@ final class AppModel {
             showsWork = false
             showsDocs = false
             showsMessages = false
-            showsSummary = false
             showsAchievements = false
             selection = nil
             openWorkflow = nil
@@ -319,7 +312,6 @@ final class AppModel {
             showsWork = false
             showsDocs = false
             showsMessages = false
-            showsSummary = false
             showsAchievements = false
             selection = nil
             openWorkflow = nil
@@ -344,7 +336,6 @@ final class AppModel {
             showsWork = false
             showsDocs = false
             showsMessages = false
-            showsSummary = false
             showsAchievements = false
             selection = nil
             openWorkflow = nil
@@ -369,7 +360,6 @@ final class AppModel {
             showsWork = false
             showsDocs = false
             showsMessages = false
-            showsSummary = false
             showsAchievements = false
             selection = nil
             openWorkflow = nil
@@ -394,7 +384,6 @@ final class AppModel {
             showsWork = false
             showsDocs = false
             showsMessages = false
-            showsSummary = false
             showsAchievements = false
             selection = nil
             openWorkflow = nil
@@ -419,7 +408,6 @@ final class AppModel {
             showsWork = false
             showsDocs = false
             showsMessages = false
-            showsSummary = false
             showsAchievements = false
             selection = nil
             openWorkflow = nil
@@ -436,7 +424,6 @@ final class AppModel {
             showsWork = false
             showsDocs = false
             showsMessages = false
-            showsSummary = false
             showsAchievements = false
             showsSpending = false
             showsEvents = false
@@ -462,7 +449,6 @@ final class AppModel {
             showsWork = false
             showsDocs = false
             showsMessages = false
-            showsSummary = false
             showsAchievements = false
             showsSpending = false
             showsEvents = false
@@ -486,7 +472,6 @@ final class AppModel {
             guard showsWork, showsWork != oldValue else { return }
             showsDocs = false
             showsMessages = false
-            showsSummary = false
             showsAchievements = false
             showsSpending = false
             showsEvents = false
@@ -509,7 +494,6 @@ final class AppModel {
     var showsDocs = false {
         didSet {
             guard showsDocs, showsDocs != oldValue else { return }
-            showsSummary = false
             showsAchievements = false
             showsSpending = false
             showsEvents = false
@@ -534,7 +518,6 @@ final class AppModel {
     var showsMessages = false {
         didSet {
             guard showsMessages, showsMessages != oldValue else { return }
-            showsSummary = false
             showsAchievements = false
             showsSpending = false
             showsEvents = false
@@ -557,32 +540,6 @@ final class AppModel {
     /// The Messages page's list and the conversation open on it, kept while the window is open.
     let messagesList = MessagesListState()
 
-    /// Whether the window is showing the Summary page (#3721): the daily summary's newest saved
-    /// page, from the Summary row at the top of the sidebar. A page like Docs, and not persisted
-    /// for the same reason.
-    var showsSummary = false {
-        didSet {
-            guard showsSummary, showsSummary != oldValue else { return }
-            showsAchievements = false
-            showsSpending = false
-            showsEvents = false
-            showsRuntimes = false
-            statusSecretsPage = nil
-            showsTime = false
-            showsVelocity = false
-            showsTokens = false
-            machinePage = nil
-            showsMachines = false
-            showsWork = false
-            showsDocs = false
-            showsMessages = false
-            selection = nil
-            openWorkflow = nil
-            folderPage = nil
-            composing = false
-        }
-    }
-
     /// Whether the window is showing the Achievements page (#3986), from its row under Usage or
     /// View ▸ Achievements (⌘0). A page like Velocity, and not persisted for the same reason. The
     /// window opens to the Dashboard instead (#5696).
@@ -601,7 +558,6 @@ final class AppModel {
             showsWork = false
             showsDocs = false
             showsMessages = false
-            showsSummary = false
             selection = nil
             openWorkflow = nil
             folderPage = nil
@@ -716,7 +672,6 @@ final class AppModel {
         showsWork = false
         showsDocs = false
         showsMessages = false
-        showsSummary = false
         showsAchievements = false
         if let agent = agents.first(where: { $0.id == agentID }) {
             pendingOpen = nil
@@ -745,7 +700,6 @@ final class AppModel {
         showsWork = false
         showsDocs = false
         showsMessages = false
-        showsSummary = false
         showsAchievements = false
         // Not listed yet: settling the selection would pick another, so it waits (#1055).
         pendingOpen = liveFolders.contains { $0.key == key } ? nil : .folder(key)
@@ -797,7 +751,6 @@ final class AppModel {
             if showsWork { return .work(workPlace.kind) }
             if showsDocs { return .docs }
             if showsMessages { return .messages }
-            if showsSummary { return .summary }
             if showsAchievements { return .achievements }
             // Nothing else open is the Dashboard (#5696), as the detail draws it.
             guard let key = selectedFolderKey else { return selection == nil && !composing ? .dashboard : nil }
@@ -829,7 +782,6 @@ final class AppModel {
                 showsWork = false
                 showsDocs = false
                 showsMessages = false
-                showsSummary = false
                 showsAchievements = false
                 select(key)
                 openWorkflow = id
@@ -862,8 +814,6 @@ final class AppModel {
                 showDocs(docsHistory.current ?? DocsPlace())
             case .messages:
                 showsMessages = true
-            case .summary:
-                showsSummary = true
             case .resources:
                 // The Remote's row (#3629): on the Mac, This Mac's page at its Resources.
                 showResources()
@@ -894,7 +844,6 @@ final class AppModel {
                 showsWork = false
                 showsDocs = false
                 showsMessages = false
-                showsSummary = false
                 showsAchievements = false
                 showFolder(key)
             case nil:
@@ -928,7 +877,6 @@ final class AppModel {
         showsWork = false
         showsDocs = false
         showsMessages = false
-        showsSummary = false
         showsAchievements = false
         showNothing()
     }
@@ -947,7 +895,6 @@ final class AppModel {
         showsWork = false
         showsDocs = false
         showsMessages = false
-        showsSummary = false
         showsAchievements = false
         select(key)
         folderPage = page
@@ -981,7 +928,6 @@ final class AppModel {
         showsWork = false
         showsDocs = false
         showsMessages = false
-        showsSummary = false
         showsAchievements = false
         select(key)
         // A new session in it (#366): the folder's own page is where a session starts,
@@ -1230,7 +1176,6 @@ final class AppModel {
         showsWork = false
         showsDocs = false
         showsMessages = false
-        showsSummary = false
         showsAchievements = false
         select(key)
         openPin = path
@@ -1467,6 +1412,10 @@ final class AppModel {
         return listed.contains { $0.id == .mac }
     }
 
+    /// The first list is drawn, or this window has none to wait for (#6311). The forge reads at start (the
+    /// Dashboard's, Work's read ahead) wait for it: sent first, they stood between the window and its sessions.
+    var firstListDrawn: Bool { hasLoadedAgents || !hasMacHost }
+
     /// Whether a host can do what `capability` names (#1748): its row's list. True when
     /// the host said no list, or the window is not a control plane's client.
     func host(_ host: MachineRef, has capability: String) -> Bool {
@@ -1503,7 +1452,7 @@ final class AppModel {
     /// pass through `needsFirstRun`: Settings makes its control plane's model again.
     private(set) var controlPlaneMoves = 0
     /// The servers (037). This Mac is `client`, as it always was.
-    let hosts = HostSet(locations: .default)
+    let hosts = HostSet()
     /// Step 7 of a machine's set-up: a key from Secrets, or a device-code card (#5361).
     let machineSignIn = MachineSignInDriver()
     /// The Export… or Import Agents… on its way, drawn as a busy sheet with Cancel (#2437).
@@ -1522,7 +1471,7 @@ final class AppModel {
         if let through = controlHosts[host] { return through }
         // A control plane's host is never reached by this window's own ssh (T024).
         if controlLink != nil { return Self.unreachable }
-        return hosts.client(for: host) ?? Self.unreachable
+        return hosts.client() ?? Self.unreachable
     }
 
     /// This Mac's host, for what is this Mac's own rather than a folder's: its runtimes,
@@ -1815,7 +1764,6 @@ final class AppModel {
     // MARK: Workflows
 
     func workflows(in folder: URL?) -> [WorkflowSummary] { work.workflows(in: folder) }
-    var userWorkflows: [WorkflowSummary] { work.userWorkflows }
 
     func refreshWorkflows() async {
         do {
@@ -2213,8 +2161,25 @@ final class AppModel {
 
     /// Settings ▸ You ▸ Secrets ▸ On This Machine (#5122): the secrets this Mac's host keeps for
     /// itself, which agents saved. Nil from a daemon too old to know the method.
-    func localSecrets() async -> LocalSecrets? {
-        try? await macClient.call(DaemonAPI.Method.secretsLocalList, DaemonAPI.Empty(), returning: LocalSecrets.self)
+    func localSecrets() async throws -> LocalSecrets? {
+        do {
+            return try await macClient.call(DaemonAPI.Method.secretsLocalList, DaemonAPI.Empty(), returning: LocalSecrets.self)
+        } catch where !host(macHostElsewhere ?? .mac, has: Capability.hostLocalSecrets1) {
+            return nil
+        }
+    }
+
+    /// Whether this Mac's host takes out a secret it keeps for itself (#6335).
+    var localSecretsRemovable: Bool { host(macHostElsewhere ?? .mac, has: Capability.hostLocalSecrets2) }
+
+    /// Take a secret this Mac keeps for itself out of its store (#6335): the list after, or why not.
+    func removeLocalSecret(_ secret: LocalSecret) async -> Result<LocalSecrets, Error> {
+        do {
+            return .success(try await macClient.call(DaemonAPI.Method.secretsLocalRemove, LocalSecretRemoveRequest(name: secret.name),
+                                                     returning: LocalSecrets.self))
+        } catch {
+            return .failure(error)
+        }
     }
 
     /// Turn Ask before use on or off for a secret this Mac keeps for itself (#5122): the list after, or why not.
@@ -2223,7 +2188,7 @@ final class AppModel {
             _ = try await macClient.call(DaemonAPI.Method.secretsSetNeedsApproval,
                                          SecretNeedsApprovalRequest(name: secret.name, needsApproval: on),
                                          returning: DaemonAPI.Empty.self)
-            return .success(await localSecrets())
+            return .success(try await localSecrets())
         } catch {
             return .failure(error)
         }
@@ -2248,35 +2213,23 @@ final class AppModel {
             .sorted { $0.lastActivityAt > $1.lastActivityAt }
     }
 
-    /// The daily summary's control (#3351). A daemon too old to know the method leaves this nil.
-    func refreshDailySummarySettings() async {
-        dailySummarySettings = try? await macClient.call(DaemonAPI.Method.dailySummarySettings,
-                                                      DaemonAPI.Empty(),
-                                                      returning: DailySummarySettings.self)
+    /// The daily checks' control (#3355, #5853). A daemon too old to know the method leaves this nil.
+    func refreshDailyChecksSettings() async {
+        dailyChecksSettings = try? await macClient.call(DaemonAPI.Method.dailyChecksSettings,
+                                                        DaemonAPI.Empty(),
+                                                        returning: DailyChecksSettings.self)
     }
 
-    /// The daily summary's saved pages (#3721). A daemon too old to know the method leaves none.
-    func refreshSummaryPages() async {
-        summaryPages = (try? await macClient.call(DaemonAPI.Method.summariesList, DaemonAPI.Empty(),
-                                                  returning: [SummaryPage].self)) ?? []
-    }
-
-    /// One saved page of the daily summary (#3721); reading the newest marks it read.
-    func readSummaryPage(_ name: String) async -> SummaryPageText? {
-        try? await macClient.call(DaemonAPI.Method.summariesRead, SummaryReadRequest(name: name),
-                                  returning: SummaryPageText.self)
-    }
-
-    /// The person chose Off or Summary, or a time, for the daily summary (#3351).
-    func setDailySummarySettings(_ settings: DailySummarySettings) async {
-        let before = dailySummarySettings
-        dailySummarySettings = settings
+    /// The person turned the daily checks on or off, or chose how often they run (#3355, #5853).
+    func setDailyChecksSettings(_ settings: DailyChecksSettings) async {
+        let before = dailyChecksSettings
+        dailyChecksSettings = settings
         let saved = await attempt {
-            self.dailySummarySettings = try await self.macClient.call(DaemonAPI.Method.dailySummarySetSettings,
-                                                                   settings,
-                                                                   returning: DailySummarySettings.self)
+            self.dailyChecksSettings = try await self.macClient.call(DaemonAPI.Method.dailyChecksSetSettings,
+                                                                     settings,
+                                                                     returning: DailyChecksSettings.self)
         }
-        if !saved { dailySummarySettings = before }
+        if !saved { dailyChecksSettings = before }
     }
 
     /// Every resource and who holds it (036). A daemon too old to know the method
@@ -2653,11 +2606,11 @@ final class AppModel {
         }
         guard let saved else { return }
         clientPermissions = saved
-        await pushClientPermissionsToServers(saved)
+        await pushClientPermissionsToServers()
     }
 
     /// As the part runtimes, once, at the control plane (#5573).
-    func pushClientPermissionsToServers(_ settings: ClientPermissionSettings) async {
+    func pushClientPermissionsToServers() async {
         await sendRuntimeChoicesToMachines()
     }
 
@@ -2793,14 +2746,6 @@ final class AppModel {
         return LevelMatch.level(field, runtimeID: runtimeID, mappings: autoMappings, preferring: chosen) { id in
             self.draftChosen[id] ?? self.draftOptions.first { $0.id == id }?.currentValue
         }
-    }
-
-    /// Where Auto would start an Auto session's successor now (FR-022), on its machine.
-    func autoPreview(for agent: Agent) async -> AutoPreview? {
-        guard let pick = agent.auto else { return nil }
-        return try? await client(forAgent: agent.id).call(DaemonAPI.Method.autoPreview,
-                                                          AutoPreviewRequest(cwd: agent.cwd, levels: pick.levels, sandbox: agent.sandboxOverride),
-                                                          returning: AutoPreview.self)
     }
 
     /// A running agent's value, mapped on its own runtime from its next step (Story 2).
@@ -3609,7 +3554,7 @@ final class AppModel {
             clientPermissions = settings
             // Remote and web clients set the Mac's host directly. Keep connected servers
             // in step just as the Settings control did before the move under the prompt.
-            if changed { Task { await pushClientPermissionsToServers(settings) } }
+            if changed { Task { await pushClientPermissionsToServers() } }
 
         case DaemonAPI.Notification.personChanged:
             guard let settings = try? params?.decode(PersonSettings.self) else { return }
@@ -3626,13 +3571,9 @@ final class AppModel {
             guard let settings = try? params?.decode(SandboxSettings.self) else { return }
             sandboxSettings = settings
 
-        case DaemonAPI.Notification.dailySummaryChanged:
-            guard let settings = try? params?.decode(DailySummarySettings.self) else { return }
-            dailySummarySettings = settings
-
-        case DaemonAPI.Notification.summariesChanged:
-            guard let pages = try? params?.decode([SummaryPage].self) else { return }
-            summaryPages = pages
+        case DaemonAPI.Notification.dailyChecksChanged:
+            guard let settings = try? params?.decode(DailyChecksSettings.self) else { return }
+            dailyChecksSettings = settings
 
         case DaemonAPI.Notification.autoChanged:
             guard let settings = try? params?.decode(AutoSettings.self) else { return }
@@ -3838,7 +3779,7 @@ final class AppModel {
         await server.setCredentialLender { [weak self] wanted in
             await self?.answerCredentialWanted(wanted, on: id) ?? false
         }
-        _ = try? await server.call(DaemonAPI.Method.credentialsOffer, credentialOffer(id))
+        _ = try? await server.call(DaemonAPI.Method.credentialsOffer, credentialOffer())
         let shown = work.shown
         Task.detached(priority: .userInitiated) { [weak self] in
             for await note in server.notifications() {
@@ -3938,8 +3879,7 @@ final class AppModel {
              DaemonAPI.Notification.attentionChanged, DaemonAPI.Notification.storeNotesChanged,
              DaemonAPI.Notification.achievementsChanged, DaemonAPI.Notification.preferencesChanged,
              DaemonAPI.Notification.multiplierChanged,
-             DaemonAPI.Notification.backupsChanged, DaemonAPI.Notification.dailySummaryChanged,
-             DaemonAPI.Notification.summariesChanged:
+             DaemonAPI.Notification.backupsChanged, DaemonAPI.Notification.dailyChecksChanged:
             // The achievements and display choices are the person's, kept on the Mac's own
             // host (#984, #1033). Settings ▸ Machines ▸ This Mac ▸ Backups is this Mac's (#1810).
             return
@@ -4013,7 +3953,7 @@ final class AppModel {
         if let listed = try? await server.call(DaemonAPI.Method.foldersList, DaemonAPI.FoldersListRequest(),
                                                returning: [DaemonAPI.FolderSummary].self) {
             work.replaceFolders(listed, from: host)
-            hosts.noteFolders(host, listed: listed)
+            hosts.noteFolders()
             pruneFolderDefaults(of: host, listed: listed)
             settleFolderSelection()
         }
@@ -4023,14 +3963,13 @@ final class AppModel {
             work.replaceMCPHealth(health, from: host)
         }
         let theirs = Set(work.agents.filter { $0.host == host }.map(\.id))
-        if let listed = try? await server.call(DaemonAPI.Method.permissionsPending,
-                                               returning: [PermissionRequest].self) {
-            work.replacePermissions(work.permissions.filter { !theirs.contains($0.agentID) } + listed)
-        }
-        if let listed = try? await server.call(DaemonAPI.Method.elicitationsPending,
-                                               returning: [ElicitationRequest].self) {
-            work.replaceElicitations(work.elicitations.filter { !theirs.contains($0.agentID) } + listed)
-        }
+        // A card of an agent removed while away goes with these reads (#6188).
+        // A card heard while the reads are on their way is laid over their replies (#6291).
+        let read = work.beginCardsRead()
+        defer { work.endCardsRead(read) }
+        let permissions = try? await server.call(DaemonAPI.Method.permissionsPending, returning: [PermissionRequest].self)
+        let elicitations = try? await server.call(DaemonAPI.Method.elicitationsPending, returning: [ElicitationRequest].self)
+        work.replaceCards(from: host, permissions: permissions, elicitations: elicitations, since: read)
         if let watching = selection, theirs.contains(watching) { await loadTranscript() }
         for chat in popouts.values where theirs.contains(chat.id) { await loadTranscript(of: chat) }
     }
@@ -4047,8 +3986,7 @@ final class AppModel {
         DaemonAPI.Notification.signInNeeded, DaemonAPI.Notification.clientPermissionsChanged,
         DaemonAPI.Notification.personChanged, DaemonAPI.Notification.sandboxChanged, DaemonAPI.Notification.autoChanged,
         DaemonAPI.Notification.backupsChanged, DaemonAPI.Notification.runtimesAccountProfilesChanged,
-        DaemonAPI.Notification.daemonPolicyStateChanged, DaemonAPI.Notification.dailySummaryChanged,
-        DaemonAPI.Notification.summariesChanged,
+        DaemonAPI.Notification.daemonPolicyStateChanged, DaemonAPI.Notification.dailyChecksChanged,
     ]
 
     /// What is this Mac's own, from this Mac's host by an id of its own (#1496). Its
@@ -4072,10 +4010,9 @@ final class AppModel {
         async let modes: Void = refreshModes()
         async let display: Void = refreshDisplayPreferences()
         async let auto: Void = refreshAuto()
-        async let dailySummary: Void = refreshDailySummarySettings()
-        async let summaries: Void = refreshSummaryPages()
+        async let dailyChecks: Void = refreshDailyChecksSettings()
         _ = await (runtimes, accounts, cost, retention, clientPermissions, sandbox, policy, person, runtimeStates, wake,
-                   storeNotes, achievements, leases, hostedMCP, events, modes, display, auto, dailySummary, summaries)
+                   storeNotes, achievements, leases, hostedMCP, events, modes, display, auto, dailyChecks)
     }
 
     func refreshEverything() async {
@@ -4120,13 +4057,11 @@ final class AppModel {
         async let transcript: Void = loadTranscript()
         async let popped: Void = loadPoppedTranscripts()
         async let auto: Void = refreshAuto()
-        // The Summary row (#3721): shown only while the daily summary is on, with its newest page.
-        async let dailySummary: Void = refreshDailySummarySettings()
-        async let summaries: Void = refreshSummaryPages()
+        async let dailyChecks: Void = refreshDailyChecksSettings()
         _ = await (popped, runtimes, accounts, workflows, pinned, requests, permissions,
                    elicitations, attention, resuming, cost, retention, clientPermissions, cloning, sending, bringing, moving, wake, leases, events, modes,
                    transcript, runtimeStates, sandbox, person, disk, capacity, storeNotes, hostedMCP, mcpHealth, achievements, multiplier,
-                   display, auto, dailySummary, summaries)
+                   display, auto, dailyChecks)
     }
 
     #if DEBUG
@@ -4153,10 +4088,13 @@ final class AppModel {
     #endif
 
     func refreshElicitations() async {
+        // A card heard while the read is on its way is laid over its reply (#6291).
+        let read = work.beginCardsRead()
+        defer { work.endCardsRead(read) }
         guard let list = try? await client.call(DaemonAPI.Method.elicitationsPending,
                                                 Optional<Int>.none,
                                                 returning: [ElicitationRequest].self) else { return }
-        work.replaceElicitations(elicitationsOnServers + list)
+        work.replaceElicitations(elicitationsOnServers + list, since: read)
     }
 
     /// What is held for the servers' agents, kept when the Mac's own are re-listed (037).
@@ -4540,11 +4478,14 @@ final class AppModel {
     }
 
     func refreshPermissions() async {
+        // A card heard while the read is on its way is laid over its reply (#6291).
+        let read = work.beginCardsRead()
+        defer { work.endCardsRead(read) }
         await attempt {
-            self.work.replacePermissions(self.permissionsOnServers
-                + (try await self.client.call(DaemonAPI.Method.permissionsPending,
-                                              Optional<String>.none,
-                                              returning: [PermissionRequest].self)))
+            let listed = try await self.client.call(DaemonAPI.Method.permissionsPending,
+                                                    Optional<String>.none,
+                                                    returning: [PermissionRequest].self)
+            self.work.replacePermissions(self.permissionsOnServers + listed, since: read)
         }
     }
 
@@ -4603,7 +4544,7 @@ final class AppModel {
         var gone = false
         let loaded = await attempt(on: host, quietWhenDown: true) {
             let client = self.client(for: host)
-            // What was written since the end held (#4794), one page from it, in place of the
+            // The held page again and what was written since (#4794, #6282), one page, in place of the
             // whole opening; a page that leaves a gap, or no answer, opens it whole.
             if let resumed = await self.work.resumeTranscript(load: load, transcript: { from, limit in
                 try await client.call(DaemonAPI.Method.agentsTranscript,
@@ -5095,12 +5036,6 @@ final class AppModel {
     /// What is on its way to this agent, if anything: for the control that sent it to
     /// show, and the others to hold. Its own cell, so one row's is not every row's (#285).
     func acting(_ id: UUID) -> AgentAct? { work.act(of: id) }
-
-    /// What the runtime behind the current agent, or the draft, says it will take.
-    /// Nothing is refused on a guess: this is what the runtime advertised.
-    var promptCapabilities: ACP.PromptCapabilities {
-        promptCapabilities(for: selectedAgent?.runtimeID ?? draftRuntimeID)
-    }
 
     /// On Auto it is the runtime Auto would pick now; before that is known, nothing is
     /// refused, as on the Remote and the web page: the host picks one that takes what is

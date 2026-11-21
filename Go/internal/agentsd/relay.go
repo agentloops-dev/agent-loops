@@ -42,7 +42,9 @@ func (d *Daemon) offerRelay(o wire.RelayOffer) error {
 		return &Error{Code: CodeServer, Message: "this machine has no control plane to tunnel through"}
 	}
 	dir := filepath.Join(d.Store.Loc.Root, "runtimes")
-	os.MkdirAll(dir, 0o700)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
 	ca := filepath.Join(dir, o.Runtime+"-relay-ca.pem")
 	if err := os.WriteFile(ca, []byte(o.CaCertificate), 0o600); err != nil {
 		return err

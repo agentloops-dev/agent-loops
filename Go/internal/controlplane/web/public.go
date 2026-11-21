@@ -156,7 +156,8 @@ func (p *Public) Serve(w http.ResponseWriter, r *http.Request) bool {
 		h.Set("Content-Length", strconv.Itoa(len(f.Data)))
 		w.WriteHeader(http.StatusOK)
 		if r.Method == http.MethodGet {
-			w.Write(f.Data)
+			// The client has gone; there is nobody to tell.
+			_, _ = w.Write(f.Data)
 		}
 	}
 	return true
@@ -180,7 +181,8 @@ func (p *Public) serveProxy(w http.ResponseWriter, r *http.Request, path string)
 	h.Set("Content-Length", strconv.Itoa(len(f.Data)))
 	w.WriteHeader(http.StatusOK)
 	if r.Method == http.MethodGet {
-		w.Write(f.Data)
+		// The client has gone; there is nobody to tell.
+		_, _ = w.Write(f.Data)
 	}
 	return true
 }

@@ -78,36 +78,7 @@ func AddTools(server *mcp.Server, w *Workspace) {
 		Description: "The channels, private channels and direct messages the bot is in: id, name, kind (channel, private, im, group) and, " +
 			"for a direct message, the user. list_conversations gives the same, with paging, as the messaging contract says. " +
 			"Invite the bot to a channel with /invite @<the app> to see it.",
-		Annotations: readOnly},
-		func(ctx context.Context, _ struct{}) (*mcp.CallToolResult, error) {
-			api, err := w.client()
-			if err != nil {
-				return nil, err
-			}
-			channels, _, err := api.GetConversationsForUserContext(ctx, &slack.GetConversationsForUserParameters{
-				Types: []string{"public_channel", "private_channel", "im", "mpim"}, Limit: 200, ExcludeArchived: true})
-			if err != nil {
-				return nil, said(err)
-			}
-			list := []any{}
-			for _, c := range channels {
-				kind := "channel"
-				switch {
-				case c.IsIM:
-					kind = "im"
-				case c.IsMpIM:
-					kind = "group"
-				case c.IsPrivate:
-					kind = "private"
-				}
-				entry := map[string]any{"id": c.ID, "name": c.Name, "kind": kind}
-				if c.User != "" {
-					entry["user"] = c.User
-				}
-				list = append(list, entry)
-			}
-			return structured(map[string]any{"channels": list}), nil
-		})
+		Annotations: readOnly}, w.listChannels)
 
 	addMessagingTools(server, w)
 	addReplyTool(server, w)
@@ -115,68 +86,119 @@ func AddTools(server *mcp.Server, w *Workspace) {
 	tool(server, &mcp.Tool{Name: "send_message", Title: "Send a message",
 		Description: "Posts a message as the bot in a channel it is in, in a thread, or to a user directly. Gives the message's ts, " +
 			"which a thread filter of message.received and read_messages take. It refuses @channel, @here and @everyone.",
-		Annotations: sends},
-		func(ctx context.Context, in sendArgs) (*mcp.CallToolResult, error) {
-			text, err := checkText(in.Channel, in.Text)
-			if err != nil {
-				return nil, err
-			}
-			api, err := w.client()
-			if err != nil {
-				return nil, err
-			}
-			options := []slack.MsgOption{slack.MsgOptionText(text, false)}
-			if t := strings.TrimSpace(in.Thread); t != "" {
-				options = append(options, slack.MsgOptionTS(t))
-			}
-			channel, ts, err := api.PostMessageContext(ctx, strings.TrimSpace(in.Channel), options...)
-			if err != nil {
-				return nil, said(err)
-			}
-			return structured(map[string]any{"channel": channel, "ts": ts, "threadTs": strings.TrimSpace(in.Thread)}), nil
-		})
+		Annotations: sends}, w.sendMessage)
 
 	tool(server, &mcp.Tool{Name: "ask_question", Title: "Ask a question",
 		Description: "Posts a question as the bot with its options as buttons, and gives the question's id and ts. " +
 			"The first person to press one raises question.answered (filter question: the id) with the option they chose; " +
 			"the question then says who answered, without its buttons. A reply in its thread is message.received (filter thread: the ts).",
-		Annotations: sends},
-		func(ctx context.Context, in askArgs) (*mcp.CallToolResult, error) {
-			text, err := checkText(in.Channel, in.Text)
-			if err != nil {
-				return nil, err
-			}
-			if len(in.Options) < 2 || len(in.Options) > maxOptions {
-				return nil, fmt.Errorf("options are 2 to %d answers", maxOptions)
-			}
-			id := newID()
-			buttons := []slack.BlockElement{}
-			for i, o := range in.Options {
-				o = strings.TrimSpace(o)
-				if o == "" || len([]rune(o)) > maxOptionChars {
-					return nil, fmt.Errorf("option %d must have 1 to %d characters", i+1, maxOptionChars)
-				}
-				buttons = append(buttons, slack.NewButtonBlockElement("answer-"+strconv.Itoa(i), strconv.Itoa(i),
-					slack.NewTextBlockObject(slack.PlainTextType, o, false, false)))
-			}
-			api, err := w.client()
-			if err != nil {
-				return nil, err
-			}
-			blocks := []slack.Block{
-				slack.NewSectionBlock(slack.NewTextBlockObject(slack.MarkdownType, text, false, false), nil, nil),
-				slack.NewActionBlock(questionBlock+id, buttons...),
-			}
-			options := []slack.MsgOption{slack.MsgOptionText(text, false), slack.MsgOptionBlocks(blocks...)}
-			if t := strings.TrimSpace(in.Thread); t != "" {
-				options = append(options, slack.MsgOptionTS(t))
-			}
-			channel, ts, err := api.PostMessageContext(ctx, strings.TrimSpace(in.Channel), options...)
-			if err != nil {
-				return nil, said(err)
-			}
-			return structured(map[string]any{"question": id, "channel": channel, "ts": ts, "threadTs": strings.TrimSpace(in.Thread)}), nil
-		})
+		Annotations: sends}, w.askQuestion)
+}
+
+// listChannels is the list_channels tool.
+func (w *Workspace) listChannels(ctx context.Context, _ struct{}) (*mcp.CallToolResult, error) {
+	api, err := w.client()
+	if err != nil {
+		return nil, err
+	}
+	channels, _, err := api.GetConversationsForUserContext(ctx, &slack.GetConversationsForUserParameters{
+		Types: []string{"public_channel", "private_channel", "im", "mpim"}, Limit: 200, ExcludeArchived: true})
+	if err != nil {
+		return nil, said(err)
+	}
+	list := []any{}
+	for _, c := range channels {
+		entry := map[string]any{"id": c.ID, "name": c.Name, "kind": channelKind(c)}
+		if c.User != "" {
+			entry["user"] = c.User
+		}
+		list = append(list, entry)
+	}
+	return structured(map[string]any{"channels": list}), nil
+}
+
+// channelKind is a channel's kind as list_channels says it: channel, private, im or group.
+func channelKind(c slack.Channel) string {
+	switch {
+	case c.IsIM:
+		return "im"
+	case c.IsMpIM:
+		return "group"
+	case c.IsPrivate:
+		return "private"
+	}
+	return "channel"
+}
+
+// sendMessage is the send_message tool.
+func (w *Workspace) sendMessage(ctx context.Context, in sendArgs) (*mcp.CallToolResult, error) {
+	text, err := checkText(in.Channel, in.Text)
+	if err != nil {
+		return nil, err
+	}
+	api, err := w.client()
+	if err != nil {
+		return nil, err
+	}
+	options := inThread([]slack.MsgOption{slack.MsgOptionText(text, false)}, in.Thread)
+	channel, ts, err := api.PostMessageContext(ctx, strings.TrimSpace(in.Channel), options...)
+	if err != nil {
+		return nil, said(err)
+	}
+	return structured(map[string]any{"channel": channel, "ts": ts, "threadTs": strings.TrimSpace(in.Thread)}), nil
+}
+
+// askQuestion is the ask_question tool.
+func (w *Workspace) askQuestion(ctx context.Context, in askArgs) (*mcp.CallToolResult, error) {
+	text, err := checkText(in.Channel, in.Text)
+	if err != nil {
+		return nil, err
+	}
+	buttons, err := answerButtons(in.Options)
+	if err != nil {
+		return nil, err
+	}
+	id := newID()
+	api, err := w.client()
+	if err != nil {
+		return nil, err
+	}
+	blocks := []slack.Block{
+		slack.NewSectionBlock(slack.NewTextBlockObject(slack.MarkdownType, text, false, false), nil, nil),
+		slack.NewActionBlock(questionBlock+id, buttons...),
+	}
+	options := inThread([]slack.MsgOption{slack.MsgOptionText(text, false), slack.MsgOptionBlocks(blocks...)}, in.Thread)
+	channel, ts, err := api.PostMessageContext(ctx, strings.TrimSpace(in.Channel), options...)
+	if err != nil {
+		return nil, said(err)
+	}
+	return structured(map[string]any{"question": id, "channel": channel, "ts": ts, "threadTs": strings.TrimSpace(in.Thread)}), nil
+}
+
+// answerButtons is a question's options as buttons, refused when there are too few or too
+// many, or one is empty or too long.
+func answerButtons(options []string) ([]slack.BlockElement, error) {
+	if len(options) < 2 || len(options) > maxOptions {
+		return nil, fmt.Errorf("options are 2 to %d answers", maxOptions)
+	}
+	buttons := []slack.BlockElement{}
+	for i, o := range options {
+		o = strings.TrimSpace(o)
+		if o == "" || len([]rune(o)) > maxOptionChars {
+			return nil, fmt.Errorf("option %d must have 1 to %d characters", i+1, maxOptionChars)
+		}
+		buttons = append(buttons, slack.NewButtonBlockElement("answer-"+strconv.Itoa(i), strconv.Itoa(i),
+			slack.NewTextBlockObject(slack.PlainTextType, o, false, false)))
+	}
+	return buttons, nil
+}
+
+// inThread is options with the thread's ts added, when thread is not empty.
+func inThread(options []slack.MsgOption, thread string) []slack.MsgOption {
+	if t := strings.TrimSpace(thread); t != "" {
+		options = append(options, slack.MsgOptionTS(t))
+	}
+	return options
 }
 
 // checkText is a message's text, refused when it is empty, too long, or pings everyone.

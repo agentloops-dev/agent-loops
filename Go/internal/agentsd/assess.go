@@ -98,7 +98,6 @@ var appToolMethods = map[string]string{
 	"bring_back":             "branches/bringBack",
 	"move_session":           "sessions/move",
 	"drive_screen":           "screen/drive",
-	"write_daily_summary":    "summaries/write",
 	"check_folders":          "folders/check",
 	"docs_search":            "docs/search",
 	"docs_read":              "docs/read",
@@ -177,15 +176,20 @@ func (d *Daemon) keepAppToolCall(agent wire.UUID, tool string, args map[string]j
 		return
 	}
 	path := d.appToolsPath(agent)
-	os.MkdirAll(filepath.Dir(path), 0o755)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil { //nolint:gosec // G301: the mode this folder always had; only its error is new
+		log.Printf("could not keep a record of an app tool call: %v", err)
+		return
+	}
 	f, oErr := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 	if oErr != nil {
 		log.Printf("could not keep a record of an app tool call: %v", oErr)
 		return
 	}
 	b, _ = redact.Bytes(b) // a call's arguments or answer can hold a token (#1001)
-	f.Write(append(b, '\n'))
-	f.Close()
+	if _, err := f.Write(append(b, '\n')); err != nil {
+		log.Printf("could not keep a record of an app tool call: %v", err)
+	}
+	_ = f.Close() // the write's error is the one that matters, and it is logged
 }
 
 // cutAppToolArgument is an argument as app-tools.jsonl keeps it (#3687): whole when its
@@ -331,7 +335,9 @@ func (d *Daemon) assessRuntime(r wire.AssessRuntimeRequest) (wire.AssessRuntimeR
 	today := nowFunc()
 	report := freshReportPath(folder, rt.ID, today)
 	// show_file takes a Markdown file that is not there yet only in a folder that is.
-	os.MkdirAll(filepath.Dir(report), 0o755)
+	if err := os.MkdirAll(filepath.Dir(report), 0o755); err != nil { //nolint:gosec // G301: the mode this folder always had; only its error is new
+		log.Printf("could not make the folder of a runtime assessment's report: %v", err)
+	}
 	day := strings.TrimPrefix(strings.TrimSuffix(filepath.Base(freshReportPathFirst(folder, rt.ID, today)), ".md"), rt.ID+"-")
 	shortID := strings.ToLower(string(store.NewUUID())[:8])
 	scope := filepath.Join(d.assessmentsPath(), "scope-"+shortID+".txt")
@@ -350,7 +356,9 @@ func (d *Daemon) assessRuntime(r wire.AssessRuntimeRequest) (wire.AssessRuntimeR
 	}
 	kept := assessStart{AgentID: id, RuntimeID: rt.ID, RuntimeVersion: version, Host: host, ReportPath: report, ScopePath: scope,
 		ShortID: shortID}
-	os.MkdirAll(d.assessmentsPath(), 0o755)
+	if err := os.MkdirAll(d.assessmentsPath(), 0o755); err != nil { //nolint:gosec // G301: the mode this folder always had; only its error is new
+		log.Printf("could not make the runtime assessments' folder: %v", err)
+	}
 	if err := writeStore(filepath.Join(d.assessmentsPath(), string(id)+".start.json"), kept); err != nil {
 		log.Printf("could not keep a runtime assessment's start: %v", err)
 	}
@@ -446,7 +454,9 @@ func (d *Daemon) assessment(id wire.UUID) (wire.RuntimeAssessmentScore, error) {
 		rec.scopeWritten = err == nil
 	}
 	score := rec.score(nowFunc())
-	os.MkdirAll(d.assessmentsPath(), 0o755)
+	if err := os.MkdirAll(d.assessmentsPath(), 0o755); err != nil { //nolint:gosec // G301: the mode this folder always had; only its error is new
+		log.Printf("could not make the runtime assessments' folder: %v", err)
+	}
 	if err := writeStore(filepath.Join(d.assessmentsPath(), string(id)+".json"), score); err != nil {
 		log.Printf("could not keep a runtime assessment's score: %v", err)
 	}
@@ -475,7 +485,7 @@ func callPath(c appToolCall) string {
 	var file struct {
 		Path string `json:"path"`
 	}
-	json.Unmarshal(c.Arguments["file"], &file)
+	_ = json.Unmarshal(c.Arguments["file"], &file) // no file, or not an object: no path
 	return file.Path
 }
 

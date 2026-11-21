@@ -47,17 +47,17 @@ func forgeLinear(t *testing.T) (*RealLinear, *[]map[string]any) {
 			Variables map[string]any `json:"variables"`
 		}
 		body, _ := io.ReadAll(r.Body)
-		json.Unmarshal(body, &req)
+		unmarshal(t, body, &req)
 		mu.Lock()
 		asked = append(asked, req.Variables)
 		mu.Unlock()
 		switch {
 		case strings.Contains(req.Query, "ForgeIssues"):
-			io.WriteString(w, forgeSearchAnswer)
+			reply(t, w, forgeSearchAnswer)
 		case req.Variables["id"] == "ENG-4":
-			io.WriteString(w, forgeItemAnswer)
+			reply(t, w, forgeItemAnswer)
 		default:
-			io.WriteString(w, `{"data":{"issue":null}}`)
+			reply(t, w, `{"data":{"issue":null}}`)
 		}
 	}))
 	t.Cleanup(s.Close)
@@ -194,5 +194,13 @@ func TestForgeItemPageLinksAndEvents(t *testing.T) {
 	}
 	if !reflect.DeepEqual(d.Events, events) {
 		t.Errorf("events: %+v", d.Events)
+	}
+}
+
+// #6349: a changed-since list is a filter on updatedAt.
+func TestSearchFilterOfUpdatedSince(t *testing.T) {
+	f := SearchFilterOf([]string{"ENG"}, SearchFilter{State: "all", UpdatedSince: "2026-11-19T10:00:00Z"})
+	if !reflect.DeepEqual(f["updatedAt"], map[string]any{"gte": "2026-11-19T10:00:00Z"}) || f["state"] != nil {
+		t.Fatalf("filter: %v", f)
 	}
 }

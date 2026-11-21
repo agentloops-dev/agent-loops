@@ -186,68 +186,17 @@ func (p *Provider) written(entry Entry) Workspace {
 }
 
 func (p *Provider) listed(listing Listing) ([]Workspace, error) {
-	var outcome Outcome
-	read := decode
-	if listing.Request != nil {
-		answer, err := p.call(*listing.Request, map[string]string{}, p.Timing.Quick, "listing workspaces")
-		if err != nil {
-			return nil, err
-		}
-		outcome = Outcome{Output: answer}
-		read = listing.Request.value
-	} else {
-		outcome = p.Run(listing.Command, p.Timing.Quick)
-		if outcome.Status != 0 || outcome.TimedOut {
-			return nil, Failure{Reason: reason(outcome, listing.Command, "listing workspaces", p.Timing.Quick)}
-		}
+	outcome, read, err := p.runListing(listing)
+	if err != nil {
+		return nil, err
 	}
 	var rows []map[string]string
 	if listing.Shape.Fields == nil {
-		columns := listing.Shape.Columns
-		for _, line := range strings.FieldsFunc(outcome.Text(), isNewline) {
-			fields := splitColumns(line, len(columns)-1)
-			if len(fields) == 0 {
-				continue
-			}
-			row := map[string]string{}
-			for i := 0; i < len(columns) && i < len(fields); i++ {
-				if fields[i] != "" {
-					row[columns[i]] = strings.TrimFunc(fields[i], isBlank)
-				}
-			}
-			rows = append(rows, row)
-		}
+		rows = columnRows(outcome.Text(), listing.Shape.Columns)
 	} else {
-		value, err := read(outcome.Output)
-		found := PathValue(listing.Shape.Items, value)
-		array, ok := found.([]any)
-		// An API leaves its list out when it is empty (Compute Engine's items).
-		if _, isObject := value.(map[string]any); err == nil && found == nil && isObject && listing.Request != nil {
-			array, ok = []any{}, true
-		}
-		if err != nil || !ok {
-			at := listing.Shape.Items
-			if at == "" {
-				at = "its top"
-			}
-			what := "The list command's output"
-			if listing.Request != nil {
-				what = "The list request's answer"
-			}
-			format := "JSON"
-			if listing.Request != nil && listing.Request.Answer == "xml" {
-				format = "XML"
-			}
-			return nil, Failure{Reason: what + " isn't a " + format + " array at " + at + "."}
-		}
-		for _, item := range array {
-			row := map[string]string{}
-			for key, path := range listing.Shape.Fields {
-				if text, ok := PathText(path, item); ok && text != "" {
-					row[key] = text
-				}
-			}
-			rows = append(rows, row)
+		rows, err = jsonRows(listing, outcome.Output, read)
+		if err != nil {
+			return nil, err
 		}
 	}
 	if len(rows) > ListLimit {
@@ -255,31 +204,118 @@ func (p *Provider) listed(listing Listing) ([]Workspace, error) {
 	}
 	var out []Workspace
 	for _, row := range rows {
-		id, ok := row["id"]
-		if !ok {
-			continue
+		if w, ok := p.listedWorkspace(listing, row); ok {
+			out = append(out, w)
 		}
-		values := map[string]string{}
-		for k, v := range listing.Defaults {
-			values[k] = v
-		}
-		for k, v := range row {
-			values[k] = v
-		}
-		name, ok := row["name"]
-		if !ok {
-			name = id
-		}
-		values["name"] = name
-		state := Unknown
-		if said, ok := row["state"]; ok {
-			state = p.Config.StateFor(said)
-		} else if left, ok := p.leftState(id); ok {
-			state = left
-		}
-		out = append(out, Workspace{ID: id, Name: name, State: state, Values: values, Commands: listing.Commands})
 	}
 	return out, nil
+}
+
+// runListing runs a listing's request or command, and gives its outcome and the
+// function that reads the output into a value.
+func (p *Provider) runListing(listing Listing) (Outcome, func([]byte) (any, error), error) {
+	if listing.Request != nil {
+		answer, err := p.call(*listing.Request, map[string]string{}, p.Timing.Quick, "listing workspaces")
+		if err != nil {
+			return Outcome{}, nil, err
+		}
+		return Outcome{Output: answer}, listing.Request.value, nil
+	}
+	outcome := p.Run(listing.Command, p.Timing.Quick)
+	if outcome.Status != 0 || outcome.TimedOut {
+		return Outcome{}, nil, Failure{Reason: reason(outcome, listing.Command, "listing workspaces", p.Timing.Quick)}
+	}
+	return outcome, decode, nil
+}
+
+// columnRows reads a list command's lines into rows, a value for each column.
+func columnRows(text string, columns []string) []map[string]string {
+	var rows []map[string]string
+	for _, line := range strings.FieldsFunc(text, isNewline) {
+		fields := splitColumns(line, len(columns)-1)
+		if len(fields) == 0 {
+			continue
+		}
+		row := map[string]string{}
+		for i := 0; i < len(columns) && i < len(fields); i++ {
+			if fields[i] != "" {
+				row[columns[i]] = strings.TrimFunc(fields[i], isBlank)
+			}
+		}
+		rows = append(rows, row)
+	}
+	return rows
+}
+
+// jsonRows reads the array at the listing's items path into rows, a value for each of
+// its json fields.
+func jsonRows(listing Listing, output []byte, read func([]byte) (any, error)) ([]map[string]string, error) {
+	value, err := read(output)
+	found := PathValue(listing.Shape.Items, value)
+	array, ok := found.([]any)
+	// An API leaves its list out when it is empty (Compute Engine's items).
+	if _, isObject := value.(map[string]any); err == nil && found == nil && isObject && listing.Request != nil {
+		array, ok = []any{}, true
+	}
+	if err != nil || !ok {
+		return nil, notAnArray(listing)
+	}
+	var rows []map[string]string
+	for _, item := range array {
+		row := map[string]string{}
+		for key, path := range listing.Shape.Fields {
+			if text, ok := PathText(path, item); ok && text != "" {
+				row[key] = text
+			}
+		}
+		rows = append(rows, row)
+	}
+	return rows, nil
+}
+
+// notAnArray is the failure when a listing's output has no array at its items path.
+func notAnArray(listing Listing) Failure {
+	at := listing.Shape.Items
+	if at == "" {
+		at = "its top"
+	}
+	what := "The list command's output"
+	if listing.Request != nil {
+		what = "The list request's answer"
+	}
+	format := "JSON"
+	if listing.Request != nil && listing.Request.Answer == "xml" {
+		format = "XML"
+	}
+	return Failure{Reason: what + " isn't a " + format + " array at " + at + "."}
+}
+
+// listedWorkspace is the workspace a row names, with the listing's defaults under the
+// row's values; false when the row has no id.
+func (p *Provider) listedWorkspace(listing Listing, row map[string]string) (Workspace, bool) {
+	id, ok := row["id"]
+	if !ok {
+		return Workspace{}, false
+	}
+	values := map[string]string{}
+	for k, v := range listing.Defaults {
+		values[k] = v
+	}
+	for k, v := range row {
+		values[k] = v
+	}
+	name, ok := row["name"]
+	if !ok {
+		name = id
+	}
+	values["name"] = name
+	state := Unknown
+	if said, ok := row["state"]; ok {
+		state = p.Config.StateFor(said)
+	} else if left, ok := p.leftState(id); ok {
+		state = left
+	}
+	return Workspace{ID: id, Name: name, State: state, Values: values, Commands: listing.Commands}, true
 }
 
 func isNewline(r rune) bool {

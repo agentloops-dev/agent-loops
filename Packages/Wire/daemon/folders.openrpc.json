@@ -1873,6 +1873,27 @@
       }
     },
     {
+      "name": "git/trailers",
+      "x-capability": "host.commit-trailers/1",
+      "description": "The trailer lines for a commit by this session's agent, or for its pull request's squash message (#6365), by the effective commitTrailers rule of the session's folder. The worktree's commit-msg hook and the agents' tool commit_trailers ask it; an agent types no trailer by hand.",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/org.schema.json#/definitions/GitTrailersRequest"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/org.schema.json#/definitions/GitTrailers"
+        }
+      }
+    },
+    {
       "name": "pages/changed",
       "x-capability": "pages/1",
       "tags": [

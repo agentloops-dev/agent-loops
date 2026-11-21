@@ -39,7 +39,7 @@ func TestCheckForgejoToken(t *testing.T) {
 		case r.Header.Get("Authorization") != "token fj-good":
 			w.WriteHeader(http.StatusUnauthorized)
 		case r.URL.Path == "/api/v1/user":
-			w.Write([]byte(`{"id":2,"login":"agentstest"}`))
+			reply(t, w, `{"id":2,"login":"agentstest"}`)
 		default:
 			http.NotFound(w, r)
 		}

@@ -120,7 +120,11 @@ func (d *Daemon) relay() (*modelRelay, error) {
 		ReadHeaderTimeout: 30 * time.Second, ErrorLog: log.New(io.Discard, "", 0),
 		TLSConfig: &tls.Config{Certificates: []tls.Certificate{cert}, NextProtos: []string{"http/1.1"}, MinVersion: tls.VersionTLS12}}
 	tlsLn := tls.NewListener(ln, r.srv.TLSConfig)
-	d.goJob("model relay", func() { r.srv.Serve(tlsLn) })
+	d.goJob("model relay", func() {
+		if err := r.srv.Serve(tlsLn); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Printf("model relay: %v", err)
+		}
+	})
 	d.modelRelay = r
 	log.Printf("model relay: on 127.0.0.1:%d", r.port)
 	return r, nil
@@ -277,7 +281,7 @@ func relayError(w http.ResponseWriter, status int, kind, words string) {
 	b, _ := json.Marshal(map[string]any{"type": "error", "error": map[string]any{"type": kind, "message": words, "code": status}})
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	w.Write(b)
+	_, _ = w.Write(b) // a runtime that has gone cannot be told
 }
 
 // authHeaders are the headers a runtime sends a key in: each is taken out before the
@@ -794,7 +798,7 @@ func askForUsage(path string, body []byte) []byte {
 		return body
 	}
 	var opts map[string]json.RawMessage
-	json.Unmarshal(obj["stream_options"], &opts)
+	_ = json.Unmarshal(obj["stream_options"], &opts) // none, or bad ones, are made below
 	if opts == nil {
 		opts = map[string]json.RawMessage{}
 	}

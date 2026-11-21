@@ -1,8 +1,9 @@
 #!/bin/zsh
 # Build Agent Loops for a GitHub release (#669, #4225): the window and this Mac's host in one app,
 # signed with Developer ID, notarized and stapled, in a .dmg and a .zip, beside the Linux agentsd
-# as tarballs and a SHA256SUMS. The zip is for Macs that may not mount a disk image (#675:
-# CyberArk, no hdiutil): unzip, then move the app to ~/Applications, which needs no admin rights.
+# and loops (#6448) as tarballs and a SHA256SUMS. The zip is for Macs that may not mount a disk
+# image (#675: CyberArk, no hdiutil): unzip, then move the app to ~/Applications, which needs no
+# admin rights.
 #
 # Agent Loops was Agents (#5297), and Agents Host before that (#4224). An Agents updates
 # itself from Agents-<version>.zip and wants an Agents.app in it; an Agents Host from
@@ -83,7 +84,7 @@ fi
 
 # What the bundle must hold, signed: the helpers, the MCP servers it ships (#700) and the
 # Linux agentsd.
-for helper in agentsd agents-control github-mcp linear-mcp gitlab-mcp email-mcp jira-mcp slack-mcp googlechat-mcp whatsapp-mcp sentry-mcp betterstack-mcp forgejo-mcp bitbucket-mcp azuredevops-mcp azureboards-mcp workspace-commands; do
+for helper in agentsd agents-control github-mcp linear-mcp gitlab-mcp email-mcp jira-mcp slack-mcp googlechat-mcp whatsapp-mcp sentry-mcp betterstack-mcp forgejo-mcp bitbucket-mcp azuredevops-mcp azureboards-mcp workspace-commands loops; do
     [[ -e "$app/Contents/Helpers/$helper" ]] || { print -u2 "Agent Loops has no Helpers/$helper"; exit 1 }
 done
 codesign --verify --deep --strict "$app"
@@ -138,6 +139,11 @@ for arch in x86_64 aarch64; do
         azuredevops-mcp-linux-$arch azuredevops-mcp-linux-$arch.sha256 \
         azureboards-mcp-linux-$arch azureboards-mcp-linux-$arch.sha256 VERSION
 done
+# loops, the command-line client (#6448), on its own for macOS and Linux: a person who has no
+# Agent Loops.app, or a Linux machine, downloads it from here.
+loops_flags=()
+(( dry )) && loops_flags=(--dry-run)
+$root/scripts/build-loops.sh $loops_flags $version $out
 (cd $out && shasum -a 256 *.dmg *.zip *.tar.gz > SHA256SUMS)
 print "\n$out:"
 (cd $out && ls -lh *.dmg *.zip *.tar.gz SHA256SUMS)

@@ -1583,7 +1583,7 @@
     },
     "ForgeListAllRequest": {
       "type": "object",
-      "description": "forge/listAll (#5592): forge/issues (kind issues) or forge/pulls (kind pulls) of the caller's machines in one call. state, board and limit are as in ForgeListRequest, for each machine. pages, for a next page, names the machines to ask and each one's cursor, as its last list gave it; without pages every machine is asked for its first page.",
+      "description": "forge/listAll (#5592): forge/issues (kind issues) or forge/pulls (kind pulls) of the caller's machines in one call. state, board, label, assignee (a login) and limit are as in ForgeListRequest, for each machine (label and assignee: #6383). pages, for a next page, names the machines to ask and each one's cursor, as its last list gave it; without pages every machine is asked for its first page.",
       "properties": {
         "kind": {
           "type": "string",
@@ -1596,6 +1596,12 @@
           "type": "string"
         },
         "board": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "assignee": {
           "type": "string"
         },
         "limit": {
@@ -2636,29 +2642,6 @@
       ],
       "additionalProperties": false
     },
-    "MachineSummaryFacts": {
-      "type": "object",
-      "description": "One of the person's other machines in machines/summaryFacts (#3354): its facts, or, when it is off or did not answer, unreached, the words that say why.",
-      "properties": {
-        "machine": {
-          "$ref": "#/definitions/MachineRef"
-        },
-        "machineName": {
-          "type": "string"
-        },
-        "facts": {
-          "$ref": "core.schema.json#/definitions/SummaryFacts"
-        },
-        "unreached": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "machine",
-        "machineName"
-      ],
-      "additionalProperties": false
-    },
     "MachineTunnel": {
       "type": "object",
       "properties": {
@@ -2746,22 +2729,6 @@
         "host",
         "version",
         "deploys"
-      ],
-      "additionalProperties": false
-    },
-    "MachinesSummaryFacts": {
-      "type": "object",
-      "description": "machines/summaryFacts (#3354): the daily summary's facts from each of the person's other machines, by name.",
-      "properties": {
-        "machines": {
-          "type": "array",
-          "items": {
-            "$ref": "#/definitions/MachineSummaryFacts"
-          }
-        }
-      },
-      "required": [
-        "machines"
       ],
       "additionalProperties": false
     },

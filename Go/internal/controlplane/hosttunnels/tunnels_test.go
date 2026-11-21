@@ -174,7 +174,7 @@ func TestAMasterThatNeverAnswersIsEnded(t *testing.T) {
 	folder := t.TempDir()
 	// -O check never answers yes.
 	never := filepath.Join(folder, "never")
-	os.WriteFile(never, []byte("#!/bin/sh\nfor word in \"$@\"; do [ \"$word\" = check ] && exit 255; done\nexec sleep 30\n"), 0o755)
+	must(t, os.WriteFile(never, []byte("#!/bin/sh\nfor word in \"$@\"; do [ \"$word\" = check ] && exit 255; done\nexec sleep 30\n"), 0o700)) //nolint:gosec // G306: a fake ssh, so it must run
 	heard := &heardChanges{}
 	tunnels := newTunnels(store.NewMemory(), never, heard, []records.MachineRecord{{ID: "ws", Name: "ws"}})
 	defer tunnels.Stop()
@@ -224,8 +224,12 @@ func TestATunnelLearnsItsHostFromTheCodeAndGoesWhenTheHostDoes(t *testing.T) {
 	}
 
 	// The host's join spends the code: the tunnel is that host's from then on.
-	memory.Put(ctx, codeKey(r.Code), []byte("{}"), store.Absent)
-	memory.Put(ctx, spentKey(r.Code), []byte(`{"publicKey":"AQ==","host":"ws"}`), store.Absent)
+	if _, err := memory.Put(ctx, codeKey(r.Code), []byte("{}"), store.Absent); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := memory.Put(ctx, spentKey(r.Code), []byte(`{"publicKey":"AQ==","host":"ws"}`), store.Absent); err != nil {
+		t.Fatal(err)
+	}
 	tunnels.Reconcile(ctx)
 	if tunnels.State("ws") == nil {
 		t.Error("the tunnel did not learn its host")
@@ -295,7 +299,9 @@ func TestAServerThatNeverJoinedIsLetGo(t *testing.T) {
 	stale := record("")
 	stale.Made = records.At(time.Now().Add(-UnjoinedKept - time.Second))
 	data, _ := records.Encode(stale)
-	memory.Put(ctx, Key(stale.ID), data, store.Absent)
+	if _, err := memory.Put(ctx, Key(stale.ID), data, store.Absent); err != nil {
+		t.Fatal(err)
+	}
 	tunnels := newTunnels(memory, sleeper, &heardChanges{}, nil)
 	defer tunnels.Stop()
 	tunnels.Reconcile(ctx)

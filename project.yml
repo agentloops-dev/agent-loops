@@ -479,6 +479,11 @@ targets:
       - name: Build the command machine provider
         script: sh "$SRCROOT/scripts/go-github-mcp.sh" workspace-commands
         basedOnDependencyAnalysis: false
+      # loops, the command-line client (#6448), built and carried the same way: a person
+      # links Contents/Helpers/loops into PATH (docs/how-to/use-loops-in-a-terminal.md).
+      - name: Build the loops command
+        script: sh "$SRCROOT/scripts/go-github-mcp.sh" loops
+        basedOnDependencyAnalysis: false
     # Carried into Contents/Helpers and signed here, not by a copy phase, which would try
     # to strip it (a Go binary is already stripped, and strip refuses it).
     postBuildScripts:
@@ -536,6 +541,9 @@ targets:
         basedOnDependencyAnalysis: false
       - name: Carry the command machine provider
         script: sh "$SRCROOT/scripts/go-github-mcp.sh" --carry workspace-commands
+        basedOnDependencyAnalysis: false
+      - name: Carry the loops command
+        script: sh "$SRCROOT/scripts/go-github-mcp.sh" --carry loops
         basedOnDependencyAnalysis: false
     sources:
       - path: Host/Sources

@@ -1,7 +1,6 @@
 package agentsd
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -30,7 +29,7 @@ func TestCostIsBankedAndLimitsKept(t *testing.T) {
 	read := int64(100)
 	d.bankTurnUsage(a.ID, wire.TurnUsage{TotalTokens: 1300, InputTokens: 1000, OutputTokens: 300, CachedReadTokens: &read})
 	var st wire.CostState
-	json.Unmarshal(c.call(t, 1, "cost/state", nil), &st)
+	mustUnmarshal(t, c.call(t, 1, "cost/state", nil), &st)
 	if st.Today["USD"] != 0.75 || st.TokensToday != 1200 || st.Day != time.Now().Format("2006-01-02") {
 		t.Fatalf("%+v", st)
 	}
@@ -43,25 +42,25 @@ func TestCostIsBankedAndLimitsKept(t *testing.T) {
 		t.Fatalf("%s", b)
 	}
 	var h wire.UsageHistory
-	json.Unmarshal(c.call(t, 2, "usage/history", nil), &h)
+	mustUnmarshal(t, c.call(t, 2, "usage/history", nil), &h)
 	day := h.Days[st.Day]["claude"]
 	if day.Cost["USD"] != 0.75 || day.InputTokens != 1000 || day.Turns != 1 || h.Now == "" || !sameZone(h.TimeZone) {
 		t.Fatalf("%+v", h)
 	}
 	// Limits: set, a key left alone when absent, taken away with null.
-	json.Unmarshal(c.call(t, 3, "cost/setLimits", map[string]any{"daily": map[string]any{"amount": 5, "currency": "USD"}, "perAgentTokens": 100000}), &st)
+	mustUnmarshal(t, c.call(t, 3, "cost/setLimits", map[string]any{"daily": map[string]any{"amount": 5, "currency": "USD"}, "perAgentTokens": 100000}), &st)
 	if st.Limits.Daily == nil || st.Limits.Daily.Amount != 5 || *st.Limits.PerAgentTokens != 100000 {
 		t.Fatalf("%+v", st.Limits)
 	}
 	st = wire.CostState{}
-	json.Unmarshal(c.call(t, 4, "cost/setLimits", map[string]any{"daily": nil}), &st)
+	mustUnmarshal(t, c.call(t, 4, "cost/setLimits", map[string]any{"daily": nil}), &st)
 	if st.Limits.Daily != nil || st.Limits.PerAgentTokens == nil {
 		t.Fatalf("%+v", st.Limits)
 	}
 	var m wire.Achievements
-	json.Unmarshal(c.call(t, 5, "achievements/state", nil), &m)
+	mustUnmarshal(t, c.call(t, 5, "achievements/state", nil), &m)
 	var th wire.TimeHistory
-	json.Unmarshal(c.call(t, 6, "time/history", nil), &th)
+	mustUnmarshal(t, c.call(t, 6, "time/history", nil), &th)
 	if m.Earned == nil || th.Hours == nil || th.Now == "" || !sameZone(th.TimeZone) {
 		t.Fatalf("%+v %+v", m, th)
 	}

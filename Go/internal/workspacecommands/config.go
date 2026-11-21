@@ -193,57 +193,7 @@ func From(value any) (Config, error) {
 		return Config{}, err
 	}
 	if given, present := o["list"]; present {
-		list, isLine := given.(string)
-		var request *Request
-		if !isLine {
-			r, err := requestFrom(given, "list")
-			if err != nil {
-				return Config{}, err
-			}
-			request = r
-		} else if list == "" {
-			return Config{}, ConfigError("list is empty")
-		}
-		var shape Shape
-		if fields, ok := o["json"].(map[string]any); ok {
-			paths := map[string]string{}
-			for key, value := range fields {
-				if key == "items" {
-					continue
-				}
-				path, ok := value.(string)
-				if !ok {
-					return Config{}, ConfigError("json." + key + " must be a path")
-				}
-				paths[key] = path
-			}
-			if _, ok := paths["id"]; !ok {
-				return Config{}, ConfigError("json needs an id path")
-			}
-			items, _ := fields["items"].(string)
-			shape = Shape{Fields: paths, Items: items}
-		} else if columns := strings_(o["columns"]); len(columns) > 0 {
-			if !contains(columns, "id") {
-				return Config{}, ConfigError("columns must name an id column")
-			}
-			shape = Shape{Columns: columns}
-		} else if request != nil {
-			return Config{}, ConfigError("a list request needs json paths")
-		} else {
-			return Config{}, ConfigError("a list needs columns, or json paths")
-		}
-		if request != nil && shape.Fields == nil {
-			return Config{}, ConfigError("a list request needs json paths")
-		}
-		commands, err := commandsFrom(o, "")
-		if err != nil {
-			return Config{}, err
-		}
-		making, err := makingFrom(o)
-		if err != nil {
-			return Config{}, err
-		}
-		return newConfig(nil, &Listing{Command: list, Request: request, Shape: shape, Commands: commands}, states, making), nil
+		return listedConfig(o, given, states)
 	}
 	if _, ok := o["create"]; ok {
 		return Config{}, ConfigError("create and delete need a list command, which finds what they made")
@@ -255,6 +205,92 @@ func From(value any) (Config, error) {
 	if len(items) == 0 {
 		return Config{}, ConfigError("give workspaces, a list command, or a preset")
 	}
+	entries, err := entriesFrom(items)
+	if err != nil {
+		return Config{}, err
+	}
+	return newConfig(entries, nil, states, Making{}), nil
+}
+
+// listedConfig reads a configuration whose workspaces a list command or request finds;
+// given is its list key.
+func listedConfig(o map[string]any, given any, states map[string]State) (Config, error) {
+	list, isLine := given.(string)
+	var request *Request
+	if !isLine {
+		r, err := requestFrom(given, "list")
+		if err != nil {
+			return Config{}, err
+		}
+		request = r
+	} else if list == "" {
+		return Config{}, ConfigError("list is empty")
+	}
+	shape, err := listShape(o, request)
+	if err != nil {
+		return Config{}, err
+	}
+	commands, err := commandsFrom(o, "")
+	if err != nil {
+		return Config{}, err
+	}
+	making, err := makingFrom(o)
+	if err != nil {
+		return Config{}, err
+	}
+	return newConfig(nil, &Listing{Command: list, Request: request, Shape: shape, Commands: commands}, states, making), nil
+}
+
+// listShape reads how a list's output is read: json paths, or columns. A list request
+// needs json paths.
+func listShape(o map[string]any, request *Request) (Shape, error) {
+	var shape Shape
+	if fields, ok := o["json"].(map[string]any); ok {
+		s, err := jsonShape(fields)
+		if err != nil {
+			return Shape{}, err
+		}
+		shape = s
+	} else if columns := strings_(o["columns"]); len(columns) > 0 {
+		if !contains(columns, "id") {
+			return Shape{}, ConfigError("columns must name an id column")
+		}
+		shape = Shape{Columns: columns}
+	} else if request != nil {
+		return Shape{}, ConfigError("a list request needs json paths")
+	} else {
+		return Shape{}, ConfigError("a list needs columns, or json paths")
+	}
+	if request != nil && shape.Fields == nil {
+		return Shape{}, ConfigError("a list request needs json paths")
+	}
+	return shape, nil
+}
+
+// jsonShape reads a list's json key: a path for each field, which must name an id, and
+// the path of the items.
+func jsonShape(fields map[string]any) (Shape, error) {
+	paths := map[string]string{}
+	for key, value := range fields {
+		if key == "items" {
+			continue
+		}
+		path, ok := value.(string)
+		if !ok {
+			return Shape{}, ConfigError("json." + key + " must be a path")
+		}
+		paths[key] = path
+	}
+	if _, ok := paths["id"]; !ok {
+		return Shape{}, ConfigError("json needs an id path")
+	}
+	items, _ := fields["items"].(string)
+	return Shape{Fields: paths, Items: items}, nil
+}
+
+// entriesFrom reads a fixed list of workspaces. Each needs a name or an id, and no two
+// have the same id.
+func entriesFrom(items []any) ([]Entry, error) {
 	var entries []Entry
 	for n, item := range items {
 		fields, _ := item.(map[string]any)
@@ -263,7 +299,7 @@ func From(value any) (Config, error) {
 			name, _ = fields["id"].(string)
 		}
 		if name == "" {
-			return Config{}, ConfigError(fmt.Sprintf("workspace %d has no name", n+1))
+			return nil, ConfigError(fmt.Sprintf("workspace %d has no name", n+1))
 		}
 		id, ok := fields["id"].(string)
 		if !ok {
@@ -271,16 +307,16 @@ func From(value any) (Config, error) {
 		}
 		for _, e := range entries {
 			if e.ID == id {
-				return Config{}, ConfigError("two workspaces are called " + id)
+				return nil, ConfigError("two workspaces are called " + id)
 			}
 		}
 		commands, err := commandsFrom(fields, name+": ")
 		if err != nil {
-			return Config{}, err
+			return nil, err
 		}
 		entries = append(entries, Entry{ID: id, Name: name, Commands: commands})
 	}
-	return newConfig(entries, nil, states, Making{}), nil
+	return entries, nil
 }
 
 // action is a command or a request at key: the line, the request, or neither.

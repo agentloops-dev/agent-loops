@@ -6,14 +6,9 @@ false positive. Do not add broad suppressions to make a scan quiet.
 
 Tool pins for the first scan:
 
-- Periphery 3.8.0
-- `periphery-3.8.0.zip` SHA-256 `07d4e286e31dd79164df39097e0b59f533c94badbe18158464a455ea88a166d7`
+- Periphery: pinned in `scripts/lint.sh` since #6336 (3.8.0)
 - `golang.org/x/tools/cmd/deadcode` v0.49.0
-- Knip 6.42.1
-
-The Web Knip entry points are `src/main.tsx`, `src/sandbox/proxy.ts` and `src/sw.ts` (the
-service worker), the JavaScript bundles declared in `Web/build.mjs`. Knip does not infer these API-based
-esbuild entries, so `Web/knip.json` names them. The analyzer configuration has no ignores.
+- Knip: pinned in `Web/package.json` since #6337 (6.45.1)
 
 ## Confirmed false positives
 
@@ -40,27 +35,18 @@ Added 2026-10-29 (`2026-10-29.md`, the first complete `GOOS=darwin -test` scan):
 
 ### Periphery (Swift)
 
-- `Packages/AgentsKit/Sources/AgentsKitCore/Runtimes/Allowance/LimitRecognition.swift`
-  `isAntigravityUsageLimit(_:)`: Periphery lists it as unused, but line 101 passes it to
-  `contains(where:)`. A function reference has no `(` after the name, so a label test
-  misses it; look for `.name` and `where: name` too (added 2026-10-31).
-
-- `Shared/UI/Paper.swift` `forgeWaitingWash` and `forgeWaitingRule`: Periphery lists them
-  as unused, but they are design tokens. `design/tokens.json` names each one in its
-  `dev.agentloops.swift` extension, and `DesignTokensTests` reads them by that name. A
-  Paper colour with a `dev.agentloops.swift` entry is live until the token goes
-  (added 2026-11-12).
-
-- `Agents.xcodeproj` is not checked in. Run `xcodegen generate` in the review worktree
-  after merging `main` and before the index build, or files added since the project was
-  made are missing from the build and from the index (added 2026-10-30).
+- Since #6336, Periphery is a gate on every PR (`scripts/lint.sh periphery`, in
+  `swift-lint:lint`), not this review's: a Swift declaration kept on purpose is a line in
+  `.periphery-allowed.txt`, with why. Of the entries that were here, the whole-program scan no
+  longer reports `isAntigravityUsageLimit`; `Paper.forgeWaitingWash` and `forgeWaitingRule`
+  are in the allowlist; and `run_periphery` runs `xcodegen generate` itself (added 2026-11-19).
 
 ### Knip (Web)
 
-- Any export of `Web/src` that a `Web/test/*.test.mjs` file names: the tests bundle the
-  source with `test/load.mjs` and read exports by name, which Knip does not follow.
-  Knip lists them as unused exports. Not ignored in `knip.json` (it would hide real
-  findings); filter them when reading the output.
+- Since #6337, Knip is a gate on every PR (`scripts/lint.sh knip`, in `web:lint`), not this
+  review's: a web file, export or dependency kept on purpose is an entry in
+  `Web/knip.config.js`, with why. The old entry here (an export that a test names) is settled
+  there: the config reads a test's `load("src/…")` as an import (added 2026-11-19).
 
 ### Compatibility search
 

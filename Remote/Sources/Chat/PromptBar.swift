@@ -18,8 +18,6 @@ struct PromptBar: View {
     /// Set in a scene of its own (#888): its session, not the selection.
     @Environment(\.poppedChat) private var popped
     @Environment(\.scenePhase) private var scenePhase
-    @Environment(\.horizontalSizeClass) private var sizeClass
-    @Environment(\.chatActions) private var chatActions
     let agent: Agent
     /// A question or a form is floating above. The bar keeps to its field row while it
     /// is not being typed in, so the question has the room.
@@ -107,6 +105,8 @@ struct PromptBar: View {
         .animation(ResponseMotion.response, value: isMentioning)
         .onAppear { restoreDraft() }
         .onChange(of: agent.id) { restoreDraft() }
+        // After an error stop, "Carry on" waits in an empty bar, as on the Mac.
+        .modifier(OffersCarryOn(text: $text, agent: agent))
         // Voice mode listens with its own dictation: this bar's stops, so the same words do
         // not go two ways (#2445).
         .onChange(of: VoiceMode.shared.isOn) { _, isOn in

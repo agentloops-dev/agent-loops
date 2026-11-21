@@ -340,3 +340,11 @@ func TestItemPageHasChildrenAndEvents(t *testing.T) {
 		t.Fatalf("plan reads %q", f.asked)
 	}
 }
+
+// #6349: a changed-since list is a relative time, which is not in the person's time zone.
+func TestSearchJQLSinceMinutes(t *testing.T) {
+	jql := SearchJQL([]string{"PROJ"}, SearchFilter{State: "all", SinceMinutes: 7})
+	if !strings.Contains(jql, `updated >= "-7m"`) || !strings.HasSuffix(jql, "ORDER BY updated DESC") {
+		t.Fatalf("jql: %s", jql)
+	}
+}

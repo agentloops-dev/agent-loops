@@ -379,7 +379,7 @@ struct ChoiceChips: View {
         } else if let runtimeID = model.startRuntimeID {
             let choices = SandboxCatalog.choices(for: runtimeID)
             let runtimeDefault = model.sandboxSettings.choice(for: runtimeID)
-            let title = SandboxWords.override(model.startSandbox, runtimeDefault: runtimeDefault, runtimeID: runtimeID)
+            let title = SandboxWords.override(model.startSandbox, runtimeDefault: runtimeDefault)
             if choices.isEmpty {
                 // Its fixed value, in the shared words (#2658): said, not offered. With no
                 // sandbox the app can vouch for, the organisation's rule refuses it (#998),
@@ -397,7 +397,7 @@ struct ChoiceChips: View {
                     ForEach(choices, id: \.self) { choice in
                         if let setBy, choice != .on {
                             OrgPolicyMenuItem(name: choice == .off ? SandboxWords.startWithout
-                                                  : SandboxWords.choice(choice, runtimeID: runtimeID), mark: setBy)
+                                                  : SandboxWords.choice(choice), mark: setBy)
                         } else {
                             Button {
                                 // The value Settings gives, chosen again, follows Settings still.
@@ -407,7 +407,7 @@ struct ChoiceChips: View {
                                     model.choose("agent-full-access", for: "mode")
                                 }
                             } label: {
-                                choiceLabel(SandboxWords.choice(choice, runtimeID: runtimeID),
+                                choiceLabel(SandboxWords.choice(choice),
                                             chosen: (model.startSandbox ?? runtimeDefault) == choice)
                                 if model.startSandbox == nil, choice == runtimeDefault {
                                     Text(LevelWords.followsSettings)

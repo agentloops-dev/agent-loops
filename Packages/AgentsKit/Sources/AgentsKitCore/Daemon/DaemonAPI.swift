@@ -93,27 +93,11 @@ public enum DaemonAPI {
         /// fixed; without one, the first id the device names is the only one it may use.
         /// Said by the bridge, before a single line of the device's is carried.
         public static let connectionBindDevice = "connection/bindDevice"
-        /// A connection saying it carries mail: that it hears `mailbox/post` and takes
-        /// what it hears to the devices' mailboxes. Said once, by the bridge, right after
-        /// it connects (025).
-        ///
-        /// It exists because nothing else can tell the daemon so. Every connection starts
-        /// as the Mac and the bridge never says otherwise, and a withdrawal broadcast
-        /// while no carrier is listening is lost for good — the need it withdraws is
-        /// over, so there is no later decision to post it again. A withdrawal waits in
-        /// `attention.json` until a connection has said this.
-        public static let mailboxCarry = "mailbox/carry"
-        /// The paired devices (021 US5).
-        public static let devicesList = "devices/list"
         /// A device saying who it is and handing over its public key, once — which is
         /// all pairing is. Returns the record; the same id with the same key is the
         /// same device and gets its record back, and the same id with a **different**
         /// key is refused `notSupported` — a key never changes under an identity.
         public static let devicesAnnounce = "devices/announce"
-        /// The Mac's window forgetting a paired device (046, R11): its record goes, and the
-        /// bridge stops carrying anything for it through the relay. Refused `notAllowed` on
-        /// a device's own connection.
-        public static let devicesForget = "devices/forget"
         /// The bridge handing the daemon the public half of the Mac's relay key, so a device
         /// announcing on the direct link is given it (046, R4). Said once per connection,
         /// right after `mailbox/carry`.
@@ -322,11 +306,6 @@ public enum DaemonAPI {
         /// of the bundle or the patch, and the send itself, which makes or brings up to
         /// date the host's copy and adds it as a folder.
         public static let foldersReceiveState = "folders/receiveState"
-        public static let foldersReceiveUpload = "folders/receiveUpload"
-        public static let foldersReceive = "folders/receive"
-        /// The sending side, on this Mac's host, since the window reads no repository
-        /// itself: the sheet's facts, the bundle and patch made, and one part of either.
-        public static let foldersBringBack = "folders/bringBack"
         /// Bring Back from ‹machine›… (#4640): this Mac's host brings the branches back
         /// itself, through the control plane, and answers at once; `bringBack/changed` says
         /// how it goes, and `folders/bringingBack` lists those under way for a window that
@@ -334,8 +313,6 @@ public enum DaemonAPI {
         public static let foldersBringBackFrom = "folders/bringBackFrom"
         public static let foldersBringingBack = "folders/bringingBack"
         public static let foldersSendFacts = "folders/sendFacts"
-        public static let foldersSendPack = "folders/sendPack"
-        public static let foldersSendRead = "folders/sendRead"
         /// Send to ‹machine›… (#4613): this Mac's host sends the folder itself, through the
         /// control plane, and answers at once; `send/changed` says how it goes, and
         /// `folders/sends` lists the sends under way for a window that connects mid-send.
@@ -374,12 +351,6 @@ public enum DaemonAPI {
         /// Deny one on this host only (#391): it does not run here, and the file is not
         /// touched, so other hosts still see it waiting. Takes a `WorkflowApproveRequest`.
         public static let workflowsDeny = "workflows/deny"
-        /// How many workflows turned on may run in each folder (#506): the
-        /// person's setting, as `WorkflowLimitSettings`.
-        public static let workflowsLimit = "workflows/limit"
-        /// Set it. The person's alone: not in an agent's allowlist, since a ceiling an
-        /// agent could raise for itself is not one. Answers the setting as kept.
-        public static let workflowsSetLimit = "workflows/setLimit"
         /// A folder's plugins and which are waiting for the person's OK (security review, S2).
         public static let pluginsList = "plugins/list"
         public static let pluginsApprove = "plugins/approve"
@@ -447,8 +418,6 @@ public enum DaemonAPI {
         /// socket was forwarded to on the server, the certificate it answers with, and the
         /// stand-in sign-in the runtime is given. Nothing secret; sent on every connect.
         public static let relayOffer = "relay/offer"
-        /// A window lends this Mac's own file sign-in for one runtime (049: OpenCode's).
-        public static let credentialsLendSignIn = "credentials/lendSignIn"
         /// The folders at a path, before there is any folder or agent to scope it to:
         /// what the window browses to choose a server folder as a folder (037).
         public static let filesBrowse = "files/browse"
@@ -467,7 +436,6 @@ public enum DaemonAPI {
         public static let shellDetach = "shell/detach"
         public static let shellInput = "shell/input"
         public static let shellResize = "shell/resize"
-        public static let shellSignal = "shell/signal"
         public static let shellRestart = "shell/restart"
         /// The shells an agent has, by number, so a window that opens finds the tabs it
         /// left rather than only the first (055).
@@ -500,7 +468,6 @@ public enum DaemonAPI {
         public static let achievementsState = "achievements/state"
         /// The Multiplier now (#3903), for the hero page (#3904). No params.
         public static let multiplierState = "multiplier/state"
-        public static let costSetLimits = "cost/setLimits"
         /// Cursor and Grok permission mode (061). Control only.
         public static let clientPermissionsState = "clientPermissions/state"
         public static let clientPermissionsSet = "clientPermissions/set"
@@ -530,6 +497,8 @@ public enum DaemonAPI {
         /// Settings ▸ You ▸ Secrets ▸ On This Machine (#5122): the secrets a machine keeps for itself,
         /// which agents saved there. The person's own clients only.
         public static let secretsLocalList = "secrets/localList"
+        /// One of them taken out of the machine's store (#6335).
+        public static let secretsLocalRemove = "secrets/localRemove"
         /// Status ▸ Environment (#5259, #5260): a machine's `~/.agents/env` and each folder's `.agents/env`, one
         /// variable of a folder's file changed, what a session there gets, and a hand edit of `~/.agents/env` undone.
         /// The person's own clients only.
@@ -541,13 +510,10 @@ public enum DaemonAPI {
         public static let desktopControlSet = "desktopControl/set"
         public static let desktopControlResume = "desktopControl/resume"
         public static let desktopControlTakeOver = "desktopControl/takeOver"
-        /// The daily summary's one control (#3351): Off or Summary, and its time, for all
-        /// folders. The home folder's Daily summary workflow keeps it.
-        public static let dailySummarySettings = "dailySummary/settings"
-        public static let dailySummarySetSettings = "dailySummary/setSettings"
-        /// The daily summary's saved pages (#3721): the sidebar's Summary row and page.
-        public static let summariesList = "summaries/list"
-        public static let summariesRead = "summaries/read"
+        /// The daily checks' one control (#3355, #5853): on or off, and how often, for all
+        /// folders. The home folder's Daily checks workflow keeps it.
+        public static let dailyChecksSettings = "dailyChecks/settings"
+        public static let dailyChecksSetSettings = "dailyChecks/setSettings"
         /// One agent's override (nil clears it), and the card's recovery (064).
         public static let agentsSetSandbox = "agents/setSandbox"
         public static let agentsAnswerSandbox = "agents/answerSandbox"
@@ -630,23 +596,15 @@ public enum DaemonAPI {
         public static let modesChanged = "modes/changed"
         /// The display choices changed: the whole map, as `preferences/get` answers (#1033).
         public static let preferencesChanged = "preferences/changed"
-        /// The daily summary's control changed (#3351): the whole of it, as
-        /// `dailySummary/settings` answers.
-        public static let dailySummaryChanged = "dailySummary/changed"
-        /// The daily summary's saved pages changed (#3721): all of them, as `summaries/list`
-        /// answers.
-        public static let summariesChanged = "summaries/changed"
+        /// The daily checks' control changed (#3355, #5853): the whole of it, as
+        /// `dailyChecks/settings` answers.
+        public static let dailyChecksChanged = "dailyChecks/changed"
         /// The whole resolved fact for one need: where it should be showing and whether
         /// the person may be buzzed. Broadcast to every connection, not only to `to`,
         /// which is what lets the losers withdraw (021).
         public static let attentionChanged = "attention/changed"
         /// A device announced or was heard from: the whole record (021).
         public static let deviceChanged = "device/changed"
-        /// Something for a device's mailbox: a `MailboxItem`, sealed. The daemon has no
-        /// CloudKit and must not; the bridge hears this and posts it. Every connection
-        /// hears it, and that is safe: a need id, a device id and ciphertext name
-        /// nothing (021 FR-022).
-        public static let mailboxPost = "mailbox/post"
         /// A folder appeared, was archived, or its counts moved. Windows upsert by
         /// folder, the way they upsert agents by id.
         public static let folderChanged = "folder/changed"
@@ -1079,14 +1037,6 @@ public enum DaemonAPI {
         /// Why there will be no runtime, when there will be none.
         public var failure: String?
 
-        public init(draftID: UUID, options: [ConfigOption] = [], commands: [SlashCommand] = [],
-                    failure: String? = nil) {
-            self.draftID = draftID
-            self.options = options
-            self.commands = commands
-            self.failure = failure
-        }
-
         public init(from decoder: any Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
             draftID = try c.decode(UUID.self, forKey: .draftID)
@@ -1380,10 +1330,6 @@ public enum DaemonAPI {
     public struct UndoTurnResult: Codable, Sendable, Hashable {
         public var putBack: [String]
         public var changedSince: [String]
-        public init(putBack: [String], changedSince: [String]) {
-            self.putBack = putBack
-            self.changedSince = changedSince
-        }
     }
 
     public struct ChangesFileRequest: Codable, Sendable {
@@ -1457,10 +1403,6 @@ public enum DaemonAPI {
     public struct FileMentionDTO: Codable, Sendable, Hashable {
         public var path: String
         public var relativePath: String
-        public init(path: String, relativePath: String) {
-            self.path = path
-            self.relativePath = relativePath
-        }
 
         public var mention: FileMention {
             FileMention(url: URL(filePath: path), relativePath: relativePath)
@@ -1500,7 +1442,6 @@ public enum DaemonAPI {
     /// Whether the queued prompt was still waiting and now has the new words (#1552).
     public struct EditQueuedResult: Codable, Sendable {
         public var edited: Bool
-        public init(edited: Bool) { self.edited = edited }
     }
 
     /// Find in a chat (#1532): its prompts and replies that hold `text`, any case.
@@ -1521,11 +1462,6 @@ public enum DaemonAPI {
         public var index: Int
         public var entryID: UUID
         public var line: String
-        public init(index: Int, entryID: UUID, line: String) {
-            self.index = index
-            self.entryID = entryID
-            self.line = line
-        }
     }
 
     /// The session search over what was said (#1585).
@@ -1543,15 +1479,10 @@ public enum DaemonAPI {
     public struct SaidMatch: Codable, Sendable, Hashable {
         public var agentID: UUID
         public var line: String
-        public init(agentID: UUID, line: String) {
-            self.agentID = agentID
-            self.line = line
-        }
     }
 
     public struct SaidSearchResult: Codable, Sendable {
         public var matches: [SaidMatch]
-        public init(matches: [SaidMatch]) { self.matches = matches }
     }
 
     /// A file's problems, as its language server finds them (#844).
@@ -1587,11 +1518,6 @@ public enum DaemonAPI {
         public var label: String
         public var insert: String?
         public var detail: String?
-        public init(label: String, insert: String? = nil, detail: String? = nil) {
-            self.label = label
-            self.insert = insert
-            self.detail = detail
-        }
         /// What goes in the text.
         public var written: String { insert ?? label }
     }
@@ -1613,13 +1539,6 @@ public enum DaemonAPI {
         public var severity: String
         public var message: String
         public var source: String?
-        public init(line: Int, column: Int, severity: String, message: String, source: String? = nil) {
-            self.line = line
-            self.column = column
-            self.severity = severity
-            self.message = message
-            self.source = source
-        }
     }
 
     /// At most 200 problems and the server that found them; `reason` when there is none.
@@ -1641,22 +1560,12 @@ public enum DaemonAPI {
         public var os: String
         public var booted: Bool
         public var id: String { udid }
-        public init(udid: String, name: String, os: String, booted: Bool) {
-            self.udid = udid
-            self.name = name
-            self.os = os
-            self.booted = booted
-        }
     }
 
     /// The host's simulators, booted first; `reason` says why there are none to list.
     public struct SimulatorList: Codable, Sendable {
         public var simulators: [Simulator]
         public var reason: String?
-        public init(simulators: [Simulator], reason: String? = nil) {
-            self.simulators = simulators
-            self.reason = reason
-        }
     }
 
     public struct SimulatorRequest: Codable, Sendable {
@@ -1690,122 +1599,12 @@ public enum DaemonAPI {
         public var jpeg: Data
         public var width: Int
         public var height: Int
-        public init(jpeg: Data, width: Int, height: Int) {
-            self.jpeg = jpeg
-            self.width = width
-            self.height = height
-        }
     }
 
     /// The newest matches, oldest first; `more` when older ones were left out.
     public struct FindResult: Codable, Sendable {
         public var matches: [FindMatch]
         public var more: Bool
-        public init(matches: [FindMatch], more: Bool) {
-            self.matches = matches
-            self.more = more
-        }
-    }
-
-    /// What the MCP helper sends when an agent calls the older suggestion tool.
-    ///
-    /// The token, not an agent id: the helper is a process the runtime started, and
-    /// anything on this Mac can reach the daemon's socket. A token the daemon minted
-    /// for one session is the only thing that says which agent this is, and it is
-    /// refused the moment that session is over.
-    /// What the MCP helper sends when an agent says how the work went.
-    ///
-    /// The token does the same work it does for a suggestion: the helper is a process
-    /// the runtime started, anything on this Mac can reach the socket, and a token the
-    /// daemon minted for one session is the only thing that says which agent this is.
-    /// The outcome is the wire spelling, checked at the daemon rather than here — a
-    /// word this build does not know must be refused, never rounded.
-    public struct ReportOutcomeRequest: Codable, Sendable {
-        public var token: String
-        public var outcome: String
-        public var message: String
-        /// Only with `blocked` (039): the agents it waits on, as it wrote them — ids or
-        /// titles, resolved by the daemon. Optional, so an older helper still relays.
-        public var waitingOn: [String]?
-
-        public init(token: String, outcome: String, message: String,
-                    waitingOn: [String]? = nil) {
-            self.token = token
-            self.outcome = outcome
-            self.message = message
-            self.waitingOn = waitingOn
-        }
-    }
-
-    public struct SuggestPromptsRequest: Codable, Sendable {
-        public var token: String
-        public var prompts: [SuggestedPrompt]
-
-        public init(token: String, prompts: [SuggestedPrompt]) {
-            self.token = token
-            self.prompts = prompts
-        }
-    }
-
-    /// What the MCP helper sends when an agent ends its turn with the one call (023).
-    ///
-    /// The token does the work it does for a report. The outcome is the wire
-    /// spelling, checked at the daemon and never rounded. The prompts have already
-    /// been cleaned by the service — trimmed, cut to four, empties dropped — and may
-    /// be empty, which means no chips: the call is the whole account of the turn.
-    public struct FinishTurnRequest: Codable, Sendable {
-        public var token: String
-        public var outcome: String
-        public var message: String
-        public var prompts: [SuggestedPrompt]
-        /// Only with `blocked` (039). See `ReportOutcomeRequest`.
-        public var waitingOn: [String]?
-        /// `any` or `all` (#152): whether the first of `waitingOn` to finish resumes it.
-        /// A string, checked at the daemon; left out is `all`.
-        public var wakeOn: String?
-        /// `request_archive` or `archive`: where the agent asked to be put once the turn is over.
-        /// A string, checked at the daemon, and optional: an agent's MCP helper is
-        /// started from whatever binary was on disk when its session began, so one
-        /// begun before this field existed relays a call without it.
-        public var afterwards: String?
-        public var addLabels: [String]
-        public var removeLabels: [String]
-        /// Where the agent asked to move once the turn ends (053). None clears a move
-        /// the agent asked for earlier in the same turn: the last call is the whole
-        /// account of it.
-        public var move: MoveAsk?
-
-        public init(token: String, outcome: String, message: String,
-                    prompts: [SuggestedPrompt],
-                    waitingOn: [String]? = nil,
-                    wakeOn: String? = nil, afterwards: String? = nil,
-                    addLabels: [String] = [], removeLabels: [String] = [],
-                    move: MoveAsk? = nil) {
-            self.token = token
-            self.outcome = outcome
-            self.message = message
-            self.prompts = prompts
-            self.waitingOn = waitingOn
-            self.wakeOn = wakeOn
-            self.afterwards = afterwards
-            self.addLabels = addLabels
-            self.removeLabels = removeLabels
-            self.move = move
-        }
-
-        public init(from decoder: any Decoder) throws {
-            let c = try decoder.container(keyedBy: CodingKeys.self)
-            token = try c.decode(String.self, forKey: .token)
-            outcome = try c.decode(String.self, forKey: .outcome)
-            message = try c.decode(String.self, forKey: .message)
-            prompts = try c.decode([SuggestedPrompt].self, forKey: .prompts)
-            waitingOn = try c.decodeIfPresent([String].self, forKey: .waitingOn)
-            wakeOn = try c.decodeIfPresent(String.self, forKey: .wakeOn)
-            afterwards = try c.decodeIfPresent(String.self, forKey: .afterwards)
-            addLabels = try c.decodeIfPresent([String].self, forKey: .addLabels) ?? []
-            removeLabels = try c.decodeIfPresent([String].self, forKey: .removeLabels) ?? []
-            move = try c.decodeIfPresent(MoveAsk.self, forKey: .move)
-        }
     }
 
     /// What the MCP helper sends when an agent calls the show-file tool. The token
@@ -1877,65 +1676,6 @@ public enum DaemonAPI {
         /// sent, and a client treats every folder it shows for the agent as changed.
         /// Absent from a host before it, which always sent them all.
         public var many: Bool?
-
-        /// The most folders one notice names; a build in a lane changes thousands.
-        public static let folderLimit = 64
-
-        public init(agentID: UUID, folders: [String], many: Bool? = nil) {
-            self.agentID = agentID
-            self.folders = folders
-            self.many = many
-        }
-    }
-
-    public struct ShowFileRequest: Codable, Sendable {
-        public var token: String
-        public var file: ShownFile
-
-        public init(token: String, file: ShownFile) {
-            self.token = token
-            self.file = file
-        }
-    }
-
-    /// What the MCP helper sends when an agent calls `ask_question`. The token does the
-    /// same work it does for a suggestion, and the questions become a form
-    /// elicitation the daemon holds until the person answers — including on the phone.
-    public struct AskFormRequest: Codable, Sendable {
-        public var token: String
-        public var title: String?
-        public var questions: [Question]
-
-        public struct Question: Codable, Sendable {
-            public var id: String
-            public var prompt: String
-            public var options: [Option]?
-            public var allowMultiple: Bool?
-
-            public struct Option: Codable, Sendable {
-                public var id: String
-                public var label: String?
-
-                public init(id: String, label: String? = nil) {
-                    self.id = id
-                    self.label = label
-                }
-            }
-
-            public init(id: String, prompt: String, options: [Option]? = nil,
-                        allowMultiple: Bool? = nil) {
-                self.id = id
-                self.prompt = prompt
-                self.options = options
-                self.allowMultiple = allowMultiple
-            }
-        }
-
-        public init(token: String, title: String? = nil, questions: [Question]) {
-            self.token = token
-            self.title = title
-            self.questions = questions
-        }
     }
 
     /// One agent, one file, to every window.
@@ -2010,17 +1750,6 @@ public enum DaemonAPI {
             guard let index else { return TranscriptRequest(agentID: agentID, limit: 50) }
             return TranscriptRequest(agentID: agentID, before: index + 4, limit: 8)
         }
-
-        /// The request as a host answers it (#200): a negative limit or position is
-        /// refused, and a limit past the ceiling is cut to it. A limit of zero is an
-        /// empty page.
-        public func bounded() throws -> TranscriptRequest {
-            var bounded = self
-            bounded.limit = try DaemonAPI.boundedLimit(limit, ceiling: Self.limitCeiling)
-            try DaemonAPI.requireNotNegative(before, named: "before")
-            try DaemonAPI.requireNotNegative(from, named: "from")
-            return bounded
-        }
     }
 
     public struct TurnsRequest: Codable, Sendable {
@@ -2053,27 +1782,6 @@ public enum DaemonAPI {
             before = try c.decodeIfPresent(Int.self, forKey: .before)
             limit = try c.decodeIfPresent(Int.self, forKey: .limit) ?? 50
         }
-
-        /// The request as a host answers it (#200), as `TranscriptRequest.bounded()`.
-        public func bounded() throws -> TurnsRequest {
-            var bounded = self
-            bounded.limit = try DaemonAPI.boundedLimit(limit, ceiling: Self.limitCeiling)
-            try DaemonAPI.requireNotNegative(before, named: "before")
-            return bounded
-        }
-    }
-
-    /// A page's limit as a host takes it (#200): never negative, never past `ceiling`.
-    static func boundedLimit(_ limit: Int, ceiling: Int) throws -> Int {
-        try requireNotNegative(limit, named: "limit")
-        return min(limit, ceiling)
-    }
-
-    /// One position or limit in a request, refused in words when it is below zero (#200).
-    static func requireNotNegative(_ value: Int?, named name: String) throws {
-        guard let value, value < 0 else { return }
-        throw JSONRPCError(code: JSONRPCError.invalidParams,
-                           message: "\(name) must be 0 or more, not \(value).")
     }
 
     // MARK: Cost
@@ -2162,62 +1870,6 @@ public enum DaemonAPI {
     public struct ApplyAllowances: Codable, Sendable {
         public var states: [AllowanceState]
         public init(states: [AllowanceState]) { self.states = states }
-    }
-
-    public struct SetLimitsRequest: Codable, Sendable {
-        public var perAgent: Cost??
-        public var daily: Cost??
-        /// The token limits (#838), on the same absent / null terms.
-        public var perAgentTokens: Int??
-        public var dailyTokens: Int??
-
-        public init(perAgent: Cost?? = nil, daily: Cost?? = nil,
-                    perAgentTokens: Int?? = nil, dailyTokens: Int?? = nil) {
-            self.perAgent = perAgent
-            self.daily = daily
-            self.perAgentTokens = perAgentTokens
-            self.dailyTokens = dailyTokens
-        }
-
-        /// Every limit in `limits`, each present: what a copy to another host sends.
-        public init(copying limits: CostLimits) {
-            self.init(perAgent: .some(limits.perAgent), daily: .some(limits.daily),
-                      perAgentTokens: .some(limits.perAgentTokens), dailyTokens: .some(limits.dailyTokens))
-        }
-
-        enum CodingKeys: String, CodingKey { case perAgent, daily, perAgentTokens, dailyTokens }
-
-        public init(from decoder: any Decoder) throws {
-            let c = try decoder.container(keyedBy: CodingKeys.self)
-            perAgent = c.contains(.perAgent)
-                ? .some(try c.decodeIfPresent(Cost.self, forKey: .perAgent)) : .none
-            daily = c.contains(.daily)
-                ? .some(try c.decodeIfPresent(Cost.self, forKey: .daily)) : .none
-            perAgentTokens = c.contains(.perAgentTokens)
-                ? .some(try c.decodeIfPresent(Int.self, forKey: .perAgentTokens)) : .none
-            dailyTokens = c.contains(.dailyTokens)
-                ? .some(try c.decodeIfPresent(Int.self, forKey: .dailyTokens)) : .none
-        }
-
-        public func encode(to encoder: any Encoder) throws {
-            var c = encoder.container(keyedBy: CodingKeys.self)
-            if case .some(let value) = perAgent {
-                if let value { try c.encode(value, forKey: .perAgent) }
-                else { try c.encodeNil(forKey: .perAgent) }
-            }
-            if case .some(let value) = daily {
-                if let value { try c.encode(value, forKey: .daily) }
-                else { try c.encodeNil(forKey: .daily) }
-            }
-            if case .some(let value) = perAgentTokens {
-                if let value { try c.encode(value, forKey: .perAgentTokens) }
-                else { try c.encodeNil(forKey: .perAgentTokens) }
-            }
-            if case .some(let value) = dailyTokens {
-                if let value { try c.encode(value, forKey: .dailyTokens) }
-                else { try c.encodeNil(forKey: .dailyTokens) }
-            }
-        }
     }
 
     /// One agent's own ceiling. Null means "no ceiling of its own": the app-wide
@@ -2443,27 +2095,12 @@ public enum DaemonAPI {
         public init(_ agent: Agent) {
             self.init(lastActivityAt: agent.lastActivityAt, id: agent.id, archivedAt: agent.archivedAt)
         }
-
-        /// The list's order: newest activity first, then by id.
-        public static func listOrder(_ a: Agent, _ b: Agent) -> Bool {
-            listOrder(a, ListCursor(b))
-        }
-
-        /// Whether `a` comes before the point `b` in the list's order.
-        public static func listOrder(_ a: Agent, _ b: ListCursor) -> Bool {
-            if a.lastActivityAt != b.lastActivityAt { return a.lastActivityAt > b.lastActivityAt }
-            return a.id.uuidString < b.id.uuidString
-        }
     }
 
     // MARK: Notifications
 
     /// `agent/entry`: sent only to the connections showing the agent (#203).
     public struct EntryNotification: Codable, Sendable {
-        /// The most an entry may weigh on the wire, encoded (#203). A tool call's diff or a
-        /// file read whole can be megabytes; past this, a stub goes and the open chat reads
-        /// the entry with `agents/transcript`.
-        public static let entryByteLimit = 32 * 1024
 
         public var agentID: UUID
         public var entry: TranscriptEntry
@@ -2517,13 +2154,6 @@ public enum DaemonAPI {
         public var url: URL
         public var userCode: String?
         public var wantsCode: Bool
-        public init(signInID: String, runtimeID: String, url: URL, userCode: String? = nil, wantsCode: Bool) {
-            self.signInID = signInID
-            self.runtimeID = runtimeID
-            self.url = url
-            self.userCode = userCode
-            self.wantsCode = wantsCode
-        }
     }
 
     /// The end of a sign-in `runtimes/signInStart` began (#3349): the code, or cancel.
@@ -2864,25 +2494,6 @@ public enum DaemonAPI {
         }
     }
 
-    public struct ShellSignalRequest: Codable, Sendable {
-        public var agentID: UUID
-        public var shell: Int
-        public var signal: Int32
-
-        public init(agentID: UUID, shell: Int = 0, signal: Int32) {
-            self.agentID = agentID
-            self.shell = shell
-            self.signal = signal
-        }
-
-        public init(from decoder: any Decoder) throws {
-            let c = try decoder.container(keyedBy: CodingKeys.self)
-            agentID = try c.decode(UUID.self, forKey: .agentID)
-            shell = try c.decodeIfPresent(Int.self, forKey: .shell) ?? 0
-            signal = try c.decode(Int32.self, forKey: .signal)
-        }
-    }
-
     public struct ShellOutputNotification: Codable, Sendable {
         public var agentID: UUID
         public var shell: Int
@@ -2953,8 +2564,6 @@ public enum DaemonAPI {
         // -32006 (a prompt to a working agent), -32019 (already answered), -32020 (no
         // such device), -32021 (no such need), -32037 (credential refused, now a
         // notification), -32046 (stop the turn first, 052).
-        public static let runtimeNotFound = -32001
-        public static let runtimeWillNotStart = -32002
         /// The runtime would not start because its command sandbox could not be set up
         /// (064). Its data is `SandboxWillNotStart`: the form keeps the prompt and offers
         /// **Start without sandbox** when `offOffered`.
@@ -2962,117 +2571,27 @@ public enum DaemonAPI {
         /// No runtime Auto may use can take the session (#2658): the form keeps the prompt,
         /// and the message names each runtime and why.
         public static let autoNoRuntime = -32083
-        public static let sessionGone = -32003
         public static let folderGone = -32004
         public static let noSuchAgent = -32005
-        /// Delete on an agent that is not archived, or that something still holds (#398).
-        /// The message is the reason. -32050 was a retired agent's tombstone (051), gone
-        /// with tombstones, and is not to be given out again.
-        public static let deleteRefused = -32051
-        /// The user's login shell is missing, or the agent's folder has gone (FR-024).
-        public static let shellWillNotStart = -32010
-        /// A restart was asked for on a shell that is still running.
-        public static let shellNotLive = -32011
         /// The runtime is installed and will not work until somebody signs in. Its own
         /// auth methods come back in the error's data, including the command Copilot
         /// names for the terminal.
         public static let needsSignIn = -32007
-        /// The runtime answered the handshake with a version we do not speak.
-        public static let wrongProtocolVersion = -32008
-        /// The runtime never said it could do the thing that was asked of it.
-        public static let notSupported = -32009
         /// Something only the Mac's own window may do, asked on a device's connection:
         /// forgetting a device (046).
         public static let notAllowed = -32060
-        /// A destructive call that nobody confirmed.
-        public static let notConfirmed = -32010
-        /// A folder that is not a folder, on archive or unarchive.
-        public static let noSuchFolder = -32012
-        /// Archiving a folder while one of its agents is still working. Deliberately
-        /// unlike archiving an agent, which stops the one it was given: cancelling
-        /// several turns because somebody tidied their sidebar is not a small thing,
-        /// so this refuses and names them.
-        public static let folderHasLiveAgents = -32013
-        /// A workflow id that is not one of this folder's.
-        public static let noSuchWorkflow = -32014
-        /// Front matter that could not be read, on a write. Refused before anything is
-        /// written: a file that could never fire is worth telling the agent about while
-        /// it can still fix it.
-        public static let workflowUnreadable = -32015
-        /// A path outside the calling agent's own workflow folder.
-        public static let notInWorkflowFolder = -32016
-        /// A new workflow in a folder that already has all the waiting ones it may
-        /// have, or one turned on when the total is already running (#506).
-        public static let workflowLimitReached = -32017
-        /// An agent turning back on a workflow the person turned off (#100). Only an
-        /// agent's own off can be undone by an agent.
-        public static let workflowTurnedOffByPerson = -32041
-        /// A new agent asked for while the day's spending limit is reached. Raised by
-        /// `agents/start` only: a prompt to an agent that already exists succeeds and
-        /// waits on that agent's queue, because losing what somebody typed because a
-        /// budget was reached would be the worst possible reading of "control cost".
-        public static let dayLimitReached = -32018
-        /// A daemon asked to quit while a turn is in flight (037).
-        public static let busy = -32040
         /// A server daemon had to start a runtime for this request and has no sign-in to
         /// start it with. Nothing was started, so the same request (same `sendID`) can be
         /// sent again after `credentials/lend` (043). `data`: `runtime`, `offered`.
         public static let credentialWanted = -32036
-        /// `credentials/lend` to a daemon that is not a server's (043, D5).
-        public static let notAServer = -32038
-        /// `credentials/lend` for a runtime this connection did not offer, or on a
-        /// connection that said the server uses its own sign-in only (043, FR-014).
-        public static let notOffered = -32039
         /// A server daemon had to start a runtime whose sign-in the Mac relays (056: Claude),
         /// and there was no relay, the server is not "own sign-in only", and it has no
         /// sign-in of its own. Nothing was started. `data`: `SignInWanted`.
         public static let signInWanted = -32070
-        /// A client or host from before the team tier, on a control plane with more than one
-        /// person (#1763, R14): it cannot tell people apart, so it is refused with "Update
-        /// Agents to join this team". Never said to a build that has `client.team/1`.
-        public static let updateToJoinTeam = -32074
-        /// A client over its rate at the control plane (#2150): the request was not run. The
-        /// socket stays open; wait a moment and try again.
-        public static let tooManyRequests = -32075
-        /// `presence/report` from a connection with no identity: not a window and not a
-        /// device the bridge opened on behalf of. The surface is taken from the
-        /// connection and never from the parameters, so there is nothing to report as.
-        public static let notASurface = -32022
-        /// A new agent asked for while the per-agent limit is zero. Every agent would
-        /// be at it before its first word, and a new one has no queue to hold on.
-        public static let agentLimitReached = -32023
-        /// Text that is not an HTTPS or SSH Git URL, or has no name to give a folder (027).
-        public static let notACloneURL = -32024
-        /// The folder a clone would become is already there and is not a checkout of
-        /// that repository. The message names it; nothing in it is touched.
-        public static let folderInTheWay = -32025
-        /// Git could not clone it. The message says why in a sentence.
-        public static let cloneFailed = -32026
-        /// An agent asked to do something to an agent that is not its to touch, or
-        /// past its folder's limit, or was itself started by an agent (028). The
-        /// message is the sentence the agent is shown.
-        public static let notYours = -32027
-        /// Making a worktree failed, or it could not be made at all (030). The message
-        /// is git's own words, and no agent was started.
-        public static let worktreeFailed = -32028
-        /// The worktree an agent works in is not there any more.
-        public static let worktreeMissing = -32029
-        /// The folder named is not a worktree of this folder's repository, or not one
-        /// the app made, where only those will do.
-        public static let notAWorktree = -32030
-        /// An agent is still working in the worktree to be removed.
-        public static let worktreeInUse = -32031
         /// The folder or file asked for is not there, or not any more (034).
         public static let fileGone = -32032
         /// `artifact/write` with a base: the file changed on disk since the edit began (#1858).
         public static let fileChanged = -32081
-        /// It is there and cannot be opened (034).
-        public static let fileNotReadable = -32033
-        /// `changes/file` for a path that is not in the agent's list of changes.
-        public static let notChanged = -32034
-        /// A lease action on something that is not there to act on: an end on a
-        /// resource nobody holds, an empty name, a waiter not in that line (036).
-        public static let leaseRefused = -32035
         /// A method this connection's role may not call: an agent's helper asking for
         /// something only a window may, or a process that is neither (security review).
         public static let notPermitted = -32045
@@ -3099,24 +2618,9 @@ public enum DaemonAPI {
         /// A write the disk refused: full, or a folder this may not write to (#88). The
         /// message says what was not kept and what to do; the data is `WriteFailure`.
         public static let couldNotSave = -32095
-        /// An agent copied in from another root (#228): its session and folder are that
-        /// root's live work, so this daemon will not start a runtime for it.
-        public static let importedAgent = -32096
-        /// The runtime session is live under another daemon on this Mac (#228), which
-        /// holds its lock. Two daemons driving one conversation is two agents doing one
-        /// agent's work in the same folder.
-        public static let sessionLiveElsewhere = -32097
-        /// A scratch daemon asked to run an agent in a folder outside its own root
-        /// (#228), without `--allow-outside-root`.
-        public static let outsideScratchRoot = -32098
-        /// `agents/list` with a `changedSince` this host cannot vouch for (#4785): too old,
-        /// or of another epoch. Ask for the whole list.
-        public static let revisionGone = -32105
         /// `firstBuild/start` while a first-build session that is not archived is there
         /// (#5056): the error's data has its `agentID`, so the client opens it.
         public static let firstBuildRunning = -32106
-        /// `user/sealedSecret` for a name the person has no secret under (#5114).
-        public static let noSuchSecret = -32107
         /// `user/sealedSecret` from a client the control plane keeps no copy for yet (#5114):
         /// it gets one when another of the person's clients is online (`sealing/work`).
         public static let noClientCopy = -32108
@@ -3152,18 +2656,11 @@ public enum DaemonAPI {
 
     public struct FolderRemovedNotification: Codable, Sendable {
         public var folder: URL
-        public init(folder: URL) {
-            self.folder = folder
-        }
     }
 
     public struct WorkflowRemovedNotification: Codable, Sendable {
         public var folder: URL
         public var workflowID: String
-        public init(folder: URL, workflowID: String) {
-            self.folder = folder
-            self.workflowID = workflowID
-        }
     }
 
     /// Put a workflow away, or bring it back.
@@ -3232,10 +2729,6 @@ public enum DaemonAPI {
     public struct PluginsList: Codable, Sendable {
         public var folder: URL
         public var plugins: [FolderPlugin]
-        public init(folder: URL, plugins: [FolderPlugin]) {
-            self.folder = folder
-            self.plugins = plugins
-        }
     }
 
     /// Approve a plugin's folder as the row showed it.
@@ -3329,136 +2822,7 @@ public enum DaemonAPI {
         }
     }
 
-    /// What an agent passes to the workflow tool.
-    public struct ManageWorkflowsRequest: Codable, Sendable {
-        public enum Action: String, Codable, Sendable {
-            case list, read, write, remove
-            /// Turn one on or off (#100).
-            case enable, disable
-            /// Run one now, as Run now does (#1524).
-            case run
-        }
-
-        public var token: String
-        public var action: Action
-        public var workflowID: String?
-        public var content: String?
-
-        public init(token: String, action: Action, workflowID: String? = nil,
-                    content: String? = nil) {
-            self.token = token
-            self.action = action
-            self.workflowID = workflowID
-            self.content = content
-        }
-    }
-
     // MARK: Agents started by agents (028)
-
-    /// What an agent passes to `start_session`. There is no folder: the new session
-    /// always starts in the caller's own folder, which the token decides.
-    public struct StartHelperRequest: Codable, Sendable {
-        public var token: String
-        public var prompt: String
-        public var runtime: String?
-        public var model: String?
-        public var permissionMode: String?
-        /// `"new"`, or the name of a worktree of the caller's repository, as the agent
-        /// wrote it (030). Resolved by the daemon, which alone can say what exists.
-        public var worktree: String?
-        public var labels: [String]
-
-        public init(token: String, prompt: String, runtime: String? = nil,
-                    model: String? = nil, permissionMode: String? = nil,
-                    worktree: String? = nil, labels: [String] = []) {
-            self.worktree = worktree
-            self.token = token
-            self.prompt = prompt
-            self.runtime = runtime
-            self.model = model
-            self.permissionMode = permissionMode
-            self.labels = labels
-        }
-
-        public init(from decoder: any Decoder) throws {
-            let c = try decoder.container(keyedBy: CodingKeys.self)
-            token = try c.decode(String.self, forKey: .token)
-            prompt = try c.decode(String.self, forKey: .prompt)
-            runtime = try c.decodeIfPresent(String.self, forKey: .runtime)
-            model = try c.decodeIfPresent(String.self, forKey: .model)
-            permissionMode = try c.decodeIfPresent(String.self, forKey: .permissionMode)
-            worktree = try c.decodeIfPresent(String.self, forKey: .worktree)
-            labels = try c.decodeIfPresent([String].self, forKey: .labels) ?? []
-        }
-    }
-
-    /// What an agent passes to `stop_session` or `archive_session`. The id
-    /// is a string so one that is not a UUID is refused in words rather than failing
-    /// to decode.
-    public struct HelperRequest: Codable, Sendable {
-        public var token: String
-        public var agentID: String
-
-        public init(token: String, agentID: String) {
-            self.token = token
-            self.agentID = agentID
-        }
-    }
-
-    /// `archive_session` on itself (#481, #638): `request_archive` or `archive`, checked
-    /// at the daemon.
-    public struct AfterTurnRequest: Codable, Sendable {
-        public var token: String
-        public var afterwards: String
-
-        public init(token: String, afterwards: String) {
-            self.token = token
-            self.afterwards = afterwards
-        }
-    }
-
-    /// `set_session_labels` (#481).
-    public struct OwnLabelsRequest: Codable, Sendable {
-        public var token: String
-        public var add: [String]
-        public var remove: [String]
-
-        public init(token: String, add: [String] = [], remove: [String] = []) {
-            self.token = token
-            self.add = add
-            self.remove = remove
-        }
-    }
-
-    /// A wait on sessions (`wait_for_event` on `agent.ended`, #3799): the block `finish_turn` used to carry.
-    public struct WaitOnRequest: Codable, Sendable {
-        public var token: String
-        /// By id or exact title, as `waiting_on` took them.
-        public var agents: [String]
-        /// `any` or `all`; left out is `all`.
-        public var wakeOn: String?
-        public var untilMinutes: Int?
-        /// What the person reads on the row while it waits. Left out, the app says it.
-        public var message: String?
-
-        public init(token: String, agents: [String] = [], wakeOn: String? = nil,
-                    untilMinutes: Int? = nil, message: String? = nil) {
-            self.token = token
-            self.agents = agents
-            self.wakeOn = wakeOn
-            self.untilMinutes = untilMinutes
-            self.message = message
-        }
-    }
-
-    /// What an agent passes to `list_sessions` with `started_by: me`: nothing but who it is.
-    public struct ListHelpersRequest: Codable, Sendable {
-        public var token: String
-
-        public init(token: String) {
-            self.token = token
-        }
-    }
 
     /// `runtimes/markAvailable` (065): a runtime is back, by its credential key.
     public struct MarkRuntimeAvailable: Codable, Sendable {
@@ -3466,83 +2830,7 @@ public enum DaemonAPI {
         public init(credentialKey: String) { self.credentialKey = credentialKey }
     }
 
-    /// What an agent passes to `list_sessions` (065): who it is, and which page. Its
-    /// folder is its own, never a parameter.
-    public struct ListSessionsRequest: Codable, Sendable {
-        public var token: String
-        /// How many sessions; nil is `SessionLookup.pageSize` (#210).
-        public var limit: Int?
-        /// The id of the last session the previous page listed; nil is the first page.
-        public var after: String?
-
-        public init(token: String, limit: Int? = nil, after: String? = nil) {
-            self.token = token
-            self.limit = limit
-            self.after = after
-        }
-    }
-
-    /// What an agent passes to `read_session` (065): a session id or exact title.
-    public struct ReadSessionRequest: Codable, Sendable {
-        public var token: String
-        public var session: String
-
-        public init(token: String, session: String) {
-            self.token = token
-            self.session = session
-        }
-    }
-
-    /// `message_session` (#560): `to` is a session id or exact title in the caller's folder.
-    public struct MessageAgentRequest: Codable, Sendable {
-        public var token: String
-        public var to: String
-        public var message: String
-
-        public init(token: String, to: String, message: String) {
-            self.token = token
-            self.to = to
-            self.message = message
-        }
-    }
-
     // MARK: Leases (036)
-
-    /// `lease_resource`: take, extend, or wait in line.
-    public struct LeaseRequest: Codable, Sendable {
-        public var token: String
-        public var name: String
-        public var minutes: Int?
-        /// Nil is true: wait in line.
-        public var wait: Bool?
-
-        public init(token: String, name: String, minutes: Int? = nil, wait: Bool? = nil) {
-            self.token = token
-            self.name = name
-            self.minutes = minutes
-            self.wait = wait
-        }
-    }
-
-    /// `release_resource`: give back, or leave the line.
-    public struct LeaseNameRequest: Codable, Sendable {
-        public var token: String
-        public var name: String
-
-        public init(token: String, name: String) {
-            self.token = token
-            self.name = name
-        }
-    }
-
-    /// `list_resources`.
-    public struct LeaseTokenRequest: Codable, Sendable {
-        public var token: String
-
-        public init(token: String) {
-            self.token = token
-        }
-    }
 
     /// The person ending a lease on `name`: the one `agentID` holds, or with none
     /// named, every one (#116; before it there was only ever one).
@@ -3601,8 +2889,6 @@ public enum DaemonAPI {
             self.resources = resources
             self.at = at
         }
-
-        public static let empty = LeaseSnapshot(resources: [], at: .distantPast)
     }
 
     /// One resource as the page draws it. A waiter's call id stays in the daemon; what
@@ -3773,11 +3059,6 @@ public enum DaemonAPI {
         public var remote: String?
 
         public var id: String { name }
-
-        public init(name: String, remote: String? = nil) {
-            self.name = name
-            self.remote = remote
-        }
     }
 
     /// One worktree of a repository, as git lists it and as the app knows it.
@@ -3951,36 +3232,6 @@ public enum DaemonAPI {
         }
     }
 
-    /// A move asked for on `finish_turn` (053).
-    public struct MoveAsk: Codable, Sendable, Equatable {
-        public var target: MoveTarget
-        public var removeLeft: Bool
-        public var discardChanges: Bool
-
-        public init(target: MoveTarget, removeLeft: Bool = false, discardChanges: Bool = false) {
-            self.target = target
-            self.removeLeft = removeLeft
-            self.discardChanges = discardChanges
-        }
-    }
-
-    /// An agent moving itself (053), from a helper begun before the move rode on
-    /// `finish_turn`: what it passed to the `enter_worktree` or `exit_worktree` it had.
-    public struct MoveSelfRequest: Codable, Sendable {
-        public var token: String
-        /// None takes back a move the agent asked for earlier in the turn (#481).
-        public var target: MoveTarget?
-        public var removeLeft: Bool
-        public var discardChanges: Bool
-
-        public init(token: String, target: MoveTarget?, removeLeft: Bool = false, discardChanges: Bool = false) {
-            self.token = token
-            self.target = target
-            self.removeLeft = removeLeft
-            self.discardChanges = discardChanges
-        }
-    }
-
     /// The person moving an agent (053). No target takes back the move that is waiting.
     public struct MoveRequest: Codable, Sendable {
         public var agentID: UUID
@@ -4100,12 +3351,6 @@ public enum DaemonAPI {
         }
     }
 
-    /// `devices/forget`.
-    public struct DeviceForget: Codable, Sendable {
-        public var id: UUID
-        public init(id: UUID) { self.id = id }
-    }
-
     /// What `devices/announce` answers: the device's record, under `device`, as
     /// `Packages/Wire/schema` and the Go host have it (#4905).
     public struct AnnounceReply: Codable, Sendable, Hashable {
@@ -4152,11 +3397,6 @@ public enum DaemonAPI {
     public struct AttentionDelivery: Codable, Sendable, Hashable {
         public var needID: NeedID
         public var to: Surface?
-
-        public init(needID: NeedID, to: Surface?) {
-            self.needID = needID
-            self.to = to
-        }
     }
 
     /// `attention/pending`: what is outstanding, and where each is showing.
@@ -4177,13 +3417,6 @@ public enum DaemonAPI {
         public var need: Need?
         public var to: Surface?
         public var alert: Bool
-
-        public init(needID: NeedID, need: Need?, to: Surface?, alert: Bool) {
-            self.needID = needID
-            self.need = need
-            self.to = to
-            self.alert = alert
-        }
     }
 }
 
@@ -4193,31 +3426,6 @@ public extension DaemonAPI {
     /// when everything read.
     struct StoreNotes: Codable, Hashable, Sendable {
         public var notes: [String]
-
-        public init(notes: [String]) {
-            self.notes = notes
-        }
-    }
-
-    /// `daemon/status` (037).
-    struct DaemonStatus: Codable, Hashable, Sendable {
-        /// Agents starting, running or waiting on the person: an update waits for zero.
-        public var turnsInFlight: Int
-        /// Agents holding a runtime: what removing the server would stop.
-        public var agentsLive: Int
-
-        public init(turnsInFlight: Int, agentsLive: Int) {
-            self.turnsInFlight = turnsInFlight
-            self.agentsLive = agentsLive
-        }
-    }
-
-    /// `daemon/quit` (037).
-    struct QuitRequest: Codable, Hashable, Sendable {
-        /// Stop every live agent first. Without it, a turn in flight refuses the quit.
-        public var stopAgents: Bool
-
-        public init(stopAgents: Bool) { self.stopAgents = stopAgents }
     }
 }
 
@@ -4277,24 +3485,6 @@ public extension DaemonAPI {
         }
     }
 
-    /// `credentials/lendSignIn` (049): the lendable part of this Mac's file sign-in for one
-    /// runtime, as the text of the file. Empty for nothing to lend, so a start that asked goes
-    /// on without. Prints as a provider count only.
-    struct SignInLend: Codable, Hashable, Sendable, CustomStringConvertible, CustomReflectable {
-        public var runtime: String
-        public var content: String
-        public var providers: Int
-
-        public var description: String { "SignInLend(\(runtime), \(providers) providers)" }
-        public var customMirror: Mirror { Mirror(self, children: ["runtime": runtime, "providers": providers]) }
-
-        public init(runtime: String, content: LentSignInContent?) {
-            self.runtime = runtime
-            self.content = content?.reveal() ?? ""
-            self.providers = content?.providers ?? 0
-        }
-    }
-
     /// `credentials/refused` (043): which agent stopped, and whether it was the token this
     /// window lent (`lent`) or the server's own sign-in that was refused.
     struct CredentialRefused: Codable, Hashable, Sendable {
@@ -4334,11 +3524,6 @@ public extension DaemonAPI {
         /// The connection offered a credential for this runtime: the window has one and
         /// can lend it without asking. False means it has none to lend.
         public var offered: Bool
-
-        public init(runtime: String, offered: Bool) {
-            self.runtime = runtime
-            self.offered = offered
-        }
     }
 }
 
@@ -4419,10 +3604,6 @@ public extension DaemonAPI {
     struct MoveToMachineAnswer: Codable, Hashable, Sendable {
         public var folder: String
         public var carriesOn: Bool
-        public init(folder: String, carriesOn: Bool) {
-            self.folder = folder
-            self.carriesOn = carriesOn
-        }
     }
 
     /// `move/changed` (#4641): `sent` of `total` bytes of the branch are on that machine (0 of 0
@@ -4440,19 +3621,6 @@ public extension DaemonAPI {
         public var finished: Bool
         public var problem: String?
         public var id: UUID { agentID }
-        public init(agentID: UUID, machine: String, machineName: String, folder: String, startedAt: Date, sent: Int = 0,
-                    total: Int = 0, branchSent: Bool = false, finished: Bool = false, problem: String? = nil) {
-            self.agentID = agentID
-            self.machine = machine
-            self.machineName = machineName
-            self.folder = folder
-            self.startedAt = startedAt
-            self.sent = sent
-            self.total = total
-            self.branchSent = branchSent
-            self.finished = finished
-            self.problem = problem
-        }
     }
 
     // MARK: Send to ‹host›… (#1123)
@@ -4784,13 +3952,6 @@ public extension DaemonAPI {
         public var folder: String?
         /// Where they go; nil is the machine's default (#1815). The state always says it.
         public var target: BackupTarget?
-
-        public init(every: BackupEvery, keep: Int, folder: String? = nil, target: BackupTarget? = nil) {
-            self.every = every
-            self.keep = keep
-            self.folder = folder
-            self.target = target
-        }
     }
 
     /// One backup in the folder: this machine's, or another's that this one can restore.
@@ -4802,16 +3963,6 @@ public extension DaemonAPI {
         public var bytes: Int
         public var agents: Int
         public var thisMachine: Bool
-
-        public init(id: String, machine: String, rootID: String, madeAt: Date, bytes: Int, agents: Int, thisMachine: Bool) {
-            self.id = id
-            self.machine = machine
-            self.rootID = rootID
-            self.madeAt = madeAt
-            self.bytes = bytes
-            self.agents = agents
-            self.thisMachine = thisMachine
-        }
     }
 
     /// `selfUpdate/status`, and what `selfUpdate/changed` carries (#2178): how this Mac's
@@ -4863,17 +4014,6 @@ public extension DaemonAPI {
         public var canUseControl: Bool?
         /// The folder is on the disk of what it backs up, and not a synced folder (#2139).
         public var sameDisk: Bool?
-
-        public init(settings: BackupSettings, folder: String, backups: [Backup], making: Bool, lastError: String? = nil,
-                    canUseControl: Bool? = nil, sameDisk: Bool? = nil) {
-            self.settings = settings
-            self.folder = folder
-            self.backups = backups
-            self.making = making
-            self.lastError = lastError
-            self.canUseControl = canUseControl
-            self.sameDisk = sameDisk
-        }
     }
 
     /// `backups/make`: answer at once, or once the backup is made (#1815).
@@ -4943,12 +4083,6 @@ public extension DaemonAPI {
         public var settings: RetentionSettings
         public var archivedCount: Int
         public var archivedBytes: Int
-
-        public init(settings: RetentionSettings, archivedCount: Int, archivedBytes: Int) {
-            self.settings = settings
-            self.archivedCount = archivedCount
-            self.archivedBytes = archivedBytes
-        }
     }
 
     struct RetentionSetRequest: Codable, Sendable {

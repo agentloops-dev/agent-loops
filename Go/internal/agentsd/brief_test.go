@@ -87,7 +87,7 @@ func TestOpenCodeHasTheBriefAsAnInstructionsFile(t *testing.T) {
 	var config map[string]any
 	for _, kv := range l.Env {
 		if v, ok := strings.CutPrefix(kv, "OPENCODE_CONFIG_CONTENT="); ok {
-			json.Unmarshal([]byte(v), &config)
+			mustUnmarshal(t, []byte(v), &config)
 		}
 	}
 	if got, _ := config["instructions"].([]any); len(got) != 1 || got[0] != file || config["share"] != "disabled" {
@@ -120,9 +120,9 @@ func TestEachRuntimeHasTheBriefTheWayItTakesIt(t *testing.T) {
 			fakeRuntimes(t)
 			d, c := start(t, t.TempDir())
 			defer d.Shutdown()
-			os.WriteFile(d.resourcesFile(), []byte(`[{"name":"gpu","displayName":"GPU","description":"For training.","holders":1}]`), 0o644)
+			must(t, os.WriteFile(d.resourcesFile(), []byte(`[{"name":"gpu","displayName":"GPU","description":"For training.","holders":1}]`), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 			var id wire.UUID
-			json.Unmarshal(c.call(t, 1, "agents/start", map[string]any{"runtimeID": rt.ID, "cwd": "file://" + t.TempDir(), "prompt": "say your brief"}), &id)
+			mustUnmarshal(t, c.call(t, 1, "agents/start", map[string]any{"runtimeID": rt.ID, "cwd": "file://" + t.TempDir(), "prompt": "say your brief"}), &id)
 			c.until(t, "the end", ended(id, wire.AgentStateFinished))
 			brief := d.brief(d.Store.Agent(id))
 			if !strings.Contains(brief, "You are "+rt.Name+"; I am ") || !strings.Contains(brief, "- GPU (one at a time): For training.") {
@@ -156,7 +156,7 @@ func TestCursorHasTheBriefInItsFirstPromptOnly(t *testing.T) {
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	var id wire.UUID
-	json.Unmarshal(c.call(t, 1, "agents/start", map[string]any{"runtimeID": "cursor", "cwd": "file://" + t.TempDir(), "prompt": "say your brief"}), &id)
+	mustUnmarshal(t, c.call(t, 1, "agents/start", map[string]any{"runtimeID": "cursor", "cwd": "file://" + t.TempDir(), "prompt": "say your brief"}), &id)
 	c.until(t, "the first end", ended(id, wire.AgentStateFinished))
 	c.call(t, 2, "agents/prompt", map[string]any{"agentID": id, "text": "say your brief again", "from": "person"})
 	waitFor(t, "the second answer", func() bool { return strings.Count(agentMessages(d, id), "System: ") == 2 })
@@ -177,7 +177,7 @@ func TestAPageEditIsToldOnTheNextTurn(t *testing.T) {
 	id := startAgent(t, c, 1, work, "hi")
 	c.until(t, "the first end", ended(id, wire.AgentStateFinished))
 	page := filepath.Join(work, "plan.md")
-	os.WriteFile(page, []byte("# Plan\n\nStep one."), 0o644)
+	must(t, os.WriteFile(page, []byte("# Plan\n\nStep one."), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	c.call(t, 2, "artifact/write", map[string]any{"agentID": id, "path": page, "text": "# Plan\n\nStep one, as I put it."})
 	c.call(t, 3, "agents/prompt", map[string]any{"agentID": id, "text": "say your brief", "from": "person"})
 	waitFor(t, "the answer", func() bool { return strings.Contains(agentMessages(d, id), "Before: ") })
@@ -198,8 +198,8 @@ func TestTheBriefSaysWhoIsWho(t *testing.T) {
 	defer d.Shutdown()
 	title := "Login redirect"
 	parent := seeded(t, d, t.TempDir(), func(a *wire.Agent) { a.Title = &title })
-	os.MkdirAll(d.SettingsDir, 0o700)
-	os.WriteFile(filepath.Join(d.SettingsDir, "person.json"), []byte(`{"name":"Sam","pronouns":" she/her "}`), 0o644)
+	must(t, os.MkdirAll(d.SettingsDir, 0o700))
+	must(t, os.WriteFile(filepath.Join(d.SettingsDir, "person.json"), []byte(`{"name":"Sam","pronouns":" she/her "}`), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	helper := wire.Agent{RuntimeID: "grok", StartedByAgent: &parent.ID}
 	got := d.namingBrief(&helper)
 	for _, want := range []string{"You are Grok, started by “Login redirect”; I am Sam.", "\"Grok (this agent) will…\"",
@@ -208,7 +208,7 @@ func TestTheBriefSaysWhoIsWho(t *testing.T) {
 			t.Fatalf("%q has no %q", got, want)
 		}
 	}
-	os.WriteFile(filepath.Join(d.SettingsDir, "person.json"), []byte(`{"name":"Sam"}`), 0o644)
+	must(t, os.WriteFile(filepath.Join(d.SettingsDir, "person.json"), []byte(`{"name":"Sam"}`), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	if got := d.namingBrief(&wire.Agent{RuntimeID: "claude"}); !strings.HasPrefix(got, "You are Claude; I am Sam.") || !strings.HasSuffix(got, `or as "they".`) {
 		t.Fatal(got)
 	}
@@ -276,12 +276,11 @@ func TestTheBriefSaysTheRestWhereItApplies(t *testing.T) {
 // toolsBriefSkips are the app's tools no brief line names, each with where an agent is told
 // of it instead (#3608).
 var toolsBriefSkips = map[string]string{
-	"hang_up":             "voice mode's own words (agents.go)",
-	"write_daily_summary": "the Daily summary workflow's prompt",
-	"check_folders":       "the Daily checks workflow's prompt",
-	"cancel_wait":         "every wait's answer",
-	"cancel_message":      "message_session's refusal of a second message",
-	"list_resources":      "lease_resource's description; the declared resources are in the brief",
+	"hang_up":        "voice mode's own words (agents.go)",
+	"check_folders":  "the Daily checks workflow's prompt",
+	"cancel_wait":    "every wait's answer",
+	"cancel_message": "message_session's refusal of a second message",
+	"list_resources": "lease_resource's description; the declared resources are in the brief",
 }
 
 // Every tool this host can list is named in the brief, or skipped above with a reason, so a
@@ -445,8 +444,8 @@ func TestThePersonasPromptFollowsTheBrief(t *testing.T) {
 
 	folder, home := t.TempDir(), t.TempDir()
 	write := func(base, id, text string) {
-		os.MkdirAll(filepath.Join(base, ".agents", "personas"), 0o755)
-		os.WriteFile(filepath.Join(base, ".agents", "personas", id+".md"), []byte(text), 0o644)
+		must(t, os.MkdirAll(filepath.Join(base, ".agents", "personas"), 0o755)) //nolint:gosec // G301: the mode this folder always had; only its error is new
+		must(t, os.WriteFile(filepath.Join(base, ".agents", "personas", id+".md"), []byte(text), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	}
 	write(folder, "reviewer", "---\nname: Reviewer\nmodel: x\n---\n\nReview as a sceptic.\n")
 	write(home, "reviewer", "The person's own.")
@@ -496,10 +495,10 @@ func TestASessionStartedAsAPersonaHasItsPrompt(t *testing.T) {
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	work := t.TempDir()
-	os.MkdirAll(filepath.Join(work, ".agents", "personas"), 0o755)
-	os.WriteFile(filepath.Join(work, ".agents", "personas", "pirate.md"), []byte("---\nname: Pirate\n---\n\nSay ARRR.\n"), 0o644)
+	must(t, os.MkdirAll(filepath.Join(work, ".agents", "personas"), 0o755)) //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(work, ".agents", "personas", "pirate.md"), []byte("---\nname: Pirate\n---\n\nSay ARRR.\n"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	var id wire.UUID
-	json.Unmarshal(c.call(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + work, "prompt": "say your brief", "persona": "pirate"}), &id)
+	mustUnmarshal(t, c.call(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + work, "prompt": "say your brief", "persona": "pirate"}), &id)
 	c.until(t, "the end", ended(id, wire.AgentStateFinished))
 	if a := d.Store.Agent(id); a.Persona == nil || *a.Persona != "pirate" {
 		t.Fatalf("%v", a.Persona)

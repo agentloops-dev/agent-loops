@@ -21,7 +21,7 @@ func TestShowingAFile(t *testing.T) {
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "a.txt"), []byte("hi"), 0o644)
+	must(t, os.WriteFile(filepath.Join(dir, "a.txt"), []byte("hi"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	a := seeded(t, d, dir, nil)
 	m := appClient(t, d, a.ID)
 	m.post("initialize", map[string]any{}, 1)
@@ -109,7 +109,7 @@ func TestAskingThePersonAForm(t *testing.T) {
 	go func() { text, _ := m.tool(3, "ask_question", question); answered <- text }()
 	var pending []wire.ElicitationRequest
 	waitFor(t, "the form", func() bool {
-		json.Unmarshal(c.call(t, 1, "elicitations/pending", nil), &pending)
+		mustUnmarshal(t, c.call(t, 1, "elicitations/pending", nil), &pending)
 		return len(pending) == 1
 	})
 	f := pending[0].Mode.Form.Value
@@ -157,7 +157,7 @@ func TestAFormLeftOpenBringsItsAnswerLater(t *testing.T) {
 	l.inTurn = false
 	l.mu.Unlock()
 	var pending []wire.ElicitationRequest
-	json.Unmarshal(c.call(t, 1, "elicitations/pending", nil), &pending)
+	mustUnmarshal(t, c.call(t, 1, "elicitations/pending", nil), &pending)
 	if len(pending) != 1 {
 		t.Fatalf("the form was taken down: %+v", pending)
 	}
@@ -165,14 +165,14 @@ func TestAFormLeftOpenBringsItsAnswerLater(t *testing.T) {
 	waitFor(t, "the answer in its chat", func() bool {
 		return slices.Contains(userMessages(d, a.ID), "The person replied to your form \"Pick a colour\" (ask_question). They answered:\n- Which colour?: Red")
 	})
-	json.Unmarshal(c.call(t, 3, "elicitations/pending", nil), &pending)
+	mustUnmarshal(t, c.call(t, 3, "elicitations/pending", nil), &pending)
 	if len(pending) != 0 {
 		t.Fatalf("%+v", pending)
 	}
 	// The prompt that brings the answer starts a turn, so the answer is the end of the
 	// turn that asked, not drawn after the next turn's steps (#2934).
 	var page wire.TurnsPage
-	json.Unmarshal(c.call(t, 4, "agents/turns", map[string]any{"agentID": a.ID, "limit": 50}), &page)
+	mustUnmarshal(t, c.call(t, 4, "agents/turns", map[string]any{"agentID": a.ID, "limit": 50}), &page)
 	ends, err := d.Store.LineEnds(a.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -212,14 +212,14 @@ func TestAMessageDismissesTheQuestions(t *testing.T) {
 	go func() { text, _ := m.tool(3, "ask_question", question); answered <- text }()
 	var pending []wire.ElicitationRequest
 	waitFor(t, "both forms", func() bool {
-		json.Unmarshal(c.call(t, 1, "elicitations/pending", nil), &pending)
+		mustUnmarshal(t, c.call(t, 1, "elicitations/pending", nil), &pending)
 		return len(pending) == 2
 	})
 	c.call(t, 2, "agents/prompt", map[string]any{"agentID": a.ID, "text": "Blue, please."})
 	if text := <-answered; text != answeredByMessage {
 		t.Fatal(text)
 	}
-	json.Unmarshal(c.call(t, 3, "elicitations/pending", nil), &pending)
+	mustUnmarshal(t, c.call(t, 3, "elicitations/pending", nil), &pending)
 	if len(pending) != 0 {
 		t.Fatalf("the cards are still up: %+v", pending)
 	}
@@ -251,7 +251,7 @@ func TestDecliningAFormSaysWhy(t *testing.T) {
 	go func() { text, _ := m.tool(2, "ask_question", question); answered <- text }()
 	var pending []wire.ElicitationRequest
 	waitFor(t, "the form", func() bool {
-		json.Unmarshal(c.call(t, 1, "elicitations/pending", nil), &pending)
+		mustUnmarshal(t, c.call(t, 1, "elicitations/pending", nil), &pending)
 		return len(pending) == 1
 	})
 	c.call(t, 2, "elicitations/answer", map[string]any{"requestID": pending[0].ID, "action": "decline",
@@ -287,7 +287,7 @@ func TestDismissingAFormLeavesTheReplyToTheNextMessage(t *testing.T) {
 	go func() { text, _ := m.tool(2, "ask_question", question); answered <- text }()
 	var pending []wire.ElicitationRequest
 	waitFor(t, "the form", func() bool {
-		json.Unmarshal(c.call(t, 1, "elicitations/pending", nil), &pending)
+		mustUnmarshal(t, c.call(t, 1, "elicitations/pending", nil), &pending)
 		return len(pending) == 1
 	})
 	c.call(t, 2, "elicitations/answer", map[string]any{"requestID": pending[0].ID, "action": "cancel", "content": map[string]any{}})

@@ -179,7 +179,10 @@ func fakeProvider(mode string) {
 		line, err := in.ReadBytes('\n')
 		if len(line) > 0 {
 			var message map[string]any
-			json.Unmarshal(line, &message)
+			if err := json.Unmarshal(line, &message); err != nil {
+				fmt.Fprintln(os.Stderr, "fake provider:", err)
+				continue
+			}
 			f.handle(message)
 		}
 		if err != nil {
@@ -465,7 +468,7 @@ func TestAnHTTPProviderIsReachedWithItsSession(t *testing.T) {
 		}
 		body, _ := io.ReadAll(r.Body)
 		var m map[string]any
-		json.Unmarshal(body, &m)
+		must(t, json.Unmarshal(body, &m))
 		id, hasID := m["id"]
 		if !hasID {
 			w.WriteHeader(http.StatusAccepted)

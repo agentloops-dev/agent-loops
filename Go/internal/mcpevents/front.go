@@ -63,82 +63,117 @@ func (f *Front) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
 		_ = fromUpstream.Close()
 	}()
 
-	var writeMu sync.Mutex
-	write := func(line []byte) {
-		writeMu.Lock()
-		defer writeMu.Unlock()
-		_, _ = out.Write(append(bytes.TrimRight(line, "\r\n"), '\n'))
-	}
-	var initMu sync.Mutex
-	initIDs := map[string]bool{}
-
+	c := &connection{front: f, out: out, upstreamIn: upstreamIn, initIDs: map[string]bool{}}
 	relayed := make(chan struct{})
 	go func() {
 		defer close(relayed)
-		r := bufio.NewReaderSize(upstreamOut, 64<<10)
-		for {
-			line, err := ReadLine(r)
-			if len(line) > 0 {
-				var m message
-				if json.Unmarshal(line, &m) == nil && len(m.ID) > 0 && m.Method == "" && len(m.Result) > 0 {
-					initMu.Lock()
-					isInit := initIDs[string(m.ID)]
-					delete(initIDs, string(m.ID))
-					initMu.Unlock()
-					if isInit {
-						line = f.initialized(line)
-					}
-				}
-				write(line)
-			}
-			if err != nil {
-				return
-			}
-		}
+		c.relay(upstreamOut)
 	}()
 
-	var answering sync.WaitGroup
+	readErr := c.read(ctx, in)
+	c.answering.Wait()
+	_ = upstreamIn.Close()
+	<-relayed
+	cancel()
+	<-upstreamDone //nolint:errcheck // the upstream ends because cancel stopped it; the client's read is what Serve says
+	return readErr
+}
+
+// connection is one client's Serve: what its reader and the relay from the server behind share.
+type connection struct {
+	front      *Front
+	out        io.Writer
+	upstreamIn io.Writer
+	writeMu    sync.Mutex
+	// initIDs are the ids of the initialize requests the server behind has not answered yet.
+	initMu    sync.Mutex
+	initIDs   map[string]bool
+	answering sync.WaitGroup
+}
+
+// write puts line on out, one line at a time.
+func (c *connection) write(line []byte) {
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+	_, _ = c.out.Write(append(bytes.TrimRight(line, "\r\n"), '\n'))
+}
+
+// relay writes each line of the server behind to out until it ends, with the events added to
+// its answer to initialize.
+func (c *connection) relay(upstreamOut io.Reader) {
+	r := bufio.NewReaderSize(upstreamOut, 64<<10)
+	for {
+		line, err := ReadLine(r)
+		if len(line) > 0 {
+			c.write(c.initializedIfInit(line))
+		}
+		if err != nil {
+			return
+		}
+	}
+}
+
+// initializedIfInit is line with the events added when it answers an initialize request, else
+// line.
+func (c *connection) initializedIfInit(line []byte) []byte {
+	var m message
+	if json.Unmarshal(line, &m) != nil || len(m.ID) == 0 || m.Method != "" || len(m.Result) == 0 {
+		return line
+	}
+	c.initMu.Lock()
+	isInit := c.initIDs[string(m.ID)]
+	delete(c.initIDs, string(m.ID))
+	c.initMu.Unlock()
+	if isInit {
+		return c.front.initialized(line)
+	}
+	return line
+}
+
+// read reads in until it ends, answers the events requests and hands every other line to the
+// server behind. Its error is the read's or the hand-over's; the end of in is none.
+func (c *connection) read(ctx context.Context, in io.Reader) error {
 	r := bufio.NewReaderSize(in, 64<<10)
 	var readErr error
 	for {
 		line, err := ReadLine(r)
 		if len(bytes.TrimSpace(line)) > 0 {
-			var m message
-			parsed := json.Unmarshal(line, &m) == nil
-			switch {
-			case parsed && (m.Method == "events/list" || m.Method == "events/poll"):
-				if len(m.ID) == 0 {
-					break // a notification is answered with nothing
-				}
-				answering.Add(1)
-				go func() {
-					defer answering.Done()
-					write(f.answer(ctx, m))
-				}()
-			default:
-				if parsed && m.Method == "initialize" && len(m.ID) > 0 {
-					initMu.Lock()
-					initIDs[string(m.ID)] = true
-					initMu.Unlock()
-				}
-				if _, werr := upstreamIn.Write(append(bytes.TrimRight(line, "\r\n"), '\n')); werr != nil {
-					readErr = werr
-				}
+			if werr := c.handle(ctx, line); werr != nil {
+				readErr = werr
 			}
 		}
 		if err != nil || readErr != nil {
 			if err != nil && err != io.EOF {
 				readErr = err
 			}
-			break
+			return readErr
 		}
 	}
-	answering.Wait()
-	_ = upstreamIn.Close()
-	<-relayed
-	cancel()
-	<-upstreamDone
-	return readErr
+}
+
+// handle answers one events request itself, in the background, or hands line to the server
+// behind; its error is the hand-over's.
+func (c *connection) handle(ctx context.Context, line []byte) error {
+	var m message
+	parsed := json.Unmarshal(line, &m) == nil
+	if parsed && (m.Method == "events/list" || m.Method == "events/poll") {
+		if len(m.ID) == 0 {
+			return nil // a notification is answered with nothing
+		}
+		c.answering.Add(1)
+		go func() {
+			defer c.answering.Done()
+			c.write(c.front.answer(ctx, m))
+		}()
+		return nil
+	}
+	if parsed && m.Method == "initialize" && len(m.ID) > 0 {
+		c.initMu.Lock()
+		c.initIDs[string(m.ID)] = true
+		c.initMu.Unlock()
+	}
+	_, err := c.upstreamIn.Write(append(bytes.TrimRight(line, "\r\n"), '\n'))
+	return err
 }
 
 // ReadLine is the next line without its newline; err is set at the end, and is

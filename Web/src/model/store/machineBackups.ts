@@ -1,5 +1,5 @@
 // Part of the Store (#5384): machineBackups.
-import type { MachineRef, BackupRestoreResult, BackupSettings, BackupState, ConnectAnotherRequest, DailySummarySettings, SummaryPageText, DriveApproval, WakeSettings, PlaneMoveAsk } from "../../protocol/generated";
+import type { MachineRef, BackupRestoreResult, BackupSettings, BackupState, ConnectAnotherRequest, DailyChecksSettings, DriveApproval, WakeSettings, PlaneMoveAsk } from "../../protocol/generated";
 import { CallFailed } from "../../wire/link";
 import { describe } from "../errors";
 import { log } from "../../log";
@@ -108,30 +108,21 @@ export const machineBackupsMethods = {
       this.say(describe(error));
     }
   },
-  /** Settings ▸ Workflows' daily summary (#3351), asked when the section is shown. */
-  loadDailySummary(this: Store): void {
-    void this.link.call("dailySummary/settings", {}, this.macHostID.value).then(
-      (settings) => { this.dailySummary.value = settings; },
+  /** Settings ▸ Workflows' daily checks (#3355, #5853), asked when the section is shown. */
+  loadDailyChecks(this: Store): void {
+    void this.link.call("dailyChecks/settings", {}, this.macHostID.value).then(
+      (settings) => { this.dailyChecks.value = settings; },
       () => { /* too old to know the method: the control stays out. */ },
     );
   },
-  /** One saved page of the daily summary (#3721); reading the newest marks it read. Null when it
-   * could not be read. */
-  async readSummaryPage(this: Store, name: string): Promise<SummaryPageText | null> {
+  /** The person turned the daily checks on or off, or chose how often they run (#3355, #5853). */
+  async setDailyChecks(this: Store, settings: DailyChecksSettings): Promise<void> {
+    const before = this.dailyChecks.value;
+    this.dailyChecks.value = settings;
     try {
-      return await this.link.call("summaries/read", { name }, this.macHostID.value);
-    } catch {
-      return null;
-    }
-  },
-  /** The person chose a mode, a time or how often the checks run, for the daily summary (#3351, #3395). */
-  async setDailySummary(this: Store, settings: DailySummarySettings): Promise<void> {
-    const before = this.dailySummary.value;
-    this.dailySummary.value = settings;
-    try {
-      this.dailySummary.value = await this.link.call("dailySummary/setSettings", settings, this.macHostID.value);
+      this.dailyChecks.value = await this.link.call("dailyChecks/setSettings", settings, this.macHostID.value);
     } catch (error) {
-      this.dailySummary.value = before;
+      this.dailyChecks.value = before;
       this.say(describe(error));
     }
   },

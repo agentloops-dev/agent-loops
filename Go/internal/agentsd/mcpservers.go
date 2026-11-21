@@ -290,7 +290,7 @@ func canonicalEntry(raw json.RawMessage) string {
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)
 	enc.SetEscapeHTML(false)
-	enc.Encode(v)
+	_ = enc.Encode(v) // v was just decoded from JSON, so it encodes
 	return strings.TrimSuffix(buf.String(), "\n")
 }
 
@@ -341,7 +341,9 @@ func (d *Daemon) mcpApprovalsLocked() (approved map[string]string, begun, unread
 				began, _ := json.Marshal(now())
 				d.mcpApprovals["approvalsBegan"] = began
 				if out, err := json.Marshal(d.mcpApprovals); err == nil {
-					store.WriteAtomically(d.mcpApprovalsPath(), out, 0o644)
+					if err := store.WriteAtomically(d.mcpApprovalsPath(), out, 0o644); err != nil {
+						log.Printf("mcp: could not keep %s: %v", d.mcpApprovalsPath(), err)
+					}
 				}
 			}
 		}
@@ -350,7 +352,7 @@ func (d *Daemon) mcpApprovalsLocked() (approved map[string]string, begun, unread
 		return nil, true, true
 	}
 	approved = map[string]string{}
-	json.Unmarshal(d.mcpApprovals["approved"], &approved)
+	_ = json.Unmarshal(d.mcpApprovals["approved"], &approved) // none kept yet: none approved
 	return approved, true, false
 }
 

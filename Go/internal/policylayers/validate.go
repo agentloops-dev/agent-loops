@@ -24,6 +24,7 @@ var knownPolicyRuleFields = map[string]bool{
 	"marketplaces":       true,
 	"environment":        true,
 	"connectorTools":     true,
+	"commitTrailers":     true,
 }
 
 var loggedUnknown sync.Map
@@ -79,7 +80,29 @@ func Validate(raw []byte) (wire.PolicyRules, error) {
 	return rules, nil
 }
 
+// validateRules checks each rule of a layer, in this order: the enums, the counts, the lists
+// of names, the connector tools, the commit trailers, then the runtimes. The first error found is returned.
 func validateRules(r wire.PolicyRules) error {
+	if err := validateEnums(r); err != nil {
+		return err
+	}
+	if err := validateCounts(r); err != nil {
+		return err
+	}
+	if err := validateNames(r); err != nil {
+		return err
+	}
+	if err := validateConnectorTools(r.ConnectorTools); err != nil {
+		return err
+	}
+	if err := validateCommitTrailers(r.CommitTrailers); err != nil {
+		return err
+	}
+	return validateRuntimes(r.Runtimes)
+}
+
+// validateEnums checks that sandbox and marketplaces.customServers have a known value.
+func validateEnums(r wire.PolicyRules) error {
 	if r.Sandbox != nil && !isKnownSandbox(*r.Sandbox) {
 		return fmt.Errorf("policylayers: unknown sandbox %q", *r.Sandbox)
 	}
@@ -88,6 +111,11 @@ func validateRules(r wire.PolicyRules) error {
 			return fmt.Errorf("policylayers: unknown marketplaces.customServers %q", r.Marketplaces.CustomServers)
 		}
 	}
+	return nil
+}
+
+// validateCounts checks that each budget, helper, workflow and notice limit is in its range.
+func validateCounts(r wire.PolicyRules) error {
 	if r.Budgets != nil {
 		if err := atLeastOne("budgets.perAgentTokens", r.Budgets.PerAgentTokens); err != nil {
 			return err
@@ -120,6 +148,11 @@ func validateRules(r wire.PolicyRules) error {
 			return err
 		}
 	}
+	return nil
+}
+
+// validateNames checks that the marketplace and environment lists have no empty name.
+func validateNames(r wire.PolicyRules) error {
 	if r.Marketplaces != nil {
 		if err := noEmptyName("marketplaces.allowed", r.Marketplaces.Allowed); err != nil {
 			return err
@@ -130,17 +163,17 @@ func validateRules(r wire.PolicyRules) error {
 			return err
 		}
 	}
-	if err := validateConnectorTools(r.ConnectorTools); err != nil {
-		return err
-	}
-	if r.Runtimes != nil {
-		for id, rule := range r.Runtimes {
-			if id == "" {
-				return fmt.Errorf("policylayers: runtimes has an empty name")
-			}
-			if err := noEmptyName("runtimes."+id+".models", rule.Models); err != nil {
-				return err
-			}
+	return nil
+}
+
+// validateRuntimes checks that no runtime id and no model name is empty.
+func validateRuntimes(runtimes map[string]wire.PolicyRuntimeRule) error {
+	for id, rule := range runtimes {
+		if id == "" {
+			return fmt.Errorf("policylayers: runtimes has an empty name")
+		}
+		if err := noEmptyName("runtimes."+id+".models", rule.Models); err != nil {
+			return err
 		}
 	}
 	return nil

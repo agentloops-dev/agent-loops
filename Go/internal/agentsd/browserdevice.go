@@ -33,7 +33,8 @@ var emulateDeviceTool = json.RawMessage(`{"name":"browser_emulate_device","title
 // emulateDeviceCheck refuses a call that names no device, before the lease is taken.
 func emulateDeviceCheck(args map[string]json.RawMessage) (*browser.Device, string) {
 	var name string
-	json.Unmarshal(args["device"], &name)
+	// A missing or wrong device is the empty name, refused below.
+	_ = json.Unmarshal(args["device"], &name)
 	d, ok := browser.DeviceNamed(name)
 	if !ok {
 		return nil, fmt.Sprintf("There is no device %q: give phone, tablet or desktop.", name)

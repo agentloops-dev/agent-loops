@@ -185,6 +185,7 @@ var own = methodSet(
 	"readApi/list",
 	"readApi/make",
 	"readApi/revoke",
+	"reports/changes",
 	"reports/export",
 	"reports/nodes",
 	"reports/usage",
@@ -431,7 +432,7 @@ func (m *Methods) Handle(method string, params json.RawMessage, from Caller) (an
 		"signIn/domains/check", "signIn/domains/claim", "signIn/domains/list", "signIn/domains/preview",
 		"signIn/domains/remove", "signIn/domains/set":
 		return m.signInMethod(ctx, method, params, from)
-	case "reports/usage", "reports/export", "reports/value", "reports/nodes":
+	case "reports/usage", "reports/export", "reports/value", "reports/nodes", "reports/changes":
 		return m.reportMethod(ctx, method, params, from)
 	case "user/settings", "user/setAgentConfigFile", "user/setSettings", "user/setSecret", "user/removeSecret", "user/secretNames",
 		"user/secretRecipients", "user/sealedSecret", "user/secretOffers", "user/dropSecretOffer":
@@ -446,7 +447,8 @@ func (m *Methods) Handle(method string, params json.RawMessage, from Caller) (an
 		// A grant an older window still sends is let go: every client may do everything
 		// (#111).
 		var p wire.ClientPairingRequest
-		json.Unmarshal(params, &p)
+		// The params are optional: none, or ones that do not read, are the defaults.
+		_ = json.Unmarshal(params, &p)
 		return m.s.codes.Issue(ctx, false, deref(p.Kind) == records.KindBrowser, controllink.CodeLifetime)
 	case "devices/startPairing":
 		return m.s.codes.Issue(ctx, false, false, controllink.CodeLifetime)
@@ -476,13 +478,15 @@ func (m *Methods) Handle(method string, params json.RawMessage, from Caller) (an
 		return m.startEnroll(ctx, params, from)
 	case "machines/install":
 		var request wire.MachineInstall
-		json.Unmarshal(params, &request)
+		// The params are optional: none, or ones that do not read, are the defaults.
+		_ = json.Unmarshal(params, &request)
 		return m.s.installer.Install(withInstallWorkspace(ctx, request), params)
 	case "machines/detect":
 		return m.s.installer.Detect(ctx)
 	case "machines/sshHosts":
 		var p wire.SSHHostsRequest
-		json.Unmarshal(params, &p)
+		// The params are optional: none, or ones that do not read, are the defaults.
+		_ = json.Unmarshal(params, &p)
 		return m.s.installer.SSHHosts(ctx, strings.TrimSpace(deref(p.Destination)))
 	case "machines/update":
 		return m.updateMachine(ctx, params)
@@ -641,8 +645,9 @@ func (m *Methods) forgetClient(ctx context.Context, params json.RawMessage, from
 	// clients/forget says the client; devices/forget, from an older Remote, its id.
 	var client wire.ClientRequest
 	var device wire.DeviceForget
-	json.Unmarshal(params, &client)
-	json.Unmarshal(params, &device)
+	// The params are one of the two: the other does not read, and is empty.
+	_ = json.Unmarshal(params, &client)
+	_ = json.Unmarshal(params, &device)
 	id := string(client.Client)
 	if !controllink.IsUUID(id) {
 		id = string(device.ID)
@@ -711,7 +716,8 @@ func (m *Methods) saveActivityToken(ctx context.Context, params json.RawMessage,
 // bot, which an admin enrols (#1761, FR-030).
 func (m *Methods) startEnroll(ctx context.Context, params json.RawMessage, from Caller) (any, error) {
 	var enroll wire.MachineEnroll
-	json.Unmarshal(params, &enroll)
+	// The params are optional: none, or ones that do not read, are the defaults.
+	_ = json.Unmarshal(params, &enroll)
 	if bot := deref(enroll.As); bot != "" {
 		if !m.s.isAdmin(m.callerPerson(from)) {
 			return nil, fail(notPermitted, "Only an admin can add a machine for a bot.")
@@ -1072,7 +1078,8 @@ func (m *Methods) hostRow(h records.MachineRecord) wire.ControlMachine {
 		Owner:   optional(m.s.ownerOf(h.ID))}
 	if raw, ok := h.Extra["implementation"]; ok {
 		var impl string
-		json.Unmarshal(raw, &impl)
+		// An implementation that is not a string is not said.
+		_ = json.Unmarshal(raw, &impl)
 		row.Implementation = optional(impl)
 	}
 	if list := hostCapabilities(h); list != nil {
@@ -1168,7 +1175,8 @@ func (m *Methods) admitOnce(ctx context.Context, client records.ClientRecord) (b
 func (m *Methods) NoteEpoch(ctx context.Context, id controllink.Identity, epoch int) {
 	switch id.Kind {
 	case 'c':
-		m.records.ChangeClient(ctx, id.ID, func(c *records.ClientRecord) bool {
+		// A failed write is let go: the next connection says the epoch again.
+		_ = m.records.ChangeClient(ctx, id.ID, func(c *records.ClientRecord) bool {
 			if c.KnownEpoch != nil && *c.KnownEpoch == epoch {
 				return false
 			}
@@ -1176,7 +1184,8 @@ func (m *Methods) NoteEpoch(ctx context.Context, id controllink.Identity, epoch 
 			return true
 		})
 	case 'h':
-		m.records.ChangeHost(ctx, id.ID, func(h *records.MachineRecord) bool {
+		// A failed write is let go: the next connection says the epoch again.
+		_ = m.records.ChangeHost(ctx, id.ID, func(h *records.MachineRecord) bool {
 			if h.KnownEpoch != nil && *h.KnownEpoch == epoch {
 				return false
 			}
@@ -1733,7 +1742,10 @@ func (m *Methods) openTunnel(ctx context.Context, host string, params json.RawMe
 		return nil, err
 	}
 	if record := m.records.Host(host); record == nil || record.SignInFrom[request.Runtime] == "" {
-		m.records.Load(ctx)
+		if err := m.records.Load(ctx); err != nil {
+			// The records held are used, as they were before the read.
+			m.s.log("tunnel to " + host + ": the records could not be read again: " + err.Error())
+		}
 	}
 	record := m.records.Host(host)
 	if record == nil || record.SignInFrom[request.Runtime] == "" || !m.sameUser(host, record.SignInFrom[request.Runtime]) {
@@ -1880,7 +1892,8 @@ func (m *Methods) sendAtJoin(host string) {
 // clearDetectFolders drops the mark of a host marked before #656 to add the folders it
 // found: the mark goes, unsaid.
 func (m *Methods) clearDetectFolders(ctx context.Context, host string) {
-	m.records.ChangeHost(ctx, host, func(r *records.MachineRecord) bool {
+	// The mark is dropped again on the next detect.
+	_ = m.records.ChangeHost(ctx, host, func(r *records.MachineRecord) bool {
 		if r.DetectFolders == nil || !*r.DetectFolders {
 			return false
 		}

@@ -172,6 +172,12 @@ type forgeBook struct {
 	forgeImages forgeImageCache
 	// forgeImageTransport reads forge/image's images; a test gives a fake, nil is the default.
 	forgeImageTransport http.RoundTripper
+	// keptGitHub is forgeGitHubKept's client, as keptGitHubToken (#6349).
+	keptGitHub      forgeGitHub
+	keptGitHubToken string
+	// forgeUnchanged is what forge/changes last read of each GitHub source while it had not
+	// changed (#6349), so a read whose probe says the same answers it again with no search.
+	forgeUnchanged map[string]unchangedRead
 }
 
 func (d *Daemon) registerForge() {
@@ -195,6 +201,7 @@ func (d *Daemon) registerForge() {
 	d.registerForgeBoards()
 	d.registerForgeImage()
 	d.registerForgeReleases()
+	d.registerForgeSync()
 }
 
 // forgeCursor is a list's cursor, one per forge by its name, so a page goes on where each forge
@@ -303,8 +310,11 @@ func (d *Daemon) forgeListAsked(ctx context.Context, prs bool, r wire.ForgeListR
 	}
 	filter := forgeFilter{PRs: prs, State: state, Label: deref(r.Label), Assignee: deref(r.Assignee), Query: deref(r.Query),
 		Feature: deref(r.Feature), Reviewer: reviewer, Board: board}
+	if r.UpdatedSince != nil {
+		filter.UpdatedSince = r.UpdatedSince.Time()
+	}
 	moved, scopeKeys := d.forgeListScopes(ctx, folders, prs, board, reviewer)
-	key, _ := json.Marshal([]any{method, scopeKeys, board.key(), r.State, r.Label, r.Assignee, r.Query, r.Feature, reviewer, cursor, limit})
+	key, _ := json.Marshal([]any{method, scopeKeys, board.key(), r.State, r.Label, r.Assignee, r.Query, r.Feature, reviewer, cursor, limit, r.UpdatedSince})
 	if a, ok := d.forgeCached(string(key)); ok && a.list != nil {
 		return *a.list, nil
 	}
@@ -420,6 +430,7 @@ func forgeListPages(ctx context.Context, moved []forgeListScoped, cursor forgeCu
 		p := forgePage{err: m.err}
 		if p.err == nil {
 			p, p.err = m.forge.List(ctx, m.scope, filter, cursor.At[name], limit)
+			p, _ = sinceBounded(p, filter)
 		}
 		p.forge = name
 		pages = append(pages, p)
@@ -727,16 +738,36 @@ func (d *Daemon) forgeGitHub() (forgeGitHub, error) {
 	if !ok || !c.Usable(nowFunc()) {
 		return nil, errors.New(githubmcp.NotConnected)
 	}
+	return d.forgeGitHubAs(c.Access), nil
+}
+
+// forgeGitHubAs is GitHub as token.
+func (d *Daemon) forgeGitHubAs(token string) forgeGitHub {
 	if d.newForgeGitHub != nil {
-		return d.newForgeGitHub(c.Access), nil
+		return d.newForgeGitHub(token)
 	}
-	token := c.Access
 	// A walk points GitHub at its fixture server (AGENTS_TEST_GITHUB_URL), as the skill catalogue does.
 	api := ""
 	if e := d.catalogEndpoints(); !e.IsLive() {
 		api = e.API
 	}
-	return githubmcp.NewRealGitHub(api, func() string { return token }, nil), nil
+	return githubmcp.NewRealGitHub(api, func() string { return token }, nil)
+}
+
+// forgeGitHubKept is GitHub as the person's connection, one client kept for as long as the
+// token is the same (#6349), so the ETags of its GET answers are kept from call to call and an
+// unchanged answer is a 304, which costs no rate limit. forgeGitHub makes a new one each call.
+func (d *Daemon) forgeGitHubKept() (forgeGitHub, error) {
+	c, ok := d.githubConnection()
+	if !ok || !c.Usable(nowFunc()) {
+		return nil, errors.New(githubmcp.NotConnected)
+	}
+	d.forgeMu.Lock()
+	defer d.forgeMu.Unlock()
+	if d.keptGitHub == nil || d.keptGitHubToken != c.Access {
+		d.keptGitHub, d.keptGitHubToken = d.forgeGitHubAs(c.Access), c.Access
+	}
+	return d.keptGitHub, nil
 }
 
 // forgeGitLab is the GitLab at root as the person's connection; the caller has checked there is one.

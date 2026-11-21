@@ -1,7 +1,6 @@
 package agentsd
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -33,7 +32,7 @@ func TestABoundConnectionSpeaksForOneDevice(t *testing.T) {
 	t.Cleanup(func() { close(p.in) })
 	p.call(t, 1, "connection/bindDevice", map[string]any{})
 	var reply wire.AnnounceReply
-	json.Unmarshal(p.call(t, 3, "devices/announce", announcement(phone, 1)), &reply)
+	mustUnmarshal(t, p.call(t, 3, "devices/announce", announcement(phone, 1)), &reply)
 	if string(reply.Device.ID) != phone {
 		t.Fatalf("reply: %+v", reply)
 	}
@@ -63,7 +62,7 @@ func TestABoundConnectionSpeaksForOneDevice(t *testing.T) {
 	}
 	mac.call(t, 8, "devices/forget", map[string]any{"id": phone})
 	var list []wire.Device
-	json.Unmarshal(mac.call(t, 9, "devices/list", nil), &list)
+	mustUnmarshal(t, mac.call(t, 9, "devices/list", nil), &list)
 	if len(list) != 0 {
 		t.Fatalf("after forget: %+v", list)
 	}
@@ -73,8 +72,8 @@ func TestDevicesKeepWhatALaterBuildWrote(t *testing.T) {
 	t.Parallel()
 
 	d, mac := startDevices(t)
-	os.WriteFile(filepath.Join(d.Store.Loc.Root, "devices.json"),
-		[]byte(`[{"id":"`+phone+`","publicKey":"AQE=","name":"Old","kind":"iPad","announcedAt":1,"wants":["x"]},{"id":"bad"},"nope"]`), 0o644)
+	must(t, os.WriteFile(filepath.Join(d.Store.Loc.Root, "devices.json"), //nolint:gosec // G306: the mode this file always had; only its error is new
+		[]byte(`[{"id":"`+phone+`","publicKey":"AQE=","name":"Old","kind":"iPad","announcedAt":1,"wants":["x"]},{"id":"bad"},"nope"]`), 0o644))
 	mac.call(t, 1, "devices/announce", announcement(phone, 1))
 	b, _ := os.ReadFile(filepath.Join(d.Store.Loc.Root, "devices.json"))
 	if !strings.Contains(string(b), `"wants":["x"]`) || !strings.Contains(string(b), `"name":"Phone"`) {

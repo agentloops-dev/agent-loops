@@ -190,7 +190,9 @@ func (d *Daemon) saveRecordsLocked(replacing bool) {
 	}
 	if d.workflowRecsBad {
 		if b, err := os.ReadFile(d.workflowsPath()); err == nil {
-			os.WriteFile(fmt.Sprintf("%s.unreadable-%d", d.workflowsPath(), time.Now().Unix()), b, 0o644)
+			if err := os.WriteFile(fmt.Sprintf("%s.unreadable-%d", d.workflowsPath(), time.Now().Unix()), b, 0o644); err != nil { //nolint:gosec // G306: the mode this file always had; only its error is new
+				log.Printf("workflows.json: could not set the unreadable copy aside: %v", err)
+			}
 			store.TrimSetAsides(d.workflowsPath())
 		}
 		d.workflowRecsBad = false
@@ -209,7 +211,9 @@ func (d *Daemon) saveRecordsLocked(replacing bool) {
 	}
 	if r.ApprovalsBegan != nil {
 		if _, err := os.Stat(d.workflowBegan()); err != nil {
-			os.WriteFile(d.workflowBegan(), []byte(approvalsBeganNote), 0o644)
+			if err := os.WriteFile(d.workflowBegan(), []byte(approvalsBeganNote), 0o644); err != nil { //nolint:gosec // G306: the mode this file always had; only its error is new
+				log.Printf("workflows: could not note when approvals began: %v", err)
+			}
 		}
 	}
 }
@@ -231,7 +235,9 @@ func (d *Daemon) stateLocked(folder, id string, make bool) *workflowState {
 // keepCopyLocked writes the approved bytes where approvedCopy names them, and each skill's
 // where approvedSkills does.
 func (d *Daemon) keepCopyLocked(st *workflowState, f *workflowFile) {
-	os.MkdirAll(d.workflowCopies(), 0o755)
+	if err := os.MkdirAll(d.workflowCopies(), 0o755); err != nil { //nolint:gosec // G301: the mode this folder always had; only its error is new
+		log.Printf("workflows: could not make %s: %v", d.workflowCopies(), err)
+	}
 	st.ApprovedCopy = nil
 	if name, ok := d.keepBytes(f.text); ok {
 		st.ApprovedCopy = &name
@@ -845,14 +851,14 @@ func (d *Daemon) tellWorkflow(folder, id string) {
 	if f == nil {
 		d.workflowMu.Unlock()
 		Broadcast(d, wire.NotifyWorkflowRemoved, wire.WorkflowRemovedNotification{Folder: store.FolderURL(folder), WorkflowID: id})
-		d.sendFolder(folder)
+		_, _ = d.sendFolder(folder) // a folder no longer listed has nothing to tell
 		return
 	}
 	s := d.summaryLocked(folder, id, d.ceilingsLocked())
 	d.workflowMu.Unlock()
 	Broadcast(d, wire.NotifyWorkflowChanged, s)
 	// What waits for an OK rides on the folder's summary and in Needs You (#1322).
-	d.sendFolder(folder)
+	_, _ = d.sendFolder(folder) // a folder no longer listed has nothing to tell
 }
 
 // tellEveryWorkflow says each again: a ceiling or an approval moves them all.
@@ -863,10 +869,10 @@ func (d *Daemon) tellEveryWorkflow() {
 		folders[store.FolderPath(s.Workflow.Folder)] = true
 	}
 	for f := range folders {
-		d.sendFolder(f)
+		_, _ = d.sendFolder(f) // a folder no longer listed has nothing to tell
 	}
-	// The daily summary's control is the home folder's Daily summary workflow (#3351).
-	Broadcast(d, wire.NotifyDailySummaryChanged, d.dailySummarySettings())
+	// The daily checks' control is the home folder's Daily checks workflow (#3355, #5853).
+	Broadcast(d, wire.NotifyDailyChecksChanged, d.dailyChecksSettings())
 }
 
 func (d *Daemon) oneWorkflow(folder, id string) (wire.WorkflowSummary, error) {
@@ -1107,7 +1113,7 @@ func (d *Daemon) deleteWorkflow(r wire.WorkflowRequest) error {
 	d.workflowMu.Unlock()
 	d.unpinWorkflow(folder, r.WorkflowID)
 	Broadcast(d, wire.NotifyWorkflowRemoved, wire.WorkflowRemovedNotification{Folder: store.FolderURL(folder), WorkflowID: r.WorkflowID})
-	d.sendFolder(folder)
+	_, _ = d.sendFolder(folder) // a folder no longer listed has nothing to tell
 	d.tellEveryWorkflow()
 	return nil
 }
@@ -1399,7 +1405,9 @@ func (d *Daemon) unpinWorkflow(folder, id string) {
 	for i, w := range f.workflows {
 		if w.Workflow == id {
 			f.workflows = append(f.workflows[:i], f.workflows[i+1:]...)
-			d.writePins(f, folder)
+			if err := d.writePins(f, folder); err != nil {
+				log.Printf("workflows: could not unpin %s in %s: %v", id, folder, err)
+			}
 			return
 		}
 	}

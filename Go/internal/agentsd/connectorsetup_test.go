@@ -2,7 +2,6 @@ package agentsd
 
 import (
 	"context"
-	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -110,7 +109,7 @@ func TestAFoldersConnectorSetUp(t *testing.T) {
 	c.call(t, 1, "folders/add", map[string]any{"folder": "file://" + folder})
 
 	var setup wire.ConnectorSetup
-	json.Unmarshal(c.call(t, 2, "connectors/setup", map[string]any{"folder": folder}), &setup)
+	mustUnmarshal(t, c.call(t, 2, "connectors/setup", map[string]any{"folder": folder}), &setup)
 	slots := slotsByKind(setup)
 	if setup.Repository == nil || *setup.Repository != "alexec/agents-walk" || setup.Connection != nil || setup.Done != 3 ||
 		slots[wire.ConnectorSlotKindTasks].State != wire.ConnectorSlotStateNotConnected ||
@@ -119,13 +118,13 @@ func TestAFoldersConnectorSetUp(t *testing.T) {
 		t.Fatalf("before connecting: %+v", setup)
 	}
 
-	file.Put(connections.Connection{Provider: connections.GitHub, Login: "alexec", Access: "ghu_secret",
-		AccessExpiresAt: time.Now().Add(time.Hour), ConnectedAt: time.Now()})
+	must(t, file.Put(connections.Connection{Provider: connections.GitHub, Login: "alexec", Access: "ghu_secret",
+		AccessExpiresAt: time.Now().Add(time.Hour), ConnectedAt: time.Now()}))
 	raw := c.call(t, 3, "connectors/setup", map[string]any{"folder": folder})
 	if strings.Contains(string(raw), "ghu_secret") {
 		t.Fatalf("a token went to the client: %s", raw)
 	}
-	json.Unmarshal(raw, &setup)
+	mustUnmarshal(t, raw, &setup)
 	slots = slotsByKind(setup)
 	tasks, review, ci := slots[wire.ConnectorSlotKindTasks], slots[wire.ConnectorSlotKindCodeReview], slots[wire.ConnectorSlotKindCi]
 	if tasks.State != wire.ConnectorSlotStateRead || tasks.Proof == nil || *tasks.Proof.Number != 7 || tasks.Proof.Title != "Fix the walk" {
@@ -160,7 +159,7 @@ func TestAFoldersConnectorSetUp(t *testing.T) {
 	gh.mu.Lock()
 	gh.err = map[string]error{"issue": &githubmcp.GitHubError{Kind: githubmcp.Failed, Message: "GitHub: dial tcp: no route"}}
 	gh.mu.Unlock()
-	json.Unmarshal(c.call(t, 5, "connectors/setup", map[string]any{"folder": folder, "reading": "fresh"}), &setup)
+	mustUnmarshal(t, c.call(t, 5, "connectors/setup", map[string]any{"folder": folder, "reading": "fresh"}), &setup)
 	slots = slotsByKind(setup)
 	if s := slots[wire.ConnectorSlotKindTasks]; s.State != wire.ConnectorSlotStateRead || s.Proof == nil {
 		t.Fatalf("a lost read untick: %+v", s)
@@ -172,14 +171,14 @@ func TestAFoldersConnectorSetUp(t *testing.T) {
 		t.Fatalf("the events came back after they were taken out: %+v", setup.Events)
 	}
 
-	json.Unmarshal(c.call(t, 6, "connectors/setup/skip", map[string]any{"folder": folder, "slot": "codeReview", "skipped": true}), &setup)
+	mustUnmarshal(t, c.call(t, 6, "connectors/setup/skip", map[string]any{"folder": folder, "slot": "codeReview", "skipped": true}), &setup)
 	if s := slotsByKind(setup)[wire.ConnectorSlotKindCodeReview]; s.State != wire.ConnectorSlotStateSkipped || setup.Done != 6 {
 		t.Fatalf("skipped: %+v %d", s, setup.Done)
 	}
 	if b, _ := os.ReadFile(filepath.Join(folder, ".agents", "folder.json")); !strings.Contains(string(b), `"codeReview"`) {
 		t.Fatalf("folder.json: %s", b)
 	}
-	json.Unmarshal(c.call(t, 7, "connectors/setup/skip", map[string]any{"folder": folder, "slot": "codeReview", "skipped": false}), &setup)
+	mustUnmarshal(t, c.call(t, 7, "connectors/setup/skip", map[string]any{"folder": folder, "slot": "codeReview", "skipped": false}), &setup)
 	if s := slotsByKind(setup)[wire.ConnectorSlotKindCodeReview]; s.State != wire.ConnectorSlotStateRead {
 		t.Fatalf("set up again: %+v", s)
 	}
@@ -192,8 +191,8 @@ func TestAFoldersConnectorSetUp(t *testing.T) {
 	}
 
 	// Disconnected, the slots wait for the connection again.
-	file.Delete(connections.GitHub)
-	json.Unmarshal(c.call(t, 9, "connectors/setup", map[string]any{"folder": folder, "reading": "stored"}), &setup)
+	must(t, file.Delete(connections.GitHub))
+	mustUnmarshal(t, c.call(t, 9, "connectors/setup", map[string]any{"folder": folder, "reading": "stored"}), &setup)
 	if s := slotsByKind(setup)[wire.ConnectorSlotKindTasks]; s.State != wire.ConnectorSlotStateNotConnected || setup.Done != 3 {
 		t.Fatalf("disconnected: %+v", setup)
 	}
@@ -208,15 +207,15 @@ func TestEventsThatCannotBeTurnedOnSayWhy(t *testing.T) {
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	file := &connections.File{Path: filepath.Join(t.TempDir(), ".agents-secrets", connections.FileName)}
-	file.Put(connections.Connection{Provider: connections.GitHub, Login: "alexec", Access: "ghu_secret",
-		AccessExpiresAt: time.Now().Add(time.Hour), ConnectedAt: time.Now()})
+	must(t, file.Put(connections.Connection{Provider: connections.GitHub, Login: "alexec", Access: "ghu_secret",
+		AccessExpiresAt: time.Now().Add(time.Hour), ConnectedAt: time.Now()}))
 	d.connStoreFor = func() (connections.Store, error) { return file, nil }
 	d.newSetupReader = func(string) setupReader { return &fakeSetupGitHub{} }
 	folder := gitFolder(t, "https://github.com/alexec/agents-walk.git")
 	c.call(t, 1, "folders/add", map[string]any{"folder": "file://" + folder})
 
 	var setup wire.ConnectorSetup
-	json.Unmarshal(c.call(t, 2, "connectors/setup", map[string]any{"folder": folder}), &setup)
+	mustUnmarshal(t, c.call(t, 2, "connectors/setup", map[string]any{"folder": folder}), &setup)
 	if setup.Events.State != wire.ConnectorEventsStateFailed || setup.Events.Message == nil ||
 		strings.Contains(*setup.Events.Message, "-32") {
 		t.Fatalf("%+v", setup.Events)
@@ -231,8 +230,8 @@ func TestASetUpWithNoGitHubRemote(t *testing.T) {
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	file := &connections.File{Path: filepath.Join(t.TempDir(), ".agents-secrets", connections.FileName)}
-	file.Put(connections.Connection{Provider: connections.GitHub, Login: "alexec", Access: "ghu_secret",
-		AccessExpiresAt: time.Now().Add(time.Hour), ConnectedAt: time.Now()})
+	must(t, file.Put(connections.Connection{Provider: connections.GitHub, Login: "alexec", Access: "ghu_secret",
+		AccessExpiresAt: time.Now().Add(time.Hour), ConnectedAt: time.Now()}))
 	d.connStoreFor = func() (connections.Store, error) { return file, nil }
 	gh := &fakeSetupGitHub{}
 	d.newSetupReader = func(string) setupReader { return gh }
@@ -240,7 +239,7 @@ func TestASetUpWithNoGitHubRemote(t *testing.T) {
 	c.call(t, 1, "folders/add", map[string]any{"folder": "file://" + folder})
 
 	var setup wire.ConnectorSetup
-	json.Unmarshal(c.call(t, 2, "connectors/setup", map[string]any{"folder": folder}), &setup)
+	mustUnmarshal(t, c.call(t, 2, "connectors/setup", map[string]any{"folder": folder}), &setup)
 	if setup.Repository != nil || slotsByKind(setup)[wire.ConnectorSlotKindTasks].State != wire.ConnectorSlotStateNoRemote ||
 		gh.reads != 0 || setup.Events.State != wire.ConnectorEventsStateOff {
 		t.Fatalf("%+v", setup)
@@ -308,7 +307,7 @@ func TestAGitLabFoldersConnectorSetUp(t *testing.T) {
 	c.call(t, 1, "folders/add", map[string]any{"folder": "file://" + folder})
 
 	var setup wire.ConnectorSetup
-	json.Unmarshal(c.call(t, 2, "connectors/setup", map[string]any{"folder": folder}), &setup)
+	mustUnmarshal(t, c.call(t, 2, "connectors/setup", map[string]any{"folder": folder}), &setup)
 	slots := slotsByKind(setup)
 	if setup.Forge == nil || *setup.Forge != wire.ConnectionProviderGitlab || deref(setup.Site) != "gitlab.com" ||
 		deref(setup.Repository) != "agentstest-group/agents-walk" || setup.InstallURL != nil ||
@@ -318,20 +317,20 @@ func TestAGitLabFoldersConnectorSetUp(t *testing.T) {
 	}
 
 	// A connection to a self-managed GitLab is not sent to gitlab.com.
-	file.Put(connections.Connection{Provider: connections.GitLab, Login: "agentstest", Access: "glpat-other",
-		URL: "https://gitlab.example.com/", ConnectedAt: time.Now()})
-	json.Unmarshal(c.call(t, 3, "connectors/setup", map[string]any{"folder": folder, "reading": "fresh"}), &setup)
+	must(t, file.Put(connections.Connection{Provider: connections.GitLab, Login: "agentstest", Access: "glpat-other",
+		URL: "https://gitlab.example.com/", ConnectedAt: time.Now()}))
+	mustUnmarshal(t, c.call(t, 3, "connectors/setup", map[string]any{"folder": folder, "reading": "fresh"}), &setup)
 	if setup.Connection != nil || gl.reads != 0 || slotsByKind(setup)[wire.ConnectorSlotKindCi].State != wire.ConnectorSlotStateNotConnected {
 		t.Fatalf("another GitLab's connection: %+v", setup)
 	}
 
-	file.Put(connections.Connection{Provider: connections.GitLab, Login: "agentstest", Access: "gloas-secret",
-		AccessExpiresAt: time.Now().Add(time.Hour), ConnectedAt: time.Now()})
+	must(t, file.Put(connections.Connection{Provider: connections.GitLab, Login: "agentstest", Access: "gloas-secret",
+		AccessExpiresAt: time.Now().Add(time.Hour), ConnectedAt: time.Now()}))
 	raw := c.call(t, 4, "connectors/setup", map[string]any{"folder": folder, "reading": "fresh"})
 	if strings.Contains(string(raw), "gloas-secret") {
 		t.Fatalf("a token went to the client: %s", raw)
 	}
-	json.Unmarshal(raw, &setup)
+	mustUnmarshal(t, raw, &setup)
 	slots = slotsByKind(setup)
 	tasks, review, ci := slots[wire.ConnectorSlotKindTasks], slots[wire.ConnectorSlotKindCodeReview], slots[wire.ConnectorSlotKindCi]
 	if tasks.State != wire.ConnectorSlotStateRead || tasks.Proof == nil || *tasks.Proof.Number != 3 ||
@@ -366,8 +365,8 @@ func TestAProjectsSlotsFillItsFolders(t *testing.T) {
 	defer d.Shutdown()
 	file := &connections.File{Path: filepath.Join(t.TempDir(), ".agents-secrets", connections.FileName)}
 	d.connStoreFor = func() (connections.Store, error) { return file, nil }
-	file.Put(connections.Connection{Provider: connections.GitHub, Login: "alexec", Access: "ghu_secret",
-		AccessExpiresAt: time.Now().Add(time.Hour), ConnectedAt: time.Now()})
+	must(t, file.Put(connections.Connection{Provider: connections.GitHub, Login: "alexec", Access: "ghu_secret",
+		AccessExpiresAt: time.Now().Add(time.Hour), ConnectedAt: time.Now()}))
 	var mu sync.Mutex
 	readRepos := map[string]bool{}
 	d.newSetupReader = func(token string) setupReader {
@@ -387,7 +386,7 @@ func TestAProjectsSlotsFillItsFolders(t *testing.T) {
 	}}}})
 
 	var setup wire.ConnectorSetup
-	json.Unmarshal(c.call(t, 2, "connectors/setup", map[string]any{"folder": folder, "reading": "fresh"}), &setup)
+	mustUnmarshal(t, c.call(t, 2, "connectors/setup", map[string]any{"folder": folder, "reading": "fresh"}), &setup)
 	slots := slotsByKind(setup)
 	tasks, review, ci := slots[wire.ConnectorSlotKindTasks], slots[wire.ConnectorSlotKindCodeReview], slots[wire.ConnectorSlotKindCi]
 	if setup.Project == nil || *setup.Project != id || setup.ProjectName == nil || *setup.ProjectName != "Agents" {
@@ -427,7 +426,7 @@ func TestAProjectsSlotsFillItsFolders(t *testing.T) {
 	// The project gives the slot back: the folder's own again.
 	d.heardProjects(wire.MachineProjects{Projects: []wire.ProjectTools{{ID: id, Name: "Agents", Slots: []wire.ProjectSlot{}}}})
 	var again wire.ConnectorSetup
-	json.Unmarshal(c.call(t, 4, "connectors/setup", map[string]any{"folder": folder}), &again)
+	mustUnmarshal(t, c.call(t, 4, "connectors/setup", map[string]any{"folder": folder}), &again)
 	if s := slotsByKind(again)[wire.ConnectorSlotKindCodeReview]; s.State != wire.ConnectorSlotStateNoRemote || s.FromProject != nil || s.Repository != nil {
 		t.Fatalf("given back: %+v", s)
 	}
@@ -445,4 +444,37 @@ func (r *recordingGitHub) NewestPull(ctx context.Context, repo string) (*githubm
 	r.repos[repo] = true
 	r.mu.Unlock()
 	return r.fakeSetupGitHub.NewestPull(ctx, repo)
+}
+
+// #6359: a store that does not read is no connection, and the daemon says so once until a
+// read works again; a connection that reads again counts again.
+func TestAStoreThatDoesNotReadIsNoConnection(t *testing.T) {
+	t.Parallel()
+
+	file := &connections.File{Path: filepath.Join(t.TempDir(), connections.FileName)}
+	d := &Daemon{}
+	d.connStoreFor = func() (connections.Store, error) { return file, nil }
+	if err := os.WriteFile(file.Path, []byte("{not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		if _, ok := d.forgejoConnection(); ok {
+			t.Fatal("an unreadable store gave a connection")
+		}
+	}
+	if !d.connReadFailed.Load() {
+		t.Fatal("the failed read was not kept")
+	}
+	if err := os.Remove(file.Path); err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Put(connections.Connection{Provider: connections.Forgejo, URL: "http://localhost:3753/"}); err != nil {
+		t.Fatal(err)
+	}
+	if c, ok := d.forgejoConnection(); !ok || c.URL != "http://localhost:3753/" {
+		t.Fatalf("%+v %v", c, ok)
+	}
+	if d.connReadFailed.Load() {
+		t.Fatal("a read that worked kept the failure")
+	}
 }

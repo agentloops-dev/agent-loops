@@ -74,7 +74,6 @@ public struct EnvFile: Codable, Sendable, Hashable {
 /// `env/list`'s answer: `~/.agents/env` first, then each known folder's `.agents/env`.
 public struct EnvList: Codable, Sendable, Hashable {
     public var files: [EnvFile]
-    public init(files: [EnvFile] = []) { self.files = files }
 }
 
 /// `env/list`: with `folder`, only `~/.agents/env` and that folder's file.
@@ -137,10 +136,6 @@ public struct EnvResolvedVariable: Codable, Sendable, Hashable, Identifiable {
 public struct EnvResolved: Codable, Sendable, Hashable {
     public var folder: String
     public var variables: [EnvResolvedVariable]
-    public init(folder: String, variables: [EnvResolvedVariable] = []) {
-        self.folder = folder
-        self.variables = variables
-    }
 }
 
 /// `env/changed`: `folder`'s `.agents/env` changed, or `~/.agents/env` (`yours`).
@@ -326,9 +321,7 @@ public enum EnvironmentPage {
         /// For a repo: its folder, and that folder's name.
         public var folder: String?
         public var repo: String?
-        public var line: Int
         public var state: EnvVariableState
-        public var reason: String?
         /// The file has changes git has not committed.
         public var uncommitted: Bool
         /// Why it is in Needs you, or nil.
@@ -375,8 +368,8 @@ public enum EnvironmentPage {
             file.variables.map { variable in
                 Item(id: id(layer: file.layer, folder: file.folder, name: variable.name), name: variable.name,
                      value: variable.value, description: variable.description, layer: file.layer, path: file.path,
-                     folder: file.folder, repo: file.folder.map(repoName), line: variable.line, state: variable.state,
-                     reason: variable.reason, uncommitted: file.uncommitted == true, needs: needs(variable, layer: file.layer))
+                     folder: file.folder, repo: file.folder.map(repoName), state: variable.state,
+                     uncommitted: file.uncommitted == true, needs: needs(variable, layer: file.layer))
             }
         }
     }
@@ -440,12 +433,6 @@ public enum EnvironmentPage {
     /// The layer in short, as a Needs you row says it: "Yours" or "Repo · Agents".
     public static func layerShort(_ item: Item) -> String {
         item.layer == .yours ? "Yours" : "Repo · \(item.repo ?? "")"
-    }
-
-    /// The row's second line: the layer, or why it needs you.
-    public static func subtitle(_ item: Item) -> String {
-        if let needs = item.needs { return needs }
-        return item.layer == .yours ? "Yours" : "Repo · \(item.repo ?? "")"
     }
 
     /// Also set (wireframes §4a): the same name in the other layer, and which one sessions get. Yours wins over a repo's.

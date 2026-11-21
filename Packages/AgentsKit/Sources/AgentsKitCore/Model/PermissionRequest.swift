@@ -40,10 +40,6 @@ public struct PermissionOption: Codable, Hashable, Sendable, Identifiable {
         case rejectAlways = "reject_always"
         case unknown
 
-        public init(wire: String?) {
-            self = Kind(rawValue: wire ?? "") ?? .unknown
-        }
-
         public var allows: Bool { self == .allowOnce || self == .allowAlways }
     }
 

@@ -33,9 +33,14 @@ public struct LocalSecret: Codable, Sendable, Hashable, Identifiable {
 
 public struct LocalSecrets: Codable, Sendable, Hashable {
     public var secrets: [LocalSecret]
+}
 
-    public init(secrets: [LocalSecret] = []) {
-        self.secrets = secrets
+/// secrets/localRemove's request (#6335): one secret a machine keeps for itself, taken out of its store.
+public struct LocalSecretRemoveRequest: Codable, Sendable, Hashable {
+    public var name: String
+
+    public init(name: String) {
+        self.name = name
     }
 }
 
@@ -43,10 +48,12 @@ public struct LocalSecrets: Codable, Sendable, Hashable {
 /// in `Web/src/model/localSecrets.ts`.
 public enum LocalSecretWords {
     public static let header = "On This Machine"
-    public static let footer = "Agents saved these on this machine, with ask_secret, capture_secret or generate_secret. "
-        + "Every session's agent here can use one by its name. They are not sent to your other machines."
-    /// Under each row.
-    public static let notBackedUp = "Only on this machine. Not backed up."
+    /// Under Remove's question (#6335).
+    public static let removeMessage = "It is taken out of this machine's store. Agents here can no longer use it."
+    /// When the machine's list does not load (#6335): its secrets are not hidden without a word.
+    public static func didNotLoad(_ why: String) -> String {
+        "The secrets on this machine did not load: \(why)"
+    }
 }
 
 extension SecretInfoWords {

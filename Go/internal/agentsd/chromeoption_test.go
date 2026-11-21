@@ -33,16 +33,16 @@ func TestOnlyAClaudeSessionAskedForChromeGetsTheFlag(t *testing.T) {
 	t.Parallel()
 
 	a := &wire.Agent{RuntimeID: "claude", StartOptions: wire.StartOptions{Values: map[string]wire.JSONValue{}}}
-	if b, _ := json.Marshal(agentSessionMeta(a)); strings.Contains(string(b), "extraArgs") {
+	if b, _ := json.Marshal(agentSessionMeta(a)); strings.Contains(string(b), `"chrome"`) {
 		t.Fatalf("Chrome without asking: %s", b)
 	}
 	a.StartOptions.Values["chrome"] = wire.JSONValue(`true`)
 	b, _ := json.Marshal(agentSessionMeta(a))
-	if !strings.Contains(string(b), `"extraArgs":{"chrome":null}`) || !strings.Contains(string(b), `"disallowedTools"`) {
-		t.Fatalf("no --chrome, or the tools the app takes away lost: %s", b)
+	if !strings.Contains(string(b), `"chrome":null`) || !strings.Contains(string(b), `"disallowedTools"`) || !strings.Contains(string(b), `"settings":`) {
+		t.Fatalf("no --chrome, or the tools the app takes away or the settings lost: %s", b)
 	}
 	// The plain sessionMeta is not changed under another agent.
-	if b, _ := json.Marshal(sessionMeta("claude")); strings.Contains(string(b), "extraArgs") {
+	if b, _ := json.Marshal(sessionMeta("claude")); strings.Contains(string(b), `"chrome"`) {
 		t.Fatalf("sessionMeta itself changed: %s", b)
 	}
 	g := &wire.Agent{RuntimeID: "grok", StartOptions: wire.StartOptions{Values: map[string]wire.JSONValue{"chrome": wire.JSONValue(`true`)}}}
@@ -76,7 +76,7 @@ func TestAChatsUseChromeIsKeptWithoutAskingClaude(t *testing.T) {
 	defer d.Shutdown()
 	a := seeded(t, d, t.TempDir(), nil)
 	var opts []wire.ConfigOption
-	json.Unmarshal(c.call(t, 1, "agents/setOption", map[string]any{"agentID": a.ID, "optionID": "chrome", "value": true}), &opts)
+	mustUnmarshal(t, c.call(t, 1, "agents/setOption", map[string]any{"agentID": a.ID, "optionID": "chrome", "value": true}), &opts)
 	if len(opts) == 0 || opts[len(opts)-1].ID != "chrome" || string(opts[len(opts)-1].CurrentValue) != "true" {
 		t.Fatalf("%+v", opts)
 	}

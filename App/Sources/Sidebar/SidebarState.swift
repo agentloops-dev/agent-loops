@@ -147,8 +147,6 @@ final class SidebarFrame {
 @MainActor
 @Observable
 final class AgentPaneState {
-    let agentID: UUID
-
     /// Nil means the agent's own folder. The pane resolves it, so an agent whose folder
     /// moved does not carry a stale path around.
     var folder: URL?
@@ -204,10 +202,6 @@ final class AgentPaneState {
     var opened: Set<SidebarPane> = []
     /// False when the agent's daemon holds only one shell — a server not yet updated.
     var canOpenMoreShells = true
-
-    init(agentID: UUID) {
-        self.agentID = agentID
-    }
 }
 
 /// Every agent's pane state, for this window.
@@ -218,20 +212,15 @@ final class SidebarStates {
 
     func state(for agentID: UUID) -> AgentPaneState {
         if let existing = states[agentID] { return existing }
-        let fresh = AgentPaneState(agentID: agentID)
+        let fresh = AgentPaneState()
         states[agentID] = fresh
         return fresh
-    }
-
-    /// Nothing is kept for an agent that has gone.
-    func forget(_ agentID: UUID) {
-        states[agentID] = nil
     }
 }
 
 /// Where the Changes pane is looking (035).
 struct ChangesSelection: Equatable {
-    enum View: Equatable { case edits, folder, whole }
+    enum View: Equatable { case edits, whole }
 
     var path: String
     /// The tool call whose edit to bring into view, when the pane was opened from one.

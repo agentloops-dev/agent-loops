@@ -484,7 +484,7 @@ func (d *Daemon) viewAnswer(scope, server, uri, hash string) (string, bool) {
 	d.mcpApprovalsLocked()
 	views := map[string]string{}
 	if d.mcpApprovals != nil {
-		json.Unmarshal(d.mcpApprovals["views"], &views)
+		_ = json.Unmarshal(d.mcpApprovals["views"], &views) // none, or bad ones, are no answers
 	}
 	d.mcpMu.Unlock()
 	stored, ok := views[viewKey(scope, server, uri)]
@@ -695,7 +695,7 @@ func viewContextPreface(title string, content, structured json.RawMessage) strin
 		Type string `json:"type"`
 		Text string `json:"text"`
 	}
-	json.Unmarshal(content, &blocks)
+	_ = json.Unmarshal(content, &blocks) // content that is not blocks has no text
 	for _, b := range blocks {
 		if b.Type == "text" && strings.TrimSpace(b.Text) != "" {
 			parts = append(parts, b.Text)
@@ -835,7 +835,7 @@ func viewPolicy(csp json.RawMessage) wire.AppViewPolicy {
 	origins := func(key string) []string {
 		kept := []string{}
 		var values []json.RawMessage
-		json.Unmarshal(fields[key], &values)
+		_ = json.Unmarshal(fields[key], &values) // an absent or bad field has no origins
 		for _, v := range values {
 			text, ok := stringOf(v)
 			origin, good := policyOrigin(text)

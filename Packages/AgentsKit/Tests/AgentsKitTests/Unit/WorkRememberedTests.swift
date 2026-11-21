@@ -45,10 +45,7 @@ struct WorkRememberedTests {
         #expect(WorkRemembered.list("%zz", kind: .issue).filter == .init())
     }
 
-    @Test func featuresAndTimelineKeepTheirChoices() {
-        #expect(WorkRemembered.features(board: "") == "")
-        let board = WorkRemembered.features(board: "https://github.com/orgs/a/projects/1")
-        #expect(WorkRemembered.value("board", in: board) == "https://github.com/orgs/a/projects/1")
+    @Test func timelineKeepsItsChoices() {
         #expect(WorkRemembered.timeline(range: .twoDays, project: "", board: "") == "")
         let t = WorkRemembered.timeline(WorkRemembered.timeline(range: .week, project: "p1", board: "b"))
         #expect(t.range == .week)
@@ -59,7 +56,6 @@ struct WorkRememberedTests {
 
     @Test func eachPageHasItsOwnKey() {
         #expect(WorkRemembered.key(.issue) == "agents.work.filters.issue")
-        #expect(WorkRemembered.key(.feature) == "agents.work.filters.features")
         #expect(WorkRemembered.key(.timeline) == "agents.work.filters.timeline")
     }
 }

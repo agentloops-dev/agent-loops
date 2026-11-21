@@ -14,16 +14,6 @@ public struct QueuedStart: Codable, Hashable, Sendable {
     public var worktree: WorktreeChoice?
     public var labels: [String]
 
-    public init(runtimeID: String? = nil, permissionMode: String? = nil, model: String? = nil,
-                effort: String? = nil, worktree: WorktreeChoice? = nil, labels: [String] = []) {
-        self.runtimeID = runtimeID
-        self.permissionMode = permissionMode
-        self.model = model
-        self.effort = effort
-        self.worktree = worktree
-        self.labels = labels
-    }
-
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         runtimeID = try c.decodeIfPresent(String.self, forKey: .runtimeID)

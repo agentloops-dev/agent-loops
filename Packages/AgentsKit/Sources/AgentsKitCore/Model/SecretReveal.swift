@@ -45,8 +45,6 @@ public extension CardSecret {
         public var label: String
         /// As shown: the number in groups of four.
         public var text: String
-        /// As copied: the number's digits only.
-        public var value: String
         public var id: DaemonAPI.UserSealedSecretRequest.Part { part }
     }
 
@@ -57,34 +55,14 @@ public extension CardSecret {
             let text = part == .number
                 ? stride(from: 0, to: value.count, by: 4).map { String(value.dropFirst($0).prefix(4)) }.joined(separator: " ")
                 : value
-            return Shown(part: part, label: UserScopeWords.partLabel(part), text: text, value: value)
+            return Shown(part: part, label: UserScopeWords.partLabel(part), text: text)
         }
     }
 }
-
-#if canImport(CryptoKit)
-public extension ClientSealing {
-    /// Asks the control plane for this client's own copy of one secret (it writes the audit
-    /// entry first), and opens it here.
-    static func reveal(_ request: DaemonAPI.UserSealedSecretRequest, on control: DaemonClient, key: DeviceKey,
-                       client: UUID) async throws -> String {
-        let to = try await control.call(DaemonAPI.Method.userSecretRecipients, DaemonAPI.Empty(),
-                                        returning: DaemonAPI.SealRecipients.self)
-        let sealed = try await control.call(DaemonAPI.Method.userSealedSecret, request, returning: DaemonAPI.UserSealedSecret.self)
-        // A copy that does not open here (a changed key) has its own line.
-        do {
-            return try open(sealed, user: to.user ?? "", with: key, client: client)
-        } catch {
-            throw SecretRevealWords.RevealFailure()
-        }
-    }
-}
-#endif
 
 /// Settings ▸ You ▸ Accounts ▸ Details… (#5116, wireframes section 7): each field, and which
 /// ones Copy.
 public extension AccountsWords {
-    static let details = "Details…"
     static let noSecretLine = "No secret. Add one in Secrets, then name it in Edit…."
     static let notInSecrets = "not in Secrets"
 

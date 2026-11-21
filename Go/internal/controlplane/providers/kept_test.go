@@ -101,7 +101,7 @@ func TestAPromptForAStoppedHostIsKeptStartsItAndGoesOnceItConnects(t *testing.T)
 	}
 	// An id the host dedupes by, as the client sent none.
 	var params map[string]any
-	json.Unmarshal(requests[0].params, &params)
+	must(t, json.Unmarshal(requests[0].params, &params))
 	if !isUUID(strOr(params["sendID"])) {
 		t.Errorf("%v", params)
 	}
@@ -128,7 +128,7 @@ func TestAKeptStartSaysWhichAgentItMade(t *testing.T) {
 		t.Error("the agent it made was not said")
 	}
 	var sent map[string]any
-	json.Unmarshal(host.requests()[0].params, &sent)
+	must(t, json.Unmarshal(host.requests()[0].params, &sent))
 	if !isUUID(strOr(sent["requestID"])) {
 		t.Error("no requestID")
 	}
@@ -142,9 +142,9 @@ func TestWhatIsKeptOutlivesARestartOfTheControlPlane(t *testing.T) {
 	h := newHarness(t)
 	h.link(h.add(), devbox, "agents-devbox")
 	kept := h.keeper()
-	kept.Keep(devbox, MethodAgentsPrompt, promptParams("one"), h.caller, nil)
+	mustKeep(t, kept.Keep(devbox, MethodAgentsPrompt, promptParams("one"), h.caller, nil))
 	time.Sleep(2 * time.Millisecond)
-	kept.Keep(devbox, MethodAgentsPrompt, promptParams("two"), h.caller, nil)
+	mustKeep(t, kept.Keep(devbox, MethodAgentsPrompt, promptParams("two"), h.caller, nil))
 	again := h.keeper()
 	var texts []string
 	for _, k := range again.All() {
@@ -158,7 +158,7 @@ func TestWhatIsKeptOutlivesARestartOfTheControlPlane(t *testing.T) {
 	var sent []string
 	for _, r := range host.requests() {
 		var p map[string]any
-		json.Unmarshal(r.params, &p)
+		must(t, json.Unmarshal(r.params, &p))
 		sent = append(sent, strOr(p["text"]))
 	}
 	if !reflect.DeepEqual(sent, []string{"one", "two"}) {
@@ -254,7 +254,7 @@ func TestWhatWasNotSentGoesAWeekOn(t *testing.T) {
 	h.link(h.add(), devbox, "agents-devbox")
 	h.provider.set("", "Error: droplet is locked", 0)
 	kept := h.keeper()
-	kept.Keep(devbox, MethodAgentsPrompt, promptParams("go"), h.caller, nil)
+	mustKeep(t, kept.Keep(devbox, MethodAgentsPrompt, promptParams("go"), h.caller, nil))
 	eventually(t, func() bool { return len(kept.All()) == 1 && deref(kept.All()[0].Failed) != "" })
 	if n := kept.Expire(time.Now().Add(KeptFailedFor - time.Hour)); n != 0 || len(kept.All()) != 1 {
 		t.Fatalf("dropped %d before its week", n)
@@ -290,7 +290,7 @@ func TestAHostKeepsAtMostKeptLimitWithWhatWasNotSent(t *testing.T) {
 		}
 		eventually(t, allFailed)
 	}
-	kept.Keep(devbox, MethodAgentsPrompt, promptParams("one more"), h.caller, nil)
+	mustKeep(t, kept.Keep(devbox, MethodAgentsPrompt, promptParams("one more"), h.caller, nil))
 	all := kept.All()
 	if len(all) != KeptLimit || all[0].ID == first.ID || all[len(all)-1].Text != "one more" {
 		t.Fatalf("kept %d: %v", len(all), all)
@@ -304,7 +304,7 @@ func TestAPromptTheHostRefusesIsShownNotSentInItsWords(t *testing.T) {
 	h := newHarness(t)
 	h.link(h.add(), devbox, "agents-devbox")
 	kept := h.keeper()
-	kept.Keep(devbox, MethodAgentsPrompt, promptParams("go"), h.caller, nil)
+	mustKeep(t, kept.Keep(devbox, MethodAgentsPrompt, promptParams("go"), h.caller, nil))
 	host := &keptHost{refuse: "Its folder has gone."}
 	h.router.mu.Lock()
 	h.router.answer = host.answer
@@ -321,7 +321,7 @@ func TestARemovedHostTakesWhatWasKeptForIt(t *testing.T) {
 	h := newHarness(t)
 	h.link(h.add(), devbox, "agents-devbox")
 	kept := h.keeper()
-	kept.Keep(devbox, MethodAgentsPrompt, promptParams("go"), h.caller, nil)
+	mustKeep(t, kept.Keep(devbox, MethodAgentsPrompt, promptParams("go"), h.caller, nil))
 	kept.Forget(devbox)
 	keys, _ := h.store.List(context.Background(), KeptPrefix)
 	if len(kept.All()) != 0 || len(keys) != 0 {
@@ -348,14 +348,14 @@ func TestAKeptRecordIsStoredAsSwiftStoresIt(t *testing.T) {
 	h := newHarness(t)
 	h.link(h.add(), devbox, "agents-devbox")
 	kept := h.keeper()
-	kept.Keep(devbox, MethodAgentsPrompt, promptParams("go"), h.caller, nil)
+	mustKeep(t, kept.Keep(devbox, MethodAgentsPrompt, promptParams("go"), h.caller, nil))
 	keys, _ := h.store.List(context.Background(), KeptPrefix+devbox+"/")
 	if len(keys) != 1 || !strings.HasSuffix(keys[0].Key, ".json") {
 		t.Fatalf("%v", keys)
 	}
 	object, _ := h.store.Get(context.Background(), keys[0].Key)
 	var stored map[string]any
-	json.Unmarshal(object.Data, &stored)
+	must(t, json.Unmarshal(object.Data, &stored))
 	for _, key := range []string{"id", "host", "method", "params", "client", "clientKind", "at"} {
 		if _, ok := stored[key]; !ok {
 			t.Errorf("no %s in %s", key, object.Data)

@@ -1368,27 +1368,6 @@
       }
     },
     {
-      "name": "agents/summaryFacts",
-      "x-capability": "summary.machines/1",
-      "description": "From the control plane only (#3354): this machine's facts for the daily summary that another of the person's machines writes: sessions done and stopped, what waits on the person, suggestions not taken, and what the checks found here.",
-      "paramStructure": "by-name",
-      "params": [
-        {
-          "name": "params",
-          "required": true,
-          "schema": {
-            "$ref": "schema/core.schema.json#/definitions/SummaryFactsRequest"
-          }
-        }
-      ],
-      "result": {
-        "name": "result",
-        "schema": {
-          "$ref": "schema/core.schema.json#/definitions/SummaryFacts"
-        }
-      }
-    },
-    {
       "name": "agents/touchedPaths",
       "x-capability": "agents/1",
       "tags": [
@@ -1930,9 +1909,9 @@
       }
     },
     {
-      "name": "dailySummary/changed",
-      "x-capability": "daily-summary/1",
-      "description": "The daily summary's control changed (#3351): by dailySummary/setSettings, or by a change to the home folder's Daily summary workflow. Sent with every workflow change.",
+      "name": "dailyChecks/changed",
+      "x-capability": "daily-checks/1",
+      "description": "The daily checks' control changed (#3355, #5853): by dailyChecks/setSettings, or by a change to the home folder's Daily checks workflow. Sent with every workflow change.",
       "x-notification": true,
       "tags": [
         {
@@ -1945,15 +1924,15 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "schema/core.schema.json#/definitions/DailySummarySettings"
+            "$ref": "schema/core.schema.json#/definitions/DailyChecksSettings"
           }
         }
       ]
     },
     {
-      "name": "dailySummary/setSettings",
-      "x-capability": "daily-summary/1",
-      "description": "Sets the daily summary's control (#3351): turns the home folder's Daily summary workflow on or off and sets its time. It answers the settings as they now are.",
+      "name": "dailyChecks/setSettings",
+      "x-capability": "daily-checks/1",
+      "description": "Sets the daily checks' control (#3355, #5853): turns the home folder's Daily checks workflow on or off and sets how often it runs. It answers the settings as they now are.",
       "tags": [
         {
           "name": "web"
@@ -1965,21 +1944,21 @@
           "name": "params",
           "required": true,
           "schema": {
-            "$ref": "schema/core.schema.json#/definitions/DailySummarySettings"
+            "$ref": "schema/core.schema.json#/definitions/DailyChecksSettings"
           }
         }
       ],
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "schema/core.schema.json#/definitions/DailySummarySettings"
+          "$ref": "schema/core.schema.json#/definitions/DailyChecksSettings"
         }
       }
     },
     {
-      "name": "dailySummary/settings",
-      "x-capability": "daily-summary/1",
-      "description": "The daily summary's control (#3351), read from the home folder's Daily summary workflow. dailySummary/changed says when it changes.",
+      "name": "dailyChecks/settings",
+      "x-capability": "daily-checks/1",
+      "description": "The daily checks' control (#3355, #5853), read from the home folder's Daily checks workflow. dailyChecks/changed says when it changes.",
       "tags": [
         {
           "name": "web"
@@ -1998,7 +1977,7 @@
       "result": {
         "name": "result",
         "schema": {
-          "$ref": "schema/core.schema.json#/definitions/DailySummarySettings"
+          "$ref": "schema/core.schema.json#/definitions/DailyChecksSettings"
         }
       }
     },
@@ -2718,7 +2697,7 @@
     {
       "name": "suggestions/dismiss",
       "x-capability": "suggestions/1",
-      "description": "Take a suggestion of the daily checks out of the sidebar's For Review (#3331) for good: the host keeps the dismissal, so neither For Review nor the next daily summary lists it, and the checks do not keep it again.",
+      "description": "Take a suggestion of the daily checks out of the sidebar's For Review (#3331) for good: the host keeps the dismissal, so For Review does not list it again, and the checks do not keep it again.",
       "tags": [
         {
           "name": "web"
@@ -2764,85 +2743,6 @@
         "name": "result",
         "schema": {
           "$ref": "schema/core.schema.json#/definitions/UUID"
-        }
-      }
-    },
-    {
-      "name": "summaries/changed",
-      "x-capability": "summaries/1",
-      "description": "The daily summary's saved pages changed (#3721): a page was saved, or read with summaries/read. The pages, newest first, as summaries/list answers.",
-      "x-notification": true,
-      "tags": [
-        {
-          "name": "web"
-        }
-      ],
-      "paramStructure": "by-name",
-      "params": [
-        {
-          "name": "params",
-          "required": true,
-          "schema": {
-            "type": "array",
-            "items": {
-              "$ref": "schema/sessions.schema.json#/definitions/SummaryPage"
-            }
-          }
-        }
-      ]
-    },
-    {
-      "name": "summaries/list",
-      "x-capability": "summaries/1",
-      "description": "The daily summary's saved pages on this machine (#3721), newest first: at most the last three. summaries/changed says when they change.",
-      "tags": [
-        {
-          "name": "web"
-        }
-      ],
-      "paramStructure": "by-name",
-      "params": [
-        {
-          "name": "params",
-          "required": true,
-          "schema": {
-            "$ref": "schema/core.schema.json#/definitions/Empty"
-          }
-        }
-      ],
-      "result": {
-        "name": "result",
-        "schema": {
-          "type": "array",
-          "items": {
-            "$ref": "schema/sessions.schema.json#/definitions/SummaryPage"
-          }
-        }
-      }
-    },
-    {
-      "name": "summaries/read",
-      "x-capability": "summaries/1",
-      "description": "A saved page of the daily summary and its Markdown (#3721). Reading the newest page marks it read, and the session that wrote it too.",
-      "tags": [
-        {
-          "name": "web"
-        }
-      ],
-      "paramStructure": "by-name",
-      "params": [
-        {
-          "name": "params",
-          "required": true,
-          "schema": {
-            "$ref": "schema/core.schema.json#/definitions/SummaryReadRequest"
-          }
-        }
-      ],
-      "result": {
-        "name": "result",
-        "schema": {
-          "$ref": "schema/sessions.schema.json#/definitions/SummaryPageText"
         }
       }
     },

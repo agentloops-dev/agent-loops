@@ -34,7 +34,7 @@ final class HostSet {
     /// first showed offline, not the time of each new list, so the strip does not say "now".
     private(set) var offlineSince: [MachineRef: Date] = [:]
 
-    init(locations: StoreLocations) {}
+    init() {}
 
     var isEmpty: Bool { controlled.isEmpty }
 
@@ -43,7 +43,7 @@ final class HostSet {
             .sorted { $0.value.label.localizedStandardCompare($1.value.label) == .orderedAscending }.map(\.key)
     }
 
-    func host(_ id: MachineRef) -> ServerHost? { nil }
+    func host() -> ServerHost? { nil }
 
     /// What an action aimed at this Mac's host says when it enrolled and then went quiet
     /// (#83). A host that never enrolled, or is not running, says so instead (#303).
@@ -97,16 +97,11 @@ final class HostSet {
         return true
     }
 
-    func client(for id: MachineRef) -> DaemonClient? { nil }
+    func client() -> DaemonClient? { nil }
     func start() {}
-    func connect(_ id: MachineRef) {}
     func retryNow() {}
-    func update(_ host: ServerHost) {}
-    func agentsLive(_ id: MachineRef) async -> Int { 0 }
-    func remove(_ id: MachineRef, purge: Bool = false) async {}
-    func noteFolders(_ id: MachineRef, listed: [DaemonAPI.FolderSummary]) {}
-    func forgetGoneFolder(_ id: MachineRef, path: String) {}
-    func installClaude(_ id: MachineRef) async {}
+    func noteFolders() {}
+    func forgetGoneFolder() {}
 }
 
 /// The states the window's own ssh connection to a server could be in, before 058. The
@@ -114,24 +109,9 @@ final class HostSet {
 enum ServerConnection {
     enum State: Sendable, Equatable {
         case idle
-        case connecting(Step)
         case connected
         case offline(since: Date)
-        case failed(HostProblem)
-        case updateWaiting
     }
 
-    enum Step: String, Sendable, Equatable {
-        case connect, checkSystem, setUp, installClaude, findRuntimes
-    }
-
-    enum Claude: Sendable, Equatable {
-        case unknown
-        case notInstalled
-        case installing
-        case ready(String)
-        case own
-        case failed(HostProblem)
-        case updateWaiting
-    }
+    enum Claude: Sendable, Equatable {}
 }

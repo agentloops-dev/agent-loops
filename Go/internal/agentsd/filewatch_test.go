@@ -5,6 +5,7 @@ package agentsd
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -29,13 +30,21 @@ func fileWait(t *testing.T, d *Daemon, folder, event string, paths ...string) (w
 	}()
 	waitFor(t, "the wait", func() bool {
 		w := d.Store.Agent(a.ID).EventWait
-		if w == nil || w.Ending != nil {
-			return false
-		}
-		d.fileMu.Lock()
-		defer d.fileMu.Unlock()
-		return d.fileWatches[folder] != nil
+		return w != nil && w.Ending == nil
 	})
+	// Once the record says it waits, its files are followed (#6410): a file that goes now
+	// was seen, so it is removed.
+	d.fileMu.Lock()
+	var globs []string
+	if st := d.fileWatches[folder]; st != nil {
+		globs = st.globs
+	}
+	d.fileMu.Unlock()
+	for _, p := range paths {
+		if !slices.Contains(globs, p) {
+			t.Fatalf("the wait is recorded, but its files are not followed: %q not in %q", p, globs)
+		}
+	}
 	return a.ID, answered
 }
 
@@ -52,12 +61,12 @@ func answer(t *testing.T, answered chan string) string {
 
 func TestAPullThatAddsThreeWatchedFilesWakesOnceWithThePaths(t *testing.T) {
 	folder := canonical(t.TempDir())
-	os.MkdirAll(filepath.Join(folder, "reports"), 0o755)
-	os.WriteFile(filepath.Join(folder, "reports", "old.csv"), []byte("old"), 0o644)
+	must(t, os.MkdirAll(filepath.Join(folder, "reports"), 0o755))                            //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(folder, "reports", "old.csv"), []byte("old"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	d, _ := watched(t, folder)
 	_, answered := fileWait(t, d, folder, "file.added", "reports/*.csv")
 	for _, name := range []string{"a.csv", "b.csv", "c.csv", "notes.txt"} {
-		os.WriteFile(filepath.Join(folder, "reports", name), []byte("x"), 0o644)
+		must(t, os.WriteFile(filepath.Join(folder, "reports", name), []byte("x"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	}
 	text := answer(t, answered)
 	if !strings.HasPrefix(text, "file.added happened at ") || !strings.Contains(text, "reports/a.csv") ||
@@ -77,9 +86,9 @@ func TestAPullThatAddsThreeWatchedFilesWakesOnceWithThePaths(t *testing.T) {
 
 func TestAWatchedFileDeletedOrMovedAwayIsRemoved(t *testing.T) {
 	folder := canonical(t.TempDir())
-	os.MkdirAll(filepath.Join(folder, "reports"), 0o755)
+	must(t, os.MkdirAll(filepath.Join(folder, "reports"), 0o755)) //nolint:gosec // G301: the mode this folder always had; only its error is new
 	for _, name := range []string{"a.csv", "b.csv"} {
-		os.WriteFile(filepath.Join(folder, "reports", name), []byte("x"), 0o644)
+		must(t, os.WriteFile(filepath.Join(folder, "reports", name), []byte("x"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	}
 	d, _ := watched(t, folder)
 	_, answered := fileWait(t, d, folder, "file.removed", "reports/**")
@@ -89,7 +98,7 @@ func TestAWatchedFileDeletedOrMovedAwayIsRemoved(t *testing.T) {
 	}
 	// Moved away is removed, and moved in under another name is added: a move is both.
 	_, answered = fileWait(t, d, folder, "file.*", "reports/*.csv")
-	os.Rename(filepath.Join(folder, "reports", "b.csv"), filepath.Join(folder, "b.csv"))
+	must(t, os.Rename(filepath.Join(folder, "reports", "b.csv"), filepath.Join(folder, "b.csv")))
 	if text := answer(t, answered); !strings.HasPrefix(text, "file.removed happened at ") || !strings.Contains(text, "reports/b.csv") {
 		t.Fatal(text)
 	}
@@ -97,17 +106,17 @@ func TestAWatchedFileDeletedOrMovedAwayIsRemoved(t *testing.T) {
 
 func TestAChangeNothingWatchesWritesNothing(t *testing.T) {
 	folder := canonical(t.TempDir())
-	os.MkdirAll(filepath.Join(folder, "reports"), 0o755)
-	os.WriteFile(filepath.Join(folder, "reports", "kept.csv"), []byte("old"), 0o644)
+	must(t, os.MkdirAll(filepath.Join(folder, "reports"), 0o755))                             //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(folder, "reports", "kept.csv"), []byte("old"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	d, _ := watched(t, folder)
 	// No wait at all: nothing is looked at.
-	os.WriteFile(filepath.Join(folder, "reports", "early.csv"), []byte("x"), 0o644)
+	must(t, os.WriteFile(filepath.Join(folder, "reports", "early.csv"), []byte("x"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	time.Sleep(3 * fileSettle)
 	agent, answered := fileWait(t, d, folder, "file.added", "reports/*.csv")
 	// Not watched, written over, or the folder itself: nothing.
-	os.WriteFile(filepath.Join(folder, "notes.txt"), []byte("x"), 0o644)
-	os.WriteFile(filepath.Join(folder, "reports", "kept.csv"), []byte("new and longer"), 0o644)
-	os.WriteFile(filepath.Join(folder, "reports", "early.csv"), []byte("again"), 0o644)
+	must(t, os.WriteFile(filepath.Join(folder, "notes.txt"), []byte("x"), 0o644))                        //nolint:gosec // G306: the mode this file always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(folder, "reports", "kept.csv"), []byte("new and longer"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(folder, "reports", "early.csv"), []byte("again"), 0o644))         //nolint:gosec // G306: the mode this file always had; only its error is new
 	time.Sleep(3 * fileSettle)
 	if got := append(raised(d, "file.added"), raised(d, "file.removed")...); len(got) != 0 {
 		t.Fatalf("%+v", got)
@@ -122,13 +131,13 @@ func TestAFileStillBeingWrittenIsAddedOnceAfterItStops(t *testing.T) {
 	d, _ := watched(t, folder)
 	_, answered := fileWait(t, d, folder, "file.added", "**/*.log")
 	p := filepath.Join(folder, "out", "run.log")
-	os.MkdirAll(filepath.Dir(p), 0o755)
+	must(t, os.MkdirAll(filepath.Dir(p), 0o755)) //nolint:gosec // G301: the mode this folder always had; only its error is new
 	f, err := os.Create(p)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for i := 0; i < 4; i++ {
-		f.WriteString("line\n")
+		must(t, errOnly(f.WriteString("line\n")))
 		time.Sleep(fileSettle / 3)
 	}
 	f.Close()

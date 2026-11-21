@@ -52,8 +52,8 @@ env:
 
 jobs:
   # What each job runs (#5677): a Linux job of about a minute that reads Nx's project graph
-  # (#5631) and the lanes' attestations (#5585), and ends. `go`, `apps` and `test` need only its
-  # outputs, so the three run side by side: when the macOS jobs needed `go`, they waited for all of
+  # (#5631), and ends. `go`, `apps` and `test` need only its outputs, so the three run side by
+  # side: when the macOS jobs needed `go`, they waited for all of
   # it (its outputs are there only when a job ends), about 7 minutes on a change to Go. A macOS
   # job starts only when a project of its own is affected, so a change to docs/ or a skill boots
   # no macOS runner. A job skipped by its `if:` satisfies a required check; a workflow-level
@@ -65,10 +65,6 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: read
-      # The attestation/<platform> check runs on the pull request's commits, and the heads it
-      # had before a force push (#5585).
-      checks: read
-      pull-requests: read
     env:
       # Rule 2 of #5627: never Nx Cloud; no .env file, which no hash reads.
       NX_NO_CLOUD: "true"
@@ -82,13 +78,9 @@ jobs:
       marks: ${{ steps.affected.outputs.marks }}
       swiftlint: ${{ steps.affected.outputs.swiftlint }}
       gomac: ${{ steps.affected.outputs.gomac }}
-      skip-linux: ${{ steps.affected.outputs.skip-linux }}
-      skip-swift: ${{ steps.affected.outputs.skip-swift }}
-      skip-gomac: ${{ steps.affected.outputs.skip-gomac }}
-      skip-apps: ${{ steps.affected.outputs.skip-apps }}
     steps:
-      # The pull request's own commit, not its merge with main: the hashes are then the lane's
-      # (#5584). The base for `nx affected` is its merge base with main.
+      # The pull request's own commit, not its merge with main (#5584). The base for
+      # `nx affected` is its merge base with main.
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
@@ -107,23 +99,11 @@ jobs:
       # What each job runs, by what this change affects: on a pull request since its merge base
       # with main, on main since the push before; with no base (a new branch, a run by hand),
       # everything. Each step of `go`, `apps` and `test` reads these in its `if:`.
-      #
-      # Then, on a pull request only, the tasks that a lane's attestation covers (#5585, epic
-      # #5581 §3; scripts/ci-attested.mjs): a statement from the agents' bot, from a lane that is
-      # not revoked (#5586: the revocation branch), whose task and Nx hash are the ones CI calculates now
-      # at the head, PASSED. skip-<step> lists them and that step runs only the others; a macOS
-      # step with every task covered gets `skip` (swift, gomac, swiftlint, apps), so `test` and
-      # `apps` may not start at all (#6060: `apps` still starts for the marks).
-      # A push to main and a run by hand skip nothing. With no accepted attestation, or when
-      # GitHub does not answer, nothing is skipped (principle 11). The job summary lists each
-      # skipped task and the check run that covers it.
       - name: Affected projects
         id: affected
         shell: bash
         env:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
-          PR: ${{ github.event.pull_request.number }}
-          GH_TOKEN: ${{ github.token }}
         run: |
           apps=run swift=run go=run marks=run swiftlint=run
           if [[ -n "$BASE" ]] && git cat-file -e "$BASE^{commit}" 2>/dev/null; then
@@ -136,28 +116,22 @@ jobs:
             changed=$(git diff --name-only "$BASE" HEAD)
             # The marks (#4615): a mark, its source or this file.
             grep -qE '^(design/logo/blob/final/|scripts/design\.sh$|App/Resources/Assets\.xcassets/|Remote/Resources/Assets\.xcassets/AppIcon|Web/assets/|docs/assets/|docs/favicon\.ico$|www/assets/|\.github/workflows/ci\.yml$)' <<<"$changed" || marks=skip
-            # SwiftLint (swift-lint:lint, in `test`): any Swift file, its rules, its baseline or
-            # lint.sh. swift-lint is affected by every change, so its own files say when.
-            grep -qE '(\.swift$|^\.swiftlint(\.yml|-baseline\.json)$|^scripts/lint\.sh$|^lint/swift/)' <<<"$changed" || swiftlint=skip
+            # SwiftLint and Periphery (swift-lint:lint, the `swift-lint` job): any Swift file, their
+            # rules, baseline and allowlist, what the index builds read (project.yml, a package's
+            # manifest, build-cache.sh, the Xcode), lint.sh, or this file, whose swift-lint job a
+            # change must run to measure (#6454). swift-lint is affected by every
+            # change, so its own files say when.
+            grep -qE '(\.swift$|^\.swiftlint(\.yml|-baseline\.json)$|^\.periphery-allowed\.txt$|^project\.yml$|^Packages/[^/]+/Package\.resolved$|^\.xcode-version$|^scripts/(lint\.sh|periphery-report\.py|build-cache\.sh)$|^lint/swift/|^\.github/workflows/ci\.yml$)' <<<"$changed" || swiftlint=skip
           fi
-          # gomac is `test`'s Go on a Mac: go, but skip when an attestation covers all of it.
+          # gomac is `test`'s Go on a Mac: the same as go.
           gomac=$go
-          if [[ -n "$PR" ]] && [[ -n "$BASE" ]] && git cat-file -e "$BASE^{commit}" 2>/dev/null; then
-            attested=$(node scripts/ci-attested.mjs select --base "$BASE" --pr "$PR") || attested=
-            echo "$attested"
-            grep '^skip-' <<<"$attested" >> "$GITHUB_OUTPUT" || true
-            grep -qx 'all-swift=true' <<<"$attested" && swift=skip
-            grep -qx 'all-gomac=true' <<<"$attested" && gomac=skip
-            grep -qx 'all-swiftlint=true' <<<"$attested" && swiftlint=skip
-            grep -qx 'all-apps=true' <<<"$attested" && apps=skip
-          fi
           printf 'apps=%s\nswift=%s\ngo=%s\ngomac=%s\nmarks=%s\nswiftlint=%s\n' "$apps" "$swift" "$go" "$gomac" "$marks" "$swiftlint" | tee -a "$GITHUB_OUTPUT"
 
   # The Linux job (#5645), on every change, beside `apps` and `test` (#5677): Nx over the Go
   # module, the web app, the Wire code generation and the design tokens (#5628, epic #5627):
   # go:build, go:vet, go:test (-race), web:build, web:lint (tsc, the lint that keeps agent output
   # inert, the licence list, Biome), web:test (which holds the build to its MANIFEST), wire:gen,
-  # design:gen, go:lint (golangci-lint, govulncheck) and repo-lint:lint (shellcheck, zsh -n, our
+  # design:gen, go:lint (golangci-lint, govulncheck, deadcode) and repo-lint:lint (shellcheck, zsh -n, our
   # text checks, jscpd; #5672), each linter failing on a finding. Then the Wire compat check and
   # the mixed-versions test (#1767). Each project's project.json names the inputs of its tasks; a
   # lane runs the same with scripts/nx.sh. The Xcode projects (tag xcode) are `apps` and `test`'s.
@@ -194,8 +168,8 @@ jobs:
           echo "NX_WORKSPACE_DATA_DIRECTORY=$RUNNER_TEMP/nx/data" >> "$GITHUB_ENV"
           # go:test keeps each shard's log and its summary here (#6008).
           echo "GO_TEST_LOG_DIR=$RUNNER_TEMP/go-test-logs" >> "$GITHUB_ENV"
-      # The pull request's own commit, not its merge with main: the hashes are then the lane's
-      # (#5584). The base for `nx affected` is its merge base with main.
+      # The pull request's own commit, not its merge with main (#5584). The base for
+      # `nx affected` is its merge base with main.
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
@@ -263,19 +237,8 @@ jobs:
         run: |
           scripts/pnpm.sh install --frozen-lockfile
           scripts/pnpm.sh audit signatures
-      # The Nx hash of each affected task at the pull request's own commit, with no task run
-      # (#5584): a lane's attestation/<platform> check run names its tasks by these. For
-      # information; `changes`'s "Affected projects" calculates them again for its skips (#5585).
-      - name: Nx task hashes
-        if: github.event_name == 'pull_request'
-        continue-on-error: true
-        shell: bash
-        env:
-          BASE: ${{ github.event.pull_request.base.sha }}
-        run: |
-          { echo "### Nx task hashes, $(uname -sm)"; echo '```'; node scripts/nx-hashes.cjs --affected "$BASE" test vet lint; echo '```'; } | tee -a "$GITHUB_STEP_SUMMARY"
       # The pinned linters (scripts/lint.sh --tools), on the PATH for the lint targets in Nx
-      # (#5672): go:lint (golangci-lint, govulncheck), web:lint (Biome) and repo-lint:lint
+      # (#5672): go:lint (golangci-lint, govulncheck, deadcode), web:lint (Biome) and repo-lint:lint
       # (shellcheck, zsh -n, our text checks, jscpd). Each fails on a finding. The binaries are
       # cached, and golangci-lint's analysis with them.
       - uses: actions/cache@v5
@@ -293,7 +256,7 @@ jobs:
           restore-keys: golangci-lint-
       - name: Lint tools
         run: |
-          scripts/lint.sh --tools ~/.cache/lint-tools shellcheck golangci-lint govulncheck biome jscpd
+          scripts/lint.sh --tools ~/.cache/lint-tools shellcheck golangci-lint govulncheck deadcode biome jscpd
           echo "$HOME/.cache/lint-tools" >> "$GITHUB_PATH"
       # The reserve is the steps after it: the mixed-versions test (about a minute), the Wire
       # compat check and the cache saves. The linters are Nx's lint targets, inside this budget.
@@ -306,8 +269,7 @@ jobs:
         run: bash scripts/ci-time-left.sh
       # What the change affects, each task skipped when the cache has a pass at its hash: on a
       # pull request since its merge base with main, on main since the push before; with no
-      # base (a new branch, a run by hand), every task. On a pull request, not the tasks that an
-      # attestation covers (SKIP, from `changes`; #5585).
+      # base (a new branch, a run by hand), every task.
       - name: Nx affected
         id: nx
         timeout-minutes: ${{ fromJSON(steps.budget.outputs.minutes) }}
@@ -316,15 +278,12 @@ jobs:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
           # A lint target says which of its findings are in this change's files.
           LINT_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
-          SKIP: ${{ needs.changes.outputs.skip-linux }}
         run: |
           git cat-file -e "$LINT_BASE^{commit}" 2>/dev/null || LINT_BASE=
           targets=gen,build,vet,lint,test
           # One task at a time: go:test -race beside web:test made both fail under load (#5632),
           # as they did not when each had a job of its own.
-          if [[ -n "$SKIP" ]]; then
-            node scripts/ci-attested.mjs run --group linux --base "$BASE" --skip "$SKIP"
-          elif [[ -n "$BASE" ]] && git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+          if [[ -n "$BASE" ]] && git cat-file -e "$BASE^{commit}" 2>/dev/null; then
             scripts/nx.sh affected -t "$targets" --exclude='tag:xcode' --base="$BASE" --head=HEAD --parallel=1 --output-style=stream
           else
             scripts/nx.sh run-many -t "$targets" --exclude='tag:xcode' --parallel=1 --output-style=stream
@@ -435,134 +394,6 @@ jobs:
           JOB_MINUTES: 20
           STATUS: ${{ job.status }}
         run: bash scripts/ci-step-times.sh
-
-  # On main, 10% of the attested tasks of the batch run again at their merge commits (#5586, epic
-  # #5581 §5; scripts/ci-sample.mjs). A task that fails there and passes at the merge commit's
-  # parent was attested falsely: its lane goes on the revocation list (`revoked.txt` on the
-  # orphan branch attestation-revocations, which `select` reads) and a bug is filed. A task that
-  # fails at the parent too is a break of main, for Fix main. It waits for `go`, so it adds no
-  # load while the checks of the batch run, and it is not a required check.
-  sample:
-    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.sha }}
-    needs: go
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    permissions:
-      # contents: the revocation branch. issues: the bug. checks, pull-requests: the statements
-      # and the pull request of each commit.
-      contents: write
-      issues: write
-      checks: read
-      pull-requests: read
-      actions: read
-    env:
-      NX_NO_CLOUD: "true"
-      NX_DAEMON: "false"
-      NX_LOAD_DOT_ENV_FILES: "false"
-      NX_TUI: "false"
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-node@v5
-        with:
-          node-version-file: Web/.node-version
-          package-manager-cache: false
-      - uses: actions/setup-go@v6
-        with:
-          go-version-file: Go/go.mod
-          cache: false
-      - name: Sample the attested tasks
-        env:
-          GH_TOKEN: ${{ github.token }}
-          BEFORE: ${{ github.event.before }}
-        run: |
-          # The batch is from the last green run on main, as `go`'s "Batch" step says.
-          green=$(gh run list --workflow ci.yml --branch main --event push --status success --limit 1 --json headSha --jq '.[0].headSha // empty' 2>/dev/null) || green=
-          node scripts/ci-sample.mjs run --platform linux --before "${green:-$BEFORE}" --after "$GITHUB_SHA"
-
-  # The Xcode tasks (and the Go tasks a lane attested on a Mac) get the same sample on a macOS
-  # runner (#6077). A macOS minute costs about ten Linux ones, so: this Linux job of seconds
-  # says first whether the batch has such a task, and fixes the batch for the macOS job; that
-  # job reruns at most one task, each run at most 20 minutes (a run that hits the cap revokes
-  # nothing). Neither is a required check.
-  sample-macos-plan:
-    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.sha }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      contents: read
-      checks: read
-      pull-requests: read
-      actions: read
-    outputs:
-      sampled: ${{ steps.plan.outputs.sampled }}
-      before: ${{ steps.plan.outputs.before }}
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-node@v5
-        with:
-          node-version-file: Web/.node-version
-          package-manager-cache: false
-      - name: Xcode tasks to sample
-        id: plan
-        env:
-          GH_TOKEN: ${{ github.token }}
-          BEFORE: ${{ github.event.before }}
-        run: |
-          green=$(gh run list --workflow ci.yml --branch main --event push --status success --limit 1 --json headSha --jq '.[0].headSha // empty' 2>/dev/null) || green=
-          node scripts/ci-sample.mjs run --platform macos --max 1 --dry --output --before "${green:-$BEFORE}" --after "$GITHUB_SHA"
-
-  # After `apps` and `test`, so it adds no load while the batch's own macOS checks run; not when
-  # either failed (main is broken then, a case for Fix main). A job they skipped is no failure.
-  sample-macos:
-    needs: [sample-macos-plan, apps, test]
-    if: ${{ always() && !cancelled() && needs.sample-macos-plan.result == 'success' && needs.sample-macos-plan.outputs.sampled != '0' && needs.apps.result != 'failure' && needs.test.result != 'failure' }}
-    runs-on: xcode-27
-    # One task at the merge commit, and at its parent only when it fails there: two runs of at
-    # most 20 minutes, and the set-up.
-    timeout-minutes: 50
-    permissions:
-      contents: write
-      issues: write
-      checks: read
-      pull-requests: read
-      actions: read
-    env:
-      NX_NO_CLOUD: "true"
-      NX_DAEMON: "false"
-      NX_LOAD_DOT_ENV_FILES: "false"
-      NX_TUI: "false"
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-      - name: Xcode
-        run: echo "DEVELOPER_DIR=/Applications/Xcode_$(cat .xcode-version).app/Contents/Developer" >> "$GITHUB_ENV"
-      # What `apps` and `test-swift` set up: mac:build needs xcodegen, and the app and AgentsKit
-      # compile Metal.
-      - name: Tools
-        run: |
-          xcodebuild -version
-          brew install xcodegen &
-          xcodegen_pid=$!
-          xcodebuild -downloadComponent MetalToolchain
-          wait "$xcodegen_pid"
-      - uses: actions/setup-node@v5
-        with:
-          node-version-file: Web/.node-version
-          package-manager-cache: false
-      - uses: actions/setup-go@v6
-        with:
-          go-version-file: Go/go.mod
-          cache: false
-      - name: Sample the attested Xcode tasks
-        env:
-          GH_TOKEN: ${{ github.token }}
-          BEFORE: ${{ needs.sample-macos-plan.outputs.before }}
-        run: node scripts/ci-sample.mjs run --platform macos --max 1 --minutes 20 --before "$BEFORE" --after "$GITHUB_SHA"
 
   # The Mac app and the Remote, as Nx's mac:build and remote:build (#5631): each an xcodebuild
   # through scripts/build-cache.sh, as a lane runs it, and the Blob's marks (#4615). A check main
@@ -761,8 +592,7 @@ jobs:
       # mac:build and remote:build, one at a time (they share build/DerivedData), and the tasks
       # they depend on (wire:gen, design:gen, web:build). A build that fails on a restored
       # DerivedData gets one more go from clean (scripts/ci-clean-retry.sh says why); a task that
-      # passed is in the Nx cache, so the retry runs only what failed. On a pull request, not the
-      # builds that an attestation covers (SKIP, from `changes`; #6060).
+      # passed is in the Nx cache, so the retry runs only what failed.
       - name: Nx affected
         if: env.APPS != 'skip'
         id: nx
@@ -771,13 +601,10 @@ jobs:
         env:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
           RESTORED: ${{ steps.xcode-cache.outputs.cache-matched-key }}
-          SKIP: ${{ needs.changes.outputs.skip-apps }}
         run: |
           source scripts/ci-clean-retry.sh
           nx_apps() {
-            if [[ -n "$SKIP" ]]; then
-              node scripts/ci-attested.mjs run --group apps --base "$BASE" --skip "$SKIP"
-            elif [[ -n "$BASE" ]] && git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            if [[ -n "$BASE" ]] && git cat-file -e "$BASE^{commit}" 2>/dev/null; then
               scripts/nx.sh affected -t build --exclude='*,!mac,!remote' --base="$BASE" --head=HEAD --parallel=1 --output-style=stream
             else
               scripts/nx.sh run-many -t build --projects=mac,remote --parallel=1 --output-style=stream
@@ -900,7 +727,7 @@ jobs:
     needs: changes
     # `always()` so a failed `changes` still runs this job rather than skipping it, which would
     # read as a pass: an output that `changes` did not reach is empty, not 'skip', so its steps run.
-    if: ${{ always() && !cancelled() && (!inputs.jobs || contains(format(' {0} ', inputs.jobs), ' test ')) && (needs.changes.outputs.swift != 'skip' || needs.changes.outputs.swiftlint != 'skip') }}
+    if: ${{ always() && !cancelled() && (!inputs.jobs || contains(format(' {0} ', inputs.jobs), ' test ')) && needs.changes.outputs.swift != 'skip' }}
     runs-on: xcode-27
     # The limit of every job, as in `go` (#5673): warm, the Swift targets take about 5 to 8
     # minutes. Every AgentsKit target from cold does not fit in it: such a run fails, and its
@@ -1019,15 +846,6 @@ jobs:
         run: |
           scripts/pnpm.sh install --frozen-lockfile
           scripts/pnpm.sh audit signatures
-      # As in `go`, on macOS (#5584).
-      - name: Nx task hashes
-        if: github.event_name == 'pull_request' && env.SWIFT != 'skip'
-        continue-on-error: true
-        shell: bash
-        env:
-          BASE: ${{ github.event.pull_request.base.sha }}
-        run: |
-          { echo "### Nx task hashes, $(uname -sm)"; echo '```'; node scripts/nx-hashes.cjs --affected "$BASE" test vet lint; echo '```'; } | tee -a "$GITHUB_STEP_SUMMARY"
       # A job that reaches its timeout-minutes ends Cancelled, not Failed, and a pull request
       # with auto-merge on waits for a check that never comes; a step's own timeout fails the
       # step (scripts/ci-time-left.sh, #5609).
@@ -1054,22 +872,16 @@ jobs:
         env:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
           RESTORED: ${{ steps.agentskit-cache.outputs.cache-matched-key }}${{ steps.codetext-cache.outputs.cache-matched-key }}
-          SKIP: ${{ needs.changes.outputs.skip-swift }}
         run: |
           source scripts/ci-clean-retry.sh
           nx_swift() {
-            if [[ -n "$SKIP" ]]; then
-              node scripts/ci-attested.mjs run --group swift --base "$BASE" --skip "$SKIP"
-            elif [[ -n "$BASE" ]] && git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            if [[ -n "$BASE" ]] && git cat-file -e "$BASE^{commit}" 2>/dev/null; then
               scripts/nx.sh affected -t test --exclude='*,!agentskit,!agentskit-repo,!codetext' --base="$BASE" --head=HEAD --parallel=1 --output-style=stream
             else
               scripts/nx.sh run-many -t test --projects=agentskit,agentskit-repo,codetext --parallel=1 --output-style=stream
             fi
           }
           clean_retry "$RESTORED" Packages/AgentsKit/.build Packages/CodeText/.build -- nx_swift
-      - name: SwiftLint
-        if: ${{ always() && !cancelled() && env.SWIFTLINT != 'skip' }}
-        run: scripts/nx.sh run swift-lint:lint --output-style=stream
       - name: Save the Nx cache
         if: ${{ (always() && !cancelled()) && !inputs.sha }}
         uses: actions/cache/save@v5
@@ -1133,7 +945,116 @@ jobs:
   # (its root, its folders, a *_darwin.go file) is held as Linux's is. TMPDIR is resolved,
   # because a Mac's temporary folder is reached through the /var link and the daemon keeps
   # folders with their links resolved. Each step's `if:` reads GO: `changes`'s gomac, which is
-  # its go, or skip when an attestation covers all of it (#5585).
+  # its go.
+  # swift-lint:lint (#6336): SwiftLint, and Periphery over every Swift target, which builds the Mac
+  # app, the Remote and both Swift packages with an index of their own (scripts/lint.sh
+  # periphery). Out of `test-swift`, whose 20 minutes it does not fit in. build/periphery and the
+  # packages are cached between runs, so a warm run builds only what changed.
+  swift-lint:
+    needs: changes
+    if: ${{ always() && !cancelled() && (!inputs.jobs || contains(format(' {0} ', inputs.jobs), ' test ')) && needs.changes.outputs.swiftlint != 'skip' }}
+    runs-on: xcode-27
+    # Cold, the four index builds take about as long as `apps` from cold (#5836).
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      actions: write
+    env:
+      NX_NO_CLOUD: "true"
+      NX_DAEMON: "false"
+      NX_LOAD_DOT_ENV_FILES: "false"
+      NX_TUI: "false"
+    steps:
+      - name: Nx's folders
+        run: |
+          echo "NX_CACHE_DIRECTORY=$RUNNER_TEMP/nx/cache" >> "$GITHUB_ENV"
+          echo "NX_WORKSPACE_DATA_DIRECTORY=$RUNNER_TEMP/nx/data" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.sha || github.event.pull_request.head.sha || github.sha }}
+      # Each tracked file's time from its content, as in `go` (#5677), here for Xcode's and
+      # SwiftPM's incremental builds (#6454). The index builds have no compilation cache
+      # (AGENTS_BUILD_CACHE_INDEX=1), so a restored build/periphery saves time only when an
+      # unchanged source is older than its object. With the checkout's own times every file
+      # was newer, and a warm Periphery run compiled everything again: 1109 s of the job's 20 min.
+      - name: Content times
+        run: python3 scripts/ci-mtimes.py
+      - name: Xcode
+        run: echo "DEVELOPER_DIR=/Applications/Xcode_$(cat .xcode-version).app/Contents/Developer" >> "$GITHUB_ENV"
+      - name: Toolchain fingerprint
+        id: toolchain
+        run: |
+          version="$(xcodebuild -version | tr -dc '0-9A-Za-z.')"
+          sdk="$(xcrun --sdk macosx --show-sdk-build-version)"
+          echo "fingerprint=${version}-sdk${sdk}" >> "$GITHUB_OUTPUT"
+      # As `apps`'s: falls back to the newest for the same manifests, then for this toolchain.
+      - name: Restore the index builds
+        uses: actions/cache/restore@v5
+        with:
+          path: |
+            build/periphery
+            ~/Library/Caches/Agents-build/packages
+            ~/Library/Caches/Agents-build/checkouts
+          key: macos-xcode-27-periphery-${{ steps.toolchain.outputs.fingerprint }}-${{ hashFiles('project.yml', 'Packages/*/Package.swift', 'Packages/*/Package.resolved') }}-${{ github.sha }}
+          restore-keys: |
+            macos-xcode-27-periphery-${{ steps.toolchain.outputs.fingerprint }}-${{ hashFiles('project.yml', 'Packages/*/Package.swift', 'Packages/*/Package.resolved') }}-
+            macos-xcode-27-periphery-${{ steps.toolchain.outputs.fingerprint }}-
+      # The Mac app's build makes Web/dist and carries the Go binaries, as in `apps`; AgentsKit
+      # compiles Metal.
+      - name: Tools
+        run: |
+          brew install xcodegen &
+          xcodegen_pid=$!
+          xcodebuild -downloadComponent MetalToolchain
+          wait "$xcodegen_pid"
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: Web/.node-version
+          package-manager-cache: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: Go/go.mod
+          cache: false
+      - name: Install from the lockfile
+        timeout-minutes: 5
+        run: |
+          scripts/pnpm.sh install --frozen-lockfile
+          scripts/pnpm.sh audit signatures
+      - name: SwiftLint and Periphery
+        timeout-minutes: 40
+        run: scripts/nx.sh run swift-lint:lint --output-style=stream
+      # The linked bundles out of the index builds before main saves them: about 2 GB of the
+      # 6 GB (the two apps with their Go helpers, their extensions, the package test bundles and
+      # dSYMs). Periphery reads only the index stores and Intermediates' .SwiftFileList files,
+      # and the next build relinks and copies the bundles from the objects it keeps. Whole, the
+      # cache (3.3 GB packed) put the repo's caches over GitHub's 10 GB, so it was evicted soon
+      # after each save and every pull request's index builds ran cold, 32 to 34 minutes.
+      - name: Trim the index builds
+        if: ${{ always() && !cancelled() && env.MAIN_CACHE == 'true' }}
+        run: |
+          du -sh build/periphery 2>/dev/null || true
+          find build/periphery/mac/Build/Products/Debug build/periphery/remote/Build/Products/Debug-iphonesimulator \
+            -maxdepth 1 \( -name '*.app' -o -name '*.appex' -o -name '*.dSYM' \) -exec rm -rf {} + 2>/dev/null || true
+          find build/periphery/AgentsKit build/periphery/CodeText \
+            -maxdepth 3 \( -name '*.xctest' -o -name '*.dSYM' \) -prune -exec rm -rf {} + 2>/dev/null || true
+          du -sh build/periphery 2>/dev/null || true
+      - name: Save the index builds
+        id: save-index
+        if: ${{ always() && !cancelled() && env.MAIN_CACHE == 'true' }}
+        uses: actions/cache/save@v5
+        with:
+          path: |
+            build/periphery
+            ~/Library/Caches/Agents-build/packages
+            ~/Library/Caches/Agents-build/checkouts
+          key: macos-xcode-27-periphery-${{ steps.toolchain.outputs.fingerprint }}-${{ hashFiles('project.yml', 'Packages/*/Package.swift', 'Packages/*/Package.resolved') }}-${{ github.sha }}
+      - name: Prune old index build caches for this ref
+        if: ${{ always() && steps.save-index.outcome == 'success' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/prune-ci-caches.sh "macos-xcode-27-periphery-" "macos-xcode-27-periphery-${{ steps.toolchain.outputs.fingerprint }}-${{ hashFiles('project.yml', 'Packages/*/Package.swift', 'Packages/*/Package.resolved') }}-${{ github.sha }}" "$GITHUB_REF"
+
   test-go:
     needs: changes
     # `always()`, as in test-swift: a failed `changes` runs this job rather than skip it.
@@ -1196,15 +1117,6 @@ jobs:
         run: |
           scripts/pnpm.sh install --frozen-lockfile
           scripts/pnpm.sh audit signatures
-      # As in `go`, on macOS (#5584).
-      - name: Nx task hashes
-        if: github.event_name == 'pull_request' && env.GO != 'skip'
-        continue-on-error: true
-        shell: bash
-        env:
-          BASE: ${{ github.event.pull_request.base.sha }}
-        run: |
-          { echo "### Nx task hashes, $(uname -sm)"; echo '```'; node scripts/nx-hashes.cjs --affected "$BASE" test vet lint; echo '```'; } | tee -a "$GITHUB_STEP_SUMMARY"
       # Go's own caches, under Nx's, as in `go`.
       # Its key ends in full (the Go tasks passed) or part (they failed or ran out of time), then
       # the run (#5704): a part restores by prefix, so a rerun and the next run start warm, and
@@ -1252,14 +1164,11 @@ jobs:
         shell: bash
         env:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
-          SKIP: ${{ needs.changes.outputs.skip-gomac }}
         run: |
           export TMPDIR=$(cd "$RUNNER_TEMP" && pwd -P)
           # No lint: go:lint and repo-lint:lint are the Linux job's, which reads Go as Linux.
           targets=gen,build,vet,test
-          if [[ -n "$SKIP" ]]; then
-            node scripts/ci-attested.mjs run --group gomac --base "$BASE" --skip "$SKIP"
-          elif [[ -n "$BASE" ]] && git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+          if [[ -n "$BASE" ]] && git cat-file -e "$BASE^{commit}" 2>/dev/null; then
             scripts/nx.sh affected -t "$targets" --exclude='web,tag:xcode' --base="$BASE" --head=HEAD --parallel=1 --output-style=stream
           else
             scripts/nx.sh run-many -t "$targets" --exclude='web,tag:xcode' --parallel=1 --output-style=stream
@@ -1330,19 +1239,20 @@ jobs:
   # Cancelled, #5609). A skipped job satisfies a required check, so with both skipped this passes
   # too. The failing job's own log says what failed.
   test:
-    needs: [changes, test-swift, test-go]
+    needs: [changes, test-swift, test-go, swift-lint]
     if: ${{ always() && !cancelled() && (!inputs.jobs || contains(format(' {0} ', inputs.jobs), ' test ')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: test-swift and test-go
+      - name: test-swift, test-go and swift-lint
         env:
           SWIFT: ${{ needs.test-swift.result }}
           GO: ${{ needs.test-go.result }}
+          LINT: ${{ needs.swift-lint.result }}
         run: |
-          echo "test-swift: $SWIFT, test-go: $GO"
+          echo "test-swift: $SWIFT, test-go: $GO, swift-lint: $LINT"
           failed=0
-          for job in "test-swift:$SWIFT" "test-go:$GO"; do
+          for job in "test-swift:$SWIFT" "test-go:$GO" "swift-lint:$LINT"; do
             case ${job#*:} in
               success | skipped) ;;
               *) echo "::error::${job%%:*} ended ${job#*:}: its own log says why."; failed=1 ;;

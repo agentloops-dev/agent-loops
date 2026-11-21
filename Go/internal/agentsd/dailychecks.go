@@ -22,15 +22,16 @@ import (
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
-// The read-only checks (#3355): between daily summaries, the Daily checks workflow's agent asks
+// The read-only checks (#3355): every few hours, the Daily checks workflow's agent asks
 // this host, with check_folders, what looks wrong in the folders that had no work since the last
 // check: failing CI on the default branch, pull requests that went stale or are in conflict,
 // issues assigned to the person that no session has, and a missed scheduled workflow. It keeps
 // each finding that needs the person as a suggestion, with a prompt that starts a session on
-// it; the next summary lists them, and an urgent one sends a notice. It reads and never acts.
+// it, and an urgent one sends a notice. It reads and never acts.
 // Every client lists them in For Review (#3331), with the folder's pins, until the person starts
 // a session from one (suggestions/start) or dismisses it (suggestions/dismiss); a dismissed one
-// never comes back, in For Review, the next summary or a later check.
+// never comes back, in For Review or a later check. The daily summary that read them is gone
+// (#5853).
 
 const (
 	dailyChecksID = "daily-checks"
@@ -46,7 +47,33 @@ const (
 	checkLines = 10
 	// dismissalsKept is the most dismissals the checks keep: the oldest go first.
 	dismissalsKept = 200
+	// checksReach is how long a suggestion is kept, and the furthest back a check looks.
+	checksReach = 7 * 24 * time.Hour
+	// personalWorkflowFolder names the person's own workflows in a claim, the same on every
+	// machine whatever its home folder is called.
+	personalWorkflowFolder = "~"
 )
+
+// oneMachineWorkflows are the person's own workflows that run on one of their machines,
+// claimed per schedule, and only in their home folder: never copied into a project (#3192).
+var oneMachineWorkflows = map[string]bool{dailyChecksID: true}
+
+// inPersonalHome is whether a session works in the person's home folder: tools/list offers
+// such a one check_folders, as a run's workflow is marked on it only after it starts.
+func (d *Daemon) inPersonalHome(id wire.UUID) bool {
+	a := d.Store.Agent(id)
+	home := d.personalHome()
+	return a != nil && home != "" && filepath.Clean(store.FolderPath(a.Cwd)) == filepath.Clean(home)
+}
+
+func agentTitle(a *wire.Agent) string {
+	if a.Title != nil && strings.TrimSpace(*a.Title) != "" {
+		return strings.TrimSpace(*a.Title)
+	}
+	return "Untitled session"
+}
+
+func checksClock(t time.Time) string { return t.Local().Format("Mon 15:04") }
 
 // checksMu keeps one read-change-write of the checks' file at a time.
 var checksMu sync.Mutex
@@ -123,9 +150,9 @@ func writeChecks(home string, r checksRecord) error {
 	return store.WriteAtomically(checksPath(home), b, 0o600)
 }
 
-// bySummaryWorkflow is whether a session is a daily summary's or a check's own: neither is work.
-func bySummaryWorkflow(a *wire.Agent) bool {
-	return a.StartedByWorkflow != nil && (*a.StartedByWorkflow == dailySummaryID || *a.StartedByWorkflow == dailyChecksID)
+// byChecksWorkflow is whether a session is a check's own: it is not work.
+func byChecksWorkflow(a *wire.Agent) bool {
+	return a.StartedByWorkflow != nil && *a.StartedByWorkflow == dailyChecksID
 }
 
 // runsDailyChecks is whether an agent may call check_folders: the Daily checks workflow's, in
@@ -154,7 +181,7 @@ func (d *Daemon) quietFolders(since time.Time) []string {
 	from := wire.DateOf(since)
 	busy := map[string]bool{filepath.Clean(d.personalHome()): true}
 	for _, a := range d.Store.Agents() {
-		if !bySummaryWorkflow(&a) && a.LastActivityAt >= from {
+		if !byChecksWorkflow(&a) && a.LastActivityAt >= from {
 			busy[filepath.Clean(folderPath(&a))] = true
 		}
 	}
@@ -178,7 +205,7 @@ func (d *Daemon) checkFacts(at time.Time) string {
 	checksMu.Lock()
 	r := readChecks(home)
 	since := r.CheckedAt
-	if since.IsZero() || since.Before(at.Add(-summaryReach)) {
+	if since.IsZero() || since.Before(at.Add(-checksReach)) {
 		since = at.Add(-checksGap)
 	}
 	r.CheckedAt = at
@@ -192,7 +219,7 @@ func (d *Daemon) checkFacts(at time.Time) string {
 		if o != nil && o.Refused != nil && o.Refused.Value.MissedWhileClosed != nil && o.Refused.At >= wire.DateOf(since) {
 			f := filepath.Clean(store.FolderPath(w.Workflow.Folder))
 			missed[f] = append(missed[f], fmt.Sprintf("Workflow %q missed its run at %s: the machine slept or the app was closed.",
-				w.Workflow.Name, summaryClock(o.Refused.At.Time())))
+				w.Workflow.Name, checksClock(o.Refused.At.Time())))
 		}
 	}
 	gh := findGH()
@@ -329,7 +356,7 @@ func (d *Daemon) forgeCIFailures(gh, folder, branch string) ([]string, bool) {
 		seen[run.WorkflowName] = true
 		if failedConclusions[run.Conclusion] {
 			failing = append(failing, fmt.Sprintf("CI on %s fails: the newest %q run, at %s, ended %s. %s",
-				branch, run.WorkflowName, summaryClock(run.CreatedAt), run.Conclusion, run.URL))
+				branch, run.WorkflowName, checksClock(run.CreatedAt), run.Conclusion, run.URL))
 		}
 	}
 	return failing, true
@@ -399,7 +426,7 @@ func (d *Daemon) keepSuggestion(id wire.UUID, args map[string]json.RawMessage, a
 	}
 	kept := []checkSuggestion{}
 	for _, old := range r.Suggestions {
-		if (old.Folder != s.Folder || old.Title != s.Title) && at.Sub(old.At) < summaryReach {
+		if (old.Folder != s.Folder || old.Title != s.Title) && at.Sub(old.At) < checksReach {
 			kept = append(kept, old)
 		}
 	}
@@ -414,7 +441,7 @@ func (d *Daemon) keepSuggestion(id wire.UUID, args map[string]json.RawMessage, a
 		return "", &Error{Message: "The suggestion was not kept: " + err.Error()}
 	}
 	d.pinsChanged(s.Folder)
-	said := "Kept: For Review lists it, and the next daily summary."
+	said := "Kept: For Review lists it."
 	if s.Urgent {
 		if reply, err := d.notify(id, map[string]json.RawMessage{"title": jsonString("Daily checks"),
 			"body": jsonString(s.Title + " (" + filepath.Base(s.Folder) + ")")}); err != nil {
@@ -426,31 +453,8 @@ func (d *Daemon) keepSuggestion(id wire.UUID, args map[string]json.RawMessage, a
 	return said, nil
 }
 
-// checkSuggestions is what the checks found since, oldest first, for the summary's facts.
-func checkSuggestions(home string, since time.Time) []string {
-	checksMu.Lock()
-	r := readChecks(home)
-	checksMu.Unlock()
-	var out []string
-	for _, s := range r.Suggestions {
-		if s.At.Before(since) {
-			continue
-		}
-		line := fmt.Sprintf("%q in %s, at %s. Start a session there with: %s", s.Title, filepath.Base(s.Folder),
-			summaryClock(s.At), prefix(strings.Join(strings.Fields(s.Prompt), " "), 200))
-		if s.Urgent {
-			line = "Urgent: " + line
-		}
-		if s.Link != "" {
-			line += " " + s.Link
-		}
-		out = append(out, line)
-	}
-	return out
-}
-
 // suggestionsFor is a folder's suggestions for For Review (#3331), newest first: those of the
-// last week, as the summary reads them.
+// last week.
 func (d *Daemon) suggestionsFor(folder string, at time.Time) []wire.CheckSuggestion {
 	home := d.personalHome()
 	if home == "" {
@@ -461,7 +465,7 @@ func (d *Daemon) suggestionsFor(folder string, at time.Time) []wire.CheckSuggest
 	checksMu.Unlock()
 	var out []wire.CheckSuggestion
 	for _, s := range slices.Backward(r.Suggestions) {
-		if filepath.Clean(s.Folder) != filepath.Clean(folder) || at.Sub(s.At) >= summaryReach {
+		if filepath.Clean(s.Folder) != filepath.Clean(folder) || at.Sub(s.At) >= checksReach {
 			continue
 		}
 		c := wire.CheckSuggestion{ID: s.id(), Title: s.Title, Prompt: s.Prompt, At: wire.DateOf(s.At)}

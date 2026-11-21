@@ -34,9 +34,8 @@ Alex chose tiers on 2026-10-27 (#2796). Each row has a **Tier** cell after its F
 - the workflow page's Activity, Run Now, Approve and Enabled; today's cost in Activity and the limit banners;
 - the join and sign-in approval cards, pairing and sign-in, and the strips that say a machine or the control plane is away;
 - the Remote's trimmed Settings: This app (Voice, Notifications, Sidebar) and Help;
-- the daily summary: its Off / Summary control and time in Settings ▸ Agent Configuration ▸ Workflows, the summary page and its notice (Alex, 2026-11-01, #3192, #3351).
+- the daily checks: their Off / On control and how often in Settings ▸ Agent Configuration ▸ Workflows (Alex, 2026-11-01, #3192, #3351; the daily summary it was the control of went in #5853).
 - day-to-day coding from the Remote (Alex, 2026-11-07, #4030): the person's Secrets and For One Session, Accounts, the Machines group (its rows, New, Start, Stop, Delete, what a machine needs, and a machine's page), a machine's runtimes' **Sign In…** and **Update**, **Add Folder…** and **Clone Git URL…**, and **Move to Machine…**.
-- Work ▸ Features: its groups, its features and their epics and issues, with no Board menu (Alex, 2026-11-09).
 - the Velocity page, the PRs that landed over time, under Reports after Achievements on the Remote (named Multiplier until #5736) (Alex, 2026-11-11, #4758).
 - Work ▸ Timeline, after Releases in the Work group; on a phone in portrait it is the list of epics (Alex, 2026-11-17, #6044: "Timeline is Work, and then goes on the Remotes").
 
@@ -65,7 +64,7 @@ The surfaces: **Desk** is the Mac window (and the Windows and Linux shells, #445
 |---|---|---|---|---|---|
 | Engineer, agent work | Engineer (agent work) | yes | yes | yes | Core |
 | Engineer, set-up (folders, connectors, Agent Configuration, Folder Settings, own usage, Docs, Messages) | Engineer (set-up) | yes | yes | no | Mac + web |
-| Lead | Lead | yes | a link to the web page; Work ▸ Features, Velocity and Timeline stay native | no (Features, Velocity and Timeline stay) | Web + Mac link (Features, Velocity, Timeline: Core) |
+| Lead | Lead | yes | a link to the web page; Velocity and Timeline stay native | no (Velocity and Timeline stay) | Web + Mac link (Velocity, Timeline: Core) |
 | Admin | Admin | yes | no; a link only where an engineer looks for it (Edit in Console) | no | Web only, or Web + Mac link |
 | Report reader | Report reader | yes | a link to the web page (Reports, #4938) | no | Web + Mac link |
 
@@ -103,6 +102,21 @@ The deltas are tracked by 33 issues:
 - [Hosts, connection and pairing](parity/hosts-connection-and-pairing.md)
 - [MCP Apps views](parity/mcp-apps-views.md)
 - [Console and Reports (#1804)](parity/console-and-reports.md)
+
+## The command line (`loops`, epic #6443)
+
+`loops` is a fourth client, for a terminal and for scripts. It draws a small part of Core, so it gets this list, not a column on every row (Alex, 2026-11-20, #6443). Its role is Engineer (agent work). It gives no row a new verdict, and nobody files a parity issue for it: the Mac window, the Remote and the web page each say `by design` about it. Its commands are in `docs/reference/loops.md`.
+
+What `loops` has of Core:
+- **The session list:** of one folder only, the folder of the directory it runs in (`loops ls`, 20 rows, `--all` for every one). No smart groups, unread marks or other folders.
+- **Start a session:** in the folder, on Auto or with `--runtime`. A session it starts says `startedVia: cli` (`cli-print` for `-p` and `--detach`).
+- **Continue a session:** the folder's newest (`loops`, `-c`) or one by id or title (`-r`).
+- **Chat:** the agent's reply as it comes, the tool calls, and the prompt (Return sends, Option-Return adds a line, Control-C stops the turn).
+- **Question and permission cards:** answered by number in the chat. A secret, a step in a browser or a page to open is answered on another client. Print mode never answers a card: it waits for any client, or ends (`--on-ask=fail`, exit 3).
+- **Pairing:** `loops pair` with a client code from **Pair a Mac…**, `loops unpair` and `loops status`.
+- **Add Folder:** `loops folder add`, for this computer's machine or `--machine`.
+
+What it does not have: approvals and Changes, notices, the Brief, terminals, files, diffs, worktrees, the Simulator pane and the Agent Browser, runtimes' details, personas, workflows, Settings and every Mac + web, Web + Mac link and Web only feature. Its own, by design: print mode for scripts (`-p`, `--json`, `--detach`, `--timeout`) and its exit codes.
 
 ## Live sync
 

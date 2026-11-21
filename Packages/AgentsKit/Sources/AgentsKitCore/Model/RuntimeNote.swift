@@ -23,22 +23,6 @@ public enum RuntimeNote {
     /// and then by the agent being picked back up, which is when it stops mattering.
     public static let stoppedWithDaemon = "This agent was working when the daemon stopped, so it stopped too."
 
-    /// A record copied in from another Agents root (#228). Its conversation and folder
-    /// are that root's live work, so this daemon shows it and never runs it.
-    public static let imported = "This agent was made under another Agents set-up and copied here, so it is shown but never run here: its conversation and its folder belong to that set-up."
-
-    /// A chat a restart did not pick up, because its last pick-ups each went down
-    /// with the daemon (#209).
-    public static func notPickedUpAgain(_ times: Int) -> String {
-        "Not picked back up: the app stopped \(times) times in a row while picking this conversation up, so picking it up may be what stops it. Send it a message to pick it up yourself."
-    }
-
-    /// A message from the runtime too long to read, left out of the conversation (#209).
-    public static func messageCut(bytes: Int) -> String {
-        let megabytes = max(1, Int((Double(bytes) / 1_048_576).rounded()))
-        return "The runtime sent a message of about \(megabytes) MB, too long to read, so it was left out."
-    }
-
     /// A question the agent asked that ended without an answer, because its runtime
     /// exited, the person stopped it, or the daemon went.
     ///
@@ -55,19 +39,6 @@ public enum RuntimeNote {
     /// not all know (after a restart the pending questions died with the last daemon —
     /// what is left is the agent's state).
     public static let questionWentUnanswered = "Nobody answered this question before the agent ended."
-
-    /// A runtime the app ended because it missed a deadline (#166): "Claude did not answer
-    /// its handshake in 2 minutes, so the app ended it." History, not passing: it is the
-    /// reason the agent stopped.
-    public static func endedLate(_ runtimeName: String, _ late: RuntimeDidNotAnswer) -> String {
-        switch late.phase {
-        case .turn:
-            "\(runtimeName) said nothing for \(RuntimeDidNotAnswer.span(late.after)) with nothing pending, "
-                + "so the app ended it. Send it a message to pick it back up."
-        default:
-            "\(runtimeName) \(late.words), so the app ended it."
-        }
-    }
 
     /// The note a branch starts with (#1658): "Branched from Plan before its prompt 2.".
     /// It says where the branch was cut, so it is drawn after the last reply the branch

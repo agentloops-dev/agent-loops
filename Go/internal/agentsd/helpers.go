@@ -281,7 +281,9 @@ func (d *Daemon) requestArchiveHelper(caller, target wire.UUID) (string, error) 
 	name, folder := quotedTitle(t.Title), folderPath(t)
 	may := d.agentsMayArchive(folder)
 	if may && !helperBusy(t) {
-		d.archiveBy(t.ID, wire.AgentArchivedReasonByAgent)
+		if err := d.archiveBy(t.ID, wire.AgentArchivedReasonByAgent); err != nil {
+			return "", err
+		}
 		return "Archived " + name + ", freeing its place; the person can unarchive it. " + scopeTitle(folder) + " now has " + d.helperPlaces(folder) + ".", nil
 	}
 	if r := t.ArchiveRequest; r != nil && r.Requested != nil {

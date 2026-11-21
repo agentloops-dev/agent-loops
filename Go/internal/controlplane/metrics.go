@@ -379,7 +379,7 @@ func (s *Service) ServeMetrics(addr, token string) (string, error) {
 	s.mu.Lock()
 	s.servers = append(s.servers, srv)
 	s.mu.Unlock()
-	go srv.Serve(ln)
+	go s.serve(srv, ln, "metrics")
 	s.log("metrics: serving /metrics on " + ln.Addr().String())
 	return ln.Addr().String(), nil
 }

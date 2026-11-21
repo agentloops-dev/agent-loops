@@ -113,9 +113,16 @@ func bind(cfg Config, files Files) (*Listener, error) {
 	}
 	l.listeners = listeners
 	for _, ln := range listeners {
-		go l.srv.Serve(ln)
+		go l.serve(ln)
 	}
 	return l, nil
+}
+
+// serve is srv.Serve on one listener, with why it stopped logged when it was not Close.
+func (l *Listener) serve(ln net.Listener) {
+	if err := l.srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) && l.cfg.Log != nil {
+		l.cfg.Log("web: stopped serving on " + ln.Addr().String() + ": " + err.Error())
+	}
 }
 
 // Port is LoopbackListener.port: the port both addresses are bound on.
@@ -142,8 +149,9 @@ func (l *Listener) Stop() {
 func (l *Listener) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if v := l.gate.judge(r.Method, r.Host, r.RequestURI, r.Header); v.upgrade && handshakeOK(r) {
 		rc := http.NewResponseController(w)
-		rc.SetReadDeadline(time.Time{})
-		rc.SetWriteDeadline(time.Time{})
+		// A writer without deadlines has none to clear.
+		_ = rc.SetReadDeadline(time.Time{})
+		_ = rc.SetWriteDeadline(time.Time{})
 		ws, err := websocket.Accept(w, r, &websocket.AcceptOptions{
 			// The gate has checked Host and Origin already, more strictly than Accept would.
 			InsecureSkipVerify: true,
@@ -154,7 +162,8 @@ func (l *Listener) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		ws.SetReadLimit(maxMessage)
 		if l.cfg.Accept == nil {
-			ws.CloseNow()
+			// The connection is being dropped; how it closes does not matter.
+			_ = ws.CloseNow()
 			return
 		}
 		l.cfg.Accept(ws, r.RemoteAddr, l.Origin())
@@ -172,7 +181,8 @@ func (l *Listener) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.Add(kv[0], kv[1])
 	}
 	w.WriteHeader(reply.status)
-	w.Write(reply.body)
+	// The client has gone; there is nobody to tell.
+	_, _ = w.Write(reply.body)
 }
 
 // handshakeOK is what NIO's WebSocket upgrader needs before it upgrades: HTTP/1.1, a

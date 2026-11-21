@@ -8,9 +8,6 @@ public extension DaemonAPI.Method {
     static let eventsList = "events/list"
     /// The person cancelling an agent's wait, from the Mac, the phone or the web page.
     static let eventsCancelWait = "events/cancelWait"
-    /// Raise an event by hand. Debug builds on a scratch root only: how the events page
-    /// is seen before anything real raises one.
-    static let eventsRaise = "events/raise"
     /// The window telling the daemon a server went offline or came back. The window
     /// holds the servers' connections, so it is the only one that knows.
     static let eventsServer = "events/server"
@@ -22,43 +19,9 @@ public extension DaemonAPI.Notification {
 }
 
 public extension DaemonAPI.Failure {
-    /// An event name, filter or scope the app will not take: unknown, outside the
-    /// caller's folder, or a `custom.` one (#639). The message says which, and what
-    /// would do (042 R16).
-    static let eventRefused = -32050
-    /// Cancelling a wait when there is none.
-    static let noWait = -32051
 }
 
 public extension DaemonAPI {
-    struct EventWaitRequest: Codable, Sendable, Hashable {
-        public var token: String
-        /// `wait` (the default), `recent` or `list`.
-        public var action: String?
-        public var events: [String]?
-        /// Each key one value, or a list meaning any of (073).
-        public var `where`: [String: DetailFilter]?
-        public var from: EventPosition?
-        public var untilMinutes: Int?
-        public var limit: Int?
-
-        public init(token: String, action: String? = nil, events: [String]? = nil,
-                    where filters: [String: DetailFilter]? = nil, from: EventPosition? = nil,
-                    untilMinutes: Int? = nil, limit: Int? = nil) {
-            self.token = token
-            self.action = action
-            self.events = events
-            self.where = filters
-            self.from = from
-            self.untilMinutes = untilMinutes
-            self.limit = limit
-        }
-    }
-
-    struct EventTokenRequest: Codable, Sendable, Hashable {
-        public var token: String
-        public init(token: String) { self.token = token }
-    }
 
     struct EventsListRequest: Codable, Sendable, Hashable {
         public var before: EventPosition?
@@ -96,13 +59,6 @@ public extension DaemonAPI {
         public var status: WaitStatus
 
         public var id: UUID { agentID }
-
-        public init(agentID: UUID, title: String, folder: URL, status: WaitStatus) {
-            self.agentID = agentID
-            self.title = title
-            self.folder = folder
-            self.status = status
-        }
     }
 
     struct EventsPage: Codable, Sendable, Hashable {
@@ -126,11 +82,6 @@ public extension DaemonAPI {
     struct EventsChange: Codable, Sendable, Hashable {
         public var event: Event?
         public var waiting: [WaitingAgent]
-
-        public init(event: Event?, waiting: [WaitingAgent]) {
-            self.event = event
-            self.waiting = waiting
-        }
     }
 
     /// `events/server`: one server, by the name the person gave it, gone or back.
@@ -141,18 +92,6 @@ public extension DaemonAPI {
         public init(server: String, online: Bool) {
             self.server = server
             self.online = online
-        }
-    }
-
-    /// `events/raise`: a draft, and optionally consequences to hang on it, so the page
-    /// can be seen whole before anything real produces them.
-    struct EventRaiseRequest: Codable, Sendable, Hashable {
-        public var draft: EventDraft
-        public var consequences: [Consequence]?
-
-        public init(draft: EventDraft, consequences: [Consequence]? = nil) {
-            self.draft = draft
-            self.consequences = consequences
         }
     }
 }

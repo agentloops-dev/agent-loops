@@ -1580,6 +1580,10 @@
           "$ref": "#/definitions/StartedFrom",
           "description": "An agent on another machine started it, through the control plane (#2887): its chat says who."
         },
+        "startedVia": {
+          "$ref": "#/definitions/StartedVia",
+          "description": "The loops CLI started it (#6444); absent from the Mac window, the Remote and the web page. It is not startedFrom, which the control plane signs and the host trusts for agents/fromStarter."
+        },
         "autoChose": {
           "type": "string",
           "description": "The line the control plane made when Auto picked this machine (#5375), \"Auto chose Mac mini: you last started here.\": the session's chat says it first. A client sends what sessions/previewStart gave in text."
@@ -1617,6 +1621,14 @@
         "who"
       ],
       "additionalProperties": false
+    },
+    "StartedVia": {
+      "type": "string",
+      "enum": [
+        "cli",
+        "cli-print"
+      ],
+      "description": "The loops CLI started the session (#6444, epic #6443): cli from a terminal that follows the chat; cli-print from -p or --detach, a script that reads only the end."
     },
     "StartingPoint": {
       "type": "object",
@@ -1685,55 +1697,6 @@
       "required": [
         "folder",
         "id"
-      ],
-      "additionalProperties": false
-    },
-    "SummaryPage": {
-      "type": "object",
-      "description": "One saved page of the daily summary (#3721), in ~/.agents/summaries on this machine: the sidebar's Summary row and the Summary page.",
-      "properties": {
-        "name": {
-          "type": "string",
-          "description": "The file's name without .md, such as 2026-11-06-1810: what summaries/read names."
-        },
-        "title": {
-          "type": "string",
-          "description": "The page's first heading, such as \"Daily summary, Fri 6 Nov\"; the name when it has none."
-        },
-        "savedAt": {
-          "$ref": "core.schema.json#/definitions/WireDate"
-        },
-        "unread": {
-          "type": "boolean",
-          "description": "Nobody has read it with summaries/read since it was saved."
-        },
-        "writer": {
-          "$ref": "core.schema.json#/definitions/UUID",
-          "description": "The Daily summary workflow's session that wrote it: the page's \"How this was written\". Absent for a page saved before #3721."
-        }
-      },
-      "required": [
-        "name",
-        "title",
-        "savedAt",
-        "unread"
-      ],
-      "additionalProperties": false
-    },
-    "SummaryPageText": {
-      "type": "object",
-      "description": "summaries/read (#3721): a saved page of the daily summary and its Markdown.",
-      "properties": {
-        "page": {
-          "$ref": "#/definitions/SummaryPage"
-        },
-        "markdown": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "page",
-        "markdown"
       ],
       "additionalProperties": false
     },

@@ -97,7 +97,7 @@ func TestReadAgain(t *testing.T) {
 	f := openAt(t, path, t0)
 	link(t, f, session("a"), issue("1"), RelWorksOn, t0)
 	link(t, f, session("a"), pr("2"), RelOpens, t0.Add(time.Minute))
-	f.End(wire.LineageEndRequest{From: session("a"), To: issue("1"), Rel: RelWorksOn}, t0.Add(time.Hour))
+	end(t, f, wire.LineageEndRequest{From: session("a"), To: issue("1"), Rel: RelWorksOn}, t0.Add(time.Hour))
 	want := f.Walk(session("a"), 1)
 	f.Close()
 
@@ -130,7 +130,7 @@ func TestTornAndUnreadableLines(t *testing.T) {
 	link(t, f, session("a"), issue("1"), RelWorksOn, t0)
 	f.Close()
 	b, _ := os.ReadFile(path)
-	os.WriteFile(path, append(b, []byte(`{"link":{"from"`)...), 0o644)
+	must(t, os.WriteFile(path, append(b, []byte(`{"link":{"from"`)...), 0o600)) //nolint:gosec // G703: a file in t.TempDir()
 	torn := openAt(t, path, t0)
 	if n := len(torn.Links(issue("1")).Links); n != 1 {
 		t.Fatalf("torn: %d", n)
@@ -143,7 +143,7 @@ func TestTornAndUnreadableLines(t *testing.T) {
 	}
 
 	b, _ = os.ReadFile(path)
-	os.WriteFile(path, append([]byte("not json\n"), b...), 0o644)
+	must(t, os.WriteFile(path, append([]byte("not json\n"), b...), 0o600)) //nolint:gosec // G703: a file in t.TempDir()
 	bad := openAt(t, path, t0)
 	if n := len(bad.Links(issue("1")).Links); n != 2 {
 		t.Fatalf("unreadable: %d", n)
@@ -163,7 +163,7 @@ func TestEndedLinksGoAfterKeepEnded(t *testing.T) {
 	f := openAt(t, path, t0)
 	link(t, f, session("a"), issue("1"), RelWorksOn, t0)
 	link(t, f, session("b"), issue("1"), RelWorksOn, t0)
-	f.End(wire.LineageEndRequest{From: session("a"), To: issue("1"), Rel: RelWorksOn}, t0)
+	end(t, f, wire.LineageEndRequest{From: session("a"), To: issue("1"), Rel: RelWorksOn}, t0)
 	f.Close()
 	later := openAt(t, path, t0.Add(KeepEnded+time.Hour))
 	got := later.Links(issue("1")).Links
@@ -204,7 +204,7 @@ func TestPruneDropsEndedLinksWhileOpen(t *testing.T) {
 	t.Cleanup(func() { f.Close() })
 	link(t, f, session("a"), issue("1"), RelWorksOn, t0)
 	link(t, f, session("b"), issue("1"), RelWorksOn, t0)
-	f.End(wire.LineageEndRequest{From: session("a"), To: issue("1"), Rel: RelWorksOn}, t0)
+	end(t, f, wire.LineageEndRequest{From: session("a"), To: issue("1"), Rel: RelWorksOn}, t0)
 	if n := f.Prune(); n != 0 {
 		t.Fatalf("pruned %d before KeepEnded", n)
 	}
@@ -227,7 +227,7 @@ func TestTheStoreIsBounded(t *testing.T) {
 	f := openAt(t, path, t0)
 	ended := wire.LineageEndRequest{From: session("old"), To: issue("1"), Rel: RelWorksOn}
 	link(t, f, ended.From, ended.To, ended.Rel, t0)
-	f.End(ended, t0)
+	end(t, f, ended, t0)
 	for i := range MostLinks + rewriteMargin {
 		link(t, f, session(fmt.Sprint(i)), pr("2"), RelOpens, t0)
 	}
@@ -362,5 +362,21 @@ func TestUnknownStateReadsAsStopped(t *testing.T) {
 	f := openAt(t, path, t0)
 	if got := f.Links(session("a")).States; len(got) != 1 || got[0].State != wire.LineageSessionStateNameStopped {
 		t.Fatalf("states: %+v", got)
+	}
+}
+
+// must fails the test at once when a set-up step fails.
+func must(t testing.TB, err error) {
+	t.Helper()
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+// end ends a link, and fails the test when it cannot.
+func end(t testing.TB, f *Files, r wire.LineageEndRequest, at time.Time) {
+	t.Helper()
+	if _, err := f.End(r, at); err != nil {
+		t.Fatal(err)
 	}
 }

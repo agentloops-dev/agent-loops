@@ -224,7 +224,7 @@ func (d *Daemon) makeMachine(agent wire.UUID, args map[string]json.RawMessage) (
 		}
 	}
 	var options map[string]json.RawMessage
-	json.Unmarshal(args["options"], &options)
+	_ = json.Unmarshal(args["options"], &options) // absent options are none
 	keys := make([]string, 0, len(options))
 	for k := range options {
 		keys = append(keys, k)
@@ -261,7 +261,9 @@ func (d *Daemon) makeMachine(agent wire.UUID, args map[string]json.RawMessage) (
 			return "", err
 		}
 		var made wire.ProviderCreated
-		json.Unmarshal(out, &made)
+		if err := json.Unmarshal(out, &made); err != nil {
+			return "", err
+		}
 		if made.Joining {
 			return "Made " + made.Workspace.Name + ". It joins as the host " + made.Workspace.Name + " on its first boot: wait for server.online.", nil
 		}

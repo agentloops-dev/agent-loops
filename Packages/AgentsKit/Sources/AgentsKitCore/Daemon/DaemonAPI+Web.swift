@@ -76,6 +76,7 @@ public extension DaemonAPI {
                 Row(Method.secretsSetNeedsApproval, params: SecretNeedsApprovalRequest.self, result: Empty.self, kind: .hostRequest),
                 // Settings ▸ You ▸ Secrets ▸ On This Machine (#5122): what agents saved on the machine.
                 Row(Method.secretsLocalList, params: Empty.self, result: LocalSecrets.self, kind: .hostRequest),
+                Row(Method.secretsLocalRemove, params: LocalSecretRemoveRequest.self, result: LocalSecrets.self, kind: .hostRequest),
                 // Status ▸ Environment (#5260): the files of variables, one written, and As a session sees it.
                 Row(Method.envList, params: EnvListRequest.self, result: EnvList.self, kind: .hostRequest),
                 Row(Method.envWrite, params: EnvWriteRequest.self, result: Empty.self, kind: .hostRequest),
@@ -90,13 +91,10 @@ public extension DaemonAPI {
                 // runtime with background processes is kept.
                 Row(Method.wakeSettings, params: Empty.self, result: WakeSettings.self, kind: .hostRequest),
                 Row(Method.wakeSet, params: WakeSettings.self, result: WakeSettings.self, kind: .hostRequest),
-                // The daily summary's Off / Summary control and its time (#3351), for Settings.
-                Row(Method.dailySummarySettings, params: Empty.self, result: DailySummarySettings.self, kind: .hostRequest),
-                Row(Method.dailySummarySetSettings, params: DailySummarySettings.self, result: DailySummarySettings.self,
+                // The daily checks' Off / On control and how often (#3355, #5853), for Settings.
+                Row(Method.dailyChecksSettings, params: Empty.self, result: DailyChecksSettings.self, kind: .hostRequest),
+                Row(Method.dailyChecksSetSettings, params: DailyChecksSettings.self, result: DailyChecksSettings.self,
                     kind: .hostRequest),
-                // The Summary row and page (#3721): the saved pages, and one page's Markdown.
-                Row(Method.summariesList, params: Empty.self, result: [SummaryPage].self, kind: .hostRequest),
-                Row(Method.summariesRead, params: SummaryReadRequest.self, result: SummaryPageText.self, kind: .hostRequest),
                 // Auto (#2658): the order and cells, what it would pick now.
                 Row(Method.autoState, params: Empty.self, result: AutoSettings.self, kind: .hostRequest),
                 Row(Method.autoSet, params: AutoSettings.self, result: AutoSettings.self, kind: .hostRequest),
@@ -313,13 +311,16 @@ public extension DaemonAPI {
                 Row(Method.forgeDiff, params: ForgeNodeRequest.self, result: ForgeDiff.self, kind: .hostRequest),
                 Row(Method.forgePlan, params: ForgePlanRequest.self, result: ForgePlan.self, kind: .hostRequest),
                 Row(Method.forgeNext, params: ForgeNextRequest.self, result: ForgeNext.self, kind: .hostRequest),
-                Row(Method.forgeFeatures, params: ForgeFeaturesRequest.self, result: ForgeFeatures.self, kind: .hostRequest),
                 Row(Method.forgeBoards, params: ForgeBoardsRequest.self, result: ForgeBoards.self, kind: .hostRequest),
                 Row(Method.forgeImage, params: ForgeImageRequest.self, result: ForgeImage.self, kind: .hostRequest),
                 Row(Method.forgeReleases, params: ForgeReleasesRequest.self, result: ForgeReleases.self, kind: .hostRequest),
                 Row(Method.forgeRelease, params: ForgeReleaseRequest.self, result: ForgeReleaseDetail.self, kind: .hostRequest),
                 Row(Method.forgeAddChild, params: ForgeAddChildRequest.self, result: ForgeDone.self, kind: .hostRequest),
                 Row(Method.forgeBlockedBy, params: ForgeBlockedByRequest.self, result: ForgeDone.self, kind: .hostRequest),
+                Row(Method.forgeChanges, params: ForgeChangesRequest.self, result: ForgeChanges.self, kind: .hostRequest),
+                Row(Method.forgeIds, params: ForgeIdsRequest.self, result: ForgeIds.self, kind: .hostRequest),
+                Row(Method.forgeChecks, params: ForgeChecksRequest.self, result: ForgeChecks.self, kind: .hostRequest),
+                Row(Method.forgeSources, params: Empty.self, result: ForgeSources.self, kind: .hostRequest),
                 // The Messages page's reads and its reply (#4343, #4344, #4345).
                 Row(Method.messagesConversations, params: MessagesConversationsRequest.self, result: MessagesConversations.self,
                     kind: .hostRequest),
@@ -333,8 +334,6 @@ public extension DaemonAPI {
                 Row(Method.workDismissLead, params: WorkDismissLeadRequest.self, result: ForgeDone.self, kind: .hostRequest),
                 // Work ▸ Deploys (#5270).
                 Row(Method.deploysTargets, params: DeployTargetsRequest.self, result: DeployTargets.self, kind: .hostRequest),
-                // Work ▸ Features as a delivery view (#4586).
-                Row(Method.workFeatures, params: WorkFeaturesRequest.self, result: WorkFeatures.self, kind: .hostRequest),
                 Row(Method.docsList, params: DocsListRequest.self, result: DocsList.self, kind: .hostRequest),
                 Row(Method.docsSearch, params: DocsSearchRequest.self, result: DocsSearch.self, kind: .hostRequest),
                 Row(Method.docsRead, params: DocsReadRequest.self, result: DocsReading.self, kind: .hostRequest),
@@ -617,6 +616,8 @@ public extension DaemonAPI {
                 Row(Method.reportsValue, params: ReportQuery.self, result: ReportValue.self, kind: .controlRequest),
                 // Work ▸ Issues, Pull requests and Releases (#3118).
                 Row(Method.reportsNodes, params: ReportNodesQuery.self, result: ReportNodes.self, kind: .controlRequest),
+                // The figures changed since a cursor, for Work's local cache (#6350).
+                Row(Method.reportsChanges, params: ReportChangesQuery.self, result: ReportChanges.self, kind: .controlRequest),
                 Row(Method.reportsScopes, params: Empty.self, result: ReportScopes.self, kind: .controlRequest),
                 // Lineage over every machine's copy (#4276): Work ▸ Timeline's sessions.
                 Row(Method.lineageWalkAll, params: LineageWalkAllRequest.self, result: LineageGraph.self, kind: .controlRequest),
@@ -787,9 +788,8 @@ public extension DaemonAPI {
                 Row(Notification.modesChanged, params: RememberedModes.self, result: Empty.self, kind: .hostNotification),
                 Row(Notification.preferencesChanged, params: DisplayPreferences.self, result: Empty.self,
                     kind: .hostNotification),
-                Row(Notification.dailySummaryChanged, params: DailySummarySettings.self, result: Empty.self,
+                Row(Notification.dailyChecksChanged, params: DailyChecksSettings.self, result: Empty.self,
                     kind: .hostNotification),
-                Row(Notification.summariesChanged, params: [SummaryPage].self, result: Empty.self, kind: .hostNotification),
                 Row(Notification.workflowChanged, params: WorkflowSummary.self, result: Empty.self, kind: .hostNotification),
                 Row(Notification.workflowRemoved, params: WorkflowRemovedNotification.self, result: Empty.self,
                     kind: .hostNotification),

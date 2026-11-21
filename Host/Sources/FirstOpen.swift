@@ -93,7 +93,7 @@ extension HostModel {
     /// The window's own client code (#4226): made here, with the control key, and used at
     /// once, so it is never shown.
     func windowCode() async throws -> ControlCode {
-        let made = await ControlTool.run(["code", "--client", "--home", paths.controlHome.path], paths: paths, settings: settings)
+        let made = await ControlTool.run(["code", "--client", "--home", paths.controlHome.path], paths: paths)
         guard made.ok, let line = made.output.split(separator: "\n").last, let code = ControlCode(text: String(line)) else {
             throw ControlService.Failure(made.problem.isEmpty ? "No code could be made for this window." : made.problem)
         }

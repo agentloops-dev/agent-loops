@@ -40,7 +40,7 @@
 #                   one (#1796). A go test or build that is killed leaves its folders in
 #                   tmp/ (go-build*, a test's t.TempDir): prune removes each one in which
 #                   nothing changed for AGENTS_GO_TMP_HOURS (6), also while Go runs (#5722).
-#   npm/            npm's cache for a Node tool run by hand (Knip); lint.sh's once
+#   npm/            npm's cache for a Node tool run by hand; lint.sh's once
 #   lint-tools/<t>-<v>/  scripts/lint.sh's pinned macOS linters (#4709); prune takes a
 #                   version not used in a week
 #   in-use/<pid>    the folders the build with that pid uses; prune keeps them
@@ -49,6 +49,11 @@
 # What is not shared: DerivedData and .build. Their contents name the worktree's own
 # paths, and SwiftPM locks .build for one process at a time, so a shared one would make
 # lanes rebuild each other's or wait.
+#
+# AGENTS_BUILD_CACHE_INDEX=1 is for an index for Periphery (scripts/lint.sh periphery, #6336):
+# the same packages and checkouts, but no compilation cache and no prefix mapping, and
+# COMPILER_INDEX_STORE_ENABLE=YES. A replayed compile writes no index, and a mapped one writes
+# /^worktree paths into it, so Periphery would find nothing or everything.
 #
 # An xcodebuild that names no -derivedDataPath gets <worktree>/build/DerivedData (#2684),
 # not Xcode's ~/Library/Developer/Xcode/DerivedData/Agents-<hash>: deleting the worktree's
@@ -134,6 +139,7 @@ xcode() {
 		SWIFT_OTHER_PREFIX_MAPPINGS="\"$PWD=/^worktree\""
 		CLANG_OTHER_PREFIX_MAPPINGS="\"$PWD=/^worktree\""
 	)
+	[ "${AGENTS_BUILD_CACHE_INDEX:-}" = 1 ] && flags=("${flags[@]:0:4}" COMPILER_INDEX_STORE_ENABLE=YES)
 	# Two builds resolving into one checkouts folder at once can each write it: the first
 	# build on a new key resolves it under a lock and keeps the project's Package.resolved
 	# beside it; every build after copies that in and builds without resolving.
@@ -230,8 +236,9 @@ go_kb() { kb_of "$CACHE/go"; }
 
 # go.sh's TMPDIR: each folder in it that nothing changed in for AGENTS_GO_TMP_HOURS (6)
 # hours. A running go test or build writes in its own folders all the time, so a folder
-# with no change for hours is one that a killed run left (#5722). Since #5726 each go.sh run
-# has a folder of its own there, removed when it ends and by the next run after a SIGKILL:
+# with no change for hours is one that a killed run left (#5722). Each go.sh run holds a
+# folder there (k<sum of its arguments>-<n>, with its .lock and .owner files; #5726, #6397),
+# removed when it ends and emptied by the next run with the same arguments after a SIGKILL:
 # this is the second line, for what those leave.
 go_tmp() {
 	local tmp="$CACHE/go/tmp" mins d k n=0 freed=0

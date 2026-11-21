@@ -438,7 +438,9 @@ func (d *Daemon) saveMCPApprovalsLocked(replacing bool) error {
 			return nil
 		}
 		if b, err := os.ReadFile(d.mcpApprovalsPath()); err == nil {
-			os.WriteFile(fmt.Sprintf("%s.unreadable-%d", d.mcpApprovalsPath(), time.Now().Unix()), b, 0o644)
+			if err := os.WriteFile(fmt.Sprintf("%s.unreadable-%d", d.mcpApprovalsPath(), time.Now().Unix()), b, 0o644); err != nil { //nolint:gosec // G306: the mode this file always had; only its error is new
+				log.Printf("mcp: could not keep the unreadable %s aside: %v", filepath.Base(d.mcpApprovalsPath()), err)
+			}
 			store.TrimSetAsides(d.mcpApprovalsPath())
 		}
 		began, _ := json.Marshal(now())
@@ -460,11 +462,13 @@ func (d *Daemon) changeMCPApprovals(replacing bool, change func(approved, views 
 		return nil
 	}
 	if d.mcpApprovals == nil {
-		d.saveMCPApprovalsLocked(true)
+		// This makes the new map; the save at the end writes it again and says if it fails.
+		_ = d.saveMCPApprovalsLocked(true)
 	}
 	approved, views := map[string]string{}, map[string]string{}
-	json.Unmarshal(d.mcpApprovals["approved"], &approved)
-	json.Unmarshal(d.mcpApprovals["views"], &views)
+	// A part that is missing or not a map starts empty.
+	_ = json.Unmarshal(d.mcpApprovals["approved"], &approved)
+	_ = json.Unmarshal(d.mcpApprovals["views"], &views)
 	change(approved, views)
 	d.mcpApprovals["approved"], _ = json.Marshal(approved)
 	if len(views) > 0 || d.mcpApprovals["views"] != nil {
@@ -503,7 +507,8 @@ func (d *Daemon) mcpList(dest wire.SkillDestination) (wire.MCPListAnswer, error)
 	approved, _, unreadable := d.mcpApprovalsLocked()
 	views := map[string]string{}
 	if d.mcpApprovals != nil {
-		json.Unmarshal(d.mcpApprovals["views"], &views)
+		// No views, or not a map of them, is none.
+		_ = json.Unmarshal(d.mcpApprovals["views"], &views)
 	}
 	d.mcpMu.Unlock()
 	if folder && unreadable {
@@ -763,10 +768,14 @@ func (d *Daemon) mcpRemove(r wire.MCPRemoveRequest) (wire.MCPRemoveAnswer, error
 		}
 	}
 	delete(side.Servers, key)
-	side.Save(d.mcpSidecarPath())
+	if err := side.Save(d.mcpSidecarPath()); err != nil {
+		log.Printf("mcp: remove %s: could not save %s: %v", r.Name, d.mcpSidecarPath(), err)
+	}
 	if r.Destination.Kind == wire.SkillDestinationKindFolder {
 		folder := *r.Destination.Folder
-		d.changeMCPApprovals(true, func(approved, _ map[string]string) { delete(approved, mcpApprovalKey(folder, r.Name)) })
+		if err := d.changeMCPApprovals(true, func(approved, _ map[string]string) { delete(approved, mcpApprovalKey(folder, r.Name)) }); err != nil {
+			log.Printf("mcp: remove %s: could not forget its approval: %v", r.Name, err)
+		}
 	}
 	if forget != "" {
 		if err := d.forgetPlainSecret(home, forget); err != nil {

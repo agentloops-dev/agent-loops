@@ -2,7 +2,6 @@ package agentsd
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -45,12 +44,12 @@ func TestConnectingBitbucketWithAToken(t *testing.T) {
 	d.bitbucketHTTP, d.bitbucketAPI = bb.Client(), bb.URL+"/2.0"
 
 	var refused wire.ConnectionTokenAnswer
-	json.Unmarshal(c.call(t, 1, "connections/sign-in/token", map[string]any{"provider": "bitbucket", "token": "bb-secret"}), &refused)
+	mustUnmarshal(t, c.call(t, 1, "connections/sign-in/token", map[string]any{"provider": "bitbucket", "token": "bb-secret"}), &refused)
 	if refused.Error == nil || refused.Connection != nil || strings.Contains(*refused.Error, "bb-secret") || !strings.Contains(*refused.Error, "email") {
 		t.Fatalf("an API token without its email: %+v", refused)
 	}
 	var bad wire.ConnectionTokenAnswer
-	json.Unmarshal(c.call(t, 2, "connections/sign-in/token", map[string]any{"provider": "bitbucket", "user": "not an email", "token": "bb-secret"}), &bad)
+	mustUnmarshal(t, c.call(t, 2, "connections/sign-in/token", map[string]any{"provider": "bitbucket", "user": "not an email", "token": "bb-secret"}), &bad)
 	if bad.Error == nil || !strings.Contains(*bad.Error, "email") {
 		t.Fatalf("not an email: %+v", bad)
 	}
@@ -60,7 +59,7 @@ func TestConnectingBitbucketWithAToken(t *testing.T) {
 		t.Fatalf("the token went back to the client: %s", raw)
 	}
 	var made wire.ConnectionTokenAnswer
-	json.Unmarshal(raw, &made)
+	mustUnmarshal(t, raw, &made)
 	if made.Error != nil || made.Connection == nil || made.Connection.Provider != wire.ConnectionProviderBitbucket ||
 		deref(made.Connection.Login) != "agentstest" || deref(made.Connection.Workspace) != "bitbucket.org" || made.Connection.ExpiresAt != nil {
 		t.Fatalf("made: %+v", made)
@@ -70,7 +69,7 @@ func TestConnectingBitbucketWithAToken(t *testing.T) {
 		t.Fatalf("kept: %+v", kept)
 	}
 	var access wire.ConnectionTokenAnswer
-	json.Unmarshal(c.call(t, 4, "connections/sign-in/token", map[string]any{"provider": "bitbucket", "token": "bb-access"}), &access)
+	mustUnmarshal(t, c.call(t, 4, "connections/sign-in/token", map[string]any{"provider": "bitbucket", "token": "bb-access"}), &access)
 	if access.Connection == nil {
 		t.Fatalf("an access token: %+v", access)
 	}
@@ -78,7 +77,7 @@ func TestConnectingBitbucketWithAToken(t *testing.T) {
 		t.Fatalf("an access token replaces the API token: %+v", again)
 	}
 	var list wire.ConnectionsList
-	json.Unmarshal(c.call(t, 5, "connections/list", map[string]any{}), &list)
+	mustUnmarshal(t, c.call(t, 5, "connections/list", map[string]any{}), &list)
 	if len(list.Connections) != 1 || list.Connections[0].Provider != wire.ConnectionProviderBitbucket {
 		t.Fatalf("list: %+v", list)
 	}
@@ -166,7 +165,7 @@ func TestABitbucketFoldersConnectorSetUp(t *testing.T) {
 	c.call(t, 1, "folders/add", map[string]any{"folder": "file://" + folder})
 
 	var setup wire.ConnectorSetup
-	json.Unmarshal(c.call(t, 2, "connectors/setup", map[string]any{"folder": folder}), &setup)
+	mustUnmarshal(t, c.call(t, 2, "connectors/setup", map[string]any{"folder": folder}), &setup)
 	slots := slotsByKind(setup)
 	if setup.Forge == nil || *setup.Forge != wire.ConnectionProviderBitbucket || deref(setup.Site) != "bitbucket.org" ||
 		deref(setup.Repository) != "agentstest/agents-walk" || deref(setup.RepositoryURL) != "https://bitbucket.org/agentstest/agents-walk" ||
@@ -175,12 +174,12 @@ func TestABitbucketFoldersConnectorSetUp(t *testing.T) {
 		t.Fatalf("before connecting: %+v", setup)
 	}
 
-	file.Put(connections.BitbucketConnection(connections.BitbucketAPI, "me@example.com", "bb-secret", "agentstest", time.Now()))
+	must(t, file.Put(connections.BitbucketConnection(connections.BitbucketAPI, "me@example.com", "bb-secret", "agentstest", time.Now())))
 	raw := c.call(t, 3, "connectors/setup", map[string]any{"folder": folder, "reading": "fresh"})
 	if strings.Contains(string(raw), "bb-secret") {
 		t.Fatalf("a token went to the client: %s", raw)
 	}
-	json.Unmarshal(raw, &setup)
+	mustUnmarshal(t, raw, &setup)
 	slots = slotsByKind(setup)
 	tasks, review, ci := slots[wire.ConnectorSlotKindTasks], slots[wire.ConnectorSlotKindCodeReview], slots[wire.ConnectorSlotKindCi]
 	if tasks.State != wire.ConnectorSlotStateRead || tasks.Proof == nil || *tasks.Proof.Number != 4 ||
@@ -203,7 +202,7 @@ func TestABitbucketFoldersConnectorSetUp(t *testing.T) {
 	bb.mu.Lock()
 	bb.offTracker = true
 	bb.mu.Unlock()
-	json.Unmarshal(c.call(t, 4, "connectors/setup", map[string]any{"folder": folder, "reading": "fresh"}), &setup)
+	mustUnmarshal(t, c.call(t, 4, "connectors/setup", map[string]any{"folder": folder, "reading": "fresh"}), &setup)
 	if tasks := slotsByKind(setup)[wire.ConnectorSlotKindTasks]; tasks.State != wire.ConnectorSlotStateFailed || tasks.Message == nil ||
 		!strings.HasPrefix(*tasks.Message, "agentstest/agents-walk has its issue tracker off.") {
 		t.Fatalf("a tracker that is off: %+v", tasks)
@@ -227,7 +226,7 @@ func TestABitbucketRemoteAtTheConnectionsAPI(t *testing.T) {
 		t.Fatalf("before connecting: %+v %v", f, connected)
 	}
 	fake := "http://127.0.0.1:3785/2.0/"
-	file.Put(connections.BitbucketConnection(fake, "", "bb-access", "agentstest", time.Now()))
+	must(t, file.Put(connections.BitbucketConnection(fake, "", "bb-access", "agentstest", time.Now())))
 	if f, c, connected := forgeAtOK(t, d, ctx, folder); f.root != fake || !connected || c.Access != "bb-access" {
 		t.Fatalf("connected to a fake: %+v %v", f, connected)
 	}

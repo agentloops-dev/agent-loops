@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -31,29 +30,31 @@ func newFakeLinear(t *testing.T) *fakeLinear {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/oauth/token":
-			r.ParseForm()
+			if err := r.ParseForm(); err != nil {
+				t.Error(err)
+			}
 			f.forms = append(f.forms, r.PostForm)
 			if r.PostForm.Get("grant_type") == "refresh_token" {
 				if f.refresh["error"] != nil {
 					w.WriteHeader(http.StatusBadRequest)
 				}
-				json.NewEncoder(w).Encode(f.refresh)
+				replyJSON(t, w, f.refresh)
 				return
 			}
 			if r.PostForm.Get("code") != "code-1" {
 				w.WriteHeader(http.StatusBadRequest)
-				json.NewEncoder(w).Encode(map[string]any{"error": "invalid_grant"})
+				replyJSON(t, w, map[string]any{"error": "invalid_grant"})
 				return
 			}
-			json.NewEncoder(w).Encode(map[string]any{"access_token": "lin_oauth_new", "token_type": "Bearer",
+			replyJSON(t, w, map[string]any{"access_token": "lin_oauth_new", "token_type": "Bearer", //nolint:gosec // G101: a fake token
 				"expires_in": 86399, "refresh_token": "lin_refresh_new", "scope": "read write"})
 		case "/graphql":
 			if r.Header.Get("Authorization") != "Bearer lin_oauth_new" {
 				w.WriteHeader(http.StatusUnauthorized)
 				return
 			}
-			json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{
-				"viewer": map[string]any{"name": "Alex", "email": "alex@example.com"},
+			replyJSON(t, w, map[string]any{"data": map[string]any{
+				"viewer":       map[string]any{"name": "Alex", "email": "alex@example.com"},
 				"organization": map[string]any{"name": "Agents Walk"}}})
 		default:
 			w.WriteHeader(http.StatusNotFound)
@@ -138,8 +139,8 @@ func TestLinearRefreshRotatesAndRefuses(t *testing.T) {
 	f := newFakeLinear(t)
 	now := time.Date(2026, 10, 19, 12, 0, 0, 0, time.UTC)
 	s := &File{Path: t.TempDir() + "/connections.json"}
-	s.Put(Connection{Provider: Linear, Login: "Alex", Workspace: "Agents Walk", Access: "old", Refresh: "r1",
-		AccessExpiresAt: now.Add(5 * time.Minute), ConnectedAt: now.Add(-time.Hour)})
+	must(t, s.Put(Connection{Provider: Linear, Login: "Alex", Workspace: "Agents Walk", Access: "old", Refresh: "r1",
+		AccessExpiresAt: now.Add(5 * time.Minute), ConnectedAt: now.Add(-time.Hour)}))
 
 	f.refresh = map[string]any{"access_token": "a2", "refresh_token": "r2", "expires_in": 86399}
 	if got, err := RefreshIfDue(context.Background(), s, f.flow(now), Linear, now); got != Renewed || err != nil {

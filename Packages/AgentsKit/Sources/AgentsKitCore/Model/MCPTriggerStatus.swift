@@ -31,16 +31,4 @@ public struct MCPTriggerStatus: Codable, Hashable, Sendable {
     public var failure: MCPTriggerFailure?
     /// When it asks next, while retrying, so a line can say "trying again in 40 s".
     public var retryAt: Date?
-
-    public init(name: String, server: String?, state: State, lastPolledAt: Date? = nil, lastEventAt: Date? = nil,
-                missedSince: Date? = nil, failure: MCPTriggerFailure? = nil, retryAt: Date? = nil) {
-        self.name = name
-        self.server = server
-        self.state = state
-        self.lastPolledAt = lastPolledAt
-        self.lastEventAt = lastEventAt
-        self.missedSince = missedSince
-        self.failure = failure
-        self.retryAt = retryAt
-    }
 }

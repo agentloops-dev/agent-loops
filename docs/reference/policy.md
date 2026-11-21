@@ -41,6 +41,7 @@ Mac window passes to a server with `policy/applyYours`.
 | `notices` | `{antigravityTerms?: show \| accepted \| refuse}` | Google's terms notice for Antigravity (#999): `show` (as absent), `accepted` (your organisation reviewed the terms; members see no notice, and the Policy pane says so), `refuse` (Antigravity is refused). Console ▸ Policy names them **Show the notice**, **Reviewed by your organisation** and **Do not allow**. |
 | `stopAll` | `{on, by, at, note?}` | The kill switch. Only `policy/stopAll` changes it. |
 | `connectorTools` | `{<connector>: {writes?, tools?: {<tool>: allow \| ask \| off}}}` | Only in your layer and a folder's (#4099). **Allow**, **Ask** or **Off** for each tool of a connector, by the connector's name; `writes` is one level for each tool that writes and that `tools` does not name. A tool no layer names is **Ask** when it writes and **Allow** when it only reads. A tool writes unless its annotations say `readOnlyHint: true`, or when they say `destructiveHint: true`. Tighter is later: Allow, Ask, Off. See [Connector tools](#connector-tools). |
+| `commitTrailers` | `{<trailer>: on \| off}` | In each layer (#6365). Which trailers an agent's commits and squash messages carry: `Made-by`, `Cost`, `Tokens`, `Duration`, `Session`, `Fixes` (also `Refs`), `Epic`, `Requested-by`, `Approved-by`, `Attested`, `Co-authored-by`. A key that no layer sets has its default: every trailer **On**, `Cost` **Off**. For a record trailer **On** is tighter; for a spend trailer (`Cost`, `Tokens`, `Duration`) **Off** is tighter. A key a machine does not know is kept and has no effect. Each key is a rule of `policy/effective`, `commitTrailers.<key>`. See [Commit trailers](#commit-trailers). |
 | `requireFollowing` | `true` | The control plane refuses to start work on a machine that has not kept this version. |
 | `groups` | `{}` | Empty. A place for later layers, which can only make a rule tighter. |
 
@@ -83,6 +84,35 @@ How a level is kept:
 A runtime that uses a tool without asking (a mode such as Bypass Permissions) and has no deny
 list of its own is not stopped by an Off level. A runtime starts again at its next turn when
 its Off tools change.
+
+## Commit trailers
+
+`git/trailers {session, pr?}` (capability `host.commit-trailers/1`, #6371) gives the trailer
+lines of a commit by the session's agent, or of its pull request's squash message, by the
+effective `commitTrailers` rule of the session's folder. The worktree's `commit-msg` hook and
+the agents' tool `commit_trailers` ask it; an agent types no trailer by hand. A trailer with
+no value is left out. The lines come in this order:
+
+| Trailer | Value |
+|---|---|
+| `Made-by` | `<runtime>:<model>`, as `claude-code:claude-opus-5-5` (the shape of the kernel's `Assisted-by`). |
+| `Session` | The session's id. Not its web address, which would put the Mac's hardware id and the person's home folder in public history. |
+| `Fixes` | One line for each issue the session is labelled with (`#n`) and each issue the PR fixes. With no `pr`, `Refs`: a commit on a branch closes nothing. |
+| `Epic` | The first issue's parent: lineage's part-of link, else one read of the issue from the forge cache. |
+| `Requested-by` | The login of the person's forge connection. |
+| `Approved-by` | Each login whose newest review of the PR approves it: one read of the PR from the forge cache. Only with `pr`. |
+| `Attested` | No value since #6438 removed the attestations, so it is left out. |
+| `Cost`, `Tokens`, `Duration` | The totals of the sessions labelled with the PR (`P#<n>`) or its issues, from the cost on the link (`lineage-cost.json`): the PR, the issues it fixes, and the session's own `#n`. With no `pr`, the session's issues; with none, the session itself. As `$3.00`, `in=412.0k out=38.0k` and `47m`. |
+| `Co-authored-by` | The runtime's own line for GitHub's commit page, where it is known: Claude's, `Claude Opus 5.5 <noreply@anthropic.com>`. |
+
+At most two forge calls a PR, each read from the forge cache when it has the answer. A
+trailer the rule turns off is not worked out, so it costs no forge call.
+
+**The runtime's own attribution is off.** Each Claude session starts with
+`--settings {"attribution":{"commit":""},"includeCoAuthoredBy":false}`, so Claude Code adds no
+`Co-authored-by` that the rule turns off, and no second copy of the one `git/trailers` writes.
+The daemon knows no such setting for the other runtimes; the worktree's `commit-msg` hook
+(#6372) takes out a trailer that the rule turns off, whoever wrote it.
 
 ## The signature
 

@@ -74,12 +74,19 @@ type OpenPR struct {
 	// ChangesRequested is a reviewer asking its author for changes, where the forge says it.
 	SkipsBlocked     bool
 	ChangesRequested bool
+	// FailedChecks are its head's failed statuses and ChecksRunning says one still runs, read
+	// with its conflicts, for the maxChecked updated last (#6293).
+	FailedChecks  []Check
+	ChecksRunning bool
 }
 
 // blocking is why it cannot merge until its author acts (pr.blocked, #5321): a conflict not
 // yet worked out keeps the state it had.
 func (o OpenPR) blocking() mcpevents.Blocking {
-	b := mcpevents.Blocking{HeadSHA: o.HeadSHA, ChangesRequested: o.ChangesRequested}
+	b := mcpevents.Blocking{HeadSHA: o.HeadSHA, ChangesRequested: o.ChangesRequested, ChecksRunning: o.ChecksRunning}
+	for _, c := range o.FailedChecks {
+		b.FailedChecks = append(b.FailedChecks, mcpevents.FailedCheck{Name: c.Name, URL: c.URL})
+	}
 	if o.Conflicts == nil {
 		b.Unknown = true
 	} else {
@@ -134,6 +141,53 @@ func (d FailedChecks) json() map[string]any {
 		"run":        map[string]any{"id": d.RunID, "name": d.RunName, "url": d.RunURL},
 		"failedJobs": jobs,
 	}
+}
+
+// PassedCheck is a checks.passed event's data (#6293): one commit status that passed at an
+// open pull request's head. Key is the status's key, so each check is its own event; RunID is
+// the Pipelines run (its build number) it links to, 0 for another CI.
+type PassedCheck struct {
+	PR      PR
+	HeadSHA string
+	At      string
+	Key     string
+	RunID   int
+	RunName string
+	RunURL  string
+	Trusted bool
+}
+
+func (d PassedCheck) json() map[string]any {
+	return map[string]any{"pr": d.PR.json(), "headSha": d.HeadSHA,
+		"run": map[string]any{"id": d.RunID, "name": d.RunName, "url": d.RunURL}, "completedAt": d.At}
+}
+
+// Review is a participant's answer to an open pull request (#6293): State is approved or
+// changes_requested. Bitbucket keeps only each participant's last answer, with no words and no
+// id of its own. PRTrusted is the pull request's trust, Trusted the reviewer's.
+type Review struct {
+	PR        PR
+	HeadSHA   string
+	Author    string
+	State     string
+	PRTrusted bool
+	Trusted   bool
+}
+
+// PRComment is a comment on a pull request itself, not on a line of its diff (#6293).
+type PRComment struct {
+	ID      int
+	At      string
+	PR      PR
+	Author  string
+	Body    string
+	URL     string
+	Trusted bool
+}
+
+func (c PRComment) data() map[string]any {
+	return map[string]any{"pr": c.PR.json(), "commentedAt": c.At,
+		"comment": map[string]any{"author": c.Author, "url": c.URL, "body": c.Body}}
 }
 
 // Issue is an issue as the issue events name it. Bitbucket's issues have no labels: Labels
@@ -232,6 +286,12 @@ type Bitbucket interface {
 	ClosedPRs(ctx context.Context, repo, since string) (merged []MergedPR, closed []ClosedPR, listed Listed, err error)
 	// FailedChecks are the open pull requests whose head commit failed its checks, in any order.
 	FailedChecks(ctx context.Context, repo, since string) (failed []FailedChecks, listed Listed, err error)
+	// PassedChecks are the statuses that passed at the open pull requests' heads, at or after since.
+	PassedChecks(ctx context.Context, repo, since string) (passed []PassedCheck, listed Listed, err error)
+	// Reviews are the open pull requests' participants who approved or asked for changes.
+	Reviews(ctx context.Context, repo string) ([]Review, error)
+	// PRComments are the comments on pull requests themselves (not on their diffs) made at or after since.
+	PRComments(ctx context.Context, repo, since string) (comments []PRComment, listed Listed, err error)
 	// CompletedPipelines are the Pipelines runs that finished at or after since, of pipeline
 	// (its name), branch (or tag) and run (a build number) when each is set (#4217).
 	CompletedPipelines(ctx context.Context, repo, pipeline, branch string, run int, since string) (pipelines []CompletedPipeline, listed Listed, err error)

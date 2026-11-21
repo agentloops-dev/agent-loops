@@ -269,7 +269,6 @@ private struct FolderWindowColumns: View {
 /// folder only, its sessions, workflows and pages, and Folder Settings… at the foot.
 /// No Status, no Usage and no other folders: those are the main window's.
 private struct FolderWindowSidebar: View {
-    @Environment(AppModel.self) private var model
     @AppStorage(SidebarSmartRow.offDefaultsKey, store: WindowDefaults.store) private var smartOff = SidebarSmartRow.offAtFirst
     let window: FolderWindowState
     let summary: DaemonAPI.FolderSummary

@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"log"
 	"os"
 	"path/filepath"
 	"slices"
@@ -64,7 +65,9 @@ func (d *Daemon) guardedRecs() *guardedRecords {
 	if d.guarded == nil {
 		d.guarded = &guardedRecords{}
 		if b, err := os.ReadFile(d.guardedFile()); err == nil {
-			diskjson.Unmarshal(b, d.guarded)
+			if err := diskjson.Unmarshal(b, d.guarded); err != nil {
+				log.Printf("guarded-files.json: could not read: %v", err)
+			}
 		}
 		// A file the app no longer keeps (.agents/project.json before #2617) cannot be
 		// kept or undone, so its record goes (#2680).
@@ -96,7 +99,9 @@ func (d *Daemon) saveGuarded() {
 		r.States = []guardedState{}
 	}
 	if b, err := diskjson.Marshal(r); err == nil {
-		store.WriteAtomically(d.guardedFile(), b, 0o644)
+		if err := store.WriteAtomically(d.guardedFile(), b, 0o644); err != nil {
+			log.Printf("guarded-files.json: could not save: %v", err)
+		}
 	}
 }
 
@@ -227,7 +232,8 @@ func addGuardedChanger(p *guardedPending, a wire.Agent) {
 }
 
 func (d *Daemon) guardedFilesMoved(folder string) {
-	d.sendFolder(folder)
+	// A folder that went away has nothing to say.
+	_, _ = d.sendFolder(folder)
 	d.pinsChanged(folder)
 }
 
@@ -481,7 +487,8 @@ func (d *Daemon) keepOrUndo(r wire.GuardedChangeRequest, keep bool) (wire.Folder
 		if !ownFolders(folder, filepath.Dir(r.Path)) {
 			err = linkedFolder(filepath.Dir(r.Path), folder)
 		} else if had {
-			os.MkdirAll(filepath.Dir(path), 0o755)
+			// A folder that cannot be made fails the write below, which says so.
+			_ = os.MkdirAll(filepath.Dir(path), 0o755) //nolint:gosec // G301: the mode this folder always had; only its error is new
 			err = store.WriteAtomically(path, content, 0o644)
 		} else if err = os.Remove(path); errors.Is(err, os.ErrNotExist) {
 			err = nil
@@ -604,7 +611,9 @@ func (d *Daemon) answerArchiveApproval(folder string, r wire.ApprovalAnswer) (wi
 		return wire.FolderSummary{}, Invalid("That session is not asking to be archived any more.")
 	}
 	if r.Action == wire.ApprovalActionApprove {
-		d.archive(id)
+		if err := d.archive(id); err != nil {
+			return wire.FolderSummary{}, err
+		}
 	} else {
 		d.change(id, func(a *wire.Agent) { a.ArchiveRequest = nil })
 	}

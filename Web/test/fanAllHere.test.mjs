@@ -43,6 +43,12 @@ test("forge/listAll with pages asks only the machines named, each from its curso
   await assert.rejects(answerHere("forge/listAll", { kind: "epics" }, h), /issues or pulls/);
 });
 
+test("forge/listAll gives each machine the label and the assignee, so a narrowed list is one call (#6383)", async () => {
+  const h = here({ a: { "forge/issues": { items: [] } } });
+  await answerHere("forge/listAll", { kind: "issues", label: "bug", assignee: "alex" }, h);
+  assert.deepEqual(h.asked.map((a) => [a.host, a.params]), ["a", "b", "c"].map((host) => [host, { label: "bug", assignee: "alex", limit: 50 }]));
+});
+
 test("docs/listAll merges the machines' docs newest first, and its cursor goes on from where each machine was", async () => {
   const docs = { a: [{ ref: "a1", updated: 9 }, { ref: "a2", updated: 5 }], b: [{ ref: "b1", updated: 7 }, { ref: "b2", updated: 1 }] };
   const h = here({

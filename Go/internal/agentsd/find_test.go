@@ -2,7 +2,6 @@ package agentsd
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"os"
 	goruntime "runtime"
@@ -24,7 +23,7 @@ func TestFindInChat(t *testing.T) {
 	id := seeded(t, d, t.TempDir(), nil).ID
 	say := func(kind wire.TranscriptEntryKind, subagent *string) wire.UUID {
 		e := wire.TranscriptEntry{ID: store.NewUUID(), At: now(), Kind: kind, SubagentID: subagent}
-		d.Store.Append(id, e)
+		must(t, errOnly(d.Store.Append(id, e)))
 		return e.ID
 	}
 	reply := func(messageID, text string) wire.TranscriptEntryKind {
@@ -45,7 +44,7 @@ func TestFindInChat(t *testing.T) {
 		if limit > 0 {
 			params["limit"] = limit
 		}
-		json.Unmarshal(c.call(t, n, "agents/find", params), &r)
+		mustUnmarshal(t, c.call(t, n, "agents/find", params), &r)
 		return r
 	}
 	got := find(1, "cache", 0)
@@ -78,7 +77,7 @@ func TestFindReadsOnlyMessages(t *testing.T) {
 	id := seeded(t, d, t.TempDir(), nil).ID
 	say := func(kind wire.TranscriptEntryKind) wire.UUID {
 		e := wire.TranscriptEntry{ID: store.NewUUID(), At: now(), Kind: kind}
-		d.Store.Append(id, e)
+		must(t, errOnly(d.Store.Append(id, e)))
 		return e.ID
 	}
 	output := strings.Repeat("output ", 2000)
@@ -124,7 +123,7 @@ func TestFindStops(t *testing.T) {
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	id := seeded(t, d, t.TempDir(), nil).ID
-	d.Store.Append(id, wire.TranscriptEntry{ID: store.NewUUID(), At: now(), Kind: wire.TranscriptEntryKind{UserMessage: &wire.TranscriptEntryKindUserMessage{Value: "cache"}}})
+	must(t, errOnly(d.Store.Append(id, wire.TranscriptEntry{ID: store.NewUUID(), At: now(), Kind: wire.TranscriptEntryKind{UserMessage: &wire.TranscriptEntryKindUserMessage{Value: "cache"}}})))
 	older, _ := d.startFind(findKey{client: 1, agent: id})
 	otherClient, _ := d.startFind(findKey{client: 2, agent: id})
 	newer, done := d.startFind(findKey{client: 1, agent: id})

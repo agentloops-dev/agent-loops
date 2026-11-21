@@ -83,7 +83,7 @@ func namedInput() schema {
 var fixesSchema = map[string]any{"type": "array", "items": str}
 
 // events are the events this server offers, in the gitlab server's order, and checks.passed,
-// run.completed and deploy.waiting as the github server's (#3805, #3810, #3820); the gitlab server's issue events
+// run.completed, deploy.waiting, pr.reviewed and pr.commented as the github server's (#3805, #3810, #3820, #6295); the gitlab server's issue events
 // are the tracker's here.
 var events = []event{
 	{Name: "checks.failed", Title: "Checks failed",
@@ -150,9 +150,20 @@ var events = []event{
 		Input:       namedInput(),
 		Payload:     object(map[string]any{"pr": prSchema(nil), "conflictedAt": str})},
 	{Name: "pr.blocked", Title: "Pull request blocked",
-		Description: mcpevents.BlockedDescription("On Azure DevOps: conflict from mergeStatus, and changes_requested from a reviewer's vote of waiting for author or rejected; policies (required builds) and auto-complete are not read."+ownPRs),
+		Description: mcpevents.BlockedDescription("On Azure DevOps: conflict from mergeStatus; changes_requested from a reviewer's vote of waiting for author or rejected; and required_check_failed, the newest build of a pipeline at the head that failed, or the newest status of a context that failed or is error (Azure DevOps says which builds a branch policy requires only per pull request, so every one counts, as for checks.failed). Read for the 50 newest active pull requests. Auto-complete is not read, so never automerge_disabled or behind." + ownPRs),
 		Input:       namedInput(),
 		Payload:     mcpevents.BlockedPayload(prSchema(nil))},
+	// The github server's pr.reviewed and pr.commented (#6295).
+	{Name: "pr.reviewed", Title: "Pull request reviewed",
+		Description: "A reviewer of an active pull request voted: approved or approved with suggestions (state approved), or waiting for author or rejected (changes_requested). Azure DevOps keeps only each reviewer's last vote, with no words: so body is always empty, url is the pull request's, commit is its head when the poll saw the vote, and reviewedAt is that poll's time. Once per vote: a vote reset by a new push and given again is a new one. Never a bot's vote, unless anyone is true." + ownPRs,
+		Input:       namedInput(),
+		Payload: object(map[string]any{"pr": prSchema(nil),
+			"review": object(map[string]any{"author": str, "state": str, "body": str, "url": str, "commit": str}), "reviewedAt": str})},
+	{Name: "pr.commented", Title: "Pull request commented on",
+		Description: "A comment was left on a pull request itself, in a thread on no file (not on a line of its diff, which review.comment covers), or an answer in such a thread. Its body is the first 4000 characters; comment.threadId is the thread to answer in with reply_to_pull_request_comment. A comment whose body starts with <!-- agent --> is left out: an agent's, not a person's, where agents post as the person's account. The 50 newest active pull requests are read, and those closed since. Never a bot's comment, unless anyone is true; and only on the repository's own pull requests.",
+		Input:       schema{repoProperty, prProperty, fixesProperty, anyoneProperty, mineProperty, anyProperty},
+		Payload: object(map[string]any{"pr": prSchema(nil),
+			"comment": object(map[string]any{"author": str, "url": str, "body": str, "threadId": integer}), "commentedAt": str})},
 	// For the person, not the repository (#2034): what asks the token's owner for something.
 	{Name: "review.requested", Title: "Review requested from me",
 		Description: "The Azure DevOps account whose token this server has was added as a reviewer of an active pull request and has not voted: once per request, so a vote reset by a new push is a new one. Anyone's pull request, a fork's too.",
@@ -274,6 +285,8 @@ func (s *Events) prStates(ctx context.Context, name string, a args, p pollParams
 		return "conflictedAt", func() ([]state, error) { return s.conflictedStates(ctx, a, yours) }
 	case "pr.opened":
 		return "openedAt", func() ([]state, error) { return s.openedStates(ctx, a) }
+	case "pr.reviewed":
+		return "reviewedAt", func() ([]state, error) { return s.reviewedStates(ctx, a, yours) }
 	}
 	return "", nil
 }
@@ -292,7 +305,7 @@ func requestedStates(yours *Yours) []state {
 // blockedStates are the open pull requests and whether each is blocked; was are the ids
 // the cursor had.
 func (s *Events) blockedStates(ctx context.Context, name string, a args, yours *Yours, was []string) ([]state, error) {
-	prs, err := s.AzureDevOps.OpenPRs(ctx, a.repo)
+	prs, err := s.AzureDevOps.OpenPRs(ctx, a.repo, true)
 	var out []state
 	for _, m := range prs {
 		if m.SkipsBlocked || (a.mine && !a.byMe(m.PR, yours)) || (!a.mine && !a.anyone && !m.Trusted) {
@@ -306,7 +319,7 @@ func (s *Events) blockedStates(ctx context.Context, name string, a args, yours *
 
 // conflictedStates are the open pull requests and whether each is in conflict.
 func (s *Events) conflictedStates(ctx context.Context, a args, yours *Yours) ([]state, error) {
-	prs, err := s.AzureDevOps.OpenPRs(ctx, a.repo)
+	prs, err := s.AzureDevOps.OpenPRs(ctx, a.repo, false)
 	var out []state
 	for _, m := range prs {
 		if a.mine {
@@ -322,7 +335,7 @@ func (s *Events) conflictedStates(ctx context.Context, a args, yours *Yours) ([]
 
 // openedStates are the open pull requests and whether each is ready (not a draft).
 func (s *Events) openedStates(ctx context.Context, a args) ([]state, error) {
-	prs, err := s.AzureDevOps.OpenPRs(ctx, a.repo)
+	prs, err := s.AzureDevOps.OpenPRs(ctx, a.repo, false)
 	var out []state
 	for _, m := range prs {
 		if !a.anyone && !m.Trusted {
@@ -332,6 +345,27 @@ func (s *Events) openedStates(ctx context.Context, a args) ([]state, error) {
 		j := m.PR.json()
 		j["author"] = m.Author
 		out = append(out, state{mr: m.PR, on: &ready, json: j})
+	}
+	return out, err
+}
+
+// reviewedStates are pr.reviewed's (#6295): each vote on an active pull request the poll
+// wants, on while it stands, keyed by its reviewer and state.
+func (s *Events) reviewedStates(ctx context.Context, a args, yours *Yours) ([]state, error) {
+	prs, err := s.AzureDevOps.OpenPRs(ctx, a.repo, false)
+	wanted := wantedPR(a, yours)
+	var out []state
+	for _, m := range prs {
+		if !wanted(m.PR, m.Trusted) {
+			continue
+		}
+		for _, v := range m.Votes {
+			if !a.anyone && !v.Trusted {
+				continue
+			}
+			out = append(out, state{mr: m.PR, on: new(true), key: v.Author + ":" + v.State, json: m.PR.json(),
+				extra: map[string]any{"review": map[string]any{"author": v.Author, "state": v.State, "body": "", "url": m.PR.URL, "commit": m.HeadSHA}}})
+		}
 	}
 	return out, err
 }
@@ -408,8 +442,8 @@ func candidates(ctx context.Context, f AzureDevOps, name string, a args, yours *
 	case "deploy.waiting":
 		list, err := waitingCandidates(ctx, f, a)
 		return list, Listed{}, err
-	case "review.comment":
-		return commentCandidates(ctx, f, a, yours, since)
+	case "review.comment", "pr.commented":
+		return commentCandidates(ctx, f, name, a, yours, since)
 	case "checks.failed":
 		return failedCandidates(ctx, f, a, wantedPR(a, yours), since)
 	case "checks.passed":
@@ -471,10 +505,15 @@ func waitingCandidates(ctx context.Context, f AzureDevOps, a args) ([]candidate,
 	return list, nil
 }
 
-// commentCandidates are the review comments made at or after since.
-func commentCandidates(ctx context.Context, f AzureDevOps, a args, yours *Yours, since string) ([]candidate, Listed, error) {
+// commentCandidates are review.comment's comments on lines, or pr.commented's on the pull
+// requests themselves (#6295), made at or after since.
+func commentCandidates(ctx context.Context, f AzureDevOps, name string, a args, yours *Yours, since string) ([]candidate, Listed, error) {
 	repo := a.repo
-	comments, listed, err := f.ReviewComments(ctx, repo, since)
+	read, data := f.ReviewComments, ReviewComment.data
+	if name == "pr.commented" {
+		read, data = f.PRComments, ReviewComment.prData
+	}
+	comments, listed, err := read(ctx, repo, since)
 	if err != nil {
 		return nil, Listed{}, err
 	}
@@ -483,9 +522,10 @@ func commentCandidates(ctx context.Context, f AzureDevOps, a args, yours *Yours,
 		// Trust is the commenter's; mine only narrows the pull request (#3797).
 		m := c.PR
 		if at := mcpevents.Normalized(c.At); at != "" && a.wantsPR(m.Number) && (a.branch == "" || m.Branch == a.branch) &&
-			a.closesOne(m) && a.byMe(m, yours) && (a.anyone || c.Trusted) {
-			list = append(list, candidate{EventID: fmt.Sprintf("review.comment:%s:%d:%d:%d", repo, c.PR.Number, c.ThreadID, c.ID), Time: at,
-				Data:    func() (map[string]any, error) { return c.data(), nil },
+			a.closesOne(m) && a.byMe(m, yours) && (a.anyone || c.Trusted) &&
+			(name != "pr.commented" || !mcpevents.ByAgent(c.Body)) {
+			list = append(list, candidate{EventID: fmt.Sprintf("%s:%s:%d:%d:%d", name, repo, c.PR.Number, c.ThreadID, c.ID), Time: at,
+				Data:    func() (map[string]any, error) { return data(c), nil },
 				Subject: prRef(repo, c.PR.Number), Key: fmt.Sprintf("%d:%d", c.ThreadID, c.ID)})
 		}
 	}

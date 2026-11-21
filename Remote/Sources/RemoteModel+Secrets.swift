@@ -34,8 +34,25 @@ extension RemoteModel {
     }
 
     /// Settings ▸ You ▸ Secrets ▸ On This Machine (#5122): what agents saved on the Mac's host.
-    func localSecrets() async -> LocalSecrets? {
-        try? await client.call(DaemonAPI.Method.secretsLocalList, DaemonAPI.Empty(), returning: LocalSecrets.self)
+    func localSecrets() async throws -> LocalSecrets? {
+        do {
+            return try await client.call(DaemonAPI.Method.secretsLocalList, DaemonAPI.Empty(), returning: LocalSecrets.self)
+        } catch where !host(.mac, has: Capability.hostLocalSecrets1) {
+            return nil
+        }
+    }
+
+    /// Whether the Mac's host takes out a secret it keeps for itself (#6335).
+    var localSecretsRemovable: Bool { host(.mac, has: Capability.hostLocalSecrets2) }
+
+    /// Take a secret the Mac keeps for itself out of its store (#6335): the list after, or why not.
+    func removeLocalSecret(_ secret: LocalSecret) async -> Result<LocalSecrets, Error> {
+        do {
+            return .success(try await client.call(DaemonAPI.Method.secretsLocalRemove, LocalSecretRemoveRequest(name: secret.name),
+                                                  returning: LocalSecrets.self))
+        } catch {
+            return .failure(error)
+        }
     }
 
     func setLocalSecretAsksBeforeUse(_ secret: LocalSecret, _ on: Bool) async -> Result<LocalSecrets?, Error> {
@@ -43,7 +60,7 @@ extension RemoteModel {
             _ = try await client.call(DaemonAPI.Method.secretsSetNeedsApproval,
                                       SecretNeedsApprovalRequest(name: secret.name, needsApproval: on),
                                       returning: DaemonAPI.Empty.self)
-            return .success(await localSecrets())
+            return .success(try await localSecrets())
         } catch {
             return .failure(error)
         }
@@ -65,12 +82,6 @@ extension RemoteModel {
     var sessionsForSecrets: [Agent] {
         work.agents.filter { $0.host == .mac && $0.state != .archived }
             .sorted { $0.lastActivityAt > $1.lastActivityAt }
-    }
-
-    /// The daily summary's saved pages (#3721), from the Mac's host.
-    func refreshSummaryPages() async {
-        summaryPages = (try? await client.call(DaemonAPI.Method.summariesList, DaemonAPI.Empty(),
-                                               returning: [SummaryPage].self)) ?? []
     }
 
     /// The Multiplier (#4116), from the Mac's host, as the window asks it: on each catch-up
@@ -105,23 +116,17 @@ extension RemoteModel {
         work.agents.count { $0.state == .starting || $0.state == .running }
     }
 
-    /// One saved page of the daily summary (#3721); reading the newest marks it read.
-    func readSummaryPage(_ name: String) async -> SummaryPageText? {
-        try? await client.call(DaemonAPI.Method.summariesRead, SummaryReadRequest(name: name),
-                               returning: SummaryPageText.self)
-    }
-
-    /// The person chose Off or Summary, or a time, for the daily summary (#3351). Nil when it
-    /// was set; else why not, and the control goes back to what it was.
-    func setDailySummarySettings(_ settings: DailySummarySettings) async -> String? {
-        let before = dailySummarySettings
-        dailySummarySettings = settings
+    /// The person turned the daily checks on or off, or chose how often (#3355, #5853). Nil when
+    /// it was set; else why not, and the control goes back to what it was.
+    func setDailyChecksSettings(_ settings: DailyChecksSettings) async -> String? {
+        let before = dailyChecksSettings
+        dailyChecksSettings = settings
         do {
-            dailySummarySettings = try await client.call(DaemonAPI.Method.dailySummarySetSettings, settings,
-                                                         returning: DailySummarySettings.self)
+            dailyChecksSettings = try await client.call(DaemonAPI.Method.dailyChecksSetSettings, settings,
+                                                        returning: DailyChecksSettings.self)
             return nil
         } catch {
-            dailySummarySettings = before
+            dailyChecksSettings = before
             return sentence(for: error)
         }
     }
@@ -470,7 +475,4 @@ extension RemoteModel {
     func sentence(for error: any Error) -> String {
         (error as? JSONRPCError).map(OlderPeer.controlRefusal) ?? "Your Mac did not answer."
     }
-
-    /// A refusal in the Remote's words.
-    func refusal(_ error: any Error) -> String { sentence(for: error) }
 }

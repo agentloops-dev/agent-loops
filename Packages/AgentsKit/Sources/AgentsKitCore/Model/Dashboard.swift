@@ -198,8 +198,6 @@ public enum Dashboard {
             if g == .archived {
                 guard let at = agent.archivedAt, calendar.isDate(at, inSameDayAs: now) else { continue }
             }
-            // The daily summary has its own page; it is no work item.
-            if agent.writesDailySummary { continue }
             let session = Session(agent: agent, mark: g != .archived && asks(agent) ? .needsYou : Mark.of(agent, group: g))
             let shows = isLive(g) || session.mark == .needsYou || session.mark == .failed
             let repo = folders[path(agent.folderPath)]

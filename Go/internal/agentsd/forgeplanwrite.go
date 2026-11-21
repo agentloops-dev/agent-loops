@@ -90,8 +90,7 @@ func (d *Daemon) forgeAddChild(ctx context.Context, r wire.ForgeAddChildRequest)
 		if err != nil {
 			return wire.ForgeDone{}, forgeCannotErr(method, t.forge, err)
 		}
-		d.forgeWrote()
-		return done, nil
+		return d.forgeWroteOn(ctx, r.Node, done), nil
 	}
 	// A new child is in the epic's feature (#3265): the epic's page has just read its plan, so this
 	// read is the kept one.
@@ -108,11 +107,11 @@ func (d *Daemon) forgeAddChild(ctx context.Context, r wire.ForgeAddChildRequest)
 	}
 	done, err := t.forge.AddChild(ctx, t.ref, forgeChild{Title: title, Labels: labels, Level: level})
 	// A new issue that did not become a child is still made: forget the kept answers either way.
-	d.forgeWrote()
 	if err != nil {
+		d.forgeWrote()
 		return wire.ForgeDone{}, forgeCannotErr(method, t.forge, err)
 	}
-	return wire.ForgeDone{URL: done.URL}, nil
+	return d.forgeWroteOn(ctx, r.Node, wire.ForgeDone{URL: done.URL}), nil
 }
 
 // forgejoIssueOf is the repository and number ref names on the connected Forgejo: #12 is in
@@ -188,9 +187,9 @@ func (d *Daemon) forgeBlockedBy(ctx context.Context, r wire.ForgeBlockedByReques
 		}
 	}
 	// Some links may be written before one fails: forget the kept answers either way.
-	d.forgeWrote()
 	if err != nil {
+		d.forgeWrote()
 		return wire.ForgeDone{}, err
 	}
-	return wire.ForgeDone{}, nil
+	return d.forgeWroteOn(ctx, r.Node, wire.ForgeDone{}), nil
 }

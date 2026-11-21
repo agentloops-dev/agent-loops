@@ -383,6 +383,9 @@ extension RemoteModel {
                 if (try? await control.connect(startIfNeeded: false, timeout: .seconds(5))) != nil {
                     backoff.connected()
                     self?.controlPlane = control
+                    // The lock first (#6311): until this device is in it, every machine refuses its calls, the
+                    // machines' reads below among them, so it asks to join before them.
+                    if let client = RemoteControl.membership?.client { await self?.lock.connected(control, client: client) }
                     await self?.syncOtherHosts(control, link: link)
                     await self?.loadMachineProviders()
                     await self?.loadKept(control)
@@ -390,7 +393,6 @@ extension RemoteModel {
                     await self?.signIn.connected(control)
                     // Status ▸ Secrets and Accounts' rows say when the newest operation was (#4161).
                     await self?.userScope.load(control)
-                    if let client = RemoteControl.membership?.client { await self?.lock.connected(control, client: client) }
                     await Self.sealWaiting(on: control, lock: self?.lock)
                     for await change in control.notifications() {
                         guard let self, !Task.isCancelled else { return }
@@ -497,8 +499,8 @@ extension RemoteModel {
             let id = host.id
             reachableHosts.insert(id)
             // A start there with no key of its own asks this device for one (#344).
-            await other.setCredentialLender { [weak self] wanted in
-                await self?.answerCredentialWanted(wanted, on: id) ?? false
+            await other.setCredentialLender { [weak self] _ in
+                await self?.answerCredentialWanted() ?? false
             }
             if let folders = try? await other.call(DaemonAPI.Method.foldersList,
                                                     DaemonAPI.FoldersListRequest(includeArchived: false),
@@ -665,13 +667,9 @@ extension RemoteModel {
            let change = try? notification.params?.decode(DaemonAPI.MoveNotification.self) {
             moveChanged(change)
         }
-        if notification.method == DaemonAPI.Notification.dailySummaryChanged,
-           let settings = try? notification.params?.decode(DailySummarySettings.self) {
-            self.dailySummarySettings = settings
-        }
-        if notification.method == DaemonAPI.Notification.summariesChanged,
-           let pages = try? notification.params?.decode([SummaryPage].self) {
-            self.summaryPages = pages
+        if notification.method == DaemonAPI.Notification.dailyChecksChanged,
+           let settings = try? notification.params?.decode(DailyChecksSettings.self) {
+            self.dailyChecksSettings = settings
         }
         if notification.method == DaemonAPI.Notification.preferencesChanged,
            let preferences = try? notification.params?.decode(DaemonAPI.DisplayPreferences.self) {

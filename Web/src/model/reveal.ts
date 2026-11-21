@@ -84,7 +84,6 @@ export async function copyText(value: string, secret: boolean): Promise<string> 
 
 // Settings ▸ You ▸ Accounts ▸ Details… (#5116, section 7), as the window's AccountsWords.
 
-export const detailsLabel = "Details…";
 export const noSecretLine = "No secret. Add one in Secrets, then name it in Edit….";
 export const notInSecrets = "not in Secrets";
 

@@ -31,6 +31,10 @@ var (
 type requestStore struct {
 	mu   sync.Mutex
 	byID map[wire.UUID]*wire.Request
+	// held is the open form requests whose call this daemon holds (#6475): never lost
+	// forms, also in the instant after an answer takes the form from its live and before
+	// it ends the request, or a second answer at once would be taken as a lost form's.
+	held map[wire.UUID]bool
 	// timer brings back the deferred requests whose time has come (#4233).
 	timer *time.Timer
 }
@@ -155,7 +159,7 @@ func (d *Daemon) lostForms(agent wire.UUID) []wire.ElicitationRequest {
 		if a := d.Store.Agent(*r.AskedBy); a == nil || a.State == wire.AgentStateArchived {
 			continue
 		}
-		if d.liveFormOf(r.ID) != nil {
+		if d.heldForm(r.ID) || d.liveFormOf(r.ID) != nil {
 			continue
 		}
 		out = append(out, *r.Detail.Elicitation)
@@ -242,6 +246,17 @@ func (d *Daemon) keepFormRequest(r *wire.Request) wire.Request {
 	return copyRequest(r)
 }
 
+// holdFormRequest marks form request id as one whose call this daemon holds
+// (requestStore.held), until the request ends.
+func (d *Daemon) holdFormRequest(id wire.UUID) {
+	d.requests.mu.Lock()
+	defer d.requests.mu.Unlock()
+	if d.requests.held == nil {
+		d.requests.held = map[wire.UUID]bool{}
+	}
+	d.requests.held[id] = true
+}
+
 // requestOpened tells the clients and raises request.opened, once the agent's lock is let go.
 // The clients get the request as it is now: an answer that came first ended it already.
 func (d *Daemon) requestOpened(opened wire.Request) {
@@ -278,6 +293,7 @@ func (d *Daemon) addRequestWaiter(id, agent wire.UUID) {
 // its waiters. It is false when the request had ended already, or is not here.
 func (d *Daemon) endRequest(id wire.UUID, state wire.RequestState, answer *string, why wire.RequestDroppedWhy, by *wire.AuditActor) bool {
 	d.requests.mu.Lock()
+	delete(d.requests.held, id)
 	r := d.requests.byID[id]
 	if r == nil || r.State != wire.RequestStateOpen {
 		d.requests.mu.Unlock()
@@ -400,6 +416,13 @@ func (d *Daemon) liveFormOf(id wire.UUID) *pendingElicitation {
 	return nil
 }
 
+// heldForm is whether this daemon holds the form request id's call (requestStore.held).
+func (d *Daemon) heldForm(id wire.UUID) bool {
+	d.requests.mu.Lock()
+	defer d.requests.mu.Unlock()
+	return d.requests.held[id]
+}
+
 // answerLostForm answers a form whose held call a restart took: as for a form left open
 // (#1641), the answer starts the session again with a prompt.
 func (d *Daemon) answerLostForm(req wire.ElicitationRequest, action wire.AnswerElicitationRequestAction, content map[string]wire.JSONValue, by *wire.AuditActor) error {
@@ -425,6 +448,10 @@ func (d *Daemon) answerLostForm(req wire.ElicitationRequest, action wire.AnswerE
 			return Invalid("%s", strings.Join(why, ". "))
 		}
 		said = answers(req.Mode.Form.Value, content, req.Message)
+	}
+	if d.heldForm(req.ID) {
+		// Not lost: an answer that came first is ending it (#6475).
+		return &Error{Code: wire.FailureNoSuchAgent, Message: "That form has already been answered."}
 	}
 	if !d.endRequest(req.ID, wire.RequestStateAnswered, formAnswerSummary(action, said), "", by) {
 		return &Error{Code: wire.FailureNoSuchAgent, Message: "That request has ended already."}
@@ -457,7 +484,10 @@ func (d *Daemon) dropRequest(r wire.RequestsDrop, by *wire.AuditActor) (wire.Req
 		return wire.RequestUpdate{}, &Error{Code: wire.FailureNoSuchAgent, Message: "That request has ended already.", Data: wire.RequestUpdate{Request: *rec}}
 	}
 	if d.liveFormOf(r.ID) != nil {
-		d.answerElicitation(wire.AnswerElicitationRequest{RequestID: r.ID, Action: wire.AnswerElicitationRequestActionCancel})
+		// The request is dropped already; a form answered meanwhile has nothing left to cancel.
+		if err := d.answerElicitation(wire.AnswerElicitationRequest{RequestID: r.ID, Action: wire.AnswerElicitationRequestActionCancel}); err != nil {
+			log.Printf("requests: drop %s: could not cancel its form: %v", r.ID, err)
+		}
 	}
 	d.secretUseEnded(r.ID)
 	after := d.request(r.ID)

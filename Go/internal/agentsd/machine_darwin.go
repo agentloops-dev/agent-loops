@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"time"
-
 )
 
 // StartMachineWatch hears the Mac (#1368) through agents-watch --machine, beside this
@@ -104,5 +103,7 @@ func (d *Daemon) runMachineWatch(helper string, stop chan struct{}) {
 		marker = false
 	}
 	close(ended)
-	cmd.Wait()
+	if err := cmd.Wait(); err != nil {
+		log.Printf("machine watch: %v", err)
+	}
 }

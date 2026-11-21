@@ -12,7 +12,7 @@ struct ProjectRows: View {
         let projects = model.newSessionProjects
         if let summary = model.work.folder(folder), let current = NewSessionProject.choice(of: summary.key, in: projects) {
             Section {
-                projectRow(projects, current: current, summary: summary)
+                projectRow(projects, current: current)
                 if !current.hidesMachine {
                     machineRow(current, summary: summary)
                 }
@@ -21,8 +21,7 @@ struct ProjectRows: View {
         }
     }
 
-    private func projectRow(_ projects: [NewSessionProject.Choice], current: NewSessionProject.Choice,
-                            summary: DaemonAPI.FolderSummary) -> some View {
+    private func projectRow(_ projects: [NewSessionProject.Choice], current: NewSessionProject.Choice) -> some View {
         Menu {
             ForEach(projects) { project in
                 Button {

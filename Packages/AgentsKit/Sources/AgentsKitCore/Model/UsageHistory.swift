@@ -20,7 +20,6 @@ public struct UsageHistory: Codable, Sendable, Hashable {
     public var timeZone: String?
 
     public static let hoursKept = 168
-    public static let daysKept = 90
 
     /// Cost the history was seeded with from `spend.json`, which never said which
     /// runtime spent it (#823). Named "Earlier" wherever a runtime is.
@@ -40,15 +39,6 @@ public struct UsageHistory: Codable, Sendable, Hashable {
     public mutating func add(_ bucket: UsageBucket, runtime: String, hour: String) {
         hours[hour, default: [:]][runtime, default: UsageBucket()].add(bucket)
         days[String(hour.prefix(10)), default: [:]][runtime, default: UsageBucket()].add(bucket)
-    }
-
-    /// Drop what is past the bound. By count rather than by date: a clock moved back
-    /// cannot make the file grow, and an idle week keeps older days rather than none.
-    public mutating func prune() {
-        let hoursKept = Set(hours.keys.sorted().suffix(Self.hoursKept))
-        hours = hours.filter { hoursKept.contains($0.key) }
-        let daysKept = Set(days.keys.sorted().suffix(Self.daysKept))
-        days = days.filter { daysKept.contains($0.key) }
     }
 
     /// The host's local hour, `yyyy-MM-ddTHH`.
@@ -84,19 +74,6 @@ public struct UsageBucket: Codable, Sendable, Hashable {
         self.cachedWriteTokens = cachedWriteTokens
         self.turns = turns
         self.unpricedTurns = unpricedTurns
-    }
-
-    /// One turn's tokens. Its cost is banked on its own, as it arrives.
-    public init(turn usage: TurnUsage, priced: Bool) {
-        self.init(inputTokens: usage.inputTokens, outputTokens: usage.outputTokens,
-                  thoughtTokens: usage.thoughtTokens ?? 0,
-                  cachedReadTokens: usage.cachedReadTokens ?? 0,
-                  cachedWriteTokens: usage.cachedWriteTokens ?? 0,
-                  turns: 1, unpricedTurns: priced ? 0 : 1)
-    }
-
-    public init(cost: Cost) {
-        self.init(cost: [cost.currency: cost.amount])
     }
 
     /// What the work asked for and got back. Cache reads are counted apart: they are

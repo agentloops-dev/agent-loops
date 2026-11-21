@@ -40,16 +40,6 @@ public extension DaemonAPI {
         public var dailyTokens: Int?
         public var by: AuditActor
         public var request: String?
-
-        public init(user: String, day: String, daily: Double? = nil, dailyTokens: Int? = nil, by: AuditActor,
-                    request: String? = nil) {
-            self.user = user
-            self.day = day
-            self.daily = daily
-            self.dailyTokens = dailyTokens
-            self.by = by
-            self.request = request
-        }
     }
 
     /// Each person's budgets per UTC day and per agent, in US dollars and tokens.
@@ -110,13 +100,6 @@ public extension DaemonAPI {
         public var by: AuditActor
         public var at: Date
         public var note: String?
-
-        public init(on: Bool, by: AuditActor, at: Date, note: String? = nil) {
-            self.on = on
-            self.by = by
-            self.at = at
-            self.note = note
-        }
     }
 
     /// The policy (spec 998 FR-002). Each rule is optional: absent sets no ceiling.
@@ -138,12 +121,15 @@ public extension DaemonAPI {
         public var requireFollowing: Bool?
         public var groups: JSONValue?
         public var notices: PolicyNotices?
+        /// Which trailers an agent's commits carry (#6365).
+        public var commitTrailers: [String: CommitTrailerValue]?
 
         public init(version: Int, issued: Date, changedBy: AuditActor, requires: [String] = [], permissionMode: PermissionLevel? = nil,
                     sandbox: String? = nil, runtimes: [String: PolicyRuntimeRule]? = nil,
                     marketplaces: PolicyMarketplaces? = nil, budgets: PolicyBudgets? = nil, helpers: PolicyHelpers? = nil,
                     environment: PolicyEnvironment? = nil, stopAll: PolicyStopAll? = nil, requireFollowing: Bool? = nil,
-                    groups: JSONValue? = nil, notices: PolicyNotices? = nil) {
+                    groups: JSONValue? = nil, notices: PolicyNotices? = nil,
+                    commitTrailers: [String: CommitTrailerValue]? = nil) {
             self.version = version
             self.issued = issued
             self.changedBy = changedBy
@@ -159,6 +145,7 @@ public extension DaemonAPI {
             self.requireFollowing = requireFollowing
             self.groups = groups
             self.notices = notices
+            self.commitTrailers = commitTrailers
         }
 
         /// Whether the kill switch is on.
@@ -181,12 +168,6 @@ public extension DaemonAPI {
         public var policy: OrgPolicy?
         public var rev: String?
         public var machines: [String: Int]?
-
-        public init(policy: OrgPolicy? = nil, rev: String? = nil, machines: [String: Int]? = nil) {
-            self.policy = policy
-            self.rev = rev
-            self.machines = machines
-        }
     }
 
     /// `policy/set`: the rules, and the tag the admin read.
@@ -415,12 +396,6 @@ public extension DaemonAPI {
         public var setBy: PolicySetBy?
 
         public var id: String { "\(runtime ?? "*")/\(name)" }
-
-        public init(name: String, runtime: String? = nil, setBy: PolicySetBy? = nil) {
-            self.name = name
-            self.runtime = runtime
-            self.setBy = setBy
-        }
     }
 
     /// `settings/passThrough` (#998): the person's own pass-through names, each marked when the

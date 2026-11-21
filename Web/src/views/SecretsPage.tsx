@@ -10,6 +10,7 @@ import type { Store } from "../model/store";
 import { savedByLine } from "../model/secretOffers";
 import { go, route } from "../route";
 import { describe } from "../model/errors";
+import { localDidNotLoad, localSecretWords } from "../model/localSecrets";
 import { Capability } from "../protocol/capabilities.generated";
 import { about, cardKind, isSecretName, secretsLeft } from "../model/userScope";
 import { askBeforeUseHint, askBeforeUseWords } from "../model/askBeforeUse";
@@ -68,6 +69,7 @@ export function SecretsPage({ store, down }: { store: Store; down: boolean }) {
   const { host, name: hostName, picker } = useSettingsMachine(store);
   const sessions = useSignal<SessionSecrets | null>(null);
   const local = useSignal<LocalSecrets | null>(null);
+  const localProblem = useSignal<string | null>(null);
   const search = useSignal("");
   const chip = useSignal<Chip>("all");
   const project = useSignal<string | null>(null);
@@ -81,7 +83,14 @@ export function SecretsPage({ store, down }: { store: Store; down: boolean }) {
   const loadHost = async () => {
     if (!host) return;
     sessions.value = await store.link.call("secrets/sessionList", {}, host).catch(() => null);
-    local.value = store.has(host, Capability.hostLocalSecrets1) ? await store.link.call("secrets/localList", {}, host).catch(() => null) : null;
+    localProblem.value = null;
+    try {
+      local.value = await store.link.call("secrets/localList", {}, host);
+    } catch (error) {
+      // An empty list would hide what agents there still use (#6335): say why, unless the host is too old for it.
+      local.value = null;
+      if (store.has(host, Capability.hostLocalSecrets1)) localProblem.value = localDidNotLoad(describe(error));
+    }
   };
   useEffect(() => { if (!down) void loadHost(); }, [host, down, changes]);
   // ⌘F (Ctrl+F) puts the cursor in the search, as the window's (wireframes §2).
@@ -129,6 +138,7 @@ export function SecretsPage({ store, down }: { store: Store; down: boolean }) {
   const listPane = (
     <div class="secrets-list" role="listbox" aria-label="Secrets" tabIndex={0} onKeyDown={listKeys}>
       {problem.value && <p class="hint failure">{problem.value}</p>}
+      {localProblem.value && <p class="hint failure">{localProblem.value}</p>}
       {left && (
         <div class="banner attention" role="status">
           <p>{secretsLeft(left)}</p>
@@ -325,6 +335,14 @@ function SecretDetail({ store, item, down, show, host, offersAsk, accounts, repl
         problem.value = describe(error);
         return;
       }
+    } else if (item.place === "machine" && host) {
+      if (!await ask(`Remove ${item.name}? ${localSecretWords.removeMessage}`)) return;
+      try {
+        await store.link.call("secrets/localRemove", { name: item.name }, host);
+      } catch (error) {
+        problem.value = describe(error);
+        return;
+      }
     } else return;
     open(null);
     changed();
@@ -412,7 +430,7 @@ function SecretDetail({ store, item, down, show, host, offersAsk, accounts, repl
               </>
             )}
             <span class="spacer" />
-            {item.place !== "machine" && <button type="button" class="destructive" disabled={down} onClick={() => void remove()}>{w.remove}</button>}
+            {(item.place !== "machine" || (!!host && store.has(host, Capability.hostLocalSecrets2))) && <button type="button" class="destructive" disabled={down} onClick={() => void remove()}>{w.remove}</button>}
           </div>
         </>
       )}

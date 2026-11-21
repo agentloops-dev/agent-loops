@@ -32,7 +32,6 @@ enum StripTone {
 /// One of a strip's buttons, or a line of its ⋯ menu.
 struct StripButton {
     let title: String
-    var icon: String?
     var help: String?
     var disabled = false
     let action: () -> Void

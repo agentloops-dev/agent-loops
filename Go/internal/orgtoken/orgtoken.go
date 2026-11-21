@@ -388,7 +388,7 @@ func Check(ctx context.Context, e *Endpoints, r Route, values map[string]string)
 	if err != nil {
 		return wire.OrgRouteCheck{Words: "The route's address could not be reached from the machine."}
 	}
-	io.Copy(io.Discard, io.LimitReader(resp.Body, mostAnswer))
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, mostAnswer)) // only to free the connection; the status is the answer
 	resp.Body.Close()
 	switch {
 	case resp.StatusCode/100 == 2:

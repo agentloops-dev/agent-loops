@@ -2425,7 +2425,7 @@
     },
     "ProjectBoard": {
       "type": "object",
-      "description": "One board in a project's Tasks slot (#3282): a GitHub Projects board, a Jira board, a Linear team, a GitLab group board or an Azure Boards board (a team's, #3816), by its address and a name (the team's). Work's Issues and Features lists narrow to one. A client sends name and url; the control plane reads forge, key and site from the url.",
+      "description": "One board in a project's Tasks slot (#3282): a GitHub Projects board, a Jira board, a Linear team, a GitLab group board or an Azure Boards board (a team's, #3816), by its address and a name (the team's). Work's Issues and Timeline narrow to one. A client sends name and url; the control plane reads forge, key and site from the url.",
       "properties": {
         "name": {
           "type": "string"

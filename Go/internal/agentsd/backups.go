@@ -379,7 +379,7 @@ func (d *Daemon) startBackup() bool {
 	if !d.claimBackup() {
 		return false
 	}
-	d.goJob("backup", func() { d.runBackup() })
+	d.goJob("backup", func() { _ = d.runBackup() }) // runBackup logs and shows its own error
 	return true
 }
 

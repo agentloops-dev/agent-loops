@@ -2,7 +2,6 @@ package gitlabmcp
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -38,18 +37,18 @@ func TestPlanReadsWorkItemsAndLinks(t *testing.T) {
 				Variables map[string]any `json:"variables"`
 			}
 			body, _ := io.ReadAll(r.Body)
-			json.Unmarshal(body, &req)
+			unmarshal(t, body, &req)
 			if req.Variables["path"] != "group/app" || req.Variables["iid"] != "5" {
-				io.WriteString(w, `{"data":{"project":null}}`)
+				reply(t, w, `{"data":{"project":null}}`)
 				return
 			}
-			io.WriteString(w, hierarchyAnswer)
+			reply(t, w, hierarchyAnswer)
 		case "/api/v4/projects/group%2Fapp/issues/5":
-			json.NewEncoder(w).Encode(obj{"iid": 5, "title": "Epic", "state": "opened", "labels": []string{"epic"}})
+			replyJSON(t, w, obj{"iid": 5, "title": "Epic", "state": "opened", "labels": []string{"epic"}})
 		case "/api/v4/projects/group%2Fapp/issues":
-			json.NewEncoder(w).Encode([]obj{forgeItemJSON(7, "closed", "2026-11-02T09:00:00Z"), forgeItemJSON(6, "opened", "2026-11-02T08:00:00Z")})
+			replyJSON(t, w, []obj{forgeItemJSON(7, "closed", "2026-11-02T09:00:00Z"), forgeItemJSON(6, "opened", "2026-11-02T08:00:00Z")})
 		case "/api/v4/projects/group%2Flib/issues":
-			json.NewEncoder(w).Encode([]obj{})
+			replyJSON(t, w, []obj{})
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -103,9 +102,9 @@ func TestBlockersReadManyWorkItems(t *testing.T) {
 			Variables map[string]any `json:"variables"`
 		}
 		body, _ := io.ReadAll(r.Body)
-		json.Unmarshal(body, &req)
+		unmarshal(t, body, &req)
 		asked = append(asked, req.Variables)
-		io.WriteString(w, `{"data":{"project":{"workItems":{"nodes":[
+		reply(t, w, `{"data":{"project":{"workItems":{"nodes":[
  {"iid":"6","widgets":[{},{"linkedItems":{"nodes":[
   {"linkType":"is_blocked_by","workItem":{"iid":"7","state":"OPEN","namespace":{"fullPath":"group/app"}}},
   {"linkType":"blocks","workItem":{"iid":"8","state":"OPEN","namespace":{"fullPath":"group/app"}}},
@@ -137,9 +136,9 @@ func TestParentsReadManyWorkItems(t *testing.T) {
 			Variables map[string]any `json:"variables"`
 		}
 		body, _ := io.ReadAll(r.Body)
-		json.Unmarshal(body, &req)
+		unmarshal(t, body, &req)
 		asked = append(asked, req.Variables)
-		io.WriteString(w, `{"data":{"project":{"workItems":{"nodes":[
+		reply(t, w, `{"data":{"project":{"workItems":{"nodes":[
  {"iid":"6","widgets":[{},{"parent":{"iid":"3","state":"OPEN","namespace":{"fullPath":"group/app"}}}]},
  {"iid":"9","widgets":[{"parent":null}]}]}}}}`)
 	}))
@@ -155,5 +154,16 @@ func TestParentsReadManyWorkItems(t *testing.T) {
 	}
 	if len(asked) != 1 || asked[0]["path"] != "group/app" || fmt.Sprint(asked[0]["iids"]) != "[6 9]" || asked[0]["first"] != float64(2) {
 		t.Fatalf("asked: %v", asked)
+	}
+}
+
+// #6349: a changed-since list is GitLab's updated_after, in one call per project for every state.
+func TestListPathUpdatedAfter(t *testing.T) {
+	f := SearchFilter{State: "all", UpdatedAfter: "2026-11-19T10:00:00Z"}
+	if p := listPath("group/app", f, "all", "", 100); !strings.Contains(p, "updated_after=2026-11-19T10%3A00%3A00Z") {
+		t.Fatalf("path: %s", p)
+	}
+	if states := listStates(f); len(states) != 1 || states[0] != "all" {
+		t.Fatalf("states: %q", states)
 	}
 }

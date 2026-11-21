@@ -71,11 +71,11 @@ var frontApp = func(pid int) (int, error) {
 	defer func() {
 		stdin.Close()
 		done := make(chan struct{})
-		go func() { cmd.Wait(); close(done) }()
+		go func() { _ = cmd.Wait(); close(done) }() // the answer was read already; how it exits says nothing more
 		select {
 		case <-done:
 		case <-time.After(2 * time.Second):
-			cmd.Process.Kill()
+			_ = cmd.Process.Kill() // it may have ended already
 		}
 	}()
 	frame, _ := json.Marshal(map[string]any{"action": "front", "pid": pid})
@@ -91,7 +91,9 @@ var frontApp = func(pid int) (int, error) {
 	go func() {
 		var a answer
 		if b, err := bufio.NewReader(stdout).ReadBytes(0); err == nil {
-			json.Unmarshal(b[:len(b)-1], &a)
+			if err := json.Unmarshal(b[:len(b)-1], &a); err != nil {
+				a.Error = "agents-drive's answer could not be read: " + err.Error()
+			}
 		} else {
 			a.Error = "agents-drive said nothing"
 		}
@@ -104,7 +106,7 @@ var frontApp = func(pid int) (int, error) {
 		}
 		return a.Previous, nil
 	case <-time.After(windowWaitsLongest):
-		cmd.Process.Kill()
+		_ = cmd.Process.Kill() // it may have ended already
 		return 0, fmt.Errorf("agents-drive did not answer in %s", windowWaitsLongest)
 	}
 }
@@ -127,7 +129,9 @@ func (d *Daemon) showHandOffWindow(agent, request wire.UUID) (string, bool) {
 	}
 	letGo := func() {
 		if !held && d.holdsScreen(agent) {
-			d.releaseResource(agent, screenLeaseName)
+			if _, err := d.releaseResource(agent, screenLeaseName); err != nil {
+				log.Printf("browser: could not release the screen: %v", err)
+			}
 		}
 	}
 	tab := string(d.sessionTab(agent))
@@ -189,7 +193,9 @@ func (d *Daemon) hideHandOffWindow(request wire.UUID) {
 		}
 	}
 	if w.leased && d.holdsScreen(w.agent) {
-		d.releaseResource(w.agent, screenLeaseName)
+		if _, err := d.releaseResource(w.agent, screenLeaseName); err != nil {
+			log.Printf("browser: could not release the screen: %v", err)
+		}
 	}
 }
 

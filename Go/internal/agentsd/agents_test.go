@@ -46,7 +46,7 @@ func userMessages(d *Daemon, id wire.UUID) []string {
 func startAgent(t *testing.T, c *conn, n int, cwd, prompt string) wire.UUID {
 	t.Helper()
 	var id wire.UUID
-	json.Unmarshal(c.call(t, n, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + cwd, "prompt": prompt}), &id)
+	mustUnmarshal(t, c.call(t, n, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + cwd, "prompt": prompt}), &id)
 	return id
 }
 
@@ -70,7 +70,7 @@ func TestTheQueueOutlivesATurnAndGoesTogether(t *testing.T) {
 	}
 	b, _ := os.ReadFile(filepath.Join(root, "agents", string(id), "agent.json"))
 	var onDisk wire.Agent
-	if diskjson.Unmarshal(b, &onDisk); len(onDisk.QueuedPrompts) != 3 || onDisk.QueuedPrompts[1].Text != "second" {
+	if must(t, diskjson.Unmarshal(b, &onDisk)); len(onDisk.QueuedPrompts) != 3 || onDisk.QueuedPrompts[1].Text != "second" {
 		t.Fatalf("on disk %s", b)
 	}
 	c.call(t, 5, "agents/unqueue", map[string]any{"agentID": id, "promptID": a.QueuedPrompts[2].ID})
@@ -107,7 +107,7 @@ func TestEditQueued(t *testing.T) {
 	q := d.Store.Agent(id).QueuedPrompts
 	edit := func(n int, promptID wire.UUID, text string) bool {
 		var r wire.EditQueuedResult
-		json.Unmarshal(c.call(t, n, "agents/editQueued", map[string]any{"agentID": id, "promptID": promptID, "text": text}), &r)
+		mustUnmarshal(t, c.call(t, n, "agents/editQueued", map[string]any{"agentID": id, "promptID": promptID, "text": text}), &r)
 		return r.Edited
 	}
 	if !edit(5, q[0].ID, "first, changed") {
@@ -166,16 +166,16 @@ func TestRenameAndHandBack(t *testing.T) {
 	runtimeTitle := "From the runtime"
 	a := seeded(t, d, t.TempDir(), func(a *wire.Agent) { a.Title = &runtimeTitle })
 	var got wire.Agent
-	json.Unmarshal(c.call(t, 1, "agents/rename", map[string]any{"agentID": a.ID, "title": "  My   name\nhere "}), &got)
+	mustUnmarshal(t, c.call(t, 1, "agents/rename", map[string]any{"agentID": a.ID, "title": "  My   name\nhere "}), &got)
 	if *got.Title != "My name here" || got.TitleIsPersons == nil || !*got.TitleIsPersons || *got.RuntimeTitle != runtimeTitle {
 		t.Fatalf("%+v", got)
 	}
-	json.Unmarshal(c.call(t, 2, "agents/rename", map[string]any{"agentID": a.ID, "title": strings.Repeat("x", 90)}), &got)
+	mustUnmarshal(t, c.call(t, 2, "agents/rename", map[string]any{"agentID": a.ID, "title": strings.Repeat("x", 90)}), &got)
 	if len([]rune(*got.Title)) != 80 || *got.RuntimeTitle != runtimeTitle {
 		t.Fatalf("%q", *got.Title)
 	}
 	got = wire.Agent{}
-	json.Unmarshal(c.call(t, 3, "agents/rename", map[string]any{"agentID": a.ID, "title": " "}), &got)
+	mustUnmarshal(t, c.call(t, 3, "agents/rename", map[string]any{"agentID": a.ID, "title": " "}), &got)
 	if *got.Title != runtimeTitle || got.TitleIsPersons != nil || got.RuntimeTitle != nil {
 		t.Fatalf("handed back %+v", got)
 	}
@@ -197,7 +197,7 @@ func TestLabels(t *testing.T) {
 	mk("Release")
 	id := mk("bug")
 	var got wire.Agent
-	json.Unmarshal(c.call(t, 1, "agents/setLabels", map[string]any{"agentID": id, "add": []string{"release", " BUG "}, "remove": []string{}}), &got)
+	mustUnmarshal(t, c.call(t, 1, "agents/setLabels", map[string]any{"agentID": id, "add": []string{"release", " BUG "}, "remove": []string{}}), &got)
 	if len(got.Labels) != 2 || got.Labels[0].Owner != wire.SessionLabelOwnerPerson || got.Labels[1].Value != "Release" {
 		t.Fatalf("%+v", got.Labels)
 	}
@@ -211,7 +211,7 @@ func TestLabels(t *testing.T) {
 		t.Fatal(e.Message)
 	}
 	var words []string
-	json.Unmarshal(c.call(t, 5, "agents/labelVocabulary", map[string]any{"folder": store.FolderURL(folder)}), &words)
+	mustUnmarshal(t, c.call(t, 5, "agents/labelVocabulary", map[string]any{"folder": store.FolderURL(folder)}), &words)
 	if strings.Join(words, ",") != "Release,bug" {
 		t.Fatal(words)
 	}
@@ -247,7 +247,7 @@ func TestUnarchiveAndDelete(t *testing.T) {
 	}
 	// A delete cut off after its folder was set aside is finished at the next start.
 	aside := filepath.Join(root, "agents", ".deleting-"+string(store.NewUUID()))
-	os.MkdirAll(aside, 0o755)
+	must(t, os.MkdirAll(aside, 0o755)) //nolint:gosec // G301: the mode this folder always had; only its error is new
 	if _, err := store.Open(root); err != nil {
 		t.Fatal(err)
 	}
@@ -280,11 +280,13 @@ func TestTouchedPaths(t *testing.T) {
 	real, _ := filepath.EvalSymlinks(dir)
 	id := seeded(t, d, dir, nil).ID
 	diff := filepath.Join(dir, "b.go")
-	d.Store.Append(id, wire.TranscriptEntry{ID: store.NewUUID(), At: now(), Kind: wire.TranscriptEntryKind{ToolCall: &wire.TranscriptEntryKindToolCall{
+	if _, err := d.Store.Append(id, wire.TranscriptEntry{ID: store.NewUUID(), At: now(), Kind: wire.TranscriptEntryKind{ToolCall: &wire.TranscriptEntryKindToolCall{
 		Value: wire.ToolCall{Title: "Edit", Content: []wire.ToolCallContent{{Type: "diff", Path: &diff}},
-			Locations: []wire.ToolCallLocation{{Path: filepath.Join(dir, "a.go")}}}}}})
+			Locations: []wire.ToolCallLocation{{Path: filepath.Join(dir, "a.go")}}}}}}); err != nil {
+		t.Fatal(err)
+	}
 	var paths []string
-	json.Unmarshal(c.call(t, 1, "agents/touchedPaths", map[string]any{"agentID": id}), &paths)
+	mustUnmarshal(t, c.call(t, 1, "agents/touchedPaths", map[string]any{"agentID": id}), &paths)
 	if strings.Join(paths, " ") != filepath.Join(real, "a.go")+" "+filepath.Join(real, "b.go") &&
 		strings.Join(paths, " ") != filepath.Join(dir, "a.go")+" "+filepath.Join(dir, "b.go") {
 		t.Fatal(paths)
@@ -309,7 +311,7 @@ func TestContinueInFolder(t *testing.T) {
 	})
 	request := store.NewUUID()
 	var id wire.UUID
-	json.Unmarshal(c.call(t, 1, "agents/continueInFolder", map[string]any{"agentID": old.ID, "text": "and the tests", "requestID": request}), &id)
+	mustUnmarshal(t, c.call(t, 1, "agents/continueInFolder", map[string]any{"agentID": old.ID, "text": "and the tests", "requestID": request}), &id)
 	waitFor(t, "finished", func() bool { return d.Store.Agent(id).State == wire.AgentStateFinished })
 	a := d.Store.Agent(id)
 	if store.FolderPath(a.Cwd) != folder || *a.Title != title || len(a.Labels) != 1 || a.Labels[0].Value != "mine" {
@@ -321,9 +323,37 @@ func TestContinueInFolder(t *testing.T) {
 		t.Fatalf("%q", said)
 	}
 	var again wire.UUID
-	json.Unmarshal(c.call(t, 2, "agents/continueInFolder", map[string]any{"agentID": old.ID, "requestID": request}), &again)
+	mustUnmarshal(t, c.call(t, 2, "agents/continueInFolder", map[string]any{"agentID": old.ID, "requestID": request}), &again)
 	if again != id {
 		t.Fatalf("a second agent %s", again)
+	}
+}
+
+// TestFolderListOfOneIsTheLatestActive: agents/list {folder, limit: 1} is the folder's session
+// with the latest activity, not the one made last, and not another folder's (#6444): what
+// `loops` with no argument continues.
+func TestFolderListOfOneIsTheLatestActive(t *testing.T) {
+	t.Parallel()
+
+	d, c := start(t, t.TempDir())
+	defer d.Shutdown()
+	hour := wire.Date(3600)
+	t0 := now()
+	folder, other := t.TempDir(), t.TempDir()
+	at := func(created, active wire.Date) func(a *wire.Agent) {
+		return func(a *wire.Agent) { a.CreatedAt, a.LastActivityAt = created, active }
+	}
+	busy := seeded(t, d, folder, at(t0-48*hour, t0-hour))
+	seeded(t, d, folder, at(t0-2*hour, t0-2*hour))
+	seeded(t, d, folder, at(t0-24*hour, t0-24*hour))
+	seeded(t, d, other, at(t0, t0))
+	var list []wire.Agent
+	if err := json.Unmarshal(c.call(t, 1, "agents/list", map[string]any{"includeArchived": false, "archivedCommands": false,
+		"archivedOnly": false, "lean": true, "folder": store.FolderURL(folder), "limit": 1}), &list); err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 1 || list[0].ID != busy.ID {
+		t.Fatalf("not the latest active of the folder: %+v", list)
 	}
 }
 
@@ -351,13 +381,13 @@ func TestArchivedListIsNewestArchivedFirst(t *testing.T) {
 	b := seeded(t, d, t.TempDir(), archived(t0-hour, t0-24*hour))
 	old := seeded(t, d, t.TempDir(), archived(t0-48*hour, 0))
 	var list []wire.Agent
-	json.Unmarshal(c.call(t, 1, "agents/list", map[string]any{"archivedOnly": true, "includeArchived": true, "lean": true}), &list)
+	mustUnmarshal(t, c.call(t, 1, "agents/list", map[string]any{"archivedOnly": true, "includeArchived": true, "lean": true}), &list)
 	if len(list) != 3 || list[0].ID != a.ID || list[1].ID != b.ID || list[2].ID != old.ID {
 		t.Fatalf("not newest archived first: %+v", list)
 	}
 	list = nil
 	after := map[string]any{"lastActivityAt": a.LastActivityAt, "id": a.ID, "archivedAt": *a.ArchivedAt}
-	json.Unmarshal(c.call(t, 2, "agents/list", map[string]any{"archivedOnly": true, "includeArchived": true, "lean": true, "after": after}), &list)
+	mustUnmarshal(t, c.call(t, 2, "agents/list", map[string]any{"archivedOnly": true, "includeArchived": true, "lean": true, "after": after}), &list)
 	if len(list) != 2 || list[0].ID != b.ID || list[1].ID != old.ID {
 		t.Fatalf("the next page: %+v", list)
 	}

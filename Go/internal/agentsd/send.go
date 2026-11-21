@@ -65,8 +65,12 @@ func (d *Daemon) sendFacts(r wire.SendFactsRequest) (wire.SendFacts, error) {
 	} else if out != "" {
 		f.Branches = strings.Split(out, "\n")
 	}
+	// "On no branch" only when git says so (#6341): a git that did not run to its end under
+	// load is not a detached HEAD, and a move or send then fails with git's words.
 	if cur, err := git(path, "symbolic-ref", "-q", "--short", "HEAD"); err == nil && cur != "" {
 		f.Current = &cur
+	} else if !gitAnswered(err) {
+		return f, err
 	}
 	if origin, err := git(path, "remote", "get-url", "origin"); err == nil && origin != "" {
 		f.Origin = &origin
@@ -101,7 +105,9 @@ func (d *Daemon) sendPack(r wire.SendPackRequest) (wire.SendPack, error) {
 		refs = append(refs, "refs/heads/"+b)
 	}
 	sweepTransfers(d.outgoingFolder())
-	os.MkdirAll(d.outgoingFolder(), 0o700)
+	if err := os.MkdirAll(d.outgoingFolder(), 0o700); err != nil {
+		return p, err
+	}
 
 	// Only the receiving host's commits this repository has too can be left out.
 	var known []string
@@ -178,7 +184,7 @@ func (d *Daemon) readOutgoing(r wire.SendReadRequest, gone string) (wire.SendRea
 		os.Remove(path)
 	} else {
 		now := time.Now()
-		os.Chtimes(path, now, now)
+		_ = os.Chtimes(path, now, now) // keeps it from the sweep; it fails only when the file is gone
 	}
 	return wire.SendRead{Data: buf[:n], End: end}, nil
 }

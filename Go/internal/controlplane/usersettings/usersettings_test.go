@@ -111,23 +111,10 @@ func TestASecretIsKeptAsEnvelopesNothingHereOpens(t *testing.T) {
 		t.Fatalf("%+v %v %v", got, waiting, err)
 	}
 	for _, secret := range got.Secrets {
-		if value, err := opens(t, box, "sam", secret); err != nil || secrets[string(secret.Name)] != value {
-			t.Fatalf("%s came back as something else: %v", secret.Name, err)
-		}
-		if _, err := opens(t, other, "sam", secret); err == nil {
-			t.Fatal("another machine's key opens it")
-		}
+		opensOnlyFor(t, box, other, secret, secrets[string(secret.Name)])
 	}
 	// SC-007: no file under the prefix holds a secret, nor its base64, nor any part of it.
-	for key, data := range everyObject(t, s) {
-		for _, value := range secrets {
-			for _, form := range []string{value, base64.StdEncoding.EncodeToString([]byte(value)), value[:12]} {
-				if bytes.Contains(data, []byte(form)) {
-					t.Fatalf("%s holds a secret", key)
-				}
-			}
-		}
-	}
+	holdsNoSecret(t, s, secrets)
 	// A machine with no copy waits for both; another person has none of them.
 	if got, waiting, _ := b.Delivery(ctx, "sam", other.id); len(got.Secrets) != 0 || strings.Join(waiting, ",") != "GITHUB_TOKEN|1,LINEAR_KEY|1" {
 		t.Fatalf("%+v %v", got, waiting)
@@ -141,18 +128,7 @@ func TestASecretIsKeptAsEnvelopesNothingHereOpens(t *testing.T) {
 		t.Fatalf("%+v %v %v", items, lacks, err)
 	}
 	for _, item := range items {
-		value, err := opens(t, mac, "sam", wire.SealedUserSecret{Name: wire.UserSecretName(item.ID), Version: item.Version, Sealed: item.Mine["value"]})
-		if err != nil {
-			t.Fatal(err)
-		}
-		again := sealed(t, "sam", item.ID, item.Version, value, other)
-		if added, err := b.AddSealed(ctx, "sam", item.ID, item.Version, again.Values, allowing(box, mac, other)); err != nil || !added {
-			t.Fatal(added, err)
-		}
-		// At an older version, or for one that is not a recipient now, nothing is added.
-		if added, _ := b.AddSealed(ctx, "sam", item.ID, item.Version+1, again.Values, allowing(box, mac, other)); added {
-			t.Fatal("added at another version")
-		}
+		sealsForOther(t, b, item, mac, other, allowing(box, mac, other))
 	}
 	if got, waiting, _ := b.Delivery(ctx, "sam", other.id); len(got.Secrets) != 2 || len(waiting) != 0 {
 		t.Fatalf("%+v %v", got, waiting)
@@ -163,6 +139,51 @@ func TestASecretIsKeptAsEnvelopesNothingHereOpens(t *testing.T) {
 	}
 }
 
+// opensOnlyFor says secret opens as want with mine's key, and not with other's.
+func opensOnlyFor(t *testing.T, mine, other recipient, secret wire.SealedUserSecret, want string) {
+	t.Helper()
+	if value, err := opens(t, mine, "sam", secret); err != nil || want != value {
+		t.Fatalf("%s came back as something else: %v", secret.Name, err)
+	}
+	if _, err := opens(t, other, "sam", secret); err == nil {
+		t.Fatal("another machine's key opens it")
+	}
+}
+
+// holdsNoSecret says no object in s holds a value of secrets, nor its base64, nor its
+// first 12 characters.
+func holdsNoSecret(t *testing.T, s store.Store, secrets map[string]string) {
+	t.Helper()
+	for key, data := range everyObject(t, s) {
+		for _, value := range secrets {
+			for _, form := range []string{value, base64.StdEncoding.EncodeToString([]byte(value)), value[:12]} {
+				if bytes.Contains(data, []byte(form)) {
+					t.Fatalf("%s holds a secret", key)
+				}
+			}
+		}
+	}
+}
+
+// sealsForOther is the person's client (mac) sealing item again for other: it is added
+// at the item's version, and not at another.
+func sealsForOther(t *testing.T, b *Book, item wire.SealingItem, mac, other recipient, allowed map[string]bool) {
+	t.Helper()
+	ctx := context.Background()
+	value, err := opens(t, mac, "sam", wire.SealedUserSecret{Name: wire.UserSecretName(item.ID), Version: item.Version, Sealed: item.Mine["value"]})
+	if err != nil {
+		t.Fatal(err)
+	}
+	again := sealed(t, "sam", item.ID, item.Version, value, other)
+	if added, err := b.AddSealed(ctx, "sam", item.ID, item.Version, again.Values, allowed); err != nil || !added {
+		t.Fatal(added, err)
+	}
+	// At an older version, or for one that is not a recipient now, nothing is added.
+	if added, _ := b.AddSealed(ctx, "sam", item.ID, item.Version+1, again.Values, allowed); added {
+		t.Fatal("added at another version")
+	}
+}
+
 // A record copied to another person's secrets does not open on that person's machine:
 // the associated data names the person.
 func TestAnEnvelopeMovedToAnotherPersonDoesNotOpen(t *testing.T) {
@@ -170,9 +191,11 @@ func TestAnEnvelopeMovedToAnotherPersonDoesNotOpen(t *testing.T) {
 	s := store.NewMemory()
 	b := New(s, nil, "")
 	box := newRecipient(t, "m:box")
-	b.SetSecret(ctx, "sam", sealed(t, "sam", "TOKEN", 1, "sams-token", box), allowing(box))
+	must(t, b.SetSecret(ctx, "sam", sealed(t, "sam", "TOKEN", 1, "sams-token", box), allowing(box)))
 	o, _ := s.Get(ctx, secretKey("sam", "TOKEN"))
-	s.Put(ctx, secretKey("kim", "TOKEN"), o.Data, store.Absent)
+	if _, err := s.Put(ctx, secretKey("kim", "TOKEN"), o.Data, store.Absent); err != nil {
+		t.Fatal(err)
+	}
 	got, _, err := b.Delivery(ctx, "kim", box.id)
 	if err != nil || len(got.Secrets) != 1 {
 		t.Fatalf("%+v %v", got, err)
@@ -186,7 +209,7 @@ func TestNamesNeverHoldValues(t *testing.T) {
 	ctx := context.Background()
 	b := New(store.NewMemory(), nil, "")
 	box, spare := newRecipient(t, "m:box"), newRecipient(t, "m:spare")
-	b.SetSecret(ctx, "sam", sealed(t, "sam", "TOKEN", 1, "the-value", box), allowing(box, spare))
+	must(t, b.SetSecret(ctx, "sam", sealed(t, "sam", "TOKEN", 1, "the-value", box), allowing(box, spare)))
 	rows, _ := b.Names(ctx, "sam", []string{box.id, spare.id})
 	raw, _ := json.Marshal(rows)
 	if len(rows) != 1 || rows[0].Name != "TOKEN" || deref(rows[0].Version) != 1 || len(rows[0].Waiting) != 1 || rows[0].Waiting[0] != "spare" ||
@@ -292,7 +315,9 @@ func TestPartsAreKeptWithoutBeingRead(t *testing.T) {
 	if got.McpServers == nil || got.Updated == nil {
 		t.Fatalf("%+v", got)
 	}
-	b.SetPart(ctx, "sam", wire.UserSettingsPartNameMcpServers, json.RawMessage(`null`))
+	if _, err := b.SetPart(ctx, "sam", wire.UserSettingsPartNameMcpServers, json.RawMessage(`null`)); err != nil {
+		t.Fatal(err)
+	}
 	if got, _ := b.Settings(ctx, "sam"); got.McpServers != nil {
 		t.Fatalf("%+v", got)
 	}
@@ -358,10 +383,10 @@ func TestAMachineLeftIsNamedOnTheSecretsItHad(t *testing.T) {
 	ctx := context.Background()
 	b := New(store.NewMemory(), nil, "")
 	box := newRecipient(t, "m:box")
-	b.SetSecret(ctx, "sam", sealed(t, "sam", "A", 1, "1", box), allowing(box))
-	b.SetSecret(ctx, "sam", sealed(t, "sam", "B", 1, "2", box), allowing(box))
-	b.Sent(ctx, "sam", "box", []string{"A", "B"})
-	b.Sent(ctx, "sam", "mac", []string{"A"})
+	must(t, b.SetSecret(ctx, "sam", sealed(t, "sam", "A", 1, "1", box), allowing(box)))
+	must(t, b.SetSecret(ctx, "sam", sealed(t, "sam", "B", 1, "2", box), allowing(box)))
+	must(t, b.Sent(ctx, "sam", "box", []string{"A", "B"}))
+	must(t, b.Sent(ctx, "sam", "mac", []string{"A"}))
 	had, err := b.Left(ctx, "sam", "box", "Sam's box")
 	if err != nil || strings.Join(had, ",") != "A,B" {
 		t.Fatal(had, err)
@@ -371,7 +396,7 @@ func TestAMachineLeftIsNamedOnTheSecretsItHad(t *testing.T) {
 		t.Fatalf("%+v", rows)
 	}
 	// Set again, the secret is a new one: the machine it was on no longer matters.
-	b.SetSecret(ctx, "sam", sealed(t, "sam", "A", 2, "3", box), allowing(box))
+	must(t, b.SetSecret(ctx, "sam", sealed(t, "sam", "A", 2, "3", box), allowing(box)))
 	if rows, _ := b.Names(ctx, "sam", nil); len(rows[0].LeftOn) != 0 || len(rows[0].Machines) != 1 {
 		t.Fatalf("%+v", rows)
 	}
@@ -408,10 +433,12 @@ func TestEveryMachineTakesFromThePersonsOneBucket(t *testing.T) {
 		t.Fatalf("kim: %+v", got)
 	}
 	// A machine's limits are kept within the bounds.
-	b.SetNoticeLimits(ctx, "sam", wire.NoticeLimits{Burst: 500, CooldownMinutes: 0})
+	if _, err := b.SetNoticeLimits(ctx, "sam", wire.NoticeLimits{Burst: 500, CooldownMinutes: 0}); err != nil {
+		t.Fatal(err)
+	}
 	settings, _ := b.Settings(ctx, "sam")
 	var kept wire.NoticeLimits
-	if json.Unmarshal(settings.Notifications, &kept); kept != (wire.NoticeLimits{Burst: 20, CooldownMinutes: 10}) {
+	if err := json.Unmarshal(settings.Notifications, &kept); err != nil || kept != (wire.NoticeLimits{Burst: 20, CooldownMinutes: 10}) {
 		t.Fatal(string(settings.Notifications))
 	}
 }

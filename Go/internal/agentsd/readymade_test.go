@@ -20,7 +20,7 @@ func TestReadyMadeWorkflowsRead(t *testing.T) {
 	t.Parallel()
 
 	ids := readyMadeIDs()
-	if !slices.Equal(ids, []string{"address-review-comments", "answer-a-sign-up-code", "daily-checks", "daily-summary", "file-a-bug-from-sentry", "fix-failed-checks", "work-a-jira-issue", "work-a-linear-issue", "work-an-issue"}) {
+	if !slices.Equal(ids, []string{"address-review-comments", "answer-a-sign-up-code", "daily-checks", "file-a-bug-from-sentry", "fix-failed-checks", "work-a-jira-issue", "work-a-linear-issue", "work-an-issue"}) {
 		t.Fatal(ids)
 	}
 	var events []string
@@ -145,7 +145,7 @@ func TestReadyMadeWorkflowsLiveInUserFolderAndFoldersUseThem(t *testing.T) {
 		t.Fatalf("%+v", list)
 	}
 	// A forge folder lists the built-ins as user workflows, off by default: all but the daily
-	// summary, which is the person's, not a folder's (#3192).
+	// checks, which are the person's, not a folder's (#3192, #3355).
 	json.Unmarshal(c.call(t, 4, "workflows/list", map[string]any{"folder": folderURL}), &list)
 	if len(list) != 7 || list[0].IsEnabled || list[0].AwaitingApproval != nil || list[6].Workflow.Name != "Work an issue" || list[0].Scope == nil || *list[0].Scope != "user" {
 		t.Fatalf("%+v", list)
@@ -157,7 +157,7 @@ func TestReadyMadeWorkflowsLiveInUserFolderAndFoldersUseThem(t *testing.T) {
 	}
 	var userList []wire.WorkflowSummary
 	json.Unmarshal(c.call(t, 5, "workflows/list", map[string]any{"scope": "user"}), &userList)
-	if len(userList) != 9 || userList[0].Content == nil || userList[0].Scope == nil || *userList[0].Scope != "user" {
+	if len(userList) != 8 || userList[0].Content == nil || userList[0].Scope == nil || *userList[0].Scope != "user" {
 		t.Fatalf("user workflows: %+v", userList)
 	}
 
@@ -356,12 +356,15 @@ func TestReadyMadeUpdatesOnlyTheUneditedCopy(t *testing.T) {
 		d.saveRecordsLocked(true)
 		d.workflowMu.Unlock()
 	}
-	summary, _ := readyMadeText("daily-summary")
+	summary, _ := readyMadeText("fix-failed-checks")
 	checks, _ := readyMadeText("daily-checks")
 	work, _ := readyMadeText("work-an-issue")
-	// Daily summary as #3922 found it, turned on: unedited, so it is updated, and asked again.
-	turnedOn, _ := setFrontMatter("enabled", nil, strings.Replace(summary, "permission-mode: ask", "permission-mode: plan", 1))
-	approve("daily-summary", turnedOn)
+	// Fix failed checks as the daemon made an earlier version, turned on: unedited, so it is
+	// updated, and asked again.
+	turnedOn, _ := setFrontMatter("enabled", nil, strings.Replace(summary, "permission-mode: approve-for-me", "permission-mode: plan", 1))
+	fixDigest, _ := readyMadeDigest(turnedOn)
+	markReadyMadeMade(home, "fix-failed-checks", fixDigest)
+	approve("fix-failed-checks", turnedOn)
 	// Daily checks edited by the person.
 	edited := strings.Replace(checks, "permission-mode: ask", "permission-mode: plan", 1) + "\nMy own line.\n"
 	approve("daily-checks", edited)
@@ -376,17 +379,17 @@ func TestReadyMadeUpdatesOnlyTheUneditedCopy(t *testing.T) {
 	var list []wire.WorkflowSummary
 	json.Unmarshal(c.call(t, 2, "workflows/list", map[string]any{"scope": "user"}), &list)
 	wantOn, _ := setFrontMatter("enabled", nil, summary)
-	if !fileHas(t, path("daily-summary"), wantOn) || !fileHas(t, path("daily-checks"), edited) || !fileHas(t, path("work-an-issue"), work) {
+	if !fileHas(t, path("fix-failed-checks"), wantOn) || !fileHas(t, path("daily-checks"), edited) || !fileHas(t, path("work-an-issue"), work) {
 		t.Fatal("the unedited copies were not updated, or the edited one was")
 	}
 	waits := map[string]bool{}
 	for _, s := range list {
 		waits[s.Workflow.WorkflowID] = s.AwaitingApproval != nil
 	}
-	if !waits["daily-summary"] || waits["daily-checks"] || !waits["work-an-issue"] {
+	if !waits["fix-failed-checks"] || waits["daily-checks"] || !waits["work-an-issue"] {
 		t.Fatalf("approvals: %v", waits)
 	}
-	if want, _ := readyMadeDigest(summary); madeReadyMade(home)["daily-summary"] != want {
+	if want, _ := readyMadeDigest(summary); madeReadyMade(home)["fix-failed-checks"] != want {
 		t.Fatal("the update did not keep its digest")
 	}
 
@@ -403,8 +406,8 @@ func TestReadyMadeUpdatesOnlyTheUneditedCopy(t *testing.T) {
 		return by
 	}
 	by := notices()
-	if by["daily-summary"].ReadyMadeUpdatedAt == nil || by["work-an-issue"].ReadyMadeUpdatedAt == nil ||
-		by["daily-summary"].NewerReadyMade != nil || by["daily-checks"].NewerReadyMade != nil || by["daily-checks"].ReadyMadeUpdatedAt != nil {
+	if by["fix-failed-checks"].ReadyMadeUpdatedAt == nil || by["work-an-issue"].ReadyMadeUpdatedAt == nil ||
+		by["fix-failed-checks"].NewerReadyMade != nil || by["daily-checks"].NewerReadyMade != nil || by["daily-checks"].ReadyMadeUpdatedAt != nil {
 		t.Fatalf("notices: %+v", by)
 	}
 	older, _ := readyMadeDigest(strings.Replace(checks, "permission-mode: ask", "permission-mode: plan", 1))
@@ -430,5 +433,47 @@ func TestReadyMadeUpdatesOnlyTheUneditedCopy(t *testing.T) {
 	}
 	if digest, _ := readyMadeDigest(checks); madeReadyMade(home)["daily-checks"] != digest {
 		t.Fatal("taking it did not keep its digest")
+	}
+}
+
+// #5853: the daily summary is gone from the ready-made set. Its copy and its skill's that the
+// person did not edit are removed; an edited copy, and the pages it saved, stay theirs.
+func TestTheRetiredDailySummaryGoesWhenUnedited(t *testing.T) {
+	t.Parallel()
+
+	for _, edited := range []bool{false, true} {
+		d, c := start(t, t.TempDir())
+		home := t.TempDir()
+		d.PersonalHome = home
+		workflow := "---\nname: Daily summary\non:\n  - schedule:\n      at: \":00\"\n      between: \"08:00-08:00\"\nagent: new\nenabled: true\n---\n\nIt is time for the person's daily summary.\n"
+		skill := "---\nname: daily-summary\n---\n\n# Daily summary\n"
+		digest, _ := readyMadeDigest(workflow)
+		markReadyMadeMade(home, "daily-summary", digest)
+		markReadyMadeSkillMade(home, "daily-summary", readyMadeSkillDigest(skill))
+		if edited {
+			workflow += "My own line.\n"
+			skill += "My own line.\n"
+		}
+		wf := filepath.Join(workflowsFolder(home), "daily-summary.md")
+		sk := filepath.Join(home, ".agents", "skills", "daily-summary", "SKILL.md")
+		page := filepath.Join(home, ".agents", "summaries", "2026-11-06-0800.md")
+		for path, text := range map[string]string{wf: workflow, sk: skill, page: "# Daily summary, Fri 6 Nov\n"} {
+			if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		c.call(t, 1, "workflows/list", map[string]any{"scope": "user"})
+		_, wfErr := os.Stat(wf)
+		_, skErr := os.Stat(sk)
+		if edited != (wfErr == nil) || edited != (skErr == nil) {
+			t.Fatalf("edited %v: the workflow %v, the skill %v", edited, wfErr, skErr)
+		}
+		if _, err := os.Stat(page); err != nil {
+			t.Fatalf("a saved page went: %v", err)
+		}
+		d.Shutdown()
 	}
 }

@@ -589,8 +589,9 @@ and `pr.reviewed` stay as they are.
   | --- | --- | --- |
   | `github` | all five | `mergeable`, `mergeStateStatus` (`BEHIND`), `reviewDecision`, the last auto-merge event of the timeline, and the head's checks against the required checks of the base's rulesets and branch protection, in one GraphQL query |
   | `gitlab` | `conflict`, `required_check_failed` (the head pipeline), `changes_requested`, `behind` | `detailed_merge_status`, one reason at a time |
-  | `azuredevops` | `conflict`, `changes_requested` | `mergeStatus`, and a reviewer's vote of *waiting for author* or *rejected* |
-  | `forgejo`, `bitbucket` | `conflict` | the same read as `pr.conflicted` |
+  | `azuredevops` | `conflict`, `changes_requested`, `required_check_failed` | `mergeStatus`, a reviewer's vote of *waiting for author* or *rejected*, and the newest build of a pipeline or status of a context at the head that failed (every one: a branch policy's required builds are not read) |
+  | `forgejo` | `conflict` | the same read as `pr.conflicted` |
+  | `bitbucket` | `conflict`, `required_check_failed`, `changes_requested` | the same read as `pr.conflicted`, a FAILED status at the head (every status: the API does not say which the merge checks require), and a participant whose state is `changes_requested` |
 
 ### Deploys
 
@@ -640,18 +641,23 @@ it, so two machines can make two ids for one change.
 | `github` | `pr.merged` / `pr.closed` | the PR | none / the close time |
 | `github`, `gitlab`, `forgejo`, `bitbucket`, `azuredevops` | `pr.blocked` | the PR (the merge request on GitLab) | the head commit and the reasons, as `<sha>:conflict,behind` |
 | `github` | `pr.conflicted` and the other states | the PR, or the issue for `issue.assigned` | the review for `review.posted`, else the poll time |
-| `gitlab` | `issue.*`, `review.comment`, `pr.merged`, `pr.closed`, states | `gitlab:issue:` or `gitlab:mr:<group/project>#<n>` | as `github` |
-| `gitlab` | `checks.failed` | `gitlab:pipeline:<group/project>#<pipeline id>` | the pipeline's update time |
+| `gitlab` | `issue.*`, `review.comment`, `pr.commented`, `pr.merged`, `pr.closed`, states | `gitlab:issue:` or `gitlab:mr:<group/project>#<n>` | as `github` |
+| `gitlab` | `checks.failed`, `checks.passed` | `gitlab:pipeline:<group/project>#<pipeline id>` | the pipeline's update time |
+| `gitlab` | `pr.reviewed` | `gitlab:mr:<group/project>#<n>` | the person and the state, as `dev:approved` |
 | `gitlab` | `run.completed`, `deploy.waiting` | `gitlab:pipeline:<group/project>#<pipeline id>` | the update time, or the blocked deployments |
 | `gitlab`, `azuredevops`, `bitbucket` | `deploy.started`, `deploy.succeeded`, `deploy.failed` | `<server>:deploy:<repo>#<deployment id>` (Bitbucket's uuid, Azure DevOps's record id) | none: each is sent once for a deployment |
 | `forgejo`, `bitbucket` | `issue.*`, `review.comment`, `pr.merged`, `pr.closed`, states | `<server>:issue:` or `<server>:pr:<owner/repo>#<n>` | as `github` |
 | `forgejo`, `bitbucket` | `checks.failed` | the PR | the head commit and the time |
+| `bitbucket` | `checks.passed` | the PR | the head commit, the status's key and its time |
+| `bitbucket` | `pr.commented` | `bitbucket:pr:<workspace/name>#<n>` | the comment's id |
+| `bitbucket` | `pr.reviewed` | `bitbucket:pr:<workspace/name>#<n>` | the participant and the state, as `dev:approved` |
 | `bitbucket` | `run.completed` | `bitbucket:run:<workspace/name>#<build number>` | the finish time |
 | `forgejo` | `run.completed` | `forgejo:run:<owner/repo>#<run number>` | the finish time |
 | `azuredevops` | PR events, `checks.*` | `azuredevops:pr:<org/project/repo>#<n>` | the thread and comment, or the head commit and the time |
+| `azuredevops` | `pr.reviewed` | `azuredevops:pr:<org/project/repo>#<n>` | the reviewer and the state, as `dev@acme.test:approved` |
 | `azuredevops` | `run.completed`, `deploy.waiting` | `azuredevops:run:<org/project/repo>#<build id>` | the finish time, or the environments |
 | `azureboards` | `issue.*` | `azureboards:issue:<org/project>#<id>` | none for `issue.opened`; else the activity's id |
-| `jira` | `issue.*` | `jira:issue:<project>#<KEY-n>` | none for `issue.opened`; else the comment, label or change's id |
+| `jira` | `issue.*` | `jira:issue:<project>#<KEY-n>` | none for `issue.opened`; else the comment, label or change's id (`issue.closed`: the status move's) |
 | `linear` | `issue.*` | `linear:issue:<team>#<ENG-n>` | none for `issue.opened`; else the comment, label or history entry's id |
 | `sentry` | `health.issue_new` / `health.issue_regressed` | `sentry:issue:<org/project>#<id>` | none / the regression's time |
 | `betterstack` | `health.incident_*` | `betterstack:incident:<team>#<id>` | none |

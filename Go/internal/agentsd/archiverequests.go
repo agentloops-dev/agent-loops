@@ -2,6 +2,7 @@ package agentsd
 
 import (
 	"encoding/json"
+	"log"
 	"strings"
 
 	"github.com/agentloops-dev/agent-loops/Go/wire"
@@ -115,7 +116,9 @@ func (d *Daemon) afterArchiveRequest(id wire.UUID, requested, archiveNow bool) {
 		}
 		d.goAfterTurn("archive when done", func() {
 			d.record(id, runtimeNote(note))
-			d.archiveBy(id, wire.AgentArchivedReasonByAgent)
+			if err := d.archiveBy(id, wire.AgentArchivedReasonByAgent); err != nil {
+				log.Printf("archive when done: %s: %v", id, err)
+			}
 		})
 	}
 }

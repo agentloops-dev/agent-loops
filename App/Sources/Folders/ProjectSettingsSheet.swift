@@ -318,7 +318,6 @@ func settingsNote(_ words: String) -> some View {
 
 /// The words Project Settings and Folder Settings say about where a setting is kept.
 enum ProjectSettingsWords {
-    static let title = "Project Settings"
     static let menuItem = "Project Settings…"
     static let folderTitle = "Folder Settings"
     static let folderMenuItem = "Folder Settings…"

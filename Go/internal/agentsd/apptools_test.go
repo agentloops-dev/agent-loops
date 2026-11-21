@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"runtime/pprof"
 	"strings"
 	"testing"
 	"time"
@@ -43,7 +44,10 @@ func (m *mcpClient) post(method string, params any, id int) (int, map[string]jso
 	}
 	res, err := m.client.Do(req)
 	if err != nil {
-		m.t.Fatal(err)
+		// A call that gets no answer is a daemon goroutine blocked somewhere: say where (#6395).
+		var stacks bytes.Buffer
+		_ = pprof.Lookup("goroutine").WriteTo(&stacks, 2) // a bytes.Buffer does not fail
+		m.t.Fatalf("%s %s: %v\n%s", method, m.url, err, stacks.String())
 	}
 	defer res.Body.Close()
 	if s := res.Header.Get("Mcp-Session-Id"); s != "" {
@@ -51,7 +55,9 @@ func (m *mcpClient) post(method string, params any, id int) (int, map[string]jso
 	}
 	b, _ := io.ReadAll(res.Body)
 	var out map[string]json.RawMessage
-	json.Unmarshal(b, &out)
+	if err := json.Unmarshal(b, &out); err != nil && len(b) > 0 {
+		m.t.Fatalf("%s %s: %d %s: %v", method, m.url, res.StatusCode, b, err)
+	}
 	return res.StatusCode, out
 }
 
@@ -98,15 +104,15 @@ func TestTheAppsToolsAreServedToEachRuntime(t *testing.T) {
 			InputSchema map[string]json.RawMessage `json:"inputSchema"`
 		} `json:"tools"`
 	}
-	json.Unmarshal(list["result"], &tools)
+	mustUnmarshal(t, list["result"], &tools)
 	// drive_screen is the one tool this host may not offer at all: on a host with no
 	// agents-drive beside it (#3004, host.desktop-control/1), and on every host while desktop
-	// control is Off (FR-004), as it is here. Nor is
-	// write_daily_summary and check_folders, but in the person's home folder (#3192, #3355).
+	// control is Off (FR-004), as it is here. Nor is check_folders, but in the person's home
+	// folder (#3355).
 	if d.desktopControlOn() || d.offersDriveScreen() {
 		t.Fatal("desktop control is on while it is Off")
 	}
-	want := len(appToolCalls()) - 3
+	want := len(appToolCalls()) - 2
 	// After them, Playwright's browser tools, where this host can install the browser (#3534).
 	if d.offersBrowser() {
 		list, _ := browserTools()
@@ -123,7 +129,7 @@ func TestTheAppsToolsAreServedToEachRuntime(t *testing.T) {
 			Content []struct{ Text string } `json:"content"`
 			IsError bool                    `json:"isError"`
 		}
-		json.Unmarshal(r["result"], &res)
+		mustUnmarshal(t, r["result"], &res)
 		return res.Content[0].Text, res.IsError
 	}
 	if text, isErr := call(3, map[string]any{"add": "review"}); isErr || text != "This session's labels: Mine, review." {

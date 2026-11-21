@@ -15,7 +15,6 @@ import (
 	"github.com/agentloops-dev/agent-loops/Go/internal/browser"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
-	"golang.org/x/sync/singleflight"
 )
 
 // Daemon is one host: its root, the clients connected to it, and what it serves them.
@@ -38,10 +37,6 @@ type Daemon struct {
 
 	// erasures is the queue of runtime copies of deleted agents to erase (#1001).
 	erasures eraser
-
-	// featureReads shares one forge/features read between the calls that ask for it at once
-	// (#5450): the window asks forge/features and work/features together, to draw the rows first.
-	featureReads singleflight.Group
 
 	// Tunneler opens tunnels through the control plane, to a host that lends a sign-in;
 	// nil when this host has no control plane.
@@ -179,7 +174,7 @@ type Daemon struct {
 	undoNotes  undoNotes
 	policyOnce sync.Once
 	policy     SocketPolicy
-	// SettingsDir is the person's settings on this host (StoreLocations.personalSettings):
+	// SettingsDir is the person's settings on this host (#1033):
 	// <root>/settings, or $HOME/.agents/settings for a server, as the Swift host's --serve.
 	SettingsDir string
 	// RaiseByHand lets events/raise make an event: an unreleased build on a scratch root.
@@ -212,6 +207,10 @@ type startOptions struct {
 	// attach, when set, reaches each runtime in place of starting its process (acp.Launch.Attach):
 	// a test's fake runtime in the test's own process (#6143).
 	attach func(acp.Launch) (acp.Attached, error)
+	// diskFree, when set, is each volume's free space in place of what the disk says, from
+	// its real reading: a test's daemon reads a disk with room (#6390), so a full Mac puts no
+	// disk notice in its Needs you; a disk test sets its own.
+	diskFree func(wire.DiskReading) int64
 }
 
 // startOpts are the daemon's start options now: none for a Daemon made without New.
@@ -317,10 +316,7 @@ func (d *Daemon) removeClient(c *Client) {
 // the host goes is not heard, and a client that reads nothing would hold each write that
 // follows a turn up to its own limit, past Shutdown's wait for them.
 func (d *Daemon) clientsToTell() []*Client {
-	d.afterTurnMu.Lock()
-	closed := d.afterTurnClosed
-	d.afterTurnMu.Unlock()
-	if closed {
+	if d.shuttingDown() {
 		return nil
 	}
 	d.mu.Lock()
@@ -350,7 +346,7 @@ func Broadcast[P any](d *Daemon, n wire.Notification[P], params P) {
 				continue
 			}
 		}
-		c.write(string(b))
+		c.writeUnasked(string(b))
 	}
 	for up, fs := range routed {
 		fanOut(up, fs, string(b))

@@ -199,7 +199,8 @@ func (h *httpSender) send(ctx context.Context, lines [][]byte) error {
 		return err
 	}
 	defer resp.Body.Close()
-	io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
+	// The body is drained only so the connection can be used again.
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
 	if resp.StatusCode == http.StatusRequestEntityTooLarge {
 		return fmt.Errorf("%s answered %s: %w", h.url, resp.Status, errTooLarge)
 	}
@@ -260,7 +261,9 @@ func (s *syslogSender) send(ctx context.Context, lines [][]byte) error {
 		}
 	}
 	deadline, _ := ctx.Deadline()
-	s.conn.SetWriteDeadline(deadline)
+	if err := s.conn.SetWriteDeadline(deadline); err != nil {
+		return err
+	}
 	var b bytes.Buffer
 	now := time.Now()
 	for _, l := range lines {

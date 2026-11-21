@@ -195,24 +195,11 @@ public extension DaemonAPI {
         public var defaultFor: [String]
         /// One of the caller's machines may use it and waits for an admin's app to seal it (#3397).
         public var waiting: Bool?
-
-        public init(id: String, name: String, kind: String, runtimes: [String], defaultFor: [String] = [], waiting: Bool? = nil) {
-            self.id = id
-            self.name = name
-            self.kind = kind
-            self.runtimes = runtimes
-            self.defaultFor = defaultFor
-            self.waiting = waiting
-        }
     }
 
     /// `orgRoutes/mine`.
     struct OrgRoutesMine: Codable, Sendable, Hashable {
         public var routes: [OrgRouteMine]
-
-        public init(routes: [OrgRouteMine]) {
-            self.routes = routes
-        }
     }
 }
 

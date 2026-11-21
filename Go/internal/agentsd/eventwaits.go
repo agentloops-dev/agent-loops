@@ -155,7 +155,7 @@ func inputSchemaFor(name string) jsonSchema {
 	closed := false
 	if k := kindNamed(name); k != nil {
 		var s jsonSchema
-		json.Unmarshal(k.InputSchema, &s)
+		_ = json.Unmarshal(k.InputSchema, &s) // the catalogue's own schema; a bad one has no properties
 		return s
 	}
 	out := jsonSchema{Properties: map[string]jsonSchema{}, AdditionalProperties: &closed}
@@ -164,7 +164,7 @@ func inputSchemaFor(name string) jsonSchema {
 		for _, k := range kinds {
 			if strings.HasPrefix(k.Name, subject+".") {
 				var s jsonSchema
-				json.Unmarshal(k.InputSchema, &s)
+				_ = json.Unmarshal(k.InputSchema, &s) // the catalogue's own schema; a bad one has no properties
 				for key, p := range s.Properties {
 					if _, had := out.Properties[key]; !had {
 						out.Properties[key] = p
@@ -1023,6 +1023,9 @@ func defaultBranch(dir string) string {
 
 // waitForEvent is wait_for_event on events. The call is held open up to eventHoldLimit.
 func (d *Daemon) waitForEvent(agent wire.UUID, args map[string]json.RawMessage) (string, error) {
+	// The hold counts from the call's start, not from the end of its checks (#6310): the
+	// client counts from when it asked.
+	entered := time.Now()
 	a := d.Store.Agent(agent)
 	if a == nil {
 		return "", &Error{Code: CodeNoSuchAgent, Message: leaseNoCall}
@@ -1051,7 +1054,7 @@ func (d *Daemon) waitForEvent(agent wire.UUID, args map[string]json.RawMessage) 
 		return "", err
 	}
 	warning := warning0 + neverHereWarning
-	servers, serverWarning, err := d.checkEventWaitServers(serverNames, req, folderPath(a), appTaken)
+	servers, serverWarning, err := d.checkEventWaitServersWithin(eventHoldLimit, serverNames, req, folderPath(a), appTaken)
 	if err != nil {
 		return "", err
 	}
@@ -1086,13 +1089,17 @@ func (d *Daemon) waitForEvent(agent wire.UUID, args map[string]json.RawMessage) 
 	}
 	d.openWaits[agent] = call
 	d.waitMu.Unlock()
+	// What the files it watches are now is not raised as added (#3795). It is taken before the
+	// record says it waits (#6410): a file that goes once it waits was seen, so it is removed.
+	d.followFileGlobs(folderPath(a), waitFileGlobs(patterns)...)
 	if d.change(agent, func(a *wire.Agent) { a.EventWait = &wait }) == nil {
 		d.takeOpenWait(agent)
+		d.followFileGlobs(folderPath(a))
 		return "", &Error{Code: CodeNoSuchAgent, Message: "That agent is not here."}
 	}
-	d.addEventWaitRequestWaiters(agent, patterns)
-	// What the files it watches are now is not raised as added (#3795).
+	// Again, in case a workflow's look came in between and left this wait's globs out.
 	d.followFileGlobs(folderPath(a))
+	d.addEventWaitRequestWaiters(agent, patterns)
 	d.startMCPWait(servers)
 	d.tellEvents(nil)
 	d.armWaitTimer()
@@ -1100,7 +1107,7 @@ func (d *Daemon) waitForEvent(agent wire.UUID, args map[string]json.RawMessage) 
 	if prev != nil {
 		prefix += replacedWords(prev)
 	}
-	hold := time.AfterFunc(eventHoldLimit, d.jobFunc("eventwaits timer", func() { d.eventHoldReached(agent, wait.ID) }))
+	hold := time.AfterFunc(max(0, eventHoldLimit-time.Since(entered)), d.jobFunc("eventwaits timer", func() { d.eventHoldReached(agent, wait.ID) }))
 	defer hold.Stop()
 	select {
 	case text := <-call.answer:

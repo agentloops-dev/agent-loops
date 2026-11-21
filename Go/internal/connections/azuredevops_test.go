@@ -13,10 +13,10 @@ import (
 // address, or as an Azure DevOps Server's collection; http only for this machine.
 func TestAzureDevOpsOrganization(t *testing.T) {
 	for raw, want := range map[string][2]string{
-		"acme":                                     {AzureDevOpsServices, "acme"},
-		"dev.azure.com/acme":                       {AzureDevOpsServices, "acme"},
-		"https://dev.azure.com/acme/Web/_git/site": {AzureDevOpsServices, "acme"},
-		"acme.visualstudio.com":                    {AzureDevOpsServices, "acme"},
+		"acme":               {AzureDevOpsServices, "acme"},
+		"dev.azure.com/acme": {AzureDevOpsServices, "acme"},
+		"https://dev.azure.com/acme/Web/_git/site":        {AzureDevOpsServices, "acme"},
+		"acme.visualstudio.com":                           {AzureDevOpsServices, "acme"},
 		"https://acme.visualstudio.com/DefaultCollection": {AzureDevOpsServices, "acme"},
 		"server/tfs/DefaultCollection":                    {"https://server/tfs/", "DefaultCollection"},
 		"http://127.0.0.1:3802/acme":                      {"http://127.0.0.1:3802/", "acme"},
@@ -43,7 +43,7 @@ func TestCheckAzureDevOpsToken(t *testing.T) {
 			http.NotFound(w, r)
 		case basic && user == "" && pass == "pat-good":
 			w.Header().Set("Content-Type", "application/json")
-			w.Write([]byte(`{"authenticatedUser":{"id":"u1","providerDisplayName":"Agents Test"}}`))
+			reply(t, w, `{"authenticatedUser":{"id":"u1","providerDisplayName":"Agents Test"}}`)
 		case pass == "pat-redirect":
 			http.Redirect(w, r, "/_signin", http.StatusFound)
 		default:

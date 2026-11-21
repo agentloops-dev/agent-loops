@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/yamlnode"
@@ -115,7 +116,7 @@ func TestAutoPicksTheRuntime(t *testing.T) {
 	dir := "file://" + t.TempDir()
 	startAuto := func(id int, levels map[string]any) wire.Agent {
 		var agent wire.UUID
-		json.Unmarshal(c.call(t, id, "agents/start", map[string]any{"runtimeID": "auto", "cwd": dir, "prompt": "hello", "levels": levels}), &agent)
+		mustUnmarshal(t, c.call(t, id, "agents/start", map[string]any{"runtimeID": "auto", "cwd": dir, "prompt": "hello", "levels": levels}), &agent)
 		return *d.Store.Agent(agent)
 	}
 	a := startAuto(1, map[string]any{"model": "balanced", "permission": "ask"})
@@ -170,13 +171,13 @@ func TestAutoWhenNoRuntimeCan(t *testing.T) {
 		t.Fatalf("%+v", err)
 	}
 	var p wire.AutoPreview
-	json.Unmarshal(c.call(t, 3, "auto/preview", map[string]any{"cwd": "file://" + t.TempDir()}), &p)
+	mustUnmarshal(t, c.call(t, 3, "auto/preview", map[string]any{"cwd": "file://" + t.TempDir()}), &p)
 	if p.RuntimeID != nil || len(p.Skipped) != len(catalog) {
 		t.Fatalf("%+v", p)
 	}
 	// A rate-limited runtime is still taken when no other can.
 	out(d, "claude", true)
-	json.Unmarshal(c.call(t, 4, "auto/preview", map[string]any{"cwd": "file://" + t.TempDir()}), &p)
+	mustUnmarshal(t, c.call(t, 4, "auto/preview", map[string]any{"cwd": "file://" + t.TempDir()}), &p)
 	if p.RuntimeID == nil || *p.RuntimeID != "claude" {
 		t.Fatalf("%+v", p)
 	}
@@ -198,16 +199,16 @@ func TestAutoPassesByARuntimeThatTakesNoPictures(t *testing.T) {
 	picture := []map[string]any{{"id": "00000000-0000-0000-0000-000000000001", "displayName": "shot.png",
 		"block": map[string]any{"type": "image", "mimeType": "image/png", "data": "iVBORw0KGgo="}}}
 	var p wire.AutoPreview
-	json.Unmarshal(c.call(t, 1, "auto/preview", map[string]any{"cwd": dir, "needs": map[string]any{"image": true}}), &p)
+	mustUnmarshal(t, c.call(t, 1, "auto/preview", map[string]any{"cwd": dir, "needs": map[string]any{"image": true}}), &p)
 	if p.RuntimeID == nil || *p.RuntimeID != "codex" || len(p.Skipped) != 1 || p.Skipped[0].Reason != "takes no pictures" {
 		t.Fatalf("%+v", p)
 	}
-	json.Unmarshal(c.call(t, 2, "auto/preview", map[string]any{"cwd": dir}), &p)
+	mustUnmarshal(t, c.call(t, 2, "auto/preview", map[string]any{"cwd": dir}), &p)
 	if p.RuntimeID == nil || *p.RuntimeID != "claude" {
 		t.Fatalf("without a picture: %+v", p)
 	}
 	var agent wire.UUID
-	json.Unmarshal(c.call(t, 3, "agents/start", map[string]any{"runtimeID": "auto", "cwd": dir, "prompt": "look", "attachments": picture}), &agent)
+	mustUnmarshal(t, c.call(t, 3, "agents/start", map[string]any{"runtimeID": "auto", "cwd": dir, "prompt": "look", "attachments": picture}), &agent)
 	if a := d.Store.Agent(agent); a.RuntimeID != "codex" || a.Auto == nil || a.Auto.Skipped[0].Reason != "takes no pictures" {
 		t.Fatalf("%s %+v", a.RuntimeID, a.Auto)
 	}
@@ -239,7 +240,7 @@ func TestTheMappingsAreThePersons(t *testing.T) {
 	c.call(t, 1, "auto/set", map[string]any{"order": []string{}, "excluded": []string{},
 		"overrides": []any{map[string]any{"runtimeID": "claude", "field": "permission", "level": "approveForMe", "native": bypass}}})
 	var m wire.AutoMappings
-	json.Unmarshal(c.call(t, 2, "auto/mappings", map[string]any{}), &m)
+	mustUnmarshal(t, c.call(t, 2, "auto/mappings", map[string]any{}), &m)
 	found := false
 	for _, cell := range m.Cells {
 		if cell.RuntimeID == "claude" && cell.Field == wire.AutoFieldPermission && cell.Level == "approveForMe" {
@@ -250,7 +251,7 @@ func TestTheMappingsAreThePersons(t *testing.T) {
 		t.Fatalf("%v %d", found, len(m.Cells))
 	}
 	var id wire.UUID
-	json.Unmarshal(c.call(t, 3, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(), "prompt": "hello",
+	mustUnmarshal(t, c.call(t, 3, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(), "prompt": "hello",
 		"levels": map[string]any{"permission": "approveForMe", "model": "smart"}, "startOptions": map[string]any{"values": map[string]any{"model": "haiku"}, "extraArguments": []string{}}}), &id)
 	a := d.Store.Agent(id)
 	if stringValue(a.StartOptions.Values["mode"]) != "bypassPermissions" || stringValue(a.StartOptions.Values["model"]) != "haiku" || a.Auto != nil {
@@ -286,7 +287,17 @@ func TestLevelsFollowTheMappings(t *testing.T) {
 	auto := map[string]any{"options": map[string]any{"mode": "auto"}}
 	c.call(t, 1, "auto/set", map[string]any{"order": []string{}, "excluded": []string{},
 		"overrides": []any{map[string]any{"runtimeID": "claude", "field": "permission", "level": "approveForMe", "native": auto}}})
-	until(t, "Approve for me", func() bool {
+	// On a miss it says what the record, the saved settings and their match were (#6432),
+	// before the daemon shuts down; waitFor's failure gives every goroutine's stack.
+	defer func() {
+		if t.Failed() {
+			r := d.Store.Agent(a.ID)
+			s := d.autoSettings()
+			t.Logf("levels %s, settings %s, they match %s; still running: %v",
+				mustJSON(r.Levels), mustJSON(s), mustJSON(d.matchLevelsWith(r, s)), d.liveJobs())
+		}
+	}()
+	waitFor(t, "Approve for me", func() bool {
 		p := permission(a.ID)
 		return p != nil && *p == wire.PermissionLevelApproveForMe
 	})
@@ -306,6 +317,49 @@ func TestLevelsFollowTheMappings(t *testing.T) {
 	}
 }
 
+// A pass that matches levels again, and an auto/set while it runs: the new settings are
+// saved, and their own pass ends, before this pass gets to a record. That record follows the
+// settings saved, not the ones the pass read when it began (#6432).
+func TestARematchTakesTheSettingsSavedSinceItBegan(t *testing.T) {
+	t.Parallel()
+
+	d, _ := start(t, t.TempDir())
+	defer d.Shutdown()
+	d.SettingsDir = t.TempDir()
+	dir := t.TempDir()
+	mode := func(a *wire.Agent) { a.StartOptions.Values["mode"] = jsonString("auto") }
+	// The pass takes the newest first: first, then second.
+	second := seeded(t, d, dir, mode)
+	first := seeded(t, d, dir, func(a *wire.Agent) {
+		mode(a)
+		a.LastActivityAt = wire.DateOf(time.Now().Add(time.Minute))
+	})
+	auto := wire.AutoSettings{Order: []string{}, Excluded: []string{}, Overrides: []wire.AutoOverride{{RuntimeID: "claude",
+		Field: wire.AutoFieldPermission, Level: string(wire.PermissionLevelApproveForMe),
+		Native: wire.NativeSetting{Options: map[string]wire.JSONValue{"mode": jsonString("auto")}}}}}
+	if err := d.writeSetting("auto.json", auto); err != nil {
+		t.Fatal(err)
+	}
+	// The person takes the cell back once the pass has changed the first record. The pass of
+	// that auto/set finds the second record Custom already, so it changes nothing.
+	once := false
+	d.changeTold = func(a wire.Agent) {
+		if a.ID == first.ID && !once {
+			once = true
+			if err := d.writeSetting("auto.json", wire.AutoSettings{Order: []string{}, Excluded: []string{}, Overrides: []wire.AutoOverride{}}); err != nil {
+				t.Error(err)
+			}
+		}
+	}
+	d.rematchLevels()
+	if !once {
+		t.Fatal("the pass did not change the first record")
+	}
+	if l := d.Store.Agent(second.ID).Levels; l != nil && l.Permission != nil {
+		t.Fatalf("the second record took the old cell: %v", *l.Permission)
+	}
+}
+
 // A per-agent answer to permission requests, before the person's in Settings (FR-019).
 func TestAnAgentsOwnPermissionRequests(t *testing.T) {
 	t.Parallel()
@@ -315,13 +369,13 @@ func TestAnAgentsOwnPermissionRequests(t *testing.T) {
 	defer d.Shutdown()
 	d.SettingsDir = t.TempDir()
 	var id wire.UUID
-	json.Unmarshal(c.call(t, 1, "agents/start", map[string]any{"runtimeID": "cursor", "cwd": "file://" + t.TempDir(), "prompt": "hello",
+	mustUnmarshal(t, c.call(t, 1, "agents/start", map[string]any{"runtimeID": "cursor", "cwd": "file://" + t.TempDir(), "prompt": "hello",
 		"levels": map[string]any{"permissionRequests": "alwaysApprove"}}), &id)
 	if a := d.Store.Agent(id); !d.agentAlwaysApproves(a) || d.alwaysApproves("cursor") {
 		t.Fatal("not the agent's own")
 	}
 	var a wire.Agent
-	json.Unmarshal(c.call(t, 2, "agents/setClientPermission", map[string]any{"agentID": id}), &a)
+	mustUnmarshal(t, c.call(t, 2, "agents/setClientPermission", map[string]any{"agentID": id}), &a)
 	if a.ClientPermission != nil || d.agentAlwaysApproves(&a) {
 		t.Fatalf("%+v", a.ClientPermission)
 	}
@@ -393,11 +447,11 @@ func TestContinueOnAuto(t *testing.T) {
 	defer d.Shutdown()
 	d.SettingsDir = t.TempDir()
 	var first wire.UUID
-	json.Unmarshal(c.call(t, 1, "agents/start", map[string]any{"runtimeID": "auto", "cwd": "file://" + t.TempDir(), "prompt": "hello",
+	mustUnmarshal(t, c.call(t, 1, "agents/start", map[string]any{"runtimeID": "auto", "cwd": "file://" + t.TempDir(), "prompt": "hello",
 		"levels": map[string]any{"model": "smart", "permission": "plan"}}), &first)
 	out(d, "claude", false)
 	var next wire.UUID
-	json.Unmarshal(c.call(t, 2, "agents/continueInNew", map[string]any{"agentID": first, "auto": true}), &next)
+	mustUnmarshal(t, c.call(t, 2, "agents/continueInNew", map[string]any{"agentID": first, "auto": true}), &next)
 	a := d.Store.Agent(next)
 	if a.RuntimeID != "codex" || a.Auto == nil || *a.Auto.Levels.Model != wire.ModelLevelSmart || stringValue(a.StartOptions.Values["collaboration_mode"]) != "plan" {
 		t.Fatalf("%s %+v %s", a.RuntimeID, a.Auto, a.StartOptions.Values)

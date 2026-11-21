@@ -31,9 +31,11 @@ func echoSocket(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
-	defer ws.CloseNow()
-	ws.Write(r.Context(), websocket.MessageText, []byte("hello"))
-	ws.Read(r.Context())
+	defer func() { _ = ws.CloseNow() }() // the client may have closed it already
+	if ws.Write(r.Context(), websocket.MessageText, []byte("hello")) != nil {
+		return
+	}
+	_, _, _ = ws.Read(r.Context()) // only waits for the client to hang up
 }
 
 // connectProxy is an HTTP proxy that only tunnels (CONNECT), as a corporate one does for
@@ -61,12 +63,16 @@ func (p *connectProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		upstream.Close()
 		return
 	}
-	conn.Write([]byte("HTTP/1.1 200 Connection established\r\n\r\n"))
+	if _, err := conn.Write([]byte("HTTP/1.1 200 Connection established\r\n\r\n")); err != nil {
+		_ = upstream.Close() // the tunnel was never made: nothing is lost
+		_ = conn.Close()
+		return
+	}
 	go func() {
-		io.Copy(upstream, buffered)
+		_, _ = io.Copy(upstream, buffered) // ends when either side closes the tunnel
 		upstream.Close()
 	}()
-	io.Copy(conn, upstream)
+	_, _ = io.Copy(conn, upstream) // as above
 	conn.Close()
 }
 

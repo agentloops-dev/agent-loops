@@ -101,14 +101,16 @@ type handoverParams map[string]json.RawMessage
 // text is the string param k, or "".
 func (p handoverParams) text(k string) string {
 	var v string
-	json.Unmarshal(p[k], &v)
+	// A param that is absent or not a string is "".
+	_ = json.Unmarshal(p[k], &v)
 	return v
 }
 
 // flag is the bool param k, or false.
 func (p handoverParams) flag(k string) bool {
 	var v bool
-	json.Unmarshal(p[k], &v)
+	// A param that is absent or not a bool is false.
+	_ = json.Unmarshal(p[k], &v)
 	return v
 }
 
@@ -116,7 +118,8 @@ func (s *Service) handoverAnswer(method string, params json.RawMessage) (any, er
 	ctx := context.Background()
 	phase := s.phase.now()
 	var p handoverParams
-	json.Unmarshal(params, &p)
+	// Params that do not read have no names: each param is its zero.
+	_ = json.Unmarshal(params, &p)
 	switch method {
 	case "handover/status":
 		return s.handoverStatus(), nil
@@ -163,8 +166,11 @@ func (s *Service) handoverAnswer(method string, params json.RawMessage) (any, er
 			return nil, refuseHandover("This copy isn't forwarding.")
 		}
 		s.phase.setUntil(time.Now())
-		s.markForwarding(time.Now())
-		s.log("forwarding stopped")
+		if err := s.markForwarding(time.Now()); err != nil {
+			s.log("forwarding stopped, but its mark could not be written: " + err.Error())
+		} else {
+			s.log("forwarding stopped")
+		}
 		return s.handoverStatus(), nil
 	case "handover/forward":
 		return s.handoverForward(phase, p)
@@ -240,7 +246,9 @@ func (s *Service) handoverMark(ctx context.Context, phase string, p handoverPara
 		return nil, err
 	}
 	if object != nil {
-		st.Delete(ctx, key)
+		if err := st.Delete(ctx, key); err != nil {
+			return nil, err
+		}
 	}
 	return map[string]bool{"found": object != nil}, nil
 }
@@ -501,7 +509,8 @@ func (s *Service) resumeForwardingIfMarked(ctx context.Context) error {
 		Until *records.Stamp `json:"until"`
 	}
 	if s.cfg.NoForwarding || json.Unmarshal(object.Data, &mark) != nil || mark.Until == nil {
-		s.cfg.Store.Delete(ctx, s.forwardingKey())
+		// An unreadable mark is not taken up; one left is overwritten by the next handover.
+		_ = s.cfg.Store.Delete(ctx, s.forwardingKey())
 		return nil
 	}
 	s.methods.setFrozen(true)

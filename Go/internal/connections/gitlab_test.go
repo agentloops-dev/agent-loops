@@ -2,7 +2,6 @@ package connections
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -28,7 +27,9 @@ func newFakeGitLab(t *testing.T) *fakeGitLab {
 	f.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
 		defer f.mu.Unlock()
-		r.ParseForm()
+		if err := r.ParseForm(); err != nil {
+			t.Error(err)
+		}
 		form := map[string]string{"path": r.URL.Path}
 		for k := range r.PostForm {
 			form[k] = r.PostForm.Get(k)
@@ -39,11 +40,11 @@ func newFakeGitLab(t *testing.T) *fakeGitLab {
 			if a["error"] != nil {
 				w.WriteHeader(http.StatusBadRequest)
 			}
-			json.NewEncoder(w).Encode(a)
+			replyJSON(t, w, a)
 		}
 		switch {
 		case r.URL.Path == "/oauth/authorize_device":
-			json.NewEncoder(w).Encode(map[string]any{"device_code": "dev-gl", "user_code": "GLAB-CODE",
+			replyJSON(t, w, map[string]any{"device_code": "dev-gl", "user_code": "GLAB-CODE",
 				"verification_uri": "https://gitlab.com/oauth/device", "expires_in": 300, "interval": 5})
 		case r.URL.Path == "/oauth/token" && r.PostForm.Get("grant_type") == "refresh_token":
 			answer(f.refresh)
@@ -60,9 +61,9 @@ func newFakeGitLab(t *testing.T) *fakeGitLab {
 				w.WriteHeader(http.StatusUnauthorized)
 				return
 			}
-			json.NewEncoder(w).Encode(map[string]any{"id": 7, "username": "agentstest"})
+			replyJSON(t, w, map[string]any{"id": 7, "username": "agentstest"})
 		case r.URL.Path == "/api/v4/personal_access_tokens/self" && f.expires != "":
-			json.NewEncoder(w).Encode(map[string]any{"expires_at": f.expires, "scopes": []string{"api"}})
+			replyJSON(t, w, map[string]any{"expires_at": f.expires, "scopes": []string{"api"}})
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}

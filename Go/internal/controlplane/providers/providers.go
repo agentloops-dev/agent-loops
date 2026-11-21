@@ -551,8 +551,6 @@ func (p *Providers) AgentCall(host, agent, method string, params json.RawMessage
 		return p.projectFolders(rawOf(given), caller)
 	case MethodProjectSessions:
 		return p.projectSessions(host, rawOf(given), caller)
-	case MethodSummaryFacts:
-		return p.summaryFacts(host, rawOf(given), caller)
 	}
 	if method == MethodProvidersCreate || method == MethodProvidersOptions || method == MethodProvidersDeleteWorkspace {
 		if err := p.agentProvider(given); err != nil {
@@ -700,7 +698,8 @@ func (p *Providers) answer(method string, params json.RawMessage, caller Caller,
 		return map[string]any{"providers": p.SummariesFor(caller.Person)}, nil
 	case MethodProvidersRefresh:
 		var request providerRequest
-		decodeJSON(params, &request)
+		// The params are optional: none, or ones that do not read, are the defaults.
+		_ = decodeJSON(params, &request)
 		go p.Refresh(string(deref(request.ID)))
 		return map[string]any{}, nil
 	case MethodProvidersAdd, MethodProvidersUpdate:
@@ -1365,7 +1364,9 @@ func (p *Providers) remove(id string) error {
 	for _, h := range p.records.Hosts() {
 		if link := LinkOf(&h); link != nil && link.Provider == id {
 			setLink(&h, nil)
-			p.records.SaveHost(context.Background(), h)
+			if err := p.records.SaveHost(context.Background(), h); err != nil {
+				p.log("provider " + id + ": " + h.Name + " could not be unlinked: " + err.Error())
+			}
 		}
 	}
 	p.log("provider: removed " + id)
@@ -1725,7 +1726,11 @@ func (p *Providers) Keepable(host string) string {
 
 // StartForUse is WorkspaceProviders.startForUse: starts a host's workspace for a kept
 // request, or joins the start under way.
-func (p *Providers) StartForUse(host, by string) { p.begin(starting, host, by) }
+func (p *Providers) StartForUse(host, by string) {
+	if _, err := p.begin(starting, host, by); err != nil {
+		p.log("workspace: " + host + " could not be started for " + by + ": " + errorWords(err))
+	}
+}
 
 // StopFor stops (never deletes) each started workspace of a person's machines, so they
 // cost nothing while the person is suspended (#1002, D13, FR-018). Their disks, agents and
@@ -2664,7 +2669,9 @@ func (p *Providers) wakeUps(now time.Time) {
 			workflow = "a workflow"
 		}
 		p.log(fmt.Sprintf("workspace: wake-up call for %s: %s due at %s", h.Name, workflow, at.UTC().Format(time.RFC3339)))
-		p.begin(starting, h.ID, "schedule ("+workflow+")")
+		if _, err := p.begin(starting, h.ID, "schedule ("+workflow+")"); err != nil {
+			p.log("workspace: wake-up call for " + h.Name + " failed: " + errorWords(err))
+		}
 	}
 }
 

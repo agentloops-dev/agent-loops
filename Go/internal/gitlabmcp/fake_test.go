@@ -48,6 +48,8 @@ type fakeGitLab struct {
 	posted      []obj         // what was POSTed or PUT, with its path
 	diffs       map[int][]obj // merge request → its files
 	discuss     map[int][]obj // merge request → its discussions
+	reviewers   map[int][]obj // merge request → its reviewers, with their states (#6296)
+	approvers   map[int][]obj // merge request → who approved it (#6296)
 	traces      map[int]string
 	labelled    map[int][]obj // issue → its resource label events
 	deploys     []obj         // the project's deployments (#4217)
@@ -60,7 +62,7 @@ type fakeGitLab struct {
 
 func newFake(t *testing.T) *fakeGitLab {
 	f := &fakeGitLab{t: t, jobs: map[int][]obj{}, commits: map[string][]obj{}, members: map[int]int{}, diffs: map[int][]obj{},
-		discuss: map[int][]obj{}, traces: map[int]string{}, labelled: map[int][]obj{}, groupMember: map[int]bool{}}
+		discuss: map[int][]obj{}, reviewers: map[int][]obj{}, approvers: map[int][]obj{}, traces: map[int]string{}, labelled: map[int][]obj{}, groupMember: map[int]bool{}}
 	f.server = httptest.NewServer(http.HandlerFunc(f.serve))
 	t.Cleanup(f.server.Close)
 	return f
@@ -288,6 +290,12 @@ func (rq *fakeRequest) routeProjectAndMergeRequests() bool {
 	case rq.is(3, "merge_requests") && parts[2] == "diffs":
 		id, _ := strconv.Atoi(parts[1])
 		rq.answer(200, rq.stated(orEmpty(f.diffs[id]), "", ""))
+	case rq.is(3, "merge_requests") && parts[2] == "reviewers":
+		id, _ := strconv.Atoi(parts[1])
+		rq.answer(200, orEmpty(f.reviewers[id]))
+	case rq.is(3, "merge_requests") && parts[2] == "approvals":
+		id, _ := strconv.Atoi(parts[1])
+		rq.answer(200, obj{"approved_by": orEmpty(f.approvers[id])})
 	case rq.is(3, "merge_requests") && parts[2] == "discussions":
 		id, _ := strconv.Atoi(parts[1])
 		rq.answer(200, orEmpty(f.discuss[id]))

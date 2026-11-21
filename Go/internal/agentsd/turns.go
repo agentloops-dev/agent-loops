@@ -703,7 +703,7 @@ func (l *live) turn() bool {
 	}
 	l.forgetTools()
 	l.holdBlockForTurn(from)
-	d.moveState(l.id, wire.AgentStateRunning, true)
+	d.moveState(l.id, wire.AgentStateRunning, true, nil)
 	bs = l.turnPrefaceBlocks(bs, q, branch)
 	bs, s, stopped := l.addTurnBrief(bs)
 	if stopped || s == nil {
@@ -1113,16 +1113,16 @@ func acpBlocks(bs []wire.ContentBlock) []sdk.ContentBlock {
 // answered mid-turn (waiting on the person, then running again) keeps the turn's report:
 // a block reported before the card is still how the turn ends (#1432).
 func (d *Daemon) setState(id wire.UUID, s wire.AgentState) {
-	d.moveState(id, s, false)
+	d.moveState(id, s, false, nil)
 }
 
 // moveState is setState; only a turn's words sent to an archived agent take it out of the
 // archive (unarchive): a card or an answer in a turn its archive cut off leaves it there
-// (#1611).
-func (d *Daemon) moveState(id wire.UUID, s wire.AgentState, fromArchive bool) {
+// (#1611). With from, it moves only an agent in that state, in the same change (#6367).
+func (d *Daemon) moveState(id wire.UUID, s wire.AgentState, fromArchive bool, from *wire.AgentState) {
 	changed, started := false, false
 	d.change(id, func(a *wire.Agent) {
-		if a.State == s || a.State == wire.AgentStateArchived && !fromArchive {
+		if a.State == s || a.State == wire.AgentStateArchived && !fromArchive || from != nil && a.State != *from {
 			return
 		}
 		changed, started = true, a.State == wire.AgentStateStarting && s == wire.AgentStateRunning
@@ -1301,7 +1301,7 @@ func firstSentence(s string) string {
 func toolCall(v any) wire.ToolCall {
 	b, _ := json.Marshal(v)
 	var u map[string]json.RawMessage
-	json.Unmarshal(b, &u)
+	_ = json.Unmarshal(b, &u) // b is v marshalled; one that is not an object leaves every field empty
 	str := func(k string) *string {
 		var s string
 		if json.Unmarshal(u[k], &s) == nil {
@@ -1570,7 +1570,9 @@ func (l *live) updatePlan(p *sdk.SessionUpdatePlan) {
 	d := l.d
 	b, _ := json.Marshal(p.Entries)
 	var entries []wire.PlanEntry
-	json.Unmarshal(b, &entries)
+	if err := json.Unmarshal(b, &entries); err != nil {
+		log.Printf("plan: could not read the runtime's entries: %v", err)
+	}
 	if entries == nil {
 		entries = []wire.PlanEntry{}
 	}
@@ -1732,11 +1734,25 @@ func (l *live) Permission(ctx context.Context, p sdk.RequestPermissionRequest) s
 	}
 	Broadcast(d, wire.NotifyAgentPermission, wire.PermissionNotification{AgentID: l.id, RequestID: req.ID})
 	d.reconsider()
-	if ctx.Err() == nil {
-		d.setState(l.id, wire.AgentStateRunning)
+	// Only from the card: a stop can end the turn before this wakes, as the runtime's own
+	// session/cancel lets it go (#6367), and running would then outlive the turn.
+	asked := ctx.Err() == nil
+	move := func() {
+		if asked {
+			d.moveIf(l.id, wire.AgentStateWaitingOnUser, wire.AgentStateRunning)
+		}
+	}
+	if hold := permissionLetGo.Load(); hold != nil {
+		(*hold)(l, move)
+	} else {
+		move()
 	}
 	return option
 }
+
+// permissionLetGo runs as a permission card is let go, with the move back to running: a
+// test holds it there until the turn has ended, as a slow wake-up does (#6367).
+var permissionLetGo atomic.Pointer[func(*live, func())]
 
 // permissionAnswerWithoutCard is the answer to a request that needs no card: the app's
 // own tools, a bot's machine, a connector's tool level, and Always Approve. False when

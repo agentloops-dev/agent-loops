@@ -32,7 +32,8 @@ func (m *Methods) lockMethod(ctx context.Context, method string, params json.Raw
 	switch method {
 	case "lock/get":
 		var request wire.LockGet
-		json.Unmarshal(params, &request)
+		// The params are optional: none, or ones that do not read, are the defaults.
+		_ = json.Unmarshal(params, &request)
 		if other := deref(request.Person); other != "" && other != person {
 			// Another person's lock, for an admin's client to check the machine keys it seals
 			// an org route to (#3491, D7, D8). It holds only public keys and names.

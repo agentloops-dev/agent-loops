@@ -17,10 +17,11 @@ import (
 func TestTheEventsAreTheGitLabServersNames(t *testing.T) {
 	// The gitlab server's, but for run.completed and deploy.waiting, which each forge has
 	// where its API does; run.completed is after checks.failed, as there (#4217).
+	not := map[string]bool{"run.completed": true, "deploy.waiting": true}
 	without := func(names []string) []string {
 		var out []string
 		for _, n := range names {
-			if n != "run.completed" && n != "deploy.waiting" {
+			if !not[n] {
 				out = append(out, n)
 			}
 		}
@@ -363,7 +364,8 @@ func TestBaseURL(t *testing.T) {
 // #3797: every event about one pull request names it by pr, branch, fixes or mine, or takes
 // any; an issue event takes one issue or a list of them.
 func TestEventsListGivesWhichArgumentsNameOne(t *testing.T) {
-	named := map[string]bool{"checks.failed": true, "pr.merged": true, "pr.closed": true, "pr.conflicted": true, "pr.blocked": true, "review.comment": true}
+	named := map[string]bool{"checks.failed": true, "pr.merged": true, "pr.closed": true, "pr.conflicted": true, "pr.blocked": true, "review.comment": true,
+		"checks.passed": true, "pr.reviewed": true, "pr.commented": true}
 	for _, e := range eventsList()["events"].([]any) {
 		e := e.(map[string]any)
 		name := e["name"].(string)
@@ -476,4 +478,120 @@ func envelopeOf(result map[string]any, i int) (subject, key string) {
 	subject, _ = e["subject"].(string)
 	key, _ = e["key"].(string)
 	return subject, key
+}
+
+// #6293: checks.passed is one event a status that passed at an open pull request's head.
+func TestChecksPassedIsOneAStatus(t *testing.T) {
+	f := newFake(t)
+	f.pulls = []obj{pull(1, "feature", dev, nil), pull(2, "fork", stranger, nil)}
+	p := newPoller(t, f, "checks.passed", nil)
+	p.poll()
+	run := "https://bitbucket.org/acme/app/pipelines/results/13"
+	f.set(func() {
+		f.statuses["sha1"] = []obj{
+			{"key": "pipeline-1", "name": "Pipeline #13 for feature", "state": "SUCCESSFUL", "url": run, "updated_on": at(1)},
+			{"key": "lint", "state": "SUCCESSFUL", "url": "https://ci.test/lint", "updated_on": at(1)},
+			{"key": "e2e", "state": "FAILED", "updated_on": at(1)},
+			{"key": "slow", "state": "INPROGRESS", "updated_on": at(1)},
+		}
+		f.statuses["sha2"] = []obj{{"key": "pipeline-2", "state": "SUCCESSFUL", "updated_on": at(1)}}
+	})
+	ids, result := p.poll()
+	when := mcpevents.TimeString(start.Add(60e9))
+	same(t, ids, []string{"checks.passed:acme/app:sha1:lint:" + when, "checks.passed:acme/app:sha1:pipeline-1:" + when})
+	d := data(t, result, 1)
+	same(t, d["headSha"], "sha1")
+	same(t, d["run"], map[string]any{"id": 13, "name": "Pipeline #13 for feature", "url": run})
+	same(t, d["completedAt"], when)
+	ids, _ = p.poll()
+	same(t, ids, []string(nil))
+}
+
+// #6293: pr.blocked reads a failed status at the head and a participant's request for changes;
+// a rerun of the failed check on the same head is no new event.
+func TestBlockedReadsFailedChecksAndChangesRequested(t *testing.T) {
+	f := newFake(t)
+	f.pulls = []obj{pull(1, "feature", dev, nil)}
+	p := newPoller(t, f, "pr.blocked", obj{"pr": []int{1}})
+	p.poll()
+	f.set(func() {
+		f.statuses["sha1"] = []obj{{"key": "ci", "name": "CI", "state": "FAILED", "url": "https://ci.test/1", "updated_on": at(1)}}
+	})
+	ids, result := p.poll()
+	same(t, untimed(ids), []string{"pr.blocked:acme/app:1:sha1:required_check_failed"})
+	d := data(t, result, 0)
+	same(t, d["reasons"], []any{"required_check_failed"})
+	same(t, d["failedChecks"], []any{map[string]any{"name": "CI", "url": "https://ci.test/1"}})
+	// The check runs again on the same head: still blocked, no new event.
+	f.set(func() { f.statuses["sha1"][0]["state"] = "INPROGRESS" })
+	ids, _ = p.poll()
+	same(t, ids, []string(nil))
+	f.set(func() {
+		f.statuses["sha1"][0]["state"] = "SUCCESSFUL"
+		f.pulls[0]["participants"] = []any{obj{"user": alex, "role": "REVIEWER", "approved": false, "state": "changes_requested"}}
+	})
+	ids, result = p.poll()
+	same(t, untimed(ids), []string{"pr.blocked:acme/app:1:sha1:changes_requested"})
+	same(t, data(t, result, 0)["reviewUrl"], "https://bitbucket.org/acme/app/pull-requests/1")
+}
+
+// #6293: pr.reviewed is each participant's answer, once while it stands, from the repository's
+// own people only.
+func TestReviewedIsEachAnswerOnce(t *testing.T) {
+	f := newFake(t)
+	f.pulls = []obj{pull(1, "feature", alex, nil)}
+	p := newPoller(t, f, "pr.reviewed", obj{"pr": []int{1}})
+	p.poll()
+	f.set(func() {
+		f.pulls[0]["participants"] = []any{
+			obj{"user": dev, "role": "REVIEWER", "approved": true, "state": "approved"},
+			obj{"user": stranger, "role": "PARTICIPANT", "approved": true, "state": "approved"},
+			obj{"user": reader, "role": "REVIEWER", "approved": false, "state": nil},
+		}
+	})
+	ids, result := p.poll()
+	same(t, untimed(ids), []string{"pr.reviewed:acme/app:1:dev:approved"})
+	same(t, data(t, result, 0)["review"], map[string]any{"author": "dev", "state": "approved", "body": "",
+		"url": "https://bitbucket.org/acme/app/pull-requests/1", "commit": "sha1"})
+	ids, _ = p.poll()
+	same(t, ids, []string(nil))
+	f.set(func() {
+		f.pulls[0]["participants"] = []any{obj{"user": dev, "role": "REVIEWER", "approved": false, "state": "changes_requested"}}
+	})
+	ids, result = p.poll()
+	same(t, untimed(ids), []string{"pr.reviewed:acme/app:1:dev:changes_requested"})
+	same(t, data(t, result, 0)["review"].(map[string]any)["state"], "changes_requested")
+}
+
+// #6293: pr.commented is a comment on the pull request itself: not a line of its diff, not a
+// stranger's, not an agent's.
+func TestCommentedIsOnThePullRequestItself(t *testing.T) {
+	f := newFake(t)
+	f.pulls = []obj{pull(1, "feature", alex, nil)}
+	p := newPoller(t, f, "pr.commented", obj{"pr": []int{1}})
+	p.poll()
+	f.set(func() {
+		f.pulls[0]["updated_on"] = at(1)
+		f.prComments[1] = []obj{
+			comment(51, dev, "Ship it.", at(1), nil),
+			comment(52, stranger, "Spam.", at(1), nil),
+			comment(53, dev, "Rename this.", at(1), obj{"inline": obj{"path": "main.go", "to": 12}}),
+			comment(54, dev, "<!-- agent -->\nDone.", at(1), nil),
+			comment(55, dev, " ", at(1), nil),
+		}
+	})
+	ids, result := p.poll()
+	same(t, ids, []string{"pr.commented:acme/app:51"})
+	same(t, data(t, result, 0)["comment"], map[string]any{"author": "dev", "url": "https://bitbucket.org/c/51", "body": "Ship it."})
+	ids, _ = p.poll()
+	same(t, ids, []string(nil))
+}
+
+// untimed are a diff event's ids without the poll time they end with.
+func untimed(ids []string) []string {
+	out := make([]string, len(ids))
+	for i, id := range ids {
+		out[i], _, _ = strings.Cut(id, ":"+start.Format("2006-"))
+	}
+	return out
 }

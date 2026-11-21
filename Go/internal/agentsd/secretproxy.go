@@ -243,5 +243,5 @@ func refuseSecretProxy(w http.ResponseWriter, r *http.Request, words string) {
 	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.WriteHeader(http.StatusForbidden)
-	io.WriteString(w, words)
+	_, _ = io.WriteString(w, words) // a client gone already does not need the words
 }

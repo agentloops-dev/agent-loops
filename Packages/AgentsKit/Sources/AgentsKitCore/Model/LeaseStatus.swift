@@ -22,7 +22,6 @@ public struct LeaseStatus: Equatable, Sendable {
         public var shortName: String
         public var displayName: String
         public var holderName: String
-        public var holder: UUID?
         public var until: Date?
         public var place: Int
         /// Why the line waits for the machine, not for a holder (#4748): "this Mac is near
@@ -62,7 +61,7 @@ public struct LeaseStatus: Equatable, Sendable {
                 waiting.append(Waiting(
                     name: state.name, shortName: short, displayName: state.displayName,
                     holderName: LeaseWords.agentName(next.flatMap { titles[$0.holder] }),
-                    holder: next?.holder, until: next?.expiresAt, place: index + 1,
+                    until: next?.expiresAt, place: index + 1,
                     capacityWait: state.capacityWait))
             }
         }

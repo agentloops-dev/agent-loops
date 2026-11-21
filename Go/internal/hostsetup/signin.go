@@ -2,7 +2,6 @@ package hostsetup
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -28,53 +27,37 @@ func SignIn(ctx context.Context, o Options, d Deps, rep *Reporter, say func(stri
 	}
 	begun := time.Now()
 	last := ""
+	var said wire.MachineSetupState
 	for {
-		raw, err := d.Call(wire.CallRuntimesList.Name, wire.Empty{})
-		var all []wire.RuntimeStatus
-		if err == nil {
-			err = json.Unmarshal(raw, &all)
-		}
+		all, err := call[[]wire.RuntimeStatus](d, wire.CallRuntimesList.Name, wire.Empty{})
 		if err != nil {
 			rep.Say(step, wire.MachineSetupStateFailed, "", err.Error())
 			return fmt.Errorf("%s: %w", step, err)
 		}
-		var waiting, ready []string
-		for _, id := range ids {
-			name, signedIn := id, false
-			for _, r := range all {
-				if r.Runtime.ID == id {
-					if r.Runtime.Name != "" {
-						name = r.Runtime.Name
-					}
-					signedIn = signedInOn(r)
-				}
-			}
-			if signedIn {
-				ready = append(ready, name)
-			} else {
-				waiting = append(waiting, name)
-			}
-		}
+		waiting, ready := splitSignedIn(all, ids)
 		if len(waiting) == 0 {
 			line := strings.Join(ready, ", ") + " signed in"
 			rep.Say(step, wire.MachineSetupStateDone, line, "")
 			say("Sign in to runtimes: %s", line)
 			return nil
 		}
+		// The states go in order, also when an answer is slow (#6340): the first pass says
+		// running, needs-you comes only after running was said, and the step fails only
+		// after needs-you was said, so the person is told before it fails.
 		elapsed := time.Since(begun)
-		if elapsed > d.SignInWait {
+		if said == wire.MachineSetupStateNeedsYou && elapsed > d.SignInWait {
 			problem := fmt.Sprintf("%s not signed in after %s. Nobody used the sign-in.", strings.Join(waiting, ", "), d.SignInWait)
 			rep.Say(step, wire.MachineSetupStateFailed, "", problem)
 			say("%s: %s", step, problem)
 			return fmt.Errorf("%s: %s", step, problem)
 		}
 		state, line := wire.MachineSetupStateRunning, "Looking for keys in Secrets: "+strings.Join(waiting, ", ")
-		if elapsed > d.KeyWait {
+		if said != "" && elapsed > d.KeyWait {
 			state, line = wire.MachineSetupStateNeedsYou, "Waiting for you: "+strings.Join(waiting, ", ")
 		}
 		if line != last {
 			rep.Say(step, state, line, "")
-			last = line
+			last, said = line, state
 		}
 		select {
 		case <-ctx.Done():
@@ -82,6 +65,28 @@ func SignIn(ctx context.Context, o Options, d Deps, rep *Reporter, say func(stri
 		case <-time.After(d.Poll):
 		}
 	}
+}
+
+// splitSignedIn names the runtimes of ids that wait for a sign-in and those that are signed
+// in, by the runtime's own name when the host gives one.
+func splitSignedIn(all []wire.RuntimeStatus, ids []string) (waiting, ready []string) {
+	for _, id := range ids {
+		name, signedIn := id, false
+		for _, r := range all {
+			if r.Runtime.ID == id {
+				if r.Runtime.Name != "" {
+					name = r.Runtime.Name
+				}
+				signedIn = signedInOn(r)
+			}
+		}
+		if signedIn {
+			ready = append(ready, name)
+		} else {
+			waiting = append(waiting, name)
+		}
+	}
+	return waiting, ready
 }
 
 // signedInOn says whether a runtime on this machine is signed in: available, and, for the

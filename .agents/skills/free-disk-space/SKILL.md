@@ -1,6 +1,6 @@
 ---
 name: free-disk-space
-description: Free disk space on this Mac (#199, #1796) until 20% of the disk is free. Bound the shared build cache (Swift, Go and the Go temp folders that killed runs leave), delete the build output in worktrees nobody builds in, remove the worktrees nobody has changed for hours, end leaked headless Chromes and their clones, remove old Xcode device support, unavailable simulators, CoreDevice's install deltas and the Xcode DerivedData of removed worktrees, erase the walk simulators, and, when the disk is critical, remove Colima data disks no instance has and prune uv's and npm's caches. Nothing else. It needs no app tools. Use when the Free disk space workflow runs on machine.disk_low, or when Alex asks to free disk space.
+description: Free disk space on this Mac (#199, #1796) until 20% of the disk is free. Bound the shared build cache (Swift, Go and the Go temp folders that killed runs leave) and Go's default build cache, delete the build output in worktrees nobody builds in, remove the worktrees nobody has changed for hours, end leaked headless Chromes and their clones, remove old Xcode device support, unavailable simulators, CoreDevice's install deltas and the Xcode DerivedData of removed worktrees, erase the walk simulators, and, when the disk is critical, remove Colima data disks no instance has and prune uv's and npm's caches. Nothing else. It needs no app tools. Use when the Free disk space workflow runs on machine.disk_low, or when Alex asks to free disk space.
 ---
 
 # Free disk space
@@ -79,6 +79,19 @@ Each build also prunes it to 15 GB behind itself (#2346). The last line says
 `after: <GB>; freed <GB>`: put both in the report. If it exits non-zero, say so with its
 output in the report, and go on.
 
+Then Go's default build cache (#6462). A `go` that runs without `Go/scripts/go.sh` or
+`scripts/lint.sh` (by hand, or gopls) writes to `$(go env GOCACHE)`,
+`~/Library/Caches/go-build`, which the prune above does not bound (28 GB on 2026-11-20).
+When it is not the shared cache, is over 2 GB and no `go` runs, `gocache` empties it with
+`go clean -cache`:
+
+```sh
+scripts/free-disk.sh gocache --dry-run
+scripts/free-disk.sh gocache                                # --max-gb N moves the 2 GB
+```
+
+Put its line in the report.
+
 ## 3. Free build output in worktrees nobody builds in
 
 ```sh
@@ -86,8 +99,9 @@ scripts/free-disk.sh buildoutput --dry-run
 scripts/free-disk.sh buildoutput
 ```
 
-It looks at each worktree under `$P/.agents/worktrees` that no process works in and that
-is not locked, and in which no file, build output too, changed in the last hour. In it, it
+It looks at each worktree under `$P/.agents/worktrees`, and at the Runtime check's tree
+(`~/Library/Caches/Agents Nightly Runtimes/tree`, or `$AGENTS_NIGHTLY_HOME/tree`; #6461),
+that no process works in and that is not locked, and in which no file, build output too, changed in the last hour. In it, it
 deletes each `build`, `.build`, `DerivedData` and `node_modules` folder that git ignores
 and tracks nothing in: by the worktree's own `.gitignore`, it is build output, and a build
 makes it again. Put each `freed` line in the report.
@@ -131,7 +145,9 @@ Xcode builds each worktree into `~/Library/Developer/Xcode/DerivedData/Agents-<h
 (3 to 4 GB), not into the worktree, so steps 3 and 4 do not find it (#2683). `deriveddata`
 removes an `Agents-*` folder only when its `info.plist` names a `WorkspacePath` under
 `$P/.agents/worktrees/` that is gone, and no running `xcodebuild` names the folder or that
-worktree.
+worktree. It also removes an `Agents-*` folder with no `info.plist` that holds only `Logs`
+and `SourcePackages`, when no file in it changed in the last hour: a package resolve with no
+`-derivedDataPath` leaves one (about 0.9 GB each; 47 on 2026-11-20, #6456).
 
 The run-app skill keeps its walk simulators ("Agents Walk", #2400), and their data grows
 with each walk (23.5 GB on 2026-11-15, much of it shared with the runtime). `simulators`
@@ -167,6 +183,20 @@ worktrees left:
 ```sh
 du -sk "$P"/.agents/worktrees/* 2>/dev/null | sort -rn | head -5
 ```
+
+Then report what `du` cannot see (#5725):
+
+```sh
+scripts/free-disk.sh hidden
+```
+
+On 2026-11-20, about 120 GB of the Data volume was not visible to `du`. The main suspect
+is `/System/Volumes/Data/.fseventsd`, with about 138,000 log files that only root can read.
+`hidden` deletes nothing. Clearing `.fseventsd` is Alex's step, because it needs root and
+a restart, and Spotlight and Time Machine scan again after it. Do not do it: name the file
+count in the report. When the count is high and the target is not reached, ask Alex (with
+`ask_question`, once) whether to run `sudo rm -rf /System/Volumes/Data/.fseventsd` and
+restart. #6426 tracks a way to measure these folders without Alex.
 
 End with one line per worktree touched (`freed <GB> from <name>` or `removed <name>,
 branch <branch> kept`), then the build cache before and after (with the Go temp folders

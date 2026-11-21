@@ -47,7 +47,7 @@ const mostSeen = 4096
 // runs a command or reads a file.
 var controlAsks = methodSet([]string{
 	"daemon/ping", "daemon/status", wire.CallLockHello.Name,
-	wire.CallAgentsList.Name, wire.CallWorktreesAll.Name, wire.CallAgentsSummaryFacts.Name,
+	wire.CallAgentsList.Name, wire.CallWorktreesAll.Name,
 	wire.CallBackupsMake.Name, "folders/clone",
 })
 
@@ -106,9 +106,21 @@ func (l *clientLock) set(c *machinelock.Channel) {
 // write sends a line from this machine: what it answers and what it says unasked (agent/changed,
 // a question card), with the channel's MAC once a client opened one, so the control plane can
 // forge neither (#3492, #3541). Refusals go with send: an error with no MAC is taken.
-func (c *Client) write(line string) {
+func (c *Client) write(line string) { c.writeOnce(line, false) }
+
+// writeUnasked is write for what the host says unasked (Broadcast, sendEach). Once Shutdown
+// has begun it sends nothing, as clientsToTell does (#3828), also when it was already waiting
+// for the client's write lock (#6268): a client that reads nothing holds each write up to its
+// connection's own limit, and the writes in line behind one went on one at a time, each to
+// that limit, past Shutdown's wait for the goroutines that made them.
+func (c *Client) writeUnasked(line string) { c.writeOnce(line, true) }
+
+func (c *Client) writeOnce(line string, unasked bool) {
 	c.lock.write.Lock()
 	defer c.lock.write.Unlock()
+	if unasked && c.d != nil && c.d.shuttingDown() {
+		return
+	}
 	if ch := c.lock.get(); ch != nil {
 		line = ch.Seal(line)
 	}
@@ -304,7 +316,9 @@ func (d *Daemon) seeSigned(id string, at int64, now time.Time) bool {
 	if d.lockSeen == nil {
 		d.lockSeen = map[string]int64{}
 		if b, err := os.ReadFile(path); err == nil {
-			json.Unmarshal(b, &d.lockSeen)
+			if err := json.Unmarshal(b, &d.lockSeen); err != nil {
+				log.Printf("lock check: could not read %s: %v", lockSeenFile, err)
+			}
 		}
 	}
 	if _, seen := d.lockSeen[id]; seen {

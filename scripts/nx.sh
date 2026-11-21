@@ -29,7 +29,7 @@ cd "$root"
 NX_NO_CLOUD=true NX_LOAD_DOT_ENV_FILES=false NX_DAEMON=false NX_TUI=false
 # Each task's output as it runs (#5887). With no style, Nx 24 picks `summary` for an agent (no
 # task output, only a log path) and `static` prints a task's output only when it ends, so a
-# hung task showed nothing. An --output-style flag still wins; ci-sample.mjs keeps `static`.
+# hung task showed nothing. An --output-style flag still wins.
 NX_DEFAULT_OUTPUT_STYLE=${NX_DEFAULT_OUTPUT_STYLE:-stream}
 export NX_NO_CLOUD NX_LOAD_DOT_ENV_FILES NX_DAEMON NX_TUI NX_DEFAULT_OUTPUT_STYLE
 "$root/scripts/pnpm.sh" install --frozen-lockfile --reporter=silent

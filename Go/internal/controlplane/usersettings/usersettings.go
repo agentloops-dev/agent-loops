@@ -222,40 +222,19 @@ func (b *Book) setPart(ctx context.Context, user string, part wire.UserSettingsP
 	}
 	value = json.RawMessage(strings.TrimSpace(string(value)))
 	removing := len(value) == 0 || string(value) == "null"
-	if !removing {
-		if len(value) > MaxPart {
-			return false, fmt.Errorf("%w: %s is over %d KB", ErrInvalid, part, MaxPart>>10)
-		}
-		if smallPart(part) && len(value) > MaxSmallPart {
-			return false, fmt.Errorf("%w: %s is over %d KB", ErrInvalid, part, MaxSmallPart>>10)
-		}
-		if !strings.HasPrefix(string(value), kind) || !json.Valid(value) {
-			return false, fmt.Errorf("%w: %s must be a JSON %s", ErrInvalid, part, map[string]string{"{": "object", "[": "list"}[kind])
-		}
-		if part == wire.UserSettingsPartNameAccounts {
-			if err := checkAccounts(value); err != nil {
-				return false, err
-			}
-		}
-		if part == wire.UserSettingsPartNameEnvironment {
-			if err := checkEnvironment(value); err != nil {
-				return false, err
-			}
-		}
-	}
 	var parsed wire.JSONValue
 	if !removing {
+		if err := checkPartValue(part, kind, value); err != nil {
+			return false, err
+		}
 		parsed = canonical(value)
 	}
 	changed := false
 	err := b.change(ctx, settingsKey(user), func(raw []byte) ([]byte, error) {
-		var s wire.UserSettings
-		if raw != nil {
-			if err := json.Unmarshal(raw, &s); err != nil {
-				return nil, err
-			}
+		s, err := readSettings(raw)
+		if err != nil {
+			return nil, err
 		}
-		s.AgentConfigFiles = nil
 		slot := partOf(&s, part)
 		if part == wire.UserSettingsPartNameAccounts && !removing {
 			parsed = canonical(stampAccounts(*slot, parsed, b.now(), byMachine))
@@ -270,6 +249,40 @@ func (b *Book) setPart(ctx context.Context, user string, part wire.UserSettingsP
 		return records.Encode(s)
 	})
 	return changed, err
+}
+
+// checkPartValue checks a part's value that is not a removal: its size, its JSON kind
+// (kind is "{" or "["), and for accounts and environment, what they hold.
+func checkPartValue(part wire.UserSettingsPartName, kind string, value json.RawMessage) error {
+	if len(value) > MaxPart {
+		return fmt.Errorf("%w: %s is over %d KB", ErrInvalid, part, MaxPart>>10)
+	}
+	if smallPart(part) && len(value) > MaxSmallPart {
+		return fmt.Errorf("%w: %s is over %d KB", ErrInvalid, part, MaxSmallPart>>10)
+	}
+	if !strings.HasPrefix(string(value), kind) || !json.Valid(value) {
+		return fmt.Errorf("%w: %s must be a JSON %s", ErrInvalid, part, map[string]string{"{": "object", "[": "list"}[kind])
+	}
+	switch part {
+	case wire.UserSettingsPartNameAccounts:
+		return checkAccounts(value)
+	case wire.UserSettingsPartNameEnvironment:
+		return checkEnvironment(value)
+	}
+	return nil
+}
+
+// readSettings is a person's settings record as stored (nil for none), with its agent
+// config files cleared, as setPart always did before an edit.
+func readSettings(raw []byte) (wire.UserSettings, error) {
+	var s wire.UserSettings
+	if raw != nil {
+		if err := json.Unmarshal(raw, &s); err != nil {
+			return s, err
+		}
+	}
+	s.AgentConfigFiles = nil
+	return s, nil
 }
 
 // canonical is a part as one form of its JSON, so the same part set again is no change.
@@ -377,7 +390,8 @@ func (b *Book) SetPolicy(ctx context.Context, user string, signed wire.SignedYou
 			var currentSigned wire.SignedYourPolicy
 			if json.Unmarshal(s.Policy, &currentSigned) == nil {
 				if decoded, err := base64.StdEncoding.DecodeString(currentSigned.Policy); err == nil {
-					json.Unmarshal(decoded, &current)
+					// A policy that does not read is none.
+					_ = json.Unmarshal(decoded, &current)
 				}
 			}
 		}
@@ -425,7 +439,8 @@ func (b *Book) TakeNotice(ctx context.Context, user string, given wire.NoticeLim
 		var bucket noticebucket.Bucket
 		if raw != nil {
 			// A record that will not read is a full bucket, not a person who can be told nothing.
-			json.Unmarshal(raw, &bucket)
+			// A record that will not read is a full bucket.
+			_ = json.Unmarshal(raw, &bucket)
 		}
 		left, next, ok := bucket.Take(b.now(), burst, cooldown)
 		out = wire.NoticeTaken{Sent: ok, Left: int64(left), NextAt: wire.DateOf(next)}
@@ -478,16 +493,7 @@ func (b *Book) SetSecretFrom(ctx context.Context, user string, set wire.UserSecr
 		return err
 	}
 	name := string(set.Name)
-	if err := CheckName(name); err != nil {
-		return err
-	}
-	if err := checkEnvelopes(set.Values); err != nil {
-		return err
-	}
-	if set.Kind != nil && *set.Kind != wire.UserSecretKindCard {
-		return fmt.Errorf("%w: a secret's kind is card, or left out", ErrInvalid)
-	}
-	description, err := CheckSecretDescription(set.Description)
+	description, err := checkSecretSet(set)
 	if err != nil {
 		return err
 	}
@@ -497,12 +503,7 @@ func (b *Book) SetSecretFrom(ctx context.Context, user string, set wire.UserSecr
 	} else if len(names) >= MaxSecrets && !slices.Contains(names, name) {
 		return fmt.Errorf("%w: a person keeps at most %d secrets", ErrInvalid, MaxSecrets)
 	}
-	sealed := map[string]wire.SealedEnvelope{}
-	for recipient, e := range set.Values {
-		if allowed[recipient] {
-			sealed[recipient] = e
-		}
-	}
+	sealed := sealedFor(set.Values, allowed)
 	if len(sealed) == 0 {
 		return fmt.Errorf("%w: none of the machines or apps it was sealed to is yours now; try again", ErrInvalid)
 	}
@@ -513,31 +514,67 @@ func (b *Book) SetSecretFrom(ctx context.Context, user string, set wire.UserSecr
 				return nil, err
 			}
 		}
-		if set.Version <= r.Version {
-			return nil, fmt.Errorf("%w: the secret changed in another app; load it again, then set it", ErrInvalid)
+		next, err := b.nextSecret(r, set, sealed, &description, savedBy)
+		if err != nil {
+			return nil, err
 		}
-		// An agent's secret never replaces one of the person's on its own (#5308): over a name
-		// the person has, an offer is taken only by Use the Agent's, at the version the person
-		// saw plus one. An app that takes it as a new name is refused.
-		if savedBy != nil && r.Sealed != nil && set.Version != r.Version+1 {
-			return nil, fmt.Errorf("%w: you have a secret with this name; choose Keep Yours or Use the Agent's", ErrInvalid)
-		}
-		if savedBy != nil && description == "" {
-			// Use the Agent's changes the value; the person's own description stays.
-			description = r.Description
-		}
-		var kind string
-		if set.Kind != nil {
-			kind = string(*set.Kind)
-		}
-		created := r.Created
-		if r.Sealed == nil {
-			created = b.stamp()
-		}
-		r = secretRecord{Name: name, Version: set.Version, Kind: kind, NeedsApproval: set.NeedsApproval != nil && *set.NeedsApproval,
-			Description: description, Sealed: sealed, Updated: b.stamp(), Created: created, Machines: r.Machines, SavedBy: savedBy}
-		return records.Encode(r)
+		return records.Encode(next)
 	})
+}
+
+// checkSecretSet checks a secret set's name, envelopes and kind, and gives its description
+// as CheckSecretDescription keeps it.
+func checkSecretSet(set wire.UserSecretSet) (string, error) {
+	if err := CheckName(string(set.Name)); err != nil {
+		return "", err
+	}
+	if err := checkEnvelopes(set.Values); err != nil {
+		return "", err
+	}
+	if set.Kind != nil && *set.Kind != wire.UserSecretKindCard {
+		return "", fmt.Errorf("%w: a secret's kind is card, or left out", ErrInvalid)
+	}
+	return CheckSecretDescription(set.Description)
+}
+
+// sealedFor is the envelopes of values whose recipients allowed names.
+func sealedFor(values map[string]wire.SealedEnvelope, allowed map[string]bool) map[string]wire.SealedEnvelope {
+	sealed := map[string]wire.SealedEnvelope{}
+	for recipient, e := range values {
+		if allowed[recipient] {
+			sealed[recipient] = e
+		}
+	}
+	return sealed
+}
+
+// nextSecret is the record that set makes of r, the record kept now, or why it is refused.
+// For an agent's offer (savedBy not nil) with no description, *description takes r's.
+func (b *Book) nextSecret(r secretRecord, set wire.UserSecretSet, sealed map[string]wire.SealedEnvelope, description *string,
+	savedBy *wire.SecretSavedBy) (secretRecord, error) {
+	if set.Version <= r.Version {
+		return r, fmt.Errorf("%w: the secret changed in another app; load it again, then set it", ErrInvalid)
+	}
+	// An agent's secret never replaces one of the person's on its own (#5308): over a name
+	// the person has, an offer is taken only by Use the Agent's, at the version the person
+	// saw plus one. An app that takes it as a new name is refused.
+	if savedBy != nil && r.Sealed != nil && set.Version != r.Version+1 {
+		return r, fmt.Errorf("%w: you have a secret with this name; choose Keep Yours or Use the Agent's", ErrInvalid)
+	}
+	if savedBy != nil && *description == "" {
+		// Use the Agent's changes the value; the person's own description stays.
+		*description = r.Description
+	}
+	var kind string
+	if set.Kind != nil {
+		kind = string(*set.Kind)
+	}
+	created := r.Created
+	if r.Sealed == nil {
+		created = b.stamp()
+	}
+	return secretRecord{Name: string(set.Name), Version: set.Version, Kind: kind, NeedsApproval: set.NeedsApproval != nil && *set.NeedsApproval,
+		Description: *description, Sealed: sealed, Updated: b.stamp(), Created: created, Machines: r.Machines, SavedBy: savedBy}, nil
 }
 
 // AddSealed keeps the copies a client sealed for a secret's recipients that had none, at

@@ -113,8 +113,8 @@ struct MoreSheet: View {
                                     Text(ClientPermissionWords.title(choice))
                                 }
                                 Text(model.startClientPermission == nil && choice == settings
-                                     ? "\(LevelWords.followsSettings). \(ClientPermissionWords.description(choice, runtimeName: name))"
-                                     : ClientPermissionWords.description(choice, runtimeName: name))
+                                     ? "\(LevelWords.followsSettings). \(ClientPermissionWords.description(choice))"
+                                     : ClientPermissionWords.description(choice))
                                     .appText(.supporting)
                             }
                         }
@@ -135,7 +135,7 @@ struct MoreSheet: View {
                     }
                     Button("Cancel", role: .cancel) {}
                 } message: {
-                    Text(ClientPermissionWords.confirmMessage(runtimeName: name))
+                    Text(ClientPermissionWords.confirmMessage)
                 }
             }
             .paperListRow()

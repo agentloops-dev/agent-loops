@@ -128,7 +128,7 @@ func (l linearForge) List(ctx context.Context, scope forgeScope, f forgeFilter, 
 		return forgePage{}, err
 	}
 	page, err := ln.Search(ctx, teams, linearmcp.SearchFilter{State: f.State, Label: f.Label, Assignee: f.Assignee, Query: f.Query,
-		Feature: f.Feature}, cursor, limit)
+		Feature: f.Feature, UpdatedSince: f.since()}, cursor, limit)
 	var p forgePage
 	for _, i := range page.Items {
 		folder, named := s.teamFolder[i.Team]

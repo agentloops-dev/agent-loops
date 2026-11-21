@@ -500,6 +500,80 @@ func exportKey() {
 }
 
 func serve() {
+	serveLogs()
+	text, u, port := serveAddress()
+	cfg := controlplane.Config{URL: text, Bind: value("--bind"), Port: port, Log: logs.Write, Logger: logs.Logger(),
+		ServerFolder: controlplane.ServerFolder(), ToolsetFolder: controlplane.ToolsetFolder(),
+		ReleaseSource: os.Getenv("AGENTS_RELEASE_DOWNLOADS")}
+	if dir := cmp.Or(os.Getenv("AGENTS_CONTROL_RELEASES"), filepath.Join(home(), "releases")); home() != "" || os.Getenv("AGENTS_CONTROL_RELEASES") != "" {
+		cfg.ReleaseFolder = expand(dir)
+	}
+	serveTLS(&cfg, u)
+	serveIdentity(&cfg, u)
+	if root := value("--host-root"); root != "" {
+		cfg.HostJoinFile = filepath.Join(expand(root), "control-join.json")
+	}
+	// Where other copies reach this one: several copies over one store (US3).
+	cfg.PeerURL = os.Getenv("AGENTS_CONTROL_PEER_URL")
+	// Empty, for a handover to fill (R16); and forwarding again after a restart unless
+	// told to serve.
+	cfg.Receive = has("--receive") || os.Getenv("AGENTS_CONTROL_RECEIVE") == "1"
+	cfg.NoForwarding = has("--no-forwarding") || os.Getenv("AGENTS_CONTROL_FORWARDING") == "0"
+	// The proxy in front (Caddy), whose X-Forwarded-For is a socket's source (P3).
+	var err error
+	if cfg.TrustedProxies, err = controlplane.ParseTrustedProxies(os.Getenv("AGENTS_CONTROL_TRUSTED_PROXIES")); err != nil {
+		fail("AGENTS_CONTROL_TRUSTED_PROXIES: %v", err)
+	}
+	serveWeb(&cfg)
+	stop := make(chan os.Signal, 1)
+	// Agents Host's launch agent starts it again (KeepAlive): control/restart stops it.
+	if has("--restartable") {
+		cfg.Restart = func() {
+			time.Sleep(200 * time.Millisecond)
+			stop <- syscall.SIGTERM
+		}
+	}
+	cfg.Store = openStore("")
+	cfg.PrivateKey, cfg.KeyKeeper = keyAndKeeper(cfg.Store)
+	cfg.SecretKeeper = secretKeeper()
+	s, err := controlplane.New(cfg)
+	if err != nil {
+		fail("%v", err)
+	}
+	listening, err := s.Start(context.Background())
+	if err != nil {
+		fail("%v", err)
+	}
+	serveTelemetry(s)
+	if cfg.Pin != "" {
+		say("pin " + cfg.Pin)
+	}
+	// Found by the window on this network (frame K2). Not for a walk that must stay out
+	// of sight: --no-bonjour.
+	var advertiser *exec.Cmd
+	if home() != "" && !has("--no-bonjour") && runtime.GOOS == "darwin" {
+		if advertiser = advertise(cfg.Name, listening, cfg.Pin); advertiser != nil {
+			say("advertised as " + cfg.Name)
+		}
+	}
+	// SIGUSR1: try the web remote's listener again (Agents Host's Try Again, 071 R3).
+	retry := make(chan os.Signal, 1)
+	signal.Notify(retry, syscall.SIGUSR1)
+	go func() {
+		for range retry {
+			s.RetryWeb()
+		}
+	}()
+	signal.Notify(stop, syscall.SIGTERM, syscall.SIGINT)
+	<-stop
+	if advertiser != nil && advertiser.Process != nil {
+		_ = advertiser.Process.Kill() // it may have gone already; the control plane stops either way
+	}
+	s.Stop()
+}
+
+// serveLogs sends the log where --log, AGENTS_CONTROL_LOG and the format and level say.
+func serveLogs() {
 	// Beside the rest of what it says, in control.log, rather than in the system log (#93).
 	if file := value("--log"); file != "" {
 		logs.Take(expand(file), controlplane.LogLimit)
@@ -513,6 +587,11 @@ func serve() {
 	if err := logs.Configure(flagOrEnv("--log-format", "AGENTS_CONTROL_LOG_FORMAT"), flagOrEnv("--log-level", "AGENTS_CONTROL_LOG_LEVEL")); err != nil {
 		fail("%v", err)
 	}
+}
+
+// serveAddress is the control plane's address, parsed, and the port it listens on:
+// --port, else the address's own port, else 8791.
+func serveAddress() (string, *url.URL, int) {
 	homePort := 8791
 	if p, err := strconv.Atoi(value("--port")); err == nil {
 		homePort = p
@@ -531,12 +610,12 @@ func serve() {
 	} else if p, err := strconv.Atoi(u.Port()); err == nil {
 		port = p
 	}
-	cfg := controlplane.Config{URL: text, Bind: value("--bind"), Port: port, Log: logs.Write, Logger: logs.Logger(),
-		ServerFolder: controlplane.ServerFolder(), ToolsetFolder: controlplane.ToolsetFolder(),
-		ReleaseSource: os.Getenv("AGENTS_RELEASE_DOWNLOADS")}
-	if dir := cmp.Or(os.Getenv("AGENTS_CONTROL_RELEASES"), filepath.Join(home(), "releases")); home() != "" || os.Getenv("AGENTS_CONTROL_RELEASES") != "" {
-		cfg.ReleaseFolder = expand(dir)
-	}
+	return text, u, port
+}
+
+// serveTLS sets the certificate and its pin: self-signed with --self-signed or a home, else
+// the one AGENTS_CONTROL_TLS_CERT and AGENTS_CONTROL_TLS_KEY give.
+func serveTLS(cfg *controlplane.Config, u *url.URL) {
 	if dir := value("--self-signed"); dir != "" || home() != "" {
 		if dir == "" {
 			dir = filepath.Join(home(), "tls")
@@ -558,6 +637,11 @@ func serve() {
 	if cfg.Pin == "" {
 		cfg.Pin = os.Getenv("AGENTS_CONTROL_PIN")
 	}
+}
+
+// serveIdentity sets how long keys live, this copy's name and machine, and where machine
+// providers keep their secrets.
+func serveIdentity(cfg *controlplane.Config, u *url.URL) {
 	// How long a client's or machine's key lives unused (#997): 90 days unless said.
 	if days := value("--key-days"); days != "" || os.Getenv("AGENTS_CONTROL_KEY_DAYS") != "" {
 		if days == "" {
@@ -588,19 +672,11 @@ func serve() {
 	if cfg.ProviderHome == "" && os.Getenv("AGENTS_CONTROL_PROVIDER_HOME") != "" {
 		cfg.ProviderHome = expand(os.Getenv("AGENTS_CONTROL_PROVIDER_HOME"))
 	}
-	if root := value("--host-root"); root != "" {
-		cfg.HostJoinFile = filepath.Join(expand(root), "control-join.json")
-	}
-	// Where other copies reach this one: several copies over one store (US3).
-	cfg.PeerURL = os.Getenv("AGENTS_CONTROL_PEER_URL")
-	// Empty, for a handover to fill (R16); and forwarding again after a restart unless
-	// told to serve.
-	cfg.Receive = has("--receive") || os.Getenv("AGENTS_CONTROL_RECEIVE") == "1"
-	cfg.NoForwarding = has("--no-forwarding") || os.Getenv("AGENTS_CONTROL_FORWARDING") == "0"
-	// The proxy in front (Caddy), whose X-Forwarded-For is a socket's source (P3).
-	if cfg.TrustedProxies, err = controlplane.ParseTrustedProxies(os.Getenv("AGENTS_CONTROL_TRUSTED_PROXIES")); err != nil {
-		fail("AGENTS_CONTROL_TRUSTED_PROXIES: %v", err)
-	}
+}
+
+// serveWeb sets the web page, its views and pushes, and, with a home, the files that say
+// whether the page is served and whether it is turned off.
+func serveWeb(cfg *controlplane.Config) {
 	cfg.Web = webConfig()
 	cfg.PublicWeb = publicWeb()
 	if cfg.PublicViews = value("--views-url"); cfg.PublicViews == "" {
@@ -612,20 +688,23 @@ func serve() {
 	if p := webPusher(); p != nil {
 		cfg.WebPush = p
 	}
+	if home() == "" {
+		return
+	}
 	// Whether the page is served, for Agents Host to read (071 R3): this run's, or none.
-	if home() != "" {
-		file := filepath.Join(home(), "web.json")
-		os.Remove(file)
-		cfg.WebChanged = func(status web.Status) {
-			data, _ := json.Marshal(map[string]any{"pid": os.Getpid(), "status": status})
-			tmp := file + ".tmp"
-			if os.WriteFile(tmp, data, 0o644) == nil {
-				os.Rename(tmp, file)
+	file := filepath.Join(home(), "web.json")
+	os.Remove(file)
+	cfg.WebChanged = func(status web.Status) {
+		data, _ := json.Marshal(map[string]any{"pid": os.Getpid(), "status": status})
+		tmp := file + ".tmp"
+		if os.WriteFile(tmp, data, 0o644) == nil {
+			if err := os.Rename(tmp, file); err != nil {
+				fail("web.json: %v", err)
 			}
 		}
 	}
 	// Turned off from a page (control/setWeb, #4252): web-off beside web.json keeps it.
-	if home() != "" && cfg.Web != nil {
+	if cfg.Web != nil {
 		off := filepath.Join(home(), "web-off")
 		_, err := os.Stat(off)
 		cfg.WebOff = err == nil
@@ -639,25 +718,10 @@ func serve() {
 			return os.WriteFile(off, nil, 0o644)
 		}
 	}
-	stop := make(chan os.Signal, 1)
-	// Agents Host's launch agent starts it again (KeepAlive): control/restart stops it.
-	if has("--restartable") {
-		cfg.Restart = func() {
-			time.Sleep(200 * time.Millisecond)
-			stop <- syscall.SIGTERM
-		}
-	}
-	cfg.Store = openStore("")
-	cfg.PrivateKey, cfg.KeyKeeper = keyAndKeeper(cfg.Store)
-	cfg.SecretKeeper = secretKeeper()
-	s, err := controlplane.New(cfg)
-	if err != nil {
-		fail("%v", err)
-	}
-	listening, err := s.Start(context.Background())
-	if err != nil {
-		fail("%v", err)
-	}
+}
+
+// serveTelemetry starts the metrics listener and the OTLP export, when they are asked for.
+func serveTelemetry(s *controlplane.Service) {
 	if addr := flagOrEnv("--metrics", "AGENTS_CONTROL_METRICS"); addr != "" {
 		if _, err := s.ServeMetrics(addr, metricsToken()); err != nil {
 			fail("metrics: %v", err)
@@ -668,31 +732,6 @@ func serve() {
 	} else if otlp != nil {
 		s.ExportOTLP(*otlp)
 	}
-	if cfg.Pin != "" {
-		say("pin " + cfg.Pin)
-	}
-	// Found by the window on this network (frame K2). Not for a walk that must stay out
-	// of sight: --no-bonjour.
-	var advertiser *exec.Cmd
-	if home() != "" && !has("--no-bonjour") && runtime.GOOS == "darwin" {
-		if advertiser = advertise(cfg.Name, listening, cfg.Pin); advertiser != nil {
-			say("advertised as " + cfg.Name)
-		}
-	}
-	// SIGUSR1: try the web remote's listener again (Agents Host's Try Again, 071 R3).
-	retry := make(chan os.Signal, 1)
-	signal.Notify(retry, syscall.SIGUSR1)
-	go func() {
-		for range retry {
-			s.RetryWeb()
-		}
-	}()
-	signal.Notify(stop, syscall.SIGTERM, syscall.SIGINT)
-	<-stop
-	if advertiser != nil && advertiser.Process != nil {
-		advertiser.Process.Kill()
-	}
-	s.Stop()
 }
 
 // advertise is Advertiser.swift: _agents-control._tcp under this Mac's name, with the

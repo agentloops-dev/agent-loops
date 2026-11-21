@@ -81,12 +81,22 @@ func dial(ctx context.Context, base, pin, origin string) (*Lines, error) {
 		if ctx.Err() == nil && errors.Is(dctx.Err(), context.DeadlineExceeded) {
 			// Such as a tunnel's dead remote forward, which takes the connection and never
 			// answers (#1770).
-			return nil, fmt.Errorf("%s took the connection but did not answer within %s", u.Host, dialWait)
+			return nil, &NoAnswerError{Host: u.Host, Wait: dialWait}
 		}
 		return nil, err
 	}
 	ws.SetReadLimit(MaxMessage)
 	return &Lines{ws: ws}, nil
+}
+
+// NoAnswerError is a control plane that took the connection but did not answer within Wait.
+type NoAnswerError struct {
+	Host string
+	Wait time.Duration
+}
+
+func (e *NoAnswerError) Error() string {
+	return fmt.Sprintf("%s took the connection but did not answer within %s", e.Host, e.Wait)
 }
 
 // dialWait is how long a dial has to get the control plane's answer, TLS and the upgrade.

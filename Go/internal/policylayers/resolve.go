@@ -15,152 +15,185 @@ import (
 // with that value; every other layer that sets a looser value is kept, not used (FR-006). A
 // rule no layer sets has no decides: today's default applies.
 func Resolve(layers []Layer) wire.EffectivePolicy {
+	rules := make([]wire.EffectiveRule, 0, 19+len(Trailers))
+	rules = append(rules, enumRules(layers)...)
+	rules = append(rules, budgetRules(layers)...)
+	rules = append(rules, limitRules(layers)...)
+	rules = append(rules, allowRules(layers)...)
+	rules = append(rules, commitTrailerRules(layers)...)
 	return wire.EffectivePolicy{
-		Rules: []wire.EffectiveRule{
-			scalar(wire.PolicyRuleNamePermissionMode, layers,
-				func(r wire.PolicyRules) (wire.PermissionLevel, bool) {
-					if r.PermissionMode == nil {
-						return "", false
-					}
-					return *r.PermissionMode, true
-				},
-				func(v wire.PermissionLevel) float64 { return float64(PermissionModeOrder(v)) },
-				permissionModeWords),
-			scalar(wire.PolicyRuleNamePermissionRequests, layers,
-				func(r wire.PolicyRules) (wire.ClientPermissionMode, bool) {
-					if r.PermissionRequests == nil {
-						return "", false
-					}
-					return *r.PermissionRequests, true
-				},
-				func(v wire.ClientPermissionMode) float64 { return float64(PermissionRequestsOrder(v)) },
-				permissionRequestsWords),
-			scalar(wire.PolicyRuleNameSandbox, layers,
-				func(r wire.PolicyRules) (wire.SandboxChoice, bool) {
-					if r.Sandbox == nil {
-						return "", false
-					}
-					return *r.Sandbox, true
-				},
-				func(v wire.SandboxChoice) float64 { return float64(SandboxOrder(v)) },
-				sandboxWords),
-			scalar(wire.PolicyRuleNameBudgetsPerAgent, layers,
-				func(r wire.PolicyRules) (float64, bool) {
-					if r.Budgets == nil || r.Budgets.PerAgent == nil {
-						return 0, false
-					}
-					return r.Budgets.PerAgent.Amount, true
-				},
-				NumberTighterIsLess, moneyWords("per agent")),
-			scalar(wire.PolicyRuleNameBudgetsDaily, layers,
-				func(r wire.PolicyRules) (float64, bool) {
-					if r.Budgets == nil || r.Budgets.Daily == nil {
-						return 0, false
-					}
-					return r.Budgets.Daily.Amount, true
-				},
-				NumberTighterIsLess, moneyWords("a day")),
-			scalar(wire.PolicyRuleNameBudgetsPerAgentTokens, layers,
-				func(r wire.PolicyRules) (float64, bool) {
-					if r.Budgets == nil || r.Budgets.PerAgentTokens == nil {
-						return 0, false
-					}
-					return float64(*r.Budgets.PerAgentTokens), true
-				},
-				NumberTighterIsLess, tokensWords("per agent")),
-			scalar(wire.PolicyRuleNameBudgetsDailyTokens, layers,
-				func(r wire.PolicyRules) (float64, bool) {
-					if r.Budgets == nil || r.Budgets.DailyTokens == nil {
-						return 0, false
-					}
-					return float64(*r.Budgets.DailyTokens), true
-				},
-				NumberTighterIsLess, tokensWords("a day")),
-			scalar(wire.PolicyRuleNameHelpersMostRunning, layers,
-				func(r wire.PolicyRules) (float64, bool) {
-					if r.Helpers == nil || r.Helpers.MostRunning == nil {
-						return 0, false
-					}
-					return float64(*r.Helpers.MostRunning), true
-				},
-				NumberTighterIsLess, countWords("running at once")),
-			scalar(wire.PolicyRuleNameHelpersMostNotArchived, layers,
-				func(r wire.PolicyRules) (float64, bool) {
-					if r.Helpers == nil || r.Helpers.MostNotArchived == nil {
-						return 0, false
-					}
-					return float64(*r.Helpers.MostNotArchived), true
-				},
-				NumberTighterIsLess, countWords("not archived")),
-			scalar(wire.PolicyRuleNameHelpersMostQueued, layers,
-				func(r wire.PolicyRules) (float64, bool) {
-					if r.Helpers == nil || r.Helpers.MostQueued == nil {
-						return 0, false
-					}
-					return float64(*r.Helpers.MostQueued), true
-				},
-				NumberTighterIsLess, countWords("queued")),
-			scalar(wire.PolicyRuleNameWorkflowsMostOn, layers,
-				func(r wire.PolicyRules) (float64, bool) {
-					if r.Workflows == nil || r.Workflows.MostOn == nil {
-						return 0, false
-					}
-					return float64(*r.Workflows.MostOn), true
-				},
-				NumberTighterIsLess, countWords("turned on")),
-			scalar(wire.PolicyRuleNameNoticeLimitsBurst, layers,
-				func(r wire.PolicyRules) (float64, bool) {
-					if r.NoticeLimits == nil || r.NoticeLimits.Burst == nil {
-						return 0, false
-					}
-					return float64(*r.NoticeLimits.Burst), true
-				},
-				NumberTighterIsLess, countWords("in a burst")),
-			scalar(wire.PolicyRuleNameNoticeLimitsWaitMinutes, layers,
-				func(r wire.PolicyRules) (float64, bool) {
-					if r.NoticeLimits == nil || r.NoticeLimits.WaitMinutes == nil {
-						return 0, false
-					}
-					return float64(*r.NoticeLimits.WaitMinutes), true
-				},
-				NumberTighterIsMore, minutesWords),
-			scalar(wire.PolicyRuleNameArchiveMyChats, layers,
-				func(r wire.PolicyRules) (bool, bool) {
-					if r.ArchiveMyChats == nil {
-						return false, false
-					}
-					return *r.ArchiveMyChats, true
-				},
-				func(v bool) float64 { return float64(ArchiveMyChatsOrder(v)) },
-				boolWords),
-			resolveRuntimes(layers),
-			listPatterns(wire.PolicyRuleNameMarketplacesAllowed, layers,
-				func(r wire.PolicyRules) ([]string, bool) {
-					if r.Marketplaces == nil {
-						return nil, false
-					}
-					return r.Marketplaces.Allowed, true
-				}),
-			scalar(wire.PolicyRuleNameMarketplacesCustomServers, layers,
-				func(r wire.PolicyRules) (string, bool) {
-					if r.Marketplaces == nil || r.Marketplaces.CustomServers == "" {
-						return "", false
-					}
-					return r.Marketplaces.CustomServers, true
-				},
-				func(v string) float64 { return float64(CustomServersOrder(v)) },
-				customServersWords),
-			listPatterns(wire.PolicyRuleNameEnvironment, layers,
-				func(r wire.PolicyRules) ([]string, bool) {
-					if r.Environment == nil {
-						return nil, false
-					}
-					return r.Environment.PassThrough, true
-				}),
-			resolveConnectorTools(layers),
-		},
+		Rules:            rules,
 		FoldersWithRules: []wire.PolicyFolderWithRules{},
 		Behind:           []wire.PolicyBehindMachine{},
+	}
+}
+
+// enumRules resolves the permission and sandbox rules, an enum each (FR-005), in the
+// order Resolve returns them.
+func enumRules(layers []Layer) []wire.EffectiveRule {
+	return []wire.EffectiveRule{
+		scalar(wire.PolicyRuleNamePermissionMode, layers,
+			func(r wire.PolicyRules) (wire.PermissionLevel, bool) {
+				if r.PermissionMode == nil {
+					return "", false
+				}
+				return *r.PermissionMode, true
+			},
+			func(v wire.PermissionLevel) float64 { return float64(PermissionModeOrder(v)) },
+			permissionModeWords),
+		scalar(wire.PolicyRuleNamePermissionRequests, layers,
+			func(r wire.PolicyRules) (wire.ClientPermissionMode, bool) {
+				if r.PermissionRequests == nil {
+					return "", false
+				}
+				return *r.PermissionRequests, true
+			},
+			func(v wire.ClientPermissionMode) float64 { return float64(PermissionRequestsOrder(v)) },
+			permissionRequestsWords),
+		scalar(wire.PolicyRuleNameSandbox, layers,
+			func(r wire.PolicyRules) (wire.SandboxChoice, bool) {
+				if r.Sandbox == nil {
+					return "", false
+				}
+				return *r.Sandbox, true
+			},
+			func(v wire.SandboxChoice) float64 { return float64(SandboxOrder(v)) },
+			sandboxWords),
+	}
+}
+
+// budgetRules resolves the budget rules, money and tokens (FR-005), in the
+// order Resolve returns them.
+func budgetRules(layers []Layer) []wire.EffectiveRule {
+	return []wire.EffectiveRule{
+		scalar(wire.PolicyRuleNameBudgetsPerAgent, layers,
+			func(r wire.PolicyRules) (float64, bool) {
+				if r.Budgets == nil || r.Budgets.PerAgent == nil {
+					return 0, false
+				}
+				return r.Budgets.PerAgent.Amount, true
+			},
+			NumberTighterIsLess, moneyWords("per agent")),
+		scalar(wire.PolicyRuleNameBudgetsDaily, layers,
+			func(r wire.PolicyRules) (float64, bool) {
+				if r.Budgets == nil || r.Budgets.Daily == nil {
+					return 0, false
+				}
+				return r.Budgets.Daily.Amount, true
+			},
+			NumberTighterIsLess, moneyWords("a day")),
+		scalar(wire.PolicyRuleNameBudgetsPerAgentTokens, layers,
+			func(r wire.PolicyRules) (float64, bool) {
+				if r.Budgets == nil || r.Budgets.PerAgentTokens == nil {
+					return 0, false
+				}
+				return float64(*r.Budgets.PerAgentTokens), true
+			},
+			NumberTighterIsLess, tokensWords("per agent")),
+		scalar(wire.PolicyRuleNameBudgetsDailyTokens, layers,
+			func(r wire.PolicyRules) (float64, bool) {
+				if r.Budgets == nil || r.Budgets.DailyTokens == nil {
+					return 0, false
+				}
+				return float64(*r.Budgets.DailyTokens), true
+			},
+			NumberTighterIsLess, tokensWords("a day")),
+	}
+}
+
+// limitRules resolves the helper, workflow and notice limits (FR-005), in the
+// order Resolve returns them.
+func limitRules(layers []Layer) []wire.EffectiveRule {
+	return []wire.EffectiveRule{
+		scalar(wire.PolicyRuleNameHelpersMostRunning, layers,
+			func(r wire.PolicyRules) (float64, bool) {
+				if r.Helpers == nil || r.Helpers.MostRunning == nil {
+					return 0, false
+				}
+				return float64(*r.Helpers.MostRunning), true
+			},
+			NumberTighterIsLess, countWords("running at once")),
+		scalar(wire.PolicyRuleNameHelpersMostNotArchived, layers,
+			func(r wire.PolicyRules) (float64, bool) {
+				if r.Helpers == nil || r.Helpers.MostNotArchived == nil {
+					return 0, false
+				}
+				return float64(*r.Helpers.MostNotArchived), true
+			},
+			NumberTighterIsLess, countWords("not archived")),
+		scalar(wire.PolicyRuleNameHelpersMostQueued, layers,
+			func(r wire.PolicyRules) (float64, bool) {
+				if r.Helpers == nil || r.Helpers.MostQueued == nil {
+					return 0, false
+				}
+				return float64(*r.Helpers.MostQueued), true
+			},
+			NumberTighterIsLess, countWords("queued")),
+		scalar(wire.PolicyRuleNameWorkflowsMostOn, layers,
+			func(r wire.PolicyRules) (float64, bool) {
+				if r.Workflows == nil || r.Workflows.MostOn == nil {
+					return 0, false
+				}
+				return float64(*r.Workflows.MostOn), true
+			},
+			NumberTighterIsLess, countWords("turned on")),
+		scalar(wire.PolicyRuleNameNoticeLimitsBurst, layers,
+			func(r wire.PolicyRules) (float64, bool) {
+				if r.NoticeLimits == nil || r.NoticeLimits.Burst == nil {
+					return 0, false
+				}
+				return float64(*r.NoticeLimits.Burst), true
+			},
+			NumberTighterIsLess, countWords("in a burst")),
+		scalar(wire.PolicyRuleNameNoticeLimitsWaitMinutes, layers,
+			func(r wire.PolicyRules) (float64, bool) {
+				if r.NoticeLimits == nil || r.NoticeLimits.WaitMinutes == nil {
+					return 0, false
+				}
+				return float64(*r.NoticeLimits.WaitMinutes), true
+			},
+			NumberTighterIsMore, minutesWords),
+	}
+}
+
+// allowRules resolves the archive, runtime, marketplace, environment and connector-tool rules (FR-005), in the
+// order Resolve returns them.
+func allowRules(layers []Layer) []wire.EffectiveRule {
+	return []wire.EffectiveRule{
+		scalar(wire.PolicyRuleNameArchiveMyChats, layers,
+			func(r wire.PolicyRules) (bool, bool) {
+				if r.ArchiveMyChats == nil {
+					return false, false
+				}
+				return *r.ArchiveMyChats, true
+			},
+			func(v bool) float64 { return float64(ArchiveMyChatsOrder(v)) },
+			boolWords),
+		resolveRuntimes(layers),
+		listPatterns(wire.PolicyRuleNameMarketplacesAllowed, layers,
+			func(r wire.PolicyRules) ([]string, bool) {
+				if r.Marketplaces == nil {
+					return nil, false
+				}
+				return r.Marketplaces.Allowed, true
+			}),
+		scalar(wire.PolicyRuleNameMarketplacesCustomServers, layers,
+			func(r wire.PolicyRules) (string, bool) {
+				if r.Marketplaces == nil || r.Marketplaces.CustomServers == "" {
+					return "", false
+				}
+				return r.Marketplaces.CustomServers, true
+			},
+			func(v string) float64 { return float64(CustomServersOrder(v)) },
+			customServersWords),
+		listPatterns(wire.PolicyRuleNameEnvironment, layers,
+			func(r wire.PolicyRules) ([]string, bool) {
+				if r.Environment == nil {
+					return nil, false
+				}
+				return r.Environment.PassThrough, true
+			}),
+		resolveConnectorTools(layers),
 	}
 }
 

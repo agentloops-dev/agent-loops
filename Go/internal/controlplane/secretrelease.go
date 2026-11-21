@@ -174,7 +174,8 @@ func (s *Service) forgetOldReleases(ctx context.Context, host string, now time.T
 		}
 		var seen releaseSeen
 		if json.Unmarshal(o.Data, &seen) == nil && seen.At < oldest {
-			s.cfg.Store.Delete(ctx, k.Key)
+			// A key left is deleted by the next sweep.
+			_ = s.cfg.Store.Delete(ctx, k.Key)
 		}
 	}
 }

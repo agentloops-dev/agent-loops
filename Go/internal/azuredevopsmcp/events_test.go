@@ -22,8 +22,8 @@ func TestTheEventsAreTheGitLabServersPullRequestEventsChecksPassedRunCompletedAn
 		if !strings.HasPrefix(name, "issue.") && name != "run.completed" && name != "deploy.waiting" {
 			want = append(want, name)
 		}
-		if name == "checks.failed" {
-			want = append(want, "checks.passed", "run.completed", "deploy.waiting")
+		if name == "checks.passed" {
+			want = append(want, "run.completed", "deploy.waiting")
 		}
 	}
 	same(t, EventNames(), want)
@@ -572,7 +572,7 @@ func TestBuildServicesAndGroupsAreBots(t *testing.T) {
 // any; run.completed takes any too.
 func TestEventsListGivesWhichArgumentsNameOne(t *testing.T) {
 	named := map[string]bool{"checks.failed": true, "checks.passed": true, "pr.merged": true, "pr.closed": true,
-		"pr.conflicted": true, "pr.blocked": true, "review.comment": true}
+		"pr.conflicted": true, "pr.blocked": true, "review.comment": true, "pr.reviewed": true, "pr.commented": true}
 	for _, e := range eventsList()["events"].([]any) {
 		e := e.(map[string]any)
 		name := e["name"].(string)
@@ -635,4 +635,108 @@ func envelopeOf(result map[string]any, i int) (subject, key string) {
 	subject, _ = e["subject"].(string)
 	key, _ = e["key"].(string)
 	return subject, key
+}
+
+// #6295: pr.blocked reads the newest build of each pipeline at the head and the newest status
+// of each context; a rerun of the failed build on the same head is no new event.
+func TestBlockedReadsFailedBuildsAndStatusesAtTheHead(t *testing.T) {
+	f := newFake(t)
+	f.pulls = []obj{pull(1, "feature", dev, nil)}
+	p := newPoller(t, f, "pr.blocked", obj{"pr": []int{1}})
+	p.poll()
+	// Failed, then passed: the newest build of a pipeline counts; one of an older head does not.
+	f.set(func() {
+		f.builds = []obj{build(10, 1, "sha1", "lint", "failed", 1), build(11, 1, "sha1", "lint", "succeeded", 2),
+			build(12, 1, "old", "unit", "failed", 2)}
+	})
+	ids, _ := p.poll()
+	same(t, ids, []string(nil))
+	f.set(func() {
+		f.builds = append(f.builds, build(13, 1, "sha1", "ci", "failed", 3))
+		f.statuses[1] = []obj{prStatus(1, "scan", "deps", "error", 3, 0)}
+	})
+	ids, result := p.poll()
+	same(t, untimed(ids), []string{"pr.blocked:acme/Web App/app:1:sha1:required_check_failed"})
+	same(t, data(t, result, 0)["failedChecks"], []any{
+		map[string]any{"name": "ci", "url": "https://ado.test/acme/Web%20App/_build/results?buildId=13"},
+		map[string]any{"name": "scan/deps", "url": "https://scan.test/1"}})
+	// ci and the scan run again on the same head: still blocked, no new event.
+	f.set(func() {
+		queued := build(14, 1, "sha1", "ci", "", 0)
+		queued["status"], queued["finishTime"] = "inProgress", nil
+		f.builds = append(f.builds, queued)
+		f.statuses[1] = append(f.statuses[1], prStatus(2, "scan", "deps", "pending", 4, 0))
+	})
+	ids, _ = p.poll()
+	same(t, ids, []string(nil))
+	// Both pass: no longer blocked; a new failure on the same head is a new event.
+	f.set(func() {
+		f.builds[len(f.builds)-1] = build(14, 1, "sha1", "ci", "succeeded", 5)
+		f.statuses[1] = append(f.statuses[1], prStatus(3, "scan", "deps", "succeeded", 5, 0))
+	})
+	ids, _ = p.poll()
+	same(t, ids, []string(nil))
+	f.set(func() { f.statuses[1] = append(f.statuses[1], prStatus(4, "scan", "deps", "failed", 6, 0)) })
+	ids, _ = p.poll()
+	same(t, untimed(ids), []string{"pr.blocked:acme/Web App/app:1:sha1:required_check_failed"})
+}
+
+// #6295: pr.reviewed is each reviewer's vote, once while it stands, never a bot's.
+func TestReviewedIsEachVoteOnce(t *testing.T) {
+	f := newFake(t)
+	f.pulls = []obj{pull(1, "feature", alex, nil)}
+	p := newPoller(t, f, "pr.reviewed", obj{"pr": []int{1}})
+	p.poll()
+	f.set(func() {
+		f.pulls[0]["reviewers"] = []any{
+			merged(dev, obj{"vote": 5}),
+			merged(builder, obj{"vote": 10}),
+			merged(renovate, obj{"vote": 0}),
+		}
+	})
+	ids, result := p.poll()
+	same(t, untimed(ids), []string{"pr.reviewed:acme/Web App/app:1:dev@acme.test:approved"})
+	same(t, data(t, result, 0)["review"], map[string]any{"author": "dev@acme.test", "state": "approved", "body": "",
+		"url": f.server.URL + web + "/pullrequest/1", "commit": "sha1"})
+	ids, _ = p.poll()
+	same(t, ids, []string(nil))
+	f.set(func() { f.pulls[0]["reviewers"] = []any{merged(dev, obj{"vote": -10})} })
+	ids, result = p.poll()
+	same(t, untimed(ids), []string{"pr.reviewed:acme/Web App/app:1:dev@acme.test:changes_requested"})
+	same(t, data(t, result, 0)["review"].(map[string]any)["state"], "changes_requested")
+}
+
+// #6295: pr.commented is a comment on the pull request itself: not on a file or a line, not
+// a bot's or the system's, not an agent's.
+func TestCommentedIsOnThePullRequestItself(t *testing.T) {
+	f := newFake(t)
+	f.pulls = []obj{pull(1, "feature", alex, nil)}
+	p := newPoller(t, f, "pr.commented", obj{"pr": []int{1}})
+	p.poll()
+	comment := func(id int, author obj, content, kind string) obj {
+		return obj{"id": id, "author": author, "content": content, "publishedDate": at(1), "commentType": kind}
+	}
+	f.set(func() {
+		f.threads[1] = []obj{
+			{"id": 50, "status": "active", "comments": []any{comment(1, dev, "Ship it.", "text"), comment(2, builder, "Policy.", "text"),
+				comment(3, dev, "<!-- agent -->\nDone.", "text"), comment(4, dev, " ", "text")}},
+			{"id": 51, "threadContext": obj{"filePath": "/main.go", "rightFileStart": obj{"line": 3}}, "comments": []any{comment(1, dev, "A line.", "text")}},
+			{"id": 52, "comments": []any{comment(1, dev, "Dev voted", "system")}},
+		}
+	})
+	ids, result := p.poll()
+	same(t, ids, []string{"pr.commented:acme/Web App/app:1:50:1"})
+	same(t, data(t, result, 0)["comment"], map[string]any{"author": "dev@acme.test", "body": "Ship it.", "threadId": 50,
+		"url": f.server.URL + web + "/pullrequest/1?discussionId=50"})
+	ids, _ = p.poll()
+	same(t, ids, []string(nil))
+}
+
+// untimed are a diff event's ids without the poll time they end with.
+func untimed(ids []string) []string {
+	out := make([]string, len(ids))
+	for i, id := range ids {
+		out[i], _, _ = strings.Cut(id, ":"+start.Format("2006-"))
+	}
+	return out
 }
