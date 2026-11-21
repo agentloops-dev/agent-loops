@@ -8,11 +8,9 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
-	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -121,7 +119,6 @@ func TestTheStarterReachesItsSessionOnAnotherMachine(t *testing.T) {
 // one slow machine should not cost the others their share of the wait.
 func TestListThereAsksEveryMachineAtOnce(t *testing.T) {
 	t.Parallel()
-	flaky.UnderLoad(t, "#6262")
 
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -130,29 +127,56 @@ func TestListThereAsksEveryMachineAtOnce(t *testing.T) {
 	a := seeded(t, d, dir, func(a *wire.Agent) { a.State, a.RuntimeID, a.Title = wire.AgentStateRunning, "claude", &title })
 
 	const n = 6
-	const delay = 80 * time.Millisecond
 	for i := 0; i < n; i++ {
 		d.noteStartedThere(startedThere{Machine: fmt.Sprintf("pc%d", i), Session: store.NewUUID(), Starter: a.ID,
 			Folder: dir, There: "/home/me/app", Title: fmt.Sprintf("session %d", i), At: now()})
 	}
+	// Count the asks in flight at once, not the time the call takes, so a busy machine
+	// cannot fail it (#6262). Each ask waits until all n are in flight, or for the test's limit: asked
+	// at once, all n meet; asked in turn, only one is ever in flight.
+	var mu sync.Mutex
+	inFlight, most, met := 0, 0, false
+	all := make(chan struct{})
+	meet := func() { // with mu held
+		if !met {
+			met = true
+			close(all)
+		}
+	}
+	limit := afterLimit(t)
 	d.SetControlAsk(func(_ context.Context, method string, params any) (json.RawMessage, error) {
 		call, _ := params.(wire.MachineWorkspaceCall)
 		if call.Method != "machines/sessionCall" {
 			return nil, &controllink.AskError{Code: -32010, Message: "Agent Loops can’t ask that of the control plane."}
 		}
-		time.Sleep(delay)
+		mu.Lock()
+		inFlight++
+		most = max(most, inFlight)
+		if inFlight == n {
+			meet()
+		}
+		mu.Unlock()
+		select {
+		case <-all:
+		case <-limit: // asked in turn: let every ask go, and the count fails the test
+			mu.Lock()
+			meet()
+			mu.Unlock()
+		}
+		mu.Lock()
+		inFlight--
+		mu.Unlock()
 		return json.Marshal(wire.SessionCallReply{Said: "working"})
 	})
 
-	began := time.Now()
 	lines := d.listThere(a.ID)
-	elapsed := time.Since(began)
 	if len(lines) != n {
 		t.Fatalf("got %d lines, want %d", len(lines), n)
 	}
-	// Serial would take at least n*delay; asked at once, it should take closer to one delay.
-	if elapsed > delay*time.Duration(n)/2 {
-		t.Fatalf("listThere took %v for %d sessions at %v each: not asked at once", elapsed, n, delay)
+	mu.Lock()
+	defer mu.Unlock()
+	if most != n {
+		t.Fatalf("at most %d of %d asks were in flight at once: not asked at once", most, n)
 	}
 }
 
