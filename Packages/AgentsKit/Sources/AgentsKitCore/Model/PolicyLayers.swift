@@ -65,6 +65,12 @@ public extension DaemonAPI {
         public var tools: [String: ConnectorToolLevel]?
     }
 
+    /// One trailer's value in a layer's `commitTrailers` (#6365). Record trailers (Made-by,
+    /// Session, Fixes, …): on is tighter. Spend trailers (Cost, Tokens, Duration): off is tighter.
+    enum CommitTrailerValue: String, Codable, Sendable, Hashable, CaseIterable {
+        case on, off
+    }
+
     /// The rules a layer sets (#2957, data-model.md "PolicyRules"): the same shape on the
     /// organisation, your and a folder's layer (FR-002). Every field is optional: absent sets
     /// nothing.
@@ -82,12 +88,16 @@ public extension DaemonAPI {
         public var environment: PolicyEnvironment?
         /// The level of each connector's tools, by the connector's name (#4099).
         public var connectorTools: [String: PolicyConnectorRule]?
+        /// Which trailers an agent's commits carry, by the trailer's key (#6365). A key this
+        /// build does not know is kept.
+        public var commitTrailers: [String: CommitTrailerValue]?
 
         public init(permissionMode: PermissionLevel? = nil, permissionRequests: ClientPermissionMode? = nil,
                     sandbox: SandboxChoice? = nil, budgets: PolicyRuleBudgets? = nil, helpers: PolicyHelpers? = nil,
                     workflows: PolicyWorkflows? = nil, noticeLimits: PolicyNoticeLimits? = nil, archiveMyChats: Bool? = nil,
                     runtimes: [String: PolicyRuntimeRule]? = nil, marketplaces: PolicyMarketplaces? = nil,
-                    environment: PolicyEnvironment? = nil, connectorTools: [String: PolicyConnectorRule]? = nil) {
+                    environment: PolicyEnvironment? = nil, connectorTools: [String: PolicyConnectorRule]? = nil,
+                    commitTrailers: [String: CommitTrailerValue]? = nil) {
             self.permissionMode = permissionMode
             self.permissionRequests = permissionRequests
             self.sandbox = sandbox
@@ -100,6 +110,7 @@ public extension DaemonAPI {
             self.marketplaces = marketplaces
             self.environment = environment
             self.connectorTools = connectorTools
+            self.commitTrailers = commitTrailers
         }
     }
 

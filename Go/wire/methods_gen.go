@@ -215,6 +215,7 @@ var CallForgeRequestChanges = Method[ForgeRequestChangesRequest, ForgeDone]{"for
 var CallForgeRerun = Method[ForgeNodeRequest, ForgeDone]{"forge/rerun"}
 var CallForgeSources = Method[Empty, ForgeSources]{"forge/sources"}
 var CallGitFill = Method[GitCredentialRequest, GitCredential]{"git/fill"}
+var CallGitTrailers = Method[GitTrailersRequest, GitTrailers]{"git/trailers"}
 var CallLineageCost = Method[LineageNodeRequest, LineageCostRollup]{"lineage/cost"}
 var CallLineageEnd = Method[LineageEndRequest, LineageLinks]{"lineage/end"}
 var CallLineageEstimate = Method[LineageEstimateRequest, LineageEstimate]{"lineage/estimate"}

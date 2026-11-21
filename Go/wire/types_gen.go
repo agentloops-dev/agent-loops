@@ -2998,6 +2998,15 @@ type CloneSummary struct {
 	StartedAt Date `json:"startedAt"`
 }
 
+// One trailer's value in commitTrailers (#6365).
+type CommitTrailerValue string
+
+const CommitTrailerValueOn CommitTrailerValue = "on"
+const CommitTrailerValueOff CommitTrailerValue = "off"
+
+// The trailers of an agent's commits, each on or off, by the trailer's key (#6365): Made-by, Cost, Tokens, Duration, Session, Fixes, Epic, Requested-by, Approved-by, Attested, Co-authored-by. Fixes also writes Refs. A key the machine does not know is kept and has no effect; a key no layer sets has its default (every key on, Cost off). Record trailers (Made-by, Session, Fixes, Epic, Requested-by, Approved-by, Attested, Co-authored-by): on is tighter. Spend trailers (Cost, Tokens, Duration): off is tighter. Its rules in policy/effective are commitTrailers.<key>.
+type CommitTrailers map[string]CommitTrailerValue
+
 type ConfigChoice struct {
 	Value JSONValue `json:"value"`
 
@@ -6782,6 +6791,19 @@ type GitCredentialRequest struct {
 	Host string `json:"host"`
 
 	Path *string `json:"path,omitzero"`
+}
+
+// The trailer block for a commit or a squash message (#6365), in order, one "Key: value" line each; empty when the rule turns every trailer off.
+type GitTrailers struct {
+	Lines []string `json:"lines"`
+}
+
+// git/trailers (#6365): the session whose folder's effective commitTrailers rule applies, and the pull request whose totals Cost, Tokens and Duration give.
+type GitTrailersRequest struct {
+	Session UUID `json:"session"`
+
+	// The pull request's number. Absent: the totals are the session's own, and Approved-by is left out.
+	Pr *int64 `json:"pr,omitzero"`
 }
 
 // GitView (Model/AgentChanges.swift): `{ shared: { since } }`, `{ unavailable: … }` and so on.
@@ -10603,6 +10625,9 @@ type OrgPolicy struct {
 	Groups *Empty `json:"groups,omitzero"`
 
 	Notices *PolicyNotices `json:"notices,omitzero"`
+
+	// #6365: which trailers an agent's commits carry, each on or off. On is tighter for a record trailer, off for a spend trailer (Cost, Tokens, Duration).
+	CommitTrailers CommitTrailers `json:"commitTrailers,omitzero"`
 }
 
 // An org sign-in provider (#1002, D1, FR-001): an OIDC issuer that an organisation registered for this control plane. Kept at v1/signin/providers/<id>.json; its client secret is sealed beside it and never returned. The control plane sets version, secret, created, changed and redirectURI.
@@ -11980,6 +12005,17 @@ const PolicyRuleNameMarketplacesAllowed PolicyRuleName = "marketplaces.allowed"
 const PolicyRuleNameMarketplacesCustomServers PolicyRuleName = "marketplaces.customServers"
 const PolicyRuleNameEnvironment PolicyRuleName = "environment"
 const PolicyRuleNameConnectorTools PolicyRuleName = "connectorTools"
+const PolicyRuleNameCommitTrailersMadeBy PolicyRuleName = "commitTrailers.Made-by"
+const PolicyRuleNameCommitTrailersCost PolicyRuleName = "commitTrailers.Cost"
+const PolicyRuleNameCommitTrailersTokens PolicyRuleName = "commitTrailers.Tokens"
+const PolicyRuleNameCommitTrailersDuration PolicyRuleName = "commitTrailers.Duration"
+const PolicyRuleNameCommitTrailersSession PolicyRuleName = "commitTrailers.Session"
+const PolicyRuleNameCommitTrailersFixes PolicyRuleName = "commitTrailers.Fixes"
+const PolicyRuleNameCommitTrailersEpic PolicyRuleName = "commitTrailers.Epic"
+const PolicyRuleNameCommitTrailersRequestedBy PolicyRuleName = "commitTrailers.Requested-by"
+const PolicyRuleNameCommitTrailersApprovedBy PolicyRuleName = "commitTrailers.Approved-by"
+const PolicyRuleNameCommitTrailersAttested PolicyRuleName = "commitTrailers.Attested"
+const PolicyRuleNameCommitTrailersCoAuthoredBy PolicyRuleName = "commitTrailers.Co-authored-by"
 
 // The rules a layer sets (#2957, data-model.md "PolicyRules"): the same shape on the organisation, your and a folder's layer (FR-002). Every field is optional: absent sets nothing.
 type PolicyRules struct {
@@ -12008,6 +12044,8 @@ type PolicyRules struct {
 
 	// The level of each connector's tools, by the connector's name (#4099). A tool no layer names is ask when it writes and allow when it only reads.
 	ConnectorTools map[string]PolicyConnectorRule `json:"connectorTools,omitzero"`
+
+	CommitTrailers CommitTrailers `json:"commitTrailers,omitzero"`
 }
 
 // One allowed runtime in a policy (#998).
