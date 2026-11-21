@@ -51,7 +51,9 @@ func toldSecretOps(d *Daemon) func() []wire.SecretOperation {
 // secret's last operation, removed with the secret. Neither the value nor its last four
 // characters is in any of them.
 func TestEachUseOfASecretIsRecorded(t *testing.T) {
-	setFor(t, &secretOpsBatch, 100*time.Millisecond)
+	// The test sends the batch itself, after the last read (#6298): on a timer, a slow runner
+	// split the MCP server's three reads over two batches, nine operations, not eight.
+	setFor(t, &secretOpsBatch, time.Hour)
 	home := t.TempDir()
 	personalHomeFor(t, home)
 	os.MkdirAll(filepath.Join(home, ".agents"), 0o700)
@@ -107,11 +109,15 @@ func TestEachUseOfASecretIsRecorded(t *testing.T) {
 
 	// The audit: the changes and the deny at once, the reads in one batch, the MCP server's
 	// three as one with a count.
+	d.flushSecretOps()
 	var ops []wire.SecretOperation
-	waitFor(t, "the reads' batch", func() bool {
+	waitFor(t, "the changes, the deny and the reads' batch", func() bool {
 		ops = told()
-		return len(ops) == 8
+		return len(ops) >= 8
 	})
+	if len(ops) != 8 {
+		t.Fatalf("%d operations told, not 8: %+v", len(ops), ops)
+	}
 	checkMCPReadsBatched(t, ops, a.ID)
 
 	// The last operation of each, kept on disk.
@@ -131,6 +137,19 @@ func TestEachUseOfASecretIsRecorded(t *testing.T) {
 
 	// Never a value, never its hint.
 	checkNoSecretHints(t, d, told(), raw, values)
+}
+
+// The reads' batch goes to the audit on its timer, with nothing else to send it.
+func TestTheReadsBatchGoesOnItsTimer(t *testing.T) {
+	setFor(t, &secretOpsBatch, 10*time.Millisecond)
+	d, _ := start(t, t.TempDir())
+	t.Cleanup(d.Shutdown)
+	told := toldSecretOps(d)
+	d.secretRead("", "API_TOKEN", wire.SecretOperationUseCommand, terminalPlace)
+	waitFor(t, "the read told", func() bool { return len(told()) == 1 })
+	if op := told()[0]; op.Name != "API_TOKEN" || op.What != wire.SecretOperationWhatRead || op.Count != nil {
+		t.Fatalf("%+v", op)
+	}
 }
 
 // checkSecretChangesRecorded checks the secret.changed events of the secrets that
