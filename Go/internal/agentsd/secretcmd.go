@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/execfile"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -206,14 +207,22 @@ func writeSecretShim(bin, agentsd string) error {
 	return writeCommand(filepath.Join(bin, "agents-secret"), script)
 }
 
-// writeCommand writes script to path, executable, when it is not there already.
+// writeCommand writes script to path, executable, when it is not there already. It writes a
+// temporary file of its own with execfile.Write, so no fork of agentsd holds it open for
+// writing and a session that runs the command at once does not fail with "text file busy"
+// on Linux (ETXTBSY, #6278); then it renames the file into place, so a session never runs a
+// part of it, and two sessions that start at once do not write the same file.
 func writeCommand(path, script string) error {
 	if old, err := os.ReadFile(path); err == nil && string(old) == script {
 		return nil
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, []byte(script), 0o700); err != nil { //nolint:gosec // G306: a command must be executable
+	tmp := path + ".tmp-" + string(store.NewUUID())
+	if err := execfile.Write(tmp, []byte(script), 0o700); err != nil {
 		return err
 	}
-	return os.Rename(tmp, path)
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	return nil
 }
