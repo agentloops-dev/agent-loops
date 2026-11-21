@@ -17,6 +17,9 @@ func WithCaps(eff wire.EffectivePolicy, above []Layer) wire.EffectivePolicy {
 			if c.Rule != eff.Rules[i].Rule || c.Decides == nil {
 				continue
 			}
+			if t, ok := trailerForRule(c.Rule); ok && !trailerCapBinds(t, c.Words) {
+				continue
+			}
 			line := CapLine(c.Rule, *c.Decides, c.Words)
 			eff.Rules[i].Cap = c.Value
 			eff.Rules[i].CapLine = &line
@@ -28,6 +31,9 @@ func WithCaps(eff wire.EffectivePolicy, above []Layer) wire.EffectivePolicy {
 // CapLine is a capped row's line in the clients' words (contracts/policy-layers-api.md,
 // "Client words"): the layer's name, then the value it allows.
 func CapLine(rule wire.PolicyRuleName, layer wire.PolicyLayerRef, words string) string {
+	if t, ok := trailerForRule(rule); ok {
+		return trailerLayerName(layer) + ": " + trailerCapPhrase(t)
+	}
 	return LayerName(layer) + ": " + capPhrase(rule, words)
 }
 

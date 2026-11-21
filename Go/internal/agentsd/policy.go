@@ -826,6 +826,7 @@ func orgRulesFrom(p *wire.OrgPolicy) wire.PolicyRules {
 	r.Workflows = p.Workflows
 	r.NoticeLimits = p.NoticeLimits
 	r.ArchiveMyChats = p.ArchiveMyChats
+	r.CommitTrailers = p.CommitTrailers
 	if p.Sandbox != nil {
 		switch *p.Sandbox {
 		case "required":
