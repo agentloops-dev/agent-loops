@@ -200,10 +200,12 @@ func (rt *readTokens) serve(w http.ResponseWriter, r *http.Request) {
 	switch q.Get("format") {
 	case "", "json":
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(report)
+		// The client has gone; there is nobody to tell.
+		_ = json.NewEncoder(w).Encode(report)
 	case "csv":
 		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
-		w.Write([]byte(reportCSV(report.Rows)))
+		// The client has gone; there is nobody to tell.
+		_, _ = w.Write([]byte(reportCSV(report.Rows)))
 	case "jsonl":
 		w.Header().Set("Content-Type", "application/jsonl")
 		var b bytes.Buffer
@@ -213,7 +215,8 @@ func (rt *readTokens) serve(w http.ResponseWriter, r *http.Request) {
 				b.WriteByte('\n')
 			}
 		}
-		w.Write(b.Bytes())
+		// The client has gone; there is nobody to tell.
+		_, _ = w.Write(b.Bytes())
 	default:
 		plain(w, http.StatusBadRequest, "format is json, csv or jsonl\n")
 	}
@@ -239,7 +242,8 @@ func (rt *readTokens) serveDelivery(w http.ResponseWriter, r *http.Request, scop
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{"delivery": delivery})
+	// The client has gone; there is nobody to tell.
+	_ = json.NewEncoder(w).Encode(map[string]any{"delivery": delivery})
 }
 
 // list is every token, newest first.

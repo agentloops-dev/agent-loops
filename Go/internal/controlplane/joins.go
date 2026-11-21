@@ -97,7 +97,8 @@ func (j *joins) all(ctx context.Context) ([]joinRecord, error) {
 			continue
 		}
 		if now.Sub(r.Expires.Time) > joinKept {
-			j.s.cfg.Store.Delete(ctx, entry.Key)
+			// A key left is deleted by the next sweep.
+			_ = j.s.cfg.Store.Delete(ctx, entry.Key)
 			continue
 		}
 		out = append(out, *r)
@@ -377,7 +378,9 @@ func (j *joins) dropFor(ctx context.Context, user string) {
 		if r.Person == user && j.open(r) {
 			if _, etag, err := j.read(ctx, r.ID); err == nil {
 				r.Result, r.By = "denied", ""
-				j.write(ctx, r, etag)
+				if err := j.write(ctx, r, etag); err != nil {
+					j.s.log("join " + r.ID + ": could not be denied for a removed person: " + err.Error())
+				}
 			}
 		}
 	}
@@ -390,7 +393,8 @@ func (j *joins) serve(w http.ResponseWriter, r *http.Request) {
 	answer := func(status int, v any) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(status)
-		json.NewEncoder(w).Encode(v)
+		// The client has gone; there is nobody to tell.
+		_ = json.NewEncoder(w).Encode(v)
 	}
 	refuse := func(err error) {
 		e := asRPC(err)

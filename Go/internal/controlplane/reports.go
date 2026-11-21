@@ -396,7 +396,8 @@ func reportCSV(rows []wire.ReportRow) string {
 		"workflowRuns", "workflowFailures")
 	var b bytes.Buffer
 	w := csv.NewWriter(&b)
-	w.Write(header)
+	// A csv.Writer to a bytes.Buffer does not fail.
+	_ = w.Write(header)
 	i := func(n int64) string { return strconv.FormatInt(n, 10) }
 	f := func(n float64) string { return strconv.FormatFloat(n, 'f', -1, 64) }
 	for _, r := range rows {
@@ -422,7 +423,8 @@ func reportCSV(rows []wire.ReportRow) string {
 		} else {
 			line = append(line, "", "", "", "", "", "", "", "", "")
 		}
-		w.Write(line)
+		// A csv.Writer to a bytes.Buffer does not fail.
+		_ = w.Write(line)
 	}
 	w.Flush()
 	return b.String()

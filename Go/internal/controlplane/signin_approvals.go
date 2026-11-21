@@ -95,7 +95,8 @@ func (a *signInApprovals) all(ctx context.Context) ([]signInRequest, error) {
 			continue
 		}
 		if a.now().Sub(r.Expires.Time) > joinKept {
-			a.s.cfg.Store.Delete(ctx, entry.Key)
+			// A key left is deleted by the next sweep.
+			_ = a.s.cfg.Store.Delete(ctx, entry.Key)
 			continue
 		}
 		out = append(out, *r)
@@ -150,7 +151,7 @@ func sameCode(typed, code string) bool {
 // has, or one with every place taken. It looks the same as one that waits for a person.
 func (a *signInApprovals) unanswered(conn *Conn, ask signInAsk) (*wire.Admitted, error) {
 	expires := a.now().Add(joinLifetime)
-	conn.SendNow(notification("control/signInWaiting", wire.SignInWaiting{Code: a.code(ask.public), Expires: dateOf(expires)}))
+	conn.Reply(notification("control/signInWaiting", wire.SignInWaiting{Code: a.code(ask.public), Expires: dateOf(expires)}))
 	timer := time.NewTimer(time.Until(expires))
 	defer timer.Stop()
 	select {
@@ -195,7 +196,7 @@ func (a *signInApprovals) wait(ctx context.Context, conn *Conn, ask signInAsk) (
 	if err != nil {
 		return nil, err
 	}
-	conn.SendNow(notification("control/signInWaiting", wire.SignInWaiting{Code: r.Code, Expires: dateOf(r.Expires.Time)}))
+	conn.Reply(notification("control/signInWaiting", wire.SignInWaiting{Code: r.Code, Expires: dateOf(r.Expires.Time)}))
 	a.s.router.TellPerson(r.Person, "control/signInRequested", a.row(r))
 	if ask.provider == browserProvider {
 		a.s.log(ask.name + " asked to sign in as a person and waits for approval (request " + r.ID[:8] + ")")

@@ -151,7 +151,8 @@ func (l *Log) emit(at time.Time, level slog.Level, msg string, attrs []slog.Attr
 		h := slog.NewJSONHandler(&b, &slog.HandlerOptions{Level: slog.LevelDebug})
 		r := slog.NewRecord(at, level, msg, 0)
 		r.AddAttrs(attrs...)
-		h.Handle(context.Background(), r)
+		// A log line that cannot be written has nowhere to be said.
+		_ = h.Handle(context.Background(), r)
 		text = b.String()
 	} else {
 		var b strings.Builder
@@ -162,13 +163,15 @@ func (l *Log) emit(at time.Time, level slog.Level, msg string, attrs []slog.Attr
 		text = stamped(b.String(), at)
 	}
 	if l.file != nil {
-		l.file.Write([]byte(text))
+		// A log line that cannot be written has nowhere to be said.
+		_, _ = l.file.Write([]byte(text))
 		if !l.copied {
 			return
 		}
 	}
 	if l.to != nil {
-		io.WriteString(l.to, text)
+		// A log line that cannot be written has nowhere to be said.
+		_, _ = io.WriteString(l.to, text)
 	} else {
 		os.Stderr.WriteString(text)
 	}

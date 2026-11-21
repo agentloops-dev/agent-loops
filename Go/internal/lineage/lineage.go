@@ -281,7 +281,9 @@ func OpenWith(path string, now func() time.Time, topics Topics) *Files {
 	}
 	if ld.unreadable > 0 {
 		aside := fmt.Sprintf("%s.unreadable-%d", path, now().Unix())
-		os.WriteFile(aside, data, 0o644)
+		if err := os.WriteFile(aside, data, 0o644); err != nil { //nolint:gosec // G306: the same mode as the lineage file it keeps
+			log.Printf("%s: could not keep the unreadable file as %s: %v", filepath.Base(path), filepath.Base(aside), err)
+		}
 		store.TrimSetAsides(path)
 		log.Printf("%s: %d lines could not be read; the file is kept as %s", filepath.Base(path), ld.unreadable, filepath.Base(aside))
 	}
@@ -616,13 +618,18 @@ func (f *Files) append(l line) error {
 		return errors.New("could not encode the link")
 	}
 	if f.file == nil {
-		os.MkdirAll(filepath.Dir(f.path), 0o755)
+		if err := os.MkdirAll(filepath.Dir(f.path), 0o755); err != nil { //nolint:gosec // G301: as readable as the lineage file in it
+			return err
+		}
 		file, err := os.OpenFile(f.path, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o644)
 		if err != nil {
 			return err
 		}
 		if endsTorn(f.path) {
-			file.Write([]byte("\n"))
+			if _, err := file.Write([]byte("\n")); err != nil {
+				_ = file.Close() // the write failed already; that is the error to give
+				return err
+			}
 		}
 		f.file = file
 	}

@@ -1511,7 +1511,8 @@ func (r *Router) clientLine(line, sessionID string) {
 		if s := r.clients[sessionID]; s != nil {
 			r.log("control: unreadable line from client " + sessionID)
 			var o map[string]json.RawMessage
-			json.Unmarshal([]byte(line), &o)
+			// The line is known not to read: a route it names is a bonus.
+			_ = json.Unmarshal([]byte(line), &o)
 			named := ""
 			if raw, ok := o["h"]; ok {
 				if json.Unmarshal(raw, &named) != nil || !controllink.IsHostID(named) {

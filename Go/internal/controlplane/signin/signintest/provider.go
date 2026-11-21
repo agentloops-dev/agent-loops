@@ -174,7 +174,8 @@ func (p *Provider) serveDiscovery(w http.ResponseWriter, r *http.Request) {
 		p.discovery(doc)
 	}
 	p.mu.Unlock()
-	json.NewEncoder(w).Encode(doc)
+	// The client has gone; there is nobody to tell.
+	_ = json.NewEncoder(w).Encode(doc)
 }
 
 func (p *Provider) serveKeys(w http.ResponseWriter, r *http.Request) {
@@ -183,7 +184,8 @@ func (p *Provider) serveKeys(w http.ResponseWriter, r *http.Request) {
 		{"kty": "EC", "kid": p.kid + "-ec", "use": "sig", "alg": "ES256", "crv": "P-256",
 			"x": b64(p.ecKey.X.FillBytes(make([]byte, 32))), "y": b64(p.ecKey.Y.FillBytes(make([]byte, 32)))},
 	}
-	json.NewEncoder(w).Encode(map[string]any{"keys": keys})
+	// The client has gone; there is nobody to tell.
+	_ = json.NewEncoder(w).Encode(map[string]any{"keys": keys})
 }
 
 // serveAuthorize signs in p.who at once and sends the browser back with a code.
@@ -288,7 +290,8 @@ func (p *Provider) serveToken(w http.ResponseWriter, r *http.Request) {
 	p.mu.Unlock()
 	p.Tokens.Add(1)
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{"token_type": "Bearer", "expires_in": 3600, "id_token": idToken,
+	// The client has gone; there is nobody to tell.
+	_ = json.NewEncoder(w).Encode(map[string]any{"token_type": "Bearer", "expires_in": 3600, "id_token": idToken,
 		"access_token": access, "refresh_token": refresh})
 }
 
@@ -326,7 +329,8 @@ func (p *Provider) sign(c Claims) string {
 func tokenError(w http.ResponseWriter, status int, code string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]string{"error": code})
+	// The client has gone; there is nobody to tell.
+	_ = json.NewEncoder(w).Encode(map[string]string{"error": code})
 }
 
 func random(n int) string {

@@ -510,7 +510,9 @@ func (m *Methods) removePerson(ctx context.Context, user string, from Caller) er
 		}
 		if link != nil && m.s.providers != nil {
 			name, provided := h.Name, m.s.providers
-			safe.Go("delete a removed person's machine", func() { provided.DeleteForRemoval(*link, name, user) })
+			safe.Go("delete a removed person's machine", func() {
+				_ = provided.DeleteForRemoval(*link, name, user) // It logs its own failure.
+			})
 		}
 	}
 	m.s.joins.dropFor(ctx, user)

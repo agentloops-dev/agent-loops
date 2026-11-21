@@ -631,10 +631,14 @@ func (si *signIns) sealOrgProviderSecret(ctx context.Context, id, secret string)
 		return nil, userFailure(err)
 	}
 	return func() {
+		var err error
 		if previous == nil {
-			si.s.cfg.Store.Delete(context.Background(), key)
+			err = si.s.cfg.Store.Delete(context.Background(), key)
 		} else {
-			si.s.cfg.Store.Put(context.Background(), key, previous.Data, store.Matching(written))
+			_, err = si.s.cfg.Store.Put(context.Background(), key, previous.Data, store.Matching(written))
+		}
+		if err != nil {
+			si.s.log("org sign-in: " + key + " could not be undone: " + err.Error())
 		}
 	}, nil
 }
@@ -700,7 +704,9 @@ func (si *signIns) removeOrgProvider(ctx context.Context, r wire.OrgProviderRequ
 	}
 	for _, c := range si.domainClaims(ctx, true) {
 		if c.claim.Provider == r.ID {
-			si.s.cfg.Store.Delete(ctx, domainKey(c.claim.Domain))
+			if err := si.s.cfg.Store.Delete(ctx, domainKey(c.claim.Domain)); err != nil {
+				si.s.log("org provider " + r.ID + ": its claim on " + c.claim.Domain + " could not be deleted: " + err.Error())
+			}
 		}
 	}
 	si.forgetClaims()

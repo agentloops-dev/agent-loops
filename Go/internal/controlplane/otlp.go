@@ -168,7 +168,8 @@ func (e *otlpExporter) post(ctx context.Context, body []byte) error {
 		return fmt.Errorf("%s: %w", redactedEndpoint(e.cfg.Endpoint), err)
 	}
 	defer resp.Body.Close()
-	io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
+	// The body is drained only so the connection can be used again.
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
 	if resp.StatusCode/100 != 2 {
 		return fmt.Errorf("%s answered %s", redactedEndpoint(e.cfg.Endpoint), resp.Status)
 	}

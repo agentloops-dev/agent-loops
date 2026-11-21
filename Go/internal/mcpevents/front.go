@@ -75,7 +75,7 @@ func (f *Front) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
 	_ = upstreamIn.Close()
 	<-relayed
 	cancel()
-	<-upstreamDone
+	<-upstreamDone //nolint:errcheck // the upstream ends because cancel stopped it; the client's read is what Serve says
 	return readErr
 }
 

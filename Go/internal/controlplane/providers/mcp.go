@@ -576,7 +576,8 @@ func (p *stdioProcess) write(body []byte) {
 	line := append(bytes.TrimRight(body, "\n"), '\n')
 	p.writeMu.Lock()
 	defer p.writeMu.Unlock()
-	p.in.Write(line)
+	// A server that cannot read its stdin has ended: Exited says so.
+	_, _ = p.in.Write(line)
 }
 
 // send writes one request and waits for the answer with the same id, or until timeout.
@@ -637,12 +638,14 @@ func (p *stdioProcess) end(reason string) {
 	if p.in != nil {
 		p.in.Close()
 	}
-	p.cmd.Process.Signal(syscall.SIGTERM)
+	// It may have ended already; the Kill below is the fallback.
+	_ = p.cmd.Process.Signal(syscall.SIGTERM)
 	go func() {
 		select {
 		case <-p.exited:
 		case <-time.After(2 * time.Second):
-			p.cmd.Process.Kill()
+			// It may have ended between the two.
+			_ = p.cmd.Process.Kill()
 		}
 	}()
 }

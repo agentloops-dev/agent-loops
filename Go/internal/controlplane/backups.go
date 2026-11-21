@@ -553,9 +553,10 @@ func (b *backupStore) overKeep(h *hostBackups, keep int64) []string {
 // deleteBackups deletes each named backup of the host: its .json first, then its parts.
 func (b *backupStore) deleteBackups(ctx context.Context, folder string, h *hostBackups, drop []string) {
 	for _, name := range drop {
-		b.store.Delete(ctx, folder+name+".json")
+		// A key left is deleted at the next prune: a part with no .json is a stray.
+		_ = b.store.Delete(ctx, folder+name+".json")
 		for _, k := range h.parts[name] {
-			b.store.Delete(ctx, k)
+			_ = b.store.Delete(ctx, k)
 		}
 		delete(h.parts, name)
 	}
@@ -567,7 +568,8 @@ func (b *backupStore) deleteStrayParts(ctx context.Context, h *hostBackups, now 
 	for name, keys := range h.parts {
 		if !contains(h.complete, name) && (b.older(name, now, backupStrayAge) || b.ahead(name, now)) {
 			for _, k := range keys {
-				b.store.Delete(ctx, k)
+				// A key left is deleted at the next prune.
+				_ = b.store.Delete(ctx, k)
 			}
 		}
 	}

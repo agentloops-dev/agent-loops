@@ -567,7 +567,7 @@ func serve() {
 	signal.Notify(stop, syscall.SIGTERM, syscall.SIGINT)
 	<-stop
 	if advertiser != nil && advertiser.Process != nil {
-		advertiser.Process.Kill()
+		_ = advertiser.Process.Kill() // it may have gone already; the control plane stops either way
 	}
 	s.Stop()
 }
@@ -698,7 +698,9 @@ func serveWeb(cfg *controlplane.Config) {
 		data, _ := json.Marshal(map[string]any{"pid": os.Getpid(), "status": status})
 		tmp := file + ".tmp"
 		if os.WriteFile(tmp, data, 0o644) == nil {
-			os.Rename(tmp, file)
+			if err := os.Rename(tmp, file); err != nil {
+				fail("web.json: %v", err)
+			}
 		}
 	}
 	// Turned off from a page (control/setWeb, #4252): web-off beside web.json keeps it.

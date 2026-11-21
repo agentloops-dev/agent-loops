@@ -109,7 +109,8 @@ func Probe(ctx context.Context, s Store, copy string) error {
 	if err != nil {
 		return err
 	}
-	defer s.Delete(context.WithoutCancel(ctx), key)
+	// A probe key left behind is harmless: the next probe writes it again.
+	defer func() { _ = s.Delete(context.WithoutCancel(ctx), key) }()
 	if _, err := s.Put(ctx, key, []byte("again"), Absent); !IsConflict(err) {
 		if err != nil {
 			return err

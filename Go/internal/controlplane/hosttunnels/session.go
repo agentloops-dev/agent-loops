@@ -66,7 +66,8 @@ func session(ctx context.Context, record Record, base sshCommand, folder string,
 	errorsWrite.Close()
 	master := &master{cmd: cmd, exited: make(chan struct{})}
 	go func() {
-		cmd.Wait()
+		// How ssh ended is in its stderr, read by the caller; Wait only reaps it.
+		_ = cmd.Wait()
 		// Its ProxyCommand, such as gh's relay, can outlive it (#1643).
 		procgroup.End(cmd)
 		master.ended.Store(true)
@@ -170,7 +171,8 @@ var releasing = 3 * time.Second
 func release(ssh sshCommand, control string, port int) {
 	ctx, cancel := context.WithTimeout(context.Background(), releasing)
 	defer cancel()
-	ssh.run(ctx, ssh.tunnelCancelArguments(control, port, port))
+	// Best effort: a forward that stays ends when the server's sshd does.
+	_, _ = ssh.run(ctx, ssh.tunnelCancelArguments(control, port, port))
 }
 
 // master is the session's ssh: ended is set once it has exited.
@@ -183,7 +185,8 @@ type master struct {
 // terminate is Process.terminate: SIGTERM, if it still runs.
 func (m *master) terminate() {
 	if !m.ended.Load() {
-		m.cmd.Process.Signal(syscall.SIGTERM)
+		// It may have ended since the check; then there is nothing to stop.
+		_ = m.cmd.Process.Signal(syscall.SIGTERM)
 	}
 }
 

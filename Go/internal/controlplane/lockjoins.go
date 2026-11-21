@@ -97,7 +97,8 @@ func (j *lockJoins) all(ctx context.Context) ([]lockJoinRecord, error) {
 			continue
 		}
 		if j.now().Sub(r.Expires.Time) > joinKept {
-			j.s.cfg.Store.Delete(ctx, entry.Key)
+			// A key left is deleted by the next sweep.
+			_ = j.s.cfg.Store.Delete(ctx, entry.Key)
 			continue
 		}
 		out = append(out, *r)

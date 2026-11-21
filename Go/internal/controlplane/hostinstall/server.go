@@ -195,9 +195,11 @@ func (i installer) install(ctx context.Context, binary, sha string, firstInstall
 		return nil
 	}
 	if firstInstall {
-		i.run(ctx, `rm -rf "$HOME/.agents-server"`)
+		// Tidying a failed install: the error said is the install's.
+		_, _ = i.run(ctx, `rm -rf "$HOME/.agents-server"`)
 	} else {
-		i.run(ctx, `rm -f "$HOME"/.agents-server/bin/.agentsd-*.part`)
+		// Tidying a failed install: the error said is the install's.
+		_, _ = i.run(ctx, `rm -f "$HOME"/.agents-server/bin/.agentsd-*.part`)
 	}
 	if strings.Contains(out.stderr, "FAILED") || strings.Contains(out.stderr, "checksum") {
 		return installFailed("The copy on the server did not match. Nothing was changed.")

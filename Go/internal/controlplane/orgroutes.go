@@ -590,7 +590,9 @@ func (s *Service) writeRouteSecrets(ctx context.Context, record orgSecretRecord,
 	}
 	return func() {
 		if previous == nil {
-			s.cfg.Store.Delete(context.Background(), key)
+			if err := s.cfg.Store.Delete(context.Background(), key); err != nil {
+				s.log("org routes: " + key + " could not be undone: " + err.Error())
+			}
 			return
 		}
 		if _, err := s.cfg.Store.Put(context.Background(), key, previous, store.Matching(written)); err != nil {
@@ -1167,7 +1169,8 @@ func (s *Service) orgRoutesApplied(ctx context.Context, host string, applied wir
 // appliedOrgRoutes is what a machine said it keeps.
 func appliedOrgRoutes(h records.MachineRecord) []wire.OrgRouteVersion {
 	var list []wire.OrgRouteVersion
-	json.Unmarshal(h.Extra[orgRoutesApplied], &list)
+	// None, or a list that does not read, is no routes kept.
+	_ = json.Unmarshal(h.Extra[orgRoutesApplied], &list)
 	return list
 }
 
