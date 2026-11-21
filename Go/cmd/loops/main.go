@@ -8,6 +8,9 @@
 //	loops status             the pairing, this machine and the folder here
 //	loops ls [--all]         this folder's sessions: 20, or with --all every one
 //	loops folder add [dir]   add this directory (or dir) as a folder
+//	loops -p "…" [--json]    print mode for scripts: start a session here, follow it to the
+//	                         end, print the last reply (#6447)
+//	loops --detach "…"       start a session here, print its id and exit
 //
 // Exit codes (Stage 3): 0 done; 1 an error; 2 not in a folder; 3 a card waits and
 // --on-ask=fail; 4 timed out; 5 not paired.
@@ -97,17 +100,30 @@ const usage = `loops: Agent Loops in a terminal
   loops status             the pairing, this machine and the folder here
   loops ls [--all]         this folder's sessions (20; --all for every one, archived too)
   loops folder add [dir]   add this directory as a folder
+  loops -p "…"             print mode: start a session here, follow it to the end, print
+                           the agent's last reply (the prompt may come on stdin)
+  loops --detach "…"       start a session here, print its id and exit at once
 
 Flags:
   --folder <name|path>     work in this folder, not the one of the current directory
   --machine <name>         the folder's machine, when it is not this computer
   --control <host>         the control plane, when this terminal is paired with several
+
+Print mode (-p, --detach):
+  --json                   one JSON object per line: the session first, the end last
+  --on-ask=wait|fail       a card waits: wait for an answer on any client (the default),
+                           or end with exit 3; loops never answers a card itself
+  --timeout <duration>     end with exit 4 after this long (as 10m); the session goes on
 `
 
 // options are the flags, which may come before or after the command.
 type options struct {
 	folder, machine, control string
 	all                      bool
+	// Print mode (#6447).
+	print, detach, json bool
+	onAsk               string
+	timeout             time.Duration
 	// controlName is the paired control plane's host name, for the words.
 	controlName string
 }
@@ -120,6 +136,12 @@ func parse(args []string) (options, []string, error) {
 	fs.StringVar(&o.machine, "machine", "", "")
 	fs.StringVar(&o.control, "control", "", "")
 	fs.BoolVar(&o.all, "all", false, "")
+	fs.BoolVar(&o.print, "p", false, "")
+	fs.BoolVar(&o.print, "print", false, "")
+	fs.BoolVar(&o.detach, "detach", false, "")
+	fs.BoolVar(&o.json, "json", false, "")
+	fs.StringVar(&o.onAsk, "on-ask", "", "")
+	fs.DurationVar(&o.timeout, "timeout", 0, "")
 	var rest []string
 	for {
 		if err := fs.Parse(args); err != nil {
@@ -148,6 +170,12 @@ func run(ctx context.Context, args []string, w io.Writer) error {
 	o, rest, err := parse(args)
 	if err != nil {
 		return err
+	}
+	if err := checkPrintFlags(o); err != nil {
+		return err
+	}
+	if o.print || o.detach {
+		return printMode(ctx, w, o, rest)
 	}
 	cmd := ""
 	if len(rest) > 0 {
@@ -178,7 +206,7 @@ func run(ctx context.Context, args []string, w io.Writer) error {
 		}
 		return folderAdd(ctx, w, o, dir)
 	default:
-		// Starting and continuing a session here (#6446) and print mode (#6447) come next;
+		// Starting and continuing a session here with the live chat (#6446) comes next;
 		// until then the folder is found as they will find it, so its states and codes hold.
 		_, p, err := connect(ctx, o)
 		if err != nil {
