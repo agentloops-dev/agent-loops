@@ -145,8 +145,8 @@ func TestResolveRuleNoLayerSetsHasNoDecides(t *testing.T) {
 			}
 		}
 	}
-	if len(ep.Rules) != 19 {
-		t.Fatalf("got %d rules, want 19 (FR-002, #4099, #4377)", len(ep.Rules))
+	if len(ep.Rules) != 19+len(Trailers) {
+		t.Fatalf("got %d rules, want %d (FR-002, #4099, #4377, #6365)", len(ep.Rules), 19+len(Trailers))
 	}
 }
 
