@@ -239,11 +239,8 @@ func validKey(key []byte) bool {
 // entries takes only a root.
 func (s *State) Add(e wire.LockEntry) error {
 	i := len(s.hashes)
-	bad := func(err error, format string, args ...any) error {
-		return &CheckError{Index: i, Err: err, Why: fmt.Sprintf(format, args...)}
-	}
 	if i >= MostEntries {
-		return bad(ErrInvalid, "the lock has %d entries, the most it takes", MostEntries)
+		return checkErr(i, ErrInvalid, "the lock has %d entries, the most it takes", MostEntries)
 	}
 	body, err := Open(e)
 	if err != nil {
@@ -254,84 +251,111 @@ func (s *State) Add(e wire.LockEntry) error {
 		return &CheckError{Index: i, Err: why, Why: err.Error()}
 	}
 	if !validKey(body.Key) {
-		return bad(ErrInvalid, "its key is not a P-256 key")
+		return checkErr(i, ErrInvalid, "its key is not a P-256 key")
 	}
 	if i == 0 {
-		if body.Kind != wire.LockEntryKindRoot {
-			return bad(ErrOutOfOrder, "the first entry is %s, not root", body.Kind)
-		}
-		if len(body.Previous) != 0 {
-			return bad(ErrOutOfOrder, "the root names an entry before it")
-		}
-		if body.Person == "" {
-			return bad(ErrInvalid, "the root names no person")
-		}
-		if !bytes.Equal(body.Signer, body.Key) {
-			return bad(ErrForged, "the root is not signed by the key it names")
-		}
-		s.Person = body.Person
-		s.members = map[string]Member{}
-		s.add(body, i)
-		s.Root = HashOf(e)
-		s.hashes = append(s.hashes, s.Root)
-		return nil
+		return s.addRoot(e, body)
 	}
 	if body.Person != s.Person {
-		return bad(ErrForged, "it names the person %q, not %q", body.Person, s.Person)
+		return checkErr(i, ErrForged, "it names the person %q, not %q", body.Person, s.Person)
 	}
 	if head := s.Head(); !bytes.Equal(body.Previous, head[:]) {
-		return bad(ErrOutOfOrder, "it follows %x, not the head %s", body.Previous, head.Short())
+		return checkErr(i, ErrOutOfOrder, "it follows %x, not the head %s", body.Previous, head.Short())
 	}
+	spent, err := s.authorise(body, i)
+	if err != nil {
+		return err
+	}
+	if err := s.apply(body, i); err != nil {
+		return err
+	}
+	if spent != "" {
+		delete(s.members, spent)
+	}
+	s.hashes = append(s.hashes, HashOf(e))
+	return nil
+}
+
+// checkErr is the CheckError for the entry at index i.
+func checkErr(i int, err error, format string, args ...any) error {
+	return &CheckError{Index: i, Err: err, Why: fmt.Sprintf(format, args...)}
+}
+
+// addRoot checks and takes the first entry, the root.
+func (s *State) addRoot(e wire.LockEntry, body wire.LockBody) error {
+	if body.Kind != wire.LockEntryKindRoot {
+		return checkErr(0, ErrOutOfOrder, "the first entry is %s, not root", body.Kind)
+	}
+	if len(body.Previous) != 0 {
+		return checkErr(0, ErrOutOfOrder, "the root names an entry before it")
+	}
+	if body.Person == "" {
+		return checkErr(0, ErrInvalid, "the root names no person")
+	}
+	if !bytes.Equal(body.Signer, body.Key) {
+		return checkErr(0, ErrForged, "the root is not signed by the key it names")
+	}
+	s.Person = body.Person
+	s.members = map[string]Member{}
+	s.add(body, 0)
+	s.Root = HashOf(e)
+	s.hashes = append(s.hashes, s.Root)
+	return nil
+}
+
+// authorise checks the entry's kind and its signer, and gives the invite it
+// spends, if any. An invite signs one addMachine, and is spent once that entry
+// is taken.
+func (s *State) authorise(body wire.LockBody, i int) (spent string, err error) {
 	signer := s.Signer(body.Signer)
-	// An invite signs one addMachine, and is spent once that entry is taken.
-	spent := ""
 	switch body.Kind {
 	case wire.LockEntryKindRoot:
-		return bad(ErrOutOfOrder, "a second root")
+		return "", checkErr(i, ErrOutOfOrder, "a second root")
 	case wire.LockEntryKindAddMachine:
 		if len(body.SealingKey) == 0 || !validKey(body.SealingKey) {
-			return bad(ErrInvalid, "the machine's sealing key is not a P-256 key")
+			return "", checkErr(i, ErrInvalid, "the machine's sealing key is not a P-256 key")
 		}
 		if invite, ok := s.members[keyID(body.Signer)]; ok && invite.Kind == wire.LockEntryKindInvite {
 			if !body.At.Time().Before(invite.Expires) {
-				return bad(ErrForged, "its invite expired at %s", invite.Expires.UTC().Format(time.RFC3339))
+				return "", checkErr(i, ErrForged, "its invite expired at %s", invite.Expires.UTC().Format(time.RFC3339))
 			}
 			spent = keyID(body.Signer)
 			signer = true
 		}
 	case wire.LockEntryKindInvite:
 		if body.Expires == nil || !body.Expires.Time().After(body.At.Time()) {
-			return bad(ErrInvalid, "the invite has no expiry after it was made")
+			return "", checkErr(i, ErrInvalid, "the invite has no expiry after it was made")
 		}
 	case wire.LockEntryKindAddClient, wire.LockEntryKindRemove, wire.LockEntryKindRecovery:
 	default:
-		return bad(ErrInvalid, "the kind %q is not one this build knows", body.Kind)
+		return "", checkErr(i, ErrInvalid, "the kind %q is not one this build knows", body.Kind)
 	}
 	if !signer {
-		return bad(ErrForged, "its signer is not a client or the recovery key of the lock")
+		return "", checkErr(i, ErrForged, "its signer is not a client or the recovery key of the lock")
 	}
+	return spent, nil
+}
+
+// apply changes the members for an entry that authorise passed.
+func (s *State) apply(body wire.LockBody, i int) error {
 	switch body.Kind {
 	case wire.LockEntryKindRemove:
 		if _, ok := s.members[keyID(body.Key)]; !ok {
-			return bad(ErrInvalid, "it removes a key the lock does not name")
+			return checkErr(i, ErrInvalid, "it removes a key the lock does not name")
 		}
 		delete(s.members, keyID(body.Key))
 	case wire.LockEntryKindRecovery:
 		if _, ok := s.members[keyID(body.Key)]; ok {
-			return bad(ErrInvalid, "the recovery key is a member of the lock")
+			return checkErr(i, ErrInvalid, "the recovery key is a member of the lock")
 		}
 		s.recovery = slices.Clone(body.Key)
 		s.recoverySealed = slices.Clone(body.Sealed)
 	default:
 		if _, ok := s.members[keyID(body.Key)]; ok || bytes.Equal(body.Key, s.recovery) {
-			return bad(ErrInvalid, "its key is in the lock already")
+			return checkErr(i, ErrInvalid, "its key is in the lock already")
 		}
 		s.add(body, i)
 	}
-	if spent != "" {
-		delete(s.members, spent)
-	}
-	s.hashes = append(s.hashes, HashOf(e))
 	return nil
 }
 
