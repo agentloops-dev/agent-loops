@@ -125,6 +125,7 @@ nav:
       - how-to/watch-background-work.md
       - how-to/review-changes-and-approvals.md
       - how-to/use-a-shell.md
+      - how-to/use-loops-in-a-terminal.md
       - how-to/edit-files.md
       - how-to/use-the-simulator-pane.md
       - how-to/let-an-agent-drive-desktop-apps.md

@@ -93,6 +93,8 @@ something particular done.
   for your OK on its Review page, and answer it from the page, the card or Needs You.
 - [Use a shell in an agent's folder](use-a-shell.md): the Terminal pane, one shell to a
   tab.
+- [Use loops in a terminal](use-loops-in-a-terminal.md): install the command-line client,
+  pair it, and start or continue a session in the folder you are in.
 - [Attach files and pictures to a prompt](attach-files.md): drag, paste, the paperclip,
   or an @ mention.
 - [Read an agent's changes](read-an-agents-changes.md): the Changes pane, edits in the
