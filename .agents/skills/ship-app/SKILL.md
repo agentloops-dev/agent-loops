@@ -29,6 +29,13 @@ instead of 20s. `--build-only` builds in the checkout
 the script is in (run a worktree's copy to build that worktree), checks the products,
 and stops: nothing is installed or relaunched. Use it to prove a change to this script.
 
+`--install-cli` also puts `loops`, the command-line client, on the PATH (#6559). With the
+Mac install, `~/.local/bin/loops` becomes a link to
+`~/Applications/Agent Loops.app/Contents/Helpers/loops`, so `loops` updates each time the
+app does. With `--no-mac`, the script builds `loops` alone (`scripts/go-github-mcp.sh
+--force loops`) and copies it to `~/.local/bin/loops`. When `~/.local/bin` is not on the
+PATH, the script says so. A failed install does not stop the rest, but the script exits 1.
+
 ## The live control plane (#4712)
 
 `--control-plane` also deploys the checkout to the live control plane,
