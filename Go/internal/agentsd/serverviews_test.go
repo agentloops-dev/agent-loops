@@ -36,8 +36,7 @@ func TestAServersListViewsShowWithoutAPinAndHide(t *testing.T) {
 	c.call(t, 20, "pins/list", nil)
 	c.until(t, "pins/changed with ci's view", func(method string, p json.RawMessage) bool {
 		var n wire.PinsChangedNotification
-		mustUnmarshal(t, p, &n)
-		return method == "pins/changed" && len(n.Views) == 1
+		return method == "pins/changed" && json.Unmarshal(p, &n) == nil && len(n.Views) == 1
 	})
 	mustUnmarshal(t, c.call(t, 2, "pins/list", nil), &all)
 	if len(all) != 1 || len(all[0].Pins) != 0 || len(all[0].Views) != 1 {

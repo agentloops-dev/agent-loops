@@ -147,7 +147,9 @@ func TestABranchsRecordIsNotQueued(t *testing.T) {
 			return false
 		}
 		var b wire.Agent
-		mustUnmarshal(t, p, &b)
+		if json.Unmarshal(p, &b) != nil {
+			return false // another notification, or not this one yet
+		}
 		if b.ID != id {
 			return false
 		}

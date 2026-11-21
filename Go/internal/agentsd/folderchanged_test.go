@@ -60,7 +60,9 @@ func folderChangedFor(t *testing.T, c *conn, folder string) wire.FolderSummary {
 			return false
 		}
 		var s wire.FolderSummary
-		mustUnmarshal(t, params, &s)
+		if json.Unmarshal(params, &s) != nil {
+			return false // another notification, or not this one yet
+		}
 		if store.FolderPath(s.Folder.Folder) != folder {
 			return false
 		}
@@ -129,7 +131,9 @@ func TestFolderChangedOneChangeAtWindowEnd(t *testing.T) {
 	c.until(t, "folder/changed of both", func(method string, params json.RawMessage) bool {
 		if method == wire.NotifyFolderChanged.Name {
 			var s wire.FolderSummary
-			mustUnmarshal(t, params, &s)
+			if json.Unmarshal(params, &s) != nil {
+				return false // another notification, or not this one yet
+			}
 			seen[store.FolderPath(s.Folder.Folder)] = true
 		}
 		return seen[one] && seen[two]

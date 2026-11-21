@@ -120,8 +120,7 @@ func TestAViewRowsCountFollowsItsListAndGoesStale(t *testing.T) {
 	d.countViewsOnce(context.Background())
 	c.until(t, "pins/changed with 24", func(method string, p json.RawMessage) bool {
 		var n wire.PinsChangedNotification
-		mustUnmarshal(t, p, &n)
-		return method == "pins/changed" && len(n.Views) == 1 && n.Views[0].Count != nil && *n.Views[0].Count == 24
+		return method == "pins/changed" && json.Unmarshal(p, &n) == nil && len(n.Views) == 1 && n.Views[0].Count != nil && *n.Views[0].Count == 24
 	})
 	// A failed poll keeps the last count, marked stale.
 	down.Store(true)
