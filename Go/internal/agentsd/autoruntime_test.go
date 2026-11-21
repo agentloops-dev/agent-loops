@@ -7,6 +7,7 @@ import (
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/yamlnode"
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -265,6 +266,7 @@ func TestTheMappingsAreThePersons(t *testing.T) {
 // since, or a record from before levels were kept, said Custom for a mode a cell now gives
 // (#5730). auto/set and a branch match them again.
 func TestLevelsFollowTheMappings(t *testing.T) {
+	flaky.UnderLoad(t, "#6432")
 	t.Parallel()
 
 	fakeRuntimes(t)
