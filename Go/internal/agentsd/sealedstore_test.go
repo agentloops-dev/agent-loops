@@ -26,7 +26,7 @@ func TestAnUnflaggedRecordOpensWithNoApproval(t *testing.T) {
 	if err := d.saveSealedSecret(home, "GITLAB_TOKEN", value, "", false); err != nil {
 		t.Fatal(err)
 	}
-	s := readSealedSecrets(home).Secrets["GITLAB_TOKEN"]
+	s := sealedSecretsHere(home)["GITLAB_TOKEN"]
 	if !s.NoAsk || s.Release || len(s.Grants) != 0 || strings.Contains(string(s.Sealed), value) {
 		t.Fatalf("%+v", s)
 	}
@@ -80,7 +80,7 @@ func TestAnUnflaggedRecordsFlagChangedByHandDoesNotOpen(t *testing.T) {
 	if err := d.saveSealedSecret(home, "ASKED_TOKEN", "asked-value", "", true); err != nil {
 		t.Fatal(err)
 	}
-	f := readSealedSecrets(home)
+	f, _ := readSealedSecrets(home)
 	plain, asked := f.Secrets["PLAIN_TOKEN"], f.Secrets["ASKED_TOKEN"]
 	plain.NoAsk, asked.NoAsk = false, true
 	f.Secrets["PLAIN_TOKEN"], f.Secrets["ASKED_TOKEN"] = plain, asked
@@ -109,7 +109,7 @@ func TestALinuxMachineWithNoControlPlaneKeepsAnUnflaggedSecret(t *testing.T) {
 	if err := d.saveSealedSecret(home, "GITLAB_TOKEN", "linux-value", "", false); err != nil {
 		t.Fatal(err)
 	}
-	if s := readSealedSecrets(home).Secrets["GITLAB_TOKEN"]; s.Release || !s.NoAsk {
+	if s := sealedSecretsHere(home)["GITLAB_TOKEN"]; s.Release || !s.NoAsk {
 		t.Fatalf("%+v", s)
 	}
 	if got := d.secrets()["GITLAB_TOKEN"]; got != "linux-value" {
@@ -143,7 +143,7 @@ func TestAnUnreadableKeyGivesOneErrorForEverySecret(t *testing.T) {
 		t.Fatal(err)
 	}
 	d.HostKey = unreadableKey{}
-	f := readSealedSecrets(home)
+	f, _ := readSealedSecrets(home)
 	var messages []string
 	for _, name := range []string{"PLAIN_TOKEN", "ASKED_TOKEN"} {
 		_, err := d.openSealedSecret(sealedLocal, name, f.Secrets[name])
@@ -187,7 +187,7 @@ func TestNoSecretsEnvAfterAStart(t *testing.T) {
 	if got := d.secrets(); got["OLD_TOKEN"] != "old-4177-not-real" || got["KEPT_TOKEN"] != "from-the-file" {
 		t.Fatalf("%v", got)
 	}
-	if s := readSealedSecrets(home).Secrets["OLD_TOKEN"]; !s.NoAsk {
+	if s := sealedSecretsHere(home)["OLD_TOKEN"]; !s.NoAsk {
 		t.Fatalf("a moved secret is flagged: %+v", s)
 	}
 

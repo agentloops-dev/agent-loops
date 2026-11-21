@@ -87,12 +87,21 @@ func secretDescription(text string) (string, error) {
 
 // listSecrets is list_secrets.
 func (d *Daemon) listSecrets(agent wire.UUID, _ map[string]json.RawMessage) (string, error) {
-	return secretListNote(d.secretList(agent)), nil
+	all, err := d.secretList(agent)
+	if err != nil {
+		// Not "There are no secrets": the secrets in the file are still there (#6486).
+		note := "This machine's secrets cannot be listed: " + err.Error() + ". Do not save a secret on this machine until it is repaired."
+		if len(all) == 0 {
+			return note, nil
+		}
+		return note + "\n" + secretListNote(all), nil
+	}
+	return secretListNote(all), nil
 }
 
 // secretList is every secret the calling session can name: its own first, then this
 // machine's, then the person's that are not here yet.
-func (d *Daemon) secretList(agent wire.UUID) []secretListLine {
+func (d *Daemon) secretList(agent wire.UUID) ([]secretListLine, error) {
 	var out []secretListLine
 	seen := map[string]bool{}
 	add := func(l secretListLine) {
@@ -112,7 +121,7 @@ func (d *Daemon) secretList(agent wire.UUID) []secretListLine {
 	}
 	home := d.personalHome()
 	if home == "" {
-		return out
+		return out, nil
 	}
 	d.userScopeMu.Lock()
 	mark := d.userMarkLocked()
@@ -123,7 +132,8 @@ func (d *Daemon) secretList(agent wire.UUID) []secretListLine {
 	}
 	local := readSecretDescriptions(home)
 	names := skillcatalog.LoadSecrets(skillcatalog.SecretsPath(home)).Names()
-	for n := range readSealedSecrets(home).Secrets {
+	f, unreadable := readSealedSecrets(home)
+	for n := range f.Secrets {
 		names = append(names, n)
 	}
 	sort.Strings(names)
@@ -140,7 +150,7 @@ func (d *Daemon) secretList(agent wire.UUID) []secretListLine {
 		add(secretListLine{Name: string(a.Name), Description: aboutText(a.Description), Kind: aboutKind(a.Kind),
 			NeedsApproval: a.NeedsApproval != nil && *a.NeedsApproval})
 	}
-	return out
+	return out, unreadable
 }
 
 func aboutText(p *string) string {

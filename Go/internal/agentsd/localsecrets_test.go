@@ -94,8 +94,8 @@ func TestLocalSecretsRemoveTakesAnAgentsSaveOut(t *testing.T) {
 		return out
 	}
 	// Every name list_secrets says is here and not the person's is in the list.
-	for _, l := range d.secretList("") {
-		if l.HereToo && l.Name != "PERSONS_TOKEN" && !slices.Contains(names(d.localSecretList()), l.Name) {
+	for _, l := range secretLines(t, d) {
+		if l.HereToo && l.Name != "PERSONS_TOKEN" && !slices.Contains(names(localRows(t, d)), l.Name) {
 			t.Fatalf("list_secrets gives %s, but On This Machine does not", l.Name)
 		}
 	}
@@ -108,13 +108,13 @@ func TestLocalSecretsRemoveTakesAnAgentsSaveOut(t *testing.T) {
 	if len(after.Secrets) != 0 {
 		t.Fatalf("still listed: %s", raw)
 	}
-	if _, ok := readSealedSecrets(home).Secrets["AZURE_DEVOPS_TOKEN"]; ok {
+	if _, ok := sealedSecretsHere(home)["AZURE_DEVOPS_TOKEN"]; ok {
 		t.Fatal("still in sealed.json")
 	}
 	if _, ok := readSecretDescriptions(home)["AZURE_DEVOPS_TOKEN"]; ok {
 		t.Fatal("its description stayed")
 	}
-	for _, l := range d.secretList("") {
+	for _, l := range secretLines(t, d) {
 		if l.Name == "AZURE_DEVOPS_TOKEN" {
 			t.Fatal("list_secrets still gives it")
 		}
@@ -123,7 +123,7 @@ func TestLocalSecretsRemoveTakesAnAgentsSaveOut(t *testing.T) {
 	if msg := c.callErr(t, 2, wire.CallSecretsLocalRemove.Name, map[string]any{"name": "PERSONS_TOKEN"}); !strings.Contains(msg, "remove it under Yours") {
 		t.Fatalf("the person's secret: %s", msg)
 	}
-	if _, ok := readSealedSecrets(home).Secrets["PERSONS_TOKEN"]; !ok {
+	if _, ok := sealedSecretsHere(home)["PERSONS_TOKEN"]; !ok {
 		t.Fatal("the person's secret went")
 	}
 	if msg := c.callErr(t, 3, wire.CallSecretsLocalRemove.Name, map[string]any{"name": "NOT_HERE"}); !strings.Contains(msg, "not on this machine") {
