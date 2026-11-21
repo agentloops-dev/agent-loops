@@ -32,8 +32,8 @@ struct FeatureFlagTests {
     }
 
     @MainActor
-    @Test func theMirrorReadsAFlagIntoTheDefaults() throws {
-        let defaults = try #require(UserDefaults(suiteName: "FeatureFlagTests-\(UUID().uuidString)"))
+    @Test func theMirrorReadsAFlagIntoTheDefaults() {
+        let defaults = MemoryDefaults()
         let mirror = DisplayPreferenceMirror(defaults: defaults, send: { $0 }, failed: { _ in })
         let flag = FeatureFlag.commitTrailers
         mirror.hostSaid([flag.key: .bool(true)])
