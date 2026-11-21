@@ -29,8 +29,8 @@ public enum CommitTrailerWords {
 
         public var line: String {
             switch self {
-            case .record: "a folder or your organisation can only turn these on"
-            case .spend: "a folder or your organisation can only turn these off"
+            case .record: "a folder or your organisation can require these"
+            case .spend: "a folder or your organisation can keep these out"
             }
         }
 
