@@ -101,7 +101,8 @@ func (p *Providers) refuse(method string, params []byte, caller Caller) error {
 		Provider string `json:"provider"`
 		Host     string `json:"host"`
 	}
-	decodeJSON(params, &named)
+	// The params are optional: none, or ones that do not read, are the defaults.
+	_ = decodeJSON(params, &named)
 	provider := ""
 	switch method {
 	case MethodProvidersOptions, MethodProvidersCreate, MethodProvidersDeleteWorkspace:

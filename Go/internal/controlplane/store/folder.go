@@ -90,7 +90,8 @@ func (f *Folder) Put(_ context.Context, key string, data []byte, when Condition)
 	if err := flock(lock, syscall.LOCK_EX); err != nil {
 		return "", Unavailable("cannot lock %s: %v", key, err)
 	}
-	defer flock(lock, syscall.LOCK_UN)
+	// Closing the file lets go of the lock too, so a failed unlock loses nothing.
+	defer func() { _ = flock(lock, syscall.LOCK_UN) }()
 
 	// Only a file that is not there is absent (#206): one there and unreadable is neither
 	// overwritten as absent nor taken as some other version.
@@ -230,7 +231,8 @@ func (f *Folder) List(_ context.Context, prefix string) ([]Key, error) {
 // path: it visits every folder.
 func (f *Folder) RemoveLeftovers(before time.Time) int {
 	removed := 0
-	filepath.WalkDir(f.Root, func(p string, d fs.DirEntry, err error) error {
+	// The walk function returns nil for every path, so WalkDir does too.
+	_ = filepath.WalkDir(f.Root, func(p string, d fs.DirEntry, err error) error {
 		if err != nil || p == f.Root || !d.Type().IsRegular() {
 			return nil
 		}

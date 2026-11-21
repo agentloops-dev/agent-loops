@@ -40,7 +40,9 @@ func (s *Service) reportPolicy(ctx context.Context) (wire.ReportPolicy, error) {
 		return policy, fail(storeUnavailable, "The report policy could not be read: %v", err)
 	}
 	if object != nil {
-		json.Unmarshal(object.Data, &policy)
+		if err := json.Unmarshal(object.Data, &policy); err != nil {
+			s.log("reports: the report policy does not read, so it is the default: " + err.Error())
+		}
 	}
 	if policy.BudgetsUSD == nil {
 		policy.BudgetsUSD = map[string]float64{}

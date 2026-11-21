@@ -72,7 +72,8 @@ func (l *leases) take(ctx context.Context, host string) (int, error) {
 		var previous hostLease
 		when := store.Absent
 		if existing != nil {
-			json.Unmarshal(existing.Data, &previous)
+			// An unreadable lease is taken over as a new one, at epoch 0.
+			_ = json.Unmarshal(existing.Data, &previous)
 			when = store.Matching(existing.ETag)
 		}
 		next := hostLease{Host: host, Copy: l.copy, Epoch: previous.Epoch + 1, Expires: records.At(time.Now().Add(leaseLife))}
@@ -104,7 +105,8 @@ func (l *leases) release(ctx context.Context, host string) int {
 	over := mine.lease
 	over.Expires = records.Now()
 	data, _ := records.Encode(over)
-	l.store.Put(ctx, leaseKey(host), data, store.Matching(mine.etag))
+	// A release not written: the lease runs out by itself.
+	_, _ = l.store.Put(ctx, leaseKey(host), data, store.Matching(mine.etag))
 	return over.Epoch
 }
 
@@ -153,7 +155,8 @@ func (l *leases) renewAll(ctx context.Context) {
 			over := renewed
 			over.Expires = records.Now()
 			data, _ := records.Encode(over)
-			l.store.Put(ctx, leaseKey(host), data, store.Matching(etag))
+			// A release not written: the lease runs out by itself.
+			_, _ = l.store.Put(ctx, leaseKey(host), data, store.Matching(etag))
 		case store.IsConflict(err) && still && now.etag == mine.etag:
 			delete(l.held, host)
 			lost := l.lost
@@ -235,7 +238,8 @@ func (m *mesh) every(d time.Duration, f func()) {
 }
 
 func (m *mesh) stop() {
-	m.s.cfg.Store.Delete(context.Background(), copyRecordKey(m.s.copyID))
+	// A record left is tidied away by the other copies once it is copyGone old.
+	_ = m.s.cfg.Store.Delete(context.Background(), copyRecordKey(m.s.copyID))
 	m.mu.Lock()
 	links, proxies := m.links, m.proxies
 	m.links, m.proxies = map[string]*peerLink{}, map[string]*proxyUplink{}
@@ -257,7 +261,8 @@ func (m *mesh) tick() {
 	me := m.s.copyID
 	record := copyRecord{ID: me, PeerURL: m.peerURL, Started: records.At(m.started), Heartbeat: records.Now()}
 	data, _ := records.Encode(record)
-	st.Put(ctx, copyRecordKey(me), data, store.Always)
+	// The next heartbeat writes it again.
+	_, _ = st.Put(ctx, copyRecordKey(me), data, store.Always)
 	listed, err := st.List(ctx, "v1/copies/")
 	if err != nil {
 		return
@@ -274,7 +279,8 @@ func (m *mesh) tick() {
 		}
 		if time.Since(c.Heartbeat.Time) > copyGone {
 			// Gone: any copy tidies its record away.
-			st.Delete(ctx, e.Key)
+			// Any copy tries again at its next heartbeat.
+			_ = st.Delete(ctx, e.Key)
 			continue
 		}
 		m.mu.Lock()
@@ -380,7 +386,8 @@ func encodePeer(tag string, body any) string {
 	var b bytes.Buffer
 	e := json.NewEncoder(&b)
 	e.SetEscapeHTML(false)
-	e.Encode(map[string]any{tag: body})
+	// A bytes.Buffer does not fail, and every body here is a wire type that encodes.
+	_ = e.Encode(map[string]any{tag: body})
 	return strings.TrimSuffix(b.String(), "\n")
 }
 
@@ -415,7 +422,8 @@ func (m *mesh) received(line string, link *peerLink) {
 			ID    string `json:"id"`
 			State string `json:"state"`
 		}
-		json.Unmarshal(o["host"], &h)
+		// A host line that does not read is not "online".
+		_ = json.Unmarshal(o["host"], &h)
 		if h.State == "online" {
 			m.reach(h.ID, link)
 		} else {
@@ -465,11 +473,14 @@ func (m *mesh) stream(host, hostLine string, link *peerLink) {
 			return
 		}
 		var c int
-		json.Unmarshal(o["c"], &c)
+		// A line with no channel number is channel 0.
+		_ = json.Unmarshal(o["c"], &c)
 		switch {
 		case o["open"] != nil:
 			var open wire.ChannelOpen
-			json.Unmarshal(o["open"], &open)
+			if json.Unmarshal(o["open"], &open) != nil {
+				return
+			}
 			r.OpenFromPeer(link.peer, host, c, open)
 		case o["m"] != nil:
 			r.FromPeer(link.peer, host, c, string(o["m"]))
@@ -682,14 +693,18 @@ func (s *Service) announce(kind, subject, by string) {
 	s.mesh.broadcast(encodePeer("event", event))
 	key := fmt.Sprintf("%s%s/%013d-%s.json", meshEventsPrefix, at.Format(sweptDayLayout), at.UnixMilli(), strings.ToLower(records.NewUUID()[:8]))
 	if data, err := records.Encode(map[string]any{"kind": kind, "subject": subject, "at": records.At(at), "by": by}); err == nil {
-		s.cfg.Store.Put(context.Background(), key, data, store.Absent)
+		if _, err := s.cfg.Store.Put(context.Background(), key, data, store.Absent); err != nil {
+			s.log("mesh: event " + kind + " could not be kept: " + err.Error())
+		}
 	}
 }
 
 // apply is a change another copy made: the records again, then its effect on sessions
 // here.
 func (s *Service) apply(e controlEvent) {
-	s.records.Load(context.Background())
+	if err := s.records.Load(context.Background()); err != nil {
+		s.log("mesh: the records could not be read again for " + e.Kind + ": " + err.Error())
+	}
 	switch e.Kind {
 	case "clientForgotten":
 		s.router.ForgetClient(strings.ToUpper(e.Subject))

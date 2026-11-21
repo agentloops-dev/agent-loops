@@ -53,7 +53,8 @@ func (f *Bucket) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		w.Header().Set("ETag", etag(data))
-		w.Write(data)
+		// The client has gone; there is nobody to tell.
+		_, _ = w.Write(data)
 	case "PUT":
 		if r.Header.Get("If-None-Match") == "*" && there {
 			http.Error(w, "<Error><Code>PreconditionFailed</Code></Error>", http.StatusPreconditionFailed)
@@ -115,8 +116,9 @@ func (f *Bucket) list(w http.ResponseWriter, r *http.Request) {
 		page.NextContinuationToken = strconv.Itoa(end)
 	}
 	w.Header().Set("Content-Type", "application/xml")
-	io.WriteString(w, xml.Header)
-	xml.NewEncoder(w).Encode(page)
+	// The client has gone; there is nobody to tell.
+	_, _ = io.WriteString(w, xml.Header)
+	_ = xml.NewEncoder(w).Encode(page)
 }
 
 func etag(data []byte) string {

@@ -81,7 +81,10 @@ func Backup(ctx context.Context, st store.Store, parts HomeParts, to string) (*B
 	if err := os.MkdirAll(filepath.Join(to, "tls"), 0o700); err != nil {
 		return nil, err
 	}
-	os.Chmod(to, 0o700)
+	// MkdirAll leaves a folder that was there with its mode: the backup holds keys.
+	if err := os.Chmod(to, 0o700); err != nil { //nolint:gosec // G302: a folder needs x to be opened; 0700 is its owner only
+		return nil, err
+	}
 	list := &BackupList{Made: time.Now().UTC(), Files: []string{}}
 	if parts.GivenKey != nil {
 		if err := os.WriteFile(filepath.Join(to, "control-key"), parts.GivenKey, 0o600); err != nil {

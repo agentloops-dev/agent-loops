@@ -252,7 +252,9 @@ func (p *Providers) hostKey(host string, link WorkspaceLink, destination, trust 
 		return "", "", err
 	}
 	var result SSHResult
-	json.Unmarshal(raw, &result)
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return "", "", err
+	}
 	return deref(result.KnownHosts), deref(result.NeedsTrust), nil
 }
 
@@ -312,7 +314,9 @@ func (p *Providers) InstallCarried(request wire.MachineInstall, person string, c
 		return nil, true, err
 	}
 	var result SSHResult
-	json.Unmarshal(raw, &result)
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return nil, true, err
+	}
 	if trust := deref(result.NeedsTrust); trust != "" {
 		return map[string]any{"needsTrust": trust, "name": name}, true, nil
 	}

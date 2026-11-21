@@ -108,6 +108,12 @@ func (c *Conn) SendNow(line string) error {
 	return c.ws.Write(ctx, websocket.MessageText, []byte(line))
 }
 
+// Reply is SendNow for a line whose failure needs no handling: a reply, a refusal or a
+// notice to a peer that, when the write fails, has gone, and whose next Read says so.
+func (c *Conn) Reply(line string) {
+	_ = c.SendNow(line) // The peer has gone; the connection's Read ends it.
+}
+
 // Read is the next line.
 func (c *Conn) Read(ctx context.Context) (string, error) {
 	_, b, err := c.ws.Read(ctx)

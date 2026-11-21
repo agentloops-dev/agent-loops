@@ -253,7 +253,8 @@ func (l *links) all(ctx context.Context) ([]linkRequestRecord, error) {
 			continue
 		}
 		if now.Sub(r.Expires.Time) > linkKept {
-			l.s.cfg.Store.Delete(ctx, entry.Key)
+			// A key left is deleted by the next sweep.
+			_ = l.s.cfg.Store.Delete(ctx, entry.Key)
 			continue
 		}
 		out = append(out, *r)
@@ -522,7 +523,8 @@ func (l *links) dropFor(ctx context.Context, user string) {
 	if every, err := l.every(ctx); err == nil {
 		for _, r := range every {
 			if r.User == user {
-				l.s.cfg.Store.Delete(ctx, linkKey(r.Channel, r.Identity))
+				// A link left names a removed person, who can no longer sign in to use it.
+				_ = l.s.cfg.Store.Delete(ctx, linkKey(r.Channel, r.Identity))
 			}
 		}
 	}
@@ -531,7 +533,9 @@ func (l *links) dropFor(ctx context.Context, user string) {
 			if r.For == user && l.open(r) {
 				if _, etag, err := l.readRequest(ctx, r.ID); err == nil {
 					r.Result, r.By = "denied", ""
-					l.writeRequest(ctx, r, etag)
+					if err := l.writeRequest(ctx, r, etag); err != nil {
+						l.s.log("link request " + r.ID + ": could not be denied for a removed person: " + err.Error())
+					}
 				}
 			}
 		}
