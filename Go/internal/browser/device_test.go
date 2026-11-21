@@ -144,7 +144,7 @@ func servePhonePage(t *testing.T) (*httptest.Server, chan http.Header) {
 		default:
 		}
 		w.Header().Set("Content-Type", "text/html")
-		w.Write([]byte(`<meta name=viewport content="width=device-width"><p>a page`))
+		reply(t, w, `<meta name=viewport content="width=device-width"><p>a page`)
 	}))
 	t.Cleanup(site.Close)
 	return site, hints

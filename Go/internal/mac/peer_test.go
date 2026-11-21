@@ -86,7 +86,7 @@ func TestPeerCheckerStartsAgainAfterTheHelperDies(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "agents-peer")
 	// Answers one question and leaves.
-	os.WriteFile(path, []byte("#!/bin/sh\necho 'team T'\nread t\necho control\n"), 0o755)
+	must(t, os.WriteFile(path, []byte("#!/bin/sh\necho 'team T'\nread t\necho control\n"), 0o755)) //nolint:gosec // G306: a stand-in helper that the checker runs
 	p := NewPeerChecker(path)
 	defer p.Close()
 	if r, err := p.Role(Token{1}); err != nil || r != RoleControl {
@@ -112,9 +112,19 @@ func TestPeerCheckerCacheIsBounded(t *testing.T) {
 	p := NewPeerChecker(path)
 	defer p.Close()
 	for i := 0; i < maxCached+10; i++ {
-		p.Role(Token{9, 0, 0, 0, 0, uint32(i)})
+		if _, err := p.Role(Token{9, 0, 0, 0, 0, uint32(i)}); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if len(p.cached) > maxCached {
 		t.Fatalf("%d cached", len(p.cached))
+	}
+}
+
+// must fails the test at once when a set-up step fails.
+func must(t testing.TB, err error) {
+	t.Helper()
+	if err != nil {
+		t.Fatal(err)
 	}
 }

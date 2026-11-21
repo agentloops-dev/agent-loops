@@ -2,7 +2,6 @@ package githubmcp
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -80,19 +79,19 @@ func forgeAPI(t *testing.T, vars *asked) *RealGitHub {
 			Variables map[string]any `json:"variables"`
 		}
 		body, _ := io.ReadAll(r.Body)
-		json.Unmarshal(body, &req)
+		unmarshal(t, body, &req)
 		vars.mu.Lock()
 		vars.vars = append(vars.vars, req.Variables)
 		vars.mu.Unlock()
 		switch {
 		case strings.Contains(req.Query, "search(query"):
-			io.WriteString(w, searchAnswer)
+			reply(t, w, searchAnswer)
 		case req.Variables["number"] == float64(3):
-			io.WriteString(w, itemAnswer)
+			reply(t, w, itemAnswer)
 		case req.Variables["number"] == float64(12):
-			io.WriteString(w, pullAnswer)
+			reply(t, w, pullAnswer)
 		default:
-			io.WriteString(w, `{"data":{"repository":{"issueOrPullRequest":null}}}`)
+			reply(t, w, `{"data":{"repository":{"issueOrPullRequest":null}}}`)
 		}
 	}))
 	t.Cleanup(s.Close)

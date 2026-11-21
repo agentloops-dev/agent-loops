@@ -147,8 +147,11 @@ func TestRemoveTakesOutOnlyItsBlock(t *testing.T) {
 	if removed, err := Remove(filepath.Join(t.TempDir(), "none"), "first"); err != nil || removed {
 		t.Fatalf("no file: %v %v", removed, err)
 	}
-	Remove(path, "")
-	Remove(path, "second")
+	for _, label := range []string{"", "second"} {
+		if removed, err := Remove(path, label); err != nil || !removed {
+			t.Fatalf("%q: %v %v", label, removed, err)
+		}
+	}
 	if data, _ := os.ReadFile(path); string(data) != "Host mine\n  User me\n" {
 		t.Errorf("the person's lines changed: %q", data)
 	}

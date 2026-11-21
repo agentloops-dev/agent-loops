@@ -2,7 +2,6 @@ package githubmcp
 
 import (
 	"context"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -14,7 +13,7 @@ func TestMilestonesHaveTheirDueDates(t *testing.T) {
 		if r.URL.Path != "/repos/o/r/milestones" || r.URL.Query().Get("state") != "open" {
 			t.Errorf("asked %s?%s", r.URL.Path, r.URL.RawQuery)
 		}
-		io.WriteString(w, `[{"title":"Planning","due_on":"2026-11-20T08:00:00Z"},{"title":"Later","due_on":null}]`)
+		reply(t, w, `[{"title":"Planning","due_on":"2026-11-20T08:00:00Z"},{"title":"Later","due_on":null}]`)
 	}))
 	t.Cleanup(s.Close)
 	got, err := NewRealGitHub(s.URL, func() string { return "t" }, nil).Milestones(context.Background(), "o/r")

@@ -47,17 +47,17 @@ func forgeLinear(t *testing.T) (*RealLinear, *[]map[string]any) {
 			Variables map[string]any `json:"variables"`
 		}
 		body, _ := io.ReadAll(r.Body)
-		json.Unmarshal(body, &req)
+		unmarshal(t, body, &req)
 		mu.Lock()
 		asked = append(asked, req.Variables)
 		mu.Unlock()
 		switch {
 		case strings.Contains(req.Query, "ForgeIssues"):
-			io.WriteString(w, forgeSearchAnswer)
+			reply(t, w, forgeSearchAnswer)
 		case req.Variables["id"] == "ENG-4":
-			io.WriteString(w, forgeItemAnswer)
+			reply(t, w, forgeItemAnswer)
 		default:
-			io.WriteString(w, `{"data":{"issue":null}}`)
+			reply(t, w, `{"data":{"issue":null}}`)
 		}
 	}))
 	t.Cleanup(s.Close)

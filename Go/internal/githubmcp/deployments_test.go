@@ -3,7 +3,6 @@ package githubmcp
 import (
 	"context"
 	"fmt"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -21,20 +20,20 @@ func TestDeploymentsReadsOnlyThoseUpdatedSince(t *testing.T) {
 		asked = append(asked, r.URL.Path+"?"+r.URL.RawQuery)
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/o/r/deployments"):
-			io.WriteString(w, `[
+			reply(t, w, `[
 				{"id":2,"sha":"bbb","ref":"v0.18.0","environment":"release","production_environment":false,"transient_environment":false,
 				 "created_at":"2026-11-08T17:54:17Z","updated_at":"2026-11-08T18:51:48Z"},
 				{"id":1,"sha":"aaa","ref":"main","environment":"release","created_at":"2026-11-07T10:00:00Z","updated_at":"2026-11-07T10:10:00Z"}]`)
 		case strings.HasSuffix(r.URL.Path, "/deployments/2/statuses"):
-			io.WriteString(w, `[
+			reply(t, w, `[
 				{"id":23,"state":"success","created_at":"2026-11-08T18:20:00Z","target_url":"https://github.com/o/r/actions/runs/9/job/99","environment_url":"https://example.com"},
 				{"id":22,"state":"in_progress","created_at":"2026-11-08T18:00:00Z","target_url":"https://github.com/o/r/actions/runs/9/job/99"},
 				{"id":21,"state":"waiting","created_at":"2026-11-08T17:54:18Z","target_url":"https://github.com/o/r/actions/runs/9/job/99"}]`)
 		case strings.HasSuffix(r.URL.Path, "/actions/jobs/99"):
-			io.WriteString(w, `{"conclusion":"cancelled"}`)
+			reply(t, w, `{"conclusion":"cancelled"}`)
 		default:
 			t.Errorf("asked %s", r.URL.Path)
-			io.WriteString(w, `[]`)
+			reply(t, w, `[]`)
 		}
 	}))
 	t.Cleanup(s.Close)

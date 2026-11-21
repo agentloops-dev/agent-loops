@@ -17,6 +17,7 @@ import (
 // forgeLab is a GitLab with two projects' issues and merge requests, newest first, that keeps
 // each request's path and query.
 type forgeLab struct {
+	t     testing.TB
 	mu    sync.Mutex
 	asked []string
 	lists map[string][]obj // "group/app issues" → items, newest first
@@ -31,7 +32,7 @@ func (f *forgeLab) serve(w http.ResponseWriter, r *http.Request) {
 	f.asked = append(f.asked, r.URL.EscapedPath()+"?"+r.URL.RawQuery)
 	path := strings.TrimPrefix(r.URL.EscapedPath(), "/api/v4/")
 	if v, ok := f.one[path]; ok {
-		json.NewEncoder(w).Encode(v)
+		replyJSON(f.t, w, v)
 		return
 	}
 	parts := strings.Split(path, "/")
@@ -60,7 +61,7 @@ func (f *forgeLab) serve(w http.ResponseWriter, r *http.Request) {
 	if !f.uncounted {
 		w.Header().Set("X-Total", strconv.Itoa(total))
 	}
-	json.NewEncoder(w).Encode(list)
+	replyJSON(f.t, w, list)
 }
 
 func forgeItemJSON(iid int, state, updated string) obj {
@@ -83,7 +84,7 @@ func TestUserAvatarIsAWholeURL(t *testing.T) {
 }
 
 func newForgeLab(t *testing.T) (*forgeLab, *RealGitLab) {
-	f := &forgeLab{lists: map[string][]obj{}, one: map[string]obj{}}
+	f := &forgeLab{t: t, lists: map[string][]obj{}, one: map[string]obj{}}
 	s := httptest.NewServer(http.HandlerFunc(f.serve))
 	t.Cleanup(s.Close)
 	g := NewRealGitLab(s.URL, func() string { return token }, nil)
@@ -205,14 +206,14 @@ func TestItemPageReadsAMergeRequest(t *testing.T) {
 		switch path := strings.TrimPrefix(r.URL.EscapedPath(), "/api/v4/"); path {
 		case "projects/group%2Fapp/merge_requests/4/notes":
 			if r.URL.Query().Get("page") != "1" || r.URL.Query().Get("sort") != "desc" {
-				json.NewEncoder(w).Encode([]any{})
+				replyJSON(t, w, []any{})
 				return
 			}
-			json.NewEncoder(w).Encode(notes)
+			replyJSON(t, w, notes)
 		case "projects/group%2Fapp/merge_requests/4/discussions":
-			json.NewEncoder(w).Encode([]any{obj{"id": "a", "notes": []any{obj{"type": "DiffNote"}}}, obj{"id": "b", "notes": []any{obj{"type": nil}}}})
+			replyJSON(t, w, []any{obj{"id": "a", "notes": []any{obj{"type": "DiffNote"}}}, obj{"id": "b", "notes": []any{obj{"type": nil}}}})
 		case "projects/group%2Fapp/pipelines/77/jobs":
-			json.NewEncoder(w).Encode([]any{obj{"name": "test", "stage": "check", "status": "failed", "web_url": "j", "started_at": "2026-11-01T09:00:00.000Z", "finished_at": "2026-11-01T09:02:00.000Z"},
+			replyJSON(t, w, []any{obj{"name": "test", "stage": "check", "status": "failed", "web_url": "j", "started_at": "2026-11-01T09:00:00.000Z", "finished_at": "2026-11-01T09:02:00.000Z"},
 				obj{"name": "lint", "stage": "check", "status": "failed", "allow_failure": true}})
 		case "/api/graphql":
 			var q struct {
@@ -220,7 +221,7 @@ func TestItemPageReadsAMergeRequest(t *testing.T) {
 			}
 			_ = json.NewDecoder(r.Body).Decode(&q)
 			asked = q.Variables
-			json.NewEncoder(w).Encode(obj{"data": obj{"project": obj{
+			replyJSON(t, w, obj{"data": obj{"project": obj{
 				"mergeRequest": obj{"diffStatsSummary": obj{"additions": 40, "deletions": 2}, "commitCount": 3,
 					"reviewers": obj{"nodes": []any{
 						obj{"username": "kim", "avatarUrl": "/uploads/-/system/user/avatar/7/avatar.png", "webUrl": "https://gitlab.com/kim", "mergeRequestInteraction": obj{"reviewState": "REQUESTED_CHANGES"}},
@@ -308,14 +309,14 @@ func TestItemPageReadsAnIssuesLinks(t *testing.T) {
 		case !links && (path == "/api/graphql" || strings.HasSuffix(path, "/closed_by")):
 			http.Error(w, "no", http.StatusNotFound)
 		case path == "/api/graphql":
-			json.NewEncoder(w).Encode(obj{"data": obj{"project": obj{"workItems": obj{"nodes": []any{obj{"widgets": []any{obj{
+			replyJSON(t, w, obj{"data": obj{"project": obj{"workItems": obj{"nodes": []any{obj{"widgets": []any{obj{
 				"__typename": "WorkItemWidgetHierarchy", "children": obj{"nodes": []any{
 					obj{"iid": "5", "state": "CLOSED", "title": "A child", "webUrl": "https://gitlab.com/group/app/-/issues/5", "namespace": obj{"fullPath": "group/app"}}}}}}}}}}}})
 		case path == "projects/group%2Fapp/issues/3/closed_by":
-			json.NewEncoder(w).Encode([]any{obj{"iid": 4, "title": "The fix", "state": "merged", "web_url": "https://gitlab.com/group/web/-/merge_requests/4",
+			replyJSON(t, w, []any{obj{"iid": 4, "title": "The fix", "state": "merged", "web_url": "https://gitlab.com/group/web/-/merge_requests/4",
 				"references": obj{"full": "group/web!4"}}, obj{"iid": 6, "title": "Another", "state": "opened"}})
 		case path == "projects/group%2Fapp/issues/3/notes":
-			json.NewEncoder(w).Encode([]any{})
+			replyJSON(t, w, []any{})
 		default:
 			f.serve(w, r)
 		}

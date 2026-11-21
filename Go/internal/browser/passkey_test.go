@@ -37,7 +37,7 @@ func TestARealSoftwarePasskey(t *testing.T) {
 		t.Skip("set AGENTS_TEST_CHROMIUM to a Chromium to start a real one")
 	}
 	site := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Write([]byte("<!doctype html><title>Passkey</title>"))
+		reply(t, w, "<!doctype html><title>Passkey</title>")
 	}))
 	defer site.Close()
 	address := strings.Replace(site.URL, "127.0.0.1", "localhost", 1)

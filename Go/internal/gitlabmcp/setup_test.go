@@ -2,7 +2,6 @@ package gitlabmcp
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -19,13 +18,13 @@ func TestSetupReads(t *testing.T) {
 		switch {
 		case strings.HasPrefix(r.URL.Path, "/api/v4/projects/group/hidden/"):
 			w.WriteHeader(http.StatusNotFound)
-			w.Write([]byte(`{"message":"404 Project Not Found"}`))
+			reply(t, w, `{"message":"404 Project Not Found"}`)
 		case strings.HasSuffix(r.URL.Path, "/issues"):
-			json.NewEncoder(w).Encode([]map[string]any{{"iid": 4, "title": "Walk it", "web_url": "https://gitlab.com/group/app/-/issues/4", "created_at": "2026-10-20T10:00:00Z"}})
+			replyJSON(t, w, []map[string]any{{"iid": 4, "title": "Walk it", "web_url": "https://gitlab.com/group/app/-/issues/4", "created_at": "2026-10-20T10:00:00Z"}})
 		case strings.HasSuffix(r.URL.Path, "/merge_requests"):
-			w.Write([]byte(`[]`))
+			reply(t, w, `[]`)
 		case strings.HasSuffix(r.URL.Path, "/pipelines"):
-			json.NewEncoder(w).Encode([]map[string]any{{"id": 99, "ref": "main", "status": "failed", "web_url": "https://gitlab.com/group/app/-/pipelines/99", "updated_at": "2026-10-20T10:00:00Z"}})
+			replyJSON(t, w, []map[string]any{{"id": 99, "ref": "main", "status": "failed", "web_url": "https://gitlab.com/group/app/-/pipelines/99", "updated_at": "2026-10-20T10:00:00Z"}})
 		default:
 			http.NotFound(w, r)
 		}
@@ -70,8 +69,11 @@ func TestProjectAt(t *testing.T) {
 		}
 	}
 	dir := t.TempDir()
-	exec.Command("git", "-C", dir, "init", "-q").Run()
-	exec.Command("git", "-C", dir, "remote", "add", "origin", "git@github.com:alexec/agents.git").Run()
+	for _, args := range [][]string{{"init", "-q"}, {"remote", "add", "origin", "git@github.com:alexec/agents.git"}} {
+		if out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).CombinedOutput(); err != nil { //nolint:gosec // G204: the test's own git arguments
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
 	if _, _, ok := ProjectAt(context.Background(), dir, []string{"https://gitlab.com/"}); ok {
 		t.Error("a GitHub remote is not a GitLab project")
 	}

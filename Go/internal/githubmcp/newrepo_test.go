@@ -2,7 +2,6 @@ package githubmcp
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -24,17 +23,17 @@ func TestMakeRepository(t *testing.T) {
 		got = append(got, r.Method+" "+r.URL.Path)
 		switch {
 		case r.URL.Path == "/user":
-			io.WriteString(w, `{"login":"someone","id":42}`)
+			reply(t, w, `{"login":"someone","id":42}`)
 		case r.Method == http.MethodGet && r.URL.Path == "/repos/someone/old":
-			io.WriteString(w, `{"full_name":"someone/old","clone_url":"https://github.com/someone/old.git"}`)
+			reply(t, w, `{"full_name":"someone/old","clone_url":"https://github.com/someone/old.git"}`)
 		case r.Method == http.MethodPost && (r.URL.Path == "/user/repos" || r.URL.Path == "/orgs/acme/repos"):
-			json.Unmarshal(body, &made)
+			unmarshal(t, body, &made)
 			w.WriteHeader(http.StatusCreated)
 			owner := "someone"
 			if r.URL.Path == "/orgs/acme/repos" {
 				owner = "acme"
 			}
-			io.WriteString(w, `{"full_name":"`+owner+`/`+made["name"].(string)+`","clone_url":"https://github.com/`+owner+`/x.git"}`)
+			reply(t, w, `{"full_name":"`+owner+`/`+made["name"].(string)+`","clone_url":"https://github.com/`+owner+`/x.git"}`)
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -75,10 +74,10 @@ func TestMakeRepositoryRefusedIsThePersonsStep(t *testing.T) {
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Path == "/user":
-			io.WriteString(w, `{"login":"someone","id":42}`)
+			reply(t, w, `{"login":"someone","id":42}`)
 		case r.Method == http.MethodPost:
 			w.WriteHeader(http.StatusForbidden)
-			io.WriteString(w, `{"message":"Resource not accessible by integration"}`)
+			reply(t, w, `{"message":"Resource not accessible by integration"}`)
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -102,14 +101,14 @@ func TestMakePublicRepository(t *testing.T) {
 		body, _ := io.ReadAll(r.Body)
 		switch {
 		case r.URL.Path == "/user":
-			io.WriteString(w, `{"login":"someone","id":42}`)
+			reply(t, w, `{"login":"someone","id":42}`)
 		case r.Method == http.MethodGet && r.URL.Path == "/repos/someone/old":
-			io.WriteString(w, `{"full_name":"someone/old","clone_url":"https://github.com/someone/old.git","private":true}`)
+			reply(t, w, `{"full_name":"someone/old","clone_url":"https://github.com/someone/old.git","private":true}`)
 		case r.Method == http.MethodPost && r.URL.Path == "/user/repos":
 			posts++
-			json.Unmarshal(body, &made)
+			unmarshal(t, body, &made)
 			w.WriteHeader(http.StatusCreated)
-			io.WriteString(w, `{"full_name":"someone/`+made["name"].(string)+`","clone_url":"https://github.com/someone/x.git","private":false}`)
+			reply(t, w, `{"full_name":"someone/`+made["name"].(string)+`","clone_url":"https://github.com/someone/x.git","private":false}`)
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}

@@ -55,7 +55,7 @@ func TestWhatACommandLeavesIsEndedWithIt(t *testing.T) {
 		t.Fatal(err)
 	}
 	child := childOf(t, pidFile)
-	t.Cleanup(func() { syscall.Kill(child, syscall.SIGKILL) })
+	t.Cleanup(func() { _ = syscall.Kill(child, syscall.SIGKILL) }) // ESRCH once End ended it, as it should
 	if gone(child) {
 		t.Fatal("the child ended before End: the test shows nothing")
 	}
@@ -81,9 +81,9 @@ func TestACancelledCommandsGroupIsEnded(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	child := childOf(t, pidFile)
-	t.Cleanup(func() { syscall.Kill(child, syscall.SIGKILL) })
+	t.Cleanup(func() { _ = syscall.Kill(child, syscall.SIGKILL) }) // ESRCH once End ended it, as it should
 	cancel()
-	cmd.Wait()
+	_ = cmd.Wait() // the cancel kills it, so it ends with an error
 	End(cmd)
 	if !gone(child) {
 		t.Fatal("the child is still running after the cancel")

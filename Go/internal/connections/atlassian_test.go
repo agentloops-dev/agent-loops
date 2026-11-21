@@ -16,7 +16,9 @@ func TestAtlassianRefreshSendsTheSecretAsJSON(t *testing.T) {
 	var kind string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		kind = r.Header.Get("Content-Type")
-		json.NewDecoder(r.Body).Decode(&got)
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+			t.Error(err)
+		}
 		fmt.Fprint(w, `{"access_token":"new","refresh_token":"rotated","expires_in":3600}`)
 	}))
 	defer srv.Close()

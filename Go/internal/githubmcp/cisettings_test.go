@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
-	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -33,9 +32,9 @@ func TestCISettings(t *testing.T) {
 		got = append(got, r.Method+" "+r.URL.Path)
 		switch {
 		case r.URL.Path == "/repos/o/r/actions/secrets/public-key":
-			io.WriteString(w, `{"key_id":"k1","key":"`+base64.StdEncoding.EncodeToString(pub[:])+`"}`)
+			reply(t, w, `{"key_id":"k1","key":"`+base64.StdEncoding.EncodeToString(pub[:])+`"}`)
 		case r.Method == http.MethodPut && r.URL.Path == "/repos/o/r/actions/secrets/SENTRY_TOKEN":
-			json.Unmarshal(body, &sealed)
+			unmarshal(t, body, &sealed)
 			w.WriteHeader(http.StatusCreated)
 		case r.Method == http.MethodPatch && r.URL.Path == "/repos/o/r/actions/variables/OLD":
 			w.WriteHeader(http.StatusNoContent)
@@ -44,12 +43,12 @@ func TestCISettings(t *testing.T) {
 		case r.Method == http.MethodPost && r.URL.Path == "/repos/o/r/actions/variables":
 			w.WriteHeader(http.StatusCreated)
 		case r.URL.Path == "/users/alexec":
-			io.WriteString(w, `{"id":7}`)
+			reply(t, w, `{"id":7}`)
 		case r.URL.Path == "/orgs/o/teams/release":
-			io.WriteString(w, `{"id":9}`)
+			reply(t, w, `{"id":9}`)
 		case r.Method == http.MethodPut && r.URL.Path == "/repos/o/r/environments/app-store":
 			gate = string(body)
-			io.WriteString(w, `{}`)
+			reply(t, w, `{}`)
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
