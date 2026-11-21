@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -301,9 +302,13 @@ func (d *Daemon) removeAccount(ctx context.Context, r wire.AccountRequest) ([]wi
 	if isOrgAccount(p) {
 		return nil, Invalid("%s is from your organisation. Only your organisation can remove it.", p.Name)
 	}
-	stopped := []wire.UUID{}
+	stopped, onIt := []wire.UUID{}, []wire.UUID{}
 	for _, a := range d.Store.Agents() {
-		if a.RuntimeID == r.RuntimeID && a.AccountID != nil && *a.AccountID == r.AccountID && holdsRuntime(a.State) {
+		if a.RuntimeID != r.RuntimeID || a.AccountID == nil || *a.AccountID != r.AccountID {
+			continue
+		}
+		onIt = append(onIt, a.ID)
+		if holdsRuntime(a.State) {
 			d.live(a.ID).cancel()
 			d.dropLeases(a.ID, "holderStopped")
 			d.endWait(a.ID, "stopped", false)
@@ -339,9 +344,17 @@ func (d *Daemon) removeAccount(ctx context.Context, r wire.AccountRequest) ([]wi
 	if err != nil {
 		return stopped, err
 	}
+	// Their runtimes run in the folder (#6289): a turn still starting links into it, and a
+	// warm one writes to it. Each ends before the folder goes.
+	d.endRuntimesOf(onIt)
 	// Only a folder of the app's own is deleted.
+	var removeErr error
 	if folder := accountFolder(*p); strings.HasPrefix(folder, filepath.Join(d.Store.Loc.Root, "runtimes", "accounts")+string(filepath.Separator)) {
-		os.RemoveAll(folder)
+		if err := removeFolder(folder); err != nil {
+			log.Printf("runtimes/removeAccount: %s %s: could not delete its folder: %v", r.RuntimeID, r.AccountID, err)
+			removeErr = &Error{Code: CodeServer, Message: fmt.Sprintf("%s is removed, but its folder %s, with its sign-in, "+
+				"could not be deleted: %v. Delete the folder yourself.", p.Name, folder, err)}
+		}
 	}
 	d.allowMu.Lock()
 	if _, ok := d.allowancesLocked()[accountKey(r.RuntimeID, &r.AccountID)]; ok {
@@ -351,7 +364,64 @@ func (d *Daemon) removeAccount(ctx context.Context, r wire.AccountRequest) ([]wi
 	d.allowMu.Unlock()
 	d.tellAccountProfiles()
 	d.tellAllowances()
-	return stopped, nil
+	return stopped, removeErr
+}
+
+// runtimeEndWait is how long removeAccount waits for a cancelled turn to end before it
+// halts the agent's runtime.
+var runtimeEndWait = 10 * time.Second
+
+// endRuntimesOf waits for the turns of the agents to end, then lets each one's runtime go:
+// a runtime started in an account's folder is not left running in it (#6289).
+func (d *Daemon) endRuntimesOf(agents []wire.UUID) {
+	deadline := time.Now().Add(runtimeEndWait)
+	for _, id := range agents {
+		l := d.liveIfAny(id)
+		if l == nil {
+			continue
+		}
+		if !l.waitIdle(deadline) {
+			log.Printf("runtimes/removeAccount: agent %s: its turn did not end in %v; halting its runtime", id, runtimeEndWait)
+			l.halt()
+			// A halted turn ends on its own; a runtime it started late is let go below.
+			if !l.waitIdle(time.Now().Add(runtimeHaltWait)) {
+				log.Printf("runtimes/removeAccount: agent %s: its turn did not end %v after the halt", id, runtimeHaltWait)
+			}
+		}
+		d.releaseRuntime(id)
+	}
+}
+
+// runtimeHaltWait is how long removeAccount waits for a halted turn to end.
+var runtimeHaltWait = 3 * time.Second
+
+// waitIdle waits until the agent has no turn running, or the deadline; it says which.
+func (l *live) waitIdle(deadline time.Time) bool {
+	for {
+		l.mu.Lock()
+		busy := l.running || l.inTurn
+		l.mu.Unlock()
+		if !busy {
+			return true
+		}
+		if time.Now().After(deadline) {
+			return false
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// removeFolder is os.RemoveAll, tried again when something wrote into the folder while
+// it went ("directory not empty").
+func removeFolder(folder string) error {
+	var err error
+	for range 3 {
+		if err = os.RemoveAll(folder); err == nil {
+			return nil
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	return err
 }
 
 // linkShared links the person's own settings into an account's folder, where the folder
