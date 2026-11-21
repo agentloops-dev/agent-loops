@@ -8,7 +8,6 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -36,7 +35,6 @@ func runTurn(t *testing.T, d *Daemon, c *conn, dir, path string) (wire.UUID, wir
 }
 
 func TestUndoPutsBackWhatATurnChanged(t *testing.T) {
-	flaky.UnderLoad(t, "#6274")
 	t.Parallel()
 
 	fakeRuntimes(t)
@@ -67,6 +65,46 @@ func TestUndoPutsBackWhatATurnChanged(t *testing.T) {
 	if note := d.undoNotes.take(id); note == "" {
 		t.Fatal("no note for the runtime")
 	}
+}
+
+// An undo as soon as the turn's card is there: its record says finished, and the turn's
+// own end has not returned yet (#6274). The turn is in that end for as long as the test
+// says, so the undo is not refused as a turn in flight; a turn that begins is.
+func TestUndoAtOnceAfterTheTurnEnds(t *testing.T) {
+	t.Parallel()
+
+	fakeRuntimes(t)
+	d, c := start(t, t.TempDir())
+	defer d.Shutdown()
+	dir := repo(t)
+	path := filepath.Join(dir, "a.txt")
+	must(t, os.WriteFile(path, []byte("one\n"), 0o644)) //nolint:gosec // G306: a scratch file in the test's own repo
+	must(t, errOnly(git(dir, "add", "a.txt")))
+	must(t, errOnly(git(dir, "commit", "-q", "-m", "a")))
+	id, tc := runTurn(t, d, c, dir, path)
+	l := d.live(id)
+	waitFor(t, "the turn's own end", func() bool { l.mu.Lock(); defer l.mu.Unlock(); return !l.inTurn })
+
+	// The turn as it ends: its changes kept and its record finished, inTurn not cleared yet.
+	l.mu.Lock()
+	l.inTurn = true
+	l.mu.Unlock()
+	var r wire.UndoTurnResult
+	mustUnmarshal(t, c.call(t, 2, "changes/undoTurn", map[string]any{"agentID": id, "turn": tc.Turn}), &r)
+	if b, _ := os.ReadFile(path); string(b) != "one\n" || len(r.PutBack) != 1 || r.PutBack[0] != path {
+		t.Fatalf("%q %+v", b, r)
+	}
+
+	// A turn that begins may change files until its own changes are kept.
+	l.mu.Lock()
+	l.turnSeq++
+	l.mu.Unlock()
+	if e := c.callError(t, 3, "changes/undoTurn", map[string]any{"agentID": id, "turn": tc.Turn}); e.Code != wire.FailureBusy {
+		t.Fatalf("%+v", e)
+	}
+	l.mu.Lock()
+	l.inTurn = false
+	l.mu.Unlock()
 }
 
 func TestUndoRemovesAFileTheTurnMade(t *testing.T) {

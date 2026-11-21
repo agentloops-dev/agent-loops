@@ -50,6 +50,10 @@ type live struct {
 	prompting, stopped bool
 	// turnSeq counts turns, so a cancel sent again is only for the turn it was meant for.
 	turnSeq int
+	// changesKept is the turnSeq of the last turn whose changes were kept (keepTurnChanges):
+	// from then on that turn changes no file, though inTurn is true until it returns, after
+	// its record says it ended (#6274).
+	changesKept int
 	// reported is whether this turn said how it went itself (a wait on agents), so its
 	// ending keeps that rather than one worked out from its last words.
 	reported bool
@@ -693,7 +697,7 @@ func (l *live) turn() bool {
 	bs, from, branch, turnEntry := l.recordTurnPrompt(a, q)
 	// The folder as the turn begins, for Undo These Changes (#3437); its end is the second.
 	snap := d.snapshotTurn(l.id, turnEntry)
-	defer d.endTurnSnapshot(snap)
+	defer l.keepTurnChanges(snap)
 	l.clearForTurn(from)
 	// Archived or stopped while it got ready (#1611): its context is gone, and the state
 	// is left as the stop wrote it.
