@@ -465,9 +465,12 @@ run_periphery() {
 		build "$p" scripts/build-cache.sh swift build --package-path "Packages/$p" --build-tests --build-system native \
 			--scratch-path "$root/$out/$p" -Xswiftc -index-store-path -Xswiftc "$root/$out/$p/index" || return 1
 	done
-	periphery scan --project Agents.xcodeproj --schemes AgentsHost --skip-build \
+	# --skip-schemes-validation: Periphery's own `xcodebuild -list` resolves the packages into
+	# ~/Library/Developer/Xcode/DerivedData/Agents-<hash> (0.9 GB a run, #6456); the builds
+	# above have shown that the schemes are there.
+	periphery scan --project Agents.xcodeproj --schemes AgentsHost --skip-build --skip-schemes-validation \
 		--index-store-path "$out/mac/Index.noindex/DataStore" "${opts[@]}" >"$out/mac.json" || status=1
-	periphery scan --project Agents.xcodeproj --schemes Remote --skip-build \
+	periphery scan --project Agents.xcodeproj --schemes Remote --skip-build --skip-schemes-validation \
 		--index-store-path "$out/remote/Index.noindex/DataStore" "${opts[@]}" >"$out/remote.json" || status=1
 	for p in AgentsKit CodeText; do
 		(cd "Packages/$p" && periphery scan --skip-build --index-store-path "$root/$out/$p/index" "${opts[@]}") >"$out/$p.json" || status=1

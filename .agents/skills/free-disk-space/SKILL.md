@@ -132,7 +132,9 @@ Xcode builds each worktree into `~/Library/Developer/Xcode/DerivedData/Agents-<h
 (3 to 4 GB), not into the worktree, so steps 3 and 4 do not find it (#2683). `deriveddata`
 removes an `Agents-*` folder only when its `info.plist` names a `WorkspacePath` under
 `$P/.agents/worktrees/` that is gone, and no running `xcodebuild` names the folder or that
-worktree.
+worktree. It also removes an `Agents-*` folder with no `info.plist` that holds only `Logs`
+and `SourcePackages`, when no file in it changed in the last hour: a package resolve with no
+`-derivedDataPath` leaves one (about 0.9 GB each; 47 on 2026-11-20, #6456).
 
 The run-app skill keeps its walk simulators ("Agents Walk", #2400), and their data grows
 with each walk (23.5 GB on 2026-11-15, much of it shared with the runtime). `simulators`

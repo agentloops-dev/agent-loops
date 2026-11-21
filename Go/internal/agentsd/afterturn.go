@@ -76,6 +76,14 @@ func (d *Daemon) closeAfterTurns() {
 	d.afterTurnMu.Unlock()
 }
 
+// shuttingDown is whether Shutdown has begun: no turn starts, and nothing more goes to a
+// client unasked.
+func (d *Daemon) shuttingDown() bool {
+	d.afterTurnMu.Lock()
+	defer d.afterTurnMu.Unlock()
+	return d.afterTurnClosed
+}
+
 // going is whether Shutdown has begun, or the daemon's context is done. A SIGTERM ends
 // that context, and with it every turn, before main reaches Shutdown (#1822): those turns
 // are cut off by the daemon's going too.
@@ -83,9 +91,7 @@ func (d *Daemon) going() bool {
 	if d.ctx.Err() != nil {
 		return true
 	}
-	d.afterTurnMu.Lock()
-	defer d.afterTurnMu.Unlock()
-	return d.afterTurnClosed
+	return d.shuttingDown()
 }
 
 // waitAfterTurns waits until none are under way, at most limit, and is false if they were

@@ -3,6 +3,7 @@ package agentsd
 import (
 	"encoding/json"
 	"os"
+	goruntime "runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -68,6 +69,53 @@ func TestShutdownWaitsForWhatTellsAClientThatReadsNothing(t *testing.T) {
 	if !done.Load() {
 		t.Fatal("what told the clients was not done when Shutdown returned")
 	}
+}
+
+// The writes in line for a client that reads nothing end as Shutdown begins (#6268).
+// clientsToTell starts no new one, but those already waiting for the client's write lock
+// went on one at a time, each to the conn's 5 s: a reconsider among them outlived
+// Shutdown's wait for its goroutines.
+func TestShutdownEndsTheWritesInLineForAClientThatReadsNothing(t *testing.T) {
+	t.Parallel()
+
+	d, c := start(t, t.TempDir())
+	for len(c.out) < cap(c.out) {
+		c.out <- ""
+	}
+	for range 3 {
+		d.goJob("tells a client", func() {
+			Broadcast(d, wire.NotifyWorkflowRemoved, wire.WorkflowRemovedNotification{WorkflowID: "x"})
+		})
+	}
+	waitFor(t, "three writes in line for the client", func() bool { return writesToClients() >= 3 })
+	// When Shutdown waits for the goroutines, the client reads one line: the write that held
+	// the lock goes, and each one after it would wait the conn's 5 s again.
+	go func() {
+		<-d.hostCtx().Done()
+		<-c.out
+	}()
+
+	began := time.Now()
+	d.Shutdown()
+
+	if took := time.Since(began); took > 2*time.Second {
+		t.Errorf("Shutdown took %v", took)
+	}
+	if live := d.liveJobs(); len(live) > 0 {
+		t.Fatalf("still writing to the client after Shutdown: %v", live)
+	}
+}
+
+// writesToClients is how many goroutines are in a write to a client, or waiting for one.
+func writesToClients() int {
+	buf := make([]byte, 1<<22)
+	n := 0
+	for _, g := range strings.Split(string(buf[:goruntime.Stack(buf, true)]), "\n\n") {
+		if strings.Contains(g, "agentsd.(*Client).write") {
+			n++
+		}
+	}
+	return n
 }
 
 // endingRaised is whether events.jsonl has the event that says how the agent ended.

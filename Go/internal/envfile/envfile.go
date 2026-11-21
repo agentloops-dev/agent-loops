@@ -122,70 +122,108 @@ func lineFor(name, value string) string {
 // new variable goes at the end, after a blank line, with its description above it.
 // description nil keeps the one there; "" removes it. The caller refuses a file with a problem.
 func Edit(b []byte, name string, value, description *string) []byte {
-	p := Parse(b)
-	lines := p.Lines
-	// Every line that sets the name, and the comment just above each.
+	lines := Parse(b).Lines
+	at := linesSetting(lines, name)
+	replace := -1
+	if len(at) > 0 {
+		replace = at[len(at)-1]
+	}
+	drop := linesToDrop(lines, at, replace, value == nil)
+	out := rewrite(lines, drop, replace, name, value, description)
+	if replace < 0 && value != nil {
+		out = appendVariable(out, name, *value, description)
+	}
+	return joinLines(out)
+}
+
+// linesSetting is the index of every line that sets the name.
+func linesSetting(lines []string, name string) []int {
 	var at []int
 	for i, raw := range lines {
 		if n, _, ok := splitLine(strings.TrimSpace(raw)); ok && n == name {
 			at = append(at, i)
 		}
 	}
-	commentAbove := func(i int) bool {
-		return i > 0 && strings.HasPrefix(strings.TrimSpace(lines[i-1]), "#")
-	}
-	var out []string
+	return at
+}
+
+// commentAbove is whether the line above line i is a # comment.
+func commentAbove(lines []string, i int) bool {
+	return i > 0 && strings.HasPrefix(strings.TrimSpace(lines[i-1]), "#")
+}
+
+// blankLine is whether line i is blank or outside the file.
+func blankLine(lines []string, i int) bool {
+	return i < 0 || i >= len(lines) || strings.TrimSpace(lines[i]) == ""
+}
+
+// linesToDrop is the lines that go: each line of at but the one replaced (all of them on a
+// removal), with the comment just above it, and one of two blank lines around the block.
+func linesToDrop(lines []string, at []int, replace int, remove bool) map[int]bool {
 	drop := map[int]bool{}
-	replace := -1
-	if len(at) > 0 {
-		replace = at[len(at)-1]
-	}
-	blank := func(i int) bool { return i < 0 || i >= len(lines) || strings.TrimSpace(lines[i]) == "" }
 	for _, i := range at {
-		if i != replace || value == nil {
-			drop[i] = true
-			first := i
-			if commentAbove(i) {
-				drop[i-1] = true
-				first = i - 1
-			}
-			// A block between two blank lines leaves one, not two.
-			if blank(first-1) && i+1 < len(lines) && blank(i+1) {
-				drop[i+1] = true
-			}
+		if i == replace && !remove {
+			continue
+		}
+		drop[i] = true
+		first := i
+		if commentAbove(lines, i) {
+			drop[i-1] = true
+			first = i - 1
+		}
+		// A block between two blank lines leaves one, not two.
+		if blankLine(lines, first-1) && i+1 < len(lines) && blankLine(lines, i+1) {
+			drop[i+1] = true
 		}
 	}
+	return drop
+}
+
+// rewrite is the lines that are kept, with the line at replace set to the new value (and its
+// description changed when description is non-nil).
+func rewrite(lines []string, drop map[int]bool, replace int, name string, value, description *string) []string {
+	var out []string
 	for i, raw := range lines {
 		if drop[i] {
 			continue
 		}
-		if i == replace && value != nil {
-			hasComment := commentAbove(i)
-			if description != nil {
-				if hasComment {
-					out = out[:len(out)-1]
-				}
-				if d := oneLine(*description); d != "" {
-					out = append(out, "# "+d)
-				}
-			}
-			out = append(out, lineFor(name, *value))
+		if i != replace || value == nil {
+			out = append(out, raw)
 			continue
 		}
-		out = append(out, raw)
-	}
-	if replace < 0 && value != nil {
-		if len(out) > 0 && strings.TrimSpace(out[len(out)-1]) != "" {
-			out = append(out, "")
-		}
 		if description != nil {
-			if d := oneLine(*description); d != "" {
-				out = append(out, "# "+d)
+			if commentAbove(lines, i) {
+				out = out[:len(out)-1]
 			}
+			out = appendDescription(out, *description)
 		}
 		out = append(out, lineFor(name, *value))
 	}
-	// No blank lines left at the end by a removal.
+	return out
+}
+
+// appendVariable adds a new variable at the end, after a blank line, with its description.
+func appendVariable(out []string, name, value string, description *string) []string {
+	if len(out) > 0 && strings.TrimSpace(out[len(out)-1]) != "" {
+		out = append(out, "")
+	}
+	if description != nil {
+		out = appendDescription(out, *description)
+	}
+	return append(out, lineFor(name, value))
+}
+
+// appendDescription adds the description as a # comment line, when it is not empty.
+func appendDescription(out []string, description string) []string {
+	if d := oneLine(description); d != "" {
+		out = append(out, "# "+d)
+	}
+	return out
+}
+
+// joinLines is the file of the lines, with no blank lines left at the end by a removal; nil
+// when no line is left.
+func joinLines(out []string) []byte {
 	for len(out) > 0 && strings.TrimSpace(out[len(out)-1]) == "" {
 		out = out[:len(out)-1]
 	}
