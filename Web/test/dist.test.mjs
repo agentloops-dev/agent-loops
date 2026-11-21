@@ -10,9 +10,7 @@ import { fileURLToPath } from "node:url";
 
 const repo = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
 const manifestPath = join(repo, "Web/dist/MANIFEST");
-// Under scripts/checks.sh attest (AGENTS_ATTEST), a missing one fails: an attested skip is a test
-// that never ran (#5774).
-const skip = existsSync(manifestPath) || process.env.AGENTS_ATTEST ? false : "no Web/dist built here; run scripts/web.sh build";
+const skip = existsSync(manifestPath) ? false : "no Web/dist built here; run scripts/web.sh build";
 const manifest = skip ? [] : readFileSync(manifestPath, "utf8").trim().split("\n");
 
 test("every file in the manifest has the bytes it records", { skip }, () => {

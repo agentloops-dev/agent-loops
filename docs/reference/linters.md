@@ -41,7 +41,6 @@ not make `web:test` affected, and Nx's cache gives a false pass. Add the file to
 #5887), and CI passes `--output-style=stream`. An `--output-style` flag still wins. With no style,
 Nx 24 picks `summary` when an agent runs it, which prints only the path of each failing task's
 log, and `static` prints a task's output only when the task ends, so a hung task shows nothing.
-`scripts/ci-sample.mjs` keeps `static`, because it keeps the log for a bug, not for a reader.
 
 ## Baselines
 
