@@ -6467,6 +6467,9 @@ type ForgeListRequest struct {
 	Board *string `json:"board,omitzero"`
 
 	UpdatedSince *Date `json:"updatedSince,omitzero"`
+
+	// The order (#6358): priority (High, then Medium, then Low, then none, each newest first; a page that ends a priority is short), else the last updated first.
+	Sort *string `json:"sort,omitzero"`
 }
 
 // forge/log (#3130): the last lines of each failed check's log, as plain text.

@@ -26,6 +26,8 @@ type SearchFilter struct {
 	// UpdatedSince and UpdatedBefore narrow the list to the items updated at or after, and at or
 	// before, a time in RFC 3339 (#6349); "" for no bound.
 	UpdatedSince, UpdatedBefore string
+	// Sort is the order: SortPriority, else the last updated first (#6358).
+	Sort string
 }
 
 // Item is an issue or a pull request as the forge reads list it.
@@ -427,6 +429,9 @@ func SearchQuery(repos []string, f SearchFilter) string {
 // Search is one page of the issues or pull requests of repos, at most first (1 to 100), after
 // the cursor after ("" for the first page).
 func (g *RealGitHub) Search(ctx context.Context, repos []string, f SearchFilter, after string, first int) (SearchPage, error) {
+	if f.Sort == SortPriority {
+		return g.prioritySearch(ctx, repos, f, after, first)
+	}
 	if len(repos) == 0 {
 		return SearchPage{Items: []Item{}, Cursors: []string{}}, nil
 	}
