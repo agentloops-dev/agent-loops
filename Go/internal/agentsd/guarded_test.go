@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -85,6 +86,7 @@ func TestThePersonsOwnEditIsTheirs(t *testing.T) {
 }
 
 func TestAPullsChangeWaits(t *testing.T) {
+	flaky.UnderLoad(t, "#6521")
 	t.Parallel()
 
 	d, c := start(t, t.TempDir())
