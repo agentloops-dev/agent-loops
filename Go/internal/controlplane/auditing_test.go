@@ -195,3 +195,45 @@ func TestSecretOperationsAreAudited(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+// A machine sends an operation again when it did not hear the answer (#6464): the audit keeps
+// an id it has kept already once. One with no id, from an older machine, is always kept.
+func TestAResentSecretOperationIsKeptOnce(t *testing.T) {
+	t.Parallel()
+	p := startPlane(t, store.NewMemory(), controllink.NewPrivateKey())
+	box := p.hostWith("MACHINE-2", nil)
+	_, window := p.client("Test window")
+	at := wire.DateOf(time.Now())
+	one, two := "op-6464-one", "op-6464-two"
+	send := func(ops ...wire.SecretOperation) {
+		t.Helper()
+		params, _ := json.Marshal(wire.MachineSecretOpsCall{Ops: ops})
+		if _, err := p.s.methods.HostSaid(box.member.Host, "machine/secretOps", params); err != nil {
+			t.Fatal(err)
+		}
+	}
+	send(wire.SecretOperation{Name: "A_TOKEN", What: wire.SecretOperationWhatAdded, At: at, ID: &one},
+		wire.SecretOperation{Name: "OLD_MACHINE", What: wire.SecretOperationWhatAdded, At: at})
+	// The resend has the first again, beside one new.
+	send(wire.SecretOperation{Name: "A_TOKEN", What: wire.SecretOperationWhatAdded, At: at, ID: &one},
+		wire.SecretOperation{Name: "B_TOKEN", What: wire.SecretOperationWhatAdded, At: at, ID: &two},
+		wire.SecretOperation{Name: "OLD_MACHINE", What: wire.SecretOperationWhatAdded, At: at})
+	entries := func() wire.AuditList {
+		var list wire.AuditList
+		if err := json.Unmarshal(call(t, window, "", "audit/list", wire.AuditQuery{}), &list); err != nil {
+			t.Fatal(err)
+		}
+		return list
+	}
+	p.waitFor(func() bool { return len(entries().Entries) >= 4 }, "four entries")
+	// A second look, so a fifth that came late shows.
+	time.Sleep(100 * time.Millisecond)
+	list := entries()
+	got := map[string]int{}
+	for _, e := range list.Entries {
+		got[*e.Target]++
+	}
+	if len(list.Entries) != 4 || got["A_TOKEN"] != 1 || got["B_TOKEN"] != 1 || got["OLD_MACHINE"] != 2 {
+		t.Fatal(got)
+	}
+}

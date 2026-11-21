@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/audit"
@@ -120,7 +121,7 @@ var secretOpActions = map[wire.SecretOperationWhat]string{
 // minute, never the value. The machine sends at most one per secret, session, place and
 // minute.
 func (s *Service) auditSecretOps(host, user string, ops []wire.SecretOperation) {
-	for _, op := range ops {
+	for _, op := range s.unseenSecretOps(host, ops) {
 		action, ok := secretOpActions[op.What]
 		if !ok || strings.TrimSpace(op.Name) == "" {
 			continue
@@ -140,6 +141,51 @@ func (s *Service) auditSecretOps(host, user string, ops []wire.SecretOperation) 
 		s.auditWriter.Add(audit.Pending{Method: "machine/secretOps", Action: action, Host: host,
 			Who: func() (wire.AuditActor, *string) { return actor, &target }})
 	}
+}
+
+// secretOpsSeenMost bounds the operation ids this copy remembers, for every machine together
+// (#6464). A machine keeps at most 1,000 operations not yet told (agentsd's
+// secretOpsPendingMost), so its resend is in the last ones this copy saw.
+const secretOpsSeenMost = 20_000
+
+// secretOpsSeen is the ids of the machines' operations this copy queued for the audit, as
+// host|id, oldest first in order: a machine sends an operation again when it did not hear the
+// answer (#6464), and the audit keeps it once. It is in memory only: a restart of this copy
+// between a send it kept and the machine's resend keeps that one twice.
+type secretOpsSeen struct {
+	mu    sync.Mutex
+	ids   map[string]bool
+	order []string
+}
+
+// unseenSecretOps is ops less those with an id that host sent already. An operation with no
+// id, from an older machine, is always new.
+func (s *Service) unseenSecretOps(host string, ops []wire.SecretOperation) []wire.SecretOperation {
+	seen := &s.secretOpsSeen
+	seen.mu.Lock()
+	defer seen.mu.Unlock()
+	if seen.ids == nil {
+		seen.ids = map[string]bool{}
+	}
+	out := make([]wire.SecretOperation, 0, len(ops))
+	for _, op := range ops {
+		if op.ID == nil || *op.ID == "" {
+			out = append(out, op)
+			continue
+		}
+		key := host + "|" + *op.ID
+		if seen.ids[key] {
+			continue
+		}
+		seen.ids[key] = true
+		seen.order = append(seen.order, key)
+		if len(seen.order) > secretOpsSeenMost {
+			delete(seen.ids, seen.order[0])
+			seen.order = seen.order[1:]
+		}
+		out = append(out, op)
+	}
+	return out
 }
 
 func (s *Service) startAudit() {
