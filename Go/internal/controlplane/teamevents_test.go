@@ -60,9 +60,9 @@ func TestATeamTriggerHeardByEveryMachineRunsOnce(t *testing.T) {
 	sam := p.invite(admin, "Sam", wire.UserRoleMember)
 	lee := p.invite(admin, "Lee", wire.UserRoleMember)
 	var platform wire.Group
-	json.Unmarshal(call(t, admin, "", "groups/set", wire.GroupSet{Name: "Platform", Members: []string{sam.id}}), &platform)
+	must(t, json.Unmarshal(call(t, admin, "", "groups/set", wire.GroupSet{Name: "Platform", Members: []string{sam.id}}), &platform))
 	var made wire.BotMade
-	json.Unmarshal(call(t, admin, "", "bots/make", wire.BotMake{Name: "review-bot", Group: platform.ID}), &made)
+	must(t, json.Unmarshal(call(t, admin, "", "bots/make", wire.BotMake{Name: "review-bot", Group: platform.ID}), &made))
 
 	machines := []*fakeHost{p.botMachine(admin, made.User, "MACHINE-B1"), p.botMachine(admin, made.User, "MACHINE-B2"),
 		p.botMachine(admin, made.User, "MACHINE-B3")}
@@ -192,9 +192,9 @@ func TestABotsMachineIsStartedOnceForItsTriggers(t *testing.T) {
 	_, admin := p.client("Alex's Mac")
 	sam := p.invite(admin, "Sam", wire.UserRoleMember)
 	var platform wire.Group
-	json.Unmarshal(call(t, admin, "", "groups/set", wire.GroupSet{Name: "Platform", Members: []string{sam.id}}), &platform)
+	must(t, json.Unmarshal(call(t, admin, "", "groups/set", wire.GroupSet{Name: "Platform", Members: []string{sam.id}}), &platform))
 	var made wire.BotMade
-	json.Unmarshal(call(t, admin, "", "bots/make", wire.BotMake{Name: "review-bot", Group: platform.ID}), &made)
+	must(t, json.Unmarshal(call(t, admin, "", "bots/make", wire.BotMake{Name: "review-bot", Group: platform.ID}), &made))
 	b1, b2 := p.botMachine(admin, made.User, "MACHINE-B1"), p.botMachine(admin, made.User, "MACHINE-B2")
 	for _, m := range []*fakeHost{b1, b2} {
 		fake.may[m.member.Host] = true
@@ -303,7 +303,7 @@ func TestAPersonsMachineIsToldTheBotsOfItsGroups(t *testing.T) {
 	sam := p.invite(admin, "Sam", wire.UserRoleMember)
 	lee := p.invite(admin, "Lee", wire.UserRoleMember)
 	var platform wire.Group
-	json.Unmarshal(call(t, admin, "", "groups/set", wire.GroupSet{Name: "Platform", Members: []string{sam.id}}), &platform)
+	must(t, json.Unmarshal(call(t, admin, "", "groups/set", wire.GroupSet{Name: "Platform", Members: []string{sam.id}}), &platform))
 	samsMac, leesMac := p.machine(sam, "MACHINE-S"), p.machine(lee, "MACHINE-L")
 	botsOf := func(host string) string {
 		u, _ := users.of(host)
@@ -311,7 +311,7 @@ func TestAPersonsMachineIsToldTheBotsOfItsGroups(t *testing.T) {
 	}
 
 	var made wire.BotMade
-	json.Unmarshal(call(t, admin, "", "bots/make", wire.BotMake{Name: "review-bot", Group: platform.ID}), &made)
+	must(t, json.Unmarshal(call(t, admin, "", "bots/make", wire.BotMake{Name: "review-bot", Group: platform.ID}), &made))
 	p.waitFor(func() bool { return botsOf(samsMac.member.Host) == "review-bot" }, "Sam's machine told the bot")
 	bot := p.botMachine(admin, made.User, "MACHINE-B1")
 	p.waitFor(func() bool { u, ok := users.of(bot.member.Host); return ok && u.Kind == "bot" }, "the bot's machine told")
@@ -356,7 +356,7 @@ func TestATeamTriggerCarriesOnlyAServerEventOrASchedule(t *testing.T) {
 			return nil, false
 		}
 		var tr wire.TeamTrigger
-		json.Unmarshal(params, &tr)
+		must(t, json.Unmarshal(params, &tr))
 		mu.Lock()
 		defer mu.Unlock()
 		got = append(got, tr)
@@ -370,9 +370,9 @@ func TestATeamTriggerCarriesOnlyAServerEventOrASchedule(t *testing.T) {
 	_, admin := p.client("Alex's Mac")
 	sam := p.invite(admin, "Sam", wire.UserRoleMember)
 	var platform wire.Group
-	json.Unmarshal(call(t, admin, "", "groups/set", wire.GroupSet{Name: "Platform", Members: []string{sam.id}}), &platform)
+	must(t, json.Unmarshal(call(t, admin, "", "groups/set", wire.GroupSet{Name: "Platform", Members: []string{sam.id}}), &platform))
 	var made wire.BotMade
-	json.Unmarshal(call(t, admin, "", "bots/make", wire.BotMake{Name: "review-bot", Group: platform.ID}), &made)
+	must(t, json.Unmarshal(call(t, admin, "", "bots/make", wire.BotMake{Name: "review-bot", Group: platform.ID}), &made))
 	p.botMachine(admin, made.User, "MACHINE-B1")
 	samsMac := p.machine(sam, "MACHINE-S")
 	runsOn := []string{"review-bot"}
@@ -421,7 +421,7 @@ func TestATeamTriggerCarriesOnlyAServerEventOrASchedule(t *testing.T) {
 	checkLink(t, p, samsMac.member.Host, slack)
 	note := waitNote(t, sam.window, "control/linkRequested")
 	var asked wire.ChannelLinkRequest
-	json.Unmarshal(note.Params, &asked)
+	must(t, json.Unmarshal(note.Params, &asked))
 	call(t, sam.window, "", "links/approve", wire.ChannelLinkDecide{Request: asked.Request})
 	if err := send(serverTrigger("app/review", runsOn, "e2", map[string]string{"sender_channel": "slack", "sender_identity": "T1/U42",
 		"sender_user": "someone-else", "sender_name": "Alex"})); err != nil {

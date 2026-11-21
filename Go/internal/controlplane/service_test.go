@@ -174,6 +174,31 @@ func fakeHello(machine string) controllink.MachineHello {
 }
 
 // serveHost connects a host that has joined, and answers its channels as host does.
+// answer is the fake machine's reply to one call: the test's own answer for its method
+// when it set one, else the few that every test needs.
+func (h *fakeHost) answer(host string, id json.RawMessage, method string, params json.RawMessage) string {
+	h.mu.Lock()
+	agents := h.agents
+	own := h.answers[method]
+	h.mu.Unlock()
+	if own != nil {
+		return reply(id, own(params))
+	}
+	if method == "agents/list" && agents != nil {
+		return reply(id, agents(params))
+	}
+	switch method {
+	case "daemon/ping":
+		return reply(id, map[string]any{"pong": host})
+	case "agents/list", "elicitations/pending":
+		return reply(id, []any{})
+	case "worktrees/all":
+		return reply(id, fakeWorktrees)
+	default:
+		return replyError(id, notFound(method))
+	}
+}
+
 func (p *plane) serveHost(root string, member *controllink.Membership, private []byte, hello controllink.MachineHello, opened func(controllink.Conn)) *fakeHost {
 	ctx, cancel := context.WithCancel(context.Background())
 	h := &fakeHost{root: root, member: member, cancel: cancel, done: make(chan struct{}), private: private}
@@ -195,28 +220,9 @@ func (p *plane) serveHost(root string, member *controllink.Membership, private [
 				Method string          `json:"method"`
 				Params json.RawMessage `json:"params"`
 			}
-			json.Unmarshal([]byte(line), &m)
-			h.mu.Lock()
-			agents := h.agents
-			own := h.answers[m.Method]
-			h.mu.Unlock()
-			if own != nil {
-				c.Write(reply(m.ID, own(m.Params)))
-				continue
-			}
-			if m.Method == "agents/list" && agents != nil {
-				c.Write(reply(m.ID, agents(m.Params)))
-				continue
-			}
-			switch m.Method {
-			case "daemon/ping":
-				c.Write(reply(m.ID, map[string]any{"pong": member.Host}))
-			case "agents/list", "elicitations/pending":
-				c.Write(reply(m.ID, []any{}))
-			case "worktrees/all":
-				c.Write(reply(m.ID, fakeWorktrees))
-			default:
-				c.Write(replyError(m.ID, notFound(m.Method)))
+			fakeMust(json.Unmarshal([]byte(line), &m))
+			if c.Write(h.answer(member.Host, m.ID, m.Method, m.Params)) != nil {
+				return // the test closed the link
 			}
 		}
 	}}
@@ -320,7 +326,7 @@ func TestAHostAndAWindowThroughTheControlPlane(t *testing.T) {
 	member, window := p.client("Test window")
 
 	var pong struct{ Pong string }
-	json.Unmarshal(call(t, window, box.member.Host, "daemon/ping", nil), &pong)
+	must(t, json.Unmarshal(call(t, window, box.member.Host, "daemon/ping", nil), &pong))
 	if pong.Pong != box.member.Host {
 		t.Fatal(pong)
 	}
@@ -332,17 +338,17 @@ func TestAHostAndAWindowThroughTheControlPlane(t *testing.T) {
 		You       string  `json:"you"`
 		StartedAt float64 `json:"startedAt"`
 	}
-	json.Unmarshal(call(t, window, "", "control/status", nil), &status)
+	must(t, json.Unmarshal(call(t, window, "", "control/status", nil), &status))
 	if status.Name != "Test plane" || status.HomeHost != "mac" || status.You != member.Client || status.StartedAt < 8e8 {
 		t.Fatalf("%+v", status)
 	}
 	var hosts []wire.ControlMachine
-	json.Unmarshal(call(t, window, "", "machines/list", nil), &hosts)
+	must(t, json.Unmarshal(call(t, window, "", "machines/list", nil), &hosts))
 	if len(hosts) != 2 || hosts[0].State != "online" || hosts[1].State != "online" || deref(hosts[0].Implementation) != "go" {
 		t.Fatalf("%+v", hosts)
 	}
 	var clients []map[string]any
-	json.Unmarshal(call(t, window, "", "clients/list", nil), &clients)
+	must(t, json.Unmarshal(call(t, window, "", "clients/list", nil), &clients))
 	if len(clients) != 1 || clients[0]["kind"] != "mac" {
 		t.Fatalf("%+v", clients)
 	}
@@ -555,7 +561,7 @@ func TestTheFolderAndKeyAreTheControlPlane(t *testing.T) {
 	}
 	defer window.Close()
 	var hosts []wire.ControlMachine
-	json.Unmarshal(call(t, window, "", "machines/list", nil), &hosts)
+	must(t, json.Unmarshal(call(t, window, "", "machines/list", nil), &hosts))
 	if len(hosts) != 1 || string(hosts[0].ID) != h.member.Host {
 		t.Fatalf("%+v", hosts)
 	}
@@ -579,14 +585,14 @@ func TestASwiftStoreIsTakenUp(t *testing.T) {
 	if _, err := r.SettingsOrMake(context.Background(), func() records.Settings { return settings }); err != nil {
 		t.Fatal(err)
 	}
-	r.SaveHost(context.Background(), records.MachineRecord{ID: "mac", Name: "Mac", Platform: "macOS arm64"})
+	must(t, r.SaveHost(context.Background(), records.MachineRecord{ID: "mac", Name: "Mac", Platform: "macOS arm64"}))
 	p := startPlane(t, store.NewFolder(root), key)
 	if p.s.Records().Host("mac") == nil {
 		t.Fatal("the host went")
 	}
 	data, _ := os.ReadFile(filepath.Join(root, "v1", "control.json"))
 	var written map[string]any
-	json.Unmarshal(data, &written)
+	must(t, json.Unmarshal(data, &written))
 	if written["name"] != "Swift plane" || written["url"] != p.url {
 		t.Fatalf("%s", data)
 	}
@@ -629,8 +635,8 @@ func TestABrowserThroughTheLoopbackListener(t *testing.T) {
 	dist := t.TempDir()
 	index := []byte("<html></html>")
 	sum := sha256.Sum256(index)
-	os.WriteFile(filepath.Join(dist, "index.html"), index, 0o644)
-	os.WriteFile(filepath.Join(dist, "MANIFEST"), []byte("agents-web 1\nout "+hex.EncodeToString(sum[:])+" Web/dist/index.html\n"), 0o644)
+	must(t, os.WriteFile(filepath.Join(dist, "index.html"), index, 0o600))
+	must(t, os.WriteFile(filepath.Join(dist, "MANIFEST"), []byte("agents-web 1\nout "+hex.EncodeToString(sum[:])+" Web/dist/index.html\n"), 0o600))
 
 	port := freePort(t)
 	url := "http://127.0.0.1:" + itoa(port)
@@ -670,7 +676,7 @@ func TestABrowserThroughTheLoopbackListener(t *testing.T) {
 		public, _ := controllink.PublicKey(private)
 		id := records.NewUUID()
 		params, _ := json.Marshal(wire.ClientAnnounce{ID: wire.UUID(id), PublicKey: public, Name: "Safari", Kind: wire.ClientKind(kind)})
-		l.Write(context.Background(), `{"jsonrpc":"2.0","id":1,"method":"clients/announce","params":`+string(params)+`}`)
+		must(t, l.Write(context.Background(), `{"jsonrpc":"2.0","id":1,"method":"clients/announce","params":`+string(params)+`}`))
 		line, err := l.Read(context.Background())
 		if err != nil {
 			return "", nil, err
@@ -736,7 +742,9 @@ func answerHello(l *controllink.Lines, id controllink.Identity, key []byte, at, 
 	if err != nil {
 		return nil, nil, err
 	}
-	l.Write(ctx, controllink.Message{Auth: auth}.Line())
+	if err := l.Write(ctx, controllink.Message{Auth: auth}.Line()); err != nil {
+		return nil, nil, err
+	}
 	line, err = l.Read(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -786,7 +794,7 @@ func (p *plane) rawHostWith(name string, code *controllink.Code) (string, *contr
 	}
 	params, _ := json.Marshal(wire.MachineAnnounce{PublicKey: public, Name: name, Platform: "macOS arm64", Version: "1",
 		MachineID: "RAW-MAC"})
-	l.Write(ctx, `{"jsonrpc":"2.0","id":1,"method":"machines/announce","params":`+string(params)+`}`)
+	must(p.t, l.Write(ctx, `{"jsonrpc":"2.0","id":1,"method":"machines/announce","params":`+string(params)+`}`))
 	line, err := l.Read(ctx)
 	if err != nil {
 		p.t.Fatal(err)
@@ -795,7 +803,7 @@ func (p *plane) rawHostWith(name string, code *controllink.Code) (string, *contr
 	var answer struct {
 		Result wire.Admitted `json:"result"`
 	}
-	json.Unmarshal([]byte(line), &answer)
+	must(p.t, json.Unmarshal([]byte(line), &answer))
 	host := string(deref(answer.Result.Host))
 	key, _ := controllink.HostKey(private, code.ControlKey, host)
 	l, _, err = controllink.Join(ctx, code.URL, "", controllink.Credentials{Identity: "h:" + host, Key: key,
@@ -804,7 +812,7 @@ func (p *plane) rawHostWith(name string, code *controllink.Code) (string, *contr
 		p.t.Fatal(err)
 	}
 	hello, _ := json.Marshal(wire.MachineHello{Version: "1", Platform: "macOS arm64", MachineID: "RAW-MAC"})
-	l.Write(ctx, channelFrame(0, `{"jsonrpc":"2.0","id":1,"method":"machine/hello","params":`+string(hello)+`}`))
+	must(p.t, l.Write(ctx, channelFrame(0, `{"jsonrpc":"2.0","id":1,"method":"machine/hello","params":`+string(hello)+`}`)))
 	p.t.Cleanup(l.Close)
 	return host, l, key
 }
@@ -899,8 +907,8 @@ func TestAHostsImplementationIsKeptFromItsHello(t *testing.T) {
 	box := p.host("MACHINE-2")
 	implementation := func() string {
 		var said string
-		if rec := p.s.records.Host(box.member.Host); rec != nil {
-			json.Unmarshal(rec.Extra["implementation"], &said)
+		if rec := p.s.records.Host(box.member.Host); rec != nil && len(rec.Extra["implementation"]) > 0 {
+			must(t, json.Unmarshal(rec.Extra["implementation"], &said))
 		}
 		return said
 	}
@@ -925,9 +933,9 @@ func TestAHostsImplementationIsKeptFromItsHello(t *testing.T) {
 func TestToolsetFilesAreTheNamedOnesOnly(t *testing.T) {
 	t.Parallel()
 	folder := t.TempDir()
-	os.MkdirAll(filepath.Join(folder, "claude"), 0o755)
-	os.WriteFile(filepath.Join(folder, "claude", "manifest.json"), []byte(`{"runtimeID":"claude"}`), 0o644)
-	os.WriteFile(filepath.Join(folder, "claude", "mac-node.json"), []byte(`{}`), 0o644)
+	must(t, os.MkdirAll(filepath.Join(folder, "claude"), 0o750))
+	must(t, os.WriteFile(filepath.Join(folder, "claude", "manifest.json"), []byte(`{"runtimeID":"claude"}`), 0o600))
+	must(t, os.WriteFile(filepath.Join(folder, "claude", "mac-node.json"), []byte(`{}`), 0o600))
 	if data, ok := toolsetFile("claude/manifest.json", folder); !ok || string(data) != `{"runtimeID":"claude"}` {
 		t.Fatalf("manifest: %q %v", data, ok)
 	}

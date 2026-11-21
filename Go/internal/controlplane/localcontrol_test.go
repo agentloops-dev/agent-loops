@@ -23,8 +23,8 @@ func webDist(t *testing.T) string {
 	dist := t.TempDir()
 	index := []byte("<html></html>")
 	sum := sha256.Sum256(index)
-	os.WriteFile(filepath.Join(dist, "index.html"), index, 0o644)
-	os.WriteFile(filepath.Join(dist, "MANIFEST"), []byte("agents-web 1\nout "+hex.EncodeToString(sum[:])+" Web/dist/index.html\n"), 0o644)
+	must(t, os.WriteFile(filepath.Join(dist, "index.html"), index, 0o600))
+	must(t, os.WriteFile(filepath.Join(dist, "MANIFEST"), []byte("agents-web 1\nout "+hex.EncodeToString(sum[:])+" Web/dist/index.html\n"), 0o600))
 	return dist
 }
 
@@ -43,7 +43,7 @@ func TestAnAdminTurnsTheWebListenerOffAndOn(t *testing.T) {
 		t.Fatal("not serving")
 	}
 	var status wire.WebRemoteStatus
-	json.Unmarshal(call(t, window, "", "control/setWeb", wire.WebServe{On: false}), &status)
+	must(t, json.Unmarshal(call(t, window, "", "control/setWeb", wire.WebServe{On: false}), &status))
 	if status.Served || status.Reason == nil || *status.Reason != "off" || p.s.WebPort() != 0 {
 		t.Fatalf("%+v", status)
 	}
@@ -52,16 +52,16 @@ func TestAnAdminTurnsTheWebListenerOffAndOn(t *testing.T) {
 		t.Fatal("the listener is still open")
 	}
 	// Try Again leaves it off.
-	json.Unmarshal(call(t, window, "", "control/retryWeb", wire.Empty{}), &status)
+	must(t, json.Unmarshal(call(t, window, "", "control/retryWeb", wire.Empty{}), &status))
 	if status.Served {
 		t.Fatalf("%+v", status)
 	}
 	var said wire.ControlStatus
-	json.Unmarshal(call(t, window, "", "control/status", wire.Empty{}), &said)
+	must(t, json.Unmarshal(call(t, window, "", "control/status", wire.Empty{}), &said))
 	if said.Web == nil || said.Web.Served || said.Restartable != nil {
 		t.Fatalf("%+v", said)
 	}
-	json.Unmarshal(call(t, window, "", "control/setWeb", wire.WebServe{On: true}), &status)
+	must(t, json.Unmarshal(call(t, window, "", "control/setWeb", wire.WebServe{On: true}), &status))
 	if !status.Served || p.s.WebPort() == 0 {
 		t.Fatalf("%+v", status)
 	}
@@ -84,7 +84,7 @@ func TestTheWebListenerStartsOffWhenKeptOff(t *testing.T) {
 	}
 	_, window := p.client("Window")
 	var said wire.ControlStatus
-	json.Unmarshal(call(t, window, "", "control/status", wire.Empty{}), &said)
+	must(t, json.Unmarshal(call(t, window, "", "control/status", wire.Empty{}), &said))
 	if said.Web == nil || said.Web.Reason == nil || *said.Web.Reason != "off" {
 		t.Fatalf("%+v", said.Web)
 	}
@@ -107,7 +107,7 @@ func TestRestartOnlyWhereItStartsAgain(t *testing.T) {
 	})
 	_, other := q.client("Window")
 	var said wire.ControlStatus
-	json.Unmarshal(call(t, other, "", "control/status", wire.Empty{}), &said)
+	must(t, json.Unmarshal(call(t, other, "", "control/status", wire.Empty{}), &said))
 	if said.Restartable == nil || !*said.Restartable {
 		t.Fatalf("%+v", said)
 	}

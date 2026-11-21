@@ -28,7 +28,7 @@ func TestSecretRowInfoAndNoHintInTheStore(t *testing.T) {
 	setSecret(t, alex, "GITHUB_TOKEN", "ghp_0123456789abcdefQ7zX", 0)
 	rows := func() []wire.UserSecretRow {
 		var names wire.UserSecretNames
-		json.Unmarshal(call(t, window, "", "user/secretNames", nil), &names)
+		must(t, json.Unmarshal(call(t, window, "", "user/secretNames", nil), &names))
 		return names.Secrets
 	}
 	p.waitFor(func() bool { r := rows(); return len(r) == 1 && len(r[0].Machines) == 1 }, "the machine noted")
@@ -113,7 +113,7 @@ func TestAccountInfo(t *testing.T) {
 	other := wire.UserSettings{Accounts: settings.Accounts}
 	s.addAccountInfo("bo", &other)
 	var theirs wire.OutsideAccounts
-	json.Unmarshal(other.Accounts, &theirs)
+	must(t, json.Unmarshal(other.Accounts, &theirs))
 	if theirs.Accounts[0].LastOp != nil {
 		t.Fatal("another person's")
 	}

@@ -102,7 +102,7 @@ func orgProvider(prov *signintest.Provider, join wire.OrgProviderJoin) wire.OrgP
 func addOrg(t *testing.T, owner *controllink.Session, prov *signintest.Provider, join wire.OrgProviderJoin) wire.OrgProviderKept {
 	t.Helper()
 	var kept wire.OrgProviderKept
-	json.Unmarshal(call(t, owner, "", "signIn/orgProviders/set", wire.OrgProviderSet{Provider: orgProvider(prov, join), Secret: &prov.ClientSecret}), &kept)
+	must(t, json.Unmarshal(call(t, owner, "", "signIn/orgProviders/set", wire.OrgProviderSet{Provider: orgProvider(prov, join), Secret: &prov.ClientSecret}), &kept))
 	if kept.Provider.ID != "acme-okta" || deref(kept.Provider.Version) != 1 || kept.Rev == "" {
 		t.Fatalf("%+v", kept)
 	}
@@ -176,7 +176,7 @@ func orgStartOn(t *testing.T, s *controllink.SignInSession, returnTo wire.SignIn
 		t.Fatal(err)
 	}
 	var started wire.SignInOrgStarted
-	json.Unmarshal(raw, &started)
+	must(t, json.Unmarshal(raw, &started))
 	return started.URL
 }
 
@@ -202,7 +202,7 @@ func TestNoOrgProviderChangesNothing(t *testing.T) {
 	prov := signintest.NewProvider(t, "RS256", "")
 	p, _, owner, _ := orgPlane(t, prov, nil)
 	var providers wire.SignInProviders
-	json.Unmarshal(call(t, owner, "", "signIn/providers", nil), &providers)
+	must(t, json.Unmarshal(call(t, owner, "", "signIn/providers", nil), &providers))
 	if providers.OrgProviders != nil || providers.Discover != nil {
 		t.Fatalf("%+v", providers)
 	}
@@ -220,7 +220,7 @@ func TestNoOrgProviderChangesNothing(t *testing.T) {
 		t.Fatalf("an s: connection with nothing on: %v", err)
 	}
 	var list wire.OrgProviderList
-	json.Unmarshal(call(t, owner, "", "signIn/orgProviders/list", nil), &list)
+	must(t, json.Unmarshal(call(t, owner, "", "signIn/orgProviders/list", nil), &list))
 	if len(list.Providers) != 0 {
 		t.Fatalf("%+v", list)
 	}
@@ -281,20 +281,20 @@ func TestOrgProviderSettings(t *testing.T) {
 		t.Fatal(e)
 	}
 	var again wire.OrgProviderKept
-	json.Unmarshal(call(t, owner, "", "signIn/orgProviders/set", wire.OrgProviderSet{Provider: change, Rev: &kept.Rev}), &again)
+	must(t, json.Unmarshal(call(t, owner, "", "signIn/orgProviders/set", wire.OrgProviderSet{Provider: change, Rev: &kept.Rev}), &again))
 	if deref(again.Provider.Version) != 2 || again.Provider.Name != "Acme" || again.Provider.Secret.Fingerprint != kept.Provider.Secret.Fingerprint {
 		t.Fatalf("%+v", again.Provider)
 	}
 	// Check reads the document and the JWKS again.
 	var check wire.OrgProviderCheck
-	json.Unmarshal(call(t, owner, "", "signIn/orgProviders/check", wire.OrgProviderRequest{ID: "acme-okta"}), &check)
+	must(t, json.Unmarshal(call(t, owner, "", "signIn/orgProviders/check", wire.OrgProviderRequest{ID: "acme-okta"}), &check))
 	if !check.Ok || check.JwksKeys != 2 || len(check.Missing) != 0 {
 		t.Fatalf("%+v", check)
 	}
 	// Every client sees the id, the name and the order, and nothing more (FR-003).
 	var shown wire.SignInProviders
 	raw := call(t, sam.window, "", "signIn/providers", nil)
-	json.Unmarshal(raw, &shown)
+	must(t, json.Unmarshal(raw, &shown))
 	if len(shown.OrgProviders) != 1 || shown.OrgProviders[0] != (wire.SignInOrgProvider{ID: "acme-okta", Name: "Acme"}) ||
 		strings.Contains(string(raw), prov.ClientID) {
 		t.Fatalf("%s", raw)
@@ -327,7 +327,7 @@ func TestOrgProviderSettings(t *testing.T) {
 	// The audit says the provider was added, with the fingerprint, never the secret.
 	p.waitFor(func() bool {
 		var list wire.AuditList
-		json.Unmarshal(call(t, owner, "", "audit/list", nil), &list)
+		must(t, json.Unmarshal(call(t, owner, "", "audit/list", nil), &list))
 		for _, e := range list.Entries {
 			if e.Method == "signIn/orgProviders/set" && strings.Contains(deref(e.Target), fingerprint(prov.ClientSecret)) {
 				return true
@@ -543,15 +543,15 @@ func TestWhoMayJoinByAnOrgProvider(t *testing.T) {
 	// Kim is invited, pairs with the code, and adds the org sign-in from that client.
 	kim := p.invite(owner, "Kim", wire.UserRoleMember)
 	var started wire.SignInOrgStarted
-	json.Unmarshal(call(t, kim.window, "", "signIn/orgStart", wire.SignInOrgStart{Provider: "acme-okta", Purpose: wire.SignInOrgPurposeAddToMe,
-		ReturnTo: wire.SignInOrgReturnApp}), &started)
+	must(t, json.Unmarshal(call(t, kim.window, "", "signIn/orgStart", wire.SignInOrgStart{Provider: "acme-okta", Purpose: wire.SignInOrgPurposeAddToMe,
+		ReturnTo: wire.SignInOrgReturnApp}), &started))
 	v := b.open(t, started.URL)
 	// Another of the owner's clients cannot take Kim's ticket.
 	if e := callError(t, owner, "", "signIn/ticket", wire.SignInTicket{Ticket: v.Get("ticket")}); !strings.Contains(e, "another connection") {
 		t.Fatal(e)
 	}
 	var added wire.SignInTicketResult
-	json.Unmarshal(call(t, kim.window, "", "signIn/ticket", wire.SignInTicket{Ticket: v.Get("ticket")}), &added)
+	must(t, json.Unmarshal(call(t, kim.window, "", "signIn/ticket", wire.SignInTicket{Ticket: v.Get("ticket")}), &added))
 	if added.SignIn == nil || added.SignIn.Provider != "acme-okta" || deref(added.SignIn.Account) != "00u-kim" {
 		t.Fatalf("%+v", added)
 	}
@@ -564,7 +564,7 @@ func TestWhoMayJoinByAnOrgProvider(t *testing.T) {
 	}
 	// Anyone the provider signs in joins as a member.
 	var list wire.OrgProviderList
-	json.Unmarshal(call(t, owner, "", "signIn/orgProviders/list", nil), &list)
+	must(t, json.Unmarshal(call(t, owner, "", "signIn/orgProviders/list", nil), &list))
 	o := list.Providers[0].Provider
 	o.Join = new(wire.OrgProviderJoinAnyone)
 	call(t, owner, "", "signIn/orgProviders/set", wire.OrgProviderSet{Provider: o, Rev: &list.Providers[0].Rev})
@@ -577,7 +577,7 @@ func TestWhoMayJoinByAnOrgProvider(t *testing.T) {
 		t.Fatalf("%+v", got)
 	}
 	// Turned off, it signs nobody in (FR-009).
-	json.Unmarshal(call(t, owner, "", "signIn/orgProviders/list", nil), &list)
+	must(t, json.Unmarshal(call(t, owner, "", "signIn/orgProviders/list", nil), &list))
 	o = list.Providers[0].Provider
 	o.On = new(false)
 	call(t, owner, "", "signIn/orgProviders/set", wire.OrgProviderSet{Provider: o, Rev: &list.Providers[0].Rev})
@@ -622,13 +622,13 @@ func TestClaimedDomainsSendAndRequire(t *testing.T) {
 	p.s.signIns.org.skew.Store(int64(25 * time.Hour))
 	p.s.signIns.checkDomains(context.Background())
 	var list wire.SignInDomainList
-	json.Unmarshal(call(t, owner, "", "signIn/domains/list", nil), &list)
+	must(t, json.Unmarshal(call(t, owner, "", "signIn/domains/list", nil), &list))
 	if c := list.Domains[0]; c.State != wire.DomainClaimStateProved || c.FailingSince == nil || !c.Require {
 		t.Fatalf("%+v", c)
 	}
 	p.s.signIns.org.skew.Store(int64(9 * 24 * time.Hour))
 	p.s.signIns.checkDomains(context.Background())
-	json.Unmarshal(call(t, owner, "", "signIn/domains/list", nil), &list)
+	must(t, json.Unmarshal(call(t, owner, "", "signIn/domains/list", nil), &list))
 	if c := list.Domains[0]; c.State != wire.DomainClaimStateNotProved || c.Require || c.SendHere {
 		t.Fatalf("%+v", c)
 	}
@@ -640,7 +640,7 @@ func TestClaimedDomainsSendAndRequire(t *testing.T) {
 	}
 	// Removing the provider takes its claims too.
 	call(t, owner, "", "signIn/orgProviders/remove", wire.OrgProviderRequest{ID: "acme-okta"})
-	json.Unmarshal(call(t, owner, "", "signIn/domains/list", nil), &list)
+	must(t, json.Unmarshal(call(t, owner, "", "signIn/domains/list", nil), &list))
 	if len(list.Domains) != 0 {
 		t.Fatalf("%+v", list)
 	}
@@ -651,7 +651,7 @@ func TestClaimedDomainsSendAndRequire(t *testing.T) {
 func claimAndProveAcme(t *testing.T, owner, kimWindow *controllink.Session, dns *fakeDNS) wire.DomainClaim {
 	t.Helper()
 	var claim wire.DomainClaim
-	json.Unmarshal(call(t, owner, "", "signIn/domains/claim", wire.SignInDomainClaim{Domain: "Acme.Test", Provider: "acme-okta"}), &claim)
+	must(t, json.Unmarshal(call(t, owner, "", "signIn/domains/claim", wire.SignInDomainClaim{Domain: "Acme.Test", Provider: "acme-okta"}), &claim))
 	if claim.Domain != "acme.test" || claim.TxtName != "_agents.acme.test" || !strings.HasPrefix(claim.TxtValue, "agents-domain=") ||
 		len(claim.TxtValue) != len("agents-domain=")+32 || claim.State != wire.DomainClaimStateNotProved {
 		t.Fatalf("%+v", claim)
@@ -663,12 +663,12 @@ func claimAndProveAcme(t *testing.T, owner, kimWindow *controllink.Session, dns 
 	if e := callError(t, owner, "", "signIn/domains/set", wire.SignInDomainSet{Domain: "acme.test", Require: new(true)}); !strings.Contains(e, "Prove acme.test first") {
 		t.Fatal(e)
 	}
-	json.Unmarshal(call(t, owner, "", "signIn/domains/check", wire.SignInDomainRequest{Domain: "acme.test"}), &claim)
+	must(t, json.Unmarshal(call(t, owner, "", "signIn/domains/check", wire.SignInDomainRequest{Domain: "acme.test"}), &claim))
 	if claim.State != wire.DomainClaimStateNotProved {
 		t.Fatalf("proved with no record: %+v", claim)
 	}
 	dns.set(claim.TxtName, "v=spf1", claim.TxtValue)
-	json.Unmarshal(call(t, owner, "", "signIn/domains/check", wire.SignInDomainRequest{Domain: "acme.test"}), &claim)
+	must(t, json.Unmarshal(call(t, owner, "", "signIn/domains/check", wire.SignInDomainRequest{Domain: "acme.test"}), &claim))
 	if claim.State != wire.DomainClaimStateProved || claim.LastGood == nil {
 		t.Fatalf("%+v", claim)
 	}
@@ -688,7 +688,7 @@ func checkOneProviderAndPreview(t *testing.T, owner *controllink.Session, prov *
 	}
 	// The preview names Kim and her Google sign-in, and never the local owner.
 	var preview wire.SignInDomainPreview
-	json.Unmarshal(call(t, owner, "", "signIn/domains/preview", wire.SignInDomainRequest{Domain: "acme.test"}), &preview)
+	must(t, json.Unmarshal(call(t, owner, "", "signIn/domains/preview", wire.SignInDomainRequest{Domain: "acme.test"}), &preview))
 	if len(preview.People) != 1 || preview.People[0].User != kimID || deref(preview.People[0].SignIns[0].Email) != "kim@acme.test" {
 		t.Fatalf("%+v", preview)
 	}
@@ -698,7 +698,7 @@ func checkOneProviderAndPreview(t *testing.T, owner *controllink.Session, prov *
 // answers for acme.test only, the same for any other, and the providers say so.
 func checkSendHere(t *testing.T, p *plane, owner *controllink.Session, claim *wire.DomainClaim) {
 	t.Helper()
-	json.Unmarshal(call(t, owner, "", "signIn/domains/set", wire.SignInDomainSet{Domain: "acme.test", SendHere: new(true), Require: new(true)}), claim)
+	must(t, json.Unmarshal(call(t, owner, "", "signIn/domains/set", wire.SignInDomainSet{Domain: "acme.test", SendHere: new(true), Require: new(true)}), claim))
 	s := openSignIn(t, p)
 	for email, want := range map[string]string{"lee@ACME.test": "acme-okta", "lee@other.test": "", "no email": ""} {
 		raw, err := s.Call(context.Background(), "signIn/discover", wire.SignInDiscover{Email: email})
@@ -706,13 +706,13 @@ func checkSendHere(t *testing.T, p *plane, owner *controllink.Session, claim *wi
 			t.Fatal(err)
 		}
 		var d wire.SignInDiscovered
-		json.Unmarshal(raw, &d)
+		must(t, json.Unmarshal(raw, &d))
 		if deref(d.Provider) != want {
 			t.Errorf("%s: %s", email, raw)
 		}
 	}
 	var providers wire.SignInProviders
-	json.Unmarshal(call(t, owner, "", "signIn/providers", nil), &providers)
+	must(t, json.Unmarshal(call(t, owner, "", "signIn/providers", nil), &providers))
 	if !deref(providers.Discover) {
 		t.Fatalf("%+v", providers)
 	}
@@ -749,7 +749,7 @@ func checkRequiredAtSignIn(t *testing.T, p *plane, owner *controllink.Session, f
 func checkRenewalNeedsOrg(t *testing.T, p *plane, prov *signintest.Provider, kim *person) {
 	t.Helper()
 	soon := records.At(time.Now().Add(24 * time.Hour))
-	p.s.records.ChangeClient(context.Background(), kim.member.Client, func(c *records.ClientRecord) bool { c.Expires = &soon; return true })
+	must(t, p.s.records.ChangeClient(context.Background(), kim.member.Client, func(c *records.ClientRecord) bool { c.Expires = &soon; return true }))
 	p.s.renewClient(context.Background(), kim.member.Client)
 	if c := p.s.records.Client(kim.member.Client); !c.Expires.Equal(soon.Time) {
 		t.Fatalf("renewed: %v", c.Expires)
@@ -757,8 +757,8 @@ func checkRenewalNeedsOrg(t *testing.T, p *plane, prov *signintest.Provider, kim
 	call(t, kim.window, "", "control/status", nil)
 	prov.SignInAs(signintest.Claims{"sub": "00u-kim", "email": "kim@acme.test"})
 	var started wire.SignInOrgStarted
-	json.Unmarshal(call(t, kim.window, "", "signIn/orgStart", wire.SignInOrgStart{Provider: "acme-okta", Purpose: wire.SignInOrgPurposeAddToMe,
-		ReturnTo: wire.SignInOrgReturnApp, LoginHint: new("kim@acme.test")}), &started)
+	must(t, json.Unmarshal(call(t, kim.window, "", "signIn/orgStart", wire.SignInOrgStart{Provider: "acme-okta", Purpose: wire.SignInOrgPurposeAddToMe,
+		ReturnTo: wire.SignInOrgReturnApp, LoginHint: new("kim@acme.test")}), &started))
 	v := (&browser{prov: prov}).open(t, started.URL)
 	call(t, kim.window, "", "signIn/ticket", wire.SignInTicket{Ticket: v.Get("ticket")})
 	if hint := prov.Authorized()[len(prov.Authorized())-1].Get("login_hint"); hint != "kim@acme.test" {
@@ -779,7 +779,7 @@ func TestEntraAndGoogleWorkspacePresets(t *testing.T) {
 	entra := wire.OrgProvider{Name: "Acme Okta", Preset: wire.OrgProviderPresetEntra, Issuer: prov.Issuer, ClientID: prov.ClientID,
 		Join: new(wire.OrgProviderJoinAnyone)}
 	var kept wire.OrgProviderKept
-	json.Unmarshal(call(t, owner, "", "signIn/orgProviders/set", wire.OrgProviderSet{Provider: entra, Secret: &prov.ClientSecret}), &kept)
+	must(t, json.Unmarshal(call(t, owner, "", "signIn/orgProviders/set", wire.OrgProviderSet{Provider: entra, Secret: &prov.ClientSecret}), &kept))
 	if deref(kept.Provider.AccountClaim) != "oid" || deref(kept.Provider.Tenant) != "tenant-1" {
 		t.Fatalf("%+v", kept.Provider)
 	}
@@ -797,13 +797,13 @@ func TestEntraAndGoogleWorkspacePresets(t *testing.T) {
 	// Google Workspace with the organisation's own client.
 	gw := kept.Provider
 	gw.Preset, gw.Tenant, gw.AccountClaim = wire.OrgProviderPresetGoogleWorkspace, nil, new("sub")
-	json.Unmarshal(call(t, owner, "", "signIn/orgProviders/set", wire.OrgProviderSet{Provider: gw, Rev: &kept.Rev}), &kept)
+	must(t, json.Unmarshal(call(t, owner, "", "signIn/orgProviders/set", wire.OrgProviderSet{Provider: gw, Rev: &kept.Rev}), &kept))
 	prov.SignInAs(signintest.Claims{"sub": "g-1", "hd": "acme.test", "email": "ola@acme.test"})
 	if _, err := p.signInOrg(t, b); err == nil || !strings.Contains(err.Error(), "not in one of this provider's domains") {
 		t.Fatal(err)
 	}
 	var claim wire.DomainClaim
-	json.Unmarshal(call(t, owner, "", "signIn/domains/claim", wire.SignInDomainClaim{Domain: "acme.test", Provider: "acme-okta"}), &claim)
+	must(t, json.Unmarshal(call(t, owner, "", "signIn/domains/claim", wire.SignInDomainClaim{Domain: "acme.test", Provider: "acme-okta"}), &claim))
 	dns.set(claim.TxtName, claim.TxtValue)
 	call(t, owner, "", "signIn/domains/check", wire.SignInDomainRequest{Domain: "acme.test"})
 	if _, err := p.signInOrg(t, b); err != nil {
@@ -872,8 +872,8 @@ func TestThePageOnThisDomainSignsIn(t *testing.T) {
 	dist := t.TempDir()
 	index := []byte("<html></html>")
 	sum := sha256.Sum256(index)
-	os.WriteFile(filepath.Join(dist, "index.html"), index, 0o644)
-	os.WriteFile(filepath.Join(dist, "MANIFEST"), []byte("agents-web 1\nout "+hex.EncodeToString(sum[:])+" Web/dist/index.html\n"), 0o644)
+	must(t, os.WriteFile(filepath.Join(dist, "index.html"), index, 0o600))
+	must(t, os.WriteFile(filepath.Join(dist, "MANIFEST"), []byte("agents-web 1\nout "+hex.EncodeToString(sum[:])+" Web/dist/index.html\n"), 0o600))
 	prov := signintest.NewProvider(t, "RS256", "")
 	p := startPlaneWith(t, store.NewMemory(), controllink.NewPrivateKey(), func(c *Config) {
 		withKeeper(newKeeperKey())(c)

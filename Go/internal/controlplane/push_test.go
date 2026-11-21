@@ -66,7 +66,7 @@ func openPush(t *testing.T, m *controllink.ClientMembership, push apns.Push) wir
 		t.Fatal(err)
 	}
 	var item wire.ControlPushItem
-	json.Unmarshal(plaintext, &item)
+	must(t, json.Unmarshal(plaintext, &item))
 	return item
 }
 
@@ -104,8 +104,12 @@ func TestANeedIsPushedThroughAPNsWithNoRelay(t *testing.T) {
 	}
 
 	// The same need again changes nothing; met, it is taken back, quietly.
-	p.s.methods.HostSaid(box.member.Host, "attention/need", json.RawMessage(pushNeed))
-	p.s.methods.HostSaid(box.member.Host, "attention/need", json.RawMessage(`{"withdraw":{"permission":"E0000000-0000-4000-8000-000000000005"}}`))
+	if _, err := p.s.methods.HostSaid(box.member.Host, "attention/need", json.RawMessage(pushNeed)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.s.methods.HostSaid(box.member.Host, "attention/need", json.RawMessage(`{"withdraw":{"permission":"E0000000-0000-4000-8000-000000000005"}}`)); err != nil {
+		t.Fatal(err)
+	}
 	p.waitFor(func() bool { return len(pusher.sent()) == 2 }, "the withdrawal")
 	time.Sleep(100 * time.Millisecond)
 	if n := len(pusher.sent()); n != 2 {
@@ -143,7 +147,9 @@ func TestOnlyADeviceSetsItsOwnToken(t *testing.T) {
 	if e := callError(t, phone, "", "clients/setPushToken", map[string]string{"token": pushDeviceToken, "environment": "staging"}); e == "" {
 		t.Fatal(e)
 	}
-	p.s.methods.HostSaid(box.member.Host, "attention/need", json.RawMessage(pushNeed))
+	if _, err := p.s.methods.HostSaid(box.member.Host, "attention/need", json.RawMessage(pushNeed)); err != nil {
+		t.Fatal(err)
+	}
 	p.waitFor(func() bool { return p.s.Records().Client(m.Client).PushToken == nil }, "the gone token forgotten")
 	// And with no token, the device sets none by saying none.
 	call(t, phone, "", "clients/setPushToken", map[string]string{"token": pushDeviceToken, "environment": "production"})
@@ -159,7 +165,9 @@ func TestNoKeyMeansNoPushesAndSaysSo(t *testing.T) {
 	p := startPlane(t, store.NewMemory(), controllink.NewPrivateKey())
 	box := p.host("MACHINE-2")
 	p.phoneWithToken()
-	p.s.methods.HostSaid(box.member.Host, "attention/need", json.RawMessage(pushNeed))
+	if _, err := p.s.methods.HostSaid(box.member.Host, "attention/need", json.RawMessage(pushNeed)); err != nil {
+		t.Fatal(err)
+	}
 	said := 0
 	for {
 		select {
@@ -200,7 +208,7 @@ func TestAPushTooBigLosesItsButtonsFirst(t *testing.T) {
 	}
 	plaintext, _ := apns.Open(key, apns.Purpose, push.Sealed)
 	var item wire.ControlPushItem
-	json.Unmarshal(plaintext, &item)
+	must(t, json.Unmarshal(plaintext, &item))
 	if item.Headline == nil || item.Headline.H2 != "b" || len(item.Headline.Answers) != 0 {
 		t.Fatal(string(plaintext))
 	}
@@ -220,7 +228,9 @@ func (p *plane) lockedPhone(host string) *controllink.ClientMembership {
 	}
 	call(p.t, session, "", "clients/setPushToken", map[string]string{"token": pushDeviceToken, "environment": "development"})
 	// The fake host does not know the method; the control plane hears the report first.
-	session.Call(context.Background(), host, "presence/report", map[string]any{"active": false, "mayNotify": true})
+	if _, err := session.Call(context.Background(), host, "presence/report", map[string]any{"active": false, "mayNotify": true}); err == nil {
+		p.t.Fatal("the fake host answered presence/report")
+	}
 	p.waitFor(func() bool {
 		c := p.s.Records().Client(m.Client)
 		return c.MayNotify != nil && *c.MayNotify
@@ -259,7 +269,9 @@ func TestAfterAMoveANeedReachesALockedPhone(t *testing.T) {
 	if item := openPush(t, m, pusher.sent()[0]); !item.Alert || item.Headline == nil || item.Headline.H2 != "Fix the gallery" {
 		t.Fatal(item)
 	}
-	moved.s.methods.HostSaid(host.member.Host, "attention/need", json.RawMessage(`{"withdraw":{"permission":"E0000000-0000-4000-8000-000000000005"}}`))
+	if _, err := moved.s.methods.HostSaid(host.member.Host, "attention/need", json.RawMessage(`{"withdraw":{"permission":"E0000000-0000-4000-8000-000000000005"}}`)); err != nil {
+		t.Fatal(err)
+	}
 	moved.waitFor(func() bool { return len(pusher.sent()) == 2 }, "the withdrawal")
 	time.Sleep(100 * time.Millisecond)
 	if n := len(pusher.sent()); n != 2 {
@@ -276,7 +288,9 @@ func TestANeedWithNoDeviceSaysSo(t *testing.T) {
 	t.Parallel()
 	p := startPlaneWith(t, store.NewMemory(), controllink.NewPrivateKey(), func(c *Config) { c.Push = &fakePusher{} })
 	box := p.host("MACHINE-2")
-	p.s.methods.HostSaid(box.member.Host, "attention/need", json.RawMessage(pushNeed))
+	if _, err := p.s.methods.HostSaid(box.member.Host, "attention/need", json.RawMessage(pushNeed)); err != nil {
+		t.Fatal(err)
+	}
 	for {
 		select {
 		case line := <-p.lines:

@@ -45,8 +45,8 @@ func TestAnAdminSetsAnAuditSink(t *testing.T) {
 	_, window := p.client("Test window")
 	token := "s3cret-token"
 	var state wire.AuditSinksState
-	json.Unmarshal(call(t, window, "", "audit/setSinks", wire.AuditSinks{Sinks: []wire.AuditSink{
-		{Kind: wire.AuditSinkKindHttp, Address: srv.URL + "/in", Token: &token}}}), &state)
+	must(t, json.Unmarshal(call(t, window, "", "audit/setSinks", wire.AuditSinks{Sinks: []wire.AuditSink{
+		{Kind: wire.AuditSinkKindHttp, Address: srv.URL + "/in", Token: &token}}}), &state))
 	if len(state.Sinks) != 1 || state.Sinks[0].Sink.Token != nil || state.Sinks[0].Sink.HasToken == nil || !*state.Sinks[0].Sink.HasToken {
 		t.Fatalf("%+v", state)
 	}
@@ -74,7 +74,7 @@ func TestAnAdminSetsAnAuditSink(t *testing.T) {
 	mu.Unlock()
 
 	var listed wire.AuditSinksState
-	json.Unmarshal(call(t, window, "", "audit/sinks", wire.Empty{}), &listed)
+	must(t, json.Unmarshal(call(t, window, "", "audit/sinks", wire.Empty{}), &listed))
 	if len(listed.Sinks) != 1 || !*listed.Sinks[0].Sink.HasToken || strings.Contains(mustMarshal(listed), token) {
 		t.Fatalf("%+v", listed)
 	}

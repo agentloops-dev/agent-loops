@@ -31,7 +31,9 @@ func TestStoreReadsAreReadOnceByTag(t *testing.T) {
 	ctx := context.Background()
 	st := &getCounting{Store: store.NewMemory()}
 	for i := range 30 {
-		st.Put(ctx, fmt.Sprintf("v1/x/%02d.json", i), []byte(fmt.Sprint(i)), store.Always)
+		if _, err := st.Put(ctx, fmt.Sprintf("v1/x/%02d.json", i), []byte(fmt.Sprint(i)), store.Always); err != nil {
+			t.Fatal(err)
+		}
 	}
 	var c readCache
 	readAll := func() [][]byte {
@@ -49,8 +51,10 @@ func TestStoreReadsAreReadOnceByTag(t *testing.T) {
 	if st.gets.Load() != 30 {
 		t.Fatalf("read again: %d", st.gets.Load())
 	}
-	st.Put(ctx, "v1/x/07.json", []byte("seven"), store.Always)
-	st.Delete(ctx, "v1/x/08.json")
+	if _, err := st.Put(ctx, "v1/x/07.json", []byte("seven"), store.Always); err != nil {
+		t.Fatal(err)
+	}
+	must(t, st.Delete(ctx, "v1/x/08.json"))
 	if got := readAll(); string(got[7]) != "seven" || st.gets.Load() != 31 {
 		t.Fatalf("%q, %d reads", got[7], st.gets.Load())
 	}
@@ -74,22 +78,26 @@ func TestTeamWorkflowsCountsTheNewestRuns(t *testing.T) {
 	_, admin := p.client("Alex's Mac")
 	var made wire.BotMade
 	var platform wire.Group
-	json.Unmarshal(call(t, admin, "", "groups/set", wire.GroupSet{Name: "Platform"}), &platform)
-	json.Unmarshal(call(t, admin, "", "bots/make", wire.BotMake{Name: "review-bot", Group: platform.ID}), &made)
+	must(t, json.Unmarshal(call(t, admin, "", "groups/set", wire.GroupSet{Name: "Platform"}), &platform))
+	must(t, json.Unmarshal(call(t, admin, "", "bots/make", wire.BotMake{Name: "review-bot", Group: platform.ID}), &made))
 	host := p.botMachine(admin, made.User, "MACHINE-B1").member.Host
 
 	ctx := context.Background()
 	now := time.Now()
 	old := now.Add(-3 * 24 * time.Hour)
 	for i := range mostRunsRead {
-		p.s.claimRun(ctx, host, wire.WorkflowClaim{Workflow: "old", Trigger: fmt.Sprint(i)}, old)
+		if _, err := p.s.claimRun(ctx, host, wire.WorkflowClaim{Workflow: "old", Trigger: fmt.Sprint(i)}, old); err != nil {
+			t.Fatal(err)
+		}
 	}
 	for i := range 3 {
-		p.s.claimRun(ctx, host, wire.WorkflowClaim{Workflow: "new", Trigger: fmt.Sprint(i)}, now)
+		if _, err := p.s.claimRun(ctx, host, wire.WorkflowClaim{Workflow: "new", Trigger: fmt.Sprint(i)}, now); err != nil {
+			t.Fatal(err)
+		}
 	}
 	var board wire.TeamWorkflows
 	raw := call(t, admin, "", "console/teamWorkflows", map[string]any{})
-	json.Unmarshal(raw, &board)
+	must(t, json.Unmarshal(raw, &board))
 	runs := map[string]int64{}
 	for _, b := range board.Bots {
 		for _, w := range b.Workflows {

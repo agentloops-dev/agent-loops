@@ -27,7 +27,7 @@ func governanceReport(t *testing.T, p *plane, host string, items ...wire.Catalog
 func usage(t *testing.T, s *controllink.Session) wire.CatalogUsage {
 	t.Helper()
 	var out wire.CatalogUsage
-	json.Unmarshal(call(t, s, "", "governance/usage", wire.Empty{}), &out)
+	must(t, json.Unmarshal(call(t, s, "", "governance/usage", wire.Empty{}), &out))
 	return out
 }
 
@@ -96,14 +96,14 @@ func TestGovernanceReportIsBounded(t *testing.T) {
 func requests(t *testing.T, s *controllink.Session) []wire.CatalogRequest {
 	t.Helper()
 	var out wire.CatalogRequestList
-	json.Unmarshal(call(t, s, "", "governance/requests", wire.Empty{}), &out)
+	must(t, json.Unmarshal(call(t, s, "", "governance/requests", wire.Empty{}), &out))
 	return out.Requests
 }
 
 func ask(t *testing.T, s *controllink.Session, kind wire.CatalogKind, name string) wire.CatalogRequest {
 	t.Helper()
 	var out wire.CatalogRequest
-	json.Unmarshal(call(t, s, "", "governance/request", wire.CatalogAsk{Kind: kind, Name: name, Why: new("for reviews")}), &out)
+	must(t, json.Unmarshal(call(t, s, "", "governance/request", wire.CatalogAsk{Kind: kind, Name: name, Why: new("for reviews")}), &out))
 	return out
 }
 
@@ -118,7 +118,7 @@ func TestGovernanceApprovesOncePerGroup(t *testing.T) {
 	bea := p.invite(admin, "Bea", wire.UserRoleMember)
 	cy := p.invite(admin, "Cy", wire.UserRoleMember)
 	var platform wire.Group
-	json.Unmarshal(call(t, admin, "", "groups/set", wire.GroupSet{Name: "Platform", Members: []string{sam.id, bea.id}}), &platform)
+	must(t, json.Unmarshal(call(t, admin, "", "groups/set", wire.GroupSet{Name: "Platform", Members: []string{sam.id, bea.id}}), &platform))
 
 	first := ask(t, sam.window, wire.CatalogKindMCP, "github")
 	if first.State != wire.CatalogRequestStateWaiting || first.UserName != "Sam" {
@@ -142,7 +142,7 @@ func TestGovernanceApprovesOncePerGroup(t *testing.T) {
 	}
 
 	var decided wire.CatalogRequest
-	json.Unmarshal(call(t, admin, "", "governance/decide", wire.CatalogDecide{Request: first.ID, Approve: true, Group: &platform.ID}), &decided)
+	must(t, json.Unmarshal(call(t, admin, "", "governance/decide", wire.CatalogDecide{Request: first.ID, Approve: true, Group: &platform.ID}), &decided))
 	if decided.State != wire.CatalogRequestStateApproved || deref(decided.GroupName) != "Platform" {
 		t.Fatalf("%+v", decided)
 	}
@@ -157,18 +157,18 @@ func TestGovernanceApprovesOncePerGroup(t *testing.T) {
 		t.Fatal(e)
 	}
 	// Refused for Cy: no approval.
-	json.Unmarshal(call(t, admin, "", "governance/decide", wire.CatalogDecide{Request: cyWaits.ID, Approve: false}), &decided)
+	must(t, json.Unmarshal(call(t, admin, "", "governance/decide", wire.CatalogDecide{Request: cyWaits.ID, Approve: false}), &decided))
 	if decided.State != wire.CatalogRequestStateRefused {
 		t.Fatalf("%+v", decided)
 	}
 
 	var approvals wire.CatalogApprovalList
-	json.Unmarshal(call(t, admin, "", "governance/approvals", wire.Empty{}), &approvals)
+	must(t, json.Unmarshal(call(t, admin, "", "governance/approvals", wire.Empty{}), &approvals))
 	if len(approvals.Approvals) != 1 || deref(approvals.Approvals[0].Group) != platform.ID {
 		t.Fatalf("%+v", approvals)
 	}
 	// Taken back: the next ask waits again.
-	json.Unmarshal(call(t, admin, "", "governance/revoke", wire.CatalogRevoke{Kind: wire.CatalogKindMCP, Name: "github", Group: &platform.ID}), &approvals)
+	must(t, json.Unmarshal(call(t, admin, "", "governance/revoke", wire.CatalogRevoke{Kind: wire.CatalogKindMCP, Name: "github", Group: &platform.ID}), &approvals))
 	if len(approvals.Approvals) != 0 {
 		t.Fatalf("%+v", approvals)
 	}
@@ -192,7 +192,7 @@ func TestGovernanceApprovedAtOnce(t *testing.T) {
 		t.Fatalf("%+v", again)
 	}
 	var group wire.Group
-	json.Unmarshal(call(t, admin, "", "groups/set", wire.GroupSet{Name: "Reviewers", Members: []string{sam.id}}), &group)
+	must(t, json.Unmarshal(call(t, admin, "", "groups/set", wire.GroupSet{Name: "Reviewers", Members: []string{sam.id}}), &group))
 	r = ask(t, sam.window, wire.CatalogKindMCP, "linear")
 	call(t, admin, "", "governance/decide", wire.CatalogDecide{Request: r.ID, Approve: true, Group: &group.ID})
 	call(t, admin, "", "groups/set", wire.GroupSet{ID: &group.ID, Name: "Reviewers", Members: []string{sam.id, bea.id}})
