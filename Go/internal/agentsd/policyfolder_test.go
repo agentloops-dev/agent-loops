@@ -239,3 +239,30 @@ func TestPolicyEffectiveForAClient(t *testing.T) {
 		t.Fatalf("policy/yours carries the signed copy: %+v", yours.Signed)
 	}
 }
+
+// A folder's policy.json first seen while it is written (empty, or half of it) is not
+// approved as it stands (#6525): the whole copy is then a change against no rules.
+func TestAFolderPolicyFirstSeenHalfWrittenIsNotApproved(t *testing.T) {
+	t.Parallel()
+
+	d, _ := start(t, t.TempDir())
+	defer d.Shutdown()
+	for _, half := range []string{"", `{"helpers":{"mostRu`} {
+		// A folder the app has not added, so no watch: only the test checks the file.
+		dir := t.TempDir()
+		file := filepath.Join(dir, folderPolicyFile)
+		must(t, os.MkdirAll(filepath.Dir(file), 0o755))  //nolint:gosec // G301: the mode .agents always has
+		must(t, os.WriteFile(file, []byte(half), 0o644)) //nolint:gosec // G306: the mode policy.json always has
+		d.checkFolderPolicyGuarded(dir)
+		if s := guardedStateOf(d, dir, folderPolicyFile); s.ApprovedDigest != nil || s.Pending == nil {
+			t.Fatalf("%q: %+v", half, s)
+		}
+		// The whole copy only tightens no rules, so it applies.
+		whole := `{"helpers":{"mostRunning":2}}`
+		must(t, store.WriteAtomically(file, []byte(whole), 0o644))
+		d.checkFolderPolicyGuarded(dir)
+		if s := guardedStateOf(d, dir, folderPolicyFile); string(s.ApprovedContent) != whole || s.Pending != nil {
+			t.Fatalf("after %q: %+v", half, s)
+		}
+	}
+}
