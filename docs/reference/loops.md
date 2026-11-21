@@ -50,6 +50,7 @@ name one by its id.
 | `--machine <name or id>` | all but `pair` | Works on this machine of the control plane, not on this computer. |
 | `--control <host>` | all but `pair` | Uses this control plane, when the terminal is paired with more than one. |
 | `--runtime <id>` | a new session | The runtime that a new session starts on, as `claude` or `codex`. Auto when you do not give it. |
+| `--debug` | all | When `loops` cannot get to the control plane or the machine, it also writes the full error on a line that starts with `Debug:`. |
 | `--all` | `ls` | All the sessions, in pages of 20, also the archived ones. |
 | `--json` | `-p`, `--detach` | One JSON object on each line (below). |
 | `--on-ask=wait` | `-p` | When a card waits, waits for an answer on any client. This is the default. |
@@ -65,6 +66,20 @@ starts a new session: it does not take `-c` or `-r`.
 |---|---|
 | 0 | Done: the turn ended, or the command did its work. |
 | 1 | An error: the control plane or the machine did not answer, the session stopped with an error, or the command was not correct. Nothing changed when `loops` could not get to the control plane. |
+
+When `loops` cannot get to the control plane, it gives the cause in a few words, as
+`Cannot reach control.example (it refused the connection).`:
+
+| Words | Cause |
+|---|---|
+| `timed out after 10 s` | The control plane took the connection, but did not answer. |
+| `timed out` | The time to connect went by. |
+| `it refused the connection` | Nothing listens at the address. |
+| `no such host` | The host name is not in DNS. |
+| `could not look up the host` | DNS did not answer. |
+| `its certificate is not the paired one` | The certificate is not the one that the pairing code pinned. |
+
+Other errors keep their own words. `--debug` adds the full error.
 | 2 | The directory is not in a folder of the machine, or `--folder` names no folder. |
 | 3 | A card waits for an answer, with `--on-ask=fail`. |
 | 4 | The time of `--timeout` went by. |

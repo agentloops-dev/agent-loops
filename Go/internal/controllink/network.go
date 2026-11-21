@@ -41,6 +41,9 @@ func transport(pin string) *http.Transport {
 // network's proxy, with no time limit of its own: a download's context ends it (#5786).
 func HTTPClient(pin string) *http.Client { return &http.Client{Transport: transport(pin)} }
 
+// ErrNotPinned is a control plane whose certificate is not the one its pin names.
+var ErrNotPinned = errors.New("the certificate is not the pinned one")
+
 // tlsConfig checks the control plane's certificate by its pin, or by TrustRoots.
 func tlsConfig(pin string) *tls.Config {
 	config := &tls.Config{MinVersion: tls.VersionTLS12}
@@ -59,7 +62,7 @@ func tlsConfig(pin string) *tls.Config {
 		}
 		sum := sha256.Sum256(leaf.RawSubjectPublicKeyInfo)
 		if B64URL(sum[:]) != pin {
-			return errors.New("the certificate is not the pinned one")
+			return ErrNotPinned
 		}
 		return nil
 	}

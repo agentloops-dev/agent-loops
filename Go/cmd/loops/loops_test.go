@@ -6,10 +6,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -307,5 +310,47 @@ func TestHelpFlagsPrintTheUsageAndExitZero(t *testing.T) {
 	err := run(context.Background(), []string{"--bogus"}, &bytes.Buffer{})
 	if codeOf(err) != exitError || !strings.Contains(err.Error(), "See: loops --help") || strings.Contains(err.Error(), "Exit codes:") {
 		t.Fatalf("an unknown flag says so in two lines: %v", err)
+	}
+}
+
+// A dial's error is a few words, as wireframe 9's; --debug adds its raw words (#6479).
+func TestUnreachableSaysShortReasons(t *testing.T) {
+	refused := httptest.NewServer(http.NotFoundHandler())
+	refusedURL := refused.URL
+	refused.Close()
+	notPinned := httptest.NewTLSServer(http.NotFoundHandler())
+	defer notPinned.Close()
+	pin := controllink.B64URL(make([]byte, 32))
+	cases := []struct {
+		name, base, pin, want string
+	}{
+		{"refused", refusedURL, "", "it refused the connection"},
+		{"no such host", "https://nowhere.invalid", "", "no such host"},
+		{"not pinned", notPinned.URL, pin, "its certificate is not the paired one"},
+	}
+	for _, c := range cases {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		_, err := controllink.Dial(ctx, c.base, c.pin)
+		cancel()
+		if err == nil {
+			t.Fatalf("%s: dialled", c.name)
+		}
+		got := unreachable("control.example", err).Error()
+		if want := "Cannot reach control.example (" + c.want + ")."; !strings.HasPrefix(got, want) || strings.Contains(got, "Debug:") {
+			t.Fatalf("%s: %q, want %q (from %v)", c.name, got, want, err)
+		}
+	}
+	noAnswer := &controllink.NoAnswerError{Host: "control.example", Wait: 10 * time.Second}
+	if got := reason(fmt.Errorf("join: %w", noAnswer)); got != "timed out after 10 s" {
+		t.Fatalf("no answer: %q", got)
+	}
+	if got := reason(errors.New("the key is wrong")); got != "the key is wrong" {
+		t.Fatalf("an error with no short words keeps its own: %q", got)
+	}
+	debug = true
+	t.Cleanup(func() { debug = false })
+	raw := fmt.Errorf("dial tcp 127.0.0.1:1: %w", syscall.ECONNREFUSED)
+	if got := unreachable("control.example", raw).Error(); !strings.HasSuffix(got, "\nDebug: "+raw.Error()) || !strings.HasPrefix(got, "Cannot reach control.example (it refused the connection).") {
+		t.Fatalf("--debug: %q", got)
 	}
 }

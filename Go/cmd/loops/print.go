@@ -386,7 +386,7 @@ func (f *follow) unreachable(err error) error {
 		return err
 	}
 	f.out.flush()
-	return f.end("gone", exitError, fmt.Sprintf("Lost the session's host (%v). The session goes on: loops -r %s", err, short(f.id)))
+	return f.end("gone", exitError, fmt.Sprintf("Lost the session's host (%s). The session goes on: loops -r %s", reason(err), short(f.id))+debugLine(err))
 }
 
 // short is a session id as loops ls shows it.

@@ -27,9 +27,11 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
@@ -70,11 +72,40 @@ func codeOf(err error) int {
 
 // unreachable is state 9 of the wireframes (exit 1): nothing changed.
 func unreachable(what string, err error) error {
-	why := err.Error()
-	if errors.Is(err, context.DeadlineExceeded) {
-		why = "timed out"
+	return &exit{code: exitError, msg: fmt.Sprintf("Cannot reach %s (%s).\nNothing changed. Try again, or run: loops status", what, reason(err)) + debugLine(err)}
+}
+
+// debug is --debug: an error's raw words go after its short ones (#6479).
+var debug bool
+
+// debugLine is the raw error on a line of its own, with --debug; else nothing.
+func debugLine(err error) string {
+	if !debug {
+		return ""
 	}
-	return &exit{code: exitError, msg: fmt.Sprintf("Cannot reach %s (%s).\nNothing changed. Try again, or run: loops status", what, why)}
+	return "\nDebug: " + err.Error()
+}
+
+// reason is a dial error in a few words, as wireframe 9's "(timed out after 10 s)" (#6479).
+// An error it does not know keeps its own words.
+func reason(err error) string {
+	var noAnswer *controllink.NoAnswerError
+	var dns *net.DNSError
+	switch {
+	case errors.As(err, &noAnswer):
+		return fmt.Sprintf("timed out after %d s", int(noAnswer.Wait.Round(time.Second).Seconds()))
+	case errors.Is(err, context.DeadlineExceeded):
+		return "timed out"
+	case errors.Is(err, syscall.ECONNREFUSED):
+		return "it refused the connection"
+	case errors.As(err, &dns) && dns.IsNotFound:
+		return "no such host"
+	case errors.As(err, &dns):
+		return "could not look up the host"
+	case errors.Is(err, controllink.ErrNotPinned):
+		return "its certificate is not the paired one"
+	}
+	return err.Error()
 }
 
 var errNotPaired = &exit{code: exitNotPair, msg: "This terminal is not paired with a control plane.\n" +
@@ -118,6 +149,7 @@ Flags:
   --machine <name>         the folder's machine, when it is not this computer
   --control <host>         the control plane, when this terminal is paired with several
   --runtime <id>           the runtime a new session starts on (claude, codex, …); Auto by default
+  --debug                  when the control plane cannot be reached, its whole error too
 
 In the chat: ⏎ sends, ⌥⏎ adds a line, ^C stops the turn (twice leaves), ^D leaves; the
 session goes on. A card (a question, a permission) is answered here or on any client.
@@ -167,6 +199,7 @@ func parse(args []string) (options, []string, error) {
 	fs.BoolVar(&o.json, "json", false, "")
 	fs.StringVar(&o.onAsk, "on-ask", "", "")
 	fs.DurationVar(&o.timeout, "timeout", 0, "")
+	fs.BoolVar(&debug, "debug", false, "")
 	var rest []string
 	for {
 		if err := fs.Parse(args); err != nil {
@@ -313,7 +346,7 @@ func pair(ctx context.Context, w io.Writer, text string) error {
 	// the kind is only the icon its Devices list shows.
 	m, err := controllink.PairClientAs(ctx, code, name, string(wire.ClientKindMac))
 	if err != nil {
-		return &exit{code: exitError, msg: fmt.Sprintf("Could not pair with %s: %v", hostOf(code.URL), err)}
+		return &exit{code: exitError, msg: fmt.Sprintf("Could not pair with %s (%s).", hostOf(code.URL), reason(err)) + debugLine(err)}
 	}
 	h, err := readHosts()
 	if err != nil {
