@@ -49,7 +49,10 @@ func main() {
 	if asJSON {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
-		enc.Encode(rep)
+		if err := enc.Encode(rep); err != nil {
+			fmt.Fprintln(os.Stderr, "conflict-risk:", err)
+			os.Exit(1)
+		}
 		return
 	}
 	fmt.Println(rep.Words())

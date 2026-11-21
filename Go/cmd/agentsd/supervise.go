@@ -37,7 +37,9 @@ func supervise(args []string) {
 		setLog(f)
 	}
 	lock := filepath.Join(root, "supervise.lock")
-	os.WriteFile(lock, []byte(fmt.Sprint(os.Getpid())), 0o600)
+	if err := os.WriteFile(lock, []byte(fmt.Sprint(os.Getpid())), 0o600); err != nil {
+		log.Printf("supervise: %v", err)
+	}
 	defer os.Remove(lock)
 
 	self, _ := os.Executable()
@@ -82,8 +84,7 @@ func supervise(args []string) {
 		select {
 		case s := <-sigs:
 			log.Printf("supervise: %v, stopping agentsd", s)
-			cmd.Process.Signal(syscall.SIGTERM)
-			<-exited
+			stopHost(cmd.Process, exited)
 			return
 		case err = <-exited:
 		}
@@ -122,4 +123,13 @@ func supervise(args []string) {
 		}
 		wait = min(wait*2, time.Minute)
 	}
+}
+
+// stopHost sends the host SIGTERM and waits for it to end. The supervisor ends after it,
+// so how the host ended changes nothing.
+func stopHost(p *os.Process, exited <-chan error) {
+	if err := p.Signal(syscall.SIGTERM); err != nil {
+		log.Printf("supervise: %v", err)
+	}
+	<-exited //nolint:errcheck // the supervisor ends; how agentsd ended does not change that
 }

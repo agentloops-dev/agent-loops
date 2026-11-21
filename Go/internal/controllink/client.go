@@ -183,7 +183,9 @@ func (s *Session) Call(ctx context.Context, host, method string, params any) (js
 			Result json.RawMessage `json:"result"`
 			Error  json.RawMessage `json:"error"`
 		}
-		json.Unmarshal(raw, &r)
+		if err := json.Unmarshal(raw, &r); err != nil {
+			return nil, fmt.Errorf("a reply that is not JSON-RPC: %w", err)
+		}
 		if r.Error != nil {
 			return nil, fmt.Errorf("%s", r.Error)
 		}
