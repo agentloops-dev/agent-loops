@@ -86,8 +86,9 @@ scripts/free-disk.sh buildoutput --dry-run
 scripts/free-disk.sh buildoutput
 ```
 
-It looks at each worktree under `$P/.agents/worktrees` that no process works in and that
-is not locked, and in which no file, build output too, changed in the last hour. In it, it
+It looks at each worktree under `$P/.agents/worktrees`, and at the Runtime check's tree
+(`~/Library/Caches/Agents Nightly Runtimes/tree`, or `$AGENTS_NIGHTLY_HOME/tree`; #6461),
+that no process works in and that is not locked, and in which no file, build output too, changed in the last hour. In it, it
 deletes each `build`, `.build`, `DerivedData` and `node_modules` folder that git ignores
 and tracks nothing in: by the worktree's own `.gitignore`, it is build output, and a build
 makes it again. Put each `freed` line in the report.

@@ -55,7 +55,10 @@ report   A pinned runtime that passed every step: one PR per runtime, on the bra
          tested in .agents/reviews/runtimes/<runtime>-<date>.md, and each runtime's State and
          Last checked in docs/reference/integrations.md (#1283). A runtime skipped keeps its
          last check, with a note of why it was skipped.
-         --dry-run prints what it would do and opens, pushes and records nothing.
+         Last, it removes the tree's build output (build/, .build, Packages/*/.build,
+         node_modules; about 5 GB, #6461): the next run builds again from the shared
+         compilation cache (scripts/build-cache.sh).
+         --dry-run prints what it would do and opens, pushes, records and removes nothing.
 
 Runtimes the person installs (Grok, Copilot, Cursor) are never updated here: the app runs
 the person's own copy, so updating it would change the live app before it was tested. They
@@ -63,6 +66,7 @@ are tested when the version installed differs from the one tested last.
 """
 import argparse
 import datetime
+import glob
 import importlib.util
 import json
 import os
@@ -243,7 +247,8 @@ def prepare_tree(home, base):
         if status != 0:
             cannot_plan("git worktree add", out)
     else:
-        # The tree is this script's own: put it back to the base, keeping build/ (ignored).
+        # The tree is this script's own: put it back to the base. `git clean -qfd` keeps
+        # ignored build output; `report` removes it when the run ends (#6461).
         status, out = sh(["git", "-C", tree, "checkout", "-q", "--detach", "-f", base])
         if status != 0:
             cannot_plan("git checkout", out)
@@ -1147,6 +1152,34 @@ def report(args):
     with open(os.path.join(run, "report.md"), "w") as f:
         f.write(text + "\n")
     print("\n" + (text or "Nothing changed."))
+    clean_build_output(os.path.join(args.home, "tree"), args.dry_run)
+
+
+# The tree's build output, which `git clean -qfd` keeps because git ignores it (#6461).
+BUILD_OUTPUT = ("build", ".build", "Packages/*/.build", "node_modules", "*/node_modules")
+
+
+def clean_build_output(tree, dry_run):
+    """Remove the tree's build output when the run ends (#6461): about 5 GB that nothing
+    reads until the next run, which builds again from the shared compilation cache
+    (scripts/build-cache.sh). Only folders git ignores and tracks nothing in go."""
+    if not os.path.exists(os.path.join(tree, ".git")):
+        return
+    for pattern in BUILD_OUTPUT:
+        for path in sorted(glob.glob(os.path.join(tree, pattern))):
+            rel = os.path.relpath(path, tree)
+            if not os.path.isdir(path) or os.path.islink(path):
+                continue
+            ignored = sh(["git", "-C", tree, "check-ignore", "-q", "--", rel + "/"])[0] == 0
+            tracked = sh(["git", "-C", tree, "ls-files", "--", rel])[1].strip()
+            if not ignored or tracked:
+                print(f"Kept {rel} in the tree: tracked or not ignored")
+                continue
+            if dry_run:
+                print(f"Would remove the tree's {rel}")
+            else:
+                shutil.rmtree(path, ignore_errors=True)
+                print(f"Removed the tree's {rel}")
 
 
 def main():
