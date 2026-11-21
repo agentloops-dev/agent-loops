@@ -102,6 +102,7 @@ public enum Capability {
     public static let hostDesktopControl1 = "host.desktop-control/1"
     public static let hostDriveApproval1 = "host.drive-approval/1"
     public static let hostLocalSecrets1 = "host.local-secrets/1"
+    public static let hostLocalSecrets2 = "host.local-secrets/2"
     public static let hostLock1 = "host.lock/1"
     public static let hostLock2 = "host.lock/2"
     public static let hostLock3 = "host.lock/3"
@@ -597,6 +598,7 @@ public enum Capability {
         "secrets/addGrant": "host.secret-grants/1",
         "secrets/grants": "host.secret-grants/1",
         "secrets/localList": "host.local-secrets/1",
+        "secrets/localRemove": "host.local-secrets/2",
         "secrets/removeGrant": "host.secret-grants/1",
         "secrets/sessionList": "host.session-secrets/1",
         "secrets/sessionRemove": "host.session-secrets/1",

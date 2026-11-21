@@ -34,8 +34,25 @@ extension RemoteModel {
     }
 
     /// Settings ▸ You ▸ Secrets ▸ On This Machine (#5122): what agents saved on the Mac's host.
-    func localSecrets() async -> LocalSecrets? {
-        try? await client.call(DaemonAPI.Method.secretsLocalList, DaemonAPI.Empty(), returning: LocalSecrets.self)
+    func localSecrets() async throws -> LocalSecrets? {
+        do {
+            return try await client.call(DaemonAPI.Method.secretsLocalList, DaemonAPI.Empty(), returning: LocalSecrets.self)
+        } catch where !host(.mac, has: Capability.hostLocalSecrets1) {
+            return nil
+        }
+    }
+
+    /// Whether the Mac's host takes out a secret it keeps for itself (#6335).
+    var localSecretsRemovable: Bool { host(.mac, has: Capability.hostLocalSecrets2) }
+
+    /// Take a secret the Mac keeps for itself out of its store (#6335): the list after, or why not.
+    func removeLocalSecret(_ secret: LocalSecret) async -> Result<LocalSecrets, Error> {
+        do {
+            return .success(try await client.call(DaemonAPI.Method.secretsLocalRemove, LocalSecretRemoveRequest(name: secret.name),
+                                                  returning: LocalSecrets.self))
+        } catch {
+            return .failure(error)
+        }
     }
 
     func setLocalSecretAsksBeforeUse(_ secret: LocalSecret, _ on: Bool) async -> Result<LocalSecrets?, Error> {
@@ -43,7 +60,7 @@ extension RemoteModel {
             _ = try await client.call(DaemonAPI.Method.secretsSetNeedsApproval,
                                       SecretNeedsApprovalRequest(name: secret.name, needsApproval: on),
                                       returning: DaemonAPI.Empty.self)
-            return .success(await localSecrets())
+            return .success(try await localSecrets())
         } catch {
             return .failure(error)
         }

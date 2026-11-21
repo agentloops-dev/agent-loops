@@ -7848,6 +7848,14 @@ export interface LocalSecret {
   description?: string;
 }
 
+/**
+ * secrets/localRemove (#6335): take one secret this machine keeps for itself out of its store. Not
+ * one of the person's (user/removeSecret) and not a session's own (secrets/sessionRemove).
+ */
+export interface LocalSecretRemoveRequest {
+  name: string;
+}
+
 /** secrets/localList (#5122): every secret this machine keeps for itself, by name. No value. */
 export interface LocalSecrets {
   secrets: LocalSecret[];
@@ -17233,6 +17241,7 @@ export interface Methods {
   "sealing/add": { params: SealingAdd; result: Empty };
   "sealing/work": { params: Empty; result: SealingWork };
   "secrets/localList": { params: Empty; result: LocalSecrets };
+  "secrets/localRemove": { params: LocalSecretRemoveRequest; result: LocalSecrets };
   "secrets/sessionList": { params: Empty; result: SessionSecrets };
   "secrets/sessionRemove": { params: SessionSecretRemoveRequest; result: SessionSecrets };
   "secrets/sessionSet": { params: SessionSecretSetRequest; result: SessionSecrets };
@@ -17718,6 +17727,7 @@ export const MethodTarget = {
   "sealing/add": "control",
   "sealing/work": "control",
   "secrets/localList": "host",
+  "secrets/localRemove": "host",
   "secrets/sessionList": "host",
   "secrets/sessionRemove": "host",
   "secrets/sessionSet": "host",
@@ -18448,6 +18458,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   LiveBoard: { required: ["agents"], optional: [] },
   LiveFrame: { required: ["source", "agentID", "capturedAt"], optional: ["image", "locked", "narration", "title", "width", "height"] },
   LocalSecret: { required: ["name", "setAt"], optional: ["lastOp", "backedUp", "needsApproval", "description"] },
+  LocalSecretRemoveRequest: { required: ["name"], optional: [] },
   LocalSecrets: { required: ["secrets"], optional: [] },
   Lock: { required: ["person", "entries"], optional: [] },
   LockAdd: { required: ["entries"], optional: [] },

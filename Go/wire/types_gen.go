@@ -8183,6 +8183,11 @@ type LocalSecret struct {
 	Description *string `json:"description,omitzero"`
 }
 
+// secrets/localRemove (#6335): take one secret this machine keeps for itself out of its store. Not one of the person's (user/removeSecret) and not a session's own (secrets/sessionRemove).
+type LocalSecretRemoveRequest struct {
+	Name string `json:"name"`
+}
+
 // secrets/localList (#5122): every secret this machine keeps for itself, by name. No value.
 type LocalSecrets struct {
 	Secrets []LocalSecret `json:"secrets"`

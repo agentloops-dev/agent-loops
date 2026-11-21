@@ -497,6 +497,8 @@ public enum DaemonAPI {
         /// Settings ▸ You ▸ Secrets ▸ On This Machine (#5122): the secrets a machine keeps for itself,
         /// which agents saved there. The person's own clients only.
         public static let secretsLocalList = "secrets/localList"
+        /// One of them taken out of the machine's store (#6335).
+        public static let secretsLocalRemove = "secrets/localRemove"
         /// Status ▸ Environment (#5259, #5260): a machine's `~/.agents/env` and each folder's `.agents/env`, one
         /// variable of a folder's file changed, what a session there gets, and a hand edit of `~/.agents/env` undone.
         /// The person's own clients only.

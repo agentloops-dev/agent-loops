@@ -2161,8 +2161,25 @@ final class AppModel {
 
     /// Settings ▸ You ▸ Secrets ▸ On This Machine (#5122): the secrets this Mac's host keeps for
     /// itself, which agents saved. Nil from a daemon too old to know the method.
-    func localSecrets() async -> LocalSecrets? {
-        try? await macClient.call(DaemonAPI.Method.secretsLocalList, DaemonAPI.Empty(), returning: LocalSecrets.self)
+    func localSecrets() async throws -> LocalSecrets? {
+        do {
+            return try await macClient.call(DaemonAPI.Method.secretsLocalList, DaemonAPI.Empty(), returning: LocalSecrets.self)
+        } catch where !host(macHostElsewhere ?? .mac, has: Capability.hostLocalSecrets1) {
+            return nil
+        }
+    }
+
+    /// Whether this Mac's host takes out a secret it keeps for itself (#6335).
+    var localSecretsRemovable: Bool { host(macHostElsewhere ?? .mac, has: Capability.hostLocalSecrets2) }
+
+    /// Take a secret this Mac keeps for itself out of its store (#6335): the list after, or why not.
+    func removeLocalSecret(_ secret: LocalSecret) async -> Result<LocalSecrets, Error> {
+        do {
+            return .success(try await macClient.call(DaemonAPI.Method.secretsLocalRemove, LocalSecretRemoveRequest(name: secret.name),
+                                                     returning: LocalSecrets.self))
+        } catch {
+            return .failure(error)
+        }
     }
 
     /// Turn Ask before use on or off for a secret this Mac keeps for itself (#5122): the list after, or why not.
@@ -2171,7 +2188,7 @@ final class AppModel {
             _ = try await macClient.call(DaemonAPI.Method.secretsSetNeedsApproval,
                                          SecretNeedsApprovalRequest(name: secret.name, needsApproval: on),
                                          returning: DaemonAPI.Empty.self)
-            return .success(await localSecrets())
+            return .success(try await localSecrets())
         } catch {
             return .failure(error)
         }

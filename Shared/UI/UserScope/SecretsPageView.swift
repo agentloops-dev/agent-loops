@@ -88,7 +88,11 @@ struct SecretsPageView<Source: LocalSecretsSource>: View {
             Button("Remove", role: .destructive) { Task { await remove(item) } }
             Button("Cancel", role: .cancel) {}
         } message: { item in
-            Text(item.place == .yours ? "It is taken out of the sealed store on every machine of yours." : SessionSecretWords.removeMessage)
+            switch item.place {
+            case .yours: Text("It is taken out of the sealed store on every machine of yours.")
+            case .session: Text(SessionSecretWords.removeMessage)
+            case .machine: Text(LocalSecretWords.removeMessage)
+            }
         }
     }
 
@@ -268,7 +272,7 @@ struct SecretsPageView<Source: LocalSecretsSource>: View {
         .contentShape(Rectangle())
         #if os(iOS)
         .swipeActions(edge: .trailing) {
-            if item.place != .machine {
+            if removable(item) {
                 Button(role: .destructive) { removing = item } label: { Text("Remove") }
             }
         }
@@ -326,7 +330,7 @@ struct SecretsPageView<Source: LocalSecretsSource>: View {
         return SecretDetail(item: item, row: row, control: control, show: show,
                             accounts: state.accounts.filter { $0.secret == item.name || $0.card == item.name },
                             asksOffered: item.place == .yours || source.sessionHostAsksBeforeUse,
-                            isEditing: editing == item.id, agentTitle: agentTitle, openAccount: openAccount,
+                            removable: removable(item), isEditing: editing == item.id, agentTitle: agentTitle, openAccount: openAccount,
                             edit: { editing = $0 ? item.id : nil },
                             replace: { if let row { replacing = row } },
                             remove: { removing = item },
@@ -400,7 +404,18 @@ struct SecretsPageView<Source: LocalSecretsSource>: View {
     private func reload() async {
         await state.load(control)
         sessions = await source.sessionSecrets()
-        local = await source.localSecrets()
+        do {
+            local = try await source.localSecrets()
+        } catch {
+            // An empty list would hide what agents here still use (#6335): say why instead.
+            local = nil
+            problem = LocalSecretWords.didNotLoad(UserScopeWords.refusal(error))
+        }
+    }
+
+    /// Whether Remove is offered: one of Yours and a session's always; one on a machine when its host takes it out (#6335).
+    private func removable(_ item: SecretsPage.Item) -> Bool {
+        item.place != .machine || source.localSecretsRemovable
     }
 
     /// Ask before use. A secret for one session or on one machine: its host seals it again. One of Yours is sealed with
@@ -438,7 +453,13 @@ struct SecretsPageView<Source: LocalSecretsSource>: View {
             guard let secret = sessions?.secrets.first(where: { $0.agentID == item.agentID && $0.name == item.name }) else { return }
             if let after = await source.removeSessionSecret(secret) { sessions = after }
         case .machine:
-            return
+            guard let secret = local?.secrets.first(where: { $0.name == item.name }) else { return }
+            switch await source.removeLocalSecret(secret) {
+            case .success(let after): local = after
+            case .failure(let error):
+                problem = UserScopeWords.refusal(error)
+                return
+            }
         }
         if selection == item.id { selection = nil }
     }
@@ -454,6 +475,8 @@ private struct SecretDetail: View {
     let show: SecretShowState?
     let accounts: [DaemonAPI.OutsideAccount]
     let asksOffered: Bool
+    /// Remove is offered (#6335).
+    let removable: Bool
     let isEditing: Bool
     let agentTitle: (UUID) -> String?
     let openAccount: (DaemonAPI.OutsideAccount) -> Void
@@ -592,7 +615,7 @@ private struct SecretDetail: View {
                 Button(SecretsPage.edit) { edit(true) }.disabled(control == nil)
             }
             Spacer()
-            if item.place != .machine {
+            if removable {
                 Button(SecretsPage.remove, role: .destructive, action: remove)
                     .disabled(item.place == .yours && control == nil)
             }
