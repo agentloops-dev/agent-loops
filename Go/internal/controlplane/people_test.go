@@ -34,7 +34,7 @@ type person struct {
 func (p *plane) invite(owner *controllink.Session, name string, role wire.UserRole) *person {
 	p.t.Helper()
 	var invited wire.PersonInvited
-	json.Unmarshal(call(p.t, owner, "", "people/invite", wire.PersonInvite{Name: name, Role: role}), &invited)
+	must(p.t, json.Unmarshal(call(p.t, owner, "", "people/invite", wire.PersonInvite{Name: name, Role: role}), &invited))
 	code, err := controllink.ParseCode(invited.Text)
 	if err != nil {
 		p.t.Fatal(err)
@@ -49,7 +49,7 @@ func (p *plane) invite(owner *controllink.Session, name string, role wire.UserRo
 	}
 	p.t.Cleanup(s.Close)
 	var status wire.ControlStatus
-	json.Unmarshal(call(p.t, s, "", "control/status", nil), &status)
+	must(p.t, json.Unmarshal(call(p.t, s, "", "control/status", nil), &status))
 	if status.Person == nil || status.Person.Name != name || status.Person.Role != role {
 		p.t.Fatalf("%+v", status.Person)
 	}
@@ -66,7 +66,7 @@ func (p *plane) machine(who *person, name string) *fakeHost {
 func (p *plane) machineSaying(who *person, hello controllink.MachineHello) *fakeHost {
 	p.t.Helper()
 	var shown wire.ControlCodeShown
-	json.Unmarshal(call(p.t, who.window, "", "machines/startEnroll", nil), &shown)
+	must(p.t, json.Unmarshal(call(p.t, who.window, "", "machines/startEnroll", nil), &shown))
 	code, err := controllink.ParseCode(shown.Text)
 	if err != nil {
 		p.t.Fatal(err)
@@ -90,7 +90,7 @@ func (p *plane) machineSaying(who *person, hello controllink.MachineHello) *fake
 func listedHosts(t *testing.T, s *controllink.Session) []string {
 	t.Helper()
 	var list []wire.ControlMachine
-	json.Unmarshal(call(t, s, "", "machines/list", nil), &list)
+	must(t, json.Unmarshal(call(t, s, "", "machines/list", nil), &list))
 	out := []string{}
 	for _, h := range list {
 		out = append(out, string(h.ID))
@@ -122,7 +122,7 @@ func TestOnePersonSeesNoChange(t *testing.T) {
 	}
 	call(t, window, box.member.Host, "agents/list", nil)
 	var people wire.PeopleList
-	json.Unmarshal(call(t, window, "", "people/list", nil), &people)
+	must(t, json.Unmarshal(call(t, window, "", "people/list", nil), &people))
 	if !people.Admin || len(people.People) != 1 {
 		t.Fatalf("%+v", people)
 	}
@@ -154,13 +154,13 @@ func TestForgeLoginsAreSelfOnlyAndSeenByEveryone(t *testing.T) {
 	call(t, sam.window, "", "people/setForgeLogins", wire.ForgeLogins{Github: optional("sam-gh")})
 
 	var forSam wire.PeopleForViews
-	json.Unmarshal(call(t, sam.window, "", "people/forViews", nil), &forSam)
+	must(t, json.Unmarshal(call(t, sam.window, "", "people/forViews", nil), &forSam))
 	if len(forSam.People) != 2 {
 		t.Fatalf("a member sees every person's forge logins, not only their own: %+v", forSam)
 	}
 
 	var forAlex wire.PeopleForViews
-	json.Unmarshal(call(t, alexWindow, "", "people/forViews", nil), &forAlex)
+	must(t, json.Unmarshal(call(t, alexWindow, "", "people/forViews", nil), &forAlex))
 	var me, them *wire.TeamPerson
 	for i := range forAlex.People {
 		switch forAlex.People[i].ID {
@@ -186,7 +186,7 @@ func TestForgeLoginsAreSelfOnlyAndSeenByEveryone(t *testing.T) {
 	call(t, alexWindow, "", "people/setForgeLogins", wire.ForgeLogins{Github: &blank})
 	// A fresh PeopleForViews: json.Unmarshal leaves a field its JSON omits as it found it.
 	var cleared wire.PeopleForViews
-	json.Unmarshal(call(t, alexWindow, "", "people/forViews", nil), &cleared)
+	must(t, json.Unmarshal(call(t, alexWindow, "", "people/forViews", nil), &cleared))
 	for i := range cleared.People {
 		if cleared.People[i].ID != owner {
 			continue
@@ -222,11 +222,11 @@ func TestEachPersonReachesOnlyTheirOwnMachines(t *testing.T) {
 
 	// People: an admin sees everyone's machines by name and state; a member only themselves.
 	var list wire.PeopleList
-	json.Unmarshal(call(t, kim.window, "", "people/list", nil), &list)
+	must(t, json.Unmarshal(call(t, kim.window, "", "people/list", nil), &list))
 	if !list.Admin || len(list.People) != 3 || len(list.People[1].Machines) != 2 {
 		t.Fatalf("%+v", list)
 	}
-	json.Unmarshal(call(t, sam.window, "", "people/list", nil), &list)
+	must(t, json.Unmarshal(call(t, sam.window, "", "people/list", nil), &list))
 	if list.Admin || len(list.People) != 1 || list.People[0].ID != sam.id {
 		t.Fatalf("%+v", list)
 	}
@@ -235,7 +235,7 @@ func TestEachPersonReachesOnlyTheirOwnMachines(t *testing.T) {
 	}
 	// Clients: each person's own.
 	var clients []wire.ClientRecord
-	json.Unmarshal(call(t, sam.window, "", "clients/list", nil), &clients)
+	must(t, json.Unmarshal(call(t, sam.window, "", "clients/list", nil), &clients))
 	if len(clients) != 1 || string(clients[0].ID) != sam.member.Client {
 		t.Fatalf("%+v", clients)
 	}
@@ -409,7 +409,7 @@ func TestRolesAndRemoval(t *testing.T) {
 	}
 	// An invite not used yet, and a code Sam made, are spent by nobody after the removal.
 	var shown wire.ControlCodeShown
-	json.Unmarshal(call(t, sam.window, "", "clients/startPairing", nil), &shown)
+	must(t, json.Unmarshal(call(t, sam.window, "", "clients/startPairing", nil), &shown))
 
 	call(t, alexWindow, "", "people/remove", wire.PersonRequest{User: sam.id})
 	p.waitFor(func() bool { return p.s.Records().Client(sam.member.Client) == nil }, "Sam's client forgotten")
@@ -429,7 +429,7 @@ func TestRolesAndRemoval(t *testing.T) {
 		t.Fatal("a removed person's code paired")
 	}
 	var list wire.PeopleList
-	json.Unmarshal(call(t, alexWindow, "", "people/list", nil), &list)
+	must(t, json.Unmarshal(call(t, alexWindow, "", "people/list", nil), &list))
 	if len(list.People) != 1 {
 		t.Fatalf("%+v", list)
 	}
@@ -459,12 +459,12 @@ func TestAMachineJoinsByApproval(t *testing.T) {
 	code := <-codes
 	note := waitNote(t, sam.window, "control/joinRequested")
 	var asked wire.JoinRequest
-	json.Unmarshal(note.Params, &asked)
+	must(t, json.Unmarshal(note.Params, &asked))
 	if asked.Code != code || asked.For != sam.id || asked.Name != "box sam-build" {
 		t.Fatalf("%+v", asked)
 	}
 	var waiting []wire.JoinRequest
-	json.Unmarshal(call(t, alexWindow, "", "machines/joinRequests", nil), &waiting)
+	must(t, json.Unmarshal(call(t, alexWindow, "", "machines/joinRequests", nil), &waiting))
 	if len(waiting) != 0 {
 		t.Fatalf("Alex sees Sam's request: %+v", waiting)
 	}
@@ -472,7 +472,7 @@ func TestAMachineJoinsByApproval(t *testing.T) {
 		t.Fatal(e)
 	}
 	var approved wire.JoinApproved
-	json.Unmarshal(call(t, sam.window, "", "machines/approveJoin", wire.JoinRequestDecide{Request: asked.Request}), &approved)
+	must(t, json.Unmarshal(call(t, sam.window, "", "machines/approveJoin", wire.JoinRequestDecide{Request: asked.Request}), &approved))
 	var member *controllink.Membership
 	select {
 	case member = <-joined:
@@ -503,13 +503,13 @@ func TestAMachineJoinsByApproval(t *testing.T) {
 		t.Fatal(err)
 	}
 	var ticket wire.MachineJoinTicket
-	json.NewDecoder(resp.Body).Decode(&ticket)
+	must(t, json.NewDecoder(resp.Body).Decode(&ticket))
 	resp.Body.Close()
-	json.Unmarshal(call(t, sam.window, "", "machines/joinRequests", nil), &waiting)
+	must(t, json.Unmarshal(call(t, sam.window, "", "machines/joinRequests", nil), &waiting))
 	if len(waiting) != 0 {
 		t.Fatalf("a member sees a request that names nobody: %+v", waiting)
 	}
-	json.Unmarshal(call(t, alexWindow, "", "machines/joinRequests", nil), &waiting)
+	must(t, json.Unmarshal(call(t, alexWindow, "", "machines/joinRequests", nil), &waiting))
 	if len(waiting) != 1 || waiting[0].Request != ticket.Request {
 		t.Fatalf("%+v", waiting)
 	}
@@ -519,7 +519,7 @@ func TestAMachineJoinsByApproval(t *testing.T) {
 		t.Fatal(err)
 	}
 	var decision wire.MachineJoinDecision
-	json.NewDecoder(resp.Body).Decode(&decision)
+	must(t, json.NewDecoder(resp.Body).Decode(&decision))
 	resp.Body.Close()
 	if decision.Result != "denied" || decision.Host != nil {
 		t.Fatalf("%+v", decision)
@@ -642,7 +642,7 @@ func TestLendsAndWindowsStayWithinOneUser(t *testing.T) {
 		t.Fatal(err)
 	}
 	var hosts []wire.ControlMachine
-	json.Unmarshal(call(t, sam.window, "", "machines/list", nil), &hosts)
+	must(t, json.Unmarshal(call(t, sam.window, "", "machines/list", nil), &hosts))
 	for _, h := range hosts {
 		if string(h.ID) != samBox {
 			continue
@@ -682,7 +682,7 @@ func TestRemoveFirstSaysWhatWorkIsNotPushed(t *testing.T) {
 		t.Fatalf("a member asked: %s", e)
 	}
 	var preview wire.PersonRemovePreview
-	json.Unmarshal(call(t, alexWindow, "", "people/removePreview", wire.PersonRequest{User: sam.id}), &preview)
+	must(t, json.Unmarshal(call(t, alexWindow, "", "people/removePreview", wire.PersonRequest{User: sam.id}), &preview))
 	if len(preview.RegisteredMachines) != 1 || string(preview.RegisteredMachines[0].ID) != registered {
 		t.Fatalf("registered: %+v", preview.RegisteredMachines)
 	}
@@ -717,7 +717,7 @@ func TestDeleteFirstSaysWhichWorktreesAreNotPushed(t *testing.T) {
 	box := p.machine(sam, "SAM-WS").member.Host
 
 	var preview wire.StartedMachinePreview
-	json.Unmarshal(call(t, sam.window, "", "machines/deletePreview", wire.MachineRequest{Host: wire.MachineRef(box)}), &preview)
+	must(t, json.Unmarshal(call(t, sam.window, "", "machines/deletePreview", wire.MachineRequest{Host: wire.MachineRef(box)}), &preview))
 	if string(preview.Host) != box || preview.Unknown != nil || len(preview.Unpushed) != 3 || deref(preview.Unpushed[0].Ahead) != 2 {
 		t.Fatalf("%+v", preview)
 	}

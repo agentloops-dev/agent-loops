@@ -66,7 +66,9 @@ func TestTheSweepRemovesProvidersTombstones(t *testing.T) {
 	ctx := context.Background()
 	s := store.NewMemory()
 	rs := records.New(s)
-	rs.SettingsOrMake(ctx, func() records.Settings { return records.Settings{Name: "test", MachineID: "m"} })
+	if _, err := rs.SettingsOrMake(ctx, func() records.Settings { return records.Settings{Name: "test", MachineID: "m"} }); err != nil {
+		t.Fatal(err)
+	}
 	yes, now := true, time.Now()
 	removedAt := records.At(now)
 	for _, r := range []providers.ProviderRecord{
@@ -75,7 +77,9 @@ func TestTheSweepRemovesProvidersTombstones(t *testing.T) {
 		{ID: "legacy", Name: "Legacy", Kind: providers.KindHTTP, Forgotten: &yes},
 	} {
 		data, _ := records.Encode(r)
-		s.Put(ctx, providers.ProviderKey(r.ID), data, store.Absent)
+		if _, err := s.Put(ctx, providers.ProviderKey(r.ID), data, store.Absent); err != nil {
+			t.Fatal(err)
+		}
 	}
 	first, err := sweep(ctx, rs, now, mostPerSweep, nil)
 	if err != nil || first.tombstones != 0 || first.dated != 1 {
@@ -99,9 +103,13 @@ func TestTheSweepRemovesStrayProbesAndMarks(t *testing.T) {
 	ctx := context.Background()
 	s := store.NewMemory()
 	rs := records.New(s)
-	rs.SettingsOrMake(ctx, func() records.Settings { return records.Settings{Name: "test", MachineID: "m"} })
+	if _, err := rs.SettingsOrMake(ctx, func() records.Settings { return records.Settings{Name: "test", MachineID: "m"} }); err != nil {
+		t.Fatal(err)
+	}
 	for _, key := range []string{"probe/copy-1", "handover/mark-abc", "handover/forwarding-x"} {
-		s.Put(ctx, key, []byte("x"), store.Absent)
+		if _, err := s.Put(ctx, key, []byte("x"), store.Absent); err != nil {
+			t.Fatal(err)
+		}
 	}
 	events := &eventSweep{}
 	now := time.Now()
@@ -112,7 +120,9 @@ func TestTheSweepRemovesStrayProbesAndMarks(t *testing.T) {
 	if report, _ := sweep(ctx, rs, now.Add(30*time.Minute), mostPerSweep, events); report.leftovers != 0 {
 		t.Fatalf("%+v", report)
 	}
-	s.Put(ctx, "probe/copy-2", []byte("x"), store.Absent)
+	if _, err := s.Put(ctx, "probe/copy-2", []byte("x"), store.Absent); err != nil {
+		t.Fatal(err)
+	}
 	if report, err := sweep(ctx, rs, now.Add(time.Hour), mostPerSweep, events); err != nil || report.leftovers != 2 {
 		t.Fatalf("%+v %v", report, err)
 	}
@@ -134,13 +144,17 @@ func TestTheSweepRemovesApprovalsOfPeopleAndGroupsThatAreGone(t *testing.T) {
 	p := startPlane(t, store.NewMemory(), controllink.NewPrivateKey())
 	rs := p.s.records
 	yes, now := true, records.Now()
-	rs.ChangeGroup(ctx, "g-live", func(*records.Group) (*records.Group, error) { return &records.Group{ID: "g-live", Name: "Live"}, nil })
-	rs.ChangeGroup(ctx, "g-gone", func(*records.Group) (*records.Group, error) {
+	if _, err := rs.ChangeGroup(ctx, "g-live", func(*records.Group) (*records.Group, error) { return &records.Group{ID: "g-live", Name: "Live"}, nil }); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := rs.ChangeGroup(ctx, "g-gone", func(*records.Group) (*records.Group, error) {
 		return &records.Group{ID: "g-gone", Name: "Gone", Removed: &yes, RemovedAt: &now}, nil
-	})
-	rs.ChangePeople(ctx, func(map[string]records.Person) ([]records.Person, error) {
+	}); err != nil {
+		t.Fatal(err)
+	}
+	must(t, rs.ChangePeople(ctx, func(map[string]records.Person) ([]records.Person, error) {
 		return []records.Person{{ID: "u-live", Name: "Live"}, {ID: "u-gone", Name: "Gone", Removed: &yes, RemovedAt: &now}}, nil
-	})
+	}))
 	approve := func(group, user string) string {
 		a := wire.CatalogApproval{Kind: wire.CatalogKindMCP, Name: "server", Group: optional(group), User: optional(user), By: "admin"}
 		if err := p.s.keepApproval(ctx, a); err != nil {
@@ -170,7 +184,9 @@ func TestCodesHaveACount(t *testing.T) {
 	st := p.s.cfg.Store
 	keys, _ := st.List(ctx, codesPrefix)
 	for i, have := 0, countSuffix(keys, ".json"); have+i < codesMost; i++ {
-		st.Put(ctx, codeKey(fmt.Sprintf("filler-%d", i)), []byte("{}"), store.Absent)
+		if _, err := st.Put(ctx, codeKey(fmt.Sprintf("filler-%d", i)), []byte("{}"), store.Absent); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if _, err := p.s.codes.Issue(ctx, false, false, controllink.CodeLifetime); err == nil || !strings.Contains(err.Error(), "codes already") {
 		t.Fatalf("a code over the count: %v", err)
@@ -178,7 +194,7 @@ func TestCodesHaveACount(t *testing.T) {
 	if keys, _ := st.List(ctx, codesPrefix); countSuffix(keys, ".json") != codesMost {
 		t.Fatalf("%d codes", countSuffix(keys, ".json"))
 	}
-	st.Delete(ctx, codeKey("filler-0"))
+	must(t, st.Delete(ctx, codeKey("filler-0")))
 	if _, err := p.s.codes.Issue(ctx, false, false, controllink.CodeLifetime); err != nil {
 		t.Fatal(err)
 	}
@@ -193,7 +209,9 @@ func TestStartedSignInsHaveACount(t *testing.T) {
 	addOrg(t, owner, prov, wire.OrgProviderJoinAnyone)
 	st := p.s.cfg.Store
 	for i := range oidcStatesMost - 1 {
-		st.Put(ctx, storeKeyHash(oidcStatePrefix, fmt.Sprint(i))+".json", []byte("{}"), store.Absent)
+		if _, err := st.Put(ctx, storeKeyHash(oidcStatePrefix, fmt.Sprint(i))+".json", []byte("{}"), store.Absent); err != nil {
+			t.Fatal(err)
+		}
 	}
 	s := openSignIn(t, p)
 	if orgStartOn(t, s, wire.SignInOrgReturnApp) == "" {

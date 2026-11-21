@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -31,7 +32,7 @@ func scimOn(t *testing.T, owner *controllink.Session, match wire.SCIMMatch) (str
 	t.Helper()
 	call(t, owner, "", "scim/set", wire.SCIMSet{Provider: "acme-okta", On: true, Match: &match})
 	var made wire.SCIMTokenMade
-	json.Unmarshal(call(t, owner, "", "scim/tokens/make", wire.SCIMTokenMake{Provider: "acme-okta", Name: "Okta"}), &made)
+	must(t, json.Unmarshal(call(t, owner, "", "scim/tokens/make", wire.SCIMTokenMake{Provider: "acme-okta", Name: "Okta"}), &made))
 	if !strings.HasPrefix(made.Value, "agscim_") || !strings.HasSuffix(made.URL, "/scim/v2") {
 		t.Fatalf("%+v", made)
 	}
@@ -65,7 +66,10 @@ func scimDo(t *testing.T, base, token, method, path string, body any) (int, map[
 	}
 	defer res.Body.Close()
 	var out map[string]any
-	json.NewDecoder(res.Body).Decode(&out)
+	// A 204 has no body.
+	if err := json.NewDecoder(res.Body).Decode(&out); err != nil && !errors.Is(err, io.EOF) {
+		t.Fatal(err)
+	}
 	return res.StatusCode, out
 }
 
@@ -102,7 +106,7 @@ func play(t *testing.T, base, token, file string) map[string]string {
 	for _, step := range set.Steps {
 		var body any
 		if len(step.Body) > 0 {
-			json.Unmarshal([]byte(fill(string(step.Body))), &body)
+			must(t, json.Unmarshal([]byte(fill(string(step.Body))), &body))
 		}
 		status, out := scimDo(t, base, token, step.Method, fill(step.Path), body)
 		if status != step.Status {
@@ -199,12 +203,12 @@ func TestOktaAndEntraRequestSetsPlay(t *testing.T) {
 		t.Fatalf("%+v", ben)
 	}
 	var requests wire.RemoveRequestList
-	json.Unmarshal(call(t, owner, "", "people/removeRequests", nil), &requests)
+	must(t, json.Unmarshal(call(t, owner, "", "people/removeRequests", nil), &requests))
 	if len(requests.Requests) != 1 || requests.Requests[0].User != ids["ben"] {
 		t.Fatalf("%+v", requests)
 	}
 	call(t, owner, "", "people/remove", wire.PersonRequest{User: ids["ben"]})
-	json.Unmarshal(call(t, owner, "", "people/removeRequests", nil), &requests)
+	must(t, json.Unmarshal(call(t, owner, "", "people/removeRequests", nil), &requests))
 	if len(requests.Requests) != 0 {
 		t.Fatalf("%+v", requests)
 	}
@@ -233,17 +237,17 @@ func TestSCIMTokens(t *testing.T) {
 	}
 	// A second token, then a third is refused while two are live.
 	var second wire.SCIMTokenMade
-	json.Unmarshal(call(t, owner, "", "scim/tokens/make", wire.SCIMTokenMake{Provider: "acme-okta", Name: "Rotation"}), &second)
+	must(t, json.Unmarshal(call(t, owner, "", "scim/tokens/make", wire.SCIMTokenMake{Provider: "acme-okta", Name: "Rotation"}), &second))
 	if e := callError(t, owner, "", "scim/tokens/make", wire.SCIMTokenMake{Provider: "acme-okta", Name: "Third"}); !strings.Contains(e, "Revoke one first") {
 		t.Fatal(e)
 	}
 	var list wire.SCIMTokenList
-	json.Unmarshal(call(t, owner, "", "scim/tokens/list", wire.SCIMTokensRequest{Provider: "acme-okta"}), &list)
+	must(t, json.Unmarshal(call(t, owner, "", "scim/tokens/list", wire.SCIMTokensRequest{Provider: "acme-okta"}), &list))
 	if len(list.Tokens) != 2 {
 		t.Fatalf("%+v", list)
 	}
 	p.waitFor(func() bool {
-		json.Unmarshal(call(t, owner, "", "scim/tokens/list", wire.SCIMTokensRequest{Provider: "acme-okta"}), &list)
+		must(t, json.Unmarshal(call(t, owner, "", "scim/tokens/list", wire.SCIMTokensRequest{Provider: "acme-okta"}), &list))
 		return slices.ContainsFunc(list.Tokens, func(tk wire.SCIMToken) bool { return tk.LastUse != nil })
 	}, "the token's last use noted")
 	// Revoked: refused at once.
@@ -263,7 +267,7 @@ func TestSCIMTokens(t *testing.T) {
 	call(t, owner, "", "signIn/orgProviders/set", wire.OrgProviderSet{Provider: other, Secret: &prov2.ClientSecret})
 	call(t, owner, "", "scim/set", wire.SCIMSet{Provider: "other-entra", On: true})
 	var made wire.SCIMTokenMade
-	json.Unmarshal(call(t, owner, "", "scim/tokens/make", wire.SCIMTokenMake{Provider: "other-entra", Name: "Entra"}), &made)
+	must(t, json.Unmarshal(call(t, owner, "", "scim/tokens/make", wire.SCIMTokenMake{Provider: "other-entra", Name: "Entra"}), &made))
 	_, list2 := scimDo(t, base, made.Value, "GET", "/Users", nil)
 	if list2["totalResults"].(float64) != 0 {
 		t.Fatal(list2)
@@ -315,7 +319,7 @@ func TestSCIMUsers(t *testing.T) {
 	}
 	// Provisioned: People says Waiting for first sign-in.
 	var list wire.PeopleList
-	json.Unmarshal(call(t, owner, "", "people/list", nil), &list)
+	must(t, json.Unmarshal(call(t, owner, "", "people/list", nil), &list))
 	row := list.People[slices.IndexFunc(list.People, func(r wire.PersonRow) bool { return r.ID == id })]
 	if row.Provisioned == nil || !*row.Provisioned || row.Scim == nil || row.Scim.Provider != "acme-okta" {
 		t.Fatalf("%+v", row)
@@ -389,7 +393,7 @@ func urlEscape(s string) string {
 
 func listedProvider(t *testing.T, owner *controllink.Session) wire.OrgProviderKept {
 	var list wire.OrgProviderList
-	json.Unmarshal(call(t, owner, "", "signIn/orgProviders/list", nil), &list)
+	must(t, json.Unmarshal(call(t, owner, "", "signIn/orgProviders/list", nil), &list))
 	return list.Providers[0]
 }
 
@@ -464,13 +468,13 @@ func TestSCIMSuspensionOnTwoCopies(t *testing.T) {
 	c := a.s.records.Client(memberships[0].Client)
 	expires := records.At(time.Now().Add(24 * time.Hour))
 	c.Expires = &expires
-	a.s.records.SaveClient(context.Background(), *c)
+	must(t, a.s.records.SaveClient(context.Background(), *c))
 	a.s.renewClient(context.Background(), c.ID)
 	if got := a.s.records.Client(c.ID).Expires; !got.Time.Equal(expires.Time) {
 		t.Fatal("a suspended person's key renewed")
 	}
 	var list wire.PeopleList
-	json.Unmarshal(call(t, owner, "", "people/list", nil), &list)
+	must(t, json.Unmarshal(call(t, owner, "", "people/list", nil), &list))
 	row := list.People[slices.IndexFunc(list.People, func(r wire.PersonRow) bool { return r.ID == id })]
 	if row.Suspended == nil || row.Suspended.By != "scim" || row.Suspended.Provider != "acme-okta" {
 		t.Fatalf("%+v", row)
@@ -487,7 +491,7 @@ func TestSCIMSuspensionOnTwoCopies(t *testing.T) {
 	scimDo(t, base, token, "DELETE", "/Users/"+id, nil)
 	b.waitFor(func() bool { return b.s.suspended(id) }, "b heard the delete")
 	var requests wire.RemoveRequestList
-	json.Unmarshal(call(t, owner, "", "people/removeRequests", nil), &requests)
+	must(t, json.Unmarshal(call(t, owner, "", "people/removeRequests", nil), &requests))
 	if len(requests.Requests) != 1 || requests.Requests[0].Name != "kim" {
 		t.Fatalf("%+v", requests)
 	}
@@ -517,7 +521,7 @@ func TestSCIMGroupsGiveRoles(t *testing.T) {
 	}
 	// An admin cannot change a SCIM group's members, or remove it.
 	var groups wire.GroupList
-	json.Unmarshal(call(t, owner, "", "groups/list", nil), &groups)
+	must(t, json.Unmarshal(call(t, owner, "", "groups/list", nil), &groups))
 	if len(groups.Groups) != 1 || groups.Groups[0].Source == nil || groups.Groups[0].Source.Scim != "acme-okta" {
 		t.Fatalf("%+v", groups)
 	}

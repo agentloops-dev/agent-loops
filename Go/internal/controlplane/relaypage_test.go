@@ -47,7 +47,7 @@ func TestAPageAHostCarries(t *testing.T) {
 			return nil, err
 		}
 		auth.Page = page
-		l.Write(ctx, controllink.Message{Auth: auth}.Line())
+		must(t, l.Write(ctx, controllink.Message{Auth: auth}.Line()))
 		line, err = l.Read(ctx)
 		if err != nil {
 			return nil, err
@@ -78,7 +78,7 @@ func TestAPageAHostCarries(t *testing.T) {
 	public, _ := controllink.PublicKey(private)
 	id := records.NewUUID()
 	params, _ := json.Marshal(wire.ClientAnnounce{ID: wire.UUID(id), PublicKey: public, Name: "Safari", Kind: wire.ClientKind(records.KindBrowser)})
-	l.Write(context.Background(), `{"jsonrpc":"2.0","id":1,"method":"clients/announce","params":`+string(params)+`}`)
+	must(t, l.Write(context.Background(), `{"jsonrpc":"2.0","id":1,"method":"clients/announce","params":`+string(params)+`}`))
 	if line, err := l.Read(context.Background()); err != nil || !strings.Contains(line, `"result"`) {
 		t.Fatal(line, err)
 	}
@@ -93,7 +93,7 @@ func TestAPageAHostCarries(t *testing.T) {
 	if _, ok, err := answerHello(l, controllink.Identity{Kind: 'c', ID: id}, key, origin, "browser"); err != nil || ok == nil {
 		t.Fatal(err)
 	}
-	l.Write(context.Background(), `{"m":{"jsonrpc":"2.0","id":7,"method":"control/status"}}`)
+	must(t, l.Write(context.Background(), `{"m":{"jsonrpc":"2.0","id":7,"method":"control/status"}}`))
 	if line := readUntil(t, l, `"id":7`); !strings.Contains(line, `"result"`) {
 		t.Fatal(line)
 	}

@@ -105,11 +105,19 @@ func TestCompareDigitsOfAMadeMachine(t *testing.T) {
 		st := newStoredSetup(now)
 		st.Expect = token
 		for _, id := range []wire.MachineSetupStepID{wire.MachineSetupStepIDCreate, wire.MachineSetupStepIDJoin, wire.MachineSetupStepIDInstall} {
-			st.report(rep(id, wire.MachineSetupStateRunning), now)
-			st.report(rep(id, wire.MachineSetupStateDone), now)
+			if _, _, err := st.report(rep(id, wire.MachineSetupStateRunning), now); err != nil {
+				t.Fatal(err)
+			}
+			if _, _, err := st.report(rep(id, wire.MachineSetupStateDone), now); err != nil {
+				t.Fatal(err)
+			}
 		}
-		st.report(rep(wire.MachineSetupStepIDCompare, wire.MachineSetupStateRunning), now)
-		st.report(wire.MachineSetupReport{Step: wire.MachineSetupStepIDCompare, State: wire.MachineSetupStateDone, Code: shown}, now)
+		if _, _, err := st.report(rep(wire.MachineSetupStepIDCompare, wire.MachineSetupStateRunning), now); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := st.report(wire.MachineSetupReport{Step: wire.MachineSetupStepIDCompare, State: wire.MachineSetupStateDone, Code: shown}, now); err != nil {
+			t.Fatal(err)
+		}
 		return st
 	}
 	if st := run(&token); st.Steps[3].State != wire.MachineSetupStateDone || st.Steps[3].Detail != "Both show "+token {
@@ -128,11 +136,19 @@ func TestCompareDigitsOfAMadeMachine(t *testing.T) {
 	// A machine that no digits were made for (a pasted code) is not compared here.
 	st := newStoredSetup(now)
 	for _, id := range setupSteps[:3] {
-		st.report(rep(id, wire.MachineSetupStateRunning), now)
-		st.report(rep(id, wire.MachineSetupStateDone), now)
+		if _, _, err := st.report(rep(id, wire.MachineSetupStateRunning), now); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := st.report(rep(id, wire.MachineSetupStateDone), now); err != nil {
+			t.Fatal(err)
+		}
 	}
-	st.report(rep(wire.MachineSetupStepIDCompare, wire.MachineSetupStateRunning), now)
-	st.report(rep(wire.MachineSetupStepIDCompare, wire.MachineSetupStateDone), now)
+	if _, _, err := st.report(rep(wire.MachineSetupStepIDCompare, wire.MachineSetupStateRunning), now); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := st.report(rep(wire.MachineSetupStepIDCompare, wire.MachineSetupStateDone), now); err != nil {
+		t.Fatal(err)
+	}
 	if st.Steps[3].State != wire.MachineSetupStateDone {
 		t.Fatalf("no digits made: %+v", st.Steps[3])
 	}

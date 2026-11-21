@@ -57,7 +57,7 @@ func TestTheReadAPIReadsTheReportsWithAToken(t *testing.T) {
 		t.Fatal(e)
 	}
 	var made wire.ReadTokenMade
-	json.Unmarshal(call(t, admin, "", "readApi/make", wire.ReadTokenMake{Name: "Looker"}), &made)
+	must(t, json.Unmarshal(call(t, admin, "", "readApi/make", wire.ReadTokenMake{Name: "Looker"}), &made))
 	if !strings.HasPrefix(made.Value, readTokenPrefix) || made.URL != p.url+readAPIPath {
 		t.Fatalf("%+v", made)
 	}
@@ -100,7 +100,7 @@ func TestTheReadAPIReadsTheReportsWithAToken(t *testing.T) {
 
 	// Revoked: refused at once.
 	var state wire.ReadAPI
-	json.Unmarshal(call(t, admin, "", "readApi/revoke", wire.ReadTokenRevoke{ID: made.Token.ID}), &state)
+	must(t, json.Unmarshal(call(t, admin, "", "readApi/revoke", wire.ReadTokenRevoke{ID: made.Token.ID}), &state))
 	if len(state.Tokens) != 1 || state.Tokens[0].Revoked == nil || state.Otlp != nil {
 		t.Fatalf("%+v", state)
 	}
@@ -116,7 +116,7 @@ func TestAReadTokenIsLimited(t *testing.T) {
 	_, admin := p.client("Owner's window")
 	bea := p.invite(admin, "Bea", wire.UserRoleAdmin)
 	var made wire.ReadTokenMade
-	json.Unmarshal(call(t, bea.window, "", "readApi/make", wire.ReadTokenMake{Name: "Bea's BI"}), &made)
+	must(t, json.Unmarshal(call(t, bea.window, "", "readApi/make", wire.ReadTokenMake{Name: "Bea's BI"}), &made))
 	limited := false
 	for range readBurst + 5 {
 		if code, _ := readReports(t, p, made.Value, ""); code == http.StatusTooManyRequests {
@@ -160,7 +160,7 @@ func TestARevokeWinsOverALastUseStamp(t *testing.T) {
 	p := startPlane(t, st, controllink.NewPrivateKey())
 	_, admin := p.client("Owner's window")
 	var made wire.ReadTokenMade
-	json.Unmarshal(call(t, admin, "", "readApi/make", wire.ReadTokenMake{Name: "Looker"}), &made)
+	must(t, json.Unmarshal(call(t, admin, "", "readApi/make", wire.ReadTokenMake{Name: "Looker"}), &made))
 	all, etags, err := p.s.readAPI.list(t.Context())
 	if err != nil || len(all) != 1 {
 		t.Fatal(all, err)

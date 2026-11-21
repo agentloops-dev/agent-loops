@@ -45,7 +45,7 @@ func TestTheControlPlaneWritesTheActor(t *testing.T) {
 	p.waitFor(func() bool {
 		// A new list each time: decoding into the last one keeps its fields a reply leaves out.
 		list = wire.AuditList{}
-		json.Unmarshal(call(t, window, "", "audit/list", wire.AuditQuery{}), &list)
+		must(t, json.Unmarshal(call(t, window, "", "audit/list", wire.AuditQuery{}), &list))
 		return len(list.Entries) == 2
 	}, "two entries")
 	if !list.Admin || list.Days != 30 || list.More {
@@ -65,7 +65,7 @@ func TestTheControlPlaneWritesTheActor(t *testing.T) {
 	}
 
 	var export wire.AuditExport
-	json.Unmarshal(call(t, window, "", "audit/export", wire.AuditQuery{}), &export)
+	must(t, json.Unmarshal(call(t, window, "", "audit/export", wire.AuditQuery{}), &export))
 	if export.Count != 2 || strings.Count(export.Lines, "\n") != 2 || strings.Contains(export.Lines, "mallory") {
 		t.Fatalf("%+v", export)
 	}
@@ -96,7 +96,9 @@ func TestTheAuditTargetIsReadOffTheRoutersLock(t *testing.T) {
 	}()
 	<-reading
 	select {
-	case <-answered:
+	case err := <-answered:
+		// Any answer will do: the fake machine has no agents/stop. Only the time counts.
+		t.Log("the machine answered:", err)
 	case <-time.After(10 * time.Second):
 		t.Fatal("the machine's answer waited for the audit's read")
 	}
@@ -104,7 +106,7 @@ func TestTheAuditTargetIsReadOffTheRoutersLock(t *testing.T) {
 	close(release)
 	p.waitFor(func() bool {
 		var list wire.AuditList
-		json.Unmarshal(call(t, window, "", "audit/list", wire.AuditQuery{}), &list)
+		must(t, json.Unmarshal(call(t, window, "", "audit/list", wire.AuditQuery{}), &list))
 		return len(list.Entries) == 1 && list.Entries[0].Target != nil && *list.Entries[0].Target == "A1"
 	}, "the stop kept")
 }
@@ -133,7 +135,7 @@ func TestAccountOperationsAreAudited(t *testing.T) {
 	var list wire.AuditList
 	p.waitFor(func() bool {
 		list = wire.AuditList{}
-		json.Unmarshal(call(t, window, "", "audit/list", wire.AuditQuery{}), &list)
+		must(t, json.Unmarshal(call(t, window, "", "audit/list", wire.AuditQuery{}), &list))
 		return len(list.Entries) == 2
 	}, "two entries")
 	actions := map[string]bool{}
@@ -173,7 +175,7 @@ func TestSecretOperationsAreAudited(t *testing.T) {
 	var list wire.AuditList
 	p.waitFor(func() bool {
 		list = wire.AuditList{}
-		json.Unmarshal(call(t, window, "", "audit/list", wire.AuditQuery{}), &list)
+		must(t, json.Unmarshal(call(t, window, "", "audit/list", wire.AuditQuery{}), &list))
 		return len(list.Entries) == 4
 	}, "four entries")
 	got := map[string]string{}
