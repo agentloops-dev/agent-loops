@@ -44,7 +44,7 @@ func LooserRules(approved, next wire.PolicyRules) []wire.PolicyRuleName {
 			out = append(out, c.rule)
 		}
 	}
-	return out
+	return append(out, looserCommitTrailers(approved, next)...)
 }
 
 // RuleTitle is a rule's name as the Policy pane says it (PolicyLayersWords.rows,
@@ -52,6 +52,9 @@ func LooserRules(approved, next wire.PolicyRules) []wire.PolicyRuleName {
 func RuleTitle(rule wire.PolicyRuleName) string {
 	if t, ok := ruleTitles[rule]; ok {
 		return t
+	}
+	if t, ok := trailerForRule(rule); ok {
+		return t.Key
 	}
 	return string(rule)
 }

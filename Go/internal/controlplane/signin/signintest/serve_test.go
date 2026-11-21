@@ -102,7 +102,7 @@ func setUp(t *testing.T, p *Provider, text string) func(method, path string, bod
 	match := wire.SCIMMatchExternalId
 	call("scim/set", wire.SCIMSet{Provider: "acme-okta", On: true, Match: &match})
 	var made wire.SCIMTokenMade
-	json.Unmarshal(call("scim/tokens/make", wire.SCIMTokenMake{Provider: "acme-okta", Name: "Okta"}), &made)
+	must(t, json.Unmarshal(call("scim/tokens/make", wire.SCIMTokenMake{Provider: "acme-okta", Name: "Okta"}), &made))
 	// The scratch control plane's own certificate is a walk's: not checked.
 	client := &http.Client{Timeout: 10 * time.Second, Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
 	scim := func(method, path string, body any) map[string]any {
@@ -116,7 +116,7 @@ func setUp(t *testing.T, p *Provider, text string) func(method, path string, bod
 		}
 		defer res.Body.Close()
 		var out map[string]any
-		json.NewDecoder(res.Body).Decode(&out)
+		must(t, json.NewDecoder(res.Body).Decode(&out))
 		if res.StatusCode >= 300 {
 			t.Fatalf("%s %s: %d %v", method, path, res.StatusCode, out)
 		}
@@ -134,7 +134,7 @@ func setUp(t *testing.T, p *Provider, text string) func(method, path string, bod
 		"displayName": "Acme Admins", "members": []map[string]any{{"value": samID}}})
 	groupID, _ := group["id"].(string)
 	var groups wire.GroupList
-	json.Unmarshal(call("groups/list", map[string]any{}), &groups)
+	must(t, json.Unmarshal(call("groups/list", map[string]any{}), &groups))
 	for _, g := range groups.Groups {
 		if g.Source != nil && g.Source.DisplayName == "Acme Admins" {
 			admin := wire.UserRoleAdmin

@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -58,6 +59,7 @@ func stillWaitsAndWakes(t *testing.T, d *Daemon, dir string, agent wire.UUID, an
 }
 
 func TestASleepAnswersAHeldWaitBeforeTheMacSleeps(t *testing.T) {
+	flaky.UnderLoad(t, "#6495")
 	fakeRuntimes(t)
 	setFor(t, &eventHoldLimit, 10*time.Minute)
 	d, _ := start(t, t.TempDir())

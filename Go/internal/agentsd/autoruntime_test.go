@@ -116,7 +116,7 @@ func TestAutoPicksTheRuntime(t *testing.T) {
 	dir := "file://" + t.TempDir()
 	startAuto := func(id int, levels map[string]any) wire.Agent {
 		var agent wire.UUID
-		json.Unmarshal(c.call(t, id, "agents/start", map[string]any{"runtimeID": "auto", "cwd": dir, "prompt": "hello", "levels": levels}), &agent)
+		mustUnmarshal(t, c.call(t, id, "agents/start", map[string]any{"runtimeID": "auto", "cwd": dir, "prompt": "hello", "levels": levels}), &agent)
 		return *d.Store.Agent(agent)
 	}
 	a := startAuto(1, map[string]any{"model": "balanced", "permission": "ask"})
@@ -171,13 +171,13 @@ func TestAutoWhenNoRuntimeCan(t *testing.T) {
 		t.Fatalf("%+v", err)
 	}
 	var p wire.AutoPreview
-	json.Unmarshal(c.call(t, 3, "auto/preview", map[string]any{"cwd": "file://" + t.TempDir()}), &p)
+	mustUnmarshal(t, c.call(t, 3, "auto/preview", map[string]any{"cwd": "file://" + t.TempDir()}), &p)
 	if p.RuntimeID != nil || len(p.Skipped) != len(catalog) {
 		t.Fatalf("%+v", p)
 	}
 	// A rate-limited runtime is still taken when no other can.
 	out(d, "claude", true)
-	json.Unmarshal(c.call(t, 4, "auto/preview", map[string]any{"cwd": "file://" + t.TempDir()}), &p)
+	mustUnmarshal(t, c.call(t, 4, "auto/preview", map[string]any{"cwd": "file://" + t.TempDir()}), &p)
 	if p.RuntimeID == nil || *p.RuntimeID != "claude" {
 		t.Fatalf("%+v", p)
 	}
@@ -199,16 +199,16 @@ func TestAutoPassesByARuntimeThatTakesNoPictures(t *testing.T) {
 	picture := []map[string]any{{"id": "00000000-0000-0000-0000-000000000001", "displayName": "shot.png",
 		"block": map[string]any{"type": "image", "mimeType": "image/png", "data": "iVBORw0KGgo="}}}
 	var p wire.AutoPreview
-	json.Unmarshal(c.call(t, 1, "auto/preview", map[string]any{"cwd": dir, "needs": map[string]any{"image": true}}), &p)
+	mustUnmarshal(t, c.call(t, 1, "auto/preview", map[string]any{"cwd": dir, "needs": map[string]any{"image": true}}), &p)
 	if p.RuntimeID == nil || *p.RuntimeID != "codex" || len(p.Skipped) != 1 || p.Skipped[0].Reason != "takes no pictures" {
 		t.Fatalf("%+v", p)
 	}
-	json.Unmarshal(c.call(t, 2, "auto/preview", map[string]any{"cwd": dir}), &p)
+	mustUnmarshal(t, c.call(t, 2, "auto/preview", map[string]any{"cwd": dir}), &p)
 	if p.RuntimeID == nil || *p.RuntimeID != "claude" {
 		t.Fatalf("without a picture: %+v", p)
 	}
 	var agent wire.UUID
-	json.Unmarshal(c.call(t, 3, "agents/start", map[string]any{"runtimeID": "auto", "cwd": dir, "prompt": "look", "attachments": picture}), &agent)
+	mustUnmarshal(t, c.call(t, 3, "agents/start", map[string]any{"runtimeID": "auto", "cwd": dir, "prompt": "look", "attachments": picture}), &agent)
 	if a := d.Store.Agent(agent); a.RuntimeID != "codex" || a.Auto == nil || a.Auto.Skipped[0].Reason != "takes no pictures" {
 		t.Fatalf("%s %+v", a.RuntimeID, a.Auto)
 	}
@@ -240,7 +240,7 @@ func TestTheMappingsAreThePersons(t *testing.T) {
 	c.call(t, 1, "auto/set", map[string]any{"order": []string{}, "excluded": []string{},
 		"overrides": []any{map[string]any{"runtimeID": "claude", "field": "permission", "level": "approveForMe", "native": bypass}}})
 	var m wire.AutoMappings
-	json.Unmarshal(c.call(t, 2, "auto/mappings", map[string]any{}), &m)
+	mustUnmarshal(t, c.call(t, 2, "auto/mappings", map[string]any{}), &m)
 	found := false
 	for _, cell := range m.Cells {
 		if cell.RuntimeID == "claude" && cell.Field == wire.AutoFieldPermission && cell.Level == "approveForMe" {
@@ -251,7 +251,7 @@ func TestTheMappingsAreThePersons(t *testing.T) {
 		t.Fatalf("%v %d", found, len(m.Cells))
 	}
 	var id wire.UUID
-	json.Unmarshal(c.call(t, 3, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(), "prompt": "hello",
+	mustUnmarshal(t, c.call(t, 3, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(), "prompt": "hello",
 		"levels": map[string]any{"permission": "approveForMe", "model": "smart"}, "startOptions": map[string]any{"values": map[string]any{"model": "haiku"}, "extraArguments": []string{}}}), &id)
 	a := d.Store.Agent(id)
 	if stringValue(a.StartOptions.Values["mode"]) != "bypassPermissions" || stringValue(a.StartOptions.Values["model"]) != "haiku" || a.Auto != nil {
@@ -369,13 +369,13 @@ func TestAnAgentsOwnPermissionRequests(t *testing.T) {
 	defer d.Shutdown()
 	d.SettingsDir = t.TempDir()
 	var id wire.UUID
-	json.Unmarshal(c.call(t, 1, "agents/start", map[string]any{"runtimeID": "cursor", "cwd": "file://" + t.TempDir(), "prompt": "hello",
+	mustUnmarshal(t, c.call(t, 1, "agents/start", map[string]any{"runtimeID": "cursor", "cwd": "file://" + t.TempDir(), "prompt": "hello",
 		"levels": map[string]any{"permissionRequests": "alwaysApprove"}}), &id)
 	if a := d.Store.Agent(id); !d.agentAlwaysApproves(a) || d.alwaysApproves("cursor") {
 		t.Fatal("not the agent's own")
 	}
 	var a wire.Agent
-	json.Unmarshal(c.call(t, 2, "agents/setClientPermission", map[string]any{"agentID": id}), &a)
+	mustUnmarshal(t, c.call(t, 2, "agents/setClientPermission", map[string]any{"agentID": id}), &a)
 	if a.ClientPermission != nil || d.agentAlwaysApproves(&a) {
 		t.Fatalf("%+v", a.ClientPermission)
 	}
@@ -447,11 +447,11 @@ func TestContinueOnAuto(t *testing.T) {
 	defer d.Shutdown()
 	d.SettingsDir = t.TempDir()
 	var first wire.UUID
-	json.Unmarshal(c.call(t, 1, "agents/start", map[string]any{"runtimeID": "auto", "cwd": "file://" + t.TempDir(), "prompt": "hello",
+	mustUnmarshal(t, c.call(t, 1, "agents/start", map[string]any{"runtimeID": "auto", "cwd": "file://" + t.TempDir(), "prompt": "hello",
 		"levels": map[string]any{"model": "smart", "permission": "plan"}}), &first)
 	out(d, "claude", false)
 	var next wire.UUID
-	json.Unmarshal(c.call(t, 2, "agents/continueInNew", map[string]any{"agentID": first, "auto": true}), &next)
+	mustUnmarshal(t, c.call(t, 2, "agents/continueInNew", map[string]any{"agentID": first, "auto": true}), &next)
 	a := d.Store.Agent(next)
 	if a.RuntimeID != "codex" || a.Auto == nil || *a.Auto.Levels.Model != wire.ModelLevelSmart || stringValue(a.StartOptions.Values["collaboration_mode"]) != "plan" {
 		t.Fatalf("%s %+v %s", a.RuntimeID, a.Auto, a.StartOptions.Values)

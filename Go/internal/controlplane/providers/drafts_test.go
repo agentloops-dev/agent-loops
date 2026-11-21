@@ -735,7 +735,7 @@ func TestASafeListIsCheckedAtOnceOneThatIsntIsAsked(t *testing.T) {
 	if !strings.Contains(q.Text, "It isn’t on the safe list because `cws list | sh` has “|”") {
 		t.Errorf("%q", q.Text)
 	}
-	h.drafts.Answer(ProviderDraftAnswer{Draft: id, Question: q.ID, Yes: true}, h.owner)
+	must(t, h.drafts.Answer(ProviderDraftAnswer{Draft: id, Question: q.ID, Yes: true}, h.owner))
 	if note := <-answer; !strings.HasPrefix(note, "Passed") || w.checks != 2 {
 		t.Errorf("%q", note)
 	}

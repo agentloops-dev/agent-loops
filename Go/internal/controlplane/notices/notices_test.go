@@ -159,7 +159,7 @@ func TestTheDesk(t *testing.T) {
 		t.Fatalf("%+v", moved)
 	}
 	var withdraw AttentionNeed
-	json.Unmarshal([]byte(`{"withdraw":{ "permission" : "E0000000-0000-4000-8000-000000000005" }}`), &withdraw)
+	must(t, json.Unmarshal([]byte(`{"withdraw":{ "permission" : "E0000000-0000-4000-8000-000000000005" }}`), &withdraw))
 	gone := desk.Heard(withdraw, nil, devices, t0)
 	if len(gone) != 1 || gone[0].Device != wire.UUID(pad) {
 		t.Fatalf("%+v", gone)

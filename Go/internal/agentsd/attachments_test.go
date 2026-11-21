@@ -25,7 +25,7 @@ func TestAttachmentsAreWrittenWholeAndBound(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		os.Chtimes(path, clock.now(), clock.now())
+		must(t, os.Chtimes(path, clock.now(), clock.now()))
 		return path
 	}
 	exists := func(path string) bool { _, err := os.Stat(path); return err == nil }
@@ -43,9 +43,9 @@ func TestAttachmentsAreWrittenWholeAndBound(t *testing.T) {
 	// named stays. Put in place, not written: each write bounds the folder by size at once.
 	place := func(name string, age time.Duration) string {
 		path := filepath.Join(filepath.Dir(first), name)
-		os.WriteFile(path, []byte(strings.Repeat("x", 10)), 0o600)
+		must(t, os.WriteFile(path, []byte(strings.Repeat("x", 10)), 0o600))
 		at := clock.now().Add(-age)
-		os.Chtimes(path, at, at)
+		must(t, os.Chtimes(path, at, at))
 		return path
 	}
 	named := place("0A1B2C3D-named.png", 8*24*time.Hour)
@@ -64,10 +64,10 @@ func TestAttachmentsAreWrittenWholeAndBound(t *testing.T) {
 	tmpOld := filepath.Join(filepath.Dir(first), ".cut.png.ab.tmp")
 	tmpNew := filepath.Join(filepath.Dir(first), ".going.png.cd.tmp")
 	for _, p := range []string{tmpOld, tmpNew} {
-		os.WriteFile(p, []byte("x"), 0o600)
+		must(t, os.WriteFile(p, []byte("x"), 0o600))
 	}
 	day := clock.now().Add(-25 * time.Hour)
-	os.Chtimes(tmpOld, day, day)
+	must(t, os.Chtimes(tmpOld, day, day))
 	d.sweepAttachments()
 	if exists(unnamed) || exists(tmpOld) {
 		t.Fatal("an old attachment or a cut-off write was kept")
@@ -107,9 +107,9 @@ func TestAttachmentWritesReadNoTranscript(t *testing.T) {
 	exists := func(path string) bool { _, err := os.Stat(path); return err == nil }
 	place := func(name string) string {
 		path := filepath.Join(dir, name)
-		os.WriteFile(path, []byte("x"), 0o600)
+		must(t, os.WriteFile(path, []byte("x"), 0o600))
 		at := clock.now().Add(-8 * 24 * time.Hour)
-		os.Chtimes(path, at, at)
+		must(t, os.Chtimes(path, at, at))
 		return path
 	}
 	named := place("0A1B2C3D-named.png")
@@ -173,14 +173,14 @@ func TestAttachmentsRefuseALinkedFolder(t *testing.T) {
 			outside := t.TempDir()
 			victim := filepath.Join(outside, "4E5F6A7B-old.png")
 			if linked == ".agents" {
-				os.Mkdir(filepath.Join(outside, "attachments"), 0o700)
+				must(t, os.Mkdir(filepath.Join(outside, "attachments"), 0o700))
 				victim = filepath.Join(outside, "attachments", "4E5F6A7B-old.png")
 			}
-			os.WriteFile(victim, []byte("x"), 0o600)
+			must(t, os.WriteFile(victim, []byte("x"), 0o600))
 			old := clock.now().Add(-30 * 24 * time.Hour)
-			os.Chtimes(victim, old, old)
+			must(t, os.Chtimes(victim, old, old))
 			if linked == attachmentsFolder {
-				os.Mkdir(filepath.Join(root, ".agents"), 0o700)
+				must(t, os.Mkdir(filepath.Join(root, ".agents"), 0o700))
 			}
 			if err := os.Symlink(outside, filepath.Join(root, linked)); err != nil {
 				t.Fatal(err)
@@ -214,7 +214,7 @@ func TestAttachmentsOfAFolderWithNoAgentGo(t *testing.T) {
 			t.Fatal(err)
 		}
 		at := clock.now().Add(-age)
-		os.Chtimes(path, at, at)
+		must(t, os.Chtimes(path, at, at))
 		return path
 	}
 	exists := func(path string) bool { _, err := os.Stat(path); return err == nil }
@@ -230,7 +230,7 @@ func TestAttachmentsOfAFolderWithNoAgentGo(t *testing.T) {
 		t.Fatalf("a folder with attachments left the list: %v", got)
 	}
 	at := clock.now().Add(-8 * 24 * time.Hour)
-	os.Chtimes(young, at, at)
+	must(t, os.Chtimes(young, at, at))
 	d.sweepAttachments()
 	if exists(young) {
 		t.Fatal("the last attachment was kept")

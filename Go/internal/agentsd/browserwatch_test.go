@@ -20,12 +20,13 @@ func nextBrowserFrame(c *conn, wait time.Duration) *wire.BrowserFrame {
 		select {
 		case line := <-c.out:
 			var m message
-			json.Unmarshal([]byte(line), &m)
-			if m.Method != wire.NotifyBrowserFrame.Name {
+			if json.Unmarshal([]byte(line), &m) != nil || m.Method != wire.NotifyBrowserFrame.Name {
 				continue
 			}
 			var f wire.BrowserFrame
-			json.Unmarshal(m.Params, &f)
+			if json.Unmarshal(m.Params, &f) != nil {
+				continue
+			}
 			return &f
 		case <-deadline:
 			return nil
@@ -158,13 +159,13 @@ func TestAWatcherWhoJoinsSeesTheLastFrame(t *testing.T) {
 		select {
 		case line := <-late.out:
 			var m message
-			json.Unmarshal([]byte(line), &m)
+			mustUnmarshal(t, []byte(line), &m)
 			switch {
 			case string(m.ID) == "1":
 				answered = true
 			case m.Method == wire.NotifyBrowserFrame.Name:
 				f = &wire.BrowserFrame{}
-				json.Unmarshal(m.Params, f)
+				mustUnmarshal(t, m.Params, f)
 			}
 		case <-deadline:
 			t.Fatalf("after 10 s: answered %v, frame %+v", answered, f)

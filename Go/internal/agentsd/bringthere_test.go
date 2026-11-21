@@ -30,10 +30,10 @@ func TestBringBackBringsTheBranchHere(t *testing.T) {
 	sendGit(t, filepath.Dir(there), nil, "clone", "-q", "-b", "fix-login", src, there)
 	sendGit(t, there, nil, "config", "user.email", "t@example.com")
 	sendGit(t, there, nil, "config", "user.name", "T")
-	os.WriteFile(filepath.Join(there, "login.go"), []byte("package login\n"), 0o644)
+	must(t, os.WriteFile(filepath.Join(there, "login.go"), []byte("package login\n"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	sendGit(t, there, nil, "add", "-A")
 	sendGit(t, there, nil, "commit", "-q", "-m", "login")
-	os.WriteFile(filepath.Join(there, "notes.txt"), []byte("not committed\n"), 0o644)
+	must(t, os.WriteFile(filepath.Join(there, "notes.txt"), []byte("not committed\n"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	head := sendGit(t, there, nil, "rev-parse", "HEAD")
 	title := "fix-login"
 	a := seeded(t, d, src, func(a *wire.Agent) {
@@ -57,7 +57,7 @@ func TestBringBackBringsTheBranchHere(t *testing.T) {
 		}
 		b, _ := json.Marshal(call.Params)
 		var s wire.MachineFolderSend
-		json.Unmarshal(b, &s)
+		mustUnmarshal(t, b, &s)
 		var out wire.MachineFolderSent
 		var err error
 		switch {
@@ -109,7 +109,7 @@ func TestBringBackBringsTheBranchHere(t *testing.T) {
 	go func() { text, _ := m.tool(4, "bring_back", from); answered <- text }()
 	var pending []wire.ElicitationRequest
 	waitFor(t, "the card", func() bool {
-		json.Unmarshal(c.call(t, 1, "elicitations/pending", nil), &pending)
+		mustUnmarshal(t, c.call(t, 1, "elicitations/pending", nil), &pending)
 		return len(pending) == 1
 	})
 	if f := pending[0].Mode.Form.Value; *f.Properties[0].Title != "Bring fix-login, with its uncommitted changes, back from "+there+" on pc into "+shortPath(src)+"?" {

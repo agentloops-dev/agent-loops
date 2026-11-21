@@ -51,12 +51,12 @@ func TestAProviderIsListedWithItsWorkspacesAndNeverItsSecret(t *testing.T) {
 			t.Errorf("%s holds the secret", k.Key)
 		}
 	}
-	filepath.WalkDir(h.home, func(path string, d os.DirEntry, err error) error {
+	must(t, filepath.WalkDir(h.home, func(path string, d os.DirEntry, err error) error {
 		if data, _ := os.ReadFile(path); err == nil && !d.IsDir() && strings.Contains(string(data), "hunter2") {
 			t.Errorf("%s holds the secret", path)
 		}
 		return nil
-	})
+	}))
 }
 
 func TestTheProviderRecordIsKeptAtTheSwiftKey(t *testing.T) {
@@ -67,7 +67,7 @@ func TestTheProviderRecordIsKeptAtTheSwiftKey(t *testing.T) {
 		t.Fatal("no record")
 	}
 	var stored map[string]any
-	json.Unmarshal(object.Data, &stored)
+	must(t, json.Unmarshal(object.Data, &stored))
 	for _, key := range []string{"id", "name", "kind", "secretNames", "capabilities", "contract", "rev", "commands"} {
 		if _, ok := stored[key]; !ok {
 			t.Errorf("no %s in %s", key, object.Data)
@@ -697,7 +697,7 @@ func TestANewWorkspaceClonesItsFoldersOnceItJoins(t *testing.T) {
 			t.Errorf("%+v", d)
 		}
 		var params map[string]string
-		json.Unmarshal(d.params, &params)
+		must(t, json.Unmarshal(d.params, &params))
 		got = append(got, params["url"])
 	}
 	if !reflect.DeepEqual(got, urls) {
@@ -1028,7 +1028,7 @@ func TestAMachineFromARepositoryClonesItFirstOnceItJoins(t *testing.T) {
 	var got []string
 	for _, d := range h.router.deliveries() {
 		var params map[string]string
-		json.Unmarshal(d.params, &params)
+		must(t, json.Unmarshal(d.params, &params))
 		got = append(got, params["url"])
 	}
 	if !reflect.DeepEqual(got, []string{"https://github.com/alexec/agents.git", "https://github.com/alexec/two"}) {
@@ -1407,15 +1407,19 @@ func TestACarriedCodespaceIsInstalledFromItsMachine(t *testing.T) {
 	code := func() (string, error) { codes++; return "agents-control:2:h:code", nil }
 	h.router.asking = func(host, method string, params json.RawMessage) json.RawMessage {
 		var ask wire.ProviderSSH
-		json.Unmarshal(params, &ask)
+		must(t, json.Unmarshal(params, &ask))
 		if ask.Op != "install" {
 			return rawOf(wire.ProviderCarried{})
 		}
 		if deref(ask.Trust) != "SHA256:abc" {
 			return rawOf(wire.ProviderCarried{Result: rawOf(SSHResult{NeedsTrust: new("SHA256:abc")})})
 		}
-		h.providers.HostSaid(other, wire.NotifyMachineInstallProgress.Name, rawOf(wire.ControlInstallProgress{Name: "fuzzy", Step: "not-this"}))
-		h.providers.HostSaid(carrier, wire.NotifyMachineInstallProgress.Name, rawOf(wire.ControlInstallProgress{Name: "fuzzy", Step: "setUp"}))
+		if _, err := h.providers.HostSaid(other, wire.NotifyMachineInstallProgress.Name, rawOf(wire.ControlInstallProgress{Name: "fuzzy", Step: "not-this"})); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := h.providers.HostSaid(carrier, wire.NotifyMachineInstallProgress.Name, rawOf(wire.ControlInstallProgress{Name: "fuzzy", Step: "setUp"})); err != nil {
+			t.Fatal(err)
+		}
 		return rawOf(wire.ProviderCarried{Result: rawOf(SSHResult{})})
 	}
 	request := wire.MachineInstall{Destination: "cs.fuzzy-space.main", Name: new("fuzzy"), Provider: &id,
@@ -1445,7 +1449,9 @@ func TestACarriedCodespaceIsInstalledFromItsMachine(t *testing.T) {
 		t.Error("the install's progress was not said as it should be")
 	}
 	// After the install, a machine's progress is not said.
-	h.providers.HostSaid(carrier, wire.NotifyMachineInstallProgress.Name, rawOf(wire.ControlInstallProgress{Name: "fuzzy", Step: "late"}))
+	if _, err := h.providers.HostSaid(carrier, wire.NotifyMachineInstallProgress.Name, rawOf(wire.ControlInstallProgress{Name: "fuzzy", Step: "late"})); err != nil {
+		t.Fatal(err)
+	}
 	if h.router.heard("late") {
 		t.Error("progress said with no install running")
 	}

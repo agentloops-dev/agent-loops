@@ -28,12 +28,13 @@ func nextBringBack(c *conn, wait time.Duration) *wire.BringBackNotification {
 		select {
 		case line := <-c.out:
 			var m message
-			json.Unmarshal([]byte(line), &m)
-			if m.Method != wire.NotifyBringBackChanged.Name {
+			if json.Unmarshal([]byte(line), &m) != nil || m.Method != wire.NotifyBringBackChanged.Name {
 				continue
 			}
 			var n wire.BringBackNotification
-			json.Unmarshal(m.Params, &n)
+			if json.Unmarshal(m.Params, &n) != nil {
+				continue
+			}
 			return &n
 		case <-deadline:
 			return nil
@@ -68,7 +69,9 @@ func (p *bringBackPeer) ask(_ context.Context, method string, params any) (json.
 	}
 	p.mu.Unlock()
 	var s wire.MachineFolderSend
-	json.Unmarshal(b, &s)
+	if err := json.Unmarshal(b, &s); err != nil {
+		return nil, err
+	}
 	out, step, err := p.step(s)
 	p.mu.Lock()
 	p.steps = append(p.steps, step)
@@ -150,10 +153,10 @@ func TestFoldersBringBackFromBringsOnItsOwn(t *testing.T) {
 	// More than one part of folders/sendRead, so the bring-back says how far it is.
 	big := make([]byte, sendPartSize+sendPartSize/2)
 	rand.Read(big)
-	os.WriteFile(filepath.Join(there, "big.bin"), big, 0o644)
+	must(t, os.WriteFile(filepath.Join(there, "big.bin"), big, 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	sendGit(t, there, nil, "add", "-A")
 	sendGit(t, there, nil, "commit", "-q", "-m", "big")
-	os.WriteFile(filepath.Join(there, "notes.txt"), []byte("not committed\n"), 0o644)
+	must(t, os.WriteFile(filepath.Join(there, "notes.txt"), []byte("not committed\n"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	head := sendGit(t, there, nil, "rev-parse", "HEAD")
 
 	peer := &bringBackPeer{d: d, held: make(chan struct{})}
@@ -187,7 +190,7 @@ func TestFoldersBringBackFromBringsOnItsOwn(t *testing.T) {
 
 	// It answers before the bring-back is done.
 	var s wire.BringBackSummary
-	json.Unmarshal(c.call(t, 3, "folders/bringBackFrom", from), &s)
+	mustUnmarshal(t, c.call(t, 3, "folders/bringBackFrom", from), &s)
 	if s.Machine != "pc-id" || s.MachineName != "pc" || s.Source != there || s.Folder != store.PathURL(src) {
 		t.Fatalf("%+v", s)
 	}
@@ -207,7 +210,7 @@ func TestFoldersBringBackFromBringsOnItsOwn(t *testing.T) {
 	// A window that connects now finds it, and a second bring-back into the same folder is
 	// refused.
 	var under []wire.BringBackNotification
-	json.Unmarshal(c.call(t, 4, "folders/bringingBack", nil), &under)
+	mustUnmarshal(t, c.call(t, 4, "folders/bringingBack", nil), &under)
 	if len(under) != 1 || under[0].BringBack.ID != s.ID || under[0].Read != last.Read {
 		t.Fatalf("%+v", under)
 	}
@@ -231,13 +234,13 @@ func TestFoldersBringBackFromBringsOnItsOwn(t *testing.T) {
 			t.Fatalf("left in %s: %v", folder, left)
 		}
 	}
-	json.Unmarshal(c.call(t, 6, "folders/bringingBack", nil), &under)
+	mustUnmarshal(t, c.call(t, 6, "folders/bringingBack", nil), &under)
 	if len(under) != 0 {
 		t.Fatalf("still under way: %+v", under)
 	}
 
 	// Now uncommitted changes here: the bring-back stops, says why, and changes nothing.
-	json.Unmarshal(c.call(t, 7, "folders/bringBackFrom", from), &s)
+	mustUnmarshal(t, c.call(t, 7, "folders/bringBackFrom", from), &s)
 	last = waitBringBackFinished(t, c, nil)
 	if last.Problem == nil || !strings.HasPrefix(*last.Problem, "Nothing came back into "+filepath.Base(src)+" from pc: ") {
 		t.Fatalf("%+v", last)

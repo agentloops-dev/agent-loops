@@ -44,7 +44,7 @@ func TestAHostOfAControlPlaneOffersAndWithdrawsNeeds(t *testing.T) {
 	root := t.TempDir()
 	// A Swift host offered a change in a worktree since removed, and never withdrew it.
 	gone := `{"guardedChange":{"folder":"file:///nowhere/worktrees/gone","path":".agents/pins.json"}}`
-	os.WriteFile(filepath.Join(root, "attention.json"), []byte(`{"raised":[],"deliveries":[],"withdrawing":[],"forwarded":[`+gone+`]}`), 0o644)
+	must(t, os.WriteFile(filepath.Join(root, "attention.json"), []byte(`{"raised":[],"deliveries":[],"withdrawing":[],"forwarded":[`+gone+`]}`), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	d, c := start(t, root)
 	defer d.Shutdown()
 	report := seeded(t, d, t.TempDir(), func(a *wire.Agent) {
