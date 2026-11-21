@@ -72,9 +72,9 @@ func fakeSignInTools(t *testing.T) string {
 	for _, v := range []string{"CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY", "OPENAI_API_KEY"} {
 		t.Setenv(v, "")
 	}
-	os.MkdirAll(bin, 0o755)
-	os.WriteFile(filepath.Join(bin, "claude"), []byte(fakeClaudeTool), 0o755)
-	os.WriteFile(filepath.Join(bin, "codex"), []byte(fakeCodexTool), 0o755)
+	must(t, os.MkdirAll(bin, 0o755))                                                   //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(bin, "claude"), []byte(fakeClaudeTool), 0o755)) //nolint:gosec // G306: the mode this file always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(bin, "codex"), []byte(fakeCodexTool), 0o755))   //nolint:gosec // G306: the mode this file always had; only its error is new
 	return home
 }
 
@@ -87,7 +87,7 @@ func asAServer(t *testing.T) {
 func statusFor(t *testing.T, c *conn, id int, runtimeID string) wire.RuntimeStatus {
 	t.Helper()
 	var list []wire.RuntimeStatus
-	json.Unmarshal(c.call(t, id, "runtimes/list", map[string]any{}), &list)
+	mustUnmarshal(t, c.call(t, id, "runtimes/list", map[string]any{}), &list)
 	for _, s := range list {
 		if s.Runtime.ID == runtimeID {
 			return s
@@ -112,7 +112,7 @@ func TestSigningClaudeInOnAServer(t *testing.T) {
 	}
 
 	var step wire.RuntimeSignInStep
-	json.Unmarshal(c.call(t, 3, "runtimes/signInStart", map[string]any{"runtimeID": "claude"}), &step)
+	mustUnmarshal(t, c.call(t, 3, "runtimes/signInStart", map[string]any{"runtimeID": "claude"}), &step)
 	if string(step.URL) != "https://claude.ai/oauth/authorize?code=true&state=x" || !step.WantsCode || step.UserCode != nil {
 		t.Fatalf("%+v", step)
 	}
@@ -124,9 +124,9 @@ func TestSigningClaudeInOnAServer(t *testing.T) {
 		t.Fatalf("bad code: %+v", e)
 	}
 
-	json.Unmarshal(c.call(t, 6, "runtimes/signInStart", map[string]any{"runtimeID": "claude"}), &step)
+	mustUnmarshal(t, c.call(t, 6, "runtimes/signInStart", map[string]any{"runtimeID": "claude"}), &step)
 	var s wire.RuntimeStatus
-	json.Unmarshal(c.call(t, 7, "runtimes/signInFinish", map[string]any{"signInID": step.SignInID, "code": " good\n"}), &s)
+	mustUnmarshal(t, c.call(t, 7, "runtimes/signInFinish", map[string]any{"signInID": step.SignInID, "code": " good\n"}), &s)
 	if s.SignIn == nil || !s.SignIn.SignedIn {
 		t.Fatalf("after: %+v", s.SignIn)
 	}
@@ -168,13 +168,13 @@ func TestSigningClaudeInWithACodeAsLongAsARealOne(t *testing.T) {
 	if len(code) != 92 {
 		t.Fatalf("the code is %d characters, not 92", len(code))
 	}
-	os.WriteFile(filepath.Join(home, "claude-good-code"), []byte(code), 0o600)
+	must(t, os.WriteFile(filepath.Join(home, "claude-good-code"), []byte(code), 0o600))
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	asAServer(t)
 
 	var step wire.RuntimeSignInStep
-	json.Unmarshal(c.call(t, 1, "runtimes/signInStart", map[string]any{"runtimeID": "claude"}), &step)
+	mustUnmarshal(t, c.call(t, 1, "runtimes/signInStart", map[string]any{"runtimeID": "claude"}), &step)
 	if !step.WantsCode {
 		t.Fatalf("%+v", step)
 	}
@@ -184,9 +184,9 @@ func TestSigningClaudeInWithACodeAsLongAsARealOne(t *testing.T) {
 		t.Fatalf("a code cut short: %+v", e)
 	}
 
-	json.Unmarshal(c.call(t, 3, "runtimes/signInStart", map[string]any{"runtimeID": "claude"}), &step)
+	mustUnmarshal(t, c.call(t, 3, "runtimes/signInStart", map[string]any{"runtimeID": "claude"}), &step)
 	var s wire.RuntimeStatus
-	json.Unmarshal(c.call(t, 4, "runtimes/signInFinish", map[string]any{"signInID": step.SignInID, "code": code + "\n"}), &s)
+	mustUnmarshal(t, c.call(t, 4, "runtimes/signInFinish", map[string]any{"signInID": step.SignInID, "code": code + "\n"}), &s)
 	if s.SignIn == nil || !s.SignIn.SignedIn {
 		t.Fatalf("after the long code: %+v", s.SignIn)
 	}
@@ -207,7 +207,7 @@ func TestSigningCodexInOnAServer(t *testing.T) {
 	asAServer(t)
 
 	var step wire.RuntimeSignInStep
-	json.Unmarshal(c.call(t, 1, "runtimes/signInStart", map[string]any{"runtimeID": "codex"}), &step)
+	mustUnmarshal(t, c.call(t, 1, "runtimes/signInStart", map[string]any{"runtimeID": "codex"}), &step)
 	if string(step.URL) != "https://auth.openai.com/codex/device" || step.UserCode == nil || *step.UserCode != "ABCD-EFGH1" || step.WantsCode {
 		t.Fatalf("%+v", step)
 	}
@@ -215,16 +215,16 @@ func TestSigningCodexInOnAServer(t *testing.T) {
 	if e.Code != wire.FailureNeedsSignIn || !strings.Contains(e.Message, "still waiting") {
 		t.Fatalf("too soon: %+v", e)
 	}
-	os.WriteFile(filepath.Join(home, "entered"), nil, 0o600)
+	must(t, os.WriteFile(filepath.Join(home, "entered"), nil, 0o600))
 	// Done again until Codex has seen the code: a loaded runner can take longer than one
 	// short wait (#3634).
 	var s wire.RuntimeStatus
 	for id, deadline := 100, time.Now().Add(15*time.Second); ; id++ {
 		c.send(requestLine(id, "runtimes/signInFinish", map[string]any{"signInID": step.SignInID}))
 		var m message
-		json.Unmarshal([]byte(c.answer(t, id)), &m)
+		mustUnmarshal(t, []byte(c.answer(t, id)), &m)
 		if m.Error == nil {
-			json.Unmarshal(m.Result, &s)
+			mustUnmarshal(t, m.Result, &s)
 			break
 		}
 		if !strings.Contains(m.Error.Message, "still waiting") || time.Now().After(deadline) {
@@ -240,13 +240,13 @@ func TestSigningCodexInOnAServer(t *testing.T) {
 		!strings.Contains(e.Message, "That key was refused") {
 		t.Fatalf("%+v", e)
 	}
-	json.Unmarshal(c.call(t, 5, "runtimes/signInKey", map[string]any{"runtimeID": "codex", "key": "sk-good"}), &s)
+	mustUnmarshal(t, c.call(t, 5, "runtimes/signInKey", map[string]any{"runtimeID": "codex", "key": "sk-good"}), &s)
 	if !s.SignIn.SignedIn {
 		t.Fatalf("key: %+v", s.SignIn)
 	}
 
 	// Cancel stops one that is waiting.
-	json.Unmarshal(c.call(t, 6, "runtimes/signInStart", map[string]any{"runtimeID": "codex"}), &step)
+	mustUnmarshal(t, c.call(t, 6, "runtimes/signInStart", map[string]any{"runtimeID": "codex"}), &step)
 	c.call(t, 7, "runtimes/signInFinish", map[string]any{"signInID": step.SignInID, "cancel": true})
 	if e := c.callError(t, 8, "runtimes/signInFinish", map[string]any{"signInID": step.SignInID}); e.Code != CodeInvalidParams {
 		t.Fatalf("%+v", e)
@@ -294,8 +294,8 @@ func TestTheControlPlaneAsksWhichRuntimesAreReady(t *testing.T) {
 	}
 	asked, _ := json.Marshal(out)
 	var fromAsk, fromClient []wire.RuntimeStatus
-	json.Unmarshal(asked, &fromAsk)
-	json.Unmarshal(c.call(t, 1, "runtimes/list", map[string]any{}), &fromClient)
+	mustUnmarshal(t, asked, &fromAsk)
+	mustUnmarshal(t, c.call(t, 1, "runtimes/list", map[string]any{}), &fromClient)
 	if len(fromAsk) == 0 || len(fromAsk) != len(fromClient) {
 		t.Fatalf("asked %d, a client %d", len(fromAsk), len(fromClient))
 	}

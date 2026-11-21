@@ -27,8 +27,7 @@ func fakeMCPServer() {
 			ID     *int   `json:"id"`
 			Method string `json:"method"`
 		}
-		json.Unmarshal(in.Bytes(), &m)
-		if m.ID == nil {
+		if json.Unmarshal(in.Bytes(), &m) != nil || m.ID == nil {
 			continue
 		}
 		result := `{"protocolVersion":"2025-06-18","capabilities":{"tools":{}},"serverInfo":{"name":"fake","version":"1"}}`
@@ -65,7 +64,7 @@ func fakeHTTPMCP(t *testing.T) *httptest.Server {
 			ID     *int   `json:"id"`
 			Method string `json:"method"`
 		}
-		json.NewDecoder(r.Body).Decode(&m)
+		check(t, json.NewDecoder(r.Body).Decode(&m))
 		if m.ID == nil {
 			w.WriteHeader(http.StatusAccepted)
 			return
@@ -96,7 +95,7 @@ func TestMCPServersAreChecked(t *testing.T) {
 	defer locked.Close()
 	home := t.TempDir()
 	d.PersonalHome = home
-	os.MkdirAll(filepath.Join(home, ".agents"), 0o755)
+	must(t, os.MkdirAll(filepath.Join(home, ".agents"), 0o755)) //nolint:gosec // G301: the mode this folder always had; only its error is new
 	entries := map[string]any{
 		"fake":   map[string]any{"command": self},
 		"levels": map[string]any{"command": self, "env": map[string]any{"FAKE_MCP_LEVELS": "1"}},
@@ -105,10 +104,10 @@ func TestMCPServersAreChecked(t *testing.T) {
 		"gone":   map[string]any{"command": "/bin/sh", "args": []string{"-c", "exit 0"}},
 	}
 	b, _ := json.Marshal(map[string]any{"mcpServers": entries})
-	os.WriteFile(filepath.Join(home, ".agents", "mcp.json"), b, 0o644)
+	must(t, os.WriteFile(filepath.Join(home, ".agents", "mcp.json"), b, 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 
 	var snap wire.MCPHealthSnapshot
-	json.Unmarshal(c.call(t, 1, "mcp/health/check", map[string]any{}), &snap)
+	mustUnmarshal(t, c.call(t, 1, "mcp/health/check", map[string]any{}), &snap)
 	byName := func(s wire.MCPHealthSnapshot) map[string]wire.MCPServerHealth {
 		m := map[string]wire.MCPServerHealth{}
 		for _, h := range s.Servers {
@@ -127,7 +126,7 @@ func TestMCPServersAreChecked(t *testing.T) {
 	deadline := time.Now().Add(20 * time.Second)
 	for !settled(byName(snap)) && time.Now().Before(deadline) {
 		time.Sleep(100 * time.Millisecond)
-		json.Unmarshal(c.call(t, 2, "mcp/health", nil), &snap)
+		mustUnmarshal(t, c.call(t, 2, "mcp/health", nil), &snap)
 	}
 	got := byName(snap)
 	if h := got["fake"]; h.Check != wire.MCPCheckStateAnswered || h.Tools == nil || *h.Tools != 2 || h.CheckedAt == nil {
@@ -150,13 +149,13 @@ func TestMCPServersAreChecked(t *testing.T) {
 	}
 	// Checked a moment ago: a look now starts nothing; Check Now checks it again.
 	at := *got["fake"].CheckedAt
-	json.Unmarshal(c.call(t, 3, "mcp/health", nil), &snap)
+	mustUnmarshal(t, c.call(t, 3, "mcp/health", nil), &snap)
 	if byName(snap)["fake"].Check != wire.MCPCheckStateAnswered {
 		t.Fatal("checked again unasked")
 	}
-	json.Unmarshal(c.call(t, 4, "mcp/health/check", map[string]any{}), &snap)
+	mustUnmarshal(t, c.call(t, 4, "mcp/health/check", map[string]any{}), &snap)
 	for time.Now().Before(deadline) {
-		json.Unmarshal(c.call(t, 5, "mcp/health", nil), &snap)
+		mustUnmarshal(t, c.call(t, 5, "mcp/health", nil), &snap)
 		if h := byName(snap)["fake"]; h.Check == wire.MCPCheckStateAnswered && *h.CheckedAt > at {
 			return
 		}

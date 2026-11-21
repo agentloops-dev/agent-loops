@@ -20,23 +20,24 @@ func TestASessionsMCPServers(t *testing.T) {
 	defer d.Shutdown()
 	home := t.TempDir()
 	d.PersonalHome = home
-	os.MkdirAll(filepath.Join(home, ".agents"), 0o755)
-	os.MkdirAll(filepath.Join(home, ".agents-secrets"), 0o700)
-	os.WriteFile(filepath.Join(home, ".agents", "mcp.json"), []byte(`{"mcpServers":{
+	must(t, os.MkdirAll(filepath.Join(home, ".agents"), 0o755)) //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.MkdirAll(filepath.Join(home, ".agents-secrets"), 0o700))
+	//nolint:gosec // G306: the mode this file always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(home, ".agents", "mcp.json"), []byte(`{"mcpServers":{
 		"github": {"command": "npx", "args": ["-y", "gh"], "env": {"GITHUB_TOKEN": "${GH}"}},
-		"docs": {"url": "https://docs/${MISSING}"}, "old": {"type": "sse", "url": "https://old"}}}`), 0o644)
-	os.WriteFile(filepath.Join(home, ".agents-secrets", "secrets.env"), []byte("# mine\nGH=abc\n"), 0o600)
+		"docs": {"url": "https://docs/${MISSING}"}, "old": {"type": "sse", "url": "https://old"}}}`), 0o644))
+	must(t, os.WriteFile(filepath.Join(home, ".agents-secrets", "secrets.env"), []byte("# mine\nGH=abc\n"), 0o600))
 	dir := folder(t, c, 1)
 	// The host's first look approved what the folder had then (nothing); this one waits.
-	os.MkdirAll(filepath.Join(dir, ".agents"), 0o755)
-	os.WriteFile(filepath.Join(dir, ".agents", "mcp.json"), []byte(`{"mcpServers":{"tool": {"command": "tool"}}}`), 0o644)
+	must(t, os.MkdirAll(filepath.Join(dir, ".agents"), 0o755))                                                                      //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(dir, ".agents", "mcp.json"), []byte(`{"mcpServers":{"tool": {"command": "tool"}}}`), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	got := d.sessionMCP(dir)
 	if len(got) != 2 || got[0].Stdio == nil || got[0].Stdio.Name != "github" || got[0].Stdio.Env[0].Value != "abc" || got[1].Sse == nil {
 		b, _ := json.Marshal(got)
 		t.Fatalf("%s", b)
 	}
 	var snap wire.MCPHealthSnapshot
-	json.Unmarshal(c.call(t, 2, "mcp/health", nil), &snap)
+	mustUnmarshal(t, c.call(t, 2, "mcp/health", nil), &snap)
 	checks := map[string]wire.MCPCheckState{}
 	for _, s := range snap.Servers {
 		checks[s.Name] = s.Check

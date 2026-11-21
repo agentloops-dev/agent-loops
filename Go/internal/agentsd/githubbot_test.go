@@ -93,7 +93,7 @@ func TestMakingTheAgentsBot(t *testing.T) {
 	}
 }
 
-func mustUnmarshal(t *testing.T, raw json.RawMessage, into any) {
+func mustUnmarshal(t testing.TB, raw json.RawMessage, into any) {
 	t.Helper()
 	if err := json.Unmarshal(raw, into); err != nil {
 		t.Fatalf("%s: %v", raw, err)

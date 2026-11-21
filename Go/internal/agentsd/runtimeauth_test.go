@@ -2,7 +2,6 @@ package agentsd
 
 import (
 	"context"
-	"encoding/json"
 	"testing"
 
 	"github.com/agentloops-dev/agent-loops/Go/wire"
@@ -64,7 +63,7 @@ func TestSigningARuntimeInAndOut(t *testing.T) {
 	defer d.Shutdown()
 
 	var a wire.RuntimeAccount
-	json.Unmarshal(c.call(t, 1, "runtimes/authenticate", map[string]any{"runtimeID": "claude", "methodID": "browser"}), &a)
+	mustUnmarshal(t, c.call(t, 1, "runtimes/authenticate", map[string]any{"runtimeID": "claude", "methodID": "browser"}), &a)
 	if a.State != wire.RuntimeAccountStateReady || len(a.AuthMethods) != 3 || a.AuthMethods[0].ID != "browser" || !a.CanLogOut {
 		t.Fatalf("%+v", a)
 	}
@@ -85,7 +84,7 @@ func TestSigningARuntimeInAndOut(t *testing.T) {
 	// Signing out stops the agents using the runtime, and says which.
 	running := seeded(t, d, t.TempDir(), func(a *wire.Agent) { a.State = wire.AgentStateRunning })
 	var stopped []wire.UUID
-	json.Unmarshal(c.call(t, 4, "runtimes/logout", map[string]any{"runtimeID": "claude"}), &stopped)
+	mustUnmarshal(t, c.call(t, 4, "runtimes/logout", map[string]any{"runtimeID": "claude"}), &stopped)
 	if len(stopped) != 1 || stopped[0] != running.ID {
 		t.Fatal(stopped)
 	}
@@ -105,7 +104,7 @@ func TestChoosingARuntimesProvider(t *testing.T) {
 	defer d.Shutdown()
 
 	var a wire.RuntimeAccount
-	json.Unmarshal(c.call(t, 1, "runtimes/setProvider", map[string]any{"runtimeID": "claude", "providerID": "bedrock"}), &a)
+	mustUnmarshal(t, c.call(t, 1, "runtimes/setProvider", map[string]any{"runtimeID": "claude", "providerID": "bedrock"}), &a)
 	if a.CurrentProviderID == nil || *a.CurrentProviderID != "bedrock" || len(a.Providers) != 3 ||
 		a.Providers[0].ID != "main" || !*a.Providers[0].Configured || *a.Providers[2].Configured || *a.Providers[2].Protocol != "openai" {
 		t.Fatalf("%+v", a)
@@ -122,7 +121,7 @@ func TestChoosingARuntimesProvider(t *testing.T) {
 		t.Fatalf("%+v", e)
 	}
 	a = wire.RuntimeAccount{}
-	json.Unmarshal(c.call(t, 4, "runtimes/disableProvider", map[string]any{"runtimeID": "claude", "providerID": "openai"}), &a)
+	mustUnmarshal(t, c.call(t, 4, "runtimes/disableProvider", map[string]any{"runtimeID": "claude", "providerID": "openai"}), &a)
 	// The runtime's own list after: two route, so which is current is not known.
 	if a.CurrentProviderID != nil || len(a.Providers) != 3 {
 		t.Fatalf("%+v", a)
@@ -132,7 +131,7 @@ func TestChoosingARuntimesProvider(t *testing.T) {
 func accountOf(t *testing.T, c *conn, runtimeID string) wire.RuntimeAccount {
 	t.Helper()
 	var all []wire.RuntimeAccount
-	json.Unmarshal(c.call(t, 99, "runtimes/accounts", nil), &all)
+	mustUnmarshal(t, c.call(t, 99, "runtimes/accounts", nil), &all)
 	for _, a := range all {
 		if a.RuntimeID == runtimeID {
 			return a

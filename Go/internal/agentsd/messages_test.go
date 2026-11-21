@@ -33,7 +33,7 @@ func fakeMessagingMCP(t *testing.T, source string, conversations []wire.Messagin
 				Arguments fakeMessagingArgs `json:"arguments"`
 			} `json:"params"`
 		}
-		json.NewDecoder(r.Body).Decode(&m)
+		check(t, json.NewDecoder(r.Body).Decode(&m))
 		if m.ID == nil {
 			w.WriteHeader(http.StatusAccepted)
 			return
@@ -210,13 +210,14 @@ func TestMessagesMergeEveryContractConnector(t *testing.T) {
 	})
 	var calls atomic.Int32
 	discord := fakeSlackMCP(t, &calls)
-	os.MkdirAll(filepath.Join(home, ".agents"), 0o755)
-	os.WriteFile(filepath.Join(home, ".agents", "mcp.json"), []byte(`{"mcpServers": {
+	must(t, os.MkdirAll(filepath.Join(home, ".agents"), 0o755)) //nolint:gosec // G301: the mode this folder always had; only its error is new
+	//nolint:gosec // G306: the mode this file always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(home, ".agents", "mcp.json"), []byte(`{"mcpServers": {
 		"slack": {"type": "http", "url": "`+slack.URL+`"},
 		"email": {"type": "http", "url": "`+email.URL+`"},
 		"discord": {"type": "http", "url": "`+discord.URL+`"},
 		"gmail": {"type": "http", "url": "http://127.0.0.1:1/mcp"},
-		"kb": {"type": "http", "url": "https://kb.example.com/mcp"}}}`), 0o644)
+		"kb": {"type": "http", "url": "https://kb.example.com/mcp"}}}`), 0o644))
 
 	ids := pageMergedConversations(t, c, folder)
 	if fmt.Sprint(ids) != "[T6 C5 T4 C3 C2 T1]" {
@@ -227,7 +228,7 @@ func TestMessagesMergeEveryContractConnector(t *testing.T) {
 	}
 
 	var read wire.MessagesRead
-	json.Unmarshal(c.call(t, 20, "messages/read", map[string]any{"server": "slack", "folder": folder, "conversation": "C5"}), &read)
+	mustUnmarshal(t, c.call(t, 20, "messages/read", map[string]any{"server": "slack", "folder": folder, "conversation": "C5"}), &read)
 	if read.Server != "slack" || read.Conversation != "C5" || !read.Untrusted || len(read.Messages) != 2 ||
 		read.Messages[0].Text != "second" || read.Cursor == nil || *read.Cursor != "older" {
 		t.Fatalf("read: %+v", read)
@@ -245,7 +246,7 @@ func TestMessagesMergeEveryContractConnector(t *testing.T) {
 	// messages/reply (#4345) sends by the connector's reply tool, and gives what it sent; a
 	// connector with no reply tool, a reply with no text and a connector that is not one say so.
 	var replied wire.MessagesReplied
-	json.Unmarshal(c.call(t, 30, "messages/reply", map[string]any{"server": "slack", "folder": folder, "conversation": "C5",
+	mustUnmarshal(t, c.call(t, 30, "messages/reply", map[string]any{"server": "slack", "folder": folder, "conversation": "C5",
 		"thread": "1.2", "text": "On it."}), &replied)
 	if replied.Server != "slack" || replied.Folder != folder || replied.Conversation != "C5" || replied.Message.ID != "m3" ||
 		replied.Message.Text != "On it." || replied.Message.Thread == nil || *replied.Message.Thread != "1.2" {
@@ -307,11 +308,12 @@ func TestMessagesMarkRead(t *testing.T) {
 	marks := &fakeMarks{}
 	slack := fakeMessagingMCP(t, "slack", []wire.MessagingConversation{conversationAt("slack", "C5", "2026-11-09T10:05:00Z")})
 	email := fakeMessagingMCP(t, "email", []wire.MessagingConversation{conversationAt("email", "T4", "2026-11-09T10:04:00Z")}, marks)
-	os.MkdirAll(filepath.Join(home, ".agents"), 0o755)
-	os.WriteFile(filepath.Join(home, ".agents", "mcp.json"), []byte(`{"mcpServers": {
+	must(t, os.MkdirAll(filepath.Join(home, ".agents"), 0o755)) //nolint:gosec // G301: the mode this folder always had; only its error is new
+	//nolint:gosec // G306: the mode this file always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(home, ".agents", "mcp.json"), []byte(`{"mcpServers": {
 		"slack": {"type": "http", "url": "`+slack.URL+`"},
 		"email": {"type": "http", "url": "`+email.URL+`"},
-		"gmail": {"type": "http", "url": "http://127.0.0.1:1/mcp"}}}`), 0o644)
+		"gmail": {"type": "http", "url": "http://127.0.0.1:1/mcp"}}}`), 0o644))
 
 	read := func(id int, params map[string]any) wire.MessagesRead {
 		var r wire.MessagesRead

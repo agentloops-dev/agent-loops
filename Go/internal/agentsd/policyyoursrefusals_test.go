@@ -40,7 +40,7 @@ func refusedByYou(t testing.TB, err error, rule string) {
 	r, ok := e.Data.(wire.PolicyRefusal)
 	if !ok {
 		b, _ := json.Marshal(e.Data)
-		json.Unmarshal(b, &r)
+		mustUnmarshal(t, b, &r)
 	}
 	if r.Layer == nil || r.Layer.Kind != "you" {
 		t.Fatalf("refused %+v, wanted layer.kind you", r)
@@ -136,7 +136,7 @@ func TestYourLayerStopsALooserModeChange(t *testing.T) {
 	plan := wire.PermissionLevelPlan
 	setYourRules(t, d, wire.PolicyRules{PermissionMode: &plan})
 	var id wire.UUID
-	json.Unmarshal(c.call(t, 1, "agents/start", map[string]any{"runtimeID": "auto", "cwd": "file://" + dir, "prompt": "hi"}), &id)
+	mustUnmarshal(t, c.call(t, 1, "agents/start", map[string]any{"runtimeID": "auto", "cwd": "file://" + dir, "prompt": "hi"}), &id)
 	e := c.callError(t, 2, "agents/setLevels", map[string]any{"agentID": id, "levels": map[string]any{"permission": "bypassPermissions"}})
 	refusedByYou(t, e, "permissionMode")
 }

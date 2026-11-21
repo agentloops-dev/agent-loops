@@ -1,7 +1,6 @@
 package agentsd
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -16,7 +15,7 @@ import (
 func reviewsIn(t *testing.T, d *Daemon, c *conn, id int, repo string) []wire.ReviewPull {
 	t.Helper()
 	var listed []wire.FolderPins
-	json.Unmarshal(c.call(t, id, "pins/list", wire.Empty{}), &listed)
+	mustUnmarshal(t, c.call(t, id, "pins/list", wire.Empty{}), &listed)
 	for _, pp := range listed {
 		if d.folderRepo(store.FolderPath(pp.Folder)).path == repo && len(pp.Reviews) > 0 {
 			return pp.Reviews
@@ -59,7 +58,7 @@ func TestForReviewListsPullRequestsWaitingForApproval(t *testing.T) {
 	}
 	// The Remote reads them in its catch-up.
 	var snapshot wire.CatchUpSnapshot
-	json.Unmarshal(c.call(t, 20, "client/catchUp", wire.CatchUpRequest{Parts: []string{"pins"}}), &snapshot)
+	mustUnmarshal(t, c.call(t, 20, "client/catchUp", wire.CatchUpRequest{Parts: []string{"pins"}}), &snapshot)
 	caught := 0
 	for _, pp := range snapshot.Pins {
 		caught += len(pp.Reviews)
@@ -70,7 +69,7 @@ func TestForReviewListsPullRequestsWaitingForApproval(t *testing.T) {
 
 	var folder wire.URL
 	var listed []wire.FolderPins
-	json.Unmarshal(c.call(t, 3, "pins/list", wire.Empty{}), &listed)
+	mustUnmarshal(t, c.call(t, 3, "pins/list", wire.Empty{}), &listed)
 	for _, pp := range listed {
 		if len(pp.Reviews) == 2 {
 			folder = pp.Folder

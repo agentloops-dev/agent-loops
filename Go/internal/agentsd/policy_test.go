@@ -70,7 +70,7 @@ func refused(t *testing.T, e *Error, reason, rule string) {
 	}
 	b, _ := json.Marshal(e.Data)
 	var r wire.PolicyRefusal
-	json.Unmarshal(b, &r)
+	mustUnmarshal(t, b, &r)
 	if r.Reason != reason || (rule != "" && (r.Rule == nil || *r.Rule != rule)) || r.Words == "" {
 		t.Fatalf("refused %+v, wanted %s %s", r, reason, rule)
 	}
@@ -101,7 +101,7 @@ func TestNoPolicyChangesNothing(t *testing.T) {
 	dir := t.TempDir()
 	c.call(t, 1, "agents/start", startParams(dir, "claude", map[string]any{"mode": "bypassPermissions", "model": "opus"}))
 	var st wire.PolicyState
-	json.Unmarshal(c.call(t, 2, "daemon/policyState", map[string]any{}), &st)
+	mustUnmarshal(t, c.call(t, 2, "daemon/policyState", map[string]any{}), &st)
 	if st.Version != nil || st.NoPolicy || st.StopAll || st.Refusal != nil {
 		t.Fatalf("%+v", st)
 	}
@@ -175,7 +175,7 @@ func TestThePolicyFileIsKeptAndChecked(t *testing.T) {
 	// Edited by hand to loosen it: fails the signature check, and starts no work.
 	path := filepath.Join(root, orgPolicyFile)
 	b, _ := os.ReadFile(path)
-	os.WriteFile(path, []byte(strings.Replace(string(b), "approveForMe", "bypassPermissions", 1)), 0o600)
+	must(t, os.WriteFile(path, []byte(strings.Replace(string(b), "approveForMe", "bypassPermissions", 1)), 0o600)) //nolint:gosec // G703: the test's own temp folder; only its error is new
 	d3, c3 := joined(t, root, k)
 	refused(t, c3.callError(t, 1, "agents/start", startParams(dir, "claude", nil)), "noPolicy", "")
 	d3.Shutdown()
@@ -189,13 +189,13 @@ func TestThePolicyFileIsKeptAndChecked(t *testing.T) {
 		t.Fatal(e.Message)
 	}
 	var st4 wire.PolicyState
-	json.Unmarshal(c4.call(t, 2, "daemon/policyState", map[string]any{}), &st4)
+	mustUnmarshal(t, c4.call(t, 2, "daemon/policyState", map[string]any{}), &st4)
 	if !st4.NoPolicy || st4.Refusal == nil || st4.Refusal.Reason != "noPolicy" {
 		t.Fatalf("%+v", st4)
 	}
 	// An older copy than the one applied here, put back: still no work.
 	old := k.signed(t, 1, map[string]any{})
-	os.WriteFile(path, old, 0o600)
+	must(t, os.WriteFile(path, old, 0o600))
 	d4.orgMu.Lock()
 	d4.orgRead = false
 	d4.orgMu.Unlock()
@@ -246,10 +246,10 @@ func TestEveryRuleAtEveryPath(t *testing.T) {
 	root := t.TempDir()
 	d, c := joined(t, root, k)
 	dir := t.TempDir()
-	os.MkdirAll(d.SettingsDir, 0o700)
+	must(t, os.MkdirAll(d.SettingsDir, 0o700))
 	// The person's own settings, looser than the policy: kept as they are.
-	os.WriteFile(filepath.Join(d.SettingsDir, "sandbox.json"), []byte(`{"defaults":{"claude":"off"}}`), 0o600)
-	os.WriteFile(filepath.Join(d.SettingsDir, passThroughFile), []byte(`{"names":["AWS_PROFILE","MY_*"],"runtimes":{"claude":["SECRET_TOKEN"]}}`), 0o600)
+	must(t, os.WriteFile(filepath.Join(d.SettingsDir, "sandbox.json"), []byte(`{"defaults":{"claude":"off"}}`), 0o600))
+	must(t, os.WriteFile(filepath.Join(d.SettingsDir, passThroughFile), []byte(`{"names":["AWS_PROFILE","MY_*"],"runtimes":{"claude":["SECRET_TOKEN"]}}`), 0o600))
 	rules := map[string]any{
 		"permissionMode": "approveForMe",
 		"sandbox":        "required",
@@ -367,7 +367,7 @@ func TestEveryRuleAtEveryPath(t *testing.T) {
 		t.Fatal("the person's setting was changed")
 	}
 	var sandbox wire.SandboxSettings
-	json.Unmarshal(c.call(t, 90, "sandbox/state", map[string]any{}), &sandbox)
+	mustUnmarshal(t, c.call(t, 90, "sandbox/state", map[string]any{}), &sandbox)
 	if sandbox.SetBy == nil || sandbox.SetBy.Rule != "sandbox" {
 		t.Fatalf("%+v", sandbox)
 	}
@@ -379,7 +379,7 @@ func TestEveryRuleAtEveryPath(t *testing.T) {
 
 	// Marketplaces: only the allowed one is listed.
 	var list wire.MarketplacesListAnswer
-	json.Unmarshal(c.call(t, 91, "marketplaces/list", map[string]any{}), &list)
+	mustUnmarshal(t, c.call(t, 91, "marketplaces/list", map[string]any{}), &list)
 	if len(list.Marketplaces) != 1 || list.Marketplaces[0].ID != "provided:github-mcp" {
 		t.Fatalf("%+v", list.Marketplaces)
 	}
@@ -393,7 +393,7 @@ func TestEveryRuleAtEveryPath(t *testing.T) {
 	}
 
 	var pass wire.PassThroughState
-	json.Unmarshal(c.call(t, 92, "settings/passThrough", map[string]any{}), &pass)
+	mustUnmarshal(t, c.call(t, 92, "settings/passThrough", map[string]any{}), &pass)
 	marked := map[string]bool{}
 	for _, p := range pass.Names {
 		marked[p.Name] = p.SetBy != nil
@@ -404,7 +404,7 @@ func TestEveryRuleAtEveryPath(t *testing.T) {
 
 	// The lists the clients draw mark what is refused.
 	var runtimes []wire.RuntimeStatus
-	json.Unmarshal(c.call(t, 93, "runtimes/list", map[string]any{}), &runtimes)
+	mustUnmarshal(t, c.call(t, 93, "runtimes/list", map[string]any{}), &runtimes)
 	for _, r := range runtimes {
 		if allowed := r.Runtime.ID == "claude" || r.Runtime.ID == "codex"; allowed == (r.SetBy != nil) {
 			t.Errorf("%s marked %v", r.Runtime.ID, r.SetBy)
@@ -511,7 +511,7 @@ func TestApprovingEveryRequestIsUnderTheModeCeiling(t *testing.T) {
 		Value string            `json:"value"`
 		SetBy *wire.PolicySetBy `json:"setBy"`
 	}
-	json.Unmarshal(d.markOptions("copilot", opts)[0].Options, &marked)
+	mustUnmarshal(t, d.markOptions("copilot", opts)[0].Options, &marked)
 	if len(marked) != 2 || marked[0].SetBy != nil || marked[1].SetBy == nil || marked[1].SetBy.Rule != "permissionMode" {
 		t.Fatalf("%+v", marked)
 	}
@@ -543,7 +543,7 @@ func TestTheRuntimesOwnModelIsCheckedBeforeTheFirstTurn(t *testing.T) {
 	d, c := joined(t, root, k)
 	// The fake runtime's own model in a folder called offers is opus.
 	dir := filepath.Join(t.TempDir(), "offers")
-	os.Mkdir(dir, 0o755)
+	must(t, os.Mkdir(dir, 0o755)) //nolint:gosec // G301: the mode this folder always had; only its error is new
 	d.Told(wire.NotifyMachinePolicy.Name, k.signed(t, 1, map[string]any{"runtimes": map[string]any{"claude": map[string]any{"models": []string{"sonnet"}}}}))
 	id := startAgent(t, c, 1, dir, "hi")
 	waitFor(t, "the hold said", func() bool {
@@ -671,7 +671,7 @@ func TestTheKillSwitch(t *testing.T) {
 	_, err := d.startFor(helperRequest("claude", one, "run", "", nil, nil, nil), startedBy{owner: wire.SessionLabelOwnerAgent})
 	refused(t, asError(err), "stopAll", "stopAll")
 	var st wire.PolicyState
-	json.Unmarshal(c.call(t, 6, "daemon/policyState", map[string]any{}), &st)
+	mustUnmarshal(t, c.call(t, 6, "daemon/policyState", map[string]any{}), &st)
 	if !st.StopAll || st.Refusal == nil || st.Refusal.Reason != "stopAll" {
 		t.Fatalf("%+v", st)
 	}
@@ -706,7 +706,7 @@ func TestMachineBudgets(t *testing.T) {
 		t.Fatal(err)
 	}
 	var cost wire.CostState
-	json.Unmarshal(c.call(t, 1, "cost/state", map[string]any{}), &cost)
+	mustUnmarshal(t, c.call(t, 1, "cost/state", map[string]any{}), &cost)
 	if cost.Organisation == nil || cost.Organisation.Daily.Amount != 1 || cost.SetBy == nil {
 		t.Fatalf("%+v", cost)
 	}
@@ -759,7 +759,7 @@ func TestAMissingCapabilityRefusesEveryStart(t *testing.T) {
 	var line struct {
 		Policy json.RawMessage `json:"policy"`
 	}
-	json.Unmarshal(raw, &line)
+	mustUnmarshal(t, raw, &line)
 	sig, _ := controllink.SignPolicy(k.private, line.Policy)
 	b, _ := json.Marshal(map[string]any{"policy": line.Policy,
 		"signature": wire.PolicySignature{Version: 1, KeyID: controllink.KeyID(k.public), Alg: controllink.PolicyAlg, Sig: sig}})
@@ -798,8 +798,8 @@ func TestAlwaysApproveIsUnderTheModeCeiling(t *testing.T) {
 	root := t.TempDir()
 	d, c := joined(t, root, k)
 	dir := t.TempDir()
-	os.MkdirAll(d.SettingsDir, 0o700)
-	os.WriteFile(filepath.Join(d.SettingsDir, "client-permissions.json"), []byte(`{"grok":"alwaysApprove"}`), 0o600)
+	must(t, os.MkdirAll(d.SettingsDir, 0o700))
+	must(t, os.WriteFile(filepath.Join(d.SettingsDir, "client-permissions.json"), []byte(`{"grok":"alwaysApprove"}`), 0o600))
 	person := seeded(t, d, dir, func(a *wire.Agent) { a.RuntimeID = "grok" })
 	helper := seeded(t, d, dir, func(a *wire.Agent) { a.RuntimeID = "grok"; a.StartedByAgent = &person.ID })
 	workflow := seeded(t, d, dir, func(a *wire.Agent) { a.RuntimeID = "grok"; a.StartedByWorkflow = new("wf") })
@@ -817,7 +817,7 @@ func TestAlwaysApproveIsUnderTheModeCeiling(t *testing.T) {
 		t.Fatal("Always Approve answers above the ceiling")
 	}
 	var cp wire.ClientPermissionSettings
-	json.Unmarshal(c.call(t, 2, "clientPermissions/state", nil), &cp)
+	mustUnmarshal(t, c.call(t, 2, "clientPermissions/state", nil), &cp)
 	if cp.SetBy == nil || cp.SetBy.Rule != "permissionMode" {
 		t.Fatalf("%+v", cp)
 	}
@@ -839,7 +839,7 @@ func TestAlwaysApproveIsUnderTheModeCeiling(t *testing.T) {
 	}
 	c.call(t, 4, "auto/set", map[string]any{"order": []string{"grok"}, "excluded": []string{"claude", "codex", "cursor", "copilot", "gemini", "opencode", "antigravity"}, "overrides": []any{}})
 	var auto wire.UUID
-	json.Unmarshal(c.call(t, 4, "agents/start", map[string]any{"runtimeID": "auto", "cwd": "file://" + dir, "prompt": "x", "levels": map[string]any{"permission": "approveForMe"}}), &auto)
+	mustUnmarshal(t, c.call(t, 4, "agents/start", map[string]any{"runtimeID": "auto", "cwd": "file://" + dir, "prompt": "x", "levels": map[string]any{"permission": "approveForMe"}}), &auto)
 	if a := d.Store.Agent(auto); a == nil || a.RuntimeID != "grok" || !asks(a) {
 		t.Fatalf("Auto's Always Approve above the ceiling: %+v", a)
 	}
@@ -895,14 +895,14 @@ func TestSetYoursRefusesAConflictingRevision(t *testing.T) {
 	d, c := start(t, t.TempDir())
 	d.SettingsDir = t.TempDir()
 	// The first start makes revision 1 (no old files here, so empty rules).
-	json.Unmarshal(c.call(t, 1, "policy/yours", nil), new(wire.YourPolicyState))
+	mustUnmarshal(t, c.call(t, 1, "policy/yours", nil), new(wire.YourPolicyState))
 	e := c.callError(t, 2, "policy/setYours", wire.SetYourPolicyRequest{Rules: wire.PolicyRules{}, Revision: 0})
 	if e == nil || e.Code != wire.FailureChangedElsewhere {
 		t.Fatalf("%+v, wanted changedElsewhere", e)
 	}
 	// The right revision goes through.
 	var set wire.YourPolicy
-	json.Unmarshal(c.call(t, 3, "policy/setYours", wire.SetYourPolicyRequest{Rules: wire.PolicyRules{}, Revision: 1}), &set)
+	mustUnmarshal(t, c.call(t, 3, "policy/setYours", wire.SetYourPolicyRequest{Rules: wire.PolicyRules{}, Revision: 1}), &set)
 	if set.Revision != 2 {
 		t.Fatalf("%+v", set)
 	}
@@ -916,7 +916,7 @@ func TestSetYoursRefusesANonKeeperMachine(t *testing.T) {
 
 	d, c := start(t, t.TempDir())
 	d.SettingsDir = t.TempDir()
-	os.MkdirAll(d.SettingsDir, 0o700)
+	must(t, os.MkdirAll(d.SettingsDir, 0o700))
 
 	// A copy naming another host as the keeper, signed by the key this machine has
 	// pinned for it (#2957, research R3/R4): as if it arrived from that other machine.
@@ -963,7 +963,7 @@ func TestSetYoursRefusesInvalidRules(t *testing.T) {
 		t.Fatalf("%+v, wanted invalidParams", e)
 	}
 	var state wire.YourPolicyState
-	json.Unmarshal(c.call(t, 2, "policy/yours", nil), &state)
+	mustUnmarshal(t, c.call(t, 2, "policy/yours", nil), &state)
 	if state.Policy.Rules.Helpers != nil {
 		t.Fatalf("the invalid rules were saved anyway: %+v", state.Policy.Rules)
 	}
