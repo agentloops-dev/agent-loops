@@ -121,6 +121,7 @@ type Daemon struct {
 	restartBook
 	adoptedBook
 	machineBook
+	sleepBook
 	hostStatusBook
 	elsewhereBook
 	idleBook

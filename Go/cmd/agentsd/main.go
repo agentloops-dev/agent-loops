@@ -205,6 +205,7 @@ func startWork(d *agentsd.Daemon) {
 	d.StartRepoAliases()
 	d.StartCITimings()
 	d.StartMachineWatch()
+	d.StartSleepWatch()
 }
 
 // commandLine is DaemonCommandLine: the flags the install script and ssh pass.
