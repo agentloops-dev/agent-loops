@@ -42,18 +42,18 @@ public enum DisplayPreference {
     public static let multiplierPRsPerWeekDefault = 1.4
     public static let multiplierPRsPerWeekRange = 0.1...100.0
     public static let multiplierLine = "multiplierLine"
-    /// The feature flags the person turned on (`FeatureFlag`, #6373), comma-separated.
-    public static let features = "features"
 
-    /// The ones kept as a plain value in a client's defaults, and the kind of each.
+    /// The ones kept as a plain value in a client's defaults, and the kind of each: each
+    /// feature flag in work too (`FeatureFlag.key`, #6254).
     public enum Kind: Sendable { case bool, string, int }
-    public static let mirrored: [String: Kind] = [
+    public static let mirrored: [String: Kind] = Dictionary(uniqueKeysWithValues: FeatureFlag.allCases.map { ($0.key, Kind.bool) })
+        .merging(plain) { kept, _ in kept }
+    private static let plain: [String: Kind] = [
         smartGroupsOff: .string,
         showsArchivedFolders: .bool, showsActivity: .bool, showsUsage: .bool,
         startRuntimeID: .string, skillsMarketplace: .string, mcpMarketplace: .string,
         agentsMayArchiveMyChats: .bool,
         noticeBurst: .int, noticeCooldownMinutes: .int,
-        features: .string,
     ]
 }
 

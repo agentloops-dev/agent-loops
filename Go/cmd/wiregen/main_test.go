@@ -105,3 +105,25 @@ func TestDefinitionsAndMethodsAreInNameOrder(t *testing.T) {
 		t.Errorf("unsorted methods: err = %v", err)
 	}
 }
+
+// The list of feature flags is checked (#6254): a name of the right form, once and in name
+// order, with its words and its issue.
+func TestReadFlagsRefusesABadList(t *testing.T) {
+	flag := func(name string) string {
+		return `{"name": "` + name + `", "title": "T", "about": "A", "issue": 1}`
+	}
+	if _, err := readFlags([]byte(`{"flags": [` + flag("a-flag") + `, ` + flag("b") + `]}`)); err != nil {
+		t.Fatalf("a good list: %v", err)
+	}
+	for why, list := range map[string]string{
+		"out of order": `{"flags": [` + flag("b") + `, ` + flag("a") + `]}`,
+		"twice":        `{"flags": [` + flag("a") + `, ` + flag("a") + `]}`,
+		"bad name":     `{"flags": [` + flag("A_flag") + `]}`,
+		"no words":     `{"flags": [{"name": "a", "title": "", "about": "A", "issue": 1}]}`,
+		"no issue":     `{"flags": [{"name": "a", "title": "T", "about": "A"}]}`,
+	} {
+		if _, err := readFlags([]byte(list)); err == nil {
+			t.Errorf("%s: the list was taken", why)
+		}
+	}
+}

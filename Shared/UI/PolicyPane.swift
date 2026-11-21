@@ -30,8 +30,8 @@ struct PolicyPane: View {
     @State private var trailerFailure: (key: String, line: String)?
     /// The folders whose own rule changes the Commit trailers block (#6534).
     @State private var trailerFolders: [CommitTrailerWords.FolderChange] = []
-    /// The feature flags the person turned on (`FeatureFlag`).
-    @AppStorage(DisplayPreference.features, store: WindowDefaults.store) private var features = ""
+    /// Whether the person turned the Commit trailers flag on (`FeatureFlag`, #6254).
+    @AppStorage(FeatureFlag.commitTrailers.key, store: WindowDefaults.store) private var trailersOn = false
 
     private struct Reload: Hashable {
         var connected: Bool
@@ -70,7 +70,7 @@ struct PolicyPane: View {
                 }
                 #if os(macOS)
                 // Mac + web (#6373): the Remote has no Commit trailers group.
-                if FeatureFlag.on(in: features).contains(.commitTrailers), CommitTrailerWords.isFollowed(effective) {
+                if trailersOn, CommitTrailerWords.isFollowed(effective) {
                     CommitTrailersSection(effective: effective, yours: yours?.policy.rules,
                                           editable: yours != nil && !isSaving, failure: trailerFailure,
                                           readAt: readAt, folders: trailerFolders,
@@ -110,7 +110,7 @@ struct PolicyPane: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 #if os(macOS)
-                if FeatureFlag.on(in: features).contains(.commitTrailers), let behind = trailersBehindLine(effective) {
+                if trailersOn, let behind = trailersBehindLine(effective) {
                     Text(behind).appText(.fine).tinted(.warning)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -178,7 +178,7 @@ struct PolicyPane: View {
     /// folder's `.agents/policy.json` can turn a trailer on or off for its agents (#6534). One
     /// read for each such folder, only with the flag on; a folder that can't be read is left out.
     private func trailerFolders(_ host: DaemonClient, outside: DaemonAPI.EffectivePolicy) async -> [CommitTrailerWords.FolderChange] {
-        guard FeatureFlag.on(in: features).contains(.commitTrailers), CommitTrailerWords.isFollowed(outside) else { return [] }
+        guard trailersOn, CommitTrailerWords.isFollowed(outside) else { return [] }
         var out: [CommitTrailerWords.FolderChange] = []
         for folder in outside.foldersWithRules {
             guard let inFolder = try? await host.call(DaemonAPI.Method.policyEffective,

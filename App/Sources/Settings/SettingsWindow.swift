@@ -205,6 +205,7 @@ struct SettingsWindow: View {
                            openFolderPolicy: requests.map { requests in { path in openFolderPolicy(path, requests) } })
             }
         case .voice: FormColumn { Form { VoiceSettingsSection() }.paperForm() }
+        case .featureFlags: FormColumn { Form { FeatureFlagsSettingsSection() }.paperForm() }
         case .account: FormColumn { AccountSettingsView() }
         case .signIns:
             FormColumn {
@@ -284,7 +285,8 @@ extension SettingsScope {
         // How this app draws: Sidebar is kept on the Mac's host so every client draws the
         // same (#1033, #2079), but its subject is the app (#2157).
         // Notifications' limits are rules of Agents ▸ Policy now (#2957, FR-023).
-        case .thisApp: [.appearance, .sidebar, .voice]
+        // Feature Flags (#6254): the features in work that the person turns on, on every client.
+        case .thisApp: [.appearance, .sidebar, .voice, .featureFlags]
         // What agents may do, what they spend and what they take (#2957, FR-018).
         case .agents: [.agentsPolicy, .spending, .resources]
         case .machines: [.machines, .runtimes, .browser, .agentConfiguration]
@@ -303,6 +305,8 @@ enum SettingsPane: String, Hashable, CaseIterable {
     case agentsPolicy
     /// Voice mode, its voice and its sounds (Alex, 2026-10-29): was in Appearance.
     case voice
+    /// The features in work that the person turns on (#6254, epic-lifecycle stage 6).
+    case featureFlags
     /// Every machine, and this Mac's own settings (#1759). Was the Mac pane: its raw value is
     /// what a window left open on it kept.
     case machines = "mac"
@@ -350,6 +354,7 @@ enum SettingsPane: String, Hashable, CaseIterable {
         case .sidebar: "Sidebar"
         case .agentsPolicy: PolicyLayersWords.title
         case .voice: "Voice"
+        case .featureFlags: FeatureFlagsSettingsSection.title
         case .account: "Account"
         case .machines: "Machines"
         case .runtimes: "Agent Runtimes"
@@ -379,6 +384,7 @@ enum SettingsPane: String, Hashable, CaseIterable {
         case .sidebar: "sidebar.left"
         case .agentsPolicy: PolicyLayersWords.symbol
         case .voice: "waveform"
+        case .featureFlags: "flag"
         case .account: "person.crop.circle"
         case .machines: "desktopcomputer"
         case .runtimes: "cpu"

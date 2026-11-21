@@ -1,0 +1,11 @@
+{
+  "$comment": "The feature flags in work (#6254, epic-lifecycle stage 6, #6253): one list, so the Mac window, the Remote and the web page read the same names. A flag is kept per person in the host's display settings as flag:<name>, a bool; off when absent. scripts/wire.sh gen writes FeatureFlag.generated.swift and flags.generated.ts from it. Keep the flags in name order; take a flag out when its feature ships.",
+  "flags": [
+    {
+      "name": "commit-trailers",
+      "title": "Commit trailers",
+      "about": "The Commit trailers group in Agents ▸ Policy: the trailers on each agent's commits.",
+      "issue": 6373
+    }
+  ]
+}
