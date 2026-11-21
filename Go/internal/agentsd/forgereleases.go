@@ -95,7 +95,7 @@ func (d *Daemon) forgeReleases(ctx context.Context, r wire.ForgeReleasesRequest)
 			releases, err = s.forge.Releases(ctx, s.scope, limit)
 		}
 		if err != nil {
-			out.Errors = append(out.Errors, wire.ForgeListError{Forge: name, Message: err.Error()})
+			out.Errors = append(out.Errors, forgeListError(name, err))
 		}
 		out.Releases = append(out.Releases, releases...)
 	}

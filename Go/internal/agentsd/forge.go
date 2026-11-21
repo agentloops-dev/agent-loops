@@ -448,7 +448,7 @@ func forgeListFillForgesAndErrors(out *wire.ForgeList, moved []forgeListScoped, 
 	}
 	for _, p := range pages {
 		if p.err != nil {
-			out.Errors = append(out.Errors, wire.ForgeListError{Forge: p.forge, Message: p.err.Error()})
+			out.Errors = append(out.Errors, forgeListError(p.forge, p.err))
 		}
 	}
 }
