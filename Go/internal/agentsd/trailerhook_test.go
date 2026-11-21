@@ -159,6 +159,9 @@ func TestTheHookChainsToTheFoldersOwnAndLeavesTheMainCheckout(t *testing.T) {
 	if _, err := git(dir, "config", "core.hooksPath", husky); err != nil {
 		t.Fatal(err)
 	}
+	if err := installTrailerHook(root); err != nil { // as the next session's start does (#6529)
+		t.Fatal(err)
+	}
 	mark := filepath.Join(t.TempDir(), "pre-commit-ran")
 	if out, err := gitWithEnv(t, root, append(session, "HUSKY_MARK="+mark), "commit", "-q", "--allow-empty", "-m", "husky"); err != nil {
 		t.Fatal(err, out)
@@ -177,6 +180,77 @@ func TestTheHookChainsToTheFoldersOwnAndLeavesTheMainCheckout(t *testing.T) {
 	}
 	if m := lastMessage(t, root); m != "as it is\n\nHusky: ran" {
 		t.Fatalf("%q", m)
+	}
+}
+
+// #6529: the worktree's folder links commit-msg and the names the folder's own hooks folder
+// has, not every hook's name, so a fetch or a rebase starts no hook for each ref.
+func TestTheHookLinksOnlyTheNamesTheFolderHas(t *testing.T) {
+	t.Parallel()
+
+	dir := repo(t)
+	root := filepath.Join(dir, ".agents", "worktrees", "w")
+	if _, err := git(dir, "worktree", "add", "-q", "-b", "agents/w", root, "HEAD"); err != nil {
+		t.Fatal(err)
+	}
+	hooks := filepath.Join(dir, ".git", "hooks")
+	if err := os.MkdirAll(hooks, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	gitDir, err := git(root, "rev-parse", "--absolute-git-dir")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mine := filepath.Join(gitDir, trailerHooksDir)
+	linked := func() []string {
+		t.Helper()
+		var names []string
+		for _, name := range gitHookNames {
+			if target, err := os.Readlink(filepath.Join(mine, name)); err == nil && target == trailerHookScript {
+				names = append(names, name)
+			}
+		}
+		return names
+	}
+
+	// An install from before #6529 linked every name; the next install takes them out.
+	if err := writeTrailerHooks(mine, map[string]bool{"reference-transaction": true, "pre-push": true, "commit-msg": true}); err != nil {
+		t.Fatal(err)
+	}
+	writeFileMode(t, filepath.Join(hooks, "pre-push.sample"), []byte("#!/bin/sh\n"), 0o755)
+	writeFileMode(t, filepath.Join(hooks, "post-merge"), []byte("#!/bin/sh\n"), 0o644) // not executable: git skips it
+	if err := installTrailerHook(root); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(linked(), " "); got != "commit-msg" {
+		t.Fatalf("linked %q, want commit-msg alone", got)
+	}
+
+	// A hook the folder adds gets its link at the next install, and its hook runs.
+	mark := filepath.Join(t.TempDir(), "ran")
+	writeFileMode(t, filepath.Join(hooks, "reference-transaction"), []byte("#!/bin/sh\ntouch \"$MARK\"\n"), 0o755)
+	if err := installTrailerHook(root); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(linked(), " "); got != "commit-msg reference-transaction" {
+		t.Fatalf("linked %q", got)
+	}
+	if out, err := gitWithEnv(t, root, []string{"MARK=" + mark}, "update-ref", "refs/heads/x", "HEAD"); err != nil {
+		t.Fatal(err, out)
+	}
+	if _, err := os.Stat(mark); err != nil {
+		t.Fatal("the folder's reference-transaction did not run")
+	}
+
+	// And it goes when the folder's hook goes.
+	if err := os.Remove(filepath.Join(hooks, "reference-transaction")); err != nil {
+		t.Fatal(err)
+	}
+	if err := installTrailerHook(root); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(linked(), " "); got != "commit-msg" {
+		t.Fatalf("linked %q", got)
 	}
 }
 
