@@ -99,7 +99,7 @@ func printMode(ctx context.Context, w io.Writer, o options, rest []string) error
 
 // startAndFollow starts the session and, unless --detach, follows its turn to the end.
 func startAndFollow(ctx context.Context, w io.Writer, c caller, notes <-chan controllink.Note, p place, o options, prompt string) error {
-	id, err := startSession(ctx, c, p, prompt)
+	id, err := startSession(ctx, c, p, o.runtime, prompt)
 	if err != nil {
 		return err
 	}
@@ -126,11 +126,15 @@ func startAndFollow(ctx context.Context, w io.Writer, c caller, notes <-chan con
 	return f.run(fctx, notes, o.timeout)
 }
 
-// startSession is agents/start in the folder, by Auto, marked as started by a script.
-func startSession(ctx context.Context, c caller, p place, prompt string) (wire.UUID, error) {
+// startSession is agents/start in the folder, by Auto (or --runtime), marked as started by
+// a script.
+func startSession(ctx context.Context, c caller, p place, runtime, prompt string) (wire.UUID, error) {
 	via := wire.StartedViaCLIPrint
+	if runtime == "" {
+		runtime = autoRuntime
+	}
 	req := wire.StartRequest{
-		RuntimeID: "auto", Cwd: p.folder, Prompt: prompt,
+		RuntimeID: runtime, Cwd: p.folder, Prompt: prompt,
 		Attachments:           []wire.Attachment{},
 		StartOptions:          wire.StartOptions{Values: map[string]wire.JSONValue{}, ExtraArguments: []string{}},
 		AdditionalDirectories: []wire.URL{}, McpServers: []wire.MCPServer{}, Labels: []string{},
