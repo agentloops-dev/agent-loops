@@ -19,15 +19,17 @@ var ctx = context.Background()
 // (testdata/v1, from a scratch control plane, names and machine changed).
 func swiftStore(t *testing.T) *store.Folder {
 	root := t.TempDir()
-	filepath.WalkDir("testdata", func(p string, d os.DirEntry, err error) error {
+	must(t, filepath.WalkDir("testdata", func(p string, d os.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return err
 		}
 		rel, _ := filepath.Rel("testdata", p)
-		os.MkdirAll(filepath.Join(root, filepath.Dir(rel)), 0o700)
+		if err := os.MkdirAll(filepath.Join(root, filepath.Dir(rel)), 0o700); err != nil {
+			return err
+		}
 		data, _ := os.ReadFile(p)
 		return os.WriteFile(filepath.Join(root, rel), data, 0o600)
-	})
+	}))
 	return store.NewFolder(root)
 }
 
@@ -62,7 +64,7 @@ func TestSwiftRecordsAreRead(t *testing.T) {
 func TestWritingKeepsWhatItDoesNotKnow(t *testing.T) {
 	s := swiftStore(t)
 	r := New(s)
-	r.Load(ctx)
+	must(t, r.Load(ctx))
 	h := r.Host("mac")
 	h.Version = "0.2"
 	if err := r.SaveHost(ctx, *h); err != nil {
@@ -70,7 +72,7 @@ func TestWritingKeepsWhatItDoesNotKnow(t *testing.T) {
 	}
 	o, _ := s.Get(ctx, HostKey("mac"))
 	var written map[string]any
-	json.Unmarshal(o.Data, &written)
+	must(t, json.Unmarshal(o.Data, &written))
 	if written["version"] != "0.2" || written["rev"] != 3.0 || written["laterField"] == nil ||
 		written["reach"] == nil || written["signInFrom"] == nil {
 		t.Fatalf("%s", o.Data)
@@ -88,7 +90,7 @@ func TestWritingKeepsWhatItDoesNotKnow(t *testing.T) {
 	}
 	o, _ = s.Get(ctx, ClientKey(c.ID))
 	written = nil
-	json.Unmarshal(o.Data, &written)
+	must(t, json.Unmarshal(o.Data, &written))
 	if written["grant"] != "operator" || written["paired"] != "2026-10-14T02:58:31.000Z" || written["id"] != c.ID {
 		t.Fatalf("%s", o.Data)
 	}
@@ -98,11 +100,11 @@ func TestWritingKeepsWhatItDoesNotKnow(t *testing.T) {
 func TestAnUnchangedHostIsNotWritten(t *testing.T) {
 	s := store.NewMemory()
 	r := New(s)
-	r.SaveHost(ctx, MachineRecord{ID: "box", Name: "Box", Platform: "linux"})
+	must(t, r.SaveHost(ctx, MachineRecord{ID: "box", Name: "Box", Platform: "linux"}))
 	before, _ := s.Get(ctx, HostKey("box"))
 	h := r.Host("box")
 	h.Rev = 99
-	r.SaveHost(ctx, *h)
+	must(t, r.SaveHost(ctx, *h))
 	after, _ := s.Get(ctx, HostKey("box"))
 	if before.ETag != after.ETag || r.Host("box").Rev != 1 {
 		t.Fatal("written again")
@@ -115,8 +117,8 @@ func TestAChangeElsewhereFirstConflicts(t *testing.T) {
 	s := store.NewMemory()
 	a, b := New(s), New(s)
 	id := NewUUID()
-	a.SaveClient(ctx, ClientRecord{ID: id, Name: "Phone", Kind: KindIPhone, PublicKey: []byte{4}, Paired: Now()})
-	b.Load(ctx)
+	must(t, a.SaveClient(ctx, ClientRecord{ID: id, Name: "Phone", Kind: KindIPhone, PublicKey: []byte{4}, Paired: Now()}))
+	must(t, b.Load(ctx))
 	c := a.Client(id)
 	c.Name = "Renamed at a"
 	if err := a.SaveClient(ctx, *c); err != nil {
@@ -127,7 +129,7 @@ func TestAChangeElsewhereFirstConflicts(t *testing.T) {
 	if err := b.SaveClient(ctx, *c2); !store.IsConflict(err) {
 		t.Fatalf("want a conflict, got %v", err)
 	}
-	b.Load(ctx)
+	must(t, b.Load(ctx))
 	if b.Client(id).Name != "Renamed at a" {
 		t.Fatal(b.Client(id))
 	}
@@ -139,19 +141,19 @@ func TestForgettingAndPairingAgain(t *testing.T) {
 	s := store.NewMemory()
 	r := New(s)
 	id := NewUUID()
-	r.SaveClient(ctx, ClientRecord{ID: id, Name: "Phone", Kind: KindIPhone, PublicKey: []byte{4}, Paired: Now()})
+	must(t, r.SaveClient(ctx, ClientRecord{ID: id, Name: "Phone", Kind: KindIPhone, PublicKey: []byte{4}, Paired: Now()}))
 	if err := r.ForgetClient(ctx, id); err != nil {
 		t.Fatal(err)
 	}
 	other := New(s)
-	other.Load(ctx)
+	must(t, other.Load(ctx))
 	if other.Client(id) != nil || !other.WasForgotten(id) || len(other.TombstoneKeys()) != 1 {
 		t.Fatal("not a tombstone")
 	}
 	if err := other.SaveClient(ctx, ClientRecord{ID: id, Name: "Phone", Kind: KindIPhone, PublicKey: []byte{4}, Paired: Now()}); err != nil {
 		t.Fatal(err)
 	}
-	r.Load(ctx)
+	must(t, r.Load(ctx))
 	if r.Client(id) == nil || r.WasForgotten(id) {
 		t.Fatal("not paired again")
 	}
@@ -160,7 +162,7 @@ func TestForgettingAndPairingAgain(t *testing.T) {
 		t.Fatal(err)
 	}
 	// And a host removed twice is there once.
-	r.SaveHost(ctx, MachineRecord{ID: "box", Name: "Box"})
+	must(t, r.SaveHost(ctx, MachineRecord{ID: "box", Name: "Box"}))
 	if gone, _ := r.RemoveHost(ctx, "box"); !gone {
 		t.Fatal("not removed")
 	}
@@ -175,7 +177,7 @@ func TestAForgottenClientStaysForgotten(t *testing.T) {
 	s := store.NewMemory()
 	r := New(s)
 	id := NewUUID()
-	r.SaveClient(ctx, ClientRecord{ID: id, Name: "Phone", Kind: KindIPhone, PublicKey: []byte{4}, Paired: Now()})
+	must(t, r.SaveClient(ctx, ClientRecord{ID: id, Name: "Phone", Kind: KindIPhone, PublicKey: []byte{4}, Paired: Now()}))
 	read := r.Client(id)
 	epoch := 0
 	read.KnownEpoch = &epoch
@@ -186,13 +188,13 @@ func TestAForgottenClientStaysForgotten(t *testing.T) {
 		t.Fatal(err)
 	}
 	other := New(s)
-	other.Load(ctx)
+	must(t, other.Load(ctx))
 	if r.Client(id) != nil || !r.WasForgotten(id) || other.Client(id) != nil || !other.WasForgotten(id) {
 		t.Fatal("brought back")
 	}
 	// A known one is changed.
 	id2 := NewUUID()
-	r.SaveClient(ctx, ClientRecord{ID: id2, Name: "Pad", Kind: KindIPhone, PublicKey: []byte{5}, Paired: Now()})
+	must(t, r.SaveClient(ctx, ClientRecord{ID: id2, Name: "Pad", Kind: KindIPhone, PublicKey: []byte{5}, Paired: Now()}))
 	c := r.Client(id2)
 	c.Name = "iPad"
 	if err := r.UpdateClient(ctx, *c); err != nil || r.Client(id2).Name != "iPad" || r.Client(id2).Rev != 2 {
@@ -205,26 +207,30 @@ func TestAForgottenClientStaysForgotten(t *testing.T) {
 func TestAChangeKeepsWhatWasWrittenSince(t *testing.T) {
 	r := New(store.NewMemory())
 	id := NewUUID()
-	r.SaveClient(ctx, ClientRecord{ID: id, Name: "Phone", Kind: KindUnknown, PublicKey: []byte{4}, Paired: Now()})
+	must(t, r.SaveClient(ctx, ClientRecord{ID: id, Name: "Phone", Kind: KindUnknown, PublicKey: []byte{4}, Paired: Now()}))
 	yes := true
 	var wg sync.WaitGroup
 	for n := range 20 {
 		wg.Add(2)
 		go func() {
 			defer wg.Done()
-			r.ChangeClient(ctx, id, func(c *ClientRecord) bool {
+			if err := r.ChangeClient(ctx, id, func(c *ClientRecord) bool {
 				epoch := n
 				c.KnownEpoch = &epoch
 				return true
-			})
+			}); err != nil {
+				t.Error(err)
+			}
 		}()
 		go func() {
 			defer wg.Done()
 			if n == 10 {
-				r.ChangeClient(ctx, id, func(c *ClientRecord) bool {
+				if err := r.ChangeClient(ctx, id, func(c *ClientRecord) bool {
 					c.Kind, c.MayNotify = KindIPhone, &yes
 					return true
-				})
+				}); err != nil {
+					t.Error(err)
+				}
 			}
 		}()
 	}
@@ -236,7 +242,7 @@ func TestAChangeKeepsWhatWasWrittenSince(t *testing.T) {
 		t.Fatal(err)
 	}
 	unchanged := r.Client(id).Rev
-	r.ChangeClient(ctx, id, func(*ClientRecord) bool { return false })
+	must(t, r.ChangeClient(ctx, id, func(*ClientRecord) bool { return false }))
 	if r.Client(id).Rev != unchanged {
 		t.Fatal("wrote nothing")
 	}
@@ -250,12 +256,16 @@ func TestAnUnreadableRecordIsNeitherKnownNorForgotten(t *testing.T) {
 	var said []string
 	r.OnUnreadable(func(line string) { said = append(said, line) })
 	id := NewUUID()
-	r.SaveClient(ctx, ClientRecord{ID: id, Name: "Phone", Kind: KindIPhone, PublicKey: []byte{4}, Paired: Now()})
-	s.Put(ctx, ClientKey(id), []byte("{not json"), store.Always)
+	must(t, r.SaveClient(ctx, ClientRecord{ID: id, Name: "Phone", Kind: KindIPhone, PublicKey: []byte{4}, Paired: Now()}))
+	if _, err := s.Put(ctx, ClientKey(id), []byte("{not json"), store.Always); err != nil {
+		t.Fatal(err)
+	}
 	broken := NewUUID()
-	s.Put(ctx, ClientKey(broken), []byte(`{"id":"`+broken+`"}`), store.Absent)
-	r.Load(ctx)
-	r.Load(ctx)
+	if _, err := s.Put(ctx, ClientKey(broken), []byte(`{"id":"`+broken+`"}`), store.Absent); err != nil {
+		t.Fatal(err)
+	}
+	must(t, r.Load(ctx))
+	must(t, r.Load(ctx))
 	if r.Client(id) == nil || !r.ClientUnreadable(id) {
 		t.Fatal("the held record went")
 	}
@@ -296,7 +306,9 @@ func TestSettingsAreMadeOnce(t *testing.T) {
 	}
 	// Settings that are there and can't be read are never made over.
 	bad := store.NewMemory()
-	bad.Put(ctx, SettingsKey, []byte("{}"), store.Absent)
+	if _, err := bad.Put(ctx, SettingsKey, []byte("{}"), store.Absent); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := New(bad).SettingsOrMake(ctx, func() Settings { return Settings{Name: "cp"} }); err == nil {
 		t.Fatal("made over")
 	}
@@ -305,10 +317,14 @@ func TestSettingsAreMadeOnce(t *testing.T) {
 func TestSettingsChangedElsewhereAreChangedAgain(t *testing.T) {
 	s := store.NewMemory()
 	a, b := New(s), New(s)
-	a.SettingsOrMake(ctx, func() Settings { return Settings{Name: "cp", Port: 8790, MachineID: "m"} })
-	b.Load(ctx)
+	if _, err := a.SettingsOrMake(ctx, func() Settings { return Settings{Name: "cp", Port: 8790, MachineID: "m"} }); err != nil {
+		t.Fatal(err)
+	}
+	must(t, b.Load(ctx))
 	url := "https://a:1"
-	a.ChangeSettings(ctx, func(s *Settings) { s.URL = &url })
+	if _, err := a.ChangeSettings(ctx, func(s *Settings) { s.URL = &url }); err != nil {
+		t.Fatal(err)
+	}
 	got, err := b.ChangeSettings(ctx, func(s *Settings) { s.Port = 9000 })
 	if err != nil || got.Port != 9000 || got.URL == nil || *got.URL != url || *got.Rev != 3 {
 		t.Fatalf("%+v %v", got, err)
@@ -334,7 +350,7 @@ func TestIDs(t *testing.T) {
 func TestChangesHereDoNotConflictWithEachOther(t *testing.T) {
 	r := New(store.NewMemory())
 	id := NewUUID()
-	r.SaveClient(ctx, ClientRecord{ID: id, Name: "Phone", Kind: KindIPhone, PublicKey: []byte{4}, Paired: Now()})
+	must(t, r.SaveClient(ctx, ClientRecord{ID: id, Name: "Phone", Kind: KindIPhone, PublicKey: []byte{4}, Paired: Now()}))
 	var wg sync.WaitGroup
 	errs := make(chan error, 40)
 	for n := range 20 {

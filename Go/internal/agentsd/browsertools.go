@@ -78,8 +78,9 @@ var browserTools = sync.OnceValues(func() ([]json.RawMessage, map[string]bool) {
 			continue
 		}
 		var name, description string
-		json.Unmarshal(t["name"], &name)
-		json.Unmarshal(t["description"], &description)
+		// Optional fields: one that is missing or not a string stays empty, and no name skips the tool.
+		_ = json.Unmarshal(t["name"], &name)
+		_ = json.Unmarshal(t["description"], &description)
 		if name == "" {
 			continue
 		}
@@ -530,7 +531,9 @@ func (d *Daemon) endBrowserDrive(agent wire.UUID) {
 	d.endBrowserSession(agent)
 	d.stopDrivingBrowser(agent)
 	if d.holdsBrowser(agent) && d.handOffOpen(agent) == nil {
-		d.releaseResource(agent, browserLeaseName)
+		if _, err := d.releaseResource(agent, browserLeaseName); err != nil {
+			log.Printf("browser: could not release the lease of %s: %v", agent, err)
+		}
 	}
 }
 

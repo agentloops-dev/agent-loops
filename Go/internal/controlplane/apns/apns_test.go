@@ -58,7 +58,9 @@ func NewFakeAPNs(t *testing.T) *FakeAPNs {
 		w.Header().Set("apns-id", "00000000-0000-4000-8000-000000000001")
 		w.WriteHeader(status)
 		if reason != "" {
-			json.NewEncoder(w).Encode(map[string]string{"reason": reason})
+			if err := json.NewEncoder(w).Encode(map[string]string{"reason": reason}); err != nil {
+				t.Error(err)
+			}
 		}
 	}))
 	f.Server.EnableHTTP2 = true
@@ -87,7 +89,7 @@ func writeKey(t *testing.T) (string, *ecdsa.PrivateKey) {
 	}
 	der, _ := x509.MarshalPKCS8PrivateKey(key)
 	file := filepath.Join(t.TempDir(), "AuthKey_ABCDE12345.p8")
-	os.WriteFile(file, pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der}), 0o600)
+	must(t, os.WriteFile(file, pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der}), 0o600))
 	return file, key
 }
 
@@ -118,8 +120,8 @@ func claims(t *testing.T, token string) (header, body map[string]any) {
 	parts := strings.Split(token, ".")
 	h, _ := base64.RawURLEncoding.DecodeString(parts[0])
 	b, _ := base64.RawURLEncoding.DecodeString(parts[1])
-	json.Unmarshal(h, &header)
-	json.Unmarshal(b, &body)
+	must(t, json.Unmarshal(h, &header))
+	must(t, json.Unmarshal(b, &body))
 	return
 }
 
@@ -201,7 +203,7 @@ func TestAnAlertIsPostedOverHTTP2WithTokenAuth(t *testing.T) {
 		t.Fatal(err)
 	}
 	var opened wire.ControlPushItem
-	json.Unmarshal(plaintext, &opened)
+	must(t, json.Unmarshal(plaintext, &opened))
 	if opened.Headline == nil || opened.Headline.H2 != "Rehang the gallery" || !opened.Alert {
 		t.Fatal(string(plaintext))
 	}
@@ -271,7 +273,7 @@ func TestTheProviderTokenIsMadeAgain(t *testing.T) {
 	c, _ := newClient(t, f, func() time.Time { return now })
 	sealed, _ := Seal(device(t).PublicKey().Bytes(), Purpose, []byte(`{}`))
 	send := func() string {
-		c.Send(context.Background(), Push{Token: deviceToken, Environment: wire.PushEnvironmentProduction, Sealed: sealed})
+		must(t, c.Send(context.Background(), Push{Token: deviceToken, Environment: wire.PushEnvironmentProduction, Sealed: sealed}))
 		got := f.Requests()
 		return got[len(got)-1].Header.Get("authorization")
 	}
@@ -339,7 +341,7 @@ func TestABadKeyIsRefused(t *testing.T) {
 	der, _ := x509.MarshalPKCS8PrivateKey(rsaKey)
 	other := filepath.Join(t.TempDir(), "rsa.p8")
 	text := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der})
-	os.WriteFile(other, text, 0o600)
+	must(t, os.WriteFile(other, text, 0o600))
 	_, err := New(Config{KeyFile: other, KeyID: "ABCDE12345", TeamID: "6T4RVD5724"})
 	if err == nil || !strings.Contains(err.Error(), "P-256") {
 		t.Fatal(err)
@@ -410,7 +412,7 @@ func TestTheSwiftFixtureOpens(t *testing.T) {
 		}
 		push := Push{Token: deviceToken, Alert: true, Sealed: sealed}
 		data, _ := json.MarshalIndent(fixture{phone.Bytes(), push.Payload(), item}, "", "  ")
-		os.MkdirAll("testdata", 0o755)
+		must(t, os.MkdirAll("testdata", 0o750))
 		if err := os.WriteFile(file, append(data, '\n'), 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -430,13 +432,13 @@ func TestTheSwiftFixtureOpens(t *testing.T) {
 	var payload struct {
 		Agents wire.ControlPush `json:"agents"`
 	}
-	json.Unmarshal(f.Push, &payload)
+	must(t, json.Unmarshal(f.Push, &payload))
 	plaintext, err := Open(key, Purpose, payload.Agents.Sealed)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var item bytes.Buffer
-	json.Compact(&item, f.Item)
+	must(t, json.Compact(&item, f.Item))
 	if string(plaintext) != item.String() {
 		t.Fatalf("%s\n%s", plaintext, item.String())
 	}

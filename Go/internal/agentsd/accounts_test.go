@@ -2,7 +2,6 @@ package agentsd
 
 import (
 	"encoding/base64"
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"slices"
@@ -24,8 +23,8 @@ func TestAnAddedAccount(t *testing.T) {
 	home := t.TempDir()
 	personalHomeFor(t, home)
 	t.Setenv("CLAUDE_CONFIG_DIR", "")
-	os.MkdirAll(filepath.Join(home, ".claude", "skills"), 0o700)
-	os.WriteFile(filepath.Join(home, ".claude", "CLAUDE.md"), []byte("mine"), 0o600)
+	must(t, os.MkdirAll(filepath.Join(home, ".claude", "skills"), 0o700))
+	must(t, os.WriteFile(filepath.Join(home, ".claude", "CLAUDE.md"), []byte("mine"), 0o600))
 	d, c := start(t, root)
 	defer d.Shutdown()
 
@@ -34,7 +33,7 @@ func TestAnAddedAccount(t *testing.T) {
 		t.Fatalf("Grok took a second account: %+v", e)
 	}
 	var p wire.AccountProfile
-	json.Unmarshal(c.call(t, 2, "runtimes/addAccount", map[string]any{"runtimeID": "claude", "name": " Work "}), &p)
+	mustUnmarshal(t, c.call(t, 2, "runtimes/addAccount", map[string]any{"runtimeID": "claude", "name": " Work "}), &p)
 	folder := accountFolder(p)
 	if p.Name != "Work" || p.SignedIn || !strings.HasPrefix(folder, filepath.Join(root, "runtimes", "accounts", "claude")) ||
 		p.SignInCommand == nil || !strings.HasPrefix(*p.SignInCommand, "CLAUDE_CONFIG_DIR=") {
@@ -51,9 +50,9 @@ func TestAnAddedAccount(t *testing.T) {
 	}
 
 	// Signed in once its folder says so, and as whom.
-	os.WriteFile(filepath.Join(folder, ".claude.json"), []byte(`{"oauthAccount":{"emailAddress":"a@example.com"}}`), 0o600)
+	must(t, os.WriteFile(filepath.Join(folder, ".claude.json"), []byte(`{"oauthAccount":{"emailAddress":"a@example.com"}}`), 0o600))
 	var list []wire.AccountProfile
-	json.Unmarshal(c.call(t, 4, "runtimes/accountProfiles", map[string]any{}), &list)
+	mustUnmarshal(t, c.call(t, 4, "runtimes/accountProfiles", map[string]any{}), &list)
 	if len(list) != 1 || !list[0].SignedIn || list[0].SignedInAs == nil || *list[0].SignedInAs != "a@example.com" {
 		t.Fatalf("%+v", list)
 	}
@@ -71,7 +70,7 @@ func TestAnAddedAccount(t *testing.T) {
 
 	// Its own row on the allowance list, after the runtime's own.
 	var al wire.RuntimeAllowances
-	json.Unmarshal(c.call(t, 5, "runtimes/allowances", nil), &al)
+	mustUnmarshal(t, c.call(t, 5, "runtimes/allowances", nil), &al)
 	key := "claude:account:" + p.ID
 	i := slices.IndexFunc(al.Rows, func(r wire.RuntimeAllowancesRow) bool { return r.CredentialKey == key })
 	own := slices.IndexFunc(al.Rows, func(r wire.RuntimeAllowancesRow) bool { return r.CredentialKey == "claude:sign-in" })
@@ -82,7 +81,7 @@ func TestAnAddedAccount(t *testing.T) {
 	// A session on it keeps it, and spends its allowance, not the runtime's own.
 	work := t.TempDir()
 	var id wire.UUID
-	json.Unmarshal(c.call(t, 6, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + work, "accountID": p.ID,
+	mustUnmarshal(t, c.call(t, 6, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + work, "accountID": p.ID,
 		"prompt": "hi", "startOptions": map[string]any{"values": map[string]any{}, "extraArguments": []string{}}}), &id)
 	a := d.Store.Agent(id)
 	if a == nil || a.AccountID == nil || *a.AccountID != p.ID || agentKey(a) != key {
@@ -128,7 +127,7 @@ func TestCodexAccountSignedInAs(t *testing.T) {
 
 	folder := t.TempDir()
 	payload := base64.RawURLEncoding.EncodeToString([]byte(`{"email":"b@example.com"}`))
-	os.WriteFile(filepath.Join(folder, "auth.json"), []byte(`{"tokens":{"id_token":"x.`+payload+`.y"}}`), 0o600)
+	must(t, os.WriteFile(filepath.Join(folder, "auth.json"), []byte(`{"tokens":{"id_token":"x.`+payload+`.y"}}`), 0o600))
 	p := wire.AccountProfile{RuntimeID: "codex", Reach: wire.AccountReach{SignIn: &wire.AccountReachSignIn{Folder: folder}}}
 	(&Daemon{}).readSignIn(&p)
 	if !p.SignedIn || p.SignedInAs == nil || *p.SignedInAs != "b@example.com" || p.SignInCommand != nil {

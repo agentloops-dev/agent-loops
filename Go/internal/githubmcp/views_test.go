@@ -82,36 +82,36 @@ func (a *viewsAPI) serve(t *testing.T) *httptest.Server {
 		a.mu.Unlock()
 		switch {
 		case r.URL.Path == "/graphql" && strings.Contains(string(body), "pullRequests(states: OPEN"):
-			io.WriteString(w, boardAnswer)
+			reply(t, w, boardAnswer)
 		case r.URL.Path == "/graphql" && strings.Contains(string(body), "enablePullRequestAutoMerge"):
-			io.WriteString(w, `{"data":{"enablePullRequestAutoMerge":{"pullRequest":{"number":7}}}}`)
+			reply(t, w, `{"data":{"enablePullRequestAutoMerge":{"pullRequest":{"number":7}}}}`)
 		case r.URL.Path == "/graphql" && strings.Contains(string(body), "pullRequest(number"):
-			io.WriteString(w, pageAnswer)
+			reply(t, w, pageAnswer)
 		case r.URL.Path == "/user":
-			io.WriteString(w, `{"login":"alexec","type":"User"}`)
+			reply(t, w, `{"login":"alexec","type":"User"}`)
 		case r.URL.Path == "/repos/o/r/issues":
-			io.WriteString(w, `[{"number":3,"title":"Mean is off by one","html_url":"https://github.com/o/r/issues/3","user":{"login":"kim"},
+			reply(t, w, `[{"number":3,"title":"Mean is off by one","html_url":"https://github.com/o/r/issues/3","user":{"login":"kim"},
 			  "labels":[{"name":"bug","color":"D73A4A"},{"name":"odd","color":"red"}],"assignees":[{"login":"sam"},{"login":"AlexEC"}],"comments":2,"updated_at":"2026-10-18T07:00:00Z",
 			  "milestone":{"title":"0.13 Lineage and value"}},
 			 {"number":4,"title":"No milestone yet","html_url":"https://github.com/o/r/issues/4","user":{"login":"dependabot[bot]","type":"Bot"},
 			  "labels":[],"assignees":[],"comments":0,"updated_at":"2026-10-18T07:00:00Z"},
 			 {"number":7,"title":"a PR","pull_request":{"url":"x"}}]`)
 		case r.URL.Path == "/search/issues":
-			io.WriteString(w, `{"total_count":2,"items":[{"number":9,"title":"Old mean bug","html_url":"https://github.com/o/r/issues/9",
+			reply(t, w, `{"total_count":2,"items":[{"number":9,"title":"Old mean bug","html_url":"https://github.com/o/r/issues/9",
 			  "user":{"login":"kim"},"labels":[{"name":"bug","color":"d73a4a"}],"assignees":[]},
 			 {"number":3,"title":"Mean is off by one","html_url":"https://github.com/o/r/issues/3","user":{"login":"kim"},"labels":[]}]}`)
 		case r.URL.Path == "/repos/o/r/issues/3":
-			io.WriteString(w, `{"number":3,"title":"Mean is off by one","state":"open","html_url":"https://github.com/o/r/issues/3",
+			reply(t, w, `{"number":3,"title":"Mean is off by one","state":"open","html_url":"https://github.com/o/r/issues/3",
 			  "user":{"login":"kim"},"labels":[{"name":"bug","color":"d73a4a"}]}`)
 		case r.URL.Path == "/repos/o/r/issues/7":
-			io.WriteString(w, `{"number":7,"title":"a PR","state":"open","pull_request":{"url":"x"}}`)
+			reply(t, w, `{"number":7,"title":"a PR","state":"open","pull_request":{"url":"x"}}`)
 		case r.URL.Path == "/repos/o/r/pulls/7" && r.Method == http.MethodGet:
-			io.WriteString(w, `{"node_id":"PR_7","head":{"ref":"fix-mean","sha":"c0ffee","repo":{"full_name":"o/r"}}}`)
+			reply(t, w, `{"node_id":"PR_7","head":{"ref":"fix-mean","sha":"c0ffee","repo":{"full_name":"o/r"}}}`)
 		case r.URL.Path == "/repos/o/r/pulls/7/merge" && r.Method == http.MethodPut:
 			if !strings.Contains(string(body), `"squash"`) {
 				t.Errorf("merge: %s", body)
 			}
-			io.WriteString(w, `{"merged":true}`)
+			reply(t, w, `{"merged":true}`)
 		case r.URL.Path == "/repos/o/r/git/refs/heads/fix-mean" && r.Method == http.MethodDelete:
 			w.WriteHeader(http.StatusNoContent)
 		case r.Method == http.MethodPost && (r.URL.Path == "/repos/o/r/issues/7/comments" || r.URL.Path == "/repos/o/r/pulls/7/comments/44/replies"):
@@ -122,17 +122,17 @@ func (a *viewsAPI) serve(t *testing.T) *httptest.Server {
 			a.mu.Lock()
 			a.posted = append(a.posted, r.URL.Path+" "+c.Body)
 			a.mu.Unlock()
-			io.WriteString(w, `{"html_url":"https://github.com/o/r/pull/7#c"}`)
+			reply(t, w, `{"html_url":"https://github.com/o/r/pull/7#c"}`)
 		case r.URL.Path == "/repos/o/r/pulls/7/reviews":
-			io.WriteString(w, `{"id":1}`)
+			reply(t, w, `{"id":1}`)
 		case r.URL.Path == "/repos/o/r/pulls/7/files":
-			io.WriteString(w, `[{"filename":"average.py","status":"modified","additions":1,"deletions":1,
+			reply(t, w, `[{"filename":"average.py","status":"modified","additions":1,"deletions":1,
 			  "patch":"@@ -4,3 +4,3 @@ def average(xs):\n     total = sum(xs)\n-    return total / len(xs) - 1\n+    return total / len(xs)\n \n\\ No newline at end of file"},
 			 {"filename":"logo.png","status":"added","additions":0,"deletions":0}]`)
 		case r.URL.Path == "/repos/o/r/actions/runs/99/jobs":
-			io.WriteString(w, `{"jobs":[{"id":5,"name":"test","html_url":"j","conclusion":"failure"},{"id":6,"name":"lint","conclusion":"success"}]}`)
+			reply(t, w, `{"jobs":[{"id":5,"name":"test","html_url":"j","conclusion":"failure"},{"id":6,"name":"lint","conclusion":"success"}]}`)
 		case r.URL.Path == "/repos/o/r/actions/jobs/5/logs":
-			io.WriteString(w, "\x1b[31mline one\x1b[0m\nFAIL: mean\n")
+			reply(t, w, "\x1b[31mline one\x1b[0m\nFAIL: mean\n")
 		default:
 			http.NotFound(w, r)
 		}
@@ -265,7 +265,9 @@ func callTool(t *testing.T, c *mcp.ClientSession, name string, args map[string]a
 	var data map[string]any
 	if r.StructuredContent != nil {
 		b, _ := json.Marshal(r.StructuredContent)
-		json.Unmarshal(b, &data)
+		if err := json.Unmarshal(b, &data); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
 	}
 	return r, data
 }

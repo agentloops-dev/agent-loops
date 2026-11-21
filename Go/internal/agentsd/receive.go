@@ -2,6 +2,7 @@ package agentsd
 
 import (
 	"context"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -50,7 +51,9 @@ func (d *Daemon) receiveUpload(r wire.ReceiveUploadRequest) error {
 		sweepTransfers(d.incomingFolder())
 		os.Remove(path)
 	}
-	os.MkdirAll(d.incomingFolder(), 0o700)
+	if err := os.MkdirAll(d.incomingFolder(), 0o700); err != nil {
+		return fileError(CodeFileNotReadable, err.Error())
+	}
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
 		return fileError(CodeFileNotReadable, err.Error())
@@ -92,7 +95,9 @@ func ownTree(dir string) (head, tree string, err error) {
 	tmp.Close()
 	defer os.Remove(tmp.Name())
 	if b, err := os.ReadFile(index); err == nil {
-		os.WriteFile(tmp.Name(), b, 0o600)
+		if err := os.WriteFile(tmp.Name(), b, 0o600); err != nil { //nolint:gosec // G703: our own CreateTemp file
+			_ = os.Remove(tmp.Name()) // with no copy, git add makes an index from nothing: slower, the same tree
+		}
 	} else {
 		os.Remove(tmp.Name())
 	}
@@ -327,7 +332,9 @@ func receiveFetchBundle(path, bundle string) error {
 func receiveDropSentRefs(path string) {
 	if out, _ := git(path, "for-each-ref", "--format=%(refname)", "refs/agents-send"); out != "" {
 		for _, ref := range strings.Split(out, "\n") {
-			git(path, "update-ref", "-d", ref)
+			if _, err := git(path, "update-ref", "-d", ref); err != nil {
+				log.Printf("receive: could not remove %s: %v", ref, err) //nolint:gosec // G706: a ref this daemon made
+			}
 		}
 	}
 }
@@ -407,7 +414,9 @@ func receiveApplyPatch(path, patch string) error {
 			return Invalid("The commits arrived, but the uncommitted changes did not apply: %s", err.Error())
 		}
 		if now, err := worktreeFingerprint(path); err == nil {
-			os.WriteFile(sentMark(path), []byte(now+"\n"), 0o600)
+			if err := os.WriteFile(sentMark(path), []byte(now+"\n"), 0o600); err != nil {
+				log.Printf("receive: could not mark %s as sent: %v", path, err)
+			}
 		}
 	}
 	return nil

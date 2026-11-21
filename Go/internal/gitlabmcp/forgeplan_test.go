@@ -2,7 +2,6 @@ package gitlabmcp
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -38,18 +37,18 @@ func TestPlanReadsWorkItemsAndLinks(t *testing.T) {
 				Variables map[string]any `json:"variables"`
 			}
 			body, _ := io.ReadAll(r.Body)
-			json.Unmarshal(body, &req)
+			unmarshal(t, body, &req)
 			if req.Variables["path"] != "group/app" || req.Variables["iid"] != "5" {
-				io.WriteString(w, `{"data":{"project":null}}`)
+				reply(t, w, `{"data":{"project":null}}`)
 				return
 			}
-			io.WriteString(w, hierarchyAnswer)
+			reply(t, w, hierarchyAnswer)
 		case "/api/v4/projects/group%2Fapp/issues/5":
-			json.NewEncoder(w).Encode(obj{"iid": 5, "title": "Epic", "state": "opened", "labels": []string{"epic"}})
+			replyJSON(t, w, obj{"iid": 5, "title": "Epic", "state": "opened", "labels": []string{"epic"}})
 		case "/api/v4/projects/group%2Fapp/issues":
-			json.NewEncoder(w).Encode([]obj{forgeItemJSON(7, "closed", "2026-11-02T09:00:00Z"), forgeItemJSON(6, "opened", "2026-11-02T08:00:00Z")})
+			replyJSON(t, w, []obj{forgeItemJSON(7, "closed", "2026-11-02T09:00:00Z"), forgeItemJSON(6, "opened", "2026-11-02T08:00:00Z")})
 		case "/api/v4/projects/group%2Flib/issues":
-			json.NewEncoder(w).Encode([]obj{})
+			replyJSON(t, w, []obj{})
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -103,9 +102,9 @@ func TestBlockersReadManyWorkItems(t *testing.T) {
 			Variables map[string]any `json:"variables"`
 		}
 		body, _ := io.ReadAll(r.Body)
-		json.Unmarshal(body, &req)
+		unmarshal(t, body, &req)
 		asked = append(asked, req.Variables)
-		io.WriteString(w, `{"data":{"project":{"workItems":{"nodes":[
+		reply(t, w, `{"data":{"project":{"workItems":{"nodes":[
  {"iid":"6","widgets":[{},{"linkedItems":{"nodes":[
   {"linkType":"is_blocked_by","workItem":{"iid":"7","state":"OPEN","namespace":{"fullPath":"group/app"}}},
   {"linkType":"blocks","workItem":{"iid":"8","state":"OPEN","namespace":{"fullPath":"group/app"}}},
@@ -137,9 +136,9 @@ func TestParentsReadManyWorkItems(t *testing.T) {
 			Variables map[string]any `json:"variables"`
 		}
 		body, _ := io.ReadAll(r.Body)
-		json.Unmarshal(body, &req)
+		unmarshal(t, body, &req)
 		asked = append(asked, req.Variables)
-		io.WriteString(w, `{"data":{"project":{"workItems":{"nodes":[
+		reply(t, w, `{"data":{"project":{"workItems":{"nodes":[
  {"iid":"6","widgets":[{},{"parent":{"iid":"3","state":"OPEN","namespace":{"fullPath":"group/app"}}}]},
  {"iid":"9","widgets":[{"parent":null}]}]}}}}`)
 	}))

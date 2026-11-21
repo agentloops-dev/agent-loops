@@ -2,7 +2,6 @@ package agentsd
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -14,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentloops-dev/agent-loops/Go/internal/connections"
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/skillcatalog"
+	"github.com/agentloops-dev/agent-loops/Go/internal/connections"
 	"github.com/agentloops-dev/agent-loops/Go/internal/emailmcp"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
@@ -65,7 +64,7 @@ func TestConnectingGitHubWithTheDeviceFlow(t *testing.T) {
 	}
 
 	var started wire.ConnectionSignIn
-	json.Unmarshal(c.call(t, 1, "connections/sign-in", map[string]any{"provider": "github"}), &started)
+	mustUnmarshal(t, c.call(t, 1, "connections/sign-in", map[string]any{"provider": "github"}), &started)
 	close(polling)
 	if started.Status != wire.ConnectionSignInStatusWaiting || started.UserCode == nil || *started.UserCode != "ABCD-1234" ||
 		started.Grant != wire.ConnectionSignInGrantDeviceCode ||
@@ -79,7 +78,7 @@ func TestConnectingGitHubWithTheDeviceFlow(t *testing.T) {
 		if strings.Contains(string(raw), "ghu_secret") || strings.Contains(string(raw), "dev-1") {
 			t.Fatalf("a secret went to the client: %s", raw)
 		}
-		json.Unmarshal(raw, &done)
+		mustUnmarshal(t, raw, &done)
 	}
 	if done.Connection == nil || done.Connection.Login == nil || *done.Connection.Login != "octocat" {
 		t.Fatalf("done: %+v", done)
@@ -94,7 +93,7 @@ func TestConnectingGitHubWithTheDeviceFlow(t *testing.T) {
 		t.Fatalf("a token in the list: %s", raw)
 	}
 	var list wire.ConnectionsList
-	json.Unmarshal(raw, &list)
+	mustUnmarshal(t, raw, &list)
 	if len(list.Connections) != 1 || list.Connections[0].State != wire.ConnectionStateConnected {
 		t.Fatalf("list: %+v", list)
 	}
@@ -104,7 +103,7 @@ func TestConnectingGitHubWithTheDeviceFlow(t *testing.T) {
 	}
 
 	c.call(t, 31, "connections/disconnect", map[string]any{"provider": "github"})
-	json.Unmarshal(c.call(t, 32, "connections/list", map[string]any{}), &list)
+	mustUnmarshal(t, c.call(t, 32, "connections/list", map[string]any{}), &list)
 	if len(list.Connections) != 0 {
 		t.Fatalf("after disconnect: %+v", list)
 	}
@@ -141,12 +140,12 @@ func TestASignInUnderWayIsShared(t *testing.T) {
 			}}
 	}
 	var a, b, cancelled wire.ConnectionSignIn
-	json.Unmarshal(c.call(t, 1, "connections/sign-in", map[string]any{"provider": "github"}), &a)
-	json.Unmarshal(c.call(t, 2, "connections/sign-in", map[string]any{"provider": "github"}), &b)
+	mustUnmarshal(t, c.call(t, 1, "connections/sign-in", map[string]any{"provider": "github"}), &a)
+	mustUnmarshal(t, c.call(t, 2, "connections/sign-in", map[string]any{"provider": "github"}), &b)
 	if a.FlowID != b.FlowID || starts.Load() != 1 {
 		t.Fatalf("two sign-ins: %v %v, %d starts", a.FlowID, b.FlowID, starts.Load())
 	}
-	json.Unmarshal(c.call(t, 3, "connections/sign-in/cancel", map[string]any{"flowID": a.FlowID}), &cancelled)
+	mustUnmarshal(t, c.call(t, 3, "connections/sign-in/cancel", map[string]any{"flowID": a.FlowID}), &cancelled)
 	if cancelled.Status != wire.ConnectionSignInStatusCancelled {
 		t.Fatalf("cancel: %+v", cancelled)
 	}
@@ -164,7 +163,7 @@ func TestConnectingLinearWithTheCodeFlow(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/oauth/token":
-			r.ParseForm()
+			check(t, r.ParseForm())
 			verifier.Store(r.PostForm.Get("code_verifier"))
 			fmt.Fprint(w, `{"access_token":"lin_oauth_secret","expires_in":86399,"refresh_token":"lin_refresh_secret"}`)
 		case "/graphql":
@@ -185,7 +184,7 @@ func TestConnectingLinearWithTheCodeFlow(t *testing.T) {
 	}
 
 	var started, again, web wire.ConnectionSignIn
-	json.Unmarshal(c.call(t, 1, "connections/sign-in", map[string]any{"provider": "linear"}), &started)
+	mustUnmarshal(t, c.call(t, 1, "connections/sign-in", map[string]any{"provider": "linear"}), &started)
 	if started.Grant != wire.ConnectionSignInGrantAuthorizationCode || started.UserCode != nil ||
 		!strings.HasPrefix(started.VerificationURL, "https://linear.app/oauth/authorize?") {
 		t.Fatalf("started: %+v", started)
@@ -196,8 +195,8 @@ func TestConnectingLinearWithTheCodeFlow(t *testing.T) {
 		t.Fatalf("address: %s", started.VerificationURL)
 	}
 	// The Mac and the Remote share one; a web page has its own, with its origin in the state.
-	json.Unmarshal(c.call(t, 2, "connections/sign-in", map[string]any{"provider": "linear"}), &again)
-	json.Unmarshal(c.call(t, 3, "connections/sign-in", map[string]any{"provider": "linear",
+	mustUnmarshal(t, c.call(t, 2, "connections/sign-in", map[string]any{"provider": "linear"}), &again)
+	mustUnmarshal(t, c.call(t, 3, "connections/sign-in", map[string]any{"provider": "linear",
 		"origin": "https://control.agentloops.dev"}), &web)
 	wu, _ := url.Parse(web.VerificationURL)
 	if again.FlowID != started.FlowID || web.FlowID == started.FlowID || !strings.Contains(wu.Query().Get("state"), ".") {
@@ -216,7 +215,7 @@ func TestConnectingLinearWithTheCodeFlow(t *testing.T) {
 	if strings.Contains(string(raw), "lin_oauth_secret") || strings.Contains(string(raw), "lin_refresh_secret") {
 		t.Fatalf("a secret went to the client: %s", raw)
 	}
-	json.Unmarshal(raw, &done)
+	mustUnmarshal(t, raw, &done)
 	if done.Status != wire.ConnectionSignInStatusConnected || done.Connection == nil ||
 		deref(done.Connection.Login) != "Alex" || deref(done.Connection.Workspace) != "Agents Walk" {
 		t.Fatalf("done: %s", raw)
@@ -229,14 +228,14 @@ func TestConnectingLinearWithTheCodeFlow(t *testing.T) {
 		t.Fatalf("kept: %+v", kept)
 	}
 	// A second complete (the Remote, after the Mac) is told how it ended.
-	json.Unmarshal(c.call(t, 7, "connections/sign-in/complete", map[string]any{"flowID": started.FlowID, "state": state, "code": "code-1"}), &again)
+	mustUnmarshal(t, c.call(t, 7, "connections/sign-in/complete", map[string]any{"flowID": started.FlowID, "state": state, "code": "code-1"}), &again)
 	if again.Status != wire.ConnectionSignInStatusConnected {
 		t.Fatalf("second complete: %+v", again)
 	}
 
 	// The person pressed Cancel on linear.app.
 	var denied wire.ConnectionSignIn
-	json.Unmarshal(c.call(t, 8, "connections/sign-in/complete", map[string]any{"flowID": web.FlowID,
+	mustUnmarshal(t, c.call(t, 8, "connections/sign-in/complete", map[string]any{"flowID": web.FlowID,
 		"state": wu.Query().Get("state"), "error": "access_denied"}), &denied)
 	if denied.Status != wire.ConnectionSignInStatusDenied {
 		t.Fatalf("denied: %+v", denied)
@@ -247,7 +246,7 @@ func TestConnectingLinearWithTheCodeFlow(t *testing.T) {
 		t.Fatalf("a token in the list: %s", raw)
 	}
 	var list wire.ConnectionsList
-	json.Unmarshal(raw, &list)
+	mustUnmarshal(t, raw, &list)
 	if len(list.Connections) != 1 || list.Connections[0].Provider != wire.ConnectionProviderLinear || list.Connections[0].InstallURL != nil {
 		t.Fatalf("list: %s", raw)
 	}
@@ -282,12 +281,12 @@ func TestConnectingGitLabWithAnAccessToken(t *testing.T) {
 	d.gitlabHTTP = gl.Client()
 
 	var refused wire.ConnectionTokenAnswer
-	json.Unmarshal(c.call(t, 1, "connections/sign-in/token", map[string]any{"provider": "gitlab", "url": gl.URL, "token": "glpat-wrong"}), &refused)
+	mustUnmarshal(t, c.call(t, 1, "connections/sign-in/token", map[string]any{"provider": "gitlab", "url": gl.URL, "token": "glpat-wrong"}), &refused)
 	if refused.Error == nil || refused.Connection != nil || strings.Contains(*refused.Error, "glpat-wrong") {
 		t.Fatalf("a wrong token: %+v", refused)
 	}
 	var plain wire.ConnectionTokenAnswer
-	json.Unmarshal(c.call(t, 2, "connections/sign-in/token", map[string]any{"provider": "gitlab", "url": "http://gitlab.example.com", "token": "glpat-secret"}), &plain)
+	mustUnmarshal(t, c.call(t, 2, "connections/sign-in/token", map[string]any{"provider": "gitlab", "url": "http://gitlab.example.com", "token": "glpat-secret"}), &plain)
 	if plain.Error == nil || !strings.Contains(*plain.Error, "https://") {
 		t.Fatalf("a token over http: %+v", plain)
 	}
@@ -297,7 +296,7 @@ func TestConnectingGitLabWithAnAccessToken(t *testing.T) {
 		t.Fatalf("the token went back to the client: %s", raw)
 	}
 	var made wire.ConnectionTokenAnswer
-	json.Unmarshal(raw, &made)
+	mustUnmarshal(t, raw, &made)
 	host := strings.TrimPrefix(gl.URL, "http://")
 	if made.Error != nil || made.Connection == nil || deref(made.Connection.Login) != "agentstest" ||
 		deref(made.Connection.Workspace) != host || made.Connection.ExpiresAt == nil {
@@ -308,7 +307,7 @@ func TestConnectingGitLabWithAnAccessToken(t *testing.T) {
 		t.Fatalf("kept: %+v", kept)
 	}
 	var list wire.ConnectionsList
-	json.Unmarshal(c.call(t, 4, "connections/list", map[string]any{}), &list)
+	mustUnmarshal(t, c.call(t, 4, "connections/list", map[string]any{}), &list)
 	if len(list.Connections) != 1 || list.Connections[0].Provider != wire.ConnectionProviderGitlab {
 		t.Fatalf("list: %+v", list)
 	}
@@ -352,7 +351,7 @@ func TestConnectingGitHubWithAPersonalAccessToken(t *testing.T) {
 		{"provider": "github", "url": "https://github.example.com", "token": "github_pat_secret"},
 	} {
 		var refused wire.ConnectionTokenAnswer
-		json.Unmarshal(c.call(t, 1+i, "connections/sign-in/token", bad), &refused)
+		mustUnmarshal(t, c.call(t, 1+i, "connections/sign-in/token", bad), &refused)
 		if refused.Error == nil || refused.Connection != nil || strings.Contains(*refused.Error, bad["token"].(string)) {
 			t.Fatalf("refused %d: %+v", i, refused)
 		}
@@ -363,7 +362,7 @@ func TestConnectingGitHubWithAPersonalAccessToken(t *testing.T) {
 		t.Fatalf("the token went back to the client: %s", raw)
 	}
 	var made wire.ConnectionTokenAnswer
-	json.Unmarshal(raw, &made)
+	mustUnmarshal(t, raw, &made)
 	if made.Error != nil || made.Connection == nil || deref(made.Connection.Login) != "octocat" ||
 		made.Connection.ByToken == nil || !*made.Connection.ByToken || made.Connection.InstallURL != nil ||
 		made.Connection.ExpiresAt == nil {
@@ -402,7 +401,7 @@ func TestAWalkConnectsTheFixtureGitHubWithAnyToken(t *testing.T) {
 	d.connStoreFor = func() (connections.Store, error) { return file, nil }
 
 	var made wire.ConnectionTokenAnswer
-	json.Unmarshal(c.call(t, 1, "connections/sign-in/token", map[string]any{"provider": "github", "token": "walk"}), &made)
+	mustUnmarshal(t, c.call(t, 1, "connections/sign-in/token", map[string]any{"provider": "github", "token": "walk"}), &made)
 	if made.Error != nil || made.Connection == nil || deref(made.Connection.Login) != "sam" || asked.Load() != 1 {
 		t.Fatalf("made: %+v, asked %d", made, asked.Load())
 	}
@@ -464,7 +463,7 @@ func TestConnectingEmailWithAnAppPassword(t *testing.T) {
 	}
 
 	var refused wire.ConnectionTokenAnswer
-	json.Unmarshal(c.call(t, 1, "connections/sign-in/email", map[string]any{"server": "imap.example.com", "user": "agents@example.com", "password": "wrong-pass"}), &refused)
+	mustUnmarshal(t, c.call(t, 1, "connections/sign-in/email", map[string]any{"server": "imap.example.com", "user": "agents@example.com", "password": "wrong-pass"}), &refused)
 	if refused.Error == nil || refused.Connection != nil || strings.Contains(*refused.Error, "wrong-pass") ||
 		!strings.HasPrefix(*refused.Error, "The mail server refused") {
 		t.Fatalf("a wrong password: %+v", refused)
@@ -476,7 +475,7 @@ func TestConnectingEmailWithAnAppPassword(t *testing.T) {
 		{"server": "imap.example.com", "user": "a@example.com", "password": " "},
 	} {
 		var a wire.ConnectionTokenAnswer
-		json.Unmarshal(c.call(t, 10+i, "connections/sign-in/email", bad), &a)
+		mustUnmarshal(t, c.call(t, 10+i, "connections/sign-in/email", bad), &a)
 		if a.Error == nil || a.Connection != nil {
 			t.Fatalf("%v: %+v", bad, a)
 		}
@@ -490,7 +489,7 @@ func TestConnectingEmailWithAnAppPassword(t *testing.T) {
 		t.Fatalf("the password went back to the client: %s", raw)
 	}
 	var made wire.ConnectionTokenAnswer
-	json.Unmarshal(raw, &made)
+	mustUnmarshal(t, raw, &made)
 	if made.Error != nil || made.Connection == nil || made.Connection.Provider != wire.ConnectionProviderEmail ||
 		deref(made.Connection.Login) != "agents@example.com" || deref(made.Connection.Workspace) != "imap.example.com" || made.Connection.ExpiresAt != nil {
 		t.Fatalf("made: %+v", made)
@@ -508,7 +507,7 @@ func TestConnectingEmailWithAnAppPassword(t *testing.T) {
 		t.Fatalf("read back: %s %s %v", address, security, err)
 	}
 	var list wire.ConnectionsList
-	json.Unmarshal(c.call(t, 3, "connections/list", map[string]any{}), &list)
+	mustUnmarshal(t, c.call(t, 3, "connections/list", map[string]any{}), &list)
 	if len(list.Connections) != 1 || list.Connections[0].Provider != wire.ConnectionProviderEmail {
 		t.Fatalf("list: %+v", list)
 	}
@@ -516,7 +515,7 @@ func TestConnectingEmailWithAnAppPassword(t *testing.T) {
 		t.Fatalf("email has no sign-in page: %s", msg)
 	}
 	var gone wire.ConnectionDisconnectAnswer
-	json.Unmarshal(c.call(t, 5, "connections/disconnect", map[string]any{"provider": "email"}), &gone)
+	mustUnmarshal(t, c.call(t, 5, "connections/disconnect", map[string]any{"provider": "email"}), &gone)
 	if _, ok, _ := file.Get(connections.Email); gone.Error != nil || ok {
 		t.Fatalf("disconnect: %+v", gone)
 	}

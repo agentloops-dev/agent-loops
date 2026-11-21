@@ -51,7 +51,9 @@ func kinds(d *Daemon, id wire.UUID) []string {
 	for _, e := range entries {
 		b, _ := json.Marshal(e.Kind)
 		var k map[string]json.RawMessage
-		json.Unmarshal(b, &k)
+		if err := json.Unmarshal(b, &k); err != nil {
+			out = append(out, err.Error())
+		}
 		for name := range k {
 			out = append(out, name)
 		}
@@ -76,7 +78,7 @@ func TestAFormIsHeldAndAnswered(t *testing.T) {
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	var id wire.UUID
-	json.Unmarshal(c.call(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(),
+	mustUnmarshal(t, c.call(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(),
 		"prompt": "a form please"}), &id)
 	var form wire.ElicitationRequest
 	c.until(t, "a form", asked(&form))
@@ -89,7 +91,7 @@ func TestAFormIsHeldAndAnswered(t *testing.T) {
 		t.Fatalf("%+v", p)
 	}
 	var pending []wire.ElicitationRequest
-	json.Unmarshal(c.call(t, 2, "elicitations/pending", nil), &pending)
+	mustUnmarshal(t, c.call(t, 2, "elicitations/pending", nil), &pending)
 	if len(pending) != 1 || pending[0].ID != form.ID {
 		t.Fatalf("pending %+v", pending)
 	}
@@ -141,7 +143,7 @@ func TestADeclinedRuntimeFormBringsItsReasonAsAPrompt(t *testing.T) {
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	var id wire.UUID
-	json.Unmarshal(c.call(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(),
+	mustUnmarshal(t, c.call(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(),
 		"prompt": "a form please"}), &id)
 	var form wire.ElicitationRequest
 	c.until(t, "a form", asked(&form))
@@ -159,7 +161,7 @@ func TestStoppingAnAgentTakesItsFormDownWithIt(t *testing.T) {
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	var id wire.UUID
-	json.Unmarshal(c.call(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(),
+	mustUnmarshal(t, c.call(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(),
 		"prompt": "a form please"}), &id)
 	var form wire.ElicitationRequest
 	c.until(t, "a form", asked(&form))
@@ -194,7 +196,7 @@ func TestAWithdrawnFormTakesTheAgentOutOfWaiting(t *testing.T) {
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	var id wire.UUID
-	json.Unmarshal(c.call(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(),
+	mustUnmarshal(t, c.call(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(),
 		"prompt": "a form, then withdraw it"}), &id)
 	var form wire.ElicitationRequest
 	c.until(t, "a link", asked(&form))

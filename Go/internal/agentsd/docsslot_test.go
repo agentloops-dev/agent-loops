@@ -1,7 +1,6 @@
 package agentsd
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"slices"
@@ -27,16 +26,16 @@ func TestTheDocsSlot(t *testing.T) {
 	old := time.Now().Add(-time.Hour)
 	write := func(rel string, at time.Time) {
 		path := filepath.Join(folder, rel)
-		os.MkdirAll(filepath.Dir(path), 0o755)
+		must(t, os.MkdirAll(filepath.Dir(path), 0o755)) //nolint:gosec // G301: the mode this folder always had; only its error is new
 		if err := os.WriteFile(path, []byte("# "+rel), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		os.Chtimes(path, at, at)
+		must(t, os.Chtimes(path, at, at))
 	}
 	c.call(t, 1, "folders/add", map[string]any{"folder": "file://" + folder})
 
 	var setup wire.ConnectorSetup
-	json.Unmarshal(c.call(t, 2, "connectors/setup", map[string]any{"folder": folder}), &setup)
+	mustUnmarshal(t, c.call(t, 2, "connectors/setup", map[string]any{"folder": folder}), &setup)
 	if s := slotsByKind(setup)[wire.ConnectorSlotKindDocs]; s.State != wire.ConnectorSlotStateRead || s.Proof != nil ||
 		s.Choice != "This folder" || s.Servers != nil {
 		t.Fatalf("a folder with no docs: %+v", s)
@@ -48,13 +47,14 @@ func TestTheDocsSlot(t *testing.T) {
 	write("docs/notes.txt", time.Now())
 	write("docs/node_modules/x/README.md", time.Now())
 	write("docs/.cache/README.md", time.Now())
-	os.MkdirAll(filepath.Join(home, ".agents"), 0o755)
-	os.WriteFile(filepath.Join(home, ".agents", "mcp.json"), []byte(`{"mcpServers": {
+	must(t, os.MkdirAll(filepath.Join(home, ".agents"), 0o755)) //nolint:gosec // G301: the mode this folder always had; only its error is new
+	//nolint:gosec // G306: the mode this file always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(home, ".agents", "mcp.json"), []byte(`{"mcpServers": {
 		"notion": {"type": "http", "url": "https://mcp.notion.com/mcp"},
 		"team-wiki": {"command": "wiki-mcp"},
-		"playwright": {"command": "npx", "args": ["@playwright/mcp"]}}}`), 0o644)
+		"playwright": {"command": "npx", "args": ["@playwright/mcp"]}}}`), 0o644))
 
-	json.Unmarshal(c.call(t, 3, "connectors/setup", map[string]any{"folder": folder, "reading": "fresh"}), &setup)
+	mustUnmarshal(t, c.call(t, 3, "connectors/setup", map[string]any{"folder": folder, "reading": "fresh"}), &setup)
 	s := slotsByKind(setup)[wire.ConnectorSlotKindDocs]
 	if s.State != wire.ConnectorSlotStateRead || s.Proof == nil || s.Proof.Title != "docs/how-to/use-docs.md" || s.Proof.At == nil {
 		t.Fatalf("the newest doc: %+v %+v", s, s.Proof)
@@ -69,14 +69,14 @@ func TestTheDocsSlot(t *testing.T) {
 
 	// A fresh value each time: Unmarshal into the old one keeps the fields a slot no longer has.
 	setup = wire.ConnectorSetup{}
-	json.Unmarshal(c.call(t, 4, "connectors/setup/skip", map[string]any{"folder": folder, "slot": "docs", "skipped": true}), &setup)
+	mustUnmarshal(t, c.call(t, 4, "connectors/setup/skip", map[string]any{"folder": folder, "slot": "docs", "skipped": true}), &setup)
 	if s := slotsByKind(setup)[wire.ConnectorSlotKindDocs]; s.State != wire.ConnectorSlotStateSkipped || s.Servers != nil {
 		t.Fatalf("skipped: %+v", s)
 	}
 	if b, _ := os.ReadFile(filepath.Join(folder, ".agents", "folder.json")); !strings.Contains(string(b), `"docs"`) {
 		t.Fatalf("folder.json: %s", b)
 	}
-	json.Unmarshal(c.call(t, 5, "connectors/setup/skip", map[string]any{"folder": folder, "slot": "docs", "skipped": false}), &setup)
+	mustUnmarshal(t, c.call(t, 5, "connectors/setup/skip", map[string]any{"folder": folder, "slot": "docs", "skipped": false}), &setup)
 	if s := slotsByKind(setup)[wire.ConnectorSlotKindDocs]; s.State != wire.ConnectorSlotStateRead {
 		t.Fatalf("set up again: %+v", s)
 	}

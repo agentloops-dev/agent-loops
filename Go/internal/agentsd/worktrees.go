@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -149,7 +150,9 @@ func excludeLine(commonDir, comment, line string) error {
 		text += "\n"
 	}
 	text += comment + "\n" + line + "\n"
-	os.MkdirAll(filepath.Dir(path), 0o755)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil { //nolint:gosec // G301: the mode this folder always had; only its error is new
+		return err
+	}
 	return store.WriteAtomically(path, []byte(text), mode)
 }
 
@@ -337,9 +340,13 @@ func undoWorktree(choice wire.WorktreeChoice, wt *wire.AgentWorktree) {
 		return
 	}
 	folder := store.FolderPath(wt.Folder)
-	git(folder, "worktree", "remove", "--force", store.FolderPath(wt.Root))
+	if _, err := git(folder, "worktree", "remove", "--force", store.FolderPath(wt.Root)); err != nil {
+		log.Printf("worktrees: could not undo %s: %v", store.FolderPath(wt.Root), err)
+	}
 	if (choice.New != nil || choice.Named != nil) && wt.Branch != nil {
-		git(folder, "branch", "-D", *wt.Branch)
+		if _, err := git(folder, "branch", "-D", *wt.Branch); err != nil {
+			log.Printf("worktrees: could not delete branch %s: %v", *wt.Branch, err)
+		}
 	}
 }
 
@@ -389,7 +396,9 @@ func (d *Daemon) takeStartingPoint(id wire.UUID, cwd string) {
 	defer d.agentMu.Unlock()
 	if a := d.Store.Agent(id); a != nil && a.StartingPoint == nil {
 		a.StartingPoint = &wire.StartingPoint{Repository: store.FolderURL(lines[0]), Commit: lines[1]}
-		d.Store.Save(*a)
+		if err := d.Store.Save(*a); err != nil {
+			log.Printf("worktrees: could not save the starting point of %s: %v", id, err)
+		}
 	}
 }
 
@@ -640,7 +649,8 @@ func (d *Daemon) wantSizes(roots []string) {
 func measure(root string, deadline time.Time) wire.WorktreeSize {
 	var size wire.WorktreeSize
 	n := 0
-	filepath.WalkDir(root, func(_ string, e fs.DirEntry, err error) error {
+	// The callback returns only nil or SkipAll, so the walk has no error to give.
+	_ = filepath.WalkDir(root, func(_ string, e fs.DirEntry, err error) error {
 		if err != nil {
 			return nil
 		}
@@ -924,7 +934,7 @@ func (d *Daemon) recreateWorktree(id wire.UUID) (wire.Agent, error) {
 		d.noteFolder(id)
 		return wire.Agent{}, &Error{Code: wire.FailureFolderGone, Message: "Its branch " + branch + " is not there any more, so the worktree cannot be made again."}
 	}
-	git(folder, "worktree", "prune")
+	_, _ = git(folder, "worktree", "prune") // tidy-up only: the add below says when it matters
 	if _, err := git(folder, "worktree", "add", store.FolderPath(a.Worktree.Root), branch); err != nil {
 		return wire.Agent{}, &Error{Code: wire.FailureFolderGone, Message: "The worktree could not be made again: " + err.Error()}
 	}

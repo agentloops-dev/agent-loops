@@ -35,7 +35,7 @@ func fakeAtlassian(t *testing.T, body, auth *atomic.Value) *httptest.Server {
 		switch {
 		case r.URL.Path == "/oauth/token":
 			var b map[string]string
-			json.NewDecoder(r.Body).Decode(&b)
+			check(t, json.NewDecoder(r.Body).Decode(&b))
 			body.Store(b)
 			fmt.Fprint(w, `{"access_token":"atl_oauth_secret","expires_in":3600,"refresh_token":"atl_refresh_secret"}`)
 		case r.URL.Path == "/me":
@@ -75,8 +75,8 @@ func TestConnectingJiraWithAtlassianSignIn(t *testing.T) {
 	if why := c.callErr(t, 1, "connections/sign-in", map[string]any{"provider": "atlassian"}); !strings.Contains(why, "API token") {
 		t.Fatalf("no app: %q", why)
 	}
-	os.MkdirAll(filepath.Join(home, ".agents-secrets"), 0o700)
-	os.WriteFile(filepath.Join(home, ".agents-secrets", "secrets.env"), []byte("ATLASSIAN_CLIENT_ID=atl-client\nATLASSIAN_CLIENT_SECRET=atl-app-secret\n"), 0o600)
+	must(t, os.MkdirAll(filepath.Join(home, ".agents-secrets"), 0o700))
+	must(t, os.WriteFile(filepath.Join(home, ".agents-secrets", "secrets.env"), []byte("ATLASSIAN_CLIENT_ID=atl-client\nATLASSIAN_CLIENT_SECRET=atl-app-secret\n"), 0o600))
 	real := d.codeFlow(wire.ConnectionProviderAtlassian)
 	if real.ClientID != "atl-client" || real.ClientSecret != "atl-app-secret" {
 		t.Fatalf("app from the secrets: %q", real.ClientID)
@@ -92,7 +92,7 @@ func TestConnectingJiraWithAtlassianSignIn(t *testing.T) {
 	if strings.Contains(string(raw), "atl-app-secret") {
 		t.Fatalf("the client secret went to the client: %s", raw)
 	}
-	json.Unmarshal(raw, &started)
+	mustUnmarshal(t, raw, &started)
 	u, _ := url.Parse(started.VerificationURL)
 	q := u.Query()
 	if started.Grant != wire.ConnectionSignInGrantAuthorizationCode || u.Host != "auth.atlassian.com" ||
@@ -106,7 +106,7 @@ func TestConnectingJiraWithAtlassianSignIn(t *testing.T) {
 	if strings.Contains(string(raw), "atl_oauth_secret") || strings.Contains(string(raw), "atl_refresh_secret") {
 		t.Fatalf("a token went to the client: %s", raw)
 	}
-	json.Unmarshal(raw, &done)
+	mustUnmarshal(t, raw, &done)
 	if done.Status != wire.ConnectionSignInStatusConnected || done.Connection == nil ||
 		deref(done.Connection.Login) != "Alex" || deref(done.Connection.Workspace) != "Agents Walk" {
 		t.Fatalf("done: %s", raw)
@@ -128,7 +128,7 @@ func TestConnectingJiraWithAtlassianSignIn(t *testing.T) {
 	}
 	// The list never says the newest issue: only the answer that connected does.
 	var list wire.ConnectionsList
-	json.Unmarshal(c.call(t, 4, "connections/list", map[string]any{}), &list)
+	mustUnmarshal(t, c.call(t, 4, "connections/list", map[string]any{}), &list)
 	if len(list.Connections) != 1 || list.Connections[0].Provider != wire.ConnectionProviderAtlassian || list.Connections[0].Newest != nil ||
 		list.Connections[0].ByToken != nil {
 		t.Fatalf("list: %+v", list)
@@ -150,7 +150,7 @@ func TestConnectingJiraWithAnAPIToken(t *testing.T) {
 	d.jiraHTTP = jira.Client()
 
 	var bad wire.ConnectionTokenAnswer
-	json.Unmarshal(c.call(t, 1, "connections/sign-in/token", map[string]any{"provider": "atlassian", "token": "tok"}), &bad)
+	mustUnmarshal(t, c.call(t, 1, "connections/sign-in/token", map[string]any{"provider": "atlassian", "token": "tok"}), &bad)
 	if bad.Error == nil || !strings.Contains(*bad.Error, "site") {
 		t.Fatalf("no site: %+v", bad)
 	}
@@ -161,7 +161,7 @@ func TestConnectingJiraWithAnAPIToken(t *testing.T) {
 	if strings.Contains(string(raw), "ATATT-secret") {
 		t.Fatalf("the token went back: %s", raw)
 	}
-	json.Unmarshal(raw, &cloud)
+	mustUnmarshal(t, raw, &cloud)
 	if cloud.Connection == nil || deref(cloud.Connection.Login) != "Alex C" || cloud.Connection.ByToken == nil || cloud.Connection.Newest == nil ||
 		cloud.Connection.Newest.Title != "WALK-7 Newest one" {
 		t.Fatalf("cloud: %s", raw)
@@ -175,7 +175,7 @@ func TestConnectingJiraWithAnAPIToken(t *testing.T) {
 	}
 
 	var dc wire.ConnectionTokenAnswer
-	json.Unmarshal(c.call(t, 3, "connections/sign-in/token", map[string]any{"provider": "atlassian", "url": jira.URL,
+	mustUnmarshal(t, c.call(t, 3, "connections/sign-in/token", map[string]any{"provider": "atlassian", "url": jira.URL,
 		"token": "pat-secret"}), &dc)
 	if dc.Connection == nil {
 		t.Fatalf("data center: %+v", dc)

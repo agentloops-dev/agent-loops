@@ -35,7 +35,9 @@ func (m *mcpClient) tryTool(id int, name string, args map[string]any) (string, b
 		Content []struct{ Text string } `json:"content"`
 		IsError bool                    `json:"isError"`
 	}
-	json.Unmarshal(r["result"], &res)
+	if err := json.Unmarshal(r["result"], &res); err != nil && len(r["result"]) > 0 {
+		return "", false, fmt.Errorf("%s: %s: %w", name, r["result"], err)
+	}
 	if len(res.Content) == 0 {
 		return "", false, fmt.Errorf("%s: %s", name, r["error"])
 	}

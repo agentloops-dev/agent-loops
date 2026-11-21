@@ -44,7 +44,7 @@ func TestKeptSourceSealsANewKey(t *testing.T) {
 	}
 	// No file on the disk holds the key in clear, also not in base64.
 	files := 0
-	filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+	must(t, filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return err
 		}
@@ -54,7 +54,7 @@ func TestKeptSourceSealsANewKey(t *testing.T) {
 			t.Errorf("%s holds the key in clear", path)
 		}
 		return nil
-	})
+	}))
 	if files == 0 {
 		t.Fatal("the sealed key is not in the store's folder")
 	}

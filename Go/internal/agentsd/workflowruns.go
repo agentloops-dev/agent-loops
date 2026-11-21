@@ -967,7 +967,9 @@ func (d *Daemon) workflowRunFinished(agent wire.UUID) {
 		asked := a.ArchiveRequest != nil && a.ArchiveRequest.Requested != nil
 		if *whenDone == wire.WorkflowWhenDoneArchive || *whenDone == wire.WorkflowWhenDoneArchiveAllowed && asked {
 			d.record(agent, runtimeNote("Archived when its run was done, as the workflow “"+name+"” allows."))
-			d.archiveBy(agent, wire.AgentArchivedReasonByAgent)
+			if err := d.archiveBy(agent, wire.AgentArchivedReasonByAgent); err != nil {
+				log.Printf("workflow %s: could not archive %s: %v", name, agent, err)
+			}
 		}
 	}
 	d.releaseQueued(folder, run.WorkflowID)

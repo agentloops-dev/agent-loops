@@ -105,7 +105,9 @@ func (d *Daemon) readYoursLocked() {
 	d.yoursWas = yourPolicySeen{}
 	d.yoursUntrusted = false
 	if b, err := os.ReadFile(d.yourPolicySeenPath()); err == nil {
-		json.Unmarshal(b, &d.yoursWas)
+		if err := json.Unmarshal(b, &d.yoursWas); err != nil {
+			log.Printf("policy: could not read %s: %v", filepath.Base(d.yourPolicySeenPath()), err)
+		}
 	}
 	b, err := os.ReadFile(d.yourPolicyPath())
 	if err != nil {
@@ -557,7 +559,9 @@ func (d *Daemon) firstStartMoveLocked() {
 func (d *Daemon) firstStartMoveBudgetsLocked(rules *wire.PolicyRules) {
 	if b, err := os.ReadFile(d.limitsPath()); err == nil {
 		var l wire.CostLimits
-		json.Unmarshal(b, &l)
+		if err := json.Unmarshal(b, &l); err != nil {
+			log.Printf("policy: the first-start move: could not read %s: %v", filepath.Base(d.limitsPath()), err)
+		}
 		budgets := wire.PolicyRuleBudgets{PerAgentTokens: l.PerAgentTokens, DailyTokens: l.DailyTokens}
 		if l.Daily != nil {
 			daily := *l.Daily
@@ -582,7 +586,9 @@ func (d *Daemon) firstStartMoveWorkflowLimitLocked(rules *wire.PolicyRules) {
 		var l struct {
 			Total *int64 `json:"total"`
 		}
-		json.Unmarshal(b, &l)
+		if err := json.Unmarshal(b, &l); err != nil {
+			log.Printf("policy: the first-start move: could not read %s: %v", filepath.Base(workflowLimitPath), err)
+		}
 		if l.Total != nil {
 			rules.Workflows = &wire.PolicyWorkflows{MostOn: l.Total}
 		}
@@ -607,7 +613,9 @@ func (d *Daemon) firstStartMoveDisplayLocked(rules *wire.PolicyRules) {
 	changed = firstStartMoveArchiveMyChats(fields, rules) || changed
 	if changed {
 		if nb, err := json.Marshal(fields); err == nil {
-			store.WriteAtomically(displayPath, nb, 0o644)
+			if err := store.WriteAtomically(displayPath, nb, 0o644); err != nil {
+				log.Printf("policy: the first-start move: could not save %s: %v", filepath.Base(displayPath), err)
+			}
 		}
 	}
 }
@@ -670,7 +678,9 @@ func (d *Daemon) firstStartMoveEnvironmentLocked(rules *wire.PolicyRules) {
 	envPath := filepath.Join(d.SettingsDir, passThroughFile)
 	if b, err := os.ReadFile(envPath); err == nil {
 		var l passThroughList
-		json.Unmarshal(b, &l)
+		if err := json.Unmarshal(b, &l); err != nil {
+			log.Printf("policy: the first-start move: could not read %s: %v", passThroughFile, err)
+		}
 		if len(l.Names) > 0 || len(l.Runtimes) > 0 {
 			rules.Environment = &wire.PolicyEnvironment{PassThrough: l.Names, Runtimes: l.Runtimes}
 		}

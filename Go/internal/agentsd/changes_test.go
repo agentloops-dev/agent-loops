@@ -20,9 +20,9 @@ func TestChangesAreTheReportedAndTheSeen(t *testing.T) {
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := repo(t)
-	os.WriteFile(filepath.Join(dir, "a.txt"), []byte("one\ntwo\n"), 0o644)
-	git(dir, "add", "a.txt")
-	git(dir, "commit", "-q", "-m", "a")
+	must(t, os.WriteFile(filepath.Join(dir, "a.txt"), []byte("one\ntwo\n"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
+	must(t, errOnly(git(dir, "add", "a.txt")))
+	must(t, errOnly(git(dir, "commit", "-q", "-m", "a")))
 	head, _ := git(dir, "rev-parse", "HEAD")
 	a := seeded(t, d, dir, func(a *wire.Agent) {
 		a.StartingPoint = &wire.StartingPoint{Repository: store.FolderURL(dir), Commit: head}
@@ -31,13 +31,15 @@ func TestChangesAreTheReportedAndTheSeen(t *testing.T) {
 	path := filepath.Join(dir, "a.txt")
 	old, nw := "two\n", "TWO\n"
 	id, done := "call_1", "completed"
-	d.Store.Append(a.ID, wire.TranscriptEntry{ID: store.NewUUID(), At: now(), Kind: wire.TranscriptEntryKind{ToolCall: &wire.TranscriptEntryKindToolCall{
+	if _, err := d.Store.Append(a.ID, wire.TranscriptEntry{ID: store.NewUUID(), At: now(), Kind: wire.TranscriptEntryKind{ToolCall: &wire.TranscriptEntryKindToolCall{
 		Value: wire.ToolCall{ToolCallID: &id, Title: "Edit", Status: &done, Locations: []wire.ToolCallLocation{},
-			Content: []wire.ToolCallContent{{Type: "diff", Path: &path, OldText: &old, NewText: &nw}}}}}})
-	os.WriteFile(path, []byte("one\nTWO\nthree\n"), 0o644)
-	os.WriteFile(filepath.Join(dir, "new.md"), []byte("# x\n"), 0o644)
+			Content: []wire.ToolCallContent{{Type: "diff", Path: &path, OldText: &old, NewText: &nw}}}}}}); err != nil {
+		t.Fatal(err)
+	}
+	must(t, os.WriteFile(path, []byte("one\nTWO\nthree\n"), 0o644))             //nolint:gosec // G306: the mode this file always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(dir, "new.md"), []byte("# x\n"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	var list wire.ChangesList
-	json.Unmarshal(c.call(t, 1, "changes/list", map[string]any{"agentID": a.ID}), &list)
+	mustUnmarshal(t, c.call(t, 1, "changes/list", map[string]any{"agentID": a.ID}), &list)
 	if !list.ReportsEdits || list.Git.Shared == nil || list.Git.Shared.Since != head || len(list.Files) != 2 {
 		t.Fatalf("%+v", list)
 	}
@@ -51,7 +53,7 @@ func TestChangesAreTheReportedAndTheSeen(t *testing.T) {
 		t.Fatalf("%+v", n)
 	}
 	var detail wire.ChangedFileDetail
-	json.Unmarshal(c.call(t, 2, "changes/file", map[string]any{"agentID": a.ID, "path": path, "whole": true}), &detail)
+	mustUnmarshal(t, c.call(t, 2, "changes/file", map[string]any{"agentID": a.ID, "path": path, "whole": true}), &detail)
 	var kinds []string
 	for _, l := range detail.Whole {
 		kinds = append(kinds, string(l.Kind)+":"+l.Text)
@@ -87,15 +89,15 @@ func TestBranchingFromAPrompt(t *testing.T) {
 	a := seeded(t, d, t.TempDir(), func(a *wire.Agent) { a.RuntimeSessionID, a.Title = &session, &title })
 	ask := func(text string) wire.UUID {
 		id := store.NewUUID()
-		d.Store.Append(a.ID, wire.TranscriptEntry{ID: id, At: now(), Kind: wire.TranscriptEntryKind{UserMessage: &wire.TranscriptEntryKindUserMessage{Value: text}}})
-		d.Store.Append(a.ID, wire.TranscriptEntry{ID: store.NewUUID(), At: now(), Kind: wire.TranscriptEntryKind{AgentMessage: &wire.TranscriptEntryKindAgentMessage{Text: "Done: " + text}}})
+		must(t, errOnly(d.Store.Append(a.ID, wire.TranscriptEntry{ID: id, At: now(), Kind: wire.TranscriptEntryKind{UserMessage: &wire.TranscriptEntryKindUserMessage{Value: text}}})))
+		must(t, errOnly(d.Store.Append(a.ID, wire.TranscriptEntry{ID: store.NewUUID(), At: now(), Kind: wire.TranscriptEntryKind{AgentMessage: &wire.TranscriptEntryKindAgentMessage{Text: "Done: " + text}}})))
 		return id
 	}
 	ask("Make the cache")
 	second := ask("Make it faster")
 	ask("Make it smaller")
 	var id wire.UUID
-	json.Unmarshal(c.call(t, 1, "agents/branchFrom", map[string]any{"agentID": a.ID, "entryID": second}), &id)
+	mustUnmarshal(t, c.call(t, 1, "agents/branchFrom", map[string]any{"agentID": a.ID, "entryID": second}), &id)
 	b := d.Store.Agent(id)
 	if b == nil || b.RuntimeSessionID != nil || b.BranchedFrom == nil || *b.BranchedFrom != a.ID || *b.Title != "Plan (branch)" {
 		t.Fatalf("%+v", b)
@@ -129,13 +131,15 @@ func TestABranchsRecordIsNotQueued(t *testing.T) {
 	defer d.Shutdown()
 	a := seeded(t, d, t.TempDir(), nil)
 	first, second := store.NewUUID(), store.NewUUID()
-	d.Store.AppendMany(a.ID, []wire.TranscriptEntry{
+	if _, err := d.Store.AppendMany(a.ID, []wire.TranscriptEntry{
 		{ID: first, At: now(), Kind: wire.TranscriptEntryKind{UserMessage: &wire.TranscriptEntryKindUserMessage{Value: "Make the cache"}}},
 		{ID: store.NewUUID(), At: now(), Kind: wire.TranscriptEntryKind{AgentMessage: &wire.TranscriptEntryKindAgentMessage{Text: "Done: " + strings.Repeat("cache ", 20000)}}},
 		{ID: second, At: now(), Kind: wire.TranscriptEntryKind{UserMessage: &wire.TranscriptEntryKindUserMessage{Value: "Make it faster"}}},
-	})
+	}); err != nil {
+		t.Fatal(err)
+	}
 	var id wire.UUID
-	json.Unmarshal(c.call(t, 1, "agents/branchFrom", map[string]any{"agentID": a.ID, "entryID": second}), &id)
+	mustUnmarshal(t, c.call(t, 1, "agents/branchFrom", map[string]any{"agentID": a.ID, "entryID": second}), &id)
 	c.call(t, 2, "agents/prompt", map[string]any{"agentID": id, "text": "say your brief", "from": "person"})
 	queued, ran := false, false
 	c.until(t, "the branch's turn end", func(method string, p json.RawMessage) bool {
@@ -143,7 +147,7 @@ func TestABranchsRecordIsNotQueued(t *testing.T) {
 			return false
 		}
 		var b wire.Agent
-		json.Unmarshal(p, &b)
+		mustUnmarshal(t, p, &b)
 		if b.ID != id {
 			return false
 		}
@@ -182,7 +186,7 @@ func TestForkingAConversation(t *testing.T) {
 	a := seeded(t, d, t.TempDir(), func(a *wire.Agent) { a.RuntimeSessionID, a.Title = &session, &title })
 	d.record(a.ID, runtimeNote("first"))
 	var id wire.UUID
-	json.Unmarshal(c.call(t, 1, "agents/fork", map[string]any{"agentID": a.ID}), &id)
+	mustUnmarshal(t, c.call(t, 1, "agents/fork", map[string]any{"agentID": a.ID}), &id)
 	b := d.Store.Agent(id)
 	if b == nil || *b.RuntimeSessionID != "forked-fake-session" || *b.Title != "Plan (branch)" || b.State != wire.AgentStateFinished {
 		t.Fatalf("%+v", b)

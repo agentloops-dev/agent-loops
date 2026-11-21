@@ -130,7 +130,9 @@ func BenchmarkSignOnce(b *testing.B) {
 	k, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	note := []byte(`{"jsonrpc":"2.0","method":"agent/changed","params":` + `{"text":"` + strings.Repeat("x", 2000) + `"}}`)
 	for b.Loop() {
-		SignData(k, note)
+		if _, err := SignData(k, note); err != nil {
+			b.Fatal(err)
+		}
 	}
 }
 

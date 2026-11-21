@@ -384,7 +384,7 @@ func (o OAuth) Revoke(ctx context.Context, token, endpoint string, c Client) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	if req, err := formRequest(ctx, endpoint, c, [][2]string{{"token", token}}); err == nil {
-		o.send(req)
+		_, _, _, _ = o.send(req) // best effort, as above
 	}
 }
 

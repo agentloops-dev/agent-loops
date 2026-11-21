@@ -328,9 +328,9 @@ func TestTheKeyFileIsMadeOnceAndKept(t *testing.T) {
 		t.Fatal(info.Mode())
 	}
 	// A torn file, older than a moment, is made again.
-	os.WriteFile(file, []byte("x"), 0o600)
+	must(t, os.WriteFile(file, []byte("x"), 0o600))
 	old := time.Now().Add(-time.Minute)
-	os.Chtimes(file, old, old)
+	must(t, os.Chtimes(file, old, old))
 	k, err := LoadOrMakeKey(file)
 	if err != nil || len(k) != 32 || bytes.Equal(k, keys[0]) {
 		t.Fatal(err)

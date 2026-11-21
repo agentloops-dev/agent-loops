@@ -31,11 +31,15 @@ func TestPipeCarriesBytesBothWays(t *testing.T) {
 	if _, err := io.ReadFull(b, got); err != nil || string(got) != "GET / HTTP/1.1\r\n" {
 		t.Fatalf("%q %v", got, err)
 	}
-	b.Write([]byte("HTTP/1.1 200 OK"))
+	if _, err := b.Write([]byte("HTTP/1.1 200 OK")); err != nil {
+		t.Fatal(err)
+	}
 	select {
 	case line := <-tunnel.out:
 		var s string
-		json.Unmarshal([]byte(line), &s)
+		if err := json.Unmarshal([]byte(line), &s); err != nil {
+			t.Fatal(err)
+		}
 		if raw, _ := base64.StdEncoding.DecodeString(s); string(raw) != "HTTP/1.1 200 OK" {
 			t.Fatalf("%q", raw)
 		}

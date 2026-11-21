@@ -104,18 +104,18 @@ func mcpWaitArguments(filters map[string][]string, schema json.RawMessage) map[s
 	var s struct {
 		Properties map[string]json.RawMessage `json:"properties"`
 	}
-	json.Unmarshal(schema, &s)
+	_ = json.Unmarshal(schema, &s) // no schema, or not an object: no properties, so text
 	typesOf := func(p json.RawMessage) []string {
 		var x struct {
 			Type json.RawMessage `json:"type"`
 		}
-		json.Unmarshal(p, &x)
+		_ = json.Unmarshal(p, &x) // no type: none
 		var one string
 		var many []string
 		if json.Unmarshal(x.Type, &one) == nil {
 			return []string{one}
 		}
-		json.Unmarshal(x.Type, &many)
+		_ = json.Unmarshal(x.Type, &many) // neither a string nor a list: no types
 		return many
 	}
 	typed := func(text string, p json.RawMessage) json.RawMessage {
@@ -145,7 +145,7 @@ func mcpWaitArguments(filters map[string][]string, schema json.RawMessage) map[s
 		var items struct {
 			Items json.RawMessage `json:"items"`
 		}
-		json.Unmarshal(p, &items)
+		_ = json.Unmarshal(p, &items) // no items: each value as text
 		list := make([]json.RawMessage, 0, len(vs))
 		for _, v := range vs {
 			list = append(list, typed(v, items.Items))
@@ -216,7 +216,7 @@ func propertiesOf(schema json.RawMessage) map[string]bool {
 	var s struct {
 		Properties map[string]json.RawMessage `json:"properties"`
 	}
-	json.Unmarshal(schema, &s)
+	_ = json.Unmarshal(schema, &s) // no schema, or not an object: no keys
 	out := map[string]bool{}
 	for k := range s.Properties {
 		out[k] = true
@@ -233,7 +233,7 @@ func oneValueWords(given map[string][]string, schema json.RawMessage) string {
 			Type json.RawMessage `json:"type"`
 		} `json:"properties"`
 	}
-	json.Unmarshal(schema, &s)
+	_ = json.Unmarshal(schema, &s) // no schema, or not an object: no keys
 	var keys []string
 	for k, vs := range given {
 		p, ok := s.Properties[k]

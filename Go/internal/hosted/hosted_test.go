@@ -36,13 +36,15 @@ func fakeGitHub(t *testing.T) *httptest.Server {
 	g := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/login/oauth/access_token":
-			r.ParseForm()
+			if err := r.ParseForm(); err != nil {
+				t.Error(err)
+			}
 			code := r.PostForm.Get("code")
 			if r.PostForm.Get("client_secret") != "secret" || code != "good" && !strings.HasPrefix(code, "u.") {
-				json.NewEncoder(w).Encode(map[string]string{"error": "bad_verification_code", "error_description": "The code is wrong."})
+				replyJSON(t, w, map[string]string{"error": "bad_verification_code", "error_description": "The code is wrong."})
 				return
 			}
-			json.NewEncoder(w).Encode(map[string]string{"access_token": "gho_" + code})
+			replyJSON(t, w, map[string]string{"access_token": "gho_" + code})
 		case "/user/emails":
 			token, _ := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer gho_")
 			parts := strings.Split(token, ".")
@@ -57,12 +59,12 @@ func fakeGitHub(t *testing.T) *httptest.Server {
 				email = "u" + id + "@example.com"
 			}
 			verified := len(parts) < 4 || parts[2] != "noemail"
-			json.NewEncoder(w).Encode([]map[string]any{{"email": "other" + id + "@example.com", "primary": false, "verified": true},
+			replyJSON(t, w, []map[string]any{{"email": "other" + id + "@example.com", "primary": false, "verified": true},
 				{"email": email, "primary": true, "verified": verified}})
 		case "/user":
 			token, _ := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer gho_")
 			if token == "good" {
-				json.NewEncoder(w).Encode(map[string]any{"id": 42, "login": "ana", "created_at": "2015-01-01T00:00:00Z"})
+				replyJSON(t, w, map[string]any{"id": 42, "login": "ana", "created_at": "2015-01-01T00:00:00Z"})
 				return
 			}
 			parts := strings.Split(token, ".")
@@ -72,7 +74,7 @@ func fakeGitHub(t *testing.T) *httptest.Server {
 			}
 			id, _ := strconv.Atoi(parts[1])
 			days, _ := strconv.Atoi(parts[3])
-			json.NewEncoder(w).Encode(map[string]any{"id": id, "login": parts[2],
+			replyJSON(t, w, map[string]any{"id": id, "login": parts[2],
 				"created_at": time.Now().Add(-time.Duration(days) * 24 * time.Hour).UTC().Format(time.RFC3339)})
 		default:
 			w.WriteHeader(http.StatusNotFound)

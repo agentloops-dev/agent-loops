@@ -46,7 +46,9 @@ func (d *Daemon) orgAccountFolder(runtimeID, route string) (string, error) {
 			if _, err := os.Lstat(dst); err == nil {
 				continue
 			}
-			os.Symlink(src, dst)
+			if err := os.Symlink(src, dst); err != nil {
+				log.Printf("org launch: could not link %s: %v", dst, err)
+			}
 		}
 	}
 	if kind, ok := accountKinds[runtimeID]; ok && home != "" {

@@ -2,6 +2,7 @@ package skillcatalog
 
 import (
 	"context"
+	"log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -308,7 +309,9 @@ func (in PersonaInstaller) Add(st StagedPersona, place Place, replace bool, now 
 	putBack := func() {
 		os.Remove(target)
 		if trashed != "" {
-			os.Rename(trashed, target)
+			if err := os.Rename(trashed, target); err != nil {
+				log.Printf("personas: could not put the old %s back from the Trash: %v", filepath.Base(target), err)
+			}
 		}
 	}
 	if err := store.WriteAtomically(target, st.Data, 0o644); err != nil {
@@ -345,7 +348,9 @@ func (PersonaInstaller) Remove(id string, place Place, now time.Time) (string, e
 	lock.RemovePersona(id)
 	if err := lock.Write(); err != nil {
 		if trashed != "" {
-			os.Rename(trashed, target)
+			if err := os.Rename(trashed, target); err != nil {
+				log.Printf("personas: could not put %s back from the Trash: %v", filepath.Base(target), err)
+			}
 		}
 		return "", Failed("could not write " + filepath.Base(place.Lock))
 	}
@@ -382,7 +387,9 @@ func (u Updates) CheckPersonas(ctx context.Context, managed map[string]wire.Mana
 			continue
 		}
 		if personaUpdateStates(personas, answer, lock, now, out) {
-			lock.Write()
+			if err := lock.Write(); err != nil {
+				log.Printf("personas: could not note the update check in %s: %v", filepath.Base(place.Lock), err)
+			}
 		}
 	}
 	return out

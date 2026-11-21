@@ -48,7 +48,9 @@ func (d *Daemon) achievementsLocked() *wire.Achievements {
 	if d.achievementsHeld == nil {
 		var m wire.Achievements
 		if b, err := os.ReadFile(d.achievementsPath()); err == nil {
-			diskjson.Unmarshal(b, &m)
+			if err := diskjson.Unmarshal(b, &m); err != nil {
+				log.Printf("achievements: could not read %s: %v", d.achievementsPath(), err)
+			}
 		}
 		if m.Earned == nil {
 			m.Earned = []wire.EarnedAchievement{}

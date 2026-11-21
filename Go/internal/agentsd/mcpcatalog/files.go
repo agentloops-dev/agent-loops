@@ -16,7 +16,7 @@ import (
 )
 
 // PersonalFile is <home>/.agents/mcp.json; FolderFile is <folder>/.agents/mcp.json.
-func PersonalFile(home string) string  { return filepath.Join(home, ".agents", "mcp.json") }
+func PersonalFile(home string) string { return filepath.Join(home, ".agents", "mcp.json") }
 func FolderFile(folder string) string { return filepath.Join(folder, ".agents", "mcp.json") }
 
 // RemovedFile is <home>/.agents/mcp.removed.json: the entries last taken out of the personal
@@ -158,7 +158,9 @@ func LoadSidecar(path string) Sidecar {
 	var s Sidecar
 	if json.Unmarshal(b, &s) != nil {
 		aside := fmt.Sprintf("%s.unreadable-%d", path, time.Now().Unix())
-		os.Rename(path, aside)
+		if err := os.Rename(path, aside); err != nil {
+			log.Printf("%s: could not set it aside: %v", filepath.Base(path), err)
+		}
 		store.TrimSetAsides(path)
 		log.Printf("%s: unreadable; kept as %s; servers added from the registry show as written by hand",
 			filepath.Base(path), filepath.Base(aside))

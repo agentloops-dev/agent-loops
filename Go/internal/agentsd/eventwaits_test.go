@@ -255,7 +255,7 @@ func aPersonEventsServer(t *testing.T) *httptest.Server {
 			Method string          `json:"method"`
 			Params json.RawMessage `json:"params"`
 		}
-		json.NewDecoder(r.Body).Decode(&m)
+		check(t, json.NewDecoder(r.Body).Decode(&m))
 		if m.ID == nil {
 			w.WriteHeader(http.StatusAccepted)
 			return
@@ -275,7 +275,7 @@ func aPersonEventsServer(t *testing.T) *httptest.Server {
 		}
 		w.Header().Set("Mcp-Session-Id", "s1")
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": *m.ID, "result": result})
+		check(t, json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": *m.ID, "result": result}))
 	}))
 	t.Cleanup(s.Close)
 	return s

@@ -12,6 +12,6 @@ func macOpen(args ...string) error {
 	if err := cmd.Start(); err != nil {
 		return &Error{Code: wire.FailureNotSupported, Message: "This Mac could not open that: " + err.Error()}
 	}
-	go cmd.Wait()
+	go func() { _ = cmd.Wait() }() // only reaps it: open's exit says nothing more
 	return nil
 }

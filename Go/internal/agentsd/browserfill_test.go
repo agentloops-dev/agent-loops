@@ -41,11 +41,15 @@ func (p *fillPage) callTool(_ context.Context, name string, args map[string]json
 	}
 	switch name {
 	case "browser_type":
-		json.Unmarshal(args["text"], &p.value)
+		if err := json.Unmarshal(args["text"], &p.value); err != nil {
+			return nil, err
+		}
 		return text("### Ran Playwright code\n```js\nawait page.getByRole('textbox', { name: 'Password' }).fill('" + p.value + "');\n```"), nil
 	case "browser_evaluate":
 		var fn string
-		json.Unmarshal(args["function"], &fn)
+		if err := json.Unmarshal(args["function"], &fn); err != nil {
+			return nil, err
+		}
 		// Playwright says the code it ran after the result, every word in it.
 		text := func(s string) *mcp.CallToolResult { return text(s + "\n### Ran Playwright code\n" + fn) }
 		switch {
@@ -91,7 +95,7 @@ func fillSetUp(t *testing.T, secrets map[string]string) (*mcpClient, *fillPage, 
 	home := t.TempDir()
 	personalHomeFor(t, home)
 	path := skillcatalog.SecretsPath(home)
-	os.MkdirAll(filepath.Dir(path), 0o700)
+	must(t, os.MkdirAll(filepath.Dir(path), 0o700))
 	env, _ := skillcatalog.LoadSecretsForChange(path)
 	for k, v := range secrets {
 		env.Set(k, v)
@@ -260,7 +264,7 @@ func TestFillSecretPressesEnterAfterTheMask(t *testing.T) {
 // assertNotUnder fails when any file under root holds s.
 func assertNotUnder(t *testing.T, root, s string) {
 	t.Helper()
-	filepath.Walk(root, func(path string, fi os.FileInfo, err error) error {
+	must(t, filepath.Walk(root, func(path string, fi os.FileInfo, err error) error {
 		if err != nil || fi.IsDir() {
 			return nil
 		}
@@ -268,7 +272,7 @@ func assertNotUnder(t *testing.T, root, s string) {
 			t.Errorf("%s holds the value", path)
 		}
 		return nil
-	})
+	}))
 }
 
 // #3531: a card secret is filled a part at a time, and once one part is in the page every

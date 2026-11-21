@@ -223,11 +223,42 @@ func (d *Daemon) folderFilesChanged(folder string, paths []string) {
 	if !isDir(folder) {
 		return
 	}
+	branches, rescan, approvals, env, guarded := folderChangeKinds(folder, paths)
+	d.watchedFilesChanged(folder, paths)
+	// The Environment page reads the folder's .agents/env again (#5259).
+	if env {
+		d.tellEnvChanged(folder, false)
+	}
+	if branches {
+		d.scheduleBranchCheck(folder, branchSettle)
+	}
+	if rescan {
+		d.rescanWorkflows(folder)
+	}
+	// A change to an app-owned file made outside the app waits for the person (#502); the
+	// folder's summary and pins say what it is now.
+	for rel := range guarded {
+		d.checkGuarded(folder, rel, nil)
+	}
+	if guarded[".agents/pins.json"] {
+		d.pinsChanged(folder)
+	}
+	// The summary carries the folder's settings and its MCP servers and plugins waiting
+	// for approval (#126, #773).
+	if guarded[".agents/folder.json"] || approvals {
+		if _, err := d.sendFolder(folder); err != nil {
+			log.Printf("folder watch: could not send %s: %v", folder, err)
+		}
+	}
+}
+
+// folderChangeKinds says what the changed paths in folder touch: its branches, its
+// workflows or skills, its MCP servers or plugins, its env, and which guarded files.
+func folderChangeKinds(folder string, paths []string) (branches, rescan, approvals, env bool, guarded map[string]bool) {
 	agents := filepath.Join(folder, ".agents")
 	workflows := workflowsFolder(folder)
 	under := func(p, dir string) bool { return p == dir || strings.HasPrefix(p, dir+string(filepath.Separator)) }
-	var branches, rescan, approvals, env bool
-	guarded := map[string]bool{}
+	guarded = map[string]bool{}
 	for _, p := range paths {
 		if isBranchPath(p) {
 			branches = true
@@ -251,30 +282,7 @@ func (d *Daemon) folderFilesChanged(folder string, paths []string) {
 			env = true
 		}
 	}
-	d.watchedFilesChanged(folder, paths)
-	// The Environment page reads the folder's .agents/env again (#5259).
-	if env {
-		d.tellEnvChanged(folder, false)
-	}
-	if branches {
-		d.scheduleBranchCheck(folder, branchSettle)
-	}
-	if rescan {
-		d.rescanWorkflows(folder)
-	}
-	// A change to an app-owned file made outside the app waits for the person (#502); the
-	// folder's summary and pins say what it is now.
-	for rel := range guarded {
-		d.checkGuarded(folder, rel, nil)
-	}
-	if guarded[".agents/pins.json"] {
-		d.pinsChanged(folder)
-	}
-	// The summary carries the folder's settings and its MCP servers and plugins waiting
-	// for approval (#126, #773).
-	if guarded[".agents/folder.json"] || approvals {
-		d.sendFolder(folder)
-	}
+	return branches, rescan, approvals, env, guarded
 }
 
 // rescanWorkflows reads a folder's workflows again and tells each one that came, changed

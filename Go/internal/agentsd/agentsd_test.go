@@ -61,7 +61,7 @@ func (c *conn) call(t testing.TB, id int, method string, params any) json.RawMes
 		select {
 		case line := <-c.out:
 			var m message
-			json.Unmarshal([]byte(line), &m)
+			mustUnmarshal(t, []byte(line), &m)
 			if string(m.ID) != strings.TrimSpace(string(mustJSON(id))) {
 				continue // a notification
 			}
@@ -101,7 +101,7 @@ func (c *conn) callError(t *testing.T, id int, method string, params any) *Error
 		select {
 		case line := <-c.out:
 			var m message
-			json.Unmarshal([]byte(line), &m)
+			mustUnmarshal(t, []byte(line), &m)
 			if string(m.ID) != strings.TrimSpace(string(mustJSON(id))) {
 				continue // a notification
 			}
@@ -243,7 +243,7 @@ func TestASwiftRootIsServed(t *testing.T) {
 	fix := filepath.Join("..", "..", "..", "Packages", "AgentsKit", "Tests", "AgentsKitTests", "Fixtures", "legacy-agent")
 	b, _ := os.ReadFile(filepath.Join(fix, "agent.json"))
 	var head struct{ ID string }
-	json.Unmarshal(b, &head)
+	mustUnmarshal(t, b, &head)
 	// The fixture's folder is a real one on the Mac it was made on: here, a folder of the
 	// test's own, so the host never reads (or runs the workflows of) a real folder.
 	b = []byte(strings.ReplaceAll(string(b), `"file:///Users/alexcollins/Agents/"`, `"`+string(store.FolderURL(t.TempDir()))+`/"`))
@@ -251,10 +251,10 @@ func TestASwiftRootIsServed(t *testing.T) {
 		t.Fatal("the fixture still names a real folder")
 	}
 	dir := filepath.Join(root, "agents", strings.ToUpper(head.ID))
-	os.MkdirAll(dir, 0o755)
-	os.WriteFile(filepath.Join(dir, "agent.json"), b, 0o644)
+	must(t, os.MkdirAll(dir, 0o755))                                  //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(dir, "agent.json"), b, 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	tb, _ := os.ReadFile(filepath.Join(fix, "transcript.jsonl"))
-	os.WriteFile(filepath.Join(dir, "transcript.jsonl"), tb, 0o644)
+	must(t, os.WriteFile(filepath.Join(dir, "transcript.jsonl"), tb, 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	// The fixture's agent was left running: its record also says it stopped with the
 	// daemon, a note and its ending (DaemonCore+Recovery).
 	lines := strings.Count(string(tb), "\n") + 2
@@ -263,21 +263,21 @@ func TestASwiftRootIsServed(t *testing.T) {
 	// Stopped before the root goes: recovery may still be writing the agent's record.
 	defer d.Shutdown()
 	var agents []wire.Agent
-	json.Unmarshal(c.call(t, 1, "agents/list", map[string]any{"includeArchived": true}), &agents)
+	mustUnmarshal(t, c.call(t, 1, "agents/list", map[string]any{"includeArchived": true}), &agents)
 	if len(agents) != 1 || string(agents[0].ID) != strings.ToUpper(head.ID) {
 		t.Fatalf("agents %v", agents)
 	}
 	var folders []wire.FolderSummary
-	json.Unmarshal(c.call(t, 2, "folders/list", map[string]any{"includeArchived": true}), &folders)
+	mustUnmarshal(t, c.call(t, 2, "folders/list", map[string]any{"includeArchived": true}), &folders)
 	if len(folders) != 1 || folders[0].Name == "" {
 		t.Fatalf("folders %+v", folders)
 	}
 	var page wire.TranscriptPage
-	json.Unmarshal(c.call(t, 3, "agents/transcript", map[string]any{"agentID": head.ID, "limit": 10}), &page)
+	mustUnmarshal(t, c.call(t, 3, "agents/transcript", map[string]any{"agentID": head.ID, "limit": 10}), &page)
 	if page.Total != int64(lines) || page.FirstIndex != int64(lines-10) || len(page.Entries) != 10 {
 		t.Fatalf("page total %d first %d entries %d (lines %d)", page.Total, page.FirstIndex, len(page.Entries), lines)
 	}
-	json.Unmarshal(c.call(t, 4, "agents/transcript", map[string]any{"agentID": head.ID, "limit": 10, "before": 5}), &page)
+	mustUnmarshal(t, c.call(t, 4, "agents/transcript", map[string]any{"agentID": head.ID, "limit": 10, "before": 5}), &page)
 	if page.FirstIndex != 0 || len(page.Entries) != 5 {
 		t.Fatalf("before 5: first %d entries %d", page.FirstIndex, len(page.Entries))
 	}
@@ -288,7 +288,7 @@ func TestAddAFolder(t *testing.T) {
 
 	root := t.TempDir()
 	work := filepath.Join(t.TempDir(), "hello")
-	os.Mkdir(work, 0o755)
+	must(t, os.Mkdir(work, 0o755)) //nolint:gosec // G301: the mode this folder always had; only its error is new
 	d, c := start(t, root)
 	var s wire.FolderSummary
 	if err := json.Unmarshal(c.call(t, 1, "folders/add", map[string]any{"folder": "file://" + work}), &s); err != nil {

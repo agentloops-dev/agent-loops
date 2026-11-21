@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -158,9 +159,13 @@ func (d *Daemon) deleteFolder(folder string) error {
 	}
 	for _, a := range agents {
 		if a.State != wire.AgentStateArchived {
-			d.archive(a.ID)
+			if err := d.archive(a.ID); err != nil {
+				log.Printf("folders: could not archive %s: %v", a.ID, err)
+			}
 		}
-		d.delete(a.ID)
+		if err := d.delete(a.ID); err != nil {
+			log.Printf("folders: could not delete %s: %v", a.ID, err)
+		}
 	}
 	ps = append(ps[:i], ps[i+1:]...)
 	if err := d.saveFolders(ps); err != nil {
@@ -255,7 +260,9 @@ func setFolderConfig(folder, key string, v any) error {
 	if err != nil {
 		return err
 	}
-	os.MkdirAll(filepath.Dir(path), 0o755)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil { //nolint:gosec // G301: the mode this folder always had; only its error is new
+		return err
+	}
 	return store.WriteAtomically(path, append(b, '\n'), 0o644)
 }
 
@@ -340,7 +347,9 @@ func (d *Daemon) setHelperLimits(r wire.SetHelperLimitsRequest) (wire.FolderSumm
 		return wire.FolderSummary{}, configWriteError(err)
 	}
 	if p, i, _ := d.folderRecord(folder); i >= 0 && p.HelperLimits != nil {
-		d.editRecord(folder, func(p *wire.Folder) { p.HelperLimits = nil })
+		if err := d.editRecord(folder, func(p *wire.Folder) { p.HelperLimits = nil }); err != nil {
+			log.Printf("folders: could not clear the helper limits of %s: %v", folder, err)
+		}
 	}
 	return d.sendFolder(folder)
 }
@@ -624,7 +633,7 @@ func (d *Daemon) cloneFolder(r wire.CloneRequest) (wire.FolderSummary, error) {
 		d.cloneMu.Unlock()
 		Broadcast(d, wire.NotifyCloneChanged, wire.CloneNotification{Clone: c, Finished: true})
 	}()
-	os.MkdirAll(staging, 0o755)
+	_ = os.MkdirAll(staging, 0o755) //nolint:gosec // G301: the mode this folder always had; only its error is new; git clone makes the folders it needs, and says when it cannot
 	staged := filepath.Join(staging, remote.folderName)
 	ctx, cancel := context.WithTimeout(d.ctx, time.Hour)
 	defer cancel()

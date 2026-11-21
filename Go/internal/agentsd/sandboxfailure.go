@@ -229,10 +229,14 @@ func (d *Daemon) answerSandbox(ctx context.Context, r wire.AnswerSandboxRequest)
 	case len(a.QueuedPrompts) > 0:
 		d.live(a.ID).kick()
 	case pending.CompletedToolCalls > 0:
-		d.enqueue(a.ID, wire.QueuedPrompt{ID: store.NewUUID(), Text: carryOnWithoutSandbox, QueuedAt: now(), From: wire.PromptOriginApp}, true)
+		if err := d.enqueue(a.ID, wire.QueuedPrompt{ID: store.NewUUID(), Text: carryOnWithoutSandbox, QueuedAt: now(), From: wire.PromptOriginApp}, true); err != nil {
+			log.Printf("sandbox: could not queue the carry-on prompt for %s: %v", a.ID, err)
+		}
 	default:
 		if text := d.lastPersonsPrompt(a.ID); text != "" {
-			d.enqueue(a.ID, wire.QueuedPrompt{ID: store.NewUUID(), Text: text, QueuedAt: now(), From: wire.PromptOriginApp}, true)
+			if err := d.enqueue(a.ID, wire.QueuedPrompt{ID: store.NewUUID(), Text: text, QueuedAt: now(), From: wire.PromptOriginApp}, true); err != nil {
+				log.Printf("sandbox: could not queue the person's prompt again for %s: %v", a.ID, err)
+			}
 		}
 	}
 	return *d.Store.Agent(a.ID), nil

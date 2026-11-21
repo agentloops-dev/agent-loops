@@ -69,13 +69,15 @@ func (f *fakeControl) serve(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
-	defer ws.CloseNow()
+	defer func() { _ = ws.CloseNow() }() // the client may have closed it already
 	ctx := r.Context()
 	l := &Lines{ws: ws}
 	nonce := make([]byte, 32)
 	rand.Read(nonce)
 	pub, _ := PublicKey(f.private)
-	l.Write(ctx, Message{Hello: &Hello{V: Version, Name: "scratch", Control: B64URL(pub), Nonce: B64URL(nonce), Copy: "a"}}.Line())
+	if l.Write(ctx, Message{Hello: &Hello{V: Version, Name: "scratch", Control: B64URL(pub), Nonce: B64URL(nonce), Copy: "a"}}.Line()) != nil {
+		return // the client went: what it does then is the test's to check
+	}
 	line, err := l.Read(ctx)
 	if err != nil {
 		return
@@ -97,29 +99,43 @@ func (f *fakeControl) serve(w http.ResponseWriter, r *http.Request) {
 	origin, _ := Origin(f.srv.URL)
 	got, _ := FromB64URL(a.Mac)
 	if key == nil || f.refuse || !Same(got, PeerMAC(key, nonce, peer, a.ID, origin)) {
-		l.Write(ctx, Message{Refused: Unknown}.Line())
+		_ = l.Write(ctx, Message{Refused: Unknown}.Line()) // the fake hangs up next; a lost line fails the client's side
 		return
 	}
-	l.Write(ctx, Message{OK: &OK{Mac: B64URL(ServerMAC(key, nonce, peer, a.ID, origin))}}.Line())
+	if l.Write(ctx, Message{OK: &OK{Mac: B64URL(ServerMAC(key, nonce, peer, a.ID, origin))}}.Line()) != nil {
+		return
+	}
 	if strings.HasPrefix(a.ID, "e:") {
-		req, _ := l.Read(ctx)
-		var call struct {
-			Method string `json:"method"`
-			Params struct {
-				PublicKey []byte `json:"publicKey"`
-			} `json:"params"`
-		}
-		json.Unmarshal([]byte(req), &call)
-		if call.Method != "machines/announce" {
-			f.t.Errorf("enrol said %s", call.Method)
-		}
-		f.mu.Lock()
-		f.hostPublic = call.Params.PublicKey
-		f.mu.Unlock()
-		l.Write(ctx, `{"jsonrpc":"2.0","id":1,"result":{"host":"`+f.host+`"}}`)
+		f.enrol(ctx, l)
 		return
 	}
-	// The uplink: machine/hello on channel 0, then a channel opened and a message on it.
+	f.uplink(ctx, l, ws)
+}
+
+// enrol answers a host's machines/announce with the host's id, and keeps its public key.
+func (f *fakeControl) enrol(ctx context.Context, l *Lines) {
+	req, _ := l.Read(ctx)
+	var call struct {
+		Method string `json:"method"`
+		Params struct {
+			PublicKey []byte `json:"publicKey"`
+		} `json:"params"`
+	}
+	if err := json.Unmarshal([]byte(req), &call); err != nil {
+		f.t.Errorf("enrol %q: %v", req, err)
+	}
+	if call.Method != "machines/announce" {
+		f.t.Errorf("enrol said %s", call.Method)
+	}
+	f.mu.Lock()
+	f.hostPublic = call.Params.PublicKey
+	f.mu.Unlock()
+	_ = l.Write(ctx, `{"jsonrpc":"2.0","id":1,"result":{"host":"`+f.host+`"}}`) // the fake hangs up next, as after a refusal
+}
+
+// uplink is the host's link once it is in: machine/hello on channel 0, then a channel opened
+// and a message on it, then each line the host sends.
+func (f *fakeControl) uplink(ctx context.Context, l *Lines, ws *websocket.Conn) {
 	first, _ := l.Read(ctx)
 	var frame struct {
 		C int `json:"c"`
@@ -128,7 +144,9 @@ func (f *fakeControl) serve(w http.ResponseWriter, r *http.Request) {
 			Params MachineHello `json:"params"`
 		} `json:"m"`
 	}
-	json.Unmarshal([]byte(first), &frame)
+	if err := json.Unmarshal([]byte(first), &frame); err != nil {
+		f.t.Errorf("first uplink line %q: %v", first, err)
+	}
 	if frame.C != 0 || frame.M.Method != "machine/hello" {
 		f.t.Errorf("first uplink line %s", first)
 	}
@@ -136,8 +154,11 @@ func (f *fakeControl) serve(w http.ResponseWriter, r *http.Request) {
 	if f.letGo {
 		return
 	}
-	l.Write(ctx, `{"c":1,"open":{"client":"C","device":"D1","fanOut":true}}`)
-	l.Write(ctx, `{"c":1,"m":{"jsonrpc":"2.0","id":7,"method":"daemon/ping"}}`)
+	for _, line := range []string{`{"c":1,"open":{"client":"C","device":"D1","fanOut":true}}`, `{"c":1,"m":{"jsonrpc":"2.0","id":7,"method":"daemon/ping"}}`} {
+		if l.Write(ctx, line) != nil {
+			return
+		}
+	}
 	f.ws.Store(ws)
 	if f.say != nil {
 		go f.relay(ctx, l)
@@ -165,10 +186,12 @@ func (f *fakeControl) serve(w http.ResponseWriter, r *http.Request) {
 		}
 		if json.Unmarshal([]byte(line), &ask) == nil && ask.C == 0 && ask.M.Method == "machine/machines" {
 			id := strconv.FormatInt(ask.M.ID, 10)
+			answer := `{"c":0,"m":{"jsonrpc":"2.0","id":` + id + `,"result":{"providers":[]}}}`
 			if strings.Contains(string(ask.M.Params), "refuse") {
-				l.Write(ctx, `{"c":0,"m":{"jsonrpc":"2.0","id":`+id+`,"error":{"code":-32010,"message":"Agent Loops can’t ask that of the control plane."}}}`)
-			} else {
-				l.Write(ctx, `{"c":0,"m":{"jsonrpc":"2.0","id":`+id+`,"result":{"providers":[]}}}`)
+				answer = `{"c":0,"m":{"jsonrpc":"2.0","id":` + id + `,"error":{"code":-32010,"message":"Agent Loops can’t ask that of the control plane."}}}`
+			}
+			if l.Write(ctx, answer) != nil {
+				return
 			}
 			continue
 		}
@@ -241,7 +264,9 @@ func TestEnrolThenUplink(t *testing.T) {
 		}
 		for line := range c.In() {
 			served <- line
-			c.Write(`{"jsonrpc":"2.0","id":7,"result":{}}`)
+			if err := c.Write(`{"jsonrpc":"2.0","id":7,"result":{}}`); err != nil {
+				t.Error(err)
+			}
 		}
 	}}
 	go u.Run(ctx)
@@ -267,12 +292,12 @@ func TestEnrolThenUplink(t *testing.T) {
 	if _, err := u.Ask(ctx, "machine/machines", map[string]any{"method": "refuse"}); !errors.As(err, &refused) || refused.Code != -32010 || refused.Message != "Agent Loops can’t ask that of the control plane." {
 		t.Fatalf("refused %v", err)
 	}
-	u.WriteFanOut([]int{1, 3}, nil, `{"jsonrpc":"2.0","method":"agent/changed","params":{}}`)
+	must(t, u.WriteFanOut([]int{1, 3}, nil, `{"jsonrpc":"2.0","method":"agent/changed","params":{}}`))
 	if line := <-f.channel; line != `{"f":[1,3],"m":{"jsonrpc":"2.0","method":"agent/changed","params":{}}}` {
 		t.Fatalf("fan-out frame %s", line)
 	}
 	// Each checked channel's lock member, null for one with none (#3541).
-	u.WriteFanOut([]int{1, 3}, []string{"", `{"n":2,"mac":"M"}`}, `{"jsonrpc":"2.0","method":"agent/changed","params":{}}`)
+	must(t, u.WriteFanOut([]int{1, 3}, []string{"", `{"n":2,"mac":"M"}`}, `{"jsonrpc":"2.0","method":"agent/changed","params":{}}`))
 	if line := <-f.channel; line != `{"f":[1,3],"l":[null,{"n":2,"mac":"M"}],"m":{"jsonrpc":"2.0","method":"agent/changed","params":{}}}` {
 		t.Fatalf("fan-out frame with lock members %s", line)
 	}
@@ -300,5 +325,13 @@ func TestMembershipShape(t *testing.T) {
 	b, _ := os.ReadFile(filepath.Join(root, "control-host.json"))
 	if !strings.Contains(string(b), `"controlKey":"BAEC"`) {
 		t.Fatalf("file %s", b)
+	}
+}
+
+// must fails the test at once when a step fails.
+func must(t testing.TB, err error) {
+	t.Helper()
+	if err != nil {
+		t.Fatal(err)
 	}
 }

@@ -51,7 +51,7 @@ func TestACardReachesTheWindowAfterThePause(t *testing.T) {
 		t.Fatalf("%+v", a)
 	}
 	var pending wire.AttentionPending
-	json.Unmarshal(c.call(t, 3, "attention/pending", nil), &pending)
+	mustUnmarshal(t, c.call(t, 3, "attention/pending", nil), &pending)
 	if len(pending.Needs) != 1 || len(pending.Deliveries) != 1 {
 		t.Fatalf("%+v", pending)
 	}
@@ -73,12 +73,12 @@ func TestEveryClientHearsANeedShownNowhereAndItsEnd(t *testing.T) {
 	defer d.Shutdown()
 	dir := folder(t, c, 1)
 	folder := store.FolderURL(dir)
-	os.WriteFile(filepath.Join(dir, "a.md"), nil, 0o644)
+	must(t, os.WriteFile(filepath.Join(dir, "a.md"), nil, 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	c.call(t, 2, "pins/pin", map[string]any{"folder": folder, "path": "a.md"})
 	worker := seeded(t, d, dir, func(a *wire.Agent) {
 		a.State, a.EndedReason = wire.AgentStateRunning, nil
 	})
-	os.WriteFile(filepath.Join(dir, ".agents", "pins.json"), []byte(`{"pins":[]}`), 0o644)
+	must(t, os.WriteFile(filepath.Join(dir, ".agents", "pins.json"), []byte(`{"pins":[]}`), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	d.readPins(dir)
 	var told wire.AttentionNotification
 	c.until(t, "the change told", attentionNote(func(n wire.AttentionNotification) bool {
@@ -93,7 +93,7 @@ func TestEveryClientHearsANeedShownNowhereAndItsEnd(t *testing.T) {
 	d.reconsider()
 	// Kept: every client hears it is over, by its id alone.
 	var reading wire.GuardedChangeReading
-	json.Unmarshal(c.call(t, 3, "folders/readGuardedChange", map[string]any{"folder": folder, "path": ".agents/pins.json"}), &reading)
+	mustUnmarshal(t, c.call(t, 3, "folders/readGuardedChange", map[string]any{"folder": folder, "path": ".agents/pins.json"}), &reading)
 	c.in <- `{"jsonrpc":"2.0","id":4,"method":"approvals/answer","params":{"folder":"` + string(folder) +
 		`","kind":"file","key":".agents/pins.json","digest":"` + *reading.Digest + `","action":"approve"}}`
 	c.until(t, "the change over", attentionNote(func(n wire.AttentionNotification) bool {

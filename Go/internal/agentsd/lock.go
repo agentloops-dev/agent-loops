@@ -111,7 +111,9 @@ func (d *Daemon) heldLockLocked() (*machinelock.State, bool) {
 func (d *Daemon) LockPin() machinelock.Pin {
 	var pin machinelock.Pin
 	if b, err := os.ReadFile(d.lockPinPath()); err == nil {
-		json.Unmarshal(b, &pin)
+		if err := json.Unmarshal(b, &pin); err != nil {
+			log.Printf("lock: could not read the kept pin: %v", err)
+		}
 	}
 	return pin
 }
@@ -265,7 +267,9 @@ func (d *Daemon) toldLockJoin(params json.RawMessage) {
 	// passed on another key could only pass on that key's digits.
 	digits := machinelock.Digits(r.Key, ask.nonce, r.Nonce)
 	shown := digits[:3] + " " + digits[3:]
-	os.WriteFile(filepath.Join(d.Store.Loc.Root, lockShownFile), []byte(shown+"\n"), 0o600)
+	if err := os.WriteFile(filepath.Join(d.Store.Loc.Root, lockShownFile), []byte(shown+"\n"), 0o600); err != nil {
+		log.Printf("lock: could not keep the digits shown: %v", err)
+	}
 	log.Printf("lock: to add this machine to the lock, check that your device shows the digits %s, then approve it", shown)
 }
 

@@ -283,7 +283,7 @@ func (s *sockConn) writeAll() {
 		case <-s.done:
 			return
 		case line := <-s.out:
-			s.c.SetWriteDeadline(time.Now().Add(sockWriteDeadline))
+			_ = s.c.SetWriteDeadline(time.Now().Add(sockWriteDeadline)) // it fails only on a closed socket, and so does the write
 			_, err := w.WriteString(line + "\n")
 			for more := true; more && err == nil; {
 				select {
@@ -319,18 +319,26 @@ func (d *Daemon) ServeSocket(ctx context.Context, path string) error {
 	if err != nil {
 		return err
 	}
-	os.Chmod(path, 0o600)
+	if err := os.Chmod(path, 0o600); err != nil {
+		_ = l.Close() // the socket is not served
+		return err
+	}
 	policy := d.socketPolicy()
 	log.Printf("socket: %s", policy.Summary())
 	// Shutdown ends the accept loop too, not only the caller's ctx (#5812): a loop left
 	// running past it took connections in the next test.
-	d.goJob("socket close", func() {
+	// A host that stopped between the listen and here starts no job: close at once, or the
+	// accept below waits for ever (#6487).
+	if !d.goJobAt("socket close", callerSite(0), func() {
 		select {
 		case <-ctx.Done():
 		case <-d.hostCtx().Done():
 		}
 		l.Close()
-	})
+	}) {
+		_ = l.Close() // nothing listens on it yet; a close that fails has no one to tell
+		return net.ErrClosed
+	}
 	for {
 		c, err := l.Accept()
 		if err != nil {
@@ -345,7 +353,7 @@ func (d *Daemon) ServeSocket(ctx context.Context, path string) error {
 func (d *Daemon) acceptSocket(c net.Conn, policy SocketPolicy) {
 	role, ok := policy.Role(c)
 	if !ok {
-		c.Close() // another account, or one the kernel would not name
+		_ = c.Close() // another account, or one the kernel would not name
 		return
 	}
 	d.serveSockConn(newSockConn(c, role), bufio.NewReaderSize(c, 1<<20))

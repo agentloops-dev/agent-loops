@@ -105,7 +105,9 @@ func (d *Daemon) sendPack(r wire.SendPackRequest) (wire.SendPack, error) {
 		refs = append(refs, "refs/heads/"+b)
 	}
 	sweepTransfers(d.outgoingFolder())
-	os.MkdirAll(d.outgoingFolder(), 0o700)
+	if err := os.MkdirAll(d.outgoingFolder(), 0o700); err != nil {
+		return p, err
+	}
 
 	// Only the receiving host's commits this repository has too can be left out.
 	var known []string
@@ -182,7 +184,7 @@ func (d *Daemon) readOutgoing(r wire.SendReadRequest, gone string) (wire.SendRea
 		os.Remove(path)
 	} else {
 		now := time.Now()
-		os.Chtimes(path, now, now)
+		_ = os.Chtimes(path, now, now) // keeps it from the sweep; it fails only when the file is gone
 	}
 	return wire.SendRead{Data: buf[:n], End: end}, nil
 }

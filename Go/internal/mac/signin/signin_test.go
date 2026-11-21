@@ -169,7 +169,9 @@ func TestClaudesItemAsClaudeWritesIt(t *testing.T) {
 	if tok, err := c.Current(); err != nil || tok.Access != "tok" {
 		t.Fatalf("%v %v", tok, err)
 	}
-	c.Current()
+	if _, err := c.Current(); err != nil {
+		t.Fatal(err)
+	}
 	if reads != 1 {
 		t.Fatalf("read %d times: the token is kept until a minute before it expires", reads)
 	}
@@ -191,10 +193,14 @@ func TestCodexsFileIsLentAsAStandInAndRenewedInPlace(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "auth.json")
 	b, _ := json.Marshal(map[string]any{"auth_mode": "chatgpt", "tokens": map[string]any{"access_token": access,
 		"id_token": id, "refresh_token": "refresh", "account_id": "acct"}})
-	os.WriteFile(file, b, 0o600)
+	if err := os.WriteFile(file, b, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	endpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body map[string]string
-		json.NewDecoder(r.Body).Decode(&body)
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+		}
 		if body["refresh_token"] != "refresh" || body["client_id"] != "app_x" {
 			w.WriteHeader(400)
 			return
@@ -212,7 +218,12 @@ func TestCodexsFileIsLentAsAStandInAndRenewedInPlace(t *testing.T) {
 	var lent struct {
 		Tokens map[string]string `json:"tokens"`
 	}
-	json.Unmarshal([]byte(standIn), &lent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal([]byte(standIn), &lent); err != nil {
+		t.Fatal(err)
+	}
 	kept, _ := claims(lent.Tokens["id_token"])["https://api.openai.com/auth"].(map[string]any)
 	if err != nil || lent.Tokens["refresh_token"] != "agents-relay-standin" || kept["chatgpt_plan_type"] != "pro" ||
 		kept["secret"] != nil || ClientBearer(standIn) != lent.Tokens["access_token"] || strings.Contains(standIn, access) {

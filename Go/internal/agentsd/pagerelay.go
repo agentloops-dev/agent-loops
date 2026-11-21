@@ -66,12 +66,13 @@ func (d *Daemon) StartPage(ctx context.Context, private []byte, folder string, p
 // closes. When the control plane can't be reached, the page is told so with the refusal it
 // already knows (unavailable), and it tries again as it does today.
 func (d *Daemon) carryPage(ctx context.Context, page *websocket.Conn, private []byte, port int, remote string) {
-	defer page.CloseNow()
+	defer func() { _ = page.CloseNow() }() // it may be closed already, by either end
 	up, host, err := d.dialForPage(ctx, private, port)
 	if err != nil {
 		log.Printf("page: a page from %s was not carried: %v", remote, err)
 		wctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		page.Write(wctx, websocket.MessageText, []byte(controllink.Message{Refused: controllink.Unavailable}.Line()))
+		// A page gone already does not need the refusal.
+		_ = page.Write(wctx, websocket.MessageText, []byte(controllink.Message{Refused: controllink.Unavailable}.Line()))
 		cancel()
 		page.Close(websocket.StatusNormalClosure, "")
 		return
@@ -232,7 +233,12 @@ func (o *pageOut) writeAll(ctx context.Context) {
 }
 
 // Close lets the page go: its socket is closed, so its reader ends too.
-func (o *pageOut) Close() { o.once.Do(func() { close(o.done); o.page.CloseNow() }) }
+func (o *pageOut) Close() {
+	o.once.Do(func() {
+		close(o.done)
+		_ = o.page.CloseNow() // it may be closed already, by the other end
+	})
+}
 
 // dialForPage opens a socket to the control plane and proves this host on it as w:<host>,
 // with the page's port, at each address the membership has in turn.

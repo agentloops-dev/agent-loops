@@ -484,7 +484,10 @@ func (d *Daemon) dropRequest(r wire.RequestsDrop, by *wire.AuditActor) (wire.Req
 		return wire.RequestUpdate{}, &Error{Code: wire.FailureNoSuchAgent, Message: "That request has ended already.", Data: wire.RequestUpdate{Request: *rec}}
 	}
 	if d.liveFormOf(r.ID) != nil {
-		d.answerElicitation(wire.AnswerElicitationRequest{RequestID: r.ID, Action: wire.AnswerElicitationRequestActionCancel})
+		// The request is dropped already; a form answered meanwhile has nothing left to cancel.
+		if err := d.answerElicitation(wire.AnswerElicitationRequest{RequestID: r.ID, Action: wire.AnswerElicitationRequestActionCancel}); err != nil {
+			log.Printf("requests: drop %s: could not cancel its form: %v", r.ID, err)
+		}
 	}
 	d.secretUseEnded(r.ID)
 	after := d.request(r.ID)

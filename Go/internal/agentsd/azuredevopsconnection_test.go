@@ -2,7 +2,6 @@ package agentsd
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -43,12 +42,12 @@ func TestConnectingAzureDevOpsWithAToken(t *testing.T) {
 	d.azureDevOpsHTTP = ado.Client()
 
 	var none wire.ConnectionTokenAnswer
-	json.Unmarshal(c.call(t, 1, "connections/sign-in/token", map[string]any{"provider": "azuredevops", "token": "ado-secret"}), &none)
+	mustUnmarshal(t, c.call(t, 1, "connections/sign-in/token", map[string]any{"provider": "azuredevops", "token": "ado-secret"}), &none)
 	if none.Error == nil || none.Connection != nil || !strings.Contains(*none.Error, "organization") {
 		t.Fatalf("no organization: %+v", none)
 	}
 	var bad wire.ConnectionTokenAnswer
-	json.Unmarshal(c.call(t, 2, "connections/sign-in/token", map[string]any{"provider": "azuredevops", "url": ado.URL + "/acme", "token": "ado-wrong"}), &bad)
+	mustUnmarshal(t, c.call(t, 2, "connections/sign-in/token", map[string]any{"provider": "azuredevops", "url": ado.URL + "/acme", "token": "ado-wrong"}), &bad)
 	if bad.Error == nil || strings.Contains(*bad.Error, "ado-wrong") || !strings.Contains(*bad.Error, "did not take") {
 		t.Fatalf("a wrong token: %+v", bad)
 	}
@@ -58,7 +57,7 @@ func TestConnectingAzureDevOpsWithAToken(t *testing.T) {
 		t.Fatalf("the token went back to the client: %s", raw)
 	}
 	var made wire.ConnectionTokenAnswer
-	json.Unmarshal(raw, &made)
+	mustUnmarshal(t, raw, &made)
 	host := strings.TrimPrefix(ado.URL, "http://")
 	if made.Error != nil || made.Connection == nil || made.Connection.Provider != wire.ConnectionProviderAzuredevops ||
 		deref(made.Connection.Login) != "Agents Test" || deref(made.Connection.Workspace) != host+"/acme" || made.Connection.ExpiresAt != nil {
@@ -69,7 +68,7 @@ func TestConnectingAzureDevOpsWithAToken(t *testing.T) {
 		t.Fatalf("kept: %+v", kept)
 	}
 	var list wire.ConnectionsList
-	json.Unmarshal(c.call(t, 4, "connections/list", map[string]any{}), &list)
+	mustUnmarshal(t, c.call(t, 4, "connections/list", map[string]any{}), &list)
 	if len(list.Connections) != 1 || list.Connections[0].Provider != wire.ConnectionProviderAzuredevops ||
 		!strings.Contains(fmt.Sprint(list.Providers), "azuredevops") {
 		t.Fatalf("list: %+v", list)
@@ -111,7 +110,7 @@ func TestSigningInToAzureDevOpsWithEntra(t *testing.T) {
 	access := "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiIxIn0.c2ln"
 	polling := make(chan struct{})
 	entra := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		r.ParseForm()
+		check(t, r.ParseForm())
 		form := map[string]string{"path": r.URL.Path}
 		for k := range r.PostForm {
 			form[k] = r.PostForm.Get(k)
@@ -171,7 +170,7 @@ func TestSigningInToAzureDevOpsWithEntra(t *testing.T) {
 		t.Fatalf("an Azure DevOps Server: %s", msg)
 	}
 	var started wire.ConnectionSignIn
-	json.Unmarshal(c.call(t, 3, "connections/sign-in", map[string]any{"provider": "azuredevops", "url": ado.URL + "/acme"}), &started)
+	mustUnmarshal(t, c.call(t, 3, "connections/sign-in", map[string]any{"provider": "azuredevops", "url": ado.URL + "/acme"}), &started)
 	if started.Status != wire.ConnectionSignInStatusWaiting || deref(started.UserCode) != "ENTRA123" ||
 		started.VerificationURL != "https://microsoft.com/devicelogin" || started.Grant != wire.ConnectionSignInGrantDeviceCode {
 		t.Fatalf("started: %+v", started)
@@ -195,7 +194,7 @@ func TestSigningInToAzureDevOpsWithEntra(t *testing.T) {
 
 	// Due within the margin: renewed with the scope, as Entra wants it.
 	kept.AccessExpiresAt = time.Now().Add(time.Minute)
-	file.Put(kept)
+	must(t, file.Put(kept))
 	d.renewConnections()
 	renewed, _, _ := file.Get(connections.AzureDevOps)
 	mu.Lock()
@@ -207,9 +206,9 @@ func TestSigningInToAzureDevOpsWithEntra(t *testing.T) {
 	}
 	// An Entra connection that must sign in again is still Entra's, not a token's.
 	renewed.Access, renewed.Refresh, renewed.SignInAgain = "", "", true
-	file.Put(renewed)
+	must(t, file.Put(renewed))
 	var list wire.ConnectionsList
-	json.Unmarshal(c.call(t, 5, "connections/list", map[string]any{}), &list)
+	mustUnmarshal(t, c.call(t, 5, "connections/list", map[string]any{}), &list)
 	if len(list.Connections) != 1 || list.Connections[0].ByToken != nil || list.Connections[0].State != wire.ConnectionStateSignInAgain {
 		t.Fatalf("list: %+v", list.Connections)
 	}
@@ -225,7 +224,7 @@ func waitEntraSignIn(t *testing.T, c *conn, flowID wire.UUID) wire.ConnectionSig
 		if strings.Contains(string(raw), "eyJ") || strings.Contains(string(raw), "rt-1") || strings.Contains(string(raw), "dc-secret") {
 			t.Fatalf("a secret went to the client: %s", raw)
 		}
-		json.Unmarshal(raw, &done)
+		mustUnmarshal(t, raw, &done)
 		if done.Status != wire.ConnectionSignInStatusWaiting {
 			break
 		}
@@ -292,7 +291,7 @@ func TestAnAzureDevOpsFoldersConnectorSetUp(t *testing.T) {
 	c.call(t, 1, "folders/add", map[string]any{"folder": "file://" + folder})
 
 	var setup wire.ConnectorSetup
-	json.Unmarshal(c.call(t, 2, "connectors/setup", map[string]any{"folder": folder}), &setup)
+	mustUnmarshal(t, c.call(t, 2, "connectors/setup", map[string]any{"folder": folder}), &setup)
 	slots := slotsByKind(setup)
 	if setup.Forge == nil || *setup.Forge != wire.ConnectionProviderAzuredevops || deref(setup.Site) != "dev.azure.com" ||
 		deref(setup.Repository) != "acme/Web/app" || deref(setup.RepositoryURL) != "https://dev.azure.com/acme/Web/_git/app" ||
@@ -301,12 +300,12 @@ func TestAnAzureDevOpsFoldersConnectorSetUp(t *testing.T) {
 		t.Fatalf("before connecting: %+v", setup)
 	}
 
-	file.Put(connections.AzureDevOpsConnection(connections.AzureDevOpsServices, "acme", "ado-secret", "Agents Test", time.Now()))
+	must(t, file.Put(connections.AzureDevOpsConnection(connections.AzureDevOpsServices, "acme", "ado-secret", "Agents Test", time.Now())))
 	raw := c.call(t, 3, "connectors/setup", map[string]any{"folder": folder, "reading": "fresh"})
 	if strings.Contains(string(raw), "ado-secret") {
 		t.Fatalf("a token went to the client: %s", raw)
 	}
-	json.Unmarshal(raw, &setup)
+	mustUnmarshal(t, raw, &setup)
 	slots = slotsByKind(setup)
 	tasks, review, ci := slots[wire.ConnectorSlotKindTasks], slots[wire.ConnectorSlotKindCodeReview], slots[wire.ConnectorSlotKindCi]
 	if tasks.State != wire.ConnectorSlotStateRead || tasks.Proof == nil || *tasks.Proof.Number != 12 ||
@@ -352,10 +351,10 @@ func TestAnAzureDevOpsSetUpKeepsTheFoldersBoardsProjects(t *testing.T) {
 	file := &connections.File{Path: filepath.Join(t.TempDir(), ".agents-secrets", connections.FileName)}
 	d.connStoreFor = func() (connections.Store, error) { return file, nil }
 	d.newAzureDevOpsSetupReader = func(string, string) azureDevOpsSetupReader { return &fakeSetupAzureDevOps{} }
-	file.Put(connections.AzureDevOpsConnection(connections.AzureDevOpsServices, "acme", "ado-secret", "Agents Test", time.Now()))
+	must(t, file.Put(connections.AzureDevOpsConnection(connections.AzureDevOpsServices, "acme", "ado-secret", "Agents Test", time.Now())))
 	named := gitFolder(t, "https://dev.azure.com/acme/Web/_git/app")
-	os.MkdirAll(filepath.Join(named, ".agents"), 0o755)
-	os.WriteFile(filepath.Join(named, ".agents", "folder.json"), []byte(`{"azureBoardsProjects": ["acme/Plans"]}`), 0o644)
+	must(t, os.MkdirAll(filepath.Join(named, ".agents"), 0o755))                                                                    //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(named, ".agents", "folder.json"), []byte(`{"azureBoardsProjects": ["acme/Plans"]}`), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	c.call(t, 1, "folders/add", map[string]any{"folder": "file://" + named})
 	c.call(t, 2, "connectors/setup", map[string]any{"folder": named, "reading": "fresh"})
 	if got := d.folderBoardsProjects(named); !slices.Equal(got, []string{"acme/plans"}) {
@@ -363,8 +362,8 @@ func TestAnAzureDevOpsSetUpKeepsTheFoldersBoardsProjects(t *testing.T) {
 	}
 
 	jira := gitFolder(t, "https://dev.azure.com/acme/Web/_git/other")
-	os.MkdirAll(filepath.Join(jira, ".agents"), 0o755)
-	os.WriteFile(filepath.Join(jira, ".agents", "folder.json"), []byte(`{"jiraProjects": ["WEB"]}`), 0o644)
+	must(t, os.MkdirAll(filepath.Join(jira, ".agents"), 0o755))                                                      //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(jira, ".agents", "folder.json"), []byte(`{"jiraProjects": ["WEB"]}`), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	c.call(t, 3, "folders/add", map[string]any{"folder": "file://" + jira})
 	c.call(t, 4, "connectors/setup", map[string]any{"folder": jira, "reading": "fresh"})
 	if b, _ := os.ReadFile(filepath.Join(jira, ".agents", "folder.json")); strings.Contains(string(b), "azureBoardsProjects") {
@@ -389,7 +388,7 @@ func TestAnAzureDevOpsRemoteAtTheConnectionsServer(t *testing.T) {
 		t.Fatalf("before connecting: %+v %v", f, connected)
 	}
 	fake := "http://127.0.0.1:3802/"
-	file.Put(connections.AzureDevOpsConnection(fake, "acme", "ado-secret", "Agents Test", time.Now()))
+	must(t, file.Put(connections.AzureDevOpsConnection(fake, "acme", "ado-secret", "Agents Test", time.Now())))
 	server := gitFolder(t, fake+"acme/Web/_git/app")
 	if f, c, connected := forgeAtOK(t, d, ctx, server); f.root != fake || f.repo != "acme/Web/app" || !connected || c.Access != "ado-secret" {
 		t.Fatalf("connected to a fake: %+v %v", f, connected)

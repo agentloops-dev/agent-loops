@@ -235,7 +235,7 @@ func writeCanonical(b *bytes.Buffer, v any) {
 		var s bytes.Buffer
 		enc := json.NewEncoder(&s)
 		enc.SetEscapeHTML(false)
-		enc.Encode(x)
+		_ = enc.Encode(x) // a string always encodes
 		b.Write(bytes.TrimRight(s.Bytes(), "\n"))
 	case json.Number:
 		if n, err := x.Int64(); err == nil {

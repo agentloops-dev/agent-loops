@@ -108,7 +108,7 @@ func mcpEventsErrorOf(err error) *mcpEventsError {
 			RetryAfterMs *int   `json:"retryAfterMs"`
 			Reason       string `json:"reason"`
 		}
-		json.Unmarshal(f.data, &data)
+		_ = json.Unmarshal(f.data, &data) // optional: no data leaves no retry time and no reason
 		switch f.code {
 		case -32011:
 			e.kind = "notFound"
@@ -279,7 +279,7 @@ func (p *mcpEventConns) connect(key string, c *mcpEventConn, es eventServer) err
 		var init struct {
 			Capabilities map[string]json.RawMessage `json:"capabilities"`
 		}
-		json.Unmarshal(raw, &init)
+		_ = json.Unmarshal(raw, &init) // optional: no capabilities reads as no events
 		_, c.hasEvents = init.Capabilities["events"]
 		ctx, cancel := context.WithTimeout(context.Background(), p.timeout)
 		err = c.c.notify(ctx, "notifications/initialized")

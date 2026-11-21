@@ -302,7 +302,8 @@ func (d *Daemon) filesMentionMatches(r wire.FileMentionRequest) []wire.FileMenti
 	}
 	term := strings.ToLower(r.Term)
 	seen := 0
-	filepath.WalkDir(root, func(path string, e os.DirEntry, err error) error {
+	// The callback returns only nil or SkipDir, so the walk has no error to give: out is what it found.
+	_ = filepath.WalkDir(root, func(path string, e os.DirEntry, err error) error {
 		seen++
 		if err != nil || len(out) >= 50 || seen > 20000 {
 			return filepath.SkipDir

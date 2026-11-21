@@ -2,6 +2,7 @@ package agentsd
 
 import (
 	"context"
+	"log"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -49,7 +50,9 @@ func (d *Daemon) saveAllowancesLocked() {
 		list = append(list, s)
 	}
 	sort.Slice(list, func(i, j int) bool { return list[i].CredentialKey < list[j].CredentialKey })
-	writeStore(d.allowancesPath(), list)
+	if err := writeStore(d.allowancesPath(), list); err != nil {
+		log.Printf("allowances: could not save: %v", err)
+	}
 }
 
 // ownKey is a runtime's own credential: its sign-in.

@@ -94,7 +94,7 @@ func (d *Daemon) readSessionSecrets(agent wire.UUID) sessionSecretFile {
 	var f sessionSecretFile
 	if p := d.sessionSecretsPath(agent); p != "" {
 		if b, err := os.ReadFile(p); err == nil {
-			json.Unmarshal(b, &f)
+			_ = json.Unmarshal(b, &f) // unreadable reads as nothing (above)
 		}
 	}
 	return f
@@ -116,8 +116,11 @@ func (d *Daemon) writeSessionSecretsLocked(agent wire.UUID, f sessionSecretFile)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
-	os.Chmod(filepath.Dir(dir), 0o700)
-	os.Chmod(dir, 0o700)
+	for _, folder := range []string{filepath.Dir(dir), dir} {
+		if err := os.Chmod(folder, 0o700); err != nil { //nolint:gosec // G302: a folder, which needs x to be opened
+			log.Printf("session secrets: could not make %s private: %v", folder, err)
+		}
+	}
 	b, err := json.Marshal(f)
 	if err != nil {
 		return err

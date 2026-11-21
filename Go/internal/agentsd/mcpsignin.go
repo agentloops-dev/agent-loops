@@ -381,7 +381,10 @@ func (d *Daemon) finishSignIn(flow *signInFlow, redirect *loopback, plan mcpcata
 		return failed("The sign-in couldn't be kept: " + mcpcatalog.SignInFileName + " could not be read or written.")
 	}
 	if given != nil {
-		st.signIns.KeepClient(*given, plan.Server)
+		// The sign-in is kept; without its client the next sign-in registers one again.
+		if err := st.signIns.KeepClient(*given, plan.Server); err != nil {
+			log.Printf("mcp sign-in: %s: its client could not be kept: %v", name, err)
+		}
 	}
 	redirect.finish("Signed in to "+name, "The next agent you start has it. You can close this tab and go back to Agent Loops.")
 	return wire.MCPSignInStatus{SignedIn: &struct{}{}}
@@ -530,7 +533,11 @@ func listenForCallback(state string) (*loopback, error) {
 	lb := &loopback{state: state, listener: l, arrived: make(chan map[string]string, 1), page: make(chan [2]string, 1),
 		stopped: make(chan struct{}), sent: make(chan struct{})}
 	lb.server = &http.Server{Handler: http.HandlerFunc(lb.serve), ReadHeaderTimeout: 10 * time.Second}
-	safe.Go("mcp sign-in redirect", func() { lb.server.Serve(l) })
+	safe.Go("mcp sign-in redirect", func() {
+		if err := lb.server.Serve(l); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Printf("mcp sign-in: the redirect listener stopped: %v", err)
+		}
+	})
 	return lb, nil
 }
 
@@ -555,7 +562,8 @@ func (lb *loopback) serve(w http.ResponseWriter, r *http.Request) {
 	if query["state"] != lb.state {
 		h.Set("Content-Type", "text/plain")
 		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte("This isn't the sign-in Agent Loops is waiting for."))
+		// A browser that went away has no one to read it.
+		_, _ = w.Write([]byte("This isn't the sign-in Agent Loops is waiting for."))
 		return
 	}
 	first := false
@@ -563,7 +571,7 @@ func (lb *loopback) serve(w http.ResponseWriter, r *http.Request) {
 	if !first {
 		h.Set("Content-Type", "text/plain")
 		w.WriteHeader(http.StatusConflict)
-		w.Write([]byte("This sign-in is already done."))
+		_, _ = w.Write([]byte("This sign-in is already done."))
 		return
 	}
 	defer close(lb.sent)
@@ -576,7 +584,8 @@ func (lb *loopback) serve(w http.ResponseWriter, r *http.Request) {
 			`<body><h1>` + html.EscapeString(p[0]) + `</h1><p>` + html.EscapeString(p[1]) + `</p></body>`)
 		// Whole on the wire before linger closes the server: a length, not chunks.
 		h.Set("Content-Length", strconv.Itoa(len(page)))
-		w.Write(page)
+		// A browser that went away has no one to read it.
+		_, _ = w.Write(page)
 		if f, ok := w.(http.Flusher); ok {
 			f.Flush()
 		}

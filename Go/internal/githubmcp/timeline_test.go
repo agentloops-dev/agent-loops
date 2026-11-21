@@ -2,7 +2,6 @@ package githubmcp
 
 import (
 	"context"
-	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -44,7 +43,7 @@ func TestTimelineReadsEpicsChildrenAndReleases(t *testing.T) {
 			Variables map[string]any `json:"variables"`
 		}
 		body, _ := io.ReadAll(r.Body)
-		json.Unmarshal(body, &req)
+		unmarshal(t, body, &req)
 		mu.Lock()
 		defer mu.Unlock()
 		if ids, ok := req.Variables["ids"].([]any); ok {
@@ -57,7 +56,7 @@ func TestTimelineReadsEpicsChildrenAndReleases(t *testing.T) {
 					nodes = append(nodes, "null")
 				}
 			}
-			io.WriteString(w, `{"data":{"nodes":[`+strings.Join(nodes, ",")+`]}}`)
+			reply(t, w, `{"data":{"nodes":[`+strings.Join(nodes, ",")+`]}}`)
 			return
 		}
 		lists = append(lists, req.Variables)
@@ -66,7 +65,7 @@ func TestTimelineReadsEpicsChildrenAndReleases(t *testing.T) {
 		if req.Variables["states"].([]any)[0] == "OPEN" {
 			ids = `{"id":"I1","number":1},{"id":"I2","number":2}`
 		}
-		io.WriteString(w, `{"data":{"repository":{"issues":{"nodes":[`+ids+`]},`+releases+`}}}`)
+		reply(t, w, `{"data":{"repository":{"issues":{"nodes":[`+ids+`]},`+releases+`}}}`)
 	}))
 	t.Cleanup(s.Close)
 	g := NewRealGitHub(s.URL, func() string { return "t" }, nil)
@@ -113,7 +112,7 @@ func TestTimelineReadsEpicsInBatchesInOrder(t *testing.T) {
 			Variables map[string]any `json:"variables"`
 		}
 		body, _ := io.ReadAll(r.Body)
-		json.Unmarshal(body, &req)
+		unmarshal(t, body, &req)
 		ids, ok := req.Variables["ids"].([]any)
 		if !ok {
 			var nodes []string
@@ -122,7 +121,7 @@ func TestTimelineReadsEpicsInBatchesInOrder(t *testing.T) {
 					nodes = append(nodes, `{"id":"I`+strconv.Itoa(n)+`","number":`+strconv.Itoa(n)+`}`)
 				}
 			}
-			io.WriteString(w, `{"data":{"repository":{"issues":{"nodes":[`+strings.Join(nodes, ",")+`]},"releases":{"nodes":[]}}}}`)
+			reply(t, w, `{"data":{"repository":{"issues":{"nodes":[`+strings.Join(nodes, ",")+`]},"releases":{"nodes":[]}}}}`)
 			return
 		}
 		mu.Lock()
@@ -139,7 +138,7 @@ func TestTimelineReadsEpicsInBatchesInOrder(t *testing.T) {
 			n := strings.TrimPrefix(id.(string), "I")
 			nodes = append(nodes, `{"number":`+n+`,"issueState":"OPEN","repository":{"nameWithOwner":"alexec/Agents"},"subIssues":{"nodes":[]}}`)
 		}
-		io.WriteString(w, `{"data":{"nodes":[`+strings.Join(nodes, ",")+`]}}`)
+		reply(t, w, `{"data":{"nodes":[`+strings.Join(nodes, ",")+`]}}`)
 	}))
 	t.Cleanup(s.Close)
 	g := NewRealGitHub(s.URL, func() string { return "t" }, nil)

@@ -91,7 +91,9 @@ type racing struct {
 }
 
 func (r racing) Put(ctx context.Context, key string, data []byte, when store.Condition) (string, error) {
-	r.Store.Put(ctx, key, r.other, store.Absent)
+	if _, err := r.Store.Put(ctx, key, r.other, store.Absent); err != nil {
+		return "", err
+	}
 	return r.Store.Put(ctx, key, data, when)
 }
 

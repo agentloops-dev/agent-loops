@@ -331,11 +331,11 @@ func (c *stdioMCP) end() {
 	close(c.gone)
 	c.in.Close()
 	done := make(chan struct{})
-	go func() { c.cmd.Wait(); close(done) }()
+	go func() { _ = c.cmd.Wait(); close(done) }() // how a server that is asked to go exits says nothing
 	select {
 	case <-done:
 	case <-time.After(2 * time.Second):
-		c.cmd.Process.Kill()
+		_ = c.cmd.Process.Kill() // it may have ended already
 		<-done
 	}
 }

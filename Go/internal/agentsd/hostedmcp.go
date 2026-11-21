@@ -655,7 +655,9 @@ func hostedReplyOf(raw json.RawMessage) (json.RawMessage, *Error) {
 			Data    json.RawMessage `json:"data"`
 		} `json:"error"`
 	}
-	json.Unmarshal(raw, &reply)
+	if err := json.Unmarshal(raw, &reply); err != nil {
+		return nil, &Error{Code: -32000, Message: "The server's reply could not be read: " + err.Error()}
+	}
 	if reply.Error != nil {
 		e := &Error{Code: -32000, Message: "The server refused."}
 		if reply.Error.Code != nil {
@@ -793,7 +795,8 @@ func (d *Daemon) hostedRestart(h *hostedServer) {
 	h.state, h.retryAt = wire.HostedMCPStateIdle, nil
 	h.restarts++
 	d.hostedMu.Unlock()
-	d.hostedReady(h)
+	// hostedReady logs a start that fails, and the next call starts it again.
+	_, _ = d.hostedReady(h)
 }
 
 // hostedIdleLocked lets the process go: nothing uses it.
@@ -826,8 +829,9 @@ func hostedEnd(cmd *exec.Cmd, in io.WriteCloser) {
 		in.Close()
 	}
 	pid := cmd.Process.Pid
-	syscall.Kill(-pid, syscall.SIGTERM)
-	time.AfterFunc(hostedKillAfter, func() { syscall.Kill(-pid, syscall.SIGKILL) })
+	// A group that has already ended has nothing to stop.
+	_ = syscall.Kill(-pid, syscall.SIGTERM)
+	time.AfterFunc(hostedKillAfter, func() { _ = syscall.Kill(-pid, syscall.SIGKILL) })
 }
 
 // MARK: stderr
@@ -902,19 +906,22 @@ func (l *hostedLog) write(p []byte) {
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	os.MkdirAll(filepath.Dir(l.path), 0o700)
+	// A folder that cannot be made fails the open below, and the log is best effort.
+	_ = os.MkdirAll(filepath.Dir(l.path), 0o700)
 	// A write over the limit goes in parts of the limit (#3687), so no file passes it.
 	for len(p) > 0 {
 		part := p[:min(len(p), hostedLogLimit)]
 		p = p[len(part):]
 		if fi, err := os.Stat(l.path); err == nil && fi.Size()+int64(len(part)) > hostedLogLimit {
-			os.Rename(l.path, l.path+".1")
+			// A log that cannot be turned over grows past its limit by one part at most.
+			_ = os.Rename(l.path, l.path+".1")
 		}
 		f, err := os.OpenFile(l.path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 		if err != nil {
 			return
 		}
-		f.Write(part)
+		// The server's log is best effort: a write that fails loses only log lines.
+		_, _ = f.Write(part)
 		f.Close()
 	}
 }

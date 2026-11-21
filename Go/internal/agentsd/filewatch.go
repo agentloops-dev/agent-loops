@@ -81,7 +81,7 @@ func matchesAnyGlob(rel string, globs []string) bool {
 // eventPaths is a file event's paths detail, a JSON list, read back.
 func eventPaths(e wire.Event) []string {
 	var paths []string
-	json.Unmarshal([]byte(e.Details["paths"]), &paths)
+	_ = json.Unmarshal([]byte(e.Details["paths"]), &paths) // no paths detail: no paths
 	return paths
 }
 
@@ -176,7 +176,8 @@ func fileStamp(p string) (watchStamp, bool) {
 // relative to the folder, leaving out what the folder's watch leaves out and .git.
 func walkWatched(folder, dir string, globs []string) map[string]watchStamp {
 	files := map[string]watchStamp{}
-	filepath.WalkDir(dir, func(p string, e os.DirEntry, err error) error {
+	// The walk skips what it cannot read, so WalkDir returns no error.
+	_ = filepath.WalkDir(dir, func(p string, e os.DirEntry, err error) error {
 		if err != nil {
 			return nil
 		}

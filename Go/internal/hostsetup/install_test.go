@@ -71,7 +71,7 @@ func fakeHost(t *testing.T, l Layout, started *int) Deps {
 func options(t *testing.T) (Options, Layout) {
 	home := t.TempDir()
 	exe := filepath.Join(t.TempDir(), "agentsd")
-	os.WriteFile(exe, []byte("the host"), 0o700)
+	must(t, os.WriteFile(exe, []byte("the host"), 0o700)) //nolint:gosec // G306: the stand-in for agentsd must run
 	// A code with the right shape is not needed: the join file is written only for a parsed one,
 	// so a test that has no real code joins by an existing membership.
 	return Options{Join: "agents-control:x", Name: "dev-2", Home: home, Executable: exe}, LayoutOf(home)
@@ -79,11 +79,11 @@ func options(t *testing.T) (Options, Layout) {
 
 func TestRunWithAnAlreadyJoinedHostSetsUpAndIsSafeToRunAgain(t *testing.T) {
 	o, l := options(t)
-	os.MkdirAll(l.Root, 0o700)
-	os.WriteFile(filepath.Join(l.Root, "control-host.json"), []byte("{}"), 0o600)
+	must(t, os.MkdirAll(l.Root, 0o700))
+	must(t, os.WriteFile(filepath.Join(l.Root, "control-host.json"), []byte("{}"), 0o600))
 	project := t.TempDir()
-	os.MkdirAll(filepath.Join(project, ".agents"), 0o700)
-	os.WriteFile(filepath.Join(project, SetupScript), []byte("echo \"$AGENTS_SETUP $AGENTS_MACHINE $AGENTS_FROM_POOL\" > out.txt\necho warmed\n"), 0o600)
+	must(t, os.MkdirAll(filepath.Join(project, ".agents"), 0o700))
+	must(t, os.WriteFile(filepath.Join(project, SetupScript), []byte("echo \"$AGENTS_SETUP $AGENTS_MACHINE $AGENTS_FROM_POOL\" > out.txt\necho warmed\n"), 0o600))
 	o.Projects = []string{project}
 	started := 1 // running already
 	deps := fakeHost(t, l, &started)
@@ -131,11 +131,11 @@ func TestInstallRefusesWhatIsNotAHostCode(t *testing.T) {
 
 func TestAFailedScriptFailsStepSixWithItsLastLinesAndStepFiveStillRuns(t *testing.T) {
 	o, l := options(t)
-	os.MkdirAll(l.Root, 0o700)
-	os.WriteFile(filepath.Join(l.Root, "control-host.json"), []byte("{}"), 0o600)
+	must(t, os.MkdirAll(l.Root, 0o700))
+	must(t, os.WriteFile(filepath.Join(l.Root, "control-host.json"), []byte("{}"), 0o600))
 	bad := t.TempDir()
-	os.MkdirAll(filepath.Join(bad, ".agents"), 0o700)
-	os.WriteFile(filepath.Join(bad, SetupScript), []byte("echo one\nfalse\necho never\n"), 0o600)
+	must(t, os.MkdirAll(filepath.Join(bad, ".agents"), 0o700))
+	must(t, os.WriteFile(filepath.Join(bad, SetupScript), []byte("echo one\nfalse\necho never\n"), 0o600))
 	o.Projects = []string{bad, filepath.Join(t.TempDir(), "missing")}
 	started := 1
 	err := Run(context.Background(), o, fakeHost(t, l, &started))
@@ -156,10 +156,10 @@ func TestAFailedScriptFailsStepSixWithItsLastLinesAndStepFiveStillRuns(t *testin
 func TestRunScriptHoldsNoCredentialsAndStopsAtTheTimeout(t *testing.T) {
 	t.Setenv("GITHUB_TOKEN", "secret")
 	project := t.TempDir()
-	os.MkdirAll(filepath.Join(project, ".agents"), 0o700)
-	os.WriteFile(filepath.Join(project, SetupScript), []byte(`[ -z "$GITHUB_TOKEN" ] || exit 7
+	must(t, os.MkdirAll(filepath.Join(project, ".agents"), 0o700))
+	must(t, os.WriteFile(filepath.Join(project, SetupScript), []byte(`[ -z "$GITHUB_TOKEN" ] || exit 7
 exec sleep 30
-`), 0o600)
+`), 0o600))
 	start := time.Now()
 	had, err := RunScript(context.Background(), project, "m", false, 300*time.Millisecond, nil, nil)
 	if !had || err == nil || !strings.Contains(err.Error(), "ran longer than") {
@@ -176,7 +176,7 @@ exec sleep 30
 
 func TestPlaceBinaryIsRepeatable(t *testing.T) {
 	o, l := options(t)
-	os.MkdirAll(l.Bin, 0o700)
+	must(t, os.MkdirAll(l.Bin, 0o700))
 	a, err := placeBinary(o.Executable, l)
 	if err != nil {
 		t.Fatal(err)
@@ -209,5 +209,13 @@ func TestCompareSaysTheDigitsOfTheJoinCode(t *testing.T) {
 	}
 	if b, _ := os.ReadFile(filepath.Join(l.Root, "control-join-code")); string(b) != o.Join {
 		t.Errorf("the host joins with %q", b)
+	}
+}
+
+// must fails the test at once when a set-up step fails.
+func must(t testing.TB, err error) {
+	t.Helper()
+	if err != nil {
+		t.Fatal(err)
 	}
 }

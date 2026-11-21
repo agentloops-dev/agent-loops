@@ -41,7 +41,7 @@ func secretDescriptionsPath(home string) string {
 func readSecretDescriptions(home string) map[string]string {
 	out := map[string]string{}
 	if b, err := os.ReadFile(secretDescriptionsPath(home)); err == nil {
-		json.Unmarshal(b, &out)
+		_ = json.Unmarshal(b, &out) // unreadable reads as none, as the doc says
 	}
 	return out
 }

@@ -110,7 +110,9 @@ func readStore(path string, v any, meaning string) string {
 		return ""
 	}
 	aside := fmt.Sprintf("%s.unreadable-%d", path, time.Now().Unix())
-	os.Rename(path, aside)
+	if err := os.Rename(path, aside); err != nil {
+		log.Printf("%s: could not set it aside: %v", filepath.Base(path), err)
+	}
 	store.TrimSetAsides(path)
 	log.Printf("%s: unreadable, %s; kept as %s", filepath.Base(path), meaning, filepath.Base(aside))
 	return filepath.Base(path) + " could not be read, so it was set aside as " + filepath.Base(aside) + "."
