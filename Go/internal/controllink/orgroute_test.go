@@ -82,7 +82,7 @@ func TestTheSealingVectorsOpen(t *testing.T) {
 			file.Vectors = append(file.Vectors, v)
 		}
 		b, _ := json.MarshalIndent(file, "", "  ")
-		os.MkdirAll(filepath.Dir(sealingVectors), 0o755)
+		must(t, os.MkdirAll(filepath.Dir(sealingVectors), 0o750))
 		if err := os.WriteFile(sealingVectors, append(b, '\n'), 0o644); err != nil {
 			t.Fatal(err)
 		}

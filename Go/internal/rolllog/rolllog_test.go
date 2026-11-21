@@ -1,6 +1,7 @@
 package rolllog
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -25,13 +26,13 @@ func TestRollsPastTheLimit(t *testing.T) {
 	defer f.Close()
 	line := strings.Repeat("a", 39) + "\n" // 40 bytes
 	for range 2 {
-		f.Write([]byte(line))
+		write(t, f, line)
 	}
 	if _, err := os.Stat(Previous(path)); !os.IsNotExist(err) {
 		t.Fatal("rolled under the limit")
 	}
 	// The third line would take it to 120 bytes: the 80 go aside first.
-	f.Write([]byte(line))
+	write(t, f, line)
 	if got := read(t, Previous(path)); got != line+line {
 		t.Fatalf("previous %q", got)
 	}
@@ -40,7 +41,7 @@ func TestRollsPastTheLimit(t *testing.T) {
 	}
 	// Writing on never makes either file much bigger than the limit.
 	for range 1000 {
-		f.Write([]byte(line))
+		write(t, f, line)
 	}
 	for _, p := range []string{path, Previous(path)} {
 		if fi, _ := os.Stat(p); fi.Size() > 100 {
@@ -49,7 +50,7 @@ func TestRollsPastTheLimit(t *testing.T) {
 	}
 	// A line larger than the limit still goes into an empty log, whole.
 	big := strings.Repeat("d", 300)
-	f.Write([]byte(big))
+	write(t, f, big)
 	if got := read(t, path); got != big {
 		t.Fatalf("%d bytes", len(got))
 	}
@@ -57,13 +58,13 @@ func TestRollsPastTheLimit(t *testing.T) {
 
 func TestOpenRollsALogAlreadyPastTheLimit(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "control.log")
-	os.WriteFile(path, []byte(strings.Repeat("x", 200)), 0o600)
+	must(t, os.WriteFile(path, []byte(strings.Repeat("x", 200)), 0o600))
 	f, err := Open(path, 100, false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer f.Close()
-	f.Write([]byte("new\n"))
+	write(t, f, "new\n")
 	if read(t, path) != "new\n" || len(read(t, Previous(path))) != 200 {
 		t.Fatal("not rolled at open")
 	}
@@ -77,10 +78,10 @@ func TestTwoWritersShareOneLog(t *testing.T) {
 	defer host.Close()
 	supervisor, _ := Open(path, 100, false)
 	defer supervisor.Close()
-	host.Write([]byte(strings.Repeat("h", 60) + "\n"))
-	supervisor.Write([]byte(strings.Repeat("s", 37) + "\n")) // 99 bytes, both counted
-	host.Write([]byte("rolls\n"))
-	supervisor.Write([]byte("after\n"))
+	write(t, host, strings.Repeat("h", 60)+"\n")
+	write(t, supervisor, strings.Repeat("s", 37)+"\n") // 99 bytes, both counted
+	write(t, host, "rolls\n")
+	write(t, supervisor, "after\n")
 	if got := read(t, path); got != "rolls\nafter\n" {
 		t.Fatalf("current %q", got)
 	}
@@ -89,7 +90,7 @@ func TestTwoWritersShareOneLog(t *testing.T) {
 	}
 	// Removed by hand: started afresh.
 	os.Remove(path)
-	host.Write([]byte("again\n"))
+	write(t, host, "again\n")
 	if got := read(t, path); got != "again\n" {
 		t.Fatalf("after a removal %q", got)
 	}
@@ -104,18 +105,34 @@ func TestCheckRollsWhatWentPastWrite(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer f.Close()
-	f.Write([]byte("line\n"))
+	write(t, f, "line\n")
 	f.Check()
 	if _, err := os.Stat(Previous(path)); !os.IsNotExist(err) {
 		t.Fatal("rolled under the limit")
 	}
-	f.File().Write([]byte(strings.Repeat("p", 200)))
+	write(t, f.File(), strings.Repeat("p", 200))
 	f.Check()
 	if len(read(t, Previous(path))) != 205 {
 		t.Fatal("not rolled")
 	}
-	f.Write([]byte("after\n"))
+	write(t, f, "after\n")
 	if got := read(t, path); got != "after\n" {
 		t.Fatalf("current %q", got)
+	}
+}
+
+// must fails the test at once when a set-up step fails.
+func must(t testing.TB, err error) {
+	t.Helper()
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+// write writes s to w, and fails the test when it cannot.
+func write(t testing.TB, w io.Writer, s string) {
+	t.Helper()
+	if _, err := io.WriteString(w, s); err != nil {
+		t.Fatal(err)
 	}
 }

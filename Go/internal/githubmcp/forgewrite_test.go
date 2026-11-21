@@ -22,24 +22,24 @@ func restAPI(t *testing.T) (*RealGitHub, func() []string) {
 		mu.Unlock()
 		switch {
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/issues/7"):
-			io.WriteString(w, `{"id":700,"number":7}`)
+			reply(t, w, `{"id":700,"number":7}`)
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/issues/8"):
-			io.WriteString(w, `{"id":800,"number":8}`)
+			reply(t, w, `{"id":800,"number":8}`)
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/o/r/issues"):
 			w.WriteHeader(http.StatusCreated)
-			io.WriteString(w, `{"id":900,"number":9,"html_url":"https://github.com/o/r/issues/9"}`)
+			reply(t, w, `{"id":900,"number":9,"html_url":"https://github.com/o/r/issues/9"}`)
 		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/800"):
 			w.WriteHeader(http.StatusNotFound)
-			io.WriteString(w, `{"message":"Not Found"}`)
+			reply(t, w, `{"message":"Not Found"}`)
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/pulls/7"):
-			io.WriteString(w, `{"node_id":"PR_7","number":7}`)
+			reply(t, w, `{"node_id":"PR_7","number":7}`)
 		case r.URL.Path == "/graphql":
-			io.WriteString(w, `{"data":{}}`)
+			reply(t, w, `{"data":{}}`)
 		case r.Method == http.MethodGet:
 			w.WriteHeader(http.StatusNotFound)
-			io.WriteString(w, `{"message":"Not Found"}`)
+			reply(t, w, `{"message":"Not Found"}`)
 		default:
-			io.WriteString(w, `{}`)
+			reply(t, w, `{}`)
 		}
 	}))
 	t.Cleanup(s.Close)

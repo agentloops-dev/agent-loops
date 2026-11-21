@@ -2,7 +2,6 @@ package githubmcp
 
 import (
 	"context"
-	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -33,13 +32,13 @@ func TestPlanReadsSubIssuesAndBlockers(t *testing.T) {
 			Variables map[string]any `json:"variables"`
 		}
 		body, _ := io.ReadAll(r.Body)
-		json.Unmarshal(body, &req)
+		unmarshal(t, body, &req)
 		query = req.Query
 		if req.Variables["number"] == float64(404) {
-			io.WriteString(w, `{"data":{"repository":{"issue":null}}}`)
+			reply(t, w, `{"data":{"repository":{"issue":null}}}`)
 			return
 		}
-		io.WriteString(w, planAnswer)
+		reply(t, w, planAnswer)
 	}))
 	t.Cleanup(s.Close)
 	g := NewRealGitHub(s.URL, func() string { return "t" }, nil)
@@ -84,9 +83,9 @@ func TestBlockersReadsManyIssuesInOneQuery(t *testing.T) {
 			Query string `json:"query"`
 		}
 		body, _ := io.ReadAll(r.Body)
-		json.Unmarshal(body, &req)
+		unmarshal(t, body, &req)
 		queries = append(queries, req.Query)
-		io.WriteString(w, `{"data":{"repository":{"i7":{"blockedBy":{"nodes":[{"number":8,"state":"OPEN","repository":{"nameWithOwner":"o/r"}},{}]}},
+		reply(t, w, `{"data":{"repository":{"i7":{"blockedBy":{"nodes":[{"number":8,"state":"OPEN","repository":{"nameWithOwner":"o/r"}},{}]}},
  "i9":{"blockedBy":{"nodes":[]}},"i12":null}}}`)
 	}))
 	t.Cleanup(s.Close)

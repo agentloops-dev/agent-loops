@@ -2,7 +2,6 @@ package connections
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -32,7 +31,9 @@ func newFake(t *testing.T) *fakeGitHub {
 	f.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
 		defer f.mu.Unlock()
-		r.ParseForm()
+		if err := r.ParseForm(); err != nil {
+			t.Error(err)
+		}
 		form := map[string]string{"path": r.URL.Path}
 		for k := range r.PostForm {
 			form[k] = r.PostForm.Get(k)
@@ -41,24 +42,24 @@ func newFake(t *testing.T) *fakeGitHub {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case r.URL.Path == "/login/device/code":
-			json.NewEncoder(w).Encode(map[string]any{"device_code": "dev-123", "user_code": "WDJB-MJHT",
+			replyJSON(t, w, map[string]any{"device_code": "dev-123", "user_code": "WDJB-MJHT",
 				"verification_uri": "https://github.com/login/device", "expires_in": 900, "interval": 5})
 		case r.URL.Path == "/login/oauth/access_token" && r.PostForm.Get("grant_type") == "refresh_token":
-			json.NewEncoder(w).Encode(f.refresh)
+			replyJSON(t, w, f.refresh)
 		case r.URL.Path == "/login/oauth/access_token":
 			if len(f.polls) == 0 {
-				json.NewEncoder(w).Encode(map[string]any{"error": "authorization_pending"})
+				replyJSON(t, w, map[string]any{"error": "authorization_pending"})
 				return
 			}
 			next := f.polls[0]
 			f.polls = f.polls[1:]
-			json.NewEncoder(w).Encode(next)
+			replyJSON(t, w, next)
 		case r.URL.Path == "/api/user":
 			if r.Header.Get("Authorization") != "Bearer ghu_new" {
 				w.WriteHeader(http.StatusUnauthorized)
 				return
 			}
-			json.NewEncoder(w).Encode(map[string]any{"login": "octocat"})
+			replyJSON(t, w, map[string]any{"login": "octocat"})
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -211,7 +212,7 @@ func TestRefreshLeavesTheConnectionOnANetworkFailure(t *testing.T) {
 	flow := fake.flow(&now, new([]time.Duration))
 	fake.server.Close()
 	c := Connection{Provider: GitHub, Access: "ghu_old", Refresh: "ghr_old", AccessExpiresAt: now.Add(time.Minute)}
-	s.Put(c)
+	must(t, s.Put(c))
 	if r, err := RefreshIfDue(context.Background(), s, flow, GitHub, now); r != Unchanged || err == nil {
 		t.Fatalf("got %v %v", r, err)
 	}
@@ -276,7 +277,7 @@ func TestTheFileIsTheOwnersOnly(t *testing.T) {
 		t.Fatal("still there")
 	}
 	// A file that does not read is not written over.
-	os.WriteFile(s.Path, []byte("{"), 0o600)
+	must(t, os.WriteFile(s.Path, []byte("{"), 0o600))
 	if err := s.Put(Connection{Provider: GitHub}); !errors.Is(err, ErrUnreadable) {
 		t.Fatalf("got %v", err)
 	}
@@ -290,16 +291,16 @@ func TestTokenReaderReadsTheHostsStore(t *testing.T) {
 		t.Fatal("a token with no connection")
 	}
 	s, _ := Open(l)
-	s.Put(Connection{Provider: GitHub, Access: "ghu_x", AccessExpiresAt: time.Now().Add(time.Hour)})
+	must(t, s.Put(Connection{Provider: GitHub, Access: "ghu_x", AccessExpiresAt: time.Now().Add(time.Hour)}))
 	if got := read(); got != "ghu_x" {
 		t.Fatalf("got %q", got)
 	}
 	// An ended token is not given, and a "sign in again" has none.
-	s.Put(Connection{Provider: GitHub, Access: "ghu_old", AccessExpiresAt: time.Now().Add(-time.Second)})
+	must(t, s.Put(Connection{Provider: GitHub, Access: "ghu_old", AccessExpiresAt: time.Now().Add(-time.Second)}))
 	if got := TokenReader(l, GitHub)(); got != "" {
 		t.Fatalf("an ended token: %q", got)
 	}
-	s.Put(Connection{Provider: GitHub, SignInAgain: true})
+	must(t, s.Put(Connection{Provider: GitHub, SignInAgain: true}))
 	if got := TokenReader(l, GitHub)(); got != "" {
 		t.Fatalf("sign in again: %q", got)
 	}
@@ -314,11 +315,11 @@ func TestTokenReaderSeesARenewalSoon(t *testing.T) {
 	l := Locator("file:" + path)
 	s, _ := Open(l)
 	read := TokenReader(l, GitHub)
-	s.Put(Connection{Provider: GitHub, Access: "ghu_far", AccessExpiresAt: time.Now().Add(time.Hour)})
+	must(t, s.Put(Connection{Provider: GitHub, Access: "ghu_far", AccessExpiresAt: time.Now().Add(time.Hour)}))
 	if got := read(); got != "ghu_far" {
 		t.Fatalf("got %q", got)
 	}
-	s.Put(Connection{Provider: GitHub, Access: "ghu_due", AccessExpiresAt: time.Now().Add(RefreshMargin / 2)})
+	must(t, s.Put(Connection{Provider: GitHub, Access: "ghu_due", AccessExpiresAt: time.Now().Add(RefreshMargin / 2)}))
 	time.Sleep(40 * time.Millisecond)
 	if got := read(); got != "ghu_far" {
 		t.Fatalf("a token far from its end is read again at once: %q", got)
@@ -327,7 +328,7 @@ func TestTokenReaderSeesARenewalSoon(t *testing.T) {
 	if got := read(); got != "ghu_due" {
 		t.Fatalf("got %q", got)
 	}
-	s.Put(Connection{Provider: GitHub, Access: "ghu_renewed", AccessExpiresAt: time.Now().Add(8 * time.Hour)})
+	must(t, s.Put(Connection{Provider: GitHub, Access: "ghu_renewed", AccessExpiresAt: time.Now().Add(8 * time.Hour)}))
 	time.Sleep(40 * time.Millisecond)
 	if got := read(); got != "ghu_renewed" {
 		t.Fatalf("the renewal is not seen: %q", got)
@@ -359,7 +360,7 @@ func TestKeychainKeepsAConnection(t *testing.T) {
 		t.Skip("no Keychain here")
 	}
 	k := &Keychain{Service: "agents.connection.test-" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")}
-	t.Cleanup(func() { k.Delete(GitHub) })
+	t.Cleanup(func() { _ = k.Delete(GitHub) }) // the test deletes it; this only cleans up after a failure
 	if _, ok, err := k.Get(GitHub); ok || err != nil {
 		t.Fatalf("empty: %v %v", ok, err)
 	}

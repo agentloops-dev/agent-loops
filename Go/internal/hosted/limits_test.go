@@ -175,7 +175,9 @@ func TestEventsPastThePlanGo(t *testing.T) {
 	old := now.Now().Add(-8 * day).Format("2006-01-02")
 	kept := now.Now().Add(-6 * day).Format("2006-01-02")
 	for _, key := range []string{"v1/events/" + old + "/1.json", "v1/events/" + old + "/2.json", "v1/events/" + kept + "/3.json"} {
-		l.Put(ctx, key, []byte(`{}`), store.Always)
+		if _, err := l.Put(ctx, key, []byte(`{}`), store.Always); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if n, err := s.sweepEvents(ctx, l, eventsSweepMost); err != nil || n != 2 {
 		t.Fatal(n, err)
@@ -351,7 +353,9 @@ func TestConnectionsHoldToThePlan(t *testing.T) {
 	}
 	res := connect()
 	buf := new(bytes.Buffer)
-	buf.ReadFrom(res.Body)
+	if _, err := buf.ReadFrom(res.Body); err != nil {
+		t.Fatal(err)
+	}
 	if res.StatusCode != http.StatusTooManyRequests || res.Header.Get("Agents-Refusal") != "limit" ||
 		!strings.Contains(buf.String(), "Your Free plan allows 2 connections at once. Close one") {
 		t.Fatal(res.StatusCode, res.Header.Get("Agents-Refusal"), buf.String())
@@ -362,7 +366,9 @@ func TestConnectionsHoldToThePlan(t *testing.T) {
 		t.Fatal(err)
 	}
 	buf.Reset()
-	buf.ReadFrom(ready.Body)
+	if _, err := buf.ReadFrom(ready.Body); err != nil {
+		t.Fatal(err)
+	}
 	ready.Body.Close()
 	if ready.Header.Get("Agents-Refusal") != "limit" || !strings.Contains(buf.String(), "Your Free plan allows 2 connections at once. Close one") {
 		t.Fatal(ready.StatusCode, ready.Header.Get("Agents-Refusal"), buf.String())

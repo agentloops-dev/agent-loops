@@ -35,9 +35,9 @@ func TestCheckBitbucketToken(t *testing.T) {
 		case r.URL.Path != "/2.0/user":
 			http.NotFound(w, r)
 		case basic && user == "me@example.com" && pass == "api-good":
-			w.Write([]byte(`{"nickname":"agentstest","display_name":"Agents Test"}`))
+			reply(t, w, `{"nickname":"agentstest","display_name":"Agents Test"}`)
 		case r.Header.Get("Authorization") == "Bearer access-good":
-			w.Write([]byte(`{"display_name":"Repository Access Token"}`))
+			reply(t, w, `{"display_name":"Repository Access Token"}`)
 		default:
 			w.WriteHeader(http.StatusUnauthorized)
 		}

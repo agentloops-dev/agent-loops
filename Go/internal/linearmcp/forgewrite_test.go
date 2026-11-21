@@ -2,7 +2,6 @@ package linearmcp
 
 import (
 	"context"
-	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -26,38 +25,38 @@ func TestPlanWritesOnLinear(t *testing.T) {
 			Variables map[string]any `json:"variables"`
 		}
 		body, _ := io.ReadAll(r.Body)
-		json.Unmarshal(body, &req)
+		unmarshal(t, body, &req)
 		mu.Lock()
 		defer mu.Unlock()
 		q := req.Query
 		switch {
 		case strings.Contains(q, "issueCreate"):
 			asked = append(asked, "create "+req.Variables["team"].(string)+" "+req.Variables["parent"].(string)+" "+req.Variables["title"].(string)+" "+strings.Join(anyStrings(req.Variables["labels"]), ","))
-			io.WriteString(w, `{"data":{"issueCreate":{"success":true,"issue":{"identifier":"ENG-9","url":"u9"}}}}`)
+			reply(t, w, `{"data":{"issueCreate":{"success":true,"issue":{"identifier":"ENG-9","url":"u9"}}}}`)
 		case strings.Contains(q, "parentId: $parent"):
 			asked = append(asked, "parent "+req.Variables["id"].(string)+" "+req.Variables["parent"].(string))
-			io.WriteString(w, `{"data":{"issueUpdate":{"success":true}}}`)
+			reply(t, w, `{"data":{"issueUpdate":{"success":true}}}`)
 		case strings.Contains(q, "issueRelationCreate"):
 			asked = append(asked, "block "+req.Variables["blocker"].(string)+" "+req.Variables["blocked"].(string))
 			blocked = true
-			io.WriteString(w, `{"data":{"issueRelationCreate":{"success":true}}}`)
+			reply(t, w, `{"data":{"issueRelationCreate":{"success":true}}}`)
 		case strings.Contains(q, "issueRelationDelete"):
 			asked = append(asked, "unblock "+req.Variables["id"].(string))
 			blocked = false
-			io.WriteString(w, `{"data":{"issueRelationDelete":{"success":true}}}`)
+			reply(t, w, `{"data":{"issueRelationDelete":{"success":true}}}`)
 		case strings.Contains(q, "inverseRelations"):
 			rel := ``
 			if blocked {
 				rel = `{"id":"rel-1","type":"blocks","issue":{"identifier":"ENG-6"}}`
 			}
-			io.WriteString(w, `{"data":{"issue":{"id":"id-7","inverseRelations":{"nodes":[`+rel+`]}}}}`)
+			reply(t, w, `{"data":{"issue":{"id":"id-7","inverseRelations":{"nodes":[`+rel+`]}}}}`)
 		case strings.Contains(q, "issueLabels"):
-			io.WriteString(w, `{"data":{"issueLabels":{"nodes":[{"id":"l-task","name":"Task"},{"id":"l-work","name":"feature:work"}]}}}`)
+			reply(t, w, `{"data":{"issueLabels":{"nodes":[{"id":"l-task","name":"Task"},{"id":"l-work","name":"feature:work"}]}}}`)
 		case strings.Contains(q, "labels(first: 100)"):
 			id := req.Variables["id"].(string)
-			io.WriteString(w, `{"data":{"issue":{"id":"id-`+id[strings.Index(id, "-")+1:]+`","team":{"id":"team-1"},"labels":{"nodes":[]}}}}`)
+			reply(t, w, `{"data":{"issue":{"id":"id-`+id[strings.Index(id, "-")+1:]+`","team":{"id":"team-1"},"labels":{"nodes":[]}}}}`)
 		default:
-			io.WriteString(w, `{"data":{}}`)
+			reply(t, w, `{"data":{}}`)
 		}
 	}))
 	t.Cleanup(s.Close)
