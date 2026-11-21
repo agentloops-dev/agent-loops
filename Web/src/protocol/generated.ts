@@ -14940,6 +14940,11 @@ export interface StartRequest {
    */
   startedFrom?: StartedFrom;
   /**
+   * The loops CLI started it (#6444); absent from the Mac window, the Remote and the web page. It
+   * is not startedFrom, which the control plane signs and the host trusts for agents/fromStarter.
+   */
+  startedVia?: StartedVia;
+  /**
    * The line the control plane made when Auto picked this machine (#5375), "Auto chose Mac mini:
    * you last started here.": the session's chat says it first. A client sends what
    * sessions/previewStart gave in text.
@@ -14969,6 +14974,14 @@ export interface StartedMachinePreview {
   unpushed: UnpushedWork[];
   unknown?: string;
 }
+
+/**
+ * The loops CLI started the session (#6444, epic #6443): cli from a terminal that follows the chat;
+ * cli-print from -p or --detach, a script that reads only the end.
+ */
+export type StartedVia =
+  | "cli"
+  | "cli-print";
 
 export interface StartingPoint {
   repository: URLString;
@@ -19042,7 +19055,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   SlashCommand: { required: ["name"], optional: ["description", "inputHint"] },
   SpendCaps: { required: [], optional: ["dailyUSD"] },
   StartOptions: { required: ["values", "extraArguments"], optional: [] },
-  StartRequest: { required: ["runtimeID", "cwd", "prompt", "attachments", "startOptions", "additionalDirectories", "mcpServers", "labels"], optional: ["draftID", "worktree", "requestID", "sandbox", "priority", "persona", "levels", "purpose", "accountID", "voice", "startedFrom", "autoChose"] },
+  StartRequest: { required: ["runtimeID", "cwd", "prompt", "attachments", "startOptions", "additionalDirectories", "mcpServers", "labels"], optional: ["draftID", "worktree", "requestID", "sandbox", "priority", "persona", "levels", "purpose", "accountID", "voice", "startedFrom", "startedVia", "autoChose"] },
   StartedFrom: { required: ["machine", "agent", "who"], optional: [] },
   StartedMachinePreview: { required: ["host", "name", "state", "unpushed"], optional: ["unknown"] },
   StartingPoint: { required: ["repository", "commit"], optional: [] },

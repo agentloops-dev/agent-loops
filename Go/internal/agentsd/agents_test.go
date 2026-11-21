@@ -327,6 +327,34 @@ func TestContinueInFolder(t *testing.T) {
 	}
 }
 
+// TestFolderListOfOneIsTheLatestActive: agents/list {folder, limit: 1} is the folder's session
+// with the latest activity, not the one made last, and not another folder's (#6444): what
+// `loops` with no argument continues.
+func TestFolderListOfOneIsTheLatestActive(t *testing.T) {
+	t.Parallel()
+
+	d, c := start(t, t.TempDir())
+	defer d.Shutdown()
+	hour := wire.Date(3600)
+	t0 := now()
+	folder, other := t.TempDir(), t.TempDir()
+	at := func(created, active wire.Date) func(a *wire.Agent) {
+		return func(a *wire.Agent) { a.CreatedAt, a.LastActivityAt = created, active }
+	}
+	busy := seeded(t, d, folder, at(t0-48*hour, t0-hour))
+	seeded(t, d, folder, at(t0-2*hour, t0-2*hour))
+	seeded(t, d, folder, at(t0-24*hour, t0-24*hour))
+	seeded(t, d, other, at(t0, t0))
+	var list []wire.Agent
+	if err := json.Unmarshal(c.call(t, 1, "agents/list", map[string]any{"includeArchived": false, "archivedCommands": false,
+		"archivedOnly": false, "lean": true, "folder": store.FolderURL(folder), "limit": 1}), &list); err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 1 || list[0].ID != busy.ID {
+		t.Fatalf("not the latest active of the folder: %+v", list)
+	}
+}
+
 // TestArchivedListIsNewestArchivedFirst: an archived-only page is in order of when each was
 // archived, not of last activity (#2153), and goes on from its cursor in that order.
 func TestArchivedListIsNewestArchivedFirst(t *testing.T) {

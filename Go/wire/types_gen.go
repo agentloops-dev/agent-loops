@@ -15810,6 +15810,9 @@ type StartRequest struct {
 	// An agent on another machine started it, through the control plane (#2887): its chat says who.
 	StartedFrom *StartedFrom `json:"startedFrom,omitzero"`
 
+	// The loops CLI started it (#6444); absent from the Mac window, the Remote and the web page. It is not startedFrom, which the control plane signs and the host trusts for agents/fromStarter.
+	StartedVia *StartedVia `json:"startedVia,omitzero"`
+
 	// The line the control plane made when Auto picked this machine (#5375), "Auto chose Mac mini: you last started here.": the session's chat says it first. A client sends what sessions/previewStart gave in text.
 	AutoChose *string `json:"autoChose,omitzero"`
 }
@@ -15835,6 +15838,12 @@ type StartedMachinePreview struct {
 
 	Unknown *string `json:"unknown,omitzero"`
 }
+
+// The loops CLI started the session (#6444, epic #6443): cli from a terminal that follows the chat; cli-print from -p or --detach, a script that reads only the end.
+type StartedVia string
+
+const StartedViaCLI StartedVia = "cli"
+const StartedViaCLIPrint StartedVia = "cli-print"
 
 type StartingPoint struct {
 	Repository URL `json:"repository"`
