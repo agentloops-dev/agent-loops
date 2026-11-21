@@ -1412,6 +1412,10 @@ final class AppModel {
         return listed.contains { $0.id == .mac }
     }
 
+    /// The first list is drawn, or this window has none to wait for (#6311). The forge reads at start (the
+    /// Dashboard's, Work's read ahead) wait for it: sent first, they stood between the window and its sessions.
+    var firstListDrawn: Bool { hasLoadedAgents || !hasMacHost }
+
     /// Whether a host can do what `capability` names (#1748): its row's list. True when
     /// the host said no list, or the window is not a control plane's client.
     func host(_ host: MachineRef, has capability: String) -> Bool {

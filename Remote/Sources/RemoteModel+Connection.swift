@@ -77,6 +77,9 @@ extension RemoteModel {
             problem = nil
             controlPlaneRefusalLine = nil
             listen()
+            // The control plane first (#6311): its watch asks to join the machine lock, and until this device is in
+            // it the host refuses every call below. Started after them, it waited out a refused catch-up, a minute.
+            watchOtherHosts()
             // Each call here with a deadline: this runs inside the reconnect loop, and a
             // reply lost to a Mac restarting left the loop, and so the app, waiting for
             // good while it looked connected (073).
@@ -91,7 +94,6 @@ extension RemoteModel {
                 await catchUp()
                 await machineBrowsers[.mac]?.rewatchIfWatching()
             }
-            watchOtherHosts()
             note("link: settled after \(ContinuousClock.now - began); still connected \(isConnected)")
             return true
         } catch {
