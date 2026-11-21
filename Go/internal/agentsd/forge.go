@@ -692,17 +692,40 @@ func (d *Daemon) forgeItem(ctx context.Context, kind string, r wire.ForgeItemReq
 
 // forgeViewer is the login the person's connection to the forge named name has (#5804): the
 // one forge/approve reviews as, so a client knows which reviewer and which author is the
-// person. nil where the connection does not say it.
+// person. nil where the connection does not say it. It is kept in memory (#6531) until a
+// write to the store, or forgeCacheFor.
 func (d *Daemon) forgeViewer(name string) *string {
 	switch name {
 	case connections.GitHub, connections.GitLab, connections.Forgejo, connections.Bitbucket, connections.AzureDevOps:
 	default:
 		return nil
 	}
-	if c, ok := d.storedConnection(name); ok && c.Login != "" {
-		return &c.Login
+	d.viewerMu.Lock()
+	kept, ok := d.viewers[name]
+	gen := d.viewerGen
+	d.viewerMu.Unlock()
+	if ok && nowFunc().Sub(kept.at) < forgeCacheFor {
+		return kept.login
 	}
-	return nil
+	at := nowFunc()
+	c, found, err := d.readConnection(name)
+	if err != nil {
+		// A store that does not read is not kept: the next call reads it again.
+		return nil
+	}
+	var login *string
+	if found && c.Login != "" {
+		login = &c.Login
+	}
+	d.viewerMu.Lock()
+	if d.viewerGen == gen {
+		if d.viewers == nil {
+			d.viewers = map[string]keptViewer{}
+		}
+		d.viewers[name] = keptViewer{login, at}
+	}
+	d.viewerMu.Unlock()
+	return login
 }
 
 // gitlabOf is the connected GitLab, the project of repo there and a folder on it: a node names

@@ -84,6 +84,13 @@ type connectionBook struct {
 	// connReadFailed is set while the store does not read: storedConnection logs the first
 	// failure, and the next after a read works again (#6359).
 	connReadFailed atomic.Bool
+	// viewers is each forge's login, as forgeViewer read it from the store (#6531): the hook
+	// asks for Requested-by on each commit, and a Keychain read is most of that call. A write
+	// through connectionStore forgets them all, and an answer is kept forgeCacheFor at most,
+	// for a write by another process (a server's renewal).
+	viewerMu  sync.Mutex
+	viewers   map[string]keptViewer
+	viewerGen uint64 // one more at each forget, so a read that a write overtook is not kept
 	// newDeviceFlow is the provider's flow; a test gives a fake GitHub.
 	newDeviceFlow func(provider wire.ConnectionProvider) *connections.DeviceFlow
 	// newCodeFlow is a code-flow provider's flow; a test gives a fake Linear.
@@ -217,13 +224,49 @@ func (d *Daemon) connectionLocator() connections.Locator {
 }
 
 func (d *Daemon) connectionStore() (connections.Store, error) {
-	if d.connStoreFor != nil {
-		return d.connStoreFor()
-	}
-	if goruntime.GOOS != "darwin" && d.personalHome() == "" {
+	var s connections.Store
+	var err error
+	switch {
+	case d.connStoreFor != nil:
+		s, err = d.connStoreFor()
+	case goruntime.GOOS != "darwin" && d.personalHome() == "":
 		return nil, invalid("This machine has no home folder to keep connections in.")
+	default:
+		s, err = connections.Open(d.connectionLocator())
 	}
-	return connections.Open(d.connectionLocator())
+	if err != nil {
+		return nil, err
+	}
+	return forgettingStore{s, d}, nil
+}
+
+// forgettingStore is the host's store that forgets the kept logins at each write (#6531).
+type forgettingStore struct {
+	connections.Store
+	d *Daemon
+}
+
+func (s forgettingStore) Put(c connections.Connection) error {
+	defer s.d.forgetViewers()
+	return s.Store.Put(c)
+}
+
+func (s forgettingStore) Delete(provider string) error {
+	defer s.d.forgetViewers()
+	return s.Store.Delete(provider)
+}
+
+// keptViewer is a forge's login as the store said it at at; nil when it has none.
+type keptViewer struct {
+	login *string
+	at    time.Time
+}
+
+func (d *Daemon) forgetViewers() {
+	d.viewerMu.Lock()
+	d.viewers = nil
+	d.viewerGen++
+	d.viewerMu.Unlock()
 }
 
 func (d *Daemon) deviceFlow(p wire.ConnectionProvider) *connections.DeviceFlow {
