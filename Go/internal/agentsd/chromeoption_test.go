@@ -76,7 +76,7 @@ func TestAChatsUseChromeIsKeptWithoutAskingClaude(t *testing.T) {
 	defer d.Shutdown()
 	a := seeded(t, d, t.TempDir(), nil)
 	var opts []wire.ConfigOption
-	json.Unmarshal(c.call(t, 1, "agents/setOption", map[string]any{"agentID": a.ID, "optionID": "chrome", "value": true}), &opts)
+	mustUnmarshal(t, c.call(t, 1, "agents/setOption", map[string]any{"agentID": a.ID, "optionID": "chrome", "value": true}), &opts)
 	if len(opts) == 0 || opts[len(opts)-1].ID != "chrome" || string(opts[len(opts)-1].CurrentValue) != "true" {
 		t.Fatalf("%+v", opts)
 	}

@@ -46,8 +46,8 @@ func TestAFolderThatStopsWorkingIsIdleOnce(t *testing.T) {
 		t.Fatalf("%d", n)
 	}
 	// The clean-up's own agent, started by a folder.idle workflow, is not work.
-	os.MkdirAll(workflowsFolder(dir), 0o755)
-	os.WriteFile(filepath.Join(workflowsFolder(dir), "tidy.md"), []byte("---\non: folder.idle\n---\nTidy.\n"), 0o644)
+	must(t, os.MkdirAll(workflowsFolder(dir), 0o755))                                                                          //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(workflowsFolder(dir), "tidy.md"), []byte("---\non: folder.idle\n---\nTidy.\n"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	d.rescanWorkflows(dir)
 	tidy := "tidy"
 	job := seeded(t, d, dir, func(a *wire.Agent) { running(a); a.StartedByWorkflow = &tidy })

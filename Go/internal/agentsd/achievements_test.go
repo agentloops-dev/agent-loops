@@ -24,17 +24,17 @@ func TestAchievementsEarned(t *testing.T) {
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	var id wire.UUID
-	json.Unmarshal(c.call(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(), "prompt": "hello"}), &id)
+	mustUnmarshal(t, c.call(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(), "prompt": "hello"}), &id)
 	c.until(t, "the first agent earned", func(m string, p json.RawMessage) bool {
 		return m == "achievements/changed" && strings.Contains(string(p), `"firstAgent"`)
 	})
 	dir := folder(t, c, 2)
-	os.MkdirAll(workflowsFolder(dir), 0o755)
-	os.WriteFile(filepath.Join(workflowsFolder(dir), "tidy.md"), []byte("---\non: agent.finished\n---\nTidy.\n"), 0o644)
+	must(t, os.MkdirAll(workflowsFolder(dir), 0o755))                                                                             //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(workflowsFolder(dir), "tidy.md"), []byte("---\non: agent.finished\n---\nTidy.\n"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	c.call(t, 3, "workflows/list", map[string]any{"folder": store.FolderURL(dir)})
 	waitFor(t, "the first workflow", func() bool {
 		var m wire.Achievements
-		json.Unmarshal(c.call(t, 4, "achievements/state", map[string]any{}), &m)
+		mustUnmarshal(t, c.call(t, 4, "achievements/state", map[string]any{}), &m)
 		return hasAchievement(&m, firstWorkflow) && hasAchievement(&m, firstAgent)
 	})
 	b, _ := os.ReadFile(d.achievementsPath())
@@ -86,8 +86,8 @@ func TestAPairedDeviceIsBackFilled(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
-	os.WriteFile(filepath.Join(root, "devices.json"), []byte(`[{"id":"11111111-2222-3333-4444-555555555555","publicKey":"AAAA",`+
-		`"name":"Phone","kind":"iPhone","announcedAt":1}]`), 0o644)
+	must(t, os.WriteFile(filepath.Join(root, "devices.json"), []byte(`[{"id":"11111111-2222-3333-4444-555555555555","publicKey":"AAAA",`+ //nolint:gosec // G306: the mode this file always had; only its error is new
+		`"name":"Phone","kind":"iPhone","announcedAt":1}]`), 0o644))
 	d, _ := start(t, root)
 	defer d.Shutdown()
 	waitFor(t, "the pairing back-filled", func() bool { return earned(d, firstPairing) })

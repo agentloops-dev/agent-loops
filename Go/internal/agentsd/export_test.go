@@ -25,7 +25,7 @@ func exportOf(t *testing.T, d *Daemon, c *conn, id int, params map[string]any) (
 	var all []byte
 	for i := 1; ; i++ {
 		var part wire.SendRead
-		json.Unmarshal(c.call(t, id*100+i, "agents/exportRead", map[string]any{"id": made.File.ID, "offset": len(all)}), &part)
+		mustUnmarshal(t, c.call(t, id*100+i, "agents/exportRead", map[string]any{"id": made.File.ID, "offset": len(all)}), &part)
 		all = append(all, part.Data...)
 		if part.End {
 			break
@@ -286,9 +286,9 @@ func TestExportAndImportStreamABigTranscript(t *testing.T) {
 		t.Fatal(err)
 	}
 	for range size / len(line) {
-		f.WriteString(line)
+		must(t, errOnly(f.WriteString(line)))
 	}
-	f.WriteString(`{"torn":`)
+	must(t, errOnly(f.WriteString(`{"torn":`)))
 	f.Close()
 
 	path := filepath.Join(t.TempDir(), "x.tar.gz")

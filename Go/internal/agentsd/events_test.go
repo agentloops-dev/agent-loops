@@ -2,7 +2,6 @@ package agentsd
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -54,17 +53,17 @@ func TestEventsAreKeptAndReadBack(t *testing.T) {
 	d.addConsequence(wire.Consequence{Woke: &wire.ConsequenceWoke{AgentID: "A", Title: "Fix"}}, base+2)
 
 	var page wire.EventsPage
-	json.Unmarshal(c.call(t, 1, "events/list", map[string]any{"limit": 1}), &page)
+	mustUnmarshal(t, c.call(t, 1, "events/list", map[string]any{"limit": 1}), &page)
 	if len(page.Events) != 1 || page.Events[0].Position != base+2 || !page.HasMore || len(page.Events[0].Consequences) != 1 || page.Waiting == nil {
 		t.Fatalf("%+v", page)
 	}
 	page = wire.EventsPage{}
-	json.Unmarshal(c.call(t, 2, "events/list", map[string]any{"limit": 200, "groups": []string{"mac"}}), &page)
+	mustUnmarshal(t, c.call(t, 2, "events/list", map[string]any{"limit": 200, "groups": []string{"mac"}}), &page)
 	if page.Events[0].Name != "server.online" {
 		t.Fatalf("%+v", page)
 	}
 	page = wire.EventsPage{}
-	json.Unmarshal(c.call(t, 3, "events/list", map[string]any{"limit": 200, "scope": map[string]any{"folder": map[string]any{"_0": "file://" + dir}}}), &page)
+	mustUnmarshal(t, c.call(t, 3, "events/list", map[string]any{"limit": 200, "scope": map[string]any{"folder": map[string]any{"_0": "file://" + dir}}}), &page)
 	if len(page.Events) != 1 || page.Events[0].Name != "branch.moved" {
 		t.Fatalf("%+v", page)
 	}
@@ -79,7 +78,7 @@ func TestEventsAreKeptAndReadBack(t *testing.T) {
 	}
 	var state eventState
 	s, _ := os.ReadFile(filepath.Join(root, "events-state.json"))
-	diskjson.Unmarshal(s, &state)
+	must(t, diskjson.Unmarshal(s, &state))
 	if state.NextPosition != 2+eventPositionBlock {
 		t.Fatalf("%s", s)
 	}
@@ -87,7 +86,7 @@ func TestEventsAreKeptAndReadBack(t *testing.T) {
 
 	// A restart reads it back, and a torn last line is skipped; positions go on from the block.
 	f, _ := os.OpenFile(filepath.Join(root, "events.jsonl"), os.O_APPEND|os.O_WRONLY, 0o644)
-	f.WriteString(`{"event":{"posi`)
+	must(t, errOnly(f.WriteString(`{"event":{"posi`)))
 	f.Close()
 	d2, err := New(context.Background(), root)
 	if err != nil {
@@ -144,7 +143,7 @@ func TestRaisingByHandAndAServersChange(t *testing.T) {
 	}
 	draft["name"] = "branch.moved"
 	var e wire.Event
-	json.Unmarshal(c.call(t, 3, "events/raise", map[string]any{"draft": draft,
+	mustUnmarshal(t, c.call(t, 3, "events/raise", map[string]any{"draft": draft,
 		"consequences": []any{map[string]any{"woke": map[string]any{"agentID": "A", "title": "Fix"}}}}), &e)
 	if e.Name != "branch.moved" || len(e.Consequences) != 1 {
 		t.Fatalf("%+v", e)
@@ -152,7 +151,7 @@ func TestRaisingByHandAndAServersChange(t *testing.T) {
 	if e := c.callError(t, 4, "events/server", map[string]any{"server": " ", "online": true}); e.Message != "A server change needs the server's name." {
 		t.Fatal(e.Message)
 	}
-	json.Unmarshal(c.call(t, 5, "events/server", map[string]any{"server": "ci", "online": false}), &e)
+	mustUnmarshal(t, c.call(t, 5, "events/server", map[string]any{"server": "ci", "online": false}), &e)
 	if e.Name != "server.offline" || e.Sentence != "ci went offline." || e.Details["server"] != "ci" {
 		t.Fatalf("%+v", e)
 	}
@@ -229,7 +228,7 @@ func TestADiskCrossingIsSaidOnce(t *testing.T) {
 	// The levels of the first look are kept for the next run.
 	var state eventState
 	s, _ := os.ReadFile(filepath.Join(root, "events-state.json"))
-	diskjson.Unmarshal(s, &state)
+	must(t, diskjson.Unmarshal(s, &state))
 	if len(state.DiskLevels) == 0 {
 		t.Fatalf("%s", s)
 	}
