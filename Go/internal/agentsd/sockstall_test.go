@@ -38,7 +38,7 @@ func TestAStalledSocketClientIsLetGo(t *testing.T) {
 	}
 	defer os.RemoveAll(dir)
 	path := filepath.Join(dir, "d.sock")
-	go d.ServeSocket(ctx, path)
+	go func() { _ = d.ServeSocket(ctx, path) }() // it ends with ctx; a socket that does not listen fails the dial
 	stalled := dialUnix(t, path)
 	defer stalled.Close()
 	reader := dialUnix(t, path)
@@ -104,7 +104,7 @@ func TestAStalledSocketClientIsLetGo(t *testing.T) {
 		t.Fatalf("the reading client heard %d of %d", got, n)
 	}
 	// The stalled one was let go: what it has buffered ends in EOF.
-	stalled.SetReadDeadline(time.Now().Add(waitLimit(t)))
+	must(t, stalled.SetReadDeadline(time.Now().Add(waitLimit(t))))
 	if _, err := io.Copy(io.Discard, stalled); err != nil {
 		t.Fatalf("the stalled client was not let go: %v", err)
 	}

@@ -19,16 +19,16 @@ func sharedHome(t *testing.T) string {
 	home := t.TempDir()
 	put := func(rel, text string) {
 		p := filepath.Join(home, rel)
-		os.MkdirAll(filepath.Dir(p), 0o755)
-		os.WriteFile(p, []byte(text), 0o644)
+		must(t, os.MkdirAll(filepath.Dir(p), 0o755))  //nolint:gosec // G301: the mode this folder always had; only its error is new
+		must(t, os.WriteFile(p, []byte(text), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	}
 	put(".agents/AGENTS.md", "# Personal instructions\n")
 	put(".agents/skills/review/SKILL.md", "---\nname: review\ndescription: \"Reviews a change.\"\n---\n")
 	put(".agents/skills/linked/SKILL.md", "---\nname: linked\n---\n")
 	put(".agents/skills/clashing/SKILL.md", "---\nname: clashing\n---\n")
 	put(".claude/skills/clashing/SKILL.md", "theirs\n")
-	os.Symlink("../../.agents/skills/linked", filepath.Join(home, ".claude/skills/linked"))
-	os.Symlink("../.agents/AGENTS.md", filepath.Join(home, ".claude/CLAUDE.md"))
+	must(t, os.Symlink("../../.agents/skills/linked", filepath.Join(home, ".claude/skills/linked")))
+	must(t, os.Symlink("../.agents/AGENTS.md", filepath.Join(home, ".claude/CLAUDE.md")))
 	put(".codex/AGENTS.md", "codex's own\n")
 	put(".agents/mcp.json", `{"mcpServers": {
 		"github": {"command": "npx", "args": ["-y", "server", "--token=abc123", "fourth"], "env": {"GITHUB_TOKEN": "${GITHUB_TOKEN}"}},
@@ -171,11 +171,11 @@ func TestSharedSnapshotAnsweredOverTheSocket(t *testing.T) {
 	// A folder's .agents, with no reach, and only a folder's.
 	folder := t.TempDir()
 	c.call(t, 2, "folders/add", map[string]any{"folder": "file://" + folder})
-	os.MkdirAll(filepath.Join(folder, ".agents", "skills", "build"), 0o755)
-	os.WriteFile(filepath.Join(folder, ".agents", "folder.json"), []byte("{}"), 0o644)
-	os.WriteFile(filepath.Join(folder, ".agents", "mcp.json"), []byte("{not json"), 0o644)
+	must(t, os.MkdirAll(filepath.Join(folder, ".agents", "skills", "build"), 0o755))                //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(folder, ".agents", "folder.json"), []byte("{}"), 0o644))     //nolint:gosec // G306: the mode this file always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(folder, ".agents", "mcp.json"), []byte("{not json"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	s = wire.SharedSnapshot{}
-	json.Unmarshal(c.call(t, 3, "personal/shared", map[string]any{"folder": folder}), &s)
+	mustUnmarshal(t, c.call(t, 3, "personal/shared", map[string]any{"folder": folder}), &s)
 	if s.Home != filepath.Join(folder, ".agents") || s.Instructions == nil || s.Instructions.Exists ||
 		s.Instructions.Path != filepath.Join(folder, "AGENTS.md") || len(s.Skills) != 1 || len(s.Skills[0].Reach) != 0 ||
 		s.MCP.Problem == nil || len(s.OtherFiles) != 1 || s.OtherFiles[0].Kind != wire.SharedOtherFileKindApp ||
@@ -196,7 +196,7 @@ func TestSharedSnapshotWithNoPersonalHome(t *testing.T) {
 	personalHomeFor(t, "")
 	raw := c.call(t, 1, "personal/shared", nil)
 	var s wire.SharedSnapshot
-	json.Unmarshal(raw, &s)
+	mustUnmarshal(t, raw, &s)
 	if s.LaidOut || s.Home != "" || !strings.Contains(string(raw), `"skills":[]`) {
 		t.Fatalf("%s", raw)
 	}

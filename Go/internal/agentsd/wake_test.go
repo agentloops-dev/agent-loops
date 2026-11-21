@@ -199,11 +199,11 @@ func TestReadWakeSettingsForgives(t *testing.T) {
 	if s := readWakeSettings(path); !reflect.DeepEqual(s, defaultWake()) {
 		t.Fatalf("missing: %+v", s)
 	}
-	os.WriteFile(path, []byte(`{"keepsAwake":"yes","graceHours":99,"awakeOnPower":true}`), 0o644)
+	must(t, os.WriteFile(path, []byte(`{"keepsAwake":"yes","graceHours":99,"awakeOnPower":true}`), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	if s := readWakeSettings(path); !s.KeepsAwake || s.GraceHours != 8 || s.WarmRuntimes != 3 || !s.AwakeOnPower {
 		t.Fatalf("forgiven: %+v", s)
 	}
-	os.WriteFile(path, []byte(`not json`), 0o644)
+	must(t, os.WriteFile(path, []byte(`not json`), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	if s := readWakeSettings(path); !reflect.DeepEqual(s, defaultWake()) {
 		t.Fatalf("corrupt: %+v", s)
 	}

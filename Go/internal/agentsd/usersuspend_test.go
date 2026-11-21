@@ -53,7 +53,7 @@ func TestASuspendedPersonsWorkStops(t *testing.T) {
 	root := t.TempDir()
 	d, c := start(t, root)
 	one, two := t.TempDir(), t.TempDir()
-	os.WriteFile(filepath.Join(one, "notes.txt"), []byte("kept"), 0o644)
+	must(t, os.WriteFile(filepath.Join(one, "notes.txt"), []byte("kept"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	a := startAgent(t, c, 1, one, "wait for me")
 	b := startAgent(t, c, 2, two, "wait for me")
 	waitFor(t, "both running", func() bool {
@@ -110,8 +110,8 @@ func TestASuspendedPersonsWorkflowsPause(t *testing.T) {
 	defer d.Shutdown()
 	dir := folder(t, c, 1)
 	folder := store.FolderURL(dir)
-	os.MkdirAll(workflowsFolder(dir), 0o755)
-	os.WriteFile(filepath.Join(workflowsFolder(dir), "review.md"), []byte("---\nname: Review\non: lease.granted\n---\nReview what changed.\n"), 0o644)
+	must(t, os.MkdirAll(workflowsFolder(dir), 0o755))                                                                                                           //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(workflowsFolder(dir), "review.md"), []byte("---\nname: Review\non: lease.granted\n---\nReview what changed.\n"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	approveAll(t, c, folder)
 	d.Told(wire.NotifyUserSuspended.Name, suspendedNote(false))
 	e := d.raise(wire.EventDraft{Name: "lease.granted", At: now(), Scope: macScope(), Sentence: "x was given build.",
@@ -130,7 +130,7 @@ func TestASuspendedPersonsWorkflowsPause(t *testing.T) {
 		t.Fatalf("%d agents started by themselves", n)
 	}
 	var s wire.WorkflowSummary
-	json.Unmarshal(c.call(t, 3, "workflows/run", map[string]any{"folder": folder, "workflowID": "review"}), &s)
+	mustUnmarshal(t, c.call(t, 3, "workflows/run", map[string]any{"folder": folder, "workflowID": "review"}), &s)
 	if s.LastOutcome == nil || s.LastOutcome.Ran == nil {
 		t.Fatalf("%+v", s)
 	}
@@ -149,7 +149,7 @@ func TestASuspendedPersonsWindowIsRefusedDirectly(t *testing.T) {
 		t.Fatalf("%+v", reply)
 	}
 	d.Told(wire.NotifyUserSuspended.Name, suspendedNote(false))
-	c.SetDeadline(time.Now().Add(5 * time.Second))
+	must(t, c.SetDeadline(time.Now().Add(5*time.Second)))
 	for {
 		if _, err := r.ReadString('\n'); err != nil {
 			if errors.Is(err, os.ErrDeadlineExceeded) {

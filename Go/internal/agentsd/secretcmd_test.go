@@ -37,7 +37,7 @@ func TestAgentsSecretReadsASecretThatDoesNotAsk(t *testing.T) {
 	}
 
 	stub := filepath.Join(t.TempDir(), "agentsd")
-	os.WriteFile(stub, []byte("#!/bin/sh\necho \"agentsd $*\"\n"), 0o700)
+	must(t, os.WriteFile(stub, []byte("#!/bin/sh\necho \"agentsd $*\"\n"), 0o700)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	d.credentialSelf = stub
 	env := d.withSecretCommand([]string{"PATH=/usr/bin:/bin"}, a.ID)
 	joined := strings.Join(env, "\n")

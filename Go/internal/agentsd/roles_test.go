@@ -70,8 +70,14 @@ func socketCall(t *testing.T, path, method string) *message {
 	c := dialUnix(t, path)
 	defer c.Close()
 	b, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": method})
-	must(t, errOnly(c.Write(append(b, '\n'))))
-	must(t, c.SetReadDeadline(time.Now().Add(5*time.Second)))
+	// A socket that closed on the caller (the policy turned it away) fails the write, the
+	// deadline or the read: each is no answer.
+	if _, err := c.Write(append(b, '\n')); err != nil {
+		return nil
+	}
+	if err := c.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		return nil
+	}
 	line, err := bufio.NewReader(c).ReadString('\n')
 	if err != nil {
 		return nil

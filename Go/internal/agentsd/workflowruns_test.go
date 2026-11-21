@@ -21,7 +21,7 @@ import (
 func approveAll(t *testing.T, c *conn, folder wire.URL) {
 	t.Helper()
 	var list []wire.WorkflowSummary
-	json.Unmarshal(c.call(t, 90, "workflows/list", map[string]any{"folder": folder}), &list)
+	mustUnmarshal(t, c.call(t, 90, "workflows/list", map[string]any{"folder": folder}), &list)
 	for i, s := range list {
 		if s.AwaitingApproval != nil {
 			c.call(t, 91+i, "workflows/approve", map[string]any{"folder": folder, "workflowID": s.Workflow.WorkflowID, "digest": s.AwaitingApproval.Digest})
@@ -42,11 +42,11 @@ func TestAWorkflowRuns(t *testing.T) {
 		a.LastActivityAt = lastUsed
 	})
 	folder := store.FolderURL(dir)
-	os.MkdirAll(workflowsFolder(dir), 0o755)
-	os.WriteFile(filepath.Join(workflowsFolder(dir), "review.md"), []byte("---\nname: Review\non: lease.granted\n---\nReview what changed.\n"), 0o644)
+	must(t, os.MkdirAll(workflowsFolder(dir), 0o755))
+	must(t, os.WriteFile(filepath.Join(workflowsFolder(dir), "review.md"), []byte("---\nname: Review\non: lease.granted\n---\nReview what changed.\n"), 0o644))
 	approveAll(t, c, folder)
 	var s wire.WorkflowSummary
-	json.Unmarshal(c.call(t, 2, "workflows/run", map[string]any{"folder": folder, "workflowID": "review"}), &s)
+	mustUnmarshal(t, c.call(t, 2, "workflows/run", map[string]any{"folder": folder, "workflowID": "review"}), &s)
 	if s.LastOutcome == nil || s.LastOutcome.Ran == nil {
 		t.Fatalf("%+v", s)
 	}
@@ -175,7 +175,7 @@ func TestRunNowRetriesStoppedWorkflowOnCurrentRuntime(t *testing.T) {
 	}
 	approveAll(t, c, folderURL)
 	var summary wire.WorkflowSummary
-	json.Unmarshal(c.call(t, 2, "workflows/run", map[string]any{"folder": folderURL, "workflowID": "retry"}), &summary)
+	mustUnmarshal(t, c.call(t, 2, "workflows/run", map[string]any{"folder": folderURL, "workflowID": "retry"}), &summary)
 	if summary.LastOutcome == nil || summary.LastOutcome.Ran == nil {
 		t.Fatalf("retry did not run: %+v", summary.LastOutcome)
 	}
@@ -184,7 +184,7 @@ func TestRunNowRetriesStoppedWorkflowOnCurrentRuntime(t *testing.T) {
 		t.Fatalf("retry did not use the current runtime: %+v", a)
 	}
 	// The new agent is still active, so another Run now remains refused.
-	json.Unmarshal(c.call(t, 3, "workflows/run", map[string]any{"folder": folderURL, "workflowID": "retry"}), &summary)
+	mustUnmarshal(t, c.call(t, 3, "workflows/run", map[string]any{"folder": folderURL, "workflowID": "retry"}), &summary)
 	if summary.LastOutcome.Refused == nil || summary.LastOutcome.Refused.Value.RunInFlight == nil {
 		t.Fatalf("active run was not protected: %+v", summary.LastOutcome)
 	}
@@ -233,10 +233,10 @@ func TestRunNowUsesExplicitlyChangedRuntimeWhileOldRunIsActive(t *testing.T) {
 	defer d.Shutdown()
 	dir := folder(t, c, 1)
 	folderURL := store.FolderURL(dir)
-	if err := os.MkdirAll(workflowsFolder(dir), 0o755); err != nil {
+	if err := os.MkdirAll(workflowsFolder(dir), 0o755); err != nil { //nolint:gosec // G301: the mode this folder always had; only its error is new
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(workflowsFolder(dir), "retry.md"), []byte("---\nname: Retry\nruntime: codex\n---\nwait for me\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(workflowsFolder(dir), "retry.md"), []byte("---\nname: Retry\nruntime: codex\n---\nwait for me\n"), 0o644); err != nil { //nolint:gosec // G306: the mode this file always had; only its error is new
 		t.Fatal(err)
 	}
 	approveAll(t, c, folderURL)
@@ -252,12 +252,12 @@ func TestRunNowUsesExplicitlyChangedRuntimeWhileOldRunIsActive(t *testing.T) {
 	d.workflowMu.Unlock()
 
 	var summary wire.WorkflowSummary
-	json.Unmarshal(c.call(t, 2, "workflows/run", map[string]any{"folder": folderURL, "workflowID": "retry"}), &summary)
+	mustUnmarshal(t, c.call(t, 2, "workflows/run", map[string]any{"folder": folderURL, "workflowID": "retry"}), &summary)
 	if summary.LastOutcome == nil || summary.LastOutcome.Refused == nil || summary.LastOutcome.Refused.Value.RunInFlight == nil {
 		t.Fatalf("a start without an agent ID did not block Run now: %+v", summary.LastOutcome)
 	}
 	d.releaseRun(pending.ID)
-	json.Unmarshal(c.call(t, 3, "workflows/run", map[string]any{"folder": folderURL, "workflowID": "retry"}), &summary)
+	mustUnmarshal(t, c.call(t, 3, "workflows/run", map[string]any{"folder": folderURL, "workflowID": "retry"}), &summary)
 	if summary.LastOutcome == nil || summary.LastOutcome.Ran == nil {
 		t.Fatalf("Run now did not retry on the selected runtime: %+v", summary.LastOutcome)
 	}
@@ -265,7 +265,7 @@ func TestRunNowUsesExplicitlyChangedRuntimeWhileOldRunIsActive(t *testing.T) {
 	if a := d.Store.Agent(newAgent); a == nil || a.RuntimeID != "codex" {
 		t.Fatalf("retry used the wrong runtime: %+v", a)
 	}
-	json.Unmarshal(c.call(t, 4, "workflows/run", map[string]any{"folder": folderURL, "workflowID": "retry"}), &summary)
+	mustUnmarshal(t, c.call(t, 4, "workflows/run", map[string]any{"folder": folderURL, "workflowID": "retry"}), &summary)
 	if summary.LastOutcome.Refused == nil || summary.LastOutcome.Refused.Value.RunInFlight == nil {
 		t.Fatalf("a run on the selected runtime did not block Run now: %+v", summary.LastOutcome)
 	}
@@ -280,11 +280,11 @@ func TestAFireWhileARunGoesQueues(t *testing.T) {
 	defer d.Shutdown()
 	dir := folder(t, c, 1)
 	folder := store.FolderURL(dir)
-	os.MkdirAll(workflowsFolder(dir), 0o755)
-	os.WriteFile(filepath.Join(workflowsFolder(dir), "slow.md"), []byte("---\non: server.online\n---\nwait for me\n"), 0o644)
+	must(t, os.MkdirAll(workflowsFolder(dir), 0o755))                                                                                  //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(workflowsFolder(dir), "slow.md"), []byte("---\non: server.online\n---\nwait for me\n"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	approveAll(t, c, folder)
 	var s wire.WorkflowSummary
-	json.Unmarshal(c.call(t, 2, "workflows/run", map[string]any{"folder": folder, "workflowID": "slow"}), &s)
+	mustUnmarshal(t, c.call(t, 2, "workflows/run", map[string]any{"folder": folder, "workflowID": "slow"}), &s)
 	first := s.LastOutcome.Ran.AgentID
 	waitFor(t, "it working", func() bool { return d.Store.Agent(first).State == wire.AgentStateRunning })
 	e := d.raise(wire.EventDraft{Name: "server.online", At: now(), Scope: macScope(), Sentence: "ci came back.", Details: map[string]string{"server": "ci"}})
@@ -294,7 +294,7 @@ func TestAFireWhileARunGoesQueues(t *testing.T) {
 	})
 	// By hand while it runs is refused, and said.
 	s = wire.WorkflowSummary{}
-	json.Unmarshal(c.call(t, 3, "workflows/run", map[string]any{"folder": folder, "workflowID": "slow"}), &s)
+	mustUnmarshal(t, c.call(t, 3, "workflows/run", map[string]any{"folder": folder, "workflowID": "slow"}), &s)
 	if s.LastOutcome.Refused == nil || s.LastOutcome.Refused.Value.RunInFlight == nil || s.Queued != 1 {
 		t.Fatalf("%+v", s)
 	}
@@ -334,17 +334,17 @@ func TestAWorkflowPinnedHereRuns(t *testing.T) {
 	defer d.Shutdown()
 	dir := folder(t, c, 1)
 	folder := store.FolderURL(dir)
-	os.MkdirAll(workflowsFolder(dir), 0o755)
-	os.WriteFile(filepath.Join(workflowsFolder(dir), "here.md"), []byte("---\nname: Here\non: lease.granted\nruns-on: ["+machine.ID()+"]\n---\nLook.\n"), 0o644)
-	os.WriteFile(filepath.Join(workflowsFolder(dir), "there.md"), []byte("---\nname: There\non: lease.granted\nruns-on: [another-computer]\n---\nLook.\n"), 0o644)
+	must(t, os.MkdirAll(workflowsFolder(dir), 0o755))                                                                                                                       //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(workflowsFolder(dir), "here.md"), []byte("---\nname: Here\non: lease.granted\nruns-on: ["+machine.ID()+"]\n---\nLook.\n"), 0o644))   //nolint:gosec // G306: the mode this file always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(workflowsFolder(dir), "there.md"), []byte("---\nname: There\non: lease.granted\nruns-on: [another-computer]\n---\nLook.\n"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	approveAll(t, c, folder)
 	var list []wire.WorkflowSummary
-	json.Unmarshal(c.call(t, 2, "workflows/list", map[string]any{"folder": folder}), &list)
+	mustUnmarshal(t, c.call(t, 2, "workflows/list", map[string]any{"folder": folder}), &list)
 	if len(list) != 1 || list[0].Workflow.WorkflowID != "here" {
 		t.Fatalf("%+v", list)
 	}
 	var s wire.WorkflowSummary
-	json.Unmarshal(c.call(t, 3, "workflows/run", map[string]any{"folder": folder, "workflowID": "here"}), &s)
+	mustUnmarshal(t, c.call(t, 3, "workflows/run", map[string]any{"folder": folder, "workflowID": "here"}), &s)
 	if s.LastOutcome == nil || s.LastOutcome.Ran == nil {
 		t.Fatalf("%+v", s)
 	}
@@ -369,12 +369,12 @@ func TestAWorkflowRunQueuedForALeaseIsNotArchived(t *testing.T) {
 	defer d.Shutdown()
 	dir := folder(t, c, 1)
 	folder := store.FolderURL(dir)
-	os.MkdirAll(workflowsFolder(dir), 0o755)
-	os.WriteFile(filepath.Join(workflowsFolder(dir), "drill.md"),
-		[]byte("---\nname: Drill\nwhen-done: archive\n---\nJoin the line for a lease.\n"), 0o644)
+	must(t, os.MkdirAll(workflowsFolder(dir), 0o755))                     //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(workflowsFolder(dir), "drill.md"), //nolint:gosec // G306: the mode this file always had; only its error is new
+		[]byte("---\nname: Drill\nwhen-done: archive\n---\nJoin the line for a lease.\n"), 0o644))
 	approveAll(t, c, folder)
 	var s wire.WorkflowSummary
-	json.Unmarshal(c.call(t, 2, "workflows/run", map[string]any{"folder": folder, "workflowID": "drill"}), &s)
+	mustUnmarshal(t, c.call(t, 2, "workflows/run", map[string]any{"folder": folder, "workflowID": "drill"}), &s)
 	if s.LastOutcome == nil || s.LastOutcome.Ran == nil {
 		t.Fatalf("%+v", s)
 	}

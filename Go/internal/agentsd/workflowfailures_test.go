@@ -1,7 +1,6 @@
 package agentsd
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -34,12 +33,12 @@ func TestAFailedRunIsListedUntilDismissed(t *testing.T) {
 	defer d.Shutdown()
 	dir := folder(t, c, 1)
 	folder := store.FolderURL(dir)
-	os.MkdirAll(workflowsFolder(dir), 0o755)
-	os.WriteFile(filepath.Join(workflowsFolder(dir), "nightly.md"), []byte("---\nname: Nightly\non: lease.granted\n---\nCheck the build.\n"), 0o644)
+	must(t, os.MkdirAll(workflowsFolder(dir), 0o755))                                                                                                         //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(workflowsFolder(dir), "nightly.md"), []byte("---\nname: Nightly\non: lease.granted\n---\nCheck the build.\n"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	approveAll(t, c, folder)
 	run := func(id int) wire.UUID {
 		var s wire.WorkflowSummary
-		json.Unmarshal(c.call(t, id, "workflows/run", map[string]any{"folder": folder, "workflowID": "nightly"}), &s)
+		mustUnmarshal(t, c.call(t, id, "workflows/run", map[string]any{"folder": folder, "workflowID": "nightly"}), &s)
 		if s.LastOutcome == nil || s.LastOutcome.Ran == nil {
 			t.Fatalf("%+v", s)
 		}
@@ -55,7 +54,7 @@ func TestAFailedRunIsListedUntilDismissed(t *testing.T) {
 		a := d.Store.Agent(agent)
 		// A run that stopped short (#1916: a finished run is never a failure).
 		a.State, a.EndedReason = wire.AgentStateStopped, reason(wire.EndedReasonRuntimeError)
-		d.Store.Save(*a)
+		must(t, d.Store.Save(*a))
 		return agent
 	}
 	agent := run(2)
@@ -82,7 +81,7 @@ func TestAFailedRunIsListedUntilDismissed(t *testing.T) {
 		t.Fatalf("a failure not shown is not dismissed: %+v", e)
 	}
 	var s wire.FolderSummary
-	json.Unmarshal(c.call(t, 6, "approvals/answer", answer("dismiss", *item.Digest)), &s)
+	mustUnmarshal(t, c.call(t, 6, "approvals/answer", answer("dismiss", *item.Digest)), &s)
 	for _, a := range s.Approvals {
 		if a.Kind == wire.ApprovalKindWorkflowFailed {
 			t.Fatalf("dismissed, it leaves Needs You: %+v", s.Approvals)

@@ -1,7 +1,6 @@
 package agentsd
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -24,7 +23,7 @@ func backgroundBuild(t *testing.T, words string) (*Daemon, *conn, wire.UUID, str
 	t.Cleanup(d.Shutdown)
 	release := filepath.Join(t.TempDir(), "release")
 	var id wire.UUID
-	json.Unmarshal(c.call(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(),
+	mustUnmarshal(t, c.call(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(),
 		"prompt": words + release, "startOptions": map[string]any{"values": map[string]any{}, "extraArguments": []string{}}}), &id)
 	c.until(t, "the prompt's end", ended(id, wire.AgentStateFinished))
 	c.until(t, "the runtime's own turn", ended(id, wire.AgentStateRunning))
@@ -47,7 +46,7 @@ func TestAHandOffWorksInATurnTheRuntimeBeganItself(t *testing.T) {
 		t.Fatalf("%s while the runtime still works", a.State)
 	}
 	// The cycle's result ends it, with a report from its own last words.
-	os.WriteFile(release, nil, 0o600)
+	must(t, os.WriteFile(release, nil, 0o600))
 	c.until(t, "the runtime's own turn's end", ended(id, wire.AgentStateFinished))
 	a := d.Store.Agent(id)
 	if a.Report == nil || a.Report.Message != "The build finished." {
@@ -79,7 +78,7 @@ func TestACycleBegunAsThePromptEndsIsATurnOfItsOwn(t *testing.T) {
 	if l := d.live(id); func() bool { l.mu.Lock(); defer l.mu.Unlock(); return !l.unprompted }() {
 		t.Fatal("no turn of its own")
 	}
-	os.WriteFile(release, nil, 0o600)
+	must(t, os.WriteFile(release, nil, 0o600))
 	c.until(t, "the runtime's own turn's end", ended(id, wire.AgentStateFinished))
 	if a := d.Store.Agent(id); a.Report == nil || a.Report.Message != "The build finished." {
 		t.Fatalf("%+v", a.Report)
@@ -89,7 +88,7 @@ func TestACycleBegunAsThePromptEndsIsATurnOfItsOwn(t *testing.T) {
 func TestATurnTheRuntimeBeganEndsWhenItGoesQuiet(t *testing.T) {
 	setFor(t, &unpromptedQuiet, 300*time.Millisecond)
 	d, c, id, release := backgroundBuild(t, "Quietly run the build in the background, then wait for ")
-	os.WriteFile(release, nil, 0o600)
+	must(t, os.WriteFile(release, nil, 0o600))
 	c.until(t, "the quiet end", ended(id, wire.AgentStateFinished))
 	if a := d.Store.Agent(id); a.Report == nil || a.Report.Message != "The build finished." {
 		t.Fatalf("%+v", a.Report)
@@ -118,7 +117,7 @@ func TestAnAskerBeginsATurnForALiveRuntime(t *testing.T) {
 	if !l.leaveUnprompted() {
 		t.Fatal("the call began no turn")
 	}
-	os.WriteFile(release, nil, 0o600)
+	must(t, os.WriteFile(release, nil, 0o600))
 	// The cycle's last words and result end a turn of their own: wait for it, so the
 	// daemon writes nothing in its root as the test's folders go (#4568).
 	c.until(t, "the runtime's own turn's end", ended(id, wire.AgentStateFinished))

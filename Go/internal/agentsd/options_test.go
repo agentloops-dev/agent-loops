@@ -47,8 +47,7 @@ func TestAFormIsGivenWhatTheRuntimeOffers(t *testing.T) {
 	}
 	c.until(t, "the change", func(m string, p json.RawMessage) bool {
 		var n wire.DraftOptionsNotification
-		mustUnmarshal(t, p, &n)
-		return m == "agents/draftOptions" && n.DraftID == got.DraftID && n.Failure == nil && !strings.Contains(string(p), "Old Opus")
+		return m == "agents/draftOptions" && json.Unmarshal(p, &n) == nil && n.DraftID == got.DraftID && n.Failure == nil && !strings.Contains(string(p), "Old Opus")
 	})
 	c.call(t, 4, "agents/discardDraft", map[string]any{"draftID": got.DraftID})
 	if d.closeDraft(got.DraftID) {

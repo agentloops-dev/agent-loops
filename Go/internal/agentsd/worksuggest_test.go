@@ -1,7 +1,6 @@
 package agentsd
 
 import (
-	"encoding/json"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -97,7 +96,7 @@ func TestWorkSuggestLeads(t *testing.T) {
 	lead("#2", wire.AgentStateArchived)
 
 	var out wire.WorkSuggestLeads
-	json.Unmarshal(c.call(t, 1, "work/suggest-leads", wire.WorkSuggestLeadsRequest{}), &out)
+	mustUnmarshal(t, c.call(t, 1, "work/suggest-leads", wire.WorkSuggestLeadsRequest{}), &out)
 	var got []string
 	for _, s := range out.Suggestions {
 		got = append(got, s.Node.Ref)
@@ -113,7 +112,7 @@ func TestWorkSuggestLeads(t *testing.T) {
 
 	c.call(t, 2, "work/dismiss-lead", wire.WorkDismissLeadRequest{Node: out.Suggestions[0].Node})
 	out = wire.WorkSuggestLeads{}
-	json.Unmarshal(c.call(t, 3, "work/suggest-leads", wire.WorkSuggestLeadsRequest{}), &out)
+	mustUnmarshal(t, c.call(t, 3, "work/suggest-leads", wire.WorkSuggestLeadsRequest{}), &out)
 	if len(out.Suggestions) != 3 || out.Suggestions[0].Node.Ref != "github:issue:alexec/agents#3" || out.More != 0 {
 		t.Fatalf("after dismiss: %+v", out)
 	}
@@ -123,7 +122,7 @@ func TestWorkSuggestLeads(t *testing.T) {
 		d.forgeCache = nil
 		d.forgeMu.Unlock()
 		var out wire.WorkSuggestLeads
-		json.Unmarshal(c.call(t, id, "work/suggest-leads", wire.WorkSuggestLeadsRequest{}), &out)
+		mustUnmarshal(t, c.call(t, id, "work/suggest-leads", wire.WorkSuggestLeadsRequest{}), &out)
 		return out
 	}
 

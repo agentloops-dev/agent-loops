@@ -1031,8 +1031,7 @@ func TestAnOrgKeyReplacedAndRemoved(t *testing.T) {
 	mustUnmarshal(t, c.call(t, 1, "agents/start", start), &id)
 	c.until(t, "running", func(method string, params json.RawMessage) bool {
 		var a wire.Agent
-		mustUnmarshal(t, params, &a)
-		return method == "agent/changed" && a.ID == id && a.State == wire.AgentStateRunning
+		return method == "agent/changed" && json.Unmarshal(params, &a) == nil && a.ID == id && a.State == wire.AgentStateRunning
 	})
 	deliver(t, d)
 	c.until(t, "stopped", ended(id, wire.AgentStateStopped))
@@ -1059,8 +1058,7 @@ func TestAnOrgKeyReplacedAndRemoved(t *testing.T) {
 	mustUnmarshal(t, c.call(t, 3, "agents/continueInNew", map[string]any{"agentID": id}), &moved)
 	c.until(t, "moved", func(method string, params json.RawMessage) bool {
 		var a wire.Agent
-		mustUnmarshal(t, params, &a)
-		return method == "agent/changed" && a.ID == moved && a.State == wire.AgentStateRunning
+		return method == "agent/changed" && json.Unmarshal(params, &a) == nil && a.ID == moved && a.State == wire.AgentStateRunning
 	})
 	m := d.Store.Agent(moved)
 	if m.AccountID != nil || store.FolderPath(m.Cwd) != dir || m.RuntimeID != "claude" {

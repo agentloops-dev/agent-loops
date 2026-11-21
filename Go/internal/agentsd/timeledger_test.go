@@ -1,7 +1,6 @@
 package agentsd
 
 import (
-	"encoding/json"
 	"os"
 	"testing"
 	"time"
@@ -60,14 +59,14 @@ func TestATurnIsBanked(t *testing.T) {
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	var id wire.UUID
-	json.Unmarshal(c.call(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(), "prompt": "hello"}), &id)
+	mustUnmarshal(t, c.call(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(), "prompt": "hello"}), &id)
 	c.until(t, "the turn", ended(id, wire.AgentStateFinished))
 	// The state says finished a moment before the entry that banks the turn.
 	var h wire.TimeHistory
 	day := dayStamp(time.Now())
 	waitFor(t, "the turn banked", func() bool {
 		h = wire.TimeHistory{}
-		json.Unmarshal(c.call(t, 2, "time/history", map[string]any{}), &h)
+		mustUnmarshal(t, c.call(t, 2, "time/history", map[string]any{}), &h)
 		return h.Days[day]["claude"].Turns == 1
 	})
 	if b := h.Days[day]["claude"]; b.Agent+b.Tools <= 0 || h.Recap[day].Agents != 1 || h.Recap[day].PeakAgents != 1 || h.Now == "" {

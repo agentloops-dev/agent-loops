@@ -61,7 +61,7 @@ func countServer(t *testing.T, count *atomic.Int32, down *atomic.Bool) *httptest
 			ID     json.RawMessage `json:"id"`
 			Method string          `json:"method"`
 		}
-		json.Unmarshal(b, &m)
+		check(t, json.Unmarshal(b, &m))
 		var result any
 		switch m.Method {
 		case "notifications/initialized":
@@ -78,7 +78,7 @@ func countServer(t *testing.T, count *atomic.Int32, down *atomic.Bool) *httptest
 			result = map[string]any{"content": []any{}, "structuredContent": map[string]any{"count": count.Load()}}
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": m.ID, "result": result})
+		check(t, json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": m.ID, "result": result}))
 	}))
 	t.Cleanup(s.Close)
 	return s
@@ -93,15 +93,15 @@ func TestAViewRowsCountFollowsItsListAndGoesStale(t *testing.T) {
 	server := countServer(t, &count, &down)
 	home := t.TempDir()
 	personalHomeFor(t, home)
-	os.MkdirAll(filepath.Join(home, ".agents"), 0o755)
-	os.WriteFile(filepath.Join(home, ".agents", "mcp.json"), []byte(`{"mcpServers":{"gh":{"url":"`+server.URL+`"}}}`), 0o644)
+	must(t, os.MkdirAll(filepath.Join(home, ".agents"), 0o755))                                                                        //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(home, ".agents", "mcp.json"), []byte(`{"mcpServers":{"gh":{"url":"`+server.URL+`"}}}`), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := folder(t, c, 1)
 
 	views := func() []wire.PinView {
 		var all []wire.FolderPins
-		json.Unmarshal(c.call(t, 2, "pins/list", nil), &all)
+		mustUnmarshal(t, c.call(t, 2, "pins/list", nil), &all)
 		if len(all) != 1 {
 			return nil
 		}
@@ -120,8 +120,7 @@ func TestAViewRowsCountFollowsItsListAndGoesStale(t *testing.T) {
 	d.countViewsOnce(context.Background())
 	c.until(t, "pins/changed with 24", func(method string, p json.RawMessage) bool {
 		var n wire.PinsChangedNotification
-		json.Unmarshal(p, &n)
-		return method == "pins/changed" && len(n.Views) == 1 && n.Views[0].Count != nil && *n.Views[0].Count == 24
+		return method == "pins/changed" && json.Unmarshal(p, &n) == nil && len(n.Views) == 1 && n.Views[0].Count != nil && *n.Views[0].Count == 24
 	})
 	// A failed poll keeps the last count, marked stale.
 	down.Store(true)

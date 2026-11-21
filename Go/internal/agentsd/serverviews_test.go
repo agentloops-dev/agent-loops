@@ -22,9 +22,10 @@ func TestAServersListViewsShowWithoutAPinAndHide(t *testing.T) {
 	server := fakeViewServer(t, &calls)
 	home := t.TempDir()
 	personalHomeFor(t, home)
-	os.MkdirAll(filepath.Join(home, ".agents"), 0o755)
-	os.WriteFile(filepath.Join(home, ".agents", "mcp.json"), []byte(`{"mcpServers":{"ci":{"url":"`+server.URL+`"},
-		"local":{"command":"local-server"}}}`), 0o644)
+	must(t, os.MkdirAll(filepath.Join(home, ".agents"), 0o755)) //nolint:gosec // G301: the mode this folder always had; only its error is new
+	//nolint:gosec // G306: the mode this file always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(home, ".agents", "mcp.json"), []byte(`{"mcpServers":{"ci":{"url":"`+server.URL+`"},
+		"local":{"command":"local-server"}}}`), 0o644))
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := folder(t, c, 1)
@@ -35,10 +36,9 @@ func TestAServersListViewsShowWithoutAPinAndHide(t *testing.T) {
 	c.call(t, 20, "pins/list", nil)
 	c.until(t, "pins/changed with ci's view", func(method string, p json.RawMessage) bool {
 		var n wire.PinsChangedNotification
-		json.Unmarshal(p, &n)
-		return method == "pins/changed" && len(n.Views) == 1
+		return method == "pins/changed" && json.Unmarshal(p, &n) == nil && len(n.Views) == 1
 	})
-	json.Unmarshal(c.call(t, 2, "pins/list", nil), &all)
+	mustUnmarshal(t, c.call(t, 2, "pins/list", nil), &all)
 	if len(all) != 1 || len(all[0].Pins) != 0 || len(all[0].Views) != 1 {
 		t.Fatalf("%+v", all)
 	}
@@ -58,7 +58,7 @@ func TestAServersListViewsShowWithoutAPinAndHide(t *testing.T) {
 
 	// Hidden: still listed, marked, and kept in pins.json; shown again.
 	c.call(t, 3, "pins/hideView", map[string]any{"folder": folder, "uri": "ui://ci/board", "hidden": true})
-	json.Unmarshal(c.call(t, 4, "pins/list", nil), &all)
+	mustUnmarshal(t, c.call(t, 4, "pins/list", nil), &all)
 	if h := all[0].Views[0].Hidden; h == nil || !*h {
 		t.Fatalf("%+v", all[0].Views)
 	}
@@ -72,7 +72,7 @@ func TestAServersListViewsShowWithoutAPinAndHide(t *testing.T) {
 
 	// Pinned, it shows as its pin only.
 	c.call(t, 6, "pins/pin", map[string]any{"folder": folder, "view": map[string]any{"server": "ci", "uri": "ui://ci/board", "tool": "board"}})
-	json.Unmarshal(c.call(t, 7, "pins/list", nil), &all)
+	mustUnmarshal(t, c.call(t, 7, "pins/list", nil), &all)
 	if len(all[0].Pins) != 1 || len(all[0].Views) != 0 {
 		t.Fatalf("%+v", all[0])
 	}
@@ -148,13 +148,13 @@ func TestOurViewsShowWhereTheRepoFits(t *testing.T) {
 		}
 	}
 	dir := t.TempDir()
-	os.MkdirAll(filepath.Join(dir, ".git"), 0o755)
-	os.WriteFile(filepath.Join(dir, ".git", "config"), []byte("[core]\n\tbare = false\n[remote \"origin\"]\n\turl = git@github.com:a/b.git\n"), 0o644)
+	must(t, os.MkdirAll(filepath.Join(dir, ".git"), 0o755))                                                                                                     //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(dir, ".git", "config"), []byte("[core]\n\tbare = false\n[remote \"origin\"]\n\turl = git@github.com:a/b.git\n"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	// A worktree reads the repo's config.
 	wt := t.TempDir()
-	os.MkdirAll(filepath.Join(dir, ".git", "worktrees", "w"), 0o755)
-	os.WriteFile(filepath.Join(dir, ".git", "worktrees", "w", "commondir"), []byte("../..\n"), 0o644)
-	os.WriteFile(filepath.Join(wt, ".git"), []byte("gitdir: "+filepath.Join(dir, ".git", "worktrees", "w")+"\n"), 0o644)
+	must(t, os.MkdirAll(filepath.Join(dir, ".git", "worktrees", "w"), 0o755))                                                     //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(dir, ".git", "worktrees", "w", "commondir"), []byte("../..\n"), 0o644))                    //nolint:gosec // G306: the mode this file always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(wt, ".git"), []byte("gitdir: "+filepath.Join(dir, ".git", "worktrees", "w")+"\n"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	if originHost(dir) != "github.com" || originHost(wt) != "github.com" || originHost(t.TempDir()) != "" {
 		t.Fatal(originHost(dir), originHost(wt))
 	}
@@ -194,12 +194,12 @@ func TestJiraAndAzureBoardsRowsGoOnlyWhereTheFolderNamesTheirProjects(t *testing
 	jira, _ := mcpcatalog.OursByID("agents/jira")
 	boards, _ := mcpcatalog.OursByID("agents/azureboards")
 	named := t.TempDir()
-	os.MkdirAll(filepath.Join(named, ".agents"), 0o755)
-	os.WriteFile(filepath.Join(named, ".agents", "folder.json"),
-		[]byte(`{"jiraProjects": ["PROJ"], "azureBoardsProjects": ["acme/Web App"]}`), 0o644)
+	must(t, os.MkdirAll(filepath.Join(named, ".agents"), 0o755))         //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(named, ".agents", "folder.json"), //nolint:gosec // G306: the mode this file always had; only its error is new
+		[]byte(`{"jiraProjects": ["PROJ"], "azureBoardsProjects": ["acme/Web App"]}`), 0o644))
 	jiraOnly := t.TempDir()
-	os.MkdirAll(filepath.Join(jiraOnly, ".agents"), 0o755)
-	os.WriteFile(filepath.Join(jiraOnly, ".agents", "folder.json"), []byte(`{"jiraProjects": ["PROJ"]}`), 0o644)
+	must(t, os.MkdirAll(filepath.Join(jiraOnly, ".agents"), 0o755))                                                       //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(jiraOnly, ".agents", "folder.json"), []byte(`{"jiraProjects": ["PROJ"]}`), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	none := t.TempDir()
 
 	if !d.inWork(jira, named) || !d.inWork(boards, named) {

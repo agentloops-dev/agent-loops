@@ -135,7 +135,9 @@ func TestPinsThereBeforeTheFolderAreSaidOnAdd(t *testing.T) {
 			return false
 		}
 		var n wire.PinsChangedNotification
-		mustUnmarshal(t, p, &n)
+		if json.Unmarshal(p, &n) != nil {
+			return false // another notification, or not this one yet
+		}
 		return len(n.Pins) == 1 && n.Pins[0].Path == "plan.md"
 	})
 }

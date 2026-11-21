@@ -1055,7 +1055,7 @@ func TestAWorkflowForTwoServersSaysNothingOfTheOneNotHere(t *testing.T) {
 	dir := folder(t, c, 1)
 	folder := store.FolderURL(dir)
 	//nolint:gosec // G301: the mode this folder always had; only its error is new
-	must(t, os.MkdirAll(workflowsFolder(dir), 0o755))                   
+	must(t, os.MkdirAll(workflowsFolder(dir), 0o755))
 	//nolint:gosec // G306: the mode this file always had; only its error is new
 	must(t, os.WriteFile(filepath.Join(workflowsFolder(dir), "both.md"),
 		[]byte("---\non:\n  - pr.merged:\n      server: [ci, gone]\n  - review.posted\n---\nLook.\n"), 0o644))
@@ -1091,7 +1091,7 @@ func TestAChannelMessageStartsWorkOnlyFromALinkedSender(t *testing.T) {
 	dir := folder(t, c, 1)
 	folder := store.FolderURL(dir)
 	//nolint:gosec // G301: the mode this folder always had; only its error is new
-	must(t, os.MkdirAll(workflowsFolder(dir), 0o755))                                                                                                                  
+	must(t, os.MkdirAll(workflowsFolder(dir), 0o755))
 	//nolint:gosec // G306: the mode this file always had; only its error is new
 	must(t, os.WriteFile(filepath.Join(workflowsFolder(dir), "merged.md"), []byte("---\nname: Merged\non:\n  - pr.merged:\n      server: ci\n---\nTidy up.\n"), 0o644))
 	approveAll(t, c, folder)
