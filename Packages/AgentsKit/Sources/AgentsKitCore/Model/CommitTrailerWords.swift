@@ -112,6 +112,40 @@ public enum CommitTrailerWords {
         trailers.filter { $0.isWritten && isOn($0) }.map { "\($0.key): \($0.example)" }
     }
 
+    /// The line above the folders whose own rule changes the block (#6534).
+    public static let foldersTitle = "These folders change it:"
+
+    /// A folder whose own `.agents/policy.json` changes the block (#6534): its name, its
+    /// path (for its Project Settings ▸ Policy) and what it changes, as "Cost on, Tokens off".
+    public struct FolderChange: Hashable, Sendable, Identifiable {
+        public var folder: String
+        public var name: String
+        public var changes: String
+        public var id: String { folder }
+
+        public init(folder: String, name: String, changes: String) {
+            self.folder = folder
+            self.name = name
+            self.changes = changes
+        }
+    }
+
+    /// What a folder's rule changes: each written trailer whose value in force for an agent in
+    /// the folder is not its value outside any folder. Nil when it changes none.
+    public static func folderChange(folder: String, name: String, inFolder: DaemonAPI.EffectivePolicy,
+                                    outside: DaemonAPI.EffectivePolicy) -> FolderChange? {
+        func rule(_ policy: DaemonAPI.EffectivePolicy, _ trailer: Trailer) -> DaemonAPI.EffectiveRule? {
+            policy.rules.first { $0.rule == trailer.rule }
+        }
+        let changes = trailers.filter(\.isWritten).compactMap { trailer -> String? in
+            let on = isOn(trailer, rule(inFolder, trailer))
+            guard on != isOn(trailer, rule(outside, trailer)) else { return nil }
+            return "\(trailer.key) \(on ? "on" : "off")"
+        }
+        guard !changes.isEmpty else { return nil }
+        return FolderChange(folder: folder, name: name, changes: changes.joined(separator: ", "))
+    }
+
     /// A failed save's line: the switch is back where it was.
     public static func failed(_ trailer: Trailer, wasOn: Bool, reason: String) -> String {
         "Not saved: \(reason) \(trailer.key) is \(wasOn ? "On" : "Off") again."

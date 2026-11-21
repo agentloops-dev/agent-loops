@@ -82,6 +82,29 @@ struct CommitTrailerWordsTests {
             == "Not saved: The Mac did not answer. Requested-by is On again.")
     }
 
+    /// #6534: this repo sets Cost on, so its commits get Cost while the pane says Off.
+    @Test func aFolderLineSaysWhatItsRuleChanges() throws {
+        let cost = try trailer("Cost"), madeBy = try trailer("Made-by"), tokens = try trailer("Tokens")
+        let outside = DaemonAPI.EffectivePolicy(rules: [
+            DaemonAPI.EffectiveRule(rule: cost.rule, value: .bool(false), words: "Off"),
+            DaemonAPI.EffectiveRule(rule: madeBy.rule, value: .bool(true), words: "On", decides: you),
+        ])
+        let inFolder = DaemonAPI.EffectivePolicy(folder: "/src/agents", rules: [
+            DaemonAPI.EffectiveRule(rule: cost.rule, value: .bool(true), words: "On", decides: folder),
+            DaemonAPI.EffectiveRule(rule: madeBy.rule, value: .bool(true), words: "On", decides: folder),
+            DaemonAPI.EffectiveRule(rule: tokens.rule, value: .bool(false), words: "Off", decides: folder),
+        ])
+        let change = CommitTrailerWords.folderChange(folder: "/src/agents", name: "Agents", inFolder: inFolder, outside: outside)
+        #expect(change == CommitTrailerWords.FolderChange(folder: "/src/agents", name: "Agents", changes: "Cost on, Tokens off"))
+        // A folder whose rule sets only what applies outside it changes nothing.
+        #expect(CommitTrailerWords.folderChange(folder: "/src/x", name: "x", inFolder: outside, outside: outside) == nil)
+        // Attested has no value, so a folder that turns it off changes no commit.
+        let attested = try trailer("Attested")
+        let offAttested = DaemonAPI.EffectivePolicy(rules: [DaemonAPI.EffectiveRule(rule: attested.rule, value: .bool(false),
+                                                                                     words: "Off", decides: folder)])
+        #expect(CommitTrailerWords.folderChange(folder: "/src/x", name: "x", inFolder: offAttested, outside: outside) == nil)
+    }
+
     @Test func aFlagIsOnOnlyWhenItsNameIsInTheList() {
         #expect(FeatureFlag.on(in: nil).isEmpty)
         #expect(FeatureFlag.on(in: "other, commit-trailers") == [.commitTrailers])
