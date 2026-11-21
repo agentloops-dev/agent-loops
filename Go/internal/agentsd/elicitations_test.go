@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -156,7 +155,6 @@ func TestADeclinedRuntimeFormBringsItsReasonAsAPrompt(t *testing.T) {
 }
 
 func TestStoppingAnAgentTakesItsFormDownWithIt(t *testing.T) {
-	flaky.UnderLoad(t, "#6551")
 	t.Parallel()
 
 	fakeRuntimes(t)
