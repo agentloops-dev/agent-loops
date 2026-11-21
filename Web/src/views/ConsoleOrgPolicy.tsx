@@ -15,6 +15,8 @@ import { changed, changes, formOf, modeNames, modes, policyOf, reachChoiceNames,
 import type { ReachChoice } from "../model/orgPolicy";
 import { routeRuntimes } from "../model/orgAccounts";
 import type { ModeName, PolicyForm } from "../model/orgPolicy";
+import * as trailerWords from "../model/commitTrailers";
+import type { TrailerChoice, TrailerKind } from "../model/commitTrailers";
 import { KillSwitch, StoppedStrip } from "./settings/Policy";
 import { MessageBanner, ask } from "./MessageKinds";
 
@@ -255,6 +257,28 @@ export function OrgPolicyPage({ store, down }: { store: Store; down: boolean }) 
         </label>
         {form.limitPassThrough && <input type="text" class="wide" placeholder="ANTHROPIC_*, OPENAI_API_KEY" aria-label="Variables allowed"
           value={form.passThrough} onInput={text("passThrough")} />}
+      </section>
+
+      <section aria-labelledby="org-policy-trailers">
+        <h3 class="section-head" id="org-policy-trailers">{trailerWords.title}</h3>
+        <p class="hint">{trailerWords.sub}</p>
+        {(["record", "spend"] as const satisfies readonly TrailerKind[]).map((kind) => (
+          <fieldset key={kind} class="group-people">
+            <legend>{trailerWords.kindTitle[kind]}</legend>
+            <p class="hint">{trailerWords.orgKindHelp[kind]}</p>
+            {trailerWords.trailers.filter((t) => t.kind === kind).map((t) => (
+              <label key={t.key} class="setting">
+                <span>{t.key}<br /><span class="quiet small trailer-example">{t.example}</span></span>
+                <select aria-label={`${t.key} trailer`} value={form.trailers[t.key] ?? ""}
+                  onChange={(e) => edit({ trailers: { ...form.trailers, [t.key]: (e.currentTarget as HTMLSelectElement).value as TrailerChoice } })}>
+                  <option value="">{trailerWords.notSetName(t)}</option>
+                  <option value="on">On</option>
+                  <option value="off">Off</option>
+                </select>
+              </label>
+            ))}
+          </fieldset>
+        ))}
       </section>
 
       <section aria-labelledby="org-policy-machines">
