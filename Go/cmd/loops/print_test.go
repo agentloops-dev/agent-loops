@@ -1,0 +1,217 @@
+package main
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
+)
+
+// step is what the host has after one more read of the session: its transcript so far
+// and its state.
+type step struct {
+	entries []wire.TranscriptEntry
+	state   wire.AgentState
+	ended   wire.EndedReason
+}
+
+func chunk(id, text string) wire.TranscriptEntry {
+	return wire.TranscriptEntry{Kind: wire.TranscriptEntryKind{AgentMessage: &wire.TranscriptEntryKindAgentMessage{MessageID: &id, Text: text}}}
+}
+
+func said(text string) wire.TranscriptEntry {
+	return wire.TranscriptEntry{Kind: wire.TranscriptEntryKind{UserMessage: &wire.TranscriptEntryKindUserMessage{Value: text}}}
+}
+
+func tool(title string) wire.TranscriptEntry {
+	return wire.TranscriptEntry{Kind: wire.TranscriptEntryKind{ToolCall: &wire.TranscriptEntryKindToolCall{Value: wire.ToolCall{Title: title}}}}
+}
+
+func asks(title string) wire.TranscriptEntry {
+	return wire.TranscriptEntry{Kind: wire.TranscriptEntryKind{PermissionAsked: &wire.TranscriptEntryKindPermissionAsked{Value: wire.PermissionRequest{ToolCall: wire.ToolCall{Title: title}}}}}
+}
+
+// hostFake is a host with one folder that starts session S and goes through steps, one per
+// agents/list; the last step holds.
+func hostFake(t *testing.T, steps []step) (*fake, *wire.StartRequest) {
+	t.Helper()
+	f := &fake{answer: map[string]func(string, any) (any, error){}}
+	var started wire.StartRequest
+	at := 0
+	var all []wire.TranscriptEntry
+	f.answer["agents/start"] = func(_ string, params any) (any, error) {
+		started = params.(wire.StartRequest)
+		return wire.UUID("AB12CD34-0000-0000-0000-000000000000"), nil
+	}
+	f.answer["presence/report"] = func(string, any) (any, error) { return wire.Empty{}, nil }
+	f.answer["agents/transcript"] = func(_ string, params any) (any, error) {
+		all = steps[min(at, len(steps)-1)].entries
+		from := *params.(wire.TranscriptRequest).From
+		end := min(int(from)+pageLimit, len(all))
+		return wire.TranscriptPage{FirstIndex: from, Total: int64(len(all)), Entries: all[from:end]}, nil
+	}
+	f.answer["agents/list"] = func(string, any) (any, error) {
+		s := steps[min(at, len(steps)-1)]
+		at++
+		a := wire.Agent{ID: "AB12CD34-0000-0000-0000-000000000000", State: s.state}
+		if s.ended != "" {
+			a.EndedReason = &s.ended
+		}
+		return []wire.Agent{a}, nil
+	}
+	return f, &started
+}
+
+var here = place{machine: wire.ControlMachine{ID: "h1", Name: "Alex's MacBook Pro"}, folder: "file:///src/agent-loops/"}
+
+// printRun runs print mode on the fake with no notes, so each read comes by the recheck.
+func printRun(t *testing.T, f *fake, o options) (string, error) {
+	t.Helper()
+	was := recheck
+	recheck = time.Millisecond
+	t.Cleanup(func() { recheck = was })
+	var b bytes.Buffer
+	err := startAndFollow(context.Background(), &b, f, make(chan controllink.Note), here, o, "summarise yesterday's CI failures")
+	return b.String(), err
+}
+
+// A whole turn: two replies with a tool call between, each in chunks.
+var turnSteps = []step{
+	{state: wire.AgentStateStarting},
+	{entries: []wire.TranscriptEntry{said("summarise yesterday's CI failures"), chunk("m1", "Reading the CI runs "), chunk("m1", "since 2026-11-19…")}, state: wire.AgentStateRunning},
+	{entries: []wire.TranscriptEntry{said("summarise yesterday's CI failures"), chunk("m1", "Reading the CI runs "), chunk("m1", "since 2026-11-19…"),
+		tool("gh run list"), chunk("m2", "3 failures, all TestStopWaits "), chunk("m2", "under load (#6385).")}, state: wire.AgentStateFinished},
+}
+
+func TestPrintModePrintsOnlyTheLastReply(t *testing.T) {
+	f, started := hostFake(t, turnSteps)
+	out, err := printRun(t, f, options{print: true})
+	if err != nil || out != "3 failures, all TestStopWaits under load (#6385).\n" {
+		t.Fatalf("got %q %v", out, err)
+	}
+	if started.RuntimeID != "auto" || started.Cwd != here.folder || started.StartedVia == nil || *started.StartedVia != wire.StartedViaCLIPrint ||
+		started.Prompt != "summarise yesterday's CI failures" {
+		t.Fatalf("the start: %+v", started)
+	}
+}
+
+func TestPrintModeJSONIsOneObjectPerLineSessionFirstEndLast(t *testing.T) {
+	f, _ := hostFake(t, turnSteps)
+	out, err := printRun(t, f, options{print: true, json: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var types, texts []string
+	for _, l := range strings.Split(strings.TrimSpace(out), "\n") {
+		var m map[string]any
+		if err := json.Unmarshal([]byte(l), &m); err != nil {
+			t.Fatalf("not one object a line: %q", l)
+		}
+		types = append(types, m["type"].(string))
+		if s, ok := m["text"].(string); ok {
+			texts = append(texts, s)
+		}
+		if m["type"] == "session" && (m["id"] != "AB12CD34-0000-0000-0000-000000000000" || m["startedVia"] != "cli-print" || m["folder"] != "agent-loops") {
+			t.Fatalf("the session line: %s", l)
+		}
+		if m["type"] == "end" && (m["state"] != "done" || m["exit"] != float64(0)) {
+			t.Fatalf("the end line: %s", l)
+		}
+	}
+	if strings.Join(types, " ") != "session entry entry entry entry end" {
+		t.Fatalf("lines: %v\n%s", types, out)
+	}
+	want := []string{"summarise yesterday's CI failures", "Reading the CI runs since 2026-11-19…", "gh run list", "3 failures, all TestStopWaits under load (#6385)."}
+	if strings.Join(texts, "|") != strings.Join(want, "|") {
+		t.Fatalf("the chunks of a message are one entry: %q", texts)
+	}
+}
+
+func TestOnAskFailEndsWithExitThreeAndAnswersNothing(t *testing.T) {
+	f, _ := hostFake(t, []step{{entries: []wire.TranscriptEntry{asks("Run scripts/docs-parts.py")}, state: wire.AgentStateWaitingOnUser}})
+	out, err := printRun(t, f, options{print: true, json: true, onAsk: onAskFail})
+	if codeOf(err) != exitAsked || !strings.Contains(err.Error(), "Needs you") {
+		t.Fatalf("exit %d: %v", codeOf(err), err)
+	}
+	if !strings.HasSuffix(out, `{"card":"Permission: Run scripts/docs-parts.py","exit":3,"state":"needs-you","type":"end"}`+"\n") {
+		t.Fatalf("the end line: %s", out)
+	}
+	for _, c := range f.calls {
+		if strings.Contains(c, "answer") {
+			t.Fatalf("the CLI answered a card: %v", f.calls)
+		}
+	}
+}
+
+func TestOnAskWaitWaitsForAnAnswerFromAnyClient(t *testing.T) {
+	card := []wire.TranscriptEntry{asks("Run make")}
+	answered := append(append([]wire.TranscriptEntry{}, card...),
+		wire.TranscriptEntry{Kind: wire.TranscriptEntryKind{PermissionAnswered: &wire.TranscriptEntryKindPermissionAnswered{OptionID: "allow"}}}, chunk("m", "Built."))
+	f, _ := hostFake(t, []step{
+		{entries: card, state: wire.AgentStateWaitingOnUser},
+		{entries: card, state: wire.AgentStateWaitingOnUser},
+		{entries: answered, state: wire.AgentStateFinished},
+	})
+	out, err := printRun(t, f, options{print: true, json: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(out, `"type":"card"`) != 1 || !strings.Contains(out, `"text":"Built."`) || !strings.Contains(out, `"state":"done"`) {
+		t.Fatalf("one card line, then the end: %s", out)
+	}
+}
+
+func TestTimeoutEndsWithExitFourAndLeavesTheSession(t *testing.T) {
+	f, _ := hostFake(t, []step{{state: wire.AgentStateRunning}})
+	_, err := printRun(t, f, options{print: true, timeout: 30 * time.Millisecond})
+	if codeOf(err) != exitTimedOut || !strings.Contains(err.Error(), "loops -r ab12cd") {
+		t.Fatalf("exit %d: %v", codeOf(err), err)
+	}
+	for _, c := range f.calls {
+		if strings.Contains(c, "agents/stop") {
+			t.Fatal("a timeout stopped the session")
+		}
+	}
+}
+
+func TestAStoppedTurnExitsOne(t *testing.T) {
+	f, _ := hostFake(t, []step{{state: wire.AgentStateStopped, ended: wire.EndedReasonProcessDied}})
+	out, err := printRun(t, f, options{print: true, json: true})
+	if codeOf(err) != exitError || !strings.Contains(out, `"reason":"processDied"`) {
+		t.Fatalf("exit %d: %v\n%s", codeOf(err), err, out)
+	}
+}
+
+func TestDetachPrintsTheIDAndFollowsNothing(t *testing.T) {
+	f, _ := hostFake(t, turnSteps)
+	out, err := printRun(t, f, options{detach: true})
+	if err != nil || out != "AB12CD34-0000-0000-0000-000000000000\n" {
+		t.Fatalf("got %q %v", out, err)
+	}
+	if len(f.calls) != 1 {
+		t.Fatalf("only agents/start: %v", f.calls)
+	}
+}
+
+func TestPrintFlagsNeedPrintMode(t *testing.T) {
+	for _, args := range [][]string{{"--json", "x"}, {"--on-ask=fail", "x"}, {"--timeout", "1m", "x"}, {"-p", "--on-ask=maybe", "x"}} {
+		if err := run(context.Background(), args, &bytes.Buffer{}); codeOf(err) != exitError {
+			t.Errorf("%v: %v", args, err)
+		}
+	}
+	o, rest, err := parse([]string{"-p", "--json", "--on-ask=fail", "--timeout", "10m", "fix", "it"})
+	if err != nil || !o.print || !o.json || o.onAsk != onAskFail || o.timeout != 10*time.Minute || strings.Join(rest, " ") != "fix it" {
+		t.Fatalf("%+v %v %v", o, rest, err)
+	}
+	if p, err := promptOf(rest, nil); err != nil || p != "fix it" {
+		t.Fatalf("the words are the prompt: %q %v", p, err)
+	}
+	if _, err := promptOf(nil, nil); codeOf(err) != exitError {
+		t.Fatalf("no prompt: %v", err)
+	}
+}
