@@ -127,7 +127,9 @@ export async function answerHere(method: string, params: unknown, here: FanHere)
       }
       const limit = limitOf(request.limit, 50, 100);
       const got = await askEach<ForgeList>(here, hosts, `forge/${request.kind}`, (h) => ({
-        ...request.state !== undefined && { state: request.state }, ...request.board !== undefined && { board: request.board }, limit,
+        ...request.state !== undefined && { state: request.state }, ...request.board !== undefined && { board: request.board },
+        // A label and an assignee go to each machine, so a narrowed list is one call (#6383).
+        ...request.label !== undefined && { label: request.label }, ...request.assignee !== undefined && { assignee: request.assignee }, limit,
         ...cursors.get(h.id) && { cursor: cursors.get(h.id) },
       }));
       return {

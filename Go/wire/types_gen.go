@@ -6413,13 +6413,17 @@ type ForgeListAll struct {
 	NotAsked int64 `json:"notAsked"`
 }
 
-// forge/listAll (#5592): forge/issues (kind issues) or forge/pulls (kind pulls) of the caller's machines in one call. state, board and limit are as in ForgeListRequest, for each machine. pages, for a next page, names the machines to ask and each one's cursor, as its last list gave it; without pages every machine is asked for its first page.
+// forge/listAll (#5592): forge/issues (kind issues) or forge/pulls (kind pulls) of the caller's machines in one call. state, board, label, assignee (a login) and limit are as in ForgeListRequest, for each machine (label and assignee: #6383). pages, for a next page, names the machines to ask and each one's cursor, as its last list gave it; without pages every machine is asked for its first page.
 type ForgeListAllRequest struct {
 	Kind string `json:"kind"`
 
 	State *string `json:"state,omitzero"`
 
 	Board *string `json:"board,omitzero"`
+
+	Label *string `json:"label,omitzero"`
+
+	Assignee *string `json:"assignee,omitzero"`
 
 	Limit *int64 `json:"limit,omitzero"`
 
