@@ -222,9 +222,14 @@ func (d *Daemon) startOpts() startOptions {
 	return startOptions{}
 }
 
+// newDiskFree is the diskFree of a daemon that New makes: nil, the disk's own reading, in
+// the product. The package's tests set it once, before any test runs, to a disk with room
+// (#6497), so a test's restart by New reads no full Mac either.
+var newDiskFree func(wire.DiskReading) int64
+
 // New is a daemon on root, with the personal home AGENTS_PERSONAL_HOME names.
 func New(ctx context.Context, root string) (*Daemon, error) {
-	return newWith(ctx, root, startOptions{namedHome: os.Getenv("AGENTS_PERSONAL_HOME")})
+	return newWith(ctx, root, startOptions{namedHome: os.Getenv("AGENTS_PERSONAL_HOME"), diskFree: newDiskFree})
 }
 
 // newWith is New with its options given, not read from the process.
