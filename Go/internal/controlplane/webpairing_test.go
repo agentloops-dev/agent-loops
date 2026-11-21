@@ -23,8 +23,8 @@ func TestOnlyTheMachineHereGetsTheWebPagesCode(t *testing.T) {
 	dist := t.TempDir()
 	index := []byte("<html></html>")
 	sum := sha256.Sum256(index)
-	os.WriteFile(filepath.Join(dist, "index.html"), index, 0o644)
-	os.WriteFile(filepath.Join(dist, "MANIFEST"), []byte("agents-web 1\nout "+hex.EncodeToString(sum[:])+" Web/dist/index.html\n"), 0o644)
+	must(t, os.WriteFile(filepath.Join(dist, "index.html"), index, 0o600))
+	must(t, os.WriteFile(filepath.Join(dist, "MANIFEST"), []byte("agents-web 1\nout "+hex.EncodeToString(sum[:])+" Web/dist/index.html\n"), 0o600))
 	p := startPlaneWith(t, store.NewMemory(), controllink.NewPrivateKey(), func(c *Config) {
 		c.Web = &WebConfig{Folder: dist, Port: 0}
 	})

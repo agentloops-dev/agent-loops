@@ -17,7 +17,7 @@ import (
 func (p *plane) botMachine(admin *controllink.Session, bot, name string) *fakeHost {
 	p.t.Helper()
 	var shown wire.ControlCodeShown
-	json.Unmarshal(call(p.t, admin, "", "machines/startEnroll", wire.MachineEnroll{As: &bot}), &shown)
+	must(p.t, json.Unmarshal(call(p.t, admin, "", "machines/startEnroll", wire.MachineEnroll{As: &bot}), &shown))
 	code, err := controllink.ParseCode(shown.Text)
 	if err != nil {
 		p.t.Fatal(err)
@@ -41,7 +41,7 @@ func (h *hostUsers) heard(host, method string, params json.RawMessage) {
 		return
 	}
 	var u wire.MachineUser
-	json.Unmarshal(params, &u)
+	fakeMust(json.Unmarshal(params, &u))
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if h.last == nil {
@@ -70,7 +70,7 @@ func TestABotRunsOncePerTriggerAndStopsAtItsCap(t *testing.T) {
 	sam := p.invite(admin, "Sam", wire.UserRoleMember)
 
 	var platform wire.Group
-	json.Unmarshal(call(t, admin, "", "groups/set", wire.GroupSet{Name: "Platform", Members: []string{sam.id}}), &platform)
+	must(t, json.Unmarshal(call(t, admin, "", "groups/set", wire.GroupSet{Name: "Platform", Members: []string{sam.id}}), &platform))
 	if e := callError(t, sam.window, "", "bots/make", wire.BotMake{Name: "review-bot", Group: platform.ID}); !strings.Contains(e, "Only an admin") {
 		t.Fatal(e)
 	}
@@ -78,7 +78,7 @@ func TestABotRunsOncePerTriggerAndStopsAtItsCap(t *testing.T) {
 		t.Fatal(e)
 	}
 	var made wire.BotMade
-	json.Unmarshal(call(t, admin, "", "bots/make", wire.BotMake{Name: "review-bot", Group: platform.ID}), &made)
+	must(t, json.Unmarshal(call(t, admin, "", "bots/make", wire.BotMake{Name: "review-bot", Group: platform.ID}), &made))
 	bot := made.User
 	if e := callError(t, sam.window, "", "machines/startEnroll", wire.MachineEnroll{As: &bot}); !strings.Contains(e, "Only an admin") {
 		t.Fatal(e)
@@ -134,7 +134,7 @@ func TestABotRunsOncePerTriggerAndStopsAtItsCap(t *testing.T) {
 	}
 	note := waitNote(t, admin, "control/capReached")
 	var reached wire.CapReached
-	json.Unmarshal(note.Params, &reached)
+	must(t, json.Unmarshal(note.Params, &reached))
 	if reached.User != bot || reached.SpentUSD != 3 || reached.CapUSD != 2 {
 		t.Fatalf("%s", note.Params)
 	}
@@ -162,7 +162,7 @@ func TestABotRunsOncePerTriggerAndStopsAtItsCap(t *testing.T) {
 func assertBotListedWithItsMachines(t *testing.T, admin *controllink.Session, bot, group string) {
 	t.Helper()
 	var list wire.PeopleList
-	json.Unmarshal(call(t, admin, "", "people/list", nil), &list)
+	must(t, json.Unmarshal(call(t, admin, "", "people/list", nil), &list))
 	found := false
 	for _, row := range list.People {
 		if row.ID == bot {

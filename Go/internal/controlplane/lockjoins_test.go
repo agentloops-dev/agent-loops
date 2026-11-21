@@ -29,7 +29,7 @@ func lockKey(t *testing.T) *ecdsa.PrivateKey {
 func signOnto(t *testing.T, s *controllink.Session, signer *ecdsa.PrivateKey, body wire.LockBody) wire.LockHead {
 	t.Helper()
 	var lock wire.Lock
-	json.Unmarshal(call(t, s, "", "lock/get", nil), &lock)
+	must(t, json.Unmarshal(call(t, s, "", "lock/get", nil), &lock))
 	body.Person, body.At = lock.Person, wire.DateOf(time.Now())
 	if len(lock.Entries) > 0 {
 		h := machinelock.HashOf(lock.Entries[len(lock.Entries)-1])
@@ -40,7 +40,7 @@ func signOnto(t *testing.T, s *controllink.Session, signer *ecdsa.PrivateKey, bo
 		t.Fatal(err)
 	}
 	var head wire.LockHead
-	json.Unmarshal(call(t, s, "", "lock/add", wire.LockAdd{Entries: []wire.LockEntry{e}}), &head)
+	must(t, json.Unmarshal(call(t, s, "", "lock/add", wire.LockAdd{Entries: []wire.LockEntry{e}}), &head))
 	return head
 }
 
@@ -48,7 +48,7 @@ func joinNote(t *testing.T, s *controllink.Session, request string, ok func(wire
 	t.Helper()
 	for {
 		var r wire.LockJoinRequest
-		json.Unmarshal(waitNote(t, s, "control/lockJoinRequested").Params, &r)
+		must(t, json.Unmarshal(waitNote(t, s, "control/lockJoinRequested").Params, &r))
 		if r.Request == request && ok(r) {
 			return r
 		}
@@ -75,13 +75,13 @@ func TestANewClientJoinsTheLockByApproval(t *testing.T) {
 	signOnto(t, mac, macKey, wire.LockBody{Kind: wire.LockEntryKindRoot, Key: machinelock.PublicKey(macKey), Name: new("Mac"), ClientKind: new("mac")})
 
 	var started wire.LockJoinStarted
-	json.Unmarshal(call(t, browser, "", "lock/join", ask), &started)
+	must(t, json.Unmarshal(call(t, browser, "", "lock/join", ask), &started))
 	asked := joinNote(t, mac, started.Request, func(wire.LockJoinRequest) bool { return true })
 	if asked.Client != browserMember.Client || asked.Name != "Browser" || !bytes.Equal(asked.Commitment, ask.Commitment) || asked.Nonce != nil {
 		t.Fatalf("%+v", asked)
 	}
 	var listed []wire.LockJoinRequest
-	json.Unmarshal(call(t, mac, "", "lock/joinRequests", nil), &listed)
+	must(t, json.Unmarshal(call(t, mac, "", "lock/joinRequests", nil), &listed))
 	if len(listed) != 1 || listed[0].Request != started.Request {
 		t.Fatalf("%+v", listed)
 	}
@@ -117,16 +117,16 @@ func TestANewClientJoinsTheLockByApproval(t *testing.T) {
 	// Approve: the signer puts the browser's addClient on the lock.
 	signOnto(t, mac, macKey, wire.LockBody{Kind: wire.LockEntryKindAddClient, Key: key, Name: new("Browser"), ClientKind: new("web")})
 	var decided wire.LockJoinDecided
-	json.Unmarshal(waitNote(t, browser, "control/lockJoinDecided").Params, &decided)
+	must(t, json.Unmarshal(waitNote(t, browser, "control/lockJoinDecided").Params, &decided))
 	if decided.Request != started.Request || decided.Result != "approved" {
 		t.Fatalf("%+v", decided)
 	}
-	json.Unmarshal(call(t, mac, "", "lock/joinRequests", nil), &listed)
+	must(t, json.Unmarshal(call(t, mac, "", "lock/joinRequests", nil), &listed))
 	if len(listed) != 0 {
 		t.Fatalf("%+v", listed)
 	}
 	var lock wire.Lock
-	json.Unmarshal(call(t, browser, "", "lock/get", nil), &lock)
+	must(t, json.Unmarshal(call(t, browser, "", "lock/get", nil), &lock))
 	state, err := machinelock.Check(lock.Entries)
 	if err != nil || !state.Signer(key) {
 		t.Fatal(err)
@@ -147,17 +147,17 @@ func TestALockJoinIsDeniedOrAskedAgain(t *testing.T) {
 	signOnto(t, mac, macKey, wire.LockBody{Kind: wire.LockEntryKindRoot, Key: machinelock.PublicKey(macKey)})
 	ask := wire.LockJoin{Key: machinelock.PublicKey(phoneKey), Commitment: machinelock.Commitment(machinelock.PublicKey(phoneKey), make([]byte, 16))}
 	var first, second wire.LockJoinStarted
-	json.Unmarshal(call(t, phone, "", "lock/join", ask), &first)
-	json.Unmarshal(call(t, phone, "", "lock/join", ask), &second)
+	must(t, json.Unmarshal(call(t, phone, "", "lock/join", ask), &first))
+	must(t, json.Unmarshal(call(t, phone, "", "lock/join", ask), &second))
 	var listed []wire.LockJoinRequest
-	json.Unmarshal(call(t, mac, "", "lock/joinRequests", nil), &listed)
+	must(t, json.Unmarshal(call(t, mac, "", "lock/joinRequests", nil), &listed))
 	if len(listed) != 1 || listed[0].Request != second.Request {
 		t.Fatalf("%+v", listed)
 	}
 	call(t, mac, "", "lock/joinDeny", wire.LockJoinEnd{Request: second.Request})
 	for {
 		var decided wire.LockJoinDecided
-		json.Unmarshal(waitNote(t, phone, "control/lockJoinDecided").Params, &decided)
+		must(t, json.Unmarshal(waitNote(t, phone, "control/lockJoinDecided").Params, &decided))
 		if decided.Request == second.Request {
 			if decided.Result != "denied" {
 				t.Fatalf("%+v", decided)
@@ -181,7 +181,7 @@ func (n *machineNotes) heard(host, method string, params json.RawMessage) {
 		return
 	}
 	var r wire.LockJoinRequest
-	json.Unmarshal(params, &r)
+	fakeMust(json.Unmarshal(params, &r))
 	n.mu.Lock()
 	n.got = append(n.got, r)
 	n.mu.Unlock()
@@ -225,7 +225,7 @@ func TestAMachineJoinsTheLock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	json.Unmarshal(b, &started)
+	must(t, json.Unmarshal(b, &started))
 	asked := joinNote(t, mac, started.Request, func(wire.LockJoinRequest) bool { return true })
 	if asked.Machine == nil || string(*asked.Machine) != box.member.Host || asked.Name != "box box" {
 		t.Fatalf("%+v", asked)
@@ -245,7 +245,7 @@ func TestAMachineJoinsTheLock(t *testing.T) {
 	}
 	signOnto(t, mac, macKey, wire.LockBody{Kind: wire.LockEntryKindAddMachine, Key: boxKey, SealingKey: boxKey, ID: new(box.member.Host)})
 	var decided wire.LockJoinDecided
-	json.Unmarshal(waitNote(t, mac, "control/lockJoinDecided").Params, &decided)
+	must(t, json.Unmarshal(waitNote(t, mac, "control/lockJoinDecided").Params, &decided))
 	if decided.Request != started.Request || decided.Result != "approved" {
 		t.Fatalf("%+v", decided)
 	}
@@ -257,7 +257,7 @@ func TestAMachineJoinsTheLock(t *testing.T) {
 	dev := p.host("dev")
 	devKey, _ := controllink.PublicKey(dev.private)
 	var lock wire.Lock
-	json.Unmarshal(call(t, mac, "", "lock/get", nil), &lock)
+	must(t, json.Unmarshal(call(t, mac, "", "lock/get", nil), &lock))
 	state, err := machinelock.Check(lock.Entries)
 	if err != nil {
 		t.Fatal(err)
@@ -271,7 +271,7 @@ func TestAMachineJoinsTheLock(t *testing.T) {
 	if _, err := dev.uplink.Ask(ctx, "machine/lockAdd", wire.LockAdd{Entries: []wire.LockEntry{own}}); err != nil {
 		t.Fatal(err)
 	}
-	json.Unmarshal(call(t, mac, "", "lock/get", nil), &lock)
+	must(t, json.Unmarshal(call(t, mac, "", "lock/get", nil), &lock))
 	state, err = machinelock.Check(lock.Entries)
 	if err != nil {
 		t.Fatal(err)
@@ -305,7 +305,7 @@ func TestTheRecoveryKeyAndANewLock(t *testing.T) {
 
 	// The Mac is lost. The phone reads the sealed key from the lock and opens it.
 	var lock wire.Lock
-	json.Unmarshal(call(t, phone, "", "lock/get", nil), &lock)
+	must(t, json.Unmarshal(call(t, phone, "", "lock/get", nil), &lock))
 	state, err := machinelock.Check(lock.Entries)
 	if err != nil {
 		t.Fatal(err)
@@ -315,14 +315,14 @@ func TestTheRecoveryKeyAndANewLock(t *testing.T) {
 		t.Fatal(err)
 	}
 	signOnto(t, phone, opened, wire.LockBody{Kind: wire.LockEntryKindAddClient, Key: machinelock.PublicKey(phoneKey), ClientKind: new("remote")})
-	json.Unmarshal(call(t, phone, "", "lock/get", nil), &lock)
+	must(t, json.Unmarshal(call(t, phone, "", "lock/get", nil), &lock))
 	if state, _ = machinelock.Check(lock.Entries); !state.Signer(machinelock.PublicKey(phoneKey)) {
 		t.Fatal("the recovered phone is not a signer")
 	}
 
 	// Every signer and the recovery key lost: a new lock, which a new root starts.
 	call(t, phone, "", "lock/reset", nil)
-	json.Unmarshal(call(t, phone, "", "lock/get", nil), &lock)
+	must(t, json.Unmarshal(call(t, phone, "", "lock/get", nil), &lock))
 	if len(lock.Entries) != 0 {
 		t.Fatalf("the lock after a reset: %d entries", len(lock.Entries))
 	}

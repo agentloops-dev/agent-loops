@@ -20,7 +20,9 @@ func TestCopyStoreCarriesRecordsAndRefusesAStoreInUse(t *testing.T) {
 		}
 	}
 	// The receiving copy's own sealed key is there already (#1458), and stays.
-	to.Put(ctx, "v1/keys/control.sealed", []byte("its own"), store.Absent)
+	if _, err := to.Put(ctx, "v1/keys/control.sealed", []byte("its own"), store.Absent); err != nil {
+		t.Fatal(err)
+	}
 	copied, skipped, err := CopyStore(ctx, from, to)
 	if err != nil || copied != 2 || skipped != 3 {
 		t.Fatal(copied, skipped, err)

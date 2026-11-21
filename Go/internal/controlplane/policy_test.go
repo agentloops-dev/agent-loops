@@ -36,7 +36,7 @@ func (d *policiesTold) heard(host, method string, params json.RawMessage) {
 		return
 	}
 	var line policyLine
-	json.Unmarshal(params, &line)
+	fakeMust(json.Unmarshal(params, &line))
 	d.mu.Lock()
 	d.got[host] = append(d.got[host], line)
 	d.mu.Unlock()
@@ -59,7 +59,7 @@ func (d *policiesTold) version(host string) int64 {
 		return 0
 	}
 	var p wire.OrgPolicy
-	json.Unmarshal(line.Policy, &p)
+	fakeMust(json.Unmarshal(line.Policy, &p))
 	return p.Version
 }
 
@@ -73,14 +73,14 @@ func policyHello(name string) controllink.MachineHello {
 func setPolicy(t *testing.T, s *controllink.Session, policy wire.OrgPolicy, rev *string) wire.PolicyKept {
 	t.Helper()
 	var kept wire.PolicyKept
-	json.Unmarshal(call(t, s, "", "policy/set", wire.PolicySet{Policy: policy, Rev: rev}), &kept)
+	must(t, json.Unmarshal(call(t, s, "", "policy/set", wire.PolicySet{Policy: policy, Rev: rev}), &kept))
 	return kept
 }
 
 func getPolicy(t *testing.T, s *controllink.Session) wire.PolicyKept {
 	t.Helper()
 	var kept wire.PolicyKept
-	json.Unmarshal(call(t, s, "", "policy/get", nil), &kept)
+	must(t, json.Unmarshal(call(t, s, "", "policy/get", nil), &kept))
 	return kept
 }
 
@@ -102,7 +102,7 @@ func TestNoPolicySendsNoneAndChangesNothing(t *testing.T) {
 		t.Fatal("a machine that does not follow the policy was told one")
 	}
 	var view wire.PolicyView
-	json.Unmarshal(call(t, window, "", "policy/mine", nil), &view)
+	must(t, json.Unmarshal(call(t, window, "", "policy/mine", nil), &view))
 	if view.Policy != nil {
 		t.Fatalf("%+v", view)
 	}
@@ -170,7 +170,7 @@ func TestAnAdminSavesASignedPolicy(t *testing.T) {
 
 	// Two admins read the same rev; the second to save is told to load it again.
 	var priyaRead wire.PolicyKept
-	json.Unmarshal(call(t, priya.window, "", "policy/get", nil), &priyaRead)
+	must(t, json.Unmarshal(call(t, priya.window, "", "policy/get", nil), &priyaRead))
 	second := setPolicy(t, window, wire.OrgPolicy{PermissionMode: optional(wire.PermissionLevelAsk)}, first.Rev)
 	if second.Policy.Version != 2 {
 		t.Fatalf("%+v", second.Policy)
@@ -218,7 +218,7 @@ func TestAnAdminSavesASignedPolicy(t *testing.T) {
 	// The audit names who changed it.
 	p.waitFor(func() bool {
 		var list wire.AuditList
-		json.Unmarshal(call(t, window, "", "audit/list", wire.AuditQuery{}), &list)
+		must(t, json.Unmarshal(call(t, window, "", "audit/list", wire.AuditQuery{}), &list))
 		n := 0
 		for _, e := range list.Entries {
 			if e.Method == "policy/set" && e.Action == "Changed the organisation's policy" {
@@ -230,7 +230,7 @@ func TestAnAdminSavesASignedPolicy(t *testing.T) {
 
 	// Sam reads the rules in force.
 	var view wire.PolicyView
-	json.Unmarshal(call(t, sam.window, "", "policy/mine", nil), &view)
+	must(t, json.Unmarshal(call(t, sam.window, "", "policy/mine", nil), &view))
 	if view.Policy == nil || view.Policy.Version != 3 || deref(view.Policy.PermissionMode) != wire.PermissionLevelApproveForMe {
 		t.Fatalf("%+v", view)
 	}
@@ -285,20 +285,20 @@ func TestTheKillSwitchReachesEveryone(t *testing.T) {
 	box := p.machineSaying(sam, policyHello("MACHINE-2"))
 
 	var kept wire.PolicyKept
-	json.Unmarshal(call(t, window, "", "policy/stopAll", wire.PolicyStopAllRequest{On: true, Note: optional("A token leaked.")}), &kept)
+	must(t, json.Unmarshal(call(t, window, "", "policy/stopAll", wire.PolicyStopAllRequest{On: true, Note: optional("A token leaked.")}), &kept))
 	if kept.Policy == nil || kept.Policy.StopAll == nil || !kept.Policy.StopAll.On || kept.Policy.StopAll.By.User != p.s.localOwner() ||
 		deref(kept.Policy.StopAll.Note) != "A token leaked." || kept.Policy.Version != 1 {
 		t.Fatalf("%+v", kept.Policy)
 	}
 	var view wire.PolicyView
-	json.Unmarshal(waitNote(t, sam.window, wire.NotifyControlStopAll.Name).Params, &view)
+	must(t, json.Unmarshal(waitNote(t, sam.window, wire.NotifyControlStopAll.Name).Params, &view))
 	if view.Policy == nil || view.Policy.StopAll == nil || !view.Policy.StopAll.On {
 		t.Fatalf("%+v", view)
 	}
 	p.waitFor(func() bool {
 		line, _ := told.last(box.member.Host)
 		var policy wire.OrgPolicy
-		json.Unmarshal(line.Policy, &policy)
+		must(t, json.Unmarshal(line.Policy, &policy))
 		return policy.StopAll != nil && policy.StopAll.On
 	}, "the machine told the switch is on")
 
@@ -310,14 +310,14 @@ func TestTheKillSwitchReachesEveryone(t *testing.T) {
 
 	call(t, window, "", "policy/stopAll", wire.PolicyStopAllRequest{On: false})
 	view = wire.PolicyView{}
-	json.Unmarshal(waitNote(t, sam.window, wire.NotifyControlStopAll.Name).Params, &view)
+	must(t, json.Unmarshal(waitNote(t, sam.window, wire.NotifyControlStopAll.Name).Params, &view))
 	if view.Policy == nil || view.Policy.StopAll == nil || view.Policy.StopAll.On || view.Policy.Version != 3 {
 		t.Fatalf("%+v", view.Policy)
 	}
 	p.waitFor(func() bool { return told.version(box.member.Host) == 3 }, "the machine told the switch is off")
 	p.waitFor(func() bool {
 		var list wire.AuditList
-		json.Unmarshal(call(t, window, "", "audit/list", wire.AuditQuery{}), &list)
+		must(t, json.Unmarshal(call(t, window, "", "audit/list", wire.AuditQuery{}), &list))
 		n := 0
 		for _, e := range list.Entries {
 			if e.Method == "policy/stopAll" && e.Action == "Turned the kill switch on or off" {
@@ -345,19 +345,19 @@ func TestARaiseIsForOnePersonAndToday(t *testing.T) {
 	}
 	call(t, window, "", "policy/raise", wire.PolicyRaiseRequest{User: sam.id, Daily: optional(60.0)})
 	var kept wire.PolicyKept
-	json.Unmarshal(call(t, window, "", "policy/raise", wire.PolicyRaiseRequest{User: sam.id, Daily: optional(80.0), Request: optional("R1")}), &kept)
+	must(t, json.Unmarshal(call(t, window, "", "policy/raise", wire.PolicyRaiseRequest{User: sam.id, Daily: optional(80.0), Request: optional("R1")}), &kept))
 	raises := kept.Policy.Budgets.Raises
 	today := time.Now().UTC().Format(time.DateOnly)
 	if len(raises) != 1 || raises[0].User != sam.id || raises[0].Day != today || deref(raises[0].Daily) != 80 || deref(raises[0].Request) != "R1" {
 		t.Fatalf("%+v", raises)
 	}
 	var view wire.PolicyView
-	json.Unmarshal(call(t, bea.window, "", "policy/mine", nil), &view)
+	must(t, json.Unmarshal(call(t, bea.window, "", "policy/mine", nil), &view))
 	if len(view.Policy.Budgets.Raises) != 0 {
 		t.Fatalf("Bea sees %+v", view.Policy.Budgets.Raises)
 	}
 	view = wire.PolicyView{}
-	json.Unmarshal(call(t, sam.window, "", "policy/mine", nil), &view)
+	must(t, json.Unmarshal(call(t, sam.window, "", "policy/mine", nil), &view))
 	if len(view.Policy.Budgets.Raises) != 1 {
 		t.Fatalf("%+v", view.Policy.Budgets)
 	}
@@ -381,20 +381,20 @@ func TestAskForMoreIsAnsweredByARaiseOrARefusal(t *testing.T) {
 	}
 	setPolicy(t, window, wire.OrgPolicy{Budgets: &wire.PolicyBudgets{Daily: optional(40.0)}}, nil)
 	var asked, again wire.BudgetRequest
-	json.Unmarshal(call(t, sam.window, "", "policy/askForMore", wire.PolicyAskForMore{Why: optional("  the release  ")}), &asked)
+	must(t, json.Unmarshal(call(t, sam.window, "", "policy/askForMore", wire.PolicyAskForMore{Why: optional("  the release  ")}), &asked))
 	if asked.State != wire.BudgetRequestStateWaiting || asked.User != sam.id || asked.UserName != "Sam" || deref(asked.Why) != "the release" {
 		t.Fatalf("%+v", asked)
 	}
-	json.Unmarshal(call(t, sam.window, "", "policy/askForMore", wire.PolicyAskForMore{}), &again)
+	must(t, json.Unmarshal(call(t, sam.window, "", "policy/askForMore", wire.PolicyAskForMore{}), &again))
 	if again.ID != asked.ID {
 		t.Fatalf("asked twice: %+v", again)
 	}
 	var beas wire.BudgetRequest
-	json.Unmarshal(call(t, bea.window, "", "policy/askForMore", wire.PolicyAskForMore{}), &beas)
+	must(t, json.Unmarshal(call(t, bea.window, "", "policy/askForMore", wire.PolicyAskForMore{}), &beas))
 
 	requests := func(s *controllink.Session) []wire.BudgetRequest {
 		var list wire.BudgetRequestList
-		json.Unmarshal(call(t, s, "", "policy/requests", wire.Empty{}), &list)
+		must(t, json.Unmarshal(call(t, s, "", "policy/requests", wire.Empty{}), &list))
 		return list.Requests
 	}
 	if got := requests(window); len(got) != 2 {
@@ -409,7 +409,7 @@ func TestAskForMoreIsAnsweredByARaiseOrARefusal(t *testing.T) {
 
 	call(t, window, "", "policy/raise", wire.PolicyRaiseRequest{User: sam.id, Daily: optional(80.0), Request: optional(asked.ID)})
 	var refused wire.BudgetRequest
-	json.Unmarshal(call(t, window, "", "policy/refuseMore", wire.PolicyRefuseMore{Request: beas.ID}), &refused)
+	must(t, json.Unmarshal(call(t, window, "", "policy/refuseMore", wire.PolicyRefuseMore{Request: beas.ID}), &refused))
 	if refused.State != wire.BudgetRequestStateRefused || refused.DecidedBy == nil {
 		t.Fatalf("%+v", refused)
 	}
@@ -423,7 +423,7 @@ func TestAskForMoreIsAnsweredByARaiseOrARefusal(t *testing.T) {
 		t.Fatalf("Sam sees %+v", got)
 	}
 	// Refused, asking again the same day answers the refusal.
-	json.Unmarshal(call(t, bea.window, "", "policy/askForMore", wire.PolicyAskForMore{}), &again)
+	must(t, json.Unmarshal(call(t, bea.window, "", "policy/askForMore", wire.PolicyAskForMore{}), &again))
 	if again.State != wire.BudgetRequestStateRefused {
 		t.Fatalf("%+v", again)
 	}

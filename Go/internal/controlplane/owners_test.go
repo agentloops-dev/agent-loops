@@ -117,7 +117,7 @@ func TestACarriedPageEndsWhenItsMachineChangesHands(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		t.Cleanup(func() { ws.CloseNow() })
+		t.Cleanup(func() { _ = ws.CloseNow() }) // the test has its answer by then
 		c := newConn(<-conns, "127.0.0.1:1")
 		r.mu.Lock()
 		r.clients[id] = &clientSession{caller: Caller{Session: id, Client: id, Person: person}, conn: c,

@@ -28,7 +28,7 @@ func (d *deliveries) heard(host, method string, params json.RawMessage) {
 		return
 	}
 	var u wire.MachineUserSettings
-	json.Unmarshal(params, &u)
+	fakeMust(json.Unmarshal(params, &u))
 	d.mu.Lock()
 	d.got[host] = append(d.got[host], u)
 	d.mu.Unlock()
@@ -91,7 +91,7 @@ func secretsOf(box *fakeHost, u wire.MachineUserSettings) map[string]string {
 func setSecret(t *testing.T, who *person, name, value string, was int64) {
 	t.Helper()
 	var recipients wire.SealRecipients
-	json.Unmarshal(call(t, who.window, "", "user/secretRecipients", nil), &recipients)
+	must(t, json.Unmarshal(call(t, who.window, "", "user/secretRecipients", nil), &recipients))
 	set := wire.UserSecretSet{Name: wire.UserSecretName(name), Version: was + 1, Values: map[string]wire.SealedEnvelope{}}
 	for _, r := range recipients.Recipients {
 		e, err := controllink.Seal(r.PublicKey, controllink.UserSecretPurpose, controllink.UserSecretAD(who.id, r.ID, name, was+1), []byte(value))
@@ -153,7 +153,7 @@ func TestSettingsAndSecretsGoOnlyToTheirPersonsMachines(t *testing.T) {
 		t.Fatal("a machine that does not take user settings was told them")
 	}
 	var alexSettings wire.UserSettings
-	json.Unmarshal(call(t, alexWindow, "", "user/settings", nil), &alexSettings)
+	must(t, json.Unmarshal(call(t, alexWindow, "", "user/settings", nil), &alexSettings))
 	if alexSettings.McpServers != nil {
 		t.Fatalf("%+v", alexSettings)
 	}
@@ -163,7 +163,7 @@ func TestSettingsAndSecretsGoOnlyToTheirPersonsMachines(t *testing.T) {
 	next := p.machineSaying(sam, takingHello("MACHINE-23"))
 	p.waitFor(func() bool { u, ok := told.last(next.member.Host); return ok && len(u.Secrets) == 0 }, "Sam's new machine told its settings")
 	var waiting wire.UserSecretNames
-	json.Unmarshal(call(t, sam.window, "", "user/secretNames", nil), &waiting)
+	must(t, json.Unmarshal(call(t, sam.window, "", "user/secretNames", nil), &waiting))
 	if len(waiting.Secrets) != 1 || len(waiting.Secrets[0].Waiting) != 1 || string(waiting.Secrets[0].Waiting[0]) != next.member.Host {
 		t.Fatalf("%+v", waiting)
 	}
@@ -183,7 +183,7 @@ func TestSettingsAndSecretsGoOnlyToTheirPersonsMachines(t *testing.T) {
 		if strings.Contains(string(raw), "ghp_") {
 			t.Fatalf("a value went back to a client: %s", raw)
 		}
-		json.Unmarshal(raw, &names)
+		must(t, json.Unmarshal(raw, &names))
 		return len(names.Secrets) == 1 && len(names.Secrets[0].Machines) == 2 && len(names.Secrets[0].Waiting) == 0
 	}, "both of Sam's machines noted")
 
@@ -210,11 +210,11 @@ func TestSettingsAndSecretsGoOnlyToTheirPersonsMachines(t *testing.T) {
 	call(t, sam.window, "", "machines/remove", wire.MachineRequest{Host: wire.MachineRef(next.member.Host)})
 	note := waitNote(t, sam.window, wire.NotifyControlSecretsLeft.Name)
 	var left wire.SecretsLeft
-	json.Unmarshal(note.Params, &left)
+	must(t, json.Unmarshal(note.Params, &left))
 	if string(left.Host) != next.member.Host || len(left.Secrets) != 1 || left.Secrets[0] != "GITHUB_TOKEN" {
 		t.Fatalf("%+v", left)
 	}
-	json.Unmarshal(call(t, sam.window, "", "user/secretNames", nil), &names)
+	must(t, json.Unmarshal(call(t, sam.window, "", "user/secretNames", nil), &names))
 	if row := names.Secrets[0]; len(row.Machines) != 1 || len(row.LeftOn) != 1 || string(row.LeftOn[0].Host) != next.member.Host {
 		t.Fatalf("%+v", row)
 	}
@@ -300,7 +300,7 @@ func TestAMachineCannotSendAgentConfigFilesToItsPersonsOtherMachines(t *testing.
 		t.Fatalf("the Mac was sent files from another machine: %+v", u.Settings.AgentConfigFiles)
 	}
 	var stored wire.UserSettings
-	json.Unmarshal(call(t, window, "", "user/settings", nil), &stored)
+	must(t, json.Unmarshal(call(t, window, "", "user/settings", nil), &stored))
 	if stored.AgentConfigFiles != nil {
 		t.Fatalf("kept files from a machine: %+v", stored.AgentConfigFiles)
 	}
@@ -422,12 +422,12 @@ func TestYourLayerPushesToYourMachinesWithinFiveSeconds(t *testing.T) {
 
 	// A revision that does not go up changes nothing kept.
 	var before wire.UserSettings
-	json.Unmarshal(call(t, window, "", "user/settings", nil), &before)
+	must(t, json.Unmarshal(call(t, window, "", "user/settings", nil), &before))
 	if _, err := keeper.uplink.Ask(t.Context(), wire.CallUserSetPolicy.Name, signPolicy(policy)); err != nil {
 		t.Fatal(err)
 	}
 	var after wire.UserSettings
-	json.Unmarshal(call(t, window, "", "user/settings", nil), &after)
+	must(t, json.Unmarshal(call(t, window, "", "user/settings", nil), &after))
 	if string(before.Policy) != string(after.Policy) {
 		t.Fatalf("a resend of the same revision changed the stored policy")
 	}

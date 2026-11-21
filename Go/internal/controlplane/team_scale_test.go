@@ -22,7 +22,7 @@ func TestARemovalIsInForceOnEveryCopyWithinFiveSeconds(t *testing.T) {
 	sam := b.invite(ownerAtB, "Sam", wire.UserRoleMember)
 	samMachine := b.machine(sam, "SAM-BOX").member.Host
 	var shown wire.ControlCodeShown
-	json.Unmarshal(call(t, sam.window, "", "clients/startPairing", nil), &shown)
+	must(t, json.Unmarshal(call(t, sam.window, "", "clients/startPairing", nil), &shown))
 	call(t, sam.window, samMachine, "daemon/ping", nil)
 	_, ownerAtA := a.client("Owner's Mac at A")
 	a.waitFor(func() bool { return a.s.records.Person(sam.id) != nil }, "A knowing Sam")
@@ -48,7 +48,7 @@ func TestARemovalIsInForceOnEveryCopyWithinFiveSeconds(t *testing.T) {
 		t.Fatal("a removed person's code paired")
 	}
 	var list wire.PeopleList
-	json.Unmarshal(call(t, ownerAtB, "", "people/list", nil), &list)
+	must(t, json.Unmarshal(call(t, ownerAtB, "", "people/list", nil), &list))
 	for _, p := range list.People {
 		if p.ID == sam.id {
 			t.Fatalf("B still lists Sam: %+v", list.People)

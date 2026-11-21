@@ -37,7 +37,7 @@ func TestStopWaitsForASocketInAccept(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ws.CloseNow()
+	defer func() { _ = ws.CloseNow() }() // the test has its answer by then
 	if _, _, err := ws.Read(ctx); err != nil {
 		t.Fatal(err)
 	}

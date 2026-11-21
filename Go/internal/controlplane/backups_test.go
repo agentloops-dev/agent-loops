@@ -118,7 +118,9 @@ func TestBackupsGoUpInPartsAndComeBackOnAnotherHost(t *testing.T) {
 	}
 	// A part moved to another key does not open: each is bound to its own.
 	o, _ := st.Get(context.Background(), partKey(b.hostFolder(owner, "a"), "20261020T120000Z", 0))
-	st.Put(context.Background(), partKey(b.hostFolder(owner, "a"), "20261020T120000Z", 1), o.Data, store.Always)
+	if _, err := st.Put(context.Background(), partKey(b.hostFolder(owner, "a"), "20261020T120000Z", 1), o.Data, store.Always); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := b.said("backups/download", "b", raw(t, wire.BackupStorePartRequest{ID: made.ID, Part: 1})); err == nil {
 		t.Fatal("a part under another key opened")
 	}
@@ -142,7 +144,9 @@ func TestBackupsRefuseWhatIsNotAHostsOwn(t *testing.T) {
 	if _, err := putBackup(t, b, "a", "20261020T120000Z", nil, 3); err == nil {
 		t.Fatal("a backup of no parts was committed")
 	}
-	b.said("backups/upload", "a", raw(t, wire.BackupStorePart{Name: "20261020T130000Z", Part: 1, Data: []byte("x")}))
+	if _, err := b.said("backups/upload", "a", raw(t, wire.BackupStorePart{Name: "20261020T130000Z", Part: 1, Data: []byte("x")})); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := b.said("backups/commit", "a", raw(t, wire.BackupStoreCommit{Name: "20261020T130000Z", Parts: 2, Keep: 3})); err == nil {
 		t.Fatal("a backup with part 0 missing was committed")
 	}
@@ -171,8 +175,12 @@ func TestBackupsKeepTheNewestOfEachHost(t *testing.T) {
 		}
 	}
 	// A backup cut off two days ago, and one under way now.
-	b.said("backups/upload", "a", raw(t, wire.BackupStorePart{Name: "20261018T000000Z", Part: 0, Data: []byte("cut off")}))
-	b.said("backups/upload", "a", raw(t, wire.BackupStorePart{Name: "20261020T115900Z", Part: 0, Data: []byte("under way")}))
+	if _, err := b.said("backups/upload", "a", raw(t, wire.BackupStorePart{Name: "20261018T000000Z", Part: 0, Data: []byte("cut off")})); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.said("backups/upload", "a", raw(t, wire.BackupStorePart{Name: "20261020T115900Z", Part: 0, Data: []byte("under way")})); err != nil {
+		t.Fatal(err)
+	}
 	for _, name := range []string{"20261019T010000Z", "20261019T020000Z", "20261019T030000Z"} {
 		if _, err := putBackup(t, b, "a", name, [][]byte{[]byte("a")}, 2); err != nil {
 			t.Fatal(err)
@@ -200,13 +208,19 @@ func TestBackupsKeepTheNewestOfEachHost(t *testing.T) {
 	}
 	// A removed host's backups stay while they are recent, so a new server can restore
 	// them, and go once its newest is old.
-	b.records.RemoveHost(context.Background(), "b")
-	putBackup(t, b, "a", "20261019T040000Z", [][]byte{[]byte("a")}, 2)
+	if _, err := b.records.RemoveHost(context.Background(), "b"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := putBackup(t, b, "a", "20261019T040000Z", [][]byte{[]byte("a")}, 2); err != nil {
+		t.Fatal(err)
+	}
 	if n := len(storedList(t, b, "a")); n != 4 {
 		t.Fatalf("%d listed with b removed a day ago", n)
 	}
 	b.now = func() time.Time { return time.Date(2027, 2, 1, 0, 0, 0, 0, time.UTC) }
-	putBackup(t, b, "a", "20261019T050000Z", [][]byte{[]byte("a")}, 2)
+	if _, err := putBackup(t, b, "a", "20261019T050000Z", [][]byte{[]byte("a")}, 2); err != nil {
+		t.Fatal(err)
+	}
 	for _, l := range storedList(t, b, "a") {
 		if !l.ThisMachine {
 			t.Fatalf("removed b's old backup %s is kept", l.ID)
@@ -223,9 +237,15 @@ func TestTheSweepPrunesBackupsNoHostPrunes(t *testing.T) {
 	if _, err := putBackup(t, b, "b", "20261019T120000Z", [][]byte{[]byte("b")}, 3); err != nil {
 		t.Fatal(err)
 	}
-	b.said("backups/upload", "a", raw(t, wire.BackupStorePart{Name: "20261018T000000Z", Part: 0, Data: []byte("cut off")}))
-	b.records.RemoveHost(context.Background(), "a")
-	b.records.RemoveHost(context.Background(), "b")
+	if _, err := b.said("backups/upload", "a", raw(t, wire.BackupStorePart{Name: "20261018T000000Z", Part: 0, Data: []byte("cut off")})); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.records.RemoveHost(context.Background(), "a"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.records.RemoveHost(context.Background(), "b"); err != nil {
+		t.Fatal(err)
+	}
 	// Recent: kept, for a new server to restore.
 	if err := b.pruneOrphans(context.Background()); err != nil {
 		t.Fatal(err)
@@ -237,7 +257,7 @@ func TestTheSweepPrunesBackupsNoHostPrunes(t *testing.T) {
 		t.Fatalf("a's cut-off part stayed: %v", keys)
 	}
 	b.now = func() time.Time { return time.Date(2027, 2, 1, 0, 0, 0, 0, time.UTC) }
-	b.pruneOrphans(context.Background())
+	must(t, b.pruneOrphans(context.Background()))
 	if keys, _ := st.List(context.Background(), backupsPrefix); len(keys) != 0 {
 		t.Fatalf("left %v", keys)
 	}
@@ -263,9 +283,13 @@ func TestBackupsFromBeforeTheirOwnKeyStillOpen(t *testing.T) {
 	folder := b.hostFolder(owner, "a")
 	key := partKey(folder, "20261019T120000Z", 0)
 	nonce := make([]byte, old.NonceSize())
-	st.Put(ctx, key, old.Seal(nonce, nonce, []byte("old"), []byte(key)), store.Always)
+	if _, err := st.Put(ctx, key, old.Seal(nonce, nonce, []byte("old"), []byte(key)), store.Always); err != nil { //nolint:gosec // G407: test data, sealed once with a zero nonce
+		t.Fatal(err)
+	}
 	data, _ := json.Marshal(storedBackup{Host: "a", Name: "20261019T120000Z", Parts: 1})
-	st.Put(ctx, folder+"20261019T120000Z.json", data, store.Always)
+	if _, err := st.Put(ctx, folder+"20261019T120000Z.json", data, store.Always); err != nil {
+		t.Fatal(err)
+	}
 
 	to := store.NewMemory()
 	if _, _, err := CopyStore(ctx, st, to); err != nil {
@@ -318,7 +342,9 @@ func TestBackupsKeepToTheQuotaAndNoNameAhead(t *testing.T) {
 	// One put there by a host whose clock was out, before the refusal: the next prune
 	// deletes it.
 	folder := b.hostFolder(owner, "a")
-	st.Put(context.Background(), partKey(folder, "20271020T000000Z", 0), four, store.Always)
+	if _, err := st.Put(context.Background(), partKey(folder, "20271020T000000Z", 0), four, store.Always); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := putBackup(t, b, "a", "20261020T110000Z", [][]byte{four}, 10); err != nil {
 		t.Fatal(err)
 	}
