@@ -98,6 +98,7 @@ const CapGovernance1 = "governance/1"
 const CapGroups1 = "groups/1"
 const CapHandover1 = "handover/1"
 const CapHostBrowserSettings1 = "host.browser-settings/1"
+const CapHostCommitTrailers1 = "host.commit-trailers/1"
 const CapHostDesktopControl1 = "host.desktop-control/1"
 const CapHostDriveApproval1 = "host.drive-approval/1"
 const CapHostLocalSecrets1 = "host.local-secrets/1"
@@ -463,6 +464,7 @@ var HostCapabilities = pairs([][2]string{
 	{"forge/rerun", "forge-write/1"},
 	{"forge/sources", "forge-sync/1"},
 	{"git/fill", "git/1"},
+	{"git/trailers", "host.commit-trailers/1"},
 	{"lineage/cost", "lineage/1"},
 	{"lineage/end", "lineage/1"},
 	{"lineage/estimate", "lineage.estimate/1"},

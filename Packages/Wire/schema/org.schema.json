@@ -762,6 +762,21 @@
       ],
       "additionalProperties": false
     },
+    "CommitTrailerValue": {
+      "type": "string",
+      "enum": [
+        "on",
+        "off"
+      ],
+      "description": "One trailer's value in commitTrailers (#6365)."
+    },
+    "CommitTrailers": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/definitions/CommitTrailerValue"
+      },
+      "description": "The trailers of an agent's commits, each on or off, by the trailer's key (#6365): Made-by, Cost, Tokens, Duration, Session, Fixes, Epic, Requested-by, Approved-by, Attested, Co-authored-by. Fixes also writes Refs. A key the machine does not know is kept and has no effect; a key no layer sets has its default (every key on, Cost off). Record trailers (Made-by, Session, Fixes, Epic, Requested-by, Approved-by, Attested, Co-authored-by): on is tighter. Spend trailers (Cost, Tokens, Duration): off is tighter. Its rules in policy/effective are commitTrailers.<key>."
+    },
     "ConfigChoiceGroup": {
       "type": "object",
       "properties": {
@@ -1989,6 +2004,39 @@
       "required": [
         "protocol",
         "host"
+      ],
+      "additionalProperties": false
+    },
+    "GitTrailers": {
+      "type": "object",
+      "description": "The trailer block for a commit or a squash message (#6365), in order, one \"Key: value\" line each; empty when the rule turns every trailer off.",
+      "properties": {
+        "lines": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "lines"
+      ],
+      "additionalProperties": false
+    },
+    "GitTrailersRequest": {
+      "type": "object",
+      "description": "git/trailers (#6365): the session whose folder's effective commitTrailers rule applies, and the pull request whose totals Cost, Tokens and Duration give.",
+      "properties": {
+        "session": {
+          "$ref": "core.schema.json#/definitions/UUID"
+        },
+        "pr": {
+          "type": "integer",
+          "description": "The pull request's number. Absent: the totals are the session's own, and Approved-by is left out."
+        }
+      },
+      "required": [
+        "session"
       ],
       "additionalProperties": false
     },
@@ -3525,6 +3573,10 @@
         },
         "notices": {
           "$ref": "connections.schema.json#/definitions/PolicyNotices"
+        },
+        "commitTrailers": {
+          "$ref": "#/definitions/CommitTrailers",
+          "description": "#6365: which trailers an agent's commits carry, each on or off. On is tighter for a record trailer, off for a spend trailer (Cost, Tokens, Duration)."
         }
       },
       "required": [
@@ -5135,7 +5187,18 @@
         "marketplaces.allowed",
         "marketplaces.customServers",
         "environment",
-        "connectorTools"
+        "connectorTools",
+        "commitTrailers.Made-by",
+        "commitTrailers.Cost",
+        "commitTrailers.Tokens",
+        "commitTrailers.Duration",
+        "commitTrailers.Session",
+        "commitTrailers.Fixes",
+        "commitTrailers.Epic",
+        "commitTrailers.Requested-by",
+        "commitTrailers.Approved-by",
+        "commitTrailers.Attested",
+        "commitTrailers.Co-authored-by"
       ],
       "description": "One rule a policy layer can set (#2957, data-model.md \"EffectiveRule\")."
     },
@@ -5186,6 +5249,9 @@
             "$ref": "connections.schema.json#/definitions/PolicyConnectorRule"
           },
           "description": "The level of each connector's tools, by the connector's name (#4099). A tool no layer names is ask when it writes and allow when it only reads."
+        },
+        "commitTrailers": {
+          "$ref": "#/definitions/CommitTrailers"
         }
       },
       "additionalProperties": false

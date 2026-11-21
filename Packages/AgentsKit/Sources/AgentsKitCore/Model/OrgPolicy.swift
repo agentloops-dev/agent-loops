@@ -121,12 +121,15 @@ public extension DaemonAPI {
         public var requireFollowing: Bool?
         public var groups: JSONValue?
         public var notices: PolicyNotices?
+        /// Which trailers an agent's commits carry (#6365).
+        public var commitTrailers: [String: CommitTrailerValue]?
 
         public init(version: Int, issued: Date, changedBy: AuditActor, requires: [String] = [], permissionMode: PermissionLevel? = nil,
                     sandbox: String? = nil, runtimes: [String: PolicyRuntimeRule]? = nil,
                     marketplaces: PolicyMarketplaces? = nil, budgets: PolicyBudgets? = nil, helpers: PolicyHelpers? = nil,
                     environment: PolicyEnvironment? = nil, stopAll: PolicyStopAll? = nil, requireFollowing: Bool? = nil,
-                    groups: JSONValue? = nil, notices: PolicyNotices? = nil) {
+                    groups: JSONValue? = nil, notices: PolicyNotices? = nil,
+                    commitTrailers: [String: CommitTrailerValue]? = nil) {
             self.version = version
             self.issued = issued
             self.changedBy = changedBy
@@ -142,6 +145,7 @@ public extension DaemonAPI {
             self.requireFollowing = requireFollowing
             self.groups = groups
             self.notices = notices
+            self.commitTrailers = commitTrailers
         }
 
         /// Whether the kill switch is on.

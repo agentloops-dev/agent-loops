@@ -2718,6 +2718,21 @@ export interface CloneSummary {
   startedAt: WireDate;
 }
 
+/** One trailer's value in commitTrailers (#6365). */
+export type CommitTrailerValue =
+  | "on"
+  | "off";
+
+/**
+ * The trailers of an agent's commits, each on or off, by the trailer's key (#6365): Made-by, Cost,
+ * Tokens, Duration, Session, Fixes, Epic, Requested-by, Approved-by, Attested, Co-authored-by.
+ * Fixes also writes Refs. A key the machine does not know is kept and has no effect; a key no layer
+ * sets has its default (every key on, Cost off). Record trailers (Made-by, Session, Fixes, Epic,
+ * Requested-by, Approved-by, Attested, Co-authored-by): on is tighter. Spend trailers (Cost,
+ * Tokens, Duration): off is tighter. Its rules in policy/effective are commitTrailers.<key>.
+ */
+export type CommitTrailers = Record<string, CommitTrailerValue>;
+
 export interface ConfigChoice {
   value: JSONValue;
   name: string;
@@ -6420,6 +6435,27 @@ export interface GitCredentialRequest {
   path?: string;
 }
 
+/**
+ * The trailer block for a commit or a squash message (#6365), in order, one "Key: value" line each;
+ * empty when the rule turns every trailer off.
+ */
+export interface GitTrailers {
+  lines: string[];
+}
+
+/**
+ * git/trailers (#6365): the session whose folder's effective commitTrailers rule applies, and the
+ * pull request whose totals Cost, Tokens and Duration give.
+ */
+export interface GitTrailersRequest {
+  session: UUID;
+  /**
+   * The pull request's number. Absent: the totals are the session's own, and Approved-by is left
+   * out.
+   */
+  pr?: number;
+}
+
 /** GitView (Model/AgentChanges.swift): `{ shared: { since } }`, `{ unavailable: … }` and so on. */
 export type GitView =
   | { owned: { since: string } }
@@ -10047,6 +10083,11 @@ export interface OrgPolicy {
   /** Empty. A place for later layers that only make a rule tighter. */
   groups?: Empty;
   notices?: PolicyNotices;
+  /**
+   * #6365: which trailers an agent's commits carry, each on or off. On is tighter for a record
+   * trailer, off for a spend trailer (Cost, Tokens, Duration).
+   */
+  commitTrailers?: CommitTrailers;
 }
 
 /**
@@ -11345,7 +11386,18 @@ export type PolicyRuleName =
   | "marketplaces.allowed"
   | "marketplaces.customServers"
   | "environment"
-  | "connectorTools";
+  | "connectorTools"
+  | "commitTrailers.Made-by"
+  | "commitTrailers.Cost"
+  | "commitTrailers.Tokens"
+  | "commitTrailers.Duration"
+  | "commitTrailers.Session"
+  | "commitTrailers.Fixes"
+  | "commitTrailers.Epic"
+  | "commitTrailers.Requested-by"
+  | "commitTrailers.Approved-by"
+  | "commitTrailers.Attested"
+  | "commitTrailers.Co-authored-by";
 
 /**
  * The rules a layer sets (#2957, data-model.md "PolicyRules"): the same shape on the organisation,
@@ -11369,6 +11421,7 @@ export interface PolicyRules {
    * ask when it writes and allow when it only reads.
    */
   connectorTools?: Record<string, PolicyConnectorRule>;
+  commitTrailers?: CommitTrailers;
 }
 
 /** One allowed runtime in a policy (#998). */
@@ -18360,6 +18413,8 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   GitAsk: { required: ["server", "from"], optional: [] },
   GitCredential: { required: ["username", "password"], optional: [] },
   GitCredentialRequest: { required: ["protocol", "host"], optional: ["path"] },
+  GitTrailers: { required: ["lines"], optional: [] },
+  GitTrailersRequest: { required: ["session"], optional: ["pr"] },
   Goal: { required: ["objective", "status", "at"], optional: ["iterations", "reason", "tokensUsed", "tokenBudget", "timeUsedSeconds"] },
   Group: { required: ["id", "name", "everyone", "members"], optional: ["caps", "source", "role"] },
   GroupList: { required: ["groups"], optional: [] },
@@ -18637,7 +18692,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   OTLPExport: { required: ["endpoint", "every"], optional: ["lastSent", "lastFailure", "failedAt"] },
   OptionsRequest: { required: ["runtimeID", "cwd", "mcpServers"], optional: [] },
   OptionsResponse: { required: ["draftID", "options", "commands"], optional: [] },
-  OrgPolicy: { required: ["version", "issued", "changedBy", "requires"], optional: ["permissionMode", "permissionRequests", "sandbox", "runtimes", "marketplaces", "budgets", "helpers", "environment", "workflows", "noticeLimits", "archiveMyChats", "stopAll", "requireFollowing", "groups", "notices"] },
+  OrgPolicy: { required: ["version", "issued", "changedBy", "requires"], optional: ["permissionMode", "permissionRequests", "sandbox", "runtimes", "marketplaces", "budgets", "helpers", "environment", "workflows", "noticeLimits", "archiveMyChats", "stopAll", "requireFollowing", "groups", "notices", "commitTrailers"] },
   OrgProvider: { required: ["id", "name", "preset", "issuer", "clientID"], optional: ["accountClaim", "tenant", "scopes", "join", "on", "order", "secret", "version", "created", "changed", "redirectURI", "scim"] },
   OrgProviderCheck: { required: ["ok", "missing", "jwksKeys", "redirectURI"], optional: [] },
   OrgProviderKept: { required: ["provider", "rev"], optional: [] },
@@ -18751,7 +18806,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   PolicyRefuseMore: { required: ["request"], optional: [] },
   PolicyRuleBudgets: { required: [], optional: ["perAgent", "daily", "perAgentTokens", "dailyTokens"] },
   PolicyRuleLine: { required: ["rule", "title", "words"], optional: [] },
-  PolicyRules: { required: [], optional: ["permissionMode", "permissionRequests", "sandbox", "budgets", "helpers", "workflows", "noticeLimits", "archiveMyChats", "runtimes", "marketplaces", "environment", "connectorTools"] },
+  PolicyRules: { required: [], optional: ["permissionMode", "permissionRequests", "sandbox", "budgets", "helpers", "workflows", "noticeLimits", "archiveMyChats", "runtimes", "marketplaces", "environment", "connectorTools", "commitTrailers"] },
   PolicyRuntimeRule: { required: [], optional: ["models", "reach"] },
   PolicySet: { required: ["policy"], optional: ["rev"] },
   PolicySetBy: { required: ["by", "rule", "words"], optional: ["layer"] },

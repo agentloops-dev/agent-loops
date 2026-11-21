@@ -99,6 +99,7 @@ public enum Capability {
     public static let groups1 = "groups/1"
     public static let handover1 = "handover/1"
     public static let hostBrowserSettings1 = "host.browser-settings/1"
+    public static let hostCommitTrailers1 = "host.commit-trailers/1"
     public static let hostDesktopControl1 = "host.desktop-control/1"
     public static let hostDriveApproval1 = "host.drive-approval/1"
     public static let hostLocalSecrets1 = "host.local-secrets/1"
@@ -464,6 +465,7 @@ public enum Capability {
         "forge/rerun": "forge-write/1",
         "forge/sources": "forge-sync/1",
         "git/fill": "git/1",
+        "git/trailers": "host.commit-trailers/1",
         "lineage/cost": "lineage/1",
         "lineage/end": "lineage/1",
         "lineage/estimate": "lineage.estimate/1",

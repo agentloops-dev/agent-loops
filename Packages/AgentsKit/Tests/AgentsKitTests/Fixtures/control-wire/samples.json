@@ -110,6 +110,14 @@
     "username": "username",
     "password": "password"
   },
+  "PolicyRules": {
+    "archiveMyChats": false,
+    "commitTrailers": {
+      "Made-by": "on",
+      "Cost": "off",
+      "Next-trailer": "on"
+    }
+  },
   "AttentionNeed": {
     "need": {
       "id": {
