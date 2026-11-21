@@ -24,13 +24,13 @@ func TestTheHotPathReadsOnlyLiveRecords(t *testing.T) {
 	url := store.FolderURL(folder)
 	byUser := wire.AgentArchivedReasonByUser
 	live := store.NewUUID()
-	d.Store.Save(wire.Agent{ID: live, RuntimeID: "claude", Cwd: url, State: wire.AgentStateFinished, EndedReason: reason(wire.EndedReasonEndTurn),
-		CreatedAt: 500, LastActivityAt: 600, CostToDate: map[string]float64{"USD": 1}})
+	must(t, d.Store.Save(wire.Agent{ID: live, RuntimeID: "claude", Cwd: url, State: wire.AgentStateFinished, EndedReason: reason(wire.EndedReasonEndTurn),
+		CreatedAt: 500, LastActivityAt: 600, CostToDate: map[string]float64{"USD": 1}}))
 	const archived = 50
 	for i := range archived {
 		at := wire.Date(100 + i)
-		d.Store.Save(wire.Agent{ID: store.NewUUID(), RuntimeID: "claude", Cwd: url, State: wire.AgentStateArchived,
-			ArchivedAt: &at, ArchivedReason: &byUser, CreatedAt: at, LastActivityAt: at, CostToDate: map[string]float64{"USD": 2}})
+		must(t, d.Store.Save(wire.Agent{ID: store.NewUUID(), RuntimeID: "claude", Cwd: url, State: wire.AgentStateArchived,
+			ArchivedAt: &at, ArchivedReason: &byUser, CreatedAt: at, LastActivityAt: at, CostToDate: map[string]float64{"USD": 2}}))
 	}
 	first, ok := d.folderSummary(folder)
 	if !ok {

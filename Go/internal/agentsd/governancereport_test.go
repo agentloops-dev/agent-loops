@@ -20,12 +20,12 @@ func TestTheGovernanceReportIsTheCatalogueSidecars(t *testing.T) {
 	d.PersonalHome = home
 	writeMCPJSON(t, filepath.Join(home, ".agents", "mcp.json"), "github")
 	writeMCPJSON(t, filepath.Join(app, ".agents", "mcp.json"), "github", "linear")
-	os.WriteFile(filepath.Join(root, "catalog-mcp.json"), []byte(`{"version":1,"servers":{
+	must(t, os.WriteFile(filepath.Join(root, "catalog-mcp.json"), []byte(`{"version":1,"servers":{
 		"personal/github":{"registryName":"io.github/github","version":"1.2.0","run":"remote","addedAt":"2026-10-01T00:00:00Z"},
 		"`+app+`/github":{"registryName":"io.github/github","version":"1.2.0","run":"remote","addedAt":"2026-10-01T00:00:00Z"},
-		"`+app+`/linear":{"registryName":"","version":"","run":"remote","addedAt":"2026-10-01T00:00:00Z","byHand":true}}}`), 0o600)
-	os.WriteFile(filepath.Join(root, "catalog-skills.json"), []byte(`{"version":1,"skills":{
-		"personal/review":{"commit":"0123456789abcdef0123","treeSHA":"t","catalogue":"anthropics/skills","addedAt":"2026-10-01T00:00:00Z"}}}`), 0o600)
+		"`+app+`/linear":{"registryName":"","version":"","run":"remote","addedAt":"2026-10-01T00:00:00Z","byHand":true}}}`), 0o600))
+	must(t, os.WriteFile(filepath.Join(root, "catalog-skills.json"), []byte(`{"version":1,"skills":{
+		"personal/review":{"commit":"0123456789abcdef0123","treeSHA":"t","catalogue":"anthropics/skills","addedAt":"2026-10-01T00:00:00Z"}}}`), 0o600))
 	got := d.governanceItems()
 	if len(got) != 3 {
 		t.Fatalf("%+v", got)
@@ -40,7 +40,7 @@ func TestTheGovernanceReportIsTheCatalogueSidecars(t *testing.T) {
 		t.Fatalf("%+v", g)
 	}
 	// A file that does not decode says nothing, and stays where it is.
-	os.WriteFile(filepath.Join(root, "catalog-mcp.json"), []byte(`{`), 0o600)
+	must(t, os.WriteFile(filepath.Join(root, "catalog-mcp.json"), []byte(`{`), 0o600))
 	if got := d.governanceItems(); len(got) != 1 {
 		t.Fatalf("%+v", got)
 	}
@@ -61,10 +61,10 @@ func TestTheGovernanceReportDropsAServerGoneFromMCPJSON(t *testing.T) {
 	d.PersonalHome = home
 	writeMCPJSON(t, filepath.Join(home, ".agents", "mcp.json"))
 	writeMCPJSON(t, filepath.Join(app, ".agents", "mcp.json"), "linear")
-	os.WriteFile(filepath.Join(root, "catalog-mcp.json"), []byte(`{"version":1,"servers":{
+	must(t, os.WriteFile(filepath.Join(root, "catalog-mcp.json"), []byte(`{"version":1,"servers":{
 		"personal/obsidian":{"registryName":"ai.smithery/obsidian","version":"0.4.0","run":"remote","addedAt":"2026-10-05T00:00:00Z"},
 		"`+app+`/github":{"registryName":"io.github/github","version":"1.2.0","run":"remote","addedAt":"2026-10-01T00:00:00Z"},
-		"`+app+`/linear":{"registryName":"io.github/linear","version":"2.0.0","run":"remote","addedAt":"2026-10-01T00:00:00Z"}}}`), 0o600)
+		"`+app+`/linear":{"registryName":"io.github/linear","version":"2.0.0","run":"remote","addedAt":"2026-10-01T00:00:00Z"}}}`), 0o600))
 	got := d.governanceItems()
 	if len(got) != 1 || got[0].Name != "linear" {
 		t.Fatalf("%+v", got)
@@ -75,7 +75,7 @@ func TestTheGovernanceReportDropsAServerGoneFromMCPJSON(t *testing.T) {
 		t.Fatalf("%+v", got)
 	}
 	// One that is not valid JSON settles nothing.
-	os.WriteFile(filepath.Join(app, ".agents", "mcp.json"), []byte(`{`), 0o600)
+	must(t, os.WriteFile(filepath.Join(app, ".agents", "mcp.json"), []byte(`{`), 0o600))
 	if got := d.governanceItems(); len(got) != 2 || got[0].Name != "github" || got[1].Name != "linear" {
 		t.Fatalf("%+v", got)
 	}
@@ -89,7 +89,7 @@ func writeMCPJSON(t *testing.T, path string, names ...string) {
 		servers[n] = map[string]any{"url": "https://example.com/" + n}
 	}
 	b, _ := json.Marshal(map[string]any{"mcpServers": servers})
-	os.MkdirAll(filepath.Dir(path), 0o700)
+	must(t, os.MkdirAll(filepath.Dir(path), 0o700))
 	if err := os.WriteFile(path, b, 0o600); err != nil {
 		t.Fatal(err)
 	}

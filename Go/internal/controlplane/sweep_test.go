@@ -22,46 +22,60 @@ func TestTheSweepRemovesTheDeadAndKeepsTheLive(t *testing.T) {
 	root := t.TempDir()
 	s := store.NewFolder(root)
 	rs := records.New(s)
-	rs.SettingsOrMake(ctx, func() records.Settings { return records.Settings{Name: "test", MachineID: "m"} })
+	if _, err := rs.SettingsOrMake(ctx, func() records.Settings { return records.Settings{Name: "test", MachineID: "m"} }); err != nil {
+		t.Fatal(err)
+	}
 	now := time.Now()
 	day := func(ago int) string { return now.Add(-time.Duration(ago) * 24 * time.Hour).UTC().Format("2006-01-02") }
-	s.Put(ctx, "v1/events/"+day(91)+"/old.json", []byte("{}"), store.Absent)
-	s.Put(ctx, "v1/events/"+day(1)+"/new.json", []byte("{}"), store.Absent)
+	if _, err := s.Put(ctx, "v1/events/"+day(91)+"/old.json", []byte("{}"), store.Absent); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Put(ctx, "v1/events/"+day(1)+"/new.json", []byte("{}"), store.Absent); err != nil {
+		t.Fatal(err)
+	}
 	code := func(id string, expires time.Time, spent bool) {
 		data, _ := records.Encode(storedCode{Purpose: "client", Expires: records.At(expires)})
-		s.Put(ctx, codeKey(id), data, store.Absent)
+		if _, err := s.Put(ctx, codeKey(id), data, store.Absent); err != nil {
+			t.Fatal(err)
+		}
 		if spent {
-			s.Put(ctx, spentKey(id), []byte("{}"), store.Absent)
+			if _, err := s.Put(ctx, spentKey(id), []byte("{}"), store.Absent); err != nil {
+				t.Fatal(err)
+			}
 		}
 	}
 	code("long-gone", now.Add(-48*time.Hour), true)
 	code("just-expired", now.Add(-10*time.Minute), false)
 	code("good", now.Add(10*time.Minute), true)
-	s.Put(ctx, spentKey("orphan"), []byte("{}"), store.Absent)
+	if _, err := s.Put(ctx, spentKey("orphan"), []byte("{}"), store.Absent); err != nil {
+		t.Fatal(err)
+	}
 
 	client := func(name string) records.ClientRecord {
 		return records.ClientRecord{ID: records.NewUUID(), Name: name, Kind: records.KindIPhone, PublicKey: []byte{4}, Paired: records.Now()}
 	}
 	live, forgotten, legacy := client("live"), client("forgotten"), client("legacy")
-	rs.SaveClient(ctx, live)
-	rs.SaveClient(ctx, forgotten)
-	rs.ForgetClient(ctx, forgotten.ID)
+	must(t, rs.SaveClient(ctx, live))
+	must(t, rs.SaveClient(ctx, forgotten))
+	must(t, rs.ForgetClient(ctx, forgotten.ID))
 	// A tombstone from before forgottenAt was kept.
 	yes := true
 	legacy.Forgotten, legacy.Rev = &yes, 1
 	data, _ := records.Encode(legacy)
-	s.Put(ctx, records.ClientKey(legacy.ID), data, store.Absent)
-	rs.Load(ctx)
+	if _, err := s.Put(ctx, records.ClientKey(legacy.ID), data, store.Absent); err != nil {
+		t.Fatal(err)
+	}
+	must(t, rs.Load(ctx))
 	if !rs.WasForgotten(forgotten.ID) {
 		t.Fatal("not forgotten")
 	}
 	// Leftovers: an old temporary file goes, a new one stays.
 	folder := filepath.Join(root, "v1", "clients")
 	oldTmp, newTmp := filepath.Join(folder, ".x.json.1.tmp"), filepath.Join(folder, ".y.json.2.tmp")
-	os.WriteFile(oldTmp, nil, 0o600)
-	os.WriteFile(newTmp, nil, 0o600)
+	must(t, os.WriteFile(oldTmp, nil, 0o600))
+	must(t, os.WriteFile(newTmp, nil, 0o600))
 	then := now.Add(-2 * time.Hour)
-	os.Chtimes(oldTmp, then, then)
+	must(t, os.Chtimes(oldTmp, then, then))
 
 	first, err := sweep(ctx, rs, now, mostPerSweep, nil)
 	if err != nil {
@@ -119,18 +133,24 @@ func TestTheSweepRemovesRemovedProjects(t *testing.T) {
 	ctx := context.Background()
 	s := store.NewMemory()
 	rs := records.New(s)
-	rs.SettingsOrMake(ctx, func() records.Settings { return records.Settings{Name: "test", MachineID: "m"} })
-	for _, id := range []string{"p-live", "p-gone"} {
-		rs.ChangeProject(ctx, id, func(*records.Project) (*records.Project, error) {
-			return &records.Project{ID: id, Name: id, Owner: "u", MadeAt: records.Now()}, nil
-		})
+	if _, err := rs.SettingsOrMake(ctx, func() records.Settings { return records.Settings{Name: "test", MachineID: "m"} }); err != nil {
+		t.Fatal(err)
 	}
-	rs.ChangeProject(ctx, "p-gone", func(p *records.Project) (*records.Project, error) {
+	for _, id := range []string{"p-live", "p-gone"} {
+		if _, err := rs.ChangeProject(ctx, id, func(*records.Project) (*records.Project, error) {
+			return &records.Project{ID: id, Name: id, Owner: "u", MadeAt: records.Now()}, nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := rs.ChangeProject(ctx, "p-gone", func(p *records.Project) (*records.Project, error) {
 		yes, now := true, records.Now()
 		next := *p
 		next.Removed, next.RemovedAt = &yes, &now
 		return &next, nil
-	})
+	}); err != nil {
+		t.Fatal(err)
+	}
 	if got := rs.ProjectsOwnedBy("u"); got != 2 {
 		t.Fatal(got)
 	}
@@ -156,26 +176,32 @@ func TestTheSweepRemovesRemovedGroupsAndPeople(t *testing.T) {
 	ctx := context.Background()
 	s := store.NewMemory()
 	rs := records.New(s)
-	rs.SettingsOrMake(ctx, func() records.Settings { return records.Settings{Name: "test", MachineID: "m"} })
+	if _, err := rs.SettingsOrMake(ctx, func() records.Settings { return records.Settings{Name: "test", MachineID: "m"} }); err != nil {
+		t.Fatal(err)
+	}
 	yes, now := true, records.Now()
 	for _, id := range []string{"g-live", "g-gone"} {
-		rs.ChangeGroup(ctx, id, func(*records.Group) (*records.Group, error) {
+		if _, err := rs.ChangeGroup(ctx, id, func(*records.Group) (*records.Group, error) {
 			return &records.Group{ID: id, Name: id}, nil
-		})
+		}); err != nil {
+			t.Fatal(err)
+		}
 	}
-	rs.ChangeGroup(ctx, "g-gone", func(g *records.Group) (*records.Group, error) {
+	if _, err := rs.ChangeGroup(ctx, "g-gone", func(g *records.Group) (*records.Group, error) {
 		next := *g
 		next.Removed, next.RemovedAt = &yes, &now
 		return &next, nil
-	})
-	rs.ChangePeople(ctx, func(map[string]records.Person) ([]records.Person, error) {
+	}); err != nil {
+		t.Fatal(err)
+	}
+	must(t, rs.ChangePeople(ctx, func(map[string]records.Person) ([]records.Person, error) {
 		return []records.Person{
 			{ID: "u-live", Name: "Live"},
 			{ID: "u-gone", Name: "Gone", Removed: &yes, RemovedAt: &now},
 			{ID: "u-refused", Name: "Refused", Removed: &yes, RemovedAt: &now,
 				SignIns: []records.SignIn{{Provider: "google", Account: "1"}}},
 		}, nil
-	})
+	}))
 	at := time.Now()
 	if report, err := sweep(ctx, rs, at, mostPerSweep, nil); err != nil || report.tombstones != 0 {
 		t.Fatalf("%+v %v", report, err)
@@ -208,13 +234,13 @@ func TestTheSweepCutsARemovedPersonToTheirTombstone(t *testing.T) {
 	s := store.NewMemory()
 	rs := records.New(s)
 	yes, now := true, records.Now()
-	rs.ChangePeople(ctx, func(map[string]records.Person) ([]records.Person, error) {
+	must(t, rs.ChangePeople(ctx, func(map[string]records.Person) ([]records.Person, error) {
 		return []records.Person{
 			{ID: "u-live", Name: "Live", GitHubLogin: "live"},
 			{ID: "u-refused", Name: "Refused", Removed: &yes, RemovedAt: &now, GitHubLogin: "refused",
 				SignIns: []records.SignIn{{Provider: "google", Account: "1", Email: "refused@example.com"}}},
 		}, nil
-	})
+	}))
 	if report, err := sweep(ctx, rs, time.Now(), mostPerSweep, nil); err != nil || report.cut != 1 {
 		t.Fatalf("%+v %v", report, err)
 	}
@@ -240,7 +266,9 @@ func TestTheSweepStopsAtItsBound(t *testing.T) {
 	ctx := context.Background()
 	s := store.NewMemory()
 	for n := range 12 {
-		s.Put(ctx, "v1/events/2000-01-01/"+itoa(n)+".json", []byte("{}"), store.Absent)
+		if _, err := s.Put(ctx, "v1/events/2000-01-01/"+itoa(n)+".json", []byte("{}"), store.Absent); err != nil {
+			t.Fatal(err)
+		}
 	}
 	report, _ := sweep(ctx, records.New(s), time.Now(), 5, nil)
 	if left, _ := s.List(ctx, "v1/events/"); report.events != 5 || len(left) != 7 {
@@ -257,11 +285,15 @@ func TestTheSweepCatchesUpWithinTheHour(t *testing.T) {
 	now := time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC)
 	for _, day := range []string{"2000-01-01", "2000-01-02", "2000-01-03"} {
 		for n := range 17 {
-			s.Put(ctx, "v1/events/"+day+"/"+itoa(n)+".json", []byte("{}"), store.Absent)
+			if _, err := s.Put(ctx, "v1/events/"+day+"/"+itoa(n)+".json", []byte("{}"), store.Absent); err != nil {
+				t.Fatal(err)
+			}
 		}
 	}
 	kept := now.Format(sweptDayLayout)
-	s.Put(ctx, "v1/events/"+kept+"/0.json", []byte("{}"), store.Absent)
+	if _, err := s.Put(ctx, "v1/events/"+kept+"/0.json", []byte("{}"), store.Absent); err != nil {
+		t.Fatal(err)
+	}
 	pauses := 0
 	report, rounds, err := sweepRounds(ctx, records.New(s), func() time.Time { return now }, 10, &eventSweep{},
 		time.Second, func(time.Duration) bool { pauses++; return true })
@@ -280,7 +312,9 @@ func TestTheSweepRoundsStop(t *testing.T) {
 	fill := func() store.Store {
 		s := store.NewMemory()
 		for n := range 50 {
-			s.Put(ctx, "v1/events/2000-01-01/"+itoa(n)+".json", []byte("{}"), store.Absent)
+			if _, err := s.Put(ctx, "v1/events/2000-01-01/"+itoa(n)+".json", []byte("{}"), store.Absent); err != nil {
+				t.Fatal(err)
+			}
 		}
 		return s
 	}
@@ -316,21 +350,39 @@ func TestTheSweepRemovesOrphans(t *testing.T) {
 	}
 	lease := func(host string, expires time.Time) {
 		data, _ := records.Encode(hostLease{Host: host, Copy: "c", Epoch: 3, Expires: records.At(expires)})
-		s.Put(ctx, leaseKey(host), data, store.Always)
+		if _, err := s.Put(ctx, leaseKey(host), data, store.Always); err != nil {
+			t.Fatal(err)
+		}
 	}
 	lease("KNOWN", now.Add(-time.Hour))
 	lease("GONE", now.Add(-time.Hour))
 	lease("GOING", now.Add(time.Minute))
-	s.Put(ctx, orgRouteKey("r1"), []byte(`{"removed":true}`), store.Always)
-	s.Put(ctx, orgSecretKey("r1"), []byte(`{}`), store.Always)
-	s.Put(ctx, orgRouteKey("r2"), []byte(`{"id":"r2","name":"live"}`), store.Always)
-	s.Put(ctx, orgSecretKey("r2"), []byte(`{}`), store.Always)
+	if _, err := s.Put(ctx, orgRouteKey("r1"), []byte(`{"removed":true}`), store.Always); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Put(ctx, orgSecretKey("r1"), []byte(`{}`), store.Always); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Put(ctx, orgRouteKey("r2"), []byte(`{"id":"r2","name":"live"}`), store.Always); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Put(ctx, orgSecretKey("r2"), []byte(`{}`), store.Always); err != nil {
+		t.Fatal(err)
+	}
 	// A removed machine's folder list goes (#3125); one whose record this copy has not
 	// read yet stays.
-	s.Put(ctx, projectFoldersKey("KNOWN"), []byte(`{"folders":[]}`), store.Always)
-	s.Put(ctx, projectFoldersKey("GONE"), []byte(`{"folders":[]}`), store.Always)
-	s.Put(ctx, projectFoldersKey("ELSEWHERE"), []byte(`{"folders":[]}`), store.Always)
-	s.Put(ctx, records.HostKey("ELSEWHERE"), []byte(`{"id":"ELSEWHERE"}`), store.Always)
+	if _, err := s.Put(ctx, projectFoldersKey("KNOWN"), []byte(`{"folders":[]}`), store.Always); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Put(ctx, projectFoldersKey("GONE"), []byte(`{"folders":[]}`), store.Always); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Put(ctx, projectFoldersKey("ELSEWHERE"), []byte(`{"folders":[]}`), store.Always); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Put(ctx, records.HostKey("ELSEWHERE"), []byte(`{"id":"ELSEWHERE"}`), store.Always); err != nil {
+		t.Fatal(err)
+	}
 	report, err := sweep(ctx, rs, now, mostPerSweep, nil)
 	if err != nil || report.orphans != 3 {
 		t.Fatalf("%+v %v", report, err)
@@ -365,7 +417,9 @@ func TestTheSweepListsOnlyTheExpiredDays(t *testing.T) {
 	for ago := range 93 {
 		day := now.AddDate(0, 0, -ago).Format("2006-01-02")
 		for n := range 20 {
-			s.Put(ctx, "v1/events/"+day+"/by/x/"+itoa(n)+".json", []byte("{}"), store.Absent)
+			if _, err := s.Put(ctx, "v1/events/"+day+"/by/x/"+itoa(n)+".json", []byte("{}"), store.Absent); err != nil {
+				t.Fatal(err)
+			}
 		}
 	}
 	rs := records.New(s)
@@ -420,7 +474,7 @@ func TestWhatAHostLastListedIsKept(t *testing.T) {
 	}, "the copy kept")
 	box.stop()
 	var heard map[string]json.RawMessage
-	json.Unmarshal(call(t, window, "", "machines/lastHeard", map[string]string{"host": box.member.Host}), &heard)
+	must(t, json.Unmarshal(call(t, window, "", "machines/lastHeard", map[string]string{"host": box.member.Host}), &heard))
 	if string(heard["agents"]) != "[]" || heard["heardAt"] == nil || heard["folders"] != nil {
 		t.Fatalf("%s", heard)
 	}
@@ -494,12 +548,18 @@ func TestTheSweepKeepsMeshEventsADay(t *testing.T) {
 	ctx := context.Background()
 	s := store.NewMemory()
 	rs := records.New(s)
-	rs.SettingsOrMake(ctx, func() records.Settings { return records.Settings{Name: "test", MachineID: "m"} })
+	if _, err := rs.SettingsOrMake(ctx, func() records.Settings { return records.Settings{Name: "test", MachineID: "m"} }); err != nil {
+		t.Fatal(err)
+	}
 	now := time.Date(2026, 11, 6, 12, 0, 0, 0, time.UTC)
 	for _, day := range []string{"2026-11-04", "2026-11-05", "2026-11-06"} {
-		s.Put(ctx, meshEventsPrefix+day+"/0000000000001-abcdefgh.json", []byte("{}"), store.Absent)
+		if _, err := s.Put(ctx, meshEventsPrefix+day+"/0000000000001-abcdefgh.json", []byte("{}"), store.Absent); err != nil {
+			t.Fatal(err)
+		}
 	}
-	s.Put(ctx, eventsPrefix+"2026-11-04/audit.json", []byte("{}"), store.Absent)
+	if _, err := s.Put(ctx, eventsPrefix+"2026-11-04/audit.json", []byte("{}"), store.Absent); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := sweep(ctx, rs, now, mostPerSweep, nil); err != nil {
 		t.Fatal(err)
 	}

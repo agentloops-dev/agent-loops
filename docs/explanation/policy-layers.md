@@ -28,6 +28,15 @@ tighter, a longer wait after a burst of notices is tighter, and **Off** is tight
 **Agents may archive the chats I start**. For a list (runtimes, marketplaces, variables), a
 name that one layer leaves out is not allowed.
 
+**Commit trailers** (#6365) have two directions, by the kind of trailer. For a record trailer
+(`Made-by`, `Session`, `Fixes`, `Epic`, `Requested-by`, `Approved-by`, `Attested`,
+`Co-authored-by`), **On** is tighter: a folder or your organisation can make a record of agent
+work required, and you cannot remove it. For a spend trailer (`Cost`, `Tokens`, `Duration`),
+**Off** is tighter: a folder or your organisation can keep spend out of git history, and you
+cannot add it there. A layer above caps a trailer only at its tight value, so the 🔒 line says
+**This folder (agent-loops): Made-by is required** or **Your organisation: Tokens is kept out
+of commits**.
+
 ## A capped value is kept
 
 When a layer above caps your value, the machine does not change or delete your value. It

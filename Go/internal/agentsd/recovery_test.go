@@ -159,7 +159,7 @@ func TestAnAgentACleanStopCutOffIsPickedBackUp(t *testing.T) {
 	root := t.TempDir()
 	first, c := start(t, root)
 	var id wire.UUID
-	json.Unmarshal(c.call(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(),
+	mustUnmarshal(t, c.call(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(),
 		"prompt": "wait for me"}), &id)
 	c.until(t, "running", ended(id, wire.AgentStateRunning))
 	first.Shutdown()
@@ -200,7 +200,7 @@ func TestAnAgentASignalCutOffIsPickedBackUp(t *testing.T) {
 	ctx, signal := context.WithCancel(context.Background())
 	first, c := startWith(t, ctx, root)
 	var id wire.UUID
-	json.Unmarshal(c.call(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(),
+	mustUnmarshal(t, c.call(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(),
 		"prompt": "wait for me"}), &id)
 	c.until(t, "running", ended(id, wire.AgentStateRunning))
 	signal()
@@ -239,7 +239,7 @@ func TestAStartThatDiesBeforeThePickUpLeavesItToTheNext(t *testing.T) {
 		{"a clean stop", func(t *testing.T, root string) wire.UUID {
 			first, c := start(t, root)
 			var id wire.UUID
-			json.Unmarshal(c.call(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(),
+			mustUnmarshal(t, c.call(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(),
 				"prompt": "wait for me"}), &id)
 			c.until(t, "running", ended(id, wire.AgentStateRunning))
 			first.Shutdown()

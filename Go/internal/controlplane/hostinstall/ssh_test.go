@@ -29,7 +29,7 @@ func TestWhatSSHLeavesRunningEndsWithTheCall(t *testing.T) {
 		t.Fatal(err)
 	}
 	relay, _ := strconv.Atoi(strings.TrimSpace(string(data)))
-	t.Cleanup(func() { syscall.Kill(relay, syscall.SIGKILL) })
+	t.Cleanup(func() { _ = syscall.Kill(relay, syscall.SIGKILL) }) // it may have ended already
 	for range 50 {
 		stat, _ := os.ReadFile("/proc/" + strconv.Itoa(relay) + "/stat")
 		if syscall.Kill(relay, 0) != nil || strings.Contains(string(stat), ") Z ") {

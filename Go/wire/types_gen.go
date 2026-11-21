@@ -14450,6 +14450,9 @@ type SecretOperation struct {
 
 	// How many times in the minute from at, when more than one.
 	Count *int64 `json:"count,omitzero"`
+
+	// The machine's id for this operation (#6464). A machine keeps an operation until the control plane answers, and sends it again after a stop or a failed send; the control plane keeps an id it has kept already only once. Left out by an older machine.
+	ID *string `json:"id,omitzero"`
 }
 
 // How a secret was read (#4156): fill (fill_secret), ci (set_ci_secret), mcp (an HTTP MCP server's header or url, through agentsd, #4120), env (given to a session at its start: its own secrets as variables, or an MCP server's ${NAME} from secrets.env) or command (agents-secret NAME, printed for a session's own command, #4178, or for a call with no session's grant that a person allowed, with the place terminal, #4179).

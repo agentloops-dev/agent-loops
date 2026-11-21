@@ -16,7 +16,7 @@ import (
 func listedProviders(t *testing.T, s *controllink.Session) []wire.ProviderSummary {
 	t.Helper()
 	var listed wire.ProviderList
-	json.Unmarshal(call(t, s, "", "providers/list", nil), &listed)
+	must(t, json.Unmarshal(call(t, s, "", "providers/list", nil), &listed))
 	return listed.Providers
 }
 
@@ -47,7 +47,7 @@ func TestOnlyAProvidersGroupSeesAndUsesIt(t *testing.T) {
 	}
 
 	var platform wire.Group
-	json.Unmarshal(call(t, owner, "", "groups/set", wire.GroupSet{Name: "Platform", Members: []string{sam.id}}), &platform)
+	must(t, json.Unmarshal(call(t, owner, "", "groups/set", wire.GroupSet{Name: "Platform", Members: []string{sam.id}}), &platform))
 	if platform.ID == "" || len(platform.Members) != 1 {
 		t.Fatalf("%+v", platform)
 	}
@@ -59,7 +59,7 @@ func TestOnlyAProvidersGroupSeesAndUsesIt(t *testing.T) {
 	for {
 		note := waitNote(t, sam.window, "control/providersChanged")
 		var told wire.ProviderList
-		json.Unmarshal(note.Params, &told)
+		must(t, json.Unmarshal(note.Params, &told))
 		if len(told.Providers) == 1 && *told.Providers[0].Group == platform.ID {
 			break
 		}
@@ -90,11 +90,11 @@ func TestOnlyAProvidersGroupSeesAndUsesIt(t *testing.T) {
 	}
 
 	var groups wire.GroupList
-	json.Unmarshal(call(t, kim.window, "", "groups/list", nil), &groups)
+	must(t, json.Unmarshal(call(t, kim.window, "", "groups/list", nil), &groups))
 	if len(groups.Groups) != 0 {
 		t.Fatalf("Kim: %+v", groups)
 	}
-	json.Unmarshal(call(t, sam.window, "", "groups/list", nil), &groups)
+	must(t, json.Unmarshal(call(t, sam.window, "", "groups/list", nil), &groups))
 	if len(groups.Groups) != 1 {
 		t.Fatalf("Sam: %+v", groups)
 	}
@@ -110,7 +110,7 @@ func TestOnlyAProvidersGroupSeesAndUsesIt(t *testing.T) {
 	}
 	call(t, owner, "", "providers/setGroup", wire.ProviderGroup{Provider: "do-1"})
 	call(t, owner, "", "groups/remove", wire.GroupRequest{ID: platform.ID})
-	json.Unmarshal(call(t, owner, "", "groups/list", nil), &groups)
+	must(t, json.Unmarshal(call(t, owner, "", "groups/list", nil), &groups))
 	if len(groups.Groups) != 0 {
 		t.Fatalf("after remove: %+v", groups)
 	}

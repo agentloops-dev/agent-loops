@@ -1,7 +1,6 @@
 package agentsd
 
 import (
-	"encoding/json"
 	"os"
 	goruntime "runtime"
 	"strings"
@@ -20,7 +19,7 @@ func TestShutdownWaitsForTheWritesAfterATurn(t *testing.T) {
 	fakeRuntimes(t)
 	d, c := start(t, t.TempDir())
 	var id wire.UUID
-	json.Unmarshal(c.call(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(),
+	mustUnmarshal(t, c.call(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(),
 		"prompt": "wait for me"}), &id)
 	c.until(t, "running", ended(id, wire.AgentStateRunning))
 

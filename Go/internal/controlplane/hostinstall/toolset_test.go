@@ -232,7 +232,7 @@ func TestADownloadThatDoesNotMatchLeavesNoToolsetButAHost(t *testing.T) {
 	f := newToolsetFake(t)
 	manifest, _ := os.ReadFile(filepath.Join(f.toolsets, "claude/manifest.json"))
 	var m map[string]any
-	json.Unmarshal(manifest, &m)
+	must(t, json.Unmarshal(manifest, &m))
 	m["node"].(map[string]any)["sha256"] = map[string]string{"aarch64": strings.Repeat("0", 64)}
 	data, _ := json.Marshal(m)
 	f.write("toolsets/claude/manifest.json", string(data), 0o644)
@@ -283,8 +283,10 @@ func TestAServerWithoutXzIsSentNodeUnpacked(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	w.Write(plain)
-	w.Close()
+	if _, err := w.Write(plain); err != nil {
+		t.Fatal(err)
+	}
+	must(t, w.Close())
 	f.write("dist/v0/node-v0-linux-arm64.tar.xz", packed.String(), 0o644)
 	manifest, _ := os.ReadFile(filepath.Join(f.toolsets, "claude/manifest.json"))
 	f.write("toolsets/claude/manifest.json", strings.Replace(string(manifest), sum(string(plain)), sum(packed.String()), 1), 0o644)

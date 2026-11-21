@@ -50,9 +50,15 @@ func TestAStoreWithBothMachineFoldersGetsTheOldMachines(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
 	folder := store.NewFolder(root)
-	folder.Put(ctx, "v1/hosts/old.json", []byte("old"), store.Absent)
-	folder.Put(ctx, "v1/hosts/mac.json", []byte("stale"), store.Absent)
-	folder.Put(ctx, "v1/machines/mac.json", []byte("new"), store.Absent)
+	if _, err := folder.Put(ctx, "v1/hosts/old.json", []byte("old"), store.Absent); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := folder.Put(ctx, "v1/hosts/mac.json", []byte("stale"), store.Absent); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := folder.Put(ctx, "v1/machines/mac.json", []byte("new"), store.Absent); err != nil {
+		t.Fatal(err)
+	}
 	st, err := OpenStore("file://"+root+"/", os.Getenv, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -156,7 +162,9 @@ func TestACopyOfAnOldStoreMovesItsMachines(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	from, to := store.NewFolder(t.TempDir()), store.NewFolder(t.TempDir())
-	from.Put(ctx, "v1/hosts/mac.json", []byte("mac"), store.Absent)
+	if _, err := from.Put(ctx, "v1/hosts/mac.json", []byte("mac"), store.Absent); err != nil {
+		t.Fatal(err)
+	}
 	if copied, _, err := BackupStore(ctx, from, to); err != nil || copied != 1 {
 		t.Fatal(copied, err)
 	}

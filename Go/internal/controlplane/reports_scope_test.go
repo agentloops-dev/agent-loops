@@ -35,13 +35,13 @@ func TestReportScopes(t *testing.T) {
 	week := func(s *controllink.Session, scope *wire.ReportScope) wire.UsageReport {
 		t.Helper()
 		var r wire.UsageReport
-		json.Unmarshal(call(t, s, "", "reports/usage", wire.ReportQuery{Range: wire.ReportRangeWeek, Scope: scope}), &r)
+		must(t, json.Unmarshal(call(t, s, "", "reports/usage", wire.ReportQuery{Range: wire.ReportRangeWeek, Scope: scope}), &r))
 		return r
 	}
 
 	// Bea sees Me alone, and is refused the organisation, a group and the policy.
 	var scopes wire.ReportScopes
-	json.Unmarshal(call(t, bea.window, "", "reports/scopes", map[string]any{}), &scopes)
+	must(t, json.Unmarshal(call(t, bea.window, "", "reports/scopes", map[string]any{}), &scopes))
 	if len(scopes.Scopes) != 1 || scopes.Scopes[0].Scope.Kind != wire.ReportScopeKindMe || scopes.Admin {
 		t.Fatalf("%+v", scopes)
 	}
@@ -60,7 +60,7 @@ func TestReportScopes(t *testing.T) {
 
 	// The admin sets the organisation's budget; a budget of any other key is left out.
 	var policy wire.ReportPolicy
-	json.Unmarshal(call(t, admin, "", "reports/setPolicy", wire.ReportPolicy{BudgetsUSD: map[string]float64{"org": 400, "old-group": 5}}), &policy)
+	must(t, json.Unmarshal(call(t, admin, "", "reports/setPolicy", wire.ReportPolicy{BudgetsUSD: map[string]float64{"org": 400, "old-group": 5}}), &policy))
 	if policy.BudgetsUSD["org"] != 400 || len(policy.BudgetsUSD) != 1 {
 		t.Fatalf("%+v", policy)
 	}
@@ -72,7 +72,7 @@ func TestReportScopes(t *testing.T) {
 		t.Fatalf("%+v", r)
 	}
 	var csv wire.ReportExport
-	json.Unmarshal(call(t, admin, "", "reports/export", wire.ReportQuery{Range: wire.ReportRangeWeek, Scope: org}), &csv)
+	must(t, json.Unmarshal(call(t, admin, "", "reports/export", wire.ReportQuery{Range: wire.ReportRangeWeek, Scope: org}), &csv))
 	if strings.Contains(csv.Text, "groups") || csv.Count != 2 {
 		t.Fatal(csv.Text)
 	}
@@ -101,7 +101,7 @@ func TestReportProjectLens(t *testing.T) {
 	cy := p.invite(admin, "Cy", wire.UserRoleMember)
 	beas, cys := p.machine(bea, "BEAS-MAC"), p.machine(cy, "CYS-MAC")
 	var made wire.Project
-	json.Unmarshal(call(t, admin, "", "projects/set", wire.ProjectSet{Name: "Shop"}), &made)
+	must(t, json.Unmarshal(call(t, admin, "", "projects/set", wire.ProjectSet{Name: "Shop"}), &made))
 	day := time.Now().UTC().Format(usageDayLayout)
 	for _, h := range []*fakeHost{beas, cys} {
 		joined, _ := json.Marshal(wire.ProjectsJoined{Folders: []wire.JoinedFolder{{Folder: "file:///shop", Name: "shop", Project: made.ID}}})
@@ -118,13 +118,13 @@ func TestReportProjectLens(t *testing.T) {
 	}
 	lens := &wire.ReportScope{Kind: wire.ReportScopeKindProject, Project: &made.ID}
 	var scopes wire.ReportScopes
-	json.Unmarshal(call(t, bea.window, "", "reports/scopes", map[string]any{}), &scopes)
+	must(t, json.Unmarshal(call(t, bea.window, "", "reports/scopes", map[string]any{}), &scopes))
 	if len(scopes.Scopes) != 2 || scopes.Scopes[1].Name != "Shop" || scopes.Scopes[1].Scope.Kind != wire.ReportScopeKindProject {
 		t.Fatalf("%+v", scopes)
 	}
 	// A member sees the project's rows on every machine, not the other folder's.
 	var r wire.UsageReport
-	json.Unmarshal(call(t, bea.window, "", "reports/usage", wire.ReportQuery{Range: wire.ReportRangeWeek, Scope: lens}), &r)
+	must(t, json.Unmarshal(call(t, bea.window, "", "reports/usage", wire.ReportQuery{Range: wire.ReportRangeWeek, Scope: lens}), &r))
 	if len(r.Rows) != 2 || r.Rows[0].Folder != "shop" || r.Rows[1].Folder != "shop" || r.Scope.Kind != wire.ReportScopeKindProject {
 		t.Fatalf("%+v", r)
 	}

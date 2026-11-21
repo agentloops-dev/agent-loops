@@ -28,9 +28,9 @@ func TestABoardNarrowsWorkToItsForge(t *testing.T) {
 	j := &fakeForgeJira{}
 	d.newForgeJira = func(jiramcp.Auth) forgeJira { return j }
 	home := d.personalHome()
-	os.MkdirAll(filepath.Join(home, ".agents-secrets"), 0o700)
-	os.WriteFile(filepath.Join(home, ".agents-secrets", "secrets.env"),
-		[]byte("JIRA_URL=https://acme.atlassian.net/\nJIRA_EMAIL=kim@acme.com\nJIRA_API_TOKEN=tok\n"), 0o600)
+	must(t, os.MkdirAll(filepath.Join(home, ".agents-secrets"), 0o700))
+	must(t, os.WriteFile(filepath.Join(home, ".agents-secrets", "secrets.env"),
+		[]byte("JIRA_URL=https://acme.atlassian.net/\nJIRA_EMAIL=kim@acme.com\nJIRA_API_TOKEN=tok\n"), 0o600))
 
 	// The folders on alexec/agents are in one project; the GitLab folder on Group/App in another.
 	var agents, app []string
@@ -60,7 +60,7 @@ func TestABoardNarrowsWorkToItsForge(t *testing.T) {
 	}})
 
 	var boards wire.ForgeBoards
-	json.Unmarshal(c.call(t, 1, "forge/boards", wire.ForgeBoardsRequest{}), &boards)
+	mustUnmarshal(t, c.call(t, 1, "forge/boards", wire.ForgeBoardsRequest{}), &boards)
 	var urls []string
 	for _, b := range boards.Boards {
 		urls = append(urls, b.URL)
@@ -69,14 +69,14 @@ func TestABoardNarrowsWorkToItsForge(t *testing.T) {
 	if want := []string{billing.URL, webBoard.URL, teamA.URL, platform.URL}; !slices.Equal(urls, want) {
 		t.Fatalf("boards %v, want %v", urls, want)
 	}
-	json.Unmarshal(c.call(t, 2, "forge/boards", wire.ForgeBoardsRequest{Folder: &app[0]}), &boards)
+	mustUnmarshal(t, c.call(t, 2, "forge/boards", wire.ForgeBoardsRequest{Folder: &app[0]}), &boards)
 	if len(boards.Boards) != 3 || boards.Boards[0].Name != "Platform" {
 		t.Fatalf("app's boards %+v", boards.Boards)
 	}
 
 	ghBefore, _ := gh.asked()
 	var list wire.ForgeList
-	json.Unmarshal(c.call(t, 3, "forge/issues", wire.ForgeListRequest{Board: &webBoard.URL}), &list)
+	mustUnmarshal(t, c.call(t, 3, "forge/issues", wire.ForgeListRequest{Board: &webBoard.URL}), &list)
 	searches, _ := gh.asked()
 	if len(searches) != len(ghBefore)+1 || !strings.HasPrefix(searches[len(searches)-1], "alexec/agents is:issue is:open repo:alexec/agents project:acme/7") {
 		t.Fatalf("GitHub searches %q", searches)
@@ -85,17 +85,17 @@ func TestABoardNarrowsWorkToItsForge(t *testing.T) {
 		t.Fatalf("gitlab %q linear %q jira %q items %+v", gl.searches, ln.searches, j.searches, list.Items)
 	}
 
-	json.Unmarshal(c.call(t, 4, "forge/issues", wire.ForgeListRequest{Board: &platform.URL}), &list)
+	mustUnmarshal(t, c.call(t, 4, "forge/issues", wire.ForgeListRequest{Board: &platform.URL}), &list)
 	if !slices.Equal(ln.searches, []string{"PLAT after="}) || len(list.Items) != 1 || deref(list.Items[0].Folder) != app[0] {
 		t.Fatalf("linear %q items %+v", ln.searches, list.Items)
 	}
 
-	json.Unmarshal(c.call(t, 5, "forge/issues", wire.ForgeListRequest{Board: &teamA.URL}), &list)
+	mustUnmarshal(t, c.call(t, 5, "forge/issues", wire.ForgeListRequest{Board: &teamA.URL}), &list)
 	if !slices.Equal(gl.searches, []string{"Group/App after= board=team-a@0.17"}) || len(list.Items) != 2 {
 		t.Fatalf("gitlab %q items %+v", gl.searches, list.Items)
 	}
 
-	json.Unmarshal(c.call(t, 6, "forge/issues", wire.ForgeListRequest{Board: &billing.URL}), &list)
+	mustUnmarshal(t, c.call(t, 6, "forge/issues", wire.ForgeListRequest{Board: &billing.URL}), &list)
 	if len(j.searches) != 1 || !strings.HasPrefix(j.searches[0], "filter = 10040 AND statusCategory != 3") ||
 		len(list.Items) != 1 || deref(list.Items[0].Folder) != app[0] {
 		t.Fatalf("jira %q items %+v", j.searches, list.Items)
@@ -104,9 +104,9 @@ func TestABoardNarrowsWorkToItsForge(t *testing.T) {
 	// A board of no folder's project, here or in a folder not in its project: nothing, and no forge asked.
 	other := "https://github.com/orgs/acme/projects/99"
 	before, _ := gh.asked()
-	json.Unmarshal(c.call(t, 7, "forge/issues", wire.ForgeListRequest{Board: &other}), &list)
+	mustUnmarshal(t, c.call(t, 7, "forge/issues", wire.ForgeListRequest{Board: &other}), &list)
 	var narrowed wire.ForgeList
-	json.Unmarshal(c.call(t, 8, "forge/issues", wire.ForgeListRequest{Board: &webBoard.URL, Folder: &app[0]}), &narrowed)
+	mustUnmarshal(t, c.call(t, 8, "forge/issues", wire.ForgeListRequest{Board: &webBoard.URL, Folder: &app[0]}), &narrowed)
 	after, _ := gh.asked()
 	if len(list.Items) != 0 || len(narrowed.Items) != 0 || len(after) != len(before) {
 		t.Fatalf("other board %+v, app's folder %+v, searches %q", list, narrowed, after[len(before):])
@@ -116,11 +116,11 @@ func TestABoardNarrowsWorkToItsForge(t *testing.T) {
 // writeFolderProject puts folder in project id, as the Project picker writes it.
 func writeFolderProject(t *testing.T, folder, id string) {
 	t.Helper()
-	os.MkdirAll(filepath.Join(folder, ".agents"), 0o755)
+	must(t, os.MkdirAll(filepath.Join(folder, ".agents"), 0o755)) //nolint:gosec // G301: the mode this folder always had; only its error is new
 	path := filepath.Join(folder, ".agents", "folder.json")
 	m := map[string]any{}
 	if b, err := os.ReadFile(path); err == nil {
-		json.Unmarshal(b, &m)
+		mustUnmarshal(t, b, &m)
 	}
 	m["project"] = id
 	b, _ := json.Marshal(m)

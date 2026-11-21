@@ -100,7 +100,7 @@ func TestLineageOnAnAzureReposFolder(t *testing.T) {
 	}
 
 	// With no connection the folder is still on Azure DevOps, by its host.
-	file.Delete(connections.AzureDevOps)
+	must(t, file.Delete(connections.AzureDevOps))
 	if r := d.folderRepo(folder); r != azureDevOpsRepo {
 		t.Fatalf("with no Azure DevOps connection: %+v", r)
 	}
@@ -230,9 +230,9 @@ func TestAzureReposAddressesOnAServerUnderAPath(t *testing.T) {
 	personalHomeFor(t, home)
 	d, _ := start(t, t.TempDir())
 	t.Cleanup(d.Shutdown)
-	os.MkdirAll(filepath.Join(home, ".agents-secrets"), 0o700)
-	os.WriteFile(filepath.Join(home, ".agents-secrets", "secrets.env"),
-		[]byte("AZURE_DEVOPS_URL=https://tfs.example/tfs\nAZURE_DEVOPS_TOKEN=tok\n"), 0o600)
+	must(t, os.MkdirAll(filepath.Join(home, ".agents-secrets"), 0o700))
+	must(t, os.WriteFile(filepath.Join(home, ".agents-secrets", "secrets.env"),
+		[]byte("AZURE_DEVOPS_URL=https://tfs.example/tfs\nAZURE_DEVOPS_TOKEN=tok\n"), 0o600))
 
 	for raw, want := range map[string]string{
 		"https://tfs.example/tfs/Main/_git/App/pullrequest/8":         "azuredevops:pr:main/app/app#8",
@@ -280,7 +280,7 @@ func TestAzureReposAddressesOnAServerUnderAPath(t *testing.T) {
 	// The connection's Server comes first.
 	file := &connections.File{Path: filepath.Join(t.TempDir(), ".agents-secrets", connections.FileName)}
 	d.connStoreFor = func() (connections.Store, error) { return file, nil }
-	file.Put(connections.AzureDevOpsConnection("https://ado.example/collections/", "Main", "tok", "Kim", time.Now()))
+	must(t, file.Put(connections.AzureDevOpsConnection("https://ado.example/collections/", "Main", "tok", "Kim", time.Now())))
 	if root := d.azureDevOpsServerRoot(); root != "https://ado.example/collections/" {
 		t.Errorf("the connected Server's root: %q", root)
 	}

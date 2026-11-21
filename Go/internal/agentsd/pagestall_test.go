@@ -24,7 +24,7 @@ func TestAStalledPageDoesNotHoldAnAgentChange(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	page, browser := pipedPage(t, ctx)
-	defer browser.CloseNow()
+	defer func() { _ = browser.CloseNow() }() // the end of the test: the page may be gone already
 	out := newPageOut(ctx, page)
 	defer out.Close()
 	local := &pageChannel{host: "h", toPage: out.Write}
@@ -101,7 +101,7 @@ func pipedPage(t *testing.T, ctx context.Context) (*websocket.Conn, *websocket.C
 		pages <- ws
 		<-ctx.Done()
 	})}
-	go srv.Serve(l)
+	go func() { _ = srv.Serve(l) }() // ErrServerClosed at srv.Close, after the test
 	t.Cleanup(func() { srv.Close() })
 	browser, _, err := websocket.Dial(ctx, "ws://page/", &websocket.DialOptions{HTTPClient: &http.Client{Transport: &http.Transport{
 		DialContext: func(context.Context, string, string) (net.Conn, error) { return client, nil },

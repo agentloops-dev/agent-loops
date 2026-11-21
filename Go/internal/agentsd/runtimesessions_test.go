@@ -1,7 +1,6 @@
 package agentsd
 
 import (
-	"encoding/json"
 	"testing"
 
 	"github.com/agentloops-dev/agent-loops/Go/wire"
@@ -18,12 +17,12 @@ func TestTheirConversationsTakenOver(t *testing.T) {
 	defer d.Shutdown()
 	dir := t.TempDir()
 	var list []wire.RuntimeSession
-	json.Unmarshal(c.call(t, 1, "sessions/list", map[string]any{"runtimeID": "claude", "cwd": "file://" + dir}), &list)
+	mustUnmarshal(t, c.call(t, 1, "sessions/list", map[string]any{"runtimeID": "claude", "cwd": "file://" + dir}), &list)
 	if len(list) != 1 || list[0].SessionID != "theirs" || *list[0].Title != "Their talk" || list[0].UpdatedAt == nil || *list[0].IsHeld {
 		t.Fatalf("%+v", list)
 	}
 	var id wire.UUID
-	json.Unmarshal(c.call(t, 2, "sessions/adopt", map[string]any{"runtimeID": "claude", "sessionID": "theirs", "cwd": "file://" + dir}), &id)
+	mustUnmarshal(t, c.call(t, 2, "sessions/adopt", map[string]any{"runtimeID": "claude", "sessionID": "theirs", "cwd": "file://" + dir}), &id)
 	a := d.Store.Agent(id)
 	if a == nil || a.State != wire.AgentStateFinished || *a.RuntimeSessionID != "theirs" {
 		t.Fatalf("%+v", a)
@@ -36,9 +35,9 @@ func TestTheirConversationsTakenOver(t *testing.T) {
 	}
 	// Taken over once: the same agent, and listed as held.
 	var again wire.UUID
-	json.Unmarshal(c.call(t, 3, "sessions/adopt", map[string]any{"runtimeID": "claude", "sessionID": "theirs", "cwd": "file://" + dir}), &again)
+	mustUnmarshal(t, c.call(t, 3, "sessions/adopt", map[string]any{"runtimeID": "claude", "sessionID": "theirs", "cwd": "file://" + dir}), &again)
 	list = nil
-	json.Unmarshal(c.call(t, 4, "sessions/list", map[string]any{"runtimeID": "claude", "cwd": "file://" + dir}), &list)
+	mustUnmarshal(t, c.call(t, 4, "sessions/list", map[string]any{"runtimeID": "claude", "cwd": "file://" + dir}), &list)
 	if again != id || !*list[0].IsHeld {
 		t.Fatalf("%s %+v", again, list)
 	}

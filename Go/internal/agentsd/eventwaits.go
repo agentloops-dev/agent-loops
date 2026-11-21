@@ -938,6 +938,10 @@ type openEventCall struct {
 	waitID  wire.UUID
 	answer  chan string
 	started time.Time
+	// answerNow is set, under waitMu, by a sleep or a wake that came while the call was
+	// parked but its record did not say it waited yet (#6495): eventHoldReached skips such
+	// a call, so the call answers itself once the record says it waits.
+	answerNow bool
 }
 
 type eventWaitState struct {
@@ -1109,6 +1113,12 @@ func (d *Daemon) waitForEvent(agent wire.UUID, args map[string]json.RawMessage) 
 	}
 	hold := time.AfterFunc(max(0, eventHoldLimit-time.Since(entered)), d.jobFunc("eventwaits timer", func() { d.eventHoldReached(agent, wait.ID) }))
 	defer hold.Stop()
+	d.waitMu.Lock()
+	answerNow := call.answerNow
+	d.waitMu.Unlock()
+	if answerNow {
+		d.eventHoldReached(agent, wait.ID)
+	}
 	select {
 	case text := <-call.answer:
 		return prefix + text, nil

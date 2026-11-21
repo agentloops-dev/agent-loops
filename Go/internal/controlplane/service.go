@@ -180,6 +180,8 @@ type Service struct {
 	multiplierBook
 	// Each machine's hints and the newest operation on each secret (#4158): memory only.
 	secretInfoBook
+	// secretOpsSeen is the ids of the machines' secret operations the audit has (#6464).
+	secretOpsSeen secretOpsSeen
 	// Each machine's capacity and each person's last start, for Auto (#5374): memory only.
 	autoBook
 	origin  string

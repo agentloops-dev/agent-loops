@@ -35,16 +35,16 @@ func TestFilesAreKeptToTheAgentsFolder(t *testing.T) {
 
 	d, c := start(t, t.TempDir())
 	work, _ := store.Resolve(t.TempDir())
-	os.Mkdir(filepath.Join(work, "sub"), 0o755)
-	os.WriteFile(filepath.Join(work, "README.md"), []byte("# hello\n"), 0o644)
-	os.WriteFile(filepath.Join(work, "pic.png"), []byte{0x89, 'P', 'N', 'G'}, 0o644)
+	must(t, os.Mkdir(filepath.Join(work, "sub"), 0o755))                                      //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(work, "README.md"), []byte("# hello\n"), 0o644))       //nolint:gosec // G306: the mode this file always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(work, "pic.png"), []byte{0x89, 'P', 'N', 'G'}, 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	outside := filepath.Join(t.TempDir(), "secret")
-	os.WriteFile(outside, []byte("no"), 0o644)
-	os.Symlink(outside, filepath.Join(work, "link"))
+	must(t, os.WriteFile(outside, []byte("no"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
+	must(t, os.Symlink(outside, filepath.Join(work, "link")))
 	id := anAgentIn(t, d, work)
 
 	var l wire.DirectoryListing
-	json.Unmarshal(c.call(t, 1, "files/list", map[string]any{"agentID": id, "folder": work}), &l)
+	mustUnmarshal(t, c.call(t, 1, "files/list", map[string]any{"agentID": id, "folder": work}), &l)
 	var names []string
 	for _, e := range l.Entries {
 		names = append(names, e.Name)
@@ -53,15 +53,15 @@ func TestFilesAreKeptToTheAgentsFolder(t *testing.T) {
 		t.Fatalf("entries %v", names)
 	}
 	var r wire.FileReading
-	json.Unmarshal(c.call(t, 2, "files/read", map[string]any{"agentID": id, "path": filepath.Join(work, "README.md")}), &r)
+	mustUnmarshal(t, c.call(t, 2, "files/read", map[string]any{"agentID": id, "path": filepath.Join(work, "README.md")}), &r)
 	if r.Kind != "text" || *r.Text != "# hello\n" {
 		t.Fatalf("%+v", r)
 	}
-	json.Unmarshal(c.call(t, 3, "files/read", map[string]any{"agentID": id, "path": filepath.Join(work, "README.md"), "knownStamp": r.Stamp}), &r)
+	mustUnmarshal(t, c.call(t, 3, "files/read", map[string]any{"agentID": id, "path": filepath.Join(work, "README.md"), "knownStamp": r.Stamp}), &r)
 	if r.Kind != "unchanged" {
 		t.Fatalf("kind %s for a file read before", r.Kind)
 	}
-	json.Unmarshal(c.call(t, 4, "files/read", map[string]any{"agentID": id, "path": filepath.Join(work, "pic.png")}), &r)
+	mustUnmarshal(t, c.call(t, 4, "files/read", map[string]any{"agentID": id, "path": filepath.Join(work, "pic.png")}), &r)
 	if r.Kind != "image" || len(r.Bytes) != 4 {
 		t.Fatalf("image %+v", r)
 	}
@@ -82,15 +82,15 @@ func TestBrowseListsALinkUnderItsOwnPath(t *testing.T) {
 
 	_, c := start(t, t.TempDir())
 	real, _ := store.Resolve(t.TempDir())
-	os.WriteFile(filepath.Join(real, "AGENTS.md"), []byte("# hi\n"), 0o644)
-	os.Mkdir(filepath.Join(real, "docs"), 0o755)
-	os.Symlink(filepath.Join(real, "AGENTS.md"), filepath.Join(real, "CLAUDE.md"))
-	os.Symlink(filepath.Join(real, "docs"), filepath.Join(real, "notes"))
+	must(t, os.WriteFile(filepath.Join(real, "AGENTS.md"), []byte("# hi\n"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
+	must(t, os.Mkdir(filepath.Join(real, "docs"), 0o755))                            //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.Symlink(filepath.Join(real, "AGENTS.md"), filepath.Join(real, "CLAUDE.md")))
+	must(t, os.Symlink(filepath.Join(real, "docs"), filepath.Join(real, "notes")))
 	via := filepath.Join(t.TempDir(), "via")
-	os.Symlink(real, via)
+	must(t, os.Symlink(real, via))
 
 	var l wire.DirectoryListing
-	json.Unmarshal(c.call(t, 1, "files/browse", map[string]any{"path": via}), &l)
+	mustUnmarshal(t, c.call(t, 1, "files/browse", map[string]any{"path": via}), &l)
 	if l.URL != store.FolderURL(real)+"/" {
 		t.Fatalf("folder %s", l.URL)
 	}
@@ -116,12 +116,12 @@ func TestAWatchSaysWhichFoldersChanged(t *testing.T) {
 	prepareWatch(t)
 	d, c := start(t, t.TempDir())
 	work, _ := store.Resolve(t.TempDir())
-	os.MkdirAll(filepath.Join(work, "src"), 0o755)
-	os.MkdirAll(filepath.Join(work, "node_modules", "x"), 0o755)
+	must(t, os.MkdirAll(filepath.Join(work, "src"), 0o755))               //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.MkdirAll(filepath.Join(work, "node_modules", "x"), 0o755)) //nolint:gosec // G301: the mode this folder always had; only its error is new
 	id := anAgentIn(t, d, work)
 	c.call(t, 1, "files/watch", map[string]any{"agentID": id, "folder": work})
-	os.WriteFile(filepath.Join(work, "node_modules", "x", "ignored.js"), []byte("x"), 0o644)
-	os.WriteFile(filepath.Join(work, "src", "main.go"), []byte("package main"), 0o644)
+	must(t, os.WriteFile(filepath.Join(work, "node_modules", "x", "ignored.js"), []byte("x"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(work, "src", "main.go"), []byte("package main"), 0o644))       //nolint:gosec // G306: the mode this file always had; only its error is new
 	// Under load FSEvents can say a change many seconds late, or a write go unsaid for a
 	// while: src is written again until it is heard (#1411).
 	heard := make(chan struct{})
@@ -132,7 +132,7 @@ func TestAWatchSaysWhichFoldersChanged(t *testing.T) {
 			case <-heard:
 				return
 			case <-time.After(time.Second):
-				os.WriteFile(filepath.Join(work, "src", "main.go"), []byte("package main // again"), 0o644)
+				check(t, os.WriteFile(filepath.Join(work, "src", "main.go"), []byte("package main // again"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 			}
 		}
 	}()
@@ -173,7 +173,7 @@ func (c *conn) callHearing(t *testing.T, id int, method string, params any, what
 		select {
 		case line := <-c.out:
 			var m message
-			json.Unmarshal([]byte(line), &m)
+			mustUnmarshal(t, []byte(line), &m)
 			switch {
 			case string(m.ID) == strings.TrimSpace(string(mustJSON(id))):
 				if m.Error != nil {

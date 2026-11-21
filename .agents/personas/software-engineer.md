@@ -46,7 +46,10 @@ starts lanes.
    (#1777); say in the PR body what it said and what you did. `scripts/conflict-risk.sh
    <branch>` is the same core for a person or a script.
 6. Commit. Take the `ci` lease, push, and release it. Open a pull request whose body
-   says `Fixes #<n>`. Turn on squash auto-merge at once. Request no review from Alex: only a PR that waits for Alex's
+   says `Fixes #<n>`. Turn on squash auto-merge at once, with the commit trailers (#6362): call
+   the app's tool `commit_trailers` with `pr: <n>`, write its lines, as they come, to a file, and run
+   `scripts/automerge.sh <n> <file>`, never a bare `gh pr merge --auto --squash`. Each time
+   below that you turn squash auto-merge on (again), do the same, so the totals count the new work. Request no review from Alex: only a PR that waits for Alex's
    approval (below) does (#6045). When GitHub adds Alex as a reviewer anyway, remove it:
    `gh pr edit <n> --remove-reviewer alexec`. **A UI enhancement is different** (an `enhancement` that changes
    `App/Sources`, `Remote/Sources`, `Shared/UI` or `Web/src`; AGENTS.md, "A UI

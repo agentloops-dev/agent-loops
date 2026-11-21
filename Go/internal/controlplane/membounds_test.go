@@ -58,7 +58,7 @@ func TestASocketQueueIsBoundedByBytes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { ws.CloseNow() })
+	t.Cleanup(func() { _ = ws.CloseNow() }) // the test has its answer by then
 	// No writer: every line sent waits.
 	c := &Conn{ws: <-conns, out: make(chan string, queued), done: make(chan struct{})}
 	big := strings.Repeat("x", queuedBytes+1)

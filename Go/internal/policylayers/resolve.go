@@ -15,11 +15,12 @@ import (
 // with that value; every other layer that sets a looser value is kept, not used (FR-006). A
 // rule no layer sets has no decides: today's default applies.
 func Resolve(layers []Layer) wire.EffectivePolicy {
-	rules := make([]wire.EffectiveRule, 0, 19)
+	rules := make([]wire.EffectiveRule, 0, 19+len(Trailers))
 	rules = append(rules, enumRules(layers)...)
 	rules = append(rules, budgetRules(layers)...)
 	rules = append(rules, limitRules(layers)...)
 	rules = append(rules, allowRules(layers)...)
+	rules = append(rules, commitTrailerRules(layers)...)
 	return wire.EffectivePolicy{
 		Rules:            rules,
 		FoldersWithRules: []wire.PolicyFolderWithRules{},

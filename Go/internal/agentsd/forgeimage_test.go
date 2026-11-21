@@ -3,7 +3,6 @@ package agentsd
 import (
 	"bytes"
 	"encoding/base64"
-	"encoding/json"
 	"io"
 	"net/http"
 	"os"
@@ -85,7 +84,7 @@ func TestForgeImageReadsAGitHubAttachment(t *testing.T) {
 	})
 	var image wire.ForgeImage
 	for i := range 2 {
-		json.Unmarshal(c.call(t, 1+i, "forge/image", wire.ForgeImageRequest{URL: "https://github.com/user-attachments/assets/abc"}), &image)
+		mustUnmarshal(t, c.call(t, 1+i, "forge/image", wire.ForgeImageRequest{URL: "https://github.com/user-attachments/assets/abc"}), &image)
 	}
 	if image.MimeType != "image/png" || !bytes.Equal(image.Data, pngBytes) {
 		t.Fatalf("image: %s, %d bytes", image.MimeType, len(image.Data))
@@ -111,11 +110,11 @@ func TestForgeImageReadsAGitHubBlobLink(t *testing.T) {
 		file: imageAnswer("image/png", pngBytes),
 	})
 	var image wire.ForgeImage
-	json.Unmarshal(c.call(t, 1, "forge/image", wire.ForgeImageRequest{URL: blob}), &image)
+	mustUnmarshal(t, c.call(t, 1, "forge/image", wire.ForgeImageRequest{URL: blob}), &image)
 	if image.MimeType != "image/png" || !bytes.Equal(image.Data, pngBytes) {
 		t.Fatalf("image: %s, %d bytes", image.MimeType, len(image.Data))
 	}
-	json.Unmarshal(c.call(t, 2, "forge/image", wire.ForgeImageRequest{URL: raw}), &image)
+	mustUnmarshal(t, c.call(t, 2, "forge/image", wire.ForgeImageRequest{URL: raw}), &image)
 	if image.MimeType != "image/png" {
 		t.Fatalf("raw image: %s", image.MimeType)
 	}
@@ -280,9 +279,9 @@ func TestForgeImageReadsEachForgesAvatars(t *testing.T) {
 		}
 	}
 	secrets := filepath.Join(d.personalHome(), ".agents-secrets")
-	os.MkdirAll(secrets, 0o700)
-	os.WriteFile(filepath.Join(secrets, "secrets.env"), []byte("AZURE_DEVOPS_URL=https://dev.azure.com/\nAZURE_DEVOPS_TOKEN=ado\n"+
-		"JIRA_URL=https://jira.acme.test/jira\nJIRA_API_TOKEN=pat\n"), 0o600)
+	must(t, os.MkdirAll(secrets, 0o700))
+	must(t, os.WriteFile(filepath.Join(secrets, "secrets.env"), []byte("AZURE_DEVOPS_URL=https://dev.azure.com/\nAZURE_DEVOPS_TOKEN=ado\n"+
+		"JIRA_URL=https://jira.acme.test/jira\nJIRA_API_TOKEN=pat\n"), 0o600))
 	ado := "Basic " + base64.StdEncoding.EncodeToString([]byte(":ado"))
 	read := map[string]string{
 		"https://avatars.githubusercontent.com/u/1?v=4":                                           "",
@@ -364,9 +363,9 @@ func TestForgeImageReadsEachForgesAttachments(t *testing.T) {
 		}
 	}
 	secrets := filepath.Join(d.personalHome(), ".agents-secrets")
-	os.MkdirAll(secrets, 0o700)
-	os.WriteFile(filepath.Join(secrets, "secrets.env"), []byte("AZURE_DEVOPS_URL=https://dev.azure.com/\nAZURE_DEVOPS_TOKEN=ado\n"+
-		"JIRA_URL=https://jira.acme.test/jira\nJIRA_API_TOKEN=pat\n"), 0o600)
+	must(t, os.MkdirAll(secrets, 0o700))
+	must(t, os.WriteFile(filepath.Join(secrets, "secrets.env"), []byte("AZURE_DEVOPS_URL=https://dev.azure.com/\nAZURE_DEVOPS_TOKEN=ado\n"+
+		"JIRA_URL=https://jira.acme.test/jira\nJIRA_API_TOKEN=pat\n"), 0o600))
 	ado := " auth=Basic " + base64.StdEncoding.EncodeToString([]byte(":ado"))
 	bb := " auth=Basic " + base64.StdEncoding.EncodeToString([]byte("kim@example.com:bb-secret"))
 	secret := "0123456789abcdef0123456789abcdef"
@@ -401,7 +400,7 @@ func TestForgeImageReadsEachForgesAttachments(t *testing.T) {
 		n++
 		before := len(web.requests())
 		var image wire.ForgeImage
-		json.Unmarshal(c.call(t, n, "forge/image", wire.ForgeImageRequest{URL: u}), &image)
+		mustUnmarshal(t, c.call(t, n, "forge/image", wire.ForgeImageRequest{URL: u}), &image)
 		if image.MimeType != "image/png" {
 			t.Errorf("%s: %s", u, image.MimeType)
 		}

@@ -27,7 +27,7 @@ func fakeDocsMCP(t *testing.T, asked *[]map[string]any, mu *sync.Mutex) *httptes
 			Method string          `json:"method"`
 			Params json.RawMessage `json:"params"`
 		}
-		json.NewDecoder(r.Body).Decode(&m)
+		check(t, json.NewDecoder(r.Body).Decode(&m))
 		if m.ID == nil {
 			w.WriteHeader(http.StatusAccepted)
 			return
@@ -40,7 +40,7 @@ func fakeDocsMCP(t *testing.T, asked *[]map[string]any, mu *sync.Mutex) *httptes
 			var p struct {
 				Arguments map[string]any `json:"arguments"`
 			}
-			json.Unmarshal(m.Params, &p)
+			check(t, json.Unmarshal(m.Params, &p))
 			mu.Lock()
 			*asked = append(*asked, p.Arguments)
 			mu.Unlock()
@@ -71,13 +71,14 @@ func TestADocsConnectorProvesItselfWithOneSearch(t *testing.T) {
 	var asked []map[string]any
 	var mu sync.Mutex
 	kb := fakeDocsMCP(t, &asked, &mu)
-	os.MkdirAll(filepath.Join(home, ".agents"), 0o755)
-	os.WriteFile(filepath.Join(home, ".agents", "mcp.json"), []byte(`{"mcpServers": {
+	must(t, os.MkdirAll(filepath.Join(home, ".agents"), 0o755)) //nolint:gosec // G301: the mode this folder always had; only its error is new
+	//nolint:gosec // G306: the mode this file always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(home, ".agents", "mcp.json"), []byte(`{"mcpServers": {
 		"notion": {"type": "http", "url": "https://mcp.notion.com/mcp"},
-		"kb": {"type": "http", "url": "`+kb.URL+`"}}}`), 0o644)
+		"kb": {"type": "http", "url": "`+kb.URL+`"}}}`), 0o644))
 	read := func(id int, reading string) wire.ConnectorSlot {
 		var setup wire.ConnectorSetup
-		json.Unmarshal(c.call(t, id, "connectors/setup", map[string]any{"folder": folder, "reading": reading}), &setup)
+		mustUnmarshal(t, c.call(t, id, "connectors/setup", map[string]any{"folder": folder, "reading": reading}), &setup)
 		return slotsByKind(setup)[wire.ConnectorSlotKindDocs]
 	}
 
@@ -88,10 +89,11 @@ func TestADocsConnectorProvesItselfWithOneSearch(t *testing.T) {
 	}
 
 	maps := filepath.Join(home, ".agents", docsMapsFile)
-	os.WriteFile(maps, []byte(`{"kb": {
+	//nolint:gosec // G306: the mode this file always had; only its error is new
+	must(t, os.WriteFile(maps, []byte(`{"kb": {
 		"search": {"tool": "kb_find", "query": "q", "arguments": {"limit": 3}},
 		"read": {"tool": "kb_open", "id": "key"},
-		"results": {"list": "data.pages", "title": "name", "id": "key", "url": "link"}}}`), 0o644)
+		"results": {"list": "data.pages", "title": "name", "id": "key", "url": "link"}}}`), 0o644))
 	s = read(3, "cached")
 	if !slices.Equal(s.Servers, []string{"notion", "kb"}) || s.Choice != "This folder, Notion and kb" || len(s.DocsServers) != 2 {
 		t.Fatalf("mapped: %q %v %+v", s.Choice, s.Servers, s.DocsServers)
@@ -117,7 +119,7 @@ func TestADocsConnectorProvesItselfWithOneSearch(t *testing.T) {
 	}
 	mu.Unlock()
 
-	os.WriteFile(maps, []byte(`{"kb": {"search": {"tool": "kb_search", "query": "q"}, "read": {"tool": "kb_open", "id": "key"}}}`), 0o644)
+	must(t, os.WriteFile(maps, []byte(`{"kb": {"search": {"tool": "kb_search", "query": "q"}, "read": {"tool": "kb_open", "id": "key"}}}`), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	s = read(5, "cached")
 	if f := s.DocsServers[1]; f.State != wire.DocsServerStateFailed || f.Message == nil ||
 		*f.Message != "Its map names kb_search, a tool it doesn't have." {

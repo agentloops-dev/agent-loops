@@ -141,13 +141,13 @@ func TestOrgSignInLiveIssuer(t *testing.T) {
 	_, owner := p.client("Alex's Mac")
 	join := wire.OrgProviderJoinAnyone
 	var kept wire.OrgProviderKept
-	json.Unmarshal(call(t, owner, "", "signIn/orgProviders/set", wire.OrgProviderSet{Provider: wire.OrgProvider{Name: "Acme",
-		Preset: wire.OrgProviderPresetOidc, Issuer: l.issuer, ClientID: l.clientID, Join: &join}, Secret: &l.secret}), &kept)
+	must(t, json.Unmarshal(call(t, owner, "", "signIn/orgProviders/set", wire.OrgProviderSet{Provider: wire.OrgProvider{Name: "Acme",
+		Preset: wire.OrgProviderPresetOidc, Issuer: l.issuer, ClientID: l.clientID, Join: &join}, Secret: &l.secret}), &kept))
 	if kept.Provider.ID != "acme" {
 		t.Fatalf("%+v", kept)
 	}
 	var check wire.OrgProviderCheck
-	json.Unmarshal(call(t, owner, "", "signIn/orgProviders/check", wire.OrgProviderRequest{ID: "acme"}), &check)
+	must(t, json.Unmarshal(call(t, owner, "", "signIn/orgProviders/check", wire.OrgProviderRequest{ID: "acme"}), &check))
 	if !check.Ok || check.JwksKeys == 0 || check.RedirectURI != p.url+"/v1/oidc/callback" {
 		t.Fatalf("check: %+v", check)
 	}
@@ -176,7 +176,7 @@ func TestOrgSignInLiveIssuer(t *testing.T) {
 		t.Fatal(err)
 	}
 	var started wire.SignInOrgStarted
-	json.Unmarshal(raw, &started)
+	must(t, json.Unmarshal(raw, &started))
 	ticket, err := l.browse(t, l.password)(started.URL)
 	if err != nil {
 		t.Fatal(err)

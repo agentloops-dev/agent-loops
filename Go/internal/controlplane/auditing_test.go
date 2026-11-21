@@ -45,7 +45,7 @@ func TestTheControlPlaneWritesTheActor(t *testing.T) {
 	p.waitFor(func() bool {
 		// A new list each time: decoding into the last one keeps its fields a reply leaves out.
 		list = wire.AuditList{}
-		json.Unmarshal(call(t, window, "", "audit/list", wire.AuditQuery{}), &list)
+		must(t, json.Unmarshal(call(t, window, "", "audit/list", wire.AuditQuery{}), &list))
 		return len(list.Entries) == 2
 	}, "two entries")
 	if !list.Admin || list.Days != 30 || list.More {
@@ -65,7 +65,7 @@ func TestTheControlPlaneWritesTheActor(t *testing.T) {
 	}
 
 	var export wire.AuditExport
-	json.Unmarshal(call(t, window, "", "audit/export", wire.AuditQuery{}), &export)
+	must(t, json.Unmarshal(call(t, window, "", "audit/export", wire.AuditQuery{}), &export))
 	if export.Count != 2 || strings.Count(export.Lines, "\n") != 2 || strings.Contains(export.Lines, "mallory") {
 		t.Fatalf("%+v", export)
 	}
@@ -96,7 +96,9 @@ func TestTheAuditTargetIsReadOffTheRoutersLock(t *testing.T) {
 	}()
 	<-reading
 	select {
-	case <-answered:
+	case err := <-answered:
+		// Any answer will do: the fake machine has no agents/stop. Only the time counts.
+		t.Log("the machine answered:", err)
 	case <-time.After(10 * time.Second):
 		t.Fatal("the machine's answer waited for the audit's read")
 	}
@@ -104,7 +106,7 @@ func TestTheAuditTargetIsReadOffTheRoutersLock(t *testing.T) {
 	close(release)
 	p.waitFor(func() bool {
 		var list wire.AuditList
-		json.Unmarshal(call(t, window, "", "audit/list", wire.AuditQuery{}), &list)
+		must(t, json.Unmarshal(call(t, window, "", "audit/list", wire.AuditQuery{}), &list))
 		return len(list.Entries) == 1 && list.Entries[0].Target != nil && *list.Entries[0].Target == "A1"
 	}, "the stop kept")
 }
@@ -133,7 +135,7 @@ func TestAccountOperationsAreAudited(t *testing.T) {
 	var list wire.AuditList
 	p.waitFor(func() bool {
 		list = wire.AuditList{}
-		json.Unmarshal(call(t, window, "", "audit/list", wire.AuditQuery{}), &list)
+		must(t, json.Unmarshal(call(t, window, "", "audit/list", wire.AuditQuery{}), &list))
 		return len(list.Entries) == 2
 	}, "two entries")
 	actions := map[string]bool{}
@@ -173,7 +175,7 @@ func TestSecretOperationsAreAudited(t *testing.T) {
 	var list wire.AuditList
 	p.waitFor(func() bool {
 		list = wire.AuditList{}
-		json.Unmarshal(call(t, window, "", "audit/list", wire.AuditQuery{}), &list)
+		must(t, json.Unmarshal(call(t, window, "", "audit/list", wire.AuditQuery{}), &list))
 		return len(list.Entries) == 4
 	}, "four entries")
 	got := map[string]string{}
@@ -190,6 +192,48 @@ func TestSecretOperationsAreAudited(t *testing.T) {
 		"NEW_TOKEN":                            "Added a secret",
 	}
 	if !maps.Equal(got, want) {
+		t.Fatal(got)
+	}
+}
+
+// A machine sends an operation again when it did not hear the answer (#6464): the audit keeps
+// an id it has kept already once. One with no id, from an older machine, is always kept.
+func TestAResentSecretOperationIsKeptOnce(t *testing.T) {
+	t.Parallel()
+	p := startPlane(t, store.NewMemory(), controllink.NewPrivateKey())
+	box := p.hostWith("MACHINE-2", nil)
+	_, window := p.client("Test window")
+	at := wire.DateOf(time.Now())
+	one, two := "op-6464-one", "op-6464-two"
+	send := func(ops ...wire.SecretOperation) {
+		t.Helper()
+		params, _ := json.Marshal(wire.MachineSecretOpsCall{Ops: ops})
+		if _, err := p.s.methods.HostSaid(box.member.Host, "machine/secretOps", params); err != nil {
+			t.Fatal(err)
+		}
+	}
+	send(wire.SecretOperation{Name: "A_TOKEN", What: wire.SecretOperationWhatAdded, At: at, ID: &one},
+		wire.SecretOperation{Name: "OLD_MACHINE", What: wire.SecretOperationWhatAdded, At: at})
+	// The resend has the first again, beside one new.
+	send(wire.SecretOperation{Name: "A_TOKEN", What: wire.SecretOperationWhatAdded, At: at, ID: &one},
+		wire.SecretOperation{Name: "B_TOKEN", What: wire.SecretOperationWhatAdded, At: at, ID: &two},
+		wire.SecretOperation{Name: "OLD_MACHINE", What: wire.SecretOperationWhatAdded, At: at})
+	entries := func() wire.AuditList {
+		var list wire.AuditList
+		if err := json.Unmarshal(call(t, window, "", "audit/list", wire.AuditQuery{}), &list); err != nil {
+			t.Fatal(err)
+		}
+		return list
+	}
+	p.waitFor(func() bool { return len(entries().Entries) >= 4 }, "four entries")
+	// A second look, so a fifth that came late shows.
+	time.Sleep(100 * time.Millisecond)
+	list := entries()
+	got := map[string]int{}
+	for _, e := range list.Entries {
+		got[*e.Target]++
+	}
+	if len(list.Entries) != 4 || got["A_TOKEN"] != 1 || got["B_TOKEN"] != 1 || got["OLD_MACHINE"] != 2 {
 		t.Fatal(got)
 	}
 }

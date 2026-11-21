@@ -125,23 +125,17 @@ func (d *Daemon) withSecretCommand(env []string, agent wire.UUID) []string {
 		log.Printf("agents-secret: could not write the command: %v", err)
 		return env
 	}
+	if err := writeTrailersShim(bin, self); err != nil {
+		log.Printf("agents-trailers: could not write the command: %v", err)
+	}
 	return prependPath(env, bin)
 }
 
 // serveSecretValue answers `agentsd secret`: the value of the secret ?name= for the grant's
 // session, as plain text, when it does not ask; else words that say why not.
 func (d *Daemon) serveSecretValue(w http.ResponseWriter, r *http.Request) {
-	grant := bearer(r.Header.Get("Authorization"))
-	d.credMu.Lock()
-	agent, ok := d.commandGrants[grant]
-	d.credMu.Unlock()
-	if grant == "" || !ok {
-		w.WriteHeader(http.StatusNotFound)
-		return
-	}
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", "POST")
-		w.WriteHeader(http.StatusMethodNotAllowed)
+	agent, ok := d.commandGrantPost(w, r)
+	if !ok {
 		return
 	}
 	name := strings.TrimSpace(r.URL.Query().Get("name"))
@@ -154,6 +148,25 @@ func (d *Daemon) serveSecretValue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_, _ = io.WriteString(w, words)
+}
+
+// commandGrantPost is the session whose command grant asks r (agents-secret's, and
+// agents-trailers'), from a POST; else it has answered 404 or 405, and ok is false.
+func (d *Daemon) commandGrantPost(w http.ResponseWriter, r *http.Request) (wire.UUID, bool) {
+	grant := bearer(r.Header.Get("Authorization"))
+	d.credMu.Lock()
+	agent, ok := d.commandGrants[grant]
+	d.credMu.Unlock()
+	if grant == "" || !ok {
+		w.WriteHeader(http.StatusNotFound)
+		return "", false
+	}
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", "POST")
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return "", false
+	}
+	return agent, true
 }
 
 // secretForCommand is name's value for agent's agents-secret, with the read recorded; or the
@@ -190,12 +203,16 @@ func writeSecretShim(bin, agentsd string) error {
 	script := "#!/bin/sh\n" +
 		"# agents-secret NAME (#4178): Agent Loops writes this file. agentsd gives the value of a secret with Ask before use off, and records the read.\n" +
 		"exec " + shellQuote(agentsd) + " secret \"$@\"\n"
-	path := filepath.Join(bin, "agents-secret")
+	return writeCommand(filepath.Join(bin, "agents-secret"), script)
+}
+
+// writeCommand writes script to path, executable, when it is not there already.
+func writeCommand(path, script string) error {
 	if old, err := os.ReadFile(path); err == nil && string(old) == script {
 		return nil
 	}
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, []byte(script), 0o700); err != nil {
+	if err := os.WriteFile(tmp, []byte(script), 0o700); err != nil { //nolint:gosec // G306: a command must be executable
 		return err
 	}
 	return os.Rename(tmp, path)

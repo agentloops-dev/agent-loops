@@ -159,8 +159,8 @@ func TestMakeAppRepositoryHandsTheRepositoryToThePerson(t *testing.T) {
 	work := t.TempDir()
 	for p, body := range webTemplate {
 		full := filepath.Join(work, filepath.FromSlash(p))
-		os.MkdirAll(filepath.Dir(full), 0o755)
-		os.WriteFile(full, []byte(body), 0o644)
+		must(t, os.MkdirAll(filepath.Dir(full), 0o755))  //nolint:gosec // G301: the mode this folder always had; only its error is new
+		must(t, os.WriteFile(full, []byte(body), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	}
 	for _, args := range [][]string{
 		{"init", "-q", "--bare", "--initial-branch=main", bare},

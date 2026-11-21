@@ -183,15 +183,23 @@ func (d *Daemon) prepareWorktreeFrom(folder, from string, choice wire.WorktreeCh
 			"No worktree was made: git could not read the repository of "+folder+", so try again. Git said:"))
 	}
 	folderURL := store.FolderURL(folder)
+	var wt *wire.AgentWorktree
+	var cwd string
 	switch {
 	case choice.New != nil || choice.Named != nil:
-		return d.prepareNewWorktree(repo, folder, from, choice, prompt, folderURL)
+		wt, cwd, err = d.prepareNewWorktree(repo, folder, from, choice, prompt, folderURL)
 	case choice.Branch != nil:
-		return d.prepareBranchWorktree(repo, folder, choice.Branch.Value, folderURL)
+		wt, cwd, err = d.prepareBranchWorktree(repo, folder, choice.Branch.Value, folderURL)
 	case choice.Existing != nil:
-		return prepareExistingWorktree(repo, folder, choice, folderURL)
+		wt, cwd, err = prepareExistingWorktree(repo, folder, choice, folderURL)
+	default:
+		return nil, "", Invalid("A worktree choice names new, named, branch or existing.")
 	}
-	return nil, "", Invalid("A worktree choice names new, named, branch or existing.")
+	if err == nil {
+		// Its commit-msg hook (#6372): also in a worktree made before the hook was.
+		installTrailerHookAt(wt)
+	}
+	return wt, cwd, err
 }
 
 // prepareNewWorktree makes a new worktree, on a new branch, from what from has checked out.
@@ -938,6 +946,7 @@ func (d *Daemon) recreateWorktree(id wire.UUID) (wire.Agent, error) {
 	if _, err := git(folder, "worktree", "add", store.FolderPath(a.Worktree.Root), branch); err != nil {
 		return wire.Agent{}, &Error{Code: wire.FailureFolderGone, Message: "The worktree could not be made again: " + err.Error()}
 	}
+	installTrailerHookAt(a.Worktree)
 	d.noteFolder(id)
 	return *d.Store.Agent(id), nil
 }

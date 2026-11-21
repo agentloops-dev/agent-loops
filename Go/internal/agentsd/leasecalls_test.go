@@ -2,6 +2,7 @@ package agentsd
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,16 +18,30 @@ import (
 
 func (m *mcpClient) tool(id int, name string, args map[string]any) (string, bool) {
 	m.t.Helper()
-	_, r := m.post("tools/call", map[string]any{"name": "mcp__agents__" + name, "arguments": args}, id)
+	text, isErr, err := m.tryTool(id, name, args)
+	if err != nil {
+		m.t.Fatal(err)
+	}
+	return text, isErr
+}
+
+// tryTool is tool that says what failed rather than failing the test (#6495).
+func (m *mcpClient) tryTool(id int, name string, args map[string]any) (string, bool, error) {
+	_, r, err := m.tryPost("tools/call", map[string]any{"name": "mcp__agents__" + name, "arguments": args}, id)
+	if err != nil {
+		return "", false, err
+	}
 	var res struct {
 		Content []struct{ Text string } `json:"content"`
 		IsError bool                    `json:"isError"`
 	}
-	json.Unmarshal(r["result"], &res)
-	if len(res.Content) == 0 {
-		m.t.Fatalf("%s: %s", name, r["error"])
+	if err := json.Unmarshal(r["result"], &res); err != nil && len(r["result"]) > 0 {
+		return "", false, fmt.Errorf("%s: %s: %w", name, r["result"], err)
 	}
-	return res.Content[0].Text, res.IsError
+	if len(res.Content) == 0 {
+		return "", false, fmt.Errorf("%s: %s", name, r["error"])
+	}
+	return res.Content[0].Text, res.IsError, nil
 }
 
 func TestAgentsTakeTurnsWithAResource(t *testing.T) {
@@ -103,7 +118,7 @@ func TestAgentsTakeTurnsWithAResource(t *testing.T) {
 func checkBuildLineCallOpen(t *testing.T, c *conn) {
 	t.Helper()
 	var snap wire.LeaseSnapshot
-	json.Unmarshal(c.call(t, 1, "resources/snapshot", nil), &snap)
+	mustUnmarshal(t, c.call(t, 1, "resources/snapshot", nil), &snap)
 	for _, r := range snap.Resources {
 		if r.Name == "build" && (len(r.Line) != 1 || !r.Line[0].IsCallOpen) {
 			t.Fatalf("%+v", r)
@@ -215,7 +230,7 @@ func TestALineOutlivesARestart(t *testing.T) {
 			"grantedAt": stamp, "expiresAt": at.Add(20 * time.Minute).Format("2006-01-02T15:04:05.000Z"), "warned": false}},
 		"line": []any{map[string]any{"agentID": placed, "askedAt": stamp}}}}, "notices": map[string]any{}}
 	b, _ := json.Marshal(book)
-	os.WriteFile(filepath.Join(root, "leases.json"), b, 0o644)
+	must(t, os.WriteFile(filepath.Join(root, "leases.json"), b, 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 
 	d, c := start(t, root)
 	defer d.Shutdown()
@@ -349,7 +364,7 @@ func TestALostPlaceIsKeptOverARestart(t *testing.T) {
 			"grantedAt": stamp(at), "expiresAt": stamp(at.Add(20 * time.Minute)), "warned": false}},
 		"line": []any{map[string]any{"agentID": late, "askedAt": stamp(at.Add(-time.Minute))}}}}, "notices": map[string]any{}}
 	b, _ := json.Marshal(book)
-	os.WriteFile(filepath.Join(root, "leases.json"), b, 0o644)
+	must(t, os.WriteFile(filepath.Join(root, "leases.json"), b, 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 
 	d, _ := start(t, root)
 	defer d.Shutdown()

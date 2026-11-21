@@ -115,7 +115,7 @@ func TestAnHTTPSinkGetsEachEntry(t *testing.T) {
 		Hash  string          `json:"hash"`
 		Entry json.RawMessage `json:"entry"`
 	}
-	json.Unmarshal([]byte(got[1]), &line)
+	must(t, json.Unmarshal([]byte(got[1]), &line))
 	o, _ := s.Get(context.Background(), line.Key)
 	if o == nil || line.Hash != Hash(o.Data) || !strings.Contains(string(line.Entry), `"seq":2`) {
 		t.Fatalf("line %s, stored %v", got[1], o)

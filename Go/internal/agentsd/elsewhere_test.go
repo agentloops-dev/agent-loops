@@ -45,7 +45,7 @@ func TestTheStarterReachesItsSessionOnAnotherMachine(t *testing.T) {
 		}
 		var s wire.MachineSessionCall
 		b, _ := json.Marshal(call.Params)
-		json.Unmarshal(b, &s)
+		mustUnmarshal(t, b, &s)
 		mu.Lock()
 		defer mu.Unlock()
 		calls = append(calls, s)
@@ -169,7 +169,7 @@ func TestOnlyTheStarterReachesASessionFromAnotherMachine(t *testing.T) {
 		if call.Method == "machines/sessionEnded" {
 			var e wire.SessionEnded
 			b, _ := json.Marshal(call.Params)
-			json.Unmarshal(b, &e)
+			mustUnmarshal(t, b, &e)
 			mu.Lock()
 			ended = append(ended, e)
 			mu.Unlock()
@@ -180,7 +180,7 @@ func TestOnlyTheStarterReachesASessionFromAnotherMachine(t *testing.T) {
 	starter := "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE"
 	from := map[string]any{"machine": "Alex's Mac", "agent": starter, "who": "Claude (fix-login)"}
 	var id wire.UUID
-	json.Unmarshal(c.call(t, 2, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + dir, "prompt": "Check the Windows bug",
+	mustUnmarshal(t, c.call(t, 2, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + dir, "prompt": "Check the Windows bug",
 		"startedFrom": from}), &id)
 	// Ended as hasEnded says, not only saved Finished: end saves the state before its turn
 	// loop lets go, and a status asked between the two has no ending yet (#2973).
@@ -197,11 +197,11 @@ func TestOnlyTheStarterReachesASessionFromAnotherMachine(t *testing.T) {
 		}
 	}
 	var reply wire.SessionCallReply
-	json.Unmarshal(c.call(t, 5, "agents/fromStarter", map[string]any{"from": from, "session": string(id), "op": "status"}), &reply)
+	mustUnmarshal(t, c.call(t, 5, "agents/fromStarter", map[string]any{"from": from, "session": string(id), "op": "status"}), &reply)
 	if !strings.HasPrefix(reply.Said, "finished") || reply.Ended == nil || reply.Ended.Finished == nil {
 		t.Fatalf("%+v", reply)
 	}
-	json.Unmarshal(c.call(t, 6, "agents/fromStarter", map[string]any{"from": from, "session": string(id), "op": "read"}), &reply)
+	mustUnmarshal(t, c.call(t, 6, "agents/fromStarter", map[string]any{"from": from, "session": string(id), "op": "read"}), &reply)
 	if !strings.Contains(reply.Said, "Check the Windows bug") {
 		t.Fatal(reply.Said)
 	}
@@ -213,7 +213,7 @@ func TestOnlyTheStarterReachesASessionFromAnotherMachine(t *testing.T) {
 	mu.Lock()
 	ended = nil
 	mu.Unlock()
-	json.Unmarshal(c.call(t, 7, "agents/fromStarter", map[string]any{"from": from, "session": string(id), "op": "message", "message": "Try the 32-bit build too."}), &reply)
+	mustUnmarshal(t, c.call(t, 7, "agents/fromStarter", map[string]any{"from": from, "session": string(id), "op": "message", "message": "Try the 32-bit build too."}), &reply)
 	if reply.Said != "Sent to “Check the Windows bug”, which is working on it now. Wait for it with wait_for_event on agent.ended, naming it in agent, and read its answer with read_session." {
 		t.Fatal(reply.Said)
 	}

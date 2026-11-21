@@ -43,7 +43,7 @@ func movingPairHeld(t *testing.T, hold chan struct{}) (here, there *Daemon, c *c
 			return nil, &controllink.AskError{Code: -32010, Message: "Agent Loops can’t ask that of the control plane."}
 		}
 		var s wire.MachineFolderSend
-		json.Unmarshal(b, &s)
+		mustUnmarshal(t, b, &s)
 		var out wire.MachineFolderSent
 		step := ""
 		var err error
@@ -93,10 +93,10 @@ func TestMoveSessionTakesAHelperThereWithItsWork(t *testing.T) {
 	here, there, c, steps := movingPair(t)
 	src := repo(t)
 	sendGit(t, src, nil, "checkout", "-q", "-b", "fix-login")
-	os.WriteFile(filepath.Join(src, "login.go"), []byte("package login\n"), 0o644)
+	must(t, os.WriteFile(filepath.Join(src, "login.go"), []byte("package login\n"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	sendGit(t, src, nil, "add", "-A")
 	sendGit(t, src, nil, "commit", "-q", "-m", "login")
-	os.WriteFile(filepath.Join(src, "notes.txt"), []byte("not committed\n"), 0o644)
+	must(t, os.WriteFile(filepath.Join(src, "notes.txt"), []byte("not committed\n"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	head := sendGit(t, src, nil, "rev-parse", "HEAD")
 	lead := seeded(t, here, src, nil)
 	title := "Fix login"
@@ -121,7 +121,7 @@ func TestMoveSessionTakesAHelperThereWithItsWork(t *testing.T) {
 			t.Fatal(text)
 		default:
 		}
-		json.Unmarshal(c.call(t, 1, "elicitations/pending", nil), &pending)
+		mustUnmarshal(t, c.call(t, 1, "elicitations/pending", nil), &pending)
 		return len(pending) == 1
 	})
 	if f := pending[0].Mode.Form.Value; *f.Properties[0].Title != "Move the session “Fix login” to pc, with fix-login and its uncommitted changes, into "+
@@ -207,7 +207,7 @@ func TestMoveSessionMovesItselfWhenTheTurnEnds(t *testing.T) {
 			t.Fatal(text)
 		default:
 		}
-		json.Unmarshal(c.call(t, 1, "elicitations/pending", nil), &pending)
+		mustUnmarshal(t, c.call(t, 1, "elicitations/pending", nil), &pending)
 		return len(pending) == 1
 	})
 	c.call(t, 2, "elicitations/answer", map[string]any{"requestID": pending[0].ID, "action": "accept", "content": map[string]any{"go": "yes"}})
@@ -257,12 +257,13 @@ func nextMove(c *conn, wait time.Duration) *wire.MoveNotification {
 		select {
 		case line := <-c.out:
 			var m message
-			json.Unmarshal([]byte(line), &m)
-			if m.Method != wire.NotifyMoveChanged.Name {
+			if json.Unmarshal([]byte(line), &m) != nil || m.Method != wire.NotifyMoveChanged.Name {
 				continue
 			}
 			var n wire.MoveNotification
-			json.Unmarshal(m.Params, &n)
+			if json.Unmarshal(m.Params, &n) != nil {
+				continue
+			}
 			return &n
 		case <-deadline:
 			return nil
@@ -288,7 +289,7 @@ func TestPersonMovesASessionToAMachine(t *testing.T) {
 	here, there, c, steps := movingPairHeld(t, hold)
 	src := repo(t)
 	sendGit(t, src, nil, "checkout", "-q", "-b", "fix-login")
-	os.WriteFile(filepath.Join(src, "notes.txt"), []byte("not committed\n"), 0o644)
+	must(t, os.WriteFile(filepath.Join(src, "notes.txt"), []byte("not committed\n"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	a := seeded(t, here, src, nil)
 	folder := filepath.Join(canonical(t.TempDir()), "app")
 
@@ -316,7 +317,7 @@ func TestPersonMovesASessionToAMachine(t *testing.T) {
 		t.Fatal("gone from here before that machine has it")
 	}
 	var under []wire.MoveNotification
-	json.Unmarshal(c.call(t, 4, "agents/moves", nil), &under)
+	mustUnmarshal(t, c.call(t, 4, "agents/moves", nil), &under)
 	if len(under) != 1 || under[0].AgentID != a.ID || !under[0].BranchSent {
 		t.Fatalf("%+v", under)
 	}
@@ -341,7 +342,7 @@ func TestPersonMovesASessionToAMachine(t *testing.T) {
 	if b, _ := os.ReadFile(filepath.Join(folder, "notes.txt")); string(b) != "not committed\n" {
 		t.Fatalf("notes.txt there: %q", b)
 	}
-	json.Unmarshal(c.call(t, 6, "agents/moves", nil), &under)
+	mustUnmarshal(t, c.call(t, 6, "agents/moves", nil), &under)
 	if len(under) != 0 {
 		t.Fatalf("still under way: %+v", under)
 	}

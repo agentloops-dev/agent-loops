@@ -243,11 +243,11 @@ func failProof(t *testing.T, url, from string) int {
 		}
 		t.Fatal(err)
 	}
-	defer ws.CloseNow()
+	defer func() { _ = ws.CloseNow() }() // the test has its answer by then
 	if _, _, err := ws.Read(ctx); err != nil {
 		t.Fatal(err)
 	}
-	ws.Write(ctx, websocket.MessageText, []byte(`{"auth":"nonsense"}`))
+	must(t, ws.Write(ctx, websocket.MessageText, []byte(`{"auth":"nonsense"}`)))
 	_, line, _ := ws.Read(ctx)
 	if !strings.Contains(string(line), controllink.BadMessage) {
 		t.Fatalf("%s", line)

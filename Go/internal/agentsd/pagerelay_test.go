@@ -37,8 +37,8 @@ func TestAPageThroughThisHost(t *testing.T) {
 	dist := t.TempDir()
 	index := []byte("<html></html>")
 	sum := sha256.Sum256(index)
-	os.WriteFile(filepath.Join(dist, "index.html"), index, 0o644)
-	os.WriteFile(filepath.Join(dist, "MANIFEST"), []byte("agents-web 1\nout "+hex.EncodeToString(sum[:])+" Web/dist/index.html\n"), 0o644)
+	must(t, os.WriteFile(filepath.Join(dist, "index.html"), index, 0o644))                                                                          //nolint:gosec // G306: the mode this file always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(dist, "MANIFEST"), []byte("agents-web 1\nout "+hex.EncodeToString(sum[:])+" Web/dist/index.html\n"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 
 	// A control plane elsewhere, with no page of its own.
 	port := freeTCPPort(t)
@@ -93,7 +93,7 @@ func TestAPageThroughThisHost(t *testing.T) {
 	public, _ := controllink.PublicKey(browser)
 	id := records.NewUUID()
 	params, _ := json.Marshal(wire.ClientAnnounce{ID: wire.UUID(id), PublicKey: public, Name: "Safari", Kind: wire.ClientKind(records.KindBrowser)})
-	l.Write(ctx, `{"jsonrpc":"2.0","id":1,"method":"clients/announce","params":`+string(params)+`}`)
+	must(t, l.Write(ctx, `{"jsonrpc":"2.0","id":1,"method":"clients/announce","params":`+string(params)+`}`))
 	if line, err := l.Read(ctx); err != nil || !strings.Contains(line, `"result"`) {
 		t.Fatal(line, err)
 	}
@@ -112,7 +112,7 @@ func TestAPageThroughThisHost(t *testing.T) {
 	if err := exchange(ctx, l, controllink.Identity{Kind: 'p', ID: code.ID()}, controllink.CodeKey(code.Secret), origin); err != nil {
 		t.Fatal(err)
 	}
-	l.Write(ctx, `{"h":`+string(host)+`,"m":{"jsonrpc":"2.0","id":3,"method":"daemon/status"}}`)
+	must(t, l.Write(ctx, `{"h":`+string(host)+`,"m":{"jsonrpc":"2.0","id":3,"method":"daemon/status"}}`))
 	pageCheckNoHostAnswer(t, ctx, l)
 	l.Close()
 
@@ -125,7 +125,7 @@ func TestAPageThroughThisHost(t *testing.T) {
 	if err := exchange(ctx, l, controllink.Identity{Kind: 'c', ID: id}, key, origin); err != nil {
 		t.Fatal(err)
 	}
-	l.Write(ctx, `{"m":{"jsonrpc":"2.0","id":7,"method":"control/status"}}`)
+	must(t, l.Write(ctx, `{"m":{"jsonrpc":"2.0","id":7,"method":"control/status"}}`))
 	if line := pageReplyTo(t, ctx, l, `"id":7`); !strings.Contains(line, `"result"`) {
 		t.Fatal(line)
 	}
@@ -134,13 +134,13 @@ func TestAPageThroughThisHost(t *testing.T) {
 	// plane could not have, they are still answered, framed as the control plane frames them.
 	stopUplink()
 	time.Sleep(300 * time.Millisecond)
-	l.Write(ctx, `{"h":`+string(host)+`,"m":{"jsonrpc":"2.0","id":8,"method":"daemon/status"}}`)
+	must(t, l.Write(ctx, `{"h":`+string(host)+`,"m":{"jsonrpc":"2.0","id":8,"method":"daemon/status"}}`))
 	if line := pageReplyTo(t, ctx, l, `"id":8`); !strings.Contains(line, `"result"`) || !strings.HasPrefix(line, `{"h":`+string(host)+`,"m":`) {
 		t.Fatal(line)
 	}
 	// A call the audit keeps still goes through the control plane, which says the machine
 	// is offline: this host never answers it itself.
-	l.Write(ctx, `{"h":`+string(host)+`,"m":{"jsonrpc":"2.0","id":9,"method":"agents/stop","params":{"agentID":"`+records.NewUUID()+`"}}}`)
+	must(t, l.Write(ctx, `{"h":`+string(host)+`,"m":{"jsonrpc":"2.0","id":9,"method":"agents/stop","params":{"agentID":"`+records.NewUUID()+`"}}}`))
 	if line := pageReplyTo(t, ctx, l, `"id":9`); !strings.Contains(line, "offline") {
 		t.Fatal(line)
 	}
@@ -263,7 +263,9 @@ func exchange(ctx context.Context, l *controllink.Lines, id controllink.Identity
 	if err != nil {
 		return err
 	}
-	l.Write(rctx, controllink.Message{Auth: auth}.Line())
+	if err := l.Write(rctx, controllink.Message{Auth: auth}.Line()); err != nil {
+		return err
+	}
 	if line, err = l.Read(rctx); err != nil {
 		return err
 	}

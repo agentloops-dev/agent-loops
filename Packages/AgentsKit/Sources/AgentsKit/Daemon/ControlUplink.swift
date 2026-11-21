@@ -203,13 +203,6 @@ public final class ControlUplink: @unchecked Sendable {
             let channel = lock.withLock { channels.removeValue(forKey: number) }
             channel?.end(tellingTheControlPlane: false)
         case .message(0, let message):
-            // From a control plane before #656, which asked a new host to add the folders
-            // it found. Nothing is added by itself now: the person picks them in the window.
-            // Said done, so that control plane stops asking.
-            if case .notification(DaemonAPI.Method.foldersDetect, _)? = try? JSONRPCCodec.decode(line: message) {
-                tell(DaemonAPI.Method.foldersDetected, ["added": .int(0)])
-                return
-            }
             // Replies to `machine/hello` and `control/ping`, which nothing waits on.
             let decoded = try? JSONRPCCodec.decode(line: message)
             // The control plane's own request (#1122), answered on channel 0.

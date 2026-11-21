@@ -2,7 +2,6 @@ package agentsd
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"sync"
 	"testing"
@@ -65,13 +64,13 @@ func TestLineageWalkResolvesForgeNodes(t *testing.T) {
 
 	// The first walk answers at once and resolves in the background (#3102).
 	var g wire.LineageGraph
-	json.Unmarshal(c.call(t, 3, "lineage/walk", wire.LineageNodeRequest{Node: issue}), &g)
+	mustUnmarshal(t, c.call(t, 3, "lineage/walk", wire.LineageNodeRequest{Node: issue}), &g)
 	if g.Resolving == nil || !*g.Resolving {
 		t.Fatalf("first walk: want resolving, got %+v", g)
 	}
 	d.resolveSettle(5 * time.Second)
 	g = wire.LineageGraph{}
-	json.Unmarshal(c.call(t, 30, "lineage/walk", wire.LineageNodeRequest{Node: issue}), &g)
+	mustUnmarshal(t, c.call(t, 30, "lineage/walk", wire.LineageNodeRequest{Node: issue}), &g)
 	if g.Resolving != nil {
 		t.Fatalf("settled walk: want nothing resolving, got %+v", g)
 	}
@@ -86,7 +85,7 @@ func TestLineageWalkResolvesForgeNodes(t *testing.T) {
 	}
 
 	// Asked once; a second walk within resolveRecheck uses the cache.
-	json.Unmarshal(c.call(t, 4, "lineage/walk", wire.LineageNodeRequest{Node: issue}), &g)
+	mustUnmarshal(t, c.call(t, 4, "lineage/walk", wire.LineageNodeRequest{Node: issue}), &g)
 	d.resolveSettle(5 * time.Second)
 	if n := fake.times(issue.Ref); n != 1 {
 		t.Fatalf("%s was asked %d times, want 1", issue.Ref, n)
@@ -106,10 +105,10 @@ func TestLineageWalkSkipsResolvingWithNoFolder(t *testing.T) {
 		To:   issue, Rel: "works-on", Source: "start",
 	})
 	var g wire.LineageGraph
-	json.Unmarshal(c.call(t, 2, "lineage/walk", wire.LineageNodeRequest{Node: issue}), &g)
+	mustUnmarshal(t, c.call(t, 2, "lineage/walk", wire.LineageNodeRequest{Node: issue}), &g)
 	d.resolveSettle(5 * time.Second)
 	g = wire.LineageGraph{}
-	json.Unmarshal(c.call(t, 3, "lineage/walk", wire.LineageNodeRequest{Node: issue}), &g)
+	mustUnmarshal(t, c.call(t, 3, "lineage/walk", wire.LineageNodeRequest{Node: issue}), &g)
 	if len(g.Resolved) != 0 || g.Resolving != nil {
 		t.Fatalf("resolved with no folder signed in: %+v", g.Resolved)
 	}

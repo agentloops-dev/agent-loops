@@ -1,7 +1,6 @@
 package agentsd
 
 import (
-	"encoding/json"
 	"strings"
 	"testing"
 
@@ -35,7 +34,7 @@ func pendingHandOff(t *testing.T, c *conn) wire.ElicitationRequest {
 	t.Helper()
 	var pending []wire.ElicitationRequest
 	waitFor(t, "the card", func() bool {
-		json.Unmarshal(c.call(t, 1, "elicitations/pending", nil), &pending)
+		mustUnmarshal(t, c.call(t, 1, "elicitations/pending", nil), &pending)
 		return len(pending) == 1
 	})
 	return pending[0]

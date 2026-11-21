@@ -63,7 +63,7 @@ func TestBackupDefaults(t *testing.T) {
 		c.in <- string(b)
 		var m message
 		for m.ID == nil || string(m.ID) != "9" {
-			json.Unmarshal([]byte(<-c.out), &m)
+			mustUnmarshal(t, []byte(<-c.out), &m)
 		}
 		if m.Error == nil {
 			t.Fatalf("%v was taken", bad)
@@ -117,7 +117,7 @@ func TestBackupAndRestoreOnAnotherMachine(t *testing.T) {
 	}
 
 	var res wire.BackupRestoreResult
-	json.Unmarshal(cb.call(t, 4, "backups/restore", map[string]any{"id": made.ID}), &res)
+	mustUnmarshal(t, cb.call(t, 4, "backups/restore", map[string]any{"id": made.ID}), &res)
 	if res.Restored != 2 || res.Skipped != 0 {
 		t.Fatalf("restored %+v", res)
 	}
@@ -148,7 +148,7 @@ func TestBackupAndRestoreOnAnotherMachine(t *testing.T) {
 	}
 
 	// Again: everything is there already, so nothing is written.
-	json.Unmarshal(cb.call(t, 5, "backups/restore", map[string]any{"id": made.ID}), &res)
+	mustUnmarshal(t, cb.call(t, 5, "backups/restore", map[string]any{"id": made.ID}), &res)
 	if res.Restored != 0 || res.Skipped != 2 {
 		t.Fatalf("second restore %+v", res)
 	}
@@ -183,7 +183,7 @@ func TestARestoreFromAnotherMachineNeverRunsHere(t *testing.T) {
 
 	cb.call(t, 1, "backups/configure", map[string]any{"every": "off", "keep": 2, "folder": shared})
 	var res wire.BackupRestoreResult
-	json.Unmarshal(cb.call(t, 2, "backups/restore", map[string]any{"id": made.ID}), &res)
+	mustUnmarshal(t, cb.call(t, 2, "backups/restore", map[string]any{"id": made.ID}), &res)
 	got := b.Store.Agent(agent.ID)
 	if res.Restored != 1 || got == nil || got.MadeInRoot == nil || *got.MadeInRoot != a.Store.RootID || len(got.McpServers) != 0 {
 		t.Fatalf("restored %+v as %+v", res, got)
@@ -198,7 +198,7 @@ func TestARestoreFromAnotherMachineNeverRunsHere(t *testing.T) {
 	raw, _ := os.ReadFile(manifest)
 	writeFile(t, manifest, strings.Replace(string(raw), a.Store.RootID, c.Store.RootID, 1))
 	cc.call(t, 1, "backups/configure", map[string]any{"every": "off", "keep": 2, "folder": shared})
-	json.Unmarshal(cc.call(t, 2, "backups/restore", map[string]any{"id": made.ID}), &res)
+	mustUnmarshal(t, cc.call(t, 2, "backups/restore", map[string]any{"id": made.ID}), &res)
 	got = c.Store.Agent(agent.ID)
 	if res.Restored != 1 || got == nil || got.MadeInRoot == nil || *got.MadeInRoot != restoredElsewhere {
 		t.Fatalf("on C %+v as %+v", res, got)
@@ -243,7 +243,7 @@ func TestARestoreOfAnOlderBackupKeepsTheWorktreesFolder(t *testing.T) {
 	b, cb := start(t, t.TempDir())
 	cb.call(t, 1, "backups/configure", map[string]any{"every": "off", "keep": 2, "folder": shared})
 	var res wire.BackupRestoreResult
-	json.Unmarshal(cb.call(t, 2, "backups/restore", map[string]any{"id": made.ID}), &res)
+	mustUnmarshal(t, cb.call(t, 2, "backups/restore", map[string]any{"id": made.ID}), &res)
 	got := b.Store.Agent(agent.ID)
 	if res.Restored != 1 || got == nil || got.Worktree == nil || got.Worktree.Folder != wire.URL(repo) {
 		t.Fatalf("restored %+v as %+v", res, got)
@@ -372,7 +372,7 @@ func TestRestoreRefusesAnIDOutsideTheFolder(t *testing.T) {
 		c.in <- string(b)
 		var m message
 		for m.ID == nil || string(m.ID) != string(mustJSON(10+i)) {
-			json.Unmarshal([]byte(<-c.out), &m)
+			mustUnmarshal(t, []byte(<-c.out), &m)
 		}
 		if m.Error == nil {
 			t.Fatalf("%q was taken", id)
@@ -446,7 +446,9 @@ func (f *fakeStore) askFor(host string) askControl {
 			out = wire.BackupStoreList{Backups: list}
 		case "backups/upload":
 			var p wire.BackupStorePart
-			json.Unmarshal(b, &p)
+			if err := json.Unmarshal(b, &p); err != nil {
+				return nil, &controllink.AskError{Code: -32602, Message: err.Error()}
+			}
 			if f.parts[host+"/"+p.Name] == nil {
 				f.parts[host+"/"+p.Name] = map[int64][]byte{}
 			}
@@ -454,7 +456,9 @@ func (f *fakeStore) askFor(host string) askControl {
 			f.uploads++
 		case "backups/commit":
 			var c wire.BackupStoreCommit
-			json.Unmarshal(b, &c)
+			if err := json.Unmarshal(b, &c); err != nil {
+				return nil, &controllink.AskError{Code: -32602, Message: err.Error()}
+			}
 			if int64(len(f.parts[host+"/"+c.Name])) != c.Parts {
 				return nil, &controllink.AskError{Code: -32602, Message: "a part is missing"}
 			}
@@ -463,7 +467,9 @@ func (f *fakeStore) askFor(host string) askControl {
 			out = made
 		case "backups/download":
 			var r wire.BackupStorePartRequest
-			json.Unmarshal(b, &r)
+			if err := json.Unmarshal(b, &r); err != nil {
+				return nil, &controllink.AskError{Code: -32602, Message: err.Error()}
+			}
 			data, ok := f.parts[r.ID][r.Part]
 			if !ok {
 				return nil, &controllink.AskError{Code: -32602, Message: "no such part"}
@@ -495,7 +501,7 @@ func TestBackupToTheControlPlaneAndRestoreOnANewServer(t *testing.T) {
 	writeFile(t, a.Store.Loc.Transcript(string(agent.ID)), strings.Repeat("{\"line\":\"a turn of the conversation\"}\n", 100))
 
 	var s wire.BackupState
-	json.Unmarshal(ca.call(t, 4, "backups/make", map[string]any{"wait": true}), &s)
+	mustUnmarshal(t, ca.call(t, 4, "backups/make", map[string]any{"wait": true}), &s)
 	if s.Making || s.LastError != nil || len(s.Backups) != 1 || !s.Backups[0].ThisMachine || s.Backups[0].Agents != 1 ||
 		s.Settings.Target == nil || *s.Settings.Target != wire.BackupTargetControl || s.CanUseControl == nil || !*s.CanUseControl {
 		t.Fatalf("after a backup and wait: %+v", s)
@@ -518,7 +524,7 @@ func TestBackupToTheControlPlaneAndRestoreOnANewServer(t *testing.T) {
 		t.Fatalf("b lists %+v", list)
 	}
 	var res wire.BackupRestoreResult
-	json.Unmarshal(cb.call(t, 3, "backups/restore", map[string]any{"id": list[0].ID}), &res)
+	mustUnmarshal(t, cb.call(t, 3, "backups/restore", map[string]any{"id": list[0].ID}), &res)
 	if res.Restored != 1 {
 		t.Fatalf("restored %+v", res)
 	}
@@ -587,7 +593,7 @@ func TestABackupFolderOnTheSameDiskIsSaid(t *testing.T) {
 	b, cb := start(t, t.TempDir())
 	cb.call(t, 1, "backups/configure", map[string]any{"every": "off", "keep": 3, "folder": other})
 	var res wire.BackupRestoreResult
-	json.Unmarshal(cb.call(t, 2, "backups/restore", map[string]any{"id": made.ID}), &res)
+	mustUnmarshal(t, cb.call(t, 2, "backups/restore", map[string]any{"id": made.ID}), &res)
 	if res.Restored != 1 || b.Store.Agent(agent.ID) == nil {
 		t.Fatalf("restored %+v", res)
 	}

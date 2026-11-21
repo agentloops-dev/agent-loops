@@ -59,7 +59,7 @@ func TestAStaleMatchingConflicts(t *testing.T) {
 func TestMatchingAGoneKeyConflicts(t *testing.T) {
 	each(t, func(t *testing.T, s Store) {
 		tag, _ := s.Put(ctx, "v1/a.json", []byte("1"), Absent)
-		s.Delete(ctx, "v1/a.json")
+		must(t, s.Delete(ctx, "v1/a.json"))
 		if _, err := s.Put(ctx, "v1/a.json", []byte("2"), Matching(tag)); !IsConflict(err) {
 			t.Fatalf("want a conflict, got %v", err)
 		}
@@ -71,7 +71,9 @@ func TestMatchingAGoneKeyConflicts(t *testing.T) {
 
 func TestAlwaysWritesOverAnything(t *testing.T) {
 	each(t, func(t *testing.T, s Store) {
-		s.Put(ctx, "v1/copies/a.json", []byte("1"), Always)
+		if _, err := s.Put(ctx, "v1/copies/a.json", []byte("1"), Always); err != nil {
+			t.Fatal(err)
+		}
 		tag, err := s.Put(ctx, "v1/copies/a.json", []byte("2"), Always)
 		if err != nil || tag != SHA256Tag([]byte("2")) {
 			t.Fatal(tag, err)
@@ -85,7 +87,9 @@ func TestListSeesNewKeys(t *testing.T) {
 			t.Fatalf("not empty: %v", l)
 		}
 		tag, _ := s.Put(ctx, "v1/clients/one.json", []byte("1"), Absent)
-		s.Put(ctx, "v1/machines/mac.json", []byte("2"), Absent)
+		if _, err := s.Put(ctx, "v1/machines/mac.json", []byte("2"), Absent); err != nil {
+			t.Fatal(err)
+		}
 		l, err := s.List(ctx, "v1/clients/")
 		if err != nil || len(l) != 1 || l[0] != (Key{"v1/clients/one.json", tag, 1}) {
 			t.Fatalf("listed %v %v", l, err)
@@ -98,9 +102,15 @@ func TestListSeesNewKeys(t *testing.T) {
 
 func TestAPrefixInsideAFolderKeepsOnlyItsKeys(t *testing.T) {
 	each(t, func(t *testing.T, s Store) {
-		s.Put(ctx, "v1/codes/ab1.json", []byte("1"), Absent)
-		s.Put(ctx, "v1/codes/cd2.json", []byte("2"), Absent)
-		s.Put(ctx, "v1/control.json", []byte("3"), Absent)
+		if _, err := s.Put(ctx, "v1/codes/ab1.json", []byte("1"), Absent); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.Put(ctx, "v1/codes/cd2.json", []byte("2"), Absent); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.Put(ctx, "v1/control.json", []byte("3"), Absent); err != nil {
+			t.Fatal(err)
+		}
 		if got := keysOf(s, "v1/codes/ab"); !reflect.DeepEqual(got, []string{"v1/codes/ab1.json"}) {
 			t.Fatal(got)
 		}
@@ -211,8 +221,8 @@ func TestTheFolderIsTheSwiftLayout(t *testing.T) {
 		t.Fatal(string(data), err)
 	}
 	// A file another writer put there is read with its hash as its tag.
-	os.MkdirAll(filepath.Join(root, "v1", "machines"), 0o700)
-	os.WriteFile(filepath.Join(root, "v1", "machines", "mac.json"), []byte("hello"), 0o600)
+	must(t, os.MkdirAll(filepath.Join(root, "v1", "machines"), 0o700))
+	must(t, os.WriteFile(filepath.Join(root, "v1", "machines", "mac.json"), []byte("hello"), 0o600))
 	o, _ := f.Get(ctx, "v1/machines/mac.json")
 	if o == nil || o.ETag != tag {
 		t.Fatal(o)
@@ -233,11 +243,15 @@ func TestOnlyChangedRecordsAreReadAgain(t *testing.T) {
 	root := t.TempDir()
 	writer := NewFolder(root)
 	for n := range 40 {
-		writer.Put(ctx, fmt.Sprintf("v1/clients/%02d.json", n), []byte(fmt.Sprint(n)), Absent)
+		if _, err := writer.Put(ctx, fmt.Sprintf("v1/clients/%02d.json", n), []byte(fmt.Sprint(n)), Absent); err != nil {
+			t.Fatal(err)
+		}
 	}
 	// Elsewhere in the store, never read by a listing of clients.
 	for n := range 30 {
-		writer.Put(ctx, fmt.Sprintf("v1/events/2026-01-01/%d.json", n), []byte("{}"), Absent)
+		if _, err := writer.Put(ctx, fmt.Sprintf("v1/events/2026-01-01/%d.json", n), []byte("{}"), Absent); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if writer.HashedByListing() != 0 {
 		t.Fatal(writer.HashedByListing())
@@ -256,11 +270,17 @@ func TestOnlyChangedRecordsAreReadAgain(t *testing.T) {
 	}
 
 	// Again, unchanged: nothing read, whether the folder has settled or not.
-	reader.List(ctx, "v1/clients/")
+	if _, err := reader.List(ctx, "v1/clients/"); err != nil {
+		t.Fatal(err)
+	}
 	then := time.Now().Add(-time.Minute)
-	os.Chtimes(filepath.Join(root, "v1", "clients"), then, then)
-	reader.List(ctx, "v1/clients/")
-	reader.List(ctx, "v1/clients/")
+	must(t, os.Chtimes(filepath.Join(root, "v1", "clients"), then, then))
+	if _, err := reader.List(ctx, "v1/clients/"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := reader.List(ctx, "v1/clients/"); err != nil {
+		t.Fatal(err)
+	}
 	if reader.HashedByListing() != 40 {
 		t.Fatal(reader.HashedByListing())
 	}
@@ -278,7 +298,7 @@ func TestOnlyChangedRecordsAreReadAgain(t *testing.T) {
 	}
 
 	// One deleted: gone from the listing, and nothing read for it.
-	writer.Delete(ctx, "v1/clients/00.json")
+	must(t, writer.Delete(ctx, "v1/clients/00.json"))
 	fewer, _ := reader.List(ctx, "v1/clients/")
 	if len(fewer) != 39 || reader.HashedByListing() != 41 {
 		t.Fatal(len(fewer), reader.HashedByListing())
@@ -293,10 +313,12 @@ func TestAnUnreadableFileIsListedNotDropped(t *testing.T) {
 	}
 	root := t.TempDir()
 	f := NewFolder(root)
-	f.Put(ctx, "v1/clients/a.json", []byte("1"), Absent)
+	if _, err := f.Put(ctx, "v1/clients/a.json", []byte("1"), Absent); err != nil {
+		t.Fatal(err)
+	}
 	p := filepath.Join(root, "v1", "clients", "a.json")
-	os.Chmod(p, 0)
-	defer os.Chmod(p, 0o600)
+	must(t, os.Chmod(p, 0))
+	defer func() { must(t, os.Chmod(p, 0o600)) }()
 	l, _ := NewFolder(root).List(ctx, "v1/clients/")
 	if len(l) != 1 || l[0].ETag[:12] != `"unreadable-` {
 		t.Fatal(l)
@@ -312,17 +334,19 @@ func TestAnUnreadableFileIsListedNotDropped(t *testing.T) {
 func TestLeftoversGoAndLiveFilesStay(t *testing.T) {
 	root := t.TempDir()
 	f := NewFolder(root)
-	f.Put(ctx, "v1/clients/a.json", []byte("1"), Absent)
+	if _, err := f.Put(ctx, "v1/clients/a.json", []byte("1"), Absent); err != nil {
+		t.Fatal(err)
+	}
 	old := time.Now().Add(-2 * time.Hour)
 	leftovers := []string{"v1/clients/.b.json.1234.tmp", "probe/x-1", "v1/clients/gone.json.lock"}
 	for _, l := range leftovers {
 		p := filepath.Join(root, filepath.FromSlash(l))
-		os.MkdirAll(filepath.Dir(p), 0o700)
-		os.WriteFile(p, nil, 0o600)
-		os.Chtimes(p, old, old)
+		must(t, os.MkdirAll(filepath.Dir(p), 0o700))
+		must(t, os.WriteFile(p, nil, 0o600))
+		must(t, os.Chtimes(p, old, old))
 	}
 	for _, l := range []string{"v1/clients/a.json", "v1/clients/a.json.lock"} {
-		os.Chtimes(filepath.Join(root, filepath.FromSlash(l)), old, old)
+		must(t, os.Chtimes(filepath.Join(root, filepath.FromSlash(l)), old, old))
 	}
 	if n := f.RemoveLeftovers(time.Now().Add(-time.Hour)); n != 3 {
 		t.Fatal(n)
@@ -345,18 +369,24 @@ func TestLeftoversGoAndLiveFilesStay(t *testing.T) {
 func TestAFolderGoesWithItsLastKey(t *testing.T) {
 	root := t.TempDir()
 	f := NewFolder(root)
-	f.Put(ctx, "v1/usage/hours/2026-10-21T10/a.json", []byte("{}"), Absent)
-	f.Put(ctx, "v1/usage/hours/2026-10-21T11/a.json", []byte("{}"), Absent)
-	f.Put(ctx, "v1/usage/hours/2026-10-21T11/b.json", []byte("{}"), Absent)
-	f.Delete(ctx, "v1/usage/hours/2026-10-21T10/a.json")
+	if _, err := f.Put(ctx, "v1/usage/hours/2026-10-21T10/a.json", []byte("{}"), Absent); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.Put(ctx, "v1/usage/hours/2026-10-21T11/a.json", []byte("{}"), Absent); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.Put(ctx, "v1/usage/hours/2026-10-21T11/b.json", []byte("{}"), Absent); err != nil {
+		t.Fatal(err)
+	}
+	must(t, f.Delete(ctx, "v1/usage/hours/2026-10-21T10/a.json"))
 	if _, err := os.Stat(filepath.Join(root, "v1/usage/hours/2026-10-21T10")); !os.IsNotExist(err) {
 		t.Fatal("the empty hour's folder stayed")
 	}
-	f.Delete(ctx, "v1/usage/hours/2026-10-21T11/a.json")
+	must(t, f.Delete(ctx, "v1/usage/hours/2026-10-21T11/a.json"))
 	if _, err := os.Stat(filepath.Join(root, "v1/usage/hours/2026-10-21T11/b.json")); err != nil {
 		t.Fatal("a folder with a key went")
 	}
-	f.Delete(ctx, "v1/usage/hours/2026-10-21T11/b.json")
+	must(t, f.Delete(ctx, "v1/usage/hours/2026-10-21T11/b.json"))
 	if _, err := os.Stat(filepath.Join(root, "v1")); !os.IsNotExist(err) {
 		t.Fatal("the empty folders above stayed")
 	}
@@ -381,7 +411,7 @@ func TestWritesRaceTheFolderGoing(t *testing.T) {
 		}()
 		go func() {
 			defer wg.Done()
-			f.Delete(ctx, fmt.Sprintf("v1/h/%d/b.json", n%5))
+			must(t, f.Delete(ctx, fmt.Sprintf("v1/h/%d/b.json", n%5)))
 		}()
 	}
 	wg.Wait()

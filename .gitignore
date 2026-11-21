@@ -30,6 +30,30 @@ Web/dist/
 
 # Go builds for walks and the Go host (#1136).
 Go/out/
+# The programs that `go build ./cmd/<name>` writes into Go/ (#6503).
+/Go/agents-control
+/Go/agents-hosted
+/Go/agentsctl
+/Go/agentsd
+/Go/azureboards-mcp
+/Go/azuredevops-mcp
+/Go/betterstack-mcp
+/Go/bitbucket-mcp
+/Go/conflict-risk
+/Go/email-mcp
+/Go/forgejo-mcp
+/Go/github-mcp
+/Go/gitlab-mcp
+/Go/googlechat-mcp
+/Go/jira-mcp
+/Go/linear-mcp
+/Go/loops
+/Go/scale-seed
+/Go/sentry-mcp
+/Go/slack-mcp
+/Go/whatsapp-mcp
+/Go/wiregen
+/Go/workspace-commands
 # The observability walk's certificates and answers (#3417).
 Go/internal/controlplane/walk/observability/run/
 __pycache__/

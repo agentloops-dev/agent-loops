@@ -1,7 +1,6 @@
 package agentsd
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -23,7 +22,7 @@ func TestAddingAFolderGivesItAProject(t *testing.T) {
 
 	dir := t.TempDir()
 	var s wire.FolderSummary
-	json.Unmarshal(c.call(t, 1, "folders/add", map[string]any{"folder": store.FolderURL(dir)}), &s)
+	mustUnmarshal(t, c.call(t, 1, "folders/add", map[string]any{"folder": store.FolderURL(dir)}), &s)
 	if s.Project == nil || !strings.HasPrefix(*s.Project, "p-") || len(*s.Project) != 14 || s.ProjectProblem != nil {
 		t.Fatalf("%+v %+v", s.Project, s.ProjectProblem)
 	}
@@ -34,11 +33,11 @@ func TestAddingAFolderGivesItAProject(t *testing.T) {
 
 	// A clone that names its project joins it, with nothing written.
 	clone := t.TempDir()
-	os.MkdirAll(filepath.Join(clone, ".agents"), 0o755)
+	must(t, os.MkdirAll(filepath.Join(clone, ".agents"), 0o755)) //nolint:gosec // G301: the mode this folder always had; only its error is new
 	named := "{\"project\": \"p-agents\"}\n"
-	os.WriteFile(filepath.Join(clone, ".agents", "folder.json"), []byte(named), 0o644)
+	must(t, os.WriteFile(filepath.Join(clone, ".agents", "folder.json"), []byte(named), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	s = wire.FolderSummary{}
-	json.Unmarshal(c.call(t, 2, "folders/add", map[string]any{"folder": store.FolderURL(clone)}), &s)
+	mustUnmarshal(t, c.call(t, 2, "folders/add", map[string]any{"folder": store.FolderURL(clone)}), &s)
 	if s.Project == nil || *s.Project != "p-agents" {
 		t.Fatalf("%+v", s.Project)
 	}
@@ -48,20 +47,20 @@ func TestAddingAFolderGivesItAProject(t *testing.T) {
 
 	// Not an id: left alone, and said.
 	bad := t.TempDir()
-	os.MkdirAll(filepath.Join(bad, ".agents"), 0o755)
-	os.WriteFile(filepath.Join(bad, ".agents", "folder.json"), []byte(`{"project": "not an id"}`), 0o644)
+	must(t, os.MkdirAll(filepath.Join(bad, ".agents"), 0o755))                                                     //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(bad, ".agents", "folder.json"), []byte(`{"project": "not an id"}`), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	s = wire.FolderSummary{}
-	json.Unmarshal(c.call(t, 3, "folders/add", map[string]any{"folder": store.FolderURL(bad)}), &s)
+	mustUnmarshal(t, c.call(t, 3, "folders/add", map[string]any{"folder": store.FolderURL(bad)}), &s)
 	if s.Project != nil || s.ProjectProblem == nil || !strings.Contains(*s.ProjectProblem, "not valid") {
 		t.Fatalf("%+v %+v", s.Project, s.ProjectProblem)
 	}
 
 	// Not an object: left alone.
 	array := t.TempDir()
-	os.MkdirAll(filepath.Join(array, ".agents"), 0o755)
-	os.WriteFile(filepath.Join(array, ".agents", "folder.json"), []byte(`[1]`), 0o644)
+	must(t, os.MkdirAll(filepath.Join(array, ".agents"), 0o755))                                //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(array, ".agents", "folder.json"), []byte(`[1]`), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	s = wire.FolderSummary{}
-	json.Unmarshal(c.call(t, 4, "folders/add", map[string]any{"folder": store.FolderURL(array)}), &s)
+	mustUnmarshal(t, c.call(t, 4, "folders/add", map[string]any{"folder": store.FolderURL(array)}), &s)
 	if b, _ := os.ReadFile(filepath.Join(array, ".agents", "folder.json")); string(b) != "[1]" || s.ProjectProblem == nil {
 		t.Fatalf("%s %+v", b, s.ProjectProblem)
 	}
@@ -82,16 +81,16 @@ func TestAddingAFolderInAPickedProject(t *testing.T) {
 
 	dir := t.TempDir()
 	var s wire.FolderSummary
-	json.Unmarshal(c.call(t, 1, "folders/add", map[string]any{"folder": store.FolderURL(dir), "project": "p-picked"}), &s)
+	mustUnmarshal(t, c.call(t, 1, "folders/add", map[string]any{"folder": store.FolderURL(dir), "project": "p-picked"}), &s)
 	if s.Project == nil || *s.Project != "p-picked" {
 		t.Fatalf("%+v", s.Project)
 	}
 
 	clone := t.TempDir()
-	os.MkdirAll(filepath.Join(clone, ".agents"), 0o755)
-	os.WriteFile(filepath.Join(clone, ".agents", "folder.json"), []byte(`{"project": "p-agents", "keep": 1}`), 0o644)
+	must(t, os.MkdirAll(filepath.Join(clone, ".agents"), 0o755))                                                               //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(clone, ".agents", "folder.json"), []byte(`{"project": "p-agents", "keep": 1}`), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	s = wire.FolderSummary{}
-	json.Unmarshal(c.call(t, 2, "folders/add", map[string]any{"folder": store.FolderURL(clone), "project": "p-picked"}), &s)
+	mustUnmarshal(t, c.call(t, 2, "folders/add", map[string]any{"folder": store.FolderURL(clone), "project": "p-picked"}), &s)
 	if s.Project == nil || *s.Project != "p-picked" {
 		t.Fatalf("%+v", s.Project)
 	}
@@ -128,7 +127,7 @@ func TestAFolderJoinsAnotherProject(t *testing.T) {
 		t.Fatal(e.Message)
 	}
 	var s wire.FolderSummary
-	json.Unmarshal(c.call(t, 3, "folders/setProject", map[string]any{"folder": folder, "project": "p-shared"}), &s)
+	mustUnmarshal(t, c.call(t, 3, "folders/setProject", map[string]any{"folder": folder, "project": "p-shared"}), &s)
 	if s.Project == nil || *s.Project != "p-shared" {
 		t.Fatalf("%+v", s.Project)
 	}
@@ -170,8 +169,8 @@ func TestSessionsCarryTheirProject(t *testing.T) {
 
 	inProject := func(project string) string {
 		dir := t.TempDir()
-		os.MkdirAll(filepath.Join(dir, ".agents"), 0o755)
-		os.WriteFile(filepath.Join(dir, ".agents", "folder.json"), []byte(`{"project": "`+project+`"}`), 0o644)
+		must(t, os.MkdirAll(filepath.Join(dir, ".agents"), 0o755))                                                       //nolint:gosec // G301: the mode this folder always had; only its error is new
+		must(t, os.WriteFile(filepath.Join(dir, ".agents", "folder.json"), []byte(`{"project": "`+project+`"}`), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 		return dir
 	}
 	agents, clone, other, none := inProject("p-agents"), inProject("p-agents"), inProject("p-other"), t.TempDir()
@@ -181,7 +180,7 @@ func TestSessionsCarryTheirProject(t *testing.T) {
 	n := seeded(t, d, none, nil)
 
 	var all []wire.Agent
-	json.Unmarshal(c.call(t, 1, "agents/list", map[string]any{"lean": true}), &all)
+	mustUnmarshal(t, c.call(t, 1, "agents/list", map[string]any{"lean": true}), &all)
 	projects := map[wire.UUID]string{}
 	for _, x := range all {
 		projects[x.ID] = deref(x.Project)
@@ -191,7 +190,7 @@ func TestSessionsCarryTheirProject(t *testing.T) {
 	}
 
 	var listed []wire.Agent
-	json.Unmarshal(c.call(t, 2, "agents/list", map[string]any{"lean": true, "project": "p-agents"}), &listed)
+	mustUnmarshal(t, c.call(t, 2, "agents/list", map[string]any{"lean": true, "project": "p-agents"}), &listed)
 	got := map[wire.UUID]bool{}
 	for _, x := range listed {
 		got[x.ID] = true
@@ -200,7 +199,7 @@ func TestSessionsCarryTheirProject(t *testing.T) {
 		t.Fatalf("%+v", listed)
 	}
 	listed = nil
-	json.Unmarshal(c.call(t, 3, "agents/list", map[string]any{"lean": true, "agentID": o.ID}), &listed)
+	mustUnmarshal(t, c.call(t, 3, "agents/list", map[string]any{"lean": true, "agentID": o.ID}), &listed)
 	if len(listed) != 1 || deref(listed[0].Project) != "p-other" {
 		t.Fatalf("%+v", listed)
 	}

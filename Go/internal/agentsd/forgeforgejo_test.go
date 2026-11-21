@@ -2,7 +2,6 @@ package agentsd
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -181,10 +180,10 @@ func forgejoDaemon(t *testing.T) (*Daemon, *conn, *fakeForgeForgejo, *connection
 	for i, remote := range []string{"http://localhost:3753/walkalex/App.git", "git@codeberg.org:kim/notes.git", "git@github.com:alexec/agents.git"} {
 		c.call(t, 100+i, "folders/add", map[string]any{"folder": "file://" + gitFolder(t, remote)})
 	}
-	file.Put(connections.Connection{Provider: connections.Forgejo, Login: "walkalex", Access: "forgejo-secret",
-		URL: "http://localhost:3753/", ConnectedAt: time.Now()})
-	file.Put(connections.Connection{Provider: connections.GitHub, Login: "alexec", Access: "ghu_secret",
-		AccessExpiresAt: time.Now().Add(time.Hour), ConnectedAt: time.Now()})
+	must(t, file.Put(connections.Connection{Provider: connections.Forgejo, Login: "walkalex", Access: "forgejo-secret",
+		URL: "http://localhost:3753/", ConnectedAt: time.Now()}))
+	must(t, file.Put(connections.Connection{Provider: connections.GitHub, Login: "alexec", Access: "ghu_secret",
+		AccessExpiresAt: time.Now().Add(time.Hour), ConnectedAt: time.Now()}))
 	return d, c, fj, file
 }
 
@@ -195,7 +194,7 @@ func TestForgeListsTheConnectedForgejosRepositories(t *testing.T) {
 
 	_, c, fj, _ := forgejoDaemon(t)
 	var list wire.ForgeList
-	json.Unmarshal(c.call(t, 1, "forge/issues", wire.ForgeListRequest{Label: new("bug")}), &list)
+	mustUnmarshal(t, c.call(t, 1, "forge/issues", wire.ForgeListRequest{Label: new("bug")}), &list)
 	if len(fj.searches) != 1 || fj.searches[0] != "[walkalex/App] prs=false label=bug after= first=50" {
 		t.Fatalf("Forgejo was asked %v", fj.searches)
 	}
@@ -213,7 +212,7 @@ func TestForgeListsTheConnectedForgejosRepositories(t *testing.T) {
 		t.Fatalf("a Forgejo folder elsewhere says nothing while one is on the connected Forgejo: %+v", list.Errors)
 	}
 	var pulls wire.ForgeList
-	json.Unmarshal(c.call(t, 2, "forge/pulls", wire.ForgeListRequest{}), &pulls)
+	mustUnmarshal(t, c.call(t, 2, "forge/pulls", wire.ForgeListRequest{}), &pulls)
 	for _, i := range pulls.Items {
 		if i.Node.Ref == "forgejo:issue:walkalex/app#7" && (i.Node.Kind != "pr" || deref(i.Mergeable) != "unknown") {
 			t.Fatalf("a Forgejo pull request: %+v", i)
@@ -226,9 +225,9 @@ func TestForgeListSaysForgejoIsNotConnected(t *testing.T) {
 	t.Parallel()
 
 	_, c, fj, file := forgejoDaemon(t)
-	file.Delete(connections.Forgejo)
+	must(t, file.Delete(connections.Forgejo))
 	var list wire.ForgeList
-	json.Unmarshal(c.call(t, 1, "forge/issues", wire.ForgeListRequest{}), &list)
+	mustUnmarshal(t, c.call(t, 1, "forge/issues", wire.ForgeListRequest{}), &list)
 	if len(fj.searches) != 0 || len(list.Errors) != 1 || list.Errors[0].Forge != "forgejo" || list.Errors[0].Message != forgejomcp.NotConnected {
 		t.Fatalf("list: %+v", list)
 	}
@@ -241,13 +240,13 @@ func TestForgeReadsAForgejoIssueAndPullRequest(t *testing.T) {
 
 	_, c, fj, _ := forgejoDaemon(t)
 	var issue wire.ForgeItemDetail
-	json.Unmarshal(c.call(t, 1, "forge/issue", wire.ForgeItemRequest{Node: wire.LineageNode{Kind: "issue", Ref: "forgejo:issue:walkalex/app#7"}}), &issue)
+	mustUnmarshal(t, c.call(t, 1, "forge/issue", wire.ForgeItemRequest{Node: wire.LineageNode{Kind: "issue", Ref: "forgejo:issue:walkalex/app#7"}}), &issue)
 	if issue.Body != "The body." || deref(issue.Cursor) != "1" || len(issue.Comments) != 1 || issue.Comments[0].Bot == nil || issue.Start == nil ||
 		!strings.Contains(issue.Start.Prompt, "Work on this Forgejo issue: http://localhost:3753/walkalex/App/issues/7") || issue.Start.Labels[0] != "#7" {
 		t.Fatalf("issue: %+v", issue)
 	}
 	var pr wire.ForgeItemDetail
-	json.Unmarshal(c.call(t, 2, "forge/pull", wire.ForgeItemRequest{Node: wire.LineageNode{Kind: "pr", Ref: "forgejo:pr:walkalex/app#8"}}), &pr)
+	mustUnmarshal(t, c.call(t, 2, "forge/pull", wire.ForgeItemRequest{Node: wire.LineageNode{Kind: "pr", Ref: "forgejo:pr:walkalex/app#8"}}), &pr)
 	if deref(pr.Head) != "abc123" || len(pr.Checks) != 1 || *pr.FilesChanged != 2 || len(pr.MergeMethods) != 2 || pr.MergeMethods[0] != "squash" ||
 		deref(pr.Item.Review) != "approved" || pr.Start != nil {
 		t.Fatalf("pull: %+v", pr)
@@ -275,7 +274,7 @@ func TestForgeWritesOnAForgejoItem(t *testing.T) {
 	issue := wire.LineageNode{Kind: "issue", Ref: "forgejo:issue:walkalex/app#7"}
 	pr := wire.LineageNode{Kind: "pr", Ref: "forgejo:pr:walkalex/app#8"}
 	var done wire.ForgeDone
-	json.Unmarshal(c.call(t, 1, "forge/comment", wire.ForgeCommentRequest{Node: issue, Body: "Done"}), &done)
+	mustUnmarshal(t, c.call(t, 1, "forge/comment", wire.ForgeCommentRequest{Node: issue, Body: "Done"}), &done)
 	if deref(done.URL) != "http://localhost:3753/c/1" {
 		t.Fatalf("comment: %+v", done)
 	}
@@ -300,12 +299,12 @@ func TestForgeWritesOnAForgejoItem(t *testing.T) {
 		t.Fatalf("log: %v", e)
 	}
 	var labels wire.ForgeLabels
-	json.Unmarshal(c.call(t, 10, "forge/labels", wire.ForgeNodeRequest{Node: issue}), &labels)
+	mustUnmarshal(t, c.call(t, 10, "forge/labels", wire.ForgeNodeRequest{Node: issue}), &labels)
 	if len(labels.Labels) != 2 || deref(labels.Labels[0].Color) != "#ee0701" {
 		t.Fatalf("labels: %+v", labels)
 	}
 	var diff wire.ForgeDiff
-	json.Unmarshal(c.call(t, 11, "forge/diff", wire.ForgeNodeRequest{Node: pr}), &diff)
+	mustUnmarshal(t, c.call(t, 11, "forge/diff", wire.ForgeNodeRequest{Node: pr}), &diff)
 	if len(diff.Files) != 1 || diff.Files[0].Path != "hello.txt" || len(diff.Files[0].Hunks[0].Lines) != 1 {
 		t.Fatalf("diff: %+v", diff)
 	}
@@ -341,7 +340,7 @@ func TestForgePlanReadsAForgejoEpic(t *testing.T) {
 	_, c, fj, _ := forgejoDaemon(t)
 	epic := wire.LineageNode{Kind: "issue", Ref: "forgejo:issue:walkalex/app#1"}
 	var plan wire.ForgePlan
-	json.Unmarshal(c.call(t, 1, "forge/plan", wire.ForgePlanRequest{Node: epic}), &plan)
+	mustUnmarshal(t, c.call(t, 1, "forge/plan", wire.ForgePlanRequest{Node: epic}), &plan)
 	if deref(plan.Item.Level) != "epic" || deref(plan.Item.Feature) != "Export" || plan.Item.Progress == nil ||
 		plan.Item.Progress.Done != 1 || plan.Item.Progress.Total != 3 || deref(plan.Item.Folder) == "" {
 		t.Fatalf("epic: %+v", plan.Item)
@@ -377,7 +376,7 @@ func TestForgePlanWritesOnAForgejoEpic(t *testing.T) {
 	_, c, fj, _ := forgejoDaemon(t)
 	epic := wire.LineageNode{Kind: "issue", Ref: "forgejo:issue:walkalex/app#1"}
 	var done wire.ForgeDone
-	json.Unmarshal(c.call(t, 1, "forge/add-child", wire.ForgeAddChildRequest{Node: epic, Title: new("Export as CSV"), Level: new("story")}), &done)
+	mustUnmarshal(t, c.call(t, 1, "forge/add-child", wire.ForgeAddChildRequest{Node: epic, Title: new("Export as CSV"), Level: new("story")}), &done)
 	if deref(done.URL) != "http://localhost:3753/walkalex/App/issues/12" {
 		t.Fatalf("add child: %+v", done)
 	}
@@ -467,7 +466,7 @@ func TestLineageOnAForgejoFolder(t *testing.T) {
 	}
 
 	// Disconnected, the folder is on no forge lineage knows; Codeberg's is by its host.
-	file.Delete(connections.Forgejo)
+	must(t, file.Delete(connections.Forgejo))
 	if r := d.folderRepo(connected); r.forge != "" {
 		t.Fatalf("with no Forgejo connection: %+v", r)
 	}

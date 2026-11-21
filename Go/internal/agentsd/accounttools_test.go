@@ -20,9 +20,9 @@ func TestOldAccounts(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "gitlab.json"), []byte(`{"service":"gitlab.com","address":"a@example.com","plan":"Free",
+	must(t, os.WriteFile(filepath.Join(dir, "gitlab.json"), []byte(`{"service":"gitlab.com","address":"a@example.com","plan":"Free",
 		"monthly_cost_usd":0,"card":null,"secret":"~/.agents/secrets/gitlab-token","two_factor":null,"issue":1634,
-		"made":"2026-10-19","token_expires":"2027-10-18","notes":"Password in Keychain"}`), 0o600)
+		"made":"2026-10-19","token_expires":"2027-10-18","notes":"Password in Keychain"}`), 0o600))
 	found, err := oldAccounts(dir)
 	if err != nil || len(found) != 1 {
 		t.Fatal(found, err)
@@ -163,7 +163,7 @@ func TestAddingAnAccountAsksBeforeReplacing(t *testing.T) {
 		answered := add(4+i, "Pro")
 		var pending []wire.ElicitationRequest
 		waitFor(t, "the card", func() bool {
-			json.Unmarshal(c.call(t, 10+2*i, "elicitations/pending", nil), &pending)
+			mustUnmarshal(t, c.call(t, 10+2*i, "elicitations/pending", nil), &pending)
 			return len(pending) == 1
 		})
 		if f := pending[0].Mode.Form.Value; *pending[0].Message != "Claude (sign-up) wants to replace an account" ||
@@ -235,7 +235,7 @@ func TestALateReplaceStillReplacesTheAccount(t *testing.T) {
 	l.inTurn = false
 	l.mu.Unlock()
 	var pending []wire.ElicitationRequest
-	json.Unmarshal(c.call(t, 1, "elicitations/pending", nil), &pending)
+	mustUnmarshal(t, c.call(t, 1, "elicitations/pending", nil), &pending)
 	if len(pending) != 1 {
 		t.Fatalf("%+v", pending)
 	}
@@ -653,7 +653,7 @@ func TestRemovingAnAccountAsksForThePersons(t *testing.T) {
 		}()
 		var pending []wire.ElicitationRequest
 		waitFor(t, "the card", func() bool {
-			json.Unmarshal(c.call(t, 10+2*i, "elicitations/pending", nil), &pending)
+			mustUnmarshal(t, c.call(t, 10+2*i, "elicitations/pending", nil), &pending)
 			return len(pending) == 1
 		})
 		if f := pending[0].Mode.Form.Value; *pending[0].Message != "Claude (tidy) wants to remove an account" ||

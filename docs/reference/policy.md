@@ -41,6 +41,7 @@ Mac window passes to a server with `policy/applyYours`.
 | `notices` | `{antigravityTerms?: show \| accepted \| refuse}` | Google's terms notice for Antigravity (#999): `show` (as absent), `accepted` (your organisation reviewed the terms; members see no notice, and the Policy pane says so), `refuse` (Antigravity is refused). Console ▸ Policy names them **Show the notice**, **Reviewed by your organisation** and **Do not allow**. |
 | `stopAll` | `{on, by, at, note?}` | The kill switch. Only `policy/stopAll` changes it. |
 | `connectorTools` | `{<connector>: {writes?, tools?: {<tool>: allow \| ask \| off}}}` | Only in your layer and a folder's (#4099). **Allow**, **Ask** or **Off** for each tool of a connector, by the connector's name; `writes` is one level for each tool that writes and that `tools` does not name. A tool no layer names is **Ask** when it writes and **Allow** when it only reads. A tool writes unless its annotations say `readOnlyHint: true`, or when they say `destructiveHint: true`. Tighter is later: Allow, Ask, Off. See [Connector tools](#connector-tools). |
+| `commitTrailers` | `{<trailer>: on \| off}` | In each layer (#6365). Which trailers an agent's commits and squash messages carry: `Made-by`, `Cost`, `Tokens`, `Duration`, `Session`, `Fixes` (also `Refs`), `Epic`, `Requested-by`, `Approved-by`, `Attested`, `Co-authored-by`. A key that no layer sets has its default: every trailer **On**, `Cost` **Off**. For a record trailer **On** is tighter; for a spend trailer (`Cost`, `Tokens`, `Duration`) **Off** is tighter. A key a machine does not know is kept and has no effect. Each key is a rule of `policy/effective`, `commitTrailers.<key>`. See [Commit trailers](#commit-trailers). |
 | `requireFollowing` | `true` | The control plane refuses to start work on a machine that has not kept this version. |
 | `groups` | `{}` | Empty. A place for later layers, which can only make a rule tighter. |
 
@@ -83,6 +84,84 @@ How a level is kept:
 A runtime that uses a tool without asking (a mode such as Bypass Permissions) and has no deny
 list of its own is not stopped by an Off level. A runtime starts again at its next turn when
 its Off tools change.
+
+## Commit trailers
+
+`git/trailers {session, pr?}` (capability `host.commit-trailers/1`, #6371) gives the trailer
+lines of a commit by the session's agent, or of its pull request's squash message, by the
+effective `commitTrailers` rule of the session's folder. The worktree's `commit-msg` hook and
+the agents' tool `commit_trailers` ask it; an agent types no trailer by hand. A trailer with
+no value is left out. The lines come in this order:
+
+| Trailer | Value |
+|---|---|
+| `Made-by` | `<runtime>:<model>`, as `claude-code:claude-opus-5-5` (the shape of the kernel's `Assisted-by`). |
+| `Session` | The session's id. Not its web address, which would put the Mac's hardware id and the person's home folder in public history. |
+| `Fixes` | One line for each issue the session is labelled with (`#n`) and each issue the PR fixes. With no `pr`, `Refs`: a commit on a branch closes nothing. |
+| `Epic` | The first issue's parent: lineage's part-of link, else one read of the issue from the forge cache. |
+| `Requested-by` | The login of the person's forge connection. |
+| `Approved-by` | Each login whose newest review of the PR approves it: one read of the PR from the forge cache. Only with `pr`. |
+| `Attested` | No value since #6438 removed the attestations, so it is left out. |
+| `Cost`, `Tokens`, `Duration` | The totals of the sessions labelled with the PR (`P#<n>`) or its issues, from the cost on the link (`lineage-cost.json`): the PR, the issues it fixes, and the session's own `#n`. With no `pr`, the session's issues; with none, the session itself. As `$3.00`, `in=412.0k out=38.0k` and `47m`. |
+| `Co-authored-by` | The runtime's own line for GitHub's commit page, where it is known: Claude's, `Claude Opus 5.5 <noreply@anthropic.com>`. |
+
+At most two forge calls a PR, each read from the forge cache when it has the answer. A
+trailer the rule turns off is not worked out, so it costs no forge call.
+
+**The runtime's own attribution is off.** Each Claude session starts with
+`--settings {"attribution":{"commit":""},"includeCoAuthoredBy":false}`, so Claude Code adds no
+`Co-authored-by` that the rule turns off, and no second copy of the one `git/trailers` writes.
+The daemon knows no such setting for the other runtimes; the worktree's `commit-msg` hook
+(#6372) takes out a trailer that the rule turns off, whoever wrote it.
+
+### Commit trailers on main
+
+The app's tool `commit_trailers {pr?}` (#6362) is `git/trailers` for the session that calls
+it: a script on the socket is a stranger and cannot call `git/trailers`, so an agent asks with
+its own token. It gives the lines, one a line, to write as they come as the message's last
+paragraph. A person or a script then reads them with no API call:
+`git log --format='%(trailers:key=Cost,valueonly)'`.
+
+GitHub's squash runs no hook, so in this repo a lane writes the squash message itself:
+`scripts/automerge.sh <pr> <file>`, with the lines `commit_trailers` gave for the PR in
+`<file>`, turns on squash auto-merge with each commit's message (its own trailers taken out,
+merges of the base left out) and one block at the end. To that block it adds each commit's
+`Co-authored-by` and each commit author but the PR's own, as GitHub's own squash message names
+them. It fails on a key that is not a `commitTrailers.<key>` of the wire schema, or `Refs`, so
+the keys do not drift. `scripts/rearm-automerge.sh` keeps the message when it turns auto-merge
+off and on again; a lane that did more work runs `commit_trailers` and `scripts/automerge.sh`
+again, so the totals count it. A PR that a person makes with no agent gets no block.
+
+This repo's `.agents/policy.json` sets `"commitTrailers": {"Cost": "on"}` (Alex, 2026-11-19):
+`Cost` shows on its commits unless a person's or the organisation's layer sets it off, which
+is tighter.
+
+### The worktree's commit-msg hook
+
+Each worktree that the app makes (new, on a branch, made again, or an older one that an agent
+starts in) gets a hooks folder of its own, `.git/worktrees/<name>/agents-hooks/`. The daemon
+turns on `extensions.worktreeConfig` and sets `core.hooksPath` with `--worktree`, so the main
+checkout and the folder's other worktrees do not change. A repository that keeps `core.bare`
+or `core.worktree` in its shared config gets no hook, as git asks. It is a git hook, not a
+runtime hook: it never holds an agent's tool use.
+
+- **The folder's own hooks still run.** Each hook in the folder (every hook git runs in a
+  checkout) runs the folder's hook of the same name: the last `core.hooksPath` of a scope other
+  than the worktree's (as Husky sets it), else the repository's `hooks` folder (where lefthook
+  and pre-commit write theirs). It finds it at each run, so a hook the folder adds later runs
+  too.
+- **`commit-msg`** runs the folder's own `commit-msg` first; when that refuses the commit, it
+  stays refused. Then, in a session, `agents-trailers MSGFILE` (`agentsd trailers`, beside
+  `agents-secret` on the session's PATH, with the same grant) asks agentsd for the session's
+  `git/trailers` and writes the block as the message's last paragraph: it takes out a trailer
+  of a key the rule turns off (`Fixes` also takes out `Refs`), puts the block's `Made-by`,
+  `Session`, `Epic`, `Attested`, `Cost`, `Tokens` and `Duration` in place of one already
+  there, and adds each other line that is not there yet. Other trailers, such as a person's
+  `Signed-off-by`, stay. An editor's comments and `commit -v`'s scissors stay after it.
+- **A person's own commit** (no session's grant in the environment) gets no block.
+- **When agentsd does not answer**, the message stays as it is and the hook prints one line.
+  It never refuses a commit of its own.
+- **`git commit --no-verify`** skips it. The squash message (#6362) still applies the rule.
 
 ## The signature
 

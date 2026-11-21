@@ -22,7 +22,7 @@ func heard(t *testing.T, c *conn, id int) map[string][]json.RawMessage {
 		select {
 		case line := <-c.out:
 			var m message
-			json.Unmarshal([]byte(line), &m)
+			mustUnmarshal(t, []byte(line), &m)
 			if m.Method == "" && string(m.ID) == string(mustJSON(id)) {
 				return out
 			}
@@ -49,20 +49,20 @@ func TestOnlyTheWindowShowingAnAgentGetsItWhole(t *testing.T) {
 	d.change(a.ID, func(a *wire.Agent) { a.AvailableCommands = []wire.SlashCommand{{Name: "review"}} })
 	var got wire.Agent
 	h := heard(t, showing, 2)
-	json.Unmarshal(h["agent/changed"][0], &got)
+	mustUnmarshal(t, h["agent/changed"][0], &got)
 	if len(got.AvailableCommands) != 1 || got.ListsLeftOut != nil {
 		t.Fatalf("%+v", got)
 	}
 	got = wire.Agent{}
 	h = heard(t, other, 2)
-	json.Unmarshal(h["agent/changed"][0], &got)
+	mustUnmarshal(t, h["agent/changed"][0], &got)
 	if len(got.AvailableCommands) != 0 || got.ListsLeftOut == nil || !*got.ListsLeftOut {
 		t.Fatalf("%+v", got)
 	}
 	// They did not move: lean to both.
 	d.change(a.ID, func(a *wire.Agent) { a.IsUnread = new(bool) })
 	got = wire.Agent{}
-	json.Unmarshal(heard(t, showing, 3)["agent/changed"][0], &got)
+	mustUnmarshal(t, heard(t, showing, 3)["agent/changed"][0], &got)
 	if got.ListsLeftOut == nil {
 		t.Fatalf("%+v", got)
 	}
@@ -76,8 +76,8 @@ func TestOnlyTheWindowShowingAnAgentGetsItWhole(t *testing.T) {
 		t.Fatalf("%d entries", len(entries))
 	}
 	var small, big wire.EntryNotification
-	json.Unmarshal(entries[0], &small)
-	json.Unmarshal(entries[1], &big)
+	mustUnmarshal(t, entries[0], &small)
+	mustUnmarshal(t, entries[1], &big)
 	if small.Index != nil || small.Oversized != nil || big.Oversized == nil || *big.Oversized <= entryByteLimit || big.Index == nil || *big.Index != 1 ||
 		!strings.Contains(string(entries[1]), `"kind":{"oversized":`) {
 		t.Fatalf("%s %s", entries[0], entries[1])
@@ -114,12 +114,12 @@ func TestTheWatchedAgentIsShownAndAListCanBeLean(t *testing.T) {
 		t.Fatal("the watched agent was not shown")
 	}
 	var list []wire.Agent
-	json.Unmarshal(c.call(t, 3, "agents/list", map[string]any{"lean": true, "includeArchived": true}), &list)
+	mustUnmarshal(t, c.call(t, 3, "agents/list", map[string]any{"lean": true, "includeArchived": true}), &list)
 	if len(list) != 2 || len(list[0].AvailableCommands) != 0 || list[0].ListsLeftOut == nil {
 		t.Fatalf("%+v", list)
 	}
 	list = nil
-	json.Unmarshal(c.call(t, 4, "agents/list", map[string]any{"includeArchived": true}), &list)
+	mustUnmarshal(t, c.call(t, 4, "agents/list", map[string]any{"includeArchived": true}), &list)
 	for _, l := range list {
 		if l.ID == archived.ID && len(l.AvailableCommands) != 0 || l.ID == a.ID && len(l.AvailableCommands) != 1 || l.ListsLeftOut != nil {
 			t.Fatalf("%+v", l)

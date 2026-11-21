@@ -157,17 +157,17 @@ func TestOktaLive(t *testing.T) {
 		t.Fatal(err)
 	}
 	server := &http.Server{Handler: &recorder{out: out, proxy: httputil.NewSingleHostReverseProxy(target), t: t}, ReadHeaderTimeout: 10 * time.Second}
-	go server.Serve(listener)
+	go func() { _ = server.Serve(listener) }() // it ends with ErrServerClosed at the Close below
 	defer server.Close()
 
 	_, owner := p.client("Alex's Mac")
 	join := wire.OrgProviderJoinAnyone
 	var kept wire.OrgProviderKept
-	json.Unmarshal(call(t, owner, "", "signIn/orgProviders/set", wire.OrgProviderSet{Provider: wire.OrgProvider{Name: "Okta",
-		Preset: wire.OrgProviderPresetOkta, Issuer: l.org, ClientID: l.clientID, Join: &join}, Secret: &l.secret}), &kept)
+	must(t, json.Unmarshal(call(t, owner, "", "signIn/orgProviders/set", wire.OrgProviderSet{Provider: wire.OrgProvider{Name: "Okta",
+		Preset: wire.OrgProviderPresetOkta, Issuer: l.org, ClientID: l.clientID, Join: &join}, Secret: &l.secret}), &kept))
 	id := kept.Provider.ID
 	var check wire.OrgProviderCheck
-	json.Unmarshal(call(t, owner, "", "signIn/orgProviders/check", wire.OrgProviderRequest{ID: id}), &check)
+	must(t, json.Unmarshal(call(t, owner, "", "signIn/orgProviders/check", wire.OrgProviderRequest{ID: id}), &check))
 	if !check.Ok || check.JwksKeys == 0 || check.RedirectURI != l.url+"/v1/oidc/callback" {
 		t.Fatalf("check: %+v", check)
 	}
@@ -176,7 +176,7 @@ func TestOktaLive(t *testing.T) {
 	match := wire.SCIMMatchExternalId
 	call(t, owner, "", "scim/set", wire.SCIMSet{Provider: id, On: true, Match: &match})
 	var made wire.SCIMTokenMade
-	json.Unmarshal(call(t, owner, "", "scim/tokens/make", wire.SCIMTokenMake{Provider: id, Name: "Okta"}), &made)
+	must(t, json.Unmarshal(call(t, owner, "", "scim/tokens/make", wire.SCIMTokenMake{Provider: id, Name: "Okta"}), &made))
 	l.write(t, "scim-url", made.URL)
 	l.write(t, "scim-token", made.Value)
 	t.Logf("SCIM at %s (token in scim-token)", made.URL)
@@ -191,7 +191,7 @@ func TestOktaLive(t *testing.T) {
 			t.Fatal(err)
 		}
 		var started wire.SignInOrgStarted
-		json.Unmarshal(raw, &started)
+		must(t, json.Unmarshal(raw, &started))
 		name := "start-" + itoa(n+1)
 		l.write(t, name, started.URL)
 		t.Logf("sign-in %d: open %s", n+1, name)

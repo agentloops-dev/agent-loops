@@ -3,6 +3,7 @@ package agentsd
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"runtime/pprof"
@@ -35,6 +36,16 @@ func newMCPClient(t *testing.T, url, token string) *mcpClient {
 
 func (m *mcpClient) post(method string, params any, id int) (int, map[string]json.RawMessage) {
 	m.t.Helper()
+	code, out, err := m.tryPost(method, params, id)
+	if err != nil {
+		m.t.Fatal(err)
+	}
+	return code, out
+}
+
+// tryPost is post that says what failed rather than failing the test, for a goroutine
+// that may still run after its test ends (#6495).
+func (m *mcpClient) tryPost(method string, params any, id int) (int, map[string]json.RawMessage, error) {
 	body, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": id, "method": method, "params": params})
 	req, _ := http.NewRequest("POST", m.url, bytes.NewReader(body))
 	req.Header.Set("Authorization", "Bearer "+m.token)
@@ -47,7 +58,7 @@ func (m *mcpClient) post(method string, params any, id int) (int, map[string]jso
 		// A call that gets no answer is a daemon goroutine blocked somewhere: say where (#6395).
 		var stacks bytes.Buffer
 		_ = pprof.Lookup("goroutine").WriteTo(&stacks, 2) // a bytes.Buffer does not fail
-		m.t.Fatalf("%s %s: %v\n%s", method, m.url, err, stacks.String())
+		return 0, nil, fmt.Errorf("%s %s: %w\n%s", method, m.url, err, stacks.String())
 	}
 	defer res.Body.Close()
 	if s := res.Header.Get("Mcp-Session-Id"); s != "" {
@@ -55,8 +66,10 @@ func (m *mcpClient) post(method string, params any, id int) (int, map[string]jso
 	}
 	b, _ := io.ReadAll(res.Body)
 	var out map[string]json.RawMessage
-	json.Unmarshal(b, &out)
-	return res.StatusCode, out
+	if err := json.Unmarshal(b, &out); err != nil && len(b) > 0 {
+		return res.StatusCode, nil, fmt.Errorf("%s %s: %d %s: %w", method, m.url, res.StatusCode, b, err)
+	}
+	return res.StatusCode, out, nil
 }
 
 func appClient(t *testing.T, d *Daemon, id wire.UUID) *mcpClient {
@@ -102,7 +115,7 @@ func TestTheAppsToolsAreServedToEachRuntime(t *testing.T) {
 			InputSchema map[string]json.RawMessage `json:"inputSchema"`
 		} `json:"tools"`
 	}
-	json.Unmarshal(list["result"], &tools)
+	mustUnmarshal(t, list["result"], &tools)
 	// drive_screen is the one tool this host may not offer at all: on a host with no
 	// agents-drive beside it (#3004, host.desktop-control/1), and on every host while desktop
 	// control is Off (FR-004), as it is here. Nor is check_folders, but in the person's home
@@ -127,7 +140,7 @@ func TestTheAppsToolsAreServedToEachRuntime(t *testing.T) {
 			Content []struct{ Text string } `json:"content"`
 			IsError bool                    `json:"isError"`
 		}
-		json.Unmarshal(r["result"], &res)
+		mustUnmarshal(t, r["result"], &res)
 		return res.Content[0].Text, res.IsError
 	}
 	if text, isErr := call(3, map[string]any{"add": "review"}); isErr || text != "This session's labels: Mine, review." {

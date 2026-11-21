@@ -123,7 +123,7 @@ func TestTimeoutsCloseASlowRequestButNotASocket(t *testing.T) {
 	}
 	defer conn.Close()
 	fmt.Fprintf(conn, "POST /v1/join HTTP/1.1\r\nHost: x\r\nContent-Length: 1000\r\n\r\n{")
-	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	must(t, conn.SetReadDeadline(time.Now().Add(5*time.Second)))
 	started := time.Now()
 	buf := make([]byte, 4096)
 	for {
@@ -205,11 +205,11 @@ func TestAnUnprovenSocketReadsOnlySmallMessages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ws.CloseNow()
+	defer func() { _ = ws.CloseNow() }() // the test has its answer by then
 	if _, _, err := ws.Read(ctx); err != nil {
 		t.Fatal(err)
 	}
-	ws.Write(ctx, websocket.MessageText, []byte(`{"auth":"`+strings.Repeat("a", unprovenMessageMost)+`"}`))
+	must(t, ws.Write(ctx, websocket.MessageText, []byte(`{"auth":"`+strings.Repeat("a", unprovenMessageMost)+`"}`)))
 	_, _, err = ws.Read(ctx)
 	if websocket.CloseStatus(err) != websocket.StatusMessageTooBig {
 		t.Fatalf("a large first message was read: %v", err)
@@ -292,7 +292,7 @@ func TestSignInPlacesAreFair(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		t.Cleanup(func() { ws.CloseNow() })
+		t.Cleanup(func() { _ = ws.CloseNow() }) // the test has its answer by then
 		c := newConn(<-conns, from+":1")
 		go si.pairing(c, "S", nil, nil)
 		return c
@@ -372,7 +372,7 @@ func TestAStoreRefusalReachesAJoinAndAPairingInItsWords(t *testing.T) {
 	public, _ := controllink.PublicKey(controllink.NewPrivateKey())
 	params, _ := json.Marshal(wire.MachineAnnounce{PublicKey: public, Name: "Build box", Platform: "linux amd64",
 		Version: "1", MachineID: "BOX-1"})
-	l.Write(ctx, `{"jsonrpc":"2.0","id":1,"method":"machines/announce","params":`+string(params)+`}`)
+	must(t, l.Write(ctx, `{"jsonrpc":"2.0","id":1,"method":"machines/announce","params":`+string(params)+`}`))
 	line, err := l.Read(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -380,7 +380,7 @@ func TestAStoreRefusalReachesAJoinAndAPairingInItsWords(t *testing.T) {
 	var answer struct {
 		Error *RPCError `json:"error"`
 	}
-	if json.Unmarshal([]byte(line), &answer); answer.Error == nil || answer.Error.Message != words {
+	if err := json.Unmarshal([]byte(line), &answer); err != nil || answer.Error == nil || answer.Error.Message != words {
 		t.Fatal("the joining machine was told:", line)
 	}
 
