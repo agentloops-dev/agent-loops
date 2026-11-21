@@ -84,20 +84,28 @@ func TestThePersonsOwnEditIsTheirs(t *testing.T) {
 	}
 }
 
+// Not parallel: prepareWatch sets the watch helper for the whole package, as the other
+// watched tests do. The folder's watch runs here as on CI's Linux, also on a Mac (#6521).
 func TestAPullsChangeWaits(t *testing.T) {
-	t.Parallel()
-
+	prepareWatch(t)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := repo(t)
 	c.call(t, 1, "folders/add", map[string]any{"folder": store.FolderURL(dir)})
-	must(t, os.MkdirAll(filepath.Join(dir, ".agents"), 0o755))                                                            //nolint:gosec // G301: the mode this folder always had; only its error is new
-	must(t, os.WriteFile(filepath.Join(dir, ".agents", "folder.json"), []byte(`{"diskSpace":{"lowPercent":30}}`), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
-	d.checkGuarded(dir, ".agents/folder.json", nil)                                                                       // first seen: approved
+	// The folder's watcher checks folder.json too, whenever it hears it (#6521). So each write
+	// is atomic, and the pulled copy is in HEAD before it is on disk: whenever the watcher
+	// looks, it sees the approved copy or the pull's, never a half-written file or a change
+	// that is not in HEAD yet (which is the person's own edit, and approved).
+	file := filepath.Join(dir, ".agents", "folder.json")
+	must(t, os.MkdirAll(filepath.Dir(file), 0o755)) //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, store.WriteAtomically(file, []byte(`{"diskSpace":{"lowPercent":30}}`), 0o644))
+	d.checkGuarded(dir, ".agents/folder.json", nil) // first seen: approved
 	pulled := []byte(`{"diskSpace":{"lowPercent":50}}`)
-	must(t, os.WriteFile(filepath.Join(dir, ".agents", "folder.json"), pulled, 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
-	must(t, errOnly(git(dir, "add", ".agents/folder.json")))
+	blob, err := gitRaw(dir, pulled, "hash-object", "-w", "--stdin")
+	must(t, err)
+	must(t, errOnly(git(dir, "update-index", "--add", "--cacheinfo", "100644,"+strings.TrimSpace(string(blob))+",.agents/folder.json")))
 	must(t, errOnly(git(dir, "commit", "-q", "-m", "pulled")))
+	must(t, store.WriteAtomically(file, pulled, 0o644))
 	d.checkGuarded(dir, ".agents/folder.json", nil)
 	s, _ := d.summaryFor(dir)
 	if len(s.GuardedChanges) != 1 || !s.GuardedChanges[0].ByGit || s.Approvals[0].Line != "Changed with the last pull" ||

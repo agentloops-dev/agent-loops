@@ -152,8 +152,10 @@ func (d *Daemon) checkGuarded(folder, path string, ended *wire.UUID) {
 		d.checkFolderPolicyGuarded(folder)
 		return
 	}
-	digest, data := diskRead(folder, path)
+	// Read under the lock: a check that read an older copy (the folder watcher's, a moment
+	// late) must not take the lock after a newer check and approve that older copy (#6521).
 	d.guardedMu.Lock()
+	digest, data := diskRead(folder, path)
 	s, known := d.stateOf(folder, path)
 	moved := false
 	switch {
@@ -266,8 +268,8 @@ func guardedRefusal(path, lead string) error {
 
 // approveWrite records the app's own write as approved.
 func (d *Daemon) approveWrite(folder, path string) {
-	digest, data := diskRead(folder, path)
 	d.guardedMu.Lock()
+	digest, data := diskRead(folder, path)
 	s, _ := d.stateOf(folder, path)
 	s.ApprovedDigest, s.ApprovedContent, s.Pending = digest, data, nil
 	d.saveGuarded()
