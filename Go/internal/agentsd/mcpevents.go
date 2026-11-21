@@ -1090,9 +1090,15 @@ func (d *Daemon) runMCPSubscription(ctx context.Context, id string) {
 
 // mcpStandBy is one turn of a subscription that another machine polls: the bus brings what
 // it finds (#4731). Its cursor goes, so a poll here, when the lease comes back, starts from
-// now: no backfill (#4726). False when ctx ended in the sleep.
+// now: no backfill (#4726). False when ctx ended in the sleep, or before: an unsubscribe
+// cancels ctx under mcpEvMu, and a subscription that came back with the same id keeps its
+// cursor (#5742).
 func (d *Daemon) mcpStandBy(ctx context.Context, id string) bool {
 	d.mcpEvMu.Lock()
+	if ctx.Err() != nil {
+		d.mcpEvMu.Unlock()
+		return false
+	}
 	if r := d.mcpRecordsLocked().Subscriptions[id]; r != nil && r.Cursor != nil {
 		r.Cursor, r.PreviousCursor = nil, nil
 		d.mcpUnsaved = true
