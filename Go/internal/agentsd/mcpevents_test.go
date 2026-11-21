@@ -49,6 +49,9 @@ type eventsServer struct {
 	// what it dropped.
 	down     bool
 	downHits int
+	// listGate, when set, holds every events/list until it closes, as a server that is
+	// slow to say what it offers does (#6310).
+	listGate chan struct{}
 }
 
 func newEventsServer(t *testing.T) *eventsServer {
@@ -75,15 +78,10 @@ func newEventsServer(t *testing.T) *eventsServer {
 		case "initialize":
 			result = map[string]any{"protocolVersion": "2026-07-28", "capabilities": map[string]any{"events": map[string]any{"listChanged": true}}}
 		case "events/list":
-			props := map[string]any{"repo": map[string]any{"type": "string"}, "pr": map[string]any{"type": "integer"}}
-			s.mu.Lock()
-			if s.props != nil {
-				props = s.props
+			if !s.passListGate(r) {
+				return
 			}
-			more := s.more
-			s.mu.Unlock()
-			result = map[string]any{"events": append([]any{map[string]any{"name": "pr.merged", "delivery": []string{"poll"},
-				"inputSchema": map[string]any{"type": "object", "additionalProperties": false, "properties": props}}}, more...)}
+			result = s.listResult()
 		case "events/poll":
 			var p struct {
 				Name   string  `json:"name"`
@@ -145,6 +143,35 @@ func newEventsServer(t *testing.T) *eventsServer {
 	}))
 	t.Cleanup(s.Close)
 	return s
+}
+
+// listResult is events/list's answer: pr.merged, with props as its arguments, and more.
+func (s *eventsServer) listResult() map[string]any {
+	props := map[string]any{"repo": map[string]any{"type": "string"}, "pr": map[string]any{"type": "integer"}}
+	s.mu.Lock()
+	if s.props != nil {
+		props = s.props
+	}
+	more := s.more
+	s.mu.Unlock()
+	return map[string]any{"events": append([]any{map[string]any{"name": "pr.merged", "delivery": []string{"poll"},
+		"inputSchema": map[string]any{"type": "object", "additionalProperties": false, "properties": props}}}, more...)}
+}
+
+// passListGate waits for listGate, when set, and says whether the request is still asked.
+func (s *eventsServer) passListGate(r *http.Request) bool {
+	s.mu.Lock()
+	gate := s.listGate
+	s.mu.Unlock()
+	if gate == nil {
+		return true
+	}
+	select {
+	case <-gate:
+		return true
+	case <-r.Context().Done():
+		return false
+	}
 }
 
 // dropIfDown closes the request's connection with no answer when the server is down, as a
