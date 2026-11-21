@@ -22,6 +22,9 @@ func (d *Daemon) answerHeldWaits() {
 	held := make(map[wire.UUID]wire.UUID, len(d.openWaits))
 	for agent, c := range d.openWaits {
 		held[agent] = c.waitID
+		// A call parked a moment before its record says it waits is not answered below:
+		// it answers itself once the record is written (#6495).
+		c.answerNow = true
 	}
 	d.waitMu.Unlock()
 	for agent, waitID := range held {

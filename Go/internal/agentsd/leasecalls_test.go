@@ -2,6 +2,7 @@ package agentsd
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,16 +18,30 @@ import (
 
 func (m *mcpClient) tool(id int, name string, args map[string]any) (string, bool) {
 	m.t.Helper()
-	_, r := m.post("tools/call", map[string]any{"name": "mcp__agents__" + name, "arguments": args}, id)
+	text, isErr, err := m.tryTool(id, name, args)
+	if err != nil {
+		m.t.Fatal(err)
+	}
+	return text, isErr
+}
+
+// tryTool is tool that says what failed rather than failing the test (#6495).
+func (m *mcpClient) tryTool(id int, name string, args map[string]any) (string, bool, error) {
+	_, r, err := m.tryPost("tools/call", map[string]any{"name": "mcp__agents__" + name, "arguments": args}, id)
+	if err != nil {
+		return "", false, err
+	}
 	var res struct {
 		Content []struct{ Text string } `json:"content"`
 		IsError bool                    `json:"isError"`
 	}
-	json.Unmarshal(r["result"], &res)
-	if len(res.Content) == 0 {
-		m.t.Fatalf("%s: %s", name, r["error"])
+	if err := json.Unmarshal(r["result"], &res); err != nil && len(r["result"]) > 0 {
+		return "", false, fmt.Errorf("%s: %s: %w", name, r["result"], err)
 	}
-	return res.Content[0].Text, res.IsError
+	if len(res.Content) == 0 {
+		return "", false, fmt.Errorf("%s: %s", name, r["error"])
+	}
+	return res.Content[0].Text, res.IsError, nil
 }
 
 func TestAgentsTakeTurnsWithAResource(t *testing.T) {
