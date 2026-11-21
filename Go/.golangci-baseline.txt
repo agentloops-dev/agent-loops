@@ -3942,7 +3942,6 @@ Go/internal/machinelock/channel_test.go: G306: Expect WriteFile permissions to b
 Go/internal/machinelock/join_test.go: G301: Expect directory permissions to be 0750 or less (gosec)
 Go/internal/machinelock/join_test.go: G306: Expect WriteFile permissions to be 0600 or less (gosec)
 Go/internal/machinelock/lock.go: ST1023: should omit type error from declaration; it will be inferred from the right-hand side (staticcheck)
-Go/internal/machinelock/lock.go: cognitive complexity of func `(*State).Add` is high (> 30) (gocognit)
 Go/internal/machinelock/recovery.go: G115: integer overflow conversion uint64 -> byte (gosec)
 Go/internal/machinelock/recovery_test.go: G117: Marshaled struct field "Secret" (JSON key "secret") matches secret pattern (gosec)
 Go/internal/machinelock/recovery_test.go: G306: Expect WriteFile permissions to be 0600 or less (gosec)
