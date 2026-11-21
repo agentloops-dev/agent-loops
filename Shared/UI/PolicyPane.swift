@@ -17,6 +17,8 @@ struct PolicyPane: View {
     var openOrganisationPolicy: (() -> Void)?
     /// The online machines that do not follow Commit trailers yet (#6373), by name.
     var trailersBehind: [String] = []
+    /// Opens a folder's Project Settings ▸ Policy, by its path (#6534), where the window can.
+    var openFolderPolicy: ((String) -> Void)?
 
     @State private var effective: DaemonAPI.EffectivePolicy?
     @State private var yours: DaemonAPI.YourPolicyState?
@@ -26,6 +28,8 @@ struct PolicyPane: View {
     @State private var readAt: Date?
     /// The trailer whose last save failed, and why (#6373).
     @State private var trailerFailure: (key: String, line: String)?
+    /// The folders whose own rule changes the Commit trailers block (#6534).
+    @State private var trailerFolders: [CommitTrailerWords.FolderChange] = []
     /// The feature flags the person turned on (`FeatureFlag`).
     @AppStorage(DisplayPreference.features, store: WindowDefaults.store) private var features = ""
 
@@ -69,7 +73,8 @@ struct PolicyPane: View {
                 if FeatureFlag.on(in: features).contains(.commitTrailers), CommitTrailerWords.isFollowed(effective) {
                     CommitTrailersSection(effective: effective, yours: yours?.policy.rules,
                                           editable: yours != nil && !isSaving, failure: trailerFailure,
-                                          readAt: readAt) { trailer, on in
+                                          readAt: readAt, folders: trailerFolders,
+                                          openFolder: openFolderPolicy) { trailer, on in
                         Task { await save(trailer, on) }
                     }
                 }
@@ -160,12 +165,32 @@ struct PolicyPane: View {
                                         returning: DaemonAPI.YourPolicyState.self)
             readAt = .now
             problem = nil
+            #if os(macOS)
+            if let effective { trailerFolders = await trailerFolders(host, outside: effective) }
+            #endif
         } catch {
             problem = PeopleWords.refusal(error)
         }
     }
 
     #if os(macOS)
+    /// The folders with rules of their own whose rule changes the Commit trailers block: a
+    /// folder's `.agents/policy.json` can turn a trailer on or off for its agents (#6534). One
+    /// read for each such folder, only with the flag on; a folder that can't be read is left out.
+    private func trailerFolders(_ host: DaemonClient, outside: DaemonAPI.EffectivePolicy) async -> [CommitTrailerWords.FolderChange] {
+        guard FeatureFlag.on(in: features).contains(.commitTrailers), CommitTrailerWords.isFollowed(outside) else { return [] }
+        var out: [CommitTrailerWords.FolderChange] = []
+        for folder in outside.foldersWithRules {
+            guard let inFolder = try? await host.call(DaemonAPI.Method.policyEffective,
+                                                      DaemonAPI.PolicyEffectiveRequest(folder: folder.folder),
+                                                      returning: DaemonAPI.EffectivePolicy.self),
+                  let change = CommitTrailerWords.folderChange(folder: folder.folder, name: folder.name,
+                                                               inFolder: inFolder, outside: outside) else { continue }
+            out.append(change)
+        }
+        return out
+    }
+
     /// The machines that do not follow Commit trailers: the online ones that do not say
     /// `host.commit-trailers/1`, or this Mac when its own host gives no such rule and no other is named.
     private func trailersBehindLine(_ effective: DaemonAPI.EffectivePolicy) -> String? {

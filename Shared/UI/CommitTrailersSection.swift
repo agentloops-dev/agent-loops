@@ -16,6 +16,10 @@ struct CommitTrailersSection: View {
     let failure: (key: String, line: String)?
     /// When the machine was last read, for "Last update" (#5139).
     let readAt: Date?
+    /// The folders whose own rule changes the block (#6534), by name.
+    var folders: [CommitTrailerWords.FolderChange] = []
+    /// Opens a folder's Project Settings ▸ Policy, where the window can.
+    var openFolder: ((String) -> Void)?
     let set: (CommitTrailerWords.Trailer, Bool) -> Void
 
     var body: some View {
@@ -44,6 +48,24 @@ struct CommitTrailersSection: View {
                 .monospaced()
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
+            if !folders.isEmpty {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(CommitTrailerWords.foldersTitle).appText(.fine).foregroundStyle(.secondary)
+                    ForEach(folders) { folder in
+                        HStack(spacing: 4) {
+                            if let openFolder {
+                                Button(folder.name) { openFolder(folder.folder) }
+                                    .buttonStyle(.borderless)
+                            } else {
+                                Text(folder.name)
+                            }
+                            Text(folder.changes).foregroundStyle(.secondary)
+                        }
+                        .appText(.fine)
+                        .accessibilityElement(children: .contain)
+                    }
+                }
+            }
         } header: {
             Text("\(Text(CommitTrailerWords.previewTitle)) \(Text("· \(CommitTrailerWords.previewScope)").foregroundStyle(.secondary).fontWeight(.regular))")
         } footer: {

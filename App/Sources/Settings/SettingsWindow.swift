@@ -9,6 +9,9 @@ import SwiftUI
 /// Agent Configuration and Machines list their own pages in a column inside the pane.
 struct SettingsWindow: View {
     @Environment(AppModel.self) private var model
+    /// The main window's requests: a folder's line in Agents ▸ Policy opens its Project Settings there (#6534).
+    @Environment(WindowRequests.self) private var requests: WindowRequests?
+    @Environment(\.openWindow) private var openWindow
     @AppStorage("settingsPane", store: WindowDefaults.store) private var paneRaw = SettingsPane.appearance.rawValue
     @AppStorage("settingsSharedPage", store: WindowDefaults.store) private var sharedPageRaw = AgentConfigurationPage.overview.rawValue
     @AppStorage("settingsRuntimeID", store: WindowDefaults.store) private var runtimeIDRaw = RuntimeCatalog.claude.id
@@ -125,6 +128,15 @@ struct SettingsWindow: View {
         }
     }
 
+    /// A folder's Project Settings ▸ Policy, on the main window (#6534), as a Stopped by a
+    /// policy card opens it: the folder is selected, then the sheet asked for.
+    private func openFolderPolicy(_ path: String, _ requests: WindowRequests) {
+        let folder = URL(filePath: path)
+        if model.selectedFolder?.standardizedFileURL != folder.standardizedFileURL { model.selectedFolder = folder }
+        requests.projectSettings = .policy
+        model.bringMainWindowForward(opening: openWindow)
+    }
+
     /// The control plane's model for the window's pairing now, or none when it has none.
     private func remakeControl(unpaired: Bool) {
         control?.stop()
@@ -189,7 +201,8 @@ struct SettingsWindow: View {
             FormColumn {
                 PolicyPane(host: model.policyHost, revision: model.policyRevision,
                            openOrganisationPolicy: control == nil ? nil : { pane.wrappedValue = .policy },
-                           trailersBehind: model.machinesNotFollowingCommitTrailers)
+                           trailersBehind: model.machinesNotFollowingCommitTrailers,
+                           openFolderPolicy: requests.map { requests in { path in openFolderPolicy(path, requests) } })
             }
         case .voice: FormColumn { Form { VoiceSettingsSection() }.paperForm() }
         case .account: FormColumn { AccountSettingsView() }
