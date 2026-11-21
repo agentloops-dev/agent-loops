@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"log"
 	"os"
@@ -163,6 +164,10 @@ func diskRead(folder, path string) (*string, []byte) {
 	return &h, b
 }
 
+// readsWhole is whether a guarded file's bytes are a whole copy: no file, or JSON that
+// parses. Every guarded file is JSON; an empty or half-written one does not parse (#6525).
+func readsWhole(digest *string, data []byte) bool { return digest == nil || json.Valid(data) }
+
 func same(a, b *string) bool { return (a == nil && b == nil) || (a != nil && b != nil && *a == *b) }
 
 func inRepository(folder string) bool {
@@ -177,7 +182,7 @@ func inRepository(folder string) bool {
 }
 
 // checkGuarded is DaemonCore.checkGuardedFiles for one file: first seen, it is approved as
-// it stands; put back, its change is cleared; changed while an agent works there, or by a
+// it stands when it reads whole (readsWhole); put back, its change is cleared; changed while an agent works there, or by a
 // pull, it waits; changed by the person with nothing running, it is approved. ended is
 // the agent whose turn just ended, if any.
 func (d *Daemon) checkGuarded(folder, path string, ended *wire.UUID) {
@@ -192,6 +197,10 @@ func (d *Daemon) checkGuarded(folder, path string, ended *wire.UUID) {
 	s, known := d.stateOf(folder, path)
 	moved := false
 	switch {
+	case !known && !readsWhole(digest, data):
+		// First seen while it is written (empty, or half of it): no copy is approved yet,
+		// as if there were no file, so the whole copy is a change like any other (#6525).
+		s.ApprovedDigest, s.ApprovedContent, moved = nil, nil, true
 	case !known:
 		s.ApprovedDigest, s.ApprovedContent, moved = digest, data, true
 	case same(s.ApprovedDigest, digest):
