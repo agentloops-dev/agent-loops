@@ -504,6 +504,7 @@ type diskMount struct {
 func (d *Daemon) readDiskMounts() map[string]*diskMount {
 	mounts := map[string]*diskMount{}
 	override := sync.OnceValues(d.diskOverride)
+	diskFree := d.startOpts().diskFree
 	look := func(folder string, t diskThresholds, has bool) {
 		var st syscall.Statfs_t
 		var fi syscall.Stat_t
@@ -515,6 +516,9 @@ func (d *Daemon) readDiskMounts() map[string]*diskMount {
 		if m == nil {
 			m = &diskMount{reading: wire.DiskReading{Volume: volume, Mount: key,
 				FreeBytes: int64(st.Bavail) * int64(st.Bsize), TotalBytes: int64(st.Blocks) * int64(st.Bsize)}, t: defaultDiskThresholds}
+			if free := diskFree; free != nil {
+				m.reading.FreeBytes = min(free(m.reading), m.reading.TotalBytes)
+			}
 			if free, ok := override(); ok {
 				m.reading.FreeBytes = min(free, m.reading.TotalBytes)
 			}
