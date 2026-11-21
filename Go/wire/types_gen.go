@@ -6422,7 +6422,7 @@ type ForgeListAll struct {
 	NotAsked int64 `json:"notAsked"`
 }
 
-// forge/listAll (#5592): forge/issues (kind issues) or forge/pulls (kind pulls) of the caller's machines in one call. state, board, label, assignee (a login) and limit are as in ForgeListRequest, for each machine (label and assignee: #6383). pages, for a next page, names the machines to ask and each one's cursor, as its last list gave it; without pages every machine is asked for its first page.
+// forge/listAll (#5592): forge/issues (kind issues) or forge/pulls (kind pulls) of the caller's machines in one call. state, board, label, assignee (a login), sort and limit are as in ForgeListRequest, for each machine (label and assignee: #6383; sort: #6538). pages, for a next page, names the machines to ask and each one's cursor, as its last list gave it; without pages every machine is asked for its first page.
 type ForgeListAllRequest struct {
 	Kind string `json:"kind"`
 
@@ -6433,6 +6433,9 @@ type ForgeListAllRequest struct {
 	Label *string `json:"label,omitzero"`
 
 	Assignee *string `json:"assignee,omitzero"`
+
+	// The order, as in ForgeListRequest (#6538): priority, else the last updated first; each machine sorts its own list.
+	Sort *string `json:"sort,omitzero"`
 
 	Limit *int64 `json:"limit,omitzero"`
 
@@ -6467,6 +6470,9 @@ type ForgeListRequest struct {
 	Board *string `json:"board,omitzero"`
 
 	UpdatedSince *Date `json:"updatedSince,omitzero"`
+
+	// The order (#6538): priority (High, then Medium, then Low, then none, each newest first; GitHub by the priority labels, Jira by its priority field), else the last updated first. A forge that cannot sort by priority (GitLab) lists the last updated first; an older daemon too.
+	Sort *string `json:"sort,omitzero"`
 }
 
 // forge/log (#3130): the last lines of each failed check's log, as plain text.

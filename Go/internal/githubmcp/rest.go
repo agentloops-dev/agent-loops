@@ -66,9 +66,11 @@ type sharedBody struct {
 }
 
 type fetch struct {
-	done chan struct{}
-	body []byte
-	err  error
+	// waiters is how many asks wait for it, for a test.
+	waiters int
+	done    chan struct{}
+	body    []byte
+	err     error
 }
 
 const (
@@ -316,20 +318,9 @@ func (g *RealGitHub) shared(key string, get func() ([]byte, error)) ([]byte, err
 		g.mu.Unlock()
 		return kept.body, nil
 	}
-	if f, ok := g.running[key]; ok {
-		g.mu.Unlock()
-		<-f.done
-		return f.body, f.err
-	}
-	f := &fetch{done: make(chan struct{})}
-	g.running[key] = f
 	g.mu.Unlock()
-
-	f.body, f.err = get()
-	close(f.done)
-
+	f := g.inFlight(key, get)
 	g.mu.Lock()
-	delete(g.running, key)
 	if f.err == nil {
 		for k, v := range g.recent {
 			if now.Sub(v.at) >= g.sharing {
@@ -340,6 +331,45 @@ func (g *RealGitHub) shared(key string, get func() ([]byte, error)) ([]byte, err
 	}
 	g.mu.Unlock()
 	return f.body, f.err
+}
+
+// joined is get's answer, or the answer of the same get already running under key (#6538): two asks at once
+// make one request. Unlike shared, nothing is kept once it ends.
+func (g *RealGitHub) joined(key string, get func() ([]byte, error)) ([]byte, error) {
+	f := g.inFlight(key, get)
+	return f.body, f.err
+}
+
+// inFlight runs get under key, or waits for the get already running under it.
+func (g *RealGitHub) inFlight(key string, get func() ([]byte, error)) *fetch {
+	g.mu.Lock()
+	if f, ok := g.running[key]; ok {
+		f.waiters++
+		g.mu.Unlock()
+		<-f.done
+		return f
+	}
+	f := &fetch{done: make(chan struct{})}
+	g.running[key] = f
+	g.mu.Unlock()
+
+	f.body, f.err = get()
+	g.mu.Lock()
+	delete(g.running, key)
+	g.mu.Unlock()
+	close(f.done)
+	return f
+}
+
+// waiting is how many asks wait for one already running, for a test.
+func (g *RealGitHub) waiting() int {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	n := 0
+	for _, f := range g.running {
+		n += f.waiters
+	}
+	return n
 }
 
 // MARK: GitHub's JSON

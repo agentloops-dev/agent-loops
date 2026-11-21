@@ -111,7 +111,7 @@ func (g githubForge) List(ctx context.Context, scope forgeScope, f forgeFilter, 
 		return forgePage{}, err
 	}
 	sf := githubmcp.SearchFilter{PRs: f.PRs, State: f.State, Label: f.Label, Assignee: f.Assignee, Query: f.Query, Feature: f.Feature,
-		Reviewer: f.Reviewer, UpdatedSince: f.since(), UpdatedBefore: f.before()}
+		Reviewer: f.Reviewer, UpdatedSince: f.since(), UpdatedBefore: f.before(), Sort: f.Sort}
 	if f.Board != nil {
 		sf.Project = f.Board.project
 	}
