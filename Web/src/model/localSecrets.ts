@@ -10,7 +10,14 @@ export const localSecretWords = {
   footer: "Agents saved these on this machine, with ask_secret, capture_secret or generate_secret. " +
     "Every session's agent here can use one by its name. They are not sent to your other machines.",
   notBackedUp: "Only on this machine. Not backed up.",
+  /** Under Remove's question (#6335). */
+  removeMessage: "It is taken out of this machine's store. Agents here can no longer use it.",
 } as const;
+
+/** When the machine's list does not load (#6335): its secrets are not hidden without a word. */
+export function localDidNotLoad(why: string): string {
+  return `The secrets on this machine did not load: ${why}`;
+}
 
 /** The line under a secret a machine keeps for itself: "Set 1 h ago · Used 20 min ago". */
 export function localLine(secret: Pick<LocalSecret, "setAt" | "lastOp">, now = new Date(), timeZone?: string): Part[] {

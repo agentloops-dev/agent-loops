@@ -2616,6 +2616,19 @@
       ],
       "additionalProperties": false
     },
+    "LocalSecretRemoveRequest": {
+      "type": "object",
+      "description": "secrets/localRemove (#6335): take one secret this machine keeps for itself out of its store. Not one of the person's (user/removeSecret) and not a session's own (secrets/sessionRemove).",
+      "properties": {
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "additionalProperties": false
+    },
     "LocalSecrets": {
       "type": "object",
       "description": "secrets/localList (#5122): every secret this machine keeps for itself, by name. No value.",

@@ -2,6 +2,7 @@ package agentsd
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 
@@ -62,5 +63,73 @@ func TestLocalSecretsListsWhatAnAgentSaved(t *testing.T) {
 	}
 	if RoleAgent.Allows(wire.CallSecretsLocalList.Name) || RoleStranger.Allows(wire.CallSecretsLocalList.Name) {
 		t.Fatal("an agent's or a stranger's connection may list this machine's secrets")
+	}
+}
+
+// #6335: a secret capture_secret saved with Ask before use is in secrets/localList, and the
+// person removes it there; agents here can no longer use it. One of the person's is refused:
+// it goes with Remove under Yours.
+func TestLocalSecretsRemoveTakesAnAgentsSaveOut(t *testing.T) {
+	t.Parallel()
+
+	home := t.TempDir()
+	personalHomeFor(t, home)
+	d, c := start(t, t.TempDir())
+	defer d.Shutdown()
+	const value = "scratch-6335-not-a-real-token"
+	if err := d.saveAgentSecret("", "AZURE_DEVOPS_TOKEN", value, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := setSecretDescription(home, "AZURE_DEVOPS_TOKEN", "A scratch PAT."); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.saveSealedSecret(home, "PERSONS_TOKEN", "the-persons-value", sealedFromUser, true); err != nil {
+		t.Fatal(err)
+	}
+	names := func(l wire.LocalSecrets) []string {
+		var out []string
+		for _, s := range l.Secrets {
+			out = append(out, s.Name)
+		}
+		return out
+	}
+	// Every name list_secrets says is here and not the person's is in the list.
+	for _, l := range d.secretList("") {
+		if l.HereToo && l.Name != "PERSONS_TOKEN" && !slices.Contains(names(d.localSecretList()), l.Name) {
+			t.Fatalf("list_secrets gives %s, but On This Machine does not", l.Name)
+		}
+	}
+
+	raw := c.call(t, 1, wire.CallSecretsLocalRemove.Name, map[string]any{"name": "AZURE_DEVOPS_TOKEN"})
+	var after wire.LocalSecrets
+	if err := json.Unmarshal(raw, &after); err != nil {
+		t.Fatal(err)
+	}
+	if len(after.Secrets) != 0 {
+		t.Fatalf("still listed: %s", raw)
+	}
+	if _, ok := readSealedSecrets(home).Secrets["AZURE_DEVOPS_TOKEN"]; ok {
+		t.Fatal("still in sealed.json")
+	}
+	if _, ok := readSecretDescriptions(home)["AZURE_DEVOPS_TOKEN"]; ok {
+		t.Fatal("its description stayed")
+	}
+	for _, l := range d.secretList("") {
+		if l.Name == "AZURE_DEVOPS_TOKEN" {
+			t.Fatal("list_secrets still gives it")
+		}
+	}
+
+	if msg := c.callErr(t, 2, wire.CallSecretsLocalRemove.Name, map[string]any{"name": "PERSONS_TOKEN"}); !strings.Contains(msg, "remove it under Yours") {
+		t.Fatalf("the person's secret: %s", msg)
+	}
+	if _, ok := readSealedSecrets(home).Secrets["PERSONS_TOKEN"]; !ok {
+		t.Fatal("the person's secret went")
+	}
+	if msg := c.callErr(t, 3, wire.CallSecretsLocalRemove.Name, map[string]any{"name": "NOT_HERE"}); !strings.Contains(msg, "not on this machine") {
+		t.Fatalf("a name that is not here: %s", msg)
+	}
+	if RoleAgent.Allows(wire.CallSecretsLocalRemove.Name) || RoleStranger.Allows(wire.CallSecretsLocalRemove.Name) {
+		t.Fatal("an agent's or a stranger's connection may remove this machine's secrets")
 	}
 }
