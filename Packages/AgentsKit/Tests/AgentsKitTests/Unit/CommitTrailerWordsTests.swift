@@ -103,11 +103,4 @@ struct CommitTrailerWordsTests {
         #expect(CommitTrailerWords.folderChange(folder: "/src/x", name: "x", inFolder: offAttested, outside: outside) == nil)
         #expect(CommitTrailerWords.trailers.map(\.key).contains("Attested") == false)
     }
-
-    @Test func aFlagIsOnOnlyWhenItsNameIsInTheList() {
-        #expect(FeatureFlag.on(in: nil).isEmpty)
-        #expect(FeatureFlag.on(in: "other, commit-trailers") == [.commitTrailers])
-        #expect(FeatureFlag.on(in: "commit-trailer").isEmpty)
-        #expect(DisplayPreference.mirrored[DisplayPreference.features] == .string)
-    }
 }

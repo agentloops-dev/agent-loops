@@ -14,6 +14,7 @@
     "web-test-reads": [
       "{workspaceRoot}/App/Sources/Chat/ChatView.swift",
       "{workspaceRoot}/App/Sources/Chat/PromptBar.swift",
+      "{workspaceRoot}/App/Sources/Settings/FeatureFlagsSettingsSection.swift",
       "{workspaceRoot}/App/Sources/Sidebar/AgentBrowserPane.swift",
       "{workspaceRoot}/App/Sources/Sidebar/SidebarState.swift",
       "{workspaceRoot}/Go/internal/agentsd/changes.go",

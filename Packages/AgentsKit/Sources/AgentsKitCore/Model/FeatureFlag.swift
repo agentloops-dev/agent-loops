@@ -1,19 +1,45 @@
 import Foundation
 
-/// A feature in work, drawn only for a person who turns its flag on (epic-lifecycle stage 6,
-/// #6253). The flags a person turns on are one display choice, `features` (comma-separated
-/// names), kept with their other choices on the host in `~/.agents/settings/display.json`
-/// and mirrored into each client's defaults, so a flag follows the person, not the machine.
-/// #6254 gives the list a Settings section; until then, a person turns one on with the host's
-/// `preferences/set` (`{"features": "commit-trailers"}`), which every client then mirrors.
-public enum FeatureFlag: String, CaseIterable, Sendable {
-    /// The Commit trailers group of Agents ▸ Policy (#6373, epic #6365).
-    case commitTrailers = "commit-trailers"
+/// Where a person's feature flags are kept, and how a client reads one (#6254, epic-lifecycle
+/// stage 6, #6253).
+///
+/// The list of flags in work is `FeatureFlag`, made from `Packages/Wire/feature-flags.json`.
+/// Each flag is one of the person's display settings, `flag:<name>`, a bool, kept on the host
+/// in `~/.agents/settings/display.json` with their other choices (`preferences/get`, `/set`,
+/// `/changed`), so a flag follows the person to each of their clients, not the machine.
+/// Each client mirrors it into its own defaults (`DisplayPreferenceMirror`), so a view reads
+/// one flag with `@AppStorage(FeatureFlag.x.key, store: …)` and a model with `isOn(in:)`.
+///
+/// The store takes any name, not only the list's: a capability's toggle (#6052) is kept the
+/// same way, by its name, with its own default.
+public enum FeatureFlags {
+    /// The display setting a flag or a toggle of that name is kept under: `flag:<name>`, with
+    /// each dot of a capability's name a colon. A key has no dot because `@AppStorage` hears a
+    /// key's changes by key-value observing, which reads a dot as a key path and hears nothing.
+    public static func key(_ name: String) -> String { "flag:" + name.replacingOccurrences(of: ".", with: ":") }
 
-    /// The flags `value` (the display choice) turns on; a name this build does not know is left out.
-    public static func on(in value: String?) -> Set<FeatureFlag> {
-        Set((value ?? "").split(separator: ",").compactMap {
-            FeatureFlag(rawValue: $0.trimmingCharacters(in: .whitespaces))
-        })
+    /// Whether the person has the flag or toggle `name` on; `fallback` when they have not chosen.
+    public static func isOn(_ name: String, default fallback: Bool = false,
+                            in preferences: DaemonAPI.DisplayPreferences) -> Bool {
+        preferences[key(name)]?.boolValue ?? fallback
+    }
+
+    /// The change that turns `name` on or off. A choice that is the default takes the key
+    /// away, so display.json keeps only what the person changed.
+    public static func change(_ name: String, on: Bool, default fallback: Bool = false) -> DaemonAPI.DisplayPreferences {
+        [key(name): on == fallback ? .null : .bool(on)]
+    }
+}
+
+extension FeatureFlag {
+    /// The display setting this flag is kept under, `flag:<name>`; off when it is absent.
+    public var key: String { FeatureFlags.key(rawValue) }
+
+    /// Whether the person has this flag on, from a client's mirror of their display settings.
+    public func isOn(in defaults: UserDefaults) -> Bool { defaults.bool(forKey: key) }
+
+    /// Whether the person has this flag on, from the host's map.
+    public func isOn(in preferences: DaemonAPI.DisplayPreferences) -> Bool {
+        FeatureFlags.isOn(rawValue, in: preferences)
     }
 }
