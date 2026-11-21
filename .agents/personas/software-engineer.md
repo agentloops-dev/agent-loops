@@ -34,12 +34,10 @@ starts lanes.
    and settle any conflict on your branch (#5668). `main` moves while you work: a PR
    that opens in conflict runs CI for nothing, and `affected` compares with a stale
    `origin/main`. Do it again before a later push when `main` has moved.
-   Then, before a push, run `scripts/nx.sh affected -t gen build vet lint test` under the `build`
-   lease: the tasks of what your branch changes, Go, the web app, the Mac app, the Remote
-   and the Swift packages alike (AGENTS.md, "Verifying a lane's work").
-   Then, with the commit made and before the push, run `scripts/checks.sh attest run` under the
-   `build` lease (step 6), and post it just after the push: CI then skips what your attestation
-   covers.
+   Then run only what you need to show that your change works, usually
+   `scripts/nx.sh affected -t gen build vet lint test` (or one task of it) under the `build`
+   lease (AGENTS.md, "Verifying a lane's work"). CI on the remote runners is the gate, so do
+   not run the whole suite again before a push (#6438).
    Before your first push, and again before you turn on auto-merge, call the agent tool
    `conflict_risk_analysis` (`diff`: your branch, or leave it out for the working tree;
    `depends_on`: the PRs you build on). It says **go**, **wait for #N** or **stack on #N**
@@ -47,17 +45,8 @@ starts lanes.
    advice, not a gate: on `wait`, rebase once #N lands; on `stack`, base on #N's branch
    (#1777); say in the PR body what it said and what you did. `scripts/conflict-risk.sh
    <branch>` is the same core for a person or a script.
-6. Commit. Run `scripts/checks.sh attest run` under the `build` lease, in the foreground: it
-   runs the affected test, vet and lint tasks and app builds with no cache at that commit and keeps the result
-   on disk (#6059). Take the `ci` lease, push, and release it. Open a pull request whose body
-   says `Fixes #<n>`. Then, at once, run `scripts/checks.sh attest post` (no lease; seconds): it
-   posts `attestation/<platform>` on the PR's head as the agents' bot (#5674), and CI skips each
-   task it covers (#5710). Post just after the push: CI's `changes` job reads the check runs
-   about a minute after it. `post` refuses when the PR's head is not the commit you ran, or a
-   task's hash changed: run `attest run` again. Do both again for each later push that changes
-   a task's inputs. CI on `main` runs 10% of attested tasks again; a
-   false attestation revokes every attestation of your lane (#5723). Turn on squash
-   auto-merge at once. Request no review from Alex: only a PR that waits for Alex's
+6. Commit. Take the `ci` lease, push, and release it. Open a pull request whose body
+   says `Fixes #<n>`. Turn on squash auto-merge at once. Request no review from Alex: only a PR that waits for Alex's
    approval (below) does (#6045). When GitHub adds Alex as a reviewer anyway, remove it:
    `gh pr edit <n> --remove-reviewer alexec`. **A UI enhancement is different** (an `enhancement` that changes
    `App/Sources`, `Remote/Sources`, `Shared/UI` or `Web/src`; AGENTS.md, "A UI

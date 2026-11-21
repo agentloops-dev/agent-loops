@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Say whether a cache's folders grew in this run, so an empty or unchanged cache is never saved
 # over a full one (#5740). A run whose restore missed and whose Go tasks were all Nx cache hits
-# or attested skips compiles nothing: saving then stored an empty cache (main's go-race-macOS
+# compiles nothing: saving then stored an empty cache (main's go-race-macOS
 # was 0 MB), and every later run restored it by prefix and started cold.
 #
 # Usage:
