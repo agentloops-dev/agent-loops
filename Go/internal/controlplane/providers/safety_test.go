@@ -126,12 +126,12 @@ func TestSecretsAreLaidOverAndTakenAway(t *testing.T) {
 	if err := s.Set("p", map[string]string{"A": "1", "B": "2"}); err != nil {
 		t.Fatal(err)
 	}
-	s.Set("p", map[string]string{"A": "", "C": "3"})
+	must(t, s.Set("p", map[string]string{"A": "", "C": "3"}))
 	again := NewSecrets(home)
 	if v := again.Values("p"); len(v) != 2 || v["B"] != "2" || v["C"] != "3" {
 		t.Errorf("%v", v)
 	}
-	again.Remove("p")
+	must(t, again.Remove("p"))
 	if v := NewSecrets(home).Values("p"); len(v) != 0 {
 		t.Errorf("%v", v)
 	}
@@ -139,7 +139,7 @@ func TestSecretsAreLaidOverAndTakenAway(t *testing.T) {
 		t.Errorf("%v", err)
 	}
 	// As Swift writes it.
-	os.WriteFile(filepath.Join(home, SecretsFileName), []byte("{\n  \"q\" : {\n    \"T\" : \"x\\/y\"\n  }\n}"), 0o600)
+	must(t, os.WriteFile(filepath.Join(home, SecretsFileName), []byte("{\n  \"q\" : {\n    \"T\" : \"x\\/y\"\n  }\n}"), 0o600))
 	if NewSecrets(home).Values("q")["T"] != "x/y" {
 		t.Error("Swift's file not read")
 	}

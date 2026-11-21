@@ -37,12 +37,12 @@ func TestArchiveUnarchiveAndDeleteAFolder(t *testing.T) {
 		t.Fatal(e.Message)
 	}
 	var s wire.FolderSummary
-	json.Unmarshal(c.call(t, 4, "folders/archive", map[string]any{"folder": folder}), &s)
+	mustUnmarshal(t, c.call(t, 4, "folders/archive", map[string]any{"folder": folder}), &s)
 	if s.Folder.ArchivedAt == nil {
 		t.Fatalf("%+v", s.Folder)
 	}
 	s = wire.FolderSummary{}
-	json.Unmarshal(c.call(t, 5, "folders/unarchive", map[string]any{"folder": folder}), &s)
+	mustUnmarshal(t, c.call(t, 5, "folders/unarchive", map[string]any{"folder": folder}), &s)
 	if s.Folder.ArchivedAt != nil {
 		t.Fatal("still archived")
 	}
@@ -65,7 +65,7 @@ func TestAFoldersSettingsAreItsFile(t *testing.T) {
 	// keeps them in the folder's own policy layer, reads them back from it, and enforces
 	// them (#3149).
 	var s wire.FolderSummary
-	json.Unmarshal(c.call(t, 3, "folders/setHelperLimits", map[string]any{"folder": folder, "limits": map[string]any{"running": 4, "notArchived": 6, "queued": 2, "agentsMayArchive": true}}), &s)
+	mustUnmarshal(t, c.call(t, 3, "folders/setHelperLimits", map[string]any{"folder": folder, "limits": map[string]any{"running": 4, "notArchived": 6, "queued": 2, "agentsMayArchive": true}}), &s)
 	if l := s.Folder.HelperLimits; l == nil || l.Running == nil || *l.Running != 4 || l.NotArchived == nil || *l.NotArchived != 6 ||
 		l.Queued == nil || *l.Queued != 2 || l.AgentsMayArchive != nil {
 		t.Fatalf("%+v", s.Folder.HelperLimits)
@@ -84,7 +84,7 @@ func TestAFoldersSettingsAreItsFile(t *testing.T) {
 	}
 	// Back to the default: no choice, read back as none.
 	s = wire.FolderSummary{}
-	json.Unmarshal(c.call(t, 31, "folders/setHelperLimits", map[string]any{"folder": folder, "limits": map[string]any{"notArchived": 6}}), &s)
+	mustUnmarshal(t, c.call(t, 31, "folders/setHelperLimits", map[string]any{"folder": folder, "limits": map[string]any{"notArchived": 6}}), &s)
 	if l := s.Folder.HelperLimits; l == nil || l.Running != nil || l.NotArchived == nil || *l.NotArchived != 6 {
 		t.Fatalf("%+v", s.Folder.HelperLimits)
 	}
@@ -100,11 +100,11 @@ func TestAFoldersSettingsAreItsFile(t *testing.T) {
 	if s.Project == nil || string(b) != "{\n  \"diskSpace\" : {\n    \"lowPercent\" : 30\n  },\n  \"project\" : \""+*s.Project+"\"\n}\n" {
 		t.Fatalf("%s", b)
 	}
-	os.WriteFile(filepath.Join(dir, ".agents", "folder.json"), []byte("[1]"), 0o644)
+	must(t, os.WriteFile(filepath.Join(dir, ".agents", "folder.json"), []byte("[1]"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	if e := c.callError(t, 6, "folders/setDiskSpace", map[string]any{"folder": folder, "diskSpace": map[string]any{}}); !strings.HasPrefix(e.Message, ".agents/folder.json is not a JSON object") {
 		t.Fatal(e.Message)
 	}
-	json.Unmarshal(c.call(t, 7, "folders/setPinned", map[string]any{"folder": folder, "pinned": true}), &s)
+	mustUnmarshal(t, c.call(t, 7, "folders/setPinned", map[string]any{"folder": folder, "pinned": true}), &s)
 	if s.Folder.Pinned == nil || !*s.Folder.Pinned {
 		t.Fatal("not pinned")
 	}
@@ -117,13 +117,13 @@ func TestFindingFolders(t *testing.T) {
 	defer d.Shutdown()
 	parent := t.TempDir()
 	for _, n := range []string{"b", "a", ".hidden", "plain"} {
-		os.MkdirAll(filepath.Join(parent, n), 0o755)
+		must(t, os.MkdirAll(filepath.Join(parent, n), 0o755)) //nolint:gosec // G301: the mode this folder always had; only its error is new
 		if n != "plain" {
-			os.MkdirAll(filepath.Join(parent, n, ".git"), 0o755)
+			must(t, os.MkdirAll(filepath.Join(parent, n, ".git"), 0o755)) //nolint:gosec // G301: the mode this folder always had; only its error is new
 		}
 	}
 	var found []wire.FoundFolder
-	json.Unmarshal(c.call(t, 1, "folders/find", map[string]any{"paths": []string{parent}, "folders": []string{filepath.Join(parent, "plain"), " "}}), &found)
+	mustUnmarshal(t, c.call(t, 1, "folders/find", map[string]any{"paths": []string{parent}, "folders": []string{filepath.Join(parent, "plain"), " "}}), &found)
 	if len(found) != 3 || !strings.HasSuffix(string(found[0].Folder), "/a") || found[2].Typed == nil || found[2].IsRepository || !found[2].Exists {
 		t.Fatalf("%+v", found)
 	}
@@ -137,7 +137,7 @@ func TestNoChatFolder(t *testing.T) {
 	defer d.Shutdown()
 	d.PersonalHome = t.TempDir()
 	var ps []wire.FolderSummary
-	json.Unmarshal(c.call(t, 1, "folders/list", map[string]any{}), &ps)
+	mustUnmarshal(t, c.call(t, 1, "folders/list", map[string]any{}), &ps)
 	if len(ps) != 0 {
 		t.Fatalf("%+v", ps)
 	}
@@ -182,7 +182,7 @@ func TestFolderChangedSummaryMatchesFolders(t *testing.T) {
 			return false
 		}
 		var s wire.FolderSummary
-		json.Unmarshal(params, &s)
+		mustUnmarshal(t, params, &s)
 		if store.FolderPath(s.Folder.Folder) != target {
 			return false
 		}

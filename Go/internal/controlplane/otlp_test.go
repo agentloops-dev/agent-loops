@@ -54,7 +54,9 @@ func TestOTLPSendsTodaysFiguresByRuntime(t *testing.T) {
 		}
 		auth = r.Header.Get("Authorization")
 		body, _ := io.ReadAll(r.Body)
-		json.Unmarshal(body, &got)
+		if err := json.Unmarshal(body, &got); err != nil {
+			t.Error(err)
+		}
 	}))
 	defer collector.Close()
 
@@ -94,7 +96,7 @@ func TestOTLPSendsTodaysFiguresByRuntime(t *testing.T) {
 
 	// The page sees where it sends, with no query, and the last send; then a failure.
 	var state wire.ReadAPI
-	json.Unmarshal(call(t, admin, "", "readApi/list", wire.Empty{}), &state)
+	must(t, json.Unmarshal(call(t, admin, "", "readApi/list", wire.Empty{}), &state))
 	if state.Otlp == nil || state.Otlp.Endpoint != collector.URL+"/v1/metrics" || state.Otlp.LastSent == nil || state.Otlp.Every != 3600 {
 		t.Fatalf("%+v", state.Otlp)
 	}

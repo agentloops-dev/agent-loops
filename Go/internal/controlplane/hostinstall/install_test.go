@@ -59,7 +59,7 @@ func TestSSHsErrorsAreSaidOverAQuietConfig(t *testing.T) {
 		t.Skip("no ssh here")
 	}
 	config := filepath.Join(t.TempDir(), "config")
-	os.WriteFile(config, []byte("Host cs.*\n  LogLevel quiet\n  StrictHostKeyChecking no\n  UserKnownHostsFile /dev/null\n"), 0o600)
+	must(t, os.WriteFile(config, []byte("Host cs.*\n  LogLevel quiet\n  StrictHostKeyChecking no\n  UserKnownHostsFile /dev/null\n"), 0o600))
 	ssh := sshCommand{executable: DefaultSSH, name: "cs.w857.main", env: os.Environ()}
 	out, err := ssh.run(context.Background(), join([]string{"-F", config}, options("", ""), ssh.resolveArguments()), "")
 	if err != nil || out.status != 0 {
@@ -133,8 +133,8 @@ func TestARequestNeedNotCarryAKey(t *testing.T) {
 // #610: whether to tunnel is the sheet's to say; left out, a bastion decides.
 func TestARequestMaySayWhetherToTunnel(t *testing.T) {
 	var asked, left Request
-	json.Unmarshal([]byte(`{"destination":"ws","tunnel":true}`), &asked)
-	json.Unmarshal([]byte(`{"destination":"ws"}`), &left)
+	must(t, json.Unmarshal([]byte(`{"destination":"ws","tunnel":true}`), &asked))
+	must(t, json.Unmarshal([]byte(`{"destination":"ws"}`), &left))
 	if asked.Tunnel == nil || !*asked.Tunnel || left.Tunnel != nil {
 		t.Fatalf("%+v %+v", asked, left)
 	}
@@ -494,9 +494,9 @@ func TestCheckAgainDoesNothing(t *testing.T) {
 // membership stays, and no code is left.
 func TestAnUpdateCopiesTheHostAndStartsItAgainAsItself(t *testing.T) {
 	f := newFake(t)
-	os.MkdirAll(f.server("root"), 0o700)
+	must(t, os.MkdirAll(f.server("root"), 0o700))
 	member := `{"host":"dev-box","controlKey":"k","name":"Plane"}`
-	os.WriteFile(f.server("root/control-host.json"), []byte(member), 0o600)
+	must(t, os.WriteFile(f.server("root/control-host.json"), []byte(member), 0o600))
 	var steps []string
 	codes := &fakeCodes{}
 	trust := hostKeyFingerprint
@@ -535,8 +535,8 @@ func TestAnUpdateToAnotherServerIsRefused(t *testing.T) {
 	} {
 		f := newFake(t)
 		if c.member != "" {
-			os.MkdirAll(f.server("root"), 0o700)
-			os.WriteFile(f.server("root/control-host.json"), []byte(c.member), 0o600)
+			must(t, os.MkdirAll(f.server("root"), 0o700))
+			must(t, os.WriteFile(f.server("root/control-host.json"), []byte(c.member), 0o600))
 		}
 		var steps []string
 		trust := hostKeyFingerprint
@@ -582,10 +582,10 @@ func TestOnlyAnAgentsdInTheLockIsStopped(t *testing.T) {
 		if err := command.Start(); err != nil {
 			t.Fatal(err)
 		}
-		t.Cleanup(func() { command.Process.Kill() })
+		t.Cleanup(func() { _ = command.Process.Kill() }) // it may have ended already
 		ended := make(chan struct{})
-		go func() { command.Wait(); close(ended) }()
-		os.WriteFile(f.server("root/daemon.lock"), []byte(strconv.Itoa(command.Process.Pid)), 0o600)
+		go func() { _ = command.Wait(); close(ended) }() // a killed daemon ends with an error
+		must(t, os.WriteFile(f.server("root/daemon.lock"), []byte(strconv.Itoa(command.Process.Pid)), 0o600))
 		return ended
 	}
 	install := func() {

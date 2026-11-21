@@ -46,7 +46,7 @@ func TestAWaitOnABetterStackIncident(t *testing.T) {
 			return
 		}
 		reads++
-		json.NewEncoder(w).Encode(map[string]any{"data": incidents, "pagination": map[string]any{"next": nil}})
+		check(t, json.NewEncoder(w).Encode(map[string]any{"data": incidents, "pagination": map[string]any{"next": nil}}))
 	}))
 	defer bs.Close()
 
@@ -57,12 +57,12 @@ func TestAWaitOnABetterStackIncident(t *testing.T) {
 	m.post("initialize", map[string]any{}, 1)
 	home := t.TempDir()
 	d.PersonalHome = home
-	os.MkdirAll(filepath.Join(home, ".agents"), 0o755)
+	must(t, os.MkdirAll(filepath.Join(home, ".agents"), 0o755)) //nolint:gosec // G301: the mode this folder always had; only its error is new
 	b, _ := json.Marshal(map[string]any{"mcpServers": map[string]any{"betterstack-events": map[string]any{
 		"command": os.Args[0], "args": []string{"-test.run=^TestBetterStackEventsHelper$"},
 		"env": map[string]string{"AGENTS_BETTERSTACK_HELPER": "1", "BETTERSTACK_API_TOKEN": "bs_scratch", "BETTERSTACK_URL": bs.URL},
 	}}})
-	os.WriteFile(filepath.Join(home, ".agents", "mcp.json"), b, 0o644)
+	must(t, os.WriteFile(filepath.Join(home, ".agents", "mcp.json"), b, 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	quickPolls(d)
 	d.StartMCPEvents()
 

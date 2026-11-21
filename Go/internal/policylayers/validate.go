@@ -24,6 +24,7 @@ var knownPolicyRuleFields = map[string]bool{
 	"marketplaces":       true,
 	"environment":        true,
 	"connectorTools":     true,
+	"commitTrailers":     true,
 }
 
 var loggedUnknown sync.Map
@@ -80,7 +81,7 @@ func Validate(raw []byte) (wire.PolicyRules, error) {
 }
 
 // validateRules checks each rule of a layer, in this order: the enums, the counts, the lists
-// of names, the connector tools, then the runtimes. The first error found is returned.
+// of names, the connector tools, the commit trailers, then the runtimes. The first error found is returned.
 func validateRules(r wire.PolicyRules) error {
 	if err := validateEnums(r); err != nil {
 		return err
@@ -92,6 +93,9 @@ func validateRules(r wire.PolicyRules) error {
 		return err
 	}
 	if err := validateConnectorTools(r.ConnectorTools); err != nil {
+		return err
+	}
+	if err := validateCommitTrailers(r.CommitTrailers); err != nil {
 		return err
 	}
 	return validateRuntimes(r.Runtimes)

@@ -23,9 +23,9 @@ func TestAHostedServersViewsComeThroughItsOneCopy(t *testing.T) {
 	defer d.Shutdown()
 	home := t.TempDir()
 	d.PersonalHome = home
-	os.MkdirAll(filepath.Join(home, ".agents"), 0o755)
+	must(t, os.MkdirAll(filepath.Join(home, ".agents"), 0o755)) //nolint:gosec // G301: the mode this folder always had; only its error is new
 	entry, _ := json.Marshal(map[string]any{"mcpServers": map[string]any{"gh": map[string]any{"command": self, "hosted": true}}})
-	os.WriteFile(filepath.Join(home, ".agents", "mcp.json"), entry, 0o644)
+	must(t, os.WriteFile(filepath.Join(home, ".agents", "mcp.json"), entry, 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 
 	s, problem := d.viewServerFor("gh", t.TempDir())
 	if problem != 0 || s.connect == nil {
@@ -84,16 +84,16 @@ func TestAChangedEntrysOldViewCatalogIsRemoved(t *testing.T) {
 	defer d.Shutdown()
 	home := t.TempDir()
 	d.PersonalHome = home
-	os.MkdirAll(filepath.Join(home, ".agents"), 0o755)
+	must(t, os.MkdirAll(filepath.Join(home, ".agents"), 0o755)) //nolint:gosec // G301: the mode this folder always had; only its error is new
 	write := func(args ...string) {
 		entry, _ := json.Marshal(map[string]any{"mcpServers": map[string]any{
 			"gh": map[string]any{"command": self, "args": args, "hosted": true}}})
-		os.WriteFile(filepath.Join(home, ".agents", "mcp.json"), entry, 0o644)
+		must(t, os.WriteFile(filepath.Join(home, ".agents", "mcp.json"), entry, 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	}
 	dir := filepath.Dir(d.viewCatalogPath("x"))
 	old, _ := json.Marshal(viewCatalog{Version: viewCatalogVersion, Server: "gone", MadeAt: nowFunc().Add(-2 * viewCatalogFresh)})
-	os.MkdirAll(dir, 0o755)
-	os.WriteFile(filepath.Join(dir, "removed-entry.json"), old, 0o644)
+	must(t, os.MkdirAll(dir, 0o755))                                            //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(dir, "removed-entry.json"), old, 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 
 	var last viewServer
 	for _, args := range [][]string{nil, {"-test.run=^$"}} {

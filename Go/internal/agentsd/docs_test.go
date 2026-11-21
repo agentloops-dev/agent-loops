@@ -29,7 +29,7 @@ func fakeDocsServer(t *testing.T) *httptest.Server {
 				Arguments map[string]any
 			}
 		}
-		json.NewDecoder(r.Body).Decode(&m)
+		check(t, json.NewDecoder(r.Body).Decode(&m))
 		if m.ID == nil {
 			w.WriteHeader(http.StatusAccepted)
 			return
@@ -87,7 +87,7 @@ func TestDocsListSearchAndRead(t *testing.T) {
 	writeFile(t, filepath.Join(folder, "src", "notes.md"), "# Not a doc\n")
 	writeFile(t, filepath.Join(folder, "docs", "node_modules", "x.md"), "# Not a doc\n")
 	old := time.Now().Add(-time.Hour)
-	os.Chtimes(filepath.Join(folder, "README.md"), old, old)
+	must(t, os.Chtimes(filepath.Join(folder, "README.md"), old, old))
 
 	kb := fakeDocsServer(t)
 	writeFile(t, filepath.Join(home, ".agents", "mcp.json"), `{"mcpServers": {
@@ -100,7 +100,7 @@ func TestDocsListSearchAndRead(t *testing.T) {
 		"results": {"list": "pages", "title": "name", "id": "key", "url": "link", "snippet": "hit", "updated": "edited"}}}`)
 
 	var list wire.DocsList
-	json.Unmarshal(c.call(t, 2, "docs/list", wire.DocsListRequest{}), &list)
+	mustUnmarshal(t, c.call(t, 2, "docs/list", wire.DocsListRequest{}), &list)
 	var refs []string
 	for _, doc := range list.Docs {
 		refs = append(refs, doc.Ref+" "+doc.Title)
@@ -131,43 +131,43 @@ func TestDocsListSearchAndRead(t *testing.T) {
 	}
 
 	// A page at a time.
-	json.Unmarshal(c.call(t, 3, "docs/list", wire.DocsListRequest{Limit: new(int64(3))}), &list)
+	mustUnmarshal(t, c.call(t, 3, "docs/list", wire.DocsListRequest{Limit: new(int64(3))}), &list)
 	if len(list.Docs) != 3 || list.Cursor == nil {
 		t.Fatalf("a page: %+v", list)
 	}
 	var next wire.DocsList
-	json.Unmarshal(c.call(t, 4, "docs/list", wire.DocsListRequest{Limit: new(int64(3)), Cursor: list.Cursor}), &next)
+	mustUnmarshal(t, c.call(t, 4, "docs/list", wire.DocsListRequest{Limit: new(int64(3)), Cursor: list.Cursor}), &next)
 	if len(next.Docs) != 1 || next.Cursor != nil || next.Docs[0].Title != "Agents" {
 		t.Fatalf("the next page: %+v", next)
 	}
 
 	var found wire.DocsSearch
-	json.Unmarshal(c.call(t, 5, "docs/search", wire.DocsSearchRequest{Query: "DOCS list"}), &found)
+	mustUnmarshal(t, c.call(t, 5, "docs/search", wire.DocsSearchRequest{Query: "DOCS list"}), &found)
 	if len(found.Results) != 1 || found.Results[0].Doc.Title != "Docs, first-class" || len(found.Results[0].Matches) != 2 ||
 		*found.Results[0].Matches[0].Line != 3 || found.Results[0].Matches[1].Snippet != "A docs list for every folder." {
 		t.Fatalf("docs/search in a folder: %+v", found)
 	}
 	var inKB wire.DocsSearch
-	json.Unmarshal(c.call(t, 6, "docs/search", wire.DocsSearchRequest{Query: "checkout", Sources: []string{"mcp:kb"}}), &inKB)
+	mustUnmarshal(t, c.call(t, 6, "docs/search", wire.DocsSearchRequest{Query: "checkout", Sources: []string{"mcp:kb"}}), &inKB)
 	if len(inKB.Results) != 1 || inKB.Results[0].Doc.Ref != "mcp:kb/P2" || len(inKB.Results[0].Matches) != 1 ||
 		inKB.Results[0].Matches[0].Line != nil || inKB.Results[0].Matches[0].Snippet != "the checkout flow" || len(inKB.Sources) != 1 {
 		t.Fatalf("docs/search in a connector: %+v", inKB)
 	}
 
 	var read wire.DocsReading
-	json.Unmarshal(c.call(t, 7, "docs/read", wire.DocsReadRequest{Ref: "github:doc:alexec/agents#specs/3319-docs/spec.md", From: new(int64(3)), To: new(int64(3))}), &read)
+	mustUnmarshal(t, c.call(t, 7, "docs/read", wire.DocsReadRequest{Ref: "github:doc:alexec/agents#specs/3319-docs/spec.md", From: new(int64(3)), To: new(int64(3))}), &read)
 	if read.Text != "The Docs list.\n" || read.Lines != 4 || read.From != 3 || read.To != 3 || read.Next == nil || *read.Next != 4 ||
 		read.Doc.Title != "Docs, first-class" {
 		t.Fatalf("docs/read of a folder doc: %+v", read)
 	}
 	// A ref in the form from before #4800 reads the same doc.
 	var oldForm wire.DocsReading
-	json.Unmarshal(c.call(t, 20, "docs/read", wire.DocsReadRequest{Ref: "github:alexec/agents/doc/specs/3319-docs/spec.md"}), &oldForm)
+	mustUnmarshal(t, c.call(t, 20, "docs/read", wire.DocsReadRequest{Ref: "github:alexec/agents/doc/specs/3319-docs/spec.md"}), &oldForm)
 	if oldForm.Doc.Ref != "github:doc:alexec/agents#specs/3319-docs/spec.md" {
 		t.Fatalf("docs/read in the old form: %+v", oldForm)
 	}
 	var page wire.DocsReading
-	json.Unmarshal(c.call(t, 8, "docs/read", wire.DocsReadRequest{Ref: "mcp:kb/P2"}), &page)
+	mustUnmarshal(t, c.call(t, 8, "docs/read", wire.DocsReadRequest{Ref: "mcp:kb/P2"}), &page)
 	if page.Text != "# Checkout redesign\n\nOne\nTwo\n" || page.Lines != 4 || page.Next != nil || page.Doc.Title != "Checkout redesign" {
 		t.Fatalf("docs/read of a connector doc: %+v", page)
 	}
@@ -180,7 +180,7 @@ func TestDocsListSearchAndRead(t *testing.T) {
 
 	c.call(t, 20, "connectors/setup/skip", map[string]any{"folder": folder, "slot": "docs", "skipped": true})
 	var none wire.DocsList
-	json.Unmarshal(c.call(t, 21, "docs/list", wire.DocsListRequest{}), &none)
+	mustUnmarshal(t, c.call(t, 21, "docs/list", wire.DocsListRequest{}), &none)
 	if len(none.Docs) != 0 || len(none.Sources) != 0 {
 		t.Fatalf("a folder whose Docs slot is None: %+v", none)
 	}
@@ -197,13 +197,13 @@ func TestDocsOfAFolderWithNoForge(t *testing.T) {
 	c.call(t, 1, "folders/add", map[string]any{"folder": "file://" + folder})
 	writeFile(t, filepath.Join(folder, "docs", "plan.md"), "# Plan\n")
 	var list wire.DocsList
-	json.Unmarshal(c.call(t, 2, "docs/list", wire.DocsListRequest{Folder: &folder}), &list)
+	mustUnmarshal(t, c.call(t, 2, "docs/list", wire.DocsListRequest{Folder: &folder}), &list)
 	want := "folder:doc:" + strings.ToLower(docsMachine()+"/"+filepath.Base(folder)) + "#docs/plan.md"
 	if len(list.Docs) != 1 || list.Docs[0].Ref != want {
 		t.Fatalf("docs/list: %+v", list.Docs)
 	}
 	var read wire.DocsReading
-	json.Unmarshal(c.call(t, 3, "docs/read", wire.DocsReadRequest{Ref: want}), &read)
+	mustUnmarshal(t, c.call(t, 3, "docs/read", wire.DocsReadRequest{Ref: want}), &read)
 	if read.Text != "# Plan\n" {
 		t.Fatalf("docs/read: %+v", read)
 	}
@@ -265,8 +265,8 @@ func TestFolderDocFile(t *testing.T) {
 	outside := t.TempDir()
 	writeFile(t, filepath.Join(folder, "docs", "a.md"), "a")
 	writeFile(t, filepath.Join(outside, "secret.md"), "s")
-	os.Symlink(filepath.Join(outside, "secret.md"), filepath.Join(folder, "docs", "link.md"))
-	os.Symlink(outside, filepath.Join(folder, "specs"))
+	must(t, os.Symlink(filepath.Join(outside, "secret.md"), filepath.Join(folder, "docs", "link.md")))
+	must(t, os.Symlink(outside, filepath.Join(folder, "specs")))
 	writeFile(t, filepath.Join(folder, "docs", ".hidden", "h.md"), "h")
 	if _, ok := folderDocFile(folder, "docs/a.md"); !ok {
 		t.Fatal("docs/a.md is a doc")

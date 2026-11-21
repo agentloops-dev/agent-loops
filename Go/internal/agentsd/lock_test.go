@@ -135,7 +135,7 @@ func TestAMachineAddsItselfWithTheInviteFromItsCode(t *testing.T) {
 	}
 	ih := machinelock.HashOf(inv)
 	raw, _ := invite.Bytes()
-	controllink.SaveLockInvite(d.Store.Loc.Root, controllink.LockInvite{Key: raw, Person: "sam", Count: 2, Head: ih[:]})
+	must(t, controllink.SaveLockInvite(d.Store.Loc.Root, controllink.LockInvite{Key: raw, Person: "sam", Count: 2, Head: ih[:]}))
 
 	// A lock the control plane made up, with no invite, does not follow the code's head.
 	stranger := newLockKey(t)
@@ -147,7 +147,7 @@ func TestAMachineAddsItselfWithTheInviteFromItsCode(t *testing.T) {
 		t.Fatal("the code's lock was not taken")
 	}
 	var add wire.LockAdd
-	json.Unmarshal(lastOf(t, said(), wire.CallMachineLockAdd.Name), &add)
+	mustUnmarshal(t, lastOf(t, said(), wire.CallMachineLockAdd.Name), &add)
 	state, err := machinelock.Check([]wire.LockEntry{root, inv, add.Entries[0]})
 	if err != nil {
 		t.Fatal(err)
@@ -171,7 +171,7 @@ func TestAMachineWithNoInviteAsksAndShowsTheDigits(t *testing.T) {
 	root := lockEntry(t, mac, wire.LockEntryKindRoot, mac, nil)
 	d.TakeLock(wire.Lock{Person: "sam", Entries: []wire.LockEntry{root}})
 	var ask wire.LockJoin
-	json.Unmarshal(lastOf(t, said(), wire.CallMachineLockJoin.Name), &ask)
+	mustUnmarshal(t, lastOf(t, said(), wire.CallMachineLockJoin.Name), &ask)
 	if string(ask.Key) != string(key) || len(ask.Commitment) != 32 {
 		t.Fatalf("%+v", ask)
 	}
@@ -191,7 +191,7 @@ func TestAMachineWithNoInviteAsksAndShowsTheDigits(t *testing.T) {
 	row, _ := json.Marshal(wire.LockJoinRequest{Request: "r1", Client: "h-1", Key: ask.Key, Commitment: ask.Commitment, Nonce: signerNonce})
 	d.Told(wire.NotifyMachineLockJoinChanged.Name, row)
 	var reveal wire.LockJoinNonce
-	json.Unmarshal(lastOf(t, said(), wire.CallMachineLockJoinReveal.Name), &reveal)
+	mustUnmarshal(t, lastOf(t, said(), wire.CallMachineLockJoinReveal.Name), &reveal)
 	if reveal.Request != "r1" || string(machinelock.Commitment(key, reveal.Nonce)) != string(ask.Commitment) {
 		t.Fatalf("%+v", reveal)
 	}

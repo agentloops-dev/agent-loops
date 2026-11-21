@@ -20,7 +20,7 @@ func TestATokenSplitOverTwoChunksIsRedacted(t *testing.T) {
 	defer d.Shutdown()
 	var heard strings.Builder
 	var id wire.UUID
-	json.Unmarshal(c.call(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + work,
+	mustUnmarshal(t, c.call(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + work,
 		"prompt": "split a token", "startOptions": map[string]any{"values": map[string]any{}, "extraArguments": []string{}}}), &id)
 	c.until(t, "the turn's end", func(method string, params json.RawMessage) bool {
 		heard.Write(params)

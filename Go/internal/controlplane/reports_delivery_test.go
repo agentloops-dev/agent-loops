@@ -92,7 +92,7 @@ func TestReportsValueHasTheDeliveryFigures(t *testing.T) {
 
 	// The Read API, with an admin's token: the organisation's, in JSON only.
 	var made wire.ReadTokenMade
-	json.Unmarshal(call(t, admin, "", "readApi/make", wire.ReadTokenMake{Name: "Looker"}), &made)
+	must(t, json.Unmarshal(call(t, admin, "", "readApi/make", wire.ReadTokenMake{Name: "Looker"}), &made))
 	code, body := readReports(t, p, made.Value, "?report=delivery")
 	var read struct {
 		Delivery []wire.ReportDelivery `json:"delivery"`

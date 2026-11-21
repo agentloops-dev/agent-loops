@@ -452,6 +452,8 @@ func (d *Daemon) Shutdown() {
 	d.stopModelRelay()
 	// The last chance for chat lines the disk refused: they live only in memory (#3245).
 	d.writeHeld()
+	// The secret reads still counting, for the next start to send to the audit (#6464).
+	d.keepSecretOpsForNextStart()
 	// The archived agents' summaries, so the next start trusts them all (#4653).
 	d.Store.FlushSummaries()
 	// Last: every goroutine the host started has ended, so none writes into the root or

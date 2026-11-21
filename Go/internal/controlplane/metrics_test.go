@@ -187,7 +187,9 @@ func TestJSONLogsHoldNoToken(t *testing.T) {
 	// A param that is a token: never logged.
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	window.Call(ctx, "", "clients/setPushToken", map[string]any{"token": "push-token-abc123", "environment": "production"})
+	if _, err := window.Call(ctx, "", "clients/setPushToken", map[string]any{"token": "push-token-abc123", "environment": "production"}); err == nil {
+		t.Fatal("a push token that is not one was taken")
+	}
 	call(t, window, "", "control/status", nil)
 	logs.Write("agents-control[abcd1234]: paired with agents-control:2:h:SECRETCODE and Bearer tok-xyz, token=tok-123")
 

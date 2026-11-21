@@ -111,7 +111,7 @@ func TestTheCIToolsNeedGitHub(t *testing.T) {
 	t.Parallel()
 
 	d, _, _, file := forgeDaemon(t)
-	file.Delete(connections.GitHub)
+	must(t, file.Delete(connections.GitHub))
 	a := seeded(t, d, gitFolder(t, "git@github.com:alexec/newapp.git"), nil)
 	if _, err := d.setCIVariable(a.ID, ciArgs("name", "X", "value", "1")); err == nil || !strings.Contains(err.Error(), "no GitHub connection") {
 		t.Fatalf("%v", err)

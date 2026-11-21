@@ -131,7 +131,7 @@ func TestWaitingDeployIsAnApprovalAnsweredOnGitHub(t *testing.T) {
 		t.Fatalf("answered GitHub: %q", w)
 	}
 	var s wire.FolderSummary
-	json.Unmarshal(c.call(t, 4, "approvals/answer", wire.ApprovalAnswer{Folder: url, Kind: wire.ApprovalKindDeploy, Key: a.Key,
+	mustUnmarshal(t, c.call(t, 4, "approvals/answer", wire.ApprovalAnswer{Folder: url, Kind: wire.ApprovalKindDeploy, Key: a.Key,
 		Digest: a.Digest, Action: wire.ApprovalActionApprove}), &s)
 	if w := gh.writes(); !slices.Equal(w, []string{"deploy alexec/agents 77 [11] true Approved in Agent Loops"}) {
 		t.Fatalf("writes: %q", w)
@@ -162,7 +162,7 @@ func TestWaitingDeploysNeedAConnection(t *testing.T) {
 	if got, _ := deployApprovalsIn(d, "alexec/agents"); len(got) != 1 {
 		t.Fatalf("connected: %+v", got)
 	}
-	file.Delete(connections.GitHub)
+	must(t, file.Delete(connections.GitHub))
 	d.readDeploys(d.ctx)
 	if got, _ := deployApprovalsIn(d, "alexec/agents"); len(got) != 0 {
 		t.Fatalf("not connected: %+v", got)

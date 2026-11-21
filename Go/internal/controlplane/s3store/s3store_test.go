@@ -121,7 +121,9 @@ func TestListSeesNewKeys(t *testing.T) {
 			t.Fatalf("got %v, %v", got, err)
 		}
 		tag, _ := s.Put(ctx, "v1/clients/one.json", []byte("1"), store.Absent)
-		s.Put(ctx, "v1/machines/mac.json", []byte("2"), store.Absent)
+		if _, err := s.Put(ctx, "v1/machines/mac.json", []byte("2"), store.Absent); err != nil {
+			t.Fatal(err)
+		}
 		got, _ := s.List(ctx, "v1/clients/")
 		if want := []store.Key{{Key: "v1/clients/one.json", ETag: tag, Size: 1}}; !reflect.DeepEqual(got, want) {
 			t.Fatalf("got %v, want %v", got, want)
@@ -301,8 +303,8 @@ func TestOpenReadsTheEnvironment(t *testing.T) {
 // or AWS_PROFILE.
 func TestCredentialsFromTheAWSFile(t *testing.T) {
 	file := t.TempDir() + "/credentials"
-	os.WriteFile(file, []byte("[default]\naws_access_key_id = one\naws_secret_access_key = two\n\n"+
-		"[work]\naws_access_key_id=three\naws_secret_access_key=four\naws_session_token=five\n"), 0o600)
+	must(t, os.WriteFile(file, []byte("[default]\naws_access_key_id = one\naws_secret_access_key = two\n\n"+
+		"[work]\naws_access_key_id=three\naws_secret_access_key=four\naws_session_token=five\n"), 0o600))
 	env := map[string]string{"AWS_SHARED_CREDENTIALS_FILE": file}
 	get := func(k string) string { return env[k] }
 	if c, ok := CredentialsFrom(get); !ok || c != (Credentials{"one", "two", ""}) {

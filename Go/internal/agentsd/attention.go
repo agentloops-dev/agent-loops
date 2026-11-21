@@ -868,6 +868,8 @@ func (d *Daemon) ControlUplinkChanged(up bool) {
 	// The control plane holds this machine's bus subscriptions only while it is connected.
 	if up {
 		d.goJob("sendBusSubscriptions", func() { d.sendBusSubscriptions(true) })
+		// The secret operations the audit has not answered: the last run's too (#6464).
+		d.goJob("sendSecretOps", d.sendSecretOps)
 	}
 	if !up || d.tellControl.Load() == nil {
 		return

@@ -19,8 +19,13 @@ func heldWait(t *testing.T, d *Daemon, dir string) (wire.UUID, chan string) {
 	m := appClient(t, d, a.ID)
 	m.post("initialize", map[string]any{}, 1)
 	answered := make(chan string, 1)
+	// No t.Fatal here: the goroutine can outlive the test, and a Fatal after it ends
+	// panics the binary (#6495). What failed comes back as the answer.
 	go func() {
-		text, _ := m.tool(2, "wait_for_event", map[string]any{"events": "branch.moved", "where": map[string]any{"branch": "cd"}, "until_minutes": 10})
+		text, _, err := m.tryTool(2, "wait_for_event", map[string]any{"events": "branch.moved", "where": map[string]any{"branch": "cd"}, "until_minutes": 10})
+		if err != nil {
+			text = err.Error()
+		}
 		answered <- text
 	}()
 	waitFor(t, "the wait held", func() bool {

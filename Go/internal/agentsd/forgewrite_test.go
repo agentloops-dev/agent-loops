@@ -202,7 +202,7 @@ func TestForgeIssueWritesGoToGitHub(t *testing.T) {
 	_, before := gh.asked()
 
 	var done wire.ForgeDone
-	json.Unmarshal(c.call(t, 2, "forge/comment", wire.ForgeCommentRequest{Node: ghIssue, Body: "  Looks good.  "}), &done)
+	mustUnmarshal(t, c.call(t, 2, "forge/comment", wire.ForgeCommentRequest{Node: ghIssue, Body: "  Looks good.  "}), &done)
 	if deref(done.URL) == "" {
 		t.Fatalf("comment: %+v", done)
 	}
@@ -229,7 +229,7 @@ func TestForgeIssueWritesGoToGitHub(t *testing.T) {
 	}
 
 	var labels wire.ForgeLabels
-	json.Unmarshal(c.call(t, 7, "forge/labels", wire.ForgeNodeRequest{Node: ghIssue}), &labels)
+	mustUnmarshal(t, c.call(t, 7, "forge/labels", wire.ForgeNodeRequest{Node: ghIssue}), &labels)
 	if len(labels.Labels) != 2 || deref(labels.Labels[0].Color) != "#d73a4a" {
 		t.Fatalf("labels: %+v", labels)
 	}
@@ -285,7 +285,7 @@ func TestForgeCloseAsNotPlanned(t *testing.T) {
 
 	_, c, gh, gl, _, _ := allForgesDaemon(t)
 	var page wire.ForgeItemDetail
-	json.Unmarshal(c.call(t, 1, "forge/issue", wire.ForgeItemRequest{Node: ghIssue}), &page)
+	mustUnmarshal(t, c.call(t, 1, "forge/issue", wire.ForgeItemRequest{Node: ghIssue}), &page)
 	if !slices.Contains(page.Actions, wire.ForgeActionCloseNotPlanned) {
 		t.Fatalf("an open GitHub issue's actions: %v", page.Actions)
 	}
@@ -324,14 +324,14 @@ func TestForgeIssueBringsStartAgent(t *testing.T) {
 
 	_, c, _, _ := forgeDaemon(t)
 	var got wire.ForgeItemDetail
-	json.Unmarshal(c.call(t, 1, "forge/issue", wire.ForgeItemRequest{Node: ghIssue}), &got)
+	mustUnmarshal(t, c.call(t, 1, "forge/issue", wire.ForgeItemRequest{Node: ghIssue}), &got)
 	s := got.Start
 	if s == nil || !strings.Contains(s.Prompt, "gh issue view 7 --repo alexec/agents") || !slices.Equal(s.Labels, []string{"#7"}) ||
 		deref(s.Worktree) != "7 Forge reads" {
 		t.Fatalf("start: %+v", s)
 	}
 	var pull wire.ForgeItemDetail
-	json.Unmarshal(c.call(t, 2, "forge/pull", wire.ForgeItemRequest{Node: ghPull}), &pull)
+	mustUnmarshal(t, c.call(t, 2, "forge/pull", wire.ForgeItemRequest{Node: ghPull}), &pull)
 	if pull.Start != nil || deref(pull.Head) != "abc" || len(pull.MergeMethods) != 3 || pull.MergeMethods[0] != wire.ForgeMergeMethodSquash {
 		t.Fatalf("a pull request has its head and merge methods, and no Start Agent: %+v", pull)
 	}
@@ -346,17 +346,17 @@ func TestForgePullWritesGoToGitHub(t *testing.T) {
 	c.call(t, 1, "forge/merge", wire.ForgeMergeRequest{Node: ghPull, Sha: "abc"})
 	rebase := wire.ForgeMergeMethodRebase
 	var done wire.ForgeDone
-	json.Unmarshal(c.call(t, 2, "forge/merge", wire.ForgeMergeRequest{Node: ghPull, Sha: "abc", Method: &rebase, Auto: new(true)}), &done)
+	mustUnmarshal(t, c.call(t, 2, "forge/merge", wire.ForgeMergeRequest{Node: ghPull, Sha: "abc", Method: &rebase, Auto: new(true)}), &done)
 	if done.Auto == nil || !*done.Auto {
 		t.Fatalf("auto-merge: %+v", done)
 	}
 	c.call(t, 3, "forge/approve", wire.ForgeApproveRequest{Node: ghPull, Sha: "abc"})
-	json.Unmarshal(c.call(t, 4, "forge/rerun", wire.ForgeNodeRequest{Node: ghPull}), &done)
+	mustUnmarshal(t, c.call(t, 4, "forge/rerun", wire.ForgeNodeRequest{Node: ghPull}), &done)
 	if done.Reran == nil || *done.Reran != 1 {
 		t.Fatalf("rerun: %+v", done)
 	}
 	var log wire.ForgeLog
-	json.Unmarshal(c.call(t, 5, "forge/log", wire.ForgeLogRequest{Node: ghPull, Check: new("test")}), &log)
+	mustUnmarshal(t, c.call(t, 5, "forge/log", wire.ForgeLogRequest{Node: ghPull, Check: new("test")}), &log)
 	if !strings.Contains(log.Text, "boom") {
 		t.Fatalf("log: %+v", log)
 	}
@@ -367,7 +367,7 @@ func TestForgePullWritesGoToGitHub(t *testing.T) {
 	}
 
 	var diff wire.ForgeDiff
-	json.Unmarshal(c.call(t, 6, "forge/diff", wire.ForgeNodeRequest{Node: ghPull}), &diff)
+	mustUnmarshal(t, c.call(t, 6, "forge/diff", wire.ForgeNodeRequest{Node: ghPull}), &diff)
 	if len(diff.Files) != 1 || diff.Files[0].Path != "a.go" || len(diff.Files[0].Hunks) != 1 ||
 		diff.Files[0].Hunks[0].Lines[0].Kind != wire.DiffLineKindAdded || deref(diff.URL) == "" {
 		t.Fatalf("diff: %+v", diff)

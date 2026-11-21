@@ -16,7 +16,7 @@ func sealedSecretEntries(t *testing.T, window *controllink.Session) ([]wire.Audi
 	t.Helper()
 	raw := call(t, window, "", "audit/list", wire.AuditQuery{})
 	var list wire.AuditList
-	json.Unmarshal(raw, &list)
+	must(t, json.Unmarshal(raw, &list))
 	var out []wire.AuditEntry
 	for _, e := range list.Entries {
 		if e.Method == wire.CallUserSealedSecret.Name {
@@ -53,15 +53,15 @@ func TestAPersonsClientGetsItsOwnCopyOfASecretWithAnAuditEntry(t *testing.T) {
 
 	// A reveal, then a copy from an account: each gives this client's own copy.
 	var got wire.UserSealedSecret
-	json.Unmarshal(call(t, window, "", "user/sealedSecret",
-		wire.UserSealedSecretRequest{Name: "GITHUB_TOKEN", Purpose: wire.UserSealedSecretPurposeReveal}), &got)
+	must(t, json.Unmarshal(call(t, window, "", "user/sealedSecret",
+		wire.UserSealedSecretRequest{Name: "GITHUB_TOKEN", Purpose: wire.UserSealedSecretPurposeReveal}), &got))
 	if got.Name != "GITHUB_TOKEN" || got.Version != 1 || openSealed(t, alex.id, member, got) != value {
 		t.Fatalf("%+v", got)
 	}
 	got = wire.UserSealedSecret{}
-	json.Unmarshal(call(t, window, "", "user/sealedSecret", wire.UserSealedSecretRequest{Name: "GITHUB_TOKEN",
+	must(t, json.Unmarshal(call(t, window, "", "user/sealedSecret", wire.UserSealedSecretRequest{Name: "GITHUB_TOKEN",
 		Purpose: wire.UserSealedSecretPurposeCopy,
-		Account: &wire.UserSealedSecretAccount{Service: "gitlab.com", Address: new("agentloops@example.com")}}), &got)
+		Account: &wire.UserSealedSecretAccount{Service: "gitlab.com", Address: new("agentloops@example.com")}}), &got))
 	if openSealed(t, alex.id, member, got) != value {
 		t.Fatalf("%+v", got)
 	}
@@ -135,7 +135,7 @@ func TestACardsPartsSayWhichInTheAudit(t *testing.T) {
 	member, window := p.client("Alex's Mac")
 	user := p.s.localOwner()
 	var recipients wire.SealRecipients
-	json.Unmarshal(call(t, window, "", "user/secretRecipients", nil), &recipients)
+	must(t, json.Unmarshal(call(t, window, "", "user/secretRecipients", nil), &recipients))
 	card := wire.UserSecretKindCard
 	set := wire.UserSecretSet{Name: "SHOP_CARD", Kind: &card, Version: 1, NeedsApproval: new(true), Values: map[string]wire.SealedEnvelope{}}
 	const value = `{"number":"4242424242424242","expiry":"09/28","cvc":"123","name":"Ada Example","zip":"94110"}`
@@ -149,7 +149,7 @@ func TestACardsPartsSayWhichInTheAudit(t *testing.T) {
 	call(t, window, "", "user/setSecret", set)
 
 	var got wire.UserSealedSecret
-	json.Unmarshal(call(t, window, "", "user/sealedSecret", wire.UserSealedSecretRequest{Name: "SHOP_CARD", Purpose: wire.UserSealedSecretPurposeReveal}), &got)
+	must(t, json.Unmarshal(call(t, window, "", "user/sealedSecret", wire.UserSealedSecretRequest{Name: "SHOP_CARD", Purpose: wire.UserSealedSecretPurposeReveal}), &got))
 	if deref(got.Kind) != card || !deref(got.NeedsApproval) || openSealed(t, user, member, got) != value {
 		t.Fatalf("%+v", got)
 	}

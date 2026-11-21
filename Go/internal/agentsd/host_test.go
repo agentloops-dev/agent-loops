@@ -21,30 +21,30 @@ func TestCatchUpIsOneAnswer(t *testing.T) {
 	defer d.Shutdown()
 	dir := folder(t, c, 1)
 	seeded(t, d, dir, nil)
-	os.WriteFile(filepath.Join(dir, "a.md"), nil, 0o644)
+	must(t, os.WriteFile(filepath.Join(dir, "a.md"), nil, 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	c.call(t, 2, "pins/pin", map[string]any{"folder": store.FolderURL(dir), "path": "a.md"})
 	var s map[string]json.RawMessage
-	json.Unmarshal(c.call(t, 3, "client/catchUp", map[string]any{"parts": []string{"pins", "someday"}}), &s)
+	mustUnmarshal(t, c.call(t, 3, "client/catchUp", map[string]any{"parts": []string{"pins", "someday"}}), &s)
 	for _, k := range []string{"folders", "agents", "permissions", "elicitations", "attention", "resuming", "disk", "storeNotes", "achievements", "pins"} {
 		if _, ok := s[k]; !ok {
 			t.Fatalf("no %s in %v", k, s)
 		}
 	}
 	var agents []wire.Agent
-	json.Unmarshal(s["agents"], &agents)
+	mustUnmarshal(t, s["agents"], &agents)
 	var pins []wire.FolderPins
-	json.Unmarshal(s["pins"], &pins)
+	mustUnmarshal(t, s["pins"], &pins)
 	if len(agents) != 1 || len(pins) != 1 {
 		t.Fatalf("%d agents, %d pins", len(agents), len(pins))
 	}
 	// Asked for nothing: the lists of a first page, and no pins.
 	s = nil
-	json.Unmarshal(c.call(t, 4, "client/catchUp", nil), &s)
+	mustUnmarshal(t, c.call(t, 4, "client/catchUp", nil), &s)
 	if _, ok := s["pins"]; ok {
 		t.Fatal("pins not asked for")
 	}
 	var status wire.DaemonStatus
-	json.Unmarshal(c.call(t, 5, "daemon/status", nil), &status)
+	mustUnmarshal(t, c.call(t, 5, "daemon/status", nil), &status)
 	if status != (wire.DaemonStatus{}) {
 		t.Fatalf("%+v", status)
 	}
@@ -73,17 +73,17 @@ func TestSettingsTheWindowReads(t *testing.T) {
 
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
-	os.MkdirAll(d.SettingsDir, 0o700)
-	os.WriteFile(filepath.Join(d.SettingsDir, "sandbox.json"), []byte(`{"defaults":{"claude":"off","codex":"runtime","x":"maybe"}}`), 0o600)
-	os.WriteFile(filepath.Join(d.SettingsDir, "client-permissions.json"), []byte(`{"cursor":"autoReview","grok":"what"}`), 0o600)
-	os.WriteFile(filepath.Join(d.SettingsDir, "retention.json"), []byte(`{"keepFor":"days7"}`), 0o600)
+	must(t, os.MkdirAll(d.SettingsDir, 0o700))
+	must(t, os.WriteFile(filepath.Join(d.SettingsDir, "sandbox.json"), []byte(`{"defaults":{"claude":"off","codex":"runtime","x":"maybe"}}`), 0o600))
+	must(t, os.WriteFile(filepath.Join(d.SettingsDir, "client-permissions.json"), []byte(`{"cursor":"autoReview","grok":"what"}`), 0o600))
+	must(t, os.WriteFile(filepath.Join(d.SettingsDir, "retention.json"), []byte(`{"keepFor":"days7"}`), 0o600))
 	var sb wire.SandboxSettings
-	json.Unmarshal(c.call(t, 1, "sandbox/state", nil), &sb)
+	mustUnmarshal(t, c.call(t, 1, "sandbox/state", nil), &sb)
 	if len(sb.Defaults) != 1 || sb.Defaults["claude"] != "off" {
 		t.Fatalf("%+v", sb)
 	}
 	var cp wire.ClientPermissionSettings
-	json.Unmarshal(c.call(t, 2, "clientPermissions/state", nil), &cp)
+	mustUnmarshal(t, c.call(t, 2, "clientPermissions/state", nil), &cp)
 	if cp.Cursor != "alwaysApprove" || cp.Grok != "default" || cp.Opencode != "default" {
 		t.Fatalf("%+v", cp)
 	}
@@ -93,7 +93,7 @@ func TestSettingsTheWindowReads(t *testing.T) {
 		a.State, a.ArchivedAt, a.ArchivedReason = wire.AgentStateArchived, &at, &by
 	})
 	var r wire.RetentionState
-	json.Unmarshal(c.call(t, 3, "retention/state", nil), &r)
+	mustUnmarshal(t, c.call(t, 3, "retention/state", nil), &r)
 	if r.Settings.KeepFor != "days7" || r.ArchivedCount != 1 || r.ArchivedBytes == 0 {
 		t.Fatalf("%+v (%s)", r, archived.ID)
 	}
@@ -106,7 +106,7 @@ func TestADropBoxAndAnArtifact(t *testing.T) {
 	defer d.Shutdown()
 	dir := folder(t, c, 1)
 	var put wire.DropboxPutResponse
-	json.Unmarshal(c.call(t, 2, "dropbox/put", map[string]any{"folder": store.FolderURL(dir), "subfolder": "in/box",
+	mustUnmarshal(t, c.call(t, 2, "dropbox/put", map[string]any{"folder": store.FolderURL(dir), "subfolder": "in/box",
 		"name": "../note.txt", "data": "aGk="}), &put)
 	real, _ := store.Resolve(dir)
 	if put.Path != filepath.Join(real, ".agents", "dropbox", "in", "box", "note.txt") {
@@ -143,8 +143,8 @@ func TestADropBoxAndAnArtifact(t *testing.T) {
 	writeFile(t, stale, "x")
 	writeFile(t, kept, "x")
 	old := time.Now().Add(-48 * time.Hour)
-	os.Chtimes(stale, old, old)
-	os.Chtimes(kept, old, old)
+	must(t, os.Chtimes(stale, old, old))
+	must(t, os.Chtimes(kept, old, old))
 	d.sweepDropboxParts()
 	if _, err := os.Stat(stale); !os.IsNotExist(err) {
 		t.Fatal("a day-old .part stayed")
@@ -166,7 +166,7 @@ func TestADropBoxAndAnArtifact(t *testing.T) {
 	}
 	// With a base (#1858): written over the text the edit began from, refused over any other.
 	c.call(t, 23, "artifact/write", map[string]any{"agentID": a.ID, "path": path, "text": "# mine", "base": textDigest("# hi")})
-	os.WriteFile(path, []byte("# an agent's"), 0o644)
+	must(t, os.WriteFile(path, []byte("# an agent's"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	e := c.callError(t, 24, "artifact/write", map[string]any{"agentID": a.ID, "path": path, "text": "# mine again", "base": textDigest("# mine")})
 	if e == nil || e.Code != wire.FailureFileChanged {
 		t.Fatalf("written over a change made since: %+v", e)

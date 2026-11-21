@@ -19,7 +19,7 @@ import (
 func listedProjects(t *testing.T, s *controllink.Session) []wire.Project {
 	t.Helper()
 	var listed wire.ProjectList
-	json.Unmarshal(call(t, s, "", "projects/list", nil), &listed)
+	must(t, json.Unmarshal(call(t, s, "", "projects/list", nil), &listed))
 	return listed.Projects
 }
 
@@ -86,7 +86,7 @@ func TestMakeRenameAndRemoveAProject(t *testing.T) {
 	_, owner := p.client("Alex's Mac")
 
 	var made wire.Project
-	json.Unmarshal(call(t, owner, "", "projects/set", wire.ProjectSet{Name: "  Agents app "}), &made)
+	must(t, json.Unmarshal(call(t, owner, "", "projects/set", wire.ProjectSet{Name: "  Agents app "}), &made))
 	if !strings.HasPrefix(made.ID, "p-") || len(made.ID) != 14 || made.Name != "Agents app" || !made.MayChange {
 		t.Fatalf("%+v", made)
 	}
@@ -129,7 +129,7 @@ func TestOnlyTheOwnerOrAnAdminChangesAProject(t *testing.T) {
 	samsBox := p.machine(sam, "Sam's box")
 
 	var mine wire.Project
-	json.Unmarshal(call(t, sam.window, "", "projects/set", wire.ProjectSet{Name: "Sam's"}), &mine)
+	must(t, json.Unmarshal(call(t, sam.window, "", "projects/set", wire.ProjectSet{Name: "Sam's"}), &mine))
 	if mine.Owner != sam.id || !mine.MayChange {
 		t.Fatalf("%+v", mine)
 	}
@@ -169,7 +169,7 @@ func TestAProjectsSlotsGoToItsMachines(t *testing.T) {
 			return
 		}
 		var m wire.MachineProjects
-		json.Unmarshal(params, &m)
+		must(t, json.Unmarshal(params, &m))
 		mu.Lock()
 		heard[host] = append(heard[host], m)
 		mu.Unlock()
@@ -180,7 +180,7 @@ func TestAProjectsSlotsGoToItsMachines(t *testing.T) {
 	other := p.host("OTHER")
 
 	var made wire.Project
-	json.Unmarshal(call(t, owner, "", "projects/set", wire.ProjectSet{Name: "Agents"}), &made)
+	must(t, json.Unmarshal(call(t, owner, "", "projects/set", wire.ProjectSet{Name: "Agents"}), &made))
 	params, _ := json.Marshal(wire.ProjectsJoined{Folders: []wire.JoinedFolder{{Folder: "file:///Users/a/Agents/", Name: "Agents", Project: made.ID}}})
 	answer, err := p.s.methods.HostSaid(mac.member.Host, "projects/joined", params)
 	if err != nil {
@@ -188,7 +188,7 @@ func TestAProjectsSlotsGoToItsMachines(t *testing.T) {
 	}
 	b, _ := json.Marshal(answer)
 	var first wire.MachineProjects
-	json.Unmarshal(b, &first)
+	must(t, json.Unmarshal(b, &first))
 	if len(first.Projects) != 1 || first.Projects[0].ID != made.ID || len(first.Projects[0].Slots) != 0 {
 		t.Fatalf("%s", b)
 	}
@@ -199,7 +199,7 @@ func TestAProjectsSlotsGoToItsMachines(t *testing.T) {
 		t.Fatal(e)
 	}
 	var got wire.Project
-	json.Unmarshal(call(t, owner, "", "projects/setSlot", set), &got)
+	must(t, json.Unmarshal(call(t, owner, "", "projects/setSlot", set), &got))
 	if len(got.Slots) != 1 || *got.Slots[0].Repository != "alexec/Agents" || *got.Slots[0].Site != "github.com" {
 		t.Fatalf("%+v", got)
 	}
@@ -224,7 +224,7 @@ func TestAProjectsSlotsGoToItsMachines(t *testing.T) {
 	mu.Unlock()
 
 	// No value gives the slot back to each folder; workspace and bad repositories are refused.
-	json.Unmarshal(call(t, owner, "", "projects/setSlot", wire.ProjectSlotSet{ID: made.ID, Slot: wire.ConnectorSlotKindCodeReview}), &got)
+	must(t, json.Unmarshal(call(t, owner, "", "projects/setSlot", wire.ProjectSlotSet{ID: made.ID, Slot: wire.ConnectorSlotKindCodeReview}), &got))
 	if len(got.Slots) != 1 || got.Slots[0].Slot != wire.ConnectorSlotKindTasks {
 		t.Fatalf("%+v", got)
 	}
@@ -237,15 +237,15 @@ func TestAProjectsSlotsGoToItsMachines(t *testing.T) {
 	}
 	// A Forgejo repository (#3752): owner/name, on Codeberg when no site is given.
 	forgejo, fjRepo := wire.ConnectionProviderForgejo, "agentstest/agents-walk"
-	json.Unmarshal(call(t, owner, "", "projects/setSlot", wire.ProjectSlotSet{ID: made.ID, Slot: wire.ConnectorSlotKindCi,
-		Value: &wire.ProjectSlot{Slot: wire.ConnectorSlotKindCi, Forge: &forgejo, Repository: &fjRepo}}), &got)
+	must(t, json.Unmarshal(call(t, owner, "", "projects/setSlot", wire.ProjectSlotSet{ID: made.ID, Slot: wire.ConnectorSlotKindCi,
+		Value: &wire.ProjectSlot{Slot: wire.ConnectorSlotKindCi, Forge: &forgejo, Repository: &fjRepo}}), &got))
 	if len(got.Slots) != 2 || *got.Slots[1].Forge != forgejo || *got.Slots[1].Site != "codeberg.org" {
 		t.Fatalf("%+v", got)
 	}
 	// A Bitbucket repository (#3785): workspace/name, always on bitbucket.org.
 	bitbucket, bbRepo, elsewhere := wire.ConnectionProviderBitbucket, "agentstest/agents-walk", "bitbucket.example.com"
-	json.Unmarshal(call(t, owner, "", "projects/setSlot", wire.ProjectSlotSet{ID: made.ID, Slot: wire.ConnectorSlotKindCodeReview,
-		Value: &wire.ProjectSlot{Slot: wire.ConnectorSlotKindCodeReview, Forge: &bitbucket, Repository: &bbRepo, Site: &elsewhere}}), &got)
+	must(t, json.Unmarshal(call(t, owner, "", "projects/setSlot", wire.ProjectSlotSet{ID: made.ID, Slot: wire.ConnectorSlotKindCodeReview,
+		Value: &wire.ProjectSlot{Slot: wire.ConnectorSlotKindCodeReview, Forge: &bitbucket, Repository: &bbRepo, Site: &elsewhere}}), &got))
 	var review *wire.ProjectSlot
 	for i := range got.Slots {
 		if got.Slots[i].Slot == wire.ConnectorSlotKindCodeReview {
@@ -404,7 +404,7 @@ func TestAProjectsSessionsOnEveryMachine(t *testing.T) {
 	answer := func(list []map[string]any) func(json.RawMessage) any {
 		return func(params json.RawMessage) any {
 			var r wire.ListRequest
-			json.Unmarshal(params, &r)
+			fakeMust(json.Unmarshal(params, &r))
 			askedMu.Lock()
 			asked = append(asked, r)
 			askedMu.Unlock()
@@ -424,7 +424,7 @@ func TestAProjectsSessionsOnEveryMachine(t *testing.T) {
 	box.mu.Unlock()
 
 	var got wire.ProjectSessions
-	json.Unmarshal(call(t, window, "", "projects/sessions", map[string]any{"project": "p-agents"}), &got)
+	must(t, json.Unmarshal(call(t, window, "", "projects/sessions", map[string]any{"project": "p-agents"}), &got))
 	if len(got.Sessions) != 2 || got.Sessions[0].Session.ID != "B1" || got.Sessions[1].Session.ID != "A1" {
 		t.Fatalf("%+v", got.Sessions)
 	}
@@ -449,7 +449,7 @@ func TestAProjectsSessionsOnEveryMachine(t *testing.T) {
 
 	// A project no machine has a folder of: nothing, and nobody asked.
 	got = wire.ProjectSessions{}
-	json.Unmarshal(call(t, window, "", "projects/sessions", map[string]any{"project": "p-none"}), &got)
+	must(t, json.Unmarshal(call(t, window, "", "projects/sessions", map[string]any{"project": "p-none"}), &got))
 	if len(got.Sessions) != 0 || len(got.Unreached) != 0 {
 		t.Fatalf("%+v", got)
 	}

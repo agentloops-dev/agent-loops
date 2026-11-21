@@ -22,11 +22,11 @@ func TestCodespacesListUsesTheGitHubConnectionAndRepository(t *testing.T) {
 			t.Errorf("headers %v", r.Header)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{"codespaces": []any{map[string]any{
+		check(t, json.NewEncoder(w).Encode(map[string]any{"codespaces": []any{map[string]any{
 			"name": "silver-space", "display_name": "Silver Space", "state": "Shutdown",
 			"repository": map[string]any{"full_name": "alexec/agents"},
 			"git_status": map[string]any{"ref": "main"},
-		}}})
+		}}}))
 	}))
 	defer server.Close()
 	client := newGitHubCodespaces("test-token")
@@ -52,7 +52,7 @@ func TestCodespacesCreateUsesTheRepositoryDefaultBranch(t *testing.T) {
 			if r.URL.Path != "/repos/alexec/agents" {
 				t.Errorf("repository path %s", r.URL.Path)
 			}
-			json.NewEncoder(w).Encode(map[string]string{"default_branch": "main"})
+			check(t, json.NewEncoder(w).Encode(map[string]string{"default_branch": "main"}))
 			return
 		}
 		if r.Method != http.MethodPost || r.URL.Path != "/repos/alexec/agents/codespaces" {
@@ -64,11 +64,11 @@ func TestCodespacesCreateUsesTheRepositoryDefaultBranch(t *testing.T) {
 			t.Errorf("create body %v, %v", body, err)
 		}
 		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(map[string]any{
+		check(t, json.NewEncoder(w).Encode(map[string]any{
 			"name": "silver-space", "display_name": "Alex's Codespace", "state": "Queued",
 			"repository": map[string]string{"full_name": "alexec/agents"},
 			"git_status": map[string]string{"ref": "main"},
-		})
+		}))
 	}))
 	defer server.Close()
 	client := newGitHubCodespaces("test-token")

@@ -38,14 +38,14 @@ func TestStatusAndHostsSayCapabilities(t *testing.T) {
 	box := p.olderHost("MACHINE-2")
 	_, window := p.client("Window")
 	var status wire.ControlStatus
-	json.Unmarshal(call(t, window, "", "control/status", map[string]any{}), &status)
+	must(t, json.Unmarshal(call(t, window, "", "control/status", map[string]any{}), &status))
 	if !slices.Contains(status.Capabilities, wire.CapMachines1) || status.Required == nil ||
 		!slices.Equal(status.Required.Host, []string{wire.CapHostWire1}) || !slices.Equal(status.Required.Client, []string{wire.CapClientWire1}) {
 		t.Fatalf("control/status: %+v %+v", status.Capabilities, status.Required)
 	}
 	// The fake host says no list, as a host older than #1748: none, and nothing missing.
 	var hosts []wire.ControlMachine
-	json.Unmarshal(call(t, window, "", "machines/list", map[string]any{}), &hosts)
+	must(t, json.Unmarshal(call(t, window, "", "machines/list", map[string]any{}), &hosts))
 	for _, h := range hosts {
 		if string(h.ID) == box.member.Host && (h.Capabilities != nil || h.Missing != nil || h.State != "online") {
 			t.Fatalf("an older host: %+v", h)
@@ -87,7 +87,7 @@ func TestAHostWithoutTheRequiredSetNeedsAnUpdate(t *testing.T) {
 	}
 	_, window := p.client("Window")
 	var hosts []wire.ControlMachine
-	json.Unmarshal(call(t, window, "", "machines/list", map[string]any{}), &hosts)
+	must(t, json.Unmarshal(call(t, window, "", "machines/list", map[string]any{}), &hosts))
 	found := false
 	for _, h := range hosts {
 		if string(h.ID) == box.member.Host {
@@ -172,12 +172,12 @@ func TestOlderBuildsAreRefusedOnATeam(t *testing.T) {
 		t.Fatalf("an older host's state: %+v", state)
 	}
 	var status wire.ControlStatus
-	json.Unmarshal(call(t, owner, "", "control/status", map[string]any{}), &status)
+	must(t, json.Unmarshal(call(t, owner, "", "control/status", map[string]any{}), &status))
 	if !slices.Contains(status.Required.Client, wire.CapClientTeam1) || !slices.Contains(status.Required.Host, wire.CapHostTeam1) {
 		t.Fatalf("required on a team: %+v", status.Required)
 	}
 	var hosts []wire.ControlMachine
-	json.Unmarshal(call(t, owner, "", "machines/list", map[string]any{}), &hosts)
+	must(t, json.Unmarshal(call(t, owner, "", "machines/list", map[string]any{}), &hosts))
 	for _, h := range hosts {
 		if string(h.ID) == older.member.Host && !slices.Equal(h.Missing, []string{wire.CapHostTeam1}) {
 			t.Fatalf("an older host's row: %+v", h)

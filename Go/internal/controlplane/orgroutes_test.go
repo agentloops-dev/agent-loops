@@ -33,7 +33,7 @@ func (d *routesTold) heard(host, method string, params json.RawMessage) {
 		return
 	}
 	var delivery wire.OrgRouteDelivery
-	json.Unmarshal(params, &delivery)
+	fakeMust(json.Unmarshal(params, &delivery))
 	d.mu.Lock()
 	d.got[host] = append(d.got[host], delivery)
 	d.mu.Unlock()
@@ -119,7 +119,7 @@ func valueFingerprint(value string) string {
 func sealRoute(t *testing.T, s *controllink.Session, route wire.OrgRoute, values map[string]string, sealVersion int64) *wire.OrgRouteSealed {
 	t.Helper()
 	var recipients wire.SealRecipients
-	json.Unmarshal(call(t, s, "", "orgRoutes/recipients", wire.OrgRouteRecipientsRequest{Groups: route.Groups}), &recipients)
+	must(t, json.Unmarshal(call(t, s, "", "orgRoutes/recipients", wire.OrgRouteRecipientsRequest{Groups: route.Groups}), &recipients))
 	return sealTo(t, recipients.Recipients, route, values, sealVersion)
 }
 
@@ -156,14 +156,14 @@ func setRoute(t *testing.T, s *controllink.Session, route wire.OrgRoute, values 
 		request.Sealed = sealRoute(t, s, route, values, was+1)
 	}
 	var kept wire.OrgRouteKept
-	json.Unmarshal(call(t, s, "", "orgRoutes/set", request), &kept)
+	must(t, json.Unmarshal(call(t, s, "", "orgRoutes/set", request), &kept))
 	return kept
 }
 
 func listRoutes(t *testing.T, s *controllink.Session) wire.OrgRouteList {
 	t.Helper()
 	var list wire.OrgRouteList
-	json.Unmarshal(call(t, s, "", "orgRoutes/list", nil), &list)
+	must(t, json.Unmarshal(call(t, s, "", "orgRoutes/list", nil), &list))
 	return list
 }
 
@@ -212,7 +212,7 @@ func TestNoRouteSendsAnEmptyListAndChangesNothing(t *testing.T) {
 		t.Fatal("a machine that does not keep routes was told some")
 	}
 	var mine wire.OrgRoutesMine
-	json.Unmarshal(call(t, window, "", "orgRoutes/mine", nil), &mine)
+	must(t, json.Unmarshal(call(t, window, "", "orgRoutes/mine", nil), &mine))
 	if len(mine.Routes) != 0 {
 		t.Fatalf("%+v", mine)
 	}
@@ -321,7 +321,7 @@ func TestAnAdminKeepsARouteAndNoValueComesBack(t *testing.T) {
 	var mine wire.OrgRoutesMine
 	answers := [][]byte{call(t, window, "", "orgRoutes/list", nil), call(t, sam.window, "", "orgRoutes/mine", nil),
 		call(t, priya.window, "", "orgRoutes/list", nil)}
-	json.Unmarshal(answers[1], &mine)
+	must(t, json.Unmarshal(answers[1], &mine))
 	if len(mine.Routes) != 1 || mine.Routes[0].Name != "Acme" || !slices.Equal(mine.Routes[0].DefaultFor, []string{"claude"}) {
 		t.Fatalf("%+v", mine)
 	}
@@ -342,7 +342,7 @@ func TestAnAdminKeepsARouteAndNoValueComesBack(t *testing.T) {
 	}
 	// Each admin's client has a copy that it alone opens, and orgRoutes/sealed gives it.
 	var item wire.SealingItem
-	json.Unmarshal(call(t, priya.window, "", "orgRoutes/sealed", wire.OrgRouteRequest{ID: "acme-anthropic"}), &item)
+	must(t, json.Unmarshal(call(t, priya.window, "", "orgRoutes/sealed", wire.OrgRouteRequest{ID: "acme-anthropic"}), &item))
 	ad := controllink.OrgRouteAD("acme-anthropic", controllink.ClientRecipient(priya.member.Client), "apiKey", 1, wire.OrgRouteKindKey, anthropic, nil)
 	if plain, err := controllink.Open(priya.member.Private, controllink.OrgRoutePurpose, ad, item.Mine["apiKey"]); err != nil || string(plain) != key {
 		t.Fatalf("%q %v", plain, err)
@@ -370,11 +370,11 @@ func TestARouteReachesOnlyTheMachinesAllowed(t *testing.T) {
 		a.waitFor(func() bool { _, ok := told.last(m.member.Host); return ok }, "each machine told at its join")
 	}
 	var platform wire.Group
-	json.Unmarshal(call(t, window, "", "groups/set", wire.GroupSet{Name: "Platform", Members: []string{sam.id}}), &platform)
+	must(t, json.Unmarshal(call(t, window, "", "groups/set", wire.GroupSet{Name: "Platform", Members: []string{sam.id}}), &platform))
 
 	// The admin's client is told whom to seal to: Sam's two machines and its own self.
 	var recipients wire.SealRecipients
-	json.Unmarshal(call(t, window, "", "orgRoutes/recipients", wire.OrgRouteRecipientsRequest{Groups: []string{platform.ID}}), &recipients)
+	must(t, json.Unmarshal(call(t, window, "", "orgRoutes/recipients", wire.OrgRouteRecipientsRequest{Groups: []string{platform.ID}}), &recipients))
 	var ids []string
 	for _, r := range recipients.Recipients {
 		ids = append(ids, r.ID)
@@ -467,7 +467,7 @@ func TestARouteReachesOnlyTheMachinesAllowed(t *testing.T) {
 		t.Fatalf("%+v", list.Routes[0].Route)
 	}
 	var mine wire.OrgRoutesMine
-	json.Unmarshal(call(t, sam.window, "", "orgRoutes/mine", nil), &mine)
+	must(t, json.Unmarshal(call(t, sam.window, "", "orgRoutes/mine", nil), &mine))
 	if len(mine.Routes) != 1 || !deref(mine.Routes[0].Waiting) {
 		t.Fatalf("%+v", mine)
 	}
@@ -493,7 +493,7 @@ func TestARouteReachesOnlyTheMachinesAllowed(t *testing.T) {
 func sealForMissing(t *testing.T, s *controllink.Session, member *controllink.ClientMembership) int {
 	t.Helper()
 	var work wire.SealingWork
-	json.Unmarshal(call(t, s, "", "sealing/work", nil), &work)
+	must(t, json.Unmarshal(call(t, s, "", "sealing/work", nil), &work))
 	me := controllink.ClientRecipient(member.Client)
 	add := wire.SealingAdd{Items: []wire.SealingAddItem{}}
 	for _, item := range work.Items {
@@ -541,7 +541,7 @@ func TestReplaceAndRemoveARoute(t *testing.T) {
 	box := p.machineSaying(sam, routesHello("MACHINE-2"))
 	spare := p.machineSaying(sam, routesHello("MACHINE-3"))
 	var platform wire.Group
-	json.Unmarshal(call(t, window, "", "groups/set", wire.GroupSet{Name: "Platform", Members: []string{sam.id}}), &platform)
+	must(t, json.Unmarshal(call(t, window, "", "groups/set", wire.GroupSet{Name: "Platform", Members: []string{sam.id}}), &platform))
 
 	const oldKey, newKey = "sk-ant-old-key-111111", "sk-ant-new-key-222222"
 	route := wire.OrgRoute{Name: "Acme", Kind: wire.OrgRouteKindKey, Vendor: vendor(wire.OrgRouteVendorAnthropic),
@@ -550,8 +550,8 @@ func TestReplaceAndRemoveARoute(t *testing.T) {
 	p.waitFor(func() bool { return told.sealed(box.member.Host, "acme") != nil }, "the machine told the route")
 
 	var replaced wire.OrgRouteKept
-	json.Unmarshal(call(t, window, "", "orgRoutes/replaceKey", wire.OrgRouteReplaceKey{ID: "acme",
-		Sealed: *sealRoute(t, window, kept.Route, map[string]string{"apiKey": newKey}, 2), Rev: kept.Rev}), &replaced)
+	must(t, json.Unmarshal(call(t, window, "", "orgRoutes/replaceKey", wire.OrgRouteReplaceKey{ID: "acme",
+		Sealed: *sealRoute(t, window, kept.Route, map[string]string{"apiKey": newKey}, 2), Rev: kept.Rev}), &replaced))
 	if deref(replaced.Route.Version) != 2 || deref(replaced.Route.SealVersion) != 2 || replaced.Route.Fingerprint["apiKey"] != valueFingerprint(newKey) ||
 		replaced.Route.Name != "Acme" {
 		t.Fatalf("%+v", replaced.Route)
@@ -569,7 +569,7 @@ func TestReplaceAndRemoveARoute(t *testing.T) {
 	// The audit says what changed, and holds no value.
 	p.waitFor(func() bool {
 		var list wire.AuditList
-		json.Unmarshal(call(t, window, "", "audit/list", wire.AuditQuery{}), &list)
+		must(t, json.Unmarshal(call(t, window, "", "audit/list", wire.AuditQuery{}), &list))
 		added, replacedKey := false, false
 		for _, e := range list.Entries {
 			if strings.Contains(deref(e.Target), "sk-ant") {
@@ -594,7 +594,7 @@ func TestReplaceAndRemoveARoute(t *testing.T) {
 	call(t, sam.window, "", "machines/remove", map[string]string{"host": spare.member.Host})
 	for _, s := range []*controllink.Session{window, sam.window} {
 		var left wire.OrgRoutesLeft
-		json.Unmarshal(waitNote(t, s, wire.NotifyControlOrgRoutesLeft.Name).Params, &left)
+		must(t, json.Unmarshal(waitNote(t, s, wire.NotifyControlOrgRoutesLeft.Name).Params, &left))
 		if string(left.Host) != spare.member.Host || !slices.Equal(left.Routes, []string{"Acme"}) || left.User != sam.id {
 			t.Fatalf("%+v", left)
 		}
@@ -673,7 +673,7 @@ func TestCheckARouteOnAMachine(t *testing.T) {
 	setRoute(t, window, wire.OrgRoute{Name: "Acme", Kind: wire.OrgRouteKindKey, Vendor: vendor(wire.OrgRouteVendorAnthropic),
 		Runtimes: []string{"claude"}}, map[string]string{"apiKey": "sk-ant-checked"}, nil, 0)
 	var check wire.OrgRouteCheck
-	json.Unmarshal(call(t, window, "", "orgRoutes/check", wire.OrgRouteRequest{ID: "acme"}), &check)
+	must(t, json.Unmarshal(call(t, window, "", "orgRoutes/check", wire.OrgRouteRequest{ID: "acme"}), &check))
 	if check.Ok || !strings.Contains(check.Words, "No machine that holds this route") {
 		t.Fatalf("%+v", check)
 	}
@@ -683,7 +683,7 @@ func TestCheckARouteOnAMachine(t *testing.T) {
 		t.Fatal(err)
 	}
 	p.waitFor(func() bool { h := p.s.records.Host(box.member.Host); return h != nil && len(appliedOrgRoutes(*h)) == 1 }, "the route noted")
-	json.Unmarshal(call(t, window, "", "orgRoutes/check", wire.OrgRouteRequest{ID: "acme"}), &check)
+	must(t, json.Unmarshal(call(t, window, "", "orgRoutes/check", wire.OrgRouteRequest{ID: "acme"}), &check))
 	if !check.Ok || !strings.Contains(check.Words, "The provider took the key, checked on box MACHINE-2.") {
 		t.Fatalf("%+v", check)
 	}

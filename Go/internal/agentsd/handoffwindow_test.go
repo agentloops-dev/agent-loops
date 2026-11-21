@@ -72,7 +72,9 @@ func realWindow(t *testing.T) *fakeWindow {
 		w.fronted = append(w.fronted, pid)
 		return beforePid, nil
 	}
-	t.Cleanup(func() { driveHelper, showBrowserWindow, hideBrowserWindow, frontApp = oldHelper, oldShow, oldHide, oldFront })
+	t.Cleanup(func() {
+		driveHelper, showBrowserWindow, hideBrowserWindow, frontApp = oldHelper, oldShow, oldHide, oldFront
+	})
 	return w
 }
 
@@ -128,7 +130,7 @@ func TestAHandOffWithNoRealWindow(t *testing.T) {
 	}
 	c.call(t, 2, "elicitations/answer", map[string]any{"requestID": req.ID, "action": "accept", "content": map[string]any{"outcome": "done"}})
 	<-answered
-	d.releaseResource(other.ID, screenLeaseName)
+	must(t, errOnly(d.releaseResource(other.ID, screenLeaseName)))
 
 	w.mu.Lock()
 	w.showErr = errors.New("the browser has no window to show")

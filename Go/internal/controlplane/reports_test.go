@@ -42,7 +42,7 @@ func TestReportsAddUpWhatMachinesSend(t *testing.T) {
 	send(beas.member.Host, row("agents", 3, 300))
 
 	var day1 wire.UsageReport
-	json.Unmarshal(call(t, admin, "", "reports/usage", wire.ReportQuery{Range: wire.ReportRangeDay}), &day1)
+	must(t, json.Unmarshal(call(t, admin, "", "reports/usage", wire.ReportQuery{Range: wire.ReportRangeDay}), &day1))
 	if !day1.Admin || len(day1.Rows) != 3 {
 		t.Fatalf("%+v", day1)
 	}
@@ -60,13 +60,13 @@ func TestReportsAddUpWhatMachinesSend(t *testing.T) {
 	}
 
 	var month wire.UsageReport
-	json.Unmarshal(call(t, bea.window, "", "reports/usage", wire.ReportQuery{Range: wire.ReportRangeMonth}), &month)
+	must(t, json.Unmarshal(call(t, bea.window, "", "reports/usage", wire.ReportQuery{Range: wire.ReportRangeMonth}), &month))
 	if month.Admin || len(month.Rows) != 1 || month.Rows[0].At != day || month.Rows[0].Person != bea.id || month.Rows[0].InputTokens != 300 {
 		t.Fatalf("%+v", month)
 	}
 
 	var csv wire.ReportExport
-	json.Unmarshal(call(t, admin, "", "reports/export", wire.ReportQuery{Range: wire.ReportRangeWeek}), &csv)
+	must(t, json.Unmarshal(call(t, admin, "", "reports/export", wire.ReportQuery{Range: wire.ReportRangeWeek}), &csv))
 	lines := strings.Split(strings.TrimSpace(csv.Text), "\n")
 	if csv.Format != wire.ReportFormatCsv || csv.Count != 3 || len(lines) != 4 ||
 		!strings.HasPrefix(lines[0], "at,person,personName,host,hostName,folder,project,projectName,runtime,costUSD,inputTokens") {
@@ -74,7 +74,7 @@ func TestReportsAddUpWhatMachinesSend(t *testing.T) {
 	}
 	jsonl := wire.ReportFormatJsonl
 	var lined wire.ReportExport
-	json.Unmarshal(call(t, admin, "", "reports/export", wire.ReportQuery{Range: wire.ReportRangeThreeMonths, Format: &jsonl}), &lined)
+	must(t, json.Unmarshal(call(t, admin, "", "reports/export", wire.ReportQuery{Range: wire.ReportRangeThreeMonths, Format: &jsonl}), &lined))
 	var first wire.ReportRow
 	if lined.Count != 3 || json.Unmarshal([]byte(strings.Split(lined.Text, "\n")[0]), &first) != nil || first.Runtime != "claude" {
 		t.Fatalf("%+v", lined)
@@ -114,7 +114,9 @@ func TestReportsAreBounded(t *testing.T) {
 		usageKey(usageDaysPrefix, now.AddDate(0, 0, -89).Format(usageDayLayout), "h"),
 		usageKey(usageDaysPrefix, now.AddDate(0, 0, -91).Format(usageDayLayout), "h"),
 	} {
-		st.Put(ctx, k, []byte(`{"rows":[]}`), store.Always)
+		if _, err := st.Put(ctx, k, []byte(`{"rows":[]}`), store.Always); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if n, err := sweepUsage(ctx, st, now, 100); err != nil || n != 2 {
 		t.Fatalf("%d %v", n, err)
@@ -141,13 +143,13 @@ func TestReportsKeepWhatTheAgentsDid(t *testing.T) {
 		t.Fatal(err)
 	}
 	var got wire.UsageReport
-	json.Unmarshal(call(t, admin, "", "reports/usage", wire.ReportQuery{Range: wire.ReportRangeDay}), &got)
+	must(t, json.Unmarshal(call(t, admin, "", "reports/usage", wire.ReportQuery{Range: wire.ReportRangeDay}), &got))
 	if len(got.Rows) != 2 || got.Rows[0].Counts == nil || got.Rows[0].Counts.PrsMerged != 1 || got.Rows[1].Counts != nil ||
 		got.Rows[0].Workflow == nil || *got.Rows[0].Workflow != "nightly" {
 		t.Fatalf("%+v", got.Rows)
 	}
 	var csv wire.ReportExport
-	json.Unmarshal(call(t, admin, "", "reports/export", wire.ReportQuery{Range: wire.ReportRangeDay}), &csv)
+	must(t, json.Unmarshal(call(t, admin, "", "reports/export", wire.ReportQuery{Range: wire.ReportRangeDay}), &csv))
 	lines := strings.Split(strings.TrimSpace(csv.Text), "\n")
 	if !strings.HasSuffix(lines[0], ",workflow,sessions,failedSessions,prsOpened,prsMerged,prsReverted,mergeSeconds,waits,workflowRuns,workflowFailures") ||
 		!strings.HasSuffix(lines[1], ",nightly,2,1,1,1,0,3600,1,3,1") || !strings.HasSuffix(lines[2], ",,,,,,,,,,") {
@@ -185,7 +187,7 @@ func TestReportRowsNameTheirProject(t *testing.T) {
 	send(box.member.Host, "agents")
 
 	var report wire.UsageReport
-	json.Unmarshal(call(t, admin, "", "reports/usage", wire.ReportQuery{Range: wire.ReportRangeDay}), &report)
+	must(t, json.Unmarshal(call(t, admin, "", "reports/usage", wire.ReportQuery{Range: wire.ReportRangeDay}), &report))
 	projects := map[string]string{}
 	for _, r := range report.Rows {
 		name := ""
@@ -203,7 +205,7 @@ func TestReportRowsNameTheirProject(t *testing.T) {
 	}
 
 	var csv wire.ReportExport
-	json.Unmarshal(call(t, admin, "", "reports/export", wire.ReportQuery{Range: wire.ReportRangeDay}), &csv)
+	must(t, json.Unmarshal(call(t, admin, "", "reports/export", wire.ReportQuery{Range: wire.ReportRangeDay}), &csv))
 	if !strings.Contains(csv.Text, ",Agents,p-agents,Agents,claude,") {
 		t.Fatalf("%s", csv.Text)
 	}

@@ -21,7 +21,7 @@ func TestDeclaringAResource(t *testing.T) {
 	d, c := start(t, root)
 	defer d.Shutdown()
 	var snap wire.LeaseSnapshot
-	json.Unmarshal(c.call(t, 1, "resources/snapshot", nil), &snap)
+	mustUnmarshal(t, c.call(t, 1, "resources/snapshot", nil), &snap)
 	// The machine's own: the screen, the browser and capacity (#4579).
 	if len(snap.Resources) != 3 || snap.Resources[0].Name != "screen" || snap.Resources[0].DisplayName != "Screen, mouse and keyboard" ||
 		snap.Resources[1].Name != "browser:agents" || snap.Resources[1].Kind != "browser" ||
@@ -29,7 +29,7 @@ func TestDeclaringAResource(t *testing.T) {
 		t.Fatalf("%+v", snap)
 	}
 	two := int64(2)
-	json.Unmarshal(c.call(t, 2, "resources/declare", map[string]any{"resource": map[string]any{"name": " Build ", "displayName": " build ",
+	mustUnmarshal(t, c.call(t, 2, "resources/declare", map[string]any{"resource": map[string]any{"name": " Build ", "displayName": " build ",
 		"description": " When building ", "holders": two, "defaultMinutes": 10}}), &snap)
 	r := snap.Resources[0]
 	if r.Name != "build" || r.Declared == nil || r.Declared.Description != "When building" || *r.Places != 2 || r.DisplayName != "build" {
@@ -82,9 +82,9 @@ func TestABookSwiftWroteIsHandedOn(t *testing.T) {
 		"line": []any{map[string]any{"agentID": next.ID, "askedAt": at.Format("2006-01-02T15:04:05.000Z"),
 			"waitID": "11111111-1111-1111-1111-111111111111"}}}}, "notices": map[string]any{}}
 	b, _ := json.Marshal(book)
-	os.WriteFile(filepath.Join(root, "leases.json"), b, 0o644)
+	must(t, os.WriteFile(filepath.Join(root, "leases.json"), b, 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	var snap wire.LeaseSnapshot
-	json.Unmarshal(c.call(t, 1, "resources/snapshot", nil), &snap)
+	mustUnmarshal(t, c.call(t, 1, "resources/snapshot", nil), &snap)
 	var sim wire.ResourceState
 	for _, r := range snap.Resources {
 		if r.Name == "simulator:abc" {
@@ -101,7 +101,7 @@ func TestABookSwiftWroteIsHandedOn(t *testing.T) {
 	if e := c.callError(t, 2, "resources/end", map[string]any{"name": "simulator:abc", "agentID": next.ID}); e.Message != "That agent does not hold simulator:abc." {
 		t.Fatal(e.Message)
 	}
-	json.Unmarshal(c.call(t, 3, "resources/end", map[string]any{"name": "simulator:abc"}), &snap)
+	mustUnmarshal(t, c.call(t, 3, "resources/end", map[string]any{"name": "simulator:abc"}), &snap)
 	waitFor(t, "the next in line started", func() bool {
 		for _, m := range userMessages(d, next.ID) {
 			if strings.HasPrefix(m, "The event you were waiting for happened.") && strings.Contains(m, "You hold iPhone 17 until ") {
@@ -120,7 +120,7 @@ func TestABookSwiftWroteIsHandedOn(t *testing.T) {
 		Notices map[string][]json.RawMessage `json:"notices"`
 	}
 	b, _ = os.ReadFile(filepath.Join(root, "leases.json"))
-	diskjson.Unmarshal(b, &onDisk)
+	must(t, diskjson.Unmarshal(b, &onDisk))
 	if l := onDisk.Entries["simulator:abc"].Leases; len(l) != 1 || l[0].Holder != next.ID || !strings.Contains(string(b), "endedByPerson") {
 		t.Fatalf("%s", b)
 	}
@@ -131,7 +131,7 @@ func TestABookSwiftWroteIsHandedOn(t *testing.T) {
 		var book struct {
 			Entries map[string]json.RawMessage `json:"entries"`
 		}
-		json.Unmarshal(b, &book)
+		mustUnmarshal(t, b, &book)
 		return len(book.Entries) == 0
 	})
 	waitFor(t, "its turn over", func() bool {

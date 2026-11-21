@@ -2,7 +2,6 @@ package agentsd
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -28,7 +27,7 @@ func TestAFoldersPRCostCommentIsItsFile(t *testing.T) {
 		t.Fatal(e.Message)
 	}
 	var s wire.FolderSummary
-	json.Unmarshal(c.call(t, 3, "folders/setPRCostComment", map[string]any{"folder": folder, "prCostComment": "cost"}), &s)
+	mustUnmarshal(t, c.call(t, 3, "folders/setPRCostComment", map[string]any{"folder": folder, "prCostComment": "cost"}), &s)
 	if s.Folder.PrCostComment == nil || *s.Folder.PrCostComment != wire.PRCostCommentCost || d.prCostCommentOf(dir) != wire.PRCostCommentCost {
 		t.Fatalf("%+v", s.Folder.PrCostComment)
 	}
@@ -37,7 +36,7 @@ func TestAFoldersPRCostCommentIsItsFile(t *testing.T) {
 		t.Fatalf("%s", b)
 	}
 	s = wire.FolderSummary{}
-	json.Unmarshal(c.call(t, 4, "folders/setPRCostComment", map[string]any{"folder": folder, "prCostComment": "off"}), &s)
+	mustUnmarshal(t, c.call(t, 4, "folders/setPRCostComment", map[string]any{"folder": folder, "prCostComment": "off"}), &s)
 	b, _ = os.ReadFile(filepath.Join(dir, ".agents", "folder.json"))
 	if s.Folder.PrCostComment != nil || strings.Contains(string(b), "prCostComment") {
 		t.Fatalf("%+v %s", s.Folder.PrCostComment, b)

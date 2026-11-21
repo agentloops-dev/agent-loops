@@ -28,14 +28,14 @@ func checkLink(t *testing.T, p *plane, host string, sender wire.ChannelSender) w
 func linkRequests(t *testing.T, s *controllink.Session) []wire.ChannelLinkRequest {
 	t.Helper()
 	var out []wire.ChannelLinkRequest
-	json.Unmarshal(call(t, s, "", "links/requests", nil), &out)
+	must(t, json.Unmarshal(call(t, s, "", "links/requests", nil), &out))
 	return out
 }
 
 func channelLinks(t *testing.T, s *controllink.Session) []wire.ChannelLink {
 	t.Helper()
 	var out []wire.ChannelLink
-	json.Unmarshal(call(t, s, "", "links/list", nil), &out)
+	must(t, json.Unmarshal(call(t, s, "", "links/list", nil), &out))
 	return out
 }
 
@@ -66,7 +66,7 @@ func TestAChannelIdentityActsOnlyOnceItsPersonApproves(t *testing.T) {
 	}
 	note := waitNote(t, sam.window, "control/linkRequested")
 	var asked wire.ChannelLinkRequest
-	json.Unmarshal(note.Params, &asked)
+	must(t, json.Unmarshal(note.Params, &asked))
 	if asked.Channel != "slack" || asked.Identity != "T1/U42" || deref(asked.For) != sam.id {
 		t.Fatalf("%+v", asked)
 	}
@@ -306,7 +306,9 @@ func TestARemovedPersonsRecordsGo(t *testing.T) {
 	}
 	for _, user := range []string{sam.id, "someone-else"} {
 		for _, k := range keys(user) {
-			st.Put(ctx, k, []byte("{}"), store.Always)
+			if _, err := st.Put(ctx, k, []byte("{}"), store.Always); err != nil {
+				t.Fatal(err)
+			}
 		}
 	}
 	call(t, owner, "", "people/remove", wire.PersonRequest{User: sam.id})

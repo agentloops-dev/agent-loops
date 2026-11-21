@@ -44,9 +44,9 @@ func TestTheControlPlaneReleasesOnlyForAFreshSignedApproval(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	json.Unmarshal(b, &public)
+	must(t, json.Unmarshal(b, &public))
 	b, _ = box.uplink.Ask(ctx, wire.CallMachineSecretKey.Name, wire.Empty{})
-	json.Unmarshal(b, &again)
+	must(t, json.Unmarshal(b, &again))
 	if len(public.PublicKey) != 32 || string(public.PublicKey) != string(again.PublicKey) {
 		t.Fatalf("%x %x", public.PublicKey, again.PublicKey)
 	}
@@ -78,7 +78,7 @@ func TestTheControlPlaneReleasesOnlyForAFreshSignedApproval(t *testing.T) {
 			return nil, err
 		}
 		var r wire.SecretReleased
-		json.Unmarshal(b, &r)
+		must(t, json.Unmarshal(b, &r))
 		return r.Key, nil
 	}
 

@@ -18,7 +18,7 @@ import (
 
 func TestTheConcreteNamesAreReadThroughIncludes(t *testing.T) {
 	ssh := t.TempDir()
-	os.MkdirAll(filepath.Join(ssh, "config.d"), 0o755)
+	must(t, os.MkdirAll(filepath.Join(ssh, "config.d"), 0o700))
 	config := `# defaults
 Host *
     User agents
@@ -32,9 +32,9 @@ Match host devbox exec "true"
     Port 2222
 Include config
 `
-	os.WriteFile(filepath.Join(ssh, "config"), []byte(config), 0o600)
-	os.WriteFile(filepath.Join(ssh, "config.d/b"), []byte("Host gpu\n  ProxyJump bastion\nHost bastion\n"), 0o600)
-	os.WriteFile(filepath.Join(ssh, "config.d/a"), []byte("host a\nHOST = devbox\n"), 0o600)
+	must(t, os.WriteFile(filepath.Join(ssh, "config"), []byte(config), 0o600))
+	must(t, os.WriteFile(filepath.Join(ssh, "config.d/b"), []byte("Host gpu\n  ProxyJump bastion\nHost bastion\n"), 0o600))
+	must(t, os.WriteFile(filepath.Join(ssh, "config.d/a"), []byte("host a\nHOST = devbox\n"), 0o600))
 
 	got := Aliases(filepath.Join(ssh, "config"), "", ssh)
 	want := []string{"a", "devbox", "gpu", "bastion", "build-1", "quoted", "with space"}
@@ -251,7 +251,7 @@ func TestDetectInstallsWhatTheConfigNames(t *testing.T) {
 	f := newFake(t)
 	f.env["FAKE_SSH_PERSON_KNOWS"] = "1"
 	config := filepath.Join(f.dir, "ssh_config")
-	os.WriteFile(config, []byte("Host devbox\n  HostName devbox.lan\nHost mine\n"), 0o600)
+	must(t, os.WriteFile(config, []byte("Host devbox\n  HostName devbox.lan\nHost mine\n"), 0o600))
 	var steps []string
 	i := f.installer(&fakeCodes{}, &steps)
 	i.ConfigFile = config
@@ -285,7 +285,7 @@ func TestDetectInstallsWhatTheConfigNames(t *testing.T) {
 func TestAServerThatDoesNotLetSSHInIsUnreachable(t *testing.T) {
 	f := newFake(t)
 	config := filepath.Join(f.dir, "ssh_config")
-	os.WriteFile(config, []byte("Host devbox\n"), 0o600)
+	must(t, os.WriteFile(config, []byte("Host devbox\n"), 0o600))
 	var steps []string
 	i := f.installer(&fakeCodes{}, &steps)
 	i.ConfigFile = config

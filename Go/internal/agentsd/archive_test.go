@@ -1,7 +1,6 @@
 package agentsd
 
 import (
-	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -69,7 +68,7 @@ func TestAnArchiveWhileACardWaitsStaysArchived(t *testing.T) {
 	defer d.Shutdown()
 	var id wire.UUID
 	var card wire.PermissionRequest
-	json.Unmarshal(c.callHearing(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(),
+	mustUnmarshal(t, c.callHearing(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(),
 		"prompt": "Please ask, then write hi.txt"}, "a card", aCard(&card)), &id)
 	c.call(t, 2, "agents/archive", map[string]any{"agentID": id})
 	waitFor(t, "the turn over", func() bool {
