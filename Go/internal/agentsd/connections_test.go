@@ -520,3 +520,60 @@ func TestConnectingEmailWithAnAppPassword(t *testing.T) {
 		t.Fatalf("disconnect: %+v", gone)
 	}
 }
+
+// countingStore counts the reads of the store under it.
+type countingStore struct {
+	connections.Store
+	gets atomic.Int32
+}
+
+func (s *countingStore) Get(provider string) (connections.Connection, bool, error) {
+	s.gets.Add(1)
+	return s.Store.Get(provider)
+}
+
+// #6531: forgeViewer reads the store once, not on each commit's Requested-by, and a write
+// through the host's store (a sign-in, a disconnect) is read at the next call.
+func TestForgeViewerIsKeptUntilTheConnectionChanges(t *testing.T) {
+	t.Parallel()
+
+	d, _ := start(t, t.TempDir())
+	defer d.Shutdown()
+	s := &countingStore{Store: &connections.File{Path: filepath.Join(t.TempDir(), connections.FileName)}}
+	d.connStoreFor = func() (connections.Store, error) { return s, nil }
+	if err := s.Put(connections.Connection{Provider: connections.GitHub, Login: "alexec", Access: "a"}); err != nil {
+		t.Fatal(err)
+	}
+
+	for range 3 {
+		if got := d.forgeViewer(connections.GitHub); deref(got) != "alexec" {
+			t.Fatalf("viewer: %v", got)
+		}
+	}
+	if n := s.gets.Load(); n != 1 {
+		t.Fatalf("store read %d times for 3 calls, want 1", n)
+	}
+
+	store, err := d.connectionStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Put(connections.Connection{Provider: connections.GitHub, Login: "someone-else", Access: "b"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := d.forgeViewer(connections.GitHub); deref(got) != "someone-else" {
+		t.Fatalf("after a sign-in: %v", got)
+	}
+	if err := store.Delete(connections.GitHub); err != nil {
+		t.Fatal(err)
+	}
+	if got := d.forgeViewer(connections.GitHub); got != nil {
+		t.Fatalf("after a disconnect: %v", *got)
+	}
+	// No connection is kept too: the hook on a host that is not connected reads it once.
+	before := s.gets.Load()
+	d.forgeViewer(connections.GitHub)
+	if n := s.gets.Load() - before; n != 0 {
+		t.Fatalf("no connection read again %d times", n)
+	}
+}
