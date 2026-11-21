@@ -2156,43 +2156,6 @@
       }
     },
     {
-      "name": "folders/detect",
-      "x-capability": "folders/1",
-      "description": "To a host just added, from a control plane before #656.",
-      "x-notification": true,
-      "paramStructure": "by-name",
-      "params": [
-        {
-          "name": "params",
-          "required": true,
-          "schema": {
-            "$ref": "schema/files.schema.json#/definitions/FolderDetection"
-          }
-        }
-      ]
-    },
-    {
-      "name": "folders/detected",
-      "x-capability": "folders/1",
-      "description": "A host, on its channel 0 (#429): its answer to folders/detect.",
-      "paramStructure": "by-name",
-      "params": [
-        {
-          "name": "params",
-          "required": true,
-          "schema": {
-            "$ref": "schema/core.schema.json#/definitions/JSONValue"
-          }
-        }
-      ],
-      "result": {
-        "name": "result",
-        "schema": {
-          "$ref": "schema/core.schema.json#/definitions/Empty"
-        }
-      }
-    },
-    {
       "name": "forge/boardsAll",
       "description": "The boards of the caller's machines in one call (#5592).",
       "x-capability": "machines.all/1",
