@@ -171,17 +171,8 @@ type trailersAnswer struct {
 // serveTrailers answers agents-trailers: the block of the grant's session, as git/trailers
 // gives it, and the keys the rule turns off, as JSON.
 func (d *Daemon) serveTrailers(w http.ResponseWriter, r *http.Request) {
-	grant := bearer(r.Header.Get("Authorization"))
-	d.credMu.Lock()
-	agent, ok := d.commandGrants[grant]
-	d.credMu.Unlock()
-	if grant == "" || !ok {
-		w.WriteHeader(http.StatusNotFound)
-		return
-	}
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", "POST")
-		w.WriteHeader(http.StatusMethodNotAllowed)
+	agent, ok := d.commandGrantPost(w, r)
+	if !ok {
 		return
 	}
 	block, err := d.gitTrailers(r.Context(), wire.GitTrailersRequest{Session: agent})
@@ -443,13 +434,5 @@ func writeTrailersShim(bin, agentsd string) error {
 	script := "#!/bin/sh\n" +
 		"# agents-trailers MSGFILE (#6372): Agent Loops writes this file. The worktree's commit-msg hook runs it to write the commit's trailer block.\n" +
 		"exec " + shellQuote(agentsd) + " trailers \"$@\"\n"
-	path := filepath.Join(bin, trailersCommandName)
-	if old, err := os.ReadFile(path); err == nil && string(old) == script {
-		return nil
-	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, []byte(script), 0o700); err != nil { //nolint:gosec // G306: a command must be executable, as agents-secret's is
-		return err
-	}
-	return os.Rename(tmp, path)
+	return writeCommand(filepath.Join(bin, trailersCommandName), script)
 }
