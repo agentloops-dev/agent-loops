@@ -116,52 +116,7 @@ func AddViews(server *mcp.Server, linear Views) {
 			"A team key, a state type (triage, backlog, unstarted, started) or a label narrows it. " +
 			"Its view is the Linear issues page, where a person expands a row for its Markdown description or chooses Start Agent.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true}, Meta: uiMeta(issuesURI, "model", "app")},
-		func(ctx context.Context, req *mcp.CallToolRequest, in issuesArgs) (*mcp.CallToolResult, any, error) {
-			if in.State != "" && !contains(openStateTypes, in.State) {
-				return failed(fmt.Errorf("state must be one of %s", strings.Join(openStateTypes, ", "))), nil, nil
-			}
-			list, viewer, err := linear.OpenIssues(ctx, in.Team, in.State, in.Label)
-			if err != nil {
-				return failed(err), nil, nil
-			}
-			teams, err := linear.Teams(ctx)
-			if err != nil {
-				return failed(err), nil, nil
-			}
-			// The control plane's people (#2951): names a row, tells Team from Others.
-			people := teamMetaOf(req.Params.Meta, "linear")
-			issues := make([]any, len(list))
-			// The count on the sidebar's row (#2033): the issues that need the viewer (#2453).
-			needsYou := 0
-			for i, l := range list {
-				j := l.json()
-				section := issueSection(l.Issue, viewer, people)
-				j["section"] = section
-				if l.Creator != nil {
-					if tp, on := people[strings.ToLower(l.Creator.Email)]; on {
-						j["authorName"] = tp.Name
-						if tp.Bot {
-							j["authorBot"] = true
-						}
-					}
-				}
-				if section == sectionNeedsYou {
-					needsYou++
-				}
-				if section == sectionNeedsYou || section == sectionYours {
-					if who := agentOnOf(req.Params.Meta, l.Identifier); who != "" {
-						j["agentOn"] = who
-					}
-				}
-				issues[i] = j
-			}
-			names := make([]any, len(teams))
-			for i, t := range teams {
-				names[i] = map[string]any{"key": t.Key, "name": t.Name}
-			}
-			return structured(map[string]any{"team": in.Team, "state": in.State, "label": in.Label, "viewer": viewer.name(),
-				"teams": names, "states": openStateTypes, "issues": issues, "count": len(issues), "attention": needsYou}), nil, nil
-		})
+		showIssues(linear))
 
 	mcp.AddTool(server, &mcp.Tool{Name: "show_issue_details", Title: "Show issue details",
 		Description: "One issue's description, rendered as rich text for the Issues page.",
@@ -186,6 +141,62 @@ func AddViews(server *mcp.Server, linear Views) {
 		func(context.Context, *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
 			return &mcp.ReadResourceResult{Contents: []*mcp.ResourceContents{{URI: issuesURI, MIMEType: viewMime, Text: html, Meta: meta}}}, nil
 		})
+}
+
+// showIssues is show_issues' handler.
+func showIssues(linear Views) mcp.ToolHandlerFor[issuesArgs, any] {
+	return func(ctx context.Context, req *mcp.CallToolRequest, in issuesArgs) (*mcp.CallToolResult, any, error) {
+		if in.State != "" && !contains(openStateTypes, in.State) {
+			return failed(fmt.Errorf("state must be one of %s", strings.Join(openStateTypes, ", "))), nil, nil
+		}
+		list, viewer, err := linear.OpenIssues(ctx, in.Team, in.State, in.Label)
+		if err != nil {
+			return failed(err), nil, nil
+		}
+		teams, err := linear.Teams(ctx)
+		if err != nil {
+			return failed(err), nil, nil
+		}
+		issues, needsYou := issueRows(req.Params.Meta, list, viewer)
+		names := make([]any, len(teams))
+		for i, t := range teams {
+			names[i] = map[string]any{"key": t.Key, "name": t.Name}
+		}
+		return structured(map[string]any{"team": in.Team, "state": in.State, "label": in.Label, "viewer": viewer.name(),
+			"teams": names, "states": openStateTypes, "issues": issues, "count": len(issues), "attention": needsYou}), nil, nil
+	}
+}
+
+// issueRows is the page's rows, each with its section, and the count of the issues that
+// need the viewer: the count on the sidebar's row (#2033, #2453).
+func issueRows(meta mcp.Meta, list []ListedIssue, viewer *Person) ([]any, int) {
+	// The control plane's people (#2951): names a row, tells Team from Others.
+	people := teamMetaOf(meta, "linear")
+	issues := make([]any, len(list))
+	needsYou := 0
+	for i, l := range list {
+		j := l.json()
+		section := issueSection(l.Issue, viewer, people)
+		j["section"] = section
+		if l.Creator != nil {
+			if tp, on := people[strings.ToLower(l.Creator.Email)]; on {
+				j["authorName"] = tp.Name
+				if tp.Bot {
+					j["authorBot"] = true
+				}
+			}
+		}
+		if section == sectionNeedsYou {
+			needsYou++
+		}
+		if section == sectionNeedsYou || section == sectionYours {
+			if who := agentOnOf(meta, l.Identifier); who != "" {
+				j["agentOn"] = who
+			}
+		}
+		issues[i] = j
+	}
+	return issues, needsYou
 }
 
 // IssueDetails reads and renders one issue's Markdown description.

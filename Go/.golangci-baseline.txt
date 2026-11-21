@@ -3931,7 +3931,6 @@ Go/internal/linearmcp/forgewrite_test.go: Error return value of `io.WriteString`
 Go/internal/linearmcp/forgewrite_test.go: Error return value of `io.WriteString` is not checked (errcheck)
 Go/internal/linearmcp/forgewrite_test.go: Error return value of `json.Unmarshal` is not checked (errcheck)
 Go/internal/linearmcp/graphql.go: QF1008: could remove embedded field "gqlIssue" from selector (staticcheck)
-Go/internal/linearmcp/views.go: cognitive complexity of func `AddViews` is high (> 30) (gocognit)
 Go/internal/mac/peer.go: Error return value of `p.cmd.Process.Kill` is not checked (errcheck)
 Go/internal/mac/peer.go: Error return value of `p.cmd.Wait` is not checked (errcheck)
 Go/internal/mac/peer.go: G104: Errors unhandled (gosec)
