@@ -14,7 +14,7 @@ steps, see [Start or continue a session from a terminal](../how-to/use-loops-in-
 
 | Command | What it does |
 |---|---|
-| `loops` | Continues the most recent session of the folder here, in the chat. With no session, it waits for the first prompt. |
+| `loops` | Continues the most recent session of the folder here, in the chat. With no session, it waits for the first prompt. When stdin is not a terminal and the session is idle, it writes the session's last entries and stops. |
 | `loops "<prompt>"` | Starts a new session here with this prompt, and shows it in the chat. |
 | `loops -c ["<prompt>"]` | Continues the most recent session here, with the prompt when you give one. Also `--continue`. |
 | `loops -r <id or title> ["<prompt>"]` | Continues one session. Also `--resume`. |
@@ -25,7 +25,7 @@ steps, see [Start or continue a session from a terminal](../how-to/use-loops-in-
 | `loops pair '<code>'` | Pairs this terminal with a control plane, with a client code from **Settings ▸ Control plane ▸ Clients ▸ Pair a Mac…**. |
 | `loops unpair` | Deletes the pairing here, and removes this terminal from the control plane's clients. When the control plane does not answer, it deletes the pairing here only. |
 | `loops status` | The pairing, this machine, and the folder of the directory here. |
-| `loops help` | The commands, flags and exit codes. |
+| `loops help` | The commands, flags and exit codes. Also `-h` and `--help`. |
 
 Flags can come before or after the command. A first word that is not a command is the
 start of a prompt: `loops fix the test` starts a session with the prompt "fix the test".
@@ -34,7 +34,7 @@ start of a prompt: `loops fix the test` starts a session with the prompt "fix th
 
 `-r` takes, in this order:
 
-1. the start of a session's id, as `loops ls` shows it (6 characters or more);
+1. a session's whole id, as `-p --json` writes it, which takes one read; or the start of an id, as `loops ls` shows it (6 characters or more);
 2. a session's whole title, with no difference between capital and small letters;
 3. a part of a title that only one session has.
 

@@ -295,3 +295,17 @@ func TestUnreachableSaysNothingChanged(t *testing.T) {
 		t.Fatal("codeOf")
 	}
 }
+
+// -h and --help are the usage on stdout with exit 0, also beside print mode's flags.
+func TestHelpFlagsPrintTheUsageAndExitZero(t *testing.T) {
+	for _, args := range [][]string{{"--help"}, {"-h"}, {"-p", "-h"}} {
+		var b bytes.Buffer
+		if err := run(context.Background(), args, &b); err != nil || !strings.Contains(b.String(), "Exit codes:") {
+			t.Fatalf("%v: %v\n%s", args, err, b.String())
+		}
+	}
+	err := run(context.Background(), []string{"--bogus"}, &bytes.Buffer{})
+	if codeOf(err) != exitError || !strings.Contains(err.Error(), "See: loops --help") || strings.Contains(err.Error(), "Exit codes:") {
+		t.Fatalf("an unknown flag says so in two lines: %v", err)
+	}
+}

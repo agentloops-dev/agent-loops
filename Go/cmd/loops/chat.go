@@ -148,6 +148,11 @@ func runChat(ctx context.Context, c noter, p place, o options, a chatArgs, t ter
 		if err := f.attach(ctx, *target, others); err != nil {
 			return err
 		}
+		// With no terminal to type in and nothing to send, an idle session has nothing more
+		// to show: the command ends, as the page it read (it waited for ever, #6473).
+		if a.text == "" && t.keys == nil && !f.sent && len(f.cards) == 0 {
+			return nil
+		}
 		if a.text != "" {
 			if err := f.send(ctx, a.text); err != nil {
 				return err
@@ -181,7 +186,7 @@ func (f *live) askTheme(ctx context.Context) {
 
 // pick is the session to continue, or nil to start one: -r names one, -c and a bare
 // loops take the newest, a prompt alone starts a new one. others counts the folder's other
-// sessions.
+// sessions on the first page; it is -1 when the page was full, so there are more.
 func (f *live) pick(ctx context.Context, a chatArgs) (*wire.Agent, int, error) {
 	if a.resume != "" {
 		got, err := f.find(ctx, a.resume)
@@ -190,12 +195,15 @@ func (f *live) pick(ctx context.Context, a chatArgs) (*wire.Agent, int, error) {
 	if a.text != "" && !a.cont {
 		return nil, 0, nil
 	}
-	list, _, err := listSessions(ctx, f.c, f.p, false)
+	list, more, err := listSessions(ctx, f.c, f.p, false)
 	if err != nil {
 		return nil, 0, err
 	}
 	if len(list) == 0 {
 		return nil, 0, nil
+	}
+	if more {
+		return &list[0], -1, nil
 	}
 	return &list[0], len(list) - 1, nil
 }
@@ -209,6 +217,10 @@ func (f *live) find(ctx context.Context, want string) (*wire.Agent, error) {
 	if p.folder != "" {
 		req.Folder = &p.folder
 	}
+	// A whole id, as print mode's --json gives a script, is one read, not every page.
+	if id, ok := wholeID(want); ok {
+		req.AgentID, req.Limit = &id, nil
+	}
 	var list []wire.Agent
 	for {
 		r, err := f.c.Call(ctx, string(p.machine.ID), "agents/list", req)
@@ -220,13 +232,28 @@ func (f *live) find(ctx context.Context, want string) (*wire.Agent, error) {
 			return nil, err
 		}
 		list = append(list, page...)
-		if len(page) < pageSize {
+		if req.AgentID != nil || len(page) < pageSize {
 			break
 		}
 		last := page[len(page)-1]
 		req.After = &wire.ListCursor{LastActivityAt: last.LastActivityAt, ID: last.ID}
 	}
 	return match(list, want)
+}
+
+// wholeID is want as a session's whole id (32 hex digits, with or without dashes, after
+// an "s_"), in the daemon's form.
+func wholeID(want string) (wire.UUID, bool) {
+	hex := strings.ToUpper(strings.ReplaceAll(strings.TrimPrefix(strings.TrimSpace(want), "s_"), "-", ""))
+	if len(hex) != 32 {
+		return "", false
+	}
+	for _, r := range hex {
+		if !strings.ContainsRune("0123456789ABCDEF", r) {
+			return "", false
+		}
+	}
+	return wire.UUID(hex[:8] + "-" + hex[8:12] + "-" + hex[12:16] + "-" + hex[16:20] + "-" + hex[20:]), true
 }
 
 // match is the one session of list that want names (see find).
@@ -295,6 +322,8 @@ func (f *live) attach(ctx context.Context, a wire.Agent, others int) error {
 		line = fmt.Sprintf("Continuing %q · working", f.title)
 	}
 	switch {
+	case others < 0:
+		line += fmt.Sprintf(" · %d+ other sessions here (loops ls)", pageSize-1)
 	case others == 1:
 		line += " · 1 other session here (loops ls)"
 	case others > 1:
