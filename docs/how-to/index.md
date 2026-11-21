@@ -75,6 +75,8 @@ something particular done.
   what order, and read or change what each value is on each runtime.
 - [Pick up a conversation started somewhere else](pick-up-a-conversation.md): carry on
   in Agent Loops with one you began in Terminal, or delete one.
+- [Start or continue a session from a terminal](use-loops-in-a-terminal.md): the `loops`
+  command in the folder you are in, its cards, and print mode for scripts and CI.
 - [Answer a question or a permission request](answer-a-question.md): from the Mac, the
   iPhone or iPad, or a notification.
 - [Read a chat](read-a-chat.md): open a chat at its latest message, follow the plan card,
@@ -93,8 +95,6 @@ something particular done.
   for your OK on its Review page, and answer it from the page, the card or Needs You.
 - [Use a shell in an agent's folder](use-a-shell.md): the Terminal pane, one shell to a
   tab.
-- [Use loops in a terminal](use-loops-in-a-terminal.md): install the command-line client,
-  pair it, and start or continue a session in the folder you are in.
 - [Attach files and pictures to a prompt](attach-files.md): drag, paste, the paperclip,
   or an @ mention.
 - [Read an agent's changes](read-an-agents-changes.md): the Changes pane, edits in the
