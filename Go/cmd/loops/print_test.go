@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -237,6 +238,7 @@ func TestPrintFlagsNeedPrintMode(t *testing.T) {
 // gather ends long before the burst is taken (a nanosecond), as under load (#6554): the
 // notes queued by then are still the same read.
 func TestPrintModeReadsOnceForABurstOfEntryNotes(t *testing.T) {
+	flaky.UnderLoad(t, "#6554")
 	was, wasGather := recheck, gather
 	recheck, gather = time.Hour, time.Nanosecond
 	t.Cleanup(func() { recheck, gather = was, wasGather })

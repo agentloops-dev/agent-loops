@@ -6040,10 +6040,10 @@ export interface ForgeListAll {
 
 /**
  * forge/listAll (#5592): forge/issues (kind issues) or forge/pulls (kind pulls) of the caller's
- * machines in one call. state, board, label, assignee (a login) and limit are as in
- * ForgeListRequest, for each machine (label and assignee: #6383). pages, for a next page, names the
- * machines to ask and each one's cursor, as its last list gave it; without pages every machine is
- * asked for its first page.
+ * machines in one call. state, board, label, assignee (a login), sort and limit are as in
+ * ForgeListRequest, for each machine (label and assignee: #6383; sort: #6538). pages, for a next
+ * page, names the machines to ask and each one's cursor, as its last list gave it; without pages
+ * every machine is asked for its first page.
  */
 export interface ForgeListAllRequest {
   kind: "issues" | "pulls";
@@ -6051,6 +6051,11 @@ export interface ForgeListAllRequest {
   board?: string;
   label?: string;
   assignee?: string;
+  /**
+   * The order, as in ForgeListRequest (#6538): priority, else the last updated first; each machine
+   * sorts its own list.
+   */
+  sort?: "updated" | "priority";
   limit?: number;
   pages?: MachineCursor[];
 }
@@ -6083,6 +6088,12 @@ export interface ForgeListRequest {
   feature?: string;
   board?: string;
   updatedSince?: WireDate;
+  /**
+   * The order (#6538): priority (High, then Medium, then Low, then none, each newest first; GitHub
+   * by the priority labels, Jira by its priority field), else the last updated first. A forge that
+   * cannot sort by priority (GitLab) lists the last updated first; an older daemon too.
+   */
+  sort?: "updated" | "priority";
 }
 
 /** forge/log (#3130): the last lines of each failed check's log, as plain text. */
@@ -18385,9 +18396,9 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   ForgeLinked: { required: ["node", "title", "state"], optional: ["url"] },
   ForgeList: { required: ["items"], optional: ["cursor", "total", "errors", "forges"] },
   ForgeListAll: { required: ["lists", "unreached", "notAsked"], optional: [] },
-  ForgeListAllRequest: { required: ["kind"], optional: ["state", "board", "label", "assignee", "limit", "pages"] },
+  ForgeListAllRequest: { required: ["kind"], optional: ["state", "board", "label", "assignee", "sort", "limit", "pages"] },
   ForgeListError: { required: ["forge", "message"], optional: [] },
-  ForgeListRequest: { required: [], optional: ["folder", "state", "label", "assignee", "query", "cursor", "limit", "feature", "board", "updatedSince"] },
+  ForgeListRequest: { required: [], optional: ["folder", "state", "label", "assignee", "query", "cursor", "limit", "feature", "board", "updatedSince", "sort"] },
   ForgeLog: { required: ["text"], optional: [] },
   ForgeLogRequest: { required: ["node"], optional: ["check"] },
   ForgeLogins: { required: [], optional: ["github", "gitlab", "linear", "jira", "forgejo", "bitbucket", "azureDevOps"] },
