@@ -17,7 +17,7 @@
 
 ## Tiers (#2796)
 
-Alex chose tiers on 2026-10-27 (#2796). Each row has a **Tier** cell after its Feature, and a **Role** cell after the Tier (#5290, epic #5288). The tier says which clients must have the feature. The Mac window and the web page are full clients. The tiers trim only the Remote, except Web + Mac link (#4937), which the Mac window does not draw.
+Alex chose tiers on 2026-10-27 (#2796). Each row has a **Tier** cell after its Feature, a **Role** cell after the Tier (#5290, epic #5288), and a **Maturity** cell after the Role (#6580, below). The tier says which clients must have the feature. The Mac window and the web page are full clients. The tiers trim only the Remote, except Web + Mac link (#4937), which the Mac window does not draw.
 
 - **Core:** all three clients. A change is made on all three in the same branch, or a parity issue is filed for each client that does not get it yet.
 - **Mac + web:** the Mac window and the web page. The Remote does not have them: #2798 removes each one from the Remote completely, with no line in its place (Alex, 2026-10-29). Nobody files a Remote parity issue. Until a feature is removed, the Remote's cell says what the Remote has now.
@@ -72,9 +72,18 @@ Mac only, Web only and Remote only stay what only that client can do (hover, Fin
 
 `scripts/parity-counts.py` fails on a row whose tier is not one its role gives. A row that is not yet right has its Role cell end in **(tier moves)**: a child of epic #5288 changes a client (Mac, Remote or Web), then takes the mark off. A mark on a row that agrees fails too. `scripts/parity-counts.py --mismatches` lists the marked rows by the client to change.
 
+## Maturity (#6052, #6580)
+
+Each row has a **Maturity** cell after its Role: how ready the feature is (`docs/explanation/versions.md`, "Maturity"). The levels are in `Packages/Wire/maturity.json`, and a capability that it does not list is GA.
+
+- **`ga`:** ready. Every row is `ga` today, because the list is empty.
+- **`pilot`, `alpha` or `beta`:** the level, then the capabilities the row is about, in backticks: `beta (`chat.branch/1`)`, or `alpha (`lineage.forecast/1`, `lineage.estimate/1`)`.
+
+`scripts/parity-counts.py` (in `scripts/lint.sh checks`) fails on a row whose level is not the one that `maturity.json` gives each capability it names, and on a capability in `maturity.json` that no row names. So a PR that sets a level, or makes a feature GA, changes the list and the row together.
+
 ## Counts
 
-`scripts/parity-counts.py` counts the rows of every screen by verdict: **same**, **by design** and **delta**, by tier: **Core**, **Mac + web**, **Web + Mac link**, **Mac only**, **Web only** and **Remote only**, and by role (#5290). A row with any open delta counts as delta, even where another side's difference is by design. The script fails when a row has no tier it knows, and says which tiers replace the old **One client** (#4759). The counts are not kept by hand (#2020).
+`scripts/parity-counts.py` counts the rows of every screen by verdict: **same**, **by design** and **delta**, by tier: **Core**, **Mac + web**, **Web + Mac link**, **Mac only**, **Web only** and **Remote only**, by role (#5290), and by maturity: **ga**, **pilot**, **alpha** and **beta** (#6580). A row with any open delta counts as delta, even where another side's difference is by design. The script fails when a row has no tier it knows, and says which tiers replace the old **One client** (#4759). The counts are not kept by hand (#2020).
 
 The deltas are tracked by 33 issues:
 - **Already open:** #226 (the Remote's one sidebar) and #235 (the page's one sidebar at phone width).

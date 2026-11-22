@@ -457,6 +457,8 @@ run_checks() {
 	python3 scripts/jscpd-report.py --selftest || status=1
 	python3 scripts/docs-parts.py --selftest || status=1
 	python3 scripts/docs-parts.py check || status=1
+	python3 scripts/parity-counts.py --selftest || status=1
+	python3 scripts/parity-counts.py >/dev/null || status=1
 	sh scripts/design.sh selftest || status=1
 	sh scripts/design.sh check || status=1
 	python3 scripts/check-colour-tokens.py --selftest || status=1

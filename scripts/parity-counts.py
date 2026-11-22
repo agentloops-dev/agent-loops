@@ -15,10 +15,20 @@ Lead, Admin or Report reader. The role gives the tier (ROLE_TIERS, the rule of p
 "Tiers"). A row whose tier is not one its role gives fails, unless its role cell ends in
 "(tier moves)": a known gap that a child of the epic closes by changing a client, and then
 the mark goes. A mark on a row that agrees fails too, so the marks stay true.
+
+A row's maturity is its fourth cell (#6052, #6580): `ga`, or a level that is not GA with the
+capabilities it is about, as `beta (`chat.branch/1`)` or `alpha (`a/1`, `b/1`)`. The levels
+are in Packages/Wire/maturity.json, and a capability it does not list is GA. The script
+fails on a row whose level is not the one that file gives each capability it names, and on a
+capability in the file that no row names, so the table and the wire agree.
+
+  scripts/parity-counts.py --selftest   the maturity cell's checks, on made-up rows
 """
 
 import glob
+import json
 import os
+import re
 import sys
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
@@ -47,6 +57,9 @@ DRAWS = {
     "Remote only": ("none", "native", "none"),
 }
 OLD = {"One client": "Mac only, Web only or Remote only (#4759)"}
+MATURITY = os.path.join(ROOT, "Packages", "Wire", "maturity.json")
+LEVELS = ("ga", "pilot", "alpha", "beta")
+NOT_GA = re.compile(r"^(pilot|alpha|beta) \((`[^`]+`(?:, `[^`]+`)*)\)$")
 
 
 def verdict(row):
@@ -65,6 +78,58 @@ def tier(row):
 def role(row):
     cells = row.split(" | ")
     return cells[2].strip() if len(cells) > 2 else None
+
+
+def maturity(row):
+    cells = row.split(" | ")
+    return cells[3].strip() if len(cells) > 3 else None
+
+
+def levels(path=MATURITY):
+    """The capabilities that are not GA, by name: {capability: level}."""
+    with open(path, encoding="utf-8") as f:
+        return {c["name"]: c["level"] for c in json.load(f)["capabilities"]}
+
+
+def check_maturity(cell, known):
+    """(level, capabilities named, problem or None) for one row's Maturity cell."""
+    if cell == "ga":
+        return "ga", [], None
+    m = NOT_GA.match(cell or "")
+    if not m:
+        return None, [], (f"maturity {cell!r} is not `ga` or a level with its capabilities, "
+                          f"as `beta (`chat.branch/1`)`; levels: {', '.join(LEVELS)}")
+    level, caps = m.group(1), re.findall(r"`([^`]+)`", m.group(2))
+    for c in caps:
+        want = known.get(c)
+        if want is None:
+            return level, caps, (f"{c} is GA in Packages/Wire/maturity.json (not listed), "
+                                 f"not {level}: make the cell `ga`, or list it there")
+        if want != level:
+            return level, caps, (f"{c} is {want} in Packages/Wire/maturity.json, not {level}")
+    return level, caps, None
+
+
+def selftest():
+    known = {"chat.branch/1": "beta", "lineage.forecast/1": "alpha", "lineage.estimate/1": "alpha"}
+    cases = [
+        ("ga", "ga", None),
+        ("beta (`chat.branch/1`)", "beta", None),
+        ("alpha (`lineage.forecast/1`, `lineage.estimate/1`)", "alpha", None),
+        ("beta", None, "is not `ga`"),
+        ("GA", None, "is not `ga`"),
+        ("rc (`chat.branch/1`)", None, "is not `ga`"),
+        ("alpha (`chat.branch/1`)", "alpha", "is beta in"),
+        ("beta (`host.team/1`)", "beta", "is GA in"),
+        ("alpha (`lineage.forecast/1`, `chat.branch/1`)", "alpha", "is beta in"),
+    ]
+    for cell, level, problem in cases:
+        got, _, why = check_maturity(cell, known)
+        assert got == level, (cell, got)
+        assert (why is None) == (problem is None) and (problem is None or problem in why), (cell, why)
+    for name, level in levels().items():  # the real list reads, and has only levels a cell takes
+        assert level in LEVELS[1:], (name, level)
+    print("parity-counts selftest: ok")
 
 
 def allowed(r, row):
@@ -96,6 +161,9 @@ def mismatches():
 
 
 def main():
+    if "--selftest" in sys.argv:
+        selftest()
+        return
     if "--mismatches" in sys.argv:
         for client in ("Mac", "Remote", "Web"):
             rows = [m for m in mismatches() if client in m[3]]
@@ -103,15 +171,17 @@ def main():
             for where, t, r, _, feat in rows:
                 print(f"- {where}: {r}, now {t}: {feat}")
         return
-    totals = dict.fromkeys(VERDICTS + TIERS + ROLES, 0)
+    known = levels()
+    named = set()
+    totals = dict.fromkeys(VERDICTS + TIERS + ROLES + LEVELS, 0)
     bad = []
-    print("| Screen | Same | By design | Delta | " + " | ".join(TIERS + ROLES) + " |")
-    print("|---" * (4 + len(TIERS) + len(ROLES)) + "|")
+    print("| Screen | Same | By design | Delta | " + " | ".join(TIERS + ROLES + LEVELS) + " |")
+    print("|---" * (4 + len(TIERS) + len(ROLES) + len(LEVELS)) + "|")
     for path in sorted(glob.glob(SCREENS)):
         with open(path) as f:
             lines = f.read().splitlines()
         title = lines[0].removeprefix("# Parity: ")
-        counts = dict.fromkeys(VERDICTS + TIERS + ROLES, 0)
+        counts = dict.fromkeys(VERDICTS + TIERS + ROLES + LEVELS, 0)
         for n, line in enumerate(lines, 1):
             if not line.startswith("| ") or not (v := verdict(line)):
                 continue
@@ -127,6 +197,12 @@ def main():
                     bad.append(f"{where}: tier {t!r} is not one of {', '.join(TIERS)}")
                 continue
             where = f"{os.path.relpath(path, ROOT)}:{n}"
+            level, caps, why = check_maturity(maturity(line), known)
+            named.update(caps)
+            if level:
+                counts[level] += 1
+            if why:
+                bad.append(f"{where}: {why}")
             r = role(line) or ""
             marked = r.endswith(MARK)
             base = r.removesuffix(MARK)
@@ -142,12 +218,16 @@ def main():
                 bad.append(f"{where}: marked {MARK.strip()} but {t} is what {base} gives: remove the mark")
         for k in counts:
             totals[k] += counts[k]
-        print(f"| {title} | " + " | ".join(str(counts[k]) for k in VERDICTS + TIERS + ROLES) + " |")
+        print(f"| {title} | " + " | ".join(str(counts[k]) for k in VERDICTS + TIERS + ROLES + LEVELS) + " |")
     print(f"\nOf {sum(totals[v] for v in VERDICTS)} rows: **{totals['same']} same**, "
           f"**{totals['by design']} by design**, **{totals['delta']} delta**; "
           + ", ".join(f"**{totals[t]} {t}**" for t in TIERS) + ".")
     print("By role: " + ", ".join(f"**{totals[r]} {r}**" for r in ROLES) + f"; {len(mismatches())} rows "
           "marked (tier moves).")
+    print("By maturity: " + ", ".join(f"**{totals[m]} {m}**" for m in LEVELS) + ".")
+    for c in sorted(set(known) - named):
+        bad.append(f"Packages/Wire/maturity.json: {c} is {known[c]}, but no row names it: "
+                   f"put `{known[c]} (`{c}`)` in its feature's Maturity cell")
     if bad:
         print("\n" + "\n".join(bad), file=sys.stderr)
         sys.exit(1)
