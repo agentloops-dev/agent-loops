@@ -157,6 +157,9 @@ private struct WorkListPane: View {
                 }
             }
         }
+        // The machines that read the forges are part of what the list asks (#6152, #6635): one that comes online, as at
+        // the start, asks again, also when the sidebar has not read ahead.
+        .onChange(of: model.workSource, initial: true) { _, source in model.workLists.source = source }
         .workTask(id: list.ask) { await list.load(model: model) }
         // A change to a kept item (#6354), from this list, another or an item's page: the kept answer again.
         .onChange(of: model.workSaves?.revision) { Task { await list.redrawCached(model: model) } }
@@ -268,8 +271,10 @@ private struct WorkListPane: View {
 
     @ViewBuilder
     private var content: some View {
-        let lines = [list.problem].compactMap { $0 } + errors
-        if kind.fromForge, model.forgeMachines.isEmpty {
+        let noMachine = kind.fromForge && model.forgeMachines.isEmpty
+        // With no machine online, the kept rows stay (#6635), under why they are not new.
+        let lines = [list.problem].compactMap { $0 } + errors + (noMachine && !list.all.isEmpty ? [WorkList.noForgeOnline] : [])
+        if noMachine, list.all.isEmpty {
             WorkEmptyState(symbol: kind.sidebarIcon, title: WorkLook.emptyTitle(kind, state: list.filter.state, filtered: false),
                            line: WorkList.noForgeHere)
         } else if list.lists == nil {

@@ -128,6 +128,16 @@ public actor WorkCache: WorkCaching {
         public var hosts: [HostAnswer]
         /// The oldest page 1 of the machines: what the list says it shows.
         public var read: Date? { hosts.compactMap(\.read).min() }
+
+        /// The machines' kept answers to draw (#6635): those asked now first, in their order, then every other machine
+        /// the cache holds an answer of, in its kept order. A machine that is not known or online yet, as at the start,
+        /// keeps its rows on screen, so the list never says "No open issues" while the cache holds them.
+        public func shown(first asked: [MachineRef]) -> [HostAnswer] {
+            let by = Dictionary(hosts.map { ($0.host, $0) }, uniquingKeysWith: { a, _ in a })
+            let firsts = asked.compactMap { by[$0] }
+            let named = Set(asked)
+            return firsts + hosts.filter { !named.contains($0.host) }
+        }
     }
 
     /// A page's kept answer (#6573): its JSON, as the page encodes it, and when it was read.
