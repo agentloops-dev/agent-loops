@@ -146,6 +146,8 @@ struct WorkItemPage: View {
         .workTask(id: estimateAsk) { await loadEstimate() }
         .workTask(id: forecastAsk) { await loadForecast() }
         .workTask(id: lineageAsk) { await loadLineage() }
+        // A change to a kept item (#6354), from this page or a list: the kept item again, with no forge call.
+        .onChange(of: model.workSaves?.revision) { Task { await redrawCached() } }
         #if os(macOS)
         .workTask(id: pipelineAsk) { await loadPipeline() }
         #endif
@@ -286,7 +288,11 @@ struct WorkItemPage: View {
         return HStack(alignment: .center, spacing: 8) {
             if let item, let transitions = detail?.got.transitions, writes {
                 WorkStatusMenu(item: item, transitions: transitions) { transition in
-                    act(DaemonAPI.Method.forgeClose, DaemonAPI.ForgeCloseRequest(node: item.node, transition: transition))
+                    if let move = transitions.first(where: { $0.id == transition }), let saveChange {
+                        saveChange(.transition(move))
+                    } else {
+                        act(DaemonAPI.Method.forgeClose, DaemonAPI.ForgeCloseRequest(node: item.node, transition: transition))
+                    }
                 }
             } else {
                 WorkPagePill(kind: node.kind, state: item?.state ?? row?.state ?? "", draft: item?.draft ?? row?.draft ?? false,
@@ -550,9 +556,17 @@ struct WorkItemPage: View {
                            closes: got.transitions == nil && got.item.standing != true && ["open", "closed"].contains(got.item.state)
                                ? got.item.state : nil,
                            noun: isIssue ? "issue" : "pull request",
-                           compact: narrow, said: said) { words, failed in
+                           compact: narrow, said: said, save: saveChange) { words, failed in
                 said = (words, failed)
                 if !failed { Task { await reread() } }
+            }
+            if let saves = model.workSaves, let line = saves.line, saves.saving.contains(where: { $0.node == node })
+                || saves.failed?.save.node == node {
+                // "Saving #12…", or why the forge refused it and that it changed back, with Try again (#6354).
+                WorkSaveLine(line: line) {
+                    if let cache = model.workCache { saves.retry(model: model, cache: cache) }
+                }
+                .appText(.supporting)
             }
         } else if !fromDevice, WorkLook.mergeBox(got) == nil {
             Text("No machine of yours can write to \(WorkList.forgeName(node.ref)).")
@@ -623,7 +637,7 @@ struct WorkItemPage: View {
         let item = item
         if let detail, node.kind == "issue" || detail.got.item.priority != nil || detail.got.item.onHold == true {
             // First, as the wireframe of #6092 has it: the menu and the toggle where the forge sets them, else the chip.
-            WorkPrioritySection(model: model, host: detail.host, detail: detail.got, writes: writes) { await reread() }
+            WorkPrioritySection(model: model, host: detail.host, detail: detail.got, writes: writes, save: saveChange) { await reread() }
         }
         WorkSideSection(title: "Assignees") {
             let assignees = item?.assignees ?? row?.assignees ?? []
@@ -786,6 +800,7 @@ struct WorkItemPage: View {
     private var labelsPicker: some View {
         if let detail {
             WorkLabelsPicker(model: model, host: detail.host, item: detail.got.item) { name, add in
+                if let saveChange { return saveChange(.label(name, add: add)) }
                 act(DaemonAPI.Method.forgeLabel,
                     DaemonAPI.ForgeLabelRequest(node: detail.got.item.node, add: add ? [name] : nil, remove: add ? nil : [name]))
             }
@@ -959,6 +974,22 @@ struct WorkItemPage: View {
                 said = (WorkList.failureWords(error), true)
             }
         }
+    }
+
+    /// With Work's cache on (#6354): a change through the cache, shown at once here and in every list, and changed
+    /// back with the forge's words when it refuses it; nil with the cache off, or before a machine answered.
+    private var saveChange: ((WorkChange) -> Void)? {
+        guard !fromDevice, let host = detail?.host, let cache = model.workCache, let saves = model.workSaves else { return nil }
+        return { [model, node] change in
+            said = nil
+            saves.save(change, on: node, host: host, model: model, cache: cache)
+        }
+    }
+
+    /// The kept item again after a change to it (#6354): its fields as the cache has them; the body and the comments stay.
+    private func redrawCached() async {
+        guard let cache = model.workCache, let had = detail, let item = await cache.item(node), detail?.host == had.host else { return }
+        detail?.got.item = item
     }
 
     /// An image in the body or a comment, read by the machine that read the item (#4010,

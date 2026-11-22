@@ -610,6 +610,8 @@ struct WorkCommentBox: View {
     var compact = false
     /// What the page's last write did, under the buttons.
     var said: (words: String, failed: Bool)?
+    /// With Work's cache on (#6354): Close and Reopen go through the cache, shown at once; nil to wait for the forge.
+    var save: ((WorkChange) -> Void)?
     /// After a write: what it did, and whether it failed.
     let wrote: (String, Bool) -> Void
 
@@ -700,6 +702,10 @@ struct WorkCommentBox: View {
     private func close(reopen: Bool) async {
         if !empty {
             guard await comment() else { return }
+        }
+        if let save {
+            save(.close(reopen: reopen))
+            return
         }
         sending = true
         defer { sending = false }

@@ -80,6 +80,9 @@ protocol WorkModel: AnyObject, Sendable {
     /// pages, drawn with no forge call, then asked once. Nil where the app keeps none, or while the person's
     /// `work-cache` flag is off: then the lists and pages use `workCopy`, as before.
     var workCache: (any WorkCaching)? { get }
+    /// Work's changes through the cache (#6354): shown at once, and changed back with a message when the forge refuses
+    /// them. Nil while `workCache` is nil: then a change waits for the forge, as before.
+    var workSaves: WorkSaves? { get }
 }
 
 extension WorkModel {
@@ -88,6 +91,7 @@ extension WorkModel {
     func askWorkConnectors() -> Bool { false }
     var workCopy: LocalCopy? { nil }
     var workCache: (any WorkCaching)? { nil }
+    var workSaves: WorkSaves? { nil }
     func controlAll<R: Decodable & Sendable>(_ method: String, _ params: some Encodable & Sendable,
                                              returning: R.Type) async throws -> R? { nil }
 
