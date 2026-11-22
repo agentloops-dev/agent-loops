@@ -130,6 +130,8 @@ final class WorkListState {
         // One ask an open (#6358, finding 3): the window's restore and the click ask the same once. An open later in
         // the run asks again (#6640).
         guard !WorkList.joinsAsk(same: read == mine, reading: reading, since: readAt.map { ContinuousClock.now - $0 }) else { return }
+        // A Refresh asks the forges, not the minute-old answer each daemon keeps (#6642).
+        let fresh = read.map { $0.asked != mine.asked } ?? false
         read = mine
         readAt = ContinuousClock.now
         problem = nil
@@ -163,9 +165,9 @@ final class WorkListState {
         let source = model.workSource
         var scopes = await keptScopes(cache, ids, source: source)
         let pick = WorkList.oneEach(ids, scopes: scopes)
-        var got = await firstPages(pick.ask, of: ids, model: model)
+        var got = await firstPages(pick.ask, of: ids, fresh: fresh, model: model)
         if !pick.covered.isEmpty, got.contains(where: { !Self.clean($0.list) }) {
-            got += await firstPages(pick.covered, of: ids, model: model)
+            got += await firstPages(pick.covered, of: ids, fresh: fresh, model: model)
         }
         guard ask == mine else { return }
         for entry in got {
@@ -248,31 +250,31 @@ final class WorkListState {
 
     /// Page 1 of the cached query on `hosts`, of all the machines `all`: in one call to the control plane (naming
     /// them, when they are not all), else a call to each.
-    private func firstPages(_ hosts: [MachineRef], of all: [MachineRef], model: any WorkModel) async
+    private func firstPages(_ hosts: [MachineRef], of all: [MachineRef], fresh: Bool, model: any WorkModel) async
         -> [(host: MachineRef, list: DaemonAPI.ForgeList)] {
         guard !hosts.isEmpty else { return [] }
         do {
             let pages = hosts == all ? nil : hosts.map { DaemonAPI.MachineCursor(machine: $0, cursor: "") }
-            if let got = try await model.controlAll(DaemonAPI.Method.forgeListAll, listAllRequest(pages: pages),
+            if let got = try await model.controlAll(DaemonAPI.Method.forgeListAll, listAllRequest(pages: pages, fresh: fresh),
                                                     returning: DaemonAPI.ForgeListAll.self) {
                 return WorkList.hostLists(got, hosts: hosts)
             }
-            return await askEach(hosts, cursors: [:], model: model)
+            return await askEach(hosts, cursors: [:], fresh: fresh, model: model)
         } catch {
             return hosts.map { ($0, .init(errors: [.init(forge: "", message: error.localizedDescription)])) }
         }
     }
 
     /// forge/listAll's request for the cached query, at the cursors in `pages` for a next page.
-    private func listAllRequest(pages: [DaemonAPI.MachineCursor]? = nil) -> DaemonAPI.ForgeListAllRequest {
+    private func listAllRequest(pages: [DaemonAPI.MachineCursor]? = nil, fresh: Bool = false) -> DaemonAPI.ForgeListAllRequest {
         let query = cacheQuery
         return .init(kind: kind == .pr ? "pulls" : "issues", state: query.state, board: query.board, label: query.label,
-                     assignee: query.assignee, sort: query.sort, limit: 100, pages: pages)
+                     assignee: query.assignee, sort: query.sort, limit: 100, pages: pages, fresh: fresh ? true : nil)
     }
 
     /// The cached query on each machine: page 1 with no cursors, else only the machines in `cursors`, at theirs. One
     /// call each, side by side.
-    private func askEach(_ hosts: [MachineRef], cursors: [MachineRef: String], model: any WorkModel) async
+    private func askEach(_ hosts: [MachineRef], cursors: [MachineRef: String], fresh: Bool = false, model: any WorkModel) async
         -> [(host: MachineRef, list: DaemonAPI.ForgeList)] {
         let kind = kind
         let query = cacheQuery
@@ -280,7 +282,8 @@ final class WorkListState {
         return await withTaskGroup(of: (MachineRef, DaemonAPI.ForgeList).self) { group in
             for host in asked {
                 let request = DaemonAPI.ForgeListRequest(state: query.state, label: query.label, assignee: query.assignee,
-                                                         cursor: cursors[host], limit: 100, board: query.board, sort: query.sort)
+                                                         cursor: cursors[host], limit: 100, board: query.board, sort: query.sort,
+                                                         fresh: fresh ? true : nil)
                 group.addTask {
                     let read = await Result.catching { try await model.forgeList(kind, request, on: host) }
                     return (host, (try? read.get()) ?? .init(errors: [.init(forge: "", message: read.error?.localizedDescription ?? "")]))

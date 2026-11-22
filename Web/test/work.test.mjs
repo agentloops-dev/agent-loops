@@ -530,3 +530,14 @@ test("an issue's events go between its comments in time order; one this client d
   assert.equal(w.eventsSayClose(events), true);
   assert.equal(w.eventsSayClose(undefined), false);
 });
+
+test("a Refresh asks fresh, and Last update is the forges' read, the oldest machine's, never after now (#6642)", () => {
+  assert.equal(w.forgeListAllRequest("issue", "open", "").fresh, undefined);
+  assert.equal(w.forgeListAllRequest("pr", "open", "", undefined, undefined, true).fresh, true);
+  const now = Date.parse("2026-11-22T10:01:00Z");
+  const list = (iso) => ({ machine: "m", machineName: "M", list: { items: [], ...iso ? { readAt: at(iso) } : {} } });
+  const all = (...lists) => ({ lists, unreached: [], notAsked: 0 });
+  assert.equal(w.listReadAt(all(list("2026-11-22T10:00:10Z"), list("2026-11-22T10:00:40Z"), list()), now), Date.parse("2026-11-22T10:00:10Z"));
+  assert.equal(w.listReadAt(all(list()), now), now);
+  assert.equal(w.listReadAt(all(list("2026-11-22T10:05:00Z")), now), now);
+});

@@ -698,3 +698,29 @@ func TestForgeLabelColor(t *testing.T) {
 		t.Errorf("forgeLabelsOf: %+v", l)
 	}
 }
+
+// #6642: a kept list keeps the time of its read, and a Refresh (fresh) reads the forge again, not the kept answer.
+func TestForgeListFreshReadsAgainAndKeepsItsReadTime(t *testing.T) {
+	t.Parallel()
+
+	_, c, gh, _ := forgeDaemon(t)
+	var first, kept, fresh wire.ForgeList
+	mustUnmarshal(t, c.call(t, 1, "forge/pulls", wire.ForgeListRequest{Label: new("enhancement")}), &first)
+	if first.ReadAt == nil {
+		t.Fatalf("no readAt: %+v", first)
+	}
+	mustUnmarshal(t, c.call(t, 2, "forge/pulls", wire.ForgeListRequest{Label: new("enhancement")}), &kept)
+	if searches, _ := gh.asked(); len(searches) != 1 {
+		t.Fatalf("the same list within a minute asked again: %q", searches)
+	}
+	if kept.ReadAt == nil || !kept.ReadAt.Time().Equal(first.ReadAt.Time()) {
+		t.Fatalf("the kept answer's readAt %v is not its read's %v", kept.ReadAt, first.ReadAt)
+	}
+	mustUnmarshal(t, c.call(t, 3, "forge/pulls", wire.ForgeListRequest{Label: new("enhancement"), Fresh: new(true)}), &fresh)
+	if searches, _ := gh.asked(); len(searches) != 2 {
+		t.Fatalf("a fresh list did not read the forge: %q", searches)
+	}
+	if fresh.ReadAt == nil || fresh.ReadAt.Time().Before(first.ReadAt.Time()) || len(fresh.Items) != 1 {
+		t.Fatalf("fresh: %+v", fresh)
+	}
+}

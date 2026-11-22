@@ -158,9 +158,9 @@ func (m *Methods) forgeListAll(request wire.ForgeListAllRequest, user string, fr
 	}
 	limit := new(int64(fanLimit(request.Limit, 50, mostForgePage)))
 	got := fanEach(hosts, func(host string) (wire.ForgeList, bool) {
-		// A label, an assignee and the sort go to each machine, so a narrowed list is one call (#6383, #6538).
+		// A label, an assignee, the sort and a Refresh's fresh (#6642) go to each machine, so a narrowed list is one call (#6383, #6538).
 		ask := wire.ForgeListRequest{State: request.State, Board: request.Board, Label: request.Label, Assignee: request.Assignee, Sort: request.Sort,
-			Limit: limit}
+			Limit: limit, Fresh: request.Fresh}
 		if c, ok := cursors[host]; ok && c != "" {
 			ask.Cursor = &c
 		}

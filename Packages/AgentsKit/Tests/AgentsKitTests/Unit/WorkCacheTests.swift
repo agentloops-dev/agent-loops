@@ -41,6 +41,16 @@ struct WorkCacheTests {
         #expect(await cache.answer(issues) == nil)
     }
 
+    /// #6642: a daemon's kept answer was read before it came: "Last update" is the forges' read, never later than now.
+    @Test func aPageIsReadWhenTheForgesWereRead() async throws {
+        let clock = Clock()
+        let cache = try makeCache(clock)
+        await cache.keepPage(issues, host: mac, page: 0, list: DaemonAPI.ForgeList(items: [item(1)], readAt: clock.now - 40))
+        #expect(try #require(await cache.answer(issues)).read == clock.now - 40)
+        await cache.keepPage(issues, host: mac, page: 0, list: DaemonAPI.ForgeList(items: [item(1)], readAt: clock.now + 30))
+        #expect(try #require(await cache.answer(issues)).read == clock.now)
+    }
+
     @Test func aKeptAnswerDrawsInTheServersOrderWithWhenItWasRead() async throws {
         let clock = Clock()
         let cache = try makeCache(clock)

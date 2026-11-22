@@ -144,10 +144,12 @@ public extension DaemonAPI {
         /// The order (#6538): `priority` (High, then Medium, then Low, then none, each newest first), else the last
         /// updated first; an earlier daemon lists the last updated first.
         public var sort: String?
+        /// A Refresh (#6642): the daemon reads the forges, not the answer it keeps for a minute.
+        public var fresh: Bool?
 
         public init(folder: String? = nil, state: String? = nil, label: String? = nil, assignee: String? = nil,
                     query: String? = nil, cursor: String? = nil, limit: Int? = nil, feature: String? = nil,
-                    board: String? = nil, updatedSince: Date? = nil, sort: String? = nil) {
+                    board: String? = nil, updatedSince: Date? = nil, sort: String? = nil, fresh: Bool? = nil) {
             self.folder = folder
             self.state = state
             self.label = label
@@ -159,6 +161,7 @@ public extension DaemonAPI {
             self.board = board
             self.updatedSince = updatedSince
             self.sort = sort
+            self.fresh = fresh
         }
     }
 
@@ -255,15 +258,18 @@ public extension DaemonAPI {
         public var forges: [ForgeCapabilities]?
         /// What the list reads (#6641): forge:name per repo or project; nil from an earlier daemon.
         public var scopes: [String]?
+        /// When the forges were read for it (#6642), also for an answer the daemon kept; nil from an earlier daemon.
+        public var readAt: Date?
 
         public init(items: [ForgeItem] = [], cursor: String? = nil, errors: [ForgeListError]? = nil,
-                    forges: [ForgeCapabilities]? = nil, total: Int? = nil, scopes: [String]? = nil) {
+                    forges: [ForgeCapabilities]? = nil, total: Int? = nil, scopes: [String]? = nil, readAt: Date? = nil) {
             self.items = items
             self.cursor = cursor
             self.total = total
             self.errors = errors
             self.forges = forges
             self.scopes = scopes
+            self.readAt = readAt
         }
     }
 

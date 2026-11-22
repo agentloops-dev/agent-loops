@@ -1623,6 +1623,10 @@
         "limit": {
           "type": "integer"
         },
+        "fresh": {
+          "description": "As in ForgeListRequest (#6642): each machine reads its forges, not its kept answer. A Refresh.",
+          "type": "boolean"
+        },
         "pages": {
           "type": "array",
           "items": {

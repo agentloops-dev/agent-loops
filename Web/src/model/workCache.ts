@@ -15,6 +15,7 @@
 // is `work` in the database `agents` (wire/keys.ts), so a forget, which deletes it, drops it too.
 import type { ForgeCapabilities, ForgeItem, ForgeItemDetail, ForgeList, ForgeListError, LineageNode } from "../protocol/generated";
 import { openAgentsDatabase } from "../wire/keys";
+import { fromWireDate } from "../protocol/dates";
 
 /** What a list asks the forge (#6358): the parts that change the server's answer. The words in the filter field, the
  * label, the assignee and the project narrow the kept answer on the page. */
@@ -285,7 +286,9 @@ export class WorkCache {
       if (page < 0 || page > fresh) return;
       const at = this.now();
       const put = await this.itemsToPut(list.items);
-      const read: WorkPage = { refs: list.items.map((i) => itemKey(i.node)).filter((k) => this.memo.has(k)), cursor: list.cursor, read: at };
+      // The forges' read time, not this call's (#6642): the daemon can answer from a copy up to a minute old.
+      const readAt = list.readAt === undefined ? at : Math.min(at, fromWireDate(list.readAt).getTime());
+      const read: WorkPage = { refs: list.items.map((i) => itemKey(i.node)).filter((k) => this.memo.has(k)), cursor: list.cursor, read: readAt };
       let reads = had.slice(0, fresh);
       let stale = had.slice(fresh);
       if (page === 0) {

@@ -317,7 +317,8 @@ public actor WorkCache: WorkCaching {
         guard page >= 0, page <= fresh else { return }
         keep(items: list.items, at: at)
         let refs = list.items.map { Self.key($0.node) }.filter { memo[$0] != nil }
-        let read = Page(refs: refs, cursor: list.cursor, read: at)
+        // The forges' read time, not this call's (#6642): the daemon can answer from a copy up to a minute old.
+        let read = Page(refs: refs, cursor: list.cursor, read: min(list.readAt ?? at, at))
         var reads = Array(had.prefix(fresh))
         var stale = Array(had.dropFirst(fresh))
         if page == 0 {
