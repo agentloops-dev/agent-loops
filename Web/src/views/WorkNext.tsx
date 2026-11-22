@@ -10,7 +10,7 @@ import { fromWireDate, toWireDate } from "../protocol/dates";
 import type { Store } from "../model/store";
 import { describe } from "../model/errors";
 import { forgeHosts } from "../model/workLists";
-import { keepWork, keptWorkRead } from "../model/localCopy";
+import { keepWork, keptWorkRead } from "../model/workCache";
 import { choiceFrom, rememberEach, remembered } from "../model/workRemembered";
 import {
   allEpics, emptyLine, emptyTitle, epicChoices, epicNode, itemNumber, nextFolders, nextLevelTitle, nextLevels, nextProblem,

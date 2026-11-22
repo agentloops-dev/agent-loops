@@ -134,44 +134,36 @@ test("signed out, nothing is written", async () => {
   assert.equal(held.held.size, 0);
 });
 
-// Work's part of the copy (#4930): kept by what was asked, each group to its count, the pictures to their own cap,
-// and the oldest Work entry first when over the cap.
+// Work's part of the copy (#4930): since #6356 only the forge's pictures, kept by URL to their count and their own cap,
+// the oldest Work entry first when over the cap. Work's records are Work's cache (workCache.test.mjs).
 const { workRef, workKept } = await load("test/localCopy-entry.ts");
 
-test("work: an answer is read back for what was asked only", async () => {
+test("work: a picture is read back for its URL only, with when it was read (#5142)", async () => {
   const copy = new LocalCopy(new MemoryCopyStore());
   copy.writing = true;
-  await copy.keepWork("list", "issue|open|newest|", { lists: [], lineage: [] });
-  assert.deepEqual(await copy.work("list", "issue|open|newest|"), { lists: [], lineage: [] });
-  assert.equal(await copy.work("list", "issue|closed|newest|"), undefined);
-  assert.equal(await copy.work("plan", "issue|open|newest|"), undefined);
-  assert.equal(workRef("item", "github:alexec/Agents#1"), "agents:work:item#github:alexec/Agents#1");
-});
-
-test("work: an answer comes back with when it was read, for its Last update line (#5142)", async () => {
-  const copy = new LocalCopy(new MemoryCopyStore());
-  copy.writing = true;
-  await copy.keepWork("plan", "github:alexec/Agents#5139", { children: [] }, 1_800_000_000_000);
-  assert.deepEqual(await copy.workRead("plan", "github:alexec/Agents#5139"), { value: { children: [] }, at: 1_800_000_000_000 });
-  assert.equal(await copy.workRead("plan", "github:alexec/Agents#1"), undefined);
+  await copy.keepWork("image", "https://x/a.png", { bytes: "AA" }, 1_800_000_000_000);
+  assert.deepEqual(await copy.workRead("image", "https://x/a.png"), { value: { bytes: "AA" }, at: 1_800_000_000_000 });
+  assert.equal(await copy.work("image", "https://x/b.png"), undefined);
+  assert.equal(workRef("image", "https://x/a.png"), "agents:work:image#https://x/a.png");
 });
 
 test("work: nothing is kept signed out", async () => {
   const store = new MemoryCopyStore();
   const copy = new LocalCopy(store);
-  await copy.keepWork("item", "x", { a: 1 });
+  await copy.keepWork("image", "x", { a: 1 });
   assert.equal(store.held.size, 0);
 });
 
-test("caps: each Work group to its count, pictures to their cap, then the oldest Work entry before a transcript", () => {
-  const items = Array.from({ length: workKept.item + 2 }, (_, i) => ({ ref: `i${i}`, kind: "work", group: "item", at: i, bytes: 1 }));
-  assert.deepEqual(overCaps(items).sort(), ["i0", "i1"]);
+test("caps: pictures to their count and cap, then the oldest Work entry before a transcript; a list kept before #6356 goes", () => {
+  const many = Array.from({ length: workKept.image + 2 }, (_, i) => ({ ref: `i${i}`, kind: "work", group: "image", at: i, bytes: 1 }));
+  assert.deepEqual(overCaps(many).sort(), ["i0", "i1"]);
   const images = [1, 2, 3].map((i) => ({ ref: `p${i}`, kind: "work", group: "image", at: i, bytes: 40 }));
   assert.deepEqual(overCaps(images, 400), ["p1"]);
   const mixed = [
     { ref: "t", kind: "transcript", at: 0, bytes: 50 },
-    { ref: "old", kind: "work", group: "list", at: 1, bytes: 50 },
-    { ref: "new", kind: "work", group: "plan", at: 2, bytes: 50 },
+    { ref: "old", kind: "work", group: "image", at: 1, bytes: 50 },
+    { ref: "new", kind: "work", group: "image", at: 2, bytes: 50 },
   ];
-  assert.deepEqual(overCaps(mixed, 120), ["old"]);
+  assert.deepEqual(overCaps(mixed, 120, 20, 1_000), ["old"]);
+  assert.deepEqual(overCaps([{ ref: "l", kind: "work", group: "list", at: 1, bytes: 1 }]), ["l"]);
 });

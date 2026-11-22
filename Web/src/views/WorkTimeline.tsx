@@ -19,7 +19,7 @@ import {
   timelineLines, timelineRanges, timelineShows, titleWords, titleY, workingNow, zoomed, type Interval, type TimelineHit, type TimelineBand, type TimelineLine, type TimelineRange,
 } from "../model/workTimeline";
 import { go } from "../route";
-import { keepWork, keptWorkRead } from "../model/localCopy";
+import { keepWork, keptWorkRead } from "../model/workCache";
 import { Choice, workProjects } from "./Work";
 import { choiceFrom, choiceWords, rememberEach, remembered } from "../model/workRemembered";
 import { EmptyState, ErrorStrip, FilterMenu, FromDeviceStrip, LabelChip, OnHoldChip, PlaceholderRows, PriorityChip, RefreshButton, StateIcon } from "./WorkParts";
