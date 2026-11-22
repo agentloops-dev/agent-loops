@@ -39,6 +39,10 @@ type hostCalls struct {
 	lanes []chan hostCall
 	of    map[string]chan hostCall
 	done  chan struct{}
+	// refused is how many calls were refused since the last one a lane took. Its log
+	// lines go off the read loop (#6569): a write to a log file on a disk that is slow
+	// held the loop, and the loop answers the pings.
+	refused int
 }
 
 // startHostCalls makes the lanes for host's link gen.
@@ -85,6 +89,25 @@ func (c *hostCalls) take(call hostCall) bool {
 }
 
 func (c *hostCalls) stop() { close(c.done) }
+
+// noteTaken and noteRefused say a call went into a lane or was refused, and log the first
+// refusal of a burst and, at its end, how many there were: two lines a burst at most, each
+// written off the read loop.
+func (c *hostCalls) noteTaken() {
+	if c.refused == 0 {
+		return
+	}
+	n := c.refused
+	c.refused = 0
+	go c.r.log(fmt.Sprintf("host %s: %d calls refused while a lane was %d behind", c.host, n, hostCallQueue))
+}
+
+func (c *hostCalls) noteRefused(method string) {
+	c.refused++
+	if c.refused == 1 {
+		go c.r.log(fmt.Sprintf("host %s: %s refused; its calls are %d behind", c.host, method, hostCallQueue))
+	}
+}
 
 // answerHost runs one call and answers it on the link it came on, not on a newer one.
 func (r *Router) answerHost(host string, gen int64, call hostCall) {

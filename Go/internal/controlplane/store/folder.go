@@ -225,6 +225,34 @@ func (f *Folder) List(_ context.Context, prefix string) ([]Key, error) {
 	return out, nil
 }
 
+// Folders reads the one folder the prefix names, and only its entries' names and types:
+// no file under it is listed or stat'ed (#6569). A prefix that names no folder has none.
+func (f *Folder) Folders(_ context.Context, prefix string) ([]string, error) {
+	dir := f.Root
+	if folder := strings.TrimSuffix(prefix, "/"); folder != "" {
+		p, err := f.file(folder)
+		if err != nil {
+			return nil, err
+		}
+		dir = p
+	}
+	entries, err := os.ReadDir(dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, Unavailable("cannot read %s: %v", prefix, err)
+	}
+	var names []string
+	for _, e := range entries {
+		// As a listing walks: no hidden name, and a link is not followed.
+		if e.IsDir() && !strings.HasPrefix(e.Name(), ".") {
+			names = append(names, e.Name())
+		}
+	}
+	return names, nil
+}
+
 // RemoveLeftovers removes what a copy that stopped mid-write left behind, and probes it
 // never deleted: temporary files, probe keys and locks with no key beside them, all
 // older than before. It returns how many went. Run by the sweep (#174), never on a hot
