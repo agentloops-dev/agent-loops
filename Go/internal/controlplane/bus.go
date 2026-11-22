@@ -359,34 +359,32 @@ func (s *Service) busFromPeer(raw json.RawMessage) {
 }
 
 // sweepBus keeps the newest kept envelopes of each bus, and deletes at most most
-// of the rest, the oldest first, each with its id's file.
+// of the rest, the oldest first, each with its id's file. It lists each bus's log only
+// (#6569): the ids beside it are as many again, and a listing stats each file.
 func sweepBus(ctx context.Context, st store.Store, kept, most int) (int, error) {
 	if most <= 0 {
 		return 0, nil
 	}
-	keys, err := st.List(ctx, busPrefix)
+	buses, err := store.Folders(ctx, st, busPrefix)
 	if err != nil {
 		return 0, err
 	}
-	logs := map[string][]string{}
-	for _, k := range keys {
-		bus, rest, ok := strings.Cut(strings.TrimPrefix(k.Key, busPrefix), "/")
-		if ok && strings.HasPrefix(rest, "log/") {
-			logs[bus] = append(logs[bus], k.Key)
-		}
-	}
 	n := 0
-	for bus, list := range logs {
+	for _, bus := range buses {
 		// List gives them sorted by key, so by time.
-		for _, key := range list[:max(0, len(list)-kept)] {
+		list, err := st.List(ctx, busPrefix+bus+"/log/")
+		if err != nil {
+			return n, err
+		}
+		for _, k := range list[:max(0, len(list)-kept)] {
 			if n >= most {
 				return n, nil
 			}
-			name := strings.TrimSuffix(key[strings.LastIndexByte(key, '-')+1:], ".json")
+			name := strings.TrimSuffix(k.Key[strings.LastIndexByte(k.Key, '-')+1:], ".json")
 			if err := st.Delete(ctx, busIDKey(bus, name)); err != nil {
 				return n, err
 			}
-			if err := st.Delete(ctx, key); err != nil {
+			if err := st.Delete(ctx, k.Key); err != nil {
 				return n, err
 			}
 			n++

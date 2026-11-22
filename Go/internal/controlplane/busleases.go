@@ -171,35 +171,38 @@ func (b *eventBus) standsBy(host, poll string, now time.Time) bool {
 }
 
 // sweepBusLeases deletes at most most lease files that ended more than busLeaseKept ago.
+// It lists each bus's leases only (#6569), not its log and ids.
 func sweepBusLeases(ctx context.Context, st store.Store, now time.Time, most int) (int, error) {
 	if most <= 0 {
 		return 0, nil
 	}
-	keys, err := st.List(ctx, busPrefix)
+	buses, err := store.Folders(ctx, st, busPrefix)
 	if err != nil {
 		return 0, err
 	}
 	n := 0
-	for _, k := range keys {
-		_, rest, ok := strings.Cut(strings.TrimPrefix(k.Key, busPrefix), "/")
-		if !ok || !strings.HasPrefix(rest, "leases/") {
-			continue
-		}
-		if n >= most {
-			return n, nil
-		}
-		obj, err := st.Get(ctx, k.Key)
+	for _, bus := range buses {
+		keys, err := st.List(ctx, busPrefix+bus+"/leases/")
 		if err != nil {
 			return n, err
 		}
-		var l busLease
-		if obj == nil || (json.Unmarshal(obj.Data, &l) == nil && now.Sub(l.Until) < busLeaseKept) {
-			continue
+		for _, k := range keys {
+			if n >= most {
+				return n, nil
+			}
+			obj, err := st.Get(ctx, k.Key)
+			if err != nil {
+				return n, err
+			}
+			var l busLease
+			if obj == nil || (json.Unmarshal(obj.Data, &l) == nil && now.Sub(l.Until) < busLeaseKept) {
+				continue
+			}
+			if err := st.Delete(ctx, k.Key); err != nil {
+				return n, err
+			}
+			n++
 		}
-		if err := st.Delete(ctx, k.Key); err != nil {
-			return n, err
-		}
-		n++
 	}
 	return n, nil
 }
