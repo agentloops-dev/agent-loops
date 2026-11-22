@@ -518,3 +518,22 @@ struct WorkPageTests {
         #expect(h.canGoForward)
     }
 }
+
+/// A list's ask joins the next for the same query only within one open (#6640, #6358 finding 3).
+@Suite("Work list ask join")
+struct WorkListAskJoinTests {
+    @Test func theRestoreAndTheClickAskOnce() {
+        #expect(WorkList.joinsAsk(same: true, reading: false, since: .milliseconds(200)))
+        #expect(WorkList.joinsAsk(same: true, reading: true, since: .seconds(30)))
+    }
+
+    @Test func anOpenLaterInTheRunAsksAgain() {
+        #expect(!WorkList.joinsAsk(same: true, reading: false, since: .seconds(5)))
+        #expect(!WorkList.joinsAsk(same: true, reading: false, since: WorkList.joinWindow))
+    }
+
+    @Test func anotherQueryOrTheFirstAskAsks() {
+        #expect(!WorkList.joinsAsk(same: false, reading: true, since: .milliseconds(10)))
+        #expect(!WorkList.joinsAsk(same: true, reading: false, since: nil))
+    }
+}

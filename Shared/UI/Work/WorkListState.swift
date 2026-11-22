@@ -61,6 +61,8 @@ final class WorkListState {
     private var read: Ask?
     /// What the rows on screen were read for, without Refresh: the copy is drawn only for another.
     private var shownFor: String?
+    /// When the cached list last asked its machines: an ask for the same query joins it only for a moment (#6640).
+    private var readAt: ContinuousClock.Instant?
 
     /// How many pages of `reports/nodes` a list reads for its lineage: at most 500 nodes.
     private static let lineagePages = 5
@@ -125,9 +127,11 @@ final class WorkListState {
     /// read after it. A machine that does not answer keeps its pages, with what failed and when they were read.
     private func loadCached(_ cache: any WorkCaching, model: any WorkModel) async {
         let mine = ask
-        // One ask an open (#6358, finding 3): the window's restore and the click ask the same once.
-        guard read != mine else { return }
+        // One ask an open (#6358, finding 3): the window's restore and the click ask the same once. An open later in
+        // the run asks again (#6640).
+        guard !WorkList.joinsAsk(same: read == mine, reading: reading, since: readAt.map { ContinuousClock.now - $0 }) else { return }
         read = mine
+        readAt = ContinuousClock.now
         problem = nil
         pageProblem = nil
         reading = true
