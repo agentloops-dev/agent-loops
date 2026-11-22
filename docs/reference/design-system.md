@@ -345,7 +345,9 @@ Alex, 2026-11-12 (#5139): every page that shows cached data says how old it is, 
   it in the footer bar under the list, after the count, with what runs or failed on the
   left; they have no strip above the rows (#5968, #5967's rule in epic #6348). Work ▸ Deploys
   and Work ▸ Timeline have the same footer bar (#5969); a read of several machines says
-  *Reading 1 of 3 machines…*.
+  *Reading 1 of 3 machines…*. An item's page, a release's page and Files changed have it
+  too (#5970): an item with its Plan says the older of the two reads; a release's page says
+  *No machine keeps lineage.* there; Files changed says no age, because its diff is not kept.
 
 The pages and the plan are in `specs/5139-last-update/spec.md`.
 

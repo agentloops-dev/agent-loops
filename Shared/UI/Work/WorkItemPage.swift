@@ -31,16 +31,22 @@ struct WorkItemPage: View {
     /// The item on screen came from this device's copy (#4930): no writes until its machine answers.
     @State private var fromDevice = false
     /// When the item on screen was read from its machine (#5142): this device's copy's time, or
-    /// the last read that worked. The "Last update" line of the strips.
+    /// the last read that worked.
     @State private var detailRead: Date?
-    /// When the plan drawn from this device's copy was read, until its machine answers (#5142).
-    @State private var planCopyRead: Date?
+    /// The Plan's read, while the page shows one (#5970).
+    @State private var planRead: WorkPlanRead?
 
-    /// The page's one "From this device" strip (#5142): the oldest of the item's and the plan's
-    /// copies on screen, while a machine is asked again.
-    private var copyRead: Date? {
-        guard forgeProblem == nil else { return nil }
-        return [fromDevice ? detailRead : nil, planCopyRead].compactMap { $0 }.min()
+    /// The footer's left (#5970): what runs or failed of the item and its Plan, else from this device's copy.
+    private var footerState: WorkLook.FooterState {
+        WorkLook.pageFooterState(drawn: detail != nil, reading: reading || planRead?.reading == true,
+                                 fromDevice: fromDevice || planRead?.fromDevice == true,
+                                 lines: [forgeProblem, planRead?.problem].compactMap { $0 })
+    }
+
+    /// The footer's "Last update" (#5139): the older of the item's and the Plan's reads.
+    private var shownRead: Date? {
+        guard detail != nil else { return nil }
+        return WorkLook.oldestRead(planRead.map { [detailRead, $0.read] } ?? [detailRead])
     }
     @State private var olderLoading = false
     @State private var estimate: DaemonAPI.LineageEstimate?
@@ -82,54 +88,13 @@ struct WorkItemPage: View {
     private var writes: Bool { !fromDevice && (detail.map { model.forgeWrites(on: $0.host) } ?? false) }
 
     var body: some View {
-        ScrollView {
-            Group {
-                if detail == nil, let forgeProblem {
-                    couldNotRead(forgeProblem)
-                } else if narrow {
-                    VStack(alignment: .leading, spacing: 16) {
-                        header
-                        problemStrip
-                        Group {
-                            if let detail, let box = WorkLook.mergeBox(detail.got) {
-                                mergeBox(box, detail.got, on: detail.host)
-                            }
-                            if let detail, detail.got.item.node.kind == "pr" {
-                                WorkFilesChanged(model: model, detail: detail.got, compact: true)
-                            }
-                            // An epic's Plan before the panel's rows: it is what a person opens an epic for (epic.md note 15).
-                            plan
-                            sidePanel(compact: true) { details }
-                            main
-                            if detail != nil {
-                                sidePanel(compact: true) { connections }
-                            }
-                        }
-                        .opacity(forgeProblem == nil ? 1 : 0.5)
-                    }
-                } else {
-                    VStack(alignment: .leading, spacing: 16) {
-                        header
-                        problemStrip
-                        HStack(alignment: .top, spacing: 24) {
-                            VStack(alignment: .leading, spacing: 16) {
-                                plan
-                                main
-                            }
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                            sidePanel(compact: false) {
-                                details
-                                connections
-                            }
-                        }
-                        .opacity(forgeProblem == nil ? 1 : 0.5)
-                    }
-                }
+        // The read's state and Last update are in the footer bar, as on the lists (#5970); no strip.
+        VStack(spacing: 0) {
+            page.frame(maxHeight: .infinity)
+            if place.kind.fromForge {
+                WorkPageBar(state: footerState, count: nil, read: shownRead) { asked += 1 }
             }
-            .padding(compact ? 16 : 20)
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .onGeometryChange(for: CGFloat.self, of: \.size.width) { width = $0 }
         .environment(\.workPictures, detail.map { WorkPictures(model: model, host: $0.host) })
         #if os(iOS)
         .refreshable { asked += 1 }
@@ -151,6 +116,54 @@ struct WorkItemPage: View {
         #if os(macOS)
         .workTask(id: pipelineAsk) { await loadPipeline() }
         #endif
+    }
+
+    /// The item's page above the footer: the header, the Plan, the timeline and the panel; nothing read, what failed.
+    private var page: some View {
+        ScrollView {
+            Group {
+                if detail == nil, let forgeProblem {
+                    couldNotRead(forgeProblem)
+                } else if narrow {
+                    VStack(alignment: .leading, spacing: 16) {
+                        header
+                        Group {
+                            if let detail, let box = WorkLook.mergeBox(detail.got) {
+                                mergeBox(box, detail.got, on: detail.host)
+                            }
+                            if let detail, detail.got.item.node.kind == "pr" {
+                                WorkFilesChanged(model: model, detail: detail.got, compact: true)
+                            }
+                            // An epic's Plan before the panel's rows: it is what a person opens an epic for (epic.md note 15).
+                            plan
+                            sidePanel(compact: true) { details }
+                            main
+                            if detail != nil {
+                                sidePanel(compact: true) { connections }
+                            }
+                        }
+                    }
+                } else {
+                    VStack(alignment: .leading, spacing: 16) {
+                        header
+                        HStack(alignment: .top, spacing: 24) {
+                            VStack(alignment: .leading, spacing: 16) {
+                                plan
+                                main
+                            }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            sidePanel(compact: false) {
+                                details
+                                connections
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(compact ? 16 : 20)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .onGeometryChange(for: CGFloat.self, of: \.size.width) { width = $0 }
     }
 
     // MARK: Toolbar (Mac)
@@ -449,15 +462,6 @@ struct WorkItemPage: View {
 
     // MARK: States
 
-    /// A read failed after one came: a strip under the header, the last read dimmed under it.
-    @ViewBuilder
-    private var problemStrip: some View {
-        if detail != nil, let forgeProblem {
-            WorkErrorStrip(lines: [forgeProblem], read: detailRead) { asked += 1 }
-        }
-        WorkFromDeviceStrip(read: copyRead)
-    }
-
     /// Nothing read: in the middle, the warning glyph, *Could not read #4331*, the forge's words,
     /// Try again and Open on GitHub.
     private func couldNotRead(_ words: String) -> some View {
@@ -490,7 +494,7 @@ struct WorkItemPage: View {
             WorkPlanSection(model: model, host: detail.host, lineageHost: lineageHost, detail: detail.got, asked: asked,
                             estimates: estimate?.children ?? [], compact: compact,
                             writes: writes, waiting: fromDevice, wrote: { Task { await reread() } },
-                            fromCopy: { planCopyRead = $0 })
+                            report: { planRead = $0 })
         }
     }
 
