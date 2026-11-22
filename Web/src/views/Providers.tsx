@@ -20,7 +20,6 @@ import { makers } from "../model/machineFromRepository";
 import { adminsOnly, providerLine as groupLine } from "../model/teamGroups";
 import { ask } from "./MessageKinds";
 import { hasWarmPools, useWarmPools, WarmPoolsSection } from "./WarmPools";
-import { Icon } from "./Icon";
 import { marks, useTick } from "./MachineSetup";
 import { offersOneClick, oneClickPlan, oneClickWords, type OneClickPlan } from "../model/oneClickMake";
 import { failedStep, isReady, stepLine, stepName, stepStateWords, stepTime } from "../model/machineSetup";
