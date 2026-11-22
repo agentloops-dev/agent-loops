@@ -36,7 +36,8 @@ import { ago } from "../model/connectorSetup";
 import { fromWireDate } from "../protocol/dates";
 import { type ForgeImages, Markdown } from "../render/markdown";
 import { bytesOf } from "../model/pageImage";
-import { keepWork, keptPicture, keptWorkRead } from "../model/localCopy";
+import { keptPicture } from "../model/localCopy";
+import { workCache } from "../model/workCache";
 import { forgeMarkdown } from "../model/forgeMarkdown";
 import { ForgeTitle } from "../render/ForgeTitle";
 import {
@@ -423,8 +424,8 @@ export function WorkPage({ store, kind, ref }: { store: Store; kind: WorkKind; r
     void (async () => {
       // Seen before: this device's copy at once, until a machine answers (#4930).
       if (!detail.peek()) {
-        const kept = await keptWorkRead<{ host: string; got: ForgeItemDetail }>("item", ref);
-        if (current && kept && !detail.peek()) { detail.value = kept.value; detailAt.value = kept.at; fromDevice.value = true; }
+        const kept = await workCache()?.detail(node);
+        if (current && kept && !detail.peek()) { detail.value = { host: kept.host, got: kept.got }; detailAt.value = kept.read; fromDevice.value = true; }
       }
       // Every machine at once, and the first that answers wins (#5449): a slow or offline machine does not hold the page,
       // and an error shows only when no machine read it.
@@ -440,7 +441,7 @@ export function WorkPage({ store, kind, ref }: { store: Store; kind: WorkKind; r
         }));
         if (current) {
           detail.value = won; detailAt.value = Date.now(); fromDevice.value = false; forgeProblem.value = null;
-          keepWork("item", ref, won);
+          void workCache()?.keepDetail(won.host, won.got);
         }
       } catch {
         if (current) forgeProblem.value = last ?? notReadHere;
@@ -506,7 +507,7 @@ export function WorkPage({ store, kind, ref }: { store: Store; kind: WorkKind; r
       detail.value = { host: had.host, got };
       detailAt.value = Date.now();
       fromDevice.value = false;
-      keepWork("item", ref, { host: had.host, got });
+      void workCache()?.keepDetail(had.host, got);
     } catch (e) {
       forgeProblem.value = describe(e);
     }

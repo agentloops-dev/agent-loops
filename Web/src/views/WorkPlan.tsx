@@ -10,7 +10,7 @@
 // Blocked by. Start lead and Open lead are the page header's. Under 700 px (note 19) the bar takes the width with the
 // words under it, and a child is the phone row: its title on up to two lines, no level chip or pull request, a short
 // line 2.
-import { keepWork, keptWorkRead } from "../model/localCopy";
+import { keepWork, keptWorkRead } from "../model/workCache";
 import { useSignal } from "@preact/signals";
 import { useEffect, useRef } from "preact/hooks";
 import type { AgentState, ForgeDone, ForgeItemDetail, ForgePlan, ForgePlanChild, ForgePlanStep, ForgeStanding, LineageCostRollup, LineageEstimate, LineageLink } from "../protocol/generated";

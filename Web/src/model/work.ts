@@ -245,9 +245,10 @@ export function forgeListRequest(state: string, board: string, cursor?: string):
 
 /** forge/listAll's request (#5592): forge/issues' or forge/pulls' of every machine in one call; `pages`, for the next page,
  * names each machine still to read and its cursor. */
-export function forgeListAllRequest(kind: WorkKind, state: string, board: string, pages?: readonly { host: string; cursor: string }[]): ForgeListAllRequest {
+export function forgeListAllRequest(kind: WorkKind, state: string, board: string, pages?: readonly { host: string; cursor: string }[],
+  sort?: ForgeListAllRequest["sort"]): ForgeListAllRequest {
   return withBoard({
-    kind: kind === "issue" ? "issues" as const : "pulls" as const, state, limit: 100,
+    kind: kind === "issue" ? "issues" as const : "pulls" as const, state, limit: 100, ...sort === "priority" ? { sort } : {},
     ...pages ? { pages: pages.map((p) => ({ machine: p.host as MachineRef, cursor: p.cursor })) } : {},
   }, board);
 }

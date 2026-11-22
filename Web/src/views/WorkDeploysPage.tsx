@@ -13,7 +13,7 @@ import {
   cellLabel, clickNote, deployGrid, emptyLine, emptyTitle, jobOf, labelsLine, mergeTargets, nextWords, noLive, noMachine, shareWords,
   sinceWords, tierChip, versionWords,
 } from "../model/workDeploys";
-import { keepWork, keptWorkRead } from "../model/localCopy";
+import { keepWork, keptWorkRead } from "../model/workCache";
 import { go } from "../route";
 import { LastUpdate } from "./LastUpdate";
 import { EmptyState, ErrorStrip, FromDeviceStrip, PlaceholderRows, RefreshButton } from "./WorkParts";

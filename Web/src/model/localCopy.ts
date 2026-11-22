@@ -41,8 +41,9 @@ export interface TranscriptCopy {
   at: number;
 }
 
-/** What each Work entry holds (#4930), with how many of it are kept, the newest first; the pictures also to `imageCap`. */
-export const workKept = { list: 30, item: 50, plan: 50, features: 10, timeline: 20, deploys: 5, next: 10, boards: 10, image: 2000 } as const;
+/** What each Work entry holds (#4930), with how many of it are kept, the newest first; the pictures also to `imageCap`. Since
+ * #6356 only the forge's pictures: Work's records and answers are Work's cache (workCache.ts). */
+export const workKept = { image: 2000 } as const;
 export type WorkGroup = keyof typeof workKept;
 
 /** One of Work's last answers (#4930), kept by what was asked: a cache, never the record. */
@@ -93,6 +94,8 @@ export function overCaps(rows: readonly CopyIndexRow[], cap = copyCap, kept = tr
   const newest = (a: CopyIndexRow, b: CopyIndexRow) => b.at - a.at;
   const transcripts = rows.filter((r) => r.kind === "transcript").sort(newest);
   const drop = transcripts.slice(kept);
+  // A Work entry of a group no longer kept here (a list or an item before #6356, now in Work's cache) goes.
+  drop.push(...rows.filter((r) => r.kind === "work" && !(r.group && r.group in workKept)));
   // Each Work group to its count, and the pictures to their own cap (#4930).
   const work: CopyIndexRow[] = [];
   for (const group of Object.keys(workKept) as WorkGroup[]) {
@@ -352,11 +355,6 @@ export function setWorkCopy(copy: LocalCopy | undefined): void { pageCopy = copy
 /** Work's last answer this device kept for what was asked (#4930). */
 export function keptWork<T>(group: WorkGroup, asked: string): Promise<T | undefined> {
   return pageCopy ? pageCopy.work<T>(group, asked) : Promise.resolve(undefined);
-}
-
-/** Work's last answer this device kept, with when it was read (#5142): the "Last update" line of a page drawn from it. */
-export function keptWorkRead<T>(group: WorkGroup, asked: string): Promise<{ value: T; at: number } | undefined> {
-  return pageCopy ? pageCopy.workRead<T>(group, asked) : Promise.resolve(undefined);
 }
 
 /** A host's answer to a Work page, kept (#4930). */
