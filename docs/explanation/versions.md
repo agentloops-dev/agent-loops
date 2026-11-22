@@ -185,11 +185,14 @@ Each capability has a **maturity** (#6052): how ready its feature is.
   (`EarlyFeatures.shows` in Swift, `showsFeature` on the web page). The switch is kept as
   `flag:<capability>` in the person's display settings, with the feature flags (#6254). When
   the feature becomes GA, it leaves the list and its switch has no effect.
-- To change a level, edit the list and run `scripts/wire.sh gen`. To make a feature GA, take
-  it out.
+- To change a level, edit the list and run `scripts/wire.sh gen`, and set the **Maturity**
+  cell of the feature's row in the parity table (`specs/071-web-remote/walks/parity/`, #6580)
+  to the same level with the capability, as `beta (`chat.branch/1`)`. To make a feature GA,
+  take it out, and set the cell to `ga`. `scripts/parity-counts.py` (in `scripts/lint.sh
+  checks`) fails when the two do not agree.
 
 Each client reads the list it was built with. A host's own level on the wire, for a client
-older than its host, is #6579. The parity table's Maturity cell is #6580.
+older than its host, is #6579.
 
 ## Version numbers
 

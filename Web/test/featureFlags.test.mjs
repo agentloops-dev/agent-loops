@@ -24,13 +24,8 @@ test("a flag is on only when the Mac says the person turned it on, and a change 
   m.sendPreferencesWith(null);
 });
 
-test("the page's flags are Packages/Wire's, and its words are the window's (#6254)", async () => {
+test("the page's flags are Packages/Wire's (#6254); Early Features draws them (#6604)", async () => {
   const { featureFlags } = await load("src/protocol/flags.generated.ts");
   const wire = JSON.parse(readFileSync(new URL("../../Packages/Wire/feature-flags.json", import.meta.url), "utf8"));
   assert.deepEqual(featureFlags, wire.flags);
-  const { featureFlagsFooter, noFeatureFlags } = await load("src/views/settings/FeatureFlags.tsx");
-  const swift = readFileSync(new URL("../../App/Sources/Settings/FeatureFlagsSettingsSection.swift", import.meta.url), "utf8")
-    .replace(/"\s*\n\s*\+ "/g, "");
-  assert.ok(swift.includes(JSON.stringify(featureFlagsFooter)), "the footer is the window's");
-  assert.ok(swift.includes(JSON.stringify(noFeatureFlags)), "the empty line is the window's");
 });

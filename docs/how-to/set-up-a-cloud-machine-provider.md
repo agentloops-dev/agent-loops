@@ -27,16 +27,16 @@ on the machine that carries the provider.
 ## Where to add one
 
 - **On the Mac:** **Settings ▸ Machine Providers**, in the Control plane group, then
-  **Add Provider…**. Choose the cloud. For DigitalOcean, Codespaces and Coder, **Reach it
-  with** offers **Its API** (first) and **Its CLI**. The Mac also adds Docker and your own
-  commands.
+  **Add Provider…**. Choose the cloud from the list (under **Cloud** or **Development
+  environments**). For DigitalOcean, Codespaces and Coder, **Connect with** offers **Its API**
+  (first) and **Its CLI**. The Mac also adds Docker and your own commands.
 - **On the web page:** the **Machine providers** section of Settings, then
   **Add Provider…**.
 
 The iPhone and iPad do not add providers (#2798).
 
-The web page offers only the API presets: DigitalOcean, Codespaces, Coder, AWS EC2 and
-Compute Engine. A CLI preset needs a shell where the control plane runs, to install and
+The web page shows the same list, but opens only the API presets: DigitalOcean, Codespaces,
+Coder, AWS EC2 and Compute Engine. The other rows say **In the Mac app**. A CLI preset needs a shell where the control plane runs, to install and
 sign in the CLI, and a person in a browser has none there.
 
 The control plane runs providers only when it has a folder for them (#3113): `--home`, or

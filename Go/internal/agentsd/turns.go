@@ -209,14 +209,26 @@ func (d *Daemon) change(id wire.UUID, edit func(a *wire.Agent)) *wire.Agent {
 	return d.changeAgent(id, true, edit)
 }
 
+// changeFromArchive is change for the one edit that may take an agent out of the archive:
+// an unarchive, or a turn's words sent to an archived agent (moveState, #1611).
+func (d *Daemon) changeFromArchive(id wire.UUID, edit func(a *wire.Agent)) *wire.Agent {
+	return d.writeChange(id, true, true, edit)
+}
+
 // changeAgent is change; with moveOn false, the record keeps its last activity, so a mark
 // such as Mute (#2003) does not move the session up its list.
 func (d *Daemon) changeAgent(id wire.UUID, moveOn bool, edit func(a *wire.Agent)) *wire.Agent {
+	return d.writeChange(id, moveOn, false, edit)
+}
+
+// writeChange is changeAgent; with mayUnarchive, the edit may take the agent out of the
+// archive (changeFromArchive).
+func (d *Daemon) writeChange(id wire.UUID, moveOn, mayUnarchive bool, edit func(a *wire.Agent)) *wire.Agent {
 	// agentMu covers only the read, the edit and the save; the tell lock keeps this
 	// agent's tells in the order of its saves (agenttell.go, #4509).
 	unlockTell := d.lockAgentTell(id)
 	defer unlockTell()
-	a, before := d.saveChange(id, moveOn, edit)
+	a, before := d.saveChange(id, moveOn, mayUnarchive, edit)
 	if a == nil {
 		return nil
 	}
@@ -237,8 +249,9 @@ func (d *Daemon) changeAgent(id wire.UUID, moveOn bool, edit func(a *wire.Agent)
 }
 
 // saveChange is changeAgent's part under agentMu: the record after the edit, saved, and
-// the record before it; nil when there is no such agent or the save failed.
-func (d *Daemon) saveChange(id wire.UUID, moveOn bool, edit func(a *wire.Agent)) (*wire.Agent, wire.Agent) {
+// the record before it; nil when there is no such agent, the save failed, or the edit would
+// take an archived agent out of the archive without mayUnarchive.
+func (d *Daemon) saveChange(id wire.UUID, moveOn, mayUnarchive bool, edit func(a *wire.Agent)) (*wire.Agent, wire.Agent) {
 	d.agentMu.Lock()
 	defer d.agentMu.Unlock()
 	a := d.Store.Agent(id)
@@ -247,6 +260,12 @@ func (d *Daemon) saveChange(id wire.UUID, moveOn bool, edit func(a *wire.Agent))
 	}
 	before := *a
 	edit(a)
+	// An edit that set a state from what it saw before the archive (a turn's ending, a
+	// stop) would bring the session back, as Save clears ArchivedAt (#6619): it is dropped.
+	if before.State == wire.AgentStateArchived && a.State != wire.AgentStateArchived && !mayUnarchive {
+		log.Printf("agent %s: kept archived; a change to %s came after the archive", id, a.State)
+		return nil, wire.Agent{}
+	}
 	if moveOn {
 		a.LastActivityAt = now()
 	}
@@ -1125,7 +1144,11 @@ func (d *Daemon) setState(id wire.UUID, s wire.AgentState) {
 // (#1611). With from, it moves only an agent in that state, in the same change (#6367).
 func (d *Daemon) moveState(id wire.UUID, s wire.AgentState, fromArchive bool, from *wire.AgentState) {
 	changed, started := false, false
-	d.change(id, func(a *wire.Agent) {
+	write := d.change
+	if fromArchive {
+		write = d.changeFromArchive
+	}
+	write(id, func(a *wire.Agent) {
 		if a.State == s || a.State == wire.AgentStateArchived && !fromArchive || from != nil && a.State != *from {
 			return
 		}
@@ -1167,10 +1190,7 @@ func (d *Daemon) end(l *live, s wire.AgentState, why wire.EndedReason) {
 		l.forgetTools()
 		d.endScreenDrive(l.id)
 		d.endBrowserDrive(l.id)
-		d.workflowRunFinished(l.id)
-		d.guardedTurnEnded(l.id)
-		d.checkQueueSoon(folderPath(a))
-		d.agentEnded(l.id)
+		d.endArchivedTurn(l.id, a)
 		return
 	}
 	why = d.endedReasonFor(l.id, s, why)
@@ -1178,7 +1198,9 @@ func (d *Daemon) end(l *live, s wire.AgentState, why wire.EndedReason) {
 	l.forgetTools()
 	d.endScreenDrive(l.id)
 	d.endBrowserDrive(l.id)
-	d.change(l.id, func(a *wire.Agent) {
+	// Archived since the look above (#6619): saveChange keeps it so, and the ending is
+	// not said. A save that failed goes on as before.
+	if d.change(l.id, func(a *wire.Agent) {
 		a.State, a.EndedReason, a.RunningTool = s, reason(why), nil
 		if why != wire.EndedReasonDaemonGone {
 			a.RestartPickUps = nil // any ending but the daemon's going clears the count
@@ -1189,7 +1211,12 @@ func (d *Daemon) end(l *live, s wire.AgentState, why wire.EndedReason) {
 			keptBlock = setFinishedTurnReport(a, last, held)
 		}
 		requested, archiveNow = d.settleArchiveRequest(a, s, why, showedFile)
-	})
+	}) == nil {
+		if a := d.Store.Agent(l.id); a != nil && a.State == wire.AgentStateArchived {
+			d.endArchivedTurn(l.id, a)
+			return
+		}
+	}
 	d.record(l.id, stateChanged(s, reason(why)))
 	// A stopped session holds nothing (#6190): a runtime that died, or an error that ended
 	// the turn, let go of its leases at once, not when they run out, so its line moves. Only
@@ -1226,6 +1253,15 @@ func (d *Daemon) end(l *live, s wire.AgentState, why wire.EndedReason) {
 	}
 	// A move to another machine asked for in this turn goes now (#3717).
 	d.afterTurnMachineMove(l.id, s)
+}
+
+// endArchivedTurn is the rest of the ending of a turn its archive cut off (#1611), after its
+// tools and drives: the session stays archived, and the ending is not said.
+func (d *Daemon) endArchivedTurn(id wire.UUID, a *wire.Agent) {
+	d.workflowRunFinished(id)
+	d.guardedTurnEnded(id)
+	d.checkQueueSoon(folderPath(a))
+	d.agentEnded(id)
 }
 
 // endedReasonFor is the reason a turn ends with: the daemon's going when the host's going

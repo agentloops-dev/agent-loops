@@ -14,6 +14,26 @@ test("only the API kinds are offered, with the window's titles", () => {
   assert.equal(w.kindOfPreset("doctl"), undefined);
 });
 
+test("Add a Provider lists all eight kinds in the window's four groups, and opens only the API ones (#6069)", () => {
+  assert.deepEqual(w.providerGroups.map((g) => g.title), ["Cloud", "Development environments", "On a machine you have", "Custom"]);
+  const all = w.providerGroups.flatMap((g) => g.kinds);
+  assert.deepEqual(all, ["digitalOcean", "compute", "aws", "codespaces", "coder", "workstations", "docker", "commands"]);
+  assert.deepEqual(all.filter((k) => w.choiceKind(k)), ["digitalOcean", "compute", "aws", "codespaces", "coder"]);
+  for (const k of all) {
+    assert.ok(w.choiceDescription(k).endsWith("."), k);
+    assert.ok(w.choiceDocs(k).startsWith("https://docs.agentloops.dev/how-to/"), k);
+  }
+  assert.equal(w.choiceDescription("digitalOcean"), "Droplets with a tag.");
+  assert.equal(w.choiceTitle("docker"), "Docker Containers");
+});
+
+test("help goes under the field it is about, not in one paragraph (#6069)", () => {
+  const token = w.kindFields("digitalOcean").find((f) => f.id === "token");
+  assert.match(token.help, /^Custom scopes: droplet read and update/);
+  assert.equal(w.kindNote("digitalOcean"), "Nothing to install.");
+  for (const k of w.providerKinds) assert.ok(w.kindNote(k).length < 80, k);
+});
+
 test("DigitalOcean: the token goes only in secrets, tag and user default", () => {
   const r = w.providerRequest("digitalOcean", "", { token: " dop_v1_x " });
   assert.deepEqual(r, { name: "DigitalOcean Droplets", kind: "commands",
