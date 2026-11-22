@@ -23,6 +23,13 @@ final class RemoteModel {
     /// This device's local copy (#4791): sessions and chat ends kept in the app's Caches,
     /// drawn at launch before the Mac answers. The Mac always wins.
     @ObservationIgnored var localCopy: LocalCopyKeeper?
+    /// Work's client cache (#6357, epic #6348): one SQLite file in the app's own `Caches`, beside the local copy, with
+    /// the Remote's 50 MB bound. Nil when the file does not open: Work then reads as before.
+    @ObservationIgnored let workCacheStore: WorkCache? = {
+        let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+        return try? WorkCache(file: caches.appendingPathComponent("work-cache.sqlite"), bounds: .remote)
+    }()
+    @ObservationIgnored let workSavesStore = WorkSaves()
     var labelVocabularies: [URL: [String]] = [:]
     /// The Secrets (#5257), Accounts (#5258) and Environment (#5260) pages' selected items, so a link from one, or from
     /// the ⌘K menu (#5261), opens an item on another.
@@ -493,6 +500,8 @@ final class RemoteModel {
         StartDraftKeeper.shared.forgetAll()
         // The copy of its sessions and chats goes with the pairing (#4791).
         Task { [localCopy] in await localCopy?.forget() }
+        // Work's cache too (#6357): its items are that control plane's forges'.
+        Task { [workCacheStore] in await workCacheStore?.forget() }
         liveActivities.endAll()
         notifier.forgetAll()
         AttentionSnapshotStore.clear()

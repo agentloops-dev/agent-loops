@@ -165,7 +165,7 @@ bottom (the host daemon). The colour of each label gives the medium.
   it showed last, so a page draws at once, also when its machine does not answer. The Mac
   window and the Remote keep the copy in their Caches folder, and their client key in the
   Keychain. The web page keeps both in IndexedDB, and the key cannot be read out of the
-  browser. The Mac window's Work cache, behind the `work-cache` flag, is a SQLite file.
+  browser. Work's cache is a SQLite file on the Mac window and the Remote, and IndexedDB on the web page.
   Preferences and drafts are in UserDefaults on the Mac and the Remote, and in
   `localStorage` on the web page.
 
