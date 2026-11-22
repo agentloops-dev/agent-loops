@@ -29,6 +29,8 @@ type Carried struct {
 type CarriedCreate struct {
 	Made *MachineInfo `json:"made,omitempty"`
 	Runs bool         `json:"runs"`
+	// Said is what the make did, one line a step (#6073); an older carrier says none.
+	Said []string `json:"said,omitempty"`
 }
 
 // SSHResult is providers/ssh's result.
@@ -127,9 +129,15 @@ func (c *Carried) Options() (any, error) {
 }
 
 func (c *Carried) Create(name string, options any, firstBoot *string) (*MachineInfo, bool, error) {
+	made, runs, _, err := c.CreateSaying(name, options, firstBoot)
+	return made, runs, err
+}
+
+// CreateSaying is Create, with what the make did as the carrying machine said it (#6073).
+func (c *Carried) CreateSaying(name string, options any, firstBoot *string) (*MachineInfo, bool, []string, error) {
 	var out CarriedCreate
 	err := c.call("create", wire.ProviderCarry{Name: &name, Options: rawOf(options), FirstBoot: firstBoot}, &out)
-	return out.Made, out.Runs, err
+	return out.Made, out.Runs, out.Said, err
 }
 
 func (c *Carried) Delete(id string) error {

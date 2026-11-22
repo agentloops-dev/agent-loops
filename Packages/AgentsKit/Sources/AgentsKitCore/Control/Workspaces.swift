@@ -213,10 +213,14 @@ public extension DaemonAPI {
         /// Why the control plane gave up waiting for it to join, once it did (#4610): the row
         /// says so, with Delete.
         public var notJoined: String?
+        /// The set-up of a machine New Machine is making (#6073), from the press of Make until
+        /// it joins: what each step did, for a client that opens late.
+        public var setup: MachineSetup?
 
         public init(id: String, name: String, state: String, ssh: String? = nil, tunnel: Bool? = nil,
                     hostKeyRenews: Bool? = nil, cost: String? = nil, idleTimeoutMinutes: Int? = nil,
-                    host: MachineRef? = nil, joining: Bool? = nil, notJoined: String? = nil) {
+                    host: MachineRef? = nil, joining: Bool? = nil, notJoined: String? = nil,
+                    setup: MachineSetup? = nil) {
             self.id = id
             self.name = name
             self.state = state
@@ -228,6 +232,7 @@ public extension DaemonAPI {
             self.host = host
             self.joining = joining
             self.notJoined = notJoined
+            self.setup = setup
         }
 
         /// Whether a host added by hand may be this workspace (#976): its name is the

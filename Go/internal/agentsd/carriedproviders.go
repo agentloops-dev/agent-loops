@@ -191,8 +191,8 @@ func (c *carriedProviders) call(request wire.ProviderCarry) wire.ProviderCarried
 				return carriedError("The options are not JSON: " + err.Error())
 			}
 		}
-		made, runs, err := connection.Create(name, options, request.FirstBoot)
-		return carriedResult(providers.CarriedCreate{Made: made, Runs: runs}, err)
+		made, runs, said, err := connection.CreateSaying(name, options, request.FirstBoot)
+		return carriedResult(providers.CarriedCreate{Made: made, Runs: runs, Said: said}, err)
 	case "delete":
 		err := connection.Delete(workspace)
 		if err == nil {

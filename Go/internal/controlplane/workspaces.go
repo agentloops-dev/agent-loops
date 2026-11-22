@@ -81,6 +81,7 @@ func (s *Service) makeProviders(home string) *providers.Providers {
 			},
 			SetupStep: s.madeStep,
 			MadeFor:   s.madeFor,
+			Setup:     func(host string) *wire.MachineSetup { return s.machineSetup(context.Background(), host) },
 			BackUp:    s.backUpBeforeDelete,
 		},
 	})

@@ -160,7 +160,7 @@ func TestDigitalOceanListsByTagWithTheTokenInAHeaderOnly(t *testing.T) {
 		t.Fatalf("%v %+v", err, all)
 	}
 	w := all[0]
-	if w.ID != "3164494" || w.Name != "devbox-3164494" || w.State != Stopped || *w.SSH() != "root@203.0.113.7" {
+	if w.ID != "3164494" || w.Name != "devbox-3164494" || w.State != Stopped || *w.SSH() != "agents@203.0.113.7" {
 		t.Errorf("%+v %s", w, *w.SSH())
 	}
 	if got := f.requests()[0]; got != "GET /v2/droplets?per_page=200&tag_name=agents+team" {
@@ -200,7 +200,7 @@ func TestDigitalOceanMakesADropletThatInstallsAsItsOwnUser(t *testing.T) {
 	}
 	firstBoot := "curl -fsSL https://cp.example/v1/install.sh | sh -s -- 'HOSTCODE' 'devbox-new'"
 	// The fake lists every droplet as devbox-<id>: the one made is named so.
-	_, err := p.Create("devbox-4000001", map[string]any{"region": "sfo3"}, firstBoot)
+	_, _, err := p.Create("devbox-4000001", map[string]any{"region": "sfo3"}, firstBoot)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -211,7 +211,7 @@ func TestDigitalOceanMakesADropletThatInstallsAsItsOwnUser(t *testing.T) {
 		}
 	}
 	userData, _ := made["user_data"].(string)
-	if made["name"] != "devbox-4000001" || made["region"] != "sfo3" || made["size"] != "s-1vcpu-1gb" ||
+	if made["name"] != "devbox-4000001" || made["region"] != "sfo3" || made["size"] != "s-2vcpu-4gb" ||
 		made["image"] != "ubuntu-24-04-x64" || fmt.Sprint(made["tags"]) != "[agents team]" || fmt.Sprint(made["ssh_keys"]) != "[ab:cd]" {
 		t.Errorf("%v", made)
 	}
@@ -630,7 +630,7 @@ func TestACodespaceIsMadeWithItsIdleTimeout(t *testing.T) {
 		t.Errorf("%+v", property)
 	}
 	for name, given := range map[string]any{"mac-1": "60", "web-1": json.Number("30")} {
-		if _, err := p.Create(name, map[string]any{"idleTimeout": given}, "curl … | sh"); err != nil {
+		if _, _, err := p.Create(name, map[string]any{"idleTimeout": given}, "curl … | sh"); err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
 	}
@@ -642,7 +642,7 @@ func TestACodespaceIsMadeWithItsIdleTimeout(t *testing.T) {
 			t.Errorf("no %s in %q", want, f.requests())
 		}
 	}
-	if _, err := p.Create("odd-1", map[string]any{"idleTimeout": "soon"}, "curl … | sh"); err == nil ||
+	if _, _, err := p.Create("odd-1", map[string]any{"idleTimeout": "soon"}, "curl … | sh"); err == nil ||
 		err.Error() != "Stops after idle (minutes) must be a whole number." {
 		t.Errorf("%v", err)
 	}
@@ -654,17 +654,17 @@ func TestACodespaceIsMadeFromItsRepository(t *testing.T) {
 	if p.Config.Making.FirstBootRuns() {
 		t.Error("a codespace has no user data for the first boot")
 	}
-	if _, err := p.Create("agents-1", map[string]any{"repository": "agents"}, "curl … | sh"); err == nil || err.Error() != "Give the repository as owner/name." {
+	if _, _, err := p.Create("agents-1", map[string]any{"repository": "agents"}, "curl … | sh"); err == nil || err.Error() != "Give the repository as owner/name." {
 		t.Errorf("%v", err)
 	}
 	// With no repository, from GitHub's blank template (#4260).
-	if made, err := p.Create("blank-1", map[string]any{}, "curl … | sh"); err != nil || made.Name != "blank-1" {
+	if made, _, err := p.Create("blank-1", map[string]any{}, "curl … | sh"); err != nil || made.Name != "blank-1" {
 		t.Fatalf("%v %+v", err, made)
 	}
 	if !contains(f.requests(), `POST /repos/github/codespaces-blank/codespaces {"display_name":"blank-1","idle_timeout_minutes":240}`) {
 		t.Errorf("%q", f.requests())
 	}
-	made, err := p.Create("agents-1", map[string]any{"repository": "alexec/agents"}, "curl … | sh")
+	made, _, err := p.Create("agents-1", map[string]any{"repository": "alexec/agents"}, "curl … | sh")
 	if err != nil || made.ID != "fluffy-octo-1" || made.Name != "agents-1" || made.State != Starting {
 		t.Fatalf("%v %+v", err, made)
 	}

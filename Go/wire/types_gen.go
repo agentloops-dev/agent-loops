@@ -9335,7 +9335,7 @@ type MachineHelloAnswer struct {
 	Capabilities []string `json:"capabilities,omitzero"`
 }
 
-// One workspace, as its provider last listed it. `state` is running, starting, stopping, stopped or unknown; or failed, for a make that failed, with the provider's `reason` (#3972). `joining` while New Machine waits for it to join the control plane, and `notJoined` once the control plane gave up waiting (#4610).
+// One workspace, as its provider last listed it. `state` is running, starting, stopping, stopped or unknown; or failed, for a make that failed, with the provider's `reason` (#3972). `joining` while New Machine waits for it to join the control plane, and `notJoined` once the control plane gave up waiting (#4610). `setup` while it is being made (#6073).
 type MachineInfo struct {
 	ID string `json:"id"`
 
@@ -9365,6 +9365,9 @@ type MachineInfo struct {
 
 	// Why the control plane gave up waiting for it to join, once it did (#4610): the row says so, with Delete.
 	NotJoined *string `json:"notJoined,omitzero"`
+
+	// The set-up of a machine New Machine is making (#6073), from the press of Make until it joins (then its machine's row has it): what each step did, with its time, and on a failure the provider's words. A client that opens late reads where it is here.
+	Setup *MachineSetup `json:"setup,omitzero"`
 }
 
 // machines/install (MachineInstall.Request): a server over ssh, with its key, the fingerprint trusted, a tunnel. Add as Machine… names the provider and the workspace too (#3497): a codespace whose provider a machine carries is installed from that machine, with the token kept there.
