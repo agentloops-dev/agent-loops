@@ -85,6 +85,50 @@ func TestNoMetricsOnTheClientsPort(t *testing.T) {
 	}
 }
 
+// The heap and goroutine profiles are served beside /metrics, behind its token (#6583).
+func TestProfilesAreServedBesideTheMetrics(t *testing.T) {
+	t.Parallel()
+	p := startPlane(t, store.NewMemory(), controllink.NewPrivateKey())
+	addr, err := p.s.ServeMetrics("127.0.0.1:0", "s3cret-scrape")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for path, want := range map[string]string{
+		"/debug/pprof/heap?debug=1&gc=1": "heap profile:",
+		"/debug/pprof/goroutine?debug=1": "goroutine profile: total",
+		"/debug/pprof/goroutine?debug=2": "goroutine ",
+	} {
+		if status, _ := scrape(t, "http://"+addr+path, ""); status != http.StatusUnauthorized {
+			t.Errorf("%s with no token: %d", path, status)
+		}
+		if status, body := scrape(t, "http://"+addr+path, "s3cret-scrape"); status != http.StatusOK || !strings.Contains(body, want) {
+			t.Errorf("%s: %d %.200s", path, status, body)
+		}
+	}
+	// With no debug, the gzipped protobuf that go tool pprof reads.
+	if status, body := scrape(t, "http://"+addr+"/debug/pprof/heap", "s3cret-scrape"); status != http.StatusOK || !strings.HasPrefix(body, "\x1f\x8b") {
+		t.Fatalf("%d %q", status, body[:min(len(body), 16)])
+	}
+	// No other profile, and no index.
+	for _, path := range []string{"/debug/pprof/", "/debug/pprof/profile", "/debug/pprof/allocs", "/debug/pprof/cmdline"} {
+		if status, _ := scrape(t, "http://"+addr+path, "s3cret-scrape"); status != http.StatusNotFound {
+			t.Errorf("%s: %d", path, status)
+		}
+	}
+}
+
+// The port clients and hosts use serves no profile.
+func TestNoProfilesOnTheClientsPort(t *testing.T) {
+	t.Parallel()
+	p := startPlane(t, store.NewMemory(), controllink.NewPrivateKey())
+	for _, path := range []string{"/debug/pprof/heap", "/debug/pprof/heap?debug=1", "/debug/pprof/goroutine?debug=1", "/debug/pprof/goroutine?debug=2", "/debug/pprof/"} {
+		status, body := scrape(t, p.url+path, "")
+		if strings.Contains(body, "profile:") || strings.Contains(body, "goroutine ") || strings.HasPrefix(body, "\x1f\x8b") {
+			t.Errorf("%s: %d %.200s", path, status, body)
+		}
+	}
+}
+
 // A token is asked for when given, and needed for any address but loopback.
 func TestMetricsTakeAToken(t *testing.T) {
 	t.Parallel()

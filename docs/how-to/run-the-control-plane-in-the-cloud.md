@@ -670,6 +670,18 @@ The metrics are:
 A method name gets a label of its own for the first 300 names only. After that, the count
 goes to `other`, so a client can't make the metrics grow without end.
 
+**Profiles.** The same port, with the same token, serves the Go runtime's heap and goroutine
+profiles (#6583): `/debug/pprof/heap` and `/debug/pprof/goroutine`. The port clients use serves
+neither. From the VM, read what the heap holds:
+
+```sh
+docker compose -f deploy/compose.public.yaml exec control wget -qO- \
+    --header "Authorization: Bearer $TOKEN" 'http://127.0.0.1:9791/debug/pprof/heap?debug=1&gc=1' | head -40
+```
+
+`?debug=2` on `goroutine` gives each stack in full; with no `debug`, the file is for
+`go tool pprof`. `deploy/README.md`, "Memory", says why the compose file sets `GOMEMLIMIT`.
+
 **Logs.** With `AGENTS_CONTROL_LOG_FORMAT=json`, each line of `docker compose logs control`
 is one JSON object, from Go's `log/slog`, with `time`, `level` and `msg`. A line also has
 `copy`, `method`, `client_id`, `person_id`, `host_id` and `request_id` when they apply.
