@@ -139,6 +139,7 @@ export function SecretsPage({ store, down }: { store: Store; down: boolean }) {
     <div class="secrets-list" role="listbox" aria-label="Secrets" tabIndex={0} onKeyDown={listKeys}>
       {problem.value && <p class="hint failure">{problem.value}</p>}
       {localProblem.value && <p class="hint failure">{localProblem.value}</p>}
+      {local.value?.keyProblem && <p class="hint attention"><Icon name="triangle-alert" />{" "}{local.value.keyProblem}</p>}
       {left && (
         <div class="banner attention" role="status">
           <p>{secretsLeft(left)}</p>

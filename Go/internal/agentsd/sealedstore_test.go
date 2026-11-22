@@ -1,11 +1,13 @@
 package agentsd
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/skillcatalog"
@@ -161,6 +163,63 @@ func TestAnUnreadableKeyGivesOneErrorForEverySecret(t *testing.T) {
 	}
 	if err := d.saveSealedSecret(home, "NEW_TOKEN", "new", "", false); err == nil || !strings.Contains(err.Error(), "does not read") {
 		t.Fatalf("%v", err)
+	}
+}
+
+// #6632: a key that does not read is in the log once, not at each delivery nor for each
+// secret, and Status ▸ Secrets says it, with what to do, until the key reads again. Not
+// parallel: the log is the whole program's.
+func TestAnUnreadableKeyIsSaidOnceAndOnTheSecretsPage(t *testing.T) {
+	root, home := t.TempDir(), t.TempDir()
+	personalHomeFor(t, home)
+	_, public := machineKeys(t, root)
+	d, _ := start(t, root)
+	defer d.Shutdown()
+	sent := wire.MachineUserSettings{User: "sam", Secrets: []wire.SealedUserSecret{sealedSecret(t, public, "sam", "GITHUB_TOKEN", 1, "ghp_sams")}}
+	d.Told(wire.NotifyMachineUserSettings.Name, mustJSON(sent))
+	if err := d.saveSealedSecret(home, "AGENTS_TOKEN", "agents-value", "", false); err != nil {
+		t.Fatal(err)
+	}
+	if list, err := d.localSecretList(); err != nil || list.KeyProblem != nil {
+		t.Fatalf("%+v %v", list, err)
+	}
+
+	var logged bytes.Buffer
+	var logMu sync.Mutex
+	restoreLog := captureLog(&logged, &logMu)
+	good := d.HostKey
+	d.HostKey = unreadableKey{}
+	for version := int64(2); version <= 6; version++ {
+		sent.Secrets = []wire.SealedUserSecret{sealedSecret(t, public, "sam", "GITHUB_TOKEN", version, "ghp_sams")}
+		d.Told(wire.NotifyMachineUserSettings.Name, mustJSON(sent))
+		if _, ok := d.sealedLocalSecret(home, "AGENTS_TOKEN"); ok {
+			t.Fatal("opened with no key")
+		}
+	}
+	list, err := d.localSecretList()
+	if err != nil || list.KeyProblem == nil || !strings.Contains(*list.KeyProblem, "does not read") ||
+		!strings.Contains(*list.KeyProblem, "another program's") {
+		t.Fatalf("%+v %v", list, err)
+	}
+	d.HostKey = good
+	if _, ok := d.sealedLocalSecret(home, "AGENTS_TOKEN"); !ok {
+		t.Fatal("not opened with the key back")
+	}
+	restoreLog()
+	logMu.Lock()
+	text := logged.String()
+	logMu.Unlock()
+	if n := strings.Count(text, "for its secrets does not read"); n != 1 {
+		t.Fatalf("said %d times:\n%s", n, text)
+	}
+	if strings.Contains(text, "could not be sealed") || strings.Contains(text, "AGENTS_TOKEN") {
+		t.Fatalf("said for each secret:\n%s", text)
+	}
+	if strings.Count(text, "reads again") != 1 {
+		t.Fatal(text)
+	}
+	if list, err := d.localSecretList(); err != nil || list.KeyProblem != nil {
+		t.Fatalf("%+v %v", list, err)
 	}
 }
 

@@ -2694,6 +2694,10 @@
           "items": {
             "$ref": "#/definitions/LocalSecret"
           }
+        },
+        "keyProblem": {
+          "type": "string",
+          "description": "When this machine's key for its secrets does not read (#6632): what that stops and what the person does, in the person's words, with the key store's own error. Left out when the key reads. Status ▸ Secrets shows it at the top."
         }
       },
       "required": [

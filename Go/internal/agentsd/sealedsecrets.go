@@ -14,6 +14,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	goruntime "runtime"
 	"slices"
 	"sort"
 	"strings"
@@ -69,6 +70,11 @@ type sealedSecretsState struct {
 	releaseState
 	plainStoreMu sync.Mutex
 	plainStore   plainStoreCache
+	// sealingKeyMu guards keyProblem and keyChecked: the state of this machine's key for its
+	// secrets (#6632), said once in the log for each change and on Status ▸ Secrets.
+	sealingKeyMu sync.Mutex
+	keyProblem   string
+	keyChecked   time.Time
 }
 
 // plainStoreCache is the store's values with the flag off, opened, for the sealed.json they
@@ -147,10 +153,71 @@ func (d *Daemon) sealingKey() ([]byte, error) {
 		return nil, errors.New("this machine has no key to seal with")
 	}
 	private, err := controllink.HostPrivateKey(d.HostKey)
+	d.noteSealingKey(err)
 	if err != nil {
 		return nil, machineKeyError{err}
 	}
 	return hkdf.Key(sha256.New, private, nil, sealedSecretsInfo, 32)
+}
+
+// noteSealingKey keeps what the last read of this machine's key came to (#6632), and says it
+// in the log only when it changed: a key that does not read is tried at each delivery and for
+// each secret, and said once, not for each. cause is the key store's own error, nil when it read.
+func (d *Daemon) noteSealingKey(cause error) {
+	problem := ""
+	if cause != nil {
+		problem = cause.Error()
+	}
+	d.sealingKeyMu.Lock()
+	was := d.keyProblem
+	d.keyProblem, d.keyChecked = problem, time.Now()
+	d.sealingKeyMu.Unlock()
+	switch {
+	case problem == was:
+	case problem != "":
+		log.Printf("sealed secrets: %v. Agents here cannot use a secret kept here, and no secret is kept here, until it reads; it is tried again at each use", machineKeyError{cause})
+	default:
+		log.Printf("sealed secrets: this machine's key for its secrets reads again")
+	}
+}
+
+// isMachineKeyError is whether err is this machine's key that does not read: noteSealingKey
+// said it already, so a caller does not say it again for each secret.
+func isMachineKeyError(err error) bool {
+	var keyErr machineKeyError
+	return errors.As(err, &keyErr)
+}
+
+// sealingKeyProblem is the person's words for this machine's key when it does not read, for
+// Status ▸ Secrets (#6632); "" when it reads. A state older than plainStoreRetry is read again,
+// so the page does not say an old one.
+func (d *Daemon) sealingKeyProblem() string {
+	d.sealingKeyMu.Lock()
+	fresh := !d.keyChecked.IsZero() && time.Since(d.keyChecked) < plainStoreRetry
+	problem := d.keyProblem
+	d.sealingKeyMu.Unlock()
+	if !fresh && d.HostKey != nil {
+		key, _ := d.sealingKey()
+		clear(key)
+		d.sealingKeyMu.Lock()
+		problem = d.keyProblem
+		d.sealingKeyMu.Unlock()
+	}
+	if problem == "" {
+		return ""
+	}
+	return keyProblemWords(problem)
+}
+
+// keyProblemWords says what the person does when this machine's key does not read, and why
+// it does not (cause, the key store's words).
+func keyProblemWords(cause string) string {
+	fix := "Check that the user agentsd runs as can read the file control-host-key in its root, then restart agentsd."
+	if goruntime.GOOS == "darwin" {
+		fix = "Quit Agent Loops on this Mac and open it again. When macOS asks if Agent Loops can use its key, choose Always Allow."
+	}
+	return "This machine's key for its secrets does not read. Agents here cannot use the secrets kept here, and no secret is saved here, until it does. " +
+		fix + " (" + cause + ")"
 }
 
 // sealSecret seals value: to the machine's key, and on Linux first to the release key.
@@ -317,7 +384,9 @@ func (d *Daemon) sealedLocalSecret(home, name string) (string, bool) {
 	}
 	v, err := d.openSealedSecret(sealedLocal, name, s)
 	if err != nil {
-		log.Printf("sealed secrets: %s: %v", name, err)
+		if !isMachineKeyError(err) {
+			log.Printf("sealed secrets: %s: %v", name, err)
+		}
 		return "", false
 	}
 	return v, true
@@ -374,7 +443,6 @@ func (d *Daemon) plainStoreSecrets(home string) map[string]string {
 	if same && (c.failed.IsZero() || time.Since(c.failed) < plainStoreRetry) {
 		return c.values
 	}
-	wasFailing := same && !c.failed.IsZero()
 	*c = plainStoreCache{home: home, info: info}
 	var names []string
 	f, err := readSealedSecrets(home)
@@ -391,10 +459,8 @@ func (d *Daemon) plainStoreSecrets(home string) map[string]string {
 	}
 	gcm, err := d.sealingGCM()
 	if err != nil {
+		// sealingKey said it once, at the change (#6632).
 		c.failed = time.Now()
-		if !wasFailing {
-			log.Printf("sealed secrets: %v; %d secrets with Ask before use off are not set until then", err, len(names))
-		}
 		return nil
 	}
 	d.keepMemoryPrivateOnce()
