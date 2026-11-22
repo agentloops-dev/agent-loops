@@ -8227,6 +8227,9 @@ type LocalSecretRemoveRequest struct {
 // secrets/localList (#5122): every secret this machine keeps for itself, by name. No value.
 type LocalSecrets struct {
 	Secrets []LocalSecret `json:"secrets"`
+
+	// When this machine's key for its secrets does not read (#6632): what that stops and what the person does, in the person's words, with the key store's own error. Left out when the key reads. Status ▸ Secrets shows it at the top.
+	KeyProblem *string `json:"keyProblem,omitzero"`
 }
 
 // A person's machine lock (#3399, specs/3399-machine-lock): its chain of entries, the root first. lock/get, and machine/lock to a machine.

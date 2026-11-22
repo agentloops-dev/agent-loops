@@ -7915,6 +7915,12 @@ export interface LocalSecretRemoveRequest {
 /** secrets/localList (#5122): every secret this machine keeps for itself, by name. No value. */
 export interface LocalSecrets {
   secrets: LocalSecret[];
+  /**
+   * When this machine's key for its secrets does not read (#6632): what that stops and what the
+   * person does, in the person's words, with the key store's own error. Left out when the key
+   * reads. Status ▸ Secrets shows it at the top.
+   */
+  keyProblem?: string;
 }
 
 /**
@@ -18545,7 +18551,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   LiveFrame: { required: ["source", "agentID", "capturedAt"], optional: ["image", "locked", "narration", "title", "width", "height"] },
   LocalSecret: { required: ["name", "setAt"], optional: ["lastOp", "backedUp", "needsApproval", "description"] },
   LocalSecretRemoveRequest: { required: ["name"], optional: [] },
-  LocalSecrets: { required: ["secrets"], optional: [] },
+  LocalSecrets: { required: ["secrets"], optional: ["keyProblem"] },
   Lock: { required: ["person", "entries"], optional: [] },
   LockAdd: { required: ["entries"], optional: [] },
   LockBody: { required: ["v", "kind", "person", "signer", "at", "key"], optional: ["previous", "sealingKey", "id", "name", "clientKind", "expires", "sealed"] },
