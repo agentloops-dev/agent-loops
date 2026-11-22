@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -265,9 +264,6 @@ func (k cardKind) start(t *testing.T, c *conn, id int, cwd string) wire.UUID {
 func TestEachCardShowsOnEveryClientAndOneAnswerWins(t *testing.T) {
 	for _, k := range cardKinds {
 		t.Run(k.name, func(t *testing.T) {
-			if k.name == "question" {
-				flaky.UnderLoad(t, "#6627")
-			}
 			t.Parallel()
 			fakeRuntimes(t)
 			d, c := start(t, t.TempDir())
