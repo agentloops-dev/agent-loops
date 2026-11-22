@@ -105,7 +105,7 @@ func printMode(ctx context.Context, w io.Writer, o options, rest []string) error
 
 // startAndFollow starts the session and, unless --detach, follows its turn to the end.
 func startAndFollow(ctx context.Context, w io.Writer, c caller, notes <-chan controllink.Note, p place, o options, prompt string) error {
-	id, err := startSession(ctx, c, p, o.runtime, prompt)
+	id, err := startSession(ctx, c, p, o.runtime, o.mode, prompt)
 	if err != nil {
 		return err
 	}
@@ -137,8 +137,8 @@ func startAndFollow(ctx context.Context, w io.Writer, c caller, notes <-chan con
 }
 
 // startSession is agents/start in the folder, by Auto (or --runtime), marked as started by
-// a script.
-func startSession(ctx context.Context, c caller, p place, runtime, prompt string) (wire.UUID, error) {
+// a script, at the kept levels or --mode (#6651).
+func startSession(ctx context.Context, c caller, p place, runtime, mode, prompt string) (wire.UUID, error) {
 	via := wire.StartedViaCLIPrint
 	if runtime == "" {
 		runtime = autoRuntime
@@ -149,6 +149,7 @@ func startSession(ctx context.Context, c caller, p place, runtime, prompt string
 		StartOptions:          wire.StartOptions{Values: map[string]wire.JSONValue{}, ExtraArguments: []string{}},
 		AdditionalDirectories: []wire.URL{}, McpServers: []wire.MCPServer{}, Labels: []string{},
 		StartedVia: &via,
+		Levels:     startLevels(ctx, c, string(p.machine.ID), mode),
 	}
 	r, err := c.Call(ctx, string(p.machine.ID), "agents/start", req)
 	if err != nil {

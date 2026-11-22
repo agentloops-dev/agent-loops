@@ -50,6 +50,7 @@ name one by its id.
 | `--machine <name or id>` | all but `pair` | Works on this machine of the control plane, not on this computer. |
 | `--control <host>` | all but `pair` | Uses this control plane, when the terminal is paired with more than one. |
 | `--runtime <id>` | a new session | The runtime that a new session starts on, as `claude` or `codex`. Auto when you do not give it. |
+| `--mode <level>` | a new session | The permission that a new session starts at: `plan`, `ask`, `approve-for-me` or `bypass-permissions`. When you do not give it, the session starts at the model and permission that you chose last on a start form on any client (#3798, #6651). With no choice kept, the default is Ask, or your policy's limit. |
 | `--debug` | all | When `loops` cannot get to the control plane or the machine, it also writes the full error on a line that starts with `Debug:`. |
 | `--all` | `ls` | All the sessions, in pages of 20, also the archived ones. |
 | `--json` | `-p`, `--detach` | One JSON object on each line (below). |

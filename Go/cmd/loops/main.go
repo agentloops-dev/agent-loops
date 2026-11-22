@@ -156,6 +156,8 @@ Flags:
   --machine <name>         the folder's machine, when it is not this computer
   --control <host>         the control plane, when this terminal is paired with several
   --runtime <id>           the runtime a new session starts on (claude, codex, …); Auto by default
+  --mode <level>           the permission a new session starts at: plan, ask, approve-for-me or
+                           bypass-permissions; by default the one last chosen on any client
   --debug                  when the control plane cannot be reached, its whole error too
 
 In the chat: ⏎ sends, ⌥⏎ adds a line, ^C stops the turn (twice leaves), ^D leaves; the
@@ -180,6 +182,8 @@ type options struct {
 	// cont (-c), resume (-r) and runtime are the chat's (#6446).
 	cont            bool
 	resume, runtime string
+	// mode is --mode, the permission level a new session starts at (#6651).
+	mode string
 	// Print mode (#6447).
 	print, detach, json bool
 	onAsk               string
@@ -204,6 +208,7 @@ func parse(args []string) (options, []string, error) {
 	fs.StringVar(&o.resume, "r", "", "")
 	fs.StringVar(&o.resume, "resume", "", "")
 	fs.StringVar(&o.runtime, "runtime", "", "")
+	fs.StringVar(&o.mode, "mode", "", "")
 	fs.BoolVar(&o.print, "p", false, "")
 	fs.BoolVar(&o.print, "print", false, "")
 	fs.BoolVar(&o.detach, "detach", false, "")
@@ -248,6 +253,9 @@ func run(ctx context.Context, args []string, w io.Writer) error {
 		return err
 	}
 	if err := checkPrintFlags(o); err != nil {
+		return err
+	}
+	if err := checkMode(o.mode); err != nil {
 		return err
 	}
 	if o.print || o.detach {
