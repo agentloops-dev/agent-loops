@@ -95,6 +95,13 @@ extension AppModel {
                 if answered {
                     backoff.connected()
                     self?.controlPlaneDidAnswer()
+                    // The lock first, as on the Remote (#6311): a card for a device that asks to join
+                    // shows at once, not after every read below (#6625), and the channels to
+                    // machines those reads open have the lock's key.
+                    if let client = ControlConfig.client { await self?.lock.connected(control, client: client) }
+                    // A notice the window missed, read again while connected (#6625).
+                    let lockWatch = Task { [lock = self?.lock] in await lock?.watch(control) }
+                    defer { lockWatch.cancel() }
                     // Status ▸ Secrets and Accounts' rows say when the newest operation was (#4161).
                     // Read before the machines are reached: what the control plane keeps, a
                     // machine has from it, and gets no call of its own from here (#5573).
@@ -113,7 +120,6 @@ extension AppModel {
                         }
                     }
                     defer { zoneWatch.cancel() }
-                    if let client = ControlConfig.client { await self?.lock.connected(control, client: client) }
                     await Self.sealWaiting(on: control, lock: self?.lock)
                     for await note in control.notifications() {
                         if note.method == DaemonAPI.Notification.controlSealingWanted {

@@ -39,17 +39,20 @@ struct MaturityBadge: View {
     }
 }
 
-/// Settings ▸ This app ▸ Early Features (#6052, epic #6552): a row for each feature that is not
-/// GA and that this client shows, with its name, its badge, its help line and a switch, on by
-/// default. A feature turned off shows nowhere on the person's clients: the switch is kept on
-/// the Mac's host with their other display choices (`flag:<capability>`, #6254). Drawn by the
-/// Mac window and the Remote; the web page has the same section (Core).
+/// Settings ▸ This app ▸ Early Features (#6052, #6604, epic #6552): first a row for each feature
+/// flag in work (`FeatureFlag`, #6254), with its title, its line and a switch, off by default and
+/// with no badge; then a row for each feature that is not GA and that this client shows, with its
+/// name, its badge, its help line and a switch, on by default. A feature turned off shows nowhere
+/// on the person's clients. Each switch is kept on the Mac's host with their other display choices
+/// (`flag:<name>`, #6254), so it is the same on every client of theirs. Drawn by the Mac window and
+/// the Remote; the web page has the same section (Core).
 struct EarlyFeaturesSection: View {
     static let title = "Early Features"
     /// The words under the section, as the web page's (`earlyFeaturesFooter`).
-    static let footer = "Features that are not ready yet. Turn one off, and it shows nowhere on your clients. "
+    static let footer = "Features that are not ready yet. A feature in work is off until you turn it on. "
+        + "An early feature is on until you turn it off; then it shows nowhere on your clients. "
         + "The same on every client of yours."
-    /// What the section says when every feature is GA, as the web page's.
+    /// What the section says with no flag and every feature GA, as the web page's.
     static let none = "Every feature is ready."
 
     /// What the control plane and each host say of their levels (#6579): a client older than its
@@ -60,9 +63,10 @@ struct EarlyFeaturesSection: View {
     var body: some View {
         let rows = EarlyFeatures.rows(on: .here, said: said)
         Section {
-            if rows.isEmpty {
+            if FeatureFlag.allCases.isEmpty && rows.isEmpty {
                 Text(Self.none).foregroundStyle(.secondary)
             }
+            ForEach(FeatureFlag.allCases, id: \.self) { FeatureFlagToggle(flag: $0) }
             ForEach(rows) { EarlyFeatureToggle(feature: $0) }
         } header: {
             Text(Self.title)
@@ -72,6 +76,28 @@ struct EarlyFeaturesSection: View {
                 .foregroundStyle(.secondary)
         }
         .paperListRow()
+    }
+}
+
+/// One flag's switch (#6254): its title, and what it turns on under it; off by default.
+private struct FeatureFlagToggle: View {
+    let flag: FeatureFlag
+    @AppStorage private var on: Bool
+
+    init(flag: FeatureFlag) {
+        self.flag = flag
+        _on = AppStorage(wrappedValue: false, flag.key, store: WindowDefaults.store)
+    }
+
+    var body: some View {
+        // The switch keeps its title as its own label (a two-line label left the switch unnamed
+        // for VoiceOver), with the line under it.
+        VStack(alignment: .leading, spacing: 2) {
+            Toggle(flag.title, isOn: $on)
+            Text(flag.about)
+                .appText(.fine)
+                .foregroundStyle(.secondary)
+        }
     }
 }
 
