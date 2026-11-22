@@ -79,14 +79,16 @@ private struct EarlyFeatureToggle: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            // VoiceOver reads the switch by the feature's name; the help line under it says the
-            // badge's level. No label over the label's own Text: stacked labels crash AppKit.
+            // A switch whose label is a stack has no name for VoiceOver, so it gets the feature's
+            // name; the help line under it says the level. No Text in the stack has a label of
+            // its own, and the badge is hidden: stacked labels crash AppKit.
             Toggle(isOn: $on) {
                 HStack(spacing: 6) {
                     Text(feature.title)
                     MaturityBadge(level: feature.level).accessibilityHidden(true)
                 }
             }
+            .accessibilityLabel(feature.title)
             if let help = feature.level.help {
                 Text(help)
                     .appText(.fine)
