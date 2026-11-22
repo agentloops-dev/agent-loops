@@ -54,6 +54,22 @@ struct WorkCacheTests {
         #expect(await cache.answer(epics) == nil)
     }
 
+    /// #6635: at the start no machine is online or known yet, and the kept answer of every machine still draws; once
+    /// machines are asked, theirs come first, in their order, and a machine not asked keeps its rows after them.
+    @Test func theKeptAnswerDrawsEveryMachineAlsoWithNoneOnline() async throws {
+        let cache = try makeCache(Clock())
+        let devbox = MachineRef(rawValue: "devbox01")
+        await cache.keepPage(issues, host: mac, page: 0, list: page(1...3))
+        await cache.keepPage(issues, host: devbox, page: 0, list: page(4...5))
+        let answer = try #require(await cache.answer(issues))
+        let kept = answer.hosts.map(\.host)
+        #expect(answer.shown(first: []).map(\.host) == kept)
+        #expect(answer.shown(first: []).reduce(0) { $0 + $1.items.count } == 5)
+        #expect(answer.shown(first: [devbox]).map(\.host) == [devbox] + kept.filter { $0 != devbox })
+        #expect(answer.shown(first: [devbox, mac]).map(\.host) == [devbox, mac])
+        #expect(answer.shown(first: [MachineRef(rawValue: "new"), mac]).map(\.host) == [mac, devbox])
+    }
+
     /// #6358, finding 2: a refresh replaces page 1 and keeps the pages read by scrolling, each with its own time.
     @Test func aRefreshKeepsTheLaterPages() async throws {
         let clock = Clock()

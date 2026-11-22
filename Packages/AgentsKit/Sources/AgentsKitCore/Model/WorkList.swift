@@ -595,6 +595,8 @@ public enum WorkList {
     public static let noAgentYet = "No agent yet"
     public static let lineageOnlyNote = "Lineage lists a release once an agent works on one of its issues or pull requests."
     public static let noForgeHere = "No machine reads issues and pull requests yet. Update Agents on a machine to see them."
+    /// Kept rows on screen with no machine online to read them again (#6635).
+    public static let noForgeOnline = "No machine that reads issues and pull requests is online. These are the rows last read."
 
     // The page of one issue, PR or release (#3119): its links grouped by relation, its
     // checks, its review and its cost.

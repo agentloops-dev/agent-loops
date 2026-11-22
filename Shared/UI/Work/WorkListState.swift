@@ -194,8 +194,9 @@ final class WorkListState {
         }
     }
 
-    /// The kept answer on screen: the machines asked now, in their order, each with its kept pages. A machine that
-    /// failed after its pages were read has its errors on its list, and the strip says when the pages were read.
+    /// The kept answer on screen: the machines asked now, in their order, then every other machine the cache holds an
+    /// answer of (#6635), each with its kept pages. A machine that failed after its pages were read, or is not asked
+    /// now (not online or not known yet), keeps its rows, and the strip says when they were read.
     private func show(_ answer: WorkCache.Answer?, hosts: [MachineRef]) {
         guard let answer else {
             lists = nil
@@ -204,13 +205,13 @@ final class WorkListState {
             cachePages = [:]
             return
         }
-        let by = Dictionary(answer.hosts.map { ($0.host, $0) }, uniquingKeysWith: { a, _ in a })
-        let shown = hosts.compactMap { by[$0] }
+        let shown = answer.shown(first: hosts)
         lists = shown.map { (host: $0.host, list: $0.list) }
         cachePages = Dictionary(shown.map { ($0.host, $0.pages.count) }, uniquingKeysWith: { a, _ in a })
         cacheRead = shown.compactMap(\.read).min()
-        let failed = shown.contains { $0.failed != nil }
-        keptRead = failed ? cacheRead : nil
+        let asked = Set(hosts)
+        let stale = shown.contains { $0.failed != nil || !asked.contains($0.host) }
+        keptRead = stale ? cacheRead : nil
     }
 
     /// forge/listAll's request for the cached query, at the cursors in `pages` for a next page.
