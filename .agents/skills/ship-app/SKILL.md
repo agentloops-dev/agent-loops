@@ -39,19 +39,22 @@ PATH, the script says so. A failed install does not stop the rest, but the scrip
 ## The live control plane (#4712)
 
 `--control-plane` also deploys the checkout to the live control plane,
-control.agentloops.dev, on Google Cloud. It is off by default. Give it when Alex asks
-for the control plane to be deployed or shipped, or for main on everything. Alex
-approved its restart for a ship with `--control-plane` (2026-11-11). To deploy only the
-control plane, give `--control-plane --no-mac --no-devices`.
+control.agentloops.dev, on Google Cloud. It is opt-in, never on by default (Alex,
+2026-11-21). Give it when Alex asks for the control plane to be deployed or shipped, or
+for main on everything. Alex approved its restart for a ship with `--control-plane`
+(2026-11-11). To deploy only the control plane, give `--control-plane --no-mac
+--no-devices`.
 
 The script runs `deploy/gcp/up.sh` in the checkout that ships, before the Mac restart:
 - On a release tag (`scripts/version.sh` says `X.Y.Z`), the VM pulls that release's image.
-- On any other commit, `--build` builds the image here, for linux/amd64, from the
-  checkout, and copies it to the VM. This needs Docker with buildx running on this Mac.
+- On any other commit, `--build` builds the binaries (linux/amd64, with this Mac's Go)
+  and the web page (`scripts/web.sh build`) here, sends them to the VM, and the VM's
+  Docker builds the image from them (`deploy/Containerfile`, `BINARIES=prebuilt`). This
+  Mac needs no Docker.
 
 It acts as `~/.agents/secrets/gcp-agents-control.json` and keeps the store, the APNs key
 and the firewall. It refuses a checkout with uncommitted changes. Lease "build" for 60
-minutes for a ship with `--control-plane`: the image build is one more build.
+minutes for a ship with `--control-plane`: its build is one more build.
 
 The log is `$LOGS/control-plane.log`. When it ends, the script prints the version that the
 control plane serves (`agents-control <version> (go)`), which `up.sh` checks. A failed

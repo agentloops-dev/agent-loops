@@ -1,6 +1,7 @@
 # agents-control as a container (058, T068): static Go binaries and a user of their own.
 # The image builds them itself (#1381), from the repository: agents-control (#1137),
-# workspace-commands (#1364) and the web remote (071). Nothing is built on a Mac first.
+# workspace-commands (#1364) and the web remote (071). Nothing is built on a Mac first, unless
+# BINARIES=prebuilt says (below).
 #
 #   docker build -f deploy/Containerfile -t agents-control .
 #   docker buildx build --platform linux/amd64 -f deploy/Containerfile -t agents-control .
@@ -30,6 +31,12 @@
 ARG GO_IMAGE=golang:1.26
 # Web/.node-version's Node.
 ARG NODE_IMAGE=node:26.8.2-alpine
+# Where the binaries and the web page come from: built here (the default, as the release
+# builds it), or "prebuilt", from deploy/prebuilt/ in the build context, as deploy/gcp/up.sh
+# --build makes them on a Mac with no Docker of its own and sends them to the VM, which builds
+# the image (#4712). BuildKit builds only the stages the image needs, so a prebuilt build
+# compiles nothing.
+ARG BINARIES=built
 
 # Go runs on the machine that builds and cross-compiles for the target (#1461): under qemu
 # (linux/amd64 on an Apple silicon Mac) go mod download crashes. BuildKit sets BUILDPLATFORM,
@@ -84,14 +91,28 @@ WORKDIR /src/Web
 # control, and a /web file it cannot read turns the whole page off.
 RUN node build.mjs && chmod -R a+rX dist
 
+# What the image carries that a build makes, one tree for either source:
+#   /control/   agents-control, workspace-commands and agents-hosted, for the image's platform
+#   /web/       the web page (Web/dist)
+#   /servers/   the Linux host and its MCP servers, both architectures, with VERSION
+FROM scratch AS out-built
+COPY --from=go /out/agents-control /out/workspace-commands /out/agents-hosted /control/
+COPY --from=web /src/Web/dist/ /web/
+COPY --from=servers /out/servers/ /servers/
+
+FROM scratch AS out-prebuilt
+COPY deploy/prebuilt/ /
+
+FROM out-${BINARIES} AS out
+
 # Named base: deploy/demo builds its codes job from it.
 FROM alpine:3.24 AS base
 RUN apk add --no-cache ca-certificates openssh-client github-cli tini && adduser -D -u 10001 control \
  && mkdir /data && chown control /data
 # workspace-commands sits beside agents-control, where it looks first.
-COPY --from=go /out/agents-control /out/workspace-commands /out/agents-hosted /
-COPY --from=web /src/Web/dist/ /web/
-COPY --from=servers /out/servers/ /servers/
+COPY --from=out /control/ /
+COPY --from=out /web/ /web/
+COPY --from=out /servers/ /servers/
 # Readable by the control user whatever the build machine's umask left them (#3383): a
 # /toolsets it could not read put no runtime on a server that joined.
 COPY --chmod=0755 App/Resources/toolsets/ /toolsets/
