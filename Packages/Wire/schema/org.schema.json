@@ -1132,6 +1132,10 @@
             "type": "string"
           }
         },
+        "maturity": {
+          "$ref": "core.schema.json#/definitions/Maturity",
+          "description": "The levels of this host's capabilities that are not GA, as it said them in its last machine/hello (#6579). None from a host older than that."
+        },
         "missing": {
           "type": "array",
           "description": "Of the control plane's required capabilities for hosts, the ones this host does not have (#1748). Its state is then needsUpdate.",
@@ -1367,6 +1371,10 @@
           "items": {
             "type": "string"
           }
+        },
+        "maturity": {
+          "$ref": "core.schema.json#/definitions/Maturity",
+          "description": "The levels of the control plane's capabilities that are not GA (#6579). None from a control plane older than that."
         },
         "required": {
           "$ref": "machines.schema.json#/definitions/RequiredCapabilities"

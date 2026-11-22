@@ -2161,6 +2161,10 @@
           "items": {
             "type": "string"
           }
+        },
+        "maturity": {
+          "$ref": "core.schema.json#/definitions/Maturity",
+          "description": "The levels of this host's capabilities that are not GA (#6579). None from a host older than that."
         }
       },
       "required": [

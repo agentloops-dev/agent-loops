@@ -50,7 +50,7 @@ struct RemoteSettings: View {
                     // switch is a rule of Agents ▸ Policy now (FR-023).
                     SettingsPageLink("Sidebar", systemImage: "sidebar.left") { SidebarSettingsSection() }
                     // The features that are not GA, with a switch each, on every client (#6052, Core).
-                    SettingsPageLink(EarlyFeaturesSection.title, systemImage: "sparkles") { EarlyFeaturesSection() }
+                    SettingsPageLink(EarlyFeaturesSection.title, systemImage: "sparkles") { EarlyFeaturesSection(said: model.partsMaturity) }
                 }
                 .paperListRow()
                 // Agents ▸ Policy is Core (#2957, FR-027): every rule and where it comes from,

@@ -1407,6 +1407,15 @@ final class AppModel {
     /// Every host the control plane last listed, this Mac's included. Nil when the
     /// window is not its client; empty until the first list arrives (058, R11).
     var controlPlaneHosts: [DaemonAPI.ControlMachine]? = ControlConfig.endpoint == nil ? nil : []
+    /// `control/status.maturity` (#6579): the levels of the control plane's capabilities that are
+    /// not GA. Nil from one older than that, or before its status arrives.
+    var controlPlaneMaturity: [String: String]?
+    /// What each part says of its levels, for Early Features (#6579): the control plane's and each
+    /// host's. None without a control plane, and the window reads its own list.
+    var partsMaturity: [[String: String]?] {
+        guard let hosts = controlPlaneHosts else { return [] }
+        return [controlPlaneMaturity] + hosts.map(\.maturity)
+    }
     /// The control plane's list has arrived at least once, so an empty one means none.
     private var controlPlaneListed = false
     /// `control/status.thisMacHost` (#303): how this Mac's host says its join stands.
@@ -3792,6 +3801,7 @@ final class AppModel {
         gitAsksAnswered.formIntersection(GitLendAsk.waiting(in: listed))
         controlPlaneListed = true
         controlPlaneName = status.name
+        controlPlaneMaturity = status.maturity
         macHostJoin = status.thisMacHost
         controlPlaneMachine = status.machineID
         // `.mac` is `client`, already. Every other host, including another machine's

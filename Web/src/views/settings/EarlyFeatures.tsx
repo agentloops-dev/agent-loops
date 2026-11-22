@@ -1,7 +1,8 @@
 // Settings ▸ This app ▸ Early Features (#6052, epic #6552): a row for each feature that is not GA and that the web
 // page shows, with its name, its badge, its help line and a switch, on by default. A feature turned off shows nowhere
 // on the person's clients. Listed in ./sections.ts. The window and the Remote have the same section (Core).
-import { earlyRows, maturityWords, setEarlyFeature, showsFeature } from "../../model/maturity";
+import { earlyRows, maturityWords, partsMaturity, setEarlyFeature, showsFeature } from "../../model/maturity";
+import type { Store } from "../../model/store";
 import { MaturityBadge } from "../MaturityBadge";
 
 /** The words under the section, as the window's (EarlyFeaturesSection.footer). */
@@ -11,8 +12,10 @@ export const earlyFeaturesFooter = "Features that are not ready yet. Turn one of
 /** What the section says when every feature is GA, as the window's. */
 export const noEarlyFeatures = "Every feature is ready.";
 
-export function EarlyFeaturesSection() {
-  const rows = earlyRows();
+/** At the lowest level that the control plane and the hosts say (#6579), so a page older than its host shows the
+ *  host's level. */
+export function EarlyFeaturesSection({ store }: { store: Store }) {
+  const rows = earlyRows(undefined, partsMaturity(store.plane.value, store.hosts.value));
   return (
     <section aria-labelledby="settings-early-features">
       <h3 class="section-head" id="settings-early-features">Early Features</h3>
