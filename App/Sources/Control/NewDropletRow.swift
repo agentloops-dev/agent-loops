@@ -57,7 +57,9 @@ struct NewDropletRow: View {
                 }
             }
         }
-        .padding(.vertical, 4)
+        // ControlRow's insets, so the row lines up with the card's others.
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
         // Read again when the provider's row changes: a make takes the next name.
         .task(id: provider.workspaces.count) { await load() }
     }
@@ -132,7 +134,8 @@ struct ProviderSetupSteps: View {
                 }
             }
         }
-        .padding(.leading, 18)
-        .padding(.bottom, 4)
+        .padding(.leading, 34)
+        .padding(.trailing, 16)
+        .padding(.bottom, 10)
     }
 }

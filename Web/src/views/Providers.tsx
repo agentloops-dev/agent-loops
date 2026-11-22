@@ -156,9 +156,11 @@ function WorkspaceRow({ store, provider, workspace, hosts, say, link, install }:
     if (!await ask(words.deleteFailed(workspace.name, provider.name))) return;
     say(await store.providers.deleteFailed(provider.id, workspace.id));
   };
-  const free = failed ? [] : linkableHosts(workspace, hosts);
+  // Made here and joining by itself (#6577): its steps show below, and nothing is to be linked or added yet.
+  const joining = !workspace.host && workspace.joining === true;
+  const free = failed || joining ? [] : linkableHosts(workspace, hosts);
   const noHost = noHostLine(workspace, hosts);
-  const adding = addAsMachine(workspace);
+  const adding = joining ? undefined : addAsMachine(workspace);
   const awake = linked ? keptAwakeLine(linked) : null;
   return (
     <>
@@ -190,6 +192,7 @@ function WorkspaceRow({ store, provider, workspace, hosts, say, link, install }:
         <button type="button" disabled={!adding.ready} title={adding.help} onClick={install}>{words.addAsMachine}</button>
       )}
       {failed && <button type="button" onClick={() => void deleteFailed()}>Delete…</button>}
+      {joining && <span class="small quiet">Joining…</span>}
     </li>
     {/* A make's steps on its row, from the press until it joins (#6577, W4). */}
     {!workspace.host && workspace.setup && <li class="provider-setup"><ProviderSetupSteps setup={workspace.setup} /></li>}
