@@ -73,6 +73,22 @@ struct FanAllHereTests {
         #expect(next.cursor == nil)
     }
 
+    @Test("A machine whose call does not stop on a cancel is given up at the patience, not at its link's time-out (#6638)")
+    func frozenMachine() async {
+        let host = FanAllHere.Host(id: "frozen", name: "Frozen")
+        let start = ContinuousClock.now
+        // As a call to a stopped machine: it ends only at its own time-out, whatever the cancel.
+        let got = await FanAllHere.askOne(host, "forge/issues", .object([:]), patience: .milliseconds(100)) { _, _, _ in
+            await withCheckedContinuation { done in
+                DispatchQueue.global().asyncAfter(deadline: .now() + 5) { done.resume(returning: .null) }
+            }
+        }
+        #expect(got == nil)
+        #expect(ContinuousClock.now - start < .seconds(3))
+        let fast = await FanAllHere.askOne(host, "forge/issues", .object([:]), patience: .seconds(5)) { _, _, _ in .int(1) }
+        #expect(fast == .int(1))
+    }
+
     @Test("A method that is not a call for every machine is not answered here")
     func otherMethod() async throws {
         let got = try await FanAllHere.answer("forge/issues", .object([:]), hosts: { _ in Self.hosts }, ask: { _, _, _ in .null })

@@ -412,6 +412,10 @@ public enum WorkLook {
         return "\(n)\(more ? "+" : "") \(one)"
     }
 
+    /// The footer while a Refresh or an open asks the machines (#6638): the rows on screen stay until each answers or
+    /// the ask gives up, and this is in the place of "Last update".
+    public static let refreshing = "Refreshing…"
+
     /// The footer while the next page loads (lists.md section 2): "Loading more… · 50 shown";
     /// "Loading more… · 50 of 128 shown" with the forge's total (#4396).
     public static func loadingMore(shown: Int, total: Int? = nil) -> String {
