@@ -99,6 +99,9 @@ extension AppModel {
         return openedWorkCache
     }
 
+    /// Work's changes through the cache (#6354), while the cache is on.
+    var workSaves: WorkSaves? { workCache == nil ? nil : workSavesStore }
+
     /// The machines that read their forges (#3119), This Mac first: Work's issues and PRs come from each.
     var forgeMachines: [(id: MachineRef, name: String)] {
         let mine = thisMacHostID

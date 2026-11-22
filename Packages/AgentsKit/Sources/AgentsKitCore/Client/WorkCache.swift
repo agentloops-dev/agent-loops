@@ -24,8 +24,13 @@ public protocol WorkCaching: Sendable {
     func keepFailure(_ query: WorkCache.Query, host: MachineRef, errors: [DaemonAPI.ForgeListError]) async
     /// Items read or written outside a list (a write's answer, #6351, or an item's page): each replaces an older copy.
     func keep(items: [DaemonAPI.ForgeItem]) async
-    /// Changes one kept item at once (an optimistic write). Its `updatedAt` stays, so the forge's copy replaces it.
+    /// Changes one kept item at once (an optimistic write, #6354). Its `updatedAt` stays, so the forge's newer copy
+    /// replaces it; a copy as old (a list read while the write runs) does not, until `settle`.
     func edit(_ node: DaemonAPI.LineageNode, _ change: @Sendable (inout DaemonAPI.ForgeItem) -> Void) async
+    /// The write of an edited item ended: a copy as old as the kept one replaces it again.
+    func settle(_ node: DaemonAPI.LineageNode) async
+    /// One kept item, or nil when this device never read it.
+    func item(_ node: DaemonAPI.LineageNode) async -> DaemonAPI.ForgeItem?
     /// An item's kept page: its body and its first comments.
     func detail(_ node: DaemonAPI.LineageNode) async -> WorkCache.Detail?
     func keepDetail(_ detail: DaemonAPI.ForgeItemDetail) async
@@ -158,6 +163,8 @@ public actor WorkCache: WorkCaching {
     private let decoder = JSONDecoder()
     /// Items decoded once, by key: a draw after the first decodes nothing. The file stays the record.
     private var memo: [String: DaemonAPI.ForgeItem] = [:]
+    /// The items an optimistic write changed, until it ends (#6354): a copy as old as theirs does not replace them.
+    private var edited: Set<String> = []
 
     /// The cache in `file`, made when missing; nil keeps it in memory only (the tests).
     public init(file: URL?, bounds: Bounds = .mac, now: @escaping @Sendable () -> Date = { Date() }) throws {
@@ -262,11 +269,12 @@ public actor WorkCache: WorkCaching {
         load(items.map { Self.key($0.node) })
         for item in items {
             let key = Self.key(item.node)
-            if let had = memo[key], had.updatedAt > item.updatedAt {
+            if let had = memo[key], had.updatedAt > item.updatedAt || (edited.contains(key) && had.updatedAt == item.updatedAt) {
                 try? run("UPDATE item SET read = ? WHERE key = ?", [.real(at), .text(key)])
                 continue
             }
             guard let fit = fitted(item) else { continue }
+            edited.remove(key)
             memo[key] = fit.item
             try? run("""
             INSERT INTO item(key, updated, read, json) VALUES(?, ?, ?, ?)
@@ -299,7 +307,18 @@ public actor WorkCache: WorkCaching {
         item.updatedAt = memo[key]?.updatedAt ?? item.updatedAt
         guard let fit = fitted(item) else { return }
         memo[key] = fit.item
+        edited.insert(key)
         try? run("UPDATE item SET json = ? WHERE key = ?", [.blob(fit.json), .text(key)])
+    }
+
+    public func settle(_ node: DaemonAPI.LineageNode) {
+        edited.remove(Self.key(node))
+    }
+
+    public func item(_ node: DaemonAPI.LineageNode) -> DaemonAPI.ForgeItem? {
+        let key = Self.key(node)
+        load([key])
+        return memo[key]
     }
 
     /// Decodes the keys' items that are not in memory yet, from the file.
@@ -330,7 +349,8 @@ public actor WorkCache: WorkCaching {
         guard var found else { return nil }
         try? run("UPDATE detail SET used = ? WHERE key = ?", [.real(now()), .text(key)])
         load([key])
-        if let item = memo[key], item.updatedAt > found.detail.item.updatedAt { found.detail.item = item }
+        // The kept item is never older than the page's: an optimistic change (#6354) keeps its updatedAt.
+        if let item = memo[key], item.updatedAt >= found.detail.item.updatedAt { found.detail.item = item }
         return found
     }
 
@@ -423,6 +443,7 @@ public actor WorkCache: WorkCaching {
         try? run("DELETE FROM detail")
         try? run("PRAGMA incremental_vacuum")
         memo = [:]
+        edited = []
     }
 
     // MARK: SQLite

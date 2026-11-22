@@ -119,6 +119,29 @@ struct WorkCacheTests {
         #expect(await cache.answer(issues)?.hosts.first?.items.first?.priority == "medium")
     }
 
+    @Test func aListReadWhileTheWriteRunsDoesNotUndoTheOptimisticValue() async throws {
+        let cache = try makeCache(Clock())
+        await cache.keepPage(issues, host: mac, page: 0, list: page(1...1))
+        let node = item(1).node
+        await cache.edit(node) { $0.priority = "high" }
+        // A refresh with the copy as old as the kept one (#6354): the optimistic value stays until its own answer.
+        await cache.keepPage(issues, host: mac, page: 0, list: page(1...1))
+        #expect(await cache.item(node)?.priority == "high")
+        // The write ended (refused, and changed back): the next copy as old replaces it again.
+        await cache.settle(node)
+        await cache.keepPage(issues, host: mac, page: 0, list: page(1...1))
+        #expect(await cache.item(node)?.priority == nil)
+    }
+
+    @Test func anItemsKeptPageShowsItsOptimisticValue() async throws {
+        let cache = try makeCache(Clock())
+        let node = item(1).node
+        await cache.keepDetail(DaemonAPI.ForgeItemDetail(item: item(1), body: "Body", comments: []))
+        await cache.edit(node) { $0.state = "closed" }
+        #expect(await cache.detail(node)?.detail.item.state == "closed")
+        #expect(await cache.detail(node)?.detail.body == "Body")
+    }
+
     @Test func aFailureKeepsTheAnswerWithTheErrorAndTheReadTime() async throws {
         let clock = Clock()
         let cache = try makeCache(clock)
