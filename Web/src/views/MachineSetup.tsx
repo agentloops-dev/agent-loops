@@ -15,12 +15,12 @@ import { signInRuntime } from "./RuntimeSignInDialog";
 import { Icon, type IconName } from "./Icon";
 import { ask } from "./MessageKinds";
 
-const marks: Record<MachineSetupState, IconName> = {
+export const marks: Record<MachineSetupState, IconName> = {
   done: "circle-check", running: "refresh-cw", "needs-you": "user-x", failed: "circle-x", waiting: "circle",
 };
 
 /** A second's tick while a step runs, so its time moves. */
-function useTick(on: boolean): Date {
+export function useTick(on: boolean): Date {
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
     if (!on) return;

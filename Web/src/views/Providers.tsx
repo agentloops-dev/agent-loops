@@ -5,7 +5,7 @@
 // Add and Edit… choose the machine that carries it, and its card says which (#3496).
 import { Fragment } from "preact";
 import { useEffect, useState } from "preact/hooks";
-import type { ControlMachine, ProviderSummary, MachineInfo } from "../protocol/generated";
+import type { ControlMachine, JSONValue, MachineInfo, MachineSetup as Setup, ProviderID, ProviderSummary } from "../protocol/generated";
 import type { Store } from "../model/store";
 import {
   addAsMachine, carrierChoices, carrierLine, carrierStart, defaultIdleMinutes, idleChoices, idleRowWords, keptAwakeLine, kindChip, kindFields, kindNeeds,
@@ -18,6 +18,12 @@ import { makers } from "../model/machineFromRepository";
 import { adminsOnly, providerLine as groupLine } from "../model/teamGroups";
 import { ask } from "./MessageKinds";
 import { hasWarmPools, useWarmPools, WarmPoolsSection } from "./WarmPools";
+import { Icon } from "./Icon";
+import { marks, useTick } from "./MachineSetup";
+import { offersOneClick, oneClickPlan, oneClickWords, type OneClickPlan } from "../model/oneClickMake";
+import { failedStep, isReady, stepLine, stepName, stepStateWords, stepTime } from "../model/machineSetup";
+import { describe } from "../model/errors";
+import { go } from "../route";
 
 const time = (at: Date) => at.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 
@@ -93,8 +99,9 @@ function ProviderCard({ store, provider, say, edit, link, install }: {
             {provider.default && <span class="chip default-chip" title="New Machine makes your machines here">Default</span>}</p>
           {line && <p class="small quiet">{line}</p>}
         </div>
-        {/* The same New Machine as Add a Machine…, at this provider (#2131). */}
-        {makers([provider]).length > 0 && (
+        {/* The same New Machine as Add a Machine…, at this provider (#2131). A DigitalOcean card has New Droplet and
+            Change… below in its place (#6577). */}
+        {makers([provider]).length > 0 && !offersOneClick(provider) && (
           <button type="button" onClick={() => setMaking(true)}>New Machine…</button>
         )}
         {/* The provider New Machine uses (#3979). */}
@@ -113,6 +120,7 @@ function ProviderCard({ store, provider, say, edit, link, install }: {
         {admin && kindOfPreset(provider.preset) && <button type="button" onClick={edit}>Edit…</button>}
         {admin && <button type="button" class="destructive" onClick={() => void remove()}>Remove…</button>}
       </li>
+      {offersOneClick(provider) && <NewDropletRow store={store} provider={provider} change={() => setMaking(true)} />}
       {provider.workspaces.map((w) => (
         <WorkspaceRow key={w.id} store={store} provider={provider} workspace={w} hosts={hosts} say={say} link={() => link(w)} install={() => install(w)} />
       ))}
@@ -153,6 +161,7 @@ function WorkspaceRow({ store, provider, workspace, hosts, say, link, install }:
   const adding = addAsMachine(workspace);
   const awake = linked ? keptAwakeLine(linked) : null;
   return (
+    <>
     <li class="connection workspace-row">
       <span class={`dot ${workspace.state === "running" ? "online" : workspace.state === "unknown" ? "attention" : "offline"}`} aria-hidden="true" />
       <div class="grow">
@@ -182,6 +191,101 @@ function WorkspaceRow({ store, provider, workspace, hosts, say, link, install }:
       )}
       {failed && <button type="button" onClick={() => void deleteFailed()}>Delete…</button>}
     </li>
+    {/* A make's steps on its row, from the press until it joins (#6577, W4). */}
+    {!workspace.host && workspace.setup && <li class="provider-setup"><ProviderSetupSteps setup={workspace.setup} /></li>}
+    </>
+  );
+}
+
+/** New Droplet on a connected DigitalOcean provider's card (#6577, epic #6070 W3), as the window's NewDropletRow: one
+ * click makes a machine with what New Machine would make, and the line beside it says where and what it costs. Change…
+ * opens the whole New Machine form. The make's steps show on its row (W4), and Open Machine once it joins (W5). */
+function NewDropletRow({ store, provider, change }: { store: Store; provider: ProviderSummary; change: () => void }) {
+  const [plan, setPlan] = useState<OneClickPlan | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+  const [working, setWorking] = useState(false);
+  const [made, setMade] = useState<string[]>([]);
+  // Read again when the provider's row changes: a make takes the next name.
+  const count = provider.workspaces.length;
+  useEffect(() => {
+    let live = true;
+    void store.providers.options(provider.id)
+      .then((o) => {
+        if (!live) return;
+        const p = oneClickPlan(o);
+        setPlan(p);
+        if (!p) setProblem(`${provider.name} gives no name for a new machine: use ${oneClickWords.change}`);
+      })
+      .catch((error: unknown) => { if (live) { setPlan(null); setProblem(describe(error)); } });
+    return () => { live = false; };
+  }, [provider.id, count]);
+  const drop = (name: string) => setMade((m) => m.filter((n) => n !== name));
+  const press = async () => {
+    if (!plan) return;
+    setWorking(true);
+    setProblem(null);
+    setMade((m) => [...m, plan.name]);
+    try {
+      // The call answers once DigitalOcean made it; its row shows each step meanwhile.
+      const answer = await store.link.call("providers/create",
+        { id: provider.id as ProviderID, name: plan.name, options: plan.values as Record<string, JSONValue> });
+      if (answer.workspace.state === "failed") drop(plan.name);
+    } catch (error) {
+      drop(plan.name);
+      setProblem(describe(error));
+    } finally {
+      setWorking(false);
+      void store.providers.refresh(provider.id);
+    }
+  };
+  const ready = store.hosts.value.filter((h) => made.includes(h.name) && (!h.setup || isReady(h.setup)));
+  const usable = provider.mayUse !== false;
+  return (
+    <li class="connection new-droplet">
+      <div class="grow">
+        <div class="row-actions">
+          <button type="button" class="prominent" disabled={!plan || working || !usable} title={plan ? oneClickWords.note(plan.name) : undefined}
+            onClick={() => void press()}>{working ? "Making…" : oneClickWords.button}</button>
+          <button type="button" disabled={working || !usable} onClick={change}>{oneClickWords.change}</button>
+          {plan && <span class="small quiet">{plan.summary}</span>}
+        </div>
+        {plan && <p class="small quiet">{oneClickWords.note(plan.name)}</p>}
+        {problem && <p class="small failure" role="alert">{problem}</p>}
+        {ready.map((h) => (
+          <div key={h.id} class="row-actions new-droplet-ready">
+            <Icon name="circle-check" title="Ready" />
+            <span>{oneClickWords.ready(h.name)}</span>
+            <button type="button" onClick={() => drop(h.name)}>Done</button>
+            <button type="button" class="prominent" onClick={() => { drop(h.name); go({ nav: "machines", section: `machine-${h.id}` }); }}>
+              {oneClickWords.openMachine}</button>
+          </div>
+        ))}
+      </div>
+    </li>
+  );
+}
+
+/** A make's steps on its provider's row (#6577, W4), as the window's ProviderSetupSteps: a mark, the step and its line,
+ * and the time a running step has taken. The machine's page has the whole set-up, with Try Again, once it joins. */
+function ProviderSetupSteps({ setup }: { setup: Setup }) {
+  const failed = failedStep(setup);
+  const now = useTick(!isReady(setup) && !failed);
+  return (
+    <>
+      <ol class="setup-steps">
+        {setup.steps.map((step) => (
+          <li key={step.id} class={`setup-step ${step.state}`}>
+            <span class="setup-mark"><Icon name={marks[step.state]} title={stepStateWords[step.state]} /></span>
+            <span class="setup-words">
+              <span>{stepName(step)}</span>
+              <span class="small quiet setup-line">{stepLine(step, now)}</span>
+            </span>
+            <span class="small quiet setup-time">{stepTime(step, now)}</span>
+          </li>
+        ))}
+      </ol>
+      {failed && <p class="small failure" role="alert">{failed.error ?? `${stepName(failed)} failed.`}</p>}
+    </>
   );
 }
 
