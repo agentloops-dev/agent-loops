@@ -82,8 +82,8 @@ extension AppModel {
         return LocalCopy(folder: walk.appendingPathComponent("copy", isDirectory: true), cap: LocalCopy.macCap)
     }
 
-    /// Work's part of this device's copy (#4930). With Work's cache on (#6353), the lists and an item's page read the
-    /// cache instead; pictures, plans, Timeline and Deploys still keep their answers here.
+    /// Work's part of this device's copy (#4930). With Work's cache on (#6353, #6573), every Work page reads the cache
+    /// instead, and only pictures keep their answers here.
     var workCopy: LocalCopy? { localCopy?.copy }
 
     /// Work's client cache (#6353, epic #6348), while the person has the `work-cache` flag on: one SQLite file beside

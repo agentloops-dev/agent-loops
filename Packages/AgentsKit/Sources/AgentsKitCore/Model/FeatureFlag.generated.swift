@@ -21,7 +21,7 @@ public enum FeatureFlag: String, CaseIterable, Sendable {
     public var about: String {
         switch self {
         case .commitTrailers: "The Commit trailers group in Agents ▸ Policy: the trailers on each agent's commits."
-        case .workCache: "Work's Issues, Pull requests and an item's page draw what this Mac kept at once, then ask the forge once."
+        case .workCache: "Work's pages draw what this Mac kept at once, then ask the forge once."
         }
     }
 

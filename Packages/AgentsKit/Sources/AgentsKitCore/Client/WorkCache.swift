@@ -9,6 +9,8 @@ import SQLite3
 ///   device read it. A copy as new or newer replaces it, so a change shows in every answer that holds the item.
 /// - Each query's answer is kept per machine as the refs it returned, **in the server's order**, page by page, each
 ///   page with its cursor and when it was read, and the total, the forges and the errors.
+/// - A page whose answer is of its own shape (an epic's plan, Releases, the boards, Timeline, Deploys; #6573) keeps
+///   it whole, by the page and what it asked, with when it was read.
 /// - A refresh replaces page 1 and keeps the later pages, each with its own time, until they are read again.
 ///   Scrolling to the end of the kept pages asks the next page by the last page's cursor.
 ///
@@ -29,8 +31,28 @@ public protocol WorkCaching: Sendable {
     /// An item's kept page: its body and its first comments.
     func detail(_ node: DaemonAPI.LineageNode) async -> WorkCache.Detail?
     func keepDetail(_ detail: DaemonAPI.ForgeItemDetail) async
+    /// A page's kept answer of its own shape (#6573): an epic's plan, Releases, the boards, Timeline, Deploys. `page`
+    /// names the page and `asked` what it asked; nil when it was never answered on this device.
+    func kept(_ page: String, asked: String) async -> WorkCache.PageAnswer?
+    /// Keeps a page's answer for what it asked, read now, in place of the last one.
+    func keep(_ page: String, asked: String, json: Data) async
     /// Removes everything; the next read fills it again.
     func forget() async
+}
+
+extension WorkCaching {
+    /// A page's kept answer, decoded, with when it was read; nil with none, or one of another form.
+    public func kept<Value: Decodable>(_: Value.Type, _ page: String, asked: String) async -> (value: Value, read: Date)? {
+        guard let kept = await kept(page, asked: asked),
+              let value = try? JSONDecoder().decode(Value.self, from: kept.json) else { return nil }
+        return (value, kept.read)
+    }
+
+    /// Keeps a page's answer, encoded.
+    public func keep(_ value: some Encodable, _ page: String, asked: String) async {
+        guard let json = try? JSONEncoder().encode(value) else { return }
+        await keep(page, asked: asked, json: json)
+    }
 }
 
 public actor WorkCache: WorkCaching {
@@ -103,25 +125,35 @@ public actor WorkCache: WorkCaching {
         public var read: Date? { hosts.compactMap(\.read).min() }
     }
 
+    /// A page's kept answer (#6573): its JSON, as the page encodes it, and when it was read.
+    public struct PageAnswer: Sendable {
+        public var json: Data
+        public var read: Date
+    }
+
     /// An item's kept page.
     public struct Detail: Sendable {
         public var detail: DaemonAPI.ForgeItemDetail
         public var read: Date
     }
 
-    /// The cache's bounds (#6352): an item's row, a body and its comments, and the whole file. Over `bytes`, bodies
-    /// go first, then the answers least recently drawn, with the items no other answer holds.
+    /// The cache's bounds (#6352): an item's row, a body and its comments, a page's kept answer (#6573), and the whole
+    /// file. Over `bytes`, bodies go first, then the pages' answers and the lists' answers, each the least recently
+    /// drawn first, with the items no other answer holds.
     public struct Bounds: Sendable {
         public var itemBytes: Int
         public var bodyBytes: Int
         public var comments: Int
+        /// A page's kept answer: one over it is not kept, so the page asks again next time.
+        public var pageBytes: Int
         public var bytes: Int
 
         public init(itemBytes: Int = 4 * 1024, bodyBytes: Int = 64 * 1024, comments: Int = 50,
-                    bytes: Int = 200 * 1024 * 1024) {
+                    pageBytes: Int = 4 * 1024 * 1024, bytes: Int = 200 * 1024 * 1024) {
             self.itemBytes = itemBytes
             self.bodyBytes = bodyBytes
             self.comments = comments
+            self.pageBytes = pageBytes
             self.bytes = bytes
         }
 
@@ -178,6 +210,7 @@ public actor WorkCache: WorkCaching {
             "CREATE TABLE IF NOT EXISTS item(key TEXT PRIMARY KEY, updated REAL NOT NULL, read REAL NOT NULL, json BLOB NOT NULL)",
             "CREATE TABLE IF NOT EXISTS answer(query TEXT NOT NULL, host TEXT NOT NULL, used REAL NOT NULL, json BLOB NOT NULL, PRIMARY KEY(query, host))",
             "CREATE TABLE IF NOT EXISTS detail(key TEXT PRIMARY KEY, read REAL NOT NULL, used REAL NOT NULL, json BLOB NOT NULL)",
+            "CREATE TABLE IF NOT EXISTS page(page TEXT NOT NULL, asked TEXT NOT NULL, read REAL NOT NULL, used REAL NOT NULL, json BLOB NOT NULL, PRIMARY KEY(page, asked))",
         ] where sqlite3_exec(opened, sql, nil, nil, nil) != SQLITE_OK {
             throw CacheError(message: String(cString: sqlite3_errmsg(opened)))
         }
@@ -363,6 +396,29 @@ public actor WorkCache: WorkCaching {
         return String(text[..<end])
     }
 
+    // MARK: Pages
+
+    public func kept(_ page: String, asked: String) -> WorkCache.PageAnswer? {
+        var found: PageAnswer?
+        try? rows("SELECT read, json FROM page WHERE page = ? AND asked = ?", [.text(page), .text(asked)]) { s in
+            found = PageAnswer(json: blob(s, 1), read: Date(timeIntervalSince1970: sqlite3_column_double(s, 0)))
+        }
+        guard found != nil else { return nil }
+        try? run("UPDATE page SET used = ? WHERE page = ? AND asked = ?", [.real(now()), .text(page), .text(asked)])
+        return found
+    }
+
+    public func keep(_ page: String, asked: String, json: Data) {
+        guard json.count <= bounds.pageBytes else {
+            try? run("DELETE FROM page WHERE page = ? AND asked = ?", [.text(page), .text(asked)])
+            return
+        }
+        let at = now()
+        try? run("INSERT OR REPLACE INTO page(page, asked, read, used, json) VALUES(?, ?, ?, ?, ?)",
+                 [.text(page), .text(asked), .real(at), .real(at), .blob(json)])
+        trim()
+    }
+
     // MARK: Bounds
 
     /// The kept rows' bytes: what `bounds.bytes` bounds.
@@ -370,14 +426,14 @@ public actor WorkCache: WorkCaching {
         var total = 0
         try? rows("""
         SELECT (SELECT ifnull(sum(length(json)), 0) FROM item) + (SELECT ifnull(sum(length(json)), 0) FROM answer)
-          + (SELECT ifnull(sum(length(json)), 0) FROM detail)
+          + (SELECT ifnull(sum(length(json)), 0) FROM detail) + (SELECT ifnull(sum(length(json)), 0) FROM page)
         """) { s in total = Int(sqlite3_column_int64(s, 0)) }
         return total
     }
 
     /// Brings the file under `bounds.bytes`, to nine tenths of it so the next page does not trim again: bodies first,
-    /// the least recently opened first; then answers, the least recently drawn first, with the items that no kept
-    /// answer holds.
+    /// the least recently opened first; then the pages' answers, the least recently drawn first; then the lists'
+    /// answers, the least recently drawn first, with the items that no kept answer holds.
     func trim() {
         var total = bytes()
         guard total > bounds.bytes else { return }
@@ -389,6 +445,14 @@ public actor WorkCache: WorkCaching {
         for detail in details where total > target {
             try? run("DELETE FROM detail WHERE key = ?", [.text(detail.key)])
             total -= detail.bytes
+        }
+        var pages: [(page: String, asked: String, bytes: Int)] = []
+        try? rows("SELECT page, asked, length(json) FROM page ORDER BY used") { s in
+            pages.append((text(s, 0), text(s, 1), Int(sqlite3_column_int64(s, 2))))
+        }
+        for page in pages where total > target {
+            try? run("DELETE FROM page WHERE page = ? AND asked = ?", [.text(page.page), .text(page.asked)])
+            total -= page.bytes
         }
         var answers: [(query: String, host: String)] = []
         try? rows("SELECT query, host FROM answer ORDER BY used") { s in answers.append((text(s, 0), text(s, 1))) }
@@ -421,6 +485,7 @@ public actor WorkCache: WorkCaching {
         try? run("DELETE FROM item")
         try? run("DELETE FROM answer")
         try? run("DELETE FROM detail")
+        try? run("DELETE FROM page")
         try? run("PRAGMA incremental_vacuum")
         memo = [:]
     }

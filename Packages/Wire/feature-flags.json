@@ -10,7 +10,7 @@
     {
       "name": "work-cache",
       "title": "Work from this Mac's cache",
-      "about": "Work's Issues, Pull requests and an item's page draw what this Mac kept at once, then ask the forge once.",
+      "about": "Work's pages draw what this Mac kept at once, then ask the forge once.",
       "issue": 6353
     }
   ]
