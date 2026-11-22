@@ -316,6 +316,9 @@ func (c countedStore) Folders(ctx context.Context, prefix string) ([]string, err
 	return names, err
 }
 
+// Unwrap is the store it counts, so the sweep finds a folder's leftovers through it (#6585).
+func (c countedStore) Unwrap() store.Store { return c.Store }
+
 // requested is told of each request a client made: counted, and logged at debug with its
 // fields, never its params (which can carry a token or a prompt).
 func (s *Service) requested(caller Caller, host, method string, id json.RawMessage, result string, took time.Duration) {

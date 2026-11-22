@@ -138,7 +138,7 @@ func sweep(ctx context.Context, rs *records.Records, now time.Time, most int, ev
 		return report, err
 	}
 
-	if folder, ok := s.(*store.Folder); ok {
+	if folder := folderOf(s); folder != nil {
 		report.leftovers = folder.RemoveLeftovers(now.Add(-leftoversKept))
 	}
 	// Probes and marks an hour after the sweep first saw them, on any store (#3748).
@@ -154,6 +154,21 @@ func sweep(ctx context.Context, rs *records.Records, now time.Time, most int, ev
 		}
 	}
 	return report, nil
+}
+
+// folderOf is the folder store under s and the wrappers that count it (#6585), or nil
+// when s keeps no folder.
+func folderOf(s store.Store) *store.Folder {
+	for {
+		switch t := s.(type) {
+		case *store.Folder:
+			return t
+		case interface{ Unwrap() store.Store }:
+			s = t.Unwrap()
+		default:
+			return nil
+		}
+	}
 }
 
 // sweepAllEvents deletes, at most most, the audit's events and seals and the copies'
