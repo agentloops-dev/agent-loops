@@ -86,11 +86,10 @@ extension AppModel {
     /// instead, and only pictures keep their answers here.
     var workCopy: LocalCopy? { localCopy?.copy }
 
-    /// Work's client cache (#6353, epic #6348), while the person has the `work-cache` flag on: one SQLite file beside
-    /// this window's copy, so a scratch root or a walk has its own (#6358, finding 4). Nil when the file does not
-    /// open: the pages then read as before.
+    /// Work's client cache (#6353, epic #6348; no flag since #6357): one SQLite file beside this window's copy, so a
+    /// scratch root or a walk has its own (#6358, finding 4). Nil when the file does not open: the pages then read as
+    /// before.
     var workCache: (any WorkCaching)? {
-        guard FeatureFlag.workCache.isOn(in: WindowDefaults.store) else { return nil }
         if let openedWorkCache { return openedWorkCache }
         let root = ControlConfig.walkFolder ?? StoreLocations.default.cacheRoot
         let file = root.appendingPathComponent("work-cache.sqlite")
@@ -99,7 +98,7 @@ extension AppModel {
         return openedWorkCache
     }
 
-    /// Work's changes through the cache (#6354), while the cache is on.
+    /// Work's changes through the cache (#6354), while the cache opens.
     var workSaves: WorkSaves? { workCache == nil ? nil : workSavesStore }
 
     /// The machines that read their forges (#3119), This Mac first: Work's issues and PRs come from each.

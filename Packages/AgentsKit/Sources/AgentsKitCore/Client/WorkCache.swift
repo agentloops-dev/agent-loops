@@ -199,6 +199,8 @@ public actor WorkCache: WorkCaching {
 
         /// The Mac's Work cache.
         public static let mac = Bounds()
+        /// The Remote's (#6357): 50 MB, as the web page's (#6356) and the Remote's local copy.
+        public static let remote = Bounds(bytes: 50 * 1024 * 1024)
     }
 
     public struct CacheError: LocalizedError {

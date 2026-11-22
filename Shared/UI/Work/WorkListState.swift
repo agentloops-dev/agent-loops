@@ -98,7 +98,7 @@ final class WorkListState {
 
     // MARK: Work's cache (#6353, epic #6348)
 
-    /// The list reads Work's cache: an issue or PR list, with the person's `work-cache` flag on. Set by each load.
+    /// The list reads Work's cache: an issue or PR list, with the cache open. Set by each load.
     private(set) var cacheOn = false {
         didSet { if cacheOn != oldValue { narrow() } }
     }
