@@ -28,6 +28,8 @@ final class AppModel {
     /// This window's local copy (#4791): sessions and chat ends kept in its root's Caches,
     /// drawn at launch before the host answers. The host always wins.
     @ObservationIgnored var localCopy: LocalCopyKeeper?
+    /// Work's client cache (#6353), opened the first time a Work page asks for it with the flag on.
+    @ObservationIgnored var openedWorkCache: WorkCache?
 
     var runtimes: [RuntimeStatus] = []
     /// The start-up sheet offering to install what is missing (048). Raised once per

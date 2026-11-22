@@ -76,6 +76,10 @@ protocol WorkModel: AnyObject, Sendable {
     /// This device's copy (#4930): Work's last answers, drawn before the host answers; nil
     /// where the app keeps none.
     var workCopy: LocalCopy? { get }
+    /// Work's client cache (#6353, epic #6348): the kept answers to the Issues and Pull requests lists and the items'
+    /// pages, drawn with no forge call, then asked once. Nil where the app keeps none, or while the person's
+    /// `work-cache` flag is off: then the lists and pages use `workCopy`, as before.
+    var workCache: (any WorkCaching)? { get }
 }
 
 extension WorkModel {
@@ -83,6 +87,7 @@ extension WorkModel {
     var timelineProjects: [WorkList.Project] { workProjects }
     func askWorkConnectors() -> Bool { false }
     var workCopy: LocalCopy? { nil }
+    var workCache: (any WorkCaching)? { nil }
     func controlAll<R: Decodable & Sendable>(_ method: String, _ params: some Encodable & Sendable,
                                              returning: R.Type) async throws -> R? { nil }
 
@@ -138,7 +143,8 @@ extension WorkModel {
         } catch {
             // The control plane did not answer: none, as from a machine that cannot be read.
         }
-        if !boards.isEmpty { keepWork(boards, .boards, order.map(\.rawValue).joined(separator: ",")) }
+        // With Work's cache on (#6353) the local copy keeps nothing of Work's but pictures.
+        if !boards.isEmpty, workCache == nil { keepWork(boards, .boards, order.map(\.rawValue).joined(separator: ",")) }
         return boards
     }
 

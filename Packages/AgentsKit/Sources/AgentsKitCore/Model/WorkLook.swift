@@ -434,6 +434,22 @@ public enum WorkLook {
         return narrows(f) ? nil : total
     }
 
+    /// The forge's total for a list read through Work's cache (#6353): the forge is asked the label, the assignee and
+    /// the board too, so only the words, the project and the repo narrow it on this Mac.
+    public static func cachedListTotal(_ totals: [Int?], filter: WorkList.Filter) -> Int? {
+        var f = filter
+        f.label = ""
+        f.assignee = ""
+        return listTotal(totals, filter: f)
+    }
+
+    /// The end of a list read through Work's cache (#6353, #5967): "100 of 304 issues" when the forge has more than
+    /// the list shows, else "304 issues"; with no total, as `endWords`.
+    public static func shownOf(_ kind: WorkList.Kind, shown: Int, more: Bool, total: Int?) -> String {
+        guard let total else { return count(kind, shown, more: more) }
+        return shown < total ? "\(shown) of \(count(kind, total))" : count(kind, total)
+    }
+
     /// A page after the first that did not load: one line at the end, and Try again.
     public static let couldNotLoadMore = "Could not load more."
     /// The title of the alert when a row menu's Priority or On hold write failed (epic #6086).

@@ -987,8 +987,20 @@ struct WorkItemPage: View {
         guard !machines.isEmpty else { forgeProblem = WorkList.noForgeHere; return }
         reading = true
         defer { if asked == mine { reading = false } }
+        let cache = model.workCache
+        // Seen before, with Work's cache on (#6353): its kept page at once, with no forge call, until a machine
+        // answers. The writes wait for that answer, which says the machine that read it.
+        if detail == nil, let cache {
+            let start = ContinuousClock.now
+            if let kept = await cache.detail(node), asked == mine, detail == nil {
+                detail = (machines[0].id, kept.detail)
+                detailRead = kept.read
+                fromDevice = true
+                WorkCacheLog.note("drew \(node.kind) \(node.ref) from the kept page in \(WorkCacheLog.ms(since: start)) ms, 0 forge calls")
+            }
+        }
         // Seen before: this device's copy at once, until a machine answers (#4930).
-        if detail == nil, case let (kept, at)? = await model.keptWorkRead(KeptItem.self, .item, node.ref), asked == mine, detail == nil {
+        if cache == nil, detail == nil, case let (kept, at)? = await model.keptWorkRead(KeptItem.self, .item, node.ref), asked == mine, detail == nil {
             detail = (kept.host, kept.got)
             detailRead = at
             fromDevice = true
@@ -1023,11 +1035,20 @@ struct WorkItemPage: View {
             detailRead = Date()
             fromDevice = false
             forgeProblem = nil
-            model.keepWork(KeptItem(host: won.host, got: won.got), .item, node.ref)
+            keep(won.host, won.got)
             return
         }
         guard asked == mine else { return }
         forgeProblem = last ?? WorkList.notReadHere
+    }
+
+    /// A machine's answer, kept for the next open: in Work's cache when it is on (#6353), else in this device's copy.
+    private func keep(_ host: MachineRef, _ got: DaemonAPI.ForgeItemDetail) {
+        if let cache = model.workCache {
+            Task { await cache.keepDetail(got) }
+        } else {
+            model.keepWork(KeptItem(host: host, got: got), .item, node.ref)
+        }
     }
 
     /// The item again after a write (#3130), from the machine that read it, keeping the page
@@ -1039,7 +1060,7 @@ struct WorkItemPage: View {
             detail = (had.host, got)
             detailRead = Date()
             fromDevice = false
-            model.keepWork(KeptItem(host: had.host, got: got), .item, node.ref)
+            keep(had.host, got)
         } catch {
             forgeProblem = error.localizedDescription
         }

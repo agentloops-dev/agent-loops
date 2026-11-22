@@ -427,6 +427,15 @@ private struct WorkListPane: View {
                     Text(WorkLook.couldNotLoadMore).help(failed)
                     Button(WorkLook.tryAgain) { Task { await list.loadMore(model: model) } }.buttonStyle(.paper)
                 }
+            } else if list.cacheOn {
+                // Work's cache (#6353): "100 of 304 issues · Last update 2 min ago" (#5139, #5967).
+                HStack(spacing: 6) {
+                    Text(WorkLook.shownOf(kind, shown: shown, more: list.hasMore, total: total))
+                    if let read = list.cacheRead {
+                        Text(verbatim: "·")
+                        LastUpdateText(read: read)
+                    }
+                }
             } else {
                 Text(WorkLook.endWords(kind, shown: shown, more: list.hasMore, total: total))
             }
@@ -446,7 +455,10 @@ private struct WorkListPane: View {
     }
 
     /// The forge's count of the list (#4396), where it gives one and the list shows all it counts.
-    private var total: Int? { WorkLook.listTotal(list.lists?.map(\.list.total) ?? [], filter: list.filter) }
+    private var total: Int? {
+        let totals = list.lists?.map(\.list.total) ?? []
+        return list.cacheOn ? WorkLook.cachedListTotal(totals, filter: list.filter) : WorkLook.listTotal(totals, filter: list.filter)
+    }
 
     /// A click on a chip sets the Label filter to it (Mac); on a phone a tap opens the row.
     private var pick: ((String) -> Void)? {

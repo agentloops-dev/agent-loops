@@ -156,6 +156,20 @@ struct WorkLookTests {
         #expect(WorkLook.loadingMore(shown: 50, total: 128) == "Loading more… · 50 of 128 shown")
     }
 
+    /// Work's cache (#6353): the forge was asked the label and the assignee, so its total counts them; the words do not.
+    @Test func aCachedListCountsWhatTheForgeWasAsked() {
+        var f = WorkList.Filter()
+        f.label = "epic"
+        f.assignee = "alexec"
+        #expect(WorkLook.cachedListTotal([33], filter: f) == 33)
+        f.text = "cache"
+        #expect(WorkLook.cachedListTotal([33], filter: f) == nil)
+        #expect(WorkLook.shownOf(.issue, shown: 100, more: true, total: 304) == "100 of 304 issues")
+        #expect(WorkLook.shownOf(.issue, shown: 33, more: false, total: 33) == "33 issues")
+        #expect(WorkLook.shownOf(.pr, shown: 1, more: false, total: nil) == "1 pull request")
+        #expect(WorkLook.shownOf(.issue, shown: 100, more: true, total: nil) == "100+ issues")
+    }
+
     @Test func rowLineSaysTheTrackersStatus() {
         #expect(WorkLook.rowLine(row(status: "In Progress"), compact: true, now: now) == "#4328 · In Progress · 2 h · alexec")
     }
