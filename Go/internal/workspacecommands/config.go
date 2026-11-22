@@ -100,6 +100,31 @@ type Making struct {
 	DeleteRequest *Request
 	// Options is the New Machine form, as a flat JSON Schema object (workspace_options).
 	Options map[string]any
+	// Choices is the form read from the account (#6073), in place of Options; Options when
+	// it fails.
+	Choices func(p *Provider) (map[string]any, error)
+	// Prepare is a make's first step, before CreateRequest (#6073): the request to send, and
+	// what it did, in words.
+	Prepare func(p *Provider, request *Request, values map[string]string) (*Request, []string, error)
+	// Made says what a make made, in words, with its values.
+	Made func(values map[string]string) string
+	// NotMade is said after a create the provider refused, such as "No droplet was made."
+	NotMade string
+}
+
+// Form is the New Machine form (workspace_options): the account's choices, else Options.
+func (m Making) Form(p *Provider) map[string]any {
+	if m.Choices != nil {
+		form, err := m.Choices(p)
+		if err == nil {
+			return form
+		}
+		p.log("workspace-commands: options: the account's choices can't be read, so the form is the plain one: " + err.Error())
+	}
+	if m.Options == nil {
+		return map[string]any{"type": "object", "properties": map[string]any{}}
+	}
+	return m.Options
 }
 
 // FirstBootRuns is whether a made workspace runs the first-boot install itself.

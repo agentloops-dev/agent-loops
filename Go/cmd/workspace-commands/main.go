@@ -31,6 +31,11 @@ func main() {
 		os.Exit(2)
 	}
 	server := workspacecommands.NewServer(config, workspacecommands.StandardTiming, workspacecommands.Shell, buildinfo.Version)
+	// What it makes for itself, such as the Agent Loops ssh key (#6073), goes in the folder
+	// it is started in: the carrying machine's ~/.agents/providers.
+	if folder, err := os.Getwd(); err == nil {
+		server.Provider.Folder = folder
+	}
 	log.Printf("workspace-commands %s on stdio", buildinfo.String())
 	if err := server.Serve(os.Stdin, os.Stdout); err != nil {
 		log.Print("workspace-commands: ", err)

@@ -139,16 +139,37 @@ its state.
 ## DigitalOcean Droplets
 
 Through its API, you need a DigitalOcean API token with custom scopes: droplet read and
-update. To make and delete droplets from Agent Loops, add droplet create and delete.
+update. To make and delete droplets from Agent Loops, add droplet create and delete. To
+let Agent Loops add its ssh key and show the regions and sizes, add ssh_key read and
+create, regions read and sizes read.
 
 1. Make the token in the DigitalOcean control panel, under API.
 2. Give it in **API token**.
 3. Give the tag in **Droplets tagged** (the Mac) or **Tag**. The default is `agents`.
-4. Give the ssh user. The default is `root`.
+4. Give the ssh user. With none, the provider uses `agents`, the user that the first boot
+   makes.
 
 **New Machine…** makes a droplet with the tag, in the region, size and image that you
-choose. Choose an image with systemd, such as `ubuntu-24-04-x64`. Its first boot makes a
-user `agents` with root's ssh keys and installs Agent Loops as that user, never as root.
+choose (#6073):
+
+- **Region** and **Size** come from your account. The region nearest the machine that
+  keeps the token is first. The sizes are DigitalOcean's Basic sizes, with DigitalOcean's
+  monthly and hourly prices. The recommended size is `s-2vcpu-4gb` (2 vCPUs, 4 GB),
+  enough for 2 or 3 agents at once. When the account does not answer, the form has plain
+  text fields.
+- **Image** is `ubuntu-24-04-x64`. Choose an image with systemd.
+- **An ssh key for Agent Loops:** the machine that keeps the token makes a key pair once,
+  in `~/.agents/providers/agent-loops-ssh/`, and adds its public half, named
+  "Agent Loops", to your account. Each new droplet gets it, so DigitalOcean sends no root
+  password. You can reach the droplet with
+  `ssh -i ~/.agents/providers/agent-loops-ssh/id_ed25519 agents@<address>`. A token
+  without the ssh_key scopes makes droplets with no key, as before.
+
+The first boot makes a user `agents` with root's ssh keys and installs Agent Loops as that
+user, never as root. The machine's set-up shows each step as it goes: the key, the
+droplet (its region, size and price), its start, the install and the join. When
+DigitalOcean refuses a step, the step shows DigitalOcean's words and says whether a
+droplet was made.
 
 Through its CLI, install `doctl` and sign it in on the Mac that runs the control plane.
 

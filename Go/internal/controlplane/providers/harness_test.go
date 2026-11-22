@@ -212,6 +212,18 @@ type standIn struct {
 	lingering  []MachineInfo
 	// failDelete: Delete fails with these words.
 	failDelete string
+	// said: what a make says it did (#6073), as CreateSaying.
+	said []string
+}
+
+func (s *standIn) CreateSaying(name string, options any, firstBoot *string) (*MachineInfo, bool, []string, error) {
+	made, runs, err := s.Create(name, options, firstBoot)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err != nil {
+		return nil, false, nil, err
+	}
+	return made, runs, append([]string(nil), s.said...), nil
 }
 
 func newStandIn(ws []MachineInfo) *standIn { return &standIn{workspaces: ws, firstBootRuns: true} }
@@ -462,6 +474,22 @@ func newHarness(t *testing.T, opts ...func(*harnessOptions)) *harness {
 				h.setupMu.Lock()
 				h.setupSteps = append(h.setupSteps, madeStep{host, r})
 				h.setupMu.Unlock()
+			},
+			// A made machine's set-up, as the steps said make it (#6073).
+			Setup: func(host string) *wire.MachineSetup {
+				h.setupMu.Lock()
+				defer h.setupMu.Unlock()
+				var out *wire.MachineSetup
+				for _, s := range h.setupSteps {
+					if s.host == host {
+						if out == nil {
+							out = &wire.MachineSetup{}
+						}
+						out.Steps = append(out.Steps, wire.MachineSetupStep{ID: s.report.Step, State: s.report.State,
+							Detail: s.report.Detail})
+					}
+				}
+				return out
 			},
 			Connect: func(ProviderRecord, map[string]string) (Provider, error) { return provider, nil },
 			BackUp:  o.backUp,

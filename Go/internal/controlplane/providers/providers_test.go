@@ -854,6 +854,99 @@ func TestAMakeSaysTheFirstSetUpSteps(t *testing.T) {
 	}
 }
 
+// #6073: while the provider makes it, the provider's row has the machine being made with its
+// set-up, for a client that opens late; step 1 is done with the provider's own words; and once
+// the provider lists it running, step 2 says so, on the joining row, until it joins.
+func TestAMakeShowsItsStepsOnItsRowUntilItJoins(t *testing.T) {
+	h := newHarness(t)
+	id := h.add()
+	h.provider.mu.Lock()
+	h.provider.firstBootRuns = true
+	h.provider.createTakes = 300 * time.Millisecond
+	h.provider.said = []string{"Made an ssh key for Agent Loops and added it to your DigitalOcean account.",
+		"Made droplet machine-1 in San Francisco 3: 2 vCPUs · 4 GB · 80 GB disk · $24/month."}
+	h.provider.mu.Unlock()
+	done := make(chan error, 1)
+	go func() { _, err := h.createNameless(); done <- err }()
+	making := within5s(func() *MachineInfo {
+		if r := h.workspaceRow(id, "machine-1"); r != nil && r.Setup != nil {
+			return r
+		}
+		return nil
+	})
+	if making == nil || making.ID != "making-machine-1" || making.Joining == nil || !*making.Joining ||
+		making.Setup.Steps[0].ID != wire.MachineSetupStepIDCreate || making.Setup.Steps[0].State != wire.MachineSetupStateRunning {
+		t.Fatalf("while it is made: %+v", making)
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if made := h.stepDetail(wire.MachineSetupStepIDCreate, wire.MachineSetupStateDone, ""); made != strings.Join(h.provider.said, " ") {
+		t.Errorf("step 1 says %q", made)
+	}
+	if joining := h.workspaceRow(id, "machine-1"); joining == nil || joining.ID != "ws-machine-1" || joining.Setup == nil {
+		t.Fatalf("joining: %+v", joining)
+	}
+	// It boots: the provider lists it running.
+	h.provider.mu.Lock()
+	for i := range h.provider.workspaces {
+		if h.provider.workspaces[i].ID == "ws-machine-1" {
+			h.provider.workspaces[i].State = "running"
+		}
+	}
+	h.provider.mu.Unlock()
+	h.providers.Refresh(id)
+	started := within5s(func() *string {
+		if d := h.stepDetail(wire.MachineSetupStepIDJoin, wire.MachineSetupStateRunning, "Started"); d != "" {
+			return &d
+		}
+		return nil
+	})
+	if started == nil || *started != "Started machine-1; installing Agent Loops on it, then it joins" {
+		t.Errorf("step 2 says %v", started)
+	}
+}
+
+// within5s is what look gives within 5 seconds, or nil.
+func within5s[T any](look func() *T) *T {
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if v := look(); v != nil {
+			return v
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	return nil
+}
+
+// workspaceRow is a provider's row for the workspace named so, or nil.
+func (h *harness) workspaceRow(provider, name string) *MachineInfo {
+	for _, s := range h.providers.Summaries() {
+		if string(s.ID) != provider {
+			continue
+		}
+		for _, w := range s.Workspaces {
+			if w.Name == name {
+				return &w
+			}
+		}
+	}
+	return nil
+}
+
+// stepDetail is the last words said for a step in that state that start with prefix.
+func (h *harness) stepDetail(step wire.MachineSetupStepID, state wire.MachineSetupState, prefix string) string {
+	h.setupMu.Lock()
+	defer h.setupMu.Unlock()
+	out := ""
+	for _, s := range h.setupSteps {
+		if s.report.Step == step && s.report.State == state && strings.HasPrefix(deref(s.report.Detail), prefix) {
+			out = deref(s.report.Detail)
+		}
+	}
+	return out
+}
+
 // Seven New Machine presses in one second (#4706) reach the provider one at a time: all
 // seven sent at once failed within 3 s at GitHub. Each still makes its own machine-N.
 func TestMakesOnOneProviderGoOneAtATime(t *testing.T) {

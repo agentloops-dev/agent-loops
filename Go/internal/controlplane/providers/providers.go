@@ -126,6 +126,9 @@ type Hooks struct {
 	// code, also after the control plane restarted and lost linkWhenJoined's wait. Nil keeps
 	// none.
 	MadeFor func(host, provider, workspace string)
+	// Setup is a made machine's set-up as it stands (#6073), for its row while it is made and
+	// until it joins. Nil, or nil for a host, shows none.
+	Setup func(host string) *wire.MachineSetup
 	// BackUp makes a backup of the host, and waits for it, before its workspace is deleted
 	// (#1815). False when the host can't make one: it is offline, or older than backups.
 	// Nil makes none.
@@ -212,6 +215,13 @@ type joining struct {
 	caller *Caller
 }
 
+// makingRow is a make its provider has not answered yet (#6073): its name, and the host id
+// it joins as.
+type makingRow struct {
+	name string
+	host string
+}
+
 // notJoinedMake is a machine New Machine made that the control plane gave up waiting for
 // (#4610): its row says so, with Delete, until it is deleted or a host is linked to it.
 type notJoinedMake struct {
@@ -266,6 +276,9 @@ type Providers struct {
 	joining     map[string]*joining
 	// Makes that failed, by provider (#3972).
 	failedMakes map[string][]failedMake
+	// The makes a provider has not answered yet (#6073), by provider: each one's row, with its
+	// set-up, from the press of Make.
+	makingNow map[string][]makingRow
 	// The makes the control plane gave up waiting for (#4610), the oldest first.
 	notJoined []notJoinedMake
 	// The machines installing Agents in a codespace for Add as Machine… (#3497), by how
@@ -318,6 +331,9 @@ func NewProviders(cfg Config) *Providers {
 	if h.SetupStep == nil {
 		h.SetupStep = func(string, wire.MachineSetupReport) {}
 	}
+	if h.Setup == nil {
+		h.Setup = func(string) *wire.MachineSetup { return nil }
+	}
 	if h.MadeFor == nil {
 		h.MadeFor = func(string, string, string) {}
 	}
@@ -329,7 +345,7 @@ func NewProviders(cfg Config) *Providers {
 		providers: map[string]heldProvider{}, connections: map[string]Provider{}, listed: map[string]*listed{},
 		activities: map[string]*activity{}, problems: map[string]string{}, statuses: map[string]MachineStatus{},
 		idleTimers: map[string]*time.Timer{}, idleStopping: map[string]int{}, stoppedBy: map[string]string{},
-		broughtBack: map[string]bool{}, joining: map[string]*joining{}, failedMakes: map[string][]failedMake{}, making: map[string]*sync.Mutex{},
+		broughtBack: map[string]bool{}, joining: map[string]*joining{}, failedMakes: map[string][]failedMake{}, makingNow: map[string][]makingRow{}, making: map[string]*sync.Mutex{},
 		deleted: map[deletedWorkspace]time.Time{}, done: make(chan struct{})}
 }
 
@@ -1010,9 +1026,13 @@ func (p *Providers) Summaries() []ProviderSummary {
 		failed[id] = append([]failedMake{}, f...)
 	}
 	// The makes New Machine still waits for, and the ones it gave up on (#4610).
-	joiningNow := map[string]bool{}
+	joiningNow := map[string]string{}
 	for _, j := range p.joining {
-		joiningNow[j.provider+"/"+j.workspace] = true
+		joiningNow[j.provider+"/"+j.workspace] = j.host
+	}
+	makingNow := map[string][]makingRow{}
+	for id, rows := range p.makingNow {
+		makingNow[id] = append([]makingRow{}, rows...)
 	}
 	notJoinedNow := map[string]string{}
 	for _, n := range p.notJoined {
@@ -1027,7 +1047,11 @@ func (p *Providers) Summaries() []ProviderSummary {
 		if !ok {
 			l = listed{current: true}
 		}
-		workspaces := summaryWorkspaces(r.ID, l.workspaces, linked, joiningNow, notJoinedNow)
+		workspaces := summaryWorkspaces(r.ID, l.workspaces, linked, joiningNow, notJoinedNow, p.hooks.Setup)
+		for _, m := range makingNow[r.ID] {
+			workspaces = append(workspaces, MachineInfo{ID: "making-" + m.name, Name: m.name, State: "starting",
+				Joining: new(true), Setup: p.hooks.Setup(m.host)})
+		}
 		for _, f := range failed[r.ID] {
 			workspaces = append(workspaces, f.info)
 		}
@@ -1037,16 +1061,20 @@ func (p *Providers) Summaries() []ProviderSummary {
 }
 
 // summaryWorkspaces is a provider's listed workspaces with their hosts, and, for one with
-// no host, whether New Machine still waits for it or gave up on it (#4610).
-func summaryWorkspaces(provider string, listed []MachineInfo, linked map[string]string, joiningNow map[string]bool,
-	notJoinedNow map[string]string) []MachineInfo {
+// no host, whether New Machine still waits for it or gave up on it (#4610), and how its
+// set-up stands while it waits (#6073).
+func summaryWorkspaces(provider string, listed []MachineInfo, linked map[string]string, joiningNow map[string]string,
+	notJoinedNow map[string]string, setup func(host string) *wire.MachineSetup) []MachineInfo {
 	workspaces := []MachineInfo{}
 	for _, w := range listed {
 		key := provider + "/" + w.ID
 		w.Host = optional(wire.MachineRef(linked[key]))
 		if w.Host == nil {
-			if joiningNow[key] {
+			if host, ok := joiningNow[key]; ok {
 				w.Joining = new(true)
+				if host != "" {
+					w.Setup = setup(host)
+				}
 			}
 			if why, ok := notJoinedNow[key]; ok {
 				w.NotJoined = &why
@@ -2012,6 +2040,11 @@ func (p *Providers) create(request ProviderCreate, who string, caller *Caller) (
 	}
 	var made *MachineInfo
 	var runs bool
+	var said []string
+	// Its row, with its set-up, until the provider answers (#6073): a client that opens now
+	// sees it being made.
+	p.addMaking(id, name, madeHost)
+	defer p.dropMaking(id, name)
 	// Step 1 of its set-up (#5765), from the press of Make: waiting for an earlier make on the
 	// same provider is part of it.
 	p.setupStep(madeHost, wire.MachineSetupStepIDCreate, wire.MachineSetupStateRunning,
@@ -2020,7 +2053,11 @@ func (p *Providers) create(request ProviderCreate, who string, caller *Caller) (
 	turn.Lock()
 	_, err = p.providerCall(id, func(c Provider) (any, error) {
 		var err error
-		made, runs, err = c.Create(name, options, &firstBoot)
+		if saying, ok := c.(Saying); ok {
+			made, runs, said, err = saying.CreateSaying(name, options, &firstBoot)
+		} else {
+			made, runs, err = c.Create(name, options, &firstBoot)
+		}
 		return nil, err
 	})
 	turn.Unlock()
@@ -2030,8 +2067,12 @@ func (p *Providers) create(request ProviderCreate, who string, caller *Caller) (
 		p.setupStep(madeHost, wire.MachineSetupStepIDCreate, wire.MachineSetupStateFailed, "", errorWords(err))
 		return nil, err
 	}
-	p.setupStep(madeHost, wire.MachineSetupStepIDCreate, wire.MachineSetupStateDone,
-		"Made at "+provider.Name+" in "+secondsSince(began), "")
+	// What the provider said it did (#6073), else where and how long.
+	madeWords := "Made at " + provider.Name + " in " + secondsSince(began)
+	if len(said) > 0 {
+		madeWords = strings.Join(said, " ")
+	}
+	p.setupStep(madeHost, wire.MachineSetupStepIDCreate, wire.MachineSetupStateDone, madeWords, "")
 	if runs {
 		p.setupStep(madeHost, wire.MachineSetupStepIDJoin, wire.MachineSetupStateRunning,
 			"Waiting for "+name+" to start and join", "")
@@ -2208,6 +2249,7 @@ func (p *Providers) LinkJoined(host, provider, workspace, trust string) {
 func (p *Providers) linkWhenJoined(name string) {
 	began := time.Now()
 	var last *joining
+	started := false
 	for time.Since(began) < p.timing.GiveUp {
 		p.mu.Lock()
 		wanted := p.joining[name]
@@ -2216,6 +2258,12 @@ func (p *Providers) linkWhenJoined(name string) {
 			return
 		}
 		last = wanted
+		// Its provider lists it running (#6073): it boots and installs, then joins.
+		if !started && p.listedState(wanted.provider, wanted.workspace) == "running" {
+			started = true
+			p.setupStep(wanted.host, wire.MachineSetupStepIDJoin, wire.MachineSetupStateRunning,
+				"Started "+name+"; installing Agent Loops on it, then it joins", "")
+		}
 		for _, h := range p.records.Hosts() {
 			ours := (wanted.host != "" && h.ID == wanted.host) || h.Name == name
 			if !ours {
@@ -2258,6 +2306,20 @@ func (p *Providers) linkWhenJoined(name string) {
 	}
 }
 
+// listedState is a workspace's state as its provider last listed it, or "".
+func (p *Providers) listedState(provider, workspace string) string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if l, ok := p.listed[provider]; ok {
+		for _, w := range l.workspaces {
+			if w.ID == workspace {
+				return w.State
+			}
+		}
+	}
+	return ""
+}
+
 // setupStep says one step of a made machine's set-up (#5765), when it has a host id.
 func (p *Providers) setupStep(host string, step wire.MachineSetupStepID, state wire.MachineSetupState, detail, problem string) {
 	if host == "" {
@@ -2271,6 +2333,37 @@ func (p *Providers) setupStep(host string, step wire.MachineSetupStepID, state w
 		report.Error = &problem
 	}
 	p.hooks.SetupStep(host, report)
+	// A machine being made has no row of its own yet: its provider's row shows the step (#6073).
+	if p.records.Host(host) == nil {
+		p.changed()
+	}
+}
+
+// addMaking shows a make its provider has not answered yet (#6073).
+func (p *Providers) addMaking(provider, name, host string) {
+	p.mu.Lock()
+	p.makingNow[provider] = append(p.makingNow[provider], makingRow{name: name, host: host})
+	p.mu.Unlock()
+}
+
+// dropMaking takes the row away once the provider answered: the listed one, joining, or the
+// failed one has it now.
+func (p *Providers) dropMaking(provider, name string) {
+	p.mu.Lock()
+	rows := p.makingNow[provider]
+	kept := rows[:0]
+	for _, r := range rows {
+		if r.name != name {
+			kept = append(kept, r)
+		}
+	}
+	if len(kept) == 0 {
+		delete(p.makingNow, provider)
+	} else {
+		p.makingNow[provider] = kept
+	}
+	p.mu.Unlock()
+	p.changed()
 }
 
 // gaveUp keeps a make the control plane stopped waiting for (#4610), so that its row says
