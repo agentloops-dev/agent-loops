@@ -137,6 +137,23 @@ func (o *offers) of(id wire.UUID, kind wire.NeedKind) (offered []time.Time, with
 	return offered, withdrawn
 }
 
+// withdrawnLast is whether agent id's need of kind was offered and a withdraw came after
+// its last offer.
+func (o *offers) withdrawnLast(id wire.UUID, kind wire.NeedKind) bool {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	offered, withdrawn := false, false
+	for _, m := range o.sent {
+		if m.Need != nil && m.Need.Kind == kind && m.Need.AgentID != nil && *m.Need.AgentID == id {
+			offered, withdrawn = true, false
+		}
+		if m.Withdraw != nil && offered {
+			withdrawn = true
+		}
+	}
+	return withdrawn
+}
+
 // cardKind is one of the two cards: its notification, its pending read, its answer.
 type cardKind struct {
 	name, prompt, notification, pending string
@@ -259,6 +276,62 @@ func TestEachCardShowsOnEveryClientAndOneAnswerWins(t *testing.T) {
 			k.readLate(t, d, c, agent, card)
 			k.oneAnswerWins(t, d, control, agent, card, one, two)
 		})
+	}
+}
+
+// An offer that is still on its way to the control plane when the card is answered goes
+// before the answer's withdraw (#6627): the control plane does not keep a card that was
+// answered. The tell holds the card's offer until the answer's round has had time to
+// withdraw it; the rounds send in their order, so the withdraw comes last.
+func TestAnOfferStillOnItsWayGoesBeforeItsWithdraw(t *testing.T) {
+	for _, k := range cardKinds {
+		t.Run(k.name, func(t *testing.T) {
+			t.Parallel()
+			k.offerBeforeWithdraw(t)
+		})
+	}
+}
+
+func (k cardKind) offerBeforeWithdraw(t *testing.T) {
+	t.Helper()
+	fakeRuntimes(t)
+	d, c := start(t, t.TempDir())
+	control := &offers{}
+	held, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	d.SetControl(func(method string, params any) {
+		if n, ok := params.(wire.AttentionNeed); ok && n.Need != nil {
+			once.Do(func() {
+				close(held)
+				select {
+				case <-release:
+				case <-afterLimit(t):
+				}
+			})
+		}
+		control.tell(method, params)
+	})
+	one := listen(t, d)
+	agent := k.start(t, c, 1, t.TempDir())
+	h := one.wait(t, "the client hears the "+k.name+" card", k.raised(agent))
+	card, _, _ := k.card(h.params)
+	select {
+	case <-held:
+	case <-afterLimit(t):
+		t.Fatal("the card was never offered to the control plane")
+	}
+	method, params := k.answer(card, 0)
+	one.send(100, method, params)
+	// Time for the answer's round to withdraw the card, before its offer goes. The
+	// answer's round waits for the offer to go, so the card goes after the release.
+	time.AfterFunc(200*time.Millisecond, func() { close(release) })
+	one.wait(t, "the client sees the card go", k.gone(card))
+	waitFor(t, "the turn's end", func() bool { return d.Store.Agent(agent).State == wire.AgentStateFinished })
+	d.reconsider()
+	if !control.withdrawnLast(agent, k.need) {
+		control.mu.Lock()
+		defer control.mu.Unlock()
+		t.Fatalf("the control plane was not told last that the card is gone: %+v", control.sent)
 	}
 }
 
