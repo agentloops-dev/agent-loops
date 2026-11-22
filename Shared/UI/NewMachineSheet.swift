@@ -104,6 +104,8 @@ struct NewMachineSheet: View {
         var kind: String
         var choices: [String]
         var costs: [String: String]
+        /// Each choice as a person reads it (`x-titles`, #6073), such as San Francisco 3.
+        var titles: [String: String] = [:]
         var placeholder: String?
 
         static func read(_ schema: JSONValue) -> [Field] {
@@ -119,6 +121,7 @@ struct NewMachineSheet: View {
                              kind: choices.isEmpty ? (property["type"]?.stringValue ?? "string") : "enum",
                              choices: choices,
                              costs: (property["x-costs"]?.objectValue ?? [:]).compactMapValues(\.stringValue),
+                             titles: (property["x-titles"]?.objectValue ?? [:]).compactMapValues(\.stringValue),
                              placeholder: property["description"]?.stringValue)
             }
         }
@@ -328,7 +331,8 @@ struct NewMachineSheet: View {
         case "enum":
             Picker(field.title, selection: binding(field, default: field.choices.first ?? "")) {
                 ForEach(field.choices, id: \.self) { choice in
-                    Text(field.costs[choice].map { "\(choice) — \($0)" } ?? choice).tag(choice)
+                    // A size's title has its price already (#6577).
+                    Text(field.titles[choice] ?? field.costs[choice].map { "\(choice) — \($0)" } ?? choice).tag(choice)
                 }
             }
         case "boolean":
