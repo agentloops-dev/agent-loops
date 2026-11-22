@@ -358,7 +358,16 @@ private struct WorkRowsList: View {
         let latest = kind == .release ? WorkReleaseLook.latest(list.all) : []
         // The sessions this app knows, of every machine (#5453): a row shows the one that works on its item now.
         let agents = kind == .release ? [] : model.workAgents
-        return ScrollViewReader { reader in
+        // Work's cache (#6353): the footer is a bar under the list that stays at the bottom of the page (#6639), so a
+        // save, a refused change with Try again, and Last update show with no scroll, also on row 1 of 300.
+        return VStack(spacing: 0) {
+            rows(several: several, latest: latest, agents: agents)
+            if list.cacheOn { WorkListBar(model: model, list: list, kind: kind) }
+        }
+    }
+
+    private func rows(several: Bool, latest: Set<String>, agents: [Agent]) -> some View {
+        ScrollViewReader { reader in
             selectable {
                 WorkListStrips(list: list, lines: lines)
                 // The first `drawn` rows (#6633); the footer draws 100 more as it shows.
@@ -436,49 +445,28 @@ private struct WorkListFooter: View {
 
     /// The end of the list (lists.md sections 2 and 5): the next page loads when this row shows,
     /// with "Loading more…"; a page that failed says so with Try again; at the end, the count.
+    /// With Work's cache on, the bar under the list says these (#6639), and this row only reads the next page.
     var body: some View {
         let shown = list.rows.count
         return Group {
-            if list.loadingMore {
+            if list.cacheOn {
+                Color.clear.frame(height: 1)
+            } else if list.loadingMore {
                 HStack(spacing: 6) {
                     ProgressView().controlSize(.small)
-                    Text(WorkLook.loadingMore(shown: shown, total: total))
+                    Text(WorkLook.loadingMore(shown: shown, total: WorkListBar.total(list)))
                 }
             } else if let failed = list.pageProblem {
-                HStack(spacing: 8) {
-                    Text(WorkLook.couldNotLoadMore).help(failed)
-                    Button(WorkLook.tryAgain) { Task { await list.loadMore(model: model) } }.buttonStyle(.paper)
-                }
-            } else if list.cacheOn {
-                // Work's cache (#6353): "100 of 304 issues · Last update 2 min ago" (#5139, #5967), and a change's
-                // "Saving #6311…" or why the forge refused it, with Try again, before it (#6354).
-                HStack(spacing: 6) {
-                    if let saves = model.workSaves, let line = saves.line {
-                        WorkSaveLine(line: line) {
-                            if let cache = model.workCache { saves.retry(model: model, cache: cache) }
-                        }
-                        Spacer(minLength: 12)
-                    }
-                    Text(WorkLook.shownOf(kind, shown: shown, more: list.hasMore, total: total))
-                    // While the machines are asked (#6638): the kept rows stay, and this says a read runs.
-                    if list.reading {
-                        Text(verbatim: "·")
-                        ProgressView().controlSize(.mini)
-                        Text(WorkLook.refreshing)
-                    } else if let read = list.cacheRead {
-                        Text(verbatim: "·")
-                        LastUpdateText(read: read)
-                    }
-                }
+                WorkPageFailed(why: failed) { Task { await list.loadMore(model: model) } }
             } else {
-                Text(WorkLook.endWords(kind, shown: shown, more: list.hasMore, total: total))
+                Text(WorkLook.endWords(kind, shown: shown, more: list.hasMore, total: WorkListBar.total(list)))
             }
         }
         .appText(.fine)
         .foregroundStyle(.secondary)
         .monospacedDigit()
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 6)
+        .padding(.vertical, list.cacheOn ? 0 : 6)
         .listRowSeparator(.hidden)
         .selectionDisabled()
         // Shown, and again each time it adds rows while it still shows: 100 more of the rows read (#6633), and once
@@ -496,10 +484,70 @@ private struct WorkListFooter: View {
         var drawn: Int
     }
 
+}
+
+/// The footer bar of Work's cache (#6353, #6639; gate 2 of epic #6348), under the list, so it stays in sight: on the
+/// left, a change's "Saving #6311…" or why the forge refused it, with Try again (#6354), else "Loading more…" or a page
+/// that failed; on the right, "100 of 304 issues · Last update 2 min ago" (#5139, #5967), or Refreshing while the
+/// machines are asked (#6638).
+private struct WorkListBar: View {
+    let model: any WorkModel
+    let list: WorkListState
+    let kind: WorkList.Kind
+
+    var body: some View {
+        let shown = list.rows.count
+        let total = Self.total(list)
+        HStack(spacing: 6) {
+            if let saves = model.workSaves, let line = saves.line {
+                WorkSaveLine(line: line) {
+                    if let cache = model.workCache { saves.retry(model: model, cache: cache) }
+                }
+            } else if list.loadingMore {
+                ProgressView().controlSize(.mini)
+                Text(WorkLook.loadingMore(shown: shown, total: total))
+            } else if let failed = list.pageProblem {
+                WorkPageFailed(why: failed) { Task { await list.loadMore(model: model) } }
+            }
+            Spacer(minLength: 12)
+            Text(WorkLook.shownOf(kind, shown: shown, more: list.hasMore, total: total))
+            // While the machines are asked (#6638): the kept rows stay, and this says a read runs.
+            if list.reading {
+                Text(verbatim: "·")
+                ProgressView().controlSize(.mini)
+                Text(WorkLook.refreshing)
+            } else if let read = list.cacheRead {
+                Text(verbatim: "·")
+                LastUpdateText(read: read)
+            }
+        }
+        .appText(.fine)
+        .foregroundStyle(.secondary)
+        .monospacedDigit()
+        .padding(.horizontal, 16)
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity)
+        .background(.bar)
+        .overlay(alignment: .top) { Divider() }
+    }
+
     /// The forge's count of the list (#4396), where it gives one and the list shows all it counts.
-    private var total: Int? {
+    static func total(_ list: WorkListState) -> Int? {
         let totals = list.lists?.map(\.list.total) ?? []
         return list.cacheOn ? WorkLook.cachedListTotal(totals, filter: list.filter) : WorkLook.listTotal(totals, filter: list.filter)
+    }
+}
+
+/// "Could not load more" with Try again, and why on hover.
+private struct WorkPageFailed: View {
+    let why: String
+    let retry: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(WorkLook.couldNotLoadMore).help(why)
+            Button(WorkLook.tryAgain, action: retry).buttonStyle(.paper)
+        }
     }
 }
 

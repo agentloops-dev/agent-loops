@@ -276,8 +276,28 @@ func failure(res *http.Response, body []byte) *GitHubError {
 	case res.StatusCode == http.StatusNotFound:
 		return &GitHubError{Kind: NotFound, Message: "not found on GitHub", Refused: true}
 	}
-	return &GitHubError{Kind: Failed, Message: fmt.Sprintf("GitHub: HTTP %d", res.StatusCode),
+	return &GitHubError{Kind: Failed, Message: saidWords(res.StatusCode, body),
 		Refused: res.StatusCode == http.StatusForbidden}
+}
+
+// saidWords is a refusal with what GitHub said (#6639): "GitHub said 403 (Resource not accessible by
+// integration)", from the body's message; "GitHub said 403" when the body has none.
+func saidWords(status int, body []byte) string {
+	var said struct {
+		Message string `json:"message"`
+	}
+	words := fmt.Sprintf("GitHub said %d", status)
+	if json.Unmarshal(body, &said) != nil {
+		return words
+	}
+	msg := strings.TrimSpace(said.Message)
+	if msg == "" {
+		return words
+	}
+	if r := []rune(msg); len(r) > 200 {
+		msg = string(r[:200]) + "…"
+	}
+	return words + " (" + strings.TrimSuffix(msg, ".") + ")"
 }
 
 func retryAfter(h http.Header) int {
