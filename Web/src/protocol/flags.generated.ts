@@ -12,5 +12,5 @@ export interface FeatureFlagInfo {
 
 export const featureFlags: readonly FeatureFlagInfo[] = [
   { name: "commit-trailers", title: "Commit trailers", about: "The Commit trailers group in Agents ▸ Policy: the trailers on each agent's commits.", issue: 6373 },
-  { name: "work-cache", title: "Work from this Mac's cache", about: "Work's Issues, Pull requests and an item's page draw what this Mac kept at once, then ask the forge once.", issue: 6353 },
+  { name: "work-cache", title: "Work from this Mac's cache", about: "Work's pages draw what this Mac kept at once, then ask the forge once.", issue: 6353 },
 ];

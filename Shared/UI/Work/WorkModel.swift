@@ -93,19 +93,34 @@ extension WorkModel {
 
     /// The last answer this device kept for what was asked (#4930); nil with none.
     func keptWork<Value: Codable & Sendable>(_: Value.Type, _ group: LocalCopy.WorkGroup, _ asked: String) async -> Value? {
-        guard let copy = workCopy else { return nil }
-        return await copy.work(Value.self, group, asked)
+        await keptWorkRead(Value.self, group, asked)?.value
     }
 
-    /// The last answer this device kept, with when it was read from its host (#5142): the
-    /// "Last update" line of a page drawn from the copy.
+    /// The last answer this device kept, with when it was read from its host (#5142): the "Last update" line of a page
+    /// drawn from the copy. With Work's cache on (#6573) a page's answer is in the cache, and only pictures are in the
+    /// copy.
     func keptWorkRead<Value: Codable & Sendable>(_: Value.Type, _ group: LocalCopy.WorkGroup, _ asked: String) async -> (value: Value, at: Date)? {
+        if let cache = workCache, group != .image {
+            let start = ContinuousClock.now
+            guard let kept = await cache.kept(Value.self, group.rawValue, asked: asked) else {
+                WorkCacheLog.note("no kept \(group.rawValue) for \(asked)")
+                return nil
+            }
+            WorkCacheLog.note("drew \(group.rawValue) \(asked) from the kept answer in \(WorkCacheLog.ms(since: start)) ms, 0 forge calls")
+            return (kept.value, kept.read)
+        }
         guard let copy = workCopy else { return nil }
         return await copy.workRead(Value.self, group, asked)
     }
 
-    /// A host's answer, kept for the next open (#4930). Only a host's answers are kept, never what came from the copy.
+    /// A host's answer, kept for the next open (#4930): in Work's cache when it is on (#6573), but pictures, which stay
+    /// in the copy. Only a host's answers are kept, never what came from the copy.
     func keepWork<Value: Codable & Sendable>(_ value: Value, _ group: LocalCopy.WorkGroup, _ asked: String) {
+        if let cache = workCache, group != .image {
+            WorkCacheLog.note("asked \(group.rawValue) \(asked): kept the answer")
+            Task { await cache.keep(value, group.rawValue, asked: asked) }
+            return
+        }
         guard let copy = workCopy else { return }
         Task { await copy.keepWork(value, group, asked) }
     }
@@ -143,10 +158,13 @@ extension WorkModel {
         } catch {
             // The control plane did not answer: none, as from a machine that cannot be read.
         }
-        // With Work's cache on (#6353) the local copy keeps nothing of Work's but pictures.
-        if !boards.isEmpty, workCache == nil { keepWork(boards, .boards, order.map(\.rawValue).joined(separator: ",")) }
+        // Kept in Work's cache when it is on (#6573), else in the local copy, for the Board menu's next open.
+        if !boards.isEmpty { keepWork(boards, .boards, workBoardsAsked) }
         return boards
     }
+
+    /// What the boards are kept under: the machines that narrow to a board, in their order.
+    var workBoardsAsked: String { boardMachines.map(\.id.rawValue).joined(separator: ",") }
 
     /// Each machine's boards, a call to each (no control plane): the machines' own order, the home
     /// one first, so the same board keeps the same name.

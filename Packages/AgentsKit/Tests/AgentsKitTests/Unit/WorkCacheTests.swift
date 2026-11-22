@@ -212,11 +212,60 @@ struct WorkCacheTests {
         #expect(await cache.answer(pulls) != nil)
     }
 
+    /// #6573: a page's answer of its own shape (a plan, a timeline, the boards) is kept by the page and what it asked,
+    /// with when it was read, and across a launch.
+    @Test func aPagesAnswerIsKeptByThePageAndWhatItAsked() async throws {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("work-cache-\(UUID().uuidString).sqlite")
+        defer {
+            for suffix in ["", "-wal", "-shm"] { try? FileManager.default.removeItem(atPath: file.path + suffix) }
+        }
+        let clock = Clock()
+        do {
+            let cache = try makeCache(clock, file: file)
+            #expect(await cache.kept([String].self, "plan", asked: "github:acme/api#1") == nil)
+            await cache.keep(["one", "two"], "plan", asked: "github:acme/api#1")
+            clock.move(5)
+            await cache.keep(["three"], "plan", asked: "github:acme/api#1")
+            await cache.keep(["other"], "plan", asked: "github:acme/api#2")
+            await cache.keep(["boards"], "boards", asked: "github:acme/api#1")
+        }
+        let again = try makeCache(clock, file: file)
+        let plan = try #require(await again.kept([String].self, "plan", asked: "github:acme/api#1"))
+        #expect(plan.value == ["three"], "the newer answer replaced the older")
+        #expect(plan.read == clock.now)
+        #expect(await again.kept([String].self, "plan", asked: "github:acme/api#2")?.value == ["other"])
+        #expect(await again.kept([String].self, "boards", asked: "github:acme/api#1")?.value == ["boards"])
+        #expect(await again.kept(Int.self, "plan", asked: "github:acme/api#1") == nil, "one of another form")
+    }
+
+    @Test func aPagesAnswerOverItsBoundIsNotKept() async throws {
+        let cache = try makeCache(Clock(), bounds: WorkCache.Bounds(pageBytes: 64))
+        await cache.keep("small", "deploys", asked: "all")
+        await cache.keep(String(repeating: "x", count: 100), "deploys", asked: "all")
+        #expect(await cache.kept(String.self, "deploys", asked: "all") == nil, "the old answer went, so the page asks again")
+    }
+
+    @Test func overTheBoundThePagesAnswersGoBeforeTheLists() async throws {
+        let measure = try makeCache(Clock())
+        await measure.keepPage(issues, host: mac, page: 0, list: page(1...20))
+        let list = await measure.bytes()
+        let clock = Clock()
+        let cache = try makeCache(clock, bounds: WorkCache.Bounds(bytes: list + 1024))
+        await cache.keepPage(issues, host: mac, page: 0, list: page(1...20))
+        clock.move(1)
+        await cache.keep(String(repeating: "t", count: 2048), "timeline", asked: "p")
+        #expect(await cache.bytes() <= list + 1024)
+        #expect(await cache.kept(String.self, "timeline", asked: "p") == nil)
+        #expect(await cache.answer(issues) != nil)
+    }
+
     @Test func forgetRemovesEverything() async throws {
         let cache = try makeCache(Clock())
         await cache.keepPage(issues, host: mac, page: 0, list: page(1...3))
+        await cache.keep("plan", "plan", asked: "a")
         await cache.forget()
         #expect(await cache.answer(issues) == nil)
+        #expect(await cache.kept(String.self, "plan", asked: "a") == nil)
         #expect(await cache.bytes() == 0)
     }
 

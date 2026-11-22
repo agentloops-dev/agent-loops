@@ -18,6 +18,8 @@ final class WorkListState {
     var lineage: [DaemonAPI.ReportNode] = []
     /// The boards the Board menu offers (#3282), read with the list.
     var boards: [DaemonAPI.ProjectBoard] = []
+    /// The boards were asked this run, with Work's cache on (#6573): the kept ones draw first, and one ask a run follows.
+    private var boardsRead = false
     var lineageCursor: String?
     var problem: String?
     /// Why the last page after the first did not load: one line at the end of the list, and Try again.
@@ -140,6 +142,10 @@ final class WorkListState {
             cacheShown = query
             WorkCacheLog.note("drew \(kind.rawValue) \(query.state) \(query.sort) from the kept answer: "
                 + "\((lists ?? []).reduce(0) { $0 + $1.list.items.count }) items in \(WorkCacheLog.ms(since: start)) ms, 0 forge calls")
+            if kind == .issue, boards.isEmpty, let keptBoards = await model.keptWork([DaemonAPI.ProjectBoard].self, .boards, model.workBoardsAsked),
+               ask == mine, boards.isEmpty {
+                boards = keptBoards
+            }
         }
         guard !ids.isEmpty else {
             if lists == nil { lists = [] }
@@ -179,10 +185,12 @@ final class WorkListState {
             lineage = known.nodes
             lineageCursor = known.cursor
         }
-        // The Board menu's boards, once a run: a board does not change with each list.
-        if kind == .issue, boards.isEmpty {
+        // The Board menu's boards, once a run: a board does not change with each list. The kept ones drew already.
+        if kind == .issue, !boardsRead {
             let read = await model.workBoards()
-            if ask == mine { boards = read }
+            guard ask == mine else { return }
+            boardsRead = true
+            if !read.isEmpty || boards.isEmpty { boards = read }
         }
     }
 
