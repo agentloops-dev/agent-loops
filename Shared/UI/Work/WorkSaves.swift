@@ -51,8 +51,10 @@ final class WorkSaves {
             WorkCacheLog.note("saving \(node.kind) \(node.ref): \(change.words(node.ref))")
             do {
                 let done = try await model.forge(change.method, change.request(node), returning: DaemonAPI.ForgeDone.self, on: host)
-                await cache.settle(node)
+                // The forge's item replaces the optimistic value when it is newer; one as old (a read that did not
+                // see the write yet) does not undo it. Then a later read replaces it as usual.
                 if let item = done.item { await cache.keep(items: [item]) }
+                await cache.settle(node)
                 WorkCacheLog.note("saved \(node.kind) \(node.ref)\(done.item == nil ? " (no item in the answer)" : "")")
             } catch {
                 if let old { await cache.edit(node) { change.restore(from: old, into: &$0) } }
