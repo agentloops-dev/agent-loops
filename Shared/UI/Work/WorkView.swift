@@ -455,8 +455,8 @@ private struct WorkListFooter: View {
 }
 
 /// The footer bar of a Work list (#6639, #5968; gate 2 of epic #6348), under the list, so it stays in sight. On the
-/// left, a change's "Saving #6311…" or why the forge refused it, with Try again (#6354); else "Loading more…" or a page
-/// that failed; else the read: Loading…, Updating…, From this device, or what failed with Try again. On the right,
+/// left, a change's "Saving #6311…" or why the forge refused it, with Try again (#6354); else the read: Loading…,
+/// Updating…, From this device, or what failed with Try again; else "Loading more…" or a page that failed. On the right,
 /// "100 of 304 issues · Last update 2 min ago" (#5139, #5967).
 private struct WorkListBar: View {
     let model: any WorkModel
@@ -475,13 +475,14 @@ private struct WorkListBar: View {
                 WorkSaveLine(line: line) {
                     if let cache = model.workCache { saves.retry(model: model, cache: cache) }
                 }
+            } else if state != .none {
+                // A read that runs or failed says so before a next page does: a Refresh says Updating… (#5968).
+                WorkReadLine(state: state) { list.asked += 1 }
             } else if list.loadingMore {
                 ProgressView().controlSize(.mini)
                 Text(WorkLook.loadingMore(shown: shown, total: total))
             } else if let failed = list.pageProblem {
                 WorkPageFailed(why: failed) { Task { await list.loadMore(model: model) } }
-            } else {
-                WorkReadLine(state: state) { list.asked += 1 }
             }
             Spacer(minLength: 12)
             if list.lists != nil, state != .couldNotRead, state != .loading {
