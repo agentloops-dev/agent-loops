@@ -282,6 +282,32 @@ struct WorkCacheTests {
         #expect(await cache.answer(issues) != nil)
     }
 
+    /// #6643: the bound is checked on a running count, not a sum over every row; it stays equal to the sum through
+    /// each write, replace, cut and trim.
+    @Test func theRunningByteCountEqualsTheRowsSum() async throws {
+        let clock = Clock()
+        let cache = try makeCache(clock, bounds: WorkCache.Bounds(bytes: 24 * 1024, memoItems: 30))
+        for index in 0..<6 {
+            clock.move(1)
+            let query = WorkCache.Query(kind: .issue, label: "l\(index)")
+            await cache.keepPage(query, host: mac, page: 0, list: page((index * 20 + 1)...(index * 20 + 20)))
+            #expect(await cache.bytes() == cache.summedBytes())
+        }
+        await cache.keepPage(issues, host: mac, page: 0, list: page(1...5))
+        await cache.keepPage(issues, host: mac, page: 0, list: page(1...3))
+        await cache.keep(items: [item(2, title: "Renamed", updated: 10)])
+        await cache.edit(item(3).node) { $0.title = "Edited" }
+        await cache.keepDetail(DaemonAPI.ForgeItemDetail(item: item(1), body: "body"))
+        await cache.keepDetail(DaemonAPI.ForgeItemDetail(item: item(1), body: "a longer body"))
+        await cache.keep("plan", "plan", asked: "a")
+        await cache.keep(String(repeating: "x", count: 5 * 1024 * 1024), "plan", asked: "a")
+        #expect(await cache.bytes() == cache.summedBytes())
+        #expect(await cache.bytes() <= 24 * 1024)
+        #expect(await cache.answer(issues)?.hosts.first?.items.count == 3)
+        await cache.forget()
+        #expect(await cache.summedBytes() == 0)
+    }
+
     @Test func forgetRemovesEverything() async throws {
         let cache = try makeCache(Clock())
         await cache.keepPage(issues, host: mac, page: 0, list: page(1...3))

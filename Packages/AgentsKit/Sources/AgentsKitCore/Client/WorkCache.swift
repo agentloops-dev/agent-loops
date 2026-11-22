@@ -152,14 +152,17 @@ public actor WorkCache: WorkCaching {
         /// A page's kept answer: one over it is not kept, so the page asks again next time.
         public var pageBytes: Int
         public var bytes: Int
+        /// The items kept decoded in memory (#6643). Over it, a load keeps only the items it asks for.
+        public var memoItems: Int
 
         public init(itemBytes: Int = 4 * 1024, bodyBytes: Int = 64 * 1024, comments: Int = 50,
-                    pageBytes: Int = 4 * 1024 * 1024, bytes: Int = 200 * 1024 * 1024) {
+                    pageBytes: Int = 4 * 1024 * 1024, bytes: Int = 200 * 1024 * 1024, memoItems: Int = 5000) {
             self.itemBytes = itemBytes
             self.bodyBytes = bodyBytes
             self.comments = comments
             self.pageBytes = pageBytes
             self.bytes = bytes
+            self.memoItems = memoItems
         }
 
         /// The Mac's Work cache.
@@ -193,8 +196,12 @@ public actor WorkCache: WorkCaching {
     private let now: @Sendable () -> Date
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
-    /// Items decoded once, by key: a draw after the first decodes nothing. The file stays the record.
+    /// Items decoded once, by key: a draw after the first decodes nothing. The file stays the record. At most
+    /// `bounds.memoItems`, plus the items of the one load that is over it.
     private var memo: [String: DaemonAPI.ForgeItem] = [:]
+    /// When each query's answer was last drawn, not written yet (#6643): a draw writes nothing, and `trim` writes
+    /// these first, so the least recently drawn answer still goes first.
+    private var drawn: [String: Date] = [:]
     /// The items an optimistic write changed, until it ends (#6354): a copy as old as theirs does not replace them.
     private var edited: Set<String> = []
 
@@ -210,15 +217,28 @@ public actor WorkCache: WorkCaching {
             throw CacheError(message: "could not open \(file?.path ?? "memory"): \(message)")
         }
         handle = Handle(opened)
+        let tables = ["item", "answer", "detail", "page"]
+        // The kept rows' bytes are a running count in `size`, kept by triggers (#6643), so `bytes()` reads one row.
+        // An older file counts its rows once. `recursive_triggers` makes a REPLACE fire the delete trigger.
+        let sums = tables.map { "(SELECT ifnull(sum(length(json)), 0) FROM \($0))" }.joined(separator: " + ")
+        let triggers = tables.flatMap { table in [
+            "CREATE TRIGGER IF NOT EXISTS \(table)_in AFTER INSERT ON \(table) BEGIN UPDATE size SET bytes = bytes + length(NEW.json); END",
+            "CREATE TRIGGER IF NOT EXISTS \(table)_out AFTER DELETE ON \(table) BEGIN UPDATE size SET bytes = bytes - length(OLD.json); END",
+            "CREATE TRIGGER IF NOT EXISTS \(table)_set AFTER UPDATE OF json ON \(table) BEGIN UPDATE size SET bytes = bytes - length(OLD.json) + length(NEW.json); END",
+        ] }
         for sql in [
             "PRAGMA auto_vacuum=INCREMENTAL",
+            "PRAGMA recursive_triggers=ON",
             "PRAGMA journal_mode=WAL",
             "PRAGMA synchronous=NORMAL",
             "CREATE TABLE IF NOT EXISTS item(key TEXT PRIMARY KEY, updated REAL NOT NULL, read REAL NOT NULL, json BLOB NOT NULL)",
             "CREATE TABLE IF NOT EXISTS answer(query TEXT NOT NULL, host TEXT NOT NULL, used REAL NOT NULL, json BLOB NOT NULL, PRIMARY KEY(query, host))",
             "CREATE TABLE IF NOT EXISTS detail(key TEXT PRIMARY KEY, read REAL NOT NULL, used REAL NOT NULL, json BLOB NOT NULL)",
             "CREATE TABLE IF NOT EXISTS page(page TEXT NOT NULL, asked TEXT NOT NULL, read REAL NOT NULL, used REAL NOT NULL, json BLOB NOT NULL, PRIMARY KEY(page, asked))",
-        ] where sqlite3_exec(opened, sql, nil, nil, nil) != SQLITE_OK {
+            "BEGIN",
+            "CREATE TABLE IF NOT EXISTS size(bytes INTEGER NOT NULL)",
+            "INSERT INTO size(bytes) SELECT \(sums) WHERE NOT EXISTS (SELECT 1 FROM size)",
+        ] + triggers + ["COMMIT"] where sqlite3_exec(opened, sql, nil, nil, nil) != SQLITE_OK {
             throw CacheError(message: String(cString: sqlite3_errmsg(opened)))
         }
     }
@@ -234,7 +254,7 @@ public actor WorkCache: WorkCaching {
             }
         }
         guard !kept.isEmpty else { return nil }
-        try? run("UPDATE answer SET used = ? WHERE query = ?", [.real(now()), .text(key)])
+        drawn[key] = now()
         let all = kept.flatMap { $0.kept.pages.flatMap(\.refs) }
         load(all)
         return Answer(hosts: kept.map { host, kept in
@@ -356,7 +376,12 @@ public actor WorkCache: WorkCaching {
 
     /// Decodes the keys' items that are not in memory yet, from the file.
     private func load(_ keys: [String]) {
-        let missing = Array(Set(keys.filter { memo[$0] == nil }))
+        var missing = Array(Set(keys.filter { memo[$0] == nil }))
+        if memo.count + missing.count > bounds.memoItems {
+            let asked = Set(keys)
+            memo = memo.filter { asked.contains($0.key) }
+            missing = Array(asked.subtracting(memo.keys))
+        }
         let chunk = 500
         for start in stride(from: 0, to: missing.count, by: chunk) {
             let part = missing[start..<min(start + chunk, missing.count)]
@@ -441,8 +466,15 @@ public actor WorkCache: WorkCaching {
 
     // MARK: Bounds
 
-    /// The kept rows' bytes: what `bounds.bytes` bounds.
+    /// The kept rows' bytes: what `bounds.bytes` bounds. A running count, so it costs one row (#6643).
     public func bytes() -> Int {
+        var total = 0
+        try? rows("SELECT bytes FROM size") { s in total = Int(sqlite3_column_int64(s, 0)) }
+        return total
+    }
+
+    /// The kept rows' bytes, summed over every row: what the running count must equal (the tests).
+    func summedBytes() -> Int {
         var total = 0
         try? rows("""
         SELECT (SELECT ifnull(sum(length(json)), 0) FROM item) + (SELECT ifnull(sum(length(json)), 0) FROM answer)
@@ -451,12 +483,30 @@ public actor WorkCache: WorkCaching {
         return total
     }
 
+    /// Writes when the answers were last drawn.
+    private func writeDrawn() {
+        for (key, at) in drawn {
+            try? run("UPDATE answer SET used = ? WHERE query = ?", [.real(at), .text(key)])
+        }
+        drawn = [:]
+    }
+
     /// Brings the file under `bounds.bytes`, to nine tenths of it so the next page does not trim again: bodies first,
-    /// the least recently opened first; then the pages' answers, the least recently drawn first; then the lists'
-    /// answers, the least recently drawn first, with the items that no kept answer holds.
+    /// the least recently opened first; then the pages' answers, the least recently drawn first; then the items that
+    /// no kept answer or body holds; then the lists' answers, the least recently drawn first, with the items that no
+    /// other kept answer holds. One transaction, and each table is read once (#6643).
     func trim() {
+        guard (try? run("BEGIN")) != nil else { return }
+        writeDrawn()
         var total = bytes()
-        guard total > bounds.bytes else { return }
+        guard total > bounds.bytes else {
+            try? run("COMMIT")
+            return
+        }
+        defer {
+            try? run("COMMIT")
+            try? run("PRAGMA incremental_vacuum")
+        }
         let target = bounds.bytes / 10 * 9
         var details: [(key: String, bytes: Int)] = []
         try? rows("SELECT key, length(json) FROM detail ORDER BY used") { s in
@@ -474,30 +524,39 @@ public actor WorkCache: WorkCaching {
             try? run("DELETE FROM page WHERE page = ? AND asked = ?", [.text(page.page), .text(page.asked)])
             total -= page.bytes
         }
-        var answers: [(query: String, host: String)] = []
-        try? rows("SELECT query, host FROM answer ORDER BY used") { s in answers.append((text(s, 0), text(s, 1))) }
+        guard total > target else { return }
+        // How many kept answers and bodies hold each item: an item goes when the last one goes.
+        var holders: [String: Int] = [:]
+        var answers: [(query: String, host: String, bytes: Int, refs: Set<String>)] = []
+        try? rows("SELECT query, host, length(json), json FROM answer ORDER BY used") { s in
+            let refs = Set((try? decoder.decode(Kept.self, from: blob(s, 3)))?.pages.flatMap(\.refs) ?? [])
+            for ref in refs { holders[ref, default: 0] += 1 }
+            answers.append((text(s, 0), text(s, 1), Int(sqlite3_column_int64(s, 2)), refs))
+        }
+        try? rows("SELECT key FROM detail") { s in holders[text(s, 0), default: 0] += 1 }
+        var sizes: [String: Int] = [:]
+        try? rows("SELECT key, length(json) FROM item") { s in sizes[text(s, 0)] = Int(sqlite3_column_int64(s, 1)) }
+        var drop: [String] = []
+        for (key, size) in sizes where holders[key] == nil {
+            drop.append(key)
+            total -= size
+        }
         for answer in answers where total > target {
             try? run("DELETE FROM answer WHERE query = ? AND host = ?", [.text(answer.query), .text(answer.host)])
-            dropUnheldItems()
-            total = bytes()
-        }
-        try? run("PRAGMA incremental_vacuum")
-    }
-
-    /// Deletes the items that no kept answer or page holds.
-    private func dropUnheldItems() {
-        var held = Set<String>()
-        try? rows("SELECT json FROM answer") { s in
-            if let kept = try? decoder.decode(Kept.self, from: blob(s, 0)) {
-                held.formUnion(kept.pages.flatMap(\.refs))
+            total -= answer.bytes
+            for ref in answer.refs {
+                holders[ref, default: 1] -= 1
+                guard holders[ref] == 0, let size = sizes[ref] else { continue }
+                drop.append(ref)
+                total -= size
             }
         }
-        try? rows("SELECT key FROM detail") { s in held.insert(text(s, 0)) }
-        var all: [String] = []
-        try? rows("SELECT key FROM item") { s in all.append(text(s, 0)) }
-        for key in all where !held.contains(key) {
-            try? run("DELETE FROM item WHERE key = ?", [.text(key)])
-            memo[key] = nil
+        let chunk = 500
+        for start in stride(from: 0, to: drop.count, by: chunk) {
+            let part = drop[start..<min(start + chunk, drop.count)]
+            let marks = Array(repeating: "?", count: part.count).joined(separator: ",")
+            try? run("DELETE FROM item WHERE key IN (\(marks))", part.map { .text($0) })
+            for key in part { memo[key] = nil }
         }
     }
 
@@ -508,6 +567,7 @@ public actor WorkCache: WorkCaching {
         try? run("DELETE FROM page")
         try? run("PRAGMA incremental_vacuum")
         memo = [:]
+        drawn = [:]
         edited = []
     }
 
