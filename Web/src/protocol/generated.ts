@@ -2213,6 +2213,14 @@ export type CapacityLevel =
   | "full";
 
 /**
+ * What put a machine near or at capacity (#6596): cpu (its load per core) or memory (critical
+ * memory pressure). It stays while the level waits to fall. Absent at ok.
+ */
+export type CapacityReason =
+  | "cpu"
+  | "memory";
+
+/**
  * machine/capacity (#5374): a host tells the control plane its capacity level and 5-minute load per
  * core, on connect and when either moves enough to matter.
  */
@@ -2232,6 +2240,7 @@ export interface CapacityState {
    * capacity". Absent at ok.
    */
   words?: string;
+  reason?: CapacityReason;
 }
 
 /** An approval of an MCP server or skill (#2019, M5): for a group, or for one person. */
@@ -18108,7 +18117,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   CancelWaitRequest: { required: ["agentID"], optional: [] },
   CapReached: { required: ["user", "name", "spentUSD", "capUSD", "until"], optional: ["group"] },
   CapacityReport: { required: ["level"], optional: ["loadPerCore5"] },
-  CapacityState: { required: ["level"], optional: ["words"] },
+  CapacityState: { required: ["level"], optional: ["words", "reason"] },
   CatalogApproval: { required: ["kind", "name", "by", "at"], optional: ["source", "group", "groupName", "user", "userName"] },
   CatalogApprovalList: { required: ["approvals"], optional: [] },
   CatalogAsk: { required: ["kind", "name"], optional: ["source", "why"] },

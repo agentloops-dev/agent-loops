@@ -807,6 +807,14 @@
         "full"
       ]
     },
+    "CapacityReason": {
+      "type": "string",
+      "description": "What put a machine near or at capacity (#6596): cpu (its load per core) or memory (critical memory pressure). It stays while the level waits to fall. Absent at ok.",
+      "enum": [
+        "cpu",
+        "memory"
+      ]
+    },
     "CapacityReport": {
       "type": "object",
       "description": "machine/capacity (#5374): a host tells the control plane its capacity level and 5-minute load per core, on connect and when either moves enough to matter.",
@@ -833,6 +841,9 @@
         "words": {
           "type": "string",
           "description": "The level as a sentence's subject and verb: \"this Mac is near capacity\" or \"this Mac is at capacity\". Absent at ok."
+        },
+        "reason": {
+          "$ref": "#/definitions/CapacityReason"
         }
       },
       "required": [

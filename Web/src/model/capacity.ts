@@ -1,7 +1,7 @@
 // A machine's capacity in words (#4582), as AgentsKitCore's CapacityWords says it on the window's page: the load
 // and the level in the summary, a line that warns at near and full, and the starts that wait. The level and its
 // signals come from machine/usage (#4578).
-import type { CapacityLevel, MachineUsage, ResourceState } from "../protocol/generated";
+import type { CapacityLevel, CapacityReason, MachineUsage, ResourceState } from "../protocol/generated";
 import { oneDecimal } from "./disk";
 
 /** "Load 2.4 per core", in the summary. */
@@ -12,6 +12,14 @@ export function loadWords(perCore: number): string {
 /** "Near capacity" or "At capacity"; null at ok, where the summary says nothing of it. */
 export function levelWords(level: CapacityLevel | undefined): string | null {
   return level === "near" ? "Near capacity" : level === "full" ? "At capacity" : null;
+}
+
+/** A machine's row (#6596): "At CPU capacity" or "Near memory capacity"; the level's words when the machine does not say
+ *  why. null at ok. CapacityWords.level(_:reason:) says the same. */
+export function levelReasonWords(level: CapacityLevel | undefined, reason: CapacityReason | undefined): string | null {
+  const words = levelWords(level);
+  if (!words || !reason) return words;
+  return words.replace(" capacity", ` ${reason === "cpu" ? "CPU" : "memory"} capacity`);
 }
 
 /** The class for the level's tint: attention at near, failure at full. */

@@ -2311,6 +2311,12 @@ const CapacityLevelOk CapacityLevel = "ok"
 const CapacityLevelNear CapacityLevel = "near"
 const CapacityLevelFull CapacityLevel = "full"
 
+// What put a machine near or at capacity (#6596): cpu (its load per core) or memory (critical memory pressure). It stays while the level waits to fall. Absent at ok.
+type CapacityReason string
+
+const CapacityReasonCpu CapacityReason = "cpu"
+const CapacityReasonMemory CapacityReason = "memory"
+
 // machine/capacity (#5374): a host tells the control plane its capacity level and 5-minute load per core, on connect and when either moves enough to matter.
 type CapacityReport struct {
 	Level CapacityLevel `json:"level"`
@@ -2324,6 +2330,8 @@ type CapacityState struct {
 
 	// The level as a sentence's subject and verb: "this Mac is near capacity" or "this Mac is at capacity". Absent at ok.
 	Words *string `json:"words,omitzero"`
+
+	Reason *CapacityReason `json:"reason,omitzero"`
 }
 
 // An approval of an MCP server or skill (#2019, M5): for a group, or for one person.

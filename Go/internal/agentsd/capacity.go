@@ -91,6 +91,34 @@ func capacityTarget(s capacitySample) (wire.CapacityLevel, string) {
 	return wire.CapacityLevelOk, ""
 }
 
+// levelSignal is the signal that holds level after a look: none at ok; this look's when it
+// gave the level itself; else the one before, while the level waits to fall (#6596).
+func levelSignal(level, target wire.CapacityLevel, signal, was string) string {
+	switch {
+	case capacityRank[level] == 0:
+		return ""
+	case signal != "" && capacityRank[target] == capacityRank[level]:
+		return signal
+	case was == "":
+		return "load"
+	}
+	return was
+}
+
+// capacityReason is a signal as the rows say it: cpu for the load, memory for its pressure.
+func capacityReason(signal string) *wire.CapacityReason {
+	var r wire.CapacityReason
+	switch signal {
+	case "load":
+		r = wire.CapacityReasonCpu
+	case "memory_pressure":
+		r = wire.CapacityReasonMemory
+	default:
+		return nil
+	}
+	return &r
+}
+
 var capacityRank = map[wire.CapacityLevel]int{"": 0, wire.CapacityLevelOk: 0, wire.CapacityLevelNear: 1, wire.CapacityLevelFull: 2}
 
 // nextCapacity is the level after a look: up to the target at once; down only when this
@@ -123,6 +151,9 @@ type capacityBook struct {
 	// higher target of them.
 	capBelow     int
 	capLastBelow wire.CapacityLevel
+	// capSignal is the signal that set capLevel ("load" or "memory_pressure"; "" at ok), kept
+	// while the level waits to fall (#6596).
+	capSignal string
 	// What machine/capacity last told the control plane (#5374).
 	capSent capacitySent
 }
@@ -165,6 +196,9 @@ func (d *Daemon) checkCapacity(ctx context.Context) {
 	}
 	level, lastBelow, below := nextCapacity(was, target, d.capLastBelow, d.capBelow)
 	d.capLevel, d.capLastBelow, d.capBelow = level, lastBelow, below
+	wasSignal := d.capSignal
+	d.capSignal = levelSignal(level, target, signal, wasSignal)
+	signalMoved := d.capSignal != wasSignal
 	d.capSample, d.capSampled = s, true
 	d.capMu.Unlock()
 	d.sendCapacitySoon(level, s.load5)
@@ -175,6 +209,11 @@ func (d *Daemon) checkCapacity(ctx context.Context) {
 		d.goAfterTurn("helper queue", d.startQueuesAfterLook)
 	}
 	if level == was {
+		// The same level for another reason (#6596): the rows say the new one.
+		if signalMoved {
+			state := d.capacityState()
+			d.goJob("capacity/changed", func() { Broadcast(d, wire.NotifyCapacityChanged, state) })
+		}
 		return
 	}
 	log.Printf("capacity: %s (was %s; load %.2f per core, memory pressure %s, swap %.0f%%)",
@@ -313,10 +352,17 @@ func capacityLevelWords(level wire.CapacityLevel) string {
 	return ""
 }
 
-// capacityState is capacity/state and capacity/changed (#4748): the level now.
+// capacityState is capacity/state and capacity/changed (#4748): the level now, and what set
+// it (#6596).
 func (d *Daemon) capacityState() wire.CapacityState {
 	level := d.capacityLevel()
+	d.capMu.Lock()
+	signal := d.capSignal
+	d.capMu.Unlock()
 	st := wire.CapacityState{Level: level}
+	if capacityRank[level] > 0 {
+		st.Reason = capacityReason(signal)
+	}
 	if w := capacityLevelWords(level); w != "" {
 		st.Words = &w
 	}
