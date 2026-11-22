@@ -612,6 +612,7 @@ struct AddProviderSheet: View {
     /// Step 2's header: the kind again, its one line and what has no field, and How to set up.
     private func kindHeader(_ kind: Kind) -> some View {
         HStack(alignment: .top, spacing: 10) {
+            // Decorative: the kind's name is beside it.
             Image(icon: kind.symbol).font(.system(size: 17)).foregroundStyle(.secondary)
                 .frame(width: 24).accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
