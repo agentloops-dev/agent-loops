@@ -11,6 +11,8 @@ import (
 	"math"
 	"net"
 	"net/http"
+	"runtime"
+	"runtime/pprof"
 	"sort"
 	"strconv"
 	"strings"
@@ -338,11 +340,17 @@ func (s *Service) gauges() gauges {
 	return g
 }
 
-// MetricsHandler serves /metrics, and nothing else. With a token, only a request that
-// carries it as a bearer token is answered.
+// profiles are the runtime's profiles served beside /metrics (#6583), by their path: what
+// the heap holds and every goroutine's stack, for an operator to read what a live copy
+// holds. Never on the port clients use.
+var profiles = map[string]string{"/debug/pprof/heap": "heap", "/debug/pprof/goroutine": "goroutine"}
+
+// MetricsHandler serves /metrics, the heap and goroutine profiles, and nothing else. With
+// a token, only a request that carries it as a bearer token is answered.
 func (s *Service) MetricsHandler(token string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/metrics" {
+		profile, isProfile := profiles[r.URL.Path]
+		if r.URL.Path != "/metrics" && !isProfile {
 			http.NotFound(w, r)
 			return
 		}
@@ -354,9 +362,34 @@ func (s *Service) MetricsHandler(token string) http.Handler {
 				return
 			}
 		}
+		if isProfile {
+			writeProfile(w, r, profile)
+			return
+		}
 		w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 		s.metrics.write(w, s.gauges())
 	})
+}
+
+// writeProfile writes a runtime profile as net/http/pprof does: the gzipped protobuf that
+// `go tool pprof` reads, or text with ?debug=1 (2 for goroutines gives each stack in full),
+// and for the heap ?gc=1 collects first. It is runtime/pprof, not net/http/pprof, because
+// importing that package puts every profile on http.DefaultServeMux, for any server that
+// one day leaves its handler nil.
+func writeProfile(w http.ResponseWriter, r *http.Request, name string) {
+	debug, _ := strconv.Atoi(r.URL.Query().Get("debug"))
+	if name == "heap" && r.URL.Query().Get("gc") == "1" {
+		runtime.GC()
+	}
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	if debug > 0 {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	} else {
+		w.Header().Set("Content-Type", "application/octet-stream")
+		w.Header().Set("Content-Disposition", `attachment; filename="`+name+`"`)
+	}
+	// The status line is gone once the profile starts, so an error can only end it short.
+	_ = pprof.Lookup(name).WriteTo(w, debug)
 }
 
 // ServeMetrics listens on addr (host:port) for the scraper, apart from the port clients
@@ -380,6 +413,6 @@ func (s *Service) ServeMetrics(addr, token string) (string, error) {
 	s.servers = append(s.servers, srv)
 	s.mu.Unlock()
 	go s.serve(srv, ln, "metrics")
-	s.log("metrics: serving /metrics on " + ln.Addr().String())
+	s.log("metrics: serving /metrics and /debug/pprof/{heap,goroutine} on " + ln.Addr().String())
 	return ln.Addr().String(), nil
 }

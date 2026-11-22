@@ -210,6 +210,31 @@ docker compose -f deploy/compose.yaml exec cp1 wget -qO- --header 'Authorization
 `compose.public.yaml` has them off; docs/how-to/run-the-control-plane-in-the-cloud.md says how
 to turn them on, what each metric counts and how Prometheus scrapes them.
 
+The same port, with the same token, serves the Go runtime's heap and goroutine profiles (#6583):
+`/debug/pprof/heap` and `/debug/pprof/goroutine`, and no other profile. The port clients use
+serves neither. `?debug=1` gives text (`?debug=2` gives each goroutine's stack in full), and
+`?gc=1` collects before the heap is read. With no `debug`, `go tool pprof` reads the file:
+
+```sh
+docker compose -f deploy/compose.yaml exec cp1 wget -qO- --header 'Authorization: Bearer walk-metrics' 'http://127.0.0.1:9791/debug/pprof/heap?debug=1' | head
+docker compose -f deploy/compose.yaml exec cp1 wget -qO- --header 'Authorization: Bearer walk-metrics' http://127.0.0.1:9791/debug/pprof/heap > heap.pb.gz
+go tool pprof -top heap.pb.gz
+```
+
+A profile names the functions that hold memory and every goroutine's stack, so it is behind the
+metrics token, as the metrics are, and the port is never one that Caddy serves.
+
+## Memory
+
+`compose.public.yaml` sets `GOMEMLIMIT=200MiB` for the control plane (#6583). Without a limit,
+the Go runtime lets the heap grow to twice what is live before it collects, and keeps the pages:
+on the e2-micro of `deploy/gcp/up.sh` (969 MB, with Caddy and the OS beside it) the `control`
+container held 376 MB and the VM swapped 330 MB (#6569), where the live data was far less. With the
+limit, the GC collects more often as the heap nears it, so the process gives back what it does
+not hold. The limit is soft: a copy that holds more than 200 MiB still gets the memory, and only
+collects more often. On a machine with more memory, set `GOMEMLIMIT` in `deploy/.env` to about
+a quarter of it (such as `GOMEMLIMIT=1GiB` on 4 GB).
+
 ## Beyond one machine
 
 The same image runs anywhere containers do. Point `AGENTS_STORE` at a bucket of your own
