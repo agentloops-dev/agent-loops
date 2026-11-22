@@ -338,6 +338,17 @@ public enum WorkList {
     /// What a machine the control plane could not reach for a list says (#5592), as the web page's `notAnswered`.
     public static let didNotAnswer = "It did not answer."
 
+    /// How long a list's ask joins the next one for the same query (#6640): the window's restore and the click of one
+    /// open ask once (#6358, finding 3), and an open after it asks again. agentsd joins the asks in flight past this.
+    public static let joinWindow: Duration = .seconds(1)
+
+    /// Whether a list's ask for the same query as the last one joins it, with no forge call (#6640): only while that
+    /// one runs, or within `joinWindow` of its start. A list opened again later in the run asks again.
+    public static func joinsAsk(same: Bool, reading: Bool, since last: Duration?) -> Bool {
+        guard same, let last else { return false }
+        return reading || last < joinWindow
+    }
+
     /// Whether the window asks the control plane for every machine at once (#5592), or each machine itself (#6141).
     /// With one machine, or none, the plane only adds two hops (window to plane, plane back to the machine) and a
     /// way to fail: the machine is asked directly.
