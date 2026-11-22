@@ -191,6 +191,9 @@ bottom (the host daemon). The colour of each label gives the medium.
 The runtimes keep their own data, such as `~/.claude`. The daemon reads their sign-ins
 and never writes them.
 
+No store may grow without bound. [How data stores stay bounded](data-stores.md) says the
+rules each store follows.
+
 ## Related
 
 - [The window and the host](window-and-daemon.md).

@@ -1,18 +1,25 @@
 ---
 name: data-principles
-description: "Alex 2026-11-21 — goal: no store grows unbounded; bounded by size/count, 90-day age-out, config in .agents, roll-ups allowed, each store has a declared kind behind an interface so a file can become a database"
+description: "Alex 2026-11-21/22 — no store grows unbounded: size and count limits, 90-day age-out, config in .agents, roll-up only for time series, a declared kind behind an interface; lean into backends; evict or refuse; eviction async"
 metadata:
   type: project
 ---
 
-Alex's principles for this app's data (2026-11-21). **The goal: no data store grows without bound.**
+Alex's rules for this app's data (2026-11-21, design 2026-11-22). The full text is `docs/explanation/data-stores.md`; epic #6669 has one issue for each store that breaks a rule.
 
-1. **Size:** every store has a byte limit, or a count limit on records of known size.
-2. **Time:** records age out at 90 days at most.
-3. **Config:** configuration is in a `.agents` folder: `<repo>/.agents/` or `~/.agents/`.
-4. **Roll-up:** old detail can become a summary (usage: 168 hours, then daily totals for 90 days, `usage/rollup`). The summary is a store too, so rules 1 and 2 apply to it.
-5. **Kind:** each store is a file today, but must be swappable for a real database later. So each store declares its kind (document, log, time series, graph, blob, key-value, cache, secret) and is reached through an interface of that kind. The control plane's `store.Store` is a key-object interface already; the host daemon has none (2026-11-21).
+**The goal: no data store grows without bound.** Each store is a file today, but must be swappable for a real database later.
 
-**Why:** the worst case of every store stays known, so performance and disk stay predictable ([[bound-data-not-concurrency]]). Config in `.agents` is inspectable and follows the person or the repo.
+1. **Size:** a largest record, and a count or total-size limit on the store.
+2. **Time:** records age out within 90 days.
+3. **Config:** in `<repo>/.agents/` or `~/.agents/`.
+4. **Roll-up:** only time series roll up (usage: hours for 7 days, days for 90). The audit, conversations and logs just age out.
+5. **Kind:** each store declares its kind (small file, document, log, time series, graph, blob, cache, secret) and is reached through that kind's interface.
 
-**How to apply:** a new store names its kind, its interface, its size, count and age bounds and when they are applied (on write or hourly, not only at start or on read). Its config goes in `.agents`. For history, roll up; never keep an unbounded log. The stores that broke a rule on 2026-11-21 are epic #6669, one issue a store; the bus log, Forever conversations and the Mac's Forget were the worst.
+**Why:** the worst case of every store is known ([[bound-data-not-concurrency]]).
+
+**How to apply:**
+- Lean into the backend's own limits (S3 lifecycle, TTLs, JetStream and capped-collection limits, quotas); our code does only the rest (Alex: "the people who built them are smart").
+- Most stores are one small JSON file: use one typed small-file type with declared limits.
+- Each store declares evict (history, logs, caches) or refuse (a person's own data, never evicted).
+- Eviction is asynchronous: a hourly sweep, sooner past a high-water mark. Only the largest-record check and refusing stores check at write.
+- Stores that remember "seen" keep a cutoff time instead of every entry.
