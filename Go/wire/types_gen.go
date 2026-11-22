@@ -3762,6 +3762,9 @@ type ControlMachine struct {
 	// The capabilities this host said in its last machine/hello (#1748). None from a host older than #1748.
 	Capabilities []string `json:"capabilities,omitzero"`
 
+	// The levels of this host's capabilities that are not GA, as it said them in its last machine/hello (#6579). None from a host older than that.
+	Maturity Maturity `json:"maturity,omitzero"`
+
 	// Of the control plane's required capabilities for hosts, the ones this host does not have (#1748). Its state is then needsUpdate.
 	Missing []string `json:"missing,omitzero"`
 
@@ -3888,6 +3891,9 @@ type ControlStatus struct {
 
 	// The capabilities the control plane has (#1748).
 	Capabilities []string `json:"capabilities,omitzero"`
+
+	// The levels of the control plane's capabilities that are not GA (#6579). None from a control plane older than that.
+	Maturity Maturity `json:"maturity,omitzero"`
 
 	Required *RequiredCapabilities `json:"required,omitzero"`
 
@@ -9327,6 +9333,9 @@ type MachineHello struct {
 
 	// The capabilities this host has (#1748): each one whose methods it all serves, and the ones it declares. None from a host older than #1748.
 	Capabilities []string `json:"capabilities,omitzero"`
+
+	// The levels of this host's capabilities that are not GA (#6579). None from a host older than that.
+	Maturity Maturity `json:"maturity,omitzero"`
 }
 
 // The control plane's answer to machine/hello (#4100): what it can do, so the host asks only what it answers, such as machine/accounts with machine.accounts/1. An older control plane answers {}: no list, so the host asks it nothing new.
@@ -9983,6 +9992,16 @@ type MarketplacesListRequest struct {
 
 	Destination *SkillDestination `json:"destination,omitzero"`
 }
+
+// The levels of a part's capabilities that are not GA (#6052, #6579), capability to level, as Packages/Wire/maturity.json has them in that part's build. A capability it does not name is GA. A part older than #6579 sends none, and a client then reads the list it was built with.
+type Maturity map[string]MaturityLevel
+
+// How ready a capability that is not GA is (#6052).
+type MaturityLevel string
+
+const MaturityLevelPilot MaturityLevel = "pilot"
+const MaturityLevelAlpha MaturityLevel = "alpha"
+const MaturityLevelBeta MaturityLevel = "beta"
 
 // The kernel's memory pressure (#4578): macOS kern.memorystatus_vm_pressure_level, or Linux PSI memory (warn when some avg10 is 10% or more, critical when full avg10 is 10% or more).
 type MemoryPressure string

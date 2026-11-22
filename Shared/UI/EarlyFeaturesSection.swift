@@ -17,8 +17,11 @@ extension MaturityClient {
 struct MaturityBadge: View {
     let level: Maturity
 
-    /// The badge of a capability, by the list this client was built with.
-    init(capability: String) { level = EarlyFeatures.level(of: capability) }
+    /// The badge of a capability, by the list this client was built with, or as the part it runs
+    /// on says it (`said`, that host's `maturity`, #6579), when it says one.
+    init(capability: String, said: [String: String]? = nil) {
+        level = EarlyFeatures.level(of: capability, said: said)
+    }
 
     init(level: Maturity) { self.level = level }
 
@@ -52,8 +55,13 @@ struct EarlyFeaturesSection: View {
     /// What the section says with no flag and every feature GA, as the web page's.
     static let none = "Every feature is ready."
 
+    /// What the control plane and each host say of their levels (#6579): a client older than its
+    /// host shows the host's level, the lowest when they differ. Empty for none, and this client
+    /// reads the list it was built with.
+    var said: [[String: String]?] = []
+
     var body: some View {
-        let rows = EarlyFeatures.rows(on: .here)
+        let rows = EarlyFeatures.rows(on: .here, said: said)
         Section {
             if FeatureFlag.allCases.isEmpty && rows.isEmpty {
                 Text(Self.none).foregroundStyle(.secondary)

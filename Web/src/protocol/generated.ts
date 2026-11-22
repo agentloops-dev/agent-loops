@@ -3530,6 +3530,11 @@ export interface ControlMachine {
    */
   capabilities?: string[];
   /**
+   * The levels of this host's capabilities that are not GA, as it said them in its last
+   * machine/hello (#6579). None from a host older than that.
+   */
+  maturity?: Maturity;
+  /**
    * Of the control plane's required capabilities for hosts, the ones this host does not have
    * (#1748). Its state is then needsUpdate.
    */
@@ -3658,6 +3663,11 @@ export interface ControlStatus {
   unjoinedTunnels?: MachineTunnelChanged[];
   /** The capabilities the control plane has (#1748). */
   capabilities?: string[];
+  /**
+   * The levels of the control plane's capabilities that are not GA (#6579). None from a control
+   * plane older than that.
+   */
+  maturity?: Maturity;
   required?: RequiredCapabilities;
   /** Who this client belongs to (#994). */
   person?: ControlPerson;
@@ -8798,6 +8808,11 @@ export interface MachineHello {
    * declares. None from a host older than #1748.
    */
   capabilities?: string[];
+  /**
+   * The levels of this host's capabilities that are not GA (#6579). None from a host older than
+   * that.
+   */
+  maturity?: Maturity;
 }
 
 /**
@@ -9422,6 +9437,19 @@ export interface MarketplacesListRequest {
   kind?: CatalogKind;
   destination?: SkillDestination;
 }
+
+/**
+ * The levels of a part's capabilities that are not GA (#6052, #6579), capability to level, as
+ * Packages/Wire/maturity.json has them in that part's build. A capability it does not name is GA. A
+ * part older than #6579 sends none, and a client then reads the list it was built with.
+ */
+export type Maturity = Record<string, MaturityLevel>;
+
+/** How ready a capability that is not GA is (#6052). */
+export type MaturityLevel =
+  | "pilot"
+  | "alpha"
+  | "beta";
 
 /**
  * The kernel's memory pressure (#4578): macOS kern.memorystatus_vm_pressure_level, or Linux PSI
@@ -18215,7 +18243,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   ControlEndpoint: { required: ["url"], optional: ["pin"] },
   ControlHello: { required: ["v", "name", "control", "nonce", "copy"], optional: ["previous"] },
   ControlInstallProgress: { required: ["name", "step"], optional: [] },
-  ControlMachine: { required: ["id", "name", "platform", "version", "state", "reach"], optional: ["machineID", "signInFrom", "gitFrom", "gitAsks", "tunnel", "workspace", "implementation", "capabilities", "missing", "owner", "capacity", "loadPerCore5", "capacityAt", "setup", "labels", "autoLabels"] },
+  ControlMachine: { required: ["id", "name", "platform", "version", "state", "reach"], optional: ["machineID", "signInFrom", "gitFrom", "gitAsks", "tunnel", "workspace", "implementation", "capabilities", "maturity", "missing", "owner", "capacity", "loadPerCore5", "capacityAt", "setup", "labels", "autoLabels"] },
   ControlMoved: { required: ["url", "controlKey", "name"], optional: ["pin"] },
   ControlNewKey: { required: ["key", "proof"], optional: [] },
   ControlNotice: { required: ["kind", "words"], optional: ["user", "group"] },
@@ -18223,7 +18251,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   ControlPerson: { required: ["id", "name", "role"], optional: ["localOwner"] },
   ControlPush: { required: ["sealed"], optional: [] },
   ControlPushItem: { required: ["needID", "alert"], optional: ["headline"] },
-  ControlStatus: { required: ["name", "version", "machineID"], optional: ["homeHost", "startedAt", "port", "you", "web", "restartable", "publicWeb", "publicViews", "thisMacHost", "folderDetection", "unjoinedTunnels", "capabilities", "required", "person", "joinCommand"] },
+  ControlStatus: { required: ["name", "version", "machineID"], optional: ["homeHost", "startedAt", "port", "you", "web", "restartable", "publicWeb", "publicViews", "thisMacHost", "folderDetection", "unjoinedTunnels", "capabilities", "maturity", "required", "person", "joinCommand"] },
   Cost: { required: ["amount", "currency"], optional: [] },
   CostLimits: { required: [], optional: ["perAgent", "daily", "perAgentTokens", "dailyTokens"] },
   CostState: { required: ["limits", "today", "day", "tokensToday"], optional: ["note", "organisation", "setBy"] },
@@ -18628,7 +18656,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   MachineFolderSent: { required: [], optional: ["state", "folder", "facts", "pack", "read"] },
   MachineForgeBoards: { required: ["machine", "machineName", "boards"], optional: [] },
   MachineForgeList: { required: ["machine", "machineName", "list"], optional: [] },
-  MachineHello: { required: ["version", "platform", "machineID"], optional: ["host", "name", "implementation", "capabilities"] },
+  MachineHello: { required: ["version", "platform", "machineID"], optional: ["host", "name", "implementation", "capabilities", "maturity"] },
   MachineHelloAnswer: { required: [], optional: ["capabilities"] },
   MachineInfo: { required: ["id", "name", "state"], optional: ["ssh", "tunnel", "hostKeyRenews", "cost", "idleTimeoutMinutes", "host", "reason", "joining", "notJoined", "setup"] },
   MachineInstall: { required: ["destination"], optional: ["name", "key", "trust", "tunnel", "provider", "workspace"] },

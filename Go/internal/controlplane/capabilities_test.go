@@ -3,6 +3,7 @@ package controlplane
 import (
 	"context"
 	"encoding/json"
+	"maps"
 	"slices"
 	"strings"
 	"testing"
@@ -43,11 +44,15 @@ func TestStatusAndHostsSayCapabilities(t *testing.T) {
 		!slices.Equal(status.Required.Host, []string{wire.CapHostWire1}) || !slices.Equal(status.Required.Client, []string{wire.CapClientWire1}) {
 		t.Fatalf("control/status: %+v %+v", status.Capabilities, status.Required)
 	}
+	// Its levels (#6579): {} when every capability is GA, never none, which is an older one's.
+	if status.Maturity == nil || !maps.Equal(status.Maturity, wire.MaturityOf(status.Capabilities)) {
+		t.Fatalf("control/status maturity: %#v", status.Maturity)
+	}
 	// The fake host says no list, as a host older than #1748: none, and nothing missing.
 	var hosts []wire.ControlMachine
 	must(t, json.Unmarshal(call(t, window, "", "machines/list", map[string]any{}), &hosts))
 	for _, h := range hosts {
-		if string(h.ID) == box.member.Host && (h.Capabilities != nil || h.Missing != nil || h.State != "online") {
+		if string(h.ID) == box.member.Host && (h.Capabilities != nil || h.Maturity != nil || h.Missing != nil || h.State != "online") {
 			t.Fatalf("an older host: %+v", h)
 		}
 	}
@@ -64,6 +69,45 @@ func TestHelloIsAnsweredWithTheControlPlanesCapabilities(t *testing.T) {
 	answer, ok := result.(wire.MachineHelloAnswer)
 	if err != nil || !ok || !wire.Has(answer.Capabilities, wire.CapMachineAccounts1) || !wire.Has(answer.Capabilities, wire.CapUser5) {
 		t.Fatalf("%#v, %v", result, err)
+	}
+}
+
+// machines/list says the levels a host said in its last machine/hello (#6579), so a client
+// older than the host shows the host's; none once it says none, as a host older than that.
+func TestHostsSayTheLevelsTheirHostSaid(t *testing.T) {
+	t.Parallel()
+	p := startPlane(t, store.NewMemory(), controllink.NewPrivateKey())
+	box := p.host("MACHINE-4")
+	hello := func(levels wire.Maturity) {
+		params, _ := json.Marshal(wire.MachineHello{Version: "0.6.0", Platform: "linux aarch64", MachineID: "MACHINE-4",
+			Capabilities: []string{wire.CapHostWire1, wire.CapChatBranch1}, Maturity: levels})
+		if _, err := p.s.methods.HostSaid(box.member.Host, "machine/hello", params); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_, window := p.client("Window")
+	row := func() wire.ControlMachine {
+		var hosts []wire.ControlMachine
+		must(t, json.Unmarshal(call(t, window, "", "machines/list", map[string]any{}), &hosts))
+		for _, h := range hosts {
+			if string(h.ID) == box.member.Host {
+				return h
+			}
+		}
+		t.Fatal("no row for the host")
+		return wire.ControlMachine{}
+	}
+	hello(wire.Maturity{wire.CapChatBranch1: wire.MaturityLevelBeta})
+	if got := row().Maturity; !maps.Equal(got, wire.Maturity{wire.CapChatBranch1: wire.MaturityLevelBeta}) {
+		t.Fatalf("a beta: %#v", got)
+	}
+	hello(wire.Maturity{})
+	if got := row().Maturity; got == nil || len(got) != 0 {
+		t.Fatalf("every capability GA: %#v", got)
+	}
+	hello(nil)
+	if got := row().Maturity; got != nil {
+		t.Fatalf("a host that says none: %#v", got)
 	}
 }
 

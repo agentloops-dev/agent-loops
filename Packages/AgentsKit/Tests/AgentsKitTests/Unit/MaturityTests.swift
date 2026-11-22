@@ -50,4 +50,25 @@ struct MaturityTests {
             #expect(feature.level != .ga && !feature.title.isEmpty && feature.issue > 0)
         }
     }
+
+    @Test func aClientOlderThanItsHostShowsTheHostsLevel() {
+        // A host that says none is older than #6579: this client's own list.
+        #expect(EarlyFeatures.level(of: "chat.branch/1", said: nil, in: list) == .beta)
+        // One that says its levels: not named is GA there, named is its level.
+        #expect(EarlyFeatures.level(of: "chat.branch/1", said: [:], in: list) == .ga)
+        #expect(EarlyFeatures.level(of: "host.wire/1", said: ["host.wire/1": "alpha"], in: list) == .alpha)
+        // A level this client does not know: its own list.
+        #expect(EarlyFeatures.level(of: "chat.branch/1", said: ["chat.branch/1": "later"], in: list) == .beta)
+    }
+
+    @Test func whereNoOnePartRunsItTheLowestLevelShows() {
+        let parts: [[String: String]?] = [[:], ["chat.branch/1": "alpha"], nil]
+        #expect(EarlyFeatures.lowest(of: "chat.branch/1", said: parts, in: list) == .alpha)
+        #expect(EarlyFeatures.lowest(of: "chat.branch/1", said: [], in: list) == .beta, "no part: its own list")
+        let rows = EarlyFeatures.rows(on: .mac, said: parts, in: list)
+        #expect(rows.map(\.capability) == ["chat.branch/1", "work.cache/1"])
+        #expect(rows.map(\.level) == [.alpha, .pilot])
+        // Every part says GA: no row.
+        #expect(EarlyFeatures.rows(on: .remote, said: [[:]], in: list).isEmpty)
+    }
 }
