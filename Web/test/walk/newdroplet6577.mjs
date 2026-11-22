@@ -14,7 +14,6 @@ const js = JSON.stringify;
 let failed = 0;
 const check = (ok, line) => { if (!ok) failed += 1; console.log(`${ok ? "ok  " : "FAIL"} ${line}`); };
 mkdirSync(out, { recursive: true });
-const section = `document.querySelector("[aria-labelledby=settings-providers]")`;
 const card = `document.querySelector(".provider-card[aria-label='Scratch DigitalOcean']")`;
 const dialog = `document.querySelector("dialog[open]")`;
 
