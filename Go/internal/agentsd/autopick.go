@@ -359,9 +359,10 @@ func applyLevels(runtimeID string, l wire.Levels, values map[string]wire.JSONVal
 }
 
 // matchLevels is the values an agent runs with now, where its own settings match a cell of
-// its runtime: Custom (absent) where none does.
-func (d *Daemon) matchLevels(a *wire.Agent) *wire.Levels {
-	return d.matchLevelsWith(a, d.autoSettings())
+// its runtime: Custom (absent) where none does. Choosing, when given, is the level just chosen
+// for it: two cells can set the same native options, so the new choice stays ticked (#6822).
+func (d *Daemon) matchLevels(a *wire.Agent, choosing ...wire.Levels) *wire.Levels {
+	return d.matchLevelsWith(a, d.autoSettings(), choosing...)
 }
 
 // rematchLevels matches every live agent's levels again, with the Auto settings now
@@ -384,7 +385,7 @@ func (d *Daemon) rematchLevels() {
 	}
 }
 
-func (d *Daemon) matchLevelsWith(a *wire.Agent, settings wire.AutoSettings) *wire.Levels {
+func (d *Daemon) matchLevelsWith(a *wire.Agent, settings wire.AutoSettings, choosing ...wire.Levels) *wire.Levels {
 	offers := a.AdvertisedOptions
 	if len(offers) == 0 {
 		offers = d.runtimeOffers(a.RuntimeID)
@@ -392,16 +393,28 @@ func (d *Daemon) matchLevelsWith(a *wire.Agent, settings wire.AutoSettings) *wir
 	matches := func(m wire.AutoMapping, field wire.AutoField) bool {
 		return agentMatchesMapping(a, offers, m, field)
 	}
+	preferred := wire.Levels{}
+	if a.Levels != nil {
+		preferred = *a.Levels
+	}
+	if len(choosing) > 0 {
+		if l := choosing[0].Model; l != nil {
+			preferred.Model = l
+		}
+		if l := choosing[0].Permission; l != nil {
+			preferred.Permission = l
+		}
+	}
 	out := wire.Levels{}
 	// The more particular cells first: Fast and Smart set a model, Balanced may set none.
-	for _, l := range []string{"fast", "smart", "balanced"} {
+	for _, l := range preferLevel([]string{"fast", "smart", "balanced"}, preferred.Model) {
 		if matches(cellMapping(a.RuntimeID, wire.AutoFieldModel, l, settings, offers), wire.AutoFieldModel) {
 			m := wire.ModelLevel(l)
 			out.Model = &m
 			break
 		}
 	}
-	for _, l := range permissionLevels {
+	for _, l := range preferLevel(permissionLevels, preferred.Permission) {
 		m := cellMapping(a.RuntimeID, wire.AutoFieldPermission, l, settings, offers)
 		if m.Mark == wire.AutoMarkNearestSafer && l == string(wire.PermissionLevelPlan) {
 			// A runtime with no plan mode: its Ask cell is the same, and says it truly.
@@ -422,6 +435,24 @@ func (d *Daemon) matchLevelsWith(a *wire.Agent, settings wire.AutoSettings) *wir
 		out.PermissionRequests = &c
 	}
 	return &out
+}
+
+// preferLevel puts a kept level first in the order (#6822): two cells can set the same native
+// options, and the person's choice stays ticked. The level is still matched to its cell above,
+// so a level a mapping no longer gives rematches when the settings change (#5730).
+func preferLevel[T ~string](levels []string, preferred *T) []string {
+	if preferred == nil || !slices.Contains(levels, string(*preferred)) {
+		return levels
+	}
+	name := string(*preferred)
+	out := make([]string, 0, len(levels))
+	out = append(out, name)
+	for _, l := range levels {
+		if l != name {
+			out = append(out, l)
+		}
+	}
+	return out
 }
 
 // agentOptionValue is the value of the option id on agent a: its start value, else the
@@ -514,7 +545,7 @@ func (d *Daemon) setLevels(ctx context.Context, r wire.SetLevelsRequest) (wire.A
 				a.Auto.Levels.Permission = r.Levels.Permission
 			}
 		}
-		a.Levels = d.matchLevels(a)
+		a.Levels = d.matchLevels(a, r.Levels)
 	})
 	return *d.Store.Agent(a.ID), nil
 }
@@ -622,6 +653,11 @@ func (d *Daemon) resolveLevels(r *wire.StartRequest, by startedBy) (pick *wire.A
 	note, err = d.permissionLevelCeiling(&levels, by)
 	if err != nil {
 		return nil, nil, "", err
+	}
+	if !auto {
+		// The ceiling can lower what was asked for: keep the effective levels on the request,
+		// so the new agent starts at the level it will run with (#6822).
+		r.Levels = &levels
 	}
 	if auto {
 		id, native, skipped := d.pickRuntime(levels, r.Sandbox, needsOf(r.Attachments))

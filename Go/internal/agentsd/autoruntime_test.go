@@ -317,6 +317,68 @@ func TestLevelsFollowTheMappings(t *testing.T) {
 	}
 }
 
+// OpenCode's Ask and Approve for me cells both set mode=build: a start and a later change
+// must keep the level the person chose, as the web page already does (#2893, #6822).
+func TestAnOpenCodePermissionChoiceStaysWhenCellsShareAnOption(t *testing.T) {
+	t.Parallel()
+
+	fakeRuntimes(t)
+	d, c := start(t, t.TempDir())
+	defer d.Shutdown()
+	d.SettingsDir = t.TempDir()
+	dir := t.TempDir()
+	var id wire.UUID
+	mustUnmarshal(t, c.call(t, 1, "agents/start", map[string]any{"runtimeID": "opencode",
+		"cwd": "file://" + dir, "prompt": "hello", "levels": map[string]any{"permission": "approveForMe"}}), &id)
+	level := func() *wire.PermissionLevel {
+		if l := d.Store.Agent(id).Levels; l != nil {
+			return l.Permission
+		}
+		return nil
+	}
+	if a := d.Store.Agent(id); stringValue(a.StartOptions.Values["mode"]) != "build" {
+		t.Fatalf("start: %+v", a.StartOptions.Values)
+	}
+	if l := level(); l == nil || *l != wire.PermissionLevelApproveForMe {
+		t.Fatalf("start: %v", l)
+	}
+	for i, want := range []wire.PermissionLevel{wire.PermissionLevelAsk, wire.PermissionLevelApproveForMe} {
+		mustUnmarshal(t, c.call(t, i+2, "agents/setLevels", map[string]any{"agentID": id,
+			"levels": map[string]any{"permission": string(want)}}), &wire.Agent{})
+		if l := level(); l == nil || *l != want {
+			t.Fatalf("setLevels %s: %v", want, l)
+		}
+	}
+}
+
+// A kept level still has to match its cell (#5730): move OpenCode's Approve for me cell off
+// build, and the record rematches to Ask (#6822).
+func TestAStaleOpenCodeLevelRematchesWhenItsCellMoves(t *testing.T) {
+	t.Parallel()
+
+	fakeRuntimes(t)
+	d, c := start(t, t.TempDir())
+	defer d.Shutdown()
+	d.SettingsDir = t.TempDir()
+	dir := t.TempDir()
+	var id wire.UUID
+	mustUnmarshal(t, c.call(t, 1, "agents/start", map[string]any{"runtimeID": "opencode",
+		"cwd": "file://" + dir, "prompt": "hello", "levels": map[string]any{"permission": "approveForMe"}}), &id)
+	if l := d.Store.Agent(id).Levels; l == nil || l.Permission == nil || *l.Permission != wire.PermissionLevelApproveForMe {
+		t.Fatalf("start: %+v", l)
+	}
+	auto := wire.AutoSettings{Order: []string{}, Excluded: []string{}, Overrides: []wire.AutoOverride{{RuntimeID: "opencode",
+		Field: wire.AutoFieldPermission, Level: string(wire.PermissionLevelApproveForMe),
+		Native: wire.NativeSetting{Options: map[string]wire.JSONValue{"mode": jsonString("plan")}}}}}
+	if err := d.writeSetting("auto.json", auto); err != nil {
+		t.Fatal(err)
+	}
+	d.rematchLevels()
+	if l := d.Store.Agent(id).Levels; l == nil || l.Permission == nil || *l.Permission != wire.PermissionLevelAsk {
+		t.Fatalf("stale Approve for me: %+v", l)
+	}
+}
+
 // A pass that matches levels again, and an auto/set while it runs: the new settings are
 // saved, and their own pass ends, before this pass gets to a record. That record follows the
 // settings saved, not the ones the pass read when it began (#6432).
