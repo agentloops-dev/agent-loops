@@ -127,3 +127,36 @@ func TestReadFlagsRefusesABadList(t *testing.T) {
 		}
 	}
 }
+
+func TestReadMaturityRefusesABadList(t *testing.T) {
+	known := []string{"a.one/1", "b.two/1"}
+	entry := func(c, level, clients string) string {
+		return `{"capability": "` + c + `", "level": "` + level + `", "title": "T", "issue": 1` + clients + `}`
+	}
+	list, err := readMaturity([]byte(`{"capabilities": [`+entry("a.one/1", "beta", "")+`, `+entry("b.two/1", "pilot", `, "clients": ["mac", "web"]`)+`]}`), known)
+	if err != nil {
+		t.Fatalf("a good list: %v", err)
+	}
+	if got := tsMaturity(list); !strings.Contains(got, `{ capability: "b.two/1", level: "pilot", title: "T", issue: 1, clients: ["mac", "web"] },`) {
+		t.Errorf("the page's list:\n%s", got)
+	}
+	if got := swiftMaturity(list); !strings.Contains(got, `EarlyFeature(capability: "a.one/1", level: .beta, title: "T", issue: 1, clients: nil),`) ||
+		!strings.Contains(got, `clients: [.mac, .web]),`) {
+		t.Errorf("the Swift list:\n%s", got)
+	}
+	for why, l := range map[string]string{
+		"unknown":        entry("c.three/1", "beta", ""),
+		"twice":          entry("a.one/1", "beta", "") + `, ` + entry("a.one/1", "alpha", ""),
+		"out of order":   entry("b.two/1", "beta", "") + `, ` + entry("a.one/1", "beta", ""),
+		"ga is left out": entry("a.one/1", "ga", ""),
+		"bad level":      entry("a.one/1", "final", ""),
+		"bad client":     entry("a.one/1", "beta", `, "clients": ["ipad"]`),
+		"client twice":   entry("a.one/1", "beta", `, "clients": ["mac", "mac"]`),
+		"no title":       `{"capability": "a.one/1", "level": "beta", "title": " ", "issue": 1}`,
+		"no issue":       `{"capability": "a.one/1", "level": "beta", "title": "T"}`,
+	} {
+		if _, err := readMaturity([]byte(`{"capabilities": [`+l+`]}`), known); err == nil {
+			t.Errorf("%s: the list was taken", why)
+		}
+	}
+}

@@ -26,6 +26,11 @@ and the control plane (#1135, step 0 of the move to Go, #1134). It is not a Swif
 - **Feature flags (#6254):** AgentsKitCore's `Model/FeatureFlag.generated.swift` (the
   `FeatureFlag` enum) and `Web/src/protocol/flags.generated.ts`, from `feature-flags.json`. A new
   flag is one entry there and a `gen`; take it out when its feature ships.
+- **Maturity (#6052):** AgentsKitCore's `Model/Maturity.generated.swift` (`EarlyFeature.all`)
+  and `Web/src/protocol/maturity.generated.ts`, from `maturity.json`: each capability that is
+  not GA, with its level (`pilot`, `alpha` or `beta`), the title of its feature, its issue and,
+  for a pilot on some clients only, its clients. A capability it does not list is GA. The
+  generator refuses a name that no document has.
 
 `scripts/wire.sh check` writes nothing and fails when one of them is stale; CI's `go` job runs
 the same check as a test.

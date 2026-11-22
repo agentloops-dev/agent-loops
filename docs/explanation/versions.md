@@ -159,6 +159,38 @@ the last release's `agentsd` to the new control plane, which must not call it ou
 unless the required set moved, and pairs the new client with the last release's control plane,
 which must answer it. It also lists what the clients hide for the older host.
 
+## Maturity
+
+Each capability has a **maturity** (#6052): how ready its feature is.
+
+| Level | Meaning | Badge |
+|---|---|---|
+| `pilot` | A trial with a few people. It can change or go away. It can be on some clients only. | **Pilot** |
+| `alpha` | Works, but parts are missing and it can change much. | **Alpha** |
+| `beta` | Complete, and we still look for faults. | **Beta** |
+| `ga` | Ready. The default. | none |
+
+- `Packages/Wire/maturity.json` lists each capability that is not GA, with its level, the title
+  of its feature and its issue. A capability that it does not list is GA. `scripts/wire.sh gen`
+  checks each name against the capabilities and writes the list for Swift and TypeScript
+  (`EarlyFeature.all`, `earlyFeatures`).
+- A capability in the list can name its clients (`mac`, `remote`, `web`), for a pilot on some
+  clients only. A client that is not named does not show the feature, with no line in its
+  place. With no clients, the feature's tier in the parity table says which clients have it.
+- Each client shows the badge, with its help line, where a person goes into the feature: the
+  sidebar row, the menu item, the Settings section title, the page or sheet title
+  (`MaturityBadge` on the three clients).
+- Settings ▸ This app ▸ **Early Features** has a switch for each feature in the list that this
+  client shows, on by default. A feature turned off shows nowhere on that person's clients
+  (`EarlyFeatures.shows` in Swift, `showsFeature` on the web page). The switch is kept as
+  `flag:<capability>` in the person's display settings, with the feature flags (#6254). When
+  the feature becomes GA, it leaves the list and its switch has no effect.
+- To change a level, edit the list and run `scripts/wire.sh gen`. To make a feature GA, take
+  it out.
+
+Each client reads the list it was built with. A host's own level on the wire, for a client
+older than its host, is #6579. The parity table's Maturity cell is #6580.
+
 ## Version numbers
 
 Versions follow [Semantic Versioning 2.0.0](https://semver.org). The tag `vX.Y.Z` gives the

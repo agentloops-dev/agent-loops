@@ -10,8 +10,8 @@ const store = (role, connect = false, thisMac = false, move = false) => ({ perso
 test("each group's sections are in their subject's order", () => {
   const names = (scope, role) => sectionsIn(scope, store(role)).map((s) => s.name);
   // By subject (#2157): Sidebar and Notifications are how this app works, though the Mac's host keeps the sidebar (#2079);
-  // Feature Flags last, as the window's (#6254).
-  assert.deepEqual(names("thisApp"), ["sidebar", "notifications", "featureFlags"]);
+  // Early Features (#6052), then Feature Flags last, as the window's (#6254).
+  assert.deepEqual(names("thisApp"), ["sidebar", "notifications", "earlyFeatures", "featureFlags"]);
   // What agents may do (#2957): the archive switch and the notice limits are rules of the policy now.
   assert.deepEqual(names("agents"), ["agentsPolicy"]);
   assert.deepEqual(names("machines"), ["recoveryKey", "gitAccess", "backups", "desktopControl", "sleep", "serverBackups", "processes", "agentRuntimes", "browser"]);

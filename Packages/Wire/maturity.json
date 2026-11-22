@@ -1,0 +1,4 @@
+{
+  "$comment": "Each capability that is not GA (#6052): its level (pilot, alpha or beta), the title of its feature, its issue, and the clients that show it (mac, remote, web; every client of its tier when left out). A capability not listed is GA, so take a capability out when its feature is ready. Each client shows the level's badge where a person goes into the feature, and a toggle for it in Settings ▸ This app ▸ Early Features, on by default and kept per person as flag:<capability>. scripts/wire.sh gen checks each name against the capabilities and writes Maturity.generated.swift and maturity.generated.ts. Keep the list in name order.",
+  "capabilities": []
+}

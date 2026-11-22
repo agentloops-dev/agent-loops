@@ -5,3 +5,4 @@ export * from "../src/model/folds";
 export * from "../src/model/smartGroups";
 export * from "../src/model/startForm";
 export * from "../src/model/featureFlags";
+export * from "../src/model/maturity";
