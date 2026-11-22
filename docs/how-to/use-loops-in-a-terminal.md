@@ -66,13 +66,24 @@ You pair a terminal one time, as you pair a window.
    ```
 
    It says **Paired with** the control plane, as **loops on** this computer's name.
-4. Type `loops status`. It shows the control plane, this machine, and the folder of the
+4. When you have a machine lock, the terminal must join it too: your machines take
+   requests only from your devices. `loops pair` asks to join and shows **Digits:** and
+   six digits. On another of your devices (a window, the Remote or the web page), click
+   **Compare Digits** on the card, make sure that it shows the same digits, and click
+   **Approve**. The terminal says **Approved**. When you have no lock yet, there is no
+   step 4.
+5. Type `loops status`. It shows the control plane, this machine, and the folder of the
    directory you are in.
 
 The pairing is in `~/.config/loops/hosts.json` (or `$XDG_CONFIG_HOME/loops/hosts.json`).
 Only you can read it. Anyone who has a copy of it can use your agents, as a paired window
-can. `loops unpair` deletes it, and removes the terminal from the control plane's list of
-clients.
+can. The terminal's key for the machine lock is in the Keychain on a Mac, and in
+`~/.config/loops/lock-keys/` (mode 0600) on Linux. `loops unpair` deletes both, and
+removes the terminal from the control plane's list of clients.
+
+A terminal that you paired before it could join the lock (or whose request ran out, or
+was refused) asks to join at the next command, as in step 4. When a machine refuses it,
+`loops` says **takes requests only from your devices**: type `loops status` to ask again.
 
 ## Start or continue a session
 
@@ -157,21 +168,22 @@ has the folder, and the runner only starts it and follows it.
    with no public address is not available from a hosted runner. See
    [Run the control plane in the cloud](run-the-control-plane-in-the-cloud.md).
 2. On your computer, pair `loops` one time for CI only, with its own configuration
-   directory:
+   directory. `LOOPS_KEY_FILES=1` keeps its machine lock key in a file of that directory,
+   not in the Keychain. When it shows the digits, approve it on another device:
 
    ```sh
-   XDG_CONFIG_HOME=$(mktemp -d) sh -c 'loops pair "<the code>" && cat "$XDG_CONFIG_HOME/loops/hosts.json"'
+   export LOOPS_KEY_FILES=1 XDG_CONFIG_HOME=$(mktemp -d)
+   loops pair '<the code>' && tar -C "$XDG_CONFIG_HOME" -cz loops | base64
    ```
 
-3. Keep the file's contents as a secret of the CI, for example `LOOPS_HOSTS`. It is a key
-   to your agents: do not put it in the repository or in a log.
-4. In the job, write the file and run print mode, with the machine and the folder named:
+3. Keep the output as a secret of the CI, for example `LOOPS_CONFIG`. It is a key to your
+   agents: do not put it in the repository or in a log.
+4. In the job, write the files and run print mode, with the machine and the folder named:
 
    ```sh
-   export XDG_CONFIG_HOME="$RUNNER_TEMP/loops-config"
-   mkdir -p "$XDG_CONFIG_HOME/loops"
-   printf '%s' "$LOOPS_HOSTS" > "$XDG_CONFIG_HOME/loops/hosts.json"
-   chmod 600 "$XDG_CONFIG_HOME/loops/hosts.json"
+   export LOOPS_KEY_FILES=1 XDG_CONFIG_HOME="$RUNNER_TEMP/loops-config"
+   mkdir -p "$XDG_CONFIG_HOME"
+   printf '%s' "$LOOPS_CONFIG" | base64 -d | tar -C "$XDG_CONFIG_HOME" -xz
    loops -p --machine build-mac --folder my-app --on-ask=fail --timeout 30m \
      "the nightly build failed: find why and open a PR with the fix"
    ```

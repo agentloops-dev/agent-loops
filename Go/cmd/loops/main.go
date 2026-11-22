@@ -73,6 +73,9 @@ func codeOf(err error) int {
 
 // unreachable is state 9 of the wireframes (exit 1): nothing changed.
 func unreachable(what string, err error) error {
+	if notInLock(err) {
+		return lockRefusal(what, err)
+	}
 	return &exit{code: exitError, msg: fmt.Sprintf("Cannot reach %s (%s).\nNothing changed. Try again, or run: loops status", what, reason(err)) + debugLine(err)}
 }
 
@@ -93,6 +96,8 @@ func reason(err error) string {
 	var noAnswer *controllink.NoAnswerError
 	var dns *net.DNSError
 	switch {
+	case notInLock(err):
+		return "it takes requests only from your devices, and this terminal is not one yet: run loops status to ask to join"
 	case errors.As(err, &noAnswer):
 		return fmt.Sprintf("timed out after %d s", int(noAnswer.Wait.Round(time.Second).Seconds()))
 	case errors.Is(err, context.DeadlineExceeded):
@@ -292,9 +297,14 @@ func isCommand(word string) bool {
 	return false
 }
 
-// dial is the paired control plane's socket; it keeps a key the control plane rotated.
+// dial is the paired control plane's socket; it keeps a key the control plane rotated. A
+// terminal that is not in its machine lock yet asks to join it first (#6563).
 func dial(ctx context.Context, o *options) (*controllink.Session, error) {
-	s, err := dialLink(ctx, o)
+	mode := joinAsk
+	if (o.print || o.detach) && o.onAsk == "fail" {
+		mode = joinFail
+	}
+	s, err := dialWith(ctx, o, mode)
 	var e *exit
 	if err != nil && !errors.As(err, &e) {
 		return nil, unreachable(o.controlName, err)
@@ -302,8 +312,13 @@ func dial(ctx context.Context, o *options) (*controllink.Session, error) {
 	return s, err
 }
 
-// dialLink is dial with the dial's own error, as a relink says it (#6478).
+// dialLink is dial with the dial's own error, as a relink says it (#6478). It asks nobody
+// to join the lock: a relink only checks its calls with the key the lock names.
 func dialLink(ctx context.Context, o *options) (*controllink.Session, error) {
+	return dialWith(ctx, o, joinNever)
+}
+
+func dialWith(ctx context.Context, o *options, mode joinMode) (*controllink.Session, error) {
 	h, err := readHosts()
 	if err != nil {
 		return nil, &exit{code: exitError, msg: err.Error()}
@@ -325,6 +340,10 @@ func dialLink(ctx context.Context, o *options) (*controllink.Session, error) {
 		if err := h.write(); err != nil {
 			fmt.Fprintf(os.Stderr, "loops: could not keep the control plane's new key: %v\n", err)
 		}
+	}
+	if err := useLock(ctx, s, m, h, mode, os.Stderr); err != nil {
+		s.Close()
+		return nil, err
 	}
 	return s, nil
 }
@@ -354,11 +373,7 @@ func pair(ctx context.Context, w io.Writer, text string) error {
 	if err != nil {
 		return &exit{code: exitError, msg: fmt.Sprintf("That is not a pairing code: %v", err)}
 	}
-	hostname, _ := os.Hostname()
-	name := "loops"
-	if hostname != "" {
-		name = "loops on " + hostname
-	}
+	name := pairedName()
 	// A terminal pairs as a Mac window does: the control plane has no kind for a CLI, and
 	// the kind is only the icon its Devices list shows.
 	m, err := controllink.PairClientAs(ctx, code, name, string(wire.ClientKindMac))
@@ -369,11 +384,27 @@ func pair(ctx context.Context, w io.Writer, text string) error {
 	if err != nil {
 		return &exit{code: exitError, msg: err.Error()}
 	}
+	for _, old := range h.Hosts {
+		if old.URL == m.URL && old.Client != m.Client {
+			// The old pairing's key opens nothing now.
+			_ = lockKeys.remove(old.Client)
+		}
+	}
 	h.put(*m)
+	// A new pairing may be another person's: its lock is pinned on first use again.
+	delete(h.LockPins, m.URL)
 	if err := h.write(); err != nil {
 		return &exit{code: exitError, msg: fmt.Sprintf("Paired, but could not keep the pairing in %s: %v", hostsFile(), err)}
 	}
-	fmt.Fprintf(w, "Paired with %s as %q.\nTry: loops status\n", hostOf(m.URL), name)
+	fmt.Fprintf(w, "Paired with %s as %q.\n", hostOf(m.URL), name)
+	// Your machines take calls only from your devices: join the machine lock now (#6563).
+	o := options{control: m.URL}
+	s, err := dial(ctx, &o)
+	if err != nil {
+		return err
+	}
+	s.Close()
+	fmt.Fprintln(w, "Try: loops status")
 	return nil
 }
 
@@ -397,6 +428,9 @@ func unpair(ctx context.Context, w io.Writer, o options) error {
 		s.Close()
 	}
 	cancel()
+	if err := lockKeys.remove(m.Client); err != nil {
+		fmt.Fprintf(os.Stderr, "loops: could not remove this terminal's machine lock key: %v\n", err)
+	}
 	h.remove(u)
 	if err := h.write(); err != nil {
 		return &exit{code: exitError, msg: err.Error()}

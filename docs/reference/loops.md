@@ -22,8 +22,8 @@ steps, see [Start or continue a session from a terminal](../how-to/use-loops-in-
 | `loops --detach "<prompt>"` | Starts a new session here, writes its id, and stops at once. |
 | `loops ls [--all]` | The 20 sessions here with the most recent activity. `--all` shows all of them, also the archived ones. |
 | `loops folder add [dir]` | Adds this directory, or `dir`, as a folder of this machine. |
-| `loops pair '<code>'` | Pairs this terminal with a control plane, with a client code from **Settings ▸ Control plane ▸ Clients ▸ Pair a Mac…**. |
-| `loops unpair` | Deletes the pairing here, and removes this terminal from the control plane's clients. When the control plane does not answer, it deletes the pairing here only. |
+| `loops pair '<code>'` | Pairs this terminal with a control plane, with a client code from **Settings ▸ Control plane ▸ Clients ▸ Pair a Mac…**. When you have a machine lock, it then asks to join it, shows six digits, and waits until you approve it on another device (below). |
+| `loops unpair` | Deletes the pairing and the machine lock key here, and removes this terminal from the control plane's clients. When the control plane does not answer, it deletes them here only. |
 | `loops status` | The pairing, this machine, and the folder of the directory here. |
 | `loops help` | The commands, flags and exit codes. Also `-h` and `--help`. |
 
@@ -78,10 +78,11 @@ When `loops` cannot get to the control plane, it gives the cause in a few words,
 | `no such host` | The host name is not in DNS. |
 | `could not look up the host` | DNS did not answer. |
 | `its certificate is not the paired one` | The certificate is not the one that the pairing code pinned. |
+| `it takes requests only from your devices…` | The machine holds your machine lock, and this terminal is not in it. Type `loops status` to ask to join. |
 
 Other errors keep their own words. `--debug` adds the full error.
 | 2 | The directory is not in a folder of the machine, or `--folder` names no folder. |
-| 3 | A card waits for an answer, with `--on-ask=fail`. |
+| 3 | A card waits for an answer, or this terminal must join your machine lock, with `--on-ask=fail`. |
 | 4 | The time of `--timeout` went by. |
 | 5 | This terminal is not paired, or not with the control plane of `--control`. |
 | 6 | The connection to the control plane, or from it to the session's machine, was lost and did not come back (below). The session continues. |
@@ -148,11 +149,31 @@ The chat has colour only on a terminal.
 | `COLORTERM` | `truecolor` or `24bit`: 24-bit colour. Otherwise, the nearest of 256 colours. |
 | `LOOPS_THEME` | `light` or `dark`: the palette. When it is not set, `loops` reads `COLORFGBG`, or asks the terminal for its background. |
 
+## The machine lock
+
+A machine that holds your machine lock takes requests only from your devices
+(`specs/3399-machine-lock`). `loops` has a key of its own for each pairing. When the lock
+does not name that key, the first command (or `loops pair`) asks to join, writes
+`Digits:` and six digits, and waits until another of your devices compares them and
+approves, or until the request runs out. Then each request to a machine goes on a
+channel that the key opened (`lock/hello`), and `loops` takes an answer only when its MAC
+checks. `loops` checks the lock that the control plane sends against the head it saw last,
+and refuses a lock that does not grow from it.
+
+In print mode with `--on-ask=fail`, `loops` does not ask to join: it stops with exit 3.
+When the link comes back after a loss, it does not ask either.
+
+| Variable | What it does |
+|---|---|
+| `LOOPS_KEY_FILES` | `1`: the machine lock key is in a file in `lock-keys/` beside `hosts.json`, also on a Mac. For a pairing that you copy to CI. |
+
 ## What it keeps
 
 | File | What it is |
 |---|---|
-| `~/.config/loops/hosts.json` | The pairing: one entry for each control plane, with its key. Mode 0600. With `XDG_CONFIG_HOME` set, it is `$XDG_CONFIG_HOME/loops/hosts.json`. |
+| `~/.config/loops/hosts.json` | The pairing: one entry for each control plane, with its key, and the head of your machine lock that it saw last. Mode 0600. With `XDG_CONFIG_HOME` set, it is `$XDG_CONFIG_HOME/loops/hosts.json`. |
+| The Keychain, `dev.agentloops.loops.lock` | On a Mac, the machine lock key of each pairing. Only `loops` reads it. |
+| `~/.config/loops/lock-keys/<client>.key` | On Linux, or with `LOOPS_KEY_FILES=1`, the machine lock key of each pairing. Mode 0600. |
 
 `loops` keeps no other file and no copy of your sessions. A session that it starts says
 that it started from the command line (`startedVia`: `cli`, or `cli-print` in print mode
