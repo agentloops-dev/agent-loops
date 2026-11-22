@@ -117,9 +117,6 @@ private struct WorkListPane: View {
     /// Next ↗ on the Issues list (#5691): set only while this Mac can open the web page (#4937).
     @Environment(\.openWebPlace) private var openWebPlace
     @State private var nextProblem: String?
-    /// Back from an item's page gives the list the keys, so ↑ and ↓ go on from the row left.
-    @FocusState private var focused: Bool
-
     /// The list's state lives in the model (#3257), so an item's page can go through it and Back finds it as it was.
     @Bindable var list: WorkListState
 
@@ -213,7 +210,7 @@ private struct WorkListPane: View {
 
     @ViewBuilder
     private func choices(_ place: Place) -> some View {
-        let offered = WorkList.choices(list.all)
+        let offered = list.choices
         project(place)
         if kind.fromForge, place != .more {
             WorkFilterMenu(name: "State", selection: $list.filter.state, options: kind.states, words: \.title, compact: compact)
@@ -295,7 +292,7 @@ private struct WorkListPane: View {
                 .refreshable { list.asked += 1 }
                 #endif
             } else {
-                rowsList(shown, lines: lines)
+                WorkRowsList(model: model, list: list, kind: kind, compact: compact, lines: lines)
             }
         }
     }
@@ -317,10 +314,23 @@ private struct WorkListPane: View {
         let set = WorkLook.setFilters(list.filter, project: list.projectRepos.first { $0.project.id == list.filter.project }?.project.name,
                                       board: list.filter.board.isEmpty ? nil : WorkList.boardName(list.filter.board, in: list.boards))
         return WorkEmptyState(symbol: kind.sidebarIcon, title: WorkLook.emptyTitle(kind, state: list.filter.state, filtered: filtered),
-                              line: filtered ? set : kind.fromForge ? WorkLook.emptyLine(kind, repos: Array(Set(list.all.map(\.repo))))
+                              line: filtered ? set : kind.fromForge ? WorkLook.emptyLine(kind, repos: Array(list.repos))
                                   : WorkList.lineageOnlyNote,
                               action: filtered ? (WorkLook.clearFilters, { list.filter = WorkLook.cleared(list.filter) }) : nil)
     }
+}
+
+/// The rows of a Work list (#6633), apart from the pane: SwiftUI's list diffs every row it holds each time its builder
+/// runs, so the builder reads only the rows and what they show, not the reads, the footer or the toolbar.
+private struct WorkRowsList: View {
+    let model: any WorkModel
+    @Bindable var list: WorkListState
+    let kind: WorkList.Kind
+    let compact: Bool
+    /// What the forges or the machines said: the strip above the rows, which are dimmed under it.
+    let lines: [String]
+    /// Back from an item's page gives the list the keys, so ↑ and ↓ go on from the row left.
+    @FocusState private var focused: Bool
 
     /// A row's Priority and On hold (epic #6086), where its forge sets them; nothing for a row with neither.
     @ViewBuilder
@@ -338,38 +348,24 @@ private struct WorkListPane: View {
         model.showWork(WorkPlace(kind: kind, ref: ref, fromList: true))
     }
 
-    private func rowsList(_ shown: [WorkList.Row], lines: [String]) -> some View {
-        let several = Set(list.all.map(\.repo)).count > 1
+    var body: some View {
+        let several = list.repos.count > 1
         let latest = kind == .release ? WorkReleaseLook.latest(list.all) : []
         // The sessions this app knows, of every machine (#5453): a row shows the one that works on its item now.
         let agents = kind == .release ? [] : model.workAgents
         return ScrollViewReader { reader in
             selectable {
-                if list.fromDevice {
-                    WorkFromDeviceStrip(read: list.fromDeviceRead).listRowSeparator(.hidden).selectionDisabled()
+                WorkListStrips(list: list, lines: lines)
+                // The first `drawn` rows (#6633); the footer draws 100 more as it shows.
+                ForEach(list.drawnRows) { row in
+                    // One view a row, with no modifier outside it: SwiftUI's list walks each element's modifiers for
+                    // every row it diffs (#6633). The ForEach gives the row its id, which `scrollTo` finds; the row tags
+                    // itself for the selection.
+                    WorkListRow(model: model, row: row, several: several, compact: compact, latest: latest.contains(row.id), pick: pick,
+                                session: kind == .release ? nil : WorkSessions.workingSession(on: row.node, in: agents),
+                                dimmed: !lines.isEmpty, open: open, menu: { priorityMenu(row.id) })
                 }
-                if !lines.isEmpty {
-                    WorkErrorStrip(lines: lines, read: list.keptRead) { list.asked += 1 }.listRowSeparator(.hidden).selectionDisabled()
-                }
-                ForEach(shown) { row in
-                    Button { open(row.id) } label: {
-                        WorkItemRow(row: row, several: several, compact: compact, latest: latest.contains(row.id), pick: pick,
-                                    session: kind == .release ? nil : WorkSessions.workingSession(on: row.node, in: agents),
-                                    openSession: { model.openWorkSession($0) })
-                    }
-                    .buttonStyle(WorkRowButtonStyle())
-                    #if os(iOS)
-                    .contextMenu { priorityMenu(row.id) }
-                    #endif
-                    .environment(\.workPictures, row.host.map { WorkPictures(model: model, host: $0) })
-                    // A forge that failed leaves its rows, dimmed, under the strip (lists.md section 5).
-                    .opacity(lines.isEmpty ? 1 : 0.6)
-                    // A change the forge refused went back (#6354): a short red wash on the row.
-                    .workWashed(model.workSaves?.isWashed(row.node) == true)
-                    .id(row.id)
-                    .tag(row.id)
-                }
-                footer(shown: shown.count)
+                WorkListFooter(model: model, list: list, kind: kind)
                 if !kind.fromForge {
                     Text(WorkList.lineageOnlyNote).appText(.fine).foregroundStyle(.tertiary).selectionDisabled()
                 }
@@ -416,11 +412,28 @@ private struct WorkListPane: View {
         #endif
     }
 
+    /// A click on a chip sets the Label filter to it (Mac); on a phone a tap opens the row.
+    private var pick: ((String) -> Void)? {
+        #if os(macOS)
+        { list.filter.label = $0 }
+        #else
+        nil
+        #endif
+    }
+}
+
+/// The end of a Work list (lists.md sections 2 and 5), apart from the rows (#6633): a page read or a save changes it
+/// alone.
+private struct WorkListFooter: View {
+    let model: any WorkModel
+    @Bindable var list: WorkListState
+    let kind: WorkList.Kind
+
     /// The end of the list (lists.md sections 2 and 5): the next page loads when this row shows,
     /// with "Loading more…"; a page that failed says so with Try again; at the end, the count.
-    @ViewBuilder
-    private func footer(shown: Int) -> some View {
-        Group {
+    var body: some View {
+        let shown = list.rows.count
+        return Group {
             if list.loadingMore {
                 HStack(spacing: 6) {
                     ProgressView().controlSize(.small)
@@ -458,11 +471,19 @@ private struct WorkListPane: View {
         .padding(.vertical, 6)
         .listRowSeparator(.hidden)
         .selectionDisabled()
-        // Shown, and again each time a page adds rows while it still shows: read the next page.
-        .workTask(id: list.all.count) {
+        // Shown, and again each time it adds rows while it still shows: 100 more of the rows read (#6633), and once
+        // all are drawn, the next page.
+        .workTask(id: FooterShown(rows: list.all.count, drawn: list.drawn)) {
+            if list.drawMore() { return }
             guard list.hasMore, !list.loadingMore, list.pageProblem == nil else { return }
             await list.loadMore(model: model)
         }
+    }
+
+    /// What the footer's read waits on: a page read, or 100 more rows drawn.
+    private struct FooterShown: Equatable {
+        var rows: Int
+        var drawn: Int
     }
 
     /// The forge's count of the list (#4396), where it gives one and the list shows all it counts.
@@ -470,14 +491,52 @@ private struct WorkListPane: View {
         let totals = list.lists?.map(\.list.total) ?? []
         return list.cacheOn ? WorkLook.cachedListTotal(totals, filter: list.filter) : WorkLook.listTotal(totals, filter: list.filter)
     }
+}
 
-    /// A click on a chip sets the Label filter to it (Mac); on a phone a tap opens the row.
-    private var pick: ((String) -> Void)? {
-        #if os(macOS)
-        { list.filter.label = $0 }
-        #else
-        nil
+/// The strips above a Work list's rows, apart from them (#6633): the rows from this device's copy, and what the forges
+/// or the machines said, with when the kept rows were read.
+private struct WorkListStrips: View {
+    let list: WorkListState
+    let lines: [String]
+
+    var body: some View {
+        if list.fromDevice {
+            WorkFromDeviceStrip(read: list.fromDeviceRead).listRowSeparator(.hidden).selectionDisabled()
+        }
+        if !lines.isEmpty {
+            WorkErrorStrip(lines: lines, read: list.keptRead) { list.asked += 1 }.listRowSeparator(.hidden).selectionDisabled()
+        }
+    }
+}
+
+/// One row of a Work list (#6633): the item's button with its look, its pictures, its dimming and its wash.
+private struct WorkListRow<Menu: View>: View {
+    let model: any WorkModel
+    let row: WorkList.Row
+    let several: Bool
+    let compact: Bool
+    let latest: Bool
+    let pick: ((String) -> Void)?
+    let session: Agent?
+    /// A forge that failed leaves its rows, dimmed, under the strip (lists.md section 5).
+    let dimmed: Bool
+    let open: (String) -> Void
+    @ViewBuilder let menu: () -> Menu
+
+    var body: some View {
+        Button { open(row.id) } label: {
+            WorkItemRow(row: row, several: several, compact: compact, latest: latest, pick: pick, session: session,
+                        openSession: { model.openWorkSession($0) })
+        }
+        .buttonStyle(WorkRowButtonStyle())
+        #if os(iOS)
+        .contextMenu { menu() }
         #endif
+        .environment(\.workPictures, row.host.map { WorkPictures(model: model, host: $0) })
+        .opacity(dimmed ? 0.6 : 1)
+        // A change the forge refused went back (#6354): a short red wash on the row.
+        .workWashed(model.workSaves?.isWashed(row.node) == true)
+        .tag(row.id)
     }
 }
 

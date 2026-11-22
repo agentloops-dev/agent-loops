@@ -10,12 +10,24 @@ import Observation
 final class WorkListState {
     let kind: WorkList.Kind
     /// The filters and the sort are kept for the next launch (#5451), and the list opens with them.
-    var filter = WorkList.Filter() { didSet { remember() } }
+    var filter = WorkList.Filter() {
+        didSet {
+            remember()
+            if filter != oldValue { narrow() }
+        }
+    }
     /// The person's projects (#3283), as the model last said them, for the Project filter.
-    var projects: [WorkList.Project] = []
-    var sort = WorkList.Sort.priority { didSet { remember() } }
-    var lists: [(host: MachineRef, list: DaemonAPI.ForgeList)]?
-    var lineage: [DaemonAPI.ReportNode] = []
+    var projects: [WorkList.Project] = [] {
+        didSet { if projects != oldValue { readRepos() } }
+    }
+    var sort = WorkList.Sort.priority {
+        didSet {
+            remember()
+            if sort != oldValue { narrow() }
+        }
+    }
+    var lists: [(host: MachineRef, list: DaemonAPI.ForgeList)]? { didSet { made() } }
+    var lineage: [DaemonAPI.ReportNode] = [] { didSet { made() } }
     /// The boards the Board menu offers (#3282), read with the list.
     var boards: [DaemonAPI.ProjectBoard] = []
     /// The boards were asked this run, with Work's cache on (#6573): the kept ones draw first, and one ask a run follows.
@@ -58,6 +70,7 @@ final class WorkListState {
         let kept = WorkRemembered.list(WorkRememberedStore.kept(kind), kind: kind)
         filter = kept.filter
         sort = kept.sort
+        made()
     }
 
     /// Keeps what the list has now for the next launch; the defaults remove it.
@@ -84,7 +97,9 @@ final class WorkListState {
     // MARK: Work's cache (#6353, epic #6348)
 
     /// The list reads Work's cache: an issue or PR list, with the person's `work-cache` flag on. Set by each load.
-    private(set) var cacheOn = false
+    private(set) var cacheOn = false {
+        didSet { if cacheOn != oldValue { narrow() } }
+    }
     /// When the answer on screen was read from its machines: the footer's "Last update" (#5139, #5967).
     var cacheRead: Date?
     /// The query whose answer is on screen: a Refresh of it keeps its rows until the new answer comes.
@@ -104,19 +119,6 @@ final class WorkListState {
     }
 
     private static func word(_ text: String) -> String? { text.isEmpty ? nil : text }
-
-    /// The rows in the server's order (#6538): each machine's answer in turn, an item once, where it was first.
-    private var serverOrdered: [WorkList.Row] {
-        let byRef = Dictionary(lineage.map { ($0.node.ref, $0) }, uniquingKeysWith: { first, _ in first })
-        var seen = Set<String>()
-        var rows: [WorkList.Row] = []
-        for (host, list) in lists ?? [] {
-            for item in list.items where seen.insert(item.node.ref).inserted {
-                rows.append(WorkList.Row(item, on: host, lineage: byRef[item.node.ref]))
-            }
-        }
-        return rows
-    }
 
     /// Draws the kept answer to the list's query at once, with no forge call, then asks the query once (#6358): one
     /// `forge/listAll`, or one call a machine with no control plane. The answer replaces page 1 and keeps the pages
@@ -320,25 +322,91 @@ final class WorkListState {
     /// An issue's or a PR's lineage is joined by ref, in any order; a release's list is lineage's own.
     private var nodesSort: DaemonAPI.ReportNodesSort { !kind.fromForge && sort == .cost ? .cost : .newest }
 
-    var all: [WorkList.Row] {
-        kind.fromForge ? WorkList.merge((lists ?? []).map { (host: $0.host, items: $0.list.items) }, lineage: lineage)
-            : lineage.map(WorkList.Row.init)
+    // MARK: The rows, made once per change (#6633)
+
+    // `body` reads these many times a draw, and draws again on each change: made there, the rows cost O(n) a read
+    // (a Row and a regular expression an item), and 1,000 kept rows held the main thread for minutes. They are made
+    // here when the lists, the lineage, the projects, the filter or the sort change, and a read costs nothing.
+
+    /// Every row read, one per ref (the last updated copy), unfiltered and in no order.
+    private(set) var all: [WorkList.Row] = []
+    /// The rows as the list shows them: filtered and sorted.
+    private(set) var rows: [WorkList.Row] = []
+    /// Each project with the repos its folders read (#3283); none for releases,
+    /// which lineage alone lists, with no folder.
+    private(set) var projectRepos: [(project: WorkList.Project, repos: Set<String>)] = []
+    /// The filter menus' choices, from every row read.
+    private(set) var choices: (repos: [String], labels: [String], assignees: [String]) = ([], [], [])
+    /// The repos of every row read: a row names its repo when there are several.
+    private(set) var repos: Set<String> = []
+    /// The rows in the server's order (#6538), for the cache's Priority and Last updated; empty with the cache off.
+    @ObservationIgnored private var ordered: [WorkList.Row] = []
+    /// Each ref's repo, read from the ref once (#6633): a new page or a Refresh reads only the new refs.
+    @ObservationIgnored private var repoOf: [String: String] = [:]
+
+    /// How many of `rows` the list draws (#6633): 100 at a time, and 100 more as its end shows, so a list with
+    /// thousands of kept rows draws as one with 100. A new filter, sort or query draws from the top again.
+    private(set) var drawn = WorkListState.drawStep
+    static let drawStep = 100
+
+    /// The rows the list draws: the first `drawn` of `rows`.
+    var drawnRows: ArraySlice<WorkList.Row> { rows.prefix(drawn) }
+
+    /// The list draws 100 more of the rows read; false when it draws them all.
+    func drawMore() -> Bool {
+        guard drawn < rows.count else { return false }
+        drawn += Self.drawStep
+        return true
     }
 
-    /// The rows as the list shows them: filtered and sorted.
-    var rows: [WorkList.Row] {
+    private func repo(_ ref: String) -> String {
+        if let known = repoOf[ref] { return known }
+        let repo = WorkList.repo(of: ref)
+        repoOf[ref] = repo
+        return repo
+    }
+
+    /// The lists or the lineage changed: every row again, then the shown ones.
+    private func made() {
+        let items = (lists ?? []).map { (host: $0.host, items: $0.list.items) }
+        let made = kind.fromForge ? WorkList.merge(items, lineage: lineage, repo: repo) : lineage.map(WorkList.Row.init)
+        // The same rows again (a Refresh the forge answered alike) change nothing the list draws: SwiftUI's list
+        // diffs every row it holds on each change (#6633).
+        if made != all { all = made }
+        ordered = kind.fromForge && cacheOn ? WorkList.ordered(items, lineage: lineage, repo: repo) : []
+        let read = WorkList.choices(all)
+        if read != choices { choices = read }
+        let known = Set(all.map(\.repo))
+        if known != repos { repos = known }
+        readRepos(items)
+    }
+
+    /// The projects or the items changed: each project's repos again, then the shown rows.
+    private func readRepos(_ items: [(host: MachineRef, items: [DaemonAPI.ForgeItem])]? = nil) {
+        let read = kind.fromForge
+            ? WorkList.projectRepos(projects, lists: items ?? (lists ?? []).map { (host: $0.host, items: $0.list.items) }, repo: repo)
+            : []
+        if read.map(\.project) != projectRepos.map(\.project) || read.map(\.repos) != projectRepos.map(\.repos) { projectRepos = read }
+        shownRows()
+    }
+
+    /// The filter, the sort or the cache changed: the shown rows again, drawn from the top.
+    private func narrow() {
+        if cacheOn, ordered.isEmpty, !all.isEmpty { ordered = WorkList.ordered((lists ?? []).map { (host: $0.host, items: $0.list.items) },
+                                                                               lineage: lineage, repo: repo) }
+        drawn = Self.drawStep
+        shownRows()
+    }
+
+    private func shownRows() {
         var f = filter
         // Releases have no state in v1.
         if !kind.fromForge { f.state = .all }
         // With Work's cache, the forge sorts by priority or the last updated (#6538); the Mac only narrows the answer.
-        if cacheOn, sort == .priority || sort == .updated { return WorkList.filter(serverOrdered, f, projects: projectRepos) }
-        return WorkList.sort(WorkList.filter(all, f, projects: projectRepos), by: sort)
-    }
-
-    /// Each project with the repos its folders read (#3283); none for releases,
-    /// which lineage alone lists, with no folder.
-    var projectRepos: [(project: WorkList.Project, repos: Set<String>)] {
-        kind.fromForge ? WorkList.projectRepos(projects, lists: (lists ?? []).map { (host: $0.host, items: $0.list.items) }) : []
+        let shown = cacheOn && (sort == .priority || sort == .updated)
+            ? WorkList.filter(ordered, f, projects: projectRepos)
+            : WorkList.sort(WorkList.filter(all, f, projects: projectRepos), by: sort)
+        if shown != rows { rows = shown }
     }
 
     var hasMore: Bool { kind.fromForge ? (lists ?? []).contains { $0.list.cursor != nil } : lineageCursor != nil }
