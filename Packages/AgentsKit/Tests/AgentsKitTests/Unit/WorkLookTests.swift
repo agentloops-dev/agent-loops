@@ -331,4 +331,17 @@ struct WorkLookTests {
         #expect(WorkLook.footerState(drawn: true, read: 0, reading: false, fromDevice: false, lines: ["x"]) == .couldNotRead)
         #expect(WorkLook.FooterState.couldNotRead.words == "Could not read.")
     }
+
+    /// Deploys and Timeline (#5969): the footer says how many machines answered a read of several, and a failed read
+    /// with nothing drawn is "Could not read."
+    @Test func aPageOfSeveralMachinesSaysHowManyAnswered() {
+        let some = WorkLook.pageFooterState(drawn: true, reading: true, fromDevice: false, lines: [], answered: 1, machines: 3)
+        #expect(some == .readingMachines(answered: 1, of: 3))
+        #expect(some.words == "Reading 1 of 3 machines…" && some.busy)
+        #expect(WorkLook.pageFooterState(drawn: false, reading: true, fromDevice: false, lines: [], answered: 0, machines: 3) == .loading)
+        #expect(WorkLook.pageFooterState(drawn: true, reading: true, fromDevice: false, lines: [], answered: 1, machines: 1) == .updating)
+        #expect(WorkLook.pageFooterState(drawn: true, reading: false, fromDevice: false, lines: []) == .none)
+        #expect(WorkLook.pageFooterState(drawn: false, reading: false, fromDevice: false, lines: ["x"]) == .couldNotRead)
+        #expect(WorkLook.pageCount(1, "target") == "1 target" && WorkLook.pageCount(4, "epic") == "4 epics")
+    }
 }
