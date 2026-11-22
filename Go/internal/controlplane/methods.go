@@ -1490,7 +1490,7 @@ func (m *Methods) HostSaid(host, method string, params json.RawMessage) (any, er
 		m.s.auditSecretOps(host, owner, request.Ops)
 		m.s.noteSecretInfo(host, owner, request.Ops, request.Held, request.Held != nil)
 		return wire.Empty{}, nil
-	case "machine/machines", "machine/providerDraft", "machine/status", "machine/installProgress":
+	case "machine/machines", "machine/status", "machine/installProgress":
 		return m.machineProviders(host, method, params)
 	case "backups/stored", "backups/upload", "backups/commit", "backups/download":
 		return m.backupsSaid(host, method, params)

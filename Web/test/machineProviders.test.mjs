@@ -45,7 +45,7 @@ test("an edit sends the name and only the secrets given, so the control plane ke
 });
 
 const summary = (over = {}) => ({ id: "do", name: "DO", kind: "commands", secrets: {}, capabilities: [], contract: 1,
-  mapped: false, workspaces: [], current: true, ...over });
+  workspaces: [], current: true, ...over });
 
 test("the card's chip and lines are the window's", () => {
   assert.equal(w.kindChip(summary({ preset: "digitalocean-api" })), "command provider · digitalocean-api · API");

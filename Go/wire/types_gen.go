@@ -4732,18 +4732,6 @@ type DomainClaimState string
 const DomainClaimStateNotProved DomainClaimState = "notProved"
 const DomainClaimStateProved DomainClaimState = "proved"
 
-type DraftCheck struct {
-	Passed bool `json:"passed"`
-
-	Workspaces []MachineInfo `json:"workspaces,omitzero"`
-
-	Problem *string `json:"problem,omitzero"`
-
-	SSH *string `json:"ssh,omitzero"`
-
-	NoSSH *bool `json:"noSSH,omitzero"`
-}
-
 type DraftOptionsNotification struct {
 	DraftID UUID `json:"draftID"`
 
@@ -4752,28 +4740,6 @@ type DraftOptionsNotification struct {
 	Commands []SlashCommand `json:"commands"`
 
 	Failure *string `json:"failure,omitzero"`
-}
-
-type DraftQuestion struct {
-	ID UUID `json:"id"`
-
-	Kind string `json:"kind"`
-
-	Workspace *string `json:"workspace,omitzero"`
-
-	Cost *string `json:"cost,omitzero"`
-
-	Text string `json:"text"`
-
-	Yes string `json:"yes"`
-}
-
-type DraftStep struct {
-	At Date `json:"at"`
-
-	Kind string `json:"kind"`
-
-	Text string `json:"text"`
 }
 
 // Whether an agent's lease of the browser or the screen waits on a person (#4264). ask: each lease opens a Needs you request of kind approve (secretUse, use browser or screen), the default on a machine that a person uses; always: it never asks, the default on a machine that only agents use (a bot's machine, a Codespace), where ask counts as always, as nobody answers there; off: the tools are not offered, and are refused.
@@ -9550,17 +9516,6 @@ type MachineProjects struct {
 	Projects []ProjectTools `json:"projects"`
 }
 
-// machine/providerDraft: a writing agent called one of the writer's tools (#858).
-type MachineProviderDraftCall struct {
-	AgentID UUID `json:"agentID"`
-
-	Draft UUID `json:"draft"`
-
-	Tool string `json:"tool"`
-
-	Arguments JSONValue `json:"arguments,omitzero"`
-}
-
 type MachineRef string
 
 // machine/release (#2178): the release the control plane names, as X.Y.Z.
@@ -12457,7 +12412,7 @@ type PromptRequest struct {
 	Voice *bool `json:"voice,omitzero"`
 }
 
-// providers/add and providers/update. `machine` is the machine that carries the provider (#3398): it runs the provider's server, and `secrets` go on to it, never kept by the control plane. None picks the caller's first online machine; an update without it keeps the one it has. `cli` is not kept; `draft` is the draft this accepts (#858).
+// providers/add and providers/update. `machine` is the machine that carries the provider (#3398): it runs the provider's server, and `secrets` go on to it, never kept by the control plane. None picks the caller's first online machine; an update without it keeps the one it has.
 type ProviderAdd struct {
 	ID *ProviderID `json:"id,omitzero"`
 
@@ -12465,25 +12420,11 @@ type ProviderAdd struct {
 
 	Kind string `json:"kind"`
 
-	Command *string `json:"command,omitzero"`
-
-	Args []string `json:"args,omitzero"`
-
-	URL *string `json:"url,omitzero"`
-
-	Headers map[string]string `json:"headers,omitzero"`
-
 	Commands JSONValue `json:"commands,omitzero"`
-
-	Map JSONValue `json:"map,omitzero"`
 
 	Machine *MachineRef `json:"machine,omitzero"`
 
 	Secrets map[string]string `json:"secrets,omitzero"`
-
-	CLI *string `json:"cli,omitzero"`
-
-	Draft *UUID `json:"draft,omitzero"`
 }
 
 // What a provider's machine answers to providers/carry, providers/keepSecrets, providers/forget and providers/ssh (#3398): the call's result, or why it failed, in words for the person. Channel 0 has no error path.
@@ -12493,7 +12434,7 @@ type ProviderCarried struct {
 	Error *string `json:"error,omitzero"`
 }
 
-// providers/carry (#3398): the control plane asks the machine that carries a provider to call it. `record` is the provider's record, which never holds a secret; the machine runs its server with the secrets it keeps. `secrets` is only a draft's, for this call, and is not kept.
+// providers/carry (#3398): the control plane asks the machine that carries a provider to call it. `record` is the provider's record, which never holds a secret; the machine runs its server with the secrets it keeps. `secrets` is only those an add or an update was given to check with, for this call, and is not kept.
 type ProviderCarry struct {
 	Provider ProviderID `json:"provider"`
 
@@ -12533,85 +12474,6 @@ type ProviderCreated struct {
 	Joining bool `json:"joining"`
 }
 
-// providers/draftAnswer: yes or no to a question.
-type ProviderDraftAnswer struct {
-	Draft UUID `json:"draft"`
-
-	Question UUID `json:"question"`
-
-	Yes bool `json:"yes"`
-}
-
-// A draft answered with no agent: the server follows the contract, or a shipped map fits.
-type ProviderDraftAnswered struct {
-	Note string `json:"note"`
-
-	Map JSONValue `json:"map,omitzero"`
-
-	Preset *string `json:"preset,omitzero"`
-}
-
-// providers/draftCancel.
-type ProviderDraftRequest struct {
-	Draft UUID `json:"draft"`
-}
-
-// The writing agent's start, for the client that asked for the draft to sign (#3542): the machine that holds its person's lock takes no start the control plane sends in its own words. The client checks that it starts only a draft's writer (agents/start, the draft's purpose, sandboxed, no MCP servers or other folders), signs method and params as they are (a LockSignature to machine), and sends the signature with providers/draftSigned.
-type ProviderDraftSign struct {
-	Machine MachineRef `json:"machine"`
-
-	Method string `json:"method"`
-
-	Params string `json:"params"`
-}
-
-// providers/draftSigned (#3542): the signature of a draft's sign, which the control plane delivers with the start as it came.
-type ProviderDraftSigned struct {
-	Draft UUID `json:"draft"`
-
-	Lock LockSignature `json:"lock"`
-}
-
-// providers/draftStart (#858).
-type ProviderDraftStart struct {
-	Form ProviderAdd `json:"form"`
-
-	Secrets map[string]string `json:"secrets,omitzero"`
-
-	Provider *ProviderID `json:"provider,omitzero"`
-
-	RuntimeID string `json:"runtimeID"`
-}
-
-type ProviderDraftStarted struct {
-	Draft UUID `json:"draft"`
-
-	Answered *ProviderDraftAnswered `json:"answered,omitzero"`
-
-	Sign *ProviderDraftSign `json:"sign,omitzero"`
-}
-
-// control/providerDraft: how a draft stands, to the client that started it.
-type ProviderDraftUpdate struct {
-	Draft UUID `json:"draft"`
-
-	State string `json:"state"`
-
-	RuntimeName string `json:"runtimeName"`
-
-	Steps []DraftStep `json:"steps"`
-
-	Cost *string `json:"cost,omitzero"`
-
-	DraftJSON JSONValue `json:"draftJSON,omitzero"`
-
-	Check *DraftCheck `json:"check,omitzero"`
-
-	Question *DraftQuestion `json:"question,omitzero"`
-
-	Note *string `json:"note,omitzero"`
-}
-
 // providers/forget (#3398): the provider was removed; its machine ends its server and deletes its secrets.
 type ProviderForget struct {
 	Provider ProviderID `json:"provider"`
@@ -12648,23 +12510,6 @@ type ProviderOptions struct {
 // providers/remove, providers/refresh, providers/options (with no `id`, the default provider).
 type ProviderRequest struct {
 	ID *ProviderID `json:"id,omitzero"`
-}
-
-type ProviderRuntime struct {
-	ID string `json:"id"`
-
-	Name string `json:"name"`
-
-	IsDefault bool `json:"isDefault"`
-}
-
-// providers/runtimes: what may write, on which host, or why none.
-type ProviderRuntimes struct {
-	Runtimes []ProviderRuntime `json:"runtimes"`
-
-	Host *string `json:"host,omitzero"`
-
-	Why *string `json:"why,omitzero"`
 }
 
 // providers/ssh (#3398): the machine that carries a codespaces provider starts a codespace's agentsd over ssh (`start`), reads its host key (`hostKey`), installs Agents in it with a host code from the control plane (`install`, #3497), or holds an ssh session to it that GitHub counts as use while its machine works (`keepAwake`, renewed each few minutes, and `letSleep`, #4637), with the token it keeps. Its result is ProviderSSHResult.
@@ -12717,8 +12562,6 @@ type ProviderSummary struct {
 	Capabilities []string `json:"capabilities"`
 
 	Contract int64 `json:"contract"`
-
-	Mapped bool `json:"mapped"`
 
 	Preset *string `json:"preset,omitzero"`
 

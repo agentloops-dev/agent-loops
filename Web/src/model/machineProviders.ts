@@ -93,8 +93,8 @@ export const providerWords = {
   /** Under the list: what a provider is, and the kinds only the Mac app adds (#3425). */
   footer: (hasMac: boolean) => "A provider starts and stops your machines: DigitalOcean Droplets, GitHub Codespaces, Coder workspaces, "
     + "Google Compute Engine VMs or AWS EC2 instances, through their API. One of your machines carries it: it runs there and keeps its tokens, and the control plane keeps none. "
-    + (hasMac ? "Docker, Cloud Workstations, your own commands and MCP servers are added in the Mac app."
-      : "The web page cannot add Docker, Cloud Workstations, your own commands or MCP servers yet."),
+    + (hasMac ? "Docker, Cloud Workstations and your own commands are added in the Mac app."
+      : "The web page cannot add Docker, Cloud Workstations or your own commands yet."),
   off: "Machine providers are off on this control plane.",
   add: "Add Provider…",
   /** Under the form: where its tokens and keys go (#3496). */
@@ -225,7 +225,7 @@ export function carrierLine(provider: ProviderSummary, canEdit: boolean): string
 /** The chip on a card, as the window's: "command provider · digitalocean-api · API". */
 export function kindChip(provider: ProviderSummary): string {
   if (provider.preset) return `command provider · ${provider.preset} · ${provider.preset.endsWith("-api") ? "API" : "CLI"}`;
-  return provider.kind === "commands" ? "command provider" : provider.mapped ? "MCP server · mapped" : "MCP server";
+  return "command provider";
 }
 
 /** The grey line under a provider's name, as the window's providerLine. */

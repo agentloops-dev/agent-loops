@@ -240,7 +240,7 @@ func (s *standIn) Check() (Checked, error) {
 	if s.refuse != "" {
 		return Checked{}, &ProviderFailure{s.refuse}
 	}
-	return Checked{Contract: 1, Capabilities: []string{"create", "delete", "options"}, Workspaces: append([]MachineInfo{}, s.workspaces...), Items: -1}, nil
+	return Checked{Contract: 1, Capabilities: []string{"create", "delete", "options"}, Workspaces: append([]MachineInfo{}, s.workspaces...)}, nil
 }
 
 func (s *standIn) List() ([]MachineInfo, error) {
@@ -354,8 +354,7 @@ func (s *standIn) Delete(id string) error {
 	return nil
 }
 
-func (s *standIn) Tools() ([]any, error) { return nil, providerFailure("It can’t list its tools.") }
-func (s *standIn) End()                  {}
+func (s *standIn) End() {}
 
 func (s *standIn) count() (int, int) {
 	s.mu.Lock()

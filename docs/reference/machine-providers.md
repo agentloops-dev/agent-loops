@@ -6,10 +6,12 @@ description: The tools a machine provider offers - contract 1 - their arguments,
 
 # Machine providers
 
-A machine provider is an ordinary MCP server, over stdio or streamable http, that the
-control plane uses to start and stop the machines hosts run on. This page is the contract
-it follows, version 1. The control plane recognises a provider by its tool names and the
-version its list reports; it needs no MCP extension.
+A machine provider is an ordinary MCP server, over stdio, that the control plane uses to
+start and stop the machines hosts run on. The one provider is the command provider that Agent
+Loops ships, below; an MCP server of your own, with or without a tool map, is no longer a
+provider (#6623). This page is the contract the command provider follows, version 1. The
+control plane recognises it by its tool names and the version its list reports; it needs no
+MCP extension.
 
 The Mac adds every kind in Settings ▸ Machine Providers. The web page adds the API
 presets (`digitalocean-api`, `codespaces-api`, `coder-api`, `aws-ec2-api`,
@@ -104,9 +106,8 @@ logged.
   plane passes the values an add or an update is given on to that machine once, as
   `providers/keepSecrets`, and keeps only their names. `providers/forget` deletes them when
   the provider is removed. They are not in the store, a store copy, a handover or a backup.
-- **How the provider gets them.** The machine fills them in: a server it runs gets them as
-  environment variables, and a server at an address gets them through `${NAME}` in its
-  configured headers. What the server answers goes back with each value said as `${NAME}`.
+- **How the provider gets them.** The machine fills them in: the command provider gets them as
+  environment variables. What it answers goes back with each value said as `${NAME}`.
 - **A codespace over ssh.** The machine that carries a codespaces provider starts a
   codespace's agentsd over ssh with `gh` and the token (`providers/ssh`), reads its host
   key for a link, and installs Agent Loops in it for Add as Machine… (op `install`, #3497).
@@ -119,17 +120,6 @@ logged.
   ssh is the carrying machine's. The control plane has no token, so it keeps no tunnel to a
   codespace: the codespace dials the control plane's own address, which must be one it can
   reach.
-
-## Tool maps
-
-A server whose tools are named otherwise can be used through a tool map: which of its tools
-stands for each of the above, how the arguments are written, and where each field is in its
-answer. See [Add a machine provider](../how-to/add-a-machine-provider.md#a-tool-map-for-a-providers-own-mcp-server).
-
-An agent can write the map, or a command provider's config, at Add Provider
-([Let an agent write it](../how-to/add-a-machine-provider.md#let-an-agent-write-it)). The
-map is then the same as a map that you wrote. The provider's record says which runtime
-wrote it, and when (`writtenBy`), until you change it.
 
 ## The command provider
 
@@ -184,8 +174,8 @@ WORKSPACE_COMMANDS_CONFIG='{"preset":"docker","containers":["devbox"],"ssh":"dev
 - `list` prints one machine per line, split on whitespace into `columns`. The last column
   takes the rest of the line.
 - Or, instead of `columns`, `"json": {"items": "<path to the array>", "id": "<path>", "name":
-  "<path>", "state": "<path>", …}` reads the output as JSON. The paths are those of a
-  [tool map](#tool-maps), within each item. An empty `items` means the output is the array.
+  "<path>", "state": "<path>", …}` reads the output as JSON. A path is dotted keys, with
+  `[0]` for an item of a list, within each item. An empty `items` means the output is the array.
 - `${column}` in a template is the value from the machine's row. It is shell-quoted before
   the command runs.
 - `create`, `delete` and `options` need `list`, which finds what `create` made by its
@@ -234,8 +224,6 @@ WORKSPACE_COMMANDS_CONFIG='{"preset":"docker","containers":["devbox"],"ssh":"dev
   token is kept until a minute before it ends. The key is never sent, logged or said.
 - An answer other than 2xx is a failure, in the provider's own words (its JSON's `message`),
   cut at 1 KB. A redirect is not followed, so a header never goes to another address.
-- An agent's draft with a request, or with a preset's `api` or `url`, is asked about before
-  its check runs (#858), as the request could send a secret anywhere.
 
 ### Presets
 

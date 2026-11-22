@@ -398,7 +398,7 @@ that reason, rather than left to time out.
 
 A machine that stops (a cloud machine turned off, a container stopped) is offline like any
 other, and nothing reaches it. When it runs on a provider's workspace, the control plane can
-start it again. It asks a **machine provider**, which is an MCP server, and then waits for
+start it again. It asks a **machine provider** (the command provider, run as an MCP server), and then waits for
 the machine to connect. See [Start machines from Agent Loops](../how-to/start-machines-from-agents.md).
 
 Providers run on the control plane, not on a machine, because the machine is what is down. Their
@@ -426,13 +426,6 @@ machine runs. It does not stop a machine as idle while its next workflow is due 
 time. While the Mac that runs the control plane sleeps, no wake-up calls are made.
 
 For now only a control plane with one copy runs providers, as only one holds ssh tunnels.
-
-**Write It for Me** puts an agent in the Add Provider sheet, at authoring time only. The
-agent runs on the machine on the control plane's own machine, because the server and the CLI
-must be read there. The control plane does every call to the server or the CLI itself, with
-the secrets, and gives the agent only the results, with each secret's value replaced by its
-name. The agent has no tools of its runtime's own and is in no list. Start and Stop never
-call an agent: they use the map that was kept.
 
 ## When the store is down
 

@@ -34,9 +34,7 @@ waits for its agentsd to connect, and the server comes online by itself.
    - **GitHub Codespaces**, **Coder Machines**, or **Google Cloud Workstations**.
    - **Your commands**: one machine, given as the commands you already use to start and
      stop it, such as `cws start devstack-1`. A status command is optional; it prints
-     `running` or `stopped`.
-   - **MCP server**: a provider of its own, or another MCP server with a tool map. See
-     [Add a machine provider](add-a-machine-provider.md).
+     `running` or `stopped`. See [Add a machine provider](add-a-machine-provider.md).
 3. Fill in its few fields. If it needs a token, add it under **Secrets**. A secret stays on
    the control plane and is never shown again.
 4. Choose **Add**. Agent Loops checks the provider and lists its machines. If it can't, the
@@ -249,7 +247,6 @@ checked out in the folder there.
 
 ## Related
 
-- [Add a machine provider](add-a-machine-provider.md): presets, your own commands, a
-  tool map, or a provider of your own.
+- [Add a machine provider](add-a-machine-provider.md): presets, or your own commands.
 - [Machine providers](../reference/machine-providers.md): the tools a provider offers.
 - [The control plane](../explanation/control-plane.md): why providers run there.

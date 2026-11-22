@@ -1,7 +1,7 @@
 import Foundation
 
-// Machine providers (#691, specs/691-workspace-providers): MCP servers on the control plane
-// that start and stop the machines hosts run on. What is here is records and the wire; the
+// Machine providers (#691, specs/691-workspace-providers): the command provider, an MCP
+// server on the control plane that starts and stops the machines hosts run on. What is here is records and the wire; the
 // MCP client and the starts are ControlPlaneKit's, handed in as `WorkspaceHandling`.
 
 /// A provider, by the id the control plane gave it.
@@ -38,60 +38,30 @@ public struct WorkspaceLink: Codable, Hashable, Sendable {
 /// which stay in the control plane's own home (research R3).
 public struct ProviderRecord: Codable, Hashable, Sendable, Identifiable {
     public enum Kind: String, Codable, Sendable {
-        /// The command provider Agents ships (`workspace-commands`).
+        /// The command provider Agents ships (`workspace-commands`). The MCP server kinds,
+        /// `stdio` and `http`, were removed (#6623).
         case commands
-        /// An MCP server the control plane runs.
-        case stdio
-        /// An MCP server at an address.
-        case http
     }
 
     public var id: ProviderID
     public var name: String
     public var kind: Kind
-    public var command: String?
-    public var args: [String]?
-    public var url: String?
-    /// Values may hold `${SECRET}`, filled in from the secrets when the server is reached.
-    public var headers: [String: String]?
     /// The command provider's configuration (contracts/command-provider.md).
     public var commands: JSONValue?
     public var secretNames: [String]
-    /// For a server whose tools don't follow the contract (contracts/tool-map.md).
-    public var map: JSONValue?
     /// Which optional contract tools it has: `options`, `create`, `delete`.
     public var capabilities: [String]
     public var contract: Int
     public var rev: Int
     public var forgotten: Bool?
-    /// Set when the map or commands were kept as an agent wrote them at Add Provider (#858).
-    public var writtenBy: WrittenBy?
 
-    /// Who wrote a provider's map or commands, when it was an agent (#858).
-    public struct WrittenBy: Codable, Hashable, Sendable {
-        public var runtimeID: String
-        public var at: Date
-        public init(runtimeID: String, at: Date) {
-            self.runtimeID = runtimeID
-            self.at = at
-        }
-    }
-
-    public init(id: ProviderID, name: String, kind: Kind, command: String? = nil, args: [String]? = nil,
-                url: String? = nil, headers: [String: String]? = nil, commands: JSONValue? = nil,
-                secretNames: [String] = [], map: JSONValue? = nil, capabilities: [String] = [],
-                contract: Int = 1, rev: Int = 0, forgotten: Bool? = nil, writtenBy: WrittenBy? = nil) {
-        self.writtenBy = writtenBy
+    public init(id: ProviderID, name: String, kind: Kind, commands: JSONValue? = nil, secretNames: [String] = [],
+                capabilities: [String] = [], contract: Int = 1, rev: Int = 0, forgotten: Bool? = nil) {
         self.id = id
         self.name = name
         self.kind = kind
-        self.command = command
-        self.args = args
-        self.url = url
-        self.headers = headers
         self.commands = commands
         self.secretNames = secretNames
-        self.map = map
         self.capabilities = capabilities
         self.contract = contract
         self.rev = rev
@@ -103,35 +73,8 @@ public struct ProviderRecord: Codable, Hashable, Sendable, Identifiable {
         let trimmed = name.trimmingCharacters(in: .whitespaces)
         if trimmed.isEmpty { return "Give it a name." }
         if trimmed.count > 60 { return "The name is over 60 characters." }
-        switch kind {
-        case .commands:
-            if commands?.objectValue == nil { return "Choose a preset or give its commands." }
-        case .stdio:
-            if (command ?? "").trimmingCharacters(in: .whitespaces).isEmpty { return "Give the command that runs the server." }
-        case .http:
-            guard let url, url.hasPrefix("http://") || url.hasPrefix("https://"), URL(string: url) != nil else {
-                return "The address must start with http:// or https://."
-            }
-        }
-        for name in referencedSecrets where !secretNames.contains(name) {
-            return "${\(name)} isn’t one of its secrets."
-        }
+        if commands?.objectValue == nil { return "Choose a preset or give its commands." }
         return nil
-    }
-
-    /// The `${NAME}` its headers name.
-    public var referencedSecrets: [String] {
-        (headers ?? [:]).values.flatMap(Self.placeholders).sorted()
-    }
-
-    static func placeholders(in text: String) -> [String] {
-        var found: [String] = []
-        var rest = Substring(text)
-        while let open = rest.range(of: "${"), let close = rest[open.upperBound...].firstIndex(of: "}") {
-            found.append(String(rest[open.upperBound..<close]))
-            rest = rest[rest.index(after: close)...]
-        }
-        return found
     }
 }
 
@@ -140,8 +83,7 @@ public extension DaemonAPI.Method {
     static let providersList = "providers/list"
     /// `ProviderAdd` → `ProviderSummary`, once the server has been checked and has listed.
     static let providersAdd = "providers/add"
-    /// `ProviderAdd` with `id`; secrets left out are kept, and so are its command, address,
-    /// headers, and map or commands (#858).
+    /// `ProviderAdd` with `id`; secrets left out are kept, and so are its commands.
     static let providersUpdate = "providers/update"
     /// `ProviderRequest`. Its hosts stay, unlinked.
     static let providersRemove = "providers/remove"
@@ -259,7 +201,6 @@ public extension DaemonAPI {
         public var secrets: [String: Bool]
         public var capabilities: [String]
         public var contract: Int
-        public var mapped: Bool
         /// The command provider's preset, when it uses one.
         public var preset: String?
         public var workspaces: [MachineInfo]
@@ -286,7 +227,7 @@ public extension DaemonAPI {
         public var machineOffline: Bool?
 
         public init(id: ProviderID, name: String, kind: String, secrets: [String: Bool] = [:],
-                    capabilities: [String] = [], contract: Int = 1, mapped: Bool = false, preset: String? = nil,
+                    capabilities: [String] = [], contract: Int = 1, preset: String? = nil,
                     workspaces: [MachineInfo] = [], listedAt: Date? = nil, current: Bool = true,
                     problem: String? = nil, group: String? = nil, mayUse: Bool? = nil,
                     sshToolMissing: String? = nil, machine: MachineRef? = nil, machineName: String? = nil,
@@ -301,7 +242,6 @@ public extension DaemonAPI {
             self.secrets = secrets
             self.capabilities = capabilities
             self.contract = contract
-            self.mapped = mapped
             self.preset = preset
             self.workspaces = workspaces
             self.listedAt = listedAt
@@ -395,39 +335,20 @@ public extension DaemonAPI {
         public var id: ProviderID?
         public var name: String
         public var kind: ProviderRecord.Kind
-        public var command: String?
-        public var args: [String]?
-        public var url: String?
-        public var headers: [String: String]?
         public var commands: JSONValue?
-        public var map: JSONValue?
         /// The machine that carries it (#3398). Nil: the person's first online machine on an
         /// add, the one it has on an update.
         public var machine: MachineRef?
         /// Name to value. Passed on to `machine`, which keeps them; never given back.
         public var secrets: [String: String]?
-        /// Your commands: the program its commands use, for Write It for Me (#858). Not kept.
-        public var cli: String?
-        /// The draft this accepts (#858): its map or commands, unchanged, mark the record
-        /// `writtenBy`.
-        public var draft: UUID?
 
-        public init(id: ProviderID? = nil, name: String, kind: ProviderRecord.Kind, command: String? = nil,
-                    args: [String]? = nil, url: String? = nil, headers: [String: String]? = nil,
-                    commands: JSONValue? = nil, map: JSONValue? = nil, machine: MachineRef? = nil,
-                    secrets: [String: String]? = nil, cli: String? = nil, draft: UUID? = nil) {
+        public init(id: ProviderID? = nil, name: String, kind: ProviderRecord.Kind, commands: JSONValue? = nil,
+                    machine: MachineRef? = nil, secrets: [String: String]? = nil) {
             self.machine = machine
-            self.cli = cli
-            self.draft = draft
             self.id = id
             self.name = name
             self.kind = kind
-            self.command = command
-            self.args = args
-            self.url = url
-            self.headers = headers
             self.commands = commands
-            self.map = map
             self.secrets = secrets
         }
     }
