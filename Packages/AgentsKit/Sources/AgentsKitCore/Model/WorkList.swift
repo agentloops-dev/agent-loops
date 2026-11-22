@@ -134,9 +134,11 @@ public enum WorkList {
             self.review = review
         }
 
-        /// A row from the forge's item, with its lineage when there is any.
-        public init(_ item: DaemonAPI.ForgeItem, on host: MachineRef, lineage: DaemonAPI.ReportNode? = nil) {
-            self.init(node: item.node, title: item.title, state: item.state, labels: item.labels, repo: WorkList.repo(of: item.node.ref),
+        /// A row from the forge's item, with its lineage when there is any. `repo` is the item's repo when the caller
+        /// knows it already (#6633: a list keeps each ref's), else it is read from the ref.
+        public init(_ item: DaemonAPI.ForgeItem, on host: MachineRef, lineage: DaemonAPI.ReportNode? = nil, repo: String? = nil) {
+            self.init(node: item.node, title: item.title, state: item.state, labels: item.labels,
+                      repo: repo ?? WorkList.repo(of: item.node.ref),
                       author: item.author, assignees: item.assignees, updated: item.updatedAt,
                       url: item.url.flatMap(URL.init(string:)), host: host, draft: item.draft ?? false,
                       lineage: lineage,
@@ -215,19 +217,34 @@ public enum WorkList {
     /// Whether a title says its short name already, as a release lineage could not resolve does.
     public static func titleSaysRef(_ title: String, _ ref: String) -> Bool { title.hasSuffix(shortRef(ref)) }
 
-    /// The items of every machine, one row per ref (the last updated copy), each with its lineage by ref.
+    /// The items of every machine, one row per ref (the last updated copy), each with its lineage by ref. `repo` gives
+    /// a ref's repo (#6633: a list keeps them, so a new page reads no ref twice).
     public static func merge(_ lists: [(host: MachineRef, items: [DaemonAPI.ForgeItem])],
-                             lineage: [DaemonAPI.ReportNode]) -> [Row] {
+                             lineage: [DaemonAPI.ReportNode], repo: (String) -> String = WorkList.repo(of:)) -> [Row] {
         let byRef = Dictionary(lineage.map { ($0.node.ref, $0) }, uniquingKeysWith: { first, _ in first })
         var rows: [String: Row] = [:]
         for (host, items) in lists {
             for item in items {
-                let row = Row(item, on: host, lineage: byRef[item.node.ref])
-                if let had = rows[item.node.ref], had.updated >= row.updated { continue }
-                rows[item.node.ref] = row
+                // Only a copy that is newer than the one kept makes a row.
+                if let had = rows[item.node.ref], had.updated >= item.updatedAt { continue }
+                rows[item.node.ref] = Row(item, on: host, lineage: byRef[item.node.ref], repo: repo(item.node.ref))
             }
         }
         return Array(rows.values)
+    }
+
+    /// The items in the server's order (#6538): each machine's answer in turn, an item once, where it was first.
+    public static func ordered(_ lists: [(host: MachineRef, items: [DaemonAPI.ForgeItem])],
+                               lineage: [DaemonAPI.ReportNode], repo: (String) -> String = WorkList.repo(of:)) -> [Row] {
+        let byRef = Dictionary(lineage.map { ($0.node.ref, $0) }, uniquingKeysWith: { first, _ in first })
+        var seen = Set<String>()
+        var rows: [Row] = []
+        for (host, items) in lists {
+            for item in items where seen.insert(item.node.ref).inserted {
+                rows.append(Row(item, on: host, lineage: byRef[item.node.ref], repo: repo(item.node.ref)))
+            }
+        }
+        return rows
     }
 
     /// A project in Work's Project filter (#3283): New Session's (`NewSessionProject`), a folder that
@@ -257,13 +274,13 @@ public enum WorkList {
     /// Each project's repos and trackers (#3283): those of the items its folders read, on every
     /// machine, before the copies of one ref are merged, so a repo two projects read is in both.
     /// The projects in their order, without the ones whose folders read nothing.
-    public static func projectRepos(_ projects: [Project], lists: [(host: MachineRef, items: [DaemonAPI.ForgeItem])])
-        -> [(project: Project, repos: Set<String>)] {
+    public static func projectRepos(_ projects: [Project], lists: [(host: MachineRef, items: [DaemonAPI.ForgeItem])],
+                                    repo: (String) -> String = WorkList.repo(of:)) -> [(project: Project, repos: Set<String>)] {
         var read: [String: Set<String>] = [:]
         for (host, items) in lists {
             for item in items {
                 guard let folder = item.folder else { continue }
-                read[folderKey(host: host, path: folder), default: []].insert(repo(of: item.node.ref))
+                read[folderKey(host: host, path: folder), default: []].insert(repo(item.node.ref))
             }
         }
         return projects.compactMap { project in
