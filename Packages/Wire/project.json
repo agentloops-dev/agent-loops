@@ -22,7 +22,9 @@
         "{workspaceRoot}/Web/src/protocol/capabilities.generated.ts",
         "{workspaceRoot}/Packages/AgentsKit/Sources/AgentsKitCore/Daemon/Capabilities.generated.swift",
         "{workspaceRoot}/Packages/AgentsKit/Sources/AgentsKitCore/Model/FeatureFlag.generated.swift",
-        "{workspaceRoot}/Web/src/protocol/flags.generated.ts"
+        "{workspaceRoot}/Web/src/protocol/flags.generated.ts",
+        "{workspaceRoot}/Packages/AgentsKit/Sources/AgentsKitCore/Model/Maturity.generated.swift",
+        "{workspaceRoot}/Web/src/protocol/maturity.generated.ts"
       ]
     }
   }

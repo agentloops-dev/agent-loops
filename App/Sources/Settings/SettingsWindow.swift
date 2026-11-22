@@ -205,6 +205,7 @@ struct SettingsWindow: View {
                            openFolderPolicy: requests.map { requests in { path in openFolderPolicy(path, requests) } })
             }
         case .voice: FormColumn { Form { VoiceSettingsSection() }.paperForm() }
+        case .earlyFeatures: FormColumn { Form { EarlyFeaturesSection() }.paperForm() }
         case .featureFlags: FormColumn { Form { FeatureFlagsSettingsSection() }.paperForm() }
         case .account: FormColumn { AccountSettingsView() }
         case .signIns:
@@ -285,8 +286,9 @@ extension SettingsScope {
         // How this app draws: Sidebar is kept on the Mac's host so every client draws the
         // same (#1033, #2079), but its subject is the app (#2157).
         // Notifications' limits are rules of Agents ▸ Policy now (#2957, FR-023).
+        // Early Features (#6052): the features that are not GA, which the person can turn off.
         // Feature Flags (#6254): the features in work that the person turns on, on every client.
-        case .thisApp: [.appearance, .sidebar, .voice, .featureFlags]
+        case .thisApp: [.appearance, .sidebar, .voice, .earlyFeatures, .featureFlags]
         // What agents may do, what they spend and what they take (#2957, FR-018).
         case .agents: [.agentsPolicy, .spending, .resources]
         case .machines: [.machines, .runtimes, .browser, .agentConfiguration]
@@ -305,6 +307,8 @@ enum SettingsPane: String, Hashable, CaseIterable {
     case agentsPolicy
     /// Voice mode, its voice and its sounds (Alex, 2026-10-29): was in Appearance.
     case voice
+    /// The features that are not GA, each with its badge and a switch, on by default (#6052).
+    case earlyFeatures
     /// The features in work that the person turns on (#6254, epic-lifecycle stage 6).
     case featureFlags
     /// Every machine, and this Mac's own settings (#1759). Was the Mac pane: its raw value is
@@ -354,6 +358,7 @@ enum SettingsPane: String, Hashable, CaseIterable {
         case .sidebar: "Sidebar"
         case .agentsPolicy: PolicyLayersWords.title
         case .voice: "Voice"
+        case .earlyFeatures: EarlyFeaturesSection.title
         case .featureFlags: FeatureFlagsSettingsSection.title
         case .account: "Account"
         case .machines: "Machines"
@@ -384,6 +389,7 @@ enum SettingsPane: String, Hashable, CaseIterable {
         case .sidebar: "sidebar.left"
         case .agentsPolicy: PolicyLayersWords.symbol
         case .voice: "waveform"
+        case .earlyFeatures: "sparkles"
         case .featureFlags: "flag"
         case .account: "person.crop.circle"
         case .machines: "desktopcomputer"
