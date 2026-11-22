@@ -1092,7 +1092,7 @@
     },
     "ForgeList": {
       "type": "object",
-      "description": "forge/issues and forge/pulls (#3129): a page of items, the last updated first. cursor is the next page, absent at the end. errors says a forge that could not be read (not connected, a rate limit), and the items of the others still come. forges says what each forge on the page fills (#4361); absent from an earlier daemon. total is how many items the whole list has, the sum of each forge's count, kept from each forge's first page (#4396); absent when a forge on the list gives no count (ForgeCapabilities.total) or could not be read, and from an earlier daemon.",
+      "description": "forge/issues and forge/pulls (#3129): a page of items, the last updated first. cursor is the next page, absent at the end. errors says a forge that could not be read (not connected, a rate limit), and the items of the others still come. forges says what each forge on the page fills (#4361); absent from an earlier daemon. total is how many items the whole list has, the sum of each forge's count, kept from each forge's first page (#4396); absent when a forge on the list gives no count (ForgeCapabilities.total) or could not be read, and from an earlier daemon. scopes says what the list reads (#6641).",
       "properties": {
         "items": {
           "type": "array",
@@ -1121,6 +1121,13 @@
         "readAt": {
           "description": "When the forges were read for this answer (#6642): an answer agentsd kept has the time of its read, not of the call. Absent from an earlier daemon.",
           "$ref": "core.schema.json#/definitions/WireDate"
+        },
+        "scopes": {
+          "type": "array",
+          "description": "What the list reads (#6641): one entry per repo or project, as forge:name (github:example/shop), or one per forge that names no repos. Two machines whose lists read the same scopes give the same list, so a client asks one of them. Absent from an earlier daemon.",
+          "items": {
+            "type": "string"
+          }
         }
       },
       "required": [

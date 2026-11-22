@@ -1,21 +1,41 @@
 AgentMachines full
-{"providers":[{"id":"ID","name":"NAME","canMake":true,"canDelete":true,"options":{"k":"v"},"workspaces":[{"id":"ID","name":"NAME","state":"STATE","host":"HOST","hostState":"HOSTSTATE","cost":"COST"}]}]}
+{"providers":[{"id":"ID","name":"NAME","canMake":true,"canDelete":true,"options":{"k":"v"},"workspaces":[{"id":"ID","name":"NAME","state":"STATE","host":"HOST","hostState":"HOSTSTATE","cost":"COST","reason":"REASON"}]}],"hosts":[{"name":"NAME","state":"STATE"}]}
 AgentMachines zero
 {"providers":null}
-DraftUpdate full
-{"draft":"DRAFT","state":"STATE","runtimeName":"RUNTIMENAME","steps":[{"at":813922215.25,"kind":"KIND","text":"TEXT"}],"cost":"COST","draftJSON":{"k":"v"},"check":{"passed":true,"workspaces":[{"id":"ID","name":"NAME","state":"STATE","ssh":"SSH","tunnel":true,"cost":"COST","host":"HOST"}],"problem":"PROBLEM","ssh":"SSH","noSSH":true},"question":{"id":"ID","kind":"KIND","workspace":"WORKSPACE","cost":"COST","text":"TEXT","yes":"YES"},"note":"NOTE"}
-DraftUpdate zero
-{"draft":"","state":"","runtimeName":"","steps":null}
+KeepRequest full
+{"host":"HOST","method":"METHOD","params":{"k":"v"},"signed":{"method":"METHOD","params":"PARAMS","lock":{"to":"TO","at":7,"key":"AQID","sig":"AQID"}}}
+KeepRequest zero
+{"host":"","method":"","params":null}
+KeptDelivered full
+{"host":"HOST","id":"6F9619FF-8B86-D011-B42D-00C04FC964FF","agentID":"6F9619FF-8B86-D011-B42D-00C04FC964FF"}
+KeptDelivered zero
+{"host":"","id":""}
+KeptList full
+{"kept":[{"id":"6F9619FF-8B86-D011-B42D-00C04FC964FF","host":"HOST","kind":"KIND","agentID":"6F9619FF-8B86-D011-B42D-00C04FC964FF","text":"TEXT","folder":"FOLDER","runtimeID":"RUNTIMEID","at":813922215.25,"failed":"FAILED"}],"next":"NEXT","counts":{"kind":{"KEY":7}}}
+KeptList zero
+{"kept":null}
+KeptRequest full
+{"id":"6F9619FF-8B86-D011-B42D-00C04FC964FF","host":"HOST","kind":"KIND","agentID":"6F9619FF-8B86-D011-B42D-00C04FC964FF","text":"TEXT","folder":"FOLDER","runtimeID":"RUNTIMEID","at":813922215.25,"failed":"FAILED"}
+KeptRequest zero
+{"id":"","host":"","kind":"","text":"","at":0}
+KeptRequestID full
+{"host":"HOST","id":"6F9619FF-8B86-D011-B42D-00C04FC964FF"}
+KeptRequestID zero
+{"host":"","id":""}
+MachineInfo full
+{"id":"ID","name":"NAME","state":"STATE","ssh":"SSH","tunnel":true,"hostKeyRenews":true,"cost":"COST","idleTimeoutMinutes":7,"host":"HOST","reason":"REASON","joining":true,"notJoined":"NOTJOINED","setup":{"steps":[{"id":"ID","state":"STATE","startedAt":813922215.25,"endedAt":813922215.25,"detail":"DETAIL","error":"ERROR","fromPool":true,"slower":true}],"startedAt":813922215.25,"readyAt":813922215.25}}
+MachineInfo zero
+{"id":"","name":"","state":""}
 MachineLink full
-{"host":"HOST","provider":"PROVIDER","workspace":"WORKSPACE","startWhenUsed":true,"stopWhenIdleMinutes":7}
+{"host":"HOST","provider":"PROVIDER","workspace":"WORKSPACE","startWhenUsed":true,"stopWhenIdleMinutes":7,"trust":"TRUST"}
 MachineLink zero
 {"host":"","provider":"","workspace":""}
-MachineProviderDraftCall full
-{"agentID":"AGENTID","draft":"DRAFT","tool":"TOOL","arguments":{"k":"v"}}
-MachineProviderDraftCall zero
-{"agentID":"","draft":"","tool":""}
+MachineOptions full
+{"host":"HOST","startWhenUsed":true,"stopWhenIdleMinutes":7,"startForSchedules":true}
+MachineOptions zero
+{"host":""}
 MachineRequest full
-{"host":"HOST"}
+{"host":"HOST","purge":true}
 MachineRequest zero
 {"host":""}
 MachineSchedule full
@@ -31,82 +51,34 @@ MachineStop full
 MachineStop zero
 {"host":""}
 MachineWorkspace full
-{"provider":"PROVIDER","providerName":"PROVIDERNAME","workspace":"WORKSPACE","workspaceName":"WORKSPACENAME","workspaceState":"WORKSPACESTATE","hostState":"HOSTSTATE","phase":"PHASE","since":813922215.25,"problem":"PROBLEM","stoppedBy":"STOPPEDBY","canStart":true,"canStop":true,"startWhenUsed":true,"stopWhenIdleMinutes":7,"cost":"COST","current":true,"startForSchedules":true,"tellsSchedule":true,"nextWorkflow":"NEXTWORKFLOW","nextWorkflowAt":813922215.25,"wakeAt":813922215.25}
+{"provider":"PROVIDER","providerName":"PROVIDERNAME","workspace":"WORKSPACE","workspaceName":"WORKSPACENAME","workspaceState":"WORKSPACESTATE","hostState":"HOSTSTATE","phase":"PHASE","since":813922215.25,"problem":"PROBLEM","stoppedBy":"STOPPEDBY","canStart":true,"canStop":true,"startWhenUsed":true,"stopWhenIdleMinutes":7,"cost":"COST","idleTimeoutMinutes":7,"current":true,"startForSchedules":true,"tellsSchedule":true,"nextWorkflow":"NEXTWORKFLOW","nextWorkflowAt":813922215.25,"wakeAt":813922215.25}
 MachineWorkspace zero
 {"provider":"","providerName":"","workspace":"","workspaceName":"","workspaceState":"","canStart":false,"canStop":false,"startWhenUsed":false,"current":false}
 MachineWorkspaceCall full
-{"agent":"AGENT","method":"METHOD","params":{"k":"v"}}
+{"agent":"AGENT","method":"METHOD","params":{"k":"v"},"deliver":{"method":"METHOD","params":"PARAMS","lock":{"to":"TO","at":7,"key":"AQID","sig":"AQID"}}}
 MachineWorkspaceCall zero
 {"agent":"","method":"","params":null}
-MachineOptions full
-{"host":"HOST","startWhenUsed":true,"stopWhenIdleMinutes":7,"startForSchedules":true}
-MachineOptions zero
-{"host":""}
-KeepRequest full
-{"host":"HOST","method":"METHOD","params":{"k":"v"}}
-KeepRequest zero
-{"host":"","method":"","params":null}
-KeptDelivered full
-{"host":"HOST","id":"ID","agentID":"AGENTID"}
-KeptDelivered zero
-{"host":"","id":""}
-KeptList full
-{"kept":[{"id":"ID","host":"HOST","kind":"KIND","agentID":"AGENTID","text":"TEXT","folder":"FOLDER","runtimeID":"RUNTIMEID","at":813922215.25,"failed":"FAILED"}]}
-KeptList zero
-{"kept":null}
-KeptRequest full
-{"id":"ID","host":"HOST","kind":"KIND","agentID":"AGENTID","text":"TEXT","folder":"FOLDER","runtimeID":"RUNTIMEID","at":813922215.25,"failed":"FAILED"}
-KeptRequest zero
-{"id":"","host":"","kind":"","text":"","at":0}
-KeptRequestID full
-{"host":"HOST","id":"ID"}
-KeptRequestID zero
-{"host":"","id":""}
 ProviderAdd full
-{"id":"ID","name":"NAME","kind":"KIND","command":"COMMAND","args":["ARGS"],"url":"URL","headers":{"KEY":"HEADERS"},"commands":{"k":"v"},"map":{"k":"v"},"secrets":{"KEY":"SECRETS"},"cli":"CLI","draft":"DRAFT"}
+{"id":"ID","name":"NAME","kind":"KIND","commands":{"k":"v"},"machine":"MACHINE","secrets":{"KEY":"SECRETS"}}
 ProviderAdd zero
 {"name":"","kind":""}
 ProviderCreate full
-{"id":"ID","name":"NAME","options":{"k":"v"},"clones":["CLONES"]}
+{"id":"ID","name":"NAME","options":{"k":"v"},"clones":["CLONES"],"repository":"REPOSITORY"}
 ProviderCreate zero
-{"id":"","name":""}
+{}
 ProviderCreated full
-{"workspace":{"id":"ID","name":"NAME","state":"STATE","ssh":"SSH","tunnel":true,"cost":"COST","host":"HOST"},"joining":true}
+{"workspace":{"id":"ID","name":"NAME","state":"STATE","ssh":"SSH","tunnel":true,"hostKeyRenews":true,"cost":"COST","idleTimeoutMinutes":7,"host":"HOST","reason":"REASON","joining":true,"notJoined":"NOTJOINED","setup":{"steps":[{"id":"ID","state":"STATE","startedAt":0,"endedAt":0,"detail":"","error":"","fromPool":false,"slower":false}],"startedAt":813922215.25,"readyAt":813922215.25}},"joining":true}
 ProviderCreated zero
 {"workspace":{"id":"","name":"","state":""},"joining":false}
-ProviderDraftAnswer full
-{"draft":"DRAFT","question":"QUESTION","yes":true}
-ProviderDraftAnswer zero
-{"draft":"","question":"","yes":false}
-ProviderDraftRequest full
-{"draft":"DRAFT"}
-ProviderDraftRequest zero
-{"draft":""}
-ProviderDraftStart full
-{"form":{"id":"ID","name":"NAME","kind":"KIND","command":"COMMAND","args":["ARGS"],"url":"URL","headers":{"KEY":"HEADERS"},"commands":{"k":"v"},"map":{"k":"v"},"secrets":{"KEY":"SECRETS"},"cli":"CLI","draft":"DRAFT"},"secrets":{"KEY":"SECRETS"},"provider":"PROVIDER","runtimeID":"RUNTIMEID"}
-ProviderDraftStart zero
-{"form":{"name":"","kind":""},"runtimeID":""}
-ProviderDraftStarted full
-{"draft":"DRAFT","answered":{"note":"NOTE","map":{"k":"v"},"preset":"PRESET"}}
-ProviderDraftStarted zero
-{"draft":""}
 ProviderOptions full
-{"schema":{"k":"v"}}
+{"schema":{"k":"v"},"id":"ID","values":{"k":"v"},"name":"NAME"}
 ProviderOptions zero
 {"schema":null}
 ProviderRequest full
 {"id":"ID"}
 ProviderRequest zero
 {}
-ProviderRuntimes full
-{"runtimes":[{"id":"ID","name":"NAME","isDefault":true}],"host":"HOST","why":"WHY"}
-ProviderRuntimes zero
-{"runtimes":null}
 ProviderSummary full
-{"id":"ID","name":"NAME","kind":"KIND","secrets":{"KEY":true},"capabilities":["CAPABILITIES"],"contract":7,"mapped":true,"preset":"PRESET","workspaces":[{"id":"ID","name":"NAME","state":"STATE","ssh":"SSH","tunnel":true,"cost":"COST","host":"HOST"}],"listedAt":813922215.25,"current":true,"problem":"PROBLEM"}
+{"id":"ID","name":"NAME","kind":"KIND","secrets":{"KEY":true},"capabilities":["CAPABILITIES"],"contract":7,"preset":"PRESET","workspaces":[{"id":"ID","name":"NAME","state":"STATE","ssh":"SSH","tunnel":true,"hostKeyRenews":true,"cost":"COST","idleTimeoutMinutes":7,"host":"HOST","reason":"REASON","joining":true,"notJoined":"NOTJOINED","setup":{"steps":[{"id":"","state":""}],"startedAt":813922215.25,"readyAt":813922215.25}}],"listedAt":813922215.25,"current":true,"problem":"PROBLEM","group":"GROUP","mayUse":true,"default":true,"machine":"MACHINE","machineName":"MACHINENAME","machineOffline":true,"sshToolMissing":"SSHTOOLMISSING"}
 ProviderSummary zero
-{"id":"","name":"","kind":"","secrets":null,"capabilities":null,"contract":0,"mapped":false,"workspaces":null,"current":false}
-MachineInfo full
-{"id":"ID","name":"NAME","state":"STATE","ssh":"SSH","tunnel":true,"cost":"COST","host":"HOST"}
-MachineInfo zero
-{"id":"","name":"","state":""}
+{"id":"","name":"","kind":"","secrets":null,"capabilities":null,"contract":0,"workspaces":null,"current":false}

@@ -95,14 +95,14 @@ const kinds: Record<ProviderKind, KindInfo> = {
  * Every kind Add a Provider lists (#6069), as the window's AddProviderSheet.Kind: the API kinds
  * this page adds, and the ones only the Mac app adds, which the list shows but does not open.
  */
-export type ProviderChoice = ProviderKind | "docker" | "workstations" | "commands" | "mcp";
+export type ProviderChoice = ProviderKind | "docker" | "workstations" | "commands";
 
 /** The list's groups, in order: a person looks first for the place their machines are (#6069). */
 export const providerGroups: readonly { title: string; kinds: readonly ProviderChoice[] }[] = [
   { title: "Cloud", kinds: ["digitalOcean", "compute", "aws"] },
   { title: "Development environments", kinds: ["codespaces", "coder", "workstations"] },
   { title: "On a machine you have", kinds: ["docker"] },
-  { title: "Custom", kinds: ["commands", "mcp"] },
+  { title: "Custom", kinds: ["commands"] },
 ];
 
 /** The docs site (#1327), as the sidebar's Help: a link opened in a new tab, never fetched. */
@@ -119,7 +119,6 @@ const choices: Record<ProviderChoice, { title: string; description: string; docs
   workstations: { title: "Google Cloud Workstations", description: "Workstations in one cluster.", docs: `${docs}set-up-a-cloud-machine-provider/#google-cloud-workstations` },
   docker: { title: "Docker Containers", description: "Containers on a machine that has docker.", docs: `${docs}start-machines-from-agents/#add-a-provider` },
   commands: { title: "Your commands", description: "Your own commands to list, start and stop machines.", docs: `${docs}start-machines-from-agents/#add-a-provider` },
-  mcp: { title: "MCP server", description: "A server with workspace tools, or a tool map.", docs: `${docs}add-a-machine-provider/` },
 };
 
 export function choiceTitle(choice: ProviderChoice): string { return choices[choice].title; }
@@ -136,8 +135,8 @@ export const providerWords = {
   /** Under the list: what a provider is, and the kinds only the Mac app adds (#3425). */
   footer: (hasMac: boolean) => "A provider starts and stops your machines: DigitalOcean Droplets, GitHub Codespaces, Coder workspaces, "
     + "Google Compute Engine VMs or AWS EC2 instances, through their API. One of your machines carries it: it runs there and keeps its tokens, and the control plane keeps none. "
-    + (hasMac ? "Docker, Cloud Workstations, your own commands and MCP servers are added in the Mac app."
-      : "The web page cannot add Docker, Cloud Workstations, your own commands or MCP servers yet."),
+    + (hasMac ? "Docker, Cloud Workstations and your own commands are added in the Mac app."
+      : "The web page cannot add Docker, Cloud Workstations or your own commands yet."),
   off: "Machine providers are off on this control plane.",
   add: "Add Provider…",
   /** Step 1's line under the title (#6069). */
@@ -275,7 +274,7 @@ export function carrierLine(provider: ProviderSummary, canEdit: boolean): string
 /** The chip on a card, as the window's: "command provider · digitalocean-api · API". */
 export function kindChip(provider: ProviderSummary): string {
   if (provider.preset) return `command provider · ${provider.preset} · ${provider.preset.endsWith("-api") ? "API" : "CLI"}`;
-  return provider.kind === "commands" ? "command provider" : provider.mapped ? "MCP server · mapped" : "MCP server";
+  return "command provider";
 }
 
 /** The grey line under a provider's name, as the window's providerLine. */

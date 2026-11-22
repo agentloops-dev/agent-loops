@@ -89,12 +89,15 @@ function controlPlane(person = "alex") {
   const requests = new Map();
   const clients = [];
   let n = 0;
-  const tell = (method, params) => { for (const c of clients) queueMicrotask(() => c.lock.notify(method, structuredClone(params))); };
+  // A client with deaf set hears nothing, as a window whose connection was down (#6625).
+  const tell = (method, params) => { for (const c of clients) if (!c.deaf) queueMicrotask(() => c.lock.notify(method, structuredClone(params))); };
   const row = (r) => { const { result, ...rest } = r; return rest; };
   const changed = (r) => (r.result ? tell("control/lockJoinDecided", { request: r.request, result: r.result }) : tell("control/lockJoinRequested", row(r)));
   const fail = (code, message) => Object.assign(new Error(message), { code });
   const plane = {
     lock, requests, calls: [],
+    /** Methods that fail, as a read while the control plane does not answer. */
+    failing: new Set(),
     connect(client, name, kind = "browser", pins = new model.MemoryPins()) {
       const keys = { pair: null };
       const said = [];
@@ -111,6 +114,7 @@ function controlPlane(person = "alex") {
     },
     async answer(client, name, kind, method, params) {
       plane.calls.push({ client, method, params });
+      if (plane.failing.has(method)) throw fail(-32000, "The control plane did not answer.");
       switch (method) {
         case "lock/get": return structuredClone(lock);
         case "lock/add": {
@@ -217,6 +221,39 @@ test("the first browser makes the root; a second asks, compares digits and is ap
   assert.equal(state.membersOf("addClient")[1].clientKind, "web");
   assert.deepEqual(mac.said, []);
   assert.deepEqual(web.said, []);
+});
+
+test("a signer that missed the notice shows the card at its next read, and a read that fails keeps it (#6625)", async () => {
+  const plane = controlPlane();
+  const mac = plane.connect("AAAA-1111", "Mac");
+  mac.lock.recheckEvery = 20;
+  await mac.lock.run();
+  assert.equal(mac.lock.device.value.kind, "member");
+
+  // The window hears nothing while the CLI on the same Mac asks: it has its own client id.
+  mac.deaf = true;
+  const cli = plane.connect("CCCC-3333", "loops on a Mac", "mac");
+  await cli.lock.run();
+  assert.equal(cli.lock.device.value.kind, "asking");
+  assert.equal(mac.lock.cards.value.length, 0);
+  await eventually(() => mac.lock.cards.value.length === 1);
+  assert.equal(mac.lock.cards.value[0].request.name, "loops on a Mac");
+  assert.equal(mac.lock.cards.value[0].view.kind, "compare");
+
+  // The control plane stops answering: the card stays.
+  plane.failing.add("lock/joinRequests");
+  const reads = plane.calls.filter((c) => c.method === "lock/joinRequests").length;
+  await eventually(() => plane.calls.filter((c) => c.method === "lock/joinRequests").length > reads + 1);
+  assert.equal(mac.lock.cards.value.length, 1);
+  await mac.lock.run();
+  assert.equal(mac.lock.cards.value.length, 1);
+
+  // Back, and still deaf: the request's end is read too.
+  plane.failing.clear();
+  await plane.answer("CCCC-3333", "loops on a Mac", "mac", "lock/joinDeny", { request: mac.lock.cards.value[0].request.request });
+  await eventually(() => mac.lock.cards.value.length === 0);
+  mac.lock.recheckEvery = 60_000;
+  assert.deepEqual(mac.said, []);
 });
 
 test("after a new sign-in, the old key signs in a new key for the new client id (#4320)", async () => {

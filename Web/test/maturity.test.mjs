@@ -52,3 +52,21 @@ test("the page's list is Packages/Wire's, and its words are the window's (#6052)
   assert.ok(swift.includes(JSON.stringify(earlyFeaturesFooter)), "the footer is the window's");
   assert.ok(swift.includes(JSON.stringify(noEarlyFeatures)), "the empty line is the window's");
 });
+
+test("a page older than its host shows the host's level, the lowest where no one part runs it (#6579)", async () => {
+  const m = await load("test/preferences-entry.ts");
+  m.preferencesSaid({});
+  // A part that says none is older than #6579: the page's own list.
+  assert.equal(m.saidMaturity("chat.branch/1", undefined, list), "beta");
+  // One that says its levels: not named is GA there, named is its level, one the page does not know is its own.
+  assert.equal(m.saidMaturity("chat.branch/1", {}, list), "ga");
+  assert.equal(m.saidMaturity("host.wire/1", { "host.wire/1": "alpha" }, list), "alpha");
+  assert.equal(m.saidMaturity("chat.branch/1", { "chat.branch/1": "later" }, list), "beta");
+  const parts = m.partsMaturity({ maturity: {} }, [{ maturity: { "chat.branch/1": "alpha" } }, {}]);
+  assert.equal(parts.length, 3);
+  assert.equal(m.lowestMaturity("chat.branch/1", parts, list), "alpha");
+  assert.equal(m.lowestMaturity("chat.branch/1", [], list), "beta", "no part: its own list");
+  assert.deepEqual(m.partsMaturity(null, [{ maturity: {} }]), [], "no status yet");
+  assert.deepEqual(m.earlyRows(list, parts).map((f) => [f.capability, f.level]), [["chat.branch/1", "alpha"]]);
+  assert.deepEqual(m.earlyRows(list, [{}]), [], "every part says GA");
+});

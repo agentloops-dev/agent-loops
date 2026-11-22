@@ -63,6 +63,13 @@ func (d *Daemon) localSecretList() (wire.LocalSecrets, error) {
 		out.Secrets = append(out.Secrets, row(name, 0, false))
 	}
 	sort.Slice(out.Secrets, func(i, j int) bool { return out.Secrets[i].Name < out.Secrets[j].Name })
+	// A key that does not read stops every secret here, the person's too (#6632): the page says
+	// so once, with what to do, in place of a line in the log at each delivery.
+	if len(sealed) > 0 || len(d.personsSecretNames()) > 0 {
+		if problem := d.sealingKeyProblem(); problem != "" {
+			out.KeyProblem = &problem
+		}
+	}
 	return out, nil
 }
 

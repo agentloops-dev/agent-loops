@@ -23,9 +23,43 @@ export function maturityOf(capability: string, list: readonly EarlyFeatureInfo[]
   return list.find((f) => f.capability === capability)?.level ?? "ga";
 }
 
-/** The rows of Early Features on the page: each capability that is not GA and that the web page shows. */
-export function earlyRows(list: readonly EarlyFeatureInfo[] = earlyFeatures): readonly EarlyFeatureInfo[] {
-  return list.filter((f) => f.clients?.includes("web") ?? true);
+/** What a part says of its levels (#6579): the `maturity` of control/status or of a host's row in machines/list.
+ *  Undefined from a part older than that. */
+export type SaidMaturity = Readonly<Record<string, string>> | undefined;
+
+const known: readonly Maturity[] = ["pilot", "alpha", "beta", "ga"];
+
+/** The level of `capability` as a part said it: a part that says none is older than #6579, so the page's own list
+ *  stands in; a level the page does not know, too. A capability the part does not name is GA there. */
+export function saidMaturity(capability: string, said: SaidMaturity, list: readonly EarlyFeatureInfo[] = earlyFeatures): Maturity {
+  if (!said) return maturityOf(capability, list);
+  const raw = said[capability];
+  if (raw === undefined) return "ga";
+  return (known as readonly string[]).includes(raw) ? raw as Maturity : maturityOf(capability, list);
+}
+
+/** The level of `capability` where no one part runs it, such as Settings: the lowest that the parts say (the control
+ *  plane's and each host's), so a person is told the least ready one. With no part, the page's own list. */
+export function lowestMaturity(capability: string, parts: readonly SaidMaturity[],
+  list: readonly EarlyFeatureInfo[] = earlyFeatures): Maturity {
+  if (parts.length === 0) return maturityOf(capability, list);
+  return parts.map((p) => saidMaturity(capability, p, list)).reduce((a, b) => known.indexOf(a) <= known.indexOf(b) ? a : b);
+}
+
+/** What each part says of its levels, for Early Features: the control plane's and each host's. None before the control
+ *  plane's status arrives, and the page reads its own list. */
+export function partsMaturity(plane: { maturity?: SaidMaturity } | null, hosts: readonly { maturity?: SaidMaturity }[]): SaidMaturity[] {
+  return plane ? [plane.maturity, ...hosts.map((h) => h.maturity)] : [];
+}
+
+/** The rows of Early Features on the page: each capability that is not GA and that the web page shows, at the lowest
+ *  level the parts say (#6579). One that every part says is GA leaves the list; one the page's list does not name has
+ *  no title here, so it has no row. */
+export function earlyRows(list: readonly EarlyFeatureInfo[] = earlyFeatures, parts: readonly SaidMaturity[] = []): readonly EarlyFeatureInfo[] {
+  return list.filter((f) => f.clients?.includes("web") ?? true).flatMap((f) => {
+    const level = lowestMaturity(f.capability, parts, list);
+    return level === "ga" ? [] : [{ ...f, level }];
+  });
 }
 
 /** Whether the page shows the feature of `capability`: a GA one always; one that is not GA when the web page is one

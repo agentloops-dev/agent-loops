@@ -88,10 +88,37 @@ public enum EarlyFeatures {
         list.first { $0.capability == capability }?.level ?? .ga
     }
 
+    /// The level of `capability` as a part said it (#6579): `said` is the `maturity` of a host's
+    /// `machine/hello` (its row in `machines/list`) or of `control/status`. A part that says
+    /// none is older than that, so this client's own list stands in; a level this client does
+    /// not know, too. A capability the part does not name is GA there.
+    public static func level(of capability: String, said: [String: String]?,
+                             in list: [EarlyFeature] = EarlyFeature.all) -> Maturity {
+        guard let said else { return level(of: capability, in: list) }
+        guard let raw = said[capability] else { return .ga }
+        return Maturity(rawValue: raw) ?? level(of: capability, in: list)
+    }
+
+    /// The level of `capability` where no one part runs it, such as Settings: the lowest that
+    /// the parts say (the control plane's and each host's), so a person is told the least ready
+    /// one. With no part, this client's own list.
+    public static func lowest(of capability: String, said parts: [[String: String]?],
+                              in list: [EarlyFeature] = EarlyFeature.all) -> Maturity {
+        parts.map { level(of: capability, said: $0, in: list) }.min() ?? level(of: capability, in: list)
+    }
+
     /// The rows of Settings ▸ This app ▸ Early Features on `client`: each capability that is not
-    /// GA and that this client shows.
-    public static func rows(on client: MaturityClient, in list: [EarlyFeature] = EarlyFeature.all) -> [EarlyFeature] {
-        list.filter { $0.isOn(client) }
+    /// GA and that this client shows, at the lowest level the parts say (#6579). One that every
+    /// part says is GA leaves the list; one this client's list does not name has no title here, so
+    /// it has no row.
+    public static func rows(on client: MaturityClient, said parts: [[String: String]?] = [],
+                            in list: [EarlyFeature] = EarlyFeature.all) -> [EarlyFeature] {
+        list.filter { $0.isOn(client) }.compactMap { feature in
+            let level = lowest(of: feature.capability, said: parts, in: list)
+            guard level != .ga else { return nil }
+            return EarlyFeature(capability: feature.capability, level: level, title: feature.title,
+                                issue: feature.issue, clients: feature.clients)
+        }
     }
 
     /// Whether `client` shows the feature of `capability`: a GA one always; one that is not GA

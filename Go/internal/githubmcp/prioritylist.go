@@ -20,8 +20,9 @@ import (
 // A list of one repo with no other label, feature, words, board, reviewer or time bound (and, for pull requests,
 // no assignee) reads High, Medium and Low from GitHub's own list (repository.issues or pullRequests): no
 // 1,000-result cap, and the main rate limit. Any other reads search, because GitHub's lists match labels any of
-// and search matches all. The items with no priority always read search: a list cannot leave out labels, and a
-// read of the whole list to drop the ones with a priority costs a page for each page of those.
+// and search matches all. The items with no priority read search while they are at most searchCap: a list cannot
+// leave out labels. When they are more (#6637), search would stop at its cap, so they read the whole list and
+// drop the ones with a priority: a page can then cost more than one request, but the list reaches its end.
 
 // SortPriority is SearchFilter.Sort's value for a list in priority order.
 const SortPriority = "priority"
@@ -33,6 +34,9 @@ var priorityLabels = []string{"priority:high", "priority:medium", "priority:low"
 // higher priority has too.
 const listSpare = 10
 
+// searchCap is how many results GitHub search gives for one query at most.
+const searchCap = 1000
+
 // noPriority is the bucket of the items with no priority label.
 var noPriority = len(priorityLabels)
 
@@ -41,11 +45,14 @@ const priorityCursorPrefix = "prio:"
 
 // priorityPlace is a place in a list in priority order: the bucket (0 to noPriority), GitHub's cursor in it ("" at
 // its start), how many of it were read before it, and each bucket's count (nil before the first page answered).
+// List says After is a cursor of GitHub's whole list, not of search: the items with no priority, when search
+// cannot reach them all (#6637).
 type priorityPlace struct {
 	Bucket int    `json:"b"`
 	After  string `json:"a,omitempty"`
 	Read   int    `json:"r,omitempty"`
 	Counts []int  `json:"c,omitempty"`
+	List   bool   `json:"l,omitempty"`
 }
 
 // text is the place as a cursor.
@@ -98,18 +105,32 @@ func nextBucket(b int, counts []int) (int, bool) {
 	return 0, false
 }
 
-// bucketAsk is one bucket in a page's request: where it starts and how many it asks for.
+// bucketAsk is one bucket in a page's request: where it starts and how many it asks for. whole says the bucket
+// (the items with no priority) reads the repo's whole list where the request reads lists, not search.
 type bucketAsk struct {
 	bucket int
 	after  string
 	read   int
 	first  int
+	whole  bool
+}
+
+// readsWhole says the items with no priority, from at's place, read the whole list: they go on in it, or they
+// start and are more than search gives.
+func (at priorityPlace) readsWhole(b int) bool {
+	if b != noPriority {
+		return false
+	}
+	if at.Bucket == noPriority && at.After != "" {
+		return at.List
+	}
+	return at.Counts != nil && at.Counts[noPriority] > searchCap
 }
 
 // plan is the buckets a page from at asks for, in order: at's own, then each next one whose count is not 0 while
 // the ones before it may not fill the page. Before the counts are known, every bucket from at's.
 func (at priorityPlace) plan(first int) []bucketAsk {
-	asks := []bucketAsk{{bucket: at.Bucket, after: at.After, read: at.Read, first: first}}
+	asks := []bucketAsk{{bucket: at.Bucket, after: at.After, read: at.Read, first: first, whole: at.readsWhole(at.Bucket)}}
 	if at.Counts == nil {
 		for k := at.Bucket + 1; k <= noPriority; k++ {
 			asks = append(asks, bucketAsk{bucket: k, first: first})
@@ -118,20 +139,36 @@ func (at priorityPlace) plan(first int) []bucketAsk {
 	}
 	left := at.Counts[at.Bucket] - at.Read
 	for k, ok := nextBucket(at.Bucket, at.Counts); ok && left < first; k, ok = nextBucket(k, at.Counts) {
-		asks = append(asks, bucketAsk{bucket: k, first: min(first, max(1, first-left))})
+		asks = append(asks, bucketAsk{bucket: k, first: min(first, max(1, first-left)), whole: at.readsWhole(k)})
 		left += at.Counts[k]
 	}
 	return asks
 }
 
-// prioritySearch is one page of a list in priority order, at most first items, after the cursor after, in one
-// request.
+// fillRequests is how many requests a page of a list in priority order makes at most to fill itself.
+const fillRequests = 10
+
+// prioritySearch is one page of a list in priority order, at most first items, after the cursor after: one
+// request, and more only while a page that goes on is not full (the items with no priority read from the whole
+// list, which drops those with a priority, or the first page finds them more than search gives).
 func (g *RealGitHub) prioritySearch(ctx context.Context, repos []string, f SearchFilter, after string, first int) (SearchPage, error) {
+	first = max(1, min(first, perPage))
+	p, err := g.priorityPage(ctx, repos, f, after, first)
+	for n := 1; err == nil && p.Next != "" && len(p.Items) < first && n < fillRequests; n++ {
+		var more SearchPage
+		if more, err = g.priorityPage(ctx, repos, f, p.Next, first-len(p.Items)); err == nil {
+			p.Items, p.Cursors, p.Next = append(p.Items, more.Items...), append(p.Cursors, more.Cursors...), more.Next
+		}
+	}
+	return p, err
+}
+
+// priorityPage is one request of a list in priority order: at most first items after the cursor after.
+func (g *RealGitHub) priorityPage(ctx context.Context, repos []string, f SearchFilter, after string, first int) (SearchPage, error) {
 	at, err := readPriorityCursor(after)
 	if err != nil {
 		return SearchPage{}, &GitHubError{Kind: Failed, Message: err.Error()}
 	}
-	first = max(1, min(first, perPage))
 	if len(repos) == 0 {
 		return SearchPage{Items: []Item{}, Cursors: []string{}}, nil
 	}
@@ -147,12 +184,20 @@ func (g *RealGitHub) prioritySearch(ctx context.Context, repos []string, f Searc
 		counts = make([]int, noPriority+1)
 	}
 	for _, a := range asks {
-		e, err := q.edges(data, a.bucket)
+		e, err := q.edges(data, a.bucket, a.whole)
 		if err != nil {
 			return SearchPage{}, err
 		}
 		conns[a.bucket] = e
-		counts[a.bucket] = max(e.TotalCount, e.IssueCount)
+		// The whole list counts the items with a priority too: their count is search's, from the first page.
+		if !q.list || !a.whole {
+			counts[a.bucket] = max(e.TotalCount, e.IssueCount)
+		}
+	}
+	// The first page found more with no priority than search gives: they are left for the next request, which
+	// reads them from the whole list (#6637), so the list does not stop at search's cap.
+	if n := len(asks) - 1; q.list && n > 0 && asks[n].bucket == noPriority && !asks[n].whole && counts[noPriority] > searchCap {
+		asks = asks[:n]
 	}
 	return pageOfBuckets(asks, conns, counts, first, q.total(data)), nil
 }
@@ -162,9 +207,13 @@ func (g *RealGitHub) prioritySearch(ctx context.Context, repos []string, f Searc
 func pageOfBuckets(asks []bucketAsk, conns map[int]gqlEdges, counts []int, first int, total *int) SearchPage {
 	p := SearchPage{Items: []Item{}, Cursors: []string{}, Total: total}
 	// placeAfter is the place after an edge of bucket b: in b, or at the next bucket's start when b ends there.
+	whole := map[int]bool{}
+	for _, a := range asks {
+		whole[a.bucket] = a.whole
+	}
 	placeAfter := func(b int, cursor string, read int, ends bool) string {
 		if !ends {
-			return priorityPlace{Bucket: b, After: cursor, Read: read, Counts: counts}.text()
+			return priorityPlace{Bucket: b, After: cursor, Read: read, Counts: counts, List: whole[b]}.text()
 		}
 		if k, ok := nextBucket(b, counts); ok {
 			return priorityPlace{Bucket: k, Counts: counts}.text()
@@ -195,7 +244,7 @@ func pageOfBuckets(asks []bucketAsk, conns map[int]gqlEdges, counts []int, first
 			}
 		}
 		if e.PageInfo.HasNextPage {
-			p.Next = priorityPlace{Bucket: a.bucket, After: e.PageInfo.EndCursor, Read: read, Counts: counts}.text()
+			p.Next = priorityPlace{Bucket: a.bucket, After: e.PageInfo.EndCursor, Read: read, Counts: counts, List: a.whole}.text()
 			return p
 		}
 		if a.bucket == last {
@@ -215,10 +264,10 @@ type priorityRequest struct {
 // bucketAlias is a bucket's connection in the request.
 func bucketAlias(b int) string { return fmt.Sprintf("b%d", b) }
 
-// edges is bucket b's connection in the answer.
-func (q priorityRequest) edges(data map[string]json.RawMessage, b int) (gqlEdges, error) {
+// edges is bucket b's connection in the answer; whole says it is the whole list's.
+func (q priorityRequest) edges(data map[string]json.RawMessage, b int, whole bool) (gqlEdges, error) {
 	raw := data[bucketAlias(b)]
-	if q.list && b != noPriority {
+	if q.list && (b != noPriority || whole) {
 		var repo map[string]json.RawMessage
 		if json.Unmarshal(data["repository"], &repo) != nil {
 			return gqlEdges{}, &GitHubError{Kind: NotFound, Message: "not found on GitHub"}
@@ -283,11 +332,18 @@ func priorityQuery(repos []string, f SearchFilter, asks []bucketAsk, withTotal b
 			q.vars["a"+name] = a.after
 			after = ", after: $a" + name
 		}
-		if q.list && a.bucket != noPriority {
+		if q.list && (a.bucket != noPriority || a.whole) {
 			// An item with two priorities' labels is in both lists and kept in the higher only: a few more than the
-			// page keep such a page full.
-			args := append([]string{fmt.Sprintf("first: %d", min(perPage, a.first+listSpare))}, listArgs(f)...)
-			args = append(args, fmt.Sprintf("labels: [%q]", priorityLabels[a.bucket]))
+			// page keep such a page full. The whole list drops every item with a priority, so it asks for a full
+			// page of GitHub's.
+			n := min(perPage, a.first+listSpare)
+			if a.whole {
+				n = perPage
+			}
+			args := append([]string{fmt.Sprintf("first: %d", n)}, listArgs(f)...)
+			if a.bucket != noPriority {
+				args = append(args, fmt.Sprintf("labels: [%q]", priorityLabels[a.bucket]))
+			}
 			inRepo = append(inRepo, fmt.Sprintf("%s: %s(%s%s) { totalCount "+edgesOf+" }", name, listConnection(f),
 				strings.Join(args, ", "), after, listNode))
 			continue
@@ -397,4 +453,69 @@ func listStates(f SearchFilter) string {
 		return "[CLOSED]"
 	}
 	return ""
+}
+
+// listCursorPrefix starts a cursor of a list, last updated first, read from GitHub's own list, not search.
+const listCursorPrefix = "list:"
+
+// readsPlainList says a list, last updated first, reads GitHub's own list (repository.issues or pullRequests), not
+// search, which stops at searchCap (#6637): one repo, at most one label (a list matches labels any of), and no
+// words, board, reviewer or time bound; for pull requests, no assignee, which their list cannot ask.
+func readsPlainList(repos []string, f SearchFilter) bool {
+	return len(repos) == 1 && (f.Label == "" || f.Feature == "") && strings.TrimSpace(f.Query) == "" && f.Project == "" &&
+		f.Reviewer == "" && f.UpdatedSince == "" && f.UpdatedBefore == "" && (!f.PRs || f.Assignee == "")
+}
+
+// listPage is one page of repo's own list, last updated first, at most first items after GitHub's cursor after.
+func (g *RealGitHub) listPage(ctx context.Context, repo string, f SearchFilter, after string, first int) (SearchPage, error) {
+	owner, name, err := ownerName(repo)
+	if err != nil {
+		return SearchPage{}, err
+	}
+	vars := map[string]any{"owner": owner, "name": name}
+	params := []string{"$owner: String!", "$name: String!"}
+	args := append([]string{fmt.Sprintf("first: %d", max(1, min(first, perPage)))}, listArgs(f)...)
+	if after != "" {
+		params, vars["after"] = append(params, "$after: String"), after
+		args = append(args, "after: $after")
+	}
+	if !f.PRs && f.Assignee != "" {
+		params, vars["assignee"] = append(params, "$assignee: String"), f.Assignee
+	}
+	label := f.Label
+	if f.Feature != "" {
+		label = "feature:" + f.Feature
+	}
+	if label != "" {
+		args = append(args, fmt.Sprintf("labels: [%q]", label))
+	}
+	node, frag := "...I", issueFragment
+	if f.PRs {
+		node, frag = "...P", pullFragment
+	}
+	q := fmt.Sprintf("query(%s) {\n  repository(owner: $owner, name: $name) { l: %s(%s) { totalCount "+edgesOf+" } }\n}\n%s",
+		strings.Join(params, ", "), listConnection(f), strings.Join(args, ", "), node, frag)
+	var data struct {
+		Repository *struct {
+			L gqlEdges `json:"l"`
+		} `json:"repository"`
+	}
+	if err := g.searchFields(ctx, q, vars, &data); err != nil {
+		return SearchPage{}, err
+	}
+	if data.Repository == nil {
+		return SearchPage{}, &GitHubError{Kind: NotFound, Message: "not found on GitHub"}
+	}
+	e := data.Repository.L
+	p := SearchPage{Items: []Item{}, Cursors: []string{}, Total: &e.TotalCount}
+	for _, edge := range e.Edges {
+		if n := edge.Node; n.Number > 0 && n.Repository.NameWithOwner != "" {
+			p.Items = append(p.Items, n.item())
+			p.Cursors = append(p.Cursors, listCursorPrefix+edge.Cursor)
+		}
+	}
+	if e.PageInfo.HasNextPage {
+		p.Next = listCursorPrefix + e.PageInfo.EndCursor
+	}
+	return p, nil
 }

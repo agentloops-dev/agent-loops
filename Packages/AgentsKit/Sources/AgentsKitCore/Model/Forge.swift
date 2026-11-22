@@ -256,16 +256,19 @@ public extension DaemonAPI {
         public var total: Int?
         public var errors: [ForgeListError]?
         public var forges: [ForgeCapabilities]?
+        /// What the list reads (#6641): forge:name per repo or project; nil from an earlier daemon.
+        public var scopes: [String]?
         /// When the forges were read for it (#6642), also for an answer the daemon kept; nil from an earlier daemon.
         public var readAt: Date?
 
         public init(items: [ForgeItem] = [], cursor: String? = nil, errors: [ForgeListError]? = nil,
-                    forges: [ForgeCapabilities]? = nil, total: Int? = nil, readAt: Date? = nil) {
+                    forges: [ForgeCapabilities]? = nil, total: Int? = nil, scopes: [String]? = nil, readAt: Date? = nil) {
             self.items = items
             self.cursor = cursor
             self.total = total
             self.errors = errors
             self.forges = forges
+            self.scopes = scopes
             self.readAt = readAt
         }
     }

@@ -533,7 +533,7 @@ test("an issue's events go between its comments in time order; one this client d
 
 test("a Refresh asks fresh, and Last update is the forges' read, the oldest machine's, never after now (#6642)", () => {
   assert.equal(w.forgeListAllRequest("issue", "open", "").fresh, undefined);
-  assert.equal(w.forgeListAllRequest("pr", "open", "", undefined, true).fresh, true);
+  assert.equal(w.forgeListAllRequest("pr", "open", "", undefined, undefined, true).fresh, true);
   const now = Date.parse("2026-11-22T10:01:00Z");
   const list = (iso) => ({ machine: "m", machineName: "M", list: { items: [], ...iso ? { readAt: at(iso) } : {} } });
   const all = (...lists) => ({ lists, unreached: [], notAsked: 0 });

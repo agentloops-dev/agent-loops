@@ -387,6 +387,9 @@ extension RemoteModel {
                     // The lock first (#6311): until this device is in it, every machine refuses its calls, the
                     // machines' reads below among them, so it asks to join before them.
                     if let client = RemoteControl.membership?.client { await self?.lock.connected(control, client: client) }
+                    // A notice this device missed, read again while connected (#6625).
+                    let lockWatch = Task { [lock = self?.lock] in await lock?.watch(control) }
+                    defer { lockWatch.cancel() }
                     await self?.syncOtherHosts(control, link: link)
                     await self?.loadMachineProviders()
                     await self?.loadKept(control)

@@ -24,7 +24,8 @@
         "{workspaceRoot}/Packages/AgentsKit/Sources/AgentsKitCore/Model/FeatureFlag.generated.swift",
         "{workspaceRoot}/Web/src/protocol/flags.generated.ts",
         "{workspaceRoot}/Packages/AgentsKit/Sources/AgentsKitCore/Model/Maturity.generated.swift",
-        "{workspaceRoot}/Web/src/protocol/maturity.generated.ts"
+        "{workspaceRoot}/Web/src/protocol/maturity.generated.ts",
+        "{workspaceRoot}/Go/wire/maturity_gen.go"
       ]
     }
   }

@@ -191,8 +191,23 @@ Each capability has a **maturity** (#6052): how ready its feature is.
   take it out, and set the cell to `ga`. `scripts/parity-counts.py` (in `scripts/lint.sh
   checks`) fails when the two do not agree.
 
-Each client reads the list it was built with. A host's own level on the wire, for a client
-older than its host, is #6579.
+Each part also sends its own levels (#6579), so that a client older than its host shows the
+host's level:
+
+- A host sends `maturity` in `machine/hello`, the control plane keeps it with the host's
+  capabilities, and `machines/list` says it on the host's row. The control plane sends its own
+  in `control/status`. Each is a map of capability to level, only for the capabilities that
+  part has and that are not GA (`wire.MaturityOf`, from `Go/wire/maturity_gen.go`). A part with
+  none sends `{}`.
+- A part older than #6579 sends no `maturity`, and the client reads the list it was built with
+  for that part. A capability that a part's map does not name is GA there. A level the client
+  does not know is read from the client's own list too.
+- When the two differ, the client shows the part's level. A feature that runs on one host shows
+  that host's level (`EarlyFeatures.level(of:said:)`, `saidMaturity`). Where no one part runs it,
+  as in Early Features, the client shows the lowest level that the control plane and its hosts
+  say (`EarlyFeatures.lowest`, `lowestMaturity`), so a person is told the least ready one.
+  Early Features has rows only for capabilities in the client's own list, as only that list
+  has the title of each feature.
 
 ## Version numbers
 

@@ -73,10 +73,11 @@ func TestTheProviderRecordIsKeptAtTheSwiftKey(t *testing.T) {
 			t.Errorf("no %s in %s", key, object.Data)
 		}
 	}
-	// A record as Swift writes it is read, and what this build does not know is kept.
+	// A record as Swift writes it is read, also of a kind that was removed (#6623), and what
+	// this build does not know is kept.
 	swift := `{"capabilities":[],"contract":1,"id":"do-x1y2","kind":"stdio","name":"DO","rev":1,"secretNames":[],"later":true}`
 	var r ProviderRecord
-	if err := json.Unmarshal([]byte(swift), &r); err != nil || r.WrittenBy != nil {
+	if err := json.Unmarshal([]byte(swift), &r); err != nil || r.Kind != "stdio" {
 		t.Fatalf("%v %+v", err, r)
 	}
 	if !strings.Contains(string(rawOf(r)), `"later":true`) {

@@ -3,9 +3,7 @@ package providers
 import (
 	"encoding/json"
 	"fmt"
-	"net/url"
 	"reflect"
-	"sort"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -13,19 +11,12 @@ import (
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/records"
 )
 
-// Provider kinds, as ProviderRecord.Kind says them.
-const (
-	// The command provider Agents ships (workspace-commands).
-	KindCommands = "commands"
-	// An MCP server the control plane runs.
-	KindStdio = "stdio"
-	// An MCP server at an address.
-	KindHTTP = "http"
-)
+// KindCommands is the one provider kind, as ProviderRecord.Kind says it: the command
+// provider Agent Loops ships (workspace-commands). The MCP server kinds, "stdio" and
+// "http", were removed (#6623).
+const KindCommands = "commands"
 
-func knownKind(kind string) bool {
-	return kind == KindCommands || kind == KindStdio || kind == KindHTTP
-}
+func knownKind(kind string) bool { return kind == KindCommands }
 
 // ProvidersPrefix is WorkspaceProviders.prefix: where provider records are kept.
 const ProvidersPrefix = "v1/providers/"
@@ -36,19 +27,12 @@ func ProviderKey(id string) string { return ProvidersPrefix + id + ".json" }
 // ProviderRecord is ProviderRecord (v1/providers/<id>.json): never its secrets' values,
 // which stay on the machine that carries it (#3398).
 type ProviderRecord struct {
-	ID      string
-	Name    string
-	Kind    string
-	Command *string
-	Args    []string
-	URL     *string
-	// Values may hold ${SECRET}, filled in from the secrets when the server is reached.
-	Headers map[string]string
+	ID   string
+	Name string
+	Kind string
 	// The command provider's configuration.
 	Commands    any
 	SecretNames []string
-	// For a server whose tools do not follow the contract.
-	Map any
 	// Which optional contract tools it has: options, create, delete.
 	Capabilities []string
 	Contract     int
@@ -56,8 +40,6 @@ type ProviderRecord struct {
 	Forgotten    *bool
 	// When it was removed, so the sweep deletes its tombstone a week on (#3748).
 	ForgottenAt *records.Stamp
-	// Set when the map or commands were kept as an agent wrote them (#858).
-	WrittenBy *WrittenBy
 	// The group whose users may see it and start machines from it (#1761, FR-028); nil
 	// for the admins' alone, as every provider made before groups is.
 	Group *string
@@ -71,37 +53,25 @@ type ProviderRecord struct {
 	Extra records.Extra
 }
 
-// WrittenBy is ProviderRecord.WrittenBy.
-type WrittenBy struct {
-	RuntimeID string        `json:"runtimeID"`
-	At        records.Stamp `json:"at"`
-}
-
 type providerJSON struct {
-	ID           string            `json:"id"`
-	Name         string            `json:"name"`
-	Kind         string            `json:"kind"`
-	Command      *string           `json:"command,omitempty"`
-	Args         []string          `json:"args,omitempty"`
-	URL          *string           `json:"url,omitempty"`
-	Headers      map[string]string `json:"headers,omitempty"`
-	Commands     any               `json:"commands,omitempty"`
-	SecretNames  []string          `json:"secretNames"`
-	Map          any               `json:"map,omitempty"`
-	Capabilities []string          `json:"capabilities"`
-	Contract     int               `json:"contract"`
-	Rev          int               `json:"rev"`
-	Forgotten    *bool             `json:"forgotten,omitempty"`
-	ForgottenAt  *records.Stamp    `json:"forgottenAt,omitempty"`
-	WrittenBy    *WrittenBy        `json:"writtenBy,omitempty"`
-	Group        *string           `json:"group,omitempty"`
-	Machine      *string           `json:"machine,omitempty"`
-	AddedAt      *records.Stamp    `json:"addedAt,omitempty"`
+	ID           string         `json:"id"`
+	Name         string         `json:"name"`
+	Kind         string         `json:"kind"`
+	Commands     any            `json:"commands,omitempty"`
+	SecretNames  []string       `json:"secretNames"`
+	Capabilities []string       `json:"capabilities"`
+	Contract     int            `json:"contract"`
+	Rev          int            `json:"rev"`
+	Forgotten    *bool          `json:"forgotten,omitempty"`
+	ForgottenAt  *records.Stamp `json:"forgottenAt,omitempty"`
+	Group        *string        `json:"group,omitempty"`
+	Machine      *string        `json:"machine,omitempty"`
+	AddedAt      *records.Stamp `json:"addedAt,omitempty"`
 }
 
 func (p ProviderRecord) MarshalJSON() ([]byte, error) {
-	j := providerJSON{p.ID, p.Name, p.Kind, p.Command, p.Args, p.URL, p.Headers, p.Commands, p.SecretNames, p.Map,
-		p.Capabilities, p.Contract, p.Rev, p.Forgotten, p.ForgottenAt, p.WrittenBy, p.Group, p.Machine, p.AddedAt}
+	j := providerJSON{p.ID, p.Name, p.Kind, p.Commands, p.SecretNames, p.Capabilities, p.Contract, p.Rev, p.Forgotten,
+		p.ForgottenAt, p.Group, p.Machine, p.AddedAt}
 	if j.SecretNames == nil {
 		j.SecretNames = []string{}
 	}
@@ -117,11 +87,8 @@ func (p *ProviderRecord) UnmarshalJSON(data []byte) error {
 	if err != nil {
 		return err
 	}
-	if !knownKind(j.Kind) {
-		return fmt.Errorf("no provider kind %q", j.Kind)
-	}
-	*p = ProviderRecord{j.ID, j.Name, j.Kind, j.Command, j.Args, j.URL, j.Headers, j.Commands, j.SecretNames, j.Map,
-		j.Capabilities, j.Contract, j.Rev, j.Forgotten, j.ForgottenAt, j.WrittenBy, j.Group, j.Machine, j.AddedAt, extra}
+	*p = ProviderRecord{j.ID, j.Name, j.Kind, j.Commands, j.SecretNames, j.Capabilities, j.Contract, j.Rev, j.Forgotten,
+		j.ForgottenAt, j.Group, j.Machine, j.AddedAt, extra}
 	return nil
 }
 
@@ -135,62 +102,10 @@ func (p *ProviderRecord) Problem() string {
 	if utf8.RuneCountInString(trimmed) > 60 {
 		return "The name is over 60 characters."
 	}
-	switch p.Kind {
-	case KindCommands:
-		if _, ok := obj(p.Commands); !ok {
-			return "Choose a preset or give its commands."
-		}
-	case KindStdio:
-		if p.Command == nil || trimSpaces(*p.Command) == "" {
-			return "Give the command that runs the server."
-		}
-	case KindHTTP:
-		ok := p.URL != nil && (strings.HasPrefix(*p.URL, "http://") || strings.HasPrefix(*p.URL, "https://"))
-		if ok {
-			_, err := url.Parse(*p.URL)
-			ok = err == nil
-		}
-		if !ok {
-			return "The address must start with http:// or https://."
-		}
-	}
-	for _, name := range p.ReferencedSecrets() {
-		found := false
-		for _, s := range p.SecretNames {
-			found = found || s == name
-		}
-		if !found {
-			return "${" + name + "} isn’t one of its secrets."
-		}
+	if _, ok := obj(p.Commands); p.Kind == KindCommands && !ok {
+		return "Choose a preset or give its commands."
 	}
 	return ""
-}
-
-// ReferencedSecrets is ProviderRecord.referencedSecrets: the ${NAME} its headers name.
-func (p *ProviderRecord) ReferencedSecrets() []string {
-	var found []string
-	for _, v := range p.Headers {
-		found = append(found, placeholders(v)...)
-	}
-	sort.Strings(found)
-	return found
-}
-
-func placeholders(text string) []string {
-	var found []string
-	rest := text
-	for {
-		open := strings.Index(rest, "${")
-		if open < 0 {
-			return found
-		}
-		close := strings.IndexByte(rest[open+2:], '}')
-		if close < 0 {
-			return found
-		}
-		found = append(found, rest[open+2:open+2+close])
-		rest = rest[open+2+close+1:]
-	}
 }
 
 // preset is the command provider's preset, when it uses one.

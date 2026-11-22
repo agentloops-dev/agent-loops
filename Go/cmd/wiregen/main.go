@@ -48,6 +48,8 @@ const (
 	Maturity      = "Packages/Wire/maturity.json"
 	SwiftMaturity = "Packages/AgentsKit/Sources/AgentsKitCore/Model/Maturity.generated.swift"
 	TSMaturity    = "Web/src/protocol/maturity.generated.ts"
+	// The same levels for a Go host and the control plane, which send them (#6579).
+	GoMaturity = "Go/wire/maturity_gen.go"
 )
 
 func main() {
@@ -60,7 +62,7 @@ func main() {
 		os.Exit(1)
 	}
 	stale := false
-	for _, path := range []string{GoTypes, GoMethods, TypeScript, GoAppTools, GoEvents, GoCapabilities, TSCapabilities, SwiftCapabilities, SwiftFlags, TSFlags, SwiftMaturity, TSMaturity} {
+	for _, path := range []string{GoTypes, GoMethods, TypeScript, GoAppTools, GoEvents, GoCapabilities, TSCapabilities, SwiftCapabilities, SwiftFlags, TSFlags, SwiftMaturity, TSMaturity, GoMaturity} {
 		full := filepath.Join(*root, path)
 		current, _ := os.ReadFile(full)
 		if bytes.Equal(current, []byte(files[path])) {
@@ -222,5 +224,6 @@ func generate(root string) (map[string]string, error) {
 	}
 	return map[string]string{GoTypes: types, GoMethods: methods, TypeScript: typescript(doc, rpcs), GoAppTools: string(tools),
 		GoEvents: string(events), GoCapabilities: caps, TSCapabilities: tsCapabilities(rpcs), SwiftCapabilities: swiftCapabilities(rpcs),
-		SwiftFlags: swiftFlags(flags), TSFlags: tsFlags(flags), SwiftMaturity: swiftMaturity(early), TSMaturity: tsMaturity(early)}, nil
+		SwiftFlags: swiftFlags(flags), TSFlags: tsFlags(flags), SwiftMaturity: swiftMaturity(early), TSMaturity: tsMaturity(early),
+		GoMaturity: goMaturity(early)}, nil
 }

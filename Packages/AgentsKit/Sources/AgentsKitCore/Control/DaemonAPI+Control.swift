@@ -182,6 +182,9 @@ public extension DaemonAPI {
         /// The control plane's own capabilities, and what it requires of hosts and clients
         /// (#1748). Nil from a control plane older than that.
         public var capabilities: [String]?
+        /// The levels of its capabilities that are not GA, capability to level (#6579). Nil from a
+        /// control plane older than that, and the client reads its own list.
+        public var maturity: [String: String]?
         public var required: RequiredCapabilities?
         /// Who this client belongs to (#994). Nil from a control plane older than people.
         public var person: ControlPerson?
@@ -325,6 +328,9 @@ public extension DaemonAPI {
         /// The capabilities the host said in its last `machine/hello` (#1748); nil from a host
         /// older than that, which is taken to have them all.
         public var capabilities: [String]?
+        /// The levels of its capabilities that are not GA, as it said them in its last
+        /// `machine/hello` (#6579); nil from a host older than that, and the client reads its own list.
+        public var maturity: [String: String]?
         /// Of the control plane's required capabilities, the ones it does not have: it is
         /// then `needsUpdate`.
         public var missing: [String]?

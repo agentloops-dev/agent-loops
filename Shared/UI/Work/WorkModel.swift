@@ -77,8 +77,8 @@ protocol WorkModel: AnyObject, Sendable {
     /// where the app keeps none.
     var workCopy: LocalCopy? { get }
     /// Work's client cache (#6353, epic #6348): the kept answers to the Issues and Pull requests lists and the items'
-    /// pages, drawn with no forge call, then asked once. Nil where the app keeps none, or while the person's
-    /// `work-cache` flag is off: then the lists and pages use `workCopy`, as before.
+    /// pages, drawn with no forge call, then asked once. Nil where the app keeps none, or when its file does not open:
+    /// then the lists and pages use `workCopy`, as before.
     var workCache: (any WorkCaching)? { get }
     /// Work's changes through the cache (#6354): shown at once, and changed back with a message when the forge refuses
     /// them. Nil while `workCache` is nil: then a change waits for the forge, as before.

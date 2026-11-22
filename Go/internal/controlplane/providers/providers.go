@@ -112,7 +112,7 @@ type Hooks struct {
 	// keeps none.
 	HostKey func(host, destination, trust string) (knownHosts, needsTrust string, err error)
 	// Connect is a connection to a provider, as its record says: through the machine that
-	// carries it (Carried, #3398). secrets are only those a draft, an add or an update was
+	// carries it (Carried, #3398). secrets are only those an add or an update was
 	// given, sent with each call and kept by neither side; nil for a kept provider.
 	Connect func(record ProviderRecord, secrets map[string]string) (Provider, error)
 	// HostCommand is the one line that installs a host with a new host code, for a new
@@ -261,7 +261,6 @@ type Providers struct {
 	// Why each host's last start or stop failed, until the next one.
 	problems map[string]string
 	kept     *Kept
-	drafts   *Drafts
 	// What each host last said about whether it is idle (US4).
 	statuses map[string]MachineStatus
 	// Each linked host's stop when idle, counting down while it stays idle.
@@ -363,20 +362,6 @@ func (p *Providers) Kept() *Kept {
 	return p.kept
 }
 
-// DraftWith lets an agent write a provider's map or commands at Add Provider (#858).
-func (p *Providers) DraftWith(drafts *Drafts) {
-	p.mu.Lock()
-	p.drafts = drafts
-	p.mu.Unlock()
-}
-
-// Drafts is Write It for Me's drafts, or nil.
-func (p *Providers) Drafts() *Drafts {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return p.drafts
-}
-
 // BusyHost is WorkspaceProviders.busyHost: the host linked to a provider's workspace, by
 // name, when agents are working there; "" when none. A writer cannot ask to stop it
 // (#858, FR-020).
@@ -470,6 +455,11 @@ func (p *Providers) load() {
 		if json.Unmarshal(object.Data, &record) != nil || (record.Forgotten != nil && *record.Forgotten) {
 			continue
 		}
+		if !knownKind(record.Kind) {
+			// An MCP server provider, a kind that was removed (#6623): its record stays as it is.
+			p.log(fmt.Sprintf("provider: %s is kind %s, which this build no longer runs; not loaded", record.ID, record.Kind))
+			continue
+		}
 		p.mu.Lock()
 		p.providers[record.ID] = heldProvider{record, object.ETag}
 		p.mu.Unlock()
@@ -484,7 +474,7 @@ func (p *Providers) Answer(method string, params json.RawMessage, from Caller) (
 	return p.answer(method, params, from, "client "+shortID(from.Client))
 }
 
-// HostSaid answers machine/machines, machine/providerDraft, machine/status and machine/installProgress, which a host says
+// HostSaid answers machine/machines, machine/status and machine/installProgress, which a host says
 // on its channel 0, as ControlMethods.hostSaid does for them.
 func (p *Providers) HostSaid(host, method string, params json.RawMessage) (any, error) {
 	switch method {
@@ -497,15 +487,6 @@ func (p *Providers) HostSaid(host, method string, params json.RawMessage) (any, 
 			return nil, fail(CodeNotPermitted, "Agent Loops can’t ask that of the control plane.")
 		}
 		return p.AgentCall(host, call.Agent, call.Method, call.Params, call.Deliver)
-	case MethodHostProviderDraft:
-		var call MachineProviderDraftCall
-		if err := requireParams(params, &call, "MachineProviderDraftCall", "agentID", "draft", "tool"); err != nil {
-			return nil, err
-		}
-		if !isUUID(string(call.AgentID)) || !isUUID(string(call.Draft)) {
-			return nil, invalid("Those parameters are not a MachineProviderDraftCall.")
-		}
-		return p.DraftCall(host, call)
 	case MethodHostStatus:
 		var status MachineStatus
 		if requireParams(params, &status, "MachineStatus", "idle", "running") == nil {
@@ -520,16 +501,6 @@ func (p *Providers) HostSaid(host, method string, params json.RawMessage) (any, 
 		return map[string]any{}, nil
 	}
 	return nil, methodNotFound(method)
-}
-
-// DraftCall is WorkspaceHandling.draftCall: a writing agent on host called one of the
-// writer's tools (#858).
-func (p *Providers) DraftCall(host string, call MachineProviderDraftCall) (any, error) {
-	drafts := p.Drafts()
-	if drafts == nil {
-		return nil, fail(CodeNotPermitted, "%s", NotYoursWords)
-	}
-	return drafts.Call(host, call)
 }
 
 // AgentCall is WorkspaceHandling.agentCall: an agent on host asked through its workspace
@@ -764,8 +735,6 @@ func (p *Providers) answer(method string, params json.RawMessage, caller Caller,
 		return map[string]any{}, p.deleteMachine(string(request.Host), who, caller)
 	case MethodHostsKeep:
 		return p.answerKeep(params, caller)
-	case MethodProvidersRuntimes, MethodDraftStart, MethodDraftCancel, MethodDraftSigned, MethodDraftAnswer:
-		return p.answerDraft(method, params, caller)
 	case MethodHostsListKept, MethodHostsDropKept, MethodHostsRetryKept:
 		kept := p.Kept()
 		if kept == nil {
@@ -782,7 +751,7 @@ func (p *Providers) answerSave(params json.RawMessage, updating bool, caller Cal
 	if err := requireParams(params, &request, "ProviderAdd", "name", "kind"); err != nil {
 		return nil, err
 	}
-	if !knownKind(request.Kind) || (request.Draft != nil && *request.Draft != "" && !isUUID(string(*request.Draft))) {
+	if !knownKind(request.Kind) {
 		return nil, invalid("Those parameters are not a ProviderAdd.")
 	}
 	return p.save(request, updating, caller)
@@ -904,104 +873,6 @@ func (p *Providers) answerKeep(params json.RawMessage, caller Caller) (any, erro
 	return nil, answer
 }
 
-// answerDraft is the writer's methods: its runtimes, and a draft's start, cancel, lock and
-// answers (#858).
-func (p *Providers) answerDraft(method string, params json.RawMessage, caller Caller) (any, error) {
-	drafts := p.Drafts()
-	switch method {
-	case MethodProvidersRuntimes:
-		if drafts == nil {
-			return ProviderRuntimes{Runtimes: []ProviderRuntime{}, Why: new("This control plane can’t start a writing agent.")}, nil
-		}
-		return drafts.Runtimes(), nil
-	case MethodDraftStart:
-		if drafts == nil {
-			return nil, fail(CodeNotSupported, "This control plane can’t start a writing agent.")
-		}
-		return p.answerDraftStart(drafts, params, caller)
-	case MethodDraftCancel:
-		var request ProviderDraftRequest
-		if err := requireParams(params, &request, "ProviderDraftRequest", "draft"); err != nil {
-			return nil, err
-		}
-		if drafts != nil {
-			drafts.Cancel(string(request.Draft), caller)
-		}
-		return map[string]any{}, nil
-	case MethodDraftSigned:
-		if drafts == nil {
-			return nil, invalid("That draft has ended.")
-		}
-		var request ProviderDraftSigned
-		if err := requireParams(params, &request, "ProviderDraftSigned", "draft", "lock"); err != nil {
-			return nil, err
-		}
-		return map[string]any{}, drafts.Signed(request, caller)
-	case MethodDraftAnswer:
-		if drafts == nil {
-			return nil, invalid("That draft has ended.")
-		}
-		var answer ProviderDraftAnswer
-		if err := requireParams(params, &answer, "ProviderDraftAnswer", "draft", "question", "yes"); err != nil {
-			return nil, err
-		}
-		return map[string]any{}, drafts.Answer(answer, caller)
-	}
-	return nil, methodNotFound(method)
-}
-
-// answerDraftStart is providers/draftStart.
-func (p *Providers) answerDraftStart(drafts *Drafts, params json.RawMessage, caller Caller) (any, error) {
-	var request ProviderDraftStart
-	if err := requireParams(params, &request, "ProviderDraftStart", "form", "runtimeID"); err != nil {
-		return nil, err
-	}
-	if request.Form.Name == "" && !strings.Contains(string(params), `"name"`) || !knownKind(request.Form.Kind) {
-		return nil, invalid("Those parameters are not a ProviderDraftStart.")
-	}
-	var existing *ExistingProvider
-	if provider := string(deref(request.Provider)); provider != "" {
-		var err error
-		if existing, err = p.existingForDraft(provider, &request); err != nil {
-			return nil, err
-		}
-	}
-	return drafts.Start(request, caller, existing)
-}
-
-// existingForDraft is the provider a draft changes, and writes request's form again from
-// the provider as it is kept: the sheet knows only its name.
-func (p *Providers) existingForDraft(provider string, request *ProviderDraftStart) (*ExistingProvider, error) {
-	p.mu.Lock()
-	held, ok := p.providers[provider]
-	problem := ""
-	if l := p.listed[provider]; l != nil {
-		problem = l.problem
-	}
-	p.mu.Unlock()
-	if !ok {
-		return nil, invalid("There is no such provider.")
-	}
-	// Its secrets stay on its machine, which lays the sheet's over them (#3398): here,
-	// only their names, with no value.
-	names := map[string]string{}
-	for _, name := range held.record.SecretNames {
-		names[name] = ""
-	}
-	existing := &ExistingProvider{Record: held.record, Secrets: names, Problem: problem}
-	cli := ""
-	if request.Form.CLI != nil {
-		cli = trimSpaces(*request.Form.CLI)
-	}
-	if cli == "" {
-		cli = cliOf(held.record)
-	}
-	r := held.record
-	request.Form = ProviderAdd{ID: request.Provider, Name: r.Name, Kind: r.Kind, Command: r.Command, Args: r.Args,
-		URL: r.URL, Headers: r.Headers, CLI: &cli}
-	return existing, nil
-}
-
 // MARK: Providers
 
 // Summaries is WorkspaceProviders.summaries: every provider for the Providers page, by name.
@@ -1097,7 +968,7 @@ func (p *Providers) summary(r ProviderRecord, l listed, workspaces []MachineInfo
 		caps = []string{}
 	}
 	s := ProviderSummary{ID: wire.ProviderID(r.ID), Name: r.Name, Kind: r.Kind, Secrets: secrets, Capabilities: caps,
-		Contract: int64(r.Contract), Mapped: r.Map != nil, Preset: optional(r.preset()), Workspaces: workspaces,
+		Contract: int64(r.Contract), Preset: optional(r.preset()), Workspaces: workspaces,
 		Current: l.current, Problem: optional(l.problem), Group: r.Group}
 	if machine := deref(r.Machine); machine != "" {
 		s.Machine = optional(wire.MachineRef(machine))
@@ -1130,18 +1001,17 @@ func (p *Providers) save(request ProviderAdd, updating bool, caller Caller) (Pro
 	if err != nil {
 		return ProviderSummary{}, err
 	}
-	// An update keeps what it leaves out, as it keeps the secrets (#858 US4).
-	if heldBefore != nil && request.Kind == heldBefore.Kind {
-		keepLeftOut(&request, heldBefore)
+	// An update keeps the commands it leaves out, as it keeps the secrets.
+	if heldBefore != nil && request.Kind == heldBefore.Kind && request.Commands == nil {
+		request.Commands = jsonValue(heldBefore.Commands)
 	}
 	given, names, err := savedSecrets(request, heldBefore, machine)
 	if err != nil {
 		return ProviderSummary{}, err
 	}
-	record := ProviderRecord{ID: id, Name: trimSpaces(request.Name), Kind: request.Kind, Command: request.Command,
-		Args: request.Args, URL: request.URL, Headers: request.Headers, SecretNames: names, Contract: 1,
+	record := ProviderRecord{ID: id, Name: trimSpaces(request.Name), Kind: request.Kind, SecretNames: names, Contract: 1,
 		Machine: &machine}
-	record.Commands, record.Map = valueOf(request.Commands), valueOf(request.Map)
+	record.Commands = valueOf(request.Commands)
 	if problem := record.Problem(); problem != "" {
 		return ProviderSummary{}, invalid("%s", problem)
 	}
@@ -1164,7 +1034,6 @@ func (p *Providers) save(request ProviderAdd, updating bool, caller Caller) (Pro
 	if record.Contract == 0 {
 		record.Contract = 1
 	}
-	record.WrittenBy = p.writtenBy(request, heldBefore)
 	record.Rev = 1
 	if heldBefore != nil {
 		record.Rev = heldBefore.Rev + 1
@@ -1243,30 +1112,6 @@ func (p *Providers) saving(request ProviderAdd, updating bool) (id, etag string,
 	return id, etag, heldBefore, nil
 }
 
-// keepLeftOut gives request what it leaves out from before, as an update of the same kind
-// keeps it.
-func keepLeftOut(request *ProviderAdd, before *ProviderRecord) {
-	if request.Command == nil {
-		request.Command = before.Command
-	}
-	if request.Args == nil {
-		request.Args = before.Args
-	}
-	if request.URL == nil {
-		request.URL = before.URL
-	}
-	if request.Headers == nil {
-		request.Headers = before.Headers
-	}
-	if request.Kind == KindCommands {
-		if request.Commands == nil {
-			request.Commands = jsonValue(before.Commands)
-		}
-	} else if request.Map == nil {
-		request.Map = jsonValue(before.Map)
-	}
-}
-
 // savedSecrets is the secrets request gives, which go on to its machine, and the names of
 // all its secrets, which the control plane keeps. A provider that moves to another machine
 // must be given each of its secrets again.
@@ -1306,53 +1151,7 @@ func (p *Providers) logSaved(record ProviderRecord, updating bool, workspaces in
 	if preset := record.preset(); preset != "" {
 		extra += ", preset " + preset
 	}
-	if record.Map != nil {
-		extra += ", mapped"
-	}
 	p.log(fmt.Sprintf("provider: %s %s (%s%s), %d workspaces", verb, record.ID, record.Kind, extra, workspaces))
-}
-
-// writtenBy is WorkspaceProviders.writtenBy (#858): an agent, when the request accepts a
-// done draft and its map or commands are the draft's; otherwise it stays as it was when
-// they are unchanged, and goes when the person changed them.
-func (p *Providers) writtenBy(request ProviderAdd, before *ProviderRecord) *WrittenBy {
-	given := valueOf(request.Map)
-	if request.Kind == KindCommands {
-		given = valueOf(request.Commands)
-	}
-	if drafts := p.Drafts(); deref(request.Draft) != "" && drafts != nil {
-		if runtime, json, ok := drafts.Result(string(*request.Draft)); ok && jsonEqual(json, given) {
-			return &WrittenBy{RuntimeID: runtime, At: records.Now()}
-		}
-	}
-	if before == nil {
-		return nil
-	}
-	had := before.Map
-	if before.Kind == KindCommands {
-		had = before.Commands
-	}
-	if (had == nil && given == nil) || (had != nil && given != nil && jsonEqual(had, given)) {
-		return before.WrittenBy
-	}
-	return nil
-}
-
-// cliOf is WorkspaceProviders.cli(of:): the program a command provider's commands use, the
-// first word of its list, or of its first workspace's start (#858 US4).
-func cliOf(record ProviderRecord) string {
-	line, ok := str(get(record.Commands, "list"))
-	if !ok {
-		if ws, _ := arr(get(record.Commands, "workspaces")); len(ws) > 0 {
-			line = strOr(get(ws[0], "start"))
-		}
-	}
-	for _, word := range strings.Split(line, " ") {
-		if word != "" {
-			return word
-		}
-	}
-	return ""
 }
 
 // remove is a provider going; its hosts stay, unlinked (US2 AS5).

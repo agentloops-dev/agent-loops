@@ -11,19 +11,26 @@ import SQLite3
 ///   page with its cursor and when it was read, and the total, the forges and the errors.
 /// - A page whose answer is of its own shape (an epic's plan, Releases, the boards, Timeline, Deploys; #6573) keeps
 ///   it whole, by the page and what it asked, with when it was read.
-/// - A refresh replaces page 1 and keeps the later pages, each with its own time, until they are read again.
-///   Scrolling to the end of the kept pages asks the next page by the last page's cursor.
+/// - A refresh replaces page 1 and keeps the pages read before, each marked stale with its own time (#6636, option (c)).
+///   Scrolling asks the next page by the cursor of the last **fresh** page, never a stale one, also when a stale page
+///   said "the end". Each fresh page takes out of the stale pages the items it holds (an item is drawn once, the
+///   newest copy) and the items that the server's order puts before its last item (they left the list: closed, or
+///   out of the query). A fresh page at the end drops the stale pages.
 ///
 /// Nothing here syncs or sorts: the caller asks the forge and gives the answer to `keepPage`. The bounds are in
 /// `WorkCache.Bounds`. SQLite is the platform's (`SQLite3`, on macOS and iOS), so this adds no package.
 public protocol WorkCaching: Sendable {
     /// The kept answer to a query, with its items, or nil when it was never answered on this device.
     func answer(_ query: WorkCache.Query) async -> WorkCache.Answer?
-    /// Keeps one page of a machine's answer: page 0 replaces the first page and keeps the later ones; the page after
-    /// the last kept one is added; any other kept page is replaced. Its items replace older copies.
+    /// Keeps one page of a machine's answer: page 0 replaces the first page and marks the pages read before stale; the page
+    /// after the last fresh one is added after it; any other fresh page is replaced. The stale pages lose what the
+    /// fresh ones cover (#6636). Its items replace older copies.
     func keepPage(_ query: WorkCache.Query, host: MachineRef, page: Int, list: DaemonAPI.ForgeList) async
     /// The machine did not answer the query: its kept pages stay, with the errors and when it failed.
     func keepFailure(_ query: WorkCache.Query, host: MachineRef, errors: [DaemonAPI.ForgeListError]) async
+    /// The machine is not asked the query, as another machine reads what it reads (#6641): its kept answer goes, so
+    /// its rows do not draw as old ones.
+    func forget(_ query: WorkCache.Query, host: MachineRef) async
     /// Items read or written outside a list (a write's answer, #6351, or an item's page): each replaces an older copy.
     func keep(items: [DaemonAPI.ForgeItem]) async
     /// Changes one kept item at once (an optimistic write, #6354). Its `updatedAt` stays, so the forge's newer copy
@@ -95,11 +102,28 @@ public actor WorkCache: WorkCaching {
     }
 
     /// One kept page of a machine's answer: how many items it held, its cursor to the next page (nil at the end) and
-    /// when it was read.
+    /// when it was read. A stale page was read before the last refresh (#6636): it draws, but its cursor is never asked.
     public struct Page: Codable, Hashable, Sendable {
         public var refs: [String]
         public var cursor: String?
         public var read: Date
+        public var stale: Bool
+
+        public init(refs: [String], cursor: String?, read: Date, stale: Bool = false) {
+            self.refs = refs
+            self.cursor = cursor
+            self.read = read
+            self.stale = stale
+        }
+
+        public init(from decoder: any Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            refs = try c.decode([String].self, forKey: .refs)
+            cursor = try c.decodeIfPresent(String.self, forKey: .cursor)
+            read = try c.decode(Date.self, forKey: .read)
+            // A file kept before #6636 has no stale pages.
+            stale = try c.decodeIfPresent(Bool.self, forKey: .stale) ?? false
+        }
     }
 
     /// A machine's kept answer to a query, its items in the server's order.
@@ -116,8 +140,12 @@ public actor WorkCache: WorkCaching {
 
         /// When page 1 was read: the "Last update" of the list (#5139).
         public var read: Date? { pages.first?.read }
-        /// The cursor to the page after the kept ones; nil when the kept pages reach the end.
-        public var cursor: String? { pages.last?.cursor }
+        /// How many pages were read since the last refresh: the next page is kept after them (#6636).
+        public var fresh: Int { WorkCache.freshCount(pages) }
+        /// When the oldest stale page was read; nil with none.
+        public var staleRead: Date? { pages.filter(\.stale).map(\.read).min() }
+        /// The cursor to the page after the fresh ones; nil when they reach the end. A stale page's is never asked.
+        public var cursor: String? { fresh > 0 ? pages[fresh - 1].cursor : nil }
         /// As the wire says a list, for a caller that draws one.
         public var list: DaemonAPI.ForgeList {
             DaemonAPI.ForgeList(items: items, cursor: cursor, errors: errors, forges: forges, total: total)
@@ -128,6 +156,16 @@ public actor WorkCache: WorkCaching {
         public var hosts: [HostAnswer]
         /// The oldest page 1 of the machines: what the list says it shows.
         public var read: Date? { hosts.compactMap(\.read).min() }
+
+        /// The machines' kept answers to draw (#6635): those asked now first, in their order, then every other machine
+        /// the cache holds an answer of, in its kept order. A machine that is not known or online yet, as at the start,
+        /// keeps its rows on screen, so the list never says "No open issues" while the cache holds them.
+        public func shown(first asked: [MachineRef]) -> [HostAnswer] {
+            let by = Dictionary(hosts.map { ($0.host, $0) }, uniquingKeysWith: { a, _ in a })
+            let firsts = asked.compactMap { by[$0] }
+            let named = Set(asked)
+            return firsts + hosts.filter { !named.contains($0.host) }
+        }
     }
 
     /// A page's kept answer (#6573): its JSON, as the page encodes it, and when it was read.
@@ -152,18 +190,23 @@ public actor WorkCache: WorkCaching {
         /// A page's kept answer: one over it is not kept, so the page asks again next time.
         public var pageBytes: Int
         public var bytes: Int
+        /// The items kept decoded in memory (#6643). Over it, a load keeps only the items it asks for.
+        public var memoItems: Int
 
         public init(itemBytes: Int = 4 * 1024, bodyBytes: Int = 64 * 1024, comments: Int = 50,
-                    pageBytes: Int = 4 * 1024 * 1024, bytes: Int = 200 * 1024 * 1024) {
+                    pageBytes: Int = 4 * 1024 * 1024, bytes: Int = 200 * 1024 * 1024, memoItems: Int = 5000) {
             self.itemBytes = itemBytes
             self.bodyBytes = bodyBytes
             self.comments = comments
             self.pageBytes = pageBytes
             self.bytes = bytes
+            self.memoItems = memoItems
         }
 
         /// The Mac's Work cache.
         public static let mac = Bounds()
+        /// The Remote's (#6357): 50 MB, as the web page's (#6356) and the Remote's local copy.
+        public static let remote = Bounds(bytes: 50 * 1024 * 1024)
     }
 
     public struct CacheError: LocalizedError {
@@ -193,8 +236,12 @@ public actor WorkCache: WorkCaching {
     private let now: @Sendable () -> Date
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
-    /// Items decoded once, by key: a draw after the first decodes nothing. The file stays the record.
+    /// Items decoded once, by key: a draw after the first decodes nothing. The file stays the record. At most
+    /// `bounds.memoItems`, plus the items of the one load that is over it.
     private var memo: [String: DaemonAPI.ForgeItem] = [:]
+    /// When each query's answer was last drawn, not written yet (#6643): a draw writes nothing, and `trim` writes
+    /// these first, so the least recently drawn answer still goes first.
+    private var drawn: [String: Date] = [:]
     /// The items an optimistic write changed, until it ends (#6354): a copy as old as theirs does not replace them.
     private var edited: Set<String> = []
 
@@ -210,15 +257,28 @@ public actor WorkCache: WorkCaching {
             throw CacheError(message: "could not open \(file?.path ?? "memory"): \(message)")
         }
         handle = Handle(opened)
+        let tables = ["item", "answer", "detail", "page"]
+        // The kept rows' bytes are a running count in `size`, kept by triggers (#6643), so `bytes()` reads one row.
+        // An older file counts its rows once. `recursive_triggers` makes a REPLACE fire the delete trigger.
+        let sums = tables.map { "(SELECT ifnull(sum(length(json)), 0) FROM \($0))" }.joined(separator: " + ")
+        let triggers = tables.flatMap { table in [
+            "CREATE TRIGGER IF NOT EXISTS \(table)_in AFTER INSERT ON \(table) BEGIN UPDATE size SET bytes = bytes + length(NEW.json); END",
+            "CREATE TRIGGER IF NOT EXISTS \(table)_out AFTER DELETE ON \(table) BEGIN UPDATE size SET bytes = bytes - length(OLD.json); END",
+            "CREATE TRIGGER IF NOT EXISTS \(table)_set AFTER UPDATE OF json ON \(table) BEGIN UPDATE size SET bytes = bytes - length(OLD.json) + length(NEW.json); END",
+        ] }
         for sql in [
             "PRAGMA auto_vacuum=INCREMENTAL",
+            "PRAGMA recursive_triggers=ON",
             "PRAGMA journal_mode=WAL",
             "PRAGMA synchronous=NORMAL",
             "CREATE TABLE IF NOT EXISTS item(key TEXT PRIMARY KEY, updated REAL NOT NULL, read REAL NOT NULL, json BLOB NOT NULL)",
             "CREATE TABLE IF NOT EXISTS answer(query TEXT NOT NULL, host TEXT NOT NULL, used REAL NOT NULL, json BLOB NOT NULL, PRIMARY KEY(query, host))",
             "CREATE TABLE IF NOT EXISTS detail(key TEXT PRIMARY KEY, read REAL NOT NULL, used REAL NOT NULL, json BLOB NOT NULL)",
             "CREATE TABLE IF NOT EXISTS page(page TEXT NOT NULL, asked TEXT NOT NULL, read REAL NOT NULL, used REAL NOT NULL, json BLOB NOT NULL, PRIMARY KEY(page, asked))",
-        ] where sqlite3_exec(opened, sql, nil, nil, nil) != SQLITE_OK {
+            "BEGIN",
+            "CREATE TABLE IF NOT EXISTS size(bytes INTEGER NOT NULL)",
+            "INSERT INTO size(bytes) SELECT \(sums) WHERE NOT EXISTS (SELECT 1 FROM size)",
+        ] + triggers + ["COMMIT"] where sqlite3_exec(opened, sql, nil, nil, nil) != SQLITE_OK {
             throw CacheError(message: String(cString: sqlite3_errmsg(opened)))
         }
     }
@@ -234,7 +294,7 @@ public actor WorkCache: WorkCaching {
             }
         }
         guard !kept.isEmpty else { return nil }
-        try? run("UPDATE answer SET used = ? WHERE query = ?", [.real(now()), .text(key)])
+        drawn[key] = now()
         let all = kept.flatMap { $0.kept.pages.flatMap(\.refs) }
         load(all)
         return Answer(hosts: kept.map { host, kept in
@@ -252,17 +312,73 @@ public actor WorkCache: WorkCaching {
         let key = query.key
         let at = now()
         let kept = keptAnswer(key, host: host)
-        var pages = kept?.pages ?? []
-        guard page >= 0, page <= pages.count else { return }
+        let had = kept?.pages ?? []
+        let fresh = Self.freshCount(had)
+        guard page >= 0, page <= fresh else { return }
         keep(items: list.items, at: at)
         let refs = list.items.map { Self.key($0.node) }.filter { memo[$0] != nil }
         // The forges' read time, not this call's (#6642): the daemon can answer from a copy up to a minute old.
         let read = Page(refs: refs, cursor: list.cursor, read: min(list.readAt ?? at, at))
-        if page == pages.count { pages.append(read) } else { pages[page] = read }
+        var reads = Array(had.prefix(fresh))
+        var stale = Array(had.dropFirst(fresh))
+        if page == 0 {
+            // A refresh: every page read before is stale now, the old page 1 too (an item of it may be on page 2
+            // now), before what was stale already; the new page 1 takes out what it holds.
+            stale = reads.map { Page(refs: $0.refs, cursor: $0.cursor, read: $0.read, stale: true) } + stale
+            reads = [read]
+        } else if page == reads.count {
+            reads.append(read)
+        } else {
+            reads[page] = read
+        }
+        let pages = reads + covered(stale, by: reads, sort: query.sort)
         let answer = Kept(pages: pages, total: list.total ?? kept?.total, forges: list.forges ?? kept?.forges,
                           errors: list.errors, failed: nil)
         write(answer, key: key, host: host, used: at)
         trim()
+    }
+
+    /// The pages before the first stale one: read since the last refresh.
+    static func freshCount(_ pages: [Page]) -> Int {
+        pages.firstIndex(where: \.stale) ?? pages.count
+    }
+
+    /// The stale pages less what the fresh pages cover (#6636): the items they hold, and the items the server's order
+    /// puts before the last fresh item, which left the list. None when the fresh pages reach the end. An empty page
+    /// goes.
+    private func covered(_ stale: [Page], by fresh: [Page], sort: String) -> [Page] {
+        guard !stale.isEmpty, let end = fresh.last, end.cursor != nil else { return [] }
+        let held = Set(fresh.flatMap(\.refs))
+        load(stale.flatMap(\.refs))
+        let last = fresh.lazy.reversed().compactMap { $0.refs.last.flatMap { self.memo[$0] } }.first
+        return stale.compactMap { page in
+            var page = page
+            page.refs = page.refs.filter { ref in
+                guard !held.contains(ref), let item = memo[ref] else { return false }
+                return last.map { !Self.before(item, $0, sort: sort) } ?? true
+            }
+            return page.refs.isEmpty ? nil : page
+        }
+    }
+
+    /// `a` comes strictly before `b` in the server's order: by priority first for "priority" (high, medium, low, none),
+    /// then the last updated first, as the daemon merges the forges' pages (#6538). A tie is not before: it may be on
+    /// the next page.
+    static func before(_ a: DaemonAPI.ForgeItem, _ b: DaemonAPI.ForgeItem, sort: String) -> Bool {
+        if sort == "priority" {
+            let ra = rank(a), rb = rank(b)
+            if ra != rb { return ra < rb }
+        }
+        return a.updatedAt > b.updatedAt
+    }
+
+    private static func rank(_ item: DaemonAPI.ForgeItem) -> Int {
+        switch item.priority?.lowercased() {
+        case "high": 0
+        case "medium": 1
+        case "low": 2
+        default: 3
+        }
     }
 
     public func keepFailure(_ query: WorkCache.Query, host: MachineRef, errors: [DaemonAPI.ForgeListError]) {
@@ -271,6 +387,10 @@ public actor WorkCache: WorkCaching {
         answer.errors = errors
         answer.failed = now()
         write(answer, key: key, host: host, used: now())
+    }
+
+    public func forget(_ query: WorkCache.Query, host: MachineRef) {
+        try? run("DELETE FROM answer WHERE query = ? AND host = ?", [.text(query.key), .text(host.rawValue)])
     }
 
     private func keptAnswer(_ key: String, host: MachineRef) -> Kept? {
@@ -357,7 +477,12 @@ public actor WorkCache: WorkCaching {
 
     /// Decodes the keys' items that are not in memory yet, from the file.
     private func load(_ keys: [String]) {
-        let missing = Array(Set(keys.filter { memo[$0] == nil }))
+        var missing = Array(Set(keys.filter { memo[$0] == nil }))
+        if memo.count + missing.count > bounds.memoItems {
+            let asked = Set(keys)
+            memo = memo.filter { asked.contains($0.key) }
+            missing = Array(asked.subtracting(memo.keys))
+        }
         let chunk = 500
         for start in stride(from: 0, to: missing.count, by: chunk) {
             let part = missing[start..<min(start + chunk, missing.count)]
@@ -442,8 +567,15 @@ public actor WorkCache: WorkCaching {
 
     // MARK: Bounds
 
-    /// The kept rows' bytes: what `bounds.bytes` bounds.
+    /// The kept rows' bytes: what `bounds.bytes` bounds. A running count, so it costs one row (#6643).
     public func bytes() -> Int {
+        var total = 0
+        try? rows("SELECT bytes FROM size") { s in total = Int(sqlite3_column_int64(s, 0)) }
+        return total
+    }
+
+    /// The kept rows' bytes, summed over every row: what the running count must equal (the tests).
+    func summedBytes() -> Int {
         var total = 0
         try? rows("""
         SELECT (SELECT ifnull(sum(length(json)), 0) FROM item) + (SELECT ifnull(sum(length(json)), 0) FROM answer)
@@ -452,12 +584,30 @@ public actor WorkCache: WorkCaching {
         return total
     }
 
+    /// Writes when the answers were last drawn.
+    private func writeDrawn() {
+        for (key, at) in drawn {
+            try? run("UPDATE answer SET used = ? WHERE query = ?", [.real(at), .text(key)])
+        }
+        drawn = [:]
+    }
+
     /// Brings the file under `bounds.bytes`, to nine tenths of it so the next page does not trim again: bodies first,
-    /// the least recently opened first; then the pages' answers, the least recently drawn first; then the lists'
-    /// answers, the least recently drawn first, with the items that no kept answer holds.
+    /// the least recently opened first; then the pages' answers, the least recently drawn first; then the items that
+    /// no kept answer or body holds; then the lists' answers, the least recently drawn first, with the items that no
+    /// other kept answer holds. One transaction, and each table is read once (#6643).
     func trim() {
+        guard (try? run("BEGIN")) != nil else { return }
+        writeDrawn()
         var total = bytes()
-        guard total > bounds.bytes else { return }
+        guard total > bounds.bytes else {
+            try? run("COMMIT")
+            return
+        }
+        defer {
+            try? run("COMMIT")
+            try? run("PRAGMA incremental_vacuum")
+        }
         let target = bounds.bytes / 10 * 9
         var details: [(key: String, bytes: Int)] = []
         try? rows("SELECT key, length(json) FROM detail ORDER BY used") { s in
@@ -475,30 +625,39 @@ public actor WorkCache: WorkCaching {
             try? run("DELETE FROM page WHERE page = ? AND asked = ?", [.text(page.page), .text(page.asked)])
             total -= page.bytes
         }
-        var answers: [(query: String, host: String)] = []
-        try? rows("SELECT query, host FROM answer ORDER BY used") { s in answers.append((text(s, 0), text(s, 1))) }
+        guard total > target else { return }
+        // How many kept answers and bodies hold each item: an item goes when the last one goes.
+        var holders: [String: Int] = [:]
+        var answers: [(query: String, host: String, bytes: Int, refs: Set<String>)] = []
+        try? rows("SELECT query, host, length(json), json FROM answer ORDER BY used") { s in
+            let refs = Set((try? decoder.decode(Kept.self, from: blob(s, 3)))?.pages.flatMap(\.refs) ?? [])
+            for ref in refs { holders[ref, default: 0] += 1 }
+            answers.append((text(s, 0), text(s, 1), Int(sqlite3_column_int64(s, 2)), refs))
+        }
+        try? rows("SELECT key FROM detail") { s in holders[text(s, 0), default: 0] += 1 }
+        var sizes: [String: Int] = [:]
+        try? rows("SELECT key, length(json) FROM item") { s in sizes[text(s, 0)] = Int(sqlite3_column_int64(s, 1)) }
+        var drop: [String] = []
+        for (key, size) in sizes where holders[key] == nil {
+            drop.append(key)
+            total -= size
+        }
         for answer in answers where total > target {
             try? run("DELETE FROM answer WHERE query = ? AND host = ?", [.text(answer.query), .text(answer.host)])
-            dropUnheldItems()
-            total = bytes()
-        }
-        try? run("PRAGMA incremental_vacuum")
-    }
-
-    /// Deletes the items that no kept answer or page holds.
-    private func dropUnheldItems() {
-        var held = Set<String>()
-        try? rows("SELECT json FROM answer") { s in
-            if let kept = try? decoder.decode(Kept.self, from: blob(s, 0)) {
-                held.formUnion(kept.pages.flatMap(\.refs))
+            total -= answer.bytes
+            for ref in answer.refs {
+                holders[ref, default: 1] -= 1
+                guard holders[ref] == 0, let size = sizes[ref] else { continue }
+                drop.append(ref)
+                total -= size
             }
         }
-        try? rows("SELECT key FROM detail") { s in held.insert(text(s, 0)) }
-        var all: [String] = []
-        try? rows("SELECT key FROM item") { s in all.append(text(s, 0)) }
-        for key in all where !held.contains(key) {
-            try? run("DELETE FROM item WHERE key = ?", [.text(key)])
-            memo[key] = nil
+        let chunk = 500
+        for start in stride(from: 0, to: drop.count, by: chunk) {
+            let part = drop[start..<min(start + chunk, drop.count)]
+            let marks = Array(repeating: "?", count: part.count).joined(separator: ",")
+            try? run("DELETE FROM item WHERE key IN (\(marks))", part.map { .text($0) })
+            for key in part { memo[key] = nil }
         }
     }
 
@@ -509,6 +668,7 @@ public actor WorkCache: WorkCaching {
         try? run("DELETE FROM page")
         try? run("PRAGMA incremental_vacuum")
         memo = [:]
+        drawn = [:]
         edited = []
     }
 

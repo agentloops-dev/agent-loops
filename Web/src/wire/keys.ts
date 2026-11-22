@@ -68,15 +68,16 @@ export function codeKey(secret: Uint8Array): Promise<CryptoKey> {
 
 /**
  * The page's database, `agents`: store `key` (below) and, since version 2, store `copy`, the
- * local copy of sessions and transcript ends (#4790, model/localCopy.ts). One database, so a
- * forget, which deletes it, drops the copy with the keys.
+ * local copy of sessions and transcript ends (#4790, model/localCopy.ts), and since version 3, store
+ * `work`, Work's cache (#6356, model/workCache.ts). One database, so a forget, which deletes it, drops
+ * the copy and the cache with the keys.
  */
 export function openAgentsDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open("agents", 2);
+    const request = indexedDB.open("agents", 3);
     request.onupgradeneeded = () => {
       const db = request.result;
-      for (const name of ["key", "copy"]) if (!db.objectStoreNames.contains(name)) db.createObjectStore(name);
+      for (const name of ["key", "copy", "work"]) if (!db.objectStoreNames.contains(name)) db.createObjectStore(name);
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);

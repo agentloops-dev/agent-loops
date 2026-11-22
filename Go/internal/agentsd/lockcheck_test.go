@@ -365,9 +365,9 @@ func TestWhatAMachineSaysUnaskedCarriesItsMAC(t *testing.T) {
 	}
 }
 
-// #3542: the control plane may stop, unsigned, the writer of a provider draft it holds,
-// whose start a client of the lock signed; no other agent.
-func TestTheControlPlaneStopsOnlyADraftsWriter(t *testing.T) {
+// The control plane stops no agent unsigned, not even one started for a provider draft
+// (#3542), whose writer was removed (#6623).
+func TestTheControlPlaneStopsNoAgentUnsigned(t *testing.T) {
 	t.Parallel()
 
 	d, _, _, _ := lockedMachine(t)
@@ -377,17 +377,11 @@ func TestTheControlPlaneStopsOnlyADraftsWriter(t *testing.T) {
 	})
 	work := seeded(t, d, cwd, nil)
 	cp := channelTo(t, d)
-	cp.send(requestLine(1, wire.CallAgentsStop.Name, wire.AgentStopRequest{AgentID: work.ID}))
-	if line := cp.answer(t, 1); !notInLockAnswer(line) {
-		t.Fatalf("the control plane stopped a person's agent: %s", line)
-	}
-	cp.send(requestLine(2, wire.CallAgentsStop.Name, wire.AgentStopRequest{AgentID: writer.ID, ByAdmin: new(true)}))
-	if line := cp.answer(t, 2); !notInLockAnswer(line) {
-		t.Fatalf("the control plane stopped a writer as an admin: %s", line)
-	}
-	cp.send(requestLine(3, wire.CallAgentsStop.Name, wire.AgentStopRequest{AgentID: writer.ID}))
-	if line := cp.answer(t, 3); notInLockAnswer(line) {
-		t.Fatalf("the control plane could not stop its draft's writer: %s", line)
+	for i, id := range []wire.UUID{work.ID, writer.ID} {
+		cp.send(requestLine(i+1, wire.CallAgentsStop.Name, wire.AgentStopRequest{AgentID: id}))
+		if line := cp.answer(t, i+1); !notInLockAnswer(line) {
+			t.Fatalf("the control plane stopped an agent unsigned: %s", line)
+		}
 	}
 }
 
