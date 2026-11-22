@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -106,6 +107,7 @@ type fakeItem struct {
 // its labels, count and cursor. It counts the requests and can hold them, to see two asks join.
 type priorityGitHub struct {
 	items    []fakeItem
+	cap      int // search's cap on results, as GitHub's 1,000; 0 for none
 	requests atomic.Int32
 	hold     chan struct{}
 	asked    chan struct{}
@@ -125,7 +127,7 @@ func (g *priorityGitHub) aliases() []string {
 }
 
 var (
-	connRE    = regexp.MustCompile(`(b\d|total): (search|issues|pullRequests)\((.*?)\) \{`)
+	connRE    = regexp.MustCompile(`(b\d|total|l): (search|issues|pullRequests)\((.*?)\) \{`)
 	firstRE   = regexp.MustCompile(`first: (\d+)`)
 	afterRE   = regexp.MustCompile(`after: \$(\w+)`)
 	queryRE   = regexp.MustCompile(`query: \$(\w+)`)
@@ -165,7 +167,13 @@ func (g *priorityGitHub) answer(query string, vars map[string]any) map[string]an
 	root, repo := map[string]any{}, map[string]any{}
 	for _, m := range connRE.FindAllStringSubmatch(query, -1) {
 		alias, kind, args := m[1], m[2], m[3]
-		conn := g.connection(g.found(kind, args, vars), args, vars)
+		found := g.found(kind, args, vars)
+		conn := g.connection(found, args, vars)
+		if kind == "search" && g.cap > 0 && len(found) > g.cap {
+			// GitHub search counts every match but gives only the first 1,000.
+			conn = g.connection(found[:g.cap], args, vars)
+			conn["issueCount"] = len(found)
+		}
 		if kind == "search" {
 			root[alias] = conn
 		} else {
@@ -411,5 +419,81 @@ func TestTwoAsksOfTheSameListAtOnceAreOneRequest(t *testing.T) {
 	}
 	if fmt.Sprint(results[0].Items) != fmt.Sprint(results[1].Items) {
 		t.Fatal("the asks that joined got different answers")
+	}
+}
+
+// bigProject is the fixture of review #6355's big project: 5,000 open issues, 4,000 of them with no priority, and
+// search capped at 1,000 as GitHub's.
+func bigProject() *priorityGitHub {
+	return &priorityGitHub{cap: searchCap, items: fakeItems(5000, func(n int) []string {
+		if n%5 != 0 {
+			return []string{"bug"}
+		}
+		return []string{priorityLabels[n%3]}
+	})}
+}
+
+func TestABigProjectsPriorityListReachesItsEnd(t *testing.T) {
+	t.Parallel()
+	fake := bigProject()
+	gh := fake.serve(t)
+	got, pages := listEvery(t, gh, []string{"o/r"}, SearchFilter{Sort: SortPriority}, 100, 5000)
+	if want := wantOrder(fake.items); !slices.Equal(got, want) {
+		t.Fatalf("listed %d items, want all %d in priority order", len(got), len(want))
+	}
+	// The whole list drops the 1,000 with a priority, so a page of it can ask twice, never more.
+	if n := int(fake.requests.Load()); n > 2*pages {
+		t.Fatalf("%d requests for %d pages", n, pages)
+	}
+}
+
+func TestABigProjectsLastUpdatedListReachesItsEnd(t *testing.T) {
+	t.Parallel()
+	for _, f := range []SearchFilter{{}, {Label: "bug"}} {
+		fake := bigProject()
+		want := withLabel(fake.items, f.Label)
+		got, _ := listEvery(t, fake.serve(t), []string{"o/r"}, f, 100, len(want))
+		if len(got) != len(want) || got[len(got)-1] != want[len(want)-1].number {
+			t.Fatalf("label %q: listed %d items, want %d", f.Label, len(got), len(want))
+		}
+		if a := fake.aliases(); !slices.Equal(a, []string{"l"}) {
+			t.Fatalf("label %q: read with %v, not GitHub's list", f.Label, a)
+		}
+	}
+}
+
+func TestOnlyAListOfOneRepoAndOneLabelReadsGitHubsList(t *testing.T) {
+	t.Parallel()
+	one := []string{"o/r"}
+	for _, c := range []struct {
+		repos []string
+		f     SearchFilter
+		want  bool
+	}{
+		{one, SearchFilter{}, true},
+		{one, SearchFilter{Label: "bug", Assignee: "sam"}, true},
+		{one, SearchFilter{Feature: "work"}, true},
+		{one, SearchFilter{Label: "bug", Feature: "work"}, false},
+		{one, SearchFilter{PRs: true, Assignee: "sam"}, false},
+		{one, SearchFilter{Query: "crash"}, false},
+		{one, SearchFilter{Reviewer: "sam"}, false},
+		{[]string{"o/r", "o/s"}, SearchFilter{}, false},
+	} {
+		if got := readsPlainList(c.repos, c.f); got != c.want {
+			t.Fatalf("readsPlainList(%v, %+v) = %v, want %v", c.repos, c.f, got, c.want)
+		}
+	}
+}
+
+func TestASearchCursorFromBeforeGoesOnInSearch(t *testing.T) {
+	t.Parallel()
+	fake := &priorityGitHub{items: fakeItems(30, byPriorityLabel)}
+	if _, err := fake.serve(t).Search(context.Background(), []string{"o/r"}, SearchFilter{}, "10", 10); err != nil {
+		t.Fatal(err)
+	}
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	if !strings.Contains(fake.last, "search(") || strings.Contains(fake.last, "repository(") {
+		t.Fatalf("a search cursor did not go on in search: %s", fake.last)
 	}
 }
