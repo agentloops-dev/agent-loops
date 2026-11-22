@@ -23,6 +23,12 @@ func (f *fakeForgeGitHub) SetPriorityField(_ context.Context, repo string, numbe
 	return has, nil
 }
 
+// AddLabels gives the labels after the add, with an old priority label still on (#6644).
+func (f *fakeForgeGitHub) AddLabels(_ context.Context, repo string, number int, add []string) ([]string, error) {
+	f.note("add-labels %s#%d +%s", repo, number, strings.Join(add, ","))
+	return append(slices.Clone(add), "bug", "Priority:LOW"), nil
+}
+
 func (f *fakeForgeLinear) SetPriority(_ context.Context, identifier, priority string) error {
 	f.note("priority %s %q", identifier, priority)
 	return nil
@@ -93,7 +99,8 @@ func TestPlanLabelEdits(t *testing.T) {
 	}
 }
 
-// #6091: GitHub writes its Priority issue field where the repo has one, else the labels; on
+// #6091: GitHub writes its Priority issue field where the repo has one, else the labels (the
+// add first, then the old priority labels its answer has off, with no read: #6644); on
 // hold is a label; a pull request, a word that is not a priority and Azure Repos (no issues)
 // are refused.
 func TestForgePriorityAndHoldOnGitHub(t *testing.T) {
@@ -107,7 +114,7 @@ func TestForgePriorityAndHoldOnGitHub(t *testing.T) {
 	c.call(t, 2, "forge/priority", wire.ForgePriorityRequest{Node: ghIssue, Priority: setTo("low")})
 	c.call(t, 3, "forge/priority", wire.ForgePriorityRequest{Node: ghIssue})
 	c.call(t, 4, "forge/hold", wire.ForgeHoldRequest{Node: ghIssue, On: true})
-	want := []string{"labels alexec/agents#7 +priority:high -", `priority-field alexec/agents#7 "low"`, `priority-field alexec/agents#7 ""`,
+	want := []string{"add-labels alexec/agents#7 +priority:high", "labels alexec/agents#7 + -Priority:LOW", `priority-field alexec/agents#7 "low"`, `priority-field alexec/agents#7 ""`,
 		"labels alexec/agents#7 +on hold -"}
 	if got := gh.writes(); !slices.Equal(got, want) {
 		t.Fatalf("writes:\n%q\nwant\n%q", got, want)

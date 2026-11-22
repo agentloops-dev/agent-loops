@@ -74,6 +74,8 @@ type forgeGitHubWrites interface {
 	Assign(ctx context.Context, repo string, number int, logins []string) error
 	// The Priority issue field (#6091); has is false where the repo has none.
 	SetPriorityField(ctx context.Context, repo string, number int, priority string) (has bool, err error)
+	// The priority by labels: the labels after the add, from the write's answer (#6644).
+	AddLabels(ctx context.Context, repo string, number int, add []string) ([]string, error)
 }
 
 // forgeGitLabWrites is what the writes ask of GitLab; a test gives a fake.

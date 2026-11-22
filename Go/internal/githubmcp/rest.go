@@ -42,6 +42,8 @@ type RealGitHub struct {
 
 	// noIssueFields says this GitHub has no issue fields, so queries leave them out (#5747).
 	noIssueFields atomic.Bool
+	// fields keeps each repo's Priority issue field, for the priority writes (#6644).
+	fields fieldCache
 
 	mu        sync.Mutex
 	etags     map[string]etagged
