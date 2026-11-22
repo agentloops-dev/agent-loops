@@ -74,7 +74,7 @@ struct MachineSetupSection<SignIn: View>: View {
         .accessibilityElement(children: .combine)
     }
 
-    private static func symbol(_ state: DaemonAPI.MachineSetupStep.State) -> String {
+    static func symbol(_ state: DaemonAPI.MachineSetupStep.State) -> String {
         switch state {
         case .done: "checkmark.circle.fill"
         case .running: "arrow.triangle.2.circlepath"
@@ -84,7 +84,7 @@ struct MachineSetupSection<SignIn: View>: View {
         }
     }
 
-    private static func tint(_ state: DaemonAPI.MachineSetupStep.State) -> StateTint {
+    static func tint(_ state: DaemonAPI.MachineSetupStep.State) -> StateTint {
         switch state {
         case .done: .vouched
         case .running: .none
@@ -94,7 +94,7 @@ struct MachineSetupSection<SignIn: View>: View {
         }
     }
 
-    private static func stateWords(_ state: DaemonAPI.MachineSetupStep.State) -> String {
+    static func stateWords(_ state: DaemonAPI.MachineSetupStep.State) -> String {
         switch state {
         case .done: "Done"
         case .running: "Running"

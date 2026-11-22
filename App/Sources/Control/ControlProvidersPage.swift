@@ -19,6 +19,8 @@ struct ControlProvidersPage: View {
     @State private var trusting: LinkTrust?
     /// Delete… on a failed make's row (#6078).
     @State private var deletingFailed: FailedRow?
+    /// The machines New Droplet made from this page, until each is ready (#6577, W5).
+    @State private var madeByDroplet: Set<String> = []
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -137,7 +139,8 @@ struct ControlProvidersPage: View {
         ControlCard {
             ControlRow(dot: .none, title: provider.name, chip: kindChip(provider), detail: providerLine(provider)) {
                 HStack(spacing: 8) {
-                if provider.capabilities.contains("create") {
+                // A DigitalOcean card has New Droplet and Change… below in its place (#6577).
+                if provider.capabilities.contains("create"), !OneClickMake.offers(provider) {
                     Button("New Machine…") { making = provider }.buttonStyle(.paper)
                         .disabled(!provider.usable)
                         .help(provider.usable ? "" : GroupWords.mayNotUse(provider, groups: control.groups))
@@ -174,10 +177,14 @@ struct ControlProvidersPage: View {
                 }
                 .fixedSize()
             }
+            if OneClickMake.offers(provider) {
+                Divider()
+                NewDropletRow(control: control, provider: provider, change: { making = provider }, made: $madeByDroplet)
+            }
             ForEach(provider.workspaces) { workspace in
                 Divider()
                 ControlRow(dot: dot(workspace), title: workspace.name, detail: workspaceLine(workspace)) {
-                    if control.isJoining(provider.id, workspace) {
+                    if control.isJoining(provider.id, workspace) || (workspace.host == nil && workspace.joining == true) {
                         // Made here, installing on its first boot (US5).
                         HStack(spacing: 6) {
                             ProgressView().controlSize(.small)
@@ -206,6 +213,10 @@ struct ControlProvidersPage: View {
                         }
                         .fixedSize()
                     }
+                }
+                // A make's steps on its row, from the press until it joins (#6577, W4).
+                if workspace.host == nil, let setup = workspace.setup {
+                    ProviderSetupSteps(setup: setup)
                 }
             }
         }

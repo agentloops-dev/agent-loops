@@ -205,7 +205,7 @@ struct SettingsWindow: View {
                            openFolderPolicy: requests.map { requests in { path in openFolderPolicy(path, requests) } })
             }
         case .voice: FormColumn { Form { VoiceSettingsSection() }.paperForm() }
-        case .earlyFeatures: FormColumn { Form { EarlyFeaturesSection() }.paperForm() }
+        case .earlyFeatures: FormColumn { Form { EarlyFeaturesSection(said: model.partsMaturity) }.paperForm() }
         case .account: FormColumn { AccountSettingsView() }
         case .signIns:
             FormColumn {

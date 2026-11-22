@@ -30,7 +30,9 @@ and the control plane (#1135, step 0 of the move to Go, #1134). It is not a Swif
   and `Web/src/protocol/maturity.generated.ts`, from `maturity.json`: each capability that is
   not GA, with its level (`pilot`, `alpha` or `beta`), the title of its feature, its issue and,
   for a pilot on some clients only, its clients. A capability it does not list is GA. The
-  generator refuses a name that no document has.
+  generator refuses a name that no document has. `Go/wire/maturity_gen.go` has the levels for
+  the Go host and the control plane, which send their own in `machine/hello` and
+  `control/status` (#6579).
 
 `scripts/wire.sh check` writes nothing and fails when one of them is stale; CI's `go` job runs
 the same check as a test.

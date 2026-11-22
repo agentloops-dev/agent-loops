@@ -93,3 +93,4 @@ What agents learnt about this repo: its code, tools, process and decisions. One 
 - [Held calls and Mac sleep](held-calls-and-mac-sleep.md) — a call open over a sleep ends in the client's timeout; match timeouts to `pmset -g log` first (#6310)
 - [Periphery removed](periphery-removed.md) — Alex 2026-11-21 (#6526): no Swift dead-code gate; it cost ~8.5 min warm per swift-lint run and a 2.6 GB cache
 - [@AppStorage hears no key with a dot](appstorage-key-with-a-dot.md) — KVO reads a dot as a key path: a mirrored display key a view reads must have none (#6254, flag:<name>)
+- [Fix main asks the bug lane for root-cause lanes](fix-main-asks-the-bug-lane-for-root-cause-lanes.md) — the #4207 lead takes each new bug itself; Fix main messages it, starts no lane (2026-11-21 duplicates on #6603, #6619)
