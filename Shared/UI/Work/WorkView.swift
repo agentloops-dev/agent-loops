@@ -493,14 +493,7 @@ private struct WorkListBar: View {
                 }
             }
         }
-        .appText(.fine)
-        .foregroundStyle(.secondary)
-        .monospacedDigit()
-        .padding(.horizontal, 16)
-        .padding(.vertical, 6)
-        .frame(maxWidth: .infinity)
-        .background(.bar)
-        .overlay(alignment: .top) { Divider() }
+        .workFooterBar()
     }
 
     /// The forge's count of the list (#4396), where it gives one and the list shows all it counts.
@@ -523,9 +516,55 @@ private struct WorkPageFailed: View {
     }
 }
 
+/// The look of a Work page's footer bar (#5968, #5969): the caption step in grey on the bar's material, with a rule
+/// above it.
+private struct WorkFooterBarLook: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .appText(.fine)
+            .foregroundStyle(.secondary)
+            .monospacedDigit()
+            .padding(.horizontal, 16)
+            .padding(.vertical, 6)
+            .frame(maxWidth: .infinity)
+            .background(.bar)
+            .overlay(alignment: .top) { Divider() }
+    }
+}
+
+extension View {
+    func workFooterBar() -> some View { modifier(WorkFooterBarLook()) }
+}
+
+/// The footer bar of a Work page that is not a list (Deploys, Timeline; #5969): on the left, the read (Loading…,
+/// Updating…, Reading 2 of 3 machines…, From this device, or what failed with Try again); on the right, the count,
+/// then "Last update 72 min ago" (#5139) once a read has ended.
+struct WorkPageBar: View {
+    let state: WorkLook.FooterState
+    /// "4 targets", once something is drawn.
+    let count: String?
+    let read: Date?
+    let retry: () -> Void
+
+    var body: some View {
+        HStack(spacing: 6) {
+            WorkReadLine(state: state, retry: retry)
+            Spacer(minLength: 12)
+            if state != .couldNotRead, state != .loading {
+                if let count { Text(count) }
+                if let read {
+                    if count != nil { Text(verbatim: "·") }
+                    LastUpdateText(read: read)
+                }
+            }
+        }
+        .workFooterBar()
+    }
+}
+
 /// The footer's read (#5968): a spinner and Loading…, Updating… or From this device; or a warning glyph and what
 /// failed, every line on hover, with Try again where rows are shown.
-private struct WorkReadLine: View {
+struct WorkReadLine: View {
     let state: WorkLook.FooterState
     let retry: () -> Void
 

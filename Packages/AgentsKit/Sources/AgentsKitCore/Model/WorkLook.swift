@@ -446,6 +446,8 @@ public enum WorkLook {
         case loading
         case updating
         case fromDevice
+        /// A page that asks several machines (Timeline, #5969): "Reading 2 of 3 machines…" while some have answered.
+        case readingMachines(answered: Int, of: Int)
         /// A read failed with rows on screen: "Could not update: GitHub said 502." with Try again; `help` has every line.
         case couldNotUpdate(line: String, help: String)
         /// A read failed with nothing on screen: "Could not read."
@@ -457,13 +459,19 @@ public enum WorkLook {
             case .loading: WorkLook.loading
             case .updating: WorkLook.updating
             case .fromDevice: WorkLook.fromDevice
+            case .readingMachines(let answered, let of): "Reading \(answered) of \(of) machines…"
             case .couldNotUpdate(let line, _): line
             case .couldNotRead: WorkLook.couldNotReadShort
             }
         }
 
         /// A spinner beside the words.
-        public var busy: Bool { self == .loading || self == .updating || self == .fromDevice }
+        public var busy: Bool {
+            switch self {
+            case .loading, .updating, .fromDevice, .readingMachines: true
+            default: false
+            }
+        }
         /// The warning glyph, and Try again where there are rows.
         public var failure: Bool {
             switch self {
@@ -484,6 +492,19 @@ public enum WorkLook {
         guard reading else { return .none }
         return drawn && read > 0 ? .updating : .loading
     }
+
+    /// The footer's state for a page that is not a list (Deploys, Timeline; #5969): `drawn` whether anything is on
+    /// screen; `answered` of `machines` the machines that answered the read that runs. A read of several machines that
+    /// some have answered says how many; one that failed with something drawn says what, with Try again.
+    public static func pageFooterState(drawn: Bool, reading: Bool, fromDevice: Bool, lines: [String],
+                                       answered: Int = 0, machines: Int = 0) -> FooterState {
+        let state = footerState(drawn: drawn, read: drawn ? 1 : 0, reading: reading, fromDevice: fromDevice, lines: lines)
+        guard reading, lines.isEmpty, machines > 1, answered > 0, answered < machines else { return state }
+        return .readingMachines(answered: answered, of: machines)
+    }
+
+    /// "4 targets", "1 epic": a page's count at the right of its footer.
+    public static func pageCount(_ n: Int, _ noun: String) -> String { "\(n) \(noun)\(n == 1 ? "" : "s")" }
 
     /// The footer while the next page loads (lists.md section 2): "Loading more… · 50 shown";
     /// "Loading more… · 50 of 128 shown" with the forge's total (#4396).
