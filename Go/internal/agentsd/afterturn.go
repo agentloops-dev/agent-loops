@@ -3,6 +3,7 @@ package agentsd
 import (
 	"log"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -20,6 +21,8 @@ const afterTurnLimit = 5 * time.Second
 type afterTurnState struct {
 	afterTurnMu     sync.Mutex
 	afterTurnClosed bool
+	// quiet is set first in Shutdown: nothing more goes to a client unasked (#6603).
+	quiet atomic.Bool
 	// afterTurnsUnderWay is how many have started and not ended.
 	afterTurnsUnderWay int
 	// afterTurnsIdle closes when afterTurnsUnderWay goes back to 0; nil while it is 0.
@@ -76,8 +79,18 @@ func (d *Daemon) closeAfterTurns() {
 	d.afterTurnMu.Unlock()
 }
 
-// shuttingDown is whether Shutdown has begun: no turn starts, and nothing more goes to a
-// client unasked.
+// goQuiet is the first step of Shutdown: from here nothing more goes to a client unasked
+// (#6603). It comes before the stops that wait for loops and clocks, because a loop that
+// tells the clients (the wake loop's wake/changed) holds a client's write lock, and the
+// writes in line behind it went on one at a time, each to the conn's own limit, while
+// Shutdown waited for that loop.
+func (d *Daemon) goQuiet() { d.quiet.Store(true) }
+
+// isQuiet is whether Shutdown has begun, so that nothing more goes to a client unasked.
+func (d *Daemon) isQuiet() bool { return d.quiet.Load() }
+
+// shuttingDown is whether Shutdown has closed the turns: no turn starts, and nothing new
+// follows one.
 func (d *Daemon) shuttingDown() bool {
 	d.afterTurnMu.Lock()
 	defer d.afterTurnMu.Unlock()

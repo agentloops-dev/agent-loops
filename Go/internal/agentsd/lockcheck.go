@@ -112,13 +112,14 @@ func (c *Client) write(line string) { c.writeOnce(line, false) }
 // has begun it sends nothing, as clientsToTell does (#3828), also when it was already waiting
 // for the client's write lock (#6268): a client that reads nothing holds each write up to its
 // connection's own limit, and the writes in line behind one went on one at a time, each to
-// that limit, past Shutdown's wait for the goroutines that made them.
+// that limit, past Shutdown's wait for the goroutines that made them. "Begun" is its first
+// step, before it waits for the loops (#6603).
 func (c *Client) writeUnasked(line string) { c.writeOnce(line, true) }
 
 func (c *Client) writeOnce(line string, unasked bool) {
 	c.lock.write.Lock()
 	defer c.lock.write.Unlock()
-	if unasked && c.d != nil && c.d.shuttingDown() {
+	if unasked && c.d != nil && c.d.isQuiet() {
 		return
 	}
 	if ch := c.lock.get(); ch != nil {

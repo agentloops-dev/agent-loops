@@ -324,7 +324,7 @@ func (d *Daemon) removeClient(c *Client) {
 // the host goes is not heard, and a client that reads nothing would hold each write that
 // follows a turn up to its own limit, past Shutdown's wait for them.
 func (d *Daemon) clientsToTell() []*Client {
-	if d.shuttingDown() {
+	if d.isQuiet() {
 		return nil
 	}
 	d.mu.Lock()
@@ -411,6 +411,9 @@ func fanOut(up *controllink.Uplink, fs []fanned, line string) {
 
 // Shutdown ends what the host runs: every runtime it started.
 func (d *Daemon) Shutdown() {
+	// Nothing more goes to a client unasked, before the stops below wait for the loops
+	// that tell the clients (#6603).
+	d.goQuiet()
 	// First, so a stop that goes wrong below still counts as a stop (#1219).
 	stoppedAt := d.noteCleanStop()
 	d.machineMu.Lock()

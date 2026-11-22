@@ -1,6 +1,7 @@
 package agentsd
 
 import (
+	"context"
 	"os"
 	goruntime "runtime"
 	"strings"
@@ -77,6 +78,7 @@ func TestShutdownWaitsForWhatTellsAClientThatReadsNothing(t *testing.T) {
 func TestShutdownEndsTheWritesInLineForAClientThatReadsNothing(t *testing.T) {
 	t.Parallel()
 
+	const self = "TestShutdownEndsTheWritesInLineForAClientThatReadsNothing"
 	d, c := start(t, t.TempDir())
 	for len(c.out) < cap(c.out) {
 		c.out <- ""
@@ -86,13 +88,8 @@ func TestShutdownEndsTheWritesInLineForAClientThatReadsNothing(t *testing.T) {
 			Broadcast(d, wire.NotifyWorkflowRemoved, wire.WorkflowRemovedNotification{WorkflowID: "x"})
 		})
 	}
-	waitFor(t, "three writes in line for the client", func() bool { return writesToClients() >= 3 })
-	// When Shutdown waits for the goroutines, the client reads one line: the write that held
-	// the lock goes, and each one after it would wait the conn's 5 s again.
-	go func() {
-		<-d.hostCtx().Done()
-		<-c.out
-	}()
+	waitFor(t, "three writes in line for the client", func() bool { return writesToClientsFrom(self) >= 3 })
+	readOneLineAsShutdownBegins(d, c)
 
 	began := time.Now()
 	d.Shutdown()
@@ -105,12 +102,65 @@ func TestShutdownEndsTheWritesInLineForAClientThatReadsNothing(t *testing.T) {
 	}
 }
 
-// writesToClients is how many goroutines are in a write to a client, or waiting for one.
-func writesToClients() int {
+// The writes in line behind a loop's write end as Shutdown begins, before it waits for
+// the loops (#6603): on the Mac the wake loop told wake/changed to a client that read
+// nothing, Shutdown waited for that loop, and the three writes in line behind it went on,
+// each to the conn's 5 s, as closeAfterTurns had not come yet: Shutdown took 20 s.
+func TestShutdownEndsTheWritesInLineBehindALoop(t *testing.T) {
+	t.Parallel()
+
+	const self = "TestShutdownEndsTheWritesInLineBehindALoop"
+	d, c := start(t, t.TempDir())
+	for len(c.out) < cap(c.out) {
+		c.out <- ""
+	}
+	d.goLoop("tells a client", func(ctx context.Context) {
+		Broadcast(d, wire.NotifyWorkflowRemoved, wire.WorkflowRemovedNotification{WorkflowID: "loop"})
+		<-ctx.Done()
+	})
+	waitFor(t, "the loop's write to the client", func() bool { return writesToClientsFrom(self) >= 1 })
+	for range 3 {
+		d.goJob("tells a client", func() {
+			Broadcast(d, wire.NotifyWorkflowRemoved, wire.WorkflowRemovedNotification{WorkflowID: "x"})
+		})
+	}
+	waitFor(t, "three writes in line behind the loop's", func() bool { return writesToClientsFrom(self) >= 4 })
+	readOneLineAsShutdownBegins(d, c)
+
+	began := time.Now()
+	d.Shutdown()
+
+	if took := time.Since(began); took > 2*time.Second {
+		t.Errorf("Shutdown took %v", took)
+	}
+	if live := d.liveJobs(); len(live) > 0 {
+		t.Fatalf("still writing to the client after Shutdown: %v", live)
+	}
+}
+
+// readOneLineAsShutdownBegins has the client read one line once Shutdown has begun: the
+// write that holds the lock goes, and each one in line after it would wait the conn's 5 s
+// again. A real socket lets a client that reads nothing go after its own wait (sockConn).
+func readOneLineAsShutdownBegins(d *Daemon, c *conn) {
+	go func() {
+		for !d.isQuiet() {
+			time.Sleep(time.Millisecond)
+		}
+		select {
+		case <-c.out:
+		case <-c.gone:
+		}
+	}()
+}
+
+// writesToClientsFrom is how many goroutines that test started are in a write to a client,
+// or waiting for one. Not those of the whole process (#6603): the tests run in parallel,
+// and another test's writes passed a wait before this one's were in line.
+func writesToClientsFrom(test string) int {
 	buf := make([]byte, 1<<22)
 	n := 0
 	for _, g := range strings.Split(string(buf[:goruntime.Stack(buf, true)]), "\n\n") {
-		if strings.Contains(g, "agentsd.(*Client).write") {
+		if strings.Contains(g, "agentsd.(*Client).write") && strings.Contains(g, "agentsd."+test+".func") {
 			n++
 		}
 	}
