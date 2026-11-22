@@ -30,6 +30,8 @@ final class AppModel {
     @ObservationIgnored var localCopy: LocalCopyKeeper?
     /// Work's client cache (#6353), opened the first time a Work page asks for it with the flag on.
     @ObservationIgnored var openedWorkCache: WorkCache?
+    /// Work's changes through the cache (#6354), one store for the window.
+    @ObservationIgnored let workSavesStore = WorkSaves()
 
     var runtimes: [RuntimeStatus] = []
     /// The start-up sheet offering to install what is missing (048). Raised once per

@@ -63,6 +63,28 @@
 .provider-card .provider-setup { display: block; padding-left: 24px; }
 .workspace-row .dot.attention { background: var(--tint-attention); }
 .provider-sheet { max-width: 560px; }
+/* Add a Provider (#6069): step 1, a grouped list with a line on each row; step 2, a form in sections. */
+.provider-group .section-head { margin: 12px 0 4px; text-transform: uppercase; color: var(--paper-secondary); font-size: 0.6875rem; }
+.provider-choices { list-style: none; margin: 0; padding: 0; border: 1px solid var(--paper-rule); border-radius: 8px; background: var(--paper-raised); }
+.provider-choices li + li { border-top: 1px solid var(--paper-rule); }
+.provider-sheet .provider-choice { display: flex; align-items: center; gap: 12px; width: 100%; padding: 9px 12px; border: 0; border-radius: 0; background: none;
+  font: inherit; color: inherit; text-align: left; cursor: pointer; }
+.provider-choice:hover:not(:disabled), .provider-choice:focus-visible { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.provider-choice:disabled { cursor: default; }
+.provider-choice:disabled .grow { opacity: 0.6; }
+.provider-choice .grow { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.provider-choices li:first-child .provider-choice { border-radius: 8px 8px 0 0; }
+.provider-choices li:last-child .provider-choice { border-radius: 0 0 8px 8px; }
+.provider-icon { flex: none; width: 20px; height: 20px; color: var(--paper-secondary); }
+.provider-head { display: flex; align-items: flex-start; gap: 10px; margin: 4px 0 4px; }
+.provider-head .grow p { margin: 0; }
+.provider-form fieldset { display: flex; flex-direction: column; gap: 6px; margin: 12px 0 0; padding: 0; border: 0; }
+.provider-form legend { margin: 0 0 2px; padding: 0; font-size: 0.6875rem; font-weight: 600; text-transform: uppercase; color: var(--paper-secondary); }
+.provider-form small { font-size: 0.75rem; }
+.provider-form .field-help { margin-top: -4px; }
+.provider-foot { margin-top: 10px; font-size: 0.75rem; }
+.provider-sheet .sheet-actions .leading { margin-right: auto; }
+.provider-sheet .sheet-actions .spinner { width: 10px; height: 10px; }
 /* Move to Another Machine… and Run It Here Again… (#4255), as the window's sheets. */
 .plane-move-row .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 6px; background: var(--tint-attention); }
 .plane-move-sheet { max-width: 560px; }
