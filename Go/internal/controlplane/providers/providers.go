@@ -1583,6 +1583,12 @@ func (p *Providers) mayLink(person, provider, workspace string) bool {
 }
 
 func (p *Providers) link(request MachineLink) (any, error) {
+	return p.linkKeying(request, true)
+}
+
+// linkKeying is link; with keyed false it asks for no host key and keeps none, as for a key
+// that can't be fetched (LinkJoined, #6581).
+func (p *Providers) linkKeying(request MachineLink, keyed bool) (any, error) {
 	host, provider := string(request.Host), string(request.Provider)
 	p.mu.Lock()
 	_, ok := p.providers[provider]
@@ -1590,9 +1596,13 @@ func (p *Providers) link(request MachineLink) (any, error) {
 	if !ok {
 		return nil, invalid("There is no such provider.")
 	}
-	knownHosts, err := p.linkHostKey(host, WorkspaceLink{Provider: provider, Workspace: request.Workspace}, deref(request.Trust))
-	if err != nil {
-		return nil, err
+	knownHosts := ""
+	if keyed {
+		var err error
+		knownHosts, err = p.linkHostKey(host, WorkspaceLink{Provider: provider, Workspace: request.Workspace}, deref(request.Trust))
+		if err != nil {
+			return nil, err
+		}
 	}
 	p.forgetNotJoined(provider, request.Workspace)
 	// One host per workspace: linking moves the link.
@@ -2176,7 +2186,17 @@ func (p *Providers) LinkJoined(host, provider, workspace, trust string) {
 	if trust != "" {
 		request.Trust = &trust
 	}
-	if _, err := p.link(request); err != nil {
+	_, err := p.link(request)
+	var f *Failure
+	if errors.As(err, &f) && f.Code == CodeHostKeyToTrust && trust == "" {
+		// It joined with the code its workspace was made with, so it is that workspace's
+		// host; only its ssh host key is new, and no person is asked here (#6581). It is
+		// linked with no key, and the key is checked when ssh is first needed. A key a person
+		// trusted at an install, and that differs now, still stops the link.
+		p.log(fmt.Sprintf("workspace: %s joined for %s/%s; its host key is new, so the link keeps none", host, provider, workspace))
+		_, err = p.linkKeying(request, false)
+	}
+	if err != nil {
 		p.log(fmt.Sprintf("workspace: %s joined for %s/%s, but wasn't linked: %s", host, provider, workspace, errorWords(err)))
 	}
 }
