@@ -104,7 +104,7 @@ func carriedResult(v any, err error) wire.ProviderCarried {
 }
 
 // carry is providers/carry: the call, on the provider's server here. What it answers goes
-// back with every secret's value taken out, as a draft's steps are, so none reaches the
+// back with every secret's value taken out, so none reaches the
 // control plane from here.
 func (c *carriedProviders) carry(request wire.ProviderCarry) wire.ProviderCarried {
 	values := c.store.Values(string(request.Provider))
@@ -156,12 +156,12 @@ func (c *carriedProviders) call(request wire.ProviderCarry) wire.ProviderCarried
 	if err := json.Unmarshal(request.Record, &record); err != nil || record.ID != string(request.Provider) {
 		return carriedError("The control plane sent no provider record this machine can read.")
 	}
-	connection, draft, err := c.connection(record, request.Record, request.Secrets)
+	connection, checking, err := c.connection(record, request.Record, request.Secrets)
 	if err != nil {
 		return carriedError(err.Error())
 	}
-	if draft {
-		// A draft's secrets are not kept, and nor is its server.
+	if checking {
+		// An add's or an update's secrets are not kept, and nor is its server.
 		defer connection.End()
 	}
 	workspace := ""
@@ -199,23 +199,21 @@ func (c *carriedProviders) call(request wire.ProviderCarry) wire.ProviderCarried
 			forgetCodespaceSSH(workspace)
 		}
 		return carriedResult(nil, err)
-	case "tools":
-		return carriedResult(connection.Tools())
 	}
 	return carriedError("No provider call is called " + request.Call + ".")
 }
 
 // connection is the provider's server as record says, made again when the record
-// changed. With a draft's secrets, a new one that is not kept: true.
-func (c *carriedProviders) connection(record providers.ProviderRecord, raw []byte, draft map[string]string) (*providers.Connection, bool, error) {
+// changed. With the secrets an add or an update checks with, a new one that is not kept: true.
+func (c *carriedProviders) connection(record providers.ProviderRecord, raw []byte, checking map[string]string) (*providers.Connection, bool, error) {
 	folder := filepath.Join(c.home, ".agents", "providers")
 	if err := os.MkdirAll(folder, 0o700); err != nil {
 		return nil, false, err
 	}
 	logf := func(s string) { log.Print(s) }
-	if len(draft) > 0 {
+	if len(checking) > 0 {
 		values := c.store.Values(record.ID)
-		for k, v := range draft {
+		for k, v := range checking {
 			if v != "" {
 				values[k] = v
 			}

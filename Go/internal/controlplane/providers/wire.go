@@ -1,8 +1,7 @@
-// Package providers is machine providers on the control plane (#691, #858): MCP servers
-// that start and stop the machines hosts run on, the prompts kept for a stopped one, and
-// Write It for Me. It ports ControlPlaneKit/Providers and the wire types in
-// AgentsKitCore/Control (Workspaces.swift, WorkspaceTools.swift, KeptWire.swift,
-// ProviderDraftAPI.swift).
+// Package providers is machine providers on the control plane (#691): the command provider,
+// an MCP server that starts and stops the machines hosts run on, and the prompts kept for a
+// stopped one. It ports ControlPlaneKit/Providers and the wire types in AgentsKitCore/Control
+// (Workspaces.swift, WorkspaceTools.swift, KeptWire.swift).
 //
 // Records stay where Swift keeps them: providers at v1/providers/<id>.json, kept requests at
 // v1/kept/<host>/<seq>.json, a host's link in its own record, and secrets in
@@ -109,56 +108,50 @@ func optional[T comparable](v T) *T {
 
 // Method names (DaemonAPI.Method).
 const (
-	MethodProvidersList     = "providers/list"
-	MethodProvidersAdd      = "providers/add"
-	MethodProvidersUpdate   = "providers/update"
-	MethodProvidersRemove   = "providers/remove"
-	MethodProvidersRefresh  = "providers/refresh"
-	MethodProvidersOptions  = "providers/options"
-	MethodProvidersCreate   = "providers/create"
+	MethodProvidersList            = "providers/list"
+	MethodProvidersAdd             = "providers/add"
+	MethodProvidersUpdate          = "providers/update"
+	MethodProvidersRemove          = "providers/remove"
+	MethodProvidersRefresh         = "providers/refresh"
+	MethodProvidersOptions         = "providers/options"
+	MethodProvidersCreate          = "providers/create"
 	MethodProvidersDeleteWorkspace = "providers/deleteWorkspace"
-	MethodProvidersRuntimes = "providers/runtimes"
-	MethodProvidersMakeDefault = "providers/makeDefault"
-	MethodDraftStart        = "providers/draftStart"
-	MethodDraftCancel       = "providers/draftCancel"
-	MethodDraftAnswer       = "providers/draftAnswer"
-	MethodDraftSigned       = "providers/draftSigned"
-	MethodHostsLink         = "machines/link"
-	MethodHostsUnlink       = "machines/unlink"
-	MethodHostsSetOptions   = "machines/setMachineOptions"
-	MethodHostsStart        = "machines/start"
-	MethodHostsStop         = "machines/stop"
-	MethodHostsDelete       = "machines/deleteMachine"
-	MethodHostsKeep         = "machines/keep"
-	MethodHostsListKept     = "machines/listKept"
-	MethodHostsDropKept     = "machines/dropKept"
-	MethodHostsRetryKept    = "machines/retryKept"
-	MethodWorkspacesAgent   = "machines/forAgent"
-	MethodSessionOnMachine  = "machines/startSession"
-	MethodSessionCall       = "machines/sessionCall"
-	MethodSessionEnded      = "machines/sessionEnded"
-	MethodProjectFolders    = "machines/projectFolders"
-	MethodProjectSessions   = "machines/projectSessions"
-	MethodSendFolder        = "machines/sendFolder"
-	MethodBotKey            = "machines/botKey"
-	MethodHostMachines      = "machine/machines"
-	MethodHostProviderDraft = "machine/providerDraft"
-	MethodHostStatus        = "machine/status"
-	MethodAgentsPrompt      = "agents/prompt"
-	MethodAgentsStart       = "agents/start"
-	MethodAgentsStop        = "agents/stop"
-	MethodAgentsFromStarter = "agents/fromStarter"
-	MethodAgentsEndedThere  = "agents/endedElsewhere"
-	MethodFoldersClone      = "folders/clone"
-	MethodReceiveState      = "folders/receiveState"
-	MethodReceiveUpload     = "folders/receiveUpload"
-	MethodReceive           = "folders/receive"
-	MethodSendFacts         = "folders/sendFacts"
-	MethodSendPack          = "folders/sendPack"
-	MethodSendRead          = "folders/sendRead"
-	MethodAgentsMoveIn      = "agents/moveIn"
-	MethodBotTake           = "connections/bot/take"
-	MethodBotDrop           = "connections/bot/drop"
+	MethodProvidersMakeDefault     = "providers/makeDefault"
+	MethodHostsLink                = "machines/link"
+	MethodHostsUnlink              = "machines/unlink"
+	MethodHostsSetOptions          = "machines/setMachineOptions"
+	MethodHostsStart               = "machines/start"
+	MethodHostsStop                = "machines/stop"
+	MethodHostsDelete              = "machines/deleteMachine"
+	MethodHostsKeep                = "machines/keep"
+	MethodHostsListKept            = "machines/listKept"
+	MethodHostsDropKept            = "machines/dropKept"
+	MethodHostsRetryKept           = "machines/retryKept"
+	MethodWorkspacesAgent          = "machines/forAgent"
+	MethodSessionOnMachine         = "machines/startSession"
+	MethodSessionCall              = "machines/sessionCall"
+	MethodSessionEnded             = "machines/sessionEnded"
+	MethodProjectFolders           = "machines/projectFolders"
+	MethodProjectSessions          = "machines/projectSessions"
+	MethodSendFolder               = "machines/sendFolder"
+	MethodBotKey                   = "machines/botKey"
+	MethodHostMachines             = "machine/machines"
+	MethodHostStatus               = "machine/status"
+	MethodAgentsPrompt             = "agents/prompt"
+	MethodAgentsStart              = "agents/start"
+	MethodAgentsStop               = "agents/stop"
+	MethodAgentsFromStarter        = "agents/fromStarter"
+	MethodAgentsEndedThere         = "agents/endedElsewhere"
+	MethodFoldersClone             = "folders/clone"
+	MethodReceiveState             = "folders/receiveState"
+	MethodReceiveUpload            = "folders/receiveUpload"
+	MethodReceive                  = "folders/receive"
+	MethodSendFacts                = "folders/sendFacts"
+	MethodSendPack                 = "folders/sendPack"
+	MethodSendRead                 = "folders/sendRead"
+	MethodAgentsMoveIn             = "agents/moveIn"
+	MethodBotTake                  = "connections/bot/take"
+	MethodBotDrop                  = "connections/bot/drop"
 )
 
 // Notification names (DaemonAPI.Notification).
@@ -166,7 +159,6 @@ const (
 	NoticeProvidersChanged = "control/providersChanged"
 	NoticeKeptChanged      = "control/keptChanged"
 	NoticeKeptDelivered    = "control/keptDelivered"
-	NoticeProviderDraft    = "control/providerDraft"
 )
 
 // WorkspaceMethods is DaemonAPI.Method.workspaceMethods: every method Answer answers.
@@ -175,8 +167,7 @@ var WorkspaceMethods = map[string]bool{
 	MethodProvidersRefresh: true, MethodHostsLink: true, MethodHostsUnlink: true, MethodHostsSetOptions: true,
 	MethodHostsStart: true, MethodHostsStop: true, MethodHostsKeep: true, MethodHostsListKept: true,
 	MethodHostsDropKept: true, MethodHostsRetryKept: true, MethodProvidersOptions: true, MethodProvidersCreate: true,
-	MethodHostsDelete: true, MethodDraftStart: true, MethodDraftCancel: true, MethodDraftAnswer: true,
-	MethodDraftSigned: true, MethodProvidersRuntimes: true, MethodProvidersMakeDefault: true, MethodProvidersDeleteWorkspace: true,
+	MethodHostsDelete: true, MethodProvidersMakeDefault: true, MethodProvidersDeleteWorkspace: true,
 }
 
 // AgentWorkspaceMethods is DaemonAPI.Method.agentWorkspaceMethods: what an agent may ask
@@ -285,9 +276,7 @@ func OfflineRefusal(ws *MachineWorkspace) *Failure {
 }
 
 // ProviderAdd is DaemonAPI.ProviderAdd: providers/add and providers/update. Secrets, name
-// to value, only ever go to the control plane and are never given back; CLI, the program
-// Your commands use, for Write It for Me, is not kept; Draft is the draft this accepts
-// (#858).
+// to value, only ever go to the control plane and are never given back.
 type ProviderAdd = wire.ProviderAdd
 
 type providerRequest = wire.ProviderRequest

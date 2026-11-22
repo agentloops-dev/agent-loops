@@ -74,7 +74,12 @@ type attentionRecords struct {
 
 type attentionState struct {
 	attentionMu sync.Mutex
-	presences   map[int64]presence
+	// toldMu keeps reconsider's messages to the control plane in the order of its rounds
+	// (#6627): a round takes it before it lets attentionMu go and holds it while it sends,
+	// so an offer from a round before an answer never goes after that answer's withdraw,
+	// and a round that returns has seen every earlier round's messages sent.
+	toldMu    sync.Mutex
+	presences map[int64]presence
 	// macHereAt is when a report last found the person at the Mac, so a window that
 	// reconnects is not the person coming back (#4233).
 	macHereAt  time.Time
@@ -632,15 +637,17 @@ func (d *Daemon) reconsider() {
 		r.countWaitingLocked()
 	}
 	d.writeAttentionIfMoved()
+	d.toldMu.Lock()
 	d.attentionMu.Unlock()
-	for _, note := range r.notes {
-		Broadcast(d, wire.NotifyAttentionChanged, note)
-	}
 	for _, m := range r.told {
 		(*r.tell)(wire.CallAttentionNeed.Name, m)
 	}
 	for _, turn := range turns {
 		(*r.tell)(wire.CallAttentionTurn.Name, turn)
+	}
+	d.toldMu.Unlock()
+	for _, note := range r.notes {
+		Broadcast(d, wire.NotifyAttentionChanged, note)
 	}
 	for _, id := range r.toComputer {
 		d.noticeWentTo(id, wire.NoticeDeviceComputer)

@@ -11,16 +11,20 @@ import SQLite3
 ///   page with its cursor and when it was read, and the total, the forges and the errors.
 /// - A page whose answer is of its own shape (an epic's plan, Releases, the boards, Timeline, Deploys; #6573) keeps
 ///   it whole, by the page and what it asked, with when it was read.
-/// - A refresh replaces page 1 and keeps the later pages, each with its own time, until they are read again.
-///   Scrolling to the end of the kept pages asks the next page by the last page's cursor.
+/// - A refresh replaces page 1 and keeps the pages read before, each marked stale with its own time (#6636, option (c)).
+///   Scrolling asks the next page by the cursor of the last **fresh** page, never a stale one, also when a stale page
+///   said "the end". Each fresh page takes out of the stale pages the items it holds (an item is drawn once, the
+///   newest copy) and the items that the server's order puts before its last item (they left the list: closed, or
+///   out of the query). A fresh page at the end drops the stale pages.
 ///
 /// Nothing here syncs or sorts: the caller asks the forge and gives the answer to `keepPage`. The bounds are in
 /// `WorkCache.Bounds`. SQLite is the platform's (`SQLite3`, on macOS and iOS), so this adds no package.
 public protocol WorkCaching: Sendable {
     /// The kept answer to a query, with its items, or nil when it was never answered on this device.
     func answer(_ query: WorkCache.Query) async -> WorkCache.Answer?
-    /// Keeps one page of a machine's answer: page 0 replaces the first page and keeps the later ones; the page after
-    /// the last kept one is added; any other kept page is replaced. Its items replace older copies.
+    /// Keeps one page of a machine's answer: page 0 replaces the first page and marks the pages read before stale; the page
+    /// after the last fresh one is added after it; any other fresh page is replaced. The stale pages lose what the
+    /// fresh ones cover (#6636). Its items replace older copies.
     func keepPage(_ query: WorkCache.Query, host: MachineRef, page: Int, list: DaemonAPI.ForgeList) async
     /// The machine did not answer the query: its kept pages stay, with the errors and when it failed.
     func keepFailure(_ query: WorkCache.Query, host: MachineRef, errors: [DaemonAPI.ForgeListError]) async
@@ -95,11 +99,28 @@ public actor WorkCache: WorkCaching {
     }
 
     /// One kept page of a machine's answer: how many items it held, its cursor to the next page (nil at the end) and
-    /// when it was read.
+    /// when it was read. A stale page was read before the last refresh (#6636): it draws, but its cursor is never asked.
     public struct Page: Codable, Hashable, Sendable {
         public var refs: [String]
         public var cursor: String?
         public var read: Date
+        public var stale: Bool
+
+        public init(refs: [String], cursor: String?, read: Date, stale: Bool = false) {
+            self.refs = refs
+            self.cursor = cursor
+            self.read = read
+            self.stale = stale
+        }
+
+        public init(from decoder: any Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            refs = try c.decode([String].self, forKey: .refs)
+            cursor = try c.decodeIfPresent(String.self, forKey: .cursor)
+            read = try c.decode(Date.self, forKey: .read)
+            // A file kept before #6636 has no stale pages.
+            stale = try c.decodeIfPresent(Bool.self, forKey: .stale) ?? false
+        }
     }
 
     /// A machine's kept answer to a query, its items in the server's order.
@@ -116,8 +137,12 @@ public actor WorkCache: WorkCaching {
 
         /// When page 1 was read: the "Last update" of the list (#5139).
         public var read: Date? { pages.first?.read }
-        /// The cursor to the page after the kept ones; nil when the kept pages reach the end.
-        public var cursor: String? { pages.last?.cursor }
+        /// How many pages were read since the last refresh: the next page is kept after them (#6636).
+        public var fresh: Int { WorkCache.freshCount(pages) }
+        /// When the oldest stale page was read; nil with none.
+        public var staleRead: Date? { pages.filter(\.stale).map(\.read).min() }
+        /// The cursor to the page after the fresh ones; nil when they reach the end. A stale page's is never asked.
+        public var cursor: String? { fresh > 0 ? pages[fresh - 1].cursor : nil }
         /// As the wire says a list, for a caller that draws one.
         public var list: DaemonAPI.ForgeList {
             DaemonAPI.ForgeList(items: items, cursor: cursor, errors: errors, forges: forges, total: total)
@@ -128,6 +153,16 @@ public actor WorkCache: WorkCaching {
         public var hosts: [HostAnswer]
         /// The oldest page 1 of the machines: what the list says it shows.
         public var read: Date? { hosts.compactMap(\.read).min() }
+
+        /// The machines' kept answers to draw (#6635): those asked now first, in their order, then every other machine
+        /// the cache holds an answer of, in its kept order. A machine that is not known or online yet, as at the start,
+        /// keeps its rows on screen, so the list never says "No open issues" while the cache holds them.
+        public func shown(first asked: [MachineRef]) -> [HostAnswer] {
+            let by = Dictionary(hosts.map { ($0.host, $0) }, uniquingKeysWith: { a, _ in a })
+            let firsts = asked.compactMap { by[$0] }
+            let named = Set(asked)
+            return firsts + hosts.filter { !named.contains($0.host) }
+        }
     }
 
     /// A page's kept answer (#6573): its JSON, as the page encodes it, and when it was read.
@@ -252,16 +287,72 @@ public actor WorkCache: WorkCaching {
         let key = query.key
         let at = now()
         let kept = keptAnswer(key, host: host)
-        var pages = kept?.pages ?? []
-        guard page >= 0, page <= pages.count else { return }
+        let had = kept?.pages ?? []
+        let fresh = Self.freshCount(had)
+        guard page >= 0, page <= fresh else { return }
         keep(items: list.items, at: at)
         let refs = list.items.map { Self.key($0.node) }.filter { memo[$0] != nil }
         let read = Page(refs: refs, cursor: list.cursor, read: at)
-        if page == pages.count { pages.append(read) } else { pages[page] = read }
+        var reads = Array(had.prefix(fresh))
+        var stale = Array(had.dropFirst(fresh))
+        if page == 0 {
+            // A refresh: every page read before is stale now, the old page 1 too (an item of it may be on page 2
+            // now), before what was stale already; the new page 1 takes out what it holds.
+            stale = reads.map { Page(refs: $0.refs, cursor: $0.cursor, read: $0.read, stale: true) } + stale
+            reads = [read]
+        } else if page == reads.count {
+            reads.append(read)
+        } else {
+            reads[page] = read
+        }
+        let pages = reads + covered(stale, by: reads, sort: query.sort)
         let answer = Kept(pages: pages, total: list.total ?? kept?.total, forges: list.forges ?? kept?.forges,
                           errors: list.errors, failed: nil)
         write(answer, key: key, host: host, used: at)
         trim()
+    }
+
+    /// The pages before the first stale one: read since the last refresh.
+    static func freshCount(_ pages: [Page]) -> Int {
+        pages.firstIndex(where: \.stale) ?? pages.count
+    }
+
+    /// The stale pages less what the fresh pages cover (#6636): the items they hold, and the items the server's order
+    /// puts before the last fresh item, which left the list. None when the fresh pages reach the end. An empty page
+    /// goes.
+    private func covered(_ stale: [Page], by fresh: [Page], sort: String) -> [Page] {
+        guard !stale.isEmpty, let end = fresh.last, end.cursor != nil else { return [] }
+        let held = Set(fresh.flatMap(\.refs))
+        load(stale.flatMap(\.refs))
+        let last = fresh.lazy.reversed().compactMap { $0.refs.last.flatMap { self.memo[$0] } }.first
+        return stale.compactMap { page in
+            var page = page
+            page.refs = page.refs.filter { ref in
+                guard !held.contains(ref), let item = memo[ref] else { return false }
+                return last.map { !Self.before(item, $0, sort: sort) } ?? true
+            }
+            return page.refs.isEmpty ? nil : page
+        }
+    }
+
+    /// `a` comes strictly before `b` in the server's order: by priority first for "priority" (high, medium, low, none),
+    /// then the last updated first, as the daemon merges the forges' pages (#6538). A tie is not before: it may be on
+    /// the next page.
+    static func before(_ a: DaemonAPI.ForgeItem, _ b: DaemonAPI.ForgeItem, sort: String) -> Bool {
+        if sort == "priority" {
+            let ra = rank(a), rb = rank(b)
+            if ra != rb { return ra < rb }
+        }
+        return a.updatedAt > b.updatedAt
+    }
+
+    private static func rank(_ item: DaemonAPI.ForgeItem) -> Int {
+        switch item.priority?.lowercased() {
+        case "high": 0
+        case "medium": 1
+        case "low": 2
+        default: 3
+        }
     }
 
     public func keepFailure(_ query: WorkCache.Query, host: MachineRef, errors: [DaemonAPI.ForgeListError]) {

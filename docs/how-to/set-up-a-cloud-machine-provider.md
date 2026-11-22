@@ -29,7 +29,7 @@ on the machine that carries the provider.
 - **On the Mac:** **Settings ▸ Machine Providers**, in the Control plane group, then
   **Add Provider…**. Choose the cloud from the list (under **Cloud** or **Development
   environments**). For DigitalOcean, Codespaces and Coder, **Connect with** offers **Its API**
-  (first) and **Its CLI**. The Mac also adds Docker, your own commands and MCP servers.
+  (first) and **Its CLI**. The Mac also adds Docker and your own commands.
 - **On the web page:** the **Machine providers** section of Settings, then
   **Add Provider…**.
 
@@ -149,8 +149,12 @@ create, regions read and sizes read.
 4. Give the ssh user. With none, the provider uses `agents`, the user that the first boot
    makes.
 
-**New Machine…** makes a droplet with the tag, in the region, size and image that you
-choose (#6073):
+**New Droplet** on the provider's card makes a droplet in one click (#6577). Beside it, the
+card shows the region, the size and the monthly price that it uses: the ones you chose last
+on this provider, or else the nearest region and the recommended size. Each step shows on
+the droplet's row until it joins. Then the card says that it is ready, with **Open
+Machine**. **Change…** beside **New Droplet** opens the whole form, where you choose
+(#6073):
 
 - **Region** and **Size** come from your account. The region nearest the machine that
   keeps the token is first. The sizes are DigitalOcean's Basic sizes, with DigitalOcean's
@@ -221,8 +225,7 @@ control plane with several copies does not run them yet.
 
 ## See also
 
-- [Add a machine provider](add-a-machine-provider.md): your own commands, a tool map,
-  or a server of your own.
+- [Add a machine provider](add-a-machine-provider.md): your own commands.
 - [Machine providers](../reference/machine-providers.md): every preset's parameters
   and the contract.
 - [Start machines from Agent Loops](start-machines-from-agents.md)

@@ -347,6 +347,12 @@ final class RemoteModel {
     let userScope = UserScopeState()
     /// What `control/status` last said: its version and capabilities, for Settings (#1748).
     var controlStatus: DaemonAPI.ControlStatus?
+    /// What each part says of its levels, for Early Features (#6579): the control plane's and each
+    /// host's. None before the control plane's status arrives, and the Remote reads its own list.
+    var partsMaturity: [[String: String]?] {
+        guard let controlStatus else { return [] }
+        return [controlStatus.maturity] + controlHosts.map(\.maturity)
+    }
     /// Where the control plane runs, for the words said when it can't be reached (#4916):
     /// "your Mac" when it is in Agents on the home Mac, the control plane and its address
     /// when it is not. Kept across launches, so a phone opened while nothing answers still

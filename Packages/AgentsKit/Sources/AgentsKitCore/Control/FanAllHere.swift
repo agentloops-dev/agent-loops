@@ -72,14 +72,16 @@ public enum FanAllHere {
                 notAsked = 0
             }
             let limit = limitOf(p["limit"], byDefault: 50, most: 100)
-            let state = p["state"], boardValue = p["board"], label = p["label"], assignee = p["assignee"], known = cursors
+            let state = p["state"], boardValue = p["board"], label = p["label"], assignee = p["assignee"], sort = p["sort"]
+            let known = cursors
             let got = await askEach(asked, "forge/\(kind!)", params: { host in
                 var ask: [String: JSONValue] = ["limit": .int(limit)]
                 if let state { ask["state"] = state }
                 if let boardValue { ask["board"] = boardValue }
-                // A label and an assignee go to each machine, so a narrowed list is one call (#6383).
+                // A label, an assignee and the sort go to each machine, so a narrowed list is one call (#6383, #6634).
                 if let label { ask["label"] = label }
                 if let assignee { ask["assignee"] = assignee }
+                if let sort { ask["sort"] = sort }
                 if let c = known[host.id], !c.isEmpty { ask["cursor"] = .string(c) }
                 return .object(ask)
             }, ask: ask)
@@ -170,16 +172,43 @@ public enum FanAllHere {
     /// One machine's answer within `patience`; nil when it did not answer in time. Every machine is asked, whatever
     /// state this device last heard for it, as the control plane asks them: one that is not there fails at once, and
     /// one that just joined the lock may not have said so to this device yet.
-    static func askOne(_ host: Host, _ method: String, _ params: JSONValue, ask: @escaping Ask) async -> JSONValue? {
-        await withTaskGroup(of: JSONValue?.self) { group in
-            group.addTask { await ask(method, params, host.id) }
-            group.addTask {
-                try? await Task.sleep(for: patience)
-                return nil
-            }
-            let first = await group.next() ?? nil
-            group.cancelAll()
-            return first
+    ///
+    /// The answer goes at `patience` also when the ask does not stop on a cancel (#6638): a machine that does not answer
+    /// holds a call until its link's own time-out, about 40 s, and a task group waits for every child before it ends,
+    /// so a frozen machine held every machine's answer that long. The ask is cancelled and left to end by itself.
+    static func askOne(_ host: Host, _ method: String, _ params: JSONValue, patience: Duration = FanAllHere.patience,
+                       ask: @escaping Ask) async -> JSONValue? {
+        let first = FirstAnswer()
+        let asking = Task { await first.give(await ask(method, params, host.id)) }
+        let waiting = Task {
+            try? await Task.sleep(for: patience)
+            await first.give(nil)
+        }
+        let answer = await withTaskCancellationHandler {
+            await first.value()
+        } onCancel: {
+            Task { await first.give(nil) }
+        }
+        asking.cancel()
+        waiting.cancel()
+        return answer
+    }
+
+    /// The first of an ask and its time-out: `value` ends at the first `give`, and the later one is dropped.
+    private actor FirstAnswer {
+        private var given: JSONValue??
+        private var waiter: CheckedContinuation<JSONValue?, Never>?
+
+        func give(_ answer: JSONValue?) {
+            if case .some = given { return }
+            given = .some(answer)
+            waiter?.resume(returning: answer)
+            waiter = nil
+        }
+
+        func value() async -> JSONValue? {
+            if let given { return given }
+            return await withCheckedContinuation { waiter = $0 }
         }
     }
 

@@ -114,6 +114,7 @@ control/status
     "user/5",
     "user/6"
   ],
+  "maturity": {},
   "required": {
     "host": [
       "host.wire/1"
@@ -381,6 +382,7 @@ control/status
     "user/5",
     "user/6"
   ],
+  "maturity": {},
   "required": {
     "host": [
       "host.wire/1"

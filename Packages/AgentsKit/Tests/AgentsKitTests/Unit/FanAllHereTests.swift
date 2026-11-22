@@ -42,14 +42,15 @@ struct FanAllHereTests {
         #expect(asked.all.allSatisfy { $0.method == "forge/pulls" && $0.params["limit"]?.intValue == 100 })
     }
 
-    @Test("forge/listAll gives each machine the label and the assignee, so a narrowed list is one call (#6383)")
+    @Test("forge/listAll gives each machine the label, the assignee and the sort, so a narrowed list is one call (#6383, #6634)")
     func forgeListNarrowed() async throws {
         let asked = Asked()
         _ = try await Self.answer(DaemonAPI.Method.forgeListAll,
-                                  DaemonAPI.ForgeListAllRequest(kind: "issues", label: "bug", assignee: "alex"),
+                                  DaemonAPI.ForgeListAllRequest(kind: "issues", label: "bug", assignee: "alex", sort: "priority"),
                                   returning: DaemonAPI.ForgeListAll.self, asked: asked, answers: [:])
         #expect(asked.all.count == 3)
-        #expect(asked.all.allSatisfy { $0.params["label"]?.stringValue == "bug" && $0.params["assignee"]?.stringValue == "alex" })
+        #expect(asked.all.allSatisfy { $0.params["label"]?.stringValue == "bug" && $0.params["assignee"]?.stringValue == "alex"
+            && $0.params["sort"]?.stringValue == "priority" })
     }
 
     @Test("docs/listAll merges the machines' docs newest first, and its cursor goes on from where each machine was")
@@ -70,6 +71,22 @@ struct FanAllHereTests {
                                                       returning: DaemonAPI.DocsListAll.self, asked: asked, answers: answers))
         #expect(next.docs.map(\.doc.ref) == ["b2"])
         #expect(next.cursor == nil)
+    }
+
+    @Test("A machine whose call does not stop on a cancel is given up at the patience, not at its link's time-out (#6638)")
+    func frozenMachine() async {
+        let host = FanAllHere.Host(id: "frozen", name: "Frozen")
+        let start = ContinuousClock.now
+        // As a call to a stopped machine: it ends only at its own time-out, whatever the cancel.
+        let got = await FanAllHere.askOne(host, "forge/issues", .object([:]), patience: .milliseconds(100)) { _, _, _ in
+            await withCheckedContinuation { done in
+                DispatchQueue.global().asyncAfter(deadline: .now() + 5) { done.resume(returning: .null) }
+            }
+        }
+        #expect(got == nil)
+        #expect(ContinuousClock.now - start < .seconds(3))
+        let fast = await FanAllHere.askOne(host, "forge/issues", .object([:]), patience: .seconds(5)) { _, _, _ in .int(1) }
+        #expect(fast == .int(1))
     }
 
     @Test("A method that is not a call for every machine is not answered here")

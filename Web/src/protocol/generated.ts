@@ -3530,6 +3530,11 @@ export interface ControlMachine {
    */
   capabilities?: string[];
   /**
+   * The levels of this host's capabilities that are not GA, as it said them in its last
+   * machine/hello (#6579). None from a host older than that.
+   */
+  maturity?: Maturity;
+  /**
    * Of the control plane's required capabilities for hosts, the ones this host does not have
    * (#1748). Its state is then needsUpdate.
    */
@@ -3658,6 +3663,11 @@ export interface ControlStatus {
   unjoinedTunnels?: MachineTunnelChanged[];
   /** The capabilities the control plane has (#1748). */
   capabilities?: string[];
+  /**
+   * The levels of the control plane's capabilities that are not GA (#6579). None from a control
+   * plane older than that.
+   */
+  maturity?: Maturity;
   required?: RequiredCapabilities;
   /** Who this client belongs to (#994). */
   person?: ControlPerson;
@@ -4468,34 +4478,11 @@ export type DomainClaimState =
   | "notProved"
   | "proved";
 
-export interface DraftCheck {
-  passed: boolean;
-  workspaces?: MachineInfo[];
-  problem?: string;
-  ssh?: string;
-  noSSH?: boolean;
-}
-
 export interface DraftOptionsNotification {
   draftID: UUID;
   options: ConfigOption[];
   commands: SlashCommand[];
   failure?: string;
-}
-
-export interface DraftQuestion {
-  id: UUID;
-  kind: "start" | "stop" | "check";
-  workspace?: string;
-  cost?: string;
-  text: string;
-  yes: string;
-}
-
-export interface DraftStep {
-  at: WireDate;
-  kind: "read" | "help" | "check" | "ask" | "prove" | "note";
-  text: string;
 }
 
 /**
@@ -7915,6 +7902,12 @@ export interface LocalSecretRemoveRequest {
 /** secrets/localList (#5122): every secret this machine keeps for itself, by name. No value. */
 export interface LocalSecrets {
   secrets: LocalSecret[];
+  /**
+   * When this machine's key for its secrets does not read (#6632): what that stops and what the
+   * person does, in the person's words, with the key store's own error. Left out when the key
+   * reads. Status ▸ Secrets shows it at the top.
+   */
+  keyProblem?: string;
 }
 
 /**
@@ -8798,6 +8791,11 @@ export interface MachineHello {
    * declares. None from a host older than #1748.
    */
   capabilities?: string[];
+  /**
+   * The levels of this host's capabilities that are not GA (#6579). None from a host older than
+   * that.
+   */
+  maturity?: Maturity;
 }
 
 /**
@@ -9019,14 +9017,6 @@ export interface MachinePolicy {
  */
 export interface MachineProjects {
   projects: ProjectTools[];
-}
-
-/** machine/providerDraft: a writing agent called one of the writer's tools (#858). */
-export interface MachineProviderDraftCall {
-  agentID: UUID;
-  draft: UUID;
-  tool: string;
-  arguments?: JSONValue;
 }
 
 /** machine/release (#2178): the release the control plane names, as X.Y.Z. */
@@ -9422,6 +9412,19 @@ export interface MarketplacesListRequest {
   kind?: CatalogKind;
   destination?: SkillDestination;
 }
+
+/**
+ * The levels of a part's capabilities that are not GA (#6052, #6579), capability to level, as
+ * Packages/Wire/maturity.json has them in that part's build. A capability it does not name is GA. A
+ * part older than #6579 sends none, and a client then reads the list it was built with.
+ */
+export type Maturity = Record<string, MaturityLevel>;
+
+/** How ready a capability that is not GA is (#6052). */
+export type MaturityLevel =
+  | "pilot"
+  | "alpha"
+  | "beta";
 
 /**
  * The kernel's memory pressure (#4578): macOS kern.memorystatus_vm_pressure_level, or Linux PSI
@@ -11848,23 +11851,15 @@ export interface PromptRequest {
 /**
  * providers/add and providers/update. `machine` is the machine that carries the provider (#3398):
  * it runs the provider's server, and `secrets` go on to it, never kept by the control plane. None
- * picks the caller's first online machine; an update without it keeps the one it has. `cli` is not
- * kept; `draft` is the draft this accepts (#858).
+ * picks the caller's first online machine; an update without it keeps the one it has.
  */
 export interface ProviderAdd {
   id?: ProviderID;
   name: string;
-  kind: "commands" | "stdio" | "http";
-  command?: string;
-  args?: string[];
-  url?: string;
-  headers?: Record<string, string>;
+  kind: "commands";
   commands?: JSONValue;
-  map?: JSONValue;
   machine?: MachineRef;
   secrets?: Record<string, string>;
-  cli?: string;
-  draft?: UUID;
 }
 
 /**
@@ -11880,12 +11875,13 @@ export interface ProviderCarried {
 /**
  * providers/carry (#3398): the control plane asks the machine that carries a provider to call it.
  * `record` is the provider's record, which never holds a secret; the machine runs its server with
- * the secrets it keeps. `secrets` is only a draft's, for this call, and is not kept.
+ * the secrets it keeps. `secrets` is only those an add or an update was given to check with, for
+ * this call, and is not kept.
  */
 export interface ProviderCarry {
   provider: ProviderID;
   record: JSONValue;
-  call: "check" | "list" | "start" | "stop" | "options" | "create" | "delete" | "tools";
+  call: "check" | "list" | "start" | "stop" | "options" | "create" | "delete";
   workspace?: string;
   name?: string;
   options?: JSONValue;
@@ -11915,74 +11911,6 @@ export interface ProviderCreate {
 export interface ProviderCreated {
   workspace: MachineInfo;
   joining: boolean;
-}
-
-/** providers/draftAnswer: yes or no to a question. */
-export interface ProviderDraftAnswer {
-  draft: UUID;
-  question: UUID;
-  yes: boolean;
-}
-
-/** A draft answered with no agent: the server follows the contract, or a shipped map fits. */
-export interface ProviderDraftAnswered {
-  note: string;
-  map?: JSONValue;
-  preset?: string;
-}
-
-/** providers/draftCancel. */
-export interface ProviderDraftRequest {
-  draft: UUID;
-}
-
-/**
- * The writing agent's start, for the client that asked for the draft to sign (#3542): the machine
- * that holds its person's lock takes no start the control plane sends in its own words. The client
- * checks that it starts only a draft's writer (agents/start, the draft's purpose, sandboxed, no MCP
- * servers or other folders), signs method and params as they are (a LockSignature to machine), and
- * sends the signature with providers/draftSigned.
- */
-export interface ProviderDraftSign {
-  machine: MachineRef;
-  method: string;
-  params: string;
-}
-
-/**
- * providers/draftSigned (#3542): the signature of a draft's sign, which the control plane delivers
- * with the start as it came.
- */
-export interface ProviderDraftSigned {
-  draft: UUID;
-  lock: LockSignature;
-}
-
-/** providers/draftStart (#858). */
-export interface ProviderDraftStart {
-  form: ProviderAdd;
-  secrets?: Record<string, string>;
-  provider?: ProviderID;
-  runtimeID: string;
-}
-
-export interface ProviderDraftStarted {
-  draft: UUID;
-  answered?: ProviderDraftAnswered;
-  sign?: ProviderDraftSign;
-}
-
-/** control/providerDraft: how a draft stands, to the client that started it. */
-export interface ProviderDraftUpdate {
-  draft: UUID;
-  state: string;
-  runtimeName: string;
-  steps: DraftStep[];
-  cost?: string;
-  draftJSON?: JSONValue;
-  check?: DraftCheck;
-  question?: DraftQuestion;
-  note?: string;
 }
 
 /**
@@ -12029,19 +11957,6 @@ export interface ProviderOptions {
 /** providers/remove, providers/refresh, providers/options (with no `id`, the default provider). */
 export interface ProviderRequest {
   id?: ProviderID;
-}
-
-export interface ProviderRuntime {
-  id: string;
-  name: string;
-  isDefault: boolean;
-}
-
-/** providers/runtimes: what may write, on which host, or why none. */
-export interface ProviderRuntimes {
-  runtimes: ProviderRuntime[];
-  host?: string;
-  why?: string;
 }
 
 /**
@@ -12095,7 +12010,6 @@ export interface ProviderSummary {
   secrets: Record<string, boolean>;
   capabilities: string[];
   contract: number;
-  mapped: boolean;
   preset?: string;
   workspaces: MachineInfo[];
   listedAt?: WireDate;
@@ -18215,7 +18129,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   ControlEndpoint: { required: ["url"], optional: ["pin"] },
   ControlHello: { required: ["v", "name", "control", "nonce", "copy"], optional: ["previous"] },
   ControlInstallProgress: { required: ["name", "step"], optional: [] },
-  ControlMachine: { required: ["id", "name", "platform", "version", "state", "reach"], optional: ["machineID", "signInFrom", "gitFrom", "gitAsks", "tunnel", "workspace", "implementation", "capabilities", "missing", "owner", "capacity", "loadPerCore5", "capacityAt", "setup", "labels", "autoLabels"] },
+  ControlMachine: { required: ["id", "name", "platform", "version", "state", "reach"], optional: ["machineID", "signInFrom", "gitFrom", "gitAsks", "tunnel", "workspace", "implementation", "capabilities", "maturity", "missing", "owner", "capacity", "loadPerCore5", "capacityAt", "setup", "labels", "autoLabels"] },
   ControlMoved: { required: ["url", "controlKey", "name"], optional: ["pin"] },
   ControlNewKey: { required: ["key", "proof"], optional: [] },
   ControlNotice: { required: ["kind", "words"], optional: ["user", "group"] },
@@ -18223,7 +18137,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   ControlPerson: { required: ["id", "name", "role"], optional: ["localOwner"] },
   ControlPush: { required: ["sealed"], optional: [] },
   ControlPushItem: { required: ["needID", "alert"], optional: ["headline"] },
-  ControlStatus: { required: ["name", "version", "machineID"], optional: ["homeHost", "startedAt", "port", "you", "web", "restartable", "publicWeb", "publicViews", "thisMacHost", "folderDetection", "unjoinedTunnels", "capabilities", "required", "person", "joinCommand"] },
+  ControlStatus: { required: ["name", "version", "machineID"], optional: ["homeHost", "startedAt", "port", "you", "web", "restartable", "publicWeb", "publicViews", "thisMacHost", "folderDetection", "unjoinedTunnels", "capabilities", "maturity", "required", "person", "joinCommand"] },
   Cost: { required: ["amount", "currency"], optional: [] },
   CostLimits: { required: [], optional: ["perAgent", "daily", "perAgentTokens", "dailyTokens"] },
   CostState: { required: ["limits", "today", "day", "tokensToday"], optional: ["note", "organisation", "setBy"] },
@@ -18290,10 +18204,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   DocsServer: { required: ["name", "state"], optional: ["proof", "message"] },
   DocsSource: { required: ["id", "kind", "name", "state"], optional: ["folder", "message"] },
   DomainClaim: { required: ["domain", "provider", "state", "txtName", "txtValue", "sendHere", "require"], optional: ["lastGood", "failingSince", "claimed"] },
-  DraftCheck: { required: ["passed"], optional: ["workspaces", "problem", "ssh", "noSSH"] },
   DraftOptionsNotification: { required: ["draftID", "options", "commands"], optional: ["failure"] },
-  DraftQuestion: { required: ["id", "kind", "text", "yes"], optional: ["workspace", "cost"] },
-  DraftStep: { required: ["at", "kind", "text"], optional: [] },
   DropboxPutRequest: { required: ["folder", "name", "data"], optional: ["subfolder"] },
   DropboxPutResponse: { required: ["path"], optional: [] },
   EarnedAchievement: { required: ["id", "at"], optional: [] },
@@ -18545,7 +18456,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   LiveFrame: { required: ["source", "agentID", "capturedAt"], optional: ["image", "locked", "narration", "title", "width", "height"] },
   LocalSecret: { required: ["name", "setAt"], optional: ["lastOp", "backedUp", "needsApproval", "description"] },
   LocalSecretRemoveRequest: { required: ["name"], optional: [] },
-  LocalSecrets: { required: ["secrets"], optional: [] },
+  LocalSecrets: { required: ["secrets"], optional: ["keyProblem"] },
   Lock: { required: ["person", "entries"], optional: [] },
   LockAdd: { required: ["entries"], optional: [] },
   LockBody: { required: ["v", "kind", "person", "signer", "at", "key"], optional: ["previous", "sealingKey", "id", "name", "clientKind", "expires", "sealed"] },
@@ -18628,7 +18539,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   MachineFolderSent: { required: [], optional: ["state", "folder", "facts", "pack", "read"] },
   MachineForgeBoards: { required: ["machine", "machineName", "boards"], optional: [] },
   MachineForgeList: { required: ["machine", "machineName", "list"], optional: [] },
-  MachineHello: { required: ["version", "platform", "machineID"], optional: ["host", "name", "implementation", "capabilities"] },
+  MachineHello: { required: ["version", "platform", "machineID"], optional: ["host", "name", "implementation", "capabilities", "maturity"] },
   MachineHelloAnswer: { required: [], optional: ["capabilities"] },
   MachineInfo: { required: ["id", "name", "state"], optional: ["ssh", "tunnel", "hostKeyRenews", "cost", "idleTimeoutMinutes", "host", "reason", "joining", "notJoined", "setup"] },
   MachineInstall: { required: ["destination"], optional: ["name", "key", "trust", "tunnel", "provider", "workspace"] },
@@ -18647,7 +18558,6 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   MachineOptions: { required: ["host"], optional: ["startWhenUsed", "stopWhenIdleMinutes", "startForSchedules"] },
   MachinePolicy: { required: [], optional: ["policy", "signature", "none"] },
   MachineProjects: { required: ["projects"], optional: [] },
-  MachineProviderDraftCall: { required: ["agentID", "draft", "tool"], optional: ["arguments"] },
   MachineRelease: { required: ["version"], optional: [] },
   MachineRequest: { required: ["host"], optional: ["purge"] },
   MachineSchedule: { required: [], optional: ["at", "workflow"] },
@@ -18874,30 +18784,20 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   ProjectsChanged: { required: [], optional: ["id", "removed"] },
   ProjectsJoined: { required: ["folders"], optional: [] },
   PromptRequest: { required: ["agentID", "text", "attachments", "from"], optional: ["sendID", "voice"] },
-  ProviderAdd: { required: ["name", "kind"], optional: ["id", "command", "args", "url", "headers", "commands", "map", "machine", "secrets", "cli", "draft"] },
+  ProviderAdd: { required: ["name", "kind"], optional: ["id", "commands", "machine", "secrets"] },
   ProviderCarried: { required: [], optional: ["result", "error"] },
   ProviderCarry: { required: ["provider", "record", "call"], optional: ["workspace", "name", "options", "firstBoot", "secrets"] },
   ProviderCreate: { required: [], optional: ["id", "name", "options", "clones", "repository"] },
   ProviderCreated: { required: ["workspace", "joining"], optional: [] },
-  ProviderDraftAnswer: { required: ["draft", "question", "yes"], optional: [] },
-  ProviderDraftAnswered: { required: ["note"], optional: ["map", "preset"] },
-  ProviderDraftRequest: { required: ["draft"], optional: [] },
-  ProviderDraftSign: { required: ["machine", "method", "params"], optional: [] },
-  ProviderDraftSigned: { required: ["draft", "lock"], optional: [] },
-  ProviderDraftStart: { required: ["form", "runtimeID"], optional: ["secrets", "provider"] },
-  ProviderDraftStarted: { required: ["draft"], optional: ["answered", "sign"] },
-  ProviderDraftUpdate: { required: ["draft", "state", "runtimeName", "steps"], optional: ["cost", "draftJSON", "check", "question", "note"] },
   ProviderForget: { required: ["provider"], optional: [] },
   ProviderGroup: { required: ["provider"], optional: ["group"] },
   ProviderList: { required: ["providers"], optional: [] },
   ProviderOptions: { required: ["schema"], optional: ["id", "values", "name"] },
   ProviderRequest: { required: [], optional: ["id"] },
-  ProviderRuntime: { required: ["id", "name", "isDefault"], optional: [] },
-  ProviderRuntimes: { required: ["runtimes"], optional: ["host", "why"] },
   ProviderSSH: { required: ["provider", "op", "destination"], optional: ["hostCode", "codespace", "knownHosts", "name", "renew", "trust"] },
   ProviderSSHResult: { required: [], optional: ["knownHosts", "needsTrust"] },
   ProviderSecretsKeep: { required: ["provider", "secrets"], optional: [] },
-  ProviderSummary: { required: ["id", "name", "kind", "secrets", "capabilities", "contract", "mapped", "workspaces", "current"], optional: ["preset", "listedAt", "problem", "group", "mayUse", "default", "machine", "machineName", "machineOffline", "sshToolMissing"] },
+  ProviderSummary: { required: ["id", "name", "kind", "secrets", "capabilities", "contract", "workspaces", "current"], optional: ["preset", "listedAt", "problem", "group", "mayUse", "default", "machine", "machineName", "machineOffline", "sshToolMissing"] },
   ProviderWorkspaceRequest: { required: ["id", "workspace"], optional: [] },
   PushToken: { required: ["environment"], optional: ["token"] },
   QueuedPrompt: { required: ["id", "text", "attachments", "queuedAt", "from"], optional: ["preface", "sender"] },

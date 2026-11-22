@@ -1663,21 +1663,6 @@
       ]
     },
     {
-      "name": "control/providerDraft",
-      "x-capability": "control/1",
-      "x-notification": true,
-      "paramStructure": "by-name",
-      "params": [
-        {
-          "name": "params",
-          "required": true,
-          "schema": {
-            "$ref": "schema/machines.schema.json#/definitions/ProviderDraftUpdate"
-          }
-        }
-      ]
-    },
-    {
       "name": "control/providersChanged",
       "x-capability": "control/1",
       "tags": [
@@ -3394,27 +3379,6 @@
           }
         }
       ]
-    },
-    {
-      "name": "machine/providerDraft",
-      "x-capability": "machine/1",
-      "description": "A host, on its channel 0, for a writing agent there (#858).",
-      "paramStructure": "by-name",
-      "params": [
-        {
-          "name": "params",
-          "required": true,
-          "schema": {
-            "$ref": "schema/machines.schema.json#/definitions/MachineProviderDraftCall"
-          }
-        }
-      ],
-      "result": {
-        "name": "result",
-        "schema": {
-          "$ref": "schema/core.schema.json#/definitions/JSONValue"
-        }
-      }
     },
     {
       "name": "machine/release",
@@ -5579,86 +5543,6 @@
       }
     },
     {
-      "name": "providers/draftAnswer",
-      "x-capability": "providers/1",
-      "paramStructure": "by-name",
-      "params": [
-        {
-          "name": "params",
-          "required": true,
-          "schema": {
-            "$ref": "schema/machines.schema.json#/definitions/ProviderDraftAnswer"
-          }
-        }
-      ],
-      "result": {
-        "name": "result",
-        "schema": {
-          "$ref": "schema/core.schema.json#/definitions/Empty"
-        }
-      }
-    },
-    {
-      "name": "providers/draftCancel",
-      "x-capability": "providers/1",
-      "paramStructure": "by-name",
-      "params": [
-        {
-          "name": "params",
-          "required": true,
-          "schema": {
-            "$ref": "schema/machines.schema.json#/definitions/ProviderDraftRequest"
-          }
-        }
-      ],
-      "result": {
-        "name": "result",
-        "schema": {
-          "$ref": "schema/core.schema.json#/definitions/Empty"
-        }
-      }
-    },
-    {
-      "name": "providers/draftSigned",
-      "x-capability": "providers/1",
-      "paramStructure": "by-name",
-      "params": [
-        {
-          "name": "params",
-          "required": true,
-          "schema": {
-            "$ref": "schema/machines.schema.json#/definitions/ProviderDraftSigned"
-          }
-        }
-      ],
-      "result": {
-        "name": "result",
-        "schema": {
-          "$ref": "schema/core.schema.json#/definitions/Empty"
-        }
-      }
-    },
-    {
-      "name": "providers/draftStart",
-      "x-capability": "providers/1",
-      "paramStructure": "by-name",
-      "params": [
-        {
-          "name": "params",
-          "required": true,
-          "schema": {
-            "$ref": "schema/machines.schema.json#/definitions/ProviderDraftStart"
-          }
-        }
-      ],
-      "result": {
-        "name": "result",
-        "schema": {
-          "$ref": "schema/machines.schema.json#/definitions/ProviderDraftStarted"
-        }
-      }
-    },
-    {
       "name": "providers/list",
       "x-capability": "providers/1",
       "tags": [
@@ -5781,26 +5665,6 @@
         "name": "result",
         "schema": {
           "$ref": "schema/core.schema.json#/definitions/Empty"
-        }
-      }
-    },
-    {
-      "name": "providers/runtimes",
-      "x-capability": "providers/1",
-      "paramStructure": "by-name",
-      "params": [
-        {
-          "name": "params",
-          "required": true,
-          "schema": {
-            "$ref": "schema/core.schema.json#/definitions/Empty"
-          }
-        }
-      ],
-      "result": {
-        "name": "result",
-        "schema": {
-          "$ref": "schema/machines.schema.json#/definitions/ProviderRuntimes"
         }
       }
     },

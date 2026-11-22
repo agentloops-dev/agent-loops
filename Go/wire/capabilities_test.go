@@ -24,3 +24,17 @@ func TestMissing(t *testing.T) {
 		t.Errorf("Missing = %v, want nil", got)
 	}
 }
+
+// MaturityOf says the levels of a part's own capabilities that are not GA, and {} when it has
+// none, never nil (#6579).
+func TestMaturityOf(t *testing.T) {
+	was := CapabilityLevels
+	t.Cleanup(func() { CapabilityLevels = was })
+	CapabilityLevels = map[string]MaturityLevel{"a/1": MaturityLevelBeta, "z/1": MaturityLevelPilot}
+	if got := MaturityOf([]string{"a/1", "b/1"}); !reflect.DeepEqual(got, Maturity{"a/1": MaturityLevelBeta}) {
+		t.Errorf("MaturityOf = %v", got)
+	}
+	if got := MaturityOf([]string{"b/1"}); got == nil || len(got) != 0 {
+		t.Errorf("MaturityOf = %#v, want {}", got)
+	}
+}

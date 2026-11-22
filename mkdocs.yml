@@ -207,6 +207,7 @@ nav:
       - explanation/planning.md
       - explanation/deploys.md
       - explanation/why-agents.md
+      - explanation/data-stores.md
       - explanation/control-plane.md
       - explanation/org-keys-and-gateways.md
       - explanation/org-identity.md

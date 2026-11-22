@@ -171,7 +171,11 @@ func (d *Daemon) ApplyUserSettings(u wire.MachineUserSettings) error {
 		flagged[i].Value = ""
 	}
 	if err != nil {
-		problems = append(problems, "secrets: "+err.Error())
+		// This machine's key that does not read is said once for each change (#6632), not
+		// at each delivery.
+		if !isMachineKeyError(err) {
+			problems = append(problems, "secrets: "+err.Error())
+		}
 		names, versions = before.Secrets, before.Versions
 	}
 	mark.Secrets, mark.Versions = names, versions

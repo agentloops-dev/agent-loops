@@ -205,8 +205,7 @@ struct SettingsWindow: View {
                            openFolderPolicy: requests.map { requests in { path in openFolderPolicy(path, requests) } })
             }
         case .voice: FormColumn { Form { VoiceSettingsSection() }.paperForm() }
-        case .earlyFeatures: FormColumn { Form { EarlyFeaturesSection() }.paperForm() }
-        case .featureFlags: FormColumn { Form { FeatureFlagsSettingsSection() }.paperForm() }
+        case .earlyFeatures: FormColumn { Form { EarlyFeaturesSection(said: model.partsMaturity) }.paperForm() }
         case .account: FormColumn { AccountSettingsView() }
         case .signIns:
             FormColumn {
@@ -288,7 +287,7 @@ extension SettingsScope {
         // Notifications' limits are rules of Agents ▸ Policy now (#2957, FR-023).
         // Early Features (#6052): the features that are not GA, which the person can turn off.
         // Feature Flags (#6254): the features in work that the person turns on, on every client.
-        case .thisApp: [.appearance, .sidebar, .voice, .earlyFeatures, .featureFlags]
+        case .thisApp: [.appearance, .sidebar, .voice, .earlyFeatures]
         // What agents may do, what they spend and what they take (#2957, FR-018).
         case .agents: [.agentsPolicy, .spending, .resources]
         case .machines: [.machines, .runtimes, .browser, .agentConfiguration]
@@ -307,10 +306,10 @@ enum SettingsPane: String, Hashable, CaseIterable {
     case agentsPolicy
     /// Voice mode, its voice and its sounds (Alex, 2026-10-29): was in Appearance.
     case voice
-    /// The features that are not GA, each with its badge and a switch, on by default (#6052).
+    /// The feature flags in work, off by default (#6254), then the features that are not GA, each
+    /// with its badge and a switch, on by default (#6052). One section since #6604: a window left
+    /// open on the old Feature Flags pane opens Appearance.
     case earlyFeatures
-    /// The features in work that the person turns on (#6254, epic-lifecycle stage 6).
-    case featureFlags
     /// Every machine, and this Mac's own settings (#1759). Was the Mac pane: its raw value is
     /// what a window left open on it kept.
     case machines = "mac"
@@ -359,7 +358,6 @@ enum SettingsPane: String, Hashable, CaseIterable {
         case .agentsPolicy: PolicyLayersWords.title
         case .voice: "Voice"
         case .earlyFeatures: EarlyFeaturesSection.title
-        case .featureFlags: FeatureFlagsSettingsSection.title
         case .account: "Account"
         case .machines: "Machines"
         case .runtimes: "Agent Runtimes"
@@ -390,7 +388,6 @@ enum SettingsPane: String, Hashable, CaseIterable {
         case .agentsPolicy: PolicyLayersWords.symbol
         case .voice: "waveform"
         case .earlyFeatures: "sparkles"
-        case .featureFlags: "flag"
         case .account: "person.crop.circle"
         case .machines: "desktopcomputer"
         case .runtimes: "cpu"

@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
-	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -44,7 +43,6 @@ func callError(t *testing.T, c *conn, id int, method string, params any) Error {
 // agent there with the host's prompt and the first-build label, and refuses a second while
 // the first is not archived, with its id.
 func TestFirstBuildStart(t *testing.T) {
-	flaky.UnderLoad(t, "#6619")
 	t.Parallel()
 
 	fakeRuntimes(t)

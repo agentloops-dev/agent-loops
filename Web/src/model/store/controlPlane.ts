@@ -144,6 +144,7 @@ export const controlPlaneMethods = {
     if (!status) return;
     this.plane.value = { machineID: status.machineID, homeHost: status.homeHost, thisMacHost: status.thisMacHost,
       name: status.name, version: status.version, required: status.required, capabilities: status.capabilities,
+      maturity: status.maturity,
       startedAt: status.startedAt, web: status.web, restartable: status.restartable, publicWeb: status.publicWeb };
     this.person.value = status.person ?? null;
     this.joinCommand.value = status.joinCommand || null;

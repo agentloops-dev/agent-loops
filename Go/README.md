@@ -76,7 +76,7 @@ build added kept whole), the copies' own messages, and the JSON-RPC envelope.
 | `controlplane/web` | The web page's loopback listener |
 | `controlplane/hostinstall`, `hosttunnels` | Add a Machine over ssh, Detect, the ssh config's hosts, bastion tunnels |
 | `controlplane/notices` | Where a need shows (`Routing`), and which device gets its notice (`Desk`) |
-| `controlplane/providers` | Machine providers, kept requests, Write It for Me |
+| `controlplane/providers` | Machine providers, kept requests |
 
 **Linux hosts run the Go agentsd** (#1136). `install.sh` installs it, from
 `agentsd-linux-<arch>` (`scripts/build-linux-agentsd.sh`).

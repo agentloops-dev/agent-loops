@@ -37,8 +37,7 @@ waits for its agentsd to connect, and the server comes online by itself.
    - **On a machine you have**: **Docker Containers**, containers on a machine that has docker.
    - **Custom**: **Your commands**, one machine given as the commands you already use to start
      and stop it, such as `cws start devstack-1` (a status command is optional; it prints
-     `running` or `stopped`), and **MCP server**, a provider of its own, or another MCP server
-     with a tool map. See [Add a machine provider](add-a-machine-provider.md).
+     `running` or `stopped`). See [Add a machine provider](add-a-machine-provider.md).
 
    The web page adds the kinds that work through their API with a token. The other rows say
    **In the Mac app**.
@@ -257,7 +256,6 @@ checked out in the folder there.
 
 ## Related
 
-- [Add a machine provider](add-a-machine-provider.md): presets, your own commands, a
-  tool map, or a provider of your own.
+- [Add a machine provider](add-a-machine-provider.md): presets, or your own commands.
 - [Machine providers](../reference/machine-providers.md): the tools a provider offers.
 - [The control plane](../explanation/control-plane.md): why providers run there.

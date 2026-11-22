@@ -14,7 +14,7 @@ import (
 // Carried is a provider's connection through the machine that carries it (#3398): each
 // call goes to that machine on its channel 0 as providers/carry, and the machine runs the
 // provider's server with the secrets it keeps. The control plane has the record, never a
-// secret. Secrets is only a draft's, or the ones an add or an update was given to check
+// secret. Secrets is only the ones an add or an update was given to check
 // with: sent with each call, kept by neither side.
 type Carried struct {
 	Record ProviderRecord
@@ -142,12 +142,6 @@ func (c *Carried) CreateSaying(name string, options any, firstBoot *string) (*Ma
 
 func (c *Carried) Delete(id string) error {
 	return c.call("delete", wire.ProviderCarry{Workspace: &id}, nil)
-}
-
-func (c *Carried) Tools() ([]any, error) {
-	var out []any
-	err := c.call("tools", wire.ProviderCarry{}, &out)
-	return out, err
 }
 
 // End leaves the server running on its machine: the next call uses it.

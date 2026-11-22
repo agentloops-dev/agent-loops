@@ -25,7 +25,7 @@ func listedProviders(t *testing.T, s *controllink.Session) []wire.ProviderSummar
 func TestOnlyAProvidersGroupSeesAndUsesIt(t *testing.T) {
 	t.Parallel()
 	st := store.NewMemory()
-	record := `{"id":"do-1","name":"DigitalOcean","kind":"http","url":"http://127.0.0.1:9/","secretNames":[],` +
+	record := `{"id":"do-1","name":"DigitalOcean","kind":"commands","commands":{"preset":"doctl"},"secretNames":[],` +
 		`"capabilities":["create"],"contract":1,"rev":1}`
 	if _, err := st.Put(context.Background(), providers.ProviderKey("do-1"), []byte(record), store.Absent); err != nil {
 		t.Fatal(err)
