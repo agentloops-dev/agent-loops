@@ -3,6 +3,9 @@ package controlplane
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"reflect"
+	"sync"
 	"testing"
 	"time"
 
@@ -113,7 +116,9 @@ func TestLineageSyncKeepsAMergedCopy(t *testing.T) {
 	if _, err := mem.Put(ctx, gone, data, store.Always); err != nil {
 		t.Fatal(err)
 	}
-	if n, err := sweepLineageGraph(ctx, mem, p.s.records, later, 10); err != nil || n != 3 {
+	// One roll-up of the machine's changes (which bounds its links and states), and the
+	// removed machine's object.
+	if n, err := sweepLineageGraph(ctx, mem, p.s.records, later, 10); err != nil || n != 2 {
 		t.Fatalf("swept %d %v", n, err)
 	}
 	if got := links(); len(got) != 1 || got[0] != opens {
@@ -125,6 +130,7 @@ func TestLineageSyncKeepsAMergedCopy(t *testing.T) {
 	if object, _ := mem.Get(ctx, gone); object != nil {
 		t.Fatal("a removed machine's links were kept")
 	}
+	wantNoLineageChanges(ctx, t, mem, host)
 	if n, _ := sweepLineageGraph(ctx, mem, p.s.records, later, 10); n != 0 {
 		t.Fatalf("swept again: %d", n)
 	}
@@ -144,7 +150,8 @@ func sendLineageSync(t *testing.T, p *plane, host string, sync wire.LineageSync)
 	return answer, err
 }
 
-// keptLineageLinks reads the links the store keeps for the machine.
+// keptLineageLinks reads the links the store keeps for the machine: its links.json with its
+// changes since put over it.
 func keptLineageLinks(ctx context.Context, t *testing.T, mem store.Store, host string) []wire.LineageLink {
 	t.Helper()
 	object, err := mem.Get(ctx, lineageLinksKey(host))
@@ -155,21 +162,192 @@ func keptLineageLinks(ctx context.Context, t *testing.T, mem store.Store, host s
 	if err := json.Unmarshal(object.Data, &kept); err != nil {
 		t.Fatal(err)
 	}
-	return kept.Links
+	for _, c := range keptLineageChanges(ctx, t, mem, host) {
+		kept.Links = mergeLinks(kept.Links, c.Links)
+	}
+	return lineage.Bound(kept.Links, time.Now())
 }
 
-// keptLineageStates reads the changes of state the store keeps for the machine.
+// keptLineageStates reads the changes of state the store keeps for the machine: its
+// states.json and its changes since.
 func keptLineageStates(ctx context.Context, t *testing.T, mem store.Store, host string) []wire.LineageStateChange {
 	t.Helper()
-	object, err := mem.Get(ctx, lineageStatesKey(host))
-	if err != nil || object == nil {
-		t.Fatalf("no states: %v", err)
-	}
 	var kept storedStates
-	if err := json.Unmarshal(object.Data, &kept); err != nil {
+	object, err := mem.Get(ctx, lineageStatesKey(host))
+	if err != nil {
 		t.Fatal(err)
 	}
-	return kept.States
+	if object != nil {
+		if err := json.Unmarshal(object.Data, &kept); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, c := range keptLineageChanges(ctx, t, mem, host) {
+		kept.States = append(kept.States, c.States...)
+	}
+	if len(kept.States) == 0 {
+		t.Fatal("no states")
+	}
+	return boundStates(kept.States, time.Now())
+}
+
+// keptLineageChanges is the machine's changes not rolled up yet, oldest first.
+func keptLineageChanges(ctx context.Context, t *testing.T, mem store.Store, host string) []storedChanges {
+	t.Helper()
+	keys, err := mem.List(ctx, lineageChangesPrefix(host))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []storedChanges
+	for _, k := range keys {
+		object, err := mem.Get(ctx, k.Key)
+		if err != nil || object == nil {
+			t.Fatalf("change %s: %v", k.Key, err)
+		}
+		var c storedChanges
+		if err := json.Unmarshal(object.Data, &c); err != nil {
+			t.Fatal(err)
+		}
+		out = append(out, c)
+	}
+	return out
+}
+
+// bytesStore counts the bytes each Put writes.
+type bytesStore struct {
+	store.Store
+	mu      sync.Mutex
+	written int
+}
+
+func (c *bytesStore) Put(ctx context.Context, key string, data []byte, when store.Condition) (string, error) {
+	c.mu.Lock()
+	c.written += len(data)
+	c.mu.Unlock()
+	return c.Store.Put(ctx, key, data, when)
+}
+
+func (c *bytesStore) take() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	n := c.written
+	c.written = 0
+	return n
+}
+
+// #6584: a lineage/sync of one change writes the same bytes, whatever the machine holds;
+// past mostLineageChanges a send rolls them up, and a read gives the same answer before and
+// after the roll-up.
+func TestLineageSyncWritesOnlyTheChange(t *testing.T) {
+	t.Parallel()
+	counting := &bytesStore{Store: store.NewMemory()}
+	p := startPlane(t, counting, controllink.NewPrivateKey())
+	small := p.host("SMALL-MAC").member.Host
+	big := p.host("BIG-MAC").member.Host
+	ctx := context.Background()
+	now := time.Now()
+	session := wire.LineageNode{Kind: "session", Ref: "agents:session:#a1"}
+	linkTo := func(i int) wire.LineageLink {
+		return wire.LineageLink{From: session, To: wire.LineageNode{Kind: "issue", Ref: fmt.Sprintf("github:issue:o/r#%05d", i)},
+			Rel: "works-on", Source: "start", At: wire.DateOf(now.Add(-time.Hour))}
+	}
+	yes := true
+	// The small machine holds one link, the big one 3 sends of mostSyncLinks.
+	if _, err := sendLineageSync(t, p, small, wire.LineageSync{Links: []wire.LineageLink{linkTo(0)}, Reset: &yes}); err != nil {
+		t.Fatal(err)
+	}
+	for part := range 3 {
+		links := make([]wire.LineageLink, mostSyncLinks)
+		for i := range links {
+			links[i] = linkTo(part*mostSyncLinks + i)
+		}
+		sync := wire.LineageSync{Links: links}
+		if part == 0 {
+			sync.Reset = &yes
+		}
+		if _, err := sendLineageSync(t, p, big, sync); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := sweepLineageGraph(ctx, counting, p.s.records, now, 10); err != nil {
+		t.Fatal(err)
+	}
+	if got := len(keptLineageLinks(ctx, t, counting, big)); got != 3*mostSyncLinks {
+		t.Fatalf("big holds %d links", got)
+	}
+
+	one := func(host string, i int) int {
+		t.Helper()
+		counting.take()
+		ended := linkTo(i)
+		end := wire.DateOf(now)
+		ended.EndedAt = &end
+		state := wire.LineageStateChange{Node: session, State: wire.LineageSessionStateNameWorking, At: wire.DateOf(now)}
+		if _, err := sendLineageSync(t, p, host, wire.LineageSync{Links: []wire.LineageLink{ended}, States: []wire.LineageStateChange{state}}); err != nil {
+			t.Fatal(err)
+		}
+		return counting.take()
+	}
+	smallBytes, bigBytes := one(small, 0), one(big, 0)
+	if smallBytes != bigBytes || bigBytes > 1024 {
+		t.Fatalf("one change wrote %d bytes on the small machine, %d on the big one", smallBytes, bigBytes)
+	}
+
+	// The read's answer is the same before and after a roll-up.
+	scope := func() *mergedLineage {
+		t.Helper()
+		g, err := p.s.keptLineageGraph(ctx, func(string) bool { return true })
+		if err != nil {
+			t.Fatal(err)
+		}
+		return g
+	}
+	each := func(from, to int) {
+		t.Helper()
+		for i := from; i < to; i++ {
+			if n := one(big, i); n != bigBytes {
+				t.Fatalf("change %d wrote %d bytes, not %d", i, n, bigBytes)
+			}
+		}
+	}
+	each(1, mostLineageChanges-1)
+	before := scope()
+	if s, ok := before.states[session]; endedLinks(before.links) != mostLineageChanges-1 || !ok || s.State != wire.LineageSessionStateNameWorking {
+		t.Fatalf("the changes were not read: %d ended, %+v", endedLinks(before.links), before.states)
+	}
+	if n, err := sweepLineageGraph(ctx, counting, p.s.records, now, 10); err != nil || n != 2 {
+		t.Fatalf("swept %d %v", n, err)
+	}
+	if after := scope(); !reflect.DeepEqual(before.links, after.links) || !reflect.DeepEqual(before.hostOf, after.hostOf) ||
+		!reflect.DeepEqual(before.states, after.states) {
+		t.Fatal("a roll-up changed the read's answer")
+	}
+
+	// The send that makes mostLineageChanges rolls them up.
+	each(0, mostLineageChanges-1)
+	if n := one(big, 0); n <= bigBytes {
+		t.Fatalf("no roll-up: %d bytes", n)
+	}
+	wantNoLineageChanges(ctx, t, counting, big)
+}
+
+// wantNoLineageChanges fails unless the machine's changes are all rolled up.
+func wantNoLineageChanges(ctx context.Context, t *testing.T, st store.Store, host string) {
+	t.Helper()
+	if left := keptLineageChanges(ctx, t, st, host); len(left) != 0 {
+		t.Fatalf("%d changes left after the roll-up", len(left))
+	}
+}
+
+// endedLinks counts the links that ended.
+func endedLinks(links []wire.LineageLink) int {
+	n := 0
+	for _, l := range links {
+		if l.EndedAt != nil {
+			n++
+		}
+	}
+	return n
 }
 
 // #4275: the states are bounded by count, the oldest that are not a session's latest first.
