@@ -1,11 +1,16 @@
 // The browser's socket (071 contracts/browser-auth.md "Closing", research R4): calls routed to a
 // host or the control plane, replies and notifications, and every way the socket ends.
-import { test } from "node:test";
+import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 import { load } from "./load.mjs";
 
 const w = await load("test/wire.ts");
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+// For a test on a mock clock: the promises that a step starts settle, then one mock
+// millisecond at a time, each one's promises settled before the next. A test settles after a
+// drop too: the socket closes in a microtask, and the retry's wait starts from then.
+const settle = async () => { for (let i = 0; i < 10; i++) await new Promise((resolve) => setImmediate(resolve)); };
+const advance = async (ms) => { for (let i = 0; i < ms; i++) { mock.timers.tick(1); await settle(); } };
 
 /** Sockets the link opens, each driven by the test. */
 function sockets() {
@@ -251,16 +256,57 @@ test("a connection dropped at once does not start the waits again from the first
 });
 
 test("a connection that lasted starts the waits again from the first (#172)", async () => {
+  // The clock is a mock (#6601): with real timers, a busy machine ran the test's drop before
+  // the link's stableAfter timer, so the link was right to wait the second step (200 ms), and
+  // the test read the link before that retry.
+  mock.timers.enable({ apis: ["setTimeout", "setInterval", "Date"] });
   const net = sockets();
-  const l = link(paired(), net, { backoff: [0.01, 0.4], stableAfter: 0 });
-  await opened(l);
-  net.made[0].drop();
-  await wait(30);
-  net.made[1].drop();
-  await wait(30);
-  assert.equal(l.state.kind, "open");
-  assert.equal(net.made.length, 3);
-  l.stop();
+  // The waits are 5 ms and then 200 ms (random 0 takes half of each step).
+  const l = link(paired(), net, { backoff: [0.01, 0.4], stableAfter: 1 });
+  try {
+    l.start();
+    await settle();
+    assert.equal(l.state.kind, "open");
+    net.made[0].drop();
+    await settle();
+    await advance(5);
+    assert.equal(net.made.length, 2, "the first retry waits the first step");
+    assert.equal(l.state.kind, "open");
+    // The link stays up for stableAfter, so the next drop waits the first step again.
+    await advance(1);
+    net.made[1].drop();
+    await settle();
+    await advance(5);
+    assert.equal(net.made.length, 3, "after a connection that lasted, the first step again");
+    assert.equal(l.state.kind, "open");
+  } finally {
+    l.stop();
+    mock.timers.reset();
+  }
+});
+
+test("a connection that did not last waits the next step (#172)", async () => {
+  mock.timers.enable({ apis: ["setTimeout", "setInterval", "Date"] });
+  const net = sockets();
+  const l = link(paired(), net, { backoff: [0.01, 0.4], stableAfter: 1_000 });
+  try {
+    l.start();
+    await settle();
+    net.made[0].drop();
+    await settle();
+    await advance(5);
+    assert.equal(net.made.length, 2);
+    net.made[1].drop();
+    await settle();
+    await advance(199);
+    assert.equal(net.made.length, 2, "no retry before the second step");
+    await advance(1);
+    assert.equal(net.made.length, 3);
+    assert.equal(l.state.kind, "open");
+  } finally {
+    l.stop();
+    mock.timers.reset();
+  }
 });
 
 test("4403 with the reason suspended keeps the key, and tries again until it connects (#1002, FR-029)", async () => {
