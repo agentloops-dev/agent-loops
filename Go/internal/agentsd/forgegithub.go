@@ -552,7 +552,17 @@ func (g githubForge) SetPriority(ctx context.Context, r forgeRef, priority strin
 	if has, err := gh.SetPriorityField(ctx, r.Repo, r.Number, priority); has || err != nil {
 		return err
 	}
-	return labelPriority(ctx, g, r, priority)
+	if priority == "" {
+		return labelPriority(ctx, g, r, priority)
+	}
+	// The add's answer has the labels, so no read before it (#6644): one request, and one
+	// more for each old priority label it takes off.
+	have, err := gh.AddLabels(ctx, r.Repo, r.Number, []string{"priority:" + priority})
+	if err != nil {
+		return err
+	}
+	_, remove := priorityLabelEdit(have, priority)
+	return setLabelsIf(ctx, g, r, nil, remove)
 }
 
 // SetHold is the label on hold: GitHub has no hold field (#6091).
