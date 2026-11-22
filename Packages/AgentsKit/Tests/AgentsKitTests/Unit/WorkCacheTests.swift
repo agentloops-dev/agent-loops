@@ -70,10 +70,12 @@ struct WorkCacheTests {
         #expect(answer.shown(first: [MachineRef(rawValue: "new"), mac]).map(\.host) == [mac, devbox])
     }
 
-    /// #6358, finding 2: a refresh replaces page 1 and keeps the pages read by scrolling, each with its own time.
-    @Test func aRefreshKeepsTheLaterPages() async throws {
+    /// #6358, finding 2, and #6636 (c): a refresh replaces page 1 and keeps the pages read by scrolling, each marked
+    /// stale with its own time, the old page 1 too; the list asks on from the new page 1's cursor, also when a stale page said "the end".
+    @Test func aRefreshKeepsThePagesReadBeforeStaleAndAsksOnFromTheNewFirstPage() async throws {
         let clock = Clock()
         let cache = try makeCache(clock)
+        let first = clock.now
         await cache.keepPage(issues, host: mac, page: 0, list: page(1...3, cursor: "p2"))
         clock.move(10)
         await cache.keepPage(issues, host: mac, page: 1, list: page(4...6, cursor: "p3"))
@@ -83,11 +85,96 @@ struct WorkCacheTests {
         clock.move(60)
         await cache.keepPage(issues, host: mac, page: 0, list: page(9...11, cursor: "p2b"))
         let answer = try #require(await cache.answer(issues)?.hosts.first)
-        #expect(numbers(WorkCache.Answer(hosts: [answer])) == ["9", "10", "11", "4", "5", "6", "7", "8"])
-        #expect(answer.pages.count == 3)
+        #expect(numbers(WorkCache.Answer(hosts: [answer])) == ["9", "10", "11", "1", "2", "3", "4", "5", "6", "7", "8"])
+        #expect(answer.pages.map(\.stale) == [false, true, true, true])
+        #expect(answer.fresh == 1)
         #expect(answer.read == clock.now)
-        #expect(answer.pages.dropFirst().first?.read == second)
-        #expect(answer.cursor == nil, "the kept pages reach the end")
+        #expect(answer.pages.map(\.read).dropFirst() == [first, second, second + 10])
+        #expect(answer.staleRead == first)
+        #expect(answer.cursor == "p2b", "a stale page's end is not the end")
+    }
+
+    /// #6636: a fresh page at the end of the list drops the stale pages: what they still held left the list.
+    @Test func aFreshPageAtTheEndDropsTheStalePages() async throws {
+        let cache = try makeCache(Clock())
+        await cache.keepPage(issues, host: mac, page: 0, list: page(1...2, cursor: "p2"))
+        await cache.keepPage(issues, host: mac, page: 1, list: page(3...4))
+        await cache.keepPage(issues, host: mac, page: 0, list: page(1...3))
+        let answer = try #require(await cache.answer(issues)?.hosts.first)
+        #expect(numbers(WorkCache.Answer(hosts: [answer])) == ["1", "2", "3"])
+        #expect(answer.pages.count == 1)
+        #expect(answer.cursor == nil)
+    }
+
+    /// #6636: the next page goes after the fresh ones and takes its items out of the stale pages, and the stale items
+    /// the server's order puts before its last item, which closed.
+    @Test func aFreshPageCoversTheStaleItemsBeforeItsLast() async throws {
+        let updated = WorkCache.Query(kind: .issue, sort: "updated")
+        let cache = try makeCache(Clock())
+        func list(_ numbers: [Int], cursor: String?) -> DaemonAPI.ForgeList {
+            DaemonAPI.ForgeList(items: numbers.map { item($0, updated: TimeInterval($0)) }, cursor: cursor)
+        }
+        await cache.keepPage(updated, host: mac, page: 0, list: list([9, 8], cursor: "a"))
+        await cache.keepPage(updated, host: mac, page: 1, list: list([7, 6], cursor: "b"))
+        await cache.keepPage(updated, host: mac, page: 2, list: list([5, 4], cursor: nil))
+        // 12 and 11 are new; 8 closed; 7 moved from page 2 to page 3.
+        await cache.keepPage(updated, host: mac, page: 0, list: list([12, 11], cursor: "c"))
+        #expect(numbers(await cache.answer(updated)) == ["12", "11", "9", "8", "7", "6", "5", "4"],
+                "nothing read before is lost to the refresh")
+        await cache.keepPage(updated, host: mac, page: 1, list: list([9, 7], cursor: "d"))
+        let answer = try #require(await cache.answer(updated)?.hosts.first)
+        #expect(numbers(WorkCache.Answer(hosts: [answer])) == ["12", "11", "9", "7", "6", "5", "4"], "8 closed")
+        #expect(answer.fresh == 2)
+        #expect(answer.cursor == "d")
+    }
+
+    /// Review #6355's case (#6636): 300 open issues read to the end, then 5,000 (a big project) and a Refresh. A scroll
+    /// asks on from the new page 1 until the forge's end, and the list is then the forge's list: no item lost, none
+    /// twice, and the closed ones gone.
+    @Test func aRefreshFrom300To5000ScrollsToTheEndWithNoItemLost() async throws {
+        let updated = WorkCache.Query(kind: .issue, sort: "updated")
+        let clock = Clock()
+        let cache = try makeCache(clock)
+        func forge(_ open: [DaemonAPI.ForgeItem], at cursor: String?) -> DaemonAPI.ForgeList {
+            let from = cursor.flatMap(Int.init) ?? 0
+            let to = min(from + 100, open.count)
+            return DaemonAPI.ForgeList(items: Array(open[from ..< to]), cursor: to < open.count ? "\(to)" : nil, total: open.count)
+        }
+        func ordered(_ items: [DaemonAPI.ForgeItem]) -> [DaemonAPI.ForgeItem] { items.sorted { $0.updatedAt > $1.updatedAt } }
+        let before = ordered((1...300).map { item($0, updated: TimeInterval($0)) })
+        var after = before
+        // Then: 4,700 new issues, #150 changed (to the top), #120 and #250 closed.
+        after.removeAll { [120, 150, 250].contains(Int(String($0.node.ref.split(separator: "#").last ?? "")) ?? 0) }
+        after += (301...5000).map { item($0, updated: TimeInterval($0)) }
+        after.append(item(150, title: "Changed", updated: 6000))
+        after = ordered(after)
+
+        var cursor: String?
+        for n in 0..<3 {
+            let read = forge(before, at: cursor)
+            await cache.keepPage(updated, host: mac, page: n, list: read)
+            cursor = read.cursor
+        }
+        #expect(numbers(await cache.answer(updated)).count == 300)
+        clock.move(3600)
+        await cache.keepPage(updated, host: mac, page: 0, list: forge(after, at: nil))
+        let refreshed = try #require(await cache.answer(updated)?.hosts.first)
+        #expect(refreshed.items.count == 100 + 299, "page 1 and the 299 items read before that it does not hold")
+        #expect(refreshed.cursor == "100", "the list asks on from the new page 1")
+        #expect(refreshed.total == 4998)
+
+        var asks = 0
+        while let host = await cache.answer(updated)?.hosts.first, let next = host.cursor, asks < 100 {
+            await cache.keepPage(updated, host: mac, page: host.fresh, list: forge(after, at: next))
+            clock.move(1)
+            asks += 1
+        }
+        #expect(asks == 49)
+        let end = try #require(await cache.answer(updated)?.hosts.first)
+        #expect(end.items.map(\.node.ref) == after.map(\.node.ref), "the forge's 4,998 open issues, in its order")
+        #expect(end.items.first?.title == "Changed")
+        #expect(end.pages.allSatisfy { !$0.stale })
+        #expect(end.cursor == nil)
     }
 
     @Test func scrollingAsksThePageAfterTheKeptOnes() async throws {
@@ -105,7 +192,7 @@ struct WorkCacheTests {
         await cache.keepPage(issues, host: mac, page: 0, list: page(1...2, cursor: "p2"))
         await cache.keepPage(issues, host: mac, page: 1, list: page(3...4))
         await cache.keepPage(issues, host: mac, page: 0, list: DaemonAPI.ForgeList(items: [item(4), item(1)], cursor: "p2"))
-        #expect(numbers(await cache.answer(issues)) == ["4", "1", "3"])
+        #expect(numbers(await cache.answer(issues)) == ["4", "1", "2", "3"], "2 is kept stale until a fresh page covers it (#6636)")
     }
 
     @Test func aNewerItemReplacesTheOlderInEveryAnswerThatHoldsIt() async throws {
