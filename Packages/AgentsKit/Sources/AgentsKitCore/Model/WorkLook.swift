@@ -420,9 +420,15 @@ public enum WorkLook {
 
     /// The end of the list, in grey: "128 issues", the forge's total where it gives one (#4396);
     /// with none, "50+ issues" while more pages are there, else the rows read.
+    /// A list that ends before its total (#6637): "1000 of 5000 issues", then why.
     public static func endWords(_ kind: WorkList.Kind, shown: Int, more: Bool, total: Int? = nil) -> String {
-        total.map { count(kind, $0) } ?? count(kind, shown, more: more)
+        if let total, !more, shown < total { return shownOf(kind, shown: shown, more: more, total: total) }
+        return total.map { count(kind, $0) } ?? count(kind, shown, more: more)
     }
+
+    /// Why a list ends before the forge's total (#6637): its search gives only so many (GitHub's, 1,000), so the
+    /// rest show only in a narrower list. The web page says the same.
+    public static let searchStops = "The forge’s search shows no more. Narrow the list to see the rest."
 
     /// The forge's total for a list as the person sees it, or nil: only from one machine's read
     /// (two machines read the same repos, so their counts overlap), and only while no filter
@@ -444,10 +450,11 @@ public enum WorkLook {
     }
 
     /// The end of a list read through Work's cache (#6353, #5967): "100 of 304 issues" when the forge has more than
-    /// the list shows, else "304 issues"; with no total, as `endWords`.
+    /// the list shows, else "304 issues"; with no total, as `endWords`. A list that ends there says why (#6637).
     public static func shownOf(_ kind: WorkList.Kind, shown: Int, more: Bool, total: Int?) -> String {
         guard let total else { return count(kind, shown, more: more) }
-        return shown < total ? "\(shown) of \(count(kind, total))" : count(kind, total)
+        guard shown < total else { return count(kind, total) }
+        return "\(shown) of \(count(kind, total))" + (more ? "" : " · " + searchStops)
     }
 
     /// A page after the first that did not load: one line at the end, and Try again.

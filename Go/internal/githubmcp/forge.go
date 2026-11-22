@@ -435,6 +435,10 @@ func (g *RealGitHub) Search(ctx context.Context, repos []string, f SearchFilter,
 	if len(repos) == 0 {
 		return SearchPage{Items: []Item{}, Cursors: []string{}}, nil
 	}
+	// GitHub's own list has no 1,000-result cap (#6637). A cursor of search, from before, goes on in search.
+	if rest, ok := strings.CutPrefix(after, listCursorPrefix); ok || after == "" && readsPlainList(repos, f) {
+		return g.listPage(ctx, repos[0], f, rest, first)
+	}
 	vars := map[string]any{"q": SearchQuery(repos, f), "first": max(1, min(first, perPage))}
 	if after != "" {
 		vars["after"] = after

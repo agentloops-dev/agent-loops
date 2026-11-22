@@ -84,7 +84,7 @@ func TestSearchWithoutIssueFields(t *testing.T) {
 		}))
 		g := NewRealGitHub(s.URL, func() string { return "t" }, nil)
 		for range 2 {
-			p, err := g.Search(context.Background(), []string{"o/r"}, SearchFilter{}, "", 10)
+			p, err := g.Search(context.Background(), []string{"o/r"}, SearchFilter{Query: "t"}, "", 10)
 			if err != nil || len(p.Items) != 1 || p.Items[0].PriorityField {
 				t.Fatalf("%s: %v %+v", c.refusal, err, p)
 			}

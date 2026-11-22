@@ -168,6 +168,10 @@ struct WorkLookTests {
         #expect(WorkLook.shownOf(.issue, shown: 33, more: false, total: 33) == "33 issues")
         #expect(WorkLook.shownOf(.pr, shown: 1, more: false, total: nil) == "1 pull request")
         #expect(WorkLook.shownOf(.issue, shown: 100, more: true, total: nil) == "100+ issues")
+        // The forge's search stopped before its total (#6637): the footer says why.
+        let stopped = "1000 of 5000 issues · The forge’s search shows no more. Narrow the list to see the rest."
+        #expect(WorkLook.shownOf(.issue, shown: 1000, more: false, total: 5000) == stopped)
+        #expect(WorkLook.endWords(.issue, shown: 1000, more: false, total: 5000) == stopped)
     }
 
     @Test func rowLineSaysTheTrackersStatus() {
