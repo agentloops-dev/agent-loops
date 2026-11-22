@@ -73,13 +73,32 @@ func PairClientAs(ctx context.Context, code *Code, name, kind string) (*ClientMe
 // Session is a client's socket to the control plane: requests to it or to a host, and
 // the notifications every host sends.
 type Session struct {
-	l       *Lines
+	l       LineConn
 	next    atomic.Int64
 	mu      sync.Mutex
 	waiting map[int64]chan json.RawMessage
 	Notes   chan Note
 	// done is closed when the socket ends: a call waiting then fails at once.
 	done chan struct{}
+	// lock is the client's key in its machine lock, once UseLock gave it; routes are the
+	// checked channel to each machine called since (#6563).
+	lock   *ClientLock
+	routes map[string]*route
+}
+
+// LineConn is what a Session reads and writes lines on: a control plane's socket, or a
+// test's stand-in for one.
+type LineConn interface {
+	Write(ctx context.Context, line string) error
+	Read(ctx context.Context) (string, error)
+	Close()
+}
+
+// NewSession reads lines from l until ctx ends or l does.
+func NewSession(ctx context.Context, l LineConn) *Session {
+	s := &Session{l: l, waiting: map[int64]chan json.RawMessage{}, Notes: make(chan Note, 4096), done: make(chan struct{})}
+	safe.Go("client read", func() { s.read(ctx) })
+	return s
 }
 
 type Note struct {
@@ -107,9 +126,7 @@ func DialClient(ctx context.Context, m *ClientMembership) (*Session, error) {
 	if fresh, _ := NewKey(ok, key); fresh != nil {
 		m.ControlKey = fresh
 	}
-	s := &Session{l: l, waiting: map[int64]chan json.RawMessage{}, Notes: make(chan Note, 4096), done: make(chan struct{})}
-	safe.Go("client read", func() { s.read(ctx) })
-	return s, nil
+	return NewSession(ctx, l), nil
 }
 
 func (s *Session) read(ctx context.Context) {
@@ -126,6 +143,13 @@ func (s *Session) read(ctx context.Context) {
 		}
 		if json.Unmarshal([]byte(line), &f) != nil {
 			continue
+		}
+		if r := s.routeOf(f.H); r != nil {
+			body, ok := r.heard(f.M)
+			if !ok {
+				continue
+			}
+			f.M = body
 		}
 		var m struct {
 			ID     *int64          `json:"id"`
@@ -154,23 +178,52 @@ func (s *Session) read(ctx context.Context) {
 	}
 }
 
-// Call sends method to host ("" for the control plane itself) and returns the result.
+// Call sends method to host ("" for the control plane itself) and returns the result. With
+// a lock (UseLock), a call to a machine goes on its checked channel; a machine that refuses
+// it as not from the lock forgot the channel (its uplink went and came back, #6227), so it
+// goes again, once, on a new one.
 func (s *Session) Call(ctx context.Context, host, method string, params any) (json.RawMessage, error) {
-	id := s.next.Add(1)
+	r, err := s.routeFor(ctx, host, method)
+	if err != nil {
+		return nil, err
+	}
+	raw, err := s.call(ctx, s.next.Add(1), host, method, params, r)
+	if r == nil || r.ch == nil || !machineRefused(err) {
+		return raw, err
+	}
+	s.dropRoute(host, r)
+	if r, err = s.routeFor(ctx, host, method); err != nil {
+		return nil, err
+	}
+	return s.call(ctx, s.next.Add(1), host, method, params, r)
+}
+
+func (s *Session) call(ctx context.Context, id int64, host, method string, params any, r *route) (json.RawMessage, error) {
 	msg := map[string]any{"jsonrpc": "2.0", "id": id, "method": method}
 	if params != nil {
 		msg["params"] = params
 	}
 	b, _ := json.Marshal(msg)
-	line := `{"m":` + string(b) + `}`
-	if host != "" {
-		line = `{"h":"` + host + `","m":` + string(b) + `}`
+	frame := func(m string) string {
+		if host == "" {
+			return `{"m":` + m + `}`
+		}
+		return `{"h":"` + host + `","m":` + m + `}`
 	}
 	w := make(chan json.RawMessage, 1)
 	s.mu.Lock()
 	s.waiting[id] = w
 	s.mu.Unlock()
-	if err := s.l.Write(ctx, line); err != nil {
+	var err error
+	if r != nil && r.ch != nil {
+		// The count goes out in the order it was taken.
+		r.send.Lock()
+		err = s.l.Write(ctx, frame(r.ch.Seal(string(b))))
+		r.send.Unlock()
+	} else {
+		err = s.l.Write(ctx, frame(string(b)))
+	}
+	if err != nil {
 		s.forget(id)
 		if ctx.Err() != nil {
 			return nil, err

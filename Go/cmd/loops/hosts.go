@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
+	"github.com/agentloops-dev/agent-loops/Go/internal/machinelock"
 )
 
 // hosts is ~/.config/loops/hosts.json (mode 0600): one pairing per control plane, as gh
@@ -18,6 +19,18 @@ type hosts struct {
 	// Default is the URL of the control plane a command uses with no --control.
 	Default string                         `json:"default,omitempty"`
 	Hosts   []controllink.ClientMembership `json:"hosts"`
+	// LockPins is the head of the machine lock each control plane last sent, by its URL
+	// (#6563): a lock that does not grow from it is not taken.
+	LockPins map[string]machinelock.Pin `json:"lockPins,omitempty"`
+}
+
+func (h *hosts) lockPin(u string) machinelock.Pin { return h.LockPins[u] }
+
+func (h *hosts) setLockPin(u string, p machinelock.Pin) {
+	if h.LockPins == nil {
+		h.LockPins = map[string]machinelock.Pin{}
+	}
+	h.LockPins[u] = p
 }
 
 // configDir is $XDG_CONFIG_HOME/loops, else ~/.config/loops.
@@ -117,6 +130,7 @@ func (h *hosts) remove(u string) {
 		}
 	}
 	h.Hosts = kept
+	delete(h.LockPins, u)
 	if h.Default == u {
 		h.Default = ""
 		if len(kept) > 0 {
