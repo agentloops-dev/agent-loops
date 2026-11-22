@@ -413,6 +413,11 @@ func fanOut(up *controllink.Uplink, fs []fanned, line string) {
 func (d *Daemon) Shutdown() {
 	// First, so a stop that goes wrong below still counts as a stop (#1219).
 	stoppedAt := d.noteCleanStop()
+	// No turn starts, nothing new follows one, and nothing more goes to a client unasked,
+	// before the steps below wait for the clock's and the loops' goroutines: a loop's write
+	// in line for a client that reads nothing waited, with each write before it, the
+	// connection's limit (#6603).
+	d.closeAfterTurns()
 	d.machineMu.Lock()
 	if d.machineStop != nil {
 		d.machineStop()
@@ -431,9 +436,8 @@ func (d *Daemon) Shutdown() {
 		t.Stop()
 	}
 	d.attentionMu.Unlock()
-	// No turn starts, and nothing new follows one; the turns stopped here record their
-	// endings and what follows them before the files they write are closed (#1272).
-	d.closeAfterTurns()
+	// The turns stopped here record their endings and what follows them before the files
+	// they write are closed (#1272).
 	// What the runtimes leave running is watched again after the restart (#4577).
 	d.handBackgroundOver()
 	d.stopAll()
