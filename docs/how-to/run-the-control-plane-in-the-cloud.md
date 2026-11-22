@@ -63,17 +63,10 @@ Each takes `--dry-run`, which prints every command and runs none.
 
 4. For notices on iPhone and iPad with no Mac host: the APNs `.p8` key, as in
    [Get what it runs](#get-what-it-runs). Its name gives the Key ID.
-5. On your Mac: `gcloud` (`brew install --cask gcloud-cli`). Docker only to build a commit
-   that no release has
-   (`up.sh --build`): then Docker, running, with the `buildx` plugin. The image is for
-   `linux/amd64`, and on an Apple silicon Mac only BuildKit can build it.
-   `docker buildx version` tells you if you have the plugin. If not:
-
-   ```sh
-   brew install docker-buildx
-   mkdir -p ~/.docker/cli-plugins
-   ln -sfn "$(brew --prefix)/opt/docker-buildx/bin/docker-buildx" ~/.docker/cli-plugins/docker-buildx
-   ```
+5. On your Mac: `gcloud` (`brew install --cask gcloud-cli`). To deploy a commit that no
+   release has (`up.sh --build`), also Go (`brew install go`) and the Node in
+   `Web/.node-version`: the binaries and the web page are built on your Mac, and the VM's
+   own Docker builds the image from them. Your Mac needs no Docker.
 
 ### Run the scripts
 

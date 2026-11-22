@@ -27,7 +27,9 @@
 # deploy/compose.public.yaml and the secrets to /opt/agents on the VM, has the VM pull the
 # release's image, ghcr.io/agentloops-dev/agents-control:<version> (#2140), which carries the Linux host
 # for servers that join, and starts the control plane and Caddy there. --build is for a commit
-# no release has: it builds the image (linux/amd64) here, from this checkout, and copies it. The VM has no service
+# no release has: it builds the binaries (linux/amd64) and the web page here, with this machine's
+# own Go and Node and no Docker, sends them to the VM, and the VM's Docker builds the image from
+# them (deploy/Containerfile, BINARIES=prebuilt; #4712). The VM has no service
 # account file (an empty one): it uses the key as its own service account.
 #
 # --apns gives the APNs key (deploy/make-secrets.sh --apns); without it, a key already on the
@@ -79,10 +81,9 @@ done
 [[ -z $seal_key || -s $seal_key ]] || die "$seal_key is not a key file"
 # Look before anything is made in the cloud.
 pick_version
-# With --build, the image is built for linux/amd64. On an Apple silicon Mac the classic builder
-# cannot do it: it needs BuildKit, through the buildx plugin.
-((!build || dry_run)) || docker buildx version >/dev/null 2>&1 ||
-	die "docker buildx is not installed: brew install docker-buildx, then link it for Docker: mkdir -p ~/.docker/cli-plugins && ln -sfn \$(brew --prefix)/opt/docker-buildx/bin/docker-buildx ~/.docker/cli-plugins/docker-buildx"
+# With --build, Go and Node build here (Go/scripts/go.sh and scripts/web.sh); Docker is the VM's.
+((!build || dry_run)) || "$root/Go/scripts/go.sh" version >/dev/null ||
+	die "--build needs Go here: brew install go"
 
 setup
 kms=projects/$project/locations/$key_location/keyRings/$keyring/cryptoKeys/$key
@@ -222,10 +223,31 @@ stage=$(mktemp -d)
 trap 'rm -rf "$stage"' EXIT
 mkdir -p "$stage/deploy"
 if ((build)); then
-	say "== the image, with the Linux host in it, built here: $version"
-	run docker build --platform linux/amd64 --build-arg "VERSION=$version" \
-		-f "$root/deploy/Containerfile" -t "$image:$tag" "$root"
+	# The build context the VM's Docker gets: the Containerfile, the files the image carries,
+	# and deploy/prebuilt/, which takes the place of the stages that compile (out-prebuilt).
+	say "== the binaries and the web page, built here: $version"
+	ctx=$stage/context
+	pre=$ctx/deploy/prebuilt
+	run mkdir -p "$pre/control" "$pre/servers" "$ctx/App/Resources"
+	for cmd in agents-control workspace-commands agents-hosted; do
+		run env GOOS=linux GOARCH=amd64 CGO_ENABLED=0 "$root/Go/scripts/go.sh" build -trimpath \
+			-ldflags "-s -w -X github.com/agentloops-dev/agent-loops/Go/internal/buildinfo.Version=$version" \
+			-o "$pre/control/$cmd" "./cmd/$cmd"
+	done
+	run env AGENTS_MARKETING_VERSION="$version" "$root/scripts/build-linux-agentsd.sh" --out "$pre/servers"
+	run "$root/scripts/web.sh" build
+	[[ $dry_run == 1 || -s $root/Web/dist/MANIFEST ]] || die "scripts/web.sh build made no Web/dist/MANIFEST"
+	run cp -R "$root/Web/dist" "$pre/web"
+	run cp -R "$root/App/Resources/toolsets" "$ctx/App/Resources/toolsets"
+	run cp "$root/deploy/Containerfile" "$root/deploy/compose.public.yaml" "$root/deploy/compose.hosted.yaml" \
+		"$root/deploy/Caddyfile.public" "$root/deploy/Caddyfile.hosted" "$root/deploy/make-secrets.sh" "$ctx/deploy/"
+	# Readable by the control user whatever this machine's umask left (#4756, #3383).
+	run chmod -R a+rX "$ctx"
 fi
+
+# The VM builds the image from the context on its standard input (a gzipped tar), with its own BuildKit
+# (docker-ce's buildx plugin), for its own platform, linux/amd64.
+vm_build="sudo docker build --quiet --build-arg BINARIES=prebuilt --build-arg VERSION=$version -f deploy/Containerfile -t $image:$tag -"
 
 say "== what the VM runs, in /opt/agents"
 cp "$root/deploy/compose.public.yaml" "$root/deploy/Caddyfile.public" "$root/deploy/make-secrets.sh" "$stage/deploy/"
@@ -253,11 +275,14 @@ sudo rm .env.new; [ -f secrets/apns-key ] || { sudo touch secrets/apns-key; sudo
 sudo tee secrets/vapid-key >/dev/null; sudo chmod 644 secrets/vapid-key; }'
 if ((dry_run)); then
 	if ((build)); then
-		say "+ docker save $image:$tag | gzip | $(shown gcloud compute ssh "$name" --zone "$zone" --quiet --command 'gunzip | sudo docker load')"
+		say "+ tar -C STAGE/context -czf - . | $(shown gcloud compute ssh "$name" --zone "$zone" --quiet --command "$vm_build")"
 	fi
 	say "+ tar -C STAGE ${tar_skip[*]-} -czf - deploy | $(shown gcloud compute ssh "$name" --zone "$zone" --quiet --command "$install")"
 else
-	if ((build)); then docker save "$image:$tag" | gzip | vm_ssh 'gunzip | sudo docker load'; fi
+	if ((build)); then
+		say "== the image, built on the VM from them: $image:$tag"
+		COPYFILE_DISABLE=1 tar --no-xattrs -C "$ctx" -czf - . | vm_ssh "$vm_build"
+	fi
 	COPYFILE_DISABLE=1 tar --no-xattrs -C "$stage" ${tar_skip[@]+"${tar_skip[@]}"} -czf - deploy | vm_ssh "$install"
 fi
 
@@ -296,6 +321,8 @@ fi
 # (#2290). Once the new one serves, every image no container uses goes.
 say "== the images no container uses, removed"
 vm_ssh 'sudo docker image prune -af'
+# A --build leaves BuildKit's cache of its context on the same disk.
+((!build)) || vm_ssh 'sudo docker builder prune -af'
 # The version Settings ▸ Control plane shows is the running binary's own.
 if ((dry_run)); then
 	vm_ssh "$compose exec -T control /agents-control version"

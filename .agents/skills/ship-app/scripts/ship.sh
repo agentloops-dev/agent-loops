@@ -40,7 +40,8 @@
 #                           run from the installed one; nothing is changed (#3451)
 #   ship.sh --control-plane also deploy this checkout to the live control plane,
 #                           control.agentloops.dev, with deploy/gcp/up.sh (#4712): the
-#                           release's image on a release tag, else built here (--build)
+#                           release's image on a release tag, else built (--build: Go and Node
+#                           here, the image on the VM, so this Mac needs no Docker)
 #   ship.sh --install-cli   also put loops, the command-line client, on the PATH (#6559):
 #                           with the Mac install, ~/.local/bin/loops links to the installed
 #                           app's Contents/Helpers/loops, so it updates with the app; with
