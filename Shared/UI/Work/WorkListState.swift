@@ -102,8 +102,12 @@ final class WorkListState {
     private(set) var cacheOn = false {
         didSet { if cacheOn != oldValue { narrow() } }
     }
-    /// When the answer on screen was read from its machines: the footer's "Last update" (#5139, #5967).
+    /// When the answer on screen was read from its machines: the footer's "Last update" (#5139, #5967). Releases,
+    /// read from lineage, set it when their read ends (#5968).
     var cacheRead: Date?
+    /// When the rows on screen were read, for the footer's "Last update": the answer's, the kept rows' over a failed
+    /// read, or this device's copy's.
+    var shownRead: Date? { cacheRead ?? keptRead ?? fromDeviceRead }
     /// The query whose answer is on screen: a Refresh of it keeps its rows until the new answer comes.
     private var cacheShown: WorkCache.Query?
     /// How many pages of each machine's answer were read since the last refresh: the next page is kept after them (#6636).
@@ -504,7 +508,7 @@ final class WorkListState {
             return
         }
         cacheShown = nil
-        cacheRead = nil
+        if kind.fromForge { cacheRead = nil }
         let mine = ask
         guard read != mine || lists == nil else { return }
         read = mine
@@ -529,6 +533,7 @@ final class WorkListState {
             lineageCursor = known.cursor
             lists = []
             answered(wanted)
+            if problem == nil { cacheRead = .now }
             if problem == nil { model.keepWork(Kept(hosts: [], lists: [], lineage: known.nodes, lineageCursor: known.cursor, boards: []),
                                                .list, wanted) }
             return

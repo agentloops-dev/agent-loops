@@ -266,39 +266,35 @@ private struct WorkListPane: View {
         }
     }
 
-    @ViewBuilder
+    /// The list's body, and the footer bar under it in every state (#5968, #6639): what runs or failed, the count and
+    /// Last update stay in one place at the bottom, with no strip above the rows.
     private var content: some View {
         let noMachine = kind.fromForge && model.forgeMachines.isEmpty
-        // With no machine online, the kept rows stay (#6635), under why they are not new.
+        // With no machine online, the kept rows stay (#6635), and the footer says why they are not new.
         let lines = [list.problem].compactMap { $0 } + errors + (noMachine && !list.all.isEmpty ? [WorkList.noForgeOnline] : [])
-        if noMachine, list.all.isEmpty {
-            WorkEmptyState(symbol: kind.sidebarIcon, title: WorkLook.emptyTitle(kind, state: list.filter.state, filtered: false),
-                           line: WorkList.noForgeHere)
-        } else if list.lists == nil {
-            // The first read: placeholder rows, no spinner in the middle.
-            List { WorkPlaceholderRows() }.listStyle(.inset).disabled(true)
-        } else {
-            let shown = list.rows
-            if shown.isEmpty {
-                Group {
-                    if list.all.isEmpty, !lines.isEmpty {
-                        // Nothing read: what the forge said in the middle, in place of the list.
-                        WorkEmptyState(symbol: "exclamationmark.triangle", title: WorkLook.couldNotRead(kind),
-                                       line: lines.joined(separator: "\n"), action: (WorkLook.tryAgain, { list.asked += 1 }),
-                                       also: connectors(lines))
-                    } else {
-                        VStack(spacing: 0) {
-                            WorkErrorStrip(lines: lines) { list.asked += 1 }.padding(.horizontal, 16).padding(.top, 8)
-                            empty
-                        }
-                    }
-                }
-                #if os(iOS)
-                .refreshable { list.asked += 1 }
-                #endif
+        return VStack(spacing: 0) {
+            if noMachine, list.all.isEmpty {
+                WorkEmptyState(symbol: kind.sidebarIcon, title: WorkLook.emptyTitle(kind, state: list.filter.state, filtered: false),
+                               line: WorkList.noForgeHere)
             } else {
-                WorkRowsList(model: model, list: list, kind: kind, compact: compact, lines: lines)
+                switch WorkLook.listBody(drawn: list.lists != nil, read: list.all.count, shown: list.rows.count,
+                                         reading: list.reading, failed: !lines.isEmpty) {
+                case .placeholders:
+                    // A read runs and there is nothing to draw: placeholder rows, never an empty state (#5925, #5968).
+                    List { WorkPlaceholderRows() }.listStyle(.inset).disabled(true)
+                case .failed:
+                    // Nothing read: what the forge said in the middle, in place of the list.
+                    WorkEmptyState(symbol: "exclamationmark.triangle", title: WorkLook.couldNotRead(kind),
+                                   line: lines.joined(separator: "\n"), action: (WorkLook.tryAgain, { list.asked += 1 }),
+                                   also: connectors(lines))
+                        .modifier(PullToRefresh(list: list))
+                case .empty:
+                    empty.modifier(PullToRefresh(list: list))
+                case .rows:
+                    WorkRowsList(model: model, list: list, kind: kind, compact: compact)
+                }
             }
+            WorkListBar(model: model, list: list, kind: kind, lines: lines)
         }
     }
 
@@ -332,8 +328,6 @@ private struct WorkRowsList: View {
     @Bindable var list: WorkListState
     let kind: WorkList.Kind
     let compact: Bool
-    /// What the forges or the machines said: the strip above the rows, which are dimmed under it.
-    let lines: [String]
     /// Back from an item's page gives the list the keys, so ↑ and ↓ go on from the row left.
     @FocusState private var focused: Bool
 
@@ -358,18 +352,12 @@ private struct WorkRowsList: View {
         let latest = kind == .release ? WorkReleaseLook.latest(list.all) : []
         // The sessions this app knows, of every machine (#5453): a row shows the one that works on its item now.
         let agents = kind == .release ? [] : model.workAgents
-        // Work's cache (#6353): the footer is a bar under the list that stays at the bottom of the page (#6639), so a
-        // save, a refused change with Try again, and Last update show with no scroll, also on row 1 of 300.
-        return VStack(spacing: 0) {
-            rows(several: several, latest: latest, agents: agents)
-            if list.cacheOn { WorkListBar(model: model, list: list, kind: kind) }
-        }
+        return rows(several: several, latest: latest, agents: agents)
     }
 
     private func rows(several: Bool, latest: Set<String>, agents: [Agent]) -> some View {
         ScrollViewReader { reader in
             selectable {
-                WorkListStrips(list: list, lines: lines)
                 // The first `drawn` rows (#6633); the footer draws 100 more as it shows.
                 ForEach(list.drawnRows) { row in
                     // One view a row, with no modifier outside it: SwiftUI's list walks each element's modifiers for
@@ -377,7 +365,7 @@ private struct WorkRowsList: View {
                     // itself for the selection.
                     WorkListRow(model: model, row: row, several: several, compact: compact, latest: latest.contains(row.id), pick: pick,
                                 session: kind == .release ? nil : WorkSessions.workingSession(on: row.node, in: agents),
-                                dimmed: !lines.isEmpty, open: open, menu: { priorityMenu(row.id) })
+                                open: open, menu: { priorityMenu(row.id) })
                 }
                 WorkListFooter(model: model, list: list, kind: kind)
                 if !kind.fromForge {
@@ -443,39 +431,20 @@ private struct WorkListFooter: View {
     @Bindable var list: WorkListState
     let kind: WorkList.Kind
 
-    /// The end of the list (lists.md sections 2 and 5): the next page loads when this row shows,
-    /// with "Loading more…"; a page that failed says so with Try again; at the end, the count.
-    /// With Work's cache on, the bar under the list says these (#6639), and this row only reads the next page.
+    /// The end of the list (lists.md sections 2 and 5): the next page loads when this row shows. The bar under the
+    /// list says "Loading more…", a page that failed, and the count (#6639, #5968).
     var body: some View {
-        let shown = list.rows.count
-        return Group {
-            if list.cacheOn {
-                Color.clear.frame(height: 1)
-            } else if list.loadingMore {
-                HStack(spacing: 6) {
-                    ProgressView().controlSize(.small)
-                    Text(WorkLook.loadingMore(shown: shown, total: WorkListBar.total(list)))
-                }
-            } else if let failed = list.pageProblem {
-                WorkPageFailed(why: failed) { Task { await list.loadMore(model: model) } }
-            } else {
-                Text(WorkLook.endWords(kind, shown: shown, more: list.hasMore, total: WorkListBar.total(list)))
-            }
-        }
-        .appText(.fine)
-        .foregroundStyle(.secondary)
-        .monospacedDigit()
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, list.cacheOn ? 0 : 6)
-        .listRowSeparator(.hidden)
-        .selectionDisabled()
-        // Shown, and again each time it adds rows while it still shows: 100 more of the rows read (#6633), and once
+        Color.clear.frame(height: 1)
+            .frame(maxWidth: .infinity)
+            .listRowSeparator(.hidden)
+            .selectionDisabled()
+            // Shown, and again each time it adds rows while it still shows: 100 more of the rows read (#6633), and once
         // all are drawn, the next page.
-        .workTask(id: FooterShown(rows: list.all.count, drawn: list.drawn)) {
-            if list.drawMore() { return }
-            guard list.hasMore, !list.loadingMore, list.pageProblem == nil else { return }
-            await list.loadMore(model: model)
-        }
+            .workTask(id: FooterShown(rows: list.all.count, drawn: list.drawn)) {
+                if list.drawMore() { return }
+                guard list.hasMore, !list.loadingMore, list.pageProblem == nil else { return }
+                await list.loadMore(model: model)
+            }
     }
 
     /// What the footer's read waits on: a page read, or 100 more rows drawn.
@@ -483,26 +452,32 @@ private struct WorkListFooter: View {
         var rows: Int
         var drawn: Int
     }
-
 }
 
-/// The footer bar of Work's cache (#6353, #6639; gate 2 of epic #6348), under the list, so it stays in sight: on the
-/// left, a change's "Saving #6311…" or why the forge refused it, with Try again (#6354), else "Loading more…" or a page
-/// that failed; on the right, "100 of 304 issues · Last update 2 min ago" (#5139, #5967), or Refreshing while the
-/// machines are asked (#6638).
+/// The footer bar of a Work list (#6639, #5968; gate 2 of epic #6348), under the list, so it stays in sight. On the
+/// left, a change's "Saving #6311…" or why the forge refused it, with Try again (#6354); else the read: Loading…,
+/// Updating…, From this device, or what failed with Try again; else "Loading more…" or a page that failed. On the right,
+/// "100 of 304 issues · Last update 2 min ago" (#5139, #5967).
 private struct WorkListBar: View {
     let model: any WorkModel
     let list: WorkListState
     let kind: WorkList.Kind
+    /// What the forges or the machines said, one line each.
+    let lines: [String]
 
     var body: some View {
         let shown = list.rows.count
         let total = Self.total(list)
+        let state = WorkLook.footerState(drawn: list.lists != nil, read: list.all.count, reading: list.reading,
+                                         fromDevice: list.fromDevice, lines: lines)
         HStack(spacing: 6) {
             if let saves = model.workSaves, let line = saves.line {
                 WorkSaveLine(line: line) {
                     if let cache = model.workCache { saves.retry(model: model, cache: cache) }
                 }
+            } else if state != .none {
+                // A read that runs or failed says so before a next page does: a Refresh says Updating… (#5968).
+                WorkReadLine(state: state) { list.asked += 1 }
             } else if list.loadingMore {
                 ProgressView().controlSize(.mini)
                 Text(WorkLook.loadingMore(shown: shown, total: total))
@@ -510,15 +485,12 @@ private struct WorkListBar: View {
                 WorkPageFailed(why: failed) { Task { await list.loadMore(model: model) } }
             }
             Spacer(minLength: 12)
-            Text(WorkLook.shownOf(kind, shown: shown, more: list.hasMore, total: total))
-            // While the machines are asked (#6638): the kept rows stay, and this says a read runs.
-            if list.reading {
-                Text(verbatim: "·")
-                ProgressView().controlSize(.mini)
-                Text(WorkLook.refreshing)
-            } else if let read = list.cacheRead {
-                Text(verbatim: "·")
-                LastUpdateText(read: read)
+            if list.lists != nil, state != .couldNotRead, state != .loading {
+                Text(WorkLook.shownOf(kind, shown: shown, more: list.hasMore, total: total))
+                if let read = list.shownRead {
+                    Text(verbatim: "·")
+                    LastUpdateText(read: read)
+                }
             }
         }
         .appText(.fine)
@@ -551,19 +523,46 @@ private struct WorkPageFailed: View {
     }
 }
 
-/// The strips above a Work list's rows, apart from them (#6633): the rows from this device's copy, and what the forges
-/// or the machines said, with when the kept rows were read.
-private struct WorkListStrips: View {
-    let list: WorkListState
-    let lines: [String]
+/// The footer's read (#5968): a spinner and Loading…, Updating… or From this device; or a warning glyph and what
+/// failed, every line on hover, with Try again where rows are shown.
+private struct WorkReadLine: View {
+    let state: WorkLook.FooterState
+    let retry: () -> Void
 
     var body: some View {
-        if list.fromDevice {
-            WorkFromDeviceStrip(read: list.fromDeviceRead).listRowSeparator(.hidden).selectionDisabled()
+        if state.busy {
+            ProgressView().controlSize(.mini)
+        } else if state.failure {
+            Image(icon: "exclamationmark.triangle").foregroundStyle(StateTint.failure.style(or: .secondary)).accessibilityHidden(true)
         }
-        if !lines.isEmpty {
-            WorkErrorStrip(lines: lines, read: list.keptRead) { list.asked += 1 }.listRowSeparator(.hidden).selectionDisabled()
+        if state != .none {
+            Text(state.words).lineLimit(1).truncationMode(.tail).help(Self.help(state))
         }
+        if case .couldNotUpdate = state {
+            #if os(macOS)
+            Button(WorkLook.tryAgain, action: retry).buttonStyle(.link)
+            #else
+            Button(WorkLook.tryAgain, action: retry).buttonStyle(.borderless)
+            #endif
+        }
+    }
+
+    private static func help(_ state: WorkLook.FooterState) -> String {
+        if case .couldNotUpdate(_, let help) = state { return help }
+        return state.words
+    }
+}
+
+/// Pull to refresh on the Remote's empty and failed lists (lists.md section 3); nothing on the Mac.
+private struct PullToRefresh: ViewModifier {
+    let list: WorkListState
+
+    func body(content: Content) -> some View {
+        #if os(iOS)
+        content.refreshable { list.asked += 1 }
+        #else
+        content
+        #endif
     }
 }
 
@@ -576,8 +575,6 @@ private struct WorkListRow<Menu: View>: View {
     let latest: Bool
     let pick: ((String) -> Void)?
     let session: Agent?
-    /// A forge that failed leaves its rows, dimmed, under the strip (lists.md section 5).
-    let dimmed: Bool
     let open: (String) -> Void
     @ViewBuilder let menu: () -> Menu
 
@@ -591,7 +588,6 @@ private struct WorkListRow<Menu: View>: View {
         .contextMenu { menu() }
         #endif
         .environment(\.workPictures, row.host.map { WorkPictures(model: model, host: $0) })
-        .opacity(dimmed ? 0.6 : 1)
         // A change the forge refused went back (#6354): a short red wash on the row.
         .workWashed(model.workSaves?.isWashed(row.node) == true)
         .tag(row.id)
