@@ -6,7 +6,9 @@
 //   updatedAt. A copy as new or newer replaces it, so a change shows in every answer that holds it.
 // - Query answers as ids: each query's answer per machine, as the refs it returned in the server's
 //   order, page by page, each page with its cursor and when it was read, with the total, the forges
-//   and the errors. A refresh replaces page 1 and keeps the later pages until they are read again.
+//   and the errors. A refresh replaces page 1 and keeps the pages read before, marked stale (#6636):
+//   the next page is asked by the last fresh page's cursor, and each fresh page takes out of the stale
+//   ones what it covers.
 // - A page whose answer is of its own shape (a plan, Releases, the boards, Timeline, Deploys, Next,
 //   the lineage figures) keeps it whole, by the page and what it asked, with when it was read.
 // Nothing here syncs or sorts: the caller asks the forge and gives the answer to keepPage. The store
@@ -24,8 +26,9 @@ export interface WorkQuery {
   sort: "updated" | "priority";
 }
 
-/** One kept page of a machine's answer: its items' keys, its cursor to the next page (none at the end), when it was read. */
-export interface WorkPage { refs: string[]; cursor?: string | undefined; read: number }
+/** One kept page of a machine's answer: its items' keys, its cursor to the next page (none at the end), when it was read.
+ * A stale page was read before the last refresh (#6636): it draws, but its cursor is never asked. */
+export interface WorkPage { refs: string[]; cursor?: string | undefined; read: number; stale?: boolean | undefined }
 
 /** A machine's kept answer to a query, its items in the server's order. */
 export interface WorkHostAnswer {
@@ -40,8 +43,10 @@ export interface WorkHostAnswer {
   failed?: number | undefined;
   /** When page 1 was read: the list's "Last update" (#5139). */
   read?: number | undefined;
-  /** The cursor to the page after the kept ones; none when they reach the end. */
+  /** The cursor to the page after the fresh ones; none when they reach the end. A stale page's is never asked. */
   cursor?: string | undefined;
+  /** How many pages were read since the last refresh: the next page is kept after them (#6636). */
+  fresh: number;
 }
 
 export interface WorkAnswer {
@@ -139,6 +144,25 @@ export function queryKey(q: WorkQuery): string {
   return JSON.stringify(Object.fromEntries(Object.entries(parts).sort(([a], [b]) => a.localeCompare(b))));
 }
 const answerKey = (q: WorkQuery, host: string) => `answer ${host} ${queryKey(q)}`;
+
+/** The pages before the first stale one: read since the last refresh. */
+const freshCount = (pages: readonly WorkPage[]) => {
+  const i = pages.findIndex((p) => p.stale);
+  return i < 0 ? pages.length : i;
+};
+const freshCursor = (pages: readonly WorkPage[]) => {
+  const fresh = freshCount(pages);
+  return fresh > 0 ? pages[fresh - 1]!.cursor : undefined;
+};
+
+const rank = (item: ForgeItem) => ({ high: 0, medium: 1, low: 2 } as Record<string, number>)[item.priority?.toLowerCase() ?? ""] ?? 3;
+
+/** `a` comes strictly before `b` in the server's order: by priority first for "priority" (high, medium, low, none), then the
+ * last updated first, as the daemon merges the forges' pages (#6538). A tie is not before: it may be on the next page. */
+export function before(a: ForgeItem, b: ForgeItem, sort: WorkQuery["sort"]): boolean {
+  if (sort === "priority" && rank(a) !== rank(b)) return rank(a) < rank(b);
+  return a.updatedAt > b.updatedAt;
+}
 
 const encoder = new TextEncoder();
 const utf8 = (text: string) => encoder.encode(text).length;
@@ -243,28 +267,55 @@ export class WorkCache {
         return item ? [item] : [];
       });
       return { host, items, pages: kept.pages, total: kept.total, forges: kept.forges, errors: kept.errors, failed: kept.failed,
-        read: kept.pages[0]?.read, cursor: kept.pages.at(-1)?.cursor };
+        read: kept.pages[0]?.read, cursor: freshCursor(kept.pages), fresh: freshCount(kept.pages) };
     });
     const reads = answers.flatMap((a) => (a.read === undefined ? [] : [a.read]));
     return { hosts: answers, read: reads.length > 0 ? Math.min(...reads) : undefined };
   }
 
-  /** Keeps one page of a machine's answer: page 0 replaces the first page and keeps the later ones; the page after the
-   * last kept one is added; any other kept page is replaced. Its items replace older copies. */
+  /** Keeps one page of a machine's answer: page 0 replaces the first page and marks the pages read before stale; the page
+   * after the last fresh one is added after it; any other fresh page is replaced. The stale pages lose what the fresh ones
+   * cover (#6636). Its items replace older copies. */
   keepPage(q: WorkQuery, host: string, page: number, list: ForgeList): Promise<void> {
     return this.serial(async () => {
       const key = answerKey(q, host);
       const [kept] = await this.read<KeptAnswer>([key]);
-      const pages = [...(kept?.pages ?? [])];
-      if (page < 0 || page > pages.length) return;
+      const had = kept?.pages ?? [];
+      const fresh = freshCount(had);
+      if (page < 0 || page > fresh) return;
       const at = this.now();
       const put = await this.itemsToPut(list.items);
       const read: WorkPage = { refs: list.items.map((i) => itemKey(i.node)).filter((k) => this.memo.has(k)), cursor: list.cursor, read: at };
-      if (page === pages.length) pages.push(read);
-      else pages[page] = read;
+      let reads = had.slice(0, fresh);
+      let stale = had.slice(fresh);
+      if (page === 0) {
+        // A refresh: every page read before is stale now, the old page 1 too (an item of it may be on page 2 now).
+        stale = [...reads.map((p) => ({ ...p, stale: true })), ...stale];
+        reads = [read];
+      } else if (page === reads.length) reads.push(read);
+      else reads[page] = read;
+      const pages = [...reads, ...await this.covered(stale, reads, q.sort)];
       const answer: KeptAnswer = { pages, total: list.total ?? kept?.total, forges: list.forges ?? kept?.forges, errors: list.errors };
       await this.save([...put, [key, answer]]);
       await this.trim();
+    });
+  }
+
+  /** The stale pages less what the fresh pages cover (#6636): the items they hold, and the items the server's order puts
+   * before the last fresh item, which left the list. None when the fresh pages reach the end. An empty page goes. */
+  private async covered(stale: readonly WorkPage[], fresh: readonly WorkPage[], sort: WorkQuery["sort"]): Promise<WorkPage[]> {
+    const end = fresh.at(-1);
+    if (stale.length === 0 || !end?.cursor) return [];
+    const held = new Set(fresh.flatMap((p) => p.refs));
+    await this.load(stale.flatMap((p) => p.refs));
+    const lastRef = [...fresh].reverse().flatMap((p) => p.refs.slice(-1)).find((r) => this.memo.has(r));
+    const last = lastRef ? this.memo.get(lastRef) : undefined;
+    return stale.flatMap((page) => {
+      const refs = page.refs.filter((ref) => {
+        const item = this.memo.get(ref);
+        return !held.has(ref) && item !== undefined && (!last || !before(item, last, sort));
+      });
+      return refs.length > 0 ? [{ ...page, refs }] : [];
     });
   }
 

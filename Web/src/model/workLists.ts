@@ -233,7 +233,7 @@ export function copyAsk(l: WorkListState): string {
 function shownAnswer(answer: WorkAnswer, hosts: readonly string[]): HostList[] {
   return hosts.flatMap((host) => {
     const a = answer.hosts.find((h) => h.host === host);
-    return a ? [{ host, items: a.items, cursor: a.cursor, errors: a.errors ?? [], total: a.total, forges: a.forges, pages: a.pages.length }] : [];
+    return a ? [{ host, items: a.items, cursor: a.cursor, errors: a.errors ?? [], total: a.total, forges: a.forges, pages: a.fresh }] : [];
   });
 }
 

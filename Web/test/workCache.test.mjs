@@ -37,20 +37,39 @@ test("answer: none until kept; then the items in the server's order, with the re
   assert.equal(await c.answer({ ...q, state: "closed" }, ["mac"]), undefined);
 });
 
-test("refresh: page 1 is replaced and pages 2..n stay, each with its own time (#6358, finding 2)", async () => {
+test("refresh: page 1 is replaced and the pages read before stay, stale, each with its own time (#6358, #6636)", async () => {
   const { c, tick } = cache();
   await c.keepPage(q, "mac", 0, { items: [item(1), item(2)], cursor: "p2" });
   tick();
   await c.keepPage(q, "mac", 1, { items: [item(3), item(4)], cursor: "p3" });
   tick();
-  await c.keepPage(q, "mac", 0, { items: [item(5), item(1)], cursor: "p2" });
-  const got = await c.answer(q, ["mac"]);
-  assert.deepEqual(refs(got), ["5", "1", "3", "4"]);
-  assert.deepEqual(got.hosts[0].pages.map((p) => p.read), [1_002, 1_001]);
-  assert.equal(got.hosts[0].cursor, "p3");
-  // A page past the one after the last is not kept.
+  await c.keepPage(q, "mac", 0, { items: [item(5), item(1)], cursor: "new2" });
+  const got = (await c.answer(q, ["mac"])).hosts[0];
+  assert.deepEqual(got.items.map((i) => i.node.ref.split("#")[1]), ["5", "1", "2", "3", "4"]);
+  assert.deepEqual(got.pages.map((p) => [p.read, !!p.stale]), [[1_002, false], [1_000, true], [1_001, true]]);
+  // The next page is asked by the new page 1's cursor, never a stale one, and is kept after it.
+  assert.equal(got.cursor, "new2");
+  assert.equal(got.fresh, 1);
+  // A page past the one after the fresh ones is not kept.
   await c.keepPage(q, "mac", 5, { items: [item(9)] });
-  assert.deepEqual(refs(await c.answer(q, ["mac"])), ["5", "1", "3", "4"]);
+  assert.equal((await c.answer(q, ["mac"])).hosts[0].items.length, 5);
+});
+
+test("refresh: a stale end does not stop the list; a fresh page takes out what it covers, and one at the end drops the rest (#6636)", async () => {
+  const { c } = cache();
+  await c.keepPage(q, "mac", 0, { items: [item(3, 30), item(2, 20)], cursor: "p2" });
+  await c.keepPage(q, "mac", 1, { items: [item(1, 10)] });
+  // 9 is new, and 2 has closed.
+  await c.keepPage(q, "mac", 0, { items: [item(9, 90), item(3, 30)], cursor: "n2" });
+  let got = (await c.answer(q, ["mac"])).hosts[0];
+  assert.equal(got.cursor, "n2");
+  // 2 is after the last fresh item in the server's order, so it may be on the next page: it stays, stale, until read.
+  assert.deepEqual(refs({ hosts: [got] }), ["9", "3", "2", "1"]);
+  await c.keepPage(q, "mac", 1, { items: [item(1, 10)] });
+  got = (await c.answer(q, ["mac"])).hosts[0];
+  assert.deepEqual(refs({ hosts: [got] }), ["9", "3", "1"]);
+  assert.equal(got.cursor, undefined);
+  assert.ok(got.pages.every((p) => !p.stale));
 });
 
 test("items by id: a newer copy shows in every answer that holds it; an older one does not undo it", async () => {
