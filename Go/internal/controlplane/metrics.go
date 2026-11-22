@@ -308,6 +308,14 @@ func (c countedStore) List(ctx context.Context, prefix string) ([]store.Key, err
 	return keys, err
 }
 
+// Folders is the store's, counted as a list.
+func (c countedStore) Folders(ctx context.Context, prefix string) ([]string, error) {
+	start := time.Now()
+	names, err := store.Folders(ctx, c.Store, prefix)
+	c.m.Store("list", err, time.Since(start))
+	return names, err
+}
+
 // requested is told of each request a client made: counted, and logged at debug with its
 // fields, never its params (which can carry a token or a prompt).
 func (s *Service) requested(caller Caller, host, method string, id json.RawMessage, result string, took time.Duration) {

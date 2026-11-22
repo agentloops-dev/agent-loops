@@ -49,6 +49,11 @@ func (p *Prefixed) List(ctx context.Context, prefix string) ([]Key, error) {
 	return out, nil
 }
 
+// Folders is the inner store's, under the prefix.
+func (p *Prefixed) Folders(ctx context.Context, prefix string) ([]string, error) {
+	return Folders(ctx, p.Inner, p.prefix+prefix)
+}
+
 // DeleteAll deletes every object in s, and says how many went: an organisation's whole
 // store, when its account is deleted (#1807).
 func DeleteAll(ctx context.Context, s Store) (int, error) {

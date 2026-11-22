@@ -6,7 +6,6 @@ import (
 	"maps"
 	"slices"
 	"strconv"
-	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -1186,8 +1185,10 @@ func (r *Router) channelZero(msg, host string, gen int64, calls *hostCalls) {
 		go r.answerHost(host, gen, call)
 		return
 	}
-	if !calls.take(call) {
-		r.log(fmt.Sprintf("host %s: %s refused; its calls are %d behind", host, m.Method, hostCallQueue))
+	if calls.take(call) {
+		calls.noteTaken()
+	} else {
+		calls.noteRefused(m.Method)
 		r.mu.Lock()
 		if h := r.hosts[host]; h != nil && h.gen == gen {
 			h.conn.Send(channelFrame(0, replyError(m.ID, hostBusy)))
