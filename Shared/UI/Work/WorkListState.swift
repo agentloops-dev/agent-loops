@@ -18,6 +18,8 @@ final class WorkListState {
     var lineage: [DaemonAPI.ReportNode] = []
     /// The boards the Board menu offers (#3282), read with the list.
     var boards: [DaemonAPI.ProjectBoard] = []
+    /// The boards were asked this run, with Work's cache on (#6573): the kept ones draw first, and one ask a run follows.
+    private var boardsRead = false
     var lineageCursor: String?
     var problem: String?
     /// Why the last page after the first did not load: one line at the end of the list, and Try again.
@@ -140,6 +142,10 @@ final class WorkListState {
             cacheShown = query
             WorkCacheLog.note("drew \(kind.rawValue) \(query.state) \(query.sort) from the kept answer: "
                 + "\((lists ?? []).reduce(0) { $0 + $1.list.items.count }) items in \(WorkCacheLog.ms(since: start)) ms, 0 forge calls")
+            if kind == .issue, boards.isEmpty, let keptBoards = await model.keptWork([DaemonAPI.ProjectBoard].self, .boards, model.workBoardsAsked),
+               ask == mine, boards.isEmpty {
+                boards = keptBoards
+            }
         }
         guard !ids.isEmpty else {
             if lists == nil { lists = [] }
@@ -179,10 +185,12 @@ final class WorkListState {
             lineage = known.nodes
             lineageCursor = known.cursor
         }
-        // The Board menu's boards, once a run: a board does not change with each list.
-        if kind == .issue, boards.isEmpty {
+        // The Board menu's boards, once a run: a board does not change with each list. The kept ones drew already.
+        if kind == .issue, !boardsRead {
             let read = await model.workBoards()
-            if ask == mine { boards = read }
+            guard ask == mine else { return }
+            boardsRead = true
+            if !read.isEmpty || boards.isEmpty { boards = read }
         }
     }
 
@@ -519,6 +527,7 @@ final class WorkListState {
     /// one back when the write fails.
     func set(priority: String?, on row: WorkList.Row, model: any WorkModel) {
         guard let host = row.host, priority != row.priority?.lowercased() else { return }
+        if save(.priority(priority), on: row, host: host, model: model) { return }
         let old = row.priority
         change(row) { $0.priority = priority }
         write(DaemonAPI.Method.forgePriority, DaemonAPI.ForgePriorityRequest(node: row.node, priority: priority),
@@ -528,10 +537,29 @@ final class WorkListState {
     /// A row's On hold from its menu (`forge/hold`), as `set(priority:)` does.
     func set(hold on: Bool, on row: WorkList.Row, model: any WorkModel) {
         guard let host = row.host, on != row.onHold else { return }
+        if save(.hold(on), on: row, host: host, model: model) { return }
         let old = row.onHold
         change(row) { $0.onHold = on }
         write(DaemonAPI.Method.forgeHold, DaemonAPI.ForgeHoldRequest(node: row.node, on: on),
               on: host, model: model) { $0.change(row) { $0.onHold = old } }
+    }
+
+    /// With Work's cache on (#6354): the change through the cache, so every list and the item's page show it at once,
+    /// and it goes back with the forge's words when the forge refuses it. False with the cache off.
+    private func save(_ change: WorkChange, on row: WorkList.Row, host: MachineRef, model: any WorkModel) -> Bool {
+        guard cacheOn, let cache = model.workCache, let saves = model.workSaves else { return false }
+        saves.save(change, on: row.node, host: host, model: model, cache: cache)
+        return true
+    }
+
+    /// The kept answer on screen again, after a change to a kept item (#6354): no forge call.
+    func redrawCached(model: any WorkModel) async {
+        guard cacheOn, let cache = model.workCache, let query = cacheShown else { return }
+        let mine = ask
+        let hosts = (lists ?? []).map(\.host)
+        let answer = await cache.answer(query)
+        guard ask == mine, cacheShown == query else { return }
+        show(answer, hosts: hosts.isEmpty ? model.workMachines(board: filter.board).map(\.id) : hosts)
     }
 
     private func write(_ method: String, _ params: some Encodable & Sendable, on host: MachineRef,

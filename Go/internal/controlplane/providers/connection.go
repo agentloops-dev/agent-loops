@@ -30,6 +30,13 @@ type Provider interface {
 	End()
 }
 
+// Saying is a Provider whose make also says what it did, one line a step (#6073), such as
+// "Made an ssh key for Agent Loops and added it to your DigitalOcean account.": set-up step
+// 1's words. A Connection and a Carried one are; a stand-in need not be.
+type Saying interface {
+	CreateSaying(name string, options any, firstBoot *string) (made *MachineInfo, runs bool, said []string, err error)
+}
+
 // CannotMake is WorkspaceProvider's defaults, for a stand-in to embed: it cannot make,
 // delete or list its tools.
 type CannotMake struct{}
@@ -314,8 +321,14 @@ func (c *Connection) Options() (any, error) {
 }
 
 func (c *Connection) Create(name string, options any, firstBoot *string) (*MachineInfo, bool, error) {
+	made, runs, _, err := c.CreateSaying(name, options, firstBoot)
+	return made, runs, err
+}
+
+// CreateSaying is Create, with the words the server said for each step (its said, #6073).
+func (c *Connection) CreateSaying(name string, options any, firstBoot *string) (*MachineInfo, bool, []string, error) {
 	if c.mapping.Create == nil {
-		return nil, false, providerFailure("It can’t make workspaces.")
+		return nil, false, nil, providerFailure("It can’t make workspaces.")
 	}
 	values := map[string]any{"name": name, "options": options}
 	if firstBoot != nil {
@@ -330,16 +343,24 @@ func (c *Connection) Create(name string, options any, firstBoot *string) (*Machi
 	}
 	content, err := c.call(*c.mapping.Create, values, c.timing.Long)
 	if err != nil {
-		return nil, false, err
+		return nil, false, nil, err
 	}
 	if !c.mapping.Native {
-		return nil, c.mapping.FirstBootRuns, nil
+		return nil, c.mapping.FirstBootRuns, nil, nil
 	}
 	runs, _ := boolean(get(content, "firstBootRuns"))
-	if w := get(content, "workspace"); w != nil {
-		return c.mapping.Workspace(w), runs, nil
+	var said []string
+	if lines, ok := get(content, "said").([]any); ok {
+		for _, line := range lines {
+			if text, ok := line.(string); ok && text != "" {
+				said = append(said, text)
+			}
+		}
 	}
-	return nil, runs, nil
+	if w := get(content, "workspace"); w != nil {
+		return c.mapping.Workspace(w), runs, said, nil
+	}
+	return nil, runs, said, nil
 }
 
 func (c *Connection) Delete(id string) error {

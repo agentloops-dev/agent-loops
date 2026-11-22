@@ -8814,7 +8814,7 @@ export interface MachineHelloAnswer {
  * One workspace, as its provider last listed it. `state` is running, starting, stopping, stopped or
  * unknown; or failed, for a make that failed, with the provider's `reason` (#3972). `joining` while
  * New Machine waits for it to join the control plane, and `notJoined` once the control plane gave
- * up waiting (#4610).
+ * up waiting (#4610). `setup` while it is being made (#6073).
  */
 export interface MachineInfo {
   id: string;
@@ -8845,6 +8845,12 @@ export interface MachineInfo {
    * with Delete.
    */
   notJoined?: string;
+  /**
+   * The set-up of a machine New Machine is making (#6073), from the press of Make until it joins
+   * (then its machine's row has it): what each step did, with its time, and on a failure the
+   * provider's words. A client that opens late reads where it is here.
+   */
+  setup?: MachineSetup;
 }
 
 /**
@@ -18624,7 +18630,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   MachineForgeList: { required: ["machine", "machineName", "list"], optional: [] },
   MachineHello: { required: ["version", "platform", "machineID"], optional: ["host", "name", "implementation", "capabilities"] },
   MachineHelloAnswer: { required: [], optional: ["capabilities"] },
-  MachineInfo: { required: ["id", "name", "state"], optional: ["ssh", "tunnel", "hostKeyRenews", "cost", "idleTimeoutMinutes", "host", "reason", "joining", "notJoined"] },
+  MachineInfo: { required: ["id", "name", "state"], optional: ["ssh", "tunnel", "hostKeyRenews", "cost", "idleTimeoutMinutes", "host", "reason", "joining", "notJoined", "setup"] },
   MachineInstall: { required: ["destination"], optional: ["name", "key", "trust", "tunnel", "provider", "workspace"] },
   MachineJoinAsk: { required: ["name", "platform", "publicKey"], optional: ["version", "machineID", "person"] },
   MachineJoinDecision: { required: ["result"], optional: ["host", "controlKey", "name"] },

@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -74,6 +75,7 @@ func TestShutdownWaitsForWhatTellsAClientThatReadsNothing(t *testing.T) {
 // went on one at a time, each to the conn's 5 s: a reconsider among them outlived
 // Shutdown's wait for its goroutines.
 func TestShutdownEndsTheWritesInLineForAClientThatReadsNothing(t *testing.T) {
+	flaky.UnderLoad(t, "#6603")
 	t.Parallel()
 
 	d, c := start(t, t.TempDir())

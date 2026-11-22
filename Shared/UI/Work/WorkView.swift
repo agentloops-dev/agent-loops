@@ -158,6 +158,8 @@ private struct WorkListPane: View {
             }
         }
         .workTask(id: list.ask) { await list.load(model: model) }
+        // A change to a kept item (#6354), from this list, another or an item's page: the kept answer again.
+        .onChange(of: model.workSaves?.revision) { Task { await list.redrawCached(model: model) } }
         // A row menu's write that failed (epic #6086): the row has its old value back, and this says why.
         .alert(WorkLook.couldNotSetPriority, isPresented: Binding(get: { list.writeProblem != nil },
                                                                  set: { if !$0 { list.writeProblem = nil } })) {
@@ -362,6 +364,8 @@ private struct WorkListPane: View {
                     .environment(\.workPictures, row.host.map { WorkPictures(model: model, host: $0) })
                     // A forge that failed leaves its rows, dimmed, under the strip (lists.md section 5).
                     .opacity(lines.isEmpty ? 1 : 0.6)
+                    // A change the forge refused went back (#6354): a short red wash on the row.
+                    .workWashed(model.workSaves?.isWashed(row.node) == true)
                     .id(row.id)
                     .tag(row.id)
                 }
@@ -428,8 +432,15 @@ private struct WorkListPane: View {
                     Button(WorkLook.tryAgain) { Task { await list.loadMore(model: model) } }.buttonStyle(.paper)
                 }
             } else if list.cacheOn {
-                // Work's cache (#6353): "100 of 304 issues · Last update 2 min ago" (#5139, #5967).
+                // Work's cache (#6353): "100 of 304 issues · Last update 2 min ago" (#5139, #5967), and a change's
+                // "Saving #6311…" or why the forge refused it, with Try again, before it (#6354).
                 HStack(spacing: 6) {
+                    if let saves = model.workSaves, let line = saves.line {
+                        WorkSaveLine(line: line) {
+                            if let cache = model.workCache { saves.retry(model: model, cache: cache) }
+                        }
+                        Spacer(minLength: 12)
+                    }
                     Text(WorkLook.shownOf(kind, shown: shown, more: list.hasMore, total: total))
                     if let read = list.cacheRead {
                         Text(verbatim: "·")

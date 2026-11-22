@@ -159,7 +159,8 @@ func (p *Provider) call(r Request, values map[string]string, deadline time.Durat
 	if status < 200 || status > 299 {
 		// Too many requests, or the provider's own trouble, may pass (#1854).
 		again := status == http.StatusTooManyRequests || status >= 500
-		return nil, Failure{Reason: refusal(status, answer, parsed.Host), Again: again, After: retryAfter(header, time.Now())}
+		return nil, Failure{Reason: refusal(status, answer, parsed.Host), Again: again, After: retryAfter(header, time.Now()),
+			Status: status}
 	}
 	return answer, nil
 }
