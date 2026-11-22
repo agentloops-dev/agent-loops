@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -30,9 +31,14 @@ import (
 // the control plane racing). Consumers read the subject's state now.
 //
 // The bus log is the last busLogKept envelopes of each person's bus, for dedupe and the
-// Events page (#4732), not for redelivery: v1/bus/<bus>/log/<time>-<id hash>.json is the
-// envelope, and v1/bus/<bus>/ids/<id hash>.json says it is on the bus. The sweep keeps
-// the newest busLogKept and deletes both files of the rest.
+// Events page (#4732), not for redelivery: v1/bus/<bus>/log/<day>/<time>-<id hash>.json is
+// the envelope, and v1/bus/<bus>/ids/<id hash>.json says it is on the bus. The sweep keeps
+// the newest busLogKept and deletes both files of the rest, the oldest days first.
+//
+// The log has a folder for each UTC day (#6582), so a publish changes only today's
+// folder, and a folder store's next listing stats only today's envelopes: it takes the
+// other days from its index. A log written before #6582 has its envelopes flat in log/;
+// they are read beside the days, by their file names, until the sweep has deleted them.
 //
 // The envelope is routing data only: refs, names and times (principle 7). Its data, which
 // can be a customer's words, comes only sealed by the machine that raised it to each machine
@@ -56,8 +62,10 @@ const (
 	// signature, and the seal's tag; busEncapsulatedBytes its encapsulated key (P-256).
 	busSealedBytes       = 256<<10 + 65 + 64 + 16
 	busEncapsulatedBytes = 65
-	// busLogStamp sorts a log file by when the control plane took it.
+	// busLogStamp sorts a log file by when the control plane took it; busLogDay names
+	// its folder (#6582).
 	busLogStamp = "20060102T150405.000000000Z"
+	busLogDay   = "20060102"
 )
 
 // eventBus is what this copy holds of the bus: the subscriptions of the machines it holds,
@@ -85,8 +93,21 @@ func busIDHash(id string) string {
 
 func busIDKey(bus, hash string) string { return busPrefix + bus + "/ids/" + hash + ".json" }
 
+func busLogPrefix(bus string) string { return busPrefix + bus + "/log/" }
+
 func busLogKey(bus string, at time.Time, hash string) string {
-	return busPrefix + bus + "/log/" + at.UTC().Format(busLogStamp) + "-" + hash + ".json"
+	at = at.UTC()
+	return busLogPrefix(bus) + at.Format(busLogDay) + "/" + at.Format(busLogStamp) + "-" + hash + ".json"
+}
+
+// busLogName is a log key's file name, which sorts by time: a day's and a flat one's
+// from before #6582 alike. A whole key does not: log/20261121/… sorts before
+// log/20261121T….
+func busLogName(key string) string { return key[strings.LastIndexByte(key, '/')+1:] }
+
+// sortBusLog sorts log keys by their file names, so by time.
+func sortBusLog(keys []store.Key) {
+	sort.SliceStable(keys, func(i, j int) bool { return busLogName(keys[i].Key) < busLogName(keys[j].Key) })
 }
 
 // busPeer is a new event on the mesh, for the machines other copies hold.
@@ -359,8 +380,10 @@ func (s *Service) busFromPeer(raw json.RawMessage) {
 }
 
 // sweepBus keeps the newest kept envelopes of each bus, and deletes at most most
-// of the rest, the oldest first, each with its id's file. It lists each bus's log only
-// (#6569): the ids beside it are as many again, and a listing stats each file.
+// of the rest, the oldest first, each with its id's file: the flat envelopes from before
+// #6582, then the oldest days. It lists each bus's log only (#6569): the ids beside it are
+// as many again, and a listing stats each file. On a folder store, the days but today are
+// taken from its index (#6582).
 func sweepBus(ctx context.Context, st store.Store, kept, most int) (int, error) {
 	if most <= 0 {
 		return 0, nil
@@ -371,11 +394,11 @@ func sweepBus(ctx context.Context, st store.Store, kept, most int) (int, error) 
 	}
 	n := 0
 	for _, bus := range buses {
-		// List gives them sorted by key, so by time.
-		list, err := st.List(ctx, busPrefix+bus+"/log/")
+		list, err := st.List(ctx, busLogPrefix(bus))
 		if err != nil {
 			return n, err
 		}
+		sortBusLog(list)
 		for _, k := range list[:max(0, len(list)-kept)] {
 			if n >= most {
 				return n, nil
@@ -421,25 +444,22 @@ func (s *Service) busLog(ctx context.Context, person string, q wire.BusLogQuery)
 	if q.Topic != nil && *q.Topic != "" {
 		match.Topics = []string{strings.ToLower(*q.Topic)}
 	}
-	prefix := busPrefix + busOf(person) + "/log/"
-	keys, err := s.cfg.Store.List(ctx, prefix)
+	log, err := newBusLogReader(ctx, s.cfg.Store, busOf(person), deref(q.Before))
 	if err != nil {
 		return wire.BusLogPage{}, fail(storeUnavailable, "The bus log could not be read: %v", err)
 	}
 	out := wire.BusLogPage{Events: []wire.BusEvent{}}
-	i := len(keys) - 1
-	if q.Before != nil && *q.Before != "" {
-		before := prefix + *q.Before
-		for i >= 0 && keys[i].Key >= before {
-			i--
+	for read := 0; len(out.Events) < limit && read < busLogReadMost; read++ {
+		key, ok, err := log.older(ctx)
+		if err != nil {
+			return wire.BusLogPage{}, fail(storeUnavailable, "The bus log could not be read: %v", err)
 		}
-	}
-	read := 0
-	for ; i >= 0 && len(out.Events) < limit && read < busLogReadMost; i-- {
-		read++
-		name := strings.TrimPrefix(keys[i].Key, prefix)
+		if !ok {
+			break
+		}
+		name := busLogName(key)
 		out.Next = &name
-		obj, err := s.cfg.Store.Get(ctx, keys[i].Key)
+		obj, err := s.cfg.Store.Get(ctx, key)
 		if err != nil {
 			return wire.BusLogPage{}, fail(storeUnavailable, "The bus log could not be read: %v", err)
 		}
@@ -451,9 +471,91 @@ func (s *Service) busLog(ctx context.Context, person string, q wire.BusLogQuery)
 		e.Sealed = nil
 		out.Events = append(out.Events, e)
 	}
-	out.HasMore = i >= 0
+	more, err := log.more(ctx)
+	if err != nil {
+		return wire.BusLogPage{}, fail(storeUnavailable, "The bus log could not be read: %v", err)
+	}
+	out.HasMore = more
 	if !out.HasMore {
 		out.Next = nil
 	}
 	return out, nil
+}
+
+// busLogReader reads a bus's log from the newest day back (#6582), one day's listing at a
+// time, and after the days the flat envelopes from before #6582. A page lists only the
+// days it reads, not the whole log.
+type busLogReader struct {
+	st     store.Store
+	prefix string
+	// before is the file name a page reads below; "" for the newest.
+	before string
+	// days are the days still to list, the newest last; legacy is whether the flat
+	// envelopes are still to list.
+	days   []string
+	legacy bool
+	// keys are what is listed and not read yet, the newest last.
+	keys []store.Key
+}
+
+func newBusLogReader(ctx context.Context, st store.Store, bus, before string) (*busLogReader, error) {
+	r := &busLogReader{st: st, prefix: busLogPrefix(bus), before: before, legacy: true}
+	days, err := store.Folders(ctx, st, r.prefix)
+	if err != nil {
+		return nil, err
+	}
+	sort.Strings(days)
+	for _, day := range days {
+		// A day after the one before names has nothing below it.
+		if before == "" || day <= before[:min(len(before), len(busLogDay))] {
+			r.days = append(r.days, day)
+		}
+	}
+	return r, nil
+}
+
+// fill lists the next day back, or the flat envelopes, until there is a key to read or
+// nothing is left.
+func (r *busLogReader) fill(ctx context.Context) error {
+	for len(r.keys) == 0 && (len(r.days) > 0 || r.legacy) {
+		var keys []store.Key
+		var err error
+		if n := len(r.days); n > 0 {
+			keys, err = r.st.List(ctx, r.prefix+r.days[n-1]+"/")
+			r.days = r.days[:n-1]
+		} else {
+			// The flat envelopes from before #6582: a listing of log/ takes the days
+			// too, so it is made only once the days are read.
+			r.legacy = false
+			keys, err = r.st.List(ctx, r.prefix)
+			keys = slices.DeleteFunc(keys, func(k store.Key) bool {
+				return strings.Contains(strings.TrimPrefix(k.Key, r.prefix), "/")
+			})
+		}
+		if err != nil {
+			return err
+		}
+		sortBusLog(keys)
+		if r.before != "" {
+			keys = slices.DeleteFunc(keys, func(k store.Key) bool { return busLogName(k.Key) >= r.before })
+		}
+		r.keys = keys
+	}
+	return nil
+}
+
+// older is the next key back, if there is one.
+func (r *busLogReader) older(ctx context.Context) (string, bool, error) {
+	if err := r.fill(ctx); err != nil || len(r.keys) == 0 {
+		return "", false, err
+	}
+	k := r.keys[len(r.keys)-1]
+	r.keys = r.keys[:len(r.keys)-1]
+	return k.Key, true, nil
+}
+
+// more says whether a key is left to read.
+func (r *busLogReader) more(ctx context.Context) (bool, error) {
+	err := r.fill(ctx)
+	return len(r.keys) > 0, err
 }
