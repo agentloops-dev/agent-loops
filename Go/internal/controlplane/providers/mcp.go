@@ -3,16 +3,10 @@ package providers
 import (
 	"bufio"
 	"bytes"
-	"context"
-	"crypto/tls"
-	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"net"
-	"net/http"
-	"net/url"
 	"os"
 	"os/exec"
 	"strings"
@@ -22,26 +16,19 @@ import (
 )
 
 // The app's MCP client for providers: MCPToolClient, MCPClient and MCPStdioProcess, cut
-// down to what a provider needs. A connection, its tools, and calls to them, over stdio
-// or streamable http. Logged: the server's name and what happened in a word, never its
-// command, environment, headers, URL or any body.
+// down to what a provider needs. A connection, its tools, and calls to them, over stdio.
+// Logged: the server's name and what happened in a word, never its command, environment
+// or any body.
 
 const mcpProtocolVersion = "2025-06-18"
 
-// mcpServer is MCPServer: a stdio server the control plane runs, or one at an address.
+// mcpServer is MCPServer: a stdio server the control plane runs.
 type mcpServer struct {
-	Name string
-	// stdio
+	Name    string
 	Command string
 	Args    []string
 	Env     map[string]string
-	// streamable http, when HTTP is set
-	HTTP    bool
-	URL     string
-	Headers map[string]string
 }
-
-func (s mcpServer) isHTTP() bool { return s.HTTP }
 
 // mcpFailure is MCPClient.Failure, worded as MCPToolClient.failure words it.
 type mcpFailure struct {
@@ -107,26 +94,22 @@ type mcpClient struct {
 	mu         sync.Mutex
 	nextID     int
 	stdio      *stdioProcess
-	sessionID  string
 	negotiated string
-	http       *http.Client
 }
 
 func newMCPClient(server mcpServer, cwd string, timeout time.Duration, log func(string)) *mcpClient {
-	return &mcpClient{server: server, cwd: cwd, timeout: timeout, log: log, nextID: 1, http: &http.Client{}}
+	return &mcpClient{server: server, cwd: cwd, timeout: timeout, log: log, nextID: 1}
 }
 
 // connect starts the server or opens the session, and initializes.
 func (c *mcpClient) connect() error {
 	err := func() error {
-		if !c.server.isHTTP() {
-			p := startStdio(c.server, c.cwd, c.log)
-			c.mu.Lock()
-			c.stdio = p
-			c.mu.Unlock()
-			if why, stopped := p.stoppedBecause(); stopped {
-				return &mcpFailure{kind: "stopped", words: why}
-			}
+		p := startStdio(c.server, c.cwd, c.log)
+		c.mu.Lock()
+		c.stdio = p
+		c.mu.Unlock()
+		if why, stopped := p.stoppedBecause(); stopped {
+			return &mcpFailure{kind: "stopped", words: why}
 		}
 		params := map[string]any{
 			"protocolVersion": mcpProtocolVersion,
@@ -159,27 +142,14 @@ func (c *mcpClient) connect() error {
 	return nil
 }
 
-// end stops the stdio server, or closes the http session. Safe to call more than once.
+// end stops the stdio server. Safe to call more than once.
 func (c *mcpClient) end() {
 	c.mu.Lock()
-	p, session := c.stdio, c.sessionID
-	c.stdio, c.sessionID = nil, ""
+	p := c.stdio
+	c.stdio = nil
 	c.mu.Unlock()
 	if p != nil {
 		p.end("The app's client has ended.")
-	}
-	if c.server.isHTTP() && session != "" {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if req, err := http.NewRequestWithContext(ctx, http.MethodDelete, c.server.URL, nil); err == nil {
-			for name, value := range c.server.Headers {
-				req.Header.Set(name, value)
-			}
-			req.Header.Set("Mcp-Session-Id", session)
-			if resp, err := c.http.Do(req); err == nil {
-				resp.Body.Close()
-			}
-		}
 	}
 	c.log("mcp client: " + c.server.Name + " ended")
 }
@@ -292,10 +262,6 @@ func (c *mcpClient) request(method string, params any, optional bool, timeout ti
 
 func (c *mcpClient) notify(method string) error {
 	body, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "method": method})
-	if c.server.isHTTP() {
-		_, err := c.post(body, 0, false, c.timeout)
-		return err
-	}
 	c.mu.Lock()
 	p := c.stdio
 	c.mu.Unlock()
@@ -307,16 +273,6 @@ func (c *mcpClient) notify(method string) error {
 
 // exchange is one request out and its answer back, within timeout.
 func (c *mcpClient) exchange(body []byte, id int, timeout time.Duration) ([]byte, error) {
-	if c.server.isHTTP() {
-		reply, err := c.post(body, id, true, timeout)
-		if err != nil {
-			return nil, err
-		}
-		if reply == nil {
-			return nil, &mcpFailure{kind: "notMCP"}
-		}
-		return reply, nil
-	}
 	c.mu.Lock()
 	p := c.stdio
 	c.mu.Unlock()
@@ -324,124 +280,6 @@ func (c *mcpClient) exchange(body []byte, id int, timeout time.Duration) ([]byte
 		return nil, &mcpFailure{kind: "stopped", words: "The server is not running."}
 	}
 	return p.send(body, id, timeout)
-}
-
-// post sends one message over streamable http: the answer to id, or nil for a
-// notification.
-func (c *mcpClient) post(body []byte, id int, wantsAnswer bool, timeout time.Duration) ([]byte, error) {
-	address, err := url.Parse(c.server.URL)
-	if err != nil || (strings.ToLower(address.Scheme) != "http" && strings.ToLower(address.Scheme) != "https") {
-		return nil, &mcpFailure{kind: "unreachable", words: "That is not an http or https address."}
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.server.URL, bytes.NewReader(body))
-	if err != nil {
-		return nil, &mcpFailure{kind: "unreachable", words: "It could not be reached."}
-	}
-	for name, value := range c.server.Headers {
-		req.Header.Set(name, value)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json, text/event-stream")
-	c.mu.Lock()
-	session, negotiated := c.sessionID, c.negotiated
-	c.mu.Unlock()
-	if session != "" {
-		req.Header.Set("Mcp-Session-Id", session)
-	}
-	if negotiated != "" {
-		req.Header.Set("MCP-Protocol-Version", negotiated)
-	}
-	resp, err := c.http.Do(req)
-	if err != nil {
-		if ctx.Err() != nil {
-			return nil, &mcpFailure{kind: "timeout"}
-		}
-		return nil, &mcpFailure{kind: "unreachable", words: reachWords(err)}
-	}
-	defer resp.Body.Close()
-	data, err := io.ReadAll(io.LimitReader(resp.Body, 16<<20))
-	if err != nil {
-		if ctx.Err() != nil {
-			return nil, &mcpFailure{kind: "timeout"}
-		}
-		return nil, &mcpFailure{kind: "unreachable", words: reachWords(err)}
-	}
-	switch {
-	case resp.StatusCode == 401:
-		return nil, &mcpFailure{kind: "auth"}
-	case resp.StatusCode == 404 && session != "":
-		c.mu.Lock()
-		c.sessionID = ""
-		c.mu.Unlock()
-		return nil, &mcpFailure{kind: "expired"}
-	case resp.StatusCode < 200 || resp.StatusCode >= 300:
-		return nil, &mcpFailure{kind: "status", status: resp.StatusCode}
-	}
-	if given := resp.Header.Get("Mcp-Session-Id"); given != "" {
-		c.mu.Lock()
-		c.sessionID = given
-		c.mu.Unlock()
-	}
-	if !wantsAnswer {
-		return nil, nil
-	}
-	if strings.HasPrefix(strings.ToLower(resp.Header.Get("Content-Type")), "text/event-stream") {
-		answer := answerInEvents(id, data)
-		if answer == nil {
-			return nil, &mcpFailure{kind: "notMCP"}
-		}
-		return answer, nil
-	}
-	return data, nil
-}
-
-// answerInEvents is MCPClient.answer(_:inEvents:): the JSON-RPC answer to id among an
-// event stream's data: events.
-func answerInEvents(id int, data []byte) []byte {
-	text := strings.ReplaceAll(string(data), "\r\n", "\n")
-	for _, event := range strings.Split(text, "\n\n") {
-		var lines []string
-		for _, line := range strings.Split(event, "\n") {
-			if rest, ok := strings.CutPrefix(line, "data:"); ok {
-				lines = append(lines, strings.TrimPrefix(rest, " "))
-			}
-		}
-		if len(lines) == 0 {
-			continue
-		}
-		payload := []byte(strings.Join(lines, "\n"))
-		message, err := parseJSON(payload)
-		if err != nil {
-			continue
-		}
-		if got, ok := integer(get(message, "id")); ok && got == id && (has(message, "result") || has(message, "error")) {
-			return payload
-		}
-	}
-	return nil
-}
-
-// reachWords is MCPClient.reason: what went wrong reaching it, without the address.
-func reachWords(err error) string {
-	var dns *net.DNSError
-	var certificate *x509.UnknownAuthorityError
-	var hostname x509.HostnameError
-	var invalid x509.CertificateInvalidError
-	var record tls.RecordHeaderError
-	var timeout interface{ Timeout() bool }
-	switch {
-	case errors.As(err, &dns):
-		return "Its host could not be found."
-	case errors.Is(err, syscall.ECONNREFUSED):
-		return "Nothing answered at that address."
-	case errors.As(err, &certificate), errors.As(err, &hostname), errors.As(err, &invalid), errors.As(err, &record):
-		return "Its secure connection could not be made."
-	case errors.As(err, &timeout) && timeout.Timeout():
-		return "It did not answer in time."
-	}
-	return "It could not be reached."
 }
 
 // mcpEnvironment is RuntimeEnvironment.forMCPServers in the control plane: only what any

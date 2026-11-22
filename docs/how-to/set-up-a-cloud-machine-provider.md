@@ -29,7 +29,7 @@ on the machine that carries the provider.
 - **On the Mac:** **Settings ▸ Machine Providers**, in the Control plane group, then
   **Add Provider…**. Choose the cloud from the list (under **Cloud** or **Development
   environments**). For DigitalOcean, Codespaces and Coder, **Connect with** offers **Its API**
-  (first) and **Its CLI**. The Mac also adds Docker, your own commands and MCP servers.
+  (first) and **Its CLI**. The Mac also adds Docker and your own commands.
 - **On the web page:** the **Machine providers** section of Settings, then
   **Add Provider…**.
 
@@ -225,8 +225,7 @@ control plane with several copies does not run them yet.
 
 ## See also
 
-- [Add a machine provider](add-a-machine-provider.md): your own commands, a tool map,
-  or a server of your own.
+- [Add a machine provider](add-a-machine-provider.md): your own commands.
 - [Machine providers](../reference/machine-providers.md): every preset's parameters
   and the contract.
 - [Start machines from Agent Loops](start-machines-from-agents.md)

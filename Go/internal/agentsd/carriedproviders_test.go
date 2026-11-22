@@ -76,8 +76,7 @@ func TestACarryIsRefusedOrFailsInWords(t *testing.T) {
 	t.Parallel()
 
 	d, _ := carriedDaemon(t)
-	record, _ := json.Marshal(providers.ProviderRecord{ID: "p2", Name: "Gone", Kind: providers.KindStdio,
-		Command: new("/no/such/provider")})
+	record, _ := json.Marshal(providers.ProviderRecord{ID: "p2", Name: "Gone", Kind: "stdio"})
 	out := ask(t, d, wire.CallProvidersCarry.Name, wire.ProviderCarry{Provider: "other", Record: record, Call: "list"})
 	if out.Error == nil || !strings.Contains(*out.Error, "record") {
 		t.Fatalf("%+v", out)
@@ -96,8 +95,7 @@ func TestAFailedCarriedMakeIsLoggedWithItsReason(t *testing.T) {
 	var logged strings.Builder
 	log.SetOutput(&logged)
 	t.Cleanup(func() { log.SetOutput(os.Stderr) })
-	record, _ := json.Marshal(providers.ProviderRecord{ID: "p3", Name: "Gone", Kind: providers.KindStdio,
-		Command: new("/no/such/provider")})
+	record, _ := json.Marshal(providers.ProviderRecord{ID: "p3", Name: "Gone", Kind: "stdio"})
 	out := ask(t, d, wire.CallProvidersCarry.Name, wire.ProviderCarry{Provider: "p3", Record: record, Call: "create",
 		Name: new("machine-21"), Secrets: map[string]string{"GITHUB_TOKEN": "draft-secret-value"}})
 	if out.Error == nil {

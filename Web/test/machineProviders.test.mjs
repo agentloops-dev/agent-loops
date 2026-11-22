@@ -14,10 +14,10 @@ test("only the API kinds are offered, with the window's titles", () => {
   assert.equal(w.kindOfPreset("doctl"), undefined);
 });
 
-test("Add a Provider lists all nine kinds in the window's four groups, and opens only the API ones (#6069)", () => {
+test("Add a Provider lists all eight kinds in the window's four groups, and opens only the API ones (#6069)", () => {
   assert.deepEqual(w.providerGroups.map((g) => g.title), ["Cloud", "Development environments", "On a machine you have", "Custom"]);
   const all = w.providerGroups.flatMap((g) => g.kinds);
-  assert.deepEqual(all, ["digitalOcean", "compute", "aws", "codespaces", "coder", "workstations", "docker", "commands", "mcp"]);
+  assert.deepEqual(all, ["digitalOcean", "compute", "aws", "codespaces", "coder", "workstations", "docker", "commands"]);
   assert.deepEqual(all.filter((k) => w.choiceKind(k)), ["digitalOcean", "compute", "aws", "codespaces", "coder"]);
   for (const k of all) {
     assert.ok(w.choiceDescription(k).endsWith("."), k);
@@ -65,7 +65,7 @@ test("an edit sends the name and only the secrets given, so the control plane ke
 });
 
 const summary = (over = {}) => ({ id: "do", name: "DO", kind: "commands", secrets: {}, capabilities: [], contract: 1,
-  mapped: false, workspaces: [], current: true, ...over });
+  workspaces: [], current: true, ...over });
 
 test("the card's chip and lines are the window's", () => {
   assert.equal(w.kindChip(summary({ preset: "digitalocean-api" })), "command provider · digitalocean-api · API");

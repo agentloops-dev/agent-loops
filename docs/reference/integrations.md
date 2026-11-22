@@ -131,7 +131,6 @@ Open issues: `is:open label:integration workspace`.
 | AWS EC2 | Mac, web, control plane | built | 2026-10-19, against a fake EC2 API only (#1345); SigV4 against AWS's own test vector | `presets.go` (`aws-ec2-api`, through its API, nothing to install), `aws.go` | a walk on a real account (#3416) |
 | Google Compute Engine | Mac, web, control plane | tested on a real account | 2026-10-19, an e2-small VM in `agents-control` through the preset: create, install over ssh, Stop 16 s, Start online in 123 s, delete (`specs/691-workspace-providers/walks/1346-google-cloud.md`); against a fake API and token endpoint too | `presets.go` (`gcp-compute-api`, through its API, nothing to install), `google.go` | #1691 (an address that changes at Start) |
 | Google Cloud Workstations | Mac, web, control plane | broken (Stop works, Start never brings the host back) | 2026-10-19, a real workstation in `agents-control`: list, install over ssh, link, Stop 7 s; Start fails on a new host key (`specs/691-workspace-providers/walks/1346-google-cloud.md`) | `presets.go` (`gcloud-workstations`) | Stop and Start walked again (#3410; #1701 is closed); CLI only |
-| Any MCP or CLI provider (map written by an agent) | Mac, control plane | built | — | `Go/internal/controlplane/providers/drafts.go` | |
 | The misbehaving fake provider | control plane | walked on scratch | 2026-10-19, on the Go control plane: a dropped tool and duplicate ids added | `connection_test.go` | |
 
 ## MCP and GitHub

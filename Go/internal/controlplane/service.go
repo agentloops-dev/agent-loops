@@ -372,7 +372,7 @@ func New(cfg Config) (*Service, error) {
 		if err := os.MkdirAll(cfg.ProviderHome, 0o700); err != nil {
 			s.log(fmt.Sprintf("providers: no folder at %s: %v", cfg.ProviderHome, err))
 		}
-		s.providers = s.makeProviders(cfg.ProviderHome)
+		s.providers = s.makeProviders()
 	}
 	if cfg.PublicWeb != "" {
 		s.openPage(cfg)

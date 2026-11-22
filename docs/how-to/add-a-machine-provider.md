@@ -1,14 +1,15 @@
 ---
 diataxis: how-to
 devices: [mac, iphone, ipad, web, server]
-description: Make anything that can start and stop a machine a machine provider - a preset, your own commands, a tool map over another MCP server, or a server of your own.
+description: Make anything that can start and stop a machine a machine provider - a preset, or your own commands.
 ---
 
 # Add a machine provider
 
-A machine provider is an MCP server that lists machines, starts them and stops them.
-Agent Loops talks to every provider in the same way, so it has no code for any one cloud. There
-are three ways to make one, and only the last needs any code.
+A machine provider lists machines, starts them and stops them. Agent Loops ships one, the
+**command provider**, and there are two ways to set it up: a preset, or your own commands.
+Neither needs any code. Agent Loops no longer takes an MCP server of your own as a provider,
+with or without a tool map (#6623).
 
 ## Where a provider runs
 
@@ -31,8 +32,8 @@ make and delete to the machine that carries the provider, and that machine answe
   then keeps them: delete the provider's entry from that file by hand.
 - A provider added before this change has no machine: remove it and add it again.
 
-No provider needs a cloud's workload identity (OIDC federation) instead: every preset, a
-command provider and an MCP server can run on a machine of yours.
+No provider needs a cloud's workload identity (OIDC federation) instead: every preset and
+your own commands run on a machine of yours.
 
 ## A preset, or your own commands
 
@@ -119,106 +120,13 @@ DigitalOcean through its API makes droplets too. New Machine… makes a droplet 
 tag, in the region, size and image you choose (an image with systemd, such as
 `ubuntu-24-04-x64`). Its first boot makes a user, `agents`, with root's ssh keys, and
 installs Agent Loops as that user, never as root. The host starts with the droplet. Delete
-Machine… deletes the droplet. Any other preset needs **An MCP server** or a provider
-configured by hand to make machines.
+Machine… deletes the droplet. Any other preset needs a provider configured by hand to make
+machines.
 
 The command provider is the `workspace-commands` binary. The machine that carries the
 provider looks for it beside its `agentsd`, then where `AGENTS_WORKSPACE_COMMANDS` says, then
 on its `PATH`. Its configuration is described in full in
 [Machine providers](../reference/machine-providers.md#the-command-provider).
-
-## A tool map, for a provider's own MCP server
-
-Some providers have an MCP server of their own, with tools named their own way. Choose
-**MCP server**, give its command or address, and write a **tool map**. The map says which of
-its tools lists, starts and stops, and where the machines are in what it answers.
-
-Agent Loops ships one for DigitalOcean's server: choose **Use DigitalOcean's** under the tool map.
-It fills in `npx -y @digitalocean/mcp`, the map below, and a `DIGITALOCEAN_API_TOKEN`
-secret for your token. It needs Node on the machine that carries it.
-
-```json
-{
-  "list": {
-    "tool": "droplet-list",
-    "arguments": { "PerPage": 200 },
-    "items": "droplets",
-    "id": "id",
-    "name": "name",
-    "state": "status",
-    "ssh": "root@{networks.v4[0].ip_address}",
-    "cost": "${size.price_hourly}/hour while running",
-    "states": { "active": "running", "new": "starting", "off": "stopped", "archive": "stopped" }
-  },
-  "start":  { "tool": "power-on-droplet", "arguments": { "ID": "{id:number}" } },
-  "stop":   { "tool": "power-off-droplet", "arguments": { "ID": "{id:number}" } },
-  "delete": { "tool": "droplet-delete", "arguments": { "ID": "{id:number}" } }
-}
-```
-
-It lists every droplet in the account. Its server's `droplet-create` can't run a command on
-first boot, so use the DigitalOcean preset through its API to make droplets.
-
-- A path is dotted keys, with `[0]` for an item of a list.
-- `{path}` inside text is filled in from the machine.
-- `{id}` in arguments is the machine's id, and `{id:number}` the same as a number.
-- `create`, `delete` and `options` are optional, with the same shape as `start`.
-  `create`'s arguments take `{name}`, `{firstBoot}`, `{options}` and each choice's key, and
-  `"firstBootRuns": true` says the server runs `{firstBoot}` on the new machine.
-- `states` turns the provider's words into running, starting, stopping or stopped.
-
-The tool names in this example show the shape. Check the server's own tool list for the
-real ones. When you add it, Agent Loops checks every tool the map names is there, and names any
-that isn't.
-
-For a server at an address, its one secret is sent as `Authorization: Bearer` and the
-secret. For a command, secrets are its environment. Either way, the machine that carries
-it fills them in.
-
-## Let an agent write it
-
-For **MCP server** and **Your commands**, an agent can write the map or the commands for you.
-The agent runs on the host on the Mac that runs the control plane, on a runtime that can turn
-off its own tools. For now, that runtime is Claude. The sheet shows a runtime menu when more
-than one runtime can write.
-
-1. Give the server's command or address, or the **CLI** that your commands use (`cws`).
-   Add the secrets the server or CLI needs.
-2. Click **Write It for Me**. The control plane reads the server's tools through the
-   machine that carries it (the Mac, unless you chose another), or runs
-   `cws --help`. Then it starts the agent with what it read.
-3. Under the field, a line shows each step: "Writing… read 41 tools · checked: listed 3".
-   **Details…** shows every step. Click **×** to stop. Nothing is kept.
-4. When the agent is done, the map or the commands are in the form's own fields, with
-   the list that its last check got, and "Written by Claude. Read it before you add it."
-   Read it, change it if you want, then click **Add**. Add checks it again, as always.
-
-Some cases need no agent:
-
-- A server that follows the contract needs no map. The sheet says so.
-- A server that the DigitalOcean map fits gets that map.
-- A CLI that has a preset (`docker`, `doctl`, `gh`, `coder`, `gcloud`) gets a button for
-  that preset.
-
-What the agent can and cannot do:
-
-- It has no tools of its runtime's own. It cannot run commands, read files, or reach the
-  network. It has only seven tools, which the control plane answers for it.
-- It never sees a secret's value. Where a value would show, it sees `${NAME}`.
-- The control plane runs `cws ‹words› --help` only for subcommands that the help printed.
-  It runs a check alone only if the check is plainly a list. For any other check, the sheet
-  asks you first, with **Run Check**.
-- The agent can ask to start or stop one machine to prove the map. The sheet asks you
-  each time, with the machine and its cost. **Don't**, or no answer in 2 minutes, is a no.
-  A machine that you start this way stays running until you stop it.
-- It has 5 minutes, 8 checks and 40 tool calls. Then the sheet shows its last draft.
-
-When a provider's server changes, use **Write the Map Again…** (or **Write the Commands
-Again…**) in its card's `···` menu. The agent starts from the map that the provider has
-now. **Save** keeps the server, the secrets and the linked hosts. When Add refuses a server
-that a map would fix, the refusal has **Write a Tool Map**.
-
-Start and Stop never use the agent: they use the map that you kept.
 
 ## On the iPhone, the iPad and the web page
 
@@ -234,14 +142,8 @@ Each one asks for the same fields and the same token as the Mac. The token goes 
 machine that carries the provider, and the page never shows it again. **List Again**, **Edit…** and
 **Remove…** are on each provider, and **Stop** and **Unlink** on each linked host.
 
-Add Docker, Cloud Workstations, your own commands and MCP servers in the Mac app. They need
-a CLI or a map, which the Remote and the page do not edit.
-
-## A provider of your own
-
-Any MCP server that offers `workspaces_list`, `workspace_start` and `workspace_stop` is a
-provider as it is. It needs no map. The tools, their arguments and their answers are in
-[Machine providers](../reference/machine-providers.md).
+Add Docker, Cloud Workstations and your own commands in the Mac app. They need a CLI or
+commands, which the Remote and the page do not edit.
 
 ## Related
 
