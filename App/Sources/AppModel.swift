@@ -101,6 +101,14 @@ final class AppModel {
     @ObservationIgnored let controlBackoff = Backoff(first: .seconds(2), longest: .seconds(60))
     @ObservationIgnored private let wakeAndNetwork = WakeAndNetwork()
     @ObservationIgnored private var checkingAfterWake = false
+    /// The last wake, so a host lost with a sleep is quiet for a moment and then says the
+    /// sleep, not a lost connection (#6570).
+    /// Not watched itself, since each read of the clocks changes it.
+    @ObservationIgnored private var afterSleep = AfterSleep()
+    /// Counts the wakes seen and the ends of their quiet, so the notice is decided again then.
+    private var afterSleepChanges = 0
+    @ObservationIgnored private let sleepClocks = SleepClocks()
+    @ObservationIgnored private var afterSleepQuietTask: Task<Void, Never>?
     var problem: String?
     /// A send refused because the agent's folder has gone (#119), with the ways on. Said
     /// in the window's alert instead of `problem`, and the words stay in the bar.
@@ -1575,8 +1583,20 @@ final class AppModel {
         return MacHostNotice.decide(planeOnThisMac: controlPlaneMachine == MachineID.current,
                                     macState: macHostState,
                                     join: macHostJoin,
-                                    windowMissed: hosts.macDownSince != nil)
+                                    windowMissed: hosts.macDownSince != nil,
+                                    afterSleep: macHostAfterSleep)
     }
+
+    /// Whether this Mac's host, lost now, was lost with a sleep (#6570).
+    private var macHostAfterSleep: AfterSleep.Verdict {
+        _ = afterSleepChanges
+        let now = Date()
+        return afterSleep.verdict(downSince: hosts.macDownSince ?? now, now: now)
+    }
+
+    /// For a moment after a wake, a lost host is the window reconnecting, and nothing says
+    /// it is offline (#6570).
+    var macHostQuietAfterWake: Bool { hosts.isOffline(.mac) && macHostAfterSleep == .quiet }
 
     /// The control plane is elsewhere and lists no host on this Mac (#1503): only the window
     /// is paired here, and servers alone are hosts. Nothing then answers for this Mac's own
@@ -3251,6 +3271,7 @@ final class AppModel {
         guard !needsFirstRun else { return }
         // Said at once, everywhere this Mac's host is the target (#83), rather than
         // when the next action has waited out a connect.
+        lookForSleep()
         if hosts.macDownSince == nil { hosts.macDownSince = Date() }
         listening = nil
         // The daemon forgot these screens with the connection. Marked, so they attach
@@ -3265,6 +3286,7 @@ final class AppModel {
         routeSharedFiles()
         // Nothing to connect to, and nothing to start: the first run says where.
         guard !needsFirstRun else { return }
+        lookForSleep()
         wakeAndNetwork.start { [weak self] reason in self?.goBackNow(reason) }
         await connect()
         if !isConnected { await reconnect() }
@@ -3274,6 +3296,11 @@ final class AppModel {
     /// connection the window still believes in is asked whether it is alive, since a
     /// sleep can leave one dead without a word. A try already in flight is left alone.
     private func goBackNow(_ reason: ReconnectTriggers.Reason) {
+        if reason == .wake {
+            afterSleep.woke(at: Date())
+            quietAfterWake()
+        }
+        lookForSleep()
         let host = backoff.nudge()
         let control = controlBackoff.nudge()
         WakeAndNetwork.log.info("reconnect: \(reason.rawValue, privacy: .public): host \(String(describing: host), privacy: .public), control plane \(String(describing: control), privacy: .public)")
@@ -3284,6 +3311,28 @@ final class AppModel {
             // under every host's goes too, so nothing dials back over the dead one.
             if await !client.answers(within: .seconds(4)) { controlLink?.disconnect() }
             checkingAfterWake = false
+        }
+    }
+
+    /// Reads the clocks for a sleep that no wake notification told of, such as a dark wake
+    /// (#6541, #6570). Cheap: it is read when this Mac's host is lost, and on a wake or a
+    /// network change, not on a timer.
+    private func lookForSleep() {
+        guard afterSleep.look(asleepSoFar: sleepClocks.asleepSoFar, now: Date()) else { return }
+        WakeAndNetwork.log.info("reconnect: the clocks say this Mac slept")
+        quietAfterWake()
+    }
+
+    /// When the quiet after a wake ends, the notice is decided again, so a host still lost
+    /// then says the sleep.
+    private func quietAfterWake() {
+        afterSleepChanges &+= 1
+        guard let end = afterSleep.quietEnds(now: Date()) else { return }
+        afterSleepQuietTask?.cancel()
+        afterSleepQuietTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(max(0, end.timeIntervalSinceNow) + 0.5))
+            guard !Task.isCancelled else { return }
+            self?.afterSleepChanges &+= 1
         }
     }
 
@@ -3434,6 +3483,7 @@ final class AppModel {
             isConnected = false
             // Neither way reached it: nor is it reached directly any more (#1118).
             wentDirect(.mac, false)
+            lookForSleep()
             if hosts.macDownSince == nil { hosts.macDownSince = Date() }
             // A control plane that cannot be reached is the strip, not an alert.
             if controlLink == nil { problem = describe(error) }

@@ -19,14 +19,33 @@ enum MacHostNotice: Equatable {
     /// The host is up at the control plane, and this window is not reaching it (#445):
     /// the window's own connection, not the host. Try Again dials a fresh one.
     case windowLost
+    /// The Mac slept, and the window has not reached this Mac's host since it woke (#6570):
+    /// the sleep, not a connection that broke while the Mac was awake.
+    case wasAsleep(woke: Date)
 
     /// `macState` is this Mac's row in `machines/list` (`online`, `offline`, …), or nil when
     /// it has no row. `join` is `control/status.thisMacHost`. A plane that is not on this
     /// Mac does not read that file, so a missing join there is not "the process is down".
     /// `windowMissed` is a try of the window's own that failed, so a host that is up is
-    /// the window's connection, not "still connecting".
+    /// the window's connection, not "still connecting". `afterSleep` is whether the drop
+    /// came with a sleep (#6570): for a moment after the wake a reconnect says nothing, as
+    /// the other reconnects do (#6227), and after that the notice says the sleep.
     static func decide(planeOnThisMac: Bool, macState: String?, join: DaemonAPI.MachineJoinStatus?,
-                       windowMissed: Bool = false) -> MacHostNotice? {
+                       windowMissed: Bool = false, afterSleep: AfterSleep.Verdict = .awake) -> MacHostNotice? {
+        let notice = decideAwake(planeOnThisMac: planeOnThisMac, macState: macState, join: join,
+                                 windowMissed: windowMissed)
+        // Only the ways a reconnect looks are the sleep's: a host that has not joined, is
+        // not running or names why its uplink fails says its own reason.
+        guard notice == .windowLost || notice == .notAnswering else { return notice }
+        switch afterSleep {
+        case .awake: return notice
+        case .quiet: return nil
+        case .wasAsleep(let woke): return .wasAsleep(woke: woke)
+        }
+    }
+
+    private static func decideAwake(planeOnThisMac: Bool, macState: String?, join: DaemonAPI.MachineJoinStatus?,
+                                    windowMissed: Bool) -> MacHostNotice? {
         let up: MacHostNotice? = windowMissed ? .windowLost : nil
         if let join {
             if !join.member { return .notJoined(problem: join.problem) }
@@ -51,6 +70,7 @@ enum MacHostNotice: Equatable {
         case .notAnswering: "This Mac isn’t answering"
         case .uplinkFailing: "This Mac can’t reach the control plane"
         case .windowLost: "This window lost its connection to this Mac"
+        case .wasAsleep: "This Mac was asleep"
         }
     }
 
@@ -70,6 +90,8 @@ enum MacHostNotice: Equatable {
             "It’s running, and its link to the control plane keeps failing. \(Self.sentence(problem)) It’s trying again by itself; Help ▸ Diagnostics says more."
         case .windowLost:
             "This Mac and the control plane are both up. What’s listed is what the window last heard, and it’s reconnecting by itself."
+        case .wasAsleep(let woke):
+            "It woke at \(Self.time(woke)), and the window is reconnecting by itself. What’s listed is what the window last heard."
         }
     }
 
@@ -86,6 +108,8 @@ enum MacHostNotice: Equatable {
             "This Mac can’t reach the control plane, so that didn’t happen. It’s trying again by itself; Try Again tries now."
         case .windowLost:
             "This window lost its connection to this Mac, so that didn’t happen. It’s reconnecting by itself; Try Again tries now."
+        case .wasAsleep:
+            "This Mac was asleep, and the window is still reconnecting, so that didn’t happen. Try Again tries now."
         }
     }
 
@@ -102,11 +126,17 @@ enum MacHostNotice: Equatable {
             "This Mac is up and can’t reach the control plane\(Self.since(since)). \(Self.sentence(problem)) It’s trying again by itself."
         case .windowLost:
             "This window lost its connection to this Mac\(Self.since(since)). This Mac is up, and the window is reconnecting by itself."
+        case .wasAsleep(let woke):
+            "This Mac was asleep, and woke at \(Self.time(woke)). The window is reconnecting by itself."
         }
     }
 
     /// A tooltip's few words.
     var tooltip: String { title }
+
+    private static func time(_ date: Date) -> String {
+        date.formatted(date: .omitted, time: .shortened)
+    }
 
     private static func since(_ since: String?) -> String {
         since.map { " since \($0)" } ?? ""
