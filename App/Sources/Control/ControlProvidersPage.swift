@@ -356,20 +356,66 @@ struct AddProviderSheet: View {
             }
         }
 
-        /// What it needs on the machine that carries it.
-        var needs: String? {
+        /// The list's groups, in order: a person looks first for the place their machines are
+        /// (#6069). The same words as the web page's providerGroups.
+        enum Group: String, CaseIterable, Identifiable {
+            case cloud = "Cloud"
+            case development = "Development environments"
+            case yourMachine = "On a machine you have"
+            case custom = "Custom"
+            var id: String { rawValue }
+
+            var kinds: [Kind] {
+                switch self {
+                case .cloud: [.digitalOcean, .compute, .aws]
+                case .development: [.codespaces, .coder, .workstations]
+                case .yourMachine: [.docker]
+                case .custom: [.commands, .mcp]
+                }
+            }
+        }
+
+        /// The row's one line (#6069), as the web page's choiceDescription.
+        var summary: String {
+            switch self {
+            case .digitalOcean: "Droplets with a tag."
+            case .compute: "VMs with a label, in one zone."
+            case .aws: "Instances with a tag, in one region."
+            case .codespaces: "Your codespaces, or the codespaces of one repository."
+            case .coder: "Workspaces on your Coder deployment."
+            case .workstations: "Workstations in one cluster."
+            case .docker: "Containers on a machine that has docker."
+            case .commands: "Your own commands to list, start and stop machines."
+            case .mcp: "A server with workspace tools, or a tool map."
+            }
+        }
+
+        /// How to set up: its part of the docs, as the web page's choiceDocs.
+        var docs: URL {
+            let page = switch self {
+            case .digitalOcean: "set-up-a-cloud-machine-provider/#digitalocean-droplets"
+            case .compute: "set-up-a-cloud-machine-provider/#google-compute-engine-vms"
+            case .aws: "set-up-a-cloud-machine-provider/#aws-ec2-instances"
+            case .codespaces: "set-up-a-cloud-machine-provider/#github-codespaces"
+            case .coder: "set-up-a-cloud-machine-provider/#coder-machines"
+            case .workstations: "set-up-a-cloud-machine-provider/#google-cloud-workstations"
+            case .docker, .commands: "start-machines-from-agents/#add-a-provider"
+            case .mcp: "add-a-machine-provider/"
+            }
+            return URL(string: "how-to/\(page)", relativeTo: HelpSite.url)!.absoluteURL
+        }
+
+        /// What has no field of its own, through its CLI: one short line under the header (#6069).
+        var needs: String {
             switch self {
             case .docker: "Needs docker on the machine that carries it."
             case .digitalOcean: "Needs doctl, signed in, on the machine that carries it."
             case .codespaces: "Needs gh, signed in, on the machine that carries it."
             case .coder: "Needs coder, signed in, and `coder config-ssh` run, on the machine that carries it."
-            case .workstations: "Needs gcloud, signed in, on the machine that carries it, and a host in its ssh config that reaches the workstation’s port 22 through `gcloud workstations start-tcp-tunnel`."
-            case .compute:
-                "Needs a service account’s JSON key, with the smallest role: compute.instances.list, start and stop, and for New Machine… compute.instances.create, delete, setMetadata and setLabels, compute.disks.create, and compute.subnetworks.use and useExternalIp. ssh goes to each VM’s external address, so the network must let in port 22, and a static address keeps it the same after a stop (#1691). Nothing to install."
-            case .aws:
-                "Needs an IAM user’s access key, with the smallest policy: ec2:DescribeInstances on all resources, and ec2:StartInstances and ec2:StopInstances only on instances that have the tag (the condition aws:ResourceTag/‹tag› not Null). Nothing to install."
+            case .workstations: "Needs gcloud, signed in, on the machine that carries it."
+            case .compute, .aws: "Nothing to install."
             case .commands: "The commands run on the machine that carries it, as you."
-            case .mcp: "An MCP server that offers workspaces_list, workspace_start and workspace_stop, or a tool map onto its own tools."
+            case .mcp: "It offers workspaces_list, workspace_start and workspace_stop, or a tool map onto its own tools."
             }
         }
 
@@ -403,15 +449,22 @@ struct AddProviderSheet: View {
             }
         }
 
-        /// What the API form needs: a token with the smallest scope that does the work.
+        /// Through its API, what has no field of its own (#6069), as the web page's kindNote.
         var apiNeeds: String? {
             switch self {
-            case .digitalOcean:
-                "Needs a DigitalOcean API token with custom scopes: droplet read and update, and droplet create and delete to make and delete droplets. Nothing to install."
-            case .codespaces:
-                "Needs a GitHub token: fine-grained, with Codespaces lifecycle admin (read and write), or classic, with the codespace scope. ssh still goes through gh: run `gh codespace ssh --config >> ~/.ssh/config` on the machine that carries it."
-            case .coder:
-                "Needs your deployment’s address and a session token (`coder tokens create`). ssh still goes through coder: run `coder config-ssh` on the machine that carries it."
+            case .digitalOcean: "Nothing to install."
+            case .codespaces: "ssh still goes through gh on the machine that carries it."
+            case .coder: "ssh still goes through coder on the machine that carries it."
+            default: nil
+            }
+        }
+
+        /// The help under the API token's field: the smallest scope that does the work.
+        var tokenHelp: String? {
+            switch self {
+            case .digitalOcean: "Custom scopes: droplet read and update, and droplet create and delete to make machines."
+            case .codespaces: "Fine-grained, with Codespaces lifecycle admin (read and write), or classic, with the codespace scope."
+            case .coder: "Make one with `coder tokens create`."
             default: nil
             }
         }
@@ -456,6 +509,7 @@ struct AddProviderSheet: View {
     @State private var map = ""
     // Secrets: entered once, never shown again.
     @State private var secrets: [Secret] = []
+    @State private var showsSecrets = false
     @State private var working = false
     @State private var problem: String?
     /// The machine that carries it (#3496).
@@ -512,24 +566,75 @@ struct AddProviderSheet: View {
 
     // MARK: Pick a kind
 
+    /// Step 1 (#6069): a grouped list, a row per kind with its line, as Internet Accounts and the
+    /// "add a data source" pages draw it. A click opens its form.
     private var grid: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 116), spacing: 10)], spacing: 10) {
-                ForEach(Kind.allCases) { each in
-                    Button { choose(each) } label: {
-                        VStack(spacing: 8) {
-                            // Decorative: the kind's name is under it.
-                            Image(icon: each.symbol).imageScale(.large).accessibilityHidden(true)
-                            Text(each.title).appText(.supporting)
+        VStack(alignment: .leading, spacing: 10) {
+            Text("A provider starts and stops the machines that agents run on.")
+                .appText(.supporting).foregroundStyle(.secondary)
+            Form {
+                ForEach(Kind.Group.allCases) { group in
+                    Section(group.rawValue) {
+                        ForEach(group.kinds) { each in
+                            Button { choose(each) } label: { kindRow(each) }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel(each.title)
+                                .accessibilityHint(each.summary)
                         }
-                        .frame(maxWidth: .infinity, minHeight: 64)
                     }
-                    .buttonStyle(.paper)
                 }
             }
+            .formStyle(.grouped)
+            // All four groups at once where the screen has room; it scrolls where it has not.
+            .frame(minHeight: 420, idealHeight: 760)
             HStack {
                 Spacer()
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
+            }
+        }
+    }
+
+    private func kindRow(_ each: Kind) -> some View {
+        HStack(spacing: 10) {
+            // Decorative: the kind's name is beside it.
+            Image(icon: each.symbol).font(.system(size: 17)).foregroundStyle(.secondary)
+                .frame(width: 24).accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(each.title)
+                Text(each.summary).appText(.supporting).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Image(icon: "chevron.right").foregroundStyle(.tertiary).accessibilityHidden(true)
+        }
+        .contentShape(Rectangle())
+    }
+
+    /// Step 2's header: the kind again, its one line and what has no field, and How to set up.
+    private func kindHeader(_ kind: Kind) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            // Decorative: the kind's name is beside it.
+            Image(icon: kind.symbol).font(.system(size: 17)).foregroundStyle(.secondary)
+                .frame(width: 24).accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(kind.title).fontWeight(.semibold)
+                Text("\(kind.summary) \(kind.hasAPI && !byCLI ? kind.apiNeeds ?? "" : kind.needs)")
+                    .appText(.supporting).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer()
+            Link("How to set up", destination: kind.docs).appText(.supporting)
+        }
+    }
+
+    /// A field with its help under it (#6069), not one paragraph of needs under the form.
+    private func field<Control: View>(_ title: String, help: String? = nil, @ViewBuilder _ control: () -> Control) -> some View {
+        LabeledContent(title) {
+            VStack(alignment: .leading, spacing: 3) {
+                control().labelsHidden()
+                if let help {
+                    Text(help).appText(.fine).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
         }
     }
@@ -562,77 +667,108 @@ struct AddProviderSheet: View {
 
     @ViewBuilder
     private func form(_ kind: Kind) -> some View {
+        if editing == nil { kindHeader(kind) }
         Form {
+            if editing == nil, kind.hasAPI {
+                Section { reachPicker }
+            }
             if editing == nil {
-                TextField("Name", text: $name)
+                Section("Provider") {
+                    TextField("Name", text: $name)
+                    CarrierPicker(control: control, carrier: $carrier)
+                }
             }
             switch kind {
             case .docker:
-                TextField("Containers", text: $containers, prompt: Text("agents-devbox, other"))
-                Text("Empty: the containers labelled agents.workspace").appText(.supporting).foregroundStyle(.secondary)
-                TextField("ssh", text: $ssh, prompt: Text("alex@127.0.0.1 -p 2222"))
-                TextField("Image", text: $image, prompt: Text("agents-devbox:latest"))
-                    .disabled(!trimmed(containers).isEmpty)
-                Text("For New Machine… and Delete Machine…: an image that keeps running and has curl. Empty: it only lists.")
-                    .appText(.supporting).foregroundStyle(.secondary)
-            case .digitalOcean:
-                reachPicker
-                if !byCLI { SecureField("API token", text: $token) }
-                TextField("Droplets tagged", text: $tag)
-                TextField("ssh as", text: $user)
-            case .codespaces:
-                reachPicker
-                if !byCLI { SecureField("Token", text: $token) }
-                TextField("Repository", text: $repo, prompt: Text("Every codespace, or owner/repo"))
-            case .coder:
-                reachPicker
-                if !byCLI {
-                    TextField("Deployment", text: $deployment, prompt: Text(verbatim: "https://coder.example.com"))
-                    SecureField("Session token", text: $token)
-                }
-            case .workstations:
-                TextField("Cluster", text: $cluster)
-                TextField("Configuration", text: $config)
-                TextField("Region", text: $region)
-                TextField("Project", text: $folder, prompt: Text("gcloud’s default"))
-                TextField("ssh", text: $ssh, prompt: Text("A host in your ssh config"))
-            case .compute:
-                TextField("Project", text: $folder)
-                TextField("Zone", text: $region, prompt: Text("us-west1-b"))
-                TextField("VMs labelled", text: $tag)
-                TextField("ssh as", text: $user)
-                TextField("ssh key for new VMs", text: $sshKey, prompt: Text(verbatim: "ssh-ed25519 AAAA…"))
-                LabeledContent("Service account key") {
-                    HStack {
-                        Text(serviceAccount.isEmpty ? "None" : serviceAccount).foregroundStyle(.secondary)
-                        Button("Choose Key File…") { choosingKey = true }
+                Section("Machines") {
+                    field("Containers", help: "Empty: the containers labelled agents.workspace.") {
+                        TextField("Containers", text: $containers, prompt: Text("agents-devbox, other"))
+                    }
+                    TextField("ssh", text: $ssh, prompt: Text("alex@127.0.0.1 -p 2222"))
+                    field("Image", help: "For New Machine… and Delete Machine…: an image that keeps running and has curl. Empty: it only lists.") {
+                        TextField("Image", text: $image, prompt: Text("agents-devbox:latest"))
+                            .disabled(!trimmed(containers).isEmpty)
                     }
                 }
+            case .digitalOcean:
+                if !byCLI {
+                    Section("Access") {
+                        field("API token", help: kind.tokenHelp) { SecureField("API token", text: $token, prompt: Text("Required")) }
+                    }
+                }
+                Section("Machines") {
+                    TextField("Droplets tagged", text: $tag)
+                    TextField("ssh as", text: $user)
+                }
+            case .codespaces:
+                if !byCLI {
+                    Section("Access") {
+                        field("Token", help: kind.tokenHelp) { SecureField("Token", text: $token, prompt: Text("Required")) }
+                    }
+                }
+                Section("Machines") {
+                    field("Repository", help: "Empty: every codespace of yours.") {
+                        TextField("Repository", text: $repo, prompt: Text("owner/repo"))
+                    }
+                }
+            case .coder:
+                if !byCLI {
+                    Section("Access") {
+                        TextField("Deployment", text: $deployment, prompt: Text(verbatim: "https://coder.example.com"))
+                        field("Session token", help: kind.tokenHelp) { SecureField("Session token", text: $token, prompt: Text("Required")) }
+                    }
+                }
+            case .workstations:
+                Section("Machines") {
+                    TextField("Cluster", text: $cluster)
+                    TextField("Configuration", text: $config)
+                    TextField("Region", text: $region)
+                    TextField("Project", text: $folder, prompt: Text("gcloud’s default"))
+                    field("ssh", help: "A host in your ssh config that reaches the workstation’s port 22 through `gcloud workstations start-tcp-tunnel`.") {
+                        TextField("ssh", text: $ssh, prompt: Text("A host in your ssh config"))
+                    }
+                }
+            case .compute:
+                Section("Access") {
+                    field("Service account key", help: "A role with compute.instances list, start and stop; New Machine… needs more (How to set up).") {
+                        HStack {
+                            Text(serviceAccount.isEmpty ? "None" : serviceAccount).foregroundStyle(.secondary)
+                            Button("Choose Key File…") { choosingKey = true }
+                        }
+                    }
+                }
+                Section("Machines") {
+                    TextField("Project", text: $folder)
+                    TextField("Zone", text: $region, prompt: Text("us-west1-b"))
+                    TextField("VMs labelled", text: $tag)
+                    field("ssh as", help: "ssh goes to each VM’s external address: the network must let in port 22.") {
+                        TextField("ssh as", text: $user)
+                    }
+                    TextField("ssh key for new VMs", text: $sshKey, prompt: Text(verbatim: "ssh-ed25519 AAAA…"))
+                }
             case .aws:
-                TextField("Region", text: $region, prompt: Text("us-east-1"))
-                TextField("Instances tagged", text: $tag)
-                TextField("ssh as", text: $user)
-                TextField("Access key ID", text: $accessKey)
-                SecureField("Secret access key", text: $secretKey)
+                Section("Access") {
+                    field("Access key ID", help: "An IAM user’s key. Its policy: ec2:DescribeInstances, and ec2:StartInstances and ec2:StopInstances on tagged instances only (How to set up).") {
+                        TextField("Access key ID", text: $accessKey, prompt: Text("Required"))
+                    }
+                    SecureField("Secret access key", text: $secretKey, prompt: Text("Required"))
+                }
+                Section("Machines") {
+                    TextField("Region", text: $region, prompt: Text("us-east-1"))
+                    TextField("Instances tagged", text: $tag)
+                    TextField("ssh as", text: $user)
+                }
             case .commands:
                 commandsForm
             case .mcp:
                 mcpForm
             }
             if editing == nil, !(kind.hasAPI && !byCLI), kind != .aws, kind != .compute { secretsSection }
-            if editing == nil { CarrierPicker(control: control, carrier: $carrier) }
         }
         .formStyle(.grouped)
         .fileImporter(isPresented: $choosingKey, allowedContentTypes: [.json]) { result in
             guard case .success(let file) = result else { return }
             readServiceKey(file)
-        }
-        if let needs = (kind.hasAPI && !byCLI ? kind.apiNeeds : kind.needs), editing == nil {
-            Text(needs).appText(.supporting).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-        }
-        if editing == nil {
-            Text(ProviderCarrier.secretsFoot(control.carriers.first { $0.id == carrier }?.name))
-                .appText(.supporting).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
         if let problem {
             VStack(alignment: .leading, spacing: 6) {
@@ -648,6 +784,11 @@ struct AddProviderSheet: View {
                 }
             }
         }
+        // One foot (#6069): where the secrets go, in fine print, then Back, Cancel and Add.
+        if editing == nil {
+            Text(ProviderCarrier.secretsFoot(control.carriers.first { $0.id == carrier }?.name))
+                .appText(.fine).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        }
         HStack {
             if editing == nil {
                 Button("Back") {
@@ -655,21 +796,30 @@ struct AddProviderSheet: View {
                     self.kind = nil
                     problem = nil
                 }
+                .disabled(working)
             }
             Spacer()
-            if working { ProgressView().controlSize(.small) }
             Button("Cancel") {
                 cancelDraft()
                 dismiss()
             }
             .keyboardShortcut(.cancelAction)
-            Button(editing == nil ? "Add" : "Save") { add(kind) }
-                .keyboardShortcut(.defaultAction)
-                .disabled(working || writing || name.trimmingCharacters(in: .whitespaces).isEmpty
-                          || (editing == nil && carrier == nil)
-                          || (editing != nil && written == nil) || (kind.hasAPI && !byCLI && token.isEmpty)
-                          || (kind == .aws && (trimmed(accessKey).isEmpty || secretKey.isEmpty || trimmed(region).isEmpty))
-                          || (kind == .compute && (serviceKey.isEmpty || trimmed(folder).isEmpty || trimmed(region).isEmpty)))
+            Button { add(kind) } label: {
+                if working {
+                    HStack(spacing: 6) {
+                        ProgressView().controlSize(.small)
+                        Text("Checking…")
+                    }
+                } else {
+                    Text(editing == nil ? "Add" : "Save")
+                }
+            }
+            .keyboardShortcut(.defaultAction)
+            .disabled(working || writing || name.trimmingCharacters(in: .whitespaces).isEmpty
+                      || (editing == nil && carrier == nil)
+                      || (editing != nil && written == nil) || (kind.hasAPI && !byCLI && token.isEmpty)
+                      || (kind == .aws && (trimmed(accessKey).isEmpty || secretKey.isEmpty || trimmed(region).isEmpty))
+                      || (kind == .compute && (serviceKey.isEmpty || trimmed(folder).isEmpty || trimmed(region).isEmpty)))
         }
     }
 
@@ -689,7 +839,7 @@ struct AddProviderSheet: View {
 
     /// API or CLI, for a kind that has both: the API first, as it needs nothing installed.
     private var reachPicker: some View {
-        Picker("Reach it with", selection: $byCLI) {
+        Picker("Connect with", selection: $byCLI) {
             Text("Its API").tag(false)
             Text("Its CLI").tag(true)
         }
@@ -699,17 +849,24 @@ struct AddProviderSheet: View {
     @ViewBuilder
     private var mcpForm: some View {
         if editing == nil {
-            Picker("Server", selection: $byAddress) {
-                Text("A command").tag(false)
-                Text("An address").tag(true)
-            }
-            .pickerStyle(.segmented)
-            if byAddress {
-                TextField("Address", text: $url, prompt: Text("https://…/mcp"))
-            } else {
-                TextField("Command", text: $command, prompt: Text("npx -y @digitalocean/mcp"))
+            Section("Server") {
+                Picker("Server", selection: $byAddress) {
+                    Text("A command").tag(false)
+                    Text("An address").tag(true)
+                }
+                .pickerStyle(.segmented)
+                if byAddress {
+                    TextField("Address", text: $url, prompt: Text("https://…/mcp"))
+                } else {
+                    TextField("Command", text: $command, prompt: Text("npx -y @digitalocean/mcp"))
+                }
             }
         }
+        Section("Tool map") { mcpMap }
+    }
+
+    @ViewBuilder
+    private var mcpMap: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text("Tool map").appText(.supporting)
@@ -743,6 +900,12 @@ struct AddProviderSheet: View {
 
     @ViewBuilder
     private var commandsForm: some View {
+        Section("Commands") { commandsWriter }
+        commandsByHand
+    }
+
+    @ViewBuilder
+    private var commandsWriter: some View {
         HStack {
             TextField("CLI", text: $cli, prompt: Text(editing == nil ? "cws" : "The program its commands use"))
             WriteItForMeButton(runtimes: runtimes, runtime: $runtime, again: written != nil,
@@ -771,19 +934,24 @@ struct AddProviderSheet: View {
                 }
             }
         }
+    }
+
+    @ViewBuilder
+    private var commandsByHand: some View {
         if byConfig {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Config").appText(.supporting)
-                TextEditor(text: $commandsConfig)
-                    .appText(.code)
-                    .frame(height: 180)
-                    .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Paper.rule))
-                    .disabled(writing)
-                    .accessibilityLabel("Config")
-                if editing == nil {
-                    Button("Use the Fields Instead") { byConfig = false }
-                        .buttonStyle(.borderless)
-                        .appText(.fine)
+            Section("Config") {
+                VStack(alignment: .leading, spacing: 4) {
+                    TextEditor(text: $commandsConfig)
+                        .appText(.code)
+                        .frame(height: 180)
+                        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Paper.rule))
+                        .disabled(writing)
+                        .accessibilityLabel("Config")
+                    if editing == nil {
+                        Button("Use the Fields Instead") { byConfig = false }
+                            .buttonStyle(.borderless)
+                            .appText(.fine)
+                    }
                 }
             }
         } else {
@@ -813,25 +981,25 @@ struct AddProviderSheet: View {
     @ViewBuilder
     private var secretsSection: some View {
         Section {
-            ForEach($secrets) { $secret in
-                HStack {
-                    TextField("Name", text: $secret.name, prompt: Text("TOKEN")).frame(maxWidth: 180)
-                    SecureField("Value", text: $secret.value)
-                    Button {
-                        secrets.removeAll { $0.id == secret.id }
-                    } label: {
-                        Image(icon: "minus.circle")
+            // Closed at first (#6069): most kinds need none.
+            DisclosureGroup("Secrets (optional)", isExpanded: $showsSecrets) {
+                ForEach($secrets) { $secret in
+                    HStack {
+                        TextField("Name", text: $secret.name, prompt: Text("TOKEN")).frame(maxWidth: 180)
+                        SecureField("Value", text: $secret.value)
+                        Button {
+                            secrets.removeAll { $0.id == secret.id }
+                        } label: {
+                            Image(icon: "minus.circle")
+                        }
+                        .buttonStyle(.borderless)
+                        .accessibilityLabel("Remove \(secret.name.isEmpty ? "this secret" : secret.name)")
                     }
-                    .buttonStyle(.borderless)
-                    .accessibilityLabel("Remove \(secret.name.isEmpty ? "this secret" : secret.name)")
                 }
+                Button("Add Secret") { secrets.append(Secret()) }
+                Text("Given to the provider as environment, or as ${NAME} in its headers. Kept on the machine that carries it, never shown again. A writing agent sees their names, never their values.")
+                    .appText(.fine).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
-            Button("Add Secret") { secrets.append(Secret()) }
-        } header: {
-            Text("Secrets")
-        } footer: {
-            Text("Given to the provider as environment, or as ${NAME} in its headers. Kept on the machine that carries it, never shown again. A writing agent sees their names, never their values.")
-                .appText(.fine).foregroundStyle(.secondary)
         }
     }
 
@@ -843,6 +1011,7 @@ struct AddProviderSheet: View {
         if !secrets.contains(where: { $0.name == ShippedToolMaps.digitalOceanSecret }) {
             secrets.append(Secret(name: ShippedToolMaps.digitalOceanSecret))
         }
+        showsSecrets = true
     }
 
     // MARK: Write It for Me (#858)
@@ -1163,22 +1332,28 @@ struct EditProviderSheet: View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Edit \(provider.name)").appText(.title).fontWeight(.semibold)
             Form {
-                TextField("Name", text: $name)
-                ForEach(fields, id: \.self) { field in
-                    if field.secret == "GOOGLE_SERVICE_ACCOUNT_KEY" {
-                        LabeledContent(field.label) {
-                            HStack {
-                                Text(serviceAccount.isEmpty ? keep : serviceAccount).foregroundStyle(.secondary)
-                                Button("Choose Key File…") { choosingKey = true }
+                Section("Provider") {
+                    TextField("Name", text: $name)
+                    CarrierPicker(control: control, carrier: $carrier, current: provider)
+                }
+                if !fields.isEmpty {
+                    Section("Access") {
+                        ForEach(fields, id: \.self) { field in
+                            if field.secret == "GOOGLE_SERVICE_ACCOUNT_KEY" {
+                                LabeledContent(field.label) {
+                                    HStack {
+                                        Text(serviceAccount.isEmpty ? keep : serviceAccount).foregroundStyle(.secondary)
+                                        Button("Choose Key File…") { choosingKey = true }
+                                    }
+                                }
+                            } else if field.hidden {
+                                SecureField(field.label, text: binding(field.secret), prompt: Text(keep))
+                            } else {
+                                TextField(field.label, text: binding(field.secret), prompt: Text(keep))
                             }
                         }
-                    } else if field.hidden {
-                        SecureField(field.label, text: binding(field.secret), prompt: Text(keep))
-                    } else {
-                        TextField(field.label, text: binding(field.secret), prompt: Text(keep))
                     }
                 }
-                CarrierPicker(control: control, carrier: $carrier, current: provider)
             }
             .formStyle(.grouped)
             .fileImporter(isPresented: $choosingKey, allowedContentTypes: [.json]) { result in

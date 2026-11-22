@@ -20,7 +20,8 @@ func TestTheSweepRemovesTheDeadAndKeepsTheLive(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
-	s := store.NewFolder(root)
+	// Counted, as New wraps it: the sweep still finds the folder's leftovers (#6585).
+	s := countedStore{Store: store.NewFolder(root), m: newMetrics()}
 	rs := records.New(s)
 	if _, err := rs.SettingsOrMake(ctx, func() records.Settings { return records.Settings{Name: "test", MachineID: "m"} }); err != nil {
 		t.Fatal(err)
