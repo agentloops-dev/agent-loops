@@ -84,6 +84,8 @@ struct MachineNeedTests {
     @Test func aMachineNearOrAtCapacitySaysSo() {
         #expect(MachineNeed.most(row: row("online"), offline: false, runtimes: [], capacity: .near) == .capacity(.near))
         #expect(MachineNeed.most(row: row("needsUpdate"), offline: false, runtimes: [], capacity: .full) == .capacity(.full))
+        #expect(MachineNeed.most(row: row("online"), offline: false, runtimes: [], capacity: .full, capacityReason: .memory)
+            == .capacity(.full, .memory))
         #expect(MachineNeed.most(row: row("online"), offline: false, runtimes: [], capacity: .ok) == nil)
         #expect(MachineNeed.most(row: row("offline"), offline: true, runtimes: [], capacity: .full) == .offline)
         #expect(MachineIcon.of(.online, diskLow: false, capacity: .near) == .attention)

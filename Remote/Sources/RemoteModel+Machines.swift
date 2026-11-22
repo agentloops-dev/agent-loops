@@ -58,7 +58,8 @@ extension RemoteModel {
     /// A machine's most urgent need, as its row says it (#3764).
     func need(of host: MachineRef) -> MachineNeed? {
         MachineNeed.most(row: machineRow(host), offline: machineOffline(host),
-                         runtimes: runtimes(on: host), disks: diskAlarms(host), capacity: capacityLevel(host))
+                         runtimes: runtimes(on: host), disks: diskAlarms(host), capacity: capacityLevel(host),
+                         capacityReason: capacityLevel(host) == nil ? nil : work.capacity[host]?.reason)
     }
 
     /// The machine's capacity level, as it last pushed it (#4748); nil while it is offline,

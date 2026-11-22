@@ -24,15 +24,23 @@ extension DaemonAPI {
         case ok, near, full
     }
 
+    /// What put a machine near or at capacity (#6596): its load per core (cpu), or critical
+    /// memory pressure (memory). It stays while the level waits to fall.
+    public enum CapacityReason: String, Codable, Hashable, Sendable, CaseIterable {
+        case cpu, memory
+    }
+
     /// What capacity/state answers and capacity/changed carries (#4748): the level, and at
-    /// near and full the words "this Mac is near capacity".
+    /// near and full the words "this Mac is near capacity" and what put it there (#6596).
     public struct CapacityState: Codable, Hashable, Sendable {
         public var level: CapacityLevel
         public var words: String?
+        public var reason: CapacityReason?
 
-        public init(level: CapacityLevel, words: String? = nil) {
+        public init(level: CapacityLevel, words: String? = nil, reason: CapacityReason? = nil) {
             self.level = level
             self.words = words
+            self.reason = reason
         }
     }
 

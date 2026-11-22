@@ -12,8 +12,9 @@ public enum MachineNeed: Equatable, Sendable {
     case settingUp(DaemonAPI.MachineSetup)
     /// Its worst disk that is low or almost full (#3928): why its icon is red.
     case disk(DiskAlarm)
-    /// Near or at capacity (#4748): its icon amber at near and red at full.
-    case capacity(DaemonAPI.CapacityLevel)
+    /// Near or at capacity (#4748): its icon amber at near and red at full, and why, when the
+    /// machine says (#6596).
+    case capacity(DaemonAPI.CapacityLevel, DaemonAPI.CapacityReason? = nil)
     case update
     /// The runtimes installed there that are not signed in, by name.
     case signIn([String])
@@ -21,9 +22,10 @@ public enum MachineNeed: Equatable, Sendable {
     /// The machine's most urgent need, or nil when it needs nothing. `offline` is whether the
     /// window can ask it now; `row` is the control plane's row, nil for a machine it does not list;
     /// `disks` are its disks that are not OK, as its page says them; `capacity` its level, as
-    /// `capacity/changed` last said it.
+    /// `capacity/changed` last said it, and `capacityReason` what put it there.
     public static func most(row: DaemonAPI.ControlMachine?, offline: Bool, runtimes: [RuntimeStatus],
-                            disks: [DiskAlarm] = [], capacity: DaemonAPI.CapacityLevel? = nil) -> MachineNeed? {
+                            disks: [DiskAlarm] = [], capacity: DaemonAPI.CapacityLevel? = nil,
+                            capacityReason: DaemonAPI.CapacityReason? = nil) -> MachineNeed? {
         if let setup = row?.setup, MachineSetupWords.isSettingUp(setup) { return .settingUp(setup) }
         if offline {
             if let row, let workspace = row.workspace,
@@ -33,7 +35,7 @@ public enum MachineNeed: Equatable, Sendable {
             return row?.state == "failed" ? .setupFailed : .offline
         }
         if let disk = DiskSpace.headline(disks.filter { $0.level != .ok }, folders: []) { return .disk(disk) }
-        if let capacity, capacity != .ok { return .capacity(capacity) }
+        if let capacity, capacity != .ok { return .capacity(capacity, capacityReason) }
         if row?.state == "needsUpdate" { return .update }
         let signIn = runtimes.filter(\.needsSignIn).map(\.runtime.name)
         return signIn.isEmpty ? nil : .signIn(signIn)

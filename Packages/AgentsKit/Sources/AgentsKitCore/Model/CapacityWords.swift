@@ -18,6 +18,18 @@ public enum CapacityWords {
         }
     }
 
+    /// A machine's row (#6596): "At CPU capacity" or "Near memory capacity"; the level's
+    /// words when the machine does not say why. Nil at ok.
+    public static func level(_ level: DaemonAPI.CapacityLevel?, reason: DaemonAPI.CapacityReason?) -> String? {
+        guard let words = Self.level(level) else { return nil }
+        guard let reason else { return words }
+        let what = switch reason {
+        case .cpu: "CPU"
+        case .memory: "memory"
+        }
+        return words.replacingOccurrences(of: " capacity", with: " \(what) capacity")
+    }
+
     /// The warning at near and full: "This Mac is near capacity: load 2.4 per core." Nil at ok.
     /// The daemon's machine.busy says the same sentence.
     public static func warning(_ usage: DaemonAPI.MachineUsage, name: String) -> String? {

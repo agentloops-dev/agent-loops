@@ -132,3 +132,34 @@ func TestSampleCapacityReadsThisMachine(t *testing.T) {
 	}
 	t.Logf("%+v", s)
 }
+
+// capacity/state says what set the level (#6596): cpu for the load, memory for critical
+// pressure, kept while the level waits to fall, and none at ok.
+func TestCapacityStateSaysTheReason(t *testing.T) {
+	set := fakeCapacity(t)
+	d, _ := start(t, t.TempDir())
+	defer d.Shutdown()
+	ctx := context.Background()
+	look := func(s capacitySample, level wire.CapacityLevel, reason wire.CapacityReason) {
+		t.Helper()
+		set(s)
+		d.checkCapacity(ctx)
+		st := d.capacityState()
+		got := wire.CapacityReason("")
+		if st.Reason != nil {
+			got = *st.Reason
+		}
+		if st.Level != level || got != reason {
+			t.Fatalf("after %+v: %s for %q, want %s for %q", s, st.Level, got, level, reason)
+		}
+	}
+	quiet := capacitySample{load1: 0.4, pressure: wire.MemoryPressureNormal}
+	look(quiet, wire.CapacityLevelOk, "")
+	look(capacitySample{load1: 3.2}, wire.CapacityLevelFull, wire.CapacityReasonCpu)
+	// Critical pressure with a quiet load is full for memory, at the same level.
+	look(capacitySample{load1: 0.4, pressure: wire.MemoryPressureCritical}, wire.CapacityLevelFull, wire.CapacityReasonMemory)
+	// A look under the line keeps the level and its reason.
+	look(quiet, wire.CapacityLevelFull, wire.CapacityReasonMemory)
+	look(quiet, wire.CapacityLevelOk, "")
+	look(capacitySample{load1: 2.2}, wire.CapacityLevelNear, wire.CapacityReasonCpu)
+}

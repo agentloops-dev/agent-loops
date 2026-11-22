@@ -5,13 +5,13 @@
 // runs on a provider's workspace (#691, layouts.md L1): then a stopped or failed one offers Start,
 // and a starting one shows a spinner and how long so far. The words are OfflineWords.swift's.
 import { useEffect, useState } from "preact/hooks";
-import type { CapacityLevel, ControlMachine, DiskAlarm, MachineSetup, MachineWorkspace, RuntimeStatus } from "../protocol/generated";
+import type { CapacityLevel, CapacityReason, ControlMachine, DiskAlarm, MachineSetup, MachineWorkspace, RuntimeStatus } from "../protocol/generated";
 import { isSettingUp, setupSidebarLine } from "../model/machineSetup";
 import { fromWireDate } from "../protocol/dates";
 import type { Store } from "../model/store";
 import { headline, needWords } from "../model/disk";
 import { Strip } from "./Strip";
-import { levelWords } from "../model/capacity";
+import { levelReasonWords } from "../model/capacity";
 
 /** What a workspace host's strip says while it is stopped, starting or failed to start, or null
  *  when the ordinary offline line says it (OfflineWords.workspaceLine). */
@@ -59,7 +59,7 @@ export function footLine(host: ControlMachine): string {
 /** What a machine needs, as its row under Machines says it in one grey line (#3764; MachineNeed.swift). */
 export type MachineNeed = { kind: "offline" | "stopped" | "setupFailed" | "update" } | { kind: "disk"; alarm: DiskAlarm }
   | { kind: "settingUp"; setup: MachineSetup }
-  | { kind: "capacity"; level: CapacityLevel } | { kind: "signIn"; runtimes: string[] };
+  | { kind: "capacity"; level: CapacityLevel; reason?: CapacityReason } | { kind: "signIn"; runtimes: string[] };
 
 /** Installed but not signed in, as its line on the machine's page says (#3629; RuntimeStatus.needsSignIn). */
 export function needsSignIn(status: RuntimeStatus): boolean {
@@ -73,7 +73,7 @@ export function needsSignIn(status: RuntimeStatus): boolean {
  *  it has not joined yet; then offline, then stopped, then a set-up that failed,
  *  then its worst disk that is not OK (#3928), then an update, then a runtime's sign-in; null when it needs nothing. */
 export function machineNeed(host: ControlMachine | undefined, online: boolean, runtimes: readonly RuntimeStatus[],
-  disks: readonly DiskAlarm[] = [], capacity?: CapacityLevel): MachineNeed | null {
+  disks: readonly DiskAlarm[] = [], capacity?: CapacityLevel, reason?: CapacityReason): MachineNeed | null {
   if (host?.setup && isSettingUp(host.setup)) return { kind: "settingUp", setup: host.setup };
   if (!online) {
     const ws = host?.workspace;
@@ -82,8 +82,8 @@ export function machineNeed(host: ControlMachine | undefined, online: boolean, r
   }
   const disk = headline(disks.filter((d) => d.level !== "ok"), []);
   if (disk) return { kind: "disk", alarm: disk };
-  // Its capacity (#4748), after a low disk.
-  if (capacity && capacity !== "ok") return { kind: "capacity", level: capacity };
+  // Its capacity (#4748), after a low disk, and why (#6596).
+  if (capacity && capacity !== "ok") return { kind: "capacity", level: capacity, ...(reason ? { reason } : {}) };
   if (host?.state === "needsUpdate") return { kind: "update" };
   const signIn = runtimes.filter(needsSignIn).map((s) => s.runtime.name);
   return signIn.length ? { kind: "signIn", runtimes: signIn } : null;
@@ -97,7 +97,7 @@ export function machineNeedLine(need: MachineNeed, host: ControlMachine): string
     case "setupFailed": return `Setting up ${host.name} failed.`;
     case "settingUp": return setupSidebarLine(need.setup);
     case "disk": return needWords(need.alarm);
-    case "capacity": return levelWords(need.level) ?? "";
+    case "capacity": return levelReasonWords(need.level, need.reason) ?? "";
     case "update": return "Needs an update";
     case "signIn": return `${new Intl.ListFormat("en", { type: "conjunction" }).format(need.runtimes)} ${need.runtimes.length === 1 ? "needs" : "need"} sign-in`;
   }

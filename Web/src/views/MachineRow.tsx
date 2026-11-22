@@ -9,6 +9,7 @@ import type { Store } from "../model/store";
 import { deleteQuestion, machineActions, machineDot, machineIcon, machineKind, machineSwipes, removeQuestion, swipeDistance,
   type MachineIconTone, type MachineJoin, type MachineKind, type MachineMaking, joinHint, makingCanDelete, makingFailed,
   makingLine, makingTone } from "../model/machineRow";
+import { levelReasonWords } from "../model/capacity";
 import { machineSheets } from "../model/machineSheets";
 import { machinesGroupWords, sidebarPins, toggleSidebarPin } from "../model/machinesGroup";
 import { placedSessions } from "../model/overview";
@@ -95,9 +96,10 @@ export function MachineRow({ store, host, on, open, children }: {
   const dot = machineDot(row, store.hostIsOnline(host), store.hostsBeingStarted.value.includes(host));
   const diskLow = (store.disk.value[host]?.alarms ?? []).some((a) => a.level !== "ok");
   const capacity = store.hostIsOnline(host) ? store.capacity.value[host]?.level : undefined;
+  const reason = capacity ? store.capacity.value[host]?.reason : undefined;
   const tone = machineIcon(dot, diskLow, capacity);
-  const stateWords = tone === "failure" && dot !== "offline" ? (diskLow ? "A disk is low" : "At capacity")
-    : tone === "attention" && capacity === "near" ? "Near capacity" : toneWords[tone];
+  const stateWords = tone === "failure" && dot !== "offline" ? (diskLow ? "A disk is low" : levelReasonWords("full", reason))
+    : tone === "attention" && capacity === "near" ? levelReasonWords("near", reason) : toneWords[tone];
 
   const stop = async () => {
     const asked = await store.providers.stop(host);
