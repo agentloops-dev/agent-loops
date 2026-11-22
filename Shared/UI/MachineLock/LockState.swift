@@ -80,7 +80,11 @@ final class LockState {
     private(set) var checked: MachineLock.State?
     /// The control plane answered and the lock was read, or it has none.
     private var settled = false
-    private(set) var requests: [DaemonAPI.LockJoinRequest] = []
+    /// The open requests and the nonces sent for them; kept through a lost connection (#6625).
+    private var cards = LockJoinCards()
+    var requests: [DaemonAPI.LockJoinRequest] { cards.requests }
+    /// A read of the requests on its way: another waits for the next turn.
+    private var rechecking = false
     /// Requests answered from here and not decided yet: their buttons wait.
     private(set) var answering: Set<String> = []
     /// Why the last answer from here failed, by request.
@@ -90,8 +94,6 @@ final class LockState {
     private var key: LockSigningKey?
     /// This device's own nonce, for its open request.
     private var ownNonce: Data?
-    /// The nonce this device sent, by request: the digits use it, never the one sent back.
-    private var signerNonces: [String: Data] = [:]
     private let pins: LockPins
     private let name: String
     private let kind: ClientRecord.Kind
@@ -207,8 +209,8 @@ final class LockState {
     /// when approving it by itself failed, or its reveal did not check (#5776).
     func open(at now: Date = Date()) -> [DaemonAPI.LockJoinRequest] {
         guard place == .member else { return [] }
-        return requests.filter {
-            $0.expires > now && $0.client != client && (!Self.compared($0) || failures[$0.request] != nil || step($0) == .mismatch)
+        return cards.open(at: now, client: client).filter {
+            !Self.compared($0) || failures[$0.request] != nil || step($0) == .mismatch
         }
     }
 
@@ -235,7 +237,7 @@ final class LockState {
 
     func step(_ request: DaemonAPI.LockJoinRequest) -> Step {
         guard request.nonce != nil else { return .waiting }
-        guard request.answeredBy == client, let mine = signerNonces[request.request] else { return .elsewhere }
+        guard request.answeredBy?.uppercased() == client?.uppercased(), let mine = cards.nonce(for: request.request) else { return .elsewhere }
         guard let reveal = request.reveal else { return .revealing }
         guard MachineLock.commitment(key: request.key, nonce: reveal) == request.commitment else { return .mismatch }
         return .compare(MachineLock.digits(key: request.key, clientNonce: reveal, signerNonce: mine))
@@ -250,10 +252,29 @@ final class LockState {
         pins.pruneOthers()
         await refresh(control)
         settled = true
+        await recheck(control)
+    }
+
+    /// Reads the open requests again. A read that fails keeps the cards there are (#6625).
+    func recheck(_ control: DaemonClient) async {
+        guard !rechecking else { return }
+        rechecking = true
+        defer { rechecking = false }
+        cards.reading()
         let listed = try? await control.call(DaemonAPI.Method.lockJoinRequests, DaemonAPI.Empty(),
                                              returning: [DaemonAPI.LockJoinRequest].self)
-        requests = listed ?? []
+        cards.read(listed)
         for request in requests { await approveCompared(request, on: control) }
+    }
+
+    /// While connected, a signer reads the requests again now and then, in case a notice did
+    /// not come (#6625), as the loops CLI reads its own. Ends when its task is cancelled.
+    func watch(_ control: DaemonClient, every interval: Duration = .seconds(10)) async {
+        while !Task.isCancelled {
+            try? await Task.sleep(for: interval)
+            guard !Task.isCancelled else { return }
+            if place == .member { await recheck(control) }
+        }
     }
 
     /// A notification from the control plane. True when it was one of the lock's.
@@ -264,18 +285,13 @@ final class LockState {
             await refresh(control)
         case DaemonAPI.Notification.controlLockJoinRequested:
             guard let request = try? params?.decode(DaemonAPI.LockJoinRequest.self) else { return true }
-            if let index = requests.firstIndex(where: { $0.request == request.request }) {
-                requests[index] = request
-            } else {
-                requests.append(request)
-            }
+            cards.heard(request)
             await answerOwn(request, on: control)
             await approveCompared(request, on: control)
         case DaemonAPI.Notification.controlLockJoinDecided:
             guard let decided = try? params?.decode(DaemonAPI.LockJoinDecided.self) else { return true }
-            requests.removeAll { $0.request == decided.request }
+            cards.ended(decided.request)
             answering.remove(decided.request)
-            signerNonces[decided.request] = nil
             failures[decided.request] = nil
             if case .asking(let request, _) = place, request == decided.request {
                 ownNonce = nil
@@ -291,11 +307,10 @@ final class LockState {
         return true
     }
 
-    /// The control plane went: nothing can be answered until it is back.
+    /// The control plane went: nothing can be answered until it is back. The cards stay (#6625):
+    /// the control plane keeps each request, and the next connection reads them again.
     func went() {
-        requests = []
         answering = []
-        signerNonces = [:]
     }
 
     /// Ask Again, after a request ended.
@@ -308,11 +323,11 @@ final class LockState {
     func compare(_ request: DaemonAPI.LockJoinRequest, on control: DaemonClient?) async {
         await answering(request, on: control) { control in
             let nonce = MachineLock.nonce()
-            self.signerNonces[request.request] = nonce
+            self.cards.sent(nonce, for: request.request)
             do {
                 _ = try await control.call(DaemonAPI.Method.lockJoinAnswer, DaemonAPI.LockJoinNonce(request: request.request, nonce: nonce))
             } catch {
-                self.signerNonces[request.request] = nil
+                self.cards.sent(nil, for: request.request)
                 throw error
             }
         }
@@ -377,7 +392,7 @@ final class LockState {
     func deny(_ request: DaemonAPI.LockJoinRequest, on control: DaemonClient?) async {
         await answering(request, on: control) { control in
             _ = try await control.call(DaemonAPI.Method.lockJoinDeny, DaemonAPI.LockJoinEnd(request: request.request))
-            self.requests.removeAll { $0.request == request.request }
+            self.cards.ended(request.request)
         }
     }
 
