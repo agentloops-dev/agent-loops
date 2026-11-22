@@ -75,6 +75,11 @@ type userSettingsSyncState struct {
 type userScopeState struct {
 	// agentOffersMu makes one offer of an agent's secret at a time (#5308).
 	agentOffersMu sync.Mutex
+	// offersRunMu guards offersRunning and offersAgain: one offerWaitingAgentSecrets runs at a
+	// time, and a delivery while it runs asks for one more run after it (#6626).
+	offersRunMu   sync.Mutex
+	offersRunning bool
+	offersAgain   bool
 	// personMu is person.json's (person/set and the part person, #5573).
 	personMu    sync.Mutex
 	userScopeMu sync.Mutex

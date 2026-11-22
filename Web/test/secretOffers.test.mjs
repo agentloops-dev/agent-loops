@@ -43,3 +43,13 @@ test("agent secrets: the words", () => {
   assert.equal(w.keepYours, "Keep Yours");
   assert.equal(w.useTheAgents, "Use the Agent's");
 });
+
+test("agent secrets: one card per machine and name, with its newest offer (#6626)", () => {
+  const first = { offer: "OFFER-1", name: "OKTA_ADMIN_PASSWORD", machine: "MACHINE-30", machineName: "Mac", savedAt: "2026-11-22T02:48:50Z", conflict: true };
+  const again = { ...first, offer: "OFFER-2", savedAt: "2026-11-22T02:48:51Z" };
+  const other = { ...first, offer: "OFFER-3", machine: "MACHINE-31", savedAt: "2026-11-22T02:00:00Z" };
+  assert.equal(w.offerCard(first), w.offerCard(again));
+  assert.notEqual(w.offerCard(first), w.offerCard(other));
+  assert.deepEqual(w.waitingOffers([again, first, other]).map((o) => o.offer), ["OFFER-3", "OFFER-2"]);
+  assert.deepEqual(w.waitingOffers([]), []);
+});

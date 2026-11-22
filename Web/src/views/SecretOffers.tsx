@@ -1,12 +1,13 @@
 // A secret an agent saved on one of the person's machines (#5308, specs/5308-agent-secrets-sync), as the
 // window's and the Remote's card: at the top of the sidebar, beside the machines that ask to join. A name the
 // person has already waits for Keep Yours or Use the Agent's; any other is taken by this page at once, so it
-// shows here only until then.
+// shows here only until then. A card is keyed by its machine and name, not the offer's id (#6626): a new offer of
+// the same name, read while Use the Agent's runs, keeps its progress and its failure.
 import { useSignal } from "@preact/signals";
 import type { Store } from "../model/store";
 import type { SecretOffer } from "../protocol/generated";
 import { describe } from "../model/errors";
-import { keepYours, offerLine, offersLabel, useTheAgents, waitingOffers } from "../model/secretOffers";
+import { keepYours, offerCard, offerLine, offersLabel, useTheAgents, waitingOffers } from "../model/secretOffers";
 import { ApprovalMark } from "./Approval";
 
 function OfferCard({ store, offer, down }: { store: Store; offer: SecretOffer; down: boolean }) {
@@ -42,7 +43,7 @@ export function SecretOffers({ store, down }: { store: Store; down: boolean }) {
   if (offers.length === 0) return null;
   return (
     <section class="join-requests" aria-label={offersLabel}>
-      <ul>{offers.map((offer) => <OfferCard key={offer.offer} store={store} offer={offer} down={down} />)}</ul>
+      <ul>{offers.map((offer) => <OfferCard key={offerCard(offer)} store={store} offer={offer} down={down} />)}</ul>
     </section>
   );
 }

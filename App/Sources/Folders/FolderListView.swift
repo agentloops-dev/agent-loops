@@ -139,8 +139,8 @@ struct FolderListView: View {
             if !model.userScope.offers.isEmpty {
                 Section {
                     ForEach(model.userScope.offers) { offer in
-                        SecretOfferCard(offer: offer, isAnswering: model.userScope.answeringOffers.contains(offer.offer),
-                                        failure: model.userScope.offerFailures[offer.offer],
+                        SecretOfferCard(offer: offer, isAnswering: model.userScope.offerAnswers.isAnswering(offer),
+                                        failure: model.userScope.offerAnswers.failure(offer),
                                         choose: { use in Task { await model.chooseSecretOffer(offer, useTheAgents: use) } })
                             .listRowSeparator(.hidden)
                             .selectionDisabled()
