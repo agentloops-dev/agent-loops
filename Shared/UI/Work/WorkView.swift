@@ -447,7 +447,12 @@ private struct WorkListPane: View {
                         Spacer(minLength: 12)
                     }
                     Text(WorkLook.shownOf(kind, shown: shown, more: list.hasMore, total: total))
-                    if let read = list.cacheRead {
+                    // While the machines are asked (#6638): the kept rows stay, and this says a read runs.
+                    if list.reading {
+                        Text(verbatim: "·")
+                        ProgressView().controlSize(.mini)
+                        Text(WorkLook.refreshing)
+                    } else if let read = list.cacheRead {
                         Text(verbatim: "·")
                         LastUpdateText(read: read)
                     }
