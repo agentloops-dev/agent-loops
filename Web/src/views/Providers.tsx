@@ -1,5 +1,5 @@
 // Settings ▸ Machine providers (#1808), the window's Settings ▸ Machine Providers: each
-// provider as a card of its workspaces, Add Provider… (kind first, then its short form), Edit…,
+// provider as a card of its workspaces, Add Provider… (a grouped list of kinds, then a form in sections, #6069), Edit…,
 // List Again and Remove…, and on a workspace Add as Machine…, Link to Host…, Start, Stop, Stop when
 // idle and Unlink.
 // Add and Edit… choose the machine that carries it, and its card says which (#3496).
@@ -8,9 +8,11 @@ import { useEffect, useState } from "preact/hooks";
 import type { ControlMachine, ProviderSummary, MachineInfo } from "../protocol/generated";
 import type { Store } from "../model/store";
 import {
-  addAsMachine, carrierChoices, carrierLine, carrierStart, defaultIdleMinutes, idleChoices, idleRowWords, keptAwakeLine, kindChip, kindFields, kindNeeds,
-  kindOfPreset, kindTitle, linkableHosts, mayBe, movesTo, noHostLine, providerKinds, providerLine, providerRequest, providerWords as words, sshDestination, workspaceLine, type ProviderKind,
+  addAsMachine, carrierChoices, carrierLine, carrierStart, choiceDescription, choiceDocs, choiceKind, choiceTitle, defaultIdleMinutes, idleChoices, idleRowWords,
+  keptAwakeLine, kindChip, kindFields, kindNote, kindOfPreset, kindTitle, linkableHosts, mayBe, movesTo, noHostLine, providerGroups, providerLine,
+  providerRequest, providerWords as words, sshDestination, workspaceLine, type ProviderChoice, type ProviderField, type ProviderKind,
 } from "../model/machineProviders";
+import { Icon, type IconName } from "./Icon";
 import { Modal } from "./Modal";
 import { MachinePicker } from "./MachinePicker";
 import { MachineDialog } from "./MachineDialog";
@@ -185,7 +187,17 @@ function WorkspaceRow({ store, provider, workspace, hosts, say, link, install }:
   );
 }
 
-/** Add a Provider, or Edit… one. With `added` (Add a Machine, #2131) it goes on with the provider it added, in place of closing. */
+/** Each row's icon, as the window's Kind.symbol (design/icons.json). */
+const choiceIcons: Record<ProviderChoice, IconName> = {
+  digitalOcean: "droplet", compute: "cpu", aws: "server", codespaces: "code", coder: "square-terminal",
+  workstations: "cloud", docker: "package", commands: "square-terminal", mcp: "workflow",
+};
+
+/**
+ * Add a Provider, or Edit… one (#6069): step 1, a grouped list of the kinds with a line each;
+ * step 2, a short form in sections, with help under each field, and one foot. With `added` (Add a
+ * Machine, #2131) it goes on with the provider it added, in place of closing.
+ */
 export function AddProviderDialog({ store, editing, close, added }: {
   store: Store; editing?: ProviderSummary | undefined; close: () => void; added?: (id: string | undefined) => void;
 }) {
@@ -208,6 +220,7 @@ export function AddProviderDialog({ store, editing, close, added }: {
     setValues(Object.fromEntries(kindFields(k).filter((f) => f.value).map((f) => [f.id, f.value!])));
     setProblem(undefined);
   };
+  const back = () => { setKind(undefined); setProblem(undefined); };
   const save = async () => {
     if (!kind) return;
     const request = providerRequest(kind, name, values, editing, carrier);
@@ -221,56 +234,114 @@ export function AddProviderDialog({ store, editing, close, added }: {
     else if (added) added((store.providers.list.peek() ?? []).find((p) => !before.has(p.id))?.id);
     else close();
   };
+  const title = editing ? `Edit ${editing.name}` : kind ? `Add ${kindTitle(kind)}` : "Add a Provider";
+  const input = (f: ProviderField) => {
+    const help = f.help ? `provider-help-${f.id}` : undefined;
+    const set = (value: string) => setValues({ ...values, [f.id]: value });
+    const control = f.id === "serviceKey"
+      ? <textarea rows={4} value={shown(f.id)} disabled={working} autocomplete="off" spellcheck={false} aria-describedby={help}
+          placeholder={moving ? words.giveAgain : editing ? words.editSecret : undefined}
+          onInput={(e) => set((e.target as HTMLTextAreaElement).value)} />
+      : f.secret
+      ? <input type="password" value={shown(f.id)} disabled={working} aria-describedby={help}
+          placeholder={moving ? words.giveAgain : editing ? words.editSecret : f.prompt}
+          autocomplete="new-password" onInput={(e) => set((e.target as HTMLInputElement).value)} />
+      : <input type="text" value={shown(f.id)} disabled={working} placeholder={f.prompt} autocomplete="off" aria-describedby={help}
+          autocapitalize="off" spellcheck={false} onInput={(e) => set((e.target as HTMLInputElement).value)} />;
+    return (
+      <Fragment key={f.id}>
+        <label>{f.label}{f.optional ? " (optional)" : ""}
+          {control}
+        </label>
+        {f.help && <small class="quiet field-help" id={help}>{f.help}</small>}
+      </Fragment>
+    );
+  };
+  const access = fields.filter((f) => f.secret);
+  const machines = fields.filter((f) => !f.secret);
   return (
-    <Modal label={editing ? `Edit ${editing.name}` : "Add a Provider"} close={close}>
+    <Modal label={title} close={close}>
       <div class="sheet-body connect-sheet provider-sheet">
-        <p class="strong">{editing ? `Edit ${editing.name}` : "Add a Provider"}</p>
-        {!editing && (
-          <div class="button-group" role="radiogroup" aria-label="Kind">
-            {providerKinds.map((k) => (
-              <button key={k} type="button" role="radio" aria-checked={kind === k} class={kind === k ? "on" : ""}
-                disabled={working} onClick={() => choose(k)}>{kindTitle(k)}</button>
+        <p class="strong">{title}</p>
+        {!kind ? (
+          <>
+            <p class="small quiet">{words.chooseIntro}</p>
+            {providerGroups.map((group) => (
+              <section key={group.title} class="provider-group" aria-label={group.title}>
+                <h4 class="section-head">{group.title}</h4>
+                <ul class="provider-choices">
+                  {group.kinds.map((choice) => {
+                    const opens = choiceKind(choice);
+                    return (
+                      <li key={choice}>
+                        <button type="button" class="provider-choice" disabled={!opens}
+                          onClick={() => { if (opens) choose(opens); }}>
+                          <Icon name={choiceIcons[choice]} class="provider-icon" />
+                          <span class="grow">
+                            <span class="strong">{choiceTitle(choice)}</span>
+                            <span class="small quiet">{choiceDescription(choice)}</span>
+                          </span>
+                          {opens ? <Icon name="chevron-right" class="quiet" /> : <span class="chip">{words.inTheMacApp(store.hasMac.value)}</span>}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </section>
             ))}
-          </div>
-        )}
-        {kind && (
-          <form class="token-form" onSubmit={(e) => { e.preventDefault(); void save(); }}>
-            <p class="small quiet">{kindNeeds(kind)}</p>
-            <label>Name
-              <input type="text" value={name} placeholder={kindTitle(kind)} disabled={working} autocomplete="off"
-                onInput={(e) => setName((e.target as HTMLInputElement).value)} />
-            </label>
-            {carriers.length === 0 && !offlineCarrier ? <p class="small">{words.noneOnline}</p> : (
-              <label>{words.carriedBy}
-                <select value={carrier ?? ""} disabled={working} onChange={(e) => setCarrier((e.target as HTMLSelectElement).value)}>
-                  {offlineCarrier && <option value={offlineCarrier.machine}>{offlineCarrier.machineName ?? "Its machine"} (offline)</option>}
-                  {carriers.map((h) => <option key={h.id} value={h.id}>{h.name}</option>)}
-                </select>
+          </>
+        ) : (
+          <form class="token-form provider-form" onSubmit={(e) => { e.preventDefault(); void save(); }}>
+            <div class="provider-head">
+              <Icon name={choiceIcons[kind]} class="provider-icon" />
+              <div class="grow">
+                <p class="strong">{kindTitle(kind)}</p>
+                <p class="small quiet">{choiceDescription(kind)}{" "}{kindNote(kind)}</p>
+              </div>
+              <a class="small" href={choiceDocs(kind)} target="_blank" rel="noopener noreferrer">{words.howToSetUp}</a>
+            </div>
+            <fieldset>
+              <legend>Provider</legend>
+              <label>Name
+                <input type="text" value={name} placeholder={kindTitle(kind)} disabled={working} autocomplete="off"
+                  onInput={(e) => setName((e.target as HTMLInputElement).value)} />
               </label>
+              {carriers.length === 0 && !offlineCarrier ? <p class="small">{words.noneOnline}</p> : (
+                <label>{words.carriedBy}
+                  <select value={carrier ?? ""} disabled={working} onChange={(e) => setCarrier((e.target as HTMLSelectElement).value)}>
+                    {offlineCarrier && <option value={offlineCarrier.machine}>{offlineCarrier.machineName ?? "Its machine"} (offline)</option>}
+                    {carriers.map((h) => <option key={h.id} value={h.id}>{h.name}</option>)}
+                  </select>
+                </label>
+              )}
+              {moving && <small class="quiet">{words.movedNote}</small>}
+            </fieldset>
+            {access.length > 0 && (
+              <fieldset>
+                <legend>Access</legend>
+                {access.map(input)}
+              </fieldset>
             )}
-            {moving && <p class="small quiet">{words.movedNote}</p>}
-            {fields.map((f) => (
-              <label key={f.id}>{f.label}{f.optional ? " (optional)" : ""}
-                {f.id === "serviceKey"
-                  ? <textarea rows={4} value={shown(f.id)} disabled={working} autocomplete="off" spellcheck={false}
-                      placeholder={moving ? words.giveAgain : editing ? words.editSecret : undefined}
-                      onInput={(e) => setValues({ ...values, [f.id]: (e.target as HTMLTextAreaElement).value })} />
-                  : f.secret
-                  ? <input type="password" value={shown(f.id)} disabled={working} placeholder={moving ? words.giveAgain : editing ? words.editSecret : f.prompt}
-                      autocomplete="new-password" onInput={(e) => setValues({ ...values, [f.id]: (e.target as HTMLInputElement).value })} />
-                  : <input type="text" value={shown(f.id)} disabled={working} placeholder={f.prompt} autocomplete="off"
-                      autocapitalize="off" spellcheck={false}
-                      onInput={(e) => setValues({ ...values, [f.id]: (e.target as HTMLInputElement).value })} />}
-              </label>
-            ))}
+            {machines.length > 0 && (
+              <fieldset>
+                <legend>Machines</legend>
+                {machines.map(input)}
+              </fieldset>
+            )}
+            {/* Return in a field adds it, as the default button. */}
+            <button type="submit" hidden />
           </form>
         )}
-        {working && <p class="quiet small">Checking it lists its machines…</p>}
         {problem && <p class="small failure">{problem}</p>}
+        {kind && <p class="small quiet provider-foot">{words.secretsFoot(carriers.find((h) => h.id === carrier)?.name ?? editing?.machineName)}</p>}
         <div class="sheet-actions">
-          <span class="quiet small grow">{words.secretsFoot(carriers.find((h) => h.id === carrier)?.name ?? editing?.machineName)}</span>
+          {kind && !editing && <button type="button" class="leading" disabled={working} onClick={back}>Back</button>}
           <button type="button" onClick={close}>Cancel</button>
-          <button type="button" class="prominent" disabled={!kind || working || !carrier} onClick={() => void save()}>{editing ? "Save" : "Add"}</button>
+          {kind && (
+            <button type="button" class="prominent" disabled={working || !carrier} onClick={() => void save()}>
+              {working ? <><span class="spinner" aria-hidden="true" /> {words.checking}</> : editing ? "Save" : "Add"}
+            </button>
+          )}
         </div>
       </div>
     </Modal>
