@@ -24,11 +24,21 @@ request 0.4 s. GitHub's GraphQL cost is noted for each request: 1 point per 100 
     GET /down?on=1|0                              GitHub does not answer (HTTP 502) while on
     GET /refuse?on=1|0                            every write is refused (HTTP 403) while on
 
-    python3 -I Web/test/walk/work6355-github.py <port> [repo|big] [seconds a request]
-Point a run-app host at it with --env AGENTS_TEST_GITHUB_URL=http://127.0.0.1:<port>.
+    python3 -I Web/test/walk/work6355-github.py [port] [repo|big] [seconds a request]
+With no port, the system picks a free one (#6660), so two lanes never share a fixture. The fixture writes
+{"port", "pid", "url"} to build/walk/work6355-github.json in its worktree, and removes it when it stops. It
+does not start on a port that is in use, or when that file names a fixture that still runs. A walk script and a
+run-app host read the port from the file:
+    python3 -I Web/test/walk/work6355-github.py & FIXTURE=$!
+    F=build/walk/work6355-github.json; until [ -s $F ]; do sleep 0.2; done
+    eval "$($S/launch.sh --slug work --env AGENTS_TEST_GITHUB_URL=$(jq -r .url $F))"
 """
+import atexit
+import errno
 import json
+import os
 import re
+import signal
 import sys
 import threading
 import time
@@ -37,8 +47,12 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
 REPO = "example/shop"
-SIZE = sys.argv[2] if len(sys.argv) > 2 else "repo"
-DELAY = float(sys.argv[3]) if len(sys.argv) > 3 else 1.5
+ARGS = sys.argv[1:]
+PORT = int(ARGS.pop(0)) if ARGS and ARGS[0].isdigit() else 0
+SIZE = ARGS[0] if ARGS else "repo"
+DELAY = float(ARGS[1]) if len(ARGS) > 1 else 1.5
+PORT_FILE = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "build", "walk",
+                         "work6355-github.json"))
 REST_DELAY = 0.4
 SIZES = {"repo": (6300, 300, 600, 20), "big": (50000, 5000, 5000, 200)}
 ISSUES, OPEN_ISSUES, PRS, OPEN_PRS = SIZES[SIZE]
@@ -345,5 +359,55 @@ class Handler(BaseHTTPRequestHandler):
         self.answer(404, {"message": "Not Found"})
 
 
+def running(pid):
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def serve():
+    try:
+        with open(PORT_FILE) as f:
+            old = json.load(f)
+        if old.get("pid") != os.getpid() and running(int(old["pid"])):
+            sys.exit(f"work6355-github: a fixture already runs in this worktree (pid {old['pid']}, port "
+                     f"{old['port']}, {PORT_FILE}). Stop it first: kill {old['pid']}")
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+    try:
+        server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
+    except OSError as e:
+        if e.errno == errno.EADDRINUSE:
+            sys.exit(f"work6355-github: port {PORT} is in use, maybe by another lane's fixture. "
+                     "Give no port, and the system picks a free one.")
+        raise
+    port = server.server_address[1]
+    os.makedirs(os.path.dirname(PORT_FILE), exist_ok=True)
+    tmp = PORT_FILE + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump({"port": port, "pid": os.getpid(), "url": f"http://127.0.0.1:{port}"}, f)
+    os.replace(tmp, PORT_FILE)
+
+    def remove():
+        try:
+            with open(PORT_FILE) as f:
+                if json.load(f).get("pid") == os.getpid():
+                    os.remove(PORT_FILE)
+        except (OSError, ValueError):
+            pass
+
+    atexit.register(remove)
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
+    print(f"work6355-github: {SIZE} on http://127.0.0.1:{port} (pid {os.getpid()}, {PORT_FILE})", flush=True)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+
+
 if __name__ == "__main__":
-    ThreadingHTTPServer(("127.0.0.1", int(sys.argv[1])), Handler).serve_forever()
+    serve()
