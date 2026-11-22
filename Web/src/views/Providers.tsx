@@ -296,7 +296,7 @@ function ProviderSetupSteps({ setup }: { setup: Setup }) {
 /** Each row's icon, as the window's Kind.symbol (design/icons.json). */
 const choiceIcons: Record<ProviderChoice, IconName> = {
   digitalOcean: "droplet", compute: "cpu", aws: "server", codespaces: "code", coder: "square-terminal",
-  workstations: "cloud", docker: "package", commands: "square-terminal", mcp: "workflow",
+  workstations: "cloud", docker: "package", commands: "square-terminal",
 };
 
 /**
