@@ -208,8 +208,14 @@ func TestDetachPrintsTheIDAndFollowsNothing(t *testing.T) {
 	if err != nil || out != "AB12CD34-0000-0000-0000-000000000000\n" {
 		t.Fatalf("got %q %v", out, err)
 	}
-	if len(f.calls) != 1 {
-		t.Fatalf("only agents/start: %v", f.calls)
+	// The kept levels are read before the start (#6651); after it, nothing is followed.
+	if len(f.calls) == 0 || !strings.HasSuffix(f.calls[len(f.calls)-1], " agents/start") {
+		t.Fatalf("agents/start is the last call: %v", f.calls)
+	}
+	for _, c := range f.calls[:len(f.calls)-1] {
+		if !strings.HasSuffix(c, " preferences/get") {
+			t.Fatalf("only the kept levels, then agents/start: %v", f.calls)
+		}
 	}
 }
 
