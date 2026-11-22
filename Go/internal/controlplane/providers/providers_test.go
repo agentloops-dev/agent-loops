@@ -565,6 +565,29 @@ func TestAWorkspaceThatInstallsOnFirstBootJoinsAndIsLinked(t *testing.T) {
 	}
 }
 
+// #6581: a machine the control plane made, which joined with the code its first boot was
+// given, is linked to its workspace although its host key is new to the control plane. The
+// link keeps no key then, as for a key that can't be fetched: the key is checked when ssh is
+// first needed. Before, the link asked a person to trust the key, nothing showed the ask, and
+// the droplet stayed "running — not a host".
+func TestAMadeMachineWhoseHostKeyIsNewIsLinkedAsItJoins(t *testing.T) {
+	h := newHarness(t, func(o *harnessOptions) {
+		o.hostKey = func(string, string, string) (string, string, error) { return "", "SHA256:made", nil }
+	})
+	h.add()
+	made, err := h.create("machine-38", nil)
+	if err != nil || !made.Joining {
+		t.Fatalf("%v %+v", err, made)
+	}
+	h.enroll("ttbq3gqg", "machine-38")
+	if !eventually(t, func() bool { l := LinkOf(h.records.Host("ttbq3gqg")); return l != nil && l.Workspace == "ws-machine-38" }) {
+		t.Fatal("not linked")
+	}
+	if link := LinkOf(h.records.Host("ttbq3gqg")); link.KnownHosts != "" {
+		t.Errorf("a key nobody trusted was kept: %+v", link)
+	}
+}
+
 // A make the control plane waits for says so to every client, and one it gave up on says
 // so with a reason, until Delete deletes the workspace at the provider (#4610).
 func TestAMadeMachineThatNeverJoinsIsSaidAndCanBeDeleted(t *testing.T) {
