@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
@@ -88,8 +89,50 @@ func lockChecked(conn any) bool {
 type clientLock struct {
 	mu      sync.Mutex
 	channel *machinelock.Channel
-	write   sync.Mutex
+	write   writeLock
 }
+
+// writeLock is a client's write lock that a write the host says unasked stops waiting for
+// once Shutdown begins (#6603). A client that reads nothing holds the lock up to its
+// connection's limit, and with a sync.Mutex each write in line waited for the one before it.
+type writeLock struct {
+	once    sync.Once
+	held    chan struct{}
+	waiting atomic.Int32
+}
+
+func (l *writeLock) sem() chan struct{} {
+	l.once.Do(func() { l.held = make(chan struct{}, 1) })
+	return l.held
+}
+
+func (l *writeLock) Lock() {
+	l.waiting.Add(1)
+	defer l.waiting.Add(-1)
+	l.sem() <- struct{}{}
+}
+
+func (l *writeLock) Unlock() { <-l.sem() }
+
+// lockUnless is Lock, or false at once when stop is closed, also while it waits.
+func (l *writeLock) lockUnless(stop <-chan struct{}) bool {
+	select {
+	case <-stop:
+		return false
+	default:
+	}
+	l.waiting.Add(1)
+	defer l.waiting.Add(-1)
+	select {
+	case l.sem() <- struct{}{}:
+		return true
+	case <-stop:
+		return false
+	}
+}
+
+// inLine is how many writes hold the lock or wait for it.
+func (l *writeLock) inLine() int { return int(l.waiting.Load()) + len(l.sem()) }
 
 func (l *clientLock) get() *machinelock.Channel {
 	l.mu.Lock()
@@ -112,11 +155,18 @@ func (c *Client) write(line string) { c.writeOnce(line, false) }
 // has begun it sends nothing, as clientsToTell does (#3828), also when it was already waiting
 // for the client's write lock (#6268): a client that reads nothing holds each write up to its
 // connection's own limit, and the writes in line behind one went on one at a time, each to
-// that limit, past Shutdown's wait for the goroutines that made them.
+// that limit, past Shutdown's wait for the goroutines that made them. A write in line stops
+// waiting as Shutdown begins, not when the one before it is done (#6603).
 func (c *Client) writeUnasked(line string) { c.writeOnce(line, true) }
 
 func (c *Client) writeOnce(line string, unasked bool) {
-	c.lock.write.Lock()
+	if unasked && c.d != nil {
+		if !c.lock.write.lockUnless(c.d.shutdownBegun()) {
+			return
+		}
+	} else {
+		c.lock.write.Lock()
+	}
 	defer c.lock.write.Unlock()
 	if unasked && c.d != nil && c.d.shuttingDown() {
 		return
