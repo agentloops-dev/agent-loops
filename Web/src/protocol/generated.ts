@@ -6012,7 +6012,8 @@ export interface ForgeLinked {
  * limit), and the items of the others still come. forges says what each forge on the page fills
  * (#4361); absent from an earlier daemon. total is how many items the whole list has, the sum of
  * each forge's count, kept from each forge's first page (#4396); absent when a forge on the list
- * gives no count (ForgeCapabilities.total) or could not be read, and from an earlier daemon.
+ * gives no count (ForgeCapabilities.total) or could not be read, and from an earlier daemon. scopes
+ * says what the list reads (#6641).
  */
 export interface ForgeList {
   items: ForgeItem[];
@@ -6020,6 +6021,12 @@ export interface ForgeList {
   total?: number;
   errors?: ForgeListError[];
   forges?: ForgeCapabilities[];
+  /**
+   * What the list reads (#6641): one entry per repo or project, as forge:name
+   * (github:example/shop), or one per forge that names no repos. Two machines whose lists read the
+   * same scopes give the same list, so a client asks one of them. Absent from an earlier daemon.
+   */
+  scopes?: string[];
 }
 
 /**
@@ -18319,7 +18326,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   ForgeLabels: { required: ["labels"], optional: [] },
   ForgeLead: { required: ["session", "state"], optional: ["title"] },
   ForgeLinked: { required: ["node", "title", "state"], optional: ["url"] },
-  ForgeList: { required: ["items"], optional: ["cursor", "total", "errors", "forges"] },
+  ForgeList: { required: ["items"], optional: ["cursor", "total", "errors", "forges", "scopes"] },
   ForgeListAll: { required: ["lists", "unreached", "notAsked"], optional: [] },
   ForgeListAllRequest: { required: ["kind"], optional: ["state", "board", "label", "assignee", "sort", "limit", "pages"] },
   ForgeListError: { required: ["forge", "message"], optional: [] },

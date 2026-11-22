@@ -253,14 +253,17 @@ public extension DaemonAPI {
         public var total: Int?
         public var errors: [ForgeListError]?
         public var forges: [ForgeCapabilities]?
+        /// What the list reads (#6641): forge:name per repo or project; nil from an earlier daemon.
+        public var scopes: [String]?
 
         public init(items: [ForgeItem] = [], cursor: String? = nil, errors: [ForgeListError]? = nil,
-                    forges: [ForgeCapabilities]? = nil, total: Int? = nil) {
+                    forges: [ForgeCapabilities]? = nil, total: Int? = nil, scopes: [String]? = nil) {
             self.items = items
             self.cursor = cursor
             self.total = total
             self.errors = errors
             self.forges = forges
+            self.scopes = scopes
         }
     }
 

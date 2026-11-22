@@ -358,6 +358,7 @@ func (d *Daemon) forgeListRead(ctx context.Context, moved []forgeListScoped, cur
 		out.Total = new(int64(total))
 	}
 	forgeListFillForgesAndErrors(&out, moved, pages)
+	out.Scopes = forgeListScopeNames(moved)
 	if more {
 		out.Cursor = cursor.text()
 	}
@@ -446,6 +447,25 @@ func (d *Daemon) forgeListScopes(ctx context.Context, folders []string, prs bool
 		scopeKeys = append(scopeKeys, f.Name(), s.Key())
 	}
 	return moved, scopeKeys
+}
+
+// forgeListScopeNames is what a list reads (#6641), sorted: each repo or project as sourcesOf names it
+// (github:owner/repo), else one forge:key for a forge's whole scope. Two machines whose lists say the same give the
+// same list, so a client asks one of them.
+func forgeListScopeNames(moved []forgeListScoped) []string {
+	names := []string{}
+	for _, m := range moved {
+		sources := sourcesOf(m.forge.Name(), m.scope)
+		for _, s := range sources {
+			names = append(names, s.name)
+		}
+		if len(sources) == 0 {
+			key, _ := json.Marshal(m.scope.Key())
+			names = append(names, m.forge.Name()+":"+string(key))
+		}
+	}
+	slices.Sort(names)
+	return slices.Compact(names)
 }
 
 // forgeListPages reads one page from each forge that the cursor has not done.

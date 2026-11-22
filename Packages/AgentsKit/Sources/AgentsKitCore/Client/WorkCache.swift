@@ -28,6 +28,9 @@ public protocol WorkCaching: Sendable {
     func keepPage(_ query: WorkCache.Query, host: MachineRef, page: Int, list: DaemonAPI.ForgeList) async
     /// The machine did not answer the query: its kept pages stay, with the errors and when it failed.
     func keepFailure(_ query: WorkCache.Query, host: MachineRef, errors: [DaemonAPI.ForgeListError]) async
+    /// The machine is not asked the query, as another machine reads what it reads (#6641): its kept answer goes, so
+    /// its rows do not draw as old ones.
+    func forget(_ query: WorkCache.Query, host: MachineRef) async
     /// Items read or written outside a list (a write's answer, #6351, or an item's page): each replaces an older copy.
     func keep(items: [DaemonAPI.ForgeItem]) async
     /// Changes one kept item at once (an optimistic write, #6354). Its `updatedAt` stays, so the forge's newer copy
@@ -383,6 +386,10 @@ public actor WorkCache: WorkCaching {
         answer.errors = errors
         answer.failed = now()
         write(answer, key: key, host: host, used: now())
+    }
+
+    public func forget(_ query: WorkCache.Query, host: MachineRef) {
+        try? run("DELETE FROM answer WHERE query = ? AND host = ?", [.text(query.key), .text(host.rawValue)])
     }
 
     private func keptAnswer(_ key: String, host: MachineRef) -> Kept? {
