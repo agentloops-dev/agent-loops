@@ -220,7 +220,7 @@ func BenchmarkBusLeaseAtTheLiveShape(b *testing.B) {
 			runtime.GC()
 			var after runtime.MemStats
 			runtime.ReadMemStats(&after)
-			b.ReportMetric(float64(int64(after.HeapInuse)-int64(before.HeapInuse))/(1<<20), "heap-MB-held")
+			b.ReportMetric((float64(after.HeapInuse)-float64(before.HeapInuse))/(1<<20), "heap-MB-held")
 		})
 	}
 }
