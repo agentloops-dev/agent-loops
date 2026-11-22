@@ -104,7 +104,7 @@ final class WorkListState {
     var cacheRead: Date?
     /// The query whose answer is on screen: a Refresh of it keeps its rows until the new answer comes.
     private var cacheShown: WorkCache.Query?
-    /// How many pages of each machine's answer the cache keeps: the next page is kept after them.
+    /// How many pages of each machine's answer were read since the last refresh: the next page is kept after them (#6636).
     private var cachePages: [MachineRef: Int] = [:]
 
     /// The forge's order for the list's sort (#6538): Priority is the daemon's priority order, else the last updated
@@ -209,7 +209,7 @@ final class WorkListState {
         }
         let shown = answer.shown(first: hosts)
         lists = shown.map { (host: $0.host, list: $0.list) }
-        cachePages = Dictionary(shown.map { ($0.host, $0.pages.count) }, uniquingKeysWith: { a, _ in a })
+        cachePages = Dictionary(shown.map { ($0.host, $0.fresh) }, uniquingKeysWith: { a, _ in a })
         cacheRead = shown.compactMap(\.read).min()
         let asked = Set(hosts)
         let stale = shown.contains { $0.failed != nil || !asked.contains($0.host) }
