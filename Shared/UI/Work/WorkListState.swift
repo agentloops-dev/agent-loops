@@ -158,17 +158,25 @@ final class WorkListState {
             return
         }
         let start = ContinuousClock.now
-        var got: [(host: MachineRef, list: DaemonAPI.ForgeList)]
-        do {
-            if let all = try await model.controlAll(DaemonAPI.Method.forgeListAll, listAllRequest(), returning: DaemonAPI.ForgeListAll.self) {
-                got = WorkList.hostLists(all, hosts: ids)
-            } else {
-                got = await askEach(ids, cursors: [:], model: model)
-            }
-        } catch {
-            got = ids.map { ($0, .init(errors: [.init(forge: "", message: error.localizedDescription)])) }
+        // Each repo is asked once (#6641): a machine that reads only what another reads is left out, unless one asked
+        // fails, when the machines it covered are asked too.
+        let source = model.workSource
+        var scopes = await keptScopes(cache, ids, source: source)
+        let pick = WorkList.oneEach(ids, scopes: scopes)
+        var got = await firstPages(pick.ask, of: ids, model: model)
+        if !pick.covered.isEmpty, got.contains(where: { !Self.clean($0.list) }) {
+            got += await firstPages(pick.covered, of: ids, model: model)
         }
         guard ask == mine else { return }
+        for entry in got {
+            scopes[entry.host] = Self.clean(entry.list) ? entry.list.scopes : nil
+            if Self.clean(entry.list), let read = entry.list.scopes {
+                await cache.keep(WorkList.Scopes(scopes: read, source: source), Self.scopesPage, asked: scopesAsked(entry.host))
+            }
+        }
+        let covered = Set(WorkList.oneEach(ids, scopes: scopes).covered)
+        for host in covered { await cache.forget(query, host: host) }
+        got = got.filter { !covered.contains($0.host) }
         let shown = WorkList.shownErrors(got.map { ($0.list.items.map(\.node.ref), $0.list.errors ?? []) })
         for (i, entry) in got.enumerated() {
             let answered = !entry.list.items.isEmpty || (entry.list.errors ?? []).isEmpty
@@ -180,7 +188,7 @@ final class WorkListState {
                 await cache.keepFailure(query, host: entry.host, errors: shown[i].isEmpty ? (entry.list.errors ?? []) : shown[i])
             }
         }
-        WorkCacheLog.note("asked \(kind.rawValue) \(query.state) \(query.sort): \(got.count) machine(s), "
+        WorkCacheLog.note("asked \(kind.rawValue) \(query.state) \(query.sort): \(got.count) machine(s), \(covered.count) left out, "
             + "\(got.reduce(0) { $0 + $1.list.items.count }) items\(got.compactMap(\.list.total).max().map { " of \($0)" } ?? ""), "
             + "\(WorkCacheLog.ms(since: start)) ms")
         let answer = await cache.answer(query)
@@ -218,6 +226,41 @@ final class WorkListState {
         let asked = Set(hosts)
         let stale = shown.contains { $0.failed != nil || !asked.contains($0.host) }
         keptRead = stale ? cacheRead : nil
+    }
+
+    /// Where a machine's scopes are kept (#6641), by the kind and the board: a board narrows what a list reads.
+    private static let scopesPage = "work-scopes"
+    private func scopesAsked(_ host: MachineRef) -> String { [kind.rawValue, filter.board, host.rawValue].joined(separator: "|") }
+
+    /// Each machine's kept scopes (#6641), of those kept since Work's machines and folders last changed.
+    private func keptScopes(_ cache: any WorkCaching, _ hosts: [MachineRef], source: String) async -> [MachineRef: [String]] {
+        var out: [MachineRef: [String]] = [:]
+        for host in hosts {
+            if let kept = await cache.kept(WorkList.Scopes.self, Self.scopesPage, asked: scopesAsked(host)), kept.value.source == source {
+                out[host] = kept.value.scopes
+            }
+        }
+        return out
+    }
+
+    /// A list that read every forge it reads.
+    private static func clean(_ list: DaemonAPI.ForgeList) -> Bool { (list.errors ?? []).isEmpty }
+
+    /// Page 1 of the cached query on `hosts`, of all the machines `all`: in one call to the control plane (naming
+    /// them, when they are not all), else a call to each.
+    private func firstPages(_ hosts: [MachineRef], of all: [MachineRef], model: any WorkModel) async
+        -> [(host: MachineRef, list: DaemonAPI.ForgeList)] {
+        guard !hosts.isEmpty else { return [] }
+        do {
+            let pages = hosts == all ? nil : hosts.map { DaemonAPI.MachineCursor(machine: $0, cursor: "") }
+            if let got = try await model.controlAll(DaemonAPI.Method.forgeListAll, listAllRequest(pages: pages),
+                                                    returning: DaemonAPI.ForgeListAll.self) {
+                return WorkList.hostLists(got, hosts: hosts)
+            }
+            return await askEach(hosts, cursors: [:], model: model)
+        } catch {
+            return hosts.map { ($0, .init(errors: [.init(forge: "", message: error.localizedDescription)])) }
+        }
     }
 
     /// forge/listAll's request for the cached query, at the cursors in `pages` for a next page.

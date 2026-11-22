@@ -245,6 +245,16 @@ struct WorkCacheTests {
         #expect(await cache.detail(node)?.detail.body == "Body")
     }
 
+    /// A machine left out of a query, as another reads what it reads (#6641), draws no rows of its own.
+    @Test func aMachineLeftOutLosesItsKeptAnswer() async throws {
+        let cache = try makeCache(Clock())
+        let devbox = MachineRef(rawValue: "devbox01")
+        await cache.keepPage(issues, host: mac, page: 0, list: page(1...3))
+        await cache.keepPage(issues, host: devbox, page: 0, list: page(1...3))
+        await cache.forget(issues, host: devbox)
+        #expect(await cache.answer(issues)?.hosts.map(\.host) == [mac])
+    }
+
     @Test func aFailureKeepsTheAnswerWithTheErrorAndTheReadTime() async throws {
         let clock = Clock()
         let cache = try makeCache(clock)

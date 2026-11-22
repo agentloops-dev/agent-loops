@@ -208,6 +208,20 @@ struct WorkListTests {
         #expect(WorkList.asksControlPlane(machines: 2))
     }
 
+    /// Each repo is asked once (#6641): a machine that reads only what others asked read is left out; one that reads
+    /// the most covers the others, and one whose scopes are not known is always asked.
+    @Test func eachRepoIsAskedOfOneMachine() {
+        let a = MachineRef(rawValue: "a"), b = MachineRef(rawValue: "b"), c = MachineRef(rawValue: "c")
+        let shop = ["github:example/shop"], both = ["github:example/shop", "github:example/web"]
+        #expect(WorkList.oneEach([a, b], scopes: [:]) == ([a, b], []))
+        #expect(WorkList.oneEach([a, b], scopes: [a: shop, b: shop]) == ([a], [b]))
+        #expect(WorkList.oneEach([a, b], scopes: [a: shop, b: both]) == ([b], [a]))
+        #expect(WorkList.oneEach([a, b, c], scopes: [a: shop, b: ["github:example/web"], c: both]) == ([c], [a, b]))
+        #expect(WorkList.oneEach([a, b], scopes: [a: shop, b: ["github:example/web"]]) == ([a, b], []))
+        #expect(WorkList.oneEach([a, b], scopes: [b: shop]) == ([a, b], []))
+        #expect(WorkList.oneEach([a, b], scopes: [a: shop, b: []]) == ([a], [b]))
+    }
+
     /// forge/listAll's next pages (#5592): each machine with a cursor gets its page; one that could not read it keeps its
     /// rows and cursor, and the page says why.
     @Test func theNextPagesComeInOneAnswerAndAFailedOneKeepsItsCursor() throws {

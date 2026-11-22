@@ -6380,7 +6380,7 @@ type ForgeLinked struct {
 	URL *string `json:"url,omitzero"`
 }
 
-// forge/issues and forge/pulls (#3129): a page of items, the last updated first. cursor is the next page, absent at the end. errors says a forge that could not be read (not connected, a rate limit), and the items of the others still come. forges says what each forge on the page fills (#4361); absent from an earlier daemon. total is how many items the whole list has, the sum of each forge's count, kept from each forge's first page (#4396); absent when a forge on the list gives no count (ForgeCapabilities.total) or could not be read, and from an earlier daemon.
+// forge/issues and forge/pulls (#3129): a page of items, the last updated first. cursor is the next page, absent at the end. errors says a forge that could not be read (not connected, a rate limit), and the items of the others still come. forges says what each forge on the page fills (#4361); absent from an earlier daemon. total is how many items the whole list has, the sum of each forge's count, kept from each forge's first page (#4396); absent when a forge on the list gives no count (ForgeCapabilities.total) or could not be read, and from an earlier daemon. scopes says what the list reads (#6641).
 type ForgeList struct {
 	Items []ForgeItem `json:"items"`
 
@@ -6391,6 +6391,9 @@ type ForgeList struct {
 	Errors []ForgeListError `json:"errors,omitzero"`
 
 	Forges []ForgeCapabilities `json:"forges,omitzero"`
+
+	// What the list reads (#6641): one entry per repo or project, as forge:name (github:example/shop), or one per forge that names no repos. Two machines whose lists read the same scopes give the same list, so a client asks one of them. Absent from an earlier daemon.
+	Scopes []string `json:"scopes,omitzero"`
 }
 
 // forge/listAll (#5592): each machine's ForgeList, as it answered, in the order of the caller's machines. The machines list the same repos, so a client merges the items by ref. unreached is the machines that have the method but did not answer (offline, too slow or an error); notAsked counts the machines past the most one call asks (50), as in DocsListAll.

@@ -354,6 +354,41 @@ public enum WorkList {
     /// way to fail: the machine is asked directly.
     public static func asksControlPlane(machines: Int) -> Bool { machines > 1 }
 
+    /// What a machine's list read (#6641), as its last clean page 1 said, and what Work read from then (the machines
+    /// and their folders, `workSource`): when that changes, what it reads is not known until it is asked again.
+    public struct Scopes: Codable, Sendable, Hashable {
+        public var scopes: [String]
+        public var source: String
+
+        public init(scopes: [String], source: String) {
+            self.scopes = scopes
+            self.source = source
+        }
+    }
+
+    /// The machines to ask a list (#6641), in `hosts`' order, and those left out: a machine whose scopes are known is
+    /// left out when the machines asked already read every one of them, so each repo is asked once, not once per
+    /// machine. The machines that read the most go first, so one that reads all covers the others; one whose scopes
+    /// are not known is always asked.
+    public static func oneEach(_ hosts: [MachineRef], scopes: [MachineRef: [String]])
+        -> (ask: [MachineRef], covered: [MachineRef]) {
+        let order = hosts.indices.sorted { a, b in
+            let ca = scopes[hosts[a]]?.count ?? Int.max, cb = scopes[hosts[b]]?.count ?? Int.max
+            return ca != cb ? ca > cb : a < b
+        }
+        var read = Set<String>()
+        var covered = Set<MachineRef>()
+        for i in order {
+            guard let known = scopes[hosts[i]] else { continue }
+            if read.isSuperset(of: known) {
+                covered.insert(hosts[i])
+            } else {
+                read.formUnion(known)
+            }
+        }
+        return (hosts.filter { !covered.contains($0) }, hosts.filter { covered.contains($0) })
+    }
+
     /// forge/listAll's answer (#5592) as each of `hosts`' list, in their order, as the web page's `hostListsOf`. A
     /// machine the control plane could not reach has an error for all its forges (forge ""); one it names that is not of
     /// `hosts` is left out, as it was not asked before.
