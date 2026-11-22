@@ -412,7 +412,8 @@ func (f *live) start(ctx context.Context, text string) error {
 	via := wire.StartedViaCLI
 	req := wire.StartRequest{RuntimeID: runtime, Cwd: f.p.folder, Prompt: text, Attachments: []wire.Attachment{},
 		StartOptions:          wire.StartOptions{Values: map[string]wire.JSONValue{}, ExtraArguments: []string{}},
-		AdditionalDirectories: []wire.URL{}, McpServers: []wire.MCPServer{}, Labels: []string{}, StartedVia: &via}
+		AdditionalDirectories: []wire.URL{}, McpServers: []wire.MCPServer{}, Labels: []string{}, StartedVia: &via,
+		Levels: startLevels(ctx, f.c, f.host(), f.o.mode)}
 	r, err := f.c.Call(ctx, f.host(), "agents/start", req)
 	if err != nil {
 		return &exit{code: exitError, msg: fmt.Sprintf("Could not start a session in %s: %v", f.p.folderName(), err)}
