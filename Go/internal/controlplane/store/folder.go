@@ -44,6 +44,20 @@ func (f *Folder) HashedByListing() int {
 	return f.index.hashed
 }
 
+// StatedByListing is how many entries listing has stat'ed in the folders under prefix, a
+// folder's key ending in "/" (#6582): a folder whose stamp is unchanged stats none.
+func (f *Folder) StatedByListing(prefix string) int {
+	f.index.mu.Lock()
+	defer f.index.mu.Unlock()
+	n := 0
+	for folder, stated := range f.index.stated {
+		if strings.HasPrefix(folder+"/", prefix) {
+			n += stated
+		}
+	}
+	return n
+}
+
 // file names the file of a key: no "..", no absolute path, no hidden name.
 func (f *Folder) file(key string) (string, error) {
 	if key == "" || strings.HasPrefix(key, "/") {
@@ -328,6 +342,7 @@ func (f *Folder) scan(folder, p string, st stamp) listing {
 	entries, _ := os.ReadDir(p)
 	l := listing{stamp: st}
 	unreadable := false
+	stated := 0
 	for _, e := range entries {
 		name := e.Name()
 		if strings.HasPrefix(name, ".") || strings.HasSuffix(name, ".lock") {
@@ -337,6 +352,7 @@ func (f *Folder) scan(folder, p string, st stamp) listing {
 		file := filepath.Join(p, name)
 		// Not followed: a link could lead out of the store.
 		entry, ok := stampOf(file, false)
+		stated++
 		if !ok {
 			continue
 		}
@@ -364,7 +380,7 @@ func (f *Folder) scan(folder, p string, st stamp) listing {
 	// time; it is scanned again next time rather than trusted. So is one holding a file
 	// that could not be read: a chmod changes neither stamp.
 	l.settled = st.mtime.Before(time.Now().Add(-2*time.Second)) && !unreadable
-	f.index.keep(folder, l)
+	f.index.keep(folder, l, stated)
 	return l
 }
 
@@ -432,10 +448,12 @@ type folderIndex struct {
 	files   map[string]map[string]knownFile
 	folders map[string]listing
 	hashed  int
+	// stated is how many entries each folder's scans have stat'ed: for the tests.
+	stated map[string]int
 }
 
 func newFolderIndex() *folderIndex {
-	return &folderIndex{files: map[string]map[string]knownFile{}, folders: map[string]listing{}}
+	return &folderIndex{files: map[string]map[string]knownFile{}, folders: map[string]listing{}, stated: map[string]int{}}
 }
 
 func split(key string) (string, string) {
@@ -480,8 +498,9 @@ func (x *folderIndex) listing(folder string) (listing, bool) {
 	return l, ok
 }
 
-// keep holds a folder scanned again; files no longer in it are forgotten.
-func (x *folderIndex) keep(folder string, l listing) {
+// keep holds a folder scanned again, which stat'ed stated entries; files no longer in it
+// are forgotten.
+func (x *folderIndex) keep(folder string, l listing, stated int) {
 	present := map[string]bool{}
 	for _, e := range l.files {
 		present[e.name] = true
@@ -489,6 +508,7 @@ func (x *folderIndex) keep(folder string, l listing) {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	x.folders[folder] = l
+	x.stated[folder] += stated
 	for name := range x.files[folder] {
 		if !present[name] {
 			delete(x.files[folder], name)
