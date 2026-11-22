@@ -256,7 +256,8 @@ public actor WorkCache: WorkCaching {
         guard page >= 0, page <= pages.count else { return }
         keep(items: list.items, at: at)
         let refs = list.items.map { Self.key($0.node) }.filter { memo[$0] != nil }
-        let read = Page(refs: refs, cursor: list.cursor, read: at)
+        // The forges' read time, not this call's (#6642): the daemon can answer from a copy up to a minute old.
+        let read = Page(refs: refs, cursor: list.cursor, read: min(list.readAt ?? at, at))
         if page == pages.count { pages.append(read) } else { pages[page] = read }
         let answer = Kept(pages: pages, total: list.total ?? kept?.total, forges: list.forges ?? kept?.forges,
                           errors: list.errors, failed: nil)

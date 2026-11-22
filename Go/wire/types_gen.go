@@ -6419,6 +6419,9 @@ type ForgeList struct {
 	Errors []ForgeListError `json:"errors,omitzero"`
 
 	Forges []ForgeCapabilities `json:"forges,omitzero"`
+
+	// When the forges were read for this answer (#6642): an answer agentsd kept has the time of its read, not of the call. Absent from an earlier daemon.
+	ReadAt *Date `json:"readAt,omitzero"`
 }
 
 // forge/listAll (#5592): each machine's ForgeList, as it answered, in the order of the caller's machines. The machines list the same repos, so a client merges the items by ref. unreached is the machines that have the method but did not answer (offline, too slow or an error); notAsked counts the machines past the most one call asks (50), as in DocsListAll.
@@ -6446,6 +6449,9 @@ type ForgeListAllRequest struct {
 	Sort *string `json:"sort,omitzero"`
 
 	Limit *int64 `json:"limit,omitzero"`
+
+	// As in ForgeListRequest (#6642): each machine reads its forges, not its kept answer. A Refresh.
+	Fresh *bool `json:"fresh,omitzero"`
 
 	Pages []MachineCursor `json:"pages,omitzero"`
 }
@@ -6481,6 +6487,9 @@ type ForgeListRequest struct {
 
 	// The order (#6538): priority (High, then Medium, then Low, then none, each newest first; GitHub by the priority labels, Jira by its priority field), else the last updated first. A forge that cannot sort by priority (GitLab) lists the last updated first; an older daemon too.
 	Sort *string `json:"sort,omitzero"`
+
+	// true reads the forges, not the answer agentsd keeps for a minute (#6642): a Refresh. An earlier daemon leaves it out and can answer from its copy.
+	Fresh *bool `json:"fresh,omitzero"`
 }
 
 // forge/log (#3130): the last lines of each failed check's log, as plain text.

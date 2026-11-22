@@ -11,7 +11,7 @@ import { hostAnswers } from "./capabilities";
 import { keepWork, keptWork, keptWorkRead } from "./localCopy";
 import { mark } from "./marks";
 import {
-  filterRows, forgeListAllRequest, fromForge, lineageRow, mergeBoards, mergeForge, neighbours, parseWorkQuery, projectRepos, refForge,
+  filterRows, forgeListAllRequest, fromForge, lineageRow, listReadAt, mergeBoards, mergeForge, neighbours, parseWorkQuery, projectRepos, refForge,
   shownErrors, sortRows, workQuery,
   type Neighbours, type WorkFilter, type WorkKind, type WorkProject, type WorkProjectRepos, type WorkRow, type WorkSort, type WorkState,
 } from "./work";
@@ -52,6 +52,8 @@ export interface WorkListState {
   opened: Signal<string | undefined>;
   /** What the rows were read for; the list reads them again only when that changes. */
   read: string | undefined;
+  /** The Refresh count (`asked`) of that read: a higher one asks the forges, not the daemons' kept answers (#6642). */
+  readAsked: number;
   /** The rows on screen came from this device's copy (#4930): the machines are asked again, and the list says so. */
   fromDevice: Signal<boolean>;
   /** When the rows on screen were read (#5142): this device's copy's time, or the last read; with rows carried over a
@@ -78,7 +80,7 @@ export function workList(kind: WorkKind): WorkListState {
     l = {
       kind, filter: signal(kept.filter), projects: signal([]), sort: signal<WorkSort>(kept.sort), lists: signal(null), loading: signal(false), lineage: signal([]),
       lineageCursor: signal(undefined), problem: signal(null), more: signal(false), moreFailed: signal(null), asked: signal(0), opened: signal(undefined),
-      read: undefined, fromDevice: signal(false), readAt: signal(undefined), shownFor: undefined,
+      read: undefined, readAsked: 0, fromDevice: signal(false), readAt: signal(undefined), shownFor: undefined,
     };
     lists.set(kind, l);
     const { filter, sort } = l;
@@ -240,7 +242,9 @@ export async function drawKept(l: WorkListState): Promise<boolean> {
 export async function loadList(store: Store, l: WorkListState): Promise<void> {
   const mine = askKey(store, l);
   if (l.read === mine && l.lists.peek() !== null) return;
+  const fresh = l.read !== undefined && l.asked.peek() !== l.readAsked;
   l.read = mine;
+  l.readAsked = l.asked.peek();
   const current = () => l.read === mine;
   const wanted = copyAsk(l);
   mark("work-list-read");
@@ -271,8 +275,9 @@ export async function loadList(store: Store, l: WorkListState): Promise<void> {
     // Every machine's list in one call to the control plane (#5592), which waits for a slow machine at most 5 s; the first
     // machine that answers for a forge is enough (#5449). The rows read before stay until it answers.
     const ids = hosts.map((h) => h.id);
-    const answered = ids.length === 0 ? [] : await store.link.call("forge/listAll", forgeListAllRequest(kind, forgeState(state), board)).then(
-      (all) => hostListsOf(all, ids, before),
+    let readAt = Date.now();
+    const answered = ids.length === 0 ? [] : await store.link.call("forge/listAll", forgeListAllRequest(kind, forgeState(state), board, undefined, fresh)).then(
+      (all) => { readAt = listReadAt(all, readAt); return hostListsOf(all, ids, before); },
       (e: unknown) => ids.map((host) => carryStale({ host, items: [], errors: [{ forge: "", message: describe(e) }] }, before.find((b) => b.host === host))));
     if (!current()) return;
     const read = settleLists(answered);
@@ -283,7 +288,7 @@ export async function loadList(store: Store, l: WorkListState): Promise<void> {
     l.fromDevice.value = false;
     // Rows carried over a failed read keep the time of the read they came from: the oldest on screen.
     const at = l.readAt.peek();
-    if (!read.some((h) => h.stale?.length) || at === undefined) l.readAt.value = Date.now();
+    if (!read.some((h) => h.stale?.length) || at === undefined) l.readAt.value = readAt;
     // Only a read some forge answered is kept, without what was carried from the last one: a failed read would draw
     // an empty list next time.
     if (read.some((h) => h.errors.length === 0)) {

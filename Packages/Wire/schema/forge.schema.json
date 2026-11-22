@@ -1117,6 +1117,10 @@
           "items": {
             "$ref": "#/definitions/ForgeCapabilities"
           }
+        },
+        "readAt": {
+          "description": "When the forges were read for this answer (#6642): an answer agentsd kept has the time of its read, not of the call. Absent from an earlier daemon.",
+          "$ref": "core.schema.json#/definitions/WireDate"
         }
       },
       "required": [
@@ -1179,6 +1183,10 @@
           "description": "The order (#6538): priority (High, then Medium, then Low, then none, each newest first; GitHub by the priority labels, Jira by its priority field), else the last updated first. A forge that cannot sort by priority (GitLab) lists the last updated first; an older daemon too.",
           "type": "string",
           "enum": ["updated", "priority"]
+        },
+        "fresh": {
+          "description": "true reads the forges, not the answer agentsd keeps for a minute (#6642): a Refresh. An earlier daemon leaves it out and can answer from its copy.",
+          "type": "boolean"
         }
       },
       "additionalProperties": false

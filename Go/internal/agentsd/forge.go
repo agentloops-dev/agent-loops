@@ -320,7 +320,10 @@ func (d *Daemon) forgeListAsked(ctx context.Context, prs bool, r wire.ForgeListR
 	}
 	moved, scopeKeys := d.forgeListScopes(ctx, folders, prs, board, reviewer)
 	key, _ := json.Marshal([]any{method, scopeKeys, board.key(), r.State, r.Label, r.Assignee, r.Query, r.Feature, reviewer, cursor, limit, r.UpdatedSince, r.Sort})
-	if a, ok := d.forgeCached(string(key)); ok && a.list != nil {
+	// A Refresh (fresh) reads the forges, not the answer kept for forgeCacheFor (#6642); the key leaves it out, so
+	// its answer replaces the kept one.
+	fresh := r.Fresh != nil && *r.Fresh
+	if a, ok := d.forgeCached(string(key)); ok && a.list != nil && !fresh {
 		return *a.list, nil
 	}
 	// Asks of the same list at once read it once (#6538): a cold start asks each list from several places.
@@ -330,7 +333,7 @@ func (d *Daemon) forgeListAsked(ctx context.Context, prs bool, r wire.ForgeListR
 		d.forgeListJoining()
 	}
 	answer, err, _ := d.forgeJoin.Do(string(key), func() (any, error) {
-		if a, ok := d.forgeCached(string(key)); ok && a.list != nil {
+		if a, ok := d.forgeCached(string(key)); ok && a.list != nil && !fresh {
 			return *a.list, nil
 		}
 		return d.forgeListRead(context.WithoutCancel(ctx), moved, cursor, filter, limit, string(key)), nil
@@ -344,7 +347,8 @@ func (d *Daemon) forgeListAsked(ctx context.Context, prs bool, r wire.ForgeListR
 // forgeListRead reads a page of a list from each forge, merges them, and keeps the answer under key.
 func (d *Daemon) forgeListRead(ctx context.Context, moved []forgeListScoped, cursor forgeCursor, filter forgeFilter, limit int,
 	key string) wire.ForgeList {
-	out := wire.ForgeList{Items: []wire.ForgeItem{}}
+	// When the forges were read, for a client's "Last update" (#6642): a kept answer keeps it.
+	out := wire.ForgeList{Items: []wire.ForgeItem{}, ReadAt: new(wire.DateOf(nowFunc()))}
 	pages := forgeListPages(ctx, moved, cursor, filter, limit)
 	var more bool
 	totals := listTotals(cursor, pages)

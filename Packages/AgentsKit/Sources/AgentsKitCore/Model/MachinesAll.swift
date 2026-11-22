@@ -28,9 +28,11 @@ public extension DaemonAPI {
         public var sort: String?
         public var limit: Int?
         public var pages: [MachineCursor]?
+        /// A Refresh (#6642): each machine reads its forges, not its kept answer.
+        public var fresh: Bool?
 
         public init(kind: String, state: String? = nil, board: String? = nil, label: String? = nil, assignee: String? = nil,
-                    sort: String? = nil, limit: Int? = nil, pages: [MachineCursor]? = nil) {
+                    sort: String? = nil, limit: Int? = nil, pages: [MachineCursor]? = nil, fresh: Bool? = nil) {
             self.kind = kind
             self.state = state
             self.board = board
@@ -39,6 +41,7 @@ public extension DaemonAPI {
             self.sort = sort
             self.limit = limit
             self.pages = pages
+            self.fresh = fresh
         }
     }
 
