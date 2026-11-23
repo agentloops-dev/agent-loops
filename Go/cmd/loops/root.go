@@ -13,6 +13,7 @@ import (
 type app struct {
 	ctx context.Context
 	out io.Writer
+	err io.Writer
 	o   options
 }
 
@@ -27,7 +28,7 @@ func register(c command) {
 }
 
 func newApp(ctx context.Context, out io.Writer) *app {
-	return &app{ctx: ctx, out: out}
+	return &app{ctx: ctx, out: out, err: io.Discard}
 }
 
 // root is the cobra tree today's commands plug into. The prompt is the root's own run:
@@ -46,14 +47,11 @@ func (a *app) root() *cobra.Command {
 			return checkMode(a.o.mode)
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if a.o.print || a.o.detach {
-				return printMode(a.ctx, a.out, a.o, args)
-			}
-			return chat(a.ctx, a.o, chatArgs{text: strings.Join(args, " "), cont: a.o.cont, resume: a.o.resume})
+			return a.create(args)
 		},
 	}
 	r.SetOut(a.out)
-	r.SetErr(io.Discard)
+	r.SetErr(a.err)
 	r.SetFlagErrorFunc(func(cmd *cobra.Command, err error) error {
 		return &exit{code: exitError, msg: err.Error() + "\nSee: loops --help"}
 	})
@@ -84,7 +82,13 @@ func (a *app) root() *cobra.Command {
 
 // run executes one line of words as cobra does, so tests and main share the tree.
 func run(ctx context.Context, args []string, w io.Writer) error {
-	r := newApp(ctx, w).root()
+	return runTo(ctx, args, w, io.Discard)
+}
+
+func runTo(ctx context.Context, args []string, w, errOut io.Writer) error {
+	a := newApp(ctx, w)
+	a.err = errOut
+	r := a.root()
 	r.SetArgs(args)
 	return r.Execute()
 }
@@ -127,7 +131,8 @@ func helpText(c *cobra.Command) string {
 	if c == c.Root() {
 		b.WriteString("\nEXAMPLES\n")
 		b.WriteString("  $ loops \"fix the flaky test\"\n")
-		b.WriteString("  $ loops ls --all\n")
+		b.WriteString("  $ loops sessions list --all\n")
+		b.WriteString("  $ loops sessions create --detach \"Fix the login redirect\"\n")
 		b.WriteString("  $ loops -p \"summarise the diff\" --on-ask=fail\n\n")
 		b.WriteString("Run 'loops <command> --help' for more.\n")
 	}

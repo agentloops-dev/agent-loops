@@ -206,7 +206,7 @@ func (f *live) pick(ctx context.Context, a chatArgs) (*wire.Agent, int, error) {
 	return &list[0], len(list) - 1, nil
 }
 
-// find is the session -r names: an id or the start of one (as loops ls shows it), or a
+// find is the session -r names: an id or the start of one (as loops sessions list shows it), or a
 // title, whole or a part that only one has.
 func (f *live) find(ctx context.Context, want string) (*wire.Agent, error) {
 	p := f.p
@@ -281,7 +281,7 @@ func match(list []wire.Agent, want string) (*wire.Agent, error) {
 	case 1:
 		return &list[hits[0]], nil
 	case 0:
-		return nil, &exit{code: exitError, msg: fmt.Sprintf("No session %q here.\nSee them: loops ls", want)}
+		return nil, &exit{code: exitError, msg: fmt.Sprintf("No session %q here.\nSee them: loops sessions list", want)}
 	default:
 		ids := shortIDs(list)
 		var names []string
@@ -321,11 +321,11 @@ func (f *live) attach(ctx context.Context, a wire.Agent, others int) error {
 	}
 	switch {
 	case others < 0:
-		line += fmt.Sprintf(" · %d+ other sessions here (loops ls)", pageSize-1)
+		line += fmt.Sprintf(" · %d+ other sessions here (loops sessions list)", pageSize-1)
 	case others == 1:
-		line += " · 1 other session here (loops ls)"
+		line += " · 1 other session here (loops sessions list)"
 	case others > 1:
-		line += fmt.Sprintf(" · %d other sessions here (loops ls)", others)
+		line += fmt.Sprintf(" · %d other sessions here (loops sessions list)", others)
 	}
 	f.print(head, st.paint(roleQuiet, line), "")
 	r, err := f.c.Call(ctx, f.host(), "agents/transcript", wire.TranscriptRequest{AgentID: a.ID, Limit: attachEntries})

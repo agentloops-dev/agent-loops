@@ -2,12 +2,14 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"strings"
 	"unicode"
 	"unicode/utf8"
 
+	"golang.org/x/term"
 	"golang.org/x/text/width"
 )
 
@@ -48,6 +50,11 @@ func detectStyle(tty bool, env func(string) string) style {
 	}
 	ct := strings.ToLower(env("COLORTERM"))
 	return style{on: true, full: ct == "truecolor" || ct == "24bit", dark: darkBackground(env)}
+}
+
+func styleOf(w io.Writer) style {
+	f, ok := w.(*os.File)
+	return detectStyle(ok && term.IsTerminal(int(f.Fd())), osEnv)
 }
 
 // darkBackground reads LOOPS_THEME (light or dark), else COLORFGBG ("15;0": the background

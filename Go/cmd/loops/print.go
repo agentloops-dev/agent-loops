@@ -477,7 +477,7 @@ func (f *follow) unreachable(err error) error {
 	return f.end("gone", exitError, fmt.Sprintf("Lost the session's host (%s). The session goes on: loops -r %s", reason(err), short(f.id))+debugLine(err))
 }
 
-// short is a session id as loops ls shows it.
+// short is a session id as loops sessions list shows it.
 func short(id wire.UUID) string { return shortIDs([]wire.Agent{{ID: id}})[0] }
 
 // printer writes what print mode prints. The chunks of one agent message come as entries of

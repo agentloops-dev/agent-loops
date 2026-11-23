@@ -450,7 +450,7 @@ func TestContinuingShowsTheLastEntriesAndAnswersAWaitingCardInTheTerminal(t *tes
 		t.Fatal("leaving never stops the session")
 	}
 	got := out.String()
-	for _, want := range []string{"Agent Loops · agent-loops (Alex's MacBook Pro) · claude · opus-5.5", `Continuing "Fix the flaky stop test" · needs you 12 min · 1 other session here (loops ls)`,
+	for _, want := range []string{"Agent Loops · agent-loops (Alex's MacBook Pro) · claude · opus-5.5", `Continuing "Fix the flaky stop test" · needs you 12 min · 1 other session here (loops sessions list)`,
 		"… 41 earlier entries", "  agent  I want to run: scripts/docs-parts.py", "✓ answered", "  you    and the docs", "The session goes on. Continue it: loops -r c40d11"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("no %q in\n%q", want, got)
@@ -514,7 +514,7 @@ func TestWithNoTerminalAnIdleSessionPrintsItsLastEntriesAndEnds(t *testing.T) {
 		t.Fatal("loops with no terminal waited on an idle session")
 	}
 	got := out.String()
-	for _, want := range []string{"Tests pass 20 of 20.", "19+ other sessions here (loops ls)"} {
+	for _, want := range []string{"Tests pass 20 of 20.", "19+ other sessions here (loops sessions list)"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("no %q in\n%s", want, got)
 		}

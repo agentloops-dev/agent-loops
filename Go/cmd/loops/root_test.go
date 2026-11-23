@@ -20,7 +20,7 @@ func TestRootRegistersTodaysCommands(t *testing.T) {
 		}
 	}
 	sort.Strings(got)
-	want := []string{"auth", "folders", "ls"}
+	want := []string{"auth", "folders", "sessions"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("commands: %v, want %v", got, want)
 	}
@@ -62,6 +62,26 @@ func TestCommandsSayTheirOwnShape(t *testing.T) {
 		var b bytes.Buffer
 		if err := run(context.Background(), tc.help, &b); err != nil || !strings.Contains(b.String(), tc.msg) {
 			t.Errorf("%v: %v\n%s", tc.help, err, b.String())
+		}
+	}
+}
+
+func TestSessionsCommandsSayTheirShape(t *testing.T) {
+	err := run(context.Background(), []string{"sessions"}, &bytes.Buffer{})
+	if err == nil || !strings.Contains(err.Error(), "loops sessions <list|create|follow>") {
+		t.Fatalf("sessions: %v", err)
+	}
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"sessions", "list", "--help"}, "loops sessions list"},
+		{[]string{"sessions", "create", "--help"}, `loops sessions create ["prompt"]`},
+		{[]string{"sessions", "follow", "--help"}, "loops sessions follow [<id>]"},
+	} {
+		var b bytes.Buffer
+		if err := run(context.Background(), tc.args, &b); err != nil || !strings.Contains(b.String(), tc.want) {
+			t.Errorf("%v: %v\n%s", tc.args, err, b.String())
 		}
 	}
 }
