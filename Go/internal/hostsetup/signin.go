@@ -34,9 +34,9 @@ func SignIn(ctx context.Context, o Options, d Deps, rep *Reporter, say func(stri
 			rep.Say(step, wire.MachineSetupStateFailed, "", err.Error())
 			return fmt.Errorf("%s: %w", step, err)
 		}
-		waiting, ready := splitSignedIn(all, ids)
+		waiting, ready, lent := splitSignedIn(all, ids)
 		if len(waiting) == 0 {
-			line := strings.Join(ready, ", ") + " signed in"
+			line := signedInLine(ready, lent)
 			rep.Say(step, wire.MachineSetupStateDone, line, "")
 			say("Sign in to runtimes: %s", line)
 			return nil
@@ -67,26 +67,45 @@ func SignIn(ctx context.Context, o Options, d Deps, rep *Reporter, say func(stri
 	}
 }
 
-// splitSignedIn names the runtimes of ids that wait for a sign-in and those that are signed
-// in, by the runtime's own name when the host gives one.
-func splitSignedIn(all []wire.RuntimeStatus, ids []string) (waiting, ready []string) {
+// splitSignedIn names the runtimes of ids that wait for a sign-in, those signed in with a
+// sign-in of their own, and those a Mac lends its sign-in to (056, #6855), by the runtime's
+// own name when the host gives one. A lent sign-in is used over the machine's own (056 D7),
+// so a runtime with both is lent.
+func splitSignedIn(all []wire.RuntimeStatus, ids []string) (waiting, ready, lent []string) {
 	for _, id := range ids {
-		name, signedIn := id, false
+		name, signedIn, relayed := id, false, false
 		for _, r := range all {
 			if r.Runtime.ID == id {
 				if r.Runtime.Name != "" {
 					name = r.Runtime.Name
 				}
 				signedIn = signedInOn(r)
+				relayed = r.SignIn != nil && r.SignIn.Relayed != nil && *r.SignIn.Relayed
 			}
 		}
-		if signedIn {
+		switch {
+		case signedIn && relayed:
+			lent = append(lent, name)
+		case signedIn:
 			ready = append(ready, name)
-		} else {
+		default:
 			waiting = append(waiting, name)
 		}
 	}
-	return waiting, ready
+	return waiting, ready, lent
+}
+
+// signedInLine is step 7's line when every runtime is signed in: "Claude, Codex signed in
+// (lent by a Mac)" when a Mac lends them its sign-in (#6855).
+func signedInLine(own, lent []string) string {
+	var parts []string
+	if len(own) > 0 {
+		parts = append(parts, strings.Join(own, ", ")+" signed in")
+	}
+	if len(lent) > 0 {
+		parts = append(parts, strings.Join(lent, ", ")+" signed in (lent by a Mac)")
+	}
+	return strings.Join(parts, "; ")
 }
 
 // signedInOn says whether a runtime on this machine is signed in: available, and, for the
