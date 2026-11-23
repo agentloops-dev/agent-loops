@@ -111,6 +111,7 @@ var CallConnectorsSetupSkip = Method[ConnectorSkipRequest, ConnectorSetup]{"conn
 var CallCostSetLimits = Method[SetLimitsRequest, CostState]{"cost/setLimits"}
 var CallCostState = Method[Empty, CostState]{"cost/state"}
 var CallCredentialsOffer = Method[CredentialsOffer, Empty]{"credentials/offer"}
+var CallCycletimeHistory = Method[Empty, CycleTimeHistory]{"cycletime/history"}
 var CallDaemonLockReset = Method[Empty, Empty]{"daemon/lockReset"}
 var CallDaemonPing = Method[Empty, PingResponse]{"daemon/ping"}
 var CallDaemonPolicyState = Method[Empty, PolicyState]{"daemon/policyState"}

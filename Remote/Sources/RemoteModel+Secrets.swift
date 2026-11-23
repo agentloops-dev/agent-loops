@@ -103,6 +103,12 @@ extension RemoteModel {
         return .merged([history])
     }
 
+    func cycleTimeHistory() async -> CycleTimeHistory? {
+        guard let history = try? await client.call(DaemonAPI.Method.cycletimeHistory, Optional<String>.none,
+                                                   returning: CycleTimeHistory.self) else { return nil }
+        return .merged([history])
+    }
+
     /// The achievements (#984), for the Multiplier page's badges (#4116), from the Mac's host;
     /// then heard on `achievements/changed`.
     func refreshAchievements() async {

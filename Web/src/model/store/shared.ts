@@ -169,7 +169,7 @@ export function storedTurnOf(summary: TurnSummary): ChatTurn {
 }
 
 /** A usage figure whose read a page dates (#5144): Cost, the charts, Time, Velocity and the Multiplier. */
-export type UsageRead = "cost" | "usage" | "time" | "velocity" | "multiplier";
+export type UsageRead = "cost" | "usage" | "time" | "velocity" | "cycletime" | "multiplier";
 
 
 /** Something a person asked of a whole agent, on its way to its host (#87; AgentAct.swift). */

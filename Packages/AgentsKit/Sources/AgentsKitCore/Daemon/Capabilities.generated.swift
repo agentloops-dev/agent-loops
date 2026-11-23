@@ -56,6 +56,7 @@ public enum Capability {
     public static let control1 = "control/1"
     public static let cost1 = "cost/1"
     public static let credentials1 = "credentials/1"
+    public static let cycletime1 = "cycletime/1"
     public static let daemon1 = "daemon/1"
     public static let dailyChecks1 = "daily-checks/1"
     public static let deploysCopy1 = "deploys.copy/1"
@@ -363,6 +364,7 @@ public enum Capability {
         "cost/setLimits": "cost/1",
         "cost/state": "cost/1",
         "credentials/offer": "credentials/1",
+        "cycletime/history": "cycletime/1",
         "daemon/lockReset": "host.lock/4",
         "daemon/ping": "daemon/1",
         "daemon/policyState": "host.policy/1",

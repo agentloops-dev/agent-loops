@@ -101,4 +101,9 @@ export const eventsMethods = {
     if (history) { this.velocity.value = { ...this.velocity.value, [host]: history }; this.usageRead(host, "velocity"); }
     if (Boolean(this.velocityFailed.value[host]) !== !history) this.velocityFailed.value = { ...this.velocityFailed.value, [host]: !history };
   },
+  async loadCycleTime(this: Store, host: string): Promise<void> {
+    const history = await this.link.call("cycletime/history", {}, host).catch(() => null);
+    if (history) { this.cycleTime.value = { ...this.cycleTime.value, [host]: history }; this.usageRead(host, "cycletime"); }
+    if (Boolean(this.cycleTimeFailed.value[host]) !== !history) this.cycleTimeFailed.value = { ...this.cycleTimeFailed.value, [host]: !history };
+  },
 };

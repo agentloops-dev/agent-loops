@@ -275,6 +275,9 @@ struct RemoteSidebar: View {
                     HStack { Text("Velocity"); Spacer() }
                         .accessibilityHint("The pull requests that landed, over time")
                         .activityIcon("arrow.triangle.merge").appText(.supporting).paperTag(SidebarItem.velocity)
+                    HStack { Text("Cycle time"); Spacer() }
+                        .accessibilityHint("How long work took to land, over time")
+                        .activityIcon("hourglass").appText(.supporting).paperTag(SidebarItem.cycletime)
                 } header: {
                     Text("Reports")
                 }

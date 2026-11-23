@@ -3948,6 +3948,38 @@ type CredentialsOffer struct {
 	SignIns []string `json:"signIns,omitzero"`
 }
 
+// The landings in one hour or one day for cycle time (#6648): their samples, and how many merged PRs in it had no recorded start and so cannot be drawn.
+type CycleTimeBucket struct {
+	Samples []CycleTimeSample `json:"samples"`
+
+	NoStart int64 `json:"noStart"`
+}
+
+// cycletime/history's answer (#6648): the pull requests that landed, by the hour (168 hours) and the day (90 days), from this machine's lineage store on each ask. Each sample carries its durations, repo and level, so the clients take the medians, P85 and shares over the range a person picks.
+type CycleTimeHistory struct {
+	Hours map[string]CycleTimeBucket `json:"hours"`
+
+	Days map[string]CycleTimeBucket `json:"days"`
+
+	Now string `json:"now"`
+
+	// The host's time zone, an IANA identifier such as America/Los_Angeles, that its hour and day stamps are in (#1267). Absent from a host too old to say: read as the viewer's own.
+	TimeZone *string `json:"timeZone,omitzero"`
+}
+
+// One issue that landed in a cycle-time bucket (#6648). cycle is from the start of work (#3562) to its last PR's merge. coding is from that start to the PR's creation (#4553), and pr from the creation to the merge: when the PR's opening was not recorded, coding and pr are absent and do not add to cycle.
+type CycleTimeSample struct {
+	Cycle float64 `json:"cycle"`
+
+	Coding *float64 `json:"coding,omitzero"`
+
+	Pr *float64 `json:"pr,omitzero"`
+
+	Level string `json:"level"`
+
+	Repo string `json:"repo"`
+}
+
 type DaemonStatus struct {
 	TurnsInFlight int64 `json:"turnsInFlight"`
 
