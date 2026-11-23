@@ -55,7 +55,8 @@ type Deps struct {
 	JoinWait, RuntimeWait time.Duration
 	// ScriptTimeout bounds one project's script.
 	ScriptTimeout time.Duration
-	// SignInWait bounds the wait for the first runtime to be signed in before step 8; SmokeWait
+	// SignInWait bounds step 8's wait for its runtime to be available, after step 7 said it
+	// was signed in (step 7 itself waits for the person with no limit, #6853); SmokeWait
 	// bounds the smoke session's answer.
 	SignInWait, SmokeWait time.Duration
 	// KeyWait is how long step 7 is running, for a client to write a key it has, before it
