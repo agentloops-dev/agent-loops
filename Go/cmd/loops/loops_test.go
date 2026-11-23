@@ -156,8 +156,9 @@ func TestLocateFindsTheNearestFolderInOneCall(t *testing.T) {
 		t.Fatalf("not in a folder: %+v %v", p, err)
 	}
 	err = notInFolder(p)
-	if codeOf(err) != exitNoFolder || !strings.Contains(err.Error(), "/tmp is not in a folder on Alex's MacBook Pro.") || !strings.Contains(err.Error(), "loops folder add") {
-		t.Fatalf("state 6: %v", err)
+	want := "/tmp is not in a folder on Alex's MacBook Pro.\nAdd it: loops folders add"
+	if codeOf(err) != exitNoFolder || err.Error() != want {
+		t.Fatalf("state 6: got %q, want %q", err.Error(), want)
 	}
 }
 
@@ -267,9 +268,9 @@ func TestShortIDsGrowUntilUnique(t *testing.T) {
 
 func TestNotPairedExitsFive(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	for _, args := range [][]string{{}, {"ls"}, {"status"}, {"unpair"}, {"folder", "add"}, {"fix the test"}, {"--all", "ls"}} {
+	for _, args := range [][]string{{}, {"ls"}, {"auth", "status"}, {"auth", "logout"}, {"folders", "add"}, {"fix the test"}, {"--all", "ls"}} {
 		err := run(context.Background(), args, &bytes.Buffer{})
-		if codeOf(err) != exitNotPair || !strings.Contains(err.Error(), "loops pair '<code>'") {
+		if codeOf(err) != exitNotPair || !strings.Contains(err.Error(), "loops auth login '<code>'") {
 			t.Errorf("%v: %v", args, err)
 		}
 	}
@@ -291,7 +292,7 @@ func TestFlagsGoBeforeOrAfterTheCommand(t *testing.T) {
 
 func TestUnreachableSaysNothingChanged(t *testing.T) {
 	err := unreachable("control.agentloops.dev", fmt.Errorf("dial: %w", context.DeadlineExceeded))
-	if codeOf(err) != exitError || err.Error() != "Cannot reach control.agentloops.dev (timed out).\nNothing changed. Try again, or run: loops status" {
+	if codeOf(err) != exitError || err.Error() != "Cannot reach control.agentloops.dev (timed out).\nNothing changed. Try again, or run: loops auth status" {
 		t.Fatalf("state 9: %q", err)
 	}
 	if codeOf(errors.New("x")) != exitError || codeOf(nil) != exitOK {
