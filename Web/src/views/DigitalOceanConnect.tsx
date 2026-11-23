@@ -10,6 +10,8 @@ import type { Store } from "../model/store";
 import { carrierChoices, carrierStart, choiceDocs, kindTitle } from "../model/machineProviders";
 import { digitalOceanPreset, doCallback, doWords as words, refusal, type Fix } from "../model/digitalOceanConnect";
 import { Icon } from "./Icon";
+import { oauthCallbackOrigin } from "../model/connectorSetup";
+import { oauthChannel } from "../oauthHandBack";
 
 const signInWindow = "agents-digitalocean";
 
@@ -66,8 +68,13 @@ export function DigitalOceanConnect({ store, reconnecting, back, cancel, done }:
       });
     };
     window.addEventListener("message", listen);
+    // DigitalOcean's pages cut the window off from this one (Cross-Origin-Opener-Policy), so the
+    // hand-back page sends the answer to this origin's address, and that tab gives it here.
+    const channel = typeof BroadcastChannel === "undefined" ? undefined : new BroadcastChannel(oauthChannel);
+    if (channel) channel.onmessage = (event) => listen({ origin: oauthCallbackOrigin, data: event.data } as MessageEvent);
     stopListening.current = () => {
       window.removeEventListener("message", listen);
+      channel?.close();
       stopListening.current = undefined;
     };
     setStep({ kind: "waiting", started });

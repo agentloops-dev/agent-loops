@@ -326,3 +326,8 @@ test("an OAuth refusal keeps the control plane's data.reason (#6074)", async () 
   const p = new w.Providers({ call: async () => { throw new w.CallFailed(-32000, "You chose Deny.", { reason: "denied" }); } });
   assert.deepEqual(await p.oauthFinish({ error: "access_denied" }), { refused: "You chose Deny.", reason: "denied" });
 });
+
+test("the hand-back page's answer in this origin's address is read, and any other address is not (#6074)", () => {
+  assert.deepEqual(w.handedBack("#oauth-callback?code=c1&state=s1"), { type: "agents-oauth-callback", code: "c1", state: "s1", error: null });
+  assert.equal(w.handedBack("#/settings/providers"), undefined);
+});

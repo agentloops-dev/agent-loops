@@ -212,3 +212,7 @@
 .pool-projects { border: 0; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 2px; font-size: 0.8125rem; }
 .connect-sheet .token-form .start-from label, .connect-sheet .token-form .pool-projects label { flex-direction: row; align-items: center; gap: 6px; }
 .provider-sheet fieldset.token-form { border: 0; padding: 0; margin: 0 0 8px; min-width: 0; }
+/* A provider's card (#6074, W6): its name and line take the row, and its buttons go under them, so
+   an OAuth card's account line and Reconnect… do not squeeze the line into a column. */
+.setup-card.provider-card > .connection { flex-wrap: wrap; }
+.setup-card.provider-card > .connection > .grow { flex: 1 1 100%; }
