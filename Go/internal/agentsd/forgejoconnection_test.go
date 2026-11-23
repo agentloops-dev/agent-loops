@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/connections"
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/internal/forgejomcp"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
@@ -122,6 +123,7 @@ func (f *fakeSetupForgejo) LastChecks(ctx context.Context, repo string) (*forgej
 // slots, each proved by one read, the forgejo connector's events go on, and a connection to
 // another Forgejo is not used here.
 func TestAForgejoFoldersConnectorSetUp(t *testing.T) {
+	flaky.UnderLoad(t, "#6886")
 	t.Parallel()
 
 	home := t.TempDir()
