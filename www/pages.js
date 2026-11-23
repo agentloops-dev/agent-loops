@@ -1,43 +1,73 @@
-// agentloops.dev's pages (#6830): each section is a page, and a page's motion (its words
-// coming in, its animation) starts when the page comes into view, and starts again each time
-// it comes back. The page dot of the page in view is marked. No cookies, no tracking, no
-// requests: this only adds and removes classes. Without it, the page shows everything, still.
+// agentloops.dev's motion (#6830): as on apple.com, each part of a section (a heading, a card,
+// a drawing) comes into being when it scrolls into view, and an animation starts from the
+// beginning each time it comes into view. No cookies, no tracking, no requests: this only adds
+// and removes classes. Without it, everything shows, still.
 (() => {
-  const root = document.documentElement;
   if (!("IntersectionObserver" in window)) return;
-  root.classList.add("js");
-  const dots = new Map(
-    [...document.querySelectorAll(".dots a")].map((a) => [a.getAttribute("href").slice(1), a]),
-  );
-  const seen = new IntersectionObserver(
-    (entries) => {
-      for (const e of entries) {
-        // In view: 30 % of the page shows, or, for a page taller than the window, 40 % of the window.
-        const shows = e.intersectionRatio >= 0.3 || e.intersectionRect.height >= window.innerHeight * 0.4;
-        if (e.isIntersecting && shows) {
-          e.target.classList.add("in");
-        } else if (!e.isIntersecting) {
-          e.target.classList.remove("in");
-        }
-      }
-    },
-    { threshold: [0, 0.1, 0.2, 0.3, 0.4] },
-  );
-  const current = new IntersectionObserver(
-    (entries) => {
-      for (const e of entries) {
-        const dot = dots.get(e.target.id);
-        if (!dot) continue;
-        if (e.isIntersecting) {
-          for (const d of dots.values()) d.removeAttribute("aria-current");
-          dot.setAttribute("aria-current", "true");
-        }
-      }
-    },
-    { rootMargin: "-50% 0px -50% 0px" },
-  );
-  for (const page of document.querySelectorAll(".page")) {
-    seen.observe(page);
-    current.observe(page);
+  document.documentElement.classList.add("js");
+  const still = window.matchMedia("(prefers-reduced-motion: reduce)");
+
+  // The parts that come in: a section's own children, except a grid, which brings its
+  // children in one by one instead.
+  const groups = ".grid3";
+  const parts = [];
+  for (const child of document.querySelectorAll(".page > .wrap > *")) {
+    if (child.matches(groups)) {
+      parts.push(...child.children);
+    } else {
+      parts.push(child);
+    }
   }
+  for (const part of parts) part.classList.add("part");
+
+  const comeIn = new IntersectionObserver(
+    (entries) => {
+      for (const e of entries) {
+        if (!e.isIntersecting) continue;
+        e.target.classList.add("in");
+        comeIn.unobserve(e.target);
+      }
+    },
+    { rootMargin: "0px 0px -12% 0px", threshold: 0.15 },
+  );
+  for (const part of parts) comeIn.observe(part);
+
+  // An animation plays while it is in view, from the beginning each time it comes back.
+  const play = new IntersectionObserver(
+    (entries) => {
+      for (const e of entries) {
+        if (e.intersectionRatio >= 0.4) e.target.classList.add("playing");
+        else if (!e.isIntersecting) e.target.classList.remove("playing");
+      }
+    },
+    { threshold: [0, 0.4] },
+  );
+  for (const anim of document.querySelectorAll(".anim, .loop")) play.observe(anim);
+
+  // A figure spins up to its value when it comes into view. It starts from its own value with
+  // the page's text, so without this, or with less motion asked for, it shows the value.
+  const format = new Intl.NumberFormat("en-GB");
+  const spin = new IntersectionObserver(
+    (entries) => {
+      for (const e of entries) {
+        if (!e.isIntersecting) continue;
+        spin.unobserve(e.target);
+        if (still.matches) continue;
+        const el = e.target;
+        const to = +el.dataset.to;
+        const begin = performance.now();
+        const ms = 1800;
+        const step = (now) => {
+          const t = Math.min((now - begin) / ms, 1);
+          const eased = 1 - (1 - t) ** 4;
+          el.textContent = format.format(Math.round(to * eased));
+          if (t < 1) requestAnimationFrame(step);
+        };
+        el.textContent = "0";
+        requestAnimationFrame(step);
+      }
+    },
+    { threshold: 0.6 },
+  );
+  for (const el of document.querySelectorAll(".figure[data-to]")) spin.observe(el);
 })();

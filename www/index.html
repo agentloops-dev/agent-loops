@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Agent Loops: agentic software delivery, from idea to production, and back</title>
-<meta name="description" content="Agents plan your work, build it, pass your CI, land it and ship it. You stay in the loop for the decisions that matter, from your Mac, your phone, a browser or a terminal. Works with the agents, forges, trackers and clouds you already use.">
+<meta name="description" content="Agent Loops runs a team of coding agents for you. They plan the work with you, build it, get it through your CI, merge it and ship it. You stay in the loop for the decisions that need a person.">
 <meta property="og:title" content="Agent Loops: agentic software delivery">
 <meta property="og:description" content="From idea to production, and back. Agents do the work; you make the decisions that matter.">
 <meta property="og:image" content="https://agentloops.dev/assets/shots/mac.png">
@@ -15,17 +15,15 @@
 <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
 <link rel="stylesheet" href="tokens.css">
 <link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="brands.css">
 <script src="pages.js" defer></script>
 </head>
 <body>
 
 <header class="top"><div class="wrap">
   <a class="brand" href="/"><img src="assets/icon.svg" alt="" width="28" height="28">Agent Loops</a>
+  <span class="tagline">Agentic software delivery</span>
   <nav>
-    <a href="#lifecycle">Lifecycle</a>
-    <a href="#epic">An epic</a>
-    <a href="#integrations">Integrations</a>
-    <a href="#built">Built with it</a>
     <a href="https://docs.agentloops.dev/">Docs</a>
   </nav>
   <a class="button small" href="#get">Get Agent Loops</a>
@@ -35,90 +33,133 @@
 
 <!-- 1. Hero. The downloads are in "Get Agent Loops", lower down (Alex, 2026-11-22, PR #6862). -->
 <section class="page hero" id="top" aria-label="Agentic software delivery"><div class="wrap">
-  <p class="eyebrow">Agentic software delivery</p>
   <h1>From idea to production, and back.</h1>
-  <p class="lede">Agents plan your work, build it, pass your CI, land it and ship it. You stay in the loop for the decisions that matter, from your Mac, your phone, a browser or a terminal. It works with the agents, forges, trackers and clouds you already use.</p>
-  <p class="actions">
-    <a class="button primary" href="#lifecycle">See how it works</a>
-    <a class="button" href="https://docs.agentloops.dev/">Read the docs</a>
-  </p>
-  <!-- The hero video goes beside the mocks when #1078 makes it. -->
-  <div class="hero-mocks" role="img" aria-label="A drawing of the Work page: the epic Checkout v2 with five issues, one merged, one in CI, one with an agent at work, one that needs you to approve it, and one blocked. Beside it, an iPhone shows the issue that needs you, with Approve and Change it.">
-    <div class="mock" aria-hidden="true">
-      <div class="mock-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span>Work ▸ Epic: Checkout v2</div>
-      <div class="mock-body">
-        <div class="row"><span>&#35;412 Cart totals in one call</span><span class="st done">merged</span></div>
-        <div class="row"><span>&#35;413 Pay with a saved card</span><span class="st run">CI running</span></div>
-        <div class="row"><span>&#35;414 Receipt e-mail</span><span class="st run">working · agent on box-2</span></div>
-        <div class="row"><span>&#35;415 New checkout screen</span><span class="st you">needs you · approve</span></div>
-        <div class="row"><span>&#35;416 Roll out to 10 %</span><span class="st wait">blocked by &#35;415</span></div>
-        <div class="row foot"><span>Lead: 3 lanes running · 2 machines · $4.10 today</span><span>Last update 1 min ago</span></div>
-      </div>
-    </div>
-    <div class="mock phone" aria-hidden="true">
-      <div class="mock-bar">iPhone · Needs you</div>
-      <div class="mock-body">
-        <b>&#35;415 New checkout screen</b>
-        <p class="small">Waits for your review. 4 screenshots.</p>
-        <p class="mock-actions"><span class="button small primary">Approve</span><span class="button small">Change it</span></p>
-      </div>
-    </div>
-  </div>
-  <p class="small caption">Drawings with sample data, not screenshots.</p>
+  <p class="lede">Agent Loops runs a team of coding agents for you. They plan the work with you, build it, get it through your CI, merge it and ship it. You stay in the loop for the decisions that need a person, from your Mac, your phone, a browser or the terminal, and the agents get on with the rest.</p>
+  <!-- The loop (Alex, PR #6862): a wide drawing, and a tall one for a narrow window. Made from
+       six steps placed at even lengths along an ellipse; the orbit changes shape over time, in CSS. -->
+  <figure class="loop">
+    <svg class="lp lp-wide" viewBox="0 0 1100 440" role="img" aria-labelledby="lp-title-wide lp-desc-wide" xmlns="http://www.w3.org/2000/svg">
+      <title id="lp-title-wide">The loop</title>
+      <desc id="lp-desc-wide">An idea becomes a feature. Agents build it, the pull requests merge, and the change deploys; then the loop starts again with the next idea. You approve the feature, the merge of new screens, and the deploy.</desc>
+      <defs><radialGradient id="lp-shade-w" cx="35%" cy="30%" r="75%"><stop class="lp-stop-lit" offset="0"/><stop class="lp-stop-mid" offset="0.55"/><stop class="lp-stop-dark" offset="1"/></radialGradient><clipPath id="lp-clip-w"><circle cx="550" cy="220" r="70"/></clipPath></defs>
+      <circle class="lp-glow" cx="550" cy="220" r="84"/>
+      <circle cx="550" cy="220" r="70" fill="url(#lp-shade-w)"/>
+      <g clip-path="url(#lp-clip-w)"><g class="lp-bands"><line x1="410" y1="188.5" x2="690" y2="188.5" stroke-width="7.0"/><line x1="410" y1="211.6" x2="690" y2="211.6" stroke-width="4.9"/><line x1="410" y1="234.0" x2="690" y2="234.0" stroke-width="8.4"/><line x1="410" y1="256.4" x2="690" y2="256.4" stroke-width="4.2"/></g></g>
+      <g class="lp-orbit lp-orbit-w">
+      <path class="lp-track" d="M 190 220 A 360 140 0 1 1 910 220 A 360 140 0 1 1 190 220" pathLength="100"/>
+      <path class="lp-comet" d="M 190 220 A 360 140 0 1 1 910 220 A 360 140 0 1 1 190 220" pathLength="100"/>
+      <g class="lp-step lp-s0" transform="translate(190.0 220.0)"><g class="lp-up lp-up-w">
+        <circle class="lp-dot" r="10"/>
+        <text class="lp-name" x="-22" y="6" text-anchor="end">Idea</text>
+      </g></g>
+      <g class="lp-step lp-s1" transform="translate(413.3 90.5)"><g class="lp-up lp-up-w">
+        <circle class="lp-dot" r="10"/>
+        <text class="lp-name" x="0" y="-22" text-anchor="middle">Feature</text>
+      </g></g>
+      <g class="lp-step lp-s2" transform="translate(686.8 90.5)"><g class="lp-up lp-up-w">
+        <circle class="lp-dot" r="10"/>
+        <text class="lp-name" x="0" y="-22" text-anchor="middle">Agents</text>
+      </g></g>
+      <g class="lp-step lp-s3" transform="translate(910.0 220.0)"><g class="lp-up lp-up-w">
+        <circle class="lp-dot" r="10"/>
+        <text class="lp-name" x="22" y="6" text-anchor="start">Build</text>
+      </g></g>
+      <g class="lp-step lp-s4" transform="translate(686.7 349.5)"><g class="lp-up lp-up-w">
+        <circle class="lp-dot" r="10"/>
+        <text class="lp-name" x="0" y="36" text-anchor="middle">Merge</text>
+      </g></g>
+      <g class="lp-step lp-s5" transform="translate(413.2 349.5)"><g class="lp-up lp-up-w">
+        <circle class="lp-dot" r="10"/>
+        <text class="lp-name" x="0" y="36" text-anchor="middle">Deploy</text>
+      </g></g>
+      </g>
+    </svg>
+    <svg class="lp lp-tall" viewBox="0 0 520 820" role="img" aria-labelledby="lp-title-tall lp-desc-tall" xmlns="http://www.w3.org/2000/svg">
+      <title id="lp-title-tall">The loop</title>
+      <desc id="lp-desc-tall">An idea becomes a feature. Agents build it, the pull requests merge, and the change deploys; then the loop starts again with the next idea. You approve the feature, the merge of new screens, and the deploy.</desc>
+      <defs><radialGradient id="lp-shade-t" cx="35%" cy="30%" r="75%"><stop class="lp-stop-lit" offset="0"/><stop class="lp-stop-mid" offset="0.55"/><stop class="lp-stop-dark" offset="1"/></radialGradient><clipPath id="lp-clip-t"><circle cx="260" cy="410" r="58"/></clipPath></defs>
+      <circle class="lp-glow" cx="260" cy="410" r="72"/>
+      <circle cx="260" cy="410" r="58" fill="url(#lp-shade-t)"/>
+      <g clip-path="url(#lp-clip-t)"><g class="lp-bands"><line x1="144" y1="383.9" x2="376" y2="383.9" stroke-width="5.8"/><line x1="144" y1="403.0" x2="376" y2="403.0" stroke-width="4.1"/><line x1="144" y1="421.6" x2="376" y2="421.6" stroke-width="7.0"/><line x1="144" y1="440.2" x2="376" y2="440.2" stroke-width="3.5"/></g></g>
+      <g class="lp-orbit lp-orbit-t">
+      <path class="lp-track" d="M 164 410 A 96 300 0 1 1 356 410 A 96 300 0 1 1 164 410" pathLength="100"/>
+      <path class="lp-comet" d="M 164 410 A 96 300 0 1 1 356 410 A 96 300 0 1 1 164 410" pathLength="100"/>
+      <g class="lp-step lp-s0" transform="translate(164.0 410.0)"><g class="lp-up lp-up-t">
+        <circle class="lp-dot" r="10"/>
+        <text class="lp-name" x="-22" y="7" text-anchor="end">Idea</text>
+      </g></g>
+      <g class="lp-step lp-s1" transform="translate(194.2 191.6)"><g class="lp-up lp-up-t">
+        <circle class="lp-dot" r="10"/>
+        <text class="lp-name" x="-22" y="7" text-anchor="end">Feature</text>
+      </g></g>
+      <g class="lp-step lp-s2" transform="translate(325.8 191.6)"><g class="lp-up lp-up-t">
+        <circle class="lp-dot" r="10"/>
+        <text class="lp-name" x="22" y="7" text-anchor="start">Agents</text>
+      </g></g>
+      <g class="lp-step lp-s3" transform="translate(356.0 410.1)"><g class="lp-up lp-up-t">
+        <circle class="lp-dot" r="10"/>
+        <text class="lp-name" x="22" y="7" text-anchor="start">Build</text>
+      </g></g>
+      <g class="lp-step lp-s4" transform="translate(325.8 628.4)"><g class="lp-up lp-up-t">
+        <circle class="lp-dot" r="10"/>
+        <text class="lp-name" x="22" y="7" text-anchor="start">Merge</text>
+      </g></g>
+      <g class="lp-step lp-s5" transform="translate(194.2 628.4)"><g class="lp-up lp-up-t">
+        <circle class="lp-dot" r="10"/>
+        <text class="lp-name" x="-22" y="7" text-anchor="end">Deploy</text>
+      </g></g>
+      </g>
+    </svg>
+  </figure>
 </div></section>
 
 <!-- 2. The whole lifecycle -->
 <section class="page" id="lifecycle"><div class="wrap">
   <h2>The whole lifecycle, not only the code</h2>
-  <p class="lede">Three parts. Agents do each step. A person comes in where a person decides.</p>
+  <p class="lede">Writing the code is only one part of delivering a change. Agent Loops covers the whole journey, from the first idea to the change running in production. Agents do each step, and they come to you when a decision needs a person.</p>
   <div class="grid3">
-    <div class="card"><span class="step">1</span><h3>Idea to epic <span class="tag now">today</span></h3>
+    <div class="card"><span class="step">1</span><h3>Idea to feature</h3>
       <ul>
-        <li>A product owner agent talks the idea through with you, by text or voice, and files the issues</li>
-        <li>An epic with ordered steps, sizes and priorities, in your tracker</li>
-        <li>You agree the plan <span class="tag you">you decide</span></li>
+        <li>Tell a product owner agent your idea, by typing or out loud. It talks it through with you, then files the issues.</li>
+        <li>The feature lands in your tracker as ordered issues, each with a size and a priority.</li>
+        <li>You agree the plan before any agent starts work.</li>
       </ul></div>
-    <div class="card"><span class="step">2</span><h3>Epic to merged PR <span class="tag now">today</span></h3>
+    <div class="card"><span class="step">2</span><h3>Feature to merged PRs</h3>
       <ul>
-        <li>A lead agent starts one agent for each issue, each in its own worktree, on your machines</li>
-        <li>Your CI is the gate: agents run it, read each failure and fix it</li>
-        <li>You approve new screens <span class="tag you">you decide</span></li>
+        <li>A lead agent starts an agent for each issue, each in its own worktree, on whichever of your machines has room.</li>
+        <li>Your CI decides what is good enough. Agents run it, read each failure and fix it, so you do not have to.</li>
+        <li>A change that adds a new screen waits for you to approve it.</li>
       </ul></div>
-    <div class="card"><span class="step">3</span><h3>Deploy, watch, roll back <span class="tag now">part today</span></h3>
+    <div class="card"><span class="step">3</span><h3>Deploy, watch, roll back</h3>
       <ul>
-        <li>Every deploy in every environment, on one page <span class="tag now">today</span></li>
-        <li>Errors in production go back into work <span class="tag now">today</span></li>
-        <li>A deploy that waits for an approval comes to you <span class="tag you">you decide</span></li>
-        <li>Agents watch a canary and roll back <a class="tag soon" href="https://github.com/agentloops-dev/agent-loops/issues/6831">coming</a></li>
+        <li>See every deploy in every environment on one page.</li>
+        <li>When something breaks in production, the error goes back into work as a new issue.</li>
+        <li>A deploy that needs an approval comes to you, wherever you are.</li>
+        <li>Agents will watch a canary and roll it back when it goes wrong. <a class="tag soon" href="https://github.com/agentloops-dev/agent-loops/issues/6831">coming</a></li>
       </ul></div>
   </div>
-  <p class="flow">idea → epic → issues → agents → CI → PRs → main → deploy → health → back to work</p>
 </div></section>
 
-<!-- 2b. An epic runs itself: a page of its own, so the animation starts when it comes into view. -->
-<section class="page" id="epic"><div class="wrap">
-  <h2>An epic runs itself</h2>
-  <p class="lede">One idea, five issues, three machines. Agents do the work; you approve one new screen.</p>
+<!-- 2b. A feature builds itself: a page of its own, so the animation starts when it comes into view. "Feature", not "epic" (Alex, PR #6862). -->
+<section class="page" id="feature"><div class="wrap">
+  <h2>A feature builds itself</h2>
+  <p class="lede">Here is one feature from start to finish. You say the idea out loud. A product owner agent turns it into five issues, and a lead agent shares them out across three machines. Your only job is to approve the one new screen.</p>
   <figure class="anim">
     <svg class="ep" viewBox="0 0 720 424" role="img" aria-labelledby="ep-title ep-desc" xmlns="http://www.w3.org/2000/svg">
-      <title id="ep-title">An epic runs itself</title>
-      <desc id="ep-desc">A person says an idea: "Let people search their orders by number or e-mail." The product owner files epic 417, Order search, with five issues. The lead starts a lane for each issue whose blockers are closed, on three machines. Three lanes work and their pull requests merge; the two blocked issues then start and merge too. The epic closes: 5 pull requests, 3 machines, 3 hours 40 minutes, $14.20, and you approved one new screen.</desc>
+      <title id="ep-title">A feature builds itself</title>
+      <desc id="ep-desc">A person says an idea: "Let people search their orders by number or e-mail." The product owner files feature 417, Order search, with five issues. The lead agent starts an agent for each issue that is ready, on three machines. Three agents work and their pull requests merge; the two blocked issues then start and merge too. The feature is done: 5 pull requests, 3 machines, 3 hours 40 minutes, $14.20, and you approved one new screen.</desc>
       <rect class="ep-frame" x="1" y="1" width="718" height="422" rx="14"/>
       <rect class="ep-chrome" x="1" y="1" width="718" height="36" rx="14"/>
       <rect class="ep-chrome" x="1" y="24" width="718" height="13"/>
       <circle class="ep-light" cx="22" cy="19" r="5"/><circle class="ep-light" cx="40" cy="19" r="5"/><circle class="ep-light" cx="58" cy="19" r="5"/>
-      <text x="80" y="23" class="ep-s">An epic runs itself · one lead, a lane per issue, on several machines</text>
+      <text x="80" y="23" class="ep-s">A feature builds itself · one lead agent, an agent per issue, on several machines</text>
 
       <g class="ep-a ep-fade ep-f1">
         <rect class="ep-idea" x="24" y="52" width="420" height="30" rx="15"/>
         <text x="40" y="72" class="ep-t">🎙 "Let people search their orders by number or e-mail."</text>
       </g>
       <g class="ep-a ep-fade ep-f2">
-        <text x="24" y="108" class="ep-t ep-b">Epic &#35;417 · Order search</text>
-        <text x="210" y="108" class="ep-s">5 issues · sizes S–M · priority medium · filed by the product owner</text>
-      </g>
-      <g class="ep-a ep-fade ep-f3">
-        <text x="24" y="130" class="ep-s">The lead starts a lane for each issue whose blockers are closed</text>
+        <text x="24" y="108" class="ep-t ep-b">Feature &#35;417 · Order search</text>
       </g>
 
       <g class="ep-a ep-fade ep-f3 ep-s">
@@ -153,48 +194,106 @@
 
       <g class="ep-a ep-fade ep-f9">
         <rect class="ep-done" x="24" y="384" width="672" height="28" rx="8"/>
-        <text x="40" y="403" class="ep-t ep-b ep-done-text">Epic closed · 5 PRs · 3 machines · 3 h 40 min · $14.20 · you approved one new screen</text>
+        <text x="40" y="403" class="ep-t ep-b ep-done-text">Feature done · 5 PRs · 3 machines · 3 h 40 min · $14.20 · you approved one new screen</text>
       </g>
     </svg>
-    <figcaption class="small">Sample data. It starts when it comes into view, and stops when you ask your system for less motion.</figcaption>
   </figure>
 </div></section>
 
 <!-- 15. Works with the tools you already use. The count comes from docs/reference/integrations.md (2026-11-22). -->
 <section class="page" id="integrations"><div class="wrap">
   <h2>Works with the tools you already use</h2>
-  <p class="lede">40+ integrations, and any MCP server. Bring your agents, your forge, your tracker and your cloud. Each agent signs in with your own account and plan.</p>
+  <p class="lede">Agent Loops fits into the tools your team already has, with more than 40 integrations and room for any MCP server. Bring your own coding agents, forge, tracker and cloud. Each agent signs in with your own account and plan, so you keep the subscriptions you already pay for.</p>
   <div class="grid3 groups">
-    <div class="card"><h3>Coding agents</h3><p class="chips"><span class="chip">Claude</span><span class="chip">Codex</span><span class="chip">Antigravity</span><span class="chip">Grok</span><span class="chip">Copilot</span><span class="chip">Cursor</span><span class="chip">OpenCode</span></p>
-      <p class="more"><a href="https://docs.agentloops.dev/reference/runtimes/">What each one can do</a></p></div>
-    <div class="card"><h3>Forges</h3><p class="chips"><span class="chip">GitHub</span><span class="chip">GitLab</span><span class="chip">Bitbucket</span><span class="chip">Azure DevOps</span><span class="chip">Forgejo</span></p></div>
-    <div class="card"><h3>Trackers</h3><p class="chips"><span class="chip">GitHub Issues and Projects</span><span class="chip">Jira</span><span class="chip">Linear</span><span class="chip">Azure Boards</span></p></div>
-    <div class="card"><h3>Machines</h3><p class="chips"><span class="chip">Your Mac</span><span class="chip">Linux over ssh</span><span class="chip">DigitalOcean</span><span class="chip">AWS EC2</span><span class="chip">Google Compute</span><span class="chip">Cloud Workstations</span><span class="chip">Codespaces</span><span class="chip">Coder</span><span class="chip">Docker</span></p></div>
-    <div class="card"><h3>Chat and mail</h3><p class="chips"><span class="chip">Slack</span><span class="chip">Google Chat</span><span class="chip">WhatsApp</span><span class="chip">E-mail</span></p></div>
-    <div class="card"><h3>Errors and uptime</h3><p class="chips"><span class="chip">Sentry</span><span class="chip">Better Stack</span></p></div>
-    <div class="card"><h3>Docs</h3><p class="chips"><span class="chip">Confluence</span><span class="chip">Notion</span><span class="chip">Google Drive</span></p></div>
-    <div class="card"><h3>AI gateways</h3><p class="chips"><span class="chip">Amazon Bedrock</span><span class="chip">Vertex AI</span><span class="chip">Azure</span><span class="chip">LiteLLM</span><span class="chip">Portkey</span></p></div>
-    <div class="card"><h3>Delivery and reports</h3><p class="chips"><span class="chip">Cloud Run</span><span class="chip">App Store and TestFlight</span><span class="chip">CodeRabbit</span><span class="chip">OTLP</span><span class="chip">A read API</span></p></div>
+    <div class="card"><h3>Coding agents</h3>
+    <ul class="ints">
+      <li><span class="tile lg-claude"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/logos.svg#claude"/></svg></span>Claude</li>
+      <li><span class="tile mono" aria-hidden="true">Cx</span>Codex</li>
+      <li><span class="tile mono" aria-hidden="true">Ag</span>Antigravity</li>
+      <li><span class="tile mono" aria-hidden="true">Gk</span>Grok</li>
+      <li><span class="tile lg-githubcopilot"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/logos.svg#githubcopilot"/></svg></span>Copilot</li>
+      <li><span class="tile lg-cursor"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/logos.svg#cursor"/></svg></span>Cursor</li>
+      <li><span class="tile lg-opencode"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/logos.svg#opencode"/></svg></span>OpenCode</li>
+    </ul></div>
+    <div class="card"><h3>Forges</h3>
+    <ul class="ints">
+      <li><span class="tile lg-github"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/logos.svg#github"/></svg></span>GitHub</li>
+      <li><span class="tile lg-gitlab"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/logos.svg#gitlab"/></svg></span>GitLab</li>
+      <li><span class="tile lg-bitbucket"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/logos.svg#bitbucket"/></svg></span>Bitbucket</li>
+      <li><span class="tile mono" aria-hidden="true">Az</span>Azure DevOps</li>
+      <li><span class="tile lg-forgejo"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/logos.svg#forgejo"/></svg></span>Forgejo</li>
+    </ul></div>
+    <div class="card"><h3>Trackers</h3>
+    <ul class="ints">
+      <li><span class="tile lg-github"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/logos.svg#github"/></svg></span>GitHub Issues and Projects</li>
+      <li><span class="tile lg-jira"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/logos.svg#jira"/></svg></span>Jira</li>
+      <li><span class="tile lg-linear"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/logos.svg#linear"/></svg></span>Linear</li>
+      <li><span class="tile mono" aria-hidden="true">Az</span>Azure Boards</li>
+    </ul></div>
+    <div class="card"><h3>Machines</h3>
+    <ul class="ints">
+      <li><span class="tile lg-apple"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/logos.svg#apple"/></svg></span>Your Mac</li>
+      <li><span class="tile lg-linux"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/logos.svg#linux"/></svg></span>Linux over ssh</li>
+      <li><span class="tile lg-digitalocean"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/logos.svg#digitalocean"/></svg></span>DigitalOcean</li>
+      <li><span class="tile mono" aria-hidden="true">AWS</span>AWS EC2</li>
+      <li><span class="tile lg-googlecloud"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/logos.svg#googlecloud"/></svg></span>Google Compute</li>
+      <li><span class="tile lg-googlecloud"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/logos.svg#googlecloud"/></svg></span>Cloud Workstations</li>
+      <li><span class="tile lg-github"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/logos.svg#github"/></svg></span>Codespaces</li>
+      <li><span class="tile lg-coder"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/logos.svg#coder"/></svg></span>Coder</li>
+      <li><span class="tile lg-docker"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/logos.svg#docker"/></svg></span>Docker</li>
+    </ul></div>
+    <div class="card"><h3>Chat and mail</h3>
+    <ul class="ints">
+      <li><span class="tile mono" aria-hidden="true">Sl</span>Slack</li>
+      <li><span class="tile lg-googlechat"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/logos.svg#googlechat"/></svg></span>Google Chat</li>
+      <li><span class="tile lg-whatsapp"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/logos.svg#whatsapp"/></svg></span>WhatsApp</li>
+      <li><span class="tile mono" aria-hidden="true">@</span>E-mail</li>
+    </ul></div>
+    <div class="card"><h3>Errors and uptime</h3>
+    <ul class="ints">
+      <li><span class="tile lg-sentry"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/logos.svg#sentry"/></svg></span>Sentry</li>
+      <li><span class="tile lg-betterstack"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/logos.svg#betterstack"/></svg></span>Better Stack</li>
+    </ul></div>
+    <div class="card"><h3>Docs</h3>
+    <ul class="ints">
+      <li><span class="tile lg-confluence"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/logos.svg#confluence"/></svg></span>Confluence</li>
+      <li><span class="tile lg-notion"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/logos.svg#notion"/></svg></span>Notion</li>
+      <li><span class="tile lg-googledrive"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/logos.svg#googledrive"/></svg></span>Google Drive</li>
+    </ul></div>
+    <div class="card"><h3>AI gateways</h3>
+    <ul class="ints">
+      <li><span class="tile mono" aria-hidden="true">AWS</span>Amazon Bedrock</li>
+      <li><span class="tile lg-googlecloud"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/logos.svg#googlecloud"/></svg></span>Vertex AI</li>
+      <li><span class="tile mono" aria-hidden="true">Az</span>Azure</li>
+      <li><span class="tile mono" aria-hidden="true">LL</span>LiteLLM</li>
+      <li><span class="tile mono" aria-hidden="true">Pk</span>Portkey</li>
+    </ul></div>
+    <div class="card"><h3>Delivery and reports</h3>
+    <ul class="ints">
+      <li><span class="tile lg-googlecloud"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/logos.svg#googlecloud"/></svg></span>Cloud Run</li>
+      <li><span class="tile lg-appstore"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/logos.svg#appstore"/></svg></span>App Store and TestFlight</li>
+      <li><span class="tile lg-coderabbit"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/logos.svg#coderabbit"/></svg></span>CodeRabbit</li>
+      <li><span class="tile lg-opentelemetry"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/logos.svg#opentelemetry"/></svg></span>OTLP</li>
+      <li><span class="tile mono" aria-hidden="true">{ }</span>A read API</li>
+    </ul></div>
   </div>
-  <p class="more"><a href="https://docs.agentloops.dev/reference/integrations/">Every integration and its state</a></p>
 </div></section>
 
 <!-- 17. Built with itself. Figures from the repo's records on 2026-11-22. No count of people. -->
 <section class="page proof" id="built"><div class="wrap">
   <h2>Agent Loops is built with Agent Loops</h2>
-  <p class="lede">Agents plan, build, test and land the changes to this product, with the workflows and the approvals on this page.</p>
+  <p class="lede">We build Agent Loops with Agent Loops. Agents plan, build, test and land the changes to this product, with the same workflows and approvals you see on this page. Here is how far that has got us.</p>
   <div class="grid3">
-    <div class="card"><p class="figure">3,212</p><p class="small">pull requests merged since 2026-09-26</p></div>
-    <div class="card"><p class="figure">520</p><p class="small">pull requests merged in the last 7 days</p></div>
-    <div class="card"><p class="figure">3,080</p><p class="small">issues done</p></div>
+    <div class="card"><p class="figure" data-to="3212">3,212</p><p class="small">pull requests merged</p></div>
+    <div class="card"><p class="figure" data-to="520">520</p><p class="small">pull requests merged in the last 7 days</p></div>
+    <div class="card"><p class="figure" data-to="3080">3,080</p><p class="small">issues done</p></div>
   </div>
-  <p class="small">From <a href="https://github.com/agentloops-dev/agent-loops">the repository</a>, on 2026-11-22.</p>
 </div></section>
 
 <!-- Get Agent Loops. When sign-up is live (#3392), the first button becomes "Start free at agentloops.dev". -->
 <section class="page get" id="get"><div class="wrap">
   <h2>Get Agent Loops</h2>
-  <p class="lede">Install it on your Mac, and answer your agents from your iPhone, your iPad, a browser or a terminal.</p>
+  <p class="lede">The quickest way to start is the Mac app. Once it is running, you can answer your agents from your iPhone, your iPad, a browser or the terminal, wherever you happen to be.</p>
   <p class="actions">
     <a class="button primary" href="https://github.com/agentloops-dev/agents-releases/releases/latest">Download for Mac</a>
     <a class="button" href="https://docs.agentloops.dev/how-to/connect-a-window-or-phone/">iPhone and iPad on TestFlight</a>
@@ -204,14 +303,6 @@
 
 </main>
 
-<nav class="dots" aria-label="Pages">
-  <a href="#top" aria-label="Agentic software delivery"></a>
-  <a href="#lifecycle" aria-label="The whole lifecycle"></a>
-  <a href="#epic" aria-label="An epic runs itself"></a>
-  <a href="#integrations" aria-label="Works with the tools you already use"></a>
-  <a href="#built" aria-label="Built with Agent Loops"></a>
-  <a href="#get" aria-label="Get Agent Loops"></a>
-</nav>
 
 <footer><div class="wrap">
   <nav>
