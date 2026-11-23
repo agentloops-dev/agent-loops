@@ -284,7 +284,7 @@ func TestFlagsGoBeforeOrAfterTheCommand(t *testing.T) {
 		t.Fatalf("an unknown flag: %v", err)
 	}
 	var b bytes.Buffer
-	if err := run(context.Background(), []string{"help"}, &b); err != nil || !strings.Contains(b.String(), "  5  not paired") || !strings.Contains(b.String(), "  2  not in a folder") {
+	if err := run(context.Background(), []string{"help"}, &b); err != nil || !strings.Contains(b.String(), "COMMANDS") || !strings.Contains(b.String(), "GLOBAL FLAGS") {
 		t.Fatalf("help: %v\n%s", err, b.String())
 	}
 }
@@ -299,16 +299,16 @@ func TestUnreachableSaysNothingChanged(t *testing.T) {
 	}
 }
 
-// -h and --help are the usage on stdout with exit 0, also beside print mode's flags.
+// -h and --help are the help on stdout with exit 0, also beside print mode's flags.
 func TestHelpFlagsPrintTheUsageAndExitZero(t *testing.T) {
 	for _, args := range [][]string{{"--help"}, {"-h"}, {"-p", "-h"}} {
 		var b bytes.Buffer
-		if err := run(context.Background(), args, &b); err != nil || !strings.Contains(b.String(), "Exit codes:") {
+		if err := run(context.Background(), args, &b); err != nil || !strings.Contains(b.String(), "USAGE") || !strings.Contains(b.String(), "GLOBAL FLAGS") {
 			t.Fatalf("%v: %v\n%s", args, err, b.String())
 		}
 	}
 	err := run(context.Background(), []string{"--bogus"}, &bytes.Buffer{})
-	if codeOf(err) != exitError || !strings.Contains(err.Error(), "See: loops --help") || strings.Contains(err.Error(), "Exit codes:") {
+	if codeOf(err) != exitError || !strings.Contains(err.Error(), "See: loops --help") || strings.Contains(err.Error(), "USAGE") {
 		t.Fatalf("an unknown flag says so in two lines: %v", err)
 	}
 }

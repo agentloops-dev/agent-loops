@@ -34,6 +34,8 @@ export interface HostList {
   pages?: number | undefined;
   /** When the machine read its forges for it (#6642); none from an earlier daemon. */
   readAt?: WireDate | undefined;
+  /** What the list reads (#6641): forge:repo per repo; none from an earlier daemon. */
+  scopes?: string[] | undefined;
 }
 
 export interface WorkListState {
@@ -194,12 +196,44 @@ export const notAnswered = "It did not answer.";
  * of `hosts` (offline when the page asked) is left out, as it was not asked before. */
 export function hostListsOf(got: ForgeListAll, hosts: readonly string[], before: readonly HostList[]): HostList[] {
   const by = new Map<string, HostList>();
-  for (const l of got.lists) by.set(l.machine, { host: l.machine, items: l.list.items, cursor: l.list.cursor, errors: l.list.errors ?? [], total: l.list.total, forges: l.list.forges, readAt: l.list.readAt });
+  for (const l of got.lists) by.set(l.machine, { host: l.machine, items: l.list.items, cursor: l.list.cursor, errors: l.list.errors ?? [], total: l.list.total, forges: l.list.forges, readAt: l.list.readAt, scopes: l.list.scopes });
   for (const u of got.unreached) by.set(u.machine, { host: u.machine, items: [], errors: [{ forge: "", message: notAnswered }] });
   return hosts.flatMap((h) => {
     const list = by.get(h);
     return list ? [carryStale(list, before.find((b) => b.host === h))] : [];
   });
+}
+
+/** The machines to ask a list's page 1 (#6641), in `hosts`' order, and those left out: a machine whose scopes are known is
+ * left out when the machines asked already read every one of them, so each repo is asked once, not once per machine. The
+ * machines that read the most go first, so one that reads all covers the others; one whose scopes are not known is always
+ * asked. As the window's `WorkList.oneEach`. */
+export function oneEach(hosts: readonly string[], scopes: ReadonlyMap<string, readonly string[]>): { ask: string[]; covered: string[] } {
+  const count = (h: string) => scopes.get(h)?.length ?? Number.MAX_SAFE_INTEGER;
+  const order = hosts.map((h, i) => ({ h, i })).sort((a, b) => count(b.h) - count(a.h) || a.i - b.i);
+  const read = new Set<string>();
+  const covered = new Set<string>();
+  for (const { h } of order) {
+    const known = scopes.get(h);
+    if (!known) continue;
+    if (known.every((s) => read.has(s))) covered.add(h);
+    else for (const s of known) read.add(s);
+  }
+  return { ask: hosts.filter((h) => !covered.has(h)), covered: hosts.filter((h) => covered.has(h)) };
+}
+
+/** A machine's scopes as kept on this device (#6641), with the machines and folders the list was read from then: when those
+ * change, what it reads is not known until it is asked again. Kept by the kind and the board, as a board narrows a list. */
+interface KeptScopes { scopes: string[]; source: string }
+const scopesPage = "work-scopes";
+const scopesAsked = (kind: WorkKind, board: string, host: string) => [kind, board, host].join("|");
+
+async function keptScopes(kind: WorkKind, board: string, hosts: readonly string[], source: string): Promise<Map<string, string[]>> {
+  const kept = await Promise.all(hosts.map((h) => keptWorkRead<KeptScopes>(scopesPage, scopesAsked(kind, board, h))));
+  return new Map(hosts.flatMap((h, i) => {
+    const k = kept[i]?.value;
+    return k && k.source === source ? [[h, k.scopes] as const] : [];
+  }));
 }
 
 /** Each machine's list with only the errors the page shows (#5449): one machine's answer for a forge is enough, so the
@@ -326,15 +360,36 @@ export async function loadList(store: Store, l: WorkListState): Promise<void> {
       if (!l.problem.peek()) keepWork("lineage", wanted, { lineage: known.nodes, lineageCursor: known.cursor } satisfies KeptLineage);
       return;
     }
-    // Every machine's list in one call to the control plane (#5592), which waits for a slow machine at most 5 s; the first
-    // machine that answers for a forge is enough (#5449). The rows read before stay until it answers.
+    // The machines' lists in one call to the control plane (#5592), which waits for a slow machine at most 5 s; the first
+    // machine that answers for a forge is enough (#5449). The rows read before stay until it answers. Each repo is asked
+    // once (#6641): a machine that reads only what others read is left out, named in no page, unless one asked fails, when
+    // the machines it covered are asked too.
     const ids = hosts.map((h) => h.id);
-    let readAt = Date.now();
-    const answered = ids.length === 0 ? [] : await store.link.call("forge/listAll", forgeListAllRequest(kind, forgeState(state), board, undefined, query.sort, fresh)).then(
-      (all) => { readAt = listReadAt(all, readAt); return hostListsOf(all, ids, before); },
-      (e: unknown) => ids.map((host) => carryStale({ host, items: [], errors: [{ forge: "", message: describe(e) }] }, before.find((b) => b.host === host))));
+    const source = `${ids.join(",")}|${forgeFolders(store, ids)}`;
+    const scopes = await keptScopes(kind, board, ids, source);
     if (!current()) return;
-    const read = await keepAnswered(query, settleLists(answered), ids, before);
+    const pick = oneEach(ids, scopes);
+    let readAt = Date.now();
+    const firstPages = async (asked: readonly string[]): Promise<HostList[]> => asked.length === 0 ? [] : store.link.call("forge/listAll",
+      forgeListAllRequest(kind, forgeState(state), board, asked.length === ids.length ? undefined : asked.map((host) => ({ host, cursor: "" })), query.sort, fresh)).then(
+      (all) => { readAt = listReadAt(all, readAt); return hostListsOf(all, asked, before); },
+      (e: unknown) => asked.map((host) => carryStale({ host, items: [], errors: [{ forge: "", message: describe(e) }] }, before.find((b) => b.host === host))));
+    let answered = await firstPages(pick.ask);
+    if (pick.covered.length > 0 && answered.some((h) => h.errors.length > 0)) answered = [...answered, ...await firstPages(pick.covered)];
+    if (!current()) return;
+    for (const h of answered) {
+      if (h.errors.length > 0) scopes.delete(h.host);
+      else if (h.scopes) {
+        scopes.set(h.host, h.scopes);
+        keepWork(scopesPage, scopesAsked(kind, board, h.host), { scopes: h.scopes, source } satisfies KeptScopes);
+      }
+    }
+    // A machine left out loses its kept answer, so its rows do not draw as old ones and its next pages are not asked.
+    const covered = new Set(oneEach(ids, scopes).covered);
+    await Promise.all([...covered].map((h) => workCache()?.forgetAnswer(query, h)));
+    const shown = ids.filter((h) => !covered.has(h));
+    answered = shown.flatMap((h) => answered.filter((a) => a.host === h));
+    const read = await keepAnswered(query, settleLists(answered), shown, before);
     if (!current()) return;
     l.lists.value = read;
     l.shownFor = wanted;

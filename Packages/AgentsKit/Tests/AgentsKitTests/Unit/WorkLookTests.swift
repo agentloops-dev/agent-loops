@@ -302,4 +302,46 @@ struct WorkLookTests {
         #expect(WorkLook.credentialProblem("Linear is not connected, or its token ended: connect Linear in Connectors"))
         #expect(!WorkLook.credentialProblem("GitHub said 502 Bad Gateway"))
     }
+
+    // MARK: The footer's load states (#5968)
+
+    @Test func aListWithAReadInFlightShowsNoEmptyState() {
+        // A filter change narrows the old rows to none while the new read runs: placeholders, not "No closed issues".
+        #expect(WorkLook.listBody(drawn: true, read: 42, shown: 0, reading: true, failed: false) == .placeholders)
+        #expect(WorkLook.listBody(drawn: false, read: 0, shown: 0, reading: true, failed: false) == .placeholders)
+        #expect(WorkLook.listBody(drawn: true, read: 0, shown: 0, reading: true, failed: false) == .placeholders)
+        // Every read ended: the empty state.
+        #expect(WorkLook.listBody(drawn: true, read: 0, shown: 0, reading: false, failed: false) == .empty)
+        #expect(WorkLook.listBody(drawn: true, read: 42, shown: 0, reading: false, failed: false) == .empty)
+        #expect(WorkLook.footerState(drawn: false, read: 0, reading: true, fromDevice: false, lines: []) == .loading)
+        #expect(WorkLook.footerState(drawn: true, read: 42, reading: true, fromDevice: false, lines: []) == .updating)
+        #expect(WorkLook.footerState(drawn: true, read: 42, reading: false, fromDevice: false, lines: []) == .none)
+        #expect(WorkLook.footerState(drawn: true, read: 42, reading: true, fromDevice: true, lines: []) == .fromDevice)
+    }
+
+    @Test func aFailedReadAfterAGoodOneKeepsTheRows() {
+        #expect(WorkLook.listBody(drawn: true, read: 42, shown: 42, reading: false, failed: true) == .rows)
+        let one = WorkLook.footerState(drawn: true, read: 42, reading: false, fromDevice: false, lines: ["GitHub said 502."])
+        #expect(one == .couldNotUpdate(line: "Could not update: GitHub said 502.", help: "GitHub said 502."))
+        #expect(one.failure && !one.busy)
+        let two = WorkLook.footerState(drawn: true, read: 42, reading: false, fromDevice: false, lines: ["a", "b"])
+        #expect(two.words == "2 forges could not update")
+        // Nothing read: the failure in the middle, and a short line in the footer.
+        #expect(WorkLook.listBody(drawn: true, read: 0, shown: 0, reading: false, failed: true) == .failed)
+        #expect(WorkLook.footerState(drawn: true, read: 0, reading: false, fromDevice: false, lines: ["x"]) == .couldNotRead)
+        #expect(WorkLook.FooterState.couldNotRead.words == "Could not read.")
+    }
+
+    /// Deploys and Timeline (#5969): the footer says how many machines answered a read of several, and a failed read
+    /// with nothing drawn is "Could not read."
+    @Test func aPageOfSeveralMachinesSaysHowManyAnswered() {
+        let some = WorkLook.pageFooterState(drawn: true, reading: true, fromDevice: false, lines: [], answered: 1, machines: 3)
+        #expect(some == .readingMachines(answered: 1, of: 3))
+        #expect(some.words == "Reading 1 of 3 machines…" && some.busy)
+        #expect(WorkLook.pageFooterState(drawn: false, reading: true, fromDevice: false, lines: [], answered: 0, machines: 3) == .loading)
+        #expect(WorkLook.pageFooterState(drawn: true, reading: true, fromDevice: false, lines: [], answered: 1, machines: 1) == .updating)
+        #expect(WorkLook.pageFooterState(drawn: true, reading: false, fromDevice: false, lines: []) == .none)
+        #expect(WorkLook.pageFooterState(drawn: false, reading: false, fromDevice: false, lines: ["x"]) == .couldNotRead)
+        #expect(WorkLook.pageCount(1, "target") == "1 target" && WorkLook.pageCount(4, "epic") == "4 epics")
+    }
 }

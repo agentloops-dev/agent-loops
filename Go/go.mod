@@ -20,6 +20,7 @@ require (
 	github.com/shirou/gopsutil/v4 v4.26.10
 	github.com/shurcooL/githubv4 v0.0.0-20260209031235-2402fdf4a9ed
 	github.com/slack-go/slack v0.34.0
+	github.com/spf13/cobra v1.10.2
 	github.com/ulikunitz/xz v0.5.17
 	github.com/yuin/goldmark v1.8.5
 	go.uber.org/goleak v1.3.0
@@ -74,6 +75,7 @@ require (
 	github.com/hashicorp/go-sockaddr v1.0.7 // indirect
 	github.com/hashicorp/hcl v1.0.1-vault-7 // indirect
 	github.com/hashicorp/vault/api v1.22.0 // indirect
+	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0 // indirect
 	github.com/microcosm-cc/bluemonday v1.0.27 // indirect
 	github.com/mitchellh/go-homedir v1.1.0 // indirect

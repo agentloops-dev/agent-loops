@@ -472,6 +472,16 @@ func (d *Daemon) newStartedAgent(r wire.StartRequest, by startedBy, path string,
 		StartedByAgent: by.agent, SandboxOverride: r.Sandbox, Persona: r.Persona, AccountID: r.AccountID,
 		Auto: pick, ClientPermission: client, PrioritySet: r.Priority,
 	}
+	// Start from what was asked for, or Auto's pick: OpenCode's Ask and Approve for me cells
+	// set the same native options, and without this the first match would always win (#6822).
+	requested := r.Levels
+	if pick != nil {
+		requested = &pick.Levels
+	}
+	if requested != nil {
+		levels := *requested
+		a.Levels = &levels
+	}
 	a.Levels = d.matchLevels(&a)
 	if q := by.queued; q != nil {
 		// Out of the queue, the same agent: its id, its title, when it was asked for and the
