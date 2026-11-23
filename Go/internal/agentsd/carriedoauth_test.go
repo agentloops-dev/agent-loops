@@ -76,7 +76,7 @@ func TestACarriedOAuthConnectionStartsAndIsRevokedWhenForgotten(t *testing.T) {
 	}
 	mu.Lock()
 	defer mu.Unlock()
-	if !slices.Equal(revoked, []string{"/revoke access-1"}) {
+	if !slices.Equal(revoked, []string{"/revoke refresh-1", "/revoke access-1"}) {
 		t.Fatalf("revoked %v", revoked)
 	}
 	if len(c.store.Values("p1")) != 0 {

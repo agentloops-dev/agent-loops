@@ -219,19 +219,19 @@ func (c *Carrier) Finish(ctx context.Context, provider, state, code, providerErr
 		}
 	}
 	if len(missing) > 0 {
-		_ = c.revoke(ctx, f, answer.AccessToken) // A refused grant is revoked when it can be; the refusal is what is said.
+		_ = c.revoke(ctx, f, answer.AccessToken, answer.RefreshToken) // A refused grant is revoked when it can be; the refusal is what is said.
 		return Connected{}, failure(ScopeMissing, "%s gave Agent Loops less than it needs (no %s): connect again and allow all of it.",
 			f.Name, strings.Join(missing, ", "))
 	}
 	if status, words, err := c.accountStatus(ctx, f, answer.AccessToken); err == nil && status != "" && status != "active" {
-		_ = c.revoke(ctx, f, answer.AccessToken) // A refused grant is revoked when it can be; the refusal is what is said.
+		_ = c.revoke(ctx, f, answer.AccessToken, answer.RefreshToken) // A refused grant is revoked when it can be; the refusal is what is said.
 		if words == "" {
 			words = "its status is " + status
 		}
 		return Connected{}, failure(AccountInactive, "Your %s account can't make machines yet: %s.", f.Name, words)
 	}
 	if err := c.Store.Set(provider, c.kept(f, answer)); err != nil {
-		_ = c.revoke(ctx, f, answer.AccessToken) // A refused grant is revoked when it can be; the refusal is what is said.
+		_ = c.revoke(ctx, f, answer.AccessToken, answer.RefreshToken) // A refused grant is revoked when it can be; the refusal is what is said.
 		return Connected{}, errors.New("this machine could not keep the connection")
 	}
 	return Connected{Account: answer.Info.Email, Team: answer.Info.TeamName, Scope: answer.Scope,
@@ -419,7 +419,7 @@ func (c *Carrier) expiring(at string) bool {
 }
 
 // Revoke revokes provider's connection at the provider, when its secrets hold one: both
-// tokens stop, and the grant goes from the account's list. It is done before the secrets
+// tokens stop, and the grant goes from the account's list. It revokes the refresh token, then the access token. It is done before the secrets
 // are forgotten; a revoke that fails is said, and the secrets go all the same.
 func (c *Carrier) Revoke(ctx context.Context, provider string) error {
 	values := c.Store.Values(provider)
@@ -427,12 +427,26 @@ func (c *Carrier) Revoke(ctx context.Context, provider string) error {
 	if f == nil || values[f.AccessSecret] == "" {
 		return nil
 	}
-	return c.revoke(ctx, f, values[f.AccessSecret])
+	return c.revoke(ctx, f, values[f.AccessSecret], values[f.RefreshSecret])
 }
 
-func (c *Carrier) revoke(ctx context.Context, f *Flow, access string) error {
+// revoke revokes the refresh token, then the access token (RFC 7009). On the real account
+// a revoke of the access token alone left the refresh token working and the grant in the
+// account's list (#6072), so both go.
+func (c *Carrier) revoke(ctx context.Context, f *Flow, access, refresh string) error {
+	var first error
+	if refresh != "" {
+		first = c.revokeToken(ctx, f, access, refresh)
+	}
+	if err := c.revokeToken(ctx, f, access, access); err != nil && first == nil {
+		first = err
+	}
+	return first
+}
+
+func (c *Carrier) revokeToken(ctx context.Context, f *Flow, access, token string) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, f.Revoke,
-		strings.NewReader(url.Values{"token": {access}}.Encode()))
+		strings.NewReader(url.Values{"token": {token}}.Encode()))
 	if err != nil {
 		return err
 	}

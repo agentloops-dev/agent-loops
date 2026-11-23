@@ -89,16 +89,20 @@ func (f *fakeDO) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "/revoke":
 		f.mu.Lock()
 		defer f.mu.Unlock()
+		// As the real account does: a revoke stops the token it names. The bearer must
+		// still be good.
 		token := r.Form.Get("token")
-		if !f.access[token] || r.Header.Get("Authorization") != "Bearer "+token {
+		if !f.access[strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")] {
 			deny()
 			return
 		}
-		delete(f.access, token)
-		for k, v := range f.refresh {
-			if v == token {
-				delete(f.refresh, k)
-			}
+		if _, ok := f.refresh[token]; ok {
+			delete(f.refresh, token)
+		} else if f.access[token] {
+			delete(f.access, token)
+		} else {
+			deny()
+			return
 		}
 		f.revoked = append(f.revoked, token)
 		_, _ = w.Write([]byte(`{}`))
@@ -301,7 +305,7 @@ func TestFinishFailures(t *testing.T) {
 	if len(store.Values("do")) != 0 {
 		t.Fatal("a refused connection was kept")
 	}
-	if len(fake.revoked) != 2 {
+	if len(fake.revoked) != 4 {
 		t.Fatalf("refused grants not revoked: %v", fake.revoked)
 	}
 
@@ -419,11 +423,11 @@ func TestRevokeStopsBothTokens(t *testing.T) {
 	if err := c.Revoke(context.Background(), "do"); err != nil {
 		t.Fatal(err)
 	}
-	if len(fake.revoked) != 1 || fake.revoked[0] != "access-1" || len(fake.refresh) != 0 {
+	if len(fake.revoked) != 2 || fake.revoked[0] != "refresh-1" || fake.revoked[1] != "access-1" || len(fake.refresh) != 0 {
 		t.Fatalf("revoked %v, refresh left %v", fake.revoked, fake.refresh)
 	}
 	_ = store.Set("other", map[string]string{"DIGITALOCEAN_API_TOKEN": "dop_v1_pasted"}) //nolint:gosec // G101: a fake token
-	if err := c.Revoke(context.Background(), "other"); err != nil || len(fake.revoked) != 1 {
+	if err := c.Revoke(context.Background(), "other"); err != nil || len(fake.revoked) != 2 {
 		t.Fatal("a pasted token was revoked")
 	}
 }
