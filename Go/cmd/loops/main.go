@@ -7,11 +7,13 @@
 //	loops "…"                start a session here with this prompt, and follow it
 //	loops -c ["…"]           continue the newest session here (with a prompt)
 //	loops -r <id|title> ["…"]  continue one session
-//	loops auth login '<code>'   pair this terminal with a control plane
-//	loops auth logout           forget the pairing, here and on the control plane
-//	loops auth status           the pairing, this machine and the folder here
-//	loops ls [--all]            this folder's sessions: 20, or with --all every one
-//	loops folders add [dir]     add this directory (or dir) as a folder
+//	loops auth login '<code>'    pair this terminal with a control plane
+//	loops auth logout            forget the pairing, here and on the control plane
+//	loops auth status            the pairing, this machine and the folder here
+//	loops sessions list [--all]  this folder's sessions: 20, or with --all every one
+//	loops sessions create ["…"] start a session here, and follow it
+//	loops sessions follow [<id>] continue the newest session here, or one by id or title
+//	loops folders add [dir]      add this directory (or dir) as a folder
 //	loops -p "…" [--json]    print mode for scripts: start a session here, follow it to the
 //	                         end, print the last reply (#6447)
 //	loops --detach "…"       start a session here, print its id and exit
@@ -128,7 +130,7 @@ type options struct {
 
 func main() {
 	ctx, cancel := context.WithCancel(context.Background())
-	err := run(ctx, os.Args[1:], os.Stdout)
+	err := runTo(ctx, os.Args[1:], os.Stdout, os.Stderr)
 	cancel()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)

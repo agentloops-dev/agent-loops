@@ -6,13 +6,12 @@ import (
 	"fmt"
 	"io"
 	"strings"
-	"text/tabwriter"
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
-// pageSize is the rows loops ls shows, and each page --all reads (bounds, Stage 3).
+// pageSize is the rows loops sessions list shows, and each page --all reads (bounds, Stage 3).
 const pageSize = 20
 
 // listSessions is the folder's sessions, newest activity first, as agents/list answers
@@ -43,33 +42,58 @@ func listSessions(ctx context.Context, c caller, p place, all bool) (list []wire
 }
 
 // printList is state 4 of the wireframes, or state 5 when the folder has no session.
-func printList(w io.Writer, p place, list []wire.Agent, more, all bool, now time.Time) {
+func printList(out, errOut io.Writer, st style, p place, list []wire.Agent, more, all bool, now time.Time) {
 	if len(list) == 0 {
-		fmt.Fprintf(w, "%s · %s · no sessions yet\n\nStart one: loops \"what this folder needs\"\n", p.folderName(), p.machineName())
+		fmt.Fprintf(errOut, "No sessions in %s.\nStart one: loops \"what this folder needs\"\n", p.folderName())
 		return
+	}
+	ids := shortIDs(list)
+	headers := []string{"ID", "TITLE", "STATE", "RUNTIME", "FOLDER", "UPDATED"}
+	styled := make([]string, len(headers))
+	for i, h := range headers {
+		styled[i] = st.bold(h)
+	}
+	plain := make([][]string, len(list))
+	rows := make([][]string, len(list))
+	for i, a := range list {
+		updated := ago(now, a.LastActivityAt.Time())
+		plain[i] = []string{ids[i], titleOf(a), listStateWord(a.State), runtimeOf(a), p.folderName(), updated}
+		rows[i] = []string{st.paint(roleBrand, ids[i]), titleOf(a), st.paint(stateRole(a.State), listStateWord(a.State)), runtimeOf(a), p.folderName(), st.paint(roleQuiet, updated)}
+	}
+	widths := make([]int, len(headers))
+	for i, h := range headers {
+		widths[i] = visibleWidth(h)
+	}
+	for _, row := range plain {
+		for i, cell := range row {
+			if visibleWidth(cell) > widths[i] {
+				widths[i] = visibleWidth(cell)
+			}
+		}
+	}
+	fmt.Fprintln(out, tableLine(styled, headers, widths))
+	for i, row := range rows {
+		fmt.Fprintln(out, tableLine(row, plain[i], widths))
 	}
 	count := fmt.Sprintf("%d sessions", len(list))
 	if len(list) == 1 {
 		count = "1 session"
 	}
 	if more {
-		count = fmt.Sprintf("the %d most recent sessions", len(list))
+		count = fmt.Sprintf("%d of many", len(list))
 	}
-	fmt.Fprintf(w, "%s · %s · %s\n\n", p.folderName(), p.machineName(), count)
-	ids := shortIDs(list)
-	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "  STATE\tLAST\tTITLE\tID")
-	for i, a := range list {
-		fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\n", stateWord(a.State), ago(now, a.LastActivityAt.Time()), titleOf(a), ids[i])
+	fmt.Fprintf(errOut, "%s · loops sessions list --all\n", count)
+}
+
+func tableLine(cells, plain []string, widths []int) string {
+	var b strings.Builder
+	for i, cell := range cells {
+		b.WriteString(cell)
+		if i < len(cells)-1 {
+			b.WriteString(strings.Repeat(" ", widths[i]-visibleWidth(plain[i])+2))
+		}
 	}
-	_ = tw.Flush()
-	fmt.Fprintln(w)
-	switch {
-	case all:
-		fmt.Fprintln(w, "loops -r <id> to continue one")
-	default:
-		fmt.Fprintln(w, "loops -r <id> to continue one · --all for archived")
-	}
+	return b.String()
 }
 
 // stateWord is a session's state as the wireframes say it.
@@ -90,6 +114,33 @@ func stateWord(s wire.AgentState) string {
 	}
 }
 
+func listStateWord(s wire.AgentState) string {
+	if s == wire.AgentStateWaitingOnUser {
+		return "waiting"
+	}
+	return stateWord(s)
+}
+
+func stateRole(s wire.AgentState) role {
+	switch s {
+	case wire.AgentStateStarting, wire.AgentStateRunning:
+		return roleBrand
+	case wire.AgentStateWaitingOnUser:
+		return roleAttention
+	case wire.AgentStateStopped:
+		return roleDone
+	default:
+		return roleQuiet
+	}
+}
+
+func runtimeOf(a wire.Agent) string {
+	if a.RuntimeID == "" {
+		return "auto"
+	}
+	return a.RuntimeID
+}
+
 // titleOf is the session's title on one line of at most 48 characters.
 func titleOf(a wire.Agent) string {
 	t := "Untitled"
@@ -102,12 +153,14 @@ func titleOf(a wire.Agent) string {
 	return t
 }
 
-// ago is a time as "now", "12 min ago", "3 h ago" or "4 days ago".
+// ago is a time as "now", "12 s ago", "3 min ago", "2 h ago" or "4 days ago".
 func ago(now, t time.Time) string {
 	d := now.Sub(t)
 	switch {
-	case d < time.Minute:
+	case d < time.Second:
 		return "now"
+	case d < time.Minute:
+		return fmt.Sprintf("%d s ago", int(d/time.Second))
 	case d < time.Hour:
 		return fmt.Sprintf("%d min ago", int(d/time.Minute))
 	case d < 24*time.Hour:
@@ -119,7 +172,7 @@ func ago(now, t time.Time) string {
 	}
 }
 
-// minID is the shortest ID loops ls shows, as git's short SHA.
+// minID is the shortest ID loops sessions list shows, as git's short SHA.
 const minID = 6
 
 // shortIDs is each session's id in lower case, at the shortest length (at least minID)
