@@ -23,7 +23,7 @@ test("Add a Provider lists all eight kinds in the window's four groups, and open
     assert.ok(w.choiceDescription(k).endsWith("."), k);
     assert.ok(w.choiceDocs(k).startsWith("https://docs.agentloops.dev/how-to/"), k);
   }
-  assert.equal(w.choiceDescription("digitalOcean"), "Droplets with a tag.");
+  assert.equal(w.choiceDescription("digitalOcean"), "Connect your account; Agent Loops makes the droplet.");
   assert.equal(w.choiceTitle("docker"), "Docker Containers");
 });
 
@@ -299,4 +299,30 @@ test("a cloud machine stops after 2 hours idle unless the person says Never (#37
   assert.deepEqual(asked, [["machines/setMachineOptions", { host: "7", stopWhenIdleMinutes: 0 }]]);
   const refused = new w.Providers({ call: async () => { throw new w.CallFailed(-32602, "There is no such host."); } });
   assert.equal(await refused.setIdle("7", 60), "There is no such host.");
+});
+
+test("the guided DigitalOcean Connect's words are the window's (#6074)", () => {
+  assert.equal(w.doWords.connect, "Connect DigitalOcean…");
+  assert.deepEqual(w.refusal("denied", "x"), { text: "DigitalOcean did not connect: you chose Deny.", fix: "connect" });
+  assert.equal(w.refusal("account_inactive", "x").fix, "payment");
+  assert.equal(w.refusal("disconnected", "x").text, w.doWords.disconnected);
+  assert.equal(w.refusal(undefined, "The machine is offline.").text, "The machine is offline.");
+  assert.equal(w.accountLine({ account: "a@example.com", team: "Personal", state: "connected" }), "a@example.com · team “Personal”");
+  assert.equal(w.accountLine({ state: "connected" }), undefined);
+  assert.equal(w.isOAuth({ preset: "digitalocean-api", oauth: { state: "connected" } }), true);
+  assert.equal(w.isOAuth({ preset: "digitalocean-api" }), false);
+});
+
+test("the hand-back page's message is taken for this sign-in, or a Deny with no state (#6074)", () => {
+  const from = "https://oauth.agentloops.dev";
+  const msg = (data, origin = from) => ({ origin, data: { type: "agents-oauth-callback", ...data } });
+  assert.deepEqual(w.doCallback(msg({ code: "c1", state: "s1" }), "s1"), { state: "s1", code: "c1" });
+  assert.deepEqual(w.doCallback(msg({ code: null, state: null, error: "access_denied" }), "s1"), { error: "access_denied" });
+  assert.equal(w.doCallback(msg({ code: "c1", state: "other" }), "s1"), undefined);
+  assert.equal(w.doCallback(msg({ code: "c1", state: "s1" }, "https://evil.example"), "s1"), undefined);
+});
+
+test("an OAuth refusal keeps the control plane's data.reason (#6074)", async () => {
+  const p = new w.Providers({ call: async () => { throw new w.CallFailed(-32000, "You chose Deny.", { reason: "denied" }); } });
+  assert.deepEqual(await p.oauthFinish({ error: "access_denied" }), { refused: "You chose Deny.", reason: "denied" });
 });

@@ -5596,6 +5596,11 @@
     {
       "name": "providers/oauthFinish",
       "x-capability": "providers.oauth/1",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
       "description": "An admin's (#6072): finish an OAuth connection with what the hand-back page gave. A failure a client can act on has data.reason: denied, disconnected, scope_missing, account_inactive or expired.",
       "paramStructure": "by-name",
       "params": [
@@ -5617,6 +5622,11 @@
     {
       "name": "providers/oauthStart",
       "x-capability": "providers.oauth/1",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
       "description": "An admin's (#6072): start connecting a provider with OAuth on the machine that will carry it, which keeps the PKCE verifier and, after providers/oauthFinish, the tokens (Principle 6: the control plane keeps none).",
       "paramStructure": "by-name",
       "params": [

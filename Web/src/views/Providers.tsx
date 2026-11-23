@@ -25,6 +25,8 @@ import { offersOneClick, oneClickPlan, oneClickWords, type OneClickPlan } from "
 import { failedStep, isReady, stepLine, stepName, stepStateWords, stepTime } from "../model/machineSetup";
 import { describe } from "../model/errors";
 import { go } from "../route";
+import { DigitalOceanConnect } from "./DigitalOceanConnect";
+import { accountLine, doWords, isOAuth } from "../model/digitalOceanConnect";
 
 const time = (at: Date) => at.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 
@@ -84,19 +86,23 @@ function ProviderCard({ store, provider, say, edit, link, install }: {
   const hosts = store.hosts.value;
   const groups = store.providers.groups.value;
   const admin = store.person.value?.role !== "member";
-  const line = [providerLine(provider, time), groupLine(provider, groups),
+  // W6 (#6074): an OAuth connection says whose account, and when DigitalOcean stopped taking it.
+  const oauth = isOAuth(provider) ? provider.oauth : undefined;
+  const line = [oauth?.state === "disconnected" ? doWords.disconnected : undefined, oauth ? accountLine(oauth) : undefined,
+    oauth?.state === "disconnected" ? undefined : providerLine(provider, time), groupLine(provider, groups),
     carrierLine(provider, admin && !!kindOfPreset(provider.preset))].filter(Boolean).join(" · ");
   const [making, setMaking] = useState(false);
+  const [reconnecting, setReconnecting] = useState(false);
   const setGroup = async (group: string) => say(await store.providers.setGroup(provider.id, group || null));
   const remove = async () => {
-    if (!await ask(`${words.removeTitle(provider.name)} ${words.removeNote}`)) return;
+    if (!await ask(`${words.removeTitle(provider.name)} ${oauth ? doWords.removeNote : words.removeNote}`)) return;
     say(await store.providers.remove(provider.id));
   };
   return (
     <ul class="setup-card list provider-card" aria-label={provider.name}>
       <li class="connection">
         <div class="grow">
-          <p class="strong">{provider.name} <span class="chip">{kindChip(provider)}</span>
+          <p class="strong">{provider.name} <span class="chip">{oauth ? (oauth.state === "disconnected" ? doWords.disconnectedChip : doWords.connectedChip) : kindChip(provider)}</span>
             {provider.default && <span class="chip default-chip" title="New Machine makes your machines here">Default</span>}</p>
           {line && <p class="small quiet">{line}</p>}
         </div>
@@ -118,6 +124,7 @@ function ProviderCard({ store, provider, say, edit, link, install }: {
             {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
           </select>
         )}
+        {admin && oauth && <button type="button" onClick={() => setReconnecting(true)}>{doWords.reconnect}</button>}
         {admin && kindOfPreset(provider.preset) && <button type="button" onClick={edit}>Edit…</button>}
         {admin && <button type="button" class="destructive" onClick={() => void remove()}>Remove…</button>}
       </li>
@@ -126,6 +133,13 @@ function ProviderCard({ store, provider, say, edit, link, install }: {
         <WorkspaceRow key={w.id} store={store} provider={provider} workspace={w} hosts={hosts} say={say} link={() => link(w)} install={() => install(w)} />
       ))}
       {making && <MachineDialog store={store} machine picked={provider.id} close={() => setMaking(false)} />}
+      {reconnecting && (
+        <Modal label={`${doWords.reconnect.replace("…", "")} ${provider.name}`} close={() => setReconnecting(false)}>
+          <div class="sheet-body connect-sheet provider-sheet">
+            <DigitalOceanConnect store={store} reconnecting={provider} cancel={() => setReconnecting(false)} done={() => setReconnecting(false)} />
+          </div>
+        </Modal>
+      )}
     </ul>
   );
 }
@@ -363,13 +377,17 @@ export function AddProviderDialog({ store, editing, close, added }: {
       </Fragment>
     );
   };
+  const guided = kind === "digitalOcean" && !editing;
   const access = fields.filter((f) => f.secret);
   const machines = fields.filter((f) => !f.secret);
   return (
     <Modal label={title} close={close}>
       <div class="sheet-body connect-sheet provider-sheet">
         <p class="strong">{title}</p>
-        {!kind ? (
+        {guided ? (
+          // Guided (#6074): Connect with OAuth, or a token behind a disclosure.
+          <DigitalOceanConnect store={store} back={back} cancel={close} done={(id) => (added ? added(id) : close())} />
+        ) : !kind ? (
           <>
             <p class="small quiet">{words.chooseIntro}</p>
             {providerGroups.map((group) => (
@@ -387,6 +405,8 @@ export function AddProviderDialog({ store, editing, close, added }: {
                             <span class="strong">{choiceTitle(choice)}</span>
                             <span class="small quiet">{choiceDescription(choice)}</span>
                           </span>
+                          {/* W1 (#6074): the guided kind says so. */}
+                          {choice === "digitalOcean" && <span class="chip">{doWords.guidedChip}</span>}
                           {opens ? <Icon name="chevron-right" class="quiet" /> : <span class="chip">{words.inTheMacApp(store.hasMac.value)}</span>}
                         </button>
                       </li>
@@ -439,8 +459,8 @@ export function AddProviderDialog({ store, editing, close, added }: {
           </form>
         )}
         {problem && <p class="small failure">{problem}</p>}
-        {kind && <p class="small quiet provider-foot">{words.secretsFoot(carriers.find((h) => h.id === carrier)?.name ?? editing?.machineName)}</p>}
-        <div class="sheet-actions">
+        {kind && !guided && <p class="small quiet provider-foot">{words.secretsFoot(carriers.find((h) => h.id === carrier)?.name ?? editing?.machineName)}</p>}
+        {!guided && <div class="sheet-actions">
           {kind && !editing && <button type="button" class="leading" disabled={working} onClick={back}>Back</button>}
           <button type="button" onClick={close}>Cancel</button>
           {kind && (
@@ -448,7 +468,7 @@ export function AddProviderDialog({ store, editing, close, added }: {
               {working ? <><span class="spinner" aria-hidden="true" /> {words.checking}</> : editing ? "Save" : "Add"}
             </button>
           )}
-        </div>
+        </div>}
       </div>
     </Modal>
   );

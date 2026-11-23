@@ -2,7 +2,7 @@
 // ControlSettingsModel: listed when Settings opens, kept by control/providersChanged, and each
 // change sent to the control plane. Secrets pass through in a request and are not kept here.
 import { signal } from "@preact/signals";
-import type { ControlMachine, Group, MachineRef, ProviderAdd, ProviderID, ProviderOptions, ProviderSummary, WarmPool, WarmPoolClaim,
+import type { ControlMachine, Group, MachineRef, ProviderAdd, ProviderID, ProviderOAuthFinish, ProviderOAuthStart, ProviderOAuthStarted, ProviderOptions, ProviderSummary, WarmPool, WarmPoolClaim,
   WarmPoolClaimed, WarmPoolSet } from "../protocol/generated";
 import { Failure } from "../protocol/generated";
 import type { Caller } from "../protocol/methods";
@@ -26,6 +26,14 @@ export type InstallOutcome = { added: string } | { needsTrust: string } | { fail
 
 /** What Update… came to (#4122): updated, a host key to look at first, or why not. */
 export type UpdateOutcome = { updated: string } | { needsTrust: string } | { failed: string };
+
+/** Why an OAuth connection did not start or finish (#6074): the words, and data.reason. */
+export interface OAuthRefusal { refused: string; reason?: string }
+
+function oauthRefusal(error: unknown): OAuthRefusal {
+  const reason = error instanceof CallFailed ? (error.data as { reason?: unknown } | undefined)?.reason : undefined;
+  return typeof reason === "string" ? { refused: describe(error), reason } : { refused: describe(error) };
+}
 
 export class Providers {
   /** As last listed; null before the first list. */
@@ -87,6 +95,27 @@ export class Providers {
       return null;
     } catch (error) {
       return describe(error);
+    }
+  }
+
+  /** providers/oauthStart (#6074): the consent page to open, on the machine that keeps it, or why not with data.reason. */
+  async oauthStart(request: ProviderOAuthStart): Promise<ProviderOAuthStarted | OAuthRefusal> {
+    try {
+      return await this.caller.call("providers/oauthStart", request);
+    } catch (error) {
+      return oauthRefusal(error);
+    }
+  }
+
+  /** providers/oauthFinish (#6074): the provider, added or connected again, or why not with data.reason. */
+  async oauthFinish(request: ProviderOAuthFinish): Promise<ProviderSummary | OAuthRefusal> {
+    try {
+      const saved = await this.caller.call("providers/oauthFinish", request);
+      const list = this.list.value ?? [];
+      this.list.value = list.some((p) => p.id === saved.id) ? list.map((p) => (p.id === saved.id ? saved : p)) : [...list, saved];
+      return saved;
+    } catch (error) {
+      return oauthRefusal(error);
     }
   }
 

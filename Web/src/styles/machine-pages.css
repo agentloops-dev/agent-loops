@@ -85,6 +85,17 @@
 .provider-foot { margin-top: 10px; font-size: 0.75rem; }
 .provider-sheet .sheet-actions .leading { margin-right: auto; }
 .provider-sheet .sheet-actions .spinner { width: 10px; height: 10px; }
+/* The guided DigitalOcean Connect (#6074, W2 and W2b). */
+.do-step { margin: 14px 0 6px; }
+.do-step p { margin: 6px 0; }
+.do-connect { display: flex; justify-content: center; align-items: center; gap: 10px; }
+.do-connect .button { border: 1px solid var(--paper-edge); border-radius: var(--radius-control); background: var(--paper-raised); padding: 4px 10px; color: inherit; text-decoration: none; }
+.do-step .spinner { width: 10px; height: 10px; }
+.provider-sheet fieldset { margin: 12px 0 0; padding: 0; border: 0; }
+.do-token { margin: 10px 0; }
+.do-token label { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
+.do-token small { font-size: 0.75rem; }
+.do-token .do-connect { justify-content: space-between; margin-top: 8px; }
 /* Move to Another Machine… and Run It Here Again… (#4255), as the window's sheets. */
 .plane-move-row .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 6px; background: var(--tint-attention); }
 .plane-move-sheet { max-width: 560px; }
