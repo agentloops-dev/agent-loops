@@ -1872,15 +1872,15 @@ func (p *Providers) create(request ProviderCreate, who string, caller *Caller) (
 	}
 	firstBoot := command + " " + shellQuoted(name)
 	began := time.Now()
-	// Options left out are the ones used last on this provider, or else its defaults (#3979).
+	// Options left out are what New Machine's form shows (#6686): the person's last choices
+	// on this provider (#3979) over the form's defaults.
+	form := p.formOf(id)
 	options := valueOf(request.Options)
 	if options == nil {
-		if options = p.lastOptions(person, id); options == nil {
-			options = p.defaultOptions(id)
-		}
+		options = form.values(p.lastOptions(person, id))
 	}
 	// Kept as given, before a repository is put in them.
-	used, _ := json.Marshal(options)
+	used := valueOf(rawOf(options))
 	options, clones, err := p.withRepository(id, trimSpaces(deref(request.Repository)), options)
 	if err != nil {
 		return nil, err
@@ -1924,7 +1924,7 @@ func (p *Providers) create(request ProviderCreate, who string, caller *Caller) (
 		p.setupStep(madeHost, wire.MachineSetupStepIDJoin, wire.MachineSetupStateRunning,
 			"Waiting for "+name+" to start and join", "")
 	}
-	p.madeOn(person, id, used)
+	p.madeOn(person, id, used, form)
 	p.usedName(person, name)
 	p.Refresh(id)
 	found := p.listedMade(id, made, name)
