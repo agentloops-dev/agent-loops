@@ -15,6 +15,7 @@
 <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
 <link rel="stylesheet" href="tokens.css">
 <link rel="stylesheet" href="style.css">
+<script src="pages.js" defer></script>
 </head>
 <body>
 
@@ -22,7 +23,9 @@
   <a class="brand" href="/"><img src="assets/icon.svg" alt="" width="28" height="28">Agent Loops</a>
   <nav>
     <a href="#lifecycle">Lifecycle</a>
+    <a href="#epic">An epic</a>
     <a href="#integrations">Integrations</a>
+    <a href="#built">Built with it</a>
     <a href="https://docs.agentloops.dev/">Docs</a>
   </nav>
   <a class="button small" href="#get">Get Agent Loops</a>
@@ -31,7 +34,7 @@
 <main>
 
 <!-- 1. Hero. The downloads are in "Get Agent Loops", lower down (Alex, 2026-11-22, PR #6862). -->
-<section class="hero"><div class="wrap">
+<section class="page hero" id="top" aria-label="Agentic software delivery"><div class="wrap">
   <p class="eyebrow">Agentic software delivery</p>
   <h1>From idea to production, and back.</h1>
   <p class="lede">Agents plan your work, build it, pass your CI, land it and ship it. You stay in the loop for the decisions that matter, from your Mac, your phone, a browser or a terminal. It works with the agents, forges, trackers and clouds you already use.</p>
@@ -65,7 +68,7 @@
 </div></section>
 
 <!-- 2. The whole lifecycle -->
-<section id="lifecycle"><div class="wrap">
+<section class="page" id="lifecycle"><div class="wrap">
   <h2>The whole lifecycle, not only the code</h2>
   <p class="lede">Three parts. Agents do each step. A person comes in where a person decides.</p>
   <div class="grid3">
@@ -90,7 +93,12 @@
       </ul></div>
   </div>
   <p class="flow">idea → epic → issues → agents → CI → PRs → main → deploy → health → back to work</p>
+</div></section>
 
+<!-- 2b. An epic runs itself: a page of its own, so the animation starts when it comes into view. -->
+<section class="page" id="epic"><div class="wrap">
+  <h2>An epic runs itself</h2>
+  <p class="lede">One idea, five issues, three machines. Agents do the work; you approve one new screen.</p>
   <figure class="anim">
     <svg class="ep" viewBox="0 0 720 424" role="img" aria-labelledby="ep-title ep-desc" xmlns="http://www.w3.org/2000/svg">
       <title id="ep-title">An epic runs itself</title>
@@ -148,12 +156,12 @@
         <text x="40" y="403" class="ep-t ep-b ep-done-text">Epic closed · 5 PRs · 3 machines · 3 h 40 min · $14.20 · you approved one new screen</text>
       </g>
     </svg>
-    <figcaption class="small">An epic runs itself, with sample data. It stops when you ask your system for less motion.</figcaption>
+    <figcaption class="small">Sample data. It starts when it comes into view, and stops when you ask your system for less motion.</figcaption>
   </figure>
 </div></section>
 
 <!-- 15. Works with the tools you already use. The count comes from docs/reference/integrations.md (2026-11-22). -->
-<section id="integrations"><div class="wrap">
+<section class="page" id="integrations"><div class="wrap">
   <h2>Works with the tools you already use</h2>
   <p class="lede">40+ integrations, and any MCP server. Bring your agents, your forge, your tracker and your cloud. Each agent signs in with your own account and plan.</p>
   <div class="grid3 groups">
@@ -172,7 +180,7 @@
 </div></section>
 
 <!-- 17. Built with itself. Figures from the repo's records on 2026-11-22. No count of people. -->
-<section class="proof"><div class="wrap">
+<section class="page proof" id="built"><div class="wrap">
   <h2>Agent Loops is built with Agent Loops</h2>
   <p class="lede">Agents plan, build, test and land the changes to this product, with the workflows and the approvals on this page.</p>
   <div class="grid3">
@@ -184,7 +192,7 @@
 </div></section>
 
 <!-- Get Agent Loops. When sign-up is live (#3392), the first button becomes "Start free at agentloops.dev". -->
-<section id="get" class="get"><div class="wrap">
+<section class="page get" id="get"><div class="wrap">
   <h2>Get Agent Loops</h2>
   <p class="lede">Install it on your Mac, and answer your agents from your iPhone, your iPad, a browser or a terminal.</p>
   <p class="actions">
@@ -195,6 +203,15 @@
 </div></section>
 
 </main>
+
+<nav class="dots" aria-label="Pages">
+  <a href="#top" aria-label="Agentic software delivery"></a>
+  <a href="#lifecycle" aria-label="The whole lifecycle"></a>
+  <a href="#epic" aria-label="An epic runs itself"></a>
+  <a href="#integrations" aria-label="Works with the tools you already use"></a>
+  <a href="#built" aria-label="Built with Agent Loops"></a>
+  <a href="#get" aria-label="Get Agent Loops"></a>
+</nav>
 
 <footer><div class="wrap">
   <nav>

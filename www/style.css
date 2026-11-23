@@ -8,6 +8,7 @@
   /* Words that come second: a caption, the small print, the nav. The web page's own mix. */
   --muted: color-mix(in srgb, var(--paper-ink) 62%, transparent);
   --shadow: var(--shadow-floating);
+  --header-height: 64px;
   /* The washes behind a state: the state's tint, faint, so they work light and dark. */
   --wash-vouched: color-mix(in srgb, var(--tint-vouched) 16%, transparent);
   --wash-accent: color-mix(in srgb, var(--accent) 14%, transparent);
@@ -16,7 +17,9 @@
 
 * { box-sizing: border-box; }
 
-html { scroll-behavior: smooth; }
+/* The page is a series of pages, like a deck of slides (Alex, PR #6862): each fills the window
+   under the header and snaps into place; pages.js starts a page's motion when it comes into view. */
+html { scroll-behavior: smooth; scroll-snap-type: y proximity; scroll-padding-top: var(--header-height); }
 
 body {
   margin: 0;
@@ -51,8 +54,16 @@ h3 { font-size: 1.05rem; margin: 0 0 0.4em; }
 .more { font-size: var(--type-supporting); margin: 12px 0 0; }
 
 /* The header */
-.top { border-bottom: 1px solid var(--paper-rule); }
-.top .wrap { display: flex; align-items: center; gap: 24px; height: 64px; }
+.top {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  border-bottom: 1px solid var(--paper-rule);
+  background: color-mix(in srgb, var(--paper-ground) 86%, transparent);
+  -webkit-backdrop-filter: saturate(1.4) blur(14px);
+  backdrop-filter: saturate(1.4) blur(14px);
+}
+.top .wrap { display: flex; align-items: center; gap: 24px; height: var(--header-height); }
 .brand {
   display: flex;
   align-items: center;
@@ -66,9 +77,60 @@ h3 { font-size: 1.05rem; margin: 0 0 0.4em; }
 .top nav a { text-decoration: none; color: var(--muted); }
 .top nav a:hover { color: var(--paper-ink); }
 
-section { padding: 64px 0; border-bottom: 1px solid var(--paper-rule); }
-section:last-child { border-bottom: 0; }
-.get { background: var(--paper-sidebar); }
+.page {
+  min-height: calc(100svh - var(--header-height));
+  display: flex;
+  align-items: center;
+  padding: 72px 0;
+  scroll-snap-align: start;
+}
+.page > .wrap { width: 100%; }
+.page h2 { font-size: var(--type-display-1); margin-bottom: 0.3em; }
+.hero h1 { font-size: calc(var(--type-display-1) * 1.35); }
+.get, .proof { background: var(--paper-sidebar); }
+
+/* A page's words and pictures come in when the page does (only with pages.js: without it,
+   everything shows). */
+.js .page > .wrap > *,
+.js .page .grid3 > *,
+.js .page .hero-mocks > * {
+  opacity: 0;
+  transform: translateY(28px);
+  transition: opacity 0.7s ease, transform 0.7s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.js .page.in > .wrap > *,
+.js .page.in .grid3 > *,
+.js .page.in .hero-mocks > * { opacity: 1; transform: none; }
+.js .page.in > .wrap > :nth-child(2) { transition-delay: 0.08s; }
+.js .page.in > .wrap > :nth-child(3) { transition-delay: 0.16s; }
+.js .page.in > .wrap > :nth-child(4) { transition-delay: 0.24s; }
+.js .page.in > .wrap > :nth-child(n+5) { transition-delay: 0.32s; }
+.js .page.in .grid3 > :nth-child(3n+2), .js .page.in .hero-mocks > :nth-child(2) { transition-delay: 0.36s; }
+.js .page.in .grid3 > :nth-child(3n) { transition-delay: 0.48s; }
+/* An animation starts when its page comes into view, and again each time it comes back. */
+.js .page:not(.in) .ep-a { animation-name: none; }
+
+/* The page dots, at the right, as in a deck of slides. */
+.dots {
+  position: fixed;
+  right: 18px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.dots a {
+  display: block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 1px solid var(--paper-edge);
+  transition: background 0.3s, transform 0.3s;
+}
+.dots a:hover { background: var(--paper-rule); }
+.dots a[aria-current] { background: var(--accent); border-color: var(--accent); transform: scale(1.3); }
 
 /* Buttons */
 .actions { display: flex; flex-wrap: wrap; gap: 12px; margin: 24px 0 8px; }
@@ -269,7 +331,8 @@ section:last-child { border-bottom: 0; }
 /* Less motion: no animation, and the epic drawn as it ends (every lane merged, the epic closed). */
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
-  .ep-a { animation: none; }
+  .ep-a, .js .page:not(.in) .ep-a { animation: none; }
+  .js .page > .wrap > *, .js .page .grid3 > *, .js .page .hero-mocks > * { opacity: 1; transform: none; transition: none; }
   .ep-f1, .ep-f2, .ep-f3, .ep-f9, .ep-m1, .ep-m2, .ep-m3, .ep-m4, .ep-m5 { opacity: 1; }
   .ep-bar { transform: none; }
 }
@@ -285,7 +348,8 @@ footer nav a { text-decoration: none; }
 @media (max-width: 640px) {
   .top nav { display: none; }
   .top .wrap { justify-content: space-between; }
-  section { padding: 40px 0; }
+  .page { padding: 48px 0; }
+  .dots { display: none; }
   .lede { font-size: 1.05rem; }
   .grid3, .hero-mocks { grid-template-columns: 1fr; }
   .hero-mocks .phone { max-width: 320px; }
