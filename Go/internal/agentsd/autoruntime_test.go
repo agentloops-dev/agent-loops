@@ -493,3 +493,58 @@ func TestAnAutoHelperAsksLikeItsStarter(t *testing.T) {
 		t.Fatalf("%v", a.ClientPermission)
 	}
 }
+
+// FR-018: a permission mode cell answers requests on a named runtime too. Approve for me on
+// OpenCode starts with mode=build and the mapped Yes to all; an explicit per-agent answer wins.
+func TestNamedOpenCodeModeCellAnswersRequests(t *testing.T) {
+	t.Parallel()
+
+	fakeRuntimes(t)
+	d, c := start(t, t.TempDir())
+	defer d.Shutdown()
+	d.SettingsDir = t.TempDir()
+	dir := "file://" + t.TempDir()
+	var id wire.UUID
+	mustUnmarshal(t, c.call(t, 1, "agents/start", map[string]any{"runtimeID": "opencode", "cwd": dir, "prompt": "hello",
+		"levels": map[string]any{"permission": "approveForMe"}}), &id)
+	a := d.Store.Agent(id)
+	if stringValue(a.StartOptions.Values["mode"]) != "build" || a.ClientPermission == nil ||
+		*a.ClientPermission != wire.ClientPermissionModeAlwaysApprove || !d.agentAlwaysApproves(a) {
+		t.Fatalf("%s %v %+v", a.RuntimeID, a.ClientPermission, a.StartOptions.Values)
+	}
+	var own wire.UUID
+	mustUnmarshal(t, c.call(t, 2, "agents/start", map[string]any{"runtimeID": "opencode", "cwd": dir, "prompt": "hello",
+		"levels": map[string]any{"permission": "approveForMe", "permissionRequests": "default"}}), &own)
+	if a := d.Store.Agent(own); a.ClientPermission == nil || *a.ClientPermission != wire.ClientPermissionModeDefault || d.agentAlwaysApproves(a) {
+		t.Fatalf("explicit request cards did not win: %v", a.ClientPermission)
+	}
+}
+
+// A later Permission mode change refreshes the mapped answer; an explicit choice in the same
+// setLevels call still wins.
+func TestSetLevelsRefreshesTheMappedAnswerOnANamedRuntime(t *testing.T) {
+	t.Parallel()
+
+	fakeRuntimes(t)
+	d, c := start(t, t.TempDir())
+	defer d.Shutdown()
+	d.SettingsDir = t.TempDir()
+	var id wire.UUID
+	mustUnmarshal(t, c.call(t, 1, "agents/start", map[string]any{"runtimeID": "opencode", "cwd": "file://" + t.TempDir(), "prompt": "hello",
+		"levels": map[string]any{"permission": "approveForMe"}}), &id)
+	if a := d.Store.Agent(id); a.ClientPermission == nil || *a.ClientPermission != wire.ClientPermissionModeAlwaysApprove {
+		t.Fatalf("start: %v", a.ClientPermission)
+	}
+	c.call(t, 2, "agents/setLevels", map[string]any{"agentID": id, "levels": map[string]any{"permission": "ask"}})
+	if a := d.Store.Agent(id); a.ClientPermission == nil || *a.ClientPermission != wire.ClientPermissionModeDefault || d.agentAlwaysApproves(a) {
+		t.Fatalf("ask: %v", a.ClientPermission)
+	}
+	c.call(t, 3, "agents/setLevels", map[string]any{"agentID": id, "levels": map[string]any{"permission": "approveForMe"}})
+	if a := d.Store.Agent(id); a.ClientPermission == nil || *a.ClientPermission != wire.ClientPermissionModeAlwaysApprove || !d.agentAlwaysApproves(a) {
+		t.Fatalf("approveForMe: %v", a.ClientPermission)
+	}
+	c.call(t, 4, "agents/setLevels", map[string]any{"agentID": id, "levels": map[string]any{"permission": "ask", "permissionRequests": "alwaysApprove"}})
+	if a := d.Store.Agent(id); a.ClientPermission == nil || *a.ClientPermission != wire.ClientPermissionModeAlwaysApprove || !d.agentAlwaysApproves(a) {
+		t.Fatalf("explicit alwaysApprove: %v", a.ClientPermission)
+	}
+}

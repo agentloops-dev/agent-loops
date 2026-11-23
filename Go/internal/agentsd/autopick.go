@@ -324,9 +324,9 @@ func noRuntime(skipped []wire.AutoSkip) error {
 
 // applyLevels folds the levels into a start on a named or picked runtime: the model and mode
 // cells' options where the start set none of its own (a native value wins, the ⋯ own menu),
-// and the answer to permission requests. On Auto the permission mode's cell answers them
-// (FR-010); on a named runtime the pill, or Settings, does.
-func applyLevels(runtimeID string, l wire.Levels, values map[string]wire.JSONValue, auto bool, settings wire.AutoSettings, offers []wire.ConfigOption) (map[string]wire.JSONValue, *wire.ClientPermissionMode) {
+// and the answer to permission requests. The permission mode's cell answers them on Auto and
+// on a named runtime (FR-010, FR-018); an explicit Permission requests choice wins over it.
+func applyLevels(runtimeID string, l wire.Levels, values map[string]wire.JSONValue, settings wire.AutoSettings, offers []wire.ConfigOption) (map[string]wire.JSONValue, *wire.ClientPermissionMode) {
 	out := maps.Clone(values)
 	if out == nil {
 		out = map[string]wire.JSONValue{}
@@ -341,7 +341,7 @@ func applyLevels(runtimeID string, l wire.Levels, values map[string]wire.JSONVal
 				out[k] = v
 			}
 		}
-		if auto && m.Native.ClientPermission != nil {
+		if m.Native.ClientPermission != nil {
 			client = m.Native.ClientPermission
 		}
 	}
@@ -351,7 +351,7 @@ func applyLevels(runtimeID string, l wire.Levels, values map[string]wire.JSONVal
 	if l.Permission != nil {
 		fill(cellMapping(runtimeID, wire.AutoFieldPermission, string(*l.Permission), settings, offers))
 	}
-	if l.PermissionRequests != nil && clientAnswered[runtimeID] && !auto {
+	if l.PermissionRequests != nil && clientAnswered[runtimeID] {
 		c := *l.PermissionRequests
 		client = &c
 	}
@@ -485,9 +485,14 @@ func (d *Daemon) setLevels(ctx context.Context, r wire.SetLevelsRequest) (wire.A
 		return wire.Agent{}, Invalid("%s has %s.", runtimeName(a.RuntimeID), why)
 	}
 	n := nativeOf(cells)
-	yes := a.Auto != nil && n.ClientPermission != nil && *n.ClientPermission == wire.ClientPermissionModeAlwaysApprove ||
-		r.Levels.PermissionRequests != nil && clientAnswered[a.RuntimeID] && *r.Levels.PermissionRequests == wire.ClientPermissionModeAlwaysApprove
-	if yes {
+	// The mode cell answers permission requests on a named runtime too (FR-018); an explicit
+	// per-agent Permission requests choice wins over the mapped answer.
+	client := n.ClientPermission
+	if r.Levels.PermissionRequests != nil && clientAnswered[a.RuntimeID] {
+		c := *r.Levels.PermissionRequests
+		client = &c
+	}
+	if client != nil && *client == wire.ClientPermissionModeAlwaysApprove {
 		if err := d.alwaysApproveRefusal(); err != nil {
 			return wire.Agent{}, err
 		}
@@ -497,12 +502,8 @@ func (d *Daemon) setLevels(ctx context.Context, r wire.SetLevelsRequest) (wire.A
 			return wire.Agent{}, err
 		}
 	}
-	if a.Auto != nil && n.ClientPermission != nil {
-		c := *n.ClientPermission
-		d.change(a.ID, func(a *wire.Agent) { a.ClientPermission = &c })
-	}
-	if r.Levels.PermissionRequests != nil && clientAnswered[a.RuntimeID] {
-		c := *r.Levels.PermissionRequests
+	if client != nil {
+		c := *client
 		d.change(a.ID, func(a *wire.Agent) { a.ClientPermission = &c })
 	}
 	d.change(a.ID, func(a *wire.Agent) {
@@ -636,7 +637,7 @@ func (d *Daemon) resolveLevels(r *wire.StartRequest, by startedBy) (pick *wire.A
 		pick = &wire.AutoPick{RuntimeID: id, Levels: levels, Native: native, Skipped: skipped}
 	}
 	var values map[string]wire.JSONValue
-	values, client = applyLevels(r.RuntimeID, levels, r.StartOptions.Values, auto, settings, d.runtimeOffers(r.RuntimeID))
+	values, client = applyLevels(r.RuntimeID, levels, r.StartOptions.Values, settings, d.runtimeOffers(r.RuntimeID))
 	r.StartOptions.Values = values
 	if askOnly && client != nil {
 		client = requestCards
