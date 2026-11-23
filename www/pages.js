@@ -9,7 +9,7 @@
 
   // The parts that come in: a section's own children, except a grid, which brings its
   // children in one by one instead.
-  const groups = ".grid3";
+  const groups = ".grid3, .int-rows, .clients";
   const parts = [];
   for (const child of document.querySelectorAll(".page > .wrap > *")) {
     if (child.matches(groups)) {
@@ -28,7 +28,7 @@
         comeIn.unobserve(e.target);
       }
     },
-    { rootMargin: "0px 0px -12% 0px", threshold: 0.15 },
+    { rootMargin: "0px 0px -4% 0px", threshold: 0 },
   );
   for (const part of parts) comeIn.observe(part);
 
@@ -43,6 +43,29 @@
     { threshold: [0, 0.4] },
   );
   for (const anim of document.querySelectorAll(".anim, .loop")) play.observe(anim);
+
+  // The section nearest the middle of the window is in focus; the others are blurred (Alex,
+  // PR #6862). Between two sections, the nearer one keeps the focus; at the end of the page,
+  // the last one has it.
+  const sections = [...document.querySelectorAll(".page")];
+  let queued = false;
+  const focus = () => {
+    queued = false;
+    const middle = window.innerHeight / 2;
+    let best = sections[0];
+    let bestGap = Infinity;
+    for (const s of sections) {
+      const r = s.getBoundingClientRect();
+      const gap = r.top > middle ? r.top - middle : r.bottom < middle ? middle - r.bottom : 0;
+      if (gap < bestGap) { bestGap = gap; best = s; }
+    }
+    if (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 2) best = sections[sections.length - 1];
+    for (const s of sections) s.classList.toggle("focus", s === best);
+  };
+  const queue = () => { if (!queued) { queued = true; requestAnimationFrame(focus); } };
+  window.addEventListener("scroll", queue, { passive: true });
+  window.addEventListener("resize", queue);
+  focus();
 
   // A figure spins up to its value when it comes into view. It starts from its own value with
   // the page's text, so without this, or with less motion asked for, it shows the value.

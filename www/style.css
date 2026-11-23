@@ -2,7 +2,7 @@
    fonts, light and dark. Every colour, radius, font and type step is a token from tokens.css,
    which scripts/design.sh gen makes from design/tokens.json: this file keeps only rules.
    The page's CSP allows no inline style, so the inline SVGs' rules and keyframes are here too,
-   with a prefix for each animation (ep- for "An epic runs itself"). */
+   with a prefix for each animation (ep- for "A feature builds and deploys itself", lp- for the loop). */
 
 :root {
   /* Words that come second: a caption, the small print, the nav. The web page's own mix. */
@@ -77,33 +77,35 @@ h3 { font-size: 1.05rem; margin: 0 0 0.4em; }
   white-space: nowrap;
 }
 
-/* Each section fills the window under the header (Alex, PR #6862), with its content in the
-   middle; a section taller than the window grows. */
-.page {
-  min-height: calc(100svh - var(--header-height));
-  display: flex;
-  align-items: center;
-  padding: 56px 0;
-}
+/* Sections run on as one page, not as slides (Alex, PR #6862): a fixed 384 px between them. */
+.page { padding: 192px 0; }
+/* So that the gap above and below each section is the same, its first and last items add no
+   margin of their own. */
+.page > .wrap > :first-child { margin-top: 0; }
+.page > .wrap > :last-child { margin-bottom: 0; }
 .page > .wrap { width: 100%; }
-.page h2 { font-size: var(--type-display-1); margin-bottom: 0.3em; }
-.hero h1 { font-size: calc(var(--type-display-1) * 1.35); }
+.page h2 { font-size: var(--type-display-2); margin-bottom: 0.4em; }
+.hero h1 { font-size: var(--type-display-1); }
 .get, .proof { background: var(--paper-sidebar); }
 
 /* As on apple.com, each part of a section (a heading, a card, a drawing) comes into being when
    it scrolls into view: pages.js marks it .part, then .in. Without pages.js, everything shows. */
 .js .part {
   opacity: 0;
-  transform: translateY(36px);
-  transition: opacity 0.8s ease, transform 0.9s cubic-bezier(0.2, 0.7, 0.2, 1);
+  transform: translateY(12px);
+  filter: blur(4px);
+  transition: opacity 0.6s ease, transform 0.6s ease-out, filter 0.6s ease;
 }
-.js .part.in { opacity: 1; transform: none; }
+.js .part.in { opacity: 1; transform: none; filter: none; }
 /* Cards in a row come in one after the other. */
 .js .grid3 > .part.in:nth-child(3n+2) { transition-delay: 0.12s; }
 .js .grid3 > .part.in:nth-child(3n) { transition-delay: 0.24s; }
 /* A drawing grows a little as it comes in. */
-.js .anim.part { transform: translateY(48px) scale(0.96); }
+.js .anim.part { transform: translateY(12px) scale(0.98); }
 .js .anim.part.in { transform: none; }
+/* Only the section in focus is sharp (pages.js): the others are blurred and dimmed. */
+.js .page { transition: filter 0.5s ease, opacity 0.5s ease; }
+.js .page:not(.focus) { filter: blur(4px); opacity: 0.45; }
 /* An animation starts when it comes into view, and again each time it comes back. */
 .js .anim:not(.playing) .ep-a { animation-name: none; }
 
@@ -161,12 +163,39 @@ h3 { font-size: 1.05rem; margin: 0 0 0.4em; }
 }
 .tag.soon { background: var(--wash-attention); color: var(--tint-attention); }
 
-.groups { margin-bottom: 8px; }
+/* The integrations: a row for each group, its name at the left and its logos flowing to the
+   right (Alex, PR #6862). */
+.int-rows { margin-top: 24px; border-bottom: 1px solid var(--paper-rule); }
+.int-row { display: grid; grid-template-columns: 190px 1fr; gap: 16px; align-items: start; padding: 14px 0; border-top: 1px solid var(--paper-rule); }
+.int-row h3 { margin: 6px 0 0; font-size: var(--type-reading); }
+/* The clients: a tile for each, with its device drawn after Lucide (ISC). */
+.clients { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-top: 28px; }
+.client {
+  display: block;
+  padding: 20px;
+  border: 1px solid var(--paper-rule);
+  border-radius: var(--radius-card);
+  background: var(--paper-raised);
+  color: var(--paper-ink);
+  text-decoration: none;
+  transition: border-color 0.2s;
+}
+.client:hover { border-color: var(--accent); }
+/* A client that is planned: a dashed border and a coming soon tag, linked to its issue. */
+.client.soon { border-style: dashed; background: transparent; }
+.client.soon .client-ic { stroke: var(--paper-tertiary); }
+.client-ic { width: 40px; height: 40px; fill: none; stroke: var(--accent); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.client h3 { margin: 14px 0 0; }
+.client p { margin: 6px 0 0; font-size: var(--type-supporting); color: var(--paper-secondary); }
+.js .clients > .part.in:nth-child(4n+2) { transition-delay: 0.08s; }
+.js .clients > .part.in:nth-child(4n+3) { transition-delay: 0.16s; }
+.js .clients > .part.in:nth-child(4n) { transition-delay: 0.24s; }
+
 /* An integration: its logo, in its own colour on a faint wash of it (brands.css), and its name,
    as a pill. A group's pills flow and wrap, as a cloud. One with no free logo gets its initials
    on the page's own colours. */
-.card .ints { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; font-size: var(--type-supporting); }
-.card .ints li {
+.ints { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; font-size: var(--type-supporting); }
+.ints li {
   margin: 0;
   display: flex;
   align-items: center;
@@ -203,7 +232,11 @@ h3 { font-size: 1.05rem; margin: 0 0 0.4em; }
    A tall copy takes the place of the wide one in a narrow window. */
 .loop { margin: 40px 0 0; }
 .lp { width: 100%; height: auto; display: block; font-family: var(--font-text); overflow: visible; }
-.lp-tall { display: none; max-width: 420px; margin: 0 auto; }
+.lp-tall { display: none; max-width: 420px; margin-left: auto; margin-right: auto; }
+/* The picture keeps room at its foot for the orbit to stretch into; it hangs into the gap below,
+   so the gap under the hero is the same as the others. */
+.lp-wide { margin-bottom: -38px; }
+.lp-tall { margin-bottom: -46px; }
 .lp-track { fill: none; stroke: var(--paper-rule); stroke-width: 3; }
 .lp-comet {
   fill: none;
@@ -218,31 +251,51 @@ h3 { font-size: 1.05rem; margin: 0 0 0.4em; }
 .lp-dot { fill: var(--paper-raised); stroke: var(--accent); stroke-width: 3; animation: 12s linear infinite; }
 .lp-name { font-size: 18px; font-weight: 700; fill: var(--paper-ink); }
 .lp-tall .lp-name { font-size: 20px; }
-/* The planet in the middle: lit from the top left, with bands whose breaks drift across it, so
-   it seems to turn. */
-.lp-stop-lit { stop-color: color-mix(in srgb, var(--accent) 55%, var(--paper-on-fill)); }
-.lp-stop-mid { stop-color: var(--accent); }
-.lp-stop-dark { stop-color: color-mix(in srgb, var(--accent) 50%, var(--paper-scrim)); }
-.lp-glow { fill: var(--wash-accent); }
-.lp-bands line { stroke: var(--paper-on-fill); stroke-opacity: 0.16; stroke-linecap: round; stroke-dasharray: 70 22 30 40; animation: lp-turn 26s linear infinite; }
-.lp-bands line:nth-child(2) { stroke-dasharray: 40 30 90 20; animation-duration: 34s; }
-.lp-bands line:nth-child(3) { stroke-dasharray: 110 26 36 30; animation-duration: 22s; }
-.lp-bands line:nth-child(4) { stroke-dasharray: 30 50 60 24; animation-duration: 40s; }
-@keyframes lp-turn { from { stroke-dashoffset: 0; } to { stroke-dashoffset: -188; } }
+/* The Earth turns: its land and clouds drift across it, each a strip twice its width; and the
+   Blob floats beside it. */
+.lp-land, .lp-clouds { animation: 60s linear infinite; }
+.lp-clouds { animation-duration: 38s; }
+.lp-wide .lp-land, .lp-wide .lp-clouds { animation-name: lp-spin-w; }
+.lp-tall .lp-land, .lp-tall .lp-clouds { animation-name: lp-spin-t; }
+@keyframes lp-spin-w { to { transform: translateX(-280px); } }
+@keyframes lp-spin-t { to { transform: translateX(-232px); } }
+/* The Blob wanders round its own small patch of space, beside the Earth and inside the orbit. */
+.lp-astro { transform-box: fill-box; transform-origin: center; animation: 26s ease-in-out infinite; }
+.lp-astro-w { animation-name: lp-wander-w; }
+.lp-astro-t { animation-name: lp-wander-t; }
+@keyframes lp-wander-w {
+  0%, 100% { transform: translate(0, 0) rotate(-8deg); }
+  17% { transform: translate(34px, -30px) rotate(6deg); }
+  33% { transform: translate(52px, 6px) rotate(14deg); }
+  50% { transform: translate(22px, 38px) rotate(2deg); }
+  67% { transform: translate(-20px, 26px) rotate(-12deg); }
+  83% { transform: translate(-18px, -16px) rotate(-4deg); }
+}
+@keyframes lp-wander-t {
+  0%, 100% { transform: translate(0, 0) rotate(-8deg); }
+  20% { transform: translate(22px, -18px) rotate(8deg); }
+  40% { transform: translate(28px, 14px) rotate(14deg); }
+  60% { transform: translate(-6px, 22px) rotate(-4deg); }
+  80% { transform: translate(-24px, -6px) rotate(-12deg); }
+}
 .lp-orbit, .lp-up { animation: 60s linear infinite; }
 .lp-up { transform-origin: 0 0; }
 .lp-s0 .lp-dot { animation-name: lp-s0; }
 @keyframes lp-s0 { 0% { fill: var(--accent); } 9%, 99% { fill: var(--paper-raised); } 100% { fill: var(--accent); } }
 .lp-s1 .lp-dot { animation-name: lp-s1; }
-@keyframes lp-s1 { 0%, 16.2% { fill: var(--paper-raised); } 18.2% { fill: var(--accent); } 25.7%, 100% { fill: var(--paper-raised); } }
+@keyframes lp-s1 { 0%, 12.0% { fill: var(--paper-raised); } 14.0% { fill: var(--accent); } 21.5%, 100% { fill: var(--paper-raised); } }
 .lp-s2 .lp-dot { animation-name: lp-s2; }
-@keyframes lp-s2 { 0%, 32.8% { fill: var(--paper-raised); } 34.8% { fill: var(--accent); } 42.3%, 100% { fill: var(--paper-raised); } }
+@keyframes lp-s2 { 0%, 24.5% { fill: var(--paper-raised); } 26.5% { fill: var(--accent); } 34.0%, 100% { fill: var(--paper-raised); } }
 .lp-s3 .lp-dot { animation-name: lp-s3; }
-@keyframes lp-s3 { 0%, 49.5% { fill: var(--paper-raised); } 51.5% { fill: var(--accent); } 59.0%, 100% { fill: var(--paper-raised); } }
+@keyframes lp-s3 { 0%, 37.0% { fill: var(--paper-raised); } 39.0% { fill: var(--accent); } 46.5%, 100% { fill: var(--paper-raised); } }
 .lp-s4 .lp-dot { animation-name: lp-s4; }
-@keyframes lp-s4 { 0%, 66.2% { fill: var(--paper-raised); } 68.2% { fill: var(--accent); } 75.7%, 100% { fill: var(--paper-raised); } }
+@keyframes lp-s4 { 0%, 49.5% { fill: var(--paper-raised); } 51.5% { fill: var(--accent); } 59.0%, 100% { fill: var(--paper-raised); } }
 .lp-s5 .lp-dot { animation-name: lp-s5; }
-@keyframes lp-s5 { 0%, 82.8% { fill: var(--paper-raised); } 84.8% { fill: var(--accent); } 92.3%, 100% { fill: var(--paper-raised); } }
+@keyframes lp-s5 { 0%, 62.0% { fill: var(--paper-raised); } 64.0% { fill: var(--accent); } 71.5%, 100% { fill: var(--paper-raised); } }
+.lp-s6 .lp-dot { animation-name: lp-s6; }
+@keyframes lp-s6 { 0%, 74.5% { fill: var(--paper-raised); } 76.5% { fill: var(--accent); } 84.0%, 100% { fill: var(--paper-raised); } }
+.lp-s7 .lp-dot { animation-name: lp-s7; }
+@keyframes lp-s7 { 0%, 87.0% { fill: var(--paper-raised); } 89.0% { fill: var(--accent); } 96.5%, 100% { fill: var(--paper-raised); } }
 .lp-orbit-w { transform-origin: 550px 220px; animation-name: lp-orbit-w; }
 @keyframes lp-orbit-w {
   0.00% { transform: rotate(6.37deg) scale(1.0000, 1.1346); }
@@ -453,9 +506,10 @@ h3 { font-size: 1.05rem; margin: 0 0 0.4em; }
 }
 
 /* The loop plays while it is in view. */
-.js .loop:not(.playing) :is(.lp-comet, .lp-dot, .lp-orbit, .lp-up, .lp-bands line) { animation-play-state: paused; }
+.js .loop:not(.playing) :is(.lp-comet, .lp-dot, .lp-orbit, .lp-up, .lp-land, .lp-clouds, .lp-astro) { animation-play-state: paused; }
 
-/* An epic runs itself (ep-) */
+/* A feature builds and deploys itself (ep-). Chips keep a plain fill and text; their border
+   and icon say the state (Alex, PR #6862). Icons after Lucide (ISC). */
 .ep { font-family: var(--font-text); }
 .ep-frame { fill: var(--paper-raised); stroke: var(--paper-rule); stroke-width: 2; }
 .ep-chrome { fill: var(--paper-wash); }
@@ -465,68 +519,85 @@ h3 { font-size: 1.05rem; margin: 0 0 0.4em; }
 .ep-b { font-weight: 700; }
 .ep-idea { fill: var(--wash-accent); }
 .ep-track { fill: var(--paper-wash); }
-.ep-chips { font-size: 11px; font-weight: 700; text-anchor: middle; }
-.ep-run rect { fill: var(--wash-accent); }
-.ep-run text { fill: var(--accent); }
-.ep-ok rect { fill: var(--wash-vouched); }
-.ep-ok text { fill: var(--tint-vouched); }
-.ep-wait rect { fill: var(--paper-wash); }
-.ep-wait text { fill: var(--paper-tertiary); }
-.ep-done { fill: var(--wash-vouched); stroke: var(--tint-vouched); stroke-width: 1; }
-.ep-done-text { fill: var(--tint-vouched); font-size: 13px; }
-
-.ep-a { animation-duration: 18s; animation-iteration-count: infinite; animation-fill-mode: both; }
+.ep-chips { font-size: 11px; font-weight: 700; }
+.ep-chips rect { fill: var(--paper-raised); stroke-width: 1.5; }
+.ep-chips text { fill: var(--paper-ink); }
+.ep-ic { fill: none; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.ep-run rect, .ep-run .ep-ic { stroke: var(--accent); }
+.ep-ok rect, .ep-ok .ep-ic, .ep-ic.ep-ok { stroke: var(--tint-vouched); }
+.ep-wait rect, .ep-wait .ep-ic { stroke: var(--paper-edge); }
+.ep-spin { transform-box: fill-box; transform-origin: center; animation: ep-spin 1s linear infinite; }
+@keyframes ep-spin { to { transform: rotate(360deg); } }
+.ep-a { animation-duration: 22s; animation-iteration-count: infinite; animation-fill-mode: both; }
 .ep-fade { opacity: 0; }
-.ep-f1 { animation-name: ep-f1; }
-.ep-f2 { animation-name: ep-f2; }
-.ep-f3 { animation-name: ep-f3; }
-.ep-f9 { animation-name: ep-f9; }
-@keyframes ep-f1 { 0% { opacity: 0; } 3%, 93% { opacity: 1; } 100% { opacity: 0; } }
-@keyframes ep-f2 { 0%, 10% { opacity: 0; } 13%, 93% { opacity: 1; } 100% { opacity: 0; } }
-@keyframes ep-f3 { 0%, 18% { opacity: 0; } 21%, 93% { opacity: 1; } 100% { opacity: 0; } }
-@keyframes ep-f9 { 0%, 80% { opacity: 0; } 83%, 93% { opacity: 1; } 100% { opacity: 0; } }
-
-/* A lane's bar grows to its own width. */
 .ep-bar { fill: var(--line-accent); transform-box: fill-box; transform-origin: left center; transform: scaleX(0); }
+.ep-f1 { animation-name: ep-f1; }
+@keyframes ep-f1 { 0% { opacity: 0; } 3%, 97% { opacity: 1; } 100% { opacity: 0; } }
+.ep-f2 { animation-name: ep-f2; }
+@keyframes ep-f2 { 0%, 8% { opacity: 0; } 9.5%, 97% { opacity: 1; } 100% { opacity: 0; } }
+.ep-f3 { animation-name: ep-f3; }
+@keyframes ep-f3 { 0%, 15% { opacity: 0; } 16.5%, 97% { opacity: 1; } 100% { opacity: 0; } }
 .ep-g1 { animation-name: ep-g1; }
+@keyframes ep-g1 { 0%, 18% { transform: scaleX(0); } 40%, 97% { transform: scaleX(1); } 100% { transform: scaleX(0); } }
 .ep-g2 { animation-name: ep-g2; }
+@keyframes ep-g2 { 0%, 18% { transform: scaleX(0); } 48%, 97% { transform: scaleX(1); } 100% { transform: scaleX(0); } }
 .ep-g3 { animation-name: ep-g3; }
+@keyframes ep-g3 { 0%, 18% { transform: scaleX(0); } 35%, 97% { transform: scaleX(1); } 100% { transform: scaleX(0); } }
 .ep-g4 { animation-name: ep-g4; }
+@keyframes ep-g4 { 0%, 41% { transform: scaleX(0); } 60%, 97% { transform: scaleX(1); } 100% { transform: scaleX(0); } }
 .ep-g5 { animation-name: ep-g5; }
-@keyframes ep-g1 { 0%, 22% { transform: scaleX(0); } 46%, 93% { transform: scaleX(1); } 100% { transform: scaleX(0); } }
-@keyframes ep-g2 { 0%, 22% { transform: scaleX(0); } 54%, 93% { transform: scaleX(1); } 100% { transform: scaleX(0); } }
-@keyframes ep-g3 { 0%, 22% { transform: scaleX(0); } 40%, 93% { transform: scaleX(1); } 100% { transform: scaleX(0); } }
-@keyframes ep-g4 { 0%, 47% { transform: scaleX(0); } 66%, 93% { transform: scaleX(1); } 100% { transform: scaleX(0); } }
-@keyframes ep-g5 { 0%, 55% { transform: scaleX(0); } 78%, 93% { transform: scaleX(1); } 100% { transform: scaleX(0); } }
+@keyframes ep-g5 { 0%, 49% { transform: scaleX(0); } 70%, 97% { transform: scaleX(1); } 100% { transform: scaleX(0); } }
+.ep-g6 { animation-name: ep-g6; }
+@keyframes ep-g6 { 0%, 71% { transform: scaleX(0); } 80%, 97% { transform: scaleX(1); } 100% { transform: scaleX(0); } }
+.ep-g7 { animation-name: ep-g7; }
+@keyframes ep-g7 { 0%, 81% { transform: scaleX(0); } 90%, 97% { transform: scaleX(1); } 100% { transform: scaleX(0); } }
+.ep-c10 { animation-name: ep-c10; }
+@keyframes ep-c10 { 0%, 18% { opacity: 0; } 19.5%, 40% { opacity: 1; } 40.5%, 100% { opacity: 0; } }
+.ep-c11 { animation-name: ep-c11; }
+@keyframes ep-c11 { 0%, 40% { opacity: 0; } 41.5%, 97% { opacity: 1; } 100% { opacity: 0; } }
+.ep-c20 { animation-name: ep-c20; }
+@keyframes ep-c20 { 0%, 18% { opacity: 0; } 19.5%, 48% { opacity: 1; } 48.5%, 100% { opacity: 0; } }
+.ep-c21 { animation-name: ep-c21; }
+@keyframes ep-c21 { 0%, 48% { opacity: 0; } 49.5%, 97% { opacity: 1; } 100% { opacity: 0; } }
+.ep-c30 { animation-name: ep-c30; }
+@keyframes ep-c30 { 0%, 18% { opacity: 0; } 19.5%, 35% { opacity: 1; } 35.5%, 100% { opacity: 0; } }
+.ep-c31 { animation-name: ep-c31; }
+@keyframes ep-c31 { 0%, 35% { opacity: 0; } 36.5%, 97% { opacity: 1; } 100% { opacity: 0; } }
+.ep-c40 { animation-name: ep-c40; }
+@keyframes ep-c40 { 0%, 18% { opacity: 0; } 19.5%, 41% { opacity: 1; } 41.5%, 100% { opacity: 0; } }
+.ep-c41 { animation-name: ep-c41; }
+@keyframes ep-c41 { 0%, 41% { opacity: 0; } 42.5%, 60% { opacity: 1; } 60.5%, 100% { opacity: 0; } }
+.ep-c42 { animation-name: ep-c42; }
+@keyframes ep-c42 { 0%, 60% { opacity: 0; } 61.5%, 97% { opacity: 1; } 100% { opacity: 0; } }
+.ep-c50 { animation-name: ep-c50; }
+@keyframes ep-c50 { 0%, 18% { opacity: 0; } 19.5%, 49% { opacity: 1; } 49.5%, 100% { opacity: 0; } }
+.ep-c51 { animation-name: ep-c51; }
+@keyframes ep-c51 { 0%, 49% { opacity: 0; } 50.5%, 70% { opacity: 1; } 70.5%, 100% { opacity: 0; } }
+.ep-c52 { animation-name: ep-c52; }
+@keyframes ep-c52 { 0%, 70% { opacity: 0; } 71.5%, 97% { opacity: 1; } 100% { opacity: 0; } }
+.ep-c60 { animation-name: ep-c60; }
+@keyframes ep-c60 { 0%, 18% { opacity: 0; } 19.5%, 71% { opacity: 1; } 71.5%, 100% { opacity: 0; } }
+.ep-c61 { animation-name: ep-c61; }
+@keyframes ep-c61 { 0%, 71% { opacity: 0; } 72.5%, 80% { opacity: 1; } 80.5%, 100% { opacity: 0; } }
+.ep-c62 { animation-name: ep-c62; }
+@keyframes ep-c62 { 0%, 80% { opacity: 0; } 81.5%, 97% { opacity: 1; } 100% { opacity: 0; } }
+.ep-c70 { animation-name: ep-c70; }
+@keyframes ep-c70 { 0%, 18% { opacity: 0; } 19.5%, 81% { opacity: 1; } 81.5%, 100% { opacity: 0; } }
+.ep-c71 { animation-name: ep-c71; }
+@keyframes ep-c71 { 0%, 81% { opacity: 0; } 82.5%, 90% { opacity: 1; } 90.5%, 100% { opacity: 0; } }
+.ep-c72 { animation-name: ep-c72; }
+@keyframes ep-c72 { 0%, 90% { opacity: 0; } 91.5%, 97% { opacity: 1; } 100% { opacity: 0; } }
 
-/* A lane's chip goes from working (or blocked) to merged. */
-.ep-w1 { animation-name: ep-w1; } .ep-m1 { animation-name: ep-m1; }
-.ep-w2 { animation-name: ep-w2; } .ep-m2 { animation-name: ep-m2; }
-.ep-w3 { animation-name: ep-w3; } .ep-m3 { animation-name: ep-m3; }
-.ep-w4 { animation-name: ep-w4; } .ep-m4 { animation-name: ep-m4; }
-.ep-w5 { animation-name: ep-w5; } .ep-m5 { animation-name: ep-m5; }
-.ep-wait4 { animation-name: ep-wait4; } .ep-wait5 { animation-name: ep-wait5; }
-@keyframes ep-w1 { 0%, 22% { opacity: 0; } 24%, 46% { opacity: 1; } 47%, 100% { opacity: 0; } }
-@keyframes ep-m1 { 0%, 46% { opacity: 0; } 48%, 93% { opacity: 1; } 100% { opacity: 0; } }
-@keyframes ep-w2 { 0%, 22% { opacity: 0; } 24%, 54% { opacity: 1; } 55%, 100% { opacity: 0; } }
-@keyframes ep-m2 { 0%, 54% { opacity: 0; } 56%, 93% { opacity: 1; } 100% { opacity: 0; } }
-@keyframes ep-w3 { 0%, 22% { opacity: 0; } 24%, 40% { opacity: 1; } 41%, 100% { opacity: 0; } }
-@keyframes ep-m3 { 0%, 40% { opacity: 0; } 42%, 93% { opacity: 1; } 100% { opacity: 0; } }
-@keyframes ep-w4 { 0%, 47% { opacity: 0; } 49%, 66% { opacity: 1; } 67%, 100% { opacity: 0; } }
-@keyframes ep-m4 { 0%, 66% { opacity: 0; } 68%, 93% { opacity: 1; } 100% { opacity: 0; } }
-@keyframes ep-w5 { 0%, 55% { opacity: 0; } 57%, 78% { opacity: 1; } 79%, 100% { opacity: 0; } }
-@keyframes ep-m5 { 0%, 78% { opacity: 0; } 80%, 93% { opacity: 1; } 100% { opacity: 0; } }
-@keyframes ep-wait4 { 0%, 22% { opacity: 0; } 24%, 47% { opacity: 1; } 48%, 100% { opacity: 0; } }
-@keyframes ep-wait5 { 0%, 22% { opacity: 0; } 24%, 55% { opacity: 1; } 56%, 100% { opacity: 0; } }
 
-/* Less motion: no animation, and the epic drawn as it ends (every lane merged, the epic closed). */
+/* Less motion: no animation, and each picture drawn as it ends (every pull request merged, the feature deployed and healthy). */
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
-  .ep-a, .js .anim:not(.playing) .ep-a { animation: none; }
-  .lp-comet, .lp-dot, .lp-orbit, .lp-up, .lp-bands line { animation: none; }
+  .ep-a, .ep-spin, .js .anim:not(.playing) .ep-a { animation: none; }
+  .lp-comet, .lp-dot, .lp-orbit, .lp-up, .lp-land, .lp-clouds, .lp-astro { animation: none; }
   .lp-comet { display: none; }
-  .js .part, .js .anim.part { opacity: 1; transform: none; transition: none; }
-  .ep-f1, .ep-f2, .ep-f3, .ep-f9, .ep-m1, .ep-m2, .ep-m3, .ep-m4, .ep-m5 { opacity: 1; }
+  .js .part, .js .anim.part { opacity: 1; transform: none; filter: none; transition: none; }
+  .js .page { transition: none; }
+  .ep-f1, .ep-f2, .ep-f3, .ep-c11, .ep-c21, .ep-c31, .ep-c42, .ep-c52, .ep-c62, .ep-c72 { opacity: 1; }
   .ep-bar { transform: none; }
 }
 
@@ -537,14 +608,17 @@ footer nav a { text-decoration: none; }
 
 @media (max-width: 860px) {
   .grid3 { grid-template-columns: 1fr 1fr; }
+  .clients { grid-template-columns: repeat(2, 1fr); }
 }
 @media (max-width: 640px) {
   .top .wrap { gap: 14px; }
   .tagline { display: none; }
   .brand { font-size: 1rem; }
-  .page { padding: 40px 0; }
+  .page { padding: 128px 0; }
   .lede { font-size: 1.05rem; }
   .grid3 { grid-template-columns: 1fr; }
+  .int-row { grid-template-columns: 1fr; gap: 8px; }
+  .clients { grid-template-columns: 1fr 1fr; }
   .lp-wide { display: none; }
   .lp-tall { display: block; }
   /* The animation keeps a size that can be read, and scrolls to the side. */
