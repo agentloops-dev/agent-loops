@@ -264,7 +264,7 @@ func (j *joining) ended(result string) error {
 	if result == "denied" {
 		why = "another of your devices said no"
 	}
-	return &exit{code: exitError, msg: fmt.Sprintf("This terminal did not join your machine lock: %s.\nTo ask again, run: loops status", why)}
+	return &exit{code: exitError, msg: fmt.Sprintf("This terminal did not join your machine lock: %s.\nTo ask again, run: loops auth status", why)}
 }
 
 // pairedName is the name this terminal pairs with: "loops on <host name>".
@@ -283,5 +283,5 @@ func notInLock(err error) bool { return controllink.FailureCode(err) == wire.Fai
 // words are for an app ("Open Agent Loops on this device again").
 func lockRefusal(what string, err error) error {
 	return &exit{code: exitError, msg: fmt.Sprintf("%s takes requests only from your devices, and refused this terminal.\n"+
-		"Run loops status to ask to join your machine lock, then approve it on another of your devices.", what) + debugLine(err)}
+		"Run loops auth status to ask to join your machine lock, then approve it on another of your devices.", what) + debugLine(err)}
 }

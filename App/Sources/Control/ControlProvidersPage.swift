@@ -21,6 +21,8 @@ struct ControlProvidersPage: View {
     @State private var deletingFailed: FailedRow?
     /// The machines New Droplet made from this page, until each is ready (#6577, W5).
     @State private var madeByDroplet: Set<String> = []
+    /// Reconnect… on an OAuth provider's card (#6074, W6).
+    @State private var reconnecting: DaemonAPI.ProviderSummary?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -68,6 +70,10 @@ struct ControlProvidersPage: View {
                 .paperSheet()
         }
         .sheet(item: $editing) { provider in EditProviderSheet(control: control, provider: provider).paperSheet() }
+        .sheet(item: $reconnecting) { provider in
+            DigitalOceanConnect(control: control, reconnecting: provider, cancel: { reconnecting = nil }) { _ in reconnecting = nil }
+                .padding(28).frame(width: 560).paperSheet()
+        }
         .sheet(item: $addingHost) { prefill in ControlAddServerSheet(control: control, prefill: prefill).paperSheet() }
         // The same sheet as Settings ▸ Machines' Add a Machine…, at this provider (#2131).
         .sheet(item: $making) { provider in
@@ -78,8 +84,9 @@ struct ControlProvidersPage: View {
                             titleVisibility: .visible, presenting: removing) { provider in
             Button("Remove", role: .destructive) { Task { await control.removeProvider(provider.id) } }
             Button("Cancel", role: .cancel) {}
-        } message: { _ in
-            Text("Its machines stay as they are, unlinked: nothing here can start or stop them any more.")
+        } message: { provider in
+            Text(DigitalOceanConnectWords.isOAuth(provider) ? DigitalOceanConnectWords.removeNote
+                 : "Its machines stay as they are, unlinked: nothing here can start or stop them any more.")
         }
         .confirmationDialog(deletingFailed.map { "Delete \($0.name)?" } ?? "",
                             isPresented: Binding(get: { deletingFailed != nil }, set: { if !$0 { deletingFailed = nil } }),
@@ -144,6 +151,10 @@ struct ControlProvidersPage: View {
                     Button("New Machine…") { making = provider }.buttonStyle(.paper)
                         .disabled(!provider.usable)
                         .help(provider.usable ? "" : GroupWords.mayNotUse(provider, groups: control.groups))
+                }
+                // W6 (#6074): connect again with the browser, on the machine that keeps it.
+                if control.isAdmin, DigitalOceanConnectWords.isOAuth(provider) {
+                    Button(DigitalOceanConnectWords.reconnect) { reconnecting = provider }.buttonStyle(.paper)
                 }
                 Menu {
                     // Who may start machines from it (#1761): an admin gives it to a group.
@@ -245,7 +256,12 @@ struct ControlProvidersPage: View {
 
     /// Its kind, after "default" on the one New Machine uses (#3979).
     private func kindChip(_ provider: DaemonAPI.ProviderSummary) -> String {
-        provider.default == true ? "default · " + kindWords(provider) : kindWords(provider)
+        // W6 (#6074): an OAuth connection says whether it still works.
+        if let oauth = provider.oauth, DigitalOceanConnectWords.isOAuth(provider) {
+            let words = oauth.disconnected ? DigitalOceanConnectWords.disconnectedChip : DigitalOceanConnectWords.connectedChip
+            return provider.default == true ? "default · " + words : words
+        }
+        return provider.default == true ? "default · " + kindWords(provider) : kindWords(provider)
     }
 
     private func kindWords(_ provider: DaemonAPI.ProviderSummary) -> String {
@@ -258,7 +274,11 @@ struct ControlProvidersPage: View {
 
     private func providerLine(_ provider: DaemonAPI.ProviderSummary) -> String {
         var parts: [String] = []
-        if let problem = provider.problem, !provider.current || provider.listedAt == nil {
+        if let oauth = provider.oauth, DigitalOceanConnectWords.isOAuth(provider) {
+            if oauth.disconnected { parts.append(DigitalOceanConnectWords.disconnected) }
+            if let account = DigitalOceanConnectWords.accountLine(oauth) { parts.append(account) }
+        }
+        if let problem = provider.problem, !provider.current || provider.listedAt == nil, provider.oauth?.disconnected != true {
             parts.append("Couldn’t list: \(problem)")
         }
         if let at = provider.listedAt {
@@ -366,7 +386,7 @@ struct AddProviderSheet: View {
         /// The row's one line (#6069), as the web page's choiceDescription.
         var summary: String {
             switch self {
-            case .digitalOcean: "Droplets with a tag."
+            case .digitalOcean: DigitalOceanConnectWords.rowSummary
             case .compute: "VMs with a label, in one zone."
             case .aws: "Instances with a tag, in one region."
             case .codespaces: "Your codespaces, or the codespaces of one repository."
@@ -486,7 +506,12 @@ struct AddProviderSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text(title).appText(.title).fontWeight(.semibold)
-            if let kind {
+            if kind == .digitalOcean {
+                // Guided (#6074): Connect with OAuth, or a token behind a disclosure.
+                DigitalOceanConnect(control: control, back: { kind = nil }, cancel: { dismiss() }) { added in
+                    if let onAdded { onAdded(added) } else { dismiss() }
+                }
+            } else if let kind {
                 form(kind)
             } else {
                 grid
@@ -539,6 +564,12 @@ struct AddProviderSheet: View {
                 Text(each.summary).appText(.supporting).foregroundStyle(.secondary)
             }
             Spacer()
+            // W1 (#6074): the guided kind says so.
+            if each == .digitalOcean {
+                Text(DigitalOceanConnectWords.guidedChip).appText(.fine).foregroundStyle(.secondary)
+                    .padding(.horizontal, 6).padding(.vertical, 1)
+                    .overlay(Capsule().strokeBorder(.secondary.opacity(0.5)))
+            }
             Image(icon: "chevron.right").foregroundStyle(.tertiary).accessibilityHidden(true)
         }
         .contentShape(Rectangle())

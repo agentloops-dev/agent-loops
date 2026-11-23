@@ -206,7 +206,7 @@ func (f *live) pick(ctx context.Context, a chatArgs) (*wire.Agent, int, error) {
 	return &list[0], len(list) - 1, nil
 }
 
-// find is the session -r names: an id or the start of one (as loops ls shows it), or a
+// find is the session -r names: an id or the start of one (as loops sessions list shows it), or a
 // title, whole or a part that only one has.
 func (f *live) find(ctx context.Context, want string) (*wire.Agent, error) {
 	p := f.p
@@ -281,7 +281,7 @@ func match(list []wire.Agent, want string) (*wire.Agent, error) {
 	case 1:
 		return &list[hits[0]], nil
 	case 0:
-		return nil, &exit{code: exitError, msg: fmt.Sprintf("No session %q here.\nSee them: loops ls", want)}
+		return nil, &exit{code: exitError, msg: fmt.Sprintf("No session %q here.\nSee them: loops sessions list", want)}
 	default:
 		ids := shortIDs(list)
 		var names []string
@@ -321,11 +321,11 @@ func (f *live) attach(ctx context.Context, a wire.Agent, others int) error {
 	}
 	switch {
 	case others < 0:
-		line += fmt.Sprintf(" · %d+ other sessions here (loops ls)", pageSize-1)
+		line += fmt.Sprintf(" · %d+ other sessions here (loops sessions list)", pageSize-1)
 	case others == 1:
-		line += " · 1 other session here (loops ls)"
+		line += " · 1 other session here (loops sessions list)"
 	case others > 1:
-		line += fmt.Sprintf(" · %d other sessions here (loops ls)", others)
+		line += fmt.Sprintf(" · %d other sessions here (loops sessions list)", others)
 	}
 	f.print(head, st.paint(roleQuiet, line), "")
 	r, err := f.c.Call(ctx, f.host(), "agents/transcript", wire.TranscriptRequest{AgentID: a.ID, Limit: attachEntries})
@@ -672,26 +672,18 @@ func (f *live) leave() {
 
 // key is one key at the prompt.
 func (f *live) key(ctx context.Context, k key) error {
+	if k.kind == keyEOF && f.sc.input.text == "" {
+		return errLeave
+	}
+	if f.sc.input.apply(k) {
+		return nil
+	}
 	switch k.kind {
-	case keyText:
-		f.sc.input += k.text
-	case keyNewline:
-		f.sc.input += "\n"
-	case keyBackspace:
-		if r := []rune(f.sc.input); len(r) > 0 {
-			f.sc.input = string(r[:len(r)-1])
-		}
-	case keyClear:
-		f.sc.input = ""
-	case keyEOF:
-		if f.sc.input == "" {
-			return errLeave
-		}
 	case keyInterrupt:
 		return f.interrupt(ctx)
 	case keyEnter:
-		text := f.sc.input
-		f.sc.input = ""
+		text := f.sc.input.text
+		f.sc.input.set("")
 		if len(f.cards) > 0 {
 			f.print(f.t.st.paint(roleQuiet, "› ") + text)
 			return f.answer(ctx, text)
@@ -714,8 +706,8 @@ func (f *live) key(ctx context.Context, k key) error {
 // interrupt is ^C: with words typed, they go; in a turn, it stops (as Stop in the
 // window); a second ^C soon after, or one with no turn, leaves.
 func (f *live) interrupt(ctx context.Context) error {
-	if f.sc.input != "" {
-		f.sc.input = ""
+	if f.sc.input.text != "" {
+		f.sc.input.set("")
 		return nil
 	}
 	if f.id == "" || !f.sent || time.Since(f.stopAt) < 2*time.Second {

@@ -17310,6 +17310,8 @@ export interface Methods {
   "providers/deleteWorkspace": { params: ProviderWorkspaceRequest; result: Empty };
   "providers/list": { params: Empty; result: ProviderList };
   "providers/makeDefault": { params: ProviderRequest; result: Empty };
+  "providers/oauthFinish": { params: ProviderOAuthFinish; result: ProviderSummary };
+  "providers/oauthStart": { params: ProviderOAuthStart; result: ProviderOAuthStarted };
   "providers/options": { params: ProviderRequest; result: ProviderOptions };
   "providers/refresh": { params: ProviderRequest; result: Empty };
   "providers/remove": { params: ProviderRequest; result: Empty };
@@ -17796,6 +17798,8 @@ export const MethodTarget = {
   "providers/deleteWorkspace": "control",
   "providers/list": "control",
   "providers/makeDefault": "control",
+  "providers/oauthFinish": "control",
+  "providers/oauthStart": "control",
   "providers/options": "control",
   "providers/refresh": "control",
   "providers/remove": "control",

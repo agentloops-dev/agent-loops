@@ -7,11 +7,13 @@
 //	loops "…"                start a session here with this prompt, and follow it
 //	loops -c ["…"]           continue the newest session here (with a prompt)
 //	loops -r <id|title> ["…"]  continue one session
-//	loops pair '<code>'      pair this terminal with a control plane
-//	loops unpair             forget the pairing, here and on the control plane
-//	loops status             the pairing, this machine and the folder here
-//	loops ls [--all]         this folder's sessions: 20, or with --all every one
-//	loops folder add [dir]   add this directory (or dir) as a folder
+//	loops auth login '<code>'    pair this terminal with a control plane
+//	loops auth logout            forget the pairing, here and on the control plane
+//	loops auth status            the pairing, this machine and the folder here
+//	loops sessions list [--all]  this folder's sessions: 20, or with --all every one
+//	loops sessions create ["…"] start a session here, and follow it
+//	loops sessions follow [<id>] continue the newest session here, or one by id or title
+//	loops folders add [dir]      add this directory (or dir) as a folder
 //	loops -p "…" [--json]    print mode for scripts: start a session here, follow it to the
 //	                         end, print the last reply (#6447)
 //	loops --detach "…"       start a session here, print its id and exit
@@ -68,7 +70,7 @@ func unreachable(what string, err error) error {
 	if notInLock(err) {
 		return lockRefusal(what, err)
 	}
-	return &exit{code: exitError, msg: fmt.Sprintf("Cannot reach %s (%s).\nNothing changed. Try again, or run: loops status", what, reason(err)) + debugLine(err)}
+	return &exit{code: exitError, msg: fmt.Sprintf("Cannot reach %s (%s).\nNothing changed. Try again, or run: loops auth status", what, reason(err)) + debugLine(err)}
 }
 
 // debug is --debug: an error's raw words go after its short ones (#6479).
@@ -89,7 +91,7 @@ func reason(err error) string {
 	var dns *net.DNSError
 	switch {
 	case notInLock(err):
-		return "it takes requests only from your devices, and this terminal is not one yet: run loops status to ask to join"
+		return "it takes requests only from your devices, and this terminal is not one yet: run loops auth status to ask to join"
 	case errors.As(err, &noAnswer):
 		return fmt.Sprintf("timed out after %d s", int(noAnswer.Wait.Round(time.Second).Seconds()))
 	case errors.Is(err, context.DeadlineExceeded):
@@ -106,9 +108,8 @@ func reason(err error) string {
 	return err.Error()
 }
 
-var errNotPaired = &exit{code: exitNotPair, msg: "This terminal is not paired with a control plane.\n" +
-	"Get a code: Agent Loops ▸ Settings ▸ Control plane ▸ Clients ▸ Pair a Mac… (or the web page)\n" +
-	"Then:       loops pair '<code>'"}
+var errNotPaired = &exit{code: exitNotPair, msg: "This terminal is not paired.\n" +
+	"Get a code in Settings ▸ Devices, then: loops auth login '<code>'"}
 
 // options are the flags, which may come before or after the command.
 type options struct {
@@ -129,7 +130,7 @@ type options struct {
 
 func main() {
 	ctx, cancel := context.WithCancel(context.Background())
-	err := run(ctx, os.Args[1:], os.Stdout)
+	err := runTo(ctx, os.Args[1:], os.Stdout, os.Stderr)
 	cancel()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -166,7 +167,7 @@ func dialWith(ctx context.Context, o *options, mode joinMode) (*controllink.Sess
 	m := h.pick(o.control)
 	if m == nil {
 		if o.control != "" {
-			return nil, &exit{code: exitNotPair, msg: fmt.Sprintf("This terminal is not paired with %s.\nThen: loops pair '<code>'", o.control)}
+			return nil, &exit{code: exitNotPair, msg: fmt.Sprintf("This terminal is not paired with %s.\nThen: loops auth login '<code>'", o.control)}
 		}
 		return nil, errNotPaired
 	}

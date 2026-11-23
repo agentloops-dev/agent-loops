@@ -156,8 +156,9 @@ func TestLocateFindsTheNearestFolderInOneCall(t *testing.T) {
 		t.Fatalf("not in a folder: %+v %v", p, err)
 	}
 	err = notInFolder(p)
-	if codeOf(err) != exitNoFolder || !strings.Contains(err.Error(), "/tmp is not in a folder on Alex's MacBook Pro.") || !strings.Contains(err.Error(), "loops folder add") {
-		t.Fatalf("state 6: %v", err)
+	want := "/tmp is not in a folder on Alex's MacBook Pro.\nAdd it: loops folders add"
+	if codeOf(err) != exitNoFolder || err.Error() != want {
+		t.Fatalf("state 6: got %q, want %q", err.Error(), want)
 	}
 }
 
@@ -227,31 +228,50 @@ func TestPrintList(t *testing.T) {
 	now := time.Date(2026, 11, 20, 12, 0, 0, 0, time.UTC)
 	at := func(d time.Duration) wire.Date { return wire.DateOf(now.Add(-d)) }
 	list := []wire.Agent{
-		{ID: "7F3A2C10-0000-0000-0000-000000000000", Title: ptr("Update the parity table for the CLI"), State: wire.AgentStateWaitingOnUser, LastActivityAt: at(2 * time.Minute)},
-		{ID: "91BE0400-0000-0000-0000-000000000000", Title: ptr("Split wiregen functions"), State: wire.AgentStateRunning, LastActivityAt: at(0)},
-		{ID: "C40D1100-0000-0000-0000-000000000000", Title: ptr("Fix the flaky stop test"), State: wire.AgentStateFinished, LastActivityAt: at(12 * time.Minute)},
-		{ID: "0A9E7700-0000-0000-0000-000000000000", Title: ptr("Trim the Periphery cache"), State: wire.AgentStateStopped, LastActivityAt: at(3 * time.Hour)},
+		{ID: "7F3A2C10-0000-0000-0000-000000000000", Title: ptr("Update the parity table for the CLI"), State: wire.AgentStateWaitingOnUser, RuntimeID: "opencode", LastActivityAt: at(2 * time.Minute)},
+		{ID: "91BE0400-0000-0000-0000-000000000000", Title: ptr("Split wiregen functions"), State: wire.AgentStateRunning, RuntimeID: "claude", LastActivityAt: at(0)},
+		{ID: "C40D1100-0000-0000-0000-000000000000", Title: ptr("Fix the flaky stop test"), State: wire.AgentStateFinished, RuntimeID: "opencode", LastActivityAt: at(12 * time.Minute)},
+		{ID: "0A9E7700-0000-0000-0000-000000000000", Title: ptr("Trim the Periphery cache"), State: wire.AgentStateStopped, RuntimeID: "codex", LastActivityAt: at(3 * time.Hour)},
 	}
 	p := place{machine: wire.ControlMachine{ID: "h1", Name: "Alex's MacBook Pro"}, folder: "file:///src/agent-loops"}
-	var b bytes.Buffer
-	printList(&b, p, list, false, false, now)
-	want := `agent-loops · Alex's MacBook Pro · 4 sessions
-
-  STATE      LAST        TITLE                                ID
-  needs you  2 min ago   Update the parity table for the CLI  7f3a2c
-  working    now         Split wiregen functions              91be04
-  idle       12 min ago  Fix the flaky stop test              c40d11
-  done       3 h ago     Trim the Periphery cache             0a9e77
-
-loops -r <id> to continue one · --all for archived
+	var out, errOut bytes.Buffer
+	printList(&out, &errOut, plain, p, list, false, false, now)
+	want := `ID      TITLE                                STATE    RUNTIME   FOLDER       UPDATED
+7f3a2c  Update the parity table for the CLI  waiting  opencode  agent-loops  2 min ago
+91be04  Split wiregen functions              working  claude    agent-loops  now
+c40d11  Fix the flaky stop test              idle     opencode  agent-loops  12 min ago
+0a9e77  Trim the Periphery cache             done     codex     agent-loops  3 h ago
 `
-	if b.String() != want {
-		t.Fatalf("state 4:\n%s\nwant:\n%s", b.String(), want)
+	if out.String() != want {
+		t.Fatalf("state 4:\n%s\nwant:\n%s", out.String(), want)
 	}
-	b.Reset()
-	printList(&b, place{machine: wire.ControlMachine{ID: "h1", Name: "Alex's MacBook Pro"}, folder: "file:///src/new-thing"}, nil, false, false, now)
-	if want := "new-thing · Alex's MacBook Pro · no sessions yet\n\nStart one: loops \"what this folder needs\"\n"; b.String() != want {
-		t.Fatalf("state 5:\n%s", b.String())
+	if got := errOut.String(); got != "4 sessions · loops sessions list --all\n" {
+		t.Fatalf("state 4 hint: %q", got)
+	}
+	out.Reset()
+	errOut.Reset()
+	printList(&out, &errOut, plain, place{machine: wire.ControlMachine{ID: "h1", Name: "Alex's MacBook Pro"}, folder: "file:///src/new-thing"}, nil, false, false, now)
+	if out.String() != "" || errOut.String() != "No sessions in new-thing.\nStart one: loops \"what this folder needs\"\n" {
+		t.Fatalf("state 5: %q %q", out.String(), errOut.String())
+	}
+}
+
+func TestSessionsListPageCutHintGoesToStderr(t *testing.T) {
+	now := time.Now()
+	var out, errOut bytes.Buffer
+	printList(&out, &errOut, plain, place{machine: wire.ControlMachine{ID: "h1"}, folder: "file:///src/x"}, agents(pageSize+2, now), true, false, now)
+	if got := errOut.String(); got != "22 of many · loops sessions list --all\n" {
+		t.Fatalf("page cut: %q", got)
+	}
+	if !strings.Contains(out.String(), "TITLE") || !strings.Contains(out.String(), "00000015") {
+		t.Fatalf("page cut table: %q", out.String())
+	}
+}
+
+func TestSessionsListKeepsTodaysJSONAsPrintOnly(t *testing.T) {
+	err := run(context.Background(), []string{"sessions", "list", "--json"}, &bytes.Buffer{})
+	if codeOf(err) != exitError || !strings.Contains(err.Error(), "--json goes with -p or --detach") {
+		t.Fatalf("json on list: %v", err)
 	}
 }
 
@@ -267,17 +287,17 @@ func TestShortIDsGrowUntilUnique(t *testing.T) {
 
 func TestNotPairedExitsFive(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	for _, args := range [][]string{{}, {"ls"}, {"status"}, {"unpair"}, {"folder", "add"}, {"fix the test"}, {"--all", "ls"}} {
+	for _, args := range [][]string{{}, {"sessions", "list"}, {"sessions", "create"}, {"auth", "status"}, {"auth", "logout"}, {"folders", "add"}, {"fix the test"}, {"--all", "sessions", "list"}} {
 		err := run(context.Background(), args, &bytes.Buffer{})
-		if codeOf(err) != exitNotPair || !strings.Contains(err.Error(), "loops pair '<code>'") {
+		if codeOf(err) != exitNotPair || !strings.Contains(err.Error(), "loops auth login '<code>'") {
 			t.Errorf("%v: %v", args, err)
 		}
 	}
 }
 
 func TestFlagsGoBeforeOrAfterTheCommand(t *testing.T) {
-	o, rest, err := parse([]string{"--folder", "x", "ls", "--all", "--machine", "devbox"})
-	if err != nil || o.folder != "x" || !o.all || o.machine != "devbox" || !reflect.DeepEqual(rest, []string{"ls"}) {
+	o, rest, err := parse([]string{"--folder", "x", "sessions", "list", "--all", "--machine", "devbox"})
+	if err != nil || o.folder != "x" || !o.all || o.machine != "devbox" || !reflect.DeepEqual(rest, []string{"sessions", "list"}) {
 		t.Fatalf("%+v %v %v", o, rest, err)
 	}
 	if _, _, err := parse([]string{"--nope"}); codeOf(err) != exitError {
@@ -291,7 +311,7 @@ func TestFlagsGoBeforeOrAfterTheCommand(t *testing.T) {
 
 func TestUnreachableSaysNothingChanged(t *testing.T) {
 	err := unreachable("control.agentloops.dev", fmt.Errorf("dial: %w", context.DeadlineExceeded))
-	if codeOf(err) != exitError || err.Error() != "Cannot reach control.agentloops.dev (timed out).\nNothing changed. Try again, or run: loops status" {
+	if codeOf(err) != exitError || err.Error() != "Cannot reach control.agentloops.dev (timed out).\nNothing changed. Try again, or run: loops auth status" {
 		t.Fatalf("state 9: %q", err)
 	}
 	if codeOf(errors.New("x")) != exitError || codeOf(nil) != exitOK {
