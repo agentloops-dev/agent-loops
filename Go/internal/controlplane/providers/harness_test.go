@@ -201,6 +201,8 @@ type standIn struct {
 	// fromRepository: its form asks for `repository`, as Codespaces' does (#1809).
 	fromRepository bool
 	madeWith       []any
+	// form: its New Machine form in place of the plain one, as an account's (#6686).
+	form string
 	// failCreate: Create fails with these words (#3972).
 	failCreate string
 	// createTakes: how long a Create takes; making and mostMaking count the Creates at once (#4706).
@@ -299,8 +301,11 @@ func (s *standIn) Stop(id string) (*MachineInfo, error) {
 
 func (s *standIn) Options() (any, error) {
 	s.mu.Lock()
-	fromRepository := s.fromRepository
+	fromRepository, form := s.fromRepository, s.form
 	s.mu.Unlock()
+	if form != "" {
+		return mustParse(form), nil
+	}
 	if fromRepository {
 		return mustParse(`{"type": "object", "properties": {"repository": {"type": "string", "title": "Repository"}}}`), nil
 	}

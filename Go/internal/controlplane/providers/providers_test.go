@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/records"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -1047,14 +1048,91 @@ func TestNewMachineTakesTheOptionsUsedLastOnItsProvider(t *testing.T) {
 	provider := wire.ProviderID(id)
 	name := "big-1"
 	if _, err := h.call(MethodProvidersCreate, ProviderCreate{ID: &provider, Name: &name,
-		Options: wire.JSONValue(rawOf(map[string]any{"size": "large"}))}); err != nil {
+		Options: wire.JSONValue(rawOf(map[string]any{"size": "big"}))}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := h.createNameless(); err != nil {
 		t.Fatal(err)
 	}
-	if got := h.provider.madeWith[1]; !reflect.DeepEqual(got, map[string]any{"size": "large"}) {
+	if got := h.provider.madeWith[1]; !reflect.DeepEqual(got, map[string]any{"size": "big"}) {
 		t.Errorf("the options used last: %v", got)
+	}
+}
+
+// A make with no options makes what New Machine's form shows (#6686): the person's choices
+// over the form's defaults of now. A make that took the defaults keeps no choice, so a
+// default that changes later (#6615's size) is the next make's, and a kept choice the form
+// no longer offers gives way to its default.
+func TestAMakeWithNoOptionsTakesTheFormsDefaultsOfNow(t *testing.T) {
+	h := newHarness(t)
+	id := h.add()
+	formWith := func(region, size string) string {
+		return `{"type": "object", "properties": {
+			"region": {"type": "string", "enum": ["nyc3", "sfo2"], "default": "` + region + `"},
+			"size": {"type": "string", "enum": ["s-1vcpu-1gb", "s-2vcpu-4gb"], "default": "` + size + `"}}}`
+	}
+	h.provider.mu.Lock()
+	h.provider.form = formWith("nyc3", "s-1vcpu-1gb")
+	h.provider.mu.Unlock()
+	if _, err := h.createNameless(); err != nil {
+		t.Fatal(err)
+	}
+	// The form changes its defaults, as #6615 did and as the account's nearest region does.
+	h.provider.mu.Lock()
+	h.provider.form = formWith("sfo2", "s-2vcpu-4gb")
+	h.provider.mu.Unlock()
+	want := map[string]any{"region": "sfo2", "size": "s-2vcpu-4gb"}
+	if got := valueOf(h.must(MethodProvidersOptions, map[string]any{"id": id}).(ProviderOptions).Values); !reflect.DeepEqual(got, want) {
+		t.Errorf("the form shows %v", got)
+	}
+	if _, err := h.createNameless(); err != nil {
+		t.Fatal(err)
+	}
+	if got := h.provider.madeWith[1]; !reflect.DeepEqual(got, want) {
+		t.Errorf("a make with no options made %v, the form shows %v", got, want)
+	}
+	// What the person chose is kept, and only that: the region, not the default size.
+	provider := wire.ProviderID(id)
+	name := "east-1"
+	if _, err := h.call(MethodProvidersCreate, ProviderCreate{ID: &provider, Name: &name,
+		Options: wire.JSONValue(rawOf(map[string]any{"region": "nyc3", "size": "s-2vcpu-4gb"}))}); err != nil {
+		t.Fatal(err)
+	}
+	h.provider.mu.Lock()
+	h.provider.form = formWith("sfo2", "s-1vcpu-1gb")
+	h.provider.mu.Unlock()
+	if _, err := h.createNameless(); err != nil {
+		t.Fatal(err)
+	}
+	if got := h.provider.madeWith[3]; !reflect.DeepEqual(got, map[string]any{"region": "nyc3", "size": "s-1vcpu-1gb"}) {
+		t.Errorf("the region chosen over the size of now: %v", got)
+	}
+	// A kept choice the form no longer offers gives way to its default.
+	h.provider.mu.Lock()
+	h.provider.form = `{"type": "object", "properties": {"region": {"type": "string", "enum": ["sfo2"], "default": "sfo2"}}}`
+	h.provider.mu.Unlock()
+	if _, err := h.createNameless(); err != nil {
+		t.Fatal(err)
+	}
+	if got := h.provider.madeWith[4]; !reflect.DeepEqual(got, map[string]any{"region": "sfo2"}) {
+		t.Errorf("a region no longer offered: %v", got)
+	}
+}
+
+// The options kept before #6686 held the defaults as if chosen: they are not read.
+func TestOptionsKeptBeforeTheChoicesAreNotRead(t *testing.T) {
+	h := newHarness(t)
+	id := h.add()
+	old, _ := json.Marshal(map[string]any{"next": 2, "default": id,
+		"options": map[string]any{id: map[string]any{"size": "big"}}})
+	if _, err := h.store.Put(context.Background(), machineNamesKey(""), old, store.Absent); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.createNameless(); err != nil {
+		t.Fatal(err)
+	}
+	if got := h.provider.madeWith[0]; !reflect.DeepEqual(got, map[string]any{"size": "small"}) {
+		t.Errorf("the form's default, not the old kept options: %v", got)
 	}
 }
 
@@ -1078,7 +1156,7 @@ func TestTheFormSaysWhatNewMachineWouldMake(t *testing.T) {
 	provider := wire.ProviderID(id)
 	name := "machine-1"
 	if _, err := h.call(MethodProvidersCreate, ProviderCreate{ID: &provider, Name: &name,
-		Options: wire.JSONValue(rawOf(map[string]any{"size": "large", "gone": "x"}))}); err != nil {
+		Options: wire.JSONValue(rawOf(map[string]any{"size": "big", "gone": "x"}))}); err != nil {
 		t.Fatal(err)
 	}
 	h.provider.mu.Lock()
@@ -1089,7 +1167,7 @@ func TestTheFormSaysWhatNewMachineWouldMake(t *testing.T) {
 	if deref(form.Name) != "machine-2" {
 		t.Errorf("after machine-1 was made: %v", deref(form.Name))
 	}
-	if got := valueOf(form.Values); !reflect.DeepEqual(got, map[string]any{"size": "large"}) {
+	if got := valueOf(form.Values); !reflect.DeepEqual(got, map[string]any{"size": "big"}) {
 		t.Errorf("the options used last, only the form's fields: %v", got)
 	}
 }

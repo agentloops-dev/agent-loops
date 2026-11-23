@@ -242,11 +242,34 @@ func TestDigitalOceanMakeAddsTheAgentLoopsKeyOnceAndSaysEachStep(t *testing.T) {
 	noToken(t, *logged...)
 }
 
+// A make with no options makes the region and size the account's form shows as its defaults
+// (#6686), not the plain form's nyc3.
+func TestDigitalOceanMakeWithNoOptionsTakesTheAccountFormsDefaults(t *testing.T) {
+	atOffset(t, -8)
+	f, text := fakeDigitalOceanAccount(t, &doAccount{keys: map[string]bool{}})
+	p, _ := apiProvider(t, text, DigitalOceanSecret, token)
+	form := p.Config.Making.Form(p)
+	region, size := at(form, "properties.region.default"), at(form, "properties.size.default")
+	if region != "sfo3" || size != "s-2vcpu-4gb" {
+		t.Fatalf("the form's defaults: %v %v", region, size)
+	}
+	_, said, err := p.Create("devbox-4000001", nil, "curl … | sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if made := madeDroplet(t, f); made["region"] != region || made["size"] != size {
+		t.Errorf("made %v %v, the form shows %v %v", made["region"], made["size"], region, size)
+	}
+	if got := said[len(said)-1]; got != "Made droplet devbox-4000001 in San Francisco 3: 2 vCPUs · 4 GB · 80 GB disk · $24/month." {
+		t.Errorf("%q", got)
+	}
+}
+
 func TestDigitalOceanMakesADropletWithNoKeyWhenTheTokenMayNotAddOne(t *testing.T) {
 	f, text := fakeDigitalOceanAccount(t, &doAccount{keys: map[string]bool{}, keyStatus: http.StatusForbidden})
 	p, _ := apiProvider(t, text, DigitalOceanSecret, token)
 	p.Folder = t.TempDir()
-	_, said, err := p.Create("devbox-4000001", map[string]any{}, "curl … | sh")
+	_, said, err := p.Create("devbox-4000001", map[string]any{"region": "nyc3", "size": "s-2vcpu-4gb", "image": digitalOceanImage}, "curl … | sh")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -299,6 +322,7 @@ func TestDigitalOceanDefaultsToTheAgentsTagAndUser(t *testing.T) {
 }
 
 func TestTheServersMakeSaysWhatItDid(t *testing.T) {
+	atOffset(t, -8)
 	_, text := fakeDigitalOceanAccount(t, &doAccount{keys: map[string]bool{}})
 	p, _ := apiProvider(t, text, DigitalOceanSecret, token)
 	s := NewServer(p.Config, quick, p.Run, "test")
@@ -309,7 +333,7 @@ func TestTheServersMakeSaysWhatItDid(t *testing.T) {
 		t.Fatal(err)
 	}
 	said := at(answer, "structuredContent.said")
-	if fmt.Sprint(said) != "[Made an ssh key for Agent Loops and added it to your DigitalOcean account. Made droplet devbox-4000001 in nyc3: s-2vcpu-4gb.]" {
+	if fmt.Sprint(said) != "[Made an ssh key for Agent Loops and added it to your DigitalOcean account. Made droplet devbox-4000001 in San Francisco 3: 2 vCPUs · 4 GB · 80 GB disk · $24/month.]" {
 		t.Errorf("%v", answer)
 	}
 	options, err := s.Handle("tools/call", map[string]any{"name": "workspace_options"})
