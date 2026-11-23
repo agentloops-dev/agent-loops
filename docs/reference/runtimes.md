@@ -527,13 +527,15 @@ permission requests; the other two give a card):
 | Runtime | Fast | Balanced | Smart |
 | --- | --- | --- | --- |
 | Claude | Haiku | Sonnet | Fable 5.1, else Opus |
-| Codex | 5.6 Luna | its default | 6 Luna |
+| Codex | the newest Luna it offers (6 Luna, else 5.6 Luna) | the newest Sol it offers (6 Sol, else 5.6 Sol) | the newest Astra it offers (6 Astra) |
 | Grok | Grok 4.7 Fast | its default | Grok 4.7 |
 | Antigravity | Gemini 3.8 Flash (Low) | its default | Gemini 3.8 Flash (High) |
 | Copilot | its default (nearest safer: no smaller model known) | its default | Claude Sonnet 5.5 |
 | Cursor, OpenCode | its default (nearest safer: no other model known) | its default | its default (nearest safer: no other model known) |
 
 Smart is the runtime's most capable model that its model picker offers. The runtime check (`scripts/nightly-runtimes.py`) files an "Auto models" issue when a runtime offers a model that it did not offer at its last check, so that this table does not go stale (#3041).
+
+Codex's cells name a model line, not one version (#6891): Auto takes the highest version of Luna, Sol or Astra in what Codex last offered. On 2026-11-23 codex-acp offered 6 Astra, 6 Sol, 6 Luna, 5.6 Sol, 5.6 Terra and 5.6 Luna (no 6.2). When the cached offer (`option-cache.json`) does not have the cell's model, a start on Auto asks Codex what it offers now before it passes Codex by; when that fails, the start's reasons say "could not read its models" and the prompt stays. A model that the account does not offer is never picked, and a person's own cell wins as before.
 
 **Sandbox**:
 

@@ -179,6 +179,30 @@ func nativeOf(cells []wire.AutoMapping) wire.NativeSetting {
 }
 
 // cantHonour is why a runtime cannot give one of the cells, in short, or "".
+// cellsFor is the runtime's cells for the levels, and why it cannot honour them, or "". With a
+// folder, a Model cell that the cached offer drops is checked again with a fresh offer (#6891).
+func (d *Daemon) cellsFor(rt *runtimeDef, l wire.Levels, sandbox *wire.SandboxChoice, settings wire.AutoSettings, cwd wire.URL) ([]wire.AutoMapping, string) {
+	cells := levelCells(rt.ID, l, sandbox, settings, d.runtimeOffers(rt.ID))
+	why := cantHonour(cells)
+	if why == "" || cwd == "" || !droppedModel(cells) {
+		return cells, why
+	}
+	fresh, err := d.refreshOffers(rt, cwd)
+	if err != nil {
+		_, msg := errMessage(err)
+		return cells, "could not read its models (" + msg + ")"
+	}
+	cells = levelCells(rt.ID, l, sandbox, settings, fresh)
+	return cells, cantHonour(cells)
+}
+
+// droppedModel is whether the Model cell is dropped: a model the cached offer lacks.
+func droppedModel(cells []wire.AutoMapping) bool {
+	return slices.ContainsFunc(cells, func(c wire.AutoMapping) bool {
+		return c.Field == wire.AutoFieldModel && c.Mark == wire.AutoMarkDropped
+	})
+}
+
 func cantHonour(cells []wire.AutoMapping) string {
 	for _, c := range cells {
 		switch c.Mark {
@@ -245,8 +269,9 @@ func (d *Daemon) refusesNeeds(id string, needs wire.ACPPromptCapabilities) strin
 
 // pickRuntime is Auto's pick for the levels, sandbox and what the attachments need, or "" and
 // why each runtime was not used. A helper of a sandboxed agent still gets no No sandbox, at its
-// start (FR-021).
-func (d *Daemon) pickRuntime(l wire.Levels, sandbox *wire.SandboxChoice, needs wire.ACPPromptCapabilities) (string, wire.NativeSetting, []wire.AutoSkip) {
+// start (FR-021). With a folder (a start, not a preview), a model its cached offer lacks is
+// asked of the runtime again before the runtime is passed by (#6891).
+func (d *Daemon) pickRuntime(l wire.Levels, sandbox *wire.SandboxChoice, needs wire.ACPPromptCapabilities, cwd wire.URL) (string, wire.NativeSetting, []wire.AutoSkip) {
 	settings := d.autoSettings()
 	skipped := []wire.AutoSkip{}
 	type candidate struct {
@@ -277,8 +302,8 @@ func (d *Daemon) pickRuntime(l wire.Levels, sandbox *wire.SandboxChoice, needs w
 			skip(id, why)
 			continue
 		}
-		cells := levelCells(id, l, sandbox, settings, d.runtimeOffers(id))
-		if why := cantHonour(cells); why != "" {
+		cells, why := d.cellsFor(rt, l, sandbox, settings, cwd)
+		if why != "" {
 			skip(id, why)
 			continue
 		}
@@ -585,7 +610,7 @@ func (d *Daemon) autoPreview(r wire.AutoPreviewRequest) wire.AutoPreview {
 	if r.Needs != nil {
 		needs = *r.Needs
 	}
-	id, native, skipped := d.pickRuntime(d.autoLevels(r.Levels), r.Sandbox, needs)
+	id, native, skipped := d.pickRuntime(d.autoLevels(r.Levels), r.Sandbox, needs, "")
 	out := wire.AutoPreview{Skipped: skipped}
 	if id != "" {
 		out.RuntimeID, out.Native = &id, &native
@@ -661,7 +686,7 @@ func (d *Daemon) resolveLevels(r *wire.StartRequest, by startedBy) (pick *wire.A
 		r.Levels = &levels
 	}
 	if auto {
-		id, native, skipped := d.pickRuntime(levels, r.Sandbox, needsOf(r.Attachments))
+		id, native, skipped := d.pickRuntime(levels, r.Sandbox, needsOf(r.Attachments), r.Cwd)
 		if id == "" {
 			return nil, nil, "", noRuntime(skipped)
 		}

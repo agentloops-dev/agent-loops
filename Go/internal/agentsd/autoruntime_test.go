@@ -3,6 +3,7 @@ package agentsd
 import (
 	"encoding/json"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -92,6 +93,91 @@ func TestADroppedCell(t *testing.T) {
 	offers[0].Options = json.RawMessage(`[{"value":"opus[1m]","name":"Opus 5.5"},{"value":"claude-fable-5-1[1m]","name":"Fable 5.1"}]`)
 	if m := cellMapping("claude", wire.AutoFieldModel, "smart", settings, offers); m.Native == nil || stringValue(m.Native.Options["model"]) != "claude-fable-5-1[1m]" {
 		t.Fatalf("%+v", m)
+	}
+}
+
+// Codex takes the newest Luna, Sol and Astra it offers (#6891), and none it does not offer.
+func TestCodexTakesTheNewestOfEachLine(t *testing.T) {
+	t.Parallel()
+
+	cat := "model"
+	offers := []wire.ConfigOption{{ID: "model", Name: "Model", Type: "select", Category: &cat,
+		Options: json.RawMessage(`[{"value":"gpt-6-astra","name":"6 Astra"},{"value":"gpt-6-sol","name":"6 Sol"},{"value":"gpt-6-luna","name":"6 Luna"},` +
+			`{"value":"gpt-5.6-sol","name":"5.6 Sol"},{"value":"gpt-5.6-terra","name":"5.6 Terra"},{"value":"gpt-5.6-luna","name":"5.6 Luna"},{"value":"gpt-6.2-sol","name":"6.2 Sol"}]`)},
+		{ID: "reasoning_effort", Name: "Effort", Type: "select", Options: json.RawMessage(`[{"value":"low","name":"Low"},{"value":"high","name":"High"}]`)}}
+	model := func(level string, offers []wire.ConfigOption) wire.AutoMapping {
+		return cellMapping("codex", wire.AutoFieldModel, level, wire.AutoSettings{}, offers)
+	}
+	for level, want := range map[string]string{"fast": "gpt-6-luna", "balanced": "gpt-6.2-sol", "smart": "gpt-6-astra"} {
+		if m := model(level, offers); m.Native == nil || stringValue(m.Native.Options["model"]) != want || m.Mark != wire.AutoMarkAutoMapped {
+			t.Fatalf("%s: %+v", level, m)
+		}
+	}
+	if m := model("smart", offers); stringValue(m.Native.Options["reasoning_effort"]) != "high" {
+		t.Fatalf("%+v", m)
+	}
+	// A stale offer of 5.6 only: no Astra, so Smart is dropped, not given another line.
+	offers[0].Options = json.RawMessage(`[{"value":"gpt-5.6-sol","name":"5.6 Sol"},{"value":"gpt-5.6-luna","name":"5.6 Luna"}]`)
+	if m := model("fast", offers); stringValue(m.Native.Options["model"]) != "gpt-5.6-luna" {
+		t.Fatalf("%+v", m)
+	}
+	if m := model("smart", offers); m.Mark != wire.AutoMarkDropped {
+		t.Fatalf("%+v", m)
+	}
+	// Before Codex has said: the first named model.
+	if m := model("balanced", nil); stringValue(m.Native.Options["model"]) != "gpt-6-sol" {
+		t.Fatalf("%+v", m)
+	}
+}
+
+// A start on Auto asks Codex again before it passes it by for a model the cached offer lacks
+// (#6891); a failed ask says why, and the prompt stays.
+func TestAutoRefreshesAStaleCodexOffer(t *testing.T) {
+	t.Parallel()
+
+	fakeRuntimes(t)
+	d, c := start(t, t.TempDir())
+	defer d.Shutdown()
+	d.SettingsDir = t.TempDir()
+	dir := "file://" + t.TempDir()
+	cat, modeCat, collabCat, effortCat := "model", "mode", "collaboration_mode", "thought_level"
+	offer := func(models string) optionEntry {
+		return optionEntry{Options: []wire.ConfigOption{{ID: "model", Name: "Model", Type: "select", Category: &cat,
+			CurrentValue: json.RawMessage(`"gpt-5.6-luna"`), Options: json.RawMessage(models)},
+			{ID: "reasoning_effort", Name: "Effort", Type: "select", Category: &effortCat, CurrentValue: json.RawMessage(`"medium"`),
+				Options: json.RawMessage(`[{"value":"low","name":"Low"},{"value":"medium","name":"Medium"},{"value":"high","name":"High"}]`)},
+			{ID: "mode", Name: "Mode", Type: "select", Category: &modeCat, Options: json.RawMessage(`[{"value":"read-only","name":"Read Only"},{"value":"agent","name":"Agent"}]`)},
+			{ID: "collaboration_mode", Name: "Collaboration", Type: "select", Category: &collabCat, Options: json.RawMessage(`[{"value":"default","name":"Default"},{"value":"plan","name":"Plan"}]`)}}}
+	}
+	d.remember(optionKey("codex", wire.URL(dir), nil), offer(`[{"value":"gpt-5.6-luna","name":"5.6 Luna"}]`))
+	var asked atomic.Int32
+	d.optionMu.Lock()
+	d.offersOf = func(*runtimeDef, string) (optionEntry, error) {
+		asked.Add(1)
+		return offer(`[{"value":"gpt-6-astra","name":"6 Astra"},{"value":"gpt-6-luna","name":"6 Luna"}]`), nil
+	}
+	d.optionMu.Unlock()
+	out(d, "claude", false)
+	var p wire.AutoPreview
+	mustUnmarshal(t, c.call(t, 1, "auto/preview", map[string]any{"levels": map[string]any{"model": "smart"}}), &p)
+	if p.RuntimeID != nil && *p.RuntimeID == "codex" {
+		t.Fatalf("a preview asks no runtime: %+v", p)
+	}
+	var agent wire.UUID
+	mustUnmarshal(t, c.call(t, 2, "agents/start", map[string]any{"runtimeID": "auto", "cwd": dir, "prompt": "hello", "levels": map[string]any{"model": "smart"}}), &agent)
+	if a := d.Store.Agent(agent); a.RuntimeID != "codex" || stringValue(a.StartOptions.Values["model"]) != "gpt-6-astra" || asked.Load() != 1 {
+		t.Fatalf("%s %s asked %d", a.RuntimeID, a.StartOptions.Values, asked.Load())
+	}
+	d.optionMu.Lock()
+	d.offersOf = func(rt *runtimeDef, _ string) (optionEntry, error) {
+		return optionEntry{}, &Error{Code: CodeRuntimeWillNotStart, Message: rt.Name + " did not start"}
+	}
+	d.optionMu.Unlock()
+	d.remember(optionKey("codex", wire.URL(dir), nil), offer(`[{"value":"gpt-5.6-luna","name":"5.6 Luna"}]`))
+	c.call(t, 3, "auto/set", map[string]any{"order": []string{"codex"}, "excluded": []string{"claude", "cursor", "copilot", "grok", "opencode", "antigravity"}, "overrides": []any{}})
+	err := c.callError(t, 4, "agents/start", map[string]any{"runtimeID": "auto", "cwd": dir, "prompt": "hello", "levels": map[string]any{"model": "smart"}})
+	if err == nil || err.Code != wire.FailureAutoNoRuntime || !strings.Contains(err.Message, "Codex: could not read its models (Codex did not start)") {
+		t.Fatalf("%+v", err)
 	}
 }
 
