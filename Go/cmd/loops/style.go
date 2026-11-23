@@ -5,7 +5,10 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"unicode"
 	"unicode/utf8"
+
+	"golang.org/x/text/width"
 )
 
 // The terminal's colours are the design tokens (design/tokens.json, #4602), mapped to ANSI
@@ -154,8 +157,26 @@ func (s style) bold(text string) string {
 // osEnv is os.Getenv, for detectStyle.
 func osEnv(k string) string { return os.Getenv(k) }
 
-// visibleWidth is how many cells text takes, without its escapes: one per rune, as the
-// wireframes' text is (no wide characters are drawn by loops itself).
+// cellWidth is how many cells a rune takes: wide CJK and emoji take two, combining marks
+// and controls none. A regional indicator is one cell; a pair makes a two-cell flag.
+func cellWidth(r rune) int {
+	if r < 0x20 || (r >= 0x7f && r < 0xa0) || r == 0x200d || r == 0xfe0f || unicode.Is(unicode.Mn, r) {
+		return 0
+	}
+	if r >= 0x1f1e6 && r <= 0x1f1ff {
+		return 1
+	}
+	switch width.LookupRune(r).Kind() {
+	case width.EastAsianWide, width.EastAsianFullwidth:
+		return 2
+	}
+	if r >= 0x1f000 && r <= 0x1faff {
+		return 2
+	}
+	return 1
+}
+
+// visibleWidth is how many cells text takes, without its escapes.
 func visibleWidth(text string) int {
 	n := 0
 	for i := 0; i < len(text); {
@@ -170,9 +191,9 @@ func visibleWidth(text string) int {
 			i = j + 1
 			continue
 		}
-		_, size := utf8.DecodeRuneInString(text[i:])
+		r, size := utf8.DecodeRuneInString(text[i:])
 		i += size
-		n++
+		n += cellWidth(r)
 	}
 	return n
 }

@@ -138,16 +138,39 @@ its state.
 
 ## DigitalOcean Droplets
 
-Through its API, you need a DigitalOcean API token with custom scopes: droplet read and
-update. To make and delete droplets from Agent Loops, add droplet create and delete. To
-let Agent Loops add its ssh key and show the regions and sizes, add ssh_key read and
-create, regions read and sizes read.
+DigitalOcean is guided (#6074): you connect your account with clicks, and copy no token.
 
-1. Make the token in the DigitalOcean control panel, under API.
-2. Give it in **API token**.
-3. Give the tag in **Droplets tagged** (the Mac) or **Tag**. The default is `agents`.
-4. Give the ssh user. With none, the provider uses `agents`, the user that the first boot
-   makes.
+1. In **Add a Provider**, choose **DigitalOcean Droplets** (the row says **Guided**).
+2. In **Keeps the connection**, choose the machine that keeps the connection. The token
+   stays on that machine, never on the control plane. With one machine, the sheet shows
+   its name. With none, add a machine first.
+3. Choose **Connect DigitalOcean…**. Your browser opens DigitalOcean's consent page (on the
+   Mac, in a sign-in window; on the web page, in a new window). Sign in, choose the team,
+   and choose **Authorize**. The sheet says **Waiting for DigitalOcean…** until the browser
+   comes back, and **Open the Page Again** opens the page again.
+4. The sheet closes, and the provider's card says **Connected**, with the account and the
+   team. **New Droplet** on the card makes a droplet (below).
+
+When it does not connect, the sheet says why and gives one button: **Connect
+DigitalOcean…** after a Deny, a sign-in that took too long or fewer permissions than Agent
+Loops needs; **Add a Payment Method** and **Check Again** when the account cannot make
+droplets yet.
+
+Agent Loops asks for these scopes: droplet create, read, update and delete; ssh_key create
+and read; regions read; sizes read; tag create; and account read.
+
+**Use an API token instead**, under **Connect DigitalOcean…**, is for a team that does not
+let a person authorise apps. Make a token with the scopes above in the DigitalOcean control
+panel, under API, give it in **API token**, and choose **Connect with Token**.
+
+On the card, **Reconnect…** connects again, on the same machine. When DigitalOcean stops
+taking the connection (you removed Agent Loops under **Authorized Applications**, or a
+refresh failed), the card says **Disconnected**: "DigitalOcean disconnected Agent Loops.
+Reconnect to start and stop its droplets." **Remove…** revokes the connection at
+DigitalOcean. The droplets stay: delete them on DigitalOcean to stop paying for them.
+
+A provider added before #6074 with a tag and an ssh user keeps them: **Edit…** gives its
+token again.
 
 **New Droplet** on the provider's card makes a droplet in one click (#6577). Beside it, the
 card shows the region, the size and the monthly price that it uses: the ones you chose last
@@ -175,7 +198,8 @@ droplet (its region, size and price), its start, the install and the join. When
 DigitalOcean refuses a step, the step shows DigitalOcean's words and says whether a
 droplet was made.
 
-Through its CLI, install `doctl` and sign it in on the Mac that runs the control plane.
+A `doctl` provider that you added before #6074 still works: `doctl` must be signed in on the
+machine that carries it.
 
 ## GitHub Codespaces
 

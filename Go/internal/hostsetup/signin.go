@@ -16,8 +16,10 @@ import (
 //
 // The step is running for KeyWait, which is the time a client takes to write a key it has,
 // and needs-you after it, with the runtimes that wait, so the person is told only when the
-// keys did not do it. It fails when a runtime is not signed in after d.SignInWait: a code
-// that nobody used.
+// keys did not do it. It then waits for the person with no time limit (#6853): a person who
+// signs in an hour later, from the machine's runtimes or with the Mac's lent sign-in, still
+// gets step 8 and a Ready machine. Before, it failed after d.SignInWait, and nothing could
+// run steps 7 and 8 again. When the installer itself is stopped, the step says so.
 func SignIn(ctx context.Context, o Options, d Deps, rep *Reporter, say func(string, ...any)) error {
 	d.defaults()
 	step := wire.MachineSetupStepIDSignIn
@@ -42,15 +44,8 @@ func SignIn(ctx context.Context, o Options, d Deps, rep *Reporter, say func(stri
 			return nil
 		}
 		// The states go in order, also when an answer is slow (#6340): the first pass says
-		// running, needs-you comes only after running was said, and the step fails only
-		// after needs-you was said, so the person is told before it fails.
+		// running, and needs-you comes only after running was said.
 		elapsed := time.Since(begun)
-		if said == wire.MachineSetupStateNeedsYou && elapsed > d.SignInWait {
-			problem := fmt.Sprintf("%s not signed in after %s. Nobody used the sign-in.", strings.Join(waiting, ", "), d.SignInWait)
-			rep.Say(step, wire.MachineSetupStateFailed, "", problem)
-			say("%s: %s", step, problem)
-			return fmt.Errorf("%s: %s", step, problem)
-		}
 		state, line := wire.MachineSetupStateRunning, "Looking for keys in Secrets: "+strings.Join(waiting, ", ")
 		if said != "" && elapsed > d.KeyWait {
 			state, line = wire.MachineSetupStateNeedsYou, "Waiting for you: "+strings.Join(waiting, ", ")
@@ -61,6 +56,9 @@ func SignIn(ctx context.Context, o Options, d Deps, rep *Reporter, say func(stri
 		}
 		select {
 		case <-ctx.Done():
+			problem := fmt.Sprintf("The installer stopped before %s signed in. Run it again to finish the set-up.", strings.Join(waiting, ", "))
+			rep.Say(step, wire.MachineSetupStateFailed, "", problem)
+			say("%s: %s", step, problem)
 			return ctx.Err()
 		case <-time.After(d.Poll):
 		}

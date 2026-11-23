@@ -5,6 +5,7 @@ import (
 	"io"
 	"strconv"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -17,7 +18,19 @@ const (
 	keyEnter
 	keyNewline
 	keyBackspace
-	keyClear // ^U: the whole prompt
+	keyDelete
+	keyLeft
+	keyRight
+	keyWordLeft
+	keyWordRight
+	keyHome
+	keyEnd
+	keyPrevLine
+	keyNextLine
+	keyDeleteWordBefore
+	keyDeleteWordAfter
+	keyKillToEnd
+	keyKillToStart // ^U: the whole prompt, when the cursor is at its end
 	keyInterrupt
 	keyEOF
 	keyBackground // the terminal's answer to askBackground: dark says how it is
@@ -30,7 +43,7 @@ type key struct {
 }
 
 // keyReader turns the bytes of a terminal in raw mode into keys. Escapes it does not use
-// (arrows, function keys) are dropped whole.
+// are dropped whole.
 type keyReader struct {
 	pasting bool
 	pending []byte
@@ -69,12 +82,24 @@ func (k *keyReader) feed(b []byte) []key {
 			out = append(out, key{kind: keyNewline})
 		case c == 0x7f || c == 0x08:
 			out = append(out, key{kind: keyBackspace})
-		case c == 0x15:
-			out = append(out, key{kind: keyClear})
+		case c == 0x01: // ^A
+			out = append(out, key{kind: keyHome})
+		case c == 0x02: // ^B
+			out = append(out, key{kind: keyLeft})
+		case c == 0x04: // ^D; ^D on an empty prompt leaves, in live.key
+			out = append(out, key{kind: keyEOF})
+		case c == 0x05: // ^E
+			out = append(out, key{kind: keyEnd})
+		case c == 0x06: // ^F
+			out = append(out, key{kind: keyRight})
+		case c == 0x0b: // ^K
+			out = append(out, key{kind: keyKillToEnd})
+		case c == 0x15: // ^U
+			out = append(out, key{kind: keyKillToStart})
+		case c == 0x17: // ^W
+			out = append(out, key{kind: keyDeleteWordBefore})
 		case c == 0x03:
 			out = append(out, key{kind: keyInterrupt})
-		case c == 0x04:
-			out = append(out, key{kind: keyEOF})
 		case c == '\t':
 			text("    ")
 		case c < 0x20:
@@ -99,21 +124,69 @@ func (k *keyReader) escape(b []byte) (int, []key, bool) {
 	if len(b) < 2 {
 		return 0, nil, false
 	}
+	one := func(kind keyKind) (int, []key, bool) {
+		return 2, []key{{kind: kind}}, true
+	}
 	switch b[1] {
 	case '\r', '\n':
-		return 2, []key{{kind: keyNewline}}, true // ⌥⏎ as Esc+
+		return one(keyNewline) // ⌥⏎ as Esc+⏎
+	case 0x7f: // ⌥⌫ on terminals that send Esc DEL
+		return one(keyDeleteWordBefore)
+	case 'b', 'B':
+		return one(keyWordLeft) // ⌥b and ^←
+	case 'f', 'F':
+		return one(keyWordRight) // ⌥f and ^→
+	case 'd', 'D':
+		return one(keyDeleteWordAfter) // ⌥d
+	case 'O': // application-mode arrows
+		if len(b) < 3 {
+			return 0, nil, false
+		}
+		switch b[2] {
+		case 'A':
+			return 3, []key{{kind: keyPrevLine}}, true
+		case 'B':
+			return 3, []key{{kind: keyNextLine}}, true
+		case 'C':
+			return 3, []key{{kind: keyRight}}, true
+		case 'D':
+			return 3, []key{{kind: keyLeft}}, true
+		}
+		return 3, nil, true
 	case '[':
 		for j := 2; j < len(b); j++ {
 			if b[j] >= 0x40 && b[j] <= 0x7e {
-				switch string(b[2 : j+1]) {
+				seq := string(b[2 : j+1])
+				var ks []key
+				switch seq {
 				case "200~":
 					k.pasting = true
 				case "201~":
 					k.pasting = false
 				case "13;3u", "13;2u": // ⌥⏎ and ⇧⏎ where the terminal reports them (CSI u)
-					return j + 1, []key{{kind: keyNewline}}, true
+					ks = []key{{kind: keyNewline}}
+				case "A":
+					ks = []key{{kind: keyPrevLine}}
+				case "B":
+					ks = []key{{kind: keyNextLine}}
+				case "C":
+					ks = []key{{kind: keyRight}}
+				case "D":
+					ks = []key{{kind: keyLeft}}
+				case "H", "1~":
+					ks = []key{{kind: keyHome}}
+				case "F", "4~":
+					ks = []key{{kind: keyEnd}}
+				case "3~":
+					ks = []key{{kind: keyDelete}}
+				case "3;3~": // ⌥⌫ on terminals that send a modified Delete
+					ks = []key{{kind: keyDeleteWordBefore}}
+				case "1;3D", "1;5D": // ⌥← and ^←
+					ks = []key{{kind: keyWordLeft}}
+				case "1;3C", "1;5C": // ⌥→ and ^→
+					ks = []key{{kind: keyWordRight}}
 				}
-				return j + 1, nil, true
+				return j + 1, ks, true
 			}
 		}
 		return 0, nil, false
@@ -162,6 +235,190 @@ func backgroundReply(s string) (dark, ok bool) {
 	return 0.2126*v[0]+0.7152*v[1]+0.0722*v[2] < 0.5, true
 }
 
+// lineEditor is the prompt's text and the cursor in it. The cursor is a byte offset into
+// text, always at a rune boundary, so an edit is two slices and a join.
+type lineEditor struct {
+	text   string
+	cursor int
+}
+
+func (e *lineEditor) set(s string) {
+	e.text, e.cursor = s, len(s)
+}
+
+func (e *lineEditor) insert(s string) {
+	e.text = e.text[:e.cursor] + s + e.text[e.cursor:]
+	e.cursor += len(s)
+}
+
+func (e *lineEditor) backspace() {
+	if e.cursor == 0 {
+		return
+	}
+	_, size := utf8.DecodeLastRuneInString(e.text[:e.cursor])
+	e.cursor -= size
+	e.text = e.text[:e.cursor] + e.text[e.cursor+size:]
+}
+
+func (e *lineEditor) del() {
+	if e.cursor >= len(e.text) {
+		return
+	}
+	_, size := utf8.DecodeRuneInString(e.text[e.cursor:])
+	e.text = e.text[:e.cursor] + e.text[e.cursor+size:]
+}
+
+func (e *lineEditor) step(dir int) {
+	if dir < 0 {
+		if e.cursor > 0 {
+			_, size := utf8.DecodeLastRuneInString(e.text[:e.cursor])
+			e.cursor -= size
+		}
+		return
+	}
+	if e.cursor < len(e.text) {
+		_, size := utf8.DecodeRuneInString(e.text[e.cursor:])
+		e.cursor += size
+	}
+}
+
+func isWordRune(r rune) bool {
+	return unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_'
+}
+
+// word is the byte offset at the far end of the word the cursor is in, or of the next one
+// (backward for dir < 0). A word is a run of letters, digits and underscores.
+func (e *lineEditor) word(dir int) int {
+	i := e.cursor
+	if dir < 0 {
+		for i > 0 {
+			r, size := utf8.DecodeLastRuneInString(e.text[:i])
+			if isWordRune(r) {
+				break
+			}
+			i -= size
+		}
+		for i > 0 {
+			r, size := utf8.DecodeLastRuneInString(e.text[:i])
+			if !isWordRune(r) {
+				break
+			}
+			i -= size
+		}
+		return i
+	}
+	for i < len(e.text) {
+		r, size := utf8.DecodeRuneInString(e.text[i:])
+		if isWordRune(r) {
+			break
+		}
+		i += size
+	}
+	for i < len(e.text) {
+		r, size := utf8.DecodeRuneInString(e.text[i:])
+		if !isWordRune(r) {
+			break
+		}
+		i += size
+	}
+	return i
+}
+
+func (e *lineEditor) deleteWord(dir int) {
+	at := e.word(dir)
+	if dir < 0 {
+		e.text = e.text[:at] + e.text[e.cursor:]
+		e.cursor = at
+	} else {
+		e.text = e.text[:e.cursor] + e.text[at:]
+	}
+}
+
+// line is the byte range of the prompt line the cursor is on.
+func (e *lineEditor) line() (int, int) {
+	start := strings.LastIndexByte(e.text[:e.cursor], '\n') + 1
+	if i := strings.IndexByte(e.text[e.cursor:], '\n'); i >= 0 {
+		return start, e.cursor + i
+	}
+	return start, len(e.text)
+}
+
+func (e *lineEditor) moveLine(dir int) {
+	start, _ := e.line()
+	col := visibleWidth(e.text[start:e.cursor])
+	lineNo := strings.Count(e.text[:start], "\n")
+	if want := lineNo + dir; want < 0 || want >= strings.Count(e.text, "\n")+1 {
+		return
+	} else {
+		from := 0
+		for i := 0; i < want; i++ {
+			from += strings.IndexByte(e.text[from:], '\n') + 1
+		}
+		to := strings.IndexByte(e.text[from:], '\n')
+		if to < 0 {
+			to = len(e.text)
+		} else {
+			to += from
+		}
+		at := from
+		for at < to && col > 0 {
+			r, size := utf8.DecodeRuneInString(e.text[at:])
+			w := cellWidth(r)
+			if col < w {
+				break
+			}
+			col -= w
+			at += size
+		}
+		e.cursor = at
+	}
+}
+
+// apply edits the prompt for the keys that do, and says whether k was one of them. The
+// other keys (Enter, ^C, the background answer) are left to the caller.
+func (e *lineEditor) apply(k key) bool {
+	switch k.kind {
+	case keyText:
+		e.insert(k.text)
+	case keyNewline:
+		e.insert("\n")
+	case keyBackspace:
+		e.backspace()
+	case keyDelete, keyEOF:
+		e.del()
+	case keyLeft:
+		e.step(-1)
+	case keyRight:
+		e.step(1)
+	case keyWordLeft:
+		e.cursor = e.word(-1)
+	case keyWordRight:
+		e.cursor = e.word(1)
+	case keyHome:
+		start, _ := e.line()
+		e.cursor = start
+	case keyEnd:
+		_, end := e.line()
+		e.cursor = end
+	case keyPrevLine:
+		e.moveLine(-1)
+	case keyNextLine:
+		e.moveLine(1)
+	case keyDeleteWordBefore:
+		e.deleteWord(-1)
+	case keyDeleteWordAfter:
+		e.deleteWord(1)
+	case keyKillToEnd:
+		e.text = e.text[:e.cursor]
+	case keyKillToStart:
+		e.text = e.text[e.cursor:]
+		e.cursor = 0
+	default:
+		return false
+	}
+	return true
+}
+
 // screen is the terminal: the lines that scroll up, and under them the part that is drawn
 // again each time something changes: the agent's line not ended yet, the status (working,
 // needs you) and the prompt. In raw mode a line ends with \r\n.
@@ -170,11 +427,12 @@ type screen struct {
 	raw     bool
 	width   func() int
 	drawn   int  // rows the live part took when it was last drawn, under the cursor's row
+	down    int  // rows from the cursor back down to the last of those rows
 	showing bool // the live part is on the screen
 	partial string
 	status  string
 	prompt  bool
-	input   string
+	input   lineEditor
 }
 
 func (s *screen) eol() string {
@@ -204,12 +462,15 @@ func (s *screen) clear() {
 	}
 	var b strings.Builder
 	b.WriteString("\r")
+	if s.down > 0 {
+		fmt.Fprintf(&b, "\x1b[%dB", s.down)
+	}
 	if s.drawn > 0 {
 		fmt.Fprintf(&b, "\x1b[%dA", s.drawn)
 	}
 	b.WriteString("\x1b[J")
 	_, _ = io.WriteString(s.w, b.String())
-	s.showing, s.drawn = false, 0
+	s.showing, s.drawn, s.down = false, 0, 0
 }
 
 // live is the live part's lines.
@@ -222,7 +483,7 @@ func (s *screen) live() []string {
 		out = append(out, s.status)
 	}
 	if s.prompt {
-		lines := strings.Split(s.input, "\n")
+		lines := strings.Split(s.input.text, "\n")
 		out = append(out, "› "+lines[0])
 		for _, l := range lines[1:] {
 			out = append(out, "  "+l)
@@ -231,21 +492,67 @@ func (s *screen) live() []string {
 	return out
 }
 
-// draw puts the live part back, the cursor at its end.
+// cursorAt is the drawn line and cell column of the prompt's cursor. Every prompt line
+// has a two-cell prefix.
+func (s *screen) cursorAt(lines []string) (int, int) {
+	base := 0
+	if s.partial != "" {
+		base++
+	}
+	if s.status != "" {
+		base++
+	}
+	before := s.input.text[:s.input.cursor]
+	off := before
+	if i := strings.LastIndexByte(before, '\n'); i >= 0 {
+		off = before[i+1:]
+	}
+	return base + strings.Count(before, "\n"), 2 + visibleWidth(off)
+}
+
+// draw puts the live part back, with the cursor at the prompt's editing point.
 func (s *screen) draw() {
 	lines := s.live()
 	if len(lines) == 0 || !s.raw {
 		return
 	}
-	rows := 0
+	cols := 0
+	if s.width != nil {
+		cols = s.width()
+	}
+	spans := make([]int, len(lines))
+	total := 0
 	for i, l := range lines {
-		rows += s.rows(l)
-		if i == len(lines)-1 {
-			rows--
-		}
+		spans[i] = s.rows(l)
+		total += spans[i]
 	}
 	_, _ = io.WriteString(s.w, strings.Join(lines, s.eol()))
-	s.showing, s.drawn = true, rows
+	s.showing, s.drawn, s.down = true, total-1, 0
+	if !s.prompt {
+		return
+	}
+	line, col := s.cursorAt(lines)
+	if line >= len(lines) {
+		return
+	}
+	row := 0
+	for _, n := range spans[:line] {
+		row += n
+	}
+	if cols > 0 {
+		row += col / cols
+		col %= cols
+	} else {
+		row = line
+	}
+	if down := total - 1 - row; down > 0 {
+		fmt.Fprintf(s.w, "\x1b[%dB", down)
+		s.down = down
+	}
+	_, _ = io.WriteString(s.w, "\r")
+	if col > 0 {
+		fmt.Fprintf(s.w, "\x1b[%dC", col)
+	}
 }
 
 // print puts lines in the part that scrolls, above the live part.

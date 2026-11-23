@@ -33,10 +33,12 @@
       setTimeout(function () { window.close(); }, 400);
       return;
     }
+    // With no opener and no state (the web page's window was cut off, #6074), which page asked
+    // is not known: the app is tried, and the words say what to do on the web page.
     var denied = "agents://oauth/callback?" + new URLSearchParams({ error: answer.error }).toString();
     back.href = denied;
     back.hidden = false;
-    say("The sign-in did not finish. Going back to Agent Loops…");
+    say("The sign-in did not finish. Close this window, then connect again from Agent Loops.");
     location.replace(denied);
     return;
   }
@@ -60,11 +62,19 @@
   } catch (e) {
     origin = "";
   }
-  if (!/^https?:\/\//.test(origin) || !window.opener) {
+  if (!/^https?:\/\//.test(origin)) {
     say("The Agent Loops page that asked is not open any more. Start the sign-in again from Agent Loops.");
     return;
   }
   function give() {
+    if (!window.opener) {
+      // A provider whose pages send Cross-Origin-Opener-Policy (DigitalOcean, #6074) cuts this
+      // window off from the page that opened it. So go to that page's own origin, which gives
+      // the answer to its other tabs (Web/src/oauthHandBack.ts) and closes this one.
+      say("Going back to Agent Loops…");
+      location.replace(origin + "/#oauth-callback?" + new URLSearchParams(answer).toString());
+      return;
+    }
     window.opener.postMessage({ type: "agents-oauth-callback", code: answer.code || null,
       state: answer.state, error: answer.error || null }, origin);
     say("Signed in. You can close this window.");
