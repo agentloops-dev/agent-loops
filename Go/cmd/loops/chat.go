@@ -672,26 +672,18 @@ func (f *live) leave() {
 
 // key is one key at the prompt.
 func (f *live) key(ctx context.Context, k key) error {
+	if k.kind == keyEOF && f.sc.input.text == "" {
+		return errLeave
+	}
+	if f.sc.input.apply(k) {
+		return nil
+	}
 	switch k.kind {
-	case keyText:
-		f.sc.input += k.text
-	case keyNewline:
-		f.sc.input += "\n"
-	case keyBackspace:
-		if r := []rune(f.sc.input); len(r) > 0 {
-			f.sc.input = string(r[:len(r)-1])
-		}
-	case keyClear:
-		f.sc.input = ""
-	case keyEOF:
-		if f.sc.input == "" {
-			return errLeave
-		}
 	case keyInterrupt:
 		return f.interrupt(ctx)
 	case keyEnter:
-		text := f.sc.input
-		f.sc.input = ""
+		text := f.sc.input.text
+		f.sc.input.set("")
 		if len(f.cards) > 0 {
 			f.print(f.t.st.paint(roleQuiet, "› ") + text)
 			return f.answer(ctx, text)
@@ -714,8 +706,8 @@ func (f *live) key(ctx context.Context, k key) error {
 // interrupt is ^C: with words typed, they go; in a turn, it stops (as Stop in the
 // window); a second ^C soon after, or one with no turn, leaves.
 func (f *live) interrupt(ctx context.Context) error {
-	if f.sc.input != "" {
-		f.sc.input = ""
+	if f.sc.input.text != "" {
+		f.sc.input.set("")
 		return nil
 	}
 	if f.id == "" || !f.sent || time.Since(f.stopAt) < 2*time.Second {
