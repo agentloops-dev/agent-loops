@@ -23,6 +23,23 @@
 
   function say(text) { words.textContent = text; }
 
+  if (!answer.state && answer.error) {
+    // A provider that leaves the state out of an error (DigitalOcean's Deny, #6072): an
+    // error holds no secret, so it goes to the page that opened this one, or to the app,
+    // which ends its one sign-in that is waiting.
+    if (window.opener) {
+      window.opener.postMessage({ type: "agents-oauth-callback", code: null, state: null, error: answer.error }, "*");
+      say("The sign-in did not finish. You can close this window.");
+      setTimeout(function () { window.close(); }, 400);
+      return;
+    }
+    var denied = "agents://oauth/callback?" + new URLSearchParams({ error: answer.error }).toString();
+    back.href = denied;
+    back.hidden = false;
+    say("The sign-in did not finish. Going back to Agent Loops…");
+    location.replace(denied);
+    return;
+  }
   if (!answer.state) {
     say("This page is for signing in from Agent Loops. Start again from Agent Loops.");
     return;

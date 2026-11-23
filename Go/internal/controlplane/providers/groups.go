@@ -84,6 +84,7 @@ func (p *Providers) SummariesFor(person string) []ProviderSummary {
 // adminMethods change a provider itself: only an admin's (#1761).
 var adminMethods = map[string]bool{
 	MethodProvidersAdd: true, MethodProvidersUpdate: true, MethodProvidersRemove: true,
+	MethodProvidersOAuthStart: true, MethodProvidersOAuthFinish: true,
 }
 
 // refuse says why the caller may not ask method of a provider, or nil when they may.

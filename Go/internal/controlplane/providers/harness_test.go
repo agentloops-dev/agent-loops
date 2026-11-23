@@ -238,7 +238,7 @@ func (s *standIn) Check() (Checked, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.refuse != "" {
-		return Checked{}, &ProviderFailure{s.refuse}
+		return Checked{}, &ProviderFailure{Words: s.refuse}
 	}
 	return Checked{Contract: 1, Capabilities: []string{"create", "delete", "options"}, Workspaces: append([]MachineInfo{}, s.workspaces...)}, nil
 }
@@ -281,7 +281,7 @@ func (s *standIn) Start(id string) (*MachineInfo, error) {
 	s.mu.Unlock()
 	time.Sleep(takes)
 	if failStart != "" {
-		return nil, &ProviderFailure{failStart}
+		return nil, &ProviderFailure{Words: failStart}
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -323,7 +323,7 @@ func (s *standIn) Create(name string, options any, firstBoot *string) (*MachineI
 	}
 	s.madeWith = append(s.madeWith, options)
 	if s.failCreate != "" {
-		return nil, false, &ProviderFailure{s.failCreate}
+		return nil, false, &ProviderFailure{Words: s.failCreate}
 	}
 	made := MachineInfo{ID: "ws-" + name, Name: name, State: "starting", SSH: new("root@10.0.0.9")}
 	s.workspaces = append(s.workspaces, made)
@@ -334,11 +334,11 @@ func (s *standIn) Delete(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.failDelete != "" {
-		return &ProviderFailure{s.failDelete}
+		return &ProviderFailure{Words: s.failDelete}
 	}
 	gone := s.find(id)
 	if s.slowDelete && gone == nil {
-		return &ProviderFailure{"There is no workspace " + id + "."}
+		return &ProviderFailure{Words: "There is no workspace " + id + "."}
 	}
 	s.deleted = append(s.deleted, id)
 	if s.slowDelete {
@@ -455,7 +455,7 @@ func newHarness(t *testing.T, opts ...func(*harnessOptions)) *harness {
 				}
 				ssh.add(destination)
 				if o.sshFails != "" {
-					return &ProviderFailure{o.sshFails}
+					return &ProviderFailure{Words: o.sshFails}
 				}
 				return nil
 			},

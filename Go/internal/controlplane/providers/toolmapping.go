@@ -162,7 +162,7 @@ func Content(result any) (any, error) {
 		if len(said) > 1024 {
 			said = strings.ToValidUTF8(said[:1024], "�")
 		}
-		return nil, &ProviderFailure{said}
+		return nil, &ProviderFailure{Words: said}
 	}
 	if has(result, "structuredContent") {
 		return get(result, "structuredContent"), nil

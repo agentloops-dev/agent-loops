@@ -171,6 +171,8 @@ type listed struct {
 	// False once a list has failed after a good one.
 	current bool
 	problem string
+	// code is the last failure's, when a client can act on it (#6072): disconnected.
+	code string
 	// Which list it is, as lists counted them.
 	asked uint64
 }
@@ -283,6 +285,8 @@ type Providers struct {
 	// The machines installing Agents in a codespace for Add as Machine… (#3497), by how
 	// many installs: only their machine/installProgress is said to clients.
 	installing map[string]int
+	// The OAuth connections started and not finished yet (#6072), by state.
+	oauth oauthStarts
 	// The hosts whose codespaces their carrying machines are asked to keep awake (#4637).
 	awake map[string]keptAwake
 	// One make at a time on each provider, by its id (#4706): seven makes sent in one
@@ -691,6 +695,18 @@ func (p *Providers) answer(method string, params json.RawMessage, caller Caller,
 		return map[string]any{}, nil
 	case MethodProvidersAdd, MethodProvidersUpdate:
 		return p.answerSave(params, method == MethodProvidersUpdate, caller)
+	case MethodProvidersOAuthStart:
+		var request wire.ProviderOAuthStart
+		if err := requireParams(params, &request, "ProviderOAuthStart", "preset"); err != nil {
+			return nil, err
+		}
+		return p.oauthStart(request, caller)
+	case MethodProvidersOAuthFinish:
+		var request wire.ProviderOAuthFinish
+		if err := requireParams(params, &request, "ProviderOAuthFinish"); err != nil {
+			return nil, err
+		}
+		return p.oauthFinish(request, caller)
 	case MethodProvidersMakeDefault:
 		return p.answerProviderID(params, func(id string) error { return p.makeDefault(caller.Person, id) })
 	case MethodProvidersRemove:
@@ -969,7 +985,7 @@ func (p *Providers) summary(r ProviderRecord, l listed, workspaces []MachineInfo
 	}
 	s := ProviderSummary{ID: wire.ProviderID(r.ID), Name: r.Name, Kind: r.Kind, Secrets: secrets, Capabilities: caps,
 		Contract: int64(r.Contract), Preset: optional(r.preset()), Workspaces: workspaces,
-		Current: l.current, Problem: optional(l.problem), Group: r.Group}
+		Current: l.current, Problem: optional(l.problem), Group: r.Group, Oauth: summaryOAuth(r, l)}
 	if machine := deref(r.Machine); machine != "" {
 		s.Machine = optional(wire.MachineRef(machine))
 		if h := p.records.Host(machine); h != nil {
@@ -993,12 +1009,33 @@ func (p *Providers) summary(r ProviderRecord, l listed, workspaces []MachineInfo
 // save adds or changes a provider: connected, checked and listed before it is kept
 // (US2 AS1–2).
 func (p *Providers) save(request ProviderAdd, updating bool, caller Caller) (ProviderSummary, error) {
+	return p.saveConnected(request, updating, caller, nil)
+}
+
+// connectedSave is what an OAuth connection (#6072) adds to a save: the secrets its
+// machine keeps already, by name, and whose account they are for.
+type connectedSave struct {
+	// id is the provider's: its machine keeps the tokens under it.
+	id      string
+	machine string
+	names   []string
+	oauth   *OAuthConnection
+}
+
+// saveConnected is save, for a provider whose machine keeps an OAuth connection's tokens
+// already when connected is not nil.
+func (p *Providers) saveConnected(request ProviderAdd, updating bool, caller Caller, connected *connectedSave) (ProviderSummary, error) {
 	id, etag, heldBefore, err := p.saving(request, updating)
 	if err != nil {
 		return ProviderSummary{}, err
 	}
-	machine, err := p.carrier(request, heldBefore, caller)
-	if err != nil {
+	if connected != nil {
+		id = connected.id
+	}
+	var machine string
+	if connected != nil {
+		machine = connected.machine
+	} else if machine, err = p.carrier(request, heldBefore, caller); err != nil {
 		return ProviderSummary{}, err
 	}
 	// An update keeps the commands it leaves out, as it keeps the secrets.
@@ -1011,6 +1048,16 @@ func (p *Providers) save(request ProviderAdd, updating bool, caller Caller) (Pro
 	}
 	record := ProviderRecord{ID: id, Name: trimSpaces(request.Name), Kind: request.Kind, SecretNames: names, Contract: 1,
 		Machine: &machine}
+	switch {
+	case connected != nil:
+		record.OAuth = connected.oauth
+		record.SecretNames = unionSorted(names, connected.names)
+	case heldBefore != nil && heldBefore.OAuth != nil && !pastesToken(request):
+		record.OAuth = heldBefore.OAuth
+	case heldBefore != nil && heldBefore.OAuth != nil:
+		// A pasted token replaces the connection: its machine forgets the rest of it.
+		record.SecretNames = withoutOAuthNames(names)
+	}
 	record.Commands = valueOf(request.Commands)
 	if problem := record.Problem(); problem != "" {
 		return ProviderSummary{}, invalid("%s", problem)
@@ -1253,6 +1300,7 @@ func (p *Providers) Refresh(only string) {
 			} else {
 				l.current = l.listedAt == nil
 				l.problem = errorWords(r.err)
+				l.code = failureCode(r.err)
 				l.asked = r.asked
 			}
 			p.listed[r.id] = l

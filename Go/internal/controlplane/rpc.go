@@ -82,7 +82,12 @@ func asRPC(err error) *RPCError {
 	}
 	var provider *providers.ProviderFailure
 	if errors.As(err, &provider) {
-		return &RPCError{Code: providers.CodeProviderFailed, Message: provider.Words}
+		out := &RPCError{Code: providers.CodeProviderFailed, Message: provider.Words}
+		if provider.Code != "" {
+			// A reason a client can act on (#6072, W2b).
+			out.Data, _ = json.Marshal(map[string]string{"reason": provider.Code})
+		}
+		return out
 	}
 	var install *hostinstall.Failure
 	if errors.As(err, &install) {

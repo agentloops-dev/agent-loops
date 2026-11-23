@@ -320,7 +320,7 @@ func (c *Connection) connected(work func(*mcpClient) error) error {
 		}
 		var failure *mcpFailure
 		if !errors.As(err, &failure) {
-			return &ProviderFailure{err.Error()}
+			return &ProviderFailure{Words: err.Error()}
 		}
 		// Only a connection that went is tried again: a call the server heard and refused,
 		// or ran out of time on, could start a workspace twice.
@@ -337,7 +337,7 @@ func (c *Connection) connected(work func(*mcpClient) error) error {
 		if failure.kind == "timeout" {
 			return providerFailure("It didn’t answer in time.")
 		}
-		return &ProviderFailure{failure.Error()}
+		return &ProviderFailure{Words: failure.Error()}
 	}
 	return providerFailure("It can’t be reached.")
 }
@@ -355,7 +355,7 @@ func (c *Connection) live() (*mcpClient, error) {
 	client := newMCPClient(c.server, c.cwd, c.timing.Quick, c.log)
 	if err := client.connect(); err != nil {
 		client.end()
-		return nil, &ProviderFailure{unreachable(err)}
+		return nil, &ProviderFailure{Words: unreachable(err)}
 	}
 	c.mu.Lock()
 	c.client = client
