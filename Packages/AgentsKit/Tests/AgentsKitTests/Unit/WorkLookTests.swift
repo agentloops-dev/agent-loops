@@ -344,4 +344,14 @@ struct WorkLookTests {
         #expect(WorkLook.pageFooterState(drawn: false, reading: false, fromDevice: false, lines: ["x"]) == .couldNotRead)
         #expect(WorkLook.pageCount(1, "target") == "1 target" && WorkLook.pageCount(4, "epic") == "4 epics")
     }
+
+    /// An item with its Plan says the older of the two reads, and none until both are read (#5970).
+    @Test func anItemPageSaysTheOlderReadAndANoticeHasNoTryAgain() {
+        let old = Date(timeIntervalSince1970: 100), new = Date(timeIntervalSince1970: 200)
+        #expect(WorkLook.oldestRead([new, old]) == old)
+        #expect(WorkLook.oldestRead([new, nil]) == nil)
+        #expect(WorkLook.oldestRead([new]) == new)
+        let notice = WorkLook.FooterState.notice(WorkReleaseLook.noLineage)
+        #expect(notice.words == "No machine keeps lineage." && notice.failure && !notice.busy)
+    }
 }

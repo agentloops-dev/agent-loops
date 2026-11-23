@@ -452,6 +452,9 @@ public enum WorkLook {
         case couldNotUpdate(line: String, help: String)
         /// A read failed with nothing on screen: "Could not read."
         case couldNotRead
+        /// A state the page cannot read past, with the warning glyph and no Try again (#5970): "No machine keeps
+        /// lineage." on a release's page.
+        case notice(String)
 
         public var words: String {
             switch self {
@@ -462,6 +465,7 @@ public enum WorkLook {
             case .readingMachines(let answered, let of): "Reading \(answered) of \(of) machines…"
             case .couldNotUpdate(let line, _): line
             case .couldNotRead: WorkLook.couldNotReadShort
+            case .notice(let words): words
             }
         }
 
@@ -475,7 +479,7 @@ public enum WorkLook {
         /// The warning glyph, and Try again where there are rows.
         public var failure: Bool {
             switch self {
-            case .couldNotUpdate, .couldNotRead: true
+            case .couldNotUpdate, .couldNotRead, .notice: true
             default: false
             }
         }
@@ -501,6 +505,11 @@ public enum WorkLook {
         let state = footerState(drawn: drawn, read: drawn ? 1 : 0, reading: reading, fromDevice: fromDevice, lines: lines)
         guard reading, lines.isEmpty, machines > 1, answered > 0, answered < machines else { return state }
         return .readingMachines(answered: answered, of: machines)
+    }
+
+    /// When a page of several reads was read (#5970, #5139): the oldest part's, once every part has been read.
+    public static func oldestRead(_ reads: [Date?]) -> Date? {
+        reads.contains(where: { $0 == nil }) ? nil : reads.compactMap { $0 }.min()
     }
 
     /// "4 targets", "1 epic": a page's count at the right of its footer.

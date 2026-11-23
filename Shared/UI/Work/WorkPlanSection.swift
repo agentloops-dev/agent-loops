@@ -36,15 +36,17 @@ struct WorkPlanSection: View {
     /// The plan on screen came from this device's copy (#4930): no changes until its machine answers.
     @State private var fromDevice = false
     /// When the plan on screen was read from its machine (#5142): this device's copy's time, or
-    /// the last read that worked. The "Last update" line of a plan from the copy or a failed read.
+    /// the last read that worked.
     @State private var planRead: Date?
+    @State private var reading = false
 
-    /// When the plan drawn from the copy was read, until the machine answers: the page's one
-    /// "From this device" strip says the oldest of it and the item's (#5142). A failed read
-    /// says it in its own strip instead.
-    private var copyRead: Date? { fromDevice && problem == nil ? planRead : nil }
-    /// Told `copyRead` each time it changes, and nil when the plan goes.
-    var fromCopy: (Date?) -> Void = { _ in }
+    /// The plan's read, for the item page's footer (#5970): it says the older of the item's and the plan's age, and
+    /// what runs or failed. No strip in the section.
+    private var read: WorkPlanRead {
+        WorkPlanRead(read: plan == nil ? nil : planRead, fromDevice: fromDevice && problem == nil, problem: problem, reading: reading)
+    }
+    /// Told `read` each time it changes, and nil when the plan goes.
+    var report: (WorkPlanRead?) -> Void = { _ in }
     @State private var rollups: [DaemonAPI.LineageNode: DaemonAPI.LineageCostRollup] = [:]
     @State private var links: [DaemonAPI.LineageNode: [DaemonAPI.LineageLink]] = [:]
     @State private var said: (words: String, failed: Bool)?
@@ -78,15 +80,9 @@ struct WorkPlanSection: View {
         VStack(alignment: .leading, spacing: 0) {
             if let plan {
                 header(plan)
-                if let problem {
-                    WorkErrorStrip(lines: [problem], read: planRead) { changed += 1 }
-                        .padding(.horizontal, 12).padding(.bottom, 10)
-                }
-                Group {
-                    if let standing = plan.standing { query(standing) }
-                    content(plan)
-                }
-                .opacity(problem == nil ? 1 : 0.5)
+                // A failed read is in the page's footer (#5970); the plan stays at full opacity.
+                if let standing = plan.standing { query(standing) }
+                content(plan)
             } else if let problem {
                 title(standing: detail.item.standing == true).padding([.horizontal, .top], 12)
                 couldNotRead(problem)
@@ -99,8 +95,8 @@ struct WorkPlanSection: View {
         .clipShape(RoundedRectangle(cornerRadius: Paper.Radius.card))
         .overlay(RoundedRectangle(cornerRadius: Paper.Radius.card).strokeBorder(Paper.rule))
         .workTask(id: ask) { await load() }
-        .onChange(of: copyRead, initial: true) { fromCopy(copyRead) }
-        .onDisappear { fromCopy(nil) }
+        .onChange(of: read, initial: true) { report(read) }
+        .onDisappear { report(nil) }
         .onChange(of: asked) { folded = [:] }
     }
 
@@ -472,8 +468,8 @@ struct WorkPlanSection: View {
 
     // MARK: Loading
 
-    /// The plan, then each child's cost and links. A read after one came keeps the last plan,
-    /// dimmed under the strip, when it fails (state 2).
+    /// The plan, then each child's cost and links. A read after one came keeps the last plan when it fails, and the
+    /// page's footer says what failed (#5970).
     private func load() async {
         let mine = ask
         if mine.changed == 0 { said = nil }
@@ -484,15 +480,18 @@ struct WorkPlanSection: View {
             fromDevice = true
         }
         let got: DaemonAPI.ForgePlan
+        reading = true
         do {
             got = try await model.forge(DaemonAPI.Method.forgePlan, DaemonAPI.ForgePlanRequest(node: mine.node),
                                         returning: DaemonAPI.ForgePlan.self, on: host)
         } catch {
             guard ask == mine else { return }
+            reading = false
             problem = WorkList.failureWords(error)
             return
         }
         guard ask == mine else { return }
+        reading = false
         plan = got
         planRead = Date()
         fromDevice = false
@@ -713,4 +712,13 @@ struct WorkBar: View {
         .frame(height: 6)
         .accessibilityHidden(true)
     }
+}
+
+/// A plan's read, for its item page's footer (#5970): when it was read, whether from this device's copy, what failed
+/// and whether a read runs.
+struct WorkPlanRead: Equatable {
+    var read: Date?
+    var fromDevice: Bool
+    var problem: String?
+    var reading: Bool
 }
