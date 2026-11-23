@@ -111,9 +111,32 @@ func TestSmokeSaysNothingWhileTheRuntimeNeedsASignIn(t *testing.T) {
 	}
 }
 
+// signInLater is a host where claude is signed in once runtimes/list was asked after, so a
+// test can sign in long after the step's old time limit, with no second goroutine.
+func signInLater(h *smokeHost, after time.Duration) func(string, any) (json.RawMessage, error) {
+	begun := time.Now()
+	return func(method string, params any) (json.RawMessage, error) {
+		if method == wire.CallRuntimesList.Name && time.Since(begun) > after {
+			h.signedIn = true
+		}
+		return h.call(method, params)
+	}
+}
+
+func signInStates(t *testing.T, l Layout) []wire.MachineSetupState {
+	t.Helper()
+	var states []wire.MachineSetupState
+	for _, r := range reports(t, l) {
+		if r.Step == wire.MachineSetupStepIDSignIn {
+			states = append(states, r.State)
+		}
+	}
+	return states
+}
+
 // #5361: step 7 is running while a client writes a key, needs you after that, and done when
-// every runtime says it is available; a runtime nobody signed in fails it.
-func TestSignInWaitsForTheClientThenNeedsYouThenFails(t *testing.T) {
+// every runtime says it is available.
+func TestSignInWaitsForTheClientThenNeedsYouThenIsDone(t *testing.T) {
 	h := &smokeHost{}
 	o, l := options(t)
 	o.Runtimes = []string{"claude"}
@@ -121,33 +144,60 @@ func TestSignInWaitsForTheClientThenNeedsYouThenFails(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	d := Deps{Call: h.call, Poll: time.Millisecond, KeyWait: 5 * time.Millisecond, SignInWait: 40 * time.Millisecond}
-	if err := SignIn(context.Background(), o, d, rep, func(string, ...any) {}); err == nil {
-		t.Fatal("a runtime nobody signed in passed")
-	}
-	var states []wire.MachineSetupState
-	for _, r := range reports(t, l) {
-		if r.Step == wire.MachineSetupStepIDSignIn {
-			states = append(states, r.State)
-		}
-	}
-	want := []wire.MachineSetupState{wire.MachineSetupStateRunning, wire.MachineSetupStateNeedsYou, wire.MachineSetupStateFailed}
-	if fmt.Sprint(states) != fmt.Sprint(want) {
-		t.Fatalf("states %v, want %v", states, want)
-	}
-
-	h.signedIn = true
-	rep, _ = NewReporter(l.Root)
+	d := Deps{Call: signInLater(h, 40*time.Millisecond), Poll: time.Millisecond, KeyWait: 5 * time.Millisecond}
 	if err := SignIn(context.Background(), o, d, rep, func(string, ...any) {}); err != nil {
 		t.Fatal(err)
 	}
-	if r := lastOf(reports(t, l), wire.MachineSetupStepIDSignIn); r == nil || r.State != wire.MachineSetupStateDone {
+	want := []wire.MachineSetupState{wire.MachineSetupStateRunning, wire.MachineSetupStateNeedsYou, wire.MachineSetupStateDone}
+	if got := signInStates(t, l); fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("states %v, want %v", got, want)
+	}
+}
+
+// #6853: a person who signs in after SignInWait still finishes step 7. Before, the step
+// failed after SignInWait and nothing ran steps 7 and 8 again.
+func TestSignInKeepsWaitingPastSignInWait(t *testing.T) {
+	h := &smokeHost{}
+	o, l := options(t)
+	o.Runtimes = []string{"claude"}
+	rep, err := NewReporter(l.Root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := Deps{Call: signInLater(h, 60*time.Millisecond), Poll: time.Millisecond, KeyWait: time.Millisecond, SignInWait: 5 * time.Millisecond}
+	if err := SignIn(context.Background(), o, d, rep, func(string, ...any) {}); err != nil {
+		t.Fatalf("a sign-in after SignInWait did not finish step 7: %v", err)
+	}
+	want := []wire.MachineSetupState{wire.MachineSetupStateRunning, wire.MachineSetupStateNeedsYou, wire.MachineSetupStateDone}
+	if got := signInStates(t, l); fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("states %v, want %v", got, want)
+	}
+}
+
+// #6853: an installer that is stopped while it waits says so on step 7, so the step does not
+// say "Waiting for you" for ever.
+func TestSignInSaysFailedWhenTheInstallerStops(t *testing.T) {
+	h := &smokeHost{}
+	o, l := options(t)
+	o.Runtimes = []string{"claude"}
+	rep, err := NewReporter(l.Root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancel()
+	d := Deps{Call: h.call, Poll: time.Millisecond, KeyWait: time.Millisecond}
+	if err := SignIn(ctx, o, d, rep, func(string, ...any) {}); err == nil {
+		t.Fatal("a stopped installer passed step 7")
+	}
+	r := lastOf(reports(t, l), wire.MachineSetupStepIDSignIn)
+	if r == nil || r.State != wire.MachineSetupStateFailed || r.Error == nil || !strings.Contains(*r.Error, "Run it again") {
 		t.Fatalf("report %+v", r)
 	}
 }
 
-// #6340: a daemon that answers slower than KeyWait and SignInWait still gets running, then
-// needs you, then failed, so the person is told before the step fails.
+// #6340: a daemon that answers slower than KeyWait still gets running, then needs you, then
+// done, in order.
 func TestSignInSaysEachStateInOrderWhenTheDaemonIsSlow(t *testing.T) {
 	h := &smokeHost{}
 	o, l := options(t)
@@ -156,23 +206,18 @@ func TestSignInSaysEachStateInOrderWhenTheDaemonIsSlow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	later := signInLater(h, 50*time.Millisecond)
 	slow := func(method string, params any) (json.RawMessage, error) {
 		time.Sleep(15 * time.Millisecond)
-		return h.call(method, params)
+		return later(method, params)
 	}
 	d := Deps{Call: slow, Poll: time.Millisecond, KeyWait: time.Millisecond, SignInWait: 10 * time.Millisecond}
-	if err := SignIn(context.Background(), o, d, rep, func(string, ...any) {}); err == nil {
-		t.Fatal("a runtime nobody signed in passed")
+	if err := SignIn(context.Background(), o, d, rep, func(string, ...any) {}); err != nil {
+		t.Fatal(err)
 	}
-	var states []wire.MachineSetupState
-	for _, r := range reports(t, l) {
-		if r.Step == wire.MachineSetupStepIDSignIn {
-			states = append(states, r.State)
-		}
-	}
-	want := []wire.MachineSetupState{wire.MachineSetupStateRunning, wire.MachineSetupStateNeedsYou, wire.MachineSetupStateFailed}
-	if fmt.Sprint(states) != fmt.Sprint(want) {
-		t.Fatalf("states %v, want %v", states, want)
+	want := []wire.MachineSetupState{wire.MachineSetupStateRunning, wire.MachineSetupStateNeedsYou, wire.MachineSetupStateDone}
+	if got := signInStates(t, l); fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("states %v, want %v", got, want)
 	}
 }
 
