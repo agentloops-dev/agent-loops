@@ -72,7 +72,6 @@
 .timeline-trailing { display: inline-flex; gap: 8px; align-items: center; margin-left: auto; }
 .timeline-now-button { padding: 2px 10px; font-size: 0.75rem; border: 1px solid var(--paper-rule); border-radius: 999px; background: none; }
 /* S12: the last plot under the error strip, dimmed. */
-.timeline.dim .timeline-scroll { opacity: 0.45; }
 /* S10: grey bars where the lanes go, shimmering; still with Reduce Motion. */
 .timeline-placeholder rect { fill: var(--timeline-faint); opacity: 0.25; }
 @media (prefers-reduced-motion: no-preference) {

@@ -184,7 +184,7 @@ a.work-row { box-sizing: border-box; text-decoration: none; color: inherit; }
 .work-empty p { margin: 0; }
 .work-empty .work-state-icon { --open: var(--paper-ink); opacity: 0.45; margin-bottom: 4px; }
 .work-empty button { margin-top: 8px; }
-.work-error, .work-from-device { margin: 0 0 8px; }
+.work-error { margin: 0 0 8px; }
 .work-error .message-words { display: flex; flex-direction: column; }
 .work-error.middle { margin: 48px auto; max-width: 520px; }
 
@@ -199,3 +199,21 @@ a.work-row { box-sizing: border-box; text-decoration: none; color: inherit; }
 /* A row menu's Priority or On hold write that failed (epic #6086): one line above the rows, with a dismiss. */
 .work-plan-problem { display: flex; gap: 8px; align-items: center; margin: 6px 12px; }
 .work-plan-problem button { border: 0; background: none; padding: 2px; color: inherit; cursor: pointer; }
+/* The Work footer (#5971, epic #6348; the Mac's WorkPageBar): a bar at the bottom of the Work pane, the caption step in
+   grey, with a rule above it, across the pane's width. It does not scroll: it sticks to the pane's bottom, and a short page
+   pushes it there. On the left, the read; on the right, the count and Last update. */
+.scroll:has(.work-footer) { display: flex; flex-direction: column; padding-bottom: 0; --work-footer-inset: 32px; }
+.scroll:has(.work-footer) > .activity-body { flex: 1 0 auto; display: flex; flex-direction: column; padding-bottom: 0; }
+.activity-body > .work-footed, .activity-body > .work-page:has(> .work-footed), .work-page > .work-footed { flex: 1 0 auto; display: flex; flex-direction: column; }
+.deploys-page.work-footed { padding-bottom: 0; }
+.work-footer { position: sticky; bottom: 0; z-index: 2; margin: auto calc(-1 * var(--work-footer-inset, 0px)) 0; padding: 6px 16px;
+  display: flex; align-items: center; gap: 12px; min-height: 28px; box-sizing: border-box; border-top: 1px solid var(--paper-rule);
+  background: var(--paper-ground); font-size: var(--type-fine); font-variant-numeric: tabular-nums; color: var(--paper-secondary); }
+@media (max-width: 699px) { .scroll:has(.work-footer) { --work-footer-inset: 22px; } }
+.work-footer-state { display: flex; align-items: center; gap: 6px; min-width: 0; flex: 1 1 auto; }
+.work-footer-words { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.work-footer-warn { display: inline-flex; color: var(--tint-failure); }
+.work-footer-warn svg.lucide { width: 12px; height: 12px; }
+.work-footer button { font-size: inherit; }
+.work-footer-age { display: flex; align-items: center; gap: 6px; flex: none; white-space: nowrap; }
+.work-footer .last-update { font-size: inherit; }

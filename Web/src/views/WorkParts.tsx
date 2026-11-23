@@ -11,6 +11,7 @@ import { LastUpdate } from "./LastUpdate";
 import { MessageBanner } from "./MessageKinds";
 import { avatarHue, chipColours, labelScope, stateGlyph, stateGlyphWords, type StateGlyph } from "../model/work";
 import { Icon } from "./Icon";
+import { footerBusy, footerFailure, footerShowsRight, footerWords, type FooterState } from "../model/workFooter";
 
 const glyphPaths: Record<StateGlyph, ComponentChildren> = {
   "issue-open": <><circle cx="8" cy="8" r="6.25" /><circle cx="8" cy="8" r="1.5" class="fill" /></>,
@@ -236,21 +237,12 @@ export function EmptyState({ kind, title, line, action }: {
   );
 }
 
-/** A forge that could not be read (section 7): a strip with what it said and Try again. In the middle of a list that read
- * nothing, a heading first ("Could not read issues", lists.md section 5), and `also` beside Try again (Settings ▸
- * Connectors, for a credential the forge refused). */
-/** A Work page drawn from this device's copy (#4930) while its machine is asked again: a neutral banner with a spinner,
- * gone when the machine answers, that says when the copy was read (#5142). The window says the same (WorkLook.fromDevice). */
-export function FromDeviceStrip({ at }: { at: number | undefined }) {
-  if (at === undefined) return null;
-  return <MessageBanner tone="neutral" name="work-from-device" busy><strong>From this device.</strong> Reading it again. <LastUpdate at={at} /></MessageBanner>;
-}
-
-export function ErrorStrip({ lines, retry, middle, title, also, at }: {
+/** A Work page that read nothing (section 7, #5971): in the middle, a heading ("Could not read issues", lists.md section 5),
+ * what each forge or machine said, and Try again, with `also` beside it (Settings ▸ Connectors, for a credential the forge
+ * refused). A failed read with something on screen is in the footer instead (WorkFooter). */
+export function ErrorStrip({ lines, retry, middle, title, also }: {
   lines: readonly string[]; retry: () => void; middle?: boolean; title?: string | undefined;
   also?: { words: string; run: () => void } | undefined;
-  /** What is shown is an earlier read (#5142): "Last update 5 min ago" after the words. */
-  at?: number | undefined;
 }) {
   if (lines.length === 0) return null;
   return (
@@ -260,7 +252,36 @@ export function ErrorStrip({ lines, retry, middle, title, also, at }: {
       {also && <button type="button" onClick={also.run}>{also.words}</button>}
     </>}>
       {title && <span class="strong">{title}</span>}{lines.map((l) => <span key={l}>{l}</span>)}
-      {at !== undefined && <LastUpdate at={at} />}
     </MessageBanner>
+  );
+}
+
+/** The footer bar of a Work page (#5971, epic #6348; the Mac's WorkPageBar and WorkListBar, #5968 to #5970), under the
+ * page, so it stays in sight. On the left, the read: Loading…, Updating…, From this device, Reading 2 of 3 machines…, or
+ * what failed, every line on hover, with Try again where something is shown; with no read to say, `idle` (a list's
+ * "Loading more…"). On the right, `count`, then "Last update 5 min ago" (#5139) once a read has ended. */
+export function WorkFooter({ state, count, at, retry, idle }: {
+  state: FooterState; count?: string | undefined; at?: number | undefined; retry?: (() => void) | undefined; idle?: ComponentChildren;
+}) {
+  const right = footerShowsRight(state);
+  const help = state.kind === "couldNotUpdate" ? state.help : footerWords(state);
+  return (
+    <footer class="work-footer quiet small" aria-live="polite">
+      <span class="work-footer-state">
+        {state.kind === "none" ? idle : <>
+          {footerBusy(state) && <span class="work-spinner" aria-hidden="true" />}
+          {footerFailure(state) && <span class="work-footer-warn" aria-hidden="true"><Icon name="triangle-alert" /></span>}
+          <span class="work-footer-words" title={help}>{footerWords(state)}</span>
+          {state.kind === "couldNotUpdate" && retry && <button type="button" class="link" onClick={retry}>Try again</button>}
+        </>}
+      </span>
+      {right && (count !== undefined || at !== undefined) && (
+        <span class="work-footer-age">
+          {count !== undefined && <span>{count}</span>}
+          {count !== undefined && at !== undefined && <span aria-hidden="true">·</span>}
+          {at !== undefined && <LastUpdate at={at} />}
+        </span>
+      )}
+    </footer>
   );
 }

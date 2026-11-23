@@ -348,6 +348,8 @@ Alex, 2026-11-12 (#5139): every page that shows cached data says how old it is, 
   *Reading 1 of 3 machines…*. An item's page, a release's page and Files changed have it
   too (#5970): an item with its Plan says the older of the two reads; a release's page says
   *No machine keeps lineage.* there; Files changed says no age, because its diff is not kept.
+  The web page has the same bar on every Work page (#5971), Work ▸ Next too, with the same
+  words; it sticks to the bottom of the pane.
 
 The pages and the plan are in `specs/5139-last-update/spec.md`.
 
