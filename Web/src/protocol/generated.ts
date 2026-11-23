@@ -3715,6 +3715,46 @@ export interface CredentialsOffer {
   signIns?: string[];
 }
 
+/**
+ * The landings in one hour or one day for cycle time (#6648): their samples, and how many merged
+ * PRs in it had no recorded start and so cannot be drawn.
+ */
+export interface CycleTimeBucket {
+  samples: CycleTimeSample[];
+  noStart: number;
+}
+
+/**
+ * cycletime/history's answer (#6648): the pull requests that landed, by the hour (168 hours) and
+ * the day (90 days), from this machine's lineage store on each ask. Each sample carries its
+ * durations, repo and level, so the clients take the medians, P85 and shares over the range a
+ * person picks.
+ */
+export interface CycleTimeHistory {
+  hours: Record<string, CycleTimeBucket>;
+  days: Record<string, CycleTimeBucket>;
+  now: string;
+  /**
+   * The host's time zone, an IANA identifier such as America/Los_Angeles, that its hour and day
+   * stamps are in (#1267). Absent from a host too old to say: read as the viewer's own.
+   */
+  timeZone?: string;
+}
+
+/**
+ * One issue that landed in a cycle-time bucket (#6648). cycle is from the start of work (#3562) to
+ * its last PR's merge. coding is from that start to the PR's creation (#4553), and pr from the
+ * creation to the merge: when the PR's opening was not recorded, coding and pr are absent and do
+ * not add to cycle.
+ */
+export interface CycleTimeSample {
+  cycle: number;
+  coding?: number;
+  pr?: number;
+  level: string;
+  repo: string;
+}
+
 export interface DaemonStatus {
   turnsInFlight: number;
   agentsLive: number;
@@ -16977,6 +17017,7 @@ export interface Methods {
   "control/status": { params: Empty; result: ControlStatus };
   "cost/state": { params: Empty; result: CostState };
   "credentials/offer": { params: CredentialsOffer; result: Empty };
+  "cycletime/history": { params: Empty; result: CycleTimeHistory };
   "daemon/policyState": { params: Empty; result: PolicyState };
   "dailyChecks/setSettings": { params: DailyChecksSettings; result: DailyChecksSettings };
   "dailyChecks/settings": { params: Empty; result: DailyChecksSettings };
@@ -17463,6 +17504,7 @@ export const MethodTarget = {
   "control/status": "control",
   "cost/state": "host",
   "credentials/offer": "host",
+  "cycletime/history": "host",
   "daemon/policyState": "host",
   "dailyChecks/setSettings": "host",
   "dailyChecks/settings": "host",
@@ -18163,6 +18205,9 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   CostLimits: { required: [], optional: ["perAgent", "daily", "perAgentTokens", "dailyTokens"] },
   CostState: { required: ["limits", "today", "day", "tokensToday"], optional: ["note", "organisation", "setBy"] },
   CredentialsOffer: { required: ["runtimes", "ownSignInOnly"], optional: ["notRelayed", "signIns"] },
+  CycleTimeBucket: { required: ["samples", "noStart"], optional: [] },
+  CycleTimeHistory: { required: ["hours", "days", "now"], optional: ["timeZone"] },
+  CycleTimeSample: { required: ["cycle", "level", "repo"], optional: ["coding", "pr"] },
   DaemonStatus: { required: ["turnsInFlight", "agentsLive"], optional: [] },
   DailyChecksSettings: { required: ["enabled", "every"], optional: [] },
   DayRecap: { required: ["agents", "peakAgents", "longestClear"], optional: ["prsMerged"] },

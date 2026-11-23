@@ -32,7 +32,7 @@ test("Reports' pages are grouped by the question each answers (#5280)", async ()
   // Each of Usage's panes is in the Me lens of the page it repeats.
   assert.deepEqual(n.usagePanesOf("spend"), ["spending", "tokens"]);
   assert.deepEqual(n.usagePanesOf("time"), ["time"]);
-  assert.deepEqual(n.usagePanesOf("outcomes"), ["velocity"]);
+  assert.deepEqual(n.usagePanesOf("outcomes"), ["velocity", "cycletime"]);
   assert.deepEqual(n.usagePanesOf("adoption"), []);
 });
 

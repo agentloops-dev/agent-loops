@@ -310,6 +310,8 @@ struct FolderListView: View {
                     .appText(.supporting).sidebarInk(.time).tag(SidebarItem.time)
                 VelocityRow().activityIcon("arrow.triangle.merge")
                     .appText(.supporting).sidebarInk(.velocity).tag(SidebarItem.velocity)
+                CycleTimeRow().activityIcon("hourglass")
+                    .appText(.supporting).sidebarInk(.cycletime).tag(SidebarItem.cycletime)
             } header: {
                 // The size of every other group's heading (#495). Reports (Alex, 2026-11-12): every
                 // page that reports on the work, Multiplier and Velocity among them; was Usage.

@@ -55,6 +55,7 @@ const CapControlRotate1 = "control.rotate/1"
 const CapControl1 = "control/1"
 const CapCost1 = "cost/1"
 const CapCredentials1 = "credentials/1"
+const CapCycletime1 = "cycletime/1"
 const CapDaemon1 = "daemon/1"
 const CapDailyChecks1 = "daily-checks/1"
 const CapDeploysCopy1 = "deploys.copy/1"
@@ -360,6 +361,7 @@ var HostCapabilities = pairs([][2]string{
 	{"cost/setLimits", "cost/1"},
 	{"cost/state", "cost/1"},
 	{"credentials/offer", "credentials/1"},
+	{"cycletime/history", "cycletime/1"},
 	{"daemon/lockReset", "host.lock/4"},
 	{"daemon/ping", "daemon/1"},
 	{"daemon/policyState", "host.policy/1"},

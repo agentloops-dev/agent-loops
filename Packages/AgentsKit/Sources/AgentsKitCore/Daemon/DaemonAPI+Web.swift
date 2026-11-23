@@ -172,6 +172,8 @@ public extension DaemonAPI {
                 Row(Method.timeHistory, params: Empty.self, result: TimeHistory.self, kind: .hostRequest),
                 // Velocity (#4596).
                 Row(Method.velocityHistory, params: Empty.self, result: VelocityHistory.self, kind: .hostRequest),
+                // Cycle time (#6648).
+                Row(Method.cycletimeHistory, params: Empty.self, result: CycleTimeHistory.self, kind: .hostRequest),
                 // Reports ▸ Features (#2165).
                 Row(Method.reportsFeatures, params: Empty.self, result: FeatureUsage.self, kind: .hostRequest),
                 Row(Method.reportsProblem, params: ProblemReportRequest.self, result: ProblemReport.self, kind: .hostRequest),

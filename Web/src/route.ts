@@ -14,7 +14,7 @@
 import { signal } from "@preact/signals";
 import { movedPage, movedReport, navSections, type NavSection, type UsagePane } from "./model/nav";
 
-export type ActivityPage = "events" | "runtimes" | "mcp" | "spending" | "tokens" | "time" | "velocity";
+export type ActivityPage = "events" | "runtimes" | "mcp" | "spending" | "tokens" | "time" | "velocity" | "cycletime";
 
 export interface Route {
   /** The section (#2141); none is the Overview, or Agents when a host is named. */

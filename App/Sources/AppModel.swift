@@ -263,6 +263,7 @@ final class AppModel {
             statusSecretsPage = nil
             showsTime = false
             showsVelocity = false
+            showsCycletime = false
             showsTokens = false
             machinePage = nil
             showsMachines = false
@@ -291,6 +292,7 @@ final class AppModel {
             statusSecretsPage = nil
             showsTime = false
             showsVelocity = false
+            showsCycletime = false
             showsTokens = false
             machinePage = nil
             showsMachines = false
@@ -318,6 +320,7 @@ final class AppModel {
             showsEvents = false
             showsTime = false
             showsVelocity = false
+            showsCycletime = false
             showsTokens = false
             machinePage = nil
             showsMachines = false
@@ -342,6 +345,7 @@ final class AppModel {
             showsRuntimes = false
             showsTime = false
             showsVelocity = false
+            showsCycletime = false
             showsTokens = false
             machinePage = nil
             showsMachines = false
@@ -362,6 +366,7 @@ final class AppModel {
         didSet {
             guard showsTime, showsTime != oldValue else { return }
             showsVelocity = false
+            showsCycletime = false
             showsSpending = false
             showsEvents = false
             showsRuntimes = false
@@ -404,6 +409,29 @@ final class AppModel {
         }
     }
 
+    var showsCycletime = false {
+        didSet {
+            guard showsCycletime, showsCycletime != oldValue else { return }
+            showsSpending = false
+            showsEvents = false
+            showsRuntimes = false
+            statusSecretsPage = nil
+            showsTime = false
+            showsVelocity = false
+            showsTokens = false
+            machinePage = nil
+            showsMachines = false
+            showsWork = false
+            showsDocs = false
+            showsMessages = false
+            showsAchievements = false
+            selection = nil
+            openWorkflow = nil
+            folderPage = nil
+            composing = false
+        }
+    }
+
     /// Whether the window is showing Tokens: what the work used in tokens, and the token
     /// limits (#956). A page like Cost, and not persisted for the same reason.
     var showsTokens = false {
@@ -415,6 +443,7 @@ final class AppModel {
             statusSecretsPage = nil
             showsTime = false
             showsVelocity = false
+            showsCycletime = false
             machinePage = nil
             showsMachines = false
             showsWork = false
@@ -443,6 +472,7 @@ final class AppModel {
             statusSecretsPage = nil
             showsTime = false
             showsVelocity = false
+            showsCycletime = false
             showsTokens = false
             showsMachines = false
             selection = nil
@@ -468,6 +498,7 @@ final class AppModel {
             statusSecretsPage = nil
             showsTime = false
             showsVelocity = false
+            showsCycletime = false
             showsTokens = false
             selection = nil
             openWorkflow = nil
@@ -491,6 +522,7 @@ final class AppModel {
             statusSecretsPage = nil
             showsTime = false
             showsVelocity = false
+            showsCycletime = false
             showsTokens = false
             machinePage = nil
             showsMachines = false
@@ -513,6 +545,7 @@ final class AppModel {
             statusSecretsPage = nil
             showsTime = false
             showsVelocity = false
+            showsCycletime = false
             showsTokens = false
             machinePage = nil
             showsMachines = false
@@ -537,6 +570,7 @@ final class AppModel {
             statusSecretsPage = nil
             showsTime = false
             showsVelocity = false
+            showsCycletime = false
             showsTokens = false
             machinePage = nil
             showsMachines = false
@@ -564,6 +598,7 @@ final class AppModel {
             statusSecretsPage = nil
             showsTime = false
             showsVelocity = false
+            showsCycletime = false
             showsTokens = false
             machinePage = nil
             showsMachines = false
@@ -678,6 +713,7 @@ final class AppModel {
         statusSecretsPage = nil
         showsTime = false
         showsVelocity = false
+        showsCycletime = false
         showsTokens = false
         machinePage = nil
         showsMachines = false
@@ -706,6 +742,7 @@ final class AppModel {
         statusSecretsPage = nil
         showsTime = false
         showsVelocity = false
+        showsCycletime = false
         showsTokens = false
         machinePage = nil
         showsMachines = false
@@ -760,6 +797,7 @@ final class AppModel {
             if showsTokens { return .tokens }
             if showsTime { return .time }
             if showsVelocity { return .velocity }
+            if showsCycletime { return .cycletime }
             if showsWork { return .work(workPlace.kind) }
             if showsDocs { return .docs }
             if showsMessages { return .messages }
@@ -788,6 +826,7 @@ final class AppModel {
                 statusSecretsPage = nil
                 showsTime = false
                 showsVelocity = false
+                showsCycletime = false
                 showsTokens = false
                 machinePage = nil
                 showsMachines = false
@@ -817,6 +856,8 @@ final class AppModel {
                 showsTime = true
             case .velocity:
                 showsVelocity = true
+            case .cycletime:
+                showsCycletime = true
             case .dashboard:
                 showDashboard()
             case .work(let kind):
@@ -850,6 +891,7 @@ final class AppModel {
                 statusSecretsPage = nil
                 showsTime = false
                 showsVelocity = false
+                showsCycletime = false
                 showsTokens = false
                 machinePage = nil
                 showsMachines = false
@@ -883,6 +925,7 @@ final class AppModel {
         statusSecretsPage = nil
         showsTime = false
         showsVelocity = false
+        showsCycletime = false
         showsTokens = false
         machinePage = nil
         showsMachines = false
@@ -901,6 +944,7 @@ final class AppModel {
         statusSecretsPage = nil
         showsTime = false
         showsVelocity = false
+        showsCycletime = false
         showsTokens = false
         machinePage = nil
         showsMachines = false
@@ -934,6 +978,7 @@ final class AppModel {
         statusSecretsPage = nil
         showsTime = false
         showsVelocity = false
+        showsCycletime = false
         showsTokens = false
         machinePage = nil
         showsMachines = false
@@ -1182,6 +1227,7 @@ final class AppModel {
         statusSecretsPage = nil
         showsTime = false
         showsVelocity = false
+        showsCycletime = false
         showsTokens = false
         machinePage = nil
         showsMachines = false
@@ -2349,6 +2395,12 @@ final class AppModel {
     func velocityHistory() async -> VelocityHistory? {
         guard let history = try? await macClient.call(DaemonAPI.Method.velocityHistory, Optional<String>.none,
                                                     returning: VelocityHistory.self) else { return nil }
+        return .merged([history])
+    }
+
+    func cycleTimeHistory() async -> CycleTimeHistory? {
+        guard let history = try? await macClient.call(DaemonAPI.Method.cycletimeHistory, Optional<String>.none,
+                                                    returning: CycleTimeHistory.self) else { return nil }
         return .merged([history])
     }
 

@@ -197,12 +197,12 @@ export function groupedPages(list: readonly NavPage[]): [string, NavPage[]][] {
 
 /** Usage's panes: Activity's Cost, Tokens and Time, then Velocity, the PRs that landed (#4598). Since #5280 each is in the
  * Me lens of the report it repeats (usageReport). */
-export type UsagePane = "spending" | "tokens" | "time" | "velocity";
-export const usagePanes: readonly UsagePane[] = ["spending", "tokens", "time", "velocity"];
-export const usagePaneTitle: Record<UsagePane, string> = { spending: "Cost", tokens: "Tokens", time: "Time", velocity: "Velocity" };
+export type UsagePane = "spending" | "tokens" | "time" | "velocity" | "cycletime";
+export const usagePanes: readonly UsagePane[] = ["spending", "tokens", "time", "velocity", "cycletime"];
+export const usagePaneTitle: Record<UsagePane, string> = { spending: "Cost", tokens: "Tokens", time: "Time", velocity: "Velocity", cycletime: "Cycle time" };
 
-/** The report whose Me lens draws each of Usage's panes (#5280): Cost and Tokens on Spend, Time on Time, Velocity on Outcomes. */
-export const usageReport: Record<UsagePane, string> = { spending: "spend", tokens: "spend", time: "time", velocity: "outcomes" };
+/** The report whose Me lens draws each of Usage's panes (#5280): Cost and Tokens on Spend, Time on Time, Velocity and Cycle time on Outcomes. */
+export const usageReport: Record<UsagePane, string> = { spending: "spend", tokens: "spend", time: "time", velocity: "outcomes", cycletime: "outcomes" };
 
 /** The panes of Usage that a report's Me lens draws (#5280), in Usage's order. */
 export function usagePanesOf(report: string): UsagePane[] {
