@@ -102,7 +102,7 @@ func (s *Service) startCapacityMonitor() {
 	go func() {
 		t := time.NewTicker(controlCapacityEvery)
 		defer t.Stop()
-		var previous wire.CapacityLevel = wire.CapacityLevelOk
+		previous := wire.CapacityLevelOk
 		var lastBelow wire.CapacityLevel
 		below := 0
 		for {
