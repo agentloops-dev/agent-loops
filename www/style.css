@@ -68,6 +68,7 @@ h3 { font-size: 1.05rem; margin: 0 0 0.4em; }
 
 section { padding: 64px 0; border-bottom: 1px solid var(--paper-rule); }
 section:last-child { border-bottom: 0; }
+.get { background: var(--paper-sidebar); }
 
 /* Buttons */
 .actions { display: flex; flex-wrap: wrap; gap: 12px; margin: 24px 0 8px; }
