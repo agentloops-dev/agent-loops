@@ -269,7 +269,7 @@ func TestDigitalOceanMakesADropletWithNoKeyWhenTheTokenMayNotAddOne(t *testing.T
 	f, text := fakeDigitalOceanAccount(t, &doAccount{keys: map[string]bool{}, keyStatus: http.StatusForbidden})
 	p, _ := apiProvider(t, text, DigitalOceanSecret, token)
 	p.Folder = t.TempDir()
-	_, said, err := p.Create("devbox-4000001", map[string]any{}, "curl … | sh")
+	_, said, err := p.Create("devbox-4000001", map[string]any{"region": "nyc3", "size": "s-2vcpu-4gb", "image": digitalOceanImage}, "curl … | sh")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -322,6 +322,7 @@ func TestDigitalOceanDefaultsToTheAgentsTagAndUser(t *testing.T) {
 }
 
 func TestTheServersMakeSaysWhatItDid(t *testing.T) {
+	atOffset(t, -8)
 	_, text := fakeDigitalOceanAccount(t, &doAccount{keys: map[string]bool{}})
 	p, _ := apiProvider(t, text, DigitalOceanSecret, token)
 	s := NewServer(p.Config, quick, p.Run, "test")
@@ -332,7 +333,7 @@ func TestTheServersMakeSaysWhatItDid(t *testing.T) {
 		t.Fatal(err)
 	}
 	said := at(answer, "structuredContent.said")
-	if fmt.Sprint(said) != "[Made an ssh key for Agent Loops and added it to your DigitalOcean account. Made droplet devbox-4000001 in nyc3: s-2vcpu-4gb.]" {
+	if fmt.Sprint(said) != "[Made an ssh key for Agent Loops and added it to your DigitalOcean account. Made droplet devbox-4000001 in San Francisco 3: 2 vCPUs · 4 GB · 80 GB disk · $24/month.]" {
 		t.Errorf("%v", answer)
 	}
 	options, err := s.Handle("tools/call", map[string]any{"name": "workspace_options"})
