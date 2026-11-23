@@ -178,6 +178,14 @@ func TestInstallTheAppsOwnCopies(t *testing.T) {
 	d, c := start(t, t.TempDir())
 	tools := filepath.Join(t.TempDir(), "tools")
 	d.serveInstall(tools, bundle)
+	// The install ends before the answer (#6865): the answer is still Installing.
+	d.installStarted = func(id string, ended <-chan struct{}) {
+		select {
+		case <-ended:
+		case <-afterLimit(t):
+			t.Errorf("%s: the install did not end", id)
+		}
+	}
 	// A device's connection may not install one that is not there.
 	if _, err := d.installRuntime(&Client{conn: deviceConn{newConn()}}, "codex"); err == nil {
 		t.Fatal("a device installed")

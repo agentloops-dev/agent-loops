@@ -93,6 +93,9 @@ type installBook struct {
 	toolsets map[string]*macToolset
 	installs map[string]bool
 	states   map[string]wire.RuntimeAvailability
+	// installStarted runs after runtimes/install starts the install's job, before the
+	// answer, with a channel that closes when the job ends: a test waits for it (#6865).
+	installStarted func(id string, ended <-chan struct{})
 }
 
 // macToolset is a Toolset or an ArchiveToolset the app's bundle carries.
@@ -394,8 +397,12 @@ func (d *Daemon) installRuntime(c *Client, id string) (wire.RuntimeStatus, error
 	d.installs[id] = true
 	d.instMu.Unlock()
 	log.Printf("installing %s", id)
-	d.setInstallState(r, wire.RuntimeAvailability{Installing: &wire.RuntimeAvailabilityInstalling{}})
+	// The answer is the Installing state, taken before the job starts: a fast install can
+	// end before the answer is read (#6865).
+	answer := d.setInstallState(r, wire.RuntimeAvailability{Installing: &wire.RuntimeAvailabilityInstalling{}})
+	ended := make(chan struct{})
 	d.goJob("install "+id, func() {
+		defer close(ended)
 		result := d.install(r, *recipe, func(step string) {
 			d.instMu.Lock()
 			going := d.installs[id]
@@ -418,7 +425,10 @@ func (d *Daemon) installRuntime(c *Client, id string) (wire.RuntimeStatus, error
 			d.setInstallState(r, result)
 		}
 	})
-	return d.statusOf(r), nil
+	if d.installStarted != nil {
+		d.installStarted(id, ended)
+	}
+	return answer, nil
 }
 
 // installOnFirstUse is a runtime that prefers the app's copy (#4512) used on a Mac that has
@@ -446,11 +456,14 @@ func (d *Daemon) installOnFirstUse(r *runtimeDef) bool {
 	return true
 }
 
-func (d *Daemon) setInstallState(r *runtimeDef, s wire.RuntimeAvailability) {
+// setInstallState records s for r and tells every client; it returns the status it told.
+func (d *Daemon) setInstallState(r *runtimeDef, s wire.RuntimeAvailability) wire.RuntimeStatus {
 	d.instMu.Lock()
 	d.states[r.ID] = s
 	d.instMu.Unlock()
-	Broadcast(d, wire.NotifyRuntimeChanged, d.statusOf(r))
+	status := d.statusOf(r)
+	Broadcast(d, wire.NotifyRuntimeChanged, status)
+	return status
 }
 
 func installFailed(reason string) wire.RuntimeAvailability {
