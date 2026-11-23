@@ -17,7 +17,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 	"github.com/ulikunitz/xz"
 )
@@ -175,7 +174,6 @@ func waitInstalled(t *testing.T, c *conn, id string) wire.RuntimeStatus {
 }
 
 func TestInstallTheAppsOwnCopies(t *testing.T) {
-	flaky.UnderLoad(t, "#6865")
 	_, bundle := fakeVendors(t)
 	d, c := start(t, t.TempDir())
 	tools := filepath.Join(t.TempDir(), "tools")
