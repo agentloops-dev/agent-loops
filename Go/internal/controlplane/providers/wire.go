@@ -60,12 +60,17 @@ func methodNotFound(method string) *Failure {
 
 // ProviderFailure is ProviderFailure: a provider's failure, in words for the strip and the
 // Providers page.
-type ProviderFailure struct{ Words string }
+type ProviderFailure struct {
+	Words string
+	// Code is why, when a client can act on it (#6072): denied, disconnected,
+	// scope_missing, account_inactive or expired. Clients get it as the error's data.reason.
+	Code string
+}
 
 func (f *ProviderFailure) Error() string { return f.Words }
 
 func providerFailure(format string, args ...any) *ProviderFailure {
-	return &ProviderFailure{fmt.Sprintf(format, args...)}
+	return &ProviderFailure{Words: fmt.Sprintf(format, args...)}
 }
 
 // Caller is ControlRouter.Caller: the client session that asked.
@@ -168,6 +173,7 @@ var WorkspaceMethods = map[string]bool{
 	MethodHostsStart: true, MethodHostsStop: true, MethodHostsKeep: true, MethodHostsListKept: true,
 	MethodHostsDropKept: true, MethodHostsRetryKept: true, MethodProvidersOptions: true, MethodProvidersCreate: true,
 	MethodHostsDelete: true, MethodProvidersMakeDefault: true, MethodProvidersDeleteWorkspace: true,
+	MethodProvidersOAuthStart: true, MethodProvidersOAuthFinish: true,
 }
 
 // AgentWorkspaceMethods is DaemonAPI.Method.agentWorkspaceMethods: what an agent may ask
