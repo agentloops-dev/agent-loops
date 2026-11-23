@@ -114,7 +114,7 @@ struct DigitalOceanConnect: View {
             }
         case .refused(let text, let fix):
             Label { Text(text).fixedSize(horizontal: false, vertical: true) } icon: {
-                Image(icon: "exclamationmark.triangle").foregroundStyle(.orange)
+                Image(icon: "exclamationmark.triangle").tinted(.attention)
             }
             switch fix {
             case .connect:
