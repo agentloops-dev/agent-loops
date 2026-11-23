@@ -20,7 +20,7 @@ func TestRootRegistersTodaysCommands(t *testing.T) {
 		}
 	}
 	sort.Strings(got)
-	want := []string{"folder", "ls", "pair", "status", "unpair"}
+	want := []string{"auth", "folders", "ls"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("commands: %v, want %v", got, want)
 	}
@@ -34,7 +34,7 @@ func TestRootRegistersTodaysCommands(t *testing.T) {
 			t.Errorf("help is missing %s:\n%s", s, help)
 		}
 	}
-	for _, future := range []string{"auth", "config", "completion", "-o, --output", "--profile", "--filter", "--limit"} {
+	for _, future := range []string{"config", "completion", "-o, --output", "--profile", "--filter", "--limit"} {
 		if strings.Contains(help, future) {
 			t.Errorf("help has a noun or flag that does not exist yet: %s", future)
 		}
@@ -52,8 +52,8 @@ func TestCommandsSayTheirOwnShape(t *testing.T) {
 		help []string
 		msg  string
 	}{
-		{[]string{"pair"}, []string{"pair", "--help"}, "loops pair '<code>'"},
-		{[]string{"folder"}, []string{"folder", "add", "--help"}, "loops folder add [dir]"},
+		{[]string{"auth"}, []string{"auth", "--help"}, "loops auth <login|logout|status>"},
+		{[]string{"folders"}, []string{"folders", "add", "--help"}, "loops folders add [dir]"},
 	} {
 		err := run(context.Background(), tc.args, &bytes.Buffer{})
 		if err == nil || !strings.Contains(err.Error(), tc.msg) {

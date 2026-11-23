@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -16,15 +15,15 @@ import (
 
 func init() {
 	register(func(a *app, root *cobra.Command) {
-		folder := &cobra.Command{
-			Use:   "folder",
-			Short: "folders this terminal works in",
+		folders := &cobra.Command{
+			Use:   "folders add [dir]",
+			Short: "folders this machine has",
 			Args:  cobra.ArbitraryArgs,
 			RunE: func(cmd *cobra.Command, args []string) error {
-				return &exit{code: exitError, msg: "loops folder add [dir]"}
+				return &exit{code: exitError, msg: "loops folders add [dir]"}
 			},
 		}
-		folder.AddCommand(&cobra.Command{
+		folders.AddCommand(&cobra.Command{
 			Use:   "add [dir]",
 			Short: "add this directory (or dir) as a folder",
 			Args:  cobra.MaximumNArgs(1),
@@ -33,20 +32,24 @@ func init() {
 				if len(args) == 1 {
 					dir = args[0]
 				}
-				return folderAdd(a.ctx, a.out, a.o, dir)
+				return folderAdd(a.ctx, os.Stderr, a.o, dir)
 			},
 		})
-		root.AddCommand(folder)
+		root.AddCommand(folders)
 	})
 }
 
-func folderAdd(ctx context.Context, w io.Writer, o options, dir string) error {
+func folderAdd(ctx context.Context, say io.Writer, o options, dir string) error {
 	s, err := dial(ctx, &o)
 	if err != nil {
 		return err
 	}
 	defer s.Close()
-	list, err := machines(ctx, s)
+	return addFolder(ctx, say, s, o, dir)
+}
+
+func addFolder(ctx context.Context, say io.Writer, c caller, o options, dir string) error {
+	list, err := machines(ctx, c)
 	if err != nil {
 		return unreachable(o.controlName, err)
 	}
@@ -67,16 +70,9 @@ func folderAdd(ctx context.Context, w io.Writer, o options, dir string) error {
 		dir = filepath.Join(cwd, dir)
 	}
 	p := place{machine: m, dir: filepath.Clean(dir)}
-	r, err := s.Call(ctx, string(m.ID), "folders/add", wire.AddFolderRequest{Folder: store.PathURL(p.dir)})
-	if err != nil {
-		return &exit{code: exitError, msg: fmt.Sprintf("Could not add %s on %s: %v", tilde(p.dir), p.machineName(), err)}
+	if _, err := c.Call(ctx, string(m.ID), "folders/add", wire.AddFolderRequest{Folder: store.PathURL(p.dir)}); err != nil {
+		return &exit{code: exitError, msg: fmt.Sprintf("Cannot add %s: %v\nNothing changed.", tilde(p.dir), reason(err)) + debugLine(err)}
 	}
-	var added wire.FolderSummary
-	_ = json.Unmarshal(r, &added)
-	p.folder = added.Folder.Folder
-	if p.folder == "" {
-		p.folder = store.PathURL(p.dir)
-	}
-	fmt.Fprintf(w, "Added %s on %s.\nStart a session: loops \"what this folder needs\"\n", p.folderName(), p.machineName())
+	fmt.Fprintf(say, "Added %s as a folder on %s.\n", tilde(p.dir), p.machineName())
 	return nil
 }
