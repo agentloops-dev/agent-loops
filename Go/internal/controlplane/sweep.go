@@ -797,6 +797,20 @@ func (s *Service) sweepServing(events *eventSweep, backupsSwept *string) (sweepR
 				return s.phase.now() == phaseServing
 			}
 		})
+	if err == nil {
+		st := s.cfg.Store
+		if unwrapped, ok := st.(interface{ Unwrap() store.Store }); ok {
+			st = unwrapped.Unwrap()
+		}
+		if folder, ok := st.(*store.Folder); ok {
+			files, size, statsErr := folder.Stats()
+			if statsErr == nil {
+				s.metrics.setStoreSize(files, size)
+			} else {
+				s.log("store: capacity size not read: " + statsErr.Error())
+			}
+		}
+	}
 	// Once a day, the backups no host of their owner prunes any more (#2293).
 	if day := time.Now().UTC().Format(sweptDayLayout); err == nil && s.backups != nil && day != *backupsSwept {
 		if err := s.backups.pruneOrphans(context.Background()); err != nil {

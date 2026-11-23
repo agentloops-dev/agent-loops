@@ -168,6 +168,26 @@ func TestMetricsMethodsAreBounded(t *testing.T) {
 	}
 }
 
+func TestCapacityMetricsAreGauges(t *testing.T) {
+	m := newMetrics()
+	m.setCapacity(controlCapacity{level: "near", reason: "pressure_io", load1: 2.1, load5: 1.5,
+		pressureMemory: 5.1, pressureIO: 10.1, memoryAvailable: 123, swapUsed: 4, heapInuse: 456,
+		goroutines: 7, openFiles: 8})
+	m.setStoreSize(9, 1000)
+	var b strings.Builder
+	m.write(&b, gauges{phase: phaseServing})
+	for _, want := range []string{
+		"agents_control_capacity_level 1", `agents_control_capacity_reason{reason="pressure_io"} 1`,
+		"agents_control_load_per_core 2.1", "agents_control_pressure_io_full_avg60 10.1",
+		"agents_control_memory_available_bytes 123", "agents_control_heap_inuse_bytes 456",
+		"agents_control_goroutines 7", "agents_control_open_files 8", "agents_control_store_files 9", "agents_control_store_bytes 1000",
+	} {
+		if !strings.Contains(b.String(), want) {
+			t.Errorf("metrics do not contain %q", want)
+		}
+	}
+}
+
 // stalledWriter is a scraper that stops reading: its first write never returns until let go.
 type stalledWriter struct {
 	writing chan struct{}

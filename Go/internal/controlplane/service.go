@@ -511,6 +511,7 @@ func (s *Service) Start(ctx context.Context) (int, error) {
 		}
 	}
 	go s.refreshEvery(s.backstop(15 * time.Second))
+	s.startCapacityMonitor()
 	go s.sweepEveryHour()
 	s.startPools()
 	go s.signIns.checkEvery(time.Hour, s.stop)

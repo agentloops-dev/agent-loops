@@ -659,6 +659,36 @@ The metrics are:
 | `agents_control_leases_held`, `agents_control_copies` | With several copies: machine leases that this copy holds, and the copies it knows |
 | `agents_control_phase{phase}` | 1 for this copy's phase: `serving`, `receiving`, `frozen` or `forwarding` |
 | `agents_control_up_seconds`, `agents_control_build_info{version}` | How long it has run, and its version |
+| `agents_control_capacity_level` | 0 for `ok`, 1 for `near`, and 2 for `full` |
+| `agents_control_capacity_reason{reason}` | 1 for the signal that set the current level: `load`, `pressure_io`, `pressure_memory` or `hysteresis` |
+| `agents_control_load_per_core`, `agents_control_load_per_core5` | One and five minute load averages, each divided by the number of CPU cores |
+| `agents_control_pressure_io_full_avg60`, `agents_control_pressure_memory_full_avg60` | Linux PSI `full avg60`, in percent. They are 0 when PSI is not available |
+| `agents_control_memory_available_bytes`, `agents_control_swap_used_percent` | Available physical memory in bytes, and percent of swap in use |
+| `agents_control_heap_inuse_bytes`, `agents_control_goroutines`, `agents_control_open_files` | Go heap objects in use, goroutine count, and open file descriptor count. Open files are 0 when `/proc` is not available |
+| `agents_control_store_files`, `agents_control_store_bytes` | Regular file count and total bytes in a folder store, updated during the hourly sweep. They are 0 for other store types |
+
+The control plane samples local load, memory, swap and process data every 15 seconds. It
+does not send network traffic for these measurements. Load above 2 per core or I/O PSI
+`full avg60` above 10 or memory PSI above 5 sets `near`. Load above 3, I/O PSI above 25,
+or memory PSI above 15 sets `full`. These PSI lines are percentages. The level rises at
+once and falls after two looks under its line. Available memory, swap, heap, goroutines,
+open files and folder store size are reported, but they do not set the level. The level
+does not delay or refuse work.
+
+Alert when the copy has stayed at full for five minutes:
+
+```yaml
+groups:
+  - name: agents-control
+    rules:
+      - alert: AgentsControlAtCapacity
+        expr: agents_control_capacity_level >= 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Agent Loops control plane is at capacity
+```
 
 A method name gets a label of its own for the first 300 names only. After that, the count
 goes to `other`, so a client can't make the metrics grow without end.
