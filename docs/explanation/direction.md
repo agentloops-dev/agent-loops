@@ -6,7 +6,9 @@ devices: [mac, iphone, ipad, server]
 
 # Direction
 
-Agent Loops is a software factory you can run yourself. Many coding agents work at once on
+Agent Loops is agentic software delivery. Agents do the work of the whole software
+lifecycle, and a person is not necessary for each step. It has three parts: idea to epic,
+epic to merged pull request, and deployment and rollback. Many coding agents work at once on
 machines in the cloud or on your desk. You watch and answer them from a Mac, a phone or a
 browser. The tools you work with every day, such as the tracker, code review, CI and mail,
 show in the same place.

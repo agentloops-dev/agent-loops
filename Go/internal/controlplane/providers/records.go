@@ -49,6 +49,9 @@ type ProviderRecord struct {
 	// When it was added, so the first one added is the default for New Machine (#3972).
 	// Nil for one added before it was kept.
 	AddedAt *records.Stamp
+	// Whose account its OAuth connection is for (#6072); nil for a pasted token. The
+	// tokens stay on its machine.
+	OAuth *OAuthConnection
 	// What a later build wrote that this one does not know, written back as it was.
 	Extra records.Extra
 }
@@ -67,11 +70,19 @@ type providerJSON struct {
 	Group        *string        `json:"group,omitempty"`
 	Machine      *string        `json:"machine,omitempty"`
 	AddedAt      *records.Stamp `json:"addedAt,omitempty"`
+	OAuth        *OAuthConnection `json:"oauth,omitempty"`
+}
+
+// OAuthConnection is a provider connected with OAuth (#6072): the account and the team
+// the person chose on the provider's consent page. Never a token.
+type OAuthConnection struct {
+	Account string `json:"account,omitempty"`
+	Team    string `json:"team,omitempty"`
 }
 
 func (p ProviderRecord) MarshalJSON() ([]byte, error) {
 	j := providerJSON{p.ID, p.Name, p.Kind, p.Commands, p.SecretNames, p.Capabilities, p.Contract, p.Rev, p.Forgotten,
-		p.ForgottenAt, p.Group, p.Machine, p.AddedAt}
+		p.ForgottenAt, p.Group, p.Machine, p.AddedAt, p.OAuth}
 	if j.SecretNames == nil {
 		j.SecretNames = []string{}
 	}
@@ -88,7 +99,7 @@ func (p *ProviderRecord) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	*p = ProviderRecord{j.ID, j.Name, j.Kind, j.Commands, j.SecretNames, j.Capabilities, j.Contract, j.Rev, j.Forgotten,
-		j.ForgottenAt, j.Group, j.Machine, j.AddedAt, extra}
+		j.ForgottenAt, j.Group, j.Machine, j.AddedAt, j.OAuth, extra}
 	return nil
 }
 

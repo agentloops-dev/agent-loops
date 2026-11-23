@@ -74,7 +74,11 @@ func Ask(router Router, host, name, method string, params any, patience time.Dur
 		return nil, providerFailure("%s, which carries it, answered with something this control plane can’t read.", name)
 	}
 	if answer.Error != nil {
-		return nil, &ProviderFailure{*answer.Error}
+		failure := &ProviderFailure{Words: *answer.Error}
+		if answer.Code != nil {
+			failure.Code = string(*answer.Code)
+		}
+		return nil, failure
 	}
 	return answer.Result, nil
 }

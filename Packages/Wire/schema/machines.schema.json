@@ -1618,7 +1618,10 @@
         "sort": {
           "description": "The order, as in ForgeListRequest (#6538): priority, else the last updated first; each machine sorts its own list.",
           "type": "string",
-          "enum": ["updated", "priority"]
+          "enum": [
+            "updated",
+            "priority"
+          ]
         },
         "limit": {
           "type": "integer"
@@ -2855,18 +2858,48 @@
       "type": "object",
       "description": "move/changed (#4641): how a move to another machine goes, whoever asked for it. `sent` of `total` bytes of the branch are on that machine (0 of 0 while the bundle is made); `branchSent` once they are all there and the session itself goes; `finished` once it ended, whichever way: with no `problem` the session is there and gone from here, else `problem` says why it stopped, in the person's words, and the session stays here.",
       "properties": {
-        "agentID": { "$ref": "core.schema.json#/definitions/UUID" },
-        "machine": { "type": "string" },
-        "machineName": { "type": "string" },
-        "folder": { "type": "string" },
-        "startedAt": { "$ref": "core.schema.json#/definitions/WireDate" },
-        "sent": { "type": "integer" },
-        "total": { "type": "integer" },
-        "branchSent": { "type": "boolean" },
-        "finished": { "type": "boolean" },
-        "problem": { "type": "string" }
+        "agentID": {
+          "$ref": "core.schema.json#/definitions/UUID"
+        },
+        "machine": {
+          "type": "string"
+        },
+        "machineName": {
+          "type": "string"
+        },
+        "folder": {
+          "type": "string"
+        },
+        "startedAt": {
+          "$ref": "core.schema.json#/definitions/WireDate"
+        },
+        "sent": {
+          "type": "integer"
+        },
+        "total": {
+          "type": "integer"
+        },
+        "branchSent": {
+          "type": "boolean"
+        },
+        "finished": {
+          "type": "boolean"
+        },
+        "problem": {
+          "type": "string"
+        }
       },
-      "required": ["agentID", "machine", "machineName", "folder", "startedAt", "sent", "total", "branchSent", "finished"],
+      "required": [
+        "agentID",
+        "machine",
+        "machineName",
+        "folder",
+        "startedAt",
+        "sent",
+        "total",
+        "branchSent",
+        "finished"
+      ],
       "additionalProperties": false
     },
     "MoveRequest": {
@@ -3391,13 +3424,24 @@
     },
     "ProviderCarried": {
       "type": "object",
-      "description": "What a provider's machine answers to providers/carry, providers/keepSecrets, providers/forget and providers/ssh (#3398): the call's result, or why it failed, in words for the person. Channel 0 has no error path.",
+      "description": "What a provider's machine answers to providers/carry, providers/keepSecrets, providers/forget and providers/ssh (#3398): the call's result, or why it failed, in words for the person, and for a failure a client can act on, its `code` (#6072). Channel 0 has no error path.",
       "properties": {
         "result": {
           "$ref": "core.schema.json#/definitions/JSONValue"
         },
         "error": {
           "type": "string"
+        },
+        "code": {
+          "type": "string",
+          "enum": [
+            "denied",
+            "disconnected",
+            "scope_missing",
+            "account_inactive",
+            "expired"
+          ],
+          "description": "Why it failed, for a client to say (#6072, W2b): denied (the person chose Deny), disconnected (the provider no longer takes the connection: it was removed there, or its refresh was refused), scope_missing (the person gave less than Agent Loops needs), account_inactive (the account can't make machines yet, such as no payment method), expired (the sign-in was not finished in time; start again)."
         }
       },
       "additionalProperties": false
@@ -3506,6 +3550,167 @@
       },
       "required": [
         "providers"
+      ],
+      "additionalProperties": false
+    },
+    "ProviderOAuth": {
+      "type": "object",
+      "description": "A provider connected with OAuth (#6072): whose account and team its machine's token is for, and whether the provider still takes it. Never a token.",
+      "properties": {
+        "account": {
+          "type": "string",
+          "description": "The account's email, as the provider said at the connect."
+        },
+        "team": {
+          "type": "string",
+          "description": "The team the person chose on the provider's consent page."
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "connected",
+            "disconnected"
+          ],
+          "description": "disconnected: its last list was refused (the person removed Agent Loops at the provider, or its refresh failed): connect again."
+        }
+      },
+      "required": [
+        "state"
+      ],
+      "additionalProperties": false
+    },
+    "ProviderOAuthCarried": {
+      "type": "object",
+      "description": "providers/oauth's result in ProviderCarried (#6072): for start, the address to open and its state; for finish, whose account the token is for and the names of the secrets kept. Never a token.",
+      "properties": {
+        "url": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        },
+        "account": {
+          "type": "string"
+        },
+        "team": {
+          "type": "string"
+        },
+        "scope": {
+          "type": "string"
+        },
+        "secretNames": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "ProviderOAuthCarry": {
+      "type": "object",
+      "description": "providers/oauth (#6072): the control plane asks the machine that will carry a provider to start an OAuth connection (make and keep the PKCE verifier, about 10 minutes, and give the address to open) or to finish it (spend the code with the verifier, and keep the tokens for `provider` in ~/.agents-secrets). The verifier and the tokens never leave that machine.",
+      "properties": {
+        "op": {
+          "type": "string",
+          "enum": [
+            "start",
+            "finish"
+          ]
+        },
+        "preset": {
+          "type": "string"
+        },
+        "provider": {
+          "$ref": "core.schema.json#/definitions/ProviderID"
+        },
+        "origin": {
+          "type": "string",
+          "description": "start: the web page's origin, for the hand-back page; none for the Mac and the Remote."
+        },
+        "state": {
+          "type": "string"
+        },
+        "code": {
+          "type": "string"
+        },
+        "error": {
+          "type": "string",
+          "description": "finish: the provider's error from the callback, such as access_denied."
+        }
+      },
+      "required": [
+        "op",
+        "preset"
+      ],
+      "additionalProperties": false
+    },
+    "ProviderOAuthFinish": {
+      "type": "object",
+      "description": "providers/oauthFinish (#6072): what the hand-back page gave the client (the code and the state, or the provider's error). The machine that started it spends the code; the control plane then adds the provider (or, with the `id` of one it started for, connects it again) with no secret of its own.",
+      "properties": {
+        "state": {
+          "type": "string"
+        },
+        "code": {
+          "type": "string"
+        },
+        "error": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string",
+          "description": "The new provider's name; none is the preset's provider's name, such as DigitalOcean."
+        }
+      },
+      "additionalProperties": false
+    },
+    "ProviderOAuthStart": {
+      "type": "object",
+      "description": "providers/oauthStart (#6072): connect a provider with OAuth instead of a pasted token. `machine` carries it (the caller's first online one when none); `id` connects an existing provider again; `origin` is the web page's.",
+      "properties": {
+        "preset": {
+          "type": "string",
+          "enum": [
+            "digitalocean-api"
+          ]
+        },
+        "machine": {
+          "$ref": "#/definitions/MachineRef"
+        },
+        "id": {
+          "$ref": "core.schema.json#/definitions/ProviderID"
+        },
+        "origin": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "preset"
+      ],
+      "additionalProperties": false
+    },
+    "ProviderOAuthStarted": {
+      "type": "object",
+      "description": "providers/oauthStart's result: the provider's consent page to open (in ASWebAuthenticationSession, or a new window on the web), its state, and the machine that will keep the connection.",
+      "properties": {
+        "url": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        },
+        "machine": {
+          "$ref": "#/definitions/MachineRef"
+        },
+        "machineName": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "url",
+        "state",
+        "machine"
       ],
       "additionalProperties": false
     },
@@ -3677,6 +3882,10 @@
         "sshToolMissing": {
           "type": "string",
           "description": "The CLI its machines are reached through over ssh (gh, coder) when the control plane's machine has none (#3367). Absent when it needs none or has it."
+        },
+        "oauth": {
+          "$ref": "#/definitions/ProviderOAuth",
+          "description": "It is connected with OAuth (#6072), not a pasted token: whose account, and whether the connection still works. Absent for a pasted token."
         }
       },
       "required": [
