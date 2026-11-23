@@ -1,8 +1,10 @@
 # Agent Loops
 
-Keep your editor and your coding agent. Agent Loops runs several agents at once, shows which
-one needs you, lets them work together and on their own, and lets you answer them from
-your phone. [Why Agent Loops](https://docs.agentloops.dev/explanation/why-agents/)
+Agent Loops is agentic software delivery: agents take the work from idea to epic, from epic
+to merged pull request, and through deployment and rollback, and a person is not necessary
+for each step. Keep your editor and your coding agent. Agent Loops runs several agents at
+once, shows which one needs you, and lets you answer them from your phone.
+[Why Agent Loops](https://docs.agentloops.dev/explanation/why-agents/)
 
 A Mac app, rebuilt one feature at a time against a written spec.
 
