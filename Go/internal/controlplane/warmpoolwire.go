@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/wire"
@@ -66,8 +68,10 @@ func (b poolsBackend) Ping(provider, workspace string) bool {
 
 // Bind gives a pool machine to a person: its owner and Stop when idle, then the catch-up (#5365).
 // Steps 1 to 5 were done in the pool; 6 (projects), 7 (sign in) and 8 (smoke) wait to run again
-// on the machine, as Try Again would run them.
-func (b poolsBackend) Bind(person, provider, workspace string, stopWhenIdle *int) (string, error) {
+// on the machine, as Try Again would run them. Step 6 names the pool's projects, which the
+// person's Mac sends after the claim (#6890): a pool machine is made with no folders, so its
+// "No projects to prepare" is not the claimed machine's.
+func (b poolsBackend) Bind(person, provider, workspace string, stopWhenIdle *int, projects []string) (string, error) {
 	host := b.s.providers.PoolHost(provider, workspace)
 	if host == nil {
 		return "", fmt.Errorf("the machine has not joined")
@@ -82,6 +86,9 @@ func (b poolsBackend) Bind(person, provider, workspace string, stopWhenIdle *int
 				continue
 			}
 			st.Steps[i] = storedSetupStep{ID: st.Steps[i].ID, State: wire.MachineSetupStateWaiting}
+			if st.Steps[i].ID == wire.MachineSetupStepIDProjects {
+				st.Steps[i].Detail = claimProjectsDetail(projects)
+			}
 		}
 		st.Ready = nil
 		return nil
@@ -91,6 +98,21 @@ func (b poolsBackend) Bind(person, provider, workspace string, stopWhenIdle *int
 	}
 	b.s.setupChanged(context.Background(), host.ID)
 	return host.ID, nil
+}
+
+// claimProjectsDetail is step 6's line on a claimed machine (#6890): the pool's projects that
+// the Mac sends, by folder name; "" for a pool with none.
+func claimProjectsDetail(projects []string) string {
+	names := make([]string, 0, len(projects))
+	for _, p := range projects {
+		if name := filepath.Base(strings.TrimRight(p, "/")); name != "" && name != "." && name != "/" {
+			names = append(names, name)
+		}
+	}
+	if len(names) == 0 {
+		return ""
+	}
+	return "Waiting for " + strings.Join(names, ", ") + " from the Mac"
 }
 
 // Detail is the line of the step a pool machine's set-up is on: the running one, else the
