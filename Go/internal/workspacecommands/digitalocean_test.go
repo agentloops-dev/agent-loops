@@ -242,6 +242,29 @@ func TestDigitalOceanMakeAddsTheAgentLoopsKeyOnceAndSaysEachStep(t *testing.T) {
 	noToken(t, *logged...)
 }
 
+// A make with no options makes the region and size the account's form shows as its defaults
+// (#6686), not the plain form's nyc3.
+func TestDigitalOceanMakeWithNoOptionsTakesTheAccountFormsDefaults(t *testing.T) {
+	atOffset(t, -8)
+	f, text := fakeDigitalOceanAccount(t, &doAccount{keys: map[string]bool{}})
+	p, _ := apiProvider(t, text, DigitalOceanSecret, token)
+	form := p.Config.Making.Form(p)
+	region, size := at(form, "properties.region.default"), at(form, "properties.size.default")
+	if region != "sfo3" || size != "s-2vcpu-4gb" {
+		t.Fatalf("the form's defaults: %v %v", region, size)
+	}
+	_, said, err := p.Create("devbox-4000001", nil, "curl … | sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if made := madeDroplet(t, f); made["region"] != region || made["size"] != size {
+		t.Errorf("made %v %v, the form shows %v %v", made["region"], made["size"], region, size)
+	}
+	if got := said[len(said)-1]; got != "Made droplet devbox-4000001 in San Francisco 3: 2 vCPUs · 4 GB · 80 GB disk · $24/month." {
+		t.Errorf("%q", got)
+	}
+}
+
 func TestDigitalOceanMakesADropletWithNoKeyWhenTheTokenMayNotAddOne(t *testing.T) {
 	f, text := fakeDigitalOceanAccount(t, &doAccount{keys: map[string]bool{}, keyStatus: http.StatusForbidden})
 	p, _ := apiProvider(t, text, DigitalOceanSecret, token)
