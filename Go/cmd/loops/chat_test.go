@@ -99,7 +99,9 @@ func TestDrawLeavesTheCursorAtTheEditingPoint(t *testing.T) {
 	}{
 		{"one line", "abcd", 2, 10, "› abcd\r\x1b[4C", "\r\x1b[J"},
 		{"wide chars", "漢字abc", 6, 10, "› 漢字abc\r\x1b[6C", "\r\x1b[J"},
-		{"wrapped line", "abcdefghij", 5, 4, "› abcdefghij\x1b[1B\r\x1b[3C", "\r\x1b[1B\x1b[2A\x1b[J"},
+		{"wrapped line", "abcdefghij", 5, 4, "› abcdefghij\x1b[1A\r\x1b[3C", "\r\x1b[1B\x1b[2A\x1b[J"},
+		{"first of two lines", "one\ntwo", 1, 10, "› one\r\n  two\x1b[1A\r\x1b[3C", "\r\x1b[1B\x1b[1A\x1b[J"},
+		{"end of a full row", "ab", 2, 4, "› ab\r\n\r", "\r\x1b[1A\x1b[J"},
 		{"second line", "one\ntwo", 7, 10, "› one\r\n  two\r\x1b[5C", "\r\x1b[1A\x1b[J"},
 	}
 	for _, c := range cases {
@@ -118,6 +120,36 @@ func TestDrawLeavesTheCursorAtTheEditingPoint(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestUpdateIsOneWriteWithTheCursorHidden(t *testing.T) {
+	var w countingWriter
+	s := screen{w: &w, raw: true, prompt: true, status: "working", width: func() int { return 20 }}
+	s.input.text, s.input.cursor = "hi", 1
+	s.update()
+	s.update()
+	if w.writes != 2 {
+		t.Fatalf("each update is one write, got %d writes for two", w.writes)
+	}
+	got := w.String()
+	if !strings.HasPrefix(got, hideCursor) || !strings.HasSuffix(got, showCursor) {
+		t.Fatalf("the cursor is hidden while the live part is drawn again: %q", got)
+	}
+}
+
+type countingWriter struct {
+	bytes.Buffer
+	writes int
+}
+
+func (c *countingWriter) Write(p []byte) (int, error) {
+	c.writes++
+	return c.Buffer.Write(p)
+}
+
+func (c *countingWriter) WriteString(p string) (int, error) {
+	c.writes++
+	return c.Buffer.WriteString(p)
 }
 
 func TestColourIsTheDesignTokensOnlyOnATerminalAndNeverWithNoColor(t *testing.T) {

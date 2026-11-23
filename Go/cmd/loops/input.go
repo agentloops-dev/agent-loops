@@ -545,9 +545,15 @@ func (s *screen) draw() {
 	} else {
 		row = line
 	}
-	if down := total - 1 - row; down > 0 {
-		fmt.Fprintf(s.w, "\x1b[%dB", down)
-		s.down = down
+	if row > total-1 {
+		// The editing point is at the end of a full row: the terminal holds the cursor at
+		// that row's last cell until something is written, so start the row it goes to.
+		_, _ = io.WriteString(s.w, s.eol())
+		s.drawn = row
+	} else if up := total - 1 - row; up > 0 {
+		// After the lines the cursor is on the last row; the editing point is above it.
+		fmt.Fprintf(s.w, "\x1b[%dA", up)
+		s.down = up
 	}
 	_, _ = io.WriteString(s.w, "\r")
 	if col > 0 {
@@ -560,16 +566,43 @@ func (s *screen) print(lines ...string) {
 	if len(lines) == 0 {
 		return
 	}
-	s.clear()
-	_, _ = io.WriteString(s.w, strings.Join(lines, s.eol())+s.eol())
-	s.draw()
+	s.frame(func() {
+		s.clear()
+		_, _ = io.WriteString(s.w, strings.Join(lines, s.eol())+s.eol())
+		s.draw()
+	})
 }
 
 // update draws the live part again after a change to it.
 func (s *screen) update() {
-	s.clear()
-	s.draw()
+	s.frame(func() {
+		s.clear()
+		s.draw()
+	})
 }
+
+// frame sends what paint writes in one write, with the cursor hidden while it moves, so
+// a redraw (the spinner's, ten times a second) never shows the cursor away from the
+// editing point (#6876).
+func (s *screen) frame(paint func()) {
+	if !s.raw {
+		paint()
+		return
+	}
+	w := s.w
+	var b strings.Builder
+	b.WriteString(hideCursor)
+	s.w = &b
+	paint()
+	s.w = w
+	b.WriteString(showCursor)
+	_, _ = io.WriteString(w, b.String())
+}
+
+const (
+	hideCursor = "\x1b[?25l"
+	showCursor = "\x1b[?25h"
+)
 
 // end takes the live part off for good; a partial line goes in the lines.
 func (s *screen) end() {
