@@ -216,6 +216,158 @@
   </figure>
 </div></section>
 
+<!-- 4. Agents that start on events, and wait for them (#6856). The workflow is a short form of
+     this repo's own .agents/workflows/fix-main.md. -->
+<section class="page" id="events"><div class="wrap">
+  <h2>Agents that start on events, and wait for them</h2>
+  <p class="lede">A workflow is a Markdown file in your repository. An event, such as a red build, a new issue, a review or a message, starts an agent on it. An agent that must wait, for CI, a review or another agent, ends its turn and wakes when the event comes. It costs nothing while it waits.</p>
+  <div class="grid2">
+    <figure class="mock">
+      <figcaption class="mock-bar"><span class="mock-lights" aria-hidden="true"><i></i><i></i><i></i></span>.agents/workflows/fix-main.md</figcaption>
+<pre class="mock-code"><code><span class="cd-p">---</span>
+<span class="cd-k">name:</span> <span class="cd-s">Fix main</span>
+<span class="cd-k">on:</span>
+  - <span class="cd-k">run.completed:</span>
+      <span class="cd-k">server:</span> <span class="cd-s">github</span>
+      <span class="cd-k">workflow:</span> <span class="cd-s">ci.yml</span>
+      <span class="cd-k">branch:</span> <span class="cd-s">main</span>
+      <span class="cd-k">conclusion:</span> <span class="cd-p">[</span><span class="cd-s">failure</span><span class="cd-p">]</span>
+<span class="cd-k">agent:</span> <span class="cd-s">standing</span>
+<span class="cd-p">---</span>
+Find why main is red.
+Fix it on a pull request of its own.</code></pre>
+    </figure>
+    <figure class="mock">
+      <figcaption class="mock-bar"><span class="mock-lights" aria-hidden="true"><i></i><i></i><i></i></span>An agent waits for CI</figcaption>
+      <div class="mock-body">
+        <p class="bubble">Pull request &#35;413 is ready. I will wait for CI.</p>
+        <p class="wait-row"><span class="chip wait"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>wait_for_event</span><span class="small">checks.passed · PR &#35;413</span></p>
+        <p class="wait-row"><span class="small">0 tokens while it waits</span><span class="small">12 min</span></p>
+        <p class="bubble">Checks passed. Auto-merge is on.</p>
+        <p class="wait-row"><span class="chip ok"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>merged</span><span class="small">squash · trailers on the commit</span></p>
+      </div>
+    </figure>
+  </div>
+  <p class="small events-from">Events come from GitHub, GitLab, Jira, Linear, Sentry, Slack, mail, your machines and your other agents, and on a schedule. Agents take turns on a simulator, a browser or the CI queue with leases.</p>
+</div></section>
+
+<!-- 5. Use cases (#6856): the animations "Fix main, while you sleep" (fm-) and "An error in
+     production goes back into work" (er-), side by side, and a grid of twelve. Each card is a
+     workflow that runs today: a ready-made one, or one of this repo's own (.agents/workflows). -->
+<section class="page" id="use-cases"><div class="wrap">
+  <h2>Put agents on the work nobody wants at 2 a.m.</h2>
+  <p class="lede">Each use case is a workflow: an event starts an agent, the agent does the work, and you read what happened in the morning. Here are two of them, from the first alarm to the fix.</p>
+  <div class="anim2">
+    <figure class="anim">
+      <svg class="fm" viewBox="0 0 600 420" role="img" aria-labelledby="fm-title fm-desc" xmlns="http://www.w3.org/2000/svg">
+        <title id="fm-title">Fix main, while you sleep</title>
+        <desc id="fm-desc">At 02:13, CI fails on main. The Fix main workflow starts an agent on a machine called build-1, in its own worktree. The agent runs the failing test alone 20 times. It fails 20 of 20 times, so it is a bug, not a flaky test. The agent files issue 501, fixes the cause and opens pull request 502. It waits for CI at no cost. The checks pass and the pull request merges. At 02:41 main is green, and nothing needs you.</desc>
+        <rect class="fm-frame" x="1" y="1" width="598" height="418" rx="14"/>
+        <rect class="fm-chrome" x="1" y="1" width="598" height="36" rx="14"/>
+        <rect class="fm-chrome" x="1" y="24" width="598" height="13"/>
+        <circle class="fm-light" cx="22" cy="19" r="5"/><circle class="fm-light" cx="40" cy="19" r="5"/><circle class="fm-light" cx="58" cy="19" r="5"/>
+        <text x="80" y="23" class="fm-s">Fix main · started by an event · while you sleep</text>
+        <line class="fm-rail" x1="40" y1="70" x2="40" y2="330"/>
+        <g class="fm-a fm-s1">
+          <circle class="fm-dot fm-bad" cx="40" cy="70" r="12"/><g class="fm-ic fm-bad" transform="translate(32.8 62.8) scale(0.6)"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></g>
+          <text x="64" y="68" class="fm-t fm-b">02:13  CI failed on main</text>
+          <text x="64" y="85" class="fm-s">github · run.completed · ci.yml · failure · TestLogin</text>
+        </g>
+        <g class="fm-a fm-s2">
+          <circle class="fm-dot fm-run" cx="40" cy="118" r="12"/><g class="fm-ic fm-run" transform="translate(32.8 110.8) scale(0.6)"><path d="M6 3 20 12 6 21Z"/></g>
+          <text x="64" y="116" class="fm-t fm-b">The Fix main workflow starts an agent</text>
+          <text x="64" y="133" class="fm-s">fix-main.md · Claude · on build-1 · in its own worktree</text>
+        </g>
+        <g class="fm-a fm-s3">
+          <circle class="fm-dot fm-run" cx="40" cy="166" r="12"/><g class="fm-ic fm-run" transform="translate(32.8 158.8) scale(0.6)"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></g>
+          <text x="64" y="164" class="fm-t fm-b">Runs the test alone, 20 times</text>
+          <rect class="fm-term" x="64" y="174" width="318" height="24" rx="5"/>
+          <text x="74" y="190" class="fm-mono">go test -count=20 -run TestLogin</text>
+          <text x="394" y="190" class="fm-s"><tspan class="fm-red fm-b">20 of 20 fail:</tspan> a bug, not a flake</text>
+        </g>
+        <g class="fm-a fm-s4">
+          <circle class="fm-dot fm-ok" cx="40" cy="232" r="12"/><g class="fm-ic fm-ok" transform="translate(32.8 224.8) scale(0.6)"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><path d="M6 9v12"/></g>
+          <text x="64" y="230" class="fm-t fm-b">Files issue &#35;501, fixes the cause, opens PR &#35;502</text>
+          <text x="64" y="247" class="fm-s">The session clock used the machine's time zone, not UTC</text>
+        </g>
+        <g class="fm-a fm-s5">
+          <circle class="fm-dot fm-wait" cx="40" cy="280" r="12"/><g class="fm-ic fm-wait" transform="translate(32.8 272.8) scale(0.6)"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></g>
+          <text x="64" y="278" class="fm-t fm-b">Waits for CI, at no cost</text>
+          <text x="64" y="295" class="fm-s">wait_for_event · checks.passed · PR &#35;502 · 0 tokens</text>
+          <circle class="fm-pulse" cx="232" cy="275" r="4"/>
+        </g>
+        <g class="fm-a fm-s6">
+          <circle class="fm-dot fm-ok" cx="40" cy="330" r="12"/><g class="fm-ic fm-ok" transform="translate(32.8 322.8) scale(0.6)"><path d="M20 6 9 17l-5-5"/></g>
+          <text x="64" y="328" class="fm-t fm-b">Checks passed · squash auto-merge</text>
+          <text x="64" y="345" class="fm-s">$1.84 · 21 min · its cost and time on the commit</text>
+        </g>
+        <g class="fm-a fm-s7">
+          <rect class="fm-done" x="20" y="364" width="560" height="40" rx="10"/>
+          <g class="fm-ic fm-ok" transform="translate(32 372) scale(1)"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></g>
+          <text x="66" y="389" class="fm-t fm-b">02:41  main is green</text>
+          <text x="226" y="389" class="fm-s">Read it in Lineage in the morning.</text>
+          <text x="566" y="389" text-anchor="end" class="fm-t"><tspan class="fm-s">Needs you </tspan><tspan class="fm-b">0</tspan></text>
+        </g>
+      </svg>
+      <figcaption>Fix main, while you sleep</figcaption>
+    </figure>
+    <figure class="anim">
+      <svg class="er" viewBox="0 0 600 420" role="img" aria-labelledby="er-title er-desc" xmlns="http://www.w3.org/2000/svg">
+        <title id="er-title">An error in production goes back into work</title>
+        <desc id="er-desc">The checkout's errors in production go up after release v0.41, to 38 a minute. Sentry sees a new TypeError in applyCoupon. The ready-made workflow File a bug from Sentry files bug 509 with the stack and the release. An agent takes the bug, makes a test that shows the error, and fixes it in pull request 510. CI passes and it merges. The deploy of v0.42 waits for the production gate, and your iPhone asks you to approve it. You approve, v0.42 deploys, and the errors go back to normal, 47 minutes after the first error. Lineage links the Sentry issue, the bug, the pull request and the release.</desc>
+        <rect class="er-frame" x="1" y="1" width="598" height="418" rx="14"/>
+        <rect class="er-chrome" x="1" y="1" width="598" height="36" rx="14"/>
+        <rect class="er-chrome" x="1" y="24" width="598" height="13"/>
+        <circle class="er-light" cx="22" cy="19" r="5"/><circle class="er-light" cx="40" cy="19" r="5"/><circle class="er-light" cx="58" cy="19" r="5"/>
+        <text x="80" y="23" class="er-s">An error in production goes back into work</text>
+        <text x="20" y="62" class="er-s er-b">checkout · 5xx errors a minute · production</text>
+        <line class="er-axis" x1="20" y1="148" x2="580" y2="148"/>
+        <line class="er-alert" x1="20" y1="104" x2="580" y2="104"/>
+        <text x="580" y="98" text-anchor="end" class="er-s">alert</text>
+        <path class="er-a er-line" pathLength="100" d="M20 142 L58 140 L92 141 L125 139 L158 140 L183 112 L208 86 L242 82 L275 84 L308 80 L342 85 L375 83 L408 86 L433 84 L458 120 L483 138 L517 141 L550 140 L580 141"/>
+        <g class="er-a er-alarm"><circle class="er-pin" cx="208" cy="86" r="5"/><text x="196" y="74" text-anchor="end" class="er-s er-b er-red">v0.41 · 38 a minute</text></g>
+        <g class="er-a er-n6"><line class="er-deploy" x1="458" y1="66" x2="458" y2="148"/><text x="464" y="76" class="er-s er-b er-green">v0.42 deployed</text></g>
+        <g class="er-nodes">
+          <g class="er-a er-n1 er-bad"><rect x="20" y="172" width="100" height="62" rx="10"/><text x="70" y="194" text-anchor="middle" class="er-b">Sentry</text><text x="70" y="210" text-anchor="middle" class="er-l">TypeError in</text><text x="70" y="225" text-anchor="middle" class="er-l">applyCoupon()</text></g>
+          <g class="er-a er-n2 er-idle"><path class="er-arrow" d="m124 197 6 6-6 6"/><rect x="135" y="172" width="100" height="62" rx="10"/><text x="185" y="194" text-anchor="middle" class="er-b">Bug &#35;509</text><text x="185" y="210" text-anchor="middle" class="er-l">the stack and</text><text x="185" y="225" text-anchor="middle" class="er-l">the release</text></g>
+          <g class="er-a er-n3 er-run"><path class="er-arrow" d="m239 197 6 6-6 6"/><rect x="250" y="172" width="100" height="62" rx="10"/><text x="300" y="194" text-anchor="middle" class="er-b">An agent</text><text x="300" y="210" text-anchor="middle" class="er-l">shows it with</text><text x="300" y="225" text-anchor="middle" class="er-l">a failing test</text></g>
+          <g class="er-a er-n4 er-ok"><path class="er-arrow" d="m354 197 6 6-6 6"/><rect x="365" y="172" width="100" height="62" rx="10"/><text x="415" y="194" text-anchor="middle" class="er-b">PR &#35;510</text><text x="415" y="210" text-anchor="middle" class="er-l">the fix, a test</text><text x="415" y="225" text-anchor="middle" class="er-l">CI passed, merged</text></g>
+          <g class="er-a er-n5 er-gate"><path class="er-arrow" d="m469 197 6 6-6 6"/><rect x="480" y="172" width="100" height="62" rx="10"/><text x="530" y="194" text-anchor="middle" class="er-b">Deploy v0.42</text><text x="530" y="210" text-anchor="middle" class="er-l">waits for the</text><text x="530" y="225" text-anchor="middle" class="er-l">production gate</text></g>
+        </g>
+        <g class="er-a er-n3"><text x="20" y="268" class="er-s">"File a bug from Sentry", a ready-made</text><text x="20" y="285" class="er-s">workflow, files the bug, and an agent takes it.</text><text x="20" y="310" class="er-s">The deploy uses your own pipeline and gate.</text><text x="20" y="327" class="er-s">Agent Loops reads the gate and asks you.</text></g>
+        <g class="er-a er-phone">
+          <rect class="er-card" x="356" y="252" width="224" height="82" rx="14"/>
+          <text x="372" y="274" class="er-s">iPhone · Needs you</text>
+          <text x="372" y="294" class="er-t er-b">Deploy v0.42 to production?</text>
+          <g class="er-a er-tap"><rect class="er-yes" x="372" y="304" width="76" height="22" rx="6"/><text x="410" y="319" text-anchor="middle" class="er-btn er-on">Approve</text></g>
+          <rect class="er-no" x="456" y="304" width="60" height="22" rx="6"/><text x="486" y="319" text-anchor="middle" class="er-btn">Deny</text>
+        </g>
+        <g class="er-a er-n7">
+          <rect class="er-done" x="20" y="352" width="560" height="52" rx="10"/>
+          <g class="er-ic" transform="translate(32 366)"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></g>
+          <text x="66" y="373" class="er-t er-b">Errors back to normal, 47 min after the first one</text>
+          <text x="66" y="392" class="er-s">Lineage: Sentry issue → bug &#35;509 → PR &#35;510 → v0.42</text>
+        </g>
+      </svg>
+      <figcaption>An error in production goes back into work</figcaption>
+    </figure>
+  </div>
+  <div class="uc">
+    <div class="uc-card"><svg class="uc-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg><h3>Fix a broken build</h3><p>Main goes red, and an agent finds the cause and fixes forward.</p></div>
+    <div class="uc-card"><svg class="uc-ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg><h3>Fix failed checks</h3><p>A pull request's CI fails, and its agent reads the log and pushes a fix.</p></div>
+    <div class="uc-card"><svg class="uc-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><h3>Answer review comments</h3><p>A reviewer comments, and the agent changes the code and replies.</p></div>
+    <div class="uc-card"><svg class="uc-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r="1"/></svg><h3>Work an issue</h3><p>An issue gets the label <code>agent</code> in GitHub, GitLab, Jira or Linear, and an agent takes it.</p></div>
+    <div class="uc-card"><svg class="uc-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 2 1.88 1.88"/><path d="M14.12 3.88 16 2"/><path d="M9 7.13v-1a3 3 0 1 1 6 0v1"/><path d="M12 20c-3.3 0-6-2.7-6-6v-3a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v3c0 3.3-2.7 6-6 6"/><path d="M12 20v-9"/><path d="M6.53 9C4.6 8.8 3 7.1 3 5"/><path d="M6 13H2"/><path d="M3 21c0-2.1 1.7-3.9 3.8-4"/><path d="M20.97 5c0 2.1-1.6 3.8-3.5 4"/><path d="M22 13h-4"/><path d="M17.2 17c2.1.1 3.8 1.9 3.8 4"/></svg><h3>Errors become bugs</h3><p>Sentry sees a new error, or an old one comes back, and it becomes a bug with its stack.</p></div>
+    <div class="uc-card"><svg class="uc-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/></svg><h3>Make CI faster</h3><p>CI's median time goes over 15 minutes, and an agent makes one change that makes it faster.</p></div>
+    <div class="uc-card"><svg class="uc-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 2h4"/><path d="m12 14 3-3"/><circle cx="12" cy="14" r="8"/></svg><h3>Keep performance budgets</h3><p>Each night, an agent measures the app against its budgets and files an issue for a time that is over.</p></div>
+    <div class="uc-card"><svg class="uc-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg><h3>Security alerts</h3><p>A critical or high Dependabot alert becomes a high-priority bug, and the bug lane fixes it.</p></div>
+    <div class="uc-card"><svg class="uc-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg><h3>Flaky tests</h3><p>A test fails that the change does not touch. The agent runs it 20 times, then fixes the bug or puts the test aside with an issue.</p></div>
+    <div class="uc-card"><svg class="uc-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg><h3>Crash reports</h3><p>The app crashed, and an agent files an issue, or comments on the issue that has it already.</p></div>
+    <div class="uc-card"><svg class="uc-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg><h3>Release</h3><p>You say go, and an agent writes the notes, runs the checks, tags the version and sends the store build.</p></div>
+    <div class="uc-card"><svg class="uc-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/></svg><h3>Daily checks</h3><p>Every few hours, an agent looks for a red build, a stuck pull request or a missed workflow, and tells you.</p></div>
+  </div>
+</div></section>
+
 <!-- 15. Works with the tools you already use. The count comes from docs/reference/integrations.md (2026-11-22). -->
 <section class="page" id="integrations"><div class="wrap">
   <h2>Works with the tools you already use</h2>
