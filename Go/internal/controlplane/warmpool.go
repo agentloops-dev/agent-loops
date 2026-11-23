@@ -75,8 +75,9 @@ type poolBackend interface {
 	Ping(provider, workspace string) bool
 	// Bind makes the machine the person's, with the person's Stop when idle (minutes; nil
 	// keeps the machine's), and sets steps 6 to 8 of its set-up to run again as a catch-up
-	// (steps 1 to 5 are marked as done in the pool). It returns the machine's host id.
-	Bind(person, provider, workspace string, stopWhenIdle *int) (host string, err error)
+	// (steps 1 to 5 are marked as done in the pool). Step 6 waits for the pool's projects,
+	// which the person's Mac sends after the claim (#6890). It returns the machine's host id.
+	Bind(person, provider, workspace string, stopWhenIdle *int, projects []string) (host string, err error)
 	// Detail is what a machine's set-up is doing now, as its running step's line says, for
 	// the pool's card (#5366); "" when nothing says.
 	Detail(provider, workspace string) string
@@ -805,7 +806,7 @@ func (w *warmPools) bindTaken(person string, c claim, p *storedPool, m *storedPo
 		}
 		return "", false
 	}
-	host, err := w.backend.Bind(person, p.Provider, m.Workspace, c.StopWhenIdle)
+	host, err := w.backend.Bind(person, p.Provider, m.Workspace, c.StopWhenIdle, p.Projects)
 	if err != nil {
 		w.s.log(fmt.Sprintf("warm pool %s: %s could not be given: %v", p.Name, m.Name, err))
 		if err := w.backend.Delete(p.Owner, p.Provider, m.Workspace); err != nil {
