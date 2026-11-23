@@ -132,6 +132,8 @@ public enum WorkReleaseLook {
     /// Where the notes are, until Agents reads them (#4426): "The notes are on GitHub."
     public static func notesElsewhere(_ ref: String) -> String { "The release notes are on \(WorkList.forgeName(ref))." }
 
+    /// The release page's footer when no machine keeps lineage (#5970): a state, not "No pull requests".
+    public static let noLineage = "No machine keeps lineage."
     public static let noPulls = "Lineage links no pull request to this release. The first version tag of a repo links none."
     public static let noPipeline = "No CI run or deploy in lineage yet."
 }

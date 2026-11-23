@@ -184,7 +184,7 @@ func TestATerminalThatIsNotApprovedSaysWhat(t *testing.T) {
 func TestAMachinesRefusalSaysWhatToDoInATerminal(t *testing.T) {
 	refused := fmt.Errorf(`{"code":-32104,"message":"This machine takes requests only from your devices: the request is not signed by one of them. Open Agent Loops on this device again; if it asks to join, approve it on another of your devices."}`)
 	err := unreachable("Sam's MacBook", refused)
-	if strings.Contains(err.Error(), "Open Agent Loops") || !strings.Contains(err.Error(), "loops status") || !strings.Contains(err.Error(), "Sam's MacBook") {
+	if strings.Contains(err.Error(), "Open Agent Loops") || !strings.Contains(err.Error(), "loops auth status") || !strings.Contains(err.Error(), "Sam's MacBook") {
 		t.Fatalf("the refusal: %v", err)
 	}
 }

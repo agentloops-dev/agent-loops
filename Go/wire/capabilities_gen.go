@@ -190,6 +190,8 @@ const CapProjectsSessions1 = "projects.sessions/1"
 const CapProjects1 = "projects/1"
 const CapProvidersCarry1 = "providers.carry/1"
 const CapProvidersCarry2 = "providers.carry/2"
+const CapProvidersCarry3 = "providers.carry/3"
+const CapProvidersOauth1 = "providers.oauth/1"
 const CapProviders1 = "providers/1"
 const CapProviders2 = "providers/2"
 const CapReadapi1 = "readapi/1"
@@ -556,6 +558,7 @@ var HostCapabilities = pairs([][2]string{
 	{"providers/carry", "providers.carry/1"},
 	{"providers/forget", "providers.carry/1"},
 	{"providers/keepSecrets", "providers.carry/1"},
+	{"providers/oauth", "providers.carry/3"},
 	{"providers/ssh", "providers.carry/2"},
 	{"relay/grant", "relay/1"},
 	{"relay/offer", "relay/1"},
@@ -991,6 +994,8 @@ var ControlCapabilities = pairs([][2]string{
 	{"providers/deleteWorkspace", "providers/2"},
 	{"providers/list", "providers/1"},
 	{"providers/makeDefault", "providers/1"},
+	{"providers/oauthFinish", "providers.oauth/1"},
+	{"providers/oauthStart", "providers.oauth/1"},
 	{"providers/options", "providers/1"},
 	{"providers/refresh", "providers/1"},
 	{"providers/remove", "providers/1"},

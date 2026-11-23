@@ -461,10 +461,18 @@ func (p *Provider) Create(name string, options map[string]any, firstBoot string)
 		}
 	}
 	values := map[string]string{"name": name, "firstBoot": firstBoot}
-	// A choice left out takes the form's default, as the form showed it.
+	// A choice left out takes the form's default, as the form showed it: the account's
+	// choices where the preset reads them (#6686), else the plain form.
 	chosen := map[string]any{}
 	properties, _ := making.Options["properties"].(map[string]any)
-	for key, property := range properties {
+	form := properties
+	for key := range properties {
+		if _, given := options[key]; !given && making.Choices != nil {
+			form, _ = making.Form(p)["properties"].(map[string]any)
+			break
+		}
+	}
+	for key, property := range form {
 		if d, ok := property.(map[string]any)["default"]; ok {
 			chosen[key] = d
 		}

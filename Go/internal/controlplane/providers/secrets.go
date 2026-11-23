@@ -26,6 +26,14 @@ type Secrets struct {
 func NewSecrets(folder string) *Secrets {
 	return &Secrets{file: filepath.Join(folder, SecretsFileName)}
 }
+// Reload reads the file again at the next use: another process may have written it, as a
+// refresh that won a race does (#6072).
+func (s *Secrets) Reload() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.held = nil
+}
+
 // Values is a provider's secrets, by name.
 func (s *Secrets) Values(provider string) map[string]string {
 	s.mu.Lock()
@@ -107,7 +115,7 @@ func (s *Secrets) write(all map[string]map[string]string) error {
 	}
 	scratch, err := os.CreateTemp(folder, "."+SecretsFileName+".*")
 	if err != nil {
-		return &ProviderFailure{"the provider secrets could not be written"}
+		return &ProviderFailure{Words: "the provider secrets could not be written"}
 	}
 	name := scratch.Name()
 	ok := false

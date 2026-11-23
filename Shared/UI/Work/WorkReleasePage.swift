@@ -27,6 +27,8 @@ struct WorkReleasePage: View {
     @State private var rollup: DaemonAPI.LineageCostRollup?
     @State private var figures: DaemonAPI.LineageFigures?
     @State private var problem: String?
+    /// When the links on screen were read, for the footer's "Last update" (#5970).
+    @State private var read: Date?
     @State private var reading = false
     @State private var asked = 0
     @State private var width: CGFloat = 0
@@ -49,35 +51,20 @@ struct WorkReleasePage: View {
 
     private var narrow: Bool { compact || (width > 0 && width < WorkSidePanel<EmptyView>.narrowUnder) }
 
+    /// The footer's left (#5970): what runs or failed, or that no machine keeps lineage.
+    private var footerState: WorkLook.FooterState {
+        if lineageHost == nil { return .notice(WorkReleaseLook.noLineage) }
+        // The header is drawn from the list, so a failed first read still offers Try again.
+        return WorkLook.pageFooterState(drawn: graph != nil || problem != nil, reading: reading, fromDevice: false,
+                                        lines: problem.map { [$0] } ?? [])
+    }
+
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                header
-                if let problem {
-                    WorkErrorStrip(lines: [problem]) { asked += 1 }
-                }
-                Group {
-                    if narrow {
-                        notes
-                        WorkSidePanel(compact: true) { panel }
-                        if compact { pullsRow } else { pullRequests }
-                    } else {
-                        HStack(alignment: .top, spacing: 24) {
-                            VStack(alignment: .leading, spacing: 16) {
-                                notes
-                                pullRequests
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            WorkSidePanel(compact: false) { panel }
-                        }
-                    }
-                }
-                .opacity(problem == nil ? 1 : 0.5)
-            }
-            .padding(compact ? 16 : 20)
-            .frame(maxWidth: .infinity, alignment: .leading)
+        // The read's state and Last update are in the footer bar, as on the lists (#5970); no strip.
+        VStack(spacing: 0) {
+            page.frame(maxHeight: .infinity)
+            WorkPageBar(state: footerState, count: nil, read: graph == nil ? nil : read) { asked += 1 }
         }
-        .onGeometryChange(for: CGFloat.self, of: \.size.width) { width = $0 }
         #if os(iOS)
         .refreshable { asked += 1 }
         .navigationDestination(isPresented: $showsPulls) {
@@ -95,6 +82,34 @@ struct WorkReleasePage: View {
         .toolbar(removing: .title)
         #endif
         .workTask(id: asked) { await load() }
+    }
+
+    /// The release's page above the footer: the header, the notes, the pull requests and the panel.
+    private var page: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                header
+                Group {
+                    if narrow {
+                        notes
+                        WorkSidePanel(compact: true) { panel }
+                        if compact { pullsRow } else { pullRequests }
+                    } else {
+                        HStack(alignment: .top, spacing: 24) {
+                            VStack(alignment: .leading, spacing: 16) {
+                                notes
+                                pullRequests
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            WorkSidePanel(compact: false) { panel }
+                        }
+                    }
+                }
+            }
+            .padding(compact ? 16 : 20)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .onGeometryChange(for: CGFloat.self, of: \.size.width) { width = $0 }
     }
 
     // MARK: Toolbar
@@ -273,7 +288,7 @@ struct WorkReleasePage: View {
                     }
                     .background(RoundedRectangle(cornerRadius: Paper.Radius.card).strokeBorder(Paper.rule))
                 }
-            } else {
+            } else if problem == nil, lineageHost != nil {
                 VStack(alignment: .leading, spacing: 8) { WorkPlaceholderRows(count: 4) }
                     .redacted(reason: .placeholder)
                     .accessibilityHidden(true)
@@ -290,7 +305,7 @@ struct WorkReleasePage: View {
                 Image(icon: WorkList.Kind.pr.sidebarIcon).foregroundStyle(.secondary).accessibilityHidden(true)
                 Text(pulls.map { "Pull requests · \($0.count)" } ?? "Pull requests").monospacedDigit()
                 Spacer(minLength: 8)
-                if pulls == nil { ProgressView().controlSize(.small) }
+                if pulls == nil, reading { ProgressView().controlSize(.small) }
                 Image(icon: "chevron.right").foregroundStyle(.tertiary).accessibilityHidden(true)
             }
             .appText(.supporting)
@@ -330,7 +345,7 @@ struct WorkReleasePage: View {
         WorkSideSection(title: "Pipeline") {
             let stages = graph.map { WorkReleaseLook.pipeline(of: node, in: $0) } ?? []
             if stages.isEmpty {
-                WorkSideNone(words: graph == nil ? "Reading…" : WorkReleaseLook.noPipeline)
+                WorkSideNone(words: graph == nil && problem == nil && lineageHost != nil ? "Reading…" : WorkReleaseLook.noPipeline)
             } else {
                 ForEach(stages, id: \.self) { stage in
                     HStack(spacing: 6) {
@@ -432,10 +447,8 @@ struct WorkReleasePage: View {
     /// that keeps links. A refresh keeps the page as it is until the new read comes.
     private func load() async {
         let mine = asked
-        guard let host = lineageHost, !node.ref.isEmpty else {
-            graph = DaemonAPI.LineageGraph()
-            return
-        }
+        // No machine keeps lineage: the footer says so, and the page draws no "No pull requests" (#5970).
+        guard let host = lineageHost, !node.ref.isEmpty else { return }
         reading = true
         defer { if asked == mine { reading = false } }
         async let cost = model.lineageCost(node, on: host)
@@ -449,11 +462,12 @@ struct WorkReleasePage: View {
             graph = walked
             rollup = rolled
             figures = got
+            read = Date()
             problem = nil
         } catch {
             _ = await (cost, figured)
             guard asked == mine else { return }
-            if graph == nil { graph = DaemonAPI.LineageGraph() }
+            // The links read before stay; with none, the footer says what failed and the page no empty state (#5970).
             problem = WorkList.failureWords(error)
         }
     }

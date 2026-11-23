@@ -1,6 +1,8 @@
 // The web remote's entry point (spec 071).
 // First, so a code or an org provider's ticket in the address is gone before the router reads it (#109, #1002).
 import { linkedCode, oidcBack } from "./pairLink";
+// A sign-in's answer that the hand-back page sent here (#6074), given to the tab that waits for it.
+import { handBack } from "./oauthHandBack";
 import { render } from "preact";
 import { App } from "./App";
 import { Store } from "./model/store";
@@ -14,6 +16,7 @@ import { startSpinnerClock } from "./spinnerClock";
 import { LocalCopy, setWorkCopy, startLocalCopy } from "./model/localCopy";
 import { WorkCache, setWorkCache } from "./model/workCache";
 
+handBack();
 const session = new Session();
 const store = new Store(session.link);
 startPresence(store);

@@ -11925,12 +11925,20 @@ export interface ProviderAdd {
 
 /**
  * What a provider's machine answers to providers/carry, providers/keepSecrets, providers/forget and
- * providers/ssh (#3398): the call's result, or why it failed, in words for the person. Channel 0
- * has no error path.
+ * providers/ssh (#3398): the call's result, or why it failed, in words for the person, and for a
+ * failure a client can act on, its `code` (#6072). Channel 0 has no error path.
  */
 export interface ProviderCarried {
   result?: JSONValue;
   error?: string;
+  /**
+   * Why it failed, for a client to say (#6072, W2b): denied (the person chose Deny), disconnected
+   * (the provider no longer takes the connection: it was removed there, or its refresh was
+   * refused), scope_missing (the person gave less than Agent Loops needs), account_inactive (the
+   * account can't make machines yet, such as no payment method), expired (the sign-in was not
+   * finished in time; start again).
+   */
+  code?: "denied" | "disconnected" | "scope_missing" | "account_inactive" | "expired";
 }
 
 /**
@@ -11994,6 +12002,92 @@ export interface ProviderGroup {
 /** providers/list and control/providersChanged. */
 export interface ProviderList {
   providers: ProviderSummary[];
+}
+
+/**
+ * A provider connected with OAuth (#6072): whose account and team its machine's token is for, and
+ * whether the provider still takes it. Never a token.
+ */
+export interface ProviderOAuth {
+  /** The account's email, as the provider said at the connect. */
+  account?: string;
+  /** The team the person chose on the provider's consent page. */
+  team?: string;
+  /**
+   * disconnected: its last list was refused (the person removed Agent Loops at the provider, or its
+   * refresh failed): connect again.
+   */
+  state: "connected" | "disconnected";
+}
+
+/**
+ * providers/oauth's result in ProviderCarried (#6072): for start, the address to open and its
+ * state; for finish, whose account the token is for and the names of the secrets kept. Never a
+ * token.
+ */
+export interface ProviderOAuthCarried {
+  url?: string;
+  state?: string;
+  account?: string;
+  team?: string;
+  scope?: string;
+  secretNames?: string[];
+}
+
+/**
+ * providers/oauth (#6072): the control plane asks the machine that will carry a provider to start
+ * an OAuth connection (make and keep the PKCE verifier, about 10 minutes, and give the address to
+ * open) or to finish it (spend the code with the verifier, and keep the tokens for `provider` in
+ * ~/.agents-secrets). The verifier and the tokens never leave that machine.
+ */
+export interface ProviderOAuthCarry {
+  op: "start" | "finish";
+  preset: string;
+  provider?: ProviderID;
+  /** start: the web page's origin, for the hand-back page; none for the Mac and the Remote. */
+  origin?: string;
+  state?: string;
+  code?: string;
+  /** finish: the provider's error from the callback, such as access_denied. */
+  error?: string;
+}
+
+/**
+ * providers/oauthFinish (#6072): what the hand-back page gave the client (the code and the state,
+ * or the provider's error). The machine that started it spends the code; the control plane then
+ * adds the provider (or, with the `id` of one it started for, connects it again) with no secret of
+ * its own.
+ */
+export interface ProviderOAuthFinish {
+  state?: string;
+  code?: string;
+  error?: string;
+  /** The new provider's name; none is the preset's provider's name, such as DigitalOcean. */
+  name?: string;
+}
+
+/**
+ * providers/oauthStart (#6072): connect a provider with OAuth instead of a pasted token. `machine`
+ * carries it (the caller's first online one when none); `id` connects an existing provider again;
+ * `origin` is the web page's.
+ */
+export interface ProviderOAuthStart {
+  preset: "digitalocean-api";
+  machine?: MachineRef;
+  id?: ProviderID;
+  origin?: string;
+}
+
+/**
+ * providers/oauthStart's result: the provider's consent page to open (in
+ * ASWebAuthenticationSession, or a new window on the web), its state, and the machine that will
+ * keep the connection.
+ */
+export interface ProviderOAuthStarted {
+  url: string;
+  state: string;
+  machine: MachineRef;
+  machineName?: string;
 }
 
 /**
@@ -12105,6 +12199,11 @@ export interface ProviderSummary {
    * has none (#3367). Absent when it needs none or has it.
    */
   sshToolMissing?: string;
+  /**
+   * It is connected with OAuth (#6072), not a pasted token: whose account, and whether the
+   * connection still works. Absent for a pasted token.
+   */
+  oauth?: ProviderOAuth;
 }
 
 /**
@@ -17252,6 +17351,8 @@ export interface Methods {
   "providers/deleteWorkspace": { params: ProviderWorkspaceRequest; result: Empty };
   "providers/list": { params: Empty; result: ProviderList };
   "providers/makeDefault": { params: ProviderRequest; result: Empty };
+  "providers/oauthFinish": { params: ProviderOAuthFinish; result: ProviderSummary };
+  "providers/oauthStart": { params: ProviderOAuthStart; result: ProviderOAuthStarted };
   "providers/options": { params: ProviderRequest; result: ProviderOptions };
   "providers/refresh": { params: ProviderRequest; result: Empty };
   "providers/remove": { params: ProviderRequest; result: Empty };
@@ -17739,6 +17840,8 @@ export const MethodTarget = {
   "providers/deleteWorkspace": "control",
   "providers/list": "control",
   "providers/makeDefault": "control",
+  "providers/oauthFinish": "control",
+  "providers/oauthStart": "control",
   "providers/options": "control",
   "providers/refresh": "control",
   "providers/remove": "control",
@@ -18851,19 +18954,25 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   ProjectsJoined: { required: ["folders"], optional: [] },
   PromptRequest: { required: ["agentID", "text", "attachments", "from"], optional: ["sendID", "voice"] },
   ProviderAdd: { required: ["name", "kind"], optional: ["id", "commands", "machine", "secrets"] },
-  ProviderCarried: { required: [], optional: ["result", "error"] },
+  ProviderCarried: { required: [], optional: ["result", "error", "code"] },
   ProviderCarry: { required: ["provider", "record", "call"], optional: ["workspace", "name", "options", "firstBoot", "secrets"] },
   ProviderCreate: { required: [], optional: ["id", "name", "options", "clones", "repository"] },
   ProviderCreated: { required: ["workspace", "joining"], optional: [] },
   ProviderForget: { required: ["provider"], optional: [] },
   ProviderGroup: { required: ["provider"], optional: ["group"] },
   ProviderList: { required: ["providers"], optional: [] },
+  ProviderOAuth: { required: ["state"], optional: ["account", "team"] },
+  ProviderOAuthCarried: { required: [], optional: ["url", "state", "account", "team", "scope", "secretNames"] },
+  ProviderOAuthCarry: { required: ["op", "preset"], optional: ["provider", "origin", "state", "code", "error"] },
+  ProviderOAuthFinish: { required: [], optional: ["state", "code", "error", "name"] },
+  ProviderOAuthStart: { required: ["preset"], optional: ["machine", "id", "origin"] },
+  ProviderOAuthStarted: { required: ["url", "state", "machine"], optional: ["machineName"] },
   ProviderOptions: { required: ["schema"], optional: ["id", "values", "name"] },
   ProviderRequest: { required: [], optional: ["id"] },
   ProviderSSH: { required: ["provider", "op", "destination"], optional: ["hostCode", "codespace", "knownHosts", "name", "renew", "trust"] },
   ProviderSSHResult: { required: [], optional: ["knownHosts", "needsTrust"] },
   ProviderSecretsKeep: { required: ["provider", "secrets"], optional: [] },
-  ProviderSummary: { required: ["id", "name", "kind", "secrets", "capabilities", "contract", "workspaces", "current"], optional: ["preset", "listedAt", "problem", "group", "mayUse", "default", "machine", "machineName", "machineOffline", "sshToolMissing"] },
+  ProviderSummary: { required: ["id", "name", "kind", "secrets", "capabilities", "contract", "workspaces", "current"], optional: ["preset", "listedAt", "problem", "group", "mayUse", "default", "machine", "machineName", "machineOffline", "sshToolMissing", "oauth"] },
   ProviderWorkspaceRequest: { required: ["id", "workspace"], optional: [] },
   PushToken: { required: ["environment"], optional: ["token"] },
   QueuedPrompt: { required: ["id", "text", "attachments", "queuedAt", "from"], optional: ["preface", "sender"] },

@@ -331,6 +331,15 @@ export class WorkCache {
     });
   }
 
+  /** The machine is not asked the query, as another machine reads what it reads (#6641): its kept answer goes, so its
+   * rows do not draw as old ones. */
+  forgetAnswer(q: WorkQuery, host: string): Promise<void> {
+    return this.serial(async () => {
+      await this.ready();
+      await this.save([], [answerKey(q, host)]);
+    });
+  }
+
   // Items
 
   /** Items read or written outside a list (a write's answer, #6351, or an item's page): each replaces an older copy. */

@@ -198,6 +198,39 @@ final class ControlSettingsModel {
         }
     }
 
+    /// Why an OAuth connection did not start or finish (#6074): the words, and data.reason.
+    struct OAuthRefusal: Error, Equatable {
+        var words: String
+        var reason: String?
+    }
+
+    private static func oauthRefusal(_ error: any Error) -> OAuthRefusal {
+        guard let error = error as? JSONRPCError else { return OAuthRefusal(words: "The control plane can’t be reached.") }
+        return OAuthRefusal(words: HostProblem.controlRefusal(error), reason: error.data?["reason"]?.stringValue)
+    }
+
+    /// providers/oauthStart (#6072): the consent page to open, on the machine that keeps it.
+    func oauthStart(_ request: DaemonAPI.ProviderOAuthStart) async -> Result<DaemonAPI.ProviderOAuthStarted, OAuthRefusal> {
+        do {
+            return .success(try await client.call(DaemonAPI.Method.providersOAuthStart, request,
+                                                  returning: DaemonAPI.ProviderOAuthStarted.self))
+        } catch {
+            return .failure(Self.oauthRefusal(error))
+        }
+    }
+
+    /// providers/oauthFinish (#6072): the provider, added or connected again.
+    func oauthFinish(_ request: DaemonAPI.ProviderOAuthFinish) async -> Result<DaemonAPI.ProviderSummary, OAuthRefusal> {
+        do {
+            let summary = try await client.call(DaemonAPI.Method.providersOAuthFinish, request,
+                                                returning: DaemonAPI.ProviderSummary.self)
+            await refresh()
+            return .success(summary)
+        } catch {
+            return .failure(Self.oauthRefusal(error))
+        }
+    }
+
     /// Gives a provider to a group, or with nil to the admins alone (#1761).
     func setGroup(_ provider: ProviderID, _ group: String?) async {
         await perform(DaemonAPI.Method.providersSetGroup, DaemonAPI.ProviderGroup(provider: provider, group: group))

@@ -12493,11 +12493,14 @@ type ProviderAdd struct {
 	Secrets map[string]string `json:"secrets,omitzero"`
 }
 
-// What a provider's machine answers to providers/carry, providers/keepSecrets, providers/forget and providers/ssh (#3398): the call's result, or why it failed, in words for the person. Channel 0 has no error path.
+// What a provider's machine answers to providers/carry, providers/keepSecrets, providers/forget and providers/ssh (#3398): the call's result, or why it failed, in words for the person, and for a failure a client can act on, its `code` (#6072). Channel 0 has no error path.
 type ProviderCarried struct {
 	Result JSONValue `json:"result,omitzero"`
 
 	Error *string `json:"error,omitzero"`
+
+	// Why it failed, for a client to say (#6072, W2b): denied (the person chose Deny), disconnected (the provider no longer takes the connection: it was removed there, or its refresh was refused), scope_missing (the person gave less than Agent Loops needs), account_inactive (the account can't make machines yet, such as no payment method), expired (the sign-in was not finished in time; start again).
+	Code *string `json:"code,omitzero"`
 }
 
 // providers/carry (#3398): the control plane asks the machine that carries a provider to call it. `record` is the provider's record, which never holds a secret; the machine runs its server with the secrets it keeps. `secrets` is only those an add or an update was given to check with, for this call, and is not kept.
@@ -12557,6 +12560,86 @@ type ProviderID string
 // providers/list and control/providersChanged.
 type ProviderList struct {
 	Providers []ProviderSummary `json:"providers"`
+}
+
+// A provider connected with OAuth (#6072): whose account and team its machine's token is for, and whether the provider still takes it. Never a token.
+type ProviderOAuth struct {
+	// The account's email, as the provider said at the connect.
+	Account *string `json:"account,omitzero"`
+
+	// The team the person chose on the provider's consent page.
+	Team *string `json:"team,omitzero"`
+
+	// disconnected: its last list was refused (the person removed Agent Loops at the provider, or its refresh failed): connect again.
+	State string `json:"state"`
+}
+
+// providers/oauth's result in ProviderCarried (#6072): for start, the address to open and its state; for finish, whose account the token is for and the names of the secrets kept. Never a token.
+type ProviderOAuthCarried struct {
+	URL *string `json:"url,omitzero"`
+
+	State *string `json:"state,omitzero"`
+
+	Account *string `json:"account,omitzero"`
+
+	Team *string `json:"team,omitzero"`
+
+	Scope *string `json:"scope,omitzero"`
+
+	SecretNames []string `json:"secretNames,omitzero"`
+}
+
+// providers/oauth (#6072): the control plane asks the machine that will carry a provider to start an OAuth connection (make and keep the PKCE verifier, about 10 minutes, and give the address to open) or to finish it (spend the code with the verifier, and keep the tokens for `provider` in ~/.agents-secrets). The verifier and the tokens never leave that machine.
+type ProviderOAuthCarry struct {
+	Op string `json:"op"`
+
+	Preset string `json:"preset"`
+
+	Provider *ProviderID `json:"provider,omitzero"`
+
+	// start: the web page's origin, for the hand-back page; none for the Mac and the Remote.
+	Origin *string `json:"origin,omitzero"`
+
+	State *string `json:"state,omitzero"`
+
+	Code *string `json:"code,omitzero"`
+
+	// finish: the provider's error from the callback, such as access_denied.
+	Error *string `json:"error,omitzero"`
+}
+
+// providers/oauthFinish (#6072): what the hand-back page gave the client (the code and the state, or the provider's error). The machine that started it spends the code; the control plane then adds the provider (or, with the `id` of one it started for, connects it again) with no secret of its own.
+type ProviderOAuthFinish struct {
+	State *string `json:"state,omitzero"`
+
+	Code *string `json:"code,omitzero"`
+
+	Error *string `json:"error,omitzero"`
+
+	// The new provider's name; none is the preset's provider's name, such as DigitalOcean.
+	Name *string `json:"name,omitzero"`
+}
+
+// providers/oauthStart (#6072): connect a provider with OAuth instead of a pasted token. `machine` carries it (the caller's first online one when none); `id` connects an existing provider again; `origin` is the web page's.
+type ProviderOAuthStart struct {
+	Preset string `json:"preset"`
+
+	Machine *MachineRef `json:"machine,omitzero"`
+
+	ID *ProviderID `json:"id,omitzero"`
+
+	Origin *string `json:"origin,omitzero"`
+}
+
+// providers/oauthStart's result: the provider's consent page to open (in ASWebAuthenticationSession, or a new window on the web), its state, and the machine that will keep the connection.
+type ProviderOAuthStarted struct {
+	URL string `json:"url"`
+
+	State string `json:"state"`
+
+	Machine MachineRef `json:"machine"`
+
+	MachineName *string `json:"machineName,omitzero"`
 }
 
 // providers/options: the New Machine form, a JSON Schema, with what New Machine would make (#4634). With no `id`, the person's default provider.
@@ -12658,6 +12741,9 @@ type ProviderSummary struct {
 
 	// The CLI its machines are reached through over ssh (gh, coder) when the control plane's machine has none (#3367). Absent when it needs none or has it.
 	SshToolMissing *string `json:"sshToolMissing,omitzero"`
+
+	// It is connected with OAuth (#6072), not a pasted token: whose account, and whether the connection still works. Absent for a pasted token.
+	Oauth *ProviderOAuth `json:"oauth,omitzero"`
 }
 
 // providers/deleteWorkspace (#4610): one of a provider's workspaces that no machine is linked to.

@@ -39,12 +39,12 @@ func lockKey(m *controllink.ClientMembership) (*ecdsa.PrivateKey, error) {
 	raw, ok, err := lockKeys.load(m.Client)
 	if err != nil {
 		return nil, &exit{code: exitError, msg: fmt.Sprintf("Could not read this terminal's machine lock key (%v).\n"+
-			"Pair again to make a new one: loops pair '<code>'", err)}
+			"Pair again to make a new one: loops auth login '<code>'", err)}
 	}
 	if ok {
 		key, err := machinelock.MachineSigner(raw)
 		if err != nil {
-			return nil, &exit{code: exitError, msg: "This terminal's machine lock key is not a key.\nPair again to make a new one: loops pair '<code>'"}
+			return nil, &exit{code: exitError, msg: "This terminal's machine lock key is not a key.\nPair again to make a new one: loops auth login '<code>'"}
 		}
 		return key, nil
 	}
