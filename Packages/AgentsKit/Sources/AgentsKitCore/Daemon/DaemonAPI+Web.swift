@@ -580,6 +580,11 @@ public extension DaemonAPI {
                 // Start a Machine from a Repository (#1809): the provider's form, then the machine.
                 Row(Method.providersOptions, params: ProviderRequest.self, result: ProviderOptions.self, kind: .controlRequest),
                 Row(Method.providersCreate, params: ProviderCreate.self, result: ProviderCreated.self, kind: .controlRequest),
+                // The guided DigitalOcean Connect (#6074): the consent page, then what the hand-back page gave.
+                Row(Method.providersOAuthStart, params: ProviderOAuthStart.self, result: ProviderOAuthStarted.self,
+                    kind: .controlRequest),
+                Row(Method.providersOAuthFinish, params: ProviderOAuthFinish.self, result: ProviderSummary.self,
+                    kind: .controlRequest),
                 // Prompts and starts kept for a stopped workspace (#691 US3).
                 Row(Method.hostsListKept, params: Empty.self, result: KeptList.self, kind: .controlRequest),
                 Row(Method.hostsDropKept, params: KeptRequestID.self, result: Empty.self, kind: .controlRequest),

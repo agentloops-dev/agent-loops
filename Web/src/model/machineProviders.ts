@@ -9,6 +9,7 @@ import type { ControlMachine, MachineRef, ProviderAdd, ProviderSummary, MachineI
 import { fromWireDate } from "../protocol/dates";
 import { Capability } from "../protocol/capabilities.generated";
 import { hostAnswers } from "./capabilities";
+import { doWords } from "./digitalOceanConnect";
 
 export type ProviderKind = "digitalOcean" | "codespaces" | "coder" | "aws" | "compute";
 
@@ -111,7 +112,7 @@ const docs = `${helpSite}how-to/`;
 
 /** Each kind's row: its title, its one line, and its part of the docs (How to set up). */
 const choices: Record<ProviderChoice, { title: string; description: string; docs: string }> = {
-  digitalOcean: { title: kinds.digitalOcean.title, description: "Droplets with a tag.", docs: `${docs}set-up-a-cloud-machine-provider/#digitalocean-droplets` },
+  digitalOcean: { title: kinds.digitalOcean.title, description: doWords.rowSummary, docs: `${docs}set-up-a-cloud-machine-provider/#digitalocean-droplets` },
   compute: { title: kinds.compute.title, description: "VMs with a label, in one zone.", docs: `${docs}set-up-a-cloud-machine-provider/#google-compute-engine-vms` },
   aws: { title: kinds.aws.title, description: "Instances with a tag, in one region.", docs: `${docs}set-up-a-cloud-machine-provider/#aws-ec2-instances` },
   codespaces: { title: kinds.codespaces.title, description: "Your codespaces, or the codespaces of one repository.", docs: `${docs}set-up-a-cloud-machine-provider/#github-codespaces` },

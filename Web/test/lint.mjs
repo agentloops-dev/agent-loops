@@ -45,6 +45,11 @@ const allowedURLs = new Set([
   // Help (#1327): the docs site at its own domain (#1549), a link the person opens in a new tab,
   // never fetched by the page.
   "https://docs.agentloops.dev/",
+  // The guided DigitalOcean Connect (#6074): DigitalOcean's sign-up, token and billing pages, the
+  // same for every person, as the window's; links opened in a new tab, never fetched.
+  "https://cloud.digitalocean.com/registrations/new",
+  "https://cloud.digitalocean.com/account/api/tokens",
+  "https://cloud.digitalocean.com/account/billing",
   // Repositories on github.com (#1685): where the person changes which repositories the GitHub
   // App reaches, the same for every person, as the window's; a link opened in a new tab, never fetched.
   "https://github.com/settings/installations",
