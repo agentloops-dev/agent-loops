@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Agent Loops: run your coding agents together, and answer them from anywhere</title>
-<meta name="description" content="Keep your editor and the coding agents you already have. Agent Loops runs several of them at once on your Mac or your own servers, shows which one needs you, and lets you answer from your iPhone, iPad or a browser.">
-<meta property="og:title" content="Agent Loops">
-<meta property="og:description" content="Run several coding agents at once. See which one needs you. Answer from anywhere.">
+<title>Agent Loops: agentic software delivery, from idea to production, and back</title>
+<meta name="description" content="Agents plan your work, build it, pass your CI, land it and ship it. You stay in the loop for the decisions that matter, from your Mac, your phone, a browser or a terminal. Works with the agents, forges, trackers and clouds you already use.">
+<meta property="og:title" content="Agent Loops: agentic software delivery">
+<meta property="og:description" content="From idea to production, and back. Agents do the work; you make the decisions that matter.">
 <meta property="og:image" content="https://agentloops.dev/assets/shots/mac.png">
 <meta property="og:url" content="https://agentloops.dev/">
 <link rel="canonical" href="https://agentloops.dev/">
@@ -18,121 +18,175 @@
 </head>
 <body>
 
-<header class="top">
-  <a class="brand" href="/"><img src="assets/icon.svg" alt="" width="32" height="32">Agent Loops</a>
+<header class="top"><div class="wrap">
+  <a class="brand" href="/"><img src="assets/icon.svg" alt="" width="28" height="28">Agent Loops</a>
   <nav>
-    <a href="#clients">Clients</a>
+    <a href="#lifecycle">Lifecycle</a>
+    <a href="#integrations">Integrations</a>
     <a href="https://docs.agentloops.dev/">Docs</a>
   </nav>
-</header>
+  <a class="button small primary" href="https://github.com/agentloops-dev/agents-releases/releases/latest">Download for Mac</a>
+</div></header>
 
 <main>
 
-<section class="hero">
-  <img class="hero-icon" src="assets/icon.svg" alt="The Agent Loops icon: a white blob with a smile, on blue" width="112" height="112">
-  <h1>Run several coding agents at once. See which one needs you.</h1>
-  <p class="lede">Keep your editor and the coding agents you already pay for. Agent Loops runs them on your Mac or on your own servers. You answer them from your iPhone, your iPad or a browser.</p>
+<!-- 1. Hero. When sign-up is live (#3392), the first button becomes "Start free at agentloops.dev". -->
+<section class="hero"><div class="wrap">
+  <p class="eyebrow">Agentic software delivery</p>
+  <h1>From idea to production, and back.</h1>
+  <p class="lede">Agents plan your work, build it, pass your CI, land it and ship it. You stay in the loop for the decisions that matter, from your Mac, your phone, a browser or a terminal. It works with the agents, forges, trackers and clouds you already use.</p>
   <p class="actions">
-    <a class="button primary" href="https://docs.agentloops.dev/tutorials/first-agent/">Get it on TestFlight</a>
+    <a class="button primary" href="https://github.com/agentloops-dev/agents-releases/releases/latest">Download for Mac</a>
+    <a class="button" href="https://docs.agentloops.dev/how-to/connect-a-window-or-phone/">iPhone and iPad on TestFlight</a>
     <a class="button" href="https://docs.agentloops.dev/">Read the docs</a>
   </p>
-  <p class="small">An alpha, on TestFlight by invitation. Source visible. All rights reserved.</p>
-  <!-- The hero video goes here when #1078 makes it. Replace the figure with:
-       <div class="video"><iframe src="https://www.youtube-nocookie.com/embed/VIDEO_ID?rel=0"
-         title="Agent Loops in two minutes" loading="lazy" allowfullscreen
-         allow="encrypted-media; picture-in-picture"></iframe></div> -->
-  <figure class="shot hero-shot">
-    <img src="assets/shots/mac.png" alt="The Agent Loops window on a Mac: folders and their agents in the sidebar, grouped by what happens next, with one conversation open" width="1440" height="900">
-  </figure>
-</section>
-
-<section class="pitch">
-  <article>
-    <h2>It runs the agents you already have</h2>
-    <p>Claude, Codex, Gemini, Antigravity, Grok, Copilot, Cursor and OpenCode, each signed in with your own account and plan. Agent Loops brings no model and no bill of its own. You choose the runtime, the model and the permission mode for each agent.</p>
-    <p class="more"><a href="https://docs.agentloops.dev/reference/runtimes/">What each runtime can do</a></p>
-  </article>
-
-  <article>
-    <h2>It shows which agent needs you</h2>
-    <p>Every agent is in one group: Needs you, Waiting, Working, Done or Paused. When an agent ends its turn, it says in one sentence how it went. Read the list and you know what to open, without reading a conversation.</p>
-    <p class="more"><a href="https://docs.agentloops.dev/reference/statuses/">Statuses and groups</a></p>
-  </article>
-
-  <article>
-    <h2>You see the work, not only the chat</h2>
-    <p>A plan or a review that an agent writes opens beside the conversation and fills in as the agent writes. You can type on it while it grows. Code changes are coloured down to the word.</p>
-    <p class="more"><a href="https://docs.agentloops.dev/how-to/follow-a-live-document/">Follow a live document</a></p>
-  </article>
-
-  <article>
-    <h2>Agents that work together, and on their own</h2>
-    <p>An agent finishes a change. A workflow, a Markdown file in your repository, starts a second agent to test it. The tester needs the iOS simulator, but another agent has it. So the tester takes a place in line and ends its turn. It costs nothing while it waits, and it starts again when the simulator is free.</p>
-    <p>It fixes the failure, then waits for <code>main</code> to move so it can rebase. Nothing polls. When <code>main</code> moves, the agent wakes up and finishes. Nobody asked you for anything.</p>
-    <ul>
-      <li><strong>Leases.</strong> Agents take turns with a simulator, a browser, the screen, or anything they name. <a href="https://docs.agentloops.dev/explanation/leases/">Leases</a></li>
-      <li><strong>Events.</strong> An agent can wait for another agent, a branch, a pull request or the Mac waking. <a href="https://docs.agentloops.dev/reference/events/">Events</a></li>
-      <li><strong>Workflows.</strong> Start an agent on a schedule or when something happens. The file lives beside your code. <a href="https://docs.agentloops.dev/how-to/set-up-a-workflow/">Set up a workflow</a></li>
-      <li><strong>Agents that manage agents.</strong> An agent can start helpers, each in a worktree of its own, then brief them, wait for them and stop them. <a href="https://docs.agentloops.dev/reference/agent-tools/">Tools for agents</a></li>
-    </ul>
-  </article>
-
-  <article>
-    <h2>They keep going without you</h2>
-    <p>Your agents run in a helper in the background, not in the window. Close the window or quit the app, and they carry on. The Mac stays awake while a turn runs. After a restart, the agents that were working pick up where they stopped.</p>
-    <p class="more"><a href="https://docs.agentloops.dev/explanation/window-and-daemon/">The window and the host</a></p>
-  </article>
-
-  <article>
-    <h2>Your machines, one figure for spending</h2>
-    <p>The work runs on your Mac, or on a Linux server of your own. The control plane that connects your devices runs on your Mac, or on hosting you rent. Every agent's spending, on every runtime and server, adds up to one figure for the day, and you can set a limit.</p>
-    <p class="more"><a href="https://docs.agentloops.dev/explanation/control-plane/">The control plane</a> · <a href="https://docs.agentloops.dev/how-to/limit-spending/">Limit spending</a></p>
-  </article>
-</section>
-
-<section class="clients" id="clients">
-  <h2>On the Mac, the iPhone and iPad, and the web</h2>
-  <p class="lede">The same agents, the same list and the same conversations on each. Read, answer, start and stop agents from any of them. When an agent needs you and you are away from the Mac, the device you used last gets a notification.</p>
-  <div class="three">
-    <figure class="shot">
-      <img src="assets/shots/mac-client.png" alt="The Mac window with an agent's conversation and its live document beside it" width="1440" height="900" loading="lazy">
-      <figcaption><strong>Mac.</strong> The window, with files, changes and a terminal beside each conversation.</figcaption>
-    </figure>
-    <figure class="shot phone">
-      <img src="assets/shots/iphone.png" alt="Agent Loops on an iPhone: the list of agents grouped by who needs you" width="603" height="1311" loading="lazy">
-      <figcaption><strong>iPhone and iPad.</strong> Answer a question from the sofa, or start an agent on the train.</figcaption>
-    </figure>
-    <figure class="shot">
-      <img src="assets/shots/web.png" alt="Agent Loops as a web page in a browser" width="1440" height="900" loading="lazy">
-      <figcaption><strong>Web.</strong> The same app as a page in any browser, served by your own Mac or control plane.</figcaption>
-    </figure>
+  <!-- The hero video goes beside the mocks when #1078 makes it. -->
+  <div class="hero-mocks" role="img" aria-label="A drawing of the Work page: the epic Checkout v2 with five issues, one merged, one in CI, one with an agent at work, one that needs you to approve it, and one blocked. Beside it, an iPhone shows the issue that needs you, with Approve and Change it.">
+    <div class="mock" aria-hidden="true">
+      <div class="mock-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span>Work ▸ Epic: Checkout v2</div>
+      <div class="mock-body">
+        <div class="row"><span>&#35;412 Cart totals in one call</span><span class="st done">merged</span></div>
+        <div class="row"><span>&#35;413 Pay with a saved card</span><span class="st run">CI running</span></div>
+        <div class="row"><span>&#35;414 Receipt e-mail</span><span class="st run">working · agent on box-2</span></div>
+        <div class="row"><span>&#35;415 New checkout screen</span><span class="st you">needs you · approve</span></div>
+        <div class="row"><span>&#35;416 Roll out to 10 %</span><span class="st wait">blocked by &#35;415</span></div>
+        <div class="row foot"><span>Lead: 3 lanes running · 2 machines · $4.10 today</span><span>Last update 1 min ago</span></div>
+      </div>
+    </div>
+    <div class="mock phone" aria-hidden="true">
+      <div class="mock-bar">iPhone · Needs you</div>
+      <div class="mock-body">
+        <b>&#35;415 New checkout screen</b>
+        <p class="small">Waits for your review. 4 screenshots.</p>
+        <p class="mock-actions"><span class="button small primary">Approve</span><span class="button small">Change it</span></p>
+      </div>
+    </div>
   </div>
-</section>
+  <p class="small caption">Drawings with sample data, not screenshots.</p>
+</div></section>
 
-<!-- Videos (#1078, #1793). When the first one is on YouTube, take out `hidden` and add one
-     <div class="video"> per video, with a youtube-nocookie.com address only:
-     <div class="video"><iframe src="https://www.youtube-nocookie.com/embed/VIDEO_ID?rel=0"
-       title="…" loading="lazy" allowfullscreen allow="encrypted-media; picture-in-picture"></iframe></div> -->
-<section class="videos" id="videos" hidden>
-  <h2>See it work</h2>
-</section>
+<!-- 2. The whole lifecycle -->
+<section id="lifecycle"><div class="wrap">
+  <h2>The whole lifecycle, not only the code</h2>
+  <p class="lede">Three parts. Agents do each step. A person comes in where a person decides.</p>
+  <div class="grid3">
+    <div class="card"><span class="step">1</span><h3>Idea to epic <span class="tag now">today</span></h3>
+      <ul>
+        <li>A product owner agent talks the idea through with you, by text or voice, and files the issues</li>
+        <li>An epic with ordered steps, sizes and priorities, in your tracker</li>
+        <li>You agree the plan <span class="tag you">you decide</span></li>
+      </ul></div>
+    <div class="card"><span class="step">2</span><h3>Epic to merged PR <span class="tag now">today</span></h3>
+      <ul>
+        <li>A lead agent starts one agent for each issue, each in its own worktree, on your machines</li>
+        <li>Your CI is the gate: agents run it, read each failure and fix it</li>
+        <li>You approve new screens <span class="tag you">you decide</span></li>
+      </ul></div>
+    <div class="card"><span class="step">3</span><h3>Deploy, watch, roll back <span class="tag now">part today</span></h3>
+      <ul>
+        <li>Every deploy in every environment, on one page <span class="tag now">today</span></li>
+        <li>Errors in production go back into work <span class="tag now">today</span></li>
+        <li>A deploy that waits for an approval comes to you <span class="tag you">you decide</span></li>
+        <li>Agents watch a canary and roll back <a class="tag soon" href="https://github.com/agentloops-dev/agent-loops/issues/6831">coming</a></li>
+      </ul></div>
+  </div>
+  <p class="flow">idea → epic → issues → agents → CI → PRs → main → deploy → health → back to work</p>
 
-<section class="honest">
-  <h2>When something else is better</h2>
-  <ul>
-    <li><strong>You want one assistant beside the file you edit.</strong> The agent in your editor is closer to hand. Agent Loops is not an editor.</li>
-    <li><strong>You do not use a Mac.</strong> Agent Loops needs a Mac. Servers, phones and browsers connect to it.</li>
-    <li><strong>Your computer should be off while the work happens.</strong> A cloud agent does that. Agent Loops runs the work on machines you own.</li>
-  </ul>
-  <p class="actions">
-    <a class="button primary" href="https://docs.agentloops.dev/tutorials/first-agent/">Start your first agent</a>
-    <a class="button" href="https://docs.agentloops.dev/explanation/why-agents/">Why Agent Loops, in full</a>
-  </p>
-</section>
+  <figure class="anim">
+    <svg class="ep" viewBox="0 0 720 424" role="img" aria-labelledby="ep-title ep-desc" xmlns="http://www.w3.org/2000/svg">
+      <title id="ep-title">An epic runs itself</title>
+      <desc id="ep-desc">A person says an idea: "Let people search their orders by number or e-mail." The product owner files epic 417, Order search, with five issues. The lead starts a lane for each issue whose blockers are closed, on three machines. Three lanes work and their pull requests merge; the two blocked issues then start and merge too. The epic closes: 5 pull requests, 3 machines, 3 hours 40 minutes, $14.20, and you approved one new screen.</desc>
+      <rect class="ep-frame" x="1" y="1" width="718" height="422" rx="14"/>
+      <rect class="ep-chrome" x="1" y="1" width="718" height="36" rx="14"/>
+      <rect class="ep-chrome" x="1" y="24" width="718" height="13"/>
+      <circle class="ep-light" cx="22" cy="19" r="5"/><circle class="ep-light" cx="40" cy="19" r="5"/><circle class="ep-light" cx="58" cy="19" r="5"/>
+      <text x="80" y="23" class="ep-s">An epic runs itself · one lead, a lane per issue, on several machines</text>
+
+      <g class="ep-a ep-fade ep-f1">
+        <rect class="ep-idea" x="24" y="52" width="420" height="30" rx="15"/>
+        <text x="40" y="72" class="ep-t">🎙 "Let people search their orders by number or e-mail."</text>
+      </g>
+      <g class="ep-a ep-fade ep-f2">
+        <text x="24" y="108" class="ep-t ep-b">Epic &#35;417 · Order search</text>
+        <text x="210" y="108" class="ep-s">5 issues · sizes S–M · priority medium · filed by the product owner</text>
+      </g>
+      <g class="ep-a ep-fade ep-f3">
+        <text x="24" y="130" class="ep-s">The lead starts a lane for each issue whose blockers are closed</text>
+      </g>
+
+      <g class="ep-a ep-fade ep-f3 ep-s">
+        <text x="24" y="166">&#35;418 Index orders</text><text x="24" y="210">&#35;419 Search API</text><text x="24" y="254">&#35;420 Search field</text>
+        <text x="24" y="298">&#35;421 Empty state</text><text x="24" y="342">&#35;422 Search docs</text>
+        <text x="168" y="180">build-1</text><text x="168" y="224">do-box-2</text><text x="168" y="268">studio-mac</text>
+        <text x="168" y="312">build-1</text><text x="168" y="356">do-box-2</text>
+        <rect class="ep-track" x="168" y="156" width="400" height="12" rx="6"/><rect class="ep-track" x="168" y="200" width="400" height="12" rx="6"/>
+        <rect class="ep-track" x="168" y="244" width="400" height="12" rx="6"/><rect class="ep-track" x="168" y="288" width="400" height="12" rx="6"/>
+        <rect class="ep-track" x="168" y="332" width="400" height="12" rx="6"/>
+      </g>
+      <rect class="ep-a ep-bar ep-g1" x="168" y="156" width="210" height="12" rx="6"/>
+      <rect class="ep-a ep-bar ep-g2" x="168" y="200" width="270" height="12" rx="6"/>
+      <rect class="ep-a ep-bar ep-g3" x="168" y="244" width="160" height="12" rx="6"/>
+      <rect class="ep-a ep-bar ep-g4" x="378" y="288" width="140" height="12" rx="6"/>
+      <rect class="ep-a ep-bar ep-g5" x="438" y="332" width="130" height="12" rx="6"/>
+
+      <g class="ep-chips">
+        <g class="ep-a ep-fade ep-w1 ep-run"><rect x="588" y="152" width="110" height="20" rx="5"/><text x="643" y="166">working</text></g>
+        <g class="ep-a ep-fade ep-m1 ep-ok"><rect x="588" y="152" width="110" height="20" rx="5"/><text x="643" y="166">✓ PR merged</text></g>
+        <g class="ep-a ep-fade ep-w2 ep-run"><rect x="588" y="196" width="110" height="20" rx="5"/><text x="643" y="210">CI running</text></g>
+        <g class="ep-a ep-fade ep-m2 ep-ok"><rect x="588" y="196" width="110" height="20" rx="5"/><text x="643" y="210">✓ PR merged</text></g>
+        <g class="ep-a ep-fade ep-w3 ep-run"><rect x="588" y="240" width="110" height="20" rx="5"/><text x="643" y="254">working</text></g>
+        <g class="ep-a ep-fade ep-m3 ep-ok"><rect x="578" y="240" width="130" height="20" rx="5"/><text x="643" y="254">✓ approved · merged</text></g>
+        <g class="ep-a ep-fade ep-wait4 ep-wait"><rect x="588" y="284" width="110" height="20" rx="5"/><text x="643" y="298">blocked by &#35;418</text></g>
+        <g class="ep-a ep-fade ep-w4 ep-run"><rect x="588" y="284" width="110" height="20" rx="5"/><text x="643" y="298">working</text></g>
+        <g class="ep-a ep-fade ep-m4 ep-ok"><rect x="588" y="284" width="110" height="20" rx="5"/><text x="643" y="298">✓ PR merged</text></g>
+        <g class="ep-a ep-fade ep-wait5 ep-wait"><rect x="588" y="328" width="110" height="20" rx="5"/><text x="643" y="342">blocked by &#35;419</text></g>
+        <g class="ep-a ep-fade ep-w5 ep-run"><rect x="588" y="328" width="110" height="20" rx="5"/><text x="643" y="342">working</text></g>
+        <g class="ep-a ep-fade ep-m5 ep-ok"><rect x="588" y="328" width="110" height="20" rx="5"/><text x="643" y="342">✓ PR merged</text></g>
+      </g>
+
+      <g class="ep-a ep-fade ep-f9">
+        <rect class="ep-done" x="24" y="384" width="672" height="28" rx="8"/>
+        <text x="40" y="403" class="ep-t ep-b ep-done-text">Epic closed · 5 PRs · 3 machines · 3 h 40 min · $14.20 · you approved one new screen</text>
+      </g>
+    </svg>
+    <figcaption class="small">An epic runs itself, with sample data. It stops when you ask your system for less motion.</figcaption>
+  </figure>
+</div></section>
+
+<!-- 15. Works with the tools you already use. The count comes from docs/reference/integrations.md (2026-11-22). -->
+<section id="integrations"><div class="wrap">
+  <h2>Works with the tools you already use</h2>
+  <p class="lede">40+ integrations, and any MCP server. Bring your agents, your forge, your tracker and your cloud. Each agent signs in with your own account and plan.</p>
+  <div class="grid3 groups">
+    <div class="card"><h3>Coding agents</h3><p class="chips"><span class="chip">Claude</span><span class="chip">Codex</span><span class="chip">Antigravity</span><span class="chip">Grok</span><span class="chip">Copilot</span><span class="chip">Cursor</span><span class="chip">OpenCode</span></p>
+      <p class="more"><a href="https://docs.agentloops.dev/reference/runtimes/">What each one can do</a></p></div>
+    <div class="card"><h3>Forges</h3><p class="chips"><span class="chip">GitHub</span><span class="chip">GitLab</span><span class="chip">Bitbucket</span><span class="chip">Azure DevOps</span><span class="chip">Forgejo</span></p></div>
+    <div class="card"><h3>Trackers</h3><p class="chips"><span class="chip">GitHub Issues and Projects</span><span class="chip">Jira</span><span class="chip">Linear</span><span class="chip">Azure Boards</span></p></div>
+    <div class="card"><h3>Machines</h3><p class="chips"><span class="chip">Your Mac</span><span class="chip">Linux over ssh</span><span class="chip">DigitalOcean</span><span class="chip">AWS EC2</span><span class="chip">Google Compute</span><span class="chip">Cloud Workstations</span><span class="chip">Codespaces</span><span class="chip">Coder</span><span class="chip">Docker</span></p></div>
+    <div class="card"><h3>Chat and mail</h3><p class="chips"><span class="chip">Slack</span><span class="chip">Google Chat</span><span class="chip">WhatsApp</span><span class="chip">E-mail</span></p></div>
+    <div class="card"><h3>Errors and uptime</h3><p class="chips"><span class="chip">Sentry</span><span class="chip">Better Stack</span></p></div>
+    <div class="card"><h3>Docs</h3><p class="chips"><span class="chip">Confluence</span><span class="chip">Notion</span><span class="chip">Google Drive</span></p></div>
+    <div class="card"><h3>AI gateways</h3><p class="chips"><span class="chip">Amazon Bedrock</span><span class="chip">Vertex AI</span><span class="chip">Azure</span><span class="chip">LiteLLM</span><span class="chip">Portkey</span></p></div>
+    <div class="card"><h3>Delivery and reports</h3><p class="chips"><span class="chip">Cloud Run</span><span class="chip">App Store and TestFlight</span><span class="chip">CodeRabbit</span><span class="chip">OTLP</span><span class="chip">A read API</span></p></div>
+  </div>
+  <p class="more"><a href="https://docs.agentloops.dev/reference/integrations/">Every integration and its state</a></p>
+</div></section>
+
+<!-- 17. Built with itself. Figures from the repo's records on 2026-11-22. No count of people. -->
+<section class="proof"><div class="wrap">
+  <h2>Agent Loops is built with Agent Loops</h2>
+  <p class="lede">Agents plan, build, test and land the changes to this product, with the workflows and the approvals on this page.</p>
+  <div class="grid3">
+    <div class="card"><p class="figure">3,212</p><p class="small">pull requests merged since 2026-09-26</p></div>
+    <div class="card"><p class="figure">520</p><p class="small">pull requests merged in the last 7 days</p></div>
+    <div class="card"><p class="figure">3,080</p><p class="small">issues done</p></div>
+  </div>
+  <p class="small">From <a href="https://github.com/agentloops-dev/agent-loops">the repository</a>, on 2026-11-22.</p>
+</div></section>
 
 </main>
 
-<footer>
+<footer><div class="wrap">
   <nav>
     <a href="https://docs.agentloops.dev/">Docs</a>
     <a href="https://docs.agentloops.dev/privacy/">Privacy</a>
@@ -140,7 +194,7 @@
     <a href="https://github.com/agentloops-dev/agents-releases/issues">Support</a>
   </nav>
   <p class="small">This site sets no cookies and has no tracking. Apple, Mac, iPhone, iPad and TestFlight are trademarks of Apple Inc.</p>
-</footer>
+</div></footer>
 
 </body>
 </html>
