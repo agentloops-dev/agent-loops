@@ -175,3 +175,36 @@ func TestSignInSaysEachStateInOrderWhenTheDaemonIsSlow(t *testing.T) {
 		t.Fatalf("states %v, want %v", states, want)
 	}
 }
+
+// #6855: step 7 says which runtimes a Mac lends its sign-in to; a lent one is lent also
+// when the machine has a sign-in of its own (056 D7).
+func TestSignedInLineSaysWhichAreLent(t *testing.T) {
+	yes := true
+	status := func(id, name string, own bool, relayed *bool) wire.RuntimeStatus {
+		var s wire.RuntimeStatus
+		s.Runtime.ID, s.Runtime.Name = id, name
+		s.Availability.Available = &wire.RuntimeAvailabilityAvailable{}
+		s.SignIn = &wire.RuntimeSignIn{SignedIn: own, Relayed: relayed}
+		return s
+	}
+	cases := []struct {
+		all  []wire.RuntimeStatus
+		want string
+	}{
+		{[]wire.RuntimeStatus{status("claude", "Claude", false, &yes), status("codex", "Codex", true, &yes)},
+			"Claude, Codex signed in (lent by a Mac)"},
+		{[]wire.RuntimeStatus{status("claude", "Claude", true, nil), status("codex", "Codex", false, &yes)},
+			"Claude signed in; Codex signed in (lent by a Mac)"},
+		{[]wire.RuntimeStatus{status("claude", "Claude", true, nil), status("codex", "Codex", true, nil)},
+			"Claude, Codex signed in"},
+	}
+	for _, c := range cases {
+		waiting, own, lent := splitSignedIn(c.all, []string{"claude", "codex"})
+		if len(waiting) != 0 {
+			t.Fatalf("waiting %v", waiting)
+		}
+		if got := signedInLine(own, lent); got != c.want {
+			t.Errorf("line %q, want %q", got, c.want)
+		}
+	}
+}
