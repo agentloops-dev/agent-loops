@@ -259,6 +259,10 @@ func rollUpLineage(ctx context.Context, st store.Store, host string, reset []wir
 		keptLinks.Links = mergeLinks(nil, reset)
 	}
 	var merged []string
+	// The changes' links are merged once, after the loop: a merge per change rebuilt its map
+	// over every kept link and sorted them all again, the control plane's largest allocation
+	// on the live heap (#6597).
+	var changed []wire.LineageLink
 	for _, k := range changeKeys {
 		object, err := st.Get(ctx, k.Key)
 		if err != nil {
@@ -270,10 +274,11 @@ func rollUpLineage(ctx context.Context, st store.Store, host string, reset []wir
 			continue
 		}
 		if reset == nil && linksRead {
-			keptLinks.Links = mergeLinks(keptLinks.Links, change.Links)
+			changed = append(changed, change.Links...)
 		}
 		keptStates.States = append(keptStates.States, change.States...)
 	}
+	keptLinks.Links = mergeLinks(keptLinks.Links, changed)
 	keptStates.States = boundStates(append(keptStates.States, states...), now)
 	keptStates.At = records.At(now)
 	if err := putOver(ctx, st, lineageStatesKey(host), statesObject, keptStates); err != nil {
