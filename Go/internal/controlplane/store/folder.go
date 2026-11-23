@@ -37,6 +37,28 @@ type Folder struct {
 
 func NewFolder(root string) *Folder { return &Folder{Root: root, index: newFolderIndex()} }
 
+// Stats returns the regular-file count and bytes in the folder store. Call it from the
+// periodic sweep, not on every metrics scrape.
+func (f *Folder) Stats() (int64, int64, error) {
+	var files, size int64
+	err := filepath.WalkDir(f.Root, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !entry.Type().IsRegular() {
+			return nil
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		files++
+		size += info.Size()
+		return nil
+	})
+	return files, size, err
+}
+
 // HashedByListing is how many files listing has read and hashed: for the tests.
 func (f *Folder) HashedByListing() int {
 	f.index.mu.Lock()

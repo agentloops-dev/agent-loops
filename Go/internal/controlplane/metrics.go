@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/capacity"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
 )
 
@@ -30,10 +31,12 @@ import (
 // Every label's values are bounded: a method that a client names is
 // counted under its own name only for the first metricsMethods names, then as "other".
 type Metrics struct {
-	mu       sync.Mutex
-	counters map[string]map[labels]float64
-	times    map[string]map[labels]*histogram
-	methods  map[string]bool
+	mu                     sync.Mutex
+	counters               map[string]map[labels]float64
+	times                  map[string]map[labels]*histogram
+	methods                map[string]bool
+	capacity               controlCapacity
+	storeFiles, storeBytes int64
 }
 
 // metricsMethods is how many method names get a label of their own.
@@ -168,28 +171,41 @@ func (m *Metrics) Store(op string, err error, took time.Duration) {
 
 // help is each metric's HELP line and type.
 var help = map[string][2]string{
-	"agents_control_requests_total":         {"counter", "Requests from clients, by method and result (ok, error, routed, refused)."},
-	"agents_control_request_seconds":        {"histogram", "Time the control plane took to answer its own requests, by method."},
-	"agents_control_events_sent_total":      {"counter", "Notifications sent to clients, by method, one for each client sent to."},
-	"agents_control_store_operations_total": {"counter", "Store operations, by op."},
-	"agents_control_store_errors_total":     {"counter", "Store operations that failed, by op."},
-	"agents_control_store_seconds":          {"histogram", "Time each store operation took, by op."},
-	"agents_control_hosts_connected":        {"gauge", "Machines whose uplink this copy holds."},
-	"agents_control_hosts_known":            {"gauge", "Machines in the store."},
-	"agents_control_clients_connected":      {"gauge", "Clients (windows, phones, browsers) with a session here."},
-	"agents_control_client_sessions":        {"gauge", "Client sessions here; a client can have more than one."},
-	"agents_control_leases_held":            {"gauge", "Machine leases this copy holds, with several copies over one store."},
-	"agents_control_copies":                 {"gauge", "Copies of the control plane this copy knows of, itself too."},
-	"agents_control_phase":                  {"gauge", "1 for this copy's phase: serving, receiving, frozen or forwarding."},
-	"agents_control_up_seconds":             {"gauge", "Seconds since this copy started."},
-	"agents_control_build_info":             {"gauge", "1, with this copy's version."},
+	"agents_control_requests_total":             {"counter", "Requests from clients, by method and result (ok, error, routed, refused)."},
+	"agents_control_request_seconds":            {"histogram", "Time the control plane took to answer its own requests, by method."},
+	"agents_control_events_sent_total":          {"counter", "Notifications sent to clients, by method, one for each client sent to."},
+	"agents_control_store_operations_total":     {"counter", "Store operations, by op."},
+	"agents_control_store_errors_total":         {"counter", "Store operations that failed, by op."},
+	"agents_control_store_seconds":              {"histogram", "Time each store operation took, by op."},
+	"agents_control_hosts_connected":            {"gauge", "Machines whose uplink this copy holds."},
+	"agents_control_hosts_known":                {"gauge", "Machines in the store."},
+	"agents_control_clients_connected":          {"gauge", "Clients (windows, phones, browsers) with a session here."},
+	"agents_control_client_sessions":            {"gauge", "Client sessions here; a client can have more than one."},
+	"agents_control_leases_held":                {"gauge", "Machine leases this copy holds, with several copies over one store."},
+	"agents_control_copies":                     {"gauge", "Copies of the control plane this copy knows of, itself too."},
+	"agents_control_phase":                      {"gauge", "1 for this copy's phase: serving, receiving, frozen or forwarding."},
+	"agents_control_up_seconds":                 {"gauge", "Seconds since this copy started."},
+	"agents_control_capacity_level":             {"gauge", "Capacity level: 0 ok, 1 near, 2 full."},
+	"agents_control_capacity_reason":            {"gauge", "1 with the signal that set the current capacity level."},
+	"agents_control_load_per_core":              {"gauge", "One-minute load average per CPU core."},
+	"agents_control_load_per_core5":             {"gauge", "Five-minute load average per CPU core."},
+	"agents_control_pressure_memory_full_avg60": {"gauge", "Linux memory PSI full avg60, in percent."},
+	"agents_control_pressure_io_full_avg60":     {"gauge", "Linux I/O PSI full avg60, in percent."},
+	"agents_control_memory_available_bytes":     {"gauge", "Available physical memory in bytes."},
+	"agents_control_swap_used_percent":          {"gauge", "Swap space used, as a percent of total."},
+	"agents_control_heap_inuse_bytes":           {"gauge", "Go heap objects in use, in bytes."},
+	"agents_control_goroutines":                 {"gauge", "Number of Go goroutines."},
+	"agents_control_open_files":                 {"gauge", "Open process file descriptors, when available."},
+	"agents_control_store_files":                {"gauge", "Regular files in the folder store, counted during the sweep."},
+	"agents_control_store_bytes":                {"gauge", "Bytes in regular files in the folder store, counted during the sweep."},
+	"agents_control_build_info":                 {"gauge", "1, with this copy's version."},
 }
 
 // gauges is what is read when scraped, rather than counted.
 type gauges struct {
 	hostsConnected, hostsKnown, clients, sessions, leases, copies int
-	phase, version                                                        string
-	up                                                                    time.Duration
+	phase, version                                                string
+	up                                                            time.Duration
 }
 
 // write writes every metric in the Prometheus text format (version 0.0.4). The text is made
@@ -234,6 +250,22 @@ func (m *Metrics) text(w *bytes.Buffer, g gauges) {
 		gauge("agents_control_phase", label("phase", p), v)
 	}
 	gauge("agents_control_up_seconds", "", math.Round(g.up.Seconds()))
+	c := m.capacity
+	gauge("agents_control_capacity_level", "", float64(capacity.Rank(c.level)))
+	if c.reason != "" {
+		gauge("agents_control_capacity_reason", label("reason", c.reason), 1)
+	}
+	gauge("agents_control_load_per_core", "", c.load1)
+	gauge("agents_control_load_per_core5", "", c.load5)
+	gauge("agents_control_pressure_memory_full_avg60", "", c.pressureMemory)
+	gauge("agents_control_pressure_io_full_avg60", "", c.pressureIO)
+	gauge("agents_control_memory_available_bytes", "", c.memoryAvailable)
+	gauge("agents_control_swap_used_percent", "", c.swapUsed)
+	gauge("agents_control_heap_inuse_bytes", "", c.heapInuse)
+	gauge("agents_control_goroutines", "", float64(c.goroutines))
+	gauge("agents_control_open_files", "", float64(c.openFiles))
+	gauge("agents_control_store_files", "", float64(m.storeFiles))
+	gauge("agents_control_store_bytes", "", float64(m.storeBytes))
 	gauge("agents_control_build_info", label("version", g.version), 1)
 
 	names := make([]string, 0, len(out))
@@ -252,6 +284,18 @@ func (m *Metrics) text(w *bytes.Buffer, g gauges) {
 			w.WriteString(line)
 		}
 	}
+}
+
+func (m *Metrics) setCapacity(c controlCapacity) {
+	m.mu.Lock()
+	m.capacity = c
+	m.mu.Unlock()
+}
+
+func (m *Metrics) setStoreSize(files, bytes int64) {
+	m.mu.Lock()
+	m.storeFiles, m.storeBytes = files, bytes
+	m.mu.Unlock()
 }
 
 func joined(a, b labels) labels {
