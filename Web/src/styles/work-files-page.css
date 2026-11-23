@@ -9,7 +9,6 @@
 .work-files-page .files-head .tabs { margin: 0; border-bottom: none; }
 .work-files-page .files-head .tabs button { padding: 4px 10px 6px; }
 .files-pick { display: inline-flex; gap: 4px; align-items: center; }
-.work-files-page .files-fresh { margin: 0 0 12px; }
 .work-files-page .plus { color: var(--forge-open); font-variant-numeric: tabular-nums; }
 .work-files-page .minus { color: var(--forge-closed); font-variant-numeric: tabular-nums; }
 .work-files-page .change, .files-sheet .change { font-size: 0.75rem; color: var(--paper-tertiary); }

@@ -7,13 +7,10 @@
 .work-item-grid > .work-pull-top { grid-area: pulltop; }
 .work-item-grid > .work-page-bar { grid-area: bar; }
 .work-item-grid > .work-page-head { grid-area: head; }
-.work-item-grid > .work-problem { grid-area: problem; }
 .work-item-grid > .work-side.people { grid-area: people; }
 .work-item-grid > .work-main { grid-area: main; min-width: 0; }
 .work-item-grid > .work-side.links { grid-area: links; }
 .work-item-grid > .work-could-not { grid-area: none; }
-/* A read failed after one came: the strip under the header, the last read dimmed under it. */
-.work-item-grid:has(> .work-problem) > :is(.work-side, .work-main) { opacity: 0.5; }
 .work-page-bar { gap: 6px; }
 .work-place { display: inline-flex; gap: 6px; align-items: baseline; min-width: 0; margin-right: auto; white-space: nowrap; }
 .work-place a { color: inherit; opacity: 0.7; text-decoration: none; }
@@ -227,11 +224,9 @@ button.work-merge-row:hover { background: var(--paper-wash); }
   grid-template-areas: "bar" "head" "problem" "notes" "people" "main"; column-gap: 24px; }
 .work-release-grid > .work-page-bar { grid-area: bar; }
 .work-release-grid > .work-page-head { grid-area: head; }
-.work-release-grid > .work-problem { grid-area: problem; }
 .work-release-grid > .work-release-notes { grid-area: notes; }
 .work-release-grid > .work-side.people { grid-area: people; margin: 12px 0; border-bottom: 1px solid var(--paper-rule); }
 .work-release-grid > .work-main { grid-area: main; min-width: 0; }
-.work-release-grid:has(> .work-problem) > :is(.work-side, .work-main, .work-release-notes) { opacity: 0.5; }
 .work-release-page .work-page-byline .quiet { font-variant-numeric: tabular-nums; }
 .work-release-range, .work-release-tag { font-family: var(--mono, ui-monospace, monospace); font-size: 0.95em; }
 .work-release-tag { display: inline-flex; gap: 6px; align-items: center; }
@@ -315,10 +310,7 @@ dialog.sheet:has(.work-log) { width: min(860px, calc(100vw - 32px)); }
 .work-lead-state.attention { color: var(--tint-attention); opacity: 1; }
 .work-lead-state.attention .dot, .work-open-lead .dot.attention { background: var(--tint-attention); }
 .work-plan > .work-placeholder { border-top: 1px solid var(--paper-rule); }
-.work-plan-strip { padding: 0 12px 10px; }
-.work-plan-strip .work-error { margin: 0; }
 .work-plan-body { border-top: 1px solid var(--paper-rule); }
-.work-plan-body.stale { opacity: 0.5; }
 .work-plan-band { display: flex; gap: 6px; align-items: baseline; width: 100%; box-sizing: border-box; padding: 7px 12px; border: none; border-radius: 0;
   background: var(--paper-well); color: color-mix(in srgb, currentColor 70%, transparent); font: inherit; font-size: 0.875rem; text-align: left; cursor: pointer; }
 .work-plan-band .strong { color: var(--paper-ink); }
@@ -381,7 +373,6 @@ dialog.sheet:has(.work-log) { width: min(860px, calc(100vw - 32px)); }
   .work-item-grid > * { order: 10; }
   .work-item-grid > .work-page-bar { order: 1; }
   .work-item-grid > .work-page-head { order: 2; }
-  .work-item-grid > .work-problem { order: 3; }
   .work-item-grid > .work-pull-top { order: 4; }
   .work-item-grid > .work-main > .work-plan { order: 5; }
   .work-item-grid > .work-side.people { order: 6; }
