@@ -287,7 +287,7 @@ func TestShortIDsGrowUntilUnique(t *testing.T) {
 
 func TestNotPairedExitsFive(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	for _, args := range [][]string{{}, {"sessions", "list"}, {"sessions", "create"}, {"auth", "status"}, {"auth", "logout"}, {"folders", "add"}, {"fix the test"}, {"--all", "sessions", "list"}}
+	for _, args := range [][]string{{}, {"sessions", "list"}, {"sessions", "create"}, {"auth", "status"}, {"auth", "logout"}, {"folders", "add"}, {"fix the test"}, {"--all", "sessions", "list"}} {
 		err := run(context.Background(), args, &bytes.Buffer{})
 		if codeOf(err) != exitNotPair || !strings.Contains(err.Error(), "loops auth login '<code>'") {
 			t.Errorf("%v: %v", args, err)
