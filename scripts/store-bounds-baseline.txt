@@ -48,7 +48,6 @@
 1 Go/internal/agentsd/mcpcatalog.go WriteAtomically
 1 Go/internal/agentsd/mcpcatalog.go os.WriteFile
 1 Go/internal/agentsd/mcpcatalog/files.go WriteAtomically
-1 Go/internal/agentsd/mcpcatalog/signins.go WriteAtomically
 1 Go/internal/agentsd/mcpevents.go WriteAtomically
 1 Go/internal/agentsd/mcpservers.go WriteAtomically
 1 Go/internal/agentsd/modelrelay.go os.WriteFile
@@ -71,15 +70,11 @@
 1 Go/internal/agentsd/runtimes.go os.WriteFile
 1 Go/internal/agentsd/runtimesignin.go os.WriteFile
 1 Go/internal/agentsd/said.go WriteAtomically
-1 Go/internal/agentsd/sealedsecrets.go WriteAtomically
 1 Go/internal/agentsd/secretcmd.go execfile.Write
-1 Go/internal/agentsd/secrethints.go WriteAtomically
-1 Go/internal/agentsd/secretlist.go WriteAtomically
 1 Go/internal/agentsd/secretops.go WriteAtomically
 2 Go/internal/agentsd/selfupdate.go WriteAtomically
 1 Go/internal/agentsd/selfupdate.go os.Create
 1 Go/internal/agentsd/send.go os.OpenFile
-1 Go/internal/agentsd/sessionsecrets.go WriteAtomically
 3 Go/internal/agentsd/settings.go WriteAtomically
 1 Go/internal/agentsd/setupforward.go WriteAtomically
 1 Go/internal/agentsd/setupprojects.go os.WriteFile
