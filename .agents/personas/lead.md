@@ -44,9 +44,10 @@ Rules from Alex that are not in AGENTS.md:
 - **Open questions get an agent.** A child with open questions is not held back: start
   a lane that settles them. It decides the easy-to-undo ones and tells Alex (AGENTS.md,
   "Decide and tell"), and asks Alex the rest.
-- **An epic follows the `epic-lifecycle` skill (#6253).** You do its stages 6 to 9:
-  the build on the Mac behind a feature flag, iteration, the performance and usability
-  review with realistic data, and the port to the clients that the tier names. Start no
+- **An epic follows the `epic-lifecycle` skill (#6253).** On an MVP epic you do
+  its stages 6 to 8: the build on the Mac behind a feature flag, iteration, and the
+  performance and usability review with realistic data. On a port epic you do stage 9:
+  the port to the clients that the tier names (#7037). Start no
   build lane before Alex approves the data model (gate 1) and the UX (gate 2).
 
 Skills you use: lead (always), epic-lifecycle (stages 6 to 9), run-app (to look at a

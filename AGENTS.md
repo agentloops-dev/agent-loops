@@ -35,7 +35,7 @@
 - **A feature has a role first, and its tier follows (#5290, epic #5288).** The role is who uses it: Engineer (agent work), Engineer (set-up), Lead, Admin or Report reader; it is the Role cell after Tier in the parity table, and a Maturity cell (`ga`, or a level with its capabilities) follows it, checked against `Packages/Wire/maturity.json` (#6580). The rule (`parity.md`, "Roles"): Engineer (agent work) is Core (Desk, Hand, Web); Engineer (set-up) is Mac + web (Desk, Web); Lead and Report reader are Web, with a link from the Desk, and no Hand (Velocity and Timeline stay Core); Admin is Web only, or Web + Mac link where an engineer looks for it. A new feature gets a role; its tier follows. `scripts/parity-counts.py` fails on a row whose tier its role does not give.
 - **A change to any client's UI** (`App/Sources`, `Remote/Sources`, `Shared/UI` or `Web/src`) says, in its commit, what **each of the other two** does about it, one line each:
   - the same change in this branch: `remote: same`;
-  - a parity issue filed: `web: #NNN`;
+  - a parity issue filed: `web: #NNN`. For an MVP, `remote: #NNN` and `web: #NNN` can name children of its port epic ("Plans", #7037);
   - left out on purpose: `mac: by design (no swipe on Mac)`;
   - not on the Remote because of its tier: `remote: tier mac+web`, or `remote: tier web+link`; not on a client because it is one client's only: `mac: tier web only`, `remote: tier web only`, or `web: tier mac only`;
   - a web change to a Web + Mac link feature: `mac: tier web+link` when the Mac's link still goes to the right place, else `mac: same` (the link changes in this branch) or `mac: #NNN`.
@@ -131,6 +131,11 @@ Alex still decides, by a form: anything hard to undo (deleting data, rewriting h
 - **The order is in the forge, not in prose.** The children are the epic's sub-issues, and a child that must wait is "blocked by" the children it waits for. A **step** is the set of children whose blockers are all closed or in an earlier step; the children of one step can run at the same time, under the open-PR limits. A "Slices" table in the epic's body is optional prose: the sub-issues and their "blocked by" links are the plan.
 - **One lead per epic** (the `lead` skill, `.agents/skills/lead/`). The Product Owner files the epic and its first children; then the lead owns the plan: it starts a lane for each child whose blockers are closed, files the new children that its lanes find, and closes the epic when all its children are closed. The lead writes no code.
 - **An epic gets one lead, not a place for each child.** The lead does not count as a lane; its lanes do, towards the folder's lane and open-PR limits (typically 5 to 7 at once, per project). The order of `forge/next` applies to the epic as one unit.
+- **A feature is planned as up to three epics (Alex, 2026-11-24, #7037)**, each "blocked by" the one before: **design** (the data model, wireframes and mock-ups), **MVP or proof of concept** (one client, usually the Mac) and **port** (the web page and the Remote, as the tier says). This is this repo's rule only: the daemon's order does not change. The `epic-lifecycle` skill has the stages.
+  - Design is in the MVP epic by default: its first children, which the build children are blocked by. The agent can ask Alex whether to make it a separate epic; that epic and its children get `priority:high`. A design issue closes on Alex's approval at its gate.
+  - A proof of concept is not thrown away: it can become the MVP. One that merges follows the normal rules (gate 2, the flag, approval of a new screen).
+  - The MVP epic closes when stage 8 (the performance and usability review) is done. The flag stays until the port is done. A port of one issue has no epic: it goes to #4208, blocked by the MVP epic.
+  - A follow-up does not hold an epic open: one issue goes to the standing epic #4208 (a bug to #4207); several go to a new epic that is "blocked by" the first.
 - **The app says "epic"** for every forge, also for Linear.
 
 ## Landing a change
