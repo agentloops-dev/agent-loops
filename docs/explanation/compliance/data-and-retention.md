@@ -158,7 +158,7 @@ These are in `<folder>/.agents/`.
 | `worktrees/<name>`, and branch `agents/<name>` | blob | Git worktrees that agents made | **No bound, on purpose: they belong to the user** (#6708). The worktree goes when its agent is archived or deleted, merged or not, with its uncommitted and untracked changes (#3726, #3877). The branch goes only when it is merged. A worktree that an agent not archived works in or names, one on no branch, and one the app did not make are always kept. | On archive and delete; when removed |
 | `reviews/runtimes/` | document | Runtime assessment reports | 1 MiB a report (a longer one is cut), 90 days, and the newest 50 on the machine, in all its folders; the oldest goes first. A report that git tracks is the repository's, and is never changed or deleted. A file with another name is yours (#6712). | Hourly, and when an assessment starts or is scored |
 | `workflows/assess-<id>.md` | document | A runtime assessment's throwaway workflow | **None**; the assessing agent removes it | Never |
-| `pins.json` | key-value | Pinned sessions and hidden views | 10 sessions, 50 hidden views | On write |
+| `pins.json` | key-value | Pinned pages, views, sessions and workflows, and hidden views | 10 pages and views, 10 sessions and 10 workflows, 4 KiB a pin; 50 hidden views, 1 KiB each; 128 KiB in all; a write past that is refused. No age, on purpose: they are your choices, committed with the folder. Each stays until you remove it, or its session or workflow is archived (#6725). | On write; on archive |
 | `folder.json`, `policy.json`, `mcp.json`, `personas/`, `skills/`, `workflows/` and the like | document | The folder's configuration, meant to be committed | Small | — |
 
 ## Outside our folders
