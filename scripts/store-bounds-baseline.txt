@@ -202,7 +202,6 @@
 1 Go/internal/controlplane/sweep.go v1/codes
 1 Go/internal/controlplane/sweep.go v1/mesh
 1 Go/internal/controlplane/usersettings/usersettings.go v1/users
-1 Go/internal/controlplane/warmpool.go v1/warm-pools
 1 Go/internal/execfile/execfile.go os.WriteFile
 4 Go/internal/hosted/accounts.go v1/accounts
 1 Go/internal/hosted/accounts.go v1/emails
