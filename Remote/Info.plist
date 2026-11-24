@@ -58,6 +58,7 @@
 	<key>NSUserActivityTypes</key>
 	<array>
 		<string>com.alexecollins.agents.remote.session</string>
+		<string>com.alexecollins.agents.remote.work</string>
 	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>

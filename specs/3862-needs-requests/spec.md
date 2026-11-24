@@ -80,7 +80,8 @@ So a restart loses every open question, nothing joins the app's requests to the 
 - **One file a record**, `<root>/requests/<id>.json`, written atomically (temp, fsync, rename), as the other stores are. A record is small (a form and a checklist), so one file each is simple and safe.
 - **The bound, enforced in code with a test** (the HADR rule "every store has a bound"):
   - an answered or dropped record is deleted **14 days** after it ended;
-  - at most **1,000 files**. Above that, the oldest ended records go first. When all 1,000 are open, the daemon makes no new **forge** request (it logs once per poll), but it still makes app requests: each session holds at most one held form, so the sessions' own limit bounds those.
+  - each record is **256 KiB** at most, and **90 days** old at most, from when it was asked (#6718). At 90 days an open one is dropped (`expired`): its card goes, the chat keeps a line, and the session that asked starts again once to hear it. A forge item that is still listed opens as a new request;
+  - at most **1,000 files**. Above that, the oldest ended records go first. An open one is never evicted: when all 1,000 are open, a new request, of a form too, is refused with words (#6718).
   - The daemon prunes at start and once an hour.
 - **A secret's value is never in the record.** It goes to the Keychain, as `saveAskedSecret` does now. The record keeps the name.
 - **After a restart:**

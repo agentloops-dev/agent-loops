@@ -122,3 +122,26 @@ struct WorkSideLinked: View {
         .disabled(open == nil)
     }
 }
+
+/// A session on the side panel's Lineage: a green dot while it runs, its title; it opens the chat.
+struct WorkSideSession: View {
+    let model: any WorkModel
+    let id: UUID
+
+    var body: some View {
+        let title = model.workSessionTitle(id)
+        let runs = model.workSessionState(id)?.holdsRuntime == true
+        return Button { model.openWorkSession(id) } label: {
+            HStack(spacing: 6) {
+                Circle().fill(runs ? WorkLook.Tone.green.color : Color.secondary.opacity(0.4)).frame(width: 7, height: 7)
+                    .accessibilityHidden(true)
+                Text(title ?? "A session on another machine").lineLimit(1).truncationMode(.tail)
+                    .foregroundStyle(title == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(.tint))
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(title == nil)
+        .accessibilityLabel([title ?? "A session on another machine", runs ? "running" : nil].compactMap { $0 }.joined(separator: ", "))
+    }
+}
