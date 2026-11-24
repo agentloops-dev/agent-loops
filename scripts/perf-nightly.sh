@@ -107,6 +107,8 @@ if [ ! -f "$REPO/Web/dist/MANIFEST" ]; then
 fi
 python3 "$RUNAPP/rpc.py" "$ROOT" call folders/add "{\"folder\": \"file://$ROOT/work\"}" >/dev/null
 python3 "$RUNAPP/rpc.py" "$ROOT" call folders/add "{\"folder\": \"file://$ROOT/big\"}" >/dev/null
+# Work is behind a feature flag (#6572): on, so the walk times its list.
+python3 "$RUNAPP/rpc.py" "$ROOT" call preferences/set '{"flag:work": true}' >/dev/null
 sleep 5
 
 # The session the page sends to: the stand-in's, and never a real runtime's.

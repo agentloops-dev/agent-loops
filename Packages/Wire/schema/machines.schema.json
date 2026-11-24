@@ -2551,6 +2551,59 @@
       ],
       "additionalProperties": false
     },
+    "MachineSetupProject": {
+      "type": "object",
+      "description": "A project folder a pool machine gets: path is the folder on its sources, project the project id it joins there, and sources the person's machines that have it, those online first.",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "project": {
+          "type": "string"
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/MachineSetupSource"
+          }
+        }
+      },
+      "required": [
+        "path",
+        "sources"
+      ],
+      "additionalProperties": false
+    },
+    "MachineSetupProjects": {
+      "type": "object",
+      "description": "setup/projects: how the host's get of the pool's projects stands (#6890). pool is false for a machine no warm pool made, which gets none. finished with no problem: folders are the folders here.",
+      "properties": {
+        "pool": {
+          "type": "boolean"
+        },
+        "finished": {
+          "type": "boolean"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "problem": {
+          "type": "string"
+        },
+        "folders": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "pool",
+        "finished",
+        "folders"
+      ],
+      "additionalProperties": false
+    },
     "MachineSetupReport": {
       "type": "object",
       "description": "machine/setupStep: a step of the installer on the machine (agents-host install --join), as it starts, goes on and ends (#5355).",
@@ -2578,6 +2631,26 @@
       "required": [
         "step",
         "state"
+      ],
+      "additionalProperties": false
+    },
+    "MachineSetupSource": {
+      "type": "object",
+      "properties": {
+        "machine": {
+          "$ref": "#/definitions/MachineRef"
+        },
+        "name": {
+          "type": "string"
+        },
+        "online": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "machine",
+        "name",
+        "online"
       ],
       "additionalProperties": false
     },
@@ -2639,6 +2712,37 @@
         "signIn",
         "smoke"
       ]
+    },
+    "MachineSetupWork": {
+      "type": "object",
+      "description": "machine/setupWork: what the set-up of the machine that asks has left (#6890, #6896). pool: a warm pool made it. claimed: a person claimed it, and from is the first of steps 6 to 8 that waits to run (absent: none does now). done: nothing is left to ask for. projects: the project folders to get, at their last commit. An unclaimed machine does step 6 and stops.",
+      "properties": {
+        "pool": {
+          "type": "boolean"
+        },
+        "claimed": {
+          "type": "boolean"
+        },
+        "done": {
+          "type": "boolean"
+        },
+        "from": {
+          "$ref": "#/definitions/MachineSetupStepID"
+        },
+        "projects": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/MachineSetupProject"
+          }
+        }
+      },
+      "required": [
+        "pool",
+        "claimed",
+        "done",
+        "projects"
+      ],
+      "additionalProperties": false
     },
     "MachineStatus": {
       "type": "object",
@@ -5359,7 +5463,7 @@
     },
     "WarmPool": {
       "type": "object",
-      "description": "A warm pool (#5363, epic #5353, Part 2 of the machine set-up spec): a provider's machines kept made, joined, with Agents, runtimes and the pool's projects at their last commit, and signed in to nothing. minReady is what it keeps; maxSize is the most it holds, ready or being set up (a claimed machine leaves the pool and does not count). target is written by the control plane and is minReady until auto-scale. ready, settingUp, failedMakes and stoppedBecause are read-only. machines and claims are read-only too (#5366).",
+      "description": "A warm pool (#5363, epic #5353, Part 2 of the machine set-up spec): a provider's machines kept made, joined, with Agents, runtimes and the pool's projects at their last commit, and signed in to nothing. minReady is what it keeps; maxSize is the most it holds, ready or being set up (a claimed machine leaves the pool and does not count). target is written by the control plane and is minReady until auto-scale. ready, settingUp, failedMakes, stoppedBecause and waitingBecause are read-only. machines and claims are read-only too (#5366).",
       "properties": {
         "id": {
           "type": "string"
@@ -5429,6 +5533,10 @@
         "stoppedBecause": {
           "type": "string",
           "description": "Why the pool stopped making, in the provider's words."
+        },
+        "waitingBecause": {
+          "type": "string",
+          "description": "Why a pool that is keeping makes no machine now: no machine that has its projects is online (#6890)."
         },
         "machines": {
           "type": "array",

@@ -998,7 +998,7 @@ type AuditCause struct {
 	ID string `json:"id"`
 }
 
-// control/setAuditDays (#996): how many days audit entries are kept, 1 to 3,650. The default is 90.
+// control/setAuditDays (#996): how many days audit entries are kept, 1 to 90. The default is 90.
 type AuditDays struct {
 	Days int64 `json:"days"`
 }
@@ -9671,6 +9671,28 @@ type MachineSetup struct {
 	ReadyAt *Date `json:"readyAt,omitzero"`
 }
 
+// A project folder a pool machine gets: path is the folder on its sources, project the project id it joins there, and sources the person's machines that have it, those online first.
+type MachineSetupProject struct {
+	Path string `json:"path"`
+
+	Project *string `json:"project,omitzero"`
+
+	Sources []MachineSetupSource `json:"sources"`
+}
+
+// setup/projects: how the host's get of the pool's projects stands (#6890). pool is false for a machine no warm pool made, which gets none. finished with no problem: folders are the folders here.
+type MachineSetupProjects struct {
+	Pool bool `json:"pool"`
+
+	Finished bool `json:"finished"`
+
+	Detail *string `json:"detail,omitzero"`
+
+	Problem *string `json:"problem,omitzero"`
+
+	Folders []string `json:"folders"`
+}
+
 // machine/setupStep: a step of the installer on the machine (agents-host install --join), as it starts, goes on and ends (#5355).
 type MachineSetupReport struct {
 	Step MachineSetupStepID `json:"step"`
@@ -9685,6 +9707,14 @@ type MachineSetupReport struct {
 
 	// The digits the host shows for its join token (controllink.TokenCode), said with the compare step: the control plane compares them with the ones it made (#5359).
 	Code *string `json:"code,omitzero"`
+}
+
+type MachineSetupSource struct {
+	Machine MachineRef `json:"machine"`
+
+	Name string `json:"name"`
+
+	Online bool `json:"online"`
 }
 
 type MachineSetupState string
@@ -9725,6 +9755,19 @@ const MachineSetupStepIDRuntimes MachineSetupStepID = "runtimes"
 const MachineSetupStepIDProjects MachineSetupStepID = "projects"
 const MachineSetupStepIDSignIn MachineSetupStepID = "signIn"
 const MachineSetupStepIDSmoke MachineSetupStepID = "smoke"
+
+// machine/setupWork: what the set-up of the machine that asks has left (#6890, #6896). pool: a warm pool made it. claimed: a person claimed it, and from is the first of steps 6 to 8 that waits to run (absent: none does now). done: nothing is left to ask for. projects: the project folders to get, at their last commit. An unclaimed machine does step 6 and stops.
+type MachineSetupWork struct {
+	Pool bool `json:"pool"`
+
+	Claimed bool `json:"claimed"`
+
+	Done bool `json:"done"`
+
+	From *MachineSetupStepID `json:"from,omitzero"`
+
+	Projects []MachineSetupProject `json:"projects"`
+}
 
 // machine/status on channel 0 (#691 US4): each agent working or waiting on a person, and the next scheduled workflow.
 type MachineStatus struct {
@@ -17236,7 +17279,7 @@ type WakeState struct {
 	OnPower bool `json:"onPower"`
 }
 
-// A warm pool (#5363, epic #5353, Part 2 of the machine set-up spec): a provider's machines kept made, joined, with Agents, runtimes and the pool's projects at their last commit, and signed in to nothing. minReady is what it keeps; maxSize is the most it holds, ready or being set up (a claimed machine leaves the pool and does not count). target is written by the control plane and is minReady until auto-scale. ready, settingUp, failedMakes and stoppedBecause are read-only. machines and claims are read-only too (#5366).
+// A warm pool (#5363, epic #5353, Part 2 of the machine set-up spec): a provider's machines kept made, joined, with Agents, runtimes and the pool's projects at their last commit, and signed in to nothing. minReady is what it keeps; maxSize is the most it holds, ready or being set up (a claimed machine leaves the pool and does not count). target is written by the control plane and is minReady until auto-scale. ready, settingUp, failedMakes, stoppedBecause and waitingBecause are read-only. machines and claims are read-only too (#5366).
 type WarmPool struct {
 	ID string `json:"id"`
 
@@ -17282,6 +17325,9 @@ type WarmPool struct {
 
 	// Why the pool stopped making, in the provider's words.
 	StoppedBecause *string `json:"stoppedBecause,omitzero"`
+
+	// Why a pool that is keeping makes no machine now: no machine that has its projects is online (#6890).
+	WaitingBecause *string `json:"waitingBecause,omitzero"`
 
 	// The machines the pool holds now, ready, setting up or failed (#5366): a line each on the pool's card.
 	Machines []WarmPoolMachine `json:"machines,omitzero"`

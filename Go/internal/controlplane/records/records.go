@@ -26,6 +26,7 @@ import (
 )
 
 const (
+	// store-bounds: kind=document; size=1MiB (16KiB a record, tombstones 1MiB more); age=until-deleted; applied=on write, and the hourly sweep forgets a client whose key expired
 	ClientsPrefix  = "v1/clients/"
 	MachinesPrefix = "v1/machines/"
 	// OldMachinesPrefix is where builds before #2316 kept machines: moved to
@@ -280,11 +281,13 @@ func (r *Records) HostUnreadable(id string) bool {
 }
 
 // TombstoneKeys is the key of every tombstone read, for the sweep (#174): forgotten
-// clients and machines, removed projects (#2711) and groups, and removed people with no
-// sign-in (#3126). A removed person with a sign-in is kept: the record refuses it.
+// clients and machines, removed projects (#2711) and groups, and removed people (#3126,
+// #6756). The local owner's is left out: the settings name that person, and a local owner
+// with no record is an admin.
 func (r *Records) TombstoneKeys() []string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	owner := r.owner()
 	out := make([]string, 0, len(r.tombstones))
 	for key := range r.tombstones {
 		out = append(out, key)
@@ -300,7 +303,7 @@ func (r *Records) TombstoneKeys() []string {
 		}
 	}
 	for _, h := range r.people {
-		if h.record.IsRemoved() && len(h.record.SignIns) == 0 {
+		if h.record.IsRemoved() && (owner == nil || h.record.ID != *owner) {
 			out = append(out, PersonKey(h.record.ID))
 		}
 	}
@@ -585,7 +588,8 @@ func (r *Records) SaveClient(ctx context.Context, c ClientRecord) error {
 	}
 	key := ClientKey(c.ID)
 	var condition store.Condition
-	if h, ok := r.clients[c.ID]; ok {
+	h, known := r.clients[c.ID]
+	if known {
 		c.Rev = h.record.Rev + 1
 		condition = store.Matching(h.etag)
 	} else {
@@ -594,6 +598,13 @@ func (r *Records) SaveClient(ctx context.Context, c ClientRecord) error {
 		condition = overTombstone(etag, ok)
 	}
 	r.mu.Unlock()
+	if known {
+		if err := r.changeWithin(ctx, h.record, c); err != nil {
+			return err
+		}
+	} else if err := r.newClientWithin(ctx, c); err != nil {
+		return err
+	}
 	kept, etag, err := write(ctx, r.Store, c, key, condition)
 	if err != nil {
 		return err
@@ -623,6 +634,9 @@ func (r *Records) UpdateClient(ctx context.Context, c ClientRecord) error {
 	}
 	c.Rev = h.record.Rev + 1
 	key := ClientKey(c.ID)
+	if err := r.changeWithin(ctx, h.record, c); err != nil {
+		return err
+	}
 	kept, etag, err := write(ctx, r.Store, c, key, store.Matching(h.etag))
 	if err != nil {
 		return err
@@ -654,6 +668,9 @@ func (r *Records) ChangeClient(ctx context.Context, id string, change func(*Clie
 	}
 	c.ID = id
 	c.Rev = h.record.Rev + 1
+	if err := r.changeWithin(ctx, h.record, c); err != nil {
+		return err
+	}
 	kept, etag, err := write(ctx, r.Store, c, ClientKey(id), store.Matching(h.etag))
 	if err != nil {
 		return err
@@ -667,12 +684,17 @@ func (r *Records) ChangeClient(ctx context.Context, id string, change func(*Clie
 // ForgetClient is clients/forget: a tombstone against the version read. Nothing happens
 // for a client that is not known. The last client may go too (#111).
 func (r *Records) ForgetClient(ctx context.Context, id string) error {
+	_, err := r.forgetClient(ctx, id, nil)
+	return err
+}
+
+func (r *Records) forgetClient(ctx context.Context, id string, still func(ClientRecord) bool) (bool, error) {
 	r.writing.Lock()
 	defer r.writing.Unlock()
 	id = strings.ToUpper(id)
 	if r.Client(id) == nil {
 		if err := r.load(ctx); err != nil {
-			return err
+			return false, err
 		}
 	}
 	// Another copy may have noted the client connecting since it was read: a forget means
@@ -682,31 +704,39 @@ func (r *Records) ForgetClient(ctx context.Context, id string) error {
 		r.mu.Lock()
 		h, ok := r.clients[id]
 		r.mu.Unlock()
-		if !ok {
-			return nil
+		if !ok || still != nil && !still(h.record) {
+			return false, nil
 		}
 		tombstone := h.record
 		yes, now := true, Now()
 		tombstone.Forgotten, tombstone.ForgottenAt = &yes, &now
 		tombstone.Rev++
+		// A tombstone pushes to nobody (#6757).
+		tombstone.PushToken, tombstone.ActivityTokens, tombstone.WebPush = nil, nil, nil
 		var err error
 		_, etag, err = write(ctx, r.Store, tombstone, ClientKey(id), store.Matching(h.etag))
-		if store.IsConflict(err) && attempt < 2 {
-			if err := r.load(ctx); err != nil {
-				return err
-			}
-			continue
-		}
+		again, err := r.tombstoneAgain(ctx, err, attempt)
 		if err != nil {
-			return err
+			return false, err
 		}
-		break
+		if !again {
+			break
+		}
 	}
 	r.mu.Lock()
 	r.tombstones[ClientKey(id)] = etag
 	delete(r.clients, id)
 	r.mu.Unlock()
-	return nil
+	return true, nil
+}
+
+// tombstoneAgain is whether a tombstone's write is tried once more: another copy wrote the
+// record first, and it has been read again. Any other error is the write's.
+func (r *Records) tombstoneAgain(ctx context.Context, err error, attempt int) (bool, error) {
+	if store.IsConflict(err) && attempt < 2 {
+		return true, r.load(ctx)
+	}
+	return false, err
 }
 
 // SaveHost saves a host: created if new, else updated against the version read, and
@@ -842,16 +872,13 @@ func (r *Records) RemoveHost(ctx context.Context, id string) (bool, error) {
 		tombstone.Rev++
 		var err error
 		_, etag, err = write(ctx, r.Store, tombstone, HostKey(id), store.Matching(h.etag))
-		if store.IsConflict(err) && attempt < 2 {
-			if err := r.load(ctx); err != nil {
-				return false, err
-			}
-			continue
-		}
+		again, err := r.tombstoneAgain(ctx, err, attempt)
 		if err != nil {
 			return false, err
 		}
-		break
+		if !again {
+			break
+		}
 	}
 	r.mu.Lock()
 	r.tombstones[HostKey(id)] = etag

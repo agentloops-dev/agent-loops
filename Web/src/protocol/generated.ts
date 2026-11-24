@@ -943,7 +943,7 @@ export interface AuditCause {
 }
 
 /**
- * control/setAuditDays (#996): how many days audit entries are kept, 1 to 3,650. The default is 90.
+ * control/setAuditDays (#996): how many days audit entries are kept, 1 to 90. The default is 90.
  */
 export interface AuditDays {
   days: number;
@@ -9178,6 +9178,29 @@ export interface MachineSetup {
 }
 
 /**
+ * A project folder a pool machine gets: path is the folder on its sources, project the project id
+ * it joins there, and sources the person's machines that have it, those online first.
+ */
+export interface MachineSetupProject {
+  path: string;
+  project?: string;
+  sources: MachineSetupSource[];
+}
+
+/**
+ * setup/projects: how the host's get of the pool's projects stands (#6890). pool is false for a
+ * machine no warm pool made, which gets none. finished with no problem: folders are the folders
+ * here.
+ */
+export interface MachineSetupProjects {
+  pool: boolean;
+  finished: boolean;
+  detail?: string;
+  problem?: string;
+  folders: string[];
+}
+
+/**
  * machine/setupStep: a step of the installer on the machine (agents-host install --join), as it
  * starts, goes on and ends (#5355).
  */
@@ -9192,6 +9215,12 @@ export interface MachineSetupReport {
    * step: the control plane compares them with the ones it made (#5359).
    */
   code?: string;
+}
+
+export interface MachineSetupSource {
+  machine: MachineRef;
+  name: string;
+  online: boolean;
 }
 
 export type MachineSetupState =
@@ -9230,6 +9259,20 @@ export type MachineSetupStepID =
   | "projects"
   | "signIn"
   | "smoke";
+
+/**
+ * machine/setupWork: what the set-up of the machine that asks has left (#6890, #6896). pool: a warm
+ * pool made it. claimed: a person claimed it, and from is the first of steps 6 to 8 that waits to
+ * run (absent: none does now). done: nothing is left to ask for. projects: the project folders to
+ * get, at their last commit. An unclaimed machine does step 6 and stops.
+ */
+export interface MachineSetupWork {
+  pool: boolean;
+  claimed: boolean;
+  done: boolean;
+  from?: MachineSetupStepID;
+  projects: MachineSetupProject[];
+}
 
 /**
  * machine/status on channel 0 (#691 US4): each agent working or waiting on a person, and the next
@@ -16228,8 +16271,8 @@ export interface WakeState {
  * made, joined, with Agents, runtimes and the pool's projects at their last commit, and signed in
  * to nothing. minReady is what it keeps; maxSize is the most it holds, ready or being set up (a
  * claimed machine leaves the pool and does not count). target is written by the control plane and
- * is minReady until auto-scale. ready, settingUp, failedMakes and stoppedBecause are read-only.
- * machines and claims are read-only too (#5366).
+ * is minReady until auto-scale. ready, settingUp, failedMakes, stoppedBecause and waitingBecause
+ * are read-only. machines and claims are read-only too (#5366).
  */
 export interface WarmPool {
   id: string;
@@ -16259,6 +16302,11 @@ export interface WarmPool {
   failedMakes?: number;
   /** Why the pool stopped making, in the provider's words. */
   stoppedBecause?: string;
+  /**
+   * Why a pool that is keeping makes no machine now: no machine that has its projects is online
+   * (#6890).
+   */
+  waitingBecause?: string;
   /**
    * The machines the pool holds now, ready, setting up or failed (#5366): a line each on the pool's
    * card.
@@ -18764,8 +18812,12 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   MachineSessionCall: { required: ["host", "call"], optional: [] },
   MachineSessionStart: { required: ["host", "start"], optional: [] },
   MachineSetup: { required: ["steps", "startedAt"], optional: ["readyAt"] },
+  MachineSetupProject: { required: ["path", "sources"], optional: ["project"] },
+  MachineSetupProjects: { required: ["pool", "finished", "folders"], optional: ["detail", "problem"] },
   MachineSetupReport: { required: ["step", "state"], optional: ["detail", "error", "fromPool", "code"] },
+  MachineSetupSource: { required: ["machine", "name", "online"], optional: [] },
   MachineSetupStep: { required: ["id", "state"], optional: ["startedAt", "endedAt", "detail", "error", "fromPool", "slower"] },
+  MachineSetupWork: { required: ["pool", "claimed", "done", "projects"], optional: ["from"] },
   MachineStatus: { required: ["idle", "running"], optional: ["schedule"] },
   MachineStop: { required: ["host"], optional: ["confirmRunning"] },
   MachineTunnel: { required: ["up"], optional: ["problem"] },
@@ -19342,7 +19394,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   WaitingOffer: { required: ["name", "offer"], optional: [] },
   WakeSettings: { required: ["keepsAwake", "graceHours", "warmRuntimes", "awakeOnPower"], optional: ["backgroundHours", "releaseAfterMinutes"] },
   WakeState: { required: ["isHolding", "agentsInFlight", "heldBackByBattery", "onPower"], optional: ["batteryPercent", "since", "graceUntil"] },
-  WarmPool: { required: ["id", "name", "scope", "provider", "minReady", "maxSize", "target", "state"], optional: ["size", "region", "runtimes", "projects", "replaceAfter", "hours", "ready", "settingUp", "failedMakes", "stoppedBecause", "machines", "claims"] },
+  WarmPool: { required: ["id", "name", "scope", "provider", "minReady", "maxSize", "target", "state"], optional: ["size", "region", "runtimes", "projects", "replaceAfter", "hours", "ready", "settingUp", "failedMakes", "stoppedBecause", "waitingBecause", "machines", "claims"] },
   WarmPoolClaim: { required: ["provider"], optional: ["size", "region", "stopWhenIdle"] },
   WarmPoolClaimed: { required: ["workspace", "name", "fromPool"], optional: ["host", "pool", "note"] },
   WarmPoolClaims: { required: ["count", "empty"], optional: ["medianSeconds"] },

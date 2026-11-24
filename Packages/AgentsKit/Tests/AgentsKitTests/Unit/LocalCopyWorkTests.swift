@@ -36,7 +36,7 @@ struct LocalCopyWorkTests {
     @Test func anAnswerComesBackWithWhenItWasRead() async {
         let copy = LocalCopy(folder: folder(), cap: LocalCopy.macCap)
         defer { Task { await copy.forget() } }
-        let read = Date(timeIntervalSince1970: 1_800_000_000)
+        let read = Date(timeIntervalSince1970: Date().timeIntervalSince1970.rounded() - 3600)
         await copy.keepWork(item(1), .item, "github:alexec/Agents#1", readAt: read)
         let got = await copy.workRead(DaemonAPI.ForgeItem.self, .item, "github:alexec/Agents#1")
         #expect(got?.value == item(1))

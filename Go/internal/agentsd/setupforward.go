@@ -7,8 +7,10 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/internal/hostsetup"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
@@ -31,9 +33,12 @@ func (d *Daemon) StartSetupReports() {
 
 // forwardSetupReports tails file until ctx ends.
 func (d *Daemon) forwardSetupReports(ctx context.Context, file string, every time.Duration) {
-	var offset int64
+	// A host that starts again says no line twice (#6896): an old "projects done" must not
+	// end the step of a claim.
+	offset := sentReports(file)
 	tries := 0
-	prelude := false
+	prelude := offset > 0
+	watch, next := true, time.Time{}
 	for {
 		select {
 		case <-ctx.Done():
@@ -51,9 +56,34 @@ func (d *Daemon) forwardSetupReports(ctx context.Context, file string, every tim
 		if int64(len(data)) < offset {
 			// The installer began a new run.
 			offset, prelude = 0, false
+			watch = true
 		}
+		before := offset
 		offset, tries, prelude = d.forwardSetupReportLines(ctx, *ask, data, offset, tries, prelude)
+		if offset != before {
+			if err := store.WriteAtomically(file+".sent", []byte(strconv.FormatInt(offset, 10)), 0o600); err != nil {
+				log.Printf("setup: how far the reports were sent could not be kept: %v", err)
+			}
+		}
+		// Asked only once everything said is sent, so the answer knows of it.
+		if watch && offset == int64(len(data)) && time.Now().After(next) {
+			watch = d.continueSetup(ctx)
+			next = time.Now().Add(setupWorkEvery)
+		}
 	}
+}
+
+// sentReports is how much of file an earlier run of this host sent.
+func sentReports(file string) int64 {
+	b, err := os.ReadFile(file + ".sent")
+	if err != nil {
+		return 0
+	}
+	n, err := strconv.ParseInt(string(b), 10, 64)
+	if err != nil || n < 0 {
+		return 0
+	}
+	return n
 }
 
 // forwardSetupReportLines sends each whole line of data after offset to the control

@@ -52,21 +52,21 @@ func (d *Daemon) said(id wire.UUID) []string {
 	if b, err := os.ReadFile(saidFile(d.Store.Loc, id)); err == nil {
 		_ = json.Unmarshal(b, &index)
 	}
-	info, err := os.Stat(d.Store.Loc.Transcript(string(id)))
+	end, err := d.Store.TranscriptSize(id)
 	if err != nil {
 		return nil
 	}
-	if index.Size > 0 && info.Size() == index.Size {
+	if index.Size > 0 && end == index.Size {
 		return index.messages()
 	}
 	// Shorter than what was read (some other transcript now), or a said.json from before sizes.
-	if info.Size() < index.Size || index.Size == 0 {
+	if end < index.Size || index.Size == 0 {
 		index = saidIndex{}
 	}
 	var current *wire.TranscriptEntry
 	currentAt := index.Offset
 	kept := index.Messages
-	end, size, err := d.Store.EntriesFrom(id, index.Offset, func(e wire.TranscriptEntry, start, end int64) {
+	whole, size, err := d.Store.EntriesFrom(id, index.Offset, func(e wire.TranscriptEntry, start, end int64) {
 		if e.SubagentID != nil {
 			return
 		}
@@ -87,7 +87,7 @@ func (d *Daemon) said(id wire.UUID) []string {
 		return index.messages()
 	}
 	if current == nil {
-		currentAt = end
+		currentAt = whole
 	}
 	index = saidIndex{Offset: currentAt, Size: size, Messages: boundSaid(kept)}
 	if current != nil {

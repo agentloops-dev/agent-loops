@@ -115,6 +115,7 @@ struct RemoteApp: App {
                     }
                 }
                 #endif
+                .onAppear { StartDraftKeeper.shared.refused = { [model] in model.report($0) } }
                 // An agent archived, here or anywhere, or more of them arrived: its draft goes,
                 // as on the Mac (#3749). Only the drafts that exist are looked at.
                 .onChange(of: model.work.archivals) { StartDraftKeeper.shared.sweep(agents: model.work) }
@@ -262,6 +263,10 @@ struct RemoteView: View {
             } else if sizeClass == .compact, model.openActivity == nil {
                 compactColumn = .sidebar
             }
+        }
+        // Work turned off while one of its pages is open: nothing picked in its place (#6572).
+        .onChange(of: model.flags.on) {
+            if !model.flags.isOn(.work), case .work? = model.openActivity { model.sidebarItem = nil }
         }
         .onChange(of: compactColumn) { _, column in
             if column == .sidebar, sizeClass == .compact { model.sidebarItem = nil }

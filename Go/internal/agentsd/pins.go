@@ -21,7 +21,9 @@ import (
 
 // A folder's pins (#159, #180, #432), in <folder>/.agents/pins.json, as the Swift host
 // reads and writes them (Pins.swift, DaemonCore+Pins): pages and views, sessions and
-// workflows, ten of each at most, in the order shown.
+// workflows, ten of each at most, in the order shown. They are what a person chose, and are
+// committed with the folder, so they have no age: each stays until it is removed, or its
+// session or workflow is archived (#6725). A write past a limit is refused.
 
 const (
 	pinsPerFolder  = 10
@@ -30,6 +32,11 @@ const (
 	pinsFilePath   = ".agents/pins.json"
 	// hiddenViewsPerFolder bounds the server views hidden in one folder (#2032).
 	hiddenViewsPerFolder = 50
+	// The largest pin and hidden view's address, and the largest file, in bytes (#6725). The
+	// file's is room for every entry at its largest; it also bounds what was written by hand.
+	pinMost        = 4 << 10
+	hiddenViewMost = 1 << 10
+	pinsFileMost   = 128 << 10
 )
 
 type pinner struct {
@@ -313,7 +320,13 @@ func (d *Daemon) writePins(f pinsFile, folder string) error {
 	} else {
 		b, err := f.data()
 		if err == nil {
-			if old, rerr := os.ReadFile(path); rerr != nil || !bytes.Equal(old, b) {
+			old, rerr := os.ReadFile(path)
+			// A file already over, written by hand, can still be made smaller.
+			if len(b) > pinsFileMost && len(b) >= len(old) && !bytes.Equal(old, b) {
+				return pinRefused("The pins were not changed: " + pinsFilePath + " is at most 128 KB. Unpin something first.")
+			}
+			if rerr != nil || !bytes.Equal(old, b) {
+				// store-bounds: kind=key-value; size=128KiB a folder, 4KiB a pin; count=10 of each kind of pin, 50 hidden views; age=until-deleted; applied=on write (refused)
 				err = store.WriteAtomically(path, b, 0o644)
 			}
 		}
@@ -535,6 +548,7 @@ func (d *Daemon) pinsCallWrite(_ context.Context, _ *Client, r wire.PinWriteRequ
 	if old, err := os.ReadFile(path); err == nil && string(old) == r.Text {
 		return wire.Empty{}, nil
 	}
+	// store-bounds: not a store: the page itself, a file in the person's project
 	if err := store.WriteAtomically(path, []byte(r.Text), 0o644); err != nil {
 		return wire.Empty{}, &Error{Code: CodeInternal, Message: "Could not save " + filepath.Base(path) + ": " + err.Error()}
 	}
@@ -606,6 +620,9 @@ func (d *Daemon) pinsCallHideView(_ context.Context, _ *Client, r wire.PinHideVi
 	}
 	if !strings.HasPrefix(r.URI, "ui://") {
 		return wire.Empty{}, Invalid("A view's address starts ui://.")
+	}
+	if r.Hidden && len(r.URI) > hiddenViewMost {
+		return wire.Empty{}, pinRefused("Nothing was hidden: a view's address is at most 1 KB.")
 	}
 	f := d.readPins(folder)
 	at := slices.Index(f.hiddenViews, r.URI)
@@ -728,6 +745,9 @@ func (d *Daemon) pin(entry pinEntry, folder, lead string) error {
 	}
 	if entry.title != nil && utf8.RuneCountInString(*entry.title) > pinTitleLength {
 		return pinRefused(lead + "`title` is at most 60 characters.")
+	}
+	if b, err := (pinsFile{pins: []pinEntry{entry}}).data(); err != nil || len(b) > pinMost {
+		return pinRefused(lead + "a pin is at most 4 KB.")
 	}
 	f := d.readPins(folder)
 	for i, e := range f.pins {

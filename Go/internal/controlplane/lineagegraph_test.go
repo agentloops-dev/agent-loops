@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -213,17 +214,21 @@ func keptLineageChanges(ctx context.Context, t *testing.T, mem store.Store, host
 	return out
 }
 
-// bytesStore counts the bytes each Put writes.
+// bytesStore counts the bytes each Put under prefix writes. The plane's own timed writes, as
+// its capacity snapshot every controlCapacityEvery, are elsewhere and not counted (#6994).
 type bytesStore struct {
 	store.Store
+	prefix  string
 	mu      sync.Mutex
 	written int
 }
 
 func (c *bytesStore) Put(ctx context.Context, key string, data []byte, when store.Condition) (string, error) {
-	c.mu.Lock()
-	c.written += len(data)
-	c.mu.Unlock()
+	if strings.HasPrefix(key, c.prefix) {
+		c.mu.Lock()
+		c.written += len(data)
+		c.mu.Unlock()
+	}
 	return c.Store.Put(ctx, key, data, when)
 }
 
@@ -240,7 +245,7 @@ func (c *bytesStore) take() int {
 // after the roll-up.
 func TestLineageSyncWritesOnlyTheChange(t *testing.T) {
 	t.Parallel()
-	counting := &bytesStore{Store: store.NewMemory()}
+	counting := &bytesStore{Store: store.NewMemory(), prefix: lineageGraphPrefix}
 	p := startPlane(t, counting, controllink.NewPrivateKey())
 	small := p.host("SMALL-MAC").member.Host
 	big := p.host("BIG-MAC").member.Host
@@ -279,6 +284,8 @@ func TestLineageSyncWritesOnlyTheChange(t *testing.T) {
 	one := func(host string, i int) int {
 		t.Helper()
 		counting.take()
+		// A timed write of the plane's between two changes is not a part of either (#6994).
+		p.s.keepControlCapacity(controlCapacity{at: time.Now()})
 		ended := linkTo(i)
 		end := wire.DateOf(now)
 		ended.EndedAt = &end
@@ -289,7 +296,7 @@ func TestLineageSyncWritesOnlyTheChange(t *testing.T) {
 		return counting.take()
 	}
 	smallBytes, bigBytes := one(small, 0), one(big, 0)
-	if smallBytes != bigBytes || bigBytes > 1024 {
+	if smallBytes == 0 || smallBytes != bigBytes || bigBytes > 1024 {
 		t.Fatalf("one change wrote %d bytes on the small machine, %d on the big one", smallBytes, bigBytes)
 	}
 

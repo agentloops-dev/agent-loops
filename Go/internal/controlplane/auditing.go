@@ -37,7 +37,7 @@ func (s *Service) actorFor(client string) wire.AuditActor {
 }
 
 func (s *Service) auditLog() *audit.Log {
-	return &audit.Log{Store: s.cfg.Store, Chain: s.auditChain, Out: s.auditSinks.Add}
+	return &audit.Log{Store: s.cfg.Store, Entries: s.auditEntries, Chain: s.auditChain, Out: s.auditSinks.Add}
 }
 
 // auditTarget is audit.Target; a test holds it to prove where it runs.
@@ -144,8 +144,8 @@ func (s *Service) auditSecretOps(host, user string, ops []wire.SecretOperation) 
 }
 
 // secretOpsSeenMost bounds the operation ids this copy remembers, for every machine together
-// (#6464). A machine keeps at most 1,000 operations not yet told (agentsd's
-// secretOpsPendingMost), so its resend is in the last ones this copy saw.
+// (#6464). A machine keeps at most 2,000 operations not yet told (agentsd's
+// secretOpsPendingMost, and twice that until its sweep), so its resend is in the last ones this copy saw.
 const secretOpsSeenMost = 20_000
 
 // secretOpsSeen is the ids of the machines' operations this copy queued for the audit, as

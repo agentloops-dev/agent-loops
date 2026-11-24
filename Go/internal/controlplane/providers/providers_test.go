@@ -1136,6 +1136,26 @@ func TestOptionsKeptBeforeTheChoicesAreNotRead(t *testing.T) {
 	}
 }
 
+// A person's record is 64 KiB at most (#6759): choices past that are not kept, nor are a
+// gone provider's, and the counter goes on.
+func TestMachineNamesAreBounded(t *testing.T) {
+	h := newHarness(t)
+	id := h.add()
+	old, _ := json.Marshal(map[string]any{"next": 2, "chosen": map[string]any{"GONE": map[string]any{"size": "big"}}})
+	if _, err := h.store.Put(context.Background(), machineNamesKey(""), old, store.Absent); err != nil {
+		t.Fatal(err)
+	}
+	h.must(MethodProvidersCreate, map[string]any{"id": id, "options": map[string]any{"size": strings.Repeat("x", machineNamesMost)}})
+	object, err := h.store.Get(context.Background(), machineNamesKey(""))
+	if err != nil || object == nil || len(object.Data) > machineNamesMost {
+		t.Fatalf("%v %v", object, err)
+	}
+	var kept machineNames
+	if err := json.Unmarshal(object.Data, &kept); err != nil || kept.Next != 3 || kept.Default != id || len(kept.Chosen) != 0 {
+		t.Fatalf("%+v %v", kept, err)
+	}
+}
+
 // The New Machine sheet starts with what New Machine would make (#4634).
 func TestTheFormSaysWhatNewMachineWouldMake(t *testing.T) {
 	h := newHarness(t)

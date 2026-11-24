@@ -15,6 +15,7 @@ import { useSignal } from "@preact/signals";
 import { useEffect, useRef } from "preact/hooks";
 import type { AccountProfile, Attachment, BranchSummary, ClientPermissionSettings, ConfigOption, JSONValue, Persona, PolicySetBy, RuntimeStatus, SandboxChoice, SlashCommand, StartRequest, UUID, WorktreeSize,
   WorktreeSummary } from "../protocol/generated";
+import { flagOn } from "../model/featureFlags";
 import type { SandboxWillNotStart, Store } from "../model/store";
 import { drawable, modeOption, modeStartsOn } from "../model/options";
 import { keep, rememberOptions, rememberedOptions } from "../model/startMemory";
@@ -568,7 +569,7 @@ export function NewAgent({ store, host, folder, folderName, down, inBackground }
         )}
         <p class="quiet" title={path}>{path} · {machine}</p>
         <KeptBubbles store={store} kept={keptStarts} />
-        {!inBackground && <Suggested store={store} host={host} down={down} />}
+        {!inBackground && flagOn("suggested") && <Suggested store={store} host={host} down={down} />}
       </div>
       <footer class="foot"
         onFocusIn={(e) => { if (isPrompt(e.target)) { promptFocused.value = true; typed.value = e.target.value.length; } }}

@@ -39,6 +39,7 @@ func (d *Daemon) register() {
 	d.registerReceive()
 	d.registerSend()
 	d.registerFolderSend()
+	d.registerSetupProjects()
 	d.registerFolderBringBack()
 	d.registerExports()
 	d.registerBringBack()
@@ -671,7 +672,7 @@ func (d *Daemon) transcript(r wire.TranscriptRequest) (wire.TranscriptPage, erro
 	if err != nil {
 		return wire.TranscriptPage{}, err
 	}
-	total := int64(len(ends))
+	total := int64(ends.Total())
 	end := total
 	if r.Before != nil {
 		end = min(*r.Before, total)
@@ -680,6 +681,8 @@ func (d *Daemon) transcript(r wire.TranscriptRequest) (wire.TranscriptPage, erro
 		limit = max(0, min(limit, end-*r.From))
 	}
 	start := end - min(limit, end)
+	// The lines before the first kept are gone (#6706).
+	start = max(start, min(int64(ends.First()), end))
 	page := wire.TranscriptPage{FirstIndex: start, Total: total, Entries: []wire.TranscriptEntry{}}
 	entries, _, err := d.Store.Entries(r.AgentID, ends, int(start), int(end))
 	if err != nil {

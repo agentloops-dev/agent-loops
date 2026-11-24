@@ -19,12 +19,14 @@ extension RemoteModel {
     /// The folder's host can list them: it says `work.suggest-leads/1` (or says no list), and answers.
     func suggestsLeads(on host: MachineRef) -> Bool {
         // A host with no list is asked, and one that does not know the method draws no section.
-        hostClient(host) != nil && !isStale(on: host) && self.host(host, has: Capability.workSuggestLeads1)
+        // Asked only with the Suggested flag on (#6572).
+        flags.isOn(.suggested) && hostClient(host) != nil && !isStale(on: host) && self.host(host, has: Capability.workSuggestLeads1)
     }
 
     /// Read the folder's suggestions: the device's copy at once, then its host's answer in its
     /// place. A read that fails keeps what was there, so its "Last update" says how old it is.
     func loadSuggestions(in key: FolderKey) async {
+        guard flags.isOn(.suggested) else { return }
         if startSuggestions[key] == nil,
            let kept = await keptWorkRead(DaemonAPI.WorkSuggestLeads.self, .suggestions, Self.suggestionsAsked(key)),
            startSuggestions[key] == nil {

@@ -26,7 +26,7 @@ struct ArchiveSettingsSection: View {
                                                    settings: state.settings))
                     .appText(.reading)
                 Picker("Delete archived agents after", selection: keepFor(in: state)) {
-                    ForEach(RetentionSettings.KeepFor.allCases, id: \.self) { keep in
+                    ForEach(RetentionSettings.KeepFor.offered(with: state.settings.keepFor), id: \.self) { keep in
                         Text(DeletionWords.keepForLabel(keep)).tag(keep)
                     }
                 }

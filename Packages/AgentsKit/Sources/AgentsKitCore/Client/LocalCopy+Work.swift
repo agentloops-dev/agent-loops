@@ -67,15 +67,14 @@ extension LocalCopy {
         let ref = Self.workRef(group, asked)
         let url = workFile(ref, group)
         guard let record = read(Value.self, at: url), record.ref == ref else { return nil }
-        let written = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
-        return (record.value, record.at ?? written ?? .distantPast)
+        return (record.value, record.at ?? .distantPast)
     }
 
     /// A host's answer, kept, then the copy trimmed to its caps. `at` is when the client read
     /// it from its host; now when not given.
-    public func keepWork<Value: Codable & Sendable>(_ value: Value, _ group: WorkGroup, _ asked: String, readAt at: Date = Date()) {
+    public func keepWork<Value: Codable & Sendable>(_ value: Value, _ group: WorkGroup, _ asked: String, readAt at: Date? = nil) {
         let ref = Self.workRef(group, asked)
-        write(Record(ref: ref, value: value, at: at), to: workFile(ref, group))
+        write(Record(ref: ref, value: value, at: at ?? now()), to: workFile(ref, group))
         trim()
     }
 

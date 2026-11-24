@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"log"
 	"maps"
-	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -45,6 +44,9 @@ type live struct {
 	// kick between a turn's end and the run loop's return found it running, so the loop
 	// goes on for it rather than leave its message in the queue (#4907).
 	kicks, kicksAtEnd int
+	// onHeld is called when the run loop has decided to hold what is queued and has not
+	// returned yet; only a test sets it, before it kicks (#6989).
+	onHeld func()
 	// prompting is whether the turn's words are with the runtime; a stop before then is
 	// kept in stopped, and the turn ends there instead of sending them.
 	prompting, stopped bool
@@ -566,9 +568,8 @@ func (d *Daemon) enqueue(id wire.UUID, q wire.QueuedPrompt, first bool) error {
 }
 
 // hasTurn is whether something in the agent's queue may go now.
-func (d *Daemon) hasTurn(a *wire.Agent) bool {
-	_, _, ok := nextTurn(a.QueuedPrompts, d.heldMessages(a))
-	return ok
+func hasTurn(a *wire.Agent) bool {
+	return len(a.QueuedPrompts) > 0
 }
 
 // kick starts the agent's turns unless they are running, or the host is going.
@@ -584,28 +585,21 @@ func (l *live) kick() {
 
 // nextTurn is QueuedPrompt.nextTurn and merging: the run of the person's prompts at the
 // head goes as one (#346), since what was typed later so often corrects what came first;
-// anything else goes alone. A held message (heldMessage) is passed over, and waits where
-// it is, until the person has something in the queue too.
-func nextTurn(queue []wire.QueuedPrompt, held map[wire.UUID]bool) (wire.QueuedPrompt, []wire.QueuedPrompt, bool) {
-	start := 0
-	if !slices.ContainsFunc(queue, func(q wire.QueuedPrompt) bool { return q.From == wire.PromptOriginPerson }) {
-		for start < len(queue) && held[queue[start].ID] {
-			start++
-		}
-	}
-	if start == len(queue) {
+// anything else goes alone.
+func nextTurn(queue []wire.QueuedPrompt) (wire.QueuedPrompt, []wire.QueuedPrompt, bool) {
+	if len(queue) == 0 {
 		return wire.QueuedPrompt{}, queue, false
 	}
-	n := start + 1
-	if queue[start].From == wire.PromptOriginPerson {
+	n := 1
+	if queue[0].From == wire.PromptOriginPerson {
 		for n < len(queue) && queue[n].From == wire.PromptOriginPerson {
 			n++
 		}
 	}
-	merged := queue[start]
+	merged := queue[0]
 	var texts, prefaces []string
 	merged.Attachments = []wire.Attachment{}
-	for _, q := range queue[start:n] {
+	for _, q := range queue[:n] {
 		texts = append(texts, q.Text)
 		if q.Preface != nil {
 			prefaces = append(prefaces, *q.Preface)
@@ -618,7 +612,7 @@ func nextTurn(queue []wire.QueuedPrompt, held map[wire.UUID]bool) (wire.QueuedPr
 		p := strings.Join(prefaces, "\n\n")
 		merged.Preface = &p
 	}
-	return merged, append(append([]wire.QueuedPrompt(nil), queue[:start]...), queue[n:]...), true
+	return merged, append([]wire.QueuedPrompt(nil), queue[n:]...), true
 }
 
 // blocks is QueuedPrompt.blocks: the words, then what is attached.
@@ -649,16 +643,26 @@ func (l *live) run() {
 		// A queued record's words wait for its place: only startQueued takes it out of the
 		// queue, on the runtime Auto picks then (#4380). A day rolling over or a message
 		// kicks it too.
-		if a == nil || a.State == wire.AgentStateQueued || !l.d.hasTurn(a) {
+		if a == nil || a.State == wire.AgentStateQueued || !hasTurn(a) {
 			l.running = false
 			l.mu.Unlock()
 			return
 		}
+		kicks := l.kicks
 		l.mu.Unlock()
 		// What is queued waits while the organisation's policy refuses the turn (#998),
 		// and while the agent or the day is at its limit.
 		if l.d.holdsForPolicy(l) || l.d.holdsForLimit(l.id) {
+			if l.onHeld != nil {
+				l.onHeld()
+			}
 			l.mu.Lock()
+			if l.kicks != kicks {
+				// Released as it was held (a limit raised, a day rolled over): that kick found
+				// it running, so the loop looks again rather than leave the queue (#6989).
+				l.mu.Unlock()
+				continue
+			}
 			l.running = false
 			l.mu.Unlock()
 			return
@@ -784,11 +788,7 @@ func (l *live) takeTurnWords() (wire.QueuedPrompt, bool) {
 	d := l.d
 	var q wire.QueuedPrompt
 	taken := false
-	held := map[wire.UUID]bool{}
-	if a := d.Store.Agent(l.id); a != nil {
-		held = d.heldMessages(a)
-	}
-	d.change(l.id, func(a *wire.Agent) { q, a.QueuedPrompts, taken = nextTurn(a.QueuedPrompts, held) })
+	d.change(l.id, func(a *wire.Agent) { q, a.QueuedPrompts, taken = nextTurn(a.QueuedPrompts) })
 	if !taken {
 		return q, false
 	}
@@ -2114,7 +2114,7 @@ func (d *Daemon) stopAll() {
 
 // keepMode is the runtime moving itself to another mode (Claude leaving plan mode): the
 // agent's mode now, as the Swift host kept it, so that the checks that read it
-// (inheritedMode, looserThan) see the mode it runs in, not the one it started in.
+// (inheritedMode) see the mode it runs in, not the one it started in.
 func keepMode(a *wire.Agent, id string, v wire.JSONValue) {
 	values := make(map[string]wire.JSONValue, len(a.StartOptions.Values)+1)
 	for k, old := range a.StartOptions.Values {

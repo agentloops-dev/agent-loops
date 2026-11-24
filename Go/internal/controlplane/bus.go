@@ -30,10 +30,11 @@ import (
 // connected misses the event, and a rare copy can still be delivered twice (two copies of
 // the control plane racing). Consumers read the subject's state now.
 //
-// The bus log is the last busLogKept envelopes of each person's bus, for dedupe and the
+// The bus log is each person's newest envelopes, for dedupe and the
 // Events page (#4732), not for redelivery: v1/bus/<bus>/log/<day>/<time>-<id hash>.json is
-// the envelope, and v1/bus/<bus>/ids/<id hash>.json says it is on the bus. The sweep keeps
-// the newest busLogKept and deletes both files of the rest, the oldest days first.
+// the envelope, and v1/bus/<bus>/ids/<id hash>.json says it is on the bus. The hourly sweep
+// expires envelopes older than 90 days and evicts oldest envelopes over the count or 1 GiB
+// limit, deleting both files for each envelope.
 //
 // The log has a folder for each UTC day (#6582), so a publish changes only today's
 // folder, and a folder store's next listing stats only today's envelopes: it takes the
@@ -47,9 +48,13 @@ import (
 // up: inside each is the raising machine's signature.
 
 const (
+	// store-bounds: kind=log; size=1GiB a person; age=90d; applied=hourly sweep
 	busPrefix = "v1/bus/"
-	// busLogKept is how many envelopes each person's bus keeps (#4726).
-	busLogKept = 100_000
+	// The bus log is bounded by count and bytes; a record has its own encoded-size limit.
+	busLogKept             = 100_000
+	busLogMaxBytes   int64 = 1 << 30
+	busLogMaxAge           = 90 * 24 * time.Hour
+	busLogRecordMost       = 24 << 20
 	// busPublishMost and busSubscriptionsMost bound one call, as the wire says.
 	busPublishMost       = 100
 	busSubscriptionsMost = 1_000
@@ -148,6 +153,13 @@ func checkBusEvent(e wire.BusEvent) error {
 			return fmt.Errorf("a sealed copy is more than 256 KB of data")
 		}
 		to[c.Machine] = true
+	}
+	body, err := json.Marshal(e)
+	if err != nil {
+		return err
+	}
+	if len(body) > busLogRecordMost {
+		return fmt.Errorf("the encoded envelope is more than %d bytes", busLogRecordMost)
 	}
 	return nil
 }
@@ -379,12 +391,15 @@ func (s *Service) busFromPeer(raw json.RawMessage) {
 	s.busDeliverTo(p.Person, "", p.Event, p.PollOnly)
 }
 
-// sweepBus keeps the newest kept envelopes of each bus, and deletes at most most
-// of the rest, the oldest first, each with its id's file: the flat envelopes from before
-// #6582, then the oldest days. It lists each bus's log only (#6569): the ids beside it are
-// as many again, and a listing stats each file. On a folder store, the days but today are
-// taken from its index (#6582).
+// sweepBus applies the bus log's count, byte and age bounds, and deletes at most most
+// envelopes, oldest first, with each id's file. It lists each bus's log only (#6569): the
+// ids beside it are as many again, and a listing stats each file. On a folder store, the
+// days but today are taken from its index (#6582).
 func sweepBus(ctx context.Context, st store.Store, kept, most int) (int, error) {
+	return sweepBusAt(ctx, st, time.Now(), kept, busLogMaxBytes, busLogMaxAge, most)
+}
+
+func sweepBusAt(ctx context.Context, st store.Store, now time.Time, kept int, maxBytes int64, maxAge time.Duration, most int) (int, error) {
 	if most <= 0 {
 		return 0, nil
 	}
@@ -399,9 +414,16 @@ func sweepBus(ctx context.Context, st store.Store, kept, most int) (int, error) 
 			return n, err
 		}
 		sortBusLog(list)
-		for _, k := range list[:max(0, len(list)-kept)] {
+		sizes, total, err := busLogSizes(ctx, st, list)
+		if err != nil {
+			return n, err
+		}
+		for i, k := range list {
 			if n >= most {
 				return n, nil
+			}
+			if !busLogExpired(k.Key, now.Add(-maxAge)) && len(list)-i <= kept && total <= maxBytes {
+				continue
 			}
 			name := strings.TrimSuffix(k.Key[strings.LastIndexByte(k.Key, '-')+1:], ".json")
 			if err := st.Delete(ctx, busIDKey(bus, name)); err != nil {
@@ -410,10 +432,56 @@ func sweepBus(ctx context.Context, st store.Store, kept, most int) (int, error) 
 			if err := st.Delete(ctx, k.Key); err != nil {
 				return n, err
 			}
+			total -= sizes[i]
 			n++
 		}
 	}
 	return n, nil
+}
+
+// busLogSizes is each envelope's size and their total. A store whose listing has no sizes
+// is read for them.
+func busLogSizes(ctx context.Context, st store.Store, list []store.Key) (sizes []int64, total int64, err error) {
+	sizes = make([]int64, len(list))
+	for i, k := range list {
+		size := k.Size
+		if size < 0 {
+			obj, err := st.Get(ctx, k.Key)
+			if err != nil {
+				return nil, 0, err
+			}
+			size = 0
+			if obj != nil {
+				size = int64(len(obj.Data))
+			}
+		}
+		sizes[i] = size
+		total += size
+	}
+	return sizes, total, nil
+}
+
+// busLogExpired says whether an envelope was taken at or before cutoff. A name with no time
+// cannot age out later, so it has expired.
+func busLogExpired(key string, cutoff time.Time) bool {
+	stamp, _, _ := strings.Cut(busLogName(key), "-")
+	at, err := time.Parse(busLogStamp, stamp)
+	return err != nil || !at.After(cutoff)
+}
+
+// deleteBus removes all state scoped to a person's bus, including its log, dedupe ids,
+// and producer leases.
+func deleteBus(ctx context.Context, st store.Store, bus string) error {
+	keys, err := st.List(ctx, busPrefix+bus+"/")
+	if err != nil {
+		return err
+	}
+	for _, key := range keys {
+		if err := st.Delete(ctx, key.Key); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 const (

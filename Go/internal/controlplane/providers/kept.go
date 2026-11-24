@@ -23,6 +23,15 @@ const KeptPrefix = "v1/kept/"
 // KeptLimit is KeptRequests.limit: at most this many per host, waiting or not sent.
 const KeptLimit = 20
 
+// KeptRecordBytes is the maximum stored size of one kept request, including attachments.
+const KeptRecordBytes = 40 << 20
+
+// KeptBytes is the maximum stored size of kept requests for one host (20 × 40 MiB).
+const KeptBytes = KeptLimit * KeptRecordBytes
+
+// KeptWaitingFor bounds waiting requests by the 90-day maximum age in #6669's model.
+const KeptWaitingFor = 90 * 24 * time.Hour
+
 // KeptFailedFor is how long a request that was not sent is kept, to try again or drop by
 // hand (#3647): its attachments are in it.
 const KeptFailedFor = 7 * 24 * time.Hour
@@ -173,19 +182,8 @@ func (k *Kept) Keep(host, method string, params json.RawMessage, caller Caller, 
 	if name == "" {
 		return nil
 	}
-	k.mu.Lock()
-	waiting := 0
-	for _, e := range k.kept[host] {
-		if e.record.Failed == "" {
-			waiting++
-		}
-	}
-	k.mu.Unlock()
-	if waiting >= KeptLimit {
-		return fail(CodeHostOffline, "%s is starting; too many prompts are waiting.", name)
-	}
-	// The oldest not sent makes room, so a host keeps KeptLimit at most (#3647).
-	k.dropFailed(host, func(left int, _ keptRecord) bool { return left >= KeptLimit })
+	// Kept requests are person-owned payloads. Refuse at the count limit; do not evict one
+	// person's failed request to make room for another.
 	record := keptRecord{ID: records.NewUUID(), Host: host, Method: method, Params: once(method, params),
 		Client: strings.ToUpper(caller.Client), ClientKind: caller.Kind, At: records.Now(), Signed: signed}
 	if signed != nil {
@@ -197,13 +195,27 @@ func (k *Kept) Keep(host, method string, params json.RawMessage, caller Caller, 
 	}
 	key := KeptPrefix + host + "/" + sequence(record.At.Time) + "-" + record.ID + ".json"
 	data, err := records.Encode(record)
+	if err == nil && len(data) > KeptRecordBytes {
+		return fail(CodeHostOffline, "%s is stopped; this request and its attachments exceed the 40 MiB kept-request limit.", name)
+	}
+	// Hold the lock through the store write so concurrent keeps cannot exceed the quota.
+	k.mu.Lock()
+	if len(k.kept[host]) >= KeptLimit {
+		k.mu.Unlock()
+		return fail(CodeHostOffline, "%s is starting; too many prompts are waiting.", name)
+	}
+	used := keptBytes(k.kept[host])
+	if err == nil && used+len(data) > KeptBytes {
+		k.mu.Unlock()
+		return fail(CodeHostOffline, "%s is stopped; its kept requests have reached the 800 MiB limit. Drop a request before trying again.", name)
+	}
 	if err == nil {
 		_, err = k.store.Put(context.Background(), key, data, store.Absent)
 	}
 	if err != nil {
+		k.mu.Unlock()
 		return fail(CodeStoreUnavailable, "%s is stopped, and the control plane couldn’t keep this to send later.", name)
 	}
-	k.mu.Lock()
 	k.kept[host] = append(k.kept[host], keptEntry{key, record})
 	k.mu.Unlock()
 	k.log(fmt.Sprintf("workspace: kept %s for %s from client %s", record.kind(), name, shortID(caller.Client)))
@@ -420,11 +432,10 @@ func (k *Kept) fail(host, only, reason string) {
 	}
 }
 
-// Expire drops every request not sent for KeptFailedFor (#3647), with its attachments, and
-// says how many went. One written before failedAt was kept goes by when it was kept.
+// Expire drops failed requests after KeptFailedFor and all other requests after
+// KeptWaitingFor, with their attachments, then refreshes the owning person's list.
 func (k *Kept) Expire(now time.Time) int {
 	k.Load()
-	before := now.Add(-KeptFailedFor)
 	k.mu.Lock()
 	hosts := make([]string, 0, len(k.kept))
 	for h := range k.kept {
@@ -433,30 +444,42 @@ func (k *Kept) Expire(now time.Time) int {
 	k.mu.Unlock()
 	dropped := 0
 	for _, h := range hosts {
-		dropped += k.dropFailed(h, func(_ int, r keptRecord) bool {
-			at := r.At
-			if r.FailedAt != nil {
-				at = *r.FailedAt
+		dropped += k.dropExpired(h, func(r keptRecord) bool {
+			if r.Failed != "" {
+				at := r.At
+				if r.FailedAt != nil {
+					at = *r.FailedAt
+				}
+				return at.Before(now.Add(-KeptFailedFor))
 			}
-			return at.Before(before)
+			return r.At.Before(now.Add(-KeptWaitingFor))
 		})
 	}
 	if dropped > 0 {
-		k.log(fmt.Sprintf("workspace: dropped %d kept requests not sent for %s", dropped, KeptFailedFor))
+		k.log(fmt.Sprintf("workspace: expired %d kept requests after their retention limit", dropped))
 		k.changed()
 	}
 	return dropped
 }
 
-// dropFailed deletes the host's requests not sent, oldest first, while drop says so of the
-// next one; drop is called under k.mu with how many the host keeps. It says how many went.
-func (k *Kept) dropFailed(host string, drop func(left int, r keptRecord) bool) int {
+func keptBytes(entries []keptEntry) int {
+	used := 0
+	for _, e := range entries {
+		data, err := records.Encode(e.record)
+		if err == nil {
+			used += len(data)
+		}
+	}
+	return used
+}
+
+func (k *Kept) dropExpired(host string, drop func(keptRecord) bool) int {
 	k.mu.Lock()
 	var keys []string
 	entries := k.kept[host]
 	for i := 0; i < len(entries); {
 		e := entries[i]
-		if e.record.Failed == "" || !drop(len(entries), e.record) {
+		if !drop(e.record) {
 			i++
 			continue
 		}

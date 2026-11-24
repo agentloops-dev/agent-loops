@@ -9,7 +9,8 @@ import type { Store } from "../model/store";
 import { Capability } from "../protocol/capabilities.generated";
 import { go, route } from "../route";
 import { adminOf } from "../model/console";
-import { navTitle, sectionKeys, sectionsShown, type NavSection } from "../model/nav";
+import { flagOn } from "../model/featureFlags";
+import { sectionKeys, sectionsShown, sectionTitle, type NavSection } from "../model/nav";
 import { folderKey, folderPath } from "../model/groups";
 import { canStop } from "../model/tree";
 import { repoOf, shortRef } from "../model/work";
@@ -114,7 +115,7 @@ export function commandItems(store: Store, apple: boolean, setup: MenuSetup = no
   const change = store.changeUndo.value;
   if (change) add(change.menu, () => void store.undoChange(), commandKey("z", apple));
   for (const s of sectionsShown(adminOf(store), "overview")) {
-    add(s === "overview" ? "Overview" : `Go to ${navTitle[s]}`, () => go(s === "overview" ? {} : { nav: s }), goKey(s),
+    add(s === "overview" ? "Overview" : `Go to ${sectionTitle(s)}`, () => go(s === "overview" ? {} : { nav: s }), goKey(s),
       s === "settings" ? ["preferences"] : undefined);
   }
   const folderItems = folders.map((f): CommandItem => {
@@ -123,7 +124,7 @@ export function commandItems(store: Store, apple: boolean, setup: MenuSetup = no
     return { id, kind: "folder", title: f.folder.name, ...several ? { detail: f.host.name } : {} };
   });
   const repos: string[] = [];
-  const work = (kind: "issue" | "pr"): CommandItem[] => allRows(workList(kind)).map((row) => {
+  const work = (kind: "issue" | "pr"): CommandItem[] => (flagOn("work") ? allRows(workList(kind)) : []).map((row) => {
     const id = `${kind}:${row.node.ref}`;
     const repo = repoOf(row.node.ref);
     if (!repos.includes(repo)) repos.push(repo);
@@ -188,8 +189,8 @@ export function CommandMenu({ store }: { store: Store }) {
   const setup = useSignal<MenuSetup>(noSetup);
   useEffect(() => {
     if (!open.value) return;
-    // The Work lists' issues and PRs, read once; a list read already is not read again.
-    for (const kind of ["issue", "pr"] as const) void loadList(store, workList(kind)).catch(() => undefined);
+    // The Work lists' issues and PRs, read once; a list read already is not read again. None with Work off (#6572).
+    if (flagOn("work")) for (const kind of ["issue", "pr"] as const) void loadList(store, workList(kind)).catch(() => undefined);
     // The secrets, accounts and variables, read each time it opens: they change on other machines (#5261).
     void readSetup(store).then((read) => { setup.value = read; }, () => undefined);
   }, [open.value]);

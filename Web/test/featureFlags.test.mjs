@@ -29,3 +29,20 @@ test("the page's flags are Packages/Wire's (#6254); Early Features draws them (#
   const wire = JSON.parse(readFileSync(new URL("../../Packages/Wire/feature-flags.json", import.meta.url), "utf8"));
   assert.deepEqual(featureFlags, wire.flags);
 });
+
+test("a flag is as this browser heard it last until the Mac says (#6572)", async () => {
+  const kept = new Map([["featureFlags", JSON.stringify({ "flag:work": true })]]);
+  const before = globalThis.localStorage;
+  Object.defineProperty(globalThis, "localStorage", { configurable: true, writable: true,
+    value: { getItem: (k) => kept.get(k) ?? null, setItem: (k, v) => kept.set(k, v) } });
+  try {
+    const m = await load("test/flagcopy-entry.ts");
+    assert.equal(m.flagOn("work"), true, "the copy, before the Mac is heard");
+    assert.equal(m.flagOn("docs"), false);
+    m.preferencesSaid({ "flag:docs": true, startRuntimeID: "x" });
+    assert.equal(m.flagOn("work"), false, "what the Mac says wins");
+    assert.deepEqual(JSON.parse(kept.get("featureFlags")), { "flag:docs": true });
+  } finally {
+    Object.defineProperty(globalThis, "localStorage", { configurable: true, writable: true, value: before });
+  }
+});

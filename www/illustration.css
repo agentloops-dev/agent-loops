@@ -16,3 +16,9 @@
 .lp-smile { fill: none; stroke: #0e1a3a; stroke-width: 28; stroke-linecap: round; }
 .lp-helmet { fill: #cfe3ff; fill-opacity: 0.22; stroke: #b8c7dc; stroke-width: 22; }
 .lp-glint { fill: none; stroke: #ffffff; stroke-width: 30; stroke-linecap: round; stroke-opacity: 0.8; }
+
+/* The redacted government file (fl-, Alex, PR #6960): typed paper and black marker bars. */
+.fl-paper { fill: #f3ecd8; stroke: #b9ad8c; stroke-width: 1; }
+.fl-shadow { fill: #000000; fill-opacity: 0.22; }
+.fl-bar { fill: #0b0b0b; }
+.fl-word { fill: #f3ecd8; }

@@ -116,7 +116,8 @@ struct StartAgentView: View {
             if sceneFolder == nil { ProjectRows(folder: key) }
             personaHeading
             // Suggested (#5460): open epics with no lead, a tap fills the form as Start lead does.
-            SuggestedLeadsSection(key: key) { fill($0.start) }
+            // Only with its flag on (#6572).
+            if model.flags.isOn(.suggested) { SuggestedLeadsSection(key: key) { fill($0.start) } }
             // Starts kept for this folder's stopped workspace (#691 US3, layouts.md L6a): the
             // agent each makes opens once the host is up.
             if case let starts = model.keptStarts(in: folder), !starts.isEmpty {

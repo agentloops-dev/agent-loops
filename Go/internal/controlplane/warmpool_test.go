@@ -126,6 +126,7 @@ type fakePools struct {
 	failMake      error
 	stages        map[string]poolStage
 	stopped       string
+	wait          string
 	readyAt       map[string]*time.Time
 }
 
@@ -244,7 +245,8 @@ func (f *fakePools) Detail(provider, workspace string) string {
 	}
 	return ""
 }
-func (f *fakePools) ReadyAt(host string) *time.Time { return f.readyAt[host] }
+func (f *fakePools) ProjectsWait(string, []string) string { return f.wait }
+func (f *fakePools) ReadyAt(host string) *time.Time       { return f.readyAt[host] }
 func (f *fakePools) Bind(person, provider, workspace string, stop *int, projects []string) (string, error) {
 	f.bound = append(f.bound, person+":"+workspace)
 	f.boundProjects = append(f.boundProjects, projects)
@@ -293,8 +295,8 @@ func TestClaimTakesOldestReadyAndReplacesIt(t *testing.T) {
 	}
 }
 
-// #6890: a claim hands the pool's projects to the bind, so the claimed machine's step 6 waits
-// for them by name instead of keeping the pool's "No projects to prepare".
+// #6890: a claim hands the pool's projects to the bind, which the machine's step 6
+// brings up to date.
 func TestClaimBindsWithThePoolsProjects(t *testing.T) {
 	t.Parallel()
 	w, f := testPools(t)
@@ -312,16 +314,6 @@ func TestClaimBindsWithThePoolsProjects(t *testing.T) {
 	}
 	if len(f.boundProjects) != 1 || len(f.boundProjects[0]) != 1 || f.boundProjects[0][0] != "/Users/alex/Agents" {
 		t.Fatalf("the bind gets the pool's projects: %v", f.boundProjects)
-	}
-}
-
-func TestClaimProjectsDetailNamesEachFolder(t *testing.T) {
-	t.Parallel()
-	if got := claimProjectsDetail([]string{"/Users/alex/Agents/", "/Users/alex/Web"}); got != "Waiting for Agents, Web from the Mac" {
-		t.Fatalf("got %q", got)
-	}
-	if got := claimProjectsDetail(nil); got != "" {
-		t.Fatalf("no projects, no line: %q", got)
 	}
 }
 

@@ -16,15 +16,42 @@ import (
 // New Machine with no questions (#3972): a make with no provider, name or options takes
 // the person's default provider, the name machine-N and the provider's default options.
 
-// MachineNamesPrefix is where each person's machine-N counter is kept.
+// MachineNamesPrefix is where each person's machine-N counter is kept. It is the person's
+// current state: it goes with the person (#6759), and not at an age before, so that a
+// number is never used twice (#3971).
+// store-bounds: kind=key-value; size=64KiB a person; age=until-deleted; applied=on write, on person removal and hourly sweep
 const MachineNamesPrefix = "v1/machine-names/"
 
 // machineNamesKey is a person's counter; the admin who signs in with no person has one too.
 func machineNamesKey(person string) string {
 	if person == "" {
-		person = "-"
+		person = noPerson
 	}
 	return MachineNamesPrefix + url.PathEscape(person) + ".json"
+}
+
+// noPerson stands in a key for the admin who signs in with no person.
+const noPerson = "-"
+
+// machineNamesMost is the largest record of a person's. Choices that would take it past
+// that are not kept; the counter always is (#6759).
+const machineNamesMost = 64 << 10
+
+// MachineNamesPerson is the person whose record the key holds. ok is false for the admin
+// with no person, and for a key of something else.
+func MachineNamesPerson(key string) (person string, ok bool) {
+	escaped, isPrefix := strings.CutPrefix(key, MachineNamesPrefix)
+	escaped, isJSON := strings.CutSuffix(escaped, ".json")
+	person, err := url.PathUnescape(escaped)
+	return person, isPrefix && isJSON && err == nil && person != "" && person != noPerson
+}
+
+// ForgetMachineNames deletes a removed person's machine-N counter and last choices (#6759).
+func ForgetMachineNames(ctx context.Context, s store.Store, person string) error {
+	if person == "" || person == noPerson {
+		return nil
+	}
+	return s.Delete(ctx, machineNamesKey(person))
 }
 
 // machineNames is v1/machine-names/<person>.json: the number the person's next machine-N
@@ -153,6 +180,7 @@ func (p *Providers) lastOptions(person, id string) any {
 // madeOn keeps the provider a make used (#3979), and what the person chose on its form: the
 // options given that are not the form's defaults (#6686), for the next New Machine. A make
 // that took every default keeps no choice, so the next one takes the defaults of then.
+// Choices for a provider that is gone go, and choices too large for the record are not kept.
 func (p *Providers) madeOn(person, id string, given any, form newMachineForm) {
 	options, _ := given.(map[string]any)
 	chosen := map[string]any{}
@@ -161,8 +189,14 @@ func (p *Providers) madeOn(person, id string, given any, form newMachineForm) {
 			chosen[key] = value
 		}
 	}
+	tooLarge := false
 	err := p.changeChoices(person, func(c *machineNames) {
 		c.Default = id
+		for other := range c.Chosen {
+			if _, ok := p.record(other); !ok {
+				delete(c.Chosen, other)
+			}
+		}
 		if len(chosen) == 0 {
 			delete(c.Chosen, id)
 			return
@@ -171,7 +205,14 @@ func (p *Providers) madeOn(person, id string, given any, form newMachineForm) {
 			c.Chosen = map[string]json.RawMessage{}
 		}
 		c.Chosen[id] = rawOf(chosen)
+		// Room for the counter to grow by digits is left.
+		if tooLarge = len(rawOf(c)) > machineNamesMost-32; tooLarge {
+			delete(c.Chosen, id)
+		}
 	})
+	if tooLarge {
+		p.log(fmt.Sprintf("workspace: the options %s made a machine with are not kept: a person's record is %d bytes at most", id, machineNamesMost))
+	}
 	if err != nil {
 		p.log("workspace: could not keep the options " + id + " made a machine with: " + errorWords(err))
 	}

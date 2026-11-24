@@ -81,7 +81,7 @@ struct FolderAgentsView: View {
                     hostName: { [model] in model.hosts.label($0) }))
             }
             // The epics with no lead (#5459): a tap fills the bar below, and starts nothing.
-            if let summary { SuggestedLeadsSection(host: summary.host) }
+            if let summary, model.flags.isOn(.suggested) { SuggestedLeadsSection(host: summary.host) }
             // Its own margins, the same as in a chat. The folder is this folder's and
             // not the bar's to change.
             PromptBar(folderIsFixed: true, presence: { promptFocused = $0; typed = $1 })

@@ -122,7 +122,8 @@ struct ContentView: View {
     }
 
     /// What the right-hand column shows: a page about all the work, a workflow, a
-    /// pinned page, a chat, a new session, or — with nothing picked — the Dashboard (#5696).
+    /// pinned page, a chat, a new session, or — with nothing picked — the Dashboard (#5696),
+    /// or the Achievements page with the Dashboard's flag off (#6572).
     @ViewBuilder
     private func detail(inPaneOf width: CGFloat) -> some View {
         if model.showsEvents {
@@ -147,11 +148,7 @@ struct ContentView: View {
         } else if model.showsCycletime {
             CycleTimeView().paperGround()
         } else if model.showsAchievements {
-            AchievementsPage(multiplier: model.work.multiplier, read: model.work.multiplierReadAt, achievements: model.work.achievements,
-                           agentsWorking: model.agents.count { $0.state == .starting || $0.state == .running },
-                           hints: "⌘N new session · ↑↓ move · ⌘K find",
-                           refresh: { await model.refreshMultiplier() })
-                .paperGround()
+            achievementsPage
         } else if model.showsWork {
             // Build trends ↗ on the Pipeline line opens the web page (#5180).
             WorkView(model: model).webPlaceLinks().paperGround()
@@ -210,9 +207,18 @@ struct ContentView: View {
                 .paperGround()
         } else {
             // The home page (#5696): where the window opens and where it goes when the
-            // selection clears.
-            DashboardView().paperGround()
+            // selection clears. With the Dashboard's flag off (#6572) it reads nothing: the page
+            // before it, which is the Achievements row's too.
+            if model.flags.isOn(.dashboard) { DashboardView().paperGround() } else { achievementsPage }
         }
+    }
+
+    private var achievementsPage: some View {
+        AchievementsPage(multiplier: model.work.multiplier, read: model.work.multiplierReadAt, achievements: model.work.achievements,
+                         agentsWorking: model.agents.count { $0.state == .starting || $0.state == .running },
+                         hints: "⌘N new session · ↑↓ move · ⌘K find",
+                         refresh: { await model.refreshMultiplier() })
+            .paperGround()
     }
 
     /// The folder whose shell is under the page, while Control-` has it open (#418):
@@ -423,6 +429,7 @@ struct ContentView: View {
         .onChange(of: model.filesToShow) { showWhatWasAskedFor() }
         // Each page the window comes to goes on its history (#5784).
         .onChange(of: model.pagePlace, initial: true) { model.notePagePlace() }
+        .onChange(of: model.flags.on) { model.leaveHiddenPages() }
         .onChange(of: model.selection) {
             // Open File… searches the session it was opened over.
             requests.showsFileSearch = false

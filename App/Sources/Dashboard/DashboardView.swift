@@ -119,6 +119,8 @@ struct DashboardView: View {
                     DashboardEpicCard(epic: epic) {
                         model.showWork(WorkPlace(kind: .issue, ref: epic.node.ref))
                     }
+                    // Work off (#6572): there is no page to open.
+                    .allowsHitTesting(model.flags.isOn(.work))
                 }
             }
         }
@@ -343,7 +345,8 @@ private struct DashboardRow: View {
 
     @ViewBuilder
     private var title: some View {
-        if let node = item.node {
+        // With Work off (#6572) an item has no page to open.
+        if model.flags.isOn(.work), let node = item.node {
             Button { open(node) } label: { Text(item.title).lineLimit(1) }
                 .buttonStyle(.plain)
                 .help("Open \(item.refText ?? item.title) in Work")
@@ -363,6 +366,7 @@ private struct DashboardRow: View {
 
 /// "PR #20 ✓": a pull request and its checks. Opens the pull request's Work page when it was listed.
 private struct DashboardPullChip: View {
+    @Environment(AppModel.self) private var model
     let pr: Dashboard.PullRequest
     let open: (DaemonAPI.LineageNode) -> Void
 
@@ -376,7 +380,7 @@ private struct DashboardPullChip: View {
         .padding(.horizontal, 6)
         .padding(.vertical, 2)
         .background(Paper.well, in: RoundedRectangle(cornerRadius: Paper.Radius.control))
-        if let node = pr.node {
+        if model.flags.isOn(.work), let node = pr.node {
             Button { open(node) } label: { chip }
                 .buttonStyle(.plain)
                 .help(help)
@@ -515,6 +519,7 @@ private struct DashboardApprovalCard: View {
             }
         } decline: {
             AskDecline("Open pull request", action: open)
+                .disabled(!model.flags.isOn(.work))
         } buttons: {
             Button { approve() } label: {
                 HStack(spacing: 6) {

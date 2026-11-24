@@ -1124,13 +1124,18 @@ func (m *Methods) forget(ctx context.Context, id string, after time.Duration) er
 	if err := m.records.ForgetClient(ctx, id); err != nil {
 		return err
 	}
+	m.forgotten(id, after)
+	return nil
+}
+
+// forgotten ends the sessions of a client whose tombstone is written, and tells every window.
+func (m *Methods) forgotten(id string, after time.Duration) {
 	go func() {
 		time.Sleep(after)
 		m.router.ForgetClient(id)
 		m.router.BroadcastControl("control/clientChanged", map[string]any{"client": id, "removed": true})
 		m.s.tellHostClients()
 	}()
-	return nil
 }
 
 // Admit is ControlMethods.admit: a client that has paired, or connected again. lastSeen
@@ -1538,6 +1543,9 @@ func (m *Methods) hostReported(ctx context.Context, host, method string, params 
 			return nil, true, err
 		}
 		return map[string]any{}, true, m.s.setupStep(ctx, host, report)
+	case wire.CallMachineSetupWork.Name:
+		work, err := m.s.setupWork(ctx, host)
+		return work, true, err
 	case "machine/policyApplied":
 		applied, err := require[wire.PolicyApplied](params, "PolicyApplied")
 		if err != nil {

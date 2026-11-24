@@ -1,7 +1,6 @@
 package store
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"crypto/rand"
@@ -64,6 +63,9 @@ type Store struct {
 	// OnGap is told the notice written where lines a full hold let go would have been, so
 	// the clients showing the agent see it.
 	OnGap func(id wire.UUID, e wire.TranscriptEntry, index int)
+	// OnLarge is told when a conversation passed twice its bound, for a sweep before the
+	// hour's. It is called with locks held, so it only says so.
+	OnLarge func()
 }
 
 // Open reads the root, making what is missing.
@@ -608,6 +610,7 @@ func (s *Store) AppendOne(id wire.UUID, e wire.TranscriptEntry) (int, wire.Trans
 // openTranscript opens a transcript to append to; a test counts the opens through it, or
 // refuses them as a full disk does.
 var openTranscript = func(file string) (*os.File, error) {
+	// store-bounds: kind=log; size=10MiB; age=90d; applied=hourly sweep (FolderLog)
 	return os.OpenFile(file, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 }
 
@@ -637,14 +640,18 @@ func (s *Store) appendEntries(id wire.UUID, es []wire.TranscriptEntry, hold bool
 			}
 			b, es[i] = r, cut
 		}
+		b, err = boundEntry(&es[i], b)
+		if err != nil {
+			return 0, err
+		}
 		buf = append(append(buf, b...), '\n')
 	}
 	s.mu.Lock()
 	n, ok := s.lines[id]
 	if !ok {
-		file := s.Loc.Transcript(string(id))
-		endTornLine(file)
-		n = countLines(file)
+		t := s.transcript(id)
+		endTornLine(t.file)
+		n = t.count()
 		s.lines[id] = n
 	}
 	if len(es) == 0 {
@@ -657,33 +664,9 @@ func (s *Store) appendEntries(id wire.UUID, es []wire.TranscriptEntry, hold bool
 	return n, err
 }
 
-// writeTranscript appends whole lines to a transcript. A write the disk cut short is
-// taken back, so the next line is never glued to half of this one.
+// writeTranscript appends whole lines to a transcript. With mu held.
 func (s *Store) writeTranscript(id wire.UUID, buf []byte) error {
-	if err := fault(s.Loc.Transcript(string(id)), true, buf); err != nil {
-		return err
-	}
-	if err := os.MkdirAll(s.Loc.Agent(string(id)), 0o755); err != nil {
-		return err
-	}
-	f, err := openTranscript(s.Loc.Transcript(string(id)))
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	var size int64 = -1
-	if info, err := f.Stat(); err == nil {
-		size = info.Size()
-	}
-	if _, err := f.Write(buf); err != nil {
-		if size >= 0 {
-			if terr := f.Truncate(size); terr != nil {
-				log.Printf("store: could not take a torn write out of %s: %v", f.Name(), terr)
-			}
-		}
-		return err
-	}
-	return nil
+	return s.transcript(id).write(buf)
 }
 
 // endTornLine ends the last line of a transcript that a kill cut short (#6184): with no
@@ -706,54 +689,14 @@ func endTornLine(file string) {
 	}
 }
 
-func countLines(file string) int {
-	f, err := os.Open(file)
-	if err != nil {
-		return 0
-	}
-	defer f.Close()
-	n := 0
-	r := bufio.NewReaderSize(f, 1<<16)
-	for {
-		line, err := r.ReadSlice('\n')
-		if len(line) > 0 && line[len(line)-1] == '\n' {
-			n++
-		}
-		if err == bufio.ErrBufferFull {
-			continue
-		}
-		if err != nil {
-			return n
-		}
-	}
-}
-
 // Transcript is an agent's entries from line from (0 for all), each with its index.
 // A line that will not decode is skipped, as TranscriptReader skips one.
 func (s *Store) Transcript(id wire.UUID, from int) ([]wire.TranscriptEntry, []int, error) {
-	f, err := os.Open(s.Loc.Transcript(string(id)))
-	if os.IsNotExist(err) {
-		return nil, nil, nil
-	}
+	ends, err := s.LineEnds(id)
 	if err != nil {
 		return nil, nil, err
 	}
-	defer f.Close()
-	var out []wire.TranscriptEntry
-	var at []int
-	r := bufio.NewScanner(f)
-	r.Buffer(make([]byte, 1<<20), 256<<20)
-	for i := 0; r.Scan(); i++ {
-		if i < from || len(bytes.TrimSpace(r.Bytes())) == 0 {
-			continue
-		}
-		var e wire.TranscriptEntry
-		if diskjson.Unmarshal(r.Bytes(), &e) == nil {
-			out = append(out, e)
-			at = append(at, i)
-		}
-	}
-	return out, at, r.Err()
+	return s.Entries(id, ends, from, ends.Total())
 }
 
 // MARK: folders.json

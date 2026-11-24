@@ -2,6 +2,7 @@ package agentsd
 
 import (
 	"context"
+	"errors"
 	"log"
 	"os"
 	"path/filepath"
@@ -184,7 +185,16 @@ func validBranch(name string) bool {
 	return err == nil
 }
 
-func (d *Daemon) receive(r wire.ReceiveRequest) (summary wire.FolderSummary, err error) {
+func (d *Daemon) receive(r wire.ReceiveRequest) (wire.FolderSummary, error) {
+	return d.receiveInto(r, false)
+}
+
+// errFolderChanged says that receiveInto left a folder with changes as it is.
+var errFolderChanged = errors.New("the folder has changes")
+
+// receiveInto is receive; with keepChanges it does nothing to a folder that has changes,
+// the last send's too, and says errFolderChanged (#6890).
+func (d *Daemon) receiveInto(r wire.ReceiveRequest, keepChanges bool) (summary wire.FolderSummary, err error) {
 	// The uploads go whatever the answer, also when a check below refuses (#1531).
 	var bundle, patch string
 	if r.Bundle != nil {
@@ -209,6 +219,11 @@ func (d *Daemon) receive(r wire.ReceiveRequest) (summary wire.FolderSummary, err
 	m, _ := receiveLocks.LoadOrStore(path, &sync.Mutex{})
 	m.(*sync.Mutex).Lock()
 	defer m.(*sync.Mutex).Unlock()
+	if keepChanges && isDir(path) {
+		if changed, _, err := changes(path); err == nil && changed {
+			return summary, errFolderChanged
+		}
+	}
 	return d.receiveIntoLocked(r, path, bundle, patch)
 }
 
