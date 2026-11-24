@@ -423,17 +423,18 @@ func (e *lineEditor) apply(k key) bool {
 // again each time something changes: the agent's line not ended yet, the status (working,
 // needs you) and the prompt. In raw mode a line ends with \r\n.
 type screen struct {
-	w       io.Writer
-	raw     bool
-	width   func() int
-	drawn   int  // rows the live part took when it was last drawn, under the cursor's row
-	down    int  // rows from the cursor back down to the last of those rows
-	showing bool // the live part is on the screen
-	partial string
-	status  string
-	prompt  bool
-	prefix  string
-	input   lineEditor
+	w        io.Writer
+	raw      bool
+	width    func() int
+	drawn    int  // rows the live part took when it was last drawn, under the cursor's row
+	down     int  // rows from the cursor back down to the last of those rows
+	showing  bool // the live part is on the screen
+	partial  string
+	status   string
+	settings string
+	prompt   bool
+	prefix   string
+	input    lineEditor
 }
 
 func (s *screen) eol() string {
@@ -491,6 +492,9 @@ func (s *screen) live() []string {
 		for _, l := range lines[1:] {
 			out = append(out, continuation+l)
 		}
+	}
+	if s.settings != "" {
+		out = append(out, s.settings)
 	}
 	return out
 }
@@ -621,5 +625,5 @@ func (s *screen) end() {
 		_, _ = io.WriteString(s.w, s.partial+s.eol())
 		s.partial = ""
 	}
-	s.prompt, s.status = false, ""
+	s.prompt, s.status, s.settings = false, "", ""
 }

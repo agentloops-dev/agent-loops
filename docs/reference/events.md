@@ -245,7 +245,7 @@ an answer or a drop clears it.
 | `request.opened` | request, kind, pr, issue | request, kind, source, title, agent, pr or issue, url | An agent in this folder asked a person for something. |
 | `request.deferred` | request, kind, pr, issue | request, kind, source, title, agent, pr or issue, url, until, atMac | A person put a request off to Later. `until` is RFC 3339; `atMac` is `true`. |
 | `request.answered` | request, kind, pr, issue | request, kind, source, title, agent, pr or issue, url, answer, answered_by | A request was answered. `answer` is a summary, never a secret's value. |
-| `request.dropped` | request, kind, pr, issue | request, kind, source, title, agent, pr or issue, url, why | A request ended with no answer. `why` is `askerEnded`, `folderArchived`, `forgeClosed`, `restarted` or `byPerson`. |
+| `request.dropped` | request, kind, pr, issue | request, kind, source, title, agent, pr or issue, url, why | A request ended with no answer. `why` is `askerEnded`, `folderArchived`, `forgeClosed`, `restarted`, `byPerson` or `expired` (open for 90 days). |
 
 ## Restarts
 

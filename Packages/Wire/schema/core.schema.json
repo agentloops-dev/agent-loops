@@ -1433,7 +1433,7 @@
           "description": "A summary for the row; never a secret's value."
         },
         "droppedWhy": {
-          "$ref": "workflows.schema.json#/definitions/RequestDroppedWhy"
+          "$ref": "workflows.schema.json#/definitions/RequestEndedWhy"
         },
         "deferred": {
           "$ref": "workflows.schema.json#/definitions/RequestDeferral",

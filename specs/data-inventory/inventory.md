@@ -393,7 +393,7 @@ newer than a row above for the same store.
 | `<root>/erased.json` | document | IDs of deleted agents | 10,000 IDs, 400 days | `Go/internal/agentsd/erasure.go:43-44` | #6715 |
 | `<root>/repo-aliases.json` | key-value | Repo renames | 1,000 renames of 2 KiB each, 90 days, the oldest first | `Go/internal/agentsd/repoaliases.go` (`openRepoAliases`) | #6716 |
 | `<root>/release-tags.json` | log | Linked release tags | 5,000 tags of 1 KiB; 90 days | `Go/internal/agentsd/lineagerelease.go` | #6717 |
-| `<root>/requests/<id>.json` | document | Open questions and forms | Ended ones 14 days, 1,000 files; an open one has no age | `Go/internal/agentsd/requests.go:27-28` | #6718 |
+| `<root>/requests/<id>.json` | document | Open questions and forms | 1,000 records of 256 KiB; 90 days, open too (dropped, its asker told); ended ones 14 days | `Go/internal/agentsd/requestfiles.go` | #6718 |
 | `<root>/lineage-deploys.json` | key-value | Each deploy's last event | 1,000 deploys of 16 KiB each, 90 days from the last event, the oldest first | `Go/internal/agentsd/lineagedeploy.go` (`openDeploys`) | #6719 |
 | `<root>/account-ops.json` | key-value | Last operation of each account and secret | 1,000 entries of 1 KiB each, 90 days, the oldest first | `Go/internal/agentsd/accountops.go` (`openAccountOps`) | #6720 |
 | `<root>/elsewhere.json` | key-value | Sessions on other machines | 800 entries of 64 KiB each, 90 days from when the machines last spoke of the session, the oldest first | `Go/internal/agentsd/elsewhere.go` (`openElsewhere`) | #6722 |
@@ -474,7 +474,7 @@ newer than a row above for the same store.
 | Remote app group `shared-inbox.json` | blob | What was shared to Agent Loops | Each attachment capped; no count, total or age | `Packages/AgentsKit/Sources/AgentsKitCore/Widget/SharedInbox.swift:88,105-118` | #6795 |
 | Mac browser pane `WKWebsiteDataStore.default()` | blob | Cookies and site storage of every site the pane opened | None: only the caches are emptied, at launch; not on Forget | `App/Sources/Sidebar/BrowserPane.swift:171-195` | #6796 |
 | `machinePicker.pinned` (Mac, Remote, web) | key-value | Pinned machines | 100 of 64 bytes each, one over that refused; until removed, or its machine is no longer listed (no age, on purpose: a person's choice) | `Packages/AgentsKit/Sources/AgentsKitCore/Sidebar/MachinesGroup.swift` (`MachinePins`); `Web/src/model/machinePicker.ts` | #6797 |
-| Remote defaults `remote.startFolders` | key-value | Start folders | None; not pruned, not cleared on Forget | `Remote/Sources/RemoteModel.swift` | #6798 |
+| Remote defaults `remote.startFolders` | key-value | Start folders, each with its machine | 100 of 1,024 + 64 bytes each, one over that refused; until removed, its machine is no longer listed, or Forget (no age, on purpose: a person's choice) | `Packages/AgentsKit/Sources/AgentsKitCore/Sidebar/StartFolders.swift` | #6798 |
 | Mac and Remote `App Support/Agents/control-client.json` | key-value | The pairing with a control plane | Config outside .agents | `App/Sources/Control/ControlConfig.swift:40; Remote/Sources/Link/ControlPlaneLink.swift:20` | #6800 |
 | Mac MDM profile `ControlPlaneAddress`, `ControlPlaneKey`, `MustJoin` | key-value | An org's pin to its control plane | Read only, set by the org | `Packages/AgentsKit/Sources/AgentsKitCore/Control/MachinePin.swift:15-17` | #6801 |
 | Mac and Remote defaults `voiceMode.*` | key-value | Voice mode settings | Only in the device's defaults | `Shared/UI/Voice (voiceMode keys)` | #6802 |

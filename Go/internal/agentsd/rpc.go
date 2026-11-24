@@ -220,11 +220,13 @@ func (d *Daemon) logUnknown(method string) {
 // A daemon.sock client is written by a goroutine of its own, through a bounded queue, so a
 // client that stops reading (a window hung or stopped in a debugger) never holds Broadcast,
 // its caller or any lock the caller has (#1399): its queue stays full for sockQueueWait, or
-// a write to it takes longer than sockWriteDeadline, and it is let go. It connects again and catches up.
+// it takes longer than sockWriteDeadline over one piece (sockPiece), and it is let go. It
+// connects again and catches up.
 const (
 	sockQueue         = 1024
 	sockQueueWait     = 2 * time.Second
 	sockWriteDeadline = 10 * time.Second
+	sockPiece         = 64 << 10
 )
 
 var errSocketGone = errors.New("the socket's client was let go")
@@ -277,13 +279,12 @@ func (s *sockConn) Write(line string) error {
 
 // writeAll writes what is queued, as much as is there at once, until the client goes.
 func (s *sockConn) writeAll() {
-	w := bufio.NewWriter(s.c)
+	w := bufio.NewWriter(pieceWriter{s.c})
 	for {
 		select {
 		case <-s.done:
 			return
 		case line := <-s.out:
-			_ = s.c.SetWriteDeadline(time.Now().Add(sockWriteDeadline)) // it fails only on a closed socket, and so does the write
 			_, err := w.WriteString(line + "\n")
 			for more := true; more && err == nil; {
 				select {
@@ -305,6 +306,24 @@ func (s *sockConn) writeAll() {
 			}
 		}
 	}
+}
+
+// pieceWriter gives each piece of what is written a deadline of its own. A burst has no
+// end while lines keep coming, so one deadline for all of it let go of a client that read
+// all the time, only slower than they came (#7012).
+type pieceWriter struct{ c net.Conn }
+
+func (w pieceWriter) Write(b []byte) (int, error) {
+	written := 0
+	for written < len(b) {
+		_ = w.c.SetWriteDeadline(time.Now().Add(sockWriteDeadline)) // it fails only on a closed socket, and so does the write
+		n, err := w.c.Write(b[written:min(written+sockPiece, len(b))])
+		written += n
+		if err != nil {
+			return written, err
+		}
+	}
+	return written, nil
 }
 
 func (s *sockConn) In() <-chan string { return s.in }

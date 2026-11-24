@@ -73,7 +73,6 @@
 1 Go/internal/agentsd/receive.go os.OpenFile
 2 Go/internal/agentsd/receive.go os.WriteFile
 3 Go/internal/agentsd/relay.go os.WriteFile
-1 Go/internal/agentsd/requests.go WriteAtomically
 1 Go/internal/agentsd/restarts.go WriteAtomically
 1 Go/internal/agentsd/runtimes.go os.WriteFile
 1 Go/internal/agentsd/runtimesignin.go os.WriteFile

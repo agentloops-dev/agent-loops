@@ -56,6 +56,14 @@ It acts as `~/.agents/secrets/gcp-agents-control.json` and keeps the store, the 
 and the firewall. It refuses a checkout with uncommitted changes. Lease "build" for 60
 minutes for a ship with `--control-plane`: its build is one more build.
 
+A deploy that builds takes 20 to 35 minutes on the VM, and some build steps say nothing for
+7 of them (#7030). Run it with a limit on your shell command of at least 75 minutes
+(Claude Code: `run_in_background` with `timeout: 4500000`), not the default, which stops it
+at 30 minutes or less. The log says each build step. The build fails by itself: 45 minutes
+after it starts, or 3 minutes after the connection to the VM is gone. When you stop a deploy,
+the build on the VM stops too, as soon as the VM sees the connection end. A deploy that
+starts while a build runs there fails and says so.
+
 The log is `$LOGS/control-plane.log`. When it ends, the script prints the version that the
 control plane serves (`agents-control <version> (go)`), which `up.sh` checks. A failed
 deploy does not stop the Mac or the devices, but the script exits 1. Then never roll back

@@ -122,9 +122,9 @@ func (d *Daemon) askSecretUse(agent wire.UUID, name string, use wire.SecretUse, 
 
 // holdOnUse opens ask's request, or finds the one open, and holds the call on it up to hold.
 func (d *Daemon) holdOnUse(agent wire.UUID, ask wire.RequestSecretUse, hold time.Duration) (string, error) {
-	id, ok := d.openSecretUseRequest(agent, ask)
-	if !ok {
-		return "", errors.New("this session cannot ask a person now")
+	id, err := d.openSecretUseRequest(agent, ask)
+	if err != nil {
+		return "", err
 	}
 	held := make(chan string, 1)
 	d.secretUseMu.Lock()
@@ -233,10 +233,10 @@ func (d *Daemon) isSessionSecret(agent wire.UUID, name string) bool {
 // openSecretUseRequest is the open request for this use: the one the session opened
 // before, when it is still open, so a call made again does not ask twice. That one is shown
 // again (raiseAgain, #4298).
-func (d *Daemon) openSecretUseRequest(agent wire.UUID, ask wire.RequestSecretUse) (wire.UUID, bool) {
+func (d *Daemon) openSecretUseRequest(agent wire.UUID, ask wire.RequestSecretUse) (wire.UUID, error) {
 	a := d.Store.Agent(agent)
 	if a == nil || a.State == wire.AgentStateArchived {
-		return "", false
+		return "", errors.New("this session cannot ask a person now")
 	}
 	d.requests.mu.Lock()
 	for _, r := range d.requests.byID {
@@ -245,7 +245,7 @@ func (d *Daemon) openSecretUseRequest(agent wire.UUID, ask wire.RequestSecretUse
 			id := r.ID
 			d.requests.mu.Unlock()
 			d.raiseAgain(wire.NeedID{Request: &id}) // asked again: shown again (#4298)
-			return id, true
+			return id, nil
 		}
 	}
 	at := now()
@@ -265,18 +265,16 @@ func (d *Daemon) openSecretUseRequest(agent wire.UUID, ask wire.RequestSecretUse
 		State: wire.RequestStateOpen, Title: title, Detail: wire.RequestDetail{SecretUse: &ask},
 		Folder: string(store.FolderURL(folderPath(a))), AskedBy: &asker,
 		Waiters: []wire.RequestWaiter{{Agent: asker, Since: at}}, AskedAt: at}
-	if d.requests.byID == nil {
-		d.requests.byID = map[wire.UUID]*wire.Request{}
-	}
-	d.requests.byID[r.ID] = r
-	d.saveRequestLocked(r)
-	c := copyRequest(r)
+	c, err := d.openRequestLocked(r)
 	d.requests.mu.Unlock()
+	if err != nil {
+		return "", err
+	}
 	log.Printf("secret use: %s asks to use %s at %s", agent, ask.Name, grantPlace(ask.Use, ask.Place))
 	Broadcast(d, wire.NotifyRequestsChanged, wire.RequestUpdate{Request: c})
 	d.raiseRequestEvent("request.opened", c, nil, nil)
 	d.reconsider() // its banner (#4017)
-	return r.ID, true
+	return r.ID, nil
 }
 
 // answerSecretUse is requests/answer for a secret's use: it keeps what the person allowed,
