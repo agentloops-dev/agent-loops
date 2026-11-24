@@ -319,7 +319,7 @@ What the Mac window and the Remote keep in their defaults, and the web page in
 | `control-client.json` (Mac, Remote); IndexedDB `agents` (web) | key-value; secret | The pairing, and the web page's key | One, until **Forget** (#6800) | On **Forget** |
 | Keychain `control-client-key`, `lock-signing-key`, `device-key` (Mac, Remote) | secret | The client's own keys | One of each; kept after **Forget** | — |
 | `copy/` in the cache folder (Mac, Remote); IndexedDB `agents` › `copy` (web) | cache | The local copy: machines, folders, records and the ends of 20 chats | 200 MiB on the Mac, 50 MiB on the Remote and the web page. No age (#6789, #6790, #6792). | On write |
-| `work-cache.sqlite`, in the cache folder (Mac) | cache | Forge items, bodies and comments | 200 MiB, least recently shown out first. No age (#6788). | On write |
+| `work-cache.sqlite`, in the cache folder (Mac, Remote) | cache | Forge items, bodies, comments and Work page answers | 90 days since it was read from the forge. 200 MiB on the Mac, 50 MiB on the Remote, least recently shown out first. An item is 4 KiB and any other record 4 MiB at most. | On write, at start, hourly, and on **Forget** |
 | `shared-inbox.json` (Remote) | blob | What was shared to Agent Loops | Each attachment is capped. No count, total or age (#6795). | On use |
 | `attention-snapshot.json` (Remote) | cache | The widget's rows | 12 rows; stale after 15 minutes | On write, and on **Forget** |
 | `remote.startFolders` (Remote) | key-value | Start folders | **None** (#6798) | Never |
