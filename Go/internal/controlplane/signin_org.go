@@ -702,6 +702,10 @@ func (si *signIns) removeOrgProvider(ctx context.Context, r wire.OrgProviderRequ
 	if err := si.s.cfg.Store.Delete(ctx, orgProviderSecretKey(r.ID)); err != nil {
 		si.s.log("org provider " + r.ID + ": its secret could not be deleted: " + err.Error())
 	}
+	// A removed provider signs nobody in, so it needs no cutoff (#6756).
+	if err := si.s.cfg.Store.Delete(ctx, joinCutoffKey(r.ID)); err != nil {
+		si.s.log("org provider " + r.ID + ": its join cutoff could not be deleted: " + err.Error())
+	}
 	for _, c := range si.domainClaims(ctx, true) {
 		if c.claim.Provider == r.ID {
 			if err := si.s.cfg.Store.Delete(ctx, domainKey(c.claim.Domain)); err != nil {
@@ -906,8 +910,14 @@ func (si *signIns) ticketPair(ctx context.Context, client string, public, helloN
 	if err != nil {
 		return nil, err
 	}
-	// A person SCIM made, signing in for the first time (FR-016).
+	// A person SCIM made, signing in for the first time (FR-016). After the cutoff (#6756)
+	// nobody joins or is matched by the provider alone: SCIM can have made a removed person
+	// again.
 	if person == nil {
+		if err := si.joinsClosed(ctx, t.Provider); err != nil {
+			si.auditSignIn(t, "", "signIn/ticket", "refused: needs an invite")
+			return nil, err
+		}
 		if person, err = si.matchProvisioned(ctx, t.Provider, t.Account, t.Email); err != nil {
 			return nil, err
 		}

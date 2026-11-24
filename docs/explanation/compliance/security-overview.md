@@ -138,7 +138,8 @@ answering cards and changing settings are recorded. Reads and prompts are not.
 
 - **Where:** Events ▸ Audit on the Mac, the Remote and the web page, and Console ▸ Audit.
   A member sees only their own entries. See [Events](../../reference/events.md#audit-who-did-what).
-- **How long:** 90 days by default. An admin sets 1 to 3,650 days.
+- **How long:** 90 days by default. An admin sets 1 to 90 days. At most 1,000,000 entries are kept: over that,
+  the oldest go first. For a longer copy, use a sink.
 - **Export:** an admin exports the entries as CSV or JSON lines.
 - **Tamper-evident:** each entry carries the hash of the one before it, in a chain for
   each copy of the control plane, and a seal for each day holds each chain's head

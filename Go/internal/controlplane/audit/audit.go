@@ -1,8 +1,8 @@
 // Package audit is who did what (#996, spec 736 US8, T3): the control plane writes an
 // entry for each action a client takes through it, with the actor it knows the client by,
 // never one the client names. Entries are the control plane's events, under
-// <prefix>/v1/events/<day>/by/<person>/, kept for auditDays (90 by default) and swept by
-// day. The person in the key lets a member's list read only their own entries (#2051).
+// <prefix>/v1/events/<day>/by/<person>/, kept for auditDays (90 by default), at
+// most 1,000,000 of them, and swept by the hour (#6755). The person in the key lets a member's list read only their own entries (#2051).
 //
 // Until people (#994) are built, a control plane has one person, the local owner, and
 // every client is theirs: every actor is the local owner and the client it used.
@@ -14,7 +14,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"path"
 	"sort"
 	"strings"
 	"time"
@@ -27,11 +26,16 @@ import (
 const (
 	// DefaultDays is how long entries are kept when control.json says nothing (FR-040).
 	DefaultDays = 90
-	// MostDays bounds what an admin may set: ten years.
-	MostDays = 3650
+	// MostDays bounds what an admin may set (#6677). A longer copy is a sink's.
+	MostDays = 90
+	// MostEntries is the most entries kept, whatever their age (Alex, #6755).
+	MostEntries = 1_000_000
+	// MostEntryBytes is the largest entry; entry cuts its text to fit (#6755).
+	MostEntryBytes = 16 << 10
 	// Grace is how long the sweep still keeps the days before a shorter time (#2067).
 	Grace = 24 * time.Hour
 	// Prefix is where entries live: the control plane's events.
+	// store-bounds: kind=log; count=1_000_000; size=16KiB a record; age=90d; applied=hourly sweep
 	Prefix    = "v1/events/"
 	dayLayout = "2006-01-02"
 	// byPerson is the folder under a day that holds each person's entries.
@@ -44,6 +48,10 @@ const (
 	// mostExported bounds an export, so that one answer stays a size a client can hold.
 	mostExported = 50_000
 	mostTarget   = 120
+	// What an entry's text is cut to (#6755): at most six bytes a byte as JSON, the 13
+	// texts and the target are under MostEntryBytes.
+	mostText       = 100
+	mostTargetText = 1024
 	// LocalOwnerName is the one person's name until people have names of their own (#994).
 	LocalOwnerName = "Local owner"
 )
@@ -239,7 +247,7 @@ func Target(params json.RawMessage) *string {
 // Days is how long entries are kept: what control.json says, or the default.
 func Days(settings *records.Settings) int {
 	if settings != nil && settings.AuditDays != nil && *settings.AuditDays > 0 {
-		return *settings.AuditDays
+		return min(*settings.AuditDays, MostDays)
 	}
 	return DefaultDays
 }
@@ -250,7 +258,7 @@ func SweepDays(settings *records.Settings, now time.Time) int {
 	days := Days(settings)
 	if settings != nil && settings.AuditDaysBefore != nil && settings.AuditShortened != nil &&
 		now.Before(settings.AuditShortened.Add(Grace)) && *settings.AuditDaysBefore > days {
-		return *settings.AuditDaysBefore
+		return min(*settings.AuditDaysBefore, MostDays)
 	}
 	return days
 }
@@ -288,7 +296,9 @@ type stored struct {
 // Log writes and reads the entries.
 type Log struct {
 	Store store.Store
-	Now   func() time.Time
+	// Entries is the store's log of entries; nil opens it.
+	Entries *store.DayLog
+	Now     func() time.Time
 	// Chain links what this copy writes (#1001); nil writes entries in no chain.
 	Chain *Chain
 	// Out hears each entry kept, for the sinks (#1001); nil sends nowhere.
@@ -302,6 +312,30 @@ func (l *Log) now() time.Time {
 	return time.Now()
 }
 
+// Open is the log that keeps the entries in s, with their bounds (#6755). sweep, when there
+// is one, is asked for a sweep before the hour.
+func Open(s store.Store, sweep func(context.Context)) (*store.DayLog, error) {
+	return store.OpenDayLog(store.Spec{Name: "audit", Kind: "log", Scope: "organisation", Bounds: store.Bounds{
+		MaxRecordBytes: MostEntryBytes, MaxCount: MostEntries, MaxAge: MostDays * 24 * time.Hour, SweepRequested: sweep,
+	}}, Prefix, s)
+}
+
+func (l *Log) entries() (*store.DayLog, error) {
+	if l.Entries != nil {
+		return l.Entries, nil
+	}
+	return Open(l.Store, nil)
+}
+
+// keep puts an entry at key, which Key made from at.
+func (l *Log) keep(ctx context.Context, key string, at time.Time, data []byte) error {
+	entries, err := l.entries()
+	if err != nil {
+		return err
+	}
+	return entries.Append(ctx, strings.TrimPrefix(key, DayFolder(KeyDay(key))), at, data)
+}
+
 // Key is where an entry made at t by user goes: by day, then by person, then by the
 // millisecond, so a person's keys for a day sort by time.
 func Key(t time.Time, user string) string {
@@ -312,10 +346,15 @@ func Key(t time.Time, user string) string {
 // dayPrefix is the folder of a day's entries, or of one person's entries that day. The
 // name is base64, so that no name makes a path of its own ("..", "/").
 func dayPrefix(day, user string) string {
+	return Prefix + day + "/" + partition(user)
+}
+
+// partition is the folder of one person's entries in each day's, or "" for everyone's.
+func partition(user string) string {
 	if user == "" {
-		return Prefix + day + "/"
+		return ""
 	}
-	return Prefix + day + "/" + byPerson + base64.RawURLEncoding.EncodeToString([]byte(user)) + "/"
+	return byPerson + base64.RawURLEncoding.EncodeToString([]byte(user)) + "/"
 }
 
 // Write keeps one action. The store's create-only write means two copies never write
@@ -326,9 +365,9 @@ func (l *Log) Write(ctx context.Context, actor wire.AuditActor, method, action s
 	var data []byte
 	var err error
 	if l.Chain != nil {
-		data, err = l.Chain.write(ctx, l.Store, &e, key, at)
+		data, err = l.Chain.write(ctx, l, &e, key, at)
 	} else if data, err = records.Encode(e); err == nil {
-		_, err = l.Store.Put(ctx, key, data, store.Absent)
+		err = l.keep(ctx, key, at, data)
 	}
 	if err == nil && l.Out != nil {
 		l.Out(key, data)
@@ -336,8 +375,45 @@ func (l *Log) Write(ctx context.Context, actor wire.AuditActor, method, action s
 	return err
 }
 
-// entry is what Write and a Writer keep, and where.
+// clip cuts text to most bytes, at a character.
+func clip(text string, most int) string {
+	if len(text) <= most {
+		return text
+	}
+	return strings.ToValidUTF8(text[:most-len("…")], "") + "…"
+}
+
+func clipped(text *string) *string {
+	if text == nil {
+		return nil
+	}
+	return new(clip(*text, mostText))
+}
+
+// clipActor is the actor with its texts cut, so that an entry keeps its size (#6755).
+func clipActor(a wire.AuditActor) wire.AuditActor {
+	a.User, a.UserName, a.ClientName = clip(a.User, mostText), clipped(a.UserName), clipped(a.ClientName)
+	if a.Client != nil {
+		a.Client = new(wire.UUID(clip(string(*a.Client), mostText)))
+	}
+	if a.Event != nil {
+		a.Event = &wire.AuditCause{Kind: clip(a.Event.Kind, mostText), ID: clip(a.Event.ID, mostText)}
+	}
+	if a.Scim != nil {
+		a.Scim = &wire.AuditSCIM{Provider: clip(a.Scim.Provider, mostText), Token: clip(a.Scim.Token, mostText)}
+	}
+	if a.Refresh != nil {
+		a.Refresh = &wire.AuditRefresh{Provider: clip(a.Refresh.Provider, mostText)}
+	}
+	return a
+}
+
+// entry is what Write and a Writer keep, and where. Its texts are cut (#6755).
 func entry(actor wire.AuditActor, method, action string, host string, target *string, at time.Time) (stored, string) {
+	actor, method, action, host = clipActor(actor), clip(method, mostText), clip(action, mostText), clip(host, mostText)
+	if target != nil {
+		target = new(clip(*target, mostTargetText))
+	}
 	e := stored{Kind: Kind, Action: action, Method: method, Target: target, At: records.At(at), Actor: &actor}
 	if actor.Client != nil {
 		e.By = string(*actor.Client)
@@ -348,14 +424,14 @@ func entry(actor wire.AuditActor, method, action string, host string, target *st
 	return e, Key(at, actor.User)
 }
 
-// decode reads one stored event as an entry. The control plane's own events between
+// decode reads one stored event, by its id in the log, as an entry. The control plane's own events between
 // copies (clientPaired, hostRemoved, …) are not entries: the call that made each is.
-func decode(key string, data []byte, owner func(by string) wire.AuditActor) (wire.AuditEntry, bool) {
+func decode(id string, data []byte, owner func(by string) wire.AuditActor) (wire.AuditEntry, bool) {
 	var s stored
 	if json.Unmarshal(data, &s) != nil || s.At.IsZero() {
 		return wire.AuditEntry{}, false
 	}
-	e := wire.AuditEntry{ID: strings.TrimSuffix(strings.TrimPrefix(key, Prefix), ".json"), At: wire.DateOf(s.At.Time),
+	e := wire.AuditEntry{ID: strings.TrimSuffix(id, ".json"), At: wire.DateOf(s.At.Time),
 		Action: s.Action, Method: s.Method, Target: s.Target}
 	if s.Host != nil {
 		h := wire.MachineRef(*s.Host)
@@ -408,50 +484,27 @@ func NewQuery(q wire.AuditQuery, days int, now time.Time, export bool) Query {
 // newest day, and stops once it has enough. A query for one person lists and reads only
 // that person's folder of each day, never the team's entries (#2051).
 func (l *Log) List(ctx context.Context, q Query, owner func(by string) wire.AuditActor) ([]wire.AuditEntry, bool, error) {
-	var days []string
-	for d := q.Until.UTC(); !d.Before(q.Since.UTC().Truncate(24 * time.Hour)); d = d.Add(-24 * time.Hour) {
-		days = append(days, d.Format(dayLayout))
-	}
-	if q.Oldest {
-		for i, j := 0, len(days)-1; i < j; i, j = i+1, j-1 {
-			days[i], days[j] = days[j], days[i]
-		}
+	log, err := l.entries()
+	if err != nil {
+		return nil, false, err
 	}
 	out := []wire.AuditEntry{}
-	for _, day := range days {
-		keys, err := l.Store.List(ctx, dayPrefix(day, q.User))
+	for r, err := range log.Range(ctx, q.Since, q.Until, partition(q.User), !q.Oldest) {
 		if err != nil {
 			return nil, false, err
 		}
-		// A day's keys are in folders by person: the file's name is the time.
-		sort.Slice(keys, func(i, j int) bool {
-			a, b := path.Base(keys[i].Key), path.Base(keys[j].Key)
-			if q.Oldest {
-				return a < b
-			}
-			return a > b
-		})
-		for _, k := range keys {
-			object, err := l.Store.Get(ctx, k.Key)
-			if err != nil {
-				return nil, false, err
-			}
-			if object == nil {
-				continue
-			}
-			e, ok := decode(k.Key, object.Data, owner)
-			if !ok {
-				continue
-			}
-			at := e.At.Time()
-			if at.Before(q.Since) || at.After(q.Until) || q.User != "" && e.Actor.User != q.User {
-				continue
-			}
-			if len(out) == q.Limit {
-				return out, true, nil
-			}
-			out = append(out, e)
+		e, ok := decode(r.ID, r.Value, owner)
+		if !ok {
+			continue
 		}
+		at := e.At.Time()
+		if at.Before(q.Since) || at.After(q.Until) || q.User != "" && e.Actor.User != q.User {
+			continue
+		}
+		if len(out) == q.Limit {
+			return out, true, nil
+		}
+		out = append(out, e)
 	}
 	return out, false, nil
 }

@@ -155,6 +155,41 @@ func TestAnUnreadPinIsKept(t *testing.T) {
 	}
 }
 
+// The pins' byte limits (#6725): a pin, a hidden view and the file past them are refused, and
+// a file written by hand past them can be made smaller.
+func TestPinsAreBounded(t *testing.T) {
+	t.Parallel()
+
+	d, c := start(t, t.TempDir())
+	defer d.Shutdown()
+	dir := folder(t, c, 1)
+	url := store.FolderURL(dir)
+	long := "ui://" + strings.Repeat("v", pinMost)
+	if e := c.callError(t, 2, "pins/hideView", map[string]any{"folder": url, "uri": long, "hidden": true}); e.Code != wire.FailurePinRefused {
+		t.Fatalf("%+v", e)
+	}
+	entry := pinEntry{path: long, pinnedBy: thePerson(), view: &wire.ViewPin{Server: "ci", URI: long, Tool: "board"}}
+	if err := d.pin(entry, dir, ""); err == nil || !strings.Contains(err.Error(), "at most 4 KB") {
+		t.Fatal(err)
+	}
+
+	big := pinsFile{unread: []json.RawMessage{json.RawMessage(`{"later":"` + strings.Repeat("x", pinsFileMost) + `"}`)}}
+	if err := d.writePins(big, dir); err == nil || !strings.Contains(err.Error(), "at most 128 KB") {
+		t.Fatal(err)
+	}
+	big.hiddenViews = []string{"ui://ci/a", "ui://ci/b"}
+	b, err := big.data()
+	must(t, err)
+	must(t, os.MkdirAll(filepath.Join(dir, ".agents"), 0o755)) //nolint:gosec // G301: the mode the folder has
+	must(t, os.WriteFile(pinsFileOf(dir), b, 0o644))           //nolint:gosec // G306: the mode the file has
+	big.hiddenViews = big.hiddenViews[:1]
+	must(t, d.writePins(big, dir))
+	big.hiddenViews = nil
+	big.unread = nil
+	big.sessions = []sessionPin{{Session: store.NewUUID(), PinnedBy: thePerson()}}
+	must(t, d.writePins(big, dir))
+}
+
 func TestSessionPinsAndArchive(t *testing.T) {
 	t.Parallel()
 

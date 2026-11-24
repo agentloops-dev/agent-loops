@@ -2,6 +2,7 @@ package audit
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -204,10 +205,16 @@ func (w *Writer) keep(batch []Pending) {
 func (w *Writer) put(one Linked) bool {
 	for try := 0; ; try++ {
 		ctx, cancel := context.WithTimeout(context.Background(), PutPatience)
-		_, err := w.log.Store.Put(ctx, one.Key, one.Data, store.Absent)
+		err := w.log.keep(ctx, one.Key, one.At, one.Data)
 		cancel()
 		if err == nil || try > 0 && store.IsConflict(err) {
 			return true
+		}
+		var tooLarge *store.LimitError
+		if errors.As(err, &tooLarge) {
+			// entry cuts each one to size, so this is a bug; no try can keep it.
+			w.logf("audit: " + err.Error())
+			return false
 		}
 		if try == 0 {
 			w.sayRefused(one)
