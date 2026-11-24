@@ -6,7 +6,7 @@
 // The page is by section (#2141): #/ is the Overview, #/agents the sidebar with nothing chosen, and
 // #/<section>/<page> a page of another section (#/status/runtimes, #/reports/spend, #/settings/policy),
 // and #/<section>/<page>/<item> one item on it: #/work/pr/github%3Aalexec%2FAgents%2399 is PR #99 (#3119),
-// and #/work/docs/<ref> a doc's page (#3321, #5267).
+// and #/work/docs/<ref> a doc's page (#3321, #5267), at a line with ?line=12 (#5481).
 // The addresses before it, #/console/<page> (#1804) and #/a/<page> (#151), are read as their new place.
 // A tab holding one folder alone (#1089) starts #/o/1/…: Open in New Tab on its heading. It keeps
 // to that folder until ‹ All.
@@ -184,8 +184,9 @@ function sectionHash(r: Route): string {
   // The Environment page's (#5260); a repo's item holds its folder's path.
   if (r.nav === "status" && r.section === "environment") return "#/environment" + (r.item ? "/" + r.item.split("/").map(encodeURIComponent).join("/") : "");
   return `#/${r.nav}` + (r.section ? "/" + encodeURIComponent(r.section) + (r.item ? "/" + encodeURIComponent(r.item) : "")
-    // A list's filters stay off an item's page, but Reports' pages under another keep theirs: #/reports/delivery/builds?… (#5178).
-    + (r.query && (!r.item || r.nav === "reports") ? `?${r.query}` : "") : "");
+    // A list's filters stay off an item's page, but Reports' pages under another keep theirs: #/reports/delivery/builds?… (#5178),
+    // and a doc's page the line a search found: #/work/docs/<ref>?line=12 (#5481).
+    + (r.query && (!r.item || r.nav === "reports" || r.section === "docs") ? `?${r.query}` : "") : "");
 }
 
 /** Whether an address is one from before #2141, or Machines ▸ Runtimes or Connectors from before #3631 and #3632, which the page writes

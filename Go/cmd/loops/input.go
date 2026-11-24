@@ -15,6 +15,7 @@ type keyKind int
 
 const (
 	keyText keyKind = iota
+	keyTab
 	keyEnter
 	keyNewline
 	keyBackspace
@@ -101,7 +102,7 @@ func (k *keyReader) feed(b []byte) []key {
 		case c == 0x03:
 			out = append(out, key{kind: keyInterrupt})
 		case c == '\t':
-			text("    ")
+			out = append(out, key{kind: keyTab})
 		case c < 0x20:
 		default:
 			if !utf8.FullRune(buf[i:]) {
@@ -423,18 +424,21 @@ func (e *lineEditor) apply(k key) bool {
 // again each time something changes: the agent's line not ended yet, the status (working,
 // needs you) and the prompt. In raw mode a line ends with \r\n.
 type screen struct {
-	w        io.Writer
-	raw      bool
-	width    func() int
-	drawn    int  // rows the live part took when it was last drawn, under the cursor's row
-	down     int  // rows from the cursor back down to the last of those rows
-	showing  bool // the live part is on the screen
-	partial  string
-	status   string
-	settings string
-	prompt   bool
-	prefix   string
-	input    lineEditor
+	w               io.Writer
+	raw             bool
+	width           func() int
+	drawn           int  // rows the live part took when it was last drawn, under the cursor's row
+	down            int  // rows from the cursor back down to the last of those rows
+	showing         bool // the live part is on the screen
+	partial         string
+	status          string
+	settings        string
+	prompt          bool
+	prefix          string
+	input           lineEditor
+	completions     []completion
+	completionFor   string
+	completionShown bool
 }
 
 func (s *screen) eol() string {
@@ -491,6 +495,15 @@ func (s *screen) live() []string {
 		out = append(out, prefix+lines[0])
 		for _, l := range lines[1:] {
 			out = append(out, continuation+l)
+		}
+		if s.completionShown {
+			for _, c := range s.completions {
+				line := "  " + c.label
+				if c.detail != "" {
+					line += "  " + c.detail
+				}
+				out = append(out, line)
+			}
 		}
 	}
 	if s.settings != "" {

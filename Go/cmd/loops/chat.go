@@ -122,26 +122,27 @@ func openTerminal() (terminal, func(), error) {
 
 // live is one chat with one session: its state, what it shows and the cards that wait.
 type live struct {
-	c        noter
-	p        place
-	o        options
-	t        terminal
-	sc       *screen
-	tr       *transcript
-	id       wire.UUID // "" until the first prompt starts a session
-	state    wire.AgentState
-	title    string
-	cards    []*card
-	since    time.Time // when the turn began, for the spinner
-	sent     bool      // a prompt was sent and its turn has not ended
-	working  bool      // the turn of sent began
-	stopAt   time.Time // when ^C last stopped the turn: a second ^C soon after leaves
-	frame    int
-	hinted   bool  // the keys' line is shown
-	next     int64 // the index after the last entry read, where a relink reads from (#6478)
-	offers   []wire.ConfigOption
-	commands []wire.SlashCommand
-	settings map[string]string
+	c           noter
+	p           place
+	o           options
+	t           terminal
+	sc          *screen
+	tr          *transcript
+	id          wire.UUID // "" until the first prompt starts a session
+	state       wire.AgentState
+	title       string
+	cards       []*card
+	since       time.Time // when the turn began, for the spinner
+	sent        bool      // a prompt was sent and its turn has not ended
+	working     bool      // the turn of sent began
+	stopAt      time.Time // when ^C last stopped the turn: a second ^C soon after leaves
+	frame       int
+	hinted      bool  // the keys' line is shown
+	next        int64 // the index after the last entry read, where a relink reads from (#6478)
+	offers      []wire.ConfigOption
+	commands    []wire.SlashCommand
+	attachments []pendingAttachment
+	settings    map[string]string
 }
 
 func runChat(ctx context.Context, c noter, p place, o options, a chatArgs, t terminal) error {
@@ -494,14 +495,21 @@ func modelOf(a wire.Agent) string {
 	return s
 }
 
-// start is wireframe 2: a new session here with the prompt.
 func (f *live) start(ctx context.Context, text string) error {
+	return f.startWith(ctx, text, f.takeAttachments())
+}
+
+// startWith is wireframe 2: a new session here with the prompt.
+func (f *live) startWith(ctx context.Context, text string, attachments []wire.Attachment) error {
+	if attachments == nil {
+		attachments = []wire.Attachment{}
+	}
 	runtime := f.o.runtime
 	if runtime == "" {
 		runtime = autoRuntime
 	}
 	via := wire.StartedViaCLI
-	req := wire.StartRequest{RuntimeID: runtime, Cwd: f.p.folder, Prompt: text, Attachments: []wire.Attachment{},
+	req := wire.StartRequest{RuntimeID: runtime, Cwd: f.p.folder, Prompt: text, Attachments: attachments,
 		StartOptions:          wire.StartOptions{Values: map[string]wire.JSONValue{}, ExtraArguments: []string{}},
 		AdditionalDirectories: []wire.URL{}, McpServers: []wire.MCPServer{}, Labels: []string{}, StartedVia: &via,
 		Levels: startLevels(ctx, f.c, f.host(), f.o.mode)}
@@ -545,10 +553,14 @@ func titleLine(text string) string {
 
 // send is a prompt to the session (agents/prompt; it waits in line when a turn runs).
 func (f *live) send(ctx context.Context, text string) error {
-	if f.id == "" {
-		return f.start(ctx, text)
+	attachments := f.takeAttachments()
+	if attachments == nil {
+		attachments = []wire.Attachment{}
 	}
-	if _, err := f.c.Call(ctx, f.host(), "agents/prompt", wire.PromptRequest{AgentID: f.id, Text: text, Attachments: []wire.Attachment{}, From: wire.PromptOriginPerson}); err != nil {
+	if f.id == "" {
+		return f.startWith(ctx, text, attachments)
+	}
+	if _, err := f.c.Call(ctx, f.host(), "agents/prompt", wire.PromptRequest{AgentID: f.id, Text: text, Attachments: attachments, From: wire.PromptOriginPerson}); err != nil {
 		if lost(err) {
 			// The notes end too, and the loop dials again; the person sends it again then.
 			f.print(indent + f.t.st.paint(roleFailure, "Not sent: the link to the control plane dropped. Send it again once it is back."))
@@ -773,9 +785,15 @@ func (f *live) key(ctx context.Context, k key) error {
 	if k.kind == keyEOF && f.sc.input.text == "" {
 		return errLeave
 	}
+	if k.kind == keyTab {
+		return f.complete(ctx)
+	}
+	f.clearCompletions()
 	if f.sc.input.apply(k) {
+		f.pruneAttachments()
 		return nil
 	}
+	f.pruneAttachments()
 	switch k.kind {
 	case keyInterrupt:
 		return f.interrupt(ctx)
@@ -783,13 +801,16 @@ func (f *live) key(ctx context.Context, k key) error {
 		text := f.sc.input.text
 		f.sc.input.set("")
 		if len(f.cards) > 0 {
+			f.attachments = nil
 			f.print(f.t.st.paint(roleQuiet, "› ") + text)
 			return f.answer(ctx, text)
 		}
 		if strings.TrimSpace(text) == "" {
+			f.attachments = nil
 			return nil
 		}
 		if name, _, isSlash := parseSlash(text); isSlash && knownCliCommand(name) {
+			f.attachments = nil
 			f.print(f.t.st.paint(roleQuiet, "› ") + text)
 			handled, err := f.command(ctx, text)
 			if handled {
@@ -817,6 +838,7 @@ func (f *live) key(ctx context.Context, k key) error {
 func (f *live) interrupt(ctx context.Context) error {
 	if f.sc.input.text != "" {
 		f.sc.input.set("")
+		f.attachments = nil
 		return nil
 	}
 	if f.id == "" || !f.sent || time.Since(f.stopAt) < 2*time.Second {
@@ -881,6 +903,9 @@ func (f *live) note(n controllink.Note) bool {
 // changed is the session's new state: a turn that began, or one that ended.
 func (f *live) changed(a wire.Agent) bool {
 	f.state = a.State
+	if a.AvailableCommands != nil {
+		f.commands = a.AvailableCommands
+	}
 	if a.Title != nil {
 		f.title = titleOf(a)
 	}

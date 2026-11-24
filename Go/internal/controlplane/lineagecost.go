@@ -3,6 +3,8 @@ package controlplane
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"maps"
 	"slices"
 	"sort"
 	"strings"
@@ -22,12 +24,18 @@ import (
 // (lineage.Rollup) comes with the lineage view (#2351).
 
 const (
+	// store-bounds: kind=graph; count=5_000 a machine; size=32MiB a machine (64KiB a node); age=90d; applied=on write and hourly sweep
 	lineagePrefix = "v1/lineage/"
 	// lineageNodesKept bounds a machine's object, as the host bounds its own file.
 	lineageNodesKept = 5_000
 	// mostWorkNodes bounds one send.
 	mostWorkNodes   = 1_000
 	lineageNodeKept = 90 * 24 * time.Hour
+	// lineageNodeBytes is the largest node: one over it is not kept, and the rest of its
+	// send is (#6768).
+	lineageNodeBytes = 64 << 10
+	// lineageBytes is the most a machine's nodes come to: the oldest go past it.
+	lineageBytes = 32 << 20
 )
 
 // storedLineage is one machine's nodes as the store keeps them.
@@ -77,22 +85,9 @@ func (s *Service) keepWork(ctx context.Context, host string, work []wire.Lineage
 	for _, n := range work {
 		byKey[n.Node] = n
 	}
-	oldest := wire.DateOf(now.Add(-lineageNodeKept))
-	nodes := make([]wire.LineageCostNode, 0, len(byKey))
-	for _, n := range byKey {
-		if n.LastAt >= oldest {
-			nodes = append(nodes, n)
-		}
-	}
-	// Newest first, so the oldest go past the bound.
-	sort.Slice(nodes, func(i, j int) bool {
-		if nodes[i].LastAt != nodes[j].LastAt {
-			return nodes[i].LastAt > nodes[j].LastAt
-		}
-		return nodes[i].Node.Ref < nodes[j].Node.Ref
-	})
-	if len(nodes) > lineageNodesKept {
-		nodes = nodes[:lineageNodesKept]
+	nodes, large := boundLineage(slices.Collect(maps.Values(byKey)), now)
+	if large > 0 {
+		s.log(fmt.Sprintf("lineage: %d nodes of machine %s are over %d KiB and are not kept", large, host, lineageNodeBytes>>10))
 	}
 	data, err := records.Encode(storedLineage{Nodes: nodes, At: records.At(now)})
 	if err != nil {
@@ -102,8 +97,43 @@ func (s *Service) keepWork(ctx context.Context, host string, work []wire.Lineage
 	return err
 }
 
-// sweepLineage deletes the nodes of machines removed since, at most most: no machine
-// writes them again, and the rest age out as each machine sends.
+// boundLineage is the nodes within every bound, newest first, so the oldest go past one,
+// and how many were too large.
+func boundLineage(nodes []wire.LineageCostNode, now time.Time) ([]wire.LineageCostNode, int) {
+	// A machine whose clock is ahead keeps its nodes no longer.
+	latest, oldest := wire.DateOf(now), wire.DateOf(now.Add(-lineageNodeKept))
+	nodes = slices.Clone(nodes)
+	for i := range nodes {
+		nodes[i].LastAt = min(nodes[i].LastAt, latest)
+	}
+	sort.Slice(nodes, func(i, j int) bool {
+		if nodes[i].LastAt != nodes[j].LastAt {
+			return nodes[i].LastAt > nodes[j].LastAt
+		}
+		return nodes[i].Node.Ref < nodes[j].Node.Ref
+	})
+	kept := make([]wire.LineageCostNode, 0, min(len(nodes), lineageNodesKept))
+	size, large := 0, 0
+	for _, n := range nodes {
+		if n.LastAt < oldest || len(kept) == lineageNodesKept {
+			break
+		}
+		data, err := json.Marshal(n)
+		if err != nil || len(data) > lineageNodeBytes {
+			large++
+			continue
+		}
+		if size += len(data) + 1; size > lineageBytes {
+			break
+		}
+		kept = append(kept, n)
+	}
+	return kept, large
+}
+
+// sweepLineage deletes the nodes of machines removed since, and bounds the rest again, so
+// a machine that stopped sending loses its old nodes too (#6768); at most most deletions
+// and writes.
 func sweepLineage(ctx context.Context, st store.Store, rs *records.Records, now time.Time, most int) (int, error) {
 	keys, err := st.List(ctx, lineagePrefix)
 	if err != nil {
@@ -119,6 +149,13 @@ func sweepLineage(ctx context.Context, st store.Store, rs *records.Records, now 
 			break
 		}
 		if known[strings.TrimSuffix(strings.TrimPrefix(k.Key, lineagePrefix), ".json")] {
+			wrote, err := reboundLineage(ctx, st, k.Key, now)
+			if err != nil {
+				return n, err
+			}
+			if wrote {
+				n++
+			}
 			continue
 		}
 		// A machine another copy has just added is not in these records yet: only an
@@ -137,4 +174,31 @@ func sweepLineage(ctx context.Context, st store.Store, rs *records.Records, now 
 		n++
 	}
 	return n, nil
+}
+
+// reboundLineage writes one machine's nodes without those past a bound, over the object it
+// read: a machine that wrote since keeps what it wrote. It says whether it wrote.
+func reboundLineage(ctx context.Context, st store.Store, key string, now time.Time) (bool, error) {
+	object, err := st.Get(ctx, key)
+	if err != nil || object == nil {
+		return false, err
+	}
+	var kept storedLineage
+	if json.Unmarshal(object.Data, &kept) != nil {
+		return false, nil
+	}
+	nodes, _ := boundLineage(kept.Nodes, now)
+	if len(nodes) == len(kept.Nodes) {
+		return false, nil
+	}
+	kept.Nodes = nodes
+	data, err := records.Encode(kept)
+	if err != nil {
+		return false, err
+	}
+	_, err = st.Put(ctx, key, data, store.Matching(object.ETag))
+	if store.IsConflict(err) {
+		return false, nil
+	}
+	return err == nil, err
 }
