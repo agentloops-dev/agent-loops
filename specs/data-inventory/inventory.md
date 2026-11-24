@@ -232,7 +232,7 @@ handover also leaves out `v1/keys/` (`storecopy.go:21,25`).
 | `v1/runs/<day>/<hash>.json` | Workflow trigger claims | 7 days; **no per-day cap** | hourly |
 | `v1/reports/views/<user>.json` | Saved report views | 50 | person removal |
 | `v1/providers/<id>.json` | Machine providers | **No cap. Tombstones are never swept.** | — |
-| `v1/machine-names/<person>.json` | The person's machine-N counter (#3972), the provider New Machine uses and what the person chose on each provider's form last (#3979; only the values that were not the form's defaults, in `chosen`, #6686) | 1 per person: one number, one provider id, one set of choices per provider | — (a number is never used again) |
+| `v1/machine-names/<person>.json` | The person's machine-N counter (#3972), the provider New Machine uses and what the person chose on each provider's form last (#3979; only the values that were not the form's defaults, in `chosen`, #6686) | 1 per person: one number, one provider id, one set of choices per provider that is still here; 64 KiB (#6759) | person removal, and hourly for a removed person; no age before that (a number is never used again) |
 | `v1/tunnels/<id>.json` | Server reverse tunnels | unjoined 15 minutes | on use |
 | `v1/policy.json`, `v1/policy/versions/` | Org policy and old versions | 64 KiB; 100 versions | on write |
 | `v1/governance/machines/`, `v1/governance/approvals/` | Installed servers and skills; approvals | 500 items; 1,000 approvals, **no expiry** | — |
@@ -433,7 +433,7 @@ newer than a row above for the same store.
 | `v1/people/` tombstones | document | A removed person who had a sign-in | A tombstone for ever, so that sign-in stays refused | `Go/internal/controlplane/sweep.go:351-355` | #6756 |
 | `v1/clients/` | document | Paired clients | 16 KiB a record, 1 MiB in all; forgotten when its key expires, at most 90 days unused; tombstone 7 days | `Go/internal/controlplane/keylife.go:18,139,145-177` | #6757 |
 | `v1/machines/` | document | Machines | No count limit on a control plane of your own; an expired one stays about 180 days | `Go/internal/controlplane/keylife.go:145-177` | #6758 |
-| `v1/machine-names/<person>.json` | key-value | A person's machine-N counter and last provider options | For ever, also after the person goes (on purpose: a number is never used twice) | `Go/internal/controlplane/providers/defaults.go:20-27` | #6759 |
+| `v1/machine-names/<person>.json` | key-value | A person's machine-N counter and last provider options | 64 KiB a person; until the person is removed (no age before, on purpose: a number is never used twice) | `Go/internal/controlplane/providers/defaults.go:20-63`, `Go/internal/controlplane/sweep.go` (`sweepMachineNames`) | #6759 |
 | `v1/machine-setup-times.json` | time series | Set-up durations | 50 a step, no age | `Go/internal/controlplane/machinesetup.go:25-27,353` | #6760 |
 | `v1/warm-pools/<id>.json` | document | Warm pools and their claims | No count limit on pools; no delete when a person goes; config outside .agents | `Go/internal/controlplane/warmpool.go:33,44-45,124` | #6761 |
 | `v1/providers/` | document | Machine providers | No count limit; until removed; config outside .agents | `Go/internal/controlplane/providers/records.go:31` | #6762 |
