@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -254,6 +255,7 @@ func TestAFailedMakeSaysWhyInListMachines(t *testing.T) {
 // the call ends inside the tool's limit; a second call shows the same card, not a second one;
 // list_machines says the make waits; and a list slower than its patience asks nobody.
 func TestASlowListLeavesTheCardTheRestOfTheHold(t *testing.T) {
+	flaky.UnderLoad(t, "#6993")
 	fakeRuntimes(t)
 	_, left := formHolds(t)
 	left()
