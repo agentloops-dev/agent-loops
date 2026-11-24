@@ -482,8 +482,8 @@ newer than a row above for the same store.
 | `catalog.personas.marketplace` (Mac, Remote mirror) | cache | The personas marketplace, in `display.json` | One short value; a value from before the move is sent once | `Packages/AgentsKit/Sources/AgentsKitCore/Model/DisplayPreference.swift` (`moved`) | #6803 |
 | Web `localStorage` `agents.startForm` | key-value | Folders a new session reaches | 100 of 1,024 bytes each, one over that refused; until removed or Forget; stays in the browser on purpose, no age (Alex, 2026-11-24) | `Web/src/model/startForm.ts` | #6805 |
 | `reviewDiffLayout` (Mac, Remote mirror) | cache | The diff layout, in `display.json` | One short value, one key on the three clients; a value from before the move is sent once | `Packages/AgentsKit/Sources/AgentsKitCore/Model/DisplayPreference.swift` (`moved`); `Web/src/model/diffLayout.ts` | #6806 |
-| `loops` `~/.config/loops/hosts.json`, `lock-keys/` | key-value | Pairings, the default host, lock pins | One entry a control plane; outside .agents | `Go/cmd/loops/hosts.go:16-45; lockkey.go:65-75` | #6807 |
-| `agentsctl` `~/.agents-go/ctl.json` | key-value | One pairing | 1; no unpair, so it stays for ever; outside .agents | `Go/cmd/agentsctl/main.go:29-35,148` | #6808 |
+| `loops` `~/.config/loops/hosts.json`, `lock-keys/` | secret | Pairings with their keys, the default host, lock pins | 20 control planes of 4 KiB, one over that refused; a lock key and a pin for each; until `loops auth logout`; stays outside `.agents` on purpose: one terminal's identity | `Go/cmd/loops/hosts.go` (`room`, `write`); `lockkey.go` | #6807 |
+| `agentsctl` `~/.agents-go/ctl.json` | secret | One pairing, with its key | 1 of 4 KiB; until `agentsctl unpair`; stays outside `.agents` on purpose: one client's identity | `Go/cmd/agentsctl/main.go` (`file`, `unpair`) | #6808 |
 
 Two more stores have a bug instead of a store issue: the bus log `v1/bus/` (log; 100,000
 envelopes and 1 GiB a person, 90 days; #6671) and `v1/release-keys/` (secret; deleted with the machine and
