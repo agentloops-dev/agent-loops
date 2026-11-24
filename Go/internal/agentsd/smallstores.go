@@ -88,12 +88,15 @@ func (d *Daemon) sweepGoneWorkflowStates(now time.Time) {
 	for _, st := range r.States {
 		there := d.workflowFiles[store.FolderPath(st.Folder)][st.WorkflowID] != nil
 		switch {
-		case there && st.GoneSince != nil:
-			st.GoneSince, changed = nil, true
-		case !there && st.GoneSince == nil:
+		case there:
+			if st.GoneSince != nil {
+				st.GoneSince, changed = nil, true
+			}
+			changed = st.ageDetails(d.workflowFiles[store.FolderPath(st.Folder)][st.WorkflowID], now) || changed
+		case st.GoneSince == nil || st.GoneSince.Time().After(now):
 			t := wire.DateOf(now)
 			st.GoneSince, changed = &t, true
-		case !there && now.Sub(st.GoneSince.Time()) >= workflowStateKeptGone:
+		case now.Sub(st.GoneSince.Time()) >= workflowStateKeptGone:
 			log.Printf("workflows: let go of %s in %s: its file went 30 days ago", st.WorkflowID, st.Folder)
 			changed = true
 			continue
@@ -101,6 +104,7 @@ func (d *Daemon) sweepGoneWorkflowStates(now time.Time) {
 		kept = append(kept, st)
 	}
 	r.States = kept
+	changed = r.evictGone(0) || changed
 	if changed {
 		d.saveRecordsLocked(false)
 	}

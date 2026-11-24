@@ -573,10 +573,9 @@ func (d *Daemon) clearStoppedRunLocked(folder, id string) {
 // the sessions that are gone or archived.
 func (d *Daemon) noteRanByLocked(agent, ran wire.UUID) {
 	rec := d.recordsLocked()
-	for id := range rec.RanBy {
-		if a := d.Store.Agent(id); a == nil || a.State == wire.AgentStateArchived {
-			delete(rec.RanBy, id)
-		}
+	d.sweepRanByLocked()
+	if len(rec.RanBy) >= workflowRanByMost {
+		return
 	}
 	if rec.RanBy == nil {
 		rec.RanBy = map[wire.UUID]wire.UUID{}
@@ -1264,6 +1263,10 @@ func (d *Daemon) sweepOldRuns() {
 	rec := d.recordsLocked()
 	kept := rec.Runs[:0]
 	for _, r := range rec.Runs {
+		if time.Since(r.StartedAt.Time()) >= store.MaxAge && !d.workflowStarting[r.ID] {
+			log.Printf("let go of the %s run: it is over 90 days old", r.WorkflowID)
+			continue
+		}
 		if time.Since(r.StartedAt.Time()) > workflowRunsKept && !d.workflowStarting[r.ID] {
 			a := (*wire.Agent)(nil)
 			if r.AgentID != nil {
@@ -1276,7 +1279,9 @@ func (d *Daemon) sweepOldRuns() {
 		}
 		kept = append(kept, r)
 	}
-	if len(kept) != len(rec.Runs) {
+	// They are oldest first from the last save.
+	kept = kept[max(0, len(kept)-workflowRunsMost):]
+	if ranBy := d.sweepRanByLocked(); ranBy || len(kept) != len(rec.Runs) {
 		rec.Runs = kept
 		d.saveRecordsLocked(false)
 	}

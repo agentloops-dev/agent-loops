@@ -242,6 +242,9 @@ func (d *Daemon) adoptOneSharedWorkflowLocked(folder, id string, f *workflowFile
 			return false
 		}
 	}
+	if d.canRememberLocked(id, home) != nil || !d.copiesFit(f) {
+		return false
+	}
 	st := d.stateLocked(home, id, true)
 	d.keepCopyLocked(st, f)
 	from := approvedByWords(a)

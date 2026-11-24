@@ -40,8 +40,8 @@ today, see [Data and retention](compliance/data-and-retention.md).
 | **Cache** | Data that can be deleted and filled again | Local copies, the Work cache, turn summaries | Each client's own (SQLite, IndexedDB, files) |
 | **Secret** | Keys, tokens and secret values | `~/.agents-secrets`, the Keychain | `gocloud.dev/secrets`, which the control plane uses already |
 
-A store holds one kind. A store that mixes kinds is split first: `workflows.json` holds
-states and runs, `lineage.jsonl` holds links and changes of state, and a Keychain
+A store holds one kind. A store that mixes kinds is split first: `workflows.json` held
+states and runs (the runs are in `workflow-runs.json` now), `lineage.jsonl` holds links and changes of state, and a Keychain
 connection item holds a token and settings that are not secret.
 
 ### The small-file type

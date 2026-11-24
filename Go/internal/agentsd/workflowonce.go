@@ -270,6 +270,10 @@ func (d *Daemon) alarmDueOfFileLocked(folder, id string, f *workflowFile, at tim
 		if st != nil && st.AlarmHandled != nil && st.AlarmHandled.Time().Equal(due) {
 			continue
 		}
+		// With no room to say it was handled, it would fire on each tick.
+		if d.canRememberLocked(id, folder) != nil {
+			continue
+		}
 		dueAt := due
 		fr := fireRequest{folder: folder, id: id, trigger: onceTriggerFiredAt(t, due), dueAt: &dueAt}
 		var of onceFire

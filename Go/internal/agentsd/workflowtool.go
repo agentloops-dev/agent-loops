@@ -552,6 +552,10 @@ func (d *Daemon) writeWorkflow(folder, id, content string) (string, error) {
 		d.workflowMu.Unlock()
 		return "", notInFolder(id)
 	}
+	if err := d.canRememberLocked(id, folder); err != nil {
+		d.workflowMu.Unlock()
+		return "", err
+	}
 	digest := sha256Hex(text)
 	st := d.stateLocked(folder, id, true)
 	if existing == nil && !alarm {
@@ -560,6 +564,7 @@ func (d *Daemon) writeWorkflow(folder, id, content string) (string, error) {
 		st.OffDigest = &digest
 	}
 	d.saveRecordsLocked(false)
+	// store-bounds: not a store: the person's own workflow file
 	if err := store.WriteAtomically(path, []byte(text), 0o644); err != nil {
 		d.workflowMu.Unlock()
 		return "", &Error{Code: wire.FailureCouldNotSave, Message: "Nothing was written: " + err.Error()}
