@@ -713,22 +713,28 @@ func (r *Records) forgetClient(ctx context.Context, id string, still func(Client
 		tombstone.PushToken, tombstone.ActivityTokens, tombstone.WebPush = nil, nil, nil
 		var err error
 		_, etag, err = write(ctx, r.Store, tombstone, ClientKey(id), store.Matching(h.etag))
-		if store.IsConflict(err) && attempt < 2 {
-			if err := r.load(ctx); err != nil {
-				return false, err
-			}
-			continue
-		}
+		again, err := r.tombstoneAgain(ctx, err, attempt)
 		if err != nil {
 			return false, err
 		}
-		break
+		if !again {
+			break
+		}
 	}
 	r.mu.Lock()
 	r.tombstones[ClientKey(id)] = etag
 	delete(r.clients, id)
 	r.mu.Unlock()
 	return true, nil
+}
+
+// tombstoneAgain is whether a tombstone's write is tried once more: another copy wrote the
+// record first, and it has been read again. Any other error is the write's.
+func (r *Records) tombstoneAgain(ctx context.Context, err error, attempt int) (bool, error) {
+	if store.IsConflict(err) && attempt < 2 {
+		return true, r.load(ctx)
+	}
+	return false, err
 }
 
 // SaveHost saves a host: created if new, else updated against the version read, and
@@ -864,16 +870,13 @@ func (r *Records) RemoveHost(ctx context.Context, id string) (bool, error) {
 		tombstone.Rev++
 		var err error
 		_, etag, err = write(ctx, r.Store, tombstone, HostKey(id), store.Matching(h.etag))
-		if store.IsConflict(err) && attempt < 2 {
-			if err := r.load(ctx); err != nil {
-				return false, err
-			}
-			continue
-		}
+		again, err := r.tombstoneAgain(ctx, err, attempt)
 		if err != nil {
 			return false, err
 		}
-		break
+		if !again {
+			break
+		}
 	}
 	r.mu.Lock()
 	r.tombstones[HostKey(id)] = etag
