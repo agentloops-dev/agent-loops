@@ -145,7 +145,8 @@ from the root (`agentsd/backups.go:69,72`). It holds nothing else.
 | `attachments/` | Files attached to prompts | 500 MB per folder; 7 days if no kept transcript names the file; `.tmp` after 1 day (`attachments.go:27,28,34`) | hourly, at start, on write. **Only in folders that still have an agent** (`attachments.go:82-90`). |
 | `dropbox/**` | Files handed to a workflow | 25 MB per file (`host.go:587`). **No total, count or age limit.** | never |
 | `worktrees/<name>` + branch `agents/<name>` | Git worktrees agentsd makes | **none, on purpose: user-owned** (#6708, closed as not planned) | when its agent is archived or deleted (#3726, #3877) |
-| `reviews/runtimes/<rt>-<date>.md`, `workflows/assess-<id>.md` | Runtime assessment reports | **none** | never |
+| `reviews/runtimes/<rt>-<date>.md` | Runtime assessment reports | 1 MiB per report; newest 50 per machine; 90 days; not those git tracks (`assess_reports.go`, #6712) | hourly, on start and on score |
+| `workflows/assess-<id>.md` | Assessment throwaway workflow | **none** | never |
 | `pins.json` | Pinned sessions and hidden views | 10 sessions, 50 hidden views (`pins.go:576,615`) | on write |
 | `folder.json`, `policy.json`, `mcp.json`, `personas/`, `skills/`, `plugins/`, `workflows/`, `docs-maps.json`, `marketplaces.json`, `mcp.removed.json`, … | Folder configuration (meant to be committed) | small; `mcp.removed.json` capped (`mcpcatalog/files.go:26`) | edited in place |
 
@@ -385,7 +386,7 @@ newer than a row above for the same store.
 | `<root>/backups/` | blob | This machine's backups | The newest Keep (1-10); no size limit on a backup; no age | `Go/internal/agentsd/backups.go:44-45` | #6709 |
 | `<root>/browser/profile/` | blob | Browser sign-ins and cookies | Caches emptied at start, 64 MB HTTP cache; cookies until the site ends them | `Go/internal/agentsd/browser/browser.go:139,637` | #6710 |
 | `<folder>/.agents/dropbox/` | blob | Files handed to workflows | 25 MB a file, 500 MB a folder; no age, on purpose (#3648) | `Go/internal/agentsd/host.go:689,693` | #6711 |
-| `<folder>/.agents/reviews/runtimes/` | document | Runtime assessment reports | None | `Go/internal/agentsd/assess.go:306,371` | #6712 |
+| `<folder>/.agents/reviews/runtimes/` | document | Runtime assessment reports | 1 MiB per report; newest 50 per machine; 90 days | `Go/internal/agentsd/assess_reports.go` | #6712 |
 | `~/.agents/dismissed-leads.json` | key-value | Dismissed epics | None: an entry goes only when its epic gets a lead | `Go/internal/agentsd/worksuggest.go:32,55-59,165` | #6713 |
 | `~/.agents/summaries/` | document | Daily summaries from before #5853 | Never deleted | `docs/explanation/compliance/data-and-retention.md` | #6714 |
 | `<root>/erased.json` | document | IDs of deleted agents | 10,000 IDs, 400 days | `Go/internal/agentsd/erasure.go:43-44` | #6715 |

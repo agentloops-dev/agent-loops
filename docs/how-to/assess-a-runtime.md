@@ -19,7 +19,9 @@ so a pass never rests on the agent's word.
 - The runtime installed and signed in. See [Sign a runtime in](sign-a-runtime-in.md).
 - A folder for it to work in, ideally a git repository so it can try a worktree. The
   report goes in that folder, in `.agents/reviews/runtimes/<runtime>-<date>.md`. The
-  workflow and the worktree it makes there are removed again before it ends.
+  workflow and the worktree it makes there are removed again before it ends. The app keeps
+  the newest 50 reports on the machine, for 90 days and up to 1 MiB each. Commit a report
+  to keep it longer.
 
 ## Steps
 
