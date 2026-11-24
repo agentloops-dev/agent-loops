@@ -91,6 +91,8 @@ func (b *Book) Offer(ctx context.Context, user, machine, machineName string, o w
 	if len(sealed) == 0 {
 		return Offered{}, fmt.Errorf("%w: none of the apps it was sealed to is the person's now; try again", ErrInvalid)
 	}
+	b.adding.Lock()
+	defer b.adding.Unlock()
 	had, err := b.offerRecords(ctx, user)
 	if err != nil {
 		return Offered{}, err
@@ -116,6 +118,9 @@ func (b *Book) Offer(ctx context.Context, user, machine, machineName string, o w
 	data, err := records.Encode(r)
 	if err != nil {
 		return Offered{}, err
+	}
+	if len(data) > MaxSecretRecord {
+		return Offered{}, fmt.Errorf("%w: a secret, sealed to every app, is over %d MB", ErrInvalid, MaxSecretRecord>>20)
 	}
 	err = b.change(ctx, key, func([]byte) ([]byte, error) { return data, nil })
 	return Offered{Name: name, Machine: machine, MachineName: machineName, Agent: r.Agent, Replaced: replaced}, err

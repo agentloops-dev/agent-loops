@@ -391,18 +391,19 @@ struct AgentsCommands: Commands {
             Divider()
             // ⌥⌘↓ and ⌥⌘↑ go through the list in front: a Work page's list while one opened
             // from it is shown (#3257), else the folder's sessions. One item per key, so the
-            // window never sees the key twice.
+            // window never sees the key twice. Off in a Work page's own window, whose list is
+            // the main window's: nothing moves behind it (#7053).
             let item = model.showsWork && workWindow == nil ? model.workNeighbours : nil
             Button(item == nil ? "Next Session" : "Next Item") {
                 if item == nil { step(by: 1) } else { Task { await model.stepWork(forward: true) } }
             }
             .keyboardShortcut(MenuKeys.nextSession)
-            .disabled(item == nil ? sessionsHere.isEmpty : !model.workHasNext)
+            .disabled(workWindow != nil || (item == nil ? sessionsHere.isEmpty : !model.workHasNext))
             Button(item == nil ? "Previous Session" : "Previous Item") {
                 if item == nil { step(by: -1) } else { Task { await model.stepWork(forward: false) } }
             }
             .keyboardShortcut(MenuKeys.previousSession)
-            .disabled(item == nil ? sessionsHere.isEmpty : item?.previous == nil)
+            .disabled(workWindow != nil || (item == nil ? sessionsHere.isEmpty : item?.previous == nil))
             Button("Next Needing Attention") { nextNeedingAttention() }
                 .keyboardShortcut(MenuKeys.nextNeedingAttention)
                 // Each folder's count, not the list itself: the menu bar is drawn again

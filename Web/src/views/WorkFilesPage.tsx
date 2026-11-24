@@ -9,20 +9,18 @@ import type { ForgeItemDetail } from "../protocol/generated";
 import type { Store } from "../model/store";
 import { describe } from "../model/errors";
 import { hunkRows } from "../model/fileDiff";
+import { chooseDiffLayout, diffLayout } from "../model/diffLayout";
 import {
   cardPath, changeWord, collapseWords, couldNotRead, cutWords, filesCounts, filesCountsSpoken, listWidth, matchFiles, nameAndFolder, splitWidth,
 } from "../model/filesPage";
 import { forgeName, shortRef } from "../model/work";
 import type { DiffFile } from "./chat/appViewBridge";
-import { FileDiff, type DiffLayout } from "./FileDiff";
+import { FileDiff } from "./FileDiff";
 import { Icon } from "./Icon";
 import { Modal } from "./Modal";
 import { OpenGlyph } from "./Work";
 import { WorkFooter } from "./WorkParts";
 import { pageFooterState } from "../model/workFooter";
-
-/** The Review page's key, so the choice is the same on both pages. */
-const layoutKey = "reviewDiffLayout";
 
 interface Read { files: DiffFile[]; cut: boolean; url?: string | undefined }
 
@@ -34,7 +32,7 @@ export function WorkFilesPage({ store, host, detail, back }: { store: Store; hos
   const problem = useSignal<string | null>(null);
   const asked = useSignal(0);
   const reading = useSignal(false);
-  const layout = useSignal<DiffLayout>(globalThis.localStorage?.getItem(layoutKey) === "sideBySide" ? "sideBySide" : "unified");
+  const layout = diffLayout();
   const collapsed = useSignal<ReadonlySet<number>>(new Set());
   const filter = useSignal("");
   const picking = useSignal(false);
@@ -71,10 +69,9 @@ export function WorkFilesPage({ store, host, detail, back }: { store: Store; hos
   const rows = useMemo(() => files.map((f) => hunkRows(f.hunks)), [read.value]);
   const shown = matchFiles(files, filter.value);
   const wide = width.value >= listWidth;
-  const split = width.value >= splitWidth && layout.value === "sideBySide";
+  const split = width.value >= splitWidth && layout === "sideBySide";
   const url = read.value?.url ?? (detail.item.url ? `${detail.item.url}/files` : undefined);
 
-  const choose = (next: DiffLayout) => { layout.value = next; globalThis.localStorage?.setItem(layoutKey, next); };
   const toggle = (i: number) => {
     const next = new Set(collapsed.value);
     if (next.has(i)) next.delete(i); else next.add(i);
@@ -131,8 +128,8 @@ export function WorkFilesPage({ store, host, detail, back }: { store: Store; hos
         )}
         {width.value >= splitWidth && files.length > 0 && (
           <span class="tabs files-layout" role="tablist" aria-label="Show">
-            <button type="button" role="tab" aria-selected={layout.value === "unified"} onClick={() => choose("unified")}>Unified</button>
-            <button type="button" role="tab" aria-selected={layout.value === "sideBySide"} onClick={() => choose("sideBySide")}>Split</button>
+            <button type="button" role="tab" aria-selected={layout === "unified"} onClick={() => chooseDiffLayout("unified")}>Unified</button>
+            <button type="button" role="tab" aria-selected={layout === "sideBySide"} onClick={() => chooseDiffLayout("sideBySide")}>Split</button>
           </span>
         )}
         {files.length > 0 && <button type="button" onClick={collapseAll}>{collapseWords(files.length, collapsed.value.size)}</button>}

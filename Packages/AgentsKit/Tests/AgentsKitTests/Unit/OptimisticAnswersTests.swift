@@ -161,4 +161,42 @@ struct OptimisticAnswersTests {
         #expect(mirror.preferences[key] == .bool(false))
         #expect(defaults.object(forKey: key) as? Bool == false)
     }
+
+    /// A choice that was this device's own goes to the host once (#6803, #6806), and one the host
+    /// did not take stays and is sent again.
+    @Test func aMovedChoiceIsSentOnceAndNotLost() async throws {
+        let defaults = MemoryDefaults()
+        let key = DisplayPreference.reviewDiffLayout
+        defaults.set("sideBySide", forKey: key)
+        var asked = 0
+        var refuses = true
+        var host: DaemonAPI.DisplayPreferences = [:]
+        let mirror = DisplayPreferenceMirror(defaults: defaults) { changes in
+            asked += 1
+            if refuses { throw JSONRPCError(code: -1, message: "Your Mac did not answer") }
+            host.merge(changes) { _, new in new }
+            return host
+        } failed: { _ in refuses = false }
+        mirror.hostSaid([:])
+        for _ in 0..<50 where refuses { await Task.yield() }
+        #expect(defaults.string(forKey: key) == "sideBySide")
+        mirror.hostSaid([:])
+        for _ in 0..<50 where host.isEmpty { await Task.yield() }
+        for _ in 0..<50 { await Task.yield() }
+        #expect(host == [key: .string("sideBySide")])
+        #expect(asked == 2)
+        // Moved: the host's map wins from now on.
+        mirror.hostSaid([:])
+        #expect(defaults.string(forKey: key) == nil)
+        #expect(asked == 2)
+    }
+
+    @Test func aHostsChoiceWinsOverAMovedOne() {
+        let defaults = MemoryDefaults()
+        let key = DisplayPreference.personasMarketplace
+        defaults.set("mine", forKey: key)
+        let mirror = DisplayPreferenceMirror(defaults: defaults, send: { $0 }, failed: { _ in })
+        mirror.hostSaid([key: .string("theirs")])
+        #expect(defaults.string(forKey: key) == "theirs")
+    }
 }

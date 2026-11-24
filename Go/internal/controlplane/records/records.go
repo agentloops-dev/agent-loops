@@ -27,13 +27,14 @@ import (
 
 const (
 	// store-bounds: kind=document; size=1MiB (16KiB a record, tombstones 1MiB more); age=until-deleted; applied=on write, and the hourly sweep forgets a client whose key expired
-	ClientsPrefix  = "v1/clients/"
+	ClientsPrefix = "v1/clients/"
 	// store-bounds: kind=document; size=1MiB (32KiB a record, tombstones 1MiB more); age=until-deleted; applied=on write, and the hourly sweep removes a machine with no workspace whose key expired
 	MachinesPrefix = "v1/machines/"
 	// OldMachinesPrefix is where builds before #2316 kept machines: moved to
 	// MachinesPrefix when a store opens or is copied (#2662).
 	OldMachinesPrefix = "v1/hosts/"
-	SettingsKey    = "v1/control.json"
+	// store-bounds: kind=key-value; count=1; size=64KiB a record; age=until-deleted; applied=on write
+	SettingsKey = "v1/control.json"
 )
 
 // ClientKey is where a client is kept: its UUID in lower case.
@@ -473,6 +474,9 @@ func (r *Records) ChangeSettings(ctx context.Context, change func(*Settings)) (*
 		change(&s)
 		if same(s, h.record) {
 			return &s, nil
+		}
+		if err := settingsFit(h.record, s); err != nil {
+			return nil, err
 		}
 		rev := 1
 		if s.Rev != nil {

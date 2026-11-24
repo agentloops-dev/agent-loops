@@ -25,7 +25,11 @@ import (
 var scopeMethods = map[string]bool{"reports/scopes": true, "reports/policy": true, "reports/setPolicy": true,
 	"reports/views": true, "reports/saveView": true, "reports/deleteView": true}
 
+// store-bounds: kind=key-value; count=1; size=4KiB a record; age=until-deleted; applied=on write
 const reportPolicyKey = "v1/reports/policy.json"
+
+// reportPolicyMostBytes is the largest reportPolicyKey record (#6778): one budget.
+const reportPolicyMostBytes = 4 << 10
 
 // orgBudget is the organisation's key among the budgets.
 const orgBudget = "org"
@@ -72,6 +76,9 @@ func (s *Service) setReportPolicy(ctx context.Context, p wire.ReportPolicy) (wir
 	}
 	data, err := records.Encode(out)
 	if err != nil {
+		return out, err
+	}
+	if err := records.Fits(ctx, s.cfg.Store, reportPolicyKey, "The report policy", data, reportPolicyMostBytes); err != nil {
 		return out, err
 	}
 	if _, err := s.cfg.Store.Put(ctx, reportPolicyKey, data, store.Always); err != nil {

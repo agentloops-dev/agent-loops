@@ -39,6 +39,7 @@ import (
 const CapHostOrgRoutes = wire.CapHostOrgRoutes2
 
 const (
+	// store-bounds: kind=key-value; count=50; size=256KiB a record and 4MiB of sealed copies; age=until-deleted; applied=on write, and the hourly sweep deletes a removed one
 	orgRoutesPrefix = "v1/org/routes/"
 	orgSecretSuffix = ".secret.json"
 	// The bounds of data-model.md.
@@ -50,8 +51,10 @@ const (
 	mostRouteModels  = 200
 	// mostRecipients bounds the machines and clients one value is sealed to, and
 	// mostSealedRecord one route's sealed record (#3397).
-	mostRecipients     = 200
-	mostSealedRecord   = 4 << 20
+	mostRecipients   = 200
+	mostSealedRecord = 4 << 20
+	// mostRouteRecord is the largest route record (#6776).
+	mostRouteRecord    = 256 << 10
 	orgRouteRetries    = 5
 	orgRoutesApplied   = "orgRoutes"
 	orgDeliveryTimeout = 30 * time.Second
@@ -99,6 +102,8 @@ var routeSecretFields = map[wire.OrgRouteKind][]string{
 type orgRouteBook struct {
 	mu   sync.Mutex
 	told map[string][sha256.Size]byte
+	// adding is held while a route is counted and added.
+	adding sync.Mutex
 	// resending is a resend running; again is another asked for while it ran (#2424).
 	resending, again bool
 }
@@ -330,6 +335,8 @@ func (s *Service) setOrgRoute(ctx context.Context, actor wire.AuditActor, method
 	if !orgRouteID.MatchString(next.ID) {
 		return wire.OrgRouteKept{}, fail(invalidParams, "A route's id is 1 to 40 of a to z, 0 to 9 and -.")
 	}
+	s.orgRoutes.adding.Lock()
+	defer s.orgRoutes.adding.Unlock()
 	for try := 0; ; try++ {
 		out, again, err := s.trySetOrgRoute(ctx, actor, method, next, sealed, rev, keyOnly, try)
 		if again {
@@ -370,6 +377,13 @@ func (s *Service) trySetOrgRoute(ctx context.Context, actor wire.AuditActor, met
 		return wire.OrgRouteKept{}, false, err
 	}
 	stampOrgRoute(&route, kept, actor, secrets)
+	data, err := records.Encode(route)
+	if err != nil {
+		return wire.OrgRouteKept{}, false, err
+	}
+	if err := records.Fits(ctx, s.cfg.Store, orgRouteKey(route.ID), "The route", data, mostRouteRecord); err != nil {
+		return wire.OrgRouteKept{}, false, err
+	}
 	// The secrets first, then the record (data-model.md): a record that names a secret
 	// always finds one. Undone when the record's write loses.
 	var undo func()
@@ -382,7 +396,7 @@ func (s *Service) trySetOrgRoute(ctx context.Context, actor wire.AuditActor, met
 			if store.IsConflict(err) {
 				return wire.OrgRouteKept{}, false, fail(changedElsewhere, "Another admin changed this route. Load it again, then save.")
 			}
-			return wire.OrgRouteKept{}, false, fail(storeUnavailable, "The route's key could not be kept: %v", err)
+			return wire.OrgRouteKept{}, false, routeKeyFailure(err)
 		}
 	}
 	out, err := s.putOrgRoute(ctx, actor, method, route, kept, undo, sealed != nil)
@@ -580,6 +594,9 @@ func (s *Service) writeRouteSecrets(ctx context.Context, record orgSecretRecord,
 	if err != nil {
 		return nil, err
 	}
+	if err := records.Fits(ctx, s.cfg.Store, key, "The route's key, sealed to every machine,", data, mostSealedRecord); err != nil {
+		return nil, err
+	}
 	when := store.Absent
 	if tag != "" {
 		when = store.Matching(tag)
@@ -599,6 +616,14 @@ func (s *Service) writeRouteSecrets(ctx context.Context, record orgSecretRecord,
 			s.log("org route " + record.ID + ": its secrets could not be put back: " + err.Error())
 		}
 	}, nil
+}
+
+// routeKeyFailure is why a route's sealed record was not kept.
+func routeKeyFailure(err error) error {
+	if large := (*records.TooLargeError)(nil); errors.As(err, &large) {
+		return err
+	}
+	return fail(storeUnavailable, "The route's key could not be kept: %v", err)
 }
 
 // removeOrgRoute deletes a route and its secrets (FR-004), conditional on the rev read:

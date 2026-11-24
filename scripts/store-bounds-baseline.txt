@@ -2,7 +2,7 @@
 1 App/Sources/Control/ControlSettingsModel.swift write(to:)
 1 App/Sources/MCPServers/ConnectLinearSheet.swift write(to:)
 1 App/Sources/Sidebar/BackgroundPane.swift write(to:)
-2 Go/cmd/agents-control/main.go os.WriteFile
+1 Go/cmd/agents-control/main.go os.WriteFile
 1 Go/cmd/agentsctl/main.go os.WriteFile
 1 Go/cmd/agentsd/enrol.go os.WriteFile
 1 Go/cmd/agentsd/install.go os.WriteFile
@@ -120,7 +120,6 @@
 1 Go/internal/controllink/personkeypin.go os.WriteFile
 1 Go/internal/controlplane/approvals.go v1/approvals
 1 Go/internal/controlplane/audit/chain.go v1/audit-seals
-1 Go/internal/controlplane/auditing_sinks.go v1/audit-sinks
 2 Go/internal/controlplane/backups.go v1/backups
 1 Go/internal/controlplane/bots.go v1/runs
 1 Go/internal/controlplane/builds.go v1/build-timings
@@ -153,10 +152,8 @@
 2 Go/internal/controlplane/mesh.go v1/copies
 1 Go/internal/controlplane/mesh.go v1/leases
 1 Go/internal/controlplane/orgrefresh.go v1/signin
-1 Go/internal/controlplane/orgroutes.go v1/org
 1 Go/internal/controlplane/people_scim.go v1/requests
 1 Go/internal/controlplane/people_scim.go v1/scim
-3 Go/internal/controlplane/policy.go v1/policy
 1 Go/internal/controlplane/policy_ask.go v1/policy
 1 Go/internal/controlplane/projects.go v1/projectFolders
 1 Go/internal/controlplane/providers/defaults.go v1/failed-makes
@@ -165,20 +162,14 @@
 1 Go/internal/controlplane/records/groups.go v1/groups
 1 Go/internal/controlplane/records/people.go v1/people
 1 Go/internal/controlplane/records/projects.go v1/projects
-1 Go/internal/controlplane/records/records.go v1/control
 1 Go/internal/controlplane/records/records.go v1/hosts
 1 Go/internal/controlplane/records/records.go v1/people
 1 Go/internal/controlplane/releasefiles.go os.CreateTemp
 1 Go/internal/controlplane/releasefiles.go os.WriteFile
 2 Go/internal/controlplane/reports.go v1/usage
-1 Go/internal/controlplane/reports_scope.go v1/reports
-1 Go/internal/controlplane/reports_views.go v1/reports
 1 Go/internal/controlplane/secretrelease.go v1/release-keys
-1 Go/internal/controlplane/signin.go v1/signin
 1 Go/internal/controlplane/signin_approvals.go v1/signins
-1 Go/internal/controlplane/signin_domains.go v1/signin
 2 Go/internal/controlplane/signin_org.go v1/oidc
-1 Go/internal/controlplane/signin_org.go v1/signin
 2 Go/internal/controlplane/store/folder.go os.OpenFile
 2 Go/internal/controlplane/storecopy.go v1/copies
 1 Go/internal/controlplane/storecopy.go v1/keys
@@ -186,7 +177,6 @@
 1 Go/internal/controlplane/storeopen.go store.NewFolder
 1 Go/internal/controlplane/sweep.go v1/codes
 1 Go/internal/controlplane/sweep.go v1/mesh
-1 Go/internal/controlplane/usersettings/usersettings.go v1/users
 1 Go/internal/execfile/execfile.go os.WriteFile
 4 Go/internal/hosted/accounts.go v1/accounts
 1 Go/internal/hosted/accounts.go v1/emails
@@ -229,6 +219,5 @@
 1 Packages/AgentsKit/Sources/AgentsKitCore/Widget/SharedInbox.swift write(to:)
 1 Shared/UI/Voice/VoiceTape.swift write(to:)
 1 Web/src/views/Multiplier.tsx localStorage.setItem
-1 Web/src/views/PersonaCatalog.tsx localStorage.setItem
 1 Web/src/wire/keys.ts indexedDB.open
 1 Web/src/wire/signIn.ts indexedDB.open

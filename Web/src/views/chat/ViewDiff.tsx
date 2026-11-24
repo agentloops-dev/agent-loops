@@ -5,17 +5,16 @@
 import { useSignal } from "@preact/signals";
 import { useEffect, useMemo, useRef } from "preact/hooks";
 import { hunkRows } from "../../model/fileDiff";
-import { FileDiff, type DiffLayout } from "../FileDiff";
+import { chooseDiffLayout, diffLayout } from "../../model/diffLayout";
+import { FileDiff } from "../FileDiff";
 import type { ViewLayer } from "./viewLayer";
 
 /** What ViewDiff draws: a layer's diff, or a Work page's (#3130). */
 type DiffHolder = Pick<ViewLayer, "diff">;
 
-const layoutKey = "reviewDiffLayout";
-
 export function ViewDiff({ layer, openLink }: { layer: DiffHolder; openLink: (url: string) => void }) {
   const diff = layer.diff.value;
-  const layout = useSignal<DiffLayout>(globalThis.localStorage?.getItem(layoutKey) === "sideBySide" ? "sideBySide" : "unified");
+  const layout = diffLayout();
   const wide = useSignal(typeof innerWidth === "number" && innerWidth >= 820);
   const body = useRef<HTMLDivElement>(null);
   const rows = useMemo(() => (diff?.files ?? []).map((f) => hunkRows(f.hunks)), [diff]);
@@ -33,7 +32,6 @@ export function ViewDiff({ layer, openLink }: { layer: DiffHolder; openLink: (ur
 
   if (!diff) return null;
   const added = diff.files.reduce((n, f) => n + f.additions, 0), removed = diff.files.reduce((n, f) => n + f.deletions, 0);
-  const choose = (next: DiffLayout) => { layout.value = next; globalThis.localStorage?.setItem(layoutKey, next); };
   return (
     <div class="view-diff" role="dialog" aria-modal="true" aria-label={diff.title}>
       <header class="column-head">
@@ -41,8 +39,8 @@ export function ViewDiff({ layer, openLink }: { layer: DiffHolder; openLink: (ur
         <span class="spacer" />
         {wide.value && (
           <span class="tabs" role="tablist" aria-label="Show">
-            <button type="button" role="tab" class={layout.value === "unified" ? "on" : ""} aria-selected={layout.value === "unified"} onClick={() => choose("unified")}>Unified</button>
-            <button type="button" role="tab" class={layout.value === "sideBySide" ? "on" : ""} aria-selected={layout.value === "sideBySide"} onClick={() => choose("sideBySide")}>Side by Side</button>
+            <button type="button" role="tab" class={layout === "unified" ? "on" : ""} aria-selected={layout === "unified"} onClick={() => chooseDiffLayout("unified")}>Unified</button>
+            <button type="button" role="tab" class={layout === "sideBySide" ? "on" : ""} aria-selected={layout === "sideBySide"} onClick={() => chooseDiffLayout("sideBySide")}>Side by Side</button>
           </span>
         )}
         <button type="button" class="prominent" onClick={() => { layer.diff.value = null; }}>Done</button>
@@ -64,7 +62,7 @@ export function ViewDiff({ layer, openLink }: { layer: DiffHolder; openLink: (ur
                 <span class="spacer" />
                 <span class="quiet small counts" aria-label={`${f.additions} lines added, ${f.deletions} removed`}>+{f.additions} −{f.deletions}</span>
               </div>
-              {rows[i]?.length ? <FileDiff rows={rows[i]!} layout={wide.value ? layout.value : "unified"} />
+              {rows[i]?.length ? <FileDiff rows={rows[i]!} layout={wide.value ? layout : "unified"} />
                 : <p class="quiet small">{f.note ?? "No lines to show."}</p>}
             </section>
           ))}
