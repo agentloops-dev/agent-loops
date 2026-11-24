@@ -4533,6 +4533,27 @@
       }
     },
     {
+      "name": "maturity/complete",
+      "x-capability": "maturity/1",
+      "description": "Anyone's (#6934): a feature says that an operation of the caller's finished, for the feature's maturity record. Who it counts for is the signed-in caller, never a param. The IDs are kept only as hashes.",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/org.schema.json#/definitions/MaturityCompletion"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/core.schema.json#/definitions/Empty"
+        }
+      }
+    },
+    {
       "name": "messages/conversationsAll",
       "description": "The conversations of the caller's machines in one call, with a cap and a cursor (#5571).",
       "x-capability": "messages.all/1",

@@ -24,7 +24,19 @@ func TestAuthenticatedMaturityCompletion(t *testing.T) {
 	yes, no := true, false
 	request := maturityCompletionRequest{FeatureID: "session-chat", ID: "completion-1", SessionID: "session-owner-1", BuildID: "build-a1", Success: &yes, Completed: &yes, Eligible: &yes, BackgroundRefresh: &no}
 	var recorded maturity.Record
-	must(t, json.Unmarshal(call(t, owner, "", "maturity/complete", request), &recorded))
+	// complete makes the call, which answers nothing of the record, and reads the record itself.
+	complete := func(client *controllink.Session) {
+		t.Helper()
+		if got := string(call(t, client, "", "maturity/complete", request)); got != "{}" {
+			t.Fatalf("maturity/complete answered %s", got)
+		}
+		got, err := a.s.methods.maturity.Read(context.Background(), request.FeatureID)
+		if err != nil || got == nil {
+			t.Fatalf("record = %+v, err = %v", got, err)
+		}
+		recorded = *got
+	}
+	complete(owner)
 	if recorded.Actor != maturity.ActorAlex || recorded.Successes != 1 {
 		t.Fatalf("owner completion = %+v", recorded)
 	}
@@ -34,7 +46,7 @@ func TestAuthenticatedMaturityCompletion(t *testing.T) {
 	if recorded.Beta[0].Session != hashMaturityReference(request.SessionID) || recorded.Beta[0].Build != hashMaturityReference(request.BuildID) {
 		t.Fatalf("owner gate evidence = %+v", recorded.Beta[0])
 	}
-	must(t, json.Unmarshal(call(t, owner, "", "maturity/complete", request), &recorded))
+	complete(owner)
 	if recorded.Successes != 1 {
 		t.Fatalf("retry incremented the outcome: %+v", recorded)
 	}
@@ -50,7 +62,7 @@ func TestAuthenticatedMaturityCompletion(t *testing.T) {
 	}
 
 	request.ID, request.SessionID = "completion-2", "session-member-1"
-	must(t, json.Unmarshal(call(t, member, "", "maturity/complete", request), &recorded))
+	complete(member)
 	if recorded.Actor != maturity.ActorOther || recorded.GA.Person != hashMaturityReference(otherPerson.id) || recorded.GA.Sessions[0] != hashMaturityReference(request.SessionID) {
 		t.Fatalf("authenticated member evidence = %+v", recorded.GA)
 	}

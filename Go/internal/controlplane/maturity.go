@@ -59,14 +59,15 @@ func (m *Methods) completeMaturity(ctx context.Context, params json.RawMessage, 
 	if actor == maturity.ActorOther {
 		completion.ActorRef = hashMaturityReference(person.ID)
 	}
-	record, err := m.maturity.Complete(ctx, request.FeatureID, completion, time.Now())
+	_, err := m.maturity.Complete(ctx, request.FeatureID, completion, time.Now())
 	if errors.Is(err, maturity.ErrInvalid) || errors.Is(err, maturity.ErrNotCompleted) {
 		return nil, fail(invalidParams, "The maturity completion is not eligible.")
 	}
 	if err != nil {
 		return nil, err
 	}
-	return record, nil
+	// Not the record: what it holds about others is a report reader's, and any person may call this.
+	return map[string]any{}, nil
 }
 
 func hashMaturityReference(id string) string {
