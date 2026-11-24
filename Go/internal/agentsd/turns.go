@@ -44,6 +44,9 @@ type live struct {
 	// kick between a turn's end and the run loop's return found it running, so the loop
 	// goes on for it rather than leave its message in the queue (#4907).
 	kicks, kicksAtEnd int
+	// onHeld is called when the run loop has decided to hold what is queued and has not
+	// returned yet; only a test sets it, before it kicks (#6989).
+	onHeld func()
 	// prompting is whether the turn's words are with the runtime; a stop before then is
 	// kept in stopped, and the turn ends there instead of sending them.
 	prompting, stopped bool
@@ -645,11 +648,21 @@ func (l *live) run() {
 			l.mu.Unlock()
 			return
 		}
+		kicks := l.kicks
 		l.mu.Unlock()
 		// What is queued waits while the organisation's policy refuses the turn (#998),
 		// and while the agent or the day is at its limit.
 		if l.d.holdsForPolicy(l) || l.d.holdsForLimit(l.id) {
+			if l.onHeld != nil {
+				l.onHeld()
+			}
 			l.mu.Lock()
+			if l.kicks != kicks {
+				// Released as it was held (a limit raised, a day rolled over): that kick found
+				// it running, so the loop looks again rather than leave the queue (#6989).
+				l.mu.Unlock()
+				continue
+			}
 			l.running = false
 			l.mu.Unlock()
 			return

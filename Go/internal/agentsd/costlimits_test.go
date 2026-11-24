@@ -2,9 +2,9 @@ package agentsd
 
 import (
 	"strings"
+	"sync"
 	"testing"
 
-	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -12,7 +12,6 @@ import (
 // its limit waits, said once; raising the limit lets it go.
 
 func TestLimitsHoldTheWork(t *testing.T) {
-	flaky.UnderLoad(t, "#6989")
 	t.Parallel()
 
 	fakeRuntimes(t)
@@ -48,5 +47,40 @@ func TestLimitsHoldTheWork(t *testing.T) {
 	waitFor(t, "it went", func() bool { u := userMessages(d, a.ID); return len(u) == 1 && u[0] == "go on" })
 	if n := names(d); !strings.Contains(strings.Join(n, " "), "cost.limit_reached") {
 		t.Fatal(n)
+	}
+}
+
+// A limit raised after the run loop decided to hold and before it returned: the kick found
+// it running, so the loop looks again rather than leave the message in the queue (#6989).
+func TestALimitRaisedAsTheWorkIsHeldLetsItGo(t *testing.T) {
+	t.Parallel()
+
+	fakeRuntimes(t)
+	d, c := start(t, t.TempDir())
+	defer d.Shutdown()
+	d.SettingsDir = t.TempDir()
+	a := seeded(t, d, t.TempDir(), nil)
+	d.bankSessionCost(a.ID, wire.Cost{Amount: 2, Currency: "USD"})
+	c.call(t, 1, "cost/setLimits", map[string]any{"daily": map[string]any{"amount": 1, "currency": "USD"}})
+	held, raised := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	l := d.live(a.ID)
+	l.mu.Lock()
+	l.onHeld = func() {
+		once.Do(func() {
+			close(held)
+			<-raised
+		})
+	}
+	l.mu.Unlock()
+	c.call(t, 2, "agents/prompt", map[string]any{"agentID": a.ID, "text": "go on", "from": "person"})
+	<-held
+	func() {
+		defer close(raised)
+		c.call(t, 3, "cost/setLimits", map[string]any{"daily": map[string]any{"amount": 10, "currency": "USD"}})
+	}()
+	waitFor(t, "it went", func() bool { u := userMessages(d, a.ID); return len(u) == 1 && u[0] == "go on" })
+	if stop := policyStops(d, a.ID); len(stop) != 1 {
+		t.Fatalf("the hold is said once: %+v", stop)
 	}
 }
