@@ -104,6 +104,8 @@ public extension DaemonAPI {
         public var settingUp: Int?
         public var failedMakes: Int?
         public var stoppedBecause: String?
+        /// Why a pool that is keeping makes no machine now (#6890).
+        public var waitingBecause: String?
         public var machines: [WarmPoolMachine]?
         public var claims: WarmPoolClaims?
 
@@ -111,7 +113,7 @@ public extension DaemonAPI {
                     region: String? = nil, runtimes: [String]? = nil, projects: [String]? = nil, minReady: Int,
                     maxSize: Int, target: Int? = nil, replaceAfter: Double? = nil, hours: WarmPoolHours? = nil,
                     state: WarmPoolState = .keeping, ready: Int? = nil, settingUp: Int? = nil, failedMakes: Int? = nil,
-                    stoppedBecause: String? = nil, machines: [WarmPoolMachine]? = nil, claims: WarmPoolClaims? = nil) {
+                    stoppedBecause: String? = nil, waitingBecause: String? = nil, machines: [WarmPoolMachine]? = nil, claims: WarmPoolClaims? = nil) {
             self.id = id
             self.name = name
             self.scope = scope
@@ -130,6 +132,7 @@ public extension DaemonAPI {
             self.settingUp = settingUp
             self.failedMakes = failedMakes
             self.stoppedBecause = stoppedBecause
+            self.waitingBecause = waitingBecause
             self.machines = machines
             self.claims = claims
         }

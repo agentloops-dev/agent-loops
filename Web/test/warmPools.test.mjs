@@ -22,6 +22,7 @@ test("the card says what the pool holds", () => {
   assert.equal(w.claimsLine(pool().claims), "41 claims · median 22 s · 3 found it empty");
   assert.equal(w.claimsLine(undefined), "No claims yet");
   assert.equal(w.poolStateLine(pool()), null);
+  assert.equal(w.poolStateLine(pool({ waitingBecause: "Mac is offline, and it has app" })), "Waiting to make a machine: Mac is offline, and it has app.");
   assert.match(w.poolStateLine(pool({ state: "off-hours" })), /^Outside its hours/);
   assert.equal(w.poolStateLine(pool({ state: "stopped", stoppedBecause: "DigitalOcean refused the size" })),
     "Stopped: DigitalOcean refused the size. Save the pool to try again.");

@@ -49,6 +49,8 @@ func fakeHost(t *testing.T, l Layout, started *int) Deps {
 		Running: func(root string) bool { return *started > 0 },
 		Call: func(method string, params any) (json.RawMessage, error) {
 			switch method {
+			case wire.CallSetupProjects.Name:
+				return json.Marshal(wire.MachineSetupProjects{Finished: true, Folders: []string{}})
 			case wire.CallRuntimesInstall.Name:
 				p := "Downloading"
 				return json.Marshal(wire.RuntimeStatus{Runtime: wire.Runtime{ID: params.(wire.RuntimeRequest).RuntimeID},
@@ -217,5 +219,81 @@ func must(t testing.TB, err error) {
 	t.Helper()
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+// #6890, #6896: a pool machine's installer gets the pool's projects, fails step 6 when they do
+// not come, and stops after step 6; the claim's run goes on to the end, after what was said.
+func TestAPoolMachineStopsAfterItsProjectsAndAClaimGoesOn(t *testing.T) {
+	o, l := options(t)
+	o.Smoke = true
+	must(t, os.MkdirAll(l.Root, 0o700))
+	must(t, os.WriteFile(filepath.Join(l.Root, "control-host.json"), []byte("{}"), 0o600))
+	project := t.TempDir()
+	must(t, os.MkdirAll(filepath.Join(project, ".agents"), 0o700))
+	must(t, os.WriteFile(filepath.Join(project, SetupScript), []byte("echo \"$AGENTS_FROM_POOL\" > out.txt\n"), 0o600))
+	started := 1
+	deps := fakeHost(t, l, &started)
+	base, polls := deps.Call, 0
+	problem := "app: Mac is offline"
+	answer := wire.MachineSetupProjects{Pool: true, Finished: true, Problem: &problem, Folders: []string{}}
+	smoke := &smokeHost{signedIn: true, state: wire.AgentStateFinished, message: "Hello.", finishCall: true}
+	deps.Call = func(method string, params any) (json.RawMessage, error) {
+		if method == wire.CallSetupProjects.Name {
+			if polls++; polls%2 == 1 {
+				detail := "Getting app"
+				return json.Marshal(wire.MachineSetupProjects{Pool: true, Detail: &detail, Folders: []string{}})
+			}
+			return json.Marshal(answer)
+		}
+		if method == wire.CallAgentsOptions.Name || strings.HasPrefix(method, "agents/") {
+			return smoke.call(method, params)
+		}
+		return base(method, params)
+	}
+	if err := Run(context.Background(), o, deps); err == nil {
+		t.Fatal("no projects, and the set-up went on")
+	}
+	if r := lastOf(reports(t, l), wire.MachineSetupStepIDProjects); r.State != wire.MachineSetupStateFailed || *r.Error != problem {
+		t.Fatalf("%+v", r)
+	}
+	answer = wire.MachineSetupProjects{Pool: true, Finished: true, Folders: []string{project}}
+	if err := Run(context.Background(), o, deps); err != nil {
+		t.Fatal(err)
+	}
+	rs := reports(t, l)
+	if r := lastOf(rs, wire.MachineSetupStepIDProjects); r.State != wire.MachineSetupStateDone || !strings.Contains(*r.Detail, "ready") {
+		t.Fatalf("%+v", r)
+	}
+	if lastOf(rs, wire.MachineSetupStepIDSignIn) != nil || lastOf(rs, wire.MachineSetupStepIDSmoke) != nil {
+		t.Fatal("a pool machine went on to sign in")
+	}
+
+	o.FromPool = true
+	if err := Continue(context.Background(), o, deps, l.Root, wire.MachineSetupStepIDProjects); err != nil {
+		t.Fatal(err)
+	}
+	after := reports(t, l)
+	if len(after) <= len(rs) {
+		t.Fatal("the claim's run wrote over what was said")
+	}
+	for _, id := range []wire.MachineSetupStepID{wire.MachineSetupStepIDProjects, wire.MachineSetupStepIDSignIn, wire.MachineSetupStepIDSmoke} {
+		if r := lastOf(after[len(rs):], id); r == nil || r.State != wire.MachineSetupStateDone {
+			t.Fatalf("%s: %+v", id, r)
+		}
+	}
+	if b, _ := os.ReadFile(filepath.Join(project, "out.txt")); strings.TrimSpace(string(b)) != "1" {
+		t.Fatalf("the script saw %q", b)
+	}
+	if !strings.Contains(string(smoke.started.Cwd), filepath.Base(project)) {
+		t.Fatalf("smoke in %s", smoke.started.Cwd)
+	}
+	// A host that stops says no failure: the next one runs the step again.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	said := len(reports(t, l))
+	_ = Continue(ctx, o, deps, l.Root, wire.MachineSetupStepIDProjects)
+	if len(reports(t, l)) != said {
+		t.Fatal("a host that stopped said a step")
 	}
 }

@@ -338,9 +338,10 @@ extension AppModel {
 
     /// Make with Start from a warm pool (#5366, spec "A claim"): the control plane takes the
     /// oldest ready machine of a pool of this provider and size, binds it with the person's Stop
-    /// when idle, and the pool makes another. Its page opens on the catch-up; the pool's
-    /// projects and the others chosen are sent as a new machine's are (#6890). With no ready machine left by now it
-    /// makes a new one, and its page says so.
+    /// when idle, and the pool makes another. Its page opens on the catch-up, in which the
+    /// machine gets the pool's projects at their last commit itself (#6890); the projects the
+    /// person ticked are sent as a new machine's are, with their uncommitted changes. With no
+    /// ready machine left by now it makes a new one, and its page says so.
     private func claimMachine(_ draft: NewMachineDraft, _ controlRequests: DaemonClient) async throws {
         let claimed = try await controlRequests.call(
             DaemonAPI.Method.poolClaim,
@@ -349,16 +350,8 @@ extension AppModel {
             returning: DaemonAPI.WarmPoolClaimed.self)
         var rest = draft
         rest.name = claimed.name
-        var atLastCommit: [URL] = []
         rest.stopWhenIdleMinutes = nil
         if claimed.fromPool {
-            // A pool machine is made with no folders (#6890): the pool's projects are sent now,
-            // with the others chosen, each once.
-            // One the person did not tick goes at its last commit: the sheet told them of no
-            // uncommitted changes going with it.
-            var seen = Set(draft.projects.map(\.standardizedFileURL.path))
-            atLastCommit = draft.poolProjects.map { URL(fileURLWithPath: $0) }
-                .filter { seen.insert($0.standardizedFileURL.path).inserted }
             machinePoolNotes[claimed.name] = WarmPoolWords.replacedNote(pool: claimed.pool ?? "the pool")
         } else {
             rest.stopWhenIdleMinutes = draft.stopWhenIdleMinutes
@@ -367,13 +360,12 @@ extension AppModel {
         if let host = claimed.host { machinePage = host }
         let made = DaemonAPI.ProviderCreated(workspace: DaemonAPI.MachineInfo(id: claimed.workspace, name: claimed.name,
                                                                                state: "running", host: claimed.host), joining: true)
-        Task { [atLastCommit] in await finishNewMachine(rest, made: made, atLastCommit: atLastCommit) }
+        Task { await finishNewMachine(rest, made: made) }
     }
 
     /// After a make that asked for a sleep time or projects (#5358): waits for the machine's
     /// row, opens its page, sets Stop when idle, then sends each project once it is reachable.
-    /// The `atLastCommit` projects go with no uncommitted changes (#6890).
-    private func finishNewMachine(_ draft: NewMachineDraft, made: DaemonAPI.ProviderCreated, atLastCommit: [URL] = []) async {
+    private func finishNewMachine(_ draft: NewMachineDraft, made: DaemonAPI.ProviderCreated) async {
         var host = made.workspace.host
         for _ in 0..<300 where host == nil {
             host = hosts.controlRows.first { $0.value.name == draft.name }?.key
@@ -382,16 +374,15 @@ extension AppModel {
         guard let host else { return }
         machinePage = host
         if let minutes = draft.stopWhenIdleMinutes { await setMachineOptions(host, stopWhenIdleMinutes: minutes) }
-        let projects = draft.projects.map { (folder: $0, changes: true) } + atLastCommit.map { (folder: $0, changes: false) }
-        guard !projects.isEmpty else { return }
+        guard !draft.projects.isEmpty else { return }
         for _ in 0..<450 where hostUnreachable(host) { try? await Task.sleep(for: .seconds(2)) }
-        for (project, changes) in projects {
+        for project in draft.projects {
             do {
                 let facts = try await sendFacts(project, on: .mac)
                 guard let branch = facts.current ?? facts.branches.first else { continue }
                 try await startSend(DaemonAPI.SendRequest(folder: project, machine: host.rawValue, machineName: draft.name,
                                                           destination: "~/\(project.lastPathComponent)", branches: facts.branches,
-                                                          checkout: branch, includeChanges: changes && facts.hasChanges && facts.current != nil,
+                                                          checkout: branch, includeChanges: facts.hasChanges && facts.current != nil,
                                                           origin: facts.origin), from: .mac)
             } catch {
                 problem = "\(project.lastPathComponent) was not sent to \(draft.name): \(describe(error))"

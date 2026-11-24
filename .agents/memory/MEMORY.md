@@ -95,3 +95,4 @@ What agents learnt about this repo: its code, tools, process and decisions. One 
 - [Periphery removed](periphery-removed.md) — Alex 2026-11-21 (#6526): no Swift dead-code gate; it cost ~8.5 min warm per swift-lint run and a 2.6 GB cache
 - [@AppStorage hears no key with a dot](appstorage-key-with-a-dot.md) — KVO reads a dot as a key path: a mirrored display key a view reads must have none (#6254, flag:<name>)
 - [Fix main asks the bug lane for root-cause lanes](fix-main-asks-the-bug-lane-for-root-cause-lanes.md) — the #4207 lead takes each new bug itself; Fix main messages it, starts no lane (2026-11-21 duplicates on #6603, #6619)
+- [No changed HOME for agentsd on a Mac](no-changed-home-for-agentsd-on-a-mac.md) — #6890: "Keychain Not Found" dialogs that stay; a pool-machine walk needs Linux
