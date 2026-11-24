@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/kms"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/records"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
 	"github.com/agentloops-dev/agent-loops/Go/internal/machinelock"
 	"github.com/agentloops-dev/agent-loops/Go/internal/secretrelease"
@@ -178,4 +179,81 @@ func (s *Service) forgetOldReleases(ctx context.Context, host string, now time.T
 			_ = s.cfg.Store.Delete(ctx, k.Key)
 		}
 	}
+}
+
+// forgetReleaseHost removes the secret and its replay markers when a machine leaves.
+// The control-plane Store is the key-value adapter for this family (#6670).
+func (s *Service) forgetReleaseHost(ctx context.Context, host string) error {
+	keys, err := s.cfg.Store.List(ctx, releaseSeenPrefix(host))
+	if err != nil {
+		return err
+	}
+	for _, key := range keys {
+		if err := s.cfg.Store.Delete(ctx, key.Key); err != nil {
+			return err
+		}
+	}
+	return s.cfg.Store.Delete(ctx, releaseKeyKey(host))
+}
+
+// sweepReleaseKeys removes expired replay markers and any release material left for a
+// machine that is no longer joined. The key-value listing is bounded by the release-key
+// collection's 1 MB organisation cap (#6669, gate 1).
+func sweepReleaseKeys(ctx context.Context, st store.Store, rs *records.Records, now time.Time, most int) (int, error) {
+	keys, err := st.List(ctx, releaseKeysPrefix)
+	if err != nil {
+		return 0, err
+	}
+	oldest := now.Add(-2 * secretrelease.ApprovalLifetime).Unix()
+	deleted := 0
+	for _, key := range keys {
+		if deleted == most {
+			break
+		}
+		removed, err := sweepReleaseKey(ctx, st, rs, key.Key, oldest)
+		if err != nil {
+			return deleted, err
+		}
+		if removed {
+			deleted++
+		}
+	}
+	return deleted, nil
+}
+
+func sweepReleaseKey(ctx context.Context, st store.Store, rs *records.Records, key string, oldest int64) (bool, error) {
+	rest := strings.TrimPrefix(key, releaseKeysPrefix)
+	host, _, isSeen := strings.Cut(rest, "/seen/")
+	if isSeen {
+		return sweepReleaseSeen(ctx, st, rs, key, host, oldest)
+	}
+	host = strings.TrimSuffix(rest, ".json")
+	if host == rest || rs.Host(host) != nil {
+		return false, nil
+	}
+	if err := st.Delete(ctx, key); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func sweepReleaseSeen(ctx context.Context, st store.Store, rs *records.Records, key, host string, oldest int64) (bool, error) {
+	if rs.Host(host) == nil {
+		if err := st.Delete(ctx, key); err != nil {
+			return false, err
+		}
+		return true, nil
+	}
+	o, err := st.Get(ctx, key)
+	if err != nil || o == nil {
+		return false, err
+	}
+	var seen releaseSeen
+	if json.Unmarshal(o.Data, &seen) != nil || seen.At >= oldest {
+		return false, nil
+	}
+	if err := st.Delete(ctx, key); err != nil {
+		return false, err
+	}
+	return true, nil
 }
