@@ -425,7 +425,7 @@ func sweepUsages(ctx context.Context, rs *records.Records, now time.Time, left i
 func sweepOrphans(ctx context.Context, rs *records.Records, now time.Time, most int) (int, error) {
 	deleted := 0
 	for _, step := range []func(context.Context, *records.Records, time.Time, int) (int, bool, error){
-		sweepOrphanLeases, sweepOrphanFolderLists, sweepRemovedOrgRoutes,
+		sweepOrphanLeases, sweepOrphanFolderLists, sweepRemovedOrgRoutes, sweepMachineNames,
 	} {
 		n, full, err := step(ctx, rs, now, most-deleted)
 		deleted += n
@@ -461,6 +461,45 @@ func sweepOrphanLeases(ctx context.Context, rs *records.Records, now time.Time, 
 			continue
 		}
 		if err := s.Delete(ctx, k.Key); err != nil {
+			return deleted, false, err
+		}
+		deleted++
+	}
+	return deleted, false, nil
+}
+
+// sweepMachineNames deletes, at most most, the machine-N counters of removed people (#6759):
+// those removed before it went with them, and one a make wrote as its person was removed.
+// The owner keeps theirs, also with no record. full says it stopped at most.
+func sweepMachineNames(ctx context.Context, rs *records.Records, _ time.Time, most int) (deleted int, full bool, err error) {
+	s := rs.Store
+	keys, err := s.List(ctx, providers.MachineNamesPrefix)
+	if err != nil {
+		return 0, false, err
+	}
+	owner := ""
+	if settings := rs.Settings(); settings != nil && settings.Owner != nil {
+		owner = *settings.Owner
+	}
+	for _, k := range keys {
+		if deleted >= most {
+			return deleted, true, nil
+		}
+		person, ok := providers.MachineNamesPerson(k.Key)
+		if !ok || person == "local" || person == owner {
+			continue
+		}
+		if held := rs.Person(person); held != nil {
+			if !held.IsRemoved() {
+				continue
+			}
+		} else if record, err := s.Get(ctx, records.PersonKey(person)); err != nil {
+			return deleted, false, err
+		} else if record != nil {
+			// Made at another copy, and not read here yet.
+			continue
+		}
+		if err := providers.ForgetMachineNames(ctx, s, person); err != nil {
 			return deleted, false, err
 		}
 		deleted++
