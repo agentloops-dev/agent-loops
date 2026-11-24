@@ -99,7 +99,7 @@ Mac.
 | `catalog-pending.json` | document | An install in progress | One; goes when the install ends or at the next start | At start |
 | `account-ops.json` | key-value | The last operation of each account, and the last read of each secret | 1,000 entries of 1 KiB each, for 90 days; the oldest goes first | Hourly, and on write: age, and the count when it is twice over |
 | `secret-ops.json` | key-value | The last operation of each secret held | Goes with its secret | On write |
-| `secret-ops-pending.json` | log | Secret audit entries not yet sent | 1,000. No age (#6721). | On write |
+| `secret-ops-pending.json` | log | Secret audit entries not yet sent | 1,000 operations of 16 KiB each, for 90 days; the oldest goes first, with a log line, and the audit never has it (#6721) | Hourly, and on write: age, and the count when it is twice over |
 | `allowances.json`, `runtime-accounts.json` | key-value | Runtime accounts you added, and each credential's allowance | Until the account is removed (#6747, #6748) | On remove |
 | `github-bot-copies.json` | key-value | Which machines have the GitHub bot's key (not the key) | The lock's machines; 16 forgotten Apps | On write |
 | `control-clients.json`, `project-tools.json`, `host-user.json` | key-value | Copies of the control plane's lists | Replaced by each new list (#6752, #6753) | On write |
