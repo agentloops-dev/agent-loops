@@ -435,7 +435,7 @@ newer than a row above for the same store.
 | `v1/machines/` | document | Machines | 32 KiB a record, 1 MiB in all; removed when its key expires, at most 90 days unused, or by a person when linked to a workspace; tombstone 7 days | `Go/internal/controlplane/keylife.go`, `records/machinebounds.go` | #6758 |
 | `v1/machine-names/<person>.json` | key-value | A person's machine-N counter and last provider options | 64 KiB a person; until the person is removed (no age before, on purpose: a number is never used twice) | `Go/internal/controlplane/providers/defaults.go:20-63`, `Go/internal/controlplane/sweep.go` (`sweepMachineNames`) | #6759 |
 | `v1/machine-setup-times.json` | time series | Set-up durations | 90 days, 50 a step, 32 KiB; on write and hourly; no roll-up | `Go/internal/controlplane/machinesetuptimes.go` | #6760 |
-| `v1/warm-pools/<id>.json` | document | Warm pools and their claims | No count limit on pools; no delete when a person goes; config outside .agents | `Go/internal/controlplane/warmpool.go:33,44-45,124` | #6761 |
+| `v1/warm-pools/<id>.json` | document | Warm pools and their claims | 10 pools a provider and 256 KiB a pool, else refused; claims 7 days and 500 a pool; the pool until deleted or its person is removed. Its config stays in the control plane's store (Alex, 2026-11-24) | `Go/internal/controlplane/warmpool.go` (`mostPoolsAProvider`, `warmPoolMost`, `forget`) | #6761 |
 | `v1/providers/` | document | Machine providers | 10 and 64 KiB each, else refused; until removed; a tombstone 7 days and 100 at most. Its config stays in the control plane's store (Alex, 2026-11-24) | `Go/internal/controlplane/providers/bounds.go`, `Go/internal/controlplane/sweep.go` (`sweepProviders`) | #6762 |
 | `v1/links/` | document | Channel identity links | No count limit; until unlinked or the person goes | `Go/internal/controlplane/links.go:38` | #6763 |
 | `v1/governance/` approvals | document | Catalogue approvals | 1,000; until taken back or the person or group goes | `Go/internal/controlplane/governance.go:43` | #6764 |
@@ -518,7 +518,7 @@ files expire without a summary. The `Forever` setting and a live conversation do
 90-day maximum age.
 
 Numeric product bounds still missing from responsible child issues include
-control-plane entity, warm-pool, link, release-key, and invite quotas; browser and
+control-plane entity, link, release-key, and invite quotas; browser and
 shared-inbox quotas; and store-specific record and collection limits where the rows above say
 **not specified**. The epic lead must track these in the existing responsible child issues or
 file a follow-up child issue when no owner exists. Do not replace this statement with estimates.
