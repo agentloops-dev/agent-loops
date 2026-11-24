@@ -83,6 +83,8 @@ export const noConnector = "No messaging connector yet. Add Slack, Email, Google
 export const setUp = "Open Connectors";
 export const noConversations = "No conversations.";
 export const noUnread = "No unread conversations.";
+/** How many pages of messages/conversationsAll a lookup of one conversation reads (#5482). */
+export const mostPagesToFind = 5;
 export const noMessages = "No messages.";
 export const outside = "Outside content: these messages come from other people, through the connector.";
 
