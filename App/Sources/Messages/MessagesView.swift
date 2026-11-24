@@ -23,6 +23,8 @@ final class MessagesListState {
     /// and one already open reads its messages again, as opening it in place does.
     private(set) var windowRow: MessagesList.Row?
     private(set) var windowAsks = 0
+    /// The lookup of the conversations that windows opened again at launch show (#7075), one for all of them.
+    @ObservationIgnored let lookup = ConversationLookup()
 
     func openInWindow(_ row: MessagesList.Row, _ window: OpenWorkWindow) {
         windowRow = row
@@ -180,14 +182,14 @@ private struct ConversationWindowButton: View {
 }
 
 /// A conversation in a window of its own (#5482), as Messages shows it. One opened again at launch is found by its key
-/// in the machines' lists, with the same read as the list's.
+/// in the machines' lists, with the same read as the list's, in one lookup for all the windows (#7075).
 struct ConversationWindow: View {
     @Environment(AppModel.self) private var model
     let conversation: String
     let list: MessagesListState
     @State private var row: MessagesList.Row?
     /// What the lookup read when it did not find the conversation; nil before.
-    @State private var missing: [MessagesList.HostConversations]?
+    @State private var missing: ConversationLookup.Sweep?
     @State private var tries = 0
     @State private var asks = 0
 
@@ -201,7 +203,7 @@ struct ConversationWindow: View {
             if let row {
                 ConversationPage(row: row, asks: asks) { list.markedRead(row.id) }
             } else if let missing {
-                notFound(missing)
+                notFound(missing.lists)
             } else if model.controlPlaneListed, model.messagesMachines.isEmpty {
                 Text(MessagesList.noMachine).foregroundStyle(.secondary).padding(24)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -234,18 +236,21 @@ struct ConversationWindow: View {
 
     private func find() async {
         guard row == nil else { return }
+        let before = missing
         missing = nil
         row = list.known(conversation)
-        guard row == nil, !model.messagesMachines.isEmpty else { return }
-        var read: [MessagesList.HostConversations] = []
-        var cursor: String?
-        for _ in 0 ..< MessagesList.mostPagesToFind {
-            (read, cursor) = await MessagesListState.read(model: model, unread: false, cursor: cursor, into: read)
-            guard !Task.isCancelled, row == nil else { return }
-            row = MessagesList.merged(read).first { $0.id == conversation }
-            if row != nil || cursor == nil { break }
+        let machines = model.messagesMachines
+        guard row == nil, !machines.isEmpty else { return }
+        let model = model
+        let answer = await list.lookup.find(conversation, machines: machines.map(\.id), after: before,
+                                            known: { row ?? list.known(conversation) },
+                                            read: { await MessagesListState.read(model: model, unread: false, cursor: $0, into: $1) })
+        guard !Task.isCancelled, row == nil else { return }
+        switch answer {
+        case let .found(found): row = found
+        case let .missing(sweep): missing = sweep
+        case .cancelled: break
         }
-        if row == nil { missing = read }
     }
 }
 
