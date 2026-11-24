@@ -505,10 +505,10 @@ These had no row above. Paths in the evidence are relative to `Go/internal/`.
 | `<root>/control-clients.json` | key-value | Copy of the paired clients | replaced by each list | `agentsd/localpath.go:45` |
 | `<root>/policy-yours-seen.json`, `lock.json`, `suspended.json` | key-value | Small state | fixed shape | `agentsd/policyyours.go:33`, `agentsd/lock.go:38`, `agentsd/usersuspend.go:24` |
 | `<root>/setup-reports.jsonl` | log | Steps of the machine's set-up | one run; a new run truncates it | `hostsetup/report.go:23` |
-| `v1/machine-setup/<host>.json` | document | A machine's set-up steps | 1 per machine; deleted when the machine is removed (best effort, `controlplane/methods.go`); no age, no sweep | `controlplane/machinesetup.go:24` |
-| `v1/machine-versions/<host>.json` | log | A machine's versions | 20 deploys; deleted when the machine is removed (best effort, `controlplane/methods.go`); no age, no sweep | `controlplane/machineversions.go:28` |
+| `v1/machine-setup/<host>.json` | document | A machine's set-up steps | 1 per machine, 512 KiB; 90 days after it ended, none while it runs; on machine removal, and hourly for a machine that is gone (7 days after its last change) (#6968) | `controlplane/machinesetup.go` (`sweepMachineSetups`) |
+| `v1/machine-versions/<host>.json` | document | A machine's versions | 20 deploys, 64 KiB; a deploy 90 days, the version now none; on machine removal, and hourly for a machine that is gone (a day after it was last seen) (#6969) | `controlplane/machineversions.go` (`sweepMachineVersions`) |
 | `v1/approvals/<person>/` | document | Signed approvals | 2,000 a person; no age, no delete found | `controlplane/approvals.go:22` |
-| `v1/failed-makes/<provider>.json` | log | Failed makes | 5 a provider; deleted with the provider; no age | `controlplane/providers/defaults.go:57` |
+| `v1/failed-makes/<provider>.json` | log | Failed makes | 5 a provider, 64 KiB; 90 days, on write and hourly; deleted with the provider (#6971) | `controlplane/providers/defaults.go` (`SweepFailedMakes`) |
 | `v1/maturity/<id>.json` | document | Feature maturity evidence | 84 records of 4 KiB; no age | `controlplane/maturity/store.go:161` |
 
 Mixed files follow these decisions: `workflows.json` splits into document/configuration, key-value

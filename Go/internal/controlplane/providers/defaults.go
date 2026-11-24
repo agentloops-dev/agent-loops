@@ -8,7 +8,9 @@ import (
 	"net/url"
 	"sort"
 	"strings"
+	"time"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/records"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
@@ -77,10 +79,25 @@ const keptFailedMakes = 5
 type failedMake struct {
 	info   MachineInfo
 	person string
+	at     time.Time
 }
+
+// old says the row is past failedMakesKept.
+func (f failedMake) old(now time.Time) bool { return now.Sub(f.at) >= failedMakesKept }
+
+// failedMakesKept is how long a failed make is kept (#6971).
+const failedMakesKept = 90 * 24 * time.Hour
+
+// failedMakesMost is the largest record: the oldest rows go first. failedReasonMost is the
+// longest reason; a longer one is cut.
+const (
+	failedMakesMost  = 64 << 10
+	failedReasonMost = 4 << 10
+)
 
 // FailedMakesPrefix is where each provider's failed makes are kept: one record a provider,
 // at most keptFailedMakes rows, the newest last.
+// store-bounds: kind=log; count=5 a provider; size=64KiB a record; age=90d; applied=on write and hourly sweep, also until the provider is removed
 const FailedMakesPrefix = "v1/failed-makes/"
 
 // failedMakesKey is a provider's record of failed makes.
@@ -93,10 +110,93 @@ type keptFailedMake struct {
 	Name   string `json:"name"`
 	Reason string `json:"reason"`
 	Person string `json:"person,omitempty"`
+	// At is when it failed. A row kept before #6971 has none: the first write or sweep gives
+	// it that time.
+	At *time.Time `json:"at,omitempty"`
 }
 
-func failedRow(name, person, reason string) failedMake {
-	return failedMake{info: MachineInfo{ID: "failed-" + name, Name: name, State: "failed", Reason: &reason}, person: person}
+// row is the failed make as a row of its provider's, with now for one with no time.
+func (k keptFailedMake) row(now time.Time) failedMake {
+	at := now
+	if k.At != nil {
+		at = *k.At
+	}
+	return failedMake{info: MachineInfo{ID: "failed-" + k.Name, Name: k.Name, State: "failed", Reason: &k.Reason}, person: k.Person, at: at}
+}
+
+// boundFailed dates the rows with no time, and drops the old ones and the oldest over the
+// count and the size. It says the record to keep, and whether it differs from rows.
+func boundFailed(rows []keptFailedMake, now time.Time) (kept []keptFailedMake, data []byte, changed bool) {
+	for _, k := range rows {
+		if k.At == nil {
+			k.At, changed = &now, true
+		}
+		if now.Sub(*k.At) < failedMakesKept {
+			kept = append(kept, k)
+		}
+	}
+	if len(kept) > keptFailedMakes {
+		kept = kept[len(kept)-keptFailedMakes:]
+	}
+	for data, _ = json.Marshal(kept); len(data) > failedMakesMost; data, _ = json.Marshal(kept) {
+		kept = kept[1:]
+	}
+	return kept, data, changed || len(kept) != len(rows)
+}
+
+// SweepFailedMakes ages out the failed makes in the store (#6971), and deletes those of
+// providers that are gone; at most most deletions and writes. full says it stopped at most.
+func SweepFailedMakes(ctx context.Context, rs *records.Records, now time.Time, most int) (swept int, full bool, err error) {
+	s := rs.Store
+	keys, err := s.List(ctx, FailedMakesPrefix)
+	if err != nil {
+		return 0, false, err
+	}
+	for _, k := range keys {
+		if swept >= most {
+			return swept, true, nil
+		}
+		did, err := sweepFailedMakesOf(ctx, s, k.Key, now)
+		if err != nil {
+			return swept, false, err
+		}
+		if did {
+			swept++
+		}
+	}
+	return swept, false, nil
+}
+
+// sweepFailedMakesOf sweeps one provider's record, and says whether it changed it.
+func sweepFailedMakesOf(ctx context.Context, s store.Store, key string, now time.Time) (bool, error) {
+	object, err := s.Get(ctx, key)
+	if err != nil || object == nil {
+		return false, err
+	}
+	var rows []keptFailedMake
+	_ = json.Unmarshal(object.Data, &rows)
+	kept, data, changed := boundFailed(rows, now)
+	if len(kept) > 0 {
+		id, _ := url.PathUnescape(strings.TrimSuffix(strings.TrimPrefix(key, FailedMakesPrefix), ".json"))
+		provider, err := s.Get(ctx, ProviderKey(id))
+		if err != nil {
+			return false, err
+		}
+		var record ProviderRecord
+		if provider != nil && (json.Unmarshal(provider.Data, &record) != nil || record.Forgotten == nil || !*record.Forgotten) {
+			if !changed {
+				return false, nil
+			}
+			_, err = s.Put(ctx, key, data, store.Matching(object.ETag))
+			var conflict *store.ConflictError
+			if errors.As(err, &conflict) {
+				// Another write came between: the next hour's sweep looks again.
+				return false, nil
+			}
+			return err == nil, err
+		}
+	}
+	return true, s.Delete(ctx, key)
 }
 
 // defaultProvider is the person's default provider: the one they made a machine on last or
@@ -422,12 +522,16 @@ func (p *Providers) loadFailed(provider string) {
 	if json.Unmarshal(object.Data, &kept) != nil {
 		return
 	}
-	if len(kept) > keptFailedMakes {
-		kept = kept[len(kept)-keptFailedMakes:]
-	}
+	p.showFailed(provider, kept)
+}
+
+// showFailed makes kept the provider's failed rows here.
+func (p *Providers) showFailed(provider string, kept []keptFailedMake) {
+	now := time.Now()
+	kept, _, _ = boundFailed(kept, now)
 	rows := make([]failedMake, 0, len(kept))
 	for _, k := range kept {
-		rows = append(rows, failedRow(k.Name, k.Person, k.Reason))
+		rows = append(rows, k.row(now))
 	}
 	p.mu.Lock()
 	p.failedMakes[provider] = rows
@@ -451,11 +555,7 @@ func (p *Providers) keepFailed(provider string, row keptFailedMake) ([]keptFaile
 			_ = json.Unmarshal(object.Data, &kept)
 			when = store.Matching(object.ETag)
 		}
-		kept = append(kept, row)
-		if len(kept) > keptFailedMakes {
-			kept = kept[len(kept)-keptFailedMakes:]
-		}
-		data, _ := json.Marshal(kept)
+		kept, data, _ := boundFailed(append(kept, row), time.Now())
 		if _, err := p.store.Put(ctx, key, data, when); err != nil {
 			var conflict *store.ConflictError
 			if errors.As(err, &conflict) {
@@ -472,27 +572,22 @@ func (p *Providers) keepFailed(provider string, row keptFailedMake) ([]keptFaile
 // keptFailedMakes: in the store, so a restart keeps it (#4747), and here. When the store
 // can't take it, the row is kept here only.
 func (p *Providers) failed(provider, name, person, reason string) {
-	row := keptFailedMake{Name: name, Reason: reason, Person: person}
+	if len(reason) > failedReasonMost {
+		reason = strings.ToValidUTF8(reason[:failedReasonMost-len("…")], "") + "…"
+	}
+	now := time.Now()
+	row := keptFailedMake{Name: name, Reason: reason, Person: person, At: &now}
 	kept, err := p.keepFailed(provider, row)
 	if err != nil {
 		p.log("workspace: could not keep the failed make " + name + " of " + provider + ": " + errorWords(err))
 		p.mu.Lock()
 		for _, f := range p.failedMakes[provider] {
-			kept = append(kept, keptFailedMake{Name: f.info.Name, Reason: deref(f.info.Reason), Person: f.person})
+			kept = append(kept, keptFailedMake{Name: f.info.Name, Reason: deref(f.info.Reason), Person: f.person, At: &f.at})
 		}
 		p.mu.Unlock()
 		kept = append(kept, row)
-		if len(kept) > keptFailedMakes {
-			kept = kept[len(kept)-keptFailedMakes:]
-		}
 	}
-	rows := make([]failedMake, 0, len(kept))
-	for _, k := range kept {
-		rows = append(rows, failedRow(k.Name, k.Person, k.Reason))
-	}
-	p.mu.Lock()
-	p.failedMakes[provider] = rows
-	p.mu.Unlock()
+	p.showFailed(provider, kept)
 	p.changed()
 }
 
