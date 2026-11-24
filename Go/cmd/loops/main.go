@@ -3,7 +3,7 @@
 // grows from agentsctl's pairing (controllink). It keeps one file, the pairing, in
 // ~/.config/loops/hosts.json (0600), and no cache: every command reads fresh.
 //
-//	loops                    continue this folder's newest session, or start one, in the terminal
+//	loops                    choose a recent session in this folder, or start one, in the terminal
 //	loops "…"                start a session here with this prompt, and follow it
 //	loops -c ["…"]           continue the newest session here (with a prompt)
 //	loops -r <id|title> ["…"]  continue one session
@@ -122,6 +122,7 @@ type options struct {
 	mode string
 	// Print mode (#6447).
 	print, detach, json bool
+	noInput             bool
 	onAsk               string
 	timeout             time.Duration
 	// controlName is the paired control plane's host name, for the words.

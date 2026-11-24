@@ -224,6 +224,56 @@ func TestListSessionsPagesOnlyWithAll(t *testing.T) {
 	}
 }
 
+func TestRecentSessionsReadsOneBoundedPage(t *testing.T) {
+	now := time.Now()
+	all := agents(recentLimit+3, now)
+	f := &fake{answer: map[string]func(string, any) (any, error){}}
+	var reqs []wire.ListRequest
+	f.answer["agents/list"] = func(_ string, params any) (any, error) {
+		reqs = append(reqs, params.(wire.ListRequest))
+		return all, nil
+	}
+	p := place{machine: wire.ControlMachine{ID: "h1"}, folder: "file:///src/agent-loops"}
+	list, err := recentSessions(context.Background(), f, p)
+	if err != nil || len(list) != recentLimit || len(reqs) != 1 || strings.Join(f.calls, ",") != "h1 agents/list" {
+		t.Fatalf("one bounded page: %d %v %v %v", len(list), len(reqs), err, f.calls)
+	}
+	r := reqs[0]
+	if r.Limit == nil || *r.Limit != recentLimit || r.Folder == nil || *r.Folder != p.folder || !r.Lean || r.IncludeArchived || r.After != nil || r.AgentID != nil {
+		t.Fatalf("the recent request: %+v", r)
+	}
+	for i := range list {
+		if list[i].ID != all[i].ID {
+			t.Fatalf("kept the newest %d, not %s", recentLimit, list[i].ID)
+		}
+	}
+}
+
+func TestPrintRecentIsANumberedTableWithoutAFolderColumn(t *testing.T) {
+	now := time.Date(2026, 11, 20, 12, 0, 0, 0, time.UTC)
+	at := func(d time.Duration) wire.Date { return wire.DateOf(now.Add(-d)) }
+	list := []wire.Agent{
+		{ID: "7F3A2C10-0000-0000-0000-000000000000", Title: ptr("Update the parity table"), State: wire.AgentStateWaitingOnUser, RuntimeID: "opencode", LastActivityAt: at(2 * time.Minute)},
+		{ID: "91BE0400-0000-0000-0000-000000000000", Title: ptr("Fix the flaky stop test"), State: wire.AgentStateRunning, RuntimeID: "claude", LastActivityAt: at(0)},
+	}
+	p := place{machine: wire.ControlMachine{ID: "h1"}, folder: "file:///src/agent-loops"}
+	var out bytes.Buffer
+	printRecent(&out, plain, p, list, now)
+	want := `Recent sessions in agent-loops
+  1  Update the parity table  waiting  opencode  2 min ago
+  2  Fix the flaky stop test  working  claude    now
+`
+	if out.String() != want {
+		t.Fatalf("recent:\n%s\nwant:\n%s", out.String(), want)
+	}
+	if strings.Contains(out.String(), "TITLE") || strings.Contains(out.String(), "FOLDER") {
+		t.Fatalf("the picker has no column headings: %s", out.String())
+	}
+	if stateRole(wire.AgentStateWaitingOnUser) != roleAttention {
+		t.Fatal("waiting uses the attention role")
+	}
+}
+
 func TestPrintList(t *testing.T) {
 	now := time.Date(2026, 11, 20, 12, 0, 0, 0, time.UTC)
 	at := func(d time.Duration) wire.Date { return wire.DateOf(now.Add(-d)) }
@@ -287,7 +337,7 @@ func TestShortIDsGrowUntilUnique(t *testing.T) {
 
 func TestNotPairedExitsFive(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	for _, args := range [][]string{{}, {"sessions", "list"}, {"sessions", "create"}, {"auth", "status"}, {"auth", "logout"}, {"folders", "add"}, {"fix the test"}, {"--all", "sessions", "list"}} {
+	for _, args := range [][]string{{"sessions", "list"}, {"sessions", "create"}, {"auth", "status"}, {"auth", "logout"}, {"folders", "add"}, {"fix the test"}, {"--all", "sessions", "list"}} {
 		err := run(context.Background(), args, &bytes.Buffer{})
 		if codeOf(err) != exitNotPair || !strings.Contains(err.Error(), "loops auth login '<code>'") {
 			t.Errorf("%v: %v", args, err)

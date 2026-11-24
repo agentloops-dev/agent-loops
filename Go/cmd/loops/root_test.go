@@ -39,10 +39,45 @@ func TestRootRegistersTodaysCommands(t *testing.T) {
 			t.Errorf("help has a noun or flag that does not exist yet: %s", future)
 		}
 	}
-	for _, flag := range []string{"--folder", "--machine", "--control", "--all", "--runtime", "--mode", "--debug", "-c, --continue", "-r, --resume", "-p, --print", "--detach", "--json", "--on-ask", "--timeout"} {
+	for _, flag := range []string{"--folder", "--machine", "--control", "--all", "--runtime", "--mode", "--debug", "-c, --continue", "-r, --resume", "-p, --print", "--no-input", "--detach", "--json", "--on-ask", "--timeout"} {
 		if !strings.Contains(help, flag) {
 			t.Errorf("help is missing today's flag %s", flag)
 		}
+	}
+}
+
+func TestBareLoopsNeedsATerminalToPickASession(t *testing.T) {
+	old := terminalAvailable
+	t.Cleanup(func() { terminalAvailable = old })
+	terminalAvailable = func() bool { return false }
+	err := run(context.Background(), []string{}, &bytes.Buffer{})
+	if err != errNoTerminal || codeOf(err) != exitError || err.Error() != `loops needs a terminal to choose a session. Use: loops -c, loops -r <id>, or loops "…"` {
+		t.Fatalf("no terminal: %v", err)
+	}
+}
+
+func TestNoInputStopsThePickerInATerminal(t *testing.T) {
+	old := terminalAvailable
+	t.Cleanup(func() { terminalAvailable = old })
+	terminalAvailable = func() bool { return true }
+	err := run(context.Background(), []string{"--no-input"}, &bytes.Buffer{})
+	if err != errNoTerminal || codeOf(err) != exitError {
+		t.Fatalf("--no-input: %v", err)
+	}
+	o, rest, err := parse([]string{"--no-input"})
+	if err != nil || !o.noInput || len(rest) != 0 {
+		t.Fatalf("the flag parses: %+v %v %v", o, rest, err)
+	}
+}
+
+func TestBareLoopsInATerminalStillConnects(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	old := terminalAvailable
+	t.Cleanup(func() { terminalAvailable = old })
+	terminalAvailable = func() bool { return true }
+	err := run(context.Background(), []string{}, &bytes.Buffer{})
+	if codeOf(err) != exitNotPair || !strings.Contains(err.Error(), "loops auth login '<code>'") {
+		t.Fatalf("a terminal reaches the pairing check: %v", err)
 	}
 }
 

@@ -432,6 +432,7 @@ type screen struct {
 	partial string
 	status  string
 	prompt  bool
+	prefix  string
 	input   lineEditor
 }
 
@@ -483,17 +484,26 @@ func (s *screen) live() []string {
 		out = append(out, s.status)
 	}
 	if s.prompt {
+		prefix := s.promptPrefix()
+		continuation := strings.Repeat(" ", visibleWidth(prefix))
 		lines := strings.Split(s.input.text, "\n")
-		out = append(out, "› "+lines[0])
+		out = append(out, prefix+lines[0])
 		for _, l := range lines[1:] {
-			out = append(out, "  "+l)
+			out = append(out, continuation+l)
 		}
 	}
 	return out
 }
 
+func (s *screen) promptPrefix() string {
+	if s.prefix != "" {
+		return s.prefix
+	}
+	return "› "
+}
+
 // cursorAt is the drawn line and cell column of the prompt's cursor. Every prompt line
-// has a two-cell prefix.
+// has the prompt's prefix.
 func (s *screen) cursorAt(lines []string) (int, int) {
 	base := 0
 	if s.partial != "" {
@@ -507,7 +517,7 @@ func (s *screen) cursorAt(lines []string) (int, int) {
 	if i := strings.LastIndexByte(before, '\n'); i >= 0 {
 		off = before[i+1:]
 	}
-	return base + strings.Count(before, "\n"), 2 + visibleWidth(off)
+	return base + strings.Count(before, "\n"), visibleWidth(s.promptPrefix()) + visibleWidth(off)
 }
 
 // draw puts the live part back, with the cursor at the prompt's editing point.

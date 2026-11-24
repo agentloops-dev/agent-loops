@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 	"time"
 
@@ -13,6 +14,8 @@ import (
 
 // pageSize is the rows loops sessions list shows, and each page --all reads (bounds, Stage 3).
 const pageSize = 20
+
+const recentLimit = 9
 
 // listSessions is the folder's sessions, newest activity first, as agents/list answers
 // them: one page of pageSize, or with all every page, archived ones too. more says a
@@ -83,6 +86,48 @@ func printList(out, errOut io.Writer, st style, p place, list []wire.Agent, more
 		count = fmt.Sprintf("%d of many", len(list))
 	}
 	fmt.Fprintf(errOut, "%s · loops sessions list --all\n", count)
+}
+
+func recentSessions(ctx context.Context, c caller, p place) ([]wire.Agent, error) {
+	limit := int64(recentLimit)
+	req := wire.ListRequest{Folder: &p.folder, Limit: &limit, Lean: true}
+	r, err := c.Call(ctx, string(p.machine.ID), "agents/list", req)
+	if err != nil {
+		return nil, unreachable(p.machineName(), err)
+	}
+	var list []wire.Agent
+	if err := json.Unmarshal(r, &list); err != nil {
+		return nil, err
+	}
+	if len(list) > recentLimit {
+		list = list[:recentLimit]
+	}
+	return list, nil
+}
+
+func printRecent(out io.Writer, st style, p place, list []wire.Agent, now time.Time) {
+	if len(list) == 0 {
+		fmt.Fprintf(out, "No sessions in %s yet.\n", p.folderName())
+		return
+	}
+	fmt.Fprintln(out, st.bold(fmt.Sprintf("Recent sessions in %s", p.folderName())))
+	widths := []int{1, len("Untitled"), len("working"), len("opencode"), len("now")}
+	plain := make([][]string, len(list))
+	rows := make([][]string, len(list))
+	for i, a := range list {
+		number := strconv.Itoa(i + 1)
+		updated := ago(now, a.LastActivityAt.Time())
+		plain[i] = []string{number, titleOf(a), listStateWord(a.State), runtimeOf(a), updated}
+		rows[i] = []string{st.paint(roleBrand, number), titleOf(a), st.paint(stateRole(a.State), listStateWord(a.State)), runtimeOf(a), st.paint(roleQuiet, updated)}
+		for j, cell := range plain[i] {
+			if visibleWidth(cell) > widths[j] {
+				widths[j] = visibleWidth(cell)
+			}
+		}
+	}
+	for i := range rows {
+		fmt.Fprintln(out, "  "+tableLine(rows[i], plain[i], widths))
+	}
 }
 
 func tableLine(cells, plain []string, widths []int) string {

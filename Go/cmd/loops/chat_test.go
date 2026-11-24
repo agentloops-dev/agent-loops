@@ -541,3 +541,144 @@ func TestResumingByAWholeIDIsOneRead(t *testing.T) {
 		t.Fatalf("by the id, in this folder: %+v", r)
 	}
 }
+
+func recentPickerAgents() []wire.Agent {
+	now := time.Now()
+	return []wire.Agent{
+		{ID: wire.UUID("A1B2C3D4-0000-0000-0000-000000000001"), Title: ptr("First session"), State: wire.AgentStateFinished,
+			RuntimeID: "opencode", LastActivityAt: wire.DateOf(now)},
+		{ID: wire.UUID("A1B2C3D4-0000-0000-0000-000000000002"), Title: ptr("Second session"), State: wire.AgentStateWaitingOnUser,
+			RuntimeID: "claude", LastActivityAt: wire.DateOf(now.Add(-time.Minute))},
+	}
+}
+
+func pickerTerminal(keys <-chan key, out *syncBuffer) terminal {
+	return terminal{out: out, keys: keys, raw: true, width: func() int { return 80 }, st: plain}
+}
+
+func TestPickerNumberResumesThatSession(t *testing.T) {
+	f := newChatFake()
+	list := recentPickerAgents()
+	f.answer["agents/list"] = func(any) any { return list }
+	keys := make(chan key, 4)
+	keys <- key{kind: keyText, text: "2"}
+	keys <- key{kind: keyEnter}
+	keys <- key{kind: keyEOF}
+	out := &syncBuffer{}
+	if err := runChat(context.Background(), f, chatHere, options{}, chatArgs{pick: true}, pickerTerminal(keys, out)); err != nil {
+		t.Fatal(err)
+	}
+	got := out.String()
+	for _, want := range []string{"Recent sessions in agent-loops", "1  First session", "2  Second session", pickerPrompt, `Continuing "Second session"`} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("no %q in\n%s", want, got)
+		}
+	}
+	if len(f.called("agents/list")) != 1 {
+		t.Fatalf("one read of the recent list: %v", f.called("agents/list"))
+	}
+	transcripts := f.called("agents/transcript")
+	if len(transcripts) != 1 || transcripts[0].(wire.TranscriptRequest).AgentID != list[1].ID {
+		t.Fatalf("the chosen session: %v", transcripts)
+	}
+}
+
+func TestPickerEnterStartsANewSessionWhenTextIsTyped(t *testing.T) {
+	f := newChatFake()
+	f.answer["agents/list"] = func(any) any { return recentPickerAgents() }
+	f.answer["agents/start"] = func(any) any { return "B21E9000-0000-0000-0000-000000000000" }
+	keys := make(chan key, 8)
+	keys <- key{kind: keyEnter}
+	keys <- key{kind: keyText, text: "go"}
+	keys <- key{kind: keyEnter}
+	keys <- key{kind: keyEOF}
+	out := &syncBuffer{}
+	if err := runChat(context.Background(), f, chatHere, options{}, chatArgs{pick: true}, pickerTerminal(keys, out)); err != nil {
+		t.Fatal(err)
+	}
+	got := out.String()
+	if !strings.Contains(got, pickerPrompt) || !strings.Contains(got, `Started "go"`) {
+		t.Fatalf("the new-session prompt and start:\n%s", got)
+	}
+	starts := f.called("agents/start")
+	if len(starts) != 1 || starts[0].(wire.StartRequest).Prompt != "go" {
+		t.Fatalf("start with the typed prompt: %v", starts)
+	}
+	if len(f.called("agents/transcript")) != 0 {
+		t.Fatal("Enter alone resumes nothing")
+	}
+}
+
+func TestPickerWithNoSessionsGoesStraightToTheNewSessionPrompt(t *testing.T) {
+	f := newChatFake()
+	f.answer["agents/list"] = func(any) any { return []wire.Agent{} }
+	f.answer["agents/start"] = func(any) any { return "B21E9000-0000-0000-0000-000000000000" }
+	keys := make(chan key, 4)
+	keys <- key{kind: keyText, text: "go"}
+	keys <- key{kind: keyEnter}
+	keys <- key{kind: keyEOF}
+	out := &syncBuffer{}
+	if err := runChat(context.Background(), f, chatHere, options{}, chatArgs{pick: true}, pickerTerminal(keys, out)); err != nil {
+		t.Fatal(err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "No sessions in agent-loops yet.") || strings.Contains(got, pickerPrompt) {
+		t.Fatalf("no picker when there is nothing to pick:\n%s", got)
+	}
+	starts := f.called("agents/start")
+	if len(starts) != 1 || starts[0].(wire.StartRequest).Prompt != "go" {
+		t.Fatalf("the prompt starts the session: %v", starts)
+	}
+}
+
+func TestPickerRejectsANumberOutsideTheList(t *testing.T) {
+	f := newChatFake()
+	list := recentPickerAgents()
+	f.answer["agents/list"] = func(any) any { return list }
+	keys := make(chan key, 8)
+	keys <- key{kind: keyText, text: "9"}
+	keys <- key{kind: keyEnter}
+	keys <- key{kind: keyText, text: "1"}
+	keys <- key{kind: keyEnter}
+	keys <- key{kind: keyEOF}
+	out := &syncBuffer{}
+	if err := runChat(context.Background(), f, chatHere, options{}, chatArgs{pick: true}, pickerTerminal(keys, out)); err != nil {
+		t.Fatal(err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "Enter 1 to 2, or press Enter for a new one.") || !strings.Contains(got, `Continuing "First session"`) {
+		t.Fatalf("the bad number asks again, then the good one resumes:\n%s", got)
+	}
+	transcripts := f.called("agents/transcript")
+	if len(transcripts) != 1 || transcripts[0].(wire.TranscriptRequest).AgentID != list[0].ID {
+		t.Fatalf("the good number chooses the first: %v", transcripts)
+	}
+}
+
+func TestPickerInterruptAndEOFLeaveWithTextTyped(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		key  key
+	}{
+		{"^C", key{kind: keyInterrupt}},
+		{"^D", key{kind: keyEOF}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newChatFake()
+			f.answer["agents/list"] = func(any) any { return recentPickerAgents() }
+			keys := make(chan key, 4)
+			keys <- key{kind: keyText, text: "2"}
+			keys <- tc.key
+			out := &syncBuffer{}
+			if err := runChat(context.Background(), f, chatHere, options{}, chatArgs{pick: true}, pickerTerminal(keys, out)); err != nil {
+				t.Fatal(err)
+			}
+			if len(f.called("agents/transcript")) != 0 || len(f.called("agents/start")) != 0 {
+				t.Fatalf("leaving neither resumes nor starts: %v %v", f.called("agents/transcript"), f.called("agents/start"))
+			}
+			if !strings.Contains(out.String(), pickerPrompt) {
+				t.Fatalf("the picker was shown:\n%s", out.String())
+			}
+		})
+	}
+}
