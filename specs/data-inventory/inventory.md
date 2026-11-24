@@ -96,7 +96,7 @@ from the root (`agentsd/backups.go:69,72`). It holds nothing else.
 | `mcp-approvals.json`, `plugin-approvals.json` | Approval digests | **none.** Grows with folders × servers. | MCP: only on explicit remove; plugins: never | no |
 | `devices.json` | Paired devices | **none** | only Forget (`devices.go:257`) | no |
 | `review-dismissals.json`, `review-opened.json` | PR URLs per folder | 200 per folder (`reviews.go:28,30`). **Folder keys are never pruned.** | on write | no |
-| `lock-seen.json` | Signed request IDs | 4,096 (`lockcheck.go:42`) | on write | no |
+| `lock-seen.json` | Signed request IDs | 4,096, 2 days (`lockcheck.go`) | hourly and on write | no |
 | `attention.json` | Needs, deliveries | live needs only | on write | no |
 | `leases.json`, `resources.json` | Resource leases | 240-minute lease cap; dropped on agent stop (`leases.go:28,383`) | on write | no |
 | `guarded-files.json` | Guarded file states | folders that exist | on save | no |
@@ -397,7 +397,7 @@ newer than a row above for the same store.
 | `<root>/account-ops.json` | key-value | Last operation of each account and secret | 1,000 entries of 1 KiB each, 90 days, the oldest first | `Go/internal/agentsd/accountops.go` (`openAccountOps`) | #6720 |
 | `<root>/elsewhere.json` | key-value | Sessions on other machines | 800 entries of 64 KiB each, 90 days from when the machines last spoke of the session, the oldest first | `Go/internal/agentsd/elsewhere.go` (`openElsewhere`) | #6722 |
 | `<root>/secret-ops-pending.json` | log | Secret audit entries not yet sent | 1,000 operations of 16 KiB each, 90 days, the oldest first | `Go/internal/agentsd/secretops.go` (`openSecretOpsPending`) | #6721 |
-| `<root>/lock-seen.json` | key-value | Replay IDs of signed requests | 4,096, no age | `Go/internal/agentsd/lockcheck.go:43` | #6723 |
+| `<root>/lock-seen.json` | key-value | Replay IDs of signed requests | 4,096 of 128 bytes each, 2 days, the one signed first goes first; a cutoff refuses what went | `Go/internal/agentsd/lockcheck.go` (`openLockSeen`) | #6723 |
 | `<root>/assessments/` | document | Runtime assessments | The newest 50, applied only when one starts | `Go/internal/agentsd/assess.go:251` | #6724 |
 | `<folder>/.agents/pins.json` | key-value | Pinned sessions and hidden views | 10 and 50, no age | `Go/internal/agentsd/pins.go:27,32` | #6725 |
 | `~/.agents/checks/suggestions.json` | document | Daily-check findings and dismissals | 50 findings, 200 dismissals, no age | `Go/internal/agentsd/dailychecks.go:39,49` | #6726 |
