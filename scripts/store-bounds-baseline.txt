@@ -1,5 +1,4 @@
 # Stores with no declared kind and bounds yet (#6669). It may only shrink: scripts/check-store-bounds.py.
-2 App/Sources/Control/ControlConfig.swift write(to:)
 1 App/Sources/Control/ControlSettingsModel.swift write(to:)
 1 App/Sources/MCPServers/ConnectLinearSheet.swift write(to:)
 1 App/Sources/Sidebar/BackgroundPane.swift write(to:)
