@@ -47,7 +47,8 @@ that runtime.
 
 Your display choices are the same on the Mac, iPhone, iPad and the web page: whether the
 chat shows thoughts, which smart groups are on, whether Archived folders, Status and Usage are open,
-the runtime and choices the new-session form starts with, and the marketplace last chosen.
+the runtime and choices the new-session form starts with, how a diff is drawn (**Unified** or
+**Side by Side**), and the marketplaces last chosen.
 Change one on any of them and the others follow. They are kept on your Mac, in
 `~/.agents/settings/display.json`.
 

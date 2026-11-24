@@ -48,8 +48,8 @@ func closeJoins(ctx context.Context, s store.Store, signIns []records.SignIn, at
 }
 
 // canJoinByItself says a provider can add people without an invite, now or when an admin
-// changes its settings: Google, and an org provider that is not removed (its id is never
-// given to another, so a removed one never signs in again).
+// changes its settings: Google, and an org provider that is not removed (its id is not
+// given to another while anything names it, so a removed one never signs in again).
 func canJoinByItself(ctx context.Context, s store.Store, provider string) (bool, error) {
 	if provider == signin.Google {
 		return true, nil

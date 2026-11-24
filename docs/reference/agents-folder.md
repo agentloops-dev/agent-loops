@@ -88,7 +88,7 @@ which the audit keeps by name too.
 | `client-permissions.json` | The permission mode of each runtime | Under a supported runtime's prompt |
 | `sandbox.json` | The command sandbox of each runtime | **Settings ▸ Agent Runtimes** |
 | `modes.json` | The mode last chosen for each runtime | The start form |
-| `display.json` | Your display choices, the same on every client: how much of a turn shows, the smart groups that are off, whether Archived folders, Status and Usage are open, the new-session form's runtime and choices, and the marketplace last chosen | Any client |
+| `display.json` | Your display choices, the same on every client: how much of a turn shows, the smart groups that are off, whether Archived folders, Status and Usage are open, the new-session form's runtime and choices, how a diff is drawn, and the marketplaces last chosen | Any client |
 | `host.json` | The role of each of your Macs (its control plane here or elsewhere, and its web remote), one entry per Mac, by its local host name. | Agent Loops |
 
 A file you change by hand counts at once, without a restart. A file that cannot be read is

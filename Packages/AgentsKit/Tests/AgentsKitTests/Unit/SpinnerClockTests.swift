@@ -87,17 +87,6 @@ struct SpinnerClockTests {
         #expect(dim == SpinnerClock.ringRestingOpacity)
     }
 
-    @Test("The breath's period comes from the defaults key, between 1 and 30 s, else 4 (#2456)")
-    func breathPeriodKey() {
-        #expect(SpinnerClock.breathPeriod(from: nil) == 4)
-        #expect(SpinnerClock.breathPeriod(from: .nan) == 4)
-        #expect(SpinnerClock.breathPeriod(from: .infinity) == 4)
-        #expect(SpinnerClock.breathPeriod(from: 6) == 6)
-        #expect(SpinnerClock.breathPeriod(from: 0.2) == 1)
-        #expect(SpinnerClock.breathPeriod(from: 90) == 30)
-        #expect(SpinnerClock.breathPeriodKey == "waitingMarkPeriod")
-    }
-
     @Test("At rest the ring is today's three dots: a line, 0.34 apart, the middle one bright")
     func ringAtRest() throws {
         for tilt in [0.0, SpinnerClock.ringTilt] {

@@ -35,8 +35,7 @@
   stroke-linejoin: round; }
 /* A waiting session's mark on all three clients (#2456, #2657), as WaitingBeacon: the waiting card's beacon,
    breathing between 0.3 and full once in 4 s. The keyframes (breathe) and --breath-period come from
-   spinnerClock.ts, which keeps every beacon on the page in step and reads `waitingMarkPeriod` from
-   localStorage; Reduce Motion doubles the period there. In the colour around it. */
+   spinnerClock.ts, which keeps every beacon on the page in step; Reduce Motion doubles the period there. In the colour around it. */
 .waiting-beacon { --well: 12px; --breath-period: 4s; display: inline-block; width: var(--well);
   height: var(--well); vertical-align: middle; opacity: 0.3; animation: breathe var(--breath-period) linear infinite; }
 /* At the chat's foot only: .working is also the sidebar mark's and the status mark's class. */

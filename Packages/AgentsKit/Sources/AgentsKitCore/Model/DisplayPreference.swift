@@ -20,9 +20,12 @@ public enum DisplayPreference {
     /// The model and permission levels last chosen on a start form (#3798):
     /// `{"model": …, "permission": …}`, so a new session does not fall back to Ask.
     public static let startLevels = "startLevels"
-    /// The marketplace last chosen in Add Skill and Add MCP Server.
+    /// The marketplace last chosen in Add Skill, Add MCP Server and Add Persona.
     public static let skillsMarketplace = "catalog.skills.marketplace"
     public static let mcpMarketplace = "catalog.mcp.marketplace"
+    public static let personasMarketplace = "catalog.personas.marketplace"
+    /// How a diff is drawn, `unified` or `sideBySide`.
+    public static let reviewDiffLayout = "reviewDiffLayout"
     /// Whether a chat the person started may archive itself when it ends done (#1802). On
     /// unless they turn it off; the host reads it when such a turn ends.
     public static let agentsMayArchiveMyChats = "agentsMayArchiveMyChats"
@@ -43,6 +46,10 @@ public enum DisplayPreference {
     public static let multiplierPRsPerWeekRange = 0.1...100.0
     public static let multiplierLine = "multiplierLine"
 
+    /// Those that were each device's own until #6803 and #6806: what a client holds is sent to
+    /// the host once, so the move loses nothing.
+    public static let moved = [personasMarketplace, reviewDiffLayout]
+
     /// The ones kept as a plain value in a client's defaults, and the kind of each: each
     /// feature flag in work too (`FeatureFlag.key`, #6254), and each Early Features toggle
     /// (`EarlyFeature.key`, #6052).
@@ -54,6 +61,7 @@ public enum DisplayPreference {
         smartGroupsOff: .string,
         showsArchivedFolders: .bool, showsActivity: .bool, showsUsage: .bool,
         startRuntimeID: .string, skillsMarketplace: .string, mcpMarketplace: .string,
+        personasMarketplace: .string, reviewDiffLayout: .string,
         agentsMayArchiveMyChats: .bool,
         noticeBurst: .int, noticeCooldownMinutes: .int,
     ]

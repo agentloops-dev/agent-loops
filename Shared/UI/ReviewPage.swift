@@ -26,7 +26,7 @@ struct ReviewPage: View {
     /// The answer went: the client leaves the page.
     let done: () -> Void
 
-    @AppStorage("reviewDiffLayout", store: WindowDefaults.store) private var layout = FileDiffView.Layout.unified
+    @AppStorage(DisplayPreference.reviewDiffLayout, store: WindowDefaults.store) private var layout = FileDiffView.Layout.unified
     @State private var reading: GuardedChangeReading?
     @State private var rows: [DiffRow] = []
     @State private var loaded = false
