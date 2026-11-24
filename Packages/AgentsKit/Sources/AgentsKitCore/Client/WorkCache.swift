@@ -283,6 +283,8 @@ public actor WorkCache: WorkCaching {
             throw CacheError(message: "could not open \(file?.path ?? "memory"): \(message)")
         }
         handle = Handle(opened)
+        // A cache that just closed can still be in its sweep (#6788): wait for its lock, do not fail to open.
+        sqlite3_busy_timeout(opened, 5000)
         let tables = ["item", "answer", "detail", "page"]
         // The kept rows' bytes are a running count in `size`, kept by triggers (#6643), so `bytes()` reads one row.
         // An older file counts its rows once. `recursive_triggers` makes a REPLACE fire the delete trigger.

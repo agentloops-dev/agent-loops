@@ -510,6 +510,7 @@ struct WorkCacheTests {
         }
         var db: OpaquePointer?
         #expect(sqlite3_open(file.path, &db) == SQLITE_OK)
+        sqlite3_busy_timeout(db, 5000)
         #expect(sqlite3_exec(db, "DROP INDEX answer_read; ALTER TABLE answer DROP COLUMN read", nil, nil, nil) == SQLITE_OK)
         sqlite3_close(db)
         let again = try makeCache(clock, file: file)
