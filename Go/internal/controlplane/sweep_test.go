@@ -172,7 +172,7 @@ func TestTheSweepRemovesRemovedProjects(t *testing.T) {
 }
 
 // #3126: a removed group goes a week on, as a project does; a removed person goes once
-// every code they made has run out, unless a sign-in of theirs is still to be refused.
+// every code they made has run out, or 90 days on when a sign-in of theirs is refused (#6756).
 func TestTheSweepRemovesRemovedGroupsAndPeople(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -223,6 +223,19 @@ func TestTheSweepRemovesRemovedGroupsAndPeople(t *testing.T) {
 	}
 	if o, _ := s.Get(ctx, records.PersonKey("u-refused")); o == nil {
 		t.Fatal("the removed person with a sign-in went, so the sign-in is no longer refused")
+	}
+	// At 90 days it goes too, and the provider's cutoff is there.
+	if report, err := sweep(ctx, rs, now.Add(removedSignInsKept), mostPerSweep, nil); err != nil || report.tombstones != 0 {
+		t.Fatalf("%+v %v", report, err)
+	}
+	if report, err := sweep(ctx, rs, now.Add(removedSignInsKept+time.Second), mostPerSweep, nil); err != nil || report.tombstones != 1 {
+		t.Fatalf("%+v %v", report, err)
+	}
+	if rs.Person("u-refused") != nil {
+		t.Fatal("the tombstone is still held")
+	}
+	if o, _ := s.Get(ctx, joinCutoffKey("google")); o == nil {
+		t.Fatal("no cutoff was kept")
 	}
 	if rs.Group("g-live") == nil || rs.Person("u-live") == nil {
 		t.Fatal("the live ones went")
