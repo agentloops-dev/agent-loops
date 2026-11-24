@@ -23,7 +23,7 @@ today, see [Data and retention](compliance/data-and-retention.md).
 | --- | --- |
 | **Size** | Every record has a largest size, and every store has a limit on its count of records or on its total size. A count is a size limit only when each record has a largest size too. |
 | **Time** | A record ages out at 90 days at most. A shorter time is fine. |
-| **Config** | Configuration is in a `.agents` folder: `<repo>/.agents/` for a folder, or `~/.agents/` for a person. A control plane keeps its configuration in its own store, which is the system of record for it (Alex, 2026-11-24). |
+| **Config** | Configuration is in a `.agents` folder: `<repo>/.agents/` for a folder, or `~/.agents/` for a person. A control plane keeps its configuration in its own store, which is the system of record for it (Alex, 2026-11-24). A device's own pairing is not configuration: it is the identity of one device, so it stays in the app's own folder, out of backups and dotfile syncs (#6800). |
 | **Roll-up** | Only time series roll up: old detail becomes a summary (usage keeps hours for 7 days, then days for 90 days). The summary is a store too, so the size and time rules apply to it. Nothing else keeps a summary of data that has aged out. |
 | **Kind** | Each store has a declared kind, and the code reaches it through an interface of that kind. A database of that kind can then replace the file. |
 

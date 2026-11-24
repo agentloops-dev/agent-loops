@@ -36,7 +36,8 @@ enum ControlConfig {
     static var walkOpenedURL: URL? { walk == nil ? nil : folder.appendingPathComponent("opened-url") }
     /// A walk's own folder, where its walk socket is (#1172); nil for the person's window.
     static var walkFolder: URL? { walk == nil ? nil : folder }
-    /// Not backed up (#1031): a restored Mac pairs again.
+    /// Not backed up (#1031): a restored Mac pairs again. Not in `~/.agents` (#6800, Alex
+    /// 2026-11-24): it is this device's identity, and a dotfile sync would copy it.
     private static var membershipFile: URL { folder.appendingPathComponent("control-client.json") }
     /// The window's key in the keychain; a walk's window has its own, as it has its own pairing.
     private static var keyAccount: String { walk.map { "control-client-key.walk.\($0)" } ?? "control-client-key" }
@@ -147,24 +148,24 @@ enum ControlConfig {
 
     static func keepHerePairing(_ pairing: Data?) {
         guard let pairing else { return }
-        try? pairing.write(to: herePairingFile, options: .atomic)
+        try? ControlMembership.write(pairing, to: herePairingFile, backedUp: false)
     }
 
     /// The kept pairing with this Mac's own control plane, made the window's again; nil with none.
     static func takeHerePairing() -> ControlMembership? {
         guard let membership = ControlMembership.load(herePairingFile), membership.client != nil, membership.url != nil else { return nil }
-        try? FileManager.default.removeItem(at: membershipFile)
         do {
-            try FileManager.default.moveItem(at: herePairingFile, to: membershipFile)
+            try membership.save(membershipFile, backedUp: false)
         } catch {
             return nil
         }
+        try? FileManager.default.removeItem(at: herePairingFile)
         return membership
     }
 
     static func putBack(_ pairing: Data?) {
         if let pairing {
-            try? pairing.write(to: membershipFile, options: .atomic)
+            try? ControlMembership.write(pairing, to: membershipFile, backedUp: false)
         } else {
             try? FileManager.default.removeItem(at: membershipFile)
         }

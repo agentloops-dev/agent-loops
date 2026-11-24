@@ -24,6 +24,12 @@ struct ControlEndpointTests {
             #expect(try file.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup == true)
             #expect(ControlMembership.load(file) == membership())
         }
+        // Its bytes put back over it (Connect to Another…) lose neither the mark nor the mode (#6800).
+        let kept = try Data(contentsOf: file)
+        try ControlMembership.write(kept, to: file, backedUp: false)
+        #expect(try URL(fileURLWithPath: file.path).resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup == true)
+        #expect(try FileManager.default.attributesOfItem(atPath: file.path)[.posixPermissions] as? Int == 0o600)
+        #expect(ControlMembership.load(file) == membership())
         let host = folder.appendingPathComponent("control-host.json")
         try membership().save(host)
         #expect(try host.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup == false)

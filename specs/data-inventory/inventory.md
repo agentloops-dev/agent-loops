@@ -292,7 +292,7 @@ Sessions are signed cookies (30 days); the server keeps nothing for them.
 | Defaults `machineLockPin.<ctrlkey>` (+ `.lock`, `:<person>`) | Machine-lock pins and the stored lock | **none**; one set per control plane and person | only on a lock reset. **Not on Forget.** |
 | Defaults display and UI choices | Fixed key set | fixed | — |
 | Defaults domains `<bundle>.walk.*`, `.root.*` | A scratch copy's preferences | walk: when its folder is gone; root: 7 days (`WindowDefaults.swift:38`) | at launch |
-| `…/Application Support/Agents/control-client.json` | Pairing (0600, not backed up) | 1 | Forget This Mac |
+| `…/Application Support/Agents/control-client.json`, `control-client.here.json` | Pairing (0600, not backed up) | 1 | Forget This Mac |
 | Keychain `control-client-key`, `lock-signing-key` (+ `.walk.<name>`) | Client key, lock signing key | **one more per walk name, never removed** | never (Forget keeps the client key by design) |
 | `WKWebsiteDataStore.default()` (browser pane) | Cookies, logins, localStorage, caches of every site any agent opened (`App/Sources/Sidebar/BrowserPane.swift:172`) | **none from the app** | never |
 | Kokoro voice models (FluidAudio cache) | TTS models, copied or downloaded | **none**; can be hundreds of MB (`Shared/UI/Voice/KokoroVoice.swift:89-107`) | never |
@@ -475,7 +475,7 @@ newer than a row above for the same store.
 | Mac browser pane `WKWebsiteDataStore.default()` | blob | Cookies and site storage of every site the pane opened | None: only the caches are emptied, at launch; not on Forget | `App/Sources/Sidebar/BrowserPane.swift:171-195` | #6796 |
 | `machinePicker.pinned` (Mac, Remote, web) | key-value | Pinned machines | 100 of 64 bytes each, one over that refused; until removed, or its machine is no longer listed (no age, on purpose: a person's choice) | `Packages/AgentsKit/Sources/AgentsKitCore/Sidebar/MachinesGroup.swift` (`MachinePins`); `Web/src/model/machinePicker.ts` | #6797 |
 | Remote defaults `remote.startFolders` | key-value | Start folders, each with its machine | 100 of 1,024 + 64 bytes each, one over that refused; until removed, its machine is no longer listed, or Forget (no age, on purpose: a person's choice) | `Packages/AgentsKit/Sources/AgentsKitCore/Sidebar/StartFolders.swift` | #6798 |
-| Mac and Remote `App Support/Agents/control-client.json` | key-value | The pairing with a control plane | Config outside .agents | `App/Sources/Control/ControlConfig.swift:40; Remote/Sources/Link/ControlPlaneLink.swift:20` | #6800 |
+| Mac and Remote `App Support/Agents/control-client.json` | key-value | The pairing with a control plane | One, until Forget; stays outside `.agents` on purpose: one device's identity, not backed up (Alex, 2026-11-24) | `App/Sources/Control/ControlConfig.swift:40; Remote/Sources/Link/ControlPlaneLink.swift:20` | #6800 |
 | Mac MDM profile `ControlPlaneAddress`, `ControlPlaneKey`, `MustJoin` | key-value | An org's pin to its control plane | Read only, set by the org | `Packages/AgentsKit/Sources/AgentsKitCore/Control/MachinePin.swift:15-17` | #6801 |
 | Mac and Remote defaults `voiceMode.*` | key-value | Voice mode settings | Only in the device's defaults | `Shared/UI/Voice (voiceMode keys)` | #6802 |
 | `catalog.personas.marketplace` (Mac, Remote, web) | key-value | The personas marketplace | Only in the device's defaults; the skills and MCP marketplaces are mirrored | `DisplayPreference.swift:50-59` | #6803 |
