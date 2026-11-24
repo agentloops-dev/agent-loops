@@ -220,9 +220,10 @@ struct MachinePickerList: View {
             }
             .buttonStyle(.plain)
             .accessibilityAddTraits(machine.id == value ? .isSelected : [])
-            Button { pinned = MachinePickerChoice.togglePin(WindowDefaults.store, machine.id.rawValue) } label: {
-                Image(icon: isPinned ? "pin.fill" : "pin")
-                    .foregroundStyle(isPinned ? StateTint.attention.style(or: .secondary) : AnyShapeStyle(.tertiary))
+            Button {
+                MachinePickerChoice.togglePin(WindowDefaults.store, machine.id, pinned: &pinned, problem: &problem)
+            } label: {
+                MachinePickerPin(isPinned: isPinned)
             }
             .buttonStyle(.plain)
             .help(isPinned ? MachinePickerChoice.unpinWords(name) : MachinePickerChoice.pinWords(name))

@@ -93,7 +93,11 @@ struct RemoteMachineRow: View {
             if host != .mac {
                 let pinned = MachinePins.pinned(machinePins).contains(host)
                 Button(MachinePins.menuTitle(pinned: pinned), icon: pinned ? "pin.slash" : "pin") {
-                    machinePins = MachinePins.toggled(host, in: machinePins)
+                    if let next = MachinePins.toggled(host, in: machinePins) {
+                        machinePins = next
+                    } else {
+                        model.report(MachinePins.fullWords)
+                    }
                 }
             }
             if actions.start {

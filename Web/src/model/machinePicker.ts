@@ -7,6 +7,10 @@ export const pickerLimit = 30;
 export const pinnedKey = "agents.machinePicker.pinned";
 export const recentKey = "agents.machinePicker.recent";
 const recentCap = 5;
+/** The most pins, and the longest id of one, as `MachinePins` (#6797): one past that is refused. A pin has no age, on purpose:
+ * it stays until it is let go, or until the control plane no longer lists its machine. */
+export const pinnedMost = 100;
+const idMost = 64;
 
 export type PickerDot = "online" | "stopped" | "offline" | "attention";
 
@@ -74,11 +78,22 @@ function read(storage: Storage | undefined, key: string): string[] {
 export const pinnedMachines = (s: Storage | undefined): string[] => read(s, pinnedKey);
 export const recentMachines = (s: Storage | undefined): string[] => read(s, recentKey);
 
-/** A machine pinned, or let go when it is. Returns the new list. */
-export function togglePin(s: Storage | undefined, id: string): string[] {
+/** A machine pinned, or let go when it is. Returns the new list; null when the pin is refused. */
+export function togglePin(s: Storage | undefined, id: string): string[] | null {
   const now = pinnedMachines(s);
+  if (!now.includes(id) && (now.length >= pinnedMost || id.length > idMost)) return null;
   const next = now.includes(id) ? now.filter((x) => x !== id) : [...now, id];
   try { s?.setItem(pinnedKey, JSON.stringify(next)); } catch { /* storage full or off: the pin lasts this page only */ }
+  return next;
+}
+
+/** Keeps only the pins that `there` says still have a machine. Returns the new list. */
+export function keepPins(s: Storage | undefined, there: (id: string) => boolean): string[] {
+  const now = pinnedMachines(s);
+  const next = now.filter(there);
+  if (next.length < now.length) {
+    try { s?.setItem(pinnedKey, JSON.stringify(next)); } catch { /* as above */ }
+  }
   return next;
 }
 
@@ -91,6 +106,7 @@ export function rememberMachine(s: Storage | undefined, id: string): string[] {
 
 export const pickerWords = {
   search: "Search machines by name or label",
+  full: `At most ${pinnedMost} machines can be pinned. Unpin one first.`,
   none: "No machine matches. Clear the search.",
   pin: (name: string) => `Pin ${name}`,
   unpin: (name: string) => `Unpin ${name}`,

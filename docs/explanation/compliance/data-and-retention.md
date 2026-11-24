@@ -325,7 +325,7 @@ What the Mac window and the Remote keep in their defaults, and the web page in
 | `shared-inbox.json` (Remote) | blob | What was shared to Agent Loops | Each attachment is capped. No count, total or age (#6795). | On use |
 | `attention-snapshot.json` (Remote) | cache | The widget's rows | 12 rows; stale after 15 minutes | On write, and on **Forget** |
 | `remote.startFolders` (Remote) | key-value | Start folders | **None** (#6798) | Never |
-| `machinePicker.pinned` | key-value | Pinned machines | **None** (#6797) | Never |
+| `machinePicker.pinned` (`agents.machinePicker.pinned` on the web page) | key-value | Pinned machines | 100 machine ids of 64 bytes each: one past that is refused, with a message. No age, on purpose: a pin is your choice. It stays until you remove it, or until the control plane no longer lists its machine. An offline machine's stays (#6797). | On write, and when the machines are listed |
 | `voiceMode.*`, marketplaces, working marks, `reviewDiffLayout`, `agents.startForm` and other choices | key-value | Choices on this client | A fixed set (#6802 to #6806) | — |
 | MDM profile (Mac) | key-value | The control plane an org pins a Mac to | Read only; set by the org (#6801) | — |
 | `crashes/`, `hangs/`, in the log folder (Mac); `remote.log` (Remote) | log | Crash and hang notes; the device log | 20 of each; 256 KiB and one older file | At start; on write |
