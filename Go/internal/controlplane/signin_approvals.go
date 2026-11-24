@@ -290,6 +290,9 @@ func (a *signInApprovals) decide(ctx context.Context, id, user string, approve b
 		a.s.log(r.Name + " was not let sign in")
 		return nil
 	}
+	if err := a.s.records.ClientRoom(ctx, r.Client); err != nil {
+		return err
+	}
 	r.Result = "approved"
 	// The request first: a second approval at another copy loses here, and pairs nothing.
 	if err := a.write(ctx, *r, store.Matching(etag)); err != nil {

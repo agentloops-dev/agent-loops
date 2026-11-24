@@ -19,8 +19,8 @@ import (
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
-// A client or machine whose key expired 90 days ago is forgotten as one forgotten by hand
-// is; one that expired since, and a live one, stay.
+// A client whose key expired, and a machine whose key expired 90 days ago, is forgotten as
+// one forgotten by hand is; a live one, and a client connected here, stay.
 func TestTheSweepForgetsClientsAndMachinesLongExpired(t *testing.T) {
 	t.Parallel()
 	p := startPlane(t, store.NewMemory(), controllink.NewPrivateKey())
@@ -35,8 +35,11 @@ func TestTheSweepForgetsClientsAndMachinesLongExpired(t *testing.T) {
 	liveHost := p.host("MACHINE-LIVE")
 	liveHost.stop()
 	now := time.Now()
-	setExpires(t, p, old.Client, now.Add(-91*24*time.Hour))
-	setExpires(t, p, recent.Client, now.Add(-89*24*time.Hour))
+	setExpires(t, p, old.Client, now.Add(-time.Minute))
+	setExpires(t, p, recent.Client, now.Add(time.Minute))
+	used, inUse := p.client("Connected Mac")
+	defer inUse.Close()
+	setExpires(t, p, used.Client, now.Add(-time.Minute))
 	saveHostExpires(t, p, oldHost.member.Host, now.Add(-91*24*time.Hour))
 
 	if gone := p.s.forgetExpired(context.Background(), now, mostPerSweep); gone != 2 {
@@ -48,8 +51,12 @@ func TestTheSweepForgetsClientsAndMachinesLongExpired(t *testing.T) {
 	if p.s.records.Host(oldHost.member.Host) != nil {
 		t.Fatal("the long-expired machine was not removed")
 	}
-	if p.s.records.Client(recent.Client) == nil || p.s.records.Client(live.Client) == nil || p.s.records.Host(liveHost.member.Host) == nil {
+	if p.s.records.Client(recent.Client) == nil || p.s.records.Client(live.Client) == nil || p.s.records.Client(used.Client) == nil || p.s.records.Host(liveHost.member.Host) == nil {
 		t.Fatal("one not long expired went")
+	}
+	// Renewed at another copy since it was read: it keeps its pairing.
+	if went, err := p.s.records.ForgetClientIf(context.Background(), live.Client, func(records.ClientRecord) bool { return false }); went || err != nil {
+		t.Fatalf("a renewed client went: %v %v", went, err)
 	}
 	// At most most a time.
 	setExpires(t, p, recent.Client, now.Add(-91*24*time.Hour))

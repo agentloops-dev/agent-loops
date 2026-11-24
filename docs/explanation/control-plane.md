@@ -183,9 +183,11 @@ A client's or a machine's key expires 90 days after it was paired (#997). The co
 plane renews it while it is in use: on each connection, and every hour for a connection
 that stays open, once the key is in its last 30 days. Every connection already proves the
 key, so renewal needs nothing from the client and shows no screen. A key that nobody used
-for 90 days is refused as expired. The Remote and the web page then ask for a new code, as
+for 90 days is refused as expired. The hourly sweep then forgets a client whose key
+expired (#6757). The Remote and the web page then ask for a new code, as
 they do for a forgotten one. A key paired before this counts from when it was last used.
-`agents-control serve --key-days N` (or `AGENTS_CONTROL_KEY_DAYS`) sets another lifetime.
+`agents-control serve --key-days N` (or `AGENTS_CONTROL_KEY_DAYS`) sets a shorter
+lifetime; 90 days is the most.
 
 An admin can rotate the control plane's own key with **Rotate Control Key…** in
 **Settings ▸ People**, on the Mac, the Remote and the web page. Nobody pairs again:

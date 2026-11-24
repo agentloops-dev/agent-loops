@@ -192,7 +192,7 @@ times only: no titles or text; #4275).
 One sweep runs every hour. It removes old audit days, codes, tombstones, records with no
 owner, usage, workflow runs and lineage, join, lock-join, sign-in and link requests, and
 policy, governance and remove requests (#3649), and once a day the backups of removed
-servers. It also forgets clients and machines whose key expired 90 days ago, and removes
+servers. It also forgets clients whose key expired (#6757), and machines whose key expired 90 days ago, and removes
 the approvals of people and groups that are gone, and probes and move marks left by a
 copy that stopped (#3748).
 
@@ -203,7 +203,7 @@ the other copies of the control plane learn that it went.
 
 | Records | Kind | What they keep | How long, how large | Applied |
 | --- | --- | --- | --- | --- |
-| Clients | document | Name, kind, public key, when last seen, push tokens (APNs, up to 16 Live Activity tokens of 12 hours each, Web Push) | Until forgotten, then a tombstone for 7 days. A key lives 90 days; a client whose key expired is forgotten 90 days later (#3748). No count limit on a control plane of your own (hosted: 5 or 50). | Hourly |
+| Clients | document | Name, kind, public key, when last seen, push tokens (APNs, up to 16 Live Activity tokens of 12 hours each, Web Push) | Until forgotten, then a tombstone for 7 days. A key lives 90 days at most from when it was paired or last renewed in use; a client whose key expired is forgotten (#6757), unless it is connected. 16 KiB a record and 1 MiB in all (hosted: 5 or 50 clients too): a new client, a longer name or a push token over that is refused; a renewal of a client in use never is. Tombstones keep no push tokens, and may come to 1 MiB more | Hourly; sizes on each write |
 | Machines | document | Name, key, platform, version, owner, workspace | Until removed, then a tombstone for 7 days. A machine whose key expired is removed 90 days later; a started machine's workspace stays (#3748). No count limit (hosted: 2 or 20). | Hourly |
 | People | document | Name, role, sign-ins (email, login), SCIM data, old names for 90 days | A removed person goes after 14 days. One with a sign-in is kept, so that sign-in stays refused, but only as a tombstone: the ID, kind, role and each sign-in's provider and account (#3647) | Hourly |
 | Groups, projects | document | Name and members; name, owner, slots and boards | 1,000 groups; 500 projects a person | Tombstone, hourly |
