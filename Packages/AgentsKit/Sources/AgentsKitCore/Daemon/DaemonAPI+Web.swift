@@ -640,6 +640,7 @@ public extension DaemonAPI {
                 Row(Method.reportsSaveView, params: ReportView.self, result: ReportViews.self, kind: .controlRequest),
                 Row(Method.reportsDeleteView, params: ReportViewID.self, result: ReportViews.self, kind: .controlRequest),
                 // The Console (#1804): the admins' app on the web page.
+                Row(Method.controlCapacity, params: Empty.self, result: ControlCapacityBoard.self, kind: .controlRequest),
                 Row(Method.consoleFleet, params: Empty.self, result: FleetBoard.self, kind: .controlRequest),
                 Row(Method.consoleTeamWorkflows, params: Empty.self, result: TeamWorkflows.self, kind: .controlRequest),
                 Row(Method.consoleLive, params: Empty.self, result: LiveBoard.self, kind: .controlRequest),
@@ -887,6 +888,8 @@ public extension DaemonAPI {
                 Row(Notification.controlGovernanceRequested, params: CatalogRequest.self, result: Empty.self,
                     kind: .controlNotification),
                 Row(Notification.controlBudgetRequested, params: BudgetRequest.self, result: Empty.self,
+                    kind: .controlNotification),
+                Row(Notification.controlCapacityChanged, params: ControlCapacityCopy.self, result: Empty.self,
                     kind: .controlNotification),
             ]
         }

@@ -3456,6 +3456,29 @@ export interface ControlAuth {
   publicKey?: Base64;
 }
 
+export interface ControlCapacityBoard {
+  copies: ControlCapacityCopy[];
+}
+
+/** One live control plane copy's most recent capacity look (#6590). */
+export interface ControlCapacityCopy {
+  copy: string;
+  level: CapacityLevel;
+  reason: string;
+  loadPerCore: number;
+  loadPerCore5: number;
+  pressureMemoryFullAvg60: number;
+  pressureIOFullAvg60: number;
+  memoryAvailableBytes: number;
+  swapUsedPercent: number;
+  heapInuseBytes: number;
+  goroutines: number;
+  openFiles: number;
+  storeFiles: number;
+  storeBytes: number;
+  at: WireDate;
+}
+
 /**
  * control/clientChanged: a client paired, renamed, connected or went; nothing says list them all
  * again.
@@ -3589,11 +3612,12 @@ export interface ControlNewKey {
 }
 
 /**
- * control/notice (#1002): something an admin should know, that no click caused: lastAdminKept,
- * groupSharesOrphaned or removeRequested; words to show, and whom it is about.
+ * control/notice (#1002, #6590): something an admin should know, with no click: lastAdminKept,
+ * groupSharesOrphaned, removeRequested, control.busy or control.ok; words to show, and whom it is
+ * about.
  */
 export interface ControlNotice {
-  kind: "lastAdminKept" | "groupSharesOrphaned" | "removeRequested";
+  kind: "lastAdminKept" | "groupSharesOrphaned" | "removeRequested" | "control.busy" | "control.ok";
   words: string;
   user?: string;
   group?: string;
@@ -17106,6 +17130,7 @@ export interface Methods {
   "console/live": { params: Empty; result: LiveBoard };
   "console/stopAgent": { params: ConsoleStopAgent; result: Empty };
   "console/teamWorkflows": { params: Empty; result: TeamWorkflows };
+  "control/capacity": { params: Empty; result: ControlCapacityBoard };
   "control/connectAnother": { params: ConnectAnotherRequest; result: Empty };
   "control/planeMove": { params: PlaneMoveAsk; result: Empty };
   "control/restart": { params: Empty; result: Empty };
@@ -17595,6 +17620,7 @@ export const MethodTarget = {
   "console/live": "control",
   "console/stopAgent": "control",
   "console/teamWorkflows": "control",
+  "control/capacity": "control",
   "control/connectAnother": "control",
   "control/planeMove": "control",
   "control/restart": "control",
@@ -17987,6 +18013,7 @@ export interface Notifications {
   "clone/changed": CloneNotification;
   "control/budgetRequested": BudgetRequest;
   "control/capReached": CapReached;
+  "control/capacityChanged": ControlCapacityCopy;
   "control/clientChanged": ControlClientChanged;
   "control/connectReported": ConnectReport;
   "control/governanceRequested": CatalogRequest;
@@ -18289,6 +18316,8 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   ContinueInNewSessionRequest: { required: ["agentID"], optional: ["requestID"] },
   ContinueWhenBack: { required: ["at", "resetKnown"], optional: [] },
   ControlAuth: { required: ["id", "nonce", "mac", "kind"], optional: ["epoch", "capabilities", "page", "publicKey"] },
+  ControlCapacityBoard: { required: ["copies"], optional: [] },
+  ControlCapacityCopy: { required: ["copy", "level", "reason", "loadPerCore", "loadPerCore5", "pressureMemoryFullAvg60", "pressureIOFullAvg60", "memoryAvailableBytes", "swapUsedPercent", "heapInuseBytes", "goroutines", "openFiles", "storeFiles", "storeBytes", "at"], optional: [] },
   ControlClientChanged: { required: [], optional: ["client", "removed"] },
   ControlCodeShown: { required: ["text", "expires"], optional: ["command"] },
   ControlCutOff: { required: ["why"], optional: ["provider"] },

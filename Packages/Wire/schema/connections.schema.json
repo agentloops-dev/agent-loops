@@ -1275,14 +1275,16 @@
     },
     "ControlNotice": {
       "type": "object",
-      "description": "control/notice (#1002): something an admin should know, that no click caused: lastAdminKept, groupSharesOrphaned or removeRequested; words to show, and whom it is about.",
+      "description": "control/notice (#1002, #6590): something an admin should know, with no click: lastAdminKept, groupSharesOrphaned, removeRequested, control.busy or control.ok; words to show, and whom it is about.",
       "properties": {
         "kind": {
           "type": "string",
           "enum": [
             "lastAdminKept",
             "groupSharesOrphaned",
-            "removeRequested"
+            "removeRequested",
+            "control.busy",
+            "control.ok"
           ]
         },
         "words": {

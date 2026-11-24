@@ -553,6 +553,8 @@ public enum DaemonAPI {
     }
 
     public enum Notification {
+        /// A live control plane copy's capacity level moved (#6590).
+        public static let controlCapacityChanged = "control/capacityChanged"
         public static let agentChanged = "agent/changed"
         /// A file of variables changed on a machine (#5259): the Environment page reads `env/list` again.
         public static let envChanged = "env/changed"

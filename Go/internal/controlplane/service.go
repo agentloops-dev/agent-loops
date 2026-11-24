@@ -691,6 +691,7 @@ func (s *Service) Stop() {
 	sockets := s.sockets
 	s.sockets = map[*Conn]bool{}
 	s.mu.Unlock()
+	_ = s.cfg.Store.Delete(context.Background(), controlCapacityKey(s.copyID))
 	for _, srv := range servers {
 		srv.Close()
 	}

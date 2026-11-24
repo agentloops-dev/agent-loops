@@ -20,7 +20,7 @@ import (
 
 // consoleMethods are the Console's: an admin's each, naming no machine, so another
 // person's machine is never named by one (#994).
-var consoleMethods = map[string]bool{"console/fleet": true, "console/live": true, "console/stopAgent": true, "console/teamWorkflows": true}
+var consoleMethods = map[string]bool{"console/fleet": true, "console/live": true, "console/stopAgent": true, "console/teamWorkflows": true, "control/capacity": true}
 
 // consoleMethod answers the Console's own calls. Each is an admin's.
 func (m *Methods) consoleMethod(ctx context.Context, method string, params json.RawMessage, from Caller) (any, error) {
@@ -28,6 +28,8 @@ func (m *Methods) consoleMethod(ctx context.Context, method string, params json.
 		return nil, fail(notPermitted, "Only an admin can open the Console.")
 	}
 	switch method {
+	case "control/capacity":
+		return m.controlCapacity(ctx)
 	case "console/fleet":
 		return m.fleet(ctx), nil
 	case "console/teamWorkflows":
@@ -52,6 +54,40 @@ func (m *Methods) consoleMethod(ctx context.Context, method string, params json.
 		return wire.Empty{}, nil
 	}
 	return nil, fail(methodNotFound, "No method %s.", method)
+}
+
+func (m *Methods) controlCapacity(ctx context.Context) (wire.ControlCapacityBoard, error) {
+	board := wire.ControlCapacityBoard{Copies: []wire.ControlCapacityCopy{}}
+	keys, err := m.s.cfg.Store.List(ctx, copiesPrefix)
+	if err != nil {
+		return board, err
+	}
+	for _, key := range keys {
+		object, err := m.s.cfg.Store.Get(ctx, key.Key)
+		if err != nil {
+			return board, err
+		}
+		if object == nil {
+			continue
+		}
+		var copy copyRecord
+		if json.Unmarshal(object.Data, &copy) != nil || copy.ID == "" {
+			continue
+		}
+		capacity, err := m.s.cfg.Store.Get(ctx, controlCapacityKey(copy.ID))
+		if err != nil {
+			return board, err
+		}
+		if capacity == nil {
+			continue
+		}
+		var snapshot wire.ControlCapacityCopy
+		if json.Unmarshal(capacity.Data, &snapshot) == nil {
+			board.Copies = append(board.Copies, snapshot)
+		}
+	}
+	sort.Slice(board.Copies, func(i, j int) bool { return board.Copies[i].Copy < board.Copies[j].Copy })
+	return board, nil
 }
 
 // liveStates are the agent states a machine's list counts as running.

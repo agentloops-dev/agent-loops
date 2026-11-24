@@ -298,6 +298,12 @@ func (m *Metrics) setStoreSize(files, bytes int64) {
 	m.mu.Unlock()
 }
 
+func (m *Metrics) storeSize() (int64, int64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.storeFiles, m.storeBytes
+}
+
 func joined(a, b labels) labels {
 	if a == "" {
 		return b

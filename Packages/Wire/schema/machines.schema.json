@@ -1168,6 +1168,35 @@
       ],
       "additionalProperties": false
     },
+    "ControlCapacityBoard": {
+      "type": "object",
+      "properties": {"copies": {"type": "array", "items": {"$ref": "#/definitions/ControlCapacityCopy"}}},
+      "required": ["copies"],
+      "additionalProperties": false
+    },
+    "ControlCapacityCopy": {
+      "type": "object",
+      "description": "One live control plane copy's most recent capacity look (#6590).",
+      "properties": {
+        "copy": {"type": "string"},
+        "level": {"$ref": "#/definitions/CapacityLevel"},
+        "reason": {"type": "string"},
+        "loadPerCore": {"type": "number"},
+        "loadPerCore5": {"type": "number"},
+        "pressureMemoryFullAvg60": {"type": "number"},
+        "pressureIOFullAvg60": {"type": "number"},
+        "memoryAvailableBytes": {"type": "number"},
+        "swapUsedPercent": {"type": "number"},
+        "heapInuseBytes": {"type": "number"},
+        "goroutines": {"type": "integer"},
+        "openFiles": {"type": "integer"},
+        "storeFiles": {"type": "integer"},
+        "storeBytes": {"type": "integer"},
+        "at": {"$ref": "core.schema.json#/definitions/WireDate"}
+      },
+      "required": ["copy", "level", "reason", "loadPerCore", "loadPerCore5", "pressureMemoryFullAvg60", "pressureIOFullAvg60", "memoryAvailableBytes", "swapUsedPercent", "heapInuseBytes", "goroutines", "openFiles", "storeFiles", "storeBytes", "at"],
+      "additionalProperties": false
+    },
     "DaemonStatus": {
       "type": "object",
       "properties": {
