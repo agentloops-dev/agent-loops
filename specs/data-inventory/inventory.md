@@ -193,7 +193,7 @@ handover also leaves out `v1/keys/` (`storecopy.go:21,25`).
 | Key | Holds | Bound | Swept |
 |---|---|---|---|
 | `v1/control.json` | Owner, endpoints, epoch, control key public parts, audit days | 1 | — |
-| `v1/clients/<UUID>.json` | Name, kind, public key, last seen, APNs token, ≤16 Live Activity tokens (12 h each), Web Push subscription | **No count cap** on self-hosted (hosted: 5/50). Key life 90 days (`keylife.go:18`). | Tombstone 7 days. **A client whose key expired is kept for ever.** |
+| `v1/clients/<UUID>.json` | Name, kind, public key, last seen, APNs token, ≤16 Live Activity tokens (12 h each), Web Push subscription | 16 KiB a record, 1 MiB in all (#6757; hosted: 5/50 clients too). Key life 90 days (`keylife.go:18`). | Tombstone 7 days. A client whose key expired is forgotten by the hourly sweep (#6757). |
 | `v1/machines/<id>.json` | Name, key, platform, version, owner, workspace | No cap (hosted: 2/20) | Tombstone 7 days. **An expired machine is kept for ever.** |
 | `v1/people/<id>.json` | Name, role, sign-ins (email, login), SCIM part, old names (90 days) | No cap | A removed person goes after 14 days, **or never when they have a sign-in** (`records/records.go:307`, `sweep.go:164`) |
 | `v1/groups/<id>.json` | Name, members | 1,000 (`groups.go:20`) | tombstone 7 days |
@@ -394,7 +394,7 @@ newer than a row above for the same store.
 | `<root>/release-tags.json` | log | Linked release tags | 5,000 tags of 1 KiB; 90 days | `Go/internal/agentsd/lineagerelease.go` | #6717 |
 | `<root>/requests/<id>.json` | document | Open questions and forms | Ended ones 14 days, 1,000 files; an open one has no age | `Go/internal/agentsd/requests.go:27-28` | #6718 |
 | `<root>/lineage-deploys.json` | key-value | Each deploy's last event | 1,000 deploys of 16 KiB each, 90 days from the last event, the oldest first | `Go/internal/agentsd/lineagedeploy.go` (`openDeploys`) | #6719 |
-| `<root>/account-ops.json` | log | Last operation of each account and secret | 500 and 500, no age | `Go/internal/agentsd/accountops.go:27` | #6720 |
+| `<root>/account-ops.json` | key-value | Last operation of each account and secret | 1,000 entries of 1 KiB each, 90 days, the oldest first | `Go/internal/agentsd/accountops.go` (`openAccountOps`) | #6720 |
 | `<root>/secret-ops-pending.json` | log | Secret audit entries not yet sent | 1,000 operations of 16 KiB each, 90 days, the oldest first | `Go/internal/agentsd/secretops.go` (`openSecretOpsPending`) | #6721 |
 | `<root>/elsewhere.json` | document | Sessions on other machines | 200 a list, no age | `Go/internal/agentsd/elsewhere.go:39` | #6722 |
 | `<root>/lock-seen.json` | key-value | Replay IDs of signed requests | 4,096, no age | `Go/internal/agentsd/lockcheck.go:43` | #6723 |
@@ -431,7 +431,7 @@ newer than a row above for the same store.
 | `<root>/lock-pin.json` | key-value | The machine lock's trust pin | In the data root | `Go/internal/agentsd/lock.go:37` | #6754 |
 | `v1/events/<day>/` (audit) | log | Audit events | 90 days by default; an admin sets 1 to 3,650; no count or size limit a day | `Go/internal/controlplane/audit/audit.go:31,241` | #6755 |
 | `v1/people/` tombstones | document | A removed person who had a sign-in | A tombstone for ever, so that sign-in stays refused | `Go/internal/controlplane/sweep.go:351-355` | #6756 |
-| `v1/clients/` | document | Paired clients | No count limit on a control plane of your own; an expired one stays about 180 days | `Go/internal/controlplane/keylife.go:18,139,145-177` | #6757 |
+| `v1/clients/` | document | Paired clients | 16 KiB a record, 1 MiB in all; forgotten when its key expires, at most 90 days unused; tombstone 7 days | `Go/internal/controlplane/keylife.go:18,139,145-177` | #6757 |
 | `v1/machines/` | document | Machines | No count limit on a control plane of your own; an expired one stays about 180 days | `Go/internal/controlplane/keylife.go:145-177` | #6758 |
 | `v1/machine-names/<person>.json` | key-value | A person's machine-N counter and last provider options | For ever, also after the person goes (on purpose: a number is never used twice) | `Go/internal/controlplane/providers/defaults.go:20-27` | #6759 |
 | `v1/machine-setup-times.json` | time series | Set-up durations | 50 a step, no age | `Go/internal/controlplane/machinesetup.go:25-27,353` | #6760 |

@@ -52,7 +52,7 @@ type Config struct {
 	// Where the key is kept, so control/rotate can keep a new one (#997); nil for a key
 	// handed in, which is not rotated.
 	KeyKeeper KeyKeeper
-	// How long a client's or machine's key lives unused (#997); 0 is DefaultKeyLifetime.
+	// How long a client's or machine's key lives unused (#997); 0 is DefaultKeyLifetime, the most.
 	KeyLifetime time.Duration
 	// The one address clients and hosts are given (R8).
 	URL string
@@ -2060,6 +2060,10 @@ func (s *Service) spendClientCode(ctx context.Context, id string, stored *stored
 	name := a.Name
 	if a.Kind == records.KindBrowser {
 		name = browserName(a.Name, s.page != nil && webOrigin == s.page.Origin())
+	}
+	// Before the code is spent, so it can be used once there is room (#6757).
+	if err := s.records.ClientRoom(ctx, a.ID); err != nil {
+		return nil, err
 	}
 	spender := a.ID
 	sp, err := s.codes.Spend(ctx, id, spent{PublicKey: a.PublicKey, Client: &spender})

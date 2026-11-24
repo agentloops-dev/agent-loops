@@ -1116,13 +1116,18 @@ func (m *Methods) forget(ctx context.Context, id string, after time.Duration) er
 	if err := m.records.ForgetClient(ctx, id); err != nil {
 		return err
 	}
+	m.forgotten(id, after)
+	return nil
+}
+
+// forgotten ends the sessions of a client whose tombstone is written, and tells every window.
+func (m *Methods) forgotten(id string, after time.Duration) {
 	go func() {
 		time.Sleep(after)
 		m.router.ForgetClient(id)
 		m.router.BroadcastControl("control/clientChanged", map[string]any{"client": id, "removed": true})
 		m.s.tellHostClients()
 	}()
-	return nil
 }
 
 // Admit is ControlMethods.admit: a client that has paired, or connected again. lastSeen

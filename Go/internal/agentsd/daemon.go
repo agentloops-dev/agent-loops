@@ -41,7 +41,7 @@ type Daemon struct {
 	requestActors map[wire.UUID]*wire.AuditActor
 
 	// accountOps is each account's last operation, and each secret's last read (#4157).
-	accountOps accountOpBook
+	accountOps *store.JSONFile[wire.AccountLastOp]
 	// secretOps is each secret's last operation, and the reads waiting for the audit (#4156).
 	secretOps secretOpBook
 
@@ -264,6 +264,7 @@ func newWith(ctx context.Context, root string, opts startOptions) (*Daemon, erro
 	d.deployStore = d.openDeploys()
 	d.releaseDone = d.openReleaseTags()
 	d.secretOps.pending = d.openSecretOpsPending()
+	d.accountOps = d.openAccountOps()
 	d.opts.Store(&opts)
 	d.jobCancel = cancel
 	st.OnGap = d.tellEntry
