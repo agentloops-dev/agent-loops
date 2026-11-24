@@ -349,13 +349,16 @@ extension AppModel {
             returning: DaemonAPI.WarmPoolClaimed.self)
         var rest = draft
         rest.name = claimed.name
+        var atLastCommit: [URL] = []
         rest.stopWhenIdleMinutes = nil
         if claimed.fromPool {
             // A pool machine is made with no folders (#6890): the pool's projects are sent now,
             // with the others chosen, each once.
-            var seen = Set<String>()
-            let pool = draft.poolProjects.map { URL(fileURLWithPath: $0) }
-            rest.projects = (pool + draft.projects).filter { seen.insert($0.standardizedFileURL.path).inserted }
+            // One the person did not tick goes at its last commit: the sheet told them of no
+            // uncommitted changes going with it.
+            var seen = Set(draft.projects.map(\.standardizedFileURL.path))
+            atLastCommit = draft.poolProjects.map { URL(fileURLWithPath: $0) }
+                .filter { seen.insert($0.standardizedFileURL.path).inserted }
             machinePoolNotes[claimed.name] = WarmPoolWords.replacedNote(pool: claimed.pool ?? "the pool")
         } else {
             rest.stopWhenIdleMinutes = draft.stopWhenIdleMinutes
@@ -364,12 +367,13 @@ extension AppModel {
         if let host = claimed.host { machinePage = host }
         let made = DaemonAPI.ProviderCreated(workspace: DaemonAPI.MachineInfo(id: claimed.workspace, name: claimed.name,
                                                                                state: "running", host: claimed.host), joining: true)
-        Task { await finishNewMachine(rest, made: made) }
+        Task { [atLastCommit] in await finishNewMachine(rest, made: made, atLastCommit: atLastCommit) }
     }
 
     /// After a make that asked for a sleep time or projects (#5358): waits for the machine's
     /// row, opens its page, sets Stop when idle, then sends each project once it is reachable.
-    private func finishNewMachine(_ draft: NewMachineDraft, made: DaemonAPI.ProviderCreated) async {
+    /// The `atLastCommit` projects go with no uncommitted changes (#6890).
+    private func finishNewMachine(_ draft: NewMachineDraft, made: DaemonAPI.ProviderCreated, atLastCommit: [URL] = []) async {
         var host = made.workspace.host
         for _ in 0..<300 where host == nil {
             host = hosts.controlRows.first { $0.value.name == draft.name }?.key
@@ -378,15 +382,16 @@ extension AppModel {
         guard let host else { return }
         machinePage = host
         if let minutes = draft.stopWhenIdleMinutes { await setMachineOptions(host, stopWhenIdleMinutes: minutes) }
-        guard !draft.projects.isEmpty else { return }
+        let projects = draft.projects.map { (folder: $0, changes: true) } + atLastCommit.map { (folder: $0, changes: false) }
+        guard !projects.isEmpty else { return }
         for _ in 0..<450 where hostUnreachable(host) { try? await Task.sleep(for: .seconds(2)) }
-        for project in draft.projects {
+        for (project, changes) in projects {
             do {
                 let facts = try await sendFacts(project, on: .mac)
                 guard let branch = facts.current ?? facts.branches.first else { continue }
                 try await startSend(DaemonAPI.SendRequest(folder: project, machine: host.rawValue, machineName: draft.name,
                                                           destination: "~/\(project.lastPathComponent)", branches: facts.branches,
-                                                          checkout: branch, includeChanges: facts.hasChanges && facts.current != nil,
+                                                          checkout: branch, includeChanges: changes && facts.hasChanges && facts.current != nil,
                                                           origin: facts.origin), from: .mac)
             } catch {
                 problem = "\(project.lastPathComponent) was not sent to \(draft.name): \(describe(error))"
