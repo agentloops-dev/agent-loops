@@ -41,12 +41,13 @@ final class WorkWindowModel: WorkModel, WorkWindowPages {
 
     var workHistory = LineageHistory<WorkPlace>()
 
-    init(base: any WorkModel, place: WorkPlace, showMain: @escaping @MainActor () -> Void,
+    /// No place: a window of a page that no link moves (a conversation, #5482), so Back and Forward stay off.
+    init(base: any WorkModel, place: WorkPlace?, showMain: @escaping @MainActor () -> Void,
          showSession: @escaping @MainActor (UUID) -> Void) {
         self.base = base
         self.showMain = showMain
         self.showSession = showSession
-        workHistory.go(place)
+        if let place { workHistory.go(place) }
     }
 
     /// The page the window shows now.
@@ -262,15 +263,11 @@ struct OpenWorkWindow: Equatable {
     @MainActor
     func callAsFunction(_ key: WorkWindowKey) { open(id: Self.sceneID, value: key) }
 
-    /// ⌘ held with the click, on the Mac: the page opens in a window.
+    #if os(macOS)
+    /// The click now is a ⌘-click.
     @MainActor
-    static var commandHeld: Bool {
-        #if os(macOS)
-        NSApp.currentEvent?.modifierFlags.contains(.command) == true
-        #else
-        false
-        #endif
-    }
+    static var commandHeld: Bool { NSApp.currentEvent?.modifierFlags.contains(.command) == true }
+    #endif
 
     /// One action for the app: two are never different, so a row is not drawn again for one.
     static func == (_: Self, _: Self) -> Bool { true }
@@ -294,7 +291,11 @@ struct WorkWindows: ViewModifier {
 extension WorkModel {
     /// A row or a link pressed: its page here, or with ⌘ held on the Mac, in a window of its own.
     func follow(_ place: WorkPlace, window: OpenWorkWindow?) {
-        if let window, WorkWindowKey(place) != nil, OpenWorkWindow.commandHeld { return window(place) }
+        #if os(macOS)
+        if let window, WorkWindowKey(place) != nil, OpenWorkWindow.commandHeld {
+            return window(place)
+        }
+        #endif
         showWork(place)
     }
 }

@@ -39,6 +39,15 @@ struct WorkWindowKeyTests {
         #expect(DocsList.ref(of: page, at: "docs/b.md") == nil)
     }
 
+    @Test func aConversationsWindowIsFoundByItsKeyAndIsNoItemsPage() throws {
+        let key = WorkWindowKey(conversation: "slack:C01")
+        #expect(key.conversation == "slack:C01")
+        #expect(key.place == nil)
+        #expect(try JSONDecoder().decode(WorkWindowKey.self, from: JSONEncoder().encode(key)) == key)
+        #expect(WorkWindowKey(conversation: "").conversation == nil)
+        #expect(WorkWindowKey(kind: "pr", ref: ref).conversation == nil)
+    }
+
     @Test func theTitleIsTheNumberAndTheItemsTitle() {
         #expect(WorkWindowKey.title("Fix the build", ref: ref) == "#12 Fix the build")
         #expect(WorkWindowKey.title("Fix the build #12", ref: ref) == "Fix the build #12")

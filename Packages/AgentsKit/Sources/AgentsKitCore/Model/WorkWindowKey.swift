@@ -26,6 +26,14 @@ public struct WorkWindowKey: Codable, Hashable, Sendable {
     /// The ref of the doc whose page it is; nil for a page of another kind.
     public var docRef: String? { kind == Self.docKind && !ref.isEmpty ? ref : nil }
 
+    /// A conversation of Messages (#5482), by its key in the list (`MessagesList.key`): the same on every machine.
+    public init(conversation key: String) { self.init(kind: Self.messages, ref: key) }
+
+    /// The conversation's key in the list; nil for a different page.
+    public var conversation: String? { kind == Self.messages && !ref.isEmpty ? ref : nil }
+
+    private static let messages = "messages"
+
     /// The item's page; nil for a kind this build does not know. It is from no list, so it has no
     /// Previous and Next.
     public var place: WorkPlace? {

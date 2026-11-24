@@ -33,6 +33,10 @@ struct WorkWindow: View {
     private var page: some View {
         if key?.docRef != nil {
             DocWindow(key: $key, opened: { shown = $0 })
+        } else if let conversation = key?.conversation {
+            ConversationWindow(conversation: conversation, list: model.messagesList).id(conversation)
+                .onAppear { shown = WorkWindowModel(base: model, place: nil, showMain: showMain, showSession: showSession) }
+                .onDisappear { shown = nil }
         } else {
             WorkWindowPage(base: model, key: $key, showMain: showMain, showSession: showSession, opened: { shown = $0 })
         }
