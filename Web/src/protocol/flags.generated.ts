@@ -16,5 +16,5 @@ export const featureFlags: readonly FeatureFlagInfo[] = [
   { name: "docs", title: "Docs", about: "Docs in the sidebar, and the Docs section on a work item's page. On the Mac and the web page.", issue: 6572 },
   { name: "suggested", title: "Suggested", about: "New Session ▸ Suggested: the epics with no lead.", issue: 6572 },
   { name: "work", title: "Work", about: "Work in the sidebar: issues, pull requests, releases, deploys and the timeline.", issue: 6572 },
-  { name: "work-windows", title: "Work in windows", about: "Open in New Window on Work's pages (Mac and iPad): an issue, a pull request or a release, and on the Mac a conversation of Messages, in a window of its own.", issue: 5480 },
+  { name: "work-windows", title: "Work in windows", about: "Open in New Window on Work's pages (Mac and iPad): an issue, a pull request or a release, and on the Mac a doc or a conversation of Messages, in a window of its own.", issue: 5480 },
 ];

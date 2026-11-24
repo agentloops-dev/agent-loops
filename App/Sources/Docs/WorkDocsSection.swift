@@ -7,6 +7,7 @@ import SwiftUI
 struct WorkDocsSection: View {
     @Environment(AppModel.self) private var model
     @Environment(\.showMainWindow) private var showMainWindow
+    @Environment(\.openWorkWindow) private var openWorkWindow
     let item: DaemonAPI.ForgeItem
     let text: String
     let asked: Int
@@ -45,8 +46,7 @@ struct WorkDocsSection: View {
 
     private func row(_ doc: DaemonAPI.Doc) -> some View {
         Button {
-            model.showDocs(DocsPlace(ref: doc.ref))
-            showMainWindow?.run()
+            model.followDoc(DocsPlace(ref: doc.ref), window: openWorkWindow, main: showMainWindow)
         } label: {
             // The panel is narrow: the title goes under the doc's name.
             HStack(alignment: .firstTextBaseline, spacing: 6) {
@@ -63,6 +63,7 @@ struct WorkDocsSection: View {
         }
         .buttonStyle(.plain)
         .help(doc.ref)
+        .docWindowMenu(doc.ref)
     }
 
     private func load() async {
