@@ -176,21 +176,10 @@ func (d *Daemon) keepAppToolCall(agent wire.UUID, tool string, args map[string]j
 	if mErr != nil {
 		return
 	}
-	path := d.appToolsPath(agent)
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil { //nolint:gosec // G301: the mode this folder always had; only its error is new
-		log.Printf("could not keep a record of an app tool call: %v", err)
-		return
-	}
-	f, oErr := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
-	if oErr != nil {
-		log.Printf("could not keep a record of an app tool call: %v", oErr)
-		return
-	}
 	b, _ = redact.Bytes(b) // a call's arguments or answer can hold a token (#1001)
-	if _, err := f.Write(append(b, '\n')); err != nil {
+	if err := d.Store.AppTools(agent).Append(context.Background(), string(store.NewUUID()), began, b); err != nil {
 		log.Printf("could not keep a record of an app tool call: %v", err)
 	}
-	_ = f.Close() // the write's error is the one that matters, and it is logged
 }
 
 // cutAppToolArgument is an argument as app-tools.jsonl keeps it (#3687): whole when its
@@ -212,24 +201,22 @@ func cutAppToolArgument(v json.RawMessage) json.RawMessage {
 	return b
 }
 
-func (d *Daemon) appToolsPath(agent wire.UUID) string {
-	// The agent's folder, upper case as Delete removes it (#3651): Linux is case-sensitive.
-	return filepath.Join(d.Store.Loc.Agent(string(agent)), "app-tools.jsonl")
-}
-
 func (d *Daemon) appToolCalls(agent wire.UUID) []appToolCall {
-	b, err := os.ReadFile(d.appToolsPath(agent))
-	if err != nil {
-		return nil
-	}
+	records := d.Store.AppTools(agent)
 	var out []appToolCall
-	for _, line := range strings.Split(string(b), "\n") {
-		var c appToolCall
-		if line != "" && diskjson.Unmarshal([]byte(line), &c) == nil {
-			out = append(out, c)
+	for cursor := ""; ; {
+		page, next, err := records.Read(context.Background(), cursor, 1000)
+		if err != nil || len(page) == 0 {
+			return out
 		}
+		for _, r := range page {
+			var c appToolCall
+			if diskjson.Unmarshal(r.Value, &c) == nil {
+				out = append(out, c)
+			}
+		}
+		cursor = next
 	}
-	return out
 }
 
 // MARK: Starting one

@@ -1,7 +1,6 @@
 package store
 
 import (
-	"bufio"
 	"bytes"
 	"io"
 	"os"
@@ -18,9 +17,38 @@ import (
 
 const indexedTranscripts = 32
 
-type lineIndex struct {
-	// ends is where each whole line ends, after its newline.
+// Lines is where each kept line of a transcript ends, by the line's number among all that
+// were ever written. A trim takes lines off the front (FolderLog) and renumbers none.
+type Lines struct {
+	// first is the number of the first line kept, and start the place it starts.
+	first int
+	start int64
+	// ends is where each whole line from first on ends, after its newline.
 	ends []int64
+}
+
+// First is the number of the first line kept, and Total one past the last.
+func (l Lines) First() int { return l.first }
+func (l Lines) Total() int { return l.first + len(l.ends) }
+
+// startOf is where a kept line starts, and where the last ends for Total.
+func (l Lines) startOf(line int) int64 {
+	if line == l.first {
+		return l.start
+	}
+	return l.ends[line-l.first-1]
+}
+
+// from is the lines a log with this head still has.
+func (l Lines) from(h logHead) Lines {
+	if h.lines < l.first || h.lines > l.Total() || l.startOf(h.lines) != h.bytes {
+		return Lines{first: h.lines, start: h.bytes}
+	}
+	return Lines{first: h.lines, start: h.bytes, ends: l.ends[h.lines-l.first:]}
+}
+
+type lineIndex struct {
+	lines Lines
 	// used orders the kept indexes: the least recently used goes first.
 	used uint64
 }
@@ -31,27 +59,23 @@ type indexBook struct {
 	clock   uint64
 }
 
-// LineEnds is where each line of the transcript ends, as of now: its length is the
-// transcript's count of lines. The slice is the caller's to read, never to change.
-func (s *Store) LineEnds(id wire.UUID) ([]int64, error) {
+// LineEnds is where each line of the transcript ends, as of now: its total is the
+// transcript's count of lines. Its slice is the caller's to read, never to change.
+func (s *Store) LineEnds(id wire.UUID) (Lines, error) {
 	s.ib.mu.Lock()
 	defer s.ib.mu.Unlock()
 	if s.ib.indexes == nil {
 		s.ib.indexes = map[wire.UUID]*lineIndex{}
 	}
-	f, err := os.Open(s.Loc.Transcript(string(id)))
+	f, head, size, err := s.transcript(id).openLog()
 	if os.IsNotExist(err) {
 		delete(s.ib.indexes, id)
-		return nil, nil
+		return Lines{}, nil
 	}
 	if err != nil {
-		return nil, err
+		return Lines{}, err
 	}
 	defer f.Close()
-	info, err := f.Stat()
-	if err != nil {
-		return nil, err
-	}
 	ix := s.ib.indexes[id]
 	if ix == nil {
 		ix = &lineIndex{}
@@ -69,84 +93,55 @@ func (s *Store) LineEnds(id wire.UUID) ([]int64, error) {
 	}
 	s.ib.clock++
 	ix.used = s.ib.clock
-	from := int64(0)
-	if n := len(ix.ends); n > 0 {
-		from = ix.ends[n-1]
-	}
+	lines := ix.lines.from(head)
+	at := lines.startOf(lines.Total())
 	// Shorter than what was indexed: some other transcript now. Look again.
-	if info.Size() < from {
-		ix.ends, from = nil, 0
+	if size < at {
+		lines, at = Lines{first: head.lines, start: head.bytes}, head.bytes
 	}
-	if info.Size() == from {
-		return ix.ends, nil
+	if size > at {
+		err = scanLines(io.NewSectionReader(f, head.at(at), size-at), func(line []byte) bool {
+			at += int64(len(line))
+			lines.ends = append(lines.ends, at)
+			return true
+		})
 	}
-	r := bufio.NewReaderSize(io.NewSectionReader(f, from, info.Size()-from), 1<<16)
-	at := from
-	for {
-		chunk, err := r.ReadSlice('\n')
-		at += int64(len(chunk))
-		if len(chunk) > 0 && chunk[len(chunk)-1] == '\n' {
-			ix.ends = append(ix.ends, at)
-		}
-		if err == bufio.ErrBufferFull {
-			continue
-		}
-		if err != nil {
-			break
-		}
-	}
-	return ix.ends, nil
+	ix.lines = lines
+	return lines, err
 }
 
-func startOf(ends []int64, line int) int64 {
-	if line == 0 {
-		return 0
-	}
-	return ends[line-1]
-}
-
-// EachLine calls see with every line from from to to (not included), its bytes and its index,
-// until see says false. The bytes are only see's until it returns.
-func (s *Store) EachLine(id wire.UUID, ends []int64, from, to int, see func(line []byte, i int) bool) error {
-	to = min(to, len(ends))
+// EachLine calls see with every line from from to to (not included), its bytes and its number,
+// until see says false. A line no longer kept is passed over. The bytes are only see's until
+// it returns.
+func (s *Store) EachLine(id wire.UUID, lines Lines, from, to int, see func(line []byte, i int) bool) error {
+	from, to = max(from, lines.First()), min(to, lines.Total())
 	if from >= to {
 		return nil
 	}
-	f, err := os.Open(s.Loc.Transcript(string(id)))
+	f, head, _, err := s.transcript(id).openLog()
 	if err != nil {
 		return err
 	}
 	defer f.Close()
-	start := startOf(ends, from)
-	r := bufio.NewReaderSize(io.NewSectionReader(f, start, ends[to-1]-start), 1<<16)
-	var line []byte
-	for i := from; i < to; {
-		chunk, err := r.ReadSlice('\n')
-		line = append(line, chunk...)
-		if err == bufio.ErrBufferFull {
-			continue
-		}
-		if len(line) > 0 {
-			if !see(line, i) {
-				return nil
-			}
-			i++
-			line = line[:0]
-		}
-		if err != nil {
-			return nil
-		}
+	// Trimmed since the lines were looked at.
+	if from = max(from, head.lines); from >= to {
+		return nil
 	}
-	return nil
+	start := lines.startOf(from)
+	i := from
+	return scanLines(io.NewSectionReader(f, head.at(start), lines.startOf(to)-start), func(line []byte) bool {
+		i++
+		return see(line, i-1)
+	})
 }
 
-// Entries is the entries on lines from to to (not included) of the transcript as indexed
-// by ends, each with its line. A line that will not decode is skipped, as
+// Entries is the entries on lines from from to to (not included) of the transcript as indexed
+// by lines, each with its line. A line that will not decode is skipped, as
 // TranscriptReader skips one, and still counts as a line.
-func (s *Store) Entries(id wire.UUID, ends []int64, from, to int) ([]wire.TranscriptEntry, []int, error) {
+func (s *Store) Entries(id wire.UUID, lines Lines, from, to int) ([]wire.TranscriptEntry, []int, error) {
 	var out []wire.TranscriptEntry
 	var at []int
-	err := s.EachLine(id, ends, from, to, func(line []byte, i int) bool {
+	err := s.EachLine(id, lines, from, to, func(line []byte, i int) bool {
 		if len(bytes.TrimSpace(line)) == 0 {
 			return true
 		}
@@ -163,10 +158,10 @@ func (s *Store) Entries(id wire.UUID, ends []int64, from, to int) ([]wire.Transc
 // LinesContaining is the lines from from on whose bytes hold what, none of them decoded:
 // a key such as "userMessage" in quotes is only ever a key, since a string's quotes are
 // escaped.
-func (s *Store) LinesContaining(id wire.UUID, ends []int64, what string, from int) ([]int, error) {
+func (s *Store) LinesContaining(id wire.UUID, lines Lines, what string, from int) ([]int, error) {
 	var out []int
 	needle := []byte(what)
-	err := s.EachLine(id, ends, from, len(ends), func(line []byte, i int) bool {
+	err := s.EachLine(id, lines, from, lines.Total(), func(line []byte, i int) bool {
 		if bytes.Contains(line, needle) {
 			out = append(out, i)
 		}
@@ -175,35 +170,22 @@ func (s *Store) LinesContaining(id wire.UUID, ends []int64, what string, from in
 	return out, err
 }
 
-// EntriesFrom calls see with each entry on the whole lines after byte from, with where its
+// EntriesFrom calls see with each entry on the whole lines after place from, with where its
 // line starts and ends, past the kept line indexes: a reader that keeps its own place (said.json,
 // P20261019-1) pushes no open chat's index out. end is where the last whole line ends and size
-// the transcript's size as read; under from, it is some other transcript now, and nothing is read.
+// where the transcript ends as read; under from, it is some other transcript now, and nothing
+// is read.
 func (s *Store) EntriesFrom(id wire.UUID, from int64, see func(e wire.TranscriptEntry, start, end int64)) (end, size int64, err error) {
-	f, err := os.Open(s.Loc.Transcript(string(id)))
+	f, head, size, err := s.transcript(id).openLog()
 	if err != nil {
 		return 0, 0, err
 	}
 	defer f.Close()
-	info, err := f.Stat()
-	if err != nil {
-		return 0, 0, err
-	}
-	if size = info.Size(); size <= from {
+	if from = max(from, head.bytes); size <= from {
 		return min(from, size), size, nil
 	}
-	r := bufio.NewReaderSize(io.NewSectionReader(f, from, size-from), 1<<16)
 	end = from
-	var line []byte
-	for {
-		chunk, err := r.ReadSlice('\n')
-		line = append(line, chunk...)
-		if err == bufio.ErrBufferFull {
-			continue
-		}
-		if len(line) == 0 || line[len(line)-1] != '\n' {
-			return end, size, nil
-		}
+	err = scanLines(io.NewSectionReader(f, head.at(from), size-from), func(line []byte) bool {
 		start := end
 		end += int64(len(line))
 		if len(bytes.TrimSpace(line)) > 0 {
@@ -212,9 +194,7 @@ func (s *Store) EntriesFrom(id wire.UUID, from int64, see func(e wire.Transcript
 				see(e, start, end)
 			}
 		}
-		line = line[:0]
-		if err != nil {
-			return end, size, nil
-		}
-	}
+		return true
+	})
+	return end, size, err
 }

@@ -57,6 +57,9 @@ type Daemon struct {
 	// moves are the moves to another machine under way, whoever asked (#4641).
 	moves movesUnderWay
 
+	// largeChat asks the retention sweep to trim conversations before the hour (#6706).
+	largeChat chan struct{}
+
 	mu      sync.Mutex
 	clients map[int64]*Client
 	unknown map[string]int
@@ -240,7 +243,7 @@ func newWith(ctx context.Context, root string, opts startOptions) (*Daemon, erro
 	}
 	// Shutdown ends this ctx last, so a goroutine that waits on d.ctx ends with the host (#5653).
 	ctx, cancel := context.WithCancel(ctx)
-	d := &Daemon{ctx: ctx, Store: st, handlers: map[string]Handler{}, clients: map[int64]*Client{}, unknown: map[string]int{},
+	d := &Daemon{ctx: ctx, largeChat: make(chan struct{}, 1), Store: st, handlers: map[string]Handler{}, clients: map[int64]*Client{}, unknown: map[string]int{},
 		lives: map[wire.UUID]*live{}, relays: map[string]*relay{}, sent: map[wire.UUID]bool{},
 		watches: map[string]*folderWatch{}, interests: map[string][]interest{}, shells: map[shellKey]*shell{},
 		SettingsDir: filepath.Join(st.Loc.Root, "settings"), HostKey: controllink.HostKeyFile{Root: st.Loc.Root},
@@ -248,6 +251,12 @@ func newWith(ctx context.Context, root string, opts startOptions) (*Daemon, erro
 	d.opts.Store(&opts)
 	d.jobCancel = cancel
 	st.OnGap = d.tellEntry
+	st.OnLarge = func() {
+		select {
+		case d.largeChat <- struct{}{}:
+		default:
+		}
+	}
 	// The sweep of roots that are gone finds this root's own folders by this (#3746).
 	if err := store.MarkOwnFolders(st.Loc); err != nil {
 		log.Printf("store: could not mark this root's cache and log folders: %v", err)

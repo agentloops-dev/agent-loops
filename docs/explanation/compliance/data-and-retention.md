@@ -7,7 +7,7 @@ description: "What each store of Agent Loops keeps, how long and how large, when
 # Data and retention
 
 Agent Loops keeps plain files, not a database. Most stores have a bound: a time, a count or a
-size. Some have none. A conversation has none: it is kept until its agent is deleted. This
+size. Some have none. A conversation is kept for 90 days and 10 MB at most. This
 page lists the stores, then says what a backup holds and what it does not.
 
 **Kind** is how the code reads and writes a store: document, log, time series, graph, blob,
@@ -37,10 +37,11 @@ Mac.
 
 | Store | Kind | What it keeps | How long, how large | Applied |
 | --- | --- | --- | --- | --- |
-| `agents/<id>/agent.json`, `transcript.jsonl` | document; log | Each agent's record and its whole conversation | Until the agent is deleted. An archived agent is deleted after **Archived agents** (7, 14, 30 or 90 days, or Forever; 30 by default). A pinned agent is kept. A conversation has no size limit, on purpose: Archived agents bounds it (#3648). | At start, then hourly |
-| `agents/<id>/app-tools.jsonl` | log | Each call to the app's own tools | With the agent. Each argument and the answer are cut to 2,000 characters. | With the agent |
-| `agents/<id>/said.json` | cache | A search index of what was said | 32 KiB, with the agent | On write |
-| `turns/<id>.jsonl`, in the cache folder | cache | A summary of each turn | With the agent. Made again from the transcript when it is missing. | With the agent |
+| `agents/<id>/agent.json` | document | Each agent's record | Until the agent is deleted. An archived agent is deleted after **Archived agents** (7, 14, 30 or 90 days; 30 by default). A pinned agent is kept for longer than the setting, but not for longer than 90 days after it was archived (#6677). A record of an agent that is not archived stays, without the lines that aged out. | At start, then hourly |
+| `agents/<id>/transcript.jsonl` | log | The whole conversation. | 10 MB a conversation and 90 days, live and pinned agents too (#6677, #6706). The oldest lines go, with no summary. One entry is 4 MB at most: a larger one is kept as a notice. | At start, then hourly; soon after a write that passes 20 MB |
+| `agents/<id>/app-tools.jsonl` | log | Each call to the app's own tools. | 2 MB an agent and 90 days. Each argument and the answer are cut to 2,000 characters; one call is 1 MB at most. | At start, then hourly; soon after a write that passes 4 MB |
+| `agents/<id>/said.json` | cache | A search index of what was said. | 32 KiB, with the agent. Made again after its transcript loses lines. | On write |
+| `turns/<id>.jsonl`, in the cache folder | cache | A summary of each turn. | Only the turns of the transcript kept, with the agent. Deleted when its transcript loses lines, and made again from it when it is missing. | With the transcript |
 | `erasures.json` | document | Runtime copies of deleted agents still to erase | 1,000 entries, 3 tries, 7 days | On write |
 | `erased.json` | document | Every agent deleted here | 10,000 IDs for 400 days | On write |
 | `elsewhere.json` | document | Sessions started on or from other machines | 200 a list | On write |
