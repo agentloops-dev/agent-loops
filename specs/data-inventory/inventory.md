@@ -133,7 +133,7 @@ from the root (`agentsd/backups.go:69,72`). It holds nothing else.
 | Store | Holds | Bound | Swept |
 |---|---|---|---|
 | `~/.agents/settings/*.json` | Settings that follow the person (see `docs/reference/agents-folder.md`) | fixed shape | n/a |
-| `~/.agents/summaries/*` | Daily summaries, none written since #5853 | the newest 3 that were kept | n/a |
+| `~/.agents/summaries/*` | Daily summaries, none written since #5853 | the newest 3, 90 days after their last change (#6714) | hourly |
 | `~/.agents/checks/suggestions.json` | Daily-check findings | 50 suggestions, 200 dismissals (`dailychecks.go:38,48`) | on write |
 | `~/.agents-secrets/secrets.env`, `connections.json`, `provider-secrets.json` | Personal secrets, OAuth connections (Linux; the Keychain on a Mac), machine provider secrets | one per entry | the person edits them |
 | `~/.agents-secrets/sessions/<agent>.json` | Session-only secrets | Values go at archive; the file goes at delete; orphans are swept at start (`sessionsecrets.go:221-275`) | archive, delete, start |
@@ -388,7 +388,7 @@ newer than a row above for the same store.
 | `<folder>/.agents/dropbox/` | blob | Files handed to workflows | 25 MB a file, 500 MB a folder; no age, on purpose (#3648) | `Go/internal/agentsd/host.go:689,693` | #6711 |
 | `<folder>/.agents/reviews/runtimes/` | document | Runtime assessment reports | 1 MiB per report; newest 50 per machine; 90 days | `Go/internal/agentsd/assess_reports.go` | #6712 |
 | `~/.agents/dismissed-leads.json` | key-value | Dismissed epics | None: an entry goes only when its epic gets a lead | `Go/internal/agentsd/worksuggest.go:32,55-59,165` | #6713 |
-| `~/.agents/summaries/` | document | Daily summaries from before #5853 | Never deleted | `docs/explanation/compliance/data-and-retention.md` | #6714 |
+| `~/.agents/summaries/` | document | Daily summaries from before #5853 | 1 MiB per page; newest 3; 90 days | `Go/internal/agentsd/oldsummaries.go` | #6714 |
 | `<root>/erased.json` | document | IDs of deleted agents | 10,000 IDs, 400 days | `Go/internal/agentsd/erasure.go:43-44` | #6715 |
 | `<root>/repo-aliases.json` | key-value | Repo renames | 1,000 renames of 2 KiB each, 90 days, the oldest first | `Go/internal/agentsd/repoaliases.go` (`openRepoAliases`) | #6716 |
 | `<root>/release-tags.json` | log | Linked release tags | 5,000 tags of 1 KiB; 90 days | `Go/internal/agentsd/lineagerelease.go` | #6717 |
