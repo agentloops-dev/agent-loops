@@ -32,7 +32,7 @@ const work = new WorkCache();
 setWorkCache(work);
 effect(() => {
   const kind = session.state.value.kind;
-  if (kind === "open" || kind === "down") { copy.writing = true; work.writing = true; }
+  if (kind === "open" || kind === "down") { copy.open(); work.open(); }
 });
 // Forgotten, here or in another tab (#3670): the drafts, the lock pins and the push subscription
 // were that control plane's, and go with it, as does the copy, deleted with the keys (#4790).

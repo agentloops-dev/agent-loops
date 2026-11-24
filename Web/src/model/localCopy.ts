@@ -7,6 +7,7 @@ import { effect } from "@preact/signals";
 import type { Agent, ControlMachine, FolderSummary, ListRevision, TranscriptPage, TurnsPage } from "../protocol/generated";
 import { formatRef } from "../protocol/ref";
 import { openAgentsDatabase } from "../wire/keys";
+import { cacheAgeLimit, type CacheStats, type CacheStore } from "./cacheStore";
 import type { Store } from "./store";
 
 /** The most the copy holds, as the Remote's (spec 4777-fast). */
@@ -15,6 +16,10 @@ export const copyCap = 50 * 1024 * 1024;
 export const transcriptsKept = 20;
 /** A transcript's entries kept: its end, as one `agents/transcript` page (store.ts `turnPage`). */
 export const entriesKept = 200;
+/** The largest record, in UTF-8 bytes of its JSON (#6792, as the Mac's). A machine over it loses its archived records and a
+ * chat its oldest entries; one still over it, or a picture over it, is not kept, so it is read again next time. */
+export const recordCap = 16 * 1024 * 1024;
+const sweepEvery = 60 * 60 * 1000;
 /** A change is written this long after the last one, so a busy chat writes once a second at most. */
 export const writeAfter = 1_000;
 
@@ -63,6 +68,9 @@ export interface CopyIndexRow {
   kind: CopyRecord["kind"];
   /** A Work entry's group (#4930). */
   group?: WorkGroup | undefined;
+  /** A transcript's machine (#6792): it goes with it. None in a row from before #6792. */
+  host?: string | undefined;
+  /** When the record was read from its host; drawing it does not make it newer. */
   at: number;
   bytes: number;
 }
@@ -86,9 +94,8 @@ export function workRef(group: WorkGroup, asked: string): string {
 }
 
 /**
- * The refs to drop so the copy keeps its caps: transcripts past the newest `kept`, then the
- * oldest transcript while the whole is over `cap`. Machines are never dropped: all of them are
- * well under a megabyte.
+ * The refs to drop so the copy keeps its caps: transcripts past the newest `kept`, then, while the whole is over `cap`,
+ * the oldest Work entry, then the oldest transcript, and last the oldest machine.
  */
 export function overCaps(rows: readonly CopyIndexRow[], cap = copyCap, kept = transcriptsKept, imageCap = cap / 4): string[] {
   const newest = (a: CopyIndexRow, b: CopyIndexRow) => b.at - a.at;
@@ -122,19 +129,40 @@ export function overCaps(rows: readonly CopyIndexRow[], cap = copyCap, kept = tr
     drop.push(oldest);
     total -= oldest.bytes;
   }
+  const machines = rows.filter((r) => r.kind === "machine").sort(newest);
+  while (total > cap && machines.length > 0) {
+    const oldest = machines.pop()!;
+    drop.push(oldest);
+    total -= oldest.bytes;
+  }
   return drop.map((r) => r.ref);
 }
 
 /** Where the copy lives: IndexedDB on the page, memory in the tests. */
 export interface CopyStore {
   get(ref: string): Promise<unknown>;
-  /** Puts and deletes in one transaction. */
-  write(put: ReadonlyArray<[string, unknown]>, drop: readonly string[]): Promise<void>;
+  /** Puts `records` and changes the stored index in one transaction, so two tabs do not undo each other's index. What the
+   * new index does not name goes: of what the old one named, or with `all`, of everything held. Answers the new index. */
+  write(records: readonly CopyRecord[], change: (stored: readonly CopyIndexRow[]) => CopyIndexRow[], all?: boolean): Promise<CopyIndexRow[]>;
 }
 
 const indexKey = "@index";
 
+function request<T>(r: IDBRequest<T>): Promise<T> {
+  return new Promise((resolve, reject) => {
+    r.onsuccess = () => resolve(r.result);
+    r.onerror = () => reject(r.error);
+  });
+}
+
+/** The keys to delete once the index is `rows`. */
+function unnamed(keys: readonly string[], rows: readonly CopyIndexRow[]): string[] {
+  const named = new Set(rows.map((r) => r.ref));
+  return keys.filter((k) => k !== indexKey && !named.has(k));
+}
+
 /** The store `copy` in the database `agents` (wire/keys.ts). */
+// store-bounds: kind=cache; size=50MiB; age=90d; action=evict; record=16MiB; applied=on write, on open and hourly
 export class IndexedCopyStore implements CopyStore {
   async get(ref: string): Promise<unknown> {
     const db = await openAgentsDatabase();
@@ -149,18 +177,26 @@ export class IndexedCopyStore implements CopyStore {
     }
   }
 
-  async write(put: ReadonlyArray<[string, unknown]>, drop: readonly string[]): Promise<void> {
+  async write(records: readonly CopyRecord[], change: (stored: readonly CopyIndexRow[]) => CopyIndexRow[], all = false): Promise<CopyIndexRow[]> {
     const db = await openAgentsDatabase();
     try {
-      await new Promise<void>((resolve, reject) => {
-        const tx = db.transaction("copy", "readwrite");
-        const store = tx.objectStore("copy");
-        for (const ref of drop) store.delete(ref);
-        for (const [ref, value] of put) store.put(value, ref);
+      const tx = db.transaction("copy", "readwrite");
+      const done = new Promise<void>((resolve, reject) => {
         tx.oncomplete = () => resolve();
         tx.onerror = () => reject(tx.error);
         tx.onabort = () => reject(tx.error);
       });
+      // A failed request also aborts the transaction, which `done` says.
+      done.catch(() => undefined);
+      const store = tx.objectStore("copy");
+      const stored = ((await request(store.get(indexKey))) as CopyIndexRow[] | undefined) ?? [];
+      const rows = change(stored);
+      const held = all ? (await request(store.getAllKeys())).map(String) : stored.map((r) => r.ref);
+      for (const record of records) store.put(record, record.ref);
+      for (const ref of unnamed([...held, ...records.map((r) => r.ref)], rows)) store.delete(ref);
+      store.put(rows, indexKey);
+      await done;
+      return rows;
     } finally {
       db.close();
     }
@@ -173,9 +209,36 @@ export class MemoryCopyStore implements CopyStore {
   async get(ref: string): Promise<unknown> {
     return structuredClone(this.held.get(ref));
   }
-  async write(put: ReadonlyArray<[string, unknown]>, drop: readonly string[]): Promise<void> {
-    for (const ref of drop) this.held.delete(ref);
-    for (const [ref, value] of put) this.held.set(ref, structuredClone(value));
+  async write(records: readonly CopyRecord[], change: (stored: readonly CopyIndexRow[]) => CopyIndexRow[], all = false): Promise<CopyIndexRow[]> {
+    const stored = (structuredClone(this.held.get(indexKey)) as CopyIndexRow[] | undefined) ?? [];
+    const rows = change(stored);
+    const held = all ? [...this.held.keys()] : stored.map((r) => r.ref);
+    for (const record of records) this.held.set(record.ref, structuredClone(record));
+    for (const ref of unnamed([...held, ...records.map((r) => r.ref)], rows)) this.held.delete(ref);
+    this.held.set(indexKey, structuredClone(rows));
+    return rows;
+  }
+}
+
+const encoder = new TextEncoder();
+const utf8 = (text: string) => encoder.encode(text).length;
+
+/** The record cut to `cap`, with its size; undefined when it cannot be. */
+function fitted(record: CopyRecord, cap: number): { record: CopyRecord; bytes: number } | undefined {
+  let fit = record;
+  for (;;) {
+    const bytes = utf8(JSON.stringify(fit));
+    if (bytes <= cap) return { record: fit, bytes };
+    if (fit.kind === "machine") {
+      const live = fit.agents.filter((a) => a.state !== "archived");
+      if (live.length === fit.agents.length) return undefined;
+      // The archived ones left out are not in the point's list.
+      const { point: _, ...rest } = fit;
+      fit = { ...rest, agents: live };
+    } else if (fit.kind === "transcript" && fit.page.entries.length > 0) {
+      const less = Math.ceil(fit.page.entries.length / 2);
+      fit = { ...fit, page: { ...fit.page, firstIndex: fit.page.firstIndex + less, entries: fit.page.entries.slice(less) } };
+    } else return undefined;
   }
 }
 
@@ -183,21 +246,54 @@ export class MemoryCopyStore implements CopyStore {
  * The copy: its index in memory, its records in the store. Every failure is swallowed: a copy
  * that cannot be read or written is no copy, and the page fetches as it did before.
  */
-export class LocalCopy {
-  private index = new Map<string, CopyIndexRow>();
+export class LocalCopy implements CacheStore {
+  private index: CopyIndexRow[] = [];
+  private loaded = false;
   private queue: Promise<void> = Promise.resolve();
+  private timer: ReturnType<typeof setInterval> | undefined;
   /** Off while the page is not signed in: a write then would make the database again. */
   writing = false;
 
-  constructor(readonly store: CopyStore = new IndexedCopyStore(), readonly cap = copyCap) {}
+  constructor(readonly store: CopyStore = new IndexedCopyStore(), readonly cap = copyCap, readonly recordBytes = recordCap,
+    private readonly now: () => number = () => Date.now()) {}
+
+  /** The page is signed in: it writes from now, and sweeps at once and each hour. */
+  open(): void {
+    if (this.writing) return;
+    this.writing = true;
+    void this.sweep();
+    this.timer ??= setInterval(() => void this.sweep(), sweepEvery);
+  }
+
+  private fresh(at: number): boolean {
+    return at >= this.now() - cacheAgeLimit;
+  }
+
+  /** The rows less what has aged out (#6792), then less what is over the caps. */
+  private bounded(rows: readonly CopyIndexRow[]): CopyIndexRow[] {
+    const fresh = rows.filter((r) => this.fresh(r.at));
+    const over = new Set(overCaps(fresh, this.cap));
+    return fresh.filter((r) => !over.has(r.ref));
+  }
+
+  /** One write after another; each failure is swallowed. */
+  private serial(act: () => Promise<void>): Promise<void> {
+    this.queue = this.queue.then(() => (this.writing ? act() : undefined)).catch(() => undefined);
+    return this.queue;
+  }
+
+  private async ready(): Promise<void> {
+    if (this.loaded) return;
+    this.index = ((await this.store.get(indexKey)) as CopyIndexRow[] | undefined) ?? [];
+    this.loaded = true;
+  }
 
   /** The index, then every machine it names. */
   async machines(): Promise<MachineCopy[]> {
     try {
       const rows = ((await this.store.get(indexKey)) as CopyIndexRow[] | undefined) ?? [];
-      this.index = new Map(rows.map((r) => [r.ref, r]));
-      const machines = await Promise.all(rows.filter((r) => r.kind === "machine").map((r) => this.store.get(r.ref)));
-      return machines.filter((m): m is MachineCopy => (m as MachineCopy | undefined)?.kind === "machine");
+      const machines = (await Promise.all(rows.filter((r) => r.kind === "machine").map((r) => this.store.get(r.ref)))) as Array<MachineCopy | undefined>;
+      return machines.filter((m): m is MachineCopy => m?.kind === "machine" && this.fresh(m.at));
     } catch {
       return [];
     }
@@ -206,32 +302,51 @@ export class LocalCopy {
   async transcript(session: string): Promise<TranscriptCopy | null> {
     try {
       const got = (await this.store.get(sessionRef(session))) as TranscriptCopy | undefined;
-      return got?.kind === "transcript" ? got : null;
+      return got?.kind === "transcript" && this.fresh(got.at) ? got : null;
     } catch {
       return null;
     }
   }
 
   /**
-   * Puts records and keeps the caps, one write after another. With `machines`, the hosts the
-   * page lists now, every other machine in the copy goes.
+   * Puts records and keeps the bounds, one write after another. With `machines`, the hosts the control plane lists now,
+   * every other machine in the copy goes, with its chats.
    */
   put(records: readonly CopyRecord[], machines?: readonly string[]): Promise<void> {
-    const listed = machines && new Set(machines.map(machineRef));
-    const drop = listed ? [...this.index.values()].filter((r) => r.kind === "machine" && !listed.has(r.ref)).map((r) => r.ref) : [];
-    if (!this.writing || (records.length === 0 && drop.length === 0)) return this.queue;
-    for (const ref of drop) this.index.delete(ref);
-    for (const record of records) {
-      this.index.set(record.ref, { ref: record.ref, kind: record.kind, ...(record.kind === "work" ? { group: record.group } : {}), at: record.at,
-        bytes: JSON.stringify(record).length * 2 });
-    }
-    for (const ref of overCaps([...this.index.values()], this.cap)) {
-      this.index.delete(ref);
-      drop.push(ref);
-    }
-    const put: Array<[string, unknown]> = [...records.map((r): [string, unknown] => [r.ref, r]), [indexKey, [...this.index.values()]]];
-    this.queue = this.queue.then(() => (this.writing ? this.store.write(put, drop) : undefined)).catch(() => undefined);
-    return this.queue;
+    if (!this.writing || (records.length === 0 && !machines)) return this.queue;
+    return this.serial(async () => {
+      await this.ready();
+      const fits = records.flatMap((r) => fitted(r, this.recordBytes) ?? []);
+      const listed = machines && new Set(machines);
+      const listedRefs = machines && new Set(machines.map(machineRef));
+      // A chat of a row from before #6792 does not say its machine: it goes too, and is read again when it opens.
+      const gone = (r: CopyIndexRow) => !!listed && !!listedRefs && (r.kind === "machine" ? !listedRefs.has(r.ref)
+        : r.kind === "transcript" && !(r.host !== undefined && listed.has(r.host)));
+      const replaced = new Set(records.map((r) => r.ref));
+      const rows = fits.map(({ record, bytes }): CopyIndexRow => ({ ref: record.ref, kind: record.kind, at: record.at,
+        ...(record.kind === "work" ? { group: record.group } : record.kind === "transcript" ? { host: record.host } : {}),
+        // With its row in the index: its ref and its numbers.
+        bytes: bytes + utf8(record.ref) + 64 }));
+      const change = (stored: readonly CopyIndexRow[]) =>
+        this.bounded([...stored.filter((r) => !replaced.has(r.ref)), ...rows].filter((r) => !gone(r)));
+      if (records.length === 0 && change(this.index).length === this.index.length) return;
+      if (!this.writing) return;
+      this.index = await this.store.write(fits.map((f) => f.record), change);
+    });
+  }
+
+  /** At sign-in and each hour: what another tab wrote is counted, what the index does not name goes, then the bounds. */
+  sweep(): Promise<void> {
+    return this.serial(async () => {
+      this.index = await this.store.write([], (stored) => this.bounded(stored), true);
+      this.loaded = true;
+    });
+  }
+
+  async stats(): Promise<CacheStats> {
+    await this.ready().catch(() => undefined);
+    return { count: this.index.length, bytes: this.index.reduce((sum, r) => sum + r.bytes, 0),
+      oldest: this.index.length === 0 ? undefined : Math.min(...this.index.map((r) => r.at)) };
   }
 
   /** Work's last answer for what was asked (#4930); undefined with none. */
@@ -243,21 +358,24 @@ export class LocalCopy {
   async workRead<T>(group: WorkGroup, asked: string): Promise<{ value: T; at: number } | undefined> {
     try {
       const got = (await this.store.get(workRef(group, asked))) as WorkCopy | undefined;
-      return got?.kind === "work" && got.group === group ? { value: got.value as T, at: got.at } : undefined;
+      return got?.kind === "work" && got.group === group && this.fresh(got.at) ? { value: got.value as T, at: got.at } : undefined;
     } catch {
       return undefined;
     }
   }
 
   /** A host's answer, kept for the next open (#4930). Only a host's answers are kept, never what came from the copy. */
-  keepWork(group: WorkGroup, asked: string, value: unknown, at = Date.now()): Promise<void> {
+  keepWork(group: WorkGroup, asked: string, value: unknown, at = this.now()): Promise<void> {
     return this.put([{ kind: "work", ref: workRef(group, asked), group, value, at }]);
   }
 
   /** At sign-out: nothing more is written, and what is in memory goes. The database itself goes with the keys. */
   forget(): void {
     this.writing = false;
-    this.index.clear();
+    clearInterval(this.timer);
+    this.timer = undefined;
+    this.index = [];
+    this.loaded = false;
   }
 }
 
@@ -309,7 +427,8 @@ export function startLocalCopy(store: Store, copy: LocalCopy, now: () => number 
         ...(point ? { point } : {}), at: now() });
     }
     for (const id of [...written.keys()]) if (!hosts.some((h) => h.id === id)) written.delete(id);
-    void copy.put(records, hosts.map((h) => h.id));
+    // Until the control plane lists them, the hosts are the copy's own (#6792).
+    void copy.put(records, store.hostsListed ? hosts.map((h) => h.id) : undefined);
   };
   const stopMachines = effect(() => {
     void store.hosts.value;

@@ -36,20 +36,20 @@ test("refs: a machine and a session", () => {
   assert.equal(sessionRef("7F3C"), "agents:session:#7F3C");
 });
 
-test("caps: transcripts past the newest 20 go, then the oldest while over the cap; machines stay", () => {
+test("caps: transcripts past the newest 20 go, then the oldest while over the cap; then machines", () => {
   const rows = [{ ref: "m", kind: "machine", at: 0, bytes: 10 }];
   for (let i = 0; i < transcriptsKept + 2; i++) rows.push({ ref: `t${i}`, kind: "transcript", at: i, bytes: 10 });
   assert.deepEqual(overCaps(rows, 1_000).sort(), ["t0", "t1"]);
   assert.deepEqual(overCaps(rows, 10 + 10 * 18).sort(), ["t0", "t1", "t2", "t3"]);
-  assert.deepEqual(overCaps([{ ref: "m", kind: "machine", at: 0, bytes: 99 }], 10), []);
+  assert.deepEqual(overCaps([{ ref: "m", kind: "machine", at: 0, bytes: 99 }], 10), ["m"]);
 });
 
 test("the copy is drawn at once, marked from this device, and the host's answer wins", async () => {
   const held = new MemoryCopyStore();
   const seed = new LocalCopy(held);
   seed.writing = true;
-  await seed.put([{ kind: "machine", ref: machineRef("mac"), host: host("mac"), folders: [], agents: [agent("old")], at: 1 },
-    { kind: "machine", ref: machineRef("gone"), host: host("gone"), agents: [agent("g")], at: 1 }]);
+  await seed.put([{ kind: "machine", ref: machineRef("mac"), host: host("mac"), folders: [], agents: [agent("old")], at: Date.now() },
+    { kind: "machine", ref: machineRef("gone"), host: host("gone"), agents: [agent("g")], at: Date.now() }]);
 
   const link = slowLink([host("mac")], [agent("new", 2)]);
   const store = new Store(link);
@@ -78,7 +78,7 @@ test("a chat draws its copy until its host's page comes, which replaces it, and 
   const held = new MemoryCopyStore();
   const seed = new LocalCopy(held);
   seed.writing = true;
-  await seed.put([{ kind: "transcript", ref: sessionRef("s"), host: "mac", session: "s", at: 1,
+  await seed.put([{ kind: "transcript", ref: sessionRef("s"), host: "mac", session: "s", at: Date.now(),
     turns: { turns: [], firstTurn: 0, openStart: 0 }, page: { firstIndex: 0, total: 1, entries: [entry("copy")] } }]);
 
   const link = slowLink([host("mac")], []);
@@ -130,7 +130,7 @@ test("signed out, nothing is written", async () => {
   const copy = new LocalCopy(held);
   copy.writing = true;
   copy.forget();
-  await copy.put([{ kind: "machine", ref: machineRef("mac"), host: host("mac"), agents: [], at: 1 }]);
+  await copy.put([{ kind: "machine", ref: machineRef("mac"), host: host("mac"), agents: [], at: Date.now() }]);
   assert.equal(held.held.size, 0);
 });
 
@@ -166,4 +166,98 @@ test("caps: pictures to their count and cap, then the oldest Work entry before a
   ];
   assert.deepEqual(overCaps(mixed, 120, 20, 1_000), ["old"]);
   assert.deepEqual(overCaps([{ ref: "l", kind: "work", group: "list", at: 1, bytes: 1 }]), ["l"]);
+});
+
+const day = 24 * 60 * 60 * 1000;
+const machine = (id, at, agents = []) => ({ kind: "machine", ref: machineRef(id), host: host(id), agents, at });
+const chat = (session, on, at, entries = [entry("e")]) => ({ kind: "transcript", ref: sessionRef(session), host: on, session, at,
+  turns: { turns: [], firstTurn: 0, openStart: 0 }, page: { firstIndex: 0, total: entries.length, entries } });
+
+/** A copy with a clock of its own. */
+function aged(held = new MemoryCopyStore(), recordBytes = undefined) {
+  let now = 1_000;
+  const copy = new LocalCopy(held, undefined, recordBytes, () => now);
+  copy.writing = true;
+  return { copy, held, tick: (ms) => { now += ms; } };
+}
+
+test("age: each kind of record goes 90 days after it was read, and drawing it does not keep it (#6792)", async () => {
+  const { copy, held, tick } = aged();
+  await copy.put([machine("mac", 1_000), chat("s", "mac", 1_000)]);
+  await copy.keepWork("image", "u", "picture");
+  tick(90 * day);
+  await copy.sweep();
+  assert.equal((await copy.machines()).length, 1, "90 days is kept");
+  assert.ok(await copy.transcript("s"));
+  assert.equal(await copy.work("image", "u"), "picture");
+  const { count, oldest } = await copy.stats();
+  assert.deepEqual([count, oldest], [3, 1_000]);
+  tick(1);
+  // Before a sweep too, nothing old draws.
+  assert.deepEqual(await copy.machines(), []);
+  assert.equal(await copy.transcript("s"), null);
+  assert.equal(await copy.work("image", "u"), undefined);
+  await copy.sweep();
+  assert.deepEqual([...held.held.keys()], ["@index"]);
+  assert.deepEqual(await copy.stats(), { count: 0, bytes: 0, oldest: undefined });
+});
+
+test("age: a write ages old records out", async () => {
+  const { copy, held, tick } = aged();
+  await copy.put([machine("mac", 1_000)]);
+  tick(91 * day);
+  await copy.keepWork("image", "u", "picture");
+  assert.deepEqual([...held.held.keys()].sort(), ["@index", workRef("image", "u")]);
+});
+
+test("a machine no longer listed goes with its chats (#6792)", async () => {
+  const { copy, held } = aged();
+  await copy.put([machine("mac", 1_000), machine("gone", 1_000), chat("s", "mac", 1_000), chat("g", "gone", 1_000)]);
+  await copy.put([]);
+  assert.equal(held.held.size, 5);
+  await copy.put([], ["mac"]);
+  assert.deepEqual([...held.held.keys()].sort(), ["@index", machineRef("mac"), sessionRef("s")].sort());
+});
+
+test("until the control plane lists its machines, none goes (#6792)", async () => {
+  const { copy, held } = aged();
+  await copy.put([machine("mac", 1_000)]);
+  const store = new Store(slowLink([], []));
+  const stop = startLocalCopy(store, copy);
+  await settle();
+  // Another tab keeps a machine that this page does not hold.
+  await aged(held).copy.put([machine("other", 1_000)]);
+  store.hosts.value = [...store.hosts.value];
+  await settle();
+  assert.ok(held.held.has(machineRef("other")));
+  stop();
+});
+
+test("tabs: one does not take the other's records out of the index; a record no index names goes", async () => {
+  const { copy, held } = aged();
+  const other = aged(held).copy;
+  await other.stats();
+  await copy.put([machine("a", 1_000)]);
+  await other.put([machine("b", 1_000)]);
+  held.held.set("lost", { at: 1_000 });
+  await copy.sweep();
+  assert.equal((await copy.stats()).count, 2);
+  assert.deepEqual([...held.held.keys()].sort(), ["@index", machineRef("a"), machineRef("b")].sort());
+});
+
+test("largest record: a machine loses its archived records, a chat its oldest entries; a picture is not kept (#6792)", async () => {
+  const { copy, held } = aged(undefined, 1_024);
+  const archived = Array.from({ length: 50 }, (_, i) => ({ ...agent(`a${i}`), state: "archived" }));
+  await copy.put([{ ...machine("mac", 1_000, [agent("live"), ...archived]), point: { epoch: "e", revision: 1 } },
+    chat("s", "mac", 1_000, Array.from({ length: 50 }, (_, i) => entry(`e${i}`)))]);
+  const kept = held.held.get(machineRef("mac"));
+  assert.deepEqual(kept.agents.map((a) => a.id), ["live"]);
+  assert.equal(kept.point, undefined);
+  const page = held.held.get(sessionRef("s")).page;
+  assert.equal(page.entries.at(-1).id, "e49");
+  assert.equal(page.entries[0].id, `e${page.firstIndex}`);
+  await copy.keepWork("image", "u", "small");
+  await copy.keepWork("image", "u", "x".repeat(2_048));
+  assert.equal(await copy.work("image", "u"), undefined);
+  assert.equal(held.held.has(workRef("image", "u")), false, "the stale one goes too");
 });

@@ -2,7 +2,6 @@ package agentsd
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -14,42 +13,71 @@ import (
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
-// #3652: release-tags.json keeps a repo's newest tags only, and a tag older than those
-// is not linked again.
-func TestReleaseTagsKeepTheNewest(t *testing.T) {
+// #3652: only a repo's newest tags are looked at, and one that is done is not asked again.
+func TestReleaseTagsLookAtTheNewest(t *testing.T) {
 	t.Parallel()
 
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	repo := forgeRepo{"github", "alexec/agents"}
-	var all []string
+	var all, asked []string
 	for i := 1; i <= releaseTagsKept+5; i++ {
-		tag := fmt.Sprintf("v0.%d.0", i)
-		all = append(all, tag)
-		d.markReleaseTagDone(repo, tag)
+		all = append(all, fmt.Sprintf("v0.%d.0", i))
 	}
-	var f releaseTagsFile
-	b, _ := os.ReadFile(d.releaseTagsPath())
-	if err := json.Unmarshal(b, &f); err != nil {
-		t.Fatal(err)
-	}
-	kept := f.Done["github:alexec/agents"]
-	if len(kept) != releaseTagsKept || kept[0] != "v0.6.0" || kept[len(kept)-1] != all[len(all)-1] {
-		t.Fatalf("kept %d: %v", len(kept), kept)
-	}
-	done, floor := d.doneReleaseTags(repo)
-	if floor != "v0.6.0" || done["v0.5.0"] {
-		t.Fatalf("floor %q, done v0.5.0 %v", floor, done["v0.5.0"])
-	}
-	asked := 0
 	d.releaseTags = func(string) ([]string, error) { return all, nil }
-	d.releaseCommitTime = func(context.Context, string, forgeRepo, string) (time.Time, error) {
-		asked++
-		return time.Time{}, fmt.Errorf("not asked")
+	d.releaseCommitTime = func(_ context.Context, _ string, _ forgeRepo, tag string) (time.Time, error) {
+		asked = append(asked, tag)
+		return time.Time{}, fmt.Errorf("no forge")
 	}
 	d.checkReleaseTagsForFolder(context.Background(), "/folder", repo)
-	if asked != 0 {
-		t.Fatalf("asked the forge %d times for tags already done", asked)
+	if len(asked) != releaseTagsKept || asked[0] != "v0.6.0" {
+		t.Fatalf("asked for %d: %v", len(asked), asked)
+	}
+	for _, tag := range asked {
+		d.markReleaseTagDone(repo, tag)
+	}
+	asked = nil
+	d.checkReleaseTagsForFolder(context.Background(), "/folder", repo)
+	if len(asked) != 0 {
+		t.Fatalf("asked the forge for tags already done: %v", asked)
+	}
+}
+
+// #6717: a done tag goes 90 days after it was linked, and is not linked again: its release is
+// at least as old. A file from before entries had a time starts again.
+func TestReleaseTagsAgeOut(t *testing.T) {
+	clock := atTime(t, time.Date(2026, 11, 6, 12, 0, 0, 0, time.UTC))
+	d, _ := start(t, t.TempDir())
+	defer d.Shutdown()
+	repo := forgeRepo{"github", "alexec/agents"}
+	if err := os.WriteFile(d.releaseTagsPath(), []byte(`{"done":{"github:alexec/agents":["v0.1.0"]}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	forge := &fakeReleases{
+		tags:       []string{"v0.1.0", "v0.2.0"},
+		commitTime: map[string]time.Time{"v0.1.0": nowFunc(), "v0.2.0": nowFunc()},
+		compares:   map[string][]compareCommit{"v0.1.0..v0.2.0": {{SHA: "s1", Message: "A change (#1)"}}},
+		asked:      map[string]int{},
+	}
+	d.releaseTags, d.releaseCommitTime, d.releaseCompare, d.releaseCommitPR =
+		forge.tagsOf, forge.time, forge.compare, forge.commitPR
+	d.checkReleaseTagsForFolder(context.Background(), "/folder", repo)
+	if done := d.doneReleaseTags(repo); len(done) != 2 || forge.asked["compare"] != 1 {
+		t.Fatalf("done %v, asked %v", done, forge.asked)
+	}
+	// Another repo's tags are its own.
+	if done := d.doneReleaseTags(forgeRepo{"github", "alexec/agents2"}); len(done) != 0 {
+		t.Fatalf("another repo's: %v", done)
+	}
+
+	clock.add(store.MaxAge)
+	d.sweepSmallStores(nowFunc())
+	if left, err := d.releaseDone.Read(); err != nil || len(left) != 0 {
+		t.Fatalf("after the sweep: %v, %v", left, err)
+	}
+	d.checkReleaseTagsForFolder(context.Background(), "/folder", repo)
+	if done := d.doneReleaseTags(repo); len(done) != 2 || forge.asked["compare"] != 1 {
+		t.Fatalf("after 90 days: done %v, asked %v", done, forge.asked)
 	}
 }
 

@@ -80,7 +80,7 @@ from the root (`agentsd/backups.go:69,72`). It holds nothing else.
 | `lineage-sync.json` | Links and session states unsent to the control plane (#4275) | 2,000 links, 5,000 states saved (25,000 held); past that it saves "send all again" instead (`lineagesync.go:31-40`) | on save | no |
 | `ci-timings/sync.json` | Days of build timings unsent to the control plane, per repository (#5232) | 90 days of at most 20 repositories (`cisync.go`) | on send | no |
 | `lineage-comments.json` | PR cost comments | 500, 30 days (`lineagecomment.go:42-44`) | on save | no |
-| `release-tags.json` | Tags already linked, per repo | **none** (`lineagerelease.go:109`) | never | no |
+| `release-tags.json` | Tags already linked | 90 days, 5,000 tags of 1 KiB (`lineagerelease.go`, `openReleaseTags`) | hourly, and on write: age, and the count when twice over | no |
 | `achievements.json` | Milestones | fixed set | n/a | no |
 
 ### Workflows, assessments, approvals and devices
@@ -193,7 +193,7 @@ handover also leaves out `v1/keys/` (`storecopy.go:21,25`).
 | Key | Holds | Bound | Swept |
 |---|---|---|---|
 | `v1/control.json` | Owner, endpoints, epoch, control key public parts, audit days | 1 | — |
-| `v1/clients/<UUID>.json` | Name, kind, public key, last seen, APNs token, ≤16 Live Activity tokens (12 h each), Web Push subscription | **No count cap** on self-hosted (hosted: 5/50). Key life 90 days (`keylife.go:18`). | Tombstone 7 days. **A client whose key expired is kept for ever.** |
+| `v1/clients/<UUID>.json` | Name, kind, public key, last seen, APNs token, ≤16 Live Activity tokens (12 h each), Web Push subscription | 16 KiB a record, 1 MiB in all (#6757; hosted: 5/50 clients too). Key life 90 days (`keylife.go:18`). | Tombstone 7 days. A client whose key expired is forgotten by the hourly sweep (#6757). |
 | `v1/machines/<id>.json` | Name, key, platform, version, owner, workspace | No cap (hosted: 2/20) | Tombstone 7 days. **An expired machine is kept for ever.** |
 | `v1/people/<id>.json` | Name, role, sign-ins (email, login), SCIM part, old names (90 days) | No cap | A removed person goes after 14 days, **or never when they have a sign-in** (`records/records.go:307`, `sweep.go:164`) |
 | `v1/groups/<id>.json` | Name, members | 1,000 (`groups.go:20`) | tombstone 7 days |
@@ -390,10 +390,10 @@ newer than a row above for the same store.
 | `~/.agents/dismissed-leads.json` | key-value | Dismissed epics | None: an entry goes only when its epic gets a lead | `Go/internal/agentsd/worksuggest.go:32,55-59,165` | #6713 |
 | `~/.agents/summaries/` | document | Daily summaries from before #5853 | Never deleted | `docs/explanation/compliance/data-and-retention.md` | #6714 |
 | `<root>/erased.json` | document | IDs of deleted agents | 10,000 IDs, 400 days | `Go/internal/agentsd/erasure.go:43-44` | #6715 |
-| `<root>/repo-aliases.json` | key-value | Repo renames | No count limit, no delete | `Go/internal/agentsd/repoaliases.go:34,38` | #6716 |
-| `<root>/release-tags.json` | log | Linked release tags | 50 a repo by key, no limit on repos, no age | `Go/internal/agentsd/lineagerelease.go:57` | #6717 |
+| `<root>/repo-aliases.json` | key-value | Repo renames | 1,000 renames of 2 KiB each, 90 days, the oldest first | `Go/internal/agentsd/repoaliases.go` (`openRepoAliases`) | #6716 |
+| `<root>/release-tags.json` | log | Linked release tags | 5,000 tags of 1 KiB; 90 days | `Go/internal/agentsd/lineagerelease.go` | #6717 |
 | `<root>/requests/<id>.json` | document | Open questions and forms | Ended ones 14 days, 1,000 files; an open one has no age | `Go/internal/agentsd/requests.go:27-28` | #6718 |
-| `<root>/lineage-deploys.json` | log | Each deploy's last event | 1,000, no age | `Go/internal/agentsd/lineagedeploy.go:42,237-244` | #6719 |
+| `<root>/lineage-deploys.json` | key-value | Each deploy's last event | 1,000 deploys of 16 KiB each, 90 days from the last event, the oldest first | `Go/internal/agentsd/lineagedeploy.go` (`openDeploys`) | #6719 |
 | `<root>/account-ops.json` | log | Last operation of each account and secret | 500 and 500, no age | `Go/internal/agentsd/accountops.go:27` | #6720 |
 | `<root>/secret-ops-pending.json` | log | Secret audit entries not yet sent | 1,000, no age | `Go/internal/agentsd/secretops.go:54,131,226-230` | #6721 |
 | `<root>/elsewhere.json` | document | Sessions on other machines | 200 a list, no age | `Go/internal/agentsd/elsewhere.go:39` | #6722 |
@@ -431,7 +431,7 @@ newer than a row above for the same store.
 | `<root>/lock-pin.json` | key-value | The machine lock's trust pin | In the data root | `Go/internal/agentsd/lock.go:37` | #6754 |
 | `v1/events/<day>/` (audit) | log | Audit events | 90 days by default; an admin sets 1 to 3,650; no count or size limit a day | `Go/internal/controlplane/audit/audit.go:31,241` | #6755 |
 | `v1/people/` tombstones | document | A removed person who had a sign-in | A tombstone for ever, so that sign-in stays refused | `Go/internal/controlplane/sweep.go:351-355` | #6756 |
-| `v1/clients/` | document | Paired clients | No count limit on a control plane of your own; an expired one stays about 180 days | `Go/internal/controlplane/keylife.go:18,139,145-177` | #6757 |
+| `v1/clients/` | document | Paired clients | 16 KiB a record, 1 MiB in all; forgotten when its key expires, at most 90 days unused; tombstone 7 days | `Go/internal/controlplane/keylife.go:18,139,145-177` | #6757 |
 | `v1/machines/` | document | Machines | No count limit on a control plane of your own; an expired one stays about 180 days | `Go/internal/controlplane/keylife.go:145-177` | #6758 |
 | `v1/machine-names/<person>.json` | key-value | A person's machine-N counter and last provider options | For ever, also after the person goes (on purpose: a number is never used twice) | `Go/internal/controlplane/providers/defaults.go:20-27` | #6759 |
 | `v1/machine-setup-times.json` | time series | Set-up durations | 50 a step, no age | `Go/internal/controlplane/machinesetup.go:25-27,353` | #6760 |
@@ -463,10 +463,11 @@ newer than a row above for the same store.
 | hosted `v1/waitlist/`, `v1/waiting/` | document | The waitlist | 10,000; removed only on sign-up | `Go/internal/hosted/signup.go:55,360,413-415` | #6786 |
 | Operator backups | blob | Each account's store | The newest 7; `--keep 0` keeps all; no age | `Go/internal/hosted/backup.go:58-83; Go/cmd/agents-hosted/admin.go:33-43` | #6787 |
 | `control.log` (`~/Library/Logs/Agents/control.log` or `/data/control.log`) | log | Operational log lines | 4 MB and one older file | — | #6901 |
-| Mac `<cache>/work-cache.sqlite` | cache | Work cache: forge items, bodies, comments, page answers | 200 MiB, least recently drawn out first; no age | `Packages/AgentsKit/Sources/AgentsKitCore/Client/WorkCache.swift:148-166,454-482` | #6788 |
-| Mac `<cache>/copy/` (local copy) | cache | Machines, folders, records, the ends of 20 chats | 200 MiB, 20 chats, 200 archived records a machine; machines never dropped; no age | `Packages/AgentsKit/Sources/AgentsKitCore/Client/LocalCopy.swift:13-20,165-179` | #6789 |
-| Remote `Caches/copy/` (local copy) | cache | As the Mac's local copy | 50 MiB, 20 chats; no age | `Packages/AgentsKit/Sources/AgentsKitCore/Client/LocalCopy.swift:14,80` | #6790 |
-| Web IndexedDB `agents` › `copy` | cache | As the Mac's local copy, and Work groups | 50 MiB; Work groups by count; no age | `Web/src/model/localCopy.ts:13-17,92-120` | #6792 |
+| Mac `<cache>/work-cache.sqlite` | cache | Work cache: forge items, bodies, comments, page answers | 200 MiB (Remote: 50 MiB), least recently drawn out first; 4 MiB a record; 90 days (#6788) | `Packages/AgentsKit/Sources/AgentsKitCore/Client/WorkCache.swift` (`Bounds`) | #6788 |
+| Web IndexedDB `agents` › `work` | cache | Work cache: forge items, bodies, comments, page answers | 50 MiB, least recently drawn out first; 4 MiB a record; 90 days (#6976) | `Web/src/model/workCache.ts` (`webBounds`) | #6976 |
+| Mac `<cache>/copy/` (local copy) | cache | Machines, folders, records, the ends of 20 chats | 200 MiB, 20 chats, 200 archived records a machine; 16 MiB a record; 90 days; a machine no longer listed is dropped (#6789) | `Packages/AgentsKit/Sources/AgentsKitCore/Client/LocalCopy.swift` | #6789 |
+| Remote `Caches/copy/` (local copy) | cache | As the Mac's local copy | 50 MiB, 20 chats; 16 MiB a record; 90 days; a machine no longer listed is dropped (#6789) | `Packages/AgentsKit/Sources/AgentsKitCore/Client/LocalCopy.swift` | #6790 |
+| Web IndexedDB `agents` › `copy` | cache | As the Mac's local copy, and Work's pictures | 50 MiB, 20 chats, 2000 pictures; 16 MiB a record; 90 days; a machine no longer listed is dropped (#6792) | `Web/src/model/localCopy.ts` | #6792 |
 | Web `localStorage` `agents.drafts` | document | Drafts | The newest 40, attachments under 256 KiB; no age (the Mac and Remote keep 30 days) | `Web/src/model/drafts.ts:10-14` | #6793 |
 | Mac and Remote defaults `draft.*` | document | Drafts | 512 KiB a draft and 30 days, but no count of drafts | `Packages/AgentsKit/Sources/AgentsKitCore/Model/DraftStore.swift:22-29` | #6794 |
 | Remote app group `shared-inbox.json` | blob | What was shared to Agent Loops | Each attachment capped; no count, total or age | `Packages/AgentsKit/Sources/AgentsKitCore/Widget/SharedInbox.swift:88,105-118` | #6795 |

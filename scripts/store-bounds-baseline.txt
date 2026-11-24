@@ -184,7 +184,6 @@
 1 Go/internal/controlplane/records/groups.go v1/groups
 1 Go/internal/controlplane/records/people.go v1/people
 1 Go/internal/controlplane/records/projects.go v1/projects
-1 Go/internal/controlplane/records/records.go v1/clients
 1 Go/internal/controlplane/records/records.go v1/control
 1 Go/internal/controlplane/records/records.go v1/hosts
 1 Go/internal/controlplane/records/records.go v1/machines
@@ -236,7 +235,6 @@
 1 Go/internal/mac/signin/certs.go os.WriteFile
 1 Go/internal/mac/signin/codex.go os.WriteFile
 1 Go/internal/mac/signin/relays.go os.OpenFile
-1 Go/internal/repoalias/repoalias.go WriteAtomically
 1 Go/internal/rolllog/rolllog.go os.OpenFile
 2 Go/internal/whatsappmcp/store.go os.OpenFile
 1 Go/internal/whatsappmcp/store.go writeAtomically
@@ -245,8 +243,6 @@
 2 Host/Sources/HostSettings.swift write(to:)
 1 Host/Sources/LocalServices.swift write(to:)
 1 Packages/AgentsKit/Sources/AgentsKitCore/Client/AgentsExportTransfer.swift createFile
-1 Packages/AgentsKit/Sources/AgentsKitCore/Client/LocalCopy.swift write(to:)
-1 Packages/AgentsKit/Sources/AgentsKitCore/Client/WorkCache.swift sqlite3_open_v2
 1 Packages/AgentsKit/Sources/AgentsKitCore/Control/ControlMembership.swift write(to:)
 1 Packages/AgentsKit/Sources/AgentsKitCore/Control/HostJoinFile.swift write(to:)
 1 Packages/AgentsKit/Sources/AgentsKitCore/Model/MachineLock.swift createFile

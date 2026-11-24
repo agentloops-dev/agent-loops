@@ -9,6 +9,7 @@ import (
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/hostinstall"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/providers"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/records"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
@@ -92,6 +93,10 @@ func asRPC(err error) *RPCError {
 	var install *hostinstall.Failure
 	if errors.As(err, &install) {
 		return &RPCError{Code: install.Code, Message: install.Message}
+	}
+	var limit *records.ClientLimitError
+	if errors.As(err, &limit) {
+		return fail(notPermitted, "%s", limit.Words)
 	}
 	var conflict *store.ConflictError
 	if errors.As(err, &conflict) {

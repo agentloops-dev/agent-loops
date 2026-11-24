@@ -14,6 +14,7 @@ import (
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/internal/browser"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
+	"github.com/agentloops-dev/agent-loops/Go/internal/repoalias"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -25,6 +26,8 @@ type Daemon struct {
 		Sweep() (int, error)
 	}
 	dismissedLeads *store.JSONFile[dismissedLead]
+	repoAliases    *store.JSONFile[repoalias.Alias]
+	erased         *store.JSONFile[wire.Date]
 
 	ctx context.Context
 	// opts are the daemon's own (#5926): set by New, and changed only by a test, as a test
@@ -256,6 +259,10 @@ func newWith(ctx context.Context, root string, opts startOptions) (*Daemon, erro
 		SettingsDir: filepath.Join(st.Loc.Root, "settings"), HostKey: controllink.HostKeyFile{Root: st.Loc.Root},
 		PersonKey: controllink.PersonKeyFile{Root: st.Loc.Root}}
 	d.dismissedLeads = d.openDismissedLeads()
+	d.repoAliases = d.openRepoAliases()
+	d.erased = d.openErased()
+	d.deployStore = d.openDeploys()
+	d.releaseDone = d.openReleaseTags()
 	d.opts.Store(&opts)
 	d.jobCancel = cancel
 	st.OnGap = d.tellEntry
