@@ -1,12 +1,13 @@
 # Data inventory: what Agents stores, where, and how it is bounded
 
-Status: research, 2026-11-06, by the Product Owner. Read from the code on `main` at e0a74e17f.
-Nothing was run. Every bound below has its constant and `file:line`, so a lane can check it.
+Status: store inventory, updated for #6684. The rows record observed bounds and implementation
+locations. Store kinds follow `specs/data-bounds/store-kinds.md`; a kind describes the access
+contract, not the file format. A numeric limit that its responsible issue has not set is
+marked **not specified**. Do not infer a product limit from an observed value or this inventory.
 
-This inventory includes and replaces the store lists in
-`docs/explanation/compliance/data-and-retention.md` and `docs/reference/agents-folder.md`.
-Those pages leave out many stores and get some bounds wrong (see "Where the docs are wrong",
-at the end).
+This inventory is the detailed list of stores. The reader summary is
+`docs/explanation/compliance/data-and-retention.md`. `docs/reference/agents-folder.md` lists
+the layout of the `.agents` folder.
 
 **Kinds of bound** used in the tables:
 
@@ -31,8 +32,7 @@ Paths in the first three sections are relative to `Go/internal/` unless shown ot
 6. [Agents Host on the Mac](#6-agents-host-on-the-mac)
 7. [The clients: Mac window, Remote, web page](#7-the-clients)
 8. [In memory](#8-in-memory)
-9. [Unbounded data, ranked](#9-unbounded-data-ranked)
-10. [Where the docs are wrong](#10-where-the-docs-are-wrong)
+9. [Kind mapping and unresolved bounds](#9-kind-mapping-and-unresolved-bounds)
 
 ---
 
@@ -351,95 +351,41 @@ are in bold.
 | Web | **`events[host]`** (`store.ts:3561-3593`) | **none** in the page; each load merges into the list. The daemon's 10,000 is the real limit. |
 | All clients | `chartHints`, `pageRevisions`, `leadAsked`, `startedPages` | **none**, small |
 
-## 9. Unbounded data, ranked
+## 9. Kind mapping and unresolved bounds
 
-Ranked by harm: deleted or private data that stays first, then disk and memory that can grow
-large, then small leaks.
+The old ranked list and the old comparison of the reader page with this inventory are retired.
+They describe findings from an earlier code snapshot. Use the current store rows above for
+observed bounds. Use the approved kind mapping and retention decisions for the target contract.
 
-**A. Data a person deleted or forgot that stays**
+The mapping below covers mixed families. A family with more than one kind must split by the
+access pattern shown; do not label the whole file with one kind.
 
-1. **Claude transcripts are never erased** (6 GB here). Filed: **#3625** (`priority:high`).
-2. Other runtimes' copies (Grok, Copilot, OpenCode, Cursor, Antigravity) are never erased unless
-   the adapter has `session/delete`.
-3. Forget / unpair leaves client data on every client: Remote widget headlines, drafts, lock
-   pins, push subscription, browser-pane website data.
-4. Control plane: a removed person with a sign-in is kept for ever, and their lock chain is too;
-   failed kept requests (with attachments) are never deleted; hosted invites record who used
-   them and survive Delete Account.
-5. Mac Agents Host: `store-before-*` folders (whole old stores, audit and sealed secrets
-   included) and `control-key-before-*` keychain items are never pruned.
+| Store family | Kind | Bounds and action |
+|---|---|---|
+| Whole JSON files and singleton records | Document | Per-store record, collection, age, and refuse or evict limits are **not specified until the responsible store issue sets them**. |
+| Transcripts and ordered event histories | Log | Transcript: 10 MB per chat and 90 days (#6706); runtime home: 1,200 MB and 90 days (#6707). Audit detail: configured 1–90 days; byte/count limit **not specified** (#6755). |
+| Usage, cost, timing, health, and capacity samples | Time series | 168 hours of hourly detail, then daily roll-up through 90 days where the store is usage data; each store's byte or count bound is **not specified until its issue sets it**. |
+| Lineage links and provenance | Graph plus log | Graph projection and ordered change log are separate stores; each collection's numeric bound is **not specified until its responsible issue sets it**. |
+| Attachments, artifacts, exports, backups, binary request bodies | Blob | Use #5713. Per-blob and owner quotas are **not specified until the responsible store issue sets them**. Keep and operator backup: 10 MB each, 90 days (#6709, #6787). |
+| Current state, indexes, routes, policy, and workflow run state | Key-value | Per-record, collection, and age limits are **not specified until the responsible store issue sets them**. |
+| Local copies, work cache, browser data, derived indexes | Cache | Evict by declared byte/count and age limits; individual limits are **not specified until the responsible store issue sets them**. |
+| Credentials, signing keys, and sealed connection material | Secret | Never expose plaintext through a list operation. Record lifetime and size limits are **not specified until the responsible store issue sets them**. |
 
-**B. Large growth on disk**
+Mixed files follow these decisions: `workflows.json` splits into document/configuration, key-value
+run state, and log history; `lineage.jsonl` stays an append log with a separate bounded graph
+projection; a Keychain connection item keeps credentials in the secret store and non-secret
+metadata in a document. Only time-series data rolls up. Audit, conversations, logs, and event
+files expire without a summary. The `Forever` setting and a live conversation do not extend the
+90-day maximum age.
 
-6. Git worktrees (`.agents/worktrees/`): no bound at all (9 GB, 18 worktrees in this repo).
-7. Server backups: up to ≈80 GiB per host on the control plane; a stray part with a future name
-   never ages.
-8. Folder dropbox: no total, count or age bound.
-9. Docker images, named volumes and cloud machines: never removed or stopped on their own.
-10. Browser profile (`<root>/browser/profile`) and the Mac browser pane's website data.
-11. Transcripts themselves: no size bound per agent (bounded by agent retention only).
-12. Other machines' backups in a shared backup folder; per-account hosted backups without `--keep`.
-13. Mesh change events kept as long as the audit (up to 10 years).
+Numeric product bounds still missing from responsible child issues include the worktree budget;
+control-plane entity, provider, warm-pool, link, release-key, and invite quotas; browser and
+shared-inbox quotas; and store-specific record and collection limits where the rows above say
+**not specified**. The epic lead must track these in the existing responsible child issues or
+file a follow-up child issue when no owner exists. Do not replace this statement with estimates.
 
-**C. Large growth in memory**
+## Retired: old ranked findings
 
-14. `storecopy` holds the whole store in memory (server backups included).
-15. Mac and Remote chats scrolled up grow without limit (the web caps at 1,600).
-16. Control plane socket queues and `readcache` are counted, not sized.
-17. `notices.Desk.posted` and peer `presence` on the control plane; `sessionCost`, `viewCalls`,
-    ACP terminal buffers in agentsd.
-
-**D. Small but never pruned**
-
-18. `release-tags.json`, workflow states and their copies, `mcp-approvals.json`,
-    `plugin-approvals.json`, `devices.json`, review files' folder keys.
-19. `~/.ssh/config` codespace blocks; `roots/<name>-<hash>` cache and log folders; walk keychain
-    items; `agents-output-*` temp files; Kokoro models.
-20. Expired clients and machines, provider tombstones, governance approvals, codes and OIDC
-    states (time-bounded but not count-bounded), handover marks, S3 probes.
-21. Remote drafts (each up to 512 KiB, loaded at every launch).
-22. Client preference maps: `newSessionProjectFolders`, fold sets, sidebar widths, lock pins.
-
-**E. A bound that exists but is applied late**
-
-23. Stores pruned only on read: control plane joins, lockjoins, signins, link, policy,
-    governance and remove requests.
-24. Stores pruned only at start or on the next use: workflow runs (at start), Outgoing/Incoming
-    (next transfer), lineage (open or append growth), crash leftovers (`.restore-*`,
-    `catalog-staging`, `browser/output`, tunnel sockets).
-25. Bounds by keys, not by age: spend, usage, time and features keep the newest N keys, so an
-    idle machine keeps older data.
-26. `app-tools.jsonl` arguments are not cut; a single MCP log write over 1 MiB is written whole;
-    a panic in `daemon.log` skips the limit.
-
-**F. Correctness found on the way**
-
-- Web lock pins are not keyed by control plane, so a re-pair reads the old pin.
-- `appToolsPath` does not upper-case the agent ID (`agentsd/assess.go:174`); on Linux a
-  lowercase ID writes outside the folder that Delete removes.
-- The VAPID key is not in `agents-control backup`; a restore breaks browser push.
-
-## 10. Where the docs are wrong
-
-`docs/explanation/compliance/data-and-retention.md`:
-
-- **"A backup holds … turn summaries"**, and the same for exports: false. `backups.go:69` reads
-  `agents/<ID>/turns.jsonl`, which is never written; summaries are in `<cache>/turns/<ID>.jsonl`.
-  The daemon can rebuild them from the transcript, so this is a doc error more than data loss.
-- It does not say that `said.json` and `erased.json` are in a backup.
-- **"The control plane holds no conversations"**: server backups (sealed transcripts), host
-  copies (agent titles), kept requests (with attachments) and lineage nodes are in the same store.
-- Clients and machines "until forgotten or removed": tombstones stay 7 days; expired ones stay for ever.
-- Kept requests "20 a machine at most": failed ones are not counted and never expire.
-- Hosted account data: it also keeps Apple and Google subjects, plan, suspension and Stripe IDs;
-  Delete Account leaves used invites, operator backups and Stripe's records.
-- Outgoing/Incoming "after an hour untouched", workflow runs "7 days", events "7 days and 10,000",
-  spend "7 days": each is applied later or by keys (section 9, E).
-- Attachments' 7-day rule applies only in folders that still have an agent.
-- It leaves out most stores in sections 1–6 of this page, among them lineage, the cost and report
-  ledgers, approvals, devices, the browser profile, worktrees, the dropbox's missing total bound,
-  every control-plane record family except the six it names, the Mac's control-plane folder and
-  keychain items, and the hosted service's own records.
-
-`docs/reference/agents-folder.md` lists only `~/.agents` and the top of the data folder; it is
-right for what it lists.
+The former sections 9 and 10 ranked unbounded data and listed documentation errors from the
+2026-11-06 snapshot. They are removed. Current issues and store rows are the source for active
+findings.

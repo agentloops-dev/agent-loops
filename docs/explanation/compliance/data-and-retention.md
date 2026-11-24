@@ -10,9 +10,11 @@ Agent Loops keeps plain files, not a database. Most stores have a bound: a time,
 size. Some have none. A conversation has none: it is kept until its agent is deleted. This
 page lists the stores, then says what a backup holds and what it does not.
 
-This page is the summary for readers. Engineers: the data inventory,
-`specs/data-inventory/inventory.md` (#3653), gives each bound with its constant and its
-`file:line`, and lists the clients and the memory as well.
+The inventory below lists the stores and their observed bounds. Its kind column follows the
+approved mapping in [`store-kinds.md`](../../../specs/data-bounds/store-kinds.md). Where a
+responsible store issue has not set a numeric bound, the row says so; this page does not set
+product limits. The inventory's section 9 is retired because its ranked findings describe an
+older state. The store rows and the issue-linked decisions are the current record.
 
 **When a bound is applied** matters as much as the bound. A store pruned **on write** or
 **hourly** stays near its bound. A store pruned only **at start**, **on read** or **on the
