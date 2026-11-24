@@ -25,23 +25,28 @@ import (
 //   - v1/governance/machines/<host>.json, a machine's last report: at most 500 items, gone
 //     when its host has no record;
 //   - v1/governance/requests/<id>.json: at most 10 waiting per person and 1000 in all; a
-//     decided one goes after 30 days;
-//   - v1/governance/approvals/<hash>.json: at most 1000; one goes with its person or group
-//     (#3748).
+//     decided one goes after 30 days, and a waiting one after 90;
+//   - v1/governance/approvals/<hash>.json: at most 1000; an approval in force has no age:
+//     one goes when an admin takes it back, or with its person or group (#3748, #6764).
 //
 // Policy's marketplace allowlist (#998) still says what a machine may install: an approval
 // is the admin's answer and its record, not a change to the allowlist.
 
 const (
-	governancePrefix         = "v1/governance/"
-	governanceMachinesPrefix = governancePrefix + "machines/"
-	governanceRequestsPrefix = governancePrefix + "requests/"
-	governanceApprovalPrefix = governancePrefix + "approvals/"
+	// store-bounds: kind=document; size=1MiB a machine; count=500 items a machine; age=until-deleted; applied=on write, and the hourly sweep deletes a removed machine's
+	governanceMachinesPrefix = "v1/governance/machines/"
+	// store-bounds: kind=document; count=1_000; size=8KiB a record; age=90d; applied=on write and hourly sweep
+	governanceRequestsPrefix = "v1/governance/requests/"
+	// store-bounds: kind=document; count=1_000; size=8KiB a record; age=until-deleted; applied=on write, and the hourly sweep deletes one whose person or group is gone
+	governanceApprovalPrefix = "v1/governance/approvals/"
 	governanceItemsMost      = 500
 	governanceWaitingMost    = 10
 	governanceRequestsMost   = 1000
 	governanceApprovalsMost  = 1000
 	governanceDecidedKept    = 30 * 24 * time.Hour
+	governanceWaitingKept    = 90 * 24 * time.Hour
+	governanceMachineBytes   = 1 << 20
+	governanceRecordBytes    = 8 << 10
 	governancePeopleMost     = 50
 	governanceNameMost       = 200
 	governanceSourceMost     = 300
@@ -101,6 +106,9 @@ func (s *Service) keepGovernanceReport(ctx context.Context, host string, report 
 		items = append(items, item)
 	}
 	data, _ := json.Marshal(governanceMachine{Host: host, At: dateOf(now), Items: items})
+	if err := governanceFits(data, governanceMachineBytes); err != nil {
+		return err
+	}
 	if _, err := s.cfg.Store.Put(ctx, governanceHostKey(host), data, store.Always); err != nil {
 		return fail(storeUnavailable, "The report could not be kept: %v", err)
 	}
@@ -199,10 +207,11 @@ func (s *Service) governanceRequests(ctx context.Context, now time.Time) ([]wire
 		if object == nil || json.Unmarshal(object.Data, &r) != nil {
 			continue
 		}
-		// A decided request is kept for the person to see, then goes; a removed person's
-		// goes at once.
+		// A decided request is kept for the person to see, then goes, and so does one that
+		// nobody answered (#6764); a removed person's goes at once.
 		gone := s.records.Person(r.User) != nil && s.records.Person(r.User).IsRemoved()
-		if gone || r.State != wire.CatalogRequestStateWaiting && r.DecidedAt != nil && now.Sub(r.DecidedAt.Time()) > governanceDecidedKept {
+		if gone || r.State != wire.CatalogRequestStateWaiting && r.DecidedAt != nil && now.Sub(r.DecidedAt.Time()) > governanceDecidedKept ||
+			now.Sub(r.At.Time()) > governanceWaitingKept {
 			_ = s.cfg.Store.Delete(ctx, k.Key)
 			continue
 		}
@@ -299,6 +308,9 @@ func (s *Service) governanceRequest(ctx context.Context, actor wire.AuditActor, 
 		r.State, r.Group, r.GroupName, r.DecidedBy, r.DecidedAt = wire.CatalogRequestStateApproved, a.Group, a.GroupName, optional(a.By), optional(dateOf(now))
 	}
 	data, _ := json.Marshal(r)
+	if err := governanceFits(data, governanceRecordBytes); err != nil {
+		return wire.CatalogRequest{}, err
+	}
 	if _, err := s.cfg.Store.Put(ctx, governanceRequestKey(r.ID), data, store.Absent); err != nil {
 		return wire.CatalogRequest{}, fail(storeUnavailable, "The request could not be kept: %v", err)
 	}
@@ -402,8 +414,19 @@ func (s *Service) keepApproval(ctx context.Context, a wire.CatalogApproval) erro
 		return fail(invalidParams, "There are %d approvals already. Take back some first.", len(keys))
 	}
 	data, _ := json.Marshal(a)
+	if err := governanceFits(data, governanceRecordBytes); err != nil {
+		return err
+	}
 	if _, err := s.cfg.Store.Put(ctx, key, data, store.Always); err != nil {
 		return fail(storeUnavailable, "The approval could not be kept: %v", err)
+	}
+	return nil
+}
+
+// governanceFits refuses a record over its largest size.
+func governanceFits(data []byte, most int) error {
+	if len(data) > most {
+		return fail(invalidParams, "What is kept of this is too large: %d bytes, and the most is %d.", len(data), most)
 	}
 	return nil
 }

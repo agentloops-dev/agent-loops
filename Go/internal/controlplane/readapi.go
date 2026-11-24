@@ -26,6 +26,7 @@ import (
 // made it is an admin.
 
 const (
+	// store-bounds: kind=secret; count=50; size=32KiB a record; age=until-deleted; applied=on write, and the hourly sweep deletes one 90 days after it was revoked
 	readTokensPrefix   = "v1/read/tokens/"
 	readTokenPrefix    = "agread_"
 	readAPIPath        = "/v1/read/reports"
@@ -315,28 +316,48 @@ func (rt *readTokens) make(ctx context.Context, r wire.ReadTokenMake, actor wire
 	hash := hex.EncodeToString(sum[:])
 	t := readTokenRecord{ID: hash[:12], Name: name, SHA256: hash, Made: wire.OrgRouteStamp{By: actor, At: wire.DateOf(now)}}
 	data, err := records.Encode(t)
+	if err == nil && len(data) > tokenMostBytes {
+		return wire.ReadTokenMade{}, fail(invalidParams, "What is kept of this token is too large: %d bytes, and the most is %d.", len(data), tokenMostBytes)
+	}
 	if err == nil {
 		_, err = rt.s.cfg.Store.Put(ctx, readTokenKey(hash), data, store.Absent)
 	}
 	if err != nil {
 		return wire.ReadTokenMade{}, fail(storeUnavailable, "The token could not be kept: %v", err)
 	}
-	rt.trim(ctx, append(all, t))
+	if err := rt.trim(ctx, append(all, t), now); err != nil {
+		rt.s.log("the old read API tokens could not be deleted: " + err.Error())
+	}
 	rt.s.auditAs(actor, "readApi/made", "token "+t.ID+" ("+name+")")
 	rt.s.log("a read API token " + t.ID + " was made")
 	return wire.ReadTokenMade{Token: t.onWire(), Value: value, URL: rt.url()}, nil
 }
 
-// trim deletes the oldest revoked tokens over mostReadTokens.
-func (rt *readTokens) trim(ctx context.Context, all []readTokenRecord) {
+// sweep trims the tokens that no write trims.
+func (rt *readTokens) sweep(ctx context.Context, now time.Time) error {
+	all, _, err := rt.list(ctx)
+	if err != nil {
+		return err
+	}
+	return rt.trim(ctx, all, now)
+}
+
+// trim deletes the oldest revoked tokens over mostReadTokens, and those revoked
+// deadTokenKept ago. A live one has no age.
+func (rt *readTokens) trim(ctx context.Context, all []readTokenRecord, now time.Time) error {
 	sort.SliceStable(all, func(i, j int) bool { return all[i].Made.At > all[j].Made.At })
 	over := len(all) - mostReadTokens
-	for i := len(all) - 1; i >= 0 && over > 0; i-- {
-		if all[i].Revoked != nil {
-			_ = rt.s.cfg.Store.Delete(ctx, readTokenKey(all[i].SHA256))
-			over--
+	for i := len(all) - 1; i >= 0; i-- {
+		revoked := all[i].Revoked
+		if revoked == nil || over <= 0 && now.Sub(revoked.At.Time()) <= deadTokenKept {
+			continue
 		}
+		if err := rt.s.cfg.Store.Delete(ctx, readTokenKey(all[i].SHA256)); err != nil {
+			return err
+		}
+		over--
 	}
+	return nil
 }
 
 // revoke is readApi/revoke: the token stops working at once here, and within
