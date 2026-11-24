@@ -14,7 +14,6 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/diskjson"
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 )
 
@@ -201,13 +200,17 @@ func (d *Daemon) reportDirs() []string {
 	for _, f := range d.Store.AgentFolders() {
 		dirs = append(dirs, reportsDir(f))
 	}
-	starts, _ := filepath.Glob(filepath.Join(d.assessmentsPath(), "*.start.json"))
-	for _, p := range starts {
-		var s assessStart
-		if b, err := os.ReadFile(p); err != nil || diskjson.Unmarshal(b, &s) != nil || !filepath.IsAbs(s.ReportPath) {
+	assessments := d.assessments()
+	all, err := listAssessments(assessments)
+	if err != nil {
+		log.Printf("retention: could not list runtime assessments: %v", err)
+	}
+	for _, one := range all {
+		doc, _ := assessments.Get(one.id) // a part that cannot be read is nil
+		if doc.start == nil || !filepath.IsAbs(doc.start.ReportPath) {
 			continue
 		}
-		if dir := filepath.Dir(s.ReportPath); strings.HasSuffix(dir, reportsDir("")) {
+		if dir := filepath.Dir(doc.start.ReportPath); strings.HasSuffix(dir, reportsDir("")) {
 			dirs = append(dirs, dir)
 		}
 	}

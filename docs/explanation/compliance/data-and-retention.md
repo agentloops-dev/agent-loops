@@ -44,7 +44,7 @@ Mac.
 | `turns/<id>.jsonl`, in the cache folder | cache | A summary of each turn. | Only the turns of the transcript kept, with the agent. Deleted when its transcript loses lines, and made again from it when it is missing. | With the transcript |
 | `erasures.json` | document | Runtime copies of deleted agents still to erase | 1,000 entries, 3 tries, 7 days | On write |
 | `erased.json` | document | Every agent deleted here | 10,000 IDs of 128 bytes each, for 90 days; the oldest goes first (#6715) | Hourly, and on write: age, and the count when it is twice over |
-| `elsewhere.json` | document | Sessions started on or from other machines | 200 a list | On write |
+| `elsewhere.json` | key-value | Sessions started on or from other machines | 800 entries of 64 KiB each, for 90 days from when the two machines last spoke of the session, so one in use stays; the one heard of the longest ago goes first | Hourly, and on write: age, and the count when it is twice over |
 | `requests/<id>.json` | document | Open questions and forms | Ended ones 14 days; 1,000 files. An open one has no age (#6718). | On write |
 | `archived-summaries.json`, in the cache folder | cache | An index of the archived agents | With the agents. Made again when it is missing. | On write |
 | `revisions.json` | log | Which records changed and went | 2,000 removals, 7 days | On write |
@@ -79,7 +79,7 @@ Mac.
 | `workflows.json`: runs | log | Workflow runs | 7 days, unless its agent still works | At start, when a run ends, and hourly (#3649) |
 | `workflows.json`: states | key-value | A state for each folder and workflow ever seen | 30 days after its workflow file goes (#3652) | Hourly, and the app's **Remove** |
 | `workflow-copies/` | key-value | The approved text of each workflow and its skills | The copies that the states name; an older version goes when one is saved | On write |
-| `assessments/` | document | Each runtime assessment's start, score and scope | The newest 50 | When one starts |
+| `assessments/` | document | Each runtime assessment's start, score and scope | 90 days from its start, and the newest 50; the oldest goes first. 256 KiB a file: a larger start or score is refused, and a longer scope file is cut (#6724) | Hourly, and when an assessment starts or is scored |
 | `mcp-events.json` | key-value | MCP event IDs already seen | 2,000 IDs, 7 days | On write |
 | `mcp-views/` | cache | View catalogues | Pruned to the live servers | On write |
 | `mcp-approvals.json`, `plugin-approvals.json` | key-value | Digests of approved MCP servers and plugins | The folders that exist: a folder that is not on disk and not in the app goes (#3652) | Hourly; MCP also on remove |
@@ -158,7 +158,7 @@ These are in `<folder>/.agents/`.
 | `worktrees/<name>`, and branch `agents/<name>` | blob | Git worktrees that agents made | **No bound, on purpose: they belong to the user** (#6708). The worktree goes when its agent is archived or deleted, merged or not, with its uncommitted and untracked changes (#3726, #3877). The branch goes only when it is merged. A worktree that an agent not archived works in or names, one on no branch, and one the app did not make are always kept. | On archive and delete; when removed |
 | `reviews/runtimes/` | document | Runtime assessment reports | 1 MiB a report (a longer one is cut), 90 days, and the newest 50 on the machine, in all its folders; the oldest goes first. A report that git tracks is the repository's, and is never changed or deleted. A file with another name is yours (#6712). | Hourly, and when an assessment starts or is scored |
 | `workflows/assess-<id>.md` | document | A runtime assessment's throwaway workflow | **None**; the assessing agent removes it | Never |
-| `pins.json` | key-value | Pinned sessions and hidden views | 10 sessions, 50 hidden views | On write |
+| `pins.json` | key-value | Pinned pages, views, sessions and workflows, and hidden views | 10 pages and views, 10 sessions and 10 workflows, 4 KiB a pin; 50 hidden views, 1 KiB each; 128 KiB in all; a write past that is refused. No age, on purpose: they are your choices, committed with the folder. Each stays until you remove it, or its session or workflow is archived (#6725). | On write; on archive |
 | `folder.json`, `policy.json`, `mcp.json`, `personas/`, `skills/`, `workflows/` and the like | document | The folder's configuration, meant to be committed | Small | — |
 
 ## Outside our folders
@@ -315,7 +315,7 @@ What the Mac window and the Remote keep in their defaults, and the web page in
 | `sidebar.folder.<folder>.width`, `.pane` (Mac only) | key-value | A folder window's inspector width and pane | As the folds | As the folds |
 | `newSessionProjectFolders` (`agents.newSession.projectFolders` on the web page) | key-value | New Session's last folder for each project | As the folds | As the folds |
 | `machineLockPin.<key>` (`agents-lock-pin.<key>` on the web page) | key-value | The machine-lock pins, the lock and each person's | This control plane's only: another control plane's go once the client is paired (#3750), and all go on **Forget** (#3670) | When the control plane answers |
-| Drafts (`draft.agent.<uuid>`, `draft.new.<folder>`, and the Mac's `draft.start`) | document | Prompts not sent, with their attachments | 512 KiB of attachments a draft. Deleted after 30 days without an edit, when its agent is archived, on send, and on **Forget** (#3749). | At start; on archive |
+| Drafts (`draft.agent.<uuid>`, `draft.new.<folder>`, and the Mac's `draft.start`) | document | Prompts not sent, with their attachments | 40 drafts, 1 MiB each with at most 512 KiB of attachments: a new one over 40, or one too big, is refused, with a message, and stays only while the app runs (#6794). Deleted after 30 days without an edit, when its agent is archived, on send, and on **Forget** (#3749). | On write, at start, on archive |
 | Drafts on the web page (`agents.drafts`) | document | Prompts not sent, with their attachments | 40 drafts: a new one over that is refused, with a message, and stays only while the page is open. Attachments only while they are under 256 KiB. Deleted after 30 days without an edit, on send, and on **Forget** (#6793). | On write, at start, hourly |
 | `control-client.json` (Mac, Remote); IndexedDB `agents` (web) | key-value; secret | The pairing, and the web page's key | One, until **Forget** (#6800) | On **Forget** |
 | Keychain `control-client-key`, `lock-signing-key`, `device-key` (Mac, Remote) | secret | The client's own keys | One of each; kept after **Forget** | — |

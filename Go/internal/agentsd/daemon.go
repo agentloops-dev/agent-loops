@@ -20,6 +20,9 @@ import (
 
 // Daemon is one host: its root, the clients connected to it, and what it serves them.
 type Daemon struct {
+	// assessMu guards the files of the assessments (assessmentFiles).
+	assessMu sync.Mutex
+
 	// smallFiles are the bounded small files (smallFile), each swept hourly; set in newWith.
 	smallFiles []interface {
 		Name() string
@@ -136,7 +139,8 @@ type Daemon struct {
 	machineBook
 	sleepBook
 	hostStatusBook
-	elsewhereBook
+	// elsewhere is the sessions on other machines, and those here from them (#2927).
+	elsewhere *store.JSONFile[elsewhereEntry]
 	idleBook
 	turnBook
 	findBook
@@ -265,6 +269,7 @@ func newWith(ctx context.Context, root string, opts startOptions) (*Daemon, erro
 	d.releaseDone = d.openReleaseTags()
 	d.secretOps.pending = d.openSecretOpsPending()
 	d.accountOps = d.openAccountOps()
+	d.elsewhere = d.openElsewhere()
 	d.lockSeen = d.openLockSeen()
 	d.opts.Store(&opts)
 	d.jobCancel = cancel

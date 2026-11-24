@@ -16,6 +16,9 @@ final class StartDraftKeeper {
     static let shared = StartDraftKeeper()
 
     private let store: DraftStore
+    private var held: HeldDrafts
+    /// Told when a draft is refused (#6794): the app's usual message.
+    var refused: ((String) -> Void)?
     private var waiting: [DraftKey: Draft] = [:]
     private var pause: Task<Void, Never>?
     /// The agents with a draft kept, once the launch's sweep has said (#3749), as the Mac's
@@ -25,6 +28,7 @@ final class StartDraftKeeper {
 
     init(store: DraftStore = DraftStore()) {
         self.store = store
+        held = HeldDrafts(store: store)
         // The one pass over the defaults, off the main thread: it lets go of the drafts
         // untouched for 30 days, as the Mac's launch does (#3749).
         Task.detached(priority: .utility) { [store] in
@@ -51,7 +55,7 @@ final class StartDraftKeeper {
     /// A chat keeps its half-typed words the same way, under the key the Mac uses for
     /// the same conversation on its own disk.
     func draft(for key: DraftKey) -> Draft? {
-        waiting[key] ?? store.draft(for: key)
+        waiting[key] ?? held.draft(for: key)
     }
 
     func note(_ text: String, _ attachments: [Attachment], for key: DraftKey) {
@@ -66,7 +70,7 @@ final class StartDraftKeeper {
 
     func clear(_ key: DraftKey) {
         waiting[key] = nil
-        store.clear(key)
+        held.clear(key)
         if case .agent(let id) = key { drafted?.remove(id) }
     }
 
@@ -76,22 +80,24 @@ final class StartDraftKeeper {
         pause?.cancel()
         waiting = [:]
         if drafted != nil { drafted = [] }
-        store.clearAll()
+        held.clearAll()
     }
 
     func flush() {
         pause?.cancel()
+        let problem = held.save(waiting)
         for (key, draft) in waiting {
-            store.save(draft, for: key)
             guard case .agent(let id) = key else { continue }
             if draft.isEmpty { drafted?.remove(id) } else { drafted?.insert(id) }
         }
         waiting = [:]
+        if let problem { refused?(problem) }
     }
 
     private func swept(_ kept: Set<UUID>) {
         // Anything typed while it ran is kept too.
         drafted = kept.union(waiting.keys.compactMap { if case .agent(let id) = $0 { id } else { nil } })
+        held.retry()
     }
 
     /// Let go of the drafts of agents archived (#3749), as the Mac does. Only an agent known
