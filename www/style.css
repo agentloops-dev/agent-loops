@@ -4,7 +4,7 @@
    The page's CSP allows no inline style, so the inline SVGs' rules and keyframes are here too,
    with a prefix for each animation (ep- for "A feature builds and deploys itself", lp- for the loop, fm- for "Fix main, while
    you sleep", er- for "An error in production goes back into work", ln- for lineage, rp- for reports,
-   cu- for the computer, mc- for machines, sl- for Slack, ml- for mail, ot- for outputs, vm- for voice mode). */
+   cu- for the computer, mc- for machines, sl- for Slack, ml- for mail, ot- and dc- for outputs, vm- for voice mode). */
 
 :root {
   /* Words that come second: a caption, the small print, the nav. The web page's own mix. */
@@ -868,9 +868,7 @@ h3 { font-size: 1.05rem; margin: 0 0 0.4em; }
 .cu-phone { fill: var(--paper-ground); stroke: var(--paper-edge); stroke-width: 3; }
 .cu-notch { fill: var(--paper-edge); }
 .cu-cur { fill: var(--paper-ink); stroke: var(--paper-ground); stroke-width: 1.2; stroke-linejoin: round; }
-.cu-tape { fill: var(--tint-failure); stroke: var(--paper-ink); stroke-width: 2; stroke-linejoin: round; }
-.cu-tape-sh { fill: var(--paper-ink); }
-.cu-red { font-size: 16px; font-weight: 800; letter-spacing: 0.08em; fill: var(--paper-ground); }
+.fl-word { font-family: var(--font-mono); font-size: 15px; font-weight: 700; letter-spacing: 0.16em; }
 .cu-sky-a { fill: var(--line-accent); }
 .cu-sky-b { fill: var(--line-warning); }
 .cu-sky-c { fill: var(--line-vouched); }
@@ -967,9 +965,11 @@ h3 { font-size: 1.05rem; margin: 0 0 0.4em; }
 @keyframes sl-press { 0%, 48% { transform: none; background: transparent; } 51% { transform: scale(0.94); background: var(--wash-accent); } 53%, 100% { transform: none; background: var(--wash-accent); } }
 .ml-mail { display: grid; gap: 3px; padding: 12px 14px; border: 1px solid var(--paper-rule); border-radius: var(--radius-control); background: var(--paper-ground); }
 .ml-chip { margin-top: 6px; padding-left: 10px; }
-.ml-secret { position: relative; display: inline-block; min-width: 132px; margin-left: 6px; text-align: center; letter-spacing: 0.1em; }
-.ml-code { padding: 8px 0; }
-.anim .ml-tape { position: absolute; left: 50%; top: 50%; width: 138px; min-width: 0; max-width: none; transform: translate(-50%, -50%) rotate(-7deg); overflow: visible; }
+.ml-secret { position: relative; display: inline-block; min-width: 150px; margin-left: 6px; text-align: center; letter-spacing: 0.1em; }
+.ml-code { padding: 16px 0; }
+.mr-row { display: grid; grid-template-columns: 26px 1fr; gap: 12px; align-items: center; min-height: 52px; }
+.mr-row > span:last-child { display: grid; }
+.anim .ml-tape { position: absolute; left: 50%; top: 50%; width: 168px; min-width: 0; max-width: none; transform: translate(-50%, -50%) rotate(-2deg); overflow: visible; }
 .ml-stamp { animation-name: ml-stamp; }
 @keyframes ml-stamp { 0%, 42% { opacity: 0; transform: scale(2.2); } 45% { opacity: 1; transform: scale(0.9); } 47%, 96% { opacity: 1; transform: none; } 100% { opacity: 0; transform: none; } }
 .sl-1 { animation-name: sl-1; }
@@ -993,70 +993,92 @@ h3 { font-size: 1.05rem; margin: 0 0 0.4em; }
 .ml-5 { animation-name: ml-5; }
 @keyframes ml-5 { 0%, 60% { opacity: 0; } 63%, 96% { opacity: 1; } 100% { opacity: 0; } }
 
-/* 10. Outputs (ot-, #6859): 20 s a loop. Its last picture, the changes, is the one that stays. */
-.anim.ot { align-self: center; }
-.ot-split { display: grid; grid-template-columns: 1fr 1.25fr; font-size: var(--type-supporting); }
+/* 10. Outputs (ot-, #6859): a proposal that writes itself beside the chat, 20 s a loop. Its own
+   pictures are dc-. */
+.anim.ot { margin-top: 28px; }
+.ot-split { display: grid; grid-template-columns: 300px 1fr; font-size: var(--type-supporting); }
 .ot-split p { margin: 0; }
 .ot-chat { padding: 16px; display: flex; flex-direction: column; gap: 10px; border-right: 1px solid var(--paper-rule); }
 .ot-me, .vm-me { justify-self: end; padding: 8px 12px; border-radius: var(--radius-floating); background: var(--wash-accent); }
 .ot-me { align-self: end; }
 .ot-chat .bubble { align-self: start; }
-.ot-card { display: grid; gap: 6px; padding: 10px 12px; border: 1px solid var(--paper-rule); border-radius: var(--radius-control); }
-.ot-undo { color: var(--accent); font-weight: 600; }
 .ot-pane { min-width: 0; background: var(--paper-ground); }
-.ot-tabs { display: flex; gap: 16px; padding: 10px 14px 0; border-bottom: 1px solid var(--paper-rule); color: var(--paper-secondary); font-weight: 600; }
-.ot-tabs span { position: relative; padding-bottom: 8px; }
+.ot-tabs { display: flex; flex-wrap: wrap; gap: 0 16px; padding: 10px 18px 0; border-bottom: 1px solid var(--paper-rule); color: var(--paper-secondary); font-weight: 600; }
+.ot-tabs > span { position: relative; padding-bottom: 8px; }
 .ot-tabs i { position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; background: var(--accent); }
-.ot-stack { display: grid; padding: 14px; min-height: 290px; }
-.ot-stack > div { grid-area: 1 / 1; min-width: 0; }
-.ot-p1, .ot-p2, .ot-p3, .ot-tf { opacity: 0; }
-.ot-stack h4 { margin: 8px 0; font-size: 1.05rem; }
-.ot-stack ol { margin: 0; padding-left: 20px; display: grid; gap: 8px; }
+.ot-name { margin-left: auto; font-weight: 400; }
 .ot-flag { margin-left: 6px; padding: 1px 6px; border-radius: var(--radius-code); background: var(--accent); color: var(--paper-ground); font-weight: 700; font-size: var(--type-fine); }
-.anim .ot-stack svg { min-width: 0; max-width: 240px; margin: 10px auto 0; }
-.ot-box rect { fill: var(--paper-raised); stroke: var(--accent); stroke-width: 1.5; }
-.ot-arrow, .ot-axis { fill: none; stroke: var(--paper-edge); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
-.ot-txt { font-size: 13.5px; fill: var(--paper-ink); text-anchor: middle; }
-.ot-was { fill: var(--paper-edge); }
-.ot-now { fill: var(--accent); }
-.ot-split .ot-file { display: flex; justify-content: space-between; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--paper-rule); }
-.ot-add { color: var(--tint-vouched); }
-.ot-del { color: var(--tint-failure); }
-.ot-diff { margin: 14px 0 0; font-family: var(--font-mono); font-size: var(--type-fine); line-height: 1.8; white-space: pre-wrap; }
-.ot-diff span { display: block; padding: 0 6px; }
-.ot-diff i { font-style: normal; font-weight: 700; border-radius: var(--radius-code); padding: 1px 2px; }
-.ot-al { background: var(--wash-vouched); }
-.ot-al i { background: color-mix(in srgb, var(--tint-vouched) 30%, transparent); }
-.ot-dl { background: color-mix(in srgb, var(--tint-failure) 12%, transparent); }
-.ot-dl i { background: color-mix(in srgb, var(--tint-failure) 28%, transparent); }
+.points.ot-points { grid-template-columns: 1fr 1fr; gap: 18px 32px; margin-top: 32px; }
+.dc { display: grid; gap: 16px; padding: 18px; }
+.anim .dc svg { min-width: 0; }
+.dc h4 { margin: 0 0 4px; font-size: 1.05rem; }
+.dc-sky { fill: var(--accent); }
+.dc-ring { fill: none; stroke: var(--paper-ground); stroke-opacity: 0.35; stroke-width: 1.5; }
+.dc-star, .dc-sat { fill: var(--paper-ground); }
+.dc-star { fill-opacity: 0.7; }
+.dc-core { fill: var(--paper-ground); }
+.dc-tilt { transform-origin: 500px 92px; animation: dc-tilt 10s ease-in-out infinite alternate; }
+@keyframes dc-tilt { from { transform: rotate(-14deg); } to { transform: rotate(10deg); } }
+.dc-orb { transform-origin: 500px 92px; animation: dc-orb 9s linear infinite; }
+@keyframes dc-orb { to { transform: rotate(360deg); } }
+.dc-kick { font-size: 12px; font-weight: 700; letter-spacing: 0.14em; fill: var(--paper-ground); fill-opacity: 0.8; }
+.dc-big { font-size: 36px; font-weight: 800; letter-spacing: -0.02em; fill: var(--paper-ground); }
+.dc-kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.dc-kpis p { display: grid; padding: 10px 14px; border-radius: var(--radius-control); background: var(--wash-accent); }
+.dc-kpis b { font-size: 1.6rem; line-height: 1.2; color: var(--accent); }
+.dc-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+.dc-grid { fill: none; stroke: var(--paper-rule); stroke-width: 1.5; }
+.dc-area { fill: var(--wash-vouched); }
+.dc-line { fill: none; stroke: var(--tint-vouched); stroke-width: 4; stroke-linecap: round; stroke-dasharray: 100; animation-name: dc-line; }
+.dc-t { font-size: 13px; fill: var(--paper-ink); }
+.dc-b { font-weight: 800; fill: var(--tint-vouched); font-size: 16px; }
+.dc-dim { fill: var(--paper-secondary); }
+.dc-wire, .dc-pulse { fill: none; stroke: var(--paper-rule); stroke-width: 3; }
+.dc-pulse { stroke: var(--accent); stroke-linecap: round; stroke-dasharray: 10 70; animation: dc-pulse 2.4s linear infinite; }
+@keyframes dc-pulse { to { stroke-dashoffset: -160; } }
+.dc-node > * { fill: var(--paper-raised); stroke: var(--accent); stroke-width: 2; }
+.dc-mid text { font-size: 14px; font-weight: 600; fill: var(--paper-ink); text-anchor: middle; }
+.dc-road { fill: none; stroke: var(--tint-vouched); stroke-width: 5; stroke-dasharray: 100; animation-name: dc-road; }
+.dc-stop circle { fill: var(--paper-ground); stroke: var(--tint-vouched); stroke-width: 4; }
+.dc-edit { display: inline-grid; }
+.dc-edit > * { grid-area: 1 / 1; }
+.dc-typed { padding: 0 4px; border-radius: var(--radius-code); background: var(--wash-attention); white-space: nowrap; }
+.dc-typed i { display: inline-block; width: 2px; height: 1em; margin-left: 2px; vertical-align: -2px; background: var(--tint-attention); }
+.dc .dc-old { opacity: 0; }
+.dc-a { animation-duration: 20s; animation-iteration-count: infinite; animation-fill-mode: both; animation-timing-function: ease-out; }
+.js .anim:not(.playing) .dc-a { animation-name: none; }
+.js .anim:not(.playing) .dc-in { opacity: 0; }
+.js .anim:not(.playing) :is(.dc-tilt, .dc-orb, .dc-pulse) { animation-play-state: paused; }
+@keyframes dc-line { 0%, 28% { stroke-dashoffset: 100; } 42%, 100% { stroke-dashoffset: 0; } }
+@keyframes dc-road { 0%, 54% { stroke-dashoffset: 100; } 64%, 80% { stroke-dashoffset: 0; } 81% { stroke-dashoffset: 100; } 89%, 100% { stroke-dashoffset: 0; } }
+.dc-old { animation-name: dc-old; }
+@keyframes dc-old { 0%, 64% { opacity: 1; } 66%, 100% { opacity: 0; } }
+.dc-typed { animation-name: dc-typed; }
+@keyframes dc-typed { 0%, 66% { opacity: 0; clip-path: inset(0 100% 0 0); } 67% { opacity: 1; clip-path: inset(0 96% 0 0); } 73%, 96% { opacity: 1; clip-path: inset(0); } 100% { opacity: 0; clip-path: inset(0); } }
 .ot-m1 { animation-name: ot-m1; }
 @keyframes ot-m1 { 0%, 3% { opacity: 0; } 6%, 96% { opacity: 1; } 100% { opacity: 0; } }
 .ot-m2 { animation-name: ot-m2; }
-@keyframes ot-m2 { 0%, 32% { opacity: 0; } 35%, 96% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes ot-m2 { 0%, 40% { opacity: 0; } 43%, 96% { opacity: 1; } 100% { opacity: 0; } }
 .ot-m3 { animation-name: ot-m3; }
-@keyframes ot-m3 { 0%, 50% { opacity: 0; } 53%, 96% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes ot-m3 { 0%, 74% { opacity: 0; } 77%, 96% { opacity: 1; } 100% { opacity: 0; } }
 .ot-m4 { animation-name: ot-m4; }
-@keyframes ot-m4 { 0%, 68% { opacity: 0; } 71%, 96% { opacity: 1; } 100% { opacity: 0; } }
-.ot-p1 { animation-name: ot-p1; }
-@keyframes ot-p1 { 0%, 3% { opacity: 0; } 6%, 30% { opacity: 1; } 32%, 100% { opacity: 0; } }
-.ot-p2 { animation-name: ot-p2; }
-@keyframes ot-p2 { 0%, 32% { opacity: 0; } 35%, 48% { opacity: 1; } 50%, 100% { opacity: 0; } }
-.ot-p3 { animation-name: ot-p3; }
-@keyframes ot-p3 { 0%, 50% { opacity: 0; } 53%, 66% { opacity: 1; } 68%, 100% { opacity: 0; } }
-.ot-p4 { animation-name: ot-p4; }
-@keyframes ot-p4 { 0%, 68% { opacity: 0; } 71%, 96% { opacity: 1; } 100% { opacity: 0; } }
-.ot-l1 { animation-name: ot-l1; }
-@keyframes ot-l1 { 0%, 8% { opacity: 0; } 11%, 94% { opacity: 1; } 96%, 100% { opacity: 0; } }
-.ot-l2 { animation-name: ot-l2; }
-@keyframes ot-l2 { 0%, 13% { opacity: 0; } 16%, 94% { opacity: 1; } 96%, 100% { opacity: 0; } }
-.ot-l3 { animation-name: ot-l3; }
-@keyframes ot-l3 { 0%, 18% { opacity: 0; } 21%, 94% { opacity: 1; } 96%, 100% { opacity: 0; } }
-.ot-l4 { animation-name: ot-l4; }
-@keyframes ot-l4 { 0%, 23% { opacity: 0; } 26%, 94% { opacity: 1; } 96%, 100% { opacity: 0; } }
-.ot-tf { animation-name: ot-tf; }
-@keyframes ot-tf { 0%, 66% { opacity: 1; } 68%, 100% { opacity: 0; } }
-.ot-tc { animation-name: ot-tc; }
-@keyframes ot-tc { 0%, 68% { opacity: 0; } 71%, 96% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes ot-m4 { 0%, 84% { opacity: 0; } 87%, 96% { opacity: 1; } 100% { opacity: 0; } }
+.dc-1 { animation-name: dc-1; }
+@keyframes dc-1 { 0%, 6% { opacity: 0; transform: translateY(14px); } 10%, 96% { opacity: 1; transform: none; } 100% { opacity: 0; transform: none; } }
+.dc-2 { animation-name: dc-2; }
+@keyframes dc-2 { 0%, 17% { opacity: 0; transform: translateY(14px); } 21%, 96% { opacity: 1; transform: none; } 100% { opacity: 0; transform: none; } }
+.dc-3 { animation-name: dc-3; }
+@keyframes dc-3 { 0%, 26% { opacity: 0; transform: translateY(14px); } 30%, 96% { opacity: 1; transform: none; } 100% { opacity: 0; transform: none; } }
+.dc-4 { animation-name: dc-4; }
+@keyframes dc-4 { 0%, 40% { opacity: 0; transform: translateY(14px); } 44%, 96% { opacity: 1; transform: none; } 100% { opacity: 0; transform: none; } }
+.dc-5 { animation-name: dc-5; }
+@keyframes dc-5 { 0%, 40% { opacity: 0; } 43%, 96% { opacity: 1; } 100% { opacity: 0; } }
+.dc-6 { animation-name: dc-6; }
+@keyframes dc-6 { 0%, 52% { opacity: 0; transform: translateY(14px); } 56%, 96% { opacity: 1; transform: none; } 100% { opacity: 0; transform: none; } }
+.dc-new { animation-name: dc-new; }
+@keyframes dc-new { 0%, 82% { opacity: 0; } 85%, 96% { opacity: 1; } 100% { opacity: 0; } }
+.dc svg .dc-old { animation-name: dc-map; }
+@keyframes dc-map { 0%, 80% { opacity: 1; } 82%, 100% { opacity: 0; } }
 
 /* 12. Voice mode (vm-, #6859): 16 s a loop. */
 .vm-pair { margin-top: 64px; align-items: center; }
@@ -1107,6 +1129,8 @@ h3 { font-size: 1.05rem; margin: 0 0 0.4em; }
   .ln-in, .js .anim:not(.playing) .ln-in { opacity: 1; }
   .cu-a, .mc-a, .js .anim:not(.playing) :is(.cu-a, .mc-a) { animation: none; }
   .cu-in, .mc-in, .js .anim:not(.playing) :is(.cu-in, .mc-in) { opacity: 1; }
+  .dc-a, .dc-tilt, .dc-orb, .dc-pulse, .js .anim:not(.playing) .dc-a { animation: none; }
+  .dc-in, .js .anim:not(.playing) .dc-in { opacity: 1; }
   .sl-a, .ml-a, .ot-a, .vm-a, .vm-wave i, .js .anim:not(.playing) :is(.sl-a, .ml-a, .ot-a, .vm-a) { animation: none; }
   .sl-in, .ml-in, .ot-in, .vm-in, .js .anim:not(.playing) :is(.sl-in, .ml-in, .ot-in, .vm-in) { opacity: 1; }
   .js .part .rp-bar, .js .part.in .rp-bar { transform: none; transition: none; }
@@ -1124,6 +1148,8 @@ footer nav a { text-decoration: none; }
   .anim2 .anim { max-width: 640px; margin: 0 auto; width: 100%; }
   .uc { grid-template-columns: repeat(2, 1fr); }
   .anim.ln-pair { grid-template-columns: 1fr; }
+  .ot-split { grid-template-columns: 1fr; }
+  .ot-chat { border-right: 0; border-bottom: 1px solid var(--paper-rule); }
 }
 @media (max-width: 640px) {
   .top .wrap { gap: 14px; }
@@ -1141,8 +1167,12 @@ footer nav a { text-decoration: none; }
   .anim { overflow-x: auto; }
   .anim svg { min-width: 600px; }
   .anim.cu-fig svg { min-width: 0; }
-  .ot-split { grid-template-columns: 1fr; }
-  .ot-chat { border-right: 0; border-bottom: 1px solid var(--paper-rule); }
+  .dc-kpis { grid-template-columns: 1fr; }
+  .dc-kick { font-size: 19px; letter-spacing: 0.06em; }
+  .dc-mid.dc-stops text { font-size: 25px; }
+  .dc svg:not(.dc-cover) { overflow: visible; }
+  .dc-pair, .points.ot-points { grid-template-columns: 1fr; }
+  .ot-name { margin-left: 0; }
   .anim.ln-pair { overflow-x: visible; }
   .ln-scroll { overflow-x: auto; }
 }

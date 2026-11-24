@@ -406,11 +406,11 @@ Fix it on a pull request of its own.</code></pre>
     <div class="cu-item"><figure class="anim cu-fig">
       <svg class="cu" viewBox="0 0 340 250" role="img" aria-labelledby="cub-title cub-desc" xmlns="http://www.w3.org/2000/svg">
         <title id="cub-title">An agent signs in to a site in its own browser</title>
-        <desc id="cub-desc">The agent types an e-mail address. The password field fills with dots, and a cartoon label that says REDACTED lands on it, because the agent never sees the password. The agent uses a passkey, and it is signed in.</desc>
+        <desc id="cub-desc">The agent types an e-mail address. The password field fills with dots, and a scrap of a government file, with black bars and the word REDACTED, lands on it, because the agent never sees the password. The agent uses a passkey, and it is signed in.</desc>
         <rect class="cu-frame" x="1" y="1" width="338" height="248" rx="12"/><path class="cu-chrome" d="M1 35V13a12 12 0 0 1 12-12h314a12 12 0 0 1 12 12v22z"/><circle class="cu-light" cx="19" cy="18" r="4.5"/><circle class="cu-light" cx="34" cy="18" r="4.5"/><circle class="cu-light" cx="49" cy="18" r="4.5"/><text class="cu-s" x="66" y="22">Agent Browser · shop.example</text>
         <text class="cu-t cu-b" x="36" y="68">Sign in</text>
         <rect class="cu-field" x="36" y="80" width="268" height="32" rx="7"/><text class="cu-t cu-a cu-in cu-1" x="48" y="101">agent@shop.example</text>
-        <rect class="cu-field" x="36" y="122" width="268" height="32" rx="7"/><g class="cu-a cu-in cu-2"><text class="cu-t" x="48" y="143">••••••••••</text></g><g transform="translate(100 138) rotate(-7)"><g class="cu-a cu-in cu-stamp"><path class="cu-tape-sh" d="M-60 -13 60 -13 55 -7 62 -1 56 5 61 13 -60 13 -55 6 -62 0 -56 -6z" transform="translate(3 4)"/><path class="cu-tape" d="M-60 -13 60 -13 55 -7 62 -1 56 5 61 13 -60 13 -55 6 -62 0 -56 -6z"/><text class="cu-red" x="0" y="5.5" text-anchor="middle">REDACTED</text></g></g>
+        <rect class="cu-field" x="36" y="122" width="268" height="32" rx="7"/><g class="cu-a cu-in cu-2"><text class="cu-t" x="48" y="143">••••••••••</text></g><g transform="translate(122 138) rotate(-2)"><g class="cu-a cu-in cu-stamp"><path class="fl-shadow" d="M-72 -21H74L72 23-70 25z" transform="translate(2 3)"/><path class="fl-paper" d="M-74 -22 -40 -23 0 -21 40 -23 74 -22 73 22 36 24 0 22 -38 24 -73 23z"/><path class="fl-bar" d="M-66 -17h34v7h-34zM-27 -17h52v7h-52zM30 -17h36v7h-36zM-66 12h58v7h-58zM-3 12h24v7h-24z"/><path class="fl-bar" d="M-68 -7 67 -8 68 8 -67 9z"/><text class="fl-word" x="0" y="5" text-anchor="middle">REDACTED</text></g></g>
         <g class="cu-a cu-in cu-3"><rect class="cu-field" x="36" y="164" width="268" height="32" rx="7"/><text class="cu-t" x="48" y="185">Passkey</text><path class="cu-ok" d="m268 180 4 4 8 -9"/></g>
         <g class="cu-a cu-in cu-4"><rect class="cu-done" x="36" y="206" width="268" height="30" rx="7"/><text class="cu-t cu-b" x="170" y="226" text-anchor="middle">Signed in</text></g>
       </svg></figure>
@@ -517,11 +517,11 @@ Fix it on a pull request of its own.</code></pre>
   </div>
 </div></section>
 
-<!-- 9. Slack and mail (#6859): a Slack thread (sl-) and a mailbox (ml-), with the workflow file
-     between them. The slack server asks with buttons; the email server reads and never sends. -->
+<!-- 9. Slack, Google Chat, email and more (#6859): chats (sl-), a mailbox (ml-), the other
+     sources (mr-) and the workflow file. The slack server asks with buttons; the email server reads and never sends. -->
 <section class="page" id="messages"><div class="wrap">
-  <h2>Slack and mail drive the work</h2>
-  <p class="lede">Your team already reports bugs in Slack and by mail. Mention the bot or send a mail, and a workflow starts an agent on it. The agent answers in the Slack thread and asks its questions there, so nobody has to open another app.</p>
+  <h2>Slack, Google Chat, email and more drive the work</h2>
+  <p class="lede">Your team already reports bugs in chat and by email. Mention the bot, or send an email, and a workflow starts an agent on it. In chat, the agent answers where you asked and puts its questions there too, so nobody has to open another app.</p>
   <div class="grid3">
     <figure class="mock anim sl" role="img" aria-label="A Slack thread in the checkout channel. Sam mentions Agents: the coupon field is broken on mobile. Agents answers: On it, I filed bug 523. Agents asks: hide the field, or make it scroll? Sam presses Make it scroll. Agents answers: Fixed and merged in pull request 524.">
       <figcaption class="mock-bar" aria-hidden="true"><span class="mock-lights" aria-hidden="true"><i></i><i></i><i></i></span>Slack · &#35;checkout</figcaption>
@@ -530,6 +530,40 @@ Fix it on a pull request of its own.</code></pre>
         <div class="sl-msg sl-a sl-in sl-2"><span class="sl-av sl-bot" aria-hidden="true">A</span><div><b>Agents</b><p>On it. I filed bug &#35;523.</p></div></div>
         <div class="sl-msg sl-a sl-in sl-3"><span class="sl-av sl-bot" aria-hidden="true">A</span><div><b>Agents</b><p>Hide the field, or make it scroll?</p><div class="sl-stack"><div class="sl-btns sl-a sl-ask"><span class="sl-btn">Hide it</span><span class="sl-btn sl-a sl-press">Make it scroll</span></div><p class="small sl-a sl-in sl-got">Sam chose <b>Make it scroll</b></p></div></div></div>
         <div class="sl-msg sl-a sl-in sl-4"><span class="sl-av sl-bot" aria-hidden="true">A</span><div><b>Agents</b><p>Fixed and merged in PR &#35;524.</p></div></div>
+      </div>
+    </figure>
+    <figure class="mock anim sl" role="img" aria-label="Google Chat. Priya asks Agents: is the release ready? Agents answers: two bugs are left, and both have a pull request. Priya says: tell me when they merge. Agents answers: both merged, and main is green.">
+      <figcaption class="mock-bar" aria-hidden="true"><span class="mock-lights" aria-hidden="true"><i></i><i></i><i></i></span>Google Chat · Release</figcaption>
+      <div class="mock-body" aria-hidden="true">
+        <div class="sl-msg sl-a sl-in sl-1"><span class="sl-av sl-you">P</span><div><b>Priya</b><p><span class="sl-at">@Agents</span> is the release ready?</p></div></div>
+        <div class="sl-msg sl-a sl-in sl-2"><span class="sl-av sl-bot">A</span><div><b>Agents</b><p>Two bugs are left. Both have a pull request.</p></div></div>
+        <div class="sl-msg sl-a sl-in sl-3"><span class="sl-av sl-you">P</span><div><b>Priya</b><p><span class="sl-at">@Agents</span> tell me when they merge</p></div></div>
+        <div class="sl-msg sl-a sl-in sl-4"><span class="sl-av sl-bot">A</span><div><b>Agents</b><p>Both merged. Main is green.</p></div></div>
+      </div>
+    </figure>
+    <figure class="mock anim ml" role="img" aria-label="The agents' mailbox. A mail from a customer says that a refund failed, and an agent starts on it. A mail from GitLab has a sign-up code, black bars cover the code, as on a redacted government file, and the code goes to the agent that waits for it.">
+      <figcaption class="mock-bar" aria-hidden="true"><span class="mock-lights" aria-hidden="true"><i></i><i></i><i></i></span>Email · Inbox</figcaption>
+      <div class="mock-body" aria-hidden="true">
+        <div class="ml-mail ml-a ml-in ml-1"><span class="small">kim@customer.example</span><b>Refund failed</b><span>I sent it back last week, but…</span><span class="ml-a ml-in ml-2"><span class="chip wait ml-chip">agent started</span></span></div>
+        <div class="ml-mail ml-a ml-in ml-3"><span class="small">noreply@gitlab.com</span><b>Your sign-up code</b><span class="ml-code">Code: <span class="ml-secret">••••••••<svg class="ml-tape" viewBox="-80 -28 160 58" aria-hidden="true"><g class="ml-a ml-in ml-stamp"><path class="fl-shadow" d="M-72 -21H74L72 23-70 25z" transform="translate(2 3)"/><path class="fl-paper" d="M-74 -22 -40 -23 0 -21 40 -23 74 -22 73 22 36 24 0 22 -38 24 -73 23z"/><path class="fl-bar" d="M-66 -17h34v7h-34zM-27 -17h52v7h-52zM30 -17h36v7h-36zM-66 12h58v7h-58zM-3 12h24v7h-24z"/><path class="fl-bar" d="M-68 -7 67 -8 68 8 -67 9z"/><text class="fl-word" x="0" y="5" text-anchor="middle">REDACTED</text></g></svg></span></span><span class="ml-a ml-in ml-5"><span class="chip ok ml-chip">given to the waiting agent</span></span></div>
+      </div>
+    </figure>
+    <figure class="mock anim sl" role="img" aria-label="WhatsApp. Lee writes: the photos load slowly. Agents answers: they have no cache. Do I fix it now? Lee presses Fix it. Agents answers: fixed in pull request 529.">
+      <figcaption class="mock-bar" aria-hidden="true"><span class="mock-lights" aria-hidden="true"><i></i><i></i><i></i></span>WhatsApp</figcaption>
+      <div class="mock-body" aria-hidden="true">
+        <div class="sl-msg sl-a sl-in sl-1"><span class="sl-av sl-you">L</span><div><b>Lee</b><p>The photos load slowly</p></div></div>
+        <div class="sl-msg sl-a sl-in sl-2"><span class="sl-av sl-bot">A</span><div><b>Agents</b><p>I found it. They have no cache.</p></div></div>
+        <div class="sl-msg sl-a sl-in sl-3"><span class="sl-av sl-bot">A</span><div><b>Agents</b><p>Do I fix it now?</p><div class="sl-stack"><div class="sl-btns sl-a sl-ask"><span class="sl-btn">Wait</span><span class="sl-btn sl-a sl-press">Fix it</span></div><p class="small sl-a sl-in sl-got">Lee chose <b>Fix it</b></p></div></div></div>
+        <div class="sl-msg sl-a sl-in sl-4"><span class="sl-av sl-bot">A</span><div><b>Agents</b><p>Fixed in PR &#35;529.</p></div></div>
+      </div>
+    </figure>
+    <figure class="mock anim sl" role="img" aria-label="More sources that start an agent: an error in Sentry, an issue in Jira, an issue in Linear and a review on GitHub.">
+      <figcaption class="mock-bar" aria-hidden="true"><span class="mock-lights" aria-hidden="true"><i></i><i></i><i></i></span>And more</figcaption>
+      <div class="mock-body" aria-hidden="true">
+        <p class="mr-row sl-a sl-in sl-1"><span class="tile lg-sentry"><svg viewBox="0 0 24 24"><use href="assets/logos.svg#sentry"/></svg></span><span><b>A new error in Sentry</b><span class="small">starts an agent on the bug</span></span></p>
+        <p class="mr-row sl-a sl-in sl-2"><span class="tile lg-jira"><svg viewBox="0 0 24 24"><use href="assets/logos.svg#jira"/></svg></span><span><b>A new issue in Jira</b><span class="small">starts an agent on the issue</span></span></p>
+        <p class="mr-row sl-a sl-in sl-3"><span class="tile lg-linear"><svg viewBox="0 0 24 24"><use href="assets/logos.svg#linear"/></svg></span><span><b>An issue in Linear</b><span class="small">starts an agent on the issue</span></span></p>
+        <p class="mr-row sl-a sl-in sl-4"><span class="tile lg-github"><svg viewBox="0 0 24 24"><use href="assets/logos.svg#github"/></svg></span><span><b>A review on GitHub</b><span class="small">starts an agent on the comments</span></span></p>
       </div>
     </figure>
     <figure class="mock">
@@ -546,52 +580,43 @@ Read the message and do
 what it asks.
 Answer in its thread.</code></pre>
     </figure>
-    <figure class="mock anim ml" role="img" aria-label="The agents' mailbox. A mail from a customer says that a refund failed, and an agent starts on it. A mail from GitLab has a sign-up code, a cartoon label that says REDACTED covers the code, and the code goes to the agent that waits for it.">
-      <figcaption class="mock-bar" aria-hidden="true"><span class="mock-lights" aria-hidden="true"><i></i><i></i><i></i></span>Mail · Inbox</figcaption>
-      <div class="mock-body" aria-hidden="true">
-        <div class="ml-mail ml-a ml-in ml-1"><span class="small">kim@customer.example</span><b>Refund failed</b><span>I sent it back last week, but…</span><span class="ml-a ml-in ml-2"><span class="chip wait ml-chip">agent started</span></span></div>
-        <div class="ml-mail ml-a ml-in ml-3"><span class="small">noreply@gitlab.com</span><b>Your sign-up code</b><span class="ml-code">Code: <span class="ml-secret">••••••••<svg class="ml-tape" viewBox="-68 -19 138 38" aria-hidden="true"><g class="ml-a ml-in ml-stamp"><path class="cu-tape-sh" d="M-60 -13 60 -13 55 -7 62 -1 56 5 61 13 -60 13 -55 6 -62 0 -56 -6z" transform="translate(3 4)"/><path class="cu-tape" d="M-60 -13 60 -13 55 -7 62 -1 56 5 61 13 -60 13 -55 6 -62 0 -56 -6z"/><text class="cu-red" x="0" y="5.5" text-anchor="middle">REDACTED</text></g></svg></span></span><span class="ml-a ml-in ml-5"><span class="chip ok ml-chip">given to the waiting agent</span></span></div>
-      </div>
-    </figure>
   </div>
-  <p class="small events-from">Agents get messages and mail as data to read, never as instructions. The mailbox is theirs, and they can't send mail from it. Google Chat and WhatsApp work too, and agents can search your team's docs in the repository, Confluence, Notion or Google Drive before they start.</p>
+  <p class="small events-from">Agents get messages and mail as data to read, never as instructions. The mailbox is theirs, and they can't send mail from it. Agents can search your team's docs in the repository, Confluence, Notion or Google Drive before they start.</p>
 </div></section>
 
-<!-- 10. Outputs (#6859): the pane beside the chat (ot-) shows a plan as the agent writes it, a
-     diagram, a chart and the changes. Kept artifacts are planned (#5713). -->
+<!-- 10. Outputs (#6859): a proposal writes itself in the pane beside the chat (ot-, with the
+     document's own pictures, dc-), and you edit it. Kept artifacts are planned (#5713). -->
 <section class="page" id="outputs"><div class="wrap">
   <h2>See the output, not a wall of text</h2>
   <p class="lede">You shouldn't have to scroll through a chat to find the plan. What an agent makes opens in a pane beside the conversation, and you can read it there while the agent carries on.</p>
-  <div class="grid2">
-    <ul class="points">
-      <li><b>Live documents.</b> A plan, spec or review fills in as the agent writes it. Type on it yourself, and the agent builds on your words.</li>
-      <li><b>Drawn for you.</b> HTML pages, diagrams and charts show as pictures.</li>
-      <li><b>Every change.</b> See each file the agent touched, marked down to the word. Undo what one turn changed with one click.</li>
-      <li><b>The rest of the desk.</b> Files, a terminal, the iOS simulator and the agent's own browser sit beside the chat too.</li>
-      <li><b>Versions you keep.</b> Artifacts with a history, stored for as long as you choose. <a class="tag soon" href="https://github.com/agentloops-dev/agent-loops/issues/5713">coming</a></li>
-    </ul>
-    <figure class="mock anim ot" role="img" aria-label="A chat with a pane beside it. You ask for a plan for order search. The plan fills in line by line in the pane as the agent writes it. Then the pane shows a flowchart, a bar chart of search times, and last the changes: three files, 82 lines added and 17 removed, with Undo These Changes in the chat.">
-      <figcaption class="mock-bar" aria-hidden="true"><span class="mock-lights" aria-hidden="true"><i></i><i></i><i></i></span>Order search</figcaption>
-      <div class="ot-split" aria-hidden="true">
-        <div class="ot-chat">
-          <p class="ot-me">Plan and build order search. Show me as you go.</p>
-          <p class="bubble ot-a ot-in ot-m1">I'm writing the plan beside the chat.</p>
-          <p class="bubble ot-a ot-in ot-m2">This is how a search runs.</p>
-          <p class="bubble ot-a ot-in ot-m3">The index makes it fast.</p>
-          <div class="ot-card ot-a ot-in ot-m4"><b>Changed 3 files</b><span class="ot-undo">Undo These Changes</span></div>
-        </div>
-        <div class="ot-pane">
-          <div class="ot-tabs"><span>Files<i class="ot-a ot-tf"></i></span><span>Changes<i class="ot-a ot-in ot-tc"></i></span><span>Terminal</span></div>
-          <div class="ot-stack">
-            <div class="ot-a ot-p1"><p class="small">plan.md <span class="ot-flag">Claude</span></p><h4>Order search</h4><ol><li class="ot-a ot-l1">Add an index on the order number</li><li class="ot-a ot-l2">Search it from the orders page</li><li class="ot-a ot-l3">Show the first 20 results</li><li class="ot-a ot-l4">Test with 1 million orders</li></ol></div>
-            <div class="ot-a ot-p2"><p class="small">flow.mmd</p><svg viewBox="0 0 220 200"><g class="ot-box"><rect x="50" y="8" width="120" height="40" rx="8"/><rect x="50" y="80" width="120" height="40" rx="8"/><rect x="50" y="152" width="120" height="40" rx="8"/></g><path class="ot-arrow" d="M110 48v28m-5-6 5 6 5-6M110 120v28m-5-6 5 6 5-6"/><g class="ot-txt"><text x="110" y="33">Orders page</text><text x="110" y="105">Search index</text><text x="110" y="177">First 20 results</text></g></svg></div>
-            <div class="ot-a ot-p3"><p class="small">latency.vl.json</p><svg viewBox="0 0 220 200"><path class="ot-axis" d="M20 168h184"/><rect class="ot-was" x="48" y="24" width="44" height="144" rx="4"/><rect class="ot-now" x="132" y="142" width="44" height="26" rx="4"/><g class="ot-txt"><text x="70" y="16">840 ms</text><text x="154" y="134">150 ms</text><text x="70" y="188">Before</text><text x="154" y="188">After</text></g></svg></div>
-            <div class="ot-a ot-in ot-p4"><p class="ot-file"><span>orders.go</span><span class="small"><span class="ot-add">+38</span> <span class="ot-del">−9</span></span></p><p class="ot-file"><span>search.go</span><span class="small"><span class="ot-add">+31</span></span></p><p class="ot-file"><span>orders.html</span><span class="small"><span class="ot-add">+13</span> <span class="ot-del">−8</span></span></p><pre class="ot-diff"><span class="ot-dl">- rows := <i>scan</i>(orders)</span><span class="ot-al">+ rows := <i>index.Find</i>(n)</span></pre></div>
-          </div>
+  <figure class="mock anim ot" role="img" aria-label="A chat with a live document beside it. You ask for a proposal for order search that you can show to the whole company. The document builds itself: a cover that says Find any order before you blink, three figures (150 milliseconds, 5.6 times faster, 1 million orders), a chart of the search time that falls, a picture of how a search runs, and a rollout. You type Germany over the rollout's first step, and the agent draws the rollout again.">
+    <figcaption class="mock-bar" aria-hidden="true"><span class="mock-lights" aria-hidden="true"><i></i><i></i><i></i></span>Order search</figcaption>
+    <div class="ot-split" aria-hidden="true">
+      <div class="ot-chat">
+        <p class="ot-me">Write the proposal for order search. I want to show it to the whole company.</p>
+        <p class="bubble ot-a ot-in ot-m1">I'm writing it beside the chat.</p>
+        <p class="bubble ot-a ot-in ot-m2">I drew the speed-up, and how a search runs.</p>
+        <p class="ot-me ot-a ot-in ot-m3">I changed the rollout. Draw it again?</p>
+        <p class="bubble ot-a ot-in ot-m4">Done. Germany goes first.</p>
+      </div>
+      <div class="ot-pane">
+        <div class="ot-tabs"><span>Files<i></i></span><span>Changes</span><span>Terminal</span><span class="ot-name small">proposal.md <span class="ot-flag">Claude</span></span></div>
+        <div class="dc">
+          <div class="dc-a dc-in dc-1"><svg class="dc-cover" viewBox="0 0 660 184"><rect class="dc-sky" width="660" height="184" rx="10"/><g class="dc-tilt"><ellipse class="dc-ring" cx="500" cy="92" rx="60" ry="25"/><ellipse class="dc-ring" cx="500" cy="92" rx="110" ry="46"/><ellipse class="dc-ring" cx="500" cy="92" rx="165" ry="69"/><ellipse class="dc-ring" cx="500" cy="92" rx="225" ry="94"/></g><circle class="dc-star" cx="350" cy="30" r="2"/><circle class="dc-star" cx="420" cy="140" r="2.5"/><circle class="dc-star" cx="590" cy="26" r="3"/><circle class="dc-star" cx="630" cy="120" r="2"/><circle class="dc-star" cx="460" cy="40" r="1.6"/><circle class="dc-star" cx="300" cy="150" r="2"/><circle class="dc-star" cx="560" cy="155" r="2"/><circle class="dc-core" cx="500" cy="92" r="30"/><g class="dc-orb"><circle class="dc-sat" cx="610" cy="92" r="8"/></g><text class="dc-kick" x="32" y="52">PROPOSAL · ORDER SEARCH</text><text class="dc-big" x="30" y="98">Find any order</text><text class="dc-big" x="30" y="136">before you blink</text></svg></div>
+          <div class="dc-kpis dc-a dc-in dc-2"><p><b>150 ms</b><span class="small">to find an order</span></p><p><b>5.6×</b><span class="small">faster than today</span></p><p><b>1 million</b><span class="small">orders searched</span></p></div>
+          <div class="dc-pair"><div class="dc-a dc-in dc-3"><h4>The wait goes away</h4><svg viewBox="0 0 310 160"><path class="dc-grid" d="M8 30H302M8 78H302M8 126H302"/><path class="dc-area dc-a dc-in dc-5" d="M8 36C50 30 70 46 104 42S150 52 172 92 226 124 302 127V140H8z"/><path class="dc-line dc-a" pathLength="100" d="M8 36C50 30 70 46 104 42S150 52 172 92 226 124 302 127"/><text class="dc-t" x="10" y="22">840 ms</text><text class="dc-t dc-b" x="302" y="112" text-anchor="end">150 ms</text><text class="dc-t dc-dim" x="8" y="156">Today</text><text class="dc-t dc-dim" x="302" y="156" text-anchor="end">With the index</text></svg></div><div class="dc-a dc-in dc-4"><h4>How a search runs</h4><svg viewBox="0 0 310 160"><path class="dc-wire" d="M72 80C110 80 106 34 144 34M72 80C110 80 106 126 144 126M214 34C246 34 240 80 262 80M214 126C246 126 240 80 262 80"/><path class="dc-pulse" d="M72 80C110 80 106 34 144 34M72 80C110 80 106 126 144 126M214 34C246 34 240 80 262 80M214 126C246 126 240 80 262 80"/><g class="dc-node"><circle cx="42" cy="80" r="30"/><rect x="144" y="14" width="70" height="40" rx="9"/><rect x="144" y="106" width="70" height="40" rx="9"/><circle cx="276" cy="80" r="28"/></g><g class="dc-mid"><text x="42" y="85">Ask</text><text x="179" y="39">Index</text><text x="179" y="131">Cache</text><text x="276" y="85">Found</text></g></svg></div></div>
+          <div class="dc-a dc-in dc-6"><h4>Rollout: <span class="dc-edit"><span class="dc-a dc-old">everyone at 5%</span><span class="dc-a dc-in dc-typed">Germany first<i></i></span></span></h4><svg viewBox="0 0 660 84"><path class="dc-grid" d="M40 30H620"/><path class="dc-road dc-a" pathLength="100" d="M40 30H620"/><g class="dc-stop"><circle cx="60" cy="30" r="11"/><circle cx="330" cy="30" r="11"/><circle cx="600" cy="30" r="11"/></g><g class="dc-mid dc-stops"><text class="dc-a dc-old" x="60" y="66">Everyone, 5%</text><text class="dc-a dc-in dc-new" x="60" y="66">Germany</text><text x="330" y="66">Europe</text><text x="600" y="66">World</text></g></svg></div>
         </div>
       </div>
-    </figure>
-  </div>
+    </div>
+  </figure>
+  <ul class="points ot-points">
+    <li><b>Live documents.</b> A plan, spec or review fills in as the agent writes it. Type on it yourself, and the agent builds on your words.</li>
+    <li><b>Drawn for you.</b> HTML pages, diagrams and charts show as pictures.</li>
+    <li><b>Every change.</b> See each file the agent touched, marked down to the word. Undo what one turn changed with one click.</li>
+    <li><b>The rest of the desk.</b> Files, a terminal, the iOS simulator and the agent's own browser sit beside the chat too.</li>
+    <li><b>Versions you keep.</b> Artifacts with a history, stored for as long as you choose. <a class="tag soon" href="https://github.com/agentloops-dev/agent-loops/issues/5713">coming</a></li>
+  </ul>
 </div></section>
 
 <!-- 11. Reports (#6857): each figure is one that Reports, Delivery, Builds, Spend or Forecast
