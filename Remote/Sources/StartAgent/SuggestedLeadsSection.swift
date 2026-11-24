@@ -23,7 +23,7 @@ struct SuggestedLeadsSection: View {
             Section {
                 if !hidden {
                     ForEach(read.value.suggestions) { row($0) }
-                    if let more = SuggestedLeads.more(read.value.more) {
+                    if model.flags.isOn(.work), let more = SuggestedLeads.more(read.value.more) {
                         Button {
                             model.showWork(WorkPlace(kind: .timeline))
                         } label: {

@@ -6,6 +6,7 @@
 // takes it out for good.
 import type { ReviewPull } from "../protocol/generated";
 import type { Store } from "../model/store";
+import { flagOn } from "../model/featureFlags";
 import { shortAgo } from "../model/activity";
 import { fromWireDate } from "../protocol/dates";
 import { go, routeHash } from "../route";
@@ -34,8 +35,8 @@ export function ReviewPullRow({ store, host, folder, pull, place, down }: {
 }) {
   const at = fromWireDate(pull.updatedAt);
   const opened = () => void store.openReview(host, folder, pull.url);
-  // Its Work page in the app; a host with no ref leaves only its forge page.
-  const page = pull.ref ? { nav: "work", section: "pr", item: pull.ref } as const : null;
+  // Its Work page in the app; a host with no ref, or Work off (#6572), leaves only its forge page.
+  const page = pull.ref && flagOn("work") ? { nav: "work", section: "pr", item: pull.ref } as const : null;
   const open = () => {
     if (page) go(page); else window.open(pull.url, "_blank", "noopener");
     opened();

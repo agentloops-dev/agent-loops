@@ -588,7 +588,7 @@ final class AppModel {
 
     /// Whether the window is showing the Achievements page (#3986), from its row under Usage or
     /// View ▸ Achievements (⌘0). A page like Velocity, and not persisted for the same reason. The
-    /// window opens to the Dashboard instead (#5696).
+    /// window opens to the Dashboard instead (#5696), or here with the Dashboard's flag off (#6572).
     var showsAchievements = false {
         didSet {
             guard showsAchievements, showsAchievements != oldValue else { return }
@@ -622,6 +622,8 @@ final class AppModel {
 
     /// Open Docs at a place: the list, or a doc's page.
     func showDocs(_ place: DocsPlace = DocsPlace()) {
+        // Docs is off (#6572): the page the window opens to, not a hidden one.
+        guard flags.isOn(.docs) else { return showDashboard() }
         if place.ref != nil, docsHistory.current == nil { docsHistory.go(DocsPlace()) }
         if place != docsHistory.current { docsHistory.go(place) }
         showsDocs = true
@@ -635,6 +637,8 @@ final class AppModel {
 
     /// Open Work at a place: a list, or an item's page.
     func showWork(_ place: WorkPlace) {
+        // Work is off (#6572): the page the window opens to, not a hidden one.
+        guard flags.isOn(.work) else { return showDashboard() }
         // The list Work opens on is no place yet: a page opened from it puts it first, so Back finds it (#3257).
         if place.fromList, workHistory.current == nil { workHistory.go(WorkPlace(kind: place.kind)) }
         if place != workHistory.current { workHistory.go(place) }
@@ -802,8 +806,8 @@ final class AppModel {
             if showsDocs { return .docs }
             if showsMessages { return .messages }
             if showsAchievements { return .achievements }
-            // Nothing else open is the Dashboard (#5696), as the detail draws it.
-            guard let key = selectedFolderKey else { return selection == nil && !composing ? .dashboard : nil }
+            // Nothing else open is the home page (#5696), as the detail draws it.
+            guard let key = selectedFolderKey else { return selection == nil && !composing ? homeItem : nil }
             if let id = openWorkflow { return .workflow(id, in: key) }
             if case .review(let id)? = folderPage { return .review(id, in: key) }
             if folderPage == .archivedSessions { return .archivedSessions(key) }
@@ -811,7 +815,7 @@ final class AppModel {
             if folderPage == .mcpServers { return .folderMCPServers(key) }
             if let openPin { return .pin(openPin, in: key) }
             if let selection { return .session(selection) }
-            return composing ? .folder(key) : .dashboard
+            return composing ? .folder(key) : homeItem
         }
         set {
             // The person's own pick wins over a banner still waiting for its lists.
@@ -910,8 +914,19 @@ final class AppModel {
     }
 
     /// The Achievements page (#3986), from its row under Usage or View ▸ Achievements (⌘0).
+    /// With the Dashboard's flag off (#6572) it is the home page, as it was before #5696.
     func showAchievements() {
+        guard flags.isOn(.dashboard) else { return showDashboard() }
         showsAchievements = true
+    }
+
+    /// The home page's row: the Dashboard's, or with its flag off (#6572) the Achievements page's,
+    /// which the window opened to before #5696.
+    var homeItem: SidebarItem { flags.isOn(.dashboard) ? .dashboard : .achievements }
+
+    /// A feature was turned off while its page was open: the home page in its place (#6572).
+    func leaveHiddenPages() {
+        if (showsWork && !flags.isOn(.work)) || (showsDocs && !flags.isOn(.docs)) { showDashboard() }
     }
 
     /// The Dashboard (#5534), the home page (#5696): each work item on this Mac with its sessions,
@@ -2638,6 +2653,9 @@ final class AppModel {
                                                     returning: ClientPermissionSettings.self) else { return }
         clientPermissions = settings
     }
+
+    /// The feature flags the person has on (#6572), as the mirror keeps them.
+    let flags = FeatureFlagStates(defaults: WindowDefaults.store)
 
     /// The person's display choices (#1033): this Mac's host keeps them, and the window's
     /// defaults mirror them so every view reads them where it always did.

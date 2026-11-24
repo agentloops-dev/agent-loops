@@ -9,6 +9,7 @@ import { useEffect, useRef } from "preact/hooks";
 import { useSignal } from "@preact/signals";
 import type { BuildsChange, BuildsHistory, BuildsHistoryRequest, BuildsRun, ForgeRelease } from "../protocol/generated";
 import { Capability } from "../protocol/capabilities.generated";
+import { flagOn } from "../model/featureFlags";
 import type { Store } from "../model/store";
 import { hostAnswers } from "../model/capabilities";
 import { go, replace, route, routeHash } from "../route";
@@ -378,6 +379,8 @@ function ChangePicked({ store, from, repo, ask, change: c, history: h }: { store
 
 function prLink(repo: string, pr: number | undefined) {
   if (!pr) return null;
+  // With Work off (#6572) there is no page to link to.
+  if (!flagOn("work")) return `#${pr} `;
   return <><a href={routeHash({ nav: "work", section: "pr", item: pullRef(repo, pr) })}>{`#${pr}`}</a>{" "}</>;
 }
 

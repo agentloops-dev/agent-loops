@@ -9,8 +9,9 @@ import { useSignal } from "@preact/signals";
 import { Fragment, type ComponentChildren } from "preact";
 import type { Store } from "../model/store";
 import { go, route, sectionOf } from "../route";
-import { gated, groupedPages, machinePages, navPages, navTitle, openPage, pagesShown, sectionKeys, sectionsShown,
-  type NavPage, type NavSection, pageRoute, routePageID } from "../model/nav";
+import { flagOn } from "../model/featureFlags";
+import { gated, groupedPages, machinePages, navPages, openPage, pagesShown, sectionKeys, sectionsShown,
+  type NavPage, type NavSection, pageRoute, routePageID, sectionTitle } from "../model/nav";
 import { adminOf, adminsOnly } from "../model/console";
 import { hostAnswers } from "../model/capabilities";
 import { needingYou, placedSessions } from "../model/overview";
@@ -111,8 +112,8 @@ export function NavBar({ store, session }: { store: Store; session: Session }) {
     const count = countOf(store, s, admin);
     return (
       <button key={s} type="button" class={`nav-item${s === current ? " on" : ""}`} aria-current={s === current ? "page" : undefined}
-        aria-label={count ? `${navTitle[s]}, ${count} waiting` : undefined} onClick={() => to(s)}>
-        {navTitle[s]}{count > 0 && <span class="sub-app-count" aria-hidden="true">{count}</span>}
+        aria-label={count ? `${sectionTitle(s)}, ${count} waiting` : undefined} onClick={() => to(s)}>
+        {sectionTitle(s)}{count > 0 && <span class="sub-app-count" aria-hidden="true">{count}</span>}
       </button>
     );
   };
@@ -123,7 +124,7 @@ export function NavBar({ store, session }: { store: Store; session: Session }) {
         <div class="nav-items wide-only">{shown.map(item)}</div>
         <div class="nav-menu narrow-only">
           <button type="button" class="nav-menu-button" aria-expanded={menuOpen.value} onClick={() => { menuOpen.value = !menuOpen.value; }}>
-            {navTitle[current]} <Icon name={menuOpen.value ? "chevron-up" : "chevron-down"} />
+            {sectionTitle(current)} <Icon name={menuOpen.value ? "chevron-up" : "chevron-down"} />
             {!menuOpen.value && shown.some((s) => countOf(store, s, admin) > 0) && <span class="sub-app-count" aria-hidden="true">•</span>}
           </button>
           {menuOpen.value && <div class="nav-menu-list">{shown.map(item)}</div>}
@@ -251,12 +252,13 @@ export function SectionPage({ store, section, down }: { store: Store; section: E
   const forgeIds = forgeHosts(store).map((h) => h.id);
   const forgeOn = forgeIds.join(",");
   const forgeOnFolders = forgeFolders(store, forgeIds);
+  const workOn = flagOn("work");
   useEffect(() => {
-    if (section !== "work" || !forgeOn) return;
+    if (section !== "work" || !workOn || !forgeOn) return;
     const kind: WorkKind = r.section === "pr" || r.section === "release" ? r.section : "issue";
     const l = workList(kind);
     if (!l.loading.peek() || l.read !== askKey(store, l)) void loadList(store, l);
-  }, [section, forgeOn, forgeOnFolders]);
+  }, [section, workOn, forgeOn, forgeOnFolders]);
   // Status ▸ Events' grey line reads who waits on each machine that answers; events/changed keeps it.
   const online = store.hosts.value.filter((h) => hostAnswers(h.state)).map((h) => h.id);
   useEffect(() => {
@@ -276,12 +278,12 @@ export function SectionPage({ store, section, down }: { store: Store; section: E
   return (
     <div class={`columns sub-app console${list.length > 1 ? "" : " one-page"}`} aria-busy={down}>
       {list.length > 1 && (
-        <nav class="folders sub-app-list" aria-label={navTitle[section]}>
+        <nav class="folders sub-app-list" aria-label={sectionTitle(section)}>
           {groupedPages(list).map(([group, pages]) => (
             <div key={group} class="sub-app-group">
               {machinesHead(group) ? (
                 <h2 class="section-head" onContextMenu={(e) => openContextMenu(e, headItems())}>{group}</h2>
-              ) : <h2 class="section-head">{group}</h2>}
+              ) : <h2 class="section-head">{section === "work" ? sectionTitle(section) : group}</h2>}
               {pages.map((p) => p.draw.kind === "machine" ? (
                 <MachineRow key={p.id} store={store} host={p.draw.host} on={p.id === open?.id}
                   open={() => go({ nav: section, section: p.id })}>
