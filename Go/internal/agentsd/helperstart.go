@@ -73,79 +73,14 @@ func inheritedMode(caller *wire.Agent, runtime string) *string {
 	return &s
 }
 
-// looserThan is how the target may do more without asking than the caller, or "": a mode
-// looser than the caller's, or its sandbox not on while the caller's is. A message from the
-// caller then waits for the person, as start_session gives a helper no looser a mode.
-func (d *Daemon) looserThan(target, caller *wire.Agent) string {
-	theirs, own := inheritedMode(target, target.RuntimeID), inheritedMode(caller, caller.RuntimeID)
-	switch {
-	case theirs == nil && own == nil:
-	case theirs == nil:
-		return "it runs in its runtime's own mode, which may let it do more without asking than yours (" + *own + ")"
-	case own == nil:
-		return "it runs in " + *theirs + ", and you in your runtime's own mode"
-	case !noLooser(*theirs, *own):
-		return "it runs in " + *theirs + ", which lets it do more without asking than yours (" + *own + ")"
-	}
-	on := func(a *wire.Agent) bool {
-		return a.EffectiveSandbox != nil && a.EffectiveSandbox.State == wire.SandboxStateOn
-	}
-	if on(caller) && !on(target) {
-		return "its command sandbox is not on, and yours is"
-	}
-	return ""
-}
-
 // reportsTo is whether the target set the sender going: it started the sender, or ran the
-// workflow the sender belongs to. The sender's messages then go to it at once, whatever its
-// mode, as the work it asked for comes back (#1728).
+// workflow the sender belongs to (#1728). It may then answer the sender's cards.
 func (d *Daemon) reportsTo(sender, target *wire.Agent) bool {
 	if sender.StartedByAgent != nil && *sender.StartedByAgent == target.ID {
 		return true
 	}
 	ran := d.ranBy(sender)
 	return ran != nil && *ran == target.ID
-}
-
-// holdsMessageFrom is why a message from the sender waits for the person in the target's
-// chat, or "": the target is looser than the sender (looserThan), and did not set it going.
-func (d *Daemon) holdsMessageFrom(target, sender *wire.Agent) string {
-	if d.reportsTo(sender, target) {
-		return ""
-	}
-	return d.looserThan(target, sender)
-}
-
-// heldMessage is whether a message from another session waits in the target's queue
-// until the person speaks to it: its sender is gone, or the target holds its messages.
-func (d *Daemon) heldMessage(q wire.QueuedPrompt, target *wire.Agent) bool {
-	if q.From != wire.PromptOriginAgent {
-		return false
-	}
-	if q.Sender == nil {
-		return true
-	}
-	// Its starter on another machine: its words go at once (#2927).
-	if from := d.startedFromOf(target.ID); from != nil && from.Agent == q.Sender.AgentID {
-		return false
-	}
-	// An agent of its project on another machine: so do its words (#5618).
-	if d.messagedFromElsewhere(target.ID, q.Sender.AgentID) {
-		return false
-	}
-	sender := d.Store.Agent(q.Sender.AgentID)
-	return sender == nil || d.holdsMessageFrom(target, sender) != ""
-}
-
-// heldMessages is the ids of the messages in the agent's queue that wait for the person.
-func (d *Daemon) heldMessages(a *wire.Agent) map[wire.UUID]bool {
-	held := map[wire.UUID]bool{}
-	for _, q := range a.QueuedPrompts {
-		if d.heldMessage(q, a) {
-			held[q.ID] = true
-		}
-	}
-	return held
 }
 
 func (d *Daemon) unavailableRuntime(rt *runtimeDef) string {
