@@ -862,12 +862,20 @@ h3 { font-size: 1.05rem; margin: 0 0 0.4em; }
 .cu-raise { fill: var(--paper-raised); stroke: var(--paper-edge); }
 .cu-rule { stroke: var(--paper-rule); }
 .cu-hl, .cu-bar { fill: var(--accent); }
-.cu-pill, .cu-done { fill: var(--wash-vouched); stroke: var(--tint-vouched); }
+.cu-done { fill: var(--wash-vouched); stroke: var(--tint-vouched); }
 .cu-bub { fill: var(--paper-wash); }
 .cu-ok { fill: none; stroke: var(--tint-vouched); stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
 .cu-phone { fill: var(--paper-ground); stroke: var(--paper-edge); stroke-width: 3; }
 .cu-notch { fill: var(--paper-edge); }
 .cu-cur { fill: var(--paper-ink); stroke: var(--paper-ground); stroke-width: 1.2; stroke-linejoin: round; }
+.cu-tape { fill: var(--tint-failure); stroke: var(--paper-ink); stroke-width: 2; stroke-linejoin: round; }
+.cu-tape-sh { fill: var(--paper-ink); }
+.cu-red { font-size: 16px; font-weight: 800; letter-spacing: 0.08em; fill: var(--paper-ground); }
+.cu-sky-a { fill: var(--line-accent); }
+.cu-sky-b { fill: var(--line-warning); }
+.cu-sky-c { fill: var(--line-vouched); }
+.cu-sun { fill: var(--paper-ground); }
+.cu-hill { fill: var(--paper-edge); }
 .cu-menu { opacity: 0; }
 .cu-point { transform: translate(250px, 176px); }
 .cu-a { animation-duration: 12s; animation-iteration-count: infinite; animation-fill-mode: both; animation-timing-function: ease-out; }
@@ -883,10 +891,12 @@ h3 { font-size: 1.05rem; margin: 0 0 0.4em; }
 @keyframes cu-4 { 0%, 46% { opacity: 0; } 49%, 96% { opacity: 1; } 100% { opacity: 0; } }
 .cu-5 { animation-name: cu-5; }
 @keyframes cu-5 { 0%, 58% { opacity: 0; } 61%, 96% { opacity: 1; } 100% { opacity: 0; } }
+.cu-stamp { animation-name: cu-stamp; }
+@keyframes cu-stamp { 0%, 27% { opacity: 0; transform: scale(2.2); } 30% { opacity: 1; transform: scale(0.9); } 32%, 96% { opacity: 1; transform: none; } 100% { opacity: 0; transform: none; } }
 .cu-menu { animation-name: cu-menu; }
 @keyframes cu-menu { 0%, 10% { opacity: 0; } 12%, 28% { opacity: 1; } 31%, 100% { opacity: 0; } }
 .cu-point { animation-name: cu-point; }
-@keyframes cu-point { 0% { transform: translate(250px, 176px); opacity: 1; } 9%, 13% { transform: translate(176px, 62px); } 21%, 31% { transform: translate(206px, 122px); } 40%, 96% { transform: translate(250px, 176px); opacity: 1; } 100% { transform: translate(250px, 176px); opacity: 0; } }
+@keyframes cu-point { 0% { transform: translate(250px, 176px); opacity: 1; } 9%, 13% { transform: translate(100px, 62px); } 21%, 31% { transform: translate(140px, 122px); } 40%, 96% { transform: translate(250px, 176px); opacity: 1; } 100% { transform: translate(250px, 176px); opacity: 0; } }
 .cu-bar { transform-box: fill-box; transform-origin: left center; animation-name: cu-bar; }
 @keyframes cu-bar { 0%, 36% { transform: scaleX(0); } 57%, 100% { transform: none; } }
 
@@ -911,12 +921,14 @@ h3 { font-size: 1.05rem; margin: 0 0 0.4em; }
 .mc-w50 { width: 50%; }
 .mc-ask { padding: 12px 14px; border: 1px solid var(--paper-rule); border-left: 3px solid var(--tint-attention); border-radius: var(--radius-control); }
 .mc-btn { padding: 5px 12px; border-radius: var(--radius-control); background: var(--accent); color: var(--paper-ground); font-weight: 700; white-space: nowrap; }
-.mc-press, .mc-start, .mc-idle { opacity: 0; }
+.mc-press, .mc-making, .mc-start, .mc-idle { opacity: 0; }
 .mc-a { animation-duration: 16s; animation-iteration-count: infinite; animation-fill-mode: both; animation-timing-function: ease-out; }
 .mc-card { animation-name: mc-card; }
 @keyframes mc-card { 0%, 8% { opacity: 0; } 11%, 96% { opacity: 1; } 100% { opacity: 0; } }
-.mc-yes { animation-name: mc-yes; }
-@keyframes mc-yes { 0%, 27% { opacity: 0; } 30%, 96% { opacity: 1; } 100% { opacity: 0; } }
+.mc-making { animation-name: mc-making; }
+@keyframes mc-making { 0%, 27% { opacity: 0; } 30%, 46% { opacity: 1; } 49%, 100% { opacity: 0; } }
+.mc-made { animation-name: mc-made; }
+@keyframes mc-made { 0%, 48% { opacity: 0; } 51%, 96% { opacity: 1; } 100% { opacity: 0; } }
 .mc-new { animation-name: mc-new; }
 @keyframes mc-new { 0%, 28% { opacity: 0; } 31%, 96% { opacity: 1; } 100% { opacity: 0; } }
 .mc-on { animation-name: mc-on; }
