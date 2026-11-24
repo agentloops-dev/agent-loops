@@ -261,6 +261,7 @@ func newWith(ctx context.Context, root string, opts startOptions) (*Daemon, erro
 	d.dismissedLeads = d.openDismissedLeads()
 	d.repoAliases = d.openRepoAliases()
 	d.erased = d.openErased()
+	d.deployStore = d.openDeploys()
 	d.releaseDone = d.openReleaseTags()
 	d.accountOps = d.openAccountOps()
 	d.opts.Store(&opts)
