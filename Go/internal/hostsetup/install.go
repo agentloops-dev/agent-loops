@@ -62,7 +62,7 @@ type Deps struct {
 	// KeyWait is how long step 7 is running, for a client to write a key it has, before it
 	// says it needs the person.
 	KeyWait time.Duration
-	Out                   io.Writer
+	Out     io.Writer
 }
 
 func (d *Deps) defaults() {
@@ -156,6 +156,7 @@ func Run(ctx context.Context, o Options, d Deps) error {
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	var first error
+	pool := false
 	keep := func(err error) {
 		mu.Lock()
 		if first == nil {
@@ -172,12 +173,14 @@ func Run(ctx context.Context, o Options, d Deps) error {
 	}()
 	go func() {
 		defer wg.Done()
-		if err := prepareProjects(ctx, o, d, l, rep, say); err != nil {
+		var err error
+		if pool, err = prepareProjects(ctx, &o, d, l.Logs, rep, say); err != nil {
 			keep(failed(wire.MachineSetupStepIDProjects, err))
 		}
 	}()
 	wg.Wait()
-	if first != nil || !o.Smoke {
+	if first != nil || !o.Smoke || pool {
+		// A pool signs in to nothing: steps 7 and 8 are the claim's (#6896).
 		return first
 	}
 	// 7: Sign in to runtimes: a client's work, which this step waits on.
@@ -186,6 +189,30 @@ func Run(ctx context.Context, o Options, d Deps) error {
 	}
 	// 8: Smoke session.
 	return Smoke(ctx, o, d, rep, say)
+}
+
+// Continue runs the set-up from step from (projects, sign-in or smoke) to the end, inside the
+// host, on a machine that a person claimed from a warm pool (#6896). root is the host's root.
+func Continue(ctx context.Context, o Options, d Deps, root string, from wire.MachineSetupStepID) error {
+	d.defaults()
+	rep := moreReports(ctx, root)
+	say := func(string, ...any) {}
+	switch from {
+	case wire.MachineSetupStepIDProjects:
+		if _, err := prepareProjects(ctx, &o, d, filepath.Join(root, "logs"), rep, say); err != nil {
+			rep.Say(wire.MachineSetupStepIDProjects, wire.MachineSetupStateFailed, "", err.Error())
+			return err
+		}
+		fallthrough
+	case wire.MachineSetupStepIDSignIn:
+		if err := SignIn(ctx, o, d, rep, say); err != nil {
+			return err
+		}
+		fallthrough
+	case wire.MachineSetupStepIDSmoke:
+		return Smoke(ctx, o, d, rep, say)
+	}
+	return fmt.Errorf("set-up does not go on from step %s", from)
 }
 
 // installAgents is step 3. The host is this program's own copy, placed in ~/.agents-server/bin
@@ -385,18 +412,55 @@ func installRuntime(ctx context.Context, d Deps, id string, progress func(string
 	}
 }
 
-// prepareProjects is step 6: each project folder's .agents/setup.sh, one after another, so
-// two scripts never fight over one cache. The folders are sent by the control plane before
-// this step; one that is not here fails the step, and the others still run.
-func prepareProjects(ctx context.Context, o Options, d Deps, l Layout, rep *Reporter, say func(string, ...any)) error {
+// poolProjects has the host get the projects of the pool that made this machine (#6890), and
+// puts their folders in o.Projects. pool is false for a machine that no pool made.
+func poolProjects(ctx context.Context, o *Options, d Deps, rep *Reporter) (pool bool, note string, err error) {
+	for {
+		got, err := call[wire.MachineSetupProjects](d, wire.CallSetupProjects.Name, wire.Empty{})
+		if err != nil {
+			return false, "", fmt.Errorf("the host did not get the pool's projects: %w", err)
+		}
+		if got.Finished {
+			if got.Problem != nil {
+				return got.Pool, "", fmt.Errorf("%s", *got.Problem)
+			}
+			if got.Pool {
+				o.Projects = got.Folders
+			}
+			if got.Detail != nil {
+				note = *got.Detail
+			}
+			return got.Pool, note, nil
+		}
+		if got.Detail != nil {
+			rep.Say(wire.MachineSetupStepIDProjects, wire.MachineSetupStateRunning, *got.Detail, "")
+		}
+		select {
+		case <-ctx.Done():
+			return false, "", ctx.Err()
+		case <-time.After(d.Poll):
+		}
+	}
+}
+
+// prepareProjects is step 6: a pool's projects are got (poolProjects), then each project
+// folder's .agents/setup.sh, one after another, so two scripts never fight over one cache. A
+// folder that is not here fails the step, and the others still run. pool says that a warm
+// pool made this machine.
+func prepareProjects(ctx context.Context, o *Options, d Deps, logs string, rep *Reporter, say func(string, ...any)) (bool, error) {
 	step := wire.MachineSetupStepIDProjects
+	rep.Say(step, wire.MachineSetupStateRunning, "Looking for projects", "")
+	pool, note, err := poolProjects(ctx, o, d, rep)
+	if err != nil {
+		return pool, err
+	}
 	if len(o.Projects) == 0 {
 		rep.Say(step, wire.MachineSetupStateDone, "No projects to prepare", "")
 		say("Send projects: none")
-		return nil
+		return pool, nil
 	}
 	rep.Say(step, wire.MachineSetupStateRunning, fmt.Sprintf("0 of %d projects", len(o.Projects)), "")
-	_ = os.MkdirAll(l.Logs, 0o700)
+	_ = os.MkdirAll(logs, 0o700)
 	var problems []string
 	ran := 0
 	for i, project := range o.Projects {
@@ -405,7 +469,7 @@ func prepareProjects(ctx context.Context, o Options, d Deps, l Layout, rep *Repo
 			problems = append(problems, name+": the folder is not on this machine")
 			continue
 		}
-		logFile, _ := os.OpenFile(filepath.Join(l.Logs, "setup-"+name+".log"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+		logFile, _ := os.OpenFile(filepath.Join(logs, "setup-"+name+".log"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 		had, err := RunScript(ctx, project, o.Name, o.FromPool, d.ScriptTimeout, logFile, func(line string) {
 			rep.Say(step, wire.MachineSetupStateRunning, fmt.Sprintf("%s (%d of %d): %s", name, i+1, len(o.Projects), line), "")
 		})
@@ -420,13 +484,19 @@ func prepareProjects(ctx context.Context, o Options, d Deps, l Layout, rep *Repo
 		}
 	}
 	if len(problems) > 0 {
-		return fmt.Errorf("%s", strings.Join(problems, "\n"))
+		return pool, fmt.Errorf("%s", strings.Join(problems, "\n"))
 	}
 	text := fmt.Sprintf("%d projects ready", len(o.Projects))
+	if len(o.Projects) == 1 {
+		text = filepath.Base(o.Projects[0]) + " ready"
+	}
 	if ran > 0 {
 		text += fmt.Sprintf(", %d set-up scripts ran", ran)
 	}
+	if note != "" {
+		text += "; " + note
+	}
 	rep.Say(step, wire.MachineSetupStateDone, text, "")
 	say("Send projects: %s", text)
-	return nil
+	return pool, nil
 }
