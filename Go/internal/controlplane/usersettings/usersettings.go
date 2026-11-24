@@ -17,6 +17,7 @@
 package usersettings
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -26,6 +27,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"gocloud.dev/secrets"
@@ -38,6 +40,13 @@ import (
 )
 
 // Prefix is where every person's user settings are in the store.
+//
+// They follow the person to each machine of theirs, so they stay in the control plane's own
+// store and not in one machine's ~/.agents (Alex, 2026-11-24, #6761; #6780). They are the
+// person's own data, so nothing is evicted, and they go when the person is removed. A removed
+// secret's tombstone goes 90 days on.
+//
+// store-bounds: kind=key-value; count=200 secrets a person (400 with removed ones) and 100 offers; size=5MiB of settings (256KiB a part), 5MiB a secret sealed to 200; age=until-deleted; applied=on write, on person removal, and the hourly sweep deletes a removed secret at 90 days
 const Prefix = "v1/users/"
 
 // The bounds on what one person keeps, so no person fills the store or a machine's link.
@@ -49,6 +58,20 @@ const (
 	MaxSecrets   = 200
 	// MaxRecipients bounds the machines and clients a secret is sealed to (#3397).
 	MaxRecipients = 200
+	// MaxSettings bounds a person's settings as kept, with every part.
+	MaxSettings = 5 << 20
+	// MaxSecretRecord bounds one secret or offer as kept: MaxRecipients copies of MaxSecret.
+	MaxSecretRecord = 5 << 20
+	// MaxRemovedSecrets bounds the removed secrets' tombstones when a new name is set.
+	MaxRemovedSecrets = 200
+	// MaxLeftOn bounds the removed machines a secret names, the newest.
+	MaxLeftOn = 200
+	// maxLeftOnName bounds the name of one, in characters.
+	maxLeftOnName = 100
+	// RemovedSecretsKept is how long a removed secret's tombstone stays.
+	RemovedSecretsKept = 90 * 24 * time.Hour
+	// tombstoneMost is more than a tombstone takes, so the sweep reads no sealed secret.
+	tombstoneMost = 1 << 10
 )
 
 var (
@@ -74,6 +97,8 @@ type Book struct {
 	keeper    *secrets.Keeper
 	keeperURL string
 	now       func() time.Time
+	// adding is held while a person's secrets or offers are counted and one is added.
+	adding sync.Mutex
 }
 
 // New is a book over s. keeper seals and opens what other parts of the control plane keep
@@ -133,6 +158,8 @@ type secretRecord struct {
 	Created  string              `json:"created,omitempty"`
 	Machines []string            `json:"machines,omitempty"`
 	LeftOn   []wire.SecretLeftOn `json:"leftOn,omitempty"`
+	// Going is a tombstone the sweep is deleting: nothing is written over it.
+	Going bool `json:"going,omitempty"`
 	// SavedBy is where it came from (#5308): an agent saved it on a machine, and a client of
 	// the person's took it. A set that takes no offer forgets it.
 	SavedBy *wire.SecretSavedBy `json:"savedBy,omitempty"`
@@ -242,24 +269,34 @@ func (b *Book) setPart(ctx context.Context, user string, part wire.UserSettingsP
 		if string(canonical(*slot)) == string(parsed) {
 			return nil, nil
 		}
+		if err := partFits(part, canonical(*slot), parsed); err != nil {
+			return nil, err
+		}
 		*slot = parsed
 		changed = true
 		at := b.stamp()
 		s.Updated = &at
-		return records.Encode(s)
+		return encodeSettings(s, raw)
 	})
 	return changed, err
 }
 
-// checkPartValue checks a part's value that is not a removal: its size, its JSON kind
+// partFits refuses a part over its bound as it is kept, unless it is no larger than the one
+// there: one that is over already can be made smaller a step at a time (#6780).
+func partFits(part wire.UserSettingsPartName, had, value json.RawMessage) error {
+	most := MaxPart
+	if smallPart(part) {
+		most = MaxSmallPart
+	}
+	if len(value) > most && len(value) > len(had) {
+		return fmt.Errorf("%w: %s is over %d KB", ErrInvalid, part, most>>10)
+	}
+	return nil
+}
+
+// checkPartValue checks a part's value that is not a removal: its JSON kind
 // (kind is "{" or "["), and for accounts and environment, what they hold.
 func checkPartValue(part wire.UserSettingsPartName, kind string, value json.RawMessage) error {
-	if len(value) > MaxPart {
-		return fmt.Errorf("%w: %s is over %d KB", ErrInvalid, part, MaxPart>>10)
-	}
-	if smallPart(part) && len(value) > MaxSmallPart {
-		return fmt.Errorf("%w: %s is over %d KB", ErrInvalid, part, MaxSmallPart>>10)
-	}
 	if !strings.HasPrefix(string(value), kind) || !json.Valid(value) {
 		return fmt.Errorf("%w: %s must be a JSON %s", ErrInvalid, part, map[string]string{"{": "object", "[": "list"}[kind])
 	}
@@ -294,8 +331,12 @@ func canonical(raw json.RawMessage) json.RawMessage {
 	if json.Unmarshal(raw, &v) != nil {
 		return raw
 	}
-	b, _ := json.Marshal(v)
-	return b
+	var out bytes.Buffer
+	e := json.NewEncoder(&out)
+	// As the record keeps it: a < is one byte.
+	e.SetEscapeHTML(false)
+	_ = e.Encode(v)
+	return bytes.TrimSpace(out.Bytes())
 }
 
 func partOf(s *wire.UserSettings, part wire.UserSettingsPartName) *wire.JSONValue {
@@ -365,9 +406,6 @@ func (b *Book) SetPolicy(ctx context.Context, user string, signed wire.SignedYou
 	if err != nil {
 		return false, fmt.Errorf("%w: policy is not a signed policy", ErrInvalid)
 	}
-	if len(value) > MaxPart {
-		return false, fmt.Errorf("%w: policy is over %d KB", ErrInvalid, MaxPart>>10)
-	}
 	decoded, err := base64.StdEncoding.DecodeString(signed.Policy)
 	if err != nil {
 		return false, fmt.Errorf("%w: policy is not base64", ErrInvalid)
@@ -398,11 +436,14 @@ func (b *Book) SetPolicy(ctx context.Context, user string, signed wire.SignedYou
 		if next.Revision <= current.Revision {
 			return nil, nil // not newer: kept, silently (the keeper may resend the same layer)
 		}
+		if err := partFits("policy", s.Policy, value); err != nil {
+			return nil, err
+		}
 		s.Policy = value
 		changed = true
 		at := b.stamp()
 		s.Updated = &at
-		return records.Encode(s)
+		return encodeSettings(s, raw)
 	})
 	return changed, err
 }
@@ -498,10 +539,10 @@ func (b *Book) SetSecretFrom(ctx context.Context, user string, set wire.UserSecr
 		return err
 	}
 	key := secretKey(user, name)
-	if names, err := b.liveNames(ctx, user); err != nil {
+	b.adding.Lock()
+	defer b.adding.Unlock()
+	if err := b.secretRoom(ctx, user, name); err != nil {
 		return err
-	} else if len(names) >= MaxSecrets && !slices.Contains(names, name) {
-		return fmt.Errorf("%w: a person keeps at most %d secrets", ErrInvalid, MaxSecrets)
 	}
 	sealed := sealedFor(set.Values, allowed)
 	if len(sealed) == 0 {
@@ -514,11 +555,14 @@ func (b *Book) SetSecretFrom(ctx context.Context, user string, set wire.UserSecr
 				return nil, err
 			}
 		}
+		if r.Going {
+			return nil, fmt.Errorf("%w: the removed secret with this name is being deleted; try again in a minute", ErrInvalid)
+		}
 		next, err := b.nextSecret(r, set, sealed, &description, savedBy)
 		if err != nil {
 			return nil, err
 		}
-		return records.Encode(next)
+		return encodeSecret(next, raw)
 	})
 }
 
@@ -614,8 +658,11 @@ func (b *Book) AddSealed(ctx context.Context, user, name string, version int64, 
 		if !added {
 			return nil, nil
 		}
+		if len(next) > MaxRecipients && len(next) > len(r.Sealed) {
+			return nil, fmt.Errorf("%w: a secret is sealed to at most %d machines and apps", ErrInvalid, MaxRecipients)
+		}
 		r.Sealed = next
-		return records.Encode(r)
+		return encodeSecret(r, raw)
 	})
 	return added, err
 }
@@ -688,6 +735,118 @@ func (b *Book) liveNames(ctx context.Context, user string) ([]string, error) {
 		}
 	}
 	return names, nil
+}
+
+// secretRoom refuses a new name past the person's most secrets, or past the most removed
+// ones. One of theirs has its room, and so has a removed one set again.
+func (b *Book) secretRoom(ctx context.Context, user, name string) error {
+	all, _, err := b.secretRecords(ctx, user)
+	if err != nil {
+		return err
+	}
+	live, removed, there := 0, 0, false
+	for _, r := range all {
+		if r.Sealed != nil {
+			live++
+		} else {
+			removed++
+		}
+		if r.Name == name {
+			if r.Sealed != nil {
+				return nil
+			}
+			there = true
+		}
+	}
+	if live >= MaxSecrets {
+		return fmt.Errorf("%w: a person keeps at most %d secrets", ErrInvalid, MaxSecrets)
+	}
+	if removed >= MaxRemovedSecrets && !there {
+		return fmt.Errorf("%w: too many secrets were removed in the last 90 days; use a name you had, or try again in a few days", ErrInvalid)
+	}
+	return nil
+}
+
+// encodeSettings is the record as it is kept, indented; one over MaxSettings is refused,
+// unless it is no larger than raw, the one there.
+func encodeSettings(s wire.UserSettings, raw []byte) ([]byte, error) {
+	data, err := records.Encode(s)
+	if err == nil && len(data) > MaxSettings && len(data) > len(raw) {
+		return nil, fmt.Errorf("%w: your settings are over %d MB; remove something first", ErrInvalid, MaxSettings>>20)
+	}
+	return data, err
+}
+
+// encodeSecret is the record as it is kept; one over MaxSecretRecord is refused, unless it is
+// no larger than raw, the one there.
+func encodeSecret(r secretRecord, raw []byte) ([]byte, error) {
+	data, err := records.Encode(r)
+	if err == nil && len(data) > MaxSecretRecord && len(data) > len(raw) {
+		return nil, fmt.Errorf("%w: a secret, sealed to every machine and app, is over %d MB", ErrInvalid, MaxSecretRecord>>20)
+	}
+	return data, err
+}
+
+func cutName(name string) string {
+	if r := []rune(name); len(r) > maxLeftOnName {
+		return string(r[:maxLeftOnName])
+	}
+	return name
+}
+
+// SweepRemovedSecrets deletes, at most most, each person's removed secrets' tombstones
+// RemovedSecretsKept after the removal (#6780), and says how many went. A secret set again
+// takes a version that is the time in milliseconds, so it is above a deleted one's. Each is
+// marked first, so a set at the same time is either kept or refused, never lost.
+func SweepRemovedSecrets(ctx context.Context, s store.Store, now time.Time, most int) (int, error) {
+	keys, err := s.List(ctx, Prefix)
+	if err != nil {
+		return 0, err
+	}
+	deleted := 0
+	for _, k := range keys {
+		if deleted >= most {
+			break
+		}
+		if k.Size > tombstoneMost || !strings.Contains(k.Key, "/secrets/") {
+			continue
+		}
+		gone, err := sweepRemovedSecret(ctx, s, k.Key, now)
+		if err != nil {
+			return deleted, err
+		}
+		if gone {
+			deleted++
+		}
+	}
+	return deleted, nil
+}
+
+func sweepRemovedSecret(ctx context.Context, s store.Store, key string, now time.Time) (bool, error) {
+	o, err := s.Get(ctx, key)
+	if err != nil {
+		return false, err
+	}
+	var r secretRecord
+	if o == nil || json.Unmarshal(o.Data, &r) != nil || r.Sealed != nil || r.Name == "" {
+		return false, nil
+	}
+	if at, err := time.Parse(time.RFC3339, r.Updated); err != nil || now.Sub(at) < RemovedSecretsKept {
+		return false, nil
+	}
+	if !r.Going {
+		r.Going = true
+		data, err := records.Encode(r)
+		if err != nil {
+			return false, err
+		}
+		if _, err := s.Put(ctx, key, data, store.Matching(o.ETag)); store.IsConflict(err) {
+			return false, nil
+		} else if err != nil {
+			return false, err
+		}
+	}
+	return true, s.Delete(ctx, key)
 }
 
 // Names is user/secretNames: each secret's name, its version, when it changed, the
@@ -914,7 +1073,8 @@ func (b *Book) Left(ctx context.Context, user, host, hostName string) ([]string,
 			}
 			r.Machines = slices.DeleteFunc(r.Machines, func(m string) bool { return m == host })
 			if r.Sealed != nil {
-				r.LeftOn = append(r.LeftOn, wire.SecretLeftOn{Host: wire.MachineRef(host), Name: hostName, At: b.stamp()})
+				r.LeftOn = append(r.LeftOn, wire.SecretLeftOn{Host: wire.MachineRef(host), Name: cutName(hostName), At: b.stamp()})
+				r.LeftOn = r.LeftOn[max(0, len(r.LeftOn)-MaxLeftOn):]
 			}
 			return records.Encode(r)
 		})

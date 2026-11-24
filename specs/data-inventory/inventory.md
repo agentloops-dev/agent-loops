@@ -94,9 +94,9 @@ from the root (`agentsd/backups.go:69,72`). It holds nothing else.
 | `mcp-events.json` | Seen MCP event IDs | 2,000 IDs, 7 days (`mcpevents.go:53-56`) | on write | no |
 | `mcp-views/*.json` | View catalogues | pruned (`viewservers.go:369`) | on write | no |
 | `mcp-approvals.json`, `plugin-approvals.json` | Approval digests | **none.** Grows with folders × servers. | MCP: only on explicit remove; plugins: never | no |
-| `devices.json` | Paired devices | **none** | only Forget (`devices.go:257`) | no |
+| `devices.json` | Paired devices | 256 of 4 KiB each, else refused; 90 days unseen (`devices.go`, #6734) | on write, hourly, Forget | no |
 | `review-dismissals.json` | Dismissed PRs | 2,000 of 8 KiB each, 90 days from the PR's last change or its dismissal (`reviews.go`, #6728) | hourly and on write | no |
-| `review-opened.json` | PR URLs per folder | 200 per folder (`reviewOpenedPerFolder`). **Folder keys are never pruned.** | on write | no |
+| `review-opened.json` | Opened PRs | 2,000 of 8 KiB each, 90 days from the PR's last change or its opening (`reviews.go`, #6729) | hourly and on write | no |
 | `lock-seen.json` | Signed request IDs | 4,096, 2 days (`lockcheck.go`) | hourly and on write | no |
 | `attention.json` | Needs, deliveries | live needs only | on write | no |
 | `leases.json`, `resources.json` | Resource leases | 240-minute lease cap; dropped on agent stop (`leases.go:28,383`) | on write | no |
@@ -193,7 +193,7 @@ handover also leaves out `v1/keys/` (`storecopy.go:21,25`).
 
 | Key | Holds | Bound | Swept |
 |---|---|---|---|
-| `v1/control.json` | Owner, endpoints, epoch, control key public parts, audit days | 1 | — |
+| `v1/control.json` | Owner, endpoints, epoch, control key public parts, audit days | 1, 64 KiB (#6771) | on write |
 | `v1/clients/<UUID>.json` | Name, kind, public key, last seen, APNs token, ≤16 Live Activity tokens (12 h each), Web Push subscription | 16 KiB a record, 1 MiB in all (#6757; hosted: 5/50 clients too). Key life 90 days (`keylife.go:18`). | Tombstone 7 days. A client whose key expired is forgotten by the hourly sweep (#6757). |
 | `v1/machines/<id>.json` | Name, key, platform, version, owner, workspace | 32 KiB a record, 1 MiB in all (#6758; hosted: 2/20 machines too) | Tombstone 7 days. A machine with no workspace whose key expired is removed by the hourly sweep (#6758); a linked one stays until removed. |
 | `v1/people/<id>.json` | Name, role, sign-ins (email, login), SCIM part, old names (90 days) | No cap | A removed person goes after 14 days, or 90 when they have a sign-in (#6756) |
@@ -201,7 +201,7 @@ handover also leaves out `v1/keys/` (`storecopy.go:21,25`).
 | `v1/projects/<id>.json` | Name, owner, slots, ≤20 boards | 500 per person (`projects.go:36`) | tombstone 7 days |
 | `v1/projectFolders/<host>.json` | A machine's joined folders | 1,000 | orphan sweep |
 | `v1/locks/<person>/<n>.json` | Machine-lock chain | 4,096 per person (`machinelock/lock.go:40`) | only on Reset. **Not deleted when the person is removed.** |
-| `v1/users/<u>/settings.json`, `notices.json`, `secrets/<NAME>.json` | Person settings, notice bucket, sealed secrets | 256 KiB part, 16 KiB secret, 200 secrets (`usersettings/usersettings.go:45-49`) | on person removal |
+| `v1/users/<u>/settings.json`, `notices.json`, `secrets/<NAME>.json`, `offers/` | Person settings, notice bucket, sealed secrets, agents' offers | 256 KiB a part, 5 MiB of settings, 16 KiB a secret sealed to 200 (5 MiB), 200 secrets, 200 tombstones, 100 offers (`usersettings/usersettings.go`) | on write; on person removal; a removed secret's tombstone hourly at 90 days (#6780) |
 | `v1/links/<channel>/<sha>.json` | Channel identity → person, and when it last acted | 4 KiB a record, 1 MiB in all (#6763) | 90 days unused, hourly; on unlink or person removal |
 
 ### Requests, codes and sign-in
@@ -212,7 +212,7 @@ handover also leaves out `v1/keys/` (`storecopy.go:21,25`).
 | `v1/joins/`, `v1/lockjoins/`, `v1/signins/` | Waiting join, lock-join and sign-in asks (keys, source IP) | 50 / 200 / 50 open, per-person caps; 10-minute life | 1 h after expiry, **on read only** |
 | `v1/linkRequests/<id>.json` | Link asks | 50 open; 24 h | on read only |
 | `v1/oidc/state/`, `v1/oidc/tickets/` | PKCE verifier, sealed refresh token | 10 / 2 minutes. **No count cap.** | 1 h, hourly |
-| `v1/signin.json`, `v1/signin/providers/`, `v1/signin/domains/` | Sign-in settings, org OIDC providers, domain claims | 5 providers, 20 domains | on remove |
+| `v1/signin.json`, `v1/signin/providers/`, `v1/signin/domains/` | Sign-in settings, org OIDC providers, domain claims | 16 KiB; 5 providers of 16 KiB (95 tombstones); 20 domains of 4 KiB (#6773 to #6775) | on write, on remove; a removed provider's tombstone hourly at 90 days, once nothing names it |
 | `v1/signin/refresh/<person>/<prov>.json` | Sealed org refresh token | 1 per person per provider | person removal |
 | `v1/scim/<prov>/names/<sha>.json` | userName → person | 1 per SCIM user | rename or delete. **Not on an admin's remove.** |
 | `v1/scim/tokens/`, `v1/read/tokens/` | Token hashes, last-use IP | 2 live / 20 a provider; 10 live / 50; 8 KiB when made; a live one has no age (#6766, #6767) | on write; hourly, 90 days after a revoke or end |
@@ -231,13 +231,13 @@ handover also leaves out `v1/keys/` (`storecopy.go:21,25`).
 | `v1/deploys/<host>.json` | A machine's deploys, as deploys/delivery's figures need them: refs, names, states, times, tiers, merge times; no titles or logs (#5496) | 1,000 deploys a send, each in place of the last; of each deploy the newest 1,000 merges and 200 health signals, 20 environments; a removed machine's after a day (`deploys.go`) | on write, hourly |
 | `v1/build-timings/<host>/<forge>/<path>/<day>.json`, `meta.json` | A machine's CI runs, jobs and steps of a repository: refs, times, conclusions, runner labels, names; no titles or logs (#5232) | As on the machine (`citimings`: 90 days, 20,000 runs a repository, PR steps 14 days), each day bounded on write; a stopped machine's swept once a day; a removed machine's after a day (`builds.go`) | on write, hourly |
 | `v1/runs/<day>/<hash>.json` | Workflow trigger claims | 7 days; **no per-day cap** | hourly |
-| `v1/reports/views/<user>.json` | Saved report views | 50 | person removal |
+| `v1/reports/views/<user>.json` | Saved report views | 50, 64 KiB a person (#6779) | on write; person removal |
 | `v1/providers/<id>.json` | Machine providers | 10, 64 KiB each, more is refused (#6762) | on remove; a tombstone after 7 days, and past 100 the oldest |
 | `v1/machine-names/<person>.json` | The person's machine-N counter (#3972), the provider New Machine uses and what the person chose on each provider's form last (#3979; only the values that were not the form's defaults, in `chosen`, #6686) | 1 per person: one number, one provider id, one set of choices per provider that is still here; 64 KiB (#6759) | person removal, and hourly for a removed person; no age before that (a number is never used again) |
 | `v1/tunnels/<id>.json` | Server reverse tunnels | unjoined 15 minutes | on use |
-| `v1/policy.json`, `v1/policy/versions/` | Org policy and old versions | 64 KiB each; 100 versions, 90 days from when each was replaced (#6765) | on write, hourly |
+| `v1/policy.json`, `v1/policy.sig`, `v1/policy/versions/` | Org policy, its signature and old versions | 64 KiB, 1 KiB (#6772); 100 versions, 90 days from when each was replaced (#6765) | on write, hourly |
 | `v1/governance/machines/`, `v1/governance/approvals/` | Installed servers and skills; approvals | 500 items, 1 MiB a machine; 1,000 approvals of 8 KiB, no age while in force (#6764) | hourly: those of a removed machine, person or group |
-| `v1/org/routes/<id>.json` + `.secret.json` | Org keys and gateways | 50 routes, 4 MiB sealed | tombstone swept |
+| `v1/org/routes/<id>.json` + `.secret.json` | Org keys and gateways | 50 routes of 256 KiB, 4 MiB sealed (#6776) | on write; tombstone swept |
 
 ### Audit, keys and backups
 
@@ -245,7 +245,7 @@ handover also leaves out `v1/keys/` (`storecopy.go:21,25`).
 |---|---|---|---|
 | `v1/events/<day>/…` | Audit entries (who, method, host, target) | 90 days by default, 1–3,650 (`audit/audit.go:29-33`); hosted plans 7 / 90 days. **No size cap per day.** | hourly, by day |
 | `v1/events/<day>/<ms>-<rand>.json` | **Mesh change events** (several copies only) | **The audit's days, so up to 10 years** (`mesh.go:675`) | same sweep |
-| `v1/audit-seals/`, `v1/audit-sinks.json` | Daily chain heads; ≤4 SIEM sinks with sealed tokens | with the day; 4 | — |
+| `v1/audit-seals/`, `v1/audit-sinks.json` | Daily chain heads; ≤4 SIEM sinks with sealed tokens | with the day; 4, 64 KiB (#6777) | on write (sinks) |
 | `v1/keys/control.sealed` (+ previous) | KMS-sealed control key | 2; previous after 30 days | — |
 | `v1/backups.key` | Sealed key for server backups | 1 | — |
 | `v1/backups/<owner>/<host>/<name>/…` | Servers' sealed backups (transcripts) | 8 MiB × 1,024 parts = 8 GiB a backup; Keep 1–10, **so up to ≈80 GiB a host**; a removed host's for 90 days (`backups.go:52-56`) | on commit, daily. Stray parts age by a **name time the host chooses**, so a future time never ages. |
@@ -404,13 +404,13 @@ newer than a row above for the same store.
 | `<folder>/.agents/pins.json` | key-value | Pinned pages, views, sessions and workflows, and hidden views | 10 of each and 50; 4 KiB a pin, 1 KiB a hidden view, 128 KiB a folder; until removed (no age, on purpose: a person's choices, committed with the folder) | `Go/internal/agentsd/pins.go` (`pinsFileMost`) | #6725 |
 | `~/.agents/checks/suggestions.json` | document | Daily-check findings and dismissals | 50 findings, 200 dismissals, no age | `Go/internal/agentsd/dailychecks.go:39,49` | #6726 |
 | `~/.agents/mcp.removed.json` | key-value | Removed MCP servers | 100 of 256 KiB each, 90 days from the removal; refuses when full | `Go/internal/agentsd/removedconnectors.go` (`openRemovedConnectors`) | #6727 |
-| `<root>/review-dismissals.json` | key-value | Dismissed PR links | 2,000 of 8 KiB each, 90 days from the PR's last change or its dismissal, the oldest first; For Review leaves out a PR unchanged for 90 days; goes with its folder | `Go/internal/agentsd/reviews.go` (`openReviewDismissals`) | #6728 |
-| `<root>/review-opened.json` | key-value | Opened PR links | 200 a folder; until the folder goes | `Go/internal/agentsd/reviews.go:31` | #6729 |
+| `<root>/review-dismissals.json` | key-value | Dismissed PR links | 2,000 of 8 KiB each, 90 days from the PR's last change or its dismissal, the oldest first; For Review leaves out a PR unchanged for 90 days; goes with its folder | `Go/internal/agentsd/reviews.go` (`openReviewMarks`) | #6728 |
+| `<root>/review-opened.json` | key-value | Opened PR links | 2,000 of 8 KiB each, 90 days from the PR's last change or its opening, the oldest first; goes with its folder | `Go/internal/agentsd/reviews.go` (`openReviewMarks`) | #6729 |
 | `<root>/workflows.json` (states) and `workflow-copies/` | key-value | Workflow states and approved copies | 2,000 states of 64 KiB, 64 MiB of copies; live approvals and on or off until removed (current state, on purpose), the last run and held fires 90 days, all 30 days after the file goes; the runs are `workflow-runs.json` (log, 1,000 of 64 KiB, 90 days) | `Go/internal/agentsd/workflowbounds.go` | #6730 |
-| `<root>/connector-setup.json` | key-value | Connector set-up for each folder | Until the folder leaves the machine | `Go/internal/agentsd/connectorsetup.go:386-391` | #6731 |
-| `<root>/catalog-skills.json` | key-value | Installed catalog skills | Until the item is removed | `Go/internal/agentsd/skills.go:48` | #6732 |
-| `<root>/catalog-mcp.json` | key-value | Installed catalog MCP servers | Until the item is removed | `Go/internal/agentsd/mcpcatalog.go:84` | #6733 |
-| `<root>/devices.json` | document | Paired devices | 90 days unseen; no count limit | `Go/internal/agentsd/smallstores.go:22` | #6734 |
+| `<root>/connector-setup.json` | key-value | Connector set-up for each folder | 2,000 of 64 KiB each, the one read longest ago first; what a read found 90 days; ticks and done marks until the folder leaves the machine (no age, on purpose: current state) | `Go/internal/agentsd/connectorsetup.go` (`saveSetupLocked`) | #6731 |
+| `<root>/catalog-skills.json` | key-value | Installed catalog skills | 2,000 of 8 KiB each, else refused; until removed (no age, on purpose: current state), or 30 days after the item went | `Go/internal/agentsd/skillcatalog/sidecar.go`, `smallstores.go` (`sweepCatalogItems`) | #6732 |
+| `<root>/catalog-mcp.json` | key-value | Installed catalog MCP servers | 2,000 of 8 KiB each, else refused; until removed (no age, on purpose: current state), or 30 days after the item went | `Go/internal/agentsd/mcpcatalog/files.go`, `smallstores.go` (`sweepCatalogItems`) | #6733 |
+| `<root>/devices.json` | document | Paired devices | 256 of 4 KiB each, a new one past that refused; 90 days unseen | `Go/internal/agentsd/devices.go` (`deviceLimit`) | #6734 |
 | `<logs>/daemon.log` | log | What the machine did | 4 MB and one older file; size only, so an idle machine keeps lines older than 90 days | `Go/internal/rolllog/rolllog.go:14` | #6735 |
 | `<logs>/mcp-logs/` | log | Hosted MCP servers' stderr | 1 MB a server, 32 servers; size only | `Go/internal/agentsd/hostedmcp.go:58,865` | #6736 |
 | `<file>.unreadable-*`, `<file>.corrupt-*` | blob | Stores set aside when unreadable | The newest 3, no age | `Go/internal/agentsd/store/files.go:79` | #6737 |
@@ -447,17 +447,17 @@ newer than a row above for the same store.
 | `v1/lineage/<host>.json` | graph | Lineage node cost | 5,000 nodes of 64 KiB, 32 MiB and 90 days a machine, on write and hourly | `Go/internal/controlplane/lineagecost.go` (`boundLineage`, `sweepLineage`) | #6768 |
 | `Agents Control/store-before-*` (Mac) | blob | Whole old stores | The newest 2, of any size, no age | `Host/Sources/HostModel.swift:567,584` | #6769 |
 | Keychain `control-key-before-*` (Mac) | secret | Old control keys | The newest 2, no age | `Host/Sources/ControlKey.swift:51,63-83` | #6770 |
-| `v1/control.json` | key-value | Control plane settings | Org-wide config in the store | `Go/internal/controlplane/records/records.go:34` | #6771 |
-| `v1/policy.json`, `v1/policy.sig` | key-value | The org policy | Org-wide config in the store | `Go/internal/controlplane/policy.go:36-48` | #6772 |
-| `v1/signin.json` | key-value | Sign-in providers that are on | Org-wide config in the store | `Go/internal/controlplane/signin.go:33` | #6773 |
-| `v1/signin/providers/` | key-value | Org OIDC providers | 5, until removed | `Go/internal/controlplane/signin_org.go:39` | #6774 |
-| `v1/signin/domains/` | key-value | Domain claims | 20, until removed | `Go/internal/controlplane/signin_domains.go:27` | #6775 |
-| `v1/org/routes/` | key-value | Org keys and gateways | 50, until removed | `Go/internal/controlplane/orgroutes.go:42,45` | #6776 |
-| `v1/audit-sinks.json` | key-value | SIEM sinks | 4 | `Go/internal/controlplane/auditing_sinks.go:26` | #6777 |
-| `v1/reports/policy.json` | key-value | Budgets | Org-wide config in the store | `Go/internal/controlplane/reports_scope.go:28` | #6778 |
-| `v1/reports/views/` | key-value | Saved report views | 50 a person | `Go/internal/controlplane/reports_views.go:23` | #6779 |
-| `v1/users/` | key-value | Settings and secrets that follow a person | 256 KiB, 200 secrets of 16 KiB | `Go/internal/controlplane/usersettings/usersettings.go:41-49` | #6780 |
-| `Agents Control/web-off` (Mac) | key-value | The web page turned off | A marker file | `Go/cmd/agents-control/main.go:707-720` | #6781 |
+| `v1/control.json` | key-value | Control plane settings | 64 KiB, else a person's change is refused. Stays in the control plane's store (Alex, 2026-11-24) | `Go/internal/controlplane/records/fits.go` | #6771 |
+| `v1/policy.json`, `v1/policy.sig` | key-value | The org policy | 64 KiB and 1 KiB, else refused; the kill switch never is. Stays in the control plane's store (Alex, 2026-11-24) | `Go/internal/controlplane/policy.go` (`nextPolicy`) | #6772 |
+| `v1/signin.json` | key-value | Sign-in providers that are on | 16 KiB, else refused. Stays in the control plane's store (Alex, 2026-11-24) | `Go/internal/controlplane/signin.go` | #6773 |
+| `v1/signin/providers/` | key-value | Org OIDC providers | 5 of 16 KiB, else refused; a tombstone goes at 90 days, once nothing names its ID, and 95 at most. Stays in the control plane's store (Alex, 2026-11-24) | `Go/internal/controlplane/signin_org.go`, `Go/internal/controlplane/sweep.go` (`sweepRemovedOrgProviders`) | #6774 |
+| `v1/signin/domains/` | key-value | Domain claims | 20 of 4 KiB, else refused; until removed. Stays in the control plane's store (Alex, 2026-11-24) | `Go/internal/controlplane/signin_domains.go` | #6775 |
+| `v1/org/routes/` | key-value | Org keys and gateways | 50 of 256 KiB and 4 MiB sealed, else refused; until removed. Stays in the control plane's store (Alex, 2026-11-24) | `Go/internal/controlplane/orgroutes.go` | #6776 |
+| `v1/audit-sinks.json` | key-value | SIEM sinks | 4 in 64 KiB, else refused. Stays in the control plane's store (Alex, 2026-11-24) | `Go/internal/controlplane/auditing_sinks.go` | #6777 |
+| `v1/reports/policy.json` | key-value | Budgets | One budget, 4 KiB. Stays in the control plane's store (Alex, 2026-11-24) | `Go/internal/controlplane/reports_scope.go` | #6778 |
+| `v1/reports/views/` | key-value | Saved report views | 50 and 64 KiB a person, else refused; until removed, or with the person. Stays in the control plane's store (Alex, 2026-11-24) | `Go/internal/controlplane/reports_views.go` | #6779 |
+| `v1/users/` | key-value | Settings and secrets that follow a person | 256 KiB a part, 5 MiB of settings, 200 secrets of 5 MiB sealed, 100 offers, else refused; with the person. A removed secret's tombstone 90 days, 200 at most. They follow the person, so they stay in the store | `Go/internal/controlplane/usersettings/usersettings.go`, `Go/internal/controlplane/usersettings/offers.go` | #6780 |
+| `Agents Control/web-off` (Mac) | key-value | The web page turned off | One empty file; until the page is turned on. This control plane's own configuration, beside its store | `Go/cmd/agents-control/main.go` (`serveWeb`) | #6781 |
 | hosted `v1/invites/` | document | Invite links | 1,000 of 4 KiB, else refused; until it expires, 90 days at most | `Go/internal/hosted/recordbounds.go` (`sweepInvites`) | #6782 |
 | hosted `v1/allow/` | key-value | The operator's allow list | 10,000 of 4 KiB, else refused; 90 days from the last allow | `Go/internal/hosted/recordbounds.go` (`sweepAllowed`) | #6783 |
 | hosted `v1/blocked/`, `v1/blocked/email/` | key-value | The operator's block lists | 10,000 each of 4 KiB, else refused; no age, until unblocked (Alex, 2026-11-24: a blocked person must not come back) | `Go/internal/hosted/recordbounds.go` (`putBlock`, `putEmailBlock`) | #6784 |
@@ -477,7 +477,7 @@ newer than a row above for the same store.
 | `machinePicker.pinned` (Mac, Remote, web) | key-value | Pinned machines | 100 of 64 bytes each, one over that refused; until removed, or its machine is no longer listed (no age, on purpose: a person's choice) | `Packages/AgentsKit/Sources/AgentsKitCore/Sidebar/MachinesGroup.swift` (`MachinePins`); `Web/src/model/machinePicker.ts` | #6797 |
 | Remote defaults `remote.startFolders` | key-value | Start folders, each with its machine | 100 of 1,024 + 64 bytes each, one over that refused; until removed, its machine is no longer listed, or Forget (no age, on purpose: a person's choice) | `Packages/AgentsKit/Sources/AgentsKitCore/Sidebar/StartFolders.swift` | #6798 |
 | Mac and Remote `App Support/Agents/control-client.json` | key-value | The pairing with a control plane | One, until Forget; stays outside `.agents` on purpose: one device's identity, not backed up (Alex, 2026-11-24) | `App/Sources/Control/ControlConfig.swift:40; Remote/Sources/Link/ControlPlaneLink.swift:20` | #6800 |
-| Mac MDM profile `ControlPlaneAddress`, `ControlPlaneKey`, `MustJoin` | key-value | An org's pin to its control plane | Read only, set by the org | `Packages/AgentsKit/Sources/AgentsKitCore/Control/MachinePin.swift:15-17` | #6801 |
+| Mac MDM profile `ControlPlaneAddress`, `ControlPlaneKey`, `MustJoin` | key-value | An org's pin to its control plane | Three settings, read only, set by the org; stays outside `.agents` on purpose: a person's file must not replace it | `Packages/AgentsKit/Sources/AgentsKitCore/Control/MachinePin.swift:15-17` | #6801 |
 | Mac and Remote defaults `voiceMode.*` | key-value | Voice mode settings | Only in the device's defaults | `Shared/UI/Voice (voiceMode keys)` | #6802 |
 | `catalog.personas.marketplace` (Mac, Remote, web) | key-value | The personas marketplace | Only in the device's defaults; the skills and MCP marketplaces are mirrored | `DisplayPreference.swift:50-59` | #6803 |
 | `workingMarkTilt`, `waitingMarkPeriod` (Mac, Remote, web) | key-value | How the working and waiting marks move | Only in the device's defaults | `WindowDefaults; Web localStorage` | #6804 |

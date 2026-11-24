@@ -706,6 +706,7 @@ func serveWeb(cfg *controlplane.Config) {
 	}
 	// Turned off from a page (control/setWeb, #4252): web-off beside web.json keeps it.
 	if cfg.Web != nil {
+		// It is this control plane's own configuration, so it stays with its store (Alex, #6761).
 		off := filepath.Join(home(), "web-off")
 		_, err := os.Stat(off)
 		cfg.WebOff = err == nil
@@ -716,6 +717,7 @@ func serveWeb(cfg *controlplane.Config) {
 				}
 				return nil
 			}
+			// store-bounds: kind=key-value; count=1 (an empty file); age=until-deleted; applied=on write, and when the page is turned on
 			return os.WriteFile(off, nil, 0o644)
 		}
 	}
