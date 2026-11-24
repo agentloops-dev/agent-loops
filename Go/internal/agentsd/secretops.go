@@ -82,6 +82,28 @@ type secretOpBook struct {
 	sending, again bool
 }
 
+// secretOpsMost is how many secrets the last operations keep: the oldest go first.
+const secretOpsMost = 500
+
+// trimOldest drops the oldest entries past secretOpsMost.
+func trimOldest[V any](m map[string]V, at func(V) wire.Date) {
+	if len(m) <= secretOpsMost {
+		return
+	}
+	keys := slices.SortedFunc(maps.Keys(m), func(a, b string) int {
+		if at(m[a]) < at(m[b]) {
+			return -1
+		}
+		if at(m[a]) > at(m[b]) {
+			return 1
+		}
+		return strings.Compare(a, b)
+	})
+	for _, k := range keys[:len(keys)-secretOpsMost] {
+		delete(m, k)
+	}
+}
+
 // secretOpKey is what one audit entry counts: a secret, a session, a use and a place.
 func secretOpKey(op wire.SecretOperation) string {
 	var agent wire.UUID

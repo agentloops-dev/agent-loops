@@ -354,9 +354,9 @@ func (d *Daemon) accountsDone(agent wire.UUID, ops []wire.AccountOperation) {
 
 // withLastOps is the accounts, each with its last operation as this machine knows it.
 func (d *Daemon) withLastOps(all []wire.OutsideAccount) []wire.OutsideAccount {
-	out := slices.Clone(all)
+	out, last := slices.Clone(all), d.readAccountOps()
 	for i := range out {
-		out[i].LastOp = d.accountLastOp(out[i])
+		out[i].LastOp = accountLastOp(last, out[i])
 	}
 	return out
 }

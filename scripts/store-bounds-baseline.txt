@@ -14,7 +14,6 @@
 1 Go/cmd/agentsd/supervise.go rolllog.Open
 1 Go/cmd/loops/hosts.go os.CreateTemp
 1 Go/cmd/loops/lockkey.go WriteAtomically
-1 Go/internal/agentsd/accountops.go WriteAtomically
 1 Go/internal/agentsd/acp/session.go os.OpenFile
 1 Go/internal/agentsd/agentconfigeditor.go WriteAtomically
 2 Go/internal/agentsd/attachments.go WriteAtomically

@@ -394,7 +394,7 @@ newer than a row above for the same store.
 | `<root>/release-tags.json` | log | Linked release tags | 5,000 tags of 1 KiB; 90 days | `Go/internal/agentsd/lineagerelease.go` | #6717 |
 | `<root>/requests/<id>.json` | document | Open questions and forms | Ended ones 14 days, 1,000 files; an open one has no age | `Go/internal/agentsd/requests.go:27-28` | #6718 |
 | `<root>/lineage-deploys.json` | log | Each deploy's last event | 1,000, no age | `Go/internal/agentsd/lineagedeploy.go:42,237-244` | #6719 |
-| `<root>/account-ops.json` | log | Last operation of each account and secret | 500 and 500, no age | `Go/internal/agentsd/accountops.go:27` | #6720 |
+| `<root>/account-ops.json` | key-value | Last operation of each account and secret | 1,000 entries of 1 KiB each, 90 days, the oldest first | `Go/internal/agentsd/accountops.go` (`openAccountOps`) | #6720 |
 | `<root>/secret-ops-pending.json` | log | Secret audit entries not yet sent | 1,000, no age | `Go/internal/agentsd/secretops.go:54,131,226-230` | #6721 |
 | `<root>/elsewhere.json` | document | Sessions on other machines | 200 a list, no age | `Go/internal/agentsd/elsewhere.go:39` | #6722 |
 | `<root>/lock-seen.json` | key-value | Replay IDs of signed requests | 4,096, no age | `Go/internal/agentsd/lockcheck.go:43` | #6723 |

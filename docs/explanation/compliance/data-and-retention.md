@@ -97,7 +97,7 @@ Mac.
 | `connector-setup.json` | key-value | Connector set-up for each folder | Until the folder leaves the machine (#6731) | On remove |
 | `catalog-skills.json`, `catalog-mcp.json` | key-value | Installed catalogue items | Until the item is removed (#6732, #6733) | On remove |
 | `catalog-pending.json` | document | An install in progress | One; goes when the install ends or at the next start | At start |
-| `account-ops.json` | log | The last operation of each account and secret | 500 and 500. No age (#6720). | On write |
+| `account-ops.json` | key-value | The last operation of each account, and the last read of each secret | 1,000 entries of 1 KiB each, for 90 days; the oldest goes first | Hourly, and on write: age, and the count when it is twice over |
 | `secret-ops.json` | key-value | The last operation of each secret held | Goes with its secret | On write |
 | `secret-ops-pending.json` | log | Secret audit entries not yet sent | 1,000. No age (#6721). | On write |
 | `allowances.json`, `runtime-accounts.json` | key-value | Runtime accounts you added, and each credential's allowance | Until the account is removed (#6747, #6748) | On remove |
