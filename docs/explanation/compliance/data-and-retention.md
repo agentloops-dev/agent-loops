@@ -66,7 +66,7 @@ Mac.
 | `lineage-sync.json` | key-value | Lineage links and session states not yet sent to the control plane (#4275) | 2,000 links and 5,000 state changes; past that, it keeps only a note to send everything again from `lineage.jsonl` | On write |
 | `ci-timings/sync.json` | key-value | The days of build timings not yet sent to the control plane, for each repository (#5232) | 90 days of at most 20 repositories | On send |
 | `lineage-comments.json` | log | Cost comments on PRs | 500, 30 days | On write |
-| `release-tags.json` | log | Release tags already linked, for each repo | The newest 50 for each repo; an older tag counts as linked (#3652) | On write |
+| `release-tags.json` | log | Release tags already linked, for each repo | 5,000 tags of 1 KiB each, for 90 days; the oldest goes first. Only the newest 50 tags of a repo (#3652), and releases of the last 90 days, are linked, so a tag that goes is not linked again (#6717) | Hourly, and on write: age, and the count when it is twice over |
 | `achievements.json` | document | Milestones | A fixed set | — |
 | `ci-timings/<forge>/<path>/<day>.jsonl` | time series | CI runs, their jobs and steps | 90 days, 20,000 runs a repository; a pull request run's steps 14 days | On the sweep |
 | `lineage-deploys.json` | key-value | Each deploy's last event | 1,000 deploys of 16 KiB each, for 90 days from the last event; the oldest goes first (#6719) | Hourly, and on write: age and count |
