@@ -21,6 +21,7 @@ is what each target runs.
 | `repo-lint:lint` | shellcheck (`-S warning`, `.shellcheckrc`) | a finding | `go` (Linux) |
 | `repo-lint:lint` | `zsh -n` | a syntax error | `go` (Linux) |
 | `repo-lint:lint` | our text checks (`scripts/check-*.py` and the other self-tests) | a failure | `go` (Linux) |
+| `repo-lint:lint` | `scripts/check-store-bounds.py` | a new direct `store.NewFolder` opening, or a legacy baseline entry after its opening is removed | `go` (Linux) |
 | `repo-lint:lint` | jscpd (`.jscpd.json`) | a clone not in `.jscpd-baseline.txt` | `go` (Linux) |
 | `swift-lint:lint` | SwiftLint (`.swiftlint.yml`) | a finding not in `.swiftlint-baseline.json` | `swift-lint` (macOS) |
 

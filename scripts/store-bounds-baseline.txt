@@ -1,0 +1,3 @@
+Go/cmd/scale-seed/main.go:store.NewFolder
+Go/internal/controlplane/homebackup.go:store.NewFolder
+Go/internal/controlplane/storeopen.go:store.NewFolder
