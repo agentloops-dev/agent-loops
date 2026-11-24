@@ -2223,7 +2223,8 @@
         "folderArchived",
         "forgeClosed",
         "restarted",
-        "byPerson"
+        "byPerson",
+        "expired"
       ]
     },
     "RequestFormAnswer": {

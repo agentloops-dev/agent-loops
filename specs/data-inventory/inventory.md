@@ -392,7 +392,7 @@ newer than a row above for the same store.
 | `<root>/erased.json` | document | IDs of deleted agents | 10,000 IDs, 400 days | `Go/internal/agentsd/erasure.go:43-44` | #6715 |
 | `<root>/repo-aliases.json` | key-value | Repo renames | 1,000 renames of 2 KiB each, 90 days, the oldest first | `Go/internal/agentsd/repoaliases.go` (`openRepoAliases`) | #6716 |
 | `<root>/release-tags.json` | log | Linked release tags | 5,000 tags of 1 KiB; 90 days | `Go/internal/agentsd/lineagerelease.go` | #6717 |
-| `<root>/requests/<id>.json` | document | Open questions and forms | Ended ones 14 days, 1,000 files; an open one has no age | `Go/internal/agentsd/requests.go:27-28` | #6718 |
+| `<root>/requests/<id>.json` | document | Open questions and forms | 1,000 records of 256 KiB; 90 days, open too (dropped, its asker told); ended ones 14 days | `Go/internal/agentsd/requestfiles.go` | #6718 |
 | `<root>/lineage-deploys.json` | key-value | Each deploy's last event | 1,000 deploys of 16 KiB each, 90 days from the last event, the oldest first | `Go/internal/agentsd/lineagedeploy.go` (`openDeploys`) | #6719 |
 | `<root>/account-ops.json` | key-value | Last operation of each account and secret | 1,000 entries of 1 KiB each, 90 days, the oldest first | `Go/internal/agentsd/accountops.go` (`openAccountOps`) | #6720 |
 | `<root>/elsewhere.json` | key-value | Sessions on other machines | 800 entries of 64 KiB each, 90 days from when the machines last spoke of the session, the oldest first | `Go/internal/agentsd/elsewhere.go` (`openElsewhere`) | #6722 |

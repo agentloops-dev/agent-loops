@@ -75,6 +75,10 @@ func (l *live) Elicitation(ctx context.Context, params json.RawMessage) (string,
 		d.record(l.id, wire.TranscriptEntryKind{RuntimeNote: &wire.TranscriptEntryKindRuntimeNote{Value: questionWentUnanswered}})
 		return string(wire.AnswerElicitationRequestActionCancel), nil
 	}
+	if err := d.formRefused(req); err != nil {
+		d.record(l.id, runtimeNote(browserWords(err)))
+		return string(wire.AnswerElicitationRequestActionDecline), nil
+	}
 	r := l.holdForm(ctx, req)
 	if r.action != wire.AnswerElicitationRequestActionAccept {
 		// The protocol's decline has no words (#4039): the reason comes as the next prompt.

@@ -13624,6 +13624,7 @@ const RequestDroppedWhyFolderArchived RequestDroppedWhy = "folderArchived"
 const RequestDroppedWhyForgeClosed RequestDroppedWhy = "forgeClosed"
 const RequestDroppedWhyRestarted RequestDroppedWhy = "restarted"
 const RequestDroppedWhyByPerson RequestDroppedWhy = "byPerson"
+const RequestDroppedWhyExpired RequestDroppedWhy = "expired"
 
 // The forge item a request is (spec 3862 §4).
 type RequestForge struct {

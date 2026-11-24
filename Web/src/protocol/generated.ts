@@ -13015,7 +13015,8 @@ export type RequestDroppedWhy =
   | "folderArchived"
   | "forgeClosed"
   | "restarted"
-  | "byPerson";
+  | "byPerson"
+  | "expired";
 
 /** The forge item a request is (spec 3862 §4). */
 export interface RequestForge {

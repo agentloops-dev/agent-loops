@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"log"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -21,8 +20,10 @@ import (
 // the end raises request.answered or request.dropped, which wakes every session that waits
 // on it (wait_for_event with where: {request: <id>}).
 
-// The bound (spec 3862 §1): an ended record goes after requestKeepFor, and at most
-// requestFileLimit records are kept, the oldest ended ones going first.
+// The bound (spec 3862 §1, #6718): an ended record goes after requestKeepFor, and at most
+// requestFileLimit records are kept, the oldest ended ones going first. An open one is a
+// person's: it is never evicted, a new one past the limit is refused, and at requestMaxAge
+// it is dropped and its asker told.
 var (
 	requestKeepFor   = 14 * 24 * time.Hour
 	requestFileLimit = 1000
@@ -41,42 +42,164 @@ type requestStore struct {
 
 func (d *Daemon) requestsDir() string { return filepath.Join(d.Store.Loc.Root, "requests") }
 
-// loadRequests reads the records at start, prunes them, and prunes again once an hour.
+// loadRequests reads the records at start and prunes them; the hourly sweep does after that.
 func (d *Daemon) loadRequests() {
 	d.requests.mu.Lock()
 	d.requests.byID = map[wire.UUID]*wire.Request{}
-	entries, _ := os.ReadDir(d.requestsDir())
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") || strings.HasPrefix(e.Name(), ".") {
-			continue
+	records := d.requestRecords()
+	for cursor := ""; ; {
+		ids, next, err := records.List(cursor, requestPage)
+		if err != nil {
+			log.Printf("requests: %v", err)
 		}
-		b, err := os.ReadFile(filepath.Join(d.requestsDir(), e.Name()))
-		var r wire.Request
-		if err != nil || json.Unmarshal(b, &r) != nil || r.ID == "" {
-			log.Printf("requests: skipped unreadable %s", e.Name())
-			continue
+		for _, id := range ids {
+			b, err := records.Get(id)
+			var r wire.Request
+			if err != nil || json.Unmarshal(b, &r) != nil || string(r.ID) != id {
+				log.Printf("requests: skipped unreadable %s.json", id)
+				continue
+			}
+			d.requests.byID[r.ID] = &r
 		}
-		d.requests.byID[r.ID] = &r
+		if next == "" {
+			break
+		}
+		cursor = next
 	}
 	d.requests.mu.Unlock()
 	d.pruneRequests(time.Now())
 	d.armRequestTimer() // one due while the host was down comes back at once
-	t := time.NewTicker(time.Hour)
-	d.goLoop("request pruner", func(ctx context.Context) {
-		defer t.Stop()
-		for {
-			select {
-			case <-t.C:
-				d.pruneRequests(time.Now())
-			case <-ctx.Done():
-				return
-			}
-		}
-	})
 }
 
-// pruneRequests drops the open requests whose asker has gone, then keeps the bound.
-func (d *Daemon) pruneRequests(at time.Time) {
+// sweepRequests holds the requests to their bounds, in the hourly sweep.
+func (d *Daemon) sweepRequests(at time.Time) {
+	d.dropGoneAskers()
+	d.expireRequests(at)
+	d.pruneRequests(at)
+	d.requestRecords().Expire(at.Add(-requestMaxAge), func(id string) bool { return d.request(wire.UUID(id)) != nil })
+}
+
+// expireRequests drops each open request that is requestMaxAge old: its card goes, the chat
+// keeps a line, and the session that asked starts again once to hear it (Alex, #6718). A
+// forge item still listed opens as a new request in the next forge sweep.
+func (d *Daemon) expireRequests(at time.Time) {
+	d.requests.mu.Lock()
+	for _, r := range d.requests.byID {
+		if r.AskedAt.Time().After(at) { // a clock that went back: its age starts now
+			r.AskedAt = wire.DateOf(at)
+			d.saveRequestLocked(r)
+		}
+	}
+	d.requests.mu.Unlock()
+	for _, r := range d.listRequests(wire.RequestsListStateOpen, "") {
+		if at.Sub(r.AskedAt.Time()) < requestMaxAge {
+			return // the oldest first
+		}
+		d.expireRequest(r)
+	}
+}
+
+func (d *Daemon) expireRequest(r wire.Request) {
+	var l *live
+	var pe *pendingElicitation
+	for _, each := range d.everyLive() {
+		if each.elicitationFor(r.ID) != nil {
+			if l, pe = each, each.take(r.ID); pe == nil {
+				return // being answered
+			}
+			break
+		}
+	}
+	if pe == nil && d.heldForm(r.ID) {
+		return // being answered
+	}
+	waits := r.AskedBy != nil && d.waitsOnDrop(*r.AskedBy, r.ID)
+	if !d.endRequest(r.ID, wire.RequestStateDropped, nil, wire.RequestDroppedWhyExpired, nil) {
+		return
+	}
+	d.secretUseEnded(r.ID)
+	if r.AskedBy == nil {
+		return
+	}
+	asker, title := *r.AskedBy, clip(r.Title, 200)
+	d.record(asker, runtimeNote("Nobody answered “"+title+"” in 90 days, so it expired."))
+	if r.Detail.Elicitation != nil {
+		d.formDown(asker, r.ID)
+	}
+	words := "Your request \"" + title + "\" expired: nobody answered it in 90 days. Ask again if you still need it, or end your turn."
+	switch {
+	case pe != nil && pe.left && pe.late != nil:
+		d.goJob("late form answer", func() { pe.late(words) })
+		return
+	case pe != nil && !pe.left:
+		d.moveIf(l.id, wire.AgentStateWaitingOnUser, wire.AgentStateRunning)
+		pe.reply <- cancelled()
+	case waits:
+		return // request.dropped starts it
+	}
+	if err := d.promptFromApp(asker, words); err != nil {
+		log.Printf("agent %s: request expired: %v", asker, err)
+	}
+}
+
+// waitsOnDrop is whether agent waits for the event that a drop of request id raises.
+func (d *Daemon) waitsOnDrop(agent, id wire.UUID) bool {
+	a := d.Store.Agent(agent)
+	if a == nil || a.EventWait == nil || a.EventWait.Ending != nil {
+		return false
+	}
+	for _, p := range a.EventWait.Patterns {
+		if p.Name == "request.dropped" && strings.EqualFold(p.Filters["request"], string(id)) {
+			return true
+		}
+	}
+	return false
+}
+
+// requestRefusedLocked is why a new request is not opened, or nil: the open ones are a
+// person's, so none is evicted to make room.
+func (d *Daemon) requestRefusedLocked(r *wire.Request) error {
+	open := 0
+	for _, each := range d.requests.byID {
+		if each.State == wire.RequestStateOpen {
+			open++
+		}
+	}
+	if open >= requestFileLimit {
+		return Invalid("This machine has %d open requests already, the most it keeps. Nothing was asked: the person answers or drops some first.", open)
+	}
+	if b, _ := json.Marshal(r); len(b) > requestMaxNew {
+		return Invalid("Nothing was asked: the request is %d KB, and the most is %d KB. Ask with fewer words.", len(b)>>10, requestMaxNew>>10)
+	}
+	return nil
+}
+
+// openRequestLocked keeps a new request, on disk too, unless it is refused.
+func (d *Daemon) openRequestLocked(r *wire.Request) (wire.Request, error) {
+	if err := d.requestRefusedLocked(r); err != nil {
+		return wire.Request{}, err
+	}
+	if d.requests.byID == nil {
+		d.requests.byID = map[wire.UUID]*wire.Request{}
+	}
+	d.requests.byID[r.ID] = r
+	d.saveRequestLocked(r)
+	return copyRequest(r), nil
+}
+
+// formRefused is why a form cannot be a request, before it is shown.
+func (d *Daemon) formRefused(req wire.ElicitationRequest) error {
+	r := d.formRequest(req)
+	if r == nil {
+		return nil
+	}
+	d.requests.mu.Lock()
+	defer d.requests.mu.Unlock()
+	return d.requestRefusedLocked(r)
+}
+
+// dropGoneAskers drops the open requests whose asker has gone.
+func (d *Daemon) dropGoneAskers() {
 	for _, r := range d.listRequests(wire.RequestsListStateOpen, "") {
 		if r.AskedBy == nil {
 			continue
@@ -88,8 +211,18 @@ func (d *Daemon) pruneRequests(at time.Time) {
 			d.endRequest(r.ID, wire.RequestStateDropped, nil, wire.RequestDroppedWhyFolderArchived, nil)
 		}
 	}
+}
+
+// pruneRequests drops the open requests whose asker has gone, then keeps the bounds of the
+// ended ones.
+func (d *Daemon) pruneRequests(at time.Time) {
+	d.dropGoneAskers()
 	d.requests.mu.Lock()
 	defer d.requests.mu.Unlock()
+	d.pruneEndedLocked(at)
+}
+
+func (d *Daemon) pruneEndedLocked(at time.Time) {
 	var ended []*wire.Request
 	for _, r := range d.requests.byID {
 		if r.State != wire.RequestStateOpen {
@@ -99,7 +232,7 @@ func (d *Daemon) pruneRequests(at time.Time) {
 	sort.Slice(ended, func(i, j int) bool { return endedAt(ended[i]) < endedAt(ended[j]) })
 	over := len(d.requests.byID) - requestFileLimit
 	for _, r := range ended {
-		if over <= 0 && at.Sub(endedAt(r).Time()) < requestKeepFor {
+		if over <= 0 && at.Sub(endedAt(r).Time()) < requestKeepFor && at.Sub(r.AskedAt.Time()) < requestMaxAge {
 			continue
 		}
 		d.removeRequestLocked(r.ID)
@@ -116,15 +249,19 @@ func endedAt(r *wire.Request) wire.Date {
 
 func (d *Daemon) removeRequestLocked(id wire.UUID) {
 	delete(d.requests.byID, id)
-	if err := os.Remove(filepath.Join(d.requestsDir(), string(id)+".json")); err != nil && !os.IsNotExist(err) {
+	if err := d.requestRecords().Delete(string(id)); err != nil {
 		log.Printf("requests: %v", err)
 	}
 }
 
 func (d *Daemon) saveRequestLocked(r *wire.Request) {
 	b, _ := json.Marshal(r)
-	if err := store.WriteAtomically(filepath.Join(d.requestsDir(), string(r.ID)+".json"), b, 0o600); err != nil {
+	if err := d.requestRecords().Put(string(r.ID), b); err != nil {
 		log.Printf("requests: %s: %v", r.ID, err)
+	}
+	// Past the high-water mark the ended ones go now, not in the hourly sweep.
+	if len(d.requests.byID) >= 2*requestFileLimit {
+		d.pruneEndedLocked(nowFunc())
 	}
 }
 
@@ -282,6 +419,10 @@ func (d *Daemon) addRequestWaiter(id, agent wire.UUID) {
 			return
 		}
 	}
+	if len(r.Waiters) >= requestMaxWaiters { // it waits all the same; it is only not listed
+		d.requests.mu.Unlock()
+		return
+	}
 	r.Waiters = append(r.Waiters, wire.RequestWaiter{Agent: agent, Since: now()})
 	d.saveRequestLocked(r)
 	c := copyRequest(r)
@@ -303,6 +444,10 @@ func (d *Daemon) endRequest(id wire.UUID, state wire.RequestState, answer *strin
 	r.State, r.AnsweredAt, r.AnsweredBy = state, &at, by
 	r.Deferred = nil // an end clears Later (#4233)
 	if state == wire.RequestStateAnswered {
+		if answer != nil && len(*answer) > requestMaxAnswer {
+			cut := strings.ToValidUTF8((*answer)[:requestMaxAnswer], "") + "…"
+			answer = &cut
+		}
 		r.Answer = answer
 	} else {
 		r.DroppedWhy = &why
