@@ -229,6 +229,9 @@ func (d *Daemon) askForm(id wire.UUID, args map[string]json.RawMessage, late fun
 	req := wire.ElicitationRequest{ID: store.NewUUID(), AgentID: id, Message: message,
 		Mode: wire.ElicitationRequestMode{Form: &wire.ElicitationRequestModeForm{Value: schema}}, Scope: wire.ElicitationRequestScopeSession,
 		AskedAt: now()}
+	if err := d.formRefused(req); err != nil {
+		return "", false, err
+	}
 	r, answered := l.holdAskedForm(req, late, until)
 	if !answered {
 		return "", false, nil

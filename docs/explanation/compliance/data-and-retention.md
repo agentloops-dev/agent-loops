@@ -45,7 +45,7 @@ Mac.
 | `erasures.json` | document | Runtime copies of deleted agents still to erase | 1,000 entries, 3 tries, 7 days | On write |
 | `erased.json` | document | Every agent deleted here | 10,000 IDs of 128 bytes each, for 90 days; the oldest goes first (#6715) | Hourly, and on write: age, and the count when it is twice over |
 | `elsewhere.json` | key-value | Sessions started on or from other machines | 800 entries of 64 KiB each, for 90 days from when the two machines last spoke of the session, so one in use stays; the one heard of the longest ago goes first | Hourly, and on write: age, and the count when it is twice over |
-| `requests/<id>.json` | document | Open questions and forms | Ended ones 14 days; 1,000 files. An open one has no age (#6718). | On write |
+| `requests/<id>.json` | document | Open questions and forms | 1,000 records of 256 KiB each, and 90 days from when it was asked, open too (#6718). Ended ones 14 days; the oldest ended one goes first. An open one is never evicted: a new one past 1,000 open is refused. At 90 days an open one is dropped, and the session that asked is told once. An answer is cut to 16 KiB, and 100 waiters are listed. | Hourly and at start; on write when it is twice over the count |
 | `archived-summaries.json`, in the cache folder | cache | An index of the archived agents | With the agents. Made again when it is missing. | On write |
 | `revisions.json` | log | Which records changed and went | 2,000 removals, 7 days | On write |
 | `alive.json`, `background.json` | key-value | When the machine last ran, and the commands that outlive a stop | One of each | On write |
