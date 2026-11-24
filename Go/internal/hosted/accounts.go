@@ -137,13 +137,25 @@ type accounts struct {
 	now   func() time.Time
 }
 
-func accountKey(id string) string { return hostedPrefix + "v1/accounts/" + id + ".json" }
+// Accounts and their links have no age: they stay until Delete Account, a recorded exception
+// to the 90-day rule until epic #7092 (#7094; Alex, 2026-11-24).
+const (
+	// store-bounds: kind=document; count=100; size=8KiB a record; age=until-deleted; applied=on sign-up (refused), on write (refused) and on Delete Account
+	accountsFolder = hostedPrefix + "v1/accounts/"
+	// store-bounds: kind=key-value; count=100; size=128B a record; age=until-deleted; applied=on sign-up, one an account at most, and on Delete Account
+	emailsFolder = hostedPrefix + "v1/emails/"
+	// accountRecordMost is the largest account record. The reason for a suspension is its only
+	// part with no limit of its own.
+	accountRecordMost = 8 << 10
+)
+
+func accountKey(id string) string { return accountsFolder + id + ".json" }
 // signInKey is a sign-in's link to its account: hosted/v1/github/<id>.json for a GitHub
 // user, as before #3386.
 func signInKey(si SignIn) string {
 	return hostedPrefix + "v1/" + si.Provider + "/" + si.Subject + ".json"
 }
-func emailKey(mark string) string { return hostedPrefix + "v1/emails/" + mark + ".json" }
+func emailKey(mark string) string { return emailsFolder + mark + ".json" }
 func accountStore(st store.Store, id string) *store.Prefixed {
 	return store.NewPrefixed(st, accountsPrefix+id+"/")
 }
@@ -254,6 +266,10 @@ func (a *accounts) update(ctx context.Context, id string, f func(*Account)) (*Ac
 		}
 		f(&acc)
 		data, _ := json.MarshalIndent(acc, "", "  ")
+		// One that is over already may still change, when it does not grow.
+		if len(data) > accountRecordMost && len(data) > len(o.Data) {
+			return nil, fmt.Errorf("the account's record would be %d bytes, and the most is %d", len(data), accountRecordMost)
+		}
 		if _, err := a.store.Put(ctx, accountKey(id), data, store.Matching(o.ETag)); err != nil {
 			if store.IsConflict(err) {
 				continue
@@ -267,13 +283,13 @@ func (a *accounts) update(ctx context.Context, id string, f func(*Account)) (*Ac
 
 // all is every account, in order of id.
 func (a *accounts) all(ctx context.Context) ([]Account, error) {
-	keys, err := a.store.List(ctx, hostedPrefix+"v1/accounts/")
+	keys, err := a.store.List(ctx, accountsFolder)
 	if err != nil {
 		return nil, err
 	}
 	var list []Account
 	for _, k := range keys {
-		id := strings.TrimSuffix(strings.TrimPrefix(k.Key, hostedPrefix+"v1/accounts/"), ".json")
+		id := strings.TrimSuffix(strings.TrimPrefix(k.Key, accountsFolder), ".json")
 		if acc, err := a.get(ctx, id); err != nil {
 			return nil, err
 		} else if acc != nil {
@@ -285,7 +301,7 @@ func (a *accounts) all(ctx context.Context) ([]Account, error) {
 
 // count is how many accounts there are.
 func (a *accounts) count(ctx context.Context) (int, error) {
-	keys, err := a.store.List(ctx, hostedPrefix+"v1/accounts/")
+	keys, err := a.store.List(ctx, accountsFolder)
 	return len(keys), err
 }
 

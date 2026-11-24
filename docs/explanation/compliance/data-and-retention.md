@@ -227,7 +227,7 @@ the other copies of the control plane learn that it went. A removed person's sta
 | Machine set-up times | time series | How long each set-up step took, and when it ended | 90 days, 50 a step (#6760), 32 KiB at most. No roll-up. | On write, hourly |
 | Machine versions | document | Each machine's version and its updates | 20 updates a machine, 64 KiB at most; a version over 256 bytes is not kept. An update goes after 90 days; the version now has no age. Deleted when the machine is removed; that of a machine that is gone, a day after it was last seen (#6969) | On write; on remove; hourly |
 | Machine names | key-value | A person's machine counter and last choices | One a person, 64 KiB at most: choices past that are not kept. The counter has no age while the person is here, so that a number is never used twice. Deleted when the person is removed (#6759). | On write; on remove; hourly |
-| Approvals | document | Each person's signed approvals of workflows and connectors | 2,000 a person; a new one past that is dropped. No age, and not deleted with the person. | On write |
+| Approvals | document | Each person's signed approvals of workflows and connectors | 2,000 a person of 8 KiB each: one past that is refused, and it still holds on the machine that approved. An approval has no age while the person is here, so that nobody approves the same file again. Deleted when the person is removed (#6970). | On write; on remove; hourly |
 
 ### Requests, codes and sign-in
 
@@ -264,7 +264,7 @@ the other copies of the control plane learn that it went. A removed person's sta
 | Failed machine makes | log | Why a machine could not be made | 5 a provider, 64 KiB at most; a reason is cut at 4 KiB. 90 days: one kept with no time counts from the first write or sweep. Deleted with the provider (#6971) | On write; on remove; hourly |
 | Event bus | log | Events between a person's machines: refs, names and times, and sealed data | 90 days; 100,000 envelopes and 1 GiB of encoded log records a person, the oldest deleted first with their dedupe ids. An envelope is at most 24 MiB encoded: 64 sealed copies of 256 KiB, in base64. Deleted when the person is removed (#6671). | On write; hourly; on remove |
 | Budgets | key-value | The org's budgets | One record of 4 KiB, with one budget (#6778) | On write |
-| Feature maturity | document | Evidence for each feature's rating | 84 records of 4 KiB. No age. | On write |
+| Feature maturity | document | Evidence for each feature's rating | 84 records of 4 KiB, each updated in place: one more, or a larger one, is refused. A rating is current state, so it has no age: an idle feature keeps it (#6905, #6972). | On write |
 
 ### Audit, keys and backups
 
@@ -287,17 +287,22 @@ service keeps these records.
 
 | Records | Kind | What they keep | How long, how large |
 | --- | --- | --- | --- |
-| Account | document | Sign-in provider (GitHub, Apple or Google) and its user ID, login, plan, suspension, certificate time, **Stripe customer and subscription IDs**, the date it signed up | Until **Delete Account**. 100 accounts. |
-| Sign-in links | document | Which account a GitHub, Apple or Google user is | Until **Delete Account** |
-| Account usage | key-value | The bytes the account's store holds | Until **Delete Account** |
+| Account | document | Sign-in provider (GitHub, Apple or Google) and its user ID, login, plan, suspension, certificate time, **Stripe customer and subscription IDs**, the date it signed up | Until **Delete Account** (the exception below). 100 accounts, then a new one is refused; 8 KiB a record. |
+| Sign-in links | document | Which account a GitHub, Apple or Google user is | Until **Delete Account** (the exception below). One an account, 128 bytes each. |
+| Account usage | key-value | The bytes the account's store holds | Until **Delete Account** (the exception below). One an account, 128 bytes each. |
 | The account's control plane store | all of the kinds | All of the section above | Plan limits: 1 or 20 GB, 2 or 20 machines, 5 or 50 clients, audit 7 or 90 days. Until **Delete Account**. |
 | Invites | document | Expiry, and **who used it** | 14 days to use it, 90 at most. It goes when that time ends, used or not, and with **Delete Account** of the account that used it. 1,000 of 4 KiB; a new one over that is refused (#6782). Hourly |
 | Waitlist | document | Who asked to join | 90 days; removed sooner on sign-up or a block. 10,000 of 4 KiB; a new one over that is refused (#6786). Hourly |
 | Stripe events | key-value | Stripe event IDs already seen | 30 days, swept daily |
 | Operator backups | blob | Each account's store, on the operator's disk | The newest 7 by default; `--keep N` sets it, `--keep 0` keeps all (#3648) |
-| Email links | key-value | Which account a sign-in email is | Until **Delete Account** (#6785) |
+| Email links | key-value | Which account a sign-in email is | Until **Delete Account** (the exception below). At most one an account, 128 bytes each. |
 | Allow list | key-value | GitHub logins that may sign up, and when the operator allowed each | 90 days from the last allow; an account that was made stays. 10,000 of 4 KiB; a new one over that is refused (#6783). Hourly |
 | Block lists | key-value | Sign-ins and emails' keyed hashes that may not sign up, with the login and the reason | Until the operator unblocks it. A block has no age, because one that aged out would let the person back in (Alex, 2026-11-24). 10,000 sign-ins and 10,000 emails of 4 KiB; a new one over that is refused (#6784) |
+
+**An exception to the 90-day rule (Alex, 2026-11-24):** an account, its sign-in links, its
+email link and its usage have no age. They stay until **Delete Account**, for at most 100
+accounts, until epic [#7092](https://github.com/agentloops-dev/agent-loops/issues/7092) deletes
+idle accounts safely.
 
 The service keeps nothing for a signed-in browser: a session is a signed cookie for 30 days.
 

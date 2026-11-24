@@ -386,3 +386,37 @@ func TestBlockerSuspendsUntilSamePathFixedBuildRecovery(t *testing.T) {
 		t.Fatalf("recovered evidence = %#v, err=%v", r, err)
 	}
 }
+
+// #6972: a rating has no age, and no rating goes to make room for a new feature's.
+func TestAnIdleRatingStaysAndANewOneIsRefusedPastTheMost(t *testing.T) {
+	ctx := context.Background()
+	s := store.NewMemory()
+	ids := make([]string, MaxRecords)
+	for i := range ids {
+		ids[i] = fmt.Sprintf("feature-%02d", i)
+	}
+	m, err := New(s, ids)
+	if err != nil {
+		t.Fatal(err)
+	}
+	then := time.Now().Add(-400 * 24 * time.Hour)
+	for _, id := range ids {
+		if _, err := m.Evaluate(ctx, id, 1, then); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A new catalogue, with one feature in the place of another.
+	ids[0] = "feature-new"
+	if m, err = New(s, ids); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.Evaluate(ctx, "feature-new", 1, time.Now()); !errors.Is(err, ErrFull) {
+		t.Fatalf("a record past the most: %v", err)
+	}
+	if r, err := m.Evaluate(ctx, "feature-01", 1, time.Now()); err != nil || !r.StartedAt.Equal(then) {
+		t.Fatalf("an idle record: %+v %v", r, err)
+	}
+	if o, err := s.Get(ctx, Key("feature-00")); err != nil || o == nil {
+		t.Fatalf("the record of the feature that left: %v %v", o, err)
+	}
+}
