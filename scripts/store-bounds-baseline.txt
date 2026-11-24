@@ -131,7 +131,6 @@
 2 Go/internal/controlplane/codes.go v1/codes
 1 Go/internal/controlplane/copies.go v1/copies
 1 Go/internal/controlplane/deploys.go v1/deploys
-1 Go/internal/controlplane/governance.go v1/governance
 4 Go/internal/controlplane/homebackup.go os.WriteFile
 2 Go/internal/controlplane/homebackup.go store.NewFolder
 2 Go/internal/controlplane/hostinstall/install.go os.WriteFile
@@ -145,7 +144,6 @@
 1 Go/internal/controlplane/kms/kms.go v1/keys
 1 Go/internal/controlplane/kms/rotate.go os.OpenFile
 1 Go/internal/controlplane/kms/rotate.go v1/keys
-1 Go/internal/controlplane/lineagecost.go v1/lineage
 1 Go/internal/controlplane/lineagegraph.go v1/lineage-graph
 1 Go/internal/controlplane/links.go v1/linkRequests
 1 Go/internal/controlplane/lockjoins.go v1/lockjoins
@@ -161,13 +159,12 @@
 1 Go/internal/controlplane/orgroutes.go v1/org
 1 Go/internal/controlplane/people_scim.go v1/requests
 1 Go/internal/controlplane/people_scim.go v1/scim
-4 Go/internal/controlplane/policy.go v1/policy
+3 Go/internal/controlplane/policy.go v1/policy
 1 Go/internal/controlplane/policy_ask.go v1/policy
 1 Go/internal/controlplane/projects.go v1/projectFolders
 1 Go/internal/controlplane/providers/defaults.go v1/failed-makes
 1 Go/internal/controlplane/providers/kept.go v1/kept
 1 Go/internal/controlplane/providers/secrets.go os.CreateTemp
-1 Go/internal/controlplane/readapi.go v1/read
 1 Go/internal/controlplane/records/groups.go v1/groups
 1 Go/internal/controlplane/records/people.go v1/people
 1 Go/internal/controlplane/records/projects.go v1/projects
@@ -179,7 +176,6 @@
 2 Go/internal/controlplane/reports.go v1/usage
 1 Go/internal/controlplane/reports_scope.go v1/reports
 1 Go/internal/controlplane/reports_views.go v1/reports
-1 Go/internal/controlplane/scim_tokens.go v1/scim
 1 Go/internal/controlplane/secretrelease.go v1/release-keys
 1 Go/internal/controlplane/signin.go v1/signin
 1 Go/internal/controlplane/signin_approvals.go v1/signins
