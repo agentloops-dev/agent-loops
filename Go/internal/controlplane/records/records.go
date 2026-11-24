@@ -282,11 +282,13 @@ func (r *Records) HostUnreadable(id string) bool {
 }
 
 // TombstoneKeys is the key of every tombstone read, for the sweep (#174): forgotten
-// clients and machines, removed projects (#2711) and groups, and removed people with no
-// sign-in (#3126). A removed person with a sign-in is kept: the record refuses it.
+// clients and machines, removed projects (#2711) and groups, and removed people (#3126,
+// #6756). The local owner's is left out: the settings name that person, and a local owner
+// with no record is an admin.
 func (r *Records) TombstoneKeys() []string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	owner := r.owner()
 	out := make([]string, 0, len(r.tombstones))
 	for key := range r.tombstones {
 		out = append(out, key)
@@ -302,7 +304,7 @@ func (r *Records) TombstoneKeys() []string {
 		}
 	}
 	for _, h := range r.people {
-		if h.record.IsRemoved() && len(h.record.SignIns) == 0 {
+		if h.record.IsRemoved() && (owner == nil || h.record.ID != *owner) {
 			out = append(out, PersonKey(h.record.ID))
 		}
 	}

@@ -817,6 +817,9 @@ func (si *signIns) pair(ctx context.Context, conn *Conn, client string, public, 
 		return nil, err
 	}
 	if person == nil {
+		if err := si.joinsClosed(ctx, c.provider); err != nil {
+			return nil, err
+		}
 		id, err := si.joinByDomain(ctx, c, settings)
 		if err != nil {
 			return nil, err

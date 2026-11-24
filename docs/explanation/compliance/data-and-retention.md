@@ -197,7 +197,7 @@ the approvals of people and groups that are gone, and probes and move marks left
 copy that stopped (#3748).
 
 A removed client, machine, group, project, route or machine provider leaves a **tombstone** for 7 days, so
-the other copies of the control plane learn that it went.
+the other copies of the control plane learn that it went. A removed person's stays longer (below).
 
 ### People, machines and clients
 
@@ -205,7 +205,8 @@ the other copies of the control plane learn that it went.
 | --- | --- | --- | --- | --- |
 | Clients | document | Name, kind, public key, when last seen, push tokens (APNs, up to 16 Live Activity tokens of 12 hours each, Web Push) | Until forgotten, then a tombstone for 7 days. A key lives 90 days at most from when it was paired or last renewed in use; a client whose key expired is forgotten (#6757), unless it is connected. 16 KiB a record and 1 MiB in all (hosted: 5 or 50 clients too): a new client, a longer name or a push token over that is refused; a renewal of a client in use never is. Tombstones keep no push tokens, and may come to 1 MiB more | Hourly; sizes on each write |
 | Machines | document | Name, key, platform, version, owner, workspace | Until removed, then a tombstone for 7 days that keeps no labels, links or capabilities. A key lives 90 days at most from when it was joined or last renewed in use; a machine whose key expired is removed (#6758), unless it is connected, or linked to a provider's workspace, which its person could still start or delete: that one stays until a person removes it. 32 KiB a record and 1 MiB in all (hosted: 2 or 20 machines too): a new machine, a label or a lend over that is refused; a hello of a joined machine is refused only over 32 KiB a record, and a renewal never is. Tombstones may come to 1 MiB more | Hourly; sizes on each write |
-| People | document | Name, role, sign-ins (email, login), SCIM data, old names for 90 days | A removed person goes after 14 days. One with a sign-in is kept, so that sign-in stays refused, but only as a tombstone: the ID, kind, role and each sign-in's provider and account (#3647) | Hourly |
+| People | document | Name, role, sign-ins (email, login), SCIM data, old names for 90 days | A removed person goes after 14 days. One with a sign-in goes after 90 days; until then only a tombstone is kept: the ID, kind, role and each sign-in's provider and account (#3647, #6756). The local owner's tombstone, one record, stays while they are the control plane's owner, so that a removed owner is not an admin again | Hourly |
+| Join cutoffs | document | A provider's ID and a time: when a removed person's tombstone with a sign-in of that provider first aged out. From then on, an account of it that nobody has needs an invite, so the old sign-in stays refused (#6756) | 1 KiB a record; Google and 5 org providers. Until the provider is removed | On write, and when the provider is removed |
 | Groups, projects | document | Name and members; name, owner, slots and boards | 1,000 groups; 500 projects a person | Tombstone, hourly |
 | Projects' folders | document | Each machine's joined folders | 1,000 | Hourly |
 | Machine locks | log | Each person's lock chain | 4,096 entries a person. Deleted when the person is removed (#3647) | On **Reset** and on remove |
@@ -257,7 +258,7 @@ the other copies of the control plane learn that it went.
 
 | Records | Kind | What they keep | How long, how large | Applied |
 | --- | --- | --- | --- | --- |
-| Audit events | log | Who did what (see [Security overview](security-overview.md#who-did-what)) | 90 days by default; an admin sets 1 to 3,650 days (hosted: 7 or 90). No size limit a day. | Hourly, by day |
+| Audit events | log | Who did what (see [Security overview](security-overview.md#who-did-what)) | 90 days by default; an admin sets 1 to 90 days (hosted: 7 or 90). At most 1,000,000 entries, of at most 16 KiB each: the oldest over that go, even when they are newer than the days set. A longer text in an entry is cut. No roll-up: the long copy is the SIEM sink's (#6755). | Hourly, oldest first; before the hour at 2,000,000 entries |
 | Change events between copies | log | What changed, when the control plane has several copies | 1 day, in `v1/mesh/events/` (#3648) | Hourly, by day |
 | Audit seals and sinks | log; key-value | Each day's chain head; up to 4 SIEM sinks with sealed tokens | With the day; 4 sinks | Hourly |
 | Keys | secret | The sealed control key and the previous one; the sealed key for server backups | 2; the previous one 30 days | — |
