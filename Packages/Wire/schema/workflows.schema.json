@@ -2223,9 +2223,21 @@
         "folderArchived",
         "forgeClosed",
         "restarted",
+        "byPerson"
+      ]
+    },
+    "RequestEndedWhy": {
+      "type": "string",
+      "description": "Why a request was dropped, on its record: a RequestDroppedWhy, which a caller can give, or expired, which only the host says (#6718).",
+      "enum": [
+        "askerEnded",
+        "folderArchived",
+        "forgeClosed",
+        "restarted",
         "byPerson",
         "expired"
-      ]
+      ],
+      "x-fallback": "askerEnded"
     },
     "RequestFormAnswer": {
       "type": "object",

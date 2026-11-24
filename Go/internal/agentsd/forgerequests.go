@@ -271,7 +271,7 @@ func (d *Daemon) forgeRequestGone(ctx context.Context, r wire.Request) {
 	}
 	switch {
 	case detail.Item.State != "open" && (kind == lineage.KindPR || !allDone(checklistOf(detail.Body))):
-		d.endRequest(r.ID, wire.RequestStateDropped, nil, wire.RequestDroppedWhyForgeClosed, nil)
+		d.endRequest(r.ID, wire.RequestStateDropped, nil, wire.RequestEndedWhyForgeClosed, nil)
 	case detail.Item.State != "open":
 		d.endRequest(r.ID, wire.RequestStateAnswered, new("Closed with every step done"), "", nil)
 	case kind == lineage.KindPR:

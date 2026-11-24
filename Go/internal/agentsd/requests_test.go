@@ -85,7 +85,7 @@ func TestADroppedRequestTakesItsFormDown(t *testing.T) {
 	c.in <- `{"jsonrpc":"2.0","id":2,"method":"requests/drop","params":{"id":"` + string(form.ID) + `"}}`
 	c.until(t, "the form taken down", takenDown(form.ID))
 	r := d.request(form.ID)
-	if r.State != wire.RequestStateDropped || r.DroppedWhy == nil || *r.DroppedWhy != wire.RequestDroppedWhyByPerson {
+	if r.State != wire.RequestStateDropped || r.DroppedWhy == nil || *r.DroppedWhy != wire.RequestEndedWhyByPerson {
 		t.Fatalf("%+v", r)
 	}
 	if n := names(d); !contains(n, "request.dropped") {
@@ -473,7 +473,7 @@ func TestAHeldFormExpires(t *testing.T) {
 	case <-afterLimit(t):
 		t.Fatal("the held call did not hear")
 	}
-	if r := d.request(pe.req.ID); r == nil || r.DroppedWhy == nil || *r.DroppedWhy != wire.RequestDroppedWhyExpired {
+	if r := d.request(pe.req.ID); r == nil || r.DroppedWhy == nil || *r.DroppedWhy != wire.RequestEndedWhyExpired {
 		t.Fatalf("%+v", r)
 	}
 	if l.elicitationFor(pe.req.ID) != nil {

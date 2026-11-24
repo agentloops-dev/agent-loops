@@ -114,7 +114,7 @@ func (d *Daemon) expireRequest(r wire.Request) {
 		return // being answered
 	}
 	waits := r.AskedBy != nil && d.waitsOnDrop(*r.AskedBy, r.ID)
-	if !d.endRequest(r.ID, wire.RequestStateDropped, nil, wire.RequestDroppedWhyExpired, nil) {
+	if !d.endRequest(r.ID, wire.RequestStateDropped, nil, wire.RequestEndedWhyExpired, nil) {
 		return
 	}
 	d.secretUseEnded(r.ID)
@@ -206,9 +206,9 @@ func (d *Daemon) dropGoneAskers() {
 		}
 		switch a := d.Store.Agent(*r.AskedBy); {
 		case a == nil:
-			d.endRequest(r.ID, wire.RequestStateDropped, nil, wire.RequestDroppedWhyAskerEnded, nil)
+			d.endRequest(r.ID, wire.RequestStateDropped, nil, wire.RequestEndedWhyAskerEnded, nil)
 		case a.State == wire.AgentStateArchived:
-			d.endRequest(r.ID, wire.RequestStateDropped, nil, wire.RequestDroppedWhyFolderArchived, nil)
+			d.endRequest(r.ID, wire.RequestStateDropped, nil, wire.RequestEndedWhyFolderArchived, nil)
 		}
 	}
 }
@@ -306,7 +306,7 @@ func (d *Daemon) lostForms(agent wire.UUID) []wire.ElicitationRequest {
 
 // dropRequestsOf drops every open request a session asked, held or lost, as it is archived
 // (#4990): halt takes down only the forms held in memory.
-func (d *Daemon) dropRequestsOf(agent wire.UUID, why wire.RequestDroppedWhy) {
+func (d *Daemon) dropRequestsOf(agent wire.UUID, why wire.RequestEndedWhy) {
 	for _, r := range d.listRequests(wire.RequestsListStateOpen, "") {
 		if r.AskedBy == nil || *r.AskedBy != agent {
 			continue
@@ -432,7 +432,7 @@ func (d *Daemon) addRequestWaiter(id, agent wire.UUID) {
 
 // endRequest answers or drops an open request, once: its end raises the event that wakes
 // its waiters. It is false when the request had ended already, or is not here.
-func (d *Daemon) endRequest(id wire.UUID, state wire.RequestState, answer *string, why wire.RequestDroppedWhy, by *wire.AuditActor) bool {
+func (d *Daemon) endRequest(id wire.UUID, state wire.RequestState, answer *string, why wire.RequestEndedWhy, by *wire.AuditActor) bool {
 	d.requests.mu.Lock()
 	delete(d.requests.held, id)
 	r := d.requests.byID[id]
@@ -621,9 +621,9 @@ func (d *Daemon) dropRequest(r wire.RequestsDrop, by *wire.AuditActor) (wire.Req
 	if rec == nil {
 		return wire.RequestUpdate{}, &Error{Code: wire.FailureNoSuchAgent, Message: "There is no such request."}
 	}
-	why := wire.RequestDroppedWhyByPerson
+	why := wire.RequestEndedWhyByPerson
 	if r.Why != nil {
-		why = *r.Why
+		why = wire.RequestEndedWhy(*r.Why)
 	}
 	if !d.endRequest(r.ID, wire.RequestStateDropped, nil, why, by) {
 		return wire.RequestUpdate{}, &Error{Code: wire.FailureNoSuchAgent, Message: "That request has ended already.", Data: wire.RequestUpdate{Request: *rec}}
