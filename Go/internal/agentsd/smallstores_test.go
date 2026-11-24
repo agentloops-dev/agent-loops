@@ -155,13 +155,13 @@ func TestApprovalsLetGoOfFoldersThatAreGone(t *testing.T) {
 		`"views":{"user|s|ui://v":"show:h","`+gone+`|s|ui://v":"show:h"}}`), 0o644))
 	must(t, os.WriteFile(filepath.Join(root, "plugin-approvals.json"), []byte(`{"approvalsBegan":1,"approved":{`+ //nolint:gosec // G306: the mode this file always had; only its error is new
 		`"`+onDisk+`/.agents/plugins/p":"x","`+gone+`/.agents/plugins/p":"x"},"denied":{"`+gone+`/.agents/plugins/q":"y"}}`), 0o644))
-	must(t, os.WriteFile(filepath.Join(root, "review-dismissals.json"), []byte(`{"`+onDisk+`":["u1"],"`+gone+`":["u2"]}`), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
-	must(t, os.WriteFile(filepath.Join(root, "review-opened.json"), []byte(`{"`+gone+`":["u3"]}`), 0o644))                         //nolint:gosec // G306: the mode this file always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(root, "review-dismissals.json"), []byte(`{"a":{"folder":"`+onDisk+`","url":"u1"},"b":{"folder":"`+gone+`","url":"u2"}}`), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(root, "review-opened.json"), []byte(`{"`+gone+`":["u3"]}`), 0o644))                                                               //nolint:gosec // G306: the mode this file always had; only its error is new
 	d.mcpMu.Lock()
 	d.mcpLoaded = false
 	d.mcpMu.Unlock()
 	d.reviewMu.Lock()
-	d.dismissedLoaded, d.openedLoaded = false, false
+	d.openedLoaded = false
 	d.reviewMu.Unlock()
 
 	d.sweepSmallStores(time.Now())

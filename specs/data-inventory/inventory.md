@@ -95,7 +95,8 @@ from the root (`agentsd/backups.go:69,72`). It holds nothing else.
 | `mcp-views/*.json` | View catalogues | pruned (`viewservers.go:369`) | on write | no |
 | `mcp-approvals.json`, `plugin-approvals.json` | Approval digests | **none.** Grows with folders × servers. | MCP: only on explicit remove; plugins: never | no |
 | `devices.json` | Paired devices | **none** | only Forget (`devices.go:257`) | no |
-| `review-dismissals.json`, `review-opened.json` | PR URLs per folder | 200 per folder (`reviews.go:28,30`). **Folder keys are never pruned.** | on write | no |
+| `review-dismissals.json` | Dismissed PRs | 2,000 of 8 KiB each, 90 days from the PR's last change or its dismissal (`reviews.go`, #6728) | hourly and on write | no |
+| `review-opened.json` | PR URLs per folder | 200 per folder (`reviewOpenedPerFolder`). **Folder keys are never pruned.** | on write | no |
 | `lock-seen.json` | Signed request IDs | 4,096, 2 days (`lockcheck.go`) | hourly and on write | no |
 | `attention.json` | Needs, deliveries | live needs only | on write | no |
 | `leases.json`, `resources.json` | Resource leases | 240-minute lease cap; dropped on agent stop (`leases.go:28,383`) | on write | no |
@@ -402,7 +403,7 @@ newer than a row above for the same store.
 | `<folder>/.agents/pins.json` | key-value | Pinned pages, views, sessions and workflows, and hidden views | 10 of each and 50; 4 KiB a pin, 1 KiB a hidden view, 128 KiB a folder; until removed (no age, on purpose: a person's choices, committed with the folder) | `Go/internal/agentsd/pins.go` (`pinsFileMost`) | #6725 |
 | `~/.agents/checks/suggestions.json` | document | Daily-check findings and dismissals | 50 findings, 200 dismissals, no age | `Go/internal/agentsd/dailychecks.go:39,49` | #6726 |
 | `~/.agents/mcp.removed.json` | key-value | Removed MCP servers | 100 of 256 KiB each, 90 days from the removal; refuses when full | `Go/internal/agentsd/removedconnectors.go` (`openRemovedConnectors`) | #6727 |
-| `<root>/review-dismissals.json` | key-value | Dismissed PR links | 200 a folder; until the folder goes | `Go/internal/agentsd/reviews.go:29` | #6728 |
+| `<root>/review-dismissals.json` | key-value | Dismissed PR links | 2,000 of 8 KiB each, 90 days from the PR's last change or its dismissal, the oldest first; For Review leaves out a PR unchanged for 90 days; goes with its folder | `Go/internal/agentsd/reviews.go` (`openReviewDismissals`) | #6728 |
 | `<root>/review-opened.json` | key-value | Opened PR links | 200 a folder; until the folder goes | `Go/internal/agentsd/reviews.go:31` | #6729 |
 | `<root>/workflows.json` (states) and `workflow-copies/` | key-value | Workflow states and approved copies | While the workflow file exists, then 30 days | `Go/internal/agentsd/smallstores.go:21` | #6730 |
 | `<root>/connector-setup.json` | key-value | Connector set-up for each folder | Until the folder leaves the machine | `Go/internal/agentsd/connectorsetup.go:386-391` | #6731 |
