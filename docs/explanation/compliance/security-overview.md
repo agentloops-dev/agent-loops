@@ -64,7 +64,7 @@ names its issue.
 - **Key lifetimes** (T4, #997). A client's or a machine's key expires 90 days after it was
   paired. The control plane renews it while it is in use. `agents-control serve --key-days`
   sets a shorter lifetime; 90 days is the most. A client whose key expired is forgotten
-  within the hour (#6757).
+  within the hour (#6757), and so is a machine that is linked to no workspace (#6758).
 - **Rotation.** An admin can rotate the control plane's own key. Nobody pairs again. The old
   key is still accepted for 30 days.
 - **Failed proofs are limited.** After 20 failed proofs in a minute from one address, that

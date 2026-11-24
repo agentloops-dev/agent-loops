@@ -2120,6 +2120,10 @@ func (s *Service) spendHostCode(ctx context.Context, id string, stored *storedCo
 	if json.Unmarshal(params, &a) != nil {
 		return nil, fail(invalidParams, "Say which host you are.")
 	}
+	// Before the code is spent, so it can be used once there is room (#6758).
+	if err := s.records.MachineRoom(ctx, a.PublicKey); err != nil {
+		return nil, err
+	}
 	want := s.joiningHostID(stored, a)
 	sp, err := s.codes.Spend(ctx, id, spent{PublicKey: a.PublicKey, Host: &want})
 	if err != nil {
