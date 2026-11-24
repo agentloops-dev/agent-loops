@@ -70,7 +70,7 @@ Mac.
 | `achievements.json` | document | Milestones | A fixed set | — |
 | `ci-timings/<forge>/<path>/<day>.jsonl` | time series | CI runs, their jobs and steps | 90 days, 20,000 runs a repository; a pull request run's steps 14 days | On the sweep |
 | `lineage-deploys.json` | log | Each deploy's last event | 1,000. No age (#6719). | On write |
-| `repo-aliases.json` | key-value | Repository renames | **None** (#6716) | Never |
+| `repo-aliases.json` | key-value | Repository renames | 1,000 renames of 2 KiB each, for 90 days; the oldest goes first. The daily check learns again a rename that a folder or the lineage still names (#6716) | Hourly, and on write: age and count |
 
 ### Workflows, assessments, approvals and devices
 
@@ -320,7 +320,7 @@ What the Mac window and the Remote keep in their defaults, and the web page in
 | Keychain `control-client-key`, `lock-signing-key`, `device-key` (Mac, Remote) | secret | The client's own keys | One of each; kept after **Forget** | — |
 | `copy/` in the cache folder (Mac, Remote) | cache | The local copy: machines, folders, records, the ends of 20 chats and Work's pictures | 90 days since it was read from its host. 200 MiB on the Mac, 50 MiB on the Remote, the oldest out first. A record is 16 MiB at most. A machine that the control plane no longer lists goes, with its chats. | On write, hourly, when the machines are listed, and on **Forget** |
 | IndexedDB `agents` › `copy` (web) | cache | The local copy: machines, folders, records and the ends of 20 chats | 50 MiB. No age (#6792). | On write |
-| `work-cache.sqlite`, in the cache folder (Mac, Remote) | cache | Forge items, bodies, comments and Work page answers | 90 days since it was read from the forge. 200 MiB on the Mac, 50 MiB on the Remote, least recently shown out first. An item is 4 KiB and any other record 4 MiB at most. | On write, at start, hourly, and on **Forget** |
+| `work-cache.sqlite`, in the cache folder (Mac, Remote); IndexedDB `agents` › `work` (web) | cache | Forge items, bodies, comments and Work page answers | 90 days since it was read from the forge. 200 MiB on the Mac, 50 MiB on the Remote and the web page, least recently shown out first. An item is 4 KiB and any other record 4 MiB at most. | On write, at start, hourly, and on **Forget** |
 | `shared-inbox.json` (Remote) | blob | What was shared to Agent Loops | Each attachment is capped. No count, total or age (#6795). | On use |
 | `attention-snapshot.json` (Remote) | cache | The widget's rows | 12 rows; stale after 15 minutes | On write, and on **Forget** |
 | `remote.startFolders` (Remote) | key-value | Start folders | **None** (#6798) | Never |

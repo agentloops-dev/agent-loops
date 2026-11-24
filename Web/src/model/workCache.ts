@@ -16,6 +16,7 @@
 import type { ForgeCapabilities, ForgeItem, ForgeItemDetail, ForgeList, ForgeListError, LineageNode } from "../protocol/generated";
 import { openAgentsDatabase } from "../wire/keys";
 import { fromWireDate } from "../protocol/dates";
+import { cacheAgeLimit, type CacheStats, type CacheStore } from "./cacheStore";
 
 /** What a list asks the forge (#6358): the parts that change the server's answer. The words in the filter field, the
  * label, the assignee and the project narrow the kept answer on the page. */
@@ -59,17 +60,31 @@ export interface WorkAnswer {
 /** An item's kept page: the machine that read it, its answer, and when. */
 export interface WorkDetail { host: string; got: ForgeItemDetail; read: number }
 
-/** The cache's bounds (#6352; the web's 50 MB, epic #6348): over `bytes`, bodies go first, then the pages' answers and the
- * lists' answers, each the least recently drawn first, with the items no other answer holds. */
-export interface WorkBounds { itemBytes: number; bodyBytes: number; comments: number; pageBytes: number; bytes: number }
-export const webBounds: WorkBounds = { itemBytes: 4 * 1024, bodyBytes: 64 * 1024, comments: 50, pageBytes: 4 * 1024 * 1024, bytes: 50 * 1024 * 1024 };
+/** The cache's bounds (#6352; the web's 50 MB, epic #6348; the age, #6976): over `bytes`, bodies go first, then the pages'
+ * answers and the lists' answers, each the least recently drawn first, with the items no other answer holds. */
+export interface WorkBounds {
+  itemBytes: number;
+  bodyBytes: number;
+  comments: number;
+  /** The largest record. A page's answer or an item's page over it is not kept, so the page asks again next time; a list's
+   * answer loses its last pages. */
+  recordBytes: number;
+  bytes: number;
+  /** A record goes this long (ms) after it was read from the forge, at most 90 days; drawing it does not make it newer. */
+  age: number;
+}
+export const webBounds: WorkBounds = { itemBytes: 4 * 1024, bodyBytes: 64 * 1024, comments: 50, recordBytes: 4 * 1024 * 1024,
+  bytes: 50 * 1024 * 1024, age: cacheAgeLimit };
+const sweepEvery = 60 * 60 * 1000;
 
 /** Where the cache lives: IndexedDB on the page, memory in the tests. */
 export interface WorkStore {
   /** The values of `keys`, in their order; undefined for a missing one. */
   get(keys: readonly string[]): Promise<unknown[]>;
-  /** Puts and deletes in one transaction. */
-  write(put: ReadonlyArray<[string, unknown]>, drop: readonly string[]): Promise<void>;
+  /** Puts and deletes, and changes the stored index, in one transaction: two tabs do not undo each other's index. */
+  write(put: ReadonlyArray<[string, unknown]>, drop: readonly string[], index: (stored: IndexRows) => IndexRows): Promise<void>;
+  /** Deletes the records that the stored index does not name: nothing else would age them out. */
+  dropUnindexed(): Promise<void>;
 }
 
 function request<T>(r: IDBRequest<T>): Promise<T> {
@@ -80,6 +95,7 @@ function request<T>(r: IDBRequest<T>): Promise<T> {
 }
 
 /** The store `work` in the database `agents`. */
+// store-bounds: kind=cache; size=50MiB; age=90d; action=evict; record=4MiB; applied=on write, on open and hourly
 export class IndexedWorkStore implements WorkStore {
   private async run<T>(mode: IDBTransactionMode, act: (store: IDBObjectStore) => Promise<T> | T): Promise<T> {
     const db = await openAgentsDatabase();
@@ -102,10 +118,21 @@ export class IndexedWorkStore implements WorkStore {
     return this.run("readonly", (store) => Promise.all(keys.map((k) => request(store.get(k)))));
   }
 
-  write(put: ReadonlyArray<[string, unknown]>, drop: readonly string[]): Promise<void> {
-    return this.run("readwrite", (store) => {
+  write(put: ReadonlyArray<[string, unknown]>, drop: readonly string[], index: (stored: IndexRows) => IndexRows): Promise<void> {
+    return this.run("readwrite", async (store) => {
       for (const key of drop) store.delete(key);
       for (const [key, value] of put) store.put(value, key);
+      const stored = (await request(store.get(indexKey))) as IndexRows | undefined;
+      store.put(index(stored ?? {}), indexKey);
+    });
+  }
+
+  dropUnindexed(): Promise<void> {
+    return this.run("readwrite", async (store) => {
+      const stored = ((await request(store.get(indexKey))) as IndexRows | undefined) ?? {};
+      for (const key of await request(store.getAllKeys())) {
+        if (key !== indexKey && !Object.hasOwn(stored, String(key))) store.delete(key);
+      }
     });
   }
 }
@@ -116,10 +143,16 @@ export class MemoryWorkStore implements WorkStore {
   async get(keys: readonly string[]): Promise<unknown[]> {
     return keys.map((k) => structuredClone(this.held.get(k)));
   }
-  async write(put: ReadonlyArray<[string, unknown]>, drop: readonly string[]): Promise<void> {
+  async write(put: ReadonlyArray<[string, unknown]>, drop: readonly string[], index: (stored: IndexRows) => IndexRows): Promise<void> {
     for (const key of drop) this.held.delete(key);
     for (const [key, value] of put) this.held.set(key, structuredClone(value));
-  }}
+    this.held.set(indexKey, structuredClone(index(structuredClone((this.held.get(indexKey) as IndexRows | undefined) ?? {}))));
+  }
+  async dropUnindexed(): Promise<void> {
+    const stored = (this.held.get(indexKey) as IndexRows | undefined) ?? {};
+    for (const key of [...this.held.keys()]) if (key !== indexKey && !Object.hasOwn(stored, key)) this.held.delete(key);
+  }
+}
 
 /** A machine's answer as the store keeps it; the items are their own records. */
 interface KeptAnswer {
@@ -130,8 +163,12 @@ interface KeptAnswer {
   failed?: number | undefined;
 }
 
-/** What the cache knows of each record without reading it: its size and when it was last drawn, kept as one record. */
-interface IndexRow { bytes: number; used: number }
+/** What the cache knows of each record without reading it, kept as one record: its size, when it was last drawn, and when it
+ * was read from the forge (an answer's oldest page; none in a row from before #6976, which the first sweep sets). */
+interface IndexRow { bytes: number; used: number; read?: number | undefined }
+type IndexRows = Record<string, IndexRow>;
+/** A record to write: its key, its value and when it was read from the forge. */
+type Put = readonly [key: string, value: unknown, read: number];
 
 const indexKey = "@index";
 const itemKey = (node: LineageNode) => `item ${node.kind} ${node.ref}`;
@@ -155,6 +192,21 @@ const freshCursor = (pages: readonly WorkPage[]) => {
   const fresh = freshCount(pages);
   return fresh > 0 ? pages[fresh - 1]!.cursor : undefined;
 };
+
+/** When an answer's oldest page was read; with no page, when the machine failed to answer. */
+const oldestRead = (kept: KeptAnswer) => kept.pages.length > 0 ? Math.min(...kept.pages.map((p) => p.read)) : kept.failed ?? 0;
+
+/** The answer less what was read before `cutoff` (#6976); undefined when nothing is left. The pages read since a refresh
+ * follow one another, so those after one that goes go too. */
+function since(kept: KeptAnswer, cutoff: number): KeptAnswer | undefined {
+  if (oldestRead(kept) >= cutoff && (kept.failed === undefined || kept.failed >= cutoff)) return kept;
+  const fresh = kept.pages.slice(0, freshCount(kept.pages));
+  const old = fresh.findIndex((p) => p.read < cutoff);
+  const pages = [...(old < 0 ? fresh : fresh.slice(0, old)), ...kept.pages.slice(fresh.length).filter((p) => p.read >= cutoff)];
+  const failed = kept.failed !== undefined && kept.failed >= cutoff ? { failed: kept.failed, errors: kept.errors } : {};
+  if (pages.length > 0) return { pages, total: kept.total, forges: kept.forges, ...(kept.failed === undefined ? { errors: kept.errors } : failed) };
+  return failed.failed === undefined ? undefined : { pages, ...failed };
+}
 
 const rank = (item: ForgeItem) => ({ high: 0, medium: 1, low: 2 } as Record<string, number>)[item.priority?.toLowerCase() ?? ""] ?? 3;
 
@@ -184,7 +236,7 @@ export function prefixBytes(text: string, bytes: number): string {
  * The cache: an index and the items drawn in memory, the records in the store. Every failure is swallowed: a cache
  * that cannot be read or written is no cache, and the page asks the forge as it would with none.
  */
-export class WorkCache {
+export class WorkCache implements CacheStore {
   private index = new Map<string, IndexRow>();
   private loaded: Promise<void> | undefined;
   /** Items read once, by key: a draw after the first reads nothing. The store stays the record. */
@@ -196,9 +248,25 @@ export class WorkCache {
   private turn: Promise<unknown> = Promise.resolve();
   /** Off while the page is not signed in: a write then would make the database again. */
   writing = false;
+  private timer: ReturnType<typeof setInterval> | undefined;
+  readonly bounds: WorkBounds;
 
-  constructor(readonly store: WorkStore = new IndexedWorkStore(), readonly bounds: WorkBounds = webBounds,
-    private readonly now: () => number = () => Date.now()) {}
+  constructor(readonly store: WorkStore = new IndexedWorkStore(), bounds: WorkBounds = webBounds,
+    private readonly now: () => number = () => Date.now()) {
+    this.bounds = { ...bounds, age: Math.min(bounds.age, cacheAgeLimit) };
+  }
+
+  /** The page is signed in: it writes from now, and sweeps at once and each hour. */
+  open(): void {
+    if (this.writing) return;
+    this.writing = true;
+    void this.sweep();
+    this.timer ??= setInterval(() => void this.sweep(), sweepEvery);
+  }
+
+  private cutoff(): number {
+    return this.now() - this.bounds.age;
+  }
 
   private serial<T>(act: () => Promise<T>): Promise<T> {
     const run = this.turn.then(act, act);
@@ -208,7 +276,7 @@ export class WorkCache {
 
   private ready(): Promise<void> {
     this.loaded ??= this.store.get([indexKey]).then(([rows]) => {
-      this.index = new Map(Object.entries((rows as Record<string, IndexRow> | undefined) ?? {}));
+      this.index = new Map(Object.entries((rows as IndexRows | undefined) ?? {}));
     }, () => undefined);
     return this.loaded;
   }
@@ -223,19 +291,32 @@ export class WorkCache {
     }
   }
 
-  /** Writes records and the index, one write after another; `used` only moves the records' times. */
-  private save(put: ReadonlyArray<[string, unknown]>, drop: readonly string[] = [], used: readonly string[] = []): Promise<void> {
+  /** Writes records and their index rows, one write after another; `touch` only changes the rows of kept records. */
+  private save(put: readonly Put[], drop: readonly string[] = [], touch: ReadonlyMap<string, Partial<IndexRow>> = new Map()): Promise<void> {
     if (!this.writing) return this.queue;
     const at = this.now();
-    for (const key of drop) this.index.delete(key);
-    for (const [key, value] of put) this.index.set(key, { bytes: JSON.stringify(value).length, used: at });
-    for (const key of used) {
-      const row = this.index.get(key);
-      if (row) row.used = at;
-    }
-    const all: Array<[string, unknown]> = [...put, [indexKey, Object.fromEntries(this.index)]];
-    this.queue = this.queue.then(() => (this.writing ? this.store.write(all, drop) : undefined)).catch(() => undefined);
+    const rows = put.map(([key, value, read]): [string, IndexRow] => [key, { bytes: utf8(JSON.stringify(value)), used: at, read }]);
+    const apply = (index: Map<string, IndexRow>) => {
+      for (const key of drop) index.delete(key);
+      for (const [key, row] of rows) index.set(key, row);
+      for (const [key, change] of touch) {
+        const row = index.get(key);
+        if (row) index.set(key, { ...row, ...change });
+      }
+      return index;
+    };
+    apply(this.index);
+    const records = put.map(([key, value]): [string, unknown] => [key, value]);
+    this.queue = this.queue.then(() => (this.writing
+      ? this.store.write(records, drop, (stored) => Object.fromEntries(apply(new Map(Object.entries(stored)))))
+      : undefined)).catch(() => undefined);
     return this.queue;
+  }
+
+  /** The records were drawn now. */
+  private drawn(keys: readonly string[]): void {
+    const used = this.now();
+    void this.save([], [], new Map(keys.map((k) => [k, { used }])));
   }
 
   /** Reads the keys' items that are not in memory yet. */
@@ -255,10 +336,14 @@ export class WorkCache {
   async answer(q: WorkQuery, hosts: readonly string[]): Promise<WorkAnswer | undefined> {
     const keys = hosts.map((h) => answerKey(q, h));
     const kept = await this.read<KeptAnswer>(keys);
-    const found = hosts.flatMap((host, i) => (kept[i] ? [{ host, kept: kept[i]! }] : []));
+    const cutoff = this.cutoff();
+    const found = hosts.flatMap((host, i) => {
+      const fresh = kept[i] && since(kept[i]!, cutoff);
+      return fresh ? [{ host, kept: fresh }] : [];
+    });
     if (found.length === 0) return undefined;
     await this.load(found.flatMap((f) => f.kept.pages.flatMap((p) => p.refs)));
-    void this.save([], [], found.map((f) => answerKey(q, f.host)));
+    this.drawn(found.map((f) => answerKey(q, f.host)));
     const answers = found.map(({ host, kept }): WorkHostAnswer => {
       const seen = new Set<string>();
       const items = kept.pages.flatMap((p) => p.refs).flatMap((ref) => {
@@ -285,9 +370,9 @@ export class WorkCache {
       const fresh = freshCount(had);
       if (page < 0 || page > fresh) return;
       const at = this.now();
-      const put = await this.itemsToPut(list.items);
       // The forges' read time, not this call's (#6642): the daemon can answer from a copy up to a minute old.
       const readAt = list.readAt === undefined ? at : Math.min(at, fromWireDate(list.readAt).getTime());
+      const put = await this.itemsToPut(list.items, readAt);
       const read: WorkPage = { refs: list.items.map((i) => itemKey(i.node)).filter((k) => this.memo.has(k)), cursor: list.cursor, read: readAt };
       let reads = had.slice(0, fresh);
       let stale = had.slice(fresh);
@@ -299,9 +384,18 @@ export class WorkCache {
       else reads[page] = read;
       const pages = [...reads, ...await this.covered(stale, reads, q.sort)];
       const answer: KeptAnswer = { pages, total: list.total ?? kept?.total, forges: list.forges ?? kept?.forges, errors: list.errors };
-      await this.save([...put, [key, answer]]);
+      await this.saveAnswer(key, answer, put);
       await this.trim();
     });
+  }
+
+  /** Writes an answer, less its last pages when it is over `bounds.recordBytes`; one with nothing left goes. */
+  private saveAnswer(key: string, answer: KeptAnswer, put: readonly Put[] = []): Promise<void> {
+    let fit = answer;
+    const over = () => utf8(JSON.stringify(fit)) > this.bounds.recordBytes;
+    while (fit.pages.length > 0 && over()) fit = { ...fit, pages: fit.pages.slice(0, -1) };
+    if (over() || (fit.pages.length === 0 && fit.failed === undefined)) return this.save(put, [key]);
+    return this.save([...put, [key, fit, oldestRead(fit)]]);
   }
 
   /** The stale pages less what the fresh pages cover (#6636): the items they hold, and the items the server's order puts
@@ -327,7 +421,8 @@ export class WorkCache {
     return this.serial(async () => {
       const key = answerKey(q, host);
       const [kept] = await this.read<KeptAnswer>([key]);
-      await this.save([[key, { ...(kept ?? { pages: [] }), errors, failed: this.now() } satisfies KeptAnswer]]);
+      await this.saveAnswer(key, { ...(kept ?? { pages: [] }), errors, failed: this.now() });
+      await this.trim();
     });
   }
 
@@ -345,15 +440,16 @@ export class WorkCache {
   /** Items read or written outside a list (a write's answer, #6351, or an item's page): each replaces an older copy. */
   keepItems(items: readonly ForgeItem[]): Promise<void> {
     return this.serial(async () => {
-      await this.save(await this.itemsToPut(items));
+      await this.save(await this.itemsToPut(items, this.now()));
+      await this.trim();
     });
   }
 
   /** The items to write: each replaces a kept one only when as new or newer, so a late answer does not undo a newer one;
    * one over `bounds.itemBytes` after trimming is not kept. */
-  private async itemsToPut(items: readonly ForgeItem[]): Promise<Array<[string, unknown]>> {
+  private async itemsToPut(items: readonly ForgeItem[], read: number): Promise<Put[]> {
     await this.load(items.map((i) => itemKey(i.node)));
-    const put: Array<[string, unknown]> = [];
+    const put: Put[] = [];
     for (const item of items) {
       const key = itemKey(item.node);
       const had = this.memo.get(key);
@@ -362,7 +458,8 @@ export class WorkCache {
       if (!fit) continue;
       this.edited.delete(key);
       this.memo.set(key, fit);
-      put.push([key, fit]);
+      // An answer from the daemon's copy can be older than the kept item's own read.
+      put.push([key, fit, Math.max(read, this.readOf(key) ?? 0)]);
     }
     return put;
   }
@@ -391,7 +488,8 @@ export class WorkCache {
       if (!fit) return;
       this.memo.set(key, fit);
       this.edited.add(key);
-      await this.save([[key, fit]]);
+      // Not a read from the forge: the item ages from its last one.
+      await this.save([[key, fit, this.readOf(key) ?? this.now()]]);
     });
   }
 
@@ -404,7 +502,13 @@ export class WorkCache {
   async item(node: LineageNode): Promise<ForgeItem | undefined> {
     const key = itemKey(node);
     await this.load([key]);
-    return this.memo.get(key);
+    return (this.readOf(key) ?? Infinity) < this.cutoff() ? undefined : this.memo.get(key);
+  }
+
+  /** When a record was read from the forge, as far as the index says; an item's row from before #6976 has when it was written. */
+  private readOf(key: string): number | undefined {
+    const row = this.index.get(key);
+    return row?.read ?? (key.startsWith("item ") ? row?.used : undefined);
   }
 
   // Details
@@ -412,8 +516,8 @@ export class WorkCache {
   /** An item's kept page, with the newest kept copy of the item; undefined when it was never read here. */
   async detail(node: LineageNode): Promise<WorkDetail | undefined> {
     const [found] = await this.read<WorkDetail>([detailKey(node)]);
-    if (!found) return undefined;
-    void this.save([], [], [detailKey(node)]);
+    if (!found || found.read < this.cutoff()) return undefined;
+    this.drawn([detailKey(node)]);
     const item = await this.item(node);
     // The kept item is never older than the page's: an optimistic change keeps its updatedAt.
     return item && item.updatedAt >= found.got.item.updatedAt ? { ...found, got: { ...found.got, item } } : found;
@@ -421,10 +525,13 @@ export class WorkCache {
 
   keepDetail(host: string, got: ForgeItemDetail): Promise<void> {
     return this.serial(async () => {
-      const put = await this.itemsToPut([got.item]);
+      const at = this.now();
+      const put = await this.itemsToPut([got.item], at);
       const body = utf8(got.body) > this.bounds.bodyBytes ? prefixBytes(got.body, this.bounds.bodyBytes) : got.body;
-      const kept: WorkDetail = { host, got: { ...got, body, comments: got.comments.slice(0, this.bounds.comments) }, read: this.now() };
-      await this.save([...put, [detailKey(got.item.node), kept]]);
+      const kept: WorkDetail = { host, got: { ...got, body, comments: got.comments.slice(0, this.bounds.comments) }, read: at };
+      const key = detailKey(got.item.node);
+      if (utf8(JSON.stringify(kept)) > this.bounds.recordBytes) await this.save(put, [key]);
+      else await this.save([...put, [key, kept, at]]);
       await this.trim();
     });
   }
@@ -435,45 +542,115 @@ export class WorkCache {
   async kept<T>(page: string, asked: string): Promise<{ value: T; at: number } | undefined> {
     const key = pageKey(page, asked);
     const [found] = await this.read<{ value: T; at: number }>([key]);
-    if (!found) return undefined;
-    void this.save([], [], [key]);
+    if (!found || found.at < this.cutoff()) return undefined;
+    this.drawn([key]);
     return found;
   }
 
-  /** Keeps a page's answer for what it asked, read now, in place of the last one; one over `bounds.pageBytes` is not kept,
+  /** Keeps a page's answer for what it asked, read now, in place of the last one; one over `bounds.recordBytes` is not kept,
    * so the page asks again next time. */
   keep(page: string, asked: string, value: unknown): Promise<void> {
     return this.serial(async () => {
       const key = pageKey(page, asked);
       const record = { value, at: this.now() };
-      if (JSON.stringify(record).length > this.bounds.pageBytes) return this.save([], [key]);
-      await this.save([[key, record]]);
+      if (utf8(JSON.stringify(record)) > this.bounds.recordBytes) return this.save([], [key]);
+      await this.save([[key, record, record.at]]);
       await this.trim();
     });
   }
 
   // Bounds
 
-  /** The kept records' size: what `bounds.bytes` bounds. */
+  /** A kept record's size, with its row in the index: its key and its numbers. */
+  private size(key: string): number {
+    const row = this.index.get(key);
+    return row ? row.bytes + utf8(key) + 64 : 0;
+  }
+
+  /** The kept records' size, with the index: what `bounds.bytes` bounds. */
   bytes(): number {
     let total = 0;
-    for (const row of this.index.values()) total += row.bytes;
+    for (const key of this.index.keys()) total += this.size(key);
     return total;
   }
 
-  /** Brings the cache under `bounds.bytes`, to nine tenths of it so the next page does not trim again: bodies first, the
-   * least recently opened first; then the pages' answers; then the lists' answers, with the items no kept answer holds. */
+  async stats(): Promise<CacheStats> {
+    await this.ready();
+    let oldest: number | undefined;
+    for (const [key, row] of this.index) oldest = Math.min(oldest ?? Infinity, this.readOf(key) ?? row.used);
+    return { count: this.index.size, bytes: this.bytes(), oldest };
+  }
+
+  /** At sign-in and each hour: what another tab wrote is read, what the index does not name goes, then the bounds. */
+  sweep(): Promise<void> {
+    return this.serial(async () => {
+      await this.ready();
+      await this.queue;
+      if (!this.writing) return;
+      try {
+        await this.store.dropUnindexed();
+        const [rows] = await this.store.get([indexKey]);
+        if (!this.writing) return;
+        this.index = new Map(Object.entries((rows as IndexRows | undefined) ?? {}));
+      } catch {
+        // The next sweep tries again.
+      }
+      for (const key of this.memo.keys()) if (!this.index.has(key)) this.memo.delete(key);
+      await this.trim();
+    });
+  }
+
+  /** Removes what was read longer than `bounds.age` ago (#6976). It reads only the answers that lose something, and once
+   * each record of a row from before #6976. */
+  private async ageOut(): Promise<void> {
+    const cutoff = this.cutoff();
+    const due = [...this.index.keys()].filter((key) => (this.readOf(key) ?? -Infinity) < cutoff);
+    if (due.length === 0) return;
+    const look = due.filter((key) => key.startsWith("answer ") || this.readOf(key) === undefined);
+    const looked = new Set(look);
+    const drop = due.filter((key) => !looked.has(key));
+    const put: Put[] = [];
+    const touch = new Map<string, Partial<IndexRow>>();
+    const records = await this.read<KeptAnswer & { read?: number; at?: number }>(look);
+    look.forEach((key, i) => {
+      const record = records[i];
+      if (record && key.startsWith("answer ")) {
+        const kept = since(record, cutoff);
+        if (!kept) drop.push(key);
+        else if (kept === record) touch.set(key, { read: oldestRead(kept) });
+        else {
+          put.push([key, kept, oldestRead(kept)]);
+          touch.set(key, { used: this.index.get(key)?.used ?? 0 });
+        }
+      } else {
+        const read = record?.read ?? record?.at ?? 0;
+        if (read < cutoff) drop.push(key);
+        else touch.set(key, { read });
+      }
+    });
+    for (const key of drop) {
+      this.memo.delete(key);
+      this.edited.delete(key);
+    }
+    await this.save(put, drop, touch);
+  }
+
+  /** Ages records out, then brings the cache under `bounds.bytes`, to nine tenths of it so the next page does not trim again:
+   * bodies first, the least recently opened first; then the pages' answers; then the lists' answers, with the items no kept
+   * answer holds. */
   private async trim(): Promise<void> {
+    if (!this.writing) return;
+    await this.ageOut();
     let total = this.bytes();
     if (total <= this.bounds.bytes) return;
     const target = this.bounds.bytes / 10 * 9;
     const oldest = (prefix: string) => [...this.index].filter(([k]) => k.startsWith(prefix)).sort(([, a], [, b]) => a.used - b.used);
     const drop: string[] = [];
     for (const prefix of ["detail ", "page "]) {
-      for (const [key, row] of oldest(prefix)) {
+      for (const [key] of oldest(prefix)) {
         if (total <= target) break;
         drop.push(key);
-        total -= row.bytes;
+        total -= this.size(key);
       }
     }
     // Then the answers, the least recently drawn first, each with the items that no kept answer or page holds after it.
@@ -487,7 +664,7 @@ export class WorkCache {
       }
       return [...this.index.keys()].filter((k) => k.startsWith("item ") && !held.has(k));
     };
-    const size = (keys: Iterable<string>) => [...keys].reduce((sum, k) => sum + (this.index.get(k)?.bytes ?? 0), 0);
+    const size = (keys: Iterable<string>) => [...keys].reduce((sum, k) => sum + this.size(k), 0);
     let freed = unheld();
     total -= size(freed);
     for (const key of answers) {
@@ -495,7 +672,7 @@ export class WorkCache {
       drop.push(key);
       refsOf.delete(key);
       const now = unheld();
-      total -= (this.index.get(key)?.bytes ?? 0) + size(now.filter((k) => !freed.includes(k)));
+      total -= this.size(key) + size(now.filter((k) => !freed.includes(k)));
       freed = now;
     }
     for (const key of freed) {

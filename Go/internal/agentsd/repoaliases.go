@@ -7,14 +7,17 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"maps"
 	"net/http"
-	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/internal/lineage"
 	"github.com/agentloops-dev/agent-loops/Go/internal/repoalias"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // Repo aliases (#4957, spec 4929-github-organisation): when a repo's owner moves, such as
@@ -35,16 +38,49 @@ const (
 	repoAliasAPI       = "https://api.github.com"
 )
 
-func (d *Daemon) repoAliasesPath() string { return filepath.Join(d.Store.Loc.Root, "repo-aliases.json") }
+func (d *Daemon) repoAliasesPath() string {
+	return filepath.Join(d.Store.Loc.Root, "repo-aliases.json")
+}
 
-// loadRepoAliases reads the book kept; with no file, the book is left as it is.
+// openRepoAliases opens the book's file, which evicts: the check learns again each alias that is
+// still named.
+func (d *Daemon) openRepoAliases() *store.JSONFile[repoalias.Alias] {
+	return smallFile(d, store.Spec{Name: "repo-aliases.json", Kind: "key-value", Scope: "machine",
+		Bounds: store.Bounds{MaxRecordBytes: 2 << 10, MaxCount: repoalias.Most, MaxAge: store.MaxAge, Action: store.EvictOldest}},
+		d.repoAliasesPath, func(a *repoalias.Alias) *wire.Date { return &a.At })
+}
+
+// loadRepoAliases reads the book kept; with none kept, the book is left as it is. An Update that
+// changes nothing sets aside a file that cannot be read, such as one from before #6716.
 func (d *Daemon) loadRepoAliases() {
-	if _, err := os.Stat(d.repoAliasesPath()); errors.Is(err, os.ErrNotExist) {
+	err := d.repoAliases.Update(func(map[string]repoalias.Alias) error { return nil })
+	kept, readErr := d.repoAliases.Read()
+	if err = errors.Join(err, readErr); err != nil {
+		log.Printf("repo aliases: %v", err)
+	}
+	if len(kept) > 0 {
+		repoalias.Set(slices.Collect(maps.Values(kept)))
+	}
+}
+
+// saveRepoAliases writes the book, and drops from it the aliases past the file's limits.
+func (d *Daemon) saveRepoAliases() {
+	if err := d.repoAliases.Update(func(m map[string]repoalias.Alias) error {
+		clear(m)
+		for _, a := range repoalias.All() {
+			m[a.Key()] = a
+		}
+		return nil
+	}); err != nil {
+		log.Printf("repo aliases: %v", err)
 		return
 	}
-	if err := repoalias.Load(d.repoAliasesPath()); err != nil {
-		log.Printf("repo aliases: %v; starting with none", err)
+	kept, err := d.repoAliases.Read()
+	if err != nil {
+		log.Printf("repo aliases: %v", err)
+		return
 	}
+	repoalias.Set(slices.Collect(maps.Values(kept)))
 }
 
 // StartRepoAliases asks GitHub, a while after the start and then once a day, whether the
@@ -68,6 +104,8 @@ func (d *Daemon) repoAliasClock() {
 // how many it added.
 func (d *Daemon) checkRepoAliases(ctx context.Context) int {
 	added := 0
+	// An alias past its age goes first, so a name still in use is asked about in this check.
+	d.saveRepoAliases()
 	for _, repo := range d.githubReposNamed() {
 		if ctx.Err() != nil {
 			break
@@ -83,9 +121,7 @@ func (d *Daemon) checkRepoAliases(ctx context.Context) int {
 		}
 	}
 	if added > 0 {
-		if err := repoalias.Save(d.repoAliasesPath()); err != nil {
-			log.Printf("repo aliases: %v", err)
-		}
+		d.saveRepoAliases()
 		if r, ok := d.lineageFiles(); ok {
 			r.Realias()
 		}
