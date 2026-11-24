@@ -3896,6 +3896,7 @@ final class AppModel {
             pruneFolderDefaults(of: id, listed: [])
         }
         localCopy?.listed(machines: listed.map(\.id))
+        MachinePins.keep(WindowDefaults.store, listed: listed.map(\.id))
     }
 
     /// A client for one of the control plane's hosts, connected: first directly over its
