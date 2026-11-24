@@ -267,9 +267,49 @@ func TestWhatWasNotSentGoesAWeekOn(t *testing.T) {
 	}
 }
 
-// A host keeps KeptLimit requests at most, not sent ones too: a new one pushes out the oldest
-// not sent (#3647).
-func TestAHostKeepsAtMostKeptLimitWithWhatWasNotSent(t *testing.T) {
+func TestAWaitingRequestExpiresAfterNinetyDaysAndRefreshesItsPersonsList(t *testing.T) {
+	h := newHarness(t)
+	h.link(h.add(), devbox, "agents-devbox")
+	kept := h.keeper()
+	mustKeep(t, kept.Keep(devbox, MethodAgentsPrompt, promptParams("wait"), h.caller, nil))
+	kept.mu.Lock()
+	entry := &kept.kept[devbox][0]
+	entry.record.At = records.Stamp{Time: time.Now().Add(-KeptWaitingFor - time.Hour)}
+	data, err := records.Encode(entry.record)
+	if err != nil {
+		kept.mu.Unlock()
+		t.Fatal(err)
+	}
+	if _, err := h.store.Put(context.Background(), entry.key, data, store.Always); err != nil {
+		kept.mu.Unlock()
+		t.Fatal(err)
+	}
+	kept.mu.Unlock()
+	if n := kept.Expire(time.Now()); n != 1 || len(kept.All()) != 0 {
+		t.Fatalf("expired %d; kept %v", n, kept.All())
+	}
+	if !h.router.heard(NoticeKeptChanged) {
+		t.Fatal("the person's kept-request list was not refreshed")
+	}
+	if keys, _ := h.store.List(context.Background(), KeptPrefix+devbox+"/"); len(keys) != 0 {
+		t.Fatalf("expired payload remains stored: %v", keys)
+	}
+}
+
+func TestKeptPayloadByteBounds(t *testing.T) {
+	if KeptBytes != KeptLimit*KeptRecordBytes {
+		t.Fatalf("kept bytes = %d", KeptBytes)
+	}
+	if KeptBytes != 800<<20 {
+		t.Fatalf("expected 800 MiB, got %d", KeptBytes)
+	}
+	if KeptRecordBytes != 40<<20 {
+		t.Fatalf("record bytes = %d", KeptRecordBytes)
+	}
+}
+
+// Person-owned failed requests are not evicted when a host reaches KeptLimit.
+func TestAHostRefusesAtKeptLimitWithoutEvictingFailedRequests(t *testing.T) {
 	h := newHarness(t)
 	h.link(h.add(), devbox, "agents-devbox")
 	h.provider.set("", "Error: droplet is locked", 0)
@@ -282,17 +322,16 @@ func TestAHostKeepsAtMostKeptLimitWithWhatWasNotSent(t *testing.T) {
 		}
 		return true
 	}
-	var first KeptRequest
 	for i := range KeptLimit {
-		s := keptSummary(t, kept.Keep(devbox, MethodAgentsPrompt, promptParams(fmt.Sprint("go ", i)), h.caller, nil))
-		if i == 0 {
-			first = s
-		}
+		mustKeep(t, kept.Keep(devbox, MethodAgentsPrompt, promptParams(fmt.Sprint("go ", i)), h.caller, nil))
 		eventually(t, allFailed)
 	}
-	mustKeep(t, kept.Keep(devbox, MethodAgentsPrompt, promptParams("one more"), h.caller, nil))
+	f := kept.Keep(devbox, MethodAgentsPrompt, promptParams("one more"), h.caller, nil)
+	if f == nil || f.Code != CodeHostOffline {
+		t.Fatalf("over-limit request was not refused: %v", f)
+	}
 	all := kept.All()
-	if len(all) != KeptLimit || all[0].ID == first.ID || all[len(all)-1].Text != "one more" {
+	if len(all) != KeptLimit || all[0].Text != "go 0" || all[len(all)-1].Text != fmt.Sprint("go ", KeptLimit-1) {
 		t.Fatalf("kept %d: %v", len(all), all)
 	}
 	if keys, _ := h.store.List(context.Background(), KeptPrefix+devbox+"/"); len(keys) != KeptLimit {
