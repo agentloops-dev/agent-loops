@@ -1,6 +1,7 @@
 package agentsd
 
 import (
+	"bytes"
 	"os"
 	"strings"
 	"testing"
@@ -96,12 +97,12 @@ func TestSaidSearchKeepsTheOpenChatsLineIndex(t *testing.T) {
 	must(t, errOnly(d.Store.Append(open, user("Write the docs"))))
 	must(t, errOnly(d.Store.Append(open, user("And the tests"))))
 	ends, err := d.Store.LineEnds(open)
-	if err != nil || len(ends) != 2 {
+	if err != nil || ends.Total() != 2 {
 		t.Fatalf("ends %v %v", ends, err)
 	}
 	path := d.Store.Loc.Transcript(string(open))
 	b, _ := os.ReadFile(path)
-	b[ends[0]-1] = ' '
+	b[bytes.IndexByte(b, '\n')] = ' '
 	if err := os.WriteFile(path, b, 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +113,7 @@ func TestSaidSearchKeepsTheOpenChatsLineIndex(t *testing.T) {
 	if len(said.Matches) != 40 || len(listed) != 40 {
 		t.Fatalf("%d said, %d listed", len(said.Matches), len(listed))
 	}
-	if ends, _ := d.Store.LineEnds(open); len(ends) != 2 {
-		t.Fatalf("the search pushed the open chat's line index out: %d lines on a fresh scan", len(ends))
+	if ends, _ := d.Store.LineEnds(open); ends.Total() != 2 {
+		t.Fatalf("the search pushed the open chat's line index out: %d lines on a fresh scan", ends.Total())
 	}
 }

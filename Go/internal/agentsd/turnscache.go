@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/diskjson"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -29,6 +30,8 @@ type turnState struct {
 	// asks is the lines that are an ask, up to scanned.
 	asks    []int
 	scanned int
+	// first is the first line kept, where the first turn starts (#6706).
+	first int
 	// people is the lines of asks that are the person's, in order: what numbers the
 	// Prompts list from the first prompt (#1862).
 	people []int
@@ -50,12 +53,12 @@ type turnBook struct {
 // starts is where each turn starts: the first line, then every ask after it. The last is
 // the turn still going.
 func (t *turnState) starts(total int) []int {
-	if total == 0 {
+	if total <= t.first {
 		return nil
 	}
-	out := []int{0}
+	out := []int{t.first}
 	for _, a := range t.asks {
-		if a != 0 {
+		if a > t.first {
 			out = append(out, a)
 		}
 	}
@@ -82,7 +85,7 @@ func (d *Daemon) turns(r wire.TurnsRequest) (wire.TurnsPage, error) {
 	if err != nil {
 		return wire.TurnsPage{}, err
 	}
-	starts := t.starts(len(ends))
+	starts := t.starts(ends.Total())
 	closed := max(0, len(starts)-1)
 	end := closed
 	if r.Before != nil {
@@ -98,7 +101,7 @@ func (d *Daemon) turns(r wire.TurnsRequest) (wire.TurnsPage, error) {
 	if err := d.makeTurns(r.AgentID, t, needed, starts, ends); err != nil {
 		return wire.TurnsPage{}, err
 	}
-	page := wire.TurnsPage{Turns: []wire.TurnSummary{}, FirstTurn: int64(start)}
+	page := wire.TurnsPage{Turns: []wire.TurnSummary{}, FirstTurn: int64(start), OpenStart: int64(ends.First())}
 	if len(starts) > 0 {
 		page.OpenStart = int64(starts[len(starts)-1])
 	}
@@ -132,14 +135,17 @@ func (d *Daemon) turns(r wire.TurnsRequest) (wire.TurnsPage, error) {
 
 // currentTurns is what is known of a chat's turns, brought up to the end of its
 // transcript. Called with turnMu held.
-func (d *Daemon) currentTurns(id wire.UUID, ends []int64) (*turnState, error) {
-	total := len(ends)
+func (d *Daemon) currentTurns(id wire.UUID, ends store.Lines) (*turnState, error) {
+	total := ends.Total()
 	if d.turnsOf == nil {
 		d.turnsOf = map[wire.UUID]*turnState{}
 	}
 	t := d.turnsOf[id]
+	if t != nil && t.first != ends.First() { // trimmed since: its turns start elsewhere
+		t = nil
+	}
 	if t == nil {
-		t = &turnState{known: d.readTurns(id), later: map[int]wire.TurnSummary{}}
+		t = &turnState{first: ends.First(), known: d.readTurns(id), later: map[int]wire.TurnSummary{}}
 		if err := d.checkKept(id, t, ends); err != nil {
 			return nil, err
 		}
@@ -174,6 +180,13 @@ func (d *Daemon) currentTurns(id wire.UUID, ends []int64) (*turnState, error) {
 		}
 	}
 	t.scanned = total
+	d.dropMoved(id, t)
+	return t, nil
+}
+
+// dropMoved lets go the summaries whose turns are elsewhere now.
+func (d *Daemon) dropMoved(id wire.UUID, t *turnState) {
+	total := t.scanned
 	// The kept summaries hold only while each still starts and ends where its turn does.
 	starts := t.starts(total)
 	closed := max(0, len(starts)-1)
@@ -190,17 +203,16 @@ func (d *Daemon) currentTurns(id wire.UUID, ends []int64) (*turnState, error) {
 			delete(t.later, p)
 		}
 	}
-	return t, nil
 }
 
-func (d *Daemon) isAskLine(id wire.UUID, ends []int64, line int) bool {
+func (d *Daemon) isAskLine(id wire.UUID, ends store.Lines, line int) bool {
 	ask, _ := d.askAt(id, ends, line)
 	return ask
 }
 
 // askAt is whether the line starts a turn, and whether the person sent it.
-func (d *Daemon) askAt(id wire.UUID, ends []int64, line int) (ask, person bool) {
-	if line >= len(ends) {
+func (d *Daemon) askAt(id wire.UUID, ends store.Lines, line int) (ask, person bool) {
+	if line >= ends.Total() {
 		return false, false
 	}
 	entries, _, err := d.Store.Entries(id, ends, line, line+1)
@@ -220,7 +232,7 @@ const lateAnswerLookBack = 8
 // bringsLateAnswer is startsTurn(after:) for the app's prompt: the one that brings the
 // answer to a form left open (#1641) starts a turn, so the answer is drawn at the end of
 // the turn that asked (#2934).
-func (d *Daemon) bringsLateAnswer(id wire.UUID, ends []int64, line int, e *wire.TranscriptEntry) bool {
+func (d *Daemon) bringsLateAnswer(id wire.UUID, ends store.Lines, line int, e *wire.TranscriptEntry) bool {
 	u := e.Kind.UserMessage
 	if u == nil || u.From == nil || *u.From != wire.PromptOriginApp {
 		return false
@@ -247,19 +259,19 @@ func isPersonsPrompt(e *wire.TranscriptEntry) bool {
 // checkKept is checkKept: the kept turns hold while each starts on the entry it began
 // with and an ask is still where the last ends. The last is checked first; only when it
 // fails is each looked at, and the file cut back to before the first that does not hold.
-func (d *Daemon) checkKept(id wire.UUID, t *turnState, ends []int64) error {
+func (d *Daemon) checkKept(id wire.UUID, t *turnState, ends store.Lines) error {
 	known := t.known
 	if len(known) == 0 {
 		return nil
 	}
 	begins := func(s wire.TurnSummary) bool {
-		if int(s.Start) >= len(ends) {
+		if int(s.Start) >= ends.Total() {
 			return false
 		}
 		entries, _, err := d.Store.Entries(id, ends, int(s.Start), int(s.Start)+1)
 		return err == nil && len(entries) == 1 && entries[0].ID == s.ID
 	}
-	joined := known[0].Start == 0
+	joined := int(known[0].Start) == t.first
 	for i := 1; joined && i < len(known); i++ {
 		joined = known[i-1].End == known[i].Start
 	}
@@ -267,7 +279,7 @@ func (d *Daemon) checkKept(id wire.UUID, t *turnState, ends []int64) error {
 	if !joined || !begins(last) || !d.isAskLine(id, ends, int(last.End)) {
 		holding := 0
 		for holding < len(known) {
-			want := int64(0)
+			want := int64(t.first)
 			if holding > 0 {
 				want = known[holding-1].End
 			}
@@ -298,7 +310,7 @@ func (d *Daemon) checkKept(id wire.UUID, t *turnState, ends []int64) error {
 }
 
 // makeTurns makes the summaries of the turns at these positions, from one read, for later.
-func (d *Daemon) makeTurns(id wire.UUID, t *turnState, positions []int, starts []int, ends []int64) error {
+func (d *Daemon) makeTurns(id wire.UUID, t *turnState, positions []int, starts []int, ends store.Lines) error {
 	if len(positions) == 0 {
 		return nil
 	}
@@ -307,7 +319,7 @@ func (d *Daemon) makeTurns(id wire.UUID, t *turnState, positions []int, starts [
 	if err != nil {
 		return err
 	}
-	if len(ends) < starts[last+1] {
+	if ends.Total() < starts[last+1] {
 		return errShrunk
 	}
 	i := 0
@@ -373,7 +385,7 @@ func (d *Daemon) fillTurnsSoon(id wire.UUID) {
 			ends, err := d.Store.LineEnds(id)
 			starts := t.starts(t.scanned)
 			p := len(t.known)
-			if err != nil || p+1 >= len(starts) || len(ends) < t.scanned {
+			if err != nil || p+1 >= len(starts) || ends.Total() < t.scanned || ends.First() != t.first {
 				d.turnMu.Unlock()
 				return
 			}

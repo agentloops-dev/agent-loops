@@ -58,18 +58,27 @@ func TestRetentionDeletesOldArchivedAgents(t *testing.T) {
 		t.Fatalf("no archive time stamped: %+v", a.ArchivedAt)
 	}
 
-	// Forever deletes nothing, however old.
+	// Forever is 90 days, and a pin holds no longer (#6677).
 	must(t, os.MkdirAll(d.SettingsDir, 0o700))
 	must(t, os.WriteFile(filepath.Join(d.SettingsDir, "retention.json"), []byte(`{"keepFor":"forever"}`), 0o600))
-	clock.add(365 * 24 * time.Hour)
+	if d.keepFor() != wire.RetentionKeepForDays90 {
+		t.Fatal(d.keepFor())
+	}
 	if n := d.sweepArchived(); n != 0 || d.Store.Agent(recent.ID) == nil {
-		t.Fatalf("forever deleted %d", n)
+		t.Fatalf("forever deleted %d within 90 days", n)
+	}
+	clock.add(31 * 24 * time.Hour) // the pinned one was archived 91 days ago
+	if count, _ := d.dueArchived(d.keepFor()); count != 1 {
+		t.Fatalf("%d due", count)
+	}
+	if n := d.sweepArchived(); n != 1 || d.Store.Agent(pinned.ID) != nil || d.Store.Agent(recent.ID) == nil {
+		t.Fatalf("forever deleted %d past 90 days", n)
 	}
 
 	// Seven days: the recent one goes too; a value this build cannot read is 30 days.
 	must(t, os.WriteFile(filepath.Join(d.SettingsDir, "retention.json"), []byte(`{"keepFor":"days7"}`), 0o600))
 	clock.set(time.Date(2026, 10, 19, 12, 0, 0, 0, time.UTC))
-	if n := d.sweepArchived(); n != 1 || d.Store.Agent(recent.ID) != nil || d.Store.Agent(pinned.ID) == nil || d.Store.Agent(noTime.ID) == nil {
+	if n := d.sweepArchived(); n != 1 || d.Store.Agent(recent.ID) != nil || d.Store.Agent(noTime.ID) == nil {
 		t.Fatalf("days7 deleted %d", n)
 	}
 	must(t, os.WriteFile(filepath.Join(d.SettingsDir, "retention.json"), []byte(`{"keepFor":"days1000"}`), 0o600))
