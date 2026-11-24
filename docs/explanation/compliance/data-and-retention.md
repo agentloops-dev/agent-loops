@@ -212,7 +212,7 @@ the other copies of the control plane learn that it went. A removed person's sta
 | Projects' folders | document | Each machine's joined folders | 1,000 | Hourly |
 | Machine locks | log | Each person's lock chain | 4,096 entries a person. Deleted when the person is removed (#3647) | On **Reset** and on remove |
 | A person's settings and secrets | key-value; secret | Settings that follow a person; secrets, sealed | 256 KiB of settings, 200 secrets of 16 KiB | When the person is removed |
-| Channel links | document | Which person a channel identity is | No count limit | On unlink or when the person is removed |
+| Channel links | document | Which person a channel identity is, and when it last acted | 4 KiB a record and 1 MiB in all: an approval over that is refused, and the request still waits. No link is evicted. A link goes 90 days after its identity last acted; a message from it renews the link (noted once a day). After that, a message asks the person again (#6763) | Size before an approval, age hourly; also on unlink, or when the person is removed |
 | Machine set-up | document | Each machine's set-up steps | One a machine, deleted when the machine is removed. No age. | On remove |
 | Machine set-up times | time series | How long each set-up step took, and when it ended | 90 days, 50 a step (#6760), 32 KiB at most. No roll-up. | On write, hourly |
 | Machine versions | log | Each machine's version and its updates | 20 updates a machine, deleted when the machine is removed. No age. | On write; on remove |
