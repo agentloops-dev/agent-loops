@@ -15,6 +15,7 @@ import (
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/githubmcp"
 	"github.com/agentloops-dev/agent-loops/Go/internal/gitlabmcp"
+	"github.com/agentloops-dev/agent-loops/Go/internal/rolllog"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -222,7 +223,7 @@ func TestAWriteOverTheMCPLogLimitIsSplit(t *testing.T) {
 	l := &hostedLog{path: filepath.Join(t.TempDir(), "mcp-logs", "srv-1.log")}
 	l.write([]byte("first\n"))
 	l.write(bytes.Repeat([]byte("e"), 2*hostedLogLimit+10))
-	for _, p := range []string{l.path, l.path + ".1"} {
+	for _, p := range []string{l.path, rolllog.Previous(l.path)} {
 		fi, err := os.Stat(p)
 		if err != nil || fi.Size() > hostedLogLimit {
 			t.Fatalf("%s: %v %v", p, fi, err)

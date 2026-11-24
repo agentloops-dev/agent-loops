@@ -32,6 +32,7 @@ func supervise(args []string) {
 	// The host's output at each start: the log as it is then (the host opens its own,
 	// rolled, as soon as it starts).
 	out := func() io.Writer { return os.Stderr }
+	// store-bounds: kind=log; size=8MiB; age=7d; applied=on write, at open and every 30 s (#6735)
 	if f, err := rolllog.Open(store.At(root).Log(), rolllog.Limit, false); err == nil {
 		out = func() io.Writer { return f.File() }
 		setLog(f)

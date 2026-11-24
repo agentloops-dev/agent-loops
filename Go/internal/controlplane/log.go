@@ -18,7 +18,7 @@ import (
 
 // Log is ControlLog: every line stamped with the time and its zone, into control.log
 // when serving with one (#93), rolled past 4 MB to control.previous.log (#174) by the
-// shared roller (#1555).
+// shared roller (#1555), which keeps a line 7 days at most (#6901).
 //
 // For an operations team (#2176) it writes JSON lines instead (Configure "json"), one
 // object a line with time, level and msg, and the copy, method, client, person, host and
@@ -67,6 +67,7 @@ func (l *Log) Configure(format, level string) error {
 
 // Take sends every line, and the process's own standard output and error, to file.
 func (l *Log) Take(file string, limit int64) {
+	// store-bounds: kind=log; size=8MiB; age=7d; applied=on write, at open and every 30 s (#6901)
 	f, err := rolllog.Open(file, limit, true)
 	if err != nil {
 		return
@@ -85,10 +86,12 @@ func (l *Log) Take(file string, limit int64) {
 // from before a redeploy, and `docker logs` and a log shipper still see them. What the
 // runtime writes itself (a panic) goes only to standard error.
 func (l *Log) Copy(file string, limit int64) error {
+	// store-bounds: kind=log; size=8MiB; age=7d; applied=on write, at open and every 30 s (#6901)
 	f, err := rolllog.Open(file, limit, false)
 	if err != nil {
 		return err
 	}
+	f.Watch()
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if l.file != nil {

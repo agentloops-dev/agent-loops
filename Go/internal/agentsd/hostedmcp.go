@@ -26,6 +26,7 @@ import (
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/internal/githubmcp"
+	"github.com/agentloops-dev/agent-loops/Go/internal/rolllog"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -44,7 +45,7 @@ import (
 //     one ends the process is let go; the next call starts it again.
 //   - Restarted with backoff when it stops while in use: 1 s, 2 s, 4 s … up to a minute,
 //     back to 1 s once it has run a minute.
-//   - stderr to mcp-logs/<name>-<scope digest>.log in the log folder, rolled at 1 MB. The
+//   - stderr to mcp-logs/<name>-<scope digest>.log in the log folder, rolled at 256 KiB (#6736). The
 //     status keeps its last line.
 //
 // Logged: the server's name and a word, never its command, arguments, environment or any
@@ -55,7 +56,11 @@ import (
 const (
 	hostedLimit      = 8
 	hostedPathPrefix = "/mcp/hosted/"
-	hostedLogLimit   = 1 << 20
+	// The logs of mcp-logs (#6736): a server's is two files of hostedLogLimit, and the folder
+	// is swept to hostedLogsBytes. Between sweeps each server in use (hostedLimit) adds one
+	// hostedLogLimit at most, so the folder stays under 10 MB.
+	hostedLogLimit  = 256 << 10
+	hostedLogsBytes = 7 << 20
 )
 
 var (
@@ -856,73 +861,71 @@ func hostedLogName(k hostedKey) string {
 func (d *Daemon) hostedLogLocked(h *hostedServer) *hostedLog {
 	if h.log == nil && d.Store != nil && d.Store.Loc.Logs != "" {
 		h.log = &hostedLog{path: filepath.Join(d.Store.Loc.Logs, "mcp-logs", hostedLogName(h.key))}
-		dropOldHostedLogs(filepath.Dir(h.log.path), filepath.Base(h.log.path))
+		hostedLogMu.Lock()
+		dropOldHostedLogs(filepath.Dir(h.log.path), time.Now())
+		hostedLogMu.Unlock()
 	}
 	return h.log
 }
 
-// hostedLogsKept is how many servers' logs mcp-logs keeps, each with its rolled .1 (#2292).
-const hostedLogsKept = 32
+// hostedLogMu is held for a write to a log of mcp-logs and for a sweep of the folder, so a
+// sweep never removes a file that a write has open.
+var hostedLogMu sync.Mutex
 
-// dropOldHostedLogs deletes all but the newest hostedLogsKept logs in mcp-logs, never
-// keep's (#2292): a server that is gone, or moved to another scope, leaves its log.
-func dropOldHostedLogs(dir, keep string) {
+func (d *Daemon) sweepHostedLogs(now time.Time) {
+	if d.Store == nil || d.Store.Loc.Logs == "" {
+		return
+	}
+	hostedLogMu.Lock()
+	defer hostedLogMu.Unlock()
+	dropOldHostedLogs(filepath.Join(d.Store.Loc.Logs, "mcp-logs"), now)
+}
+
+// dropOldHostedLogs deletes the files of mcp-logs past their age, and then the ones written
+// longest ago until the rest are hostedLogsBytes (#2292, #6736): a server that is gone, or moved
+// to another scope, leaves its log. Two files of each server in use fit in that, so they stay.
+func dropOldHostedLogs(dir string, now time.Time) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return
 	}
-	type logFile struct {
-		name string
-		at   time.Time
-	}
-	var logs []logFile
+	var files []os.FileInfo
 	for _, e := range entries {
-		if name := e.Name(); strings.HasSuffix(name, ".log") && name != keep {
-			if fi, err := e.Info(); err == nil {
-				logs = append(logs, logFile{name, fi.ModTime()})
-			}
+		if fi, err := e.Info(); err == nil && fi.Mode().IsRegular() {
+			files = append(files, fi)
 		}
 	}
-	if len(logs) < hostedLogsKept {
-		return
-	}
-	sort.Slice(logs, func(i, j int) bool { return logs[i].at.After(logs[j].at) })
-	// One place is keep's.
-	for _, l := range logs[hostedLogsKept-1:] {
-		os.Remove(filepath.Join(dir, l.name))
-		os.Remove(filepath.Join(dir, l.name+".1"))
+	sort.Slice(files, func(i, j int) bool { return files[i].ModTime().After(files[j].ModTime()) })
+	var kept int64
+	for _, fi := range files {
+		if kept += fi.Size(); kept > hostedLogsBytes || rolllog.Expired(fi.ModTime(), now) {
+			kept -= fi.Size()
+			// The next sweep tries again.
+			_ = os.Remove(filepath.Join(dir, fi.Name()))
+		}
 	}
 }
 
-// hostedLog is a file of a server's own, started again past hostedLogLimit.
+// hostedLog is a server's own log.
 type hostedLog struct {
-	mu   sync.Mutex
 	path string
+	// written is how much since the folder was last swept for it.
+	written int
 }
 
 func (l *hostedLog) write(p []byte) {
 	if l == nil {
 		return
 	}
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	// A folder that cannot be made fails the open below, and the log is best effort.
+	hostedLogMu.Lock()
+	defer hostedLogMu.Unlock()
+	// A folder that cannot be made fails the append below. The log is best effort: a write
+	// that fails loses only log lines.
 	_ = os.MkdirAll(filepath.Dir(l.path), 0o700)
-	// A write over the limit goes in parts of the limit (#3687), so no file passes it.
-	for len(p) > 0 {
-		part := p[:min(len(p), hostedLogLimit)]
-		p = p[len(part):]
-		if fi, err := os.Stat(l.path); err == nil && fi.Size()+int64(len(part)) > hostedLogLimit {
-			// A log that cannot be turned over grows past its limit by one part at most.
-			_ = os.Rename(l.path, l.path+".1")
-		}
-		f, err := os.OpenFile(l.path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
-		if err != nil {
-			return
-		}
-		// The server's log is best effort: a write that fails loses only log lines.
-		_, _ = f.Write(part)
-		f.Close()
+	_ = rolllog.Append(l.path, hostedLogLimit, p)
+	if l.written += len(p); l.written >= hostedLogLimit {
+		l.written = 0
+		dropOldHostedLogs(filepath.Dir(l.path), time.Now())
 	}
 }
 
