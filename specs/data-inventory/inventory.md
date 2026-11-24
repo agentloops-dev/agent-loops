@@ -62,7 +62,7 @@ from the root (`agentsd/backups.go:69,72`). It holds nothing else.
 | `<cache>/turns/<ID>.jsonl` | Turn summaries | life. Media base64 is limited (`turns.go:1197`). | with the agent (`store/store.go:217`) | **no** (the backup reads the wrong path) |
 | `erasures.json` | Runtime copies still to erase | 1,000 entries, 3 tries, 7 days (`erasure.go:40-45`) | on write | no |
 | `erased.json` | Every agent deleted here | 10,000 IDs, 400 days | on write | yes |
-| `elsewhere.json` | Sessions started on or from other machines | 200 per list (`elsewhere.go:40`) | on save | no |
+| `elsewhere.json` | Sessions started on or from other machines | 800 entries of 64 KiB; 90 days from when last heard | hourly and on save | no |
 
 ### Events, usage, cost and lineage
 
@@ -90,7 +90,7 @@ from the root (`agentsd/backups.go:69,72`). It holds nothing else.
 | `workflows.json`: runs | Workflow runs | 7 days (`workflowruns.go:27`) | **at start only** (`workflowruns.go:1054`), and when a run ends | no |
 | `workflows.json`: states | One state per (folder, workflow) ever seen | **none.** `GoneSince` (`workflows.go:59`) is declared and never set. | only the app's Remove | no |
 | `workflow-copies/<sha256>` | Approved workflow and skill text | The copies that the states name (`workflows.go:244`) | after each save | no |
-| `assessments/*.json` | Runtime assessments | newest 50 (`assess.go:208`) | on a new start | no |
+| `assessments/*.json` | Runtime assessments | newest 50; 90 days from the start; 256 KiB per file (`assess_store.go`, #6724) | hourly, on start and on score | no |
 | `mcp-events.json` | Seen MCP event IDs | 2,000 IDs, 7 days (`mcpevents.go:53-56`) | on write | no |
 | `mcp-views/*.json` | View catalogues | pruned (`viewservers.go:369`) | on write | no |
 | `mcp-approvals.json`, `plugin-approvals.json` | Approval digests | **none.** Grows with folders × servers. | MCP: only on explicit remove; plugins: never | no |
@@ -147,7 +147,7 @@ from the root (`agentsd/backups.go:69,72`). It holds nothing else.
 | `worktrees/<name>` + branch `agents/<name>` | Git worktrees agentsd makes | **none, on purpose: user-owned** (#6708, closed as not planned) | when its agent is archived or deleted (#3726, #3877) |
 | `reviews/runtimes/<rt>-<date>.md` | Runtime assessment reports | 1 MiB per report; newest 50 per machine; 90 days; not those git tracks (`assess_reports.go`, #6712) | hourly, on start and on score |
 | `workflows/assess-<id>.md` | Assessment throwaway workflow | **none** | never |
-| `pins.json` | Pinned sessions and hidden views | 10 sessions, 50 hidden views (`pins.go:576,615`) | on write |
+| `pins.json` | Pinned pages, views, sessions and workflows, and hidden views | 10 pages and views, 10 sessions and 10 workflows, 4 KiB a pin; 50 hidden views, 1 KiB each; 128 KiB in all; a write past that is refused (`pins.go`, #6725). No age, on purpose: current state, until removed | on write, on archive |
 | `folder.json`, `policy.json`, `mcp.json`, `personas/`, `skills/`, `plugins/`, `workflows/`, `docs-maps.json`, `marketplaces.json`, `mcp.removed.json`, … | Folder configuration (meant to be committed) | small; `mcp.removed.json` capped (`mcpcatalog/files.go:26`) | edited in place |
 
 ## 3. Outside our folders
@@ -284,7 +284,7 @@ Sessions are signed cookies (30 days); the server keeps nothing for them.
 
 | Store | Holds | Bound | Cleared |
 |---|---|---|---|
-| Defaults `draft.agent.<uuid>`, `draft.new.<folder>`, `draft.start` | Unsent prompts and attachments, ≤512 KiB each | 30 days (`DraftStore.swift:29`); removed on archive (`App/Sources/Chat/DraftKeeper.swift:47,221`) | archive, 30 days, send |
+| Defaults `draft.agent.<uuid>`, `draft.new.<folder>`, `draft.start` | Unsent prompts and attachments, ≤1 MiB each | 40 drafts, a new one over that refused; 30 days (`DraftStore.swift`); removed on archive (`App/Sources/Chat/DraftKeeper.swift`) | archive, 30 days, send |
 | Defaults `newSessionProjectFolders` | Last folder per project | **none** | never |
 | Defaults `sidebar.folds` / `folded` / `openSessions` | Sidebar fold state | `openSessions` 200; **fold sets none** | never |
 | Defaults `sidebar.<window>.width` / `.pane` | Inspector size per folder window | **none** | never |
@@ -302,7 +302,7 @@ Sessions are signed cookies (30 days); the server keeps nothing for them.
 
 | Store | Holds | Bound | Cleared |
 |---|---|---|---|
-| Defaults `draft.agent.<uuid>`, … | Unsent prompts and attachments, ≤512 KiB each | **none.** The Remote never calls `DraftStore.sweep`, so neither the 30 days nor archive applies. iOS loads all of `UserDefaults` at launch. | only on send |
+| Defaults `draft.agent.<uuid>`, … | Unsent prompts and attachments, ≤1 MiB each | As the Mac: 40 drafts, 30 days, archive (`Remote/Sources/StartAgent/StartDraftKeeper.swift`) | archive, 30 days, send |
 | App group `Library/Caches/attention-snapshot.json` | The widget's needs-you rows **with headlines in plain text** | 12 rows; stale after 15 minutes | **not on Forget**: the widget keeps showing the old pairing |
 | Defaults `machineLockPin.*`, `newSessionProjectFolders`, fold sets | As on the Mac | **none** | never |
 | Defaults `liveActivityTurns` | Turns covered by the Live Activity | the activity's sessions | when the activity ends |
@@ -395,11 +395,11 @@ newer than a row above for the same store.
 | `<root>/requests/<id>.json` | document | Open questions and forms | Ended ones 14 days, 1,000 files; an open one has no age | `Go/internal/agentsd/requests.go:27-28` | #6718 |
 | `<root>/lineage-deploys.json` | key-value | Each deploy's last event | 1,000 deploys of 16 KiB each, 90 days from the last event, the oldest first | `Go/internal/agentsd/lineagedeploy.go` (`openDeploys`) | #6719 |
 | `<root>/account-ops.json` | key-value | Last operation of each account and secret | 1,000 entries of 1 KiB each, 90 days, the oldest first | `Go/internal/agentsd/accountops.go` (`openAccountOps`) | #6720 |
+| `<root>/elsewhere.json` | key-value | Sessions on other machines | 800 entries of 64 KiB each, 90 days from when the machines last spoke of the session, the oldest first | `Go/internal/agentsd/elsewhere.go` (`openElsewhere`) | #6722 |
 | `<root>/secret-ops-pending.json` | log | Secret audit entries not yet sent | 1,000 operations of 16 KiB each, 90 days, the oldest first | `Go/internal/agentsd/secretops.go` (`openSecretOpsPending`) | #6721 |
-| `<root>/elsewhere.json` | document | Sessions on other machines | 200 a list, no age | `Go/internal/agentsd/elsewhere.go:39` | #6722 |
 | `<root>/lock-seen.json` | key-value | Replay IDs of signed requests | 4,096 of 128 bytes each, 2 days, the one signed first goes first; a cutoff refuses what went | `Go/internal/agentsd/lockcheck.go` (`openLockSeen`) | #6723 |
-| `<root>/assessments/` | document | Runtime assessments | The newest 50, applied only when one starts | `Go/internal/agentsd/assess.go:251` | #6724 |
-| `<folder>/.agents/pins.json` | key-value | Pinned sessions and hidden views | 10 and 50, no age | `Go/internal/agentsd/pins.go:27,32` | #6725 |
+| `<root>/assessments/` | document | Runtime assessments | The newest 50; 90 days from the start; 256 KiB per file | `Go/internal/agentsd/assess_store.go` | #6724 |
+| `<folder>/.agents/pins.json` | key-value | Pinned pages, views, sessions and workflows, and hidden views | 10 of each and 50; 4 KiB a pin, 1 KiB a hidden view, 128 KiB a folder; until removed (no age, on purpose: a person's choices, committed with the folder) | `Go/internal/agentsd/pins.go` (`pinsFileMost`) | #6725 |
 | `~/.agents/checks/suggestions.json` | document | Daily-check findings and dismissals | 50 findings, 200 dismissals, no age | `Go/internal/agentsd/dailychecks.go:39,49` | #6726 |
 | `~/.agents/mcp.removed.json` | key-value | Removed MCP servers | 20, no age | `Go/internal/agentsd/mcpcatalog/files.go:27` | #6727 |
 | `<root>/review-dismissals.json` | key-value | Dismissed PR links | 200 a folder; until the folder goes | `Go/internal/agentsd/reviews.go:29` | #6728 |
@@ -469,7 +469,7 @@ newer than a row above for the same store.
 | Remote `Caches/copy/` (local copy) | cache | As the Mac's local copy | 50 MiB, 20 chats; 16 MiB a record; 90 days; a machine no longer listed is dropped (#6789) | `Packages/AgentsKit/Sources/AgentsKitCore/Client/LocalCopy.swift` | #6790 |
 | Web IndexedDB `agents` › `copy` | cache | As the Mac's local copy, and Work's pictures | 50 MiB, 20 chats, 2000 pictures; 16 MiB a record; 90 days; a machine no longer listed is dropped (#6792) | `Web/src/model/localCopy.ts` | #6792 |
 | Web `localStorage` `agents.drafts` | document | Drafts | 40, a new one over that refused; attachments under 256 KiB; 30 days since the last edit (#6793) | `Web/src/model/drafts.ts` | #6793 |
-| Mac and Remote defaults `draft.*` | document | Drafts | 512 KiB a draft and 30 days, but no count of drafts | `Packages/AgentsKit/Sources/AgentsKitCore/Model/DraftStore.swift:22-29` | #6794 |
+| Mac and Remote defaults `draft.*` | document | Drafts | 40, a new one over that refused; 1 MiB a draft, 512 KiB of it attachments; 30 days since the last edit (#6794) | `Packages/AgentsKit/Sources/AgentsKitCore/Model/DraftStore.swift` | #6794 |
 | Remote app group `shared-inbox.json` | blob | What was shared to Agent Loops | Each attachment capped; no count, total or age | `Packages/AgentsKit/Sources/AgentsKitCore/Widget/SharedInbox.swift:88,105-118` | #6795 |
 | Mac browser pane `WKWebsiteDataStore.default()` | blob | Cookies and site storage of every site the pane opened | None: only the caches are emptied, at launch; not on Forget | `App/Sources/Sidebar/BrowserPane.swift:171-195` | #6796 |
 | `machinePicker.pinned` (Mac, Remote, web) | key-value | Pinned machines | None; a removed machine's ID stays | `MachinePickerChoice.swift:9-11,86-100; Web/src/model/machinePicker.ts:7` | #6797 |

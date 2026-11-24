@@ -28,6 +28,15 @@ public struct DraftStore: @unchecked Sendable {
     /// permanent, and this is also what catches a conversation that has gone altogether.
     public static let horizon: TimeInterval = 30 * 24 * 60 * 60
 
+    /// The most drafts a scope keeps (#6794), as the web page's `draftsKept`. A draft is a
+    /// person's own, so a new one over this is refused, with a message; none goes to make room.
+    public static let draftsKept = 40
+    /// The most one draft may take as kept: room for `inlineCap` as base64 and long words.
+    public static let draftBytes = 1024 * 1024
+
+    /// What a save did.
+    public enum Saved: Sendable { case kept, full, tooBig }
+
     private let defaults: UserDefaults
     /// Where this store's keys live: `draft.` for the ordinary root, `draft.root:<name>.`
     /// for any other. The ordinary scope's keys go on with `agent.`, `new.` or `start`,
@@ -52,7 +61,10 @@ public struct DraftStore: @unchecked Sendable {
         // A project's draft (#5376), typed before drafts were kept by project: its folder's
         // moves here once, so an update loses nothing.
         guard let former = key.formerKey, let kept = stored(former) else { return nil }
-        save(kept, for: key)
+        // Not `save`: a move is not a new draft, so a full store does not refuse it.
+        if let data = defaults.data(forKey: defaultsKey(for: former)) {
+            defaults.set(data, forKey: defaultsKey(for: key))
+        }
         clear(former)
         return kept
     }
@@ -68,15 +80,27 @@ public struct DraftStore: @unchecked Sendable {
         return draft
     }
 
-    /// Keep this draft, or forget it if there is nothing in it.
-    public func save(_ draft: Draft, for key: DraftKey) {
+    /// Keep this draft, or forget it if there is nothing in it. A refusal changes nothing
+    /// that is kept: `HeldDrafts` holds what was refused.
+    @discardableResult
+    public func save(_ draft: Draft, for key: DraftKey) -> Saved {
         guard !draft.isEmpty else {
             clear(key)
-            return
+            return .kept
         }
         let kept = draft.inlineBytes > Self.inlineCap ? draft.withoutInlineData() : draft
-        guard let data = try? JSONEncoder().encode(kept) else { return }
-        defaults.set(data, forKey: defaultsKey(for: key))
+        guard let data = try? JSONEncoder().encode(kept), data.count <= Self.draftBytes else { return .tooBig }
+        let name = defaultsKey(for: key)
+        // The count reads every key, so only a new draft pays for it.
+        if defaults.object(forKey: name) == nil, draftKeys().count >= Self.draftsKept { return .full }
+        defaults.set(data, forKey: name)
+        return .kept
+    }
+
+    /// The keys of this scope's drafts: not another root's, and not the start form.
+    private func draftKeys() -> [String] {
+        let agents = scopePrefix + DraftKey.agentPrefix, newAgents = scopePrefix + DraftKey.newAgentPrefix
+        return defaults.dictionaryRepresentation().keys.filter { $0.hasPrefix(agents) || $0.hasPrefix(newAgents) }
     }
 
     public func clear(_ key: DraftKey) {
@@ -90,17 +114,16 @@ public struct DraftStore: @unchecked Sendable {
     /// nothing — the sweep can run before the agent list has arrived, and an absence then
     /// is not evidence of anything.
     ///
-    /// This reads every key the defaults hold, so the window runs it once, off the main
-    /// thread, and after that keeps the agents it returns: an agent archived later costs a
+    /// This reads every key the defaults hold, so the window runs it once at launch, off the
+    /// main thread (`HeldDrafts` runs it again only when the store is full), and after that keeps the agents it returns: an agent archived later costs a
     /// look at the drafts that exist, not another pass over the defaults (#176).
     @discardableResult
     public func sweep(archived: Set<UUID>, now: Date) -> Set<UUID> {
-        let agents = scopePrefix + DraftKey.agentPrefix, newAgents = scopePrefix + DraftKey.newAgentPrefix
+        let agents = scopePrefix + DraftKey.agentPrefix
         var kept: Set<UUID> = []
         // Only this scope's drafts: another root's, and the start form, are not this
         // sweep's to judge.
-        for key in defaults.dictionaryRepresentation().keys
-        where key.hasPrefix(agents) || key.hasPrefix(newAgents) {
+        for key in draftKeys() {
             let agentID = key.hasPrefix(agents) ? UUID(uuidString: String(key.dropFirst(agents.count))) : nil
             if let agentID, archived.contains(agentID) {
                 defaults.removeObject(forKey: key)

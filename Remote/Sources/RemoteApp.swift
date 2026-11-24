@@ -115,6 +115,7 @@ struct RemoteApp: App {
                     }
                 }
                 #endif
+                .onAppear { StartDraftKeeper.shared.refused = { [model] in model.report($0) } }
                 // An agent archived, here or anywhere, or more of them arrived: its draft goes,
                 // as on the Mac (#3749). Only the drafts that exist are looked at.
                 .onChange(of: model.work.archivals) { StartDraftKeeper.shared.sweep(agents: model.work) }

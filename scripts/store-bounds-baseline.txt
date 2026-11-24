@@ -61,7 +61,6 @@
 1 Go/internal/agentsd/newapp.go os.WriteFile
 1 Go/internal/agentsd/orglaunch.go os.WriteFile
 1 Go/internal/agentsd/orgroutes.go WriteAtomically
-2 Go/internal/agentsd/pins.go WriteAtomically
 3 Go/internal/agentsd/plugins.go os.WriteFile
 2 Go/internal/agentsd/policy.go WriteAtomically
 1 Go/internal/agentsd/policyfolder.go WriteAtomically
