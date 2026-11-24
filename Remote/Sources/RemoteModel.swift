@@ -347,6 +347,8 @@ final class RemoteModel {
     /// Work's places (#3256), as the window keeps them: the list or the item's page open, and
     /// the ones before and after it, for Back and Forward.
     var workHistory = LineageHistory<WorkPlace>()
+    /// The main scene, for a scene of its own that opens something there (#5475).
+    @ObservationIgnored weak var mainScene: UISceneSession?
     /// Each Work list's filters, sort and rows (#3257), so a page goes through its list and Back finds it as left.
     let workLists = WorkLists()
     /// The person's settings and the names of their secrets (#1760), for Settings ▸ You ▸ Secrets
@@ -498,6 +500,7 @@ final class RemoteModel {
     /// every banner delivered from it.
     func forgetKept() {
         StartDraftKeeper.shared.forgetAll()
+        keptStartFolders = []
         // The copy of its sessions and chats goes with the pairing (#4791).
         Task { [localCopy] in await localCopy?.forget() }
         // Work's cache too (#6357): its items are that control plane's forges'.
@@ -658,8 +661,9 @@ final class RemoteModel {
     /// What has been chosen, by option id. Sent as the start's options.
     var startChosen: [String: JSONValue] = [:] { didSet { persistStartChoices() } }
 
-    var startFolders: [URL] = UserDefaults.standard.stringArray(forKey: "remote.startFolders")?.map { URL(fileURLWithPath: $0) } ?? [] {
-        didSet { UserDefaults.standard.set(startFolders.map(\.path), forKey: "remote.startFolders") }
+    /// The folders added to a new session's reach, on every machine (#6798).
+    var keptStartFolders = StartFolders.read(.standard) {
+        didSet { if keptStartFolders != oldValue { StartFolders.write(keptStartFolders, to: .standard) } }
     }
 
     /// The new agent's own sandbox choice (064). Nil follows its runtime's default.

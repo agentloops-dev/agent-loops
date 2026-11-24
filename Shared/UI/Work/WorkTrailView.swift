@@ -5,6 +5,7 @@ import SwiftUI
 /// plain button in the secondary colour that opens its place; the last, the page itself, is
 /// semibold. Never wraps: a long part is cut in its middle.
 struct WorkTrailView: View {
+    @Environment(\.openWorkWindow) private var openWorkWindow
     let model: any WorkModel
     let parts: [WorkTrail.Part]
 
@@ -15,11 +16,12 @@ struct WorkTrailView: View {
                     Image(icon: "chevron.compact.right").foregroundStyle(.tertiary).accessibilityHidden(true)
                 }
                 if let target = part.target {
-                    Button(part.words) { model.openTrail(target) }
+                    Button(part.words) { model.openTrail(target, window: openWorkWindow) }
                         .buttonStyle(.plain)
                         .foregroundStyle(.secondary)
                         .truncationMode(.middle)
                         .help(Self.help(target, part.words))
+                        .workWindowMenu(target.place)
                 } else {
                     Text(part.words).fontWeight(.semibold).monospacedDigit().layoutPriority(1)
                 }

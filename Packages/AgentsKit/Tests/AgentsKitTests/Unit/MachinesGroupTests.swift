@@ -55,13 +55,13 @@ struct MachinesGroupTests {
         #expect(MachinesGroup.allTitle(rows.total) == "All Machines (13)")
     }
 
-    @Test func pinsAreKeptAndLetGo() {
+    @Test func pinsAreKeptAndLetGo() throws {
         let box = MachineRef(rawValue: "box"), dev = MachineRef(rawValue: "dev")
-        let one = MachinePins.toggled(box, in: "")
+        let one = try #require(MachinePins.toggled(box, in: ""))
         #expect(MachinePins.pinned(one) == [box])
-        let two = MachinePins.toggled(dev, in: one)
+        let two = try #require(MachinePins.toggled(dev, in: one))
         #expect(MachinePins.pinned(two) == [box, dev])
-        #expect(MachinePins.pinned(MachinePins.toggled(box, in: two)) == [dev])
+        #expect(MachinePins.pinned(try #require(MachinePins.toggled(box, in: two))) == [dev])
         #expect(MachinePins.pinned("").isEmpty)
         #expect(MachinePins.menuTitle(pinned: true) == "Unpin from Sidebar")
     }

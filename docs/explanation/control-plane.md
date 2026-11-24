@@ -184,7 +184,7 @@ plane renews it while it is in use: on each connection, and every hour for a con
 that stays open, once the key is in its last 30 days. Every connection already proves the
 key, so renewal needs nothing from the client and shows no screen. A key that nobody used
 for 90 days is refused as expired. The hourly sweep then forgets a client whose key
-expired (#6757). The Remote and the web page then ask for a new code, as
+expired (#6757), and removes such a machine unless it is linked to a provider's workspace (#6758). The Remote and the web page then ask for a new code, as
 they do for a forgotten one. A key paired before this counts from when it was last used.
 `agents-control serve --key-days N` (or `AGENTS_CONTROL_KEY_DAYS`) sets a shorter
 lifetime; 90 days is the most.

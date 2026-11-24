@@ -78,8 +78,10 @@ tick **Also forget** that name. If another server still names it, the secret sta
 sheet says so.
 
 Your own `~/.agents/mcp.json` is in no git, so the entry that goes is kept in
-`~/.agents/mcp.removed.json`, in the same shape: copy it back into `mcp.json` to have the
-connector again. That file keeps the last 20 (#2195). A folder's `.agents/mcp.json` is
+`~/.agents/mcp.removed.json`, under its name: copy its `entry` back under that name in
+`mcpServers` in `mcp.json` to have the connector again. That file keeps each entry for 90
+days, and at most 100 (#2195, #6727). When it is full, **Remove…** says so and takes nothing
+out until you delete an entry from it. A folder's `.agents/mcp.json` is
 committed, so git brings back what was committed.
 
 If you add a connector whose name is one you wrote into `mcp.json` yourself, the app leaves

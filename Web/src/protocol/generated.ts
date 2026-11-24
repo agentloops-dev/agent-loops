@@ -12951,7 +12951,7 @@ export interface Request {
   answeredBy?: AuditActor;
   /** A summary for the row; never a secret's value. */
   answer?: string;
-  droppedWhy?: RequestDroppedWhy;
+  droppedWhy?: RequestEndedWhy;
   /**
    * Later (#4233): the request is still open, but out of Needs you, the counts and the notices
    * until it comes back. Absent when it is not deferred; an answer or a drop clears it.
@@ -13016,6 +13016,18 @@ export type RequestDroppedWhy =
   | "forgeClosed"
   | "restarted"
   | "byPerson";
+
+/**
+ * Why a request was dropped, on its record: a RequestDroppedWhy, which a caller can give, or
+ * expired, which only the host says (#6718).
+ */
+export type RequestEndedWhy =
+  | "askerEnded"
+  | "folderArchived"
+  | "forgeClosed"
+  | "restarted"
+  | "byPerson"
+  | "expired";
 
 /** The forge item a request is (spec 3862 §4). */
 export interface RequestForge {
