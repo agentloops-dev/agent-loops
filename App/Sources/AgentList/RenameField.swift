@@ -6,11 +6,12 @@ import SwiftUI
 /// once, and only the one the field is for shows it.
 struct Renaming: Equatable {
     var id: UUID
-    var place: Place = .row
+    var place: Place = .row(nil)
 
     enum Place: Equatable {
-        /// Its row in a sidebar.
-        case row
+        /// Its row in a sidebar. A session can have two, a smart group's and its folder's
+        /// (#5917): the one asked in, or nil until the first in sight takes it.
+        case row(UUID?)
         /// The main window's toolbar, over its chat.
         case mainWindow
         /// A folder's own window's toolbar (#1089).

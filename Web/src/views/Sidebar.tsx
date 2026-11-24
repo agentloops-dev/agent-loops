@@ -14,7 +14,7 @@
 // from a row under it. The menu key, Shift-F10 or a right click opens a row's menu.
 import { healthTally, folderServers } from "../model/hostedMCP";
 import { signal, useSignal } from "@preact/signals";
-import { useEffect } from "preact/hooks";
+import { useEffect, useRef } from "preact/hooks";
 import type { ComponentChildren } from "preact";
 import { byBack, laterWords } from "../model/later";
 import { FolderSettingsModal, ProjectSettingsModal } from "./ProjectSettings";
@@ -373,17 +373,6 @@ function startedByOf(store: Store, id: string): string | undefined {
   return undefined;
 }
 
-/** A folder's live sessions as its group lists them (#3278): those no smart group lists, newest started first. */
-function listedSessions(store: Store, host: string, folder: string, parsed: LabelQuery | undefined,
-  on: ReadonlySet<SmartRow>): Agent[] {
-  const live = liveSessions(store, host, folder);
-  const pins = store.sessionPinsIn(host, folder);
-  const keptID = !parsed && keptInUnread.value?.host === host ? keptInUnread.value.id : undefined;
-  const keptAgent = keptID ? live.find((a) => a.id === keptID) : undefined;
-  const kept = keptAgent && keepsInUnread(keptAgent, pins, on, keeper(keptInUnread.value?.hadFile ?? false, on)) ? keptAgent.id : undefined;
-  return folderSessions(live, pins, parsed, kept, on);
-}
-
 function liveSessions(store: Store, host: string, folder: string): Agent[] {
   const state = alone.value ? "any" : stateFilter.value;
   return store.folderView(host, folder).headings.flatMap((h) => h.agents).filter((a) => keptByState(a, state));
@@ -482,7 +471,7 @@ function SmartFold({ row, store, folders, places, query, linkDown, readSince }: 
     const found = new Map<Agent, Placed>();
     for (const placed of folders) {
       const live = liveSessions(store, placed.host.id, placed.folder.folder.folder);
-      // The pinned are in Pinned alone: each session is listed once (#587).
+      // Of the groups at the top, the pinned are in Pinned alone (#587).
       const pins = store.sessionPinsIn(placed.host.id, placed.folder.folder.folder);
       // A failed workflow run's agent is its workflow's row under Needs You, not a session too (#989);
       // an asker, its requests' rows (#3864), in Needs You or in Later (#4236).
@@ -638,7 +627,7 @@ function LaterGroup({ open, count, children }: { open: boolean; count: number; c
 /**
  * One folder (#495): a group headed by its row, then its pinned pages, its live sessions newest
  * started first with their state the row's mark, its Workflows fold (#885), and one Archived row
- * opening a page. Its pinned sessions and workflows are in Pinned at the top. A search unfolds every folder
+ * opening a page. Its pinned workflows are in Pinned at the top. A search unfolds every folder
  * with something that matches, its archived matches inline, and hides the rest. It reads its own
  * folder's agents alone, so a change to an agent draws one fold again, and a folded one reads
  * nothing of its sessions (#170). `query` is the search's words, already trimmed.
@@ -689,22 +678,16 @@ const FolderFold = memo(function FolderFold({ store, host, folder: summary, quer
   // The matcher is made once per fold, not per row.
   const parsed = searching ? { ...parseQuery(query), said: store.saidLines.value, onIssue: store.issueSessions.value, issueHeadings: store.issueHeadings.value } : undefined;
   const live = view.headings.flatMap((h) => h.agents).filter((a) => isAlone || keptByState(a, stateFilter.value));
-  // Those a group at the top lists are there alone (#495, #587), out of the folder's list. A
-  // group turned off (#846) lists nothing, so its sessions are here unless the next group has them.
   const on = smartGroupsOn.value;
-  const pins = store.sessionPinsIn(host.id, folder);
-  // The one Unread keeps while it is open is listed there, not here too (#689).
-  const keptID = !parsed && keptInUnread.value?.host === host.id ? keptInUnread.value.id : undefined;
-  const keptAgent = keptID ? live.find((a) => a.id === keptID) : undefined;
-  const kept = keptAgent && keepsInUnread(keptAgent, pins, on, keeper(keptInUnread.value?.hadFile ?? false, on)) ? keptAgent.id : undefined;
   // The project's other folders' live sessions too (#3278), each still its own folder's.
   const elsewhere = new Map<string, Placed>();
   const theirs = !unfolded ? [] : others.flatMap((placed) => {
-    const listed = listedSessions(store, placed.host.id, placed.folder.folder.folder, parsed, on);
+    const listed = folderSessions(liveSessions(store, placed.host.id, placed.folder.folder.folder), parsed);
     for (const agent of listed) elsewhere.set(agent.id, placed);
     return listed;
   });
-  const found = !unfolded ? [] : [...folderSessions(live, pins, parsed, kept, on), ...theirs].sort(byStart);
+  // Every live one, those a group at the top lists too (#5917).
+  const found = !unfolded ? [] : [...folderSessions(live, parsed), ...theirs].sort(byStart);
   const archivedFound = !unfolded || !parsed ? [] : view.archived.filter((a) => queryMatches(parsed, a));
   // A search for an epic (#3900): what it found here, live and archived, under a heading for each of its issues.
   const byIssue = parsed && groupsByIssue(parsed) ? issueGroups([...found, ...archivedFound], parsed) : [];
@@ -1016,7 +999,7 @@ export const SidebarSession = memo(function SidebarSession({ store, host, folder
     ...sessionActions(agent, store.sessionPinsIn(host, folder).includes(agent.id), startedBy(store, host, agent),
       store.has(host, Capability.mute1), canMoveOn(store, host), store.has(host, Capability.agentsStartNow1)).map(({ action, label: words, help, shortcut }) => ({
       label: words, help, disabled: down || !!store.onItsWay.value[agent.id], ...shortcut ? { shortcut } : {},
-      run: () => runSessionAction(store, host, agent, action),
+      run: () => action === "rename" ? renameHere() : runSessionAction(store, host, agent, action),
     })),
     // A question it asked, out of Needs You for an hour, as l does (#4796).
     ...laterItem(store, host, agent, down),
@@ -1034,6 +1017,15 @@ export const SidebarSession = memo(function SidebarSession({ store, host, folder
   ];
   // Into its folder's drop box, never its worktree (#231).
   const drop = useDropboxDrop(store, host, folder, down);
+  // A session a group at the top lists has a second row in its folder (#5917): its title is edited in one,
+  // the row it was asked in, else the first in sight to take it.
+  const self = useRef({}).current;
+  const renaming = store.renaming.value?.id === agent.id && !store.renaming.value.inChat;
+  useEffect(() => {
+    const now = store.renaming.peek();
+    if (renaming && now && !now.row) store.renaming.value = { ...now, row: self };
+  }, [renaming]);
+  const renameHere = () => { store.renaming.value = { id: agent.id, inChat: false, row: self }; };
   const parent = tree !== undefined && tree.children > 0;
   // A folded parent's mark is the most urgent of it and the sessions it started (#835).
   const markAgent = parent && !tree.isUnfolded ? markAgentOf(agent, startedBy(store, host, agent)) : undefined;
@@ -1049,10 +1041,10 @@ export const SidebarSession = memo(function SidebarSession({ store, host, folder
       onDblClick={(e) => {
         if (agent.state === "archived" || (e.target as HTMLElement).closest(".fold-count, .renaming")) return;
         e.preventDefault();
-        runSessionAction(store, host, agent, "rename");
+        renameHere();
       }}>
       {/* No wait lines: in the sidebar a session's row is its title and one line (#587). */}
-      {store.renaming.value?.id === agent.id && !store.renaming.value.inChat
+      {renaming && store.renaming.value?.row === self
         ? <div class="row session renaming"><RenameInput store={store} host={host} agent={agent} /></div>
         : <SessionRow agent={agent} chosen={chosen} onPick={() => { if (chosen) store.toEndAsks.value++; store.putAwayMove(agent.id); go({ host, folder: folder, session: agent.id }); }} going={going}
         extras={rowExtras(store, host, agent)}

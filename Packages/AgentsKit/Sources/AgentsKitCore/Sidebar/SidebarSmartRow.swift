@@ -22,7 +22,7 @@ import Foundation
 /// folder and not a pass over every agent held; only an open one lists its sessions.
 public enum SidebarSmartRow: String, CaseIterable, Hashable, Sendable {
     /// The pinned sessions (#180) and workflows (#432) of every folder, in the folders'
-    /// order and each folder's pin order. Out of their folders' groups (Alex, #495).
+    /// order and each folder's pin order. The sessions are in their folders' Sessions too (#5917).
     case pinned
     case needsYou, forReview, working, unread
 
@@ -79,7 +79,7 @@ public enum SidebarSmartRow: String, CaseIterable, Hashable, Sendable {
             if self == .pinned {
                 return total + Self.pinnedSessions(in: work, key).count + Self.pinnedWorkflows(in: work, key).count
             }
-            // Less the pinned that would be here: they are listed once, in Pinned (#587).
+            // Less the pinned that would be here: of the smart groups, only Pinned lists them (#587).
             let pinnedHere = Self.pinnedSessions(in: work, key).count {
                 Self.home(of: $0, in: work.group(of: $0), isPinned: false) == self
             }
@@ -107,10 +107,10 @@ public enum SidebarSmartRow: String, CaseIterable, Hashable, Sendable {
         }
     }
 
-    /// Where a live session is listed (#587): once, in the first of the smart groups it
+    /// The smart group that lists a live session (#587): one, the first of those it
     /// belongs to — Pinned, Needs You (asking, blocked, or asking to be archived, #773),
-    /// For Review (done, with a file to see, #3194), Working, Unread — or, in none of
-    /// them, under its folder. Nil for its folder.
+    /// For Review (done, with a file to see, #3194), Working, Unread — or nil for none.
+    /// Its folder's Sessions list it as well, whichever it is (#5917).
     /// A group turned off (#846) is passed over: its sessions go to the next one they
     /// fit, so one unread that asks to be archived goes to Unread with Needs You off.
     public static func home(of agent: Agent, in group: AgentGroup, isPinned: Bool,
@@ -137,8 +137,7 @@ public enum SidebarSmartRow: String, CaseIterable, Hashable, Sendable {
     }
 
     /// The session Unread keeps (#495): opened from it, read now, and listed there until
-    /// another is opened, so it does not leave under the pointer. Until then it is not under
-    /// its folder too (#689). Nil while searching, or once it belongs elsewhere: archived,
+    /// another is opened, so it does not leave under the pointer. Nil while searching, or once it belongs elsewhere: archived,
     /// pinned, waiting, working or asking to be archived. For Review keeps the one opened
     /// from it in the same way (`keeper`, #3194); `keptBy` is the group asking.
     @MainActor
@@ -245,7 +244,7 @@ public enum SidebarSmartRow: String, CaseIterable, Hashable, Sendable {
                 .flatMap { group in (shelf.groups[group] ?? []).filter { !Self.isForReview($0, in: group) } }
                 .filter { $0.showsUnread && !$0.asksToArchive }
             }
-            // A pinned session is listed in Pinned and nowhere else (#587); a failed run's
+            // Of the smart groups, only Pinned lists a pinned session (#587); a failed run's
             // agent, as its workflow's row (#989); an asker, as its requests' rows (#3864).
             let hidden = Set(work.pinnedSessions(in: key.folder))
                 .union(self == .needsYou ? Self.failedRuns(in: work, key).union(Self.askers(in: work, key)) : [])

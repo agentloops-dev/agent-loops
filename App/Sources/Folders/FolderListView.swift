@@ -716,9 +716,7 @@ struct FolderFold: View {
         // heading is the shared model's, which the Remote draws too (#226).
         let on = smartGroups ?? SidebarSmartRow.on(off: smartOff)
         let fold = SidebarFolderFold(key, label: label, in: model.work, query: query,
-                                      isOpen: folds.isOpen(key), keptInUnread: model.keptInUnread,
-                                      keptBy: SidebarSmartRow.keeper(fileToSee: model.keptHadFile, on: on), on: on,
-                                      alsoIn: group.otherKeys)
+                                      isOpen: folds.isOpen(key), on: on, alsoIn: group.otherKeys)
         let isOpen = fold.isUnfolded
         if fold.isShown {
             Section(isExpanded: Binding(
@@ -733,8 +731,8 @@ struct FolderFold: View {
                     // Then its servers' list views, without a pin (#2032).
                     ServerViewRows(folder: key)
                 }
-                // Its pinned sessions and workflows are in Pinned at the top (#495).
-                // Then every other live session, newest first, its state a mark on the
+                // Its pinned workflows are in Pinned at the top (#495).
+                // Then every live session, those a smart group lists too (#5917), newest first, its state a mark on the
                 // row rather than a heading over it (#495). Each under the session that
                 // started it, folded (#835). Under a Sessions row, as the workflows are
                 // under theirs (#2312), the only layout (#2381); not in a folder's own
@@ -903,9 +901,12 @@ struct SessionSidebarRow: View {
     var isNested = false
     /// On the Archived Sessions page (#4448): its time is when it was archived.
     var showsArchivedTime = false
+    /// The row's own id: a session a smart group lists has another in its folder (#5917).
+    @State private var rowID = UUID()
 
     var body: some View {
-        AgentRow(agent: agent, isCompact: true, place: place, tree: tree, showsArchivedTime: showsArchivedTime) {
+        AgentRow(agent: agent, isCompact: true, place: place, tree: tree, showsArchivedTime: showsArchivedTime,
+                 rowID: rowID) {
             guard let tree else { return }
             folds?.set(session: agent.id, open: !tree.isUnfolded)
         }
@@ -924,8 +925,13 @@ struct SessionSidebarRow: View {
             // A double-click edits its title in the row, as Return does (#1518).
             .simultaneousGesture(TapGesture(count: 2).onEnded {
                 guard agent.state != .archived else { return }
-                model.renaming = Renaming(id: agent.id)
+                model.renaming = Renaming(id: agent.id, place: .row(rowID))
             })
+            // Asked with a key, which names no row: the first in sight takes the field.
+            .onChange(of: model.renaming) { _, asked in
+                guard asked == Renaming(id: agent.id), model.renaming == asked else { return }
+                model.renaming?.place = .row(rowID)
+            }
             // Into its folder's drop box, never its worktree (#231).
             .dropsIntoDropbox(of: FolderKey(host: agent.host, folder: agent.folderPath))
             // Pin or Unpin (#180), from the other edge.
