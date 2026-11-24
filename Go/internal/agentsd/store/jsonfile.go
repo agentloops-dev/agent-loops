@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log"
 	"os"
 	"slices"
 	"strconv"
@@ -108,7 +109,7 @@ func (f *JSONFile[T]) Update(change func(map[string]T) error) error {
 	if err != nil {
 		return err
 	}
-	f.expire(entries)
+	dropped := f.expire(entries)
 	count := len(entries)
 	before := make(map[string][]byte, count)
 	for key, v := range entries {
@@ -132,12 +133,19 @@ func (f *JSONFile[T]) Update(change func(map[string]T) error) error {
 	if b.Action == Refuse && len(entries) > b.MaxCount && len(entries) > count {
 		return fmt.Errorf("%s: full at %d entries; remove one first: %w", f.spec.Name, b.MaxCount, ErrLimit)
 	}
-	f.expire(entries)
+	dropped += f.expire(entries)
 	// Past the high-water mark the sweep runs at once: the file is being written anyway.
-	if len(entries) > 2*b.MaxCount {
+	if n := len(entries); n > 2*b.MaxCount {
 		f.evict(entries)
+		dropped += n - len(entries)
 	}
-	return f.write(entries, old)
+	if err := f.write(entries, old); err != nil {
+		return err
+	}
+	if dropped > 0 {
+		log.Printf("retention: %d entries of %s past its limits", dropped, f.Name())
+	}
+	return nil
 }
 
 // Sweep takes the file under its limits, and says how many entries went.
@@ -201,9 +209,9 @@ func (f *JSONFile[T]) setAside() error {
 	return nil
 }
 
-// expire dates the entries with no time, and drops those past their age.
-func (f *JSONFile[T]) expire(entries map[string]T) {
-	now := f.now()
+// expire dates the entries with no time, and drops those past their age: how many.
+func (f *JSONFile[T]) expire(entries map[string]T) int {
+	now, count := f.now(), len(entries)
 	for key, v := range entries {
 		at := f.at(&v)
 		switch {
@@ -214,6 +222,7 @@ func (f *JSONFile[T]) expire(entries map[string]T) {
 			delete(entries, key)
 		}
 	}
+	return count - len(entries)
 }
 
 // evict drops what is over the largest entry, then the oldest, for a store that evicts.

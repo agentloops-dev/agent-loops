@@ -1,6 +1,7 @@
 package agentsd
 
 import (
+	"cmp"
 	"context"
 	"crypto/rand"
 	"encoding/json"
@@ -42,7 +43,8 @@ import (
 // (#6464), each with an id of its own: a stop, a send that failed and a link that dropped lose
 // none. The machine sends what waits each time the link comes up, and again secretOpsRetry
 // after a send that failed; the control plane keeps an id it has kept already once. The file
-// keeps at most secretOpsPendingMost, and the oldest goes first, with a log line.
+// is a bounded small file (openSecretOpsPending, #6721): an operation past its limits goes, with
+// a log line, and the audit never has it.
 
 // secretOpsBatch is how long reads wait to go to the audit together; a test makes it shorter.
 var secretOpsBatch = time.Minute
@@ -52,6 +54,16 @@ var secretOpsRetry = time.Minute
 
 // secretOpsPendingMost bounds the operations kept for the audit until it answers.
 const secretOpsPendingMost = 1000
+
+// secretOpsSendMost is how many operations one send has, so that a full file fits the link.
+const secretOpsSendMost = 500
+
+// secretOpMostName and secretOpMostPlace are the longest name and place, in bytes, that the audit
+// is told: a longer one is cut short, so that no operation is over the file's largest entry.
+const (
+	secretOpMostName  = 512
+	secretOpMostPlace = 1024
+)
 
 // secretOpsSaveEvery is how often a last read that only moved on is written down.
 const secretOpsSaveEvery = time.Minute
@@ -68,11 +80,12 @@ type secretOpBook struct {
 	// last is each secret's last operation, by its name: secret-ops.json.
 	last  map[string]wire.SecretOperation
 	saved time.Time
-	// pending is the operations the audit has not answered yet, oldest first, each with its
-	// id: secret-ops-pending.json.
-	pending       []wire.SecretOperation
-	pendingLoaded bool
-	// open is the id of each read in pending that still counts, by secretOpKey: the batch
+	// pending is secret-ops-pending.json: the operations the audit has not answered yet, by id.
+	pending *store.JSONFile[wire.SecretOperation]
+	// unsaved is the operations that pending does not have as they are now, by id: the reads
+	// that still count, and what a write that failed left.
+	unsaved map[string]wire.SecretOperation
+	// open is the id of each read in unsaved that still counts, by secretOpKey: the batch
 	// that timer closes. A send leaves those out until then.
 	open  map[string]string
 	timer *time.Timer
@@ -103,71 +116,111 @@ func (d *Daemon) secretOpsPath() string {
 }
 
 func (d *Daemon) secretOpsPendingPath() string {
-	if d.Store == nil {
-		return ""
-	}
 	return filepath.Join(d.Store.Loc.Root, "secret-ops-pending.json")
 }
 
-// pendingSecretOpsLocked is the operations not yet told, read from disk the first time.
-func (d *Daemon) pendingSecretOpsLocked() []wire.SecretOperation {
-	b := &d.secretOps
-	if !b.pendingLoaded {
-		b.pendingLoaded = true
-		if path := d.secretOpsPendingPath(); path != "" {
-			if raw, err := os.ReadFile(path); err == nil && diskjson.Unmarshal(raw, &b.pending) != nil {
-				log.Printf("secret-ops-pending.json: unreadable, starting afresh")
-				b.pending = nil
-			}
-		}
+// openSecretOpsPending opens the operations not yet told, which evict: a machine that its control
+// plane does not answer must still use its secrets. A file from before #6721 was a list.
+func (d *Daemon) openSecretOpsPending() *store.JSONFile[wire.SecretOperation] {
+	f := smallFile(d, store.Spec{Name: "secret-ops-pending.json", Kind: "log", Scope: "machine",
+		Bounds: store.Bounds{MaxRecordBytes: 16 << 10, MaxCount: secretOpsPendingMost, MaxAge: store.MaxAge, Action: store.EvictOldest}},
+		d.secretOpsPendingPath, func(op *wire.SecretOperation) *wire.Date { return &op.At })
+	var old []wire.SecretOperation
+	data, err := os.ReadFile(d.secretOpsPendingPath())
+	if err != nil || diskjson.Unmarshal(data, &old) != nil {
+		return f
 	}
-	return b.pending
-}
-
-// savePendingSecretOpsLocked writes the operations not yet told, the newest
-// secretOpsPendingMost of them, and removes the file when none waits.
-func (d *Daemon) savePendingSecretOpsLocked() {
-	b := &d.secretOps
-	if over := len(b.pending) - secretOpsPendingMost; over > 0 {
-		log.Printf("secret ops: dropped the oldest %d not yet told to the audit: at most %d wait", over, secretOpsPendingMost)
-		b.pending = slices.Delete(b.pending, 0, over)
+	byID := map[string]wire.SecretOperation{}
+	for _, op := range old {
+		op = boundedSecretOp(op)
+		byID[*op.ID] = op
 	}
-	path := d.secretOpsPendingPath()
-	if path == "" {
-		return
-	}
-	if len(b.pending) == 0 {
-		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-			log.Printf("secret-ops-pending.json: could not remove: %v", err)
-		}
-		return
-	}
-	raw, err := json.Marshal(b.pending)
+	// Not by Update, which would set the list aside as corrupt.
+	raw, err := diskjson.Marshal(byID)
 	if err == nil {
-		err = store.WriteAtomically(path, raw, 0o600)
+		// store-bounds: not a store: the file above, in its new form
+		err = store.WriteAtomically(d.secretOpsPendingPath(), raw, 0o600)
 	}
 	if err != nil {
-		log.Printf("secret-ops-pending.json: could not save: %v", err)
+		log.Printf("secret-ops-pending.json: could not bring over the operations: %v", err)
+		d.secretOps.unsaved = byID
 	}
+	return f
+}
+
+// boundedSecretOp is op with an id, and its name and place cut to their longest.
+func boundedSecretOp(op wire.SecretOperation) wire.SecretOperation {
+	if op.ID == nil || *op.ID == "" {
+		id := rand.Text()
+		op.ID = &id
+	}
+	short := func(s string, most int) string {
+		if len(s) <= most {
+			return s
+		}
+		log.Printf("secret ops: a name or place of %d bytes is cut to %d for the audit", len(s), most)
+		return strings.ToValidUTF8(s[:most], "")
+	}
+	op.Name = short(op.Name, secretOpMostName)
+	if op.Place != nil {
+		place := short(*op.Place, secretOpMostPlace)
+		op.Place = &place
+	}
+	return op
+}
+
+// savePendingSecretOpsLocked writes what is not saved, and lets go of the operations past their
+// age. What a write that failed leaves is bounded too.
+func (d *Daemon) savePendingSecretOpsLocked() {
+	b := &d.secretOps
+	if err := b.pending.Update(func(m map[string]wire.SecretOperation) error {
+		maps.Copy(m, b.unsaved)
+		return nil
+	}); err != nil {
+		log.Printf("secret-ops-pending.json: could not save: %v", err)
+		if over := len(b.unsaved) - secretOpsPendingMost; over > 0 {
+			log.Printf("secret ops: dropped the oldest %d not yet told to the audit: at most %d wait", over, secretOpsPendingMost)
+			for _, op := range oldestSecretOps(b.unsaved)[:over] {
+				delete(b.unsaved, *op.ID)
+			}
+		}
+		return
+	}
+	counting := b.countingLocked()
+	maps.DeleteFunc(b.unsaved, func(id string, _ wire.SecretOperation) bool { return !counting[id] })
+}
+
+// oldestSecretOps is ops, the oldest first, each with its key as its id.
+func oldestSecretOps(ops map[string]wire.SecretOperation) []wire.SecretOperation {
+	out := make([]wire.SecretOperation, 0, len(ops))
+	for id, op := range ops {
+		op.ID = &id
+		out = append(out, op)
+	}
+	slices.SortFunc(out, func(x, y wire.SecretOperation) int {
+		return cmp.Or(cmp.Compare(x.At, y.At), cmp.Compare(*x.ID, *y.ID))
+	})
+	return out
+}
+
+// countingLocked is the ids of the reads that still count.
+func (b *secretOpBook) countingLocked() map[string]bool {
+	counting := map[string]bool{}
+	for _, id := range b.open {
+		counting[id] = true
+	}
+	return counting
 }
 
 // keepSecretOpLocked gives op an id and keeps it until the audit answers.
-func (d *Daemon) keepSecretOpLocked(op wire.SecretOperation) string {
-	id := rand.Text()
-	op.ID = &id
-	d.secretOps.pending = append(d.pendingSecretOpsLocked(), op)
-	d.savePendingSecretOpsLocked()
-	return id
-}
-
-// pendingSecretOpLocked is the operation with id that waits, or nil.
-func (d *Daemon) pendingSecretOpLocked(id string) *wire.SecretOperation {
-	for i, op := range d.secretOps.pending {
-		if op.ID != nil && *op.ID == id {
-			return &d.secretOps.pending[i]
-		}
+func (d *Daemon) keepSecretOpLocked(op wire.SecretOperation) {
+	b := &d.secretOps
+	op = boundedSecretOp(op)
+	if b.unsaved == nil {
+		b.unsaved = map[string]wire.SecretOperation{}
 	}
-	return nil
+	b.unsaved[*op.ID] = op
+	d.savePendingSecretOpsLocked()
 }
 
 // secretOpsLocked is the record, read from disk the first time.
@@ -320,16 +373,19 @@ func (d *Daemon) batchSecretOpLocked(op wire.SecretOperation) {
 	key := secretOpKey(op)
 	// A count goes to disk with the next write of the file: a new entry's, the batch's end,
 	// or the stop.
-	if had := d.pendingSecretOpLocked(b.open[key]); had != nil {
+	if had, ok := b.unsaved[b.open[key]]; ok {
 		n := int64(1)
 		if had.Count != nil {
 			n = *had.Count
 		}
 		n++
 		had.Count = &n
+		b.unsaved[*had.ID] = had
 		return
 	}
-	b.open[key] = d.keepSecretOpLocked(op)
+	op = boundedSecretOp(op)
+	b.open[key] = *op.ID
+	d.keepSecretOpLocked(op)
 	if b.timer == nil {
 		b.timer = time.AfterFunc(secretOpsBatch, d.jobFunc("secretops timer", d.flushSecretOps))
 	}
@@ -364,16 +420,18 @@ func (d *Daemon) sendSecretOps() {
 			b.mu.Unlock()
 			return
 		}
-		counting := map[string]bool{}
-		for _, id := range b.open {
-			counting[id] = true
+		d.savePendingSecretOpsLocked()
+		waiting, err := b.pending.Read()
+		if err != nil {
+			log.Printf("secret-ops-pending.json: could not read: %v", err)
 		}
-		var ops []wire.SecretOperation
-		for _, op := range d.pendingSecretOpsLocked() {
-			if op.ID == nil || !counting[*op.ID] {
-				ops = append(ops, op)
-			}
+		maps.Copy(waiting, b.unsaved)
+		for id := range b.countingLocked() {
+			delete(waiting, id)
 		}
+		ops := oldestSecretOps(waiting)
+		ops = ops[:min(len(ops), secretOpsSendMost)]
+		more := len(ops) < len(waiting)
 		if len(ops) == 0 {
 			b.mu.Unlock()
 			return
@@ -382,38 +440,52 @@ func (d *Daemon) sendSecretOps() {
 		b.mu.Unlock()
 
 		ctx, cancel := context.WithTimeout(d.ctx, secretOpsAsk)
-		_, err := (*ask)(ctx, wire.CallMachineSecretOps.Name, wire.MachineSecretOpsCall{Ops: ops})
+		_, err = (*ask)(ctx, wire.CallMachineSecretOps.Name, wire.MachineSecretOpsCall{Ops: ops})
 		cancel()
 
 		b.mu.Lock()
 		b.sending = false
 		if err != nil {
 			log.Printf("secret ops: the control plane was not told of %d, kept to send again: %v", len(ops), err)
-			if b.retry == nil {
-				b.retry = time.AfterFunc(secretOpsRetry, d.jobFunc("secretops retry", func() {
-					b.mu.Lock()
-					b.retry = nil
-					b.mu.Unlock()
-					d.sendSecretOps()
-				}))
-			}
+			d.retrySecretOpsLocked()
 			b.mu.Unlock()
 			return
 		}
-		told := map[string]bool{}
 		for _, op := range ops {
-			if op.ID != nil {
-				told[*op.ID] = true
-			}
+			delete(b.unsaved, *op.ID)
 		}
-		b.pending = slices.DeleteFunc(b.pending, func(op wire.SecretOperation) bool { return op.ID == nil || told[*op.ID] })
-		d.savePendingSecretOpsLocked()
-		again := b.again
+		if err := b.pending.Update(func(m map[string]wire.SecretOperation) error {
+			for _, op := range ops {
+				delete(m, *op.ID)
+			}
+			return nil
+		}); err != nil {
+			// They go again with the same ids, which the audit keeps once.
+			log.Printf("secret-ops-pending.json: could not let go of the %d told: %v", len(ops), err)
+			d.retrySecretOpsLocked()
+			b.mu.Unlock()
+			return
+		}
+		again := b.again || more
 		b.mu.Unlock()
 		if !again {
 			return
 		}
 	}
+}
+
+// retrySecretOpsLocked sends again in secretOpsRetry.
+func (d *Daemon) retrySecretOpsLocked() {
+	b := &d.secretOps
+	if b.retry != nil {
+		return
+	}
+	b.retry = time.AfterFunc(secretOpsRetry, d.jobFunc("secretops retry", func() {
+		b.mu.Lock()
+		b.retry = nil
+		b.mu.Unlock()
+		d.sendSecretOps()
+	}))
 }
 
 // keepSecretOpsForNextStart writes the reads that still count down with their counts, for the
@@ -428,7 +500,7 @@ func (d *Daemon) keepSecretOpsForNextStart() {
 		}
 	}
 	b.open, b.timer, b.retry = nil, nil, nil
-	if b.pendingLoaded {
+	if len(b.unsaved) > 0 {
 		d.savePendingSecretOpsLocked()
 	}
 }

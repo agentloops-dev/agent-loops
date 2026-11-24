@@ -85,7 +85,7 @@
 1 Go/internal/agentsd/secretcmd.go execfile.Write
 1 Go/internal/agentsd/secrethints.go WriteAtomically
 1 Go/internal/agentsd/secretlist.go WriteAtomically
-2 Go/internal/agentsd/secretops.go WriteAtomically
+1 Go/internal/agentsd/secretops.go WriteAtomically
 2 Go/internal/agentsd/selfupdate.go WriteAtomically
 1 Go/internal/agentsd/selfupdate.go os.Create
 1 Go/internal/agentsd/send.go os.OpenFile
