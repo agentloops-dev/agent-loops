@@ -28,6 +28,7 @@ import (
 const (
 	// store-bounds: kind=document; size=1MiB (16KiB a record, tombstones 1MiB more); age=until-deleted; applied=on write, and the hourly sweep forgets a client whose key expired
 	ClientsPrefix  = "v1/clients/"
+	// store-bounds: kind=document; size=1MiB (32KiB a record, tombstones 1MiB more); age=until-deleted; applied=on write, and the hourly sweep removes a machine with no workspace whose key expired
 	MachinesPrefix = "v1/machines/"
 	// OldMachinesPrefix is where builds before #2316 kept machines: moved to
 	// MachinesPrefix when a store opens or is copied (#2662).
@@ -750,7 +751,8 @@ func (r *Records) SaveHost(ctx context.Context, h MachineRecord) error {
 	}
 	key := HostKey(h.ID)
 	var condition store.Condition
-	if old, ok := r.hosts[h.ID]; ok {
+	old, known := r.hosts[h.ID]
+	if known {
 		a, b := old.record, h
 		a.Rev, b.Rev = 0, 0
 		if same(a, b) {
@@ -765,6 +767,13 @@ func (r *Records) SaveHost(ctx context.Context, h MachineRecord) error {
 		condition = overTombstone(etag, ok)
 	}
 	r.mu.Unlock()
+	if known {
+		if err := r.machineChangeWithin(ctx, old.record, h); err != nil {
+			return err
+		}
+	} else if err := r.newMachineWithin(ctx, h); err != nil {
+		return err
+	}
 	kept, etag, err := write(ctx, r.Store, h, key, condition)
 	if err != nil {
 		return err
@@ -800,6 +809,9 @@ func (r *Records) ChangeHost(ctx context.Context, id string, change func(*Machin
 	}
 	c.ID = id
 	c.Rev = h.record.Rev + 1
+	if err := r.machineChangeWithin(ctx, h.record, c); err != nil {
+		return err
+	}
 	kept, etag, err := write(ctx, r.Store, c, HostKey(id), store.Matching(h.etag))
 	if err != nil {
 		return err
@@ -832,6 +844,9 @@ func (r *Records) AddHost(ctx context.Context, h MachineRecord) error {
 	h.Rev = 1
 	etag, ok := r.tombstones[key]
 	r.mu.Unlock()
+	if err := r.newMachineWithin(ctx, h); err != nil {
+		return err
+	}
 	kept, etag, err := write(ctx, r.Store, h, key, overTombstone(etag, ok))
 	if store.IsConflict(err) {
 		return ErrHostTaken
@@ -848,6 +863,10 @@ func (r *Records) AddHost(ctx context.Context, h MachineRecord) error {
 
 // RemoveHost is machines/remove: a tombstone. It says whether there was such a host.
 func (r *Records) RemoveHost(ctx context.Context, id string) (bool, error) {
+	return r.removeHost(ctx, id, nil)
+}
+
+func (r *Records) removeHost(ctx context.Context, id string, still func(MachineRecord) bool) (bool, error) {
 	r.writing.Lock()
 	defer r.writing.Unlock()
 	if r.Host(id) == nil {
@@ -863,13 +882,15 @@ func (r *Records) RemoveHost(ctx context.Context, id string) (bool, error) {
 		r.mu.Lock()
 		h, ok := r.hosts[id]
 		r.mu.Unlock()
-		if !ok {
+		if !ok || still != nil && !still(h.record) {
 			return false, nil
 		}
 		tombstone := h.record
 		yes, now := true, Now()
 		tombstone.Forgotten, tombstone.ForgottenAt = &yes, &now
 		tombstone.Rev++
+		// A tombstone keeps nothing that grows (#6758).
+		tombstone.SignInFrom, tombstone.GitFrom, tombstone.Workspace, tombstone.Labels, tombstone.Extra = nil, nil, nil, nil, nil
 		var err error
 		_, etag, err = write(ctx, r.Store, tombstone, HostKey(id), store.Matching(h.etag))
 		again, err := r.tombstoneAgain(ctx, err, attempt)

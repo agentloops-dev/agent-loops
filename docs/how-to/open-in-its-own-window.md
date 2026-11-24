@@ -1,14 +1,14 @@
 ---
 diataxis: how-to
 devices: [mac, ipad, iphone, web]
-description: Open a session or a folder in a window of its own on the Mac, in a scene of its own on an iPad, or in a tab of its own on the web page.
+description: Open a session, a folder or a Work page in a window of its own on the Mac, in a scene of its own on an iPad, or in a tab of its own on the web page.
 ---
 
-# Open a session or a folder in its own window
+# Open a session, a folder or a Work page in its own window
 
 Sometimes you want two things on screen at once: a chat beside the one you are in, or one
-folder on a second display while the main window shows all of them. A session or a
-folder can open in a window of its own. The main window does not change, so you do not
+folder on a second display while the main window shows all of them. A session, a
+folder or a page of Work can open in a window of its own. The main window does not change, so you do not
 lose your place in it.
 
 ## Before you start
@@ -102,6 +102,41 @@ alone and has its name as its title. Click **‹ All** to see every folder again
 
 On the iPad, the iPhone and the web page, a folder's workflows and archived sessions open
 from the sidebar of every folder. Only the Mac's folder window shows them in place.
+
+## A Work page in its own window
+
+An issue, a pull request or a release can open in a window of its own. This is a feature in
+work: turn on **Work in windows** in **Settings ▸ This app ▸ Early Features**.
+
+**Mac**
+
+Do one of these:
+
+- In Work ▸ Issues, Pull requests or Releases, right-click the row and choose **Open in New
+  Window**. Or hold Command and click the row.
+- In Work ▸ Timeline, right-click an epic and choose **Open in New Window**.
+- On the item's page, click **Open in New Window** in the toolbar. A link on the page to a
+  different item has it in its right-click menu. Command-click opens it too.
+
+The window has its own **Back** and **Forward** (Command-[ and Command-]). A link to a
+different item opens in the same window. A link to a list, a session or **Start Agent**
+opens in the main window. The window opens again when Agent Loops starts.
+
+**iPad**
+
+Touch and hold the row and choose **Open in New Window**, or drag the row out of the list.
+On the item's page, tap **Open in New Window** in the bar.
+
+**iPhone**
+
+An iPhone shows one window at a time, so it has no **Open in New Window**.
+
+**Web page**
+
+A row is a link. Use the browser: Command-click, middle-click, or choose **Open Link in New
+Tab** in its menu.
+
+There is one window for each page. Opening it again brings that window to the front.
 
 ## See also
 

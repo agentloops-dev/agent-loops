@@ -10,6 +10,8 @@ protocol WorkModel: AnyObject, Sendable {
     var workHistory: LineageHistory<WorkPlace> { get set }
     /// Each Work list's filters, sort and rows (#3257), kept while the app runs.
     var workLists: WorkLists { get }
+    /// The model of a Work page in a window of its own (#5475), not of the main window.
+    var isOwnWindow: Bool { get }
     /// Open Work at a place: a list, or an item's page.
     func showWork(_ place: WorkPlace)
     /// The machines that read their forges, the home one first.
@@ -86,6 +88,7 @@ protocol WorkModel: AnyObject, Sendable {
 }
 
 extension WorkModel {
+    var isOwnWindow: Bool { false }
     var workProjects: [WorkList.Project] { [] }
     var timelineProjects: [WorkList.Project] { workProjects }
     func askWorkConnectors() -> Bool { false }
@@ -242,12 +245,16 @@ extension WorkModel {
     }
 
     /// Open a part of a page's trail (#5452): a list, or an epic's page. Each is a new place, so Back comes back to the page.
-    func openTrail(_ target: WorkTrail.Target) {
-        switch target {
-        case .list(let kind):
-            showWork(WorkPlace(kind: kind))
-        case .item(let kind, let ref):
-            showWork(WorkPlace(kind: kind, ref: ref))
+    func openTrail(_ target: WorkTrail.Target, window: OpenWorkWindow?) {
+        follow(target.place, window: window)
+    }
+}
+
+extension WorkTrail.Target {
+    var place: WorkPlace {
+        switch self {
+        case .list(let kind): WorkPlace(kind: kind)
+        case .item(let kind, let ref): WorkPlace(kind: kind, ref: ref)
         }
     }
 }

@@ -38,3 +38,13 @@ extension View {
         }
     }
 }
+
+/// The pin of a machine's row, filled while it is pinned.
+struct MachinePickerPin: View {
+    let isPinned: Bool
+
+    var body: some View {
+        Image(icon: isPinned ? "pin.fill" : "pin")
+            .foregroundStyle(isPinned ? StateTint.attention.style(or: .secondary) : AnyShapeStyle(.tertiary))
+    }
+}

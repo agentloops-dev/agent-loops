@@ -6,7 +6,6 @@ import Foundation
 /// The web page's `Web/src/model/machinePicker.ts`, in Swift, so the Remote (#5622) can draw it too.
 public enum MachinePickerChoice {
     public static let limit = 30
-    public static let pinnedKey = "machinePicker.pinned"
     public static let recentKey = "machinePicker.recent"
     static let recentCap = 5
 
@@ -80,16 +79,25 @@ public enum MachinePickerChoice {
 
     // MARK: Pinned and recent, kept in this app's defaults as the web page keeps them in localStorage
 
-    public static func pinned(_ store: UserDefaults) -> [String] { store.stringArray(forKey: pinnedKey) ?? [] }
+    /// The machines pinned in the sidebar too: `MachinePins` keeps both (#6797).
+    public static func pinned(_ store: UserDefaults) -> [String] {
+        MachinePins.pinned(MachinePins.read(store)).map(\.rawValue)
+    }
     public static func recent(_ store: UserDefaults) -> [String] { store.stringArray(forKey: recentKey) ?? [] }
 
-    /// A machine pinned, or let go when it is. Returns the new list.
+    /// A machine pinned, or let go when it is. Returns the new list; nil when the pin is refused.
     @discardableResult
-    public static func togglePin(_ store: UserDefaults, _ id: String) -> [String] {
-        let now = pinned(store)
-        let next = now.contains(id) ? now.filter { $0 != id } : now + [id]
-        store.set(next, forKey: pinnedKey)
-        return next
+    public static func togglePin(_ store: UserDefaults, _ id: String) -> [String]? {
+        guard let next = MachinePins.toggled(MachineRef(rawValue: id), in: MachinePins.read(store)) else { return nil }
+        store.set(next, forKey: MachinePins.key)
+        return pinned(store)
+    }
+
+    /// The picker's pin button: the list it shows after, or what to say when the pin is refused.
+    public static func togglePin(_ store: UserDefaults, _ id: MachineRef, pinned: inout [String], problem: inout String?) {
+        guard let next = togglePin(store, id.rawValue) else { return problem = MachinePins.fullWords }
+        pinned = next
+        if problem == MachinePins.fullWords { problem = nil }
     }
 
     /// A machine picked goes first in Recent; the list keeps the last five.

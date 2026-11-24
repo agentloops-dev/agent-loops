@@ -98,6 +98,10 @@ func asRPC(err error) *RPCError {
 	if errors.As(err, &limit) {
 		return fail(notPermitted, "%s", limit.Words)
 	}
+	var machines *records.MachineLimitError
+	if errors.As(err, &machines) {
+		return fail(notPermitted, "%s", machines.Words)
+	}
 	var conflict *store.ConflictError
 	if errors.As(err, &conflict) {
 		return fail(changedElsewhere, "Someone changed that at the same time, so nothing was changed. Try again.")
