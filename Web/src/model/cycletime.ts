@@ -21,6 +21,7 @@ export interface CycleTimeShare {
 export interface CycleTimeChart {
   range: UsageRange;
   breakdown: CycleTimeBreakdown;
+  repo: string | null;
   bars: CycleTimeBar[];
   shares: CycleTimeShare[];
   median: number;
@@ -80,7 +81,8 @@ function shareName(sample: CycleTimeSample, breakdown: CycleTimeBreakdown): stri
 }
 
 export function cycleTimeChart(history: CycleTimeHistory, range: UsageRange,
-                               breakdown: CycleTimeBreakdown = "level"): CycleTimeChart {
+                               breakdown: CycleTimeBreakdown = "level",
+                               repo: string | null = null): CycleTimeChart {
   const slots = usageSlots(history.now, range);
   const tier = range === "D" ? history.hours : history.days;
   const all: CycleTimeSample[] = [];
@@ -91,7 +93,7 @@ export function cycleTimeChart(history: CycleTimeHistory, range: UsageRange,
     for (const key of slot.keys) {
       const bucket = tier[key];
       if (!bucket) continue;
-      samples.push(...bucket.samples);
+      samples.push(...bucket.samples.filter((sample) => repo === null || sample.repo === repo));
       bucketNoStart += bucket.noStart;
     }
     all.push(...samples);
@@ -113,7 +115,7 @@ export function cycleTimeChart(history: CycleTimeHistory, range: UsageRange,
     name, value: percentile(medians(samples), 0.5), count: samples.length,
   })).sort((a, b) => b.value - a.value || a.name.localeCompare(b.name));
   return {
-    range, breakdown, bars, shares,
+    range, breakdown, repo, bars, shares,
     median: percentile(cycles, 0.5),
     p85: percentile(cycles, 0.85),
     count: all.length,
@@ -137,9 +139,21 @@ export function durationWords(seconds: number): string {
   return `${durationNumber.format(days)} ${days === 1 ? "day" : "days"}`;
 }
 
-export function noStartWords(count: number): string {
+export function noStartWords(count: number, acrossAllRepositories = false): string {
+  const across = acrossAllRepositories ? " across all repositories" : "";
   return count === 0 ? "No PRs without a recorded start."
-    : `${count} ${count === 1 ? "PR" : "PRs"} without a recorded start.`;
+    : `${count} ${count === 1 ? "PR" : "PRs"} without a recorded start${across}.`;
+}
+
+export function cycleTimeRepositories(history: CycleTimeHistory): string[] {
+  const keys = new Set<string>();
+  for (const bucket of Object.values(history.hours)) {
+    for (const sample of bucket.samples) keys.add(sample.repo);
+  }
+  for (const bucket of Object.values(history.days)) {
+    for (const sample of bucket.samples) keys.add(sample.repo);
+  }
+  return [...keys].sort((a, b) => repoWords(a).localeCompare(repoWords(b)));
 }
 
 export function splitWords(chart: CycleTimeChart): string {

@@ -11,6 +11,7 @@ struct CycleTimeChartsSection<Refresh: Equatable>: View {
     private var pageRead: Date? { read }
     @State private var range: CycleTimeChart.Range = .week
     @State private var breakdown: CycleTimeChart.Breakdown = .level
+    @State private var repo = ""
     @State private var picked: Date?
     @State private var failed = false
     @State private var attempt = 0
@@ -36,15 +37,20 @@ struct CycleTimeChartsSection<Refresh: Equatable>: View {
                 .pickerStyle(.menu)
                 .labelsHidden()
             }
+            RepositoryPicker(repo: $repo,
+                             options: history.map { RepositoryOption.options(CycleTimeChart.repositories(in: $0)) } ?? [])
             ChartLoadingOrFailure(failed: failed, hasHistory: history != nil,
                                   message: Self.couldNotRead, retry: { attempt += 1 }) {
                 if let history {
-                    CycleTimeChartBody(chart: CycleTimeChart(history, range: range, breakdown: breakdown),
+                    CycleTimeChartBody(chart: CycleTimeChart(history, range: range,
+                                                              breakdown: breakdown,
+                                                              repo: repo.isEmpty ? nil : repo),
                                        picked: $picked)
                 }
             }
         }
         .onChange(of: range) { picked = nil }
+        .onChange(of: repo) { picked = nil }
         .task(id: Reading(refresh: refresh, attempt: attempt)) {
             apply(await readChart(load))
         }
