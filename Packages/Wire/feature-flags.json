@@ -34,7 +34,7 @@
     {
       "name": "work-windows",
       "title": "Work in windows",
-      "about": "Open in New Window on Work's pages (Mac and iPad): an issue, a pull request or a release in a window of its own.",
+      "about": "Open in New Window on Work's pages (Mac and iPad): an issue, a pull request, a release or (Mac) a doc in a window of its own.",
       "issue": 5480
     }
   ]

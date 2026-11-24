@@ -1,20 +1,20 @@
 import AgentsKitCore
 import SwiftUI
 
-/// A Work page in a window of its own on the Mac (#5475), beside the main window, whose place is not
+/// A Work page (#5475) or a doc's page (#5481) in a window of its own on the Mac, beside the main window, whose place is not
 /// touched by it. Work's lists, sessions and new sessions open in the main window.
 struct WorkWindow: View {
     @Environment(AppModel.self) private var model
     @Environment(\.openWindow) private var openWindow
     @Binding var key: WorkWindowKey?
-    @State private var shown: WorkWindowModel?
+    @State private var shown: (any WorkWindowPages)?
 
     private var showMain: @MainActor () -> Void {
         { [model, openWindow] in model.bringMainWindowForward(opening: openWindow) }
     }
 
     var body: some View {
-        WorkWindowPage(base: model, key: $key, showMain: showMain, showSession: showSession, opened: { shown = $0 })
+        page
             .webPlaceLinks()
             .paperGround()
             .windowFloor(width: 480, height: 360)
@@ -27,6 +27,15 @@ struct WorkWindow: View {
                 showSession(id)
                 return .handled
             })
+    }
+
+    @ViewBuilder
+    private var page: some View {
+        if key?.docRef != nil {
+            DocWindow(key: $key, opened: { shown = $0 })
+        } else {
+            WorkWindowPage(base: model, key: $key, showMain: showMain, showSession: showSession, opened: { shown = $0 })
+        }
     }
 
     private func showSession(_ id: UUID) {
@@ -47,5 +56,5 @@ extension EnvironmentValues {
 extension FocusedValues {
     /// The Work page in the key window, when that is a window of its own (#5475): Go ▸ Back and Forward
     /// are its, and the Session menu has no session.
-    @Entry var workWindow: WorkWindowModel?
+    @Entry var workWindow: (any WorkWindowPages)?
 }

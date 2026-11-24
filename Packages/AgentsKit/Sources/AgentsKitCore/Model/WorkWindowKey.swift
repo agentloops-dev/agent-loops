@@ -18,6 +18,14 @@ public struct WorkWindowKey: Codable, Hashable, Sendable {
         self.init(kind: place.kind.rawValue, ref: ref)
     }
 
+    /// A doc's page (#5481), by its ref.
+    public static func doc(_ ref: String) -> Self { Self(kind: docKind, ref: ref) }
+
+    private static let docKind = "doc"
+
+    /// The ref of the doc whose page it is; nil for a page of another kind.
+    public var docRef: String? { kind == Self.docKind && !ref.isEmpty ? ref : nil }
+
     /// The item's page; nil for a kind this build does not know. It is from no list, so it has no
     /// Previous and Next.
     public var place: WorkPlace? {
