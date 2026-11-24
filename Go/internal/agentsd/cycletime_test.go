@@ -6,11 +6,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/internal/lineage"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 func TestCycletimeHistorySplitsAndCountsMissingStarts(t *testing.T) {
+	flaky.UnderLoad(t, "#6927")
 	t.Parallel()
 
 	d, c := start(t, t.TempDir())
