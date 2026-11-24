@@ -30,6 +30,13 @@ import (
 // own store, so a start does not read the whole store each time.
 func usageKey(id string) string { return hostedPrefix + "v1/usage/" + id + ".json" }
 
+// Capacity samples are runtime telemetry, not account data held to the plan's storage
+// limit. The control plane replaces its sample during service start and removes it when
+// the service stops.
+const runtimeCapacityPrefix = "runtime/control-capacity/"
+
+func runtimeCapacity(key string) bool { return strings.HasPrefix(key, runtimeCapacityPrefix) }
+
 // usage is an account's bytes, and when they were last counted from the store.
 type usage struct {
 	Bytes   int64     `json:"bytes"`
@@ -176,6 +183,9 @@ func (l *limitedStore) old(ctx context.Context, key string, when store.Condition
 // Put refuses a new machine or client over the plan, and a write that grows the store past
 // it. A rewrite that grows nothing is never refused.
 func (l *limitedStore) Put(ctx context.Context, key string, data []byte, when store.Condition) (string, error) {
+	if runtimeCapacity(key) {
+		return l.Store.Put(ctx, key, data, when)
+	}
 	old, err := l.old(ctx, key, when)
 	if err != nil {
 		return "", err
@@ -222,6 +232,9 @@ func (l *limitedStore) Put(ctx context.Context, key string, data []byte, when st
 
 // Delete deletes, and counts the bytes it frees.
 func (l *limitedStore) Delete(ctx context.Context, key string) error {
+	if runtimeCapacity(key) {
+		return l.Store.Delete(ctx, key)
+	}
 	l.mu.Lock()
 	n, known := l.sizes[key]
 	l.mu.Unlock()
@@ -289,6 +302,9 @@ func count(ctx context.Context, st store.Store) (int64, error) {
 	}
 	var n int64
 	for _, k := range keys {
+		if runtimeCapacity(k.Key) {
+			continue
+		}
 		if k.Size >= 0 {
 			n += k.Size
 			continue
