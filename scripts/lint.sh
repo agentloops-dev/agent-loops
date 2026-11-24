@@ -453,6 +453,8 @@ run_checks() {
 	python3 scripts/check-workflow-github-reads.py || status=1
 	python3 scripts/check-deploy-bounds.py --selftest || status=1
 	python3 scripts/check-deploy-bounds.py || status=1
+	python3 scripts/check-store-bounds.py --selftest || status=1
+	python3 scripts/check-store-bounds.py || status=1
 	python3 scripts/wire-compat.py --selftest || status=1
 	python3 scripts/jscpd-report.py --selftest || status=1
 	python3 scripts/docs-parts.py --selftest || status=1
