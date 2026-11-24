@@ -31,6 +31,26 @@ struct StoresAsideTests {
             == ["control-key-before-5"])
     }
 
+    @Test func aKeyGoesAtNinetyDaysOnlyOnceNoStoreIsLeft() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        func key(days: Int) -> String { "control-key-before-\(1_800_000_000 - days * 86_400)" }
+        let aged = key(days: 90), young = key(days: 89)
+        let names = ["control-key", "bucket-keys", "control-key-before-notes", aged, young]
+
+        #expect(StoresAside.expiredKeys(names, stores: ["store"], now: now) == [aged])
+        // Any store set aside holds them, also one with no time in its name.
+        for store in ["store-before-1", "store-before-1799999999", returnName(1_793_000_123), "store-before-notes"] {
+            #expect(StoresAside.expiredKeys(names, stores: ["store", store], now: now).isEmpty)
+        }
+        // Stores that could not be read may be there.
+        #expect(StoresAside.expiredKeys(names, stores: nil, now: now).isEmpty)
+        // The newest 2 is still the most there are, held or not, and each is named once.
+        let oldest = key(days: 300)
+        let three = [oldest, key(days: 200), key(days: 100)]
+        #expect(StoresAside.expiredKeys(three, stores: ["store-before-1"], now: now) == [oldest])
+        #expect(StoresAside.expiredKeys(three, stores: [], now: now) == three)
+    }
+
     @Test func pruningAScratchHomeDeletesOnlyTheOldStores() throws {
         let home = FileManager.default.temporaryDirectory.appendingPathComponent("stores-aside-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: home) }

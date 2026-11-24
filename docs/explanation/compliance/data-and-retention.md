@@ -300,7 +300,7 @@ account's machines. It leaves the operator's backups of it, and Stripe's own rec
 | --- | --- | --- | --- |
 | `~/Library/Application Support/Agents Control/` | document; secret | The control plane's store, TLS certificate, `secrets-key`, push key, web settings | One of each |
 | `Agents Control/store-before-<…>` | blob | A whole old store, set aside when you change the store or move back. Each holds the audit, sealed secrets and server backups. | The newest 2; an older one is deleted when another is set aside (#3671) |
-| Keychain `com.alexecollins.agentshost` | secret | The control key, bucket keys, and `control-key-before-<time>` | One of each; the newest 2 `control-key-before-*` items, deleted with the old stores (#3671) |
+| Keychain `com.alexecollins.agentshost` | secret | The control key, bucket keys, and `control-key-before-<time>` | One of each; the newest 2 `control-key-before-*` items (32 bytes each). An item is deleted at 90 days, on the next write or hourly while the app runs, but not while a `store-before-*` folder is left: that store needs its key to be put back (#3671, #6770). The folders have no age yet (#6769). |
 | `~/Library/Logs/Agents/control.log` | log | What the control plane did | 4 MB, and one older file |
 | The Web Push key | secret | The key that signs browser push | One. In `agents-control backup` as `webpush-key.pem` (#3651). |
 | `Agents Control/web-off` | key-value | That the web page is off | One marker file (#6781) |
