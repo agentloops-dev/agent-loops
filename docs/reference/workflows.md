@@ -585,8 +585,9 @@ each run. A change to the file by hand shows in the control.
   once.
 - There is no daily summary any more (#5853). Needs You, For Review and the notices show what
   waits for you when it happens. The daemon removes your copy of the old **Daily summary**
-  workflow and its skill only when you did not edit them. An edited copy, and the pages it
-  saved in `~/.agents/summaries/`, stay yours.
+  workflow and its skill only when you did not edit them. An edited copy stays
+  yours. The daemon deletes a page it saved in `~/.agents/summaries/` 90 days after the page's
+  last change (#6714); copy a page to another folder to keep it.
 
 ### Ready-made versions
 
