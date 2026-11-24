@@ -209,11 +209,11 @@ the other copies of the control plane learn that it went.
 | Machine locks | log | Each person's lock chain | 4,096 entries a person. Deleted when the person is removed (#3647) | On **Reset** and on remove |
 | A person's settings and secrets | key-value; secret | Settings that follow a person; secrets, sealed | 256 KiB of settings, 200 secrets of 16 KiB | When the person is removed |
 | Channel links | document | Which person a channel identity is | No count limit | On unlink or when the person is removed |
-| Machine set-up | document | Each machine's set-up steps | One a machine | On write |
+| Machine set-up | document | Each machine's set-up steps | One a machine, deleted when the machine is removed. No age. | On remove |
 | Machine set-up times | time series | How long each set-up step took | 50 a step. No age (#6760). | On write |
-| Machine versions | log | Each machine's version and its updates | 20 updates a machine | On write |
+| Machine versions | log | Each machine's version and its updates | 20 updates a machine, deleted when the machine is removed. No age. | On write; on remove |
 | Machine names | key-value | A person's machine counter and last choices | One a person, kept after the person goes (#6759) | — |
-| Approvals | document | Each person's signed approvals of workflows and connectors | 2,000 a person | On write |
+| Approvals | document | Each person's signed approvals of workflows and connectors | 2,000 a person; a new one past that is dropped. No age, and not deleted with the person. | On write |
 
 ### Requests, codes and sign-in
 
@@ -246,10 +246,10 @@ the other copies of the control plane learn that it went.
 | Governance | document | Installed servers and skills; approvals | 500 items; 1,000 approvals. An approval stays until an admin takes it back, or its person or group is gone (#3748) | Hourly |
 | Org keys and gateways | key-value; secret | Routes and their sealed secrets | 50 routes | Tombstone, hourly |
 | Warm pools | document | Pools of ready machines, and their claims | No count limit (#6761) | On remove |
-| Failed machine makes | log | Why a machine could not be made | 5 a provider | On write |
+| Failed machine makes | log | Why a machine could not be made | 5 a provider, deleted with the provider. No age. | On write; on remove |
 | Event bus | log | Events between a person's machines: refs, names and times, and sealed data | 100,000 a person. No age, and not deleted with the person (#6671). | Hourly |
 | Budgets | key-value | The org's budgets | One (#6778) | On write |
-| Feature maturity | document | Evidence for each feature's rating | 84 records of 4 KiB | On write |
+| Feature maturity | document | Evidence for each feature's rating | 84 records of 4 KiB. No age. | On write |
 
 ### Audit, keys and backups
 
