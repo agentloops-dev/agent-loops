@@ -235,6 +235,12 @@ public enum DocsList {
         !(doc.path ?? "").isEmpty && !doc.source.hasPrefix("mcp:")
     }
 
+    /// The ref of the doc at another path of a folder doc's folder (#5481): a link from one doc to the next.
+    public static func ref(of doc: DaemonAPI.Doc, at path: String) -> String? {
+        guard isFolderDoc(doc), let own = doc.path, doc.ref.hasSuffix(own) else { return nil }
+        return doc.ref.dropLast(own.count) + path
+    }
+
     /// The vendor a connector doc opens in, by its ref's scheme; a mapped server by its name.
     public static func vendorName(_ ref: String) -> String {
         let scheme = ref.split(separator: ":", maxSplits: 1).first.map(String.init) ?? ""

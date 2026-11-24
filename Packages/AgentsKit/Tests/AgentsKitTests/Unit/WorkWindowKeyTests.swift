@@ -19,10 +19,24 @@ struct WorkWindowKeyTests {
     }
 
     @Test func aKindOfALaterBuildIsNoPageHere() throws {
-        let saved = Data(#"{"kind":"doc","ref":"d1"}"#.utf8)
+        let saved = Data(#"{"kind":"later","ref":"d1"}"#.utf8)
         let key = try JSONDecoder().decode(WorkWindowKey.self, from: saved)
-        #expect(key.place == nil)
+        #expect(key.place == nil && key.docRef == nil)
         #expect(try JSONDecoder().decode(WorkWindowKey.self, from: JSONEncoder().encode(key)) == key)
+    }
+
+    @Test func aDocsPageIsFoundByItsRef() {
+        #expect(WorkWindowKey.doc("github:doc:acme/app#README.md").docRef == "github:doc:acme/app#README.md")
+        #expect(WorkWindowKey.doc("notion:1").place == nil, "no item's page")
+        #expect(WorkWindowKey(kind: "pr", ref: ref).docRef == nil)
+        #expect(WorkWindowKey.doc("").docRef == nil)
+    }
+
+    @Test func aDocsLinkNamesTheNextDocOfItsFolder() {
+        let doc = DaemonAPI.Doc(ref: "github:doc:acme/app#docs/a.md", title: "A", source: "/w", folder: "/w", path: "docs/a.md")
+        #expect(DocsList.ref(of: doc, at: "docs/b.md") == "github:doc:acme/app#docs/b.md")
+        let page = DaemonAPI.Doc(ref: "notion:1", title: "A", source: "mcp:notion")
+        #expect(DocsList.ref(of: page, at: "docs/b.md") == nil)
     }
 
     @Test func aConversationsWindowIsFoundByItsKeyAndIsNoItemsPage() throws {

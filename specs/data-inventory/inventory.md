@@ -215,9 +215,9 @@ handover also leaves out `v1/keys/` (`storecopy.go:21,25`).
 | `v1/signin.json`, `v1/signin/providers/`, `v1/signin/domains/` | Sign-in settings, org OIDC providers, domain claims | 16 KiB; 5 providers of 16 KiB (95 tombstones); 20 domains of 4 KiB (#6773 to #6775) | on write, on remove; a removed provider's tombstone hourly at 90 days, once nothing names it |
 | `v1/signin/refresh/<person>/<prov>.json` | Sealed org refresh token | 1 per person per provider | person removal |
 | `v1/scim/<prov>/names/<sha>.json` | userName → person | 1 per SCIM user | rename or delete. **Not on an admin's remove.** |
-| `v1/scim/tokens/`, `v1/read/tokens/` | Token hashes, last-use IP | 2 live / 20; 10 live / 50 | trim on write |
+| `v1/scim/tokens/`, `v1/read/tokens/` | Token hashes, last-use IP | 2 live / 20 a provider; 10 live / 50; 8 KiB when made; a live one has no age (#6766, #6767) | on write; hourly, 90 days after a revoke or end |
 | `v1/requests/remove/<user>.json` | SCIM delete → admin ask | 1 per person | removal or read |
-| `v1/policy/requests/`, `v1/governance/requests/` | Budget and catalogue asks | 1,000 total; decided ones 30 days | on read |
+| `v1/policy/requests/`, `v1/governance/requests/` | Budget and catalogue asks | 1,000 total; decided ones 30 days; a governance one 90 days from the ask at most (#6764) | on read, hourly |
 
 ### Work data
 
@@ -226,7 +226,7 @@ handover also leaves out `v1/keys/` (`storecopy.go:21,25`).
 | `v1/kept/<host>/<seq>-<id>.json` | Prompts and agent starts for a stopped workspace, **with attachments** | 20 per host, **waiting ones only** (`providers/kept.go:21,176`); each up to 40 MiB | on delivery or host removal. **Failed ones are never deleted.** |
 | `v1/copies/<host>.json` | A host's last folders and agents (≤500, **with titles**) | 1 per host | on host forget |
 | `v1/usage/hours/`, `v1/usage/days/` | Usage and cost by person, project, folder, machine, runtime | 7 days / 90 days (`reports.go:30-31`) | hourly |
-| `v1/lineage/<host>.json` | Cost per issue, PR and session node | 5,000 nodes, 90 days (`lineagecost.go:25-28`) | on write |
+| `v1/lineage/<host>.json` | Cost per issue, PR and session node | 5,000 nodes of 64 KiB, 32 MiB, 90 days (`lineagecost.go`, `boundLineage`, #6768) | on write, hourly |
 | `v1/lineage-graph/<host>/links.json`, `states.json`, `changes/*.json` | A machine's lineage links and its sessions' state changes (#4275); each send's changes since the last roll-up (#6584) | Links by `lineage.Bound` (ended 90 days, 20,000); states as on the machine (90 days, each session's last, `lineage.MostStates`); at most `mostLineageChanges` (32) changes before a send or the hourly sweep rolls them up; a removed machine's after a day (`lineagegraph.go`) | on write, hourly |
 | `v1/deploys/<host>.json` | A machine's deploys, as deploys/delivery's figures need them: refs, names, states, times, tiers, merge times; no titles or logs (#5496) | 1,000 deploys a send, each in place of the last; of each deploy the newest 1,000 merges and 200 health signals, 20 environments; a removed machine's after a day (`deploys.go`) | on write, hourly |
 | `v1/build-timings/<host>/<forge>/<path>/<day>.json`, `meta.json` | A machine's CI runs, jobs and steps of a repository: refs, times, conclusions, runner labels, names; no titles or logs (#5232) | As on the machine (`citimings`: 90 days, 20,000 runs a repository, PR steps 14 days), each day bounded on write; a stopped machine's swept once a day; a removed machine's after a day (`builds.go`) | on write, hourly |
@@ -235,8 +235,8 @@ handover also leaves out `v1/keys/` (`storecopy.go:21,25`).
 | `v1/providers/<id>.json` | Machine providers | 10, 64 KiB each, more is refused (#6762) | on remove; a tombstone after 7 days, and past 100 the oldest |
 | `v1/machine-names/<person>.json` | The person's machine-N counter (#3972), the provider New Machine uses and what the person chose on each provider's form last (#3979; only the values that were not the form's defaults, in `chosen`, #6686) | 1 per person: one number, one provider id, one set of choices per provider that is still here; 64 KiB (#6759) | person removal, and hourly for a removed person; no age before that (a number is never used again) |
 | `v1/tunnels/<id>.json` | Server reverse tunnels | unjoined 15 minutes | on use |
-| `v1/policy.json`, `v1/policy.sig`, `v1/policy/versions/` | Org policy, its signature and old versions | 64 KiB, 1 KiB (#6772); 100 versions | on write |
-| `v1/governance/machines/`, `v1/governance/approvals/` | Installed servers and skills; approvals | 500 items; 1,000 approvals, **no expiry** | — |
+| `v1/policy.json`, `v1/policy.sig`, `v1/policy/versions/` | Org policy, its signature and old versions | 64 KiB, 1 KiB (#6772); 100 versions, 90 days from when each was replaced (#6765) | on write, hourly |
+| `v1/governance/machines/`, `v1/governance/approvals/` | Installed servers and skills; approvals | 500 items, 1 MiB a machine; 1,000 approvals of 8 KiB, no age while in force (#6764) | hourly: those of a removed machine, person or group |
 | `v1/org/routes/<id>.json` + `.secret.json` | Org keys and gateways | 50 routes of 256 KiB, 4 MiB sealed (#6776) | on write; tombstone swept |
 
 ### Audit, keys and backups
@@ -439,11 +439,11 @@ newer than a row above for the same store.
 | `v1/warm-pools/<id>.json` | document | Warm pools and their claims | 10 pools a provider and 256 KiB a pool, else refused; claims 7 days and 500 a pool; the pool until deleted or its person is removed. Its config stays in the control plane's store (Alex, 2026-11-24) | `Go/internal/controlplane/warmpool.go` (`mostPoolsAProvider`, `warmPoolMost`, `forget`) | #6761 |
 | `v1/providers/` | document | Machine providers | 10 and 64 KiB each, else refused; until removed; a tombstone 7 days and 100 at most. Its config stays in the control plane's store (Alex, 2026-11-24) | `Go/internal/controlplane/providers/bounds.go`, `Go/internal/controlplane/sweep.go` (`sweepProviders`) | #6762 |
 | `v1/links/` | document | Channel identity links | 4 KiB a record, 1 MiB in all; 90 days unused, or until unlinked or the person goes | `Go/internal/controlplane/linkbounds.go` | #6763 |
-| `v1/governance/` approvals | document | Catalogue approvals | 1,000; until taken back or the person or group goes | `Go/internal/controlplane/governance.go:43` | #6764 |
-| `v1/policy/versions/` | document | Old policy versions | 100, no age | `Go/internal/controlplane/policy.go:36-48` | #6765 |
-| `v1/scim/tokens/` | secret | SCIM token hashes, revoked ones too | 20, no age, trimmed on write only | `Go/internal/controlplane/scim_tokens.go:30` | #6766 |
-| `v1/read/tokens/` | secret | Read token hashes, revoked ones too | 50, no age, trimmed on write only | `Go/internal/controlplane/readapi.go:32-34,330` | #6767 |
-| `v1/lineage/<host>.json` | graph | Lineage node cost | 5,000 nodes and 90 days, applied on write only: an idle machine's nodes pass 90 days | `Go/internal/controlplane/lineagecost.go:27-30,107-125` | #6768 |
+| `v1/governance/` approvals | document | Catalogue approvals | 1,000 of 8 KiB, else refused; in force until taken back or the person or group goes | `Go/internal/controlplane/governance.go` (`sweepApprovals`) | #6764 |
+| `v1/policy/versions/` | document | Old policy versions | 100 of 64 KiB; 90 days after it was replaced | `Go/internal/controlplane/policy.go` (`sweepPolicyVersions`) | #6765 |
+| `v1/scim/tokens/` | secret | SCIM token hashes, revoked ones too | 20 a provider, 8 KiB when made; live until revoked or ended, then 90 days; until the provider is removed | `Go/internal/controlplane/scim_tokens.go` (`sweep`) | #6766 |
+| `v1/read/tokens/` | secret | Read token hashes, revoked ones too | 50, 8 KiB when made; live until revoked, then 90 days | `Go/internal/controlplane/readapi.go` (`sweep`) | #6767 |
+| `v1/lineage/<host>.json` | graph | Lineage node cost | 5,000 nodes of 64 KiB, 32 MiB and 90 days a machine, on write and hourly | `Go/internal/controlplane/lineagecost.go` (`boundLineage`, `sweepLineage`) | #6768 |
 | `Agents Control/store-before-*` (Mac) | blob | Whole old stores | The newest 2, of any size, no age | `Host/Sources/HostModel.swift:567,584` | #6769 |
 | Keychain `control-key-before-*` (Mac) | secret | Old control keys | The newest 2, no age | `Host/Sources/ControlKey.swift:51,63-83` | #6770 |
 | `v1/control.json` | key-value | Control plane settings | 64 KiB, else a person's change is refused. Stays in the control plane's store (Alex, 2026-11-24) | `Go/internal/controlplane/records/fits.go` | #6771 |

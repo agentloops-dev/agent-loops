@@ -36,18 +36,21 @@ const (
 	// store-bounds: kind=key-value; count=1; size=64KiB a record, and the kill switch's few KiB; age=until-deleted; applied=on write
 	policyKey = "v1/policy.json"
 	// store-bounds: kind=key-value; count=1; size=1KiB a record (a signature); age=until-deleted; applied=on write
-	policySigKey      = "v1/policy.sig"
+	policySigKey = "v1/policy.sig"
+	// store-bounds: kind=document; count=100; size=64KiB a record; age=90d; applied=on write and hourly sweep, from when a version was replaced
 	policyVersionsKey = "v1/policy/versions/"
 	// mostPolicyBytes, mostPolicyItems and the rest bound the document (data-model.md),
 	// so a slip of the keyboard is refused.
-	mostPolicyBytes     = 64 << 10
-	mostPolicyItems     = 200
-	mostPolicyName      = 200
-	mostPolicyNote      = 500
-	mostPolicyDailyUSD  = 1_000_000
-	mostPolicyTokens    = 1_000_000_000_000
-	mostPolicyHelpers   = 1000
-	policyVersionsKept  = 100
+	mostPolicyBytes    = 64 << 10
+	mostPolicyItems    = 200
+	mostPolicyName     = 200
+	mostPolicyNote     = 500
+	mostPolicyDailyUSD = 1_000_000
+	mostPolicyTokens   = 1_000_000_000_000
+	mostPolicyHelpers  = 1000
+	policyVersionsKept = 100
+	// policyVersionAge is how long a version is kept after the next one replaced it (#6765).
+	policyVersionAge    = 90 * 24 * time.Hour
 	policyRetries       = 5
 	policyAppliedField  = "policyVersion"
 	policyDeliveryPause = 200 * time.Millisecond
@@ -693,22 +696,47 @@ func (s *Service) signPolicy(ctx context.Context, version int64, raw []byte) err
 }
 
 // keepPolicyVersion keeps each version as it was, so an admin sees what changed (FR-005):
-// the newest policyVersionsKept.
+// the newest policyVersionsKept, and an old one for policyVersionAge.
 func (s *Service) keepPolicyVersion(ctx context.Context, version int64, raw []byte) {
 	key := fmt.Sprintf("%s%010d.json", policyVersionsKey, version)
 	if _, err := s.cfg.Store.Put(ctx, key, raw, store.Absent); err != nil && !store.IsConflict(err) {
 		s.log("policy version " + fmt.Sprint(version) + " could not be kept: " + err.Error())
 		return
 	}
-	listed, err := s.cfg.Store.List(ctx, policyVersionsKey)
-	if err != nil || len(listed) <= policyVersionsKept {
-		return
+	if err := s.sweepPolicyVersions(ctx, time.Now()); err != nil {
+		s.log("the old policy versions could not be removed: " + err.Error())
 	}
-	for _, k := range listed[:len(listed)-policyVersionsKept] {
+}
+
+// sweepPolicyVersions deletes the versions past the newest policyVersionsKept, and those
+// replaced policyVersionAge ago (#6765). A version's age runs from when the next was issued,
+// so the one in force has none, and stays.
+func (s *Service) sweepPolicyVersions(ctx context.Context, now time.Time) error {
+	listed, err := s.cfg.Store.List(ctx, policyVersionsKey)
+	if err != nil {
+		return err
+	}
+	before := wire.DateOf(now.Add(-policyVersionAge))
+	for i, k := range listed[:max(len(listed)-1, 0)] {
+		if len(listed)-i <= policyVersionsKept {
+			object, err := s.cfg.Store.Get(ctx, listed[i+1].Key)
+			if err != nil {
+				return err
+			}
+			var next wire.OrgPolicy
+			if object == nil || json.Unmarshal(object.Data, &next) != nil {
+				continue
+			}
+			// In order: the rest were replaced later.
+			if next.Issued >= before {
+				return nil
+			}
+		}
 		if err := s.cfg.Store.Delete(ctx, k.Key); err != nil {
-			s.log("an old policy version could not be removed: " + err.Error())
+			return err
 		}
 	}
+	return nil
 }
 
 // resignPolicy signs the policy again with the control key, after a rotation (T4): the

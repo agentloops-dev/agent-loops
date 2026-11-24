@@ -37,7 +37,7 @@ public enum FeatureFlag: String, CaseIterable, Sendable {
         case .docs: "Docs in the sidebar, and the Docs section on a work item's page. On the Mac and the web page."
         case .suggested: "New Session ▸ Suggested: the epics with no lead."
         case .work: "Work in the sidebar: issues, pull requests, releases, deploys and the timeline."
-        case .workWindows: "Open in New Window on Work's pages (Mac and iPad): an issue, a pull request or a release, and on the Mac a conversation of Messages, in a window of its own."
+        case .workWindows: "Open in New Window on Work's pages (Mac and iPad): an issue, a pull request or a release, and on the Mac a doc or a conversation of Messages, in a window of its own."
         }
     }
 
