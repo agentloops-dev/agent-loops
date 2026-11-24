@@ -538,6 +538,10 @@ func (m *Methods) removePerson(ctx context.Context, user string, from Caller) er
 		}
 	}
 	_ = m.s.cfg.Store.Delete(ctx, reportViewsKey(user))
+	// Their machine-N counter (#6759). The hourly sweep takes it when this does not.
+	if err := providers.ForgetMachineNames(ctx, m.s.cfg.Store, user); err != nil {
+		m.s.log("person " + user + ": their machine names could not be deleted: " + err.Error())
+	}
 	m.s.peopleChanged(user, true)
 	m.s.log("person " + user + " removed")
 	return nil

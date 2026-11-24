@@ -175,7 +175,6 @@
 1 Go/internal/controlplane/policy_ask.go v1/policy
 1 Go/internal/controlplane/projects.go v1/projectFolders
 1 Go/internal/controlplane/providers/defaults.go v1/failed-makes
-1 Go/internal/controlplane/providers/defaults.go v1/machine-names
 1 Go/internal/controlplane/providers/kept.go v1/kept
 1 Go/internal/controlplane/providers/records.go v1/providers
 1 Go/internal/controlplane/providers/secrets.go os.CreateTemp
