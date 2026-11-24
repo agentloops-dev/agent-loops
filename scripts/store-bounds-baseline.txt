@@ -17,7 +17,6 @@
 1 Go/internal/agentsd/accountops.go WriteAtomically
 1 Go/internal/agentsd/acp/session.go os.OpenFile
 1 Go/internal/agentsd/agentconfigeditor.go WriteAtomically
-1 Go/internal/agentsd/assess.go os.OpenFile
 2 Go/internal/agentsd/attachments.go WriteAtomically
 1 Go/internal/agentsd/attention.go WriteAtomically
 1 Go/internal/agentsd/backgroundended.go WriteAtomically
@@ -106,7 +105,6 @@
 1 Go/internal/agentsd/store/revisions.go WriteAtomically
 1 Go/internal/agentsd/store/roots.go WriteAtomically
 3 Go/internal/agentsd/store/store.go WriteAtomically
-1 Go/internal/agentsd/store/store.go os.OpenFile
 1 Go/internal/agentsd/store/summaries.go WriteAtomically
 2 Go/internal/agentsd/trailerhook.go os.WriteFile
 1 Go/internal/agentsd/turnscache.go os.OpenFile
@@ -139,7 +137,6 @@
 2 Go/internal/controlplane/backups.go v1/backups
 1 Go/internal/controlplane/bots.go v1/runs
 1 Go/internal/controlplane/builds.go v1/build-timings
-1 Go/internal/controlplane/bus.go v1/bus
 1 Go/internal/controlplane/capacity.go runtime/control-capacity
 2 Go/internal/controlplane/codes.go v1/codes
 1 Go/internal/controlplane/copies.go v1/copies

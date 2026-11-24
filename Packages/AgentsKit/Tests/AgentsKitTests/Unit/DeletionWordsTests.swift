@@ -34,6 +34,8 @@ struct DeletionWordsTests {
         #expect(DeletionWords.confirmSettings(count: 41, bytes: 584_000_000)
                 == "This deletes 41 archived agents now and frees 584 MB. Their conversations are deleted and cannot be brought back.")
         #expect(DeletionWords.keepForLabel(.forever) == "Never")
+        #expect(RetentionSettings.KeepFor.offered(with: .days30) == [.days7, .days14, .days30, .days90])
+        #expect(RetentionSettings.KeepFor.offered(with: .forever).last == .forever)
     }
 
     /// A file from before #398 has a size cap too; it is read without one.

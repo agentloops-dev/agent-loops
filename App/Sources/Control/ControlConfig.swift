@@ -174,6 +174,7 @@ enum ControlConfig {
         // Its machine-lock pins go with it (#3670), named by the control plane while it is known.
         LockPins(defaults: WindowDefaults.store, name: lockPinName).clearAll()
         try? FileManager.default.removeItem(at: membershipFile)
+        try? FileManager.default.removeItem(at: herePairingFile)
     }
 
     /// Connect to a control plane (frame C, and the first open, #4226): say who this window is with the code,

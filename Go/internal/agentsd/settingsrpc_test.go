@@ -84,8 +84,8 @@ func TestRetentionDescribesADeleteUntilItIsConfirmed(t *testing.T) {
 	if d.keepFor() != wire.RetentionKeepForDays30 || d.Store.Agent(a.ID) == nil {
 		t.Fatal("an unconfirmed delete was saved")
 	}
-	kept := ask(2, wire.RetentionKeepForForever, false)
-	if !kept.Applied || kept.WouldDelete != nil || kept.State == nil || kept.State.Settings.KeepFor != wire.RetentionKeepForForever || kept.State.ArchivedCount != 1 {
+	// Forever is 90 days (#6677), so it too would delete one archived 100 days ago.
+	if kept := ask(2, wire.RetentionKeepForForever, false); kept.Applied || kept.WouldDelete == nil || kept.WouldDelete.Count != 1 {
 		t.Fatalf("%+v", kept)
 	}
 	done := ask(3, wire.RetentionKeepForDays7, true)

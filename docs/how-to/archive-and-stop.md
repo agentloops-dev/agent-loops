@@ -148,8 +148,9 @@ it. An event or a chat that named it just says "another agent".
 - A chat whose worktree still has changes that are not committed or merged is kept until they
   are, and **Delete…** says why it cannot go yet. So is one a workflow run still belongs to.
   One you have open is kept from the 30 days, but **Delete…** still works on it.
-- To keep a chat, unarchive it.
-- To change how long, or to keep archived chats until you delete them, see **Settings ▸
+- To keep a chat, unarchive it. Its lines still go when they are 90 days old, as do the
+  oldest lines of any chat larger than 10 MB.
+- To change how long, up to 90 days, see **Settings ▸
   General ▸ Archived agents** in the [settings reference](../reference/settings.md).
 
 Deleting removes only what Agent Loops keeps. It never touches your files, your commits, or the
