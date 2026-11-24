@@ -51,6 +51,7 @@ struct WorkFilesPage: View {
         .navigationBarBackButtonHidden(true)
         .toolbar { barItems }
         #endif
+        .workWindowTitle(model, title: model.workLists[.pr].all.first { $0.node.ref == ref }?.title, ref: ref)
         .workTask(id: asked) { await load() }
     }
 
@@ -71,15 +72,18 @@ struct WorkFilesPage: View {
     /// ‹ *#12*: back to the pull request, the place before (#4402, as the Checks page).
     @ToolbarContentBuilder
     private var barItems: some ToolbarContent {
-        ToolbarItem(placement: .topBarLeading) {
-            // An HStack, not a Label: the bar draws a Label's icon alone.
-            Button { back() } label: {
-                HStack(spacing: 4) {
-                    Image(icon: "chevron.left").fontWeight(.semibold)
-                    Text(WorkList.shortRef(ref))
+        // A window of its own (#5475) has Back and Forward in its place.
+        if !model.isOwnWindow {
+            ToolbarItem(placement: .topBarLeading) {
+                // An HStack, not a Label: the bar draws a Label's icon alone.
+                Button { back() } label: {
+                    HStack(spacing: 4) {
+                        Image(icon: "chevron.left").fontWeight(.semibold)
+                        Text(WorkList.shortRef(ref))
+                    }
                 }
+                .accessibilityLabel(WorkList.shortRef(ref))
             }
-            .accessibilityLabel(WorkList.shortRef(ref))
         }
     }
 

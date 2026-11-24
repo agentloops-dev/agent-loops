@@ -14,6 +14,8 @@ public enum FeatureFlag: String, CaseIterable, Sendable {
     case suggested = "suggested"
     /// Work (#6572).
     case work = "work"
+    /// Work in windows (#5480).
+    case workWindows = "work-windows"
 
     /// What Settings calls it.
     public var title: String {
@@ -23,6 +25,7 @@ public enum FeatureFlag: String, CaseIterable, Sendable {
         case .docs: "Docs"
         case .suggested: "Suggested"
         case .work: "Work"
+        case .workWindows: "Work in windows"
         }
     }
 
@@ -34,6 +37,7 @@ public enum FeatureFlag: String, CaseIterable, Sendable {
         case .docs: "Docs in the sidebar, and the Docs section on a work item's page. On the Mac and the web page."
         case .suggested: "New Session ▸ Suggested: the epics with no lead."
         case .work: "Work in the sidebar: issues, pull requests, releases, deploys and the timeline."
+        case .workWindows: "Open in New Window on Work's pages (Mac and iPad): an issue, a pull request or a release in a window of its own."
         }
     }
 
@@ -45,6 +49,7 @@ public enum FeatureFlag: String, CaseIterable, Sendable {
         case .docs: 6572
         case .suggested: 6572
         case .work: 6572
+        case .workWindows: 5480
         }
     }
 }

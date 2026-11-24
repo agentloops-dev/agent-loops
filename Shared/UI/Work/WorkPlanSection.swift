@@ -31,6 +31,7 @@ struct WorkPlanSection: View {
     let wrote: () -> Void
 
     @Environment(\.openURL) private var openURL
+    @Environment(\.openWorkWindow) private var openWorkWindow
     @State private var plan: DaemonAPI.ForgePlan?
     @State private var problem: String?
     /// The plan on screen came from this device's copy (#4930): no changes until its machine answers.
@@ -367,7 +368,7 @@ struct WorkPlanSection: View {
             cost: WorkPlan.costWords(rollup),
             estimate: child.item.state == "open" ? estimate.flatMap(WorkPlan.estimateWords) : nil,
             estimateRange: estimate.flatMap(EstimateWords.rangeWords),
-            open: { model.showWork(WorkPlace(kind: .issue, ref: child.item.node.ref)) },
+            open: { model.follow(WorkPlace(kind: .issue, ref: child.item.node.ref), window: openWorkWindow) },
             openLane: lane.map { lane in { model.openWorkSession(lane.id) } },
             laneTitle: lane?.title,
             openOnForge: child.item.url.flatMap(URL.init(string:)).map { url in { openURL(url) } }
@@ -656,6 +657,7 @@ private struct WorkPlanRow<BlockedBy: View>: View {
     private var menu: some View {
         blockedBy
         Button("Open \(ref)", action: open)
+        WorkWindowButton(WorkPlace(kind: .issue, ref: child.item.node.ref))
         if let openLane, let laneTitle { Button("Open lane “\(laneTitle)”", action: openLane) }
         if let openOnForge { Button(WorkList.openOnWords(child.item.node.ref), action: openOnForge) }
     }

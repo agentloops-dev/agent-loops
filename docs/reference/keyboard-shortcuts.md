@@ -35,7 +35,7 @@ ones every Mac app has.
 | Delete | Selected session(s) in the sessions list | Archives the highlighted session, or every highlighted one that is not already archived (⌘-click to pick several). |
 | Command-Z | **Session ▸ Undo Archive** | Brings back the session you just archived, while the strip that says so shows. See [Stop and archive agents](../how-to/archive-and-stop.md). |
 | Shift-Command-' | **Session ▸ Quote in Prompt** | Quotes the words you selected in a reply in the prompt. |
-| Shift-Option-Command-O | **Session ▸ Open in New Window** | Opens the session in a window of its own. See [Open a session or a folder in its own window](../how-to/open-in-its-own-window.md). |
+| Shift-Option-Command-O | **Session ▸ Open in New Window** | Opens the session in a window of its own. See [Open a session, a folder or a Work page in its own window](../how-to/open-in-its-own-window.md). |
 | Option-Command-O | **Window ▸ Open Folder in New Window** | Opens the selected folder in a window of its own. |
 | Option-Escape | **Edit ▸ Complete** | In the file editor, asks the file's language server what to write at the caret. See [Edit files](../how-to/edit-files.md). |
 | Up Arrow, Down Arrow | In an empty prompt | Brings back the prompts you sent before, one at a time. See [Send a prompt while an agent is working](../how-to/send-while-an-agent-works.md). |

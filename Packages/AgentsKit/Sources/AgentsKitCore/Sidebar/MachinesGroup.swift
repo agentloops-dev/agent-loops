@@ -75,20 +75,51 @@ public enum MachinesGroup {
 /// menu. They come after This Mac in the Machines group and first in the machine picker. Kept in
 /// defaults as one string, a machine on each line, so `@AppStorage` keeps a view in step, as the
 /// web page keeps them in `localStorage` (`agents.machinePicker.pinned`).
+///
+/// Bounded (#6797): `most` pins of `idMost` bytes; one past that is refused, as a pin is the
+/// person's choice. No age, on purpose: a pin stays until it is let go, or until the control
+/// plane no longer lists its machine (`keep`).
 public enum MachinePins {
     public static let key = "machinePicker.pinned"
+    public static let most = 100
+    /// A machine's id, as `ControlWire.isHostID` bounds it.
+    static let idMost = 64
 
     /// The pinned machines in `stored`, the defaults' string.
     public static func pinned(_ stored: String) -> [MachineRef] {
         stored.split(separator: "\n").map { MachineRef(rawValue: String($0)) }
     }
 
-    /// `stored` with the machine pinned, or let go when it is pinned.
-    public static func toggled(_ host: MachineRef, in stored: String) -> String {
+    /// `stored` with the machine pinned, or let go when it is pinned. Nil when it is refused: there is no room.
+    public static func toggled(_ host: MachineRef, in stored: String) -> String? {
         var now = pinned(stored)
-        if let at = now.firstIndex(of: host) { now.remove(at: at) } else { now.append(host) }
-        return now.map(\.rawValue).joined(separator: "\n")
+        if let at = now.firstIndex(of: host) {
+            now.remove(at: at)
+        } else {
+            guard now.count < most, host.rawValue.utf8.count <= idMost else { return nil }
+            now.append(host)
+        }
+        return joined(now)
     }
+
+    /// The pins kept in `store`. The picker once kept them as an array, under the same key.
+    public static func read(_ store: UserDefaults) -> String {
+        store.string(forKey: key) ?? (store.stringArray(forKey: key) ?? []).joined(separator: "\n")
+    }
+
+    /// The control plane listed its machines: the pin of one it does not list goes. An offline
+    /// machine is listed, so its pin stays; so does this Mac's, which goes by a name of its own.
+    public static func keep(_ store: UserDefaults, listed: some Sequence<MachineRef>) {
+        let there = Set(listed).union([.mac])
+        let left = joined(pinned(read(store)).filter(there.contains))
+        guard store.object(forKey: key) != nil, store.string(forKey: key) != left else { return }
+        store.set(left, forKey: key)
+    }
+
+    private static func joined(_ pins: [MachineRef]) -> String { pins.map(\.rawValue).joined(separator: "\n") }
+
+    /// Said when a pin is refused.
+    public static let fullWords = "At most \(most) machines can be pinned. Unpin one first."
 
     /// The menu item's words.
     public static func menuTitle(pinned: Bool) -> String { pinned ? "Unpin from Sidebar" : "Pin to Sidebar" }

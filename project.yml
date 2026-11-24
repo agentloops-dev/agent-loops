@@ -184,9 +184,11 @@ targets:
         # without the UIScene lifecycle and nothing can be judged until it launches.
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: true
-        # A session dragged out of the sidebar into a scene of its own on an iPad (#888).
+        # A session dragged out of the sidebar, or a Work row out of its list, into a scene of its own
+        # on an iPad (#888, #5475).
         NSUserActivityTypes:
           - com.alexecollins.agents.remote.session
+          - com.alexecollins.agents.remote.work
         UILaunchScreen: {}
         UISupportedInterfaceOrientations~iphone:
           - UIInterfaceOrientationPortrait
