@@ -14,7 +14,8 @@ import (
 // renewal needs no call of its own. A key that expired is refused as expired; the client
 // asks for a new code, as a forgotten one does.
 
-// DefaultKeyLifetime is how long a key lives with no setting.
+// DefaultKeyLifetime is how long a key lives with no setting, and the most: a record that
+// is not used ages out within 90 days (#6757).
 const DefaultKeyLifetime = 90 * 24 * time.Hour
 
 // renewWithin is how near its end a key is renewed: the last 30 days, or the last third
@@ -25,7 +26,7 @@ func renewWithin(life time.Duration) time.Duration {
 
 func (s *Service) keyLifetime() time.Duration {
 	if s.cfg.KeyLifetime > 0 {
-		return s.cfg.KeyLifetime
+		return min(s.cfg.KeyLifetime, DefaultKeyLifetime)
 	}
 	return DefaultKeyLifetime
 }
@@ -134,28 +135,39 @@ func (s *Service) renewConnected(ctx context.Context) {
 	}
 }
 
-// expiredKept is how long a client or machine is kept after its key expired (#3748): it
-// can never connect again, but its person still sees it, and why, for this long.
+// expiredKept is how long a machine is kept after its key expired (#3748): it can never
+// connect again, but its person still sees it, and why, for this long.
 const expiredKept = 90 * 24 * time.Hour
 
-// forgetExpired forgets, at most most, the clients and machines whose key expired
-// expiredKept ago, as a forget or a removal by hand does: a tombstone a week, and what
-// was kept for it goes. A started machine's workspace is left as it is: only its record
-// goes. It says how many went.
+// forgetExpired forgets, at most most, the clients whose key expired (#6757) and the
+// machines whose key expired expiredKept ago, as a forget or a removal by hand does: a
+// tombstone a week, and what was kept for it goes. A client connected here, or one renewed
+// since it was read, is in use and stays. A started machine's workspace is left as it is:
+// only its record goes. It says how many went.
 func (s *Service) forgetExpired(ctx context.Context, now time.Time, most int) int {
 	before := now.Add(-expiredKept)
 	gone := 0
+	connected := map[string]bool{}
+	for _, id := range s.router.ConnectedClients() {
+		connected[id] = true
+	}
+	expired := func(c records.ClientRecord) bool { return keyExpired(c.Expires, now) }
 	for _, c := range s.records.Clients() {
 		if gone >= most {
 			return gone
 		}
-		if c.Expires == nil || !c.Expires.Before(before) {
+		if connected[c.ID] || !expired(c) {
 			continue
 		}
-		if err := s.methods.forget(ctx, c.ID, 0); err != nil {
+		went, err := s.records.ForgetClientIf(ctx, c.ID, expired)
+		if err != nil {
 			s.log("could not forget " + c.Name + ", whose key expired: " + err.Error())
 			continue
 		}
+		if !went {
+			continue
+		}
+		s.methods.forgotten(c.ID, 0)
 		s.announce("clientForgotten", c.ID, "")
 		s.log("client " + c.Name + " forgotten: its key expired " + c.Expires.UTC().Format(time.DateOnly))
 		gone++
