@@ -52,6 +52,13 @@ func (a *app) create(args []string) error {
 	return chat(a.ctx, a.o, chatArgs{text: strings.Join(args, " "), cont: a.o.cont, resume: a.o.resume})
 }
 
+func (a *app) pick() error {
+	if a.o.noInput || !terminalAvailable() {
+		return errNoTerminal
+	}
+	return chat(a.ctx, a.o, chatArgs{pick: true})
+}
+
 func (a *app) follow(args []string) error {
 	o := a.o
 	o.cont, o.resume = false, ""

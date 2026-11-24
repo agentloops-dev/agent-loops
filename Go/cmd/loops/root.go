@@ -47,6 +47,9 @@ func (a *app) root() *cobra.Command {
 			return checkMode(a.o.mode)
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) == 0 && !a.o.cont && a.o.resume == "" && !a.o.print && !a.o.detach {
+				return a.pick()
+			}
 			return a.create(args)
 		},
 	}
@@ -69,6 +72,7 @@ func (a *app) root() *cobra.Command {
 	flags.StringVar(&a.o.runtime, "runtime", "", "the runtime a new session starts on (Auto by default)")
 	flags.StringVar(&a.o.mode, "mode", "", "the permission a new session starts at: plan, ask, approve-for-me or bypass-permissions")
 	flags.BoolVarP(&a.o.print, "print", "p", false, "start here, follow the turn, print the last reply")
+	flags.BoolVar(&a.o.noInput, "no-input", false, "do not prompt for a session; bare loops needs a terminal")
 	flags.BoolVar(&a.o.detach, "detach", false, "start a session here, print its id and exit")
 	flags.BoolVar(&a.o.json, "json", false, "one JSON object per line: the session first, the end last")
 	flags.StringVar(&a.o.onAsk, "on-ask", "", "a card waits: wait on any client, or fail with exit 3")
@@ -110,7 +114,7 @@ func helpText(c *cobra.Command) string {
 	b.WriteString("Agent Loops on the command line. Works in the folder of this directory.\n\n")
 	b.WriteString("USAGE\n")
 	if c == c.Root() {
-		b.WriteString("  loops [\"prompt\"]            continue this folder's newest session, or start one\n")
+		b.WriteString("  loops [\"prompt\"]            choose a recent session in this folder, or start one\n")
 		b.WriteString("  loops <command> [flags]     run one of the commands below\n\n")
 	} else {
 		fmt.Fprintf(&b, "  %s%s\n\n", c.CommandPath(), strings.TrimPrefix(c.Use, c.Name()))

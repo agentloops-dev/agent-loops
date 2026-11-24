@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -45,7 +46,16 @@ type chatArgs struct {
 	text   string
 	cont   bool
 	resume string
+	pick   bool
 }
+
+var terminalAvailable = func() bool {
+	return term.IsTerminal(int(os.Stdin.Fd())) && term.IsTerminal(int(os.Stdout.Fd()))
+}
+
+var errNoTerminal = &exit{code: exitError, msg: `loops needs a terminal to choose a session. Use: loops -c, loops -r <id>, or loops "…"`}
+
+const pickerPrompt = "Resume a session by its number, or press Enter for a new one: "
 
 // chat is loops, loops "…", loops -c and loops -r (wireframes 1 to 3).
 func chat(ctx context.Context, o options, a chatArgs) error {
@@ -138,6 +148,10 @@ func runChat(ctx context.Context, c noter, p place, o options, a chatArgs, t ter
 	}
 	f.tr = newTranscript(f.t.st)
 	target, others, err := f.pick(ctx, a)
+	if errors.Is(err, errLeave) {
+		f.sc.end()
+		return nil
+	}
 	if err != nil {
 		return err
 	}
@@ -160,6 +174,7 @@ func runChat(ctx context.Context, c noter, p place, o options, a chatArgs, t ter
 		if err := f.start(ctx, a.text); err != nil {
 			return err
 		}
+	case a.pick:
 	case t.keys == nil:
 		return &exit{code: exitError, msg: fmt.Sprintf("%s has no sessions yet, and there is nothing to send.\nStart one: loops \"what this folder needs\"", p.folderName())}
 	default:
@@ -182,10 +197,16 @@ func (f *live) askTheme(ctx context.Context) {
 	}
 }
 
-// pick is the session to continue, or nil to start one: -r names one, -c and a bare
-// loops take the newest, a prompt alone starts a new one. others counts the folder's other
-// sessions on the first page; it is -1 when the page was full, so there are more.
+// pick is the session to continue, or nil to start one: -r names one, -c takes the newest,
+// a bare loops asks for a number, and a prompt alone starts a new one. others counts the
+// folder's other sessions on the first page; it is -1 when the page was full, so there are more.
 func (f *live) pick(ctx context.Context, a chatArgs) (*wire.Agent, int, error) {
+	if a.pick {
+		if f.t.keys == nil {
+			return nil, 0, errNoTerminal
+		}
+		return f.pickRecent(ctx)
+	}
 	if a.resume != "" {
 		got, err := f.find(ctx, a.resume)
 		return got, 0, err
@@ -204,6 +225,67 @@ func (f *live) pick(ctx context.Context, a chatArgs) (*wire.Agent, int, error) {
 		return &list[0], -1, nil
 	}
 	return &list[0], len(list) - 1, nil
+}
+
+func (f *live) pickRecent(ctx context.Context) (*wire.Agent, int, error) {
+	list, err := recentSessions(ctx, f.c, f.p)
+	if err != nil {
+		return nil, 0, err
+	}
+	if len(list) == 0 {
+		f.print(fmt.Sprintf("No sessions in %s yet.", f.p.folderName()))
+		return nil, 0, nil
+	}
+	var b strings.Builder
+	printRecent(&b, f.t.st, f.p, list, time.Now())
+	lines := strings.Split(strings.TrimSuffix(b.String(), "\n"), "\n")
+	f.sc.prefix = pickerPrompt
+	f.sc.input.set("")
+	defer func() {
+		f.sc.prefix = ""
+		f.sc.input.set("")
+	}()
+	f.print(lines...)
+	for {
+		select {
+		case <-ctx.Done():
+			f.sc.end()
+			return nil, 0, ctx.Err()
+		case k, ok := <-f.t.keys:
+			if !ok {
+				return nil, 0, errLeave
+			}
+			switch k.kind {
+			case keyInterrupt, keyEOF:
+				return nil, 0, errLeave
+			case keyBackground:
+				f.t.st.dark = k.dark
+				f.sc.update()
+			case keyEnter:
+				text := strings.TrimSpace(f.sc.input.text)
+				f.sc.input.set("")
+				if text == "" {
+					return nil, 0, nil
+				}
+				n, err := strconv.Atoi(text)
+				if err != nil || n < 1 || n > len(list) {
+					f.print(fmt.Sprintf("Enter 1 to %d, or press Enter for a new one.", len(list)))
+					continue
+				}
+				return &list[n-1], len(list) - 1, nil
+			case keyNewline:
+			case keyText:
+				k.text = strings.ReplaceAll(k.text, "\n", "")
+				if f.sc.input.apply(k) {
+					f.sc.update()
+				}
+			default:
+				if f.sc.input.apply(k) {
+					f.sc.update()
+				}
+			}
+		}
+	}
 }
 
 // find is the session -r names: an id or the start of one (as loops sessions list shows it), or a
