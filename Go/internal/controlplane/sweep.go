@@ -43,7 +43,7 @@ var straysPrefixes = []string{"probe/", "handover/mark-"}
 
 // sweepReport is StoreSweep.Report.
 type sweepReport struct {
-	events, codes, tombstones, leftovers, dated, usage int
+	events, codes, tombstones, leftovers, dated, usage, releaseKeys int
 	// Leases of hosts that were removed, and org routes' tombstones (#2293).
 	orphans int
 	// Removed people cut to their tombstone (#3647).
@@ -51,7 +51,7 @@ type sweepReport struct {
 }
 
 func (r sweepReport) total() int {
-	return r.events + r.codes + r.tombstones + r.leftovers + r.usage + r.orphans + r.cut
+	return r.events + r.codes + r.tombstones + r.leftovers + r.usage + r.releaseKeys + r.orphans + r.cut
 }
 
 // full says whether a sweep of at most most deletions stopped at that bound, so more may
@@ -62,13 +62,14 @@ func (r sweepReport) add(o sweepReport) sweepReport {
 	return sweepReport{
 		events: r.events + o.events, codes: r.codes + o.codes, tombstones: r.tombstones + o.tombstones,
 		leftovers: r.leftovers + o.leftovers, dated: r.dated + o.dated, usage: r.usage + o.usage,
-		orphans: r.orphans + o.orphans, cut: r.cut + o.cut,
+		releaseKeys: r.releaseKeys + o.releaseKeys,
+		orphans:     r.orphans + o.orphans, cut: r.cut + o.cut,
 	}
 }
 
 func (r sweepReport) String() string {
-	return fmt.Sprintf("removed %d events, %d code files, %d tombstones, %d leftovers, %d usage periods, %d orphans; dated %d tombstones; cut %d removed people",
-		r.events, r.codes, r.tombstones, r.leftovers, r.usage, r.orphans, r.dated, r.cut)
+	return fmt.Sprintf("removed %d events, %d code files, %d tombstones, %d leftovers, %d usage periods, %d release-key records, %d orphans; dated %d tombstones; cut %d removed people",
+		r.events, r.codes, r.tombstones, r.leftovers, r.usage, r.releaseKeys, r.orphans, r.dated, r.cut)
 }
 
 // sweep is StoreSweep.run: old events, spent and expired codes, old tombstones and a
@@ -129,6 +130,12 @@ func sweep(ctx context.Context, rs *records.Records, now time.Time, most int, ev
 	n, err = sweepOrphans(ctx, rs, now, left)
 	report.orphans = n
 	left -= n
+	if err != nil {
+		return report, err
+	}
+
+	report.releaseKeys, err = sweepReleaseKeys(ctx, s, rs, now, left)
+	left -= report.releaseKeys
 	if err != nil {
 		return report, err
 	}

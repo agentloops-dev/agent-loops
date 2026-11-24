@@ -24,6 +24,9 @@ struct WarmPoolWordsTests {
         #expect(WarmPoolWords.claimsLine(pool().claims) == "41 claims · median 22 s · 3 found it empty")
         #expect(WarmPoolWords.claimsLine(nil) == "No claims yet")
         #expect(WarmPoolWords.stateLine(pool()) == nil)
+        var waiting = pool()
+        waiting.waitingBecause = "Mac is offline, and it has app"
+        #expect(WarmPoolWords.stateLine(waiting) == "Waiting to make a machine: Mac is offline, and it has app.")
         #expect(WarmPoolWords.stateLine(pool(state: .offHours))?.hasPrefix("Outside its hours") == true)
     }
 

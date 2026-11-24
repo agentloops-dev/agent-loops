@@ -20,8 +20,6 @@ struct NewMachineDraft: Equatable, Sendable {
     var projects: [URL] = []
     /// Start from a warm pool (#5366): claim a ready machine of this provider and size.
     var fromPool = false
-    /// The projects that pool sends already, by path: a claim's catch-up brings them up to date.
-    var poolProjects: [String] = []
 }
 
 /// What the Mac's New Machine asks besides the provider's size (#5358): a sleep time and
@@ -410,10 +408,7 @@ struct NewMachineSheet: View {
         if let choices {
             draft.stopWhenIdleMinutes = idleMinutes
             draft.projects = choices.projects.filter(sending.contains)
-            if claimsFromPool, let pool = matchingPool {
-                draft.fromPool = true
-                draft.poolProjects = pool.projects ?? []
-            }
+            draft.fromPool = claimsFromPool
         }
         Task {
             let refused = await make(draft)

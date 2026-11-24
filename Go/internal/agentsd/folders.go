@@ -32,6 +32,7 @@ type folderState struct {
 	cloneMu      sync.Mutex
 	clones       map[string]wire.CloneSummary
 	sendState
+	machineSetupBook
 	bringBackState
 }
 

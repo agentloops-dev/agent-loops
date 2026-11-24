@@ -148,10 +148,10 @@ A wireframe is never committed to `main` (#5312). Do these steps:
 
 1. Write the HTML in a scratch folder in `/tmp`.
 2. Open it with the `browser_*` tools and take a screenshot of each screen and state.
-3. Put the pictures on the orphan branch `screenshots`, as `epic-<n>/<screen>-<state>.png`,
-   in the same way as the run-app skill's `scripts/pr-shots.sh` does for a PR.
-4. In a comment on the epic, show the pictures, and put the HTML source in a
-   `<details>` block.
+3. Write the comment in a file: refer to each picture as `![…](./<screen>-<state>.png)`, and
+   put the HTML source in a `<details>` block.
+4. Post it on the epic with the pictures: the run-app skill's
+   `scripts/pr-shots.sh comment <epic> <comment.md> <picture>...` (#6963). It pushes nothing.
 5. Delete the scratch folder.
 
 ## Questions still open

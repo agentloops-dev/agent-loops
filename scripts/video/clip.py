@@ -8,8 +8,8 @@ through its walk socket (#1172), so no other window can be in the clip and a loc
 does not stop it. With a COMMAND (walk.py steps: a scroll, a press, a key), the clip runs
 from just before it starts to a second after it ends; without one, for --seconds.
 
-The clip is an animated WebP, because an animated image in `![](…)` plays inline in a PR
-from the `screenshots` branch (pr-shots.sh), where a video file shows only as a link. A clip
+The clip is an animated WebP, because an animated image in `![](…)` plays inline in a PR,
+where pr-shots.sh uploads it with the screenshots. A clip
 with sound is pr-clip.sh's (#4856). It keeps at most MOST_SECONDS, and is made smaller until
 it is under LIMIT_BYTES, or fails.
 """
@@ -106,7 +106,7 @@ def write(shown, out, width):
 
 def sheet(out, count=6):
     """A contact sheet of up to `count` of the clip's frames, outside OUT's folder (so
-    pr-shots.sh never takes it), for a person or an agent to look at before the push."""
+    pr-shots.sh never takes it), for a person or an agent to look at before the upload."""
     clip = Image.open(out)
     picks = sorted({round(i * (clip.n_frames - 1) / max(1, count - 1)) for i in range(count)})
     w, h = clip.size

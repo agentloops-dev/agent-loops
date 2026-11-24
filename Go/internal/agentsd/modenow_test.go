@@ -10,8 +10,7 @@ import (
 )
 
 // A runtime moving itself to another mode (Claude leaving plan mode, or a config option
-// it changed) is the agent's mode now: what a message from a stricter agent is held for,
-// and what a helper it starts inherits.
+// it changed) is the agent's mode now: what a helper it starts inherits.
 
 func startedIn(mode string) func(*wire.Agent) {
 	return func(a *wire.Agent) {
@@ -27,18 +26,11 @@ func TestTheModeChecksReadTheModeAnAgentIsInNow(t *testing.T) {
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := t.TempDir()
-	lead := seeded(t, d, dir, titledAs("Lead", startedIn("default")))
 	planner := seeded(t, d, dir, titledAs("Planner", startedIn("plan")))
 	helper := seeded(t, d, dir, titledAs("Helper", startedIn("default")))
 
-	if why := d.looserThan(d.Store.Agent(planner.ID), d.Store.Agent(lead.ID)); why != "" {
-		t.Fatal(why)
-	}
 	// Its plan approved with auto-accept edits: it runs in acceptEdits now.
 	d.live(planner.ID).Update(sdk.SessionNotification{Update: sdk.SessionUpdate{CurrentModeUpdate: &sdk.SessionCurrentModeUpdate{CurrentModeId: "acceptEdits"}}})
-	if why := d.looserThan(d.Store.Agent(planner.ID), d.Store.Agent(lead.ID)); why != "it runs in acceptEdits, which lets it do more without asking than yours (default)" {
-		t.Fatal(why)
-	}
 	if m := inheritedMode(d.Store.Agent(planner.ID), ""); m == nil || *m != "acceptEdits" {
 		t.Fatal(m)
 	}

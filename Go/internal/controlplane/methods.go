@@ -1047,6 +1047,9 @@ func (m *Methods) removeHost(ctx context.Context, host string, from Caller) (boo
 	if err != nil || !gone {
 		return gone, err
 	}
+	if err := m.s.forgetReleaseHost(ctx, host); err != nil {
+		m.s.log("release key cleanup for " + host + " failed: " + err.Error())
+	}
 	// No more secrets go to it, and its person hears which it had (FR-026); its person
 	// and the admins hear which org routes it held (#999).
 	defer m.s.machineLeft(host, owner, name)
@@ -1527,6 +1530,9 @@ func (m *Methods) hostReported(ctx context.Context, host, method string, params 
 			return nil, true, err
 		}
 		return map[string]any{}, true, m.s.setupStep(ctx, host, report)
+	case wire.CallMachineSetupWork.Name:
+		work, err := m.s.setupWork(ctx, host)
+		return work, true, err
 	case "machine/policyApplied":
 		applied, err := require[wire.PolicyApplied](params, "PolicyApplied")
 		if err != nil {

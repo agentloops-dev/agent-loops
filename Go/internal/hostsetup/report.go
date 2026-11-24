@@ -10,6 +10,7 @@
 package hostsetup
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -27,6 +28,9 @@ type Reporter struct {
 	mu   sync.Mutex
 	path string
 	last map[wire.MachineSetupStepID]string
+	// ctx, when set, ends the run with the host that runs it (Continue): what fails because
+	// it ended is not the step's failure, and the next host runs the step again.
+	ctx context.Context
 }
 
 // NewReporter starts a run's reports afresh: lines of an earlier run are not said again.
@@ -39,6 +43,11 @@ func NewReporter(root string) (*Reporter, error) {
 		return nil, err
 	}
 	return &Reporter{path: path, last: map[wire.MachineSetupStepID]string{}}, nil
+}
+
+// moreReports goes on saying steps after those said already, for a run inside the host.
+func moreReports(ctx context.Context, root string) *Reporter {
+	return &Reporter{path: filepath.Join(root, ReportsFile), last: map[wire.MachineSetupStepID]string{}, ctx: ctx}
 }
 
 // Say records one step's state. The same words said twice in a row are said once.
@@ -66,6 +75,9 @@ func (r *Reporter) Compared(detail, digits string) {
 func (r *Reporter) say(report wire.MachineSetupReport) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.ctx != nil && r.ctx.Err() != nil {
+		return
+	}
 	step := report.Step
 	line, err := json.Marshal(report)
 	if err != nil || r.last[step] == string(line) {

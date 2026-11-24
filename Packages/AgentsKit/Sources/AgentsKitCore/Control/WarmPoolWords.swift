@@ -36,7 +36,7 @@ public enum WarmPoolWords {
         "ready (min \(pool.minReady), max \(pool.maxSize))"
     }
 
-    /// Why a pool makes nothing now, or nil when it is keeping.
+    /// Why a pool makes nothing now, or nil when it can make.
     public static func stateLine(_ pool: DaemonAPI.WarmPool) -> String? {
         switch pool.state {
         case .stopped:
@@ -46,7 +46,7 @@ public enum WarmPoolWords {
         case .empty:
             "Min ready is 0: it makes nothing."
         case .keeping:
-            nil
+            pool.waitingBecause.map { "Waiting to make a machine: \($0)." }
         }
     }
 
