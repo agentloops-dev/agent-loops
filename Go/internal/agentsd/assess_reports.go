@@ -100,6 +100,7 @@ func (r reportFiles) Put(was reportDocument, content []byte) error {
 	if info.Size() != was.size || !info.ModTime().Equal(was.at) {
 		return errReportChanged
 	}
+	// store-bounds: kind=document; size=50 records of 1MiB; age=90d; applied=hourly sweep, and when an assessment starts or is scored
 	if err := store.WriteAtomically(path, content, info.Mode().Perm()); err != nil {
 		return err
 	}
