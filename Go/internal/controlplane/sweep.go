@@ -487,6 +487,23 @@ func sweepOrphanLeases(ctx context.Context, rs *records.Records, now time.Time, 
 	return deleted, false, nil
 }
 
+// personGone says a person was removed. The owner is never gone, also with no record, nor is
+// the admin who signs in with no person.
+func personGone(ctx context.Context, rs *records.Records, person string) (bool, error) {
+	if person == "" || person == "local" {
+		return false, nil
+	}
+	if settings := rs.Settings(); settings != nil && settings.Owner != nil && *settings.Owner == person {
+		return false, nil
+	}
+	if held := rs.Person(person); held != nil {
+		return held.IsRemoved(), nil
+	}
+	// One made at another copy, and not read here yet, has a record in the store.
+	record, err := rs.Store.Get(ctx, records.PersonKey(person))
+	return err == nil && record == nil, err
+}
+
 // sweepMachineNames deletes, at most most, the machine-N counters of removed people (#6759):
 // those removed before it went with them, and one a make wrote as its person was removed.
 // The owner keeps theirs, also with no record. full says it stopped at most.
@@ -496,26 +513,17 @@ func sweepMachineNames(ctx context.Context, rs *records.Records, _ time.Time, mo
 	if err != nil {
 		return 0, false, err
 	}
-	owner := ""
-	if settings := rs.Settings(); settings != nil && settings.Owner != nil {
-		owner = *settings.Owner
-	}
 	for _, k := range keys {
 		if deleted >= most {
 			return deleted, true, nil
 		}
 		person, ok := providers.MachineNamesPerson(k.Key)
-		if !ok || person == "local" || person == owner {
+		if !ok {
 			continue
 		}
-		if held := rs.Person(person); held != nil {
-			if !held.IsRemoved() {
-				continue
-			}
-		} else if record, err := s.Get(ctx, records.PersonKey(person)); err != nil {
+		if gone, err := personGone(ctx, rs, person); err != nil {
 			return deleted, false, err
-		} else if record != nil {
-			// Made at another copy, and not read here yet.
+		} else if !gone {
 			continue
 		}
 		if err := providers.ForgetMachineNames(ctx, s, person); err != nil {

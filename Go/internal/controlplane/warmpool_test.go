@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
@@ -119,6 +121,8 @@ func TestPlanPoolHoursAndStop(t *testing.T) {
 }
 
 type fakePools struct {
+	failDelete    map[string]bool
+	onMake        func()
 	dead          map[string]bool
 	bound         []string
 	boundProjects [][]string
@@ -135,9 +139,15 @@ func (f *fakePools) Make(person, provider, name, size, region string) (string, e
 		return "", f.failMake
 	}
 	f.made = append(f.made, name)
+	if f.onMake != nil {
+		f.onMake()
+	}
 	return "ws-" + name, nil
 }
 func (f *fakePools) Delete(person, provider, workspace string) error {
+	if f.failDelete[workspace] {
+		return errors.New("the provider does not answer")
+	}
 	f.deleted = append(f.deleted, workspace)
 	return nil
 }
@@ -356,5 +366,126 @@ func TestPoolCardHasMachinesAndClaims(t *testing.T) {
 	list, _ = w.list(ctx, "alex")
 	if c := list.Pools[0].Claims; c.Count != 1 || c.Empty != 0 {
 		t.Fatalf("the old claim is out: %+v", c)
+	}
+}
+
+// A provider has at most 10 pools, over every person (#6761): one more is refused, and one
+// that is there can be changed.
+func TestAProviderHasTenPoolsAtMost(t *testing.T) {
+	t.Parallel()
+	w, _ := testPools(t)
+	ctx := context.Background()
+	var first wire.WarmPool
+	for i := range mostPoolsAProvider {
+		pool, err := w.set(ctx, []string{"alex", "sam"}[i%2], wire.WarmPoolSet{Name: fmt.Sprint("p", i), Provider: "do", MinReady: 0, MaxSize: 1})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if i == 0 {
+			first = pool
+		}
+	}
+	set := wire.WarmPoolSet{Name: "more", Provider: "do", MinReady: 0, MaxSize: 1}
+	if _, err := w.set(ctx, "alex", set); err == nil || !strings.Contains(err.Error(), "10 is the most") {
+		t.Fatalf("the 11th: %v", err)
+	}
+	set.ID = &first.ID
+	if _, err := w.set(ctx, "alex", set); err != nil {
+		t.Fatalf("a change of one that is there: %v", err)
+	}
+	set.Provider = "aws"
+	if _, err := w.set(ctx, "alex", set); err != nil {
+		t.Fatalf("a move to another provider: %v", err)
+	}
+	set.ID = nil
+	set.Provider = "do"
+	if _, err := w.set(ctx, "alex", set); err != nil {
+		t.Fatalf("the place it left: %v", err)
+	}
+	moved := wire.WarmPoolSet{ID: &first.ID, Name: "back", Provider: "do", MinReady: 0, MaxSize: 1}
+	if _, err := w.set(ctx, "alex", moved); err == nil {
+		t.Fatal("a move to a full provider")
+	}
+}
+
+// A pool's record is bounded (#6761): settings too large are refused, a full record makes no
+// more machines, and a pass drops the claims of more than a week ago.
+func TestAPoolsRecordIsBounded(t *testing.T) {
+	t.Parallel()
+	w, f := testPools(t)
+	ctx := context.Background()
+	set := wire.WarmPoolSet{Name: "dev", Provider: "do", MinReady: 0, MaxSize: 1, Projects: []string{strings.Repeat("x", warmPoolSetMost)}}
+	if _, err := w.set(ctx, "alex", set); err == nil || !strings.Contains(err.Error(), "32 KiB at most") {
+		t.Fatal(err)
+	}
+	if err := w.write(ctx, &storedPool{ID: "big", Name: strings.Repeat("x", warmPoolMost)}, ""); err == nil {
+		t.Fatal("a record over the limit was written")
+	}
+	p := &storedPool{ID: "p", Owner: "alex", Name: "dev", Provider: "do", MinReady: 1, MaxSize: 1,
+		Claims: []storedPoolClaim{{At: time.Now().Add(-8 * 24 * time.Hour)}, {At: time.Now()}}}
+	for p.recordSize() <= warmPoolMakeMost {
+		workspace := fmt.Sprint("ws-", len(p.Machines))
+		f.stages[workspace] = stageFailed
+		p.Machines = append(p.Machines, storedPoolMachine{Name: strings.Repeat("n", 1000), Workspace: workspace})
+	}
+	must(t, w.write(ctx, p, ""))
+	must(t, w.reconcile(ctx, "p"))
+	got, _, err := w.read(ctx, "p")
+	if err != nil || len(f.made) != 0 || got.Stopped == "" || len(got.Claims) != 1 {
+		t.Fatalf("made %d, stopped %q, %d claims: %v", len(f.made), got.Stopped, len(got.Claims), err)
+	}
+	w.stop(got, strings.Repeat("é", poolStoppedMost))
+	if len(got.Stopped) > poolStoppedMost+len("…") {
+		t.Fatal(len(got.Stopped))
+	}
+}
+
+// A machine made while its pool went (a delete at another copy) is deleted (#6761).
+func TestAMachineMadeWhileItsPoolWentIsDeleted(t *testing.T) {
+	t.Parallel()
+	w, f := testPools(t)
+	ctx := context.Background()
+	must(t, w.write(ctx, poolOf(1, 1), ""))
+	f.onMake = func() { must(t, w.s.cfg.Store.Delete(ctx, warmPoolKey("p"))) }
+	must(t, w.reconcile(ctx, "p"))
+	if len(f.made) != 1 || len(f.deleted) != 1 || f.deleted[0] != "ws-"+f.made[0] {
+		t.Fatalf("made %v deleted %v", f.made, f.deleted)
+	}
+}
+
+// A removed person's pools go with their unclaimed machines, and make no more (#6761). One
+// that cannot be deleted keeps its pool for a later pass. A claimed machine is not touched.
+func TestARemovedPersonsPoolsGo(t *testing.T) {
+	t.Parallel()
+	p := startPlane(t, store.NewMemory(), controllink.NewPrivateKey())
+	ctx := context.Background()
+	f := &fakePools{stages: map[string]poolStage{}, failDelete: map[string]bool{"ws-2": true}}
+	w := &warmPools{s: p.s, backend: f}
+	pool := &storedPool{ID: "p", Owner: "removed", Name: "dev", Provider: "do", MinReady: 2, MaxSize: 4,
+		Machines: []storedPoolMachine{{Name: "a", Workspace: "ws-1"}, {Name: "b", Workspace: "ws-2"}},
+		Claims:   []storedPoolClaim{{At: time.Now(), Host: "claimed"}}}
+	must(t, w.write(ctx, pool, ""))
+	mine := &storedPool{ID: "mine", Owner: p.s.localOwner(), Name: "mine", Provider: "do", MaxSize: 1}
+	must(t, w.write(ctx, mine, ""))
+	w.forgetPerson(ctx, "removed")
+	got, _, err := w.read(ctx, "p")
+	if err != nil || got == nil || len(got.Machines) != 1 || got.Machines[0].Workspace != "ws-2" {
+		t.Fatalf("%+v %v", got, err)
+	}
+	f.failDelete = nil
+	w.reconcileAll(ctx)
+	if got, _, _ := w.read(ctx, "p"); got == nil {
+		t.Fatal("tried again at once")
+	}
+	w.forgetTried["p"] = time.Now().Add(-poolForgetAgain)
+	w.reconcileAll(ctx)
+	if got, _, err := w.read(ctx, "p"); err != nil || got != nil {
+		t.Fatalf("the pool stayed: %+v %v", got, err)
+	}
+	if got, _, err := w.read(ctx, "mine"); err != nil || got == nil {
+		t.Fatalf("the owner's pool went: %v", err)
+	}
+	if len(f.made) != 0 || len(f.deleted) != 2 {
+		t.Fatalf("made %v deleted %v", f.made, f.deleted)
 	}
 }
