@@ -153,10 +153,8 @@
 1 Go/internal/controlplane/providers/kept.go v1/kept
 1 Go/internal/controlplane/providers/secrets.go os.CreateTemp
 1 Go/internal/controlplane/records/groups.go v1/groups
-1 Go/internal/controlplane/records/people.go v1/people
 1 Go/internal/controlplane/records/projects.go v1/projects
 1 Go/internal/controlplane/records/records.go v1/hosts
-1 Go/internal/controlplane/records/records.go v1/people
 1 Go/internal/controlplane/releasefiles.go os.CreateTemp
 1 Go/internal/controlplane/releasefiles.go os.WriteFile
 2 Go/internal/controlplane/reports.go v1/usage

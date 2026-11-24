@@ -16,6 +16,7 @@ import (
 // sign-in is the control plane's key (codes). A person invited later signs in with the
 // code they were sent until outside sign-in comes (#995).
 
+// store-bounds: kind=document; size=1MiB (16KiB a record, removed people 1MiB more); age=until-deleted; applied=on write, and the hourly sweep deletes a removed person at 14 or 90 days
 const PeoplePrefix = "v1/people/"
 
 // Roles and kinds, as Person.Role and Person.Kind say them.
@@ -260,8 +261,10 @@ func (r *Records) loadPeople(ctx context.Context) error {
 		heldPeople[PersonKey(h.record.ID)] = h
 	}
 	r.mu.Unlock()
-	people := map[string]held[Person]{}
+	people, sizes := map[string]held[Person]{}, map[string]int{}
 	for _, entry := range listed {
+		// One that cannot be read counts too.
+		sizes[personIDOfKey(entry.Key)] = int(max(entry.Size, 0))
 		if h, ok := heldPeople[entry.Key]; ok && h.etag == entry.ETag {
 			people[h.record.ID] = h
 			continue
@@ -279,9 +282,10 @@ func (r *Records) loadPeople(ctx context.Context) error {
 			continue
 		}
 		people[p.ID] = held[Person]{p, object.ETag}
+		sizes[p.ID] = len(object.Data)
 	}
 	r.mu.Lock()
-	r.people = people
+	r.people, r.peopleBytes = people, sizes
 	r.mu.Unlock()
 	return nil
 }
@@ -351,6 +355,7 @@ func (r *Records) ReadPerson(ctx context.Context, id string) (*Person, error) {
 	r.mu.Lock()
 	if _, ok := r.people[id]; !ok {
 		r.people[id] = held[Person]{p, object.ETag}
+		r.peopleBytes[id] = len(object.Data)
 	}
 	r.mu.Unlock()
 	return &p, nil
@@ -367,13 +372,23 @@ func (r *Records) Person(id string) *Person {
 	return nil
 }
 
-// SavePerson makes a person, or changes one against the version read.
+// SavePerson makes a person, or changes one against the version read. One over a limit is
+// refused (PersonLimitError).
 func (r *Records) SavePerson(ctx context.Context, p Person) error {
 	r.writing.Lock()
 	defer r.writing.Unlock()
+	return r.savePersonWithin(ctx, p)
+}
+
+func (r *Records) savePersonWithin(ctx context.Context, p Person) error {
+	if err := r.personWithin(r.Person(p.ID), p); err != nil {
+		return err
+	}
 	return r.savePerson(ctx, p)
 }
 
+// savePerson writes with no limit: the local owner's record, or the control plane would not
+// start.
 func (r *Records) savePerson(ctx context.Context, p Person) error {
 	r.mu.Lock()
 	condition := store.Absent
@@ -388,8 +403,12 @@ func (r *Records) savePerson(ctx context.Context, p Person) error {
 	if err != nil {
 		return err
 	}
+	size, err := personSize(kept)
+	if err != nil {
+		return err
+	}
 	r.mu.Lock()
-	r.people[p.ID] = held[Person]{kept, etag}
+	r.people[p.ID], r.peopleBytes[p.ID] = held[Person]{kept, etag}, size
 	r.mu.Unlock()
 	return nil
 }
@@ -415,7 +434,7 @@ func (r *Records) ChangePeople(ctx context.Context, change func(map[string]Perso
 		return err
 	}
 	for _, p := range changed {
-		if err := r.savePerson(ctx, p); err != nil {
+		if err := r.savePersonWithin(ctx, p); err != nil {
 			return err
 		}
 	}

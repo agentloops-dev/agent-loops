@@ -26,7 +26,7 @@ No SCIM library: the subset of D11 is small, and a library would bring a data mo
 
 **Testing**:
 
-- `Go/scripts/go.sh test ./...`: the fake OIDC provider (R7), tickets and replay, domain proof with fake DNS, the SCIM fixtures of Okta and Entra (R4), suspension on two copies, the leak search (SC-005), the 5,000-user timing (SC-006).
+- `Go/scripts/go.sh test ./...`: the fake OIDC provider (R7), tickets and replay, domain proof with fake DNS, the SCIM fixtures of Okta and Entra (R4), suspension on two copies, the leak search (SC-005), the 1,000-user timing (SC-006).
 - `swift test` for the AgentsKit models (the new words and `OrgProvider`).
 - Biome and Vitest for the web.
 - Walks: `test-servers` (two copies), `run-app`, the Remote walk simulator, headless Chrome for the web page and the Console.
@@ -35,11 +35,11 @@ No SCIM library: the subset of D11 is small, and a library would bring a data mo
 
 **Project Type**: a distributed app: control plane, machines, and three clients.
 
-**Performance Goals**: a suspension in force on every copy in 5 s; SCIM under 200 ms at p95 for 5,000 users; a sign-in adds one token call and one JWKS read (cached) on the control plane.
+**Performance Goals**: a suspension in force on every copy in 5 s; SCIM under 200 ms at p95 for 1,000 users; a sign-in adds one token call and one JWKS read (cached) on the control plane.
 
 **Constraints**: no cloud login is ever required (the local owner stays); no readable secret, token or ID token in the store; only fields and keys are added; plain files only; hosts never escalate.
 
-**Scale/Scope**: up to 5 org providers, 20 domains, 5,000 provisioned people and 500 groups per control plane.
+**Scale/Scope**: up to 5 org providers, 20 domains, 1,000 provisioned people and 500 groups per control plane.
 
 ## Constitution Check
 

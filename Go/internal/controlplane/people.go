@@ -206,6 +206,10 @@ func (m *Methods) invitePerson(ctx context.Context, params json.RawMessage, user
 	if request.Role != wire.UserRoleAdmin && request.Role != wire.UserRoleMember {
 		return nil, fail(invalidParams, "A role is admin or member.")
 	}
+	// An invite nobody could use is not made (#7019).
+	if err := m.records.PersonRoom(); err != nil {
+		return nil, err
+	}
 	shown, err := m.s.codes.Invite(ctx, invite{Name: name, Role: string(request.Role), By: user}, inviteLifetime)
 	if err != nil {
 		return nil, err
