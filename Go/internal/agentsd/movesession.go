@@ -436,7 +436,7 @@ func (d *Daemon) moveIn(r wire.SessionMoveIn) error {
 	}
 	r.Folder = folder
 	in := &arrival{in: r}
-	res, err := d.restoreArchive(path, m.RootID, false, false, "", in)
+	res, err := d.restoreArchive(path, m.RootID, m.MadeAt, false, false, "", in)
 	if err != nil {
 		return err
 	}
