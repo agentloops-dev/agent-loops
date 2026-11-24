@@ -130,8 +130,10 @@ In the repository on your Mac:
 
 `up.sh` runs the release in `AGENTS_VERSION`, such as `0.19.0`. Without it,
 `scripts/version.sh` says, which is a release's version only in a checkout of its tag. For
-a commit that no release has, give `--build`: it builds the image on your Mac from the
-checkout, stamps that version on it, and copies it to the machine.
+a commit that no release has, give `--build`: it builds the binaries and the web
+page on your Mac from the checkout, stamps that version on them, and the machine builds the
+image from them. That takes 15 to 27 minutes on an e2-micro, with each step in the output. It
+stops after 45 minutes, or when the connection to the machine ends.
 
 To upgrade, run `up.sh` again with the new version: the machine pulls the new image, and
 keeps the store, the APNs key and the snapshot schedule. At the end, `up.sh` checks that the
