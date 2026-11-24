@@ -7,6 +7,7 @@ package controlplane
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -39,6 +40,7 @@ func TestTheSweepForgetsClientsAndMachinesLongExpired(t *testing.T) {
 	setExpires(t, p, recent.Client, now.Add(time.Minute))
 	used, inUse := p.client("Connected Mac")
 	defer inUse.Close()
+	p.waitFor(func() bool { return slices.Contains(p.s.router.ConnectedClients(), used.Client) }, "the client to be attached")
 	setExpires(t, p, used.Client, now.Add(-time.Minute))
 	saveHostExpires(t, p, oldHost.member.Host, now.Add(-91*24*time.Hour))
 
