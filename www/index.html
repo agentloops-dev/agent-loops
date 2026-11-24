@@ -396,6 +396,63 @@ Fix it on a pull request of its own.</code></pre>
   </div>
 </div></section>
 
+<!-- 6. Agents use the computer (#6858): the agent's own browser, desktop apps and the iOS simulator,
+     each a drawing (cu-). docs/reference/agent-tools.md (browser_*, fill_secret, browser_passkey,
+     drive_screen) and docs/how-to/use-the-simulator-pane.md say what each one does. -->
+<section class="page" id="computer"><div class="wrap">
+  <h2>Agents use the computer, as you do</h2>
+  <p class="lede">Some work has no API. So an agent can drive a browser, the apps on your Mac and the iOS simulator, to test what it built or to do the step that only a screen can do. You can watch it live, from any device.</p>
+  <div class="grid3 cu-grid">
+    <div class="cu-item"><figure class="anim cu-fig">
+      <svg class="cu" viewBox="0 0 340 250" role="img" aria-labelledby="cub-title cub-desc" xmlns="http://www.w3.org/2000/svg">
+        <title id="cub-title">An agent signs in to a site in its own browser</title>
+        <desc id="cub-desc">The agent types an e-mail address. The password field fills with dots from a secret, which the agent does not see. The agent uses a passkey, and it is signed in.</desc>
+        <rect class="cu-frame" x="1" y="1" width="338" height="248" rx="12"/><path class="cu-chrome" d="M1 35V13a12 12 0 0 1 12-12h314a12 12 0 0 1 12 12v22z"/><circle class="cu-light" cx="19" cy="18" r="4.5"/><circle class="cu-light" cx="34" cy="18" r="4.5"/><circle class="cu-light" cx="49" cy="18" r="4.5"/><text class="cu-s" x="66" y="22">Agent Browser · shop.example</text>
+        <text class="cu-t cu-b" x="36" y="68">Sign in</text>
+        <rect class="cu-field" x="36" y="80" width="268" height="32" rx="7"/><text class="cu-t cu-a cu-in cu-1" x="48" y="101">agent@shop.example</text>
+        <rect class="cu-field" x="36" y="122" width="268" height="32" rx="7"/><g class="cu-a cu-in cu-2"><text class="cu-t" x="48" y="143">••••••••••</text><rect class="cu-pill" x="184" y="127" width="112" height="22" rx="11"/><text class="cu-s cu-okt" x="240" y="142" text-anchor="middle">filled, not seen</text></g>
+        <g class="cu-a cu-in cu-3"><rect class="cu-field" x="36" y="164" width="268" height="32" rx="7"/><text class="cu-t" x="48" y="185">Passkey</text><path class="cu-ok" d="m268 180 4 4 8 -9"/></g>
+        <g class="cu-a cu-in cu-4"><rect class="cu-done" x="36" y="206" width="268" height="30" rx="7"/><text class="cu-t cu-b" x="170" y="226" text-anchor="middle">Signed in</text></g>
+      </svg></figure>
+      <h3>Its own browser</h3>
+      <p>It has a browser and sign-ins of its own. It fills in a password without seeing it, and it can use a passkey. When a page asks for a person, it hands that one step to you.</p>
+    </div>
+    <div class="cu-item"><figure class="anim cu-fig">
+      <svg class="cu" viewBox="0 0 340 250" role="img" aria-labelledby="cud-title cud-desc" xmlns="http://www.w3.org/2000/svg">
+        <title id="cud-title">An agent drives a desktop app</title>
+        <desc id="cud-desc">A live tile shows the Mac's screen. The pointer goes to the Product menu in Xcode and clicks Archive. The archive runs to its end. Under the screen, the tile says the last action: Clicked Archive in Xcode.</desc>
+        <rect class="cu-frame" x="1" y="1" width="338" height="248" rx="12"/><path class="cu-chrome" d="M1 35V13a12 12 0 0 1 12-12h314a12 12 0 0 1 12 12v22z"/><circle class="cu-light" cx="19" cy="18" r="4.5"/><circle class="cu-light" cx="34" cy="18" r="4.5"/><circle class="cu-light" cx="49" cy="18" r="4.5"/><text class="cu-s" x="66" y="22">Driving the Mac's screen</text>
+        <rect class="cu-field" x="20" y="48" width="300" height="158" rx="7"/>
+        <text class="cu-s cu-b" x="34" y="68">Xcode</text><text class="cu-s" x="82" y="68">File</text><text class="cu-s" x="116" y="68">Edit</text><text class="cu-s" x="152" y="68">Product</text>
+        <line class="cu-rule" x1="20" y1="78" x2="320" y2="78"/>
+        <g class="cu-a cu-menu"><rect class="cu-raise" x="146" y="82" width="126" height="84" rx="7"/><text class="cu-t" x="160" y="104">Build</text><rect class="cu-hl" x="150" y="112" width="118" height="24" rx="5"/><text class="cu-t cu-on" x="160" y="129">Archive</text><text class="cu-t" x="160" y="154">Analyze</text></g>
+        <g class="cu-a cu-in cu-3"><text class="cu-t" x="40" y="118">Archiving Order search</text><rect class="cu-track" x="40" y="130" width="260" height="8" rx="4"/><rect class="cu-a cu-bar" x="40" y="130" width="260" height="8" rx="4"/></g>
+        <g class="cu-a cu-in cu-5"><text class="cu-t cu-b" x="40" y="168">Archive succeeded</text><path class="cu-ok" d="m288 163 4 4 8 -9"/></g>
+        <g class="cu-a cu-point"><path class="cu-cur" d="M0 0v17l4.6-4.2 3 6.6 3-1.4-3-6.4h6.2z"/></g>
+        <text class="cu-s cu-a cu-in cu-2" x="22" y="230">Clicked Archive in Xcode.</text>
+      </svg></figure>
+      <h3>The apps on your Mac</h3>
+      <p>It uses the screen, mouse and keyboard, when you turn this on. One agent has the screen at a time. Move your mouse and it stops, until you let it go on.</p>
+    </div>
+    <div class="cu-item"><figure class="anim cu-fig">
+      <svg class="cu" viewBox="0 0 340 250" role="img" aria-labelledby="cus-title cus-desc" xmlns="http://www.w3.org/2000/svg">
+        <title id="cus-title">An agent tests an app in the iOS simulator</title>
+        <desc id="cus-desc">Beside the chat, an iPhone simulator starts. The app's Order search page opens, the order number 4521 goes into the search field, and one result shows. The chat says that the test passed and that a screenshot is on the pull request.</desc>
+        <rect class="cu-frame" x="1" y="1" width="338" height="248" rx="12"/><path class="cu-chrome" d="M1 35V13a12 12 0 0 1 12-12h314a12 12 0 0 1 12 12v22z"/><circle class="cu-light" cx="19" cy="18" r="4.5"/><circle class="cu-light" cx="34" cy="18" r="4.5"/><circle class="cu-light" cx="49" cy="18" r="4.5"/><text class="cu-s" x="66" y="22">Simulator · iPhone 17</text>
+        <g class="cu-a cu-in cu-1"><rect class="cu-bub" x="18" y="60" width="150" height="30" rx="10"/><text class="cu-s" x="30" y="79">Open order search</text></g>
+        <g class="cu-a cu-in cu-3"><rect class="cu-bub" x="18" y="100" width="150" height="30" rx="10"/><text class="cu-s" x="30" y="119">Search for 4521</text></g>
+        <g class="cu-a cu-in cu-5"><rect class="cu-done" x="18" y="140" width="150" height="50" rx="10"/><text class="cu-s cu-okt cu-b" x="30" y="161">1 result, test passed</text><text class="cu-s" x="30" y="179">Screenshot on the PR</text></g>
+        <rect class="cu-phone" x="206" y="48" width="112" height="190" rx="20"/><rect class="cu-notch" x="246" y="56" width="32" height="8" rx="4"/>
+        <g class="cu-a cu-in cu-2"><text class="cu-t cu-b" x="218" y="90">Orders</text><rect class="cu-field" x="216" y="100" width="92" height="26" rx="7"/></g>
+        <text class="cu-t cu-a cu-in cu-4" x="226" y="118">4521</text>
+        <g class="cu-a cu-in cu-5"><rect class="cu-done" x="216" y="136" width="92" height="40" rx="7"/><text class="cu-s cu-b" x="224" y="153">Order 4521</text><text class="cu-s" x="224" y="168">Delivered</text></g>
+      </svg></figure>
+      <h3>The iOS simulator</h3>
+      <p>It runs the app it built, tries it out, and puts the screenshots on the pull request. The simulator shows beside the chat, and agents take turns with a lease.</p>
+    </div>
+  </div>
+</div></section>
+
 <!-- 7. Lineage (#6857): the graph (ln-) draws itself from the feature to production and back,
      then lights the part that answers each question in turn. -->
 <section class="page" id="lineage"><div class="wrap">
@@ -426,6 +483,37 @@ Fix it on a pull request of its own.</code></pre>
       </svg></div>
     </div>
   </figure>
+</div></section>
+
+<!-- 8. Scale delivery (#6858): the points, and the machines as a mock (mc-): an agent asks for a
+     machine, you say yes, and work starts on it. docs/how-to/start-machines-from-agents.md,
+     docs/explanation/leases.md (capacity) and docs/reference/workflows.md (runs-on). -->
+<section class="page" id="machines"><div class="wrap">
+  <h2>Scale delivery the way you scale production</h2>
+  <p class="lede">Your development system is a fleet, as production is. Add a machine, and more work runs at once. Agents can make, start and stop cloud machines, and a new one is made only when you say yes.</p>
+  <div class="grid2">
+    <ul class="points">
+      <li><b>Any machine.</b> Your Mac, your own Linux servers, and cloud machines on DigitalOcean, AWS, Google Cloud, GitHub Codespaces or Coder.</li>
+      <li><b>Capacity.</b> Each machine says how busy it is. When one is near full, heavy work and new agents wait in line.</li>
+      <li><b>Labels.</b> A workflow says which machines it runs on, such as <code>linux</code>, <code>macos</code> or one cloud provider.</li>
+      <li><b>Priorities.</b> When places are short, the urgent work goes to the front of the line.</li>
+      <li><b>Work that moves.</b> Send an agent to another machine with its unpushed work, and bring the branch back.</li>
+      <li><b>Costs you control.</b> A cloud machine starts when it is used and stops when it is idle. Policies limit how many agents run, and spending limits stop what they cost.</li>
+    </ul>
+    <figure class="mock anim mc" role="img" aria-label="The list of machines. studio-mac is near its CPU capacity with 2 agents. build-1 has 4 agents and do-box-2 has 3. An agent asks to make do-box-3 on DigitalOcean, you press Make it, the machine starts, comes online and gets 2 agents. codespace-7 is idle, and stops.">
+      <figcaption class="mock-bar" aria-hidden="true"><span class="mock-lights"><i></i><i></i><i></i></span>Machines</figcaption>
+      <div class="mock-body" aria-hidden="true">
+        <div class="mc-list">
+          <div class="mc-row "><span class="mc-n"><b>studio-mac</b><span class="small">macOS · 2 agents</span></span><span class="mc-r"><span class="small">Near CPU capacity</span><span class="mc-meter"><i class="mc-w90 mc-near"></i></span></span></div>
+          <div class="mc-row "><span class="mc-n"><b>build-1</b><span class="small">Linux · 4 agents</span></span><span class="mc-r"><span class="small">OK</span><span class="mc-meter"><i class="mc-w60 "></i></span></span></div>
+          <div class="mc-row "><span class="mc-n"><b>do-box-2</b><span class="small">DigitalOcean · 3 agents</span></span><span class="mc-r"><span class="small">OK</span><span class="mc-meter"><i class="mc-w50 "></i></span></span></div>
+          <div class="mc-row "><span class="mc-n"><b>codespace-7</b><span class="small">GitHub Codespaces</span></span><span class="mc-r mc-stack"><span class="chip wait mc-a mc-idle">idle</span><span class="chip mc-a mc-in mc-stop">stopped</span></span></div>
+          <div class="mc-row mc-a mc-in mc-new"><span class="mc-n"><b>do-box-3</b><span class="small">DigitalOcean <span class="mc-a mc-in mc-two">· 2 agents</span></span></span><span class="mc-r mc-stack"><span class="chip wait mc-a mc-start">starting</span><span class="chip ok mc-a mc-in mc-on">online</span></span></div>
+        </div>
+        <div class="mc-ask mc-a mc-in mc-card"><span><b>An agent asks: make do-box-3?</b><span class="small">DigitalOcean · 4 CPUs · 8 GB</span></span><span class="mc-stack"><span class="mc-btn mc-a mc-press">Make it</span><span class="chip ok mc-a mc-in mc-yes">you said yes</span></span></div>
+      </div>
+    </figure>
+  </div>
 </div></section>
 
 <!-- 11. Reports (#6857): each figure is one that Reports, Delivery, Builds, Spend or Forecast

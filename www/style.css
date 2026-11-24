@@ -3,7 +3,8 @@
    which scripts/design.sh gen makes from design/tokens.json: this file keeps only rules.
    The page's CSP allows no inline style, so the inline SVGs' rules and keyframes are here too,
    with a prefix for each animation (ep- for "A feature builds and deploys itself", lp- for the loop, fm- for "Fix main, while
-   you sleep", er- for "An error in production goes back into work", ln- for lineage, rp- for reports). */
+   you sleep", er- for "An error in production goes back into work", ln- for lineage, rp- for reports,
+   cu- for the computer, mc- for machines). */
 
 :root {
   /* Words that come second: a caption, the small print, the nav. The web page's own mix. */
@@ -843,6 +844,94 @@ h3 { font-size: 1.05rem; margin: 0 0 0.4em; }
 .rp-rows p:first-child { padding-top: 0; }
 .rp-rows p:last-child { border-bottom: 0; padding-bottom: 0; }
 
+/* 6. Agents use the computer (cu-, #6858): three drawings, 12 s a loop. */
+.cu-grid { gap: 28px 20px; }
+.cu-item h3 { margin: 16px 0 4px; }
+.cu-item p { margin: 0; color: var(--paper-secondary); font-size: var(--type-supporting); }
+.anim.cu-fig { margin: 0; max-width: none; }
+.cu { font-family: var(--font-text); }
+.cu-frame { fill: var(--paper-raised); stroke: var(--paper-rule); stroke-width: 1.5; }
+.cu-chrome { fill: var(--paper-wash); }
+.cu-light, .cu-track { fill: var(--paper-rule); }
+.cu-t { font-size: 13.5px; fill: var(--paper-ink); }
+.cu-s { font-size: 12.5px; fill: var(--paper-secondary); }
+.cu-b { font-weight: 700; }
+.cu-okt { fill: var(--tint-vouched); }
+.cu-on { fill: var(--paper-ground); }
+.cu-field { fill: var(--paper-ground); stroke: var(--paper-rule); }
+.cu-raise { fill: var(--paper-raised); stroke: var(--paper-edge); }
+.cu-rule { stroke: var(--paper-rule); }
+.cu-hl, .cu-bar { fill: var(--accent); }
+.cu-pill, .cu-done { fill: var(--wash-vouched); stroke: var(--tint-vouched); }
+.cu-bub { fill: var(--paper-wash); }
+.cu-ok { fill: none; stroke: var(--tint-vouched); stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.cu-phone { fill: var(--paper-ground); stroke: var(--paper-edge); stroke-width: 3; }
+.cu-notch { fill: var(--paper-edge); }
+.cu-cur { fill: var(--paper-ink); stroke: var(--paper-ground); stroke-width: 1.2; stroke-linejoin: round; }
+.cu-menu { opacity: 0; }
+.cu-point { transform: translate(250px, 176px); }
+.cu-a { animation-duration: 12s; animation-iteration-count: infinite; animation-fill-mode: both; animation-timing-function: ease-out; }
+.js .anim:not(.playing) :is(.cu-a, .mc-a) { animation-name: none; }
+.js .anim:not(.playing) :is(.cu-in, .mc-in) { opacity: 0; }
+.cu-1 { animation-name: cu-1; }
+@keyframes cu-1 { 0%, 6% { opacity: 0; } 9%, 96% { opacity: 1; } 100% { opacity: 0; } }
+.cu-2 { animation-name: cu-2; }
+@keyframes cu-2 { 0%, 24% { opacity: 0; } 27%, 96% { opacity: 1; } 100% { opacity: 0; } }
+.cu-3 { animation-name: cu-3; }
+@keyframes cu-3 { 0%, 34% { opacity: 0; } 37%, 96% { opacity: 1; } 100% { opacity: 0; } }
+.cu-4 { animation-name: cu-4; }
+@keyframes cu-4 { 0%, 46% { opacity: 0; } 49%, 96% { opacity: 1; } 100% { opacity: 0; } }
+.cu-5 { animation-name: cu-5; }
+@keyframes cu-5 { 0%, 58% { opacity: 0; } 61%, 96% { opacity: 1; } 100% { opacity: 0; } }
+.cu-menu { animation-name: cu-menu; }
+@keyframes cu-menu { 0%, 10% { opacity: 0; } 12%, 28% { opacity: 1; } 31%, 100% { opacity: 0; } }
+.cu-point { animation-name: cu-point; }
+@keyframes cu-point { 0% { transform: translate(250px, 176px); opacity: 1; } 9%, 13% { transform: translate(176px, 62px); } 21%, 31% { transform: translate(206px, 122px); } 40%, 96% { transform: translate(250px, 176px); opacity: 1; } 100% { transform: translate(250px, 176px); opacity: 0; } }
+.cu-bar { transform-box: fill-box; transform-origin: left center; animation-name: cu-bar; }
+@keyframes cu-bar { 0%, 36% { transform: scaleX(0); } 57%, 100% { transform: none; } }
+
+/* 8. Machines (mc-, #6858): an agent asks for a machine, you say yes, work starts on it, and an
+   idle machine stops. 16 s a loop. */
+.anim.mc { margin: 0; max-width: none; align-self: center; width: 100%; }
+.mc .mock-bar { margin: 0; }
+.mc .chip { white-space: nowrap; }
+.mc-row, .mc-ask { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.mc-row { min-height: 60px; border-bottom: 1px solid var(--paper-rule); }
+.mc-n, .mc-ask > span:first-child { display: grid; }
+.mc .small { font-size: var(--type-fine); }
+.mc-r { display: grid; justify-items: end; gap: 4px; }
+.mc-stack { display: grid; justify-items: end; align-items: center; }
+.mc-stack > * { grid-area: 1 / 1; }
+.mc-stack .chip { padding-left: 10px; }
+.mc-meter { width: 110px; height: 7px; border-radius: var(--radius-pill); background: var(--paper-rule); overflow: hidden; }
+.mc-meter i { display: block; height: 100%; background: var(--accent); }
+.mc-meter .mc-near { background: var(--tint-attention); }
+.mc-w90 { width: 90%; }
+.mc-w60 { width: 60%; }
+.mc-w50 { width: 50%; }
+.mc-ask { padding: 12px 14px; border: 1px solid var(--paper-rule); border-left: 3px solid var(--tint-attention); border-radius: var(--radius-control); }
+.mc-btn { padding: 5px 12px; border-radius: var(--radius-control); background: var(--accent); color: var(--paper-ground); font-weight: 700; white-space: nowrap; }
+.mc-press, .mc-start, .mc-idle { opacity: 0; }
+.mc-a { animation-duration: 16s; animation-iteration-count: infinite; animation-fill-mode: both; animation-timing-function: ease-out; }
+.mc-card { animation-name: mc-card; }
+@keyframes mc-card { 0%, 8% { opacity: 0; } 11%, 96% { opacity: 1; } 100% { opacity: 0; } }
+.mc-yes { animation-name: mc-yes; }
+@keyframes mc-yes { 0%, 27% { opacity: 0; } 30%, 96% { opacity: 1; } 100% { opacity: 0; } }
+.mc-new { animation-name: mc-new; }
+@keyframes mc-new { 0%, 28% { opacity: 0; } 31%, 96% { opacity: 1; } 100% { opacity: 0; } }
+.mc-on { animation-name: mc-on; }
+@keyframes mc-on { 0%, 48% { opacity: 0; } 51%, 96% { opacity: 1; } 100% { opacity: 0; } }
+.mc-two { animation-name: mc-two; }
+@keyframes mc-two { 0%, 56% { opacity: 0; } 59%, 96% { opacity: 1; } 100% { opacity: 0; } }
+.mc-stop { animation-name: mc-stop; }
+@keyframes mc-stop { 0%, 72% { opacity: 0; } 75%, 96% { opacity: 1; } 100% { opacity: 0; } }
+.mc-press { animation-name: mc-press; }
+@keyframes mc-press { 0%, 22% { opacity: 1; transform: none; } 24% { transform: scale(0.92); } 26% { opacity: 1; transform: none; } 28%, 100% { opacity: 0; } }
+.mc-start { animation-name: mc-start; }
+@keyframes mc-start { 0%, 28% { opacity: 0; } 30%, 46% { opacity: 1; } 49%, 100% { opacity: 0; } }
+.mc-idle { animation-name: mc-idle; }
+@keyframes mc-idle { 0%, 71% { opacity: 1; } 73%, 100% { opacity: 0; } }
+
 /* Less motion: no animation, and each picture drawn as it ends (every pull request merged, the feature deployed and healthy). */
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
@@ -858,6 +947,8 @@ h3 { font-size: 1.05rem; margin: 0 0 0.4em; }
   .er-phone { opacity: 0; }
   .ln-a, .js .anim:not(.playing) .ln-a { animation: none; }
   .ln-in, .js .anim:not(.playing) .ln-in { opacity: 1; }
+  .cu-a, .mc-a, .js .anim:not(.playing) :is(.cu-a, .mc-a) { animation: none; }
+  .cu-in, .mc-in, .js .anim:not(.playing) :is(.cu-in, .mc-in) { opacity: 1; }
   .js .part .rp-bar, .js .part.in .rp-bar { transform: none; transition: none; }
 }
 
@@ -889,6 +980,7 @@ footer nav a { text-decoration: none; }
   /* The animation keeps a size that can be read, and scrolls to the side. */
   .anim { overflow-x: auto; }
   .anim svg { min-width: 600px; }
+  .anim.cu-fig svg { min-width: 0; }
   .anim.ln-pair { overflow-x: visible; }
   .ln-scroll { overflow-x: auto; }
 }
