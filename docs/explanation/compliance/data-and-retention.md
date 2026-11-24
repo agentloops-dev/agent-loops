@@ -83,9 +83,9 @@ Mac.
 | `mcp-events.json` | key-value | MCP event IDs already seen | 2,000 IDs, 7 days | On write |
 | `mcp-views/` | cache | View catalogues | Pruned to the live servers | On write |
 | `mcp-approvals.json`, `plugin-approvals.json` | key-value | Digests of approved MCP servers and plugins | The folders that exist: a folder that is not on disk and not in the app goes (#3652) | Hourly; MCP also on remove |
-| `devices.json` | document | Paired devices | 90 days after a device was last seen (#3652) | Hourly, and **Forget** |
+| `devices.json` | document | Paired devices | 256 of 4 KiB each; a new one past that is refused, with a message, and one in use stays. 90 days after a device was last seen (#3652, #6734) | On write; hourly; and **Forget** |
 | `review-dismissals.json` | key-value | PRs dismissed from For Review | 2,000 of 8 KiB each, for 90 days from the PR's last change (or its dismissal, when that is later); the oldest goes first. For Review leaves out a PR that has not changed for 90 days, so one whose dismissal aged out does not come back (#6728). A folder that is not on disk and not in the app goes (#3652) | Hourly, and on write: age, and the count when it is twice over |
-| `review-opened.json` | key-value | PR links for each folder | 200 a folder; a folder that is not on disk and not in the app goes (#3652) | On write, and hourly |
+| `review-opened.json` | key-value | PRs opened from For Review | 2,000 of 8 KiB each, for 90 days from the PR's last change (or its opening, when that is later); the oldest goes first. A folder that is not on disk and not in the app goes (#3652, #6729) | Hourly, and on write: age, and the count when it is twice over |
 | `lock-seen.json` | key-value | IDs of signed requests already seen, and the cutoff | 4,096 IDs of 128 bytes each, for 2 days; the one signed first goes first. A request is refused when it is more than a day old, or signed at the cutoff or before it: the latest time signed of the IDs that the count took out (#6723). | Hourly, and on write |
 | `attention.json` | document | What needs you, and what was delivered | The live needs | On write |
 | `leases.json`, `resources.json` | document | Resource leases | 240 minutes a lease; dropped when its agent stops | On write |
@@ -95,8 +95,8 @@ Mac.
 | `browser/profile/` | blob | One browser profile for every browser sign-in, and its caches | Sign-ins until the site ends them or you clear the site in Settings ▸ Browser. The caches are emptied before each start, and the HTTP cache stays under 64 MB while it runs (#3727). | At each browser start |
 | `folders.json`, `policy*.json`, `backup-settings.json`, `settings/`, and other small files | key-value | Configuration | A fixed shape | — |
 | `<file>.unreadable-<time>`, `<file>.corrupt-<time>` | blob | A store that could not be read, set aside | The newest 3 of each kind for each file | On write |
-| `connector-setup.json` | key-value | Connector set-up for each folder | Until the folder leaves the machine (#6731) | On remove |
-| `catalog-skills.json`, `catalog-mcp.json` | key-value | Installed catalogue items | Until the item is removed (#6732, #6733) | On remove |
+| `connector-setup.json` | key-value | Connector set-up for each folder | What a read found (a title, a link): 90 days. Which reads worked, and that the set-up added its connector: no age, on purpose, until the folder leaves the machine, so that a connector's set-up stays done. 2,000 folders of 64 KiB each: past that the one read longest ago goes, and a folder whose record is larger reads again (#6731) | On write, and hourly |
+| `catalog-skills.json`, `catalog-mcp.json` | key-value | Installed catalogue items | No age while the item is installed, on purpose, so that it stays known as one from a catalogue; 30 days after an item that is no longer there went. 2,000 in each file, 8 KiB each: one past that is not recorded, and its item shows as added by hand (#6732, #6733) | On write; on remove; and hourly |
 | `catalog-pending.json` | document | An install in progress | One; goes when the install ends or at the next start | At start |
 | `account-ops.json` | key-value | The last operation of each account, and the last read of each secret | 1,000 entries of 1 KiB each, for 90 days; the oldest goes first | Hourly, and on write: age, and the count when it is twice over |
 | `secret-ops.json` | key-value | The last operation of each secret held | Goes with its secret | On write |

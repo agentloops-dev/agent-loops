@@ -2,6 +2,7 @@ package agentsd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/mcpcatalog"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/skillcatalog"
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
@@ -156,13 +159,10 @@ func TestApprovalsLetGoOfFoldersThatAreGone(t *testing.T) {
 	must(t, os.WriteFile(filepath.Join(root, "plugin-approvals.json"), []byte(`{"approvalsBegan":1,"approved":{`+ //nolint:gosec // G306: the mode this file always had; only its error is new
 		`"`+onDisk+`/.agents/plugins/p":"x","`+gone+`/.agents/plugins/p":"x"},"denied":{"`+gone+`/.agents/plugins/q":"y"}}`), 0o644))
 	must(t, os.WriteFile(filepath.Join(root, "review-dismissals.json"), []byte(`{"a":{"folder":"`+onDisk+`","url":"u1"},"b":{"folder":"`+gone+`","url":"u2"}}`), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
-	must(t, os.WriteFile(filepath.Join(root, "review-opened.json"), []byte(`{"`+gone+`":["u3"]}`), 0o644))                                                               //nolint:gosec // G306: the mode this file always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(root, "review-opened.json"), []byte(`{"a":{"folder":"`+gone+`","url":"u3"}}`), 0o644))                                            //nolint:gosec // G306: the mode this file always had; only its error is new
 	d.mcpMu.Lock()
 	d.mcpLoaded = false
 	d.mcpMu.Unlock()
-	d.reviewMu.Lock()
-	d.openedLoaded = false
-	d.reviewMu.Unlock()
 
 	d.sweepSmallStores(time.Now())
 
@@ -210,5 +210,119 @@ func TestDevicesNotSeenForNinetyDaysAreForgotten(t *testing.T) {
 	}
 	if got := d.listDevices(); len(got) != 1 || string(got[0].ID) != phone {
 		t.Fatalf("devices: %+v", got)
+	}
+}
+
+// #6734: past the most devices a new one is refused and one on record still speaks; a record
+// past its largest is refused, unless it was so and does not grow.
+func TestDevicesAreBounded(t *testing.T) {
+	t.Parallel()
+
+	d, mac := startDevices(t)
+	var list []string
+	for n := range devicesMost {
+		list = append(list, fmt.Sprintf(`{"id":"%08d-2222-3333-4444-555555555555","publicKey":"AQE=","name":"Phone","kind":"iPhone","announcedAt":1}`, n))
+	}
+	list[1] = strings.Replace(list[1], `}`, `,"later":"`+strings.Repeat("x", deviceMost)+`"}`, 1)
+	must(t, os.WriteFile(d.devicesFile(), []byte("["+strings.Join(list, ",")+"]"), 0o600))
+	if e := mac.callError(t, 1, "devices/announce", announcement(phone, 1)); e.Code != wire.FailureNotPermitted {
+		t.Fatalf("one more: %+v", e)
+	}
+	mac.call(t, 2, "devices/announce", announcement("00000000-2222-3333-4444-555555555555", 1))
+	mac.call(t, 3, "devices/announce", announcement("00000001-2222-3333-4444-555555555555", 1))
+	long := announcement("00000002-2222-3333-4444-555555555555", 1)
+	long["name"] = strings.Repeat("x", deviceMost)
+	if e := mac.callError(t, 4, "devices/announce", long); e.Code != CodeInvalidParams {
+		t.Fatalf("too long: %+v", e)
+	}
+	if got := len(d.listDevices()); got != devicesMost {
+		t.Fatalf("%d devices", got)
+	}
+}
+
+// #6731: a folder's ticks and what its set-up did once stay whatever their age; what a read
+// found goes after 90 days, a record past its largest reads again, and a folder not here goes.
+func TestConnectorSetupIsBounded(t *testing.T) {
+	clock := atTime(t, time.Date(2026, 11, 24, 12, 0, 0, 0, time.UTC))
+	root, folder, big := t.TempDir(), t.TempDir(), t.TempDir()
+	d, c := start(t, root)
+	c.call(t, 1, "folders/add", map[string]any{"folder": "file://" + folder})
+	c.call(t, 2, "folders/add", map[string]any{"folder": "file://" + big})
+	rec := func(title string) *setupRecord {
+		return &setupRecord{Repo: "a/b", ReadAt: nowFunc(), EventsAdded: true, Slots: map[wire.ConnectorSlotKind]*slotRecord{
+			wire.ConnectorSlotKindTasks: {Read: true, ReadAt: nowFunc(), Proof: &wire.ConnectorProof{Title: title}}}}
+	}
+	d.setupMu.Lock()
+	m := d.setupRecordsLocked()
+	m[folder], m[big], m["/not/here"] = rec("An issue"), rec(strings.Repeat("x", setupRecordMost)), rec("x")
+	d.setupMu.Unlock()
+	read := func() map[string]*setupRecord {
+		t.Helper()
+		d.sweepSmallStores(nowFunc())
+		d.setupMu.Lock()
+		d.setupRecords = nil
+		d.setupMu.Unlock()
+		out := map[string]*setupRecord{}
+		b, err := os.ReadFile(d.setupPath())
+		must(t, err)
+		must(t, json.Unmarshal(b, &out))
+		return out
+	}
+	got := read()
+	if len(got) != 2 || len(got[big].Slots) != 0 || !got[big].EventsAdded || got[folder].Slots[wire.ConnectorSlotKindTasks].Proof == nil {
+		t.Fatalf("%+v", got)
+	}
+	clock.add(setupProofKept)
+	got = read()
+	if s := got[folder].Slots[wire.ConnectorSlotKindTasks]; !s.Read || s.Proof != nil || !got[folder].EventsAdded {
+		t.Fatalf("after 90 days: %+v", got[folder])
+	}
+}
+
+// #6732, #6733: an installed item keeps its record whatever its age; a record goes 30 days
+// after its item, and not when the item is back or its folder's drive is not plugged in.
+func TestCatalogItemsGoAfterTheirItem(t *testing.T) {
+	clock := atTime(t, time.Date(2026, 11, 24, 12, 0, 0, 0, time.UTC))
+	root, home, folder := t.TempDir(), t.TempDir(), t.TempDir()
+	unplugged := filepath.Join(t.TempDir(), "unplugged")
+	must(t, os.Mkdir(unplugged, 0o700))
+	d, c := start(t, root)
+	d.PersonalHome = home
+	c.call(t, 1, "folders/add", map[string]any{"folder": "file://" + unplugged})
+	must(t, os.RemoveAll(unplugged))
+	writeMCPJSON(t, filepath.Join(home, ".agents", "mcp.json"), "in")
+	must(t, os.MkdirAll(filepath.Join(folder, ".agents", "skills", "in"), 0o700))
+	must(t, skillcatalog.UpdateSidecar(d.skillInstaller().Sidecar, func(m map[string]skillcatalog.SidecarRecord) {
+		for _, k := range []string{folder + "/in", folder + "/back", folder + "/out", unplugged + "/in", "personal/out"} {
+			m[k] = skillcatalog.SidecarRecord{Commit: "c"}
+		}
+	}))
+	must(t, mcpcatalog.UpdateSidecar(d.mcpSidecarPath(), func(m map[string]mcpcatalog.Record) {
+		for _, k := range []string{"personal/in", "personal/out", folder + "/out", unplugged + "/in"} {
+			m[k] = mcpcatalog.Record{RegistryName: "r"}
+		}
+	}))
+	d.sweepSmallStores(nowFunc())
+	must(t, os.MkdirAll(filepath.Join(folder, ".agents", "skills", "back"), 0o700))
+	clock.add(catalogItemKeptGone - time.Hour)
+	d.sweepSmallStores(nowFunc())
+	clock.add(time.Hour)
+	if n := len(skillcatalog.LoadSidecar(d.skillInstaller().Sidecar).Skills); n != 5 {
+		t.Fatalf("%d skills before their time", n)
+	}
+	d.sweepSmallStores(nowFunc())
+	skills, servers := skillcatalog.LoadSidecar(d.skillInstaller().Sidecar).Skills, mcpcatalog.LoadSidecar(d.mcpSidecarPath()).Servers
+	for _, k := range []string{folder + "/in", folder + "/back", unplugged + "/in"} {
+		if r, ok := skills[k]; !ok || r.GoneSince != nil {
+			t.Errorf("%s: %+v", k, r)
+		}
+	}
+	for _, k := range []string{"personal/in", unplugged + "/in"} {
+		if r, ok := servers[k]; !ok || r.GoneSince != nil {
+			t.Errorf("%s: %+v", k, r)
+		}
+	}
+	if len(skills) != 3 || len(servers) != 2 {
+		t.Fatalf("%v %v", skills, servers)
 	}
 }
