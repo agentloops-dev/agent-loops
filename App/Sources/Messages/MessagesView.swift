@@ -19,6 +19,23 @@ final class MessagesListState {
     var markingAll = false
     var markProblems: [String] = []
 
+    /// The conversation last opened in a window of its own (#5482), and how many were: its window starts from this row,
+    /// and one already open reads its messages again, as opening it in place does.
+    private(set) var windowRow: MessagesList.Row?
+    private(set) var windowAsks = 0
+
+    func openInWindow(_ row: MessagesList.Row, _ window: OpenWorkWindow) {
+        windowRow = row
+        windowAsks += 1
+        window(WorkWindowKey(conversation: row.id))
+    }
+
+    /// The conversation `key` as this window knows it now.
+    func known(_ key: String) -> MessagesList.Row? {
+        if let windowRow, windowRow.id == key { return windowRow }
+        return MessagesList.merged(lists ?? []).first { $0.id == key }
+    }
+
     var ask: [String] { [String(asked), String(unreadOnly)] }
     var rows: [MessagesList.Row] { MessagesList.merged(lists ?? [], source: source) }
     /// Where the next page of messages/conversationsAll starts (#5571); none at the end.
@@ -83,7 +100,7 @@ final class MessagesListState {
 
     /// Every machine's conversations in one call to the control plane (#5571): the first page, or the one after
     /// `cursor`, added to `into`; and where the next page starts. A failed call is a line of its own.
-    private static func read(model: AppModel, unread: Bool, cursor: String? = nil,
+    static func read(model: AppModel, unread: Bool, cursor: String? = nil,
                              into: [MessagesList.HostConversations] = [])
         async -> (lists: [MessagesList.HostConversations], cursor: String?) {
         guard !model.messagesMachines.isEmpty else { return (into, nil) }
@@ -134,12 +151,107 @@ struct MessagesView: View {
                     .help(MessagesList.nextHelp)
                     .accessibilityLabel(MessagesList.nextConversation)
             }
+            ToolbarItem(placement: .primaryAction) {
+                if let row = list.open { ConversationWindowButton(row: row, list: list, inToolbar: true) }
+            }
         }
+        .modifier(WorkWindows())
+    }
+}
+
+/// **Open in New Window** on a conversation (#5482), in its row's menu and in its page's toolbar.
+private struct ConversationWindowButton: View {
+    @Environment(\.openWorkWindow) private var openWorkWindow
+    let row: MessagesList.Row
+    let list: MessagesListState
+    var inToolbar = false
+
+    var body: some View {
+        if let openWorkWindow {
+            if inToolbar {
+                Button { list.openInWindow(row, openWorkWindow) } label: { Image(toolbarIcon: "macwindow.badge.plus") }
+                    .help(OpenWorkWindow.words)
+                    .accessibilityLabel(OpenWorkWindow.words)
+            } else {
+                Button(OpenWorkWindow.words) { list.openInWindow(row, openWorkWindow) }
+            }
+        }
+    }
+}
+
+/// A conversation in a window of its own (#5482), as Messages shows it. One opened again at launch is found by its key
+/// in the machines' lists, with the same read as the list's.
+struct ConversationWindow: View {
+    @Environment(AppModel.self) private var model
+    let conversation: String
+    let list: MessagesListState
+    @State private var row: MessagesList.Row?
+    /// What the lookup read when it did not find the conversation; nil before.
+    @State private var missing: [MessagesList.HostConversations]?
+    @State private var tries = 0
+    @State private var asks = 0
+
+    private struct Ask: Equatable {
+        let machines: [MachineRef]
+        let tries: Int
+    }
+
+    var body: some View {
+        Group {
+            if let row {
+                ConversationPage(row: row, asks: asks) { list.markedRead(row.id) }
+            } else if let missing {
+                notFound(missing)
+            } else if model.controlPlaneListed, model.messagesMachines.isEmpty {
+                Text(MessagesList.noMachine).foregroundStyle(.secondary).padding(24)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                List { WorkPlaceholderRows(count: 4) }.listStyle(.inset).disabled(true)
+            }
+        }
+        .navigationTitle(row?.conversation.title ?? MessagesList.title)
+        .task(id: Ask(machines: model.messagesMachines.map(\.id), tries: tries)) { await find() }
+        .onChange(of: list.windowAsks) {
+            guard let opened = list.windowRow, opened.id == conversation else { return }
+            row = opened
+            asks += 1
+        }
+    }
+
+    private func notFound(_ read: [MessagesList.HostConversations]) -> some View {
+        VStack(spacing: 12) {
+            ForEach(MessagesList.problems(read), id: \.self) { line in
+                Label(line, icon: "exclamationmark.triangle")
+            }
+            if MessagesList.problems(read).isEmpty { Text(MessagesList.notInList) }
+            Button("Try Again") { tries += 1 }.linkStyle()
+        }
+        .appText(.supporting)
+        .foregroundStyle(.secondary)
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func find() async {
+        guard row == nil else { return }
+        missing = nil
+        row = list.known(conversation)
+        guard row == nil, !model.messagesMachines.isEmpty else { return }
+        var read: [MessagesList.HostConversations] = []
+        var cursor: String?
+        for _ in 0 ..< MessagesList.mostPagesToFind {
+            (read, cursor) = await MessagesListState.read(model: model, unread: false, cursor: cursor, into: read)
+            guard !Task.isCancelled, row == nil else { return }
+            row = MessagesList.merged(read).first { $0.id == conversation }
+            if row != nil || cursor == nil { break }
+        }
+        if row == nil { missing = read }
     }
 }
 
 private struct MessagesListPane: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.openWorkWindow) private var openWorkWindow
     @Bindable var list: MessagesListState
 
     var body: some View {
@@ -149,6 +261,15 @@ private struct MessagesListPane: View {
             content
         }
         .task(id: list.ask) { await list.load(model: model) }
+    }
+
+    /// The conversation here, or with ⌘ held in a window of its own (#5482).
+    private func open(_ row: MessagesList.Row) {
+        if let openWorkWindow, OpenWorkWindow.commandHeld {
+            list.openInWindow(row, openWorkWindow)
+        } else {
+            list.open = row
+        }
     }
 
     private var filters: some View {
@@ -191,8 +312,9 @@ private struct MessagesListPane: View {
                         Text(list.unreadOnly ? MessagesList.noUnread : MessagesList.noConversations).foregroundStyle(.secondary)
                     }
                     ForEach(rows) { row in
-                        Button { list.open = row } label: { ConversationRow(row: row) }
+                        Button { open(row) } label: { ConversationRow(row: row) }
                             .buttonStyle(.plain)
+                            .contextMenu { ConversationWindowButton(row: row, list: list) }
                     }
                     if list.hasMore {
                         Button(list.loadingMore ? "Loading…" : "More") { Task { await list.more(model: model) } }
@@ -275,6 +397,8 @@ private struct ConversationPage: View {
     @Environment(AppModel.self) private var model
     @Environment(\.openURL) private var openURL
     let row: MessagesList.Row
+    /// Goes up when the person opens the conversation again while it is shown (#5482): it is read again.
+    var asks = 0
     /// The read marked the conversation read on its service (#5137).
     var markedRead: () -> Void = {}
 
@@ -318,7 +442,7 @@ private struct ConversationPage: View {
                 replyField(replyAs).padding(.horizontal, 16).padding(.vertical, 8)
             }
         }
-        .task { await read(more: false) }
+        .task(id: asks) { await read(more: false) }
     }
 
     private func replyField(_ replyAs: String) -> some View {
@@ -392,6 +516,7 @@ private struct ConversationPage: View {
                 returning: DaemonAPI.MessagesRead.self, on: row.host)
             messages = (more ? messages ?? [] : []) + got.messages
             cursor = got.cursor
+            problem = nil
             if got.markedRead == true { markedRead() }
         } catch {
             problem = error.localizedDescription
