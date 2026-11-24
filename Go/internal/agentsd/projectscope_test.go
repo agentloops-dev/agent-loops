@@ -230,7 +230,7 @@ func TestAProjectMemberOnAnotherMachineReadsButCannotStop(t *testing.T) {
 }
 
 // A message from an agent of the project on another machine wakes a waiting session here
-// and is read, as its starter's is, not held as from a session gone (#5618).
+// and is read, as its starter's is (#5618).
 func TestAProjectMemberOnAnotherMachineMessagesAWaitingSession(t *testing.T) {
 	t.Parallel()
 
@@ -254,12 +254,5 @@ func TestAProjectMemberOnAnotherMachineMessagesAWaitingSession(t *testing.T) {
 	waitFor(t, "the lead's turn over", func() bool { return d.Store.Agent(lead.ID).State == wire.AgentStateFinished })
 	if a := d.Store.Agent(lead.ID); len(a.QueuedPrompts) != 0 {
 		t.Fatalf("still queued: %+v", a.QueuedPrompts)
-	}
-	// The record outlives a restart, so a message still queued then goes too.
-	d.elsewhereMu.Lock()
-	d.elsewhereLoaded = false
-	d.elsewhereMu.Unlock()
-	if !d.messagedFromElsewhere(lead.ID, "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE") {
-		t.Fatal("the member's record is not kept in elsewhere.json")
 	}
 }

@@ -705,13 +705,11 @@ func (d *Daemon) messageSession(caller wire.UUID, args map[string]json.RawMessag
 	busy = busy || inFlight(target.State) || target.State == wire.AgentStateQueued
 	waitsOnPerson := target.Report != nil && target.Report.Outcome == wire.WorkOutcomeNeedsAnswer && target.State == wire.AgentStateFinished
 	stopped := target.State == wire.AgentStateStopped
-	// A target that may do more without asking than this session is not woken, and its
-	// turns pass the message over (nextTurn), until the person speaks to it; unless it set
-	// this session going (reportsTo).
-	looser := d.holdsMessageFrom(target, me)
+	// Any session of the project wakes it, whatever either's mode or sandbox (#6950): the
+	// preface says the words are not the person's.
 	// A session that wakes always runs, also over the running limit, which gates only new
 	// starts (#4377).
-	wakes := !busy && !stopped && !waitsOnPerson && looser == ""
+	wakes := !busy && !stopped && !waitsOnPerson
 	d.messageMu.Lock()
 	if d.messagesSent == nil {
 		d.messagesSent = map[wire.UUID][]time.Time{}
@@ -738,8 +736,6 @@ func (d *Daemon) messageSession(caller wire.UUID, args map[string]json.RawMessag
 		l.kick()
 	}
 	switch {
-	case looser != "":
-		return "Sent to " + name + ", but it waits in that chat until the person speaks to it: " + looser + "." + queuedMessageNote, nil
 	case busy:
 		return "Sent to " + name + ". It is working, so it reads this once its turn ends." + queuedMessageNote, nil
 	case stopped:
