@@ -20,6 +20,9 @@ import (
 
 // Daemon is one host: its root, the clients connected to it, and what it serves them.
 type Daemon struct {
+	// assessMu guards the files of the assessments (assessmentFiles).
+	assessMu sync.Mutex
+
 	// smallFiles are the bounded small files (smallFile), each swept hourly; set in newWith.
 	smallFiles []interface {
 		Name() string
