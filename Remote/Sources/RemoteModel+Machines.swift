@@ -602,6 +602,7 @@ extension RemoteModel {
         }
         localCopy?.listed(machines: listed.map(\.id))
         MachinePins.keep(WindowDefaults.store, listed: listed.map(\.id))
+        keptStartFolders = StartFolders.keep(keptStartFolders, listed: listed.map(\.id))
     }
 
     /// What another host says that the shared model does not claim, and the phone wants:

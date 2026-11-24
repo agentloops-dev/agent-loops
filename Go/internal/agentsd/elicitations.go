@@ -75,6 +75,10 @@ func (l *live) Elicitation(ctx context.Context, params json.RawMessage) (string,
 		d.record(l.id, wire.TranscriptEntryKind{RuntimeNote: &wire.TranscriptEntryKindRuntimeNote{Value: questionWentUnanswered}})
 		return string(wire.AnswerElicitationRequestActionCancel), nil
 	}
+	if err := d.formRefused(req); err != nil {
+		d.record(l.id, runtimeNote(browserWords(err)))
+		return string(wire.AnswerElicitationRequestActionDecline), nil
+	}
 	r := l.holdForm(ctx, req)
 	if r.action != wire.AnswerElicitationRequestActionAccept {
 		// The protocol's decline has no words (#4039): the reason comes as the next prompt.
@@ -103,7 +107,7 @@ func (l *live) holdForm(ctx context.Context, req wire.ElicitationRequest) elicit
 	case <-ctx.Done():
 		// The runtime went (closeQuestionsOfAGoneRuntime): nothing to say to it.
 		if l.take(req.ID) != nil {
-			d.endRequest(req.ID, wire.RequestStateDropped, nil, wire.RequestDroppedWhyAskerEnded, nil)
+			d.endRequest(req.ID, wire.RequestStateDropped, nil, wire.RequestEndedWhyAskerEnded, nil)
 			d.record(l.id, wire.TranscriptEntryKind{RuntimeNote: &wire.TranscriptEntryKindRuntimeNote{Value: questionWentUnanswered}})
 			d.formDown(l.id, req.ID)
 		}
@@ -222,7 +226,7 @@ func (l *live) ElicitationComplete(elicitationID string) {
 		// not see an agent still waiting on one.
 		l.d.moveIf(l.id, wire.AgentStateWaitingOnUser, wire.AgentStateRunning)
 		if l.take(id) != nil {
-			l.d.endRequest(id, wire.RequestStateDropped, nil, wire.RequestDroppedWhyAskerEnded, nil)
+			l.d.endRequest(id, wire.RequestStateDropped, nil, wire.RequestEndedWhyAskerEnded, nil)
 			pe.reply <- cancelled()
 		}
 		l.d.formDown(l.id, id)
@@ -250,7 +254,7 @@ func (l *live) closeForms(every bool) {
 	}
 	l.mu.Unlock()
 	for _, pe := range pes {
-		l.d.endRequest(pe.req.ID, wire.RequestStateDropped, nil, wire.RequestDroppedWhyAskerEnded, nil)
+		l.d.endRequest(pe.req.ID, wire.RequestStateDropped, nil, wire.RequestEndedWhyAskerEnded, nil)
 		l.d.record(l.id, wire.TranscriptEntryKind{RuntimeNote: &wire.TranscriptEntryKindRuntimeNote{Value: questionWentUnanswered}})
 		pe.reply <- cancelled()
 		l.d.formDown(l.id, pe.req.ID)
@@ -285,7 +289,7 @@ func (l *live) dismissQuestions() (left []string) {
 	l.mu.Unlock()
 	sort.Slice(pes, func(i, j int) bool { return pes[i].req.AskedAt < pes[j].req.AskedAt })
 	for _, pe := range pes {
-		l.d.endRequest(pe.req.ID, wire.RequestStateDropped, nil, wire.RequestDroppedWhyByPerson, nil)
+		l.d.endRequest(pe.req.ID, wire.RequestStateDropped, nil, wire.RequestEndedWhyByPerson, nil)
 		l.d.record(l.id, wire.TranscriptEntryKind{ElicitationAnswered: &wire.TranscriptEntryKindElicitationAnswered{ID: pe.req.ID,
 			Summary: dismissedByMessage}})
 		if pe.left {
@@ -300,7 +304,7 @@ func (l *live) dismissQuestions() (left []string) {
 		if req.Secret != nil || req.HandOff != nil || req.Mode.Form == nil {
 			continue
 		}
-		if !l.d.endRequest(req.ID, wire.RequestStateDropped, nil, wire.RequestDroppedWhyByPerson, nil) {
+		if !l.d.endRequest(req.ID, wire.RequestStateDropped, nil, wire.RequestEndedWhyByPerson, nil) {
 			continue
 		}
 		l.d.record(l.id, wire.TranscriptEntryKind{ElicitationAnswered: &wire.TranscriptEntryKindElicitationAnswered{ID: req.ID,

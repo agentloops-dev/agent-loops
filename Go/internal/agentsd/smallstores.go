@@ -29,6 +29,9 @@ func (d *Daemon) sweepSmallStores(now time.Time) {
 	d.sweepPluginApprovals(gone)
 	d.sweepReviewFolders(gone)
 	d.sweepUnseenDevices(now)
+	if err := d.carryRemovedConnectors(); err != nil {
+		log.Printf("retention: %v", err)
+	}
 	for _, f := range d.smallFiles {
 		if n, err := f.Sweep(); err != nil {
 			log.Printf("retention: %s: %v", f.Name(), err)

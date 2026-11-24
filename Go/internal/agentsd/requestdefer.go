@@ -34,6 +34,10 @@ func (d *Daemon) deferRequest(r wire.RequestsDefer, by *wire.AuditActor) (wire.R
 		d.requests.mu.Unlock()
 		return wire.RequestUpdate{}, &Error{Code: wire.FailureNoSuchAgent, Message: "That request has ended already.", Data: wire.RequestUpdate{Request: c}}
 	}
+	if last := rec.AskedAt.Time().Add(requestMaxAge); r.Until != nil && !r.Until.Time().Before(last) {
+		d.requests.mu.Unlock()
+		return wire.RequestUpdate{}, Invalid("This request expires on %s, 90 days after it was asked. Pick a time before that.", last.Format("2 January 2006"))
+	}
 	def := &wire.RequestDeferral{Until: r.Until, At: at, By: by}
 	if atMac {
 		def.AtMac = new(true)

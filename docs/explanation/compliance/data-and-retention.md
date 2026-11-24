@@ -45,7 +45,7 @@ Mac.
 | `erasures.json` | document | Runtime copies of deleted agents still to erase | 1,000 entries, 3 tries, 7 days | On write |
 | `erased.json` | document | Every agent deleted here | 10,000 IDs of 128 bytes each, for 90 days; the oldest goes first (#6715) | Hourly, and on write: age, and the count when it is twice over |
 | `elsewhere.json` | key-value | Sessions started on or from other machines | 800 entries of 64 KiB each, for 90 days from when the two machines last spoke of the session, so one in use stays; the one heard of the longest ago goes first | Hourly, and on write: age, and the count when it is twice over |
-| `requests/<id>.json` | document | Open questions and forms | Ended ones 14 days; 1,000 files. An open one has no age (#6718). | On write |
+| `requests/<id>.json` | document | Open questions and forms | 1,000 records of 256 KiB each, and 90 days from when it was asked, open too (#6718). Ended ones 14 days; the oldest ended one goes first. An open one is never evicted: a new one past 1,000 open is refused. At 90 days an open one is dropped, and the session that asked is told once. An answer is cut to 16 KiB, and 100 waiters are listed. | Hourly and at start; on write when it is twice over the count |
 | `archived-summaries.json`, in the cache folder | cache | An index of the archived agents | With the agents. Made again when it is missing. | On write |
 | `revisions.json` | log | Which records changed and went | 2,000 removals, 7 days | On write |
 | `alive.json`, `background.json` | key-value | When the machine last ran, and the commands that outlive a stop | One of each | On write |
@@ -141,7 +141,7 @@ Mac.
 | `~/.agents-secrets/sealed.json` | secret | Every secret of yours on this machine, sealed to it (#4014, #4177), with Ask before use on or off | Until you remove them | — |
 | `~/.agents-secrets/sessions/<agent>.json` | secret | Secrets for one session | The values go when the agent is archived; the file goes when it is deleted | On archive and delete; leftovers at start |
 | `~/.agents/dismissed-leads.json` | key-value | The epics you dismissed from New Session's **Suggested** | 500 epics of 1 KiB each, for 90 days; the oldest goes first. An epic that gets a lead goes at once (#6713). In the data folder on a machine with no personal home | Hourly, and on write: age, and the count when it is twice over |
-| `~/.agents/mcp.removed.json` | key-value | MCP servers you removed | 20. No age (#6727). | On write |
+| `~/.agents/mcp.removed.json` | key-value | MCP servers you removed, so that you can put one back by hand. The app does not read it to connect anything | 100 connectors of 256 KiB each, for 90 days after you removed them. When it is full, a removal is refused; none goes to make room (#6727) | Hourly, and on write: age. On write: count and size |
 | `~/.agents-secrets/mcp-sign-ins.json` | secret | MCP sign-in tokens | Until you sign out. No count limit (#6740). | — |
 | `~/.agents-secrets/hints.json` | secret | The last 4 characters of each secret | With its secret. No count limit (#6741). | On write |
 | `~/.agents-secrets/descriptions.json` | key-value | Secret descriptions, which are not secret | With its secret. No count limit (#6742). | On write |
@@ -324,7 +324,7 @@ What the Mac window and the Remote keep in their defaults, and the web page in
 | `work-cache.sqlite`, in the cache folder (Mac, Remote); IndexedDB `agents` › `work` (web) | cache | Forge items, bodies, comments and Work page answers | 90 days since it was read from the forge. 200 MiB on the Mac, 50 MiB on the Remote and the web page, least recently shown out first. An item is 4 KiB and any other record 4 MiB at most. | On write, at start, hourly, and on **Forget** |
 | `shared-inbox.json` (Remote) | blob | What was shared to Agent Loops | Each attachment is capped. No count, total or age (#6795). | On use |
 | `attention-snapshot.json` (Remote) | cache | The widget's rows | 12 rows; stale after 15 minutes | On write, and on **Forget** |
-| `remote.startFolders` (Remote) | key-value | Start folders | **None** (#6798) | Never |
+| `remote.startFolders` (Remote) | key-value | The folders you add to a new session on the Remote, each with its machine | 100 folders, each a path of 1,024 bytes and a machine id of 64: one past that is refused, with a message. No age, on purpose: a folder is your choice. It stays until you remove it, until the control plane no longer lists its machine, or until **Forget**. An offline machine's stays (#6798). | On write, when the machines are listed, and on **Forget** |
 | `machinePicker.pinned` (`agents.machinePicker.pinned` on the web page) | key-value | Pinned machines | 100 machine ids of 64 bytes each: one past that is refused, with a message. No age, on purpose: a pin is your choice. It stays until you remove it, or until the control plane no longer lists its machine. An offline machine's stays (#6797). | On write, and when the machines are listed |
 | `voiceMode.*`, marketplaces, working marks, `reviewDiffLayout`, `agents.startForm` and other choices | key-value | Choices on this client | A fixed set (#6802 to #6806) | — |
 | MDM profile (Mac) | key-value | The control plane an org pins a Mac to | Read only; set by the org (#6801) | — |

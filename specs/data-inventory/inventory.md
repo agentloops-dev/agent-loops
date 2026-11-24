@@ -148,7 +148,7 @@ from the root (`agentsd/backups.go:69,72`). It holds nothing else.
 | `reviews/runtimes/<rt>-<date>.md` | Runtime assessment reports | 1 MiB per report; newest 50 per machine; 90 days; not those git tracks (`assess_reports.go`, #6712) | hourly, on start and on score |
 | `workflows/assess-<id>.md` | Assessment throwaway workflow | **none** | never |
 | `pins.json` | Pinned pages, views, sessions and workflows, and hidden views | 10 pages and views, 10 sessions and 10 workflows, 4 KiB a pin; 50 hidden views, 1 KiB each; 128 KiB in all; a write past that is refused (`pins.go`, #6725). No age, on purpose: current state, until removed | on write, on archive |
-| `folder.json`, `policy.json`, `mcp.json`, `personas/`, `skills/`, `plugins/`, `workflows/`, `docs-maps.json`, `marketplaces.json`, `mcp.removed.json`, … | Folder configuration (meant to be committed) | small; `mcp.removed.json` capped (`mcpcatalog/files.go:26`) | edited in place |
+| `folder.json`, `policy.json`, `mcp.json`, `personas/`, `skills/`, `plugins/`, `workflows/`, `docs-maps.json`, `marketplaces.json`, `mcp.removed.json`, … | Folder configuration (meant to be committed) | small; `mcp.removed.json` capped (`removedconnectors.go`) | edited in place |
 
 ## 3. Outside our folders
 
@@ -392,7 +392,7 @@ newer than a row above for the same store.
 | `<root>/erased.json` | document | IDs of deleted agents | 10,000 IDs, 400 days | `Go/internal/agentsd/erasure.go:43-44` | #6715 |
 | `<root>/repo-aliases.json` | key-value | Repo renames | 1,000 renames of 2 KiB each, 90 days, the oldest first | `Go/internal/agentsd/repoaliases.go` (`openRepoAliases`) | #6716 |
 | `<root>/release-tags.json` | log | Linked release tags | 5,000 tags of 1 KiB; 90 days | `Go/internal/agentsd/lineagerelease.go` | #6717 |
-| `<root>/requests/<id>.json` | document | Open questions and forms | Ended ones 14 days, 1,000 files; an open one has no age | `Go/internal/agentsd/requests.go:27-28` | #6718 |
+| `<root>/requests/<id>.json` | document | Open questions and forms | 1,000 records of 256 KiB; 90 days, open too (dropped, its asker told); ended ones 14 days | `Go/internal/agentsd/requestfiles.go` | #6718 |
 | `<root>/lineage-deploys.json` | key-value | Each deploy's last event | 1,000 deploys of 16 KiB each, 90 days from the last event, the oldest first | `Go/internal/agentsd/lineagedeploy.go` (`openDeploys`) | #6719 |
 | `<root>/account-ops.json` | key-value | Last operation of each account and secret | 1,000 entries of 1 KiB each, 90 days, the oldest first | `Go/internal/agentsd/accountops.go` (`openAccountOps`) | #6720 |
 | `<root>/elsewhere.json` | key-value | Sessions on other machines | 800 entries of 64 KiB each, 90 days from when the machines last spoke of the session, the oldest first | `Go/internal/agentsd/elsewhere.go` (`openElsewhere`) | #6722 |
@@ -401,7 +401,7 @@ newer than a row above for the same store.
 | `<root>/assessments/` | document | Runtime assessments | The newest 50; 90 days from the start; 256 KiB per file | `Go/internal/agentsd/assess_store.go` | #6724 |
 | `<folder>/.agents/pins.json` | key-value | Pinned pages, views, sessions and workflows, and hidden views | 10 of each and 50; 4 KiB a pin, 1 KiB a hidden view, 128 KiB a folder; until removed (no age, on purpose: a person's choices, committed with the folder) | `Go/internal/agentsd/pins.go` (`pinsFileMost`) | #6725 |
 | `~/.agents/checks/suggestions.json` | document | Daily-check findings and dismissals | 50 findings, 200 dismissals, no age | `Go/internal/agentsd/dailychecks.go:39,49` | #6726 |
-| `~/.agents/mcp.removed.json` | key-value | Removed MCP servers | 20, no age | `Go/internal/agentsd/mcpcatalog/files.go:27` | #6727 |
+| `~/.agents/mcp.removed.json` | key-value | Removed MCP servers | 100 of 256 KiB each, 90 days from the removal; refuses when full | `Go/internal/agentsd/removedconnectors.go` (`openRemovedConnectors`) | #6727 |
 | `<root>/review-dismissals.json` | key-value | Dismissed PR links | 200 a folder; until the folder goes | `Go/internal/agentsd/reviews.go:29` | #6728 |
 | `<root>/review-opened.json` | key-value | Opened PR links | 200 a folder; until the folder goes | `Go/internal/agentsd/reviews.go:31` | #6729 |
 | `<root>/workflows.json` (states) and `workflow-copies/` | key-value | Workflow states and approved copies | While the workflow file exists, then 30 days | `Go/internal/agentsd/smallstores.go:21` | #6730 |
@@ -473,7 +473,7 @@ newer than a row above for the same store.
 | Remote app group `shared-inbox.json` | blob | What was shared to Agent Loops | Each attachment capped; no count, total or age | `Packages/AgentsKit/Sources/AgentsKitCore/Widget/SharedInbox.swift:88,105-118` | #6795 |
 | Mac browser pane `WKWebsiteDataStore.default()` | blob | Cookies and site storage of every site the pane opened | None: only the caches are emptied, at launch; not on Forget | `App/Sources/Sidebar/BrowserPane.swift:171-195` | #6796 |
 | `machinePicker.pinned` (Mac, Remote, web) | key-value | Pinned machines | 100 of 64 bytes each, one over that refused; until removed, or its machine is no longer listed (no age, on purpose: a person's choice) | `Packages/AgentsKit/Sources/AgentsKitCore/Sidebar/MachinesGroup.swift` (`MachinePins`); `Web/src/model/machinePicker.ts` | #6797 |
-| Remote defaults `remote.startFolders` | key-value | Start folders | None; not pruned, not cleared on Forget | `Remote/Sources/RemoteModel.swift` | #6798 |
+| Remote defaults `remote.startFolders` | key-value | Start folders, each with its machine | 100 of 1,024 + 64 bytes each, one over that refused; until removed, its machine is no longer listed, or Forget (no age, on purpose: a person's choice) | `Packages/AgentsKit/Sources/AgentsKitCore/Sidebar/StartFolders.swift` | #6798 |
 | Mac and Remote `App Support/Agents/control-client.json` | key-value | The pairing with a control plane | Config outside .agents | `App/Sources/Control/ControlConfig.swift:40; Remote/Sources/Link/ControlPlaneLink.swift:20` | #6800 |
 | Mac MDM profile `ControlPlaneAddress`, `ControlPlaneKey`, `MustJoin` | key-value | An org's pin to its control plane | Read only, set by the org | `Packages/AgentsKit/Sources/AgentsKitCore/Control/MachinePin.swift:15-17` | #6801 |
 | Mac and Remote defaults `voiceMode.*` | key-value | Voice mode settings | Only in the device's defaults | `Shared/UI/Voice (voiceMode keys)` | #6802 |

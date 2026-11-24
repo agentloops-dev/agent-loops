@@ -182,7 +182,7 @@ func TestTheForgeEndsARequest(t *testing.T) {
 	for _, r := range listedRequests(t, c, 3, "ended") {
 		switch r.Forge.Item {
 		case "issue":
-			if r.State != wire.RequestStateDropped || r.DroppedWhy == nil || *r.DroppedWhy != wire.RequestDroppedWhyForgeClosed {
+			if r.State != wire.RequestStateDropped || r.DroppedWhy == nil || *r.DroppedWhy != wire.RequestEndedWhyForgeClosed {
 				t.Fatalf("%+v", r)
 			}
 		case "pr":

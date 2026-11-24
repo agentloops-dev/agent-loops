@@ -53,7 +53,7 @@
 1 Go/internal/agentsd/mac.go WriteAtomically
 1 Go/internal/agentsd/mcpcatalog.go WriteAtomically
 1 Go/internal/agentsd/mcpcatalog.go os.WriteFile
-3 Go/internal/agentsd/mcpcatalog/files.go WriteAtomically
+2 Go/internal/agentsd/mcpcatalog/files.go WriteAtomically
 1 Go/internal/agentsd/mcpcatalog/signins.go WriteAtomically
 1 Go/internal/agentsd/mcpevents.go WriteAtomically
 1 Go/internal/agentsd/mcpservers.go WriteAtomically
@@ -73,7 +73,6 @@
 1 Go/internal/agentsd/receive.go os.OpenFile
 2 Go/internal/agentsd/receive.go os.WriteFile
 3 Go/internal/agentsd/relay.go os.WriteFile
-1 Go/internal/agentsd/requests.go WriteAtomically
 1 Go/internal/agentsd/restarts.go WriteAtomically
 1 Go/internal/agentsd/runtimes.go os.WriteFile
 1 Go/internal/agentsd/runtimesignin.go os.WriteFile

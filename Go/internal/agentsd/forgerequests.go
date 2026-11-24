@@ -236,6 +236,12 @@ func (d *Daemon) forgeRequestSeen(ctx context.Context, l forgeRequestLabel, i wi
 	if opened {
 		r = &wire.Request{ID: wire.UUID(store.NewUUID()), Kind: l.kind, Source: wire.RequestSourceForge, State: wire.RequestStateOpen,
 			Folder: string(store.FolderURL(*i.Folder)), Waiters: []wire.RequestWaiter{}, AskedAt: at}
+		r.Title, r.Forge = i.Title, f
+		if err := d.requestRefusedLocked(r); err != nil {
+			d.requests.mu.Unlock()
+			log.Printf("requests: %s is not a request: %v", *i.URL, err)
+			return
+		}
 		d.requests.byID[r.ID] = r
 	}
 	r.Title, r.Forge = i.Title, f
@@ -265,7 +271,7 @@ func (d *Daemon) forgeRequestGone(ctx context.Context, r wire.Request) {
 	}
 	switch {
 	case detail.Item.State != "open" && (kind == lineage.KindPR || !allDone(checklistOf(detail.Body))):
-		d.endRequest(r.ID, wire.RequestStateDropped, nil, wire.RequestDroppedWhyForgeClosed, nil)
+		d.endRequest(r.ID, wire.RequestStateDropped, nil, wire.RequestEndedWhyForgeClosed, nil)
 	case detail.Item.State != "open":
 		d.endRequest(r.ID, wire.RequestStateAnswered, new("Closed with every step done"), "", nil)
 	case kind == lineage.KindPR:
