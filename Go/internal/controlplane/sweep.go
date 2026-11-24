@@ -598,8 +598,9 @@ func sweepRemovedOrgRoutes(ctx context.Context, rs *records.Records, _ time.Time
 // (#3649), not only when someone next lists them: each list deletes what is past its
 // own bound on the way (joins, lock joins and sign-ins an hour after they end, link
 // requests a day after, budget requests the next day, decided governance requests after
-// 30 days, and a removed person's or machine's at once), and the governance approvals of
-// a person or group that is gone (#3748).
+// 30 days, and a removed person's or machine's at once), the channel links not used for
+// linkUnusedKept (#6763), and the governance approvals of a person or group that is gone
+// (#3748).
 func (s *Service) sweepRequests(ctx context.Context, now time.Time) {
 	failed := func(what string, err error) {
 		if err != nil {
@@ -615,6 +616,7 @@ func (s *Service) sweepRequests(ctx context.Context, now time.Time) {
 	s.links.readAgain()
 	_, err = s.links.all(ctx)
 	failed("link requests", err)
+	failed("channel links", s.links.expire(ctx, now, mostPerSweep))
 	_, err = s.budgetRequests(ctx, now)
 	failed("budget requests", err)
 	_, err = s.governanceUsage(ctx)

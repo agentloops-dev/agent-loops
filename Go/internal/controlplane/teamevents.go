@@ -171,11 +171,11 @@ func (s *Service) serverEventChecked(ctx context.Context, in wire.Event) (wire.E
 		if !ok {
 			return wire.Event{}, fail(invalidParams, "That sender names no one.")
 		}
-		link, _, err := s.links.read(ctx, sender.Channel, sender.Identity)
+		link, err := s.links.linked(ctx, sender)
 		if err != nil {
-			return wire.Event{}, fail(storeUnavailable, "The channel links could not be read: %v", err)
+			return wire.Event{}, err
 		}
-		if link == nil || !s.isPerson(link.User) {
+		if link == nil {
 			return wire.Event{}, fail(notPermitted, "That sender is not linked to a person.")
 		}
 		name := s.personName(link.User)

@@ -35,6 +35,7 @@ import (
 //	v1/linkRequests/<request>.json               a request, kept a day after it ends
 
 const (
+	// store-bounds: kind=document; size=1MiB (4KiB a record); age=90d; applied=size before an approval, age since its last use in the hourly sweep
 	linksPrefix        = "v1/links/"
 	linkRequestsPrefix = "v1/linkRequests/"
 	linkLifetime       = 24 * time.Hour
@@ -56,6 +57,9 @@ type linkRecord struct {
 	User       string        `json:"user"`
 	ApprovedBy string        `json:"approvedBy"`
 	ApprovedAt records.Stamp `json:"approvedAt"`
+	// UsedAt is when the identity last acted, to linkUsedWithin; none on a link kept before
+	// #6763, which the next sweep dates.
+	UsedAt *records.Stamp `json:"usedAt,omitempty"`
 }
 
 // linkRequestRecord is v1/linkRequests/<request>.json.
@@ -150,11 +154,11 @@ func (l *links) check(ctx context.Context, in wire.ChannelSender) (wire.ChannelL
 		l.s.log("an email from a sender whose DKIM did not pass was refused")
 		return wire.ChannelLinkChecked{Refused: new("The email's DKIM check did not pass.")}, nil
 	}
-	link, _, err := l.read(ctx, sender.Channel, sender.Identity)
+	link, err := l.linked(ctx, sender)
 	if err != nil {
-		return wire.ChannelLinkChecked{}, fail(storeUnavailable, "The channel links could not be read: %v", err)
+		return wire.ChannelLinkChecked{}, err
 	}
-	if link != nil && l.s.isPerson(link.User) {
+	if link != nil {
 		return wire.ChannelLinkChecked{User: &link.User, UserName: optional(l.s.personName(link.User))}, nil
 	}
 	if err := l.ask(ctx, sender); err != nil {
@@ -458,14 +462,19 @@ func (l *links) decide(ctx context.Context, request wire.ChannelLinkDecide, user
 			return nil
 		}
 	}
-	r.Result, r.By = "approved", user
-	if err := l.writeRequest(ctx, *r, etag); err != nil {
-		return err
-	}
+	now := records.At(l.now())
 	link := linkRecord{Channel: r.Channel, Identity: r.Identity, Name: r.Name, User: r.For, ApprovedBy: user,
-		ApprovedAt: records.At(l.now())}
+		ApprovedAt: now, UsedAt: &now}
 	data, err := records.Encode(link)
 	if err != nil {
+		return err
+	}
+	// Before the request is spent, so it can be approved once there is room (#6763).
+	if err := l.room(ctx, linkKey(link.Channel, link.Identity), len(data)); err != nil {
+		return err
+	}
+	r.Result, r.By = "approved", user
+	if err := l.writeRequest(ctx, *r, etag); err != nil {
 		return err
 	}
 	if _, err := l.s.cfg.Store.Put(ctx, linkKey(link.Channel, link.Identity), data, store.Always); err != nil {

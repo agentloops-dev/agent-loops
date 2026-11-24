@@ -201,7 +201,7 @@ handover also leaves out `v1/keys/` (`storecopy.go:21,25`).
 | `v1/projectFolders/<host>.json` | A machine's joined folders | 1,000 | orphan sweep |
 | `v1/locks/<person>/<n>.json` | Machine-lock chain | 4,096 per person (`machinelock/lock.go:40`) | only on Reset. **Not deleted when the person is removed.** |
 | `v1/users/<u>/settings.json`, `notices.json`, `secrets/<NAME>.json` | Person settings, notice bucket, sealed secrets | 256 KiB part, 16 KiB secret, 200 secrets (`usersettings/usersettings.go:45-49`) | on person removal |
-| `v1/links/<channel>/<sha>.json` | Channel identity → person | **no cap** | on unlink or person removal |
+| `v1/links/<channel>/<sha>.json` | Channel identity → person, and when it last acted | 4 KiB a record, 1 MiB in all (#6763) | 90 days unused, hourly; on unlink or person removal |
 
 ### Requests, codes and sign-in
 
@@ -437,7 +437,7 @@ newer than a row above for the same store.
 | `v1/machine-setup-times.json` | time series | Set-up durations | 90 days, 50 a step, 32 KiB; on write and hourly; no roll-up | `Go/internal/controlplane/machinesetuptimes.go` | #6760 |
 | `v1/warm-pools/<id>.json` | document | Warm pools and their claims | No count limit on pools; no delete when a person goes; config outside .agents | `Go/internal/controlplane/warmpool.go:33,44-45,124` | #6761 |
 | `v1/providers/` | document | Machine providers | No count limit; until removed; config outside .agents | `Go/internal/controlplane/providers/records.go:31` | #6762 |
-| `v1/links/` | document | Channel identity links | No count limit; until unlinked or the person goes | `Go/internal/controlplane/links.go:38` | #6763 |
+| `v1/links/` | document | Channel identity links | 4 KiB a record, 1 MiB in all; 90 days unused, or until unlinked or the person goes | `Go/internal/controlplane/linkbounds.go` | #6763 |
 | `v1/governance/` approvals | document | Catalogue approvals | 1,000; until taken back or the person or group goes | `Go/internal/controlplane/governance.go:43` | #6764 |
 | `v1/policy/versions/` | document | Old policy versions | 100, no age | `Go/internal/controlplane/policy.go:36-48` | #6765 |
 | `v1/scim/tokens/` | secret | SCIM token hashes, revoked ones too | 20, no age, trimmed on write only | `Go/internal/controlplane/scim_tokens.go:30` | #6766 |
@@ -518,7 +518,7 @@ files expire without a summary. The `Forever` setting and a live conversation do
 90-day maximum age.
 
 Numeric product bounds still missing from responsible child issues include
-control-plane entity, provider, warm-pool, link, release-key, and invite quotas; browser and
+control-plane entity, provider, warm-pool, release-key, and invite quotas; browser and
 shared-inbox quotas; and store-specific record and collection limits where the rows above say
 **not specified**. The epic lead must track these in the existing responsible child issues or
 file a follow-up child issue when no owner exists. Do not replace this statement with estimates.
