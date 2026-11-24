@@ -4,7 +4,7 @@
    The page's CSP allows no inline style, so the inline SVGs' rules and keyframes are here too,
    with a prefix for each animation (ep- for "A feature builds and deploys itself", lp- for the loop, fm- for "Fix main, while
    you sleep", er- for "An error in production goes back into work", ln- for lineage, rp- for reports,
-   cu- for the computer, mc- for machines). */
+   cu- for the computer, mc- for machines, sl- for Slack, ml- for mail, ot- for outputs, vm- for voice mode). */
 
 :root {
   /* Words that come second: a caption, the small print, the nav. The web page's own mix. */
@@ -944,6 +944,152 @@ h3 { font-size: 1.05rem; margin: 0 0 0.4em; }
 .mc-idle { animation-name: mc-idle; }
 @keyframes mc-idle { 0%, 71% { opacity: 1; } 73%, 100% { opacity: 0; } }
 
+/* 9. Slack and mail (sl-, ml-, #6859): 16 s a loop. A picture's own words wrap, so they stay
+   readable on a phone. */
+.anim:is(.sl, .ml, .ot, .vm) { margin: 0; max-width: none; width: 100%; }
+:is(.sl, .ml, .ot, .vm) .mock-bar { margin: 0; }
+:is(.sl-a, .ml-a, .vm-a) { animation-duration: 16s; }
+.ot-a { animation-duration: 20s; }
+:is(.sl-a, .ml-a, .ot-a, .vm-a) { animation-iteration-count: infinite; animation-fill-mode: both; animation-timing-function: ease-out; }
+.js .anim:not(.playing) :is(.sl-a, .ml-a, .ot-a, .vm-a) { animation-name: none; }
+.js .anim:not(.playing) :is(.sl-in, .ml-in, .ot-in, .vm-in) { opacity: 0; }
+.sl-msg { display: grid; grid-template-columns: 30px 1fr; gap: 10px; }
+.sl-av { display: grid; place-items: center; width: 30px; height: 30px; border-radius: var(--radius-code); font-weight: 700; }
+.sl-you { background: var(--wash-attention); color: var(--tint-attention); }
+.sl-bot { background: var(--wash-accent); color: var(--accent); }
+.sl-at { color: var(--accent); background: var(--wash-accent); border-radius: var(--radius-code); padding: 0 3px; }
+.sl-stack { display: grid; align-items: center; margin-top: 6px; }
+.sl-stack > * { grid-area: 1 / 1; }
+.sl-btns { display: flex; flex-wrap: wrap; gap: 8px; }
+.sl-btn { padding: 3px 10px; border: 1px solid var(--paper-edge); border-radius: var(--radius-control); font-weight: 600; }
+.sl-ask { opacity: 0; }
+.sl-press { animation-name: sl-press; }
+@keyframes sl-press { 0%, 48% { transform: none; background: transparent; } 51% { transform: scale(0.94); background: var(--wash-accent); } 53%, 100% { transform: none; background: var(--wash-accent); } }
+.ml-mail { display: grid; gap: 3px; padding: 12px 14px; border: 1px solid var(--paper-rule); border-radius: var(--radius-control); background: var(--paper-ground); }
+.ml-chip { margin-top: 6px; padding-left: 10px; }
+.ml-secret { position: relative; display: inline-block; min-width: 132px; margin-left: 6px; text-align: center; letter-spacing: 0.1em; }
+.ml-code { padding: 8px 0; }
+.anim .ml-tape { position: absolute; left: 50%; top: 50%; width: 138px; min-width: 0; max-width: none; transform: translate(-50%, -50%) rotate(-7deg); overflow: visible; }
+.ml-stamp { animation-name: ml-stamp; }
+@keyframes ml-stamp { 0%, 42% { opacity: 0; transform: scale(2.2); } 45% { opacity: 1; transform: scale(0.9); } 47%, 96% { opacity: 1; transform: none; } 100% { opacity: 0; transform: none; } }
+.sl-1 { animation-name: sl-1; }
+@keyframes sl-1 { 0%, 2% { opacity: 0; } 5%, 96% { opacity: 1; } 100% { opacity: 0; } }
+.sl-2 { animation-name: sl-2; }
+@keyframes sl-2 { 0%, 16% { opacity: 0; } 19%, 96% { opacity: 1; } 100% { opacity: 0; } }
+.sl-3 { animation-name: sl-3; }
+@keyframes sl-3 { 0%, 30% { opacity: 0; } 33%, 96% { opacity: 1; } 100% { opacity: 0; } }
+.sl-ask { animation-name: sl-ask; }
+@keyframes sl-ask { 0%, 30% { opacity: 0; } 33%, 54% { opacity: 1; } 56%, 100% { opacity: 0; } }
+.sl-got { animation-name: sl-got; }
+@keyframes sl-got { 0%, 56% { opacity: 0; } 59%, 96% { opacity: 1; } 100% { opacity: 0; } }
+.sl-4 { animation-name: sl-4; }
+@keyframes sl-4 { 0%, 72% { opacity: 0; } 75%, 96% { opacity: 1; } 100% { opacity: 0; } }
+.ml-1 { animation-name: ml-1; }
+@keyframes ml-1 { 0%, 4% { opacity: 0; } 7%, 96% { opacity: 1; } 100% { opacity: 0; } }
+.ml-2 { animation-name: ml-2; }
+@keyframes ml-2 { 0%, 18% { opacity: 0; } 21%, 96% { opacity: 1; } 100% { opacity: 0; } }
+.ml-3 { animation-name: ml-3; }
+@keyframes ml-3 { 0%, 36% { opacity: 0; } 39%, 96% { opacity: 1; } 100% { opacity: 0; } }
+.ml-5 { animation-name: ml-5; }
+@keyframes ml-5 { 0%, 60% { opacity: 0; } 63%, 96% { opacity: 1; } 100% { opacity: 0; } }
+
+/* 10. Outputs (ot-, #6859): 20 s a loop. Its last picture, the changes, is the one that stays. */
+.anim.ot { align-self: center; }
+.ot-split { display: grid; grid-template-columns: 1fr 1.25fr; font-size: var(--type-supporting); }
+.ot-split p { margin: 0; }
+.ot-chat { padding: 16px; display: flex; flex-direction: column; gap: 10px; border-right: 1px solid var(--paper-rule); }
+.ot-me, .vm-me { justify-self: end; padding: 8px 12px; border-radius: var(--radius-floating); background: var(--wash-accent); }
+.ot-me { align-self: end; }
+.ot-chat .bubble { align-self: start; }
+.ot-card { display: grid; gap: 6px; padding: 10px 12px; border: 1px solid var(--paper-rule); border-radius: var(--radius-control); }
+.ot-undo { color: var(--accent); font-weight: 600; }
+.ot-pane { min-width: 0; background: var(--paper-ground); }
+.ot-tabs { display: flex; gap: 16px; padding: 10px 14px 0; border-bottom: 1px solid var(--paper-rule); color: var(--paper-secondary); font-weight: 600; }
+.ot-tabs span { position: relative; padding-bottom: 8px; }
+.ot-tabs i { position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; background: var(--accent); }
+.ot-stack { display: grid; padding: 14px; min-height: 290px; }
+.ot-stack > div { grid-area: 1 / 1; min-width: 0; }
+.ot-p1, .ot-p2, .ot-p3, .ot-tf { opacity: 0; }
+.ot-stack h4 { margin: 8px 0; font-size: 1.05rem; }
+.ot-stack ol { margin: 0; padding-left: 20px; display: grid; gap: 8px; }
+.ot-flag { margin-left: 6px; padding: 1px 6px; border-radius: var(--radius-code); background: var(--accent); color: var(--paper-ground); font-weight: 700; font-size: var(--type-fine); }
+.anim .ot-stack svg { min-width: 0; max-width: 240px; margin: 10px auto 0; }
+.ot-box rect { fill: var(--paper-raised); stroke: var(--accent); stroke-width: 1.5; }
+.ot-arrow, .ot-axis { fill: none; stroke: var(--paper-edge); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.ot-txt { font-size: 13.5px; fill: var(--paper-ink); text-anchor: middle; }
+.ot-was { fill: var(--paper-edge); }
+.ot-now { fill: var(--accent); }
+.ot-split .ot-file { display: flex; justify-content: space-between; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--paper-rule); }
+.ot-add { color: var(--tint-vouched); }
+.ot-del { color: var(--tint-failure); }
+.ot-diff { margin: 14px 0 0; font-family: var(--font-mono); font-size: var(--type-fine); line-height: 1.8; white-space: pre-wrap; }
+.ot-diff span { display: block; padding: 0 6px; }
+.ot-diff i { font-style: normal; font-weight: 700; border-radius: var(--radius-code); padding: 1px 2px; }
+.ot-al { background: var(--wash-vouched); }
+.ot-al i { background: color-mix(in srgb, var(--tint-vouched) 30%, transparent); }
+.ot-dl { background: color-mix(in srgb, var(--tint-failure) 12%, transparent); }
+.ot-dl i { background: color-mix(in srgb, var(--tint-failure) 28%, transparent); }
+.ot-m1 { animation-name: ot-m1; }
+@keyframes ot-m1 { 0%, 3% { opacity: 0; } 6%, 96% { opacity: 1; } 100% { opacity: 0; } }
+.ot-m2 { animation-name: ot-m2; }
+@keyframes ot-m2 { 0%, 32% { opacity: 0; } 35%, 96% { opacity: 1; } 100% { opacity: 0; } }
+.ot-m3 { animation-name: ot-m3; }
+@keyframes ot-m3 { 0%, 50% { opacity: 0; } 53%, 96% { opacity: 1; } 100% { opacity: 0; } }
+.ot-m4 { animation-name: ot-m4; }
+@keyframes ot-m4 { 0%, 68% { opacity: 0; } 71%, 96% { opacity: 1; } 100% { opacity: 0; } }
+.ot-p1 { animation-name: ot-p1; }
+@keyframes ot-p1 { 0%, 3% { opacity: 0; } 6%, 30% { opacity: 1; } 32%, 100% { opacity: 0; } }
+.ot-p2 { animation-name: ot-p2; }
+@keyframes ot-p2 { 0%, 32% { opacity: 0; } 35%, 48% { opacity: 1; } 50%, 100% { opacity: 0; } }
+.ot-p3 { animation-name: ot-p3; }
+@keyframes ot-p3 { 0%, 50% { opacity: 0; } 53%, 66% { opacity: 1; } 68%, 100% { opacity: 0; } }
+.ot-p4 { animation-name: ot-p4; }
+@keyframes ot-p4 { 0%, 68% { opacity: 0; } 71%, 96% { opacity: 1; } 100% { opacity: 0; } }
+.ot-l1 { animation-name: ot-l1; }
+@keyframes ot-l1 { 0%, 8% { opacity: 0; } 11%, 94% { opacity: 1; } 96%, 100% { opacity: 0; } }
+.ot-l2 { animation-name: ot-l2; }
+@keyframes ot-l2 { 0%, 13% { opacity: 0; } 16%, 94% { opacity: 1; } 96%, 100% { opacity: 0; } }
+.ot-l3 { animation-name: ot-l3; }
+@keyframes ot-l3 { 0%, 18% { opacity: 0; } 21%, 94% { opacity: 1; } 96%, 100% { opacity: 0; } }
+.ot-l4 { animation-name: ot-l4; }
+@keyframes ot-l4 { 0%, 23% { opacity: 0; } 26%, 94% { opacity: 1; } 96%, 100% { opacity: 0; } }
+.ot-tf { animation-name: ot-tf; }
+@keyframes ot-tf { 0%, 66% { opacity: 1; } 68%, 100% { opacity: 0; } }
+.ot-tc { animation-name: ot-tc; }
+@keyframes ot-tc { 0%, 68% { opacity: 0; } 71%, 96% { opacity: 1; } 100% { opacity: 0; } }
+
+/* 12. Voice mode (vm-, #6859): 16 s a loop. */
+.vm-pair { margin-top: 64px; align-items: center; }
+.vm-h { font-size: 1.4rem; }
+.vm-p { margin: 0 0 1em; color: var(--paper-secondary); }
+.vm .mock-body { min-height: 350px; align-content: start; grid-template-rows: auto auto auto auto 1fr auto; }
+.vm .bubble { max-width: 86%; }
+.vm .mock-body > * { align-self: start; }
+.vm-bar { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 8px 14px; border: 1px solid var(--paper-rule); border-radius: var(--radius-floating); background: var(--paper-ground); }
+.vm-wave { display: flex; align-items: center; gap: 3px; height: 30px; }
+.vm-wave i { width: 3px; height: 26px; border-radius: var(--radius-pill); background: var(--accent); transform: scaleY(0.3); animation: vm-wave 1.1s ease-in-out infinite alternate; }
+.vm-wave i:nth-child(3n+1) { animation-delay: -0.4s; transform: scaleY(0.6); }
+.vm-wave i:nth-child(4n+2) { animation-delay: -0.8s; transform: scaleY(0.9); }
+.vm-wave i:nth-child(5n) { animation-duration: 0.8s; }
+@keyframes vm-wave { from { transform: scaleY(0.2); } to { transform: scaleY(1); } }
+.js .anim:not(.playing) .vm-wave i { animation-play-state: paused; }
+.vm-state { display: grid; justify-items: end; color: var(--paper-secondary); font-weight: 600; }
+.vm-state > * { grid-area: 1 / 1; }
+.vm-listen { opacity: 0; animation-name: vm-listen; }
+@keyframes vm-listen { 0%, 16% { opacity: 1; } 18%, 60% { opacity: 0; } 62%, 74% { opacity: 1; } 76%, 100% { opacity: 0; } }
+.vm-speak { animation-name: vm-speak; }
+@keyframes vm-speak { 0%, 16% { opacity: 0; } 18%, 60% { opacity: 1; } 62%, 74% { opacity: 0; } 76%, 96% { opacity: 1; } 100% { opacity: 0; } }
+.vm-1 { animation-name: vm-1; }
+@keyframes vm-1 { 0%, 4% { opacity: 0; } 7%, 96% { opacity: 1; } 100% { opacity: 0; } }
+.vm-2 { animation-name: vm-2; }
+@keyframes vm-2 { 0%, 18% { opacity: 0; } 21%, 96% { opacity: 1; } 100% { opacity: 0; } }
+.vm-3 { animation-name: vm-3; }
+@keyframes vm-3 { 0%, 36% { opacity: 0; } 39%, 96% { opacity: 1; } 100% { opacity: 0; } }
+.vm-4 { animation-name: vm-4; }
+@keyframes vm-4 { 0%, 64% { opacity: 0; } 67%, 96% { opacity: 1; } 100% { opacity: 0; } }
+.vm-5 { animation-name: vm-5; }
+@keyframes vm-5 { 0%, 76% { opacity: 0; } 79%, 96% { opacity: 1; } 100% { opacity: 0; } }
+
 /* Less motion: no animation, and each picture drawn as it ends (every pull request merged, the feature deployed and healthy). */
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
@@ -961,6 +1107,8 @@ h3 { font-size: 1.05rem; margin: 0 0 0.4em; }
   .ln-in, .js .anim:not(.playing) .ln-in { opacity: 1; }
   .cu-a, .mc-a, .js .anim:not(.playing) :is(.cu-a, .mc-a) { animation: none; }
   .cu-in, .mc-in, .js .anim:not(.playing) :is(.cu-in, .mc-in) { opacity: 1; }
+  .sl-a, .ml-a, .ot-a, .vm-a, .vm-wave i, .js .anim:not(.playing) :is(.sl-a, .ml-a, .ot-a, .vm-a) { animation: none; }
+  .sl-in, .ml-in, .ot-in, .vm-in, .js .anim:not(.playing) :is(.sl-in, .ml-in, .ot-in, .vm-in) { opacity: 1; }
   .js .part .rp-bar, .js .part.in .rp-bar { transform: none; transition: none; }
 }
 
@@ -993,6 +1141,8 @@ footer nav a { text-decoration: none; }
   .anim { overflow-x: auto; }
   .anim svg { min-width: 600px; }
   .anim.cu-fig svg { min-width: 0; }
+  .ot-split { grid-template-columns: 1fr; }
+  .ot-chat { border-right: 0; border-bottom: 1px solid var(--paper-rule); }
   .anim.ln-pair { overflow-x: visible; }
   .ln-scroll { overflow-x: auto; }
 }

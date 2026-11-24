@@ -517,6 +517,83 @@ Fix it on a pull request of its own.</code></pre>
   </div>
 </div></section>
 
+<!-- 9. Slack and mail (#6859): a Slack thread (sl-) and a mailbox (ml-), with the workflow file
+     between them. The slack server asks with buttons; the email server reads and never sends. -->
+<section class="page" id="messages"><div class="wrap">
+  <h2>Slack and mail drive the work</h2>
+  <p class="lede">Your team already reports bugs in Slack and by mail. Mention the bot or send a mail, and a workflow starts an agent on it. The agent answers in the Slack thread and asks its questions there, so nobody has to open another app.</p>
+  <div class="grid3">
+    <figure class="mock anim sl" role="img" aria-label="A Slack thread in the checkout channel. Sam mentions Agents: the coupon field is broken on mobile. Agents answers: On it, I filed bug 523. Agents asks: hide the field, or make it scroll? Sam presses Make it scroll. Agents answers: Fixed and merged in pull request 524.">
+      <figcaption class="mock-bar" aria-hidden="true"><span class="mock-lights" aria-hidden="true"><i></i><i></i><i></i></span>Slack · &#35;checkout</figcaption>
+      <div class="mock-body" aria-hidden="true">
+        <div class="sl-msg sl-a sl-in sl-1"><span class="sl-av sl-you" aria-hidden="true">S</span><div><b>Sam</b><p><span class="sl-at">@Agents</span> the coupon field is broken on mobile</p></div></div>
+        <div class="sl-msg sl-a sl-in sl-2"><span class="sl-av sl-bot" aria-hidden="true">A</span><div><b>Agents</b><p>On it. I filed bug &#35;523.</p></div></div>
+        <div class="sl-msg sl-a sl-in sl-3"><span class="sl-av sl-bot" aria-hidden="true">A</span><div><b>Agents</b><p>Hide the field, or make it scroll?</p><div class="sl-stack"><div class="sl-btns sl-a sl-ask"><span class="sl-btn">Hide it</span><span class="sl-btn sl-a sl-press">Make it scroll</span></div><p class="small sl-a sl-in sl-got">Sam chose <b>Make it scroll</b></p></div></div></div>
+        <div class="sl-msg sl-a sl-in sl-4"><span class="sl-av sl-bot" aria-hidden="true">A</span><div><b>Agents</b><p>Fixed and merged in PR &#35;524.</p></div></div>
+      </div>
+    </figure>
+    <figure class="mock">
+      <figcaption class="mock-bar"><span class="mock-lights" aria-hidden="true"><i></i><i></i><i></i></span>from-slack.md</figcaption>
+<pre class="mock-code"><code><span class="cd-p">---</span>
+<span class="cd-k">name:</span> <span class="cd-s">Work from Slack</span>
+<span class="cd-k">on:</span>
+  - <span class="cd-k">message.received:</span>
+      <span class="cd-k">server:</span> <span class="cd-s">slack</span>
+      <span class="cd-k">mentions:</span> <span class="cd-s">true</span>
+<span class="cd-k">agent:</span> <span class="cd-s">new</span>
+<span class="cd-p">---</span>
+Read the message and do
+what it asks.
+Answer in its thread.</code></pre>
+    </figure>
+    <figure class="mock anim ml" role="img" aria-label="The agents' mailbox. A mail from a customer says that a refund failed, and an agent starts on it. A mail from GitLab has a sign-up code, a cartoon label that says REDACTED covers the code, and the code goes to the agent that waits for it.">
+      <figcaption class="mock-bar" aria-hidden="true"><span class="mock-lights" aria-hidden="true"><i></i><i></i><i></i></span>Mail · Inbox</figcaption>
+      <div class="mock-body" aria-hidden="true">
+        <div class="ml-mail ml-a ml-in ml-1"><span class="small">kim@customer.example</span><b>Refund failed</b><span>I sent it back last week, but…</span><span class="ml-a ml-in ml-2"><span class="chip wait ml-chip">agent started</span></span></div>
+        <div class="ml-mail ml-a ml-in ml-3"><span class="small">noreply@gitlab.com</span><b>Your sign-up code</b><span class="ml-code">Code: <span class="ml-secret">••••••••<svg class="ml-tape" viewBox="-68 -19 138 38" aria-hidden="true"><g class="ml-a ml-in ml-stamp"><path class="cu-tape-sh" d="M-60 -13 60 -13 55 -7 62 -1 56 5 61 13 -60 13 -55 6 -62 0 -56 -6z" transform="translate(3 4)"/><path class="cu-tape" d="M-60 -13 60 -13 55 -7 62 -1 56 5 61 13 -60 13 -55 6 -62 0 -56 -6z"/><text class="cu-red" x="0" y="5.5" text-anchor="middle">REDACTED</text></g></svg></span></span><span class="ml-a ml-in ml-5"><span class="chip ok ml-chip">given to the waiting agent</span></span></div>
+      </div>
+    </figure>
+  </div>
+  <p class="small events-from">Agents get messages and mail as data to read, never as instructions. The mailbox is theirs, and they can't send mail from it. Google Chat and WhatsApp work too, and agents can search your team's docs in the repository, Confluence, Notion or Google Drive before they start.</p>
+</div></section>
+
+<!-- 10. Outputs (#6859): the pane beside the chat (ot-) shows a plan as the agent writes it, a
+     diagram, a chart and the changes. Kept artifacts are planned (#5713). -->
+<section class="page" id="outputs"><div class="wrap">
+  <h2>See the output, not a wall of text</h2>
+  <p class="lede">You shouldn't have to scroll through a chat to find the plan. What an agent makes opens in a pane beside the conversation, and you can read it there while the agent carries on.</p>
+  <div class="grid2">
+    <ul class="points">
+      <li><b>Live documents.</b> A plan, spec or review fills in as the agent writes it. Type on it yourself, and the agent builds on your words.</li>
+      <li><b>Drawn for you.</b> HTML pages, diagrams and charts show as pictures.</li>
+      <li><b>Every change.</b> See each file the agent touched, marked down to the word. Undo what one turn changed with one click.</li>
+      <li><b>The rest of the desk.</b> Files, a terminal, the iOS simulator and the agent's own browser sit beside the chat too.</li>
+      <li><b>Versions you keep.</b> Artifacts with a history, stored for as long as you choose. <a class="tag soon" href="https://github.com/agentloops-dev/agent-loops/issues/5713">coming</a></li>
+    </ul>
+    <figure class="mock anim ot" role="img" aria-label="A chat with a pane beside it. You ask for a plan for order search. The plan fills in line by line in the pane as the agent writes it. Then the pane shows a flowchart, a bar chart of search times, and last the changes: three files, 82 lines added and 17 removed, with Undo These Changes in the chat.">
+      <figcaption class="mock-bar" aria-hidden="true"><span class="mock-lights" aria-hidden="true"><i></i><i></i><i></i></span>Order search</figcaption>
+      <div class="ot-split" aria-hidden="true">
+        <div class="ot-chat">
+          <p class="ot-me">Plan and build order search. Show me as you go.</p>
+          <p class="bubble ot-a ot-in ot-m1">I'm writing the plan beside the chat.</p>
+          <p class="bubble ot-a ot-in ot-m2">This is how a search runs.</p>
+          <p class="bubble ot-a ot-in ot-m3">The index makes it fast.</p>
+          <div class="ot-card ot-a ot-in ot-m4"><b>Changed 3 files</b><span class="ot-undo">Undo These Changes</span></div>
+        </div>
+        <div class="ot-pane">
+          <div class="ot-tabs"><span>Files<i class="ot-a ot-tf"></i></span><span>Changes<i class="ot-a ot-in ot-tc"></i></span><span>Terminal</span></div>
+          <div class="ot-stack">
+            <div class="ot-a ot-p1"><p class="small">plan.md <span class="ot-flag">Claude</span></p><h4>Order search</h4><ol><li class="ot-a ot-l1">Add an index on the order number</li><li class="ot-a ot-l2">Search it from the orders page</li><li class="ot-a ot-l3">Show the first 20 results</li><li class="ot-a ot-l4">Test with 1 million orders</li></ol></div>
+            <div class="ot-a ot-p2"><p class="small">flow.mmd</p><svg viewBox="0 0 220 200"><g class="ot-box"><rect x="50" y="8" width="120" height="40" rx="8"/><rect x="50" y="80" width="120" height="40" rx="8"/><rect x="50" y="152" width="120" height="40" rx="8"/></g><path class="ot-arrow" d="M110 48v28m-5-6 5 6 5-6M110 120v28m-5-6 5 6 5-6"/><g class="ot-txt"><text x="110" y="33">Orders page</text><text x="110" y="105">Search index</text><text x="110" y="177">First 20 results</text></g></svg></div>
+            <div class="ot-a ot-p3"><p class="small">latency.vl.json</p><svg viewBox="0 0 220 200"><path class="ot-axis" d="M20 168h184"/><rect class="ot-was" x="48" y="24" width="44" height="144" rx="4"/><rect class="ot-now" x="132" y="142" width="44" height="26" rx="4"/><g class="ot-txt"><text x="70" y="16">840 ms</text><text x="154" y="134">150 ms</text><text x="70" y="188">Before</text><text x="154" y="188">After</text></g></svg></div>
+            <div class="ot-a ot-in ot-p4"><p class="ot-file"><span>orders.go</span><span class="small"><span class="ot-add">+38</span> <span class="ot-del">−9</span></span></p><p class="ot-file"><span>search.go</span><span class="small"><span class="ot-add">+31</span></span></p><p class="ot-file"><span>orders.html</span><span class="small"><span class="ot-add">+13</span> <span class="ot-del">−8</span></span></p><pre class="ot-diff"><span class="ot-dl">- rows := <i>scan</i>(orders)</span><span class="ot-al">+ rows := <i>index.Find</i>(n)</span></pre></div>
+          </div>
+        </div>
+      </div>
+    </figure>
+  </div>
+</div></section>
+
 <!-- 11. Reports (#6857): each figure is one that Reports, Delivery, Builds, Spend or Forecast
      gives today (docs/reference/reports.md). A forecast is a range, never a point. -->
 <section class="page" id="reports"><div class="wrap">
@@ -636,10 +713,10 @@ Fix it on a pull request of its own.</code></pre>
   </div>
 </div></section>
 
-<!-- 12. On every screen you use (Alex, PR #6862; voice mode comes with slice 5, #6859). Icons
-     after Lucide (ISC). -->
+<!-- 12. On every screen you use (Alex, PR #6862), and voice mode (vm-, #6859). Icons after
+     Lucide (ISC). -->
 <section class="page" id="clients"><div class="wrap">
-  <h2>On every screen you use</h2>
+  <h2>On every screen you use, and by voice</h2>
   <p class="lede">Start a session on your Mac, answer it on your phone, and check on it from the terminal. Every client shows the same sessions as they happen, so you can pick up the work wherever you are.</p>
   <div class="clients">
     <a class="client" href="https://docs.agentloops.dev/how-to/set-up-on-this-mac/"><svg class="client-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 5a2 2 0 0 1 2 2v8.5a2 2 0 0 0 .2.9l1.1 2.1a1 1 0 0 1-.9 1.5H3.6a1 1 0 0 1-.9-1.5l1.1-2.1a2 2 0 0 0 .2-.9V7a2 2 0 0 1 2-2z"/><path d="M20 16H4"/></svg><h3>Mac</h3><p>The full app. It runs your agents, shows the files and changes beside each chat, and takes voice mode.</p></a>
@@ -650,6 +727,29 @@ Fix it on a pull request of its own.</code></pre>
     <a class="client soon" href="https://github.com/agentloops-dev/agent-loops/issues/4456"><svg class="client-ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg><h3>Windows <span class="tag soon">coming soon</span></h3><p>A desktop app for Windows, with the same window as the Mac.</p></a>
     <a class="client soon" href="https://github.com/agentloops-dev/agent-loops/issues/4454"><svg class="client-ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg><h3>Linux desktop <span class="tag soon">coming soon</span></h3><p>A desktop app for Linux, with the same window as the Mac.</p></a>
     <a class="client soon" href="https://github.com/agentloops-dev/agent-loops/issues/4466"><svg class="client-ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="2" width="12" height="20" rx="2.5"/><path d="M11 18h2"/></svg><h3>Android <span class="tag soon">coming soon</span></h3><p>An app for Android phones and tablets, to answer your agents on the go.</p></a>
+  </div>
+  <div class="grid2 vm-pair">
+    <div>
+      <h3 class="vm-h">Talk to your agents</h3>
+      <p class="vm-p">Voice mode is on the Mac, iPhone and iPad. Press the voice button in a chat and speak. Pause, and your words go to the agent. It reads its answer back to you, so you can work while you cook or walk the dog.</p>
+      <ul class="points">
+        <li><b>Answer by voice.</b> The agent reads its question and the choices aloud. Say "one", or say the choice.</li>
+        <li><b>Interrupt it.</b> Talk over the reply. It stops and listens.</li>
+        <li><b>Approve safe steps.</b> You can say yes to a read, a search or an edit in the agent's own worktree. Anything else waits for your screen.</li>
+        <li><b>Speech stays on your device.</b> Your device turns your speech into text and makes the voice. Only the words go to the agent.</li>
+      </ul>
+    </div>
+    <figure class="mock anim vm" role="img" aria-label="Voice mode in a chat. You say: How is the checkout fix going? The agent says: It is done and the tests pass. Where do you want the retry limit? Two choices. One: per order. Two: per customer. One is recommended. You say: One. The agent says: Sending: Per order.">
+      <figcaption class="mock-bar" aria-hidden="true"><span class="mock-lights" aria-hidden="true"><i></i><i></i><i></i></span>Checkout fix · Voice mode</figcaption>
+      <div class="mock-body" aria-hidden="true">
+        <p class="vm-me vm-a vm-in vm-1">How's the checkout fix going?</p>
+        <p class="bubble vm-a vm-in vm-2">It's done, and the tests pass. Where do you want the retry limit?</p>
+        <p class="bubble vm-a vm-in vm-3">Two choices. One: per order. Two: per customer. One is recommended.</p>
+        <p class="vm-me vm-a vm-in vm-4">One.</p>
+        <p class="bubble vm-a vm-in vm-5">Sending: Per order.</p>
+        <div class="vm-bar"><span class="vm-wave"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="vm-state"><span class="vm-a vm-listen">Listening</span><span class="vm-a vm-in vm-speak">Speaking</span></span></div>
+      </div>
+    </figure>
   </div>
 </div></section>
 
