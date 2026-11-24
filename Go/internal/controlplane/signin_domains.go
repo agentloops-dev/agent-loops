@@ -24,9 +24,12 @@ import (
 // domain once a day; 7 days of failures take the claim back.
 
 const (
+	// store-bounds: kind=key-value; count=20; size=4KiB a record; age=until-deleted; applied=on write, and when its provider is removed
 	domainsPrefix = "v1/signin/domains/"
 	// mostDomains is how many domains one control plane claims (spec Assumptions).
 	mostDomains = 20
+	// domainMostBytes is the largest claim (#6775). The check of a claim is never refused.
+	domainMostBytes = 4 << 10
 	// domainCheckEvery is how often a proved domain is checked again; domainGrace how long
 	// it may fail before its claim goes.
 	domainCheckEvery = 24 * time.Hour
@@ -187,6 +190,8 @@ func (si *signIns) claimDomain(ctx context.Context, r wire.SignInDomainClaim, ac
 		}
 		return wire.DomainClaim{}, fail(invalidParams, "%s is claimed for another provider. Remove that claim first.", domain)
 	}
+	si.org.adding.Lock()
+	defer si.org.adding.Unlock()
 	if len(si.domainClaims(ctx, true)) >= mostDomains {
 		return wire.DomainClaim{}, fail(invalidParams, "A control plane claims %d domains at most.", mostDomains)
 	}
@@ -195,6 +200,13 @@ func (si *signIns) claimDomain(ctx context.Context, r wire.SignInDomainClaim, ac
 	now := si.clock()
 	c := wire.DomainClaim{Domain: domain, Provider: r.Provider, State: wire.DomainClaimStateNotProved, TxtName: "_agents." + domain,
 		TxtValue: "agents-domain=" + hex.EncodeToString(token), Claimed: &wire.OrgRouteStamp{By: actor, At: wire.DateOf(now)}}
+	data, err := records.Encode(domainStored{DomainClaim: c})
+	if err != nil {
+		return wire.DomainClaim{}, err
+	}
+	if err := records.Fits(ctx, si.s.cfg.Store, domainKey(domain), "The claim on "+domain, data, domainMostBytes); err != nil {
+		return wire.DomainClaim{}, err
+	}
 	if _, err := si.writeClaim(ctx, c, nil, store.Absent); err != nil {
 		if store.IsConflict(err) {
 			return wire.DomainClaim{}, fail(changedElsewhere, "%s was claimed elsewhere a moment ago. Read the domains again.", domain)
