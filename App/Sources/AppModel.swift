@@ -3453,12 +3453,13 @@ final class AppModel {
         KeptThisMacHost.forget(in: WindowDefaults.store)
         // What was half-typed to that control plane goes too (#3670).
         DraftKeeper.shared.forgetAll()
+        client = DaemonClient(link: UnreachableLink())
+        isConnected = false
+        // Last: the window can connect again while these wait, so nothing may follow them.
         if forgetLocalData {
             await localCopy?.forget()
             await workCache?.forget()
         }
-        client = DaemonClient(link: UnreachableLink())
-        isConnected = false
     }
 
     /// Keep going back until the daemon answers.
