@@ -197,7 +197,7 @@ the approvals of people and groups that are gone, and probes and move marks left
 copy that stopped (#3748).
 
 A removed client, machine, group, project, route or machine provider leaves a **tombstone** for 7 days, so
-the other copies of the control plane learn that it went.
+the other copies of the control plane learn that it went. A removed person's stays longer (below).
 
 ### People, machines and clients
 
@@ -205,7 +205,8 @@ the other copies of the control plane learn that it went.
 | --- | --- | --- | --- | --- |
 | Clients | document | Name, kind, public key, when last seen, push tokens (APNs, up to 16 Live Activity tokens of 12 hours each, Web Push) | Until forgotten, then a tombstone for 7 days. A key lives 90 days at most from when it was paired or last renewed in use; a client whose key expired is forgotten (#6757), unless it is connected. 16 KiB a record and 1 MiB in all (hosted: 5 or 50 clients too): a new client, a longer name or a push token over that is refused; a renewal of a client in use never is. Tombstones keep no push tokens, and may come to 1 MiB more | Hourly; sizes on each write |
 | Machines | document | Name, key, platform, version, owner, workspace | Until removed, then a tombstone for 7 days. A machine whose key expired is removed 90 days later; a started machine's workspace stays (#3748). No count limit (hosted: 2 or 20). | Hourly |
-| People | document | Name, role, sign-ins (email, login), SCIM data, old names for 90 days | A removed person goes after 14 days. One with a sign-in is kept, so that sign-in stays refused, but only as a tombstone: the ID, kind, role and each sign-in's provider and account (#3647) | Hourly |
+| People | document | Name, role, sign-ins (email, login), SCIM data, old names for 90 days | A removed person goes after 14 days. One with a sign-in goes after 90 days; until then only a tombstone is kept: the ID, kind, role and each sign-in's provider and account (#3647, #6756). The local owner's tombstone, one record, stays while they are the control plane's owner, so that a removed owner is not an admin again | Hourly |
+| Join cutoffs | document | A provider's ID and a time: when a removed person's tombstone with a sign-in of that provider first aged out. From then on, an account of it that nobody has needs an invite, so the old sign-in stays refused (#6756) | 1 KiB a record; Google and 5 org providers. Until the provider is removed | On write, and when the provider is removed |
 | Groups, projects | document | Name and members; name, owner, slots and boards | 1,000 groups; 500 projects a person | Tombstone, hourly |
 | Projects' folders | document | Each machine's joined folders | 1,000 | Hourly |
 | Machine locks | log | Each person's lock chain | 4,096 entries a person. Deleted when the person is removed (#3647) | On **Reset** and on remove |

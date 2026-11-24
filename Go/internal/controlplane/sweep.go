@@ -20,9 +20,11 @@ const (
 	tombstonesKept       = 7 * 24 * time.Hour
 	// A removed person goes once every code they made has run out (FR-029, #3126).
 	removedPeopleKept = inviteLifetime + tombstonesKept
-	leftoversKept     = time.Hour
-	sweepEvery        = time.Hour
-	mostPerSweep      = 1000
+	// One with a sign-in goes 90 days on, when the provider's cutoff refuses it (#6756).
+	removedSignInsKept = 90 * 24 * time.Hour
+	leftoversKept      = time.Hour
+	sweepEvery         = time.Hour
+	mostPerSweep       = 1000
 	// Between two rounds of one hour's sweep, while a round stops at mostPerSweep (#2291).
 	sweepPause     = 5 * time.Second
 	eventsPrefix   = "v1/events/"
@@ -275,11 +277,11 @@ func sweepExpiredCode(ctx context.Context, s store.Store, key string, named map[
 // tombstoneMark is what the sweep reads of a record: whether it is a tombstone, and since
 // when.
 type tombstoneMark struct {
-	Forgotten   *bool          `json:"forgotten"`
-	ForgottenAt *records.Stamp `json:"forgottenAt"`
-	Removed     *bool          `json:"removed"`
-	RemovedAt   *records.Stamp `json:"removedAt"`
-	SignIns     []any          `json:"signIns"`
+	Forgotten   *bool            `json:"forgotten"`
+	ForgottenAt *records.Stamp   `json:"forgottenAt"`
+	Removed     *bool            `json:"removed"`
+	RemovedAt   *records.Stamp   `json:"removedAt"`
+	SignIns     []records.SignIn `json:"signIns"`
 }
 
 // sweepTombstones deletes, at most most, the tombstones the records found that are past
@@ -336,6 +338,12 @@ func sweepTombstone(ctx context.Context, s store.Store, key string, now time.Tim
 	if again == nil || again.ETag != object.ETag {
 		return false, false, nil
 	}
+	// The cutoff before the delete: a sign-in is always refused by one of the two (#6756).
+	if strings.HasPrefix(key, records.PeoplePrefix) {
+		if err := closeJoins(ctx, s, mark.SignIns, records.At(now)); err != nil {
+			return false, false, err
+		}
+	}
 	if err := s.Delete(ctx, key); err != nil {
 		return false, false, err
 	}
@@ -344,8 +352,7 @@ func sweepTombstone(ctx context.Context, s store.Store, key string, now time.Tim
 
 // tombstoneBefore is the time before which a tombstone at key was forgotten goes, or false
 // when the record is kept. A removed project (#2711), group or person (#3126) is forgotten
-// when it was removed; removing one always gives it removedAt. A person's sign-ins stay
-// refused while the record is kept.
+// when it was removed; removing one always gives it removedAt.
 func tombstoneBefore(key string, mark *tombstoneMark, now time.Time) (time.Time, bool) {
 	before := now.Add(-tombstonesKept)
 	if !strings.HasPrefix(key, records.ProjectsPrefix) && !strings.HasPrefix(key, records.GroupsPrefix) &&
@@ -357,9 +364,10 @@ func tombstoneBefore(key string, mark *tombstoneMark, now time.Time) (time.Time,
 	}
 	if strings.HasPrefix(key, records.PeoplePrefix) {
 		if len(mark.SignIns) > 0 {
-			return before, false
+			before = now.Add(-removedSignInsKept)
+		} else {
+			before = now.Add(-removedPeopleKept)
 		}
-		before = now.Add(-removedPeopleKept)
 	}
 	mark.Forgotten, mark.ForgottenAt = mark.Removed, mark.RemovedAt
 	return before, true
