@@ -7,7 +7,8 @@ import Foundation
 /// window), three keys and no more: the control plane's address, its key, and must join.
 /// Rules always come from the control plane (FR-029): any other key the profile forces is
 /// ignored, and said once. Only forced values count, so a person's own `defaults write`
-/// pins nothing. Both apps read; neither writes (hosts never escalate).
+/// pins nothing. Both apps read; neither writes (hosts never escalate). Not in `~/.agents`,
+/// on purpose (#6801): the person could edit a file there, and so remove the pin.
 ///
 /// `agentsd` checks the same, as `pin.go` (`--pin-address`, `--pin-key`, `--must-join`,
 /// or `/etc/agents/policy.json` on Linux).
