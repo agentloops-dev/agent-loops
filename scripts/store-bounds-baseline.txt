@@ -24,10 +24,8 @@
 1 Go/internal/agentsd/brief.go os.WriteFile
 1 Go/internal/agentsd/bringback.go os.CreateTemp
 1 Go/internal/agentsd/browser.go os.WriteFile
-1 Go/internal/agentsd/connectorsetup.go WriteAtomically
 1 Go/internal/agentsd/cost.go WriteAtomically
 1 Go/internal/agentsd/dailychecks.go WriteAtomically
-1 Go/internal/agentsd/devices.go WriteAtomically
 1 Go/internal/agentsd/dotagents.go WriteAtomically
 3 Go/internal/agentsd/environment.go WriteAtomically
 2 Go/internal/agentsd/events.go WriteAtomically
@@ -52,7 +50,7 @@
 1 Go/internal/agentsd/mac.go WriteAtomically
 1 Go/internal/agentsd/mcpcatalog.go WriteAtomically
 1 Go/internal/agentsd/mcpcatalog.go os.WriteFile
-2 Go/internal/agentsd/mcpcatalog/files.go WriteAtomically
+1 Go/internal/agentsd/mcpcatalog/files.go WriteAtomically
 1 Go/internal/agentsd/mcpcatalog/signins.go WriteAtomically
 1 Go/internal/agentsd/mcpevents.go WriteAtomically
 1 Go/internal/agentsd/mcpservers.go WriteAtomically
@@ -95,7 +93,6 @@
 1 Go/internal/agentsd/skillcatalog/personas.go WriteAtomically
 1 Go/internal/agentsd/skillcatalog/preview.go os.WriteFile
 1 Go/internal/agentsd/skillcatalog/secrets.go WriteAtomically
-1 Go/internal/agentsd/skillcatalog/sidecar.go WriteAtomically
 1 Go/internal/agentsd/store/files.go os.OpenFile
 1 Go/internal/agentsd/store/revisions.go WriteAtomically
 1 Go/internal/agentsd/store/roots.go WriteAtomically

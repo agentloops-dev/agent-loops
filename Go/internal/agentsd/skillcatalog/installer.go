@@ -134,12 +134,8 @@ func (in Installer) Remove(name string, place Place, now time.Time) (string, err
 		}
 		return "", Failed("could not write " + filepath.Base(place.Lock))
 	}
-	side := LoadSidecar(in.Sidecar)
-	if _, ok := side.Skills[SidecarKey(place.Destination, name)]; ok {
-		delete(side.Skills, SidecarKey(place.Destination, name))
-		if err := side.Save(in.Sidecar); err != nil {
-			log.Printf("skills: could not write %s: %v", filepath.Base(in.Sidecar), err)
-		}
+	if err := UpdateSidecar(in.Sidecar, func(m map[string]SidecarRecord) { delete(m, SidecarKey(place.Destination, name)) }); err != nil {
+		log.Printf("skills: could not write %s: %v", filepath.Base(in.Sidecar), err)
 	}
 	if trashed == "" {
 		return folder, nil
@@ -373,7 +369,6 @@ func (in Installer) recordSidecar(p wire.SkillPreview, place Place, target strin
 	if p.Result.Marketplace != nil {
 		catalogue = *p.Result.Marketplace
 	}
-	side := LoadSidecar(in.Sidecar)
 	record := SidecarRecord{Commit: p.Commit, TreeSHA: p.TreeSHA, Catalogue: catalogue, AddedAt: now}
 	if p.CommittedAt != nil {
 		t := p.CommittedAt.Time()
@@ -382,8 +377,9 @@ func (in Installer) recordSidecar(p wire.SkillPreview, place Place, target strin
 	if h, err := ComputedHash(target); err == nil {
 		record.FolderHash = &h
 	}
-	side.Skills[SidecarKey(place.Destination, p.Name)] = record
-	if err := side.Save(in.Sidecar); err != nil {
+	if err := UpdateSidecar(in.Sidecar, func(m map[string]SidecarRecord) {
+		m[SidecarKey(place.Destination, p.Name)] = record
+	}); err != nil {
 		log.Printf("skills: could not write %s: %v", filepath.Base(in.Sidecar), err)
 	}
 	return catalogue
