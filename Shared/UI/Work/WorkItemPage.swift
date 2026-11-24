@@ -21,6 +21,7 @@ struct WorkItemPage: View {
     private let compact = false
     #endif
     @Environment(\.openURL) private var openURL
+    @Environment(\.openWorkWindow) private var openWorkWindow
     #if os(macOS)
     /// Whether the person turned the Docs flag on (`FeatureFlag`, #6572).
     @AppStorage(FeatureFlag.docs.key, store: WindowDefaults.store) private var docsOn = false
@@ -111,6 +112,7 @@ struct WorkItemPage: View {
         // The place says Issues › #12: the window's own title, Issues, would say it twice.
         .toolbar(removing: .title)
         #endif
+        .workWindowTitle(model, title: item?.title ?? row?.title, ref: node.ref)
         .workTask(id: asked) { await loadForge() }
         .workTask(id: estimateAsk) { await loadEstimate() }
         .workTask(id: forecastAsk) { await loadForecast() }
@@ -185,6 +187,7 @@ struct WorkItemPage: View {
         ToolbarSpacer(.flexible)
         ToolbarItemGroup(placement: .primaryAction) {
             stepper
+            WorkWindowToolbarButton(model: model, place: place)
             WorkRefreshButton(running: reading) { asked += 1 }
         }
     }
@@ -195,15 +198,18 @@ struct WorkItemPage: View {
     /// then ↑ and ↓, and on the iPhone Open on GitHub, as the state line has no room for it.
     @ToolbarContentBuilder
     private var barItems: some ToolbarContent {
-        ToolbarItem(placement: .topBarLeading) {
-            // An HStack, not a Label: the bar draws a Label's icon alone.
-            Button { back() } label: {
-                HStack(spacing: 4) {
-                    Image(icon: "chevron.left").fontWeight(.semibold)
-                    Text(backWords)
+        // A window of its own (#5475) has Back and Forward in its place.
+        if !model.isOwnWindow {
+            ToolbarItem(placement: .topBarLeading) {
+                // An HStack, not a Label: the bar draws a Label's icon alone.
+                Button { back() } label: {
+                    HStack(spacing: 4) {
+                        Image(icon: "chevron.left").fontWeight(.semibold)
+                        Text(backWords)
+                    }
                 }
+                .accessibilityLabel(backWords)
             }
-            .accessibilityLabel(backWords)
         }
         ToolbarItemGroup(placement: .topBarTrailing) {
             if let n = model.workNeighbours {
@@ -217,6 +223,7 @@ struct WorkItemPage: View {
                 .disabled(!model.workHasNext || list.loadingMore)
                 .accessibilityLabel("Next")
             }
+            WorkWindowToolbarButton(model: model, place: place)
             if compact, let url = forgeURL {
                 Button { openURL(url) } label: { Image(toolbarIcon: "arrow.up.right.square") }
                     .accessibilityLabel(WorkList.openOnWords(node.ref))
@@ -725,7 +732,7 @@ struct WorkItemPage: View {
         if item.parent != nil || item.progress != nil || !children.isEmpty || !pulls.isEmpty {
             WorkSideSection(title: "Linked") {
                 if let parent = item.parent {
-                    WorkSideLinked(node: parent) { show(parent) }
+                    WorkSideLinked(node: parent) { show(parent) }.workWindowMenu(linkPlace(parent))
                 }
                 if let progress = item.progress {
                     ProgressView(value: Double(progress.done), total: Double(max(progress.total, 1)))
@@ -733,13 +740,18 @@ struct WorkItemPage: View {
                 }
                 ForEach(children + pulls, id: \.node.ref) { linked in
                     WorkSideLinked(node: linked.node, title: linked.title, state: linked.state) { show(linked.node) }
+                        .workWindowMenu(linkPlace(linked.node))
                 }
             }
         }
     }
 
     private func show(_ node: DaemonAPI.LineageNode) {
-        if let kind = WorkList.kind(of: node) { model.showWork(WorkPlace(kind: kind, ref: node.ref)) }
+        if let place = linkPlace(node) { model.follow(place, window: openWorkWindow) }
+    }
+
+    private func linkPlace(_ node: DaemonAPI.LineageNode) -> WorkPlace? {
+        WorkList.kind(of: node).map { WorkPlace(kind: $0, ref: node.ref) }
     }
 
     /// What lineage knows (#4400 note 14): the cost and the sessions, each a link with a green dot
@@ -763,7 +775,7 @@ struct WorkItemPage: View {
                 if !counts.isEmpty {
                     Text(counts.joined(separator: " · ")).monospacedDigit()
                 }
-                ForEach(sessions, id: \.self) { session(id: $0) }
+                ForEach(sessions, id: \.self) { WorkSideSession(model: model, id: $0) }
                 if let estimate, item.state == "open", EstimateWords.shows(estimate) {
                     estimateLine(estimate)
                 } else if let estimate, item.state != "open", let words = EstimateWords.actualWords(estimate) {
@@ -778,24 +790,6 @@ struct WorkItemPage: View {
                 #endif
             }
         }
-    }
-
-    /// A session this lineage names: a green dot while it runs, its title; it opens the chat.
-    private func session(id: UUID) -> some View {
-        let title = model.workSessionTitle(id)
-        let runs = model.workSessionState(id)?.holdsRuntime == true
-        return Button { model.openWorkSession(id) } label: {
-            HStack(spacing: 6) {
-                Circle().fill(runs ? WorkLook.Tone.green.color : Color.secondary.opacity(0.4)).frame(width: 7, height: 7)
-                    .accessibilityHidden(true)
-                Text(title ?? "A session on another machine").lineLimit(1).truncationMode(.tail)
-                    .foregroundStyle(title == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(.tint))
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .disabled(title == nil)
-        .accessibilityLabel([title ?? "A session on another machine", runs ? "running" : nil].compactMap { $0 }.joined(separator: ", "))
     }
 
     /// The gear on an issue's or a pull request's Labels, when a machine of the person's writes.

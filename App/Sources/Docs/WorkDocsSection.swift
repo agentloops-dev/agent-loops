@@ -6,6 +6,7 @@ import SwiftUI
 /// word). Each opens the doc's page. Mac + web, so not on the Remote (#2796).
 struct WorkDocsSection: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.showMainWindow) private var showMainWindow
     let item: DaemonAPI.ForgeItem
     let text: String
     let asked: Int
@@ -43,7 +44,10 @@ struct WorkDocsSection: View {
     }
 
     private func row(_ doc: DaemonAPI.Doc) -> some View {
-        Button { model.showDocs(DocsPlace(ref: doc.ref)) } label: {
+        Button {
+            model.showDocs(DocsPlace(ref: doc.ref))
+            showMainWindow?.run()
+        } label: {
             // The panel is narrow: the title goes under the doc's name.
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Image(icon: "doc.text").foregroundStyle(.secondary)

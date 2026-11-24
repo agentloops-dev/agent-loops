@@ -66,6 +66,15 @@ struct AgentsApp: App {
         }
         .defaultSize(width: 1_240, height: 760)
 
+        // A Work page in a window of its own (#5475), keyed by its kind and ref, from Open in New
+        // Window or ⌘-click in Work. One per page: opening one already open brings it forward.
+        // Saved and opened again at launch.
+        WindowGroup(id: OpenWorkWindow.sceneID, for: WorkWindowKey.self) { $key in
+            WorkWindow(key: $key)
+                .environment(model)
+        }
+        .defaultSize(width: 980, height: 760)
+
         // An artifact in a window of its own (#3034), from Exchanged's "Open in New Window"
         // context-menu item. One window per artifact: opening one already open brings it
         // forward.

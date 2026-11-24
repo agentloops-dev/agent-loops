@@ -108,7 +108,7 @@ something particular done.
   session's Mac, boot it or shut it down, and tap on its screen, from any client.
 - [Let an agent drive desktop apps](let-an-agent-drive-desktop-apps.md): turn desktop
   control on, and watch the agent use your Mac's apps on a live tile from any client.
-- [Open a session or a folder in its own window](open-in-its-own-window.md): a window of
+- [Open a session, a folder or a Work page in its own window](open-in-its-own-window.md): a window of
   its own on the Mac, a scene of its own on an iPad, or a tab of its own on the web page.
 - [Stop and archive agents](archive-and-stop.md): what each does, and what each
   keeps.
