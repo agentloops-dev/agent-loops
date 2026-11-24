@@ -414,7 +414,11 @@ struct MachineRow: View {
             // Pinned: after This Mac in the group, also past seven machines (#5286).
             if host != .mac {
                 Button(MachinePins.menuTitle(pinned: MachinePins.pinned(machinePins).contains(host))) {
-                    machinePins = MachinePins.toggled(host, in: machinePins)
+                    if let next = MachinePins.toggled(host, in: machinePins) {
+                        machinePins = next
+                    } else {
+                        model.show(problem: MachinePins.fullWords)
+                    }
                 }
             }
             // This Mac's one item, as its row in Settings ▸ Machines had it (#656, #3975).

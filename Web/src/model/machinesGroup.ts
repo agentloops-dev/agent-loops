@@ -3,7 +3,7 @@
 // the machines being made, then the rest. With more than seven, one row All Machines (N) comes after them and opens the
 // Machines page. A person with seven or fewer sees every one, and no such row. Always seven, also for 2,000 machines.
 import { signal } from "@preact/signals";
-import { pinnedMachines, togglePin } from "./machinePicker";
+import { keepPins, pinnedMachines, togglePin } from "./machinePicker";
 
 export const machinesGroupLimit = 7;
 
@@ -46,6 +46,16 @@ export const machinesGroupWords = {
 /** The machines pinned on this browser, shared with the machine picker (#5287); a pin from a row's menu redraws the group. */
 export const sidebarPins = signal<string[]>(pinnedMachines(globalThis.localStorage));
 
-export function toggleSidebarPin(id: string): void {
-  sidebarPins.value = togglePin(globalThis.localStorage, id);
+/** Whether the pin was taken: false when there is no room for it. */
+export function toggleSidebarPin(id: string): boolean {
+  const next = togglePin(globalThis.localStorage, id);
+  if (next) sidebarPins.value = next;
+  return !!next;
+}
+
+/** The control plane listed its machines, or one left: the pin of a machine that is gone goes (#6797). An offline one is
+ * listed, so its pin stays. */
+export function pruneSidebarPins(there: (id: string) => boolean): void {
+  const next = keepPins(globalThis.window?.localStorage, there);
+  if (next.join() !== sidebarPins.peek().join()) sidebarPins.value = next;
 }

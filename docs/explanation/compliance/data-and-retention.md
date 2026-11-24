@@ -192,7 +192,7 @@ times only: no titles or text; #4275).
 One sweep runs every hour. It removes old audit days, codes, tombstones, records with no
 owner, usage, workflow runs and lineage, join, lock-join, sign-in and link requests, and
 policy, governance and remove requests (#3649), and once a day the backups of removed
-servers. It also forgets clients whose key expired (#6757), and machines whose key expired 90 days ago, and removes
+servers. It also forgets clients whose key expired (#6757), and machines with no workspace whose key expired (#6758), and removes
 the approvals of people and groups that are gone, and probes and move marks left by a
 copy that stopped (#3748).
 
@@ -204,7 +204,7 @@ the other copies of the control plane learn that it went. A removed person's sta
 | Records | Kind | What they keep | How long, how large | Applied |
 | --- | --- | --- | --- | --- |
 | Clients | document | Name, kind, public key, when last seen, push tokens (APNs, up to 16 Live Activity tokens of 12 hours each, Web Push) | Until forgotten, then a tombstone for 7 days. A key lives 90 days at most from when it was paired or last renewed in use; a client whose key expired is forgotten (#6757), unless it is connected. 16 KiB a record and 1 MiB in all (hosted: 5 or 50 clients too): a new client, a longer name or a push token over that is refused; a renewal of a client in use never is. Tombstones keep no push tokens, and may come to 1 MiB more | Hourly; sizes on each write |
-| Machines | document | Name, key, platform, version, owner, workspace | Until removed, then a tombstone for 7 days. A machine whose key expired is removed 90 days later; a started machine's workspace stays (#3748). No count limit (hosted: 2 or 20). | Hourly |
+| Machines | document | Name, key, platform, version, owner, workspace | Until removed, then a tombstone for 7 days that keeps no labels, links or capabilities. A key lives 90 days at most from when it was joined or last renewed in use; a machine whose key expired is removed (#6758), unless it is connected, or linked to a provider's workspace, which its person could still start or delete: that one stays until a person removes it. 32 KiB a record and 1 MiB in all (hosted: 2 or 20 machines too): a new machine, a label or a lend over that is refused; a hello of a joined machine is refused only over 32 KiB a record, and a renewal never is. Tombstones may come to 1 MiB more | Hourly; sizes on each write |
 | People | document | Name, role, sign-ins (email, login), SCIM data, old names for 90 days | A removed person goes after 14 days. One with a sign-in goes after 90 days; until then only a tombstone is kept: the ID, kind, role and each sign-in's provider and account (#3647, #6756). The local owner's tombstone, one record, stays while they are the control plane's owner, so that a removed owner is not an admin again | Hourly |
 | Join cutoffs | document | A provider's ID and a time: when a removed person's tombstone with a sign-in of that provider first aged out. From then on, an account of it that nobody has needs an invite, so the old sign-in stays refused (#6756) | 1 KiB a record; Google and 5 org providers. Until the provider is removed | On write, and when the provider is removed |
 | Groups, projects | document | Name and members; name, owner, slots and boards | 1,000 groups; 500 projects a person | Tombstone, hourly |
@@ -325,7 +325,7 @@ What the Mac window and the Remote keep in their defaults, and the web page in
 | `shared-inbox.json` (Remote) | blob | What was shared to Agent Loops | Each attachment is capped. No count, total or age (#6795). | On use |
 | `attention-snapshot.json` (Remote) | cache | The widget's rows | 12 rows; stale after 15 minutes | On write, and on **Forget** |
 | `remote.startFolders` (Remote) | key-value | Start folders | **None** (#6798) | Never |
-| `machinePicker.pinned` | key-value | Pinned machines | **None** (#6797) | Never |
+| `machinePicker.pinned` (`agents.machinePicker.pinned` on the web page) | key-value | Pinned machines | 100 machine ids of 64 bytes each: one past that is refused, with a message. No age, on purpose: a pin is your choice. It stays until you remove it, or until the control plane no longer lists its machine. An offline machine's stays (#6797). | On write, and when the machines are listed |
 | `voiceMode.*`, marketplaces, working marks, `reviewDiffLayout`, `agents.startForm` and other choices | key-value | Choices on this client | A fixed set (#6802 to #6806) | — |
 | MDM profile (Mac) | key-value | The control plane an org pins a Mac to | Read only; set by the org (#6801) | — |
 | `crashes/`, `hangs/`, in the log folder (Mac); `remote.log` (Remote) | log | Crash and hang notes; the device log | 20 of each; 256 KiB and one older file | At start; on write |
