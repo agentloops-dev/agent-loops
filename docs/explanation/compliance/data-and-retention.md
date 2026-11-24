@@ -289,12 +289,13 @@ service keeps these records.
 | Sign-in links | document | Which account a GitHub, Apple or Google user is | Until **Delete Account** |
 | Account usage | key-value | The bytes the account's store holds | Until **Delete Account** |
 | The account's control plane store | all of the kinds | All of the section above | Plan limits: 1 or 20 GB, 2 or 20 machines, 5 or 50 clients, audit 7 or 90 days. Until **Delete Account**. |
-| Invites | document | Expiry, and **who used it** | 14 days to use it. Kept after use, until **Delete Account**. |
-| Waitlist | document | Who asked to join | 10,000; removed on sign-up |
+| Invites | document | Expiry, and **who used it** | 14 days to use it, 90 at most. It goes when that time ends, used or not, and with **Delete Account** of the account that used it. 1,000 of 4 KiB; a new one over that is refused (#6782). Hourly |
+| Waitlist | document | Who asked to join | 90 days; removed sooner on sign-up or a block. 10,000 of 4 KiB; a new one over that is refused (#6786). Hourly |
 | Stripe events | key-value | Stripe event IDs already seen | 30 days, swept daily |
 | Operator backups | blob | Each account's store, on the operator's disk | The newest 7 by default; `--keep N` sets it, `--keep 0` keeps all (#3648) |
 | Email links | key-value | Which account a sign-in email is | Until **Delete Account** (#6785) |
-| Allow and block lists | key-value | The operator's lists | **None** (#6783, #6784) |
+| Allow list | key-value | GitHub logins that may sign up, and when the operator allowed each | 90 days from the last allow; an account that was made stays. 10,000 of 4 KiB; a new one over that is refused (#6783). Hourly |
+| Block lists | key-value | Sign-ins and emails' keyed hashes that may not sign up, with the login and the reason | Until the operator unblocks it. A block has no age, because one that aged out would let the person back in (Alex, 2026-11-24). 10,000 sign-ins and 10,000 emails of 4 KiB; a new one over that is refused (#6784) |
 
 The service keeps nothing for a signed-in browser: a session is a signed cookie for 30 days.
 

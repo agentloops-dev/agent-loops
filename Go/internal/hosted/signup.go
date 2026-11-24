@@ -64,17 +64,31 @@ const (
 )
 
 func allowKey(login string) string {
-	return hostedPrefix + "v1/allow/" + strings.ToLower(login) + ".json"
+	return allowFolder + strings.ToLower(login) + ".json"
 }
-func inviteKey(code string) string { return hostedPrefix + "v1/invites/" + code + ".json" }
-func waitingKey(user SignIn) string { return hostedPrefix + "v1/waiting/" + user.who() + ".json" }
-func blockedKey(user SignIn) string { return hostedPrefix + "v1/blocked/" + user.who() + ".json" }
+func inviteKey(code string) string { return invitesFolder + code + ".json" }
+func waitingKey(user SignIn) string { return waitingFolder + user.who() + ".json" }
+func blockedKey(user SignIn) string { return blockedFolder + user.who() + ".json" }
 func blockedEmailKey(mark string) string {
-	return hostedPrefix + "v1/blocked/email/" + mark + ".json"
+	return blockedEmailFolder + mark + ".json"
 }
-func waitlistKey(place string) string { return hostedPrefix + "v1/waitlist/" + place + ".json" }
+func waitlistKey(place string) string { return waitlistFolder + place + ".json" }
 
-const waitlistFolder = hostedPrefix + "v1/waitlist/"
+// Their bounds are in recordbounds.go.
+const (
+	// store-bounds: kind=document; count=1_000; size=4KiB a record; age=90d; applied=on write (refused), and the hourly sweep deletes one past its expiry
+	invitesFolder = hostedPrefix + "v1/invites/"
+	// store-bounds: kind=key-value; count=10_000; size=4KiB a record; age=90d; applied=on write (refused) and hourly sweep
+	allowFolder = hostedPrefix + "v1/allow/"
+	// store-bounds: kind=key-value; count=10_000; size=4KiB a record; age=until-deleted; applied=on write (refused), and no age: a block that aged out would let the person back in
+	blockedFolder = hostedPrefix + "v1/blocked/"
+	// store-bounds: kind=key-value; count=10_000; size=4KiB a record; age=until-deleted; applied=on write (refused), and no age: a block that aged out would let the person back in
+	blockedEmailFolder = hostedPrefix + "v1/blocked/email/"
+	// store-bounds: kind=document; count=10_000; size=4KiB a record; age=90d; applied=on write (refused) and hourly sweep
+	waitingFolder = hostedPrefix + "v1/waiting/"
+	// store-bounds: kind=document; count=10_000; size=4KiB a record; age=90d; applied=on write (refused) and hourly sweep
+	waitlistFolder = hostedPrefix + "v1/waitlist/"
+)
 
 // Invite is an invite link's record.
 type Invite struct {
@@ -321,7 +335,7 @@ func (s *Service) admit(ctx context.Context, from string, user SignIn, mark, inv
 		by := SignIn{Provider: user.Provider, Subject: user.Subject, Login: user.Login}
 		rec.Used = &Used{By: &by, At: s.cfg.Now().UTC()}
 		data, _ := json.Marshal(rec)
-		if _, err := s.cfg.Store.Put(ctx, inviteKey(invite), data, store.Matching(inv.ETag)); err != nil {
+		if err := putRecord(ctx, s.cfg.Store, inviteKey(invite), data, store.Matching(inv.ETag)); err != nil {
 			if !store.IsConflict(err) {
 				return unreadable(err)
 			}
@@ -372,7 +386,7 @@ func (s *Service) wait(ctx context.Context, from string, user SignIn, why string
 	entry = Waiting{SignIn: kept, At: now, Why: why,
 		Place: fmt.Sprintf("%s%020d-%s", order, now.UnixNano(), hex.EncodeToString(sum[:6]))}
 	data, _ := json.Marshal(entry)
-	if _, err := st.Put(ctx, waitingKey(user), data, store.Absent); err != nil {
+	if err := putRecord(ctx, st, waitingKey(user), data, store.Absent); err != nil {
 		if store.IsConflict(err) {
 			// Another tab put them on it at the same time.
 			return s.wait(ctx, from, user, why, front, true)
@@ -380,7 +394,7 @@ func (s *Service) wait(ctx context.Context, from string, user SignIn, why string
 		return unreadable(err)
 	}
 	link, _ := json.Marshal(waitlistLink{SignIn: &SignIn{Provider: user.Provider, Subject: user.Subject}})
-	if _, err := st.Put(ctx, waitlistKey(entry.Place), link, store.Absent); err != nil {
+	if err := putRecord(ctx, st, waitlistKey(entry.Place), link, store.Absent); err != nil {
 		return unreadable(err)
 	}
 	s.metrics.signedUp("waitlist")

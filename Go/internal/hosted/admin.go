@@ -56,23 +56,25 @@ func (a Admin) Invite(ctx context.Context, life time.Duration) (string, error) {
 	if life <= 0 {
 		life = InviteLife
 	}
+	if life > recordLife {
+		return "", fmt.Errorf("an invite can be used for %d days at most", int(recordLife.Hours()/24))
+	}
 	code := newInviteCode()
 	data, _ := json.Marshal(Invite{Expires: a.now().Add(life)})
-	if _, err := a.Store.Put(ctx, inviteKey(code), data, store.Absent); err != nil {
+	if err := putListed(ctx, a.Store, inviteKey(code), data, invitesFolder, "", invitesMost, "make more when some have expired"); err != nil {
 		return "", err
 	}
 	return "https://" + a.Domain + "/?invite=" + code, nil
 }
 
 // Allow lets a GitHub login sign up, whatever its age; Admit is the same for one on the
-// waitlist.
+// waitlist. It lasts recordLife, from the last time it was allowed.
 func (a Admin) Allow(ctx context.Context, login string) error {
 	if !validLogin(login) {
 		return fmt.Errorf("%q is not a GitHub login", login)
 	}
 	data, _ := json.Marshal(map[string]any{"login": login, "at": a.now()})
-	_, err := a.Store.Put(ctx, allowKey(login), data, store.Always)
-	return err
+	return putListed(ctx, a.Store, allowKey(login), data, allowFolder, "", allowMost, "disallow some logins first")
 }
 
 // Disallow takes a login off the allowlist. An account made already stays.
@@ -149,7 +151,7 @@ func (a Admin) Block(ctx context.Context, who, reason string) (SignIn, error) {
 		if err != nil {
 			return SignIn{}, err
 		}
-		if _, err := a.Store.Put(ctx, blockedEmailKey(mark), data, store.Always); err != nil {
+		if err := putEmailBlock(ctx, a.Store, mark, data); err != nil {
 			return SignIn{}, err
 		}
 		acc, err := a.accounts().byEmail(ctx, mark)
@@ -163,19 +165,19 @@ func (a Admin) Block(ctx context.Context, who, reason string) (SignIn, error) {
 		return SignIn{}, err
 	}
 	data, _ = json.Marshal(Block{Login: user.Login, Reason: reason, At: a.now()})
-	if _, err := a.Store.Put(ctx, blockedKey(user), data, store.Always); err != nil {
+	if err := putBlock(ctx, a.Store, user, data); err != nil {
 		return SignIn{}, err
 	}
 	leaveWaitlist(ctx, a.Store, user)
 	if acc, err := a.accounts().bySignIn(ctx, user); err != nil {
 		return user, err
 	} else if acc != nil {
+		var refused error
 		if acc.EmailMark != "" {
-			if _, err := a.Store.Put(ctx, blockedEmailKey(acc.EmailMark), data, store.Always); err != nil {
-				return user, err
-			}
+			refused = putEmailBlock(ctx, a.Store, acc.EmailMark, data)
 		}
-		return user, a.Suspend(ctx, acc.ID, reason)
+		// A full list of emails does not keep the account running.
+		return user, errors.Join(refused, a.Suspend(ctx, acc.ID, reason))
 	}
 	return user, nil
 }

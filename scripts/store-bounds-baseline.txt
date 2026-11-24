@@ -180,17 +180,11 @@
 1 Go/internal/execfile/execfile.go os.WriteFile
 4 Go/internal/hosted/accounts.go v1/accounts
 1 Go/internal/hosted/accounts.go v1/emails
-1 Go/internal/hosted/accounts.go v1/invites
 1 Go/internal/hosted/backup.go os.CreateTemp
 1 Go/internal/hosted/backup.go os.WriteFile
 2 Go/internal/hosted/billing.go v1/stripe
 1 Go/internal/hosted/limits.go runtime/control-capacity
 1 Go/internal/hosted/limits.go v1/usage
-1 Go/internal/hosted/signup.go v1/allow
-2 Go/internal/hosted/signup.go v1/blocked
-1 Go/internal/hosted/signup.go v1/invites
-1 Go/internal/hosted/signup.go v1/waiting
-2 Go/internal/hosted/signup.go v1/waitlist
 1 Go/internal/hostsetup/install.go os.OpenFile
 2 Go/internal/hostsetup/install.go os.WriteFile
 1 Go/internal/hostsetup/report.go os.OpenFile

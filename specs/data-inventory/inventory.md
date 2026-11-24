@@ -259,9 +259,10 @@ handover also leaves out `v1/keys/` (`storecopy.go:21,25`).
 |---|---|---|---|
 | `hosted/v1/accounts/<id>.json` | Sign-in provider and subject, login, plan, suspension, certificate time, **Stripe customer and subscription IDs** | 100 accounts (`hosted/signup.go:40`) | Delete Account |
 | `hosted/v1/{github,apple,google}/<subject>.json` | Sign-in → account | 1 per account | Delete Account |
-| `hosted/v1/invites/<code>.json` | Expiry and **who used it** | 14-day life | **never; survives Delete Account** |
-| `hosted/v1/waiting/`, `waitlist/` | Waitlist | 10,000 | only on sign-up |
-| `hosted/v1/allow/`, `blocked/` | Operator lists | operator | operator |
+| `hosted/v1/invites/<code>.json` | Expiry and **who used it** | 1,000 of 4 KiB, else refused; 14-day life, 90 at most (#6782) | hourly, at expiry; Delete Account of who used it |
+| `hosted/v1/waiting/`, `waitlist/` | Waitlist | 10,000 of 4 KiB, else refused; 90 days (#6786) | hourly; on sign-up or a block |
+| `hosted/v1/allow/` | Operator's allow list | 10,000 of 4 KiB, else refused; 90 days from the last allow (#6783) | hourly; operator |
+| `hosted/v1/blocked/`, `blocked/email/` | Operator's block lists | 10,000 each of 4 KiB, else refused; no age (#6784) | operator |
 | `hosted/v1/stripe/<evt>.json` | Stripe events seen | 30 days, daily (`billing.go:25`) | daily |
 | `hosted/v1/usage/<id>.json` | Account byte count | 1 per account | with the account |
 | `accounts/<id>/v1/…` | That account's whole control-plane store (section 4) | Plan: storage 1 / 20 GB, machines 2 / 20, clients 5 / 50, events 7 / 90 days (`hosted/plans.go:37-40`) | Delete Account |
@@ -457,11 +458,11 @@ newer than a row above for the same store.
 | `v1/reports/views/` | key-value | Saved report views | 50 and 64 KiB a person, else refused; until removed, or with the person. Stays in the control plane's store (Alex, 2026-11-24) | `Go/internal/controlplane/reports_views.go` | #6779 |
 | `v1/users/` | key-value | Settings and secrets that follow a person | 256 KiB a part, 5 MiB of settings, 200 secrets of 5 MiB sealed, 100 offers, else refused; with the person. A removed secret's tombstone 90 days, 200 at most. They follow the person, so they stay in the store | `Go/internal/controlplane/usersettings/usersettings.go`, `Go/internal/controlplane/usersettings/offers.go` | #6780 |
 | `Agents Control/web-off` (Mac) | key-value | The web page turned off | One empty file; until the page is turned on. This control plane's own configuration, beside its store | `Go/cmd/agents-control/main.go` (`serveWeb`) | #6781 |
-| hosted `v1/invites/` | document | Invite links | No count limit; an unused or expired invite is kept for ever | `Go/internal/hosted/admin.go:61; accounts.go:320-340` | #6782 |
-| hosted `v1/allow/` | key-value | The operator's allow list | None | `Go/internal/hosted/signup.go:66-74` | #6783 |
-| hosted `v1/blocked/`, `v1/blocked/email/` | key-value | The operator's block lists | None | `Go/internal/hosted/signup.go:66-74; admin.go:83,191-204` | #6784 |
+| hosted `v1/invites/` | document | Invite links | 1,000 of 4 KiB, else refused; until it expires, 90 days at most | `Go/internal/hosted/recordbounds.go` (`sweepInvites`) | #6782 |
+| hosted `v1/allow/` | key-value | The operator's allow list | 10,000 of 4 KiB, else refused; 90 days from the last allow | `Go/internal/hosted/recordbounds.go` (`sweepAllowed`) | #6783 |
+| hosted `v1/blocked/`, `v1/blocked/email/` | key-value | The operator's block lists | 10,000 each of 4 KiB, else refused; no age, until unblocked (Alex, 2026-11-24: a blocked person must not come back) | `Go/internal/hosted/recordbounds.go` (`putBlock`, `putEmailBlock`) | #6784 |
 | hosted `v1/accounts/`, sign-in links, `v1/emails/`, `v1/usage/` | document | Accounts | 100 accounts; until Delete Account | `Go/internal/hosted/signup.go:45; accounts.go:140-146,302-317` | #6785 |
-| hosted `v1/waitlist/`, `v1/waiting/` | document | The waitlist | 10,000; removed only on sign-up | `Go/internal/hosted/signup.go:55,360,413-415` | #6786 |
+| hosted `v1/waitlist/`, `v1/waiting/` | document | The waitlist | 10,000 of 4 KiB, else refused; 90 days, or sign-up or a block | `Go/internal/hosted/recordbounds.go` (`sweepWaitlist`) | #6786 |
 | Operator backups | blob | Each account's store | The newest 7; `--keep 0` keeps all; no age | `Go/internal/hosted/backup.go:58-83; Go/cmd/agents-hosted/admin.go:33-43` | #6787 |
 | `control.log` (`~/Library/Logs/Agents/control.log` or `/data/control.log`) | log | Operational log lines | 4 MB and one older file | — | #6901 |
 | Mac `<cache>/work-cache.sqlite` | cache | Work cache: forge items, bodies, comments, page answers | 200 MiB (Remote: 50 MiB), least recently drawn out first; 4 MiB a record; 90 days (#6788) | `Packages/AgentsKit/Sources/AgentsKitCore/Client/WorkCache.swift` (`Bounds`) | #6788 |
