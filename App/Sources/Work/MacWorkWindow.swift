@@ -14,7 +14,7 @@ struct WorkWindow: View {
     }
 
     var body: some View {
-        WorkWindowPage(base: model, key: $key, showMain: showMain, showSession: showSession, opened: { shown = $0 })
+        page
             .webPlaceLinks()
             .paperGround()
             .windowFloor(width: 480, height: 360)
@@ -27,6 +27,17 @@ struct WorkWindow: View {
                 showSession(id)
                 return .handled
             })
+    }
+
+    @ViewBuilder
+    private var page: some View {
+        if let conversation = key?.conversation {
+            ConversationWindow(conversation: conversation, list: model.messagesList).id(conversation)
+                .onAppear { shown = WorkWindowModel(base: model, place: nil, showMain: showMain, showSession: showSession) }
+                .onDisappear { shown = nil }
+        } else {
+            WorkWindowPage(base: model, key: $key, showMain: showMain, showSession: showSession, opened: { shown = $0 })
+        }
     }
 
     private func showSession(_ id: UUID) {

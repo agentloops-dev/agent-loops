@@ -95,7 +95,8 @@ from the root (`agentsd/backups.go:69,72`). It holds nothing else.
 | `mcp-views/*.json` | View catalogues | pruned (`viewservers.go:369`) | on write | no |
 | `mcp-approvals.json`, `plugin-approvals.json` | Approval digests | **none.** Grows with folders × servers. | MCP: only on explicit remove; plugins: never | no |
 | `devices.json` | Paired devices | **none** | only Forget (`devices.go:257`) | no |
-| `review-dismissals.json`, `review-opened.json` | PR URLs per folder | 200 per folder (`reviews.go:28,30`). **Folder keys are never pruned.** | on write | no |
+| `review-dismissals.json` | Dismissed PRs | 2,000 of 8 KiB each, 90 days from the PR's last change or its dismissal (`reviews.go`, #6728) | hourly and on write | no |
+| `review-opened.json` | PR URLs per folder | 200 per folder (`reviewOpenedPerFolder`). **Folder keys are never pruned.** | on write | no |
 | `lock-seen.json` | Signed request IDs | 4,096, 2 days (`lockcheck.go`) | hourly and on write | no |
 | `attention.json` | Needs, deliveries | live needs only | on write | no |
 | `leases.json`, `resources.json` | Resource leases | 240-minute lease cap; dropped on agent stop (`leases.go:28,383`) | on write | no |
@@ -201,7 +202,7 @@ handover also leaves out `v1/keys/` (`storecopy.go:21,25`).
 | `v1/projectFolders/<host>.json` | A machine's joined folders | 1,000 | orphan sweep |
 | `v1/locks/<person>/<n>.json` | Machine-lock chain | 4,096 per person (`machinelock/lock.go:40`) | only on Reset. **Not deleted when the person is removed.** |
 | `v1/users/<u>/settings.json`, `notices.json`, `secrets/<NAME>.json` | Person settings, notice bucket, sealed secrets | 256 KiB part, 16 KiB secret, 200 secrets (`usersettings/usersettings.go:45-49`) | on person removal |
-| `v1/links/<channel>/<sha>.json` | Channel identity → person | **no cap** | on unlink or person removal |
+| `v1/links/<channel>/<sha>.json` | Channel identity → person, and when it last acted | 4 KiB a record, 1 MiB in all (#6763) | 90 days unused, hourly; on unlink or person removal |
 
 ### Requests, codes and sign-in
 
@@ -402,7 +403,7 @@ newer than a row above for the same store.
 | `<folder>/.agents/pins.json` | key-value | Pinned pages, views, sessions and workflows, and hidden views | 10 of each and 50; 4 KiB a pin, 1 KiB a hidden view, 128 KiB a folder; until removed (no age, on purpose: a person's choices, committed with the folder) | `Go/internal/agentsd/pins.go` (`pinsFileMost`) | #6725 |
 | `~/.agents/checks/suggestions.json` | document | Daily-check findings and dismissals | 50 findings, 200 dismissals, no age | `Go/internal/agentsd/dailychecks.go:39,49` | #6726 |
 | `~/.agents/mcp.removed.json` | key-value | Removed MCP servers | 100 of 256 KiB each, 90 days from the removal; refuses when full | `Go/internal/agentsd/removedconnectors.go` (`openRemovedConnectors`) | #6727 |
-| `<root>/review-dismissals.json` | key-value | Dismissed PR links | 200 a folder; until the folder goes | `Go/internal/agentsd/reviews.go:29` | #6728 |
+| `<root>/review-dismissals.json` | key-value | Dismissed PR links | 2,000 of 8 KiB each, 90 days from the PR's last change or its dismissal, the oldest first; For Review leaves out a PR unchanged for 90 days; goes with its folder | `Go/internal/agentsd/reviews.go` (`openReviewDismissals`) | #6728 |
 | `<root>/review-opened.json` | key-value | Opened PR links | 200 a folder; until the folder goes | `Go/internal/agentsd/reviews.go:31` | #6729 |
 | `<root>/workflows.json` (states) and `workflow-copies/` | key-value | Workflow states and approved copies | While the workflow file exists, then 30 days | `Go/internal/agentsd/smallstores.go:21` | #6730 |
 | `<root>/connector-setup.json` | key-value | Connector set-up for each folder | Until the folder leaves the machine | `Go/internal/agentsd/connectorsetup.go:386-391` | #6731 |
@@ -435,9 +436,9 @@ newer than a row above for the same store.
 | `v1/machines/` | document | Machines | 32 KiB a record, 1 MiB in all; removed when its key expires, at most 90 days unused, or by a person when linked to a workspace; tombstone 7 days | `Go/internal/controlplane/keylife.go`, `records/machinebounds.go` | #6758 |
 | `v1/machine-names/<person>.json` | key-value | A person's machine-N counter and last provider options | 64 KiB a person; until the person is removed (no age before, on purpose: a number is never used twice) | `Go/internal/controlplane/providers/defaults.go:20-63`, `Go/internal/controlplane/sweep.go` (`sweepMachineNames`) | #6759 |
 | `v1/machine-setup-times.json` | time series | Set-up durations | 90 days, 50 a step, 32 KiB; on write and hourly; no roll-up | `Go/internal/controlplane/machinesetuptimes.go` | #6760 |
-| `v1/warm-pools/<id>.json` | document | Warm pools and their claims | No count limit on pools; no delete when a person goes; config outside .agents | `Go/internal/controlplane/warmpool.go:33,44-45,124` | #6761 |
+| `v1/warm-pools/<id>.json` | document | Warm pools and their claims | 10 pools a provider and 256 KiB a pool, else refused; claims 7 days and 500 a pool; the pool until deleted or its person is removed. Its config stays in the control plane's store (Alex, 2026-11-24) | `Go/internal/controlplane/warmpool.go` (`mostPoolsAProvider`, `warmPoolMost`, `forget`) | #6761 |
 | `v1/providers/` | document | Machine providers | No count limit; until removed; config outside .agents | `Go/internal/controlplane/providers/records.go:31` | #6762 |
-| `v1/links/` | document | Channel identity links | No count limit; until unlinked or the person goes | `Go/internal/controlplane/links.go:38` | #6763 |
+| `v1/links/` | document | Channel identity links | 4 KiB a record, 1 MiB in all; 90 days unused, or until unlinked or the person goes | `Go/internal/controlplane/linkbounds.go` | #6763 |
 | `v1/governance/` approvals | document | Catalogue approvals | 1,000; until taken back or the person or group goes | `Go/internal/controlplane/governance.go:43` | #6764 |
 | `v1/policy/versions/` | document | Old policy versions | 100, no age | `Go/internal/controlplane/policy.go:36-48` | #6765 |
 | `v1/scim/tokens/` | secret | SCIM token hashes, revoked ones too | 20, no age, trimmed on write only | `Go/internal/controlplane/scim_tokens.go:30` | #6766 |
@@ -518,7 +519,7 @@ files expire without a summary. The `Forever` setting and a live conversation do
 90-day maximum age.
 
 Numeric product bounds still missing from responsible child issues include
-control-plane entity, provider, warm-pool, link, release-key, and invite quotas; browser and
+control-plane entity, provider, release-key, and invite quotas; browser and
 shared-inbox quotas; and store-specific record and collection limits where the rows above say
 **not specified**. The epic lead must track these in the existing responsible child issues or
 file a follow-up child issue when no owner exists. Do not replace this statement with estimates.

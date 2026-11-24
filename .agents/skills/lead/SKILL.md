@@ -33,8 +33,8 @@ not start a second one.
 
 - **Write no code.** Do not make a branch, worktree, commit or push, and do not open,
   rebase or merge a pull request. Each child's lane does that.
-- **Change only the plan.** You can file, label and comment on issues, add sub-issues,
-  and set "blocked by". Do not change the epic's goal or a child's scope: when that
+- **Change only the plan.** You can file, label and comment on issues, add and remove
+  sub-issues, set "blocked by", and file a new epic for follow-ups (step 4). Do not change the epic's goal or a child's scope: when that
   must change, ask Alex.
 - **Follow AGENTS.md** for "Questions that already have an answer" and "Decide and
   tell". The order of work is `forge/next` ("The order", below). The lead does not
@@ -166,8 +166,8 @@ only the keys it has. A wait that names nothing is refused. When you start again
 
 ## 4. Keep the plan true
 
-- **New work that a lane finds** (a follow-up, a missing part, a bug in the epic's work):
-  file it as a new child. Look for a duplicate first (`gh issue list --search`). Give it
+- **New work that a lane finds** (a missing part, a bug in the epic's work): file it as a
+  new child. Look for a duplicate first (`gh issue list --search`). Give it
   its level (`story`, `task`, `spike`, or `bug`), its type label, the epic's `feature:`
   label, its `size:`, a priority (AGENTS.md, "Set a priority when you file"), and the
   epic's milestone (a bug gets none, unless it blocks the milestone's goal). Then add it to the epic and set what it waits for:
@@ -179,6 +179,15 @@ only the keys it has. A wait that names nothing is refused. When you start again
   gh api -X POST repos/agentloops-dev/agent-loops/issues/<new>/dependencies/blocked_by -F issue_id=$blocker
   ```
 
+- **A follow-up at the end of the epic** (#7037; "come back and validate in a few days"):
+  do not hold the epic open for it. One issue goes to the standing epic #4208: file it
+  with no parent. (A bug goes to the bug lane, #4207, as any bug with no parent does.)
+  Several go to a new epic, with their own children, that is "blocked by" this epic.
+  A child that turns out to be a follow-up moves there too: take it out of this epic
+  with `gh api -X DELETE repos/agentloops-dev/agent-loops/issues/$epic/sub_issue -F sub_issue_id=$id`.
+- **A port to the other clients** is in its own epic, "blocked by" this one, or is one
+  issue in #4208 (the `epic-lifecycle` skill, "Which epics"). It is not a child of the
+  MVP epic. Do not start a port epic's lanes before the MVP epic is closed.
 - **A child that is no longer needed:** close it as not planned, with one line that says
   why, and remove the "blocked by" links that point to it.
 - **A child that is stuck** (its lane asks Alex, or its PR waits for approval): it is not
@@ -186,7 +195,8 @@ only the keys it has. A wait that names nothing is refused. When you start again
 
 ## 5. Close the epic
 
-When all the children are closed:
+When all the children are closed (for an MVP epic, when stage 8 of the `epic-lifecycle`
+skill is done too; do not wait for its port or a follow-up):
 
 1. Close the epic: `gh issue close $epic --reason completed`.
 2. Ask `estimate_issue` for the epic (#3590). Closed, it says the estimate the epic had

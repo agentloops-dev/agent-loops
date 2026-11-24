@@ -17,17 +17,17 @@ needs you, and lets you answer them from your phone.**
 puts agents on all of it, not only on the code, and it names the three parts so nobody
 reads "delivery" as CI/CD only:
 
-1. **Idea to epic.** You say what you want in a sentence. An agent files it as an issue,
-   with a size and a priority, or as an epic whose children are in order. The plan is in
-   your tracker. See [Planning](planning.md).
-2. **Epic to merged pull request.** A lead agent starts one agent for each child that is
-   ready. Each agent works on a branch of its own, takes turns with what it shares, waits
-   for CI, fixes what fails and lands its pull request. You approve only the changes that
-   need a person. See [Agents that work together, and on their own](#agents-that-work-together-and-on-their-own).
-3. **Deployment and rollback.** Agent Loops reads your deploys from the systems that do
-   them, and shows what is live, its health and each rollback. Agents that deploy, watch
-   and roll back by themselves are the part that comes next. See
-   [The deploy model](deploys.md).
+- **Idea to epic.** You say what you want in a sentence. An agent files it as an issue,
+  with a size and a priority, or as an epic whose children are in order. The plan is in
+  your tracker. See [Planning](planning.md).
+- **Epic to merged pull request.** A lead agent starts one agent for each child that is
+  ready. Each agent works on a branch of its own, takes turns with what it shares, waits
+  for CI, fixes what fails and lands its pull request. You approve only the changes that
+  need a person. See [Agents that work together, and on their own](#agents-that-work-together-and-on-their-own).
+- **Deployment and rollback.** Agent Loops reads your deploys from the systems that do
+  them, and shows what is live, its health and each rollback. Agents that deploy, watch
+  and roll back by themselves are the part that comes next. See
+  [The deploy model](deploys.md).
 
 ## It is not an editor
 

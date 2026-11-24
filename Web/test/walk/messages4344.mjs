@@ -62,7 +62,7 @@ try {
     await page.waitFor(`document.querySelectorAll(".messages-message").length === 3`, 30_000);
     const bodies = await text(".messages-text");
     ok(`plain text, not markup: ${bodies[1]}`, bodies[1].includes("<b>not markup</b>"));
-    ok(`the address is the conversation's: ${await page.eval("location.hash")}`, (await page.eval("location.hash")) === "#/messages/slack%3AC01");
+    ok(`the address is the conversation's: ${await page.eval("location.hash")}`, (await page.eval("location.hash")) === "#/work/messages/slack%3AC01");
     await shot("web-conversation");
   }
 } catch (e) {
