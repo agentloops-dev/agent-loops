@@ -232,6 +232,7 @@ struct WorkTimelinePane: View {
     let model: any WorkModel
     @Bindable var state: WorkTimelineState
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.openWorkWindow) private var openWorkWindow
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     #if os(iOS)
     @Environment(\.horizontalSizeClass) private var widthClass
@@ -548,6 +549,7 @@ struct WorkTimelinePane: View {
                     .buttonStyle(.plain)
                     .accessibilityLabel(WorkTimeline.spoken([row.line], now: now).first?.words ?? row.line.title)
                     .accessibilityHint("Opens the epic")
+                    .workWindowMenu(place(.line(row.line)))
                 }
             }
         }
@@ -676,6 +678,8 @@ struct WorkTimelinePane: View {
                     hover = nil
                 }
             }
+            // The mark under the pointer has Open in New Window (#5475).
+            .workWindowMenu(hover.map { place($0.hit) })
             #endif
             .onTapGesture { p in
                 let hit = WorkTimeline.hit((Double(p.x), Double(p.y)), lines: drawing.lines, axis: drawing.axis)
@@ -739,9 +743,13 @@ struct WorkTimelinePane: View {
     }
 
     private func open(_ hit: WorkTimeline.Hit) {
+        model.follow(place(hit), window: openWorkWindow)
+    }
+
+    private func place(_ hit: WorkTimeline.Hit) -> WorkPlace {
         switch hit {
-        case .dot(_, let dot): model.showWork(WorkPlace(kind: .issue, ref: dot.ref))
-        case .line(let line): model.showWork(WorkPlace(kind: .issue, ref: line.epic.ref))
+        case .dot(_, let dot): WorkPlace(kind: .issue, ref: dot.ref)
+        case .line(let line): WorkPlace(kind: .issue, ref: line.epic.ref)
         }
     }
 

@@ -347,6 +347,8 @@ final class RemoteModel {
     /// Work's places (#3256), as the window keeps them: the list or the item's page open, and
     /// the ones before and after it, for Back and Forward.
     var workHistory = LineageHistory<WorkPlace>()
+    /// The main scene, for a scene of its own that opens something there (#5475).
+    @ObservationIgnored weak var mainScene: UISceneSession?
     /// Each Work list's filters, sort and rows (#3257), so a page goes through its list and Back finds it as left.
     let workLists = WorkLists()
     /// The person's settings and the names of their secrets (#1760), for Settings ▸ You ▸ Secrets

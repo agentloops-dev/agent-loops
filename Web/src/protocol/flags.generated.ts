@@ -12,4 +12,5 @@ export interface FeatureFlagInfo {
 
 export const featureFlags: readonly FeatureFlagInfo[] = [
   { name: "commit-trailers", title: "Commit trailers", about: "The Commit trailers group in Agents ▸ Policy: the trailers on each agent's commits.", issue: 6373 },
+  { name: "work-windows", title: "Work in windows", about: "Open in New Window on Work's pages (Mac and iPad): an issue, a pull request or a release in a window of its own.", issue: 5480 },
 ];

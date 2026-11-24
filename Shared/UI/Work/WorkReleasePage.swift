@@ -18,6 +18,7 @@ struct WorkReleasePage: View {
     private let compact = false
     #endif
     @Environment(\.openURL) private var openURL
+    @Environment(\.openWorkWindow) private var openWorkWindow
     /// Opens a place on the web page; the Mac window sets it while it can open the page (#5180).
     @Environment(\.openWebPlace) private var openWebPlace
     @State private var trendsProblem: String?
@@ -81,6 +82,7 @@ struct WorkReleasePage: View {
         .toolbar { toolbar }
         .toolbar(removing: .title)
         #endif
+        .workWindowTitle(model, title: row?.title ?? tag, ref: node.ref)
         .workTask(id: asked) { await load() }
     }
 
@@ -149,6 +151,7 @@ struct WorkReleasePage: View {
                 }
                 .buttonStyle(.borderless)
             }
+            WorkWindowToolbarButton(model: model, place: place)
             WorkRefreshButton(running: reading) { asked += 1 }
         }
     }
@@ -162,14 +165,17 @@ struct WorkReleasePage: View {
     /// The Remote's bar: ‹ Releases, then ↑ and ↓, and on the iPhone Open on GitHub.
     @ToolbarContentBuilder
     private var barItems: some ToolbarContent {
-        ToolbarItem(placement: .topBarLeading) {
-            Button { back() } label: {
-                HStack(spacing: 4) {
-                    Image(icon: "chevron.left").fontWeight(.semibold)
-                    Text(WorkList.Kind.release.title)
+        // A window of its own (#5475) has Back and Forward in its place.
+        if !model.isOwnWindow {
+            ToolbarItem(placement: .topBarLeading) {
+                Button { back() } label: {
+                    HStack(spacing: 4) {
+                        Image(icon: "chevron.left").fontWeight(.semibold)
+                        Text(WorkList.Kind.release.title)
+                    }
                 }
+                .accessibilityLabel(WorkList.Kind.release.title)
             }
-            .accessibilityLabel(WorkList.Kind.release.title)
         }
         ToolbarItemGroup(placement: .topBarTrailing) {
             if let n = model.workNeighbours {
@@ -180,6 +186,7 @@ struct WorkReleasePage: View {
                     .disabled(!model.workHasNext || list.loadingMore)
                     .accessibilityLabel("Next")
             }
+            WorkWindowToolbarButton(model: model, place: place)
             if compact, let url = forgeURL {
                 Button { openURL(url) } label: { Image(toolbarIcon: "arrow.up.right.square") }
                     .accessibilityLabel(WorkList.openOnWords(node.ref))
@@ -278,11 +285,12 @@ struct WorkReleasePage: View {
                 } else {
                     VStack(spacing: 0) {
                         ForEach(shown) { pr in
-                            Button { model.showWork(WorkPlace(kind: .pr, ref: pr.id)) } label: {
+                            Button { model.follow(WorkPlace(kind: .pr, ref: pr.id), window: openWorkWindow) } label: {
                                 WorkItemRow(row: pr, several: false, compact: narrow)
                                     .padding(.horizontal, 10).padding(.vertical, 4)
                             }
                             .buttonStyle(.plain)
+                            .workWindowMenu(WorkPlace(kind: .pr, ref: pr.id))
                             if pr.id != shown.last?.id { Divider() }
                         }
                     }
@@ -333,10 +341,11 @@ struct WorkReleasePage: View {
         WorkSideSection(title: "Compared with") {
             if let previous {
                 let before = WorkReleaseLook.tag(previous.node.ref)
-                Button { model.showWork(WorkPlace(kind: .release, ref: previous.id)) } label: {
+                Button { model.follow(WorkPlace(kind: .release, ref: previous.id), window: openWorkWindow) } label: {
                     Text(before).monospaced()
                 }
                 .linkStyle()
+                .workWindowMenu(WorkPlace(kind: .release, ref: previous.id))
                 .help("The release before this one")
             } else {
                 WorkSideNone(words: "None")
@@ -420,25 +429,8 @@ struct WorkReleasePage: View {
             if let runtimes = figures.flatMap(WorkReleaseLook.runtimesWords) {
                 Text(runtimes).appText(.fine).foregroundStyle(.secondary).monospacedDigit()
             }
-            ForEach(sessions, id: \.self) { session(id: $0) }
+            ForEach(sessions, id: \.self) { WorkSideSession(model: model, id: $0) }
         }
-    }
-
-    private func session(id: UUID) -> some View {
-        let title = model.workSessionTitle(id)
-        let runs = model.workSessionState(id)?.holdsRuntime == true
-        return Button { model.openWorkSession(id) } label: {
-            HStack(spacing: 6) {
-                Circle().fill(runs ? WorkLook.Tone.green.color : Color.secondary.opacity(0.4)).frame(width: 7, height: 7)
-                    .accessibilityHidden(true)
-                Text(title ?? "A session on another machine").lineLimit(1).truncationMode(.tail)
-                    .foregroundStyle(title == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(.tint))
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .disabled(title == nil)
-        .accessibilityLabel([title ?? "A session on another machine", runs ? "running" : nil].compactMap { $0 }.joined(separator: ", "))
     }
 
     // MARK: Loading

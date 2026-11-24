@@ -157,6 +157,14 @@ struct RemoteApp: App {
                 .environment(model)
         }
 
+        // A Work page in a scene of its own on an iPad (#5475), keyed by its kind and ref, from
+        // Open in New Window or a drag out of a Work list. One scene per page.
+        WindowGroup(id: OpenWorkWindow.sceneID, for: WorkWindowKey.self) { $key in
+            RemoteWorkScene(key: $key)
+                .environment(model)
+        }
+        .handlesExternalEvents(matching: [OpenWorkWindow.activityType])
+
         // The agent browser or a simulator taken over on an iPad (#4141), from Open on a live
         // tile or Open the page on a hand-off. One scene per session and source: opening one
         // already open brings it forward.
@@ -293,6 +301,11 @@ struct RemoteView: View {
         .onContinueUserActivity(PoppedChat.activityType) { activity in
             if let id = PoppedChat.agentID(in: activity) { openWindow(id: PoppedChat.sceneID, value: id) }
         }
+        // The same for a Work row dragged out of its list (#5475).
+        .onContinueUserActivity(OpenWorkWindow.activityType) { activity in
+            if let key = OpenWorkWindow.key(in: activity) { openWindow(id: OpenWorkWindow.sceneID, value: key) }
+        }
+        .background(SceneSessionReader { model.mainScene = $0 }.frame(width: 0, height: 0).accessibilityHidden(true))
         .task {
             await model.connect()
 #if DEBUG

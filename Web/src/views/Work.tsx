@@ -834,9 +834,9 @@ export function WorkPage({ store, kind, ref }: { store: Store; kind: WorkKind; r
           {(item.parent || item.progress || (got?.children ?? []).length > 0 || (got?.linkedPulls ?? []).length > 0) && (
             <SideSection title="Linked">
               {item.parent && (
-                <button type="button" class="work-mini-row" onClick={() => go({ nav: "work", section: "issue", item: item.parent!.ref })}>
+                <a class="work-mini-row" href={routeHash({ nav: "work", section: "issue", item: item.parent.ref })}>
                   <StateIcon kind="issue" state="open" size={14} /><span>{shortRef(item.parent.ref)}</span><span class="quiet">parent</span>
-                </button>
+                </a>
               )}
               {item.progress && (
                 <span class="work-progress">
@@ -945,9 +945,9 @@ function TimelineEvent({ event: e, words, stateReason }: { event: ForgeEvent; wo
 function LinkedRow({ linked }: { linked: ForgeLinked }) {
   const kind = linked.node.kind === "pr" ? "pr" : "issue";
   return (
-    <button type="button" class="work-mini-row" title={linked.title} onClick={() => go({ nav: "work", section: kind, item: linked.node.ref })}>
+    <a class="work-mini-row" title={linked.title} href={routeHash({ nav: "work", section: kind, item: linked.node.ref })}>
       <StateIcon kind={kind} state={linked.state} size={14} /><span>{shortRef(linked.node.ref)}</span><span class="work-mini-title">{linked.title}</span>
-    </button>
+    </a>
   );
 }
 

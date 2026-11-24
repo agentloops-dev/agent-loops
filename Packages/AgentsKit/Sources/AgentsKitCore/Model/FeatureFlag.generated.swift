@@ -6,11 +6,14 @@
 public enum FeatureFlag: String, CaseIterable, Sendable {
     /// Commit trailers (#6373).
     case commitTrailers = "commit-trailers"
+    /// Work in windows (#5480).
+    case workWindows = "work-windows"
 
     /// What Settings calls it.
     public var title: String {
         switch self {
         case .commitTrailers: "Commit trailers"
+        case .workWindows: "Work in windows"
         }
     }
 
@@ -18,6 +21,7 @@ public enum FeatureFlag: String, CaseIterable, Sendable {
     public var about: String {
         switch self {
         case .commitTrailers: "The Commit trailers group in Agents ▸ Policy: the trailers on each agent's commits."
+        case .workWindows: "Open in New Window on Work's pages (Mac and iPad): an issue, a pull request or a release in a window of its own."
         }
     }
 
@@ -25,6 +29,7 @@ public enum FeatureFlag: String, CaseIterable, Sendable {
     public var issue: Int {
         switch self {
         case .commitTrailers: 6373
+        case .workWindows: 5480
         }
     }
 }
