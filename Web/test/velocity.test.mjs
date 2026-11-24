@@ -30,6 +30,21 @@ test("D is today by the hour, and its figure is the day's", () => {
   assert.equal(chart.reverted, 1);
 });
 
+test("the repository picker filters bars, shares and reverts", () => {
+  const site = "github:alexec/agents-site";
+  const chart = velocity.velocityChart(history(), "D", site);
+  assert.equal(chart.repo, site);
+  assert.equal(chart.bars[15].value, 1);
+  assert.equal(chart.total, 1);
+  assert.equal(chart.average, 1);
+  assert.equal(chart.reverted, 1);
+  assert.deepEqual(chart.shares, [{ repo: site, value: 1 }]);
+  assert.deepEqual(velocity.velocityRepositories(history()), [
+    "github:alexec/agents",
+    "github:alexec/agents-site",
+  ]);
+});
+
 test("W is seven days; the average is over the days with any PR; shares by repository, largest first", () => {
   const chart = velocity.velocityChart(history(), "W");
   assert.equal(chart.bars.length, 7);

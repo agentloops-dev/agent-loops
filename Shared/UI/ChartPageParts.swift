@@ -18,6 +18,34 @@ func chartPickedBar<Bar>(in bars: [Bar], at picked: Date?, start: (Bar) -> Date)
     return bars.last { start($0) <= picked }
 }
 
+struct RepositoryOption: Identifiable {
+    let key: String
+    let name: String
+
+    var id: String { key }
+
+    static func options(_ keys: [String]) -> [RepositoryOption] {
+        keys.map { RepositoryOption(key: $0, name: VelocityChart.repoName($0)) }
+    }
+}
+
+struct RepositoryPicker: View {
+    @Binding var repo: String
+    let options: [RepositoryOption]
+
+    var body: some View {
+        Picker("Repository", selection: $repo) {
+            Text(VelocityChart.allRepositories).tag("")
+            ForEach(options) { option in
+                Text(option.name).tag(option.key)
+            }
+        }
+        .pickerStyle(.menu)
+        .labelsHidden()
+        .disabled(options.isEmpty)
+    }
+}
+
 struct ChartEmpty: View {
     var body: some View {
         Text("No pull requests landed in this range.")

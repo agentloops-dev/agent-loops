@@ -9,7 +9,7 @@
 
   // The parts that come in: a section's own children, except a grid, which brings its
   // children in one by one instead.
-  const groups = ".grid3, .grid2, .anim2, .uc, .int-rows, .clients";
+  const groups = ".grid3, .grid2, .anim2, .uc, .int-rows, .clients, .feat";
   const parts = [];
   for (const child of document.querySelectorAll(".page > .wrap > *")) {
     if (child.matches(groups)) {

@@ -20,6 +20,7 @@ struct VelocityChartsSection<Refresh: Equatable>: View {
     @State private var read: Date?
     private var pageRead: Date? { read }
     @State private var range: VelocityChart.Range = .week
+    @State private var repo = ""
     @State private var picked: Date?
     /// The last read failed (#5972): with no history, the page says so in place of the spinner;
     /// with one, the line at the top says so beside its age.
@@ -42,14 +43,19 @@ struct VelocityChartsSection<Refresh: Equatable>: View {
             }
             .pickerStyle(.segmented)
             .labelsHidden()
+            RepositoryPicker(repo: $repo,
+                             options: history.map { RepositoryOption.options(VelocityChart.repositories(in: $0)) } ?? [])
             ChartLoadingOrFailure(failed: failed, hasHistory: history != nil,
                                   message: Self.couldNotRead, retry: { attempt += 1 }) {
                 if let history {
-                    VelocityChartBody(chart: VelocityChart(history, range: range), picked: $picked)
+                    VelocityChartBody(chart: VelocityChart(history, range: range,
+                                                            repo: repo.isEmpty ? nil : repo),
+                                      picked: $picked)
                 }
             }
         }
         .onChange(of: range) { picked = nil }
+        .onChange(of: repo) { picked = nil }
         .task(id: Reading(refresh: refresh, attempt: attempt)) {
             switch await readChart(load) {
             case let .read(loaded, at):

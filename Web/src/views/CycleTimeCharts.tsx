@@ -1,7 +1,8 @@
 import { useSignal } from "@preact/signals";
 import type { CycleTimeHistory } from "../protocol/generated";
 import { type UsageRange, usageRanges, usageRangeWords } from "../model/usage";
-import { type CycleTimeBreakdown, cycleTimeChart, cycleTimeHeadline, durationWords, noStartWords, splitWords } from "../model/cycletime";
+import { type CycleTimeBreakdown, cycleTimeChart, cycleTimeHeadline, cycleTimeRepositories, durationWords, noStartWords, splitWords } from "../model/cycletime";
+import { allRepositories, repoWords } from "../model/velocity";
 import { Choice } from "./Choice";
 import { Icon } from "./Icon";
 import { label, tick, when } from "./UsageCharts";
@@ -19,6 +20,7 @@ export function CycleTimeCharts({ history, failed = false, retry }: {
 }) {
   const range = useSignal<UsageRange>("W");
   const breakdown = useSignal<CycleTimeBreakdown>("level");
+  const repo = useSignal("");
   const picked = useSignal<string | null>(null);
   if (!history && failed) {
     return (
@@ -30,7 +32,11 @@ export function CycleTimeCharts({ history, failed = false, retry }: {
     );
   }
   if (!history) return <p class="quiet">Loading…</p>;
-  const chart = cycleTimeChart(history, range.value, breakdown.value);
+  const repoOptions: [string, string][] = [["", allRepositories]];
+  for (const keyRepo of cycleTimeRepositories(history)) {
+    repoOptions.push([keyRepo, repoWords(keyRepo)]);
+  }
+  const chart = cycleTimeChart(history, range.value, breakdown.value, repo.value || null);
   const bar = chart.bars.find((b) => b.stamp === picked.value) ?? null;
   const top = Math.max(...chart.bars.map((b) => b.value), chart.p85, 1);
   const step = (width - axis) / chart.bars.length;
@@ -45,6 +51,8 @@ export function CycleTimeCharts({ history, failed = false, retry }: {
         onPick={(r) => { range.value = r; picked.value = null; }} />
       <Choice label="By" value={breakdown.value} options={breakdownOptions}
         onPick={(b) => { breakdown.value = b; }} />
+      <Choice label="Repository" value={repo.value} options={repoOptions}
+        onPick={(keyRepo) => { repo.value = keyRepo; picked.value = null; }} />
       <div class="usage-headline">
         <p class="quiet small strong">{(bar ? "PICKED BAR" : cycleTimeHeadline).toUpperCase()}</p>
         <p class="usage-figure">{durationWords(bar?.value ?? chart.median)}</p>
@@ -85,7 +93,7 @@ export function CycleTimeCharts({ history, failed = false, retry }: {
             <p key={share.name} class="usage-share"><span>{share.name}</span><span>{durationWords(share.value)}</span></p>
           ))}
           <p class="quiet small">{splitWords(chart)}</p>
-          <p class="quiet small">{noStartWords(chart.noStart)}</p>
+          <p class="quiet small">{noStartWords(chart.noStart, chart.repo !== null)}</p>
         </>
       )}
     </section>
