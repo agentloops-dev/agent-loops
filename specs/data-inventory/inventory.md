@@ -94,9 +94,9 @@ from the root (`agentsd/backups.go:69,72`). It holds nothing else.
 | `mcp-events.json` | Seen MCP event IDs | 2,000 IDs, 7 days (`mcpevents.go:53-56`) | on write | no |
 | `mcp-views/*.json` | View catalogues | pruned (`viewservers.go:369`) | on write | no |
 | `mcp-approvals.json`, `plugin-approvals.json` | Approval digests | **none.** Grows with folders × servers. | MCP: only on explicit remove; plugins: never | no |
-| `devices.json` | Paired devices | **none** | only Forget (`devices.go:257`) | no |
+| `devices.json` | Paired devices | 256 of 4 KiB each, else refused; 90 days unseen (`devices.go`, #6734) | on write, hourly, Forget | no |
 | `review-dismissals.json` | Dismissed PRs | 2,000 of 8 KiB each, 90 days from the PR's last change or its dismissal (`reviews.go`, #6728) | hourly and on write | no |
-| `review-opened.json` | PR URLs per folder | 200 per folder (`reviewOpenedPerFolder`). **Folder keys are never pruned.** | on write | no |
+| `review-opened.json` | Opened PRs | 2,000 of 8 KiB each, 90 days from the PR's last change or its opening (`reviews.go`, #6729) | hourly and on write | no |
 | `lock-seen.json` | Signed request IDs | 4,096, 2 days (`lockcheck.go`) | hourly and on write | no |
 | `attention.json` | Needs, deliveries | live needs only | on write | no |
 | `leases.json`, `resources.json` | Resource leases | 240-minute lease cap; dropped on agent stop (`leases.go:28,383`) | on write | no |
@@ -403,13 +403,13 @@ newer than a row above for the same store.
 | `<folder>/.agents/pins.json` | key-value | Pinned pages, views, sessions and workflows, and hidden views | 10 of each and 50; 4 KiB a pin, 1 KiB a hidden view, 128 KiB a folder; until removed (no age, on purpose: a person's choices, committed with the folder) | `Go/internal/agentsd/pins.go` (`pinsFileMost`) | #6725 |
 | `~/.agents/checks/suggestions.json` | document | Daily-check findings and dismissals | 50 findings, 200 dismissals, no age | `Go/internal/agentsd/dailychecks.go:39,49` | #6726 |
 | `~/.agents/mcp.removed.json` | key-value | Removed MCP servers | 100 of 256 KiB each, 90 days from the removal; refuses when full | `Go/internal/agentsd/removedconnectors.go` (`openRemovedConnectors`) | #6727 |
-| `<root>/review-dismissals.json` | key-value | Dismissed PR links | 2,000 of 8 KiB each, 90 days from the PR's last change or its dismissal, the oldest first; For Review leaves out a PR unchanged for 90 days; goes with its folder | `Go/internal/agentsd/reviews.go` (`openReviewDismissals`) | #6728 |
-| `<root>/review-opened.json` | key-value | Opened PR links | 200 a folder; until the folder goes | `Go/internal/agentsd/reviews.go:31` | #6729 |
+| `<root>/review-dismissals.json` | key-value | Dismissed PR links | 2,000 of 8 KiB each, 90 days from the PR's last change or its dismissal, the oldest first; For Review leaves out a PR unchanged for 90 days; goes with its folder | `Go/internal/agentsd/reviews.go` (`openReviewMarks`) | #6728 |
+| `<root>/review-opened.json` | key-value | Opened PR links | 2,000 of 8 KiB each, 90 days from the PR's last change or its opening, the oldest first; goes with its folder | `Go/internal/agentsd/reviews.go` (`openReviewMarks`) | #6729 |
 | `<root>/workflows.json` (states) and `workflow-copies/` | key-value | Workflow states and approved copies | 2,000 states of 64 KiB, 64 MiB of copies; live approvals and on or off until removed (current state, on purpose), the last run and held fires 90 days, all 30 days after the file goes; the runs are `workflow-runs.json` (log, 1,000 of 64 KiB, 90 days) | `Go/internal/agentsd/workflowbounds.go` | #6730 |
-| `<root>/connector-setup.json` | key-value | Connector set-up for each folder | Until the folder leaves the machine | `Go/internal/agentsd/connectorsetup.go:386-391` | #6731 |
-| `<root>/catalog-skills.json` | key-value | Installed catalog skills | Until the item is removed | `Go/internal/agentsd/skills.go:48` | #6732 |
-| `<root>/catalog-mcp.json` | key-value | Installed catalog MCP servers | Until the item is removed | `Go/internal/agentsd/mcpcatalog.go:84` | #6733 |
-| `<root>/devices.json` | document | Paired devices | 90 days unseen; no count limit | `Go/internal/agentsd/smallstores.go:22` | #6734 |
+| `<root>/connector-setup.json` | key-value | Connector set-up for each folder | 2,000 of 64 KiB each, the one read longest ago first; what a read found 90 days; ticks and done marks until the folder leaves the machine (no age, on purpose: current state) | `Go/internal/agentsd/connectorsetup.go` (`saveSetupLocked`) | #6731 |
+| `<root>/catalog-skills.json` | key-value | Installed catalog skills | 2,000 of 8 KiB each, else refused; until removed (no age, on purpose: current state), or 30 days after the item went | `Go/internal/agentsd/skillcatalog/sidecar.go`, `smallstores.go` (`sweepCatalogItems`) | #6732 |
+| `<root>/catalog-mcp.json` | key-value | Installed catalog MCP servers | 2,000 of 8 KiB each, else refused; until removed (no age, on purpose: current state), or 30 days after the item went | `Go/internal/agentsd/mcpcatalog/files.go`, `smallstores.go` (`sweepCatalogItems`) | #6733 |
+| `<root>/devices.json` | document | Paired devices | 256 of 4 KiB each, a new one past that refused; 90 days unseen | `Go/internal/agentsd/devices.go` (`deviceLimit`) | #6734 |
 | `<logs>/daemon.log` | log | What the machine did | 4 MB and one older file; size only, so an idle machine keeps lines older than 90 days | `Go/internal/rolllog/rolllog.go:14` | #6735 |
 | `<logs>/mcp-logs/` | log | Hosted MCP servers' stderr | 1 MB a server, 32 servers; size only | `Go/internal/agentsd/hostedmcp.go:58,865` | #6736 |
 | `<file>.unreadable-*`, `<file>.corrupt-*` | blob | Stores set aside when unreadable | The newest 3, no age | `Go/internal/agentsd/store/files.go:79` | #6737 |
@@ -476,7 +476,7 @@ newer than a row above for the same store.
 | `machinePicker.pinned` (Mac, Remote, web) | key-value | Pinned machines | 100 of 64 bytes each, one over that refused; until removed, or its machine is no longer listed (no age, on purpose: a person's choice) | `Packages/AgentsKit/Sources/AgentsKitCore/Sidebar/MachinesGroup.swift` (`MachinePins`); `Web/src/model/machinePicker.ts` | #6797 |
 | Remote defaults `remote.startFolders` | key-value | Start folders, each with its machine | 100 of 1,024 + 64 bytes each, one over that refused; until removed, its machine is no longer listed, or Forget (no age, on purpose: a person's choice) | `Packages/AgentsKit/Sources/AgentsKitCore/Sidebar/StartFolders.swift` | #6798 |
 | Mac and Remote `App Support/Agents/control-client.json` | key-value | The pairing with a control plane | One, until Forget; stays outside `.agents` on purpose: one device's identity, not backed up (Alex, 2026-11-24) | `App/Sources/Control/ControlConfig.swift:40; Remote/Sources/Link/ControlPlaneLink.swift:20` | #6800 |
-| Mac MDM profile `ControlPlaneAddress`, `ControlPlaneKey`, `MustJoin` | key-value | An org's pin to its control plane | Read only, set by the org | `Packages/AgentsKit/Sources/AgentsKitCore/Control/MachinePin.swift:15-17` | #6801 |
+| Mac MDM profile `ControlPlaneAddress`, `ControlPlaneKey`, `MustJoin` | key-value | An org's pin to its control plane | Three settings, read only, set by the org; stays outside `.agents` on purpose: a person's file must not replace it | `Packages/AgentsKit/Sources/AgentsKitCore/Control/MachinePin.swift:15-17` | #6801 |
 | Mac and Remote defaults `voiceMode.*` | key-value | Voice mode settings | Only in the device's defaults | `Shared/UI/Voice (voiceMode keys)` | #6802 |
 | `catalog.personas.marketplace` (Mac, Remote, web) | key-value | The personas marketplace | Only in the device's defaults; the skills and MCP marketplaces are mirrored | `DisplayPreference.swift:50-59` | #6803 |
 | `workingMarkTilt`, `waitingMarkPeriod` (Mac, Remote, web) | key-value | How the working and waiting marks move | Only in the device's defaults | `WindowDefaults; Web localStorage` | #6804 |

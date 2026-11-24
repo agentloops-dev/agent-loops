@@ -247,7 +247,7 @@ var sameDevice = func(a, b string) bool {
 
 func deviceOf(path string) (uint64, bool) {
 	for {
-		if info, err := os.Stat(path); err == nil {
+		if info, err := os.Stat(path); err == nil { //nolint:gosec // G703: only asks which disk one of the daemon's own folders is on
 			if st, ok := info.Sys().(*syscall.Stat_t); ok {
 				return uint64(st.Dev), true //nolint:unconvert // int32 on darwin
 			}

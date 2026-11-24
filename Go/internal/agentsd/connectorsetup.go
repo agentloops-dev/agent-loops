@@ -1,6 +1,7 @@
 package agentsd
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -383,19 +384,75 @@ func (d *Daemon) setupRecordsLocked() map[string]*setupRecord {
 	return d.setupRecords
 }
 
-// saveSetupLocked writes the records of folders this host still has. setupMu is held.
+const (
+	// setupFoldersMost and setupRecordMost bound connector-setup.json (#6731): the folders, and
+	// one folder's record in bytes.
+	setupFoldersMost = 2000
+	setupRecordMost  = 64 << 10
+	// setupProofKept is how long what a read found is kept.
+	setupProofKept = store.MaxAge
+)
+
+// saveSetupLocked holds the records to their limits, and writes them if they changed. Folders
+// this host no longer has go. A folder's ticks and what its set-up did once stay while it is
+// here, whatever their age (gate 1 of #6669): only what a read found goes. setupMu is held.
 func (d *Daemon) saveSetupLocked() {
-	for folder := range d.setupRecords {
-		if _, ok := d.summaryFor(folder); !ok {
+	for folder, r := range d.setupRecords {
+		if _, ok := d.summaryFor(folder); r == nil || !ok {
 			delete(d.setupRecords, folder)
+			continue
 		}
+		d.setupRecords[folder] = boundSetupRecord(r, nowFunc())
+	}
+	// Past the limit the one read longest ago goes: that folder's set-up starts again.
+	for len(d.setupRecords) > setupFoldersMost {
+		oldest := ""
+		for folder, r := range d.setupRecords {
+			if o := d.setupRecords[oldest]; o == nil || r.ReadAt.Before(o.ReadAt) {
+				oldest = folder
+			}
+		}
+		delete(d.setupRecords, oldest)
 	}
 	b, err := json.Marshal(d.setupRecords)
-	if err == nil {
+	old, rerr := os.ReadFile(d.setupPath())
+	if err == nil && (rerr != nil || !bytes.Equal(b, old)) {
+		// store-bounds: kind=key-value; count=2000; size=64KiB a folder; age=until-deleted; applied=on write, and hourly sweep
 		err = store.WriteAtomically(d.setupPath(), b, 0o600)
 	}
 	if err != nil {
 		log.Printf("connectors: the set-up's reads were not kept: %v", err)
+	}
+}
+
+// boundSetupRecord is r without what a read found 90 days ago, and without its reads when it is
+// too large: its slots read again. r is not changed, as a page may be drawing it.
+func boundSetupRecord(r *setupRecord, now time.Time) *setupRecord {
+	r = cloneRecord(r)
+	for _, s := range r.Slots {
+		if now.Sub(s.ReadAt) < setupProofKept {
+			continue
+		}
+		s.Proof = nil
+		for i := range s.Servers {
+			s.Servers[i].Proof = nil
+		}
+		for i := range s.Messaging {
+			s.Messaging[i].Proof = nil
+		}
+	}
+	if b, err := json.Marshal(r); err != nil || len(b) > setupRecordMost {
+		r.Slots, r.ReadAt = map[wire.ConnectorSlotKind]*slotRecord{}, time.Time{}
+	}
+	return r
+}
+
+// sweepConnectorSetup holds connector-setup.json to its limits, hourly.
+func (d *Daemon) sweepConnectorSetup() {
+	d.setupMu.Lock()
+	defer d.setupMu.Unlock()
+	if len(d.setupRecordsLocked()) > 0 {
+		d.saveSetupLocked()
 	}
 }
 
@@ -947,8 +1004,11 @@ func cloneRecord(r *setupRecord) *setupRecord {
 	c := *r
 	c.Slots = map[wire.ConnectorSlotKind]*slotRecord{}
 	for k, v := range r.Slots {
+		if v == nil {
+			continue
+		}
 		s := *v
-		s.Messaging = slices.Clone(v.Messaging)
+		s.Messaging, s.Servers = slices.Clone(v.Messaging), slices.Clone(v.Servers)
 		c.Slots[k] = &s
 	}
 	return &c

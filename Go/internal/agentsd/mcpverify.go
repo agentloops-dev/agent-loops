@@ -516,11 +516,7 @@ func (d *Daemon) mcpAddByHand(r wire.MCPAddByHandRequest) (wire.MCPAddAnswer, er
 	}
 	addedAt := nowFunc()
 	byHand := true
-	side := mcpcatalog.LoadSidecar(d.mcpSidecarPath())
-	side.Servers[mcpcatalog.Key(r.Destination, name)] = mcpcatalog.Record{Run: string(v.built.run), AddedAt: addedAt, ByHand: &byHand}
-	if err := side.Save(d.mcpSidecarPath()); err != nil {
-		log.Printf("mcp: could not save %s: %v", d.mcpSidecarPath(), err)
-	}
+	d.recordCatalogServer(mcpcatalog.Key(r.Destination, name), mcpcatalog.Record{Run: string(v.built.run), AddedAt: addedAt, ByHand: &byHand})
 	if r.Destination.Kind == wire.SkillDestinationKindFolder {
 		d.recordMCPApproval(*r.Destination.Folder, name, json.RawMessage(v.built.entry.Stringified()))
 	}
