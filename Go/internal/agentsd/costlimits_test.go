@@ -5,7 +5,6 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -13,7 +12,6 @@ import (
 // its limit waits, said once; raising the limit lets it go.
 
 func TestLimitsHoldTheWork(t *testing.T) {
-	flaky.UnderLoad(t, "#6989")
 	t.Parallel()
 
 	fakeRuntimes(t)
