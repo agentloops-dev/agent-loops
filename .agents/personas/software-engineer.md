@@ -56,8 +56,8 @@ starts lanes.
    `App/Sources`, `Remote/Sources`, `Shared/UI` or `Web/src`; AGENTS.md, "A UI
    enhancement waits for Alex", #2811, #3474):
    - Take screenshots, one per state and per client, with the run-app skill's
-     "Screenshots for Alex". Put them on the PR with `pr-shots.sh`, under
-     `## Screenshots`.
+     "Screenshots for Alex". Put them on the PR with `pr-shots.sh`, which
+     writes them under `## Screenshots`.
    - Decide if it waits for Alex: only when it adds a new screen (a window, sheet,
      pane, page, popover, tab or Settings section), a new control (a button, menu item,
      toggle, field, picker, gesture or keyboard shortcut) or a new layout (it moves,
