@@ -84,7 +84,7 @@ An admin sets a syslog or HTTP sink in the Console. Each audit entry goes to it 
 - **FR-003**: Redaction MUST keep the line valid JSON, and MUST cost less than 50 µs for a 4 KB line.
 - **FR-004**: Delete MUST queue the runtime's session for erasure, and erase it after the folder is gone.
 - **FR-005**: The erasure queue MUST hold at most 1,000 entries; an entry is dropped after 3 tries or 7 days, with a log line.
-- **FR-006**: The erased list MUST hold at most 10,000 IDs, oldest first out, and each ID for at most 400 days.
+- **FR-006**: The erased list MUST hold at most 10,000 IDs, oldest first out, and each ID for at most 90 days. A restore or import MUST refuse an archive made before the list's cutoff (#6715).
 - **FR-007**: A restore MUST skip an agent on the erased list.
 - **FR-008**: The `agent.deleted` event MUST say whether the runtime's copy was queued for erasure.
 - **FR-009** (slice c): Export and import of an agent or a project, on the Mac, the Remote and the web page.

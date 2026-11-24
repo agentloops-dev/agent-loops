@@ -79,6 +79,9 @@ same backup again safely: then it says **Nothing to restore: 42 agents were here
 already.** Nothing on the new machine is changed or deleted. The usage and
 time history come back only to a machine that has none of its own.
 
+A backup made 90 days ago or more cannot be restored: the machine no longer knows which of
+its agents you deleted.
+
 A restored agent is kept for your **Archived agents** time from the day you restore it.
 
 ## In each shape
