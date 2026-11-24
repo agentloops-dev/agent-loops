@@ -264,6 +264,7 @@ func newWith(ctx context.Context, root string, opts startOptions) (*Daemon, erro
 	d.deployStore = d.openDeploys()
 	d.releaseDone = d.openReleaseTags()
 	d.accountOps = d.openAccountOps()
+	d.lockSeen = d.openLockSeen()
 	d.opts.Store(&opts)
 	d.jobCancel = cancel
 	st.OnGap = d.tellEntry

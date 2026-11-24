@@ -3,8 +3,11 @@ package agentsd
 import (
 	"crypto/ecdsa"
 	"encoding/json"
+	"errors"
 	"os"
+	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -216,6 +219,117 @@ func TestSignedRequestsFromAClientOrAMachineOfTheLock(t *testing.T) {
 	if got := c.answer(t, 3); notInLockAnswer(got) {
 		t.Fatalf("a machine's call was refused: %s", got)
 	}
+}
+
+// A replay is refused after its ID ages out (#6723): the request is stale by then, also one
+// signed as far ahead of this machine's clock as it takes.
+func TestAReplayIsRefusedAfterItsIDAgesOut(t *testing.T) {
+	clock := atTime(t, time.Now().Truncate(time.Second))
+	d, phone, _, _ := lockedMachine(t)
+	c := channelTo(t, d)
+	p := []byte(`{"agentID":"11111111-1111-1111-1111-111111111111","text":"go"}`)
+	sig, err := machinelock.SignRequest(phone, "h-1", wire.CallAgentsPrompt.Name, p, nowFunc().Add(machinelock.RequestSkew-time.Second))
+	must(t, err)
+	line, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": wire.CallAgentsPrompt.Name, "params": json.RawMessage(p), "lock": sig})
+	c.send(string(line))
+	if got := c.answer(t, 1); notInLockAnswer(got) {
+		t.Fatalf("refused: %s", got)
+	}
+	left := func() int {
+		_, err := d.lockSeen.Sweep()
+		must(t, err)
+		seen, err := d.lockSeen.Read()
+		must(t, err)
+		return len(seen)
+	}
+	// The last moment that the request's age allows, the ID is still here; then it ages out.
+	for _, step := range []struct {
+		add  time.Duration
+		want int
+	}{{machinelock.RequestLifetime, 1}, {machinelock.RequestLifetime - time.Second, 1}, {time.Second, 0}, {90 * 24 * time.Hour, 0}} {
+		clock.add(step.add)
+		if n := left(); n != step.want {
+			t.Fatalf("%d IDs, want %d", n, step.want)
+		}
+		c.send(string(line))
+		if got := c.answer(t, 1); !notInLockAnswer(got) {
+			t.Fatalf("a replay was taken: %s", got)
+		}
+	}
+}
+
+// A replay is refused after the count took its ID out, also after a restart (#6723).
+func TestAReplayIsRefusedAfterTheCountTookItsIDOut(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	d, _ := start(t, root)
+	now := nowFunc()
+	// A file that a build from before #6723 wrote: times signed, with no time taken.
+	old := map[string]int64{}
+	for i := range mostSeen {
+		old["id-"+strconv.Itoa(i)] = now.Add(-time.Hour).Unix() + int64(i/2)
+	}
+	b, _ := json.Marshal(old)
+	writeFile(t, filepath.Join(d.Store.Loc.Root, lockSeenFile), string(b))
+	refused := func(id string, at int64, want error) {
+		t.Helper()
+		if err := d.seeSigned(id, at, now); !errors.Is(err, want) {
+			t.Fatalf("%s: %v, want %v", id, err, want)
+		}
+	}
+	first := old["id-0"]
+	refused("id-0", first, machinelock.ErrReplayed)
+	// Signed ahead of this machine's clock, as far as it takes.
+	ahead := now.Add(machinelock.RequestSkew).Unix()
+	must(t, d.seeSigned("ahead", ahead, now)) // takes id-0 or id-1 out
+	for _, id := range []string{"id-0", "id-1"} {
+		if d.seeSigned(id, first, now) == nil {
+			t.Fatalf("%s was taken again", id)
+		}
+	}
+	// One signed at the cutoff is refused, one after it is taken, and the file stays bounded.
+	refused("at", first, machinelock.ErrStale)
+	must(t, d.seeSigned("after", first+1, now))
+	seen, err := d.lockSeen.Read()
+	must(t, err)
+	if len(seen) != mostSeen+1 || seen[lockCutoff].Signed < first {
+		t.Fatalf("%d entries, the cutoff %v", len(seen), seen[lockCutoff])
+	}
+	// The sweep takes no ID out without its cutoff, and a new run reads both.
+	n, err := d.lockSeen.Sweep()
+	must(t, err)
+	d.lockSeen, d.lockSeenRead = d.openLockSeen(), false
+	if n != 0 || d.seeSigned("id-0", first, now) == nil {
+		t.Fatalf("the sweep took %d out, or id-0 was taken again", n)
+	}
+	// The cutoff follows the time signed, not the time taken: "ahead" goes last.
+	must(t, d.lockSeen.Update(func(m map[string]signedSeen) error {
+		for k := range m {
+			if k != "ahead" && k != lockCutoff {
+				m[k] = signedSeen{At: wire.DateOf(now), Signed: ahead + 1}
+			}
+		}
+		return nil
+	}))
+	for i := range 2 {
+		must(t, d.seeSigned("later-"+strconv.Itoa(i), ahead+2, now))
+	}
+	refused("ahead", ahead, machinelock.ErrStale)
+}
+
+// With a file that cannot be read, nothing signed until now is taken (#6723).
+func TestAnUnreadableListOfSignedRequestsRefusesWhatWasSigned(t *testing.T) {
+	t.Parallel()
+
+	d, _ := start(t, t.TempDir())
+	writeFile(t, filepath.Join(d.Store.Loc.Root, lockSeenFile), "{")
+	now := nowFunc()
+	ahead := now.Add(machinelock.RequestSkew).Unix()
+	if err := d.seeSigned("a", ahead, now); !errors.Is(err, machinelock.ErrStale) {
+		t.Fatal(err)
+	}
+	must(t, d.seeSigned("b", ahead+1, now.Add(time.Second)))
 }
 
 // A person's set-up keeps working until they have a lock: a machine with none takes what
