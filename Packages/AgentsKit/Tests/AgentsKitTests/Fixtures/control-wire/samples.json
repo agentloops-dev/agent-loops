@@ -66,6 +66,42 @@
     "controlKey": "AQID",
     "name": "name"
   },
+  "ControlCapacityCopy": {
+    "copy": "copy",
+    "level": "near",
+    "reason": "the control plane is near capacity: its disk is busy",
+    "loadPerCore": 2.3,
+    "loadPerCore5": 1.8,
+    "pressureMemoryFullAvg60": 2.5,
+    "pressureIOFullAvg60": 12.5,
+    "memoryAvailableBytes": 1048576,
+    "swapUsedPercent": 20,
+    "heapInuseBytes": 8192,
+    "goroutines": 5,
+    "openFiles": 9,
+    "storeFiles": 100,
+    "storeBytes": 81920,
+    "at": 812345678.5
+  },
+  "ControlCapacityBoard": {
+    "copies": [{
+      "copy": "copy",
+      "level": "near",
+      "reason": "the control plane is near capacity: its disk is busy",
+      "loadPerCore": 2.3,
+      "loadPerCore5": 1.8,
+      "pressureMemoryFullAvg60": 2.5,
+      "pressureIOFullAvg60": 12.5,
+      "memoryAvailableBytes": 1048576,
+      "swapUsedPercent": 20,
+      "heapInuseBytes": 8192,
+      "goroutines": 5,
+      "openFiles": 9,
+      "storeFiles": 100,
+      "storeBytes": 81920,
+      "at": 812345678.5
+    }]
+  },
   "ControlEndpoint": {
     "url": "url",
     "pin": "pin"

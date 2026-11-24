@@ -214,6 +214,8 @@ struct WireSchemaTests {
             "LendSignIn": Self.through(DaemonAPI.LendSignIn.self),
             "TunnelOpen": Self.through(DaemonAPI.TunnelOpen.self),
             "ControlMoved": Self.through(DaemonAPI.ControlMoved.self),
+            "ControlCapacityCopy": Self.through(DaemonAPI.ControlCapacityCopy.self),
+            "ControlCapacityBoard": Self.through(DaemonAPI.ControlCapacityBoard.self),
             "ControlEndpoint": Self.through(ControlEndpoint.self),
             "ControlHello": Self.through(ControlAuth.Hello.self),
             "ControlAuth": Self.through(ControlAuth.Auth.self),

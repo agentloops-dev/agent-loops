@@ -3,6 +3,30 @@ import Foundation
 /// The Console (#1804): the control plane's app for its admins, on the web page. The window
 /// and the Remote do not draw it; these types are here so `WebSignatures` names them.
 public extension DaemonAPI {
+    /// One live control plane copy's most recent capacity look (#6590).
+    struct ControlCapacityCopy: Codable, Sendable, Hashable {
+        public var copy: String
+        public var level: CapacityLevel
+        public var reason: String
+        public var loadPerCore: Double
+        public var loadPerCore5: Double
+        public var pressureMemoryFullAvg60: Double
+        public var pressureIOFullAvg60: Double
+        public var memoryAvailableBytes: Double
+        public var swapUsedPercent: Double
+        public var heapInuseBytes: Double
+        public var goroutines: Int64
+        public var openFiles: Int64
+        public var storeFiles: Int64
+        public var storeBytes: Int64
+        public var at: Date
+    }
+
+    /// `control/capacity`'s answer: the latest look of each live copy.
+    struct ControlCapacityBoard: Codable, Sendable, Hashable {
+        public var copies: [ControlCapacityCopy]
+    }
+
     /// One machine on Console ▸ Machines: its `machines/list` row, whose it is, and how many of
     /// its agents were running when it last listed them. Numbers only.
     struct FleetMachine: Codable, Sendable, Hashable {
@@ -153,6 +177,8 @@ public extension DaemonAPI {
 }
 
 public extension DaemonAPI.Method {
+    /// `Empty` → `ControlCapacityBoard` (#6590). Admins only.
+    static let controlCapacity = "control/capacity"
     /// `Empty` → `FleetBoard` (#1804, M1). Admins only.
     static let consoleFleet = "console/fleet"
     /// `Empty` → `TeamWorkflows` (#1804, M6). Admins only.

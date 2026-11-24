@@ -3679,6 +3679,43 @@ type ControlAuth struct {
 	PublicKey Data `json:"publicKey,omitzero"`
 }
 
+type ControlCapacityBoard struct {
+	Copies []ControlCapacityCopy `json:"copies"`
+}
+
+// One live control plane copy's most recent capacity look (#6590).
+type ControlCapacityCopy struct {
+	Copy string `json:"copy"`
+
+	Level CapacityLevel `json:"level"`
+
+	Reason string `json:"reason"`
+
+	LoadPerCore float64 `json:"loadPerCore"`
+
+	LoadPerCore5 float64 `json:"loadPerCore5"`
+
+	PressureMemoryFullAvg60 float64 `json:"pressureMemoryFullAvg60"`
+
+	PressureIOFullAvg60 float64 `json:"pressureIOFullAvg60"`
+
+	MemoryAvailableBytes float64 `json:"memoryAvailableBytes"`
+
+	SwapUsedPercent float64 `json:"swapUsedPercent"`
+
+	HeapInuseBytes float64 `json:"heapInuseBytes"`
+
+	Goroutines int64 `json:"goroutines"`
+
+	OpenFiles int64 `json:"openFiles"`
+
+	StoreFiles int64 `json:"storeFiles"`
+
+	StoreBytes int64 `json:"storeBytes"`
+
+	At Date `json:"at"`
+}
+
 // control/clientChanged: a client paired, renamed, connected or went; nothing says list them all again.
 type ControlClientChanged struct {
 	Client *UUID `json:"client,omitzero"`
@@ -3808,7 +3845,7 @@ type ControlNewKey struct {
 	Proof string `json:"proof"`
 }
 
-// control/notice (#1002): something an admin should know, that no click caused: lastAdminKept, groupSharesOrphaned or removeRequested; words to show, and whom it is about.
+// control/notice (#1002, #6590): something an admin should know, with no click: lastAdminKept, groupSharesOrphaned, removeRequested, control.busy or control.ok; words to show, and whom it is about.
 type ControlNotice struct {
 	Kind string `json:"kind"`
 

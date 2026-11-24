@@ -24,6 +24,7 @@ import (
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/signin"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/signin/signintest"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -616,6 +617,7 @@ func (failing) RoundTrip(*http.Request) (*http.Response, error) { return nil, io
 // than at 100 users and 10 groups. The 200 ms is held only in a perf run
 // (AGENTS_RUN_PERF=1, no -race), as scripts/perf-tests.sh runs it.
 func TestSCIMAtSize(t *testing.T) {
+	flaky.UnderLoad(t, "#6931")
 	// Not parallel (#2512): a perf run holds a wall-clock limit, which other tests running beside it would make flaky.
 	if testing.Short() {
 		t.Skip("5,000 users")

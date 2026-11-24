@@ -1009,6 +1009,24 @@
       ]
     },
     {
+      "name": "control/capacity",
+      "x-capability": "console/1",
+      "description": "The last capacity look of each live control plane copy (#6590). Admins only.",
+      "tags": [{"name": "web"}],
+      "paramStructure": "by-name",
+      "params": [{"name": "params", "required": true, "schema": {"$ref": "schema/core.schema.json#/definitions/Empty"}}],
+      "result": {"name": "result", "schema": {"$ref": "schema/machines.schema.json#/definitions/ControlCapacityBoard"}}
+    },
+    {
+      "name": "control/capacityChanged",
+      "x-capability": "console/1",
+      "description": "To admins when a live control plane copy's capacity level moves (#6590).",
+      "tags": [{"name": "web"}],
+      "x-notification": true,
+      "paramStructure": "by-name",
+      "params": [{"name": "params", "required": true, "schema": {"$ref": "schema/machines.schema.json#/definitions/ControlCapacityCopy"}}]
+    },
+    {
       "name": "control/clientChanged",
       "x-capability": "control/1",
       "tags": [
@@ -1446,7 +1464,7 @@
     {
       "name": "control/notice",
       "x-capability": "org-identity/1",
-      "description": "To admins (#1002): what changed with no click: the last admin kept, a SCIM group's shares left, a Remove request.",
+      "description": "To admins (#1002, #6590): what changed with no click: the last admin kept, a SCIM group's shares left, a Remove request, or the control plane's capacity state.",
       "x-notification": true,
       "paramStructure": "by-name",
       "params": [

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/records"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
@@ -40,6 +41,29 @@ func TestConsoleFleetIsEveryMachineForAnAdmin(t *testing.T) {
 
 	if e := callError(t, bea.window, "", "console/fleet", map[string]any{}); !strings.Contains(e, "admin") {
 		t.Fatal(e)
+	}
+}
+
+func TestControlCapacityListsLastLookOfLiveCopies(t *testing.T) {
+	t.Parallel()
+	st := store.NewMemory()
+	p := startPlane(t, st, controllink.NewPrivateKey())
+	_, admin := p.client("Owner's window")
+	copy := copyRecord{ID: p.s.copyID, PeerURL: p.url, Started: records.Now(), Heartbeat: records.Now()}
+	copyData, err := json.Marshal(copy)
+	must(t, err)
+	_, err = st.Put(context.Background(), copyRecordKey(copy.ID), copyData, store.Always)
+	must(t, err)
+	want := wire.ControlCapacityCopy{Copy: copy.ID, Level: wire.CapacityLevelNear, Reason: "the control plane is near capacity: its disk is busy", LoadPerCore: 2.3, At: wire.DateOf(time.Now())}
+	capacityData, err := json.Marshal(want)
+	must(t, err)
+	_, err = st.Put(context.Background(), controlCapacityKey(copy.ID), capacityData, store.Always)
+	must(t, err)
+
+	var got wire.ControlCapacityBoard
+	must(t, json.Unmarshal(call(t, admin, "", "control/capacity", map[string]any{}), &got))
+	if len(got.Copies) != 1 || got.Copies[0].Copy != want.Copy || got.Copies[0].Level != want.Level || got.Copies[0].LoadPerCore != want.LoadPerCore {
+		t.Fatalf("got %+v, want %+v", got, want)
 	}
 }
 

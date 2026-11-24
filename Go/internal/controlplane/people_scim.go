@@ -711,3 +711,16 @@ func (s *Service) noticeAdminsHere(n wire.ControlNotice) {
 		s.router.TellPerson(s.localOwner(), wire.NotifyControlNotice.Name, n)
 	}
 }
+
+func (s *Service) capacityChangedAdmins(snapshot wire.ControlCapacityCopy) {
+	told := map[string]bool{}
+	for _, p := range s.records.People() {
+		if p.IsAdmin() && !p.IsRemoved() {
+			s.router.TellPerson(p.ID, wire.NotifyControlCapacityChanged.Name, snapshot)
+			told[p.ID] = true
+		}
+	}
+	if s.localOwner() != "" && s.isAdmin(s.localOwner()) && !told[s.localOwner()] {
+		s.router.TellPerson(s.localOwner(), wire.NotifyControlCapacityChanged.Name, snapshot)
+	}
+}
