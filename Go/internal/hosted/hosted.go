@@ -133,6 +133,8 @@ type Service struct {
 	stop chan struct{}
 	// When the Stripe events acted on were last swept (billing.go).
 	stripeSwept time.Time
+	// When the service's own lists were last swept (recordbounds.go).
+	recordsSwept time.Time
 	metrics     metrics
 	// The metrics' account and waitlist counts, as the sweep last counted them.
 	counts *accountCounts

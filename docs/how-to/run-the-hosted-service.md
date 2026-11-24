@@ -155,15 +155,17 @@ Sign-up is by invitation at the start. A person with no invite goes on a waitlis
 their place in it. Agent Loops keeps no email address, so they sign in
 again later to see if their account is ready.
 
-- **Invite a person** with a link they can use once, within 14 days:
+- **Invite a person** with a link they can use once, within 14 days (`invite <days>`
+  sets it, 90 at most):
 
     ```sh
     docker compose -f deploy/compose.hosted.yaml exec hosted agents-hosted admin invite
     ```
 
 - **Allow a GitHub login**, or admit one from the waitlist: `agents-hosted admin allow <login>`.
-  An allowed login may sign up whatever its GitHub account's age.
-- **See the waitlist:** `agents-hosted admin waitlist`.
+  An allowed login may sign up whatever its GitHub account's age, within 90 days. After that, allow it again.
+- **See the waitlist:** `agents-hosted admin waitlist`. A person leaves it after 90 days, and
+  can join it again, at the back.
 
 These limits keep the service whole. Each is a setting below:
 
