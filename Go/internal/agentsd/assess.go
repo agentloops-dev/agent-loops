@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"regexp"
 	goruntime "runtime"
-	"sort"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -232,43 +231,6 @@ type assessStart struct {
 	ShortID        string    `json:"shortID"`
 }
 
-func (d *Daemon) assessmentsPath() string { return filepath.Join(d.Store.Loc.Root, "assessments") }
-
-// assessmentsKept is how many runtime assessments the daemon keeps (#2292).
-const assessmentsKept = 50
-
-// dropOldAssessments deletes all but the newest assessmentsKept assessments, each its
-// <agentID>.start.json, its <agentID>.json score and its scope-<id>.txt (#2292). The
-// reports have bounds of their own (assess_reports.go).
-func (d *Daemon) dropOldAssessments() {
-	dir := d.assessmentsPath()
-	starts, _ := filepath.Glob(filepath.Join(dir, "*.start.json"))
-	if len(starts) <= assessmentsKept {
-		return
-	}
-	at := map[string]time.Time{}
-	for _, p := range starts {
-		if fi, err := os.Stat(p); err == nil {
-			at[p] = fi.ModTime()
-		}
-	}
-	sort.SliceStable(starts, func(i, j int) bool {
-		if !at[starts[i]].Equal(at[starts[j]]) {
-			return at[starts[i]].After(at[starts[j]])
-		}
-		return starts[i] > starts[j]
-	})
-	for _, p := range starts[assessmentsKept:] {
-		var start assessStart
-		if b, err := os.ReadFile(p); err == nil && diskjson.Unmarshal(b, &start) == nil &&
-			start.ScopePath != "" && filepath.Dir(start.ScopePath) == dir {
-			os.Remove(start.ScopePath)
-		}
-		os.Remove(strings.TrimSuffix(p, ".start.json") + ".json")
-		os.Remove(p)
-	}
-}
-
 // escalationTools is each runtime's own question tool the app carries (ToolPolicyCatalog).
 var escalationTools = map[string]string{"claude": "AskUserQuestion", "cursor": "AskQuestion", "codex": "request_user_input",
 	"antigravity": "ask_question"}
@@ -344,15 +306,11 @@ func (d *Daemon) assessRuntime(r wire.AssessRuntimeRequest) (wire.AssessRuntimeR
 	}
 	kept := assessStart{AgentID: id, RuntimeID: rt.ID, RuntimeVersion: version, Host: host, ReportPath: report, ScopePath: scope,
 		ShortID: shortID}
-	if err := os.MkdirAll(d.assessmentsPath(), 0o755); err != nil { //nolint:gosec // G301: the mode this folder always had; only its error is new
-		log.Printf("could not make the runtime assessments' folder: %v", err)
-	}
-	if err := writeStore(filepath.Join(d.assessmentsPath(), string(id)+".start.json"), kept); err != nil {
+	if err := d.assessments().Put(string(id), assessment{start: &kept}); err != nil {
 		log.Printf("could not keep a runtime assessment's start: %v", err)
 	}
-	// The reports first: a start that goes can be the last word on where its report is.
 	d.sweepAssessReports(today)
-	d.dropOldAssessments()
+	d.sweepAssessments(today)
 	return wire.AssessRuntimeResult{AgentID: id, Model: model, ReportPath: report}, nil
 }
 
@@ -437,21 +395,21 @@ func (d *Daemon) assessment(id wire.UUID) (wire.RuntimeAssessmentScore, error) {
 			rec.reportText = &text
 		}
 	}
-	var start assessStart
-	if b, err := os.ReadFile(filepath.Join(d.assessmentsPath(), string(id)+".start.json")); err == nil && diskjson.Unmarshal(b, &start) == nil {
-		rec.start = &start
-		_, err := os.Stat(filepath.Join(folderPath(a), ".agents", "workflows", "assess-"+start.ShortID+".md"))
+	kept, err := d.assessments().Get(string(id))
+	if err != nil {
+		log.Printf("could not read a runtime assessment: %v", err)
+	}
+	if kept.start != nil {
+		rec.start = kept.start
+		_, err := os.Stat(filepath.Join(folderPath(a), ".agents", "workflows", "assess-"+kept.start.ShortID+".md"))
 		rec.workflowLeft = err == nil
-		_, err = os.Stat(start.ScopePath)
-		rec.scopeWritten = err == nil
+		rec.scopeWritten = kept.scopeWritten
 	}
 	score := rec.score(nowFunc())
-	if err := os.MkdirAll(d.assessmentsPath(), 0o755); err != nil { //nolint:gosec // G301: the mode this folder always had; only its error is new
-		log.Printf("could not make the runtime assessments' folder: %v", err)
-	}
-	if err := writeStore(filepath.Join(d.assessmentsPath(), string(id)+".json"), score); err != nil {
+	if err := d.assessments().Put(string(id), assessment{score: &score}); err != nil {
 		log.Printf("could not keep a runtime assessment's score: %v", err)
 	}
+	d.sweepAssessments(nowFunc())
 	return score, nil
 }
 

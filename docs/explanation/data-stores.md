@@ -54,7 +54,8 @@ no library. Each declares, once:
 - whether it evicts or refuses (below).
 
 It writes the file whole and atomically, as the stores do today. So most stores become a
-declaration of a few lines.
+declaration of a few lines. In the host daemon it is `store.JSONFile`, which `smallFile` opens
+and adds to the hourly sweep (`Go/internal/agentsd/smallstores.go`).
 
 ## Where each limit is enforced
 

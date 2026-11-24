@@ -414,7 +414,15 @@ func TestRolesAndRemoval(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	names := providers.MachineNamesPrefix + sam.id + ".json"
+	if _, err := p.store.Put(context.Background(), names, []byte(`{"next":3}`), store.Absent); err != nil {
+		t.Fatal(err)
+	}
+
 	call(t, alexWindow, "", "people/remove", wire.PersonRequest{User: sam.id})
+	if o, err := p.store.Get(context.Background(), names); err != nil || o != nil {
+		t.Fatalf("a removed person's machine names stayed: %v %v", o, err)
+	}
 	if keys, err := p.store.List(context.Background(), busPrefix+busOf(sam.id)+"/"); err != nil || len(keys) != 0 {
 		t.Fatalf("removed person's bus still has %d keys: %v", len(keys), err)
 	}

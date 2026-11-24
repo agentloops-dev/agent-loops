@@ -62,7 +62,7 @@ from the root (`agentsd/backups.go:69,72`). It holds nothing else.
 | `<cache>/turns/<ID>.jsonl` | Turn summaries | life. Media base64 is limited (`turns.go:1197`). | with the agent (`store/store.go:217`) | **no** (the backup reads the wrong path) |
 | `erasures.json` | Runtime copies still to erase | 1,000 entries, 3 tries, 7 days (`erasure.go:40-45`) | on write | no |
 | `erased.json` | Every agent deleted here | 10,000 IDs, 400 days | on write | yes |
-| `elsewhere.json` | Sessions started on or from other machines | 200 per list (`elsewhere.go:40`) | on save | no |
+| `elsewhere.json` | Sessions started on or from other machines | 800 entries of 64 KiB; 90 days from when last heard | hourly and on save | no |
 
 ### Events, usage, cost and lineage
 
@@ -80,7 +80,7 @@ from the root (`agentsd/backups.go:69,72`). It holds nothing else.
 | `lineage-sync.json` | Links and session states unsent to the control plane (#4275) | 2,000 links, 5,000 states saved (25,000 held); past that it saves "send all again" instead (`lineagesync.go:31-40`) | on save | no |
 | `ci-timings/sync.json` | Days of build timings unsent to the control plane, per repository (#5232) | 90 days of at most 20 repositories (`cisync.go`) | on send | no |
 | `lineage-comments.json` | PR cost comments | 500, 30 days (`lineagecomment.go:42-44`) | on save | no |
-| `release-tags.json` | Tags already linked, per repo | **none** (`lineagerelease.go:109`) | never | no |
+| `release-tags.json` | Tags already linked | 90 days, 5,000 tags of 1 KiB (`lineagerelease.go`, `openReleaseTags`) | hourly, and on write: age, and the count when twice over | no |
 | `achievements.json` | Milestones | fixed set | n/a | no |
 
 ### Workflows, assessments, approvals and devices
@@ -90,13 +90,13 @@ from the root (`agentsd/backups.go:69,72`). It holds nothing else.
 | `workflows.json`: runs | Workflow runs | 7 days (`workflowruns.go:27`) | **at start only** (`workflowruns.go:1054`), and when a run ends | no |
 | `workflows.json`: states | One state per (folder, workflow) ever seen | **none.** `GoneSince` (`workflows.go:59`) is declared and never set. | only the app's Remove | no |
 | `workflow-copies/<sha256>` | Approved workflow and skill text | The copies that the states name (`workflows.go:244`) | after each save | no |
-| `assessments/*.json` | Runtime assessments | newest 50 (`assess.go:208`) | on a new start | no |
+| `assessments/*.json` | Runtime assessments | newest 50; 90 days from the start; 256 KiB per file (`assess_store.go`, #6724) | hourly, on start and on score | no |
 | `mcp-events.json` | Seen MCP event IDs | 2,000 IDs, 7 days (`mcpevents.go:53-56`) | on write | no |
 | `mcp-views/*.json` | View catalogues | pruned (`viewservers.go:369`) | on write | no |
 | `mcp-approvals.json`, `plugin-approvals.json` | Approval digests | **none.** Grows with folders × servers. | MCP: only on explicit remove; plugins: never | no |
 | `devices.json` | Paired devices | **none** | only Forget (`devices.go:257`) | no |
 | `review-dismissals.json`, `review-opened.json` | PR URLs per folder | 200 per folder (`reviews.go:28,30`). **Folder keys are never pruned.** | on write | no |
-| `lock-seen.json` | Signed request IDs | 4,096 (`lockcheck.go:42`) | on write | no |
+| `lock-seen.json` | Signed request IDs | 4,096, 2 days (`lockcheck.go`) | hourly and on write | no |
 | `attention.json` | Needs, deliveries | live needs only | on write | no |
 | `leases.json`, `resources.json` | Resource leases | 240-minute lease cap; dropped on agent stop (`leases.go:28,383`) | on write | no |
 | `guarded-files.json` | Guarded file states | folders that exist | on save | no |
@@ -147,7 +147,7 @@ from the root (`agentsd/backups.go:69,72`). It holds nothing else.
 | `worktrees/<name>` + branch `agents/<name>` | Git worktrees agentsd makes | **none, on purpose: user-owned** (#6708, closed as not planned) | when its agent is archived or deleted (#3726, #3877) |
 | `reviews/runtimes/<rt>-<date>.md` | Runtime assessment reports | 1 MiB per report; newest 50 per machine; 90 days; not those git tracks (`assess_reports.go`, #6712) | hourly, on start and on score |
 | `workflows/assess-<id>.md` | Assessment throwaway workflow | **none** | never |
-| `pins.json` | Pinned sessions and hidden views | 10 sessions, 50 hidden views (`pins.go:576,615`) | on write |
+| `pins.json` | Pinned pages, views, sessions and workflows, and hidden views | 10 pages and views, 10 sessions and 10 workflows, 4 KiB a pin; 50 hidden views, 1 KiB each; 128 KiB in all; a write past that is refused (`pins.go`, #6725). No age, on purpose: current state, until removed | on write, on archive |
 | `folder.json`, `policy.json`, `mcp.json`, `personas/`, `skills/`, `plugins/`, `workflows/`, `docs-maps.json`, `marketplaces.json`, `mcp.removed.json`, … | Folder configuration (meant to be committed) | small; `mcp.removed.json` capped (`mcpcatalog/files.go:26`) | edited in place |
 
 ## 3. Outside our folders
@@ -193,9 +193,9 @@ handover also leaves out `v1/keys/` (`storecopy.go:21,25`).
 | Key | Holds | Bound | Swept |
 |---|---|---|---|
 | `v1/control.json` | Owner, endpoints, epoch, control key public parts, audit days | 1 | — |
-| `v1/clients/<UUID>.json` | Name, kind, public key, last seen, APNs token, ≤16 Live Activity tokens (12 h each), Web Push subscription | **No count cap** on self-hosted (hosted: 5/50). Key life 90 days (`keylife.go:18`). | Tombstone 7 days. **A client whose key expired is kept for ever.** |
+| `v1/clients/<UUID>.json` | Name, kind, public key, last seen, APNs token, ≤16 Live Activity tokens (12 h each), Web Push subscription | 16 KiB a record, 1 MiB in all (#6757; hosted: 5/50 clients too). Key life 90 days (`keylife.go:18`). | Tombstone 7 days. A client whose key expired is forgotten by the hourly sweep (#6757). |
 | `v1/machines/<id>.json` | Name, key, platform, version, owner, workspace | No cap (hosted: 2/20) | Tombstone 7 days. **An expired machine is kept for ever.** |
-| `v1/people/<id>.json` | Name, role, sign-ins (email, login), SCIM part, old names (90 days) | No cap | A removed person goes after 14 days, **or never when they have a sign-in** (`records/records.go:307`, `sweep.go:164`) |
+| `v1/people/<id>.json` | Name, role, sign-ins (email, login), SCIM part, old names (90 days) | No cap | A removed person goes after 14 days, or 90 when they have a sign-in (#6756) |
 | `v1/groups/<id>.json` | Name, members | 1,000 (`groups.go:20`) | tombstone 7 days |
 | `v1/projects/<id>.json` | Name, owner, slots, ≤20 boards | 500 per person (`projects.go:36`) | tombstone 7 days |
 | `v1/projectFolders/<host>.json` | A machine's joined folders | 1,000 | orphan sweep |
@@ -232,7 +232,7 @@ handover also leaves out `v1/keys/` (`storecopy.go:21,25`).
 | `v1/runs/<day>/<hash>.json` | Workflow trigger claims | 7 days; **no per-day cap** | hourly |
 | `v1/reports/views/<user>.json` | Saved report views | 50 | person removal |
 | `v1/providers/<id>.json` | Machine providers | **No cap. Tombstones are never swept.** | — |
-| `v1/machine-names/<person>.json` | The person's machine-N counter (#3972), the provider New Machine uses and what the person chose on each provider's form last (#3979; only the values that were not the form's defaults, in `chosen`, #6686) | 1 per person: one number, one provider id, one set of choices per provider | — (a number is never used again) |
+| `v1/machine-names/<person>.json` | The person's machine-N counter (#3972), the provider New Machine uses and what the person chose on each provider's form last (#3979; only the values that were not the form's defaults, in `chosen`, #6686) | 1 per person: one number, one provider id, one set of choices per provider that is still here; 64 KiB (#6759) | person removal, and hourly for a removed person; no age before that (a number is never used again) |
 | `v1/tunnels/<id>.json` | Server reverse tunnels | unjoined 15 minutes | on use |
 | `v1/policy.json`, `v1/policy/versions/` | Org policy and old versions | 64 KiB; 100 versions | on write |
 | `v1/governance/machines/`, `v1/governance/approvals/` | Installed servers and skills; approvals | 500 items; 1,000 approvals, **no expiry** | — |
@@ -284,7 +284,7 @@ Sessions are signed cookies (30 days); the server keeps nothing for them.
 
 | Store | Holds | Bound | Cleared |
 |---|---|---|---|
-| Defaults `draft.agent.<uuid>`, `draft.new.<folder>`, `draft.start` | Unsent prompts and attachments, ≤512 KiB each | 30 days (`DraftStore.swift:29`); removed on archive (`App/Sources/Chat/DraftKeeper.swift:47,221`) | archive, 30 days, send |
+| Defaults `draft.agent.<uuid>`, `draft.new.<folder>`, `draft.start` | Unsent prompts and attachments, ≤1 MiB each | 40 drafts, a new one over that refused; 30 days (`DraftStore.swift`); removed on archive (`App/Sources/Chat/DraftKeeper.swift`) | archive, 30 days, send |
 | Defaults `newSessionProjectFolders` | Last folder per project | **none** | never |
 | Defaults `sidebar.folds` / `folded` / `openSessions` | Sidebar fold state | `openSessions` 200; **fold sets none** | never |
 | Defaults `sidebar.<window>.width` / `.pane` | Inspector size per folder window | **none** | never |
@@ -302,7 +302,7 @@ Sessions are signed cookies (30 days); the server keeps nothing for them.
 
 | Store | Holds | Bound | Cleared |
 |---|---|---|---|
-| Defaults `draft.agent.<uuid>`, … | Unsent prompts and attachments, ≤512 KiB each | **none.** The Remote never calls `DraftStore.sweep`, so neither the 30 days nor archive applies. iOS loads all of `UserDefaults` at launch. | only on send |
+| Defaults `draft.agent.<uuid>`, … | Unsent prompts and attachments, ≤1 MiB each | As the Mac: 40 drafts, 30 days, archive (`Remote/Sources/StartAgent/StartDraftKeeper.swift`) | archive, 30 days, send |
 | App group `Library/Caches/attention-snapshot.json` | The widget's needs-you rows **with headlines in plain text** | 12 rows; stale after 15 minutes | **not on Forget**: the widget keeps showing the old pairing |
 | Defaults `machineLockPin.*`, `newSessionProjectFolders`, fold sets | As on the Mac | **none** | never |
 | Defaults `liveActivityTurns` | Turns covered by the Live Activity | the activity's sessions | when the activity ends |
@@ -317,7 +317,7 @@ Sessions are signed cookies (30 days); the server keeps nothing for them.
 |---|---|---|---|
 | IndexedDB `agents` | Non-extractable pairing key, lock signing key | 1 | Forget, re-pair, forgotten by the control plane |
 | IndexedDB `agents-signin` | Pending org sign-in key (10 minutes) | 1 | on use; expiry checked on read |
-| localStorage `agents.drafts` | Drafts | 40 drafts, 256 KiB attachments (`Web/src/model/drafts.ts:12,14`) | send; **not on Forget** |
+| localStorage `agents.drafts` | Drafts | 40 drafts, 256 KiB attachments, 30 days without an edit (`Web/src/model/drafts.ts`) | send, 30 days, Forget |
 | localStorage `agents-lock-pin`, `…:<person>` | Machine-lock pins | **none. Not keyed by control plane**, so a re-pair to another one reads the old pin. | never |
 | localStorage folds, `newSession.projectFolders`, start form, UI choices | UI state | fold sets and project map **none** | never |
 | sessionStorage filters and sort | Per tab | fixed | tab close |
@@ -390,16 +390,16 @@ newer than a row above for the same store.
 | `~/.agents/dismissed-leads.json` | key-value | Dismissed epics | None: an entry goes only when its epic gets a lead | `Go/internal/agentsd/worksuggest.go:32,55-59,165` | #6713 |
 | `~/.agents/summaries/` | document | Daily summaries from before #5853 | Never deleted | `docs/explanation/compliance/data-and-retention.md` | #6714 |
 | `<root>/erased.json` | document | IDs of deleted agents | 10,000 IDs, 400 days | `Go/internal/agentsd/erasure.go:43-44` | #6715 |
-| `<root>/repo-aliases.json` | key-value | Repo renames | No count limit, no delete | `Go/internal/agentsd/repoaliases.go:34,38` | #6716 |
-| `<root>/release-tags.json` | log | Linked release tags | 50 a repo by key, no limit on repos, no age | `Go/internal/agentsd/lineagerelease.go:57` | #6717 |
+| `<root>/repo-aliases.json` | key-value | Repo renames | 1,000 renames of 2 KiB each, 90 days, the oldest first | `Go/internal/agentsd/repoaliases.go` (`openRepoAliases`) | #6716 |
+| `<root>/release-tags.json` | log | Linked release tags | 5,000 tags of 1 KiB; 90 days | `Go/internal/agentsd/lineagerelease.go` | #6717 |
 | `<root>/requests/<id>.json` | document | Open questions and forms | Ended ones 14 days, 1,000 files; an open one has no age | `Go/internal/agentsd/requests.go:27-28` | #6718 |
-| `<root>/lineage-deploys.json` | log | Each deploy's last event | 1,000, no age | `Go/internal/agentsd/lineagedeploy.go:42,237-244` | #6719 |
-| `<root>/account-ops.json` | log | Last operation of each account and secret | 500 and 500, no age | `Go/internal/agentsd/accountops.go:27` | #6720 |
-| `<root>/secret-ops-pending.json` | log | Secret audit entries not yet sent | 1,000, no age | `Go/internal/agentsd/secretops.go:54,131,226-230` | #6721 |
-| `<root>/elsewhere.json` | document | Sessions on other machines | 200 a list, no age | `Go/internal/agentsd/elsewhere.go:39` | #6722 |
-| `<root>/lock-seen.json` | key-value | Replay IDs of signed requests | 4,096, no age | `Go/internal/agentsd/lockcheck.go:43` | #6723 |
-| `<root>/assessments/` | document | Runtime assessments | The newest 50, applied only when one starts | `Go/internal/agentsd/assess.go:251` | #6724 |
-| `<folder>/.agents/pins.json` | key-value | Pinned sessions and hidden views | 10 and 50, no age | `Go/internal/agentsd/pins.go:27,32` | #6725 |
+| `<root>/lineage-deploys.json` | key-value | Each deploy's last event | 1,000 deploys of 16 KiB each, 90 days from the last event, the oldest first | `Go/internal/agentsd/lineagedeploy.go` (`openDeploys`) | #6719 |
+| `<root>/account-ops.json` | key-value | Last operation of each account and secret | 1,000 entries of 1 KiB each, 90 days, the oldest first | `Go/internal/agentsd/accountops.go` (`openAccountOps`) | #6720 |
+| `<root>/elsewhere.json` | key-value | Sessions on other machines | 800 entries of 64 KiB each, 90 days from when the machines last spoke of the session, the oldest first | `Go/internal/agentsd/elsewhere.go` (`openElsewhere`) | #6722 |
+| `<root>/secret-ops-pending.json` | log | Secret audit entries not yet sent | 1,000 operations of 16 KiB each, 90 days, the oldest first | `Go/internal/agentsd/secretops.go` (`openSecretOpsPending`) | #6721 |
+| `<root>/lock-seen.json` | key-value | Replay IDs of signed requests | 4,096 of 128 bytes each, 2 days, the one signed first goes first; a cutoff refuses what went | `Go/internal/agentsd/lockcheck.go` (`openLockSeen`) | #6723 |
+| `<root>/assessments/` | document | Runtime assessments | The newest 50; 90 days from the start; 256 KiB per file | `Go/internal/agentsd/assess_store.go` | #6724 |
+| `<folder>/.agents/pins.json` | key-value | Pinned pages, views, sessions and workflows, and hidden views | 10 of each and 50; 4 KiB a pin, 1 KiB a hidden view, 128 KiB a folder; until removed (no age, on purpose: a person's choices, committed with the folder) | `Go/internal/agentsd/pins.go` (`pinsFileMost`) | #6725 |
 | `~/.agents/checks/suggestions.json` | document | Daily-check findings and dismissals | 50 findings, 200 dismissals, no age | `Go/internal/agentsd/dailychecks.go:39,49` | #6726 |
 | `~/.agents/mcp.removed.json` | key-value | Removed MCP servers | 20, no age | `Go/internal/agentsd/mcpcatalog/files.go:27` | #6727 |
 | `<root>/review-dismissals.json` | key-value | Dismissed PR links | 200 a folder; until the folder goes | `Go/internal/agentsd/reviews.go:29` | #6728 |
@@ -430,10 +430,10 @@ newer than a row above for the same store.
 | `<root>/host-user.json` | key-value | The machine's user from the control plane | A copy, in the data root | `Go/internal/agentsd/hostuser.go:29` | #6753 |
 | `<root>/lock-pin.json` | key-value | The machine lock's trust pin | In the data root | `Go/internal/agentsd/lock.go:37` | #6754 |
 | `v1/events/<day>/` (audit) | log | Audit events | 90 days by default; an admin sets 1 to 3,650; no count or size limit a day | `Go/internal/controlplane/audit/audit.go:31,241` | #6755 |
-| `v1/people/` tombstones | document | A removed person who had a sign-in | A tombstone for ever, so that sign-in stays refused | `Go/internal/controlplane/sweep.go:351-355` | #6756 |
-| `v1/clients/` | document | Paired clients | No count limit on a control plane of your own; an expired one stays about 180 days | `Go/internal/controlplane/keylife.go:18,139,145-177` | #6757 |
+| `v1/people/` tombstones | document | A removed person who had a sign-in | 90 days, swept hourly; then a cutoff for each provider (`v1/signin/cutoffs/`) refuses an account nobody has (#6756) | `Go/internal/controlplane/signin_cutoff.go` | #6756 |
+| `v1/clients/` | document | Paired clients | 16 KiB a record, 1 MiB in all; forgotten when its key expires, at most 90 days unused; tombstone 7 days | `Go/internal/controlplane/keylife.go:18,139,145-177` | #6757 |
 | `v1/machines/` | document | Machines | No count limit on a control plane of your own; an expired one stays about 180 days | `Go/internal/controlplane/keylife.go:145-177` | #6758 |
-| `v1/machine-names/<person>.json` | key-value | A person's machine-N counter and last provider options | For ever, also after the person goes (on purpose: a number is never used twice) | `Go/internal/controlplane/providers/defaults.go:20-27` | #6759 |
+| `v1/machine-names/<person>.json` | key-value | A person's machine-N counter and last provider options | 64 KiB a person; until the person is removed (no age before, on purpose: a number is never used twice) | `Go/internal/controlplane/providers/defaults.go:20-63`, `Go/internal/controlplane/sweep.go` (`sweepMachineNames`) | #6759 |
 | `v1/machine-setup-times.json` | time series | Set-up durations | 50 a step, no age | `Go/internal/controlplane/machinesetup.go:25-27,353` | #6760 |
 | `v1/warm-pools/<id>.json` | document | Warm pools and their claims | No count limit on pools; no delete when a person goes; config outside .agents | `Go/internal/controlplane/warmpool.go:33,44-45,124` | #6761 |
 | `v1/providers/` | document | Machine providers | No count limit; until removed; config outside .agents | `Go/internal/controlplane/providers/records.go:31` | #6762 |
@@ -463,12 +463,13 @@ newer than a row above for the same store.
 | hosted `v1/waitlist/`, `v1/waiting/` | document | The waitlist | 10,000; removed only on sign-up | `Go/internal/hosted/signup.go:55,360,413-415` | #6786 |
 | Operator backups | blob | Each account's store | The newest 7; `--keep 0` keeps all; no age | `Go/internal/hosted/backup.go:58-83; Go/cmd/agents-hosted/admin.go:33-43` | #6787 |
 | `control.log` (`~/Library/Logs/Agents/control.log` or `/data/control.log`) | log | Operational log lines | 4 MB and one older file | — | #6901 |
-| Mac `<cache>/work-cache.sqlite` | cache | Work cache: forge items, bodies, comments, page answers | 200 MiB, least recently drawn out first; no age | `Packages/AgentsKit/Sources/AgentsKitCore/Client/WorkCache.swift:148-166,454-482` | #6788 |
-| Mac `<cache>/copy/` (local copy) | cache | Machines, folders, records, the ends of 20 chats | 200 MiB, 20 chats, 200 archived records a machine; machines never dropped; no age | `Packages/AgentsKit/Sources/AgentsKitCore/Client/LocalCopy.swift:13-20,165-179` | #6789 |
-| Remote `Caches/copy/` (local copy) | cache | As the Mac's local copy | 50 MiB, 20 chats; no age | `Packages/AgentsKit/Sources/AgentsKitCore/Client/LocalCopy.swift:14,80` | #6790 |
-| Web IndexedDB `agents` › `copy` | cache | As the Mac's local copy, and Work groups | 50 MiB; Work groups by count; no age | `Web/src/model/localCopy.ts:13-17,92-120` | #6792 |
-| Web `localStorage` `agents.drafts` | document | Drafts | The newest 40, attachments under 256 KiB; no age (the Mac and Remote keep 30 days) | `Web/src/model/drafts.ts:10-14` | #6793 |
-| Mac and Remote defaults `draft.*` | document | Drafts | 512 KiB a draft and 30 days, but no count of drafts | `Packages/AgentsKit/Sources/AgentsKitCore/Model/DraftStore.swift:22-29` | #6794 |
+| Mac `<cache>/work-cache.sqlite` | cache | Work cache: forge items, bodies, comments, page answers | 200 MiB (Remote: 50 MiB), least recently drawn out first; 4 MiB a record; 90 days (#6788) | `Packages/AgentsKit/Sources/AgentsKitCore/Client/WorkCache.swift` (`Bounds`) | #6788 |
+| Web IndexedDB `agents` › `work` | cache | Work cache: forge items, bodies, comments, page answers | 50 MiB, least recently drawn out first; 4 MiB a record; 90 days (#6976) | `Web/src/model/workCache.ts` (`webBounds`) | #6976 |
+| Mac `<cache>/copy/` (local copy) | cache | Machines, folders, records, the ends of 20 chats | 200 MiB, 20 chats, 200 archived records a machine; 16 MiB a record; 90 days; a machine no longer listed is dropped (#6789) | `Packages/AgentsKit/Sources/AgentsKitCore/Client/LocalCopy.swift` | #6789 |
+| Remote `Caches/copy/` (local copy) | cache | As the Mac's local copy | 50 MiB, 20 chats; 16 MiB a record; 90 days; a machine no longer listed is dropped (#6789) | `Packages/AgentsKit/Sources/AgentsKitCore/Client/LocalCopy.swift` | #6790 |
+| Web IndexedDB `agents` › `copy` | cache | As the Mac's local copy, and Work's pictures | 50 MiB, 20 chats, 2000 pictures; 16 MiB a record; 90 days; a machine no longer listed is dropped (#6792) | `Web/src/model/localCopy.ts` | #6792 |
+| Web `localStorage` `agents.drafts` | document | Drafts | 40, a new one over that refused; attachments under 256 KiB; 30 days since the last edit (#6793) | `Web/src/model/drafts.ts` | #6793 |
+| Mac and Remote defaults `draft.*` | document | Drafts | 40, a new one over that refused; 1 MiB a draft, 512 KiB of it attachments; 30 days since the last edit (#6794) | `Packages/AgentsKit/Sources/AgentsKitCore/Model/DraftStore.swift` | #6794 |
 | Remote app group `shared-inbox.json` | blob | What was shared to Agent Loops | Each attachment capped; no count, total or age | `Packages/AgentsKit/Sources/AgentsKitCore/Widget/SharedInbox.swift:88,105-118` | #6795 |
 | Mac browser pane `WKWebsiteDataStore.default()` | blob | Cookies and site storage of every site the pane opened | None: only the caches are emptied, at launch; not on Forget | `App/Sources/Sidebar/BrowserPane.swift:171-195` | #6796 |
 | `machinePicker.pinned` (Mac, Remote, web) | key-value | Pinned machines | None; a removed machine's ID stays | `MachinePickerChoice.swift:9-11,86-100; Web/src/model/machinePicker.ts:7` | #6797 |

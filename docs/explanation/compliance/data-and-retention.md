@@ -43,8 +43,8 @@ Mac.
 | `agents/<id>/said.json` | cache | A search index of what was said. | 32 KiB, with the agent. Made again after its transcript loses lines. | On write |
 | `turns/<id>.jsonl`, in the cache folder | cache | A summary of each turn. | Only the turns of the transcript kept, with the agent. Deleted when its transcript loses lines, and made again from it when it is missing. | With the transcript |
 | `erasures.json` | document | Runtime copies of deleted agents still to erase | 1,000 entries, 3 tries, 7 days | On write |
-| `erased.json` | document | Every agent deleted here | 10,000 IDs for 400 days | On write |
-| `elsewhere.json` | document | Sessions started on or from other machines | 200 a list | On write |
+| `erased.json` | document | Every agent deleted here | 10,000 IDs of 128 bytes each, for 90 days; the oldest goes first (#6715) | Hourly, and on write: age, and the count when it is twice over |
+| `elsewhere.json` | key-value | Sessions started on or from other machines | 800 entries of 64 KiB each, for 90 days from when the two machines last spoke of the session, so one in use stays; the one heard of the longest ago goes first | Hourly, and on write: age, and the count when it is twice over |
 | `requests/<id>.json` | document | Open questions and forms | Ended ones 14 days; 1,000 files. An open one has no age (#6718). | On write |
 | `archived-summaries.json`, in the cache folder | cache | An index of the archived agents | With the agents. Made again when it is missing. | On write |
 | `revisions.json` | log | Which records changed and went | 2,000 removals, 7 days | On write |
@@ -66,11 +66,11 @@ Mac.
 | `lineage-sync.json` | key-value | Lineage links and session states not yet sent to the control plane (#4275) | 2,000 links and 5,000 state changes; past that, it keeps only a note to send everything again from `lineage.jsonl` | On write |
 | `ci-timings/sync.json` | key-value | The days of build timings not yet sent to the control plane, for each repository (#5232) | 90 days of at most 20 repositories | On send |
 | `lineage-comments.json` | log | Cost comments on PRs | 500, 30 days | On write |
-| `release-tags.json` | log | Release tags already linked, for each repo | The newest 50 for each repo; an older tag counts as linked (#3652) | On write |
+| `release-tags.json` | log | Release tags already linked, for each repo | 5,000 tags of 1 KiB each, for 90 days; the oldest goes first. Only the newest 50 tags of a repo (#3652), and releases of the last 90 days, are linked, so a tag that goes is not linked again (#6717) | Hourly, and on write: age, and the count when it is twice over |
 | `achievements.json` | document | Milestones | A fixed set | — |
 | `ci-timings/<forge>/<path>/<day>.jsonl` | time series | CI runs, their jobs and steps | 90 days, 20,000 runs a repository; a pull request run's steps 14 days | On the sweep |
-| `lineage-deploys.json` | log | Each deploy's last event | 1,000. No age (#6719). | On write |
-| `repo-aliases.json` | key-value | Repository renames | **None** (#6716) | Never |
+| `lineage-deploys.json` | key-value | Each deploy's last event | 1,000 deploys of 16 KiB each, for 90 days from the last event; the oldest goes first (#6719) | Hourly, and on write: age and count |
+| `repo-aliases.json` | key-value | Repository renames | 1,000 renames of 2 KiB each, for 90 days; the oldest goes first. The daily check learns again a rename that a folder or the lineage still names (#6716) | Hourly, and on write: age and count |
 
 ### Workflows, assessments, approvals and devices
 
@@ -79,13 +79,13 @@ Mac.
 | `workflows.json`: runs | log | Workflow runs | 7 days, unless its agent still works | At start, when a run ends, and hourly (#3649) |
 | `workflows.json`: states | key-value | A state for each folder and workflow ever seen | 30 days after its workflow file goes (#3652) | Hourly, and the app's **Remove** |
 | `workflow-copies/` | key-value | The approved text of each workflow and its skills | The copies that the states name; an older version goes when one is saved | On write |
-| `assessments/` | document | Each runtime assessment's start, score and scope | The newest 50 | When one starts |
+| `assessments/` | document | Each runtime assessment's start, score and scope | 90 days from its start, and the newest 50; the oldest goes first. 256 KiB a file: a larger start or score is refused, and a longer scope file is cut (#6724) | Hourly, and when an assessment starts or is scored |
 | `mcp-events.json` | key-value | MCP event IDs already seen | 2,000 IDs, 7 days | On write |
 | `mcp-views/` | cache | View catalogues | Pruned to the live servers | On write |
 | `mcp-approvals.json`, `plugin-approvals.json` | key-value | Digests of approved MCP servers and plugins | The folders that exist: a folder that is not on disk and not in the app goes (#3652) | Hourly; MCP also on remove |
 | `devices.json` | document | Paired devices | 90 days after a device was last seen (#3652) | Hourly, and **Forget** |
 | `review-dismissals.json`, `review-opened.json` | key-value | PR links for each folder | 200 a folder; a folder that is not on disk and not in the app goes (#3652) | On write, and hourly |
-| `lock-seen.json` | key-value | IDs of signed requests already seen | 4,096 | On write |
+| `lock-seen.json` | key-value | IDs of signed requests already seen, and the cutoff | 4,096 IDs of 128 bytes each, for 2 days; the one signed first goes first. A request is refused when it is more than a day old, or signed at the cutoff or before it: the latest time signed of the IDs that the count took out (#6723). | Hourly, and on write |
 | `attention.json` | document | What needs you, and what was delivered | The live needs | On write |
 | `leases.json`, `resources.json` | document | Resource leases | 240 minutes a lease; dropped when its agent stops | On write |
 | `guarded-files.json` | key-value | Guarded file states | The folders that exist | On write |
@@ -97,9 +97,9 @@ Mac.
 | `connector-setup.json` | key-value | Connector set-up for each folder | Until the folder leaves the machine (#6731) | On remove |
 | `catalog-skills.json`, `catalog-mcp.json` | key-value | Installed catalogue items | Until the item is removed (#6732, #6733) | On remove |
 | `catalog-pending.json` | document | An install in progress | One; goes when the install ends or at the next start | At start |
-| `account-ops.json` | log | The last operation of each account and secret | 500 and 500. No age (#6720). | On write |
+| `account-ops.json` | key-value | The last operation of each account, and the last read of each secret | 1,000 entries of 1 KiB each, for 90 days; the oldest goes first | Hourly, and on write: age, and the count when it is twice over |
 | `secret-ops.json` | key-value | The last operation of each secret held | Goes with its secret | On write |
-| `secret-ops-pending.json` | log | Secret audit entries not yet sent | 1,000. No age (#6721). | On write |
+| `secret-ops-pending.json` | log | Secret audit entries not yet sent | 1,000 operations of 16 KiB each, for 90 days; the oldest goes first, with a log line, and the audit never has it (#6721) | Hourly, and on write: age, and the count when it is twice over |
 | `allowances.json`, `runtime-accounts.json` | key-value | Runtime accounts you added, and each credential's allowance | Until the account is removed (#6747, #6748) | On remove |
 | `github-bot-copies.json` | key-value | Which machines have the GitHub bot's key (not the key) | The lock's machines; 16 forgotten Apps | On write |
 | `control-clients.json`, `project-tools.json`, `host-user.json` | key-value | Copies of the control plane's lists | Replaced by each new list (#6752, #6753) | On write |
@@ -140,7 +140,7 @@ Mac.
 | `~/.agents-secrets` | secret | Secrets, connections and machine provider secrets (see [Security overview](security-overview.md#where-secrets-live)) | Until you remove them | — |
 | `~/.agents-secrets/sealed.json` | secret | Every secret of yours on this machine, sealed to it (#4014, #4177), with Ask before use on or off | Until you remove them | — |
 | `~/.agents-secrets/sessions/<agent>.json` | secret | Secrets for one session | The values go when the agent is archived; the file goes when it is deleted | On archive and delete; leftovers at start |
-| `~/.agents/dismissed-leads.json` | key-value | Epics dismissed from the suggestions | **None:** an entry goes only when its epic gets a lead (#6713) | On write |
+| `~/.agents/dismissed-leads.json` | key-value | The epics you dismissed from New Session's **Suggested** | 500 epics of 1 KiB each, for 90 days; the oldest goes first. An epic that gets a lead goes at once (#6713). In the data folder on a machine with no personal home | Hourly, and on write: age, and the count when it is twice over |
 | `~/.agents/mcp.removed.json` | key-value | MCP servers you removed | 20. No age (#6727). | On write |
 | `~/.agents-secrets/mcp-sign-ins.json` | secret | MCP sign-in tokens | Until you sign out. No count limit (#6740). | — |
 | `~/.agents-secrets/hints.json` | secret | The last 4 characters of each secret | With its secret. No count limit (#6741). | On write |
@@ -158,7 +158,7 @@ These are in `<folder>/.agents/`.
 | `worktrees/<name>`, and branch `agents/<name>` | blob | Git worktrees that agents made | **No bound, on purpose: they belong to the user** (#6708). The worktree goes when its agent is archived or deleted, merged or not, with its uncommitted and untracked changes (#3726, #3877). The branch goes only when it is merged. A worktree that an agent not archived works in or names, one on no branch, and one the app did not make are always kept. | On archive and delete; when removed |
 | `reviews/runtimes/` | document | Runtime assessment reports | 1 MiB a report (a longer one is cut), 90 days, and the newest 50 on the machine, in all its folders; the oldest goes first. A report that git tracks is the repository's, and is never changed or deleted. A file with another name is yours (#6712). | Hourly, and when an assessment starts or is scored |
 | `workflows/assess-<id>.md` | document | A runtime assessment's throwaway workflow | **None**; the assessing agent removes it | Never |
-| `pins.json` | key-value | Pinned sessions and hidden views | 10 sessions, 50 hidden views | On write |
+| `pins.json` | key-value | Pinned pages, views, sessions and workflows, and hidden views | 10 pages and views, 10 sessions and 10 workflows, 4 KiB a pin; 50 hidden views, 1 KiB each; 128 KiB in all; a write past that is refused. No age, on purpose: they are your choices, committed with the folder. Each stays until you remove it, or its session or workflow is archived (#6725). | On write; on archive |
 | `folder.json`, `policy.json`, `mcp.json`, `personas/`, `skills/`, `workflows/` and the like | document | The folder's configuration, meant to be committed | Small | — |
 
 ## Outside our folders
@@ -192,20 +192,21 @@ times only: no titles or text; #4275).
 One sweep runs every hour. It removes old audit days, codes, tombstones, records with no
 owner, usage, workflow runs and lineage, join, lock-join, sign-in and link requests, and
 policy, governance and remove requests (#3649), and once a day the backups of removed
-servers. It also forgets clients and machines whose key expired 90 days ago, and removes
+servers. It also forgets clients whose key expired (#6757), and machines whose key expired 90 days ago, and removes
 the approvals of people and groups that are gone, and probes and move marks left by a
 copy that stopped (#3748).
 
 A removed client, machine, group, project, route or machine provider leaves a **tombstone** for 7 days, so
-the other copies of the control plane learn that it went.
+the other copies of the control plane learn that it went. A removed person's stays longer (below).
 
 ### People, machines and clients
 
 | Records | Kind | What they keep | How long, how large | Applied |
 | --- | --- | --- | --- | --- |
-| Clients | document | Name, kind, public key, when last seen, push tokens (APNs, up to 16 Live Activity tokens of 12 hours each, Web Push) | Until forgotten, then a tombstone for 7 days. A key lives 90 days; a client whose key expired is forgotten 90 days later (#3748). No count limit on a control plane of your own (hosted: 5 or 50). | Hourly |
+| Clients | document | Name, kind, public key, when last seen, push tokens (APNs, up to 16 Live Activity tokens of 12 hours each, Web Push) | Until forgotten, then a tombstone for 7 days. A key lives 90 days at most from when it was paired or last renewed in use; a client whose key expired is forgotten (#6757), unless it is connected. 16 KiB a record and 1 MiB in all (hosted: 5 or 50 clients too): a new client, a longer name or a push token over that is refused; a renewal of a client in use never is. Tombstones keep no push tokens, and may come to 1 MiB more | Hourly; sizes on each write |
 | Machines | document | Name, key, platform, version, owner, workspace | Until removed, then a tombstone for 7 days. A machine whose key expired is removed 90 days later; a started machine's workspace stays (#3748). No count limit (hosted: 2 or 20). | Hourly |
-| People | document | Name, role, sign-ins (email, login), SCIM data, old names for 90 days | A removed person goes after 14 days. One with a sign-in is kept, so that sign-in stays refused, but only as a tombstone: the ID, kind, role and each sign-in's provider and account (#3647) | Hourly |
+| People | document | Name, role, sign-ins (email, login), SCIM data, old names for 90 days | A removed person goes after 14 days. One with a sign-in goes after 90 days; until then only a tombstone is kept: the ID, kind, role and each sign-in's provider and account (#3647, #6756). The local owner's tombstone, one record, stays while they are the control plane's owner, so that a removed owner is not an admin again | Hourly |
+| Join cutoffs | document | A provider's ID and a time: when a removed person's tombstone with a sign-in of that provider first aged out. From then on, an account of it that nobody has needs an invite, so the old sign-in stays refused (#6756) | 1 KiB a record; Google and 5 org providers. Until the provider is removed | On write, and when the provider is removed |
 | Groups, projects | document | Name and members; name, owner, slots and boards | 1,000 groups; 500 projects a person | Tombstone, hourly |
 | Projects' folders | document | Each machine's joined folders | 1,000 | Hourly |
 | Machine locks | log | Each person's lock chain | 4,096 entries a person. Deleted when the person is removed (#3647) | On **Reset** and on remove |
@@ -214,7 +215,7 @@ the other copies of the control plane learn that it went.
 | Machine set-up | document | Each machine's set-up steps | One a machine, deleted when the machine is removed. No age. | On remove |
 | Machine set-up times | time series | How long each set-up step took | 50 a step. No age (#6760). | On write |
 | Machine versions | log | Each machine's version and its updates | 20 updates a machine, deleted when the machine is removed. No age. | On write; on remove |
-| Machine names | key-value | A person's machine counter and last choices | One a person, kept after the person goes (#6759) | — |
+| Machine names | key-value | A person's machine counter and last choices | One a person, 64 KiB at most: choices past that are not kept. The counter has no age while the person is here, so that a number is never used twice. Deleted when the person is removed (#6759). | On write; on remove; hourly |
 | Approvals | document | Each person's signed approvals of workflows and connectors | 2,000 a person; a new one past that is dropped. No age, and not deleted with the person. | On write |
 
 ### Requests, codes and sign-in
@@ -257,7 +258,7 @@ the other copies of the control plane learn that it went.
 
 | Records | Kind | What they keep | How long, how large | Applied |
 | --- | --- | --- | --- | --- |
-| Audit events | log | Who did what (see [Security overview](security-overview.md#who-did-what)) | 90 days by default; an admin sets 1 to 3,650 days (hosted: 7 or 90). No size limit a day. | Hourly, by day |
+| Audit events | log | Who did what (see [Security overview](security-overview.md#who-did-what)) | 90 days by default; an admin sets 1 to 90 days (hosted: 7 or 90). At most 1,000,000 entries, of at most 16 KiB each: the oldest over that go, even when they are newer than the days set. A longer text in an entry is cut. No roll-up: the long copy is the SIEM sink's (#6755). | Hourly, oldest first; before the hour at 2,000,000 entries |
 | Change events between copies | log | What changed, when the control plane has several copies | 1 day, in `v1/mesh/events/` (#3648) | Hourly, by day |
 | Audit seals and sinks | log; key-value | Each day's chain head; up to 4 SIEM sinks with sealed tokens | With the day; 4 sinks | Hourly |
 | Keys | secret | The sealed control key and the previous one; the sealed key for server backups | 2; the previous one 30 days | — |
@@ -314,12 +315,13 @@ What the Mac window and the Remote keep in their defaults, and the web page in
 | `sidebar.folder.<folder>.width`, `.pane` (Mac only) | key-value | A folder window's inspector width and pane | As the folds | As the folds |
 | `newSessionProjectFolders` (`agents.newSession.projectFolders` on the web page) | key-value | New Session's last folder for each project | As the folds | As the folds |
 | `machineLockPin.<key>` (`agents-lock-pin.<key>` on the web page) | key-value | The machine-lock pins, the lock and each person's | This control plane's only: another control plane's go once the client is paired (#3750), and all go on **Forget** (#3670) | When the control plane answers |
-| Drafts (`draft.agent.<uuid>`, `draft.new.<folder>`, and the Mac's `draft.start`) | document | Prompts not sent, with their attachments | 512 KiB of attachments a draft. Deleted after 30 days without an edit, when its agent is archived, on send, and on **Forget** (#3749). | At start; on archive |
-| Drafts on the web page (`agents.drafts`) | document | Prompts not sent, with their attachments | The newest 40 drafts; attachments only while they are under 256 KiB. Deleted on send and on **Forget**. | On write |
+| Drafts (`draft.agent.<uuid>`, `draft.new.<folder>`, and the Mac's `draft.start`) | document | Prompts not sent, with their attachments | 40 drafts, 1 MiB each with at most 512 KiB of attachments: a new one over 40, or one too big, is refused, with a message, and stays only while the app runs (#6794). Deleted after 30 days without an edit, when its agent is archived, on send, and on **Forget** (#3749). | On write, at start, on archive |
+| Drafts on the web page (`agents.drafts`) | document | Prompts not sent, with their attachments | 40 drafts: a new one over that is refused, with a message, and stays only while the page is open. Attachments only while they are under 256 KiB. Deleted after 30 days without an edit, on send, and on **Forget** (#6793). | On write, at start, hourly |
 | `control-client.json` (Mac, Remote); IndexedDB `agents` (web) | key-value; secret | The pairing, and the web page's key | One, until **Forget** (#6800) | On **Forget** |
 | Keychain `control-client-key`, `lock-signing-key`, `device-key` (Mac, Remote) | secret | The client's own keys | One of each; kept after **Forget** | — |
-| `copy/` in the cache folder (Mac, Remote); IndexedDB `agents` › `copy` (web) | cache | The local copy: machines, folders, records and the ends of 20 chats | 200 MiB on the Mac, 50 MiB on the Remote and the web page. No age (#6789, #6790, #6792). | On write |
-| `work-cache.sqlite`, in the cache folder (Mac) | cache | Forge items, bodies and comments | 200 MiB, least recently shown out first. No age (#6788). | On write |
+| `copy/` in the cache folder (Mac, Remote) | cache | The local copy: machines, folders, records, the ends of 20 chats and Work's pictures | 90 days since it was read from its host. 200 MiB on the Mac, 50 MiB on the Remote, the oldest out first. A record is 16 MiB at most. A machine that the control plane no longer lists goes, with its chats. | On write, hourly, when the machines are listed, and on **Forget** |
+| IndexedDB `agents` › `copy` (web) | cache | The local copy: machines, folders, records, the ends of 20 chats and Work's pictures | 90 days since it was read from its host. 50 MiB, the oldest out first. A record is 16 MiB at most. A machine that the control plane no longer lists goes, with its chats. | On write, at sign-in, hourly, when the machines are listed, and on **Forget** |
+| `work-cache.sqlite`, in the cache folder (Mac, Remote); IndexedDB `agents` › `work` (web) | cache | Forge items, bodies, comments and Work page answers | 90 days since it was read from the forge. 200 MiB on the Mac, 50 MiB on the Remote and the web page, least recently shown out first. An item is 4 KiB and any other record 4 MiB at most. | On write, at start, hourly, and on **Forget** |
 | `shared-inbox.json` (Remote) | blob | What was shared to Agent Loops | Each attachment is capped. No count, total or age (#6795). | On use |
 | `attention-snapshot.json` (Remote) | cache | The widget's rows | 12 rows; stale after 15 minutes | On write, and on **Forget** |
 | `remote.startFolders` (Remote) | key-value | Start folders | **None** (#6798) | Never |
@@ -361,8 +363,11 @@ summaries. Then (T8, #1001):
   time, and tried again at the next start when the runtime does not answer, 3 times at
   most within 7 days.
 - **A restore never brings the agent back.** `erased.json` in the data folder names every
-  agent the machine deleted: 10,000 at most, each for 400 days. A backup carries it, and a
-  restore skips each agent in it, also on a new machine.
+  agent the machine deleted: 10,000 at most, each for 90 days. A backup carries it, and a
+  restore skips each agent in it, also on a new machine. When an ID ages out, the backups
+  that can hold its agent are too old to restore: a machine refuses a backup or an export
+  made 90 days ago or more, or, when the list is full, one made no later than the oldest
+  deletion that the list keeps (#6715).
 
 These stay behind:
 
@@ -415,7 +420,8 @@ conversation), no secret, no usage history and no other agent.
 
 **Import Agents…** in a folder's menu sends the file to that folder's machine. Its agents
 come back archived, to read and search. They are never run there, and bring no MCP servers.
-An agent that the machine has already, or that it deleted (`erased.json`), is skipped.
+An agent that the machine has already, or that it deleted (`erased.json`), is skipped. An
+export made 90 days ago or more is refused, as a backup is.
 
 The machine makes an export in its `Outgoing` folder and an import arrives in `Incoming`.
 Each goes once it is read or imported. One left untouched for an hour goes at the next

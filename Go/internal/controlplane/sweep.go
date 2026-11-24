@@ -20,12 +20,14 @@ const (
 	tombstonesKept       = 7 * 24 * time.Hour
 	// A removed person goes once every code they made has run out (FR-029, #3126).
 	removedPeopleKept = inviteLifetime + tombstonesKept
-	leftoversKept     = time.Hour
-	sweepEvery        = time.Hour
-	mostPerSweep      = 1000
+	// One with a sign-in goes 90 days on, when the provider's cutoff refuses it (#6756).
+	removedSignInsKept = 90 * 24 * time.Hour
+	leftoversKept      = time.Hour
+	sweepEvery         = time.Hour
+	mostPerSweep       = 1000
 	// Between two rounds of one hour's sweep, while a round stops at mostPerSweep (#2291).
 	sweepPause     = 5 * time.Second
-	eventsPrefix   = "v1/events/"
+	eventsPrefix   = audit.Prefix
 	codesPrefix    = "v1/codes/"
 	sweptDayLayout = "2006-01-02"
 )
@@ -185,16 +187,22 @@ func sweepAllEvents(ctx context.Context, rs *records.Records, now time.Time, mos
 	left := most
 	total := 0
 	// Events, by the day in their key: the audit's days (#996), or the days before a
-	// shorter time for a day after it (#2067).
-	cutoff := audit.Cutoff(audit.SweepDays(rs.Settings(), now), now)
-	n, err := events.sweep(ctx, s, cutoff, left)
+	// shorter time for a day after it (#2067). Then the oldest over the count (#6755).
+	days := audit.SweepDays(rs.Settings(), now)
+	if events.log == nil {
+		var err error
+		if events.log, err = audit.Open(s, nil); err != nil {
+			return total, err
+		}
+	}
+	n, err := events.log.Sweep(ctx, now, now.Add(-time.Duration(days)*24*time.Hour), left)
 	total += n
 	left -= n
 	if err != nil {
 		return total, err
 	}
 	// The audit chain's seals (#1001), a day's each, go with their day's entries.
-	n, err = audit.SweepSeals(ctx, s, cutoff)
+	n, err = audit.SweepSeals(ctx, s, audit.Cutoff(days, now))
 	total += n
 	left -= n
 	if err != nil {
@@ -275,11 +283,11 @@ func sweepExpiredCode(ctx context.Context, s store.Store, key string, named map[
 // tombstoneMark is what the sweep reads of a record: whether it is a tombstone, and since
 // when.
 type tombstoneMark struct {
-	Forgotten   *bool          `json:"forgotten"`
-	ForgottenAt *records.Stamp `json:"forgottenAt"`
-	Removed     *bool          `json:"removed"`
-	RemovedAt   *records.Stamp `json:"removedAt"`
-	SignIns     []any          `json:"signIns"`
+	Forgotten   *bool            `json:"forgotten"`
+	ForgottenAt *records.Stamp   `json:"forgottenAt"`
+	Removed     *bool            `json:"removed"`
+	RemovedAt   *records.Stamp   `json:"removedAt"`
+	SignIns     []records.SignIn `json:"signIns"`
 }
 
 // sweepTombstones deletes, at most most, the tombstones the records found that are past
@@ -336,6 +344,12 @@ func sweepTombstone(ctx context.Context, s store.Store, key string, now time.Tim
 	if again == nil || again.ETag != object.ETag {
 		return false, false, nil
 	}
+	// The cutoff before the delete: a sign-in is always refused by one of the two (#6756).
+	if strings.HasPrefix(key, records.PeoplePrefix) {
+		if err := closeJoins(ctx, s, mark.SignIns, records.At(now)); err != nil {
+			return false, false, err
+		}
+	}
 	if err := s.Delete(ctx, key); err != nil {
 		return false, false, err
 	}
@@ -344,8 +358,7 @@ func sweepTombstone(ctx context.Context, s store.Store, key string, now time.Tim
 
 // tombstoneBefore is the time before which a tombstone at key was forgotten goes, or false
 // when the record is kept. A removed project (#2711), group or person (#3126) is forgotten
-// when it was removed; removing one always gives it removedAt. A person's sign-ins stay
-// refused while the record is kept.
+// when it was removed; removing one always gives it removedAt.
 func tombstoneBefore(key string, mark *tombstoneMark, now time.Time) (time.Time, bool) {
 	before := now.Add(-tombstonesKept)
 	if !strings.HasPrefix(key, records.ProjectsPrefix) && !strings.HasPrefix(key, records.GroupsPrefix) &&
@@ -357,9 +370,10 @@ func tombstoneBefore(key string, mark *tombstoneMark, now time.Time) (time.Time,
 	}
 	if strings.HasPrefix(key, records.PeoplePrefix) {
 		if len(mark.SignIns) > 0 {
-			return before, false
+			before = now.Add(-removedSignInsKept)
+		} else {
+			before = now.Add(-removedPeopleKept)
 		}
-		before = now.Add(-removedPeopleKept)
 	}
 	mark.Forgotten, mark.ForgottenAt = mark.Removed, mark.RemovedAt
 	return before, true
@@ -425,7 +439,7 @@ func sweepUsages(ctx context.Context, rs *records.Records, now time.Time, left i
 func sweepOrphans(ctx context.Context, rs *records.Records, now time.Time, most int) (int, error) {
 	deleted := 0
 	for _, step := range []func(context.Context, *records.Records, time.Time, int) (int, bool, error){
-		sweepOrphanLeases, sweepOrphanFolderLists, sweepRemovedOrgRoutes,
+		sweepOrphanLeases, sweepOrphanFolderLists, sweepRemovedOrgRoutes, sweepMachineNames,
 	} {
 		n, full, err := step(ctx, rs, now, most-deleted)
 		deleted += n
@@ -461,6 +475,45 @@ func sweepOrphanLeases(ctx context.Context, rs *records.Records, now time.Time, 
 			continue
 		}
 		if err := s.Delete(ctx, k.Key); err != nil {
+			return deleted, false, err
+		}
+		deleted++
+	}
+	return deleted, false, nil
+}
+
+// sweepMachineNames deletes, at most most, the machine-N counters of removed people (#6759):
+// those removed before it went with them, and one a make wrote as its person was removed.
+// The owner keeps theirs, also with no record. full says it stopped at most.
+func sweepMachineNames(ctx context.Context, rs *records.Records, _ time.Time, most int) (deleted int, full bool, err error) {
+	s := rs.Store
+	keys, err := s.List(ctx, providers.MachineNamesPrefix)
+	if err != nil {
+		return 0, false, err
+	}
+	owner := ""
+	if settings := rs.Settings(); settings != nil && settings.Owner != nil {
+		owner = *settings.Owner
+	}
+	for _, k := range keys {
+		if deleted >= most {
+			return deleted, true, nil
+		}
+		person, ok := providers.MachineNamesPerson(k.Key)
+		if !ok || person == "local" || person == owner {
+			continue
+		}
+		if held := rs.Person(person); held != nil {
+			if !held.IsRemoved() {
+				continue
+			}
+		} else if record, err := s.Get(ctx, records.PersonKey(person)); err != nil {
+			return deleted, false, err
+		} else if record != nil {
+			// Made at another copy, and not read here yet.
+			continue
+		}
+		if err := providers.ForgetMachineNames(ctx, s, person); err != nil {
 			return deleted, false, err
 		}
 		deleted++
@@ -601,12 +654,11 @@ func dateTombstone(ctx context.Context, s store.Store, key string, object *store
 	return true, nil
 }
 
-// eventSweep is what one sweep leaves the next. oldest is the oldest day that may still
-// hold events, so a sweep lists only the days that have expired, a day each, not every
-// day the audit keeps (#2053); the first sweep finds it from one list of every event.
+// eventSweep is what one sweep leaves the next. log is the audit's entries, which knows how
+// many each day holds, so a sweep does not list every day the audit keeps (#2053, #6755).
 // strays is when the sweep first saw each probe and mark (#3748), only those still there.
 type eventSweep struct {
-	oldest string
+	log    *store.DayLog
 	strays map[string]time.Time
 }
 
@@ -638,43 +690,6 @@ func (e *eventSweep) sweepStrays(ctx context.Context, s store.Store, now time.Ti
 		}
 	}
 	e.strays = seen
-	return deleted, nil
-}
-
-// sweep deletes, at most most, the events of each day before cutoff, from the oldest,
-// and says how many it deleted.
-func (e *eventSweep) sweep(ctx context.Context, s store.Store, cutoff string, most int) (int, error) {
-	if e.oldest == "" {
-		all, err := s.List(ctx, eventsPrefix)
-		if err != nil {
-			return 0, err
-		}
-		e.oldest = cutoff
-		for _, k := range all {
-			// Sorted, so the first that names a day names the oldest.
-			if day := audit.KeyDay(k.Key); audit.NextDay(day) != "" {
-				e.oldest = min(day, cutoff)
-				break
-			}
-		}
-	}
-	deleted := 0
-	for e.oldest < cutoff && deleted < most {
-		keys, err := s.List(ctx, audit.DayFolder(e.oldest))
-		if err != nil {
-			return deleted, err
-		}
-		for _, k := range keys {
-			if deleted >= most {
-				return deleted, nil
-			}
-			if err := s.Delete(ctx, k.Key); err != nil {
-				return deleted, err
-			}
-			deleted++
-		}
-		e.oldest = audit.NextDay(e.oldest)
-	}
 	return deleted, nil
 }
 
@@ -839,6 +854,14 @@ func (s *Service) sweepServing(events *eventSweep, backupsSwept *string) (sweepR
 	return report, err
 }
 
+// askSweep asks for a sweep before the hour: a store is past twice its limit (#6755).
+func (s *Service) askSweep(context.Context) {
+	select {
+	case s.sweepSoon <- struct{}{}:
+	default:
+	}
+}
+
 // sweepEveryHour runs the sweep once an hour, the first a minute after start (#174).
 func (s *Service) sweepEveryHour() {
 	select {
@@ -848,7 +871,7 @@ func (s *Service) sweepEveryHour() {
 	}
 	t := time.NewTicker(sweepEvery)
 	defer t.Stop()
-	var events eventSweep
+	events := eventSweep{log: s.auditEntries}
 	backupsSwept := ""
 	for {
 		// Only while serving: a receiving or forwarding copy leaves the store alone.
@@ -866,6 +889,7 @@ func (s *Service) sweepEveryHour() {
 		select {
 		case <-s.stop:
 			return
+		case <-s.sweepSoon:
 		case <-t.C:
 		}
 	}

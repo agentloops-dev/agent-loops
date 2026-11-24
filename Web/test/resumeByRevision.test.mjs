@@ -135,7 +135,7 @@ test("a chat opened at launch resumes from this device's copy", async () => {
   const held = new MemoryCopyStore();
   const seed = new LocalCopy(held);
   seed.writing = true;
-  await seed.put([{ kind: "transcript", ref: sessionRef("s"), host: "mac", session: "s", at: 1,
+  await seed.put([{ kind: "transcript", ref: sessionRef("s"), host: "mac", session: "s", at: Date.now(),
     turns: { turns: [], firstTurn: 0, openStart: 0 }, page: { firstIndex: 0, total: 1, entries: [entry("e0")] } }]);
   const link = hostLink({ answer: () => all([agent("s")]), page: (asked) => ({ firstIndex: 1, total: 2, entries: [entry("e1")], asked }) });
   const store = new Store(link);

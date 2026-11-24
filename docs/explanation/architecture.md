@@ -185,7 +185,7 @@ bottom (the host daemon). The colour of each label gives the medium.
 | Mac window | Files, SQLite | Pairing; local copy; Work cache | `control-client.json`; `Caches/…/copy/`; `Caches/…/work-cache.sqlite` |
 | Remote | Keychain, UserDefaults | Device key, lock signing key; preferences, drafts, lock pins | shared group `…agents.shared`; `UserDefaults.standard` |
 | Remote | Files | Pairing; local copy and device log; widget snapshot and share inbox | `control-client.json`; `Caches/`; the app group |
-| Web page | IndexedDB | Client key and lock key; local copy; an org sign-in in progress | `agents` › `key`, `copy`; `agents-signin` |
+| Web page | IndexedDB | Client key and lock key; local copy; Work cache; an org sign-in in progress | `agents` › `key`, `copy`, `work`; `agents-signin` |
 | Web page | `localStorage`, `sessionStorage` | Drafts, folds, pinned machines; filters and sort for each tab | `agents.*` |
 
 The runtimes keep their own data, such as `~/.claude`. The daemon reads their sign-ins

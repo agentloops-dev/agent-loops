@@ -22,6 +22,10 @@ struct WorkItemPage: View {
     #endif
     @Environment(\.openURL) private var openURL
     @Environment(\.openWorkWindow) private var openWorkWindow
+    #if os(macOS)
+    /// Whether the person turned the Docs flag on (`FeatureFlag`, #6572).
+    @AppStorage(FeatureFlag.docs.key, store: WindowDefaults.store) private var docsOn = false
+    #endif
     /// Opens a place on the web page; the Mac window sets it while it can open the page (#5180).
     @Environment(\.openWebPlace) private var openWebPlace
     let place: WorkPlace
@@ -711,8 +715,8 @@ struct WorkItemPage: View {
             linked(item)
             lineageSection(item)
             #if os(macOS)
-            // The docs it names and those like it (#3322): Mac + web, so not on the Remote (#2796).
-            if item.node.kind == "issue" || item.node.kind == "pr" {
+            // The docs it names and those like it (#3322), with the Docs flag on (#6572): Mac + web, so not on the Remote (#2796).
+            if docsOn, item.node.kind == "issue" || item.node.kind == "pr" {
                 WorkDocsSection(item: item, text: detail?.got.body ?? "", asked: asked)
             }
             #endif

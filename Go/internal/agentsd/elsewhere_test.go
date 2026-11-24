@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
@@ -272,15 +274,17 @@ func TestHeardThereWritesOnlyWhatChanged(t *testing.T) {
 	dir := t.TempDir()
 	a := seeded(t, d, dir, func(a *wire.Agent) { a.State, a.RuntimeID = wire.AgentStateRunning, "claude" })
 	d.noteStartedThere(startedThere{Machine: "pc", Session: there, Starter: a.ID, Folder: dir, There: "/home/me/app", Title: "watch", At: now()})
+	last := ""
 	written := func() bool {
-		_, err := os.Stat(d.elsewherePath())
-		return err == nil
+		raw, err := os.ReadFile(d.elsewherePath())
+		before := last
+		last = string(raw)
+		return err == nil && last != before
 	}
 	if !written() {
 		t.Fatal("elsewhere.json was not written when the session was kept")
 	}
 
-	os.Remove(d.elsewherePath())
 	for range 3 {
 		d.heardThere(there, "pc", "watch", nil)
 		d.heardThere(there, "", "", nil)
@@ -293,16 +297,67 @@ func TestHeardThereWritesOnlyWhatChanged(t *testing.T) {
 	if !written() {
 		t.Fatal("a new title was not written")
 	}
-	os.Remove(d.elsewherePath())
 	ended := &wire.WaitEndingHow{Stopped: &wire.WaitEndingHowStopped{}}
 	d.heardThere(there, "", "", ended)
 	if !written() {
 		t.Fatal("an ending was not written")
 	}
-	os.Remove(d.elsewherePath())
 	d.heardThere(there, "", "", &wire.WaitEndingHow{Stopped: &wire.WaitEndingHowStopped{}})
 	if written() {
 		t.Fatal("the same ending was written again")
+	}
+}
+
+// #6722: an entry goes 90 days after its machine was last heard, in the sweep too, and one still
+// heard of stays, whatever its age. A long ending is cut, so it does not refuse its entry.
+func TestElsewhereAgesOutFromWhenItWasHeard(t *testing.T) {
+	clock := atTime(t, time.Date(2026, 11, 6, 12, 0, 0, 0, time.UTC))
+	d, _ := start(t, t.TempDir())
+	defer d.Shutdown()
+	dir := t.TempDir()
+	a := seeded(t, d, dir, func(a *wire.Agent) { a.State, a.RuntimeID = wire.AgentStateRunning, "claude" })
+	quiet := store.NewUUID()
+	for _, id := range []wire.UUID{there, quiet} {
+		d.noteStartedThere(startedThere{Machine: "pc", Session: id, Starter: a.ID, Folder: dir, There: "/home/me/app", Title: "watch", At: now()})
+	}
+	d.noteStartedHere(a.ID, wire.StartedFrom{Machine: "pc", Agent: quiet, Who: "Claude"})
+
+	clock.add(60 * 24 * time.Hour)
+	long := strings.Repeat("x", 1<<20)
+	d.heardThere(there, "", "", &wire.WaitEndingHow{Finished: &wire.WaitEndingHowFinished{Message: &long}})
+	d.heardFromStarter(a.ID)
+
+	clock.add(60 * 24 * time.Hour)
+	d.sweepSmallStores(nowFunc())
+	left := d.startedThereBy(a.ID)
+	if len(left) != 1 || left[0].Session != there || left[0].Ended == nil || len(*left[0].Ended.Finished.Message) > elsewhereMessageMost+8 {
+		t.Fatalf("%d left", len(left))
+	}
+	if d.startedFromOf(a.ID) == nil {
+		t.Fatal("let go of a session its starter still spoke of")
+	}
+
+	clock.add(60 * 24 * time.Hour)
+	d.sweepSmallStores(nowFunc())
+	if len(d.startedThereBy(a.ID)) != 0 || d.startedFromOf(a.ID) != nil {
+		t.Fatal("kept past 90 days")
+	}
+}
+
+// #6722: the lists of the file as it was before are carried over.
+func TestElsewhereCarriesTheOldListsOver(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	old := `{"from":[{"session":"` + string(there) + `","from":{"machine":"pc","agent":"A","who":"Claude"}}],
+"started":[{"machine":"pc","session":"` + string(there) + `","starter":"B","folder":"/a","there":"/b","title":"watch","at":"2026-11-06T11:00:00.000Z"}]}`
+	if err := os.WriteFile(filepath.Join(root, "elsewhere.json"), []byte(old), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	d, _ := start(t, root)
+	defer d.Shutdown()
+	if s := d.startedThereBy("B"); len(s) != 1 || s[0].Title != "watch" || d.startedFromOf(there) == nil {
+		t.Fatalf("%+v", s)
 	}
 }
 

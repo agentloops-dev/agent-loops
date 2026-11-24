@@ -1,7 +1,8 @@
 package repoalias
 
 import (
-	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -73,21 +74,18 @@ func TestAChainOfMovesAndAMoveBack(t *testing.T) {
 	}
 }
 
-func TestSaveAndLoad(t *testing.T) {
+// #6716: past the count the oldest alias goes, and a name too long for its entry is not kept.
+func TestTheBookIsBounded(t *testing.T) {
 	reset(t)
-	path := filepath.Join(t.TempDir(), "repo-aliases.json")
-	Add("github", "agentloops-dev/agents", "agentloops-dev/agent-loops", t0)
-	if err := Save(path); err != nil {
-		t.Fatal(err)
+	for i := range Most + 1 {
+		if !Add("github", "a/r"+strconv.Itoa(i), "b/r"+strconv.Itoa(i), t0.Add(time.Duration(i)*time.Second)) {
+			t.Fatalf("%d was not added", i)
+		}
 	}
-	Set(nil)
-	if err := Load(path); err != nil {
-		t.Fatal(err)
+	if len(All()) != Most || Topic("github", "a/r0") != "a/r0" || Topic("github", "a/r1") != "b/r1" {
+		t.Fatalf("%d kept; a/r0 is %s", len(All()), Topic("github", "a/r0"))
 	}
-	if got := All(); len(got) != 1 || got[0].To != "agentloops-dev/agent-loops" || !got[0].At.Equal(t0) {
-		t.Fatalf("%+v", got)
-	}
-	if err := Load(filepath.Join(t.TempDir(), "none.json")); err != nil || len(All()) != 0 {
-		t.Fatalf("a missing file: %v %+v", err, All())
+	if Add("github", "a/"+strings.Repeat("x", maxName), "b/r", t0) {
+		t.Error("a name too long was added")
 	}
 }

@@ -6,6 +6,8 @@ import Foundation
 /// phone's own link to it, and only while that answers.
 extension RemoteModel {
     func showWork(_ place: WorkPlace) {
+        // Work is off (#6572): a hidden page does not show.
+        guard flags.isOn(.work) else { return }
         // The list Work opens on is no place yet: a page opened from it puts it first, so Back finds it (#3257).
         if place.fromList, workHistory.current == nil { workHistory.go(WorkPlace(kind: place.kind)) }
         if place != workHistory.current { workHistory.go(place) }

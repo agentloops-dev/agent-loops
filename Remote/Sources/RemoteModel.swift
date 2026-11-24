@@ -956,6 +956,9 @@ final class RemoteModel {
     /// The mode last chosen for each runtime, on any device. `modes/changed` keeps it
     /// current afterwards. A Mac too old to know the method leaves the sheet opening
     /// on each runtime's own current mode.
+    /// The feature flags the person has on (#6572), as the mirror keeps them.
+    let flags = FeatureFlagStates(defaults: .standard)
+
     /// The person's display choices (#1033), kept on the Mac. This device's defaults mirror
     /// them, so every view reads them where it always did.
     /// A change shows at once; one the Mac did not take goes back, and says so (#4814).

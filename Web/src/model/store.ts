@@ -363,7 +363,7 @@ export class Store extends Work {
   readonly pendingOptions = signal<Record<string, Record<string, JSONValue>>>({});
 
   /** What is typed and attached, per session or per new-agent form, kept across a reload (#254). */
-  readonly drafts = new Drafts(typeof localStorage === "undefined" ? undefined : localStorage);
+  readonly drafts = new Drafts(typeof localStorage === "undefined" ? undefined : localStorage, (sentence) => this.say(sentence));
 
   /** Whether this page may ask for Connect to Another… (#4257): its control plane is one that Agents runs on
    * this Mac (it reads the Mac host's join), it knows the method, and the person is an admin. */

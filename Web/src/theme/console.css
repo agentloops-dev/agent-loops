@@ -31,7 +31,8 @@
 }
 
 .top-search { position: relative; align-self: center; display: flex; align-items: center; }
-.top-search input { width: 17rem; height: var(--console-control); box-sizing: border-box; padding: 0 2rem 0 10px; font: inherit;
+/* Narrower with the window, so the bar holds "Docs and Messages" in Work's place (#6572). */
+.top-search input { width: min(17rem, 13vw); min-width: 10rem; height: var(--console-control); box-sizing: border-box; padding: 0 2rem 0 10px; font: inherit;
   color: inherit; background: var(--paper-well); border: 1px solid var(--paper-rule); border-radius: var(--radius-console); }
 .top-search input:focus { outline: 2px solid var(--accent); outline-offset: -1px; background: var(--paper-raised); }
 .top-search-key { position: absolute; right: 8px; font: inherit; font-size: 0.6875rem; opacity: 0.6; padding: 0 5px;

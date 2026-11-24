@@ -50,8 +50,8 @@ const (
 // for its machine to start, at most this long (D6).
 const RequestLifetime = 24 * time.Hour
 
-// requestSkew is how far ahead of this machine's clock a signed request may say it was made.
-const requestSkew = 5 * time.Minute
+// RequestSkew is how far ahead of this machine's clock a signed request may say it was made.
+const RequestSkew = 5 * time.Minute
 
 // The ways a request fails its check.
 var (
@@ -337,7 +337,7 @@ func CheckRequest(state *State, host, method string, params []byte, s wire.LockS
 		return Member{}, fmt.Errorf("%w: its signature does not check", ErrForged)
 	}
 	at := time.Unix(s.At, 0)
-	if now.Sub(at) > RequestLifetime || at.Sub(now) > requestSkew {
+	if now.Sub(at) > RequestLifetime || at.Sub(now) > RequestSkew {
 		return Member{}, ErrStale
 	}
 	m, ok := state.Member(s.Key)

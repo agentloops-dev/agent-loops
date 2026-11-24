@@ -52,7 +52,7 @@ type Config struct {
 	// Where the key is kept, so control/rotate can keep a new one (#997); nil for a key
 	// handed in, which is not rotated.
 	KeyKeeper KeyKeeper
-	// How long a client's or machine's key lives unused (#997); 0 is DefaultKeyLifetime.
+	// How long a client's or machine's key lives unused (#997); 0 is DefaultKeyLifetime, the most.
 	KeyLifetime time.Duration
 	// The one address clients and hosts are given (R8).
 	URL string
@@ -193,6 +193,10 @@ type Service struct {
 	auditChain *audit.Chain
 	// auditWriter keeps the entries, one goroutine for all (#2433).
 	auditWriter *audit.Writer
+	// auditEntries is the log they are kept in, and sweepSoon asks for a sweep before the
+	// hour (#6755).
+	auditEntries *store.DayLog
+	sweepSoon    chan struct{}
 	auditSinks  *auditSinkState
 	// Servers' backups (#1815).
 	backups *backupStore
@@ -317,6 +321,11 @@ func New(cfg Config) (*Service, error) {
 		reads: readGate{every: readAgainEvery}, metrics: metrics}
 	s.sources = newSources(cfg.TrustedProxies, s.log)
 	s.auditChain, s.auditSinks = audit.NewChain(s.copyID), newAuditSinkState(cfg.Name, s.copyID)
+	s.sweepSoon = make(chan struct{}, 1)
+	s.auditEntries, err = audit.Open(cfg.Store, s.askSweep)
+	if err != nil {
+		return nil, err
+	}
 	s.auditWriter = audit.NewWriter(s.auditLog(), s.log)
 	s.downloads, s.socketsMost, s.refusals = newAddressRates(), socketsMost, newRefusalLog(s.log)
 	if cfg.Push != nil {
@@ -2060,6 +2069,10 @@ func (s *Service) spendClientCode(ctx context.Context, id string, stored *stored
 	name := a.Name
 	if a.Kind == records.KindBrowser {
 		name = browserName(a.Name, s.page != nil && webOrigin == s.page.Origin())
+	}
+	// Before the code is spent, so it can be used once there is room (#6757).
+	if err := s.records.ClientRoom(ctx, a.ID); err != nil {
+		return nil, err
 	}
 	spender := a.ID
 	sp, err := s.codes.Spend(ctx, id, spent{PublicKey: a.PublicKey, Client: &spender})

@@ -3,25 +3,24 @@
 // Refs are read and matched by the new name (Ref, Topic, SameRepo), so a ref stored before
 // the move and an event after it name one thing. The stored files are not written again.
 //
-// The book is one for the process: the daemon loads it at start (Load), and adds to it when
-// GitHub's GET /repos/<old> answers with another full_name (Add).
+// The book is one for the process: the daemon keeps it in a small file that it loads at start (Set),
+// and adds to it when GitHub's GET /repos/<old> answers with another full_name (Add).
 package repoalias
 
 import (
-	"encoding/json"
-	"errors"
-	"os"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
-// Most bounds the aliases kept; past it, a new one is not added.
+// Most bounds the aliases kept; past it, the oldest goes.
 const Most = 1_000
+
+// maxName bounds one name, so that each alias fits in its entry of the file.
+const maxName = 256
 
 // maxHops bounds a chain of moves (a to b, then b to c).
 const maxHops = 8
@@ -31,7 +30,7 @@ type Alias struct {
 	Provider string    `json:"provider"`
 	From     string    `json:"from"`
 	To       string    `json:"to"`
-	At       time.Time `json:"at"`
+	At       wire.Date `json:"at"`
 }
 
 var (
@@ -39,16 +38,19 @@ var (
 	aliases = map[string]Alias{} // by key(provider, from)
 )
 
+// Key is the alias's key in the book.
+func (a Alias) Key() string { return key(a.Provider, a.From) }
+
 func key(provider, from string) string {
 	return strings.ToLower(provider) + ":" + strings.ToLower(from)
 }
 
-// Set replaces the book with list: for Load and tests.
+// Set replaces the book with list: the daemon's file and tests.
 func Set(list []Alias) {
 	m := make(map[string]Alias, len(list))
 	for _, a := range list {
 		if a, ok := clean(a); ok && len(m) < Most {
-			m[key(a.Provider, a.From)] = a
+			m[a.Key()] = a
 		}
 	}
 	mu.Lock()
@@ -73,6 +75,7 @@ func All() []Alias {
 func clean(a Alias) (Alias, bool) {
 	a.Provider, a.From, a.To = strings.ToLower(a.Provider), strings.ToLower(strings.Trim(a.From, "/")), strings.ToLower(strings.Trim(a.To, "/"))
 	ok := a.Provider != "" && a.From != "" && a.To != "" && a.From != a.To &&
+		len(a.From) <= maxName && len(a.To) <= maxName &&
 		!strings.ContainsAny(a.From+a.To, ":# ") && strings.Contains(a.From, "/") && strings.Contains(a.To, "/")
 	return a, ok
 }
@@ -80,20 +83,26 @@ func clean(a Alias) (Alias, bool) {
 // Add keeps that from moved to to on provider, and says whether the book changed. A move back
 // (to is an old name of from) removes the alias that pointed the other way.
 func Add(provider, from, to string, at time.Time) bool {
-	a, ok := clean(Alias{Provider: provider, From: from, To: to, At: at})
+	a, ok := clean(Alias{Provider: provider, From: from, To: to, At: wire.DateOf(at)})
 	if !ok {
 		return false
 	}
 	mu.Lock()
 	defer mu.Unlock()
-	if old, known := aliases[key(a.Provider, a.From)]; known && old.To == a.To {
-		return false
-	}
-	if _, known := aliases[key(a.Provider, a.From)]; !known && len(aliases) >= Most {
+	if old, known := aliases[a.Key()]; known && old.To == a.To {
 		return false
 	}
 	delete(aliases, key(a.Provider, a.To))
-	aliases[key(a.Provider, a.From)] = a
+	aliases[a.Key()] = a
+	if len(aliases) > Most {
+		oldest := ""
+		for k, x := range aliases {
+			if o := aliases[oldest]; k != a.Key() && (oldest == "" || x.At < o.At || x.At == o.At && k < oldest) {
+				oldest = k
+			}
+		}
+		delete(aliases, oldest)
+	}
 	return true
 }
 
@@ -155,35 +164,4 @@ func Ref(r wire.Ref) wire.Ref {
 // move, in any case.
 func SameRepo(provider, a, b string) bool {
 	return strings.EqualFold(Topic(provider, a), Topic(provider, b))
-}
-
-type file struct {
-	Aliases []Alias `json:"aliases"`
-}
-
-// Load reads the book from path; a missing file is an empty book.
-func Load(path string) error {
-	b, err := os.ReadFile(path)
-	if errors.Is(err, os.ErrNotExist) {
-		Set(nil)
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	var f file
-	if err := json.Unmarshal(b, &f); err != nil {
-		return err
-	}
-	Set(f.Aliases)
-	return nil
-}
-
-// Save writes the book to path, through a temporary file and a rename.
-func Save(path string) error {
-	b, err := json.MarshalIndent(file{Aliases: All()}, "", "  ")
-	if err != nil {
-		return err
-	}
-	return store.WriteAtomically(path, append(b, '\n'), 0o600)
 }

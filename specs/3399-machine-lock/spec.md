@@ -89,7 +89,8 @@ How step 4 is built (#3492):
   id, the time in seconds, the method and the params as sent. A client signs a prompt or a
   start for a machine it has no channel to; `hosts/keep` and the router's keeper keep it as a
   `LockDelivery` and deliver it byte for byte. The machine takes one at most a day old, once
-  (`<root>/lock-seen.json`).
+  (`<root>/lock-seen.json`: 4,096 IDs for 2 days). When the count takes an ID out, the machine
+  refuses every request signed then or before (#6723).
 - **The machine** keeps the lock it took (`<root>/lock.json`), so it checks requests after a
   restart before the control plane sends it again. Once it holds a lock, a request on a
   channel from the control plane, or on the window's local socket, is refused with

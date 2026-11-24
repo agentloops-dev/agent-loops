@@ -76,18 +76,18 @@ func sealKey(day, chain string) string { return SealsPrefix + day + "/" + chain 
 
 // write links e into the chain and keeps it at key, one Put at a time: Log.Write's way.
 // An entry that is not kept takes no place in the chain.
-func (c *Chain) write(ctx context.Context, s store.Store, e *stored, key string, at time.Time) ([]byte, error) {
+func (c *Chain) write(ctx context.Context, log *Log, e *stored, key string, at time.Time) ([]byte, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	l, err := c.linkLocked(e, key, at)
 	if err != nil {
 		return nil, err
 	}
-	if _, err := s.Put(ctx, key, l.Data, store.Absent); err != nil {
+	if err := log.keep(ctx, key, at, l.Data); err != nil {
 		return nil, err
 	}
 	c.seq, c.head, c.day = l.Seq, Hash(l.Data), l.Day
-	c.landLocked(ctx, s, l, at)
+	c.landLocked(ctx, log.Store, l, at)
 	return l.Data, nil
 }
 
@@ -201,6 +201,17 @@ func Verify(ctx context.Context, s store.Store) (Report, error) {
 	if err != nil {
 		return r, err
 	}
+	seals, err := r.readSeals(ctx, s)
+	if err != nil {
+		return r, err
+	}
+	// The last place of each chain on the oldest day, or before it.
+	sealed := map[string]int64{}
+	for _, seal := range seals {
+		if seal.Day <= oldest {
+			sealed[seal.Chain] = max(sealed[seal.Chain], seal.Seq)
+		}
+	}
 	ids := make([]string, 0, len(chains))
 	for id := range chains {
 		ids = append(ids, id)
@@ -208,37 +219,32 @@ func Verify(ctx context.Context, s store.Store) (Report, error) {
 	sort.Strings(ids)
 	r.Chains = len(ids)
 	for _, id := range ids {
-		r.checkChain(id, chains[id], oldest)
+		r.checkChain(id, chains[id], oldest, sealed[id])
 	}
-	if err := r.checkSeals(ctx, s, chains, oldest); err != nil {
-		return r, err
-	}
+	r.checkSeals(seals, chains, oldest)
 	return r, nil
 }
 
 // readChains reads every entry in the store into its chain, and counts the entries and the
 // ones in no chain. It also says the oldest day kept.
 func (r *Report) readChains(ctx context.Context, s store.Store) (map[string][]link, string, error) {
-	keys, err := s.List(ctx, Prefix)
+	log, err := Open(s, nil)
 	if err != nil {
 		return nil, "", err
 	}
 	chains := map[string][]link{}
 	oldest := ""
-	for _, k := range keys {
-		object, err := s.Get(ctx, k.Key)
+	for record, err := range log.All(ctx) {
 		if err != nil {
 			return nil, "", err
 		}
-		if object == nil {
-			continue
-		}
-		if day := KeyDay(k.Key); oldest == "" || day < oldest {
-			oldest = day
+		key := Prefix + record.ID
+		if oldest == "" {
+			oldest = KeyDay(key)
 		}
 		var e stored
-		if json.Unmarshal(object.Data, &e) != nil {
-			r.Problems = append(r.Problems, fmt.Sprintf("%s can't be read: it was changed", k.Key))
+		if json.Unmarshal(record.Value, &e) != nil {
+			r.Problems = append(r.Problems, fmt.Sprintf("%s can't be read: it was changed", key))
 			continue
 		}
 		if e.Kind != Kind {
@@ -249,18 +255,19 @@ func (r *Report) readChains(ctx context.Context, s store.Store) (map[string][]li
 			r.Unchained++
 			continue
 		}
-		chains[e.Chain] = append(chains[e.Chain], link{key: k.Key, prev: e.Prev, hash: Hash(object.Data), seq: e.Seq})
+		chains[e.Chain] = append(chains[e.Chain], link{key: key, prev: e.Prev, hash: Hash(record.Value), seq: e.Seq})
 	}
 	return chains, oldest, nil
 }
 
 // checkChain puts links in order and says each place that is missing, twice, or whose entry
 // does not name the hash of the one before. Entries before the first are missing only when
-// its day is not the oldest kept.
-func (r *Report) checkChain(id string, links []link, oldest string) {
+// its day is not the oldest kept, and the oldest day's seal does not reach them: the sweep
+// evicts a part of the oldest day when the log is over its count (#6755).
+func (r *Report) checkChain(id string, links []link, oldest string, sealed int64) {
 	sort.Slice(links, func(i, j int) bool { return links[i].seq < links[j].seq })
 	first := links[0]
-	if first.seq > 1 && KeyDay(first.key) != oldest {
+	if first.seq > 1 && KeyDay(first.key) != oldest && first.seq-1 > sealed {
 		r.Problems = append(r.Problems, fmt.Sprintf("chain %s: entries 1 to %d were removed", id, first.seq-1))
 	}
 	for i := 1; i < len(links); i++ {
@@ -277,17 +284,17 @@ func (r *Report) checkChain(id string, links []link, oldest string) {
 	}
 }
 
-// checkSeals reads every seal and says each one whose head, on a day still kept, is not in
-// its chain with the seal's hash.
-func (r *Report) checkSeals(ctx context.Context, s store.Store, chains map[string][]link, oldest string) error {
-	seals, err := s.List(ctx, SealsPrefix)
+// readSeals reads every seal, and says each one it cannot read.
+func (r *Report) readSeals(ctx context.Context, s store.Store) ([]Seal, error) {
+	keys, err := s.List(ctx, SealsPrefix)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	for _, k := range seals {
+	var seals []Seal
+	for _, k := range keys {
 		object, err := s.Get(ctx, k.Key)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		var seal Seal
 		if object == nil || json.Unmarshal(object.Data, &seal) != nil {
@@ -295,18 +302,38 @@ func (r *Report) checkSeals(ctx context.Context, s store.Store, chains map[strin
 			continue
 		}
 		r.Seals++
+		seals = append(seals, seal)
+	}
+	return seals, nil
+}
+
+// checkSeals says each seal whose head, on a day still kept, is not in its chain with the
+// seal's hash. On the oldest day kept, a chain whose entries up to the head are all gone was
+// evicted by the count (#6755).
+func (r *Report) checkSeals(seals []Seal, chains map[string][]link, oldest string) {
+	for _, seal := range seals {
 		if seal.Day < oldest {
 			continue
 		}
 		found := linkAt(chains[seal.Chain], seal.Seq)
 		switch {
+		case found == nil && seal.Day == oldest && evicted(chains[seal.Chain], seal.Seq):
 		case found == nil:
 			r.Problems = append(r.Problems, fmt.Sprintf("chain %s: entry %d, its head on %s, was removed", seal.Chain, seal.Seq, seal.Day))
 		case found.hash != seal.Hash:
 			r.Problems = append(r.Problems, fmt.Sprintf("chain %s: entry %d (%s) was changed", seal.Chain, seal.Seq, found.key))
 		}
 	}
-	return nil
+}
+
+// evicted says that no link of links is before place seq.
+func evicted(links []link, seq int64) bool {
+	for i := range links {
+		if links[i].seq < seq {
+			return false
+		}
+	}
+	return true
 }
 
 // linkAt is the link of links at place seq, or nil.

@@ -6,9 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log"
-	"os"
 	"path/filepath"
-	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -39,8 +37,12 @@ import (
 // lockSeenFile keeps lockSeen across a restart.
 const lockSeenFile = "lock-seen.json"
 
-// mostSeen bounds lockSeen: the oldest go first.
+// mostSeen bounds lockSeen: those signed first go first, and the cutoff moves to them.
 const mostSeen = 4096
+
+// lockCutoff is the key in lockSeen of the cutoff: the latest time signed of the IDs that the
+// count took out. A request signed then or before is refused, as its ID may be one of those.
+const lockCutoff = "cutoff"
 
 // controlAsks is what the control plane asks of a machine for itself, unsigned: whether it
 // is there, the Console's and a project's list of sessions, a report's facts, a backup
@@ -330,7 +332,7 @@ func (d *Daemon) takeSigned(c *Client, state *machinelock.State, m message, s wi
 	if !ok {
 		return d.refuse(c, m, "this machine has not joined a control plane")
 	}
-	now := time.Now()
+	now := nowFunc()
 	member, err := machinelock.CheckRequest(state, host, m.Method, m.Params, s, now)
 	if err != nil {
 		return d.refuse(c, m, err.Error())
@@ -338,49 +340,91 @@ func (d *Daemon) takeSigned(c *Client, state *machinelock.State, m message, s wi
 	if member.Client() && !clientSigned[m.Method] || !member.Client() && !machineSigned[m.Method] {
 		return d.refuse(c, m, "that key may not sign "+m.Method)
 	}
-	if !d.seeSigned(machinelock.SignedID(s), s.At, now) {
-		return d.refuse(c, m, machinelock.ErrReplayed.Error())
+	if err := d.seeSigned(machinelock.SignedID(s), s.At, now); err != nil {
+		return d.refuse(c, m, err.Error())
 	}
 	return true
 }
 
-// seeSigned notes a signed request as taken; false when it was taken before.
-func (d *Daemon) seeSigned(id string, at int64, now time.Time) bool {
+// signedSeen is a signed request taken (by machinelock.SignedID), or, at lockCutoff, the cutoff.
+type signedSeen struct {
+	At wire.Date `json:"at"` // when it was taken
+	// Signed is when the request says it was signed, in Unix seconds.
+	Signed int64 `json:"signed"`
+}
+
+// UnmarshalJSON also reads the bare time signed that a build from before #6723 wrote. The store
+// dates such an entry when it next writes.
+func (s *signedSeen) UnmarshalJSON(b []byte) error {
+	if json.Unmarshal(b, &s.Signed) == nil {
+		return nil
+	}
+	type plain signedSeen
+	return json.Unmarshal(b, (*plain)(s))
+}
+
+// openLockSeen opens the signed requests taken. seeSigned, not the store, keeps the count: an ID
+// that goes must move the cutoff in the same write. An ID ages out when CheckRequest has refused
+// its request as stale for a day, so a clock that is set back has that much room.
+func (d *Daemon) openLockSeen() *store.JSONFile[signedSeen] {
+	return smallFile(d, store.Spec{Name: lockSeenFile, Kind: "key-value", Scope: "machine",
+		Bounds: store.Bounds{MaxRecordBytes: 128, MaxCount: mostSeen + 1, MaxAge: 2 * machinelock.RequestLifetime, Action: store.EvictOldest}},
+		func() string { return filepath.Join(d.Store.Loc.Root, lockSeenFile) }, func(s *signedSeen) *wire.Date { return &s.At })
+}
+
+// seeSigned notes a signed request as taken. It refuses one that was taken before, one signed at
+// the cutoff or before it, and one it cannot note.
+func (d *Daemon) seeSigned(id string, at int64, now time.Time) error {
 	d.lockMu.Lock()
 	defer d.lockMu.Unlock()
-	path := filepath.Join(d.Store.Loc.Root, lockSeenFile)
-	if d.lockSeen == nil {
-		d.lockSeen = map[string]int64{}
-		if b, err := os.ReadFile(path); err == nil {
-			if err := json.Unmarshal(b, &d.lockSeen); err != nil {
-				log.Printf("lock check: could not read %s: %v", lockSeenFile, err)
+	if !d.lockSeenRead {
+		if _, err := d.lockSeen.Read(); err != nil {
+			// What was taken is not known: nothing signed until now is taken again.
+			log.Printf("lock: %v; what was signed until now is refused", err)
+			if err := d.lockSeen.Update(func(seen map[string]signedSeen) error {
+				seen[lockCutoff] = signedSeen{At: wire.DateOf(now), Signed: now.Add(machinelock.RequestSkew).Unix()}
+				return nil
+			}); err != nil {
+				return errNotNoted(err)
 			}
 		}
+		d.lockSeenRead = true
 	}
-	if _, seen := d.lockSeen[id]; seen {
-		return false
-	}
-	oldest := now.Add(-machinelock.RequestLifetime).Unix()
-	for k, t := range d.lockSeen {
-		if t < oldest {
-			delete(d.lockSeen, k)
+	var refused error
+	if err := d.lockSeen.Update(func(seen map[string]signedSeen) error {
+		_, taken := seen[id]
+		cutoff, cut := seen[lockCutoff]
+		switch {
+		case taken:
+			refused = machinelock.ErrReplayed
+			return nil
+		case cut && at <= cutoff.Signed:
+			refused = machinelock.ErrStale
+			return nil
 		}
-	}
-	if len(d.lockSeen) >= mostSeen {
-		ids := make([]string, 0, len(d.lockSeen))
-		for k := range d.lockSeen {
-			ids = append(ids, k)
+		delete(seen, lockCutoff)
+		seen[id] = signedSeen{At: wire.DateOf(now), Signed: at}
+		for len(seen) > mostSeen {
+			oldest := ""
+			for k, s := range seen {
+				if oldest == "" || s.Signed < seen[oldest].Signed {
+					oldest = k
+				}
+			}
+			cutoff, cut = signedSeen{At: wire.DateOf(now), Signed: max(cutoff.Signed, seen[oldest].Signed)}, true
+			delete(seen, oldest)
 		}
-		sort.Slice(ids, func(i, j int) bool { return d.lockSeen[ids[i]] < d.lockSeen[ids[j]] })
-		for _, k := range ids[:len(ids)-mostSeen+1] {
-			delete(d.lockSeen, k)
+		if cut {
+			seen[lockCutoff] = cutoff
 		}
+		return nil
+	}); err != nil {
+		return errNotNoted(err)
 	}
-	d.lockSeen[id] = at
-	if b, err := json.Marshal(d.lockSeen); err == nil {
-		if err := store.WriteAtomically(path, b, 0o600); err != nil {
-			log.Printf("lock: the signed requests taken could not be kept: %v", err)
-		}
-	}
-	return true
+	return refused
+}
+
+func errNotNoted(err error) error {
+	log.Printf("lock: the signed requests taken could not be kept: %v", err)
+	return errors.New("the machine could not note the request as taken")
 }

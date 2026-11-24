@@ -199,7 +199,7 @@ func (d *Daemon) stopMachine(agent wire.UUID, args map[string]json.RawMessage) (
 
 // makeMachine is make_machine.
 func (d *Daemon) makeMachine(agent wire.UUID, args map[string]json.RawMessage) (string, error) {
-	since := time.Now()
+	since := nowFunc()
 	given, err := named(args, "provider", "provider")
 	if err != nil {
 		return "", err
@@ -274,7 +274,7 @@ func (d *Daemon) makeMachine(agent wire.UUID, args map[string]json.RawMessage) (
 
 // deleteMachine is delete_machine.
 func (d *Daemon) deleteMachine(agent wire.UUID, args map[string]json.RawMessage) (string, error) {
-	since := time.Now()
+	since := nowFunc()
 	given, err := named(args, "host", "host")
 	if err != nil {
 		return "", err
@@ -454,7 +454,7 @@ func (d *Daemon) agentWho(agent wire.UUID) string {
 // formHoldLimit keeps then (#4261): the call says so, and when the person answers, then
 // runs and its words come to the agent as a prompt. A no, or no answer, never says yes.
 func (d *Daemon) personSaysYes(agent wire.UUID, title, question, yes string, then func(yes bool) (string, error)) (string, error) {
-	return d.personSaysYesSince(time.Now(), agent, title, question, yes, then)
+	return d.personSaysYesSince(nowFunc(), agent, title, question, yes, then)
 }
 
 // personSaysYesSince is personSaysYes for a call that began at since (#4986): the card is held
@@ -481,7 +481,7 @@ func (d *Daemon) personSaysYesSince(since time.Time, agent wire.UUID, title, que
 			log.Printf("agent %s: card answer: %v", agent, err)
 		}
 	}
-	note, answered, err := d.askForm(agent, map[string]json.RawMessage{"title": t, "questions": q}, late, formHoldLimit-time.Since(since))
+	note, answered, err := d.askForm(agent, map[string]json.RawMessage{"title": t, "questions": q}, late, since.Add(formHoldLimit))
 	if err != nil {
 		return "", err
 	}
