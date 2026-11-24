@@ -321,7 +321,9 @@ These stay behind:
 **Forget This Browser**, or the control plane when it forgets the client. The client then
 also deletes what it kept of that control plane (#3670):
 
-- **The Mac window:** its drafts and the start form, and its machine-lock pins.
+- **The Mac window:** its drafts and the start form, its machine-lock pins, its pairing
+  files (including the saved pairing with this Mac's own control plane), its local copy,
+  and its Work cache.
 - **The Remote:** its drafts, its machine-lock pins, the widget's file
   (`attention-snapshot.json`, with its headlines) and the badge, the Live Activity and its
   turns, and every banner it showed.

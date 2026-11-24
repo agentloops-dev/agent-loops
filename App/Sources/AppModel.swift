@@ -3422,7 +3422,7 @@ final class AppModel {
     /// Connect to Another… or Use This Mac Only (#4228): from one control plane straight to
     /// the next, with nothing of the first left dialling.
     func moveControlPlane(to endpoint: ControlConfig.Endpoint) async {
-        leaveControlPlane()
+        await leaveControlPlane()
         controlPlaneMoves += 1
         await adopt(endpoint)
     }
@@ -3430,7 +3430,7 @@ final class AppModel {
     /// Forget This Mac has gone through (#344): the control plane no longer knows this
     /// window, and its pairing is gone from disk. Everything dialled through it stops, and
     /// the window asks how to work again, as at first run.
-    func leaveControlPlane() {
+    func leaveControlPlane(forgetLocalData: Bool = false) async {
         needsFirstRun = true
         reconnecting?.cancel()
         reconnecting = nil
@@ -3453,6 +3453,10 @@ final class AppModel {
         KeptThisMacHost.forget(in: WindowDefaults.store)
         // What was half-typed to that control plane goes too (#3670).
         DraftKeeper.shared.forgetAll()
+        if forgetLocalData {
+            await localCopy?.forget()
+            await workCache?.forget()
+        }
         client = DaemonClient(link: UnreachableLink())
         isConnected = false
     }
