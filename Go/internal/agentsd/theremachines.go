@@ -1,6 +1,7 @@
 package agentsd
 
 import (
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -30,15 +31,7 @@ var notRunningStates = map[string]bool{"offline": true, "failed": true}
 // openStartedThere is the sessions this machine's agents started elsewhere that have not
 // been heard to end.
 func (d *Daemon) openStartedThere() []startedThere {
-	d.elsewhereMu.Lock()
-	defer d.elsewhereMu.Unlock()
-	var out []startedThere
-	for _, s := range d.elsewhereLocked().Started {
-		if s.Ended == nil {
-			out = append(out, s)
-		}
-	}
-	return out
+	return slices.DeleteFunc(d.theres(elsewhereStarted), func(s startedThere) bool { return s.Ended != nil })
 }
 
 // checkThereMachines lists the person's machines again when the last list is older than

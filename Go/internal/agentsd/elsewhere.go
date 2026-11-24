@@ -1,16 +1,19 @@
 package agentsd
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
 	"path/filepath"
-	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/diskjson"
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
@@ -35,28 +38,37 @@ import (
 const (
 	sessionCallMethod  = "machines/sessionCall"
 	sessionEndedMethod = "machines/sessionEnded"
-	// elsewhereKept bounds each list in elsewhere.json, newest kept.
-	elsewhereKept = 200
+	// elsewhereMessageMost and elsewhereNameMost are the most characters kept of an ending's message
+	// and of a title or a name, so that a long one does not refuse its entry.
+	elsewhereMessageMost = 4 << 10
+	elsewhereNameMost    = 512
+	// elsewhereHeardEvery is how often an entry heard of again, with no change, is written (#2977).
+	elsewhereHeardEvery = 24 * time.Hour
 )
 
-type elsewhereBook struct {
-	elsewhereMu     sync.Mutex
-	elsewhereLoaded bool
-	elsewhere       elsewhereFile
-}
+// The lists of elsewhere.json: what an entry's key begins with.
+const (
+	// Sessions agents here started on other machines. One archived there is dropped: it holds
+	// no place.
+	elsewhereStarted = "started"
+	// Who on another machine started a session here.
+	elsewhereFrom = "from"
+	// Sessions of the project on other machines that agents here wait on, not started by them
+	// (#3277); one is dropped once heard to have ended.
+	elsewhereWatched = "watched"
+	// Who on other machines waits on a session here, not its starter (#3277); told once when
+	// it ends.
+	elsewhereWatcher = "watcher"
+)
 
-type elsewhereFile struct {
-	// Started is the sessions agents here started on other machines, oldest first. One
-	// archived there is dropped: it holds no place.
-	Started []startedThere `json:"started"`
-	// From is the sessions here that agents on other machines started.
-	From []startedHere `json:"from"`
-	// Watched is the sessions of the project on other machines that agents here wait on,
-	// not started by them (#3277); one is dropped once heard to have ended.
-	Watched []startedThere `json:"watched,omitempty"`
-	// Watchers is who on other machines waits on a session here, not its starter (#3277);
-	// told once when it ends.
-	Watchers []startedHere `json:"watchers,omitempty"`
+// elsewhereEntry is one entry of elsewhere.json: There in the lists started and watched, Here in
+// from and watcher.
+type elsewhereEntry struct {
+	There *startedThere `json:"there,omitempty"`
+	Here  *startedHere  `json:"here,omitempty"`
+	// Heard is when the two machines last spoke of the session, which the entry ages from, so
+	// one in use stays: each end of a turn and each call by its starter is heard.
+	Heard wire.Date `json:"heard"`
 }
 
 type startedThere struct {
@@ -79,154 +91,192 @@ type startedHere struct {
 
 func (d *Daemon) elsewherePath() string { return filepath.Join(d.Store.Loc.Root, "elsewhere.json") }
 
-func (d *Daemon) elsewhereLocked() *elsewhereFile {
-	if !d.elsewhereLoaded {
-		d.elsewhereLoaded = true
-		readStore(d.elsewherePath(), &d.elsewhere, "sessions started on other machines are not reached from here")
+// openElsewhere opens the record, which evicts the ones heard of the longest ago. It is the
+// small-file type: a few entries, read and written whole.
+func (d *Daemon) openElsewhere() *store.JSONFile[elsewhereEntry] {
+	// The lists this file held before #6722, in use when the host is updated. They are read
+	// first, because Update sets a file in that shape aside.
+	var old struct {
+		Started  []startedThere `json:"started"`
+		From     []startedHere  `json:"from"`
+		Watched  []startedThere `json:"watched"`
+		Watchers []startedHere  `json:"watchers"`
 	}
-	return &d.elsewhere
+	if raw, err := os.ReadFile(d.elsewherePath()); err == nil {
+		_ = diskjson.Unmarshal(raw, &old)
+	}
+	f := smallFile(d, store.Spec{Name: "elsewhere.json", Kind: "key-value", Scope: "person",
+		Bounds: store.Bounds{MaxRecordBytes: 64 << 10, MaxCount: 800, MaxAge: store.MaxAge, Action: store.EvictOldest}},
+		d.elsewherePath, func(e *elsewhereEntry) *wire.Date { return &e.Heard })
+	if len(old.Started)+len(old.From)+len(old.Watched)+len(old.Watchers) == 0 {
+		return f
+	}
+	if err := f.Update(func(m map[string]elsewhereEntry) error {
+		for _, s := range old.Started {
+			putThere(m, elsewhereStarted, s)
+		}
+		for _, s := range old.Watched {
+			putThere(m, elsewhereWatched, s)
+		}
+		for _, h := range old.From {
+			putHere(m, elsewhereFrom, h)
+		}
+		for _, h := range old.Watchers {
+			putHere(m, elsewhereWatcher, h)
+		}
+		return nil
+	}); err != nil {
+		log.Printf("elsewhere: could not carry over the sessions on other machines: %v", err)
+	}
+	return f
 }
 
-func (d *Daemon) saveElsewhereLocked() {
-	f := d.elsewhereLocked()
-	var started []startedThere
-	for _, s := range f.Started {
-		if s.Ended == nil || s.Ended.Archived == nil {
-			started = append(started, s)
-		}
+func thereKey(list string, session, starter wire.UUID) string {
+	return list + "|" + string(session) + "|" + string(starter)
+}
+
+func putThere(m map[string]elsewhereEntry, list string, s startedThere) {
+	s.Title, s.Ended = cut(s.Title, elsewhereNameMost), keptEnding(s.Ended)
+	m[thereKey(list, s.Session, s.Starter)] = elsewhereEntry{There: &s, Heard: now()}
+}
+
+func putHere(m map[string]elsewhereEntry, list string, h startedHere) {
+	h.From.Who = cut(h.From.Who, elsewhereNameMost)
+	key := list + "|" + string(h.Session)
+	if list == elsewhereWatcher {
+		key += "|" + string(h.From.Agent) + "|" + strings.ToLower(h.From.Machine)
 	}
-	var from []startedHere
-	for _, h := range f.From {
-		if d.Store.Agent(h.Session) != nil {
-			from = append(from, h)
-		}
+	m[key] = elsewhereEntry{Here: &h, Heard: now()}
+}
+
+// keptEnding is an ending with its message cut to what an entry keeps.
+func keptEnding(how *wire.WaitEndingHow) *wire.WaitEndingHow {
+	if how == nil || how.Finished == nil || how.Finished.Message == nil || len(*how.Finished.Message) <= elsewhereMessageMost {
+		return how
 	}
-	var watched []startedThere
-	for _, s := range f.Watched {
-		if s.Ended == nil {
-			watched = append(watched, s)
-		}
-	}
-	var watchers []startedHere
-	for _, h := range f.Watchers {
-		if d.Store.Agent(h.Session) != nil {
-			watchers = append(watchers, h)
-		}
-	}
-	f.Started, f.From = started[max(0, len(started)-elsewhereKept):], from[max(0, len(from)-elsewhereKept):]
-	f.Watched, f.Watchers = watched[max(0, len(watched)-elsewhereKept):], watchers[max(0, len(watchers)-elsewhereKept):]
-	err := writeStore(d.elsewherePath(), elsewhereFile{Started: append([]startedThere{}, f.Started...), From: append([]startedHere{}, f.From...),
-		Watched: append([]startedThere{}, f.Watched...), Watchers: append([]startedHere{}, f.Watchers...)})
+	finished := *how.Finished
+	finished.Message = new(cut(*finished.Message, elsewhereMessageMost))
+	return &wire.WaitEndingHow{Finished: &finished}
+}
+
+// readElsewhereFile is the entries of one list, the oldest first.
+func (d *Daemon) readElsewhereFile(list string) []elsewhereEntry {
+	entries, err := d.elsewhere.Read()
 	if err != nil {
+		log.Printf("elsewhere: could not read %s: %v", d.elsewherePath(), err)
+	}
+	var out []elsewhereEntry
+	for key, e := range entries {
+		// An entry with neither half is not one this host wrote.
+		if name, _, _ := strings.Cut(key, "|"); name == list && (e.There != nil || e.Here != nil) {
+			out = append(out, e)
+		}
+	}
+	slices.SortFunc(out, func(a, b elsewhereEntry) int {
+		if a.There != nil && b.There != nil {
+			return cmp.Or(cmp.Compare(a.There.At, b.There.At), cmp.Compare(a.There.Session, b.There.Session))
+		}
+		return cmp.Compare(a.Heard, b.Heard)
+	})
+	return out
+}
+
+// updateElsewhere changes the entries, then drops those of sessions that are over.
+func (d *Daemon) updateElsewhere(change func(map[string]elsewhereEntry)) {
+	if err := d.elsewhere.Update(func(m map[string]elsewhereEntry) error {
+		change(m)
+		for key, e := range m {
+			over := e.There != nil && e.There.Ended != nil &&
+				(e.There.Ended.Archived != nil || strings.HasPrefix(key, elsewhereWatched+"|"))
+			if over || e.Here != nil && d.Store.Agent(e.Here.Session) == nil {
+				delete(m, key)
+			}
+		}
+		return nil
+	}); err != nil {
 		log.Printf("elsewhere: could not keep %s: %v", d.elsewherePath(), err)
+	}
+}
+
+// heardAgain dates an entry that was heard of again, if it is time to write that.
+func heardAgain(m map[string]elsewhereEntry, key string) {
+	if e, ok := m[key]; ok && now().Time().Sub(e.Heard.Time()) >= elsewhereHeardEvery {
+		e.Heard = now()
+		m[key] = e
 	}
 }
 
 // noteWatched keeps a session of the project on another machine that an agent here waits
 // on (#3277), once per waiter.
 func (d *Daemon) noteWatched(s startedThere) {
-	d.elsewhereMu.Lock()
-	defer d.elsewhereMu.Unlock()
-	f := d.elsewhereLocked()
-	for _, w := range f.Watched {
-		if w.Session == s.Session && w.Starter == s.Starter {
-			return
-		}
-	}
-	f.Watched = append(f.Watched, s)
-	d.saveElsewhereLocked()
+	d.updateElsewhere(func(m map[string]elsewhereEntry) { putThere(m, elsewhereWatched, s) })
 }
 
 // noteWatcher keeps who on another machine waits on a session here (#3277), once each.
 func (d *Daemon) noteWatcher(id wire.UUID, from wire.StartedFrom) {
-	d.elsewhereMu.Lock()
-	defer d.elsewhereMu.Unlock()
-	f := d.elsewhereLocked()
-	for _, h := range f.Watchers {
-		if h.Session == id && h.From.Agent == from.Agent && strings.EqualFold(h.From.Machine, from.Machine) {
-			return
-		}
-	}
-	f.Watchers = append(f.Watchers, startedHere{Session: id, From: from})
-	d.saveElsewhereLocked()
+	d.updateElsewhere(func(m map[string]elsewhereEntry) {
+		putHere(m, elsewhereWatcher, startedHere{Session: id, From: from})
+	})
 }
 
 // takeWatchers is who on other machines waits on a session here, each told only once.
 func (d *Daemon) takeWatchers(id wire.UUID) []wire.StartedFrom {
-	d.elsewhereMu.Lock()
-	defer d.elsewhereMu.Unlock()
-	f := d.elsewhereLocked()
 	var out []wire.StartedFrom
-	var kept []startedHere
-	for _, h := range f.Watchers {
-		if h.Session == id {
-			out = append(out, h.From)
-		} else {
-			kept = append(kept, h)
+	d.updateElsewhere(func(m map[string]elsewhereEntry) {
+		for key, e := range m {
+			if e.Here != nil && strings.HasPrefix(key, elsewhereWatcher+"|"+string(id)+"|") {
+				out = append(out, e.Here.From)
+				delete(m, key)
+			}
 		}
-	}
-	if len(out) > 0 {
-		f.Watchers = kept
-		d.saveElsewhereLocked()
-	}
+	})
 	return out
 }
 
 // noteStartedThere keeps a session an agent here started on another machine.
 func (d *Daemon) noteStartedThere(s startedThere) {
-	d.elsewhereMu.Lock()
-	defer d.elsewhereMu.Unlock()
-	f := d.elsewhereLocked()
-	f.Started = append(f.Started, s)
-	d.saveElsewhereLocked()
+	d.updateElsewhere(func(m map[string]elsewhereEntry) { putThere(m, elsewhereStarted, s) })
 }
 
 // noteStartedHere keeps who on another machine started a session here.
 func (d *Daemon) noteStartedHere(id wire.UUID, from wire.StartedFrom) {
-	d.elsewhereMu.Lock()
-	defer d.elsewhereMu.Unlock()
-	f := d.elsewhereLocked()
-	f.From = append(f.From, startedHere{Session: id, From: from})
-	d.saveElsewhereLocked()
+	d.updateElsewhere(func(m map[string]elsewhereEntry) { putHere(m, elsewhereFrom, startedHere{Session: id, From: from}) })
+}
+
+// heardFromStarter says the machine that started a session here spoke of it, or was told of it.
+func (d *Daemon) heardFromStarter(id wire.UUID) {
+	d.updateElsewhere(func(m map[string]elsewhereEntry) { heardAgain(m, elsewhereFrom+"|"+string(id)) })
 }
 
 // startedFromOf is who on another machine started a session here, or nil.
 func (d *Daemon) startedFromOf(id wire.UUID) *wire.StartedFrom {
-	d.elsewhereMu.Lock()
-	defer d.elsewhereMu.Unlock()
-	for _, h := range d.elsewhereLocked().From {
-		if h.Session == id {
-			from := h.From
-			return &from
+	for _, e := range d.readElsewhereFile(elsewhereFrom) {
+		if e.Here != nil && e.Here.Session == id {
+			return &e.Here.From
 		}
 	}
 	return nil
 }
 
-// startedThereBy is the sessions starter started on other machines.
-func (d *Daemon) startedThereBy(starter wire.UUID) []startedThere {
-	d.elsewhereMu.Lock()
-	defer d.elsewhereMu.Unlock()
+// theres is the sessions on other machines in one list, the oldest first.
+func (d *Daemon) theres(list string) []startedThere {
 	var out []startedThere
-	for _, s := range d.elsewhereLocked().Started {
-		if s.Starter == starter {
-			out = append(out, s)
+	for _, e := range d.readElsewhereFile(list) {
+		if e.There != nil {
+			out = append(out, *e.There)
 		}
 	}
 	return out
 }
 
+// startedThereBy is the sessions starter started on other machines.
+func (d *Daemon) startedThereBy(starter wire.UUID) []startedThere {
+	return slices.DeleteFunc(d.theres(elsewhereStarted), func(s startedThere) bool { return s.Starter != starter })
+}
+
 // watchedBy is the sessions of the project on other machines that waiter waits on (#3277).
 func (d *Daemon) watchedBy(waiter wire.UUID) []startedThere {
-	d.elsewhereMu.Lock()
-	defer d.elsewhereMu.Unlock()
-	var out []startedThere
-	for _, s := range d.elsewhereLocked().Watched {
-		if s.Starter == waiter {
-			out = append(out, s)
-		}
-	}
-	return out
+	return slices.DeleteFunc(d.theres(elsewhereWatched), func(s startedThere) bool { return s.Starter != waiter })
 }
 
 // thereNamed is the session on another machine value names, by id or exact title, of the
@@ -250,37 +300,25 @@ func (d *Daemon) thereNamed(starter wire.UUID, value string) *startedThere {
 
 // heardThere is what the session's machine said of it: its title, and how it ended, nil
 // while it goes on. An archived one is dropped, and the waits on an ended one close.
-// elsewhere.json is written only when what was heard changes a record (#2977): a status
-// probe of a session that goes on as before costs no write.
+// elsewhere.json is written only when what was heard changes a record (#2977), or once a day to
+// say it was heard: a status probe of a session that goes on as before costs no write.
 func (d *Daemon) heardThere(session wire.UUID, machine, title string, ended *wire.WaitEndingHow) {
-	d.elsewhereMu.Lock()
-	f := d.elsewhereLocked()
-	changed := false
-	var records []*startedThere
-	for i := range f.Started {
-		records = append(records, &f.Started[i])
-	}
-	for i := range f.Watched {
-		records = append(records, &f.Watched[i])
-	}
-	for _, s := range records {
-		if s.Session != session {
-			continue
+	d.updateElsewhere(func(m map[string]elsewhereEntry) {
+		for key, e := range m {
+			s := e.There
+			if s == nil || s.Session != session {
+				continue
+			}
+			if machine != "" {
+				s.Machine = machine
+			}
+			if title != "" {
+				s.Title = cut(title, elsewhereNameMost)
+			}
+			s.Ended = keptEnding(ended)
+			heardAgain(m, key)
 		}
-		if machine != "" && s.Machine != machine {
-			s.Machine, changed = machine, true
-		}
-		if title != "" && s.Title != title {
-			s.Title, changed = title, true
-		}
-		if !reflect.DeepEqual(s.Ended, ended) {
-			s.Ended, changed = ended, true
-		}
-	}
-	if changed {
-		d.saveElsewhereLocked()
-	}
-	d.elsewhereMu.Unlock()
+	})
 	if ended != nil {
 		d.closeWaits(session, *ended)
 	}
@@ -290,10 +328,8 @@ func (d *Daemon) heardThere(session wire.UUID, machine, title string, ended *wir
 // records helpersIn can count: running until heard to have ended, and not while their
 // machine was last listed as offline (#5976).
 func (d *Daemon) thereAgents(folder string) []wire.Agent {
-	d.elsewhereMu.Lock()
-	defer d.elsewhereMu.Unlock()
 	var out []wire.Agent
-	for _, s := range d.elsewhereLocked().Started {
+	for _, s := range d.theres(elsewhereStarted) {
 		if s.Folder != folder {
 			continue
 		}
@@ -501,6 +537,7 @@ func (d *Daemon) tellStarter(id wire.UUID, how wire.WaitEndingHow) {
 	// And those of the project on other machines that wait on it (#3277).
 	tell := d.takeWatchers(id)
 	if from := d.startedFromOf(id); from != nil {
+		d.heardFromStarter(id)
 		tell = append(tell, *from)
 	}
 	var title *string
@@ -528,6 +565,9 @@ func (d *Daemon) fromStarter(r wire.SessionCall) (wire.SessionCallReply, error) 
 	member := !starter && t != nil && r.Project != nil && *r.Project != "" && projectOfFolder(folderPath(t)) == *r.Project
 	if !starter && !member {
 		return reply, &Error{Code: wire.FailureNotYours, Message: "Nothing was done: you did not start that session, or it is not there any more."}
+	}
+	if starter {
+		d.heardFromStarter(t.ID)
 	}
 	if member && (r.Op == "stop" || r.Op == "archive") {
 		return reply, &Error{Code: wire.FailureNotYours, Message: "Nothing changed: you did not start that session. " +
