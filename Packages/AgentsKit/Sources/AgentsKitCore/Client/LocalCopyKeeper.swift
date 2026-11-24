@@ -15,6 +15,8 @@ public final class LocalCopyKeeper {
     public let prefetched = OpeningPrefetch()
     private weak var work: AgentsModel?
     private var pending: [MachineRef: Task<Void, Never>] = [:]
+    /// The machines the control plane last listed; nil before it answers.
+    private var listed: Set<MachineRef>?
     /// How long after a host's last list its machine is written.
     public var writeAfter: Duration = .seconds(1)
 
@@ -29,7 +31,22 @@ public final class LocalCopyKeeper {
     public func drawMachines() async {
         let machines = await copy.machinesRead()
         guard let work else { return }
-        for (machine, at) in machines { work.takeCopy(machine, readAt: at) }
+        for (machine, at) in machines where listed?.contains(machine.host) ?? true { work.takeCopy(machine, readAt: at) }
+    }
+
+    /// The control plane listed its machines: one kept that it no longer lists is gone (#6789), from the copy and from
+    /// what was drawn from it. This Mac's own (`.mac`) is the client's to say, not the list's.
+    public func listed(machines: some Sequence<MachineRef>) {
+        let hosts = Set(machines).union([.mac])
+        listed = hosts
+        if let work {
+            for host in work.drawnFromCopy.subtracting(hosts) {
+                work.replaceFolders([], from: host)
+                work.replaceAgents([], from: host)
+            }
+        }
+        let copy = copy
+        Task { await copy.dropMachines(except: hosts) }
     }
 
     /// The chat being opened, drawn from the copy while its host's page is on its way.
@@ -76,6 +93,8 @@ public final class LocalCopyKeeper {
             try? await Task.sleep(for: wait)
             guard !Task.isCancelled, let self, let work = self.work else { return }
             self.pending[host] = nil
+            // Its folders came and its sessions are still the copy's: they are not written back as read now.
+            guard !work.drawnFromCopy.contains(host) else { return }
             let machine = LocalCopy.Machine(host: host, folders: work.folders.filter { $0.host == host },
                                             agents: work.agents.filter { $0.host == host },
                                             point: work.listPoint(of: host))

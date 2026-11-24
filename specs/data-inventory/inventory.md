@@ -393,7 +393,7 @@ newer than a row above for the same store.
 | `<root>/repo-aliases.json` | key-value | Repo renames | 1,000 renames of 2 KiB each, 90 days, the oldest first | `Go/internal/agentsd/repoaliases.go` (`openRepoAliases`) | #6716 |
 | `<root>/release-tags.json` | log | Linked release tags | 5,000 tags of 1 KiB; 90 days | `Go/internal/agentsd/lineagerelease.go` | #6717 |
 | `<root>/requests/<id>.json` | document | Open questions and forms | Ended ones 14 days, 1,000 files; an open one has no age | `Go/internal/agentsd/requests.go:27-28` | #6718 |
-| `<root>/lineage-deploys.json` | log | Each deploy's last event | 1,000, no age | `Go/internal/agentsd/lineagedeploy.go:42,237-244` | #6719 |
+| `<root>/lineage-deploys.json` | key-value | Each deploy's last event | 1,000 deploys of 16 KiB each, 90 days from the last event, the oldest first | `Go/internal/agentsd/lineagedeploy.go` (`openDeploys`) | #6719 |
 | `<root>/account-ops.json` | log | Last operation of each account and secret | 500 and 500, no age | `Go/internal/agentsd/accountops.go:27` | #6720 |
 | `<root>/secret-ops-pending.json` | log | Secret audit entries not yet sent | 1,000, no age | `Go/internal/agentsd/secretops.go:54,131,226-230` | #6721 |
 | `<root>/elsewhere.json` | document | Sessions on other machines | 200 a list, no age | `Go/internal/agentsd/elsewhere.go:39` | #6722 |
@@ -465,8 +465,8 @@ newer than a row above for the same store.
 | `control.log` (`~/Library/Logs/Agents/control.log` or `/data/control.log`) | log | Operational log lines | 4 MB and one older file | — | #6901 |
 | Mac `<cache>/work-cache.sqlite` | cache | Work cache: forge items, bodies, comments, page answers | 200 MiB (Remote: 50 MiB), least recently drawn out first; 4 MiB a record; 90 days (#6788) | `Packages/AgentsKit/Sources/AgentsKitCore/Client/WorkCache.swift` (`Bounds`) | #6788 |
 | Web IndexedDB `agents` › `work` | cache | Work cache: forge items, bodies, comments, page answers | 50 MiB, least recently drawn out first; 4 MiB a record; 90 days (#6976) | `Web/src/model/workCache.ts` (`webBounds`) | #6976 |
-| Mac `<cache>/copy/` (local copy) | cache | Machines, folders, records, the ends of 20 chats | 200 MiB, 20 chats, 200 archived records a machine; machines never dropped; no age | `Packages/AgentsKit/Sources/AgentsKitCore/Client/LocalCopy.swift:13-20,165-179` | #6789 |
-| Remote `Caches/copy/` (local copy) | cache | As the Mac's local copy | 50 MiB, 20 chats; no age | `Packages/AgentsKit/Sources/AgentsKitCore/Client/LocalCopy.swift:14,80` | #6790 |
+| Mac `<cache>/copy/` (local copy) | cache | Machines, folders, records, the ends of 20 chats | 200 MiB, 20 chats, 200 archived records a machine; 16 MiB a record; 90 days; a machine no longer listed is dropped (#6789) | `Packages/AgentsKit/Sources/AgentsKitCore/Client/LocalCopy.swift` | #6789 |
+| Remote `Caches/copy/` (local copy) | cache | As the Mac's local copy | 50 MiB, 20 chats; 16 MiB a record; 90 days; a machine no longer listed is dropped (#6789) | `Packages/AgentsKit/Sources/AgentsKitCore/Client/LocalCopy.swift` | #6790 |
 | Web IndexedDB `agents` › `copy` | cache | As the Mac's local copy, and Work groups | 50 MiB; Work groups by count; no age | `Web/src/model/localCopy.ts:13-17,92-120` | #6792 |
 | Web `localStorage` `agents.drafts` | document | Drafts | The newest 40, attachments under 256 KiB; no age (the Mac and Remote keep 30 days) | `Web/src/model/drafts.ts:10-14` | #6793 |
 | Mac and Remote defaults `draft.*` | document | Drafts | 512 KiB a draft and 30 days, but no count of drafts | `Packages/AgentsKit/Sources/AgentsKitCore/Model/DraftStore.swift:22-29` | #6794 |

@@ -49,7 +49,7 @@ struct LocalCopyTests {
         let model = AgentsModel()
         let keeper = LocalCopyKeeper(copy: LocalCopy(folder: folder(), cap: LocalCopy.macCap), work: model)
         defer { Task { await keeper.forget() } }
-        let older = Date(timeIntervalSince1970: 1_794_000_000)
+        let older = Date(timeIntervalSince1970: Date().timeIntervalSince1970.rounded() - 3600)
         let newer = older.addingTimeInterval(600)
         await keeper.copy.keep(LocalCopy.Machine(host: devbox, folders: [summary()], agents: [agent("a")]), readAt: older)
         await keeper.copy.keep(LocalCopy.Machine(host: .mac, folders: [summary()], agents: [agent("b")]), readAt: newer)
@@ -97,6 +97,125 @@ struct LocalCopyTests {
         await copy.keep(LocalCopy.Transcript(session: session, turns: TurnsPage(turns: [], firstTurn: 0, openStart: 0),
                                              page: page(3)))
         #expect(await copy.transcript(of: session) == nil)
+    }
+
+    private func transcript(_ session: UUID, _ count: Int = 3) -> LocalCopy.Transcript {
+        LocalCopy.Transcript(session: session, turns: TurnsPage(turns: [], firstTurn: 0, openStart: 0), page: page(count))
+    }
+
+    private let day: TimeInterval = 24 * 60 * 60
+
+    /// #6789: each kind of record goes 90 days after it was read from its host.
+    @Test func everyRecordAgesOutAt90Days() async {
+        let clock = CopyClock()
+        let copy = LocalCopy(folder: folder(), cap: LocalCopy.macCap, now: { clock.now })
+        defer { Task { await copy.forget() } }
+        let (session, began) = (UUID(), clock.now)
+        await copy.keep(LocalCopy.Machine(host: devbox, folders: [summary()], agents: []))
+        await copy.keep(transcript(session))
+        await copy.keepWork(Data([1]), .image, "url")
+        clock.move(90 * day)
+        await copy.sweep()
+        #expect(await copy.stats().count == 3, "90 days is kept")
+        #expect(await copy.stats().oldest == began)
+        clock.move(1)
+        // Before a sweep, and after it.
+        #expect(await copy.allMachines().isEmpty)
+        #expect(await copy.transcript(of: session) == nil)
+        #expect(await copy.work(Data.self, .image, "url") == nil)
+        #expect(await copy.stats().count == 3)
+        await copy.sweep()
+        #expect(await copy.stats() == CacheStats(count: 0, bytes: 0, oldest: nil))
+    }
+
+    @Test func aWriteAgesOldRecordsOut() async {
+        let clock = CopyClock()
+        let copy = LocalCopy(folder: folder(), cap: LocalCopy.macCap, now: { clock.now })
+        defer { Task { await copy.forget() } }
+        await copy.keep(transcript(UUID()))
+        clock.move(91 * day)
+        await copy.keep(LocalCopy.Machine(host: devbox, folders: [summary()], agents: []))
+        #expect(await copy.stats().count == 1)
+        #expect(await copy.stats().oldest == clock.now)
+    }
+
+    @Test func noAgeIsOver90Days() async {
+        #expect(await LocalCopy(folder: folder(), cap: 1, age: 400 * day).age == 90 * day)
+        #expect(await LocalCopy.remote().age == 90 * day)
+    }
+
+    @Test func aRecordOverTheLargestIsCutOrNotKept() async {
+        let copy = LocalCopy(folder: folder(), cap: LocalCopy.macCap, recordCap: 4096)
+        defer { Task { await copy.forget() } }
+        let session = UUID()
+        await copy.keep(transcript(session, 200))
+        let kept = await copy.transcript(of: session)
+        #expect(kept?.page.entries.last?.text == "e199")
+        #expect((1 ..< 200).contains(kept?.page.entries.count ?? 0))
+        #expect(kept.map { $0.page.firstIndex + $0.page.entries.count } == 200)
+
+        await copy.keepWork(Data([1]), .image, "url")
+        await copy.keepWork(Data(count: 8192), .image, "url")
+        #expect(await copy.work(Data.self, .image, "url") == nil)
+
+        let live = agent("live")
+        await copy.keep(LocalCopy.Machine(host: devbox, folders: [], agents: [live] + (0 ..< 50).map { agent("old \($0)", state: .archived) }))
+        #expect(await copy.allMachines().first?.agents.map(\.id) == [live.id])
+        await copy.keep(LocalCopy.Machine(host: devbox, folders: [], agents: (0 ..< 50).map { agent("live \($0)") }))
+        #expect(await copy.allMachines().isEmpty)
+    }
+
+    @Test func overTheCapTheOldestMachineGoesLast() async {
+        let copy = LocalCopy(folder: folder(), cap: 1)
+        defer { Task { await copy.forget() } }
+        await copy.keep(LocalCopy.Machine(host: devbox, folders: [summary()], agents: []))
+        #expect(await copy.stats().count == 0)
+    }
+
+    /// A machine the control plane no longer lists goes, with its sessions' chats; This Mac stays.
+    @Test func aMachineThatIsGoneIsDropped() async throws {
+        let model = AgentsModel()
+        let keeper = LocalCopyKeeper(copy: LocalCopy(folder: folder(), cap: LocalCopy.macCap), work: model)
+        defer { Task { await keeper.forget() } }
+        keeper.writeAfter = .milliseconds(10)
+        let (gone, stays) = (agent("gone"), agent("stays"))
+        let other = MachineRef(rawValue: "devbox02")
+        for (host, one) in [(devbox, gone), (other, stays), (.mac, agent("mac"))] {
+            await keeper.copy.keep(LocalCopy.Machine(host: host, folders: [summary()], agents: [one]))
+            await keeper.copy.keep(transcript(one.id))
+        }
+        await keeper.drawMachines()
+        keeper.listed(machines: [other])
+        #expect(model.agent(gone.id) == nil)
+        #expect(!model.holdsFolders(of: devbox))
+        #expect(model.agent(stays.id) != nil)
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(Set(await keeper.copy.allMachines().map(\.host)) == [other, .mac])
+        #expect(await keeper.copy.transcript(of: gone.id) == nil)
+        #expect(await keeper.copy.transcript(of: stays.id) != nil)
+    }
+
+    /// A host let go of while the window is open lists nothing: its file goes.
+    @Test func aMachineThatListsNothingIsNotKept() async {
+        let copy = LocalCopy(folder: folder(), cap: LocalCopy.macCap)
+        defer { Task { await copy.forget() } }
+        await copy.keep(LocalCopy.Machine(host: devbox, folders: [summary()], agents: []))
+        await copy.keep(LocalCopy.Machine(host: devbox, folders: [], agents: []))
+        #expect(await copy.stats().count == 0)
+    }
+
+    /// Folders that land before the sessions do not make the copy's sessions newer.
+    @Test func whatTheCopyDrewIsNotWrittenBack() async throws {
+        let model = AgentsModel()
+        let keeper = LocalCopyKeeper(copy: LocalCopy(folder: folder(), cap: LocalCopy.macCap), work: model)
+        defer { Task { await keeper.forget() } }
+        keeper.writeAfter = .milliseconds(10)
+        let read = Date(timeIntervalSince1970: Date().timeIntervalSince1970.rounded() - 3600)
+        await keeper.copy.keep(LocalCopy.Machine(host: devbox, folders: [summary()], agents: [agent("one")]), readAt: read)
+        await keeper.drawMachines()
+        model.replaceFolders([summary()], from: devbox)
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(await keeper.copy.machinesRead().first?.at == read)
     }
 
     @Test func refsAreTheWebPagesAndNameAFile() {
@@ -204,4 +323,12 @@ struct LocalCopyTests {
         let kept = await keeper.copy.transcript(of: session)
         #expect(kept?.page.entries.compactMap(\.text) == ["e0", "e1", "added"])
     }
+}
+
+/// A clock the tests move.
+private final class CopyClock: @unchecked Sendable {
+    private let lock = NSLock()
+    private var at = Date(timeIntervalSince1970: 1_800_000_000)
+    var now: Date { lock.withLock { at } }
+    func move(_ seconds: TimeInterval) { lock.withLock { at += seconds } }
 }
