@@ -44,7 +44,7 @@ Mac.
 | `turns/<id>.jsonl`, in the cache folder | cache | A summary of each turn. | Only the turns of the transcript kept, with the agent. Deleted when its transcript loses lines, and made again from it when it is missing. | With the transcript |
 | `erasures.json` | document | Runtime copies of deleted agents still to erase | 1,000 entries, 3 tries, 7 days | On write |
 | `erased.json` | document | Every agent deleted here | 10,000 IDs of 128 bytes each, for 90 days; the oldest goes first (#6715) | Hourly, and on write: age, and the count when it is twice over |
-| `elsewhere.json` | document | Sessions started on or from other machines | 200 a list | On write |
+| `elsewhere.json` | key-value | Sessions started on or from other machines | 800 entries of 64 KiB each, for 90 days from when the two machines last spoke of the session, so one in use stays; the one heard of the longest ago goes first | Hourly, and on write: age, and the count when it is twice over |
 | `requests/<id>.json` | document | Open questions and forms | Ended ones 14 days; 1,000 files. An open one has no age (#6718). | On write |
 | `archived-summaries.json`, in the cache folder | cache | An index of the archived agents | With the agents. Made again when it is missing. | On write |
 | `revisions.json` | log | Which records changed and went | 2,000 removals, 7 days | On write |
@@ -79,7 +79,7 @@ Mac.
 | `workflows.json`: runs | log | Workflow runs | 7 days, unless its agent still works | At start, when a run ends, and hourly (#3649) |
 | `workflows.json`: states | key-value | A state for each folder and workflow ever seen | 30 days after its workflow file goes (#3652) | Hourly, and the app's **Remove** |
 | `workflow-copies/` | key-value | The approved text of each workflow and its skills | The copies that the states name; an older version goes when one is saved | On write |
-| `assessments/` | document | Each runtime assessment's start, score and scope | The newest 50 | When one starts |
+| `assessments/` | document | Each runtime assessment's start, score and scope | 90 days from its start, and the newest 50; the oldest goes first. 256 KiB a file: a larger start or score is refused, and a longer scope file is cut (#6724) | Hourly, and when an assessment starts or is scored |
 | `mcp-events.json` | key-value | MCP event IDs already seen | 2,000 IDs, 7 days | On write |
 | `mcp-views/` | cache | View catalogues | Pruned to the live servers | On write |
 | `mcp-approvals.json`, `plugin-approvals.json` | key-value | Digests of approved MCP servers and plugins | The folders that exist: a folder that is not on disk and not in the app goes (#3652) | Hourly; MCP also on remove |
