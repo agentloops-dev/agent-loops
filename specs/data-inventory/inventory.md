@@ -276,7 +276,7 @@ Sessions are signed cookies (30 days); the server keeps nothing for them.
 |---|---|---|
 | `~/Library/Application Support/Agents Control/` | `store/`, `tls/`, `secrets-key`, `apns.p8`, `web.json`, `control-key` (scratch) | fixed |
 | `…/Agents Control/store-before-<…>` | A whole old store, set aside on a store switch or a move back (`Host/…/HostModel.swift:561,791`) | **none; never pruned.** Each holds the audit, sealed secrets and server backups. |
-| Keychain `com.alexecollins.agentshost` | `control-key`, `bucket-keys`, `control-key-before-<unix>` | **`control-key-before-*` is added on each move back and never deleted** |
+| Keychain `com.alexecollins.agentshost` | `control-key`, `bucket-keys`, `control-key-before-<unix>` | `control-key-before-*`: the newest 2; 90 days once no `store-before-*` folder is left (#6770) |
 | `~/Library/Logs/Agents/control.log` | Control plane log | 4 MB + 1 older, 7 days (`rolllog/rolllog.go`, #6901) |
 | Web Push VAPID key (`AGENTS_WEBPUSH_KEY_FILE`) | Push signing key | 1. **Not in `agents-control backup`**, so a restore breaks browser push. |
 
@@ -446,7 +446,7 @@ newer than a row above for the same store.
 | `v1/read/tokens/` | secret | Read token hashes, revoked ones too | 50, 8 KiB when made; live until revoked, then 90 days | `Go/internal/controlplane/readapi.go` (`sweep`) | #6767 |
 | `v1/lineage/<host>.json` | graph | Lineage node cost | 5,000 nodes of 64 KiB, 32 MiB and 90 days a machine, on write and hourly | `Go/internal/controlplane/lineagecost.go` (`boundLineage`, `sweepLineage`) | #6768 |
 | `Agents Control/store-before-*` (Mac) | blob | Whole old stores | The newest 2, of any size, no age | `Host/Sources/HostModel.swift:567,584` | #6769 |
-| Keychain `control-key-before-*` (Mac) | secret | Old control keys | The newest 2, no age | `Host/Sources/ControlKey.swift:51,63-83` | #6770 |
+| Keychain `control-key-before-*` (Mac) | secret | Old control keys | The newest 2, 32 bytes each; 90 days, on write and hourly, but held while a `store-before-*` folder is left (#6769); evict | `Host/Sources/ControlKey.swift` (`pruneKeysAside`), `StoresAside.expiredKeys` | #6770 |
 | `v1/control.json` | key-value | Control plane settings | 64 KiB, else a person's change is refused. Stays in the control plane's store (Alex, 2026-11-24) | `Go/internal/controlplane/records/fits.go` | #6771 |
 | `v1/policy.json`, `v1/policy.sig` | key-value | The org policy | 64 KiB and 1 KiB, else refused; the kill switch never is. Stays in the control plane's store (Alex, 2026-11-24) | `Go/internal/controlplane/policy.go` (`nextPolicy`) | #6772 |
 | `v1/signin.json` | key-value | Sign-in providers that are on | 16 KiB, else refused. Stays in the control plane's store (Alex, 2026-11-24) | `Go/internal/controlplane/signin.go` | #6773 |

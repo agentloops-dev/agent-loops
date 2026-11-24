@@ -8,6 +8,8 @@ public enum StoresAside {
     public static let kept = 2
     public static let folderPrefix = "store-before-"
     public static let keyPrefix = "control-key-before-"
+    /// The most age of a key no kept store needs (#6770).
+    public static let keyAge: TimeInterval = 90 * 86_400
 
     /// When `name` was set aside, from its name: `store-before-<seconds>` (a switch),
     /// `store-before-<yyyy-mm-dd>-<seconds % 100000>` (a move back) or
@@ -36,6 +38,18 @@ public enum StoresAside {
         let dated = names.compactMap { name in time(of: name).map { (name, $0) } }
             .sorted { $0.1 != $1.1 ? $0.1 > $1.1 : $0.0 > $1.0 }
         return dated.dropFirst(keep).reversed().map(\.0)
+    }
+
+    /// The keys among `names` to delete: those past the newest `keep`, and those at 90 days
+    /// or older (#6770). A key's age waits while any store set aside is left, whatever its
+    /// name's time: a store can be put back only with its key, and no name pairs the two.
+    /// `stores` is nil when the stores could not be read, and then they may be there.
+    public static func expiredKeys(_ names: [String], stores: [String]?, now: Date = Date(), keep: Int = kept) -> [String] {
+        let keys = names.filter { $0.hasPrefix(keyPrefix) }
+        let past = beyond(keys, keep: keep)
+        guard let stores, !stores.contains(where: { $0.hasPrefix(folderPrefix) }) else { return past }
+        let aged = keys.filter { key in time(of: key).map { now.timeIntervalSince($0) >= keyAge } ?? false }
+        return past + aged.filter { !past.contains($0) }
     }
 
     /// Deletes the `store-before-*` folders in `home` past the newest `keep`. Answers the

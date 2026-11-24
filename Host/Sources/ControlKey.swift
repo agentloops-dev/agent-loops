@@ -60,12 +60,14 @@ enum HostSecrets {
         pruneKeysAside(paths)
     }
 
-    /// Deletes the `control-key-before-*` keys past the newest 2, as their stores go (#3671):
-    /// a move back needs only the last one. A scratch set-up's are files in its own root.
+    // store-bounds: kind=secret; count=2; age=90d; action=evict; record=32B; applied=on write and hourly, the age after the last store-before-* folder goes
+    /// Deletes the `control-key-before-*` keys past the newest 2 (#3671), and, once no
+    /// `store-before-*` folder is left that may need one, those at 90 days (#6770). A scratch
+    /// set-up's are files in its own root. On write and hourly (`HostModel`).
     static func pruneKeysAside(_ paths: HostPaths) {
+        let home = try? FileManager.default.contentsOfDirectory(atPath: paths.controlHome.path)
         if paths.scratch {
-            let names = (try? FileManager.default.contentsOfDirectory(atPath: paths.controlHome.path)) ?? []
-            for name in StoresAside.beyond(names.filter { $0.hasPrefix(StoresAside.keyPrefix) }) {
+            for name in StoresAside.expiredKeys(home ?? [], stores: home) {
                 try? FileManager.default.removeItem(at: paths.controlHome.appendingPathComponent(name))
             }
             return
@@ -76,7 +78,7 @@ enum HostSecrets {
         guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
               let items = result as? [[String: Any]] else { return }
         let accounts = items.compactMap { $0[kSecAttrAccount as String] as? String }
-        for account in StoresAside.beyond(accounts.filter { $0.hasPrefix(StoresAside.keyPrefix) }) {
+        for account in StoresAside.expiredKeys(accounts, stores: home) {
             let match: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
                                         kSecAttrAccount as String: account]
             SecItemDelete(match as CFDictionary)
