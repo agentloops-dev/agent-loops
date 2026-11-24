@@ -331,8 +331,8 @@ What the Mac window and the Remote keep in their defaults, and the web page in
 | `voiceMode.*`, marketplaces, working marks, `reviewDiffLayout`, `agents.startForm` and other choices | key-value | Choices on this client | A fixed set (#6802 to #6806) | — |
 | MDM profile (Mac): `ControlPlaneAddress`, `ControlPlaneKey`, `MustJoin` | key-value | The control plane an org pins a Mac to | Three settings. The app only reads them, and only the values that the profile forces: macOS and the org's MDM set and remove them, so they have no age. They are not in `~/.agents`, on purpose: the person could edit a file there, and so remove the pin (#6801). | When the org removes the profile |
 | `crashes/`, `hangs/`, in the log folder (Mac); `remote.log` (Remote) | log | Crash and hang notes; the device log | 20 of each; 256 KiB and one older file | At start; on write |
-| `~/.config/loops/hosts.json`, `lock-keys/` | key-value | Pairings of `loops` | One a control plane (#6807) | On unpair |
-| `~/.agents-go/ctl.json` | key-value | The pairing of `agentsctl` | One. No unpair (#6808). | Never |
+| `~/.config/loops/hosts.json`, `lock-keys/` | secret | Pairings of `loops`, with their keys, the default control plane and the lock pins | 20 control planes, 4 KiB each: one over that is refused, with a message. A lock key and a lock pin for each. No age, on purpose: a pairing stays until `loops auth logout`. Not in `~/.agents`, on purpose: it identifies one terminal, and a sync of `~/.agents` would copy it (#6807). | Before a pairing, and on `loops auth logout` |
+| `~/.agents-go/ctl.json` | secret | The pairing of `agentsctl`, with its key | One, 4 KiB. No age, on purpose: it stays until `agentsctl unpair`. Not in `~/.agents`, on purpose, as for `loops` (#6808). | On pair, and on `agentsctl unpair` |
 
 ## In memory
 

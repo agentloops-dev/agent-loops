@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
 	"github.com/agentloops-dev/agent-loops/Go/internal/machinelock"
@@ -15,6 +17,10 @@ import (
 
 // hosts is ~/.config/loops/hosts.json (mode 0600): one pairing per control plane, as gh
 // keeps one entry per host in ~/.config/gh/hosts.yml. The CLI keeps nothing else.
+//
+// It is not in ~/.agents, on purpose (#6807, as #6800): a pairing is the identity of one
+// terminal, with its private key, and a person syncs ~/.agents. The default and the lock
+// pins mean nothing without the pairings, so they stay with them.
 type hosts struct {
 	// Default is the URL of the control plane a command uses with no --control.
 	Default string                         `json:"default,omitempty"`
@@ -31,6 +37,25 @@ func (h *hosts) setLockPin(u string, p machinelock.Pin) {
 		h.LockPins = map[string]machinelock.Pin{}
 	}
 	h.LockPins[u] = p
+}
+
+// The most that hosts.json holds: a pairing more is refused, as each is the person's own.
+const (
+	maxHosts     = 20
+	maxCodeBytes = 2 << 10 // a pairing holds what its code holds, a key and two names
+)
+
+// room says why a pairing by the code text with the control plane at u cannot be kept, if
+// it cannot. A pairing with the same control plane replaces the old one.
+func (h *hosts) room(text, u string) error {
+	if len(text) > maxCodeBytes {
+		return &exit{code: exitError, msg: "That pairing code is too long."}
+	}
+	if len(h.Hosts) < maxHosts || slices.ContainsFunc(h.Hosts, func(m controllink.ClientMembership) bool { return m.URL == u }) {
+		return nil
+	}
+	return &exit{code: exitError, msg: fmt.Sprintf("This terminal is paired with %d control planes, the most it keeps.\n"+
+		"First unpair from one: loops auth logout --control %s", len(h.Hosts), hostOf(h.Hosts[0].URL))}
 }
 
 // configDir is $XDG_CONFIG_HOME/loops, else ~/.config/loops.
@@ -64,6 +89,10 @@ func readHosts() (*hosts, error) {
 // never sees half of it and the keys are never readable by others.
 func (h *hosts) write() error {
 	dir := configDir()
+	// A pin whose pairing went is of no use.
+	maps.DeleteFunc(h.LockPins, func(u string, _ machinelock.Pin) bool {
+		return !slices.ContainsFunc(h.Hosts, func(m controllink.ClientMembership) bool { return m.URL == u })
+	})
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
@@ -71,6 +100,7 @@ func (h *hosts) write() error {
 	if err != nil {
 		return err
 	}
+	// store-bounds: kind=secret; count=20; size=4KiB a record; age=until-deleted; applied=before a pairing, and loops auth logout deletes it
 	tmp, err := os.CreateTemp(dir, ".hosts-*.json")
 	if err != nil {
 		return err

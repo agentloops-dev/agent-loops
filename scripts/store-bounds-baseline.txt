@@ -3,7 +3,6 @@
 1 App/Sources/MCPServers/ConnectLinearSheet.swift write(to:)
 1 App/Sources/Sidebar/BackgroundPane.swift write(to:)
 2 Go/cmd/agents-control/main.go os.WriteFile
-1 Go/cmd/agentsctl/main.go os.WriteFile
 1 Go/cmd/agentsd/enrol.go os.WriteFile
 1 Go/cmd/agentsd/install.go os.WriteFile
 2 Go/cmd/agentsd/main.go os.OpenFile
@@ -11,8 +10,6 @@
 1 Go/cmd/agentsd/main.go rolllog.Open
 2 Go/cmd/agentsd/supervise.go os.WriteFile
 1 Go/cmd/agentsd/supervise.go rolllog.Open
-1 Go/cmd/loops/hosts.go os.CreateTemp
-1 Go/cmd/loops/lockkey.go WriteAtomically
 1 Go/internal/agentsd/acp/session.go os.OpenFile
 1 Go/internal/agentsd/agentconfigeditor.go WriteAtomically
 2 Go/internal/agentsd/attachments.go WriteAtomically
