@@ -718,7 +718,7 @@ a request's parameters, a prompt, a code, a bearer token, or a `token=`, `secret
 A redeploy recreates the container, and `docker compose logs control` starts again then.
 The lines from before it are in the data volume: the control plane writes a copy of each
 line to `/data/control.log` (`AGENTS_CONTROL_LOG`), rolled at 4 MB to
-`/data/control.previous.log`. Read them with
+`/data/control.previous.log` and kept 7 days at most. Read them with
 `docker compose -f deploy/compose.public.yaml exec control tail -n 200 /data/control.log`.
 Set `AGENTS_CONTROL_LOG=` (empty) in `deploy/.env` to write no copy.
 

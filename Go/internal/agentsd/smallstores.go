@@ -35,6 +35,7 @@ func (d *Daemon) sweepSmallStores(now time.Time) {
 	d.sweepReviewFolders(gone)
 	d.sweepUnseenDevices(now)
 	d.sweepConnectorSetup()
+	d.sweepHostedLogs(now)
 	d.sweepCatalogItems(now, gone)
 	if err := d.carryRemovedConnectors(); err != nil {
 		log.Printf("retention: %v", err)

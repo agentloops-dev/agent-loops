@@ -7,9 +7,7 @@
 1 Go/cmd/agentsd/install.go os.WriteFile
 2 Go/cmd/agentsd/main.go os.OpenFile
 1 Go/cmd/agentsd/main.go os.WriteFile
-1 Go/cmd/agentsd/main.go rolllog.Open
 2 Go/cmd/agentsd/supervise.go os.WriteFile
-1 Go/cmd/agentsd/supervise.go rolllog.Open
 1 Go/internal/agentsd/acp/session.go os.OpenFile
 1 Go/internal/agentsd/agentconfigeditor.go WriteAtomically
 2 Go/internal/agentsd/attachments.go WriteAtomically
@@ -35,7 +33,6 @@
 2 Go/internal/agentsd/guarded.go WriteAtomically
 2 Go/internal/agentsd/host.go WriteAtomically
 1 Go/internal/agentsd/host.go os.WriteFile
-1 Go/internal/agentsd/hostedmcp.go os.OpenFile
 1 Go/internal/agentsd/hostuser.go os.WriteFile
 1 Go/internal/agentsd/install.go os.Create
 1 Go/internal/agentsd/install.go os.OpenFile
@@ -141,7 +138,6 @@
 1 Go/internal/controlplane/links.go v1/linkRequests
 1 Go/internal/controlplane/lockjoins.go v1/lockjoins
 1 Go/internal/controlplane/locks/locks.go v1/locks
-2 Go/internal/controlplane/log.go rolllog.Open
 2 Go/internal/controlplane/machine.go os.WriteFile
 1 Go/internal/controlplane/machinesetup.go v1/machine-setup
 1 Go/internal/controlplane/machineversions.go v1/machine-versions
@@ -177,17 +173,11 @@
 1 Go/internal/execfile/execfile.go os.WriteFile
 4 Go/internal/hosted/accounts.go v1/accounts
 1 Go/internal/hosted/accounts.go v1/emails
-1 Go/internal/hosted/accounts.go v1/invites
 1 Go/internal/hosted/backup.go os.CreateTemp
 1 Go/internal/hosted/backup.go os.WriteFile
 2 Go/internal/hosted/billing.go v1/stripe
 1 Go/internal/hosted/limits.go runtime/control-capacity
 1 Go/internal/hosted/limits.go v1/usage
-1 Go/internal/hosted/signup.go v1/allow
-2 Go/internal/hosted/signup.go v1/blocked
-1 Go/internal/hosted/signup.go v1/invites
-1 Go/internal/hosted/signup.go v1/waiting
-2 Go/internal/hosted/signup.go v1/waitlist
 1 Go/internal/hostsetup/install.go os.OpenFile
 2 Go/internal/hostsetup/install.go os.WriteFile
 1 Go/internal/hostsetup/report.go os.OpenFile
@@ -199,7 +189,6 @@
 1 Go/internal/mac/signin/certs.go os.WriteFile
 1 Go/internal/mac/signin/codex.go os.WriteFile
 1 Go/internal/mac/signin/relays.go os.OpenFile
-1 Go/internal/rolllog/rolllog.go os.OpenFile
 2 Go/internal/whatsappmcp/store.go os.OpenFile
 1 Go/internal/whatsappmcp/store.go writeAtomically
 2 Go/internal/workspacecommands/digitalocean.go os.WriteFile
