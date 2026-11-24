@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -22,7 +23,8 @@ import (
 
 // Workflows, as DaemonCore+Workflows and WorkflowStore keep them on the Swift host: each a
 // file in its folder; what the host remembers of each (whether the person approved it as
-// it stands, who turned it off, when it last ran and how) in <root>/workflows.json, the
+// it stands, who turned it off, when it last ran and how) in <root>/workflows.json, its runs
+// now in <root>/workflow-runs.json, the
 // approved bytes in <root>/workflow-copies/<sha256>. A workflow that is new or changed
 // since it was approved runs nothing until the person approves it here; at most 20
 // (workflow-limit.json) are on in each folder.
@@ -90,10 +92,11 @@ type workflowRun struct {
 }
 
 type workflowRecords struct {
-	States         []workflowState `json:"states"`
-	LastTickAt     *wire.Date      `json:"lastTickAt,omitempty"`
-	Runs           []workflowRun   `json:"runs"`
-	ApprovalsBegan *wire.Date      `json:"approvalsBegan,omitempty"`
+	States     []workflowState `json:"states"`
+	LastTickAt *wire.Date      `json:"lastTickAt,omitempty"`
+	// Runs is in workflow-runs.json (#6730); a workflows.json from before has them here.
+	Runs           []workflowRun `json:"runs,omitempty"`
+	ApprovalsBegan *wire.Date    `json:"approvalsBegan,omitempty"`
 	// UserApprovalsBegan is when the user's own workflows began to need approval too: then
 	// each was approved as it stood, as every file is at the first start.
 	UserApprovalsBegan *wire.Date `json:"userApprovalsBegan,omitempty"`
@@ -137,6 +140,9 @@ type workflowBook struct {
 
 func (d *Daemon) workflowsPath() string  { return filepath.Join(d.Store.Loc.Root, "workflows.json") }
 func (d *Daemon) workflowCopies() string { return filepath.Join(d.Store.Loc.Root, "workflow-copies") }
+func (d *Daemon) workflowRunsPath() string {
+	return filepath.Join(d.Store.Loc.Root, "workflow-runs.json")
+}
 func (d *Daemon) workflowBegan() string {
 	return filepath.Join(d.Store.Loc.Root, ".workflows.json.began")
 }
@@ -168,9 +174,6 @@ func (d *Daemon) recordsLocked() *workflowRecords {
 			if r.States == nil {
 				r.States = []workflowState{}
 			}
-			if r.Runs == nil {
-				r.Runs = []workflowRun{}
-			}
 			d.workflowRecs = &r
 		} else {
 			d.workflowRecsBad = true
@@ -181,6 +184,7 @@ func (d *Daemon) recordsLocked() *workflowRecords {
 	if beganErr == nil && d.workflowRecs.ApprovalsBegan == nil {
 		d.workflowRecsBad = true
 	}
+	d.loadRunsLocked(d.workflowRecs)
 	return d.workflowRecs
 }
 
@@ -198,19 +202,24 @@ func (d *Daemon) saveRecordsLocked(replacing bool) {
 		d.workflowRecsBad = false
 	}
 	r := d.workflowRecs
-	sort.SliceStable(r.Runs, func(i, j int) bool {
-		if r.Runs[i].StartedAt != r.Runs[j].StartedAt {
-			return r.Runs[i].StartedAt < r.Runs[j].StartedAt
-		}
-		return r.Runs[i].ID < r.Runs[j].ID
-	})
-	if err := writeStore(d.workflowsPath(), r); err != nil {
+	slices.SortFunc(r.Runs, compareRuns)
+	r.boundStates()
+	states := *r
+	if err := d.saveRunsLocked(r.Runs); err != nil {
+		// They stay in workflows.json, as before, until they can be written.
+		log.Printf("workflow-runs.json: could not save: %v", err)
+	} else {
+		states.Runs = nil
+	}
+	// store-bounds: kind=key-value; count=2000; size=64KiB a state; age=until-deleted; applied=write and hourly sweep
+	if err := writeStore(d.workflowsPath(), states); err != nil {
 		log.Printf("workflows.json: could not save: %v", err)
 	} else {
 		d.dropUnnamedCopiesLocked()
 	}
 	if r.ApprovalsBegan != nil {
 		if _, err := os.Stat(d.workflowBegan()); err != nil {
+			// store-bounds: not a store: one mark with a fixed text
 			if err := os.WriteFile(d.workflowBegan(), []byte(approvalsBeganNote), 0o644); err != nil { //nolint:gosec // G306: the mode this file always had; only its error is new
 				log.Printf("workflows: could not note when approvals began: %v", err)
 			}
@@ -228,13 +237,22 @@ func (d *Daemon) stateLocked(folder, id string, make bool) *workflowState {
 	if !make {
 		return nil
 	}
+	if !d.stateRoomLocked(1) {
+		// Nothing is kept of it, so it is never approved; what a person sets is refused first
+		// (canRememberLocked).
+		return &workflowState{Folder: store.FolderURL(folder), WorkflowID: id}
+	}
 	r.States = append(r.States, workflowState{Folder: store.FolderURL(folder), WorkflowID: id})
 	return &r.States[len(r.States)-1]
 }
 
 // keepCopyLocked writes the approved bytes where approvedCopy names them, and each skill's
-// where approvedSkills does.
+// where approvedSkills does. With no room for them it approves nothing: Undo writes them back.
 func (d *Daemon) keepCopyLocked(st *workflowState, f *workflowFile) {
+	if !d.copiesFit(f) {
+		log.Printf("workflows: %s is not approved: %s", st.WorkflowID, workflowCopiesNoRoom)
+		return
+	}
 	if err := os.MkdirAll(d.workflowCopies(), 0o755); err != nil { //nolint:gosec // G301: the mode this folder always had; only its error is new
 		log.Printf("workflows: could not make %s: %v", d.workflowCopies(), err)
 	}
@@ -286,6 +304,7 @@ func (d *Daemon) dropUnnamedCopiesLocked() {
 func (d *Daemon) keepBytes(text string) (string, bool) {
 	sum := sha256.Sum256([]byte(text))
 	name := hex.EncodeToString(sum[:])
+	// store-bounds: kind=key-value; size=64MiB; age=until-deleted; applied=write, each save of the states
 	return name, store.WriteAtomically(filepath.Join(d.workflowCopies(), name), []byte(text), 0o644) == nil
 }
 
@@ -422,6 +441,9 @@ func (d *Daemon) approveReadyMadeLocked(home string, files map[string]*workflowF
 		}
 		st := d.stateLocked(home, id, false)
 		if st != nil && (st.ApprovedDigest != nil || st.DeniedDigest != nil) {
+			continue
+		}
+		if d.canRememberLocked(id, home) != nil || !d.copiesFit(f) {
 			continue
 		}
 		d.keepCopyLocked(d.stateLocked(home, id, true), f)
@@ -815,6 +837,7 @@ func (d *Daemon) editWorkflowLocked(folder, id string, byPerson bool, edit func(
 	if changed == text {
 		return nil
 	}
+	// store-bounds: not a store: the person's own workflow file
 	if err := store.WriteAtomically(path, []byte(changed), 0o644); err != nil {
 		return &Error{Code: wire.FailureCouldNotSave, Message: id + ".md was not changed: " + err.Error() + "."}
 	}
@@ -922,6 +945,7 @@ func (d *Daemon) writeUserWorkflow(r wire.WorkflowWriteRequest) (wire.WorkflowSu
 		d.workflowMu.Unlock()
 		return wire.WorkflowSummary{}, &Error{Code: wire.FailureCouldNotSave, Message: "The workflow folder could not be created: " + err.Error()}
 	}
+	// store-bounds: not a store: the person's own workflow file
 	if err := store.WriteAtomically(path, []byte(r.Content), 0o644); err != nil {
 		d.workflowMu.Unlock()
 		return wire.WorkflowSummary{}, &Error{Code: wire.FailureCouldNotSave, Message: "The workflow was not saved: " + err.Error()}
@@ -946,6 +970,10 @@ func (d *Daemon) enableWorkflow(r wire.WorkflowEnableRequest, by string) (wire.W
 	if f == nil {
 		d.workflowMu.Unlock()
 		return wire.WorkflowSummary{}, noSuchWorkflow(r.WorkflowID)
+	}
+	if err := d.canRememberLocked(r.WorkflowID, folder); err != nil {
+		d.workflowMu.Unlock()
+		return wire.WorkflowSummary{}, err
 	}
 	if r.Enabled && isOff(f.wf) && !isArchived(f.wf) {
 		if err := d.enableWorkflowLimitLocked(folder, r.WorkflowID, f); err != nil {
@@ -1031,6 +1059,10 @@ func (d *Daemon) archiveWorkflow(r wire.WorkflowArchiveRequest, byPerson bool) (
 	if f == nil {
 		err = noSuchWorkflow(r.WorkflowID)
 	} else if f.scope == "user" && folder != d.personalHome() {
+		if err := d.canRememberLocked(r.WorkflowID, folder); err != nil {
+			d.workflowMu.Unlock()
+			return wire.WorkflowSummary{}, err
+		}
 		st := d.stateLocked(folder, r.WorkflowID, true)
 		st.UserArchived = r.Archived
 		if r.Archived {
@@ -1291,6 +1323,14 @@ func (d *Daemon) approveWorkflow(r wire.WorkflowApproveRequest, approve bool) (w
 		}
 		d.workflowMu.Unlock()
 		return wire.WorkflowSummary{}, &Error{Code: wire.FailureNotChanged, Message: f.wf.Name + " changed after you looked at it, so it was not " + verb + ". Look again."}
+	}
+	if err := d.canRememberLocked(r.WorkflowID, approvalFolderOf(folder, f), folder); err != nil {
+		d.workflowMu.Unlock()
+		return wire.WorkflowSummary{}, err
+	}
+	if approve && d.hearsFor(f.wf) == "" && !d.copiesFit(f) {
+		d.workflowMu.Unlock()
+		return wire.WorkflowSummary{}, &Error{Code: wire.FailureCouldNotSave, Message: workflowCopiesNoRoom}
 	}
 	// The approval is kept where approvalOf reads it; what it refused stays in this folder's.
 	d.stateLocked(approvalFolderOf(folder, f), r.WorkflowID, true)

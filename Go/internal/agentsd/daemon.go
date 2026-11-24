@@ -28,6 +28,8 @@ type Daemon struct {
 		Name() string
 		Sweep() (int, error)
 	}
+	// runsFile is workflow-runs.json; workflowMu guards what it is written from.
+	runsFile *store.JSONFile[workflowRun]
 	// removedConnectors is the copies of the personal connectors removed (#2195).
 	removedConnectors *store.JSONFile[removedConnector]
 	dismissedLeads    *store.JSONFile[dismissedLead]
@@ -275,6 +277,7 @@ func newWith(ctx context.Context, root string, opts startOptions) (*Daemon, erro
 	d.elsewhere = d.openElsewhere()
 	d.dismissed = d.openReviewDismissals()
 	d.lockSeen = d.openLockSeen()
+	d.runsFile = d.openWorkflowRuns()
 	d.opts.Store(&opts)
 	d.jobCancel = cancel
 	st.OnGap = d.tellEntry

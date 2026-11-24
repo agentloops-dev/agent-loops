@@ -87,9 +87,9 @@ from the root (`agentsd/backups.go:69,72`). It holds nothing else.
 
 | Store | Holds | Bound | Swept | In backup |
 |---|---|---|---|---|
-| `workflows.json`: runs | Workflow runs | 7 days (`workflowruns.go:27`) | **at start only** (`workflowruns.go:1054`), and when a run ends | no |
-| `workflows.json`: states | One state per (folder, workflow) ever seen | **none.** `GoneSince` (`workflows.go:59`) is declared and never set. | only the app's Remove | no |
-| `workflow-copies/<sha256>` | Approved workflow and skill text | The copies that the states name (`workflows.go:244`) | after each save | no |
+| `workflow-runs.json` | Workflow runs | 7 days, 90 when an agent still works; 1,000 of 64 KiB (`workflowbounds.go`, #6730) | at start, when a run ends, hourly | no |
+| `workflows.json` | One state per (folder, workflow) | The approval and on or off: while the workflow is there, then 30 days; the last run and held fires: 90 days; 2,000 of 64 KiB; refuses when full of live ones (`workflowbounds.go`, #6730) | on write, hourly, the app's Remove | no |
+| `workflow-copies/<sha256>` | Approved workflow and skill text | The copies that the states name; 1 MiB a file, 64 MiB in all; refuses when full (`workflowbounds.go`, #6730) | after each save | no |
 | `assessments/*.json` | Runtime assessments | newest 50; 90 days from the start; 256 KiB per file (`assess_store.go`, #6724) | hourly, on start and on score | no |
 | `mcp-events.json` | Seen MCP event IDs | 2,000 IDs, 7 days (`mcpevents.go:53-56`) | on write | no |
 | `mcp-views/*.json` | View catalogues | pruned (`viewservers.go:369`) | on write | no |
@@ -405,7 +405,7 @@ newer than a row above for the same store.
 | `~/.agents/mcp.removed.json` | key-value | Removed MCP servers | 100 of 256 KiB each, 90 days from the removal; refuses when full | `Go/internal/agentsd/removedconnectors.go` (`openRemovedConnectors`) | #6727 |
 | `<root>/review-dismissals.json` | key-value | Dismissed PR links | 2,000 of 8 KiB each, 90 days from the PR's last change or its dismissal, the oldest first; For Review leaves out a PR unchanged for 90 days; goes with its folder | `Go/internal/agentsd/reviews.go` (`openReviewDismissals`) | #6728 |
 | `<root>/review-opened.json` | key-value | Opened PR links | 200 a folder; until the folder goes | `Go/internal/agentsd/reviews.go:31` | #6729 |
-| `<root>/workflows.json` (states) and `workflow-copies/` | key-value | Workflow states and approved copies | While the workflow file exists, then 30 days | `Go/internal/agentsd/smallstores.go:21` | #6730 |
+| `<root>/workflows.json` (states) and `workflow-copies/` | key-value | Workflow states and approved copies | 2,000 states of 64 KiB, 64 MiB of copies; live approvals and on or off until removed (current state, on purpose), the last run and held fires 90 days, all 30 days after the file goes; the runs are `workflow-runs.json` (log, 1,000 of 64 KiB, 90 days) | `Go/internal/agentsd/workflowbounds.go` | #6730 |
 | `<root>/connector-setup.json` | key-value | Connector set-up for each folder | Until the folder leaves the machine | `Go/internal/agentsd/connectorsetup.go:386-391` | #6731 |
 | `<root>/catalog-skills.json` | key-value | Installed catalog skills | Until the item is removed | `Go/internal/agentsd/skills.go:48` | #6732 |
 | `<root>/catalog-mcp.json` | key-value | Installed catalog MCP servers | Until the item is removed | `Go/internal/agentsd/mcpcatalog.go:84` | #6733 |
