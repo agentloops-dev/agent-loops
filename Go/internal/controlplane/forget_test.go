@@ -6,6 +6,7 @@ package controlplane
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
@@ -20,8 +21,9 @@ import (
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
-// A client whose key expired, and a machine whose key expired 90 days ago, is forgotten as
-// one forgotten by hand is; a live one, and a client connected here, stay.
+// A client or machine whose key expired is forgotten as
+// one forgotten by hand is; a live one, one connected here, and a machine linked to a
+// workspace, stay.
 func TestTheSweepForgetsClientsAndMachinesLongExpired(t *testing.T) {
 	t.Parallel()
 	p := startPlane(t, store.NewMemory(), controllink.NewPrivateKey())
@@ -42,7 +44,16 @@ func TestTheSweepForgetsClientsAndMachinesLongExpired(t *testing.T) {
 	defer inUse.Close()
 	p.waitFor(func() bool { return slices.Contains(p.s.router.ConnectedClients(), used.Client) }, "the client to be attached")
 	setExpires(t, p, used.Client, now.Add(-time.Minute))
-	saveHostExpires(t, p, oldHost.member.Host, now.Add(-91*24*time.Hour))
+	saveHostExpires(t, p, oldHost.member.Host, now.Add(-time.Minute))
+	linkedHost, usedHost := p.host("MACHINE-LINKED"), p.host("MACHINE-USED")
+	linkedHost.stop()
+	linked := *p.s.records.Host(linkedHost.member.Host)
+	linked.Workspace = json.RawMessage(`{"provider":"p","workspace":"w"}`)
+	if err := p.s.records.SaveHost(context.Background(), linked); err != nil {
+		t.Fatal(err)
+	}
+	saveHostExpires(t, p, linkedHost.member.Host, now.Add(-time.Minute))
+	saveHostExpires(t, p, usedHost.member.Host, now.Add(-time.Minute))
 
 	if gone := p.s.forgetExpired(context.Background(), now, mostPerSweep); gone != 2 {
 		t.Fatalf("%d went, not 2", gone)
@@ -53,7 +64,8 @@ func TestTheSweepForgetsClientsAndMachinesLongExpired(t *testing.T) {
 	if p.s.records.Host(oldHost.member.Host) != nil {
 		t.Fatal("the long-expired machine was not removed")
 	}
-	if p.s.records.Client(recent.Client) == nil || p.s.records.Client(live.Client) == nil || p.s.records.Client(used.Client) == nil || p.s.records.Host(liveHost.member.Host) == nil {
+	if p.s.records.Client(recent.Client) == nil || p.s.records.Client(live.Client) == nil || p.s.records.Client(used.Client) == nil || p.s.records.Host(liveHost.member.Host) == nil ||
+		p.s.records.Host(linkedHost.member.Host) == nil || p.s.records.Host(usedHost.member.Host) == nil {
 		t.Fatal("one not long expired went")
 	}
 	// Renewed at another copy since it was read: it keeps its pairing.

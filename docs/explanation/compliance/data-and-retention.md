@@ -135,7 +135,7 @@ Mac.
 | Store | Kind | What it keeps | How long, how large | Applied |
 | --- | --- | --- | --- | --- |
 | `~/.agents/settings/` | key-value | Settings that follow you (see [The `~/.agents` folder](../../reference/agents-folder.md)) | A fixed shape | — |
-| `~/.agents/summaries/` | document | Daily summaries saved before #5853: none is written now, and the app does not delete them | The newest 3 that were kept | — |
+| `~/.agents/summaries/` | document | Daily summaries saved before #5853, and `pages.json` with who wrote each: none is written now. A file that is not one of these is yours and stays | The newest 3 of at most 1 MiB, 90 days after their last change; `pages.json` goes with the last of them | Hourly |
 | `~/.agents/checks/suggestions.json` | document | Daily-check findings | 50 findings, 200 dismissals | On write |
 | `~/.agents-secrets` | secret | Secrets, connections and machine provider secrets (see [Security overview](security-overview.md#where-secrets-live)) | Until you remove them | — |
 | `~/.agents-secrets/sealed.json` | secret | Every secret of yours on this machine, sealed to it (#4014, #4177), with Ask before use on or off | Until you remove them | — |
@@ -192,7 +192,7 @@ times only: no titles or text; #4275).
 One sweep runs every hour. It removes old audit days, codes, tombstones, records with no
 owner, usage, workflow runs and lineage, join, lock-join, sign-in and link requests, and
 policy, governance and remove requests (#3649), and once a day the backups of removed
-servers. It also forgets clients whose key expired (#6757), and machines whose key expired 90 days ago, and removes
+servers. It also forgets clients whose key expired (#6757), and machines with no workspace whose key expired (#6758), and removes
 the approvals of people and groups that are gone, and probes and move marks left by a
 copy that stopped (#3748).
 
@@ -204,7 +204,7 @@ the other copies of the control plane learn that it went. A removed person's sta
 | Records | Kind | What they keep | How long, how large | Applied |
 | --- | --- | --- | --- | --- |
 | Clients | document | Name, kind, public key, when last seen, push tokens (APNs, up to 16 Live Activity tokens of 12 hours each, Web Push) | Until forgotten, then a tombstone for 7 days. A key lives 90 days at most from when it was paired or last renewed in use; a client whose key expired is forgotten (#6757), unless it is connected. 16 KiB a record and 1 MiB in all (hosted: 5 or 50 clients too): a new client, a longer name or a push token over that is refused; a renewal of a client in use never is. Tombstones keep no push tokens, and may come to 1 MiB more | Hourly; sizes on each write |
-| Machines | document | Name, key, platform, version, owner, workspace | Until removed, then a tombstone for 7 days. A machine whose key expired is removed 90 days later; a started machine's workspace stays (#3748). No count limit (hosted: 2 or 20). | Hourly |
+| Machines | document | Name, key, platform, version, owner, workspace | Until removed, then a tombstone for 7 days that keeps no labels, links or capabilities. A key lives 90 days at most from when it was joined or last renewed in use; a machine whose key expired is removed (#6758), unless it is connected, or linked to a provider's workspace, which its person could still start or delete: that one stays until a person removes it. 32 KiB a record and 1 MiB in all (hosted: 2 or 20 machines too): a new machine, a label or a lend over that is refused; a hello of a joined machine is refused only over 32 KiB a record, and a renewal never is. Tombstones may come to 1 MiB more | Hourly; sizes on each write |
 | People | document | Name, role, sign-ins (email, login), SCIM data, old names for 90 days | A removed person goes after 14 days. One with a sign-in goes after 90 days; until then only a tombstone is kept: the ID, kind, role and each sign-in's provider and account (#3647, #6756). The local owner's tombstone, one record, stays while they are the control plane's owner, so that a removed owner is not an admin again | Hourly |
 | Join cutoffs | document | A provider's ID and a time: when a removed person's tombstone with a sign-in of that provider first aged out. From then on, an account of it that nobody has needs an invite, so the old sign-in stays refused (#6756) | 1 KiB a record; Google and 5 org providers. Until the provider is removed | On write, and when the provider is removed |
 | Groups, projects | document | Name and members; name, owner, slots and boards | 1,000 groups; 500 projects a person | Tombstone, hourly |
@@ -213,7 +213,7 @@ the other copies of the control plane learn that it went. A removed person's sta
 | A person's settings and secrets | key-value; secret | Settings that follow a person; secrets, sealed | 256 KiB of settings, 200 secrets of 16 KiB | When the person is removed |
 | Channel links | document | Which person a channel identity is | No count limit | On unlink or when the person is removed |
 | Machine set-up | document | Each machine's set-up steps | One a machine, deleted when the machine is removed. No age. | On remove |
-| Machine set-up times | time series | How long each set-up step took | 50 a step. No age (#6760). | On write |
+| Machine set-up times | time series | How long each set-up step took, and when it ended | 90 days, 50 a step (#6760), 32 KiB at most. No roll-up. | On write, hourly |
 | Machine versions | log | Each machine's version and its updates | 20 updates a machine, deleted when the machine is removed. No age. | On write; on remove |
 | Machine names | key-value | A person's machine counter and last choices | One a person, 64 KiB at most: choices past that are not kept. The counter has no age while the person is here, so that a number is never used twice. Deleted when the person is removed (#6759). | On write; on remove; hourly |
 | Approvals | document | Each person's signed approvals of workflows and connectors | 2,000 a person; a new one past that is dropped. No age, and not deleted with the person. | On write |
@@ -325,7 +325,7 @@ What the Mac window and the Remote keep in their defaults, and the web page in
 | `shared-inbox.json` (Remote) | blob | What was shared to Agent Loops | Each attachment is capped. No count, total or age (#6795). | On use |
 | `attention-snapshot.json` (Remote) | cache | The widget's rows | 12 rows; stale after 15 minutes | On write, and on **Forget** |
 | `remote.startFolders` (Remote) | key-value | Start folders | **None** (#6798) | Never |
-| `machinePicker.pinned` | key-value | Pinned machines | **None** (#6797) | Never |
+| `machinePicker.pinned` (`agents.machinePicker.pinned` on the web page) | key-value | Pinned machines | 100 machine ids of 64 bytes each: one past that is refused, with a message. No age, on purpose: a pin is your choice. It stays until you remove it, or until the control plane no longer lists its machine. An offline machine's stays (#6797). | On write, and when the machines are listed |
 | `voiceMode.*`, marketplaces, working marks, `reviewDiffLayout`, `agents.startForm` and other choices | key-value | Choices on this client | A fixed set (#6802 to #6806) | — |
 | MDM profile (Mac) | key-value | The control plane an org pins a Mac to | Read only; set by the org (#6801) | — |
 | `crashes/`, `hangs/`, in the log folder (Mac); `remote.log` (Remote) | log | Crash and hang notes; the device log | 20 of each; 256 KiB and one older file | At start; on write |

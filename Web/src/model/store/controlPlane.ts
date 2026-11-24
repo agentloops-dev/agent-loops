@@ -1,4 +1,5 @@
 // Part of the Store (#5384): controlPlane.
+import { pruneSidebarPins } from "../machinesGroup";
 import type { Agent } from "../../protocol/generated";
 import { openOffer, sealSecret, sealWork } from "../../wire/sealing";
 import type { SecretOffer } from "../../protocol/generated";
@@ -113,6 +114,7 @@ export const controlPlaneMethods = {
         this.loadSignInRequests()]);
       this.takeHosts(machineRows(hosts));
       this.hostsListed = true;
+      pruneSidebarPins((id) => machineRows(hosts).some((h) => h.id === id));
       // A machine this device's copy drew that the control plane no longer lists goes (#4790).
       for (const host of this.fromDevice.value) {
         if (machineRows(hosts).some((h) => h.id === host)) continue;

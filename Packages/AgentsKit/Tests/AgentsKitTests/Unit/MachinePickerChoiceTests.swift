@@ -52,6 +52,25 @@ struct MachinePickerChoiceTests {
         #expect(MachinePickerChoice.togglePin(store, "a") == [])
     }
 
+    @Test func aPinPastTheMostIsRefusedAndAtItIsLetGo() {
+        let store = MemoryDefaults()
+        for id in 0..<MachinePins.most { #expect(MachinePickerChoice.togglePin(store, "m\(id)") != nil) }
+        #expect(MachinePickerChoice.togglePin(store, "over") == nil)
+        #expect(MachinePickerChoice.pinned(store).count == MachinePins.most)
+        #expect(MachinePickerChoice.togglePin(store, "m0")?.count == MachinePins.most - 1)
+        #expect(MachinePickerChoice.togglePin(store, String(repeating: "a", count: 65)) == nil)
+        #expect(MachinePickerChoice.togglePin(store, String(repeating: "a", count: 64)) != nil)
+    }
+
+    @Test func thePinsAreTheSidebarsAndGoWithTheirMachine() {
+        let store = MemoryDefaults()
+        store.set(["mac", "a", "gone"], forKey: MachinePins.key)
+        #expect(MachinePickerChoice.pinned(store) == ["mac", "a", "gone"])
+        MachinePins.keep(store, listed: [MachineRef(rawValue: "a"), MachineRef(rawValue: "b")])
+        #expect(store.string(forKey: MachinePins.key) == "mac\na")
+        #expect(MachinePickerChoice.togglePin(store, "b") == ["mac", "a", "b"])
+    }
+
     @Test func anOlderControlPlaneIsFilteredByNameIdOrLabel() {
         let all = [made("zeta", "online"), made("alpha", "online", ["gpu"]), made("beta", "online")]
         #expect(MachinePickerChoice.filtered(all, search: "").map(\.name) == ["alpha", "beta", "zeta"])

@@ -9,6 +9,7 @@ import { hostAnswers } from "../capabilities";
 import { Capability } from "../../protocol/capabilities.generated";
 import { markOnce } from "../marks";
 import type { Store } from "../store";
+import { pruneSidebarPins } from "../machinesGroup";
 import { pruneFolderKeys, searchShown, byAsked, machineRows } from "./shared";
 
 export const hostLifecycleMethods = {
@@ -107,6 +108,7 @@ export const hostLifecycleMethods = {
     this.listPoints.delete(host);
     this.detailed.delete(host);
     pruneFolderKeys(host, []);
+    pruneSidebarPins((id) => id !== host);
     const without = <T,>(held: Record<string, T>) => Object.fromEntries(Object.entries(held).filter(([key]) => key !== host));
     const notOf = <T,>(held: Record<string, T>) => Object.fromEntries(Object.entries(held).filter(([key]) => !key.startsWith(prefix)));
     this.dropHostRecords(host);

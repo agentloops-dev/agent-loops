@@ -78,6 +78,11 @@ export function MachinePicker({ store, value, onPick, label, skip, any, anyDisab
     setSearch("");
     onPick(id);
   };
+  const pin = (id: string) => {
+    const next = togglePin(globalThis.localStorage, id);
+    if (next) setPinned(next);
+    setProblem((now) => next ? (now === pickerWords.full ? null : now) : pickerWords.full);
+  };
   const shown = sections(page, pinned, recent, skip);
   return (
     <div class={`machine-picker${className ? ` ${className}` : ""}`} ref={root}
@@ -110,7 +115,7 @@ export function MachinePicker({ store, value, onPick, label, skip, any, anyDisab
                     </button>
                     <button type="button" class={`machine-picker-pin${pinned.includes(h.id) ? " on" : ""}`}
                       aria-pressed={pinned.includes(h.id)} aria-label={(pinned.includes(h.id) ? pickerWords.unpin : pickerWords.pin)(h.name)}
-                      onClick={() => setPinned(togglePin(globalThis.localStorage, h.id))}>★</button>
+                      onClick={() => pin(h.id)}>★</button>
                   </div>
                 ))}
               </div>

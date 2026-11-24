@@ -18,13 +18,10 @@ import (
 // deleted, and machines/retrySetup runs the failed step and the ones after it.
 //
 // One object a machine, v1/machine-setup/<host>.json. The durations of finished steps, for
-// "Slower than usual", are in v1/machine-setup-times.json, the last mostSetupTimes of each step.
+// "Slower than usual", are in machinesetuptimes.go.
 
 const (
 	machineSetupPrefix = "v1/machine-setup/"
-	machineSetupTimes  = "v1/machine-setup-times.json"
-	// mostSetupTimes bounds the durations kept for each step: the oldest go first.
-	mostSetupTimes = 50
 	// slowFactor and slowFloor: a running step is slower than usual after 3 times its median,
 	// and at least 2 minutes.
 	slowFactor = 3
@@ -350,38 +347,6 @@ func (s *Service) readMachineSetup(ctx context.Context, host string) (*storedSet
 	return &stored, object.ETag, nil
 }
 
-func (s *Service) readSetupTimes(ctx context.Context) map[wire.MachineSetupStepID][]float64 {
-	out := map[wire.MachineSetupStepID][]float64{}
-	if object, err := s.cfg.Store.Get(ctx, machineSetupTimes); err == nil && object != nil {
-		_ = json.Unmarshal(object.Data, &out)
-	}
-	return out
-}
-
-// noteSetupTime keeps how long a step took, for the median. A lost write costs one sample.
-func (s *Service) noteSetupTime(ctx context.Context, id wire.MachineSetupStepID, took time.Duration) {
-	for try := 0; try < 2; try++ {
-		object, err := s.cfg.Store.Get(ctx, machineSetupTimes)
-		if err != nil {
-			return
-		}
-		times, when := map[wire.MachineSetupStepID][]float64{}, store.Absent
-		if object != nil {
-			_ = json.Unmarshal(object.Data, &times)
-			when = store.Matching(object.ETag)
-		}
-		list := append(times[id], took.Seconds())
-		if len(list) > mostSetupTimes {
-			list = list[len(list)-mostSetupTimes:]
-		}
-		times[id] = list
-		data, _ := json.Marshal(times)
-		if _, err := s.cfg.Store.Put(ctx, machineSetupTimes, data, when); err == nil || !isConflict(err) {
-			return
-		}
-	}
-}
-
 // changeMachineSetup reads a machine's set-up (made now when it has none and create is true),
 // changes it and writes it, again once when another write came between.
 func (s *Service) changeMachineSetup(ctx context.Context, host string, create bool, change func(*storedSetup) error) (*storedSetup, error) {
@@ -491,7 +456,7 @@ func (s *Service) machineSetup(ctx context.Context, host string) *wire.MachineSe
 	if err != nil || stored == nil {
 		return nil
 	}
-	return stored.wire(time.Now(), s.readSetupTimes(ctx))
+	return stored.wire(time.Now(), s.readSetupTimes(ctx, stored))
 }
 
 // setupChanged tells the clients, as any change of a machine is told.

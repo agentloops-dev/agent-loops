@@ -39,3 +39,14 @@ test("recent keeps the last five, newest first; a pin toggles", () => {
   assert.deepEqual(m.togglePin(store, "a"), []);
   assert.deepEqual(m.pinnedMachines(undefined), []);
 });
+
+test("a pin past the most is refused, and one whose machine is gone goes (#6797)", () => {
+  const store = { v: {}, getItem(k) { return this.v[k] ?? null; }, setItem(k, x) { this.v[k] = x; } };
+  for (let i = 0; i < m.pinnedMost; i++) assert.ok(m.togglePin(store, `m${i}`));
+  assert.equal(m.togglePin(store, "over"), null);
+  assert.equal(m.pinnedMachines(store).length, m.pinnedMost);
+  assert.deepEqual(m.keepPins(store, (id) => id === "m1" || id === "m2"), ["m1", "m2"]);
+  assert.deepEqual(m.pinnedMachines(store), ["m1", "m2"]);
+  assert.equal(m.togglePin(store, "a".repeat(65)), null);
+  assert.deepEqual(m.togglePin(store, "a".repeat(64)), ["m1", "m2", "a".repeat(64)]);
+});

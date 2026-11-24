@@ -133,7 +133,7 @@ from the root (`agentsd/backups.go:69,72`). It holds nothing else.
 | Store | Holds | Bound | Swept |
 |---|---|---|---|
 | `~/.agents/settings/*.json` | Settings that follow the person (see `docs/reference/agents-folder.md`) | fixed shape | n/a |
-| `~/.agents/summaries/*` | Daily summaries, none written since #5853 | the newest 3 that were kept | n/a |
+| `~/.agents/summaries/*` | Daily summaries, none written since #5853 | the newest 3, 90 days after their last change (#6714) | hourly |
 | `~/.agents/checks/suggestions.json` | Daily-check findings | 50 suggestions, 200 dismissals (`dailychecks.go:38,48`) | on write |
 | `~/.agents-secrets/secrets.env`, `connections.json`, `provider-secrets.json` | Personal secrets, OAuth connections (Linux; the Keychain on a Mac), machine provider secrets | one per entry | the person edits them |
 | `~/.agents-secrets/sessions/<agent>.json` | Session-only secrets | Values go at archive; the file goes at delete; orphans are swept at start (`sessionsecrets.go:221-275`) | archive, delete, start |
@@ -194,7 +194,7 @@ handover also leaves out `v1/keys/` (`storecopy.go:21,25`).
 |---|---|---|---|
 | `v1/control.json` | Owner, endpoints, epoch, control key public parts, audit days | 1 | — |
 | `v1/clients/<UUID>.json` | Name, kind, public key, last seen, APNs token, ≤16 Live Activity tokens (12 h each), Web Push subscription | 16 KiB a record, 1 MiB in all (#6757; hosted: 5/50 clients too). Key life 90 days (`keylife.go:18`). | Tombstone 7 days. A client whose key expired is forgotten by the hourly sweep (#6757). |
-| `v1/machines/<id>.json` | Name, key, platform, version, owner, workspace | No cap (hosted: 2/20) | Tombstone 7 days. **An expired machine is kept for ever.** |
+| `v1/machines/<id>.json` | Name, key, platform, version, owner, workspace | 32 KiB a record, 1 MiB in all (#6758; hosted: 2/20 machines too) | Tombstone 7 days. A machine with no workspace whose key expired is removed by the hourly sweep (#6758); a linked one stays until removed. |
 | `v1/people/<id>.json` | Name, role, sign-ins (email, login), SCIM part, old names (90 days) | No cap | A removed person goes after 14 days, or 90 when they have a sign-in (#6756) |
 | `v1/groups/<id>.json` | Name, members | 1,000 (`groups.go:20`) | tombstone 7 days |
 | `v1/projects/<id>.json` | Name, owner, slots, ≤20 boards | 500 per person (`projects.go:36`) | tombstone 7 days |
@@ -388,7 +388,7 @@ newer than a row above for the same store.
 | `<folder>/.agents/dropbox/` | blob | Files handed to workflows | 25 MB a file, 500 MB a folder; no age, on purpose (#3648) | `Go/internal/agentsd/host.go:689,693` | #6711 |
 | `<folder>/.agents/reviews/runtimes/` | document | Runtime assessment reports | 1 MiB per report; newest 50 per machine; 90 days | `Go/internal/agentsd/assess_reports.go` | #6712 |
 | `~/.agents/dismissed-leads.json` | key-value | Dismissed epics | None: an entry goes only when its epic gets a lead | `Go/internal/agentsd/worksuggest.go:32,55-59,165` | #6713 |
-| `~/.agents/summaries/` | document | Daily summaries from before #5853 | Never deleted | `docs/explanation/compliance/data-and-retention.md` | #6714 |
+| `~/.agents/summaries/` | document | Daily summaries from before #5853 | 1 MiB per page; newest 3; 90 days | `Go/internal/agentsd/oldsummaries.go` | #6714 |
 | `<root>/erased.json` | document | IDs of deleted agents | 10,000 IDs, 400 days | `Go/internal/agentsd/erasure.go:43-44` | #6715 |
 | `<root>/repo-aliases.json` | key-value | Repo renames | 1,000 renames of 2 KiB each, 90 days, the oldest first | `Go/internal/agentsd/repoaliases.go` (`openRepoAliases`) | #6716 |
 | `<root>/release-tags.json` | log | Linked release tags | 5,000 tags of 1 KiB; 90 days | `Go/internal/agentsd/lineagerelease.go` | #6717 |
@@ -432,9 +432,9 @@ newer than a row above for the same store.
 | `v1/events/<day>/` (audit) | log | Audit events | 90 days by default; an admin sets 1 to 3,650; no count or size limit a day | `Go/internal/controlplane/audit/audit.go:31,241` | #6755 |
 | `v1/people/` tombstones | document | A removed person who had a sign-in | 90 days, swept hourly; then a cutoff for each provider (`v1/signin/cutoffs/`) refuses an account nobody has (#6756) | `Go/internal/controlplane/signin_cutoff.go` | #6756 |
 | `v1/clients/` | document | Paired clients | 16 KiB a record, 1 MiB in all; forgotten when its key expires, at most 90 days unused; tombstone 7 days | `Go/internal/controlplane/keylife.go:18,139,145-177` | #6757 |
-| `v1/machines/` | document | Machines | No count limit on a control plane of your own; an expired one stays about 180 days | `Go/internal/controlplane/keylife.go:145-177` | #6758 |
+| `v1/machines/` | document | Machines | 32 KiB a record, 1 MiB in all; removed when its key expires, at most 90 days unused, or by a person when linked to a workspace; tombstone 7 days | `Go/internal/controlplane/keylife.go`, `records/machinebounds.go` | #6758 |
 | `v1/machine-names/<person>.json` | key-value | A person's machine-N counter and last provider options | 64 KiB a person; until the person is removed (no age before, on purpose: a number is never used twice) | `Go/internal/controlplane/providers/defaults.go:20-63`, `Go/internal/controlplane/sweep.go` (`sweepMachineNames`) | #6759 |
-| `v1/machine-setup-times.json` | time series | Set-up durations | 50 a step, no age | `Go/internal/controlplane/machinesetup.go:25-27,353` | #6760 |
+| `v1/machine-setup-times.json` | time series | Set-up durations | 90 days, 50 a step, 32 KiB; on write and hourly; no roll-up | `Go/internal/controlplane/machinesetuptimes.go` | #6760 |
 | `v1/warm-pools/<id>.json` | document | Warm pools and their claims | No count limit on pools; no delete when a person goes; config outside .agents | `Go/internal/controlplane/warmpool.go:33,44-45,124` | #6761 |
 | `v1/providers/` | document | Machine providers | No count limit; until removed; config outside .agents | `Go/internal/controlplane/providers/records.go:31` | #6762 |
 | `v1/links/` | document | Channel identity links | No count limit; until unlinked or the person goes | `Go/internal/controlplane/links.go:38` | #6763 |
@@ -472,7 +472,7 @@ newer than a row above for the same store.
 | Mac and Remote defaults `draft.*` | document | Drafts | 40, a new one over that refused; 1 MiB a draft, 512 KiB of it attachments; 30 days since the last edit (#6794) | `Packages/AgentsKit/Sources/AgentsKitCore/Model/DraftStore.swift` | #6794 |
 | Remote app group `shared-inbox.json` | blob | What was shared to Agent Loops | Each attachment capped; no count, total or age | `Packages/AgentsKit/Sources/AgentsKitCore/Widget/SharedInbox.swift:88,105-118` | #6795 |
 | Mac browser pane `WKWebsiteDataStore.default()` | blob | Cookies and site storage of every site the pane opened | None: only the caches are emptied, at launch; not on Forget | `App/Sources/Sidebar/BrowserPane.swift:171-195` | #6796 |
-| `machinePicker.pinned` (Mac, Remote, web) | key-value | Pinned machines | None; a removed machine's ID stays | `MachinePickerChoice.swift:9-11,86-100; Web/src/model/machinePicker.ts:7` | #6797 |
+| `machinePicker.pinned` (Mac, Remote, web) | key-value | Pinned machines | 100 of 64 bytes each, one over that refused; until removed, or its machine is no longer listed (no age, on purpose: a person's choice) | `Packages/AgentsKit/Sources/AgentsKitCore/Sidebar/MachinesGroup.swift` (`MachinePins`); `Web/src/model/machinePicker.ts` | #6797 |
 | Remote defaults `remote.startFolders` | key-value | Start folders | None; not pruned, not cleared on Forget | `Remote/Sources/RemoteModel.swift` | #6798 |
 | Mac and Remote `App Support/Agents/control-client.json` | key-value | The pairing with a control plane | Config outside .agents | `App/Sources/Control/ControlConfig.swift:40; Remote/Sources/Link/ControlPlaneLink.swift:20` | #6800 |
 | Mac MDM profile `ControlPlaneAddress`, `ControlPlaneKey`, `MustJoin` | key-value | An org's pin to its control plane | Read only, set by the org | `Packages/AgentsKit/Sources/AgentsKitCore/Control/MachinePin.swift:15-17` | #6801 |
