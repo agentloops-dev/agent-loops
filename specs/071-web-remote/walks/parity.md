@@ -117,13 +117,13 @@ The deltas are tracked by 33 issues:
 `loops` is a fourth client, for a terminal and for scripts. It draws a small part of Core, so it gets this list, not a column on every row (Alex, 2026-11-20, #6443). Its role is Engineer (agent work). It gives no row a new verdict, and nobody files a parity issue for it: the Mac window, the Remote and the web page each say `by design` about it. Its commands are in `docs/reference/loops.md`.
 
 What `loops` has of Core:
-- **The session list:** of one folder only, the folder of the directory it runs in (`loops ls`, 20 rows, `--all` for every one). No smart groups, unread marks or other folders.
+- **The session list:** of one folder only, the folder of the directory it runs in (`loops sessions list`, 20 rows, `--all` for every one). No smart groups, unread marks or other folders.
 - **Start a session:** in the folder, on Auto or with `--runtime`. A session it starts says `startedVia: cli` (`cli-print` for `-p` and `--detach`).
-- **Continue a session:** the folder's newest (`loops`, `-c`) or one by id or title (`-r`).
+- **Continue a session:** the folder's newest (`loops`, `loops sessions follow` or `-c`) or one by id or title (`loops sessions follow <id>` or `-r`).
 - **Chat:** the agent's reply as it comes, the tool calls, and the prompt (Return sends, Option-Return adds a line, Control-C stops the turn).
 - **Question and permission cards:** answered by number in the chat. A secret, a step in a browser or a page to open is answered on another client. Print mode never answers a card: it waits for any client, or ends (`--on-ask=fail`, exit 3).
-- **Pairing:** `loops pair` with a client code from **Pair a Mac…**, `loops unpair` and `loops status`.
-- **Add Folder:** `loops folder add`, for this computer's machine or `--machine`.
+- **Pairing:** `loops auth login` with a client code from **Pair a Mac…**, `loops auth logout` and `loops auth status`.
+- **Add Folder:** `loops folders add`, for this computer's machine or `--machine`.
 
 What it does not have: approvals and Changes, notices, the Brief, terminals, files, diffs, worktrees, the Simulator pane and the Agent Browser, runtimes' details, personas, workflows, Settings and every Mac + web, Web + Mac link and Web only feature. Its own, by design: print mode for scripts (`-p`, `--json`, `--detach`, `--timeout`) and its exit codes.
 
