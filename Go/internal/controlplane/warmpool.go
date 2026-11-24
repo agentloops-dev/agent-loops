@@ -796,22 +796,14 @@ func (w *warmPools) reconcile(ctx context.Context, id string) error {
 }
 
 // forgetPerson runs a pass over a removed person's pools, which deletes them.
-func (w *warmPools) forgetPerson(ctx context.Context, person string) {
-	pools, err := w.all(ctx, person)
-	if err != nil {
-		w.s.log("warm pool: " + err.Error())
-		return
-	}
-	for _, p := range pools {
-		if err := w.reconcile(ctx, p.ID); err != nil {
-			w.s.log(fmt.Sprintf("warm pool %s: %v", p.Name, err))
-		}
-	}
-}
+func (w *warmPools) forgetPerson(ctx context.Context, person string) { w.reconcileOf(ctx, person) }
 
 // reconcileAll runs a pass over every pool.
-func (w *warmPools) reconcileAll(ctx context.Context) {
-	pools, err := w.all(ctx, "")
+func (w *warmPools) reconcileAll(ctx context.Context) { w.reconcileOf(ctx, "") }
+
+// reconcileOf runs a pass over the person's pools, or every pool when person is "".
+func (w *warmPools) reconcileOf(ctx context.Context, person string) {
+	pools, err := w.all(ctx, person)
 	if err != nil {
 		w.s.log("warm pool: " + err.Error())
 		return
