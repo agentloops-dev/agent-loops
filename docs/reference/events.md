@@ -763,8 +763,9 @@ It is read only.
   secret", "Removed a secret", `user/setSecret` and `user/removeSecret`). Never a value. An
   operation stays in `secret-ops-pending.json` on the machine, with an `id`, until the control
   plane answers (#6464): a stop, or a send that failed, loses none. The machine sends what waits
-  each time its link comes up, and again a minute after a failed send. The file keeps at most
-  1,000, and drops the oldest with a log line. The control plane keeps an `id` it has kept
+  each time its link comes up, and again a minute after a failed send. The file keeps
+  1,000 operations, for 90 days at most: the oldest goes first, with a log line, and the audit
+  never has it (#6721). The control plane keeps an `id` it has kept
   already only once (it remembers the last 20,000, in memory). Each
   machine also keeps each secret's last operation in `secret-ops.json`, for the names it holds,
   and a removed secret's goes with it. It sends that last operation, and the hint of each copy
