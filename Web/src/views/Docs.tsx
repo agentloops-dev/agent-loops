@@ -2,7 +2,7 @@
 // source (each project, each folder in no project, then each docs connector), a folder's by its
 // subfolders, with a Project filter (#3408); search with docs/search, each match's line and snippet
 // under its doc; and a doc's page from docs/read, read only, live for a folder's own file.
-import { signal, useSignal } from "@preact/signals";
+import { batch, signal, useSignal } from "@preact/signals";
 import { useEffect, useMemo, useRef } from "preact/hooks";
 import type { Doc, DocsReading, DocsSearchResult, FileReading, Project, WireDate } from "../protocol/generated";
 import type { Store } from "../model/store";
@@ -24,6 +24,8 @@ import { isPageFile, pathInFolder } from "../model/pageLink";
 import { pathOf } from "./files/paneState";
 import { offerStart } from "./NewAgent";
 import { go, route, routeHash } from "../route";
+import { pageFooterState } from "../model/workFooter";
+import { RefreshButton, WorkFooter } from "./WorkParts";
 
 /** The list's state, for the tab: a doc's page goes back to it as it was left. */
 const lists = signal<HostDocs[] | null>(null);
@@ -244,43 +246,61 @@ function Results({ results, searching }: { results: (DocsSearchResult & { host: 
 const followEvery = 5_000;
 
 /** A doc's page: its title, ref and when it changed; Open in Files or in its vendor's app, Copy link and
- * Copy ref; and its Markdown, drawn as a live page is, read only. */
+ * Copy ref; and its Markdown, drawn as a live page is, read only. Refresh reads it again; a connector doc says how old it is, and a
+ * folder doc does when a read fails (#7076). */
 export function DocPage({ store, docRef }: { store: Store; docRef: string }) {
   const hosts = docsHosts(store);
   const hostKey = hosts.map((h) => h.id).join(",");
   const got = useSignal<{ host: string; reading: DocsReading } | null>(null);
   const problem = useSignal<string | null>(null);
   const tick = useSignal(0);
+  const asked = useSignal(0);
+  const reading = useSignal(false);
+  const readAt = useSignal<number | undefined>(undefined);
   const copied = useSignal<string | null>(null);
   const startProblem = useSignal<string | null>(null);
   const line = Number(new URLSearchParams(route.value.query).get("line")) || undefined;
   useProjects(store);
 
-  // The machine that listed it first, then this Mac, then the others.
-  const order = useMemo(() => {
-    const first = listedOn.get(docRef);
-    return [...hosts].sort((a, b) => rank(b.id) - rank(a.id));
-    function rank(id: string) { return id === first ? 2 : id === store.macHostID.value ? 1 : 0; }
-  }, [docRef, hostKey]);
+  // The text the page last had, kept across draws, so a read that brings the same text costs the page nothing.
+  const last = useRef<DocText | null>(null);
+
+  // The machine it was read on, else the one that listed it first, then this Mac, then the others. A read again (Refresh,
+  // or other machines) keeps the doc on screen until it ends, and when it fails.
   useEffect(() => {
     let current = true;
-    got.value = null;
-    problem.value = null;
+    const was = got.peek();
+    const first = was?.host ?? listedOn.get(docRef);
+    const rank = (id: string) => id === first ? 2 : id === store.macHostID.value ? 1 : 0;
+    const order = [...hosts].sort((a, b) => rank(b.id) - rank(a.id));
+    reading.value = true;
     void (async () => {
-      let last: string | null = null;
+      const failures: string[] = [];
       for (const h of order) {
         try {
-          const reading = await store.link.call("docs/read", { ref: docRef }, h.id);
-          if (current) got.value = { host: h.id, reading };
+          const read = await store.link.call("docs/read", { ref: docRef }, h.id);
+          if (!current) return;
+          if (last.current) last.current.fresh = read.text;
+          else last.current = { text: read.text, fresh: read.text };
+          batch(() => {
+            got.value = { host: h.id, reading: read };
+            problem.value = null;
+            readAt.value = Date.now();
+            reading.value = false;
+            tick.value++;
+          });
           return;
         } catch (e) {
-          last = describe(e);
+          failures.push(describe(e));
         }
       }
-      if (current) problem.value = order.length === 0 ? noDocsHere : last ?? "No machine here has this doc.";
+      if (!current) return;
+      reading.value = false;
+      // A doc on screen says what its own machine said; the others may never have had it.
+      problem.value = order.length === 0 ? noDocsHere : (was ? failures[0] : failures.at(-1)) ?? "No machine here has this doc.";
     })();
     return () => { current = false; };
-  }, [docRef, hostKey]);
+  }, [docRef, hostKey, asked.value]);
 
   const doc = got.value?.reading.doc;
   const follows = doc !== undefined && isFolderDoc(doc);
@@ -290,10 +310,16 @@ export function DocPage({ store, docRef }: { store: Store; docRef: string }) {
     return () => clearInterval(timer);
   }, [follows, docRef]);
 
-  // The text the page last had, kept across draws, so a read that brings the same text costs the page nothing.
-  const last = useRef<{ ref: string; text: string } | null>(null);
-  if (got.value && last.current?.ref !== docRef) last.current = { ref: docRef, text: got.value.reading.text };
-  const source: PageSource | undefined = got.value && last.current ? docSource(store, got.value.host, docRef, last.current, tick.value) : undefined;
+  const host = got.value?.host;
+  const source: PageSource | undefined = host && last.current ? docSource(store, host, docRef, last.current, tick.value, (read, why) => {
+    // The page has gone on to another machine's copy.
+    if (got.peek()?.host !== host) return;
+    if (!read) { problem.value = why ?? null; return; }
+    if (JSON.stringify(got.peek()?.reading) !== JSON.stringify(read)) got.value = { host, reading: read };
+    problem.value = null;
+    readAt.value = Date.now();
+  }) : undefined;
+  const refresh = () => { asked.value++; };
   const copy = async (what: string, text: string) => {
     try {
       await navigator.clipboard.writeText(text);
@@ -314,11 +340,12 @@ export function DocPage({ store, docRef }: { store: Store; docRef: string }) {
   const project = doc && got.value ? projectOfIn(store)(got.value.host, doc.folder) : undefined;
 
   return (
-    <article class="work-page docs-page">
+    <article class="work-page docs-page work-footed">
       <div class="work-page-bar">
         <button type="button" title="Back" aria-label="Back" onClick={() => history.back()}>‹</button>
         <button type="button" title="Forward" aria-label="Forward" onClick={() => history.forward()}>›</button>
         <button type="button" class="link" onClick={() => go({ nav: "work", section: "docs" })}>All docs</button>
+        <RefreshButton busy={reading.value} onClick={refresh} />
       </div>
       <header class="work-page-head">
         <h2><span class="work-title">{doc ? shortForm(doc) : docRef}</span></h2>
@@ -335,7 +362,7 @@ export function DocPage({ store, docRef }: { store: Store; docRef: string }) {
         </div>
         {startProblem.value && <p class="hint failure small" role="status">{startProblem.value}</p>}
       </header>
-      {problem.value && <p class="hint">{problem.value}</p>}
+      {!got.value && problem.value && <p class="hint">{problem.value}</p>}
       {!got.value && !problem.value && <p class="hint">Reading {docRef}…</p>}
       {got.value && got.value.reading.next !== undefined && (
         <p class="quiet small">Showing lines {got.value.reading.from}–{got.value.reading.to} of {got.value.reading.lines}.</p>
@@ -344,6 +371,11 @@ export function DocPage({ store, docRef }: { store: Store; docRef: string }) {
         <section class="work-body docs-text" aria-label="Text">
           <LiveDocument store={store} host={got.value.host} agentID="" path={doc?.path ?? doc?.title ?? docRef} line={line} source={source} opens={opens} />
         </section>
+      )}
+      {/* A folder doc whose last read worked is seconds old, and says nothing. */}
+      {(!follows || problem.value) && (
+        <WorkFooter state={pageFooterState(got.value !== null, reading.value, false, problem.value ? [problem.value] : [])}
+          at={readAt.value} retry={refresh} />
       )}
     </article>
   );
@@ -455,11 +487,28 @@ export function WorkDocs({ store, itemRef, title, body, asked }: { store: Store;
   );
 }
 
-/** A doc as a live page reads it: docs/read again at each tick, the same text "unchanged". Read only. */
-function docSource(store: Store, host: string, ref: string, last: { text: string }, tick: number): PageSource {
+/** A doc's text as its page has it, and what the page itself has just read, which the live page takes next. */
+interface DocText { text: string; fresh?: string | undefined }
+
+/** A doc as a live page reads it: docs/read again at each tick, the same text "unchanged". Read only. `said` hears how
+ * each read ended. */
+function docSource(store: Store, host: string, ref: string, last: DocText, tick: number,
+  said: (read: DocsReading | null, why?: string) => void): PageSource {
+  const read = async () => {
+    try {
+      const got = await store.link.call("docs/read", { ref }, host);
+      said(got);
+      return got.text;
+    } catch (e) {
+      said(null, describe(e));
+      throw e;
+    }
+  };
   return {
     read: async (stamp) => {
-      const text = stamp ? (await store.link.call("docs/read", { ref }, host)).text : last.text;
+      const fresh = last.fresh;
+      last.fresh = undefined;
+      const text = fresh ?? (stamp ? await read() : last.text);
       const now: FileReading = text === last.text && stamp
         ? { kind: "unchanged", stamp }
         : { kind: "text", text, stamp: { size: text.length, modifiedAt: Date.now() as WireDate }, isTruncated: false, size: text.length };

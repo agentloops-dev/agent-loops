@@ -392,7 +392,8 @@ private struct ConversationRow: View {
 
 /// A conversation's messages, the newest first, each with its sender, time, text (outside content,
 /// drawn as Markdown that loads nothing) and a link to the original; older pages with More. Under them, the reply
-/// field (#4345), when the connector can send: the person's own reply, which says who it goes as.
+/// field (#4345), when the connector can send: the person's own reply, which says who it goes as. The footer says how
+/// old the messages are, and Refresh (⌘R) reads them again (#7076).
 private struct ConversationPage: View {
     @Environment(AppModel.self) private var model
     @Environment(\.openURL) private var openURL
@@ -406,6 +407,11 @@ private struct ConversationPage: View {
     @State private var cursor: String?
     @State private var problem: String?
     @State private var loading = false
+    /// When the newest page was read.
+    @State private var readAt: Date?
+    @State private var refreshes = 0
+    /// Goes up with each read of the newest page: an older read that ends after it is dropped.
+    @State private var generation = 0
     @State private var draft = ""
     /// The thread the reply answers in; nil: the conversation itself.
     @State private var thread: String?
@@ -416,9 +422,7 @@ private struct ConversationPage: View {
         VStack(alignment: .leading, spacing: 0) {
             header.padding(.horizontal, 16).padding(.vertical, 8)
             Divider()
-            if let problem {
-                Text(problem).foregroundStyle(.secondary).padding(24).frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if let messages {
+            if let messages {
                 List {
                     Label(MessagesList.outside, icon: "exclamationmark.shield").appText(.fine).foregroundStyle(.secondary)
                     if messages.isEmpty {
@@ -434,15 +438,23 @@ private struct ConversationPage: View {
                     }
                 }
                 .listStyle(.inset)
+            } else if let problem {
+                Text(problem).foregroundStyle(.secondary).padding(24).frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 List { WorkPlaceholderRows(count: 4) }.listStyle(.inset).disabled(true)
             }
-            if let replyAs = row.item.replyAs, problem == nil, messages != nil {
+            if let replyAs = row.item.replyAs, messages != nil {
                 Divider()
                 replyField(replyAs).padding(.horizontal, 16).padding(.vertical, 8)
             }
+            WorkPageBar(state: WorkLook.pageFooterState(drawn: messages != nil, reading: loading, fromDevice: false,
+                                                        lines: problem.map { [$0] } ?? []),
+                        count: nil, read: readAt) { refreshes += 1 }
         }
-        .task(id: asks) { await read(more: false) }
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) { WorkRefreshButton(running: loading) { refreshes += 1 } }
+        }
+        .workTask(id: [asks, refreshes]) { await read(more: false) }
     }
 
     private func replyField(_ replyAs: String) -> some View {
@@ -506,20 +518,25 @@ private struct ConversationPage: View {
     }
 
     private func read(more: Bool) async {
+        if !more { generation += 1 }
+        let mine = generation
         loading = true
-        defer { loading = false }
+        defer { if mine == generation { loading = false } }
         do {
             let got = try await model.messages(
                 DaemonAPI.Method.messagesRead,
                 DaemonAPI.MessagesReadRequest(server: row.item.server, folder: row.item.folder, conversation: row.conversation.id,
                                               cursor: more ? cursor : nil, limit: 50),
                 returning: DaemonAPI.MessagesRead.self, on: row.host)
+            guard mine == generation else { return }
             messages = (more ? messages ?? [] : []) + got.messages
             cursor = got.cursor
             problem = nil
+            if !more { readAt = .now }
             if got.markedRead == true { markedRead() }
         } catch {
-            problem = error.localizedDescription
+            guard mine == generation, !Task.isCancelled else { return }
+            problem = model.describe(error)
         }
     }
 }
