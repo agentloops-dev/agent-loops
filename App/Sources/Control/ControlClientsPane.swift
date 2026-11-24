@@ -49,7 +49,7 @@ struct ControlClientsPage: View {
         }
         .confirmationDialog("Forget this window?", isPresented: $forgettingThisWindow, titleVisibility: .visible) {
             Button("Forget", role: .destructive) {
-                Task { if await control.forgetThisWindow() { model.leaveControlPlane() } }
+                Task { if await control.forgetThisWindow() { await model.leaveControlPlane(forgetLocalData: true) } }
             }
             Button("Cancel", role: .cancel) {}
         } message: {

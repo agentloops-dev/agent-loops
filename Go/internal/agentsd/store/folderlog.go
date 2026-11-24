@@ -333,6 +333,7 @@ func (l *FolderLog) trim(ctx context.Context, before time.Time) (bool, error) {
 	if err != nil || cut == h.bytes {
 		return false, err
 	}
+	// store-bounds: not a store: the log itself, trimmed, before it takes the old one's place
 	tmp, err := os.CreateTemp(filepath.Dir(l.file), "."+filepath.Base(l.file)+".*.tmp")
 	if err != nil {
 		return false, err
