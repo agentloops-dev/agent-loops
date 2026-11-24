@@ -729,6 +729,18 @@ func scimRequestCosts(t *testing.T, users, groups int) (storeCost, []time.Durati
 		}
 	}
 	settle(t, st, st.now().Events)
+	// The first SCIM request writes the token's last use in the background. Complete that
+	// one-off write before measuring the 200 requests, or runner load can move it into the
+	// measured window.
+	if status, _ := scimDo(t, base, token, "GET", "/ServiceProviderConfig", nil); status != 200 {
+		t.Fatal("warm SCIM request:", status)
+	}
+	var tokenList wire.SCIMTokenList
+	p.waitFor(func() bool {
+		must(t, json.Unmarshal(call(t, owner, "", "scim/tokens/list", wire.SCIMTokensRequest{Provider: "acme-okta"}), &tokenList))
+		return len(tokenList.Tokens) == 1 && tokenList.Tokens[0].LastUse != nil
+	}, "the SCIM token's first last-use write")
+	settle(t, st, st.now().Events)
 	before := st.now()
 	var took []time.Duration
 	for i := range 200 {
