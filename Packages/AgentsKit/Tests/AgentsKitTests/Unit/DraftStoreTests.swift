@@ -185,6 +185,90 @@ struct DraftStoreTests {
         #expect(store.draft(for: .agent(id))?.droppedInlineData == true)
     }
 
+    // MARK: How many, and how big (#6794)
+
+    private func fill(_ held: inout HeldDrafts, at: Date = Date()) -> [DraftKey] {
+        let keys = (0..<DraftStore.draftsKept).map { _ in DraftKey.agent(UUID()) }
+        #expect(held.save(Dictionary(uniqueKeysWithValues: keys.map { ($0, draft(at: at)) })) == nil)
+        return keys
+    }
+
+    @Test func aFullStoreRefusesANewDraftAndSaysSoOnce() throws {
+        let (store, _) = store()
+        var held = HeldDrafts(store: store)
+        let keys = fill(&held), new = DraftKey.newAgent(folder: nil)
+        let first = try #require(keys.first), last = try #require(keys.last)
+
+        #expect(held.save([first: draft("edited")]) == nil, "an edit of a kept draft is not refused")
+        #expect(held.save([new: draft("on")]) == HeldDrafts.full)
+        #expect(held.save([new: draft("one more")]) == nil)
+        #expect(held.draft(for: new)?.text == "one more", "held while the app runs")
+        #expect(store.draft(for: new) == nil)
+        #expect(store.draft(for: first)?.text == "edited")
+        #expect(keys.allSatisfy { store.draft(for: $0) != nil }, "nothing made room for it")
+
+        held.clear(last)
+        #expect(store.draft(for: new)?.text == "one more")
+    }
+
+    /// An emptied draft makes room for one typed in the same pause.
+    @Test func anEmptiedDraftMakesRoom() {
+        let (store, _) = store()
+        var held = HeldDrafts(store: store)
+        let keys = fill(&held), new = DraftKey.agent(UUID())
+        #expect(held.save([new: draft(), keys[0]: draft("")]) == nil)
+        #expect(store.draft(for: new) != nil)
+    }
+
+    @Test func aFullStoreLetsGoOfOldDraftsFirst() {
+        let (store, _) = store()
+        var held = HeldDrafts(store: store)
+        _ = fill(&held, at: Date().addingTimeInterval(-DraftStore.horizon - 60))
+        let new = DraftKey.agent(UUID())
+        #expect(held.save([new: draft()]) == nil)
+        #expect(store.draft(for: new) != nil)
+    }
+
+    @Test func aDraftTooBigIsRefusedAndTheOneKeptStays() {
+        let (store, _) = store()
+        var held = HeldDrafts(store: store)
+        let key = DraftKey.agent(UUID())
+        _ = held.save([key: draft("short")])
+        let long = String(repeating: "a", count: DraftStore.draftBytes)
+        #expect(held.save([key: draft(long)]) == HeldDrafts.tooBig)
+        #expect(held.draft(for: key)?.text == long)
+        #expect(store.draft(for: key)?.text == "short")
+        #expect(held.save([key: draft("short again")]) == nil)
+        #expect(store.draft(for: key)?.text == "short again")
+    }
+
+    /// The start form and another root's drafts take no place; a move takes none either.
+    @Test func onlyThisRootsDraftsCount() {
+        let defaults = MemoryDefaults()
+        let store = DraftStore(defaults: defaults)
+        var held = HeldDrafts(store: store)
+        store.saveStartDraft(StartDraft(runtimeID: "claude"))
+        DraftStore(defaults: defaults, scope: "run-count").save(draft(), for: .newAgent(folder: nil))
+        let folder = URL(filePath: "/src/Agents")
+        store.save(draft("From before"), for: .newAgent(folder: folder))
+        let keys = (1..<DraftStore.draftsKept).map { _ in DraftKey.agent(UUID()) }
+        #expect(held.save(Dictionary(uniqueKeysWithValues: keys.map { ($0, draft()) })) == nil)
+        let project = DraftKey.newSession(project: "p1", folder: folder)
+        #expect(held.draft(for: project)?.text == "From before")
+        #expect(held.save([.agent(UUID()): draft()]) == HeldDrafts.full)
+    }
+
+    @Test func aForgetLetsGoOfWhatWasRefused() {
+        let (store, _) = store()
+        var held = HeldDrafts(store: store)
+        _ = fill(&held)
+        let new = DraftKey.agent(UUID())
+        _ = held.save([new: draft()])
+        held.clearAll()
+        held.retry()
+        #expect(held.draft(for: new) == nil)
+    }
+
     // MARK: The start form
 
     @Test func theStartFormComesBack() {

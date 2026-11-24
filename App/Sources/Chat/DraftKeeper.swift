@@ -18,6 +18,9 @@ final class DraftKeeper {
     static let shared = DraftKeeper()
 
     private let store: DraftStore
+    private var held: HeldDrafts
+    /// Told when a draft is refused (#6794): the app's usual message.
+    var refused: ((String) -> Void)?
     /// What changed since the last write, latest per conversation. Written once typing
     /// pauses rather than on every keystroke: a draft can carry a pasted picture, and
     /// encoding that per character would be the field lagging behind the fingers.
@@ -38,6 +41,7 @@ final class DraftKeeper {
     /// the real one.
     init(store: DraftStore = DraftStore(defaults: WindowDefaults.store)) {
         self.store = store
+        held = HeldDrafts(store: store)
         leftForm = store.startDraft()
         leftChoices = leftForm?.chosen
         // The one pass over the defaults, off the main thread: it reads every key the
@@ -58,7 +62,7 @@ final class DraftKeeper {
     // MARK: The words
 
     func draft(for key: DraftKey) -> Draft? {
-        waiting[key] ?? store.draft(for: key)
+        waiting[key] ?? held.draft(for: key)
     }
 
     /// The bar changed. Kept once typing pauses.
@@ -75,7 +79,7 @@ final class DraftKeeper {
     /// It became a prompt, and a draft exists only until it does.
     func clear(_ key: DraftKey) {
         waiting[key] = nil
-        store.clear(key)
+        held.clear(key)
         if case .agent(let id) = key { drafted?.remove(id) }
     }
 
@@ -83,12 +87,13 @@ final class DraftKeeper {
     /// the app is quitting.
     func flush() {
         pause?.cancel()
+        let problem = held.save(waiting)
         for (key, draft) in waiting {
-            store.save(draft, for: key)
             guard case .agent(let id) = key else { continue }
             if draft.isEmpty { drafted?.remove(id) } else { drafted?.insert(id) }
         }
         waiting = [:]
+        if let problem { refused?(problem) }
     }
 
     /// The control plane was forgotten (#3670): every draft goes, the start form too, and
@@ -99,12 +104,13 @@ final class DraftKeeper {
         leftForm = nil
         leftChoices = nil
         if drafted != nil { drafted = [] }
-        store.clearAll()
+        held.clearAll()
     }
 
     private func swept(_ kept: Set<UUID>, took: Duration) {
         // Anything typed while it ran is kept too.
         drafted = kept.union(waiting.keys.compactMap { if case .agent(let id) = $0 { id } else { nil } })
+        held.retry()
         Perf.measured("draft-sweep", took, "\(kept.count) drafts, off the main thread")
     }
 
@@ -227,6 +233,7 @@ struct KeepsDrafts: ViewModifier {
 
     func body(content: Content) -> some View {
         content
+            .onAppear { [weak model] in keeper.refused = { model?.show(problem: $0) } }
             .onAppear {
                 if text.isEmpty && attachments.isEmpty { take(key) }
                 keeper.sweep(agents: model.work)
