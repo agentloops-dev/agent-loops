@@ -147,6 +147,7 @@ is never kept.
 | `v1/signin/domains/<domain>.json` | The claim, and when it was last checked. |
 | `v1/oidc/state/<sha256>.json`, `.used` | A started flow, its verifier and nonce sealed; spent once. Swept after an hour. |
 | `v1/oidc/tickets/<sha256>.json`, `.used` | A ticket, with the refresh token sealed; spent once. Swept after an hour. |
+| `v1/signin/cutoffs/<provider>.json` | When a removed person's tombstone with a sign-in of the provider first aged out (90 days). From then on, an account of it that nobody has needs an invite, also one that SCIM adds. Deleted with the provider. |
 | `v1/signin/refresh/<person>/<provider>.json` | An org sign-in's refresh token, sealed, and its last good check. |
 | `v1/scim/tokens/<sha256>.json` | A SCIM token: its name, provider, who made it, last use and revocation. Never its value. |
 | `v1/scim/<provider>/names/<sha256>.json` | Which person has a `userName`, so that one `userName` is one person at every copy. |

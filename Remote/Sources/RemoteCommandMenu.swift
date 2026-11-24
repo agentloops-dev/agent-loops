@@ -55,8 +55,11 @@ enum RemoteCommandMenu {
         if let openTerminal {
             actions.append(Action("Folder Terminal", key: Keys.terminal, perform: openTerminal))
         }
-        actions.append(Action("Issues", keywords: ["Work"]) { model.showWork(WorkPlace(kind: .issue)) })
-        actions.append(Action("Pull Requests", keywords: ["Work", "PRs"]) { model.showWork(WorkPlace(kind: .pr)) })
+        // Work, with its flag on (#6572).
+        if model.flags.isOn(.work) {
+            actions.append(Action("Issues", keywords: ["Work"]) { model.showWork(WorkPlace(kind: .issue)) })
+            actions.append(Action("Pull Requests", keywords: ["Work", "PRs"]) { model.showWork(WorkPlace(kind: .pr)) })
+        }
         return actions
     }
 
@@ -82,7 +85,7 @@ enum RemoteCommandMenu {
         }
         return sessions(folders.filter { $0.key == here }) + actions.map(\.item)
             + sessions(folders.filter { $0.key != here }) + folderItems + model.userScope.commandMenuItems
-            + CommandMenuWork.items(model.workLists, .issue) + CommandMenuWork.items(model.workLists, .pr)
+            + (model.flags.isOn(.work) ? CommandMenuWork.items(model.workLists, .issue) + CommandMenuWork.items(model.workLists, .pr) : [])
     }
 
     private static func folderID(_ key: FolderKey) -> String { "\(key.host)|\(key.folder.path)" }
@@ -136,7 +139,7 @@ struct RemoteCommandMenuOverlay: ViewModifier {
                 if let term = model.commandMenu {
                     let actions = RemoteCommandMenu.actions(model, openTerminal: openTerminal)
                     CommandMenuView(items: RemoteCommandMenu.items(model, actions: actions),
-                                    repos: CommandMenuWork.repos(model.workLists), term: term,
+                                    repos: model.flags.isOn(.work) ? CommandMenuWork.repos(model.workLists) : [], term: term,
                                     choose: { [model] item in
                                         model.commandMenu = nil
                                         if let action = actions.first(where: { $0.item.id == item.id }) {

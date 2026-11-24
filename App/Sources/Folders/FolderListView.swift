@@ -203,39 +203,27 @@ struct FolderListView: View {
             // Work (#3119): a row per list (#4004), as the web's Work section has them; an item's
             // page keeps its list's row picked. New Session is the first row of each folder's
             // Sessions (#5267), so the rows with no header went: Docs and Messages are Work's first.
-            Section(isExpanded: $showsWorkLists) {
-                // The Dashboard (#5534, a PoC): each work item on this Mac and its sessions, with
-                // what waits on the person answered in place. First, as the page the window opens
-                // to and the way back to it (#5696).
-                HStack { Text("Dashboard").foregroundStyle(.primary); Spacer() }
-                    .help("Each work item on this Mac, its sessions, pull request and checks, and what waits on you")
-                    .activityIcon("square.grid.2x2")
-                    .appText(.supporting).sidebarInk(.dashboard).tag(SidebarItem.dashboard)
-                // Docs (#3321): the folders' docs and the docs connectors'.
-                HStack { Text("Docs").foregroundStyle(.primary); Spacer() }
-                    .help("Every folder’s Markdown docs and your docs connectors’ pages, read only")
-                    .activityIcon("doc.text")
-                    .appText(.supporting).sidebarInk(.docs).tag(SidebarItem.docs)
-                // Messages (#4344): the messaging connectors' conversations. Under it in grey, the
-                // unread count and what the last message woke (#4934).
-                MessagesRow()
-                    .help(MessagesList.sidebarHelp)
-                    .activityIcon("bubble.left.and.bubble.right")
-                    .appText(.supporting).sidebarInk(.messages).tag(SidebarItem.messages)
-                ForEach(WorkList.Kind.allCases) { kind in
-                    HStack { Text(kind.title).foregroundStyle(.primary); Spacer() }
-                        .help(kind.sidebarHelp)
-                        .activityIcon(kind.sidebarIcon)
-                        .appText(.supporting).sidebarInk(.work(kind)).tag(SidebarItem.work(kind))
+            // With Work's flag off (#6572) the rows left have no header, and no list is read ahead.
+            if model.flags.isOn(.work) {
+                Section(isExpanded: $showsWorkLists) {
+                    workPages
+                    ForEach(WorkList.Kind.allCases) { kind in
+                        HStack { Text(kind.title).foregroundStyle(.primary); Spacer() }
+                            .help(kind.sidebarHelp)
+                            .activityIcon(kind.sidebarIcon)
+                            .appText(.supporting).sidebarInk(.work(kind)).tag(SidebarItem.work(kind))
+                    }
+                    // Work shown: its first list read ahead, so the page draws at once (#4930), and again when a machine
+                    // joins or a folder is added (#6152); after the sessions' first list, not before it (#6311).
+                    .task(id: model.firstListDrawn ? model.workSource : nil) {
+                        guard model.firstListDrawn else { return }
+                        await model.prefetchWork()
+                    }
+                } header: {
+                    Text("Work").appText(.supporting)
                 }
-                // Work shown: its first list read ahead, so the page draws at once (#4930), and again when a machine
-                // joins or a folder is added (#6152); after the sessions' first list, not before it (#6311).
-                .task(id: model.firstListDrawn ? model.workSource : nil) {
-                    guard model.firstListDrawn else { return }
-                    await model.prefetchWork()
-                }
-            } header: {
-                Text("Work").appText(.supporting)
+            } else {
+                Section { workPages }
             }
 
             // The pages about all the work, a group like a folder's, above the smart
@@ -539,6 +527,33 @@ struct FolderListView: View {
                 addingMachine = ControlConfig.endpoint.flatMap { ControlSettingsModel(endpoint: $0) }
             }
         }
+    }
+
+    /// The rows above Work's lists: the Dashboard and Docs each with its flag on (#6572), and Messages.
+    @ViewBuilder
+    private var workPages: some View {
+        if model.flags.isOn(.dashboard) {
+            // The Dashboard (#5534, a PoC): each work item on this Mac and its sessions, with
+            // what waits on the person answered in place. First, as the page the window opens
+            // to and the way back to it (#5696).
+            HStack { Text("Dashboard").foregroundStyle(.primary); Spacer() }
+                .help("Each work item on this Mac, its sessions, pull request and checks, and what waits on you")
+                .activityIcon("square.grid.2x2")
+                .appText(.supporting).sidebarInk(.dashboard).tag(SidebarItem.dashboard)
+        }
+        if model.flags.isOn(.docs) {
+            // Docs (#3321): the folders' docs and the docs connectors'.
+            HStack { Text("Docs").foregroundStyle(.primary); Spacer() }
+                .help("Every folder’s Markdown docs and your docs connectors’ pages, read only")
+                .activityIcon("doc.text")
+                .appText(.supporting).sidebarInk(.docs).tag(SidebarItem.docs)
+        }
+        // Messages (#4344): the messaging connectors' conversations. Under it in grey, the
+        // unread count and what the last message woke (#4934).
+        MessagesRow()
+            .help(MessagesList.sidebarHelp)
+            .activityIcon("bubble.left.and.bubble.right")
+            .appText(.supporting).sidebarInk(.messages).tag(SidebarItem.messages)
     }
 
     /// One pick opens that page; several keep what is open only if it is among them.

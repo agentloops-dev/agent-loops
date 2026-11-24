@@ -73,10 +73,12 @@ enum CommandMenuItems {
     private static func folderID(_ key: FolderKey) -> String { "\(key.host)|\(key.folder.path)" }
 
     static func workItems(_ model: AppModel, _ kind: WorkList.Kind) -> [CommandFinder.Item] {
-        CommandMenuWork.items(model.workLists, kind)
+        model.flags.isOn(.work) ? CommandMenuWork.items(model.workLists, kind) : []
     }
 
-    static func repos(_ model: AppModel) -> [String] { CommandMenuWork.repos(model.workLists) }
+    static func repos(_ model: AppModel) -> [String] {
+        model.flags.isOn(.work) ? CommandMenuWork.repos(model.workLists) : []
+    }
 
     /// What choosing an item that is not an action does: open it.
     static func open(_ item: CommandFinder.Item, _ model: AppModel) {

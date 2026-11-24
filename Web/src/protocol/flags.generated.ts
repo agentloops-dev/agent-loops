@@ -12,4 +12,8 @@ export interface FeatureFlagInfo {
 
 export const featureFlags: readonly FeatureFlagInfo[] = [
   { name: "commit-trailers", title: "Commit trailers", about: "The Commit trailers group in Agents ▸ Policy: the trailers on each agent's commits.", issue: 6373 },
+  { name: "dashboard", title: "Dashboard", about: "The Dashboard on the Mac: each work item with its sessions. The window opens to it.", issue: 6572 },
+  { name: "docs", title: "Docs", about: "Docs in the sidebar, and the Docs section on a work item's page. On the Mac and the web page.", issue: 6572 },
+  { name: "suggested", title: "Suggested", about: "New Session ▸ Suggested: the epics with no lead.", issue: 6572 },
+  { name: "work", title: "Work", about: "Work in the sidebar: issues, pull requests, releases, deploys and the timeline.", issue: 6572 },
 ];

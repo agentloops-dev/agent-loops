@@ -4,7 +4,8 @@ import assert from "node:assert/strict";
 import { load } from "./load.mjs";
 
 const d = await load("src/model/docs.ts");
-const nav = await load("src/model/nav.ts");
+const nav = await load("test/nav-entry.ts");
+nav.preferencesSaid({ "flag:work": true, "flag:docs": true });
 const route = await load("src/route.ts");
 
 const wire = (ms) => (ms - Date.UTC(2001, 0, 1)) / 1000;

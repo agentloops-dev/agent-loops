@@ -372,9 +372,9 @@ private struct ReviewPullListRow: View {
         await model.dismissReview(pull, in: folder)
     }
 
-    /// Opens its Work page, else its forge page, and draws it read from then on (#3464).
+    /// Opens its Work page, else (also with Work off, #6572) its forge page, and draws it read from then on (#3464).
     private func open() {
-        if let ref = pull.ref { model.showWork(WorkPlace(kind: .pr, ref: ref)) } else { openURL(pull.url) }
+        if model.flags.isOn(.work), let ref = pull.ref { model.showWork(WorkPlace(kind: .pr, ref: ref)) } else { openURL(pull.url) }
         Task { await model.openReview(pull, in: folder) }
     }
 }

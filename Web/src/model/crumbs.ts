@@ -1,6 +1,6 @@
 // The trail over a page's title (#2142), and the person's initial in the top bar.
 import type { Route } from "../route";
-import { navPages, navTitle, type NavSection } from "./nav";
+import { navPages, sectionTitle, type NavSection } from "./nav";
 
 export interface Crumb { title: string; to?: Route }
 
@@ -12,7 +12,7 @@ export function initialOf(name: string | undefined): string {
 
 /** A page's breadcrumb: its section, then the page when its name is not the section's. */
 export function pageCrumbs(section: Exclude<NavSection, "overview">, title: string): Crumb[] {
-  return title === navTitle[section] ? [{ title }] : [{ title: navTitle[section], to: { nav: section } }, { title }];
+  return title === sectionTitle(section) ? [{ title }] : [{ title: sectionTitle(section), to: { nav: section } }, { title }];
 }
 
 /** The section an Activity page is in since #2141, for its breadcrumb; none for a page drawn inside another (Usage's panes). */

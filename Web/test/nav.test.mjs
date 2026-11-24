@@ -190,3 +190,27 @@ test("the Accounts page has its own address, and one account's (#5258)", async (
   assert.deepEqual(r.parseRoute(r.routeHash({ nav: "status", section: "accounts", item: id }, undefined)),
     { nav: "status", section: "accounts", item: id });
 });
+
+test("a page whose feature flag is off is in no list and opens by no address, and is back with no reload (#6572)", async () => {
+  const f = await load("test/nav-entry.ts");
+  const titles = () => f.pagesShown("work", true).map((p) => p.title);
+  f.preferencesSaid({});
+  assert.deepEqual(titles(), ["Messages"]);
+  assert.equal(f.sectionTitle("work"), "Messages");
+  assert.equal(f.openPage("work", "issue", true).id, "messages");
+  assert.equal(f.sectionOf({ nav: "work", section: "pr", item: "github:a/b#1" }), "overview");
+  assert.equal(f.sectionOf({ nav: "work", section: "docs" }), "overview");
+  assert.equal(f.sectionOf({ nav: "work", section: "messages" }), "work");
+  assert.equal(f.sectionOf({ nav: "work" }), "work");
+  assert.deepEqual(f.pageCrumbs("work", "Messages"), [{ title: "Messages" }]);
+  assert.deepEqual(f.searchFound("work", true, [], []).map((x) => x.title), ["Workflows", "Workflows", "Team Workflows"]);
+  f.preferencesSaid({ "flag:docs": true });
+  assert.deepEqual(titles(), ["Docs", "Messages"]);
+  assert.equal(f.sectionTitle("work"), "Docs and Messages");
+  assert.equal(f.sectionOf({ nav: "work", section: "docs" }), "work");
+  f.preferencesSaid({ "flag:work": true });
+  assert.deepEqual(titles(), ["Messages", "Issues", "Next", "Pull requests", "Releases", "Deploys", "Timeline"]);
+  assert.equal(f.sectionTitle("work"), "Work");
+  assert.equal(f.sectionOf({ nav: "work", section: "pr" }), "work");
+  assert.equal(f.openPage("work", undefined, true).id, "issue");
+});
