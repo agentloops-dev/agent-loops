@@ -474,6 +474,10 @@ public enum MessagesList {
     public static let setUp = "Open Connectors"
     public static let noConversations = "No conversations."
     public static let noUnread = "No unread conversations."
+    /// A conversation in a window of its own (#5482) that the machines' lists do not have.
+    public static let notInList = "This conversation is not in the list any more."
+    /// How many pages of messages/conversationsAll a lookup of one conversation reads.
+    public static let mostPagesToFind = 5
     public static let noMessages = "No messages."
     public static let outside = "Outside content: these messages come from other people, through the connector."
 
