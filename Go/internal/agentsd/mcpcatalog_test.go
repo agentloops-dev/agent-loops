@@ -146,12 +146,9 @@ func TestARemovedPersonalServerIsKept(t *testing.T) {
 	must(t, os.WriteFile(filepath.Join(home, ".agents", "mcp.json"), []byte(`{"mcpServers": {"mine": {"command": "my-server", "args": ["--fast"]}, "theirs": {"command": "x"}}}`), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	c.call(t, 1, "mcp/remove", map[string]any{"destination": map[string]any{"kind": "personal"}, "name": "mine"})
 	kept := filepath.Join(home, ".agents", "mcp.removed.json")
-	e, ok, _ := mcpEntryAt(kept, "mine")
-	if !ok {
-		t.Fatal("no copy kept")
-	}
-	if m, _ := e.(map[string]any); m["command"] != "my-server" {
-		t.Fatalf("%+v", e)
+	got, err := d.removedConnectors.Read()
+	if e := got["mine"]; err != nil || string(e.Entry) != `{"args":["--fast"],"command":"my-server"}` || e.RemovedAt == 0 {
+		t.Fatalf("%+v %v", got, err)
 	}
 	if info, _ := os.Stat(kept); info.Mode().Perm() != 0o600 {
 		t.Fatal(info.Mode())
