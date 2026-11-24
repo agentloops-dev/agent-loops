@@ -164,6 +164,7 @@ func Run(ctx context.Context, o Options, d Deps) error {
 		}
 		mu.Unlock()
 	}
+	mine := o // step 6 puts the pool's folders in its own copy: step 5 reads o beside it
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
@@ -174,7 +175,7 @@ func Run(ctx context.Context, o Options, d Deps) error {
 	go func() {
 		defer wg.Done()
 		var err error
-		if pool, err = prepareProjects(ctx, &o, d, l.Logs, rep, say); err != nil {
+		if pool, err = prepareProjects(ctx, &mine, d, l.Logs, rep, say); err != nil {
 			keep(failed(wire.MachineSetupStepIDProjects, err))
 		}
 	}()
