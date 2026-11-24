@@ -396,7 +396,7 @@ func sweepUsages(ctx context.Context, rs *records.Records, now time.Time, left i
 	if err != nil {
 		return usage, err
 	}
-	// A removed machine's cost on links (#2350), counted with them too.
+	// A removed machine's cost on links (#2350), and old nodes (#6768), counted with them too.
 	work, err := sweepLineage(ctx, s, rs, now, left-usage)
 	usage += work
 	if err != nil {
@@ -608,8 +608,9 @@ func sweepRemovedOrgRoutes(ctx context.Context, rs *records.Records, _ time.Time
 // own bound on the way (joins, lock joins and sign-ins an hour after they end, link
 // requests a day after, budget requests the next day, decided governance requests after
 // 30 days, and a removed person's or machine's at once), the channel links not used for
-// linkUnusedKept (#6763), and the governance approvals of a person or group that is gone
-// (#3748).
+// linkUnusedKept (#6763), the governance approvals of a person or group that is gone
+// (#3748), the policy versions replaced policyVersionAge ago (#6765), and the SCIM and read
+// tokens that stopped working deadTokenKept ago (#6766, #6767).
 func (s *Service) sweepRequests(ctx context.Context, now time.Time) {
 	failed := func(what string, err error) {
 		if err != nil {
@@ -633,6 +634,9 @@ func (s *Service) sweepRequests(ctx context.Context, now time.Time) {
 	_, err = s.governanceRequests(ctx, now)
 	failed("governance requests", err)
 	failed("governance approvals", s.sweepApprovals(ctx))
+	failed("policy versions", s.sweepPolicyVersions(ctx, now))
+	failed("SCIM tokens", s.scimTokens.sweep(ctx, now))
+	failed("read API tokens", s.readAPI.sweep(ctx, now))
 	_, err = s.removeRequests(ctx)
 	failed("remove requests", err)
 }
