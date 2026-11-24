@@ -66,7 +66,8 @@ func main() {
 	}
 	if !isTerminal() {
 		// Detached or under systemd: the log is the root's daemon.log, where the Swift
-		// host keeps it (StoreLocations.log), rolled at 4 MB (#1555). A panic lands in it too.
+		// host keeps it (StoreLocations.log), rolled at 4 MB (#1555) and kept 7 days (#6735). A panic lands in it too.
+		// store-bounds: kind=log; size=8MiB; age=7d; applied=on write, at open and every 30 s (#6735)
 		if f, err := rolllog.Open(loc.Log(), rolllog.Limit, true); err == nil {
 			setLog(f)
 		}

@@ -121,8 +121,8 @@ Mac.
 
 | Store | Kind | What it keeps | How long, how large | Applied |
 | --- | --- | --- | --- | --- |
-| `daemon.log`, in the log folder | log | What the machine did | 4 MB, and one older file. Output from a crash is checked against the limit within 30 seconds. | On write |
-| `mcp-logs/`, in the log folder | log | What each hosted MCP server wrote to stderr | 1 MB and one older file a server, and the newest 32 servers. A larger write is split, so no file passes 1 MB. | When a server starts |
+| `daemon.log`, in the log folder | log | What the machine did | 7 days and 10 MB (#6735): 4 MB, and one older file. A file holds the lines of 83 hours at most, and there are two files, so a line goes after 83 hours to 7 days, with no summary. The oldest lines go first. | On write, at start and every 30 seconds |
+| `mcp-logs/`, in the log folder | log | What each hosted MCP server wrote to stderr | 7 days and 10 MB for the folder (#6736): 256 KB and one older file a server, and the files written longest ago go when the folder passes 7 MB. A larger write is split, so no file passes 256 KB. A line goes after 83 hours to 7 days, with no summary. | On write, when a server starts, and hourly |
 | `tools/<runtime>/`, in the cache folder | cache | Pinned runtime toolsets | The current one | At start |
 | `browser/`, in the cache folder | cache | The browser that agents drive, and its output | Old browser versions are left to Playwright. Output goes when the session ends; what a crash left goes at the next start (#3649) | On install; at session end; at start |
 | The Mac browser pane's website data (WebKit's default store) | blob | The sign-ins of every site the pane opened, and its caches | Sign-ins until the site ends them. The caches are emptied once each time the app starts (#3727). | At the first pane of each launch |
@@ -309,7 +309,7 @@ account's machines. It leaves the operator's backups of it, and Stripe's own rec
 | `~/Library/Application Support/Agents Control/` | document; secret | The control plane's store, TLS certificate, `secrets-key`, push key, web settings | One of each |
 | `Agents Control/store-before-<…>` | blob | A whole old store, set aside when you change the store or move back. Each holds the audit, sealed secrets and server backups. | The newest 2; an older one is deleted when another is set aside (#3671) |
 | Keychain `com.alexecollins.agentshost` | secret | The control key, bucket keys, and `control-key-before-<time>` | One of each; the newest 2 `control-key-before-*` items, deleted with the old stores (#3671) |
-| `~/Library/Logs/Agents/control.log` | log | What the control plane did | 4 MB, and one older file |
+| `~/Library/Logs/Agents/control.log` | log | What the control plane did | 7 days and 10 MB (#6901): 4 MB, and one older file. A file holds the lines of 83 hours at most, and there are two files, so a line goes after 83 hours to 7 days, with no summary. Checked on write, at start and every 30 seconds. `/data/control.log` in a container is the same. |
 | The Web Push key | secret | The key that signs browser push | One. In `agents-control backup` as `webpush-key.pem` (#3651). |
 | `Agents Control/web-off` | key-value | That the web page is off | One empty file, beside the control plane's store, until the page is turned on. It is this control plane's own configuration, so it is not in a person's `~/.agents` (#6781) |
 
