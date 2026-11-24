@@ -109,8 +109,8 @@ struct AddPersonaSheet: View {
     @State private var previewError: DaemonAPI.CatalogError?
     @State private var marketplaces: [DaemonAPI.Marketplace] = []
     @State private var managing = false
-    /// The marketplace last searched for personas, kept across sheets.
-    @AppStorage("catalog.personas.marketplace", store: WindowDefaults.store) private var chosen = "provided:anthropic-skills"
+    /// The marketplace last searched for personas, the same on every client.
+    @AppStorage(DisplayPreference.personasMarketplace, store: WindowDefaults.store) private var chosen = "provided:anthropic-skills"
 
     var body: some View {
         VStack(spacing: 0) {

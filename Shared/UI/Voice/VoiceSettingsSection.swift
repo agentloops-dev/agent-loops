@@ -10,7 +10,9 @@ enum VoiceSettings {
     static let onKey = "voiceMode"
     static let onAtFirst = true
 
-    // How it speaks and sounds, to try options out (Alex, 2026-10-29). On this device only.
+    // How it speaks and sounds, to try options out (Alex, 2026-10-29). On this device only,
+    // on purpose (Alex, 2026-11-24, #6802): the wait is for one microphone and the sounds are the
+    // device's. A fixed set: five choices and one for each sound, with no age.
 
     /// Kokoro's voice pack, each inside the app.
     static let voiceKey = "voiceMode.voice"
