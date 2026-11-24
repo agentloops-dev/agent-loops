@@ -542,6 +542,11 @@ func (m *Methods) removePerson(ctx context.Context, user string, from Caller) er
 	if err := providers.ForgetMachineNames(ctx, m.s.cfg.Store, user); err != nil {
 		m.s.log("person " + user + ": their machine names could not be deleted: " + err.Error())
 	}
+	// Their warm pools, with the machines nobody claimed (#6761). It may take minutes, as a
+	// started machine's delete; a pass of the pools tries again what this does not delete.
+	if pools := m.s.pools; pools != nil {
+		safe.Go("delete a removed person's warm pools", func() { pools.forgetPerson(context.Background(), user) })
+	}
 	m.s.peopleChanged(user, true)
 	m.s.log("person " + user + " removed")
 	return nil
