@@ -3,8 +3,7 @@ package agentsd
 import (
 	"cmp"
 	"context"
-	"encoding/json"
-	"os"
+	"maps"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -34,8 +33,9 @@ const dismissedLeadsFile = "dismissed-leads.json"
 // dismissedLead is an epic's progress when it was dismissed: it comes back when that changes
 // (#5731). Its update time is not kept: a comment or a label changes it, so it came back in hours.
 type dismissedLead struct {
-	Done  int64 `json:"done"`
-	Total int64 `json:"total"`
+	Done  int64     `json:"done"`
+	Total int64     `json:"total"`
+	At    wire.Date `json:"at"`
 }
 
 func (d *Daemon) registerWorkSuggestLeads() {
@@ -47,9 +47,6 @@ func (d *Daemon) registerWorkSuggestLeads() {
 	})
 }
 
-// suggestedLeadMu keeps the dismissed list's read and write whole.
-var suggestedLeadMu sync.Mutex
-
 // dismissedLeadsPath is never relative: with no personal home it was the daemon's working
 // folder, and a scratch daemon wrote the list into the checkout it started from (#5815).
 func (d *Daemon) dismissedLeadsPath() string {
@@ -59,23 +56,11 @@ func (d *Daemon) dismissedLeadsPath() string {
 	return filepath.Join(d.Store.Loc.Root, dismissedLeadsFile)
 }
 
-// readDismissedLeads is the dismissed list; a file that is missing or unreadable is an empty one.
-func (d *Daemon) readDismissedLeads() map[string]dismissedLead {
-	out := map[string]dismissedLead{}
-	if b, err := os.ReadFile(d.dismissedLeadsPath()); err == nil {
-		if json.Unmarshal(b, &out) != nil || out == nil {
-			out = map[string]dismissedLead{}
-		}
-	}
-	return out
-}
-
-func (d *Daemon) writeDismissedLeads(m map[string]dismissedLead) error {
-	b, err := json.MarshalIndent(m, "", "  ")
-	if err != nil {
-		return err
-	}
-	return store.WriteAtomically(d.dismissedLeadsPath(), append(b, '\n'), 0o600)
+// openDismissedLeads opens the list, which evicts: an epic dismissed 90 days ago is suggested again.
+func (d *Daemon) openDismissedLeads() *store.JSONFile[dismissedLead] {
+	return smallFile(d, store.Spec{Name: dismissedLeadsFile, Kind: "key-value", Scope: "person",
+		Bounds: store.Bounds{MaxRecordBytes: 1 << 10, MaxCount: 500, MaxAge: store.MaxAge, Action: store.EvictOldest}},
+		d.dismissedLeadsPath, func(l *dismissedLead) *wire.Date { return &l.At })
 }
 
 // workDismissLead hides an epic until its progress changes (done or total children) or a lead of
@@ -92,11 +77,10 @@ func (d *Daemon) workDismissLead(ctx context.Context, r wire.WorkDismissLeadRequ
 	}
 	epic := epics[i]
 	p := progressOf(epic)
-	suggestedLeadMu.Lock()
-	defer suggestedLeadMu.Unlock()
-	m := d.readDismissedLeads()
-	m[r.Node.Ref] = dismissedLead{Done: p.Done, Total: p.Total}
-	if err := d.writeDismissedLeads(m); err != nil {
+	if err := d.dismissedLeads.Update(func(m map[string]dismissedLead) error {
+		m[r.Node.Ref] = dismissedLead{Done: p.Done, Total: p.Total}
+		return nil
+	}); err != nil {
 		return wire.ForgeDone{}, Invalid("%s: %v", method, err)
 	}
 	return wire.ForgeDone{}, nil
@@ -157,23 +141,20 @@ func (d *Daemon) workSuggestLeads(ctx context.Context, r wire.WorkSuggestLeadsRe
 		open = append(open, e)
 	}
 	// An epic that has a lead again is no longer dismissed: when that lead ends, it is back.
-	suggestedLeadMu.Lock()
-	dismissed := d.readDismissedLeads()
-	changed := false
-	for ref := range dismissed {
-		if led[ref] {
-			delete(dismissed, ref)
-			changed = true
-		}
+	// A list that cannot be read is an empty one.
+	dismissed, _ := d.dismissedLeads.Read()
+	again := func(ref string, _ dismissedLead) bool { return led[ref] }
+	count := len(dismissed)
+	if maps.DeleteFunc(dismissed, again); len(dismissed) < count {
+		_ = d.dismissedLeads.Update(func(m map[string]dismissedLead) error {
+			maps.DeleteFunc(m, again)
+			return nil
+		})
 	}
-	if changed {
-		_ = d.writeDismissedLeads(dismissed)
-	}
-	suggestedLeadMu.Unlock()
 	open = slices.DeleteFunc(open, func(e wire.ForgeItem) bool {
 		x, ok := dismissed[e.Node.Ref]
 		p := progressOf(e)
-		return ok && x == dismissedLead{Done: p.Done, Total: p.Total}
+		return ok && x.Done == p.Done && x.Total == p.Total
 	})
 
 	// Each one's plan, a few at once, for its children's labels.

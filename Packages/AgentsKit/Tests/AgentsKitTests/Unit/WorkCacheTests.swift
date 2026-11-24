@@ -1,4 +1,5 @@
 import Foundation
+import SQLite3
 import Testing
 @testable import AgentsKitCore
 
@@ -385,7 +386,7 @@ struct WorkCacheTests {
     }
 
     @Test func aPagesAnswerOverItsBoundIsNotKept() async throws {
-        let cache = try makeCache(Clock(), bounds: WorkCache.Bounds(pageBytes: 64))
+        let cache = try makeCache(Clock(), bounds: WorkCache.Bounds(recordBytes: 64))
         await cache.keep("small", "deploys", asked: "all")
         await cache.keep(String(repeating: "x", count: 100), "deploys", asked: "all")
         #expect(await cache.kept(String.self, "deploys", asked: "all") == nil, "the old answer went, so the page asks again")
@@ -429,6 +430,109 @@ struct WorkCacheTests {
         #expect(await cache.answer(issues)?.hosts.first?.items.count == 3)
         await cache.forget()
         #expect(await cache.summedBytes() == 0)
+    }
+
+    private let day: TimeInterval = 24 * 60 * 60
+
+    /// #6788: each kind of record goes 90 days after it was read; drawing it does not keep it.
+    @Test func everyRecordAgesOutAt90Days() async throws {
+        let clock = Clock()
+        let cache = try makeCache(clock)
+        let began = clock.now
+        await cache.keepPage(issues, host: mac, page: 0, list: page(1...3))
+        await cache.keepFailure(epics, host: mac, errors: [])
+        await cache.keepDetail(DaemonAPI.ForgeItemDetail(item: item(9), body: "body"))
+        await cache.keep("plan", "plan", asked: "a")
+        clock.move(90 * day)
+        await cache.sweep()
+        #expect(await cache.stats().oldest == began, "90 days is kept")
+        #expect(numbers(await cache.answer(issues)) == ["1", "2", "3"])
+        clock.move(1)
+        await cache.sweep()
+        #expect(await cache.stats() == CacheStats(count: 0, bytes: 0, oldest: nil))
+        #expect(await cache.summedBytes() == 0)
+        #expect(await cache.item(item(1).node) == nil, "also from memory")
+    }
+
+    @Test func aWriteAgesOldRecordsOut() async throws {
+        let clock = Clock()
+        let cache = try makeCache(clock)
+        await cache.keep("plan", "plan", asked: "a")
+        await cache.keepPage(issues, host: mac, page: 0, list: page(1...3))
+        clock.move(91 * day)
+        await cache.keep(items: [item(50)])
+        #expect(await cache.stats().count == 1)
+        #expect(await cache.stats().oldest == clock.now)
+    }
+
+    @Test func aFileOpenedAfterItAgedDrawsNothing() async throws {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("work-cache-\(UUID().uuidString).sqlite")
+        defer {
+            for suffix in ["", "-wal", "-shm"] { try? FileManager.default.removeItem(atPath: file.path + suffix) }
+        }
+        let clock = Clock()
+        do {
+            let cache = try makeCache(clock, file: file)
+            await cache.keepPage(issues, host: mac, page: 0, list: page(1...3))
+        }
+        clock.move(91 * day)
+        let again = try makeCache(clock, file: file)
+        #expect(await again.answer(issues) == nil)
+        #expect(await again.stats().count == 0)
+    }
+
+    @Test func anAnswerLosesOnlyItsAgedPages() async throws {
+        let clock = Clock()
+        let cache = try makeCache(clock)
+        await cache.keepPage(issues, host: mac, page: 0, list: page(1...3, cursor: "p2"))
+        await cache.keepPage(issues, host: mac, page: 1, list: page(4...6, cursor: "p3"))
+        clock.move(60 * day)
+        await cache.keepPage(issues, host: mac, page: 0, list: page(1...3, cursor: "p2"))
+        #expect(numbers(await cache.answer(issues)) == ["1", "2", "3", "4", "5", "6"])
+        clock.move(31 * day)
+        await cache.sweep()
+        #expect(numbers(await cache.answer(issues)) == ["1", "2", "3"])
+        #expect(await cache.answer(issues)?.hosts.first?.cursor == "p2")
+        #expect(await cache.item(item(5).node) == nil)
+        #expect(await cache.bytes() == cache.summedBytes())
+    }
+
+    /// An answer of a file from before #6788 has no read time of its own: the first sweep sets it and keeps the pages.
+    @Test func anOlderFilesAnswersKeepTheirPages() async throws {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("work-cache-\(UUID().uuidString).sqlite")
+        defer {
+            for suffix in ["", "-wal", "-shm"] { try? FileManager.default.removeItem(atPath: file.path + suffix) }
+        }
+        let clock = Clock()
+        do {
+            let cache = try makeCache(clock, file: file)
+            await cache.keepPage(issues, host: mac, page: 0, list: page(1...3))
+        }
+        var db: OpaquePointer?
+        #expect(sqlite3_open(file.path, &db) == SQLITE_OK)
+        sqlite3_busy_timeout(db, 5000)
+        #expect(sqlite3_exec(db, "DROP INDEX answer_read; ALTER TABLE answer DROP COLUMN read", nil, nil, nil) == SQLITE_OK)
+        sqlite3_close(db)
+        let again = try makeCache(clock, file: file)
+        #expect(numbers(await again.answer(issues)) == ["1", "2", "3"])
+        #expect(await again.stats().oldest == clock.now)
+    }
+
+    @Test func aRecordOverTheLargestIsCutOrNotKept() async throws {
+        let cache = try makeCache(Clock(), bounds: WorkCache.Bounds(recordBytes: 1024))
+        await cache.keepPage(issues, host: mac, page: 0, list: page(1...10, cursor: "p2"))
+        await cache.keepPage(issues, host: mac, page: 1, list: page(11...60, cursor: "p3"))
+        #expect(await cache.answer(issues)?.hosts.first?.items.count == 10, "the last page went")
+        let long = [DaemonAPI.ForgeComment(author: "a", body: String(repeating: "c", count: 2048), at: start)]
+        await cache.keepDetail(DaemonAPI.ForgeItemDetail(item: item(1), body: "body"))
+        await cache.keepDetail(DaemonAPI.ForgeItemDetail(item: item(1), body: "body", comments: long))
+        #expect(await cache.detail(item(1).node) == nil)
+    }
+
+    @Test func noBoundIsOver90Days() {
+        #expect(WorkCache.Bounds.mac.age == 90 * day)
+        #expect(WorkCache.Bounds.remote.age == 90 * day)
+        #expect(WorkCache.Bounds(age: 400 * day).age == 90 * day)
     }
 
     @Test func forgetRemovesEverything() async throws {

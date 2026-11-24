@@ -140,7 +140,7 @@ Mac.
 | `~/.agents-secrets` | secret | Secrets, connections and machine provider secrets (see [Security overview](security-overview.md#where-secrets-live)) | Until you remove them | — |
 | `~/.agents-secrets/sealed.json` | secret | Every secret of yours on this machine, sealed to it (#4014, #4177), with Ask before use on or off | Until you remove them | — |
 | `~/.agents-secrets/sessions/<agent>.json` | secret | Secrets for one session | The values go when the agent is archived; the file goes when it is deleted | On archive and delete; leftovers at start |
-| `~/.agents/dismissed-leads.json` | key-value | Epics dismissed from the suggestions | **None:** an entry goes only when its epic gets a lead (#6713) | On write |
+| `~/.agents/dismissed-leads.json` | key-value | The epics you dismissed from New Session's **Suggested** | 500 epics of 1 KiB each, for 90 days; the oldest goes first. An epic that gets a lead goes at once (#6713). In the data folder on a machine with no personal home | Hourly, and on write: age, and the count when it is twice over |
 | `~/.agents/mcp.removed.json` | key-value | MCP servers you removed | 20. No age (#6727). | On write |
 | `~/.agents-secrets/mcp-sign-ins.json` | secret | MCP sign-in tokens | Until you sign out. No count limit (#6740). | — |
 | `~/.agents-secrets/hints.json` | secret | The last 4 characters of each secret | With its secret. No count limit (#6741). | On write |
@@ -319,7 +319,7 @@ What the Mac window and the Remote keep in their defaults, and the web page in
 | `control-client.json` (Mac, Remote); IndexedDB `agents` (web) | key-value; secret | The pairing, and the web page's key | One, until **Forget** (#6800) | On **Forget** |
 | Keychain `control-client-key`, `lock-signing-key`, `device-key` (Mac, Remote) | secret | The client's own keys | One of each; kept after **Forget** | — |
 | `copy/` in the cache folder (Mac, Remote); IndexedDB `agents` › `copy` (web) | cache | The local copy: machines, folders, records and the ends of 20 chats | 200 MiB on the Mac, 50 MiB on the Remote and the web page. No age (#6789, #6790, #6792). | On write |
-| `work-cache.sqlite`, in the cache folder (Mac) | cache | Forge items, bodies and comments | 200 MiB, least recently shown out first. No age (#6788). | On write |
+| `work-cache.sqlite`, in the cache folder (Mac, Remote) | cache | Forge items, bodies, comments and Work page answers | 90 days since it was read from the forge. 200 MiB on the Mac, 50 MiB on the Remote, least recently shown out first. An item is 4 KiB and any other record 4 MiB at most. | On write, at start, hourly, and on **Forget** |
 | `shared-inbox.json` (Remote) | blob | What was shared to Agent Loops | Each attachment is capped. No count, total or age (#6795). | On use |
 | `attention-snapshot.json` (Remote) | cache | The widget's rows | 12 rows; stale after 15 minutes | On write, and on **Forget** |
 | `remote.startFolders` (Remote) | key-value | Start folders | **None** (#6798) | Never |
