@@ -192,7 +192,8 @@ times only: no titles or text; #4275).
 
 One sweep runs every hour. It removes old audit days, codes, tombstones, records with no
 owner, usage, workflow runs and lineage, join, lock-join, sign-in and link requests, and
-policy, governance and remove requests (#3649), and once a day the backups of removed
+policy, governance and remove requests (#3649), old policy versions and SCIM and read
+tokens that stopped working (#6765 to #6767), and once a day the backups of removed
 servers. It also forgets clients whose key expired (#6757), and machines with no workspace whose key expired (#6758), and removes
 the approvals of people and groups that are gone, and probes and move marks left by a
 copy that stopped (#3748).
@@ -228,8 +229,8 @@ the other copies of the control plane learn that it went. A removed person's sta
 | Link requests | document | A channel link that waits | 24 hours; 50 open | On read and hourly, 24 hours after expiry |
 | Sign-in state | secret | PKCE state and sealed refresh tokens while a sign-in runs | 10 and 2 minutes; 1,000 sign-ins started, each with at most one ticket (#3748) | Hourly, 1 hour after expiry |
 | Sign-in settings | key-value; secret | Org OIDC providers, domain claims, one sealed refresh token a person and provider | 5 providers, 20 domains | On remove |
-| SCIM and read tokens | secret | Token hashes, address of last use | 2 live of 20; 10 live of 50 | On write |
-| Policy, governance and remove requests | document | Asks for a budget, a catalogue item, or removal of a person | 1,000; a decided one 30 days | On read and hourly |
+| SCIM and read tokens | secret | Token hashes, address of last use | SCIM: 2 live of 20 a provider; read: 10 live of 50; a new one over 8 KiB is refused. A live token has no age: until it is revoked or ends. A revoked or ended one goes 90 days after that; a removed provider's go with it (#6766, #6767) | On write; hourly |
+| Policy, governance and remove requests | document | Asks for a budget, a catalogue item, or removal of a person | 1,000; a decided one 30 days; a governance one 90 days from the ask at most, and 8 KiB (#6764) | On read and hourly |
 
 ### Work data
 
@@ -238,7 +239,7 @@ the other copies of the control plane learn that it went. A removed person's sta
 | Kept requests | document | Prompts and agent starts for a stopped workspace, **with their attachments** (up to 40 MiB each) | Waiting requests expire after 90 days at most; failed requests expire after 7 days. At most 20 requests and 800 MiB per machine. The control plane refuses a new request at either limit; it does not evict a person's request (#3647, #6674) | On delivery, on keep, hourly |
 | Host copies | cache | Each machine's last folders and agents, up to 500, **with titles** | One a machine | When the machine is forgotten |
 | Usage reports | time series | Usage, cost and time by person, project, folder, machine and runtime | 7 days by the hour, 90 days by the day | Hourly |
-| Lineage | graph | Cost of each issue, PR and session node | 5,000 nodes, 90 days | On write |
+| Lineage | graph | Cost of each issue, PR and session node | 5,000 nodes, 32 MiB and 90 days a machine: the oldest go. A node over 64 KiB is not kept. A removed machine's a day after its last send (#6768) | On write, hourly |
 | Lineage graph | graph; log | Each machine's links and its sessions' changes of state (working, waiting, needs-you, stopped, archived, deleted), as refs, states and times, in `v1/lineage-graph/<machine>/` (#4275); each send in a small file until a roll-up (#6584) | Links as on the machine: an ended link 90 days after its end, 20,000 a machine. States as on the machine: 90 days, and each session's last state whatever its age, 20,000 a machine. At most 32 sends before a roll-up. A removed machine's a day after its last send | On write, hourly |
 | Deploys | document | Each machine's deploys, as refs, names, states and times: the component, the environments and their tiers, the end, whether it is a rollback, the merge times of the PRs it brings and the health signals seen in it, in `v1/deploys/<machine>.json` (#5496). No titles, no logs | As on the machine: 1,000 deploys; each send replaces the last. A removed machine's goes a day after its last send | On write, hourly |
 | Build timings | time series | Each machine's CI runs of a repository, with their jobs and steps, as refs, times, attempts, conclusions, runner labels and names, in `v1/build-timings/<machine>/` (#5232). No commit or PR titles, no logs | As on the machine: 90 days, 20,000 runs a repository, a pull request run's steps for 14 days. A machine that stopped sending is bounded once a day; a removed machine's goes a day after its last send | On write, hourly |
@@ -246,8 +247,8 @@ the other copies of the control plane learn that it went. A removed person's sta
 | Report views | key-value | Saved report views | 50 a person | When the person is removed |
 | Machine providers | document | Each provider | 10, and 64 KiB each: one more, or one larger, is refused. It is configuration, so it has no age: until removed. A removed one's tombstone, with none of its commands, for 7 days, and the newest 100 (#3748, #6762) | On write; hourly |
 | Tunnels | document | Servers' reverse tunnels | 15 minutes unjoined | On use |
-| Policy | key-value | The org policy and its old versions | 64 KiB; 100 versions | On write |
-| Governance | document | Installed servers and skills; approvals | 500 items; 1,000 approvals. An approval stays until an admin takes it back, or its person or group is gone (#3748) | Hourly |
+| Policy | key-value | The org policy and its old versions | 64 KiB each. The policy in force has no age. An old version goes 90 days after it was replaced; the newest 100 (#6765) | On write; hourly |
+| Governance | document | Installed servers and skills; approvals | 500 items and 1 MiB a machine; 1,000 approvals of 8 KiB: one more, or a larger record, is refused. An approval in force has no age: it stays until an admin takes it back, or its person or group is gone (#3748, #6764) | Hourly |
 | Org keys and gateways | key-value; secret | Routes and their sealed secrets | 50 routes | Tombstone, hourly |
 | Warm pools | document | Pools of ready machines, and their claims | 10 a provider, over every person, and 256 KiB a pool: a pool past that is refused. Claims: 7 days and 500 a pool. The pool has no age. Deleted, with the machines nobody claimed, when the person is removed (#6761). | On write; every 30 s; on remove |
 | Failed machine makes | log | Why a machine could not be made | 5 a provider, deleted with the provider. No age. | On write; on remove |

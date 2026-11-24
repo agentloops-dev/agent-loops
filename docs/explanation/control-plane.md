@@ -214,7 +214,7 @@ nothing changes.
 
 - **One document.** The store keeps it at `v1/policy.json`, with the signature in
   `v1/policy.sig`. Each version is also kept, as it was, in `v1/policy/versions/` (the
-  newest 100), so that an admin can see what each change did.
+  newest 100, each for 90 days after it was replaced), so that an admin can see what each change did.
 - **Signed by the control key.** Each change is one version higher, and the control plane
   signs it with its key (ECDSA P-256, the key that machines already trust). Any copy can send
   the signed policy without the key. At a key rotation, the control plane signs the policy

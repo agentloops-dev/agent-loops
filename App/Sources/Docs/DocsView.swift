@@ -20,6 +20,8 @@ final class DocsListState {
     var asked = 0
     /// The machine each doc was listed on, so its page reads it there first.
     var listedOn: [String: MachineRef] = [:]
+    /// The line a doc's window is asked to go to (#5481), until it has.
+    var windowLine: [String: Int] = [:]
 
     var ask: [String] { [String(asked)] }
 
@@ -130,6 +132,7 @@ struct DocsView: View {
                 DocsListPane(list: model.docsList)
             }
         }
+        .modifier(WorkWindows())
         // Back and Forward are the window's, along every page (#5784).
         .navigationTitle("Docs")
     }
@@ -137,6 +140,7 @@ struct DocsView: View {
 
 private struct DocsListPane: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.openWorkWindow) private var openWorkWindow
     @Bindable var list: DocsListState
 
     private var words: String { list.query.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -213,12 +217,13 @@ private struct DocsListPane: View {
                                 Text("▸ \(shelf.dir)").appText(.supporting).foregroundStyle(.secondary)
                             }
                             ForEach(shelf.docs) { doc in
-                                Button { model.showDocs(DocsPlace(ref: doc.ref)) } label: {
+                                Button { open(DocsPlace(ref: doc.ref)) } label: {
                                     DocRow(doc: doc, name: DocsList.underShelf(doc, shelf.dir))
                                 }
                                 .buttonStyle(.plain)
                                 .padding(.leading, shelf.dir.isEmpty ? 0 : 16)
                                 .help(doc.ref)
+                                .docWindowMenu(doc.ref)
                             }
                         }
                     } header: {
@@ -231,6 +236,8 @@ private struct DocsListPane: View {
             ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
+
+    private func open(_ place: DocsPlace) { model.followDoc(place, window: openWorkWindow) }
 
     private func sourceHeading(_ row: DocsList.SourceRow) -> some View {
         HStack(spacing: 8) {
@@ -256,7 +263,7 @@ private struct DocsListPane: View {
             List {
                 ForEach(results) { found in
                     VStack(alignment: .leading, spacing: 4) {
-                        Button { model.showDocs(DocsPlace(ref: found.result.doc.ref)) } label: {
+                        Button { open(DocsPlace(ref: found.result.doc.ref)) } label: {
                             HStack(alignment: .firstTextBaseline, spacing: 6) {
                                 Text(found.result.doc.title).fontWeight(.semibold).lineLimit(1)
                                 if let path = found.result.doc.path {
@@ -268,8 +275,9 @@ private struct DocsListPane: View {
                         }
                         .buttonStyle(.plain)
                         .help(found.result.doc.ref)
+                        .docWindowMenu(found.result.doc.ref)
                         ForEach(Array(found.result.matches.enumerated()), id: \.offset) { _, match in
-                            Button { model.showDocs(DocsPlace(ref: found.result.doc.ref, line: match.line)) } label: {
+                            Button { open(DocsPlace(ref: found.result.doc.ref, line: match.line)) } label: {
                                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                                     Text(match.line.map(String.init) ?? "")
                                         .monospacedDigit().foregroundStyle(.secondary)
@@ -281,6 +289,7 @@ private struct DocsListPane: View {
                             }
                             .buttonStyle(.plain)
                             .padding(.leading, 16)
+                            .docWindowMenu(found.result.doc.ref, line: match.line)
                         }
                     }
                     .padding(.vertical, 3)
@@ -328,11 +337,14 @@ private struct DocRow: View {
 /// A doc's page: its title, ref and when it changed; Open in Files or in its vendor's app, Copy
 /// link and Copy ref; and its Markdown, drawn as the Files pane draws a page, read only. A folder
 /// doc's page follows the file: it reads it again every few seconds while it is shown.
-private struct DocPage: View {
+struct DocPage: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.showMainWindow) private var showMainWindow
     @Environment(\.openURL) private var openURL
     let ref: String
     let line: Int?
+    /// Set in a window of its own (#5481): a link to another doc opens there.
+    var window: DocWindowModel?
 
     @State private var reading: (host: MachineRef, reading: DaemonAPI.DocsReading)?
     @State private var problem: String?
@@ -360,12 +372,22 @@ private struct DocPage: View {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .task(id: ref) {
+        .navigationTitle(window == nil ? "Docs" : doc.map { $0.title.isEmpty ? DocsList.shortForm($0) : $0.title } ?? ref)
+        .toolbar {
+            if window == nil {
+                ToolbarItem(placement: .primaryAction) { WorkWindowToolbarButton(key: .doc(ref)) }
+            }
+        }
+        // A window opened again at launch is there before the machines are.
+        .task(id: machinesKnown) {
+            guard machinesKnown else { return }
             // The names, for the project the page says, while the doc is read.
             if model.docsList.projectNames.isEmpty { Task { await model.docsList.readProjectNames(model: model) } }
             await read()
         }
     }
+
+    private var machinesKnown: Bool { !model.docsMachines.isEmpty || model.controlPlaneListed || model.controlPlaneHosts == nil }
 
     private var doc: DaemonAPI.Doc? { reading?.reading.doc }
 
@@ -387,7 +409,7 @@ private struct DocPage: View {
                 if let doc, !DocsList.isFolderDoc(doc), let url = doc.url.flatMap(URL.init(string:)) {
                     Button("Open in \(DocsList.vendorName(ref))") { openURL(url) }
                 } else if let doc, let place = filesPlace(doc) {
-                    Button("Open in Files") { _ = model.showDocFile(place.path, folder: place.folder, on: place.host) }
+                    Button("Open in Files") { _ = openFile(place.path, folder: place.folder, on: place.host) }
                         .help("Open this file as the folder’s page")
                 }
                 Button(copied == "link" ? "Copied" : "Copy link") { copy("link", DocsList.windowAddress(ref)) }
@@ -395,7 +417,10 @@ private struct DocPage: View {
                 Button(copied == "ref" ? "Copied" : "Copy ref") { copy("ref", ref) }
                     .help(ref)
                 Spacer(minLength: 0)
-                Button("All docs") { model.showDocs(DocsPlace()) }
+                Button("All docs") {
+                    model.showDocs(DocsPlace())
+                    showMainWindow?.run()
+                }
                     .linkStyle()
             }
             if let startProblem {
@@ -434,6 +459,27 @@ private struct DocPage: View {
         startProblem = folder.isEmpty ? "This doc has no folder here." : model.offerStart(
             AppViewStart(prompt: start.prompt(doc.ref), labels: start.labels(doc)),
             in: FolderKey(host: host, folder: URL(fileURLWithPath: folder)))
+        if startProblem == nil { showMainWindow?.run() }
+    }
+
+    private func openFile(_ path: String, folder: String, on host: MachineRef) -> Bool {
+        guard model.showDocFile(path, folder: folder, on: host) else { return false }
+        showMainWindow?.run()
+        return true
+    }
+
+    /// A link in the window's doc: the page of the doc it names, in this window, or else the folder's
+    /// page of the file, in the main one.
+    private func openLinked(_ ref: String, else file: @escaping @MainActor () -> Bool, on host: MachineRef) {
+        Task {
+            let asked = DaemonAPI.DocsReadRequest(ref: ref, from: 1, to: 1)
+            if let got = try? await model.docs(DaemonAPI.Method.docsRead, asked, returning: DaemonAPI.DocsReading.self, on: host) {
+                model.docsList.listedOn[got.doc.ref] = host
+                window?.go(DocsPlace(ref: got.doc.ref))
+            } else {
+                _ = file()
+            }
+        }
     }
 
     private func copy(_ what: String, _ text: String) {
@@ -457,10 +503,14 @@ private struct DocPage: View {
     private func pageActions(_ doc: DaemonAPI.Doc, on host: MachineRef) -> PageActions {
         var actions = PageActions()
         guard let folder = doc.folder else { return actions }
-        actions.openFile = { [model] file in
+        actions.openFile = { file in
             guard let relative = PinRules.relative(file.path(percentEncoded: false), in: URL(filePath: folder)),
                   PinRules.kind(relative) != nil else { return false }
-            return model.showDocFile(relative, folder: folder, on: host)
+            if window != nil, let next = DocsList.ref(of: doc, at: relative) {
+                openLinked(next, else: { openFile(relative, folder: folder, on: host) }, on: host)
+                return true
+            }
+            return openFile(relative, folder: folder, on: host)
         }
         return actions
     }
