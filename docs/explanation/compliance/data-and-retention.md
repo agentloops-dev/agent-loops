@@ -121,8 +121,8 @@ Mac.
 
 | Store | Kind | What it keeps | How long, how large | Applied |
 | --- | --- | --- | --- | --- |
-| `daemon.log`, in the log folder | log | What the machine did | 4 MB, and one older file. Output from a crash is checked against the limit within 30 seconds. | On write |
-| `mcp-logs/`, in the log folder | log | What each hosted MCP server wrote to stderr | 1 MB and one older file a server, and the newest 32 servers. A larger write is split, so no file passes 1 MB. | When a server starts |
+| `daemon.log`, in the log folder | log | What the machine did | 7 days and 10 MB (#6735): 4 MB, and one older file. A file holds the lines of 83 hours at most, and there are two files, so a line goes after 83 hours to 7 days, with no summary. The oldest lines go first. | On write, at start and every 30 seconds |
+| `mcp-logs/`, in the log folder | log | What each hosted MCP server wrote to stderr | 7 days and 10 MB for the folder (#6736): 256 KB and one older file a server, and the files written longest ago go when the folder passes 7 MB. A larger write is split, so no file passes 256 KB. A line goes after 83 hours to 7 days, with no summary. | On write, when a server starts, and hourly |
 | `tools/<runtime>/`, in the cache folder | cache | Pinned runtime toolsets | The current one | At start |
 | `browser/`, in the cache folder | cache | The browser that agents drive, and its output | Old browser versions are left to Playwright. Output goes when the session ends; what a crash left goes at the next start (#3649) | On install; at session end; at start |
 | The Mac browser pane's website data (WebKit's default store) | blob | The sign-ins of every site the pane opened, and its caches | Sign-ins until the site ends them. The caches are emptied once each time the app starts (#3727). | At the first pane of each launch |
@@ -289,12 +289,13 @@ service keeps these records.
 | Sign-in links | document | Which account a GitHub, Apple or Google user is | Until **Delete Account** |
 | Account usage | key-value | The bytes the account's store holds | Until **Delete Account** |
 | The account's control plane store | all of the kinds | All of the section above | Plan limits: 1 or 20 GB, 2 or 20 machines, 5 or 50 clients, audit 7 or 90 days. Until **Delete Account**. |
-| Invites | document | Expiry, and **who used it** | 14 days to use it. Kept after use, until **Delete Account**. |
-| Waitlist | document | Who asked to join | 10,000; removed on sign-up |
+| Invites | document | Expiry, and **who used it** | 14 days to use it, 90 at most. It goes when that time ends, used or not, and with **Delete Account** of the account that used it. 1,000 of 4 KiB; a new one over that is refused (#6782). Hourly |
+| Waitlist | document | Who asked to join | 90 days; removed sooner on sign-up or a block. 10,000 of 4 KiB; a new one over that is refused (#6786). Hourly |
 | Stripe events | key-value | Stripe event IDs already seen | 30 days, swept daily |
 | Operator backups | blob | Each account's store, on the operator's disk | The newest 7 by default; `--keep N` sets it, `--keep 0` keeps all (#3648) |
 | Email links | key-value | Which account a sign-in email is | Until **Delete Account** (#6785) |
-| Allow and block lists | key-value | The operator's lists | **None** (#6783, #6784) |
+| Allow list | key-value | GitHub logins that may sign up, and when the operator allowed each | 90 days from the last allow; an account that was made stays. 10,000 of 4 KiB; a new one over that is refused (#6783). Hourly |
+| Block lists | key-value | Sign-ins and emails' keyed hashes that may not sign up, with the login and the reason | Until the operator unblocks it. A block has no age, because one that aged out would let the person back in (Alex, 2026-11-24). 10,000 sign-ins and 10,000 emails of 4 KiB; a new one over that is refused (#6784) |
 
 The service keeps nothing for a signed-in browser: a session is a signed cookie for 30 days.
 
@@ -309,7 +310,7 @@ account's machines. It leaves the operator's backups of it, and Stripe's own rec
 | `~/Library/Application Support/Agents Control/` | document; secret | The control plane's store, TLS certificate, `secrets-key`, push key, web settings | One of each |
 | `Agents Control/store-before-<…>` | blob | A whole old store, set aside when you change the store or move back. Each holds the audit, sealed secrets and server backups. | The newest 2; an older one is deleted when another is set aside (#3671) |
 | Keychain `com.alexecollins.agentshost` | secret | The control key, bucket keys, and `control-key-before-<time>` | One of each; the newest 2 `control-key-before-*` items (32 bytes each). An item is deleted at 90 days, on the next write or hourly while the app runs, but not while a `store-before-*` folder is left: that store needs its key to be put back (#3671, #6770). The folders have no age yet (#6769). |
-| `~/Library/Logs/Agents/control.log` | log | What the control plane did | 4 MB, and one older file |
+| `~/Library/Logs/Agents/control.log` | log | What the control plane did | 7 days and 10 MB (#6901): 4 MB, and one older file. A file holds the lines of 83 hours at most, and there are two files, so a line goes after 83 hours to 7 days, with no summary. Checked on write, at start and every 30 seconds. `/data/control.log` in a container is the same. |
 | The Web Push key | secret | The key that signs browser push | One. In `agents-control backup` as `webpush-key.pem` (#3651). |
 | `Agents Control/web-off` | key-value | That the web page is off | One empty file, beside the control plane's store, until the page is turned on. It is this control plane's own configuration, so it is not in a person's `~/.agents` (#6781) |
 

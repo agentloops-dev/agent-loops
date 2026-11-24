@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func read(t *testing.T, path string) string {
@@ -48,11 +49,10 @@ func TestRollsPastTheLimit(t *testing.T) {
 			t.Fatalf("%s is %d bytes", p, fi.Size())
 		}
 	}
-	// A line larger than the limit still goes into an empty log, whole.
-	big := strings.Repeat("d", 300)
-	write(t, f, big)
-	if got := read(t, path); got != big {
-		t.Fatalf("%d bytes", len(got))
+	// What is larger than the limit goes in parts.
+	write(t, f, strings.Repeat("d", 310))
+	if cur, prev := read(t, path), read(t, Previous(path)); len(cur) != 10 || len(prev) != 100 {
+		t.Fatalf("%d and %d bytes", len(cur), len(prev))
 	}
 }
 
@@ -117,6 +117,113 @@ func TestCheckRollsWhatWentPastWrite(t *testing.T) {
 	}
 	write(t, f, "after\n")
 	if got := read(t, path); got != "after\n" {
+		t.Fatalf("current %q", got)
+	}
+}
+
+// age makes path's last write ago periods old.
+func age(t *testing.T, path string, periods int) {
+	t.Helper()
+	at := time.Now().Add(-time.Duration(periods) * period)
+	must(t, os.Chtimes(path, at, at))
+}
+
+// The check rolls an idle log of the last period and removes it a period later, and a running
+// writer goes on in the new file (#6735).
+func TestAnIdleLogAgesOut(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "daemon.log")
+	f, err := Open(path, 100, false)
+	must(t, err)
+	defer f.Close()
+	write(t, f, "old\n")
+	f.Check()
+	if got := read(t, path); got != "old\n" {
+		t.Fatalf("rolled in its own period: %q", got)
+	}
+	age(t, path, 1)
+	f.Check()
+	if got := read(t, Previous(path)); got != "old\n" {
+		t.Fatalf("previous %q", got)
+	}
+	write(t, f, "new\n")
+	age(t, Previous(path), 2)
+	f.Check()
+	if _, err := os.Stat(Previous(path)); !os.IsNotExist(err) {
+		t.Fatal("the previous log was kept past its age")
+	}
+	if got := read(t, path); got != "new\n" {
+		t.Fatalf("current %q", got)
+	}
+}
+
+// What went past Write in a new period does not make the lines before it new.
+func TestAWriteToStandardErrorDoesNotHideThePeriod(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "daemon.log")
+	f, err := Open(path, 100, false)
+	must(t, err)
+	defer f.Close()
+	write(t, f, "old\n")
+	f.period--
+	write(t, f.File(), "panic\n")
+	f.Check()
+	if got := read(t, Previous(path)); got != "old\npanic\n" {
+		t.Fatalf("previous %q", got)
+	}
+}
+
+// A log found past its age goes when it is opened.
+func TestOpenDropsALogPastItsAge(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "control.log")
+	must(t, os.WriteFile(path, []byte("old\n"), 0o600))
+	age(t, path, 3)
+	must(t, Append(path, 100, []byte("new\n")))
+	if _, err := os.Stat(Previous(path)); !os.IsNotExist(err) {
+		t.Fatal("kept past its age")
+	}
+	if got := read(t, path); got != "new\n" {
+		t.Fatalf("current %q", got)
+	}
+}
+
+// A watched log ages out with no writer.
+func TestAWatchedLogAgesOut(t *testing.T) {
+	was := CheckEvery
+	CheckEvery = time.Millisecond
+	defer func() { CheckEvery = was }()
+	path := filepath.Join(t.TempDir(), "control.log")
+	f, err := Open(path, 100, false)
+	must(t, err)
+	defer f.Close()
+	must(t, os.WriteFile(Previous(path), []byte("old\n"), 0o600))
+	age(t, Previous(path), 2)
+	f.Watch()
+	for range 2000 {
+		if _, err := os.Stat(Previous(path)); os.IsNotExist(err) {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal("kept past its age")
+}
+
+// Two writers that roll at once keep every line of the period: neither puts the other's new
+// log in the place of the previous one.
+func TestTwoWritersRollOnce(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "daemon.log")
+	a, err := Open(path, 100, false)
+	must(t, err)
+	defer a.Close()
+	b, err := Open(path, 100, false)
+	must(t, err)
+	defer b.Close()
+	write(t, a, "old\n")
+	a.roll()
+	b.roll()
+	write(t, b, "new\n")
+	if got := read(t, Previous(path)); got != "old\n" {
+		t.Fatalf("previous %q", got)
+	}
+	if got := read(t, path); got != "new\n" {
 		t.Fatalf("current %q", got)
 	}
 }

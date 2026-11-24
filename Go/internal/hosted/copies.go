@@ -465,6 +465,7 @@ func (s *Service) sweepIdleEvery(every time.Duration) {
 			return
 		case <-t.C:
 			s.sweepIdle()
+			s.sweepRecords()
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			s.sweepAccounts(ctx)
 			s.sweepStripeEvents(ctx)
