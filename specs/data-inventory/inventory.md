@@ -134,7 +134,7 @@ from the root (`agentsd/backups.go:69,72`). It holds nothing else.
 |---|---|---|---|
 | `~/.agents/settings/*.json` | Settings that follow the person (see `docs/reference/agents-folder.md`) | fixed shape | n/a |
 | `~/.agents/summaries/*` | Daily summaries, none written since #5853 | the newest 3 that were kept | n/a |
-| `~/.agents/checks/suggestions.json` | Daily-check findings | 50 suggestions, 200 dismissals (`dailychecks.go:38,48`) | on write |
+| `~/.agents/checks/suggestions.json`, `dismissed.json` | Daily-check findings and dismissals | 51 entries of 32 KiB, 7 days; 200 dismissals of 8 KiB, 90 days (`dailychecks.go`, `openChecks`) | hourly and on write |
 | `~/.agents-secrets/secrets.env`, `connections.json`, `provider-secrets.json` | Personal secrets, OAuth connections (Linux; the Keychain on a Mac), machine provider secrets | one per entry | the person edits them |
 | `~/.agents-secrets/sessions/<agent>.json` | Session-only secrets | Values go at archive; the file goes at delete; orphans are swept at start (`sessionsecrets.go:221-275`) | archive, delete, start |
 
@@ -400,7 +400,7 @@ newer than a row above for the same store.
 | `<root>/lock-seen.json` | key-value | Replay IDs of signed requests | 4,096 of 128 bytes each, 2 days, the one signed first goes first; a cutoff refuses what went | `Go/internal/agentsd/lockcheck.go` (`openLockSeen`) | #6723 |
 | `<root>/assessments/` | document | Runtime assessments | The newest 50; 90 days from the start; 256 KiB per file | `Go/internal/agentsd/assess_store.go` | #6724 |
 | `<folder>/.agents/pins.json` | key-value | Pinned pages, views, sessions and workflows, and hidden views | 10 of each and 50; 4 KiB a pin, 1 KiB a hidden view, 128 KiB a folder; until removed (no age, on purpose: a person's choices, committed with the folder) | `Go/internal/agentsd/pins.go` (`pinsFileMost`) | #6725 |
-| `~/.agents/checks/suggestions.json` | document | Daily-check findings and dismissals | 50 findings, 200 dismissals, no age | `Go/internal/agentsd/dailychecks.go:39,49` | #6726 |
+| `~/.agents/checks/suggestions.json`, `dismissed.json` | document | Daily-check findings and dismissals | 51 entries of 32 KiB each, 7 days; 200 dismissals of 8 KiB each, 90 days; the oldest first | `Go/internal/agentsd/dailychecks.go` (`openChecks`) | #6726 |
 | `~/.agents/mcp.removed.json` | key-value | Removed MCP servers | 20, no age | `Go/internal/agentsd/mcpcatalog/files.go:27` | #6727 |
 | `<root>/review-dismissals.json` | key-value | Dismissed PR links | 200 a folder; until the folder goes | `Go/internal/agentsd/reviews.go:29` | #6728 |
 | `<root>/review-opened.json` | key-value | Opened PR links | 200 a folder; until the folder goes | `Go/internal/agentsd/reviews.go:31` | #6729 |

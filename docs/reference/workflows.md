@@ -581,7 +581,7 @@ each run. A change to the file by hand shows in the control.
   workflow that missed its run. It can read more to decide (git, `gh`, connectors).
 - Each finding that needs you is kept as a suggestion, with a prompt that starts a session on
   it, in `~/.agents/checks/suggestions.json` (the newest 50, for a week). The sidebar's **For
-  Review** lists them. An urgent one, such as a broken default branch, also sends a notice at
+  Review** lists them. One you dismiss is not suggested again for 90 days. An urgent one, such as a broken default branch, also sends a notice at
   once.
 - There is no daily summary any more (#5853). Needs You, For Review and the notices show what
   waits for you when it happens. The daemon removes your copy of the old **Daily summary**

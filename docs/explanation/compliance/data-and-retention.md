@@ -136,7 +136,8 @@ Mac.
 | --- | --- | --- | --- | --- |
 | `~/.agents/settings/` | key-value | Settings that follow you (see [The `~/.agents` folder](../../reference/agents-folder.md)) | A fixed shape | — |
 | `~/.agents/summaries/` | document | Daily summaries saved before #5853: none is written now, and the app does not delete them | The newest 3 that were kept | — |
-| `~/.agents/checks/suggestions.json` | document | Daily-check findings | 50 findings, 200 dismissals | On write |
+| `~/.agents/checks/suggestions.json` | document | Daily-check findings, and when the last check started | 51 entries of 32 KiB each, for 7 days; the oldest goes first (#6726) | Hourly, and on write: age, and the count when it is twice over |
+| `~/.agents/checks/dismissed.json` | document | The daily-check findings you dismissed | 200 of 8 KiB each, for 90 days; the oldest goes first, and its finding can be suggested again (#6726) | Hourly, and on write: age, and the count when it is twice over |
 | `~/.agents-secrets` | secret | Secrets, connections and machine provider secrets (see [Security overview](security-overview.md#where-secrets-live)) | Until you remove them | — |
 | `~/.agents-secrets/sealed.json` | secret | Every secret of yours on this machine, sealed to it (#4014, #4177), with Ask before use on or off | Until you remove them | — |
 | `~/.agents-secrets/sessions/<agent>.json` | secret | Secrets for one session | The values go when the agent is archived; the file goes when it is deleted | On archive and delete; leftovers at start |

@@ -29,6 +29,7 @@ type Daemon struct {
 		Sweep() (int, error)
 	}
 	dismissedLeads *store.JSONFile[dismissedLead]
+	checks         checkBook
 	repoAliases    *store.JSONFile[repoalias.Alias]
 	erased         *store.JSONFile[wire.Date]
 
@@ -271,6 +272,7 @@ func newWith(ctx context.Context, root string, opts startOptions) (*Daemon, erro
 	d.accountOps = d.openAccountOps()
 	d.elsewhere = d.openElsewhere()
 	d.lockSeen = d.openLockSeen()
+	d.openChecks()
 	d.opts.Store(&opts)
 	d.jobCancel = cancel
 	st.OnGap = d.tellEntry

@@ -2,6 +2,7 @@ package agentsd
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -9,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -30,12 +32,12 @@ import (
 // it, and an urgent one sends a notice. It reads and never acts.
 // Every client lists them in For Review (#3331), with the folder's pins, until the person starts
 // a session from one (suggestions/start) or dismisses it (suggestions/dismiss); a dismissed one
-// never comes back, in For Review or a later check. The daily summary that read them is gone
+// does not come back for 90 days, in For Review or a later check. The daily summary that read them is gone
 // (#5853).
 
 const (
 	dailyChecksID = "daily-checks"
-	// suggestionsKept is the most suggestions the checks keep: the oldest go first.
+	// suggestionsKept is the most suggestions the checks keep: the sweep evicts the oldest.
 	suggestionsKept = 50
 	// checksGap is how far back the first check looks.
 	checksGap = 4 * time.Hour
@@ -45,7 +47,9 @@ const (
 	checkFolders = 30
 	// checkLines is the most findings of one kind a folder lists: the rest is a count.
 	checkLines = 10
-	// dismissalsKept is the most dismissals the checks keep: the oldest go first.
+	// suggestionLinkMost is the longest link of a suggestion, in bytes.
+	suggestionLinkMost = 2 << 10
+	// dismissalsKept is the most dismissals the checks keep: the sweep evicts the oldest.
 	dismissalsKept = 200
 	// checksReach is how long a suggestion is kept, and the furthest back a check looks.
 	checksReach = 7 * 24 * time.Hour
@@ -75,79 +79,159 @@ func agentTitle(a *wire.Agent) string {
 
 func checksClock(t time.Time) string { return t.Local().Format("Mon 15:04") }
 
-// checksMu keeps one read-change-write of the checks' file at a time.
-var checksMu sync.Mutex
+// checkBook is what the checks keep in ~/.agents/checks (#6726), two bounded small files.
+type checkBook struct {
+	// mu keeps one read-change-write of the two files at a time.
+	mu sync.Mutex
+	// suggestions is suggestions.json, by id, and when the last check started (checkedKey).
+	suggestions *store.JSONFile[checkSuggestion]
+	// dismissed is dismissed.json, by dismissalKey.
+	dismissed *store.JSONFile[dismissedSuggestion]
+	// carried is that the file from before #6726 is brought over, or there is none.
+	carried bool
+}
+
+// checkedKey is the entry of suggestions.json whose time is when the last check started.
+const checkedKey = "checked"
 
 // checkSuggestion is one finding the checks keep for the person.
 type checkSuggestion struct {
-	Folder string    `json:"folder"`
-	Title  string    `json:"title"`
-	Prompt string    `json:"prompt"`
+	Folder string    `json:"folder,omitempty"`
+	Title  string    `json:"title,omitempty"`
+	Prompt string    `json:"prompt,omitempty"`
 	Link   string    `json:"link,omitempty"`
 	Urgent bool      `json:"urgent,omitempty"`
-	At     time.Time `json:"at"`
+	At     wire.Date `json:"at"`
+	// Seq orders the ones found in one millisecond, the file's smallest time.
+	Seq int64 `json:"seq,omitempty"`
 }
 
-// id is the suggestion's name on the wire (#3331): the same for as long as it is kept.
-func (s checkSuggestion) id() string {
-	sum := sha256.Sum256([]byte(s.Folder + "\x00" + s.Title + "\x00" + s.At.UTC().Format(time.RFC3339Nano)))
+// suggestionID is a suggestion's key and its name on the wire (#3331): the same for as long as
+// it is kept.
+func suggestionID(folder, title string, at time.Time) string {
+	sum := sha256.Sum256([]byte(folder + "\x00" + title + "\x00" + at.UTC().Format(time.RFC3339Nano)))
 	return hex.EncodeToString(sum[:8])
 }
 
 // dismissedSuggestion is one the person dismissed (#3331): a check that finds it again, by
-// its folder and title, does not keep it.
+// its folder and title, does not keep it for 90 days.
 type dismissedSuggestion struct {
 	Folder string    `json:"folder"`
 	Title  string    `json:"title"`
-	At     time.Time `json:"at"`
+	At     wire.Date `json:"at"`
 }
 
-// checksRecord is ~/.agents/checks/suggestions.json: when the last check started, what it
-// and the ones before it found, and what the person dismissed.
-type checksRecord struct {
-	CheckedAt   time.Time             `json:"checkedAt,omitzero"`
-	Suggestions []checkSuggestion     `json:"suggestions"`
-	Dismissed   []dismissedSuggestion `json:"dismissed,omitempty"`
+func dismissalKey(folder, title string) string {
+	sum := sha256.Sum256([]byte(folder + "\x00" + title))
+	return hex.EncodeToString(sum[:])
 }
 
-func (r checksRecord) dismissed(folder, title string) bool {
-	for _, x := range r.Dismissed {
-		if x.Folder == folder && x.Title == title {
-			return true
+// checksPath is a file of the checks; with no home it is "", which reads as no file: a relative
+// path would be in a scratch daemon's working folder (#5815).
+func (d *Daemon) checksPath(name string) string {
+	home := d.personalHome()
+	if home == "" {
+		return ""
+	}
+	return filepath.Join(home, ".agents", "checks", name)
+}
+
+// openChecks opens the checks' files. Both evict: a suggestion that goes is found again by a
+// later check, and a dismissal that goes lets its finding be suggested again.
+func (d *Daemon) openChecks() {
+	d.checks.suggestions = smallFile(d, store.Spec{Name: "checks/suggestions.json", Kind: "document", Scope: "person",
+		Bounds: store.Bounds{MaxRecordBytes: 32 << 10, MaxCount: suggestionsKept + 1, MaxAge: checksReach, Action: store.EvictOldest}},
+		func() string { return d.checksPath("suggestions.json") }, func(s *checkSuggestion) *wire.Date { return &s.At })
+	d.checks.dismissed = smallFile(d, store.Spec{Name: "checks/dismissed.json", Kind: "document", Scope: "person",
+		Bounds: store.Bounds{MaxRecordBytes: 8 << 10, MaxCount: dismissalsKept, MaxAge: store.MaxAge, Action: store.EvictOldest}},
+		func() string { return d.checksPath("dismissed.json") }, func(x *dismissedSuggestion) *wire.Date { return &x.At })
+}
+
+// carryOverChecksLocked brings over suggestions.json from before #6726, one record of lists. It
+// runs before each use of the files, not when they are opened: the home is not known then.
+func (d *Daemon) carryOverChecksLocked() {
+	path := d.checksPath("suggestions.json")
+	if path == "" || d.checks.carried {
+		return
+	}
+	var old struct {
+		CheckedAt   time.Time
+		Suggestions []struct {
+			Folder, Title, Prompt, Link string
+			Urgent                      bool
+			At                          time.Time
+		}
+		Dismissed []struct {
+			Folder, Title string
+			At            time.Time
 		}
 	}
-	return false
-}
-
-func checksPath(home string) string {
-	return filepath.Join(home, ".agents", "checks", "suggestions.json")
-}
-
-// readChecks and writeChecks need a home: with none, the path was relative and a scratch
-// daemon wrote into its working folder (#5815). With no home, no checks are kept.
-func readChecks(home string) checksRecord {
-	var r checksRecord
-	if home == "" {
-		return r
+	raw, err := os.ReadFile(path)
+	if err != nil || json.Unmarshal(raw, &old) != nil ||
+		old.CheckedAt.IsZero() && len(old.Suggestions)+len(old.Dismissed) == 0 {
+		d.checks.carried = err == nil || errors.Is(err, os.ErrNotExist)
+		return
 	}
-	if b, err := os.ReadFile(checksPath(home)); err == nil {
-		_ = json.Unmarshal(b, &r)
+	// The dismissals first: a suggestion that a stop loses here, a later check finds again.
+	err = d.checks.dismissed.Update(func(m map[string]dismissedSuggestion) error {
+		for _, x := range old.Dismissed {
+			m[dismissalKey(x.Folder, x.Title)] = dismissedSuggestion{Folder: x.Folder, Title: x.Title, At: wire.DateOf(x.At)}
+		}
+		return nil
+	})
+	if err == nil {
+		// Not left to Update, which would set the old record aside as corrupt.
+		err = os.Remove(path)
 	}
-	return r
+	if err != nil {
+		log.Printf("daily checks: could not bring over the suggestions: %v", err)
+		return
+	}
+	d.checks.carried = true
+	if err := d.checks.suggestions.Update(func(m map[string]checkSuggestion) error {
+		if !old.CheckedAt.IsZero() {
+			m[checkedKey] = checkSuggestion{At: wire.DateOf(old.CheckedAt)}
+		}
+		for i, s := range old.Suggestions {
+			if len(s.Link) > suggestionLinkMost {
+				s.Link = ""
+			}
+			m[suggestionID(s.Folder, s.Title, s.At)] = checkSuggestion{Folder: s.Folder, Title: s.Title, Prompt: s.Prompt,
+				Link: s.Link, Urgent: s.Urgent, At: wire.DateOf(s.At), Seq: int64(i + 1)}
+		}
+		return nil
+	}); err != nil {
+		log.Printf("daily checks: could not bring over the suggestions: %v", err)
+	}
 }
 
-func writeChecks(home string, r checksRecord) error {
-	if home == "" {
+// suggestionsLocked is the suggestions of a folder, by id.
+func (d *Daemon) suggestionsLocked(folder string) map[string]checkSuggestion {
+	d.carryOverChecksLocked()
+	m, err := d.checks.suggestions.Read()
+	if err != nil {
+		log.Printf("daily checks: %v", err)
+	}
+	maps.DeleteFunc(m, func(id string, s checkSuggestion) bool {
+		return id == checkedKey || filepath.Clean(s.Folder) != filepath.Clean(folder)
+	})
+	return m
+}
+
+// updateSuggestionsLocked changes the suggestions, in the folder only the person reads.
+func (d *Daemon) updateSuggestionsLocked(change func(map[string]checkSuggestion)) error {
+	path := d.checksPath("suggestions.json")
+	if path == "" {
 		return errNoPersonalHome
 	}
-	if err := os.MkdirAll(filepath.Dir(checksPath(home)), 0o700); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
-	b, err := json.MarshalIndent(r, "", "  ")
-	if err != nil {
-		return err
-	}
-	return store.WriteAtomically(checksPath(home), b, 0o600)
+	d.carryOverChecksLocked()
+	return d.checks.suggestions.Update(func(m map[string]checkSuggestion) error {
+		change(m)
+		return nil
+	})
 }
 
 // byChecksWorkflow is whether a session is a check's own: it is not work.
@@ -201,16 +285,20 @@ func (d *Daemon) quietFolders(since time.Time) []string {
 // checkFacts is what looks wrong in each folder that had no work since the last check, as
 // Markdown the agent decides from. It starts a new check: the next one looks from here.
 func (d *Daemon) checkFacts(at time.Time) string {
-	home := d.personalHome()
-	checksMu.Lock()
-	r := readChecks(home)
-	since := r.CheckedAt
+	var since time.Time
+	d.checks.mu.Lock()
+	if err := d.updateSuggestionsLocked(func(m map[string]checkSuggestion) {
+		if last, ok := m[checkedKey]; ok {
+			since = last.At.Time()
+		}
+		m[checkedKey] = checkSuggestion{At: wire.DateOf(at)}
+	}); err != nil {
+		log.Printf("daily checks: the check's start was not kept: %v", err)
+	}
+	d.checks.mu.Unlock()
 	if since.IsZero() || since.Before(at.Add(-checksReach)) {
 		since = at.Add(-checksGap)
 	}
-	r.CheckedAt = at
-	_ = writeChecks(home, r)
-	checksMu.Unlock()
 
 	quiet := d.quietFolders(since)
 	missed := map[string][]string{}
@@ -403,10 +491,13 @@ func (d *Daemon) keepSuggestion(id wire.UUID, args map[string]json.RawMessage, a
 		Prompt: prefix(strings.TrimSpace(argString(args, "prompt")), 2000),
 		Link:   strings.TrimSpace(argString(args, "link")),
 		Urgent: argBool(args, "urgent"),
-		At:     at,
+		At:     wire.DateOf(at),
 	}
 	if s.Title == "" || s.Prompt == "" {
 		return "", Invalid("Nothing was kept: send a `title` that says what is wrong and a `prompt` that starts a session on it.")
+	}
+	if len(s.Link) > suggestionLinkMost {
+		return "", Invalid("Nothing was kept: the `link` is over %d bytes.", suggestionLinkMost)
 	}
 	known := false
 	for _, f := range d.folderPaths() {
@@ -417,26 +508,26 @@ func (d *Daemon) keepSuggestion(id wire.UUID, args map[string]json.RawMessage, a
 	if !known {
 		return "", Invalid("Nothing was kept: %q is not a folder on this machine. Send the folder's path as the facts give it.", s.Folder)
 	}
-	home := d.personalHome()
-	checksMu.Lock()
-	r := readChecks(home)
-	if r.dismissed(s.Folder, s.Title) {
-		checksMu.Unlock()
+	d.checks.mu.Lock()
+	d.carryOverChecksLocked()
+	dismissed, err := d.checks.dismissed.Read()
+	if err != nil {
+		log.Printf("daily checks: %v", err)
+	}
+	if _, ok := dismissed[dismissalKey(s.Folder, s.Title)]; ok {
+		d.checks.mu.Unlock()
 		return "Not kept: the person dismissed this one before. Do not suggest it again.", nil
 	}
-	kept := []checkSuggestion{}
-	for _, old := range r.Suggestions {
-		if (old.Folder != s.Folder || old.Title != s.Title) && at.Sub(old.At) < checksReach {
-			kept = append(kept, old)
+	err = d.updateSuggestionsLocked(func(m map[string]checkSuggestion) {
+		for id, old := range m {
+			s.Seq = max(s.Seq, old.Seq+1)
+			if id != checkedKey && old.Folder == s.Folder && old.Title == s.Title {
+				delete(m, id)
+			}
 		}
-	}
-	kept = append(kept, s)
-	if len(kept) > suggestionsKept {
-		kept = kept[len(kept)-suggestionsKept:]
-	}
-	r.Suggestions = kept
-	err := writeChecks(home, r)
-	checksMu.Unlock()
+		m[suggestionID(s.Folder, s.Title, at)] = s
+	})
+	d.checks.mu.Unlock()
 	if err != nil {
 		return "", &Error{Message: "The suggestion was not kept: " + err.Error()}
 	}
@@ -456,19 +547,19 @@ func (d *Daemon) keepSuggestion(id wire.UUID, args map[string]json.RawMessage, a
 // suggestionsFor is a folder's suggestions for For Review (#3331), newest first: those of the
 // last week.
 func (d *Daemon) suggestionsFor(folder string, at time.Time) []wire.CheckSuggestion {
-	home := d.personalHome()
-	if home == "" {
-		return nil // a scratch root with no home: no checks ran
-	}
-	checksMu.Lock()
-	r := readChecks(home)
-	checksMu.Unlock()
+	d.checks.mu.Lock()
+	kept := d.suggestionsLocked(folder)
+	d.checks.mu.Unlock()
+	ids := slices.SortedFunc(maps.Keys(kept), func(x, y string) int {
+		return cmp.Or(cmp.Compare(kept[y].At, kept[x].At), cmp.Compare(kept[y].Seq, kept[x].Seq))
+	})
 	var out []wire.CheckSuggestion
-	for _, s := range slices.Backward(r.Suggestions) {
-		if filepath.Clean(s.Folder) != filepath.Clean(folder) || at.Sub(s.At) >= checksReach {
-			continue
+	for _, id := range ids {
+		s := kept[id]
+		if at.Sub(s.At.Time()) >= checksReach {
+			continue // the next sweep takes it out
 		}
-		c := wire.CheckSuggestion{ID: s.id(), Title: s.Title, Prompt: s.Prompt, At: wire.DateOf(s.At)}
+		c := wire.CheckSuggestion{ID: id, Title: s.Title, Prompt: s.Prompt, At: s.At}
 		if s.Link != "" {
 			c.Link = new(wire.URL(s.Link))
 		}
@@ -481,47 +572,31 @@ func (d *Daemon) suggestionsFor(folder string, at time.Time) []wire.CheckSuggest
 }
 
 // takeSuggestion takes one of a folder's suggestions out (#3331): started from, or dismissed,
-// which is kept so that it never comes back. False when there is no such suggestion.
+// which is kept so that it does not come back for 90 days. False when there is no such suggestion.
 func (d *Daemon) takeSuggestion(folder, id string, dismiss bool, at time.Time) (checkSuggestion, bool, error) {
-	home := d.personalHome()
-	if home == "" {
+	d.checks.mu.Lock()
+	defer d.checks.mu.Unlock()
+	s, ok := d.suggestionsLocked(folder)[id]
+	if !ok {
 		return checkSuggestion{}, false, nil
 	}
-	checksMu.Lock()
-	defer checksMu.Unlock()
-	r := readChecks(home)
-	i := slices.IndexFunc(r.Suggestions, func(s checkSuggestion) bool {
-		return filepath.Clean(s.Folder) == filepath.Clean(folder) && s.id() == id
-	})
-	if i < 0 {
-		return checkSuggestion{}, false, nil
-	}
-	s := r.Suggestions[i]
-	r.Suggestions = slices.Delete(r.Suggestions, i, i+1)
-	if dismiss && !r.dismissed(s.Folder, s.Title) {
-		r.Dismissed = append(r.Dismissed, dismissedSuggestion{Folder: s.Folder, Title: s.Title, At: at})
-		if len(r.Dismissed) > dismissalsKept {
-			r.Dismissed = r.Dismissed[len(r.Dismissed)-dismissalsKept:]
+	if dismiss {
+		if err := d.checks.dismissed.Update(func(m map[string]dismissedSuggestion) error {
+			m[dismissalKey(s.Folder, s.Title)] = dismissedSuggestion{Folder: s.Folder, Title: s.Title, At: wire.DateOf(at)}
+			return nil
+		}); err != nil {
+			return s, true, err
 		}
 	}
-	return s, true, writeChecks(home, r)
+	return s, true, d.updateSuggestionsLocked(func(m map[string]checkSuggestion) { delete(m, id) })
 }
 
 // findSuggestion is one of a folder's suggestions, by its id.
 func (d *Daemon) findSuggestion(folder, id string) (checkSuggestion, bool) {
-	home := d.personalHome()
-	if home == "" {
-		return checkSuggestion{}, false
-	}
-	checksMu.Lock()
-	r := readChecks(home)
-	checksMu.Unlock()
-	for _, s := range r.Suggestions {
-		if filepath.Clean(s.Folder) == filepath.Clean(folder) && s.id() == id {
-			return s, true
-		}
-	}
-	return checkSuggestion{}, false
+	d.checks.mu.Lock()
+	defer d.checks.mu.Unlock()
+	s, ok := d.suggestionsLocked(folder)[id]
+	return s, ok
 }
 
 func (d *Daemon) registerSuggestions() {

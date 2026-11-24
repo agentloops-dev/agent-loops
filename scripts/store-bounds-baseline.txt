@@ -27,7 +27,6 @@
 1 Go/internal/agentsd/browser.go os.WriteFile
 1 Go/internal/agentsd/connectorsetup.go WriteAtomically
 1 Go/internal/agentsd/cost.go WriteAtomically
-1 Go/internal/agentsd/dailychecks.go WriteAtomically
 1 Go/internal/agentsd/devices.go WriteAtomically
 1 Go/internal/agentsd/dotagents.go WriteAtomically
 3 Go/internal/agentsd/environment.go WriteAtomically

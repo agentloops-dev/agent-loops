@@ -45,8 +45,8 @@ func TestDailyChecksKeepSuggestions(t *testing.T) {
 	if got := d.quietFolders(at.Add(-time.Hour)); !slices.Equal(got, []string{quiet}) {
 		t.Fatalf("quiet folders %v", got)
 	}
-	if r := readChecks(home); r.CheckedAt.Before(at.Add(-time.Second)) {
-		t.Fatalf("the check did not start a new one: %+v", r)
+	if m, err := d.checks.suggestions.Read(); err != nil || m[checkedKey].At.Time().Before(at.Add(-time.Second)) {
+		t.Fatalf("the check did not start a new one: %+v %v", m, err)
 	}
 
 	suggest := func(folder, title string, urgent bool) (string, error) {
@@ -70,10 +70,10 @@ func TestDailyChecksKeepSuggestions(t *testing.T) {
 	if err != nil || strings.Contains(said, "No notice") {
 		t.Fatalf("%q, %v", said, err)
 	}
-	if r := readChecks(home); len(r.Suggestions) != 1 || !r.Suggestions[0].Urgent {
-		t.Fatalf("the newer suggestion did not replace the older one: %+v", r.Suggestions)
+	if got := d.suggestionsFor(quiet, time.Now()); len(got) != 1 || got[0].Urgent == nil {
+		t.Fatalf("the newer suggestion did not replace the older one: %+v", got)
 	}
-	if st, err := os.Stat(filepath.Dir(checksPath(home))); err != nil || st.Mode().Perm() != 0o700 {
+	if st, err := os.Stat(filepath.Dir(d.checksPath("suggestions.json"))); err != nil || st.Mode().Perm() != 0o700 {
 		t.Fatalf("%v %v", st, err)
 	}
 	if !strings.Contains(said, "For Review lists it.") || strings.Contains(said, "summary") {
@@ -222,8 +222,8 @@ func suggestionsIn(t *testing.T, c *conn, id int, folder string) []wire.CheckSug
 }
 
 // #3331: every client lists the checks' suggestions in For Review, with the folder's pins,
-// newest first; Start opens a session with its prompt and takes it out; a dismissed one never
-// comes back, not in For Review or a later check.
+// newest first; Start opens a session with its prompt and takes it out; a dismissed one does
+// not come back, not in For Review or a later check.
 func TestForReviewListsTheChecksSuggestionsWithStartAndDismiss(t *testing.T) {
 	t.Parallel()
 
@@ -298,5 +298,82 @@ func TestForReviewListsTheChecksSuggestionsWithStartAndDismiss(t *testing.T) {
 	}
 	if e := c.callError(t, 10, "suggestions/start", wire.SuggestionRequest{Folder: folder, ID: got[0].ID}); e == nil {
 		t.Fatal("a suggestion started twice")
+	}
+}
+
+// #6726: suggestions.json from before its limits is brought over with its ids, less what is past
+// its age; the sweep holds both files to their count and age.
+func TestChecksAreBounded(t *testing.T) {
+	t.Parallel()
+
+	d, _ := start(t, t.TempDir())
+	defer d.Shutdown()
+	home, folder := t.TempDir(), t.TempDir()
+	path := filepath.Join(home, ".agents", "checks", "suggestions.json")
+	at := time.Now()
+	ago := func(days int) string {
+		return at.Add(-time.Duration(days) * 24 * time.Hour).UTC().Format(time.RFC3339Nano)
+	}
+	old := fmt.Sprintf(`{"checkedAt": %q, "suggestions": [
+  {"folder": %[4]q, "title": "past", "prompt": "p", "at": %[2]q}, {"folder": %[4]q, "title": "kept", "prompt": "p", "at": %[1]q}],
+ "dismissed": [{"folder": %[4]q, "title": "past", "at": %[3]q}, {"folder": %[4]q, "title": "no", "at": %[2]q}]}`,
+		ago(1), ago(8), ago(91), folder)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(old), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	d.PersonalHome = home
+	kept, err := time.Parse(time.RFC3339Nano, ago(1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := d.suggestionsFor(folder, at)
+	if len(got) != 1 || got[0].ID != suggestionID(folder, "kept", kept) {
+		t.Fatalf("brought over %+v", got)
+	}
+	dismissed, err := d.checks.dismissed.Read()
+	if _, ok := dismissed[dismissalKey(folder, "no")]; err != nil || !ok || len(dismissed) != 1 {
+		t.Fatalf("dismissals brought over: %v %v", dismissed, err)
+	}
+	if m, err := d.checks.suggestions.Read(); err != nil || len(m) != 2 || m[checkedKey].At == 0 {
+		t.Fatalf("the last check's start: %v %v", m, err)
+	}
+	if left, _ := filepath.Glob(path + ".corrupt-*"); len(left) != 0 {
+		t.Fatalf("set aside %v", left)
+	}
+
+	// What is past its age or over its count goes in the sweep.
+	raw := map[string]any{}
+	for n := range 70 {
+		raw[fmt.Sprint(n)] = map[string]any{"folder": folder, "title": fmt.Sprint(n), "prompt": "p", "at": at.Add(-time.Duration(n+1) * time.Minute).UTC().Format(time.RFC3339Nano)}
+	}
+	raw["past"] = map[string]any{"folder": folder, "title": "past", "prompt": "p", "at": ago(7)}
+	data, _ := json.Marshal(raw)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	gone := map[string]any{}
+	for n := range 250 {
+		gone[fmt.Sprint(n)] = map[string]any{"folder": folder, "title": fmt.Sprint(n), "at": ago(n % 100)}
+	}
+	data, _ = json.Marshal(gone)
+	if err := os.WriteFile(d.checksPath("dismissed.json"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	d.sweepSmallStores(nowFunc())
+	m, err := d.checks.suggestions.Read()
+	if _, ok := m["past"]; err != nil || ok || len(m) != suggestionsKept+1 || m["0"].Title == "" {
+		t.Fatalf("%d suggestions after the sweep, %v", len(m), err)
+	}
+	dismissed, err = d.checks.dismissed.Read()
+	if err != nil || len(dismissed) != dismissalsKept {
+		t.Fatalf("%d dismissals after the sweep, %v", len(dismissed), err)
+	}
+	for key, x := range dismissed {
+		if at.Sub(x.At.Time()) >= store.MaxAge {
+			t.Fatalf("%s is kept past its age", key)
+		}
 	}
 }

@@ -1,6 +1,7 @@
 package agentsd
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -164,7 +165,7 @@ func TestNoPersonalHomeWritesNoRelativePath(t *testing.T) {
 	if got, _ := d.dismissedLeads.Read(); len(got) != 1 {
 		t.Fatalf("read back %v", got)
 	}
-	if err := writeChecks("", checksRecord{}); err == nil {
+	if err := d.updateSuggestionsLocked(func(map[string]checkSuggestion) {}); !errors.Is(err, errNoPersonalHome) {
 		t.Fatal("checks were written with no home")
 	}
 }

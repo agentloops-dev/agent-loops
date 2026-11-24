@@ -2723,7 +2723,7 @@
     {
       "name": "suggestions/dismiss",
       "x-capability": "suggestions/1",
-      "description": "Take a suggestion of the daily checks out of the sidebar's For Review (#3331) for good: the host keeps the dismissal, so For Review does not list it again, and the checks do not keep it again.",
+      "description": "Take a suggestion of the daily checks out of the sidebar's For Review (#3331): the host keeps the dismissal for 90 days, so For Review does not list it again, and the checks do not keep it again.",
       "tags": [
         {
           "name": "web"
