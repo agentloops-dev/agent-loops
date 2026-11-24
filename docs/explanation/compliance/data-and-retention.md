@@ -243,7 +243,7 @@ the other copies of the control plane learn that it went. A removed person's sta
 | Build timings | time series | Each machine's CI runs of a repository, with their jobs and steps, as refs, times, attempts, conclusions, runner labels and names, in `v1/build-timings/<machine>/` (#5232). No commit or PR titles, no logs | As on the machine: 90 days, 20,000 runs a repository, a pull request run's steps for 14 days. A machine that stopped sending is bounded once a day; a removed machine's goes a day after its last send | On write, hourly |
 | Workflow runs | log | Which machine took each workflow trigger | 7 days | Hourly |
 | Report views | key-value | Saved report views | 50 a person | When the person is removed |
-| Machine providers | document | Each provider | No count limit. A removed one's tombstone for 7 days (#3748) | Hourly |
+| Machine providers | document | Each provider | 10, and 64 KiB each: one more, or one larger, is refused. It is configuration, so it has no age: until removed. A removed one's tombstone, with none of its commands, for 7 days, and the newest 100 (#3748, #6762) | On write; hourly |
 | Tunnels | document | Servers' reverse tunnels | 15 minutes unjoined | On use |
 | Policy | key-value | The org policy and its old versions | 64 KiB; 100 versions | On write |
 | Governance | document | Installed servers and skills; approvals | 500 items; 1,000 approvals. An approval stays until an admin takes it back, or its person or group is gone (#3748) | Hourly |

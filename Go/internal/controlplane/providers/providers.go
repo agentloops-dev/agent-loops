@@ -253,8 +253,10 @@ type Providers struct {
 	mu sync.Mutex
 	// Held while changed() reads the records and tells the router, so two at once can
 	// never leave the older overlay there (#1296).
-	publishing  sync.Mutex
-	providers   map[string]heldProvider
+	publishing sync.Mutex
+	providers  map[string]heldProvider
+	// The providers being added, which count for mostProviders (#6762).
+	adding      map[string]bool
 	connections map[string]Provider
 	listed      map[string]*listed
 	// Counts the lists asked for, so a slow one never replaces a later one (#1443).
@@ -345,7 +347,7 @@ func NewProviders(cfg Config) *Providers {
 	}
 	return &Providers{store: cfg.Store, records: cfg.Records, router: cfg.Router, methods: cfg.Methods,
 		timing: cfg.Timing, hooks: cfg.Hooks, log: cfg.Log,
-		providers: map[string]heldProvider{}, connections: map[string]Provider{}, listed: map[string]*listed{},
+		providers: map[string]heldProvider{}, adding: map[string]bool{}, connections: map[string]Provider{}, listed: map[string]*listed{},
 		activities: map[string]*activity{}, problems: map[string]string{}, statuses: map[string]MachineStatus{},
 		idleTimers: map[string]*time.Timer{}, idleStopping: map[string]int{}, stoppedBy: map[string]string{},
 		broughtBack: map[string]bool{}, joining: map[string]*joining{}, failedMakes: map[string][]failedMake{}, makingNow: map[string][]makingRow{}, making: map[string]*sync.Mutex{},
@@ -1032,6 +1034,13 @@ func (p *Providers) saveConnected(request ProviderAdd, updating bool, caller Cal
 	if connected != nil {
 		id = connected.id
 	}
+	if !updating {
+		release, err := p.reserve(id)
+		if err != nil {
+			return ProviderSummary{}, err
+		}
+		defer release()
+	}
 	var machine string
 	if connected != nil {
 		machine = connected.machine
@@ -1089,7 +1098,7 @@ func (p *Providers) saveConnected(request ProviderAdd, updating bool, caller Cal
 	} else {
 		record.AddedAt = new(records.Now())
 	}
-	data, err := records.Encode(record)
+	data, err := encodeWithin(record, heldBefore)
 	if err != nil {
 		return ProviderSummary{}, err
 	}
@@ -1209,10 +1218,7 @@ func (p *Providers) remove(id string) error {
 	if !ok {
 		return invalid("There is no such provider.")
 	}
-	yes, now := true, records.Now()
-	held.record.Forgotten, held.record.ForgottenAt = &yes, &now
-	held.record.Rev++
-	data, err := records.Encode(held.record)
+	data, err := records.Encode(held.record.tombstone())
 	if err != nil {
 		return err
 	}

@@ -171,7 +171,6 @@
 1 Go/internal/controlplane/projects.go v1/projectFolders
 1 Go/internal/controlplane/providers/defaults.go v1/failed-makes
 1 Go/internal/controlplane/providers/kept.go v1/kept
-1 Go/internal/controlplane/providers/records.go v1/providers
 1 Go/internal/controlplane/providers/secrets.go os.CreateTemp
 1 Go/internal/controlplane/readapi.go v1/read
 1 Go/internal/controlplane/records/groups.go v1/groups

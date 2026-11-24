@@ -3,7 +3,6 @@ package providers
 import (
 	"context"
 
-	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/records"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
@@ -157,7 +156,7 @@ func (p *Providers) SetGroup(id string, group *string) error {
 	}
 	r.Group = group
 	r.Rev++
-	data, err := records.Encode(r)
+	data, err := encodeWithin(r, &held.record)
 	if err != nil {
 		return err
 	}
