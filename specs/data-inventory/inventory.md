@@ -147,7 +147,7 @@ from the root (`agentsd/backups.go:69,72`). It holds nothing else.
 | `worktrees/<name>` + branch `agents/<name>` | Git worktrees agentsd makes | **none, on purpose: user-owned** (#6708, closed as not planned) | when its agent is archived or deleted (#3726, #3877) |
 | `reviews/runtimes/<rt>-<date>.md` | Runtime assessment reports | 1 MiB per report; newest 50 per machine; 90 days; not those git tracks (`assess_reports.go`, #6712) | hourly, on start and on score |
 | `workflows/assess-<id>.md` | Assessment throwaway workflow | **none** | never |
-| `pins.json` | Pinned sessions and hidden views | 10 sessions, 50 hidden views (`pins.go:576,615`) | on write |
+| `pins.json` | Pinned pages, views, sessions and workflows, and hidden views | 10 pages and views, 10 sessions and 10 workflows, 4 KiB a pin; 50 hidden views, 1 KiB each; 128 KiB in all; a write past that is refused (`pins.go`, #6725). No age, on purpose: current state, until removed | on write, on archive |
 | `folder.json`, `policy.json`, `mcp.json`, `personas/`, `skills/`, `plugins/`, `workflows/`, `docs-maps.json`, `marketplaces.json`, `mcp.removed.json`, … | Folder configuration (meant to be committed) | small; `mcp.removed.json` capped (`mcpcatalog/files.go:26`) | edited in place |
 
 ## 3. Outside our folders
@@ -399,7 +399,7 @@ newer than a row above for the same store.
 | `<root>/secret-ops-pending.json` | log | Secret audit entries not yet sent | 1,000 operations of 16 KiB each, 90 days, the oldest first | `Go/internal/agentsd/secretops.go` (`openSecretOpsPending`) | #6721 |
 | `<root>/lock-seen.json` | key-value | Replay IDs of signed requests | 4,096 of 128 bytes each, 2 days, the one signed first goes first; a cutoff refuses what went | `Go/internal/agentsd/lockcheck.go` (`openLockSeen`) | #6723 |
 | `<root>/assessments/` | document | Runtime assessments | The newest 50; 90 days from the start; 256 KiB per file | `Go/internal/agentsd/assess_store.go` | #6724 |
-| `<folder>/.agents/pins.json` | key-value | Pinned sessions and hidden views | 10 and 50, no age | `Go/internal/agentsd/pins.go:27,32` | #6725 |
+| `<folder>/.agents/pins.json` | key-value | Pinned pages, views, sessions and workflows, and hidden views | 10 of each and 50; 4 KiB a pin, 1 KiB a hidden view, 128 KiB a folder; until removed (no age, on purpose: a person's choices, committed with the folder) | `Go/internal/agentsd/pins.go` (`pinsFileMost`) | #6725 |
 | `~/.agents/checks/suggestions.json` | document | Daily-check findings and dismissals | 50 findings, 200 dismissals, no age | `Go/internal/agentsd/dailychecks.go:39,49` | #6726 |
 | `~/.agents/mcp.removed.json` | key-value | Removed MCP servers | 20, no age | `Go/internal/agentsd/mcpcatalog/files.go:27` | #6727 |
 | `<root>/review-dismissals.json` | key-value | Dismissed PR links | 200 a folder; until the folder goes | `Go/internal/agentsd/reviews.go:29` | #6728 |
