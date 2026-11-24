@@ -20,9 +20,12 @@ import (
 // each time, so a lead who is a lead no longer sees nothing.
 
 const (
+	// store-bounds: kind=key-value; count=50 (a person); size=64KiB a person; age=until-deleted; applied=on write, and when the person is removed
 	reportViewsPrefix = "v1/reports/views/"
 	mostReportViews   = 50
 	mostViewName      = 80
+	// mostViewsBytes is the largest record of one person's views (#6779).
+	mostViewsBytes = 64 << 10
 )
 
 var reportPages = map[wire.ReportPage]bool{wire.ReportPageSpend: true, wire.ReportPageOutcomes: true, wire.ReportPageTime: true,
@@ -47,6 +50,9 @@ func (s *Service) reportViews(ctx context.Context, user string) (wire.ReportView
 func (s *Service) keepReportViews(ctx context.Context, user string, views wire.ReportViews) (wire.ReportViews, error) {
 	data, err := records.Encode(views)
 	if err != nil {
+		return views, err
+	}
+	if err := records.Fits(ctx, s.cfg.Store, reportViewsKey(user), "Your saved views", data, mostViewsBytes); err != nil {
 		return views, err
 	}
 	// Only the person writes their own views.

@@ -12,6 +12,7 @@ import (
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/providers"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/records"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/usersettings"
 )
 
 // What the store keeps, and for how long (StoreSweep, #174, contracts/store.md rule 11).
@@ -445,7 +446,7 @@ func sweepUsages(ctx context.Context, rs *records.Records, now time.Time, left i
 func sweepOrphans(ctx context.Context, rs *records.Records, now time.Time, most int) (int, error) {
 	deleted := 0
 	for _, step := range []func(context.Context, *records.Records, time.Time, int) (int, bool, error){
-		sweepOrphanLeases, sweepOrphanFolderLists, sweepRemovedOrgRoutes, sweepMachineNames,
+		sweepOrphanLeases, sweepOrphanFolderLists, sweepRemovedOrgRoutes, sweepMachineNames, sweepRemovedOrgProviders, sweepRemovedSecrets,
 	} {
 		n, full, err := step(ctx, rs, now, most-deleted)
 		deleted += n
@@ -601,6 +602,120 @@ func sweepRemovedOrgRoutes(ctx context.Context, rs *records.Records, _ time.Time
 		deleted++
 	}
 	return deleted, false, nil
+}
+
+// sweepRemovedSecrets deletes, at most most, people's removed secrets' tombstones 90 days
+// after their removal (#6780). full says it stopped at most.
+func sweepRemovedSecrets(ctx context.Context, rs *records.Records, now time.Time, most int) (deleted int, full bool, err error) {
+	deleted, err = usersettings.SweepRemovedSecrets(ctx, rs.Store, now, most)
+	return deleted, deleted >= most, err
+}
+
+// removedOrgProvidersKept is how long a removed org provider's tombstone stays (#6774).
+const removedOrgProvidersKept = 90 * 24 * time.Hour
+
+// sweepRemovedOrgProviders deletes, at most most, removed org providers' tombstones 90 days
+// after their removal (#6774). A tombstone keeps a new provider from the id, and so from the
+// sign-ins, the suspensions and the SCIM tokens and names of the one before: while one of
+// those is there, it stays. full says it stopped at most.
+func sweepRemovedOrgProviders(ctx context.Context, rs *records.Records, now time.Time, most int) (deleted int, full bool, err error) {
+	s := rs.Store
+	keys, err := s.List(ctx, orgProvidersPrefix)
+	if err != nil {
+		return 0, false, err
+	}
+	var old []string
+	for _, k := range keys {
+		id, ok := strings.CutSuffix(strings.TrimPrefix(k.Key, orgProvidersPrefix), ".json")
+		if !ok || strings.HasSuffix(k.Key, orgProviderSecret) {
+			continue
+		}
+		object, err := s.Get(ctx, k.Key)
+		if err != nil {
+			return 0, false, err
+		}
+		var stored orgProviderStored
+		if object != nil && json.Unmarshal(object.Data, &stored) == nil && stored.ID == id && stored.Removed != nil &&
+			now.Sub(stored.Removed.Time) >= removedOrgProvidersKept {
+			old = append(old, id)
+		}
+	}
+	if len(old) == 0 {
+		return 0, false, nil
+	}
+	named, ok, err := orgProvidersNamed(ctx, rs)
+	if err != nil || !ok {
+		return 0, false, err
+	}
+	for _, id := range old {
+		if deleted >= most {
+			return deleted, true, nil
+		}
+		names, err := s.List(ctx, scimPrefix+id+"/")
+		if err != nil {
+			return deleted, false, err
+		}
+		if named[id] || len(names) > 0 {
+			continue
+		}
+		// Its secret too, which its removal could not delete.
+		if err := s.Delete(ctx, orgProviderSecretKey(id)); err != nil {
+			return deleted, false, err
+		}
+		if err := s.Delete(ctx, orgProviderKey(id)); err != nil {
+			return deleted, false, err
+		}
+		deleted++
+	}
+	return deleted, false, nil
+}
+
+// orgProvidersNamed is each provider that a person, removed or not, or a SCIM token names.
+// ok is false when a record cannot be read, and so may name any.
+func orgProvidersNamed(ctx context.Context, rs *records.Records) (names map[string]bool, ok bool, err error) {
+	named := map[string]bool{}
+	people, err := rs.Store.List(ctx, records.PeoplePrefix)
+	if err != nil {
+		return nil, false, err
+	}
+	tokens, err := rs.Store.List(ctx, scimTokensPrefix)
+	if err != nil {
+		return nil, false, err
+	}
+	for _, k := range append(people, tokens...) {
+		object, err := rs.Store.Get(ctx, k.Key)
+		if err != nil {
+			return nil, false, err
+		}
+		if object == nil {
+			continue
+		}
+		// What both records name a provider by: a person's parts, and a token's own field.
+		var r struct {
+			Provider string           `json:"provider"`
+			SignIns  []records.SignIn `json:"signIns"`
+			SCIM     *struct {
+				Provider string `json:"provider"`
+			} `json:"scim"`
+			Suspended *struct {
+				Provider string `json:"provider"`
+			} `json:"suspended"`
+		}
+		if err := json.Unmarshal(object.Data, &r); err != nil {
+			return nil, false, nil
+		}
+		named[r.Provider] = true
+		for _, in := range r.SignIns {
+			named[in.Provider] = true
+		}
+		if r.SCIM != nil {
+			named[r.SCIM.Provider] = true
+		}
+		if r.Suspended != nil {
+			named[r.Suspended.Provider] = true
+		}
+	}
+	return named, true, nil
 }
 
 // sweepRequests reads each request store, so the ended requests go within the hour

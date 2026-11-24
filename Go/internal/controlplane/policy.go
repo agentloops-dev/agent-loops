@@ -33,7 +33,9 @@ import (
 const CapHostPolicy = wire.CapHostPolicy1
 
 const (
-	policyKey         = "v1/policy.json"
+	// store-bounds: kind=key-value; count=1; size=64KiB a record, and the kill switch's few KiB; age=until-deleted; applied=on write
+	policyKey = "v1/policy.json"
+	// store-bounds: kind=key-value; count=1; size=1KiB a record (a signature); age=until-deleted; applied=on write
 	policySigKey      = "v1/policy.sig"
 	policyVersionsKey = "v1/policy/versions/"
 	// mostPolicyBytes, mostPolicyItems and the rest bound the document (data-model.md),
@@ -316,9 +318,6 @@ func checkPolicyRawEnums(params json.RawMessage) error {
 
 // checkPolicy refuses a document out of bounds, in words for the admin.
 func checkPolicy(p wire.OrgPolicy) error {
-	if b, _ := json.Marshal(p); len(b) > mostPolicyBytes {
-		return fail(invalidParams, "The policy is larger than %d KiB.", mostPolicyBytes>>10)
-	}
 	if err := checkPolicyLayers(p); err != nil {
 		return err
 	}
@@ -494,7 +493,7 @@ func (s *Service) readPolicy(ctx context.Context) (keptPolicy, error) {
 	}
 	var policy wire.OrgPolicy
 	if err := json.Unmarshal(object.Data, &policy); err != nil {
-		return keptPolicy{}, fmt.Errorf("v1/policy.json: %w", err)
+		return keptPolicy{}, fmt.Errorf("%s: %w", policyKey, err)
 	}
 	kept := keptPolicy{raw: object.Data, policy: &policy, rev: object.ETag}
 	if sig, err := s.cfg.Store.Get(ctx, policySigKey); err == nil && sig != nil {
@@ -583,7 +582,9 @@ func (s *Service) changePolicy(ctx context.Context, actor wire.AuditActor, rev *
 }
 
 // nextPolicy is the change made to the kept policy, one version higher and stamped, and
-// its canonical JSON, which must fit the bound.
+// its canonical JSON, which must fit the bound. One that is over it already can be changed
+// to one no larger (#6772). The kill switch is never refused for its size: it is short, and
+// nothing else changes with it.
 func nextPolicy(kept keptPolicy, now time.Time, actor wire.AuditActor,
 	change func(now time.Time, current *wire.OrgPolicy) (wire.OrgPolicy, error)) (wire.OrgPolicy, []byte, error) {
 	next, err := change(now, kept.policy)
@@ -591,6 +592,12 @@ func nextPolicy(kept keptPolicy, now time.Time, actor wire.AuditActor,
 		return wire.OrgPolicy{}, nil, err
 	}
 	next.Version = 1
+	var stopped *wire.PolicyStopAll
+	if kept.policy != nil {
+		stopped = kept.policy.StopAll
+	}
+	// policy/set keeps the kill switch it read, so only policy/stopAll gives another.
+	switched := next.StopAll != stopped
 	if kept.policy != nil {
 		next.Version = kept.policy.Version + 1
 	}
@@ -607,7 +614,7 @@ func nextPolicy(kept keptPolicy, now time.Time, actor wire.AuditActor,
 	if err != nil {
 		return wire.OrgPolicy{}, nil, err
 	}
-	if len(raw) > mostPolicyBytes {
+	if len(raw) > mostPolicyBytes && len(raw) > len(kept.raw) && !switched {
 		return wire.OrgPolicy{}, nil, fail(invalidParams, "The policy is larger than %d KiB.", mostPolicyBytes>>10)
 	}
 	return next, raw, nil

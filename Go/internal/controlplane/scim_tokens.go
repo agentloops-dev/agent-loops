@@ -323,6 +323,9 @@ func (si *signIns) setSCIM(ctx context.Context, r wire.SCIMSet, actor wire.Audit
 	if err != nil {
 		return wire.OrgProviderKept{}, err
 	}
+	if err := records.Fits(ctx, si.s.cfg.Store, orgProviderKey(p.ID), "The org provider", data, orgProviderMostBytes); err != nil {
+		return wire.OrgProviderKept{}, err
+	}
 	rev, err := si.s.cfg.Store.Put(ctx, orgProviderKey(p.ID), data, store.Matching(kept.rev))
 	if err != nil {
 		if store.IsConflict(err) {
