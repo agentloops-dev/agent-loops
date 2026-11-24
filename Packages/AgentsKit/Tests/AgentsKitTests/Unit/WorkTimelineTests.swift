@@ -23,13 +23,16 @@ struct WorkTimelineTests {
                                     waitsForPerson: waits ? true : nil, forecastAt: forecast.map(h))
     }
 
-    static func epic(_ n: Int, _ children: [DaemonAPI.WorkTimelineChild], segments: [(Double?, Double?)],
+    /// By default created with its first child, and closed with its last once all are.
+    static func epic(_ n: Int, _ children: [DaemonAPI.WorkTimelineChild], created: Double? = nil, closed: Double? = nil,
                      forecast: DaemonAPI.WorkTimelineForecast? = nil, feature: String? = "work",
                      reason: String? = nil) -> DaemonAPI.WorkTimelineEpic {
-        DaemonAPI.WorkTimelineEpic(item: item(n, feature: feature), stateReason: reason, createdAt: h(-100),
-                                   children: children,
-                                   segments: segments.map { .init(startedAt: $0.0.map(h), closedAt: $0.1.map(h)) },
-                                   forecast: forecast)
+        let closes = children.compactMap(\.closedAt)
+        let last = closes.count == children.count ? closes.max() : nil
+        let closedAt = closed.map(h) ?? last
+        return DaemonAPI.WorkTimelineEpic(item: item(n, feature: feature, state: closedAt == nil ? "open" : "closed"), stateReason: reason,
+                                          createdAt: created.map(h) ?? children.map(\.createdAt).min() ?? h(-100), closedAt: closedAt,
+                                          children: children, forecast: forecast)
     }
 
     static let axis = WorkTimeline.Axis(interval: DateInterval(start: h(-24), end: h(24)), width: 960)
@@ -66,41 +69,67 @@ struct WorkTimelineTests {
         #expect(days.count == 9 && days.allSatisfy { pacific.component(.hour, from: $0) == 0 })
     }
 
-    @Test func anEpicWithNoChildrenIsNotDrawnAndALineIsASegment() throws {
+    @Test func anEpicWithNoChildrenIsNotDrawnAndAnEpicIsOneBlock() throws {
         let timeline = DaemonAPI.WorkTimeline(epics: [
-            Self.epic(1, [], segments: []),
-            Self.epic(2, [Self.child(10, started: -20, closed: -18), Self.child(11, started: -6, closed: -5)],
-                      segments: [(-20, -18), (-6, -5)]),
+            Self.epic(1, []),
+            // A pause in the work (#7058): one block, solid over the pause.
+            Self.epic(2, [Self.child(10, started: -20, closed: -18), Self.child(11, started: -6, closed: -5)]),
         ])
         let lines = WorkTimeline.lines(timeline, now: Self.now)
-        try #require(lines.count == 2)
-        #expect(lines.map(\.id) == ["github:alexec/Agents#2/0", "github:alexec/Agents#2/1"])
-        #expect(lines.map(\.how) == [.joined, .joined])
-        // Each child's dot is on the line it closed in.
-        #expect(lines[0].dots.map(\.number) == ["#10"])
-        #expect(lines[1].dots.map(\.number) == ["#11"])
-        #expect(lines[1].figures == "#2 · 2 of 2")
+        try #require(lines.count == 1)
+        #expect(lines[0].id == "github:alexec/Agents#2" && lines[0].how == .joined)
+        #expect(lines[0].work == DateInterval(start: Self.h(-20), end: Self.h(-5)))
+        #expect(lines[0].figures == "#2 · 2 of 2")
     }
 
-    @Test func noDotIsBeforeItsFork() {
-        // Section 12, item 7: a child closed before its line forked sits at the fork.
+    /// #7058: a block is solid from start to finish; only an open epic has a ghost, to its predicted finish.
+    @Test func onlyAnOpenEpicHasAGhostToItsPredictedFinish() throws {
+        let forecast = DaemonAPI.WorkTimelineForecast(low: Self.h(2), mid: Self.h(5), high: Self.h(11))
         let timeline = DaemonAPI.WorkTimeline(epics: [
-            Self.epic(3, [Self.child(12, closed: -30), Self.child(13, started: -10, closed: -2)], segments: [(-10, -2)]),
+            // Created before its children and closed after them: its dates draw nothing.
+            Self.epic(1, [Self.child(10, created: -20, started: -18, closed: -10)], created: -30, closed: -4),
+            Self.epic(2, [Self.child(11, started: -8, closed: -5), Self.child(12)], created: -9, forecast: forecast),
+            // Not started: the ghost only, from Now.
+            Self.epic(3, [Self.child(13), Self.child(14)], created: -15, forecast: forecast),
+            // Not started, and nothing to forecast: nothing to draw.
+            Self.epic(4, [Self.child(15)], created: -15),
+            Self.epic(5, [Self.child(16, started: -12, closed: -7)], created: -14, closed: -6, reason: "not_planned"),
+            // On hold: never shown, open or closed.
+            Self.with(Self.epic(6, [Self.child(17, started: -3)], forecast: forecast), onHold: true),
+            Self.with(Self.epic(7, [Self.child(18, started: -3, closed: -2)]), onHold: true),
         ])
-        let line = WorkTimeline.lines(timeline, now: Self.now)[0]
-        #expect(line.dots.allSatisfy { $0.at >= line.start && $0.at <= line.end })
+        let lines = WorkTimeline.lines(timeline, now: Self.now)
+        try #require(lines.map(\.number) == ["#1", "#2", "#3", "#5"])
+        func span(_ from: Double, _ to: Double) -> DateInterval { DateInterval(start: Self.h(from), end: Self.h(to)) }
+        #expect(lines.map(\.work) == [span(-18, -10), span(-8, -5), nil, span(-12, -7)])
+        #expect(lines.map(\.ghost) == [nil, span(-5, 5), span(0, 5), nil])
+        #expect(lines.map(\.from) == [-18, -8, 0, -12].map { Self.h($0) })
+        #expect(lines.map(\.end) == [-10, 5, 5, -7].map { Self.h($0) })
+        #expect(lines.map(\.how) == [.joined, .forecast, .forecast, .dropped])
+        // The words say when the epic closed, not when its work stopped.
+        #expect(WorkTimeline.lineLine(lines[0], now: Self.now) == "#1 · 1 of 1 · closed 4 h ago")
+        // Nothing started, so nothing stopped.
+        #expect(lines[2].stopped(now: Self.now) == nil)
+        #expect(WorkTimeline.lastJoined(timeline, before: Self.h(-1)) == Self.h(-4))
+        // A session in a turn: solid to Now, the ghost from there. One on an epic not started: still a ghost.
+        let working = WorkTimeline.lines(timeline, now: Self.now, working: Set([3, 5, 12].map { "github:alexec/Agents#\($0)" }))
+        try #require(working.count == 4)
+        #expect(working.map(\.working) == [0, 1, 1, 0])
+        #expect(working[1].work == span(-8, 0) && working[1].ghost == span(0, 5) && working[2].work == nil)
+        // Forecast off: the past only.
+        #expect(WorkTimeline.lines(timeline, now: Self.now, forecast: false).map(\.number) == ["#1", "#2", "#5"])
     }
 
     @Test func anOpenLineIsForecastWaitsOrStopsAtNow() throws {
         let forecast = DaemonAPI.WorkTimelineForecast(low: Self.h(2), mid: Self.h(5), high: Self.h(11))
         let timeline = DaemonAPI.WorkTimeline(epics: [
             Self.epic(4, [Self.child(20, started: -8, closed: -3), Self.child(21, started: -1, forecast: 3),
-                          Self.child(22, forecast: 5)], segments: [(-8, nil)], forecast: forecast),
-            Self.epic(5, [Self.child(23, started: -4), Self.child(24, waits: true)], segments: [(-4, nil)],
+                          Self.child(22, forecast: 5)], forecast: forecast),
+            Self.epic(5, [Self.child(23, started: -4), Self.child(24, waits: true)],
                       forecast: .init(low: Self.h(1), mid: Self.h(2), high: Self.h(3), waits: true)),
-            Self.epic(6, [Self.child(25, started: -4)], segments: [(-4, nil)]),
-            // Not started, but forecast: it forks at its first child's forecast.
-            Self.epic(7, [Self.child(26, forecast: 6)], segments: [(nil, nil)],
+            Self.epic(6, [Self.child(25, started: -4)]),
+            // Not started, but forecast: a ghost from Now to the forecast.
+            Self.epic(7, [Self.child(26, forecast: 6)], created: -3,
                       forecast: .init(low: Self.h(5), mid: Self.h(6), high: Self.h(8))),
         ])
         let lines = WorkTimeline.lines(timeline, now: Self.now)
@@ -108,72 +137,54 @@ struct WorkTimelineTests {
         #expect(lines.map(\.how) == [.forecast, .waits(1), .open, .forecast])
         #expect(lines[0].end == Self.h(5))
         #expect(lines[0].band == DateInterval(start: Self.h(2), end: Self.h(11)))
-        #expect(lines[0].dots.map(\.closed) == [true, false, false])
         // A start is history: no session in a turn, no line works (#4265).
         #expect(lines.allSatisfy { $0.working == 0 })
-        #expect(lines[2].end == Self.now)
-        #expect(lines[3].start == Self.h(6))
+        #expect(lines[2].end == Self.h(-4))
+        #expect(lines[3].from == Self.now && lines[3].end == Self.h(6) && lines[3].work == nil)
         // Forecast off: the past only.
         let past = WorkTimeline.lines(timeline, now: Self.now, forecast: false)
-        try #require(past.count == 3)
         #expect(past.map(\.how) == [.open, .waits(1), .open])
-        #expect(past[0].dots.allSatisfy(\.closed) && past[0].band == nil)
+        #expect(past.allSatisfy { $0.band == nil && $0.ghost == nil && $0.end == $0.work?.end })
     }
 
-    /// #6043: the ghost from created to closed, solid only from started to stopped.
-    @Test func aBlockIsSolidFromStartedToStoppedAndGhostFromCreatedToClosed() throws {
+    /// #6043: solid from started to stopped.
+    @Test func aBlockIsSolidFromStartedToStopped() throws {
         let timeline = DaemonAPI.WorkTimeline(epics: [
-            // Open, nobody on it, its last close 3 h before Now: solid to there, the ghost to Now.
-            Self.epic(1, [Self.child(10, created: -12, started: -10, closed: -3), Self.child(11, created: -9)],
-                      segments: [(-10, nil)]),
-            // A child filed a day before it started: the ghost before the solid span.
-            Self.epic(2, [Self.child(12, created: -30, started: -6)], segments: [(-6, nil)]),
-            // Joined: ghost from created to started, solid to its last close.
-            Self.epic(3, [Self.child(13, created: -20, started: -15, closed: -14)], segments: [(-15, -14)]),
-            // Dropped: the same spans, in grey.
-            Self.epic(4, [Self.child(14, created: -8, started: -7, closed: -5)], segments: [(-7, -5)], reason: "not_planned"),
+            // Open, nobody on it, its last close 3 h before Now: solid to there.
+            Self.epic(1, [Self.child(10, created: -12, started: -10, closed: -3), Self.child(11, created: -9)]),
+            Self.epic(2, [Self.child(12, created: -30, started: -20), Self.child(13, started: -6)]),
         ])
         let lines = WorkTimeline.lines(timeline, now: Self.now)
-        try #require(lines.count == 4)
-        let stopped = lines[0], filed = lines[1], joined = lines[2], dropped = lines[3]
-        #expect(stopped.createdAt == Self.h(-12) && stopped.start == Self.h(-10))
-        #expect(stopped.stoppedAt == Self.h(-3) && stopped.end == Self.now)
-        #expect(stopped.stopped(now: Self.now))
+        try #require(lines.count == 2)
+        let stopped = lines[0], filed = lines[1]
+        #expect(stopped.from == Self.h(-10) && stopped.end == Self.h(-3) && stopped.ghost == nil)
+        #expect(stopped.stopped(now: Self.now) == Self.h(-3))
         #expect(WorkTimeline.lineLine(stopped, now: Self.now) == "#1 · 1 of 2 · stopped 3 h ago · open")
         #expect(WorkTimeline.spoken([stopped], now: Self.now).first?.words == "Issue 1, 1 of 2 done, open, stopped 3 h ago")
-        // The dots do not move: #10 is still at its close.
-        #expect(stopped.dots.map(\.at) == [Self.h(-3)])
-        #expect(filed.createdAt == Self.h(-30) && filed.start == Self.h(-6) && filed.stoppedAt == Self.h(-6))
-        #expect(joined.createdAt == Self.h(-20) && joined.start == Self.h(-15) && joined.stoppedAt == Self.h(-14)
-            && joined.end == Self.h(-14) && !joined.stopped(now: Self.now))
-        #expect(WorkTimeline.lineLine(joined, now: Self.now) == "#3 · 1 of 1 · closed 14 h ago")
-        #expect(dropped.how == .dropped && dropped.createdAt == Self.h(-8) && dropped.stoppedAt == Self.h(-5))
+        #expect(filed.work == DateInterval(start: Self.h(-20), end: Self.h(-6)))
         // A session in a turn on it: the work did not stop, solid to Now.
         let working = try #require(WorkTimeline.lines(timeline, now: Self.now, working: ["github:alexec/Agents#11"]).first)
-        #expect(working.stoppedAt == Self.now && !working.stopped(now: Self.now))
+        #expect(working.work?.end == Self.now && working.stopped(now: Self.now) == nil)
         #expect(WorkTimeline.lineLine(working, now: Self.now) == "#1 · 1 of 2 · open")
-        // The rows pack by the created time: #2 is filed before #1 starts, so it takes row 0.
-        let rows = WorkTimeline.layout(lines)
-        #expect(rows.first { $0.number == "#2" }?.row == 0)
-        // The block, its words and its hit start at the ghost.
+        // The block, its words and its hit start where the work started.
         let words = WorkTimeline.blockWords(filed, axis: Self.axis, measure: { Double($0.count) * 6 })
-        #expect(words.insideX == Self.axis.x(Self.h(-30)) + 6)
+        #expect(words.insideX == Self.axis.x(Self.h(-20)) + 6)
         let y = WorkTimeline.rowTop(filed.row) + 4
-        #expect(WorkTimeline.hit((x: Self.axis.x(Self.h(-20)), y: y), lines: [filed], axis: Self.axis) == .line(filed))
+        #expect(WorkTimeline.hit((x: Self.axis.x(Self.h(-10)), y: y), lines: [filed], axis: Self.axis) == filed)
     }
 
     @Test func aDroppedEpicEndsInACross() {
         let timeline = DaemonAPI.WorkTimeline(epics: [
-            Self.epic(8, [Self.child(30, started: -5, closed: -4)], segments: [(-5, -4)], reason: "not_planned"),
+            Self.epic(8, [Self.child(30, started: -5, closed: -4)], reason: "not_planned"),
         ])
         #expect(WorkTimeline.lines(timeline, now: Self.now).map(\.how) == [.dropped])
     }
 
     @Test func onlyTheLinesThatOverlapTheWindowAreDrawn() {
         let timeline = DaemonAPI.WorkTimeline(epics: [
-            Self.epic(9, [Self.child(31, started: -60, closed: -50)], segments: [(-60, -50)]),
-            Self.epic(10, [Self.child(32, started: -30, closed: -20)], segments: [(-30, -20)]),
-            Self.epic(11, [Self.child(33, started: -90), Self.child(34, waits: true)], segments: [(-90, nil)],
+            Self.epic(9, [Self.child(31, started: -60, closed: -50)]),
+            Self.epic(10, [Self.child(32, started: -30, closed: -20)]),
+            Self.epic(11, [Self.child(33, started: -90), Self.child(34, waits: true)],
                       forecast: .init(low: Self.h(-80), mid: Self.h(-80), high: Self.h(-80), waits: true)),
         ])
         let lines = WorkTimeline.overlapping(WorkTimeline.lines(timeline, now: Self.now), Self.axis.interval)
@@ -183,11 +194,11 @@ struct WorkTimelineTests {
 
     @Test func eachBlockTakesTheFirstRowFreeAtItsStartPackedInTime() {
         let timeline = DaemonAPI.WorkTimeline(epics: [
-            Self.epic(12, [Self.child(40, started: -20, closed: -10)], segments: [(-20, -10)]),
-            Self.epic(13, [Self.child(41, started: -18, closed: -12)], segments: [(-18, -12)]),
-            Self.epic(14, [Self.child(42, started: -11, closed: -9)], segments: [(-11, -9)]),
+            Self.epic(12, [Self.child(40, started: -20, closed: -10)]),
+            Self.epic(13, [Self.child(41, started: -18, closed: -12)]),
+            Self.epic(14, [Self.child(42, started: -11, closed: -9)]),
             // Starts 5 h after #12 ends, more than the gap: row 0 is free again.
-            Self.epic(15, [Self.child(43, started: -5, closed: -1)], segments: [(-5, -1)]),
+            Self.epic(15, [Self.child(43, started: -5, closed: -1)]),
         ])
         let lines = WorkTimeline.layout(WorkTimeline.lines(timeline, now: Self.now))
         #expect(lines.map(\.row) == [0, 1, 2, 0])
@@ -197,8 +208,8 @@ struct WorkTimelineTests {
         #expect(WorkTimeline.packGap == 7 * 86_400 / 50)
         // A block that waits for the person holds its row while it is open.
         let waits = WorkTimeline.layout(WorkTimeline.lines(DaemonAPI.WorkTimeline(epics: [
-            Self.epic(16, [Self.child(44, started: -30, waits: true)], segments: [(-30, nil)]),
-            Self.epic(17, [Self.child(45, started: -1, closed: -0.5)], segments: [(-1, -0.5)]),
+            Self.epic(16, [Self.child(44, started: -30, waits: true)]),
+            Self.epic(17, [Self.child(45, started: -1, closed: -0.5)]),
         ]), now: Self.now))
         #expect(waits.map(\.row) == [0, 1])
     }
@@ -214,49 +225,46 @@ struct WorkTimelineTests {
         let forecast = DaemonAPI.WorkTimelineForecast(low: Self.h(1), mid: Self.h(2), high: Self.h(4))
         let timeline = DaemonAPI.WorkTimeline(epics: [
             // No priority, and it starts first.
-            Self.epic(30, [Self.child(70, started: -20, closed: -10)], segments: [(-20, -10)]),
+            Self.epic(30, [Self.child(70, started: -20, closed: -10)]),
             // High, and it starts later: it still goes above the one with none (#6089).
-            Self.with(Self.epic(31, [Self.child(71, started: -8, closed: -2)], segments: [(-8, -2)]), priority: "high"),
-            Self.with(Self.epic(32, [Self.child(72, started: -15, closed: -12)], segments: [(-15, -12)]), priority: "HIGH"),
-            Self.with(Self.epic(33, [Self.child(73, started: -6, closed: -3)], segments: [(-6, -3)]), priority: "low"),
-            // On hold: last, and not forecast.
-            Self.with(Self.epic(34, [Self.child(74, started: -4), Self.child(75, forecast: 2)], segments: [(-4, nil)],
+            Self.with(Self.epic(31, [Self.child(71, started: -8, closed: -2)]), priority: "high"),
+            Self.with(Self.epic(32, [Self.child(72, started: -15, closed: -12)]), priority: "HIGH"),
+            Self.with(Self.epic(33, [Self.child(73, started: -6, closed: -3)]), priority: "low"),
+            // On hold: not shown (#7058).
+            Self.with(Self.epic(34, [Self.child(74, started: -4), Self.child(75, forecast: 2)],
                                 forecast: forecast), priority: "high", onHold: true),
-            Self.with(Self.epic(35, [Self.child(76, started: -30, closed: -25)], segments: [(-30, -25)]), priority: "medium"),
+            Self.with(Self.epic(35, [Self.child(76, started: -30, closed: -25)]), priority: "medium"),
         ])
         let lines = WorkTimeline.layout(WorkTimeline.lines(timeline, now: Self.now))
         let rows = Dictionary(uniqueKeysWithValues: lines.map { ($0.number, $0.row) })
         // In a band, the blocks still pack in time: #32 and #31 share High's row.
-        #expect(rows == ["#32": 0, "#31": 0, "#35": 1, "#30": 2, "#33": 3, "#34": 4])
-        let held = lines.first { $0.number == "#34" }
-        #expect(held?.how == .open && held?.band == nil && held?.dots.allSatisfy(\.closed) == true)
-        #expect(lines.map(\.chip) == ["High", "High", "Medium", nil, "Low", "On hold"])
+        #expect(rows == ["#32": 0, "#31": 0, "#35": 1, "#30": 2, "#33": 3])
+        #expect(lines.map(\.chip) == ["High", "High", "Medium", nil, "Low"])
         // Each band in use has its name on its first row; a band with no block takes no room.
-        #expect(WorkTimeline.bands(lines).map { "\($0.words)@\($0.row)" } == ["High@0", "Medium@1", "None@2", "Low@3", "On hold@4"])
+        #expect(WorkTimeline.bands(lines).map { "\($0.words)@\($0.row)" } == ["High@0", "Medium@1", "None@2", "Low@3"])
         let some = WorkTimeline.layout(lines.filter { $0.number == "#31" || $0.number == "#33" })
         #expect(some.map(\.row) == [0, 1] && WorkTimeline.bands(some).map(\.words) == ["High", "Low"])
         // A band of two rows: its next band starts below both.
         let two = WorkTimeline.layout(WorkTimeline.lines(DaemonAPI.WorkTimeline(epics: [
-            Self.with(Self.epic(36, [Self.child(77, started: -10, closed: -2)], segments: [(-10, -2)]), priority: "high"),
-            Self.with(Self.epic(37, [Self.child(78, started: -9, closed: -3)], segments: [(-9, -3)]), priority: "high"),
-            Self.epic(38, [Self.child(79, started: -20, closed: -15)], segments: [(-20, -15)]),
+            Self.with(Self.epic(36, [Self.child(77, started: -10, closed: -2)]), priority: "high"),
+            Self.with(Self.epic(37, [Self.child(78, started: -9, closed: -3)]), priority: "high"),
+            Self.epic(38, [Self.child(79, started: -20, closed: -15)]),
         ]), now: Self.now))
         #expect(two.map(\.row) == [0, 1, 2])
         #expect(WorkTimeline.bands(two).map { "\($0.words)@\($0.row)x\($0.rows)" } == ["High@0x2", "None@2x1"])
         // The list: High first, then in time.
         let spoken = WorkTimeline.spoken(lines, now: Self.now).map(\.line.number)
-        #expect(spoken == ["#32", "#31", "#35", "#30", "#33", "#34"])
+        #expect(spoken == ["#32", "#31", "#35", "#30", "#33"])
         #expect(WorkTimeline.spoken(lines, now: Self.now).first?.words.hasPrefix("Issue 32, priority high, 1 of 1 done") == true)
-        #expect(WorkTimeline.spoken(lines, now: Self.now).last?.words.hasPrefix("Issue 34, on hold, 0 of 2 done") == true)
     }
 
     @Test func thePriorityChipIsAfterTheTitleInTheBlockOrAfterIt() throws {
         let measure: (String) -> Double = { Double($0.count) * 6 }
         let timeline = DaemonAPI.WorkTimeline(epics: [
-            Self.with(Self.epic(19, [Self.child(60, started: -9, closed: -1)], segments: [(-9, -1)]), priority: "high"),
-            Self.with(Self.epic(20, [Self.child(61, started: -24, closed: -23.5)], segments: [(-24, -23.5)]), priority: "medium"),
-            Self.with(Self.epic(23, [Self.child(63, started: -6, closed: -4)], segments: [(-6, -4)]), priority: "low"),
-            Self.epic(24, [Self.child(64, started: -9, closed: -1)], segments: [(-9, -1)]),
+            Self.with(Self.epic(19, [Self.child(60, started: -9, closed: -1)]), priority: "high"),
+            Self.with(Self.epic(20, [Self.child(61, started: -24, closed: -23.5)]), priority: "medium"),
+            Self.with(Self.epic(23, [Self.child(63, started: -6, closed: -4)]), priority: "low"),
+            Self.epic(24, [Self.child(64, started: -9, closed: -1)]),
         ])
         let lines = WorkTimeline.lines(timeline, now: Self.now)
         try #require(lines.count == 4)
@@ -287,11 +295,11 @@ struct WorkTimelineTests {
     @Test func theRowsDoNotChangeBetweenRangesForTheSameRead() {
         let forecast = DaemonAPI.WorkTimelineForecast(low: Self.h(4), mid: Self.h(6), high: Self.h(10))
         let timeline = DaemonAPI.WorkTimeline(epics: [
-            Self.epic(1, [Self.child(10, started: -150, closed: -100)], segments: [(-150, -100)]),
-            Self.epic(2, [Self.child(11, started: -120, closed: -2)], segments: [(-120, -2)]),
-            Self.epic(3, [Self.child(12, started: -90, closed: -60)], segments: [(-90, -60)]),
-            Self.epic(4, [Self.child(13, started: -20), Self.child(14, forecast: 6)], segments: [(-20, nil)], forecast: forecast),
-            Self.epic(5, [Self.child(15, started: -5, closed: -1)], segments: [(-5, -1)]),
+            Self.epic(1, [Self.child(10, started: -150, closed: -100)]),
+            Self.epic(2, [Self.child(11, started: -120, closed: -2)]),
+            Self.epic(3, [Self.child(12, started: -90, closed: -60)]),
+            Self.epic(4, [Self.child(13, started: -20), Self.child(14, forecast: 6)], forecast: forecast),
+            Self.epic(5, [Self.child(15, started: -5, closed: -1)]),
         ])
         let lines = WorkTimeline.lines(timeline, now: Self.now)
         // Every range's window, and its scroll on each side, is inside the span the rows are packed over.
@@ -310,15 +318,15 @@ struct WorkTimelineTests {
     @Test func aBlocksTitleIsInItOrAfterItCutBeforeTheNextBlock() throws {
         let measure: (String) -> Double = { Double($0.count) * 6 }
         let timeline = DaemonAPI.WorkTimeline(epics: [
-            Self.epic(19, [Self.child(60, started: -9, closed: -1)], segments: [(-9, -1)]),
-            Self.epic(20, [Self.child(61, started: -24, closed: -23.5)], segments: [(-24, -23.5)]),
-            Self.epic(21, [Self.child(62, started: -20, closed: -19)], segments: [(-20, -19)], reason: "not_planned"),
+            Self.epic(19, [Self.child(60, started: -9, closed: -1)]),
+            Self.epic(20, [Self.child(61, started: -24, closed: -23.5)]),
+            Self.epic(21, [Self.child(62, started: -20, closed: -19)], reason: "not_planned"),
         ])
         let lines = WorkTimeline.lines(timeline, now: Self.now)
         let wide = lines[0], narrow = lines[1], dropped = lines[2]
         // 8 h is 160 pt: "Issue 19" fits, 6 pt in.
         let inside = WorkTimeline.blockWords(wide, axis: Self.axis, measure: measure)
-        #expect(inside.inside == "Issue 19" && inside.insideX == Self.axis.x(wide.start) + 6 && inside.outside == nil)
+        #expect(inside.inside == "Issue 19" && inside.insideX == Self.axis.x(wide.from) + 6 && inside.outside == nil)
         // Half an hour is 10 pt: the title goes after the block, cut before the next block in the row.
         let after = WorkTimeline.blockWords(narrow, axis: Self.axis, measure: measure)
         #expect(after.inside == nil && after.outside == "Issue 20" && after.outsideX == Self.axis.x(narrow.end) + 6)
@@ -346,33 +354,21 @@ struct WorkTimelineTests {
         #expect(WorkTimeline.forWhiteText(indigo) == indigo)
     }
 
-    @Test func aDotIsHeldInsideItsBlock() {
-        let timeline = DaemonAPI.WorkTimeline(epics: [
-            Self.epic(24, [Self.child(70, closed: -30), Self.child(71, started: -10, closed: -6),
-                           Self.child(72, started: -9, closed: -2)], segments: [(-10, -2)]),
-        ])
-        let line = WorkTimeline.layout(WorkTimeline.lines(timeline, now: Self.now))[0]
-        let from = Self.axis.x(line.start) + 4, to = Self.axis.x(line.end) - 4
-        let xs = line.dots.map { WorkTimeline.dotX($0, on: line, axis: Self.axis) }
-        #expect(xs == [from, Self.axis.x(Self.h(-6)), to])
-    }
-
     @Test func aFeatureKeepsItsColour() {
         #expect(WorkTimeline.colour("work", of: 12) == WorkTimeline.colour("Work", of: 12))
         #expect(WorkTimeline.colour(nil, of: 12) == 11)
         #expect((0..<11).contains(WorkTimeline.colour("autonomy", of: 12)))
     }
 
-    @Test func theHitIsTheNearestDotThenTheBlock() {
-        let timeline = DaemonAPI.WorkTimeline(epics: [
-            Self.epic(21, [Self.child(80, started: -10, closed: -6)], segments: [(-10, -2)]),
-        ])
+    @Test func theHitIsTheBlock() {
+        let timeline = DaemonAPI.WorkTimeline(epics: [Self.epic(21, [Self.child(80, started: -10, closed: -2)])])
         let lines = WorkTimeline.layout(WorkTimeline.lines(timeline, now: Self.now))
-        func hit(_ x: Double, _ y: Double) -> WorkTimeline.Hit? { WorkTimeline.hit((x, y), lines: lines, axis: Self.axis) }
-        if case .dot(_, let dot) = hit(Self.axis.x(Self.h(-6)) + 3, WorkTimeline.dotY(0)) { #expect(dot.number == "#80") } else { Issue.record("no dot") }
-        if case .line(let line) = hit(Self.axis.x(Self.h(-4)), WorkTimeline.rowTop(0) + 4) { #expect(line.number == "#21") } else { Issue.record("no block") }
+        func hit(_ x: Double, _ y: Double) -> String? { WorkTimeline.hit((x, y), lines: lines, axis: Self.axis)?.number }
+        #expect(hit(Self.axis.x(Self.h(-4)), WorkTimeline.rowTop(0) + 4) == "#21")
         #expect(hit(Self.axis.x(Self.h(-4)), WorkTimeline.rowTop(1) + 4) == nil)
         #expect(hit(Self.axis.x(Self.now), WorkTimeline.rowTop(0) + 4) == nil)
+        // The title is in the middle of the block (#7058: no dots under it).
+        #expect(WorkTimeline.titleY(0) == WorkTimeline.rowTop(0) + WorkTimeline.blockHeight / 2)
     }
 
     @Test func theWordsSayAbout() throws {
@@ -381,7 +377,7 @@ struct WorkTimelineTests {
         let backtest = DaemonAPI.WorkTimelineBacktest(error: 2.16, width: 1.3, cuts: 69, holds: 55, epics: 21, at: Self.now)
         let forecast = DaemonAPI.WorkTimelineForecast(low: Self.h(1), mid: Self.h(2), high: Self.h(4))
         let timeline = DaemonAPI.WorkTimeline(epics: [
-            Self.epic(22, [Self.child(90, started: -3, closed: -1), Self.child(91, forecast: 2)], segments: [(-3, nil)],
+            Self.epic(22, [Self.child(90, started: -3, closed: -1), Self.child(91, forecast: 2)],
                       forecast: forecast),
         ])
         let line = WorkTimeline.lines(timeline, now: Self.now)[0]
@@ -397,15 +393,12 @@ struct WorkTimelineTests {
 
     @Test func theHoverCardIsAMiniRow() throws {
         let timeline = DaemonAPI.WorkTimeline(epics: [
-            Self.epic(30, [Self.child(31, started: -5, closed: -2), Self.child(32, started: -5, closed: -1, reason: "not_planned")],
-                      segments: [(-5, -1)]),
-            Self.epic(33, [Self.child(34, started: -3), Self.child(35, waits: true)], segments: [(-3, nil)]),
+            Self.epic(30, [Self.child(31, started: -5, closed: -2), Self.child(32, started: -5, closed: -1, reason: "not_planned")]),
+            Self.epic(33, [Self.child(34, started: -3), Self.child(35, waits: true)]),
         ])
         let lines = WorkTimeline.lines(timeline, now: Self.now)
         let joined = try #require(lines.first { $0.number == "#30" })
         #expect(WorkTimeline.lineLine(joined, now: Self.now) == "#30 · 2 of 2 · closed 1 h ago")
-        #expect(joined.dots.map { WorkTimeline.dotLine($0, now: Self.now) }
-            == ["#31 · closed 2 h ago", "#32 · closed as not planned 1 h ago"])
         let waits = try #require(lines.first { $0.number == "#33" })
         #expect(WorkTimeline.lineLine(waits, now: Self.now) == "#33 · 0 of 2 · stopped 3 h ago · 1 waits for you")
     }
@@ -415,9 +408,9 @@ struct WorkTimelineTests {
         #expect(WorkTimeline.titleWords(project: "", epics: 1, range: .day) == "1 epic in these 24 hours")
         #expect(WorkTimeline.noEpicsWords(.week) == "No epic in these 7 days")
         let timeline = DaemonAPI.WorkTimeline(epics: [
-            Self.epic(40, [Self.child(41, closed: -100)], segments: [(-120, -100)]),
-            Self.epic(42, [Self.child(43, closed: -96)], segments: [(-110, -96)]),
-            Self.epic(44, [Self.child(45, started: -2)], segments: [(-2, nil)]),
+            Self.epic(40, [Self.child(41, closed: -100)]),
+            Self.epic(42, [Self.child(43, closed: -96)]),
+            Self.epic(44, [Self.child(45, started: -2)]),
         ])
         let joined = WorkTimeline.lastJoined(timeline, before: Self.h(-24))
         #expect(joined == Self.h(-96))
@@ -432,16 +425,16 @@ struct WorkTimelineTests {
         var utc = Calendar(identifier: .gregorian)
         utc.timeZone = TimeZone(identifier: "UTC")!
         let timeline = DaemonAPI.WorkTimeline(epics: [
-            Self.epic(50, [Self.child(51, started: -10, closed: -6)], segments: [(-10, -6)]),
-            Self.epic(52, [Self.child(53, started: -3, closed: -2)], segments: [(-3, -2)]),
-            Self.epic(54, [Self.child(55, started: -4)], segments: [(-4, nil)]),
-            Self.epic(56, [Self.child(57, started: -1, forecast: 6)], segments: [(-1, nil)],
+            Self.epic(50, [Self.child(51, started: -10, closed: -6)]),
+            Self.epic(52, [Self.child(53, started: -3, closed: -2)]),
+            Self.epic(54, [Self.child(55, started: -4)]),
+            Self.epic(56, [Self.child(57, started: -1, forecast: 6)],
                       forecast: .init(low: Self.h(5), mid: Self.h(6), high: Self.h(9))),
-            Self.epic(58, [Self.child(59, started: -1, forecast: 2)], segments: [(-1, nil)],
+            Self.epic(58, [Self.child(59, started: -1, forecast: 2)],
                       forecast: .init(low: Self.h(2), mid: Self.h(2), high: Self.h(2))),
-            Self.epic(60, [Self.child(61, started: -2), Self.child(62, waits: true)], segments: [(-2, nil)],
+            Self.epic(60, [Self.child(61, started: -2), Self.child(62, waits: true)],
                       forecast: .init(low: Self.h(1), mid: Self.h(1), high: Self.h(1), waits: true)),
-            Self.with(Self.epic(63, [Self.child(64, started: -5, closed: -4)], segments: [(-5, -4)]), priority: "high"),
+            Self.with(Self.epic(63, [Self.child(64, started: -5, closed: -4)]), priority: "high"),
         ])
         let rows = WorkTimeline.epicRows(WorkTimeline.lines(timeline, now: Self.now), window: Self.axis.interval, now: Self.now,
                                          calendar: utc)
@@ -465,7 +458,7 @@ struct WorkTimelineTests {
         func count(_ t: DaemonAPI.WorkTimeline) -> Int { WorkTimeline.epicCount(WorkTimeline.lines(t, now: Self.now), in: window) }
         let first = DaemonAPI.WorkTimeline(epics: [], releases: [])
         let both = WorkTimeline.merge([first, DaemonAPI.WorkTimeline(
-            epics: [Self.epic(44, [Self.child(45, started: -2)], segments: [(-2, nil)])], releases: [])])
+            epics: [Self.epic(44, [Self.child(45, started: -2)])], releases: [])])
         #expect(WorkTimeline.shows(drawn: false, reading: true, epics: 0) == .loading)
         #expect(WorkTimeline.shows(drawn: true, reading: true, epics: count(first)) == .loading)
         #expect(WorkTimeline.shows(drawn: true, reading: true, epics: count(both)) == .epics)
@@ -475,9 +468,9 @@ struct WorkTimelineTests {
     }
 
     @Test func machinesMergeEachEpicAndReleaseOnce() {
-        let a = DaemonAPI.WorkTimeline(epics: [Self.epic(23, [Self.child(1, closed: -1)], segments: [(-2, -1)])],
+        let a = DaemonAPI.WorkTimeline(epics: [Self.epic(23, [Self.child(1, closed: -1)])],
                                        releases: [.init(tag: "v2", at: Self.h(-1), repo: "a/b")], errors: ["x"])
-        let b = DaemonAPI.WorkTimeline(epics: [Self.epic(23, [Self.child(1, closed: -1)], segments: [(-2, -1)])],
+        let b = DaemonAPI.WorkTimeline(epics: [Self.epic(23, [Self.child(1, closed: -1)])],
                                        releases: [.init(tag: "v1", at: Self.h(-3), repo: "a/b"), .init(tag: "v2", at: Self.h(-1), repo: "a/b")],
                                        errors: ["x", "y"])
         let merged = WorkTimeline.merge([a, b])
@@ -487,12 +480,12 @@ struct WorkTimelineTests {
     }
 
     /// #4276: a session on another machine, from the control plane's copy, starts a child that
-    /// this machine had no start for, and an earlier one moves a start and its line back.
+    /// this machine had no start for, and an earlier one moves a start and its block's solid span back.
     @Test func sessionsOnEveryMachineStartTheChildren() throws {
         let open = Self.child(2)
         let closed = Self.child(3, started: -10, closed: -5)
         let later = Self.child(4, started: -3)
-        let timeline = DaemonAPI.WorkTimeline(epics: [Self.epic(1, [closed, open, later], segments: [(-10, -5), (-3, nil)])])
+        let timeline = DaemonAPI.WorkTimeline(epics: [Self.epic(1, [closed, open, later])])
         func on(_ n: Int, _ hours: Double) -> DaemonAPI.LineageSessionOn {
             .init(node: Node(kind: "session", ref: "session:\(n)-\(hours)"), host: "BEAS-MAC",
                   on: [Node(kind: "issue", ref: "github:alexec/Agents#\(n)")], at: Self.h(hours))
@@ -502,18 +495,17 @@ struct WorkTimelineTests {
         let kids = epic.children
         // #3 started earlier on Bea's machine; #2 started there; #4 started here first.
         #expect(kids.map(\.startedAt) == [Self.h(-12), Self.h(-4), Self.h(-3)])
-        #expect(epic.segments.map(\.startedAt) == [Self.h(-12), Self.h(-4)])
+        #expect(WorkTimeline.lines(got, now: Self.now).first?.work?.start == Self.h(-12))
         #expect(WorkTimeline.started(timeline, by: []) == timeline)
         #expect(WorkTimeline.sessionNodes(got).map(\.ref) == [1, 3, 2, 4].map { "github:alexec/Agents#\($0)" })
     }
 
-    /// #4265: a line works only while a session is in a turn on its epic or an open child, on its
-    /// open segment; a session that waits does not count, and this app's own state is the newest.
+    /// #4265: a line works only while a session is in a turn on its epic or an open child; a session that waits does not count, and this app's own state is the newest.
     @Test func aLineWorksOnlyWhileASessionIsInATurnOnIt() throws {
         let timeline = DaemonAPI.WorkTimeline(epics: [
-            Self.epic(1, [Self.child(2, started: -10, closed: -6), Self.child(3, started: -2)], segments: [(-10, -6), (-3, nil)]),
-            Self.epic(4, [Self.child(5, started: -2)], segments: [(-2, nil)]),
-            Self.epic(6, [Self.child(7, started: -2)], segments: [(-2, nil)]),
+            Self.epic(1, [Self.child(2, started: -10, closed: -6), Self.child(3, started: -2)]),
+            Self.epic(4, [Self.child(5, started: -2)]),
+            Self.epic(6, [Self.child(7, started: -2)]),
         ])
         func ref(_ n: Int) -> String { "github:alexec/Agents#\(n)" }
         func on(_ n: Int, _ state: String, id: UUID = UUID()) -> DaemonAPI.LineageSessionOn {
@@ -534,12 +526,10 @@ struct WorkTimelineTests {
             agents: [lead, agent("#7", .running), agent("#9", .running)])
         #expect(working == [ref(3), ref(7)])
         let lines = WorkTimeline.lines(timeline, now: Self.now, working: working)
-        try #require(lines.count == 4)
-        // #1's closed segment does not work; its open one does.
-        #expect(lines.map(\.working) == [0, 1, 0, 1])
+        #expect(lines.map(\.working) == [1, 0, 1])
         // The epic's own session counts too: a lead in a turn.
         let leading = WorkTimeline.lines(timeline, now: Self.now, working: [ref(4)])
-        #expect(leading.map(\.working) == [0, 0, 1, 0])
+        #expect(leading.map(\.working) == [0, 1, 0])
         #expect(WorkTimeline.workingNow(timeline, sessions: [], agents: []).isEmpty)
     }
 
