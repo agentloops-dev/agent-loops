@@ -48,6 +48,7 @@ import (
 // up: inside each is the raising machine's signature.
 
 const (
+	// store-bounds: kind=log; size=1GiB a person; age=90d; applied=hourly sweep
 	busPrefix = "v1/bus/"
 	// The bus log is bounded by count and bytes; a record has its own encoded-size limit.
 	busLogKept             = 100_000
