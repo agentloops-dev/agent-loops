@@ -998,7 +998,7 @@ type AuditCause struct {
 	ID string `json:"id"`
 }
 
-// control/setAuditDays (#996): how many days audit entries are kept, 1 to 3,650. The default is 90.
+// control/setAuditDays (#996): how many days audit entries are kept, 1 to 90. The default is 90.
 type AuditDays struct {
 	Days int64 `json:"days"`
 }

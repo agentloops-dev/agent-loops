@@ -67,8 +67,8 @@ struct EventAuditTests {
             == "Everyone's entries older than 30 days are deleted in a day (up to 335 days of them, 2 entries now). To keep them, choose 365 days again before then.")
         #expect(AuditWords.shorterMessage(from: 2, to: 1, older: nil)
             == "Everyone's entries older than 1 day are deleted in a day (up to 1 day of them). To keep them, choose 2 days again before then.")
-        #expect(AuditWords.choices(with: 90) == [30, 90, 180, 365])
-        #expect(AuditWords.choices(with: 7) == [7, 30, 90, 180, 365])
+        #expect(AuditWords.choices(with: 90) == [30, 60, 90])
+        #expect(AuditWords.choices(with: 7) == [7, 30, 60, 90])
     }
 
     /// #2087: the window and the Remote make the same CSV as the web page's auditCSV.

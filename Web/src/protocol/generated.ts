@@ -943,7 +943,7 @@ export interface AuditCause {
 }
 
 /**
- * control/setAuditDays (#996): how many days audit entries are kept, 1 to 3,650. The default is 90.
+ * control/setAuditDays (#996): how many days audit entries are kept, 1 to 90. The default is 90.
  */
 export interface AuditDays {
   days: number;
