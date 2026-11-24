@@ -81,6 +81,11 @@ extension RemoteModel {
         startingIn?.host ?? .mac
     }
 
+    /// The folders added on that host, which the new agent reaches beyond its own.
+    var startFolders: [URL] {
+        keptStartFolders.filter { $0.host == startHost }.map(\.folder)
+    }
+
     /// Whether a host can do what `capability` names (#1748): its row's list, with `.mac`
     /// read as this phone's home host. True when the host said no list, or is not a
     /// control plane's.
