@@ -19,7 +19,7 @@ import SQLite3
 ///
 /// Nothing here syncs or sorts: the caller asks the forge and gives the answer to `keepPage`. The bounds are in
 /// `WorkCache.Bounds`. SQLite is the platform's (`SQLite3`, on macOS and iOS), so this adds no package.
-public protocol WorkCaching: Sendable {
+public protocol WorkCaching: CacheStore {
     /// The kept answer to a query, with its items, or nil when it was never answered on this device.
     func answer(_ query: WorkCache.Query) async -> WorkCache.Answer?
     /// Keeps one page of a machine's answer: page 0 replaces the first page and marks the pages read before stale; the page
@@ -48,8 +48,6 @@ public protocol WorkCaching: Sendable {
     func kept(_ page: String, asked: String) async -> WorkCache.PageAnswer?
     /// Keeps a page's answer for what it asked, read now, in place of the last one.
     func keep(_ page: String, asked: String, json: Data) async
-    /// Removes everything; the next read fills it again.
-    func forget() async
 }
 
 extension WorkCaching {
@@ -180,27 +178,32 @@ public actor WorkCache: WorkCaching {
         public var read: Date
     }
 
-    /// The cache's bounds (#6352): an item's row, a body and its comments, a page's kept answer (#6573), and the whole
-    /// file. Over `bytes`, bodies go first, then the pages' answers and the lists' answers, each the least recently
+    /// The cache's bounds (#6352): an item's row, a body and its comments, any other record (#6573, #6788), the whole
+    /// file, and a record's age since this device read it from its source (#6788). Over `bytes`, bodies go first, then the pages' answers and the lists' answers, each the least recently
     /// drawn first, with the items no other answer holds.
     public struct Bounds: Sendable {
         public var itemBytes: Int
         public var bodyBytes: Int
         public var comments: Int
-        /// A page's kept answer: one over it is not kept, so the page asks again next time.
-        public var pageBytes: Int
+        /// The largest record. A page's answer or an item's page over it is not kept, so the page asks again next time;
+        /// a list's answer loses its last pages.
+        public var recordBytes: Int
         public var bytes: Int
         /// The items kept decoded in memory (#6643). Over it, a load keeps only the items it asks for.
         public var memoItems: Int
+        /// A record goes this long after it was read from the forge (#6788); drawing it does not make it newer.
+        public var age: TimeInterval
 
         public init(itemBytes: Int = 4 * 1024, bodyBytes: Int = 64 * 1024, comments: Int = 50,
-                    pageBytes: Int = 4 * 1024 * 1024, bytes: Int = 200 * 1024 * 1024, memoItems: Int = 5000) {
+                    recordBytes: Int = 4 * 1024 * 1024, bytes: Int = 200 * 1024 * 1024, memoItems: Int = 5000,
+                    age: TimeInterval = cacheAgeLimit) {
             self.itemBytes = itemBytes
             self.bodyBytes = bodyBytes
             self.comments = comments
-            self.pageBytes = pageBytes
+            self.recordBytes = recordBytes
             self.bytes = bytes
             self.memoItems = memoItems
+            self.age = min(age, cacheAgeLimit)
         }
 
         /// The Mac's Work cache.
@@ -221,6 +224,25 @@ public actor WorkCache: WorkCaching {
         var forges: [DaemonAPI.ForgeCapabilities]?
         var errors: [DaemonAPI.ForgeListError]?
         var failed: Date?
+
+        /// When its oldest page was read; with no page, when the machine failed to answer.
+        var oldest: Date { pages.map(\.read).min() ?? failed ?? .distantPast }
+
+        /// The answer less what was read before `cutoff`; nil when nothing is left. The pages read since a refresh
+        /// follow one another, so those after one that goes go too.
+        func since(_ cutoff: Date) -> Kept? {
+            var kept = self
+            let fresh = WorkCache.freshCount(pages)
+            kept.pages = Array(pages[..<fresh].prefix { $0.read >= cutoff }) + pages[fresh...].filter { $0.read >= cutoff }
+            if let at = failed, at < cutoff {
+                kept.failed = nil
+                kept.errors = nil
+            }
+            guard kept.pages.isEmpty else { return kept }
+            kept.total = nil
+            kept.forges = nil
+            return kept.failed == nil ? nil : kept
+        }
     }
 
     /// The open database, closed when the cache goes.
@@ -244,6 +266,9 @@ public actor WorkCache: WorkCaching {
     private var drawn: [String: Date] = [:]
     /// The items an optimistic write changed, until it ends (#6354): a copy as old as theirs does not replace them.
     private var edited: Set<String> = []
+    /// When the records were last aged out; nil since the cache opened.
+    private var aged: Date?
+    private static let sweepEvery: TimeInterval = 60 * 60
 
     /// The cache in `file`, made when missing; nil keeps it in memory only (the tests).
     public init(file: URL?, bounds: Bounds = .mac, now: @escaping @Sendable () -> Date = { Date() }) throws {
@@ -251,6 +276,7 @@ public actor WorkCache: WorkCaching {
         self.now = now
         var opened: OpaquePointer?
         let flags = SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX
+        // store-bounds: kind=cache; size=200MiB; age=90d; action=evict; record=4MiB; applied=on write, on open and hourly
         guard sqlite3_open_v2(file?.path ?? ":memory:", &opened, flags, nil) == SQLITE_OK else {
             let message = opened.map { String(cString: sqlite3_errmsg($0)) } ?? "out of memory"
             sqlite3_close_v2(opened)
@@ -281,11 +307,25 @@ public actor WorkCache: WorkCaching {
         ] + triggers + ["COMMIT"] where sqlite3_exec(opened, sql, nil, nil, nil) != SQLITE_OK {
             throw CacheError(message: String(cString: sqlite3_errmsg(opened)))
         }
+        // An answer's oldest read (#6788), so ageing reads only the answers that lose something. It fails when the column
+        // is there; an answer of an older file has 0, and the first sweep reads it once and sets it.
+        sqlite3_exec(opened, "ALTER TABLE answer ADD COLUMN read REAL NOT NULL DEFAULT 0", nil, nil, nil)
+        for table in tables where sqlite3_exec(opened, "CREATE INDEX IF NOT EXISTS \(table)_read ON \(table)(read)", nil, nil, nil) != SQLITE_OK {
+            throw CacheError(message: String(cString: sqlite3_errmsg(opened)))
+        }
+        // The hourly sweep, which ends with the cache. At once too: the file can be old when it opens.
+        Task { [weak self] in
+            while true {
+                guard await self?.sweep() != nil else { return }
+                try? await Task.sleep(for: .seconds(Self.sweepEvery))
+            }
+        }
     }
 
     // MARK: Answers
 
     public func answer(_ query: WorkCache.Query) -> WorkCache.Answer? {
+        ageIfDue()
         let key = query.key
         var kept: [(host: MachineRef, kept: Kept)] = []
         try? rows("SELECT host, json FROM answer WHERE query = ? ORDER BY host", [.text(key)]) { s in
@@ -387,6 +427,7 @@ public actor WorkCache: WorkCaching {
         answer.errors = errors
         answer.failed = now()
         write(answer, key: key, host: host, used: now())
+        trim()
     }
 
     public func forget(_ query: WorkCache.Query, host: MachineRef) {
@@ -402,9 +443,19 @@ public actor WorkCache: WorkCaching {
     }
 
     private func write(_ answer: Kept, key: String, host: MachineRef, used: Date) {
-        guard let json = try? encoder.encode(answer) else { return }
-        try? run("INSERT OR REPLACE INTO answer(query, host, used, json) VALUES(?, ?, ?, ?)",
-                 [.text(key), .text(host.rawValue), .real(used), .blob(json)])
+        var answer = answer
+        guard var json = try? encoder.encode(answer) else { return }
+        while json.count > bounds.recordBytes, !answer.pages.isEmpty {
+            answer.pages.removeLast()
+            guard let less = try? encoder.encode(answer) else { return }
+            json = less
+        }
+        guard json.count <= bounds.recordBytes, !answer.pages.isEmpty || answer.failed != nil else {
+            try? run("DELETE FROM answer WHERE query = ? AND host = ?", [.text(key), .text(host.rawValue)])
+            return
+        }
+        try? run("INSERT OR REPLACE INTO answer(query, host, used, read, json) VALUES(?, ?, ?, ?, ?)",
+                 [.text(key), .text(host.rawValue), .real(used), .real(answer.oldest), .blob(json)])
     }
 
     // MARK: Items
@@ -413,6 +464,7 @@ public actor WorkCache: WorkCaching {
 
     public func keep(items: [DaemonAPI.ForgeItem]) {
         keep(items: items, at: now())
+        trim()
     }
 
     /// Writes items in one transaction. A row is replaced only by a copy as new or newer, so a late answer does not
@@ -470,6 +522,7 @@ public actor WorkCache: WorkCaching {
     }
 
     public func item(_ node: DaemonAPI.LineageNode) -> DaemonAPI.ForgeItem? {
+        ageIfDue()
         let key = Self.key(node)
         load([key])
         return memo[key]
@@ -498,6 +551,7 @@ public actor WorkCache: WorkCaching {
     // MARK: Details
 
     public func detail(_ node: DaemonAPI.LineageNode) -> WorkCache.Detail? {
+        ageIfDue()
         let key = Self.key(node)
         var found: Detail?
         try? rows("SELECT read, json FROM detail WHERE key = ?", [.text(key)]) { s in
@@ -524,6 +578,11 @@ public actor WorkCache: WorkCaching {
             detail.comments = Array(detail.comments.prefix(bounds.comments))
         }
         guard let json = try? encoder.encode(detail) else { return }
+        guard json.count <= bounds.recordBytes else {
+            try? run("DELETE FROM detail WHERE key = ?", [.text(Self.key(detail.item.node))])
+            trim()
+            return
+        }
         try? run("INSERT OR REPLACE INTO detail(key, read, used, json) VALUES(?, ?, ?, ?)",
                  [.text(Self.key(detail.item.node)), .real(at), .real(at), .blob(json)])
         trim()
@@ -545,6 +604,7 @@ public actor WorkCache: WorkCaching {
     // MARK: Pages
 
     public func kept(_ page: String, asked: String) -> WorkCache.PageAnswer? {
+        ageIfDue()
         var found: PageAnswer?
         try? rows("SELECT read, json FROM page WHERE page = ? AND asked = ?", [.text(page), .text(asked)]) { s in
             found = PageAnswer(json: blob(s, 1), read: Date(timeIntervalSince1970: sqlite3_column_double(s, 0)))
@@ -555,7 +615,7 @@ public actor WorkCache: WorkCaching {
     }
 
     public func keep(_ page: String, asked: String, json: Data) {
-        guard json.count <= bounds.pageBytes else {
+        guard json.count <= bounds.recordBytes else {
             try? run("DELETE FROM page WHERE page = ? AND asked = ?", [.text(page), .text(asked)])
             return
         }
@@ -584,6 +644,70 @@ public actor WorkCache: WorkCaching {
         return total
     }
 
+    public func sweep() {
+        trim()
+    }
+
+    public func stats() -> CacheStats {
+        var stats = CacheStats(count: 0, bytes: bytes(), oldest: nil)
+        for table in ["item", "answer", "detail", "page"] {
+            try? rows("SELECT count(*), min(read) FROM \(table)") { s in
+                let count = Int(sqlite3_column_int64(s, 0))
+                guard count > 0 else { return }
+                stats.count += count
+                let oldest = Date(timeIntervalSince1970: sqlite3_column_double(s, 1))
+                stats.oldest = min(stats.oldest ?? oldest, oldest)
+            }
+        }
+        return stats
+    }
+
+    /// Ages records out before a draw, at most once an hour: the first draw can come before the first sweep.
+    private func ageIfDue() {
+        if let aged, abs(now().timeIntervalSince(aged)) < Self.sweepEvery { return }
+        guard (try? run("BEGIN")) != nil else { return }
+        let gone = ageOut()
+        try? run("COMMIT")
+        if gone { vacuum() }
+    }
+
+    /// Removes what was read longer than `bounds.age` ago (#6788); true when something went. In a transaction. Each
+    /// table has an index on `read`, so it costs only what goes.
+    private func ageOut() -> Bool {
+        let at = now()
+        aged = at
+        let cutoff = at - bounds.age
+        let before = bytes()
+        try? run("DELETE FROM detail WHERE read < ?", [.real(cutoff)])
+        try? run("DELETE FROM page WHERE read < ?", [.real(cutoff)])
+        var old: [(query: String, host: String, kept: Kept?)] = []
+        try? rows("SELECT query, host, json FROM answer WHERE read < ?", [.real(cutoff)]) { s in
+            old.append((text(s, 0), text(s, 1), try? decoder.decode(Kept.self, from: blob(s, 2))))
+        }
+        for answer in old {
+            if let kept = answer.kept?.since(cutoff), let json = try? encoder.encode(kept) {
+                try? run("UPDATE answer SET read = ?, json = ? WHERE query = ? AND host = ?",
+                         [.real(kept.oldest), .blob(json), .text(answer.query), .text(answer.host)])
+            } else {
+                try? run("DELETE FROM answer WHERE query = ? AND host = ?", [.text(answer.query), .text(answer.host)])
+            }
+        }
+        // An item is read again with each page that holds it, so a kept page's items are never older than the page.
+        var items: [String] = []
+        try? rows("SELECT key FROM item WHERE read < ?", [.real(cutoff)]) { s in items.append(text(s, 0)) }
+        try? run("DELETE FROM item WHERE read < ?", [.real(cutoff)])
+        for key in items {
+            memo[key] = nil
+            edited.remove(key)
+        }
+        return bytes() != before
+    }
+
+    /// Gives the freed pages back. It is stepped to its end: each step frees only some of them.
+    private func vacuum() {
+        try? rows("PRAGMA incremental_vacuum") { _ in }
+    }
+
     /// Writes when the answers were last drawn.
     private func writeDrawn() {
         for (key, at) in drawn {
@@ -592,21 +716,23 @@ public actor WorkCache: WorkCaching {
         drawn = [:]
     }
 
-    /// Brings the file under `bounds.bytes`, to nine tenths of it so the next page does not trim again: bodies first,
+    /// Ages records out, then brings the file under `bounds.bytes`, to nine tenths of it so the next page does not trim again: bodies first,
     /// the least recently opened first; then the pages' answers, the least recently drawn first; then the items that
     /// no kept answer or body holds; then the lists' answers, the least recently drawn first, with the items that no
     /// other kept answer holds. One transaction, and each table is read once (#6643).
     func trim() {
         guard (try? run("BEGIN")) != nil else { return }
         writeDrawn()
+        let gone = ageOut()
         var total = bytes()
         guard total > bounds.bytes else {
             try? run("COMMIT")
+            if gone { vacuum() }
             return
         }
         defer {
             try? run("COMMIT")
-            try? run("PRAGMA incremental_vacuum")
+            vacuum()
         }
         let target = bounds.bytes / 10 * 9
         var details: [(key: String, bytes: Int)] = []
@@ -666,7 +792,7 @@ public actor WorkCache: WorkCaching {
         try? run("DELETE FROM answer")
         try? run("DELETE FROM detail")
         try? run("DELETE FROM page")
-        try? run("PRAGMA incremental_vacuum")
+        vacuum()
         memo = [:]
         drawn = [:]
         edited = []
