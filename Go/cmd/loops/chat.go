@@ -122,23 +122,26 @@ func openTerminal() (terminal, func(), error) {
 
 // live is one chat with one session: its state, what it shows and the cards that wait.
 type live struct {
-	c       noter
-	p       place
-	o       options
-	t       terminal
-	sc      *screen
-	tr      *transcript
-	id      wire.UUID // "" until the first prompt starts a session
-	state   wire.AgentState
-	title   string
-	cards   []*card
-	since   time.Time // when the turn began, for the spinner
-	sent    bool      // a prompt was sent and its turn has not ended
-	working bool      // the turn of sent began
-	stopAt  time.Time // when ^C last stopped the turn: a second ^C soon after leaves
-	frame   int
-	hinted  bool  // the keys' line is shown
-	next    int64 // the index after the last entry read, where a relink reads from (#6478)
+	c        noter
+	p        place
+	o        options
+	t        terminal
+	sc       *screen
+	tr       *transcript
+	id       wire.UUID // "" until the first prompt starts a session
+	state    wire.AgentState
+	title    string
+	cards    []*card
+	since    time.Time // when the turn began, for the spinner
+	sent     bool      // a prompt was sent and its turn has not ended
+	working  bool      // the turn of sent began
+	stopAt   time.Time // when ^C last stopped the turn: a second ^C soon after leaves
+	frame    int
+	hinted   bool  // the keys' line is shown
+	next     int64 // the index after the last entry read, where a relink reads from (#6478)
+	offers   []wire.ConfigOption
+	commands []wire.SlashCommand
+	settings map[string]string
 }
 
 func runChat(ctx context.Context, c noter, p place, o options, a chatArgs, t terminal) error {
@@ -389,6 +392,12 @@ func (f *live) show(ctx context.Context) error {
 // attach is wireframe 1: the header, the last entries, the cards that wait.
 func (f *live) attach(ctx context.Context, a wire.Agent, others int) error {
 	f.id, f.state, f.title = a.ID, a.State, titleOf(a)
+	f.offers, f.commands = a.AdvertisedOptions, a.AvailableCommands
+	f.settings = map[string]string{"runtime": runtimeOf(a)}
+	if m := modelOf(a); m != "" {
+		f.settings["model"] = m
+	}
+	f.updateSettings(a.RuntimeID, a.AdvertisedOptions)
 	if err := f.show(ctx); err != nil {
 		return err
 	}
@@ -505,6 +514,11 @@ func (f *live) start(ctx context.Context, text string) error {
 		return err
 	}
 	f.id, f.state = id, wire.AgentStateStarting
+	f.offers, f.commands = nil, nil
+	f.settings = map[string]string{"runtime": runtime}
+	if p, ok := cliModeLevels[f.o.mode]; ok {
+		f.settings["mode"] = permissionName(p)
+	}
 	if err := f.show(ctx); err != nil {
 		return err
 	}
@@ -651,6 +665,7 @@ func (f *live) print(lines ...string) {
 	f.tr.width = f.cols()
 	f.sc.partial = f.tr.partial()
 	f.sc.status = f.status()
+	f.sc.settings = f.settingsLine()
 	f.sc.prompt = f.t.keys != nil
 	f.sc.print(lines...)
 }
@@ -667,6 +682,7 @@ func (f *live) redraw() {
 	f.tr.width = f.cols()
 	f.sc.partial = f.tr.partial()
 	f.sc.status = f.status()
+	f.sc.settings = f.settingsLine()
 	f.sc.prompt = f.t.keys != nil
 	f.sc.update()
 }
@@ -772,6 +788,17 @@ func (f *live) key(ctx context.Context, k key) error {
 		}
 		if strings.TrimSpace(text) == "" {
 			return nil
+		}
+		if name, _, isSlash := parseSlash(text); isSlash && knownCliCommand(name) {
+			f.print(f.t.st.paint(roleQuiet, "› ") + text)
+			handled, err := f.command(ctx, text)
+			if handled {
+				if err != nil && !errors.Is(err, errLeave) {
+					f.commandFail("run "+text, err)
+					return nil
+				}
+				return err
+			}
 		}
 		if f.id != "" {
 			f.print(f.tr.end()...)
