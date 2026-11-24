@@ -14,7 +14,7 @@ struct DiffFilesView: View {
     let diff: AppViewDiff
     var openLink: (URL) -> Void = { _ in }
 
-    @AppStorage("reviewDiffLayout", store: WindowDefaults.store) private var layout = FileDiffView.Layout.unified
+    @AppStorage(DisplayPreference.reviewDiffLayout, store: WindowDefaults.store) private var layout = FileDiffView.Layout.unified
     @State private var rows: [String: [DiffRow]] = [:]
     @State private var collapsed: Set<String> = []
     @State private var chosen: String?

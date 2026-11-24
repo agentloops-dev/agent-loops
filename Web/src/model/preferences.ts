@@ -11,6 +11,8 @@ export const preferenceKeys = {
   showsArchivedFolders: "showsArchivedFolders",
   showsActivity: "showsActivity",
   showsUsage: "showsUsage",
+  personasMarketplace: "catalog.personas.marketplace",
+  reviewDiffLayout: "reviewDiffLayout",
   startRuntimeID: "startRuntimeID",
   startChoices: "startChoices",
   startLevels: "startLevels",
@@ -59,6 +61,28 @@ export function preferencesSaid(said: Record<string, JSONValue>): void {
   heard = said;
   heardOnce.value = true;
   redraw();
+  moveOnce(globalThis.window?.localStorage);
+}
+
+/** The choices that were this browser's own until #6803 and #6806, and where each was kept, the first one first. */
+const movedFrom: [string, string[]][] = [
+  [preferenceKeys.personasMarketplace, ["catalog.personas.marketplace"]],
+  [preferenceKeys.reviewDiffLayout, ["reviewDiffLayout", "agents.reviewDiffLayout"]],
+];
+
+/**
+ * Each of them goes to the Mac once, where the Mac has none. The old value goes when the Mac has the
+ * choice, so one the Mac did not take is sent again the next time it is heard.
+ */
+export function moveOnce(storage: Pick<Storage, "getItem" | "removeItem"> | undefined): void {
+  if (!storage) return;
+  try {
+    for (const [key, old] of movedFrom) {
+      if (key in heard) { for (const name of old) storage.removeItem(name); continue; }
+      const kept = old.map((name) => storage.getItem(name)).find((value) => value !== null);
+      if (typeof kept === "string" && !pending.has(key)) setPreferences({ [key]: kept });
+    }
+  } catch { /* storage off: nothing kept */ }
 }
 
 /**

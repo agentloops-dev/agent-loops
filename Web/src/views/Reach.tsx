@@ -3,6 +3,7 @@
 // a folder on the host, so one is typed as its path. Connectors are chosen in the window.
 import { useSignal } from "@preact/signals";
 import { useEffect, useRef } from "preact/hooks";
+import { folderRefusal } from "../model/startForm";
 import { Icon } from "./Icon";
 
 /** "Reach: this folder", or how many folders, as the window says it. */
@@ -39,7 +40,11 @@ export function Reach({ folders, change, disabled }: {
       said.value = "Type the folder's full path, starting with /.";
       return;
     }
-    if (!folders.includes(url)) change([...folders, url]);
+    if (!folders.includes(url)) {
+      const refused = folderRefusal(folders, url);
+      if (refused) { said.value = refused; return; }
+      change([...folders, url]);
+    }
     typed.value = "";
     said.value = null;
   };
