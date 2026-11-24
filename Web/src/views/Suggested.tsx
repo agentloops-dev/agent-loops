@@ -5,6 +5,7 @@ import { useEffect } from "preact/hooks";
 import type { WorkSuggestLeads } from "../protocol/generated";
 import type { Store } from "../model/store";
 import { hostHas } from "../model/capabilities";
+import { flagOn } from "../model/featureFlags";
 import { CallFailed, describe, methodNotFound } from "../model/errors";
 import { keepSuggestedHidden, moreWords, suggestedHidden, suggestionDetail, unreadWords } from "../model/suggestedLeads";
 import { go } from "../route";
@@ -87,7 +88,7 @@ export function Suggested({ store, host, down }: { store: Store; host: string; d
           </li>
         ))}
       </ul>
-      {more && <a class="small" href="#/work/timeline" onClick={(e) => { e.preventDefault(); go({ nav: "work", section: "timeline" }); }}>{more}</a>}
+      {more && flagOn("work") && <a class="small" href="#/work/timeline" onClick={(e) => { e.preventDefault(); go({ nav: "work", section: "timeline" }); }}>{more}</a>}
       {said.value && <p class="failure small">{said.value}</p>}
     </section>
   );

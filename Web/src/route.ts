@@ -12,7 +12,7 @@
 // to that folder until ‹ All.
 // Every step is a history entry, so the browser's own Back moves between columns (US6).
 import { signal } from "@preact/signals";
-import { movedPage, movedReport, navSections, type NavSection, type UsagePane } from "./model/nav";
+import { hiddenPage, movedPage, movedReport, navSections, type NavSection, type UsagePane } from "./model/nav";
 
 export type ActivityPage = "events" | "runtimes" | "mcp" | "spending" | "tokens" | "time" | "velocity" | "cycletime";
 
@@ -196,8 +196,10 @@ export function isOldAddress(hash: string): boolean {
     || /^#\/?(settings|status)\/(secrets|accounts|environment)$/.test(hash);
 }
 
-/** The section a route is in: Agents for a host's places, the Overview for none. */
+/** The section a route is in: Agents for a host's places, the Overview for none, and for a page whose feature flag is
+ * off (#6572). The address stays, so the page is there when its flag is turned on. */
 export function sectionOf(r: Route): NavSection {
+  if (r.nav && hiddenPage(r.nav, r.section)) return "overview";
   return r.nav ?? (r.host ? "agents" : "overview");
 }
 

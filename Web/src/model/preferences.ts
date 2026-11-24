@@ -25,6 +25,9 @@ export const preferences = signal<Record<string, JSONValue>>({});
 /** Answers the Mac's whole map; one that answers nothing (a test's) leaves the change as made. */
 type Sender = (changes: Record<string, JSONValue | null>) => Promise<Record<string, JSONValue>> | unknown;
 
+/** Whether the Mac has said its map since the page opened. */
+export const heardOnce = signal(false);
+
 let sender: Sender | null = null;
 let failed: ((error: unknown) => void) | null = null;
 /** The Mac's own map, as last heard: what goes back when a change did not go (#4814). */
@@ -54,6 +57,7 @@ function redraw(): void {
 /** What the Mac said. A change of this page's still on its way stays drawn over it. */
 export function preferencesSaid(said: Record<string, JSONValue>): void {
   heard = said;
+  heardOnce.value = true;
   redraw();
 }
 

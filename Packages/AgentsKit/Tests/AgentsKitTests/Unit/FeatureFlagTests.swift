@@ -41,4 +41,24 @@ struct FeatureFlagTests {
         mirror.hostSaid([:])
         #expect(!flag.isOn(in: defaults))
     }
+
+    /// A model's flags follow the mirror with no restart (#6572): the four features off by default.
+    @MainActor
+    @Test func aModelsFlagsFollowTheMirror() {
+        let defaults = MemoryDefaults()
+        let states = FeatureFlagStates(defaults: defaults)
+        let mirror = DisplayPreferenceMirror(defaults: defaults, send: { $0 }, failed: { _ in })
+        // A UserDefaults posts this for itself; the test's stand-in does not.
+        func said(_ preferences: DaemonAPI.DisplayPreferences) {
+            mirror.hostSaid(preferences)
+            NotificationCenter.default.post(name: UserDefaults.didChangeNotification, object: defaults)
+        }
+        let hidden: [FeatureFlag] = [.dashboard, .docs, .suggested, .work]
+        said([:])
+        #expect(hidden.allSatisfy { !states.isOn($0) })
+        said([FeatureFlag.work.key: .bool(true)])
+        #expect(states.on == [.work])
+        said([:])
+        #expect(states.on.isEmpty)
+    }
 }

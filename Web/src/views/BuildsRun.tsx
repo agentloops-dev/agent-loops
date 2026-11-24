@@ -5,6 +5,7 @@
 import { useEffect } from "preact/hooks";
 import { useSignal } from "@preact/signals";
 import type { BuildsChange, BuildsHistory, BuildsRun, BuildsRunAnswer, BuildsRunnerWait } from "../protocol/generated";
+import { flagOn } from "../model/featureFlags";
 import type { Store } from "../model/store";
 import { routeHash, type Route } from "../route";
 import { changeTitle, forgeName, pullRef, runName, runWhen, secondsWords, wireMs, type BuildsAsk } from "../model/builds";
@@ -63,7 +64,7 @@ export function RunDrill({ store, from, repo, ask, history: h, change, at }: Pro
         <>
           <h2>
             {`${runName(run)} · run ${run.id}`}
-            {run.pr ? <>{" · "}<a href={routeHash({ nav: "work", section: "pr", item: pullRef(repo, run.pr) })}>{`#${run.pr}`}</a></> : null}
+            {run.pr ? <>{" · "}{flagOn("work") ? <a href={routeHash({ nav: "work", section: "pr", item: pullRef(repo, run.pr) })}>{`#${run.pr}`}</a> : `#${run.pr}`}</> : null}
           </h2>
           <p class="quiet">{runLine(run, g.before, runWhen(run.made, timeZone))}</p>
           <p class="builds-drill-links small">

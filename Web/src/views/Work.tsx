@@ -8,6 +8,7 @@ import { useEffect, useMemo, useRef } from "preact/hooks";
 import type {
   Agent, ForgeCloseRequest, ForgeComment, ForgeDone, ForgeEvent, ForgeLinked, ForgeItemDetail, ForgeLabel, ForgeLabelRequest, LineageCostRollup, LineageEstimate, LineageForecast, LineageGraph,
 } from "../protocol/generated";
+import { flagOn } from "../model/featureFlags";
 import type { Store } from "../model/store";
 import { Capability } from "../protocol/capabilities.generated";
 import { describe } from "../model/errors";
@@ -870,7 +871,7 @@ export function WorkPage({ store, kind, ref }: { store: Store; kind: WorkKind; r
               </SideSection>
             );
           })()}
-          {(kind === "issue" || kind === "pr") && (
+          {flagOn("docs") && (kind === "issue" || kind === "pr") && (
             <WorkDocs store={store} itemRef={ref} title={item.title} body={got?.body ?? ""} asked={asked.value} />
           )}
         </aside>

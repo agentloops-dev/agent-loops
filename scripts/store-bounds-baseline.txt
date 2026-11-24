@@ -159,7 +159,6 @@
 2 Go/internal/controlplane/log.go rolllog.Open
 2 Go/internal/controlplane/machine.go os.WriteFile
 1 Go/internal/controlplane/machinesetup.go v1/machine-setup
-1 Go/internal/controlplane/machinesetup.go v1/machine-setup-times
 1 Go/internal/controlplane/machineversions.go v1/machine-versions
 1 Go/internal/controlplane/maturity/store.go v1/maturity
 2 Go/internal/controlplane/mesh.go v1/copies

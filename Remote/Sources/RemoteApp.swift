@@ -264,6 +264,10 @@ struct RemoteView: View {
                 compactColumn = .sidebar
             }
         }
+        // Work turned off while one of its pages is open: nothing picked in its place (#6572).
+        .onChange(of: model.flags.on) {
+            if !model.flags.isOn(.work), case .work? = model.openActivity { model.sidebarItem = nil }
+        }
         .onChange(of: compactColumn) { _, column in
             if column == .sidebar, sizeClass == .compact { model.sidebarItem = nil }
         }

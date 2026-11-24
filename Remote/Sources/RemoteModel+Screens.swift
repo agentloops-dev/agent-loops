@@ -123,6 +123,11 @@ extension RemoteModel {
             case .resources, .events, .runtimes, .secretsStatus, .accountsStatus, .environmentStatus:
                 openActivity = newValue
             case .work(let kind):
+                // Work is off (#6572): a hidden page does not show.
+                guard flags.isOn(.work) else {
+                    openActivity = nil
+                    return
+                }
                 // The list's row: its list, or the place in it still open (#4004).
                 if workPlace.kind != kind { workHistory.go(WorkPlace(kind: kind)) }
                 openActivity = newValue

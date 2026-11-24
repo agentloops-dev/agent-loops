@@ -209,15 +209,22 @@ struct AgentsCommands: Commands {
             // Status ▸ Accounts, a page of its own (#5258).
             Button("Accounts") { model.showAccounts() }
                 .disabled(ControlConfig.endpoint == nil)
-            // The page the window opens to (#5696).
-            Button("Dashboard") { model.showDashboard() }
-            // A list each, as the sidebar's Work group (#4004).
-            Menu("Work") {
-                ForEach(WorkList.Kind.allCases) { kind in
-                    Button(kind.title) { model.sidebarItem = .work(kind) }
+            // The Dashboard, Work and Docs each with its flag on (#6572).
+            if model.flags.isOn(.dashboard) {
+                // The page the window opens to (#5696).
+                Button("Dashboard") { model.showDashboard() }
+            }
+            if model.flags.isOn(.work) {
+                // A list each, as the sidebar's Work group (#4004).
+                Menu("Work") {
+                    ForEach(WorkList.Kind.allCases) { kind in
+                        Button(kind.title) { model.sidebarItem = .work(kind) }
+                    }
                 }
             }
-            Button("Docs") { model.showDocs(model.docsHistory.current ?? DocsPlace()) }
+            if model.flags.isOn(.docs) {
+                Button("Docs") { model.showDocs(model.docsHistory.current ?? DocsPlace()) }
+            }
             Button(MessagesList.title) { model.sidebarItem = .messages }
             // ⌘1…n are the inspector panes, so ⌘0 is next to them (#3986); Actual Size keeps it
             // while a Markdown page is in front.
@@ -542,6 +549,8 @@ struct AgentsCommands: Commands {
         if popped != nil || folderWindow != nil { model.bringMainWindowForward(opening: openWindow) }
         requests.showsFileSearch = false
         requests.commandMenu = commandMenuActions
+        // With Work off (#6572) the menu has no issues or PRs, so nothing is read.
+        guard model.flags.isOn(.work) else { return }
         Task {
             // The Work lists' issues and PRs, read once; a list read already is not read again.
             await model.workLists[.issue].load(model: model)
@@ -617,12 +626,12 @@ struct AgentsCommands: Commands {
         add("Events", MenuKeys.events) { model.showEvents() }
         add("Resources", MenuKeys.resources) { model.showResources() }
         add("Runtimes", MenuKeys.runtimes) { model.showRuntimes() }
-        for kind in WorkList.Kind.allCases {
+        for kind in WorkList.Kind.allCases where model.flags.isOn(.work) {
             add("Work: \(kind.title)") { model.sidebarItem = .work(kind) }
         }
         add("Achievements") { model.showAchievements() }
         add("Cost", MenuKeys.cost) { model.showsSpending = true }
-        add("Docs") { model.showDocs(model.docsHistory.current ?? DocsPlace()) }
+        add("Docs", when: model.flags.isOn(.docs)) { model.showDocs(model.docsHistory.current ?? DocsPlace()) }
         add("Settings…", KeyboardShortcut(","), keywords: ["preferences"]) { openSettings() }
         return actions
     }
