@@ -146,7 +146,7 @@ Mac.
 | `~/.agents-secrets/mcp-sign-ins.json` | secret | MCP sign-in tokens | Until you sign out. No count limit (#6740). | — |
 | `~/.agents-secrets/hints.json` | secret | The last 4 characters of each secret | With its secret. No count limit (#6741). | On write |
 | `~/.agents-secrets/descriptions.json` | key-value | Secret descriptions, which are not secret | With its secret. No count limit (#6742). | On write |
-| Keychain `agents.connection.<hash>` (Linux: `connections.json`) | secret; key-value | Forge connections: the token and its settings | Until you remove the connection. No count limit (#6743). | On remove |
+| Keychain `agents.connection.<hash>` (Linux: `connections.json`) | secret | Forge connections: each token, with the server, account and site it is for. They stay with the token, because they say where it is sent (#6743) | Until you remove the connection. Linux: 16 connections of 64 KiB each. Mac: one for each provider, and the Keychain command's line of 4,095 bytes (about 2.9 KB of JSON). A connection past that is refused, and what was kept stays | On write |
 
 ## In each folder
 
