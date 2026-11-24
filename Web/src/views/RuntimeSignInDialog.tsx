@@ -8,7 +8,11 @@ import type { RuntimeSignInStep } from "../protocol/generated";
 import type { RuntimeSignInTarget, Store } from "../model/store";
 import { describe } from "../model/errors";
 import { machineSignInWords as words } from "../model/runtimes";
+import { Icon } from "./Icon";
 import { Modal } from "./Modal";
+
+/** How many letters of the link's end always show: its middle is cut when it is long. */
+const linkTail = 12;
 
 /** Opens the sign-in panel for a runtime on a machine (#5203). */
 export function signInRuntime(store: Store, target: RuntimeSignInTarget): void {
@@ -36,10 +40,13 @@ function RuntimeSignInDialog({ store, host, runtimeID, runtimeName, machine, clo
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string>();
   const [copied, setCopied] = useState<"link" | "code">();
+  const [copies, setCopies] = useState(0);
+  const [pasteRefused, setPasteRefused] = useState(false);
 
   const start = () => {
     setStep(undefined);
     setCode("");
+    setPasteRefused(false);
     setProblem(undefined);
     store.signInStart(host, runtimeID).then(setStep, (e: unknown) => setProblem(describe(e)));
   };
@@ -71,8 +78,30 @@ function RuntimeSignInDialog({ store, host, runtimeID, runtimeName, machine, clo
     setByKey(!byKey);
   };
   const copy = (text: string, what: "link" | "code") => {
-    void navigator.clipboard?.writeText(text).then(() => setCopied(what)).catch(() => {});
+    void navigator.clipboard?.writeText(text).then(() => {
+      setCopied(what);
+      setCopies((n) => n + 1);
+    }).catch(() => {});
   };
+  // The link's checkmark stays 2 s after the last copy.
+  useEffect(() => {
+    if (copied !== "link") return undefined;
+    const timer = setTimeout(() => setCopied(undefined), 2000);
+    return () => clearTimeout(timer);
+  }, [copied, copies]);
+  // The code cannot be typed, only pasted: with the icon, or with ⌘V when the browser refuses the icon.
+  const take = (text: string) => {
+    setPasteRefused(false);
+    if (text.trim()) setCode(text.trim());
+  };
+  const paste = async () => {
+    try {
+      take(await navigator.clipboard.readText());
+    } catch {
+      setPasteRefused(true);
+    }
+  };
+  const linkLabel = copied === "link" ? words.copied : words.copyLink;
   const title = words.title(runtimeName, machine);
   const ready = byKey ? key.trim() !== "" : !!step && (!step.wantsCode || code.trim() !== "");
 
@@ -91,25 +120,32 @@ function RuntimeSignInDialog({ store, host, runtimeID, runtimeName, machine, clo
         ) : step ? (
           <>
             <p>{words.openLink}</p>
-            <p class="sign-in-link">
-              <a href={step.url} target="_blank" rel="noopener noreferrer" class="button">{words.open}</a>{" "}
-              <button type="button" onClick={() => copy(step.url, "link")}>{copied === "link" ? "Copied" : words.copyLink}</button>
-            </p>
+            <div class="sign-in-field">
+              <a href={step.url} target="_blank" rel="noopener noreferrer" title={step.url}><span class="head">{step.url.slice(0, -linkTail)}</span><span>{step.url.slice(-linkTail)}</span></a>
+              <button type="button" class="icon" title={linkLabel} aria-label={linkLabel} onClick={() => copy(step.url, "link")}>
+                <Icon name={copied === "link" ? "check" : "copy"} />
+              </button>
+            </div>
             {step.userCode !== undefined ? (
               <>
                 <p>{words.typeCode}</p>
                 <p class="sign-in-code">
                   <code class="code-text" aria-label={words.codeLabel}>{step.userCode}</code>{" "}
-                  <button type="button" onClick={() => copy(step.userCode!, "code")}>{copied === "code" ? "Copied" : "Copy"}</button>
+                  <button type="button" onClick={() => copy(step.userCode!, "code")}>{copied === "code" ? words.copied : "Copy"}</button>
                 </p>
                 <p class="sheet-note">{words.codexNote}</p>
               </>
             ) : step.wantsCode && (
               <div class="token-form">
-                <label>{words.pasteCode}
-                  <input aria-label={words.codeLabel} autocomplete="off" spellcheck={false} value={code}
-                    onInput={(e) => setCode((e.target as HTMLInputElement).value)} />
-                </label>
+                <p>{words.pasteCode}</p>
+                <div class="sign-in-field">
+                  <input aria-label={words.codeLabel} placeholder={words.codeLabel} readOnly autocomplete="off" spellcheck={false} value={code}
+                    onPaste={(e) => { e.preventDefault(); take(e.clipboardData?.getData("text/plain") ?? ""); }} />
+                  <button type="button" class="icon" title={words.pasteCodeLabel} aria-label={words.pasteCodeLabel} onClick={() => void paste()}>
+                    <Icon name="clipboard-paste" />
+                  </button>
+                </div>
+                {pasteRefused && <p class="sheet-note failure" role="alert">{words.pasteRefused}</p>}
               </div>
             )}
           </>

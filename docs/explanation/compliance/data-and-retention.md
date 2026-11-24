@@ -194,7 +194,9 @@ One sweep runs every hour. It removes old audit days, codes, tombstones, records
 owner, usage, workflow runs and lineage, join, lock-join, sign-in and link requests, and
 policy, governance and remove requests (#3649), old policy versions and SCIM and read
 tokens that stopped working (#6765 to #6767), and once a day the backups of removed
-servers. It also forgets clients whose key expired (#6757), and machines with no workspace whose key expired (#6758), and removes
+servers. It also forgets clients whose key expired (#6757), and machines with no workspace whose key expired (#6758), deletes old
+machine set-ups, updates and failed makes, and those of machines and providers that are gone
+(#6968, #6969, #6971), and removes
 the approvals of people and groups that are gone, and probes and move marks left by a
 copy that stopped (#3748).
 
@@ -221,9 +223,9 @@ the other copies of the control plane learn that it went. A removed person's sta
 | Machine locks | log | Each person's lock chain | 4,096 entries a person. Deleted when the person is removed (#3647) | On **Reset** and on remove |
 | A person's settings and secrets | key-value; secret | Settings that follow a person; secrets, sealed | 256 KiB of settings, 200 secrets of 16 KiB, each sealed to 200 machines and apps at most: 256 KiB a part (16 KiB for the small ones), 5 MiB of settings as kept and 5 MiB a sealed secret; 100 offers from agents; more is refused. A secret names the newest 200 removed machines it was on. They follow the person to each machine, so they are not in one machine's `~/.agents`, and they are the person's own data, so they have no age. A removed secret's tombstone (its name, version and time) goes after 90 days; at 200 tombstones a new name is refused (#6780) | Limits on write; tombstones hourly; all of it when the person is removed |
 | Channel links | document | Which person a channel identity is, and when it last acted | 4 KiB a record and 1 MiB in all: an approval over that is refused, and the request still waits. No link is evicted. A link goes 90 days after its identity last acted; a message from it renews the link (noted once a day). After that, a message asks the person again (#6763) | Size before an approval, age hourly; also on unlink, or when the person is removed |
-| Machine set-up | document | Each machine's set-up steps | One a machine, deleted when the machine is removed. No age. | On remove |
+| Machine set-up | document | Each machine's set-up steps | One a machine, 512 KiB at most; a step's words are cut at 2 KiB. One that ended (ready or failed) goes 90 days later. One that has not ended has no age. Deleted when the machine is removed; that of a machine that is gone, or never joined, 7 days after its last change (#6968) | On write; on remove; hourly |
 | Machine set-up times | time series | How long each set-up step took, and when it ended | 90 days, 50 a step (#6760), 32 KiB at most. No roll-up. | On write, hourly |
-| Machine versions | log | Each machine's version and its updates | 20 updates a machine, deleted when the machine is removed. No age. | On write; on remove |
+| Machine versions | document | Each machine's version and its updates | 20 updates a machine, 64 KiB at most; a version over 256 bytes is not kept. An update goes after 90 days; the version now has no age. Deleted when the machine is removed; that of a machine that is gone, a day after it was last seen (#6969) | On write; on remove; hourly |
 | Machine names | key-value | A person's machine counter and last choices | One a person, 64 KiB at most: choices past that are not kept. The counter has no age while the person is here, so that a number is never used twice. Deleted when the person is removed (#6759). | On write; on remove; hourly |
 | Approvals | document | Each person's signed approvals of workflows and connectors | 2,000 a person; a new one past that is dropped. No age, and not deleted with the person. | On write |
 
@@ -259,7 +261,7 @@ the other copies of the control plane learn that it went. A removed person's sta
 | Governance | document | Installed servers and skills; approvals | 500 items and 1 MiB a machine; 1,000 approvals of 8 KiB: one more, or a larger record, is refused. An approval in force has no age: it stays until an admin takes it back, or its person or group is gone (#3748, #6764) | Hourly |
 | Org keys and gateways | key-value; secret | Routes and their sealed secrets | 50 routes of 256 KiB, and 4 MiB of sealed copies each (200 machines and apps); more is refused (#6776) | On write; tombstone, hourly |
 | Warm pools | document | Pools of ready machines, and their claims | 10 a provider, over every person, and 256 KiB a pool: a pool past that is refused. Claims: 7 days and 500 a pool. The pool has no age. Deleted, with the machines nobody claimed, when the person is removed (#6761). | On write; every 30 s; on remove |
-| Failed machine makes | log | Why a machine could not be made | 5 a provider, deleted with the provider. No age. | On write; on remove |
+| Failed machine makes | log | Why a machine could not be made | 5 a provider, 64 KiB at most; a reason is cut at 4 KiB. 90 days: one kept with no time counts from the first write or sweep. Deleted with the provider (#6971) | On write; on remove; hourly |
 | Event bus | log | Events between a person's machines: refs, names and times, and sealed data | 90 days; 100,000 envelopes and 1 GiB of encoded log records a person, the oldest deleted first with their dedupe ids. An envelope is at most 24 MiB encoded: 64 sealed copies of 256 KiB, in base64. Deleted when the person is removed (#6671). | On write; hourly; on remove |
 | Budgets | key-value | The org's budgets | One record of 4 KiB, with one budget (#6778) | On write |
 | Feature maturity | document | Evidence for each feature's rating | 84 records of 4 KiB. No age. | On write |
@@ -309,7 +311,7 @@ account's machines. It leaves the operator's backups of it, and Stripe's own rec
 | --- | --- | --- | --- |
 | `~/Library/Application Support/Agents Control/` | document; secret | The control plane's store, TLS certificate, `secrets-key`, push key, web settings | One of each |
 | `Agents Control/store-before-<…>` | blob | A whole old store, set aside when you change the store or move back. Each holds the audit, sealed secrets and server backups. | The newest 2; an older one is deleted when another is set aside (#3671) |
-| Keychain `com.alexecollins.agentshost` | secret | The control key, bucket keys, and `control-key-before-<time>` | One of each; the newest 2 `control-key-before-*` items, deleted with the old stores (#3671) |
+| Keychain `com.alexecollins.agentshost` | secret | The control key, bucket keys, and `control-key-before-<time>` | One of each; the newest 2 `control-key-before-*` items (32 bytes each). An item is deleted at 90 days, on the next write or hourly while the app runs, but not while a `store-before-*` folder is left: that store needs its key to be put back (#3671, #6770). The folders have no age yet (#6769). |
 | `~/Library/Logs/Agents/control.log` | log | What the control plane did | 7 days and 10 MB (#6901): 4 MB, and one older file. A file holds the lines of 83 hours at most, and there are two files, so a line goes after 83 hours to 7 days, with no summary. Checked on write, at start and every 30 seconds. `/data/control.log` in a container is the same. |
 | The Web Push key | secret | The key that signs browser push | One. In `agents-control backup` as `webpush-key.pem` (#3651). |
 | `Agents Control/web-off` | key-value | That the web page is off | One empty file, beside the control plane's store, until the page is turned on. It is this control plane's own configuration, so it is not in a person's `~/.agents` (#6781) |
@@ -343,8 +345,8 @@ What the Mac window and the Remote keep in their defaults, and the web page in
 | Other choices on this client | key-value | How this client shows things | A fixed set | — |
 | MDM profile (Mac): `ControlPlaneAddress`, `ControlPlaneKey`, `MustJoin` | key-value | The control plane an org pins a Mac to | Three settings. The app only reads them, and only the values that the profile forces: macOS and the org's MDM set and remove them, so they have no age. They are not in `~/.agents`, on purpose: the person could edit a file there, and so remove the pin (#6801). | When the org removes the profile |
 | `crashes/`, `hangs/`, in the log folder (Mac); `remote.log` (Remote) | log | Crash and hang notes; the device log | 20 of each; 256 KiB and one older file | At start; on write |
-| `~/.config/loops/hosts.json`, `lock-keys/` | key-value | Pairings of `loops` | One a control plane (#6807) | On unpair |
-| `~/.agents-go/ctl.json` | key-value | The pairing of `agentsctl` | One. No unpair (#6808). | Never |
+| `~/.config/loops/hosts.json`, `lock-keys/` | secret | Pairings of `loops`, with their keys, the default control plane and the lock pins | 20 control planes, 4 KiB each: one over that is refused, with a message. A lock key and a lock pin for each. No age, on purpose: a pairing stays until `loops auth logout`. Not in `~/.agents`, on purpose: it identifies one terminal, and a sync of `~/.agents` would copy it (#6807). | Before a pairing, and on `loops auth logout` |
+| `~/.agents-go/ctl.json` | secret | The pairing of `agentsctl`, with its key | One, 4 KiB. No age, on purpose: it stays until `agentsctl unpair`. Not in `~/.agents`, on purpose, as for `loops` (#6808). | On pair, and on `agentsctl unpair` |
 
 ## In memory
 

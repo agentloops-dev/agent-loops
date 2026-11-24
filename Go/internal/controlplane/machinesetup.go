@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/records"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
@@ -21,7 +22,18 @@ import (
 // "Slower than usual", are in machinesetuptimes.go.
 
 const (
+	// store-bounds: kind=document; count=1 a machine; size=512KiB a record; age=until-deleted; applied=on write, the hourly sweep deletes one 90 days after it ended, or whose machine is gone
 	machineSetupPrefix = "v1/machine-setup/"
+	// machineSetupMost is the largest record (#6968): the pool's projects (its record is 256 KiB
+	// at most) and each step's words, cut at setupWordsMost.
+	machineSetupMost = 512 << 10
+	setupWordsMost   = 2 << 10
+	// endedSetupKept is how long a set-up that ended, ready or failed, is kept. One that has not
+	// ended has no age: a warm pool's machine waits for its claim that way.
+	endedSetupKept = 90 * 24 * time.Hour
+	// unjoinedSetupKept is how long the set-up of a machine with no record is kept after its
+	// last change: a machine being made has no record until it joins.
+	unjoinedSetupKept = 7 * 24 * time.Hour
 	// slowFactor and slowFloor: a running step is slower than usual after 3 times its median,
 	// and at least 2 minutes.
 	slowFactor = 3
@@ -368,9 +380,16 @@ func (s *Service) changeMachineSetup(ctx context.Context, host string, create bo
 		if err := change(stored); err != nil {
 			return nil, err
 		}
+		for i := range stored.Steps {
+			step := &stored.Steps[i]
+			step.Detail, step.Error = cutWords(step.Detail), cutWords(step.Error)
+		}
 		data, err := json.Marshal(stored)
 		if err != nil {
 			return nil, err
+		}
+		if len(data) > machineSetupMost {
+			return nil, fail(invalidParams, "A machine's set-up is %d KiB at most.", machineSetupMost>>10)
 		}
 		if _, err = s.cfg.Store.Put(ctx, machineSetupKey(host), data, when); err == nil {
 			return stored, nil
@@ -379,6 +398,98 @@ func (s *Service) changeMachineSetup(ctx context.Context, host string, create bo
 			return nil, err
 		}
 	}
+}
+
+// cutWords is a step's words, at most setupWordsMost of them.
+func cutWords(words string) string {
+	if len(words) <= setupWordsMost {
+		return words
+	}
+	return strings.ToValidUTF8(words[:setupWordsMost-len("…")], "") + "…"
+}
+
+// ended says the set-up is ready or failed, so nothing runs it until Try Again or a claim.
+func (st *storedSetup) ended() bool { return st.Ready != nil || st.failed() }
+
+// changed is the last time that the set-up says: a step began or ended, or it was ready.
+func (st *storedSetup) changed() time.Time {
+	last := st.Started
+	for _, step := range st.Steps {
+		for _, at := range []*time.Time{step.Started, step.Ended} {
+			if at != nil && at.After(last) {
+				last = *at
+			}
+		}
+	}
+	if st.Ready != nil && st.Ready.After(last) {
+		last = *st.Ready
+	}
+	return last
+}
+
+// sweepMachineSetups deletes, at most most, the set-ups that ended endedSetupKept ago, and
+// those of machines that are gone (#6968). full says it stopped at most.
+func sweepMachineSetups(ctx context.Context, rs *records.Records, now time.Time, most int) (int, bool, error) {
+	return sweepMachineObjects(ctx, rs, machineSetupPrefix, most, func(object *store.Object, gone bool) ([]byte, bool) {
+		var stored storedSetup
+		if json.Unmarshal(object.Data, &stored) != nil || len(stored.Steps) == 0 {
+			return nil, gone
+		}
+		quiet := now.Sub(stored.changed())
+		return nil, gone && quiet >= unjoinedSetupKept || stored.ended() && quiet >= endedSetupKept
+	})
+}
+
+// sweepMachineObjects goes over the objects of one a machine under prefix. sweep says of each,
+// with whether its machine has no record in the store, to delete it or what to write in its
+// place (nil for neither). full says it stopped at most.
+func sweepMachineObjects(ctx context.Context, rs *records.Records, prefix string, most int,
+	sweep func(object *store.Object, gone bool) (write []byte, remove bool)) (swept int, full bool, err error) {
+	s := rs.Store
+	keys, err := s.List(ctx, prefix)
+	if err != nil || len(keys) == 0 {
+		return 0, false, err
+	}
+	// From the store and not only from these records, as a machine can have joined at another
+	// copy. A removed one's tombstone counts until it goes. An object's name is in lower case.
+	machines, err := s.List(ctx, records.MachinesPrefix)
+	if err != nil {
+		return 0, false, err
+	}
+	known := map[string]bool{}
+	for _, k := range machines {
+		known[strings.ToLower(strings.TrimPrefix(k.Key, records.MachinesPrefix))] = true
+	}
+	for _, h := range rs.Hosts() {
+		known[strings.ToLower(h.ID)+".json"] = true
+	}
+	for _, k := range keys {
+		if swept >= most {
+			return swept, true, nil
+		}
+		object, err := s.Get(ctx, k.Key)
+		if err != nil {
+			return swept, false, err
+		}
+		if object == nil {
+			continue
+		}
+		write, remove := sweep(object, !known[strings.TrimPrefix(k.Key, prefix)])
+		switch {
+		case remove:
+			err = s.Delete(ctx, k.Key)
+		case write != nil:
+			_, err = s.Put(ctx, k.Key, write, store.Matching(object.ETag))
+		default:
+			continue
+		}
+		// Another write came between: it is looked at again in the next hour.
+		if err != nil && !isConflict(err) {
+			return swept, false, err
+		}
+		swept++
+	}
+	return swept, false, nil
 }
 
 // BeginSetup starts a machine's set-up, all eight steps waiting. It does nothing when the

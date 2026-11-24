@@ -60,7 +60,19 @@ final class HostModel {
         // bucket it was once given go.
         HostSecrets.forgetBucketKeys(paths)
         Task { await registerOutdatedJobsAgain() }
+        sweepKeysAside()
         if !paths.scratch { SelfUpdateRelaunch.watch() }
+    }
+
+    /// The old control plane keys' hourly sweep (#6770), the first at launch.
+    private func sweepKeysAside() {
+        let paths = self.paths
+        Task.detached(priority: .utility) {
+            while !Task.isCancelled {
+                HostSecrets.pruneKeysAside(paths)
+                try? await Task.sleep(for: .seconds(3600))
+            }
+        }
     }
 
     /// Once a launch (#1379): a login item registered from an older copy's plist is

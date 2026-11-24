@@ -276,7 +276,7 @@ Sessions are signed cookies (30 days); the server keeps nothing for them.
 |---|---|---|
 | `~/Library/Application Support/Agents Control/` | `store/`, `tls/`, `secrets-key`, `apns.p8`, `web.json`, `control-key` (scratch) | fixed |
 | `…/Agents Control/store-before-<…>` | A whole old store, set aside on a store switch or a move back (`Host/…/HostModel.swift:561,791`) | **none; never pruned.** Each holds the audit, sealed secrets and server backups. |
-| Keychain `com.alexecollins.agentshost` | `control-key`, `bucket-keys`, `control-key-before-<unix>` | **`control-key-before-*` is added on each move back and never deleted** |
+| Keychain `com.alexecollins.agentshost` | `control-key`, `bucket-keys`, `control-key-before-<unix>` | `control-key-before-*`: the newest 2; 90 days once no `store-before-*` folder is left (#6770) |
 | `~/Library/Logs/Agents/control.log` | Control plane log | 4 MB + 1 older, 7 days (`rolllog/rolllog.go`, #6901) |
 | Web Push VAPID key (`AGENTS_WEBPUSH_KEY_FILE`) | Push signing key | 1. **Not in `agents-control backup`**, so a restore breaks browser push. |
 
@@ -446,7 +446,7 @@ newer than a row above for the same store.
 | `v1/read/tokens/` | secret | Read token hashes, revoked ones too | 50, 8 KiB when made; live until revoked, then 90 days | `Go/internal/controlplane/readapi.go` (`sweep`) | #6767 |
 | `v1/lineage/<host>.json` | graph | Lineage node cost | 5,000 nodes of 64 KiB, 32 MiB and 90 days a machine, on write and hourly | `Go/internal/controlplane/lineagecost.go` (`boundLineage`, `sweepLineage`) | #6768 |
 | `Agents Control/store-before-*` (Mac) | blob | Whole old stores | The newest 2, of any size, no age | `Host/Sources/HostModel.swift:567,584` | #6769 |
-| Keychain `control-key-before-*` (Mac) | secret | Old control keys | The newest 2, no age | `Host/Sources/ControlKey.swift:51,63-83` | #6770 |
+| Keychain `control-key-before-*` (Mac) | secret | Old control keys | The newest 2, 32 bytes each; 90 days, on write and hourly, but held while a `store-before-*` folder is left (#6769); evict | `Host/Sources/ControlKey.swift` (`pruneKeysAside`), `StoresAside.expiredKeys` | #6770 |
 | `v1/control.json` | key-value | Control plane settings | 64 KiB, else a person's change is refused. Stays in the control plane's store (Alex, 2026-11-24) | `Go/internal/controlplane/records/fits.go` | #6771 |
 | `v1/policy.json`, `v1/policy.sig` | key-value | The org policy | 64 KiB and 1 KiB, else refused; the kill switch never is. Stays in the control plane's store (Alex, 2026-11-24) | `Go/internal/controlplane/policy.go` (`nextPolicy`) | #6772 |
 | `v1/signin.json` | key-value | Sign-in providers that are on | 16 KiB, else refused. Stays in the control plane's store (Alex, 2026-11-24) | `Go/internal/controlplane/signin.go` | #6773 |
@@ -482,8 +482,8 @@ newer than a row above for the same store.
 | `catalog.personas.marketplace` (Mac, Remote mirror) | cache | The personas marketplace, in `display.json` | One short value; a value from before the move is sent once | `Packages/AgentsKit/Sources/AgentsKitCore/Model/DisplayPreference.swift` (`moved`) | #6803 |
 | Web `localStorage` `agents.startForm` | key-value | Folders a new session reaches | 100 of 1,024 bytes each, one over that refused; until removed or Forget; stays in the browser on purpose, no age (Alex, 2026-11-24) | `Web/src/model/startForm.ts` | #6805 |
 | `reviewDiffLayout` (Mac, Remote mirror) | cache | The diff layout, in `display.json` | One short value, one key on the three clients; a value from before the move is sent once | `Packages/AgentsKit/Sources/AgentsKitCore/Model/DisplayPreference.swift` (`moved`); `Web/src/model/diffLayout.ts` | #6806 |
-| `loops` `~/.config/loops/hosts.json`, `lock-keys/` | key-value | Pairings, the default host, lock pins | One entry a control plane; outside .agents | `Go/cmd/loops/hosts.go:16-45; lockkey.go:65-75` | #6807 |
-| `agentsctl` `~/.agents-go/ctl.json` | key-value | One pairing | 1; no unpair, so it stays for ever; outside .agents | `Go/cmd/agentsctl/main.go:29-35,148` | #6808 |
+| `loops` `~/.config/loops/hosts.json`, `lock-keys/` | secret | Pairings with their keys, the default host, lock pins | 20 control planes of 4 KiB, one over that refused; a lock key and a pin for each; until `loops auth logout`; stays outside `.agents` on purpose: one terminal's identity | `Go/cmd/loops/hosts.go` (`room`, `write`); `lockkey.go` | #6807 |
+| `agentsctl` `~/.agents-go/ctl.json` | secret | One pairing, with its key | 1 of 4 KiB; until `agentsctl unpair`; stays outside `.agents` on purpose: one client's identity | `Go/cmd/agentsctl/main.go` (`file`, `unpair`) | #6808 |
 
 Two more stores have a bug instead of a store issue: the bus log `v1/bus/` (log; 100,000
 envelopes and 1 GiB a person, 90 days; #6671) and `v1/release-keys/` (secret; deleted with the machine and
@@ -505,10 +505,10 @@ These had no row above. Paths in the evidence are relative to `Go/internal/`.
 | `<root>/control-clients.json` | key-value | Copy of the paired clients | replaced by each list | `agentsd/localpath.go:45` |
 | `<root>/policy-yours-seen.json`, `lock.json`, `suspended.json` | key-value | Small state | fixed shape | `agentsd/policyyours.go:33`, `agentsd/lock.go:38`, `agentsd/usersuspend.go:24` |
 | `<root>/setup-reports.jsonl` | log | Steps of the machine's set-up | one run; a new run truncates it | `hostsetup/report.go:23` |
-| `v1/machine-setup/<host>.json` | document | A machine's set-up steps | 1 per machine; deleted when the machine is removed (best effort, `controlplane/methods.go`); no age, no sweep | `controlplane/machinesetup.go:24` |
-| `v1/machine-versions/<host>.json` | log | A machine's versions | 20 deploys; deleted when the machine is removed (best effort, `controlplane/methods.go`); no age, no sweep | `controlplane/machineversions.go:28` |
+| `v1/machine-setup/<host>.json` | document | A machine's set-up steps | 1 per machine, 512 KiB; 90 days after it ended, none while it runs; on machine removal, and hourly for a machine that is gone (7 days after its last change) (#6968) | `controlplane/machinesetup.go` (`sweepMachineSetups`) |
+| `v1/machine-versions/<host>.json` | document | A machine's versions | 20 deploys, 64 KiB; a deploy 90 days, the version now none; on machine removal, and hourly for a machine that is gone (a day after it was last seen) (#6969) | `controlplane/machineversions.go` (`sweepMachineVersions`) |
 | `v1/approvals/<person>/` | document | Signed approvals | 2,000 a person; no age, no delete found | `controlplane/approvals.go:22` |
-| `v1/failed-makes/<provider>.json` | log | Failed makes | 5 a provider; deleted with the provider; no age | `controlplane/providers/defaults.go:57` |
+| `v1/failed-makes/<provider>.json` | log | Failed makes | 5 a provider, 64 KiB; 90 days, on write and hourly; deleted with the provider (#6971) | `controlplane/providers/defaults.go` (`SweepFailedMakes`) |
 | `v1/maturity/<id>.json` | document | Feature maturity evidence | 84 records of 4 KiB; no age | `controlplane/maturity/store.go:161` |
 
 Mixed files follow these decisions: `workflows.json` splits into document/configuration, key-value

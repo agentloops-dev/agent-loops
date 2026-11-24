@@ -942,7 +942,9 @@ func (p *Providers) Summaries() []ProviderSummary {
 				Joining: new(true), Setup: p.hooks.Setup(m.host)})
 		}
 		for _, f := range failed[r.ID] {
-			workspaces = append(workspaces, f.info)
+			if !f.old(time.Now()) {
+				workspaces = append(workspaces, f.info)
+			}
 		}
 		out = append(out, p.summary(r, l, workspaces))
 	}
