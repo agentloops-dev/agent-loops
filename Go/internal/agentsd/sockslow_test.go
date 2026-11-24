@@ -33,7 +33,7 @@ func TestASlowSocketClientThatReadsIsNotLetGo(t *testing.T) {
 				began := time.Now()
 				buf := make([]byte, 16<<10)
 				for got := 0; got < want; {
-					time.Sleep(time.Second)
+					time.Sleep(time.Second) //nolint:forbidigo // synctest time: the client is slow by this much, and no real time passes
 					n, err := client.Read(buf)
 					got += n
 					if err != nil {
