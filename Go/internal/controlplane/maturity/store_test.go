@@ -25,7 +25,7 @@ func TestRecordBounds(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, id := range ids {
-		if _, err := m.Evaluate(ctx, id, "pending", 1, false, time.Now()); err != nil {
+		if _, err := m.Evaluate(ctx, id, 1, time.Now()); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -33,14 +33,14 @@ func TestRecordBounds(t *testing.T) {
 	if err != nil || len(keys) != MaxRecords {
 		t.Fatalf("records = %d, err = %v", len(keys), err)
 	}
-	if _, err := m.Evaluate(ctx, "feature-00", "beta", 1, false, time.Now()); err != nil {
+	if _, err := m.Evaluate(ctx, "feature-00", 1, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	keys, _ = s.List(ctx, "v1/maturity/")
 	if len(keys) != MaxRecords {
 		t.Fatalf("same feature key was not replaced: records = %d", len(keys))
 	}
-	if _, err := m.Evaluate(ctx, "feature-84", "pending", 1, false, time.Now()); !errors.Is(err, ErrInvalid) {
+	if _, err := m.Evaluate(ctx, "feature-84", 1, time.Now()); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("unregistered feature error = %v", err)
 	}
 }
@@ -50,18 +50,18 @@ func TestOversizedUpdateLeavesOldRecord(t *testing.T) {
 	s := store.NewMemory()
 	now := time.Now().UTC()
 	m, _ := New(s, []string{"voice/1"})
-	if _, err := m.Evaluate(ctx, "voice/1", "beta", 1, false, now); err != nil {
+	if _, err := m.Evaluate(ctx, "voice/1", 1, now); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := m.Complete(ctx, "voice/1", Completion{ID: "source-1", Actor: ActorMember, Success: true, Completed: true, Eligible: true}, now); err != nil {
+	if _, err := m.Complete(ctx, "voice/1", Completion{ID: "source-1", Actor: ActorOther, ActorRef: "person-1", Session: "session-1", Build: "build-1", Success: true, Completed: true, Eligible: true}, now); err != nil {
 		t.Fatal(err)
 	}
-	_, err := m.update(ctx, "voice/1", "", now.Add(time.Minute), func(r *Record) error { r.Rating = string(make([]byte, MaxBytes)); return nil })
+	_, err := m.update(ctx, "voice/1", "", now.Add(time.Minute), func(r *Record) error { r.Agent.Build = string(make([]byte, MaxBytes)); return nil })
 	if !errors.Is(err, ErrTooLarge) {
 		t.Fatalf("oversized update error = %v", err)
 	}
 	r, err := m.Read(ctx, "voice/1")
-	if err != nil || r.Rating != "beta" || r.CompletionID != "source-1" {
+	if err != nil || r.Rating != "pending" || r.CompletionID != "source-1" {
 		t.Fatalf("old record = %#v, err = %v", r, err)
 	}
 }
@@ -89,7 +89,7 @@ func TestConcurrentUpdatesAndRetry(t *testing.T) {
 	now := time.Now().UTC()
 	const workers = 24
 	var wg sync.WaitGroup
-	first := Completion{ID: "completion-0", Actor: ActorMember, Success: true, Completed: true, Eligible: true}
+	first := Completion{ID: "completion-0", Actor: ActorOther, ActorRef: "person-1", Session: "session-0", Build: "build-1", Success: true, Completed: true, Eligible: true}
 	if _, err := m.Complete(ctx, "chat/1", first, now); err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +102,7 @@ func TestConcurrentUpdatesAndRetry(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			id := fmt.Sprintf("completion-%d", i)
-			_, err := m.Complete(ctx, "chat/1", Completion{ID: id, Actor: ActorMember, Success: true, Completed: true, Eligible: true}, now)
+			_, err := m.Complete(ctx, "chat/1", Completion{ID: id, Actor: ActorOther, ActorRef: "person-1", Session: id, Build: "build-1", Success: true, Completed: true, Eligible: true}, now)
 			errCh <- err
 		}(i)
 	}
@@ -139,7 +139,7 @@ func TestOrganisationScope(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := a.Evaluate(ctx, "chat/1", "beta", 1, false, time.Now()); err != nil {
+	if _, err := a.Evaluate(ctx, "chat/1", 1, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	if r, err := b.Read(ctx, "chat/1"); err != nil || r != nil {
@@ -154,7 +154,7 @@ func TestBackgroundRefreshCannotCount(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = m.Complete(ctx, "chat/1", Completion{ID: "refresh-1", Actor: ActorMember, Success: true, Completed: true, Eligible: true, BackgroundRefresh: true}, time.Now())
+	_, err = m.Complete(ctx, "chat/1", Completion{ID: "refresh-1", Actor: ActorOther, ActorRef: "person-1", Session: "session-1", Build: "build-1", Success: true, Completed: true, Eligible: true, BackgroundRefresh: true}, time.Now())
 	if !errors.Is(err, ErrNotCompleted) {
 		t.Fatalf("background refresh error = %v", err)
 	}
@@ -162,7 +162,7 @@ func TestBackgroundRefreshCannotCount(t *testing.T) {
 	if err != nil || r != nil {
 		t.Fatalf("refresh created maturity record: %#v, err = %v", r, err)
 	}
-	_, err = m.Complete(ctx, "chat/1", Completion{ID: "old-completion", Actor: ActorMember, Success: true, Completed: true}, time.Now())
+	_, err = m.Complete(ctx, "chat/1", Completion{ID: "old-completion", Actor: ActorOther, ActorRef: "person-1", Session: "session-1", Build: "build-1", Success: true, Completed: true}, time.Now())
 	if !errors.Is(err, ErrNotCompleted) {
 		t.Fatalf("ineligible source retry error = %v", err)
 	}
@@ -177,27 +177,30 @@ func TestEvidenceSlotsStayBounded(t *testing.T) {
 	}
 	now := time.Date(2026, 11, 23, 23, 0, 0, 0, time.FixedZone("UTC+2", 2*60*60))
 	for i := 0; i < 3; i++ {
-		if _, err := m.AddBetaSession(ctx, "chat/1", fmt.Sprintf("session-%d", i), now, now); err != nil {
+		if _, err := m.Complete(ctx, "chat/1", Completion{ID: fmt.Sprintf("beta-%d", i), Actor: ActorAlex, Session: fmt.Sprintf("session-%d", i), Build: "build-1", Success: true, Completed: true, Eligible: true}, now.Add(time.Duration(i)*24*time.Hour)); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if _, err := m.AddBetaSession(ctx, "chat/1", "session-0", now, now); err != nil {
+	if _, err := m.Complete(ctx, "chat/1", Completion{ID: "beta-0", Actor: ActorAlex, Session: "session-0", Build: "build-1", Success: true, Completed: true, Eligible: true}, now); err != nil {
 		t.Fatalf("duplicate beta session: %v", err)
 	}
-	if _, err := m.AddBetaSession(ctx, "chat/1", "session-3", now, now); !errors.Is(err, ErrEvidenceFull) {
+	if _, err := m.Complete(ctx, "chat/1", Completion{ID: "beta-3", Actor: ActorAlex, Session: "session-3", Build: "build-1", Success: true, Completed: true, Eligible: true}, now.Add(4*24*time.Hour)); !errors.Is(err, ErrEvidenceFull) {
 		t.Fatalf("fourth beta session error = %v", err)
 	}
-	if _, err := m.SetGAEvidence(ctx, "chat/1", "person-1", now, now); err != nil {
+	if _, err := m.Complete(ctx, "chat/1", Completion{ID: "ga-1", Actor: ActorOther, ActorRef: "person-1", Session: "ga-session-1", Build: "build-1", Success: true, Completed: true, Eligible: true}, now); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := m.SetGAEvidence(ctx, "chat/1", "person-1", now.Add(24*time.Hour), now); err != nil {
+	if _, err := m.Complete(ctx, "chat/1", Completion{ID: "ga-2", Actor: ActorOther, ActorRef: "person-1", Session: "ga-session-2", Build: "build-1", Success: true, Completed: true, Eligible: true}, now.Add(24*time.Hour)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := m.SetGAEvidence(ctx, "chat/1", "person-2", now.Add(48*time.Hour), now); !errors.Is(err, ErrEvidenceFull) {
+	if _, err := m.Complete(ctx, "chat/1", Completion{ID: "ga-3", Actor: ActorOther, ActorRef: "person-2", Session: "ga-session-3", Build: "build-1", Success: true, Completed: true, Eligible: true}, now.Add(48*time.Hour)); !errors.Is(err, ErrEvidenceFull) {
 		t.Fatalf("second GA person error = %v", err)
 	}
+	if _, err := m.SetSupportedClients(ctx, "chat/1", ClientSet{Mac: true, Remote: true, Web: true}, now); err != nil {
+		t.Fatal(err)
+	}
 	for _, client := range []string{"mac", "remote", "web"} {
-		if _, err := m.MarkClient(ctx, "chat/1", client, now); err != nil {
+		if _, err := m.RecordClientWalk(ctx, "chat/1", client, "build-1", now, now); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -205,15 +208,83 @@ func TestEvidenceSlotsStayBounded(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.Beta[0].Session != "session-0" || r.Beta[0].Date.Location() != time.UTC || r.GA.Dates[1].Location() != time.UTC || !r.Clients.Mac || !r.Clients.Remote || !r.Clients.Web {
+	if r.Beta[0].Session != "session-0" || r.Beta[0].Date.Location() != time.UTC || r.GA.Dates[1].Location() != time.UTC || r.Clients.MacWalk.Build == "" || r.Clients.RemoteWalk.Build == "" || r.Clients.WebWalk.Build == "" {
 		t.Fatalf("evidence not normalized/stored in fixed slots: %#v", r)
 	}
 }
 
 func TestEncodedRecordWithinLimit(t *testing.T) {
-	r := Record{FeatureID: "feature", Rating: "beta", Actor: ActorOwner, Beta: [3]BetaProof{{Session: "opaque-session-reference", Date: time.Now().UTC()}}, GA: GAProof{Person: "opaque-person-reference"}, Clients: ClientProof{Mac: true, Remote: true, Web: true}}
+	r := Record{FeatureID: "feature", Rating: "beta", Actor: ActorAlex, Agent: SuccessProof{Source: "source", Build: "build", Date: time.Now().UTC()}, Beta: [3]BetaProof{{Session: "opaque-session-reference", Date: time.Now().UTC(), Build: "build"}}, GA: GAProof{Person: "opaque-person-reference"}, Clients: ClientProof{Mac: true, Remote: true, Web: true, MacWalk: WalkProof{Build: "build"}, RemoteWalk: WalkProof{Build: "build"}, WebWalk: WalkProof{Build: "build"}}}
 	b, err := json.Marshal(r)
 	if err != nil || len(b) > MaxBytes {
 		t.Fatalf("encoded record bytes = %d, err = %v", len(b), err)
+	}
+}
+
+func TestRatingGatesAndMissingEvidence(t *testing.T) {
+	day := time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)
+	r := Record{Agent: SuccessProof{Source: "agent-completion", Build: "build-a", Date: day}}
+	if got := RatingFor(r); got != "alpha" {
+		t.Fatalf("alpha rating = %q", got)
+	}
+	r.Beta = [3]BetaProof{
+		{Session: "alex-1", Date: day, Build: "build-a"},
+		{Session: "alex-2", Date: day, Build: "build-a"},
+		{Session: "alex-3", Date: day.Add(24 * time.Hour), Build: "build-a"},
+	}
+	if got := RatingFor(r); got != "beta" {
+		t.Fatalf("beta rating = %q", got)
+	}
+	r.GA = GAProof{Person: "person-1", Dates: [2]time.Time{day, day.Add(24 * time.Hour)}, Sessions: [2]string{"session-1", "session-2"}, Source: [2]string{"completion-1", "completion-2"}, Builds: [2]string{"build-a", "build-a"}}
+	if got := RatingFor(r); got != "beta" {
+		t.Fatalf("rating without client walks = %q", got)
+	}
+	r.Clients = ClientProof{Configured: true, Supported: ClientSet{Mac: true, Remote: true, Web: true}, Mac: true, Remote: true, Web: true, MacWalk: WalkProof{Build: "build-a", Date: day}, RemoteWalk: WalkProof{Build: "build-a", Date: day}, WebWalk: WalkProof{Build: "build-a", Date: day}}
+	if got := RatingFor(r); got != "ga" {
+		t.Fatalf("GA rating = %q", got)
+	}
+	r.GA.Dates[1] = day
+	if got := RatingFor(r); got != "beta" {
+		t.Fatalf("same-day GA evidence rating = %q", got)
+	}
+}
+
+func TestReadsPreviousClientChecklistShape(t *testing.T) {
+	var r Record
+	if err := json.Unmarshal([]byte(`{"featureId":"chat","clients":{"mac":true,"remote":false,"web":true}}`), &r); err != nil {
+		t.Fatalf("read previous record shape: %v", err)
+	}
+	if !r.Clients.Mac || r.Clients.Remote || !r.Clients.Web {
+		t.Fatalf("client checklist = %#v", r.Clients)
+	}
+}
+
+func TestBlockerSuspendsUntilSamePathFixedBuildRecovery(t *testing.T) {
+	ctx := context.Background()
+	m, err := New(store.NewMemory(), []string{"feature"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)
+	if _, err := m.Evaluate(ctx, "feature", 1, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.RecordBlocker(ctx, "feature", "settings/save", now); err != nil {
+		t.Fatal(err)
+	}
+	r, err := m.Read(ctx, "feature")
+	if err != nil || !r.Blocked || RatingFor(*r) != "pending" {
+		t.Fatalf("blocked record = %#v, err=%v", r, err)
+	}
+	recovery := Completion{ID: "completion-1", Actor: ActorAlex, ActorRef: "alex", Session: "session-1", Build: "build-fixed", Success: true, Completed: true, Eligible: true}
+	if _, err := m.RecoverBlocker(ctx, "feature", "other/path", recovery, now.Add(time.Hour)); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("wrong-path recovery error = %v", err)
+	}
+	if _, err := m.RecoverBlocker(ctx, "feature", "settings/save", recovery, now.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	r, err = m.Read(ctx, "feature")
+	if err != nil || r.Blocked || r.Blocker.FixedBuild != "build-fixed" || r.Blocker.RecoveryActor != "alex" || r.Blocker.RecoveryCompletion != "completion-1" || r.Blocker.RecoveredAt.IsZero() {
+		t.Fatalf("recovered evidence = %#v, err=%v", r, err)
 	}
 }
