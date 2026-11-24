@@ -17,6 +17,7 @@ import (
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/apns"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/maturity"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/providers"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/records"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
@@ -29,9 +30,10 @@ import (
 // Methods is ControlMethods: the methods the control plane answers itself (058,
 // contracts/control-api.md), and what it does with a host's channel 0.
 type Methods struct {
-	s       *Service
-	records *records.Records
-	router  *Router
+	s        *Service
+	records  *records.Records
+	maturity *maturity.Records
+	router   *Router
 
 	mu sync.Mutex
 	// The web remote's listener as it stands (071 R3), set as it binds.
@@ -53,7 +55,9 @@ type gitAskWaiting struct {
 func newMethods(s *Service) *Methods {
 	// The audit (#996) is told each call the router passes on or answers here.
 	s.startAudit()
-	return &Methods{s: s, records: s.records, router: s.router, gitAsks: map[string]map[string]*gitAskWaiting{},
+	// Each service uses the store for its organisation. A caller cannot select a store.
+	maturityRecords, _ := maturity.New(s.cfg.Store, maturity.RegisteredFeatureIDs())
+	return &Methods{s: s, records: s.records, maturity: maturityRecords, router: s.router, gitAsks: map[string]map[string]*gitAskWaiting{},
 		gitAskPatience: 120 * time.Second, gitFillPatience: 30 * time.Second}
 }
 
@@ -129,6 +133,7 @@ var own = methodSet(
 	"machines/sshHosts",
 	"machines/startEnroll",
 	"machines/update",
+	"maturity/complete",
 	"lineage/sessionsOn",
 	"lineage/walkAll",
 	"builds/historyAll",
@@ -286,6 +291,7 @@ var writes = methodSet(
 	"machines/setLabels",
 	"machines/startEnroll",
 	"machines/update",
+	"maturity/complete",
 	"links/approve",
 	"links/deny",
 	"links/remove",
@@ -375,6 +381,8 @@ func (m *Methods) Handle(method string, params json.RawMessage, from Caller) (an
 		return map[string]any{}, nil
 	case "control/status":
 		return m.status(from), nil
+	case "maturity/complete":
+		return m.completeMaturity(ctx, params, from)
 	case "machines/list":
 		return m.hostList(from, params)
 	case "clients/list", "devices/list":
