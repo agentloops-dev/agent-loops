@@ -99,9 +99,13 @@ setup() {
 }
 
 # vm_ssh COMMAND: run COMMAND on the VM, over ssh as gcloud sets it up (a key of its own in
-# ~/.ssh/google_compute_engine). Standard input goes to COMMAND.
+# ~/.ssh/google_compute_engine). Standard input goes to COMMAND. ssh asks the VM for a sign of
+# life, so a connection that is gone (Wi-Fi that dropped) ends with 255 in 3 minutes: without
+# it, ssh waits for ever on a command that says nothing (#7030).
 vm_ssh() {
-	run gcloud compute ssh "$name" --zone "$zone" --quiet --command "$1"
+	run gcloud compute ssh "$name" --zone "$zone" --quiet \
+		--ssh-flag=-oConnectTimeout=60 --ssh-flag=-oServerAliveInterval=15 --ssh-flag=-oServerAliveCountMax=12 \
+		--command "$1"
 }
 
 # pick_version: the version up.sh runs, in $version, and its image tag, in $tag: AGENTS_VERSION,
