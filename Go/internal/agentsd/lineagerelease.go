@@ -9,13 +9,12 @@ import (
 	"net/url"
 	"path/filepath"
 	"regexp"
-	"slices"
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/internal/lineage"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
@@ -37,7 +36,7 @@ import (
 //     does not get the whole history.
 //   - A release's links are at the tag's commit time (decided answer (c)), not when the host
 //     happened to notice it.
-//   - Each tag is done once, kept in <root>/release-tags.json by repo, so a host that was off
+//   - Each tag is done once, kept in <root>/release-tags.json for 90 days, so a host that was off
 //     when a tag was pushed still finds it, and never re-asks the forge for one it already did.
 
 const (
@@ -52,18 +51,17 @@ var releaseTagsDelay = time.Minute
 
 var versionTagPattern = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+$`)
 
-// releaseTagsKept is how many done tags release-tags.json keeps for each repo (#3652): the
-// newest. A tag older than the oldest kept is done too, so a dropped one is not linked again.
+// releaseTagsKept is how many of a repo's tags are looked at (#3652): the newest, so an older
+// one is never linked.
 const releaseTagsKept = 50
 
-type releaseTagsFile struct {
-	// Done is each repo's (forge:path) tags already linked, so a tag is done once.
-	Done map[string][]string `json:"done,omitempty"`
+// doneReleaseTag is a tag already linked, by doneKey.
+type doneReleaseTag struct {
+	At wire.Date `json:"at"`
 }
 
 type releaseTagsBook struct {
-	releaseMu   sync.Mutex
-	releaseFile *releaseTagsFile
+	releaseDone *store.JSONFile[doneReleaseTag]
 	// releaseTags, releaseCommitTime, releaseCompare and releaseCommitPR, when set,
 	// are asked in place of the package defaults; only tests set them.
 	releaseTags       func(folder string) ([]string, error)
@@ -76,53 +74,42 @@ func (r forgeRepo) release(tag string) wire.LineageNode {
 	return r.node(lineage.KindRelease, "release", tag)
 }
 
+func (r forgeRepo) doneKey(tag string) string { return r.forge + ":" + r.path + "#" + tag }
+
 func (d *Daemon) releaseTagsPath() string {
 	return filepath.Join(d.Store.Loc.Root, "release-tags.json")
 }
 
-func (d *Daemon) releaseTagsFileLocked() *releaseTagsFile {
-	if d.releaseFile == nil {
-		d.releaseFile = &releaseTagsFile{}
-		readStore(d.releaseTagsPath(), d.releaseFile, "the releases found start again from the folders' tags")
-		if d.releaseFile.Done == nil {
-			d.releaseFile.Done = map[string][]string{}
-		}
-	}
-	return d.releaseFile
+// openReleaseTags opens the done tags, which evict: linkRelease skips a release past the same
+// age, so a tag whose entry aged out is not linked again.
+func (d *Daemon) openReleaseTags() *store.JSONFile[doneReleaseTag] {
+	return smallFile(d, store.Spec{Name: "release-tags.json", Kind: "log", Scope: "machine",
+		Bounds: store.Bounds{MaxRecordBytes: 1 << 10, MaxCount: 5_000, MaxAge: store.MaxAge, Action: store.EvictOldest}},
+		d.releaseTagsPath, func(t *doneReleaseTag) *wire.Date { return &t.At })
 }
 
-// doneReleaseTags is a repo's done tags, and, when the list is full, the oldest of them:
-// every tag older than that one is done too.
-func (d *Daemon) doneReleaseTags(repo forgeRepo) (done map[string]bool, floor string) {
-	d.releaseMu.Lock()
-	defer d.releaseMu.Unlock()
-	f := d.releaseTagsFileLocked()
-	done = map[string]bool{}
-	list := f.Done[repo.forge+":"+repo.path]
-	for _, t := range list {
-		done[t] = true
-		if floor == "" || versionLess(versionOf(t), versionOf(floor)) {
-			floor = t
+// doneReleaseTags is a repo's done tags. A file that cannot be read has none.
+func (d *Daemon) doneReleaseTags(repo forgeRepo) map[string]bool {
+	entries, err := d.releaseDone.Read()
+	if err != nil {
+		log.Printf("release-tags.json: the releases found start again from the folders' tags: %v", err)
+	}
+	done := map[string]bool{}
+	for key := range entries {
+		if tag, ok := strings.CutPrefix(key, repo.doneKey("")); ok {
+			done[tag] = true
 		}
 	}
-	if len(list) < releaseTagsKept {
-		floor = ""
-	}
-	return done, floor
+	return done
 }
 
 func (d *Daemon) markReleaseTagDone(repo forgeRepo, tag string) {
-	d.releaseMu.Lock()
-	defer d.releaseMu.Unlock()
-	f := d.releaseTagsFileLocked()
-	key := repo.forge + ":" + repo.path
-	for _, t := range f.Done[key] {
-		if t == tag {
-			return
+	if err := d.releaseDone.Update(func(m map[string]doneReleaseTag) error {
+		if _, done := m[repo.doneKey(tag)]; !done {
+			m[repo.doneKey(tag)] = doneReleaseTag{}
 		}
-	}
-	f.Done[key] = keepNewestTags(append(f.Done[key], tag))
-	if err := writeStore(d.releaseTagsPath(), f); err != nil {
+		return nil
+	}); err != nil {
 		log.Printf("release-tags.json: could not save: %v", err)
 	}
 }
@@ -171,9 +158,9 @@ func (d *Daemon) checkReleaseTagsForFolder(ctx context.Context, folder string, r
 		return
 	}
 	sortVersionTags(found)
-	done, floor := d.doneReleaseTags(repo)
+	done := d.doneReleaseTags(repo)
 	for i, tag := range found {
-		if done[tag] || floor != "" && versionLess(versionOf(tag), versionOf(floor)) {
+		if done[tag] || i < len(found)-releaseTagsKept {
 			continue
 		}
 		prev := ""
@@ -188,7 +175,7 @@ func (d *Daemon) checkReleaseTagsForFolder(ctx context.Context, folder string, r
 
 // linkRelease links tag's release node: its PRs (the commits since prev, when there is
 // one) part-of it. It says whether the release is done: not when the forge could not say its commits, so the
-// next hour tries again.
+// next hour tries again. A release of 90 days ago or more is done with no links.
 func (d *Daemon) linkRelease(ctx context.Context, folder string, repo forgeRepo, tag, prev string) bool {
 	commitTime, compare := forgeCommitTime, forgeCompareCommits
 	if c, ok := d.connectionAsks(repo.forge); ok {
@@ -201,6 +188,9 @@ func (d *Daemon) linkRelease(ctx context.Context, folder string, repo forgeRepo,
 	if err != nil {
 		log.Printf("lineage: the commit time of %s %s: %v", repo.path, tag, err)
 		return false
+	}
+	if nowFunc().Sub(at) >= store.MaxAge {
+		return true
 	}
 	release := repo.release(tag)
 	ok := true
@@ -293,15 +283,6 @@ func versionOf(tag string) [3]int {
 }
 
 // sortVersionTags sorts tags by version, lowest first.
-// keepNewestTags is tags sorted, the newest releaseTagsKept of them.
-func keepNewestTags(tags []string) []string {
-	sortVersionTags(tags)
-	if n := len(tags) - releaseTagsKept; n > 0 {
-		tags = slices.Clone(tags[n:])
-	}
-	return tags
-}
-
 func sortVersionTags(tags []string) {
 	sort.Slice(tags, func(i, j int) bool { return versionLess(versionOf(tags[i]), versionOf(tags[j])) })
 }

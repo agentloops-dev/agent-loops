@@ -80,7 +80,7 @@ from the root (`agentsd/backups.go:69,72`). It holds nothing else.
 | `lineage-sync.json` | Links and session states unsent to the control plane (#4275) | 2,000 links, 5,000 states saved (25,000 held); past that it saves "send all again" instead (`lineagesync.go:31-40`) | on save | no |
 | `ci-timings/sync.json` | Days of build timings unsent to the control plane, per repository (#5232) | 90 days of at most 20 repositories (`cisync.go`) | on send | no |
 | `lineage-comments.json` | PR cost comments | 500, 30 days (`lineagecomment.go:42-44`) | on save | no |
-| `release-tags.json` | Tags already linked, per repo | **none** (`lineagerelease.go:109`) | never | no |
+| `release-tags.json` | Tags already linked | 90 days, 5,000 tags of 1 KiB (`lineagerelease.go`, `openReleaseTags`) | hourly, and on write: age, and the count when twice over | no |
 | `achievements.json` | Milestones | fixed set | n/a | no |
 
 ### Workflows, assessments, approvals and devices
@@ -391,7 +391,7 @@ newer than a row above for the same store.
 | `~/.agents/summaries/` | document | Daily summaries from before #5853 | Never deleted | `docs/explanation/compliance/data-and-retention.md` | #6714 |
 | `<root>/erased.json` | document | IDs of deleted agents | 10,000 IDs, 400 days | `Go/internal/agentsd/erasure.go:43-44` | #6715 |
 | `<root>/repo-aliases.json` | key-value | Repo renames | 1,000 renames of 2 KiB each, 90 days, the oldest first | `Go/internal/agentsd/repoaliases.go` (`openRepoAliases`) | #6716 |
-| `<root>/release-tags.json` | log | Linked release tags | 50 a repo by key, no limit on repos, no age | `Go/internal/agentsd/lineagerelease.go:57` | #6717 |
+| `<root>/release-tags.json` | log | Linked release tags | 5,000 tags of 1 KiB; 90 days | `Go/internal/agentsd/lineagerelease.go` | #6717 |
 | `<root>/requests/<id>.json` | document | Open questions and forms | Ended ones 14 days, 1,000 files; an open one has no age | `Go/internal/agentsd/requests.go:27-28` | #6718 |
 | `<root>/lineage-deploys.json` | log | Each deploy's last event | 1,000, no age | `Go/internal/agentsd/lineagedeploy.go:42,237-244` | #6719 |
 | `<root>/account-ops.json` | log | Last operation of each account and secret | 500 and 500, no age | `Go/internal/agentsd/accountops.go:27` | #6720 |
