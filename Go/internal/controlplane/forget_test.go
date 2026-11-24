@@ -243,3 +243,27 @@ func TestStartedSignInsHaveACount(t *testing.T) {
 		t.Fatalf("a sign-in over the count: %v", err)
 	}
 }
+
+// Past the most tombstones of removed providers, the oldest go before their week (#6762).
+func TestTheSweepBoundsProvidersTombstones(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	s := store.NewMemory()
+	yes, now := true, time.Now()
+	for n := range providers.MostTombstones + 2 {
+		at := records.At(now.Add(-time.Duration(n) * time.Minute))
+		r := providers.ProviderRecord{ID: fmt.Sprintf("p%d", n), Kind: providers.KindCommands, Forgotten: &yes, ForgottenAt: &at}
+		data, _ := records.Encode(r)
+		if _, err := s.Put(ctx, providers.ProviderKey(r.ID), data, store.Absent); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if deleted, _, err := sweepProviders(ctx, s, now, mostPerSweep); err != nil || deleted != 2 {
+		t.Fatalf("%d %v", deleted, err)
+	}
+	for id, want := range map[string]bool{"p0": true, "p99": true, "p100": false, "p101": false} {
+		if o, _ := s.Get(ctx, providers.ProviderKey(id)); (o != nil) != want {
+			t.Errorf("%s: kept %v", id, o != nil)
+		}
+	}
+}

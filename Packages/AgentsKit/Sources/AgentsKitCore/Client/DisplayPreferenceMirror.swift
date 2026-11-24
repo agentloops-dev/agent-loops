@@ -53,7 +53,31 @@ public final class DisplayPreferenceMirror {
     public func hostSaid(_ preferences: DaemonAPI.DisplayPreferences) {
         hosts = preferences
         heard = true
+        moveOnce()
         draw()
+    }
+
+    /// Whether a moved choice still has this client's own value, not yet given to the host.
+    private func unmoved(_ key: String) -> Bool {
+        DisplayPreference.moved.contains(key) && !defaults.bool(forKey: Self.movedPrefix + key)
+    }
+
+    private static let movedPrefix = "displayMoved:"
+
+    /// Each choice that was this device's own goes to the host once, where the host has none.
+    /// It is done when the host has the choice, so one the host did not take is sent again.
+    private func moveOnce() {
+        applying = true
+        defer { applying = false }
+        var changes: DaemonAPI.DisplayPreferences = [:]
+        for key in DisplayPreference.moved where unmoved(key) {
+            if hosts[key] == nil, let local = defaults.string(forKey: key) {
+                if pending[key] == nil { changes[key] = .string(local) }
+            } else {
+                defaults.set(true, forKey: Self.movedPrefix + key)
+            }
+        }
+        set(changes)
     }
 
     /// The host's map with what is pending over it, into the defaults.
@@ -72,6 +96,7 @@ public final class DisplayPreferenceMirror {
             case (.int, .int(let number)?):
                 if defaults.object(forKey: key) as? Int != number { defaults.set(number, forKey: key) }
             default:
+                if unmoved(key) { continue }
                 if defaults.object(forKey: key) != nil { defaults.removeObject(forKey: key) }
             }
         }

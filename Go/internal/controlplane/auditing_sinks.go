@@ -9,6 +9,7 @@ import (
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/audit"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/kms"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/records"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
@@ -23,8 +24,11 @@ import (
 // is sealed and control.json is read by every copy for everything else.
 
 const (
-	auditSinksKey   = "v1/audit-sinks.json"
-	auditSinksEvery = 30 * time.Second
+	// store-bounds: kind=key-value; count=4 (in one record); size=64KiB a record; age=until-deleted; applied=on write
+	auditSinksKey = "v1/audit-sinks.json"
+	// auditSinksMostBytes is the largest auditSinksKey record (#6777).
+	auditSinksMostBytes = 64 << 10
+	auditSinksEvery     = 30 * time.Second
 )
 
 // auditSinksRecord is the record: the sinks with no token, and the tokens sealed as one
@@ -178,6 +182,9 @@ func (s *Service) setAuditSinks(ctx context.Context, sinks []wire.AuditSink) err
 		}
 	}
 	data, _ := json.Marshal(r)
+	if err := records.Fits(ctx, s.cfg.Store, auditSinksKey, "The audit's sinks", data, auditSinksMostBytes); err != nil {
+		return err
+	}
 	if _, err := s.cfg.Store.Put(ctx, auditSinksKey, data, store.Always); err != nil {
 		return fail(storeUnavailable, "The sinks could not be kept: %v", err)
 	}

@@ -4,11 +4,11 @@
 // and changed words washed. Unified, or the old file beside the new on a wide page. Its input is
 // rows (`hunkRows`), not what they came from, so a pull request's page (#1341) draws the same.
 // It does not scroll: the page does. Long lines wrap.
+import type { DiffLayout } from "../model/diffLayout";
 import { useSignal } from "@preact/signals";
 import { useMemo } from "preact/hooks";
 import { diffItems, type FileDiffRow } from "../model/fileDiff";
 
-export type DiffLayout = "unified" | "sideBySide";
 
 export function FileDiff({ rows, layout = "unified" }: { rows: FileDiffRow[]; layout?: DiffLayout }) {
   const opened = useSignal<ReadonlySet<number>>(new Set());

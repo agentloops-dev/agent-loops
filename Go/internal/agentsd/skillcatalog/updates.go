@@ -42,6 +42,7 @@ const updateInterval = time.Hour
 func (u Updates) Check(ctx context.Context, managed map[string]wire.ManagedSkill, place Place, now time.Time) map[string]wire.UpdateState {
 	out := map[string]wire.UpdateState{}
 	side := LoadSidecar(u.Sidecar)
+	moved := map[string]string{}
 	bySource := map[string][]wire.ManagedSkill{}
 	for _, m := range managed {
 		bySource[strings.ToLower(m.Source)] = append(bySource[strings.ToLower(m.Source)], m)
@@ -60,10 +61,18 @@ func (u Updates) Check(ctx context.Context, managed map[string]wire.ManagedSkill
 			continue
 		}
 		for _, s := range skills {
-			out[s.Name] = skillUpdateState(s, answer, place, side)
+			out[s.Name] = skillUpdateState(s, answer, place, side, moved)
 		}
 	}
-	if err := side.Save(u.Sidecar); err != nil {
+	// The file may have changed while the sources answered: only the records still there move on.
+	if err := UpdateSidecar(u.Sidecar, func(m map[string]SidecarRecord) {
+		for key, commit := range moved {
+			if r, ok := m[key]; ok {
+				r.Commit = commit
+				m[key] = r
+			}
+		}
+	}); err != nil {
 		log.Printf("skills: could not write %s: %v", filepath.Base(u.Sidecar), err)
 	}
 	return out
@@ -134,8 +143,8 @@ func (u Updates) treeFolders(ctx context.Context, owner, repo, commit string) ma
 }
 
 // skillUpdateState is s's update state against answer. A skill whose folder has the same
-// tree SHA at the new HEAD is current, and its sidecar record moves to that commit.
-func skillUpdateState(s wire.ManagedSkill, answer updateAnswer, place Place, side Sidecar) wire.UpdateState {
+// tree SHA at the new HEAD is current, and moved has that commit for its sidecar record.
+func skillUpdateState(s wire.ManagedSkill, answer updateAnswer, place Place, side Sidecar, moved map[string]string) wire.UpdateState {
 	key := SidecarKey(place.Destination, s.Name)
 	if s.Commit != nil && *s.Commit == answer.head {
 		return wire.UpdateState{Current: &struct{}{}}
@@ -157,10 +166,7 @@ func skillUpdateState(s wire.ManagedSkill, answer updateAnswer, place Place, sid
 	case !ok || was == nil:
 		return wire.UpdateState{Unknown: &struct{}{}}
 	case sha == *was:
-		if r, ok := side.Skills[key]; ok {
-			r.Commit = answer.head
-			side.Skills[key] = r
-		}
+		moved[key] = answer.head
 		return wire.UpdateState{Current: &struct{}{}}
 	default:
 		return wire.UpdateState{Available: &wire.UpdateStateAvailable{Commit: answer.head}}

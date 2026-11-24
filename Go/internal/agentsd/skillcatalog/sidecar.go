@@ -1,12 +1,14 @@
 package skillcatalog
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
@@ -31,6 +33,8 @@ type SidecarRecord struct {
 	// FolderHash is the CLI's hash of the folder as written, which "edited since it was
 	// added" is judged against.
 	FolderHash *string `json:"folderHash,omitempty"`
+	// GoneSince is when the hourly sweep first found the skill not there.
+	GoneSince *time.Time `json:"goneSince,omitempty"`
 }
 
 // SidecarKey is personal/<name>, or <folder>/<name>.
@@ -65,7 +69,62 @@ func LoadSidecar(path string) Sidecar {
 	return s
 }
 
-func (s Sidecar) Save(path string) error {
+// The limits of each catalogue file, this one and catalog-mcp.json (#6732, #6733). A record is
+// kept while its item is installed, whatever its age; the hourly sweep takes one out 30 days
+// after its item went (GoneSince).
+const (
+	sidecarMost       = 2000
+	sidecarRecordMost = 8 << 10
+)
+
+// SidecarMu is held over a change of either file: it is read, changed and written whole.
+var SidecarMu sync.Mutex
+
+// UpdateSidecar changes the records and writes the file, if they changed.
+func UpdateSidecar(path string, change func(map[string]SidecarRecord)) error {
+	SidecarMu.Lock()
+	defer SidecarMu.Unlock()
+	s := LoadSidecar(path)
+	if changed, err := ChangeRecords(s.Skills, change); !changed || err != nil {
+		return err
+	}
+	return s.save(path)
+}
+
+// ChangeRecords makes a change to a catalogue file's records, and says whether it changed them.
+// It refuses a record changed to over its largest size, and one more than the count.
+func ChangeRecords[R any](records map[string]R, change func(map[string]R)) (bool, error) {
+	count := len(records)
+	before := make(map[string][]byte, count)
+	for key, r := range records {
+		b, err := json.Marshal(r)
+		if err != nil {
+			return false, err
+		}
+		before[key] = b
+	}
+	change(records)
+	changed := len(records) != count
+	for key, r := range records {
+		b, err := json.Marshal(r)
+		if err != nil {
+			return false, err
+		}
+		if old, ok := before[key]; ok && bytes.Equal(old, b) {
+			continue
+		}
+		changed = true
+		if len(key)+len(b) > sidecarRecordMost {
+			return false, fmt.Errorf("a catalogue item's record is at most %d bytes: %w", sidecarRecordMost, store.ErrLimit)
+		}
+	}
+	if len(records) > sidecarMost && len(records) > count {
+		return false, fmt.Errorf("at most %d catalogue items are kept; remove one first: %w", sidecarMost, store.ErrLimit)
+	}
+	return changed, nil
+}
+
+func (s Sidecar) save(path string) error {
 	for k, r := range s.Skills {
 		r.AddedAt = r.AddedAt.UTC().Truncate(time.Second)
 		if r.CommittedAt != nil {
@@ -78,5 +137,6 @@ func (s Sidecar) Save(path string) error {
 	if err != nil {
 		return err
 	}
+	// store-bounds: kind=key-value; count=2000; size=8KiB a skill; age=until-deleted; applied=on write (refused), and hourly sweep
 	return store.WriteAtomically(path, b, 0o644)
 }

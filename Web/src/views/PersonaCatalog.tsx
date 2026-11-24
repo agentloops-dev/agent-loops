@@ -14,13 +14,11 @@ import {
 } from "../model/personaCatalog";
 import { lineDiff } from "../model/diff";
 import { hunkRows } from "../model/fileDiff";
+import { preferenceKeys, setPreferences, stringPreference } from "../model/preferences";
 import { fromWireDate } from "../protocol/dates";
 import { Modal } from "./Modal";
 import { FileDiff } from "./FileDiff";
 import { ask } from "./MessageKinds";
-
-/** The marketplace last searched for personas, kept across sheets, as the Mac's `catalog.personas.marketplace`. */
-const chosenKey = "catalog.personas.marketplace";
 
 export function MarketplacePersonasSection({ store, host, destination, down, changed }: {
   store: Store; host: string; destination: SkillDestination; down: boolean;
@@ -93,7 +91,8 @@ export function AddPersonaModal({ store, host, destination, installed, onAdded, 
   onAdded: () => void; close: () => void;
 }) {
   const [marketplaces, setMarketplaces] = useState<Marketplace[] | null>(null);
-  const [chosen, setChosen] = useState(() => localStorage.getItem(chosenKey) ?? "provided:anthropic-skills");
+  // The marketplace last searched for personas, the same on every client (#6803).
+  const chosen = stringPreference(preferenceKeys.personasMarketplace) ?? "provided:anthropic-skills";
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<CatalogResult[]>([]);
   const [searched, setSearched] = useState(false);
@@ -127,8 +126,7 @@ export function AddPersonaModal({ store, host, destination, installed, onAdded, 
   }, [query, marketplace?.id]);
 
   function choose(id: string) {
-    setChosen(id);
-    localStorage.setItem(chosenKey, id);
+    setPreferences({ [preferenceKeys.personasMarketplace]: id });
   }
 
   async function open(result: CatalogResult) {

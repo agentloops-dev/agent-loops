@@ -23,7 +23,7 @@ today, see [Data and retention](compliance/data-and-retention.md).
 | --- | --- |
 | **Size** | Every record has a largest size, and every store has a limit on its count of records or on its total size. A count is a size limit only when each record has a largest size too. |
 | **Time** | A record ages out at 90 days at most. A shorter time is fine. |
-| **Config** | Configuration is in a `.agents` folder: `<repo>/.agents/` for a folder, or `~/.agents/` for a person. A control plane keeps its configuration in its own store, which is the system of record for it (Alex, 2026-11-24). |
+| **Config** | Configuration is in a `.agents` folder: `<repo>/.agents/` for a folder, or `~/.agents/` for a person. A control plane keeps its configuration in its own store, which is the system of record for it (Alex, 2026-11-24). A device's own pairing is not configuration: it is the identity of one device, so it stays in the app's own folder, out of backups and dotfile syncs (#6800). A Mac's pin from its organisation stays in the MDM profile, which macOS delivers: the app only reads it, and a file that the person can edit must not replace it (#6801). |
 | **Roll-up** | Only time series roll up: old detail becomes a summary (usage keeps hours for 7 days, then days for 90 days). The summary is a store too, so the size and time rules apply to it. Nothing else keeps a summary of data that has aged out. |
 | **Kind** | Each store has a declared kind, and the code reaches it through an interface of that kind. A database of that kind can then replace the file. |
 
@@ -40,8 +40,8 @@ today, see [Data and retention](compliance/data-and-retention.md).
 | **Cache** | Data that can be deleted and filled again | Local copies, the Work cache, turn summaries | Each client's own (SQLite, IndexedDB, files) |
 | **Secret** | Keys, tokens and secret values | `~/.agents-secrets`, the Keychain | `gocloud.dev/secrets`, which the control plane uses already |
 
-A store holds one kind. A store that mixes kinds is split first: `workflows.json` holds
-states and runs, `lineage.jsonl` holds links and changes of state, and a Keychain
+A store holds one kind. A store that mixes kinds is split first: `workflows.json` held
+states and runs (the runs are in `workflow-runs.json` now), `lineage.jsonl` holds links and changes of state, and a Keychain
 connection item holds a token and settings that are not secret.
 
 ### The small-file type

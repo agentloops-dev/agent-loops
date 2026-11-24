@@ -23,6 +23,13 @@ import (
 // binding is heard everywhere, so a server's host can tell a device's connection from a
 // window's.
 
+// The most devices, and the largest record in bytes (#6734). A device seen in the last 90 days
+// is in use, so it is never let go to make room: a new one past the limit is refused.
+const (
+	devicesMost = 256
+	deviceMost  = 4 << 10
+)
+
 type deviceBook struct {
 	devMu      sync.Mutex
 	devRecords []deviceRecord
@@ -133,11 +140,37 @@ func (d *Daemon) writeDevices() error {
 	if err != nil {
 		return err
 	}
+	// store-bounds: kind=document; count=256; size=4KiB a device; age=90d; applied=on write (refused), and hourly sweep
 	return store.WriteAtomically(d.devicesFile(), b, 0o644)
 }
 
+// deviceLimit is why r, at i in the list (-1 for a new device), is past a limit, or nil. A
+// record already over, as a later build wrote it, can still be saved when it does not grow.
+func (d *Daemon) deviceLimit(r deviceRecord, i int) error {
+	if i < 0 && len(d.devRecords) >= devicesMost {
+		return &Error{Code: wire.FailureNotPermitted, Message: fmt.Sprintf("This Mac has %d paired devices, the most it keeps. Forget one in its Settings first.", devicesMost)}
+	}
+	b, err := storeJSON(r)
+	if err != nil || len(b) <= deviceMost {
+		return err
+	}
+	if i >= 0 {
+		// now's digits can differ in length from the last time's.
+		was := d.devRecords[i]
+		was.LastSeenAt = r.LastSeenAt
+		if old, err := storeJSON(was); err == nil && len(b) <= len(old) {
+			return nil
+		}
+	}
+	return Invalid("A device's name and key are at most 4 KB.")
+}
+
 func (d *Daemon) saveDevice(r deviceRecord) error {
-	if i := d.findDevice(r.ID); i >= 0 {
+	i := d.findDevice(r.ID)
+	if err := d.deviceLimit(r, i); err != nil {
+		return err
+	}
+	if i >= 0 {
 		d.devRecords[i] = r
 	} else {
 		d.devRecords = append(d.devRecords, r)

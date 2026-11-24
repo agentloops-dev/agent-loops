@@ -17,7 +17,8 @@ import { fromWireDate } from "../protocol/dates";
 import { go } from "../route";
 import { BackToList } from "./BackToList";
 import { ApprovalMark } from "./Approval";
-import { FileDiff, type DiffLayout } from "./FileDiff";
+import { chooseDiffLayout, diffLayout } from "../model/diffLayout";
+import { FileDiff } from "./FileDiff";
 import { Icon } from "./Icon";
 
 /** At most this many lines come from the host (GuardedDiffLine.limit). */
@@ -25,8 +26,6 @@ export const readingLimit = 400;
 
 /** The page draws the old file beside the new from this width, as the window does from 820 points. */
 const wideFrom = "(min-width: 1100px)";
-const layoutKey = "agents.reviewDiffLayout";
-
 /** A reading's lines as one hunk of the whole file, numbered from line 1 on both sides. */
 export function readingRows(reading: GuardedChangeReading): FileDiffRow[] {
   return hunkRows([{ oldStart: 1, newStart: 1,
@@ -55,7 +54,7 @@ export function ReviewPage({ store, host, folder, folderName, id, down }: {
   const note = useSignal("");
   const refusal = useSignal<string | null>(null);
   const wide = useSignal(globalThis.matchMedia?.(wideFrom).matches ?? true);
-  const layout = useSignal<DiffLayout>(globalThis.localStorage?.getItem(layoutKey) === "sideBySide" ? "sideBySide" : "unified");
+  const layout = diffLayout();
   useEffect(() => {
     const query = globalThis.matchMedia?.(wideFrom);
     if (!query) return;
@@ -105,10 +104,6 @@ export function ReviewPage({ store, host, folder, folderName, id, down }: {
   const held = busy.value || down || (!reading.value && approval.digest !== undefined);
   const offers = (action: ApprovalAction) => approval.actions.includes(action);
   const counts = reading.value ? readingCounts(reading.value) : undefined;
-  const choose = (next: DiffLayout) => {
-    layout.value = next;
-    globalThis.localStorage?.setItem(layoutKey, next);
-  };
   return (
     <section class="chat review-page" aria-label={`Review ${approval.title}`}>
       <header class="column-head"><BackToList /><h1>{approval.title}</h1></header>
@@ -137,12 +132,12 @@ export function ReviewPage({ store, host, folder, folderName, id, down }: {
               <span class="spacer" />
               {wide.value && (
                 <span class="tabs" role="tablist" aria-label="Show">
-                  <button type="button" role="tab" class={layout.value === "unified" ? "on" : ""} aria-selected={layout.value === "unified"} onClick={() => choose("unified")}>Unified</button>
-                  <button type="button" role="tab" class={layout.value === "sideBySide" ? "on" : ""} aria-selected={layout.value === "sideBySide"} onClick={() => choose("sideBySide")}>Side by Side</button>
+                  <button type="button" role="tab" class={layout === "unified" ? "on" : ""} aria-selected={layout === "unified"} onClick={() => chooseDiffLayout("unified")}>Unified</button>
+                  <button type="button" role="tab" class={layout === "sideBySide" ? "on" : ""} aria-selected={layout === "sideBySide"} onClick={() => chooseDiffLayout("sideBySide")}>Side by Side</button>
                 </span>
               )}
             </div>
-            {rows.length ? <FileDiff rows={rows} layout={wide.value ? layout.value : "unified"} /> : <p class="quiet">No lines changed.</p>}
+            {rows.length ? <FileDiff rows={rows} layout={wide.value ? layout : "unified"} /> : <p class="quiet">No lines changed.</p>}
             {reading.value.lines.length >= readingLimit && (
               <p class="quiet small">The change is longer than {readingLimit} lines. The rest is not shown here; open {reading.value.path} in the folder to read it all.</p>
             )}

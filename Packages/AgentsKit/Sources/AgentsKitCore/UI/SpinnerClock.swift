@@ -31,12 +31,8 @@ public enum SpinnerClock {
     /// over it, so a change of activity changes the keyframes and not the cycle.
     public static let ringPeriod: TimeInterval = ringPivotPeriod
 
-    /// How far the ring pivots each way while the session runs a tool, in degrees, unless
-    /// `workingMarkTilt` in the defaults (localStorage on the web page) says otherwise.
+    /// How far the ring pivots each way while the session runs a tool, in degrees.
     public static let ringTilt: Double = 30
-
-    /// The key that changes `ringTilt` without a build (#2332), read once at launch.
-    public static let ringTiltKey = "workingMarkTilt"
 
     /// A dot's diameter and the ring's radius, as fractions of the well's side. At rest
     /// the ring is the three dots of #2044: 0.24 across, 0.34 from centre to centre.
@@ -51,24 +47,11 @@ public enum SpinnerClock {
     public static let reducedMotionSlowing: Double = 2
 
     /// One breath of the waiting mark (#2456, #2657): the accent beacon fades between dim
-    /// and full and back, a slow sine like a sleep light, unless `waitingMarkPeriod` in the
-    /// defaults (localStorage on the web page) says otherwise. Asleep, but alive.
+    /// and full and back, a slow sine like a sleep light. Asleep, but alive.
     public static let breathPeriod: TimeInterval = 4
-
-    /// The key that changes `breathPeriod` without a build, read once at launch.
-    public static let breathPeriodKey = "waitingMarkPeriod"
-
-    /// The shortest and longest breath the key can ask for, in seconds.
-    public static let breathPeriodRange: ClosedRange<TimeInterval> = 1...30
 
     /// How dim the beacon is at the bottom of a breath: the ring's resting opacity.
     public static let breathDimOpacity: Double = ringRestingOpacity
-
-    /// The breath the key asks for: `stored` within `breathPeriodRange`, else `breathPeriod`.
-    public static func breathPeriod(from stored: Double?) -> TimeInterval {
-        guard let stored, stored.isFinite else { return breathPeriod }
-        return min(max(stored, breathPeriodRange.lowerBound), breathPeriodRange.upperBound)
-    }
 
     /// How bright the waiting beacon is `time` seconds into a breath of `period`: dim at the
     /// start, full halfway, dim again at the end, along a cosine so it has no corners.

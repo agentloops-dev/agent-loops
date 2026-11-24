@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -103,6 +104,9 @@ func readWorkflowFile(path string) (text, digest string, why string) {
 	if err != nil || !st.Mode().IsRegular() || links(st) != 1 {
 		return "", "", "This file is a link, and a workflow must be a file of its own"
 	}
+	if why := tooLargeToRun(st.Size()); why != "" {
+		return "", "", why
+	}
 	b := make([]byte, st.Size())
 	if _, err := f.ReadAt(b, 0); err != nil && st.Size() > 0 {
 		return "", "", "This file could not be read"
@@ -147,6 +151,9 @@ func readWorkflowSkills(folder, text string) ([]workflowSkill, string) {
 	for _, m := range namedSkill.FindAllStringSubmatch(text, -1) {
 		names[m[1]] = true
 	}
+	if len(names) > workflowSkillsMost {
+		return nil, fmt.Sprintf("This workflow names more than %d skills", workflowSkillsMost)
+	}
 	var skills []workflowSkill
 	for name := range names {
 		path, ok := skillPath(folder, name)
@@ -155,7 +162,7 @@ func readWorkflowSkills(folder, text string) ([]workflowSkill, string) {
 		}
 		body, _, why := readWorkflowFile(path)
 		if why != "" {
-			return nil, "This workflow names " + skillChangePath(name) + ", which could not be read, or is a link"
+			return nil, "This workflow names " + skillChangePath(name) + ", which could not be read, is too large, or is a link"
 		}
 		skills = append(skills, workflowSkill{name: name, text: body})
 	}

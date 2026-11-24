@@ -23,7 +23,7 @@ import { LiveDocument, type OpenPageFile, type PageSource } from "./LiveDocument
 import { isPageFile, pathInFolder } from "../model/pageLink";
 import { pathOf } from "./files/paneState";
 import { offerStart } from "./NewAgent";
-import { go, routeHash } from "../route";
+import { go, route, routeHash } from "../route";
 
 /** The list's state, for the tab: a doc's page goes back to it as it was left. */
 const lists = signal<HostDocs[] | null>(null);
@@ -35,8 +35,6 @@ const inProject = signal("");
 const projects = signal<Project[]>([]);
 const query = signal("");
 const asked = signal(0);
-/** The line a search match opens a doc's page at, spent once the page has gone there. */
-const openAt = signal<{ ref: string; line: number } | undefined>(undefined);
 /** The machine a doc was listed on, so its page reads it there first. */
 const listedOn = new Map<string, string>();
 
@@ -132,10 +130,6 @@ export function DocsList({ store }: { store: Store }) {
   const projectChoices = docsProjects(rows);
   const sourceChoices = rows.filter((r) => !inProject.value || r.project?.id === inProject.value);
   const problems = (l ?? []).filter((h) => h.problem).map((h) => `${h.name}: ${h.problem}`);
-  const open = (doc: Doc, line?: number) => {
-    openAt.value = line ? { ref: doc.ref, line } : undefined;
-    go({ nav: "work", section: "docs", item: doc.ref });
-  };
 
   return (
     <div class="work-list docs-list">
@@ -165,7 +159,7 @@ export function DocsList({ store }: { store: Store }) {
       </div>
       {problems.map((p) => <p key={p} class="hint">{p}</p>)}
       {hosts.length === 0 ? <p class="hint">{noDocsHere}</p>
-        : words ? <Results results={results.value} searching={searching.value} open={open} />
+        : words ? <Results results={results.value} searching={searching.value} />
         : l === null ? <p class="hint">Loading…</p>
         : groups.length === 0 ? <p class="hint">{noDocs}</p>
         : groups.map((g) => {
@@ -187,7 +181,7 @@ export function DocsList({ store }: { store: Store }) {
                 <div key={s.dir} class="docs-shelf">
                   {s.dir && <h4 class="docs-shelf-head">▸ {s.dir}</h4>}
                   <ul class={`work-rows${s.dir ? " docs-under" : ""}`}>
-                    {s.docs.map((d) => <DocRow key={d.ref} doc={d} name={underShelf(d, s.dir)} open={() => open(d)} />)}
+                    {s.docs.map((d) => <DocRow key={d.ref} doc={d} name={underShelf(d, s.dir)} />)}
                   </ul>
                 </div>
               ))}
@@ -198,43 +192,45 @@ export function DocsList({ store }: { store: Store }) {
   );
 }
 
-function DocRow({ doc, name, open }: { doc: Doc; name: string; open: () => void }) {
+/** A doc's page, at a search match's line (#5481): the rows are links, so the browser opens one in a tab too. */
+const docHref = (ref: string, line?: number) =>
+  routeHash({ nav: "work", section: "docs", item: ref, ...line ? { query: `line=${line}` } : {} });
+
+function DocRow({ doc, name }: { doc: Doc; name: string }) {
   const beside = titleBeside(doc);
   return (
     <li data-ref={doc.ref}>
-      <button type="button" class="work-row docs-row" title={doc.ref} onClick={open}>
+      <a class="work-row docs-row" title={doc.ref} href={docHref(doc.ref)}>
         <span class="work-row-head">
           <span class={doc.path ? "docs-path" : "work-title"}>{name}</span>
           {beside && <span class="quiet docs-beside">{beside}</span>}
           <span class="quiet small docs-updated">{updatedWords(doc)}</span>
         </span>
-      </button>
+      </a>
     </li>
   );
 }
 
-function Results({ results, searching, open }: {
-  results: (DocsSearchResult & { host: string })[] | null; searching: boolean; open: (doc: Doc, line?: number) => void;
-}) {
+function Results({ results, searching }: { results: (DocsSearchResult & { host: string })[] | null; searching: boolean }) {
   if (results === null) return <p class="hint">{searching ? "Searching…" : ""}</p>;
   if (results.length === 0) return <p class="hint">{searching ? "Searching…" : noResults}</p>;
   return (
     <ul class="work-rows">
       {results.map((r) => (
         <li key={r.doc.ref} data-ref={r.doc.ref}>
-          <button type="button" class="work-row docs-row" title={r.doc.ref} onClick={() => open(r.doc)}>
+          <a class="work-row docs-row" title={r.doc.ref} href={docHref(r.doc.ref)}>
             <span class="work-row-head">
               <span class="work-title">{r.doc.title}</span>
               {r.doc.path && <span class="quiet small docs-path">{r.doc.path}</span>}
             </span>
-          </button>
+          </a>
           <ul class="docs-matches">
             {r.matches.map((m, i) => (
               <li key={i}>
-                <button type="button" class="link docs-match" onClick={() => open(r.doc, m.line)}>
+                <a class="link docs-match" href={docHref(r.doc.ref, m.line)}>
                   {m.line !== undefined && <span class="docs-line">{m.line}</span>}
                   <span>{m.snippet}</span>
-                </button>
+                </a>
               </li>
             ))}
           </ul>
@@ -257,7 +253,7 @@ export function DocPage({ store, docRef }: { store: Store; docRef: string }) {
   const tick = useSignal(0);
   const copied = useSignal<string | null>(null);
   const startProblem = useSignal<string | null>(null);
-  const line = openAt.value?.ref === docRef ? openAt.value.line : undefined;
+  const line = Number(new URLSearchParams(route.value.query).get("line")) || undefined;
   useProjects(store);
 
   // The machine that listed it first, then this Mac, then the others.
@@ -429,13 +425,13 @@ export function WorkDocs({ store, itemRef, title, body, asked }: { store: Store;
     const beside = titleBeside(doc);
     return (
       <li key={doc.ref} data-ref={doc.ref}>
-        <button type="button" class="work-doc-row" title={doc.ref} onClick={() => go({ nav: "work", section: "docs", item: doc.ref })}>
+        <a class="work-doc-row" title={doc.ref} href={docHref(doc.ref)}>
           <span aria-hidden="true" class="quiet">▤</span>
           <span class="work-doc-words">
             <span class={doc.path ? "docs-path" : undefined}>{shortForm(doc)}</span>
             {beside && <span class="quiet small">{beside}</span>}
           </span>
-        </button>
+        </a>
       </li>
     );
   };
