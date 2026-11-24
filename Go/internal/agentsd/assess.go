@@ -239,7 +239,7 @@ const assessmentsKept = 50
 
 // dropOldAssessments deletes all but the newest assessmentsKept assessments, each its
 // <agentID>.start.json, its <agentID>.json score and its scope-<id>.txt (#2292). The
-// reports are in the folders, and stay.
+// reports have bounds of their own (assess_reports.go).
 func (d *Daemon) dropOldAssessments() {
 	dir := d.assessmentsPath()
 	starts, _ := filepath.Glob(filepath.Join(dir, "*.start.json"))
@@ -290,7 +290,7 @@ func assessModel(asked *string, options []wire.ConfigOption) *string {
 // not taken: a second assessment the same day opens its report empty, as the first did.
 func freshReportPath(folder, runtimeID string, at time.Time) string {
 	stem := runtimeID + "-" + at.Format("2006-01-02")
-	dir := filepath.Join(folder, ".agents", "reviews", "runtimes")
+	dir := reportsDir(folder)
 	path := filepath.Join(dir, stem+".md")
 	for n := 2; ; n++ {
 		if _, err := os.Stat(path); err != nil {
@@ -350,12 +350,14 @@ func (d *Daemon) assessRuntime(r wire.AssessRuntimeRequest) (wire.AssessRuntimeR
 	if err := writeStore(filepath.Join(d.assessmentsPath(), string(id)+".start.json"), kept); err != nil {
 		log.Printf("could not keep a runtime assessment's start: %v", err)
 	}
+	// The reports first: a start that goes can be the last word on where its report is.
+	d.sweepAssessReports(today)
 	d.dropOldAssessments()
 	return wire.AssessRuntimeResult{AgentID: id, Model: model, ReportPath: report}, nil
 }
 
 func freshReportPathFirst(folder, runtimeID string, at time.Time) string {
-	return filepath.Join(folder, ".agents", "reviews", "runtimes", runtimeID+"-"+at.Format("2006-01-02")+".md")
+	return filepath.Join(reportsDir(folder), runtimeID+"-"+at.Format("2006-01-02")+".md")
 }
 
 // MARK: Scoring
@@ -428,7 +430,9 @@ func (d *Daemon) assessment(id wire.UUID) (wire.RuntimeAssessmentScore, error) {
 	d.leaseMu.Unlock()
 	rec.reportPath = shownReport(rec.calls)
 	if rec.reportPath != "" {
-		if b, err := os.ReadFile(rec.reportPath); err == nil {
+		d.sweepAssessReports(nowFunc())
+		reports := reportFiles{filepath.Dir(rec.reportPath)}
+		if b, err := reports.Get(filepath.Base(rec.reportPath)); err == nil {
 			text := string(b)
 			rec.reportText = &text
 		}
