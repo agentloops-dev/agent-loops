@@ -183,7 +183,7 @@ h3 { font-size: 1.05rem; margin: 0 0 0.4em; }
   text-decoration: none;
   transition: border-color 0.2s;
 }
-.client:hover { border-color: var(--accent); }
+a.client:hover { border-color: var(--accent); }
 /* A client that is planned: a dashed border and a coming soon tag, linked to its issue. */
 .client.soon { border-style: dashed; background: transparent; }
 .client.soon .client-ic { stroke: var(--paper-tertiary); }
