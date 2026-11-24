@@ -50,7 +50,6 @@
 1 Go/internal/agentsd/localpath.go os.WriteFile
 2 Go/internal/agentsd/lock.go WriteAtomically
 1 Go/internal/agentsd/lock.go os.WriteFile
-1 Go/internal/agentsd/lockcheck.go WriteAtomically
 1 Go/internal/agentsd/mac.go WriteAtomically
 1 Go/internal/agentsd/mcpcatalog.go WriteAtomically
 1 Go/internal/agentsd/mcpcatalog.go os.WriteFile

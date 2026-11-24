@@ -49,9 +49,10 @@ type lockState struct {
 	// lockHeld is the lock this machine took last, checked; nil before it read one.
 	lockHeld *machinelock.State
 	lockRead bool
-	// lockSeen is each signed request taken, by machinelock.SignedID, and when it was
-	// signed, so each is taken once (lockcheck.go).
-	lockSeen map[string]int64
+	// lockSeen is each signed request taken, by machinelock.SignedID, so each is taken once
+	// (lockcheck.go); lockSeenRead, that the file could be read in this run.
+	lockSeen     *store.JSONFile[signedSeen]
+	lockSeenRead bool
 	// lockSigner is this machine's key as a signer, read once.
 	lockSigner *ecdsa.PrivateKey
 }

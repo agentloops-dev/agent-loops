@@ -265,6 +265,7 @@ func newWith(ctx context.Context, root string, opts startOptions) (*Daemon, erro
 	d.releaseDone = d.openReleaseTags()
 	d.secretOps.pending = d.openSecretOpsPending()
 	d.accountOps = d.openAccountOps()
+	d.lockSeen = d.openLockSeen()
 	d.opts.Store(&opts)
 	d.jobCancel = cancel
 	st.OnGap = d.tellEntry
