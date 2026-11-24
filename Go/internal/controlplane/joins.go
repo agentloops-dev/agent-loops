@@ -317,6 +317,10 @@ func (j *joins) decide(ctx context.Context, id, user string, approve bool) (*wir
 		j.s.log("machine " + r.Name + " was not let join")
 		return nil, nil
 	}
+	// Before the request is, so it can be approved once there is room (#6758).
+	if err := j.s.records.MachineRoom(ctx, r.PublicKey); err != nil {
+		return nil, err
+	}
 	owner := r.Person
 	if owner == "" {
 		owner = user

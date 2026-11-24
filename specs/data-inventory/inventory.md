@@ -194,7 +194,7 @@ handover also leaves out `v1/keys/` (`storecopy.go:21,25`).
 |---|---|---|---|
 | `v1/control.json` | Owner, endpoints, epoch, control key public parts, audit days | 1 | — |
 | `v1/clients/<UUID>.json` | Name, kind, public key, last seen, APNs token, ≤16 Live Activity tokens (12 h each), Web Push subscription | 16 KiB a record, 1 MiB in all (#6757; hosted: 5/50 clients too). Key life 90 days (`keylife.go:18`). | Tombstone 7 days. A client whose key expired is forgotten by the hourly sweep (#6757). |
-| `v1/machines/<id>.json` | Name, key, platform, version, owner, workspace | No cap (hosted: 2/20) | Tombstone 7 days. **An expired machine is kept for ever.** |
+| `v1/machines/<id>.json` | Name, key, platform, version, owner, workspace | 32 KiB a record, 1 MiB in all (#6758; hosted: 2/20 machines too) | Tombstone 7 days. A machine with no workspace whose key expired is removed by the hourly sweep (#6758); a linked one stays until removed. |
 | `v1/people/<id>.json` | Name, role, sign-ins (email, login), SCIM part, old names (90 days) | No cap | A removed person goes after 14 days, or 90 when they have a sign-in (#6756) |
 | `v1/groups/<id>.json` | Name, members | 1,000 (`groups.go:20`) | tombstone 7 days |
 | `v1/projects/<id>.json` | Name, owner, slots, ≤20 boards | 500 per person (`projects.go:36`) | tombstone 7 days |
@@ -432,7 +432,7 @@ newer than a row above for the same store.
 | `v1/events/<day>/` (audit) | log | Audit events | 90 days by default; an admin sets 1 to 3,650; no count or size limit a day | `Go/internal/controlplane/audit/audit.go:31,241` | #6755 |
 | `v1/people/` tombstones | document | A removed person who had a sign-in | 90 days, swept hourly; then a cutoff for each provider (`v1/signin/cutoffs/`) refuses an account nobody has (#6756) | `Go/internal/controlplane/signin_cutoff.go` | #6756 |
 | `v1/clients/` | document | Paired clients | 16 KiB a record, 1 MiB in all; forgotten when its key expires, at most 90 days unused; tombstone 7 days | `Go/internal/controlplane/keylife.go:18,139,145-177` | #6757 |
-| `v1/machines/` | document | Machines | No count limit on a control plane of your own; an expired one stays about 180 days | `Go/internal/controlplane/keylife.go:145-177` | #6758 |
+| `v1/machines/` | document | Machines | 32 KiB a record, 1 MiB in all; removed when its key expires, at most 90 days unused, or by a person when linked to a workspace; tombstone 7 days | `Go/internal/controlplane/keylife.go`, `records/machinebounds.go` | #6758 |
 | `v1/machine-names/<person>.json` | key-value | A person's machine-N counter and last provider options | 64 KiB a person; until the person is removed (no age before, on purpose: a number is never used twice) | `Go/internal/controlplane/providers/defaults.go:20-63`, `Go/internal/controlplane/sweep.go` (`sweepMachineNames`) | #6759 |
 | `v1/machine-setup-times.json` | time series | Set-up durations | 90 days, 50 a step, 32 KiB; on write and hourly; no roll-up | `Go/internal/controlplane/machinesetuptimes.go` | #6760 |
 | `v1/warm-pools/<id>.json` | document | Warm pools and their claims | No count limit on pools; no delete when a person goes; config outside .agents | `Go/internal/controlplane/warmpool.go:33,44-45,124` | #6761 |
