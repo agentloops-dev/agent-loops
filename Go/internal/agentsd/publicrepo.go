@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/internal/githubmcp"
@@ -47,7 +46,7 @@ type publicFiles struct {
 
 // makePublicRepository is make_public_repository.
 func (d *Daemon) makePublicRepository(caller wire.UUID, args map[string]json.RawMessage) (string, error) {
-	since := time.Now()
+	since := nowFunc()
 	name := strings.TrimSpace(argString(args, "name"))
 	if !ciRepoRef.MatchString("o/"+name) || name == "." || name == ".." {
 		return "", Invalid("Nothing was made: name is the repository's name: letters, digits, '.', '-' and '_', e.g. app-starter.")

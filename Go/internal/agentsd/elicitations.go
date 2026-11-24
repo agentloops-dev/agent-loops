@@ -140,12 +140,13 @@ func (l *live) showForm(req wire.ElicitationRequest) *pendingElicitation {
 	return pe
 }
 
-// holdAskedForm is ask_question's form: held up to hold (formHoldLimit, or what is left of
-// it, #4986), then left open, with false, for the answer to come as a prompt (#1641), or to
+// holdAskedForm is ask_question's form: held until until (formHoldLimit after the call
+// began, #4986), then left open, with false, for the answer to come as a prompt (#1641), or to
 // go to late when it is not nil (#4261).
-func (l *live) holdAskedForm(req wire.ElicitationRequest, late func(note string), hold time.Duration) (elicitationReply, bool) {
+func (l *live) holdAskedForm(req wire.ElicitationRequest, late func(note string), until time.Time) (elicitationReply, bool) {
 	pe := l.showForm(req)
-	timer := time.NewTimer(max(hold, 0))
+	// What showForm took (the record and the request go to disk) is part of the hold (#6993).
+	timer := time.NewTimer(max(until.Sub(nowFunc()), 0))
 	defer timer.Stop()
 	select {
 	case r := <-pe.reply:

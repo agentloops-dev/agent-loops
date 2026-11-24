@@ -250,15 +250,59 @@ func TestAFailedMakeSaysWhyInListMachines(t *testing.T) {
 	}
 }
 
+// What it takes to show the card is part of the hold (#6993): the card's record and its request
+// go to disk first, and a slow disk must not put the call past the tool's limit.
+func TestASlowCardIsPartOfTheHold(t *testing.T) {
+	fakeRuntimes(t)
+	formHolds(t)
+	formHoldLimit = time.Hour
+	clock := atTime(t, time.Now())
+	d, _ := start(t, t.TempDir())
+	defer d.Shutdown()
+	a := seeded(t, d, t.TempDir(), func(a *wire.Agent) {
+		a.State, a.EndedReason, a.RuntimeID = wire.AgentStateRunning, nil, "claude"
+	})
+	l := d.live(a.ID)
+	l.mu.Lock()
+	l.inTurn = true
+	l.mu.Unlock()
+
+	// The card is held up as it is shown, until the hold is over.
+	type result struct {
+		text string
+		err  error
+	}
+	done := make(chan result, 1)
+	d.requests.mu.Lock()
+	go func() {
+		text, err := d.personSaysYes(a.ID, "wants to", "Go?", "Go", func(bool) (string, error) { return "went", nil })
+		done <- result{text, err}
+	}()
+	// Its record comes before its request, so the call has begun.
+	waitFor(t, "the card's record", func() bool { return slices.Contains(kinds(d, a.ID), "elicitationAsked") })
+	clock.add(2 * time.Hour)
+	d.requests.mu.Unlock()
+	select {
+	case r := <-done:
+		if r.err != nil || r.text != yesStillOpen {
+			t.Fatalf("%q, %v", r.text, r.err)
+		}
+	case <-time.After(time.Minute):
+		t.Fatal("the call is still held: the hold did not count showing the card")
+	}
+}
+
 // A slow list before the card (#4986): the card is held only for what is left of the hold, so
 // the call ends inside the tool's limit; a second call shows the same card, not a second one;
 // list_machines says the make waits; and a list slower than its patience asks nobody.
 func TestASlowListLeavesTheCardTheRestOfTheHold(t *testing.T) {
 	fakeRuntimes(t)
-	_, left := formHolds(t)
-	left()
-	formHoldLimit = time.Second
-	setFor(t, &cardCheckPatience, cardCheckPatience)
+	formHolds(t)
+	// A hold that only the test's clock ends: a call that does not count what it took waits past
+	// the test's own time limit. The margin was wall time, which a slow disk took (#6993).
+	formHoldLimit = time.Hour
+	clock := atTime(t, time.Now())
+	setFor(t, &cardCheckPatience, time.Minute)
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	title := "fix-login"
@@ -269,7 +313,7 @@ func TestASlowListLeavesTheCardTheRestOfTheHold(t *testing.T) {
 	m.post("initialize", map[string]any{}, 1)
 	listed := wire.AgentMachines{Providers: []wire.AgentMachinesProvider{{ID: "do", Name: "DigitalOcean", CanMake: true}}}
 	var mu sync.Mutex
-	slow := 700 * time.Millisecond
+	slow := time.Duration(0)
 	d.SetControlAsk(func(ctx context.Context, method string, params any) (json.RawMessage, error) {
 		if method == wire.CallUserSetPolicy.Name {
 			return json.RawMessage(`{}`), nil
@@ -278,6 +322,7 @@ func TestASlowListLeavesTheCardTheRestOfTheHold(t *testing.T) {
 			mu.Lock()
 			wait := slow
 			mu.Unlock()
+			clock.add(2 * time.Hour) // the list took longer than the hold
 			select {
 			case <-time.After(wait):
 			case <-ctx.Done():
@@ -293,12 +338,8 @@ func TestASlowListLeavesTheCardTheRestOfTheHold(t *testing.T) {
 	l.inTurn = true
 	l.mu.Unlock()
 
-	began := time.Now()
 	if text, isErr := m.tool(2, "make_machine", map[string]any{"provider": "do", "name": "second"}); isErr || text != yesStillOpen {
 		t.Fatal(text)
-	}
-	if took := time.Since(began); took > formHoldLimit+400*time.Millisecond {
-		t.Fatalf("the call took %s: the hold did not count the list", took)
 	}
 	if text, isErr := m.tool(3, "make_machine", map[string]any{"provider": "do", "name": "second"}); isErr || text != yesStillOpen {
 		t.Fatal(text)
@@ -315,7 +356,7 @@ func TestASlowListLeavesTheCardTheRestOfTheHold(t *testing.T) {
 	}
 
 	mu.Lock()
-	slow = time.Second
+	slow = time.Minute
 	mu.Unlock()
 	cardCheckPatience = 100 * time.Millisecond
 	if text, isErr := m.tool(5, "make_machine", map[string]any{"provider": "do", "name": "third"}); !isErr ||
