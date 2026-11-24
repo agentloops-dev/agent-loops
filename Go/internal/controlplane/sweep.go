@@ -389,6 +389,11 @@ func sweepUsages(ctx context.Context, rs *records.Records, now time.Time, left i
 	}
 	// The bus log's age, count and byte bounds (#4729), counted with them too. Its own
 	// deletion cap: a busy bus can add more records than one sweep removes.
+	// Set-up times past 90 days (#6760): one object, written only when it changes. A copy
+	// that wrote at the same time leaves it for the next hour.
+	if err := (setupTimeSeries{s}).Rollup(ctx, now, 24*time.Hour); err != nil && !isConflict(err) {
+		return usage, err
+	}
 	busOld, err := sweepBusAt(ctx, s, now, busLogKept, busLogMaxBytes, busLogMaxAge, busLogKept/10)
 	usage += busOld
 	if err != nil {
