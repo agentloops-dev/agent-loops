@@ -147,7 +147,7 @@ func (d *Daemon) ensureReadyMadeUserWorkflowsLocked() {
 
 // retiredReadyMade are the ready-made workflows that are gone from the repository, with their
 // skills: the daily summary (#5853). A copy the person did not edit is removed; an edited one,
-// a link or a file that cannot be read stays theirs, as do the pages it saved.
+// a link or a file that cannot be read stays theirs. The pages it saved age out (oldSummaries).
 var retiredReadyMade = []string{"daily-summary"}
 
 // retireReadyMade removes a retired workflow's copy and its skill's, each only when it is the
