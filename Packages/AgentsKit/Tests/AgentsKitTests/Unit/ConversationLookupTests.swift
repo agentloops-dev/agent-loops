@@ -68,7 +68,7 @@ struct ConversationLookupTests {
         var answers: [ConversationLookup.Answer] = []
         for window in windows { answers.append(await window.value) }
         #expect(answers.map(Self.found) == ["slack:0", "slack:1", "slack:2", "slack:3", "slack:4", nil])
-        #expect(Self.missed(answers[5]) != nil)
+        #expect(answers.last.flatMap(Self.missed) != nil)
         #expect(pages.reads == [0, 1, 2, 3, 4])
     }
 
