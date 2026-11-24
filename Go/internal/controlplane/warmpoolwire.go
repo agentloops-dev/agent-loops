@@ -250,7 +250,7 @@ func (s *Service) setupWork(ctx context.Context, host string) (wire.MachineSetup
 		work.Projects, err = s.setupProjects(ctx, s.ownerOf(host), host, stored.Projects)
 		return work, err
 	}
-	p, err := s.pools.poolOf(ctx, s.records.Host(host))
+	p, err := s.pools.poolOf(ctx, s.records.Host(host), s.madeWorkspace(ctx, host))
 	if err != nil {
 		return none, fail(storeUnavailable, "The warm pools could not be read: %v", err)
 	}
