@@ -4,7 +4,7 @@
 // (messages/reply, #4345) when its connector can send. Its text is outside content: drawn as Markdown
 // by renderMarkdown, which draws no HTML, fetches no image and follows only http, https and mailto links.
 import { signal, useSignal } from "@preact/signals";
-import { useEffect } from "preact/hooks";
+import { useEffect, useRef } from "preact/hooks";
 import type { MessagingMessage } from "../protocol/generated";
 import type { Store } from "../model/store";
 import { Capability } from "../protocol/capabilities.generated";
@@ -19,7 +19,8 @@ import {
   sending, sentAs, setUp, sourceGlyph, unreadWords, type HostConversations, type MessagesRow,
 } from "../model/messages";
 import { go, routeHash } from "../route";
-import { PlaceholderRows } from "./WorkParts";
+import { pageFooterState } from "../model/workFooter";
+import { PlaceholderRows, RefreshButton, WorkFooter } from "./WorkParts";
 import { renderMarkdown } from "../render/markdown";
 import { Glyph } from "./Icon";
 
@@ -202,13 +203,18 @@ function ConversationRow({ row }: { row: MessagesRow }) {
 
 /** A conversation's page: its messages, the newest first, each with its sender, time, text and a link to the
  * original; older pages with Older; under them the reply field, when the connector can send. Found by its key
- * in the list, read again when the tab was opened on it. */
+ * in the list, read again when the tab was opened on it. The footer says how old the messages are, and Refresh reads them
+ * again (#7076). */
 export function ConversationPage({ store, conversationKey }: { store: Store; conversationKey: string }) {
   useLists(store);
   const messages = useSignal<MessagingMessage[] | null>(null);
   const cursor = useSignal<string | undefined>(undefined);
   const problem = useSignal<string | null>(null);
   const loading = useSignal(false);
+  /** When the newest page was read. */
+  const readAt = useSignal<number | undefined>(undefined);
+  /** Goes up with each read of the newest page: an older read that ends after it is dropped. */
+  const generation = useRef(0);
   const draft = useSignal("");
   const thread = useSignal<string | undefined>(undefined);
   const busy = useSignal(false);
@@ -257,6 +263,8 @@ export function ConversationPage({ store, conversationKey }: { store: Store; con
     busy.value = false;
   };
   const read = async (older: boolean) => {
+    if (!older) generation.current++;
+    const mine = generation.current;
     if (!row) return;
     loading.value = true;
     try {
@@ -264,18 +272,22 @@ export function ConversationPage({ store, conversationKey }: { store: Store; con
         server: row.item.server, folder: row.item.folder, conversation: row.item.conversation.id, limit: 50,
         ...older && cursor.value ? { cursor: cursor.value } : {},
       }, row.host);
+      if (mine !== generation.current) return;
       messages.value = [...older ? messages.value ?? [] : [], ...got.messages];
       cursor.value = got.cursor;
+      problem.value = null;
+      if (!older) readAt.value = Date.now();
       if (got.markedRead && lists.value) {
         lists.value = markedRead(lists.value, row.key);
         marked.value++;
       }
     } catch (e) {
-      problem.value = describe(e);
+      if (mine === generation.current) problem.value = describe(e);
     }
-    loading.value = false;
+    if (mine === generation.current) loading.value = false;
   };
-  useEffect(() => { messages.value = null; problem.value = null; void read(false); }, [row?.key, row?.host]);
+  const refresh = () => { void read(false); };
+  useEffect(() => { messages.value = null; problem.value = null; readAt.value = undefined; loading.value = false; void read(false); }, [row?.key, row?.host]);
 
   if (l === null || looking || finding.value) return <PlaceholderRows count={4} />;
   const problems = row ? [] : messagesProblems(l);
@@ -288,12 +300,13 @@ export function ConversationPage({ store, conversationKey }: { store: Store; con
   if (!row) return <p class="hint">This conversation is not in the list any more. <button type="button" class="link" onClick={() => go({ nav: "work", section: "messages" })}>Messages</button></p>;
   const c = row.item.conversation;
   return (
-    <article class="work-page messages-page">
+    <article class="work-page messages-page work-footed">
       <div class="work-page-bar">
         <button type="button" title="Back" aria-label="Back" onClick={() => history.back()}>‹</button>
         <button type="button" title="Forward" aria-label="Forward" onClick={() => history.forward()}>›</button>
         <button type="button" class="link" onClick={() => go({ nav: "work", section: "messages" })}>All messages</button>
         <button type="button" class="link" title={nextHelp} disabled={!next} onClick={goNext}>{nextConversation} ↓</button>
+        <RefreshButton busy={loading.value} onClick={refresh} />
       </div>
       <header class="work-page-head">
         <h2><span class="work-title">{c.title}</span></h2>
@@ -303,7 +316,7 @@ export function ConversationPage({ store, conversationKey }: { store: Store; con
         </p>
       </header>
       <p class="hint">{outside}</p>
-      {problem.value ? <p class="hint">{problem.value}</p>
+      {messages.value === null && problem.value ? <p class="hint">{problem.value}</p>
         : messages.value === null ? <PlaceholderRows count={4} />
         : messages.value.length === 0 ? <p class="hint">{noMessages}</p>
         : (
@@ -322,10 +335,10 @@ export function ConversationPage({ store, conversationKey }: { store: Store; con
             ))}
           </ul>
         )}
-      {cursor.value && !problem.value && (
+      {cursor.value && messages.value !== null && (
         <button type="button" class="link" disabled={loading.value} onClick={() => { void read(true); }}>{loading.value ? "Loading…" : "Older"}</button>
       )}
-      {replyAs && !problem.value && messages.value !== null && (
+      {replyAs && messages.value !== null && (
         <form class="messages-reply" onSubmit={(e) => { e.preventDefault(); void reply(); }}>
           {thread.value && <p class="quiet small">↩ {inThread} · <button type="button" class="link" onClick={() => { thread.value = undefined; }}>{leaveThread}</button></p>}
           <div class="messages-reply-row">
@@ -338,6 +351,8 @@ export function ConversationPage({ store, conversationKey }: { store: Store; con
           {sendProblem.value && <p class="hint">{sendProblem.value}</p>}
         </form>
       )}
+      <WorkFooter state={pageFooterState(messages.value !== null, loading.value, false, problem.value ? [problem.value] : [])}
+        at={readAt.value} retry={refresh} />
     </article>
   );
 }

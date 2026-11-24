@@ -336,7 +336,8 @@ private struct DocRow: View {
 
 /// A doc's page: its title, ref and when it changed; Open in Files or in its vendor's app, Copy
 /// link and Copy ref; and its Markdown, drawn as the Files pane draws a page, read only. A folder
-/// doc's page follows the file: it reads it again every few seconds while it is shown.
+/// doc's page follows the file: it reads it again every few seconds while it is shown. Refresh (⌘R)
+/// reads any doc again; a connector doc says how old it is, and a folder doc does when a read fails (#7076).
 struct DocPage: View {
     @Environment(AppModel.self) private var model
     @Environment(\.showMainWindow) private var showMainWindow
@@ -348,6 +349,10 @@ struct DocPage: View {
 
     @State private var reading: (host: MachineRef, reading: DaemonAPI.DocsReading)?
     @State private var problem: String?
+    @State private var readAt: Date?
+    @State private var asked = 0
+    /// A read the person sees run: the first one and each Refresh, not the ones that follow the file.
+    @State private var fetching = false
     @State private var copied: String?
     @State private var startProblem: String?
 
@@ -358,18 +363,24 @@ struct DocPage: View {
         VStack(alignment: .leading, spacing: 0) {
             header.padding(.horizontal, 16).padding(.vertical, 10)
             Divider()
-            if let problem {
-                Text(problem).foregroundStyle(.secondary).padding(16)
-                Spacer()
-            } else if let reading {
+            if let reading {
                 if let next = reading.reading.next {
                     Text("Showing lines \(reading.reading.from)–\(reading.reading.to) of \(reading.reading.lines); the rest from line \(next) is not shown.")
                         .appText(.fine).foregroundStyle(.secondary).padding(.horizontal, 16).padding(.vertical, 6)
                 }
                 LivePage(text: reading.reading.text, url: pageURL(reading.reading.doc), line: line)
                     .environment(\.pageActions, pageActions(reading.reading.doc, on: reading.host))
+            } else if let problem {
+                Text(problem).foregroundStyle(.secondary).padding(16)
+                Spacer()
             } else {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            // A folder doc whose last read worked is seconds old, and says nothing.
+            if !follows || problem != nil {
+                WorkPageBar(state: WorkLook.pageFooterState(drawn: reading != nil, reading: fetching, fromDevice: false,
+                                                            lines: problem.map { [$0] } ?? []),
+                            count: nil, read: readAt) { asked += 1 }
             }
         }
         .navigationTitle(window == nil ? "Docs" : doc.map { $0.title.isEmpty ? DocsList.shortForm($0) : $0.title } ?? ref)
@@ -377,15 +388,24 @@ struct DocPage: View {
             if window == nil {
                 ToolbarItem(placement: .primaryAction) { WorkWindowToolbarButton(key: .doc(ref)) }
             }
+            ToolbarItem(placement: .primaryAction) { WorkRefreshButton(running: fetching) { asked += 1 } }
         }
         // A window opened again at launch is there before the machines are.
-        .task(id: machinesKnown) {
+        .task(id: Ask(machinesKnown: machinesKnown, asked: asked)) {
             guard machinesKnown else { return }
             // The names, for the project the page says, while the doc is read.
             if model.docsList.projectNames.isEmpty { Task { await model.docsList.readProjectNames(model: model) } }
             await read()
+            await follow()
         }
     }
+
+    private struct Ask: Equatable {
+        let machinesKnown: Bool
+        let asked: Int
+    }
+
+    private var follows: Bool { doc.map(DocsList.isFolderDoc) ?? false }
 
     private var machinesKnown: Bool { !model.docsMachines.isEmpty || model.controlPlaneListed || model.controlPlaneHosts == nil }
 
@@ -523,38 +543,56 @@ struct DocPage: View {
         return URL(fileURLWithPath: "/").appendingPathComponent(doc.title.isEmpty ? "doc" : doc.title)
     }
 
-    /// The machine that listed it first, then this Mac, then the others; and again every few seconds
-    /// for a folder doc.
+    /// The machine it was read on, else the one that listed it first, then this Mac, then the others.
     private func read() async {
+        fetching = true
+        // A newer Refresh, which cancelled this one, says it runs.
+        defer { if !Task.isCancelled { fetching = false } }
         let machines = model.docsMachines
-        let first = model.docsList.listedOn[ref]
+        let first = reading?.host ?? model.docsList.listedOn[ref]
         let order = machines.filter { $0.id == first } + machines.filter { $0.id != first }
-        var last: String?
+        var failures: [String] = []
         for machine in order {
             do {
                 let got = try await model.docs(DaemonAPI.Method.docsRead, DaemonAPI.DocsReadRequest(ref: ref),
                                                returning: DaemonAPI.DocsReading.self, on: machine.id)
-                reading = (machine.id, got)
-                problem = nil
-                await follow(on: machine.id)
+                if Task.isCancelled { return }
+                took(got, on: machine.id)
                 return
             } catch {
                 if Task.isCancelled { return }
-                last = error.localizedDescription
+                failures.append(model.describe(error))
             }
         }
-        problem = machines.isEmpty ? DocsList.noDocsHere : last ?? "No machine here has this doc."
+        if machines.isEmpty {
+            problem = DocsList.noDocsHere
+        } else {
+            // A doc on screen says what its own machine said; the others may never have had it.
+            problem = (reading == nil ? failures.last : failures.first) ?? "No machine here has this doc."
+        }
     }
 
-    private func follow(on host: MachineRef) async {
-        guard let doc, DocsList.isFolderDoc(doc) else { return }
-        while !Task.isCancelled {
+    /// A read that worked. What did not change is not set, so a page that follows its file is not drawn again.
+    private func took(_ got: DaemonAPI.DocsReading, on host: MachineRef) {
+        if reading?.host != host || reading?.reading != got { reading = (host, got) }
+        if problem != nil { problem = nil }
+        readAt = .now
+    }
+
+    /// A folder doc again every few seconds. A read that fails keeps the doc, and the footer says so.
+    private func follow() async {
+        while !Task.isCancelled, let host = reading?.host, follows {
             try? await Task.sleep(for: Self.followEvery)
             guard !Task.isCancelled else { return }
-            if let got = try? await model.docs(DaemonAPI.Method.docsRead, DaemonAPI.DocsReadRequest(ref: ref),
-                                               returning: DaemonAPI.DocsReading.self, on: host),
-               got.text != reading?.reading.text {
-                reading = (host, got)
+            do {
+                let got = try await model.docs(DaemonAPI.Method.docsRead, DaemonAPI.DocsReadRequest(ref: ref),
+                                               returning: DaemonAPI.DocsReading.self, on: host)
+                if Task.isCancelled { return }
+                took(got, on: host)
+            } catch {
+                if Task.isCancelled { return }
+                let words = model.describe(error)
+                if problem != words { problem = words }
             }
         }
     }
