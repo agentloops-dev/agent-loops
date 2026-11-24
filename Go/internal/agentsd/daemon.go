@@ -27,6 +27,7 @@ type Daemon struct {
 	}
 	dismissedLeads *store.JSONFile[dismissedLead]
 	repoAliases    *store.JSONFile[repoalias.Alias]
+	erased         *store.JSONFile[wire.Date]
 
 	ctx context.Context
 	// opts are the daemon's own (#5926): set by New, and changed only by a test, as a test
@@ -259,6 +260,7 @@ func newWith(ctx context.Context, root string, opts startOptions) (*Daemon, erro
 		PersonKey: controllink.PersonKeyFile{Root: st.Loc.Root}}
 	d.dismissedLeads = d.openDismissedLeads()
 	d.repoAliases = d.openRepoAliases()
+	d.erased = d.openErased()
 	d.opts.Store(&opts)
 	d.jobCancel = cancel
 	st.OnGap = d.tellEntry

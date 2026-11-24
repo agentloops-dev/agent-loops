@@ -663,21 +663,30 @@ func (d *Daemon) restoreBackup(id string) (wire.BackupRestoreResult, error) {
 	archive, _, _ := d.backupPaths(id)
 	// The folder, not the manifest, says whose backup it is.
 	folder, _, _ := strings.Cut(id, "/")
-	return d.restoreArchive(archive, listed.RootID, folder == d.Store.RootID, true, "", nil)
+	return d.restoreArchive(archive, listed.RootID, listed.MadeAt, folder == d.Store.RootID, true, "", nil)
 }
 
 // restoredElsewhere is the root a record from another machine's backup is stamped with
 // when that backup names this root: never this one, so it is never run here.
 const restoredElsewhere = "restored"
 
-// restoreArchive restores the archive at path; madeIn is the root that made it, and mine
-// whether it is this machine's own backup. An import (#1001) takes no root files
+// restoreArchive restores the archive at path; madeIn is the root that made it, madeAt
+// when (one at the cutoff or before it is refused, #6715), and mine whether it is this machine's own backup. An import (#1001) takes no root files
 // (withRoot false): an export has none, and one made by hand must not change this
 // machine's history or its erased list. into, when not empty, is the folder every
 // agent is put in (#2389); empty keeps each agent's own. in, when not nil, is a session
 // moving here with move_session (#3717): it goes on here, not archived.
-func (d *Daemon) restoreArchive(archive, madeIn string, mine, withRoot bool, into string, in *arrival) (wire.BackupRestoreResult, error) {
+func (d *Daemon) restoreArchive(archive, madeIn string, madeAt wire.Date, mine, withRoot bool, into string, in *arrival) (wire.BackupRestoreResult, error) {
 	res := wire.BackupRestoreResult{}
+	// An agent this machine deleted is never restored (#1001).
+	erased, err := d.erased.Read()
+	if err != nil {
+		return res, fmt.Errorf("the list of deleted agents can't be read: %w", err)
+	}
+	if cutoff := restoreCutoff(erased); !madeAt.Time().After(cutoff) {
+		return res, Invalid("It was made on %s. This machine restores only what was made after %s: it no longer knows which older agents it deleted.",
+			madeAt.Time().UTC().Format("2 Jan 2006"), cutoff.UTC().Format("2 Jan 2006 15:04 MST"))
+	}
 	f, err := os.Open(archive)
 	if err != nil {
 		return res, err
@@ -700,10 +709,6 @@ func (d *Daemon) restoreArchive(archive, madeIn string, mine, withRoot bool, int
 		return res, err
 	}
 	defer os.RemoveAll(staging)
-	// An agent this machine deleted is never restored (#1001).
-	d.erasures.mu.Lock()
-	erased := d.readErasedLocked()
-	d.erasures.mu.Unlock()
 	r := &archiveRestore{d: d, staging: staging, files: map[string]string{}, erased: erased,
 		madeIn: madeIn, mine: mine, into: into, in: in}
 	for {
@@ -740,7 +745,7 @@ type archiveRestore struct {
 	held    wire.UUID
 	record  []byte
 	files   map[string]string
-	erased  map[wire.UUID]time.Time
+	erased  map[string]wire.Date
 	madeIn  string
 	mine    bool
 	into    string
@@ -760,7 +765,7 @@ func (r *archiveRestore) flush() error {
 	if r.held == "" {
 		return nil
 	}
-	if _, gone := r.erased[r.held]; gone {
+	if _, gone := r.erased[string(r.held)]; gone {
 		r.drop()
 		r.res.Skipped++
 		return nil

@@ -245,28 +245,89 @@ func TestTheErasureQueueIsBounded(t *testing.T) {
 	}
 }
 
-// The erased list is bounded by count, oldest out, and by age.
+// The erased list is bounded by count, oldest out, and by age. A restore's cutoff covers what
+// the count evicted, also when a backup's list adds an older time.
 func TestTheErasedListIsBounded(t *testing.T) {
 	t.Parallel()
 
 	d, _ := start(t, t.TempDir())
-	old := map[wire.UUID]time.Time{store.NewUUID(): nowFunc().Add(-erasedKeep - time.Hour)}
-	d.erasures.mu.Lock()
-	d.noteErasedLocked(old)
-	if len(d.readErasedLocked()) != 0 {
-		t.Fatal("an ID past erasedKeep is kept")
+	read := func() map[string]wire.Date {
+		list, err := d.erased.Read()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return list
 	}
-	many := map[wire.UUID]time.Time{}
-	first := store.NewUUID()
-	many[first] = nowFunc().Add(-time.Hour)
-	for range erasedMost {
-		many[store.NewUUID()] = nowFunc()
+	at := func(age time.Duration) wire.Date { return wire.DateOf(nowFunc().Add(-age)) }
+	d.noteErased(map[string]wire.Date{string(store.NewUUID()): at(erasedKeep + time.Hour), "junk": at(0)})
+	if len(read()) != 0 {
+		t.Fatal("an ID past erasedKeep, or one that is no ID, is kept")
 	}
-	d.noteErasedLocked(many)
-	list := d.readErasedLocked()
-	d.erasures.mu.Unlock()
+	// The times that a build from before #6715 wrote.
+	old := string(store.NewUUID())
+	b, _ := json.Marshal(map[string]time.Time{old: nowFunc().In(time.FixedZone("", -7*3600)).Add(-time.Hour)})
+	writeFile(t, filepath.Join(d.Store.Loc.Root, erasedFile), string(b))
+	if list := read(); list[old].Time().After(nowFunc()) || nowFunc().Sub(list[old].Time()) > 2*time.Hour {
+		t.Fatalf("an older file reads as %v", list)
+	}
+	first, second := string(store.NewUUID()), string(store.NewUUID())
+	evicted, kept := at(2*time.Hour), at(time.Hour)
+	many := map[string]wire.Date{first: evicted, second: kept}
+	for range erasedMost - 1 {
+		many[string(store.NewUUID())] = at(time.Minute)
+	}
+	d.noteErased(many)
+	d.noteErased(map[string]wire.Date{second: at(3 * time.Hour)})
+	check := func(when string) {
+		t.Helper()
+		if cutoff := restoreCutoff(read()); cutoff.Sub(kept.Time()).Abs() > time.Millisecond {
+			t.Fatalf("%s the sweep: cutoff %v, want %v", when, cutoff, kept.Time())
+		}
+	}
+	check("before")
+	if _, err := d.erased.Sweep(); err != nil {
+		t.Fatal(err)
+	}
+	check("after")
+	list := read()
 	if _, ok := list[first]; ok || len(list) != erasedMost {
 		t.Fatalf("%d IDs, oldest kept %v", len(list), ok)
+	}
+}
+
+// A deleted agent does not come back when its ID ages out: the backup that holds it is older
+// than the cutoff by then, and is refused, as a backup and as an import (#6715).
+func TestAnErasedAgentDoesNotComeBackWhenItsIDAgesOut(t *testing.T) {
+	clock := atTime(t, time.Date(2026, 10, 22, 9, 0, 0, 0, time.UTC))
+	a, c := start(t, t.TempDir())
+	dir := folder(t, c, 1)
+	c.call(t, 2, "backups/configure", map[string]any{"every": "off", "keep": 3, "folder": t.TempDir()})
+	gone := archivedWithSession(t, a, dir, "gone")
+	made, err := a.makeBackup()
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.call(t, 3, "agents/delete", map[string]any{"agentID": gone.ID})
+	archive, _, _ := a.backupPaths(made.ID)
+	upload := store.NewUUID()
+
+	clock.add(erasedKeep - time.Second)
+	if _, err := a.restoreBackup(made.ID); err != nil || a.Store.Agent(gone.ID) != nil {
+		t.Fatalf("just before the cutoff: %v, back %v", err, a.Store.Agent(gone.ID) != nil)
+	}
+	clock.add(time.Second)
+	if n, err := a.erased.Sweep(); n != 1 || err != nil {
+		t.Fatalf("the ID did not age out: %d, %v", n, err)
+	}
+	if msg := c.callErr(t, 4, "backups/restore", map[string]any{"id": made.ID}); !strings.Contains(msg, "made on 22 Oct 2026") {
+		t.Fatalf("restore: %s", msg)
+	}
+	c.call(t, 5, "agents/importUpload", map[string]any{"upload": upload, "offset": 0, "data": mustRead(t, archive)})
+	if msg := c.callErr(t, 6, "agents/import", map[string]any{"upload": upload}); !strings.Contains(msg, "made on 22 Oct 2026") {
+		t.Fatalf("import: %s", msg)
+	}
+	if a.Store.Agent(gone.ID) != nil {
+		t.Fatal("the deleted agent is back")
 	}
 }
 
