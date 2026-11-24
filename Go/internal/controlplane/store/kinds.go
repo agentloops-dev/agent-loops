@@ -211,6 +211,14 @@ type timeSeriesStore struct {
 	spec  Spec
 }
 
+type rollupBucket struct {
+	series string
+	day    time.Time
+	sum    float64
+	count  int64
+	keys   []string
+}
+
 func OpenTimeSeries(spec Spec, backend Store) (TimeSeries, error) {
 	if backend == nil {
 		return nil, errors.New("time-series backend is required")
@@ -290,34 +298,11 @@ func (s *timeSeriesStore) Range(ctx context.Context, series string, from, to tim
 		if o == nil {
 			continue
 		}
-		var point Point
-		if granularity == "day" {
-			var rec storedRecord
-			if e = json.Unmarshal(o.Data, &rec); e != nil {
-				return nil, "", e
-			}
-			var aggregate Aggregate
-			if e = json.Unmarshal(rec.Value, &aggregate); e != nil {
-				return nil, "", e
-			}
-			point = Point{Series: series, ID: aggregate.Day.Format("2006-01-02"), At: aggregate.Day, Value: aggregate.Sum}
-			point.Count = aggregate.Count
-		} else {
-			var rec storedRecord
-			if e = json.Unmarshal(o.Data, &rec); e != nil {
-				return nil, "", e
-			}
-			point = Point{Series: series, ID: rec.ID, At: rec.At, Count: 1}
-			if e = json.Unmarshal(rec.Value, &point.Value); e != nil {
-				return nil, "", e
-			}
+		point, e := decodePoint(o.Data, series, granularity)
+		if e != nil {
+			return nil, "", e
 		}
-		lower, upper := from, to
-		if granularity == "day" {
-			lower = time.Date(from.UTC().Year(), from.UTC().Month(), from.UTC().Day(), 0, 0, 0, 0, time.UTC)
-			upper = time.Date(to.UTC().Year(), to.UTC().Month(), to.UTC().Day(), 0, 0, 0, 0, time.UTC)
-		}
-		if point.At.Before(lower) || !point.At.Before(upper) {
+		if !inRange(point.At, from, to, granularity) {
 			continue
 		}
 		out = append(out, point)
@@ -329,6 +314,36 @@ func (s *timeSeriesStore) Range(ctx context.Context, series string, from, to tim
 	return out, next, nil
 }
 
+func decodePoint(data []byte, series, granularity string) (Point, error) {
+	var rec storedRecord
+	if err := json.Unmarshal(data, &rec); err != nil {
+		return Point{}, err
+	}
+	if granularity == "hour" {
+		point := Point{Series: series, ID: rec.ID, At: rec.At, Count: 1}
+		if err := json.Unmarshal(rec.Value, &point.Value); err != nil {
+			return Point{}, err
+		}
+		return point, nil
+	}
+	var aggregate Aggregate
+	if err := json.Unmarshal(rec.Value, &aggregate); err != nil {
+		return Point{}, err
+	}
+	return Point{Series: series, ID: aggregate.Day.Format("2006-01-02"), At: aggregate.Day, Value: aggregate.Sum, Count: aggregate.Count}, nil
+}
+
+func inRange(at, from, to time.Time, granularity string) bool {
+	if granularity != "day" {
+		return !at.Before(from) && at.Before(to)
+	}
+	day := func(t time.Time) time.Time {
+		t = t.UTC()
+		return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
+	}
+	return !at.Before(day(from)) && at.Before(day(to))
+}
+
 func (s *timeSeriesStore) Rollup(ctx context.Context, before time.Time, interval time.Duration) error {
 	if interval <= 0 {
 		return errors.New("roll-up interval must be positive")
@@ -338,48 +353,9 @@ func (s *timeSeriesStore) Rollup(ctx context.Context, before time.Time, interval
 	if err != nil {
 		return err
 	}
-	type bucket struct {
-		series string
-		day    time.Time
-		sum    float64
-		count  int64
-		keys   []string
-	}
-	buckets := map[string]*bucket{}
-	for _, k := range keys {
-		obj, e := s.store.Get(ctx, k.Key)
-		if e != nil {
-			return e
-		}
-		if obj == nil {
-			continue
-		}
-		var rec storedRecord
-		if e = json.Unmarshal(obj.Data, &rec); e != nil {
-			return e
-		}
-		if rec.At.After(before.Add(-s.spec.Bounds.DetailAge)) || rec.At.After(before) {
-			continue
-		}
-		remainder := strings.TrimPrefix(k.Key, prefix)
-		parts := strings.Split(remainder, "/")
-		if len(parts) < 3 {
-			continue
-		}
-		var n float64
-		if e = json.Unmarshal(rec.Value, &n); e != nil {
-			return e
-		}
-		day := time.Date(rec.At.UTC().Year(), rec.At.UTC().Month(), rec.At.UTC().Day(), 0, 0, 0, 0, time.UTC)
-		id := parts[0] + "/" + day.Format("20060102")
-		b := buckets[id]
-		if b == nil {
-			b = &bucket{series: parts[0], day: day}
-			buckets[id] = b
-		}
-		b.sum += n
-		b.count++
-		b.keys = append(b.keys, k.Key)
+	buckets, err := s.collectRollups(ctx, prefix, keys, before)
+	if err != nil {
+		return err
 	}
 	ids := make([]string, 0, len(buckets))
 	for id := range buckets {
@@ -387,43 +363,88 @@ func (s *timeSeriesStore) Rollup(ctx context.Context, before time.Time, interval
 	}
 	sort.Strings(ids)
 	for _, id := range ids {
-		b := buckets[id]
-		data, e := json.Marshal(Aggregate{Series: b.series, Day: b.day, Sum: b.sum, Count: b.count})
-		if e != nil {
-			return e
-		}
-		key := collectionPrefix(s.spec) + "daily/" + b.series + "/" + b.day.Format("20060102")
-		stored, e := json.Marshal(storedRecord{ID: "daily", At: b.day, Value: data})
-		if e != nil {
-			return e
-		}
-		if int64(len(stored)) > s.spec.Bounds.MaxRecordBytes {
-			return &LimitError{Name: s.spec.Name, Size: int64(len(stored)), Limit: s.spec.Bounds.MaxRecordBytes}
-		}
-		_, e = s.store.Put(ctx, key, stored, Absent)
-		if IsConflict(e) {
-			existing, getErr := s.store.Get(ctx, key)
-			if getErr != nil {
-				return getErr
-			}
-			if existing == nil {
-				return e
-			}
-			// A previous attempt may have committed the aggregate and deleted only
-			// some detail points. The same day key proves the destination is durable;
-			// finish deleting the remaining source points without adding them twice.
-			e = nil
-		}
-		if e != nil {
-			return e
-		}
-		for _, detail := range b.keys {
-			if e = s.store.Delete(ctx, detail); e != nil {
-				return e
-			}
+		if err := s.writeRollup(ctx, buckets[id]); err != nil {
+			return err
 		}
 	}
 	return trimStore(ctx, s.store, collectionPrefix(s.spec)+"daily/", s.spec.Bounds, before.Add(-s.spec.Bounds.MaxAge))
+}
+
+func (s *timeSeriesStore) collectRollups(ctx context.Context, prefix string, keys []Key, before time.Time) (map[string]*rollupBucket, error) {
+	buckets := map[string]*rollupBucket{}
+	cutoff := before.Add(-s.spec.Bounds.DetailAge)
+	for _, key := range keys {
+		obj, err := s.store.Get(ctx, key.Key)
+		if err != nil {
+			return nil, err
+		}
+		if obj == nil {
+			continue
+		}
+		var record storedRecord
+		if err = json.Unmarshal(obj.Data, &record); err != nil {
+			return nil, err
+		}
+		if record.At.After(cutoff) || record.At.After(before) {
+			continue
+		}
+		parts := strings.Split(strings.TrimPrefix(key.Key, prefix), "/")
+		if len(parts) < 3 {
+			continue
+		}
+		var value float64
+		if err = json.Unmarshal(record.Value, &value); err != nil {
+			return nil, err
+		}
+		day := time.Date(record.At.UTC().Year(), record.At.UTC().Month(), record.At.UTC().Day(), 0, 0, 0, 0, time.UTC)
+		id := parts[0] + "/" + day.Format("20060102")
+		bucket := buckets[id]
+		if bucket == nil {
+			bucket = &rollupBucket{series: parts[0], day: day}
+			buckets[id] = bucket
+		}
+		bucket.sum += value
+		bucket.count++
+		bucket.keys = append(bucket.keys, key.Key)
+	}
+	return buckets, nil
+}
+
+func (s *timeSeriesStore) writeRollup(ctx context.Context, bucket *rollupBucket) error {
+	data, err := json.Marshal(Aggregate{Series: bucket.series, Day: bucket.day, Sum: bucket.sum, Count: bucket.count})
+	if err != nil {
+		return err
+	}
+	key := collectionPrefix(s.spec) + "daily/" + bucket.series + "/" + bucket.day.Format("20060102")
+	stored, err := json.Marshal(storedRecord{ID: "daily", At: bucket.day, Value: data})
+	if err != nil {
+		return err
+	}
+	if int64(len(stored)) > s.spec.Bounds.MaxRecordBytes {
+		return &LimitError{Name: s.spec.Name, Size: int64(len(stored)), Limit: s.spec.Bounds.MaxRecordBytes}
+	}
+	_, err = s.store.Put(ctx, key, stored, Absent)
+	if IsConflict(err) {
+		existing, getErr := s.store.Get(ctx, key)
+		if getErr != nil {
+			return getErr
+		}
+		if existing == nil {
+			return err
+		}
+		// A prior attempt may have committed this aggregate and deleted only some
+		// detail points. Finish deleting those points without adding them twice.
+		err = nil
+	}
+	if err != nil {
+		return err
+	}
+	for _, detail := range bucket.keys {
+		if err = s.store.Delete(ctx, detail); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func trimStore(ctx context.Context, backend Store, prefix string, bounds Bounds, before time.Time) error {
@@ -459,7 +480,7 @@ func trimStore(ctx context.Context, backend Store, prefix string, bounds Bounds,
 		}
 		return items[i].at.Before(items[j].at)
 	})
-	var count int64 = int64(len(items))
+	count := int64(len(items))
 	for _, it := range items {
 		tooOld := !before.IsZero() && it.at.Before(before)
 		overCount := bounds.MaxCount > 0 && count > bounds.MaxCount
