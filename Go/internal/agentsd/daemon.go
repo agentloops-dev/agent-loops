@@ -270,6 +270,7 @@ func newWith(ctx context.Context, root string, opts startOptions) (*Daemon, erro
 	d.secretOps.pending = d.openSecretOpsPending()
 	d.accountOps = d.openAccountOps()
 	d.elsewhere = d.openElsewhere()
+	d.dismissed = d.openReviewDismissals()
 	d.lockSeen = d.openLockSeen()
 	d.opts.Store(&opts)
 	d.jobCancel = cancel

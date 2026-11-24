@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -180,20 +181,18 @@ func (d *Daemon) sweepPluginApprovals(gone func(string) bool) {
 func (d *Daemon) sweepReviewFolders(gone func(string) bool) {
 	d.reviewMu.Lock()
 	defer d.reviewMu.Unlock()
-	for _, s := range []struct {
-		path string
-		m    map[string][]string
-	}{{d.reviewDismissalsPath(), d.dismissedLocked()}, {d.reviewOpenedPath(), d.openedLocked()}} {
-		n := len(s.m)
-		for folder := range s.m {
-			if gone(folder) {
-				delete(s.m, folder)
-			}
-		}
-		if len(s.m) != n {
-			if err := writeStore(s.path, s.m); err != nil {
-				log.Printf("%s: could not save: %v", filepath.Base(s.path), err)
-			}
+	if err := d.dismissed.Update(func(m map[string]reviewDismissal) error {
+		maps.DeleteFunc(m, func(_ string, r reviewDismissal) bool { return gone(r.Folder) })
+		return nil
+	}); err != nil {
+		log.Printf("review-dismissals.json: could not save: %v", err)
+	}
+	opened := d.openedLocked()
+	n := len(opened)
+	maps.DeleteFunc(opened, func(folder string, _ []string) bool { return gone(folder) })
+	if len(opened) != n {
+		if err := writeStore(d.reviewOpenedPath(), opened); err != nil {
+			log.Printf("review-opened.json: could not save: %v", err)
 		}
 	}
 }
