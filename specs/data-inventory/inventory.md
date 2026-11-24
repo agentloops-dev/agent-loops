@@ -317,7 +317,7 @@ Sessions are signed cookies (30 days); the server keeps nothing for them.
 |---|---|---|---|
 | IndexedDB `agents` | Non-extractable pairing key, lock signing key | 1 | Forget, re-pair, forgotten by the control plane |
 | IndexedDB `agents-signin` | Pending org sign-in key (10 minutes) | 1 | on use; expiry checked on read |
-| localStorage `agents.drafts` | Drafts | 40 drafts, 256 KiB attachments (`Web/src/model/drafts.ts:12,14`) | send; **not on Forget** |
+| localStorage `agents.drafts` | Drafts | 40 drafts, 256 KiB attachments, 30 days without an edit (`Web/src/model/drafts.ts`) | send, 30 days, Forget |
 | localStorage `agents-lock-pin`, `…:<person>` | Machine-lock pins | **none. Not keyed by control plane**, so a re-pair to another one reads the old pin. | never |
 | localStorage folds, `newSession.projectFolders`, start form, UI choices | UI state | fold sets and project map **none** | never |
 | sessionStorage filters and sort | Per tab | fixed | tab close |
@@ -468,7 +468,7 @@ newer than a row above for the same store.
 | Mac `<cache>/copy/` (local copy) | cache | Machines, folders, records, the ends of 20 chats | 200 MiB, 20 chats, 200 archived records a machine; 16 MiB a record; 90 days; a machine no longer listed is dropped (#6789) | `Packages/AgentsKit/Sources/AgentsKitCore/Client/LocalCopy.swift` | #6789 |
 | Remote `Caches/copy/` (local copy) | cache | As the Mac's local copy | 50 MiB, 20 chats; 16 MiB a record; 90 days; a machine no longer listed is dropped (#6789) | `Packages/AgentsKit/Sources/AgentsKitCore/Client/LocalCopy.swift` | #6790 |
 | Web IndexedDB `agents` › `copy` | cache | As the Mac's local copy, and Work's pictures | 50 MiB, 20 chats, 2000 pictures; 16 MiB a record; 90 days; a machine no longer listed is dropped (#6792) | `Web/src/model/localCopy.ts` | #6792 |
-| Web `localStorage` `agents.drafts` | document | Drafts | The newest 40, attachments under 256 KiB; no age (the Mac and Remote keep 30 days) | `Web/src/model/drafts.ts:10-14` | #6793 |
+| Web `localStorage` `agents.drafts` | document | Drafts | 40, a new one over that refused; attachments under 256 KiB; 30 days since the last edit (#6793) | `Web/src/model/drafts.ts` | #6793 |
 | Mac and Remote defaults `draft.*` | document | Drafts | 512 KiB a draft and 30 days, but no count of drafts | `Packages/AgentsKit/Sources/AgentsKitCore/Model/DraftStore.swift:22-29` | #6794 |
 | Remote app group `shared-inbox.json` | blob | What was shared to Agent Loops | Each attachment capped; no count, total or age | `Packages/AgentsKit/Sources/AgentsKitCore/Widget/SharedInbox.swift:88,105-118` | #6795 |
 | Mac browser pane `WKWebsiteDataStore.default()` | blob | Cookies and site storage of every site the pane opened | None: only the caches are emptied, at launch; not on Forget | `App/Sources/Sidebar/BrowserPane.swift:171-195` | #6796 |

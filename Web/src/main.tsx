@@ -30,6 +30,7 @@ setWorkCopy(copy);
 // Work's cache (#6356): the Work records this device read, written only while signed in, and gone at sign-out.
 const work = new WorkCache();
 setWorkCache(work);
+store.drafts.open();
 effect(() => {
   const kind = session.state.value.kind;
   if (kind === "open" || kind === "down") { copy.open(); work.open(); }
