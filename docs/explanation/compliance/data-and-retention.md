@@ -84,7 +84,8 @@ Mac.
 | `mcp-views/` | cache | View catalogues | Pruned to the live servers | On write |
 | `mcp-approvals.json`, `plugin-approvals.json` | key-value | Digests of approved MCP servers and plugins | The folders that exist: a folder that is not on disk and not in the app goes (#3652) | Hourly; MCP also on remove |
 | `devices.json` | document | Paired devices | 90 days after a device was last seen (#3652) | Hourly, and **Forget** |
-| `review-dismissals.json`, `review-opened.json` | key-value | PR links for each folder | 200 a folder; a folder that is not on disk and not in the app goes (#3652) | On write, and hourly |
+| `review-dismissals.json` | key-value | PRs dismissed from For Review | 2,000 of 8 KiB each, for 90 days from the PR's last change (or its dismissal, when that is later); the oldest goes first. For Review leaves out a PR that has not changed for 90 days, so one whose dismissal aged out does not come back (#6728). A folder that is not on disk and not in the app goes (#3652) | Hourly, and on write: age, and the count when it is twice over |
+| `review-opened.json` | key-value | PR links for each folder | 200 a folder; a folder that is not on disk and not in the app goes (#3652) | On write, and hourly |
 | `lock-seen.json` | key-value | IDs of signed requests already seen, and the cutoff | 4,096 IDs of 128 bytes each, for 2 days; the one signed first goes first. A request is refused when it is more than a day old, or signed at the cutoff or before it: the latest time signed of the IDs that the count took out (#6723). | Hourly, and on write |
 | `attention.json` | document | What needs you, and what was delivered | The live needs | On write |
 | `leases.json`, `resources.json` | document | Resource leases | 240 minutes a lease; dropped when its agent stops | On write |
@@ -211,7 +212,7 @@ the other copies of the control plane learn that it went. A removed person's sta
 | Projects' folders | document | Each machine's joined folders | 1,000 | Hourly |
 | Machine locks | log | Each person's lock chain | 4,096 entries a person. Deleted when the person is removed (#3647) | On **Reset** and on remove |
 | A person's settings and secrets | key-value; secret | Settings that follow a person; secrets, sealed | 256 KiB of settings, 200 secrets of 16 KiB | When the person is removed |
-| Channel links | document | Which person a channel identity is | No count limit | On unlink or when the person is removed |
+| Channel links | document | Which person a channel identity is, and when it last acted | 4 KiB a record and 1 MiB in all: an approval over that is refused, and the request still waits. No link is evicted. A link goes 90 days after its identity last acted; a message from it renews the link (noted once a day). After that, a message asks the person again (#6763) | Size before an approval, age hourly; also on unlink, or when the person is removed |
 | Machine set-up | document | Each machine's set-up steps | One a machine, deleted when the machine is removed. No age. | On remove |
 | Machine set-up times | time series | How long each set-up step took, and when it ended | 90 days, 50 a step (#6760), 32 KiB at most. No roll-up. | On write, hourly |
 | Machine versions | log | Each machine's version and its updates | 20 updates a machine, deleted when the machine is removed. No age. | On write; on remove |

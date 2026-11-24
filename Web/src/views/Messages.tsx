@@ -13,12 +13,12 @@ import { hostAnswers } from "../model/capabilities";
 import { channelName } from "../model/channelLinks";
 import { ago } from "../model/connectorSetup";
 import {
-  hasUnread, hostConversationsOf, inThread, lastConsequence, leaveThread, markAllHelp, markAllRead, markedRead, markingAllRead, markProblems, mergeConversations,
+  hasUnread, hostConversationsOf, inThread, lastConsequence, leaveThread, markAllHelp, markAllRead, markedRead, markingAllRead, markProblems, mergeConversations, mostPagesToFind,
   messagesStatusLine, unreadTotal, messagesProblems, messagesSources, nextConversation, nextHelp, nextRow, noConnector, noConnectorIn,
   noConversations, noMachine, noMessages, noUnread, outside, replyInThread, replyLabel, replyPlaceholder, replyText, send, senderName,
   sending, sentAs, setUp, sourceGlyph, unreadWords, type HostConversations, type MessagesRow,
 } from "../model/messages";
-import { go } from "../route";
+import { go, routeHash } from "../route";
 import { PlaceholderRows } from "./WorkParts";
 import { renderMarkdown } from "../render/markdown";
 import { Glyph } from "./Icon";
@@ -59,28 +59,41 @@ async function markAll(store: Store) {
 /** Where the next page of messages/conversationsAll starts (#5571); none at the end. */
 const nextCursor = signal<string | undefined>(undefined);
 
+interface ConversationsPage { lists: HostConversations[]; cursor: string | undefined }
+
 /** Every machine's conversations in one call to the control plane (#5571): the first page, or the one after `cursor`, added to `into`. */
-async function readLists(store: Store, cursor?: string, into: HostConversations[] = []): Promise<HostConversations[]> {
+async function readLists(store: Store, cursor?: string, into: HostConversations[] = []): Promise<ConversationsPage> {
   try {
     const got = await store.link.call("messages/conversationsAll",
       { limit: 50, ...unreadOnly.value ? { unread: true } : {}, ...cursor ? { cursor } : {} });
-    nextCursor.value = got.cursor;
-    return hostConversationsOf(got, into);
+    return { lists: hostConversationsOf(got, into), cursor: got.cursor };
   } catch (e) {
-    nextCursor.value = undefined;
-    return [...into, { host: "", name: "Control plane", conversations: [], errors: [], problem: describe(e) }];
+    return { lists: [...into, { host: "", name: "Control plane", conversations: [], errors: [], problem: describe(e) }], cursor: undefined };
   }
 }
 
+/** A read's answer drawn, while no newer read started. */
+const take = (got: ConversationsPage) => { nextCursor.value = got.cursor; lists.value = got.lists; };
+
 /** Reads the lists when the machines or the Unread filter change, or on Refresh. */
 function useLists(store: Store) {
+  // A new tab knows its machines from this browser's copy before its link is open and its lock is read (#5482): it reads
+  // once the link is open, and again once it is in the lock, when it can ask the machines itself.
+  const up = useSignal(store.link.state.kind === "open");
+  useEffect(() => {
+    const opened = () => { if (store.link.state.kind === "open") up.value = true; };
+    opened();
+    const stop = store.link.onState(opened);
+    return () => { stop(); };
+  }, [store]);
   const hostKey = messagesHosts(store).map((h) => h.id).join(",");
   useEffect(() => {
     let current = true;
     lists.value = null;
-    void readLists(store).then((l) => { if (current) lists.value = l; });
+    if (!up.value) return;
+    void readLists(store).then((got) => { if (current) take(got); });
     return () => { current = false; };
-  }, [hostKey, asked.value, unreadOnly.value]);
+  }, [hostKey, asked.value, unreadOnly.value, up.value, store.machineLock.device.value.kind]);
 }
 
 /** How often the grey line is read again: the count asks every messaging connector over MCP. */
@@ -125,7 +138,8 @@ export function MessagesList({ store }: { store: Store }) {
   const loadMore = async () => {
     if (!l || more.value) return;
     more.value = true;
-    lists.value = await readLists(store, nextCursor.value, l);
+    const got = await readLists(store, nextCursor.value, l);
+    if (lists.value === l) take(got);
     more.value = false;
   };
 
@@ -173,8 +187,7 @@ function ConversationRow({ row }: { row: MessagesRow }) {
   const unread = unreadWords(c);
   return (
     <li data-key={row.key}>
-      <button type="button" class={`work-row messages-row${unread ? " unread" : ""}`}
-        onClick={() => go({ nav: "work", section: "messages", item: row.key })}>
+      <a class={`work-row messages-row${unread ? " unread" : ""}`} href={routeHash({ nav: "work", section: "messages", item: row.key })}>
         <span class="work-row-head">
           <span class="messages-source" title={channelName(c.source)} aria-label={channelName(c.source)}><Glyph of={sourceGlyph(c.source)} /></span>
           {c.sender && <span class="messages-sender" title={c.sender.identity}>{senderName(c.sender)}</span>}
@@ -182,7 +195,7 @@ function ConversationRow({ row }: { row: MessagesRow }) {
           {unread && <span class="messages-unread small">{unread}</span>}
           {c.lastActivity && <span class="quiet small docs-updated">{ago(new Date(c.lastActivity))}</span>}
         </span>
-      </button>
+      </a>
     </li>
   );
 }
@@ -202,6 +215,19 @@ export function ConversationPage({ store, conversationKey }: { store: Store; con
   const sendProblem = useSignal<string | null>(null);
   const l = lists.value;
   const row = l ? mergeConversations(l).find((r) => r.key === conversationKey) : undefined;
+  // A new tab on a conversation past the first page (#5482) reads further pages, a few at most, until it has it.
+  const pages = useSignal(1);
+  const finding = useSignal(false);
+  const looking = l !== null && !row && nextCursor.value !== undefined && pages.value < mostPagesToFind;
+  useEffect(() => {
+    if (!looking) return;
+    pages.value++;
+    finding.value = true;
+    void readLists(store, nextCursor.value, l).then((got) => {
+      if (lists.value === l) take(got);
+      finding.value = false;
+    });
+  }, [l, looking]);
   // Next (#5137): the next conversation in the list as it is filtered and sorted now.
   const next = l ? nextRow(mergeConversations(l, source.value), conversationKey) : undefined;
   const goNext = () => { if (next) go({ nav: "work", section: "messages", item: next.key }); };
@@ -251,7 +277,14 @@ export function ConversationPage({ store, conversationKey }: { store: Store; con
   };
   useEffect(() => { messages.value = null; problem.value = null; void read(false); }, [row?.key, row?.host]);
 
-  if (l === null) return <PlaceholderRows count={4} />;
+  if (l === null || looking || finding.value) return <PlaceholderRows count={4} />;
+  const problems = row ? [] : messagesProblems(l);
+  if (problems.length > 0) return (
+    <>
+      {problems.map((p) => <p key={p} class="hint">{p}</p>)}
+      <button type="button" class="link" onClick={() => { asked.value++; }}>Refresh</button>
+    </>
+  );
   if (!row) return <p class="hint">This conversation is not in the list any more. <button type="button" class="link" onClick={() => go({ nav: "work", section: "messages" })}>Messages</button></p>;
   const c = row.item.conversation;
   return (

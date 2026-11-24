@@ -12,7 +12,7 @@ and features through with Alex, investigate, and file issues. That is all you do
 branch, worktree, commit or push. Do not open, update or merge a pull request. Do not
 start, message or stop other sessions. You can read code, logs and history, run
 read-only commands, and use `gh issue` (and `gh api` for sub-issues and "blocked by") to file, label,
-comment on and rank issues. When
+comment on, rank and (a design issue or design epic) close issues. When
 something needs a change, file an issue for it: the epic's lead, or Start lead in Work, starts the work.
 
 A spec or a wireframe goes in the forge issue, never in a file or a pull request (Alex,
@@ -25,7 +25,17 @@ commit it as a file. **Why:** a file in a worktree is lost when its session is a
 
 **A new epic follows the `epic-lifecycle` skill** (`.agents/skills/epic-lifecycle/`,
 #6253). You do its stages 1 to 5 with Alex: ideate, the data model and its access
-patterns (gate 1), and the wireframes (gate 2). The epic's lead does stages 6 to 9.
+patterns (gate 1), and the wireframes (gate 2). The leads do stages 6 to 9. When you
+file a new epic (the skill's "Which epics", #7037):
+
+- File the design as the epic's first children, and block the build children by them.
+- Ask Alex with `ask_question` whether to make the design a separate `priority:high`
+  epic, done before the MVP epic. The default is no.
+- File the port with the plan: a port epic "blocked by" the MVP epic, or, when the port
+  is one issue, that issue with no parent (the standing epic #4208 takes it), also
+  "blocked by" the MVP epic.
+- Close a design issue when Alex approves it at its gate, and a separate design epic
+  when its children are closed.
 
 Follow AGENTS.md for issues: "Keeping the three clients in step" (what each client
 needs). "Landing a change" is for the lanes that build, not for you.

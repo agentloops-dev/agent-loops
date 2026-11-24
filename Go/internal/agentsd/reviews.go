@@ -3,6 +3,8 @@ package agentsd
 import (
 	"context"
 	"log"
+	"maps"
+	"os"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -10,6 +12,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/diskjson"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/internal/lineage"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
@@ -20,13 +24,18 @@ import (
 // the person dismisses it. Read with forge/pulls (#3129), one GitHub search for every folder,
 // on its own poll; said with each folder's pins
 // (FolderPins.reviews, pins/changed). A dismissal is kept in <root>/review-dismissals.json,
-// so a dismissed pull request never comes back; not in the folder's .agents/pins.json, which
-// a repo may check in. A pull request the person opened is kept in <root>/review-opened.json
+// not in the folder's .agents/pins.json, which a repo may check in. It ages out 90 days after
+// the pull request last changed (or was dismissed, when that is later), and For Review leaves
+// out a pull request that has not changed for as long, so a dismissed one does not come back
+// (#6728). A pull request the person opened is kept in <root>/review-opened.json
 // (#3464), so every client draws its row read.
 
 const (
-	// reviewDismissalsPerFolder bounds the dismissals kept for one folder: the oldest go first.
-	reviewDismissalsPerFolder = 200
+	// reviewDismissalsMost bounds the dismissals kept: the oldest go first.
+	reviewDismissalsMost = 2000
+	// reviewKeep is how long a dismissal is kept, and how long a pull request that does not
+	// change is listed: the same, or an aged-out dismissal would bring its pull request back.
+	reviewKeep = store.MaxAge
 	// reviewOpenedPerFolder bounds the opened pull requests kept for one folder: the oldest go first.
 	reviewOpenedPerFolder = 200
 )
@@ -41,9 +50,8 @@ type reviewBook struct {
 	reviewMu sync.Mutex
 	// reviews is each folder's pull requests for review as last read, dismissed ones left out.
 	reviews map[string][]wire.ReviewPull
-	// dismissed is each folder's dismissed pull requests' URLs, oldest first.
-	dismissed       map[string][]string
-	dismissedLoaded bool
+	// dismissed is review-dismissals.json, by reviewDismissalKey.
+	dismissed *store.JSONFile[reviewDismissal]
 	// opened is each folder's opened pull requests' URLs, oldest first.
 	opened       map[string][]string
 	openedLoaded bool
@@ -53,16 +61,71 @@ func (d *Daemon) reviewDismissalsPath() string {
 	return filepath.Join(d.Store.Loc.Root, "review-dismissals.json")
 }
 
-func (d *Daemon) dismissedLocked() map[string][]string {
-	if !d.dismissedLoaded {
-		d.dismissedLoaded = true
-		d.dismissed = map[string][]string{}
-		readStore(d.reviewDismissalsPath(), &d.dismissed, "every dismissed pull request may be listed again")
-		if d.dismissed == nil {
-			d.dismissed = map[string][]string{}
+// reviewDismissal is a pull request dismissed from a folder's For Review.
+type reviewDismissal struct {
+	Folder string   `json:"folder"`
+	URL    wire.URL `json:"url"`
+	// At is when it was dismissed, or when the pull request last changed since.
+	At wire.Date `json:"at"`
+}
+
+func reviewDismissalKey(folder string, url wire.URL) string { return folder + "|" + string(url) }
+
+// openReviewDismissals opens the dismissals. A file from before #6728 was each folder's URLs,
+// oldest first, with no time: they are dated now.
+func (d *Daemon) openReviewDismissals() *store.JSONFile[reviewDismissal] {
+	f := smallFile(d, store.Spec{Name: "review-dismissals.json", Kind: "key-value", Scope: "machine",
+		Bounds: store.Bounds{MaxRecordBytes: 8 << 10, MaxCount: reviewDismissalsMost, MaxAge: reviewKeep, Action: store.EvictOldest}},
+		d.reviewDismissalsPath, func(r *reviewDismissal) *wire.Date { return &r.At })
+	var old map[string][]wire.URL
+	data, err := os.ReadFile(d.reviewDismissalsPath())
+	if err != nil || diskjson.Unmarshal(data, &old) != nil || len(old) == 0 {
+		return f
+	}
+	entries := map[string]reviewDismissal{}
+	for folder, urls := range old {
+		for _, url := range urls {
+			entries[reviewDismissalKey(folder, url)] = reviewDismissal{Folder: folder, URL: url, At: wire.DateOf(nowFunc())}
 		}
 	}
-	return d.dismissed
+	// Not by Update, which would set the old file aside as corrupt.
+	raw, err := diskjson.Marshal(entries)
+	if err == nil {
+		// store-bounds: not a store: the file above, in its new form
+		err = store.WriteAtomically(d.reviewDismissalsPath(), raw, 0o600)
+	}
+	if err != nil {
+		log.Printf("review-dismissals.json: could not bring over the dismissals: %v", err)
+	}
+	return f
+}
+
+// dismissedLocked is the dismissals, each of a pull request in read dated by its last change.
+func (d *Daemon) dismissedLocked(read map[string][]wire.ReviewPull) map[string]reviewDismissal {
+	dismissed, err := d.dismissed.Read()
+	if err != nil {
+		log.Printf("for review: every dismissed pull request may be listed again: %v", err)
+		return dismissed
+	}
+	newer := map[string]reviewDismissal{}
+	for folder, prs := range read {
+		for _, p := range prs {
+			key := reviewDismissalKey(folder, p.URL)
+			if r, ok := dismissed[key]; ok && p.UpdatedAt > r.At {
+				r.At = p.UpdatedAt
+				newer[key] = r
+			}
+		}
+	}
+	if len(newer) > 0 {
+		if err := d.dismissed.Update(func(m map[string]reviewDismissal) error {
+			maps.Copy(m, newer)
+			return nil
+		}); err != nil {
+			log.Printf("for review: the dismissals were not written: %v", err)
+		}
+	}
+	return dismissed
 }
 
 func (d *Daemon) reviewOpenedPath() string {
@@ -144,15 +207,18 @@ func (d *Daemon) readReviews(ctx context.Context) {
 	d.setReviews(read)
 }
 
-// setReviews keeps what was read, dismissed ones left out, and says each folder that changed.
+// setReviews keeps what was read, dismissed ones and ones unchanged for reviewKeep left out, and says each folder that changed.
 func (d *Daemon) setReviews(read map[string][]wire.ReviewPull) {
 	d.reviewMu.Lock()
-	dismissed := d.dismissedLocked()
+	dismissed := d.dismissedLocked(read)
+	cutoff := wire.DateOf(nowFunc().Add(-reviewKeep))
 	next := map[string][]wire.ReviewPull{}
 	for folder, prs := range read {
 		var kept []wire.ReviewPull
 		for _, p := range prs {
-			if !slices.Contains(dismissed[folder], string(p.URL)) {
+			_, out := dismissed[reviewDismissalKey(folder, p.URL)]
+			// A forge that gave no time gives 0, which is not old.
+			if old := p.UpdatedAt != 0 && p.UpdatedAt <= cutoff; !out && !old {
 				kept = append(kept, p)
 			}
 		}
@@ -187,19 +253,14 @@ func (d *Daemon) setReviews(read map[string][]wire.ReviewPull) {
 	}
 }
 
-// dismissReview takes a pull request out of a folder's For Review for good.
+// dismissReview takes a pull request out of a folder's For Review.
 func (d *Daemon) dismissReview(folder string, url wire.URL) {
 	d.reviewMu.Lock()
-	dismissed := d.dismissedLocked()
-	if !slices.Contains(dismissed[folder], string(url)) {
-		kept := append(dismissed[folder], string(url))
-		if len(kept) > reviewDismissalsPerFolder {
-			kept = kept[len(kept)-reviewDismissalsPerFolder:]
-		}
-		dismissed[folder] = kept
-		if err := writeStore(d.reviewDismissalsPath(), dismissed); err != nil {
-			log.Printf("for review: the dismissals were not written: %v", err)
-		}
+	if err := d.dismissed.Update(func(m map[string]reviewDismissal) error {
+		m[reviewDismissalKey(folder, url)] = reviewDismissal{Folder: folder, URL: url, At: wire.DateOf(nowFunc())}
+		return nil
+	}); err != nil {
+		log.Printf("for review: the dismissals were not written: %v", err)
 	}
 	prs := slices.DeleteFunc(slices.Clone(d.reviews[folder]), func(p wire.ReviewPull) bool { return p.URL == url })
 	if len(prs) == 0 {
