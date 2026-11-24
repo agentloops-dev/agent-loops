@@ -18,6 +18,8 @@ import chevronLeft from "lucide:chevron-left";
 import chevronRight from "lucide:chevron-right";
 import chevronUp from "lucide:chevron-up";
 import circle from "lucide:circle";
+import clipboardPaste from "lucide:clipboard-paste";
+import copy from "lucide:copy";
 import circleCheck from "lucide:circle-check";
 import circleDashed from "lucide:circle-dashed";
 import circleDot from "lucide:circle-dot";
@@ -118,7 +120,7 @@ const icons = {
   "wifi-off": wifiOff, "folder-search": folderSearch, "user-x": userX, history, coins, "building-2": building2,
   pencil, search, brain, hammer, "square-arrow-right": squareArrowRight, "scroll-text": scrollText, "message-circle-question-mark": messageCircleQuestionMark, "undo-2": undo2, "clock-fading": clockFading, "circle-alert": circleAlert,
   "git-branch": gitBranch, "git-merge": gitMerge, cloud, hash, "square-dot": squareDot, "square-plus": squarePlus, "square-minus": squareMinus, "arrow-right": arrowRight, "shield-check": shieldCheck, hourglass, pointer, calendar, "corner-down-right": cornerDownRight, "loader-circle": loaderCircle,
-  key, contact, package: packageIcon, droplet, cpu, server, code,
+  key, contact, package: packageIcon, droplet, cpu, server, code, copy, "clipboard-paste": clipboardPaste,
 } satisfies Record<string, Node[]>;
 
 export type IconName = keyof typeof icons;

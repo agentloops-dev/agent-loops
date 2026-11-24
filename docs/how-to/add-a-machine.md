@@ -167,8 +167,10 @@ server needs no browser: the web page opens the sign-in page in yours.
 
 1. On the web page, open **Machines ▸ Runtimes**. Under the server's heading, Claude or
    Codex says **Not usable: not signed in**. Click **Sign In…**.
-2. Click **Open Link**, and sign in to your account on the page it opens.
-   - **Claude:** the page gives a code. Paste it into the sheet and click **Sign In**.
+2. Click the link, and sign in to your account on the page it opens. (The copy icon next
+   to it copies the link.)
+   - **Claude:** the page gives a code. Copy it, click the paste icon next to the code field, and
+     click **Sign In**. You cannot type in the field.
      Claude makes a sign-in that lasts a year, kept on the server for Agent Loops only.
    - **Codex:** type the code the sheet shows on the page, then click **Done**. If OpenAI
      does not take the code, turn on device code sign-in in ChatGPT's security settings.
