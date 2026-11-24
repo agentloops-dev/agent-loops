@@ -139,7 +139,6 @@
 2 Go/internal/controlplane/backups.go v1/backups
 1 Go/internal/controlplane/bots.go v1/runs
 1 Go/internal/controlplane/builds.go v1/build-timings
-1 Go/internal/controlplane/bus.go v1/bus
 1 Go/internal/controlplane/capacity.go runtime/control-capacity
 2 Go/internal/controlplane/codes.go v1/codes
 1 Go/internal/controlplane/copies.go v1/copies

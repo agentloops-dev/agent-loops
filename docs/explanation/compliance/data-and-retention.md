@@ -247,7 +247,7 @@ the other copies of the control plane learn that it went.
 | Org keys and gateways | key-value; secret | Routes and their sealed secrets | 50 routes | Tombstone, hourly |
 | Warm pools | document | Pools of ready machines, and their claims | No count limit (#6761) | On remove |
 | Failed machine makes | log | Why a machine could not be made | 5 a provider, deleted with the provider. No age. | On write; on remove |
-| Event bus | log | Events between a person's machines: refs, names and times, and sealed data | 100,000 a person. No age, and not deleted with the person (#6671). | Hourly |
+| Event bus | log | Events between a person's machines: refs, names and times, and sealed data | 90 days; 100,000 envelopes and 1 GiB of encoded log records a person, the oldest deleted first with their dedupe ids. An envelope is at most 24 MiB encoded: 64 sealed copies of 256 KiB, in base64. Deleted when the person is removed (#6671). | On write; hourly; on remove |
 | Budgets | key-value | The org's budgets | One (#6778) | On write |
 | Feature maturity | document | Evidence for each feature's rating | 84 records of 4 KiB. No age. | On write |
 

@@ -483,7 +483,7 @@ newer than a row above for the same store.
 | `agentsctl` `~/.agents-go/ctl.json` | key-value | One pairing | 1; no unpair, so it stays for ever; outside .agents | `Go/cmd/agentsctl/main.go:29-35,148` | #6808 |
 
 Two more stores have a bug instead of a store issue: the bus log `v1/bus/` (log; 100,000
-envelopes a person, no age; #6671) and `v1/release-keys/` (secret; deleted with the machine and
+envelopes and 1 GiB a person, 90 days; #6671) and `v1/release-keys/` (secret; deleted with the machine and
 swept hourly; #6672, closed).
 
 ### Stores found for #6684

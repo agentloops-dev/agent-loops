@@ -387,9 +387,9 @@ func sweepUsages(ctx context.Context, rs *records.Records, now time.Time, left i
 	if err != nil {
 		return usage, err
 	}
-	// The bus log past its last busLogKept envelopes (#4729), counted with them too. Its own
-	// bound: a busy bus can add more than a sweep's in an hour.
-	busOld, err := sweepBus(ctx, s, busLogKept, busLogKept/10)
+	// The bus log's age, count and byte bounds (#4729), counted with them too. Its own
+	// deletion cap: a busy bus can add more records than one sweep removes.
+	busOld, err := sweepBusAt(ctx, s, now, busLogKept, busLogMaxBytes, busLogMaxAge, busLogKept/10)
 	usage += busOld
 	if err != nil {
 		return usage, err
