@@ -3895,6 +3895,7 @@ final class AppModel {
             work.replaceAgents([], from: id)
             pruneFolderDefaults(of: id, listed: [])
         }
+        localCopy?.listed(machines: listed.map(\.id))
     }
 
     /// A client for one of the control plane's hosts, connected: first directly over its

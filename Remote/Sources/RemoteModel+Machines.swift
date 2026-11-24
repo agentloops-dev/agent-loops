@@ -600,6 +600,7 @@ extension RemoteModel {
                 pruneFolderDefaults(of: id, listed: [])
             }
         }
+        localCopy?.listed(machines: listed.map(\.id))
     }
 
     /// What another host says that the shared model does not claim, and the phone wants:
