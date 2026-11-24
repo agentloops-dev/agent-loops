@@ -198,6 +198,13 @@ servers. It also forgets clients whose key expired (#6757), and machines with no
 the approvals of people and groups that are gone, and probes and move marks left by a
 copy that stopped (#3748).
 
+The control plane's configuration (its settings, sign-in settings, policy, budgets, org keys
+and gateways, audit sinks, report views, and a person's settings and secrets) stays in the
+control plane's own store (Alex, 2026-11-24), and has no age: it stays until it is changed or
+removed. A write over a limit is refused with a message, and nothing is evicted. A record
+that is over its largest already is kept, and can be changed to one no larger (#6771 to
+#6781).
+
 A removed client, machine, group, project, route or machine provider leaves a **tombstone** for 7 days, so
 the other copies of the control plane learn that it went. A removed person's stays longer (below).
 
@@ -212,7 +219,7 @@ the other copies of the control plane learn that it went. A removed person's sta
 | Groups, projects | document | Name and members; name, owner, slots and boards | 1,000 groups; 500 projects a person | Tombstone, hourly |
 | Projects' folders | document | Each machine's joined folders | 1,000 | Hourly |
 | Machine locks | log | Each person's lock chain | 4,096 entries a person. Deleted when the person is removed (#3647) | On **Reset** and on remove |
-| A person's settings and secrets | key-value; secret | Settings that follow a person; secrets, sealed | 256 KiB of settings, 200 secrets of 16 KiB | When the person is removed |
+| A person's settings and secrets | key-value; secret | Settings that follow a person; secrets, sealed | 256 KiB of settings, 200 secrets of 16 KiB, each sealed to 200 machines and apps at most: 256 KiB a part (16 KiB for the small ones), 5 MiB of settings as kept and 5 MiB a sealed secret; 100 offers from agents; more is refused. A secret names the newest 200 removed machines it was on. They follow the person to each machine, so they are not in one machine's `~/.agents`, and they are the person's own data, so they have no age. A removed secret's tombstone (its name, version and time) goes after 90 days; at 200 tombstones a new name is refused (#6780) | Limits on write; tombstones hourly; all of it when the person is removed |
 | Channel links | document | Which person a channel identity is, and when it last acted | 4 KiB a record and 1 MiB in all: an approval over that is refused, and the request still waits. No link is evicted. A link goes 90 days after its identity last acted; a message from it renews the link (noted once a day). After that, a message asks the person again (#6763) | Size before an approval, age hourly; also on unlink, or when the person is removed |
 | Machine set-up | document | Each machine's set-up steps | One a machine, deleted when the machine is removed. No age. | On remove |
 | Machine set-up times | time series | How long each set-up step took, and when it ended | 90 days, 50 a step (#6760), 32 KiB at most. No roll-up. | On write, hourly |
@@ -228,7 +235,7 @@ the other copies of the control plane learn that it went. A removed person's sta
 | Join, lock-join and sign-in requests | document | The asking key and its address | 10 minutes; 50, 200 and 50 open | On read and hourly, 1 hour after expiry |
 | Link requests | document | A channel link that waits | 24 hours; 50 open | On read and hourly, 24 hours after expiry |
 | Sign-in state | secret | PKCE state and sealed refresh tokens while a sign-in runs | 10 and 2 minutes; 1,000 sign-ins started, each with at most one ticket (#3748) | Hourly, 1 hour after expiry |
-| Sign-in settings | key-value; secret | Org OIDC providers, domain claims, one sealed refresh token a person and provider | 5 providers, 20 domains | On remove |
+| Sign-in settings | key-value; secret | Org OIDC providers, domain claims, one sealed refresh token a person and provider | The sign-in settings are one record of 16 KiB (50 domains, 50 organisations). 5 org providers of 16 KiB, and 20 domain claims of 4 KiB; more is refused. The daily check of a claim is never refused. A removed provider's tombstone keeps its ID from a new provider: it goes after 90 days, or when no person and no SCIM token or name has the ID, whichever is later; at 95 tombstones a new provider is refused (#6773, #6774, #6775) | On write; tombstones hourly; a claim also with its provider |
 | SCIM and read tokens | secret | Token hashes, address of last use | SCIM: 2 live of 20 a provider; read: 10 live of 50; a new one over 8 KiB is refused. A live token has no age: until it is revoked or ends. A revoked or ended one goes 90 days after that; a removed provider's go with it (#6766, #6767) | On write; hourly |
 | Policy, governance and remove requests | document | Asks for a budget, a catalogue item, or removal of a person | 1,000; a decided one 30 days; a governance one 90 days from the ask at most, and 8 KiB (#6764) | On read and hourly |
 
@@ -244,16 +251,17 @@ the other copies of the control plane learn that it went. A removed person's sta
 | Deploys | document | Each machine's deploys, as refs, names, states and times: the component, the environments and their tiers, the end, whether it is a rollback, the merge times of the PRs it brings and the health signals seen in it, in `v1/deploys/<machine>.json` (#5496). No titles, no logs | As on the machine: 1,000 deploys; each send replaces the last. A removed machine's goes a day after its last send | On write, hourly |
 | Build timings | time series | Each machine's CI runs of a repository, with their jobs and steps, as refs, times, attempts, conclusions, runner labels and names, in `v1/build-timings/<machine>/` (#5232). No commit or PR titles, no logs | As on the machine: 90 days, 20,000 runs a repository, a pull request run's steps for 14 days. A machine that stopped sending is bounded once a day; a removed machine's goes a day after its last send | On write, hourly |
 | Workflow runs | log | Which machine took each workflow trigger | 7 days | Hourly |
-| Report views | key-value | Saved report views | 50 a person | When the person is removed |
+| Report views | key-value | Saved report views | 50 and 64 KiB a person; more is refused (#6779) | On write; when the person is removed |
 | Machine providers | document | Each provider | 10, and 64 KiB each: one more, or one larger, is refused. It is configuration, so it has no age: until removed. A removed one's tombstone, with none of its commands, for 7 days, and the newest 100 (#3748, #6762) | On write; hourly |
 | Tunnels | document | Servers' reverse tunnels | 15 minutes unjoined | On use |
-| Policy | key-value | The org policy and its old versions | 64 KiB each. The policy in force has no age. An old version goes 90 days after it was replaced; the newest 100 (#6765) | On write; hourly |
+| Control plane settings | key-value | Its name, address, owner, public keys, home machine, folder detection and audit days | One record of 64 KiB: folders or places to answer past that are refused. What the control plane writes itself (its own address and key) is never refused (#6771) | On write |
+| Policy | key-value | The org policy, its signature and its old versions | One policy of 64 KiB, and a signature of 1 KiB; a larger one is refused. The kill switch is never refused for the size (#6772). The policy in force has no age. An old version goes 90 days after it was replaced; the newest 100 (#6765) | On write; hourly |
 | Governance | document | Installed servers and skills; approvals | 500 items and 1 MiB a machine; 1,000 approvals of 8 KiB: one more, or a larger record, is refused. An approval in force has no age: it stays until an admin takes it back, or its person or group is gone (#3748, #6764) | Hourly |
-| Org keys and gateways | key-value; secret | Routes and their sealed secrets | 50 routes | Tombstone, hourly |
+| Org keys and gateways | key-value; secret | Routes and their sealed secrets | 50 routes of 256 KiB, and 4 MiB of sealed copies each (200 machines and apps); more is refused (#6776) | On write; tombstone, hourly |
 | Warm pools | document | Pools of ready machines, and their claims | 10 a provider, over every person, and 256 KiB a pool: a pool past that is refused. Claims: 7 days and 500 a pool. The pool has no age. Deleted, with the machines nobody claimed, when the person is removed (#6761). | On write; every 30 s; on remove |
 | Failed machine makes | log | Why a machine could not be made | 5 a provider, deleted with the provider. No age. | On write; on remove |
 | Event bus | log | Events between a person's machines: refs, names and times, and sealed data | 90 days; 100,000 envelopes and 1 GiB of encoded log records a person, the oldest deleted first with their dedupe ids. An envelope is at most 24 MiB encoded: 64 sealed copies of 256 KiB, in base64. Deleted when the person is removed (#6671). | On write; hourly; on remove |
-| Budgets | key-value | The org's budgets | One (#6778) | On write |
+| Budgets | key-value | The org's budgets | One record of 4 KiB, with one budget (#6778) | On write |
 | Feature maturity | document | Evidence for each feature's rating | 84 records of 4 KiB. No age. | On write |
 
 ### Audit, keys and backups
@@ -262,7 +270,7 @@ the other copies of the control plane learn that it went. A removed person's sta
 | --- | --- | --- | --- | --- |
 | Audit events | log | Who did what (see [Security overview](security-overview.md#who-did-what)) | 90 days by default; an admin sets 1 to 90 days (hosted: 7 or 90). At most 1,000,000 entries, of at most 16 KiB each: the oldest over that go, even when they are newer than the days set. A longer text in an entry is cut. No roll-up: the long copy is the SIEM sink's (#6755). | Hourly, oldest first; before the hour at 2,000,000 entries |
 | Change events between copies | log | What changed, when the control plane has several copies | 1 day, in `v1/mesh/events/` (#3648) | Hourly, by day |
-| Audit seals and sinks | log; key-value | Each day's chain head; up to 4 SIEM sinks with sealed tokens | With the day; 4 sinks | Hourly |
+| Audit seals and sinks | log; key-value | Each day's chain head; up to 4 SIEM sinks with sealed tokens | With the day; 4 sinks in one record of 64 KiB, more is refused (#6777) | Hourly; sinks on write |
 | Keys | secret | The sealed control key and the previous one; the sealed key for server backups | 2; the previous one 30 days | — |
 | Server backups | blob | Servers' sealed backups (their transcripts) | The newest **Keep** of each server (1 to 10). At most 20 GiB a server, the newest always kept; a backup over 20 GiB is refused (#3648). A removed server's for 90 days after its newest. A cut-off backup's parts after a day; a name more than a day ahead is refused, and its parts deleted. | After each backup, and daily |
 | Leases and heartbeats | document | Which copy holds what | 30 seconds | Hourly |
@@ -303,7 +311,7 @@ account's machines. It leaves the operator's backups of it, and Stripe's own rec
 | Keychain `com.alexecollins.agentshost` | secret | The control key, bucket keys, and `control-key-before-<time>` | One of each; the newest 2 `control-key-before-*` items, deleted with the old stores (#3671) |
 | `~/Library/Logs/Agents/control.log` | log | What the control plane did | 4 MB, and one older file |
 | The Web Push key | secret | The key that signs browser push | One. In `agents-control backup` as `webpush-key.pem` (#3651). |
-| `Agents Control/web-off` | key-value | That the web page is off | One marker file (#6781) |
+| `Agents Control/web-off` | key-value | That the web page is off | One empty file, beside the control plane's store, until the page is turned on. It is this control plane's own configuration, so it is not in a person's `~/.agents` (#6781) |
 
 ## On each client
 

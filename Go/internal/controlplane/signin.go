@@ -30,7 +30,12 @@ import (
 // that client (signIn/addToMe). No token is kept, written or logged.
 
 // signInKey is v1/signin.json: which providers an admin turned on, and what they allow.
+//
+// store-bounds: kind=key-value; count=1; size=16KiB a record; age=until-deleted; applied=on write
 const signInKey = "v1/signin.json"
+
+// signInMostBytes is the largest signInKey record (#6773): 50 domains and 50 organisations.
+const signInMostBytes = 16 << 10
 
 type signInSettings struct {
 	Google struct {
@@ -313,6 +318,9 @@ func (si *signIns) configure(ctx context.Context, c wire.SignInConfigure, user s
 		}
 		data, err := records.Encode(settings)
 		if err != nil {
+			return wire.SignInProviders{}, err
+		}
+		if err := records.Fits(ctx, si.s.cfg.Store, signInKey, "The sign-in settings", data, signInMostBytes); err != nil {
 			return wire.SignInProviders{}, err
 		}
 		condition := store.Absent
