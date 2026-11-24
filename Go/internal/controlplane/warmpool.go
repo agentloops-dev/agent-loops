@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -32,7 +33,23 @@ import (
 // machine is, and counts for neither.
 
 const (
+	// A pool is its person's configuration: it has no age, and goes when the person deletes
+	// it or is removed (#6761). It stays in the control plane's own store (Alex, 2026-11-24).
+	// store-bounds: kind=document; size=256KiB a pool, 10 pools a provider, claims 7d; age=until-deleted; applied=on write, on person removal and every 30 s pass
 	warmPoolPrefix = "v1/warm-pools/"
+	// mostPoolsAProvider is gate 1's limit (#6669), over every person. One more is refused.
+	mostPoolsAProvider = 10
+	// warmPoolMost is the largest record. Of it, what the person sets takes at most
+	// warmPoolSetMost; a pool makes no more machines past warmPoolMakeMost, so that its
+	// machines and claims always fit: one that was made is never lost for want of room.
+	warmPoolMost     = 256 << 10
+	warmPoolSetMost  = 32 << 10
+	warmPoolMakeMost = 128 << 10
+	// poolStoppedMost is the longest reason a pool keeps for why it stopped.
+	poolStoppedMost = 2 << 10
+	// poolForgetAgain is how long until a removed person's pool whose machines could not all
+	// be deleted is tried again.
+	poolForgetAgain = 5 * time.Minute
 	// defaultReplaceAfter: a ready machine is replaced after a day.
 	defaultReplaceAfter = 24 * time.Hour
 	// poolFailuresStop: this many makes that fail in a row stop the pool.
@@ -302,6 +319,8 @@ type warmPools struct {
 	// work, before its pool keeps it.
 	makingMu sync.Mutex
 	making   map[string]storedPool
+	// forgetTried is when a removed person's pool was last tried, by id; mu holds it.
+	forgetTried map[string]time.Time
 }
 
 func (w *warmPools) nowMaking(name string, p *storedPool) {
@@ -394,8 +413,122 @@ func (w *warmPools) write(ctx context.Context, p *storedPool, tag string) error 
 	if err != nil {
 		return err
 	}
+	if len(data) > warmPoolMost {
+		return fail(invalidParams, "A warm pool is %d KiB at most.", warmPoolMost>>10)
+	}
 	_, err = w.s.cfg.Store.Put(ctx, warmPoolKey(p.ID), data, when)
 	return err
+}
+
+// recordSize is what a pool takes in the store.
+func (p *storedPool) recordSize() int {
+	data, _ := json.Marshal(p)
+	return len(data)
+}
+
+// setSize is what the part that a person sets takes.
+func (p *storedPool) setSize() int {
+	set := *p
+	set.Machines, set.Claims, set.Stopped = nil, nil, ""
+	return set.recordSize()
+}
+
+// dropOldClaims drops the claims older than poolClaimsKept, and past mostPoolClaims.
+func (p *storedPool) dropOldClaims(now time.Time) {
+	p.Claims = slices.DeleteFunc(p.Claims, func(c storedPoolClaim) bool { return now.Sub(c.At) > poolClaimsKept })
+	if over := len(p.Claims) - mostPoolClaims; over > 0 {
+		p.Claims = p.Claims[over:]
+	}
+}
+
+// stop stops the pool, and tells its person why.
+func (w *warmPools) stop(p *storedPool, why string) {
+	if len(why) > poolStoppedMost {
+		why = strings.ToValidUTF8(why[:poolStoppedMost], "") + "…"
+	}
+	p.Stopped = why
+	w.backend.Stopped(p.Owner, p.Name, why)
+}
+
+// providerFull refuses a new pool on a provider that has mostPoolsAProvider, whoever's they
+// are. One that is past the limit already stays, and can be changed.
+func (w *warmPools) providerFull(ctx context.Context, provider string) error {
+	pools, err := w.all(ctx, "")
+	if err != nil {
+		return fail(storeUnavailable, "The warm pools could not be read: %v", err)
+	}
+	n := 0
+	for _, p := range pools {
+		if p.Provider == provider {
+			n++
+		}
+	}
+	if n >= mostPoolsAProvider {
+		return fail(invalidParams, "This provider has %d warm pools, everyone's together, and %d is the most. Delete one first, or use another provider.", n, mostPoolsAProvider)
+	}
+	return nil
+}
+
+// forget deletes a removed person's pool (#6761): its machines, none of which was claimed,
+// then the pool. One with a machine that could not be deleted stays, and makes nothing, until
+// a later pass deletes it. The write before the delete holds only while the pool is as it was
+// read, so a machine that another copy makes meanwhile is deleted there. The caller holds mu.
+func (w *warmPools) forget(ctx context.Context, p *storedPool, tag string, now time.Time) error {
+	if tried, ok := w.forgetTried[p.ID]; ok && now.Sub(tried) < poolForgetAgain {
+		return nil
+	}
+	if w.forgetTried == nil {
+		w.forgetTried = map[string]time.Time{}
+	}
+	w.forgetTried[p.ID] = now
+	if !w.backend.HasProvider(p.Provider) {
+		gone, err := w.providerGone(ctx, p.Provider)
+		if err != nil || !gone {
+			return err
+		}
+		// Nothing can delete them any more.
+		for _, m := range p.Machines {
+			w.s.log(fmt.Sprintf("warm pool %s: %s is not deleted: its provider was removed", p.Name, m.Name))
+		}
+		p.Machines = nil
+	}
+	p.Machines = slices.DeleteFunc(p.Machines, func(m storedPoolMachine) bool {
+		err := w.backend.Delete(p.Owner, p.Provider, m.Workspace)
+		if err != nil {
+			w.s.log(fmt.Sprintf("warm pool %s: delete %s, as its person was removed: %v", p.Name, m.Name, err))
+		}
+		return err == nil
+	})
+	p.Stopped = "its person was removed"
+	if err := w.write(ctx, p, tag); err != nil {
+		if isConflict(err) {
+			delete(w.forgetTried, p.ID)
+			return nil
+		}
+		return err
+	}
+	if len(p.Machines) > 0 {
+		return nil
+	}
+	if err := w.s.cfg.Store.Delete(ctx, warmPoolKey(p.ID)); err != nil {
+		return err
+	}
+	delete(w.forgetTried, p.ID)
+	w.s.log(fmt.Sprintf("warm pool %s deleted: its person was removed", p.Name))
+	return nil
+}
+
+// providerGone says a provider was removed, and not only that it is not read here yet.
+func (w *warmPools) providerGone(ctx context.Context, provider string) (bool, error) {
+	object, err := w.s.cfg.Store.Get(ctx, providers.ProviderKey(provider))
+	if err != nil || object == nil {
+		return err == nil, err
+	}
+	var record providers.ProviderRecord
+	if json.Unmarshal(object.Data, &record) != nil {
+		return false, nil
+	}
+	return record.Forgotten != nil && *record.Forgotten, nil
 }
 
 // all is every pool, or the person's own when person is not "".
@@ -512,17 +645,8 @@ func (w *warmPools) recordClaim(ctx context.Context, id string, c storedPoolClai
 			w.mu.Unlock()
 			return
 		}
-		kept := p.Claims[:0:0]
-		for _, old := range p.Claims {
-			if c.At.Sub(old.At) <= poolClaimsKept {
-				kept = append(kept, old)
-			}
-		}
-		kept = append(kept, c)
-		if len(kept) > mostPoolClaims {
-			kept = kept[len(kept)-mostPoolClaims:]
-		}
-		p.Claims = kept
+		p.Claims = append(p.Claims, c)
+		p.dropOldClaims(c.At)
 		err = w.write(ctx, p, tag)
 		w.mu.Unlock()
 		if err == nil {
@@ -558,34 +682,10 @@ func machineName(pool string) string {
 	return slug + "-" + hex.EncodeToString(b)
 }
 
-// reconcile runs one pass over a pool: it drops what the plan says, makes what it says, and
-// keeps the outcome.
-func (w *warmPools) reconcile(ctx context.Context, id string) error {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	p, tag, err := w.read(ctx, id)
-	if err != nil || p == nil {
-		return err
-	}
-	now := time.Now()
-	machines := w.machines(p, now)
-	if p.SetAt == nil {
-		p.SetAt = &now
-	}
-	if why, failed := w.failedInRow(p, machines); failed && p.Stopped == "" {
-		p.Stopped = why
-		w.backend.Stopped(p.Owner, p.Name, why)
-	}
-	plan := planPool(p, machines, now, w.backend.Version(), w.backend.Pins())
-	if !w.backend.HasProvider(p.Provider) || plan.makes > 0 && w.backend.ProjectsWait(p.Owner, p.Projects) != "" {
-		// With no make, an old machine is not deleted for its replacement either.
-		if plan.makes > 0 && w.backend.HasProvider(p.Provider) {
-			plan.deletes = nil
-		}
-		plan.makes = 0
-	}
+// deletePlanned deletes the pool's machines that the plan says, by their index in machines.
+func (w *warmPools) deletePlanned(p *storedPool, machines []poolMachine, deletes []int) {
 	gone := map[string]bool{}
-	for _, i := range plan.deletes {
+	for _, i := range deletes {
 		m := machines[i]
 		if err := w.backend.Delete(p.Owner, p.Provider, m.Workspace); err != nil {
 			w.s.log(fmt.Sprintf("warm pool %s: delete %s: %v", p.Name, m.Name, err))
@@ -600,13 +700,22 @@ func (w *warmPools) reconcile(ctx context.Context, id string) error {
 		}
 	}
 	p.Machines = kept
+}
+
+// makePlanned makes the pool's machines, and returns their workspaces, and done, to call once
+// the pool is kept with them.
+func (w *warmPools) makePlanned(p *storedPool, makes int) (made []string, done func()) {
 	var making []string
-	defer func() {
+	done = func() {
 		for _, name := range making {
 			w.nowMaking(name, nil)
 		}
-	}()
-	for n := 0; n < plan.makes; n++ {
+	}
+	for n := 0; n < makes; n++ {
+		if p.recordSize() > warmPoolMakeMost {
+			w.stop(p, "it holds too many machines that were not set up: delete the pool and make it again")
+			break
+		}
 		name := machineName(p.Name)
 		w.nowMaking(name, p)
 		making = append(making, name)
@@ -615,20 +724,70 @@ func (w *warmPools) reconcile(ctx context.Context, id string) error {
 			p.Failures++
 			w.s.log(fmt.Sprintf("warm pool %s: make failed (%d in a row): %v", p.Name, p.Failures, err))
 			if p.Failures >= poolFailuresStop {
-				p.Stopped = errorText(err)
-				w.backend.Stopped(p.Owner, p.Name, p.Stopped)
+				w.stop(p, errorText(err))
 			}
 			break
 		}
 		p.Failures = 0
-		made := time.Now()
-		p.LastMade = &made
-		p.Machines = append(p.Machines, storedPoolMachine{Name: name, Workspace: workspace, MadeAt: made,
+		at := time.Now()
+		p.LastMade = &at
+		made = append(made, workspace)
+		p.Machines = append(p.Machines, storedPoolMachine{Name: name, Workspace: workspace, MadeAt: at,
 			Version: w.backend.Version(), Pins: w.backend.Pins()})
 	}
+	return made, done
+}
+
+// deleteMade deletes machines that were made for a pool which does not hold them.
+func (w *warmPools) deleteMade(p *storedPool, made []string) {
+	for _, workspace := range made {
+		if err := w.backend.Delete(p.Owner, p.Provider, workspace); err != nil {
+			w.s.log(fmt.Sprintf("warm pool %s: delete %s, which it does not hold: %v", p.Name, workspace, err))
+		}
+	}
+}
+
+// reconcile runs one pass over a pool: it drops what the plan says, makes what it says, and
+// keeps the outcome.
+func (w *warmPools) reconcile(ctx context.Context, id string) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	p, tag, err := w.read(ctx, id)
+	if err != nil || p == nil {
+		return err
+	}
+	now := time.Now()
+	if w.s.records != nil {
+		if gone, err := personGone(ctx, w.s.records, p.Owner); err != nil {
+			return err
+		} else if gone {
+			return w.forget(ctx, p, tag, now)
+		}
+	}
+	p.dropOldClaims(now)
+	machines := w.machines(p, now)
+	if p.SetAt == nil {
+		p.SetAt = &now
+	}
+	if why, failed := w.failedInRow(p, machines); failed && p.Stopped == "" {
+		w.stop(p, why)
+	}
+	plan := planPool(p, machines, now, w.backend.Version(), w.backend.Pins())
+	if !w.backend.HasProvider(p.Provider) || plan.makes > 0 && w.backend.ProjectsWait(p.Owner, p.Projects) != "" {
+		// With no make, an old machine is not deleted for its replacement either.
+		if plan.makes > 0 && w.backend.HasProvider(p.Provider) {
+			plan.deletes = nil
+		}
+		plan.makes = 0
+	}
+	w.deletePlanned(p, machines, plan.deletes)
+	made, done := w.makePlanned(p, plan.makes)
+	defer done()
 	if err := w.write(ctx, p, tag); err != nil {
 		if isConflict(err) {
-			// Another write (a change of the pool) came between: the next pass sees it.
+			// Another write (a change of the pool, or its delete) came between: the next pass
+			// sees it. The pool does not hold what this one made, so nothing else deletes it.
+			w.deleteMade(p, made)
 			return nil
 		}
 		return err
@@ -636,9 +795,15 @@ func (w *warmPools) reconcile(ctx context.Context, id string) error {
 	return nil
 }
 
+// forgetPerson runs a pass over a removed person's pools, which deletes them.
+func (w *warmPools) forgetPerson(ctx context.Context, person string) { w.reconcileOf(ctx, person) }
+
 // reconcileAll runs a pass over every pool.
-func (w *warmPools) reconcileAll(ctx context.Context) {
-	pools, err := w.all(ctx, "")
+func (w *warmPools) reconcileAll(ctx context.Context) { w.reconcileOf(ctx, "") }
+
+// reconcileOf runs a pass over the person's pools, or every pool when person is "".
+func (w *warmPools) reconcileOf(ctx context.Context, person string) {
+	pools, err := w.all(ctx, person)
 	if err != nil {
 		w.s.log("warm pool: " + err.Error())
 		return
@@ -743,12 +908,22 @@ func (w *warmPools) set(ctx context.Context, person string, set wire.WarmPoolSet
 	} else {
 		p = &storedPool{ID: poolID(), Owner: person, Scope: wire.WarmPoolScopeUser}
 	}
+	if p.Provider != set.Provider {
+		if err := w.providerFull(ctx, set.Provider); err != nil {
+			w.mu.Unlock()
+			return wire.WarmPool{}, err
+		}
+	}
 	// A change is a fresh start: a pool that stopped on three failures tries again.
 	p.Name, p.Provider, p.Size, p.Region = strings.TrimSpace(set.Name), set.Provider, deref(set.Size), deref(set.Region)
 	p.Runtimes, p.Projects, p.Hours = set.Runtimes, set.Projects, set.Hours
 	p.MinReady, p.MaxSize, p.ReplaceAfter = int(set.MinReady), int(set.MaxSize), deref(set.ReplaceAfter)
 	now := time.Now()
 	p.Failures, p.Stopped, p.SetAt = 0, "", &now
+	if p.setSize() > warmPoolSetMost {
+		w.mu.Unlock()
+		return wire.WarmPool{}, fail(invalidParams, "A warm pool's settings are %d KiB at most. Use a shorter name, or fewer projects.", warmPoolSetMost>>10)
+	}
 	err := w.write(ctx, p, tag)
 	w.mu.Unlock()
 	if err != nil {
