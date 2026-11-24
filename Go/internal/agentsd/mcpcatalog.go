@@ -758,14 +758,15 @@ func (d *Daemon) mcpRemove(r wire.MCPRemoveRequest) (wire.MCPRemoveAnswer, error
 		return wire.MCPRemoveAnswer{}, mcpRefusal(mcpcatalog.SecretStillInUse(forget))
 	}
 	entry, _, _ := mcpcatalog.Entry(path, r.Name)
+	// The personal file is in no git: keep a copy of what goes first (#2195). A folder's is committed.
+	if r.Destination.Kind == wire.SkillDestinationKindPersonal {
+		if err := d.keepRemovedConnector(r.Name, entry); err != nil {
+			return wire.MCPRemoveAnswer{}, mcpRefusal(mcpcatalog.Failed(fmt.Sprintf(
+				"%s was not removed: no copy of it could be kept in %s (%v).", r.Name, d.removedConnectorsPath(), err)))
+		}
+	}
 	if err := mcpcatalog.Remove(path, r.Name); err != nil {
 		return wire.MCPRemoveAnswer{}, mcpRefusal(mcpcatalog.Unreadable(path))
-	}
-	// The personal file is in no git: keep a copy of what went (#2195). A folder's is committed.
-	if r.Destination.Kind == wire.SkillDestinationKindPersonal {
-		if err := mcpcatalog.KeepRemoved(home, r.Name, entry); err != nil {
-			log.Printf("mcp: remove %s: no copy kept in %s: %v", r.Name, mcpcatalog.RemovedFile(home), err)
-		}
 	}
 	delete(side.Servers, key)
 	if err := side.Save(d.mcpSidecarPath()); err != nil {

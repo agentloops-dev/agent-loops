@@ -28,9 +28,11 @@ type Daemon struct {
 		Name() string
 		Sweep() (int, error)
 	}
-	dismissedLeads *store.JSONFile[dismissedLead]
-	repoAliases    *store.JSONFile[repoalias.Alias]
-	erased         *store.JSONFile[wire.Date]
+	// removedConnectors is the copies of the personal connectors removed (#2195).
+	removedConnectors *store.JSONFile[removedConnector]
+	dismissedLeads    *store.JSONFile[dismissedLead]
+	repoAliases       *store.JSONFile[repoalias.Alias]
+	erased            *store.JSONFile[wire.Date]
 
 	ctx context.Context
 	// opts are the daemon's own (#5926): set by New, and changed only by a test, as a test
@@ -263,6 +265,7 @@ func newWith(ctx context.Context, root string, opts startOptions) (*Daemon, erro
 		SettingsDir: filepath.Join(st.Loc.Root, "settings"), HostKey: controllink.HostKeyFile{Root: st.Loc.Root},
 		PersonKey: controllink.PersonKeyFile{Root: st.Loc.Root}}
 	d.dismissedLeads = d.openDismissedLeads()
+	d.removedConnectors = d.openRemovedConnectors()
 	d.repoAliases = d.openRepoAliases()
 	d.erased = d.openErased()
 	d.deployStore = d.openDeploys()

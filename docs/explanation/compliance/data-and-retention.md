@@ -142,7 +142,7 @@ Mac.
 | `~/.agents-secrets/sealed.json` | secret | Every secret of yours on this machine, sealed to it (#4014, #4177), with Ask before use on or off | Until you remove them | — |
 | `~/.agents-secrets/sessions/<agent>.json` | secret | Secrets for one session | The values go when the agent is archived; the file goes when it is deleted | On archive and delete; leftovers at start |
 | `~/.agents/dismissed-leads.json` | key-value | The epics you dismissed from New Session's **Suggested** | 500 epics of 1 KiB each, for 90 days; the oldest goes first. An epic that gets a lead goes at once (#6713). In the data folder on a machine with no personal home | Hourly, and on write: age, and the count when it is twice over |
-| `~/.agents/mcp.removed.json` | key-value | MCP servers you removed | 20. No age (#6727). | On write |
+| `~/.agents/mcp.removed.json` | key-value | MCP servers you removed, so that you can put one back by hand. The app does not read it to connect anything | 100 connectors of 256 KiB each, for 90 days after you removed them. When it is full, a removal is refused; none goes to make room (#6727) | Hourly, and on write: age. On write: count and size |
 | `~/.agents-secrets/mcp-sign-ins.json` | secret | MCP sign-in tokens | Until you sign out. No count limit (#6740). | — |
 | `~/.agents-secrets/hints.json` | secret | The last 4 characters of each secret | With its secret. No count limit (#6741). | On write |
 | `~/.agents-secrets/descriptions.json` | key-value | Secret descriptions, which are not secret | With its secret. No count limit (#6742). | On write |
