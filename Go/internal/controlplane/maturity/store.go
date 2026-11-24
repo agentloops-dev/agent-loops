@@ -261,9 +261,13 @@ func (s *Records) RecoverBlocker(ctx context.Context, id, path string, completio
 	})
 }
 
-// RatingFor evaluates the fixed gate evidence in order. A blocker always
-// suspends the rating; incomplete evidence remains pending.
+// RatingFor evaluates fixed gate evidence in order. An untouched record is
+// unmeasured; a measured record with missing evidence stays pending. A blocker
+// always suspends the rating until its recovery evidence is recorded.
 func RatingFor(r Record) string {
+	if !hasMeasurement(r) {
+		return "unmeasured"
+	}
 	if r.Blocked {
 		return "pending"
 	}
@@ -290,6 +294,34 @@ func RatingFor(r Record) string {
 		return rating
 	}
 	return "ga"
+}
+
+// hasMeasurement keeps an untouched record distinct from a measured feature
+// with zero successful or failed outcomes. Evidence also makes a record measured
+// when it came from an older writer that did not set StartedAt.
+func hasMeasurement(r Record) bool {
+	if !r.StartedAt.IsZero() || r.Successes > 0 || r.Failures > 0 || r.Blocked ||
+		r.Agent.Source != "" || r.Agent.Build != "" || !r.Agent.Date.IsZero() ||
+		r.Blocker.Path != "" || r.Blocker.FixedBuild != "" || r.Blocker.RecoveryCompletion != "" ||
+		r.GA.Person != "" || r.Clients.Configured || r.Clients.Mac || r.Clients.Remote || r.Clients.Web {
+		return true
+	}
+	for i := range r.GA.Dates {
+		if !r.GA.Dates[i].IsZero() || r.GA.Sessions[i] != "" || r.GA.Source[i] != "" || r.GA.Builds[i] != "" {
+			return true
+		}
+	}
+	for _, proof := range r.Beta {
+		if proof.Session != "" || !proof.Date.IsZero() || proof.Build != "" {
+			return true
+		}
+	}
+	for _, proof := range []WalkProof{r.Clients.MacWalk, r.Clients.RemoteWalk, r.Clients.WebWalk} {
+		if validWalk(proof) {
+			return true
+		}
+	}
+	return false
 }
 
 func validWalk(proof WalkProof) bool { return proof.Build != "" && !proof.Date.IsZero() }
