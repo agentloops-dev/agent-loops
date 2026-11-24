@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -24,7 +23,6 @@ import (
 // runner under load they took over 30 s, while the one call that let go of the stalled
 // client still took sockQueueWait.
 func TestAStalledSocketClientIsLetGo(t *testing.T) {
-	flaky.UnderLoad(t, "#7012")
 	t.Parallel()
 
 	// Both callers are windows, which hear notifications, whatever the platform's door.

@@ -247,7 +247,8 @@ fi
 
 # The VM builds the image from the context on its standard input (a gzipped tar), with its own BuildKit
 # (docker-ce's buildx plugin), for its own platform, linux/amd64.
-vm_build="sudo docker build --quiet --build-arg BINARIES=prebuilt --build-arg VERSION=$version -f deploy/Containerfile -t $image:$tag -"
+# deploy/gcp/build-on-vm.sh limits its time, and stops it when the connection ends (#7030).
+vm_build="exec bash -c $(printf '%q' "$(<"$here/build-on-vm.sh")") build-on-vm $(printf '%q %q' "$image:$tag" "$version")"
 
 say "== what the VM runs, in /opt/agents"
 cp "$root/deploy/compose.public.yaml" "$root/deploy/Caddyfile.public" "$root/deploy/make-secrets.sh" "$stage/deploy/"
@@ -275,13 +276,22 @@ sudo rm .env.new; [ -f secrets/apns-key ] || { sudo touch secrets/apns-key; sudo
 sudo tee secrets/vapid-key >/dev/null; sudo chmod 644 secrets/vapid-key; }'
 if ((dry_run)); then
 	if ((build)); then
-		say "+ tar -C STAGE/context -czf - . | $(shown gcloud compute ssh "$name" --zone "$zone" --quiet --command "$vm_build")"
+		say "+ tar -C STAGE/context -czf - . | $(shown gcloud compute ssh "$name" --zone "$zone" --quiet --command "build-on-vm.sh $image:$tag $version")"
 	fi
 	say "+ tar -C STAGE ${tar_skip[*]-} -czf - deploy | $(shown gcloud compute ssh "$name" --zone "$zone" --quiet --command "$install")"
 else
 	if ((build)); then
 		say "== the image, built on the VM from them: $image:$tag"
-		COPYFILE_DISABLE=1 tar --no-xattrs -C "$ctx" -czf - . | vm_ssh "$vm_build"
+		say "$(date +%T) its steps follow; a build takes 15 to 27 minutes, and 45 at most"
+		rc=0
+		COPYFILE_DISABLE=1 tar --no-xattrs -C "$ctx" -czf - . | vm_ssh "$vm_build" || rc=$?
+		case $rc in
+		0) say "$(date +%T) the image is built" ;;
+		75) die "the image: another deploy's build runs on the VM; it ends in 45 minutes at most" ;;
+		124 | 137) die "the image: the build on the VM took more than 45 minutes and was stopped; the last step above is the one it was on" ;;
+		255) die "the image: the connection to the VM was lost, so its build stops when the VM sees that (8 minutes or so); the last step above is the one it was on. Run it again: the finished steps are in the VM's cache" ;;
+		*) die "the image: the build on the VM failed ($rc); the last step above is the one it was on" ;;
+		esac
 	fi
 	COPYFILE_DISABLE=1 tar --no-xattrs -C "$stage" ${tar_skip[@]+"${tar_skip[@]}"} -czf - deploy | vm_ssh "$install"
 fi

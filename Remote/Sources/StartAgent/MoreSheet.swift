@@ -14,6 +14,7 @@ struct MoreSheet: View {
 
     @State private var folderPath = ""
     @State private var addingFolder = false
+    @State private var folderRefusal: String?
     @FocusState private var pathFocused: Bool
     @State private var confirmingAlwaysApprove = false
 
@@ -155,7 +156,7 @@ struct MoreSheet: View {
                 HStack {
                     Text(added.path).lineLimit(1).truncationMode(.middle)
                     Spacer()
-                    Button("Remove") { model.startFolders.removeAll { $0 == added } }
+                    Button("Remove") { remove(added) }
                 }
             }
             if addingFolder {
@@ -165,8 +166,12 @@ struct MoreSheet: View {
                         .autocorrectionDisabled()
                         .focused($pathFocused)
                         .onSubmit(addFolder)
+                        .onChange(of: folderPath) { folderRefusal = nil }
                     Button("Add", action: addFolder)
                         .disabled(folderPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+                if let folderRefusal {
+                    SheetNote(text: folderRefusal, reservesSpace: false)
                 }
             } else {
                 Button("Add a folder…") {
@@ -182,9 +187,18 @@ struct MoreSheet: View {
     private func addFolder() {
         guard !folderPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         let added = URL(fileURLWithPath: (folderPath as NSString).expandingTildeInPath)
-        if added != folder, !model.startFolders.contains(added) { model.startFolders.append(added) }
+        if added != folder {
+            folderRefusal = StartFolders.add(FolderKey(host: model.startHost, folder: added), to: &model.keptStartFolders)
+            guard folderRefusal == nil else { return }
+        }
         folderPath = ""
         addingFolder = false
+    }
+
+    private func remove(_ added: URL) {
+        let key = FolderKey(host: model.startHost, folder: added)
+        model.keptStartFolders.removeAll { $0 == key }
+        folderRefusal = nil
     }
 
     private var labelsSection: some View {
