@@ -1530,6 +1530,9 @@ func (m *Methods) hostReported(ctx context.Context, host, method string, params 
 			return nil, true, err
 		}
 		return map[string]any{}, true, m.s.setupStep(ctx, host, report)
+	case wire.CallMachineSetupWork.Name:
+		work, err := m.s.setupWork(ctx, host)
+		return work, true, err
 	case "machine/policyApplied":
 		applied, err := require[wire.PolicyApplied](params, "PolicyApplied")
 		if err != nil {

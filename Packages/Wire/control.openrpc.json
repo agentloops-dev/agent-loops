@@ -3520,6 +3520,27 @@
       }
     },
     {
+      "name": "machine/setupWork",
+      "x-capability": "machine/1",
+      "description": "A host (#6890, #6896): what its set-up has left. A machine a warm pool made asks it for the pool's projects, and for the steps to run once a person claims it.",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/core.schema.json#/definitions/Empty"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/machines.schema.json#/definitions/MachineSetupWork"
+        }
+      }
+    },
+    {
       "name": "machine/status",
       "x-capability": "machine/1",
       "description": "A host, on its channel 0 (#691 US4).",

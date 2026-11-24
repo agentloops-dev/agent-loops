@@ -148,6 +148,7 @@ const CapMac1 = "mac/1"
 const CapMachineAccounts1 = "machine.accounts/1"
 const CapMachineAccounts2 = "machine.accounts/2"
 const CapMachineAgentSecrets1 = "machine.agent-secrets/1"
+const CapMachineSetup1 = "machine.setup/1"
 const CapMachineUsage1 = "machine.usage/1"
 const CapMachine1 = "machine/1"
 const CapMachinesAll1 = "machines.all/1"
@@ -619,6 +620,7 @@ var HostCapabilities = pairs([][2]string{
 	{"sessions/list", "sessions/1"},
 	{"settings/passThrough", "host.policy/1"},
 	{"settings/userPart", "host.user-settings/4"},
+	{"setup/projects", "machine.setup/1"},
 	{"shell/attach", "shell/1"},
 	{"shell/close", "shell/1"},
 	{"shell/detach", "shell/1"},
@@ -912,6 +914,7 @@ var ControlCapabilities = pairs([][2]string{
 	{"machine/secretOps", "machine/1"},
 	{"machine/secretRelease", "host.secret-release/1"},
 	{"machine/setupStep", "machine/1"},
+	{"machine/setupWork", "machine/1"},
 	{"machine/status", "machine/1"},
 	{"machines/agents", "machines/1"},
 	{"machines/agentsChanges", "machines/1"},

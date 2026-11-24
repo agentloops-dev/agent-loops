@@ -13,6 +13,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/providers"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/records"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
@@ -75,9 +77,12 @@ type poolBackend interface {
 	Ping(provider, workspace string) bool
 	// Bind makes the machine the person's, with the person's Stop when idle (minutes; nil
 	// keeps the machine's), and sets steps 6 to 8 of its set-up to run again as a catch-up
-	// (steps 1 to 5 are marked as done in the pool). Step 6 waits for the pool's projects,
-	// which the person's Mac sends after the claim (#6890). It returns the machine's host id.
+	// (steps 1 to 5 are marked as done in the pool), with the pool's projects for step 6
+	// (#6890). It returns the machine's host id.
 	Bind(person, provider, workspace string, stopWhenIdle *int, projects []string) (host string, err error)
+	// ProjectsWait is why a machine made now would not get the projects, or "": none of the
+	// person's machines that has one is online (#6890).
+	ProjectsWait(person string, projects []string) string
 	// Detail is what a machine's set-up is doing now, as its running step's line says, for
 	// the pool's card (#5366); "" when nothing says.
 	Detail(provider, workspace string) string
@@ -116,10 +121,13 @@ type storedPool struct {
 	ReplaceAfter float64             `json:"replaceAfter,omitempty"`
 	Hours        *wire.WarmPoolHours `json:"hours,omitempty"`
 	Failures     int                 `json:"failures,omitempty"`
-	Stopped      string              `json:"stopped,omitempty"`
-	Machines     []storedPoolMachine `json:"machines,omitempty"`
-	LastMade     *time.Time          `json:"lastMade,omitempty"`
-	Claims       []storedPoolClaim   `json:"claims,omitempty"`
+	// SetAt is when the person last set the pool: only machines made after it count to stop
+	// it for failed set-ups.
+	SetAt    *time.Time          `json:"setAt,omitempty"`
+	Stopped  string              `json:"stopped,omitempty"`
+	Machines []storedPoolMachine `json:"machines,omitempty"`
+	LastMade *time.Time          `json:"lastMade,omitempty"`
+	Claims   []storedPoolClaim   `json:"claims,omitempty"`
 }
 
 func warmPoolKey(id string) string { return warmPoolPrefix + id + ".json" }
@@ -290,6 +298,79 @@ type warmPools struct {
 	s       *Service
 	backend poolBackend
 	mu      sync.Mutex
+	// making are the machines being made now, by name: one can join, and ask for its set-up's
+	// work, before its pool keeps it.
+	makingMu sync.Mutex
+	making   map[string]storedPool
+}
+
+func (w *warmPools) nowMaking(name string, p *storedPool) {
+	w.makingMu.Lock()
+	defer w.makingMu.Unlock()
+	if p == nil {
+		delete(w.making, name)
+		return
+	}
+	if w.making == nil {
+		w.making = map[string]storedPool{}
+	}
+	w.making[name] = *p
+}
+
+// poolOf is the pool that holds an unclaimed machine, or that makes it now; nil for none.
+func (w *warmPools) poolOf(ctx context.Context, host *records.MachineRecord) (*storedPool, error) {
+	if host == nil {
+		return nil, nil
+	}
+	w.makingMu.Lock()
+	p, ok := w.making[host.Name]
+	w.makingMu.Unlock()
+	if ok && w.s.ownerOf(host.ID) == p.Owner {
+		return &p, nil
+	}
+	link := providers.LinkOf(host)
+	if link == nil {
+		return nil, nil
+	}
+	pools, err := w.all(ctx, "")
+	if err != nil {
+		return nil, err
+	}
+	for i := range pools {
+		for _, m := range pools[i].Machines {
+			if pools[i].Provider == link.Provider && m.Workspace == link.Workspace {
+				return &pools[i], nil
+			}
+		}
+	}
+	return nil, nil
+}
+
+// failedInRow says that the latest poolFailuresStop machines made since the pool was set all
+// failed to set themselves up, with the last one's reason. A failed machine is kept and
+// counts for nothing, so without this a pool whose projects cannot be got makes one machine
+// after another.
+func (w *warmPools) failedInRow(p *storedPool, machines []poolMachine) (string, bool) {
+	var made []poolMachine
+	for _, m := range machines {
+		if p.SetAt != nil && m.MadeAt.After(*p.SetAt) {
+			made = append(made, m)
+		}
+	}
+	if len(made) < poolFailuresStop {
+		return "", false
+	}
+	sort.SliceStable(made, func(a, b int) bool { return made[a].MadeAt.After(made[b].MadeAt) })
+	for _, m := range made[:poolFailuresStop] {
+		if m.stage != stageFailed {
+			return "", false
+		}
+	}
+	why := "three machines in a row were not set up"
+	if detail := w.backend.Detail(p.Provider, made[0].Workspace); detail != "" {
+		why += ": " + detail
+	}
+	return why, true
 }
 
 func (w *warmPools) read(ctx context.Context, id string) (*storedPool, string, error) {
@@ -375,8 +456,13 @@ func (w *warmPools) wire(p *storedPool, now time.Time) wire.WarmPool {
 	case !p.inHours(now):
 		state = wire.WarmPoolStateOffHours
 	}
+	waiting := ""
+	if state == wire.WarmPoolStateKeeping && int(ready+settingUp) < p.target() {
+		waiting = w.backend.ProjectsWait(p.Owner, p.Projects)
+	}
 	return wire.WarmPool{
-		ID: p.ID, Name: p.Name, Scope: p.Scope, Provider: p.Provider, Size: optional(p.Size), Region: optional(p.Region),
+		WaitingBecause: optional(waiting),
+		ID:             p.ID, Name: p.Name, Scope: p.Scope, Provider: p.Provider, Size: optional(p.Size), Region: optional(p.Region),
 		Runtimes: p.Runtimes, Projects: p.Projects, MinReady: int64(p.MinReady), MaxSize: int64(p.MaxSize),
 		Target: int64(p.target()), ReplaceAfter: optional(p.ReplaceAfter), Hours: p.Hours, State: state,
 		Ready: optional(ready), SettingUp: optional(settingUp), FailedMakes: optional(int64(p.Failures)),
@@ -483,8 +569,19 @@ func (w *warmPools) reconcile(ctx context.Context, id string) error {
 	}
 	now := time.Now()
 	machines := w.machines(p, now)
+	if p.SetAt == nil {
+		p.SetAt = &now
+	}
+	if why, failed := w.failedInRow(p, machines); failed && p.Stopped == "" {
+		p.Stopped = why
+		w.backend.Stopped(p.Owner, p.Name, why)
+	}
 	plan := planPool(p, machines, now, w.backend.Version(), w.backend.Pins())
-	if !w.backend.HasProvider(p.Provider) {
+	if !w.backend.HasProvider(p.Provider) || plan.makes > 0 && w.backend.ProjectsWait(p.Owner, p.Projects) != "" {
+		// With no make, an old machine is not deleted for its replacement either.
+		if plan.makes > 0 && w.backend.HasProvider(p.Provider) {
+			plan.deletes = nil
+		}
 		plan.makes = 0
 	}
 	gone := map[string]bool{}
@@ -503,8 +600,16 @@ func (w *warmPools) reconcile(ctx context.Context, id string) error {
 		}
 	}
 	p.Machines = kept
+	var making []string
+	defer func() {
+		for _, name := range making {
+			w.nowMaking(name, nil)
+		}
+	}()
 	for n := 0; n < plan.makes; n++ {
 		name := machineName(p.Name)
+		w.nowMaking(name, p)
+		making = append(making, name)
 		workspace, err := w.backend.Make(p.Owner, p.Provider, name, p.Size, p.Region)
 		if err != nil {
 			p.Failures++
@@ -642,7 +747,8 @@ func (w *warmPools) set(ctx context.Context, person string, set wire.WarmPoolSet
 	p.Name, p.Provider, p.Size, p.Region = strings.TrimSpace(set.Name), set.Provider, deref(set.Size), deref(set.Region)
 	p.Runtimes, p.Projects, p.Hours = set.Runtimes, set.Projects, set.Hours
 	p.MinReady, p.MaxSize, p.ReplaceAfter = int(set.MinReady), int(set.MaxSize), deref(set.ReplaceAfter)
-	p.Failures, p.Stopped = 0, ""
+	now := time.Now()
+	p.Failures, p.Stopped, p.SetAt = 0, "", &now
 	err := w.write(ctx, p, tag)
 	w.mu.Unlock()
 	if err != nil {
