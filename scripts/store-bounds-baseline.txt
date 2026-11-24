@@ -216,6 +216,5 @@
 1 Packages/AgentsKit/Sources/AgentsKitCore/Widget/SharedInbox.swift write(to:)
 1 Shared/UI/Voice/VoiceTape.swift write(to:)
 1 Web/src/views/Multiplier.tsx localStorage.setItem
-1 Web/src/views/PersonaCatalog.tsx localStorage.setItem
 1 Web/src/wire/keys.ts indexedDB.open
 1 Web/src/wire/signIn.ts indexedDB.open

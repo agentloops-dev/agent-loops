@@ -13,7 +13,26 @@ export interface StartForm {
 
 interface Storage { getItem(key: string): string | null; setItem(key: string, value: string): void }
 
-/** The folders are this browser's (they are paths on one host); the runtime and its choices are
+/** The most folders a form keeps, and the longest path, in bytes (#6805), as the Remote's StartFolders. */
+export const foldersMost = 100;
+export const folderPathMost = 1024;
+
+/** What to say when a folder is refused; null when it can be added. A folder is the person's choice, so none goes
+ *  to make room. */
+export function folderRefusal(folders: readonly string[], url: string): string | null {
+  if (!fits(url)) return `This path is too long. A path has at most ${folderPathMost} bytes.`;
+  return folders.length < foldersMost ? null : `At most ${foldersMost} folders can be added. Remove one first.`;
+}
+
+/** A folder URL whose path is short enough. One that is not a URL this page made is measured as it is. */
+function fits(url: string): boolean {
+  let path = url;
+  try { path = decodeURI(url.replace(/^file:\/\//, "")); } catch { /* as it is */ }
+  return new TextEncoder().encode(path).length <= folderPathMost + 1; // The URL ends with a slash.
+}
+
+/** The folders are this browser's (they are paths on one host), with no age, on purpose, until
+ *  each is removed or Forget (#6805); the runtime and its choices are
  *  the person's, kept on their Mac with the other display choices (#1033). */
 const storageKey = "agents.startForm";
 
@@ -26,7 +45,7 @@ export function keptForm(storage: Storage | undefined): StartForm {
   let folders: string[] = [];
   try {
     const kept = JSON.parse(storage?.getItem(storageKey) ?? "null") as Partial<StartForm> | null;
-    folders = Array.isArray(kept?.folders) ? kept.folders.filter((f): f is string => typeof f === "string") : [];
+    folders = Array.isArray(kept?.folders) ? kept.folders.filter((f): f is string => typeof f === "string" && fits(f)).slice(0, foldersMost) : [];
   } catch {
     // Unreadable: no folders.
   }
@@ -47,6 +66,11 @@ export function keepForm(storage: Storage | undefined, form: StartForm): void {
     changes[preferenceKeys.startChoices] = { ...choices, [form.runtimeID]: form.chosen };
   }
   if (Object.keys(changes).length > 0) setPreferences(changes);
+}
+
+/** Forget: the folders were that control plane's machines' (#6805). */
+export function forgetForm(storage: { removeItem(key: string): void } | undefined): void {
+  try { storage?.removeItem(storageKey); } catch { /* storage off: nothing kept */ }
 }
 
 /** The form's runtime when it can still start, the choices made on it only then. */

@@ -10,6 +10,7 @@ import { Session } from "./session";
 import { startPresence } from "./presence";
 import { dropWebPush, startPageNotices } from "./pageNotices";
 import { forgetPins } from "./model/machineLock";
+import { forgetForm } from "./model/startForm";
 import { effect } from "@preact/signals";
 import { startAgentLinks } from "./model/agentLink";
 import { startSpinnerClock } from "./spinnerClock";
@@ -45,6 +46,7 @@ effect(() => {
   work.forget();
   store.drafts.clear();
   forgetPins();
+  forgetForm(globalThis.localStorage);
   void dropWebPush();
 });
 const root = document.getElementById("app");

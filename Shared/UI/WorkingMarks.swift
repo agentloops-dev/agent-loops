@@ -31,19 +31,11 @@ struct WorkingRing: View {
     var doing = false
 
     var body: some View {
-        ClockedMark(tilt: doing ? Self.tilt : 0, color: color)
+        ClockedMark(tilt: doing ? SpinnerClock.ringTilt : 0, color: color)
             .frame(width: size, height: size)
             // One element and no words of its own: the caller says what it means.
             .accessibilityElement()
     }
-
-    /// How far the ring pivots while it runs a tool, in degrees: `workingMarkTilt` in the
-    /// defaults (`defaults write` the app's domain), read once at launch, else 30 (#2332).
-    static let tilt: Double = {
-        let set = WindowDefaults.store.object(forKey: SpinnerClock.ringTiltKey) as? NSNumber
-        guard let degrees = set?.doubleValue, degrees.isFinite else { return SpinnerClock.ringTilt }
-        return min(max(degrees, 0), 90)
-    }()
 }
 
 /// A waiting session's mark (#2456, #2657), in the sidebar rows, the page rows and the phone's
@@ -74,13 +66,6 @@ struct WaitingBeacon: View {
             // One element and no words of its own: the caller says what it means.
             .accessibilityElement()
     }
-
-    /// One breath, in seconds: `waitingMarkPeriod` in the defaults (`defaults write` the
-    /// app's domain), read once at launch, else 4 (#2456).
-    static let period: TimeInterval = {
-        let set = WindowDefaults.store.object(forKey: SpinnerClock.breathPeriodKey) as? NSNumber
-        return SpinnerClock.breathPeriod(from: set?.doubleValue)
-    }()
 }
 
 /// The ring's layers. The colour is resolved against the SwiftUI environment, so it
@@ -396,7 +381,7 @@ private final class BeaconView: ClockedLayersView {
 
     override func startCycle() {
         guard side > 0 else { return }
-        let breath = WaitingBeacon.period
+        let breath = SpinnerClock.breathPeriod
         let period = breath * (reduceMotion ? SpinnerClock.reducedMotionSlowing : 1)
         let fade = CAKeyframeAnimation(keyPath: "opacity")
         fade.values = (0...Self.samples).map {

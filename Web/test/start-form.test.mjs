@@ -53,3 +53,16 @@ test("start form: the levels last chosen are the next session's, on every client
   m.preferencesSaid({ startLevels: { model: "huge", permission: "approveForMe" } });
   assert.deepEqual(m.keptLevels(), { model: "balanced", permission: "approveForMe" }, "a level not known is the default");
 });
+
+test("start form: at most 100 folders of 1,024 bytes, one over that refused, and gone on Forget (#6805)", () => {
+  const full = Array.from({ length: 100 }, (_, n) => `file:///f${n}/`);
+  assert.equal(f.folderRefusal(full.slice(1), "file:///new/"), null);
+  assert.match(f.folderRefusal(full, "file:///new/"), /At most 100 folders/);
+  assert.equal(f.folderRefusal([], `file:///${"a".repeat(1023)}/`), null);
+  assert.match(f.folderRefusal([], `file:///${"a".repeat(1024)}/`), /too long/);
+  const storage = { ...memory(), removeItem(k) { this.removed = k; } };
+  storage.setItem("agents.startForm", JSON.stringify({ folders: [...full, "file:///over/"] }));
+  assert.equal(f.keptForm(storage).folders.length, 100);
+  f.forgetForm(storage);
+  assert.equal(storage.removed, "agents.startForm");
+});
