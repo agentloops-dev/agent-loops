@@ -144,7 +144,7 @@ func inAppWorktree(t *testing.T, d *Daemon) (wire.Agent, string, string) {
 	}
 	title := "The lane"
 	a := seeded(t, d, cwd, func(a *wire.Agent) { a.Worktree, a.Title = wt, &title })
-	os.WriteFile(filepath.Join(cwd, "work.txt"), []byte("work\n"), 0o644)
+	must(t, os.WriteFile(filepath.Join(cwd, "work.txt"), []byte("work\n"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	run(t, cwd, "git", "add", "work.txt")
 	run(t, cwd, "git", "-c", "user.email=t@example.com", "-c", "user.name=T", "commit", "-q", "-m", "work")
 	return a, dir, cwd
@@ -186,7 +186,7 @@ func TestLeavingWithRemoveIsRefusedWhileWorkIsNotPushed(t *testing.T) {
 	}
 	// Pushed, but with a change not committed.
 	run(t, cwd, "git", "push", "-q", "-u", "origin", "agents/lane")
-	os.WriteFile(filepath.Join(cwd, "notes.txt"), []byte("x"), 0o644)
+	must(t, os.WriteFile(filepath.Join(cwd, "notes.txt"), []byte("x"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	text, isError = m.tool(3, "move_worktree", map[string]any{"leave_worktree": "remove"})
 	if !isError || !strings.HasPrefix(text, "Removing lane would lose 1 uncommitted change: untracked notes.txt.") {
 		t.Fatal(text)

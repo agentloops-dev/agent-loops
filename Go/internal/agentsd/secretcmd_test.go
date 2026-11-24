@@ -2,13 +2,12 @@ package agentsd
 
 import (
 	"bytes"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
+	"github.com/agentloops-dev/agent-loops/Go/internal/execfile"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -17,7 +16,6 @@ import (
 // recorded with the session and the name. A flagged secret, a name that is not set and a dropped
 // grant get words and no value; a call with no grant asks a person (secretterminal_test.go).
 func TestAgentsSecretReadsASecretThatDoesNotAsk(t *testing.T) {
-	flaky.UnderLoad(t, "#6278")
 	t.Parallel()
 
 	home := t.TempDir()
@@ -37,7 +35,7 @@ func TestAgentsSecretReadsASecretThatDoesNotAsk(t *testing.T) {
 	}
 
 	stub := filepath.Join(t.TempDir(), "agentsd")
-	os.WriteFile(stub, []byte("#!/bin/sh\necho \"agentsd $*\"\n"), 0o700)
+	must(t, execfile.Write(stub, []byte("#!/bin/sh\necho \"agentsd $*\"\n"), 0o700)) // #6278: no fork holds it open, so the shim can exec it
 	d.credentialSelf = stub
 	env := d.withSecretCommand([]string{"PATH=/usr/bin:/bin"}, a.ID)
 	joined := strings.Join(env, "\n")

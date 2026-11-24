@@ -66,7 +66,7 @@ func TestNotifyingThePerson(t *testing.T) {
 	}
 	// Posted as needs, not Needs you rows: the badge's count does not move.
 	var pending wire.AttentionPending
-	json.Unmarshal(c.call(t, 6, "attention/pending", nil), &pending)
+	mustUnmarshal(t, c.call(t, 6, "attention/pending", nil), &pending)
 	var notices []wire.Need
 	for _, n := range pending.Needs {
 		if n.Kind == wire.NeedKindNotice {
@@ -94,7 +94,7 @@ func TestNotifyingThePerson(t *testing.T) {
 	}
 	// Opening the chat takes its notices down, and one sent while it is open is shown there.
 	c.call(t, 7, "presence/report", map[string]any{"active": true, "watching": a.ID})
-	json.Unmarshal(c.call(t, 8, "attention/pending", nil), &pending)
+	mustUnmarshal(t, c.call(t, 8, "attention/pending", nil), &pending)
 	for _, n := range pending.Needs {
 		if n.Kind == wire.NeedKindNotice {
 			t.Fatalf("still posted: %+v", n)
@@ -120,7 +120,7 @@ func TestNoticeLineSaysWhereItWent(t *testing.T) {
 		t.Fatal(text)
 	}
 	var pending wire.AttentionPending
-	json.Unmarshal(c.call(t, 4, "attention/pending", nil), &pending)
+	mustUnmarshal(t, c.call(t, 4, "attention/pending", nil), &pending)
 	var need *wire.NeedID
 	for _, n := range pending.Needs {
 		if n.Kind == wire.NeedKindNotice {
@@ -185,7 +185,7 @@ func TestNoticeLimitsFollowThePerson(t *testing.T) {
 			signed := params.(wire.SignedYourPolicy)
 			raw, _ := base64.StdEncoding.DecodeString(signed.Policy)
 			var policy wire.YourPolicy
-			json.Unmarshal(raw, &policy)
+			mustUnmarshal(t, raw, &policy)
 			policies <- policy
 			return json.RawMessage(`{}`), nil
 		}

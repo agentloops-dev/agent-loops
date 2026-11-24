@@ -563,7 +563,8 @@ extension AppModel {
     /// last said: This Mac's are always read, a server's when its page was opened.
     func need(of host: MachineRef) -> MachineNeed? {
         MachineNeed.most(row: hosts.controlRows[host], offline: hostUnreachable(host),
-                         runtimes: runtimes(on: host), disks: diskAlarms(host), capacity: capacityLevel(host))
+                         runtimes: runtimes(on: host), disks: diskAlarms(host), capacity: capacityLevel(host),
+                         capacityReason: capacityLevel(host) == nil ? nil : work.capacity[host]?.reason)
     }
 
     /// The machine's capacity level, as it last pushed it (#4748); nil while it is unreachable,

@@ -1,11 +1,13 @@
 package agentsd
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/skillcatalog"
@@ -26,7 +28,7 @@ func TestAnUnflaggedRecordOpensWithNoApproval(t *testing.T) {
 	if err := d.saveSealedSecret(home, "GITLAB_TOKEN", value, "", false); err != nil {
 		t.Fatal(err)
 	}
-	s := readSealedSecrets(home).Secrets["GITLAB_TOKEN"]
+	s := sealedSecretsHere(home)["GITLAB_TOKEN"]
 	if !s.NoAsk || s.Release || len(s.Grants) != 0 || strings.Contains(string(s.Sealed), value) {
 		t.Fatalf("%+v", s)
 	}
@@ -80,11 +82,11 @@ func TestAnUnflaggedRecordsFlagChangedByHandDoesNotOpen(t *testing.T) {
 	if err := d.saveSealedSecret(home, "ASKED_TOKEN", "asked-value", "", true); err != nil {
 		t.Fatal(err)
 	}
-	f := readSealedSecrets(home)
+	f, _ := readSealedSecrets(home)
 	plain, asked := f.Secrets["PLAIN_TOKEN"], f.Secrets["ASKED_TOKEN"]
 	plain.NoAsk, asked.NoAsk = false, true
 	f.Secrets["PLAIN_TOKEN"], f.Secrets["ASKED_TOKEN"] = plain, asked
-	writeSealedSecrets(home, f)
+	must(t, writeSealedSecrets(home, f))
 	if got := d.secrets(); got["ASKED_TOKEN"] != "" || got["PLAIN_TOKEN"] != "" {
 		t.Fatalf("a flag changed by hand opened: %v", got)
 	}
@@ -109,7 +111,7 @@ func TestALinuxMachineWithNoControlPlaneKeepsAnUnflaggedSecret(t *testing.T) {
 	if err := d.saveSealedSecret(home, "GITLAB_TOKEN", "linux-value", "", false); err != nil {
 		t.Fatal(err)
 	}
-	if s := readSealedSecrets(home).Secrets["GITLAB_TOKEN"]; s.Release || !s.NoAsk {
+	if s := sealedSecretsHere(home)["GITLAB_TOKEN"]; s.Release || !s.NoAsk {
 		t.Fatalf("%+v", s)
 	}
 	if got := d.secrets()["GITLAB_TOKEN"]; got != "linux-value" {
@@ -143,7 +145,7 @@ func TestAnUnreadableKeyGivesOneErrorForEverySecret(t *testing.T) {
 		t.Fatal(err)
 	}
 	d.HostKey = unreadableKey{}
-	f := readSealedSecrets(home)
+	f, _ := readSealedSecrets(home)
 	var messages []string
 	for _, name := range []string{"PLAIN_TOKEN", "ASKED_TOKEN"} {
 		_, err := d.openSealedSecret(sealedLocal, name, f.Secrets[name])
@@ -161,6 +163,63 @@ func TestAnUnreadableKeyGivesOneErrorForEverySecret(t *testing.T) {
 	}
 	if err := d.saveSealedSecret(home, "NEW_TOKEN", "new", "", false); err == nil || !strings.Contains(err.Error(), "does not read") {
 		t.Fatalf("%v", err)
+	}
+}
+
+// #6632: a key that does not read is in the log once, not at each delivery nor for each
+// secret, and Status ▸ Secrets says it, with what to do, until the key reads again. Not
+// parallel: the log is the whole program's.
+func TestAnUnreadableKeyIsSaidOnceAndOnTheSecretsPage(t *testing.T) {
+	root, home := t.TempDir(), t.TempDir()
+	personalHomeFor(t, home)
+	_, public := machineKeys(t, root)
+	d, _ := start(t, root)
+	defer d.Shutdown()
+	sent := wire.MachineUserSettings{User: "sam", Secrets: []wire.SealedUserSecret{sealedSecret(t, public, "sam", "GITHUB_TOKEN", 1, "ghp_sams")}}
+	d.Told(wire.NotifyMachineUserSettings.Name, mustJSON(sent))
+	if err := d.saveSealedSecret(home, "AGENTS_TOKEN", "agents-value", "", false); err != nil {
+		t.Fatal(err)
+	}
+	if list, err := d.localSecretList(); err != nil || list.KeyProblem != nil {
+		t.Fatalf("%+v %v", list, err)
+	}
+
+	var logged bytes.Buffer
+	var logMu sync.Mutex
+	restoreLog := captureLog(&logged, &logMu)
+	good := d.HostKey
+	d.HostKey = unreadableKey{}
+	for version := int64(2); version <= 6; version++ {
+		sent.Secrets = []wire.SealedUserSecret{sealedSecret(t, public, "sam", "GITHUB_TOKEN", version, "ghp_sams")}
+		d.Told(wire.NotifyMachineUserSettings.Name, mustJSON(sent))
+		if _, ok := d.sealedLocalSecret(home, "AGENTS_TOKEN"); ok {
+			t.Fatal("opened with no key")
+		}
+	}
+	list, err := d.localSecretList()
+	if err != nil || list.KeyProblem == nil || !strings.Contains(*list.KeyProblem, "does not read") ||
+		!strings.Contains(*list.KeyProblem, "another program's") {
+		t.Fatalf("%+v %v", list, err)
+	}
+	d.HostKey = good
+	if _, ok := d.sealedLocalSecret(home, "AGENTS_TOKEN"); !ok {
+		t.Fatal("not opened with the key back")
+	}
+	restoreLog()
+	logMu.Lock()
+	text := logged.String()
+	logMu.Unlock()
+	if n := strings.Count(text, "for its secrets does not read"); n != 1 {
+		t.Fatalf("said %d times:\n%s", n, text)
+	}
+	if strings.Contains(text, "could not be sealed") || strings.Contains(text, "AGENTS_TOKEN") {
+		t.Fatalf("said for each secret:\n%s", text)
+	}
+	if strings.Count(text, "reads again") != 1 {
+		t.Fatal(text)
+	}
+	if list, err := d.localSecretList(); err != nil || list.KeyProblem != nil {
+		t.Fatalf("%+v %v", list, err)
 	}
 }
 
@@ -187,7 +246,7 @@ func TestNoSecretsEnvAfterAStart(t *testing.T) {
 	if got := d.secrets(); got["OLD_TOKEN"] != "old-4177-not-real" || got["KEPT_TOKEN"] != "from-the-file" {
 		t.Fatalf("%v", got)
 	}
-	if s := readSealedSecrets(home).Secrets["OLD_TOKEN"]; !s.NoAsk {
+	if s := sealedSecretsHere(home)["OLD_TOKEN"]; !s.NoAsk {
 		t.Fatalf("a moved secret is flagged: %+v", s)
 	}
 
@@ -231,7 +290,7 @@ func TestNoSecretsEnvAfterAStart(t *testing.T) {
 
 	// A file that comes back (a hand edit) is moved at the next start; the store's record
 	// of a name wins over the file's line, as every reader read it first.
-	os.WriteFile(path, []byte("KEPT_TOKEN=stale-line\nNEW_TOKEN=new-4177-not-real\n"), 0o600)
+	must(t, os.WriteFile(path, []byte("KEPT_TOKEN=stale-line\nNEW_TOKEN=new-4177-not-real\n"), 0o600))
 	d2, _ := start(t, root)
 	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
 		t.Fatal("secrets.env came back and stayed")
@@ -254,8 +313,8 @@ func TestAMoveWithNoKeyKeepsTheFile(t *testing.T) {
 	home := t.TempDir()
 	personalHomeFor(t, home)
 	path := skillcatalog.SecretsPath(home)
-	os.MkdirAll(filepath.Dir(path), 0o700)
-	os.WriteFile(path, []byte("OLD_TOKEN=old-value\n"), 0o600)
+	must(t, os.MkdirAll(filepath.Dir(path), 0o700))
+	must(t, os.WriteFile(path, []byte("OLD_TOKEN=old-value\n"), 0o600))
 	d, err := newWith(context.Background(), t.TempDir(), testHooksOf(t).options())
 	if err != nil {
 		t.Fatal(err)

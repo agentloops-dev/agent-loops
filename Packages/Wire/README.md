@@ -9,6 +9,7 @@ and the control plane (#1135, step 0 of the move to Go, #1134). It is not a Swif
 | `daemon.openrpc.json` | The host's header: its info, declared capabilities and failure codes (no methods) |
 | `daemon/<group>.openrpc.json` | The methods a host answers (sent with `h`) and its notifications, one file per group (`sessions`, `folders`, `workflows`, `forge`, `mcp`, `machines`, `org`), each in name order; a method is in one file only (#5381) |
 | `control.openrpc.json` | The methods the control plane answers itself, and its notifications |
+| `feature-flags.json` | The feature flags in work (#6254), in name order: each flag's name, title, one line and issue. A person's flag is kept as `flag:<name>` in their display settings |
 
 ## What is made from it
 
@@ -22,6 +23,16 @@ and the control plane (#1135, step 0 of the move to Go, #1134). It is not a Swif
   `Web/src/protocol/capabilities.generated.ts` and AgentsKitCore's
   `Daemon/Capabilities.generated.swift`: a constant per capability, and the capability of each
   method and notification.
+- **Feature flags (#6254):** AgentsKitCore's `Model/FeatureFlag.generated.swift` (the
+  `FeatureFlag` enum) and `Web/src/protocol/flags.generated.ts`, from `feature-flags.json`. A new
+  flag is one entry there and a `gen`; take it out when its feature ships.
+- **Maturity (#6052):** AgentsKitCore's `Model/Maturity.generated.swift` (`EarlyFeature.all`)
+  and `Web/src/protocol/maturity.generated.ts`, from `maturity.json`: each capability that is
+  not GA, with its level (`pilot`, `alpha` or `beta`), the title of its feature, its issue and,
+  for a pilot on some clients only, its clients. A capability it does not list is GA. The
+  generator refuses a name that no document has. `Go/wire/maturity_gen.go` has the levels for
+  the Go host and the control plane, which send their own in `machine/hello` and
+  `control/status` (#6579).
 
 `scripts/wire.sh check` writes nothing and fails when one of them is stale; CI's `go` job runs
 the same check as a test.

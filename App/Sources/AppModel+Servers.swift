@@ -95,6 +95,13 @@ extension AppModel {
                 if answered {
                     backoff.connected()
                     self?.controlPlaneDidAnswer()
+                    // The lock first, as on the Remote (#6311): a card for a device that asks to join
+                    // shows at once, not after every read below (#6625), and the channels to
+                    // machines those reads open have the lock's key.
+                    if let client = ControlConfig.client { await self?.lock.connected(control, client: client) }
+                    // A notice the window missed, read again while connected (#6625).
+                    let lockWatch = Task { [lock = self?.lock] in await lock?.watch(control) }
+                    defer { lockWatch.cancel() }
                     // Status ▸ Secrets and Accounts' rows say when the newest operation was (#4161).
                     // Read before the machines are reached: what the control plane keeps, a
                     // machine has from it, and gets no call of its own from here (#5573).
@@ -113,7 +120,6 @@ extension AppModel {
                         }
                     }
                     defer { zoneWatch.cancel() }
-                    if let client = ControlConfig.client { await self?.lock.connected(control, client: client) }
                     await Self.sealWaiting(on: control, lock: self?.lock)
                     for await note in control.notifications() {
                         if note.method == DaemonAPI.Notification.controlSealingWanted {
@@ -332,9 +338,10 @@ extension AppModel {
 
     /// Make with Start from a warm pool (#5366, spec "A claim"): the control plane takes the
     /// oldest ready machine of a pool of this provider and size, binds it with the person's Stop
-    /// when idle, and the pool makes another. Its page opens on the catch-up; the projects the
-    /// pool does not hold are sent as a new machine's are. With no ready machine left by now it
-    /// makes a new one, and its page says so.
+    /// when idle, and the pool makes another. Its page opens on the catch-up, in which the
+    /// machine gets the pool's projects at their last commit itself (#6890); the projects the
+    /// person ticked are sent as a new machine's are, with their uncommitted changes. With no
+    /// ready machine left by now it makes a new one, and its page says so.
     private func claimMachine(_ draft: NewMachineDraft, _ controlRequests: DaemonClient) async throws {
         let claimed = try await controlRequests.call(
             DaemonAPI.Method.poolClaim,
@@ -345,7 +352,6 @@ extension AppModel {
         rest.name = claimed.name
         rest.stopWhenIdleMinutes = nil
         if claimed.fromPool {
-            rest.projects = draft.projects.filter { !draft.poolProjects.contains($0.path) }
             machinePoolNotes[claimed.name] = WarmPoolWords.replacedNote(pool: claimed.pool ?? "the pool")
         } else {
             rest.stopWhenIdleMinutes = draft.stopWhenIdleMinutes

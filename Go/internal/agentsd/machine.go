@@ -62,16 +62,12 @@ func (d *Daemon) machineFirstLookDone() {
 func (d *Daemon) machineChanged(c machineChange) {
 	if c.kind == "wake" {
 		d.goJob("disk check", d.checkDisk)
-		// A timer does not count the time the Mac slept (#6190): what came due while it
-		// slept, a lease's end or a wait's deadline, is acted on now, not that much later.
-		d.goJob("leases after wake", d.lapseLeasesNow)
-		// A call held over the sleep is answered now (#6310): its client counted the sleep
-		// and ends it at once, while the hold's timer did not count it. A wait whose time
-		// came in the sleep is told that first.
-		d.goJob("waits after wake", func() {
-			d.waitDeadlinesPassed()
-			d.answerHeldWaits()
-		})
+		d.awakeForSure(true)
+		d.afterSleep()
+	}
+	if c.kind == "back" {
+		// The person is at the Mac, so it is not in a dark wake (#6541).
+		d.awakeForSure(false)
 	}
 	if c.kind == "sleep" {
 		// Answered before the Mac sleeps (#6310), so no call is open across the sleep.

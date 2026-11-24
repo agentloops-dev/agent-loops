@@ -33,7 +33,13 @@ type SearchFilter struct {
 	// SinceMinutes narrows the list to the issues updated in the last that many minutes (#6349),
 	// 0 for no bound. JQL's dates are in the person's own time zone; a relative time is not.
 	SinceMinutes int
+	// Sort is the order: SortPriority (Jira's priority, the highest first, then the last updated), else the last
+	// updated first (#6538).
+	Sort string
 }
+
+// SortPriority is SearchFilter.Sort's value for a list in priority order.
+const SortPriority = "priority"
 
 // Item is an issue as the forge reads list it, by its key (PROJ-12).
 type Item struct {
@@ -202,7 +208,7 @@ func (r restIssue) item(site string) Item {
 	return i
 }
 
-// SearchJQL is the JQL for projects (by key) and f, the last updated first.
+// SearchJQL is the JQL for projects (by key) and f, the last updated first, or by priority for SortPriority.
 func SearchJQL(projects []string, f SearchFilter) string {
 	keys := make([]string, len(projects))
 	for n, p := range projects {
@@ -232,7 +238,11 @@ func SearchJQL(projects []string, f SearchFilter) string {
 	if f.SinceMinutes > 0 {
 		clauses = append(clauses, fmt.Sprintf("updated >= \"-%dm\"", f.SinceMinutes))
 	}
-	return strings.Join(clauses, " AND ") + " ORDER BY updated DESC"
+	order := " ORDER BY updated DESC"
+	if f.Sort == SortPriority {
+		order = " ORDER BY priority DESC, updated DESC"
+	}
+	return strings.Join(clauses, " AND ") + order
 }
 
 func featureLabel(name string) string {

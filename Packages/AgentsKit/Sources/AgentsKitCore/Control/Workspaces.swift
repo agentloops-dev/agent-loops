@@ -1,7 +1,7 @@
 import Foundation
 
-// Machine providers (#691, specs/691-workspace-providers): MCP servers on the control plane
-// that start and stop the machines hosts run on. What is here is records and the wire; the
+// Machine providers (#691, specs/691-workspace-providers): the command provider, an MCP
+// server on the control plane that starts and stops the machines hosts run on. What is here is records and the wire; the
 // MCP client and the starts are ControlPlaneKit's, handed in as `WorkspaceHandling`.
 
 /// A provider, by the id the control plane gave it.
@@ -38,60 +38,30 @@ public struct WorkspaceLink: Codable, Hashable, Sendable {
 /// which stay in the control plane's own home (research R3).
 public struct ProviderRecord: Codable, Hashable, Sendable, Identifiable {
     public enum Kind: String, Codable, Sendable {
-        /// The command provider Agents ships (`workspace-commands`).
+        /// The command provider Agents ships (`workspace-commands`). The MCP server kinds,
+        /// `stdio` and `http`, were removed (#6623).
         case commands
-        /// An MCP server the control plane runs.
-        case stdio
-        /// An MCP server at an address.
-        case http
     }
 
     public var id: ProviderID
     public var name: String
     public var kind: Kind
-    public var command: String?
-    public var args: [String]?
-    public var url: String?
-    /// Values may hold `${SECRET}`, filled in from the secrets when the server is reached.
-    public var headers: [String: String]?
     /// The command provider's configuration (contracts/command-provider.md).
     public var commands: JSONValue?
     public var secretNames: [String]
-    /// For a server whose tools don't follow the contract (contracts/tool-map.md).
-    public var map: JSONValue?
     /// Which optional contract tools it has: `options`, `create`, `delete`.
     public var capabilities: [String]
     public var contract: Int
     public var rev: Int
     public var forgotten: Bool?
-    /// Set when the map or commands were kept as an agent wrote them at Add Provider (#858).
-    public var writtenBy: WrittenBy?
 
-    /// Who wrote a provider's map or commands, when it was an agent (#858).
-    public struct WrittenBy: Codable, Hashable, Sendable {
-        public var runtimeID: String
-        public var at: Date
-        public init(runtimeID: String, at: Date) {
-            self.runtimeID = runtimeID
-            self.at = at
-        }
-    }
-
-    public init(id: ProviderID, name: String, kind: Kind, command: String? = nil, args: [String]? = nil,
-                url: String? = nil, headers: [String: String]? = nil, commands: JSONValue? = nil,
-                secretNames: [String] = [], map: JSONValue? = nil, capabilities: [String] = [],
-                contract: Int = 1, rev: Int = 0, forgotten: Bool? = nil, writtenBy: WrittenBy? = nil) {
-        self.writtenBy = writtenBy
+    public init(id: ProviderID, name: String, kind: Kind, commands: JSONValue? = nil, secretNames: [String] = [],
+                capabilities: [String] = [], contract: Int = 1, rev: Int = 0, forgotten: Bool? = nil) {
         self.id = id
         self.name = name
         self.kind = kind
-        self.command = command
-        self.args = args
-        self.url = url
-        self.headers = headers
         self.commands = commands
         self.secretNames = secretNames
-        self.map = map
         self.capabilities = capabilities
         self.contract = contract
         self.rev = rev
@@ -103,35 +73,8 @@ public struct ProviderRecord: Codable, Hashable, Sendable, Identifiable {
         let trimmed = name.trimmingCharacters(in: .whitespaces)
         if trimmed.isEmpty { return "Give it a name." }
         if trimmed.count > 60 { return "The name is over 60 characters." }
-        switch kind {
-        case .commands:
-            if commands?.objectValue == nil { return "Choose a preset or give its commands." }
-        case .stdio:
-            if (command ?? "").trimmingCharacters(in: .whitespaces).isEmpty { return "Give the command that runs the server." }
-        case .http:
-            guard let url, url.hasPrefix("http://") || url.hasPrefix("https://"), URL(string: url) != nil else {
-                return "The address must start with http:// or https://."
-            }
-        }
-        for name in referencedSecrets where !secretNames.contains(name) {
-            return "${\(name)} isn’t one of its secrets."
-        }
+        if commands?.objectValue == nil { return "Choose a preset or give its commands." }
         return nil
-    }
-
-    /// The `${NAME}` its headers name.
-    public var referencedSecrets: [String] {
-        (headers ?? [:]).values.flatMap(Self.placeholders).sorted()
-    }
-
-    static func placeholders(in text: String) -> [String] {
-        var found: [String] = []
-        var rest = Substring(text)
-        while let open = rest.range(of: "${"), let close = rest[open.upperBound...].firstIndex(of: "}") {
-            found.append(String(rest[open.upperBound..<close]))
-            rest = rest[rest.index(after: close)...]
-        }
-        return found
     }
 }
 
@@ -140,11 +83,14 @@ public extension DaemonAPI.Method {
     static let providersList = "providers/list"
     /// `ProviderAdd` → `ProviderSummary`, once the server has been checked and has listed.
     static let providersAdd = "providers/add"
-    /// `ProviderAdd` with `id`; secrets left out are kept, and so are its command, address,
-    /// headers, and map or commands (#858).
+    /// `ProviderAdd` with `id`; secrets left out are kept, and so are its commands.
     static let providersUpdate = "providers/update"
     /// `ProviderRequest`. Its hosts stay, unlinked.
     static let providersRemove = "providers/remove"
+    /// `ProviderOAuthStart` → `ProviderOAuthStarted` (#6072): the consent page to open.
+    static let providersOAuthStart = "providers/oauthStart"
+    /// `ProviderOAuthFinish` → `ProviderSummary` (#6072): what the hand-back page gave.
+    static let providersOAuthFinish = "providers/oauthFinish"
     /// `{id?}`: list again, said as `control/providersChanged`.
     static let providersRefresh = "providers/refresh"
     /// `MachineLink` → `ControlMachine`. A workspace linked to another host moves here.
@@ -213,10 +159,14 @@ public extension DaemonAPI {
         /// Why the control plane gave up waiting for it to join, once it did (#4610): the row
         /// says so, with Delete.
         public var notJoined: String?
+        /// The set-up of a machine New Machine is making (#6073), from the press of Make until
+        /// it joins: what each step did, for a client that opens late.
+        public var setup: MachineSetup?
 
         public init(id: String, name: String, state: String, ssh: String? = nil, tunnel: Bool? = nil,
                     hostKeyRenews: Bool? = nil, cost: String? = nil, idleTimeoutMinutes: Int? = nil,
-                    host: MachineRef? = nil, joining: Bool? = nil, notJoined: String? = nil) {
+                    host: MachineRef? = nil, joining: Bool? = nil, notJoined: String? = nil,
+                    setup: MachineSetup? = nil) {
             self.id = id
             self.name = name
             self.state = state
@@ -228,6 +178,7 @@ public extension DaemonAPI {
             self.host = host
             self.joining = joining
             self.notJoined = notJoined
+            self.setup = setup
         }
 
         /// Whether a host added by hand may be this workspace (#976): its name is the
@@ -254,7 +205,6 @@ public extension DaemonAPI {
         public var secrets: [String: Bool]
         public var capabilities: [String]
         public var contract: Int
-        public var mapped: Bool
         /// The command provider's preset, when it uses one.
         public var preset: String?
         public var workspaces: [MachineInfo]
@@ -279,14 +229,18 @@ public extension DaemonAPI {
         public var machineName: String?
         /// Its machine is offline: its machines can't be started or stopped until it is back.
         public var machineOffline: Bool?
+        /// Connected with OAuth (#6072), not a pasted token: whose account, and whether the
+        /// connection still works. Nil for a pasted token.
+        public var oauth: ProviderOAuth?
 
         public init(id: ProviderID, name: String, kind: String, secrets: [String: Bool] = [:],
-                    capabilities: [String] = [], contract: Int = 1, mapped: Bool = false, preset: String? = nil,
+                    capabilities: [String] = [], contract: Int = 1, preset: String? = nil,
                     workspaces: [MachineInfo] = [], listedAt: Date? = nil, current: Bool = true,
                     problem: String? = nil, group: String? = nil, mayUse: Bool? = nil,
                     sshToolMissing: String? = nil, machine: MachineRef? = nil, machineName: String? = nil,
-                    machineOffline: Bool? = nil, default isDefault: Bool? = nil) {
+                    machineOffline: Bool? = nil, default isDefault: Bool? = nil, oauth: ProviderOAuth? = nil) {
             self.default = isDefault
+            self.oauth = oauth
             self.machine = machine
             self.machineName = machineName
             self.machineOffline = machineOffline
@@ -296,7 +250,6 @@ public extension DaemonAPI {
             self.secrets = secrets
             self.capabilities = capabilities
             self.contract = contract
-            self.mapped = mapped
             self.preset = preset
             self.workspaces = workspaces
             self.listedAt = listedAt
@@ -390,40 +343,86 @@ public extension DaemonAPI {
         public var id: ProviderID?
         public var name: String
         public var kind: ProviderRecord.Kind
-        public var command: String?
-        public var args: [String]?
-        public var url: String?
-        public var headers: [String: String]?
         public var commands: JSONValue?
-        public var map: JSONValue?
         /// The machine that carries it (#3398). Nil: the person's first online machine on an
         /// add, the one it has on an update.
         public var machine: MachineRef?
         /// Name to value. Passed on to `machine`, which keeps them; never given back.
         public var secrets: [String: String]?
-        /// Your commands: the program its commands use, for Write It for Me (#858). Not kept.
-        public var cli: String?
-        /// The draft this accepts (#858): its map or commands, unchanged, mark the record
-        /// `writtenBy`.
-        public var draft: UUID?
 
-        public init(id: ProviderID? = nil, name: String, kind: ProviderRecord.Kind, command: String? = nil,
-                    args: [String]? = nil, url: String? = nil, headers: [String: String]? = nil,
-                    commands: JSONValue? = nil, map: JSONValue? = nil, machine: MachineRef? = nil,
-                    secrets: [String: String]? = nil, cli: String? = nil, draft: UUID? = nil) {
+        public init(id: ProviderID? = nil, name: String, kind: ProviderRecord.Kind, commands: JSONValue? = nil,
+                    machine: MachineRef? = nil, secrets: [String: String]? = nil) {
             self.machine = machine
-            self.cli = cli
-            self.draft = draft
             self.id = id
             self.name = name
             self.kind = kind
-            self.command = command
-            self.args = args
-            self.url = url
-            self.headers = headers
             self.commands = commands
-            self.map = map
             self.secrets = secrets
+        }
+    }
+
+    /// A provider connected with OAuth (#6072): whose account and team its machine's token is
+    /// for, and whether the provider still takes it. Never a token.
+    struct ProviderOAuth: Codable, Sendable, Hashable {
+        public var account: String?
+        public var team: String?
+        /// `connected`, or `disconnected` once its last list was refused: connect again.
+        public var state: String
+        public init(account: String? = nil, team: String? = nil, state: String = "connected") {
+            self.account = account
+            self.team = team
+            self.state = state
+        }
+        public var disconnected: Bool { state == "disconnected" }
+    }
+
+    /// `providers/oauthStart` (#6072): connect with OAuth on `machine`; with `id`, again.
+    struct ProviderOAuthStart: Codable, Sendable, Hashable {
+        public var preset: String
+        public var machine: MachineRef?
+        public var id: ProviderID?
+        public var origin: String?
+        public init(preset: String, machine: MachineRef? = nil, id: ProviderID? = nil, origin: String? = nil) {
+            self.preset = preset
+            self.machine = machine
+            self.id = id
+            self.origin = origin
+        }
+    }
+
+    /// `providers/oauthStart`'s result: the consent page, its state, and the keeping machine.
+    struct ProviderOAuthStarted: Codable, Sendable, Hashable {
+        public var url: String
+        public var state: String
+        public var machine: MachineRef
+        public var machineName: String?
+        public init(url: String, state: String, machine: MachineRef, machineName: String? = nil) {
+            self.url = url
+            self.state = state
+            self.machine = machine
+            self.machineName = machineName
+        }
+    }
+
+    /// `providers/oauthFinish` (#6072): the code and the state, or the provider's error.
+    struct ProviderOAuthFinish: Codable, Sendable, Hashable {
+        public var state: String?
+        public var code: String?
+        public var error: String?
+        public var name: String?
+        public init(state: String? = nil, code: String? = nil, error: String? = nil, name: String? = nil) {
+            self.state = state
+            self.code = code
+            self.error = error
+            self.name = name
+        }
+
+        /// What agents://oauth/callback carried, or nil when it carried neither a code nor an error.
+        public init?(callback: URL) {
+            let items = URLComponents(url: callback, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            func value(_ name: String) -> String? { items.first { $0.name == name }?.value.flatMap { $0.isEmpty ? nil : $0 } }
+            guard value("code") != nil || value("error") != nil else { return nil }
+            self.init(state: value("state"), code: value("code"), error: value("error"))
         }
     }
 

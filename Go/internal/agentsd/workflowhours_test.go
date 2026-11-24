@@ -1,7 +1,6 @@
 package agentsd
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -225,9 +224,9 @@ func TestAFireOutsideHoursIsHeld(t *testing.T) {
 		}
 	}
 	write := func(days string) {
-		os.MkdirAll(workflowsFolder(dir), 0o755)
-		os.WriteFile(filepath.Join(workflowsFolder(dir), "night.md"),
-			[]byte("---\non: server.online\nhours:\n  days: ["+days+"]\n  time-zone: UTC\n---\nLook.\n"), 0o644)
+		must(t, os.MkdirAll(workflowsFolder(dir), 0o755))                     //nolint:gosec // G301: the mode this folder always had; only its error is new
+		must(t, os.WriteFile(filepath.Join(workflowsFolder(dir), "night.md"), //nolint:gosec // G306: the mode this file always had; only its error is new
+			[]byte("---\non: server.online\nhours:\n  days: ["+days+"]\n  time-zone: UTC\n---\nLook.\n"), 0o644))
 	}
 	write(strings.Join(others, ", "))
 	approveAll(t, c, folder)
@@ -237,7 +236,7 @@ func TestAFireOutsideHoursIsHeld(t *testing.T) {
 		return got != nil && len(got.Consequences) == 1 && got.Consequences[0].Refused != nil && got.Consequences[0].Refused.Reason.OutsideHours != nil
 	})
 	var list []wire.WorkflowSummary
-	json.Unmarshal(c.call(t, 2, "workflows/list", map[string]any{"folder": folder}), &list)
+	mustUnmarshal(t, c.call(t, 2, "workflows/list", map[string]any{"folder": folder}), &list)
 	midnight := time.Now().UTC().Truncate(24 * time.Hour).Add(24 * time.Hour)
 	if len(list) != 1 || !list[0].HoldsAFire || list[0].HoursOpenAt == nil || !list[0].HoursOpenAt.Time().Equal(midnight) ||
 		list[0].Workflow.Hours == nil || len(list[0].Workflow.Hours.Days) != 6 {
@@ -254,7 +253,7 @@ func TestAFireOutsideHoursIsHeld(t *testing.T) {
 	}
 	// Run now always runs.
 	var s wire.WorkflowSummary
-	json.Unmarshal(c.call(t, 3, "workflows/run", map[string]any{"folder": folder, "workflowID": "night"}), &s)
+	mustUnmarshal(t, c.call(t, 3, "workflows/run", map[string]any{"folder": folder, "workflowID": "night"}), &s)
 	if s.LastOutcome == nil || s.LastOutcome.Ran == nil {
 		t.Fatalf("%+v", s)
 	}
@@ -378,16 +377,16 @@ func TestTheSettingsWriteHours(t *testing.T) {
 	defer d.Shutdown()
 	dir := folder(t, c, 1)
 	folder := store.FolderURL(dir)
-	os.MkdirAll(workflowsFolder(dir), 0o755)
+	must(t, os.MkdirAll(workflowsFolder(dir), 0o755)) //nolint:gosec // G301: the mode this folder always had; only its error is new
 	path := filepath.Join(workflowsFolder(dir), "nightly.md")
-	os.WriteFile(path, []byte("---\non: agent.finished\n---\nLook.\n"), 0o644)
+	must(t, os.WriteFile(path, []byte("---\non: agent.finished\n---\nLook.\n"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	var s wire.WorkflowSummary
-	json.Unmarshal(c.call(t, 2, "workflows/settings", map[string]any{"folder": folder, "workflowID": "nightly", "settings": map[string]any{"options": map[string]any{}},
+	mustUnmarshal(t, c.call(t, 2, "workflows/settings", map[string]any{"folder": folder, "workflowID": "nightly", "settings": map[string]any{"options": map[string]any{}},
 		"hours": map[string]any{"between": "18:00-09:00", "days": []string{"sat", "sun"}}}), &s)
 	if h := s.Workflow.Hours; h == nil || *h.Between != "18:00-09:00" || len(h.Days) != 2 {
 		t.Fatalf("%+v", s.Workflow.Hours)
 	}
-	json.Unmarshal(c.call(t, 3, "workflows/settings", map[string]any{"folder": folder, "workflowID": "nightly", "settings": map[string]any{"options": map[string]any{}},
+	mustUnmarshal(t, c.call(t, 3, "workflows/settings", map[string]any{"folder": folder, "workflowID": "nightly", "settings": map[string]any{"options": map[string]any{}},
 		"hours": map[string]any{}}), &s)
 	if b, _ := os.ReadFile(path); strings.Contains(string(b), "hours") {
 		t.Fatalf("%s", b)
@@ -479,7 +478,7 @@ func TestTheProjectsWorkingHours(t *testing.T) {
 		t.Fatalf("%+v", h)
 	}
 	var s wire.FolderSummary
-	json.Unmarshal(c.call(t, 2, "folders/setWorkingHours", map[string]any{"folder": folder,
+	mustUnmarshal(t, c.call(t, 2, "folders/setWorkingHours", map[string]any{"folder": folder,
 		"hours": map[string]any{"between": "08:00-16:00", "days": []string{"sun", "mon", "tue", "wed", "thu", "fri", "sat"}, "timeZone": "Asia/Tokyo"}}), &s)
 	if h := s.Folder.WorkingHours; h == nil || *h.Between != "08:00-16:00" || h.Days != nil || *h.TimeZone != "Asia/Tokyo" {
 		t.Fatalf("%+v", s.Folder.WorkingHours)
@@ -502,16 +501,16 @@ func TestTheProjectsWorkingHours(t *testing.T) {
 	}
 	// None takes it out: the default again.
 	s = wire.FolderSummary{}
-	json.Unmarshal(c.call(t, 4, "folders/setWorkingHours", map[string]any{"folder": folder}), &s)
+	mustUnmarshal(t, c.call(t, 4, "folders/setWorkingHours", map[string]any{"folder": folder}), &s)
 	if s.Folder.WorkingHours != nil || *d.workingHoursOf(dir).Between != "09:00-17:00" {
 		t.Fatalf("%+v", s.Folder.WorkingHours)
 	}
 	// Configuration's Hours writes the name.
-	os.MkdirAll(workflowsFolder(dir), 0o755)
+	must(t, os.MkdirAll(workflowsFolder(dir), 0o755)) //nolint:gosec // G301: the mode this folder always had; only its error is new
 	path := filepath.Join(workflowsFolder(dir), "nightly.md")
-	os.WriteFile(path, []byte("---\non: agent.finished\n---\nLook.\n"), 0o644)
+	must(t, os.WriteFile(path, []byte("---\non: agent.finished\n---\nLook.\n"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	var w wire.WorkflowSummary
-	json.Unmarshal(c.call(t, 5, "workflows/settings", map[string]any{"folder": folder, "workflowID": "nightly", "settings": map[string]any{"options": map[string]any{}},
+	mustUnmarshal(t, c.call(t, 5, "workflows/settings", map[string]any{"folder": folder, "workflowID": "nightly", "settings": map[string]any{"options": map[string]any{}},
 		"hours": map[string]any{"named": "not-working"}}), &w)
 	if b, _ := os.ReadFile(path); !strings.Contains(string(b), "\nhours: not-working\n") || w.Workflow.Hours == nil || w.Workflow.Hours.Named == nil {
 		t.Fatalf("%s %+v", b, w.Workflow.Hours)

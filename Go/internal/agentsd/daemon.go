@@ -14,11 +14,21 @@ import (
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/internal/browser"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
+	"github.com/agentloops-dev/agent-loops/Go/internal/repoalias"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // Daemon is one host: its root, the clients connected to it, and what it serves them.
 type Daemon struct {
+	// smallFiles are the bounded small files (smallFile), each swept hourly; set in newWith.
+	smallFiles []interface {
+		Name() string
+		Sweep() (int, error)
+	}
+	dismissedLeads *store.JSONFile[dismissedLead]
+	repoAliases    *store.JSONFile[repoalias.Alias]
+	erased         *store.JSONFile[wire.Date]
+
 	ctx context.Context
 	// opts are the daemon's own (#5926): set by New, and changed only by a test, as a test
 	// once changed the process's environment while its daemon ran.
@@ -56,6 +66,9 @@ type Daemon struct {
 	machineMoves sync.Map
 	// moves are the moves to another machine under way, whoever asked (#4641).
 	moves movesUnderWay
+
+	// largeChat asks the retention sweep to trim conversations before the hour (#6706).
+	largeChat chan struct{}
 
 	mu      sync.Mutex
 	clients map[int64]*Client
@@ -121,6 +134,7 @@ type Daemon struct {
 	restartBook
 	adoptedBook
 	machineBook
+	sleepBook
 	hostStatusBook
 	elsewhereBook
 	idleBook
@@ -221,9 +235,14 @@ func (d *Daemon) startOpts() startOptions {
 	return startOptions{}
 }
 
+// newDiskFree is the diskFree of a daemon that New makes: nil, the disk's own reading, in
+// the product. The package's tests set it once, before any test runs, to a disk with room
+// (#6497), so a test's restart by New reads no full Mac either.
+var newDiskFree func(wire.DiskReading) int64
+
 // New is a daemon on root, with the personal home AGENTS_PERSONAL_HOME names.
 func New(ctx context.Context, root string) (*Daemon, error) {
-	return newWith(ctx, root, startOptions{namedHome: os.Getenv("AGENTS_PERSONAL_HOME")})
+	return newWith(ctx, root, startOptions{namedHome: os.Getenv("AGENTS_PERSONAL_HOME"), diskFree: newDiskFree})
 }
 
 // newWith is New with its options given, not read from the process.
@@ -234,14 +253,25 @@ func newWith(ctx context.Context, root string, opts startOptions) (*Daemon, erro
 	}
 	// Shutdown ends this ctx last, so a goroutine that waits on d.ctx ends with the host (#5653).
 	ctx, cancel := context.WithCancel(ctx)
-	d := &Daemon{ctx: ctx, Store: st, handlers: map[string]Handler{}, clients: map[int64]*Client{}, unknown: map[string]int{},
+	d := &Daemon{ctx: ctx, largeChat: make(chan struct{}, 1), Store: st, handlers: map[string]Handler{}, clients: map[int64]*Client{}, unknown: map[string]int{},
 		lives: map[wire.UUID]*live{}, relays: map[string]*relay{}, sent: map[wire.UUID]bool{},
 		watches: map[string]*folderWatch{}, interests: map[string][]interest{}, shells: map[shellKey]*shell{},
 		SettingsDir: filepath.Join(st.Loc.Root, "settings"), HostKey: controllink.HostKeyFile{Root: st.Loc.Root},
 		PersonKey: controllink.PersonKeyFile{Root: st.Loc.Root}}
+	d.dismissedLeads = d.openDismissedLeads()
+	d.repoAliases = d.openRepoAliases()
+	d.erased = d.openErased()
+	d.deployStore = d.openDeploys()
+	d.releaseDone = d.openReleaseTags()
 	d.opts.Store(&opts)
 	d.jobCancel = cancel
 	st.OnGap = d.tellEntry
+	st.OnLarge = func() {
+		select {
+		case d.largeChat <- struct{}{}:
+		default:
+		}
+	}
 	// The sweep of roots that are gone finds this root's own folders by this (#3746).
 	if err := store.MarkOwnFolders(st.Loc); err != nil {
 		log.Printf("store: could not mark this root's cache and log folders: %v", err)
@@ -294,6 +324,8 @@ func newWith(ctx context.Context, root string, opts startOptions) (*Daemon, erro
 	// The deploys waiting for the person, in Needs You (#3587).
 	d.startDeploys()
 	d.installDefaultToolsets()
+	// Each app worktree's hooks folder, as this build writes it (#6529).
+	d.refreshTrailerHooks()
 	return d, nil
 }
 
@@ -405,6 +437,11 @@ func fanOut(up *controllink.Uplink, fs []fanned, line string) {
 func (d *Daemon) Shutdown() {
 	// First, so a stop that goes wrong below still counts as a stop (#1219).
 	stoppedAt := d.noteCleanStop()
+	// No turn starts, nothing new follows one, and nothing more goes to a client unasked,
+	// before the steps below wait for the clock's and the loops' goroutines: a loop's write
+	// in line for a client that reads nothing waited, with each write before it, the
+	// connection's limit (#6603).
+	d.closeAfterTurns()
 	d.machineMu.Lock()
 	if d.machineStop != nil {
 		d.machineStop()
@@ -423,9 +460,8 @@ func (d *Daemon) Shutdown() {
 		t.Stop()
 	}
 	d.attentionMu.Unlock()
-	// No turn starts, and nothing new follows one; the turns stopped here record their
-	// endings and what follows them before the files they write are closed (#1272).
-	d.closeAfterTurns()
+	// The turns stopped here record their endings and what follows them before the files
+	// they write are closed (#1272).
 	// What the runtimes leave running is watched again after the restart (#4577).
 	d.handBackgroundOver()
 	d.stopAll()

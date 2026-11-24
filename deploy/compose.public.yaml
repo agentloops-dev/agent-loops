@@ -95,7 +95,9 @@ services:
       AGENTS_WEBPUSH_SUBJECT: ${AGENTS_WEBPUSH_SUBJECT:-}
       # Prometheus /metrics (#2176), off unless set: an address in the container such as
       # 0.0.0.0:9791, which Caddy does not serve, and then the token a scraper sends. A
-      # scraper on the same Docker network reaches http://control:9791/metrics.
+      # scraper on the same Docker network reaches http://control:9791/metrics. The same
+      # port, with the same token, serves /debug/pprof/heap and /debug/pprof/goroutine
+      # (#6583); the port clients use serves neither.
       AGENTS_CONTROL_METRICS: ${AGENTS_CONTROL_METRICS:-}
       AGENTS_CONTROL_METRICS_TOKEN: ${AGENTS_CONTROL_METRICS_TOKEN:-}
       # The report figures to an OpenTelemetry collector over OTLP/HTTP (#2019), off unless
@@ -111,6 +113,12 @@ services:
       # (#174), as well as Docker's log (#4747): a redeploy recreates the container, and
       # Docker's log goes with it. Empty writes no copy.
       AGENTS_CONTROL_LOG: ${AGENTS_CONTROL_LOG-/data/control.log}
+      # The Go runtime's soft memory limit (#6583): without it the heap grows to twice what is
+      # live before the GC collects, and the e2-micro (969 MB, with Caddy and the OS beside
+      # it) swaps. 200MiB is for the e2-micro of deploy/gcp/up.sh; on a larger machine set
+      # about a quarter of its memory in deploy/.env. It is soft: a copy that needs more
+      # still gets it, and collects more often. deploy/README.md, "Memory".
+      GOMEMLIMIT: ${GOMEMLIMIT:-200MiB}
     secrets: [gcp-service-account, apns-key, vapid-key]
     # The Linux host (/servers, served at /v1/servers/… to servers joining with the install
     # command) and the runtimes' toolsets (/toolsets, at /v1/toolsets/…, so a server that joins

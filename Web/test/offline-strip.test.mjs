@@ -190,3 +190,11 @@ test("a machine near or at capacity says so after a low disk (#4748)", () => {
   assert.equal(machineNeedLine({ kind: "capacity", level: "near" }, row("online")), "Near capacity");
   assert.equal(machineNeedLine({ kind: "capacity", level: "full" }, row("online")), "At capacity");
 });
+
+test("a machine at capacity says which: CPU or memory (#6596)", () => {
+  assert.deepEqual(machineNeed(row("online"), true, [], [], "full", "memory"), { kind: "capacity", level: "full", reason: "memory" });
+  assert.equal(machineNeedLine({ kind: "capacity", level: "full", reason: "cpu" }, row("online")), "At CPU capacity");
+  assert.equal(machineNeedLine({ kind: "capacity", level: "full", reason: "memory" }, row("online")), "At memory capacity");
+  assert.equal(machineNeedLine({ kind: "capacity", level: "near", reason: "cpu" }, row("online")), "Near CPU capacity");
+  assert.equal(machineNeedLine({ kind: "capacity", level: "near", reason: "memory" }, row("online")), "Near memory capacity");
+});

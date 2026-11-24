@@ -2,7 +2,6 @@ package agentsd
 
 import (
 	"os"
-	goruntime "runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -86,11 +85,13 @@ func TestShutdownEndsTheWritesInLineForAClientThatReadsNothing(t *testing.T) {
 			Broadcast(d, wire.NotifyWorkflowRemoved, wire.WorkflowRemovedNotification{WorkflowID: "x"})
 		})
 	}
-	waitFor(t, "three writes in line for the client", func() bool { return writesToClients() >= 3 })
-	// When Shutdown waits for the goroutines, the client reads one line: the write that held
-	// the lock goes, and each one after it would wait the conn's 5 s again.
+	cl := clientOf(t, d, c)
+	// This client's own writes: other tests in the package write to their clients too (#6603).
+	waitFor(t, "three writes in line for the client", func() bool { return cl.lock.write.inLine() >= 3 })
+	// As Shutdown begins, the client reads one line: the write that held the lock goes, and
+	// each one after it would wait the conn's 5 s again.
 	go func() {
-		<-d.hostCtx().Done()
+		<-d.shutdownBegun()
 		<-c.out
 	}()
 
@@ -105,16 +106,56 @@ func TestShutdownEndsTheWritesInLineForAClientThatReadsNothing(t *testing.T) {
 	}
 }
 
-// writesToClients is how many goroutines are in a write to a client, or waiting for one.
-func writesToClients() int {
-	buf := make([]byte, 1<<22)
-	n := 0
-	for _, g := range strings.Split(string(buf[:goruntime.Stack(buf, true)]), "\n\n") {
-		if strings.Contains(g, "agentsd.(*Client).write") {
-			n++
+// A write in line for a client that reads nothing ends as Shutdown begins, not when the
+// write before it is done (#6603): the clock's and the loops' goroutines that Shutdown waits
+// for each waited, with every write before theirs, the conn's 5 s. And one that comes after
+// Shutdown began ends at once, without the lock.
+func TestShutdownEndsAWriteInLineAtOnce(t *testing.T) {
+	t.Parallel()
+
+	d, c := start(t, t.TempDir())
+	for len(c.out) < cap(c.out) {
+		c.out <- ""
+	}
+	cl := clientOf(t, d, c)
+	// Not the host's goroutine, so Shutdown does not wait for it: it holds the client's
+	// write lock for the conn's 5 s, and nobody reads.
+	holding := make(chan struct{})
+	go func() {
+		defer close(holding)
+		cl.writeUnasked("held")
+	}()
+	waitFor(t, "a write that holds the lock", func() bool { return cl.lock.write.inLine() >= 1 })
+	d.goJob("waits for the client's write lock", func() { cl.writeUnasked("in line") })
+	waitFor(t, "a write in line", func() bool { return cl.lock.write.inLine() >= 2 })
+
+	began := time.Now()
+	d.Shutdown()
+
+	if took := time.Since(began); took > 2*time.Second {
+		t.Errorf("Shutdown took %v: the write in line waited for the one before it", took)
+	}
+	after := time.Now()
+	cl.writeUnasked("after Shutdown")
+	if took := time.Since(after); took > time.Second {
+		t.Errorf("a write after Shutdown began waited %v", took)
+	}
+	// Nothing the test started still writes when it ends.
+	<-holding
+}
+
+// clientOf is the daemon's client on c.
+func clientOf(t *testing.T, d *Daemon, c *conn) *Client {
+	t.Helper()
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	for _, each := range d.clients {
+		if each.conn == c {
+			return each
 		}
 	}
-	return n
+	t.Fatal("no client on the conn")
+	return nil
 }
 
 // endingRaised is whether events.jsonl has the event that says how the agent ended.

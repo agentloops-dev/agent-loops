@@ -116,12 +116,10 @@ jobs:
             changed=$(git diff --name-only "$BASE" HEAD)
             # The marks (#4615): a mark, its source or this file.
             grep -qE '^(design/logo/blob/final/|scripts/design\.sh$|App/Resources/Assets\.xcassets/|Remote/Resources/Assets\.xcassets/AppIcon|Web/assets/|docs/assets/|docs/favicon\.ico$|www/assets/|\.github/workflows/ci\.yml$)' <<<"$changed" || marks=skip
-            # SwiftLint and Periphery (swift-lint:lint, the `swift-lint` job): any Swift file, their
-            # rules, baseline and allowlist, what the index builds read (project.yml, a package's
-            # manifest, build-cache.sh, the Xcode), lint.sh, or this file, whose swift-lint job a
-            # change must run to measure (#6454). swift-lint is affected by every
-            # change, so its own files say when.
-            grep -qE '(\.swift$|^\.swiftlint(\.yml|-baseline\.json)$|^\.periphery-allowed\.txt$|^project\.yml$|^Packages/[^/]+/Package\.resolved$|^\.xcode-version$|^scripts/(lint\.sh|periphery-report\.py|build-cache\.sh)$|^lint/swift/|^\.github/workflows/ci\.yml$)' <<<"$changed" || swiftlint=skip
+            # SwiftLint (swift-lint:lint, the `swift-lint` job): any Swift file, its rules and
+            # baseline, the Xcode (its SourceKit), lint.sh, or this file. swift-lint is affected by
+            # every change, so its own files say when.
+            grep -qE '(\.swift$|^\.swiftlint(\.yml|-baseline\.json)$|^\.xcode-version$|^scripts/lint\.sh$|^lint/swift/|^\.github/workflows/ci\.yml$)' <<<"$changed" || swiftlint=skip
           fi
           # gomac is `test`'s Go on a Mac: the same as go.
           gomac=$go
@@ -941,24 +939,15 @@ jobs:
           STATUS: ${{ job.status }}
         run: bash scripts/ci-step-times.sh
 
-  # test-go, beside test-swift and `apps`: the Go module on a Mac (#1138), so a Mac-only path
-  # (its root, its folders, a *_darwin.go file) is held as Linux's is. TMPDIR is resolved,
-  # because a Mac's temporary folder is reached through the /var link and the daemon keeps
-  # folders with their links resolved. Each step's `if:` reads GO: `changes`'s gomac, which is
-  # its go.
-  # swift-lint:lint (#6336): SwiftLint, and Periphery over every Swift target, which builds the Mac
-  # app, the Remote and both Swift packages with an index of their own (scripts/lint.sh
-  # periphery). Out of `test-swift`, whose 20 minutes it does not fit in. build/periphery and the
-  # packages are cached between runs, so a warm run builds only what changed.
+  # swift-lint:lint: SwiftLint over every Swift file (#6336; Periphery removed, #6526).
   swift-lint:
     needs: changes
     if: ${{ always() && !cancelled() && (!inputs.jobs || contains(format(' {0} ', inputs.jobs), ' test ')) && needs.changes.outputs.swiftlint != 'skip' }}
     runs-on: xcode-27
-    # Cold, the four index builds take about as long as `apps` from cold (#5836).
-    timeout-minutes: 45
+    # The limit of every job, as in `go` (#5673).
+    timeout-minutes: 20
     permissions:
       contents: read
-      actions: write
     env:
       NX_NO_CLOUD: "true"
       NX_DAEMON: "false"
@@ -973,88 +962,28 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ inputs.sha || github.event.pull_request.head.sha || github.sha }}
-      # Each tracked file's time from its content, as in `go` (#5677), here for Xcode's and
-      # SwiftPM's incremental builds (#6454). The index builds have no compilation cache
-      # (AGENTS_BUILD_CACHE_INDEX=1), so a restored build/periphery saves time only when an
-      # unchanged source is older than its object. With the checkout's own times every file
-      # was newer, and a warm Periphery run compiled everything again: 1109 s of the job's 20 min.
-      - name: Content times
-        run: python3 scripts/ci-mtimes.py
+      # SwiftLint reads Swift with this Xcode's SourceKit.
       - name: Xcode
         run: echo "DEVELOPER_DIR=/Applications/Xcode_$(cat .xcode-version).app/Contents/Developer" >> "$GITHUB_ENV"
-      - name: Toolchain fingerprint
-        id: toolchain
-        run: |
-          version="$(xcodebuild -version | tr -dc '0-9A-Za-z.')"
-          sdk="$(xcrun --sdk macosx --show-sdk-build-version)"
-          echo "fingerprint=${version}-sdk${sdk}" >> "$GITHUB_OUTPUT"
-      # As `apps`'s: falls back to the newest for the same manifests, then for this toolchain.
-      - name: Restore the index builds
-        uses: actions/cache/restore@v5
-        with:
-          path: |
-            build/periphery
-            ~/Library/Caches/Agents-build/packages
-            ~/Library/Caches/Agents-build/checkouts
-          key: macos-xcode-27-periphery-${{ steps.toolchain.outputs.fingerprint }}-${{ hashFiles('project.yml', 'Packages/*/Package.swift', 'Packages/*/Package.resolved') }}-${{ github.sha }}
-          restore-keys: |
-            macos-xcode-27-periphery-${{ steps.toolchain.outputs.fingerprint }}-${{ hashFiles('project.yml', 'Packages/*/Package.swift', 'Packages/*/Package.resolved') }}-
-            macos-xcode-27-periphery-${{ steps.toolchain.outputs.fingerprint }}-
-      # The Mac app's build makes Web/dist and carries the Go binaries, as in `apps`; AgentsKit
-      # compiles Metal.
-      - name: Tools
-        run: |
-          brew install xcodegen &
-          xcodegen_pid=$!
-          xcodebuild -downloadComponent MetalToolchain
-          wait "$xcodegen_pid"
+      # Nx itself runs on Node, from the lockfile.
       - uses: actions/setup-node@v5
         with:
           node-version-file: Web/.node-version
           package-manager-cache: false
-      - uses: actions/setup-go@v6
-        with:
-          go-version-file: Go/go.mod
-          cache: false
       - name: Install from the lockfile
         timeout-minutes: 5
         run: |
           scripts/pnpm.sh install --frozen-lockfile
           scripts/pnpm.sh audit signatures
-      - name: SwiftLint and Periphery
-        timeout-minutes: 40
+      - name: SwiftLint
+        timeout-minutes: 10
         run: scripts/nx.sh run swift-lint:lint --output-style=stream
-      # The linked bundles out of the index builds before main saves them: about 2 GB of the
-      # 6 GB (the two apps with their Go helpers, their extensions, the package test bundles and
-      # dSYMs). Periphery reads only the index stores and Intermediates' .SwiftFileList files,
-      # and the next build relinks and copies the bundles from the objects it keeps. Whole, the
-      # cache (3.3 GB packed) put the repo's caches over GitHub's 10 GB, so it was evicted soon
-      # after each save and every pull request's index builds ran cold, 32 to 34 minutes.
-      - name: Trim the index builds
-        if: ${{ always() && !cancelled() && env.MAIN_CACHE == 'true' }}
-        run: |
-          du -sh build/periphery 2>/dev/null || true
-          find build/periphery/mac/Build/Products/Debug build/periphery/remote/Build/Products/Debug-iphonesimulator \
-            -maxdepth 1 \( -name '*.app' -o -name '*.appex' -o -name '*.dSYM' \) -exec rm -rf {} + 2>/dev/null || true
-          find build/periphery/AgentsKit build/periphery/CodeText \
-            -maxdepth 3 \( -name '*.xctest' -o -name '*.dSYM' \) -prune -exec rm -rf {} + 2>/dev/null || true
-          du -sh build/periphery 2>/dev/null || true
-      - name: Save the index builds
-        id: save-index
-        if: ${{ always() && !cancelled() && env.MAIN_CACHE == 'true' }}
-        uses: actions/cache/save@v5
-        with:
-          path: |
-            build/periphery
-            ~/Library/Caches/Agents-build/packages
-            ~/Library/Caches/Agents-build/checkouts
-          key: macos-xcode-27-periphery-${{ steps.toolchain.outputs.fingerprint }}-${{ hashFiles('project.yml', 'Packages/*/Package.swift', 'Packages/*/Package.resolved') }}-${{ github.sha }}
-      - name: Prune old index build caches for this ref
-        if: ${{ always() && steps.save-index.outcome == 'success' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: bash scripts/prune-ci-caches.sh "macos-xcode-27-periphery-" "macos-xcode-27-periphery-${{ steps.toolchain.outputs.fingerprint }}-${{ hashFiles('project.yml', 'Packages/*/Package.swift', 'Packages/*/Package.resolved') }}-${{ github.sha }}" "$GITHUB_REF"
 
+  # test-go, beside test-swift and `apps`: the Go module on a Mac (#1138), so a Mac-only path
+  # (its root, its folders, a *_darwin.go file) is held as Linux's is. TMPDIR is resolved,
+  # because a Mac's temporary folder is reached through the /var link and the daemon keeps
+  # folders with their links resolved. Each step's `if:` reads GO: `changes`'s gomac, which is
+  # its go.
   test-go:
     needs: changes
     # `always()`, as in test-swift: a failed `changes` runs this job rather than skip it.

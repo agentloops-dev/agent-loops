@@ -72,12 +72,15 @@ struct WorkDeploysPane: View {
     static let nameColumn: CGFloat = 130
 
     var body: some View {
+        // The read's state, the count and Last update are in the footer bar, as on the lists (#5969); no strip.
         VStack(spacing: 0) {
-            WorkFromDeviceStrip(read: state.fromDevice ? state.read : nil)
-            if let problem = state.problem {
-                WorkErrorStrip(lines: problem.components(separatedBy: "\n"), read: state.read) { state.asked += 1 }
+            content.frame(maxHeight: .infinity)
+            if !model.deploysMachines.isEmpty {
+                WorkPageBar(state: WorkLook.pageFooterState(drawn: state.targets != nil, reading: state.reading,
+                                                            fromDevice: state.fromDevice, lines: lines),
+                            count: state.targets.map { WorkLook.pageCount($0.count, "target") },
+                            read: state.targets == nil ? nil : state.read) { state.asked += 1 }
             }
-            content
         }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
@@ -94,6 +97,9 @@ struct WorkDeploysPane: View {
             }
         }
     }
+
+    /// What the machines said, one line each.
+    private var lines: [String] { state.problem?.components(separatedBy: "\n") ?? [] }
 
     @ViewBuilder
     private var content: some View {
@@ -123,21 +129,23 @@ struct WorkDeploysPane: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
+        } else if !state.reading, !lines.isEmpty {
+            // Nothing read: what the machines said in the middle, with Try again (#5969).
+            WorkEmptyState(symbol: "exclamationmark.triangle", title: WorkDeploys.couldNotRead,
+                           line: lines.joined(separator: "\n"), action: (WorkLook.tryAgain, { state.asked += 1 }))
         } else {
             VStack(alignment: .leading, spacing: 0) {
                 header.padding(.horizontal, 24)
-                // A read that failed with nothing read before: the strip alone, no placeholders.
-                if state.problem == nil { WorkPlaceholderRows().padding(.horizontal, 24) }
+                WorkPlaceholderRows().padding(.horizontal, 24)
                 Spacer(minLength: 0)
             }
         }
     }
 
-    /// The page's title and, once read, "Last update 72 min ago" (#5139).
+    /// The page's title; its "Last update" is in the footer bar (#5969).
     private var header: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(WorkDeploys.title).appText(.title).fontWeight(.bold)
-            if let read = state.read { LastUpdateText(read: read) }
         }
         .padding(.top, 18)
         .padding(.bottom, 14)

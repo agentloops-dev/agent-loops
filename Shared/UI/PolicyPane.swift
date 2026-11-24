@@ -15,11 +15,23 @@ struct PolicyPane: View {
     let revision: Int
     /// Opens Organisation Policy, where there is one to open.
     var openOrganisationPolicy: (() -> Void)?
+    /// The online machines that do not follow Commit trailers yet (#6373), by name.
+    var trailersBehind: [String] = []
+    /// Opens a folder's Project Settings ▸ Policy, by its path (#6534), where the window can.
+    var openFolderPolicy: ((String) -> Void)?
 
     @State private var effective: DaemonAPI.EffectivePolicy?
     @State private var yours: DaemonAPI.YourPolicyState?
     @State private var problem: String?
     @State private var isSaving = false
+    /// When the machine was last read (#5139).
+    @State private var readAt: Date?
+    /// The trailer whose last save failed, and why (#6373).
+    @State private var trailerFailure: (key: String, line: String)?
+    /// The folders whose own rule changes the Commit trailers block (#6534).
+    @State private var trailerFolders: [CommitTrailerWords.FolderChange] = []
+    /// Whether the person turned the Commit trailers flag on (`FeatureFlag`, #6254).
+    @AppStorage(FeatureFlag.commitTrailers.key, store: WindowDefaults.store) private var trailersOn = false
 
     private struct Reload: Hashable {
         var connected: Bool
@@ -56,6 +68,17 @@ struct PolicyPane: View {
                     }
                     .paperListRow()
                 }
+                #if os(macOS)
+                // Mac + web (#6373): the Remote has no Commit trailers group.
+                if trailersOn, CommitTrailerWords.isFollowed(effective) {
+                    CommitTrailersSection(effective: effective, yours: yours?.policy.rules,
+                                          editable: yours != nil && !isSaving, failure: trailerFailure,
+                                          readAt: readAt, folders: trailerFolders,
+                                          openFolder: openFolderPolicy) { trailer, on in
+                        Task { await save(trailer, on) }
+                    }
+                }
+                #endif
             } else if let problem {
                 Text(problem).appText(.supporting).tinted(.failure).paperListRow()
             } else {
@@ -86,6 +109,12 @@ struct PolicyPane: View {
                     Text(behind).appText(.fine).tinted(.warning)
                         .fixedSize(horizontal: false, vertical: true)
                 }
+                #if os(macOS)
+                if trailersOn, let behind = trailersBehindLine(effective) {
+                    Text(behind).appText(.fine).tinted(.warning)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                #endif
                 if let problem {
                     Text(problem).appText(.fine).tinted(.failure)
                         .fixedSize(horizontal: false, vertical: true)
@@ -134,11 +163,61 @@ struct PolicyPane: View {
                                             returning: DaemonAPI.EffectivePolicy.self)
             yours = try await host.call(DaemonAPI.Method.policyYours, DaemonAPI.Empty(),
                                         returning: DaemonAPI.YourPolicyState.self)
+            readAt = .now
             problem = nil
+            #if os(macOS)
+            if let effective { trailerFolders = await trailerFolders(host, outside: effective) }
+            #endif
         } catch {
             problem = PeopleWords.refusal(error)
         }
     }
+
+    #if os(macOS)
+    /// The folders with rules of their own whose rule changes the Commit trailers block: a
+    /// folder's `.agents/policy.json` can turn a trailer on or off for its agents (#6534). One
+    /// read for each such folder, only with the flag on; a folder that can't be read is left out.
+    private func trailerFolders(_ host: DaemonClient, outside: DaemonAPI.EffectivePolicy) async -> [CommitTrailerWords.FolderChange] {
+        guard trailersOn, CommitTrailerWords.isFollowed(outside) else { return [] }
+        var out: [CommitTrailerWords.FolderChange] = []
+        for folder in outside.foldersWithRules {
+            guard let inFolder = try? await host.call(DaemonAPI.Method.policyEffective,
+                                                      DaemonAPI.PolicyEffectiveRequest(folder: folder.folder),
+                                                      returning: DaemonAPI.EffectivePolicy.self),
+                  let change = CommitTrailerWords.folderChange(folder: folder.folder, name: folder.name,
+                                                               inFolder: inFolder, outside: outside) else { continue }
+            out.append(change)
+        }
+        return out
+    }
+
+    /// The machines that do not follow Commit trailers: the online ones that do not say
+    /// `host.commit-trailers/1`, or this Mac when its own host gives no such rule and no other is named.
+    private func trailersBehindLine(_ effective: DaemonAPI.EffectivePolicy) -> String? {
+        var names = trailersBehind
+        if !CommitTrailerWords.isFollowed(effective), names.isEmpty { names = [CommitTrailerWords.thisMac] }
+        return CommitTrailerWords.behindLine(names)
+    }
+
+    /// Sets one trailer in your layer. A save that fails says so under the trailer's switch,
+    /// which the read after it puts back where it was.
+    private func save(_ trailer: CommitTrailerWords.Trailer, _ on: Bool) async {
+        guard let host, let yours else { return }
+        let wasOn = CommitTrailerWords.isOn(trailer, effective?.rules.first { $0.rule == trailer.rule })
+        isSaving = true
+        defer { isSaving = false }
+        do {
+            _ = try await host.call(DaemonAPI.Method.policySetYours,
+                                    DaemonAPI.SetYourPolicyRequest(rules: CommitTrailerWords.setting(yours.policy.rules, trailer, on: on),
+                                                                   revision: yours.policy.revision),
+                                    returning: DaemonAPI.YourPolicy.self)
+            trailerFailure = nil
+        } catch {
+            trailerFailure = (trailer.key, CommitTrailerWords.failed(trailer, wasOn: wasOn, reason: PeopleWords.refusal(error)))
+        }
+        await load()
+    }
+    #endif
 
     private func save(_ rule: String, _ value: JSONValue?) async {
         guard let host, let yours else { return }

@@ -306,9 +306,11 @@ func (u *Uplink) serve(ctx context.Context, l *Lines) {
 	}
 	// Nothing on this loop waits (#6260): while it does, no pong is read, and the link
 	// drops. What can wait runs off it (told, Asked, Accept).
+	var ended error
 	for {
 		line, err := l.Read(ctx)
 		if err != nil {
+			ended = err
 			break
 		}
 		u.timed("a line on the read loop", func() { u.receive(line) })
@@ -323,7 +325,9 @@ func (u *Uplink) serve(ctx context.Context, l *Lines) {
 	for _, c := range open {
 		c.end(false)
 	}
-	log.Printf("uplink: the control plane went; %d channels closed", len(open))
+	// Why the read ended (#6569): a close by the other end, with its status and reason, a
+	// reset, or this side's own drop after a ping with no pong.
+	log.Printf("uplink: the control plane went (%v); %d channels closed", ended, len(open))
 	if u.OnChange != nil {
 		u.OnChange(false, "")
 	}

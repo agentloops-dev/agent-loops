@@ -105,7 +105,7 @@ func printMode(ctx context.Context, w io.Writer, o options, rest []string) error
 
 // startAndFollow starts the session and, unless --detach, follows its turn to the end.
 func startAndFollow(ctx context.Context, w io.Writer, c caller, notes <-chan controllink.Note, p place, o options, prompt string) error {
-	id, err := startSession(ctx, c, p, o.runtime, prompt)
+	id, err := startSession(ctx, c, p, o.runtime, o.mode, prompt)
 	if err != nil {
 		return err
 	}
@@ -137,8 +137,8 @@ func startAndFollow(ctx context.Context, w io.Writer, c caller, notes <-chan con
 }
 
 // startSession is agents/start in the folder, by Auto (or --runtime), marked as started by
-// a script.
-func startSession(ctx context.Context, c caller, p place, runtime, prompt string) (wire.UUID, error) {
+// a script, at the kept levels or --mode (#6651).
+func startSession(ctx context.Context, c caller, p place, runtime, mode, prompt string) (wire.UUID, error) {
 	via := wire.StartedViaCLIPrint
 	if runtime == "" {
 		runtime = autoRuntime
@@ -149,6 +149,7 @@ func startSession(ctx context.Context, c caller, p place, runtime, prompt string
 		StartOptions:          wire.StartOptions{Values: map[string]wire.JSONValue{}, ExtraArguments: []string{}},
 		AdditionalDirectories: []wire.URL{}, McpServers: []wire.MCPServer{}, Labels: []string{},
 		StartedVia: &via,
+		Levels:     startLevels(ctx, c, string(p.machine.ID), mode),
 	}
 	r, err := c.Call(ctx, string(p.machine.ID), "agents/start", req)
 	if err != nil {
@@ -253,7 +254,9 @@ func (f *follow) relink(ctx context.Context, notes <-chan controllink.Note, caus
 // wait is until the notes about this session have come for gather since the first, a
 // tick, or the end of ctx. state says the session's record may have changed (a note other
 // than an entry, or a tick), so it is read again; an entry alone needs only the
-// transcript. ok is false when the connection ended or ctx did.
+// transcript. ok is false when the connection ended or ctx did. When gather ends, the
+// notes already queued are taken too, so a burst that came at once is one read, also
+// when taking it outlasts gather (#6554).
 func (f *follow) wait(ctx context.Context, notes <-chan controllink.Note, tick <-chan time.Time) (ok, state bool) {
 	var gathered <-chan time.Time
 	for {
@@ -270,13 +273,28 @@ func (f *follow) wait(ctx context.Context, notes <-chan controllink.Note, tick <
 				gathered = time.After(gather)
 			}
 		case <-gathered:
-			return true, state
+			return f.drain(notes, state)
 		case <-tick:
 			return true, true
 		case <-ctx.Done():
 			return false, false
 		}
 	}
+}
+
+// drain takes the notes queued when gather ended, and no more: notes that keep coming
+// wait for the next gather, so a long reply is still read at most once a gather.
+func (f *follow) drain(notes <-chan controllink.Note, state bool) (bool, bool) {
+	for range len(notes) {
+		n, open := <-notes
+		if !open {
+			return false, false
+		}
+		if f.about(n) {
+			state = state || n.Method != wire.NotifyAgentEntry.Name
+		}
+	}
+	return true, state
 }
 
 // about is whether a note is this session's.
@@ -459,7 +477,7 @@ func (f *follow) unreachable(err error) error {
 	return f.end("gone", exitError, fmt.Sprintf("Lost the session's host (%s). The session goes on: loops -r %s", reason(err), short(f.id))+debugLine(err))
 }
 
-// short is a session id as loops ls shows it.
+// short is a session id as loops sessions list shows it.
 func short(id wire.UUID) string { return shortIDs([]wire.Agent{{ID: id}})[0] }
 
 // printer writes what print mode prints. The chunks of one agent message come as entries of

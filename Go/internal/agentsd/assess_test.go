@@ -264,7 +264,7 @@ func TestAnAppToolCallsArgumentsAreCut(t *testing.T) {
 	d.keepAppToolCall(agent, "notify", map[string]json.RawMessage{
 		"body": json.RawMessage(`"` + long + `"`), "ids": list, "title": json.RawMessage(`"Done"`), "token": json.RawMessage(`"t"`),
 	}, "ok", nil, time.Now())
-	b, err := os.ReadFile(d.appToolsPath(agent))
+	b, err := os.ReadFile(filepath.Join(d.Store.Loc.Agent(string(agent)), "app-tools.jsonl"))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -94,7 +94,7 @@ func TestAnAgentsWorkspaceTools(t *testing.T) {
 	}()
 	var pending []wire.ElicitationRequest
 	waitFor(t, "the card", func() bool {
-		json.Unmarshal(c.call(t, 1, "elicitations/pending", nil), &pending)
+		mustUnmarshal(t, c.call(t, 1, "elicitations/pending", nil), &pending)
 		return len(pending) == 1
 	})
 	if f := pending[0].Mode.Form.Value; *pending[0].Message != "Claude (fix-login) wants to make a machine" ||
@@ -109,7 +109,7 @@ func TestAnAgentsWorkspaceTools(t *testing.T) {
 	// With no name, the control plane names it machine-N (#3972).
 	go func() { text, _ := m.tool(9, "make_machine", map[string]any{"provider": "do"}); answered <- text }()
 	waitFor(t, "the nameless card", func() bool {
-		json.Unmarshal(c.call(t, 5, "elicitations/pending", nil), &pending)
+		mustUnmarshal(t, c.call(t, 5, "elicitations/pending", nil), &pending)
 		return len(pending) == 1
 	})
 	if f := pending[0].Mode.Form.Value; *f.Properties[0].Title != "Make a new machine at DigitalOcean?" {
@@ -131,7 +131,7 @@ func TestAnAgentsWorkspaceTools(t *testing.T) {
 
 	go func() { text, _ := m.tool(8, "delete_machine", map[string]any{"host": "devbox"}); answered <- text }()
 	waitFor(t, "the second card", func() bool {
-		json.Unmarshal(c.call(t, 3, "elicitations/pending", nil), &pending)
+		mustUnmarshal(t, c.call(t, 3, "elicitations/pending", nil), &pending)
 		return len(pending) == 1
 	})
 	c.call(t, 4, "elicitations/answer", map[string]any{"requestID": pending[0].ID, "action": "accept", "content": map[string]any{"go": "no"}})
@@ -210,7 +210,7 @@ func TestAYesAfterTheHoldStillMakesTheMachine(t *testing.T) {
 	l.inTurn = false
 	l.mu.Unlock()
 	var pending []wire.ElicitationRequest
-	json.Unmarshal(c.call(t, 1, "elicitations/pending", nil), &pending)
+	mustUnmarshal(t, c.call(t, 1, "elicitations/pending", nil), &pending)
 	if len(pending) != 2 {
 		t.Fatalf("%+v", pending)
 	}
@@ -304,7 +304,7 @@ func TestASlowListLeavesTheCardTheRestOfTheHold(t *testing.T) {
 		t.Fatal(text)
 	}
 	var pending []wire.ElicitationRequest
-	json.Unmarshal(c.call(t, 1, "elicitations/pending", nil), &pending)
+	mustUnmarshal(t, c.call(t, 1, "elicitations/pending", nil), &pending)
 	if len(pending) != 1 {
 		t.Fatalf("asked %d times: %+v", len(pending), pending)
 	}
@@ -322,7 +322,7 @@ func TestASlowListLeavesTheCardTheRestOfTheHold(t *testing.T) {
 		text != "Nothing was done, and the person was not asked: the control plane did not list the machines within 100ms. Call it again." {
 		t.Fatal(text)
 	}
-	json.Unmarshal(c.call(t, 2, "elicitations/pending", nil), &pending)
+	mustUnmarshal(t, c.call(t, 2, "elicitations/pending", nil), &pending)
 	if len(pending) != 1 {
 		t.Fatalf("%+v", pending)
 	}
@@ -367,7 +367,10 @@ func TestDeleteMachineOnAFailedMakeDeletesItsRow(t *testing.T) {
 	l.inTurn = true
 	l.mu.Unlock()
 	answered := make(chan string, 1)
-	go func() { text, _ := m.tool(2, "delete_machine", map[string]any{"host": "pool-1-1b71be"}); answered <- text }()
+	go func() {
+		text, _ := m.tool(2, "delete_machine", map[string]any{"host": "pool-1-1b71be"})
+		answered <- text
+	}()
 	var pending []wire.ElicitationRequest
 	waitFor(t, "the card", func() bool {
 		_ = json.Unmarshal(c.call(t, 1, "elicitations/pending", nil), &pending)

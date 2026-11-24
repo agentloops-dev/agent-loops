@@ -19,6 +19,7 @@
       "{workspaceRoot}/Go/internal/agentsd/changes.go",
       "{workspaceRoot}/Packages/AgentsKit/Sources/AgentsKitCore/Model/BrowserSettings.swift",
       "{workspaceRoot}/Packages/AgentsKit/Sources/AgentsKitCore/Model/DailyChecksSettings.swift",
+      "{workspaceRoot}/Packages/AgentsKit/Sources/AgentsKitCore/Model/Maturity.swift",
       "{workspaceRoot}/Packages/AgentsKit/Sources/AgentsKitCore/Model/SessionPrompts.swift",
       "{workspaceRoot}/Packages/AgentsKit/Tests/AgentsKitTests/Fixtures/**/*",
       "{workspaceRoot}/Remote/Sources/Chat/PromptBar.swift",
@@ -29,6 +30,7 @@
       "{workspaceRoot}/Shared/UI/Chat/NowCard.swift",
       "{workspaceRoot}/Shared/UI/Chat/TranscriptRows.swift",
       "{workspaceRoot}/Shared/UI/DailyChecksControls.swift",
+      "{workspaceRoot}/Shared/UI/EarlyFeaturesSection.swift",
       "{workspaceRoot}/design/icons.json",
       "{workspaceRoot}/scripts/perf-budgets.json"
     ]

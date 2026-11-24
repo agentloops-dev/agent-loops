@@ -134,18 +134,6 @@ func normal(v any) any {
 // jsonEqual is JSONValue's ==: the same JSON, however it was written.
 func jsonEqual(a, b any) bool { return reflect.DeepEqual(normal(toValue(a)), normal(toValue(b))) }
 
-// compact is JSONEncoder with .sortedKeys and .withoutEscapingSlashes: one line, keys
-// sorted, nothing escaped that need not be.
-func compact(v any) string {
-	var out bytes.Buffer
-	e := json.NewEncoder(&out)
-	e.SetEscapeHTML(false)
-	if err := e.Encode(v); err != nil {
-		return ""
-	}
-	return strings.TrimSuffix(out.String(), "\n")
-}
-
 // rawOf is v's JSON, or nil.
 func rawOf(v any) json.RawMessage {
 	data, err := json.Marshal(v)

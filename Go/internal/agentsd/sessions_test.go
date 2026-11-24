@@ -132,7 +132,7 @@ func hasQueuedPromptWithText(queued []wire.QueuedPrompt, id wire.UUID, text stri
 }
 
 // One queued message_session per sender and target: a second send is refused, replace
-// swaps the text in place, cancel takes it back, and a held looser message still counts (#2006).
+// swaps the text in place, cancel takes it back, and a message to a stopped session still counts (#2006).
 func TestOneQueuedMessagePerTarget(t *testing.T) {
 	t.Parallel()
 
@@ -143,13 +143,11 @@ func TestOneQueuedMessagePerTarget(t *testing.T) {
 	dir := t.TempDir()
 	lead := seeded(t, d, dir, titledAs("Lead", inMode("default")))
 	other := seeded(t, d, dir, titledAs("Other", inMode("default")))
-	helper := seeded(t, d, dir, titledAs("Helper", inMode("bypassPermissions"), func(a *wire.Agent) {
-		wf := "nightly"
-		a.StartedByWorkflow = &wf
+	helper := seeded(t, d, dir, titledAs("Helper", func(a *wire.Agent) {
+		a.State = wire.AgentStateStopped
 	}))
-	peer := seeded(t, d, dir, titledAs("Peer", inMode("bypassPermissions"), func(a *wire.Agent) {
-		wf := "nightly"
-		a.StartedByWorkflow = &wf
+	peer := seeded(t, d, dir, titledAs("Peer", func(a *wire.Agent) {
+		a.State = wire.AgentStateStopped
 	}))
 	seeded(t, d, dir, titledAs("Wake"))
 
@@ -158,9 +156,8 @@ func TestOneQueuedMessagePerTarget(t *testing.T) {
 	o := appClient(t, d, other.ID)
 	o.post("initialize", map[string]any{}, 1)
 
-	heldWhy := "it runs in bypassPermissions, which lets it do more without asking than yours (default)"
 	text, isErr := m.tool(2, "message_session", map[string]any{"to": "Helper", "message": "first\nwords"})
-	if isErr || text != "Sent to “Helper”, but it waits in that chat until the person speaks to it: "+heldWhy+"."+queuedMessageNote {
+	if isErr || text != "Sent to “Helper”, which is stopped, so it waits in that chat until it is started again; a message does not start a stopped session."+queuedMessageNote {
 		t.Fatal(text)
 	}
 	first := d.Store.Agent(helper.ID).QueuedPrompts

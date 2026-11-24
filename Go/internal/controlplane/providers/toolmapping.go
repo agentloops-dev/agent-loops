@@ -84,79 +84,6 @@ func isContractState(s string) bool {
 	return false
 }
 
-// MapFrom is ToolMapping.map: a map as the provider's record keeps it, or what is wrong
-// with it.
-func MapFrom(m any) (ToolMapping, error) {
-	call := func(key string) (Call, error) {
-		tool, _ := str(get(get(m, key), "tool"))
-		if tool == "" {
-			return Call{}, providerFailure("The tool map has no %s.tool.", key)
-		}
-		return Call{Tool: tool, Arguments: get(get(m, key), "arguments")}, nil
-	}
-	list := get(m, "list")
-	path := func(key string, required bool) (string, error) {
-		value, _ := str(get(list, key))
-		if required && value == "" {
-			return "", providerFailure("The tool map has no list.%s.", key)
-		}
-		return value, nil
-	}
-	states := map[string]string{}
-	if given, ok := obj(get(list, "states")); ok {
-		for word, state := range given {
-			s, ok := str(state)
-			if !ok || !isContractState(s) {
-				return ToolMapping{}, providerFailure("list.states.%s must be one of %s.", word, strings.Join(ContractStates, ", "))
-			}
-			states[strings.ToLower(word)] = s
-		}
-	}
-	optional := func(key string) (*Call, error) {
-		if !has(m, key) {
-			return nil, nil
-		}
-		c, err := call(key)
-		return &c, err
-	}
-	var out ToolMapping
-	var err error
-	if out.List, err = call("list"); err != nil {
-		return out, err
-	}
-	if out.Start, err = call("start"); err != nil {
-		return out, err
-	}
-	if out.Stop, err = call("stop"); err != nil {
-		return out, err
-	}
-	if out.Options, err = optional("options"); err != nil {
-		return out, err
-	}
-	if out.Create, err = optional("create"); err != nil {
-		return out, err
-	}
-	if out.Delete, err = optional("delete"); err != nil {
-		return out, err
-	}
-	out.FirstBootRuns, _ = boolean(get(get(m, "create"), "firstBootRuns"))
-	l := Listing{States: states}
-	for _, p := range []struct {
-		key      string
-		into     *string
-		required bool
-	}{{"items", &l.Items, false}, {"id", &l.ID, true}, {"name", &l.Name, true}, {"state", &l.State, true},
-		{"ssh", &l.SSH, false}, {"tunnel", &l.Tunnel, false},
-		{"hostKeyRenews", &l.HostKeyRenews, false}, {"cost", &l.Cost, false},
-		{"idleTimeoutMinutes", &l.IdleTimeout, false}} {
-		if *p.into, err = path(p.key, p.required); err != nil {
-			return out, err
-		}
-	}
-	out.Listing = l
-	return out, nil
-}
-
 // Missing is ToolMapping.missing: the tool its server lacks, first in the order list,
 // start, stop, then the optional ones it names; "" for none.
 func (m ToolMapping) Missing(tools []string) string {
@@ -235,7 +162,7 @@ func Content(result any) (any, error) {
 		if len(said) > 1024 {
 			said = strings.ToValidUTF8(said[:1024], "�")
 		}
-		return nil, &ProviderFailure{said}
+		return nil, &ProviderFailure{Words: said}
 	}
 	if has(result, "structuredContent") {
 		return get(result, "structuredContent"), nil

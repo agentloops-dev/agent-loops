@@ -47,7 +47,7 @@ func TestAWaitOnANewSentryIssue(t *testing.T) {
 		if id := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/0/organizations/scratch/issues/"), "/"); id != "" {
 			for _, it := range issues {
 				if it["id"] == id {
-					json.NewEncoder(w).Encode(it)
+					check(t, json.NewEncoder(w).Encode(it))
 					return
 				}
 			}
@@ -55,7 +55,7 @@ func TestAWaitOnANewSentryIssue(t *testing.T) {
 			return
 		}
 		searches++
-		json.NewEncoder(w).Encode(issues)
+		check(t, json.NewEncoder(w).Encode(issues))
 	}))
 	defer sentry.Close()
 
@@ -66,12 +66,12 @@ func TestAWaitOnANewSentryIssue(t *testing.T) {
 	m.post("initialize", map[string]any{}, 1)
 	home := t.TempDir()
 	d.PersonalHome = home
-	os.MkdirAll(filepath.Join(home, ".agents"), 0o755)
+	must(t, os.MkdirAll(filepath.Join(home, ".agents"), 0o755)) //nolint:gosec // G301: the mode this folder always had; only its error is new
 	b, _ := json.Marshal(map[string]any{"mcpServers": map[string]any{"sentry-events": map[string]any{
 		"command": os.Args[0], "args": []string{"-test.run=^TestSentryEventsHelper$"},
 		"env": map[string]string{"AGENTS_SENTRY_HELPER": "1", "SENTRY_AUTH_TOKEN": "sntryu_scratch", "SENTRY_ORG": "scratch", "SENTRY_URL": sentry.URL},
 	}}})
-	os.WriteFile(filepath.Join(home, ".agents", "mcp.json"), b, 0o644)
+	must(t, os.WriteFile(filepath.Join(home, ".agents", "mcp.json"), b, 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	quickPolls(d)
 	d.StartMCPEvents()
 

@@ -20,6 +20,7 @@ struct VelocityChartsSection<Refresh: Equatable>: View {
     @State private var read: Date?
     private var pageRead: Date? { read }
     @State private var range: VelocityChart.Range = .week
+    @State private var repo = ""
     @State private var picked: Date?
     /// The last read failed (#5972): with no history, the page says so in place of the spinner;
     /// with one, the line at the top says so beside its age.
@@ -31,17 +32,7 @@ struct VelocityChartsSection<Refresh: Equatable>: View {
         VStack(alignment: .leading, spacing: 12) {
             if let read = pageRead {
                 if failed, history != nil {
-                    // An earlier read on screen, and the last one failed (#5972): the words and its age.
-                    HStack(spacing: 8) {
-                        LastUpdateTimeline(read: read) { now in
-                            Text(LastUpdate.banner(Self.couldNotRead + ".", read: read, now: now))
-                                .appText(.fine)
-                                .foregroundStyle(Paper.secondary)
-                                .lineLimit(1)
-                        }
-                        Button(WorkLook.tryAgain) { attempt += 1 }.buttonStyle(.paper)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    ChartReadFailureBanner(read: read, message: Self.couldNotRead) { attempt += 1 }
                 } else {
                     // How old what the page shows is (#5144): the oldest of its reads, at the top.
                     LastUpdateText(read: read).frame(maxWidth: .infinity, alignment: .trailing)
@@ -52,28 +43,27 @@ struct VelocityChartsSection<Refresh: Equatable>: View {
             }
             .pickerStyle(.segmented)
             .labelsHidden()
-            if let history {
-                VelocityChartBody(chart: VelocityChart(history, range: range), picked: $picked)
-            } else if failed {
-                // Nothing read, and the read failed (#5972): no spinner that never ends.
-                ContentUnavailableView {
-                    Label(Self.couldNotRead, icon: "exclamationmark.triangle")
-                } actions: {
-                    Button(WorkLook.tryAgain) { attempt += 1 }.buttonStyle(.paper)
+            RepositoryPicker(repo: $repo,
+                             options: history.map { RepositoryOption.options(VelocityChart.repositories(in: $0)) } ?? [])
+            ChartLoadingOrFailure(failed: failed, hasHistory: history != nil,
+                                  message: Self.couldNotRead, retry: { attempt += 1 }) {
+                if let history {
+                    VelocityChartBody(chart: VelocityChart(history, range: range,
+                                                            repo: repo.isEmpty ? nil : repo),
+                                      picked: $picked)
                 }
-                .frame(maxWidth: .infinity, minHeight: 200)
-            } else {
-                ProgressView().frame(maxWidth: .infinity, minHeight: 200)
             }
         }
         .onChange(of: range) { picked = nil }
+        .onChange(of: repo) { picked = nil }
         .task(id: Reading(refresh: refresh, attempt: attempt)) {
-            if let loaded = await load() {
+            switch await readChart(load) {
+            case let .read(loaded, at):
                 history = loaded
-                read = Date()
+                read = at
                 failed = false
-            } else if !Task.isCancelled {
-                failed = true
+            case .failed: failed = true
+            case .cancelled: break
             }
         }
     }
@@ -92,17 +82,14 @@ private struct VelocityChartBody: View {
     @Binding var picked: Date?
 
     private var pickedBar: VelocityChart.Bar? {
-        guard let picked else { return nil }
-        return chart.bars.last { $0.start <= picked }
+        chartPickedBar(in: chart.bars, at: picked) { $0.start }
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             headline
             if chart.isEmpty {
-                Text("No pull requests landed in this range.")
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, minHeight: 160)
+                ChartEmpty()
             } else {
                 bars
                 Text(chart.revertsLine)
@@ -113,50 +100,18 @@ private struct VelocityChartBody: View {
         }
     }
 
-    /// Health's block above the bars: what the figure is, the figure, and when.
     private var headline: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text((pickedBar == nil ? VelocityChart.headline : "Total").uppercased())
-                .appText(.fine).fontWeight(.semibold)
-                .foregroundStyle(.secondary)
-            Text(VelocityChart.words(pickedBar?.value ?? chart.average))
-                .appText(.title).fontWeight(.semibold)
-                .monospacedDigit()
-            Text(when)
-                .appText(.supporting)
-                .foregroundStyle(.secondary)
-        }
-        .accessibilityElement(children: .combine)
-    }
-
-    private var when: String {
-        if let bar = pickedBar {
-            switch chart.range {
-            case .day: return bar.start.formatted(.dateTime.hour())
-                + "–" + bar.start.addingTimeInterval(3600).formatted(.dateTime.hour())
-            case .week, .month: return bar.start.formatted(.dateTime.weekday(.wide).day().month())
-            case .threeMonths: return "Week of " + bar.start.formatted(.dateTime.day().month())
-            }
-        }
-        guard let first = chart.bars.first?.start, let last = chart.bars.last?.start else { return "" }
-        if chart.range == .day { return "Today" }
-        // 3M's last bar is a week that ends today, not on the day it starts.
-        let end = chart.range == .threeMonths ? Calendar.current.date(byAdding: .day, value: 6, to: last) ?? last : last
-        return (first ..< end.addingTimeInterval(1)).formatted(.interval.day().month().year())
-    }
-
-    private var unit: Calendar.Component {
-        switch chart.range {
-        case .day: .hour
-        case .week, .month: .day
-        case .threeMonths: .weekOfYear
-        }
+        ChartHeadline(
+            title: pickedBar == nil ? VelocityChart.headline : "Total",
+            value: VelocityChart.words(pickedBar?.value ?? chart.average),
+            when: ChartRangeParts.when(range: chart.range, picked: pickedBar?.start,
+                                       first: chart.bars.first?.start, last: chart.bars.last?.start))
     }
 
     private var bars: some View {
         Chart {
             ForEach(chart.bars) { bar in
-                BarMark(x: .value("When", bar.start, unit: unit), y: .value("PRs", bar.value))
+                BarMark(x: .value("When", bar.start, unit: ChartRangeParts.unit(chart.range)), y: .value("PRs", bar.value))
                     .foregroundStyle(Paper.accent.opacity(pickedBar == nil || pickedBar == bar ? 1 : 0.35))
                     .cornerRadius(2)
             }
@@ -166,35 +121,14 @@ private struct VelocityChartBody: View {
                     .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
             }
         }
-        .chartXSelection(value: $picked)
-        .chartYAxis {
-            // A PR is whole: no half-PR tick on a quiet day.
-            AxisMarks(position: .trailing) { value in
-                if let number = value.as(Double.self), number == number.rounded() {
-                    AxisGridLine()
-                    AxisValueLabel { Text(Int(number).formatted()) }
-                }
-            }
+        .chartSelectionAndAxes(range: chart.range, selected: $picked, yLabel: "PRs") { number in
+            guard number == number.rounded() else { return nil }
+            return Text(Int(number).formatted())
         }
-        .chartXAxis {
-            AxisMarks(values: .automatic(desiredCount: chart.range == .day ? 4 : 6)) { _ in
-                AxisGridLine()
-                AxisValueLabel(format: axisFormat)
-            }
-        }
-        .frame(height: 200)
     }
 
     /// 3M's bars are weeks, so its daily average is drawn as a week's worth.
     private func perBar(_ daily: Double) -> Double { chart.range == .threeMonths ? daily * 7 : daily }
-
-    private var axisFormat: Date.FormatStyle {
-        switch chart.range {
-        case .day: .dateTime.hour()
-        case .week: .dateTime.weekday(.abbreviated)
-        case .month, .threeMonths: .dateTime.day().month(.abbreviated)
-        }
-    }
 
     /// Where the range's PRs landed, by repository, most first.
     private var shares: some View {

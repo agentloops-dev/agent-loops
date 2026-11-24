@@ -55,6 +55,7 @@ const CapControlRotate1 = "control.rotate/1"
 const CapControl1 = "control/1"
 const CapCost1 = "cost/1"
 const CapCredentials1 = "credentials/1"
+const CapCycletime1 = "cycletime/1"
 const CapDaemon1 = "daemon/1"
 const CapDailyChecks1 = "daily-checks/1"
 const CapDeploysCopy1 = "deploys.copy/1"
@@ -147,6 +148,7 @@ const CapMac1 = "mac/1"
 const CapMachineAccounts1 = "machine.accounts/1"
 const CapMachineAccounts2 = "machine.accounts/2"
 const CapMachineAgentSecrets1 = "machine.agent-secrets/1"
+const CapMachineSetup1 = "machine.setup/1"
 const CapMachineUsage1 = "machine.usage/1"
 const CapMachine1 = "machine/1"
 const CapMachinesAll1 = "machines.all/1"
@@ -189,6 +191,8 @@ const CapProjectsSessions1 = "projects.sessions/1"
 const CapProjects1 = "projects/1"
 const CapProvidersCarry1 = "providers.carry/1"
 const CapProvidersCarry2 = "providers.carry/2"
+const CapProvidersCarry3 = "providers.carry/3"
+const CapProvidersOauth1 = "providers.oauth/1"
 const CapProviders1 = "providers/1"
 const CapProviders2 = "providers/2"
 const CapReadapi1 = "readapi/1"
@@ -360,6 +364,7 @@ var HostCapabilities = pairs([][2]string{
 	{"cost/setLimits", "cost/1"},
 	{"cost/state", "cost/1"},
 	{"credentials/offer", "credentials/1"},
+	{"cycletime/history", "cycletime/1"},
 	{"daemon/lockReset", "host.lock/4"},
 	{"daemon/ping", "daemon/1"},
 	{"daemon/policyState", "host.policy/1"},
@@ -554,6 +559,7 @@ var HostCapabilities = pairs([][2]string{
 	{"providers/carry", "providers.carry/1"},
 	{"providers/forget", "providers.carry/1"},
 	{"providers/keepSecrets", "providers.carry/1"},
+	{"providers/oauth", "providers.carry/3"},
 	{"providers/ssh", "providers.carry/2"},
 	{"relay/grant", "relay/1"},
 	{"relay/offer", "relay/1"},
@@ -614,6 +620,7 @@ var HostCapabilities = pairs([][2]string{
 	{"sessions/list", "sessions/1"},
 	{"settings/passThrough", "host.policy/1"},
 	{"settings/userPart", "host.user-settings/4"},
+	{"setup/projects", "machine.setup/1"},
 	{"shell/attach", "shell/1"},
 	{"shell/close", "shell/1"},
 	{"shell/detach", "shell/1"},
@@ -838,6 +845,7 @@ var ControlCapabilities = pairs([][2]string{
 	{"console/live", "console/1"},
 	{"console/stopAgent", "console/1"},
 	{"console/teamWorkflows", "console/1"},
+	{"control/capacity", "console/1"},
 	{"control/connectAnother", "control.connect-another/1"},
 	{"control/connectReport", "control.connect-another/1"},
 	{"control/ping", "control/1"},
@@ -901,12 +909,12 @@ var ControlCapabilities = pairs([][2]string{
 	{"machine/orgRoutesApplied", "host.org-routes/2"},
 	{"machine/pairWebPage", "host.web-pairing/1"},
 	{"machine/policyApplied", "host.policy/1"},
-	{"machine/providerDraft", "machine/1"},
 	{"machine/secretClients", "machine.agent-secrets/1"},
 	{"machine/secretKey", "host.secret-release/1"},
 	{"machine/secretOps", "machine/1"},
 	{"machine/secretRelease", "host.secret-release/1"},
 	{"machine/setupStep", "machine/1"},
+	{"machine/setupWork", "machine/1"},
 	{"machine/status", "machine/1"},
 	{"machines/agents", "machines/1"},
 	{"machines/agentsChanges", "machines/1"},
@@ -988,16 +996,13 @@ var ControlCapabilities = pairs([][2]string{
 	{"providers/add", "providers/1"},
 	{"providers/create", "providers/2"},
 	{"providers/deleteWorkspace", "providers/2"},
-	{"providers/draftAnswer", "providers/1"},
-	{"providers/draftCancel", "providers/1"},
-	{"providers/draftSigned", "providers/1"},
-	{"providers/draftStart", "providers/1"},
 	{"providers/list", "providers/1"},
 	{"providers/makeDefault", "providers/1"},
+	{"providers/oauthFinish", "providers.oauth/1"},
+	{"providers/oauthStart", "providers.oauth/1"},
 	{"providers/options", "providers/1"},
 	{"providers/refresh", "providers/1"},
 	{"providers/remove", "providers/1"},
-	{"providers/runtimes", "providers/1"},
 	{"providers/setGroup", "groups/1"},
 	{"providers/update", "providers/1"},
 	{"readApi/list", "readapi/1"},
@@ -1063,6 +1068,7 @@ var ControlCapabilities = pairs([][2]string{
 	{"bus/deliver", "events.bus/1"},
 	{"control/budgetRequested", "policy.ask/1"},
 	{"control/capReached", "bots/1"},
+	{"control/capacityChanged", "console/1"},
 	{"control/clientChanged", "control/1"},
 	{"control/connectReported", "control.connect-another/1"},
 	{"control/connectWanted", "control.connect-another/1"},
@@ -1091,7 +1097,6 @@ var ControlCapabilities = pairs([][2]string{
 	{"control/planeMoveWanted", "control.plane-move/1"},
 	{"control/policyChanged", "policy/1"},
 	{"control/projectsChanged", "projects/1"},
-	{"control/providerDraft", "control/1"},
 	{"control/providersChanged", "control/1"},
 	{"control/sealingWanted", "sealing/1"},
 	{"control/secretsLeft", "user/2"},
@@ -1122,6 +1127,7 @@ var ControlNotifications = set([]string{
 	"bus/deliver",
 	"control/budgetRequested",
 	"control/capReached",
+	"control/capacityChanged",
 	"control/clientChanged",
 	"control/connectReported",
 	"control/connectWanted",
@@ -1150,7 +1156,6 @@ var ControlNotifications = set([]string{
 	"control/planeMoveWanted",
 	"control/policyChanged",
 	"control/projectsChanged",
-	"control/providerDraft",
 	"control/providersChanged",
 	"control/sealingWanted",
 	"control/secretsLeft",

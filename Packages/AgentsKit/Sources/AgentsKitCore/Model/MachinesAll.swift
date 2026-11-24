@@ -24,18 +24,24 @@ public extension DaemonAPI {
         public var board: String?
         public var label: String?
         public var assignee: String?
+        /// The order, as in ForgeListRequest (#6538): `priority`, else the last updated first.
+        public var sort: String?
         public var limit: Int?
         public var pages: [MachineCursor]?
+        /// A Refresh (#6642): each machine reads its forges, not its kept answer.
+        public var fresh: Bool?
 
         public init(kind: String, state: String? = nil, board: String? = nil, label: String? = nil, assignee: String? = nil,
-                    limit: Int? = nil, pages: [MachineCursor]? = nil) {
+                    sort: String? = nil, limit: Int? = nil, pages: [MachineCursor]? = nil, fresh: Bool? = nil) {
             self.kind = kind
             self.state = state
             self.board = board
             self.label = label
             self.assignee = assignee
+            self.sort = sort
             self.limit = limit
             self.pages = pages
+            self.fresh = fresh
         }
     }
 

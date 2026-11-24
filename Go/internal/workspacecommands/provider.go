@@ -50,6 +50,8 @@ type Failure struct {
 	Reason string
 	Again  bool
 	After  time.Duration
+	// Status is the HTTP status of a provider's refusal, or 0 (#6073).
+	Status int
 }
 
 func (f Failure) Error() string { return f.Reason }
@@ -110,6 +112,9 @@ type Provider struct {
 	// os.LookupEnv when nil.
 	Fetch Fetcher
 	Env   Environment
+	// Folder is where it keeps what it makes for itself, such as the Agent Loops ssh key of
+	// a DigitalOcean provider (#6073): the folder it was started in. None keeps nothing.
+	Folder string
 	// google keeps Google Cloud's access tokens until they end.
 	google googleTokens
 
@@ -435,30 +440,39 @@ func (p *Provider) act(start bool, id string) (Workspace, error) {
 	return Workspace{}, Failure{Reason: fmt.Sprintf("%s was still %s after %s.", workspace.Name, workspace.State, words(p.Timing.Long))}
 }
 
-// Create makes a workspace (US5) with the choices given, and answers once it is listed.
-func (p *Provider) Create(name string, options map[string]any, firstBoot string) (Workspace, error) {
+// Create makes a workspace (US5) with the choices given, and answers once it is listed,
+// with what it did, in words, one line a step (#6073).
+func (p *Provider) Create(name string, options map[string]any, firstBoot string) (Workspace, []string, error) {
 	making := p.Config.Making
 	if !making.CanCreate() {
-		return Workspace{}, Failure{Reason: "It can't make workspaces."}
+		return Workspace{}, nil, Failure{Reason: "It can't make workspaces."}
 	}
 	name = strings.TrimSpace(name)
 	if name == "" {
-		return Workspace{}, Failure{Reason: "A new machine needs a name."}
+		return Workspace{}, nil, Failure{Reason: "A new machine needs a name."}
 	}
 	all, err := p.List()
 	if err != nil {
-		return Workspace{}, err
+		return Workspace{}, nil, err
 	}
 	for _, w := range all {
 		if w.Name == name || w.ID == name {
-			return Workspace{}, Failure{Reason: "There is already a workspace called " + name + "."}
+			return Workspace{}, nil, Failure{Reason: "There is already a workspace called " + name + "."}
 		}
 	}
 	values := map[string]string{"name": name, "firstBoot": firstBoot}
-	// A choice left out takes the form's default, as the form showed it.
+	// A choice left out takes the form's default, as the form showed it: the account's
+	// choices where the preset reads them (#6686), else the plain form.
 	chosen := map[string]any{}
 	properties, _ := making.Options["properties"].(map[string]any)
-	for key, property := range properties {
+	form := properties
+	for key := range properties {
+		if _, given := options[key]; !given && making.Choices != nil {
+			form, _ = making.Form(p)["properties"].(map[string]any)
+			break
+		}
+	}
+	for key, property := range form {
 		if d, ok := property.(map[string]any)["default"]; ok {
 			chosen[key] = d
 		}
@@ -485,26 +499,54 @@ func (p *Provider) Create(name string, options map[string]any, firstBoot string)
 	if owner, name, ok := strings.Cut(values["repository"], "/"); ok && owner != "" && name != "" && !strings.Contains(name, "/") {
 		values["repository.owner"], values["repository.name"] = owner, name
 	} else if making.CreateRequest != nil && strings.Contains(making.CreateRequest.URL, "${repository.") {
-		return Workspace{}, Failure{Reason: "Give the repository as owner/name."}
+		return Workspace{}, nil, Failure{Reason: "Give the repository as owner/name."}
 	}
 	request, err := withIntegers(making.CreateRequest, properties, values)
 	if err != nil {
-		return Workspace{}, err
+		return Workspace{}, nil, err
 	}
-	// The first-boot command carries a host code: logged as the template, never filled in.
-	if err := p.do(making.Create, request, values, "create "+name, "making "+name); err != nil {
-		return Workspace{}, err
+	said, err := p.make(request, values, name)
+	if err != nil {
+		return Workspace{}, nil, err
 	}
 	all, err = p.List()
 	if err != nil {
-		return Workspace{}, err
+		return Workspace{}, nil, err
 	}
 	for _, w := range all {
 		if w.Name == name || w.ID == name {
-			return w, nil
+			return w, said, nil
 		}
 	}
-	return Workspace{}, Failure{Reason: name + " was made, but the list doesn't show it yet."}
+	return Workspace{}, nil, Failure{Reason: name + " was made, but the list doesn't show it yet."}
+}
+
+// make is a make's steps (#6073): Prepare, the create itself, and what it made, in words. A
+// create the provider refused says that nothing was made, when the preset says how.
+func (p *Provider) make(request *Request, values map[string]string, name string) ([]string, error) {
+	making := p.Config.Making
+	var said []string
+	if making.Prepare != nil && request != nil {
+		var steps []string
+		var err error
+		if request, steps, err = making.Prepare(p, request, values); err != nil {
+			return nil, err
+		}
+		said = append(said, steps...)
+	}
+	// The first-boot command carries a host code: logged as the template, never filled in.
+	if err := p.do(making.Create, request, values, "create "+name, "making "+name); err != nil {
+		var refused Failure
+		if making.NotMade != "" && errors.As(err, &refused) && refused.Status != 0 {
+			refused.Reason += " " + making.NotMade
+			return nil, refused
+		}
+		return nil, err
+	}
+	if making.Made != nil {
+		said = append(said, making.Made(values))
+	}
+	return said, nil
 }
 
 // withIntegers is the request with each body value that is only ${key}, for an option of

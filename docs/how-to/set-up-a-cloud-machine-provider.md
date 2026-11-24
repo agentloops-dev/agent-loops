@@ -27,16 +27,16 @@ on the machine that carries the provider.
 ## Where to add one
 
 - **On the Mac:** **Settings ▸ Machine Providers**, in the Control plane group, then
-  **Add Provider…**. Choose the cloud. For DigitalOcean, Codespaces and Coder, **Reach it
-  with** offers **Its API** (first) and **Its CLI**. The Mac also adds Docker, your own
-  commands and MCP servers.
+  **Add Provider…**. Choose the cloud from the list (under **Cloud** or **Development
+  environments**). For DigitalOcean, Codespaces and Coder, **Connect with** offers **Its API**
+  (first) and **Its CLI**. The Mac also adds Docker and your own commands.
 - **On the web page:** the **Machine providers** section of Settings, then
   **Add Provider…**.
 
 The iPhone and iPad do not add providers (#2798).
 
-The web page offers only the API presets: DigitalOcean, Codespaces, Coder, AWS EC2 and
-Compute Engine. A CLI preset needs a shell where the control plane runs, to install and
+The web page shows the same list, but opens only the API presets: DigitalOcean, Codespaces,
+Coder, AWS EC2 and Compute Engine. The other rows say **In the Mac app**. A CLI preset needs a shell where the control plane runs, to install and
 sign in the CLI, and a person in a browser has none there.
 
 The control plane runs providers only when it has a folder for them (#3113): `--home`, or
@@ -138,19 +138,68 @@ its state.
 
 ## DigitalOcean Droplets
 
-Through its API, you need a DigitalOcean API token with custom scopes: droplet read and
-update. To make and delete droplets from Agent Loops, add droplet create and delete.
+DigitalOcean is guided (#6074): you connect your account with clicks, and copy no token.
 
-1. Make the token in the DigitalOcean control panel, under API.
-2. Give it in **API token**.
-3. Give the tag in **Droplets tagged** (the Mac) or **Tag**. The default is `agents`.
-4. Give the ssh user. The default is `root`.
+1. In **Add a Provider**, choose **DigitalOcean Droplets** (the row says **Guided**).
+2. In **Keeps the connection**, choose the machine that keeps the connection. The token
+   stays on that machine, never on the control plane. With one machine, the sheet shows
+   its name. With none, add a machine first.
+3. Choose **Connect DigitalOcean…**. Your browser opens DigitalOcean's consent page (on the
+   Mac, in a sign-in window; on the web page, in a new window). Sign in, choose the team,
+   and choose **Authorize**. The sheet says **Waiting for DigitalOcean…** until the browser
+   comes back, and **Open the Page Again** opens the page again.
+4. The sheet closes, and the provider's card says **Connected**, with the account and the
+   team. **New Droplet** on the card makes a droplet (below).
 
-**New Machine…** makes a droplet with the tag, in the region, size and image that you
-choose. Choose an image with systemd, such as `ubuntu-24-04-x64`. Its first boot makes a
-user `agents` with root's ssh keys and installs Agent Loops as that user, never as root.
+When it does not connect, the sheet says why and gives one button: **Connect
+DigitalOcean…** after a Deny, a sign-in that took too long or fewer permissions than Agent
+Loops needs; **Add a Payment Method** and **Check Again** when the account cannot make
+droplets yet.
 
-Through its CLI, install `doctl` and sign it in on the Mac that runs the control plane.
+Agent Loops asks for these scopes: droplet create, read, update and delete; ssh_key create
+and read; regions read; sizes read; tag create; and account read.
+
+**Use an API token instead**, under **Connect DigitalOcean…**, is for a team that does not
+let a person authorise apps. Make a token with the scopes above in the DigitalOcean control
+panel, under API, give it in **API token**, and choose **Connect with Token**.
+
+On the card, **Reconnect…** connects again, on the same machine. When DigitalOcean stops
+taking the connection (you removed Agent Loops under **Authorized Applications**, or a
+refresh failed), the card says **Disconnected**: "DigitalOcean disconnected Agent Loops.
+Reconnect to start and stop its droplets." **Remove…** revokes the connection at
+DigitalOcean. The droplets stay: delete them on DigitalOcean to stop paying for them.
+
+A provider added before #6074 with a tag and an ssh user keeps them: **Edit…** gives its
+token again.
+
+**New Droplet** on the provider's card makes a droplet in one click (#6577). Beside it, the
+card shows the region, the size and the monthly price that it uses: the ones you chose last
+on this provider, or else the nearest region and the recommended size. Each step shows on
+the droplet's row until it joins. Then the card says that it is ready, with **Open
+Machine**. **Change…** beside **New Droplet** opens the whole form, where you choose
+(#6073):
+
+- **Region** and **Size** come from your account. The region nearest the machine that
+  keeps the token is first. The sizes are DigitalOcean's Basic sizes, with DigitalOcean's
+  monthly and hourly prices. The recommended size is `s-2vcpu-4gb` (2 vCPUs, 4 GB),
+  enough for 2 or 3 agents at once. When the account does not answer, the form has plain
+  text fields.
+- **Image** is `ubuntu-24-04-x64`. Choose an image with systemd.
+- **An ssh key for Agent Loops:** the machine that keeps the token makes a key pair once,
+  in `~/.agents/providers/agent-loops-ssh/`, and adds its public half, named
+  "Agent Loops", to your account. Each new droplet gets it, so DigitalOcean sends no root
+  password. You can reach the droplet with
+  `ssh -i ~/.agents/providers/agent-loops-ssh/id_ed25519 agents@<address>`. A token
+  without the ssh_key scopes makes droplets with no key, as before.
+
+The first boot makes a user `agents` with root's ssh keys and installs Agent Loops as that
+user, never as root. The machine's set-up shows each step as it goes: the key, the
+droplet (its region, size and price), its start, the install and the join. When
+DigitalOcean refuses a step, the step shows DigitalOcean's words and says whether a
+droplet was made.
+
+A `doctl` provider that you added before #6074 still works: `doctl` must be signed in on the
+machine that carries it.
 
 ## GitHub Codespaces
 
@@ -200,8 +249,7 @@ control plane with several copies does not run them yet.
 
 ## See also
 
-- [Add a machine provider](add-a-machine-provider.md): your own commands, a tool map,
-  or a server of your own.
+- [Add a machine provider](add-a-machine-provider.md): your own commands.
 - [Machine providers](../reference/machine-providers.md): every preset's parameters
   and the contract.
 - [Start machines from Agent Loops](start-machines-from-agents.md)

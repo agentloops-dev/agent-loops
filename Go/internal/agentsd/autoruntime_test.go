@@ -3,6 +3,7 @@ package agentsd
 import (
 	"encoding/json"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -92,6 +93,91 @@ func TestADroppedCell(t *testing.T) {
 	offers[0].Options = json.RawMessage(`[{"value":"opus[1m]","name":"Opus 5.5"},{"value":"claude-fable-5-1[1m]","name":"Fable 5.1"}]`)
 	if m := cellMapping("claude", wire.AutoFieldModel, "smart", settings, offers); m.Native == nil || stringValue(m.Native.Options["model"]) != "claude-fable-5-1[1m]" {
 		t.Fatalf("%+v", m)
+	}
+}
+
+// Codex takes the newest Luna, Sol and Astra it offers (#6891), and none it does not offer.
+func TestCodexTakesTheNewestOfEachLine(t *testing.T) {
+	t.Parallel()
+
+	cat := "model"
+	offers := []wire.ConfigOption{{ID: "model", Name: "Model", Type: "select", Category: &cat,
+		Options: json.RawMessage(`[{"value":"gpt-6-astra","name":"6 Astra"},{"value":"gpt-6-sol","name":"6 Sol"},{"value":"gpt-6-luna","name":"6 Luna"},` +
+			`{"value":"gpt-5.6-sol","name":"5.6 Sol"},{"value":"gpt-5.6-terra","name":"5.6 Terra"},{"value":"gpt-5.6-luna","name":"5.6 Luna"},{"value":"gpt-6.2-sol","name":"6.2 Sol"}]`)},
+		{ID: "reasoning_effort", Name: "Effort", Type: "select", Options: json.RawMessage(`[{"value":"low","name":"Low"},{"value":"high","name":"High"}]`)}}
+	model := func(level string, offers []wire.ConfigOption) wire.AutoMapping {
+		return cellMapping("codex", wire.AutoFieldModel, level, wire.AutoSettings{}, offers)
+	}
+	for level, want := range map[string]string{"fast": "gpt-6-luna", "balanced": "gpt-6.2-sol", "smart": "gpt-6-astra"} {
+		if m := model(level, offers); m.Native == nil || stringValue(m.Native.Options["model"]) != want || m.Mark != wire.AutoMarkAutoMapped {
+			t.Fatalf("%s: %+v", level, m)
+		}
+	}
+	if m := model("smart", offers); stringValue(m.Native.Options["reasoning_effort"]) != "high" {
+		t.Fatalf("%+v", m)
+	}
+	// A stale offer of 5.6 only: no Astra, so Smart is dropped, not given another line.
+	offers[0].Options = json.RawMessage(`[{"value":"gpt-5.6-sol","name":"5.6 Sol"},{"value":"gpt-5.6-luna","name":"5.6 Luna"}]`)
+	if m := model("fast", offers); stringValue(m.Native.Options["model"]) != "gpt-5.6-luna" {
+		t.Fatalf("%+v", m)
+	}
+	if m := model("smart", offers); m.Mark != wire.AutoMarkDropped {
+		t.Fatalf("%+v", m)
+	}
+	// Before Codex has said: the first named model.
+	if m := model("balanced", nil); stringValue(m.Native.Options["model"]) != "gpt-6-sol" {
+		t.Fatalf("%+v", m)
+	}
+}
+
+// A start on Auto asks Codex again before it passes it by for a model the cached offer lacks
+// (#6891); a failed ask says why, and the prompt stays.
+func TestAutoRefreshesAStaleCodexOffer(t *testing.T) {
+	t.Parallel()
+
+	fakeRuntimes(t)
+	d, c := start(t, t.TempDir())
+	defer d.Shutdown()
+	d.SettingsDir = t.TempDir()
+	dir := "file://" + t.TempDir()
+	cat, modeCat, collabCat, effortCat := "model", "mode", "collaboration_mode", "thought_level"
+	offer := func(models string) optionEntry {
+		return optionEntry{Options: []wire.ConfigOption{{ID: "model", Name: "Model", Type: "select", Category: &cat,
+			CurrentValue: json.RawMessage(`"gpt-5.6-luna"`), Options: json.RawMessage(models)},
+			{ID: "reasoning_effort", Name: "Effort", Type: "select", Category: &effortCat, CurrentValue: json.RawMessage(`"medium"`),
+				Options: json.RawMessage(`[{"value":"low","name":"Low"},{"value":"medium","name":"Medium"},{"value":"high","name":"High"}]`)},
+			{ID: "mode", Name: "Mode", Type: "select", Category: &modeCat, Options: json.RawMessage(`[{"value":"read-only","name":"Read Only"},{"value":"agent","name":"Agent"}]`)},
+			{ID: "collaboration_mode", Name: "Collaboration", Type: "select", Category: &collabCat, Options: json.RawMessage(`[{"value":"default","name":"Default"},{"value":"plan","name":"Plan"}]`)}}}
+	}
+	d.remember(optionKey("codex", wire.URL(dir), nil), offer(`[{"value":"gpt-5.6-luna","name":"5.6 Luna"}]`))
+	var asked atomic.Int32
+	d.optionMu.Lock()
+	d.offersOf = func(*runtimeDef, string) (optionEntry, error) {
+		asked.Add(1)
+		return offer(`[{"value":"gpt-6-astra","name":"6 Astra"},{"value":"gpt-6-luna","name":"6 Luna"}]`), nil
+	}
+	d.optionMu.Unlock()
+	out(d, "claude", false)
+	var p wire.AutoPreview
+	mustUnmarshal(t, c.call(t, 1, "auto/preview", map[string]any{"levels": map[string]any{"model": "smart"}}), &p)
+	if p.RuntimeID != nil && *p.RuntimeID == "codex" {
+		t.Fatalf("a preview asks no runtime: %+v", p)
+	}
+	var agent wire.UUID
+	mustUnmarshal(t, c.call(t, 2, "agents/start", map[string]any{"runtimeID": "auto", "cwd": dir, "prompt": "hello", "levels": map[string]any{"model": "smart"}}), &agent)
+	if a := d.Store.Agent(agent); a.RuntimeID != "codex" || stringValue(a.StartOptions.Values["model"]) != "gpt-6-astra" || asked.Load() != 1 {
+		t.Fatalf("%s %s asked %d", a.RuntimeID, a.StartOptions.Values, asked.Load())
+	}
+	d.optionMu.Lock()
+	d.offersOf = func(rt *runtimeDef, _ string) (optionEntry, error) {
+		return optionEntry{}, &Error{Code: CodeRuntimeWillNotStart, Message: rt.Name + " did not start"}
+	}
+	d.optionMu.Unlock()
+	d.remember(optionKey("codex", wire.URL(dir), nil), offer(`[{"value":"gpt-5.6-luna","name":"5.6 Luna"}]`))
+	c.call(t, 3, "auto/set", map[string]any{"order": []string{"codex"}, "excluded": []string{"claude", "cursor", "copilot", "grok", "opencode", "antigravity"}, "overrides": []any{}})
+	err := c.callError(t, 4, "agents/start", map[string]any{"runtimeID": "auto", "cwd": dir, "prompt": "hello", "levels": map[string]any{"model": "smart"}})
+	if err == nil || err.Code != wire.FailureAutoNoRuntime || !strings.Contains(err.Message, "Codex: could not read its models (Codex did not start)") {
+		t.Fatalf("%+v", err)
 	}
 }
 
@@ -317,6 +403,68 @@ func TestLevelsFollowTheMappings(t *testing.T) {
 	}
 }
 
+// OpenCode's Ask and Approve for me cells both set mode=build: a start and a later change
+// must keep the level the person chose, as the web page already does (#2893, #6822).
+func TestAnOpenCodePermissionChoiceStaysWhenCellsShareAnOption(t *testing.T) {
+	t.Parallel()
+
+	fakeRuntimes(t)
+	d, c := start(t, t.TempDir())
+	defer d.Shutdown()
+	d.SettingsDir = t.TempDir()
+	dir := t.TempDir()
+	var id wire.UUID
+	mustUnmarshal(t, c.call(t, 1, "agents/start", map[string]any{"runtimeID": "opencode",
+		"cwd": "file://" + dir, "prompt": "hello", "levels": map[string]any{"permission": "approveForMe"}}), &id)
+	level := func() *wire.PermissionLevel {
+		if l := d.Store.Agent(id).Levels; l != nil {
+			return l.Permission
+		}
+		return nil
+	}
+	if a := d.Store.Agent(id); stringValue(a.StartOptions.Values["mode"]) != "build" {
+		t.Fatalf("start: %+v", a.StartOptions.Values)
+	}
+	if l := level(); l == nil || *l != wire.PermissionLevelApproveForMe {
+		t.Fatalf("start: %v", l)
+	}
+	for i, want := range []wire.PermissionLevel{wire.PermissionLevelAsk, wire.PermissionLevelApproveForMe} {
+		mustUnmarshal(t, c.call(t, i+2, "agents/setLevels", map[string]any{"agentID": id,
+			"levels": map[string]any{"permission": string(want)}}), &wire.Agent{})
+		if l := level(); l == nil || *l != want {
+			t.Fatalf("setLevels %s: %v", want, l)
+		}
+	}
+}
+
+// A kept level still has to match its cell (#5730): move OpenCode's Approve for me cell off
+// build, and the record rematches to Ask (#6822).
+func TestAStaleOpenCodeLevelRematchesWhenItsCellMoves(t *testing.T) {
+	t.Parallel()
+
+	fakeRuntimes(t)
+	d, c := start(t, t.TempDir())
+	defer d.Shutdown()
+	d.SettingsDir = t.TempDir()
+	dir := t.TempDir()
+	var id wire.UUID
+	mustUnmarshal(t, c.call(t, 1, "agents/start", map[string]any{"runtimeID": "opencode",
+		"cwd": "file://" + dir, "prompt": "hello", "levels": map[string]any{"permission": "approveForMe"}}), &id)
+	if l := d.Store.Agent(id).Levels; l == nil || l.Permission == nil || *l.Permission != wire.PermissionLevelApproveForMe {
+		t.Fatalf("start: %+v", l)
+	}
+	auto := wire.AutoSettings{Order: []string{}, Excluded: []string{}, Overrides: []wire.AutoOverride{{RuntimeID: "opencode",
+		Field: wire.AutoFieldPermission, Level: string(wire.PermissionLevelApproveForMe),
+		Native: wire.NativeSetting{Options: map[string]wire.JSONValue{"mode": jsonString("plan")}}}}}
+	if err := d.writeSetting("auto.json", auto); err != nil {
+		t.Fatal(err)
+	}
+	d.rematchLevels()
+	if l := d.Store.Agent(id).Levels; l == nil || l.Permission == nil || *l.Permission != wire.PermissionLevelAsk {
+		t.Fatalf("stale Approve for me: %+v", l)
+	}
+}
+
 // A pass that matches levels again, and an auto/set while it runs: the new settings are
 // saved, and their own pass ends, before this pass gets to a record. That record follows the
 // settings saved, not the ones the pass read when it began (#6432).
@@ -491,5 +639,60 @@ func TestAnAutoHelperAsksLikeItsStarter(t *testing.T) {
 	}
 	if a := helper(4, wire.PermissionLevelBypassPermissions); !d.agentAlwaysApproves(a) {
 		t.Fatalf("%v", a.ClientPermission)
+	}
+}
+
+// FR-018: a permission mode cell answers requests on a named runtime too. Approve for me on
+// OpenCode starts with mode=build and the mapped Yes to all; an explicit per-agent answer wins.
+func TestNamedOpenCodeModeCellAnswersRequests(t *testing.T) {
+	t.Parallel()
+
+	fakeRuntimes(t)
+	d, c := start(t, t.TempDir())
+	defer d.Shutdown()
+	d.SettingsDir = t.TempDir()
+	dir := "file://" + t.TempDir()
+	var id wire.UUID
+	mustUnmarshal(t, c.call(t, 1, "agents/start", map[string]any{"runtimeID": "opencode", "cwd": dir, "prompt": "hello",
+		"levels": map[string]any{"permission": "approveForMe"}}), &id)
+	a := d.Store.Agent(id)
+	if stringValue(a.StartOptions.Values["mode"]) != "build" || a.ClientPermission == nil ||
+		*a.ClientPermission != wire.ClientPermissionModeAlwaysApprove || !d.agentAlwaysApproves(a) {
+		t.Fatalf("%s %v %+v", a.RuntimeID, a.ClientPermission, a.StartOptions.Values)
+	}
+	var own wire.UUID
+	mustUnmarshal(t, c.call(t, 2, "agents/start", map[string]any{"runtimeID": "opencode", "cwd": dir, "prompt": "hello",
+		"levels": map[string]any{"permission": "approveForMe", "permissionRequests": "default"}}), &own)
+	if a := d.Store.Agent(own); a.ClientPermission == nil || *a.ClientPermission != wire.ClientPermissionModeDefault || d.agentAlwaysApproves(a) {
+		t.Fatalf("explicit request cards did not win: %v", a.ClientPermission)
+	}
+}
+
+// A later Permission mode change refreshes the mapped answer; an explicit choice in the same
+// setLevels call still wins.
+func TestSetLevelsRefreshesTheMappedAnswerOnANamedRuntime(t *testing.T) {
+	t.Parallel()
+
+	fakeRuntimes(t)
+	d, c := start(t, t.TempDir())
+	defer d.Shutdown()
+	d.SettingsDir = t.TempDir()
+	var id wire.UUID
+	mustUnmarshal(t, c.call(t, 1, "agents/start", map[string]any{"runtimeID": "opencode", "cwd": "file://" + t.TempDir(), "prompt": "hello",
+		"levels": map[string]any{"permission": "approveForMe"}}), &id)
+	if a := d.Store.Agent(id); a.ClientPermission == nil || *a.ClientPermission != wire.ClientPermissionModeAlwaysApprove {
+		t.Fatalf("start: %v", a.ClientPermission)
+	}
+	c.call(t, 2, "agents/setLevels", map[string]any{"agentID": id, "levels": map[string]any{"permission": "ask"}})
+	if a := d.Store.Agent(id); a.ClientPermission == nil || *a.ClientPermission != wire.ClientPermissionModeDefault || d.agentAlwaysApproves(a) {
+		t.Fatalf("ask: %v", a.ClientPermission)
+	}
+	c.call(t, 3, "agents/setLevels", map[string]any{"agentID": id, "levels": map[string]any{"permission": "approveForMe"}})
+	if a := d.Store.Agent(id); a.ClientPermission == nil || *a.ClientPermission != wire.ClientPermissionModeAlwaysApprove || !d.agentAlwaysApproves(a) {
+		t.Fatalf("approveForMe: %v", a.ClientPermission)
+	}
+	c.call(t, 4, "agents/setLevels", map[string]any{"agentID": id, "levels": map[string]any{"permission": "ask", "permissionRequests": "alwaysApprove"}})
+	if a := d.Store.Agent(id); a.ClientPermission == nil || *a.ClientPermission != wire.ClientPermissionModeAlwaysApprove || !d.agentAlwaysApproves(a) {
+		t.Fatalf("explicit alwaysApprove: %v", a.ClientPermission)
 	}
 }

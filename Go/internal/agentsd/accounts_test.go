@@ -6,9 +6,10 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 
-	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/acp"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -17,7 +18,6 @@ import (
 // own; and it goes with its folder.
 
 func TestAnAddedAccount(t *testing.T) {
-	flaky.UnderLoad(t, "#6289")
 	fakeRuntimes(t)
 	root := t.TempDir()
 	home := t.TempDir()
@@ -119,6 +119,128 @@ func TestAnAddedAccount(t *testing.T) {
 	b, _ := os.ReadFile(filepath.Join(root, "runtime-accounts.json"))
 	if strings.Contains(string(b), p.ID) {
 		t.Fatalf("%s", b)
+	}
+}
+
+// A removed account's folder goes once the runtimes in it have ended (#6289): a turn in
+// flight on it is stopped and waited for, and its runtime is not kept warm in a folder that
+// is gone.
+func TestRemovedAccountEndsItsRuntimesFirst(t *testing.T) {
+	fakeRuntimes(t)
+	root := t.TempDir()
+	d, c := start(t, root)
+	defer d.Shutdown()
+
+	var p wire.AccountProfile
+	mustUnmarshal(t, c.call(t, 1, "runtimes/addAccount", map[string]any{"runtimeID": "claude", "name": "Work"}), &p)
+	folder := accountFolder(p)
+	var id wire.UUID
+	mustUnmarshal(t, c.call(t, 2, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(), "accountID": p.ID,
+		"prompt": "wait for me", "startOptions": map[string]any{"values": map[string]any{}, "extraArguments": []string{}}}), &id)
+	l := d.live(id)
+	waitFor(t, "had the turn with the runtime", func() bool {
+		l.mu.Lock()
+		defer l.mu.Unlock()
+		return l.inTurn && l.prompting && l.session != nil
+	})
+
+	var stopped []wire.UUID
+	mustUnmarshal(t, c.call(t, 3, "runtimes/removeAccount", map[string]any{"runtimeID": "claude", "accountID": p.ID}), &stopped)
+	if len(stopped) != 1 || stopped[0] != id {
+		t.Fatalf("stopped %v", stopped)
+	}
+	l.mu.Lock()
+	running, session := l.running || l.inTurn, l.session
+	l.mu.Unlock()
+	if running || session != nil {
+		t.Fatalf("its runtime outlived the account: in a turn %v, runtime %v", running, session != nil)
+	}
+	if _, err := os.Stat(folder); !os.IsNotExist(err) {
+		t.Fatalf("folder kept: %v", err)
+	}
+}
+
+// A runtime that still writes into its account's folder as it ends (as Claude saves its
+// state on the way out) has ended before the folder goes, and the folder still goes
+// (#6289).
+func TestRemovedAccountOutlastsARuntimeWritingAsItEnds(t *testing.T) {
+	fakeRuntimes(t)
+	var ended atomic.Bool
+	testHooksOf(t).change(func(h *testHooks) {
+		h.opts.attach = func(l acp.Launch) (acp.Attached, error) {
+			a, err := attachFakeRuntime(l)
+			if err != nil {
+				return a, err
+			}
+			folder := ""
+			for _, kv := range l.Env {
+				if v, ok := strings.CutPrefix(kv, "CLAUDE_CONFIG_DIR="); ok {
+					folder = v
+				}
+			}
+			end := a.End
+			a.End = func() {
+				if folder != "" {
+					_ = os.MkdirAll(folder, 0o700)
+					_ = os.WriteFile(filepath.Join(folder, "last-state.json"), []byte("{}"), 0o600)
+				}
+				ended.Store(true)
+				end()
+			}
+			return a, nil
+		}
+	})
+	root := t.TempDir()
+	d, c := start(t, root)
+	defer d.Shutdown()
+
+	var p wire.AccountProfile
+	mustUnmarshal(t, c.call(t, 1, "runtimes/addAccount", map[string]any{"runtimeID": "claude", "name": "Work"}), &p)
+	folder := accountFolder(p)
+	var id wire.UUID
+	mustUnmarshal(t, c.call(t, 2, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(), "accountID": p.ID,
+		"prompt": "hello", "startOptions": map[string]any{"values": map[string]any{}, "extraArguments": []string{}}}), &id)
+	l := d.live(id)
+	waitFor(t, "its runtime kept warm after the turn", func() bool {
+		l.mu.Lock()
+		defer l.mu.Unlock()
+		return !l.running && !l.inTurn && l.session != nil
+	})
+
+	c.call(t, 3, "runtimes/removeAccount", map[string]any{"runtimeID": "claude", "accountID": p.ID})
+	if !ended.Load() {
+		t.Fatal("removeAccount answered before the runtime in the folder ended")
+	}
+	if _, err := os.Stat(folder); !os.IsNotExist(err) {
+		t.Fatalf("folder kept after its runtime wrote into it as it ended: %v", err)
+	}
+}
+
+// A folder that cannot be deleted is said, not left behind in silence (#6289).
+func TestRemovedAccountSaysItsFolderStayed(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root deletes from a folder it cannot write")
+	}
+	fakeRuntimes(t)
+	root := t.TempDir()
+	d, c := start(t, root)
+	defer d.Shutdown()
+
+	var p wire.AccountProfile
+	mustUnmarshal(t, c.call(t, 1, "runtimes/addAccount", map[string]any{"runtimeID": "claude", "name": "Work"}), &p)
+	folder := accountFolder(p)
+	parent := filepath.Dir(folder)
+	if err := os.Chmod(parent, 0o500); err != nil { //nolint:gosec // G302: unwritable on purpose, so RemoveAll fails
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chmod(parent, 0o700) }() //nolint:gosec // G302: the temp folder made writable again to clean up
+
+	e := c.callError(t, 2, "runtimes/removeAccount", map[string]any{"runtimeID": "claude", "accountID": p.ID})
+	if e == nil || !strings.Contains(e.Message, "could not be deleted") || !strings.Contains(e.Message, folder) {
+		t.Fatalf("%+v", e)
+	}
+	if d.accountProfile("claude", p.ID) != nil {
+		t.Fatal("the account is still listed")
 	}
 }
 

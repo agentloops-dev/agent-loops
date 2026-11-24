@@ -6,6 +6,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
 	"github.com/agentloops-dev/agent-loops/Go/internal/lineage"
@@ -110,18 +111,43 @@ func (s *Service) keptLineageGraph(ctx context.Context, keep func(person string)
 	}
 	g := &mergedLineage{byNode: map[wire.LineageNode][]int{}, states: map[wire.LineageNode]wire.LineageSessionState{}}
 	seen := map[syncLinkKey]bool{}
+	// The keys are in order: a machine's changes, oldest first, then its links.json and
+	// states.json (#6584).
+	var changes []storedChanges
 	for i, data := range objects {
-		if data == nil {
-			continue
+		key := strings.TrimPrefix(read[i].Key, lineageGraphPrefix)
+		_, name, _ := strings.Cut(key, "/")
+		switch {
+		case data == nil:
+			// Gone since the list.
+		case strings.HasPrefix(name, "changes/"):
+			var change storedChanges
+			if json.Unmarshal(data, &change) == nil {
+				changes = append(changes, change)
+			}
+		case name == "states.json":
+			g.addStates(data, changes)
+			changes = nil
+		case name == "links.json":
+			g.addLinks(data, changes, hosts[i], seen)
 		}
-		if strings.HasSuffix(read[i].Key, "/states.json") {
-			g.addStates(data)
-			continue
+		if next := i + 1; next == len(objects) || !sameLineageHost(read[i].Key, read[next].Key) {
+			if name != "states.json" || data == nil {
+				// No states.json yet: the changes' states are all there is.
+				g.addStates(nil, changes)
+			}
+			changes = nil
 		}
-		g.addLinks(data, hosts[i], seen)
 	}
 	g.sortLinks()
 	return g, nil
+}
+
+// sameLineageHost says whether two keys under lineageGraphPrefix are one machine's.
+func sameLineageHost(a, b string) bool {
+	ha, _, _ := strings.Cut(strings.TrimPrefix(a, lineageGraphPrefix), "/")
+	hb, _, _ := strings.Cut(strings.TrimPrefix(b, lineageGraphPrefix), "/")
+	return ha == hb
 }
 
 // keptLineageKeys is the objects among keys of the machines whose people keep says, and the
@@ -152,11 +178,15 @@ func (s *Service) keptLineageKeys(keys []store.Key, keep func(person string) boo
 	return read, hosts
 }
 
-// addStates merges in one machine's states.json: the newest state of each session wins.
-func (g *mergedLineage) addStates(data []byte) {
+// addStates merges in one machine's states.json (nil: none) and its changes since: the
+// newest state of each session wins.
+func (g *mergedLineage) addStates(data []byte, changes []storedChanges) {
 	var kept storedStates
-	if json.Unmarshal(data, &kept) != nil {
+	if data != nil && json.Unmarshal(data, &kept) != nil && len(changes) == 0 {
 		return
+	}
+	for _, change := range changes {
+		kept.States = append(kept.States, change.States...)
 	}
 	for _, c := range kept.States {
 		c.Node = g.names.Name(c.Node)
@@ -166,11 +196,18 @@ func (g *mergedLineage) addStates(data []byte) {
 	}
 }
 
-// addLinks merges in one machine's links.json, each link once across the machines (seen).
-func (g *mergedLineage) addLinks(data []byte, host string, seen map[syncLinkKey]bool) {
+// addLinks merges in one machine's links.json with its changes since put over it, each link
+// once across the machines (seen).
+func (g *mergedLineage) addLinks(data []byte, changes []storedChanges, host string, seen map[syncLinkKey]bool) {
 	var kept storedLinks
 	if json.Unmarshal(data, &kept) != nil {
 		return
+	}
+	if len(changes) > 0 {
+		for _, change := range changes {
+			kept.Links = mergeLinks(kept.Links, change.Links)
+		}
+		kept.Links = lineage.Bound(kept.Links, time.Now())
 	}
 	for _, l := range kept.Links {
 		l.From, l.To = g.names.Name(l.From), g.names.Name(l.To)

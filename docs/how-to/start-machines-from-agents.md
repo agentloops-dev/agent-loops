@@ -26,21 +26,28 @@ waits for its agentsd to connect, and the server comes online by itself.
 
 ## Add a provider
 
-1. Open **Settings ▸ Machine Providers** on the Mac and choose **Add Provider…**.
-2. Pick the kind:
-   - **Docker Containers**: containers on the Mac that runs the control plane.
-   - **DigitalOcean Droplets**: droplets with a tag. Agent Loops reaches each one as `root@` its address
-     unless you say another user.
-   - **GitHub Codespaces**, **Coder Machines**, or **Google Cloud Workstations**.
-   - **Your commands**: one machine, given as the commands you already use to start and
-     stop it, such as `cws start devstack-1`. A status command is optional; it prints
-     `running` or `stopped`.
-   - **MCP server**: a provider of its own, or another MCP server with a tool map. See
-     [Add a machine provider](add-a-machine-provider.md).
-3. Fill in its few fields. If it needs a token, add it under **Secrets**. A secret stays on
-   the control plane and is never shown again.
-4. Choose **Add**. Agent Loops checks the provider and lists its machines. If it can't, the
-   sheet says why, in the provider's words.
+1. Open **Settings ▸ Machine Providers** on the Mac or the web page and choose **Add Provider…**.
+2. Choose the kind from the list. Each row has a line that says what it is, and the rows are in
+   groups:
+   - **Cloud**: **DigitalOcean Droplets** (droplets with a tag; Agent Loops reaches each one as
+     `root@` its address unless you say another user), **Google Compute Engine VMs** and
+     **AWS EC2 Instances**.
+   - **Development environments**: **GitHub Codespaces**, **Coder Workspaces** and
+     **Google Cloud Workstations**.
+   - **On a machine you have**: **Docker Containers**, containers on a machine that has docker.
+   - **Custom**: **Your commands**, one machine given as the commands you already use to start
+     and stop it, such as `cws start devstack-1` (a status command is optional; it prints
+     `running` or `stopped`). See [Add a machine provider](add-a-machine-provider.md).
+
+   The web page adds the kinds that work through their API with a token. The other rows say
+   **In the Mac app**.
+3. Fill in the form. Its sections are **Provider** (the name, and the machine that carries it),
+   **Access** (tokens and keys) and **Machines** (tag, label, region, zone, ssh). The help under
+   each field says what it needs, and **How to set up** opens the kind's part of these docs. If
+   the provider needs other secrets, open **Secrets (optional)**. A secret stays on the machine
+   that carries the provider and is never shown again.
+4. Choose **Add**. It says **Checking…** while Agent Loops checks the provider and lists its
+   machines. If it can't, the sheet says why, in the provider's words.
 
 ## Link a server to its machine
 
@@ -249,7 +256,6 @@ checked out in the folder there.
 
 ## Related
 
-- [Add a machine provider](add-a-machine-provider.md): presets, your own commands, a
-  tool map, or a provider of your own.
+- [Add a machine provider](add-a-machine-provider.md): presets, or your own commands.
 - [Machine providers](../reference/machine-providers.md): the tools a provider offers.
 - [The control plane](../explanation/control-plane.md): why providers run there.

@@ -22,9 +22,9 @@ func TestKeysSendOnEnterAddALineOnOptionEnterAndKeepAPastesLines(t *testing.T) {
 		t.Fatalf("⌥⏎ as Esc+⏎ is a new line, ⏎ sends: %v", got)
 	}
 	got = k.feed([]byte("\x1b[200~a\rb\x1b[201~\r\x1b[13;3u\x03\x04\x7f\x15\x1b[A"))
-	want = []key{{kind: keyText, text: "a\nb"}, {kind: keyEnter}, {kind: keyNewline}, {kind: keyInterrupt}, {kind: keyEOF}, {kind: keyBackspace}, {kind: keyClear}}
+	want = []key{{kind: keyText, text: "a\nb"}, {kind: keyEnter}, {kind: keyNewline}, {kind: keyInterrupt}, {kind: keyEOF}, {kind: keyBackspace}, {kind: keyKillToStart}, {kind: keyPrevLine}}
 	if fmt.Sprint(got) != fmt.Sprint(want) {
-		t.Fatalf("a paste keeps its lines; CSI u ⌥⏎; ^C ^D ⌫ ^U; an arrow is dropped: %v", got)
+		t.Fatalf("a paste keeps its lines; CSI u ⌥⏎; ^C ^D ⌫ ^U; ↑ moves: %v", got)
 	}
 	// An escape and a character cut in two by a read come whole with the next.
 	if got = k.feed([]byte("\x1b[20")); len(got) != 0 {
@@ -40,6 +40,116 @@ func TestKeysSendOnEnterAddALineOnOptionEnterAndKeepAPastesLines(t *testing.T) {
 	if len(got) != 2 || got[0].kind != keyBackground || got[0].dark || !got[1].dark {
 		t.Fatalf("the terminal's background, light then dark: %v", got)
 	}
+}
+
+func TestLineEditorEditsAtTheCursor(t *testing.T) {
+	cases := []struct {
+		name   string
+		text   string
+		cursor int
+		keys   string
+		want   string
+		at     int
+	}{
+		{"left and insert", "hello", 5, "\x1b[DX", "hellXo", 5},
+		{"right and insert", "hello", 3, "\x1b[C\x1b[CY", "helloY", 6},
+		{"ctrl b and f", "hello", 5, "\x02Z", "hellZo", 5},
+		{"option word moves", "one two three", 13, "\x1bb\x1bf", "one two three", 13},
+		{"option word stops", "one two three", 13, "\x1bb", "one two three", 8},
+		{"word from whitespace", "one two", 3, "\x1bf", "one two", 7},
+		{"ctrl word moves", "one two", 7, "\x1b[1;5D\x1b[1;3C", "one two", 7},
+		{"home and end keys", "one two", 3, "\x1b[H\x1b[F", "one two", 7},
+		{"ctrl a and e", "one two", 3, "\x01\x05", "one two", 7},
+		{"backspace", "hello", 3, "\x7f", "helo", 2},
+		{"delete key", "hello", 2, "\x1b[3~", "helo", 2},
+		{"ctrl d deletes", "hello", 2, "\x04", "helo", 2},
+		{"option backspace", "one two three", 13, "\x1b\x7f", "one two ", 8},
+		{"ctrl w", "one two three", 13, "\x17", "one two ", 8},
+		{"option d", "one two", 0, "\x1bd", " two", 0},
+		{"ctrl k", "hello world", 5, "\x0b", "hello", 5},
+		{"ctrl u to start", "hello world", 6, "\x15", "world", 0},
+		{"ctrl u at end", "hello world", 11, "\x15", "", 0},
+		{"up keeps column", "long line\nshort", 15, "\x1b[A", "long line\nshort", 5},
+		{"down keeps column", "long line\nshort", 5, "\x1b[B", "long line\nshort", 15},
+		{"paste at cursor", "hello", 3, "\x1b[200~X\rY\x1b[201~", "helX\nYlo", 6},
+		{"option enter at cursor", "hello", 2, "\x1b\r", "he\nllo", 3},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var r keyReader
+			e := lineEditor{text: c.text, cursor: c.cursor}
+			for _, k := range r.feed([]byte(c.keys)) {
+				e.apply(k)
+			}
+			if e.text != c.want || e.cursor != c.at {
+				t.Fatalf("%q at %d -> %q at %d, want %q at %d", c.text, c.cursor, e.text, e.cursor, c.want, c.at)
+			}
+		})
+	}
+}
+
+func TestDrawLeavesTheCursorAtTheEditingPoint(t *testing.T) {
+	cases := []struct {
+		name  string
+		text  string
+		at    int
+		cols  int
+		want  string
+		clear string
+	}{
+		{"one line", "abcd", 2, 10, "› abcd\r\x1b[4C", "\r\x1b[J"},
+		{"wide chars", "漢字abc", 6, 10, "› 漢字abc\r\x1b[6C", "\r\x1b[J"},
+		{"wrapped line", "abcdefghij", 5, 4, "› abcdefghij\x1b[1A\r\x1b[3C", "\r\x1b[1B\x1b[2A\x1b[J"},
+		{"first of two lines", "one\ntwo", 1, 10, "› one\r\n  two\x1b[1A\r\x1b[3C", "\r\x1b[1B\x1b[1A\x1b[J"},
+		{"end of a full row", "ab", 2, 4, "› ab\r\n\r", "\r\x1b[1A\x1b[J"},
+		{"second line", "one\ntwo", 7, 10, "› one\r\n  two\r\x1b[5C", "\r\x1b[1A\x1b[J"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var b bytes.Buffer
+			s := screen{w: &b, raw: true, prompt: true, width: func() int { return c.cols }}
+			s.input.text, s.input.cursor = c.text, c.at
+			s.draw()
+			if got := b.String(); got != c.want {
+				t.Fatalf("draw: %q, want %q", got, c.want)
+			}
+			b.Reset()
+			s.clear()
+			if got := b.String(); got != c.clear {
+				t.Fatalf("clear: %q, want %q", got, c.clear)
+			}
+		})
+	}
+}
+
+func TestUpdateIsOneWriteWithTheCursorHidden(t *testing.T) {
+	var w countingWriter
+	s := screen{w: &w, raw: true, prompt: true, status: "working", width: func() int { return 20 }}
+	s.input.text, s.input.cursor = "hi", 1
+	s.update()
+	s.update()
+	if w.writes != 2 {
+		t.Fatalf("each update is one write, got %d writes for two", w.writes)
+	}
+	got := w.String()
+	if !strings.HasPrefix(got, hideCursor) || !strings.HasSuffix(got, showCursor) {
+		t.Fatalf("the cursor is hidden while the live part is drawn again: %q", got)
+	}
+}
+
+type countingWriter struct {
+	bytes.Buffer
+	writes int
+}
+
+func (c *countingWriter) Write(p []byte) (int, error) {
+	c.writes++
+	return c.Buffer.Write(p)
+}
+
+func (c *countingWriter) WriteString(p string) (int, error) {
+	c.writes++
+	return c.Buffer.WriteString(p)
 }
 
 func TestColourIsTheDesignTokensOnlyOnATerminalAndNeverWithNoColor(t *testing.T) {
@@ -340,7 +450,7 @@ func TestContinuingShowsTheLastEntriesAndAnswersAWaitingCardInTheTerminal(t *tes
 		t.Fatal("leaving never stops the session")
 	}
 	got := out.String()
-	for _, want := range []string{"Agent Loops · agent-loops (Alex's MacBook Pro) · claude · opus-5.5", `Continuing "Fix the flaky stop test" · needs you 12 min · 1 other session here (loops ls)`,
+	for _, want := range []string{"Agent Loops · agent-loops (Alex's MacBook Pro) · claude · opus-5.5", `Continuing "Fix the flaky stop test" · needs you 12 min · 1 other session here (loops sessions list)`,
 		"… 41 earlier entries", "  agent  I want to run: scripts/docs-parts.py", "✓ answered", "  you    and the docs", "The session goes on. Continue it: loops -r c40d11"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("no %q in\n%q", want, got)
@@ -404,7 +514,7 @@ func TestWithNoTerminalAnIdleSessionPrintsItsLastEntriesAndEnds(t *testing.T) {
 		t.Fatal("loops with no terminal waited on an idle session")
 	}
 	got := out.String()
-	for _, want := range []string{"Tests pass 20 of 20.", "19+ other sessions here (loops ls)"} {
+	for _, want := range []string{"Tests pass 20 of 20.", "19+ other sessions here (loops sessions list)"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("no %q in\n%s", want, got)
 		}
@@ -429,5 +539,146 @@ func TestResumingByAWholeIDIsOneRead(t *testing.T) {
 	}
 	if r := reqs[0].(wire.ListRequest); r.AgentID == nil || *r.AgentID != id || r.Folder == nil {
 		t.Fatalf("by the id, in this folder: %+v", r)
+	}
+}
+
+func recentPickerAgents() []wire.Agent {
+	now := time.Now()
+	return []wire.Agent{
+		{ID: wire.UUID("A1B2C3D4-0000-0000-0000-000000000001"), Title: ptr("First session"), State: wire.AgentStateFinished,
+			RuntimeID: "opencode", LastActivityAt: wire.DateOf(now)},
+		{ID: wire.UUID("A1B2C3D4-0000-0000-0000-000000000002"), Title: ptr("Second session"), State: wire.AgentStateWaitingOnUser,
+			RuntimeID: "claude", LastActivityAt: wire.DateOf(now.Add(-time.Minute))},
+	}
+}
+
+func pickerTerminal(keys <-chan key, out *syncBuffer) terminal {
+	return terminal{out: out, keys: keys, raw: true, width: func() int { return 80 }, st: plain}
+}
+
+func TestPickerNumberResumesThatSession(t *testing.T) {
+	f := newChatFake()
+	list := recentPickerAgents()
+	f.answer["agents/list"] = func(any) any { return list }
+	keys := make(chan key, 4)
+	keys <- key{kind: keyText, text: "2"}
+	keys <- key{kind: keyEnter}
+	keys <- key{kind: keyEOF}
+	out := &syncBuffer{}
+	if err := runChat(context.Background(), f, chatHere, options{}, chatArgs{pick: true}, pickerTerminal(keys, out)); err != nil {
+		t.Fatal(err)
+	}
+	got := out.String()
+	for _, want := range []string{"Recent sessions in agent-loops", "1  First session", "2  Second session", pickerPrompt, `Continuing "Second session"`} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("no %q in\n%s", want, got)
+		}
+	}
+	if len(f.called("agents/list")) != 1 {
+		t.Fatalf("one read of the recent list: %v", f.called("agents/list"))
+	}
+	transcripts := f.called("agents/transcript")
+	if len(transcripts) != 1 || transcripts[0].(wire.TranscriptRequest).AgentID != list[1].ID {
+		t.Fatalf("the chosen session: %v", transcripts)
+	}
+}
+
+func TestPickerEnterStartsANewSessionWhenTextIsTyped(t *testing.T) {
+	f := newChatFake()
+	f.answer["agents/list"] = func(any) any { return recentPickerAgents() }
+	f.answer["agents/start"] = func(any) any { return "B21E9000-0000-0000-0000-000000000000" }
+	keys := make(chan key, 8)
+	keys <- key{kind: keyEnter}
+	keys <- key{kind: keyText, text: "go"}
+	keys <- key{kind: keyEnter}
+	keys <- key{kind: keyEOF}
+	out := &syncBuffer{}
+	if err := runChat(context.Background(), f, chatHere, options{}, chatArgs{pick: true}, pickerTerminal(keys, out)); err != nil {
+		t.Fatal(err)
+	}
+	got := out.String()
+	if !strings.Contains(got, pickerPrompt) || !strings.Contains(got, `Started "go"`) {
+		t.Fatalf("the new-session prompt and start:\n%s", got)
+	}
+	starts := f.called("agents/start")
+	if len(starts) != 1 || starts[0].(wire.StartRequest).Prompt != "go" {
+		t.Fatalf("start with the typed prompt: %v", starts)
+	}
+	if len(f.called("agents/transcript")) != 0 {
+		t.Fatal("Enter alone resumes nothing")
+	}
+}
+
+func TestPickerWithNoSessionsGoesStraightToTheNewSessionPrompt(t *testing.T) {
+	f := newChatFake()
+	f.answer["agents/list"] = func(any) any { return []wire.Agent{} }
+	f.answer["agents/start"] = func(any) any { return "B21E9000-0000-0000-0000-000000000000" }
+	keys := make(chan key, 4)
+	keys <- key{kind: keyText, text: "go"}
+	keys <- key{kind: keyEnter}
+	keys <- key{kind: keyEOF}
+	out := &syncBuffer{}
+	if err := runChat(context.Background(), f, chatHere, options{}, chatArgs{pick: true}, pickerTerminal(keys, out)); err != nil {
+		t.Fatal(err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "No sessions in agent-loops yet.") || strings.Contains(got, pickerPrompt) {
+		t.Fatalf("no picker when there is nothing to pick:\n%s", got)
+	}
+	starts := f.called("agents/start")
+	if len(starts) != 1 || starts[0].(wire.StartRequest).Prompt != "go" {
+		t.Fatalf("the prompt starts the session: %v", starts)
+	}
+}
+
+func TestPickerRejectsANumberOutsideTheList(t *testing.T) {
+	f := newChatFake()
+	list := recentPickerAgents()
+	f.answer["agents/list"] = func(any) any { return list }
+	keys := make(chan key, 8)
+	keys <- key{kind: keyText, text: "9"}
+	keys <- key{kind: keyEnter}
+	keys <- key{kind: keyText, text: "1"}
+	keys <- key{kind: keyEnter}
+	keys <- key{kind: keyEOF}
+	out := &syncBuffer{}
+	if err := runChat(context.Background(), f, chatHere, options{}, chatArgs{pick: true}, pickerTerminal(keys, out)); err != nil {
+		t.Fatal(err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "Enter 1 to 2, or press Enter for a new one.") || !strings.Contains(got, `Continuing "First session"`) {
+		t.Fatalf("the bad number asks again, then the good one resumes:\n%s", got)
+	}
+	transcripts := f.called("agents/transcript")
+	if len(transcripts) != 1 || transcripts[0].(wire.TranscriptRequest).AgentID != list[0].ID {
+		t.Fatalf("the good number chooses the first: %v", transcripts)
+	}
+}
+
+func TestPickerInterruptAndEOFLeaveWithTextTyped(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		key  key
+	}{
+		{"^C", key{kind: keyInterrupt}},
+		{"^D", key{kind: keyEOF}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newChatFake()
+			f.answer["agents/list"] = func(any) any { return recentPickerAgents() }
+			keys := make(chan key, 4)
+			keys <- key{kind: keyText, text: "2"}
+			keys <- tc.key
+			out := &syncBuffer{}
+			if err := runChat(context.Background(), f, chatHere, options{}, chatArgs{pick: true}, pickerTerminal(keys, out)); err != nil {
+				t.Fatal(err)
+			}
+			if len(f.called("agents/transcript")) != 0 || len(f.called("agents/start")) != 0 {
+				t.Fatalf("leaving neither resumes nor starts: %v %v", f.called("agents/transcript"), f.called("agents/start"))
+			}
+			if !strings.Contains(out.String(), pickerPrompt) {
+				t.Fatalf("the picker was shown:\n%s", out.String())
+			}
+		})
 	}
 }

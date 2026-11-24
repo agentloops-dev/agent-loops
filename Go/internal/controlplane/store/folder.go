@@ -37,11 +37,47 @@ type Folder struct {
 
 func NewFolder(root string) *Folder { return &Folder{Root: root, index: newFolderIndex()} }
 
+// Stats returns the regular-file count and bytes in the folder store. Call it from the
+// periodic sweep, not on every metrics scrape.
+func (f *Folder) Stats() (int64, int64, error) {
+	var files, size int64
+	err := filepath.WalkDir(f.Root, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !entry.Type().IsRegular() {
+			return nil
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		files++
+		size += info.Size()
+		return nil
+	})
+	return files, size, err
+}
+
 // HashedByListing is how many files listing has read and hashed: for the tests.
 func (f *Folder) HashedByListing() int {
 	f.index.mu.Lock()
 	defer f.index.mu.Unlock()
 	return f.index.hashed
+}
+
+// StatedByListing is how many entries listing has stat'ed in the folders under prefix, a
+// folder's key ending in "/" (#6582): a folder whose stamp is unchanged stats none.
+func (f *Folder) StatedByListing(prefix string) int {
+	f.index.mu.Lock()
+	defer f.index.mu.Unlock()
+	n := 0
+	for folder, stated := range f.index.stated {
+		if strings.HasPrefix(folder+"/", prefix) {
+			n += stated
+		}
+	}
+	return n
 }
 
 // file names the file of a key: no "..", no absolute path, no hidden name.
@@ -225,49 +261,114 @@ func (f *Folder) List(_ context.Context, prefix string) ([]Key, error) {
 	return out, nil
 }
 
+// Folders reads the one folder the prefix names, and only its entries' names and types:
+// no file under it is listed or stat'ed (#6569). A prefix that names no folder has none.
+func (f *Folder) Folders(_ context.Context, prefix string) ([]string, error) {
+	dir := f.Root
+	if folder := strings.TrimSuffix(prefix, "/"); folder != "" {
+		p, err := f.file(folder)
+		if err != nil {
+			return nil, err
+		}
+		dir = p
+	}
+	entries, err := os.ReadDir(dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, Unavailable("cannot read %s: %v", prefix, err)
+	}
+	var names []string
+	for _, e := range entries {
+		// As a listing walks: no hidden name, and a link is not followed.
+		if e.IsDir() && !strings.HasPrefix(e.Name(), ".") {
+			names = append(names, e.Name())
+		}
+	}
+	return names, nil
+}
+
 // RemoveLeftovers removes what a copy that stopped mid-write left behind, and probes it
 // never deleted: temporary files, probe keys and locks with no key beside them, all
-// older than before. It returns how many went. Run by the sweep (#174), never on a hot
-// path: it visits every folder.
+// changed before before. It says how many it removed. It reads each folder's names once,
+// and stats only a name that can be a leftover (#6585): a store of many keys with their
+// locks costs one read of each folder, not a stat of each file.
 func (f *Folder) RemoveLeftovers(before time.Time) int {
+	return f.removeLeftoversIn("", f.Root, before)
+}
+
+// LeftoverStats is how many names RemoveLeftovers has stat'ed: for the tests.
+func (f *Folder) LeftoverStats() int {
+	f.index.mu.Lock()
+	defer f.index.mu.Unlock()
+	return f.index.leftoverStats
+}
+
+// removeLeftoversIn is RemoveLeftovers in one folder, rel from the root (p on disk), and
+// in those under it.
+func (f *Folder) removeLeftoversIn(rel, p string, before time.Time) int {
+	entries, err := os.ReadDir(p)
+	if err != nil {
+		return 0
+	}
+	names := make(map[string]bool, len(entries))
+	for _, e := range entries {
+		names[e.Name()] = true
+	}
+	probes := rel == "probe" || strings.HasPrefix(rel, "probe/")
 	removed := 0
-	// The walk function returns nil for every path, so WalkDir does too.
-	_ = filepath.WalkDir(f.Root, func(p string, d fs.DirEntry, err error) error {
-		if err != nil || p == f.Root || !d.Type().IsRegular() {
-			return nil
+	for _, e := range entries {
+		name := e.Name()
+		// Not followed: a link could lead out of the store.
+		if e.IsDir() {
+			removed += f.removeLeftoversIn(join(rel, name), filepath.Join(p, name), before)
+			continue
 		}
-		info, err := d.Info()
-		if err != nil || !info.ModTime().Before(before) {
-			return nil
+		if !e.Type().IsRegular() {
+			continue
 		}
-		rel, _ := filepath.Rel(f.Root, p)
-		rel = filepath.ToSlash(rel)
-		name := d.Name()
-		leftover := false
+		lock := strings.HasSuffix(name, ".lock")
 		switch {
-		case strings.HasPrefix(name, ".") && strings.HasSuffix(name, ".tmp"):
-			leftover = true
-		case strings.HasPrefix(rel, "probe/"):
-			leftover = true
-		case strings.HasSuffix(name, ".lock"):
-			// Only a lock nobody holds: one held is a write under way.
-			if _, err := os.Lstat(strings.TrimSuffix(p, ".lock")); err == nil {
-				return nil
-			}
-			l, err := os.OpenFile(p, os.O_RDWR, 0)
-			if err != nil {
-				return nil
-			}
-			defer l.Close()
-			leftover = syscall.Flock(int(l.Fd()), syscall.LOCK_EX|syscall.LOCK_NB) == nil
+		case strings.HasPrefix(name, ".") && strings.HasSuffix(name, ".tmp"), probes:
+		case lock && !names[strings.TrimSuffix(name, ".lock")]:
+		default:
+			continue
 		}
-		if leftover && os.Remove(p) == nil {
+		if f.removeLeftover(filepath.Join(p, name), lock, before) {
 			removed++
-			f.index.forget(rel)
+			f.index.forget(join(rel, name))
 		}
-		return nil
-	})
+	}
 	return removed
+}
+
+// removeLeftover removes one name that can be a leftover, when it changed before before
+// and, for a lock, nobody holds it and its key is still not there.
+func (f *Folder) removeLeftover(p string, lock bool, before time.Time) bool {
+	f.index.mu.Lock()
+	f.index.leftoverStats++
+	f.index.mu.Unlock()
+	info, err := os.Lstat(p)
+	if err != nil || !info.Mode().IsRegular() || !info.ModTime().Before(before) {
+		return false
+	}
+	if lock {
+		// Only a lock nobody holds: one held is a write under way.
+		l, err := os.OpenFile(p, os.O_RDWR, 0)
+		if err != nil {
+			return false
+		}
+		defer l.Close()
+		if syscall.Flock(int(l.Fd()), syscall.LOCK_EX|syscall.LOCK_NB) != nil {
+			return false
+		}
+		// A write may have made the key since the folder was read.
+		if _, err := os.Lstat(strings.TrimSuffix(p, ".lock")); err == nil {
+			return false
+		}
+	}
+	return os.Remove(p) == nil
 }
 
 // walk lists one folder and those under it, from what is known where nothing changed.
@@ -300,6 +401,7 @@ func (f *Folder) scan(folder, p string, st stamp) listing {
 	entries, _ := os.ReadDir(p)
 	l := listing{stamp: st}
 	unreadable := false
+	stated := 0
 	for _, e := range entries {
 		name := e.Name()
 		if strings.HasPrefix(name, ".") || strings.HasSuffix(name, ".lock") {
@@ -309,6 +411,7 @@ func (f *Folder) scan(folder, p string, st stamp) listing {
 		file := filepath.Join(p, name)
 		// Not followed: a link could lead out of the store.
 		entry, ok := stampOf(file, false)
+		stated++
 		if !ok {
 			continue
 		}
@@ -336,7 +439,7 @@ func (f *Folder) scan(folder, p string, st stamp) listing {
 	// time; it is scanned again next time rather than trusted. So is one holding a file
 	// that could not be read: a chmod changes neither stamp.
 	l.settled = st.mtime.Before(time.Now().Add(-2*time.Second)) && !unreadable
-	f.index.keep(folder, l)
+	f.index.keep(folder, l, stated)
 	return l
 }
 
@@ -404,10 +507,14 @@ type folderIndex struct {
 	files   map[string]map[string]knownFile
 	folders map[string]listing
 	hashed  int
+	// leftoverStats is how many names RemoveLeftovers has stat'ed: for the tests.
+	leftoverStats int
+	// stated is how many entries each folder's scans have stat'ed: for the tests.
+	stated map[string]int
 }
 
 func newFolderIndex() *folderIndex {
-	return &folderIndex{files: map[string]map[string]knownFile{}, folders: map[string]listing{}}
+	return &folderIndex{files: map[string]map[string]knownFile{}, folders: map[string]listing{}, stated: map[string]int{}}
 }
 
 func split(key string) (string, string) {
@@ -452,8 +559,9 @@ func (x *folderIndex) listing(folder string) (listing, bool) {
 	return l, ok
 }
 
-// keep holds a folder scanned again; files no longer in it are forgotten.
-func (x *folderIndex) keep(folder string, l listing) {
+// keep holds a folder scanned again, which stat'ed stated entries; files no longer in it
+// are forgotten.
+func (x *folderIndex) keep(folder string, l listing, stated int) {
 	present := map[string]bool{}
 	for _, e := range l.files {
 		present[e.name] = true
@@ -461,6 +569,7 @@ func (x *folderIndex) keep(folder string, l listing) {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	x.folders[folder] = l
+	x.stated[folder] += stated
 	for name := range x.files[folder] {
 		if !present[name] {
 			delete(x.files[folder], name)

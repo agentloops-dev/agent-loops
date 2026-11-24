@@ -25,7 +25,7 @@ func fakeSlackMCP(t *testing.T, calls *atomic.Int32) *httptest.Server {
 			ID     *int   `json:"id"`
 			Method string `json:"method"`
 		}
-		json.NewDecoder(r.Body).Decode(&m)
+		check(t, json.NewDecoder(r.Body).Decode(&m))
 		if m.ID == nil {
 			w.WriteHeader(http.StatusAccepted)
 			return
@@ -63,7 +63,7 @@ func TestTheMessagingSlotReadsEachChatConnector(t *testing.T) {
 	c.call(t, 1, "folders/add", map[string]any{"folder": "file://" + folder})
 	read := func(id int, reading string) (wire.ConnectorSlot, wire.ConnectorSetup) {
 		var setup wire.ConnectorSetup
-		json.Unmarshal(c.call(t, id, "connectors/setup", map[string]any{"folder": folder, "reading": reading}), &setup)
+		mustUnmarshal(t, c.call(t, id, "connectors/setup", map[string]any{"folder": folder, "reading": reading}), &setup)
 		return slotsByKind(setup)[wire.ConnectorSlotKindMessaging], setup
 	}
 
@@ -75,11 +75,12 @@ func TestTheMessagingSlotReadsEachChatConnector(t *testing.T) {
 
 	var calls atomic.Int32
 	slack := fakeSlackMCP(t, &calls)
-	os.MkdirAll(filepath.Join(home, ".agents"), 0o755)
-	os.WriteFile(filepath.Join(home, ".agents", "mcp.json"), []byte(`{"mcpServers": {
+	must(t, os.MkdirAll(filepath.Join(home, ".agents"), 0o755)) //nolint:gosec // G301: the mode this folder always had; only its error is new
+	//nolint:gosec // G306: the mode this file always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(home, ".agents", "mcp.json"), []byte(`{"mcpServers": {
 		"slack": {"type": "http", "url": "`+slack.URL+`"},
 		"gmail": {"type": "http", "url": "http://127.0.0.1:1/mcp"},
-		"kb": {"type": "http", "url": "https://kb.example.com/mcp"}}}`), 0o644)
+		"kb": {"type": "http", "url": "https://kb.example.com/mcp"}}}`), 0o644))
 	s, setup = read(3, "cached")
 	if s.State != wire.ConnectorSlotStateRead || s.Choice != "Slack and Email" || !slices.Equal(s.Servers, []string{"slack", "gmail"}) ||
 		len(s.MessagingServers) != 2 || setup.Done != none {
@@ -101,18 +102,19 @@ func TestTheMessagingSlotReadsEachChatConnector(t *testing.T) {
 		t.Fatalf("read again within five minutes: %+v, %d calls", s, calls.Load())
 	}
 
-	os.WriteFile(filepath.Join(home, ".agents", "mcp.json"), []byte(`{"mcpServers": {
-		"gmail": {"type": "http", "url": "http://127.0.0.1:1/mcp"}}}`), 0o644)
+	//nolint:gosec // G306: the mode this file always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(home, ".agents", "mcp.json"), []byte(`{"mcpServers": {
+		"gmail": {"type": "http", "url": "http://127.0.0.1:1/mcp"}}}`), 0o644))
 	if s, _ = read(5, "fresh"); s.State != wire.ConnectorSlotStateFailed || s.Message == nil {
 		t.Fatalf("none read: %+v", s)
 	}
 
-	json.Unmarshal(c.call(t, 6, "connectors/setup/skip", map[string]any{"folder": folder, "slot": "messaging", "skipped": true}), &setup)
+	mustUnmarshal(t, c.call(t, 6, "connectors/setup/skip", map[string]any{"folder": folder, "slot": "messaging", "skipped": true}), &setup)
 	if s = slotsByKind(setup)[wire.ConnectorSlotKindMessaging]; s.State != wire.ConnectorSlotStateSkipped || s.Choice != "Email" ||
 		!slices.Equal(s.Servers, []string{"gmail"}) {
 		t.Fatalf("skipped: %+v", s)
 	}
-	json.Unmarshal(c.call(t, 7, "connectors/setup/skip", map[string]any{"folder": folder, "slot": "messaging", "skipped": false}), &setup)
+	mustUnmarshal(t, c.call(t, 7, "connectors/setup/skip", map[string]any{"folder": folder, "slot": "messaging", "skipped": false}), &setup)
 	if s = slotsByKind(setup)[wire.ConnectorSlotKindMessaging]; s.State == wire.ConnectorSlotStateSkipped {
 		t.Fatalf("set up again: %+v", s)
 	}

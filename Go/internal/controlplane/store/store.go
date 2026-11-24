@@ -17,6 +17,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strings"
 )
 
 // Store is ControlStore.
@@ -30,6 +31,34 @@ type Store interface {
 	Delete(ctx context.Context, key string) error
 	// List returns every key under prefix, with its entity tag, sorted by key.
 	List(ctx context.Context, prefix string) ([]Key, error)
+}
+
+// FolderLister is a store that names the folders right under a prefix without reading
+// what is in them (#6569): a folder store reads one folder's entries, where a List walks
+// and stats every file below it.
+type FolderLister interface {
+	Folders(ctx context.Context, prefix string) ([]string, error)
+}
+
+// Folders names the folders right under prefix, which ends in "/", sorted: v1/bus/ gives
+// each bus. A store that is not a FolderLister lists the prefix and takes the names from
+// the keys.
+func Folders(ctx context.Context, s Store, prefix string) ([]string, error) {
+	if f, ok := s.(FolderLister); ok {
+		return f.Folders(ctx, prefix)
+	}
+	keys, err := s.List(ctx, prefix)
+	if err != nil {
+		return nil, err
+	}
+	var names []string
+	for _, k := range keys {
+		name, _, ok := strings.Cut(strings.TrimPrefix(k.Key, prefix), "/")
+		if ok && name != "" && (len(names) == 0 || names[len(names)-1] != name) {
+			names = append(names, name)
+		}
+	}
+	return names, nil
 }
 
 // Object is StoredObject.

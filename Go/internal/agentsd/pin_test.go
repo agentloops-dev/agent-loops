@@ -124,8 +124,8 @@ func TestAMachineThatMustJoinRunsNothingUntilItHas(t *testing.T) {
 		t.Fatal(e.Message)
 	}
 	folder := store.FolderURL(dir)
-	os.MkdirAll(workflowsFolder(dir), 0o755)
-	os.WriteFile(filepath.Join(workflowsFolder(dir), "review.md"), []byte("---\nname: Review\non: lease.granted\n---\nReview.\n"), 0o644)
+	must(t, os.MkdirAll(workflowsFolder(dir), 0o755))                                                                                              //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(workflowsFolder(dir), "review.md"), []byte("---\nname: Review\non: lease.granted\n---\nReview.\n"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	approveAll(t, c, folder)
 	refused(t, c.callError(t, 4, "workflows/run", map[string]any{"folder": folder, "workflowID": "review"}), "mustJoin", "")
 	work, _ := store.Resolve(t.TempDir())

@@ -333,7 +333,8 @@ Every event, the app's own and every MCP server's, has the same envelope: the
   minute or two after it starts and then once a day, the daemon asks GitHub
   `GET /repos/<repo>` for each GitHub repo its folders and its lineage name. When the
   `full_name` in the answer is another name, it keeps the alias in `repo-aliases.json` in
-  its root. The subject, the topic, a `repo` or `project` in `where`, and lineage's nodes
+  its root for 90 days, then asks again when a folder or the lineage still names the old
+  repo. The subject, the topic, a `repo` or `project` in `where`, and lineage's nodes
   are then read by the new name. No file is written again for the move.
 
 ## The bus
@@ -358,7 +359,8 @@ Mac's own control plane.
   control plane agree. It counts what it drops (`agents_control_bus_events_total`, by
   `result`: `kept`, `dropped`, `delivered`).
 - **The bus log** is the last 100,000 envelopes (with their sealed data) of each person's bus,
-  for dedupe and the Events page; the hourly sweep deletes the older ones. A person's client
+  at most 1 GiB and 90 days of them, for dedupe and the Events page; the hourly sweep deletes
+  the older ones, and removing the person deletes them all (#6671). A person's client
   reads it with `bus/log` (#4732): envelopes only, without the sealed data, newest first, at
   most 500 at a time (100 by default), narrowed by `provider`, `type` (a name or `noun.*`)
   and `topic`; `next` is where the next page back starts (`before`). It reads at most 2,000

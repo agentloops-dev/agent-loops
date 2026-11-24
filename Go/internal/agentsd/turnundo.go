@@ -109,21 +109,42 @@ func treeChanges(root, from, to string) ([]treeChange, error) {
 	return changes, nil
 }
 
-// endTurnSnapshot is the turn's end: the second snapshot, and, when it differs from the
-// first, the turn's turnChanged entry. In a folder where another agent's turn ran too, the
-// entry names only the files this agent reported editing, so an undo leaves the other's.
-func (d *Daemon) endTurnSnapshot(s *turnSnapshot) {
+// keepTurnChanges is the turn's end for Undo These Changes: the second snapshot, then the
+// turn's card. The turn is marked done with the folder before its card is written, so an
+// undo from that card is never refused as a turn in flight (#6274).
+func (l *live) keepTurnChanges(s *turnSnapshot) {
+	tc := l.d.endTurnSnapshot(s)
+	l.mu.Lock()
+	l.changesKept = l.turnSeq
+	l.mu.Unlock()
+	if tc != nil {
+		l.d.record(s.agent, wire.TranscriptEntryKind{TurnChanged: &wire.TranscriptEntryKindTurnChanged{Value: *tc}})
+	}
+}
+
+// changingFiles is whether l's turn may still change files: from its start until
+// keepTurnChanges. A turn whose changes are kept is in its end, which its record says.
+func (l *live) changingFiles() bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.inTurn && l.changesKept != l.turnSeq
+}
+
+// endTurnSnapshot is the second snapshot, and, when it differs from the first, the turn's
+// turnChanged entry. In a folder where another agent's turn ran too, the entry names only
+// the files this agent reported editing, so an undo leaves the other's.
+func (d *Daemon) endTurnSnapshot(s *turnSnapshot) *wire.TurnChanges {
 	if s == nil {
-		return
+		return nil
 	}
 	_, after, err := ownTree(s.root)
 	if err != nil || after == s.before {
-		return
+		return nil
 	}
 	shared := s.shared || turnStartsIn(s.root).Load() != s.started || d.othersInTurn(s.agent, s.root)
 	changes, err := treeChanges(s.root, s.before, after)
 	if err != nil {
-		return
+		return nil
 	}
 	reported := d.reportedInTurn(s.agent, s.turn)
 	changed := map[string]bool{}
@@ -153,13 +174,13 @@ func (d *Daemon) endTurnSnapshot(s *turnSnapshot) {
 	}
 	tc.CannotUndo = cannotUndo(s.root, reported, changed)
 	if len(tc.Files) == 0 && len(tc.CannotUndo) == 0 {
-		return
+		return nil
 	}
 	if shared {
 		yes := true
 		tc.OnlyReported = &yes
 	}
-	d.record(s.agent, wire.TranscriptEntryKind{TurnChanged: &wire.TranscriptEntryKindTurnChanged{Value: tc}})
+	return &tc
 }
 
 // reportedInTurn is the files the agent reported editing in turn, by their keys.
@@ -266,11 +287,9 @@ func (d *Daemon) undoTurn(r wire.UndoTurnRequest) (wire.UndoTurnResult, error) {
 	if a == nil {
 		return wire.UndoTurnResult{}, noSuchAgent()
 	}
-	l := d.live(a.ID)
-	l.mu.Lock()
-	busy := l.inTurn
-	l.mu.Unlock()
-	if busy {
+	// The record says the turn ended a little before its own end returns: busy is only a
+	// turn that may still change files (#6274).
+	if d.live(a.ID).changingFiles() {
 		return wire.UndoTurnResult{}, &Error{Code: wire.FailureBusy, Message: "The agent is working. Wait for its turn to end, or stop it, and undo then."}
 	}
 	entries, _, err := d.Store.Transcript(a.ID, 0)

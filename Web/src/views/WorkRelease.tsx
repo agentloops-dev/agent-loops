@@ -22,7 +22,8 @@ import { planSessions } from "../model/epicPlan";
 import { allRows, askKey, loadList, workList } from "../model/workLists";
 import { go, routeHash } from "../route";
 import { buildsRunLinkHelp, buildsRunLinkQuery } from "../model/builds";
-import { ErrorStrip, PlaceholderRows, RefreshButton, StateIcon } from "./WorkParts";
+import { PlaceholderRows, RefreshButton, StateIcon, WorkFooter } from "./WorkParts";
+import { noLineage, pageFooterState, type FooterState } from "../model/workFooter";
 import { Choice, OpenGlyph, ReleaseChip, ReleaseGlyph, SideSection, Stepper, WorkRowView, WorkSession, pictureReader } from "./Work";
 import { Icon } from "./Icon";
 import { DeployRows } from "./WorkDeploys";
@@ -38,6 +39,10 @@ export function WorkReleasePage({ store, ref }: { store: Store; ref: string }) {
   const figures = useSignal<LineageFigures | undefined>(undefined);
   const problem = useSignal<string | null>(null);
   const reading = useSignal(false);
+  /** When the links on screen were read, for the footer's "Last update" (#5971). */
+  const readAt = useSignal<number | undefined>(undefined);
+  /** No machine keeps lineage, once the machines have had time to say what they do: the footer says so (#5971). */
+  const noLineageHere = useSignal(false);
   // The pull requests' search and Label filter (note 25), and, under 700 px, their list opened (note 43).
   const filter = useSignal<WorkFilter>(allPulls);
   const pullsPage = useSignal(false);
@@ -57,16 +62,18 @@ export function WorkReleasePage({ store, ref }: { store: Store; ref: string }) {
   const lineageHosts = store.hosts.value.filter((h) => hostAnswers(h.state) && store.has(h.id, Capability.lineage1));
   const lineageHost = lineageHosts.find((h) => h.id === store.macHostID.value)?.id ?? lineageHosts[0]?.id;
   const figuresHere = lineageHost !== undefined && store.has(lineageHost, Capability.lineageFigures1);
-  useEffect(() => { graph.value = null; rollup.value = undefined; figures.value = undefined; problem.value = null; pullsPage.value = false; filter.value = allPulls; }, [ref]);
+  useEffect(() => { graph.value = null; rollup.value = undefined; figures.value = undefined; problem.value = null; readAt.value = undefined; pullsPage.value = false; filter.value = allPulls; }, [ref]);
   // The release's links (its pull requests, CI runs and deploys), its cost and its figures. A refresh keeps the page as
   // it is until the new read comes.
   useEffect(() => {
     let current = true;
     if (!lineageHost) {
-      // A page opened from an address reads before the machines have said what they do: placeholders until one comes.
-      const none = setTimeout(() => { if (current && !graph.peek()) graph.value = { nodes: [], links: [] }; }, 4000);
+      // A page opened from an address reads before the machines have said what they do: placeholders until one comes,
+      // then the footer says no machine keeps lineage, and the page draws no "No pull requests" (#5971, as the Mac's #5970).
+      const none = setTimeout(() => { if (current) noLineageHere.value = true; }, 4000);
       return () => { current = false; clearTimeout(none); };
     }
+    noLineageHere.value = false;
     reading.value = true;
     void Promise.all([
       store.link.call("lineage/walk", { node, depth: 2 }, lineageHost),
@@ -78,10 +85,11 @@ export function WorkReleasePage({ store, ref }: { store: Store; ref: string }) {
       graph.value = walked;
       rollup.value = cost;
       figures.value = got;
+      readAt.value = Date.now();
       problem.value = null;
     }, (e: unknown) => {
       if (!current) return;
-      if (!graph.peek()) graph.value = { nodes: [], links: [] };
+      // The links read before stay; with none, the footer says what failed and the page shows no empty state (#5971).
       problem.value = describe(e);
     }).finally(() => { if (current) reading.value = false; });
     return () => { current = false; };
@@ -96,6 +104,11 @@ export function WorkReleasePage({ store, ref }: { store: Store; ref: string }) {
   const beforeTag = before ? shortRef(before.node.ref) : undefined;
   const compare = beforeTag ? compareUrl(ref, beforeTag) : undefined;
   const refresh = () => { asked.value++; list.asked.value++; };
+  // The footer's left (#5971): what runs or failed, or that no machine keeps lineage. The header is drawn from the list,
+  // so a failed first read still offers Try again.
+  const footer: FooterState = !lineageHost
+    ? noLineageHere.value ? { kind: "notice", words: noLineage } : { kind: "loading" }
+    : pageFooterState(g !== null || problem.value !== null, reading.value, false, problem.value ? [problem.value] : []);
 
   const runtimeName = (id: string) => store.hosts.value.map((h) => store.runtimes.value[h.id]?.find((s) => s.runtime.id === id)?.runtime.name)
     .find((name) => name) || id;
@@ -114,7 +127,9 @@ export function WorkReleasePage({ store, ref }: { store: Store; ref: string }) {
   const labels = pulls ? choices(pulls).labels : [];
   const set = (patch: Partial<WorkFilter>) => { filter.value = { ...filter.value, ...patch }; };
   const openPull = (prRef: string) => go({ nav: "work", section: "pr", item: prRef });
-  const pullRows = pulls === undefined ? <PlaceholderRows />
+  // Placeholders only while a read can come: with no machine that keeps lineage, or a read that failed, nothing.
+  const waiting = g === null && !problem.value && !noLineageHere.value;
+  const pullRows = pulls === undefined ? waiting && <PlaceholderRows />
     : pulls.length === 0 ? <p class="quiet small">{noPulls}</p>
     : shown.length === 0 ? (
       <p class="quiet small work-release-none">No pull requests match
@@ -150,7 +165,7 @@ export function WorkReleasePage({ store, ref }: { store: Store; ref: string }) {
   }
 
   return (
-    <article class={`work-page work-item-page work-release-page${g === null ? " loading" : ""}`} aria-busy={g === null}>
+    <article class={`work-page work-item-page work-release-page work-footed${waiting ? " loading" : ""}`} aria-busy={waiting}>
       <div class="work-release-grid">
         <div class="work-page-bar">
           {/* The place (note 22): Releases / v0.42.0, Releases a link to the list as it was. On a 390 px page: ‹ Releases. */}
@@ -182,7 +197,6 @@ export function WorkReleasePage({ store, ref }: { store: Store; ref: string }) {
             {url && <a class="work-open-on" href={url} target="_blank" rel="noopener noreferrer"><OpenGlyph />{openOn}</a>}
           </p>
         </header>
-        {problem.value && <div class="work-problem"><ErrorStrip lines={[problem.value]} retry={() => { asked.value++; }} /></div>}
         {/* The notes' box (note 24). Agents reads no notes yet (#4426): the box says where they are. */}
         <section class="work-release-notes" aria-label="Release notes">
           <h3>Release notes</h3>
@@ -199,7 +213,7 @@ export function WorkReleasePage({ store, ref }: { store: Store; ref: string }) {
               : <span class="quiet">None</span>}
           </SideSection>
           <SideSection title="Pipeline">
-            {g === null ? <span class="bar" />
+            {waiting ? <span class="bar" />
               : stages.length === 0 ? <span class="quiet">{deployed && deployed.length > 0 ? noRun : noPipeline}</span>
               : stages.map((s, i) => (
                 <span key={i} class="work-release-stage"><span class="tick" role="img" aria-label="Done"><Icon name="check" /></span>
@@ -209,8 +223,8 @@ export function WorkReleasePage({ store, ref }: { store: Store; ref: string }) {
               title={buildsRunLinkHelp("release")}>Build trends ›</a>}
           </SideSection>
           <SideSection title={deployed && deployed.length > 0 ? `Deployed · ${targetsWords(deployed.length)}` : "Deployed"}>
-            {deployed === undefined ? <span class="bar" />
-              : deployed.length === 0 ? <span class="quiet">{noDeploys}</span>
+            {waiting ? <span class="bar" />
+              : deployed === undefined || deployed.length === 0 ? <span class="quiet">{noDeploys}</span>
               : <DeployRows store={store} rows={deployed} />}
           </SideSection>
           <SideSection title="Lineage">
@@ -238,6 +252,7 @@ export function WorkReleasePage({ store, ref }: { store: Store; ref: string }) {
           </div></div>
         </div>
       </div>
+      <WorkFooter state={footer} at={g === null ? undefined : readAt.value} retry={() => { asked.value++; }} />
     </article>
   );
 }

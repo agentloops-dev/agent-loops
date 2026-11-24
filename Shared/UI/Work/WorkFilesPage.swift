@@ -7,8 +7,9 @@ import SwiftUI
 /// from the first machine that answers, and drawn by `DiffFilesView`: the file list beside the
 /// diff on a wide page, *Files ▾* on a narrow one, headers that stay and fold. On the Mac the
 /// place, *Pull requests › #12 › Files changed*, and Refresh are the toolbar's; on the Remote
-/// (#5479) the bar has ‹ *#12* and the page pulls to refresh, and *Files ▾* opens a sheet. The diff is read
-/// each time the page opens and is never kept, so it has no "Last update" line.
+/// (#5479) the bar has ‹ *#12* and the page pulls to refresh, and *Files ▾* opens a sheet. The footer bar says
+/// Loading…, Updating… or what failed (#5970); the diff is read each time the page opens and is never kept, so it has
+/// no "Last update" line.
 struct WorkFilesPage: View {
     let model: any WorkModel
     let place: WorkPlace
@@ -23,19 +24,22 @@ struct WorkFilesPage: View {
     private var node: DaemonAPI.LineageNode { .init(kind: place.kind.rawValue, ref: ref) }
 
     var body: some View {
-        Group {
-            if let diff {
-                DiffFilesView(diff: diff, openLink: { openURL($0) })
-                    .opacity(reading ? 0.6 : 1)
-            } else if let problem {
-                couldNotRead(problem)
-            } else {
-                ProgressView()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .accessibilityLabel("Reading the files changed")
+        VStack(spacing: 0) {
+            Group {
+                if let diff {
+                    // A read that runs or failed over this diff is in the footer; the diff stays at full opacity.
+                    DiffFilesView(diff: diff, openLink: { openURL($0) })
+                } else if let problem, !reading {
+                    couldNotRead(problem)
+                } else {
+                    placeholders
+                }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            WorkPageBar(state: WorkLook.pageFooterState(drawn: diff != nil, reading: reading, fromDevice: false,
+                                                        lines: problem.map { [$0] } ?? []),
+                        count: nil, read: nil) { asked += 1 }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         #if os(macOS)
         .toolbar { toolbar }
         .toolbar(removing: .title)
@@ -97,6 +101,26 @@ struct WorkFilesPage: View {
         return parts
     }
 
+    /// Placeholder lines while the first read runs (#5970), as the other Work pages have: a file's header, then
+    /// lines of code of varied length, with the slow shimmer.
+    private var placeholders: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(0 ..< 3, id: \.self) { file in
+                RoundedRectangle(cornerRadius: 3).frame(width: 260, height: 12).padding(.top, file == 0 ? 0 : 10)
+                ForEach(0 ..< 6, id: \.self) { line in
+                    RoundedRectangle(cornerRadius: 2).frame(height: 9)
+                        .frame(maxWidth: CGFloat([520, 380, 460, 300, 560, 240][(line + file) % 6]))
+                }
+            }
+        }
+        .foregroundStyle(Paper.wash)
+        .padding(20)
+        .redacted(reason: .placeholder)
+        .modifier(WorkShimmer())
+        .accessibilityElement()
+        .accessibilityLabel("Reading the files changed")
+    }
+
     private func couldNotRead(_ words: String) -> some View {
         VStack(spacing: 8) {
             Image(icon: "exclamationmark.triangle")
@@ -129,6 +153,8 @@ struct WorkFilesPage: View {
         }
         guard !hosts.isEmpty else { problem = WorkList.noForgeHere; return }
         reading = true
+        // A Try again after nothing was read shows the placeholders, not the old error, while it runs.
+        if diff == nil { problem = nil }
         defer { if asked == mine { reading = false } }
         let (model, node) = (model, node)
         func read(_ host: MachineRef) async -> Result<DaemonAPI.ForgeDiff, Error> {

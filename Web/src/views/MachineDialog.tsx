@@ -7,7 +7,7 @@ import type { ProviderID } from "../protocol/generated";
 import type { Store } from "../model/store";
 import { describe } from "../model/errors";
 import {
-  createRequest, formFields, machineName, machineWords as words, makers, nameSuffix, repositoryDefault, repositoryOf, type FormField,
+  choiceLabel, createRequest, formFields, machineName, machineWords as words, makers, nameSuffix, repositoryDefault, repositoryOf, withValues, type FormField,
 } from "../model/machineFromRepository";
 import { addMachineWords, validMachineName } from "../model/addMachine";
 import { Modal } from "./Modal";
@@ -31,7 +31,7 @@ export function MachineDialog({ store, close, machine = false, picked }: {
     if (!chosen) return;
     let live = true;
     void store.link.call("providers/options", { id: chosen as ProviderID })
-      .then((o) => { if (live) { setFields(formFields(o.schema)); setBlank(repositoryDefault(o.schema)); } })
+      .then((o) => { if (live) { setFields(withValues(formFields(o.schema), o.values)); setBlank(repositoryDefault(o.schema)); } })
       .catch(() => { if (live) { setFields([]); setBlank(undefined); } });
     return () => { live = false; };
   }, [chosen]);
@@ -92,7 +92,7 @@ export function MachineDialog({ store, close, machine = false, picked }: {
                 {f.choices
                   ? <select value={f.value} disabled={busy || done}
                       onChange={(e) => setFields(fields.map((g, j) => (j === i ? { ...g, value: (e.target as HTMLSelectElement).value } : g)))}>
-                      {f.choices.map((c) => <option key={c} value={c}>{c}</option>)}
+                      {f.choices.map((c) => <option key={c} value={c}>{choiceLabel(f, c)}</option>)}
                     </select>
                   : <input type="text" value={f.value} disabled={busy || done} autocomplete="off" spellcheck={false}
                       onInput={(e) => setFields(fields.map((g, j) => (j === i ? { ...g, value: (e.target as HTMLInputElement).value } : g)))} />}

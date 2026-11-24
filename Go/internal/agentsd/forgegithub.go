@@ -111,7 +111,7 @@ func (g githubForge) List(ctx context.Context, scope forgeScope, f forgeFilter, 
 		return forgePage{}, err
 	}
 	sf := githubmcp.SearchFilter{PRs: f.PRs, State: f.State, Label: f.Label, Assignee: f.Assignee, Query: f.Query, Feature: f.Feature,
-		Reviewer: f.Reviewer, UpdatedSince: f.since(), UpdatedBefore: f.before()}
+		Reviewer: f.Reviewer, UpdatedSince: f.since(), UpdatedBefore: f.before(), Sort: f.Sort}
 	if f.Board != nil {
 		sf.Project = f.Board.project
 	}
@@ -552,7 +552,17 @@ func (g githubForge) SetPriority(ctx context.Context, r forgeRef, priority strin
 	if has, err := gh.SetPriorityField(ctx, r.Repo, r.Number, priority); has || err != nil {
 		return err
 	}
-	return labelPriority(ctx, g, r, priority)
+	if priority == "" {
+		return labelPriority(ctx, g, r, priority)
+	}
+	// The add's answer has the labels, so no read before it (#6644): one request, and one
+	// more for each old priority label it takes off.
+	have, err := gh.AddLabels(ctx, r.Repo, r.Number, []string{"priority:" + priority})
+	if err != nil {
+		return err
+	}
+	_, remove := priorityLabelEdit(have, priority)
+	return setLabelsIf(ctx, g, r, nil, remove)
 }
 
 // SetHold is the label on hold: GitHub has no hold field (#6091).

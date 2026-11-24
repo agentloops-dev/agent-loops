@@ -3,7 +3,7 @@
 // (reports/nodes: cost, sessions, lead time) on top. Releases come from reports/nodes alone in v1. As
 // WorkList has it on the window.
 import type {
-  ForgeCheck, ForgeComment, ForgeDone, ForgeEvent, ForgeItem, ForgeItemDetail, ForgeLabel, ForgeListAllRequest, MachineRef, ForgeListError, ForgeListRequest, ForgeMergeMethod,
+  ForgeCheck, ForgeComment, ForgeDone, ForgeEvent, ForgeItem, ForgeItemDetail, ForgeLabel, ForgeListAll, ForgeListAllRequest, MachineRef, ForgeListError, ForgeListRequest, ForgeMergeMethod,
   LineageNode, ProjectBoard, ReportNode,
 } from "../protocol/generated";
 import { fromWireDate } from "../protocol/dates";
@@ -245,11 +245,21 @@ export function forgeListRequest(state: string, board: string, cursor?: string):
 
 /** forge/listAll's request (#5592): forge/issues' or forge/pulls' of every machine in one call; `pages`, for the next page,
  * names each machine still to read and its cursor. */
-export function forgeListAllRequest(kind: WorkKind, state: string, board: string, pages?: readonly { host: string; cursor: string }[]): ForgeListAllRequest {
+export function forgeListAllRequest(kind: WorkKind, state: string, board: string, pages?: readonly { host: string; cursor: string }[],
+  sort?: ForgeListAllRequest["sort"], fresh = false): ForgeListAllRequest {
   return withBoard({
-    kind: kind === "issue" ? "issues" as const : "pulls" as const, state, limit: 100,
+    kind: kind === "issue" ? "issues" as const : "pulls" as const, state, limit: 100, ...sort === "priority" ? { sort } : {},
     ...pages ? { pages: pages.map((p) => ({ machine: p.host as MachineRef, cursor: p.cursor })) } : {},
+    // A Refresh (#6642): each machine reads its forges, not the answer it keeps for a minute.
+    ...fresh ? { fresh: true } : {},
   }, board);
+}
+
+/** When forge/listAll's answer was read from the forges (#6642), in ms: the oldest machine's, as a daemon can answer from a
+ * copy up to a minute old; `now` from earlier daemons, which do not say, and never later than `now`. */
+export function listReadAt(all: ForgeListAll, now: number): number {
+  const read = all.lists.flatMap((l) => l.list.readAt === undefined ? [] : [fromWireDate(l.list.readAt).getTime()]);
+  return Math.min(now, ...read);
 }
 
 /** The boards of several machines (forge/boards, #3282) as one list: each once, by url, in the order first read,
@@ -382,10 +392,8 @@ export function shownErrors(answers: readonly ForgeAnswer[]): ForgeListError[][]
 
 /** A forge that could not be read: "GitHub on Studio: not connected". */
 export function errorWords(e: ForgeListError, machine: string | undefined): string {
-  const forge = forgeTitle[e.forge] ?? e.forge;
-  // A forge's message can name the forge already: "Forgejo: Get …".
-  const message = forge && e.message.startsWith(`${forge}: `) ? e.message.slice(forge.length + 2) : e.message;
-  return `${forge}${machine ? ` on ${machine}` : ""}: ${message}`;
+  // agentsd's message does not name the forge (#6536): the line names it once, here.
+  return `${forgeTitle[e.forge] ?? e.forge}${machine ? ` on ${machine}` : ""}: ${e.message}`;
 }
 
 export const forgeTitle: Record<string, string> = { github: "GitHub", gitlab: "GitLab", linear: "Linear", jira: "Jira",

@@ -1,14 +1,33 @@
 ---
 diataxis: explanation
 devices: [mac, iphone, ipad, server]
-description: Why you would run your coding agents in Agent Loops, alongside the editor and tools you already use, and when something else is the better choice.
+description: Why Agent Loops is agentic software delivery (idea to epic, epic to merged pull request, deployment and rollback), how it runs the coding agents you already use, and when something else is the better choice.
 ---
 
 # Why Agent Loops
 
-**Keep your editor and your coding agent. Agent Loops is where you run several of them at once,
-see which one needs you, let them work together and on their own, and answer them from
-your phone.**
+**Agent Loops is agentic software delivery. Agents take the work from idea to epic, from epic
+to merged pull request, and through deployment and rollback. A person is not necessary for
+each step. Keep your editor and your coding agent: Agent Loops runs them, shows which one
+needs you, and lets you answer them from your phone.**
+
+## The three parts of delivery
+
+"Software delivery" is the work from an idea to code that runs in production. Agent Loops
+puts agents on all of it, not only on the code, and it names the three parts so nobody
+reads "delivery" as CI/CD only:
+
+1. **Idea to epic.** You say what you want in a sentence. An agent files it as an issue,
+   with a size and a priority, or as an epic whose children are in order. The plan is in
+   your tracker. See [Planning](planning.md).
+2. **Epic to merged pull request.** A lead agent starts one agent for each child that is
+   ready. Each agent works on a branch of its own, takes turns with what it shares, waits
+   for CI, fixes what fails and lands its pull request. You approve only the changes that
+   need a person. See [Agents that work together, and on their own](#agents-that-work-together-and-on-their-own).
+3. **Deployment and rollback.** Agent Loops reads your deploys from the systems that do
+   them, and shows what is live, its health and each rollback. Agents that deploy, watch
+   and roll back by themselves are the part that comes next. See
+   [The deploy model](deploys.md).
 
 ## It is not an editor
 
@@ -46,7 +65,7 @@ coloured down to the word. See [Read an agent's changes](../how-to/read-an-agent
 
 ## Agents that work together, and on their own
 
-Agents take turns with what they share, wait for things to happen, and start when
+This is the second part of delivery, from epic to merged pull request. Agents take turns with what they share, wait for things to happen, and start when
 something happens, without you.
 
 Here is one afternoon. An agent finishes a change, and a

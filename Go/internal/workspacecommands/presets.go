@@ -234,9 +234,10 @@ rm -f /home/agents/first-boot.sh
 // public address. New Machine makes a droplet with the tag that installs Agents on its
 // first boot; Delete deletes it.
 func digitalOceanAPI(o map[string]any) (Config, error) {
+	// With no tag, agents; with no ssh user, agents, the user the first boot makes (#6073).
 	tag, _ := o["tag"].(string)
 	if tag == "" {
-		return Config{}, ConfigError("the digitalocean-api preset needs a tag")
+		tag = "agents"
 	}
 	base, err := api(o, "https://api.digitalocean.com", "digitalocean-api")
 	if err != nil {
@@ -244,7 +245,7 @@ func digitalOceanAPI(o map[string]any) (Config, error) {
 	}
 	user, ok := o["user"].(string)
 	if !ok || user == "" {
-		user = "root"
+		user = "agents"
 	}
 	tunnel, _ := o["tunnel"].(bool)
 	headers := map[string]string{"Authorization": "Bearer ${" + DigitalOceanSecret + "}"}
@@ -264,6 +265,7 @@ func digitalOceanAPI(o map[string]any) (Config, error) {
 	text := func(title, value, description string) map[string]any {
 		return map[string]any{"type": "string", "title": title, "default": value, "description": description}
 	}
+	account := &digitalOcean{base: base, headers: headers}
 	return newConfig(nil, &Listing{
 		Request: &Request{Method: "GET", Headers: headers,
 			URL: base + "/v2/droplets?per_page=200&tag_name=" + url.QueryEscape(tag)},
@@ -274,11 +276,16 @@ func digitalOceanAPI(o map[string]any) (Config, error) {
 	}, digitalOceanStates, Making{
 		CreateRequest: &Request{Method: "POST", URL: base + "/v2/droplets", Headers: headers, Body: body},
 		DeleteRequest: &Request{Method: "DELETE", URL: base + "/v2/droplets/${id}", Headers: headers},
+		// The plain form, when the account's choices can't be read (#6073).
 		Options: map[string]any{"type": "object", "properties": map[string]any{
 			"region": text("Region", "nyc3", "A region's slug, such as nyc3, sfo3, ams3 or fra1."),
-			"size":   text("Size", "s-1vcpu-1gb", "A size's slug, such as s-1vcpu-1gb or s-2vcpu-4gb."),
-			"image":  text("Image", "ubuntu-24-04-x64", "An image with systemd, such as ubuntu-24-04-x64 or debian-12-x64."),
+			"size":   text("Size", recommendedSize, "A size's slug, such as s-1vcpu-1gb or s-2vcpu-4gb."),
+			"image":  text("Image", digitalOceanImage, "An image with systemd, such as ubuntu-24-04-x64 or debian-12-x64."),
 		}},
+		Choices: account.choices,
+		Prepare: account.prepare,
+		Made:    account.made,
+		NotMade: "No droplet was made.",
 	}), nil
 }
 

@@ -56,6 +56,7 @@ public enum Capability {
     public static let control1 = "control/1"
     public static let cost1 = "cost/1"
     public static let credentials1 = "credentials/1"
+    public static let cycletime1 = "cycletime/1"
     public static let daemon1 = "daemon/1"
     public static let dailyChecks1 = "daily-checks/1"
     public static let deploysCopy1 = "deploys.copy/1"
@@ -148,6 +149,7 @@ public enum Capability {
     public static let machineAccounts1 = "machine.accounts/1"
     public static let machineAccounts2 = "machine.accounts/2"
     public static let machineAgentSecrets1 = "machine.agent-secrets/1"
+    public static let machineSetup1 = "machine.setup/1"
     public static let machineUsage1 = "machine.usage/1"
     public static let machine1 = "machine/1"
     public static let machinesAll1 = "machines.all/1"
@@ -190,6 +192,8 @@ public enum Capability {
     public static let projects1 = "projects/1"
     public static let providersCarry1 = "providers.carry/1"
     public static let providersCarry2 = "providers.carry/2"
+    public static let providersCarry3 = "providers.carry/3"
+    public static let providersOauth1 = "providers.oauth/1"
     public static let providers1 = "providers/1"
     public static let providers2 = "providers/2"
     public static let readapi1 = "readapi/1"
@@ -361,6 +365,7 @@ public enum Capability {
         "cost/setLimits": "cost/1",
         "cost/state": "cost/1",
         "credentials/offer": "credentials/1",
+        "cycletime/history": "cycletime/1",
         "daemon/lockReset": "host.lock/4",
         "daemon/ping": "daemon/1",
         "daemon/policyState": "host.policy/1",
@@ -555,6 +560,7 @@ public enum Capability {
         "providers/carry": "providers.carry/1",
         "providers/forget": "providers.carry/1",
         "providers/keepSecrets": "providers.carry/1",
+        "providers/oauth": "providers.carry/3",
         "providers/ssh": "providers.carry/2",
         "relay/grant": "relay/1",
         "relay/offer": "relay/1",
@@ -615,6 +621,7 @@ public enum Capability {
         "sessions/list": "sessions/1",
         "settings/passThrough": "host.policy/1",
         "settings/userPart": "host.user-settings/4",
+        "setup/projects": "machine.setup/1",
         "shell/attach": "shell/1",
         "shell/close": "shell/1",
         "shell/detach": "shell/1",
@@ -776,6 +783,7 @@ public enum Capability {
         "console/live": "console/1",
         "console/stopAgent": "console/1",
         "console/teamWorkflows": "console/1",
+        "control/capacity": "console/1",
         "control/connectAnother": "control.connect-another/1",
         "control/connectReport": "control.connect-another/1",
         "control/ping": "control/1",
@@ -839,12 +847,12 @@ public enum Capability {
         "machine/orgRoutesApplied": "host.org-routes/2",
         "machine/pairWebPage": "host.web-pairing/1",
         "machine/policyApplied": "host.policy/1",
-        "machine/providerDraft": "machine/1",
         "machine/secretClients": "machine.agent-secrets/1",
         "machine/secretKey": "host.secret-release/1",
         "machine/secretOps": "machine/1",
         "machine/secretRelease": "host.secret-release/1",
         "machine/setupStep": "machine/1",
+        "machine/setupWork": "machine/1",
         "machine/status": "machine/1",
         "machines/agents": "machines/1",
         "machines/agentsChanges": "machines/1",
@@ -926,16 +934,13 @@ public enum Capability {
         "providers/add": "providers/1",
         "providers/create": "providers/2",
         "providers/deleteWorkspace": "providers/2",
-        "providers/draftAnswer": "providers/1",
-        "providers/draftCancel": "providers/1",
-        "providers/draftSigned": "providers/1",
-        "providers/draftStart": "providers/1",
         "providers/list": "providers/1",
         "providers/makeDefault": "providers/1",
+        "providers/oauthFinish": "providers.oauth/1",
+        "providers/oauthStart": "providers.oauth/1",
         "providers/options": "providers/1",
         "providers/refresh": "providers/1",
         "providers/remove": "providers/1",
-        "providers/runtimes": "providers/1",
         "providers/setGroup": "groups/1",
         "providers/update": "providers/1",
         "readApi/list": "readapi/1",
@@ -1001,6 +1006,7 @@ public enum Capability {
         "bus/deliver": "events.bus/1",
         "control/budgetRequested": "policy.ask/1",
         "control/capReached": "bots/1",
+        "control/capacityChanged": "console/1",
         "control/clientChanged": "control/1",
         "control/connectReported": "control.connect-another/1",
         "control/connectWanted": "control.connect-another/1",
@@ -1029,7 +1035,6 @@ public enum Capability {
         "control/planeMoveWanted": "control.plane-move/1",
         "control/policyChanged": "policy/1",
         "control/projectsChanged": "projects/1",
-        "control/providerDraft": "control/1",
         "control/providersChanged": "control/1",
         "control/sealingWanted": "sealing/1",
         "control/secretsLeft": "user/2",

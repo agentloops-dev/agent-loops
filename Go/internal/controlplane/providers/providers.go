@@ -112,7 +112,7 @@ type Hooks struct {
 	// keeps none.
 	HostKey func(host, destination, trust string) (knownHosts, needsTrust string, err error)
 	// Connect is a connection to a provider, as its record says: through the machine that
-	// carries it (Carried, #3398). secrets are only those a draft, an add or an update was
+	// carries it (Carried, #3398). secrets are only those an add or an update was
 	// given, sent with each call and kept by neither side; nil for a kept provider.
 	Connect func(record ProviderRecord, secrets map[string]string) (Provider, error)
 	// HostCommand is the one line that installs a host with a new host code, for a new
@@ -126,6 +126,9 @@ type Hooks struct {
 	// code, also after the control plane restarted and lost linkWhenJoined's wait. Nil keeps
 	// none.
 	MadeFor func(host, provider, workspace string)
+	// Setup is a made machine's set-up as it stands (#6073), for its row while it is made and
+	// until it joins. Nil, or nil for a host, shows none.
+	Setup func(host string) *wire.MachineSetup
 	// BackUp makes a backup of the host, and waits for it, before its workspace is deleted
 	// (#1815). False when the host can't make one: it is offline, or older than backups.
 	// Nil makes none.
@@ -168,6 +171,8 @@ type listed struct {
 	// False once a list has failed after a good one.
 	current bool
 	problem string
+	// code is the last failure's, when a client can act on it (#6072): disconnected.
+	code string
 	// Which list it is, as lists counted them.
 	asked uint64
 }
@@ -212,6 +217,13 @@ type joining struct {
 	caller *Caller
 }
 
+// makingRow is a make its provider has not answered yet (#6073): its name, and the host id
+// it joins as.
+type makingRow struct {
+	name string
+	host string
+}
+
 // notJoinedMake is a machine New Machine made that the control plane gave up waiting for
 // (#4610): its row says so, with Delete, until it is deleted or a host is linked to it.
 type notJoinedMake struct {
@@ -251,7 +263,6 @@ type Providers struct {
 	// Why each host's last start or stop failed, until the next one.
 	problems map[string]string
 	kept     *Kept
-	drafts   *Drafts
 	// What each host last said about whether it is idle (US4).
 	statuses map[string]MachineStatus
 	// Each linked host's stop when idle, counting down while it stays idle.
@@ -266,11 +277,16 @@ type Providers struct {
 	joining     map[string]*joining
 	// Makes that failed, by provider (#3972).
 	failedMakes map[string][]failedMake
+	// The makes a provider has not answered yet (#6073), by provider: each one's row, with its
+	// set-up, from the press of Make.
+	makingNow map[string][]makingRow
 	// The makes the control plane gave up waiting for (#4610), the oldest first.
 	notJoined []notJoinedMake
 	// The machines installing Agents in a codespace for Add as Machine… (#3497), by how
 	// many installs: only their machine/installProgress is said to clients.
 	installing map[string]int
+	// The OAuth connections started and not finished yet (#6072), by state.
+	oauth oauthStarts
 	// The hosts whose codespaces their carrying machines are asked to keep awake (#4637).
 	awake map[string]keptAwake
 	// One make at a time on each provider, by its id (#4706): seven makes sent in one
@@ -318,6 +334,9 @@ func NewProviders(cfg Config) *Providers {
 	if h.SetupStep == nil {
 		h.SetupStep = func(string, wire.MachineSetupReport) {}
 	}
+	if h.Setup == nil {
+		h.Setup = func(string) *wire.MachineSetup { return nil }
+	}
 	if h.MadeFor == nil {
 		h.MadeFor = func(string, string, string) {}
 	}
@@ -329,7 +348,7 @@ func NewProviders(cfg Config) *Providers {
 		providers: map[string]heldProvider{}, connections: map[string]Provider{}, listed: map[string]*listed{},
 		activities: map[string]*activity{}, problems: map[string]string{}, statuses: map[string]MachineStatus{},
 		idleTimers: map[string]*time.Timer{}, idleStopping: map[string]int{}, stoppedBy: map[string]string{},
-		broughtBack: map[string]bool{}, joining: map[string]*joining{}, failedMakes: map[string][]failedMake{}, making: map[string]*sync.Mutex{},
+		broughtBack: map[string]bool{}, joining: map[string]*joining{}, failedMakes: map[string][]failedMake{}, makingNow: map[string][]makingRow{}, making: map[string]*sync.Mutex{},
 		deleted: map[deletedWorkspace]time.Time{}, done: make(chan struct{})}
 }
 
@@ -345,20 +364,6 @@ func (p *Providers) Kept() *Kept {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.kept
-}
-
-// DraftWith lets an agent write a provider's map or commands at Add Provider (#858).
-func (p *Providers) DraftWith(drafts *Drafts) {
-	p.mu.Lock()
-	p.drafts = drafts
-	p.mu.Unlock()
-}
-
-// Drafts is Write It for Me's drafts, or nil.
-func (p *Providers) Drafts() *Drafts {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return p.drafts
 }
 
 // BusyHost is WorkspaceProviders.busyHost: the host linked to a provider's workspace, by
@@ -454,6 +459,11 @@ func (p *Providers) load() {
 		if json.Unmarshal(object.Data, &record) != nil || (record.Forgotten != nil && *record.Forgotten) {
 			continue
 		}
+		if !knownKind(record.Kind) {
+			// An MCP server provider, a kind that was removed (#6623): its record stays as it is.
+			p.log(fmt.Sprintf("provider: %s is kind %s, which this build no longer runs; not loaded", record.ID, record.Kind))
+			continue
+		}
 		p.mu.Lock()
 		p.providers[record.ID] = heldProvider{record, object.ETag}
 		p.mu.Unlock()
@@ -468,7 +478,7 @@ func (p *Providers) Answer(method string, params json.RawMessage, from Caller) (
 	return p.answer(method, params, from, "client "+shortID(from.Client))
 }
 
-// HostSaid answers machine/machines, machine/providerDraft, machine/status and machine/installProgress, which a host says
+// HostSaid answers machine/machines, machine/status and machine/installProgress, which a host says
 // on its channel 0, as ControlMethods.hostSaid does for them.
 func (p *Providers) HostSaid(host, method string, params json.RawMessage) (any, error) {
 	switch method {
@@ -481,15 +491,6 @@ func (p *Providers) HostSaid(host, method string, params json.RawMessage) (any, 
 			return nil, fail(CodeNotPermitted, "Agent Loops can’t ask that of the control plane.")
 		}
 		return p.AgentCall(host, call.Agent, call.Method, call.Params, call.Deliver)
-	case MethodHostProviderDraft:
-		var call MachineProviderDraftCall
-		if err := requireParams(params, &call, "MachineProviderDraftCall", "agentID", "draft", "tool"); err != nil {
-			return nil, err
-		}
-		if !isUUID(string(call.AgentID)) || !isUUID(string(call.Draft)) {
-			return nil, invalid("Those parameters are not a MachineProviderDraftCall.")
-		}
-		return p.DraftCall(host, call)
 	case MethodHostStatus:
 		var status MachineStatus
 		if requireParams(params, &status, "MachineStatus", "idle", "running") == nil {
@@ -504,16 +505,6 @@ func (p *Providers) HostSaid(host, method string, params json.RawMessage) (any, 
 		return map[string]any{}, nil
 	}
 	return nil, methodNotFound(method)
-}
-
-// DraftCall is WorkspaceHandling.draftCall: a writing agent on host called one of the
-// writer's tools (#858).
-func (p *Providers) DraftCall(host string, call MachineProviderDraftCall) (any, error) {
-	drafts := p.Drafts()
-	if drafts == nil {
-		return nil, fail(CodeNotPermitted, "%s", NotYoursWords)
-	}
-	return drafts.Call(host, call)
 }
 
 // AgentCall is WorkspaceHandling.agentCall: an agent on host asked through its workspace
@@ -704,6 +695,18 @@ func (p *Providers) answer(method string, params json.RawMessage, caller Caller,
 		return map[string]any{}, nil
 	case MethodProvidersAdd, MethodProvidersUpdate:
 		return p.answerSave(params, method == MethodProvidersUpdate, caller)
+	case MethodProvidersOAuthStart:
+		var request wire.ProviderOAuthStart
+		if err := requireParams(params, &request, "ProviderOAuthStart", "preset"); err != nil {
+			return nil, err
+		}
+		return p.oauthStart(request, caller)
+	case MethodProvidersOAuthFinish:
+		var request wire.ProviderOAuthFinish
+		if err := requireParams(params, &request, "ProviderOAuthFinish"); err != nil {
+			return nil, err
+		}
+		return p.oauthFinish(request, caller)
 	case MethodProvidersMakeDefault:
 		return p.answerProviderID(params, func(id string) error { return p.makeDefault(caller.Person, id) })
 	case MethodProvidersRemove:
@@ -748,8 +751,6 @@ func (p *Providers) answer(method string, params json.RawMessage, caller Caller,
 		return map[string]any{}, p.deleteMachine(string(request.Host), who, caller)
 	case MethodHostsKeep:
 		return p.answerKeep(params, caller)
-	case MethodProvidersRuntimes, MethodDraftStart, MethodDraftCancel, MethodDraftSigned, MethodDraftAnswer:
-		return p.answerDraft(method, params, caller)
 	case MethodHostsListKept, MethodHostsDropKept, MethodHostsRetryKept:
 		kept := p.Kept()
 		if kept == nil {
@@ -766,7 +767,7 @@ func (p *Providers) answerSave(params json.RawMessage, updating bool, caller Cal
 	if err := requireParams(params, &request, "ProviderAdd", "name", "kind"); err != nil {
 		return nil, err
 	}
-	if !knownKind(request.Kind) || (request.Draft != nil && *request.Draft != "" && !isUUID(string(*request.Draft))) {
+	if !knownKind(request.Kind) {
 		return nil, invalid("Those parameters are not a ProviderAdd.")
 	}
 	return p.save(request, updating, caller)
@@ -888,104 +889,6 @@ func (p *Providers) answerKeep(params json.RawMessage, caller Caller) (any, erro
 	return nil, answer
 }
 
-// answerDraft is the writer's methods: its runtimes, and a draft's start, cancel, lock and
-// answers (#858).
-func (p *Providers) answerDraft(method string, params json.RawMessage, caller Caller) (any, error) {
-	drafts := p.Drafts()
-	switch method {
-	case MethodProvidersRuntimes:
-		if drafts == nil {
-			return ProviderRuntimes{Runtimes: []ProviderRuntime{}, Why: new("This control plane can’t start a writing agent.")}, nil
-		}
-		return drafts.Runtimes(), nil
-	case MethodDraftStart:
-		if drafts == nil {
-			return nil, fail(CodeNotSupported, "This control plane can’t start a writing agent.")
-		}
-		return p.answerDraftStart(drafts, params, caller)
-	case MethodDraftCancel:
-		var request ProviderDraftRequest
-		if err := requireParams(params, &request, "ProviderDraftRequest", "draft"); err != nil {
-			return nil, err
-		}
-		if drafts != nil {
-			drafts.Cancel(string(request.Draft), caller)
-		}
-		return map[string]any{}, nil
-	case MethodDraftSigned:
-		if drafts == nil {
-			return nil, invalid("That draft has ended.")
-		}
-		var request ProviderDraftSigned
-		if err := requireParams(params, &request, "ProviderDraftSigned", "draft", "lock"); err != nil {
-			return nil, err
-		}
-		return map[string]any{}, drafts.Signed(request, caller)
-	case MethodDraftAnswer:
-		if drafts == nil {
-			return nil, invalid("That draft has ended.")
-		}
-		var answer ProviderDraftAnswer
-		if err := requireParams(params, &answer, "ProviderDraftAnswer", "draft", "question", "yes"); err != nil {
-			return nil, err
-		}
-		return map[string]any{}, drafts.Answer(answer, caller)
-	}
-	return nil, methodNotFound(method)
-}
-
-// answerDraftStart is providers/draftStart.
-func (p *Providers) answerDraftStart(drafts *Drafts, params json.RawMessage, caller Caller) (any, error) {
-	var request ProviderDraftStart
-	if err := requireParams(params, &request, "ProviderDraftStart", "form", "runtimeID"); err != nil {
-		return nil, err
-	}
-	if request.Form.Name == "" && !strings.Contains(string(params), `"name"`) || !knownKind(request.Form.Kind) {
-		return nil, invalid("Those parameters are not a ProviderDraftStart.")
-	}
-	var existing *ExistingProvider
-	if provider := string(deref(request.Provider)); provider != "" {
-		var err error
-		if existing, err = p.existingForDraft(provider, &request); err != nil {
-			return nil, err
-		}
-	}
-	return drafts.Start(request, caller, existing)
-}
-
-// existingForDraft is the provider a draft changes, and writes request's form again from
-// the provider as it is kept: the sheet knows only its name.
-func (p *Providers) existingForDraft(provider string, request *ProviderDraftStart) (*ExistingProvider, error) {
-	p.mu.Lock()
-	held, ok := p.providers[provider]
-	problem := ""
-	if l := p.listed[provider]; l != nil {
-		problem = l.problem
-	}
-	p.mu.Unlock()
-	if !ok {
-		return nil, invalid("There is no such provider.")
-	}
-	// Its secrets stay on its machine, which lays the sheet's over them (#3398): here,
-	// only their names, with no value.
-	names := map[string]string{}
-	for _, name := range held.record.SecretNames {
-		names[name] = ""
-	}
-	existing := &ExistingProvider{Record: held.record, Secrets: names, Problem: problem}
-	cli := ""
-	if request.Form.CLI != nil {
-		cli = trimSpaces(*request.Form.CLI)
-	}
-	if cli == "" {
-		cli = cliOf(held.record)
-	}
-	r := held.record
-	request.Form = ProviderAdd{ID: request.Provider, Name: r.Name, Kind: r.Kind, Command: r.Command, Args: r.Args,
-		URL: r.URL, Headers: r.Headers, CLI: &cli}
-	return existing, nil
-}
-
 // MARK: Providers
 
 // Summaries is WorkspaceProviders.summaries: every provider for the Providers page, by name.
@@ -1010,9 +913,13 @@ func (p *Providers) Summaries() []ProviderSummary {
 		failed[id] = append([]failedMake{}, f...)
 	}
 	// The makes New Machine still waits for, and the ones it gave up on (#4610).
-	joiningNow := map[string]bool{}
+	joiningNow := map[string]string{}
 	for _, j := range p.joining {
-		joiningNow[j.provider+"/"+j.workspace] = true
+		joiningNow[j.provider+"/"+j.workspace] = j.host
+	}
+	makingNow := map[string][]makingRow{}
+	for id, rows := range p.makingNow {
+		makingNow[id] = append([]makingRow{}, rows...)
 	}
 	notJoinedNow := map[string]string{}
 	for _, n := range p.notJoined {
@@ -1027,7 +934,11 @@ func (p *Providers) Summaries() []ProviderSummary {
 		if !ok {
 			l = listed{current: true}
 		}
-		workspaces := summaryWorkspaces(r.ID, l.workspaces, linked, joiningNow, notJoinedNow)
+		workspaces := summaryWorkspaces(r.ID, l.workspaces, linked, joiningNow, notJoinedNow, p.hooks.Setup)
+		for _, m := range makingNow[r.ID] {
+			workspaces = append(workspaces, MachineInfo{ID: "making-" + m.name, Name: m.name, State: "starting",
+				Joining: new(true), Setup: p.hooks.Setup(m.host)})
+		}
 		for _, f := range failed[r.ID] {
 			workspaces = append(workspaces, f.info)
 		}
@@ -1037,16 +948,20 @@ func (p *Providers) Summaries() []ProviderSummary {
 }
 
 // summaryWorkspaces is a provider's listed workspaces with their hosts, and, for one with
-// no host, whether New Machine still waits for it or gave up on it (#4610).
-func summaryWorkspaces(provider string, listed []MachineInfo, linked map[string]string, joiningNow map[string]bool,
-	notJoinedNow map[string]string) []MachineInfo {
+// no host, whether New Machine still waits for it or gave up on it (#4610), and how its
+// set-up stands while it waits (#6073).
+func summaryWorkspaces(provider string, listed []MachineInfo, linked map[string]string, joiningNow map[string]string,
+	notJoinedNow map[string]string, setup func(host string) *wire.MachineSetup) []MachineInfo {
 	workspaces := []MachineInfo{}
 	for _, w := range listed {
 		key := provider + "/" + w.ID
 		w.Host = optional(wire.MachineRef(linked[key]))
 		if w.Host == nil {
-			if joiningNow[key] {
+			if host, ok := joiningNow[key]; ok {
 				w.Joining = new(true)
+				if host != "" {
+					w.Setup = setup(host)
+				}
 			}
 			if why, ok := notJoinedNow[key]; ok {
 				w.NotJoined = &why
@@ -1069,8 +984,8 @@ func (p *Providers) summary(r ProviderRecord, l listed, workspaces []MachineInfo
 		caps = []string{}
 	}
 	s := ProviderSummary{ID: wire.ProviderID(r.ID), Name: r.Name, Kind: r.Kind, Secrets: secrets, Capabilities: caps,
-		Contract: int64(r.Contract), Mapped: r.Map != nil, Preset: optional(r.preset()), Workspaces: workspaces,
-		Current: l.current, Problem: optional(l.problem), Group: r.Group}
+		Contract: int64(r.Contract), Preset: optional(r.preset()), Workspaces: workspaces,
+		Current: l.current, Problem: optional(l.problem), Group: r.Group, Oauth: summaryOAuth(r, l)}
 	if machine := deref(r.Machine); machine != "" {
 		s.Machine = optional(wire.MachineRef(machine))
 		if h := p.records.Host(machine); h != nil {
@@ -1094,26 +1009,56 @@ func (p *Providers) summary(r ProviderRecord, l listed, workspaces []MachineInfo
 // save adds or changes a provider: connected, checked and listed before it is kept
 // (US2 AS1–2).
 func (p *Providers) save(request ProviderAdd, updating bool, caller Caller) (ProviderSummary, error) {
+	return p.saveConnected(request, updating, caller, nil)
+}
+
+// connectedSave is what an OAuth connection (#6072) adds to a save: the secrets its
+// machine keeps already, by name, and whose account they are for.
+type connectedSave struct {
+	// id is the provider's: its machine keeps the tokens under it.
+	id      string
+	machine string
+	names   []string
+	oauth   *OAuthConnection
+}
+
+// saveConnected is save, for a provider whose machine keeps an OAuth connection's tokens
+// already when connected is not nil.
+func (p *Providers) saveConnected(request ProviderAdd, updating bool, caller Caller, connected *connectedSave) (ProviderSummary, error) {
 	id, etag, heldBefore, err := p.saving(request, updating)
 	if err != nil {
 		return ProviderSummary{}, err
 	}
-	machine, err := p.carrier(request, heldBefore, caller)
-	if err != nil {
+	if connected != nil {
+		id = connected.id
+	}
+	var machine string
+	if connected != nil {
+		machine = connected.machine
+	} else if machine, err = p.carrier(request, heldBefore, caller); err != nil {
 		return ProviderSummary{}, err
 	}
-	// An update keeps what it leaves out, as it keeps the secrets (#858 US4).
-	if heldBefore != nil && request.Kind == heldBefore.Kind {
-		keepLeftOut(&request, heldBefore)
+	// An update keeps the commands it leaves out, as it keeps the secrets.
+	if heldBefore != nil && request.Kind == heldBefore.Kind && request.Commands == nil {
+		request.Commands = jsonValue(heldBefore.Commands)
 	}
 	given, names, err := savedSecrets(request, heldBefore, machine)
 	if err != nil {
 		return ProviderSummary{}, err
 	}
-	record := ProviderRecord{ID: id, Name: trimSpaces(request.Name), Kind: request.Kind, Command: request.Command,
-		Args: request.Args, URL: request.URL, Headers: request.Headers, SecretNames: names, Contract: 1,
+	record := ProviderRecord{ID: id, Name: trimSpaces(request.Name), Kind: request.Kind, SecretNames: names, Contract: 1,
 		Machine: &machine}
-	record.Commands, record.Map = valueOf(request.Commands), valueOf(request.Map)
+	switch {
+	case connected != nil:
+		record.OAuth = connected.oauth
+		record.SecretNames = unionSorted(names, connected.names)
+	case heldBefore != nil && heldBefore.OAuth != nil && !pastesToken(request):
+		record.OAuth = heldBefore.OAuth
+	case heldBefore != nil && heldBefore.OAuth != nil:
+		// A pasted token replaces the connection: its machine forgets the rest of it.
+		record.SecretNames = withoutOAuthNames(names)
+	}
+	record.Commands = valueOf(request.Commands)
 	if problem := record.Problem(); problem != "" {
 		return ProviderSummary{}, invalid("%s", problem)
 	}
@@ -1136,7 +1081,6 @@ func (p *Providers) save(request ProviderAdd, updating bool, caller Caller) (Pro
 	if record.Contract == 0 {
 		record.Contract = 1
 	}
-	record.WrittenBy = p.writtenBy(request, heldBefore)
 	record.Rev = 1
 	if heldBefore != nil {
 		record.Rev = heldBefore.Rev + 1
@@ -1215,30 +1159,6 @@ func (p *Providers) saving(request ProviderAdd, updating bool) (id, etag string,
 	return id, etag, heldBefore, nil
 }
 
-// keepLeftOut gives request what it leaves out from before, as an update of the same kind
-// keeps it.
-func keepLeftOut(request *ProviderAdd, before *ProviderRecord) {
-	if request.Command == nil {
-		request.Command = before.Command
-	}
-	if request.Args == nil {
-		request.Args = before.Args
-	}
-	if request.URL == nil {
-		request.URL = before.URL
-	}
-	if request.Headers == nil {
-		request.Headers = before.Headers
-	}
-	if request.Kind == KindCommands {
-		if request.Commands == nil {
-			request.Commands = jsonValue(before.Commands)
-		}
-	} else if request.Map == nil {
-		request.Map = jsonValue(before.Map)
-	}
-}
-
 // savedSecrets is the secrets request gives, which go on to its machine, and the names of
 // all its secrets, which the control plane keeps. A provider that moves to another machine
 // must be given each of its secrets again.
@@ -1278,53 +1198,7 @@ func (p *Providers) logSaved(record ProviderRecord, updating bool, workspaces in
 	if preset := record.preset(); preset != "" {
 		extra += ", preset " + preset
 	}
-	if record.Map != nil {
-		extra += ", mapped"
-	}
 	p.log(fmt.Sprintf("provider: %s %s (%s%s), %d workspaces", verb, record.ID, record.Kind, extra, workspaces))
-}
-
-// writtenBy is WorkspaceProviders.writtenBy (#858): an agent, when the request accepts a
-// done draft and its map or commands are the draft's; otherwise it stays as it was when
-// they are unchanged, and goes when the person changed them.
-func (p *Providers) writtenBy(request ProviderAdd, before *ProviderRecord) *WrittenBy {
-	given := valueOf(request.Map)
-	if request.Kind == KindCommands {
-		given = valueOf(request.Commands)
-	}
-	if drafts := p.Drafts(); deref(request.Draft) != "" && drafts != nil {
-		if runtime, json, ok := drafts.Result(string(*request.Draft)); ok && jsonEqual(json, given) {
-			return &WrittenBy{RuntimeID: runtime, At: records.Now()}
-		}
-	}
-	if before == nil {
-		return nil
-	}
-	had := before.Map
-	if before.Kind == KindCommands {
-		had = before.Commands
-	}
-	if (had == nil && given == nil) || (had != nil && given != nil && jsonEqual(had, given)) {
-		return before.WrittenBy
-	}
-	return nil
-}
-
-// cliOf is WorkspaceProviders.cli(of:): the program a command provider's commands use, the
-// first word of its list, or of its first workspace's start (#858 US4).
-func cliOf(record ProviderRecord) string {
-	line, ok := str(get(record.Commands, "list"))
-	if !ok {
-		if ws, _ := arr(get(record.Commands, "workspaces")); len(ws) > 0 {
-			line = strOr(get(ws[0], "start"))
-		}
-	}
-	for _, word := range strings.Split(line, " ") {
-		if word != "" {
-			return word
-		}
-	}
-	return ""
 }
 
 // remove is a provider going; its hosts stay, unlinked (US2 AS5).
@@ -1426,6 +1300,7 @@ func (p *Providers) Refresh(only string) {
 			} else {
 				l.current = l.listedAt == nil
 				l.problem = errorWords(r.err)
+				l.code = failureCode(r.err)
 				l.asked = r.asked
 			}
 			p.listed[r.id] = l
@@ -1583,6 +1458,12 @@ func (p *Providers) mayLink(person, provider, workspace string) bool {
 }
 
 func (p *Providers) link(request MachineLink) (any, error) {
+	return p.linkKeying(request, true)
+}
+
+// linkKeying is link; with keyed false it asks for no host key and keeps none, as for a key
+// that can't be fetched (LinkJoined, #6581).
+func (p *Providers) linkKeying(request MachineLink, keyed bool) (any, error) {
 	host, provider := string(request.Host), string(request.Provider)
 	p.mu.Lock()
 	_, ok := p.providers[provider]
@@ -1590,9 +1471,13 @@ func (p *Providers) link(request MachineLink) (any, error) {
 	if !ok {
 		return nil, invalid("There is no such provider.")
 	}
-	knownHosts, err := p.linkHostKey(host, WorkspaceLink{Provider: provider, Workspace: request.Workspace}, deref(request.Trust))
-	if err != nil {
-		return nil, err
+	knownHosts := ""
+	if keyed {
+		var err error
+		knownHosts, err = p.linkHostKey(host, WorkspaceLink{Provider: provider, Workspace: request.Workspace}, deref(request.Trust))
+		if err != nil {
+			return nil, err
+		}
 	}
 	p.forgetNotJoined(provider, request.Workspace)
 	// One host per workspace: linking moves the link.
@@ -1987,21 +1872,26 @@ func (p *Providers) create(request ProviderCreate, who string, caller *Caller) (
 	}
 	firstBoot := command + " " + shellQuoted(name)
 	began := time.Now()
-	// Options left out are the ones used last on this provider, or else its defaults (#3979).
+	// Options left out are what New Machine's form shows (#6686): the person's last choices
+	// on this provider (#3979) over the form's defaults.
+	form := p.formOf(id)
 	options := valueOf(request.Options)
 	if options == nil {
-		if options = p.lastOptions(person, id); options == nil {
-			options = p.defaultOptions(id)
-		}
+		options = form.values(p.lastOptions(person, id))
 	}
 	// Kept as given, before a repository is put in them.
-	used, _ := json.Marshal(options)
+	used := valueOf(rawOf(options))
 	options, clones, err := p.withRepository(id, trimSpaces(deref(request.Repository)), options)
 	if err != nil {
 		return nil, err
 	}
 	var made *MachineInfo
 	var runs bool
+	var said []string
+	// Its row, with its set-up, until the provider answers (#6073): a client that opens now
+	// sees it being made.
+	p.addMaking(id, name, madeHost)
+	defer p.dropMaking(id, name)
 	// Step 1 of its set-up (#5765), from the press of Make: waiting for an earlier make on the
 	// same provider is part of it.
 	p.setupStep(madeHost, wire.MachineSetupStepIDCreate, wire.MachineSetupStateRunning,
@@ -2010,7 +1900,11 @@ func (p *Providers) create(request ProviderCreate, who string, caller *Caller) (
 	turn.Lock()
 	_, err = p.providerCall(id, func(c Provider) (any, error) {
 		var err error
-		made, runs, err = c.Create(name, options, &firstBoot)
+		if saying, ok := c.(Saying); ok {
+			made, runs, said, err = saying.CreateSaying(name, options, &firstBoot)
+		} else {
+			made, runs, err = c.Create(name, options, &firstBoot)
+		}
 		return nil, err
 	})
 	turn.Unlock()
@@ -2020,13 +1914,17 @@ func (p *Providers) create(request ProviderCreate, who string, caller *Caller) (
 		p.setupStep(madeHost, wire.MachineSetupStepIDCreate, wire.MachineSetupStateFailed, "", errorWords(err))
 		return nil, err
 	}
-	p.setupStep(madeHost, wire.MachineSetupStepIDCreate, wire.MachineSetupStateDone,
-		"Made at "+provider.Name+" in "+secondsSince(began), "")
+	// What the provider said it did (#6073), else where and how long.
+	madeWords := "Made at " + provider.Name + " in " + secondsSince(began)
+	if len(said) > 0 {
+		madeWords = strings.Join(said, " ")
+	}
+	p.setupStep(madeHost, wire.MachineSetupStepIDCreate, wire.MachineSetupStateDone, madeWords, "")
 	if runs {
 		p.setupStep(madeHost, wire.MachineSetupStepIDJoin, wire.MachineSetupStateRunning,
 			"Waiting for "+name+" to start and join", "")
 	}
-	p.madeOn(person, id, used)
+	p.madeOn(person, id, used, form)
 	p.usedName(person, name)
 	p.Refresh(id)
 	found := p.listedMade(id, made, name)
@@ -2176,7 +2074,17 @@ func (p *Providers) LinkJoined(host, provider, workspace, trust string) {
 	if trust != "" {
 		request.Trust = &trust
 	}
-	if _, err := p.link(request); err != nil {
+	_, err := p.link(request)
+	var f *Failure
+	if errors.As(err, &f) && f.Code == CodeHostKeyToTrust && trust == "" {
+		// It joined with the code its workspace was made with, so it is that workspace's
+		// host; only its ssh host key is new, and no person is asked here (#6581). It is
+		// linked with no key, and the key is checked when ssh is first needed. A key a person
+		// trusted at an install, and that differs now, still stops the link.
+		p.log(fmt.Sprintf("workspace: %s joined for %s/%s; its host key is new, so the link keeps none", host, provider, workspace))
+		_, err = p.linkKeying(request, false)
+	}
+	if err != nil {
 		p.log(fmt.Sprintf("workspace: %s joined for %s/%s, but wasn't linked: %s", host, provider, workspace, errorWords(err)))
 	}
 }
@@ -2188,6 +2096,7 @@ func (p *Providers) LinkJoined(host, provider, workspace, trust string) {
 func (p *Providers) linkWhenJoined(name string) {
 	began := time.Now()
 	var last *joining
+	started := false
 	for time.Since(began) < p.timing.GiveUp {
 		p.mu.Lock()
 		wanted := p.joining[name]
@@ -2196,6 +2105,12 @@ func (p *Providers) linkWhenJoined(name string) {
 			return
 		}
 		last = wanted
+		// Its provider lists it running (#6073): it boots and installs, then joins.
+		if !started && p.listedState(wanted.provider, wanted.workspace) == "running" {
+			started = true
+			p.setupStep(wanted.host, wire.MachineSetupStepIDJoin, wire.MachineSetupStateRunning,
+				"Started "+name+"; installing Agent Loops on it, then it joins", "")
+		}
 		for _, h := range p.records.Hosts() {
 			ours := (wanted.host != "" && h.ID == wanted.host) || h.Name == name
 			if !ours {
@@ -2238,6 +2153,20 @@ func (p *Providers) linkWhenJoined(name string) {
 	}
 }
 
+// listedState is a workspace's state as its provider last listed it, or "".
+func (p *Providers) listedState(provider, workspace string) string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if l, ok := p.listed[provider]; ok {
+		for _, w := range l.workspaces {
+			if w.ID == workspace {
+				return w.State
+			}
+		}
+	}
+	return ""
+}
+
 // setupStep says one step of a made machine's set-up (#5765), when it has a host id.
 func (p *Providers) setupStep(host string, step wire.MachineSetupStepID, state wire.MachineSetupState, detail, problem string) {
 	if host == "" {
@@ -2251,6 +2180,37 @@ func (p *Providers) setupStep(host string, step wire.MachineSetupStepID, state w
 		report.Error = &problem
 	}
 	p.hooks.SetupStep(host, report)
+	// A machine being made has no row of its own yet: its provider's row shows the step (#6073).
+	if p.records.Host(host) == nil {
+		p.changed()
+	}
+}
+
+// addMaking shows a make its provider has not answered yet (#6073).
+func (p *Providers) addMaking(provider, name, host string) {
+	p.mu.Lock()
+	p.makingNow[provider] = append(p.makingNow[provider], makingRow{name: name, host: host})
+	p.mu.Unlock()
+}
+
+// dropMaking takes the row away once the provider answered: the listed one, joining, or the
+// failed one has it now.
+func (p *Providers) dropMaking(provider, name string) {
+	p.mu.Lock()
+	rows := p.makingNow[provider]
+	kept := rows[:0]
+	for _, r := range rows {
+		if r.name != name {
+			kept = append(kept, r)
+		}
+	}
+	if len(kept) == 0 {
+		delete(p.makingNow, provider)
+	} else {
+		p.makingNow[provider] = kept
+	}
+	p.mu.Unlock()
+	p.changed()
 }
 
 // gaveUp keeps a make the control plane stopped waiting for (#4610), so that its row says

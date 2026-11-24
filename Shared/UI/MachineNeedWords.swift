@@ -11,7 +11,7 @@ enum MachineNeedWords {
         case .settingUp(let setup): MachineSetupWords.sidebarLine(setup)
         case .setupFailed: HostProblem.installFailed("").sentence(name: name, label: name)
         case .disk(let disk): DiskSpace.needWords(disk)
-        case .capacity(let level): CapacityWords.level(level) ?? ""
+        case .capacity(let level, let reason): CapacityWords.level(level, reason: reason) ?? ""
         case .update: row.map(UpdateWords.state) ?? "Needs an update"
         case .signIn(let runtimes):
             "\(ListFormatter.localizedString(byJoining: runtimes)) \(runtimes.count == 1 ? "needs" : "need") sign-in"

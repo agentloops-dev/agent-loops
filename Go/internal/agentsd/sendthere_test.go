@@ -55,10 +55,10 @@ func TestStartSessionSendsTheBranchFirst(t *testing.T) {
 	defer d.Shutdown()
 	src := repo(t)
 	sendGit(t, src, nil, "checkout", "-q", "-b", "fix-login")
-	os.WriteFile(filepath.Join(src, "login.go"), []byte("package login\n"), 0o644)
+	must(t, os.WriteFile(filepath.Join(src, "login.go"), []byte("package login\n"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	sendGit(t, src, nil, "add", "-A")
 	sendGit(t, src, nil, "commit", "-q", "-m", "login")
-	os.WriteFile(filepath.Join(src, "notes.txt"), []byte("not committed\n"), 0o644)
+	must(t, os.WriteFile(filepath.Join(src, "notes.txt"), []byte("not committed\n"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	head := sendGit(t, src, nil, "rev-parse", "HEAD")
 	title := "fix-login"
 	a := seeded(t, d, src, func(a *wire.Agent) {
@@ -88,11 +88,11 @@ func TestStartSessionSendsTheBranchFirst(t *testing.T) {
 				return nil, &controllink.AskError{Code: wire.FailureHostOffline, Message: "pc is offline."}
 			}
 			var s wire.MachineFolderSend
-			json.Unmarshal(b, &s)
+			mustUnmarshal(t, b, &s)
 			return sendThereFolderStep(d, s, &steps)
 		case "machines/startSession":
 			var s wire.MachineSessionStart
-			json.Unmarshal(b, &s)
+			mustUnmarshal(t, b, &s)
 			starts = append(starts, s)
 			return json.RawMessage(`"11111111-2222-3333-4444-555555555555"`), nil
 		}
@@ -118,7 +118,7 @@ func TestStartSessionSendsTheBranchFirst(t *testing.T) {
 	go func() { text, _ := m.tool(3, "start_session", on); answered <- text }()
 	var pending []wire.ElicitationRequest
 	waitFor(t, "the card", func() bool {
-		json.Unmarshal(c.call(t, 1, "elicitations/pending", nil), &pending)
+		mustUnmarshal(t, c.call(t, 1, "elicitations/pending", nil), &pending)
 		return len(pending) == 1
 	})
 	if f := pending[0].Mode.Form.Value; *f.Properties[0].Title != "Send fix-login, with its uncommitted changes, to "+there+" on pc, then start a session there to “Check the Windows bug”?" {
@@ -150,7 +150,7 @@ func TestStartSessionSendsTheBranchFirst(t *testing.T) {
 	}
 
 	// Work of its own there: refused before the card, and nothing goes.
-	os.WriteFile(filepath.Join(there, "mine.txt"), []byte("mine\n"), 0o644)
+	must(t, os.WriteFile(filepath.Join(there, "mine.txt"), []byte("mine\n"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	if text, isErr := m.tool(4, "start_session", on); !isErr ||
 		text != "Nothing was sent or started on pc: "+there+" has changes of its own there." {
 		t.Fatal(text)

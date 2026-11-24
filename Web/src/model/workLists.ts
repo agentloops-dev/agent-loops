@@ -2,16 +2,16 @@
 // the cursors to the next pages, kept per kind for the tab's life. An item's page goes through the list
 // it was opened from (Previous and Next, j and k), and Back finds the list as it was left.
 import { signal, type Signal } from "@preact/signals";
-import type { ForgeCapabilities, ForgeItem, ForgeListAll, ForgeListError, ProjectBoard, ReportNode, ReportNodesSort } from "../protocol/generated";
+import type { ForgeCapabilities, ForgeItem, ForgeListAll, ForgeListError, ProjectBoard, ReportNode, ReportNodesSort, WireDate } from "../protocol/generated";
 import type { Store } from "./store";
 import { Capability } from "../protocol/capabilities.generated";
 import { CallFailed } from "../wire/link";
 import { describe } from "./errors";
 import { hostAnswers } from "./capabilities";
-import { keepWork, keptWork, keptWorkRead } from "./localCopy";
+import { keepWork, keptWorkRead, queryKey, workCache, type WorkAnswer, type WorkQuery } from "./workCache";
 import { mark } from "./marks";
 import {
-  filterRows, forgeListAllRequest, fromForge, lineageRow, mergeBoards, mergeForge, neighbours, parseWorkQuery, projectRepos, refForge,
+  filterRows, forgeListAllRequest, fromForge, lineageRow, listReadAt, mergeBoards, mergeForge, neighbours, parseWorkQuery, projectRepos, refForge,
   shownErrors, sortRows, workQuery,
   type Neighbours, type WorkFilter, type WorkKind, type WorkProject, type WorkProjectRepos, type WorkRow, type WorkSort, type WorkState,
 } from "./work";
@@ -30,6 +30,12 @@ export interface HostList {
   stale?: string[] | undefined;
   /** What each forge on the list fills and sets (#4361): a row's menu offers Priority and On hold by it (epic #6086). */
   forges?: ForgeCapabilities[] | undefined;
+  /** How many of the machine's pages Work's cache keeps (#6356): the next page is kept after them. */
+  pages?: number | undefined;
+  /** When the machine read its forges for it (#6642); none from an earlier daemon. */
+  readAt?: WireDate | undefined;
+  /** What the list reads (#6641): forge:repo per repo; none from an earlier daemon. */
+  scopes?: string[] | undefined;
 }
 
 export interface WorkListState {
@@ -52,6 +58,8 @@ export interface WorkListState {
   opened: Signal<string | undefined>;
   /** What the rows were read for; the list reads them again only when that changes. */
   read: string | undefined;
+  /** The Refresh count (`asked`) of that read: a higher one asks the forges, not the daemons' kept answers (#6642). */
+  readAsked: number;
   /** The rows on screen came from this device's copy (#4930): the machines are asked again, and the list says so. */
   fromDevice: Signal<boolean>;
   /** When the rows on screen were read (#5142): this device's copy's time, or the last read; with rows carried over a
@@ -61,8 +69,9 @@ export interface WorkListState {
   shownFor: string | undefined;
 }
 
-/** A list's first page as this device keeps it (#4930): each machine's page, the lineage figures, and the boards. */
-export interface KeptList { lists: HostList[]; lineage: ReportNode[]; lineageCursor?: string | undefined; boards?: ProjectBoard[] | undefined }
+/** The lineage figures a list keeps in Work's cache (#6356), beside its items: Releases' whole list, and the figures an
+ * issue or PR list joins by ref. */
+export interface KeptLineage { lineage: ReportNode[]; lineageCursor?: string | undefined }
 
 const lists = new Map<WorkKind, WorkListState>();
 
@@ -78,7 +87,7 @@ export function workList(kind: WorkKind): WorkListState {
     l = {
       kind, filter: signal(kept.filter), projects: signal([]), sort: signal<WorkSort>(kept.sort), lists: signal(null), loading: signal(false), lineage: signal([]),
       lineageCursor: signal(undefined), problem: signal(null), more: signal(false), moreFailed: signal(null), asked: signal(0), opened: signal(undefined),
-      read: undefined, fromDevice: signal(false), readAt: signal(undefined), shownFor: undefined,
+      read: undefined, readAsked: 0, fromDevice: signal(false), readAt: signal(undefined), shownFor: undefined,
     };
     lists.set(kind, l);
     const { filter, sort } = l;
@@ -112,8 +121,8 @@ export async function loadBoards(store: Store, again = false): Promise<void> {
   boardsRead = mine;
   // The boards this device kept from the same machines at once (#4930), until they answer.
   if (boards.peek().length === 0) {
-    const kept = await keptWork<ProjectBoard[]>("boards", mine);
-    if (kept && boardsRead === mine && boards.peek().length === 0) boards.value = kept;
+    const kept = await keptWorkRead<ProjectBoard[]>("boards", mine);
+    if (kept && boardsRead === mine && boards.peek().length === 0) boards.value = kept.value;
   }
   // Every machine's boards in one call to the control plane (#5592), which waits for a slow machine at most 5 s.
   const asked = new Set(hosts.map((h) => h.id));
@@ -159,7 +168,7 @@ async function readLineage(store: Store, kind: WorkKind, sort: ReportNodesSort, 
 export function askKey(store: Store, l: WorkListState): string {
   const { state, board } = l.filter.value;
   const hosts = listHosts(store, board).map((h) => h.id);
-  return [forgeState(state), board, nodesSort(l), hosts.join(","), forgeFolders(store, hosts), l.asked.value].join("|");
+  return [forgeState(state), board, nodesSort(l), forgeSort(l), hosts.join(","), forgeFolders(store, hosts), l.asked.value].join("|");
 }
 
 /** The machines' live folders, as the page knows them (#6152): a list read before a folder was added is read again when
@@ -187,12 +196,44 @@ export const notAnswered = "It did not answer.";
  * of `hosts` (offline when the page asked) is left out, as it was not asked before. */
 export function hostListsOf(got: ForgeListAll, hosts: readonly string[], before: readonly HostList[]): HostList[] {
   const by = new Map<string, HostList>();
-  for (const l of got.lists) by.set(l.machine, { host: l.machine, items: l.list.items, cursor: l.list.cursor, errors: l.list.errors ?? [], total: l.list.total, forges: l.list.forges });
+  for (const l of got.lists) by.set(l.machine, { host: l.machine, items: l.list.items, cursor: l.list.cursor, errors: l.list.errors ?? [], total: l.list.total, forges: l.list.forges, readAt: l.list.readAt, scopes: l.list.scopes });
   for (const u of got.unreached) by.set(u.machine, { host: u.machine, items: [], errors: [{ forge: "", message: notAnswered }] });
   return hosts.flatMap((h) => {
     const list = by.get(h);
     return list ? [carryStale(list, before.find((b) => b.host === h))] : [];
   });
+}
+
+/** The machines to ask a list's page 1 (#6641), in `hosts`' order, and those left out: a machine whose scopes are known is
+ * left out when the machines asked already read every one of them, so each repo is asked once, not once per machine. The
+ * machines that read the most go first, so one that reads all covers the others; one whose scopes are not known is always
+ * asked. As the window's `WorkList.oneEach`. */
+export function oneEach(hosts: readonly string[], scopes: ReadonlyMap<string, readonly string[]>): { ask: string[]; covered: string[] } {
+  const count = (h: string) => scopes.get(h)?.length ?? Number.MAX_SAFE_INTEGER;
+  const order = hosts.map((h, i) => ({ h, i })).sort((a, b) => count(b.h) - count(a.h) || a.i - b.i);
+  const read = new Set<string>();
+  const covered = new Set<string>();
+  for (const { h } of order) {
+    const known = scopes.get(h);
+    if (!known) continue;
+    if (known.every((s) => read.has(s))) covered.add(h);
+    else for (const s of known) read.add(s);
+  }
+  return { ask: hosts.filter((h) => !covered.has(h)), covered: hosts.filter((h) => covered.has(h)) };
+}
+
+/** A machine's scopes as kept on this device (#6641), with the machines and folders the list was read from then: when those
+ * change, what it reads is not known until it is asked again. Kept by the kind and the board, as a board narrows a list. */
+interface KeptScopes { scopes: string[]; source: string }
+const scopesPage = "work-scopes";
+const scopesAsked = (kind: WorkKind, board: string, host: string) => [kind, board, host].join("|");
+
+async function keptScopes(kind: WorkKind, board: string, hosts: readonly string[], source: string): Promise<Map<string, string[]>> {
+  const kept = await Promise.all(hosts.map((h) => keptWorkRead<KeptScopes>(scopesPage, scopesAsked(kind, board, h))));
+  return new Map(hosts.flatMap((h, i) => {
+    const k = kept[i]?.value;
+    return k && k.source === source ? [[h, k.scopes] as const] : [];
+  }));
 }
 
 /** Each machine's list with only the errors the page shows (#5449): one machine's answer for a forge is enough, so the
@@ -210,37 +251,85 @@ export function settleLists(read: readonly HostList[]): HostList[] {
   });
 }
 
-/** What a list's first page is kept under in this device's copy (#4930): kind, state, sort and board, as the window's. */
-export function copyAsk(l: WorkListState): string {
+/** The forge's order for the list's sort (#6538): Priority is the daemon's priority order, else the last updated first;
+ * Newest and Cost sort the answer on the page. */
+export const forgeSort = (l: WorkListState): WorkQuery["sort"] => l.sort.peek() === "priority" ? "priority" : "updated";
+
+/** What an issue or PR list asks the forge, and Work's cache keeps the answer under (#6356): the label, the assignee, the
+ * words and the project narrow the kept answer on the page. */
+export function cacheQuery(l: WorkListState): WorkQuery {
   const { state, board } = l.filter.peek();
-  return [l.kind, forgeState(state), nodesSort(l), board].join("|");
+  return { kind: l.kind === "pr" ? "pr" : "issue", state: forgeState(state), board: board || undefined, sort: forgeSort(l) };
 }
 
-/** Draws the first page this device kept for what is asked, unless rows read for it are on screen (#4930). */
-export async function drawKept(l: WorkListState): Promise<boolean> {
+/** What a list's answer is kept under (#4930, #6356): the cache's query, or Releases' kind and sort. */
+export function copyAsk(l: WorkListState): string {
+  return fromForge(l.kind) ? queryKey(cacheQuery(l)) : [l.kind, nodesSort(l)].join("|");
+}
+
+/** The kept answer on screen: the machines asked now, in their order, each with its kept pages. */
+function shownAnswer(answer: WorkAnswer, hosts: readonly string[]): HostList[] {
+  return hosts.flatMap((host) => {
+    const a = answer.hosts.find((h) => h.host === host);
+    return a ? [{ host, items: a.items, cursor: a.cursor, errors: a.errors ?? [], total: a.total, forges: a.forges, pages: a.fresh }] : [];
+  });
+}
+
+/** Draws the answer this device kept for what is asked, with no call, unless rows read for it are on screen (#4930,
+ * #6356): each machine's kept pages, and the lineage figures. */
+export async function drawKept(store: Store, l: WorkListState): Promise<boolean> {
   const wanted = copyAsk(l);
   if (l.shownFor === wanted) return false;
-  const got = await keptWorkRead<KeptList>("list", wanted);
-  if (!got || copyAsk(l) !== wanted || l.shownFor === wanted) return false;
-  const kept = got.value;
-  l.readAt.value = got.at;
-  l.lineage.value = kept.lineage;
-  l.lineageCursor.value = kept.lineageCursor;
-  l.lists.value = kept.lists;
-  if (kept.boards && boards.peek().length === 0) boards.value = kept.boards;
+  const cache = workCache();
+  if (!cache) return false;
+  const hosts = listHosts(store, l.filter.peek().board).map((h) => h.id);
+  const [answer, figures] = await Promise.all([
+    fromForge(l.kind) ? cache.answer(cacheQuery(l), hosts) : Promise.resolve(undefined),
+    keptWorkRead<KeptLineage>("lineage", wanted),
+  ]);
+  if (copyAsk(l) !== wanted || l.shownFor === wanted) return false;
+  if (fromForge(l.kind) ? !answer : !figures) return false;
+  l.readAt.value = answer?.read ?? figures?.at;
+  l.lineage.value = figures?.value.lineage ?? [];
+  l.lineageCursor.value = figures?.value.lineageCursor;
+  l.lists.value = answer ? shownAnswer(answer, hosts) : [];
   l.shownFor = wanted;
   l.fromDevice.value = true;
-  // "Work list, second open" (#4930): from the read's start to the copy's rows, which the night's walk times.
+  // "Work list, second open" (#4930): from the read's start to the kept rows, which the night's walk times.
   mark("work-list-copy", "work-list-read");
   return true;
 }
 
-/** Read the list for what it is asked, unless it was read for that already. A list not read for it yet draws this
- * device's copy first (#4930), and the machines' answer replaces it. */
+/** Each machine's answer kept in Work's cache (#6356): one that answered replaces its page 1 and keeps its later pages; one
+ * that did not keeps its pages, with what failed. Then the list draws the kept answer, so a refresh keeps the pages read. */
+async function keepAnswered(query: WorkQuery, read: readonly HostList[], hosts: readonly string[],
+  before: readonly HostList[]): Promise<HostList[]> {
+  const cache = workCache();
+  if (!cache) return [...read];
+  await Promise.all(read.map((h) => {
+    const items = h.items.filter((i) => !h.stale?.includes(i.node.ref));
+    return items.length > 0 || h.errors.length === 0
+      ? cache.keepPage(query, h.host, 0, { items, ...h.cursor ? { cursor: h.cursor } : {}, ...h.total === undefined ? {} : { total: h.total },
+        ...h.forges ? { forges: h.forges } : {}, ...h.errors.length > 0 ? { errors: h.errors } : {}, ...h.readAt === undefined ? {} : { readAt: h.readAt } })
+      : cache.keepFailure(query, h.host, h.errors);
+  }));
+  const answer = await cache.answer(query, hosts);
+  if (!answer) return [...read];
+  // A forge that did not answer keeps, dimmed, the rows read before it (#4392), as without the cache.
+  return settleLists(shownAnswer(answer, hosts).map((h) => {
+    const got = read.find((r) => r.host === h.host);
+    return got ? carryStale({ ...h, errors: got.errors }, before.find((b) => b.host === h.host)) : h;
+  }));
+}
+
+/** Read the list for what it is asked, unless it was read for that already. A list not read for it yet draws the answer
+ * this device kept first (#4930, #6356), with no call, then asks the machines once; their answer replaces page 1. */
 export async function loadList(store: Store, l: WorkListState): Promise<void> {
   const mine = askKey(store, l);
   if (l.read === mine && l.lists.peek() !== null) return;
+  const fresh = l.read !== undefined && l.asked.peek() !== l.readAsked;
   l.read = mine;
+  l.readAsked = l.asked.peek();
   const current = () => l.read === mine;
   const wanted = copyAsk(l);
   mark("work-list-read");
@@ -248,69 +337,92 @@ export async function loadList(store: Store, l: WorkListState): Promise<void> {
   const sort = nodesSort(l);
   const { state, board } = l.filter.peek();
   const hosts = listHosts(store, board);
+  const query = cacheQuery(l);
   l.loading.value = true;
   l.problem.value = null;
   l.moreFailed.value = null;
   try {
-    await drawKept(l);
+    await drawKept(store, l);
     if (!current()) return;
     // The rows read before stay until the new ones come (#4392): a first read shows placeholders, a refresh the rows.
     const before = l.lists.peek() ?? [];
-    // Lineage first, so the rows come with their figures; a control plane that does not list nodes gives none.
-    const known = await readLineage(store, kind, sort).catch((e: unknown) => {
+    // The lineage figures and the rows side by side: the figures do not hold up the rows (#6358). A control plane that does
+    // not list nodes gives none.
+    const lineage = readLineage(store, kind, sort).catch((e: unknown) => {
       if (current() && !(e instanceof CallFailed && e.code === -32601) && !fromForge(kind)) l.problem.value = describe(e);
-      return { nodes: [] as ReportNode[], cursor: undefined };
+      return { nodes: [] as ReportNode[], cursor: undefined, failed: true };
     });
-    if (!current()) return;
     if (!fromForge(kind)) {
+      const known = await lineage;
+      if (!current()) return;
       l.lineage.value = known.nodes; l.lineageCursor.value = known.cursor; l.lists.value = [];
       l.shownFor = wanted; l.fromDevice.value = false; l.readAt.value = Date.now();
-      if (!l.problem.peek()) keepWork("list", wanted, { lists: [], lineage: known.nodes, lineageCursor: known.cursor } satisfies KeptList);
+      if (!l.problem.peek()) keepWork("lineage", wanted, { lineage: known.nodes, lineageCursor: known.cursor } satisfies KeptLineage);
       return;
     }
-    // Every machine's list in one call to the control plane (#5592), which waits for a slow machine at most 5 s; the first
-    // machine that answers for a forge is enough (#5449). The rows read before stay until it answers.
+    // The machines' lists in one call to the control plane (#5592), which waits for a slow machine at most 5 s; the first
+    // machine that answers for a forge is enough (#5449). The rows read before stay until it answers. Each repo is asked
+    // once (#6641): a machine that reads only what others read is left out, named in no page, unless one asked fails, when
+    // the machines it covered are asked too.
     const ids = hosts.map((h) => h.id);
-    const answered = ids.length === 0 ? [] : await store.link.call("forge/listAll", forgeListAllRequest(kind, forgeState(state), board)).then(
-      (all) => hostListsOf(all, ids, before),
-      (e: unknown) => ids.map((host) => carryStale({ host, items: [], errors: [{ forge: "", message: describe(e) }] }, before.find((b) => b.host === host))));
+    const source = `${ids.join(",")}|${forgeFolders(store, ids)}`;
+    const scopes = await keptScopes(kind, board, ids, source);
     if (!current()) return;
-    const read = settleLists(answered);
-    l.lineage.value = known.nodes;
-    l.lineageCursor.value = known.cursor;
+    const pick = oneEach(ids, scopes);
+    let readAt = Date.now();
+    const firstPages = async (asked: readonly string[]): Promise<HostList[]> => asked.length === 0 ? [] : store.link.call("forge/listAll",
+      forgeListAllRequest(kind, forgeState(state), board, asked.length === ids.length ? undefined : asked.map((host) => ({ host, cursor: "" })), query.sort, fresh)).then(
+      (all) => { readAt = listReadAt(all, readAt); return hostListsOf(all, asked, before); },
+      (e: unknown) => asked.map((host) => carryStale({ host, items: [], errors: [{ forge: "", message: describe(e) }] }, before.find((b) => b.host === host))));
+    let answered = await firstPages(pick.ask);
+    if (pick.covered.length > 0 && answered.some((h) => h.errors.length > 0)) answered = [...answered, ...await firstPages(pick.covered)];
+    if (!current()) return;
+    for (const h of answered) {
+      if (h.errors.length > 0) scopes.delete(h.host);
+      else if (h.scopes) {
+        scopes.set(h.host, h.scopes);
+        keepWork(scopesPage, scopesAsked(kind, board, h.host), { scopes: h.scopes, source } satisfies KeptScopes);
+      }
+    }
+    // A machine left out loses its kept answer, so its rows do not draw as old ones and its next pages are not asked.
+    const covered = new Set(oneEach(ids, scopes).covered);
+    await Promise.all([...covered].map((h) => workCache()?.forgetAnswer(query, h)));
+    const shown = ids.filter((h) => !covered.has(h));
+    answered = shown.flatMap((h) => answered.filter((a) => a.host === h));
+    const read = await keepAnswered(query, settleLists(answered), shown, before);
+    if (!current()) return;
     l.lists.value = read;
     l.shownFor = wanted;
     l.fromDevice.value = false;
     // Rows carried over a failed read keep the time of the read they came from: the oldest on screen.
     const at = l.readAt.peek();
-    if (!read.some((h) => h.stale?.length) || at === undefined) l.readAt.value = Date.now();
-    // Only a read some forge answered is kept, without what was carried from the last one: a failed read would draw
-    // an empty list next time.
-    if (read.some((h) => h.errors.length === 0)) {
-      keepWork("list", wanted, {
-        lists: read.map(({ stale, ...h }) => ({ ...h, items: h.items.filter((i) => !stale?.includes(i.node.ref)) })),
-        lineage: known.nodes, lineageCursor: known.cursor, boards: boards.peek(),
-      } satisfies KeptList);
-    }
+    if (!read.some((h) => h.stale?.length || h.errors.length) || at === undefined) l.readAt.value = readAt;
+    const known = await lineage;
+    if (!current()) return;
+    l.lineage.value = known.nodes;
+    l.lineageCursor.value = known.cursor;
+    if (!("failed" in known)) keepWork("lineage", wanted, { lineage: known.nodes, lineageCursor: known.cursor } satisfies KeptLineage);
   } finally {
     if (current()) l.loading.value = false;
   }
 }
 
-/** The next page (Load more, or the end of the list in view) of each machine's list, or of lineage's. */
+/** The next page (Load more, or the end of the list in view) of each machine's list, or of lineage's. A machine's next page
+ * is kept after its kept pages (#6356), so the next open draws it too (#6358, finding 2). */
 export async function loadMore(store: Store, l: WorkListState): Promise<void> {
-  // A page after the copy's is read once the machines answered (#4930): the copy's cursors may be old.
+  // A page after the kept ones is read once the machines answered (#4930): the kept cursors may be old.
   if (l.more.peek() || l.fromDevice.peek()) return;
   l.more.value = true;
   l.moreFailed.value = null;
   try {
     if (fromForge(l.kind)) {
       const { state, board } = l.filter.peek();
+      const query = cacheQuery(l);
       const had = l.lists.peek() ?? [];
       const pages = had.flatMap((h) => h.cursor ? [{ host: h.host, cursor: h.cursor }] : []);
       // Each machine's next page in one call to the control plane (#5592). A forge or a machine that could not read its next
       // page says so: the rows and the cursor stay, so Try again reads it again.
-      const all = await store.link.call("forge/listAll", forgeListAllRequest(l.kind, forgeState(state), board, pages));
+      const all = await store.link.call("forge/listAll", forgeListAllRequest(l.kind, forgeState(state), board, pages, query.sort));
       const got = new Map(all.lists.map((m) => [m.machine as string, m.list]));
       const failed: string[] = all.unreached.length > 0 ? [`${all.unreached.map((u) => u.machineName).join(", ")}: ${notAnswered}`] : [];
       l.lists.value = had.map((h) => {
@@ -320,7 +432,9 @@ export async function loadMore(store: Store, l: WorkListState): Promise<void> {
           failed.push(...next.errors!.map((e) => e.message));
           return h;
         }
-        return { ...h, items: [...h.items, ...next.items], cursor: next.cursor, errors: next.errors ?? [], forges: joinForges(h.forges, next.forges) };
+        if (h.pages !== undefined) void workCache()?.keepPage(query, h.host, h.pages, next);
+        return { ...h, items: [...h.items, ...next.items], cursor: next.cursor, errors: next.errors ?? [], forges: joinForges(h.forges, next.forges),
+          pages: h.pages === undefined ? undefined : h.pages + 1 };
       });
       if (failed.length > 0) l.moreFailed.value = failed.join("; ");
     } else if (l.lineageCursor.peek()) {
@@ -350,9 +464,12 @@ export async function setRowPlan(store: Store, l: WorkListState, row: WorkRow,
   to: { priority: ForgeItem["priority"] | undefined } | { onHold: boolean }, failed: (why: string) => void): Promise<void> {
   const host = row.host;
   if (!host) return;
+  // The row and Work's cache at once (#6354, #6356), so every list and the item's page show it; the forge's next copy
+  // replaces it once the write ends.
   const change = (edit: (i: ForgeItem) => ForgeItem) => {
     l.lists.value = (l.lists.peek() ?? []).map((h) => h.host !== host ? h
       : { ...h, items: h.items.map((i) => i.node.ref === row.node.ref ? edit(i) : i) });
+    void workCache()?.edit(row.node, edit);
   };
   const withPriority = (i: ForgeItem, p: ForgeItem["priority"] | undefined): ForgeItem => {
     const { priority: _, ...rest } = i;
@@ -377,6 +494,8 @@ export async function setRowPlan(store: Store, l: WorkListState, row: WorkRow,
     if ("priority" in to) change((i) => withPriority(i, row.priority));
     else change((i) => withHold(i, row.onHold === true));
     failed(describe(e));
+  } finally {
+    workCache()?.settle(row.node);
   }
 }
 

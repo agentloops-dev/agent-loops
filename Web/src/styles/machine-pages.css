@@ -55,8 +55,47 @@
 .provider-card .chip { font-weight: normal; }
 .workspace-row .dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--paper-rule); }
 .workspace-row .dot.online { background: var(--tint-vouched); }
+/* New Droplet and a make's steps on its row (#6577). */
+.provider-card .new-droplet .row-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.provider-card .new-droplet p { margin: 4px 0 0; }
+.provider-card .new-droplet-ready { margin-top: 6px; }
+.provider-card .new-droplet-ready svg { color: var(--tint-vouched); }
+.provider-card .provider-setup { display: block; padding-left: 24px; }
 .workspace-row .dot.attention { background: var(--tint-attention); }
 .provider-sheet { max-width: 560px; }
+/* Add a Provider (#6069): step 1, a grouped list with a line on each row; step 2, a form in sections. */
+.provider-group .section-head { margin: 12px 0 4px; text-transform: uppercase; color: var(--paper-secondary); font-size: 0.6875rem; }
+.provider-choices { list-style: none; margin: 0; padding: 0; border: 1px solid var(--paper-rule); border-radius: 8px; background: var(--paper-raised); }
+.provider-choices li + li { border-top: 1px solid var(--paper-rule); }
+.provider-sheet .provider-choice { display: flex; align-items: center; gap: 12px; width: 100%; padding: 9px 12px; border: 0; border-radius: 0; background: none;
+  font: inherit; color: inherit; text-align: left; cursor: pointer; }
+.provider-choice:hover:not(:disabled), .provider-choice:focus-visible { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.provider-choice:disabled { cursor: default; }
+.provider-choice:disabled .grow { opacity: 0.6; }
+.provider-choice .grow { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.provider-choices li:first-child .provider-choice { border-radius: 8px 8px 0 0; }
+.provider-choices li:last-child .provider-choice { border-radius: 0 0 8px 8px; }
+.provider-icon { flex: none; width: 20px; height: 20px; color: var(--paper-secondary); }
+.provider-head { display: flex; align-items: flex-start; gap: 10px; margin: 4px 0 4px; }
+.provider-head .grow p { margin: 0; }
+.provider-form fieldset { display: flex; flex-direction: column; gap: 6px; margin: 12px 0 0; padding: 0; border: 0; }
+.provider-form legend { margin: 0 0 2px; padding: 0; font-size: 0.6875rem; font-weight: 600; text-transform: uppercase; color: var(--paper-secondary); }
+.provider-form small { font-size: 0.75rem; }
+.provider-form .field-help { margin-top: -4px; }
+.provider-foot { margin-top: 10px; font-size: 0.75rem; }
+.provider-sheet .sheet-actions .leading { margin-right: auto; }
+.provider-sheet .sheet-actions .spinner { width: 10px; height: 10px; }
+/* The guided DigitalOcean Connect (#6074, W2 and W2b). */
+.do-step { margin: 14px 0 6px; }
+.do-step p { margin: 6px 0; }
+.do-connect { display: flex; justify-content: center; align-items: center; gap: 10px; }
+.do-connect .button { border: 1px solid var(--paper-edge); border-radius: var(--radius-control); background: var(--paper-raised); padding: 4px 10px; color: inherit; text-decoration: none; }
+.do-step .spinner { width: 10px; height: 10px; }
+.provider-sheet fieldset { margin: 12px 0 0; padding: 0; border: 0; }
+.do-token { margin: 10px 0; }
+.do-token label { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
+.do-token small { font-size: 0.75rem; }
+.do-token .do-connect { justify-content: space-between; margin-top: 8px; }
 /* Move to Another Machine… and Run It Here Again… (#4255), as the window's sheets. */
 .plane-move-row .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 6px; background: var(--tint-attention); }
 .plane-move-sheet { max-width: 560px; }
@@ -173,3 +212,7 @@
 .pool-projects { border: 0; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 2px; font-size: 0.8125rem; }
 .connect-sheet .token-form .start-from label, .connect-sheet .token-form .pool-projects label { flex-direction: row; align-items: center; gap: 6px; }
 .provider-sheet fieldset.token-form { border: 0; padding: 0; margin: 0 0 8px; min-width: 0; }
+/* A provider's card (#6074, W6): its name and line take the row, and its buttons go under them, so
+   an OAuth card's account line and Reconnect… do not squeeze the line into a column. */
+.setup-card.provider-card > .connection { flex-wrap: wrap; }
+.setup-card.provider-card > .connection > .grow { flex: 1 1 100%; }

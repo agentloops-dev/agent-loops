@@ -19,7 +19,7 @@ func TestFirstStartMovesEveryOldSetting(t *testing.T) {
 
 	d, c := start(t, t.TempDir())
 	d.SettingsDir = t.TempDir()
-	os.MkdirAll(d.SettingsDir, 0o700)
+	must(t, os.MkdirAll(d.SettingsDir, 0o700))
 
 	mustWrite(t, filepath.Join(d.SettingsDir, "limits.json"), `{"daily":{"amount":40,"currency":"USD"}}`)
 	mustWrite(t, filepath.Join(d.SettingsDir, "workflow-limit.json"), `{"total":7}`)
@@ -27,7 +27,7 @@ func TestFirstStartMovesEveryOldSetting(t *testing.T) {
 	mustWrite(t, filepath.Join(d.SettingsDir, "runtime-environment.json"), `{"names":["FOO"],"runtimes":{"claude":["BAR"]}}`)
 
 	var state wire.YourPolicyState
-	json.Unmarshal(c.call(t, 1, "policy/yours", nil), &state)
+	mustUnmarshal(t, c.call(t, 1, "policy/yours", nil), &state)
 	r := state.Policy.Rules
 
 	if r.Budgets == nil || r.Budgets.Daily == nil || r.Budgets.Daily.Amount != 40 {
@@ -61,7 +61,7 @@ func TestFirstStartMovesEveryOldSetting(t *testing.T) {
 		t.Fatal(err)
 	}
 	var fields map[string]json.RawMessage
-	json.Unmarshal(b, &fields)
+	mustUnmarshal(t, b, &fields)
 	for _, key := range []string{noticeBurstKey, noticeCooldownKey, agentsMayArchiveMyChatsKey} {
 		if _, ok := fields[key]; ok {
 			t.Fatalf("display.json still has %s: %s", key, b)
@@ -81,7 +81,7 @@ func TestFirstStartMoveOnlyWhenTheOldFileExists(t *testing.T) {
 	d.SettingsDir = t.TempDir()
 
 	var state wire.YourPolicyState
-	json.Unmarshal(c.call(t, 1, "policy/yours", nil), &state)
+	mustUnmarshal(t, c.call(t, 1, "policy/yours", nil), &state)
 	if state.Policy.Rules.Workflows != nil {
 		t.Fatalf("no file, but workflows moved: %+v", state.Policy.Rules.Workflows)
 	}
@@ -103,18 +103,18 @@ func TestFirstStartMoveRunsOnce(t *testing.T) {
 
 	d, c := start(t, t.TempDir())
 	d.SettingsDir = t.TempDir()
-	os.MkdirAll(d.SettingsDir, 0o700)
+	must(t, os.MkdirAll(d.SettingsDir, 0o700))
 	mustWrite(t, filepath.Join(d.SettingsDir, "limits.json"), `{"daily":{"amount":40,"currency":"USD"}}`)
 
 	var first wire.YourPolicyState
-	json.Unmarshal(c.call(t, 1, "policy/yours", nil), &first)
+	mustUnmarshal(t, c.call(t, 1, "policy/yours", nil), &first)
 	if first.Policy.Revision != 1 {
 		t.Fatalf("%+v", first)
 	}
 
 	// The person changes it.
 	var set wire.YourPolicy
-	json.Unmarshal(c.call(t, 2, "policy/setYours", wire.SetYourPolicyRequest{Rules: wire.PolicyRules{
+	mustUnmarshal(t, c.call(t, 2, "policy/setYours", wire.SetYourPolicyRequest{Rules: wire.PolicyRules{
 		Budgets: &wire.PolicyRuleBudgets{Daily: &wire.Cost{Amount: 60, Currency: "USD"}},
 	}, Revision: 1}), &set)
 	if set.Revision != 2 || set.Rules.Budgets.Daily.Amount != 60 {
@@ -126,7 +126,7 @@ func TestFirstStartMoveRunsOnce(t *testing.T) {
 	mustWrite(t, filepath.Join(d.SettingsDir, "limits.json"), `{"daily":{"amount":5,"currency":"USD"}}`)
 	d.yoursRead = false // force a re-read, as a fresh process would do
 	var again wire.YourPolicyState
-	json.Unmarshal(c.call(t, 3, "policy/yours", nil), &again)
+	mustUnmarshal(t, c.call(t, 3, "policy/yours", nil), &again)
 	if again.Policy.Revision != 2 || again.Policy.Rules.Budgets.Daily.Amount != 60 {
 		t.Fatalf("the move ran again and clobbered the person's own change: %+v", again)
 	}
@@ -161,7 +161,7 @@ func TestAnUntrustedLayerIsKeptAsideNotWrittenOver(t *testing.T) {
 	d.SettingsDir = t.TempDir()
 
 	var set wire.YourPolicy
-	json.Unmarshal(c.call(t, 1, "policy/setYours", wire.SetYourPolicyRequest{Rules: wire.PolicyRules{
+	mustUnmarshal(t, c.call(t, 1, "policy/setYours", wire.SetYourPolicyRequest{Rules: wire.PolicyRules{
 		Budgets: &wire.PolicyRuleBudgets{Daily: &wire.Cost{Amount: 40, Currency: "USD"}},
 	}, Revision: 1}), &set)
 	if set.Revision != 2 {
@@ -194,7 +194,7 @@ func TestAnUntrustedLayerIsKeptAsideNotWrittenOver(t *testing.T) {
 	}
 	// The new layer is this Mac's own and is trusted again.
 	var state wire.YourPolicyState
-	json.Unmarshal(c.call(t, 3, "policy/yours", nil), &state)
+	mustUnmarshal(t, c.call(t, 3, "policy/yours", nil), &state)
 	if b := state.Policy.Rules.Budgets; b == nil || b.Daily == nil || b.Daily.Amount != 5 {
 		t.Fatalf("%+v", state.Policy.Rules)
 	}
@@ -226,7 +226,7 @@ func TestAnUntrustedLayerIsShownAndSignedAgain(t *testing.T) {
 	d, c := untrustedLayer(t)
 
 	var state wire.YourPolicyState
-	json.Unmarshal(c.call(t, 2, "policy/yours", nil), &state)
+	mustUnmarshal(t, c.call(t, 2, "policy/yours", nil), &state)
 	u := state.Untrusted
 	if u == nil || u.File != yourPolicyFile || u.Revision != 2 || len(u.Lines) != 1 || u.Lines[0].Title != "Per day" {
 		t.Fatalf("untrusted: %+v", u)
@@ -240,7 +240,7 @@ func TestAnUntrustedLayerIsShownAndSignedAgain(t *testing.T) {
 	}
 
 	state = wire.YourPolicyState{}
-	json.Unmarshal(c.call(t, 4, "policy/settleUntrustedYours", wire.SettleUntrustedYourPolicyRequest{File: u.File, Revision: 0, Sign: true}), &state)
+	mustUnmarshal(t, c.call(t, 4, "policy/settleUntrustedYours", wire.SettleUntrustedYourPolicyRequest{File: u.File, Revision: 0, Sign: true}), &state)
 	if b := state.Policy.Rules.Budgets; b == nil || b.Daily == nil || b.Daily.Amount != 40 || state.Policy.Revision != 3 {
 		t.Fatalf("signed: %+v", state.Policy)
 	}
@@ -254,7 +254,7 @@ func TestAnUntrustedLayerIsShownAndSignedAgain(t *testing.T) {
 	// Trusted after a restart too.
 	d.yoursRead = false
 	state = wire.YourPolicyState{}
-	json.Unmarshal(c.call(t, 5, "policy/yours", nil), &state)
+	mustUnmarshal(t, c.call(t, 5, "policy/yours", nil), &state)
 	if b := state.Policy.Rules.Budgets; b == nil || b.Daily == nil || b.Daily.Amount != 40 || state.Untrusted != nil {
 		t.Fatalf("after a restart: %+v %+v", state.Policy, state.Untrusted)
 	}
@@ -268,10 +268,10 @@ func TestAnUntrustedLayerSetAsideChangesNothing(t *testing.T) {
 	d, c := untrustedLayer(t)
 
 	var state wire.YourPolicyState
-	json.Unmarshal(c.call(t, 2, "policy/yours", nil), &state)
+	mustUnmarshal(t, c.call(t, 2, "policy/yours", nil), &state)
 	file := state.Untrusted.File
 	state = wire.YourPolicyState{}
-	json.Unmarshal(c.call(t, 3, "policy/settleUntrustedYours", wire.SettleUntrustedYourPolicyRequest{File: file, Revision: 0, Sign: false}), &state)
+	mustUnmarshal(t, c.call(t, 3, "policy/settleUntrustedYours", wire.SettleUntrustedYourPolicyRequest{File: file, Revision: 0, Sign: false}), &state)
 	if state.Untrusted != nil || state.Policy.Rules.Budgets != nil {
 		t.Fatalf("%+v %+v", state.Policy, state.Untrusted)
 	}

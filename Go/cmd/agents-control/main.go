@@ -67,7 +67,8 @@
 //	AGENTS_CONTROL_LOG_FORMAT, AGENTS_CONTROL_LOG_LEVEL  as --log-format and --log-level
 //	AGENTS_CONTROL_LOG          a file that gets a copy of every line, rolled at 4 MB, while
 //	                            they still go to standard error (#4747); --log takes them instead
-//	AGENTS_CONTROL_METRICS      as --metrics: host:port, such as 127.0.0.1:9791; off when unset
+//	AGENTS_CONTROL_METRICS      as --metrics: host:port, such as 127.0.0.1:9791; off when unset.
+//	                            It also serves /debug/pprof/heap and /debug/pprof/goroutine (#6583)
 //	AGENTS_CONTROL_METRICS_TOKEN  the bearer token a scraper sends; needed on any address but
 //	                            loopback. AGENTS_CONTROL_METRICS_TOKEN_FILE reads it from a file
 //	OTEL_EXPORTER_OTLP_ENDPOINT  the report figures to an OTLP/HTTP collector (#2019), off when

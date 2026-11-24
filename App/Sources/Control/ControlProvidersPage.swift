@@ -11,8 +11,6 @@ struct ControlProvidersPage: View {
     @State private var addingHost: ControlAddServerSheet.Prefill?
     /// New Machine… (US5, L9; was New Machine…).
     @State private var making: DaemonAPI.ProviderSummary?
-    /// Write the Map Again… (#858 US4, L10f).
-    @State private var rewriting: DaemonAPI.ProviderSummary?
     /// Edit… (#1932): a preset's name, and its token or keys again.
     @State private var editing: DaemonAPI.ProviderSummary?
     /// Start a Machine from a Repository… (#1809).
@@ -21,6 +19,10 @@ struct ControlProvidersPage: View {
     @State private var trusting: LinkTrust?
     /// Delete… on a failed make's row (#6078).
     @State private var deletingFailed: FailedRow?
+    /// The machines New Droplet made from this page, until each is ready (#6577, W5).
+    @State private var madeByDroplet: Set<String> = []
+    /// Reconnect… on an OAuth provider's card (#6074, W6).
+    @State private var reconnecting: DaemonAPI.ProviderSummary?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -67,8 +69,11 @@ struct ControlProvidersPage: View {
                                        sentence: ControlSettingsModel.refusal)
                 .paperSheet()
         }
-        .sheet(item: $rewriting) { provider in AddProviderSheet(control: control, editing: provider).paperSheet() }
         .sheet(item: $editing) { provider in EditProviderSheet(control: control, provider: provider).paperSheet() }
+        .sheet(item: $reconnecting) { provider in
+            DigitalOceanConnect(control: control, reconnecting: provider, cancel: { reconnecting = nil }) { _ in reconnecting = nil }
+                .padding(28).frame(width: 560).paperSheet()
+        }
         .sheet(item: $addingHost) { prefill in ControlAddServerSheet(control: control, prefill: prefill).paperSheet() }
         // The same sheet as Settings ▸ Machines' Add a Machine…, at this provider (#2131).
         .sheet(item: $making) { provider in
@@ -79,8 +84,9 @@ struct ControlProvidersPage: View {
                             titleVisibility: .visible, presenting: removing) { provider in
             Button("Remove", role: .destructive) { Task { await control.removeProvider(provider.id) } }
             Button("Cancel", role: .cancel) {}
-        } message: { _ in
-            Text("Its machines stay as they are, unlinked: nothing here can start or stop them any more.")
+        } message: { provider in
+            Text(DigitalOceanConnectWords.isOAuth(provider) ? DigitalOceanConnectWords.removeNote
+                 : "Its machines stay as they are, unlinked: nothing here can start or stop them any more.")
         }
         .confirmationDialog(deletingFailed.map { "Delete \($0.name)?" } ?? "",
                             isPresented: Binding(get: { deletingFailed != nil }, set: { if !$0 { deletingFailed = nil } }),
@@ -140,10 +146,15 @@ struct ControlProvidersPage: View {
         ControlCard {
             ControlRow(dot: .none, title: provider.name, chip: kindChip(provider), detail: providerLine(provider)) {
                 HStack(spacing: 8) {
-                if provider.capabilities.contains("create") {
+                // A DigitalOcean card has New Droplet and Change… below in its place (#6577).
+                if provider.capabilities.contains("create"), !OneClickMake.offers(provider) {
                     Button("New Machine…") { making = provider }.buttonStyle(.paper)
                         .disabled(!provider.usable)
                         .help(provider.usable ? "" : GroupWords.mayNotUse(provider, groups: control.groups))
+                }
+                // W6 (#6074): connect again with the browser, on the machine that keeps it.
+                if control.isAdmin, DigitalOceanConnectWords.isOAuth(provider) {
+                    Button(DigitalOceanConnectWords.reconnect) { reconnecting = provider }.buttonStyle(.paper)
                 }
                 Menu {
                     // Who may start machines from it (#1761): an admin gives it to a group.
@@ -163,12 +174,6 @@ struct ControlProvidersPage: View {
                         Button("Make Default") { Task { await control.makeDefault(provider.id) } }
                     }
                     Button("List Again") { Task { await control.listMachinesAgain(provider.id) } }
-                    // An agent writes its map or commands again, from the ones it has (#858 US4).
-                    if control.isAdmin, provider.kind == "commands" ? provider.preset == nil : provider.mapped {
-                        Button(provider.kind == "commands" ? "Write the Commands Again…" : "Write the Map Again…") {
-                            rewriting = provider
-                        }
-                    }
                     if control.isAdmin {
                         Divider()
                         Button("Remove…") { removing = provider }
@@ -183,10 +188,14 @@ struct ControlProvidersPage: View {
                 }
                 .fixedSize()
             }
+            if OneClickMake.offers(provider) {
+                Divider()
+                NewDropletRow(control: control, provider: provider, change: { making = provider }, made: $madeByDroplet)
+            }
             ForEach(provider.workspaces) { workspace in
                 Divider()
                 ControlRow(dot: dot(workspace), title: workspace.name, detail: workspaceLine(workspace)) {
-                    if control.isJoining(provider.id, workspace) {
+                    if control.isJoining(provider.id, workspace) || (workspace.host == nil && workspace.joining == true) {
                         // Made here, installing on its first boot (US5).
                         HStack(spacing: 6) {
                             ProgressView().controlSize(.small)
@@ -216,6 +225,10 @@ struct ControlProvidersPage: View {
                         .fixedSize()
                     }
                 }
+                // A make's steps on its row, from the press until it joins (#6577, W4).
+                if workspace.host == nil, let setup = workspace.setup {
+                    ProviderSetupSteps(setup: setup)
+                }
             }
         }
     }
@@ -243,7 +256,12 @@ struct ControlProvidersPage: View {
 
     /// Its kind, after "default" on the one New Machine uses (#3979).
     private func kindChip(_ provider: DaemonAPI.ProviderSummary) -> String {
-        provider.default == true ? "default · " + kindWords(provider) : kindWords(provider)
+        // W6 (#6074): an OAuth connection says whether it still works.
+        if let oauth = provider.oauth, DigitalOceanConnectWords.isOAuth(provider) {
+            let words = oauth.disconnected ? DigitalOceanConnectWords.disconnectedChip : DigitalOceanConnectWords.connectedChip
+            return provider.default == true ? "default · " + words : words
+        }
+        return provider.default == true ? "default · " + kindWords(provider) : kindWords(provider)
     }
 
     private func kindWords(_ provider: DaemonAPI.ProviderSummary) -> String {
@@ -251,16 +269,16 @@ struct ControlProvidersPage: View {
         if let preset = provider.preset {
             return "command provider · \(preset) · \(AddProviderSheet.Kind.byAPI(preset) ? "API" : "CLI")"
         }
-        switch provider.kind {
-        case "commands": return "command provider"
-        case "http": return provider.mapped ? "address · mapped" : "address"
-        default: return provider.mapped ? "command · mapped" : "command"
-        }
+        return "command provider"
     }
 
     private func providerLine(_ provider: DaemonAPI.ProviderSummary) -> String {
         var parts: [String] = []
-        if let problem = provider.problem, !provider.current || provider.listedAt == nil {
+        if let oauth = provider.oauth, DigitalOceanConnectWords.isOAuth(provider) {
+            if oauth.disconnected { parts.append(DigitalOceanConnectWords.disconnected) }
+            if let account = DigitalOceanConnectWords.accountLine(oauth) { parts.append(account) }
+        }
+        if let problem = provider.problem, !provider.current || provider.listedAt == nil, provider.oauth?.disconnected != true {
             parts.append("Couldn’t list: \(problem)")
         }
         if let at = provider.listedAt {
@@ -277,9 +295,8 @@ struct ControlProvidersPage: View {
         } else if control.isAdmin, provider.preset != nil {
             parts.append(ProviderCarrier.notCarried)
         }
-        // A map or commands written for it that give no ssh (#975); a preset's own way in is its own.
-        let written = provider.kind == "commands" ? provider.preset == nil : provider.mapped
-        if written, !provider.workspaces.isEmpty, provider.workspaces.allSatisfy({ $0.ssh == nil }) {
+        // Commands written for it that give no ssh (#975); a preset's own way in is its own.
+        if provider.preset == nil, !provider.workspaces.isEmpty, provider.workspaces.allSatisfy({ $0.ssh == nil }) {
             parts.append("⚠ No ssh destination: Add as Machine… and starting agentsd over ssh won’t work for these machines. Add one by hand: `user@{field}`.")
         }
         return parts.joined(separator: " · ")
@@ -310,22 +327,15 @@ struct ControlProvidersPage: View {
 
 /// Add a Provider (#691, layouts.md L4, as Alex chose it): pick what kind first, then a short
 /// form for just that kind, and the machine that carries it (#3496). A preset needs its CLI
-/// signed in there.
-///
-/// The MCP server and Your commands forms have Write It for Me (#858, L10): an agent on the
-/// control plane's host reads the server's tools or the CLI's help and writes the tool map or
-/// the commands into the form, for the person to read and Add. With `editing`, it is the
-/// provider card's Write Again… (US4): the same, from the map or commands it has, and Save.
+/// signed in there. The MCP server kind and Write It for Me were removed (#6623).
 struct AddProviderSheet: View {
     @Environment(\.dismiss) private var dismiss
-    @Environment(AppModel.self) private var model
     let control: ControlSettingsModel
-    var editing: DaemonAPI.ProviderSummary?
     /// Inside Add a Machine (#2131): the provider added, to go on with, in place of closing.
     var onAdded: ((ProviderID?) -> Void)?
 
     enum Kind: String, CaseIterable, Identifiable {
-        case docker, digitalOcean, codespaces, coder, workstations, compute, aws, commands, mcp
+        case docker, digitalOcean, codespaces, coder, workstations, compute, aws, commands
         var id: String { rawValue }
 
         var title: String {
@@ -338,7 +348,6 @@ struct AddProviderSheet: View {
             case .compute: "Google Compute Engine VMs"
             case .aws: "AWS EC2 Instances"
             case .commands: "Your commands"
-            case .mcp: "MCP server"
             }
         }
 
@@ -352,38 +361,66 @@ struct AddProviderSheet: View {
             case .compute: "cpu"
             case .aws: "server.rack"
             case .commands: "apple.terminal"
-            case .mcp: "point.3.connected.trianglepath.dotted"
             }
         }
 
-        /// What it needs on the machine that carries it.
-        var needs: String? {
+        /// The list's groups, in order: a person looks first for the place their machines are
+        /// (#6069). The same words as the web page's providerGroups.
+        enum Group: String, CaseIterable, Identifiable {
+            case cloud = "Cloud"
+            case development = "Development environments"
+            case yourMachine = "On a machine you have"
+            case custom = "Custom"
+            var id: String { rawValue }
+
+            var kinds: [Kind] {
+                switch self {
+                case .cloud: [.digitalOcean, .compute, .aws]
+                case .development: [.codespaces, .coder, .workstations]
+                case .yourMachine: [.docker]
+                case .custom: [.commands]
+                }
+            }
+        }
+
+        /// The row's one line (#6069), as the web page's choiceDescription.
+        var summary: String {
+            switch self {
+            case .digitalOcean: DigitalOceanConnectWords.rowSummary
+            case .compute: "VMs with a label, in one zone."
+            case .aws: "Instances with a tag, in one region."
+            case .codespaces: "Your codespaces, or the codespaces of one repository."
+            case .coder: "Workspaces on your Coder deployment."
+            case .workstations: "Workstations in one cluster."
+            case .docker: "Containers on a machine that has docker."
+            case .commands: "Your own commands to list, start and stop machines."
+            }
+        }
+
+        /// How to set up: its part of the docs, as the web page's choiceDocs.
+        var docs: URL {
+            let page = switch self {
+            case .digitalOcean: "set-up-a-cloud-machine-provider/#digitalocean-droplets"
+            case .compute: "set-up-a-cloud-machine-provider/#google-compute-engine-vms"
+            case .aws: "set-up-a-cloud-machine-provider/#aws-ec2-instances"
+            case .codespaces: "set-up-a-cloud-machine-provider/#github-codespaces"
+            case .coder: "set-up-a-cloud-machine-provider/#coder-machines"
+            case .workstations: "set-up-a-cloud-machine-provider/#google-cloud-workstations"
+            case .docker, .commands: "start-machines-from-agents/#add-a-provider"
+            }
+            return URL(string: "how-to/\(page)", relativeTo: HelpSite.url)!.absoluteURL
+        }
+
+        /// What has no field of its own, through its CLI: one short line under the header (#6069).
+        var needs: String {
             switch self {
             case .docker: "Needs docker on the machine that carries it."
             case .digitalOcean: "Needs doctl, signed in, on the machine that carries it."
             case .codespaces: "Needs gh, signed in, on the machine that carries it."
             case .coder: "Needs coder, signed in, and `coder config-ssh` run, on the machine that carries it."
-            case .workstations: "Needs gcloud, signed in, on the machine that carries it, and a host in its ssh config that reaches the workstation’s port 22 through `gcloud workstations start-tcp-tunnel`."
-            case .compute:
-                "Needs a service account’s JSON key, with the smallest role: compute.instances.list, start and stop, and for New Machine… compute.instances.create, delete, setMetadata and setLabels, compute.disks.create, and compute.subnetworks.use and useExternalIp. ssh goes to each VM’s external address, so the network must let in port 22, and a static address keeps it the same after a stop (#1691). Nothing to install."
-            case .aws:
-                "Needs an IAM user’s access key, with the smallest policy: ec2:DescribeInstances on all resources, and ec2:StartInstances and ec2:StopInstances only on instances that have the tag (the condition aws:ResourceTag/‹tag› not Null). Nothing to install."
+            case .workstations: "Needs gcloud, signed in, on the machine that carries it."
+            case .compute, .aws: "Nothing to install."
             case .commands: "The commands run on the machine that carries it, as you."
-            case .mcp: "An MCP server that offers workspaces_list, workspace_start and workspace_stop, or a tool map onto its own tools."
-            }
-        }
-
-        /// The kind a preset's name stands for (#858 US2 AS6).
-        static func ofPreset(_ preset: String) -> Kind? {
-            switch preset {
-            case "docker": .docker
-            case "doctl", "digitalocean-api": .digitalOcean
-            case "codespaces", "codespaces-api": .codespaces
-            case "coder", "coder-api": .coder
-            case "gcloud-workstations": .workstations
-            case "gcp-compute-api": .compute
-            case "aws-ec2-api": .aws
-            default: nil
             }
         }
 
@@ -403,15 +440,22 @@ struct AddProviderSheet: View {
             }
         }
 
-        /// What the API form needs: a token with the smallest scope that does the work.
+        /// Through its API, what has no field of its own (#6069), as the web page's kindNote.
         var apiNeeds: String? {
             switch self {
-            case .digitalOcean:
-                "Needs a DigitalOcean API token with custom scopes: droplet read and update, and droplet create and delete to make and delete droplets. Nothing to install."
-            case .codespaces:
-                "Needs a GitHub token: fine-grained, with Codespaces lifecycle admin (read and write), or classic, with the codespace scope. ssh still goes through gh: run `gh codespace ssh --config >> ~/.ssh/config` on the machine that carries it."
-            case .coder:
-                "Needs your deployment’s address and a session token (`coder tokens create`). ssh still goes through coder: run `coder config-ssh` on the machine that carries it."
+            case .digitalOcean: "Nothing to install."
+            case .codespaces: "ssh still goes through gh on the machine that carries it."
+            case .coder: "ssh still goes through coder on the machine that carries it."
+            default: nil
+            }
+        }
+
+        /// The help under the API token's field: the smallest scope that does the work.
+        var tokenHelp: String? {
+            switch self {
+            case .digitalOcean: "Custom scopes: droplet read and update, and droplet create and delete to make machines."
+            case .codespaces: "Fine-grained, with Codespaces lifecycle admin (read and write), or classic, with the codespace scope."
+            case .coder: "Make one with `coder tokens create`."
             default: nil
             }
         }
@@ -441,35 +485,17 @@ struct AddProviderSheet: View {
     @State private var serviceAccount = ""
     @State private var choosingKey = false
     // Your commands
-    @State private var cli = ""
     @State private var workspace = ""
     @State private var start = ""
     @State private var stop = ""
     @State private var status = ""
-    /// A config the fields can't hold (`list` and `columns`), as JSON (#858 L10e).
-    @State private var commandsConfig = ""
-    @State private var byConfig = false
-    // MCP server
-    @State private var byAddress = false
-    @State private var command = ""
-    @State private var url = ""
-    @State private var map = ""
     // Secrets: entered once, never shown again.
     @State private var secrets: [Secret] = []
+    @State private var showsSecrets = false
     @State private var working = false
     @State private var problem: String?
     /// The machine that carries it (#3496).
     @State private var carrier: MachineRef?
-    // Write It for Me (#858)
-    @State private var runtimes: DaemonAPI.ProviderRuntimes?
-    @State private var runtime: String?
-    @State private var draftID: UUID?
-    @State private var startingDraft = false
-    /// What the agent wrote, to tell when the person has changed it.
-    @State private var written: JSONValue?
-    /// Said with no agent: a contract server, a shipped map, a preset.
-    @State private var answered: String?
-    @State private var presetKind: Kind?
 
     struct Secret: Identifiable {
         let id = UUID()
@@ -480,7 +506,12 @@ struct AddProviderSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text(title).appText(.title).fontWeight(.semibold)
-            if let kind {
+            if kind == .digitalOcean {
+                // Guided (#6074): Connect with OAuth, or a token behind a disclosure.
+                DigitalOceanConnect(control: control, back: { kind = nil }, cancel: { dismiss() }) { added in
+                    if let onAdded { onAdded(added) } else { dismiss() }
+                }
+            } else if let kind {
                 form(kind)
             } else {
                 grid
@@ -488,48 +519,88 @@ struct AddProviderSheet: View {
         }
         .padding(28)
         .frame(width: 560)
-        .task {
-            if let editing { prepareEdit(editing) }
-            carrier = ProviderCarrier.start(editing, choices: control.carriers)
-            runtimes = await control.writerRuntimes()
-            runtime = runtimes?.runtimes.first { $0.isDefault }?.id ?? runtimes?.runtimes.first?.id
-        }
-        .onChange(of: draft?.state) { _, state in
-            if state == "done", let json = draft?.draftJSON { fill(json) }
-        }
-        .onDisappear { cancelDraft() }
+        .task { carrier = ProviderCarrier.start(nil, choices: control.carriers) }
     }
 
-    private var title: String {
-        if let editing { return "Write \(editing.name)’s \(editing.kind == "commands" ? "Commands" : "Map") Again" }
-        return kind.map { "Add \($0.title)" } ?? "Add a Provider"
-    }
-
-    private var draft: DaemonAPI.ProviderDraftUpdate? { draftID.flatMap { control.drafts[$0] } }
-
-    /// The agent is writing: its field is read-only and Add is off (L10b).
-    private var writing: Bool { startingDraft || draft.map { !$0.ended } == true }
+    private var title: String { kind.map { "Add \($0.title)" } ?? "Add a Provider" }
 
     // MARK: Pick a kind
 
+    /// Step 1 (#6069): a grouped list, a row per kind with its line, as Internet Accounts and the
+    /// "add a data source" pages draw it. A click opens its form.
     private var grid: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 116), spacing: 10)], spacing: 10) {
-                ForEach(Kind.allCases) { each in
-                    Button { choose(each) } label: {
-                        VStack(spacing: 8) {
-                            // Decorative: the kind's name is under it.
-                            Image(icon: each.symbol).imageScale(.large).accessibilityHidden(true)
-                            Text(each.title).appText(.supporting)
+        VStack(alignment: .leading, spacing: 10) {
+            Text("A provider starts and stops the machines that agents run on.")
+                .appText(.supporting).foregroundStyle(.secondary)
+            Form {
+                ForEach(Kind.Group.allCases) { group in
+                    Section(group.rawValue) {
+                        ForEach(group.kinds) { each in
+                            Button { choose(each) } label: { kindRow(each) }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel(each.title)
+                                .accessibilityHint(each.summary)
                         }
-                        .frame(maxWidth: .infinity, minHeight: 64)
                     }
-                    .buttonStyle(.paper)
                 }
             }
+            .formStyle(.grouped)
+            // All four groups at once where the screen has room; it scrolls where it has not.
+            .frame(minHeight: 420, idealHeight: 760)
             HStack {
                 Spacer()
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
+            }
+        }
+    }
+
+    private func kindRow(_ each: Kind) -> some View {
+        HStack(spacing: 10) {
+            // Decorative: the kind's name is beside it.
+            Image(icon: each.symbol).font(.system(size: 17)).foregroundStyle(.secondary)
+                .frame(width: 24).accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(each.title)
+                Text(each.summary).appText(.supporting).foregroundStyle(.secondary)
+            }
+            Spacer()
+            // W1 (#6074): the guided kind says so.
+            if each == .digitalOcean {
+                Text(DigitalOceanConnectWords.guidedChip).appText(.fine).foregroundStyle(.secondary)
+                    .padding(.horizontal, 6).padding(.vertical, 1)
+                    .overlay(Capsule().strokeBorder(.secondary.opacity(0.5)))
+            }
+            Image(icon: "chevron.right").foregroundStyle(.tertiary).accessibilityHidden(true)
+        }
+        .contentShape(Rectangle())
+    }
+
+    /// Step 2's header: the kind again, its one line and what has no field, and How to set up.
+    private func kindHeader(_ kind: Kind) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            // Decorative: the kind's name is beside it.
+            Image(icon: kind.symbol).font(.system(size: 17)).foregroundStyle(.secondary)
+                .frame(width: 24).accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(kind.title).fontWeight(.semibold)
+                Text("\(kind.summary) \(kind.hasAPI && !byCLI ? kind.apiNeeds ?? "" : kind.needs)")
+                    .appText(.supporting).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer()
+            Link("How to set up", destination: kind.docs).appText(.supporting)
+        }
+    }
+
+    /// A field with its help under it (#6069), not one paragraph of needs under the form.
+    private func field<Control: View>(_ title: String, help: String? = nil, @ViewBuilder _ control: () -> Control) -> some View {
+        LabeledContent(title) {
+            VStack(alignment: .leading, spacing: 3) {
+                control().labelsHidden()
+                if let help {
+                    Text(help).appText(.fine).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
         }
     }
@@ -546,130 +617,144 @@ struct AddProviderSheet: View {
         if each == .compute { region = "" }
         name = switch each {
         case .docker: "Docker Containers on this Mac"
-        case .commands, .mcp: ""
+        case .commands: ""
         default: each.title
         }
-    }
-
-    private func prepareEdit(_ provider: DaemonAPI.ProviderSummary) {
-        kind = provider.kind == "commands" ? .commands : .mcp
-        name = provider.name
-        byAddress = provider.kind == "http"
-        byConfig = provider.kind == "commands"
     }
 
     // MARK: Its form
 
     @ViewBuilder
     private func form(_ kind: Kind) -> some View {
+        kindHeader(kind)
         Form {
-            if editing == nil {
+            if kind.hasAPI {
+                Section { reachPicker }
+            }
+            Section("Provider") {
                 TextField("Name", text: $name)
+                CarrierPicker(control: control, carrier: $carrier)
             }
             switch kind {
             case .docker:
-                TextField("Containers", text: $containers, prompt: Text("agents-devbox, other"))
-                Text("Empty: the containers labelled agents.workspace").appText(.supporting).foregroundStyle(.secondary)
-                TextField("ssh", text: $ssh, prompt: Text("alex@127.0.0.1 -p 2222"))
-                TextField("Image", text: $image, prompt: Text("agents-devbox:latest"))
-                    .disabled(!trimmed(containers).isEmpty)
-                Text("For New Machine… and Delete Machine…: an image that keeps running and has curl. Empty: it only lists.")
-                    .appText(.supporting).foregroundStyle(.secondary)
-            case .digitalOcean:
-                reachPicker
-                if !byCLI { SecureField("API token", text: $token) }
-                TextField("Droplets tagged", text: $tag)
-                TextField("ssh as", text: $user)
-            case .codespaces:
-                reachPicker
-                if !byCLI { SecureField("Token", text: $token) }
-                TextField("Repository", text: $repo, prompt: Text("Every codespace, or owner/repo"))
-            case .coder:
-                reachPicker
-                if !byCLI {
-                    TextField("Deployment", text: $deployment, prompt: Text(verbatim: "https://coder.example.com"))
-                    SecureField("Session token", text: $token)
-                }
-            case .workstations:
-                TextField("Cluster", text: $cluster)
-                TextField("Configuration", text: $config)
-                TextField("Region", text: $region)
-                TextField("Project", text: $folder, prompt: Text("gcloud’s default"))
-                TextField("ssh", text: $ssh, prompt: Text("A host in your ssh config"))
-            case .compute:
-                TextField("Project", text: $folder)
-                TextField("Zone", text: $region, prompt: Text("us-west1-b"))
-                TextField("VMs labelled", text: $tag)
-                TextField("ssh as", text: $user)
-                TextField("ssh key for new VMs", text: $sshKey, prompt: Text(verbatim: "ssh-ed25519 AAAA…"))
-                LabeledContent("Service account key") {
-                    HStack {
-                        Text(serviceAccount.isEmpty ? "None" : serviceAccount).foregroundStyle(.secondary)
-                        Button("Choose Key File…") { choosingKey = true }
+                Section("Machines") {
+                    field("Containers", help: "Empty: the containers labelled agents.workspace.") {
+                        TextField("Containers", text: $containers, prompt: Text("agents-devbox, other"))
+                    }
+                    TextField("ssh", text: $ssh, prompt: Text("alex@127.0.0.1 -p 2222"))
+                    field("Image", help: "For New Machine… and Delete Machine…: an image that keeps running and has curl. Empty: it only lists.") {
+                        TextField("Image", text: $image, prompt: Text("agents-devbox:latest"))
+                            .disabled(!trimmed(containers).isEmpty)
                     }
                 }
+            case .digitalOcean:
+                if !byCLI {
+                    Section("Access") {
+                        field("API token", help: kind.tokenHelp) { SecureField("API token", text: $token, prompt: Text("Required")) }
+                    }
+                }
+                Section("Machines") {
+                    TextField("Droplets tagged", text: $tag)
+                    TextField("ssh as", text: $user)
+                }
+            case .codespaces:
+                if !byCLI {
+                    Section("Access") {
+                        field("Token", help: kind.tokenHelp) { SecureField("Token", text: $token, prompt: Text("Required")) }
+                    }
+                }
+                Section("Machines") {
+                    field("Repository", help: "Empty: every codespace of yours.") {
+                        TextField("Repository", text: $repo, prompt: Text("owner/repo"))
+                    }
+                }
+            case .coder:
+                if !byCLI {
+                    Section("Access") {
+                        TextField("Deployment", text: $deployment, prompt: Text(verbatim: "https://coder.example.com"))
+                        field("Session token", help: kind.tokenHelp) { SecureField("Session token", text: $token, prompt: Text("Required")) }
+                    }
+                }
+            case .workstations:
+                Section("Machines") {
+                    TextField("Cluster", text: $cluster)
+                    TextField("Configuration", text: $config)
+                    TextField("Region", text: $region)
+                    TextField("Project", text: $folder, prompt: Text("gcloud’s default"))
+                    field("ssh", help: "A host in your ssh config that reaches the workstation’s port 22 through `gcloud workstations start-tcp-tunnel`.") {
+                        TextField("ssh", text: $ssh, prompt: Text("A host in your ssh config"))
+                    }
+                }
+            case .compute:
+                Section("Access") {
+                    field("Service account key", help: "A role with compute.instances list, start and stop; New Machine… needs more (How to set up).") {
+                        HStack {
+                            Text(serviceAccount.isEmpty ? "None" : serviceAccount).foregroundStyle(.secondary)
+                            Button("Choose Key File…") { choosingKey = true }
+                        }
+                    }
+                }
+                Section("Machines") {
+                    TextField("Project", text: $folder)
+                    TextField("Zone", text: $region, prompt: Text("us-west1-b"))
+                    TextField("VMs labelled", text: $tag)
+                    field("ssh as", help: "ssh goes to each VM’s external address: the network must let in port 22.") {
+                        TextField("ssh as", text: $user)
+                    }
+                    TextField("ssh key for new VMs", text: $sshKey, prompt: Text(verbatim: "ssh-ed25519 AAAA…"))
+                }
             case .aws:
-                TextField("Region", text: $region, prompt: Text("us-east-1"))
-                TextField("Instances tagged", text: $tag)
-                TextField("ssh as", text: $user)
-                TextField("Access key ID", text: $accessKey)
-                SecureField("Secret access key", text: $secretKey)
+                Section("Access") {
+                    field("Access key ID", help: "An IAM user’s key. Its policy: ec2:DescribeInstances, and ec2:StartInstances and ec2:StopInstances on tagged instances only (How to set up).") {
+                        TextField("Access key ID", text: $accessKey, prompt: Text("Required"))
+                    }
+                    SecureField("Secret access key", text: $secretKey, prompt: Text("Required"))
+                }
+                Section("Machines") {
+                    TextField("Region", text: $region, prompt: Text("us-east-1"))
+                    TextField("Instances tagged", text: $tag)
+                    TextField("ssh as", text: $user)
+                }
             case .commands:
                 commandsForm
-            case .mcp:
-                mcpForm
             }
-            if editing == nil, !(kind.hasAPI && !byCLI), kind != .aws, kind != .compute { secretsSection }
-            if editing == nil { CarrierPicker(control: control, carrier: $carrier) }
+            if !(kind.hasAPI && !byCLI), kind != .aws, kind != .compute { secretsSection }
         }
         .formStyle(.grouped)
         .fileImporter(isPresented: $choosingKey, allowedContentTypes: [.json]) { result in
             guard case .success(let file) = result else { return }
             readServiceKey(file)
         }
-        if let needs = (kind.hasAPI && !byCLI ? kind.apiNeeds : kind.needs), editing == nil {
-            Text(needs).appText(.supporting).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-        }
-        if editing == nil {
-            Text(ProviderCarrier.secretsFoot(control.carriers.first { $0.id == carrier }?.name))
-                .appText(.supporting).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-        }
         if let problem {
-            VStack(alignment: .leading, spacing: 6) {
-                SheetNote(text: problem, reservesSpace: false)
-                // A refusal a map would fix (L10f, US1 AS7).
-                if kind == .mcp, Self.mapWouldFix(problem) {
-                    HStack {
-                        Spacer()
-                        Button("Write a Tool Map") { writeIt(kind) }
-                            .buttonStyle(.paper)
-                            .disabled(writing || runtimes?.runtimes.isEmpty != false)
-                    }
-                }
-            }
+            SheetNote(text: problem, reservesSpace: false)
         }
+        // One foot (#6069): where the secrets go, in fine print, then Back, Cancel and Add.
+        Text(ProviderCarrier.secretsFoot(control.carriers.first { $0.id == carrier }?.name))
+            .appText(.fine).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         HStack {
-            if editing == nil {
-                Button("Back") {
-                    cancelDraft()
-                    self.kind = nil
-                    problem = nil
+            Button("Back") {
+                self.kind = nil
+                problem = nil
+            }
+            .disabled(working)
+            Spacer()
+            Button("Cancel") { dismiss() }
+                .keyboardShortcut(.cancelAction)
+            Button { add(kind) } label: {
+                if working {
+                    HStack(spacing: 6) {
+                        ProgressView().controlSize(.small)
+                        Text("Checking…")
+                    }
+                } else {
+                    Text("Add")
                 }
             }
-            Spacer()
-            if working { ProgressView().controlSize(.small) }
-            Button("Cancel") {
-                cancelDraft()
-                dismiss()
-            }
-            .keyboardShortcut(.cancelAction)
-            Button(editing == nil ? "Add" : "Save") { add(kind) }
-                .keyboardShortcut(.defaultAction)
-                .disabled(working || writing || name.trimmingCharacters(in: .whitespaces).isEmpty
-                          || (editing == nil && carrier == nil)
-                          || (editing != nil && written == nil) || (kind.hasAPI && !byCLI && token.isEmpty)
-                          || (kind == .aws && (trimmed(accessKey).isEmpty || secretKey.isEmpty || trimmed(region).isEmpty))
-                          || (kind == .compute && (serviceKey.isEmpty || trimmed(folder).isEmpty || trimmed(region).isEmpty)))
+            .keyboardShortcut(.defaultAction)
+            .disabled(working || name.trimmingCharacters(in: .whitespaces).isEmpty || carrier == nil
+                      || (kind.hasAPI && !byCLI && token.isEmpty)
+                      || (kind == .aws && (trimmed(accessKey).isEmpty || secretKey.isEmpty || trimmed(region).isEmpty))
+                      || (kind == .compute && (serviceKey.isEmpty || trimmed(folder).isEmpty || trimmed(region).isEmpty)))
         }
     }
 
@@ -689,270 +774,46 @@ struct AddProviderSheet: View {
 
     /// API or CLI, for a kind that has both: the API first, as it needs nothing installed.
     private var reachPicker: some View {
-        Picker("Reach it with", selection: $byCLI) {
+        Picker("Connect with", selection: $byCLI) {
             Text("Its API").tag(false)
             Text("Its CLI").tag(true)
         }
         .pickerStyle(.segmented)
     }
 
-    @ViewBuilder
-    private var mcpForm: some View {
-        if editing == nil {
-            Picker("Server", selection: $byAddress) {
-                Text("A command").tag(false)
-                Text("An address").tag(true)
-            }
-            .pickerStyle(.segmented)
-            if byAddress {
-                TextField("Address", text: $url, prompt: Text("https://…/mcp"))
-            } else {
-                TextField("Command", text: $command, prompt: Text("npx -y @digitalocean/mcp"))
-            }
-        }
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text("Tool map").appText(.supporting)
-                Spacer()
-                WriteItForMeButton(runtimes: runtimes, runtime: $runtime, again: written != nil,
-                                   isDisabled: writing || !hasServer) { writeIt(.mcp) }
-            }
-            TextEditor(text: $map)
-                .appText(.code)
-                .frame(height: written == nil ? 90 : 180)
-                .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Paper.rule))
-                .disabled(writing)
-                .accessibilityLabel("Tool map")
-            draftStatus(changed: mapChanged)
-            if let answered {
-                Text(answered).appText(.supporting).foregroundStyle(.secondary)
-            }
-            if editing == nil {
-                HStack {
-                    Text("Leave it empty for a server that follows the contract.").appText(.fine).foregroundStyle(.secondary)
-                    Spacer()
-                    // The map Agents ships (FR-072), with the command and the secret it reads.
-                    Button("Use DigitalOcean’s") { useDigitalOcean() }
-                        .buttonStyle(.borderless)
-                        .appText(.fine)
-                        .disabled(writing)
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
     private var commandsForm: some View {
-        HStack {
-            TextField("CLI", text: $cli, prompt: Text(editing == nil ? "cws" : "The program its commands use"))
-            WriteItForMeButton(runtimes: runtimes, runtime: $runtime, again: written != nil,
-                               isDisabled: writing || (editing == nil && cli.trimmingCharacters(in: .whitespaces).isEmpty)) {
-                writeIt(.commands)
-            }
+        Section("Commands") {
+            TextField("Machine", text: $workspace, prompt: Text("devstack"))
+            TextField("ssh", text: $ssh, prompt: Text("devstack-1.cws"))
+            TextField("Start", text: $start, prompt: Text("cws start devstack-1"))
+            TextField("Stop", text: $stop, prompt: Text("cws stop devstack-1"))
+            TextField("Status", text: $status, prompt: Text("Optional: prints running or stopped"))
         }
-        if startingDraft || draft != nil || answered != nil {
-            VStack(alignment: .leading, spacing: 6) {
-                draftStatus(changed: commandsChanged)
-                if let answered {
-                    HStack {
-                        Text(answered).appText(.supporting).foregroundStyle(.secondary)
-                        Spacer()
-                        if let presetKind {
-                            Button("Use \(presetKind.title)") {
-                                self.answered = nil
-                                self.presetKind = nil
-                                choose(presetKind)
-                                // Its CLI was what the agent read: the CLI form.
-                                byCLI = presetKind.hasAPI
-                            }
-                            .buttonStyle(.paper)
-                        }
-                    }
-                }
-            }
-        }
-        if byConfig {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Config").appText(.supporting)
-                TextEditor(text: $commandsConfig)
-                    .appText(.code)
-                    .frame(height: 180)
-                    .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Paper.rule))
-                    .disabled(writing)
-                    .accessibilityLabel("Config")
-                if editing == nil {
-                    Button("Use the Fields Instead") { byConfig = false }
-                        .buttonStyle(.borderless)
-                        .appText(.fine)
-                }
-            }
-        } else {
-            Section {
-                TextField("Machine", text: $workspace, prompt: Text("devstack"))
-                TextField("ssh", text: $ssh, prompt: Text("devstack-1.cws"))
-                TextField("Start", text: $start, prompt: Text("cws start devstack-1"))
-                TextField("Stop", text: $stop, prompt: Text("cws stop devstack-1"))
-                TextField("Status", text: $status, prompt: Text("Optional: prints running or stopped"))
-            } header: {
-                Text("Or by hand")
-            }
-            .disabled(writing)
-        }
-    }
-
-    private func draftStatus(changed: Bool) -> some View {
-        ProviderDraftStatus(update: draft, starting: startingDraft, changed: changed,
-                            cancel: { cancelDraft() },
-                            answer: { question, yes in
-                                guard let draftID else { return }
-                                Task { await control.answerDraft(draftID, question: question, yes: yes) }
-                            },
-                            again: { if let kind { writeIt(kind) } })
     }
 
     @ViewBuilder
     private var secretsSection: some View {
         Section {
-            ForEach($secrets) { $secret in
-                HStack {
-                    TextField("Name", text: $secret.name, prompt: Text("TOKEN")).frame(maxWidth: 180)
-                    SecureField("Value", text: $secret.value)
-                    Button {
-                        secrets.removeAll { $0.id == secret.id }
-                    } label: {
-                        Image(icon: "minus.circle")
+            // Closed at first (#6069): most kinds need none.
+            DisclosureGroup("Secrets (optional)", isExpanded: $showsSecrets) {
+                ForEach($secrets) { $secret in
+                    HStack {
+                        TextField("Name", text: $secret.name, prompt: Text("TOKEN")).frame(maxWidth: 180)
+                        SecureField("Value", text: $secret.value)
+                        Button {
+                            secrets.removeAll { $0.id == secret.id }
+                        } label: {
+                            Image(icon: "minus.circle")
+                        }
+                        .buttonStyle(.borderless)
+                        .accessibilityLabel("Remove \(secret.name.isEmpty ? "this secret" : secret.name)")
                     }
-                    .buttonStyle(.borderless)
-                    .accessibilityLabel("Remove \(secret.name.isEmpty ? "this secret" : secret.name)")
                 }
-            }
-            Button("Add Secret") { secrets.append(Secret()) }
-        } header: {
-            Text("Secrets")
-        } footer: {
-            Text("Given to the provider as environment, or as ${NAME} in its headers. Kept on the machine that carries it, never shown again. A writing agent sees their names, never their values.")
-                .appText(.fine).foregroundStyle(.secondary)
-        }
-    }
-
-    private func useDigitalOcean() {
-        byAddress = false
-        if command.trimmingCharacters(in: .whitespaces).isEmpty { command = "npx -y @digitalocean/mcp" }
-        if name.trimmingCharacters(in: .whitespaces).isEmpty { name = "DigitalOcean Droplets" }
-        map = Self.pretty(ShippedToolMaps.digitalOcean)
-        if !secrets.contains(where: { $0.name == ShippedToolMaps.digitalOceanSecret }) {
-            secrets.append(Secret(name: ShippedToolMaps.digitalOceanSecret))
-        }
-    }
-
-    // MARK: Write It for Me (#858)
-
-    private var hasServer: Bool {
-        editing != nil || !(byAddress ? url : command).trimmingCharacters(in: .whitespaces).isEmpty
-    }
-
-    private func writeIt(_ kind: Kind) {
-        guard let runtime else { return }
-        cancelDraft()
-        problem = nil
-        answered = nil
-        presetKind = nil
-        let form: DaemonAPI.ProviderAdd
-        do {
-            form = try draftForm(kind)
-        } catch {
-            problem = "\(error)"
-            return
-        }
-        startingDraft = true
-        Task {
-            let lock = model.lock
-            let result = await control.startDraft(.init(form: form, secrets: givenSecrets, provider: editing?.id, runtimeID: runtime),
-                                                   signer: { await lock.channelSigner() })
-            startingDraft = false
-            switch result {
-            case .success(let started):
-                if let said = started.answered {
-                    answered = said.note
-                    if let shipped = said.map {
-                        map = Self.pretty(shipped)
-                        if name.trimmingCharacters(in: .whitespaces).isEmpty { name = "DigitalOcean Droplets" }
-                    }
-                    presetKind = said.preset.flatMap(Kind.ofPreset)
-                } else {
-                    draftID = started.draft
-                }
-            case .failure(let refusal):
-                problem = refusal.message
+                Button("Add Secret") { secrets.append(Secret()) }
+                Text("Given to the provider as environment. Kept on the machine that carries it, never shown again.")
+                    .appText(.fine).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
         }
-    }
-
-    /// The form so far, for the agent: what reaches the server or names the CLI.
-    private func draftForm(_ kind: Kind) throws -> DaemonAPI.ProviderAdd {
-        let trimmedName = name.trimmingCharacters(in: .whitespaces)
-        if kind == .commands {
-            return DaemonAPI.ProviderAdd(name: trimmedName, kind: .commands, cli: cli.trimmingCharacters(in: .whitespaces))
-        }
-        if editing != nil {
-            return DaemonAPI.ProviderAdd(name: trimmedName, kind: byAddress ? .http : .stdio)
-        }
-        return try request(.mcp, map: nil)
-    }
-
-    private func cancelDraft() {
-        guard let id = draftID else { return }
-        draftID = nil
-        if control.drafts[id]?.ended == true {
-            control.forgetDraft(id)
-        } else {
-            Task { await control.cancelDraft(id) }
-        }
-    }
-
-    /// The agent's result, into the form's own fields (L10d, L10e).
-    private func fill(_ json: JSONValue) {
-        written = json
-        guard kind == .commands else {
-            map = Self.pretty(json)
-            return
-        }
-        let entries = json["workspaces"]?.arrayValue ?? []
-        let plain = json.objectValue?.keys.sorted() == ["workspaces"] && entries.count == 1
-            && (entries.first?.objectValue ?? [:]).keys.allSatisfy { ["id", "name", "start", "stop", "status", "ssh"].contains($0) }
-        if plain, editing == nil {
-            let entry = entries[0]
-            workspace = entry["name"]?.stringValue ?? entry["id"]?.stringValue ?? ""
-            start = entry["start"]?.stringValue ?? ""
-            stop = entry["stop"]?.stringValue ?? ""
-            status = entry["status"]?.stringValue ?? ""
-            ssh = entry["ssh"]?.stringValue ?? ""
-            byConfig = false
-        } else {
-            commandsConfig = Self.pretty(json)
-            byConfig = true
-        }
-    }
-
-    private var mapChanged: Bool {
-        guard let written else { return false }
-        return (try? JSONValue.parse(Data(map.utf8))) != written
-    }
-
-    private var commandsChanged: Bool {
-        guard let written else { return false }
-        return (try? commandsJSON()) != written
-    }
-
-    /// "It isn't a machine provider: it has no …", or a map tool it lacks: a map would fix it.
-    static func mapWouldFix(_ refusal: String) -> Bool {
-        refusal.hasPrefix("It isn’t a machine provider") || refusal.hasPrefix("The tool map names")
-    }
-
-    static func pretty(_ json: JSONValue) -> String {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-        return (try? encoder.encode(json)).map { String(decoding: $0, as: UTF8.self) } ?? ""
     }
 
     // MARK: Adding
@@ -974,8 +835,6 @@ struct AddProviderSheet: View {
             if let refused {
                 problem = refused
             } else {
-                if let draftID { control.forgetDraft(draftID) }
-                draftID = nil
                 if let onAdded {
                     onAdded(control.providers.first { !before.contains($0.id) }?.id)
                 } else {
@@ -993,14 +852,8 @@ struct AddProviderSheet: View {
 
     private func trimmed(_ text: String) -> String { text.trimmingCharacters(in: .whitespacesAndNewlines) }
 
-    /// Your commands, as the fields or the Config editor hold them.
+    /// Your commands, as the fields hold them.
     private func commandsJSON() throws -> JSONValue {
-        if byConfig {
-            guard let parsed = try? JSONValue.parse(Data(commandsConfig.utf8)), parsed.objectValue != nil else {
-                throw Wrong(description: "The config isn’t a JSON object.")
-            }
-            return parsed
-        }
         guard !trimmed(workspace).isEmpty, !trimmed(start).isEmpty, !trimmed(stop).isEmpty else {
             throw Wrong(description: "Give the machine a name, and its Start and Stop commands.")
         }
@@ -1012,19 +865,12 @@ struct AddProviderSheet: View {
     }
 
     private func request(_ kind: Kind) throws -> DaemonAPI.ProviderAdd {
-        var mapped: JSONValue?
-        if kind == .mcp, !trimmed(map).isEmpty {
-            guard let parsed = try? JSONValue.parse(Data(map.utf8)) else { throw Wrong(description: "The tool map isn’t JSON.") }
-            mapped = parsed
-        }
-        var request = try self.request(kind, map: mapped)
-        request.id = editing?.id
-        request.draft = draftID
-        if editing == nil { request.machine = carrier }
+        var request = try form(for: kind)
+        request.machine = carrier
         return request
     }
 
-    private func request(_ kind: Kind, map mapped: JSONValue?) throws -> DaemonAPI.ProviderAdd {
+    private func form(for kind: Kind) throws -> DaemonAPI.ProviderAdd {
         var given = givenSecrets
         let name = trimmed(self.name)
         var commands: [String: JSONValue] = [:]
@@ -1080,22 +926,6 @@ struct AddProviderSheet: View {
             if !trimmed(ssh).isEmpty { commands["ssh"] = .string(trimmed(ssh)) }
         case .commands:
             return DaemonAPI.ProviderAdd(name: name, kind: .commands, commands: try commandsJSON(), secrets: given)
-        case .mcp:
-            // Edit… sends only the map: the control plane keeps the server as it is.
-            if editing != nil {
-                return DaemonAPI.ProviderAdd(name: name, kind: byAddress ? .http : .stdio, map: mapped)
-            }
-            if byAddress {
-                // An address's one secret is its bearer token.
-                let token = given.keys.sorted().first
-                return DaemonAPI.ProviderAdd(name: name, kind: .http, url: trimmed(url),
-                                             headers: token.map { ["Authorization": "Bearer ${\($0)}"] },
-                                             map: mapped, secrets: given)
-            }
-            let words = trimmed(command).split(separator: " ").map(String.init)
-            guard let first = words.first else { throw Wrong(description: "Give the command that runs the server.") }
-            return DaemonAPI.ProviderAdd(name: name, kind: .stdio, command: first, args: Array(words.dropFirst()),
-                                         map: mapped, secrets: given)
         }
         return DaemonAPI.ProviderAdd(name: name, kind: .commands, commands: .object(commands), secrets: given)
     }
@@ -1163,22 +993,28 @@ struct EditProviderSheet: View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Edit \(provider.name)").appText(.title).fontWeight(.semibold)
             Form {
-                TextField("Name", text: $name)
-                ForEach(fields, id: \.self) { field in
-                    if field.secret == "GOOGLE_SERVICE_ACCOUNT_KEY" {
-                        LabeledContent(field.label) {
-                            HStack {
-                                Text(serviceAccount.isEmpty ? keep : serviceAccount).foregroundStyle(.secondary)
-                                Button("Choose Key File…") { choosingKey = true }
+                Section("Provider") {
+                    TextField("Name", text: $name)
+                    CarrierPicker(control: control, carrier: $carrier, current: provider)
+                }
+                if !fields.isEmpty {
+                    Section("Access") {
+                        ForEach(fields, id: \.self) { field in
+                            if field.secret == "GOOGLE_SERVICE_ACCOUNT_KEY" {
+                                LabeledContent(field.label) {
+                                    HStack {
+                                        Text(serviceAccount.isEmpty ? keep : serviceAccount).foregroundStyle(.secondary)
+                                        Button("Choose Key File…") { choosingKey = true }
+                                    }
+                                }
+                            } else if field.hidden {
+                                SecureField(field.label, text: binding(field.secret), prompt: Text(keep))
+                            } else {
+                                TextField(field.label, text: binding(field.secret), prompt: Text(keep))
                             }
                         }
-                    } else if field.hidden {
-                        SecureField(field.label, text: binding(field.secret), prompt: Text(keep))
-                    } else {
-                        TextField(field.label, text: binding(field.secret), prompt: Text(keep))
                     }
                 }
-                CarrierPicker(control: control, carrier: $carrier, current: provider)
             }
             .formStyle(.grouped)
             .fileImporter(isPresented: $choosingKey, allowedContentTypes: [.json]) { result in

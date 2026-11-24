@@ -40,7 +40,7 @@ func TestAnAgentsSecretIsSealed(t *testing.T) {
 		}()
 		var pending []wire.ElicitationRequest
 		waitFor(t, "the card", func() bool {
-			json.Unmarshal(c.call(t, 1, "elicitations/pending", nil), &pending)
+			mustUnmarshal(t, c.call(t, 1, "elicitations/pending", nil), &pending)
 			return len(pending) == 1
 		})
 		c.call(t, 2, "elicitations/answer", map[string]any{"requestID": pending[0].ID, "action": "accept",
@@ -61,16 +61,16 @@ func TestAnAgentsSecretIsSealed(t *testing.T) {
 	if env := d.sessionSecretEnv(a.ID); len(env) != 0 {
 		t.Fatalf("a flagged secret is in the environment: %v", env)
 	}
-	os.MkdirAll(filepath.Join(home, ".agents"), 0o700)
-	os.WriteFile(filepath.Join(home, ".agents", "mcp.json"),
-		[]byte(`{"mcpServers":{"shop":{"command":"shop-mcp","env":{"A":"${SHOP_PASSWORD}","B":"${SHOP_PIN_CODE}"}}}}`), 0o600)
+	must(t, os.MkdirAll(filepath.Join(home, ".agents"), 0o700))
+	must(t, os.WriteFile(filepath.Join(home, ".agents", "mcp.json"),
+		[]byte(`{"mcpServers":{"shop":{"command":"shop-mcp","env":{"A":"${SHOP_PASSWORD}","B":"${SHOP_PIN_CODE}"}}}}`), 0o600))
 	for _, e := range d.sessionEntries(folderPath(&a), a.ID) {
 		if b, _ := json.Marshal(e.server); strings.Contains(string(b), value) {
 			t.Fatalf("a flagged secret is in a stdio MCP server: %s", b)
 		}
 	}
 	var list wire.SessionSecrets
-	json.Unmarshal(c.call(t, 3, "secrets/sessionList", map[string]any{}), &list)
+	mustUnmarshal(t, c.call(t, 3, "secrets/sessionList", map[string]any{}), &list)
 	if len(list.Secrets) != 1 || list.Secrets[0].NeedsApproval == nil || !*list.Secrets[0].NeedsApproval {
 		t.Fatalf("%+v", list)
 	}
@@ -145,12 +145,12 @@ func TestAChangedSealedRecordDoesNotOpen(t *testing.T) {
 	if v, ok := d.sealedLocalSecret(home, "GITLAB_PASSWORD"); !ok || v != "sealed-value" {
 		t.Fatalf("%q", v)
 	}
-	f := readSealedSecrets(home)
+	f, _ := readSealedSecrets(home)
 	s := f.Secrets["GITLAB_PASSWORD"]
 	s.Grants = []string{"github.com"}
 	f.Secrets["GITLAB_PASSWORD"] = s
 	f.Secrets["OTHER_NAME"] = s
-	writeSealedSecrets(home, f)
+	must(t, writeSealedSecrets(home, f))
 	if _, ok := d.sealedLocalSecret(home, "GITLAB_PASSWORD"); ok {
 		t.Fatal("a grant added by hand opened")
 	}

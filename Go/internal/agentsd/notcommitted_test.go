@@ -1,7 +1,6 @@
 package agentsd
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -19,20 +18,20 @@ func TestNotCommittedIsWhatGitIgnoresInAgents(t *testing.T) {
 	dir := folder(t, c, 1)
 	folder := store.FolderURL(dir)
 	var r wire.NotCommittedResponse
-	json.Unmarshal(c.call(t, 2, "folders/notCommitted", map[string]any{"folder": folder}), &r)
+	mustUnmarshal(t, c.call(t, 2, "folders/notCommitted", map[string]any{"folder": folder}), &r)
 	if r.IsRepository || len(r.Paths) != 0 {
 		t.Fatalf("not a repository: %+v", r)
 	}
 	run(t, dir, "git", "init", "-q")
-	os.WriteFile(filepath.Join(dir, ".gitignore"), []byte(".agents/worktrees/\n*.local.json\nbuild/\n"), 0o644)
-	os.MkdirAll(filepath.Join(dir, ".agents", "worktrees", "a", "src"), 0o755)
-	os.WriteFile(filepath.Join(dir, ".agents", "worktrees", "a", "src", "x.go"), []byte("x"), 0o644)
-	os.WriteFile(filepath.Join(dir, ".agents", "settings.local.json"), []byte("{}"), 0o644)
-	os.WriteFile(filepath.Join(dir, ".agents", "kept.md"), []byte("kept"), 0o644)
-	os.MkdirAll(filepath.Join(dir, "build"), 0o755)
-	os.WriteFile(filepath.Join(dir, "build", "out"), []byte("out"), 0o644) // ignored, but not in .agents
+	must(t, os.WriteFile(filepath.Join(dir, ".gitignore"), []byte(".agents/worktrees/\n*.local.json\nbuild/\n"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
+	must(t, os.MkdirAll(filepath.Join(dir, ".agents", "worktrees", "a", "src"), 0o755))                                  //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(dir, ".agents", "worktrees", "a", "src", "x.go"), []byte("x"), 0o644))            //nolint:gosec // G306: the mode this file always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(dir, ".agents", "settings.local.json"), []byte("{}"), 0o644))                     //nolint:gosec // G306: the mode this file always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(dir, ".agents", "kept.md"), []byte("kept"), 0o644))                               //nolint:gosec // G306: the mode this file always had; only its error is new
+	must(t, os.MkdirAll(filepath.Join(dir, "build"), 0o755))                                                             //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(dir, "build", "out"), []byte("out"), 0o644))                                      //nolint:gosec // G306: the mode this file always had; only its error is new; ignored, but not in .agents
 	r = wire.NotCommittedResponse{}
-	json.Unmarshal(c.call(t, 3, "folders/notCommitted", map[string]any{"folder": folder}), &r)
+	mustUnmarshal(t, c.call(t, 3, "folders/notCommitted", map[string]any{"folder": folder}), &r)
 	if want := []string{".agents/settings.local.json", ".agents/worktrees/"}; !r.IsRepository || !reflect.DeepEqual(r.Paths, want) || r.More != 0 {
 		t.Fatalf("%+v", r)
 	}

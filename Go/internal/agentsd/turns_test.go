@@ -237,11 +237,24 @@ func systemPromptOf(meta any) string {
 	return s
 }
 
+// send is a session/update to the daemon. A failed one is said on stderr and the fake
+// goes on: the daemon has ended the connection, and the test that reads the transcript
+// says what did not come (#6318).
+func (f *fakeRuntime) send(ctx context.Context, n sdk.SessionNotification) {
+	if err := f.conn.SessionUpdate(ctx, n); err != nil {
+		fmt.Fprintf(os.Stderr, "fake runtime: session/update: %v\n", err)
+	}
+}
+
 // instructionsOf is the files named in OPENCODE_CONFIG_CONTENT's instructions, read as
 // OpenCode reads them on each prompt (#2612).
 func (f *fakeRuntime) instructionsOf() string {
 	var config struct{ Instructions []string }
-	json.Unmarshal([]byte(f.getenv("OPENCODE_CONFIG_CONTENT")), &config)
+	if c := f.getenv("OPENCODE_CONFIG_CONTENT"); c != "" {
+		if err := json.Unmarshal([]byte(c), &config); err != nil {
+			return "OPENCODE_CONFIG_CONTENT: " + err.Error()
+		}
+	}
 	var out []string
 	for _, file := range config.Instructions {
 		b, _ := os.ReadFile(file)
@@ -295,7 +308,7 @@ func (f *fakeRuntime) LoadSession(ctx context.Context, r sdk.LoadSessionRequest)
 	}
 	<-f.ready
 	for _, u := range []sdk.SessionUpdate{sdk.UpdateUserMessageText("What is "), sdk.UpdateUserMessageText("two and two?"), sdk.UpdateAgentMessageText("Four.")} {
-		f.conn.SessionUpdate(ctx, sdk.SessionNotification{SessionId: r.SessionId, Update: u})
+		f.send(ctx, sdk.SessionNotification{SessionId: r.SessionId, Update: u})
 	}
 	return sdk.LoadSessionResponse{}, nil
 }
@@ -327,8 +340,10 @@ func (f *fakeRuntime) ResumeSession(_ context.Context, r sdk.ResumeSessionReques
 	f.systemPrompt = systemPromptOf(r.Meta) + f.instructionsOf()
 	var out sdk.ResumeSessionResponse
 	if filepath.Base(r.Cwd) == "reconnecting" {
-		json.Unmarshal([]byte(`{"configOptions":[{"type":"select","id":"mode","name":"Mode","currentValue":"default",
-			"options":[{"value":"default","name":"Default"},{"value":"plan","name":"Plan"}]}]}`), &out)
+		if err := json.Unmarshal([]byte(`{"configOptions":[{"type":"select","id":"mode","name":"Mode","currentValue":"default",
+			"options":[{"value":"default","name":"Default"},{"value":"plan","name":"Plan"}]}]}`), &out); err != nil {
+			return out, err
+		}
 	}
 	return out, nil
 }
@@ -346,14 +361,19 @@ func (f *fakeRuntime) NewSession(_ context.Context, r sdk.NewSessionRequest) (sd
 	if filepath.Base(r.Cwd) != "offers" {
 		return sdk.NewSessionResponse{SessionId: "fake-session"}, nil
 	}
-	json.Unmarshal([]byte(`{"sessionId":"fake-session","configOptions":[{"type":"select","id":"model","name":"Model",
-		"currentValue":"opus","options":[{"value":"opus","name":"Opus"},{"value":"sonnet","name":"Sonnet"}]}]}`), &out)
+	if err := json.Unmarshal([]byte(`{"sessionId":"fake-session","configOptions":[{"type":"select","id":"model","name":"Model",
+		"currentValue":"opus","options":[{"value":"opus","name":"Opus"},{"value":"sonnet","name":"Sonnet"}]}]}`), &out); err != nil {
+		return out, err
+	}
 	go func() {
 		<-f.ready
 		time.Sleep(50 * time.Millisecond)
 		var u sdk.SessionUpdate
-		json.Unmarshal([]byte(`{"sessionUpdate":"available_commands_update","availableCommands":[{"name":"review","description":"Review the change"}]}`), &u)
-		f.conn.SessionUpdate(context.Background(), sdk.SessionNotification{SessionId: "fake-session", Update: u})
+		if err := json.Unmarshal([]byte(`{"sessionUpdate":"available_commands_update","availableCommands":[{"name":"review","description":"Review the change"}]}`), &u); err != nil {
+			fmt.Fprintf(os.Stderr, "fake runtime: %v\n", err)
+			return
+		}
+		f.send(context.Background(), sdk.SessionNotification{SessionId: "fake-session", Update: u})
 	}()
 	return out, nil
 }
@@ -368,7 +388,9 @@ func (f *fakeRuntime) SetSessionConfigOption(_ context.Context, r sdk.SetSession
 	var opt sdk.SessionConfigOption
 	raw, _ := json.Marshal(map[string]any{"type": "select", "id": r.ValueId.ConfigId, "name": "Mode",
 		"currentValue": r.ValueId.Value, "options": []map[string]any{{"value": r.ValueId.Value, "name": r.ValueId.Value}}})
-	json.Unmarshal(raw, &opt)
+	if err := json.Unmarshal(raw, &opt); err != nil {
+		return sdk.SetSessionConfigOptionResponse{}, err
+	}
 	return sdk.SetSessionConfigOptionResponse{ConfigOptions: []sdk.SessionConfigOption{opt}}, nil
 }
 
@@ -377,7 +399,7 @@ func (f *fakeRuntime) Prompt(ctx context.Context, p sdk.PromptRequest) (sdk.Prom
 	// The person's words are the last text: ours (a preface, the brief) go before them.
 	text, before := fakePromptWords(p.Prompt)
 	say := func(s string) {
-		f.conn.SessionUpdate(ctx, sdk.SessionNotification{SessionId: p.SessionId, Update: sdk.UpdateAgentMessageText(s)})
+		f.send(ctx, sdk.SessionNotification{SessionId: p.SessionId, Update: sdk.UpdateAgentMessageText(s)})
 	}
 	// What it was told besides the words: its system prompt and what came before them.
 	if strings.Contains(text, "say your brief") {
@@ -438,7 +460,7 @@ func (f *fakeRuntime) Prompt(ctx context.Context, p sdk.PromptRequest) (sdk.Prom
 	}
 	if strings.Contains(text, "sandbox fails") && !f.sandboxOff {
 		// A command whose sandbox could not be set up, as Claude's Bash says it.
-		f.conn.SessionUpdate(ctx, sdk.SessionNotification{SessionId: p.SessionId, Update: sdk.StartToolCall("call_s", "Run make",
+		f.send(ctx, sdk.SessionNotification{SessionId: p.SessionId, Update: sdk.StartToolCall("call_s", "Run make",
 			sdk.WithStartKind(sdk.ToolKindExecute), sdk.WithStartStatus(sdk.ToolCallStatusCompleted),
 			sdk.WithStartContent([]sdk.ToolCallContent{sdk.ToolContent(sdk.TextBlock("sandbox_apply: Operation not permitted"))}))})
 		say("The command could not run.")
@@ -467,7 +489,7 @@ func (f *fakeRuntime) Prompt(ctx context.Context, p sdk.PromptRequest) (sdk.Prom
 	if _, path, ok := strings.Cut(text, "write the file "); ok {
 		return f.promptWriteFile(ctx, p.SessionId, path, say)
 	}
-	f.conn.SessionUpdate(ctx, sdk.SessionNotification{SessionId: p.SessionId, Update: sdk.StartToolCall("call_1", "Write hi.txt",
+	f.send(ctx, sdk.SessionNotification{SessionId: p.SessionId, Update: sdk.StartToolCall("call_1", "Write hi.txt",
 		sdk.WithStartKind(sdk.ToolKindEdit), sdk.WithStartStatus(sdk.ToolCallStatusPending))})
 	// The restart's words (wordsAboutTheRestart) say the question went: with
 	// AGENTS_FAKE_ASK_AGAIN=1 it asks again, as a runtime that still needs it does (#6188).
@@ -477,7 +499,7 @@ func (f *fakeRuntime) Prompt(ctx context.Context, p sdk.PromptRequest) (sdk.Prom
 			return r, nil
 		}
 	}
-	f.conn.SessionUpdate(ctx, sdk.SessionNotification{SessionId: p.SessionId, Update: sdk.UpdateToolCall("call_1",
+	f.send(ctx, sdk.SessionNotification{SessionId: p.SessionId, Update: sdk.UpdateToolCall("call_1",
 		sdk.WithUpdateStatus(sdk.ToolCallStatusCompleted))})
 	say("I wrote hi.txt. ")
 	say("Anything else?")
@@ -531,8 +553,10 @@ func (f *fakeRuntime) promptTypedLimit(ctx context.Context, session sdk.SessionI
 	if strings.Contains(text, "pay extra") {
 		w = `{"status":"allowed","rateLimitType":"five_hour","utilization":0.4,"isUsingOverage":true}`
 	}
-	json.Unmarshal([]byte(`{"sessionUpdate":"usage_update","used":10,"size":100,"_meta":{"_claude/rateLimit":`+w+`}}`), &u)
-	f.conn.SessionUpdate(ctx, sdk.SessionNotification{SessionId: session, Update: u})
+	if err := json.Unmarshal([]byte(`{"sessionUpdate":"usage_update","used":10,"size":100,"_meta":{"_claude/rateLimit":`+w+`}}`), &u); err != nil {
+		return sdk.PromptResponse{}, err
+	}
+	f.send(ctx, sdk.SessionNotification{SessionId: session, Update: u})
 	if strings.Contains(text, "pay extra") {
 		say("Done, on extra usage.")
 		return sdk.PromptResponse{StopReason: sdk.StopReasonEndTurn}, nil
@@ -550,7 +574,7 @@ func (f *fakeRuntime) promptBackgroundBuild(session sdk.SessionId, text, path st
 	go func() {
 		bg := context.Background()
 		time.Sleep(200 * time.Millisecond)
-		f.conn.SessionUpdate(bg, sdk.SessionNotification{SessionId: session, Update: sdk.UpdateAgentMessageText("The build finished. ")})
+		f.send(bg, sdk.SessionNotification{SessionId: session, Update: sdk.UpdateAgentMessageText("The build finished. ")})
 		// The poll of a file the test makes, not a wait for a time: it ends with the
 		// connection too, so no goroutine outlives the run in the test's process.
 		tick := time.NewTicker(20 * time.Millisecond)
@@ -565,11 +589,14 @@ func (f *fakeRuntime) promptBackgroundBuild(session sdk.SessionId, text, path st
 			case <-tick.C:
 			}
 		}
-		f.conn.SessionUpdate(bg, sdk.SessionNotification{SessionId: session, Update: sdk.UpdateAgentMessageText("All done.")})
+		f.send(bg, sdk.SessionNotification{SessionId: session, Update: sdk.UpdateAgentMessageText("All done.")})
 		if !quietly {
 			var u sdk.SessionUpdate
-			json.Unmarshal([]byte(`{"sessionUpdate":"usage_update","used":10,"size":100,"_meta":{"_claude/origin":{"kind":"task-notification"}}}`), &u)
-			f.conn.SessionUpdate(bg, sdk.SessionNotification{SessionId: session, Update: u})
+			if err := json.Unmarshal([]byte(`{"sessionUpdate":"usage_update","used":10,"size":100,"_meta":{"_claude/origin":{"kind":"task-notification"}}}`), &u); err != nil {
+				fmt.Fprintf(os.Stderr, "fake runtime: %v\n", err)
+				return
+			}
+			f.send(bg, sdk.SessionNotification{SessionId: session, Update: u})
 		}
 	}()
 	return sdk.PromptResponse{StopReason: sdk.StopReasonEndTurn}, nil
@@ -578,13 +605,13 @@ func (f *fakeRuntime) promptBackgroundBuild(session sdk.SessionId, text, path st
 // promptDenyQuietly answers as Copilot on a refused card (#3722): the call fails and the
 // turn ends, with no word.
 func (f *fakeRuntime) promptDenyQuietly(ctx context.Context, session sdk.SessionId, say func(string)) (sdk.PromptResponse, error) {
-	f.conn.SessionUpdate(ctx, sdk.SessionNotification{SessionId: session, Update: sdk.StartToolCall("call_d", "Write /tmp/out.txt",
+	f.send(ctx, sdk.SessionNotification{SessionId: session, Update: sdk.StartToolCall("call_d", "Write /tmp/out.txt",
 		sdk.WithStartKind(sdk.ToolKindEdit), sdk.WithStartStatus(sdk.ToolCallStatusPending))})
 	r, _ := f.conn.RequestPermission(ctx, sdk.RequestPermissionRequest{SessionId: session,
 		ToolCall: sdk.ToolCallUpdate{ToolCallId: "call_d", Title: sdk.Ptr("Write /tmp/out.txt")},
 		Options: []sdk.PermissionOption{{Kind: sdk.PermissionOptionKindAllowOnce, Name: "Allow", OptionId: "allow"},
 			{Kind: sdk.PermissionOptionKindRejectOnce, Name: "Reject", OptionId: "reject"}}})
-	f.conn.SessionUpdate(ctx, sdk.SessionNotification{SessionId: session, Update: sdk.UpdateToolCall("call_d",
+	f.send(ctx, sdk.SessionNotification{SessionId: session, Update: sdk.UpdateToolCall("call_d",
 		sdk.WithUpdateStatus(sdk.ToolCallStatusFailed))})
 	if r.Outcome.Selected != nil && r.Outcome.Selected.OptionId == "allow" {
 		say("Written.")
@@ -600,9 +627,13 @@ func (f *fakeRuntime) promptWriteFile(ctx context.Context, session sdk.SessionId
 	if b, err := os.ReadFile(path); err == nil {
 		old = []string{string(b)}
 	}
-	os.MkdirAll(filepath.Dir(path), 0o755)
-	os.WriteFile(path, []byte("agent's\n"), 0o644)
-	f.conn.SessionUpdate(ctx, sdk.SessionNotification{SessionId: session, Update: sdk.StartToolCall("call_w", "Write "+filepath.Base(path),
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil { //nolint:gosec // G301: the mode this folder always had; only its error is new
+		return sdk.PromptResponse{}, err
+	}
+	if err := os.WriteFile(path, []byte("agent's\n"), 0o644); err != nil { //nolint:gosec // G306: the mode this file always had; only its error is new
+		return sdk.PromptResponse{}, err
+	}
+	f.send(ctx, sdk.SessionNotification{SessionId: session, Update: sdk.StartToolCall("call_w", "Write "+filepath.Base(path),
 		sdk.WithStartKind(sdk.ToolKindEdit), sdk.WithStartStatus(sdk.ToolCallStatusCompleted),
 		sdk.WithStartContent([]sdk.ToolCallContent{sdk.ToolDiffContent(path, "agent's\n", old...)}))})
 	say("Written.")
@@ -620,7 +651,9 @@ func (f *fakeRuntime) form(ctx context.Context, session sdk.SessionId, withdraw 
 			ElicitationId: "e1", Url: "https://example.com/sign-in"}}
 		go func() {
 			time.Sleep(300 * time.Millisecond)
-			f.conn.UnstableCompleteElicitation(ctx, sdk.UnstableCompleteElicitationNotification{ElicitationId: "e1"})
+			if err := f.conn.UnstableCompleteElicitation(ctx, sdk.UnstableCompleteElicitationNotification{ElicitationId: "e1"}); err != nil {
+				fmt.Fprintf(os.Stderr, "fake runtime: elicitation/complete: %v\n", err)
+			}
 		}()
 	}
 	r, err := f.conn.UnstableCreateElicitation(ctx, req)
@@ -634,11 +667,18 @@ func (f *fakeRuntime) form(ctx context.Context, session sdk.SessionId, withdraw 
 	case r.Decline != nil:
 		say("You would not say.")
 	default:
-		// Cancelled by a stop: session/cancel follows the answer.
+		// Cancelled by a stop: session/cancel follows the answer, and the turn waits for it,
+		// as a runtime that keeps to ACP does. 300 ms was too short under CI's load, and the
+		// turn ended finished before the stop came (#6551). A withdrawn link has no stop to
+		// wait for.
+		wait := 10 * time.Second
+		if withdraw {
+			wait = 300 * time.Millisecond
+		}
 		select {
 		case <-ctx.Done():
 			return sdk.PromptResponse{StopReason: sdk.StopReasonCancelled}, nil
-		case <-time.After(300 * time.Millisecond):
+		case <-time.After(wait):
 		}
 		say("The form was closed.")
 	}
@@ -697,7 +737,7 @@ func (c *conn) until(t *testing.T, what string, ok func(method string, params js
 		select {
 		case line := <-c.out:
 			var m message
-			json.Unmarshal([]byte(line), &m)
+			mustUnmarshal(t, []byte(line), &m)
 			if m.Method != "" && ok(m.Method, m.Params) {
 				return
 			}
@@ -713,8 +753,7 @@ func ended(id wire.UUID, state wire.AgentState) func(string, json.RawMessage) bo
 			return false
 		}
 		var a wire.Agent
-		json.Unmarshal(p, &a)
-		return a.ID == id && a.State == state
+		return json.Unmarshal(p, &a) == nil && a.ID == id && a.State == state
 	}
 }
 
@@ -730,7 +769,7 @@ func TestATurnWithACard(t *testing.T) {
 	defer d.Shutdown()
 	var id wire.UUID
 	var permission wire.PermissionRequest
-	json.Unmarshal(c.callHearing(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + work,
+	mustUnmarshal(t, c.callHearing(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + work,
 		"prompt": "Please ask, then write hi.txt", "startOptions": map[string]any{"values": map[string]any{}, "extraArguments": []string{}}},
 		"a card", aCard(&permission)), &id)
 	if got := d.pendingPermissions(); len(got) != 1 || got[0].ID != permission.ID {
@@ -755,7 +794,7 @@ func TestATurnWithACard(t *testing.T) {
 	for _, e := range entries {
 		b, _ := json.Marshal(e.Kind)
 		var k map[string]any
-		json.Unmarshal(b, &k)
+		mustUnmarshal(t, b, &k)
 		for name := range k {
 			kinds = append(kinds, name)
 		}
@@ -781,7 +820,7 @@ func TestADeniedCardThatEndsTheTurnCarriesOn(t *testing.T) {
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	var id wire.UUID
-	json.Unmarshal(c.call(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(),
+	mustUnmarshal(t, c.call(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(),
 		"prompt": "deny quietly"}), &id)
 	var permission wire.PermissionRequest
 	c.until(t, "a card", func(method string, p json.RawMessage) bool {
@@ -818,7 +857,7 @@ func TestACardAnsweredInWordsDoesNotCarryOn(t *testing.T) {
 	defer d.Shutdown()
 	var id wire.UUID
 	var permission wire.PermissionRequest
-	json.Unmarshal(c.callHearing(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(),
+	mustUnmarshal(t, c.callHearing(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(),
 		"prompt": "Please ask, then write hi.txt"}, "a card", aCard(&permission)), &id)
 	c.call(t, 2, "permissions/answer", map[string]any{"permissionID": permission.ID, "optionID": "reject"})
 	waitFor(t, "the end", func() bool { a := d.Store.Agent(id); return a.State == wire.AgentStateFinished })
@@ -834,7 +873,7 @@ func TestStopEndsTheTurnCancelled(t *testing.T) {
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	var id wire.UUID
-	json.Unmarshal(c.call(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(),
+	mustUnmarshal(t, c.call(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(),
 		"prompt": "wait for me"}), &id)
 	c.until(t, "running", ended(id, wire.AgentStateRunning))
 	time.Sleep(200 * time.Millisecond)
@@ -883,7 +922,7 @@ func TestAnAdminsStopSaysSo(t *testing.T) {
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	var id wire.UUID
-	json.Unmarshal(c.call(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(),
+	mustUnmarshal(t, c.call(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(),
 		"prompt": "wait for me"}), &id)
 	c.until(t, "running", ended(id, wire.AgentStateRunning))
 	time.Sleep(200 * time.Millisecond)
@@ -928,9 +967,9 @@ func TestAStartWithNoSignIn(t *testing.T) {
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	folder := filepath.Join(t.TempDir(), "signedout")
-	os.Mkdir(folder, 0o755)
+	must(t, os.Mkdir(folder, 0o755)) //nolint:gosec // G301: the mode this folder always had; only its error is new
 	var id wire.UUID
-	json.Unmarshal(c.call(t, 1, "agents/start", map[string]any{"runtimeID": "cursor", "cwd": "file://" + folder, "prompt": "hi"}), &id)
+	mustUnmarshal(t, c.call(t, 1, "agents/start", map[string]any{"runtimeID": "cursor", "cwd": "file://" + folder, "prompt": "hi"}), &id)
 	c.until(t, "stopped", ended(id, wire.AgentStateStopped))
 	if a := d.Store.Agent(id); a.EndedReason == nil || *a.EndedReason != wire.EndedReasonSignInRefused {
 		t.Fatalf("%+v", a.EndedReason)
@@ -1013,10 +1052,10 @@ func TestAntigravityLaunchKeepsItsSkillsOutOfGit(t *testing.T) {
 	defer d.Shutdown()
 	dir := repo(t)
 	sub := filepath.Join(dir, "app")
-	os.MkdirAll(filepath.Join(dir, "skills", "system", "run-workflow"), 0o755)
-	os.WriteFile(filepath.Join(dir, "skills", "system", "run-workflow", "SKILL.md"), []byte("x"), 0o644)
-	os.MkdirAll(filepath.Join(sub, "skills", "system", "run-workflow"), 0o755)
-	os.WriteFile(filepath.Join(sub, "skills", "system", "run-workflow", "SKILL.md"), []byte("x"), 0o644)
+	must(t, os.MkdirAll(filepath.Join(dir, "skills", "system", "run-workflow"), 0o755))                           //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(dir, "skills", "system", "run-workflow", "SKILL.md"), []byte("x"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
+	must(t, os.MkdirAll(filepath.Join(sub, "skills", "system", "run-workflow"), 0o755))                           //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(sub, "skills", "system", "run-workflow", "SKILL.md"), []byte("x"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	for _, at := range []string{dir, sub, dir} {
 		if _, err := d.launchFor(runtimeByID("antigravity"), at); err != nil {
 			t.Fatal(err)
@@ -1039,7 +1078,7 @@ func TestRuntimesList(t *testing.T) {
 
 	_, c := start(t, t.TempDir())
 	var rs []wire.RuntimeStatus
-	json.Unmarshal(c.call(t, 1, "runtimes/list", nil), &rs)
+	mustUnmarshal(t, c.call(t, 1, "runtimes/list", nil), &rs)
 	if len(rs) != 7 || rs[0].Runtime.ID != "antigravity" {
 		t.Fatalf("%d runtimes, first %v", len(rs), rs)
 	}
@@ -1116,6 +1155,8 @@ func callTheModel(getenv func(string) string) string {
 		return err.Error()
 	}
 	defer resp.Body.Close()
-	io.Copy(io.Discard, resp.Body)
+	if _, err := io.Copy(io.Discard, resp.Body); err != nil {
+		return err.Error()
+	}
 	return strconv.Itoa(resp.StatusCode)
 }

@@ -270,6 +270,8 @@ public enum WorkDeploys {
 
     public static let title = "Deploys"
     public static let emptyTitle = "No deploys yet"
+    /// The middle of the page when no machine's read worked and nothing was read before (#5969).
+    public static let couldNotRead = "Could not read deploys"
     public static let emptyLine = "A deploy shows here once a forge's job deploys, as GitHub's and GitLab's environments record it."
     public static let noMachine = "No machine keeps deploys yet. Update Agents on a machine to see them."
     public static let none = "–"

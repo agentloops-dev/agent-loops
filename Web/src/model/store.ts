@@ -1,7 +1,7 @@
 // What the page holds and what each notification means: the Store class, in slices under ./store (#5384).
 import { sendPreferencesWith } from "./preferences";
 import { computed, signal, type ReadonlySignal } from "@preact/signals";
-import type { BrowserFrame, ControlMachine, JSONValue, RuntimeAccount, RuntimeStatus, UUID, AutoMappings, AutoSettings, BusEvent, CostState, ListRequest, SandboxChoice, PolicySetBy, RuntimeAllowances, MachineJoinStatus, KeptDelivered, KeptList, UsageHistory, TimeHistory, VelocityHistory, CapReached, ChannelLinkDecided, ChannelLinkRequest, ConnectReport, JoinDecided, JoinRequest, SecretsLeft, SignInDecided, PolicyView, SignInRequest, CatalogRequest, BudgetRequest, ClientPermissionSettings, LineageNode, LineageSessionIssue, PlaneMoveReport, WebRemoteStatus } from "../protocol/generated";
+import type { BrowserFrame, ControlMachine, JSONValue, RuntimeAccount, RuntimeStatus, UUID, AutoMappings, AutoSettings, BusEvent, CostState, ListRequest, SandboxChoice, PolicySetBy, RuntimeAllowances, MachineJoinStatus, KeptDelivered, KeptList, UsageHistory, TimeHistory, VelocityHistory, CycleTimeHistory, CapReached, ChannelLinkDecided, ChannelLinkRequest, ConnectReport, JoinDecided, JoinRequest, SecretsLeft, SignInDecided, PolicyView, SignInRequest, CatalogRequest, BudgetRequest, ClientPermissionSettings, LineageNode, LineageSessionIssue, PlaneMoveReport, WebRemoteStatus } from "../protocol/generated";
 import { type Link } from "../wire/link";
 import type { FolderGoneAsk } from "./missingFolder";
 import { describe } from "./errors";
@@ -420,6 +420,11 @@ export class Store extends Work {
   readonly velocity = signal<Record<string, VelocityHistory>>({});
   /** The hosts whose last velocity/history read failed (#5972): the page says so, not "Loading…" for ever. */
   readonly velocityFailed = signal<Record<string, boolean>>({});
+
+  /** Each host's cycletime/history (#6648): the PRs that landed, by hour and day, with their durations. */
+  readonly cycleTime = signal<Record<string, CycleTimeHistory>>({});
+  /** The hosts whose last cycletime/history read failed: the page says so, not "Loading…" for ever. */
+  readonly cycleTimeFailed = signal<Record<string, boolean>>({});
 
   /**
    * The person's bus log (#4732): every machine's events, newest first, for the rows no host here

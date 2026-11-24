@@ -1,6 +1,6 @@
 ## Counts
 
-`scripts/parity-counts.py` counts the rows of every screen by verdict: **same**, **by design** and **delta**, by tier: **Core**, **Mac + web**, **Web + Mac link**, **Mac only**, **Web only** and **Remote only**, and by role (#5290). A row with any open delta counts as delta, even where another side's difference is by design. The script fails when a row has no tier it knows, and says which tiers replace the old **One client** (#4759). The counts are not kept by hand (#2020).
+`scripts/parity-counts.py` counts the rows of every screen by verdict: **same**, **by design** and **delta**, by tier: **Core**, **Mac + web**, **Web + Mac link**, **Mac only**, **Web only** and **Remote only**, by role (#5290), and by maturity: **ga**, **pilot**, **alpha** and **beta** (#6580). A row with any open delta counts as delta, even where another side's difference is by design. The script fails when a row has no tier it knows, and says which tiers replace the old **One client** (#4759). The counts are not kept by hand (#2020).
 
 The deltas are tracked by 33 issues:
 - **Already open:** #226 (the Remote's one sidebar) and #235 (the page's one sidebar at phone width).

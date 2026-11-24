@@ -5,6 +5,7 @@
 #
 #   ./scripts/build-linux-agentsd.sh           # build both, copy into App/Resources/servers
 #   ./scripts/build-linux-agentsd.sh --check   # build both, copy nothing
+#   ./scripts/build-linux-agentsd.sh --out DIR # copy into DIR instead (deploy/gcp/up.sh --build)
 #
 # What it writes, per architecture (x86_64, aarch64):
 #   agentsd-linux-<arch>             the binary, static and stripped
@@ -33,10 +34,17 @@ set -euo pipefail
 
 root=${0:A:h:h}
 check=0
-[[ ${1:-} == --check ]] && { check=1; shift }
+out=$root/App/Resources/servers
+while (( $# )); do
+    case $1 in
+        --check) check=1 ;;
+        --out) out=${2:?--out needs a folder}; shift ;;
+        *) print -u2 "unknown option $1"; exit 2 ;;
+    esac
+    shift
+done
 
 version=${AGENTS_MARKETING_VERSION:-$($root/scripts/version.sh)}
-out=$root/App/Resources/servers
 work=$root/Go/out/servers
 mkdir -p $work
 

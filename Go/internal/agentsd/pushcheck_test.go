@@ -37,8 +37,8 @@ func TestTheHostChecksTheAppCanPushBeforeASessionGetsItsToken(t *testing.T) {
 	d.connStoreFor = func() (connections.Store, error) { return file, nil }
 	gh := &fakeSetupGitHub{readOnly: true}
 	d.newSetupReader = func(string) setupReader { return gh }
-	file.Put(connections.Connection{Provider: connections.GitHub, Login: "alexec", Access: "ghu_secret",
-		AccessExpiresAt: time.Now().Add(time.Hour), ConnectedAt: time.Now()})
+	must(t, file.Put(connections.Connection{Provider: connections.GitHub, Login: "alexec", Access: "ghu_secret",
+		AccessExpiresAt: time.Now().Add(time.Hour), ConnectedAt: time.Now()}))
 	d.credentialSelf = filepath.Join(t.TempDir(), "agentsd")
 	folder := gitFolder(t, "https://github.com/alexec/agents-walk.git")
 	base := []string{"PATH=/usr/bin:/bin"}

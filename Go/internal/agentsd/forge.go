@@ -22,6 +22,7 @@ import (
 	"github.com/agentloops-dev/agent-loops/Go/internal/lineage"
 	"github.com/agentloops-dev/agent-loops/Go/internal/linearmcp"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
+	"golang.org/x/sync/singleflight"
 )
 
 // The forge reads (#3129): forge/issues and forge/pulls list the issues and pull requests of
@@ -148,6 +149,10 @@ type forgePlanAnswer struct {
 type forgeBook struct {
 	forgeMu    sync.Mutex
 	forgeCache map[string]forgeAnswer
+	// forgeJoin joins the asks of one list that are in flight at once (#6538); a test's forgeListJoining is
+	// called as each ask comes to it.
+	forgeJoin        singleflight.Group
+	forgeListJoining func()
 	// forgeRoots is the GitLab each GitLab folder's remote is on, and its project there, read
 	// once: a remote seldom changes.
 	forgeRoots map[string][2]string
@@ -309,20 +314,45 @@ func (d *Daemon) forgeListAsked(ctx context.Context, prs bool, r wire.ForgeListR
 		return wire.ForgeList{Items: []wire.ForgeItem{}}, nil
 	}
 	filter := forgeFilter{PRs: prs, State: state, Label: deref(r.Label), Assignee: deref(r.Assignee), Query: deref(r.Query),
-		Feature: deref(r.Feature), Reviewer: reviewer, Board: board}
+		Feature: deref(r.Feature), Reviewer: reviewer, Board: board, Sort: deref(r.Sort)}
 	if r.UpdatedSince != nil {
 		filter.UpdatedSince = r.UpdatedSince.Time()
 	}
 	moved, scopeKeys := d.forgeListScopes(ctx, folders, prs, board, reviewer)
-	key, _ := json.Marshal([]any{method, scopeKeys, board.key(), r.State, r.Label, r.Assignee, r.Query, r.Feature, reviewer, cursor, limit, r.UpdatedSince})
-	if a, ok := d.forgeCached(string(key)); ok && a.list != nil {
+	key, _ := json.Marshal([]any{method, scopeKeys, board.key(), r.State, r.Label, r.Assignee, r.Query, r.Feature, reviewer, cursor, limit, r.UpdatedSince, r.Sort})
+	// A Refresh (fresh) reads the forges, not the answer kept for forgeCacheFor (#6642); the key leaves it out, so
+	// its answer replaces the kept one.
+	fresh := r.Fresh != nil && *r.Fresh
+	if a, ok := d.forgeCached(string(key)); ok && a.list != nil && !fresh {
 		return *a.list, nil
 	}
-	out := wire.ForgeList{Items: []wire.ForgeItem{}}
+	// Asks of the same list at once read it once (#6538): a cold start asks each list from several places.
+	// The read goes on when the first to ask goes, so the others still get it. An ask that comes just after a
+	// read ends finds its answer kept.
+	if d.forgeListJoining != nil {
+		d.forgeListJoining()
+	}
+	answer, err, _ := d.forgeJoin.Do(string(key), func() (any, error) {
+		if a, ok := d.forgeCached(string(key)); ok && a.list != nil && !fresh {
+			return *a.list, nil
+		}
+		return d.forgeListRead(context.WithoutCancel(ctx), moved, cursor, filter, limit, string(key)), nil
+	})
+	if err != nil {
+		return wire.ForgeList{}, err
+	}
+	return answer.(wire.ForgeList), nil
+}
+
+// forgeListRead reads a page of a list from each forge, merges them, and keeps the answer under key.
+func (d *Daemon) forgeListRead(ctx context.Context, moved []forgeListScoped, cursor forgeCursor, filter forgeFilter, limit int,
+	key string) wire.ForgeList {
+	// When the forges were read, for a client's "Last update" (#6642): a kept answer keeps it.
+	out := wire.ForgeList{Items: []wire.ForgeItem{}, ReadAt: new(wire.DateOf(nowFunc()))}
 	pages := forgeListPages(ctx, moved, cursor, filter, limit)
 	var more bool
 	totals := listTotals(cursor, pages)
-	out.Items, cursor, more = mergeForgePages(pages, cursor, limit)
+	out.Items, cursor, more = mergeForgePagesBy(pages, cursor, limit, filter.Sort == forgeSortPriority)
 	cursor.Totals = totals
 	names := make([]string, len(moved))
 	for n, m := range moved {
@@ -332,12 +362,13 @@ func (d *Daemon) forgeListAsked(ctx context.Context, prs bool, r wire.ForgeListR
 		out.Total = new(int64(total))
 	}
 	forgeListFillForgesAndErrors(&out, moved, pages)
+	out.Scopes = forgeListScopeNames(moved)
 	if more {
 		out.Cursor = cursor.text()
 	}
-	d.forgeRemember(string(key), forgeAnswer{list: &out})
+	d.forgeRemember(key, forgeAnswer{list: &out})
 	d.resolvedFromForge(out.Items)
-	return out, nil
+	return out
 }
 
 // forgeListChecked reads a list request's limit, state and cursor, and says
@@ -353,6 +384,9 @@ func forgeListChecked(method string, r wire.ForgeListRequest) (int, string, forg
 	state := deref(r.State)
 	if !slices.Contains([]string{"", "open", "closed", "all"}, state) {
 		return 0, "", forgeCursor{}, Invalid("%s: state is open, closed or all", method)
+	}
+	if !slices.Contains([]string{"", "updated", forgeSortPriority}, deref(r.Sort)) {
+		return 0, "", forgeCursor{}, Invalid("%s: sort is updated or priority", method)
 	}
 	cursor, err := cursorOf(r.Cursor)
 	if err != nil {
@@ -419,6 +453,25 @@ func (d *Daemon) forgeListScopes(ctx context.Context, folders []string, prs bool
 	return moved, scopeKeys
 }
 
+// forgeListScopeNames is what a list reads (#6641), sorted: each repo or project as sourcesOf names it
+// (github:owner/repo), else one forge:key for a forge's whole scope. Two machines whose lists say the same give the
+// same list, so a client asks one of them.
+func forgeListScopeNames(moved []forgeListScoped) []string {
+	names := []string{}
+	for _, m := range moved {
+		sources := sourcesOf(m.forge.Name(), m.scope)
+		for _, s := range sources {
+			names = append(names, s.name)
+		}
+		if len(sources) == 0 {
+			key, _ := json.Marshal(m.scope.Key())
+			names = append(names, m.forge.Name()+":"+string(key))
+		}
+	}
+	slices.Sort(names)
+	return slices.Compact(names)
+}
+
 // forgeListPages reads one page from each forge that the cursor has not done.
 func forgeListPages(ctx context.Context, moved []forgeListScoped, cursor forgeCursor, filter forgeFilter, limit int) []forgePage {
 	var pages []forgePage
@@ -448,7 +501,7 @@ func forgeListFillForgesAndErrors(out *wire.ForgeList, moved []forgeListScoped, 
 	}
 	for _, p := range pages {
 		if p.err != nil {
-			out.Errors = append(out.Errors, wire.ForgeListError{Forge: p.forge, Message: p.err.Error()})
+			out.Errors = append(out.Errors, forgeListError(p.forge, p.err))
 		}
 	}
 }
@@ -507,12 +560,42 @@ func listTotal(forges []string, totals map[string]int) (int, bool) {
 // forge whose page was all kept and was its last is done, and a forge that failed is asked
 // again from where it was. more says some forge goes on.
 func mergeForgePages(pages []forgePage, from forgeCursor, limit int) ([]wire.ForgeItem, forgeCursor, bool) {
+	return mergeForgePagesBy(pages, from, limit, false)
+}
+
+// forgeSortPriority is a list request's sort in priority order (#6538).
+const forgeSortPriority = "priority"
+
+// forgeItemRank is an item's place in a list in priority order: high, medium, low, then none.
+func forgeItemRank(i wire.ForgeItem) int {
+	switch strings.ToLower(deref(i.Priority)) {
+	case "high":
+		return 0
+	case "medium":
+		return 1
+	case "low":
+		return 2
+	}
+	return 3
+}
+
+// mergeForgePagesBy is mergeForgePages, by priority first when byPriority (#6538): each forge's
+// page is in that order already, so the merge keeps it.
+func mergeForgePagesBy(pages []forgePage, from forgeCursor, limit int, byPriority bool) ([]wire.ForgeItem, forgeCursor, bool) {
 	items := []wire.ForgeItem{}
 	taken := make([]int, len(pages))
+	before := func(a, b wire.ForgeItem) bool {
+		if byPriority {
+			if ra, rb := forgeItemRank(a), forgeItemRank(b); ra != rb {
+				return ra < rb
+			}
+		}
+		return a.UpdatedAt > b.UpdatedAt
+	}
 	for len(items) < limit {
 		best := -1
 		for n, p := range pages {
-			if taken[n] < len(p.items) && (best < 0 || p.items[taken[n]].UpdatedAt > pages[best].items[taken[best]].UpdatedAt) {
+			if taken[n] < len(p.items) && (best < 0 || before(p.items[taken[n]], pages[best].items[taken[best]])) {
 				best = n
 			}
 		}
@@ -692,17 +775,40 @@ func (d *Daemon) forgeItem(ctx context.Context, kind string, r wire.ForgeItemReq
 
 // forgeViewer is the login the person's connection to the forge named name has (#5804): the
 // one forge/approve reviews as, so a client knows which reviewer and which author is the
-// person. nil where the connection does not say it.
+// person. nil where the connection does not say it. It is kept in memory (#6531) until a
+// write to the store, or forgeCacheFor.
 func (d *Daemon) forgeViewer(name string) *string {
 	switch name {
 	case connections.GitHub, connections.GitLab, connections.Forgejo, connections.Bitbucket, connections.AzureDevOps:
 	default:
 		return nil
 	}
-	if c, ok := d.storedConnection(name); ok && c.Login != "" {
-		return &c.Login
+	d.viewerMu.Lock()
+	kept, ok := d.viewers[name]
+	gen := d.viewerGen
+	d.viewerMu.Unlock()
+	if ok && nowFunc().Sub(kept.at) < forgeCacheFor {
+		return kept.login
 	}
-	return nil
+	at := nowFunc()
+	c, found, err := d.readConnection(name)
+	if err != nil {
+		// A store that does not read is not kept: the next call reads it again.
+		return nil
+	}
+	var login *string
+	if found && c.Login != "" {
+		login = &c.Login
+	}
+	d.viewerMu.Lock()
+	if d.viewerGen == gen {
+		if d.viewers == nil {
+			d.viewers = map[string]keptViewer{}
+		}
+		d.viewers[name] = keptViewer{login, at}
+	}
+	d.viewerMu.Unlock()
+	return login
 }
 
 // gitlabOf is the connected GitLab, the project of repo there and a folder on it: a node names

@@ -13,10 +13,13 @@ import {
   cellLabel, clickNote, deployGrid, emptyLine, emptyTitle, jobOf, labelsLine, mergeTargets, nextWords, noLive, noMachine, shareWords,
   sinceWords, tierChip, versionWords,
 } from "../model/workDeploys";
-import { keepWork, keptWorkRead } from "../model/localCopy";
+import { keepWork, keptWorkRead } from "../model/workCache";
 import { go } from "../route";
-import { LastUpdate } from "./LastUpdate";
-import { EmptyState, ErrorStrip, FromDeviceStrip, PlaceholderRows, RefreshButton } from "./WorkParts";
+import { EmptyState, ErrorStrip, PlaceholderRows, RefreshButton, WorkFooter } from "./WorkParts";
+import { pageCount, pageFooterState } from "../model/workFooter";
+
+/** The middle of Deploys when nothing was read (#5971). */
+const couldNotReadDeploys = "Could not read deploys";
 
 const targets = signal<DeployTargetNow[] | null>(null);
 const problem = signal<string | null>(null);
@@ -56,7 +59,7 @@ async function load(store: Store) {
     const failed = answers.flatMap((a) => a.failed ? [a.failed] : []);
     const got = answers.flatMap((a) => a.got ? [a.got] : []);
     problem.value = failed.length ? failed.join("\n") : null;
-    // Every machine failed: what is on screen stays, with its time in the strip.
+    // Every machine failed: what is on screen stays, with its time in the footer.
     if (got.length === 0 && failed.length > 0) return;
     const merged = mergeTargets(got);
     targets.value = merged;
@@ -78,17 +81,22 @@ export function WorkDeploysPage({ store }: { store: Store }) {
   }, []);
   const refresh = () => { asked.value++; };
   const t = targets.value;
+  const lines = problem.value ? problem.value.split("\n") : [];
+  // The read's state, the count and Last update are in the footer, as on the lists (#5971, the Mac's #5969); no strip.
+  const footer = hosts === "" ? { kind: "none" as const } : pageFooterState(t !== null, reading.value, fromDevice.value, lines);
   return (
-    <div class="work-list deploys-page">
+    <div class="work-list deploys-page work-footed">
       <div class="deploys-bar">
-        {readAt.value !== undefined && !fromDevice.value ? <LastUpdate at={readAt.value} /> : <span />}
+        <span />
         <RefreshButton busy={reading.value} onClick={refresh} />
       </div>
-      <FromDeviceStrip at={fromDevice.value ? readAt.value : undefined} />
-      <ErrorStrip lines={problem.value ? problem.value.split("\n") : []} retry={refresh} at={readAt.value} />
       {hosts === "" ? <EmptyState kind="deploy" title="No machine keeps deploys" line={noMachine} />
-        : t === null ? (problem.value ? null : <PlaceholderRows />)
-        : <Grid targets={t} />}
+        : t !== null ? <Grid targets={t} />
+        : lines.length > 0 && !reading.value
+          ? <ErrorStrip lines={lines} retry={refresh} middle title={couldNotReadDeploys} />
+        : <PlaceholderRows />}
+      <WorkFooter state={footer} retry={refresh} count={t !== null ? pageCount(t.length, "target") : undefined}
+        at={t !== null ? readAt.value : undefined} />
     </div>
   );
 }

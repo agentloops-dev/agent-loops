@@ -1009,6 +1009,24 @@
       ]
     },
     {
+      "name": "control/capacity",
+      "x-capability": "console/1",
+      "description": "The last capacity look of each live control plane copy (#6590). Admins only.",
+      "tags": [{"name": "web"}],
+      "paramStructure": "by-name",
+      "params": [{"name": "params", "required": true, "schema": {"$ref": "schema/core.schema.json#/definitions/Empty"}}],
+      "result": {"name": "result", "schema": {"$ref": "schema/machines.schema.json#/definitions/ControlCapacityBoard"}}
+    },
+    {
+      "name": "control/capacityChanged",
+      "x-capability": "console/1",
+      "description": "To admins when a live control plane copy's capacity level moves (#6590).",
+      "tags": [{"name": "web"}],
+      "x-notification": true,
+      "paramStructure": "by-name",
+      "params": [{"name": "params", "required": true, "schema": {"$ref": "schema/machines.schema.json#/definitions/ControlCapacityCopy"}}]
+    },
+    {
       "name": "control/clientChanged",
       "x-capability": "control/1",
       "tags": [
@@ -1446,7 +1464,7 @@
     {
       "name": "control/notice",
       "x-capability": "org-identity/1",
-      "description": "To admins (#1002): what changed with no click: the last admin kept, a SCIM group's shares left, a Remove request.",
+      "description": "To admins (#1002, #6590): what changed with no click: the last admin kept, a SCIM group's shares left, a Remove request, or the control plane's capacity state.",
       "x-notification": true,
       "paramStructure": "by-name",
       "params": [
@@ -1658,21 +1676,6 @@
           "required": true,
           "schema": {
             "$ref": "schema/files.schema.json#/definitions/ProjectsChanged"
-          }
-        }
-      ]
-    },
-    {
-      "name": "control/providerDraft",
-      "x-capability": "control/1",
-      "x-notification": true,
-      "paramStructure": "by-name",
-      "params": [
-        {
-          "name": "params",
-          "required": true,
-          "schema": {
-            "$ref": "schema/machines.schema.json#/definitions/ProviderDraftUpdate"
           }
         }
       ]
@@ -3396,27 +3399,6 @@
       ]
     },
     {
-      "name": "machine/providerDraft",
-      "x-capability": "machine/1",
-      "description": "A host, on its channel 0, for a writing agent there (#858).",
-      "paramStructure": "by-name",
-      "params": [
-        {
-          "name": "params",
-          "required": true,
-          "schema": {
-            "$ref": "schema/machines.schema.json#/definitions/MachineProviderDraftCall"
-          }
-        }
-      ],
-      "result": {
-        "name": "result",
-        "schema": {
-          "$ref": "schema/core.schema.json#/definitions/JSONValue"
-        }
-      }
-    },
-    {
       "name": "machine/release",
       "x-capability": "host.update/1",
       "description": "To a machine that says host.update/1, on its channel 0, at each join: the release this control plane names, its own version, when that is a release (#2178). The machine updates Agents Host to it, if it is newer, between turns.",
@@ -3534,6 +3516,27 @@
         "name": "result",
         "schema": {
           "$ref": "schema/core.schema.json#/definitions/Empty"
+        }
+      }
+    },
+    {
+      "name": "machine/setupWork",
+      "x-capability": "machine/1",
+      "description": "A host (#6890, #6896): what its set-up has left. A machine a warm pool made asks it for the pool's projects, and for the steps to run once a person claims it.",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/core.schema.json#/definitions/Empty"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/machines.schema.json#/definitions/MachineSetupWork"
         }
       }
     },
@@ -5579,86 +5582,6 @@
       }
     },
     {
-      "name": "providers/draftAnswer",
-      "x-capability": "providers/1",
-      "paramStructure": "by-name",
-      "params": [
-        {
-          "name": "params",
-          "required": true,
-          "schema": {
-            "$ref": "schema/machines.schema.json#/definitions/ProviderDraftAnswer"
-          }
-        }
-      ],
-      "result": {
-        "name": "result",
-        "schema": {
-          "$ref": "schema/core.schema.json#/definitions/Empty"
-        }
-      }
-    },
-    {
-      "name": "providers/draftCancel",
-      "x-capability": "providers/1",
-      "paramStructure": "by-name",
-      "params": [
-        {
-          "name": "params",
-          "required": true,
-          "schema": {
-            "$ref": "schema/machines.schema.json#/definitions/ProviderDraftRequest"
-          }
-        }
-      ],
-      "result": {
-        "name": "result",
-        "schema": {
-          "$ref": "schema/core.schema.json#/definitions/Empty"
-        }
-      }
-    },
-    {
-      "name": "providers/draftSigned",
-      "x-capability": "providers/1",
-      "paramStructure": "by-name",
-      "params": [
-        {
-          "name": "params",
-          "required": true,
-          "schema": {
-            "$ref": "schema/machines.schema.json#/definitions/ProviderDraftSigned"
-          }
-        }
-      ],
-      "result": {
-        "name": "result",
-        "schema": {
-          "$ref": "schema/core.schema.json#/definitions/Empty"
-        }
-      }
-    },
-    {
-      "name": "providers/draftStart",
-      "x-capability": "providers/1",
-      "paramStructure": "by-name",
-      "params": [
-        {
-          "name": "params",
-          "required": true,
-          "schema": {
-            "$ref": "schema/machines.schema.json#/definitions/ProviderDraftStart"
-          }
-        }
-      ],
-      "result": {
-        "name": "result",
-        "schema": {
-          "$ref": "schema/machines.schema.json#/definitions/ProviderDraftStarted"
-        }
-      }
-    },
-    {
       "name": "providers/list",
       "x-capability": "providers/1",
       "tags": [
@@ -5706,6 +5629,58 @@
         "name": "result",
         "schema": {
           "$ref": "schema/core.schema.json#/definitions/Empty"
+        }
+      }
+    },
+    {
+      "name": "providers/oauthFinish",
+      "x-capability": "providers.oauth/1",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
+      "description": "An admin's (#6072): finish an OAuth connection with what the hand-back page gave. A failure a client can act on has data.reason: denied, disconnected, scope_missing, account_inactive or expired.",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/machines.schema.json#/definitions/ProviderOAuthFinish"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/machines.schema.json#/definitions/ProviderSummary"
+        }
+      }
+    },
+    {
+      "name": "providers/oauthStart",
+      "x-capability": "providers.oauth/1",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
+      "description": "An admin's (#6072): start connecting a provider with OAuth on the machine that will carry it, which keeps the PKCE verifier and, after providers/oauthFinish, the tokens (Principle 6: the control plane keeps none).",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/machines.schema.json#/definitions/ProviderOAuthStart"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/machines.schema.json#/definitions/ProviderOAuthStarted"
         }
       }
     },
@@ -5781,26 +5756,6 @@
         "name": "result",
         "schema": {
           "$ref": "schema/core.schema.json#/definitions/Empty"
-        }
-      }
-    },
-    {
-      "name": "providers/runtimes",
-      "x-capability": "providers/1",
-      "paramStructure": "by-name",
-      "params": [
-        {
-          "name": "params",
-          "required": true,
-          "schema": {
-            "$ref": "schema/core.schema.json#/definitions/Empty"
-          }
-        }
-      ],
-      "result": {
-        "name": "result",
-        "schema": {
-          "$ref": "schema/machines.schema.json#/definitions/ProviderRuntimes"
         }
       }
     },

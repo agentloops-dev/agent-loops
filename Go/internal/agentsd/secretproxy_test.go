@@ -32,23 +32,23 @@ func TestAnHTTPServerGetsAFlaggedSecretThroughAgentsd(t *testing.T) {
 		seen = append(seen, r.Header.Clone())
 		seenQuery = append(seenQuery, r.URL.RawQuery)
 		mu.Unlock()
-		io.ReadAll(r.Body)
+		check(t, errOnly(io.ReadAll(r.Body)))
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Mcp-Session-Id", "upstream-session")
-		io.WriteString(w, `{"jsonrpc":"2.0","id":1,"result":{"serverInfo":{"name":"notes"}}}`)
+		check(t, errOnly(io.WriteString(w, `{"jsonrpc":"2.0","id":1,"result":{"serverInfo":{"name":"notes"}}}`)))
 	}))
 	defer upstream.Close()
 
 	home := t.TempDir()
 	personalHomeFor(t, home)
 	path := skillcatalog.SecretsPath(home)
-	os.MkdirAll(filepath.Dir(path), 0o700)
+	must(t, os.MkdirAll(filepath.Dir(path), 0o700))
 	env, _ := skillcatalog.LoadSecretsForChange(path)
 	env.Set("PLAIN_KEY", "plain")
 	if err := env.Save(path); err != nil {
 		t.Fatal(err)
 	}
-	os.MkdirAll(filepath.Join(home, ".agents"), 0o700)
+	must(t, os.MkdirAll(filepath.Join(home, ".agents"), 0o700))
 	mcp := `{"mcpServers":{
 		"notes":{"url":"` + upstream.URL + `/mcp?k=${PLAIN_KEY}","headers":{"Authorization":"Bearer ${API_TOKEN}"}},
 		"local":{"command":"notes-mcp","env":{"TOKEN":"${API_TOKEN}"}}}}`
@@ -145,9 +145,9 @@ func TestADeniedServerDoesNotAskAgain(t *testing.T) {
 
 	home := t.TempDir()
 	personalHomeFor(t, home)
-	os.MkdirAll(filepath.Join(home, ".agents"), 0o700)
-	os.WriteFile(filepath.Join(home, ".agents", "mcp.json"),
-		[]byte(`{"mcpServers":{"notes":{"url":"https://notes.example.com/${API_TOKEN}"}}}`), 0o600)
+	must(t, os.MkdirAll(filepath.Join(home, ".agents"), 0o700))
+	must(t, os.WriteFile(filepath.Join(home, ".agents", "mcp.json"),
+		[]byte(`{"mcpServers":{"notes":{"url":"https://notes.example.com/${API_TOKEN}"}}}`), 0o600))
 	d, _ := start(t, t.TempDir())
 	t.Cleanup(d.Shutdown)
 	// As above: the first-start move before the test, not during its cleanup (#5070).

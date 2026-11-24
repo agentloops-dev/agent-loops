@@ -1,7 +1,6 @@
 package agentsd
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -37,7 +36,7 @@ func TestSetFolderPolicyWritesAStableOrder(t *testing.T) {
 	running := int64(2)
 	rules := wire.PolicyRules{Helpers: &wire.PolicyHelpers{MostRunning: &running}}
 	var got wire.PolicyRules
-	json.Unmarshal(c.call(t, 2, "policy/setFolder", map[string]any{"folder": store.FolderURL(dir), "rules": rules}), &got)
+	mustUnmarshal(t, c.call(t, 2, "policy/setFolder", map[string]any{"folder": store.FolderURL(dir), "rules": rules}), &got)
 	if got.Helpers == nil || got.Helpers.MostRunning == nil || *got.Helpers.MostRunning != 2 {
 		t.Fatalf("%+v", got)
 	}
@@ -66,9 +65,9 @@ func TestAFolderPolicyThatOnlyTightensAppliesAtOnce(t *testing.T) {
 	c.call(t, 2, "policy/setFolder", map[string]any{"folder": store.FolderURL(dir),
 		"rules": wire.PolicyRules{Helpers: &wire.PolicyHelpers{MostRunning: &running}}})
 	// From outside the app, tighter: 5 -> 2.
-	os.WriteFile(filepath.Join(dir, folderPolicyFile), []byte(`{"helpers":{"mostRunning":2}}`), 0o644)
+	must(t, os.WriteFile(filepath.Join(dir, folderPolicyFile), []byte(`{"helpers":{"mostRunning":2}}`), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	var state wire.PolicyFolderState
-	json.Unmarshal(c.call(t, 3, "policy/folder", map[string]any{"folder": store.FolderURL(dir)}), &state)
+	mustUnmarshal(t, c.call(t, 3, "policy/folder", map[string]any{"folder": store.FolderURL(dir)}), &state)
 	if state.Pending != nil {
 		t.Fatalf("a tighter change is pending: %+v", state.Pending)
 	}
@@ -91,9 +90,9 @@ func TestAFolderPolicyThatLoosensWaits(t *testing.T) {
 		"rules": wire.PolicyRules{Helpers: &wire.PolicyHelpers{MostRunning: &running}}})
 	approved := readPolicyJSON(t, dir)
 	// From outside the app, looser: 2 -> 5.
-	os.WriteFile(filepath.Join(dir, folderPolicyFile), []byte(`{"helpers":{"mostRunning":5}}`), 0o644)
+	must(t, os.WriteFile(filepath.Join(dir, folderPolicyFile), []byte(`{"helpers":{"mostRunning":5}}`), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	var state wire.PolicyFolderState
-	json.Unmarshal(c.call(t, 3, "policy/folder", map[string]any{"folder": store.FolderURL(dir)}), &state)
+	mustUnmarshal(t, c.call(t, 3, "policy/folder", map[string]any{"folder": store.FolderURL(dir)}), &state)
 	if state.Pending == nil {
 		t.Fatal("a looser change did not wait")
 	}
@@ -107,13 +106,13 @@ func TestAFolderPolicyThatLoosensWaits(t *testing.T) {
 	}
 	// The guarded-file actions behave as any other guarded file's do.
 	var reading wire.GuardedChangeReading
-	json.Unmarshal(c.call(t, 4, "folders/readGuardedChange", map[string]any{"folder": store.FolderURL(dir), "path": folderPolicyFile}), &reading)
+	mustUnmarshal(t, c.call(t, 4, "folders/readGuardedChange", map[string]any{"folder": store.FolderURL(dir), "path": folderPolicyFile}), &reading)
 	if reading.Approved == nil || *reading.Approved != approved || reading.Current == nil {
 		t.Fatalf("%+v", reading)
 	}
 	c.call(t, 5, "folders/keepGuardedChange", map[string]any{"folder": store.FolderURL(dir), "path": folderPolicyFile, "digest": reading.Digest})
 	state = wire.PolicyFolderState{}
-	json.Unmarshal(c.call(t, 6, "policy/folder", map[string]any{"folder": store.FolderURL(dir)}), &state)
+	mustUnmarshal(t, c.call(t, 6, "policy/folder", map[string]any{"folder": store.FolderURL(dir)}), &state)
 	if state.Pending != nil || state.Rules.Helpers == nil || *state.Rules.Helpers.MostRunning != 5 {
 		t.Fatalf("Allow did not keep the looser change: %+v", state)
 	}
@@ -126,21 +125,21 @@ func TestAnInvalidFolderPolicyIsPendingWithTheReason(t *testing.T) {
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := folder(t, c, 1)
-	os.WriteFile(filepath.Join(dir, folderPolicyFile), []byte(`not json`), 0o644)
+	must(t, os.WriteFile(filepath.Join(dir, folderPolicyFile), []byte(`not json`), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	var state wire.PolicyFolderState
-	json.Unmarshal(c.call(t, 2, "policy/folder", map[string]any{"folder": store.FolderURL(dir)}), &state)
+	mustUnmarshal(t, c.call(t, 2, "policy/folder", map[string]any{"folder": store.FolderURL(dir)}), &state)
 	if state.Pending == nil || state.Invalid == nil || *state.Invalid == "" {
 		t.Fatalf("%+v", state)
 	}
 	// Out of range: helpers.mostRunning is 1-10.
-	os.WriteFile(filepath.Join(dir, folderPolicyFile), []byte(`{"helpers":{"mostRunning":5000}}`), 0o644)
+	must(t, os.WriteFile(filepath.Join(dir, folderPolicyFile), []byte(`{"helpers":{"mostRunning":5000}}`), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	// A fresh guarded state for this test's second file (the previous one is still pending
 	// for digest reasons; approve it first, as the person would).
 	var reading wire.GuardedChangeReading
-	json.Unmarshal(c.call(t, 3, "folders/readGuardedChange", map[string]any{"folder": store.FolderURL(dir), "path": folderPolicyFile}), &reading)
+	mustUnmarshal(t, c.call(t, 3, "folders/readGuardedChange", map[string]any{"folder": store.FolderURL(dir), "path": folderPolicyFile}), &reading)
 	c.call(t, 4, "folders/undoGuardedChange", map[string]any{"folder": store.FolderURL(dir), "path": folderPolicyFile, "digest": reading.Digest})
-	os.WriteFile(filepath.Join(dir, folderPolicyFile), []byte(`{"helpers":{"mostRunning":5000}}`), 0o644)
-	json.Unmarshal(c.call(t, 5, "policy/folder", map[string]any{"folder": store.FolderURL(dir)}), &state)
+	must(t, os.WriteFile(filepath.Join(dir, folderPolicyFile), []byte(`{"helpers":{"mostRunning":5000}}`), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
+	mustUnmarshal(t, c.call(t, 5, "policy/folder", map[string]any{"folder": store.FolderURL(dir)}), &state)
 	if state.Pending == nil || state.Invalid == nil || *state.Invalid == "" {
 		t.Fatalf("%+v", state)
 	}
@@ -155,9 +154,9 @@ func TestAnUnknownFolderRuleIsIgnored(t *testing.T) {
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := folder(t, c, 1)
-	os.WriteFile(filepath.Join(dir, folderPolicyFile), []byte(`{"helpers":{"mostRunning":2},"somethingNew":true}`), 0o644)
+	must(t, os.WriteFile(filepath.Join(dir, folderPolicyFile), []byte(`{"helpers":{"mostRunning":2},"somethingNew":true}`), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	var state wire.PolicyFolderState
-	json.Unmarshal(c.call(t, 2, "policy/folder", map[string]any{"folder": store.FolderURL(dir)}), &state)
+	mustUnmarshal(t, c.call(t, 2, "policy/folder", map[string]any{"folder": store.FolderURL(dir)}), &state)
 	if state.Pending != nil {
 		t.Fatalf("an unknown field made it pending: %+v", state)
 	}
@@ -175,7 +174,7 @@ func TestAFolderValueLooserThanYoursIsKept(t *testing.T) {
 	defer d.Shutdown()
 	dir := folder(t, c, 1)
 	var yours wire.YourPolicyState
-	json.Unmarshal(c.call(t, 2, "policy/yours", map[string]any{}), &yours)
+	mustUnmarshal(t, c.call(t, 2, "policy/yours", map[string]any{}), &yours)
 	tight := int64(2)
 	c.call(t, 3, "policy/setYours", map[string]any{"rules": wire.PolicyRules{Helpers: &wire.PolicyHelpers{MostRunning: &tight}}, "revision": yours.Policy.Revision})
 	loose := int64(8)
@@ -212,7 +211,7 @@ func TestPolicyEffectiveForAClient(t *testing.T) {
 	defer d.Shutdown()
 	dir := folder(t, c, 1)
 	var yours wire.YourPolicyState
-	json.Unmarshal(c.call(t, 2, "policy/yours", map[string]any{}), &yours)
+	mustUnmarshal(t, c.call(t, 2, "policy/yours", map[string]any{}), &yours)
 	tight := int64(2)
 	c.call(t, 3, "policy/setYours", map[string]any{"rules": wire.PolicyRules{Helpers: &wire.PolicyHelpers{MostRunning: &tight}}, "revision": yours.Policy.Revision})
 	off := false
@@ -220,7 +219,7 @@ func TestPolicyEffectiveForAClient(t *testing.T) {
 		"rules": wire.PolicyRules{ArchiveMyChats: &off}})
 
 	var none wire.EffectivePolicy
-	json.Unmarshal(c.call(t, 5, "policy/effective", map[string]any{}), &none)
+	mustUnmarshal(t, c.call(t, 5, "policy/effective", map[string]any{}), &none)
 	if len(none.FoldersWithRules) != 1 || none.FoldersWithRules[0].Count != 1 || none.FoldersWithRules[0].Name != filepath.Base(dir) {
 		t.Fatalf("foldersWithRules: %+v", none.FoldersWithRules)
 	}
@@ -229,14 +228,41 @@ func TestPolicyEffectiveForAClient(t *testing.T) {
 	}
 
 	var inFolder wire.EffectivePolicy
-	json.Unmarshal(c.call(t, 6, "policy/effective", map[string]any{"folder": store.FolderURL(dir)}), &inFolder)
+	mustUnmarshal(t, c.call(t, 6, "policy/effective", map[string]any{"folder": store.FolderURL(dir)}), &inFolder)
 	r := effectiveRule(inFolder, wire.PolicyRuleNameHelpersMostRunning)
 	if r == nil || r.CapLine == nil || *r.CapLine != "Your policy: at most 2 running at once" {
 		t.Fatalf("a folder's row is capped by yours: %+v", r)
 	}
 
-	json.Unmarshal(c.call(t, 7, "policy/yours", map[string]any{}), &yours)
+	mustUnmarshal(t, c.call(t, 7, "policy/yours", map[string]any{}), &yours)
 	if yours.Signed == nil || yours.Signed.Policy == "" || yours.Signed.Key == nil {
 		t.Fatalf("policy/yours carries the signed copy: %+v", yours.Signed)
+	}
+}
+
+// A folder's policy.json first seen while it is written (empty, or half of it) is not
+// approved as it stands (#6525): the whole copy is then a change against no rules.
+func TestAFolderPolicyFirstSeenHalfWrittenIsNotApproved(t *testing.T) {
+	t.Parallel()
+
+	d, _ := start(t, t.TempDir())
+	defer d.Shutdown()
+	for _, half := range []string{"", `{"helpers":{"mostRu`} {
+		// A folder the app has not added, so no watch: only the test checks the file.
+		dir := t.TempDir()
+		file := filepath.Join(dir, folderPolicyFile)
+		must(t, os.MkdirAll(filepath.Dir(file), 0o755))  //nolint:gosec // G301: the mode .agents always has
+		must(t, os.WriteFile(file, []byte(half), 0o644)) //nolint:gosec // G306: the mode policy.json always has
+		d.checkFolderPolicyGuarded(dir)
+		if s := guardedStateOf(d, dir, folderPolicyFile); s.ApprovedDigest != nil || s.Pending == nil {
+			t.Fatalf("%q: %+v", half, s)
+		}
+		// The whole copy only tightens no rules, so it applies.
+		whole := `{"helpers":{"mostRunning":2}}`
+		must(t, store.WriteAtomically(file, []byte(whole), 0o644))
+		d.checkFolderPolicyGuarded(dir)
+		if s := guardedStateOf(d, dir, folderPolicyFile); string(s.ApprovedContent) != whole || s.Pending != nil {
+			t.Fatalf("after %q: %+v", half, s)
+		}
 	}
 }

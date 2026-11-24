@@ -1111,7 +1111,8 @@ func (d *Daemon) waitForEvent(agent wire.UUID, args map[string]json.RawMessage) 
 	if prev != nil {
 		prefix += replacedWords(prev)
 	}
-	hold := time.AfterFunc(max(0, eventHoldLimit-time.Since(entered)), d.jobFunc("eventwaits timer", func() { d.eventHoldReached(agent, wait.ID) }))
+	// In a dark wake, held only a moment: the next sleep comes soon (#6541).
+	hold := time.AfterFunc(max(0, d.waitHold()-time.Since(entered)), d.jobFunc("eventwaits timer", func() { d.eventHoldReached(agent, wait.ID) }))
 	defer hold.Stop()
 	d.waitMu.Lock()
 	answerNow := call.answerNow

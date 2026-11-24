@@ -26,9 +26,13 @@ final class WorkTimelineState {
     var problem: String?
     /// A read runs: the toolbar's Refresh spins.
     var reading = false
-    /// The last read got nothing: the plot is the read before it, dimmed under the strip (S12).
-    var stale = false
     var asked = 0
+    /// The read that ended last: until it is the window's ask, a read of it is still to come, so the empty card
+    /// (S11) waits, also on a re-read (a range, project or board change, Refresh; #5969).
+    private var done: Ask?
+    /// The machines the read that runs asks, and how many have answered: the footer says "Reading 1 of 3 machines…".
+    var asking = 0
+    var answered = 0
     /// Now was clicked: the plot scrolls back to it.
     var nowAsked = 0
     /// Children that closed since the last read, and when they were seen: their dots pulse once.
@@ -50,6 +54,9 @@ final class WorkTimelineState {
 
     var ask: Ask { Ask(asked: asked, project: project, board: board, range: range, anchor: anchor) }
 
+    /// A read of the window runs or is still to start.
+    var pending: Bool { reading || done != ask }
+
     init() {
         let kept = WorkRemembered.timeline(WorkRememberedStore.kept(.timeline))
         range = kept.range
@@ -64,7 +71,7 @@ final class WorkTimelineState {
     /// The plot on screen came from this device's copy (#4930), until the machines answer.
     var fromDevice = false
     /// When the plot on screen was read (#5142): this device's copy's time, or the last read
-    /// that worked. A stale plot says it in the failure strip, not only by its dim.
+    /// that worked. The footer says it as "Last update", also when a later read failed.
     var plotRead: Date?
 
     /// Work ▸ Timeline as this device keeps it (#4930): the plot around now, and the boards.
@@ -96,11 +103,15 @@ final class WorkTimelineState {
         guard read != mine || timeline == nil else { return }
         read = mine
         reading = true
-        defer { if ask == mine { reading = false } }
+        defer {
+            if ask == mine {
+                reading = false
+                done = mine
+            }
+        }
         let projects = projects(model: model)
         guard let project = projects.first(where: { $0.id == self.project }) ?? projects.first else {
             timeline = .init()
-            stale = false
             return
         }
         if self.project != project.id { self.project = project.id }
@@ -116,6 +127,8 @@ final class WorkTimelineState {
         async let found = model.workBoards()
         let on = Set(project.folders.map { String($0.prefix { $0 != "|" }) })
         let machines = model.timelineMachines.filter { on.contains($0.id.rawValue) }
+        asking = machines.count
+        answered = 0
         // The widest range's span, whatever the range: the rows are packed over it, so they stay put
         // across ranges (#5506).
         let span = WorkTimeline.packSpan(anchor)
@@ -125,9 +138,8 @@ final class WorkTimelineState {
         var failed: [String] = []
         func draw(all: Bool) async {
             problem = all && got.isEmpty && !failed.isEmpty ? failed.joined(separator: "\n") : nil
-            // Every machine failed: the last plot stays, dimmed under the strip.
-            stale = all && got.isEmpty && !failed.isEmpty && timeline != nil
-            if stale { return }
+            // Every machine failed: the last plot stays, or with none, what they said in the middle (#5969).
+            if all, got.isEmpty, !failed.isEmpty { return }
             var merged = WorkTimeline.merge(got)
             if let epics { merged.epics = merged.epics.filter { epics.contains($0.item.node.ref) } }
             // A child that closed since the last read of the same window lands: its dot pulses once.
@@ -165,7 +177,11 @@ final class WorkTimelineState {
                                               DaemonAPI.WorkTimelineRequest(project: project.id, from: span.start, to: span.end),
                                               returning: DaemonAPI.WorkTimeline.self, on: machine.id)
                     }
-                    let t = try? read.get()
+                    // A machine whose forge failed answers with no epic and the forge's words: a failed read, so the
+                    // plot and its age stay (#5969).
+                    let answer = try? read.get()
+                    let forgeFailed = answer.map { $0.epics.isEmpty && !($0.errors ?? []).isEmpty } ?? false
+                    let t = forgeFailed ? nil : answer
                     // A board narrows to its epics: the forge says which they are.
                     var refs: [String]?
                     if t != nil, !board.isEmpty {
@@ -173,7 +189,8 @@ final class WorkTimelineState {
                                                               on: machine.id)
                         refs = list?.items.map(\.node.ref) ?? []
                     }
-                    let problem = read.error.map { machines.count > 1 ? "\(machine.name): \($0.localizedDescription)" : $0.localizedDescription }
+                    let words = read.error?.localizedDescription ?? (forgeFailed ? answer?.errors?.joined(separator: "\n") : nil)
+                    let problem = words.map { machines.count > 1 ? "\(machine.name): \($0)" : $0 }
                     return (t, refs, problem)
                 }
             }
@@ -182,6 +199,7 @@ final class WorkTimelineState {
             var answered = 0
             for await (t, refs, problem) in group {
                 answered += 1
+                if ask == mine { self.answered = answered }
                 if let t { got.append(t) }
                 if let refs { epics = (epics ?? []).union(refs) }
                 if let problem { failed.append(problem) }
@@ -389,27 +407,38 @@ struct WorkTimelinePane: View {
         } else {
             // S10: before the first read, the axis and Now draw at once, and grey blocks shimmer in rows.
             let timeline = state.timeline ?? .init()
+            // What runs or failed, the count and Last update are in the footer bar (#5969), not in strips; a plot
+            // whose later read failed stays at full opacity (#5967's rule).
+            let lines = problems(timeline)
+            let drawn = state.timeline != nil
             VStack(spacing: 0) {
-                let lines = problems(timeline)
-                WorkFromDeviceStrip(read: state.fromDevice && lines.isEmpty ? state.plotRead : nil)
-                    .padding(.horizontal, 16).padding(.vertical, 8)
-                if !lines.isEmpty {
-                    WorkErrorStrip(lines: lines, read: state.stale || state.fromDevice ? state.plotRead : nil) { state.asked += 1 }
-                        .padding(.horizontal, 16).padding(.vertical, 8)
-                }
-                // Once a minute; while a read runs, often, so the grey blocks shimmer when they draw.
-                let drawn = state.timeline != nil
-                let busy = !drawn || state.reading
-                TimelineView(.animation(minimumInterval: busy && !reduceMotion ? 1.0 / 20 : 60)) { context in
-                    if listed {
-                        epicList(timeline, now: context.date, drawn: drawn)
-                    } else {
-                        plot(timeline, now: context.date, drawn: drawn, reading: state.reading)
+                if !drawn, !state.pending, !lines.isEmpty {
+                    // Nothing read: what the machines said in the middle, with Try again.
+                    WorkEmptyState(symbol: "exclamationmark.triangle", title: WorkTimeline.couldNotRead,
+                                   line: lines.joined(separator: "\n"), action: (WorkLook.tryAgain, { state.asked += 1 }))
+                        .frame(maxHeight: .infinity)
+                } else {
+                    // Once a minute; while a read runs, often, so the grey blocks shimmer when they draw.
+                    let busy = !drawn || state.pending
+                    TimelineView(.animation(minimumInterval: busy && !reduceMotion ? 1.0 / 20 : 60)) { context in
+                        if listed {
+                            epicList(timeline, now: context.date, drawn: drawn)
+                        } else {
+                            plot(timeline, now: context.date, drawn: drawn, reading: state.pending)
+                        }
                     }
                 }
-                .opacity(state.stale ? 0.5 : 1)
+                WorkPageBar(state: WorkLook.pageFooterState(drawn: drawn, reading: state.pending, fromDevice: state.fromDevice,
+                                                            lines: lines, answered: state.answered, machines: state.asking),
+                            count: drawn ? WorkLook.pageCount(epics(timeline), "epic") : nil,
+                            read: drawn ? state.plotRead : nil) { state.asked += 1 }
             }
         }
+    }
+
+    /// The epics in the window, for the footer's count.
+    private func epics(_ timeline: DaemonAPI.WorkTimeline) -> Int {
+        WorkTimeline.epicCount(WorkTimeline.lines(timeline, now: .now), in: state.range.window(now: state.anchor))
     }
 
     private func problems(_ timeline: DaemonAPI.WorkTimeline) -> [String] {
@@ -499,7 +528,7 @@ struct WorkTimelinePane: View {
         let lines = WorkTimeline.lines(timeline, now: now, working: working)
         let window = state.range.window(now: state.anchor)
         let rows = WorkTimeline.epicRows(lines, window: window, now: now)
-        let shows = WorkTimeline.shows(drawn: drawn, reading: state.reading, epics: rows.count)
+        let shows = WorkTimeline.shows(drawn: drawn, reading: state.pending, epics: rows.count)
         let night = scheme == .dark
         return List {
             Text(WorkTimeline.nowWords(now)).appText(.fine).fontWeight(.semibold).foregroundStyle(.secondary)

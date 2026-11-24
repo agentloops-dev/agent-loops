@@ -22,11 +22,11 @@ import (
 // (#6335): an agent must never use a secret that the person cannot find.
 
 // localSecretList is every secret in this machine's store that is not the person's, by name.
-func (d *Daemon) localSecretList() wire.LocalSecrets {
+func (d *Daemon) localSecretList() (wire.LocalSecrets, error) {
 	out := wire.LocalSecrets{Secrets: []wire.LocalSecret{}}
 	home := d.personalHome()
 	if home == "" {
-		return out
+		return out, nil
 	}
 	user := d.personsSecretNames()
 	descriptions := readSecretDescriptions(home)
@@ -43,7 +43,12 @@ func (d *Daemon) localSecretList() wire.LocalSecrets {
 		}
 		return r
 	}
-	sealed := readSealedSecrets(home).Secrets
+	f, err := readSealedSecrets(home)
+	if err != nil {
+		// An empty list here would say this machine keeps no secret of its own (#6486).
+		return wire.LocalSecrets{}, Invalid("The secrets on this machine cannot be listed: %s.", err)
+	}
+	sealed := f.Secrets
 	for name, s := range sealed {
 		if s.From == sealedFromUser || user[name] {
 			continue
@@ -58,7 +63,14 @@ func (d *Daemon) localSecretList() wire.LocalSecrets {
 		out.Secrets = append(out.Secrets, row(name, 0, false))
 	}
 	sort.Slice(out.Secrets, func(i, j int) bool { return out.Secrets[i].Name < out.Secrets[j].Name })
-	return out
+	// A key that does not read stops every secret here, the person's too (#6632): the page says
+	// so once, with what to do, in place of a line in the log at each delivery.
+	if len(sealed) > 0 || len(d.personsSecretNames()) > 0 {
+		if problem := d.sealingKeyProblem(); problem != "" {
+			out.KeyProblem = &problem
+		}
+	}
+	return out, nil
 }
 
 // personsSecretNames is the names of the person's secrets that the last sync sealed here.
@@ -92,10 +104,11 @@ func (d *Daemon) removeLocalSecret(name string) error {
 		return Invalid("%s was not removed: %s.", name, errPersonsSecret)
 	}
 	d.sealedSecretsMu.Lock()
-	f := readSealedSecrets(home)
+	f, err := readSealedSecrets(home)
 	s, inStore := f.Secrets[name]
-	var err error
 	switch {
+	case err != nil:
+		err = Invalid("%s was not removed: %s.", name, err)
 	case inStore && s.From == sealedFromUser:
 		err = Invalid("%s was not removed: %s.", name, errPersonsSecret)
 	case inStore:
@@ -127,12 +140,12 @@ func (d *Daemon) removeLocalSecret(name string) error {
 // Only the person's own clients reach these (Role.Allows): an agent's connection has none.
 func (d *Daemon) registerLocalSecrets() {
 	On(d, wire.CallSecretsLocalList, func(_ context.Context, _ *Client, _ wire.Empty) (wire.LocalSecrets, error) {
-		return d.localSecretList(), nil
+		return d.localSecretList()
 	})
 	On(d, wire.CallSecretsLocalRemove, func(_ context.Context, _ *Client, in wire.LocalSecretRemoveRequest) (wire.LocalSecrets, error) {
 		if err := d.removeLocalSecret(strings.TrimSpace(in.Name)); err != nil {
 			return wire.LocalSecrets{}, err
 		}
-		return d.localSecretList(), nil
+		return d.localSecretList()
 	})
 }

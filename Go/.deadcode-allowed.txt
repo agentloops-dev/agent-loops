@@ -3,3 +3,4 @@
 # deadcode gives it (Func or Type.Method), a space, then why it stays: reflection, go:linkname,
 # or a method that only something outside the program calls. Never an old finding to fix later:
 # remove a dead function instead.
+Go/internal/flaky/flaky.go: UnderLoad the quarantine of AGENTS.md ("Tests that fail on main too", #6037): a lane calls it for each new flaky Go test, and a root-cause fix takes the call out, so it can have no caller for a time.

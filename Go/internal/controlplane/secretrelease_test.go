@@ -114,3 +114,60 @@ func TestTheControlPlaneReleasesOnlyForAFreshSignedApproval(t *testing.T) {
 		t.Fatal("another machine was released this machine's key")
 	}
 }
+
+func TestRemovingMachineDeletesItsReleaseKeyAndSeenApprovals(t *testing.T) {
+	t.Parallel()
+	p := startPlane(t, store.NewMemory(), controllink.NewPrivateKey())
+	box := p.host("RELEASE-BOX")
+	ctx := context.Background()
+	for _, key := range []string{releaseKeyKey(box.member.Host), releaseSeenPrefix(box.member.Host) + "approval.json"} {
+		if _, err := p.s.cfg.Store.Put(ctx, key, []byte(`{"at":1}`), store.Absent); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if gone, err := p.s.methods.removeHost(ctx, box.member.Host, Caller{}); err != nil || !gone {
+		t.Fatalf("remove machine: gone=%v err=%v", gone, err)
+	}
+	for _, key := range []string{releaseKeyKey(box.member.Host), releaseSeenPrefix(box.member.Host) + "approval.json"} {
+		if object, err := p.s.cfg.Store.Get(ctx, key); err != nil || object != nil {
+			t.Fatalf("%s remains: object=%v err=%v", key, object, err)
+		}
+	}
+}
+
+func TestHourlyReleaseKeySweepExpiresSeenAndRemovesOrphans(t *testing.T) {
+	t.Parallel()
+	p := startPlane(t, store.NewMemory(), controllink.NewPrivateKey())
+	ctx, now := context.Background(), time.Now()
+	active := p.host("ACTIVE-RELEASE-BOX").member.Host
+	oldSeen := releaseSeenPrefix(active) + "old.json"
+	newSeen := releaseSeenPrefix(active) + "new.json"
+	orphanKey := releaseKeyKey("REMOVED-RELEASE-BOX")
+	orphanSeen := releaseSeenPrefix("REMOVED-RELEASE-BOX") + "seen.json"
+	for key, seen := range map[string]releaseSeen{
+		oldSeen:    {At: now.Add(-3 * secretrelease.ApprovalLifetime).Unix()},
+		newSeen:    {At: now.Unix()},
+		orphanSeen: {At: now.Unix()},
+	} {
+		b, err := json.Marshal(seen)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := p.s.cfg.Store.Put(ctx, key, b, store.Absent); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := p.s.cfg.Store.Put(ctx, orphanKey, []byte(`{}`), store.Absent); err != nil {
+		t.Fatal(err)
+	}
+	n, err := sweepReleaseKeys(ctx, p.s.cfg.Store, p.s.records, now, 100)
+	if err != nil || n != 3 {
+		t.Fatalf("deleted %d release records, err %v", n, err)
+	}
+	for key, want := range map[string]bool{oldSeen: false, newSeen: true, orphanKey: false, orphanSeen: false} {
+		object, err := p.s.cfg.Store.Get(ctx, key)
+		if err != nil || (object != nil) != want {
+			t.Errorf("%s exists=%v, want %v (err %v)", key, object != nil, want, err)
+		}
+	}
+}

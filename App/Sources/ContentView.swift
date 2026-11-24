@@ -144,6 +144,8 @@ struct ContentView: View {
             TimeView().paperGround()
         } else if model.showsVelocity {
             VelocityView().paperGround()
+        } else if model.showsCycletime {
+            CycleTimeView().paperGround()
         } else if model.showsAchievements {
             AchievementsPage(multiplier: model.work.multiplier, read: model.work.multiplierReadAt, achievements: model.work.achievements,
                            agentsWorking: model.agents.count { $0.state == .starting || $0.state == .running },
@@ -219,7 +221,7 @@ struct ContentView: View {
     private var folderForTerminal: DaemonAPI.FolderSummary? {
         guard terminal.isOpen, !model.showsEvents, !model.showsRuntimes, model.statusSecretsPage == nil,
               model.machinePage == nil, !model.showsMachines,
-              !model.showsSpending, !model.showsTokens, !model.showsTime, !model.showsVelocity,
+              !model.showsSpending, !model.showsTokens, !model.showsTime, !model.showsVelocity, !model.showsCycletime,
               !model.showsWork, !model.showsDocs, !model.showsMessages, !model.showsAchievements, let folder = model.selectedFolderSummary, folder.exists else { return nil }
         return folder
     }
@@ -234,7 +236,7 @@ struct ContentView: View {
     private var showsChat: Bool {
         model.selection != nil && !model.showsEvents
             && !model.showsRuntimes && model.statusSecretsPage == nil && model.machinePage == nil && !model.showsMachines
-            && !model.showsSpending && !model.showsTime && !model.showsVelocity && !model.showsWork && !model.showsDocs && !model.showsMessages
+            && !model.showsSpending && !model.showsTime && !model.showsVelocity && !model.showsCycletime && !model.showsWork && !model.showsDocs && !model.showsMessages
             && !model.showsAchievements && model.openWorkflow == nil
             && model.folderPage == nil && model.openPin == nil
     }

@@ -372,7 +372,7 @@ func New(cfg Config) (*Service, error) {
 		if err := os.MkdirAll(cfg.ProviderHome, 0o700); err != nil {
 			s.log(fmt.Sprintf("providers: no folder at %s: %v", cfg.ProviderHome, err))
 		}
-		s.providers = s.makeProviders(cfg.ProviderHome)
+		s.providers = s.makeProviders()
 	}
 	if cfg.PublicWeb != "" {
 		s.openPage(cfg)
@@ -511,6 +511,7 @@ func (s *Service) Start(ctx context.Context) (int, error) {
 		}
 	}
 	go s.refreshEvery(s.backstop(15 * time.Second))
+	s.startCapacityMonitor()
 	go s.sweepEveryHour()
 	s.startPools()
 	go s.signIns.checkEvery(time.Hour, s.stop)
@@ -690,6 +691,7 @@ func (s *Service) Stop() {
 	sockets := s.sockets
 	s.sockets = map[*Conn]bool{}
 	s.mu.Unlock()
+	_ = s.cfg.Store.Delete(context.Background(), controlCapacityKey(s.copyID))
 	for _, srv := range servers {
 		srv.Close()
 	}

@@ -66,6 +66,42 @@
     "controlKey": "AQID",
     "name": "name"
   },
+  "ControlCapacityCopy": {
+    "copy": "copy",
+    "level": "near",
+    "reason": "the control plane is near capacity: its disk is busy",
+    "loadPerCore": 2.3,
+    "loadPerCore5": 1.8,
+    "pressureMemoryFullAvg60": 2.5,
+    "pressureIOFullAvg60": 12.5,
+    "memoryAvailableBytes": 1048576,
+    "swapUsedPercent": 20,
+    "heapInuseBytes": 8192,
+    "goroutines": 5,
+    "openFiles": 9,
+    "storeFiles": 100,
+    "storeBytes": 81920,
+    "at": 812345678.5
+  },
+  "ControlCapacityBoard": {
+    "copies": [{
+      "copy": "copy",
+      "level": "near",
+      "reason": "the control plane is near capacity: its disk is busy",
+      "loadPerCore": 2.3,
+      "loadPerCore5": 1.8,
+      "pressureMemoryFullAvg60": 2.5,
+      "pressureIOFullAvg60": 12.5,
+      "memoryAvailableBytes": 1048576,
+      "swapUsedPercent": 20,
+      "heapInuseBytes": 8192,
+      "goroutines": 5,
+      "openFiles": 9,
+      "storeFiles": 100,
+      "storeBytes": 81920,
+      "at": 812345678.5
+    }]
+  },
   "ControlEndpoint": {
     "url": "url",
     "pin": "pin"
@@ -220,7 +256,6 @@
       "capabilities"
     ],
     "contract": 7,
-    "mapped": true,
     "preset": "preset",
     "workspaces": [
       {
@@ -241,25 +276,12 @@
     "id": "digitalocean-x7k2",
     "name": "name",
     "kind": "commands",
-    "command": "command",
-    "args": [
-      "args"
-    ],
-    "url": "url",
-    "headers": {
-      "key": "headers"
-    },
     "commands": {
-      "k": "v"
-    },
-    "map": {
       "k": "v"
     },
     "secrets": {
       "key": "secrets"
-    },
-    "cli": "cli",
-    "draft": "6F9619FF-8B86-D011-B42D-00C04FC964FF"
+    }
   },
   "ProviderRequest": {
     "id": "digitalocean-x7k2"
@@ -372,165 +394,6 @@
         "key": "AQID",
         "sig": "AQID"
       }
-    }
-  },
-  "ProviderDraftStart": {
-    "form": {
-      "id": "digitalocean-x7k2",
-      "name": "name",
-      "kind": "commands",
-      "command": "command",
-      "args": [
-        "args"
-      ],
-      "url": "url",
-      "headers": {
-        "key": "headers"
-      },
-      "commands": {
-        "k": "v"
-      },
-      "map": {
-        "k": "v"
-      },
-      "secrets": {
-        "key": "secrets"
-      },
-      "cli": "cli",
-      "draft": "6F9619FF-8B86-D011-B42D-00C04FC964FF"
-    },
-    "secrets": {
-      "key": "secrets"
-    },
-    "provider": "digitalocean-x7k2",
-    "runtimeID": "runtimeID"
-  },
-  "ProviderDraftStarted": {
-    "draft": "6F9619FF-8B86-D011-B42D-00C04FC964FF",
-    "answered": {
-      "note": "note",
-      "map": {
-        "k": "v"
-      },
-      "preset": "preset"
-    },
-    "sign": {
-      "machine": "box",
-      "method": "agents/start",
-      "params": "{\"runtimeID\":\"claude\"}"
-    }
-  },
-  "ProviderDraftSign": {
-    "machine": "box",
-    "method": "agents/start",
-    "params": "{\"runtimeID\":\"claude\"}"
-  },
-  "ProviderDraftSigned": {
-    "draft": "6F9619FF-8B86-D011-B42D-00C04FC964FF",
-    "lock": {
-      "to": "box",
-      "at": 1793880000,
-      "key": "AQID",
-      "sig": "AQID"
-    }
-  },
-  "ProviderDraftRequest": {
-    "draft": "6F9619FF-8B86-D011-B42D-00C04FC964FF"
-  },
-  "ProviderDraftAnswer": {
-    "draft": "6F9619FF-8B86-D011-B42D-00C04FC964FF",
-    "question": "6F9619FF-8B86-D011-B42D-00C04FC964FF",
-    "yes": true
-  },
-  "ProviderRuntimes": {
-    "runtimes": [
-      {
-        "id": "id",
-        "name": "name",
-        "isDefault": true
-      }
-    ],
-    "host": "host",
-    "why": "why"
-  },
-  "DraftStep": {
-    "at": 812345678.5,
-    "kind": "read",
-    "text": "text"
-  },
-  "DraftCheck": {
-    "passed": true,
-    "workspaces": [
-      {
-        "id": "id",
-        "name": "name",
-        "state": "state",
-        "ssh": "ssh",
-        "tunnel": true,
-        "cost": "cost",
-        "host": "box"
-      }
-    ],
-    "problem": "problem",
-    "ssh": "ssh",
-    "noSSH": true
-  },
-  "DraftQuestion": {
-    "id": "6F9619FF-8B86-D011-B42D-00C04FC964FF",
-    "kind": "start",
-    "workspace": "workspace",
-    "cost": "cost",
-    "text": "text",
-    "yes": "yes"
-  },
-  "ProviderDraftUpdate": {
-    "draft": "6F9619FF-8B86-D011-B42D-00C04FC964FF",
-    "state": "state",
-    "runtimeName": "runtimeName",
-    "steps": [
-      {
-        "at": 812345678.5,
-        "kind": "read",
-        "text": "text"
-      }
-    ],
-    "cost": "cost",
-    "draftJSON": {
-      "k": "v"
-    },
-    "check": {
-      "passed": true,
-      "workspaces": [
-        {
-          "id": "id",
-          "name": "name",
-          "state": "state",
-          "ssh": "ssh",
-          "tunnel": true,
-          "cost": "cost",
-          "host": "box"
-        }
-      ],
-      "problem": "problem",
-      "ssh": "ssh",
-      "noSSH": true
-    },
-    "question": {
-      "id": "6F9619FF-8B86-D011-B42D-00C04FC964FF",
-      "kind": "start",
-      "workspace": "workspace",
-      "cost": "cost",
-      "text": "text",
-      "yes": "yes"
-    },
-    "note": "note"
-  },
-  "MachineProviderDraftCall": {
-    "agentID": "6F9619FF-8B86-D011-B42D-00C04FC964FF",
-    "draft": "6F9619FF-8B86-D011-B42D-00C04FC964FF",
-    "tool": "tool",
-    "arguments": {
-      "k": "v"
     }
   },
   "ReceiveStateRequest": {

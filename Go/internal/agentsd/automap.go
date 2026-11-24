@@ -3,7 +3,9 @@ package agentsd
 import (
 	"encoding/json"
 	"maps"
+	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/agentloops-dev/agent-loops/Go/wire"
@@ -19,10 +21,13 @@ import (
 // No shipped cell gives more access than its value says (SC-005): where a runtime has no
 // exact match, the cell is its nearest setting with less access, or not possible.
 
-// autoCell is a shipped cell. models lists the model values to try, the first offered wins,
-// so a plan that lacks one model still has the cell.
+// autoCell is a shipped cell. family names a model line ("luna" for gpt-<version>-luna): the
+// newest version the runtime offers wins (#6891). models lists the model values to try after
+// it, the first offered wins, so a plan that lacks one model still has the cell, and the
+// first is the cell before the runtime has said what it offers.
 type autoCell struct {
 	options map[string]string
+	family  string
 	models  []string
 	sandbox *wire.SandboxChoice
 	client  *wire.ClientPermissionMode
@@ -81,7 +86,8 @@ var (
 const copilotModes = "https://agentclientprotocol.com/protocol/session-modes#"
 
 // autoModels is the Model table. Balanced is the runtime's usual model: nothing is set,
-// except on Claude, whose own default may be its largest. Effort follows the level (FR-003):
+// except on Claude, whose own default may be its largest, and on Codex, whose own default
+// moves between its lines (#6891). Effort follows the level (FR-003):
 // low for Fast, the runtime's own for Balanced, high for Smart.
 var autoModels = map[string]map[string]autoCell{
 	"claude": {
@@ -91,9 +97,13 @@ var autoModels = map[string]map[string]autoCell{
 			options: map[string]string{"effort": "high"}, words: "Fable 5.1, high effort"},
 	},
 	"codex": {
-		"fast":     {models: []string{"gpt-5.6-luna"}, options: map[string]string{"reasoning_effort": "low"}, words: "5.6 Luna, low effort"},
-		"balanced": {words: "Its default model"},
-		"smart":    {models: []string{"gpt-6-luna"}, options: map[string]string{"reasoning_effort": "high"}, words: "6 Luna, high effort"},
+		// The newest Luna, Sol and Astra it offers (#6891); codex-acp offered 6 and 5.6 of
+		// Luna and Sol, and 6 of Astra, on 2026-11-23.
+		"fast": {family: "luna", models: []string{"gpt-6-luna", "gpt-5.6-luna"},
+			options: map[string]string{"reasoning_effort": "low"}, words: "Newest Luna, low effort"},
+		"balanced": {family: "sol", models: []string{"gpt-6-sol", "gpt-5.6-sol"}, words: "Newest Sol"},
+		"smart": {family: "astra", models: []string{"gpt-6-astra"},
+			options: map[string]string{"reasoning_effort": "high"}, words: "Newest Astra, high effort"},
 	},
 	"grok": {
 		"fast":     {models: []string{"grok-4.7-build-fast"}, options: map[string]string{"reasoning_effort": "low"}, words: "Grok 4.7 Fast, low effort"},
@@ -334,11 +344,10 @@ func cellMapping(runtimeID string, field wire.AutoField, level string, settings 
 	}
 	if len(c.models) > 0 {
 		id := modelOptionID(offers)
-		picked := ""
+		picked := newestOfFamily(offers, id, c.family)
 		for _, m := range c.models {
-			if _, ok := offeredName(offers, id, m); ok {
+			if _, ok := offeredName(offers, id, m); ok && picked == "" {
 				picked = m
-				break
 			}
 		}
 		if picked == "" {
@@ -353,6 +362,34 @@ func cellMapping(runtimeID string, field wire.AutoField, level string, settings 
 		out.Words = words
 	}
 	return out
+}
+
+// codexModel is a Codex model value: gpt-<version>-<line>, as gpt-6-luna or gpt-5.6-sol.
+var codexModel = regexp.MustCompile(`^gpt-(\d+(?:\.\d+)*)-([a-z]+)$`)
+
+// newestOfFamily is the offered model of the line with the highest version, or "" when the
+// runtime offers none of it (or has not said).
+func newestOfFamily(offers []wire.ConfigOption, id, family string) string {
+	if family == "" {
+		return ""
+	}
+	choices, _ := optionChoices(offers, id)
+	best, bestVersion := "", []int(nil)
+	for _, ch := range choices {
+		m := codexModel.FindStringSubmatch(ch.Value)
+		if m == nil || m[2] != family {
+			continue
+		}
+		var v []int
+		for _, part := range strings.Split(m[1], ".") {
+			n, _ := strconv.Atoi(part) // the pattern has only digits here
+			v = append(v, n)
+		}
+		if best == "" || slices.Compare(v, bestVersion) > 0 {
+			best, bestVersion = ch.Value, v
+		}
+	}
+	return best
 }
 
 // nativeNotOffered is the first value of n the runtime did not offer last time, or "".

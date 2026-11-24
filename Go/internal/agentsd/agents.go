@@ -524,7 +524,7 @@ func (d *Daemon) unarchive(id wire.UUID) error {
 		next = wire.AgentStateFinished
 	}
 	var said *wire.EndedReason
-	d.change(id, func(a *wire.Agent) {
+	d.changeFromArchive(id, func(a *wire.Agent) {
 		if a.EndedReason == nil {
 			a.EndedReason, said = reason(wire.EndedReasonUnrecognised), reason(wire.EndedReasonUnrecognised)
 		}

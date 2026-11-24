@@ -54,6 +54,9 @@ struct WorkListTests {
         #expect(WorkList.failureWords(JSONRPCError(code: -32602, message: "forge/rerun: open the check on Forgejo")) ==
             "forge/rerun: open the check on Forgejo")
         #expect(WorkList.errorWords(.init(forge: "forgejo", message: "not connected"), machine: "Studio") == "Forgejo on Studio: not connected")
+        // agentsd's message does not name the forge, so the line names it once (#6536).
+        #expect(WorkList.errorWords(.init(forge: "github", message: "could not be reached (the connection was refused)"), machine: nil) ==
+            "GitHub: could not be reached (the connection was refused)")
     }
 
     @Test func oneMachinesAnswerForAForgeIsEnough() {
@@ -111,6 +114,37 @@ struct WorkListTests {
         #expect(two?.host?.rawValue == "box")
         #expect(two?.lineage?.sessions == 2)
         #expect(rows.first { $0.node.ref.hasSuffix("#1") }?.lineage == nil)
+    }
+
+    /// The server's order (#6538): each machine's items in turn, a ref once, where it was first.
+    @Test func theServersOrderKeepsEachRefWhereItWasFirst() throws {
+        let box = MachineRef(rawValue: "box")
+        let rows = WorkList.ordered([
+            (host: .mac, items: [item(3), item(1)]),
+            (host: box, items: [item(1, title: "Again"), item(2)]),
+        ], lineage: [node(2, 4.1)])
+        try #require(rows.map { WorkList.number($0.node.ref) } == [3, 1, 2])
+        #expect(rows[1].host == .mac)
+        #expect(rows[2].lineage?.sessions == 2)
+    }
+
+    /// A list reads each ref's repo once (#6633): merge and the server's order ask `repo` for a row's, not the ref.
+    @Test func mergeTakesEachRowsRepoFromTheListsLookUp() {
+        var asked: [String] = []
+        let lookUp: (String) -> String = { ref in
+            asked.append(ref)
+            return "kept:" + WorkList.repo(of: ref)
+        }
+        let lists: [(host: MachineRef, items: [DaemonAPI.ForgeItem])] = [(host: .mac, items: [item(1), item(2, repo: "alexec/Web")])]
+        let merged = WorkList.merge(lists, lineage: [], repo: lookUp)
+        #expect(Set(merged.map(\.repo)) == ["kept:github:alexec/Agents", "kept:github:alexec/Web"])
+        #expect(WorkList.ordered(lists, lineage: [], repo: lookUp).map(\.repo) == ["kept:github:alexec/Agents", "kept:github:alexec/Web"])
+        #expect(asked.count == 4)
+        // An older copy of a ref makes no row, so its repo is not asked.
+        asked = []
+        _ = WorkList.merge([(host: .mac, items: [item(1, at: day.addingTimeInterval(60))]), (host: .mac, items: [item(1)])],
+                           lineage: [], repo: lookUp)
+        #expect(asked == ["github:alexec/Agents#1"])
     }
 
     @Test func aRowsLineageInWordsNoneWithout() {
@@ -172,6 +206,20 @@ struct WorkListTests {
         #expect(!WorkList.asksControlPlane(machines: 0))
         #expect(!WorkList.asksControlPlane(machines: 1))
         #expect(WorkList.asksControlPlane(machines: 2))
+    }
+
+    /// Each repo is asked once (#6641): a machine that reads only what others asked read is left out; one that reads
+    /// the most covers the others, and one whose scopes are not known is always asked.
+    @Test func eachRepoIsAskedOfOneMachine() {
+        let a = MachineRef(rawValue: "a"), b = MachineRef(rawValue: "b"), c = MachineRef(rawValue: "c")
+        let shop = ["github:example/shop"], both = ["github:example/shop", "github:example/web"]
+        #expect(WorkList.oneEach([a, b], scopes: [:]) == ([a, b], []))
+        #expect(WorkList.oneEach([a, b], scopes: [a: shop, b: shop]) == ([a], [b]))
+        #expect(WorkList.oneEach([a, b], scopes: [a: shop, b: both]) == ([b], [a]))
+        #expect(WorkList.oneEach([a, b, c], scopes: [a: shop, b: ["github:example/web"], c: both]) == ([c], [a, b]))
+        #expect(WorkList.oneEach([a, b], scopes: [a: shop, b: ["github:example/web"]]) == ([a, b], []))
+        #expect(WorkList.oneEach([a, b], scopes: [b: shop]) == ([a, b], []))
+        #expect(WorkList.oneEach([a, b], scopes: [a: shop, b: []]) == ([a], [b]))
     }
 
     /// forge/listAll's next pages (#5592): each machine with a cursor gets its page; one that could not read it keeps its
@@ -482,5 +530,24 @@ struct WorkPageTests {
         h.back()
         #expect(h.current == WorkPlace(kind: .issue))
         #expect(h.canGoForward)
+    }
+}
+
+/// A list's ask joins the next for the same query only within one open (#6640, #6358 finding 3).
+@Suite("Work list ask join")
+struct WorkListAskJoinTests {
+    @Test func theRestoreAndTheClickAskOnce() {
+        #expect(WorkList.joinsAsk(same: true, reading: false, since: .milliseconds(200)))
+        #expect(WorkList.joinsAsk(same: true, reading: true, since: .seconds(30)))
+    }
+
+    @Test func anOpenLaterInTheRunAsksAgain() {
+        #expect(!WorkList.joinsAsk(same: true, reading: false, since: .seconds(5)))
+        #expect(!WorkList.joinsAsk(same: true, reading: false, since: WorkList.joinWindow))
+    }
+
+    @Test func anotherQueryOrTheFirstAskAsks() {
+        #expect(!WorkList.joinsAsk(same: false, reading: true, since: .milliseconds(10)))
+        #expect(!WorkList.joinsAsk(same: true, reading: false, since: nil))
     }
 }

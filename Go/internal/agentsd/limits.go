@@ -212,7 +212,11 @@ func wordsLimit(runtimeID string, code *int, message, said string) limitKind {
 	if said != "" {
 		saids = append(saids, said)
 	}
-	says := func(f func(string) bool) bool { return slices.ContainsFunc(saids, f) }
+	// Each text is trimmed once, here, for every runtime: Cursor's refusal comes after
+	// blank lines ("\n\nUpgrade your plan to continue", #6817).
+	says := func(f func(string) bool) bool {
+		return slices.ContainsFunc(saids, func(s string) bool { return f(strings.TrimSpace(s)) })
+	}
 	switch runtimeID {
 	case "copilot":
 		if says(copilotQuotaSpent.MatchString) {
@@ -224,8 +228,7 @@ func wordsLimit(runtimeID string, code *int, message, said string) limitKind {
 		}
 	case "antigravity":
 		if says(func(s string) bool {
-			t := strings.TrimSpace(s)
-			return strings.HasPrefix(t, "Usage Limit Reached") || strings.HasPrefix(t, "You have reached your current quota")
+			return strings.HasPrefix(s, "Usage Limit Reached") || strings.HasPrefix(s, "You have reached your current quota")
 		}) {
 			return limitSpent
 		}
@@ -235,7 +238,7 @@ func wordsLimit(runtimeID string, code *int, message, said string) limitKind {
 		}
 	case "opencode":
 		// Its provider's refusal, read from OpenCode's log (#3736).
-		if says(func(s string) bool { return strings.HasPrefix(strings.TrimSpace(s), "Free usage limit reached") }) {
+		if says(func(s string) bool { return strings.HasPrefix(s, "Free usage limit reached") }) {
 			return limitSpent
 		}
 	}

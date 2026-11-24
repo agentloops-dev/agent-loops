@@ -82,8 +82,24 @@ extension AppModel {
         return LocalCopy(folder: walk.appendingPathComponent("copy", isDirectory: true), cap: LocalCopy.macCap)
     }
 
-    /// Work's part of this device's copy (#4930).
+    /// Work's part of this device's copy (#4930). With Work's cache on (#6353, #6573), every Work page reads the cache
+    /// instead, and only pictures keep their answers here.
     var workCopy: LocalCopy? { localCopy?.copy }
+
+    /// Work's client cache (#6353, epic #6348; no flag since #6357): one SQLite file beside this window's copy, so a
+    /// scratch root or a walk has its own (#6358, finding 4). Nil when the file does not open: the pages then read as
+    /// before.
+    var workCache: (any WorkCaching)? {
+        if let openedWorkCache { return openedWorkCache }
+        let root = ControlConfig.walkFolder ?? StoreLocations.default.cacheRoot
+        let file = root.appendingPathComponent("work-cache.sqlite")
+        try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        openedWorkCache = try? WorkCache(file: file)
+        return openedWorkCache
+    }
+
+    /// Work's changes through the cache (#6354), while the cache opens.
+    var workSaves: WorkSaves? { workCache == nil ? nil : workSavesStore }
 
     /// The machines that read their forges (#3119), This Mac first: Work's issues and PRs come from each.
     var forgeMachines: [(id: MachineRef, name: String)] {

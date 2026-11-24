@@ -17,7 +17,7 @@
 
 ## Tiers (#2796)
 
-Alex chose tiers on 2026-10-27 (#2796). Each row has a **Tier** cell after its Feature, and a **Role** cell after the Tier (#5290, epic #5288). The tier says which clients must have the feature. The Mac window and the web page are full clients. The tiers trim only the Remote, except Web + Mac link (#4937), which the Mac window does not draw.
+Alex chose tiers on 2026-10-27 (#2796). Each row has a **Tier** cell after its Feature, a **Role** cell after the Tier (#5290, epic #5288), and a **Maturity** cell after the Role (#6580, below). The tier says which clients must have the feature. The Mac window and the web page are full clients. The tiers trim only the Remote, except Web + Mac link (#4937), which the Mac window does not draw.
 
 - **Core:** all three clients. A change is made on all three in the same branch, or a parity issue is filed for each client that does not get it yet.
 - **Mac + web:** the Mac window and the web page. The Remote does not have them: #2798 removes each one from the Remote completely, with no line in its place (Alex, 2026-10-29). Nobody files a Remote parity issue. Until a feature is removed, the Remote's cell says what the Remote has now.
@@ -36,10 +36,10 @@ Alex chose tiers on 2026-10-27 (#2796). Each row has a **Tier** cell after its F
 - the Remote's trimmed Settings: This app (Voice, Notifications, Sidebar) and Help;
 - the daily checks: their Off / On control and how often in Settings ▸ Agent Configuration ▸ Workflows (Alex, 2026-11-01, #3192, #3351; the daily summary it was the control of went in #5853).
 - day-to-day coding from the Remote (Alex, 2026-11-07, #4030): the person's Secrets and For One Session, Accounts, the Machines group (its rows, New, Start, Stop, Delete, what a machine needs, and a machine's page), a machine's runtimes' **Sign In…** and **Update**, **Add Folder…** and **Clone Git URL…**, and **Move to Machine…**.
-- the Velocity page, the PRs that landed over time, under Reports after Achievements on the Remote (named Multiplier until #5736) (Alex, 2026-11-11, #4758).
+- the Velocity page, the PRs that landed over time, and the Cycle time page, how long those PRs took, under Reports after Achievements on the Remote (named Multiplier until #5736) (Alex, 2026-11-11, #4758; Cycle time #6648).
 - Work ▸ Timeline, after Releases in the Work group; on a phone in portrait it is the list of epics (Alex, 2026-11-17, #6044: "Timeline is Work, and then goes on the Remotes").
 
-**Mac + web** is: the Console's pages that the Mac draws in Settings (People and Groups, Audit and Policy); every control plane management page (Sign-ins, People, Groups, Bots and their caps, Channels, Sign-in Providers, Policy and its kill switch, Secrets, Backups, Git access, Add a Browser); Add a Machine, machine providers, Start a Machine from a Repository and Versions; Connectors and connector set-up (Connect your tools, GitLab, Email); the first build's question page and plan page (#5048) and New App… (#5132); Agent Configuration (Skills, Personas and Workflows editors) and Auto's settings (#2923, #2924); the workflow page's Configuration pane, Edit File… and Delete…; folder management (a folder's Project, Archive, Archived folders, Export/Import and the Drop Box); the usage pages (Cost, Tokens, Time, Milestones and their charts; Velocity is Core, #4758); and Folder Settings (Alex, 2026-10-29, #2798). Add Folder, Clone Git URL, the person's Secrets and Accounts, the Machines group and Move to Machine moved to Core (Alex, 2026-11-07, #4030).
+**Mac + web** is: the Console's pages that the Mac draws in Settings (People and Groups, Audit and Policy); every control plane management page (Sign-ins, People, Groups, Bots and their caps, Channels, Sign-in Providers, Policy and its kill switch, Secrets, Backups, Git access, Add a Browser); Add a Machine, machine providers, Start a Machine from a Repository and Versions; Connectors and connector set-up (Connect your tools, GitLab, Email); the first build's question page and plan page (#5048) and New App… (#5132); Agent Configuration (Skills, Personas and Workflows editors) and Auto's settings (#2923, #2924); the workflow page's Configuration pane, Edit File… and Delete…; folder management (a folder's Project, Archive, Archived folders, Export/Import and the Drop Box); the usage pages (Cost, Tokens, Time, Milestones and their charts; Velocity and Cycle time are Core, #4758, #6648); and Folder Settings (Alex, 2026-10-29, #2798). Add Folder, Clone Git URL, the person's Secrets and Accounts, the Machines group and Move to Machine moved to Core (Alex, 2026-11-07, #4030).
 
 **Web + Mac link** is: Reports (every page, by question since #5280: Cost ▸ Spend; Output ▸ Outcomes and Delivery (with Builds and Environments); Time ▸ Time; Plan ▸ Forecast and Estimates; Use ▸ Adoption, Runtimes and Workflows; and Saved Views; link #4938), and Status ▸ Features (was Reports ▸ Features); and the Console's Report Policy, Catalogue, Read API and Requests (links #4939) (Alex, 2026-11-12, #4936). The Console's other pages are Mac + web when the Mac draws them in Settings, or draws a part of them with **Edit in Console**, and Web only when the Mac has nothing of them (the list below).
 
@@ -56,7 +56,7 @@ A new row gets its role when it is added, and its tier from the role (above), or
 
 A tier says which clients draw a feature. A **role** says who uses it, and the role gives the tier. Alex chose roles on 2026-11-13 (#5206): a new feature gets a role first, and its tier follows from the rule below. Nobody picks a tier by hand.
 
-The roles: **Engineer** directs agents and does the work, on their own machines and folders; **Lead** plans work and sees it done (Work: issues, PRs, epics, Timeline, Releases, Team Workflows, Estimates, Forecast; Velocity and Features); **Admin** manages the estate (People and Groups, Sign-in, Requests, Policy, Model Access, Catalogue, Read API, Audit and Sinks, Backups, Live Now, the fleet's Machines); **Report reader** reads what the organisation used and did (Spend, Outcomes, Time, Adoption, Runtimes, Workflows, Saved Views). The control plane is not a role: it is headless. A role is of the feature, not a permission, and one person can have several.
+The roles: **Engineer** directs agents and does the work, on their own machines and folders; **Lead** plans work and sees it done (Work: issues, PRs, epics, Timeline, Releases, Team Workflows, Estimates, Forecast; Velocity, Cycle time and Features); **Admin** manages the estate (People and Groups, Sign-in, Requests, Policy, Model Access, Catalogue, Read API, Audit and Sinks, Backups, Live Now, the fleet's Machines); **Report reader** reads what the organisation used and did (Spend, Outcomes, Time, Adoption, Runtimes, Workflows, Saved Views). The control plane is not a role: it is headless. A role is of the feature, not a permission, and one person can have several.
 
 The surfaces: **Desk** is the Mac window (and the Windows and Linux shells, #4456, #4454); **Hand** is the Remote on iPhone and iPad (and the Android shell, #4466); **Web** is the web page in any browser.
 
@@ -64,7 +64,7 @@ The surfaces: **Desk** is the Mac window (and the Windows and Linux shells, #445
 |---|---|---|---|---|---|
 | Engineer, agent work | Engineer (agent work) | yes | yes | yes | Core |
 | Engineer, set-up (folders, connectors, Agent Configuration, Folder Settings, own usage, Docs, Messages) | Engineer (set-up) | yes | yes | no | Mac + web |
-| Lead | Lead | yes | a link to the web page; Velocity and Timeline stay native | no (Velocity and Timeline stay) | Web + Mac link (Velocity, Timeline: Core) |
+| Lead | Lead | yes | a link to the web page; Velocity, Cycle time and Timeline stay native | no (Velocity, Cycle time and Timeline stay) | Web + Mac link (Velocity, Cycle time, Timeline: Core) |
 | Admin | Admin | yes | no; a link only where an engineer looks for it (Edit in Console) | no | Web only, or Web + Mac link |
 | Report reader | Report reader | yes | a link to the web page (Reports, #4938) | no | Web + Mac link |
 
@@ -72,9 +72,18 @@ Mac only, Web only and Remote only stay what only that client can do (hover, Fin
 
 `scripts/parity-counts.py` fails on a row whose tier is not one its role gives. A row that is not yet right has its Role cell end in **(tier moves)**: a child of epic #5288 changes a client (Mac, Remote or Web), then takes the mark off. A mark on a row that agrees fails too. `scripts/parity-counts.py --mismatches` lists the marked rows by the client to change.
 
+## Maturity (#6052, #6580)
+
+Each row has a **Maturity** cell after its Role: how ready the feature is (`docs/explanation/versions.md`, "Maturity"). The levels are in `Packages/Wire/maturity.json`, and a capability that it does not list is GA.
+
+- **`ga`:** ready. Every row is `ga` today, because the list is empty.
+- **`pilot`, `alpha` or `beta`:** the level, then the capabilities the row is about, in backticks: `beta (`chat.branch/1`)`, or `alpha (`lineage.forecast/1`, `lineage.estimate/1`)`.
+
+`scripts/parity-counts.py` (in `scripts/lint.sh checks`) fails on a row whose level is not the one that `maturity.json` gives each capability it names, and on a capability in `maturity.json` that no row names. So a PR that sets a level, or makes a feature GA, changes the list and the row together.
+
 ## Counts
 
-`scripts/parity-counts.py` counts the rows of every screen by verdict: **same**, **by design** and **delta**, by tier: **Core**, **Mac + web**, **Web + Mac link**, **Mac only**, **Web only** and **Remote only**, and by role (#5290). A row with any open delta counts as delta, even where another side's difference is by design. The script fails when a row has no tier it knows, and says which tiers replace the old **One client** (#4759). The counts are not kept by hand (#2020).
+`scripts/parity-counts.py` counts the rows of every screen by verdict: **same**, **by design** and **delta**, by tier: **Core**, **Mac + web**, **Web + Mac link**, **Mac only**, **Web only** and **Remote only**, by role (#5290), and by maturity: **ga**, **pilot**, **alpha** and **beta** (#6580). A row with any open delta counts as delta, even where another side's difference is by design. The script fails when a row has no tier it knows, and says which tiers replace the old **One client** (#4759). The counts are not kept by hand (#2020).
 
 The deltas are tracked by 33 issues:
 - **Already open:** #226 (the Remote's one sidebar) and #235 (the page's one sidebar at phone width).
@@ -108,13 +117,13 @@ The deltas are tracked by 33 issues:
 `loops` is a fourth client, for a terminal and for scripts. It draws a small part of Core, so it gets this list, not a column on every row (Alex, 2026-11-20, #6443). Its role is Engineer (agent work). It gives no row a new verdict, and nobody files a parity issue for it: the Mac window, the Remote and the web page each say `by design` about it. Its commands are in `docs/reference/loops.md`.
 
 What `loops` has of Core:
-- **The session list:** of one folder only, the folder of the directory it runs in (`loops ls`, 20 rows, `--all` for every one). No smart groups, unread marks or other folders.
+- **The session list:** of one folder only, the folder of the directory it runs in (`loops sessions list`, 20 rows, `--all` for every one). No smart groups, unread marks or other folders.
 - **Start a session:** in the folder, on Auto or with `--runtime`. A session it starts says `startedVia: cli` (`cli-print` for `-p` and `--detach`).
-- **Continue a session:** the folder's newest (`loops`, `-c`) or one by id or title (`-r`).
+- **Continue a session:** the folder's newest (`loops`, `loops sessions follow` or `-c`) or one by id or title (`loops sessions follow <id>` or `-r`).
 - **Chat:** the agent's reply as it comes, the tool calls, and the prompt (Return sends, Option-Return adds a line, Control-C stops the turn).
 - **Question and permission cards:** answered by number in the chat. A secret, a step in a browser or a page to open is answered on another client. Print mode never answers a card: it waits for any client, or ends (`--on-ask=fail`, exit 3).
-- **Pairing:** `loops pair` with a client code from **Pair a Mac…**, `loops unpair` and `loops status`.
-- **Add Folder:** `loops folder add`, for this computer's machine or `--machine`.
+- **Pairing:** `loops auth login` with a client code from **Pair a Mac…**, `loops auth logout` and `loops auth status`.
+- **Add Folder:** `loops folders add`, for this computer's machine or `--machine`.
 
 What it does not have: approvals and Changes, notices, the Brief, terminals, files, diffs, worktrees, the Simulator pane and the Agent Browser, runtimes' details, personas, workflows, Settings and every Mac + web, Web + Mac link and Web only feature. Its own, by design: print mode for scripts (`-p`, `--json`, `--detach`, `--timeout`) and its exit codes.
 

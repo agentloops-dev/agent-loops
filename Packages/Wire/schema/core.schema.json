@@ -1066,6 +1066,22 @@
       ],
       "additionalProperties": false
     },
+    "Maturity": {
+      "type": "object",
+      "description": "The levels of a part's capabilities that are not GA (#6052, #6579), capability to level, as Packages/Wire/maturity.json has them in that part's build. A capability it does not name is GA. A part older than #6579 sends none, and a client then reads the list it was built with.",
+      "additionalProperties": {
+        "$ref": "#/definitions/MaturityLevel"
+      }
+    },
+    "MaturityLevel": {
+      "type": "string",
+      "description": "How ready a capability that is not GA is (#6052).",
+      "enum": [
+        "pilot",
+        "alpha",
+        "beta"
+      ]
+    },
     "ModelLevel": {
       "type": "string",
       "description": "Fast: the runtime's smallest quick model; Balanced: its usual model; Smart: its most capable model (#2658).",

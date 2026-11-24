@@ -58,7 +58,8 @@ extension RemoteModel {
     /// A machine's most urgent need, as its row says it (#3764).
     func need(of host: MachineRef) -> MachineNeed? {
         MachineNeed.most(row: machineRow(host), offline: machineOffline(host),
-                         runtimes: runtimes(on: host), disks: diskAlarms(host), capacity: capacityLevel(host))
+                         runtimes: runtimes(on: host), disks: diskAlarms(host), capacity: capacityLevel(host),
+                         capacityReason: capacityLevel(host) == nil ? nil : work.capacity[host]?.reason)
     }
 
     /// The machine's capacity level, as it last pushed it (#4748); nil while it is offline,
@@ -386,6 +387,9 @@ extension RemoteModel {
                     // The lock first (#6311): until this device is in it, every machine refuses its calls, the
                     // machines' reads below among them, so it asks to join before them.
                     if let client = RemoteControl.membership?.client { await self?.lock.connected(control, client: client) }
+                    // A notice this device missed, read again while connected (#6625).
+                    let lockWatch = Task { [lock = self?.lock] in await lock?.watch(control) }
+                    defer { lockWatch.cancel() }
                     await self?.syncOtherHosts(control, link: link)
                     await self?.loadMachineProviders()
                     await self?.loadKept(control)
@@ -596,6 +600,7 @@ extension RemoteModel {
                 pruneFolderDefaults(of: id, listed: [])
             }
         }
+        localCopy?.listed(machines: listed.map(\.id))
     }
 
     /// What another host says that the shared model does not claim, and the phone wants:

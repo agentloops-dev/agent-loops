@@ -1,7 +1,6 @@
 package agentsd
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -105,7 +104,7 @@ func TestMutingAWorkflowMutesItsRuns(t *testing.T) {
 	})
 	stranger := seeded(t, d, dir, func(a *wire.Agent) { a.StartedByWorkflow = &other })
 	var s wire.WorkflowSummary
-	json.Unmarshal(c.call(t, 2, "workflows/setMuted", map[string]any{"folder": store.FolderURL(dir), "workflowID": id, "muted": true}), &s)
+	mustUnmarshal(t, c.call(t, 2, "workflows/setMuted", map[string]any{"folder": store.FolderURL(dir), "workflowID": id, "muted": true}), &s)
 	if s.Workflow.Muted == nil || !*s.Workflow.Muted {
 		t.Fatalf("%+v", s.Workflow)
 	}
@@ -116,7 +115,7 @@ func TestMutingAWorkflowMutesItsRuns(t *testing.T) {
 	if !muted(run) || muted(archived) || muted(stranger) {
 		t.Fatalf("run %v archived %v stranger %v", muted(run), muted(archived), muted(stranger))
 	}
-	json.Unmarshal(c.call(t, 3, "workflows/setMuted", map[string]any{"folder": store.FolderURL(dir), "workflowID": id, "muted": false}), &s)
+	mustUnmarshal(t, c.call(t, 3, "workflows/setMuted", map[string]any{"folder": store.FolderURL(dir), "workflowID": id, "muted": false}), &s)
 	if text, _ := os.ReadFile(path); s.Workflow.Muted != nil || strings.Contains(string(text), "muted") || muted(run) {
 		t.Fatalf("%+v %s", s.Workflow, text)
 	}

@@ -1,0 +1,32 @@
+/* The integrations' brand colours (#6830), from Simple Icons 16.38.1 (CC0-1.0). Not tokens: a
+   brand's own colour is not ours to theme (design/colour-allowlist.txt). A colour too faint on
+   the light page, or too dark on the dark page, gives way to the page's ink there. */
+.lg-apple { color: #000000; }
+.lg-appstore { color: #0D96F6; }
+.lg-betterstack { color: #000000; }
+.lg-bitbucket { color: #0052CC; }
+.lg-claude { color: #D97757; }
+.lg-coder { color: #090B0B; }
+.lg-coderabbit { color: #FF570A; }
+.lg-confluence { color: #172B4D; }
+.lg-cursor { color: #000000; }
+.lg-digitalocean { color: #0080FF; }
+.lg-docker { color: #2496ED; }
+.lg-forgejo { color: #FB923C; }
+.lg-github { color: #181717; }
+.lg-githubcopilot { color: #000000; }
+.lg-gitlab { color: #FC6D26; }
+.lg-googlechat { color: #34A853; }
+.lg-googlecloud { color: #4285F4; }
+.lg-googledrive { color: #4285F4; }
+.lg-jira { color: #0052CC; }
+.lg-linear { color: #5E6AD2; }
+.lg-notion { color: #000000; }
+.lg-opencode { color: #000000; }
+.lg-opentelemetry { color: #000000; }
+.lg-sentry { color: #362D59; }
+.lg-whatsapp { color: #25D366; }
+.lg-linux { color: var(--paper-ink); }
+@media (prefers-color-scheme: dark) {
+  .lg-apple, .lg-betterstack, .lg-bitbucket, .lg-coder, .lg-confluence, .lg-cursor, .lg-github, .lg-githubcopilot, .lg-jira, .lg-notion, .lg-opencode, .lg-opentelemetry, .lg-sentry { color: var(--paper-ink); }
+}

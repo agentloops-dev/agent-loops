@@ -159,6 +159,56 @@ the last release's `agentsd` to the new control plane, which must not call it ou
 unless the required set moved, and pairs the new client with the last release's control plane,
 which must answer it. It also lists what the clients hide for the older host.
 
+## Maturity
+
+Each capability has a **maturity** (#6052): how ready its feature is.
+
+| Level | Meaning | Badge |
+|---|---|---|
+| `pilot` | A trial with a few people. It can change or go away. It can be on some clients only. | **Pilot** |
+| `alpha` | Works, but parts are missing and it can change much. | **Alpha** |
+| `beta` | Complete, and we still look for faults. | **Beta** |
+| `ga` | Ready. The default. | none |
+
+- `Packages/Wire/maturity.json` lists each capability that is not GA, with its level, the title
+  of its feature and its issue. A capability that it does not list is GA. `scripts/wire.sh gen`
+  checks each name against the capabilities and writes the list for Swift and TypeScript
+  (`EarlyFeature.all`, `earlyFeatures`).
+- A capability in the list can name its clients (`mac`, `remote`, `web`), for a pilot on some
+  clients only. A client that is not named does not show the feature, with no line in its
+  place. With no clients, the feature's tier in the parity table says which clients have it.
+- Each client shows the badge, with its help line, where a person goes into the feature: the
+  sidebar row, the menu item, the Settings section title, the page or sheet title
+  (`MaturityBadge` on the three clients).
+- Settings ▸ This app ▸ **Early Features** has a switch for each feature in the list that this
+  client shows, on by default. A feature turned off shows nowhere on that person's clients
+  (`EarlyFeatures.shows` in Swift, `showsFeature` on the web page). The switch is kept as
+  `flag:<capability>` in the person's display settings, with the feature flags (#6254). When
+  the feature becomes GA, it leaves the list and its switch has no effect.
+- To change a level, edit the list and run `scripts/wire.sh gen`, and set the **Maturity**
+  cell of the feature's row in the parity table (`specs/071-web-remote/walks/parity/`, #6580)
+  to the same level with the capability, as `beta (`chat.branch/1`)`. To make a feature GA,
+  take it out, and set the cell to `ga`. `scripts/parity-counts.py` (in `scripts/lint.sh
+  checks`) fails when the two do not agree.
+
+Each part also sends its own levels (#6579), so that a client older than its host shows the
+host's level:
+
+- A host sends `maturity` in `machine/hello`, the control plane keeps it with the host's
+  capabilities, and `machines/list` says it on the host's row. The control plane sends its own
+  in `control/status`. Each is a map of capability to level, only for the capabilities that
+  part has and that are not GA (`wire.MaturityOf`, from `Go/wire/maturity_gen.go`). A part with
+  none sends `{}`.
+- A part older than #6579 sends no `maturity`, and the client reads the list it was built with
+  for that part. A capability that a part's map does not name is GA there. A level the client
+  does not know is read from the client's own list too.
+- When the two differ, the client shows the part's level. A feature that runs on one host shows
+  that host's level (`EarlyFeatures.level(of:said:)`, `saidMaturity`). Where no one part runs it,
+  as in Early Features, the client shows the lowest level that the control plane and its hosts
+  say (`EarlyFeatures.lowest`, `lowestMaturity`), so a person is told the least ready one.
+  Early Features has rows only for capabilities in the client's own list, as only that list
+  has the title of each feature.
+
 ## Version numbers
 
 Versions follow [Semantic Versioning 2.0.0](https://semver.org). The tag `vX.Y.Z` gives the

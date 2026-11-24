@@ -36,16 +36,18 @@ import { ago } from "../model/connectorSetup";
 import { fromWireDate } from "../protocol/dates";
 import { type ForgeImages, Markdown } from "../render/markdown";
 import { bytesOf } from "../model/pageImage";
-import { keepWork, keptPicture, keptWorkRead } from "../model/localCopy";
+import { keptPicture } from "../model/localCopy";
+import { workCache } from "../model/workCache";
 import { forgeMarkdown } from "../model/forgeMarkdown";
 import { ForgeTitle } from "../render/ForgeTitle";
 import {
-  Avatar, Avatars, EmptyState, ErrorStrip, FilterMenu, FromDeviceStrip, LabelChip, PlaceholderRows, PriorityChip, OnHoldChip, RefreshButton, StateIcon, picture, type MenuChoice, type ReadPicture,
+  Avatar, Avatars, EmptyState, ErrorStrip, FilterMenu, LabelChip, PlaceholderRows, PriorityChip, OnHoldChip, RefreshButton, StateIcon, WorkFooter, picture, type MenuChoice, type ReadPicture,
 } from "./WorkParts";
+import { footerState, listBody, oldestRead, pageFooterState } from "../model/workFooter";
 import { WorkChecksPage, WorkCommentBox, WorkFilesChanged, WorkLabelsPicker, WorkMergeBox, WorkStatusMenu } from "./WorkActions";
 import { WorkFilesPage } from "./WorkFilesPage";
 import { branchWords, mergeBox, mergedStrip, offers, pullStateWords, reviewersWords } from "../model/workPull";
-import { WorkPlan } from "./WorkPlan";
+import { type PlanRead, WorkPlan } from "./WorkPlan";
 import { WorkDocs } from "./Docs";
 import { hasPlan, leadStart, leadWords, planSessions } from "../model/epicPlan";
 import {
@@ -183,9 +185,7 @@ export function WorkList({ store, kind }: { store: Store; kind: WorkKind }) {
       ...sets.hold ? [{ label: holdToggleWords, checked: r.onHold === true, run: () => write({ onHold: r.onHold !== true }) }] : [],
     ];
   };
-  const firstRead = lists.value === null || (l.loading.value && rows.length === 0);
   const problems = [...problem.value ? [problem.value] : [], ...errors];
-  const stale = new Set((lists.value ?? []).flatMap((h) => h.stale ?? []));
   const narrowed = filtered(filter_);
   const empty = emptyWords(kind, state, narrowed, offered.repos);
   const things = kind === "pr" ? "pull requests" : workKindTitle[kind].toLowerCase();
@@ -198,7 +198,17 @@ export function WorkList({ store, kind }: { store: Store; kind: WorkKind }) {
   const failed = l.moreFailed.value;
   // The forge's count of the list (#4396), where it gives one and the list shows all it counts.
   const total = listTotal((lists.value ?? []).map((h) => h.total), filter.value);
-  const shown = !(fromForge(kind) && hosts.length === 0) && !firstRead && (rows.length > 0 || further);
+  // What the body draws (#5971, #5967's rule): placeholders while any read runs with no row to show, never an empty state
+  // then; what failed in the middle only when nothing was read; the empty state once every read ended.
+  const body = listBody(lists.value !== null, all.length, rows.length, l.loading.value, problems.length > 0);
+  const firstRead = body === "placeholders";
+  const noForge = fromForge(kind) && hosts.length === 0;
+  const shown = !noForge && !firstRead && (rows.length > 0 || further);
+  // The footer (#5971): the read, else the next page; the count and Last update.
+  const read = footerState(lists.value !== null, all.length, l.loading.value, l.fromDevice.value, problems);
+  const idle = more.value ? <><span class="work-spinner" aria-hidden="true" />{loadingMore(rows.length, total)}</>
+    : failed ? <><span title={failed}>{couldNotLoadMore}</span><button type="button" class="link" onClick={() => void loadMore(store, l)}>Try again</button></>
+    : undefined;
   useEffect(() => {
     const at = end.current;
     if (!at || !shown || !further || failed || more.value || typeof IntersectionObserver === "undefined") return;
@@ -208,7 +218,7 @@ export function WorkList({ store, kind }: { store: Store; kind: WorkKind }) {
   }, [shown, further, failed, more.value, rows.length]);
 
   return (
-    <div class="work-list">
+    <div class="work-list work-footed">
       <div class="work-filters" role="group" aria-label="Filters">
         <input type="search" placeholder={`Filter ${things}`} aria-label="Filter by words" value={filter_.text}
           onInput={(e) => set({ text: (e.target as HTMLInputElement).value })} />
@@ -238,16 +248,14 @@ export function WorkList({ store, kind }: { store: Store; kind: WorkKind }) {
         </div>
         <RefreshButton busy={l.loading.value} onClick={refresh} />
       </div>
-      {fromForge(kind) && hosts.length === 0
+      {noForge
         ? <EmptyState kind={kind} title={connectForge(kind)} line={noForgeHere} action={{ words: "Settings ▸ Connectors", run: connectors }} />
         : firstRead ? <PlaceholderRows />
-        : rows.length === 0 && !further && problems.length > 0
+        : body === "failed" && !further
           ? <ErrorStrip lines={problems} retry={refresh} middle title={couldNotRead(kind)}
               also={problems.some(credentialProblem) ? { words: "Settings ▸ Connectors", run: connectors } : undefined} />
         : (
           <>
-            <FromDeviceStrip at={l.fromDevice.value ? l.readAt.value : undefined} />
-            <ErrorStrip lines={problems} retry={refresh} at={stale.size > 0 ? l.readAt.value : undefined} />
             {planProblem.value && (
               <p class="work-plan-problem hint failure small" role="alert">
                 <span>{couldNotSetPriority}: {planProblem.value}</span>
@@ -260,7 +268,7 @@ export function WorkList({ store, kind }: { store: Store; kind: WorkKind }) {
                   action={narrowed ? { words: "Clear filters", run: clear } : undefined} />
               : (
                 <ul class="work-rows work-item-rows" ref={rowsAt}>
-                  {rows.map((r) => <WorkRowView key={r.node.ref} row={r} several={offered.repos.length > 1} dim={stale.has(r.node.ref)} pick={pick}
+                  {rows.map((r) => <WorkRowView key={r.node.ref} row={r} several={offered.repos.length > 1} dim={false} pick={pick}
                     latest={newest?.has(r.node.ref) === true} read={pictureReader(store, r.host)}
                     session={kind === "release" ? undefined : workingSession(r.node, agents)} openSession={openSession}
                     menu={kind === "issue" ? () => planMenu(r) : undefined}
@@ -271,13 +279,13 @@ export function WorkList({ store, kind }: { store: Store; kind: WorkKind }) {
         )}
       {shown && (
         <div class="work-list-end quiet small" ref={end} aria-live="polite">
-          {more.value ? <><span class="work-spinner" aria-hidden="true" />{loadingMore(rows.length, total)}</>
-            : failed ? <><span title={failed}>{couldNotLoadMore}</span><button type="button" onClick={() => void loadMore(store, l)}>Try again</button></>
-            : further ? <><button type="button" onClick={() => void loadMore(store, l)}>Load more</button><span>{endWords(kind, rows.length, true, total)}</span></>
-            : <span>{endWords(kind, rows.length, false, total)}</span>}
+          {further && !more.value && !failed && <button type="button" onClick={() => void loadMore(store, l)}>Load more</button>}
         </div>
       )}
       {!fromForge(kind) && <p class="quiet small">{lineageOnlyNote}</p>}
+      <WorkFooter state={read} retry={refresh} idle={idle}
+        count={lists.value !== null && !noForge ? endWords(kind, rows.length, further, total) : undefined}
+        at={lists.value !== null ? l.readAt.value : undefined} />
     </div>
   );
 }
@@ -382,8 +390,8 @@ export function WorkPage({ store, kind, ref }: { store: Store; kind: WorkKind; r
   const fromDevice = useSignal(false);
   /** When the item on screen was read (#5142): this device's copy's time, or the last read that worked. */
   const detailAt = useSignal<number | undefined>(undefined);
-  /** When the plan drawn from this device's copy was read, until its machine answers (#5142). */
-  const planCopyAt = useSignal<number | undefined>(undefined);
+  /** The Plan's read, while the page shows one (#5971): the footer says the item's and the plan's together. */
+  const planRead = useSignal<PlanRead | undefined>(undefined);
   const older = useSignal(false);
   const estimate = useSignal<LineageEstimate | null>(null);
   const forecast = useSignal<LineageForecast | null>(null);
@@ -423,8 +431,8 @@ export function WorkPage({ store, kind, ref }: { store: Store; kind: WorkKind; r
     void (async () => {
       // Seen before: this device's copy at once, until a machine answers (#4930).
       if (!detail.peek()) {
-        const kept = await keptWorkRead<{ host: string; got: ForgeItemDetail }>("item", ref);
-        if (current && kept && !detail.peek()) { detail.value = kept.value; detailAt.value = kept.at; fromDevice.value = true; }
+        const kept = await workCache()?.detail(node);
+        if (current && kept && !detail.peek()) { detail.value = { host: kept.host, got: kept.got }; detailAt.value = kept.read; fromDevice.value = true; }
       }
       // Every machine at once, and the first that answers wins (#5449): a slow or offline machine does not hold the page,
       // and an error shows only when no machine read it.
@@ -440,7 +448,7 @@ export function WorkPage({ store, kind, ref }: { store: Store; kind: WorkKind; r
         }));
         if (current) {
           detail.value = won; detailAt.value = Date.now(); fromDevice.value = false; forgeProblem.value = null;
-          keepWork("item", ref, won);
+          void workCache()?.keepDetail(won.host, won.got);
         }
       } catch {
         if (current) forgeProblem.value = last ?? notReadHere;
@@ -506,16 +514,19 @@ export function WorkPage({ store, kind, ref }: { store: Store; kind: WorkKind; r
       detail.value = { host: had.host, got };
       detailAt.value = Date.now();
       fromDevice.value = false;
-      keepWork("item", ref, { host: had.host, got });
+      void workCache()?.keepDetail(had.host, got);
     } catch (e) {
       forgeProblem.value = describe(e);
     }
   };
   // None while the page is this device's copy (#4930): a write acts on the machine's own answer.
   const writes = detail.value !== null && !fromDevice.value && store.has(detail.value.host, Capability.forgeWrite1);
-  // The page's one "From this device" strip (#5142): the oldest of the item's and the plan's copies on screen.
-  const copyReads = [fromDevice.value ? detailAt.value : undefined, planCopyAt.value].filter((at): at is number => at !== undefined);
-  const copyAt = forgeProblem.value || copyReads.length === 0 ? undefined : Math.min(...copyReads);
+  // The footer (#5971, as the Mac's #5970): what runs or failed of the item and its Plan, else from this device's copy;
+  // Last update the older of the item's and the Plan's reads.
+  const planNow = planRead.value;
+  const footer = pageFooterState(detail.value !== null, reading.value || planNow?.reading === true, fromDevice.value || planNow?.fromDevice === true,
+    [forgeProblem.value, planNow?.problem ?? null].filter((x): x is string => x !== null));
+  const shownAt = detail.value ? oldestRead(planNow ? [detailAt.value, planNow.at] : [detailAt.value]) : undefined;
   // A write from the header or the side panel (the status menu, a label); what it did is the line under the comment box.
   const act = async (method: "forge/close" | "forge/label", params: ForgeCloseRequest | ForgeLabelRequest) => {
     const host = detail.value?.host;
@@ -658,7 +669,7 @@ export function WorkPage({ store, kind, ref }: { store: Store; kind: WorkKind; r
   }
 
   return (
-    <article class={`work-page work-item-page${loading ? " loading" : ""}`} aria-busy={loading}>
+    <article class={`work-page work-item-page work-footed${loading ? " loading" : ""}`} aria-busy={loading}>
       <div class="work-item-grid">
       <div class="work-page-bar">
         {/* The place (note 1), the page's trail (#5452): Issues / #4331, or Issues / Epic #5448 / #5452 for an issue in
@@ -719,10 +730,6 @@ export function WorkPage({ store, kind, ref }: { store: Store; kind: WorkKind; r
         </p>
         {narrowStart && <div class="narrow-only">{narrowStart}</div>}
       </header>
-      {detail.value && forgeProblem.value && (
-        <div class="work-problem"><ErrorStrip lines={[forgeProblem.value]} retry={() => { asked.value++; }} at={detailAt.value} /></div>
-      )}
-      {copyAt !== undefined && <div class="work-problem"><FromDeviceStrip at={copyAt} /></div>}
       {/* A pull request under 700 px (pull-request.md, Narrow): the merge box at the top, then Files changed as a row. */}
       {isPull && detail.value && (
         <div class="work-pull-top work-narrow-only">
@@ -770,7 +777,7 @@ export function WorkPage({ store, kind, ref }: { store: Store; kind: WorkKind; r
         {detail.value && hasPlan(detail.value.got.item) && (
           <WorkPlan store={store} host={detail.value.host} lineageHost={lineageHost} detail={detail.value.got} asked={asked.value}
             estimates={estimate.value?.children ?? []}
-            writes={writes} waiting={fromDevice.value} wrote={() => void reread()} fromCopy={(at) => { planCopyAt.value = at; }} />
+            writes={writes} waiting={fromDevice.value} wrote={() => void reread()} onRead={(r) => { planRead.value = r; }} />
         )}
         {loading && (
           <div class="work-timeline" aria-hidden="true">
@@ -871,6 +878,7 @@ export function WorkPage({ store, kind, ref }: { store: Store; kind: WorkKind; r
       </>
       )}
       </div>
+      <WorkFooter state={footer} at={shownAt} retry={() => { asked.value++; }} />
     </article>
   );
 }

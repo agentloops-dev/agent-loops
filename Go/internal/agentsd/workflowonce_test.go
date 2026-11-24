@@ -1,7 +1,6 @@
 package agentsd
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -74,7 +73,7 @@ func TestLateWords(t *testing.T) {
 func listOne(t *testing.T, c *conn, folder wire.URL) wire.WorkflowSummary {
 	t.Helper()
 	var list []wire.WorkflowSummary
-	json.Unmarshal(c.call(t, 80, "workflows/list", map[string]any{"folder": folder}), &list)
+	mustUnmarshal(t, c.call(t, 80, "workflows/list", map[string]any{"folder": folder}), &list)
 	if len(list) != 1 {
 		t.Fatalf("%+v", list)
 	}
@@ -91,8 +90,8 @@ func TestAnAlarmFiresOnceAndArchivesItself(t *testing.T) {
 	dir := folder(t, c, 1)
 	folder := store.FolderURL(dir)
 	due := time.Now().UTC().Add(-10 * time.Minute)
-	os.MkdirAll(workflowsFolder(dir), 0o755)
-	os.WriteFile(filepath.Join(workflowsFolder(dir), "alarm.md"), []byte(onceFile(due.Format("2006-01-02T15:04"), "")), 0o644)
+	must(t, os.MkdirAll(workflowsFolder(dir), 0o755))                                                                                   //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(workflowsFolder(dir), "alarm.md"), []byte(onceFile(due.Format("2006-01-02T15:04"), "")), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	// Waiting for approval, it does not fire.
 	d.workflowTickOnce(time.Now())
 	if s := listOne(t, c, folder); s.AwaitingApproval == nil || s.LastOutcome != nil {
@@ -139,8 +138,8 @@ func TestAnAlarmPastItsGraceIsMissed(t *testing.T) {
 	dir := folder(t, c, 1)
 	folder := store.FolderURL(dir)
 	due := time.Now().UTC().Add(-3 * time.Hour)
-	os.MkdirAll(workflowsFolder(dir), 0o755)
-	os.WriteFile(filepath.Join(workflowsFolder(dir), "alarm.md"), []byte(onceFile(due.Format("2006-01-02T15:04"), "")), 0o644)
+	must(t, os.MkdirAll(workflowsFolder(dir), 0o755))                                                                                   //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(workflowsFolder(dir), "alarm.md"), []byte(onceFile(due.Format("2006-01-02T15:04"), "")), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	approveAll(t, c, folder)
 	d.workflowTickOnce(time.Now())
 	waitFor(t, "the alarm missed and archived", func() bool {

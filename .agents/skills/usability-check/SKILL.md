@@ -127,7 +127,7 @@ In the review worktree:
   `- U…-n · severity · clients · title · status`, where status starts as `open`.
 - Correct the screen's file in `specs/071-web-remote/walks/parity/` where a row is wrong or
   missing, citing the finding. A new row gets its tier from the lists in `parity.md`.
-  `scripts/parity-counts.py` gives the counts by verdict and by tier.
+  `scripts/parity-counts.py` gives the counts by verdict, tier, role and maturity.
 - Commit on `agents/reviews-usability` ("Usability check <date>: <n>
   findings").
 

@@ -49,6 +49,9 @@ struct RemoteSettings: View {
                     // Kept on the Mac's host, the same on every client (#1033, #2079). The archive
                     // switch is a rule of Agents ▸ Policy now (FR-023).
                     SettingsPageLink("Sidebar", systemImage: "sidebar.left") { SidebarSettingsSection() }
+                    // The feature flags in work, then the features that are not GA, a switch each, on every
+                    // client (#6052, #6604, Core).
+                    SettingsPageLink(EarlyFeaturesSection.title, systemImage: "sparkles") { EarlyFeaturesSection(said: model.partsMaturity) }
                 }
                 .paperListRow()
                 // Agents ▸ Policy is Core (#2957, FR-027): every rule and where it comes from,

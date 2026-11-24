@@ -364,6 +364,41 @@ func TestLeftoversGoAndLiveFilesStay(t *testing.T) {
 	}
 }
 
+// #6585: the leftovers sweep reads each folder's names once and stats only the names
+// that can be leftovers, not each of 10,000 keys and their locks.
+func TestLeftoversStatOnlyWhatCanBeLeftovers(t *testing.T) {
+	root := t.TempDir()
+	old := time.Now().Add(-2 * time.Hour)
+	write := func(rel string) {
+		p := filepath.Join(root, filepath.FromSlash(rel))
+		must(t, os.WriteFile(p, nil, 0o600))
+		must(t, os.Chtimes(p, old, old))
+	}
+	for folder := range 100 {
+		must(t, os.MkdirAll(filepath.Join(root, "v1", "clients", fmt.Sprint(folder)), 0o700))
+		for key := range 100 {
+			rel := fmt.Sprintf("v1/clients/%d/%d.json", folder, key)
+			write(rel)
+			write(rel + ".lock")
+		}
+	}
+	must(t, os.MkdirAll(filepath.Join(root, "probe"), 0o700))
+	leftovers := []string{"v1/clients/7/.8.json.1234.tmp", "probe/x-1", "v1/clients/9/gone.json.lock"}
+	for _, l := range leftovers {
+		write(l)
+	}
+	f := NewFolder(root)
+	if n := f.RemoveLeftovers(time.Now().Add(-time.Hour)); n != len(leftovers) {
+		t.Fatal(n)
+	}
+	if n := f.LeftoverStats(); n != len(leftovers) {
+		t.Fatalf("stat'ed %d names, not only the %d leftovers", n, len(leftovers))
+	}
+	if _, err := os.Stat(filepath.Join(root, "v1", "clients", "9", "9.json.lock")); err != nil {
+		t.Fatal("a key's lock went")
+	}
+}
+
 // #2293: a key's folder goes with its last key, up to the root, so an hour's folder of
 // usage does not stay for ever; a folder with another key stays.
 func TestAFolderGoesWithItsLastKey(t *testing.T) {

@@ -7,8 +7,11 @@ import { mergeTiers, usageSlots, type UsageRange } from "./usage";
 export interface VelocityBar { stamp: string; start: Date; value: number }
 export interface VelocityShare { repo: string; value: number }
 
+export const allRepositories = "All repositories";
+
 export interface VelocityChart {
   range: UsageRange;
+  repo: string | null;
   bars: VelocityBar[];
   /** By repository, largest first. */
   shares: VelocityShare[];
@@ -29,7 +32,8 @@ export function velocityHere(history: VelocityHistory): VelocityHistory {
   return mergeTiers([history], emptyBucket, add);
 }
 
-export function velocityChart(history: VelocityHistory, range: UsageRange): VelocityChart {
+export function velocityChart(history: VelocityHistory, range: UsageRange,
+                              repo: string | null = null): VelocityChart {
   const slots = usageSlots(history.now, range);
   const tier = range === "D" ? history.hours : history.days;
   const byRepo: Record<string, number> = {};
@@ -41,11 +45,12 @@ export function velocityChart(history: VelocityHistory, range: UsageRange): Velo
     for (const key of slot.keys) {
       const repos = tier[key];
       if (!repos) continue;
-      for (const [repo, b] of Object.entries(repos)) {
+      for (const [keyRepo, b] of Object.entries(repos)) {
+        if (repo !== null && keyRepo !== repo) continue;
         if (b.merged <= 0) continue;
         value += b.merged;
         reverted += b.reverted;
-        byRepo[repo] = (byRepo[repo] ?? 0) + b.merged;
+        byRepo[keyRepo] = (byRepo[keyRepo] ?? 0) + b.merged;
         daysWithData.add(key.slice(0, 10));
       }
     }
@@ -53,11 +58,22 @@ export function velocityChart(history: VelocityHistory, range: UsageRange): Velo
     return { stamp: slot.stamp, start: slot.start, value };
   });
   return {
-    range, bars, total, reverted,
+    range, repo, bars, total, reverted,
     shares: Object.entries(byRepo).map(([repo, value]) => ({ repo, value }))
       .sort((a, b) => b.value - a.value || a.repo.localeCompare(b.repo)),
     average: range === "D" ? total : total / Math.max(1, daysWithData.size),
   };
+}
+
+export function velocityRepositories(history: VelocityHistory): string[] {
+  const keys = new Set<string>();
+  for (const bucket of Object.values(history.hours)) {
+    for (const repo of Object.keys(bucket)) keys.add(repo);
+  }
+  for (const bucket of Object.values(history.days)) {
+    for (const repo of Object.keys(bucket)) keys.add(repo);
+  }
+  return [...keys].sort((a, b) => repoWords(a).localeCompare(repoWords(b)));
 }
 
 /** A repository as the shares say it: the PR node's repo without its forge (github:alexec/agents → alexec/agents). */

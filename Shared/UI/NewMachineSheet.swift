@@ -20,8 +20,6 @@ struct NewMachineDraft: Equatable, Sendable {
     var projects: [URL] = []
     /// Start from a warm pool (#5366): claim a ready machine of this provider and size.
     var fromPool = false
-    /// The projects that pool sends already, by path: a claim's catch-up brings them up to date.
-    var poolProjects: [String] = []
 }
 
 /// What the Mac's New Machine asks besides the provider's size (#5358): a sleep time and
@@ -104,6 +102,8 @@ struct NewMachineSheet: View {
         var kind: String
         var choices: [String]
         var costs: [String: String]
+        /// Each choice as a person reads it (`x-titles`, #6073), such as San Francisco 3.
+        var titles: [String: String] = [:]
         var placeholder: String?
 
         static func read(_ schema: JSONValue) -> [Field] {
@@ -119,6 +119,7 @@ struct NewMachineSheet: View {
                              kind: choices.isEmpty ? (property["type"]?.stringValue ?? "string") : "enum",
                              choices: choices,
                              costs: (property["x-costs"]?.objectValue ?? [:]).compactMapValues(\.stringValue),
+                             titles: (property["x-titles"]?.objectValue ?? [:]).compactMapValues(\.stringValue),
                              placeholder: property["description"]?.stringValue)
             }
         }
@@ -328,7 +329,8 @@ struct NewMachineSheet: View {
         case "enum":
             Picker(field.title, selection: binding(field, default: field.choices.first ?? "")) {
                 ForEach(field.choices, id: \.self) { choice in
-                    Text(field.costs[choice].map { "\(choice) — \($0)" } ?? choice).tag(choice)
+                    // A size's title has its price already (#6577).
+                    Text(field.titles[choice] ?? field.costs[choice].map { "\(choice) — \($0)" } ?? choice).tag(choice)
                 }
             }
         case "boolean":
@@ -406,10 +408,7 @@ struct NewMachineSheet: View {
         if let choices {
             draft.stopWhenIdleMinutes = idleMinutes
             draft.projects = choices.projects.filter(sending.contains)
-            if claimsFromPool, let pool = matchingPool {
-                draft.fromPool = true
-                draft.poolProjects = pool.projects ?? []
-            }
+            draft.fromPool = claimsFromPool
         }
         Task {
             let refused = await make(draft)

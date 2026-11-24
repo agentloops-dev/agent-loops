@@ -11,7 +11,7 @@ import (
 // key. Each key is a rule of its own in the effective policy (commitTrailers.<key>), and
 // "tighter" has one meaning for each key, by its kind:
 //
-//   - a record trailer (Made-by, Session, Fixes, Epic, Requested-by, Approved-by, Attested,
+//   - a record trailer (Made-by, Session, Fixes, Epic, Requested-by, Approved-by,
 //     Co-authored-by): on is tighter. A folder or an organisation can make a record of agent
 //     work required; a person cannot remove it.
 //   - a spend trailer (Cost, Tokens, Duration): off is tighter. A folder or an organisation
@@ -50,7 +50,6 @@ var Trailers = []Trailer{
 	{"Epic", wire.PolicyRuleNameCommitTrailersEpic, TrailerRecord, true},
 	{"Requested-by", wire.PolicyRuleNameCommitTrailersRequestedBy, TrailerRecord, true},
 	{"Approved-by", wire.PolicyRuleNameCommitTrailersApprovedBy, TrailerRecord, true},
-	{"Attested", wire.PolicyRuleNameCommitTrailersAttested, TrailerRecord, true},
 	{"Co-authored-by", wire.PolicyRuleNameCommitTrailersCoAuthoredBy, TrailerRecord, true},
 }
 

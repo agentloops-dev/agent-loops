@@ -103,7 +103,7 @@ func (d *Daemon) find(ctx context.Context, client int64, r wire.FindRequest) (wi
 	defer done()
 	scan := &findScan{text: text, limit: limit, result: &result}
 	var stopped error
-	err = d.Store.EachLine(r.AgentID, ends, 0, len(ends), func(line []byte, i int) bool {
+	err = d.Store.EachLine(r.AgentID, ends, 0, ends.Total(), func(line []byte, i int) bool {
 		if i%findCheck == 0 {
 			if stopped = ctx.Err(); stopped == nil && !wanted() {
 				stopped = errFindSuperseded

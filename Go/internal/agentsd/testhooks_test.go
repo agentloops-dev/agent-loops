@@ -83,6 +83,10 @@ func (h *testHooks) diskFreeLocked() func(wire.DiskReading) int64 {
 // roomyDisk is a disk with nine tenths of it free: far above the low line.
 func roomyDisk(r wire.DiskReading) int64 { return r.TotalBytes / 10 * 9 }
 
+// A daemon a test makes with New, not start (a restart on the same root), reads the same
+// roomy disk (#6497). init runs before any test, so no daemon reads newDiskFree as it changes.
+func init() { newDiskFree = roomyDisk }
+
 // diskFreeFor makes every volume of t's daemons read free bytes free, as a full or a
 // roomy disk would (#6390), in place of the Mac's own disk.
 func diskFreeFor(t testing.TB, free int64) {

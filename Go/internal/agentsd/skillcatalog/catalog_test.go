@@ -1,7 +1,6 @@
 package skillcatalog
 
 import (
-	"encoding/json"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -35,7 +34,7 @@ func TestTheHashesAreGitsAndTheCLIs(t *testing.T) {
 		t.Fatal(err)
 	}
 	var g golden
-	json.Unmarshal(b, &g)
+	mustUnmarshal(t, b, &g)
 	for _, name := range []string{"plain", "mixed", "nested"} {
 		want := g.Fixtures[name]
 		folder := filepath.Join(fixtures, "skills", name)
@@ -68,8 +67,8 @@ func copyLock(t *testing.T, name, to string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	os.MkdirAll(filepath.Dir(to), 0o755)
-	os.WriteFile(to, b, 0o644)
+	must(t, os.MkdirAll(filepath.Dir(to), 0o755)) //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(to, b, 0o644))           //nolint:gosec // G306: the mode this file always had; only its error is new
 }
 
 func TestThePersonalLockComesOutAsTheCLIWritesIt(t *testing.T) {
@@ -102,7 +101,7 @@ func TestTheFolderLockComesOutAsTheCLIWritesIt(t *testing.T) {
 		t.Fatal(err)
 	}
 	lock.Upsert("nested", "fixture-owner/fixture-skills", "skills/nested/SKILL.md", "43d79cc2b2a7065d4f3f4cc5ae35447d31c5b22469dcee4c35395c2c09d0ac0e", lockNow)
-	lock.Write()
+	must(t, lock.Write())
 	want, _ := os.ReadFile(filepath.Join(fixtures, "locks", "folder-after.json"))
 	if got, _ := os.ReadFile(path); string(got) != string(want) {
 		t.Fatalf("got\n%s\nwant\n%s", got, want)
@@ -113,7 +112,7 @@ func TestANewPersonalLockStartsAsTheCLIsEmptyOne(t *testing.T) {
 	path := filepath.Join(t.TempDir(), ".agents", ".skill-lock.json")
 	lock, _ := LoadLock(Personal, path)
 	lock.Upsert("plain", "o/r", "skills/plain/SKILL.md", "aa", lockNow)
-	lock.Write()
+	must(t, lock.Write())
 	b, _ := os.ReadFile(path)
 	if !strings.HasPrefix(string(b), "{\n  \"version\": 3,\n  \"skills\": {\n    \"plain\": {") || !strings.HasSuffix(string(b), "\n  },\n  \"dismissed\": {}\n}") {
 		t.Fatal(string(b))
@@ -123,7 +122,7 @@ func TestANewPersonalLockStartsAsTheCLIsEmptyOne(t *testing.T) {
 func TestAnUnreadableLockIsRefusedAndLeftAlone(t *testing.T) {
 	for _, text := range []string{`{"version": 2, "skills": {}}`, `{not json`, `{"version": 3}`} {
 		path := filepath.Join(t.TempDir(), ".skill-lock.json")
-		os.WriteFile(path, []byte(text), 0o644)
+		must(t, os.WriteFile(path, []byte(text), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 		_, err := LoadLock(Personal, path)
 		ce, ok := err.(*Error)
 		if !ok || ce.Why.LockUnreadable == nil {
@@ -155,7 +154,7 @@ func TestTheFolderLockKeepsPersonasApartFromSkills(t *testing.T) {
 	skills := lock.Names()
 	sort.Strings(skills)
 	lock.UpsertPersona("reviewer", PersonaEntry{Source: "o/r", Path: "personas/reviewer.md", Commit: "c", BlobSHA: "b"}, lockNow)
-	lock.Write()
+	must(t, lock.Write())
 	again, err := LoadLock(FolderScope, path)
 	if err != nil {
 		t.Fatal(err)
@@ -164,7 +163,7 @@ func TestTheFolderLockKeepsPersonasApartFromSkills(t *testing.T) {
 		t.Fatalf("%+v %v", e, again.Names())
 	}
 	again.RemovePersona("reviewer")
-	again.Write()
+	must(t, again.Write())
 	// The last one out takes the key with it, so the file is as the CLI writes it again.
 	if b, _ := os.ReadFile(path); strings.Contains(string(b), "personas") {
 		t.Fatal(string(b))

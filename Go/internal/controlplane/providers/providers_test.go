@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/records"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -73,10 +74,11 @@ func TestTheProviderRecordIsKeptAtTheSwiftKey(t *testing.T) {
 			t.Errorf("no %s in %s", key, object.Data)
 		}
 	}
-	// A record as Swift writes it is read, and what this build does not know is kept.
+	// A record as Swift writes it is read, also of a kind that was removed (#6623), and what
+	// this build does not know is kept.
 	swift := `{"capabilities":[],"contract":1,"id":"do-x1y2","kind":"stdio","name":"DO","rev":1,"secretNames":[],"later":true}`
 	var r ProviderRecord
-	if err := json.Unmarshal([]byte(swift), &r); err != nil || r.WrittenBy != nil {
+	if err := json.Unmarshal([]byte(swift), &r); err != nil || r.Kind != "stdio" {
 		t.Fatalf("%v %+v", err, r)
 	}
 	if !strings.Contains(string(rawOf(r)), `"later":true`) {
@@ -565,6 +567,29 @@ func TestAWorkspaceThatInstallsOnFirstBootJoinsAndIsLinked(t *testing.T) {
 	}
 }
 
+// #6581: a machine the control plane made, which joined with the code its first boot was
+// given, is linked to its workspace although its host key is new to the control plane. The
+// link keeps no key then, as for a key that can't be fetched: the key is checked when ssh is
+// first needed. Before, the link asked a person to trust the key, nothing showed the ask, and
+// the droplet stayed "running — not a host".
+func TestAMadeMachineWhoseHostKeyIsNewIsLinkedAsItJoins(t *testing.T) {
+	h := newHarness(t, func(o *harnessOptions) {
+		o.hostKey = func(string, string, string) (string, string, error) { return "", "SHA256:made", nil }
+	})
+	h.add()
+	made, err := h.create("machine-38", nil)
+	if err != nil || !made.Joining {
+		t.Fatalf("%v %+v", err, made)
+	}
+	h.enroll("ttbq3gqg", "machine-38")
+	if !eventually(t, func() bool { l := LinkOf(h.records.Host("ttbq3gqg")); return l != nil && l.Workspace == "ws-machine-38" }) {
+		t.Fatal("not linked")
+	}
+	if link := LinkOf(h.records.Host("ttbq3gqg")); link.KnownHosts != "" {
+		t.Errorf("a key nobody trusted was kept: %+v", link)
+	}
+}
+
 // A make the control plane waits for says so to every client, and one it gave up on says
 // so with a reason, until Delete deletes the workspace at the provider (#4610).
 func TestAMadeMachineThatNeverJoinsIsSaidAndCanBeDeleted(t *testing.T) {
@@ -831,6 +856,99 @@ func TestAMakeSaysTheFirstSetUpSteps(t *testing.T) {
 	}
 }
 
+// #6073: while the provider makes it, the provider's row has the machine being made with its
+// set-up, for a client that opens late; step 1 is done with the provider's own words; and once
+// the provider lists it running, step 2 says so, on the joining row, until it joins.
+func TestAMakeShowsItsStepsOnItsRowUntilItJoins(t *testing.T) {
+	h := newHarness(t)
+	id := h.add()
+	h.provider.mu.Lock()
+	h.provider.firstBootRuns = true
+	h.provider.createTakes = 300 * time.Millisecond
+	h.provider.said = []string{"Made an ssh key for Agent Loops and added it to your DigitalOcean account.",
+		"Made droplet machine-1 in San Francisco 3: 2 vCPUs · 4 GB · 80 GB disk · $24/month."}
+	h.provider.mu.Unlock()
+	done := make(chan error, 1)
+	go func() { _, err := h.createNameless(); done <- err }()
+	making := within5s(func() *MachineInfo {
+		if r := h.workspaceRow(id, "machine-1"); r != nil && r.Setup != nil {
+			return r
+		}
+		return nil
+	})
+	if making == nil || making.ID != "making-machine-1" || making.Joining == nil || !*making.Joining ||
+		making.Setup.Steps[0].ID != wire.MachineSetupStepIDCreate || making.Setup.Steps[0].State != wire.MachineSetupStateRunning {
+		t.Fatalf("while it is made: %+v", making)
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if made := h.stepDetail(wire.MachineSetupStepIDCreate, wire.MachineSetupStateDone, ""); made != strings.Join(h.provider.said, " ") {
+		t.Errorf("step 1 says %q", made)
+	}
+	if joining := h.workspaceRow(id, "machine-1"); joining == nil || joining.ID != "ws-machine-1" || joining.Setup == nil {
+		t.Fatalf("joining: %+v", joining)
+	}
+	// It boots: the provider lists it running.
+	h.provider.mu.Lock()
+	for i := range h.provider.workspaces {
+		if h.provider.workspaces[i].ID == "ws-machine-1" {
+			h.provider.workspaces[i].State = "running"
+		}
+	}
+	h.provider.mu.Unlock()
+	h.providers.Refresh(id)
+	started := within5s(func() *string {
+		if d := h.stepDetail(wire.MachineSetupStepIDJoin, wire.MachineSetupStateRunning, "Started"); d != "" {
+			return &d
+		}
+		return nil
+	})
+	if started == nil || *started != "Started machine-1; installing Agent Loops on it, then it joins" {
+		t.Errorf("step 2 says %v", started)
+	}
+}
+
+// within5s is what look gives within 5 seconds, or nil.
+func within5s[T any](look func() *T) *T {
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if v := look(); v != nil {
+			return v
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	return nil
+}
+
+// workspaceRow is a provider's row for the workspace named so, or nil.
+func (h *harness) workspaceRow(provider, name string) *MachineInfo {
+	for _, s := range h.providers.Summaries() {
+		if string(s.ID) != provider {
+			continue
+		}
+		for _, w := range s.Workspaces {
+			if w.Name == name {
+				return &w
+			}
+		}
+	}
+	return nil
+}
+
+// stepDetail is the last words said for a step in that state that start with prefix.
+func (h *harness) stepDetail(step wire.MachineSetupStepID, state wire.MachineSetupState, prefix string) string {
+	h.setupMu.Lock()
+	defer h.setupMu.Unlock()
+	out := ""
+	for _, s := range h.setupSteps {
+		if s.report.Step == step && s.report.State == state && strings.HasPrefix(deref(s.report.Detail), prefix) {
+			out = deref(s.report.Detail)
+		}
+	}
+	return out
+}
+
 // Seven New Machine presses in one second (#4706) reach the provider one at a time: all
 // seven sent at once failed within 3 s at GitHub. Each still makes its own machine-N.
 func TestMakesOnOneProviderGoOneAtATime(t *testing.T) {
@@ -930,14 +1048,91 @@ func TestNewMachineTakesTheOptionsUsedLastOnItsProvider(t *testing.T) {
 	provider := wire.ProviderID(id)
 	name := "big-1"
 	if _, err := h.call(MethodProvidersCreate, ProviderCreate{ID: &provider, Name: &name,
-		Options: wire.JSONValue(rawOf(map[string]any{"size": "large"}))}); err != nil {
+		Options: wire.JSONValue(rawOf(map[string]any{"size": "big"}))}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := h.createNameless(); err != nil {
 		t.Fatal(err)
 	}
-	if got := h.provider.madeWith[1]; !reflect.DeepEqual(got, map[string]any{"size": "large"}) {
+	if got := h.provider.madeWith[1]; !reflect.DeepEqual(got, map[string]any{"size": "big"}) {
 		t.Errorf("the options used last: %v", got)
+	}
+}
+
+// A make with no options makes what New Machine's form shows (#6686): the person's choices
+// over the form's defaults of now. A make that took the defaults keeps no choice, so a
+// default that changes later (#6615's size) is the next make's, and a kept choice the form
+// no longer offers gives way to its default.
+func TestAMakeWithNoOptionsTakesTheFormsDefaultsOfNow(t *testing.T) {
+	h := newHarness(t)
+	id := h.add()
+	formWith := func(region, size string) string {
+		return `{"type": "object", "properties": {
+			"region": {"type": "string", "enum": ["nyc3", "sfo2"], "default": "` + region + `"},
+			"size": {"type": "string", "enum": ["s-1vcpu-1gb", "s-2vcpu-4gb"], "default": "` + size + `"}}}`
+	}
+	h.provider.mu.Lock()
+	h.provider.form = formWith("nyc3", "s-1vcpu-1gb")
+	h.provider.mu.Unlock()
+	if _, err := h.createNameless(); err != nil {
+		t.Fatal(err)
+	}
+	// The form changes its defaults, as #6615 did and as the account's nearest region does.
+	h.provider.mu.Lock()
+	h.provider.form = formWith("sfo2", "s-2vcpu-4gb")
+	h.provider.mu.Unlock()
+	want := map[string]any{"region": "sfo2", "size": "s-2vcpu-4gb"}
+	if got := valueOf(h.must(MethodProvidersOptions, map[string]any{"id": id}).(ProviderOptions).Values); !reflect.DeepEqual(got, want) {
+		t.Errorf("the form shows %v", got)
+	}
+	if _, err := h.createNameless(); err != nil {
+		t.Fatal(err)
+	}
+	if got := h.provider.madeWith[1]; !reflect.DeepEqual(got, want) {
+		t.Errorf("a make with no options made %v, the form shows %v", got, want)
+	}
+	// What the person chose is kept, and only that: the region, not the default size.
+	provider := wire.ProviderID(id)
+	name := "east-1"
+	if _, err := h.call(MethodProvidersCreate, ProviderCreate{ID: &provider, Name: &name,
+		Options: wire.JSONValue(rawOf(map[string]any{"region": "nyc3", "size": "s-2vcpu-4gb"}))}); err != nil {
+		t.Fatal(err)
+	}
+	h.provider.mu.Lock()
+	h.provider.form = formWith("sfo2", "s-1vcpu-1gb")
+	h.provider.mu.Unlock()
+	if _, err := h.createNameless(); err != nil {
+		t.Fatal(err)
+	}
+	if got := h.provider.madeWith[3]; !reflect.DeepEqual(got, map[string]any{"region": "nyc3", "size": "s-1vcpu-1gb"}) {
+		t.Errorf("the region chosen over the size of now: %v", got)
+	}
+	// A kept choice the form no longer offers gives way to its default.
+	h.provider.mu.Lock()
+	h.provider.form = `{"type": "object", "properties": {"region": {"type": "string", "enum": ["sfo2"], "default": "sfo2"}}}`
+	h.provider.mu.Unlock()
+	if _, err := h.createNameless(); err != nil {
+		t.Fatal(err)
+	}
+	if got := h.provider.madeWith[4]; !reflect.DeepEqual(got, map[string]any{"region": "sfo2"}) {
+		t.Errorf("a region no longer offered: %v", got)
+	}
+}
+
+// The options kept before #6686 held the defaults as if chosen: they are not read.
+func TestOptionsKeptBeforeTheChoicesAreNotRead(t *testing.T) {
+	h := newHarness(t)
+	id := h.add()
+	old, _ := json.Marshal(map[string]any{"next": 2, "default": id,
+		"options": map[string]any{id: map[string]any{"size": "big"}}})
+	if _, err := h.store.Put(context.Background(), machineNamesKey(""), old, store.Absent); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.createNameless(); err != nil {
+		t.Fatal(err)
+	}
+	if got := h.provider.madeWith[0]; !reflect.DeepEqual(got, map[string]any{"size": "small"}) {
+		t.Errorf("the form's default, not the old kept options: %v", got)
 	}
 }
 
@@ -961,7 +1156,7 @@ func TestTheFormSaysWhatNewMachineWouldMake(t *testing.T) {
 	provider := wire.ProviderID(id)
 	name := "machine-1"
 	if _, err := h.call(MethodProvidersCreate, ProviderCreate{ID: &provider, Name: &name,
-		Options: wire.JSONValue(rawOf(map[string]any{"size": "large", "gone": "x"}))}); err != nil {
+		Options: wire.JSONValue(rawOf(map[string]any{"size": "big", "gone": "x"}))}); err != nil {
 		t.Fatal(err)
 	}
 	h.provider.mu.Lock()
@@ -972,7 +1167,7 @@ func TestTheFormSaysWhatNewMachineWouldMake(t *testing.T) {
 	if deref(form.Name) != "machine-2" {
 		t.Errorf("after machine-1 was made: %v", deref(form.Name))
 	}
-	if got := valueOf(form.Values); !reflect.DeepEqual(got, map[string]any{"size": "large"}) {
+	if got := valueOf(form.Values); !reflect.DeepEqual(got, map[string]any{"size": "big"}) {
 		t.Errorf("the options used last, only the form's fields: %v", got)
 	}
 }

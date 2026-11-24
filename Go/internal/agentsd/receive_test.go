@@ -1,7 +1,6 @@
 package agentsd
 
 import (
-	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -34,7 +33,7 @@ func sendGit(t *testing.T, dir string, env []string, args ...string) string {
 func macSend(t *testing.T, c *conn, src string, have []string, changes bool, branches ...string) (map[string]any, int64) {
 	t.Helper()
 	var pack wire.SendPack
-	json.Unmarshal(c.call(t, 900, "folders/sendPack", map[string]any{"folder": store.FolderURL(src), "branches": branches,
+	mustUnmarshal(t, c.call(t, 900, "folders/sendPack", map[string]any{"folder": store.FolderURL(src), "branches": branches,
 		"leavingOut": have, "includeChanges": changes}), &pack)
 	relay := func(f *wire.SendFile) *wire.UUID {
 		if f == nil {
@@ -44,7 +43,7 @@ func macSend(t *testing.T, c *conn, src string, have []string, changes bool, bra
 		var offset int64
 		for {
 			var part wire.SendRead
-			json.Unmarshal(c.call(t, 901, "folders/sendRead", map[string]any{"id": f.ID, "offset": offset}), &part)
+			mustUnmarshal(t, c.call(t, 901, "folders/sendRead", map[string]any{"id": f.ID, "offset": offset}), &part)
 			c.call(t, 902, "folders/receiveUpload", map[string]any{"upload": u, "offset": offset, "data": part.Data})
 			offset += int64(len(part.Data))
 			if part.End {
@@ -70,25 +69,25 @@ func TestSendToHost(t *testing.T) {
 	defer d.Shutdown()
 	src := repo(t)
 	sendGit(t, src, nil, "remote", "add", "origin", "git@github.com:example/hello.git")
-	os.WriteFile(filepath.Join(src, ".gitignore"), []byte("build/\n"), 0o644)
-	os.WriteFile(filepath.Join(src, "README.md"), []byte("hello\n"), 0o644)
+	must(t, os.WriteFile(filepath.Join(src, ".gitignore"), []byte("build/\n"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(src, "README.md"), []byte("hello\n"), 0o644))   //nolint:gosec // G306: the mode this file always had; only its error is new
 	sendGit(t, src, nil, "add", "-A")
 	sendGit(t, src, nil, "commit", "-q", "-m", "readme")
 	sendGit(t, src, nil, "branch", "other")
-	os.WriteFile(filepath.Join(src, "README.md"), []byte("hello, changed\n"), 0o644)
-	os.WriteFile(filepath.Join(src, "new.txt"), []byte("new\n"), 0o644)
-	os.MkdirAll(filepath.Join(src, "build"), 0o755)
-	os.WriteFile(filepath.Join(src, "build", "out"), []byte("x"), 0o644)
+	must(t, os.WriteFile(filepath.Join(src, "README.md"), []byte("hello, changed\n"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(src, "new.txt"), []byte("new\n"), 0o644))              //nolint:gosec // G306: the mode this file always had; only its error is new
+	must(t, os.MkdirAll(filepath.Join(src, "build"), 0o755))                                  //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(src, "build", "out"), []byte("x"), 0o644))             //nolint:gosec // G306: the mode this file always had; only its error is new
 	head := sendGit(t, src, nil, "rev-parse", "HEAD")
 
 	dest := filepath.Join(canonical(t.TempDir()), "hello")
 	var state wire.ReceiveState
-	json.Unmarshal(c.call(t, 1, "folders/receiveState", map[string]any{"folder": dest}), &state)
+	mustUnmarshal(t, c.call(t, 1, "folders/receiveState", map[string]any{"folder": dest}), &state)
 	if state.Exists || state.Repository || len(state.Heads) != 0 {
 		t.Fatalf("%+v", state)
 	}
 	var facts wire.SendFacts
-	json.Unmarshal(c.call(t, 2, "folders/sendFacts", map[string]any{"folder": store.FolderURL(src)}), &facts)
+	mustUnmarshal(t, c.call(t, 2, "folders/sendFacts", map[string]any{"folder": store.FolderURL(src)}), &facts)
 	if strings.Join(facts.Branches, ",") != "main,other" || *facts.Current != "main" || !facts.HasChanges ||
 		*facts.Origin != "git@github.com:example/hello.git" {
 		t.Fatalf("%+v", facts)
@@ -100,7 +99,7 @@ func TestSendToHost(t *testing.T) {
 		return m
 	}
 	var summary wire.FolderSummary
-	json.Unmarshal(c.call(t, 10, "folders/receive", send(nil, true, "main", "other")), &summary)
+	mustUnmarshal(t, c.call(t, 10, "folders/receive", send(nil, true, "main", "other")), &summary)
 	if got := sendGit(t, src, nil, "status", "--porcelain"); got != indexBefore {
 		t.Fatalf("the Mac's index changed: %q", got)
 	}
@@ -133,7 +132,7 @@ func TestSendToHost(t *testing.T) {
 	}
 
 	// The first send's changes are not the host's own: a second send replaces them.
-	json.Unmarshal(c.call(t, 20, "folders/receiveState", map[string]any{"folder": dest}), &state)
+	mustUnmarshal(t, c.call(t, 20, "folders/receiveState", map[string]any{"folder": dest}), &state)
 	if !state.Repository || state.OwnChanges || len(state.Heads) != 2 {
 		t.Fatalf("%+v", state)
 	}
@@ -154,8 +153,8 @@ func TestSendToHost(t *testing.T) {
 	}
 
 	// The host's own change stops the next send, with nothing changed.
-	os.WriteFile(filepath.Join(dest, "host.txt"), []byte("mine\n"), 0o644)
-	json.Unmarshal(c.call(t, 40, "folders/receiveState", map[string]any{"folder": dest}), &state)
+	must(t, os.WriteFile(filepath.Join(dest, "host.txt"), []byte("mine\n"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
+	mustUnmarshal(t, c.call(t, 40, "folders/receiveState", map[string]any{"folder": dest}), &state)
 	if !state.OwnChanges {
 		t.Fatal("the host's change is not its own")
 	}
@@ -186,7 +185,7 @@ func TestSendToAFolderInTheWay(t *testing.T) {
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dest := canonical(t.TempDir())
-	os.WriteFile(filepath.Join(dest, "x"), []byte("x"), 0o644)
+	must(t, os.WriteFile(filepath.Join(dest, "x"), []byte("x"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	msg := c.callErr(t, 1, "folders/receive", map[string]any{"folder": dest,
 		"branches": []map[string]any{{"name": "main", "commit": strings.Repeat("a", 40)}}, "checkout": "main"})
 	if !strings.Contains(msg, "not a Git repository") {
@@ -217,7 +216,7 @@ func TestBringBackFromHost(t *testing.T) {
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	src := repo(t)
-	os.WriteFile(filepath.Join(src, "README.md"), []byte("hello\n"), 0o644)
+	must(t, os.WriteFile(filepath.Join(src, "README.md"), []byte("hello\n"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	sendGit(t, src, nil, "add", "-A")
 	sendGit(t, src, nil, "commit", "-q", "-m", "readme")
 	dest := filepath.Join(canonical(t.TempDir()), "hello")
@@ -227,15 +226,15 @@ func TestBringBackFromHost(t *testing.T) {
 
 	// Work on the host: a commit on main, a new branch and a change not committed.
 	host := []string{"GIT_AUTHOR_NAME=H", "GIT_AUTHOR_EMAIL=h@example.com", "GIT_COMMITTER_NAME=H", "GIT_COMMITTER_EMAIL=h@example.com"}
-	os.WriteFile(filepath.Join(dest, "README.md"), []byte("hello from the host\n"), 0o644)
+	must(t, os.WriteFile(filepath.Join(dest, "README.md"), []byte("hello from the host\n"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	sendGit(t, dest, host, "commit", "-q", "-am", "host work")
 	sendGit(t, dest, host, "branch", "other")
 	hostHead := sendGit(t, dest, nil, "rev-parse", "HEAD")
-	os.WriteFile(filepath.Join(dest, "wip.txt"), []byte("not committed\n"), 0o644)
+	must(t, os.WriteFile(filepath.Join(dest, "wip.txt"), []byte("not committed\n"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 
 	macHeads := func() []string {
 		var s wire.ReceiveState
-		json.Unmarshal(c.call(t, 2, "folders/receiveState", map[string]any{"folder": src}), &s)
+		mustUnmarshal(t, c.call(t, 2, "folders/receiveState", map[string]any{"folder": src}), &s)
 		return s.Heads
 	}
 	back := func(changes bool, branches ...string) map[string]any {
@@ -247,7 +246,7 @@ func TestBringBackFromHost(t *testing.T) {
 		return m
 	}
 	var done wire.BringBack
-	json.Unmarshal(c.call(t, 10, "folders/bringBack", back(false, "main", "other")), &done)
+	mustUnmarshal(t, c.call(t, 10, "folders/bringBack", back(false, "main", "other")), &done)
 	if strings.Join(done.Moved, ",") != "main,other" || done.Applied {
 		t.Fatalf("%+v", done)
 	}
@@ -265,7 +264,7 @@ func TestBringBackFromHost(t *testing.T) {
 	}
 
 	// Again, with the uncommitted changes: nothing moves, the patch applies.
-	json.Unmarshal(c.call(t, 20, "folders/bringBack", back(true, "main")), &done)
+	mustUnmarshal(t, c.call(t, 20, "folders/bringBack", back(true, "main")), &done)
 	if len(done.Moved) != 0 || !done.Applied {
 		t.Fatalf("%+v", done)
 	}
@@ -323,7 +322,7 @@ func TestAbandonedSendIsSwept(t *testing.T) {
 		entries, _ := os.ReadDir(folder)
 		for _, e := range entries {
 			then := time.Now().Add(-by)
-			os.Chtimes(filepath.Join(folder, e.Name()), then, then)
+			must(t, os.Chtimes(filepath.Join(folder, e.Name()), then, then))
 		}
 	}
 
@@ -348,7 +347,7 @@ func TestAbandonedSendIsSwept(t *testing.T) {
 
 	// A part read keeps a slow send's file.
 	slow := store.NewUUID()
-	os.WriteFile(filepath.Join(d.outgoingFolder(), string(slow)), make([]byte, sendPartSize+1), 0o600)
+	must(t, os.WriteFile(filepath.Join(d.outgoingFolder(), string(slow)), make([]byte, sendPartSize+1), 0o600))
 	age(d.outgoingFolder(), transferLimit+time.Minute)
 	c.call(t, 7, "folders/sendRead", map[string]any{"id": slow, "offset": 0})
 	pack(8)

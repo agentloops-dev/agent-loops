@@ -32,6 +32,7 @@ type folderState struct {
 	cloneMu      sync.Mutex
 	clones       map[string]wire.CloneSummary
 	sendState
+	machineSetupBook
 	bringBackState
 }
 
@@ -683,8 +684,14 @@ func (d *Daemon) adoptClone(dest string, remote gitRemote) (wire.FolderSummary, 
 // approvedConfig is .agents/folder.json as last approved, without checking it again.
 func (d *Daemon) approvedConfig(folder string) (map[string]any, error) {
 	d.guardedMu.Lock()
-	s, known := d.stateOf(folder, ".agents/folder.json")
-	pending, content := s.Pending != nil, s.ApprovedContent
+	s := d.lookupState(folder, ".agents/folder.json")
+	known := s != nil
+	// A change that may still be a pull's (#6523) is not used yet either.
+	pending := known && (s.Pending != nil || d.guardedUnsure[guardedKey{folder, ".agents/folder.json"}] != nil)
+	var content []byte
+	if known {
+		content = s.ApprovedContent
+	}
 	d.guardedMu.Unlock()
 	if !known || !pending {
 		return readFolderConfig(folder)

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -61,9 +62,62 @@ func (d *Daemon) saveAgentSecret(agent wire.UUID, name, value string, needsAppro
 // machine is on no control plane, or on one older than #5308: the secret stays here, and is
 // offered at the next delivery.
 func (d *Daemon) offerAgentSecret(agent wire.UUID, name, value string, needsApproval bool) {
-	if !secretNameHere.MatchString(name) || !d.controlHas(wire.CapMachineAgentSecrets1) {
+	if !secretNameHere.MatchString(name) || !d.controlHas(wire.CapMachineAgentSecrets1) || d.askControl.Load() == nil {
 		return
 	}
+	d.agentOffersMu.Lock()
+	defer d.agentOffersMu.Unlock()
+	d.offerIfStillWaitingLocked(agent, name, value, needsApproval)
+}
+
+// offerIfStillWaitingLocked offers name when sealed.json, read now, still holds it as an agent's
+// secret with no offer (#6626): a run that waited on agentOffersMu decided from an older read,
+// and the person may have taken the name since (from "user"), or another run offered it. The
+// value is the record's own, opened now; fallback is for one that opens only with a person's
+// approval (a Linux value with Ask before use), which the save had in hand. Called with
+// agentOffersMu held.
+func (d *Daemon) offerIfStillWaitingLocked(agent wire.UUID, name, fallback string, needsApproval bool) {
+	home := d.personalHome()
+	if home == "" {
+		return
+	}
+	s, ok := d.waitingAgentSecret(home, name)
+	if !ok {
+		return
+	}
+	value, err := d.openSealedSecret(sealedLocal, name, s)
+	if err != nil {
+		if fallback == "" {
+			return
+		}
+		value = fallback
+	} else {
+		needsApproval = !s.NoAsk
+	}
+	d.offerAgentSecretLocked(agent, name, value, needsApproval)
+}
+
+// waitingAgentSecret is name's record in sealed.json when it waits for an offer: an agent's
+// save with no offer yet, or an old save (from "") that qualifies (decision 2) and that the
+// person has none of. Never one of the person's own (from "user").
+func (d *Daemon) waitingAgentSecret(home, name string) (sealedValue, bool) {
+	s, ok := sealedSecretsHere(home)[name]
+	switch {
+	case !ok || !secretNameHere.MatchString(name) || s.Offer != "" || s.Release:
+		return s, false
+	case s.From == sealedFromAgent:
+		return s, true
+	case s.From == "":
+		d.userScopeMu.Lock()
+		mark := d.userMarkLocked()
+		d.userScopeMu.Unlock()
+		return s, !slices.Contains(mark.Secrets, name) && d.oldAgentSave(home, name)
+	}
+	return s, false
+}
+
+// offerAgentSecretLocked makes the offer. Called with agentOffersMu held.
+func (d *Daemon) offerAgentSecretLocked(agent wire.UUID, name, value string, needsApproval bool) {
 	ask := d.askControl.Load()
 	if ask == nil {
 		return
@@ -74,8 +128,6 @@ func (d *Daemon) offerAgentSecret(agent wire.UUID, name, value string, needsAppr
 	if id == nil {
 		return
 	}
-	d.agentOffersMu.Lock()
-	defer d.agentOffersMu.Unlock()
 	ctx, cancel := context.WithTimeout(d.ctx, offerAsk)
 	defer cancel()
 	raw, err := (*ask)(ctx, wire.CallMachineSecretClients.Name, wire.Empty{})
@@ -132,7 +184,11 @@ func (d *Daemon) noteOffer(name, offer string) {
 	}
 	d.sealedSecretsMu.Lock()
 	defer d.sealedSecretsMu.Unlock()
-	f := readSealedSecrets(home)
+	f, err := readSealedSecrets(home)
+	if err != nil {
+		log.Printf("agent secrets: %s's offer was not kept: %v", name, err)
+		return
+	}
 	s, ok := f.Secrets[name]
 	if !ok || s.From != sealedFromAgent && s.From != "" {
 		return
@@ -147,37 +203,53 @@ func (d *Daemon) noteOffer(name, offer string) {
 // offerWaitingAgentSecrets offers each agent's secret here that has no offer yet, and each old
 // save that qualifies (decision 2), after a delivery. One that does not open here (a Linux
 // value with Ask before use, which opens only with a person's approval) stays here.
+//
+// Each delivery calls it, and each offer brings a delivery, so one run goes at a time: a call
+// while one runs asks for one more run after it, and returns (#6626). Before, each delivery
+// started a run that read sealed.json at once and then waited its turn for each offer: about
+// a thousand runs piled up, and each offered names the person had taken since, once a second.
 func (d *Daemon) offerWaitingAgentSecrets() {
+	d.offersRunMu.Lock()
+	if d.offersRunning {
+		d.offersAgain = true
+		d.offersRunMu.Unlock()
+		return
+	}
+	d.offersRunning = true
+	d.offersRunMu.Unlock()
+	for {
+		d.offerWaitingAgentSecretsOnce()
+		d.offersRunMu.Lock()
+		if !d.offersAgain || d.ctx.Err() != nil {
+			d.offersRunning, d.offersAgain = false, false
+			d.offersRunMu.Unlock()
+			return
+		}
+		d.offersAgain = false
+		d.offersRunMu.Unlock()
+	}
+}
+
+// offerWaitingAgentSecretsOnce is one run: each name is read again just before its offer.
+func (d *Daemon) offerWaitingAgentSecretsOnce() {
 	home := d.personalHome()
 	if home == "" || !d.controlHas(wire.CapMachineAgentSecrets1) || d.askControl.Load() == nil {
 		return
 	}
-	d.userScopeMu.Lock()
-	mark := d.userMarkLocked()
-	d.userScopeMu.Unlock()
-	yours := map[string]bool{}
-	for _, n := range mark.Secrets {
-		yours[n] = true
-	}
+	d.agentOffersMu.Lock()
+	defer d.agentOffersMu.Unlock()
 	var names []string
-	held := readSealedSecrets(home).Secrets
-	for name, s := range held {
-		switch {
-		case !secretNameHere.MatchString(name) || s.Offer != "" || s.Release:
-		case s.From == sealedFromAgent:
-			names = append(names, name)
-		case s.From == "" && !yours[name] && d.oldAgentSave(home, name):
+	for name := range sealedSecretsHere(home) {
+		if _, ok := d.waitingAgentSecret(home, name); ok {
 			names = append(names, name)
 		}
 	}
 	sort.Strings(names)
 	for _, name := range names {
-		s := held[name]
-		v, err := d.openSealedSecret(sealedLocal, name, s)
-		if err != nil {
-			continue
+		if d.ctx.Err() != nil {
+			return
 		}
-		d.offerAgentSecret("", name, v, !s.NoAsk)
+		d.offerIfStillWaitingLocked("", name, "", false)
 	}
 }
 

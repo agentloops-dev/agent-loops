@@ -94,7 +94,7 @@ func TestAPageOfTurns(t *testing.T) {
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	var id wire.UUID
-	json.Unmarshal(c.call(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(),
+	mustUnmarshal(t, c.call(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(),
 		"prompt": "hello", "attachments": []any{}, "startOptions": map[string]any{"values": map[string]any{}, "extraArguments": []any{}},
 		"additionalDirectories": []any{}, "mcpServers": []any{}, "labels": []any{}}), &id)
 	c.until(t, "the first turn", ended(id, wire.AgentStateFinished))
@@ -104,7 +104,7 @@ func TestAPageOfTurns(t *testing.T) {
 		return len(u) == 2 && d.Store.Agent(id).State == wire.AgentStateFinished
 	})
 	var page wire.TurnsPage
-	json.Unmarshal(c.call(t, 3, "agents/turns", map[string]any{"agentID": id, "limit": 50}), &page)
+	mustUnmarshal(t, c.call(t, 3, "agents/turns", map[string]any{"agentID": id, "limit": 50}), &page)
 	// What came before the first ask is a turn of its own, as the Swift host counts them.
 	if len(page.Turns) != 2 || page.FirstTurn != 0 || page.Turns[0].Ask != nil || page.Turns[1].Ask.Kind.UserMessage.Value != "hello" ||
 		page.Turns[1].End != page.OpenStart || page.Turns[1].Outcome[0].Kind.AgentMessage.Text != "I wrote hi.txt. Anything else?" {
@@ -112,7 +112,7 @@ func TestAPageOfTurns(t *testing.T) {
 		t.Fatalf("%s", b)
 	}
 	page = wire.TurnsPage{}
-	json.Unmarshal(c.call(t, 4, "agents/turns", map[string]any{"agentID": id, "before": 2, "limit": 1}), &page)
+	mustUnmarshal(t, c.call(t, 4, "agents/turns", map[string]any{"agentID": id, "before": 2, "limit": 1}), &page)
 	if len(page.Turns) != 1 || page.FirstTurn != 1 || page.OpenStart == 0 {
 		t.Fatalf("%+v", page)
 	}
@@ -128,7 +128,7 @@ func TestTurnsAreKept(t *testing.T) {
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	var id wire.UUID
-	json.Unmarshal(c.call(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(), "prompt": "hello"}), &id)
+	mustUnmarshal(t, c.call(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(), "prompt": "hello"}), &id)
 	c.until(t, "the first turn", ended(id, wire.AgentStateFinished))
 	person, agent := wire.PromptOriginPerson, wire.PromptOriginAgent
 	for i := range 300 {
@@ -137,13 +137,17 @@ func TestTurnsAreKept(t *testing.T) {
 		if i == 0 {
 			from = &agent
 		}
-		d.Store.Append(id, wire.TranscriptEntry{ID: store.NewUUID(), At: now(), Kind: wire.TranscriptEntryKind{
-			UserMessage: &wire.TranscriptEntryKindUserMessage{Value: fmt.Sprintf("ask %d", i), From: from}}})
-		d.Store.Append(id, wire.TranscriptEntry{ID: store.NewUUID(), At: now(), Kind: wire.TranscriptEntryKind{
-			AgentMessage: &wire.TranscriptEntryKindAgentMessage{Text: fmt.Sprintf("done %d", i)}}})
+		if _, err := d.Store.Append(id, wire.TranscriptEntry{ID: store.NewUUID(), At: now(), Kind: wire.TranscriptEntryKind{
+			UserMessage: &wire.TranscriptEntryKindUserMessage{Value: fmt.Sprintf("ask %d", i), From: from}}}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := d.Store.Append(id, wire.TranscriptEntry{ID: store.NewUUID(), At: now(), Kind: wire.TranscriptEntryKind{
+			AgentMessage: &wire.TranscriptEntryKindAgentMessage{Text: fmt.Sprintf("done %d", i)}}}); err != nil {
+			t.Fatal(err)
+		}
 	}
 	var page wire.TurnsPage
-	json.Unmarshal(c.call(t, 2, "agents/turns", map[string]any{"agentID": id, "limit": 5}), &page)
+	mustUnmarshal(t, c.call(t, 2, "agents/turns", map[string]any{"agentID": id, "limit": 5}), &page)
 	// Before "ask 294": "hello" and asks 1 to 293, which the Prompts list numbers from (#1862).
 	if len(page.Turns) != 5 || page.Turns[4].Ask.Kind.UserMessage.Value != "ask 298" || page.FirstPrompt == nil || *page.FirstPrompt != 294 {
 		t.Fatalf("%+v", page)
@@ -160,7 +164,7 @@ func TestTurnsAreKept(t *testing.T) {
 	d.turnsOf = nil
 	d.turnMu.Unlock()
 	page = wire.TurnsPage{}
-	json.Unmarshal(c.call(t, 3, "agents/turns", map[string]any{"agentID": id, "before": 150, "limit": 1}), &page)
+	mustUnmarshal(t, c.call(t, 3, "agents/turns", map[string]any{"agentID": id, "before": 150, "limit": 1}), &page)
 	ask := 149 - (closed - 299)
 	if len(page.Turns) != 1 || page.Turns[0].Ask.Kind.UserMessage.Value != fmt.Sprintf("ask %d", ask) ||
 		page.FirstPrompt == nil || *page.FirstPrompt != int64(ask) {
@@ -172,7 +176,7 @@ func TestTurnsAreKept(t *testing.T) {
 		return len(k) == closed && k[closed-1].ID != kept[closed-1].ID
 	})
 	var tp wire.TranscriptPage
-	json.Unmarshal(c.call(t, 4, "agents/transcript", map[string]any{"agentID": id, "before": 10, "limit": 3}), &tp)
+	mustUnmarshal(t, c.call(t, 4, "agents/transcript", map[string]any{"agentID": id, "before": 10, "limit": 3}), &tp)
 	if tp.FirstIndex != 7 || len(tp.Entries) != 3 || tp.Total < 600 {
 		t.Fatalf("%+v", tp)
 	}

@@ -41,7 +41,7 @@ Mac window passes to a server with `policy/applyYours`.
 | `notices` | `{antigravityTerms?: show \| accepted \| refuse}` | Google's terms notice for Antigravity (#999): `show` (as absent), `accepted` (your organisation reviewed the terms; members see no notice, and the Policy pane says so), `refuse` (Antigravity is refused). Console ▸ Policy names them **Show the notice**, **Reviewed by your organisation** and **Do not allow**. |
 | `stopAll` | `{on, by, at, note?}` | The kill switch. Only `policy/stopAll` changes it. |
 | `connectorTools` | `{<connector>: {writes?, tools?: {<tool>: allow \| ask \| off}}}` | Only in your layer and a folder's (#4099). **Allow**, **Ask** or **Off** for each tool of a connector, by the connector's name; `writes` is one level for each tool that writes and that `tools` does not name. A tool no layer names is **Ask** when it writes and **Allow** when it only reads. A tool writes unless its annotations say `readOnlyHint: true`, or when they say `destructiveHint: true`. Tighter is later: Allow, Ask, Off. See [Connector tools](#connector-tools). |
-| `commitTrailers` | `{<trailer>: on \| off}` | In each layer (#6365). Which trailers an agent's commits and squash messages carry: `Made-by`, `Cost`, `Tokens`, `Duration`, `Session`, `Fixes` (also `Refs`), `Epic`, `Requested-by`, `Approved-by`, `Attested`, `Co-authored-by`. A key that no layer sets has its default: every trailer **On**, `Cost` **Off**. For a record trailer **On** is tighter; for a spend trailer (`Cost`, `Tokens`, `Duration`) **Off** is tighter. A key a machine does not know is kept and has no effect. Each key is a rule of `policy/effective`, `commitTrailers.<key>`. See [Commit trailers](#commit-trailers). |
+| `commitTrailers` | `{<trailer>: on \| off}` | In each layer (#6365). Which trailers an agent's commits and squash messages carry: `Made-by`, `Cost`, `Tokens`, `Duration`, `Session`, `Fixes` (also `Refs`), `Epic`, `Requested-by`, `Approved-by`, `Co-authored-by`. A key that no layer sets has its default: every trailer **On**, `Cost` **Off**. For a record trailer **On** is tighter; for a spend trailer (`Cost`, `Tokens`, `Duration`) **Off** is tighter. A key a machine does not know is kept and has no effect, such as `Attested`, a key until #6545 removed it. Each key is a rule of `policy/effective`, `commitTrailers.<key>`. See [Commit trailers](#commit-trailers). |
 | `requireFollowing` | `true` | The control plane refuses to start work on a machine that has not kept this version. |
 | `groups` | `{}` | Empty. A place for later layers, which can only make a rule tighter. |
 
@@ -101,7 +101,6 @@ no value is left out. The lines come in this order:
 | `Epic` | The first issue's parent: lineage's part-of link, else one read of the issue from the forge cache. |
 | `Requested-by` | The login of the person's forge connection. |
 | `Approved-by` | Each login whose newest review of the PR approves it: one read of the PR from the forge cache. Only with `pr`. |
-| `Attested` | No value since #6438 removed the attestations, so it is left out. |
 | `Cost`, `Tokens`, `Duration` | The totals of the sessions labelled with the PR (`P#<n>`) or its issues, from the cost on the link (`lineage-cost.json`): the PR, the issues it fixes, and the session's own `#n`. With no `pr`, the session's issues; with none, the session itself. As `$3.00`, `in=412.0k out=38.0k` and `47m`. |
 | `Co-authored-by` | The runtime's own line for GitHub's commit page, where it is known: Claude's, `Claude Opus 5.5 <noreply@anthropic.com>`. |
 
@@ -145,17 +144,22 @@ checkout and the folder's other worktrees do not change. A repository that keeps
 or `core.worktree` in its shared config gets no hook, as git asks. It is a git hook, not a
 runtime hook: it never holds an agent's tool use.
 
-- **The folder's own hooks still run.** Each hook in the folder (every hook git runs in a
-  checkout) runs the folder's hook of the same name: the last `core.hooksPath` of a scope other
-  than the worktree's (as Husky sets it), else the repository's `hooks` folder (where lefthook
-  and pre-commit write theirs). It finds it at each run, so a hook the folder adds later runs
-  too.
+- **The folder's own hooks still run.** The folder links `commit-msg`, and each hook's name
+  that the folder's own hooks folder has as a program: the last `core.hooksPath` of a scope
+  other than the worktree's (as Husky sets it), else the repository's `hooks` folder (where
+  lefthook and pre-commit write theirs). Each of those runs the folder's hook of the same name.
+  The daemon reads that folder when it puts the hook in, when a session starts in the
+  worktree and when it starts (for each worktree that an agent not archived works in), so a
+  hook the folder adds later runs from the next session. A name the folder does not have gets
+  no link (#6529): git runs `reference-transaction` three times for each ref that a fetch or a
+  rebase changes, and with a link each run started four processes, so a fetch of 300 branches
+  took 28 s, not 0.15 s.
 - **`commit-msg`** runs the folder's own `commit-msg` first; when that refuses the commit, it
   stays refused. Then, in a session, `agents-trailers MSGFILE` (`agentsd trailers`, beside
   `agents-secret` on the session's PATH, with the same grant) asks agentsd for the session's
   `git/trailers` and writes the block as the message's last paragraph: it takes out a trailer
   of a key the rule turns off (`Fixes` also takes out `Refs`), puts the block's `Made-by`,
-  `Session`, `Epic`, `Attested`, `Cost`, `Tokens` and `Duration` in place of one already
+  `Session`, `Epic`, `Cost`, `Tokens` and `Duration` in place of one already
   there, and adds each other line that is not there yet. Other trailers, such as a person's
   `Signed-off-by`, stay. An editor's comments and `commit -v`'s scissors stay after it.
 - **A person's own commit** (no session's grant in the environment) gets no block.

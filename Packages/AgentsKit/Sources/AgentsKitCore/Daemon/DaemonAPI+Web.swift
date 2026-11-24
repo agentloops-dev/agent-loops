@@ -172,6 +172,8 @@ public extension DaemonAPI {
                 Row(Method.timeHistory, params: Empty.self, result: TimeHistory.self, kind: .hostRequest),
                 // Velocity (#4596).
                 Row(Method.velocityHistory, params: Empty.self, result: VelocityHistory.self, kind: .hostRequest),
+                // Cycle time (#6648).
+                Row(Method.cycletimeHistory, params: Empty.self, result: CycleTimeHistory.self, kind: .hostRequest),
                 // Reports ▸ Features (#2165).
                 Row(Method.reportsFeatures, params: Empty.self, result: FeatureUsage.self, kind: .hostRequest),
                 Row(Method.reportsProblem, params: ProblemReportRequest.self, result: ProblemReport.self, kind: .hostRequest),
@@ -580,6 +582,11 @@ public extension DaemonAPI {
                 // Start a Machine from a Repository (#1809): the provider's form, then the machine.
                 Row(Method.providersOptions, params: ProviderRequest.self, result: ProviderOptions.self, kind: .controlRequest),
                 Row(Method.providersCreate, params: ProviderCreate.self, result: ProviderCreated.self, kind: .controlRequest),
+                // The guided DigitalOcean Connect (#6074): the consent page, then what the hand-back page gave.
+                Row(Method.providersOAuthStart, params: ProviderOAuthStart.self, result: ProviderOAuthStarted.self,
+                    kind: .controlRequest),
+                Row(Method.providersOAuthFinish, params: ProviderOAuthFinish.self, result: ProviderSummary.self,
+                    kind: .controlRequest),
                 // Prompts and starts kept for a stopped workspace (#691 US3).
                 Row(Method.hostsListKept, params: Empty.self, result: KeptList.self, kind: .controlRequest),
                 Row(Method.hostsDropKept, params: KeptRequestID.self, result: Empty.self, kind: .controlRequest),
@@ -633,6 +640,7 @@ public extension DaemonAPI {
                 Row(Method.reportsSaveView, params: ReportView.self, result: ReportViews.self, kind: .controlRequest),
                 Row(Method.reportsDeleteView, params: ReportViewID.self, result: ReportViews.self, kind: .controlRequest),
                 // The Console (#1804): the admins' app on the web page.
+                Row(Method.controlCapacity, params: Empty.self, result: ControlCapacityBoard.self, kind: .controlRequest),
                 Row(Method.consoleFleet, params: Empty.self, result: FleetBoard.self, kind: .controlRequest),
                 Row(Method.consoleTeamWorkflows, params: Empty.self, result: TeamWorkflows.self, kind: .controlRequest),
                 Row(Method.consoleLive, params: Empty.self, result: LiveBoard.self, kind: .controlRequest),
@@ -880,6 +888,8 @@ public extension DaemonAPI {
                 Row(Notification.controlGovernanceRequested, params: CatalogRequest.self, result: Empty.self,
                     kind: .controlNotification),
                 Row(Notification.controlBudgetRequested, params: BudgetRequest.self, result: Empty.self,
+                    kind: .controlNotification),
+                Row(Notification.controlCapacityChanged, params: ControlCapacityCopy.self, result: Empty.self,
                     kind: .controlNotification),
             ]
         }

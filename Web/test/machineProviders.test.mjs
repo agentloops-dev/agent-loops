@@ -14,6 +14,26 @@ test("only the API kinds are offered, with the window's titles", () => {
   assert.equal(w.kindOfPreset("doctl"), undefined);
 });
 
+test("Add a Provider lists all eight kinds in the window's four groups, and opens only the API ones (#6069)", () => {
+  assert.deepEqual(w.providerGroups.map((g) => g.title), ["Cloud", "Development environments", "On a machine you have", "Custom"]);
+  const all = w.providerGroups.flatMap((g) => g.kinds);
+  assert.deepEqual(all, ["digitalOcean", "compute", "aws", "codespaces", "coder", "workstations", "docker", "commands"]);
+  assert.deepEqual(all.filter((k) => w.choiceKind(k)), ["digitalOcean", "compute", "aws", "codespaces", "coder"]);
+  for (const k of all) {
+    assert.ok(w.choiceDescription(k).endsWith("."), k);
+    assert.ok(w.choiceDocs(k).startsWith("https://docs.agentloops.dev/how-to/"), k);
+  }
+  assert.equal(w.choiceDescription("digitalOcean"), "Connect your account; Agent Loops makes the droplet.");
+  assert.equal(w.choiceTitle("docker"), "Docker Containers");
+});
+
+test("help goes under the field it is about, not in one paragraph (#6069)", () => {
+  const token = w.kindFields("digitalOcean").find((f) => f.id === "token");
+  assert.match(token.help, /^Custom scopes: droplet read and update/);
+  assert.equal(w.kindNote("digitalOcean"), "Nothing to install.");
+  for (const k of w.providerKinds) assert.ok(w.kindNote(k).length < 80, k);
+});
+
 test("DigitalOcean: the token goes only in secrets, tag and user default", () => {
   const r = w.providerRequest("digitalOcean", "", { token: " dop_v1_x " });
   assert.deepEqual(r, { name: "DigitalOcean Droplets", kind: "commands",
@@ -45,7 +65,7 @@ test("an edit sends the name and only the secrets given, so the control plane ke
 });
 
 const summary = (over = {}) => ({ id: "do", name: "DO", kind: "commands", secrets: {}, capabilities: [], contract: 1,
-  mapped: false, workspaces: [], current: true, ...over });
+  workspaces: [], current: true, ...over });
 
 test("the card's chip and lines are the window's", () => {
   assert.equal(w.kindChip(summary({ preset: "digitalocean-api" })), "command provider · digitalocean-api · API");
@@ -279,4 +299,35 @@ test("a cloud machine stops after 2 hours idle unless the person says Never (#37
   assert.deepEqual(asked, [["machines/setMachineOptions", { host: "7", stopWhenIdleMinutes: 0 }]]);
   const refused = new w.Providers({ call: async () => { throw new w.CallFailed(-32602, "There is no such host."); } });
   assert.equal(await refused.setIdle("7", 60), "There is no such host.");
+});
+
+test("the guided DigitalOcean Connect's words are the window's (#6074)", () => {
+  assert.equal(w.doWords.connect, "Connect DigitalOcean…");
+  assert.deepEqual(w.refusal("denied", "x"), { text: "DigitalOcean did not connect: you chose Deny.", fix: "connect" });
+  assert.equal(w.refusal("account_inactive", "x").fix, "payment");
+  assert.equal(w.refusal("disconnected", "x").text, w.doWords.disconnected);
+  assert.equal(w.refusal(undefined, "The machine is offline.").text, "The machine is offline.");
+  assert.equal(w.accountLine({ account: "a@example.com", team: "Personal", state: "connected" }), "a@example.com · team “Personal”");
+  assert.equal(w.accountLine({ state: "connected" }), undefined);
+  assert.equal(w.isOAuth({ preset: "digitalocean-api", oauth: { state: "connected" } }), true);
+  assert.equal(w.isOAuth({ preset: "digitalocean-api" }), false);
+});
+
+test("the hand-back page's message is taken for this sign-in, or a Deny with no state (#6074)", () => {
+  const from = "https://oauth.agentloops.dev";
+  const msg = (data, origin = from) => ({ origin, data: { type: "agents-oauth-callback", ...data } });
+  assert.deepEqual(w.doCallback(msg({ code: "c1", state: "s1" }), "s1"), { state: "s1", code: "c1" });
+  assert.deepEqual(w.doCallback(msg({ code: null, state: null, error: "access_denied" }), "s1"), { error: "access_denied" });
+  assert.equal(w.doCallback(msg({ code: "c1", state: "other" }), "s1"), undefined);
+  assert.equal(w.doCallback(msg({ code: "c1", state: "s1" }, "https://evil.example"), "s1"), undefined);
+});
+
+test("an OAuth refusal keeps the control plane's data.reason (#6074)", async () => {
+  const p = new w.Providers({ call: async () => { throw new w.CallFailed(-32000, "You chose Deny.", { reason: "denied" }); } });
+  assert.deepEqual(await p.oauthFinish({ error: "access_denied" }), { refused: "You chose Deny.", reason: "denied" });
+});
+
+test("the hand-back page's answer in this origin's address is read, and any other address is not (#6074)", () => {
+  assert.deepEqual(w.handedBack("#oauth-callback?code=c1&state=s1"), { type: "agents-oauth-callback", code: "c1", state: "s1", error: null });
+  assert.equal(w.handedBack("#/settings/providers"), undefined);
 });

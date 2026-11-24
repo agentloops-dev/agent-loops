@@ -1,7 +1,6 @@
 package agentsd
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -49,9 +48,9 @@ func TestAnAgentAsksThePersonToTurnOnAWorkflow(t *testing.T) {
 	defer d.Shutdown()
 	dir := folder(t, c, 1)
 	url := store.FolderURL(dir)
-	os.MkdirAll(workflowsFolder(dir), 0o755)
+	must(t, os.MkdirAll(workflowsFolder(dir), 0o755)) //nolint:gosec // G301: the mode this folder always had; only its error is new
 	for _, id := range []string{"codes", "other"} {
-		os.WriteFile(filepath.Join(workflowsFolder(dir), id+".md"), []byte("---\non: manual\nenabled: false\n---\nx\n"), 0o644)
+		must(t, os.WriteFile(filepath.Join(workflowsFolder(dir), id+".md"), []byte("---\non: manual\nenabled: false\n---\nx\n"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	}
 	approveAll(t, c, url)
 	a := seeded(t, d, dir, nil)
@@ -98,8 +97,8 @@ func TestAnAgentAsksThePersonToApproveAConnector(t *testing.T) {
 	defer d.Shutdown()
 	dir := folder(t, c, 1)
 	path := filepath.Join(dir, ".agents", "mcp.json")
-	os.MkdirAll(filepath.Dir(path), 0o755)
-	os.WriteFile(path, []byte(`{"mcpServers": {"weather": {"command": "weather-mcp"}, "mail": {"command": "mail-mcp"}}}`), 0o644)
+	must(t, os.MkdirAll(filepath.Dir(path), 0o755))                                                                                        //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(path, []byte(`{"mcpServers": {"weather": {"command": "weather-mcp"}, "mail": {"command": "mail-mcp"}}}`), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	a := seeded(t, d, dir, nil)
 	m := appClient(t, d, a.ID)
 	m.post("initialize", map[string]any{}, 1)
@@ -120,7 +119,7 @@ func TestAnAgentAsksThePersonToApproveAConnector(t *testing.T) {
 		t.Fatalf("%+v", got)
 	}
 	var list wire.MCPListAnswer
-	json.Unmarshal(c.call(t, 4, "mcp/list", map[string]any{"destination": map[string]any{"kind": "folder", "folder": dir}}), &list)
+	mustUnmarshal(t, c.call(t, 4, "mcp/list", map[string]any{"destination": map[string]any{"kind": "folder", "folder": dir}}), &list)
 	for _, srv := range list.Servers {
 		if waiting := srv.Approval.Waiting != nil; waiting != (srv.Name == "mail") {
 			t.Fatalf("%s waiting %v", srv.Name, waiting)
@@ -136,7 +135,7 @@ func TestAnAgentAsksThePersonToApproveAConnector(t *testing.T) {
 		t.Fatal(text)
 	}
 	r = openSecretUse(t, d)
-	os.WriteFile(path, []byte(`{"mcpServers": {"weather": {"command": "weather-mcp"}, "mail": {"command": "other-mcp"}}}`), 0o644)
+	must(t, os.WriteFile(path, []byte(`{"mcpServers": {"weather": {"command": "weather-mcp"}, "mail": {"command": "other-mcp"}}}`), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	answerUse(t, d, r, secretUseOnce)
 	if row, _ := d.folderServer(wire.SkillDestination{Kind: wire.SkillDestinationKindFolder, Folder: &dir}, "mail"); row.Approval.Waiting == nil {
 		t.Fatal("a changed entry was approved")

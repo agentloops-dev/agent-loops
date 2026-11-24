@@ -1,7 +1,6 @@
 package agentsd
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -19,9 +18,9 @@ func TestAWaitingWorkflowIsInTheFoldersApprovals(t *testing.T) {
 	defer d.Shutdown()
 	dir := folder(t, c, 1)
 	folder := store.FolderURL(dir)
-	os.MkdirAll(workflowsFolder(dir), 0o755)
+	must(t, os.MkdirAll(workflowsFolder(dir), 0o755)) //nolint:gosec // G301: the mode this folder always had; only its error is new
 	write := func(id, text string) {
-		os.WriteFile(filepath.Join(workflowsFolder(dir), id+".md"), []byte(text), 0o644)
+		must(t, os.WriteFile(filepath.Join(workflowsFolder(dir), id+".md"), []byte(text), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 		d.rescanWorkflows(dir)
 	}
 	write("greet", "---\nname: Greet\non: agent.finished\n---\nSay hello.\n")
@@ -38,7 +37,7 @@ func TestAWaitingWorkflowIsInTheFoldersApprovals(t *testing.T) {
 		t.Fatalf("%+v", n)
 	}
 	var reading wire.GuardedChangeReading
-	json.Unmarshal(c.call(t, 2, "approvals/read", map[string]any{"folder": folder, "kind": "workflow", "key": "greet"}), &reading)
+	mustUnmarshal(t, c.call(t, 2, "approvals/read", map[string]any{"folder": folder, "kind": "workflow", "key": "greet"}), &reading)
 	if reading.Current == nil || reading.Approved != nil || *reading.Digest != *s.Approvals[0].Digest || len(reading.Lines) == 0 {
 		t.Fatalf("%+v", reading)
 	}
@@ -74,7 +73,7 @@ func TestAWaitingWorkflowIsInTheFoldersApprovals(t *testing.T) {
 		t.Fatalf("%+v", s.Approvals)
 	}
 	var list []wire.WorkflowSummary
-	json.Unmarshal(c.call(t, 7, "workflows/list", map[string]any{"folder": folder}), &list)
+	mustUnmarshal(t, c.call(t, 7, "workflows/list", map[string]any{"folder": folder}), &list)
 	for _, w := range list {
 		if w.Workflow.WorkflowID == "other" && w.DeniedHere == nil {
 			t.Fatalf("%+v", w)

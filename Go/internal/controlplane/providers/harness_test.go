@@ -201,6 +201,8 @@ type standIn struct {
 	// fromRepository: its form asks for `repository`, as Codespaces' does (#1809).
 	fromRepository bool
 	madeWith       []any
+	// form: its New Machine form in place of the plain one, as an account's (#6686).
+	form string
 	// failCreate: Create fails with these words (#3972).
 	failCreate string
 	// createTakes: how long a Create takes; making and mostMaking count the Creates at once (#4706).
@@ -212,6 +214,18 @@ type standIn struct {
 	lingering  []MachineInfo
 	// failDelete: Delete fails with these words.
 	failDelete string
+	// said: what a make says it did (#6073), as CreateSaying.
+	said []string
+}
+
+func (s *standIn) CreateSaying(name string, options any, firstBoot *string) (*MachineInfo, bool, []string, error) {
+	made, runs, err := s.Create(name, options, firstBoot)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err != nil {
+		return nil, false, nil, err
+	}
+	return made, runs, append([]string(nil), s.said...), nil
 }
 
 func newStandIn(ws []MachineInfo) *standIn { return &standIn{workspaces: ws, firstBootRuns: true} }
@@ -226,9 +240,9 @@ func (s *standIn) Check() (Checked, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.refuse != "" {
-		return Checked{}, &ProviderFailure{s.refuse}
+		return Checked{}, &ProviderFailure{Words: s.refuse}
 	}
-	return Checked{Contract: 1, Capabilities: []string{"create", "delete", "options"}, Workspaces: append([]MachineInfo{}, s.workspaces...), Items: -1}, nil
+	return Checked{Contract: 1, Capabilities: []string{"create", "delete", "options"}, Workspaces: append([]MachineInfo{}, s.workspaces...)}, nil
 }
 
 func (s *standIn) List() ([]MachineInfo, error) {
@@ -269,7 +283,7 @@ func (s *standIn) Start(id string) (*MachineInfo, error) {
 	s.mu.Unlock()
 	time.Sleep(takes)
 	if failStart != "" {
-		return nil, &ProviderFailure{failStart}
+		return nil, &ProviderFailure{Words: failStart}
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -287,8 +301,11 @@ func (s *standIn) Stop(id string) (*MachineInfo, error) {
 
 func (s *standIn) Options() (any, error) {
 	s.mu.Lock()
-	fromRepository := s.fromRepository
+	fromRepository, form := s.fromRepository, s.form
 	s.mu.Unlock()
+	if form != "" {
+		return mustParse(form), nil
+	}
 	if fromRepository {
 		return mustParse(`{"type": "object", "properties": {"repository": {"type": "string", "title": "Repository"}}}`), nil
 	}
@@ -311,7 +328,7 @@ func (s *standIn) Create(name string, options any, firstBoot *string) (*MachineI
 	}
 	s.madeWith = append(s.madeWith, options)
 	if s.failCreate != "" {
-		return nil, false, &ProviderFailure{s.failCreate}
+		return nil, false, &ProviderFailure{Words: s.failCreate}
 	}
 	made := MachineInfo{ID: "ws-" + name, Name: name, State: "starting", SSH: new("root@10.0.0.9")}
 	s.workspaces = append(s.workspaces, made)
@@ -322,11 +339,11 @@ func (s *standIn) Delete(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.failDelete != "" {
-		return &ProviderFailure{s.failDelete}
+		return &ProviderFailure{Words: s.failDelete}
 	}
 	gone := s.find(id)
 	if s.slowDelete && gone == nil {
-		return &ProviderFailure{"There is no workspace " + id + "."}
+		return &ProviderFailure{Words: "There is no workspace " + id + "."}
 	}
 	s.deleted = append(s.deleted, id)
 	if s.slowDelete {
@@ -342,8 +359,7 @@ func (s *standIn) Delete(id string) error {
 	return nil
 }
 
-func (s *standIn) Tools() ([]any, error) { return nil, providerFailure("It can’t list its tools.") }
-func (s *standIn) End()                  {}
+func (s *standIn) End() {}
 
 func (s *standIn) count() (int, int) {
 	s.mu.Lock()
@@ -444,7 +460,7 @@ func newHarness(t *testing.T, opts ...func(*harnessOptions)) *harness {
 				}
 				ssh.add(destination)
 				if o.sshFails != "" {
-					return &ProviderFailure{o.sshFails}
+					return &ProviderFailure{Words: o.sshFails}
 				}
 				return nil
 			},
@@ -462,6 +478,22 @@ func newHarness(t *testing.T, opts ...func(*harnessOptions)) *harness {
 				h.setupMu.Lock()
 				h.setupSteps = append(h.setupSteps, madeStep{host, r})
 				h.setupMu.Unlock()
+			},
+			// A made machine's set-up, as the steps said make it (#6073).
+			Setup: func(host string) *wire.MachineSetup {
+				h.setupMu.Lock()
+				defer h.setupMu.Unlock()
+				var out *wire.MachineSetup
+				for _, s := range h.setupSteps {
+					if s.host == host {
+						if out == nil {
+							out = &wire.MachineSetup{}
+						}
+						out.Steps = append(out.Steps, wire.MachineSetupStep{ID: s.report.Step, State: s.report.State,
+							Detail: s.report.Detail})
+					}
+				}
+				return out
 			},
 			Connect: func(ProviderRecord, map[string]string) (Provider, error) { return provider, nil },
 			BackUp:  o.backUp,

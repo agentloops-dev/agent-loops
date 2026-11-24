@@ -134,9 +134,11 @@ public enum WorkList {
             self.review = review
         }
 
-        /// A row from the forge's item, with its lineage when there is any.
-        public init(_ item: DaemonAPI.ForgeItem, on host: MachineRef, lineage: DaemonAPI.ReportNode? = nil) {
-            self.init(node: item.node, title: item.title, state: item.state, labels: item.labels, repo: WorkList.repo(of: item.node.ref),
+        /// A row from the forge's item, with its lineage when there is any. `repo` is the item's repo when the caller
+        /// knows it already (#6633: a list keeps each ref's), else it is read from the ref.
+        public init(_ item: DaemonAPI.ForgeItem, on host: MachineRef, lineage: DaemonAPI.ReportNode? = nil, repo: String? = nil) {
+            self.init(node: item.node, title: item.title, state: item.state, labels: item.labels,
+                      repo: repo ?? WorkList.repo(of: item.node.ref),
                       author: item.author, assignees: item.assignees, updated: item.updatedAt,
                       url: item.url.flatMap(URL.init(string:)), host: host, draft: item.draft ?? false,
                       lineage: lineage,
@@ -215,19 +217,34 @@ public enum WorkList {
     /// Whether a title says its short name already, as a release lineage could not resolve does.
     public static func titleSaysRef(_ title: String, _ ref: String) -> Bool { title.hasSuffix(shortRef(ref)) }
 
-    /// The items of every machine, one row per ref (the last updated copy), each with its lineage by ref.
+    /// The items of every machine, one row per ref (the last updated copy), each with its lineage by ref. `repo` gives
+    /// a ref's repo (#6633: a list keeps them, so a new page reads no ref twice).
     public static func merge(_ lists: [(host: MachineRef, items: [DaemonAPI.ForgeItem])],
-                             lineage: [DaemonAPI.ReportNode]) -> [Row] {
+                             lineage: [DaemonAPI.ReportNode], repo: (String) -> String = WorkList.repo(of:)) -> [Row] {
         let byRef = Dictionary(lineage.map { ($0.node.ref, $0) }, uniquingKeysWith: { first, _ in first })
         var rows: [String: Row] = [:]
         for (host, items) in lists {
             for item in items {
-                let row = Row(item, on: host, lineage: byRef[item.node.ref])
-                if let had = rows[item.node.ref], had.updated >= row.updated { continue }
-                rows[item.node.ref] = row
+                // Only a copy that is newer than the one kept makes a row.
+                if let had = rows[item.node.ref], had.updated >= item.updatedAt { continue }
+                rows[item.node.ref] = Row(item, on: host, lineage: byRef[item.node.ref], repo: repo(item.node.ref))
             }
         }
         return Array(rows.values)
+    }
+
+    /// The items in the server's order (#6538): each machine's answer in turn, an item once, where it was first.
+    public static func ordered(_ lists: [(host: MachineRef, items: [DaemonAPI.ForgeItem])],
+                               lineage: [DaemonAPI.ReportNode], repo: (String) -> String = WorkList.repo(of:)) -> [Row] {
+        let byRef = Dictionary(lineage.map { ($0.node.ref, $0) }, uniquingKeysWith: { first, _ in first })
+        var seen = Set<String>()
+        var rows: [Row] = []
+        for (host, items) in lists {
+            for item in items where seen.insert(item.node.ref).inserted {
+                rows.append(Row(item, on: host, lineage: byRef[item.node.ref], repo: repo(item.node.ref)))
+            }
+        }
+        return rows
     }
 
     /// A project in Work's Project filter (#3283): New Session's (`NewSessionProject`), a folder that
@@ -257,13 +274,13 @@ public enum WorkList {
     /// Each project's repos and trackers (#3283): those of the items its folders read, on every
     /// machine, before the copies of one ref are merged, so a repo two projects read is in both.
     /// The projects in their order, without the ones whose folders read nothing.
-    public static func projectRepos(_ projects: [Project], lists: [(host: MachineRef, items: [DaemonAPI.ForgeItem])])
-        -> [(project: Project, repos: Set<String>)] {
+    public static func projectRepos(_ projects: [Project], lists: [(host: MachineRef, items: [DaemonAPI.ForgeItem])],
+                                    repo: (String) -> String = WorkList.repo(of:)) -> [(project: Project, repos: Set<String>)] {
         var read: [String: Set<String>] = [:]
         for (host, items) in lists {
             for item in items {
                 guard let folder = item.folder else { continue }
-                read[folderKey(host: host, path: folder), default: []].insert(repo(of: item.node.ref))
+                read[folderKey(host: host, path: folder), default: []].insert(repo(item.node.ref))
             }
         }
         return projects.compactMap { project in
@@ -321,10 +338,56 @@ public enum WorkList {
     /// What a machine the control plane could not reach for a list says (#5592), as the web page's `notAnswered`.
     public static let didNotAnswer = "It did not answer."
 
+    /// How long a list's ask joins the next one for the same query (#6640): the window's restore and the click of one
+    /// open ask once (#6358, finding 3), and an open after it asks again. agentsd joins the asks in flight past this.
+    public static let joinWindow: Duration = .seconds(1)
+
+    /// Whether a list's ask for the same query as the last one joins it, with no forge call (#6640): only while that
+    /// one runs, or within `joinWindow` of its start. A list opened again later in the run asks again.
+    public static func joinsAsk(same: Bool, reading: Bool, since last: Duration?) -> Bool {
+        guard same, let last else { return false }
+        return reading || last < joinWindow
+    }
+
     /// Whether the window asks the control plane for every machine at once (#5592), or each machine itself (#6141).
     /// With one machine, or none, the plane only adds two hops (window to plane, plane back to the machine) and a
     /// way to fail: the machine is asked directly.
     public static func asksControlPlane(machines: Int) -> Bool { machines > 1 }
+
+    /// What a machine's list read (#6641), as its last clean page 1 said, and what Work read from then (the machines
+    /// and their folders, `workSource`): when that changes, what it reads is not known until it is asked again.
+    public struct Scopes: Codable, Sendable, Hashable {
+        public var scopes: [String]
+        public var source: String
+
+        public init(scopes: [String], source: String) {
+            self.scopes = scopes
+            self.source = source
+        }
+    }
+
+    /// The machines to ask a list (#6641), in `hosts`' order, and those left out: a machine whose scopes are known is
+    /// left out when the machines asked already read every one of them, so each repo is asked once, not once per
+    /// machine. The machines that read the most go first, so one that reads all covers the others; one whose scopes
+    /// are not known is always asked.
+    public static func oneEach(_ hosts: [MachineRef], scopes: [MachineRef: [String]])
+        -> (ask: [MachineRef], covered: [MachineRef]) {
+        let order = hosts.indices.sorted { a, b in
+            let ca = scopes[hosts[a]]?.count ?? Int.max, cb = scopes[hosts[b]]?.count ?? Int.max
+            return ca != cb ? ca > cb : a < b
+        }
+        var read = Set<String>()
+        var covered = Set<MachineRef>()
+        for i in order {
+            guard let known = scopes[hosts[i]] else { continue }
+            if read.isSuperset(of: known) {
+                covered.insert(hosts[i])
+            } else {
+                read.formUnion(known)
+            }
+        }
+        return (hosts.filter { !covered.contains($0) }, hosts.filter { covered.contains($0) })
+    }
 
     /// forge/listAll's answer (#5592) as each of `hosts`' list, in their order, as the web page's `hostListsOf`. A
     /// machine the control plane could not reach has an error for all its forges (forge ""); one it names that is not of
@@ -595,6 +658,8 @@ public enum WorkList {
     public static let noAgentYet = "No agent yet"
     public static let lineageOnlyNote = "Lineage lists a release once an agent works on one of its issues or pull requests."
     public static let noForgeHere = "No machine reads issues and pull requests yet. Update Agents on a machine to see them."
+    /// Kept rows on screen with no machine online to read them again (#6635).
+    public static let noForgeOnline = "No machine that reads issues and pull requests is online. These are the rows last read."
 
     // The page of one issue, PR or release (#3119): its links grouped by relation, its
     // checks, its review and its cost.

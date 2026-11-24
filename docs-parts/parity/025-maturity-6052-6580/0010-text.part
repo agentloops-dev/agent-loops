@@ -1,0 +1,9 @@
+## Maturity (#6052, #6580)
+
+Each row has a **Maturity** cell after its Role: how ready the feature is (`docs/explanation/versions.md`, "Maturity"). The levels are in `Packages/Wire/maturity.json`, and a capability that it does not list is GA.
+
+- **`ga`:** ready. Every row is `ga` today, because the list is empty.
+- **`pilot`, `alpha` or `beta`:** the level, then the capabilities the row is about, in backticks: `beta (`chat.branch/1`)`, or `alpha (`lineage.forecast/1`, `lineage.estimate/1`)`.
+
+`scripts/parity-counts.py` (in `scripts/lint.sh checks`) fails on a row whose level is not the one that `maturity.json` gives each capability it names, and on a capability in `maturity.json` that no row names. So a PR that sets a level, or makes a feature GA, changes the list and the row together.
+

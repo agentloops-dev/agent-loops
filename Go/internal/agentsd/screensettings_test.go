@@ -68,12 +68,12 @@ func TestDesktopControlIsSavedAndReadBack(t *testing.T) {
 	defer d.Shutdown()
 	d.SettingsDir = t.TempDir()
 	var st wire.DesktopControlSettings
-	json.Unmarshal(c.call(t, 1, "desktopControl/state", nil), &st)
+	mustUnmarshal(t, c.call(t, 1, "desktopControl/state", nil), &st)
 	if !st.Enabled || st.Mode == nil || *st.Mode != wire.DriveApprovalAsk {
 		t.Fatalf("%+v, wanted Ask by default on a machine a person uses (#4264)", st)
 	}
 	// A client from before #4264 sends only enabled: On is Always Approve, as it was.
-	json.Unmarshal(c.call(t, 2, "desktopControl/set", wire.DesktopControlSettings{Enabled: true}), &st)
+	mustUnmarshal(t, c.call(t, 2, "desktopControl/set", wire.DesktopControlSettings{Enabled: true}), &st)
 	if !st.Enabled || !d.desktopControlOn() || d.desktopControlMode() != wire.DriveApprovalAlways {
 		t.Fatalf("%+v", st)
 	}
@@ -84,12 +84,12 @@ func TestDesktopControlIsSavedAndReadBack(t *testing.T) {
 	if err != nil || json.Unmarshal(b, &saved) != nil || !saved.Enabled {
 		t.Fatalf("%s %v", b, err)
 	}
-	json.Unmarshal(c.call(t, 3, "desktopControl/set", wire.DesktopControlSettings{Enabled: false}), &st)
+	mustUnmarshal(t, c.call(t, 3, "desktopControl/set", wire.DesktopControlSettings{Enabled: false}), &st)
 	if st.Enabled || d.desktopControlOn() {
 		t.Fatalf("%+v", st)
 	}
 	ask := wire.DriveApprovalAsk
-	json.Unmarshal(c.call(t, 4, "desktopControl/set", wire.DesktopControlSettings{Mode: &ask}), &st)
+	mustUnmarshal(t, c.call(t, 4, "desktopControl/set", wire.DesktopControlSettings{Mode: &ask}), &st)
 	if !st.Enabled || d.desktopControlMode() != wire.DriveApprovalAsk {
 		t.Fatalf("%+v", st)
 	}

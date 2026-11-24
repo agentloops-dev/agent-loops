@@ -4,15 +4,18 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/codespacessh"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/hostinstall"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/providers"
+	"github.com/agentloops-dev/agent-loops/Go/internal/provideroauth"
 	"github.com/agentloops-dev/agent-loops/Go/internal/workspacecommands"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
@@ -25,6 +28,8 @@ type carriedProviders struct {
 	mu    sync.Mutex
 	held  map[string]*carriedConnection
 	store *providers.Secrets
+	// The providers here connected with OAuth (#6072): their verifiers, refreshes and revokes.
+	oauth *provideroauth.Carrier
 	home  string
 	// The codespaces this machine keeps awake while their machines work (#4637).
 	awake awake
@@ -46,17 +51,18 @@ func (d *Daemon) carried() *carriedProviders {
 		if home == "" {
 			home, _ = os.UserHomeDir()
 		}
+		store := providers.NewSecrets(filepath.Join(home, ".agents-secrets"))
 		d.carriedHeld = &carriedProviders{held: map[string]*carriedConnection{}, home: home,
-			store: providers.NewSecrets(filepath.Join(home, ".agents-secrets"))}
+			store: store, oauth: provideroauth.NewCarrier(store)}
 	})
 	return d.carriedHeld
 }
 
 // carriedMethods are the asks askedProvider answers on channel 0, which no client can send:
 // said in machine/hello as providers.carry/1 and, for providers/ssh keepAwake (#4637), /2,
-// so the control plane asks only a host that has them.
+// so the control plane asks only a host that has them; providers/oauth (#6072) is /3.
 var carriedMethods = []string{wire.CallProvidersCarry.Name, wire.CallProvidersForget.Name,
-	wire.CallProvidersKeepSecrets.Name, wire.CallProvidersSSH.Name}
+	wire.CallProvidersKeepSecrets.Name, wire.CallProvidersOauth.Name, wire.CallProvidersSSH.Name}
 
 // askedProvider answers a providers/* ask; false for any other method.
 func (d *Daemon) askedProvider(method string, params json.RawMessage) (any, bool) {
@@ -80,6 +86,12 @@ func (d *Daemon) askedProvider(method string, params json.RawMessage) (any, bool
 			return carriedError("The control plane's request was not understood."), true
 		}
 		return c.forget(string(request.Provider)), true
+	case wire.CallProvidersOauth.Name:
+		var request wire.ProviderOAuthCarry
+		if err := json.Unmarshal(params, &request); err != nil {
+			return carriedError("The control plane's request was not understood."), true
+		}
+		return c.connectOAuth(request), true
 	case wire.CallProvidersSSH.Name:
 		var request wire.ProviderSSH
 		if err := json.Unmarshal(params, &request); err != nil {
@@ -91,6 +103,17 @@ func (d *Daemon) askedProvider(method string, params json.RawMessage) (any, bool
 }
 
 func carriedError(words string) wire.ProviderCarried { return wire.ProviderCarried{Error: &words} }
+
+// carriedFailure is err as ProviderCarried says it, with its code when a client can act on it.
+func carriedFailure(err error) wire.ProviderCarried {
+	out := carriedError(err.Error())
+	var f *provideroauth.Failure
+	if errors.As(err, &f) {
+		code := f.Code
+		out.Code = &code
+	}
+	return out
+}
 
 func carriedResult(v any, err error) wire.ProviderCarried {
 	if err != nil {
@@ -104,18 +127,76 @@ func carriedResult(v any, err error) wire.ProviderCarried {
 }
 
 // carry is providers/carry: the call, on the provider's server here. What it answers goes
-// back with every secret's value taken out, as a draft's steps are, so none reaches the
+// back with every secret's value taken out, so none reaches the
 // control plane from here.
 func (c *carriedProviders) carry(request wire.ProviderCarry) wire.ProviderCarried {
-	values := c.store.Values(string(request.Provider))
+	provider := string(request.Provider)
+	if len(request.Secrets) == 0 {
+		// An OAuth connection's token is refreshed first, when it is near its end (#6072):
+		// the server is made again with the new one.
+		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+		refreshed, err := c.oauth.Fresh(ctx, provider)
+		cancel()
+		if err != nil {
+			out := redacted(providers.NewRedaction(c.store.Values(provider)), carriedFailure(err))
+			logCarried(request, out)
+			return out
+		}
+		if refreshed {
+			c.end(provider)
+		}
+	}
+	values := c.store.Values(provider)
 	for k, v := range request.Secrets {
 		if v != "" {
 			values[k] = v
 		}
 	}
-	out := redacted(providers.NewRedaction(values), c.call(request))
+	out := c.call(request)
+	if out.Error != nil && c.oauth.Connected(values) && strings.Contains(*out.Error, " answered 401") {
+		// The token was refused although it is fresh: the person removed Agent Loops there.
+		code := provideroauth.Disconnected
+		out.Code = &code
+	}
+	out = redacted(providers.NewRedaction(values), out)
 	logCarried(request, out)
 	return out
+}
+
+// connectOAuth is providers/oauth (#6072): start keeps a verifier here and gives the
+// address to open; finish spends the code and keeps the tokens here. Neither is logged
+// with a value.
+func (c *carriedProviders) connectOAuth(request wire.ProviderOAuthCarry) wire.ProviderCarried {
+	switch request.Op {
+	case "start":
+		address, state, err := c.oauth.Start(request.Preset, deref(request.Origin))
+		if err != nil {
+			return carriedFailure(err)
+		}
+		log.Printf("providers: started an OAuth connection for %s", request.Preset)
+		return carriedResult(wire.ProviderOAuthCarried{URL: &address, State: &state}, nil)
+	case "finish":
+		provider := ""
+		if request.Provider != nil {
+			provider = string(*request.Provider)
+		}
+		if provider == "" {
+			return carriedError("The control plane named no provider to keep the connection for.")
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+		connected, err := c.oauth.Finish(ctx, provider, deref(request.State), deref(request.Code), deref(request.Error))
+		if err != nil {
+			log.Printf("providers: the OAuth connection for %s did not finish: %v", provider, err)
+			return carriedFailure(err)
+		}
+		c.end(provider)
+		log.Printf("providers: connected %s with OAuth", provider)
+		names := connected.SecretNames
+		return carriedResult(wire.ProviderOAuthCarried{Account: optionalString(connected.Account),
+			Team: optionalString(connected.Team), Scope: optionalString(connected.Scope), SecretNames: names}, nil)
+	}
+	return carriedError("No OAuth step is called " + string(request.Op) + ".")
 }
 
 // logCarried logs a call that failed, with its reason, and a create's outcome, here on the
@@ -156,12 +237,12 @@ func (c *carriedProviders) call(request wire.ProviderCarry) wire.ProviderCarried
 	if err := json.Unmarshal(request.Record, &record); err != nil || record.ID != string(request.Provider) {
 		return carriedError("The control plane sent no provider record this machine can read.")
 	}
-	connection, draft, err := c.connection(record, request.Record, request.Secrets)
+	connection, checking, err := c.connection(record, request.Record, request.Secrets)
 	if err != nil {
 		return carriedError(err.Error())
 	}
-	if draft {
-		// A draft's secrets are not kept, and nor is its server.
+	if checking {
+		// An add's or an update's secrets are not kept, and nor is its server.
 		defer connection.End()
 	}
 	workspace := ""
@@ -191,31 +272,29 @@ func (c *carriedProviders) call(request wire.ProviderCarry) wire.ProviderCarried
 				return carriedError("The options are not JSON: " + err.Error())
 			}
 		}
-		made, runs, err := connection.Create(name, options, request.FirstBoot)
-		return carriedResult(providers.CarriedCreate{Made: made, Runs: runs}, err)
+		made, runs, said, err := connection.CreateSaying(name, options, request.FirstBoot)
+		return carriedResult(providers.CarriedCreate{Made: made, Runs: runs, Said: said}, err)
 	case "delete":
 		err := connection.Delete(workspace)
 		if err == nil {
 			forgetCodespaceSSH(workspace)
 		}
 		return carriedResult(nil, err)
-	case "tools":
-		return carriedResult(connection.Tools())
 	}
 	return carriedError("No provider call is called " + request.Call + ".")
 }
 
 // connection is the provider's server as record says, made again when the record
-// changed. With a draft's secrets, a new one that is not kept: true.
-func (c *carriedProviders) connection(record providers.ProviderRecord, raw []byte, draft map[string]string) (*providers.Connection, bool, error) {
+// changed. With the secrets an add or an update checks with, a new one that is not kept: true.
+func (c *carriedProviders) connection(record providers.ProviderRecord, raw []byte, checking map[string]string) (*providers.Connection, bool, error) {
 	folder := filepath.Join(c.home, ".agents", "providers")
 	if err := os.MkdirAll(folder, 0o700); err != nil {
 		return nil, false, err
 	}
 	logf := func(s string) { log.Print(s) }
-	if len(draft) > 0 {
+	if len(checking) > 0 {
 		values := c.store.Values(record.ID)
-		for k, v := range draft {
+		for k, v := range checking {
 			if v != "" {
 				values[k] = v
 			}
@@ -264,7 +343,7 @@ func (c *carriedProviders) end(provider string) {
 
 // keep is providers/keepSecrets. Never logged.
 func (c *carriedProviders) keep(request wire.ProviderSecretsKeep) wire.ProviderCarried {
-	if err := c.store.Set(string(request.Provider), request.Secrets); err != nil {
+	if err := c.store.Set(string(request.Provider), c.oauth.Pasted(request.Secrets)); err != nil {
 		return carriedError("This machine could not keep the provider's secrets.")
 	}
 	c.end(string(request.Provider))
@@ -276,6 +355,13 @@ func (c *carriedProviders) keep(request wire.ProviderSecretsKeep) wire.ProviderC
 func (c *carriedProviders) forget(provider string) wire.ProviderCarried {
 	c.end(provider)
 	c.awake.forget(provider)
+	// An OAuth connection is revoked at the provider first (#6072): both tokens stop and
+	// the grant goes from the account's list. The secrets go all the same.
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	if err := c.oauth.Revoke(ctx, provider); err != nil {
+		log.Printf("providers: %s's connection was not revoked: %v", provider, err)
+	}
+	cancel()
 	if err := c.store.Remove(provider); err != nil {
 		return carriedError("This machine could not delete the provider's secrets.")
 	}

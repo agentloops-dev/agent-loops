@@ -232,6 +232,11 @@ export class MachineLock {
   private readonly approving = new Set<string>();
   private readonly approveFailed = new Set<string>();
   private rows: LockJoinRequest[] = [];
+  /** While a read of the requests is on its way: each request heard since (true) or ended since (false). */
+  private since: Map<string, boolean> | null = null;
+  /** How often a signer reads the requests again, in case a notice did not come (#6625). */
+  recheckEvery = 10_000;
+  private recheckTimer: ReturnType<typeof setTimeout> | undefined;
   /** The lock as this page last checked it. */
   private state: LockState | null = null;
   private running: Promise<void> | null = null;
@@ -389,13 +394,11 @@ export class MachineLock {
       this.ended = false;
       this.device.value = { kind: "member" };
       this.offerRecovery(read.state);
-      const listed = (await this.link.call("lock/joinRequests", {}).catch(() => [])) as LockJoinRequest[];
-      this.rows = [];
-      for (const row of listed) await this.take(row);
-      await this.show();
-      for (const row of [...this.rows]) await this.approveCompared(row);
+      await this.recheck();
+      this.keepRechecking();
       return;
     }
+    clearTimeout(this.recheckTimer);
     this.rows = [];
     this.cards.value = [];
     this.recovery.value = { kind: "none" };
@@ -557,6 +560,39 @@ export class MachineLock {
     }
   }
 
+  /**
+   * Reads the open requests again (#6625). A read that fails keeps the cards there are, and a
+   * row heard while the read was on its way is newer than the read, so the read does not undo it.
+   */
+  private async recheck(): Promise<void> {
+    if (this.since) return;
+    const since = new Map<string, boolean>();
+    this.since = since;
+    let listed: LockJoinRequest[] | null;
+    try {
+      listed = (await this.link.call("lock/joinRequests", {})) as LockJoinRequest[];
+    } catch {
+      listed = null;
+    } finally {
+      this.since = null;
+    }
+    if (!listed) return;
+    this.rows = this.rows.filter((r) => since.get(r.request) === true);
+    for (const row of listed) if (!since.has(row.request)) await this.take(row);
+    await this.show();
+    for (const row of [...this.rows]) await this.approveCompared(row);
+  }
+
+  /** While this page is a signer, it reads the requests again now and then (#6625). */
+  private keepRechecking(): void {
+    clearTimeout(this.recheckTimer);
+    this.recheckTimer = setTimeout(() => {
+      if (this.device.peek().kind !== "member") return;
+      void this.recheck().catch((error: unknown) => this.say(error)).finally(() => this.keepRechecking());
+    }, this.recheckEvery);
+    (this.recheckTimer as { unref?: () => void } | undefined)?.unref?.();
+  }
+
   /** A row from lock/joinRequests or control/lockJoinRequested. */
   private async take(row: LockJoinRequest): Promise<void> {
     if (row.client.toUpperCase() === this.client) {
@@ -576,6 +612,7 @@ export class MachineLock {
       return;
     }
     if (this.device.peek().kind !== "member") return;
+    this.since?.set(row.request, true);
     this.rows = [...this.rows.filter((r) => r.request !== row.request), row];
     await this.show();
     await this.approveCompared(row);
@@ -618,6 +655,7 @@ export class MachineLock {
       }
       return;
     }
+    this.since?.set(decided.request, false);
     this.sent.delete(decided.request);
     this.approveFailed.delete(decided.request);
     this.rows = this.rows.filter((r) => r.request !== decided.request);
@@ -784,6 +822,7 @@ export class MachineLock {
   async deny(request: string): Promise<void> {
     try {
       await this.link.call("lock/joinDeny", { request });
+      this.since?.set(request, false);
       this.sent.delete(request);
       this.rows = this.rows.filter((r) => r.request !== request);
       await this.show();

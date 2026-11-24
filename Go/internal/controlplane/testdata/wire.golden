@@ -88,6 +88,7 @@ control/status
     "projects.boards/1",
     "projects.sessions/1",
     "projects/1",
+    "providers.oauth/1",
     "providers/1",
     "providers/2",
     "readapi/1",
@@ -114,6 +115,7 @@ control/status
     "user/5",
     "user/6"
   ],
+  "maturity": {},
   "required": {
     "host": [
       "host.wire/1"
@@ -355,6 +357,7 @@ control/status
     "projects.boards/1",
     "projects.sessions/1",
     "projects/1",
+    "providers.oauth/1",
     "providers/1",
     "providers/2",
     "readapi/1",
@@ -381,6 +384,7 @@ control/status
     "user/5",
     "user/6"
   ],
+  "maturity": {},
   "required": {
     "host": [
       "host.wire/1"

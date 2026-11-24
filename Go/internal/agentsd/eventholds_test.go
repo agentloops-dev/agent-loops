@@ -138,3 +138,60 @@ func TestABlockedServerKeepsNoWaitPastItsHold(t *testing.T) {
 		t.Fatal(text)
 	}
 }
+
+// #6541: in a dark wake the Mac sleeps again within seconds, and IOKit says neither the
+// wake nor the sleep, so agentsd sees the sleep from its clocks.
+
+func TestASleepNoPowerMessageSaidAnswersAHeldWait(t *testing.T) {
+	fakeRuntimes(t)
+	setFor(t, &eventHoldLimit, 10*time.Minute)
+	d, _ := start(t, t.TempDir())
+	defer d.Shutdown()
+	dir := t.TempDir()
+	agent, answered := heldWait(t, d, dir)
+	d.sleptThrough(15*time.Minute, time.Now().Add(-time.Second))
+	stillWaitsAndWakes(t, d, dir, agent, answered, "the sleep the clocks saw left the call held")
+}
+
+func TestADarkWakeHoldsACallOnlyUntilTheNextSleep(t *testing.T) {
+	fakeRuntimes(t)
+	setFor(t, &eventHoldLimit, 10*time.Minute)
+	setFor(t, &darkWakeHold, 200*time.Millisecond)
+	d, _ := start(t, t.TempDir())
+	defer d.Shutdown()
+	d.sleptThrough(15*time.Minute, time.Now().Add(-time.Second))
+	a := seeded(t, d, t.TempDir(), nil)
+	m := appClient(t, d, a.ID)
+	m.post("initialize", map[string]any{}, 1)
+	asked := time.Now()
+	text, _ := m.tool(2, "wait_for_event", map[string]any{"events": "branch.moved", "where": map[string]any{"branch": "cd"}, "until_minutes": 10})
+	if took := time.Since(asked); took > 30*time.Second {
+		t.Fatalf("held %s in a dark wake", took)
+	}
+	if !strings.HasPrefix(text, "Still waiting for branch.moved branch cd, since ") {
+		t.Fatal(text)
+	}
+	if w := d.Store.Agent(a.ID).EventWait; w == nil || w.Ending != nil {
+		t.Fatalf("the wait went: %+v", w)
+	}
+	// The power messages say wake: the Mac is up, and a call is held its full time again.
+	d.machineChanged(machineChange{kind: "wake"})
+	if hold := d.waitHold(); hold != eventHoldLimit {
+		t.Fatalf("held %s after a wake, want %s", hold, eventHoldLimit)
+	}
+}
+
+func TestASleepTheWakeWordSaidIsNoDarkWake(t *testing.T) {
+	setFor(t, &eventHoldLimit, 10*time.Minute)
+	d, _ := start(t, t.TempDir())
+	defer d.Shutdown()
+	lastLook := time.Now()
+	d.machineChanged(machineChange{kind: "wake"})
+	d.sleptThrough(15*time.Minute, lastLook)
+	if hold := d.waitHold(); hold != eventHoldLimit {
+		t.Fatalf("held %s after a heard wake, want %s", hold, eventHoldLimit)
+	}
+	if got := sleptBetween(lastLook, time.Now()); got < -time.Second || got > time.Second {
+		t.Fatalf("an awake second slept %s", got)
+	}
+}

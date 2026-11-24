@@ -262,18 +262,22 @@ func (s *Server) call(tool Tool, arguments any) (any, error) {
 			result = map[string]any{"workspace": w.JSON()}
 		}
 	case "workspace_options":
-		schema := any(p.Config.Making.Options)
-		if p.Config.Making.Options == nil {
-			schema = map[string]any{"type": "object", "properties": map[string]any{}}
-		}
-		result = map[string]any{"schema": schema}
+		result = map[string]any{"schema": p.Config.Making.Form(p)}
 	case "workspace_create":
 		name, _ := args["name"].(string)
 		options, _ := args["options"].(map[string]any)
 		firstBoot, _ := args["firstBoot"].(string)
 		var w Workspace
-		if w, err = p.Create(name, options, firstBoot); err == nil {
+		var said []string
+		if w, said, err = p.Create(name, options, firstBoot); err == nil {
 			result = map[string]any{"workspace": w.JSON(), "firstBootRuns": p.Config.Making.FirstBootRuns()}
+			if len(said) > 0 {
+				lines := make([]any, len(said))
+				for i, line := range said {
+					lines[i] = line
+				}
+				result["said"] = lines
+			}
 		}
 	case "workspace_delete":
 		if err = p.Delete(id); err == nil {

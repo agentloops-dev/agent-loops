@@ -915,6 +915,8 @@ public enum WorkTimeline {
     public static let showTheWeek = "Show the week"
     /// S12: no project to draw.
     public static let noProject = "No project to draw"
+    /// The middle of the page when no machine's read worked and nothing was read before (#5969).
+    public static let couldNotRead = "Could not read the timeline"
     public static let noProjectLine = "Timeline shows a project’s epics. Add a folder to a project to see them."
     public static let noMachine = "No machine draws the timeline yet. Update Agents on a machine to see it."
 }

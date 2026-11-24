@@ -59,6 +59,8 @@ export interface FormField {
   description?: string;
   /** What each choice costs, when the provider says (`x-costs`). */
   costs?: Record<string, string>;
+  /** Each choice as a person reads it (`x-titles`, #6073), such as San Francisco 3. */
+  titles?: Record<string, string>;
 }
 
 /** The form's fields, but `repository`, which the repository fills. */
@@ -73,6 +75,10 @@ export function formFields(schema: JSONValue | undefined): FormField[] {
     const costs = p["x-costs"];
     if (costs && typeof costs === "object" && !Array.isArray(costs)) {
       field.costs = Object.fromEntries(Object.entries(costs).filter(([, c]) => typeof c === "string")) as Record<string, string>;
+    }
+    const titles = p["x-titles"];
+    if (titles && typeof titles === "object" && !Array.isArray(titles)) {
+      field.titles = Object.fromEntries(Object.entries(titles).filter(([, t]) => typeof t === "string")) as Record<string, string>;
     }
     return field;
   });
@@ -89,8 +95,11 @@ export function withValues(fields: readonly FormField[], values: JSONValue | und
   });
 }
 
-/** A choice as the form shows it: with its cost when the provider names one. */
+/** A choice as the form shows it: its title when the provider gives one (a size's has its price, #6577), else with its
+ * cost when the provider names one. */
 export function choiceLabel(field: FormField, choice: string): string {
+  const title = field.titles?.[choice];
+  if (title) return title;
   const cost = field.costs?.[choice];
   return cost ? `${choice} — ${cost}` : choice;
 }

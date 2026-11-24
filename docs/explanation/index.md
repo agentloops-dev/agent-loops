@@ -16,6 +16,8 @@ Nothing here needs doing; it is for understanding.
   environments, deploys and checks map into one model that takes no side.
 - [Why Agent Loops](why-agents.md): why you would run your coding agents here, alongside the
   editor you already use, and when something else is better.
+- [How data stores stay bounded](data-stores.md): why no store grows without bound, the
+  kinds of store, where each limit is enforced, and how the limits are kept true.
 - [The control plane](control-plane.md): hosts, clients, copies and the store, where to
   run it, and what happens when it is down.
 - [Org keys and gateways](org-keys-and-gateways.md): where an organisation's keys and

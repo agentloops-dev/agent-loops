@@ -75,6 +75,11 @@ type userSettingsSyncState struct {
 type userScopeState struct {
 	// agentOffersMu makes one offer of an agent's secret at a time (#5308).
 	agentOffersMu sync.Mutex
+	// offersRunMu guards offersRunning and offersAgain: one offerWaitingAgentSecrets runs at a
+	// time, and a delivery while it runs asks for one more run after it (#6626).
+	offersRunMu   sync.Mutex
+	offersRunning bool
+	offersAgain   bool
 	// personMu is person.json's (person/set and the part person, #5573).
 	personMu    sync.Mutex
 	userScopeMu sync.Mutex
@@ -166,7 +171,11 @@ func (d *Daemon) ApplyUserSettings(u wire.MachineUserSettings) error {
 		flagged[i].Value = ""
 	}
 	if err != nil {
-		problems = append(problems, "secrets: "+err.Error())
+		// This machine's key that does not read is said once for each change (#6632), not
+		// at each delivery.
+		if !isMachineKeyError(err) {
+			problems = append(problems, "secrets: "+err.Error())
+		}
 		names, versions = before.Secrets, before.Versions
 	}
 	mark.Secrets, mark.Versions = names, versions
@@ -176,7 +185,7 @@ func (d *Daemon) ApplyUserSettings(u wire.MachineUserSettings) error {
 	if err == nil && before.User == u.User {
 		changes = userSecretChanges(before, mark)
 		// A name an agent's secret keeps here while its offer waits (#5308) was not removed.
-		held := readSealedSecrets(home).Secrets
+		held := sealedSecretsHere(home)
 		changes = slices.DeleteFunc(changes, func(c secretChange) bool {
 			_, ok := held[c.name]
 			return c.what == wire.SecretOperationWhatRemoved && ok

@@ -23,10 +23,10 @@ func TestUserSettingsGoIntoTheMachinesFiles(t *testing.T) {
 	d, c := start(t, root)
 	defer d.Shutdown()
 	d.SettingsDir = t.TempDir()
-	os.MkdirAll(filepath.Join(home, ".agents-secrets"), 0o700)
-	os.WriteFile(filepath.Join(home, ".agents-secrets", "secrets.env"), []byte("MINE=kept\n"), 0o600)
-	os.MkdirAll(filepath.Join(home, ".agents"), 0o755)
-	os.WriteFile(filepath.Join(home, ".agents", "mcp.json"), []byte(`{"mcpServers":{"old":{"command":"x"}},"note":"kept"}`), 0o644)
+	must(t, os.MkdirAll(filepath.Join(home, ".agents-secrets"), 0o700))
+	must(t, os.WriteFile(filepath.Join(home, ".agents-secrets", "secrets.env"), []byte("MINE=kept\n"), 0o600))
+	must(t, os.MkdirAll(filepath.Join(home, ".agents"), 0o755))                                                                              //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(home, ".agents", "mcp.json"), []byte(`{"mcpServers":{"old":{"command":"x"}},"note":"kept"}`), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 
 	instructions := "Use ASD-STE100."
 	sent := wire.MachineUserSettings{User: "sam", Settings: wire.UserSettings{
@@ -132,9 +132,9 @@ func TestAgentConfigFilesFromAnotherMachineAreNotWritten(t *testing.T) {
 
 	root, home := t.TempDir(), t.TempDir()
 	personalHomeFor(t, home)
-	os.MkdirAll(filepath.Join(home, ".agents", "skills", "mine"), 0o755)
-	os.WriteFile(filepath.Join(home, ".agents", "skills", "mine", "SKILL.md"), []byte("mine"), 0o644)
-	os.WriteFile(filepath.Join(home, ".agents", "mcp.json"), []byte(`{"mcpServers":{"mine":{"command":"x"}}}`), 0o644)
+	must(t, os.MkdirAll(filepath.Join(home, ".agents", "skills", "mine"), 0o755))                                               //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(home, ".agents", "skills", "mine", "SKILL.md"), []byte("mine"), 0o644))                  //nolint:gosec // G306: the mode this file always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(home, ".agents", "mcp.json"), []byte(`{"mcpServers":{"mine":{"command":"x"}}}`), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	d, _ := start(t, root)
 	defer d.Shutdown()
 	server := base64.StdEncoding.EncodeToString([]byte(`{"x":{"command":"y"}}`))
@@ -172,14 +172,14 @@ func TestAnOldMarkTakesAwayOnlyWhatAgentConfigWrote(t *testing.T) {
 	personalHomeFor(t, home)
 	agents := filepath.Join(home, ".agents")
 	for _, rel := range []string{"mcp.json", "plugins/one/plugin.json", "skills/tool/run.sh", "personas/old.md"} {
-		os.MkdirAll(filepath.Dir(filepath.Join(agents, rel)), 0o755)
-		os.WriteFile(filepath.Join(agents, rel), []byte("{}"), 0o644)
+		must(t, os.MkdirAll(filepath.Dir(filepath.Join(agents, rel)), 0o755))  //nolint:gosec // G301: the mode this folder always had; only its error is new
+		must(t, os.WriteFile(filepath.Join(agents, rel), []byte("{}"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	}
 	d, _ := start(t, root)
 	defer d.Shutdown()
 	old, _ := json.Marshal(userSettingsSyncState{User: "sam", Secrets: []string{},
 		Files: []string{"mcp.json", "plugins/one/plugin.json", "skills/tool/run.sh", "personas/old.md"}})
-	os.WriteFile(d.userSettingsSyncPath(), old, 0o644)
+	must(t, os.WriteFile(d.userSettingsSyncPath(), old, 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	d.Told(wire.NotifyMachineUserSettings.Name, mustJSON(wire.MachineUserSettings{
 		User: "sam",
 		Settings: wire.UserSettings{McpServers: wire.JSONValue(`{"mine":{"command":"x"}}`),
@@ -210,8 +210,8 @@ func TestAgentConfigNamesStayInTheirFolders(t *testing.T) {
 	}
 	// A mark that names a file outside is never removed.
 	outside := filepath.Join(home, "keep.txt")
-	os.WriteFile(outside, []byte("x"), 0o644)
-	writeAgentConfig(home, mustJSON(wire.UserAgentConfig{}), []string{"../keep.txt", "/etc/hosts"})
+	must(t, os.WriteFile(outside, []byte("x"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
+	must(t, errOnly(writeAgentConfig(home, mustJSON(wire.UserAgentConfig{}), []string{"../keep.txt", "/etc/hosts"})))
 	if _, err := os.Stat(outside); err != nil {
 		t.Fatal("removed a file outside ~/.agents")
 	}
@@ -225,16 +225,16 @@ func TestAPartIsTakenFromThisMachine(t *testing.T) {
 	d, c := start(t, root)
 	defer d.Shutdown()
 	d.SettingsDir = t.TempDir()
-	os.MkdirAll(filepath.Join(home, ".agents", "skills", "one"), 0o755)
-	os.MkdirAll(filepath.Join(home, ".agents", "skills", "many"), 0o755)
-	os.WriteFile(filepath.Join(home, ".agents", "skills", "one", "SKILL.md"), []byte("one"), 0o644)
-	os.WriteFile(filepath.Join(home, ".agents", "skills", "many", "SKILL.md"), []byte("many"), 0o644)
-	os.WriteFile(filepath.Join(home, ".agents", "skills", "many", "run.sh"), []byte("x"), 0o644)
-	os.WriteFile(filepath.Join(home, ".agents", "AGENTS.md"), []byte("Be brief."), 0o644)
+	must(t, os.MkdirAll(filepath.Join(home, ".agents", "skills", "one"), 0o755))                               //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.MkdirAll(filepath.Join(home, ".agents", "skills", "many"), 0o755))                              //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(home, ".agents", "skills", "one", "SKILL.md"), []byte("one"), 0o644))   //nolint:gosec // G306: the mode this file always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(home, ".agents", "skills", "many", "SKILL.md"), []byte("many"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(home, ".agents", "skills", "many", "run.sh"), []byte("x"), 0o644))      //nolint:gosec // G306: the mode this file always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(home, ".agents", "AGENTS.md"), []byte("Be brief."), 0o644))             //nolint:gosec // G306: the mode this file always had; only its error is new
 	var got wire.UserPartHere
-	json.Unmarshal(c.call(t, 1, "settings/userPart", wire.UserPartRequest{Part: wire.UserSettingsPartNameAgentConfig}), &got)
+	mustUnmarshal(t, c.call(t, 1, "settings/userPart", wire.UserPartRequest{Part: wire.UserSettingsPartNameAgentConfig}), &got)
 	var config wire.UserAgentConfig
-	json.Unmarshal(got.Value, &config)
+	mustUnmarshal(t, got.Value, &config)
 	if config.Instructions == nil || *config.Instructions != "Be brief." || config.Skills["one"] != "one" || len(config.Skills) != 1+len(readyMadeIDs())+len(readyMadeSkillIDs()) ||
 		len(got.LeftOut) != 1 || got.LeftOut[0] != "many" {
 		t.Fatalf("%+v %+v", got, config)
@@ -245,13 +245,13 @@ func TestAPartIsTakenFromThisMachine(t *testing.T) {
 		}
 	}
 	// A token in clear is refused, by name only; one in a secret is taken.
-	os.WriteFile(filepath.Join(home, ".agents", "mcp.json"), []byte(`{"mcpServers":{"gh":{"url":"https://x","headers":{"Authorization":"Bearer ghp_clear"}}}}`), 0o644)
+	must(t, os.WriteFile(filepath.Join(home, ".agents", "mcp.json"), []byte(`{"mcpServers":{"gh":{"url":"https://x","headers":{"Authorization":"Bearer ghp_clear"}}}}`), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	if e := c.callError(t, 2, "settings/userPart", wire.UserPartRequest{Part: wire.UserSettingsPartNameMcpServers}); e == nil ||
 		!strings.Contains(e.Message, "gh has Authorization") || strings.Contains(e.Message, "ghp_clear") {
 		t.Fatalf("%+v", e)
 	}
-	os.WriteFile(filepath.Join(home, ".agents", "mcp.json"), []byte(`{"mcpServers":{"gh":{"url":"https://x","headers":{"Authorization":"Bearer ${GH}"},"env":{"DEBUG":"1"}}}}`), 0o644)
-	json.Unmarshal(c.call(t, 3, "settings/userPart", wire.UserPartRequest{Part: wire.UserSettingsPartNameMcpServers}), &got)
+	must(t, os.WriteFile(filepath.Join(home, ".agents", "mcp.json"), []byte(`{"mcpServers":{"gh":{"url":"https://x","headers":{"Authorization":"Bearer ${GH}"},"env":{"DEBUG":"1"}}}}`), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
+	mustUnmarshal(t, c.call(t, 3, "settings/userPart", wire.UserPartRequest{Part: wire.UserSettingsPartNameMcpServers}), &got)
 	if !strings.Contains(string(got.Value), "${GH}") {
 		t.Fatalf("%s", got.Value)
 	}

@@ -121,10 +121,12 @@ func TestPlanPoolHoursAndStop(t *testing.T) {
 type fakePools struct {
 	dead          map[string]bool
 	bound         []string
+	boundProjects [][]string
 	made, deleted []string
 	failMake      error
 	stages        map[string]poolStage
 	stopped       string
+	wait          string
 	readyAt       map[string]*time.Time
 }
 
@@ -243,9 +245,11 @@ func (f *fakePools) Detail(provider, workspace string) string {
 	}
 	return ""
 }
-func (f *fakePools) ReadyAt(host string) *time.Time { return f.readyAt[host] }
-func (f *fakePools) Bind(person, provider, workspace string, stop *int) (string, error) {
+func (f *fakePools) ProjectsWait(string, []string) string { return f.wait }
+func (f *fakePools) ReadyAt(host string) *time.Time       { return f.readyAt[host] }
+func (f *fakePools) Bind(person, provider, workspace string, stop *int, projects []string) (string, error) {
 	f.bound = append(f.bound, person+":"+workspace)
+	f.boundProjects = append(f.boundProjects, projects)
 	return "host-" + workspace, nil
 }
 
@@ -288,6 +292,28 @@ func TestClaimTakesOldestReadyAndReplacesIt(t *testing.T) {
 	// Another provider or size matches no pool.
 	if got, _ = w.claim(ctx, "alex", claim{Provider: "do", Size: "big"}); got.FromPool {
 		t.Fatal("size must match")
+	}
+}
+
+// #6890: a claim hands the pool's projects to the bind, which the machine's step 6
+// brings up to date.
+func TestClaimBindsWithThePoolsProjects(t *testing.T) {
+	t.Parallel()
+	w, f := testPools(t)
+	ctx := context.Background()
+	pool, err := w.set(ctx, "alex", wire.WarmPoolSet{Name: "dev", Provider: "do", MinReady: 1, MaxSize: 2,
+		Projects: []string{"/Users/alex/Agents"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored, _, _ := w.read(ctx, pool.ID)
+	f.stages[stored.Machines[0].Workspace] = stageReady
+	got, err := w.claim(ctx, "alex", claim{Provider: "do"})
+	if err != nil || !got.FromPool {
+		t.Fatalf("claim: %+v %v", got, err)
+	}
+	if len(f.boundProjects) != 1 || len(f.boundProjects[0]) != 1 || f.boundProjects[0][0] != "/Users/alex/Agents" {
+		t.Fatalf("the bind gets the pool's projects: %v", f.boundProjects)
 	}
 }
 

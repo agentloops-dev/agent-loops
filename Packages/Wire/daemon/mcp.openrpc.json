@@ -681,7 +681,11 @@
     {
       "name": "mcp/approve",
       "x-capability": "mcp/1",
-      "tags": [{"name": "web"}],
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
       "paramStructure": "by-name",
       "params": [
         {
@@ -837,7 +841,11 @@
     {
       "name": "mcp/list",
       "x-capability": "mcp/1",
-      "tags": [{"name": "web"}],
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
       "paramStructure": "by-name",
       "params": [
         {
@@ -1440,6 +1448,27 @@
           "required": true,
           "schema": {
             "$ref": "schema/org.schema.json#/definitions/ProviderSecretsKeep"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/machines.schema.json#/definitions/ProviderCarried"
+        }
+      }
+    },
+    {
+      "name": "providers/oauth",
+      "x-capability": "providers.carry/3",
+      "description": "Asked by the control plane on channel 0 (#6072): start or finish an OAuth connection for a provider this machine will carry. The verifier and the tokens stay here; the tokens are refreshed here before a call, and revoked at the provider when the provider is forgotten.",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/machines.schema.json#/definitions/ProviderOAuthCarry"
           }
         }
       ],

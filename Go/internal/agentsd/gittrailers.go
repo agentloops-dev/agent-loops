@@ -3,6 +3,7 @@ package agentsd
 import (
 	"context"
 	"slices"
+	"sync"
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/lineage"
@@ -24,11 +25,11 @@ import (
 //   - Fixes is one line per issue the session is labelled with, and the issues the PR fixes;
 //     with no PR it is Refs, as a commit on a branch closes nothing.
 //   - Epic is the first issue's parent, from lineage's part-of link (the forge's answer, kept
-//     an hour), else one read of the issue from the forge cache. Approved-by is each login
-//     whose newest review of the PR approves it, one read of the PR. At most two forge calls.
+//     an hour), else the resolve cache's parent (the forge's plan, #3562), else one read of
+//     the issue from the forge cache. Approved-by is each login whose newest review of the PR
+//     approves it, one read of the PR. At most two forge calls, at the same time (#6530).
 //   - Requested-by is the login the person's forge connection has.
-//   - Attested has no value since #6438 removed the attestations, so it is left out, as is any
-//     trailer with no value.
+//   - A trailer with no value is left out.
 //   - Co-authored-by is the runtime's own line for GitHub's commit page, where it is known
 //     (Claude's); the daemon turns the runtime's own attribution off (sessionMeta), so this is
 //     the only copy, and the rule can turn it off.
@@ -38,7 +39,7 @@ const trailerForgeWait = 5 * time.Second
 
 // trailerBlockOrder is the order of the block's lines: the records, then the spend, then
 // Co-authored-by last, where GitHub reads it (the Preview of the gate 2 wireframes).
-var trailerBlockOrder = []string{"Made-by", "Session", "Fixes", "Epic", "Requested-by", "Approved-by", "Attested",
+var trailerBlockOrder = []string{"Made-by", "Session", "Fixes", "Epic", "Requested-by", "Approved-by",
 	"Cost", "Tokens", "Duration", "Co-authored-by"}
 
 // trailerItem reads an issue or a PR for the block, from the forge cache within its minute.
@@ -121,20 +122,29 @@ func (d *Daemon) trailerValues(ctx context.Context, a *wire.Agent, folder string
 			add("Fixes", shortRef(n.Ref, ref))
 		}
 	}
+	// The two forge reads (Epic's issue, Approved-by's PR) run at the same time: a commit
+	// waits for the slower, not the sum (#6530).
+	var epic wire.LineageNode
+	var hasEpic bool
+	var approvers []string
+	var wg sync.WaitGroup
 	if on["Epic"] && len(issues) > 0 {
-		if epic, ok := d.issueEpic(ctx, issues[0]); ok {
-			add("Epic", shortRef(epic.Ref, issues[0].Ref))
-		}
+		wg.Go(func() { epic, hasEpic = d.issueEpic(ctx, issues[0]) })
+	}
+	if on["Approved-by"] && prNode != nil {
+		wg.Go(func() { approvers = d.prApprovers(ctx, *prNode) })
+	}
+	wg.Wait()
+	if hasEpic {
+		add("Epic", shortRef(epic.Ref, issues[0].Ref))
 	}
 	if on["Requested-by"] {
 		if login := d.forgeViewer(repo.forge); login != nil {
 			add("Requested-by", *login)
 		}
 	}
-	if on["Approved-by"] && prNode != nil {
-		for _, login := range d.prApprovers(ctx, *prNode) {
-			add("Approved-by", login)
-		}
+	for _, login := range approvers {
+		add("Approved-by", login)
 	}
 	if on["Cost"] || on["Tokens"] || on["Duration"] {
 		for key, v := range spendTrailers(d.trailerTotals(a, prNode, issues)) {
@@ -207,13 +217,17 @@ func (d *Daemon) trailerTotals(a *wire.Agent, pr *wire.LineageNode, issues []wir
 	return total
 }
 
-// issueEpic is the issue issue is a sub-issue of: lineage's active part-of link, else the
-// forge's read of the issue.
+// issueEpic is the issue issue is a sub-issue of: lineage's active part-of link, out of all
+// the issue's links (#6530), else the resolve cache's parent, from the forge's plan (#3562),
+// else the forge's read of the issue.
 func (d *Daemon) issueEpic(ctx context.Context, issue wire.LineageNode) (wire.LineageNode, bool) {
-	for _, l := range d.lineage().Links(issue).Links {
-		if l.From == issue && l.Rel == lineage.RelPartOf && l.EndedAt == nil && l.To.Kind == lineage.KindIssue {
+	for _, l := range d.lineage().ActiveFrom(issue, lineage.RelPartOf) {
+		if l.To.Kind == lineage.KindIssue {
 			return l.To, true
 		}
+	}
+	if p := d.resolvedParent(issue); p != nil {
+		return *p, true
 	}
 	ctx, cancel := context.WithTimeout(ctx, trailerForgeWait)
 	defer cancel()
@@ -222,6 +236,18 @@ func (d *Daemon) issueEpic(ctx context.Context, issue wire.LineageNode) (wire.Li
 		return wire.LineageNode{}, false
 	}
 	return *item.Item.Parent, true
+}
+
+// resolvedParent is issue's parent as the resolve cache last had it from the forge's plan,
+// or nil when it has none.
+func (d *Daemon) resolvedParent(issue wire.LineageNode) *wire.LineageNode {
+	d.resolveMu.Lock()
+	defer d.resolveMu.Unlock()
+	if e, ok := d.resolveCache[issue]; ok && e.parent != nil && e.parent.Kind == lineage.KindIssue {
+		p := *e.parent
+		return &p
+	}
+	return nil
 }
 
 // prApprovers is each login whose newest review of pr approves it.

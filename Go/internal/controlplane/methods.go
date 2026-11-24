@@ -980,6 +980,7 @@ func (m *Methods) status(from Caller) wire.ControlStatus {
 	status.FolderDetection = &detection
 	needed := requiredNow(m.router.Team())
 	status.Capabilities, status.Required = capabilities(), &needed
+	status.Maturity = wire.MaturityOf(status.Capabilities)
 	return status
 }
 
@@ -1046,6 +1047,9 @@ func (m *Methods) removeHost(ctx context.Context, host string, from Caller) (boo
 	if err != nil || !gone {
 		return gone, err
 	}
+	if err := m.s.forgetReleaseHost(ctx, host); err != nil {
+		m.s.log("release key cleanup for " + host + " failed: " + err.Error())
+	}
 	// No more secrets go to it, and its person hears which it had (FR-026); its person
 	// and the admins hear which org routes it held (#999).
 	defer m.s.machineLeft(host, owner, name)
@@ -1082,6 +1086,7 @@ func (m *Methods) hostRow(h records.MachineRecord) wire.ControlMachine {
 		_ = json.Unmarshal(raw, &impl)
 		row.Implementation = optional(impl)
 	}
+	row.Maturity = hostMaturity(h)
 	if list := hostCapabilities(h); list != nil {
 		row.Capabilities, row.Missing = list, wire.Missing(list, requiredNow(m.router.Team()).Host)
 	} else if m.router.Team() {
@@ -1490,7 +1495,7 @@ func (m *Methods) HostSaid(host, method string, params json.RawMessage) (any, er
 		m.s.auditSecretOps(host, owner, request.Ops)
 		m.s.noteSecretInfo(host, owner, request.Ops, request.Held, request.Held != nil)
 		return wire.Empty{}, nil
-	case "machine/machines", "machine/providerDraft", "machine/status", "machine/installProgress":
+	case "machine/machines", "machine/status", "machine/installProgress":
 		return m.machineProviders(host, method, params)
 	case "backups/stored", "backups/upload", "backups/commit", "backups/download":
 		return m.backupsSaid(host, method, params)
@@ -1525,6 +1530,9 @@ func (m *Methods) hostReported(ctx context.Context, host, method string, params 
 			return nil, true, err
 		}
 		return map[string]any{}, true, m.s.setupStep(ctx, host, report)
+	case wire.CallMachineSetupWork.Name:
+		work, err := m.s.setupWork(ctx, host)
+		return work, true, err
 	case "machine/policyApplied":
 		applied, err := require[wire.PolicyApplied](params, "PolicyApplied")
 		if err != nil {
@@ -1820,7 +1828,7 @@ func applyHello(record *records.MachineRecord, hello wire.MachineHello) {
 		}
 		record.Extra = extra
 	}
-	*record = withCapabilities(*record, hello.Capabilities)
+	*record = withCapabilities(*record, hello.Capabilities, hello.Maturity)
 }
 
 // settleHomeHost makes the host the home host when it should be, and says whether it did.

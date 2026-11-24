@@ -34,8 +34,10 @@ import { mergeUsage } from "../model/usage";
 import { hostAnswers, hostNeedsUpdate } from "../model/capabilities";
 import { approvalWaitWords, mergeTime } from "../model/time";
 import { velocityHere } from "../model/velocity";
+import { cycleTimeHere } from "../model/cycletime";
 import { TimeCharts } from "./TimeCharts";
 import { VelocityCharts } from "./VelocityCharts";
+import { CycleTimeCharts } from "./CycleTimeCharts";
 import { pageHost } from "./Multiplier";
 import { oldestRead } from "../model/lastUpdate";
 import { Capability } from "../protocol/capabilities.generated";
@@ -248,7 +250,7 @@ function runtimeRowLine(status: RuntimeStatus, allowance: { unusable?: string; s
 
 const onlineHosts = (store: Store): ControlMachine[] => store.hosts.value.filter((h) => hostAnswers(h.state));
 
-const pageTitles: Record<ActivityPage, string> = { events: "Events", runtimes: "Runtimes", mcp: "Connectors", spending: "Cost", tokens: "Tokens", time: "Time", velocity: "Velocity" };
+const pageTitles: Record<ActivityPage, string> = { events: "Events", runtimes: "Runtimes", mcp: "Connectors", spending: "Cost", tokens: "Tokens", time: "Time", velocity: "Velocity", cycletime: "Cycle time" };
 
 /** How much is left, with no times, as allowanceReading's first part: "62% left". Null when the reading has no amount. */
 function allowanceAmount(state: AllowanceState, now: Date): string | null {
@@ -469,6 +471,7 @@ export function ActivityPageView({ store, page, inReport = false }: { store: Sto
           {page === "tokens" && <TokensPage store={store} hostName={hostName} />}
           {page === "time" && <TimePage store={store} />}
           {page === "velocity" && <VelocityPage store={store} />}
+          {page === "cycletime" && <CycleTimePage store={store} />}
         </div>
       </div>
     </section>
@@ -477,7 +480,7 @@ export function ActivityPageView({ store, page, inReport = false }: { store: Sto
 
 /**
  * When the usage page last read what it shows (#5144), the oldest of its parts: Cost and Tokens
- * each machine's day and the charts; Time every chart host's; Velocity the Mac's. Undefined for
+ * each machine's day and the charts; Time every chart host's; Velocity and Cycle time the Mac's. Undefined for
  * the other pages, and for Cost's Reports, which says its own.
  */
 function usageReadAt(store: Store, page: ActivityPage, costPane: "cost" | "reports"): number | undefined {
@@ -490,6 +493,7 @@ function usageReadAt(store: Store, page: ActivityPage, costPane: "cost" | "repor
   }
   if (page === "time") return oldestRead(reads, chartHosts(store), ["time"]);
   if (page === "velocity") { const host = pageHost(store); return host ? oldestRead(reads, [host], ["velocity"]) : undefined; }
+  if (page === "cycletime") { const host = pageHost(store); return host ? oldestRead(reads, [host], ["cycletime"]) : undefined; }
   return undefined;
 }
 
@@ -761,6 +765,21 @@ function VelocityPage({ store }: { store: Store }) {
   const history = store.velocity.value[host];
   return <VelocityCharts history={history ? velocityHere(history) : undefined}
     failed={store.velocityFailed.value[host] === true} retry={() => void store.loadVelocity(host)} />;
+}
+
+function CycleTimePage({ store }: { store: Store }) {
+  const host = pageHost(store);
+  const multiplier = host ? store.multiplier.value[host] : undefined;
+  useEffect(() => { if (host) void store.loadCycleTime(host); }, [host, multiplier]);
+  useEffect(() => {
+    if (!host) return;
+    const every = setInterval(() => { if (document.visibilityState === "visible") void store.loadCycleTime(host); }, 60_000);
+    return () => clearInterval(every);
+  }, [host]);
+  if (!host) return <p class="quiet">No machine is connected.</p>;
+  const history = store.cycleTime.value[host];
+  return <CycleTimeCharts history={history ? cycleTimeHere(history) : undefined}
+    failed={store.cycleTimeFailed.value[host] === true} retry={() => void store.loadCycleTime(host)} />;
 }
 
 /** What the work used in tokens (#956): the charts in tokens, then each host's day against its token limits. */

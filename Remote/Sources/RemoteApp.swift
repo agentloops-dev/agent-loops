@@ -459,6 +459,7 @@ struct RemoteView: View {
         case .machine(let host): RemoteMachinePage(host: host).staleBanner().paperGround()
         case .achievements: RemoteAchievementsPage().paperGround()
         case .velocity: RemoteVelocityPage().paperGround()
+        case .cycletime: RemoteCycleTimePage().paperGround()
         case .work: WorkView(model: model).staleBanner().paperGround()
         // Cost, Tokens, Time and connectors are Mac + web (#2798): nothing opens them here.
         default: NothingPickedPage()
@@ -579,6 +580,22 @@ struct RemoteVelocityPage: View {
         }
         .staleBanner()
         .navigationTitle("Velocity")
+        .toolbarTitleDisplayMode(.inline)
+    }
+}
+
+struct RemoteCycleTimePage: View {
+    @Environment(RemoteModel.self) private var model
+    @Environment(\.horizontalSizeClass) private var sizeClass
+
+    var body: some View {
+        ScrollView {
+            CycleTimeChartsSection(load: { await model.cycleTimeHistory() }, refresh: model.work.multiplier)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(sizeClass == .compact ? 16 : 24)
+        }
+        .staleBanner()
+        .navigationTitle("Cycle time")
         .toolbarTitleDisplayMode(.inline)
     }
 }

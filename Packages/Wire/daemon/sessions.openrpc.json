@@ -1909,6 +1909,32 @@
       }
     },
     {
+      "name": "cycletime/history",
+      "x-capability": "cycletime/1",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
+      "description": "How long the person's work took to land, by the hour and the day (#6648): each landed PR's cycle, coding and PR time with its repo and level, counted from this machine's lineage store on each ask. Cycle is from the start of work to the merge; coding is from that start to PR creation, and PR time from creation to the merge.",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/core.schema.json#/definitions/Empty"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/reports.schema.json#/definitions/CycleTimeHistory"
+        }
+      }
+    },
+    {
       "name": "dailyChecks/changed",
       "x-capability": "daily-checks/1",
       "description": "The daily checks' control changed (#3355, #5853): by dailyChecks/setSettings, or by a change to the home folder's Daily checks workflow. Sent with every workflow change.",

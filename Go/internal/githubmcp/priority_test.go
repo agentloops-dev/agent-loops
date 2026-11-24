@@ -3,12 +3,14 @@ package githubmcp
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 // priorityItem is a search's answer with one issue, its issue field values and its repo's fields.
@@ -84,7 +86,7 @@ func TestSearchWithoutIssueFields(t *testing.T) {
 		}))
 		g := NewRealGitHub(s.URL, func() string { return "t" }, nil)
 		for range 2 {
-			p, err := g.Search(context.Background(), []string{"o/r"}, SearchFilter{}, "", 10)
+			p, err := g.Search(context.Background(), []string{"o/r"}, SearchFilter{Query: "t"}, "", 10)
 			if err != nil || len(p.Items) != 1 || p.Items[0].PriorityField {
 				t.Fatalf("%s: %v %+v", c.refusal, err, p)
 			}
@@ -138,5 +140,81 @@ func TestSetPriorityField(t *testing.T) {
 			t.Errorf("%s: has %v, %v, wrote %q, want %v %q", c.name, has, err, wrote, c.has, c.want)
 		}
 		s.Close()
+	}
+}
+
+// #6644: the repo's Priority field is kept: a second change in a repo with no field asks
+// nothing, one in a repo with the field asks only the write (the issue's id is kept too, and a
+// new issue asks only its id), and after fieldsFor or a failed write it asks again.
+func TestSetPriorityFieldKept(t *testing.T) {
+	var asked []string
+	fail := false
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Query     string         `json:"query"`
+			Variables map[string]any `json:"variables"`
+		}
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &req)
+		repo := req.Variables["name"]
+		switch {
+		case strings.Contains(req.Query, "setIssueFieldValue"):
+			asked = append(asked, "set")
+			if fail {
+				_, _ = io.WriteString(w, `{"errors":[{"message":"Could not resolve to a node"}]}`)
+				return
+			}
+			_, _ = io.WriteString(w, `{"data":{"setIssueFieldValue":{"issue":{"number":5}}}}`)
+		case strings.Contains(req.Query, "issueFields"):
+			asked = append(asked, fmt.Sprintf("fields %v", repo))
+			fields := ``
+			if repo == "with" {
+				fields = `{"id":"F1","name":"Priority","options":[{"id":"O1","name":"High"}]}`
+			}
+			_, _ = io.WriteString(w, `{"data":{"repository":{"issue":{"id":"I5"},"issueFields":{"nodes":[`+fields+`]}}}}`)
+		default:
+			asked = append(asked, fmt.Sprintf("issue %v", repo))
+			_, _ = io.WriteString(w, `{"data":{"repository":{"issue":{"id":"I6"}}}}`)
+		}
+	}))
+	defer s.Close()
+	now := time.Now()
+	g := NewRealGitHub(s.URL, func() string { return "t" }, nil)
+	g.fields.now = func() time.Time { return now }
+	set := func(repo string, number int) {
+		t.Helper()
+		_, _ = g.SetPriorityField(context.Background(), repo, number, "high")
+	}
+	set("o/none", 5)
+	set("o/none", 6)
+	set("o/with", 5)
+	set("o/with", 5)
+	set("o/with", 6)
+	now = now.Add(fieldsFor)
+	set("o/none", 5)
+	fail = true
+	set("o/with", 6)
+	fail = false
+	set("o/with", 6)
+	want := "fields none;fields with;set;set;issue with;set;fields none;fields with;set;fields with;set"
+	if got := strings.Join(asked, ";"); got != want {
+		t.Errorf("asked\n%s\nwant\n%s", got, want)
+	}
+}
+
+// #6644: the add gives the issue's labels from its own answer.
+func TestAddLabelsGivesTheLabels(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/repos/o/r/issues/5/labels" {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = io.WriteString(w, `[{"name":"bug"},{"name":"priority:high"},{"name":"priority:low"}]`)
+	}))
+	defer s.Close()
+	g := NewRealGitHub(s.URL, func() string { return "t" }, nil)
+	got, err := g.AddLabels(context.Background(), "o/r", 5, []string{"priority:high"})
+	if err != nil || strings.Join(got, ",") != "bug,priority:high,priority:low" {
+		t.Fatalf("labels %q, %v", got, err)
 	}
 }

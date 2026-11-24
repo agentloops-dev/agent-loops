@@ -341,7 +341,15 @@ Alex, 2026-11-12 (#5139): every page that shows cached data says how old it is, 
 - **It ticks:** every 10 s for the first minute, then once a minute.
 - **Where:** in the pane's banner, after its words, when the pane has one; when not, at
   the top of the pane in `ink.secondary` at the caption step (at the trailing end of the
-  pane's header when it has one). It is a status line, not a control.
+  pane's header when it has one). It is a status line, not a control. **Work's lists** put
+  it in the footer bar under the list, after the count, with what runs or failed on the
+  left; they have no strip above the rows (#5968, #5967's rule in epic #6348). Work ▸ Deploys
+  and Work ▸ Timeline have the same footer bar (#5969); a read of several machines says
+  *Reading 1 of 3 machines…*. An item's page, a release's page and Files changed have it
+  too (#5970): an item with its Plan says the older of the two reads; a release's page says
+  *No machine keeps lineage.* there; Files changed says no age, because its diff is not kept.
+  The web page has the same bar on every Work page (#5971), Work ▸ Next too, with the same
+  words; it sticks to the bottom of the pane.
 
 The pages and the plan are in `specs/5139-last-update/spec.md`.
 

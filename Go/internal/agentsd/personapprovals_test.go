@@ -78,9 +78,9 @@ func TestAWorkflowApprovedElsewhereIsApprovedHereOnlyWhileItIsTheSameFile(t *tes
 	d.scanLocked()
 	d.workflowMu.Unlock()
 	// Approval has begun, so a file added now waits.
-	os.MkdirAll(filepath.Join(dir, ".agents", "workflows"), 0o755)
+	must(t, os.MkdirAll(filepath.Join(dir, ".agents", "workflows"), 0o755)) //nolint:gosec // G301: the mode this folder always had; only its error is new
 	file := filepath.Join(dir, ".agents", "workflows", "triage.md")
-	os.WriteFile(file, []byte("---\non: manual\n---\nTriage the new way.\n"), 0o644)
+	must(t, os.WriteFile(file, []byte("---\non: manual\n---\nTriage the new way.\n"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	d.rescanWorkflows(dir)
 	s, err := d.oneWorkflow(dir, "triage")
 	if err != nil || s.AwaitingApproval == nil {
@@ -96,7 +96,7 @@ func TestAWorkflowApprovedElsewhereIsApprovedHereOnlyWhileItIsTheSameFile(t *tes
 	}
 
 	// A change to the file has another digest: it waits again.
-	os.WriteFile(file, []byte("---\non: manual\n---\nTriage and push.\n"), 0o644)
+	must(t, os.WriteFile(file, []byte("---\non: manual\n---\nTriage and push.\n"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	d.rescanWorkflows(dir)
 	if s, _ = d.oneWorkflow(dir, "triage"); s.AwaitingApproval == nil || s.ApprovedFrom != nil {
 		t.Fatalf("a changed file did not wait: %+v", s)
@@ -122,9 +122,9 @@ func TestAConnectorApprovedElsewhereIsApprovedHereOnlyWhileItIsTheSameEntry(t *t
 	defer d.Shutdown()
 	dir := folder(t, c, 1)
 	path := filepath.Join(dir, ".agents", "mcp.json")
-	os.MkdirAll(filepath.Dir(path), 0o755)
+	must(t, os.MkdirAll(filepath.Dir(path), 0o755)) //nolint:gosec // G301: the mode this folder always had; only its error is new
 	write := func(arg string) {
-		os.WriteFile(path, []byte(`{"mcpServers":{"docs":{"command":"docs-server","args":["`+arg+`"]}}}`), 0o644)
+		must(t, os.WriteFile(path, []byte(`{"mcpServers":{"docs":{"command":"docs-server","args":["`+arg+`"]}}}`), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	}
 	write("one")
 	d.mcpMu.Lock()

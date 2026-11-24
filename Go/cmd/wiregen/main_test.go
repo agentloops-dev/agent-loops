@@ -105,3 +105,58 @@ func TestDefinitionsAndMethodsAreInNameOrder(t *testing.T) {
 		t.Errorf("unsorted methods: err = %v", err)
 	}
 }
+
+// The list of feature flags is checked (#6254): a name of the right form, once and in name
+// order, with its words and its issue.
+func TestReadFlagsRefusesABadList(t *testing.T) {
+	flag := func(name string) string {
+		return `{"name": "` + name + `", "title": "T", "about": "A", "issue": 1}`
+	}
+	if _, err := readFlags([]byte(`{"flags": [` + flag("a-flag") + `, ` + flag("b") + `]}`)); err != nil {
+		t.Fatalf("a good list: %v", err)
+	}
+	for why, list := range map[string]string{
+		"out of order": `{"flags": [` + flag("b") + `, ` + flag("a") + `]}`,
+		"twice":        `{"flags": [` + flag("a") + `, ` + flag("a") + `]}`,
+		"bad name":     `{"flags": [` + flag("A_flag") + `]}`,
+		"no words":     `{"flags": [{"name": "a", "title": "", "about": "A", "issue": 1}]}`,
+		"no issue":     `{"flags": [{"name": "a", "title": "T", "about": "A"}]}`,
+	} {
+		if _, err := readFlags([]byte(list)); err == nil {
+			t.Errorf("%s: the list was taken", why)
+		}
+	}
+}
+
+func TestReadMaturityRefusesABadList(t *testing.T) {
+	known := []string{"a.one/1", "b.two/1"}
+	entry := func(c, level, clients string) string {
+		return `{"capability": "` + c + `", "level": "` + level + `", "title": "T", "issue": 1` + clients + `}`
+	}
+	list, err := readMaturity([]byte(`{"capabilities": [`+entry("a.one/1", "beta", "")+`, `+entry("b.two/1", "pilot", `, "clients": ["mac", "web"]`)+`]}`), known)
+	if err != nil {
+		t.Fatalf("a good list: %v", err)
+	}
+	if got := tsMaturity(list); !strings.Contains(got, `{ capability: "b.two/1", level: "pilot", title: "T", issue: 1, clients: ["mac", "web"] },`) {
+		t.Errorf("the page's list:\n%s", got)
+	}
+	if got := swiftMaturity(list); !strings.Contains(got, `EarlyFeature(capability: "a.one/1", level: .beta, title: "T", issue: 1, clients: nil),`) ||
+		!strings.Contains(got, `clients: [.mac, .web]),`) {
+		t.Errorf("the Swift list:\n%s", got)
+	}
+	for why, l := range map[string]string{
+		"unknown":        entry("c.three/1", "beta", ""),
+		"twice":          entry("a.one/1", "beta", "") + `, ` + entry("a.one/1", "alpha", ""),
+		"out of order":   entry("b.two/1", "beta", "") + `, ` + entry("a.one/1", "beta", ""),
+		"ga is left out": entry("a.one/1", "ga", ""),
+		"bad level":      entry("a.one/1", "final", ""),
+		"bad client":     entry("a.one/1", "beta", `, "clients": ["ipad"]`),
+		"client twice":   entry("a.one/1", "beta", `, "clients": ["mac", "mac"]`),
+		"no title":       `{"capability": "a.one/1", "level": "beta", "title": " ", "issue": 1}`,
+		"no issue":       `{"capability": "a.one/1", "level": "beta", "title": "T"}`,
+	} {
+		if _, err := readMaturity([]byte(`{"capabilities": [`+l+`]}`), known); err == nil {
+			t.Errorf("%s: the list was taken", why)
+		}
+	}
+}

@@ -14,7 +14,7 @@ import (
 // Carried is a provider's connection through the machine that carries it (#3398): each
 // call goes to that machine on its channel 0 as providers/carry, and the machine runs the
 // provider's server with the secrets it keeps. The control plane has the record, never a
-// secret. Secrets is only a draft's, or the ones an add or an update was given to check
+// secret. Secrets is only the ones an add or an update was given to check
 // with: sent with each call, kept by neither side.
 type Carried struct {
 	Record ProviderRecord
@@ -29,6 +29,8 @@ type Carried struct {
 type CarriedCreate struct {
 	Made *MachineInfo `json:"made,omitempty"`
 	Runs bool         `json:"runs"`
+	// Said is what the make did, one line a step (#6073); an older carrier says none.
+	Said []string `json:"said,omitempty"`
 }
 
 // SSHResult is providers/ssh's result.
@@ -72,7 +74,11 @@ func Ask(router Router, host, name, method string, params any, patience time.Dur
 		return nil, providerFailure("%s, which carries it, answered with something this control plane can’t read.", name)
 	}
 	if answer.Error != nil {
-		return nil, &ProviderFailure{*answer.Error}
+		failure := &ProviderFailure{Words: *answer.Error}
+		if answer.Code != nil {
+			failure.Code = string(*answer.Code)
+		}
+		return nil, failure
 	}
 	return answer.Result, nil
 }
@@ -127,19 +133,19 @@ func (c *Carried) Options() (any, error) {
 }
 
 func (c *Carried) Create(name string, options any, firstBoot *string) (*MachineInfo, bool, error) {
+	made, runs, _, err := c.CreateSaying(name, options, firstBoot)
+	return made, runs, err
+}
+
+// CreateSaying is Create, with what the make did as the carrying machine said it (#6073).
+func (c *Carried) CreateSaying(name string, options any, firstBoot *string) (*MachineInfo, bool, []string, error) {
 	var out CarriedCreate
 	err := c.call("create", wire.ProviderCarry{Name: &name, Options: rawOf(options), FirstBoot: firstBoot}, &out)
-	return out.Made, out.Runs, err
+	return out.Made, out.Runs, out.Said, err
 }
 
 func (c *Carried) Delete(id string) error {
 	return c.call("delete", wire.ProviderCarry{Workspace: &id}, nil)
-}
-
-func (c *Carried) Tools() ([]any, error) {
-	var out []any
-	err := c.call("tools", wire.ProviderCarry{}, &out)
-	return out, err
 }
 
 // End leaves the server running on its machine: the next call uses it.

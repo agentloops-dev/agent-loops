@@ -37,6 +37,9 @@ public enum SidebarItem: Hashable, Sendable {
     /// The pull requests that landed, over time (#4597): the Multiplier's count drawn by hour,
     /// day and week. Core: the Remote has it under Status, after the Multiplier (#4758).
     case velocity
+    /// How long the person's work took to land, over time (#6648). Core: the Remote and the
+    /// web page have it under Reports.
+    case cycletime
     /// One of Work's lists (#3119), a row each under the Work group (#4004): the issues and pull
     /// requests from the forges, with lineage on top, and the releases lineage knows. An
     /// item's page keeps its list's row.

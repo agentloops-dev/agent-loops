@@ -15,6 +15,12 @@ extension RemoteModel {
     /// Work's part of this device's copy (#4930).
     var workCopy: LocalCopy? { localCopy?.copy }
 
+    /// Work's client cache (#6357): the lists and items' pages draw from it with no call, then ask once.
+    var workCache: (any WorkCaching)? { workCacheStore }
+
+    /// Work's changes through the cache (#6354), while the cache opens.
+    var workSaves: WorkSaves? { workCacheStore == nil ? nil : workSavesStore }
+
     /// Every machine's live folders this phone knows (#6152): Work's lists read again when one is added or goes.
     var workFolders: [FolderKey] { folders.map(\.key) }
 

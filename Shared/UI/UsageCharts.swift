@@ -79,50 +79,18 @@ private struct UsageChartBody: View {
         }
     }
 
-    /// Health's block above the bars: what the figure is, the figure, and when.
     private var headline: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text((pickedBar == nil ? chart.headline : "Total").uppercased())
-                .appText(.fine).fontWeight(.semibold)
-                .foregroundStyle(.secondary)
-            Text(chart.words(pickedBar?.value ?? chart.average))
-                .appText(.title).fontWeight(.semibold)
-                .monospacedDigit()
-            Text(when)
-                .appText(.supporting)
-                .foregroundStyle(.secondary)
-        }
-        .accessibilityElement(children: .combine)
-    }
-
-    private var when: String {
-        if let bar = pickedBar {
-            switch chart.range {
-            case .day: return bar.start.formatted(.dateTime.hour())
-                + "–" + bar.start.addingTimeInterval(3600).formatted(.dateTime.hour())
-            case .week, .month: return bar.start.formatted(.dateTime.weekday(.wide).day().month())
-            case .threeMonths: return "Week of " + bar.start.formatted(.dateTime.day().month())
-            }
-        }
-        guard let first = chart.bars.first?.start, let last = chart.bars.last?.start else { return "" }
-        if chart.range == .day { return "Today" }
-        // 3M's last bar is a week that ends today, not on the day it starts.
-        let end = chart.range == .threeMonths ? Calendar.current.date(byAdding: .day, value: 6, to: last) ?? last : last
-        return (first ..< end.addingTimeInterval(1)).formatted(.interval.day().month().year())
-    }
-
-    private var unit: Calendar.Component {
-        switch chart.range {
-        case .day: .hour
-        case .week, .month: .day
-        case .threeMonths: .weekOfYear
-        }
+        ChartHeadline(
+            title: pickedBar == nil ? chart.headline : "Total",
+            value: chart.words(pickedBar?.value ?? chart.average),
+            when: ChartRangeParts.when(range: chart.range, picked: pickedBar?.start,
+                                       first: chart.bars.first?.start, last: chart.bars.last?.start))
     }
 
     private var bars: some View {
         Chart {
             ForEach(chart.bars) { bar in
-                BarMark(x: .value("When", bar.start, unit: unit), y: .value(chart.metric.rawValue, bar.value))
+                BarMark(x: .value("When", bar.start, unit: ChartRangeParts.unit(chart.range)), y: .value(chart.metric.rawValue, bar.value))
                     .foregroundStyle(Paper.accent.opacity(pickedBar == nil || pickedBar == bar ? 1 : 0.35))
                     .cornerRadius(2)
             }
@@ -132,32 +100,13 @@ private struct UsageChartBody: View {
                     .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
             }
         }
-        .chartXSelection(value: $picked)
-        .chartYAxis {
-            AxisMarks(position: .trailing) { value in
-                AxisGridLine()
-                AxisValueLabel { if let number = value.as(Double.self) { Text(chart.words(number)) } }
-            }
+        .chartSelectionAndAxes(range: chart.range, selected: $picked, yLabel: chart.metric.rawValue) { number in
+            Text(chart.words(number))
         }
-        .chartXAxis {
-            AxisMarks(values: .automatic(desiredCount: chart.range == .day ? 4 : 6)) { _ in
-                AxisGridLine()
-                AxisValueLabel(format: axisFormat)
-            }
-        }
-        .frame(height: 200)
     }
 
     /// 3M's bars are weeks, so its daily average is drawn as a week's worth.
     private func perBar(_ daily: Double) -> Double { chart.range == .threeMonths ? daily * 7 : daily }
-
-    private var axisFormat: Date.FormatStyle {
-        switch chart.range {
-        case .day: .dateTime.hour()
-        case .week: .dateTime.weekday(.abbreviated)
-        case .month, .threeMonths: .dateTime.day().month(.abbreviated)
-        }
-    }
 
     /// Where the range went, by runtime, largest first.
     private var shares: some View {

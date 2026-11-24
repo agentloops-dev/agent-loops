@@ -88,7 +88,10 @@ func prove(t *testing.T, path string, w window) (net.Conn, *bufio.Reader, contro
 	if err != nil {
 		t.Fatal(err)
 	}
-	must(t, errOnly(c.Write([]byte(controllink.Message{Auth: auth}.Line()+"\n"))))
+	// A host that refuses the window closes the socket: the write or the read fails.
+	if _, err := c.Write([]byte(controllink.Message{Auth: auth}.Line() + "\n")); err != nil {
+		return c, r, controllink.Message{Refused: "closed"}
+	}
 	line, err = r.ReadString('\n')
 	if err != nil {
 		return c, r, controllink.Message{Refused: "closed"}

@@ -44,9 +44,9 @@ func seed(t *testing.T, root, file string) string {
 		t.Fatal(err)
 	}
 	var head struct{ ID string }
-	json.Unmarshal(b, &head)
+	mustUnmarshal(t, b, &head)
 	dir := filepath.Join(root, "agents", strings.ToUpper(head.ID))
-	os.MkdirAll(dir, 0o755)
+	must(t, os.MkdirAll(dir, 0o755)) //nolint:gosec // G301: the mode this folder always had; only its error is new
 	if err := os.WriteFile(filepath.Join(dir, "agent.json"), b, 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -72,8 +72,8 @@ func TestARootSwiftWroteOpens(t *testing.T) {
 	}
 	after, _ := os.ReadFile(filepath.Join(root, "agents", id, "agent.json"))
 	var x, y map[string]any
-	json.Unmarshal(before, &x)
-	json.Unmarshal(after, &y)
+	mustUnmarshal(t, before, &x)
+	mustUnmarshal(t, after, &y)
 	delete(y, "madeInRoot") // stamped: the root had no id, so its records are its own
 	delete(y, "revision")   // its place in this host's order of changes (#4785)
 	for k, v := range x {
@@ -149,7 +149,7 @@ func TestTranscriptAppendAndRead(t *testing.T) {
 func TestAppendManyOpensTheTranscriptOnce(t *testing.T) {
 	s, _ := Open(t.TempDir())
 	id := NewUUID()
-	s.Append(id, wire.TranscriptEntry{ID: NewUUID(), Kind: wire.TranscriptEntryKind{AgentMessage: &wire.TranscriptEntryKindAgentMessage{}}})
+	must(t, errOnly(s.Append(id, wire.TranscriptEntry{ID: NewUUID(), Kind: wire.TranscriptEntryKind{AgentMessage: &wire.TranscriptEntryKindAgentMessage{}}})))
 	opens := 0
 	was := openTranscript
 	openTranscript = func(file string) (*os.File, error) { opens++; return was(file) }
@@ -205,11 +205,11 @@ func TestEntriesFrom(t *testing.T) {
 	s, _ := Open(t.TempDir())
 	id := NewUUID()
 	for _, text := range []string{"one", "two"} {
-		s.Append(id, wire.TranscriptEntry{ID: NewUUID(), Kind: wire.TranscriptEntryKind{AgentMessage: &wire.TranscriptEntryKindAgentMessage{Text: text}}})
+		must(t, errOnly(s.Append(id, wire.TranscriptEntry{ID: NewUUID(), Kind: wire.TranscriptEntryKind{AgentMessage: &wire.TranscriptEntryKindAgentMessage{Text: text}}})))
 	}
 	path := s.Loc.Transcript(string(id))
 	f, _ := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
-	f.WriteString(`{"half`)
+	must(t, errOnly(f.WriteString(`{"half`)))
 	f.Close()
 	var texts []string
 	var starts []int64
@@ -277,13 +277,13 @@ func TestAWorktreeWithNoFolderIsFilled(t *testing.T) {
 	root := t.TempDir()
 	repo := filepath.Join(t.TempDir(), "repo")
 	wt := filepath.Join(repo, ".agents", "worktrees", "lane")
-	os.MkdirAll(wt, 0o755)
+	must(t, os.MkdirAll(wt, 0o755)) //nolint:gosec // G301: the mode this folder always had; only its error is new
 	if out, err := exec.Command("git", "init", "-q", repo).CombinedOutput(); err != nil {
 		t.Skipf("no git here: %v %s", err, out)
 	}
 	write := func(id, worktree string) {
 		dir := filepath.Join(root, "agents", id)
-		os.MkdirAll(dir, 0o755)
+		must(t, os.MkdirAll(dir, 0o755)) //nolint:gosec // G301: the mode this folder always had; only its error is new
 		b := `{"id":"` + id + `","runtimeID":"claude","cwd":"file:///w/","state":"stopped","endedReason":"endTurn",` +
 			`"advertisedOptions":[],"availableCommands":[],"worktree":` + worktree + `}`
 		if err := os.WriteFile(filepath.Join(dir, "agent.json"), []byte(b), 0o644); err != nil {
@@ -305,7 +305,7 @@ func TestAWorktreeWithNoFolderIsFilled(t *testing.T) {
 		}
 		b, _ := os.ReadFile(s.Loc.Record(string(id)))
 		var rec struct{ Worktree struct{ Folder wire.URL } }
-		json.Unmarshal(b, &rec)
+		mustUnmarshal(t, b, &rec)
 		if rec.Worktree.Folder != folder {
 			t.Errorf("%s: written back as %q, want %s", id, rec.Worktree.Folder, folder)
 		}
@@ -341,24 +341,24 @@ func TestAgentsInAgreesWithTheRecords(t *testing.T) {
 		}
 	}
 	a, b, w := NewUUID(), NewUUID(), NewUUID()
-	s.Save(wire.Agent{ID: a, Cwd: "file:///src/one/"})
-	s.Save(wire.Agent{ID: b, Cwd: "file:///src/two"})
+	must(t, s.Save(wire.Agent{ID: a, Cwd: "file:///src/one/"}))
+	must(t, s.Save(wire.Agent{ID: b, Cwd: "file:///src/two"}))
 	tree := wire.Agent{ID: w, Cwd: "file:///src/one/.agents/worktrees/x",
 		Worktree: &wire.AgentWorktree{Name: "x", Root: "file:///src/one/.agents/worktrees/x", Folder: "file:///src/one"}}
-	s.Save(tree)
+	must(t, s.Save(tree))
 	agrees(s, "/src/one", "/src/two", "/src/one/.agents/worktrees/x")
 	if n := len(s.AgentsIn("/src/one")); n != 2 {
 		t.Fatalf("/src/one has %d agents, want 2", n)
 	}
 	// The worktree moves to the other folder: it leaves the first.
 	tree.Worktree.Folder = "file:///src/two"
-	s.Save(tree)
+	must(t, s.Save(tree))
 	agrees(s, "/src/one", "/src/two")
 	if n := len(s.AgentsIn("/src/two")); n != 2 {
 		t.Fatalf("/src/two has %d agents, want 2", n)
 	}
-	s.Delete(b)
-	s.Delete(a)
+	must(t, s.Delete(b))
+	must(t, s.Delete(a))
 	agrees(s, "/src/one", "/src/two")
 	if got := s.AgentsIn("/src/one"); got != nil {
 		t.Fatalf("/src/one after its delete: %v", got)
@@ -381,9 +381,9 @@ func TestLiveIndexAndArchivedTally(t *testing.T) {
 			CreatedAt: made, LastActivityAt: made + 10, CostToDate: map[string]float64{"USD": cost}}
 	}
 	live, old, older := NewUUID(), NewUUID(), NewUUID()
-	s.Save(wire.Agent{ID: live, Cwd: "file:///src/one", State: wire.AgentStateFinished, EndedReason: &endTurn, CreatedAt: 50, LastActivityAt: 60})
-	s.Save(archived(old, 20, 1))
-	s.Save(archived(older, 10, 2))
+	must(t, s.Save(wire.Agent{ID: live, Cwd: "file:///src/one", State: wire.AgentStateFinished, EndedReason: &endTurn, CreatedAt: 50, LastActivityAt: 60}))
+	must(t, s.Save(archived(old, 20, 1)))
+	must(t, s.Save(archived(older, 10, 2)))
 	if got := s.LiveAgents(); len(got) != 1 || got[0].ID != live {
 		t.Fatalf("live %v", got)
 	}
@@ -404,14 +404,14 @@ func TestLiveIndexAndArchivedTally(t *testing.T) {
 		t.Fatalf("again %+v, visited %d more", again, s.Visited()-before)
 	}
 	// An archived record changes: its tally is summed again.
-	s.Save(archived(old, 20, 5))
+	must(t, s.Save(archived(old, 20, 5)))
 	if got := s.ArchivedIn("/src/one"); got.CostToDate["USD"] != 7 {
 		t.Fatalf("after a cost %+v", got)
 	}
 	// The live one is archived, an archived one comes back, one is deleted.
-	s.Save(archived(live, 50, 1))
-	s.Save(wire.Agent{ID: old, Cwd: "file:///src/one", State: wire.AgentStateFinished, EndedReason: &endTurn, CreatedAt: 20, LastActivityAt: 70})
-	s.Delete(older)
+	must(t, s.Save(archived(live, 50, 1)))
+	must(t, s.Save(wire.Agent{ID: old, Cwd: "file:///src/one", State: wire.AgentStateFinished, EndedReason: &endTurn, CreatedAt: 20, LastActivityAt: 70}))
+	must(t, s.Delete(older))
 	if got := s.LiveAgentsIn("/src/one"); len(got) != 1 || got[0].ID != old {
 		t.Fatalf("live after the moves %v", got)
 	}

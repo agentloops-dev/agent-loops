@@ -546,3 +546,18 @@ func TestTheAgentsBotsPRIsTheReposOwn(t *testing.T) {
 	equal(t, isTrusted("CONTRIBUTOR", "alexec-agents[bot]", "Bot"), false, "the bot's comments are still the agents' own")
 	equal(t, isTrustedActor("alexec-agents[bot]", "Bot", false, "", false), true, "the bot's labels")
 }
+
+// A refusal keeps what GitHub said (#6639), so the person learns why, as the gate-2 wireframe shows.
+func TestARefusalKeepsWhatGitHubSaid(t *testing.T) {
+	for body, want := range map[string]string{
+		`{"message":"Resource not accessible by integration","documentation_url":"x"}`: "GitHub said 403 (Resource not accessible by integration)",
+		`{"message":"Must have admin rights to Repository."}`:                          "GitHub said 403 (Must have admin rights to Repository)",
+		`{}`:       "GitHub said 403",
+		`not json`: "GitHub said 403",
+		``:         "GitHub said 403",
+	} {
+		res := &http.Response{StatusCode: http.StatusForbidden, Header: http.Header{}}
+		got := failure(res, []byte(body))
+		equal(t, [3]any{got.Kind, got.Message, got.Refused}, [3]any{Failed, want, true}, body)
+	}
+}

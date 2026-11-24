@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"slices"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -44,9 +46,12 @@ func TestGitTrailersWritesTheBlockByTheRule(t *testing.T) {
 	d.lineageDo(func() { d.link(issue, epic, lineage.RelPartOf, lineage.SourceForge) })
 	d.lineageSettle(5 * time.Second)
 
+	var askedMu sync.Mutex
 	asked := []wire.LineageNode{}
 	was := trailerItem
 	trailerItem = func(_ context.Context, _ *Daemon, kind string, n wire.LineageNode) (wire.ForgeItemDetail, error) {
+		askedMu.Lock()
+		defer askedMu.Unlock()
 		asked = append(asked, n)
 		return wire.ForgeItemDetail{Reviewers: []wire.ForgeReviewer{
 			{Login: "alexec", State: wire.ForgeReviewerStateApproved}, {Login: "bob", State: wire.ForgeReviewerStateCommented}}}, nil
@@ -62,7 +67,7 @@ func TestGitTrailersWritesTheBlockByTheRule(t *testing.T) {
 		return got.Lines
 	}
 
-	// The defaults: Cost off, every other trailer on; Requested-by and Attested have no value.
+	// The defaults: Cost off, every other trailer on; Requested-by has no value.
 	got := lines(2, map[string]any{"session": a.ID, "pr": 10})
 	want := []string{
 		"Made-by: claude-code:claude-opus-5-5",
@@ -113,6 +118,87 @@ func TestGitTrailersWritesTheBlockByTheRule(t *testing.T) {
 	}
 	if !slices.Equal(got, want) {
 		t.Fatalf("got\n%q\nwant\n%q", got, want)
+	}
+}
+
+// Epic with no part-of link in lineage (#6530): the resolve cache's parent, from the forge's
+// plan, with no forge read of the issue; with no parent known either, the read of the issue
+// and the read of the PR run at the same time, so a commit waits for one, not both.
+//
+// Not parallel: it replaces trailerItem.
+func TestGitTrailersEpicReadsTheForgeOnceAtMostAndAtTheSameTime(t *testing.T) {
+	d, c := start(t, t.TempDir())
+	defer d.Shutdown()
+	dir := folder(t, c, 1)
+	d.repoMu.Lock()
+	d.repos = map[string]forgeRepo{dir: {"github", "alexec/agents"}}
+	d.repoMu.Unlock()
+	repo := forgeRepo{"github", "alexec/agents"}
+	issue, epic := repo.issue(7), repo.issue(5)
+	a := seeded(t, d, dir, func(a *wire.Agent) {
+		a.Labels = []wire.SessionLabel{{Value: "#7", Owner: wire.SessionLabelOwnerAgent}}
+	})
+
+	var mu sync.Mutex
+	asked := []string{}
+	both := make(chan struct{})
+	was := trailerItem
+	trailerItem = func(ctx context.Context, _ *Daemon, kind string, n wire.LineageNode) (wire.ForgeItemDetail, error) {
+		mu.Lock()
+		asked = append(asked, kind)
+		if len(asked) == 2 {
+			close(both)
+		}
+		mu.Unlock()
+		if kind == lineage.KindIssue {
+			// The issue's read waits for the PR's: it ends only when both run at once.
+			select {
+			case <-both:
+			case <-ctx.Done():
+				return wire.ForgeItemDetail{}, ctx.Err()
+			}
+			p := repo.issue(6)
+			return wire.ForgeItemDetail{Item: wire.ForgeItem{Parent: &p}}, nil
+		}
+		return wire.ForgeItemDetail{Reviewers: []wire.ForgeReviewer{{Login: "alexec", State: wire.ForgeReviewerStateApproved}}}, nil
+	}
+	defer func() { trailerItem = was }()
+
+	lines := func(id int, params map[string]any) []string {
+		t.Helper()
+		var got wire.GitTrailers
+		if err := json.Unmarshal(c.call(t, id, "git/trailers", params), &got); err != nil {
+			t.Fatal(err)
+		}
+		return got.Lines
+	}
+	epicLine := func(got []string) string {
+		for _, l := range got {
+			if strings.HasPrefix(l, "Epic: ") {
+				return l
+			}
+		}
+		return ""
+	}
+
+	// No parent known: the issue and the PR are read at the same time.
+	got := lines(2, map[string]any{"session": a.ID, "pr": 10})
+	if epicLine(got) != "Epic: #6" || !slices.Contains(got, "Approved-by: alexec") {
+		t.Fatalf("%q", got)
+	}
+	slices.Sort(asked)
+	if !slices.Equal(asked, []string{lineage.KindIssue, lineage.KindPR}) {
+		t.Fatalf("the forge was asked for %v", asked)
+	}
+
+	// The forge's plan said the parent: no read of the issue.
+	d.resolvedFromForgeLocked([]wire.ForgeItem{{Node: issue, Title: "t", State: "open", Parent: &epic}})
+	asked = nil
+	if got := lines(3, map[string]any{"session": a.ID}); epicLine(got) != "Epic: #5" {
+		t.Fatalf("%q", got)
+	}
+	if len(asked) != 0 {
+		t.Fatalf("the forge was asked for %v, with the parent in the resolve cache", asked)
 	}
 }
 

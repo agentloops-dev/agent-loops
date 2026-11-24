@@ -85,6 +85,50 @@ func TestNoMetricsOnTheClientsPort(t *testing.T) {
 	}
 }
 
+// The heap and goroutine profiles are served beside /metrics, behind its token (#6583).
+func TestProfilesAreServedBesideTheMetrics(t *testing.T) {
+	t.Parallel()
+	p := startPlane(t, store.NewMemory(), controllink.NewPrivateKey())
+	addr, err := p.s.ServeMetrics("127.0.0.1:0", "s3cret-scrape")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for path, want := range map[string]string{
+		"/debug/pprof/heap?debug=1&gc=1": "heap profile:",
+		"/debug/pprof/goroutine?debug=1": "goroutine profile: total",
+		"/debug/pprof/goroutine?debug=2": "goroutine ",
+	} {
+		if status, _ := scrape(t, "http://"+addr+path, ""); status != http.StatusUnauthorized {
+			t.Errorf("%s with no token: %d", path, status)
+		}
+		if status, body := scrape(t, "http://"+addr+path, "s3cret-scrape"); status != http.StatusOK || !strings.Contains(body, want) {
+			t.Errorf("%s: %d %.200s", path, status, body)
+		}
+	}
+	// With no debug, the gzipped protobuf that go tool pprof reads.
+	if status, body := scrape(t, "http://"+addr+"/debug/pprof/heap", "s3cret-scrape"); status != http.StatusOK || !strings.HasPrefix(body, "\x1f\x8b") {
+		t.Fatalf("%d %q", status, body[:min(len(body), 16)])
+	}
+	// No other profile, and no index.
+	for _, path := range []string{"/debug/pprof/", "/debug/pprof/profile", "/debug/pprof/allocs", "/debug/pprof/cmdline"} {
+		if status, _ := scrape(t, "http://"+addr+path, "s3cret-scrape"); status != http.StatusNotFound {
+			t.Errorf("%s: %d", path, status)
+		}
+	}
+}
+
+// The port clients and hosts use serves no profile.
+func TestNoProfilesOnTheClientsPort(t *testing.T) {
+	t.Parallel()
+	p := startPlane(t, store.NewMemory(), controllink.NewPrivateKey())
+	for _, path := range []string{"/debug/pprof/heap", "/debug/pprof/heap?debug=1", "/debug/pprof/goroutine?debug=1", "/debug/pprof/goroutine?debug=2", "/debug/pprof/"} {
+		status, body := scrape(t, p.url+path, "")
+		if strings.Contains(body, "profile:") || strings.Contains(body, "goroutine ") || strings.HasPrefix(body, "\x1f\x8b") {
+			t.Errorf("%s: %d %.200s", path, status, body)
+		}
+	}
+}
+
 // A token is asked for when given, and needed for any address but loopback.
 func TestMetricsTakeAToken(t *testing.T) {
 	t.Parallel()
@@ -121,6 +165,26 @@ func TestMetricsMethodsAreBounded(t *testing.T) {
 	}
 	if !strings.Contains(b.String(), `agents_control_requests_total{method="other",result="error"} 50`) {
 		t.Fatal(b.String())
+	}
+}
+
+func TestCapacityMetricsAreGauges(t *testing.T) {
+	m := newMetrics()
+	m.setCapacity(controlCapacity{level: "near", reason: "pressure_io", load1: 2.1, load5: 1.5,
+		pressureMemory: 5.1, pressureIO: 10.1, memoryAvailable: 123, swapUsed: 4, heapInuse: 456,
+		goroutines: 7, openFiles: 8})
+	m.setStoreSize(9, 1000)
+	var b strings.Builder
+	m.write(&b, gauges{phase: phaseServing})
+	for _, want := range []string{
+		"agents_control_capacity_level 1", `agents_control_capacity_reason{reason="pressure_io"} 1`,
+		"agents_control_load_per_core 2.1", "agents_control_pressure_io_full_avg60 10.1",
+		"agents_control_memory_available_bytes 123", "agents_control_heap_inuse_bytes 456",
+		"agents_control_goroutines 7", "agents_control_open_files 8", "agents_control_store_files 9", "agents_control_store_bytes 1000",
+	} {
+		if !strings.Contains(b.String(), want) {
+			t.Errorf("metrics do not contain %q", want)
+		}
 	}
 }
 

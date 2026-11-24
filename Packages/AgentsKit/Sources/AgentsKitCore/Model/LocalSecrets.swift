@@ -33,6 +33,14 @@ public struct LocalSecret: Codable, Sendable, Hashable, Identifiable {
 
 public struct LocalSecrets: Codable, Sendable, Hashable {
     public var secrets: [LocalSecret]
+    /// When the machine's key for its secrets does not read (#6632): what that stops and what to do, in the host's words.
+    /// Nil when the key reads. Status ▸ Secrets shows it at the top.
+    public var keyProblem: String?
+
+    public init(secrets: [LocalSecret], keyProblem: String? = nil) {
+        self.secrets = secrets
+        self.keyProblem = keyProblem
+    }
 }
 
 /// secrets/localRemove's request (#6335): one secret a machine keeps for itself, taken out of its store.

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/acp"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/diskjson"
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
@@ -29,7 +30,8 @@ import (
 //     files it knows (every runtime's but OpenCode's) in the home that launch names. A copy that
 //     could not be erased is tried again at the next start, erasureTries times at most.
 //   - erased.json is every agent this machine deleted, so a restore skips it. Backups carry
-//     it, and a restore adds the backup's to this machine's.
+//     it, and a restore adds the backup's to this machine's. An ID ages out, so a restore also
+//     refuses an archive made before the cutoff (restoreCutoff, #6715).
 //
 // A sweep of many agents costs one runtime start per runtime and account, none for an
 // adapter that said it cannot delete, and one rewrite of each file per batch (#2427).
@@ -41,7 +43,7 @@ const (
 	erasureKeep  = 7 * 24 * time.Hour
 	erasureWait  = 60 * time.Second
 	erasedMost   = 10000
-	erasedKeep   = 400 * 24 * time.Hour
+	erasedKeep   = store.MaxAge
 )
 
 // erasure is one runtime copy to erase.
@@ -54,7 +56,7 @@ type erasure struct {
 	Tries     int       `json:"tries"`
 }
 
-// eraser is the Daemon's queue state. mu guards both files; busy is whether the eraser is
+// eraser is the Daemon's queue state. mu guards erasures.json; busy is whether the eraser is
 // taking an entry, for a test to wait on. cannotDelete is each adapter install that said it
 // cannot delete a session, by adapterKey; only eraseLoop reads and writes it.
 type eraser struct {
@@ -64,7 +66,7 @@ type eraser struct {
 	cannotDelete map[string]bool
 }
 
-// writeErasureFile writes erasures.json and erased.json; a test counts the writes.
+// writeErasureFile writes erasures.json; a test counts the writes.
 var writeErasureFile = store.WriteAtomically
 
 // adapterKey names a runtime's adapter as installed: its path and when it last changed, so
@@ -90,7 +92,6 @@ var erasing = true
 var sessionIDShape = regexp.MustCompile(`^[A-Za-z0-9_-]{1,128}$`)
 
 func (d *Daemon) erasuresPath() string { return filepath.Join(d.Store.Loc.Root, erasuresFile) }
-func (d *Daemon) erasedPath() string   { return filepath.Join(d.Store.Loc.Root, erasedFile) }
 
 // startErasures drops the entries that are too old or tried too often, and starts the
 // eraser on the rest.
@@ -163,16 +164,16 @@ func (d *Daemon) queueErasures(agents []*wire.Agent) {
 	held := d.heldSessions(agents)
 	d.erasures.mu.Lock()
 	defer d.erasures.mu.Unlock()
-	erased := map[wire.UUID]time.Time{}
+	erased := map[string]wire.Date{}
 	var add []erasure
 	for _, a := range agents {
-		erased[a.ID] = nowFunc()
+		erased[string(a.ID)] = wire.DateOf(nowFunc())
 		if d.mayErase(a, held) {
 			add = append(add, erasure{AgentID: a.ID, RuntimeID: a.RuntimeID, SessionID: *a.RuntimeSessionID,
 				AccountID: a.AccountID, QueuedAt: nowFunc()})
 		}
 	}
-	d.noteErasedLocked(erased)
+	d.noteErased(erased)
 	if len(add) == 0 {
 		return
 	}
@@ -479,47 +480,48 @@ func (d *Daemon) writeErasures(q []erasure) {
 
 // MARK: The erased list
 
-func (d *Daemon) readErasedLocked() map[wire.UUID]time.Time {
-	list := map[wire.UUID]time.Time{}
-	if b, err := os.ReadFile(d.erasedPath()); err == nil {
-		if err := json.Unmarshal(b, &list); err != nil {
-			log.Printf("erased.json: %v; starting with none", err)
-		}
-	}
-	return list
+// openErased opens the erased list. It evicts; restoreCutoff refuses what an ID that went
+// would have refused.
+func (d *Daemon) openErased() *store.JSONFile[wire.Date] {
+	return smallFile(d, store.Spec{Name: erasedFile, Kind: "document", Scope: "machine",
+		Bounds: store.Bounds{MaxRecordBytes: 128, MaxCount: erasedMost, MaxAge: erasedKeep, Action: store.EvictOldest}},
+		func() string { return filepath.Join(d.Store.Loc.Root, erasedFile) }, func(at *wire.Date) *wire.Date { return at })
 }
 
-// noteErasedLocked adds IDs to the erased list, keeping it to erasedMost IDs of the last
-// erasedKeep, the newest.
-func (d *Daemon) noteErasedLocked(add map[wire.UUID]time.Time) {
-	list := d.readErasedLocked()
-	for id, at := range add {
-		id = wire.UUID(strings.ToUpper(string(id)))
-		if old, ok := list[id]; !ok || at.Before(old) {
-			list[id] = at
+// noteErased adds IDs to the erased list. An ID keeps its latest time, so a list merged in
+// never takes the cutoff back.
+func (d *Daemon) noteErased(add map[string]wire.Date) {
+	if err := d.erased.Update(func(list map[string]wire.Date) error {
+		for id, at := range add {
+			if id = strings.ToUpper(id); backupAgentID(id) {
+				list[id] = max(list[id], at)
+			}
 		}
-	}
-	cutoff := nowFunc().Add(-erasedKeep)
-	maps.DeleteFunc(list, func(_ wire.UUID, at time.Time) bool { return at.Before(cutoff) })
-	if over := len(list) - erasedMost; over > 0 {
-		ids := slices.SortedFunc(maps.Keys(list), func(a, b wire.UUID) int { return list[a].Compare(list[b]) })
-		for _, id := range ids[:over] {
-			delete(list, id)
-		}
-	}
-	b, _ := json.Marshal(list)
-	if err := writeErasureFile(d.erasedPath(), b, 0o600); err != nil {
+		return nil
+	}); err != nil {
 		log.Printf("erased.json: %v", err)
 	}
 }
 
 // takeErasedList adds a backup's erased list to this machine's.
 func (d *Daemon) takeErasedList(b []byte) {
-	var add map[wire.UUID]time.Time
-	if json.Unmarshal(b, &add) != nil || len(add) == 0 {
-		return
+	var add map[string]wire.Date
+	if diskjson.Unmarshal(b, &add) == nil && len(add) > 0 {
+		d.noteErased(add)
 	}
-	d.erasures.mu.Lock()
-	defer d.erasures.mu.Unlock()
-	d.noteErasedLocked(add)
+}
+
+// restoreCutoff is the time an archive must be made after to be restored: list may have let
+// go of an ID erased at it or before. That is the list's age, or, when the list is full, the
+// time of the last ID that its count keeps. Nothing else takes an ID out, so it never goes back.
+func restoreCutoff(list map[string]wire.Date) time.Time {
+	cutoff := nowFunc().Add(-erasedKeep)
+	if len(list) < erasedMost {
+		return cutoff
+	}
+	times := slices.Sorted(maps.Values(list))
+	if full := times[len(times)-erasedMost].Time(); full.After(cutoff) {
+		return full
+	}
+	return cutoff
 }

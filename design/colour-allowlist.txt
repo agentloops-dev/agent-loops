@@ -14,3 +14,7 @@ Web/src/views/Multiplier.tsx #3A78E6 the Blob's own outline (design/logo/blob)
 Web/src/views/Multiplier.tsx #0E1A3A the Blob's own eyes and mouth (design/logo/blob)
 Web/src/views/WorkTimeline.tsx * the features' palette: the window's system colours, one per feature
 www/assets/icon.svg * the Blob mark, made by scripts/design.sh marks
+www/illustration.css * the hero's picture and the redacted file: the Earth and the Blob in a space suit, the same in light and dark and scraps of paper (#6830, #6859)
+www/brands.css * the integrations' brand colours, from Simple Icons (CC0): a brand's own colour is not ours to theme (#6830)
+Web/src/model/commitTrailers.ts #6334 not a colour: an issue number, the Fixes trailer's example value (#6533)
+Web/src/model/commitTrailers.ts #5627 not a colour: an issue number, the Epic trailer's example value (#6533)

@@ -67,7 +67,7 @@ func pickMachine(list []wire.ControlMachine, want, here, hostname string) (wire.
 				return m, nil
 			}
 		}
-		return wire.ControlMachine{}, &exit{code: exitError, msg: fmt.Sprintf("No machine %q on this control plane.\nSee them: loops status", want)}
+		return wire.ControlMachine{}, &exit{code: exitError, msg: fmt.Sprintf("No machine %q on this control plane.\nSee them: loops auth status", want)}
 	}
 	for _, m := range list {
 		if m.MachineID != nil && here != "" && strings.EqualFold(*m.MachineID, here) {
@@ -180,7 +180,7 @@ func folderNamed(ctx context.Context, c caller, host, name string) (wire.URL, er
 
 // notInFolder is state 6 of the wireframes (exit 2).
 func notInFolder(p place) error {
-	return &exit{code: exitNoFolder, msg: fmt.Sprintf("%s is not in a folder on %s.\nAdd it:   loops folder add\nOr name one: loops --folder <name> \"…\"",
+	return &exit{code: exitNoFolder, msg: fmt.Sprintf("%s is not in a folder on %s.\nAdd it: loops folders add",
 		tilde(p.dir), p.machineName())}
 }
 

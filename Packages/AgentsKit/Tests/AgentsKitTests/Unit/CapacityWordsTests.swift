@@ -19,6 +19,16 @@ struct CapacityWordsTests {
         #expect(CapacityWords.level(.full) == "At capacity")
     }
 
+    /// A machine's row says why (#6596), and only the level when the machine does not say.
+    @Test func theRowSaysWhichCapacity() {
+        #expect(CapacityWords.level(.full, reason: .cpu) == "At CPU capacity")
+        #expect(CapacityWords.level(.full, reason: .memory) == "At memory capacity")
+        #expect(CapacityWords.level(.near, reason: .cpu) == "Near CPU capacity")
+        #expect(CapacityWords.level(.near, reason: .memory) == "Near memory capacity")
+        #expect(CapacityWords.level(.full, reason: nil) == "At capacity")
+        #expect(CapacityWords.level(.ok, reason: .cpu) == nil)
+    }
+
     @Test func theWarningNamesWhatPutItThere() {
         #expect(CapacityWords.warning(usage(.ok), name: "This Mac") == nil)
         #expect(CapacityWords.warning(usage(nil), name: "This Mac") == nil)

@@ -21,7 +21,23 @@ export const keepYours = "Keep Yours";
 export const useTheAgents = "Use the Agent's";
 export const offersLabel = "Secrets saved by agents";
 
-/** The offers a person sees in Needs you: every one with a conflict, and one with none that no app took yet. */
+/**
+ * The card that shows an offer (#6626): its machine and name, not its id, so a new offer of the same name keeps the
+ * card's progress and failure. SecretOffer.card in Swift.
+ */
+export function offerCard(offer: Pick<SecretOffer, "machine" | "name">): string {
+  return `${offer.machine}|${offer.name}`;
+}
+
+/**
+ * The offers a person sees in Needs you, oldest first: every one with a conflict, and one with none that no app took
+ * yet; for each machine and name, its newest offer only (#6626).
+ */
 export function waitingOffers(offers: readonly SecretOffer[]): SecretOffer[] {
-  return [...offers].sort((a, b) => a.savedAt.localeCompare(b.savedAt));
+  const newest = new Map<string, SecretOffer>();
+  for (const offer of offers) {
+    const had = newest.get(offerCard(offer));
+    if (!had || had.savedAt <= offer.savedAt) newest.set(offerCard(offer), offer);
+  }
+  return [...newest.values()].sort((a, b) => a.savedAt.localeCompare(b.savedAt) || offerCard(a).localeCompare(offerCard(b)));
 }

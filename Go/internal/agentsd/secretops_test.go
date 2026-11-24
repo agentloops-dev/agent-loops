@@ -56,10 +56,10 @@ func TestEachUseOfASecretIsRecorded(t *testing.T) {
 	setFor(t, &secretOpsBatch, time.Hour)
 	home := t.TempDir()
 	personalHomeFor(t, home)
-	os.MkdirAll(filepath.Join(home, ".agents"), 0o700)
-	os.WriteFile(filepath.Join(home, ".agents", "mcp.json"), []byte(`{"mcpServers":{
+	must(t, os.MkdirAll(filepath.Join(home, ".agents"), 0o700))
+	must(t, os.WriteFile(filepath.Join(home, ".agents", "mcp.json"), []byte(`{"mcpServers":{
 		"notes":{"url":"https://notes.example.com/${API_TOKEN}"},
-		"docs":{"url":"https://docs.example.com/mcp","headers":{"Authorization":"Bearer ${DOCS_KEY}"}}}}`), 0o600)
+		"docs":{"url":"https://docs.example.com/mcp","headers":{"Authorization":"Bearer ${DOCS_KEY}"}}}}`), 0o600))
 	d, _ := start(t, t.TempDir())
 	t.Cleanup(d.Shutdown)
 	told := toldSecretOps(d)
@@ -101,7 +101,7 @@ func TestEachUseOfASecretIsRecorded(t *testing.T) {
 		t.Fatal(got)
 	}
 	// A deny is recorded too.
-	go d.askSecretUse(a.ID, "API_TOKEN", wire.SecretUseFill, "Example.com", time.Second)
+	go func() { _, _ = d.askSecretUse(a.ID, "API_TOKEN", wire.SecretUseFill, "Example.com", time.Second) }() // the deny's error: the events below check it
 	answerUse(t, d, openSecretUse(t, d), secretUseDeny)
 	if denied := secretEvents(d, "secret.denied"); len(denied) != 1 || denied[0].Details["place"] != "example.com" || denied[0].Details["use"] != "fill" {
 		t.Fatalf("%+v", denied)

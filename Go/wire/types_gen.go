@@ -2311,6 +2311,12 @@ const CapacityLevelOk CapacityLevel = "ok"
 const CapacityLevelNear CapacityLevel = "near"
 const CapacityLevelFull CapacityLevel = "full"
 
+// What put a machine near or at capacity (#6596): cpu (its load per core) or memory (critical memory pressure). It stays while the level waits to fall. Absent at ok.
+type CapacityReason string
+
+const CapacityReasonCpu CapacityReason = "cpu"
+const CapacityReasonMemory CapacityReason = "memory"
+
 // machine/capacity (#5374): a host tells the control plane its capacity level and 5-minute load per core, on connect and when either moves enough to matter.
 type CapacityReport struct {
 	Level CapacityLevel `json:"level"`
@@ -2324,6 +2330,8 @@ type CapacityState struct {
 
 	// The level as a sentence's subject and verb: "this Mac is near capacity" or "this Mac is at capacity". Absent at ok.
 	Words *string `json:"words,omitzero"`
+
+	Reason *CapacityReason `json:"reason,omitzero"`
 }
 
 // An approval of an MCP server or skill (#2019, M5): for a group, or for one person.
@@ -3004,7 +3012,7 @@ type CommitTrailerValue string
 const CommitTrailerValueOn CommitTrailerValue = "on"
 const CommitTrailerValueOff CommitTrailerValue = "off"
 
-// The trailers of an agent's commits, each on or off, by the trailer's key (#6365): Made-by, Cost, Tokens, Duration, Session, Fixes, Epic, Requested-by, Approved-by, Attested, Co-authored-by. Fixes also writes Refs. A key the machine does not know is kept and has no effect; a key no layer sets has its default (every key on, Cost off). Record trailers (Made-by, Session, Fixes, Epic, Requested-by, Approved-by, Attested, Co-authored-by): on is tighter. Spend trailers (Cost, Tokens, Duration): off is tighter. Its rules in policy/effective are commitTrailers.<key>.
+// The trailers of an agent's commits, each on or off, by the trailer's key (#6365): Made-by, Cost, Tokens, Duration, Session, Fixes, Epic, Requested-by, Approved-by, Co-authored-by. Fixes also writes Refs. A key the machine does not know is kept and has no effect; a key no layer sets has its default (every key on, Cost off). Record trailers (Made-by, Session, Fixes, Epic, Requested-by, Approved-by, Co-authored-by): on is tighter. Spend trailers (Cost, Tokens, Duration): off is tighter. Its rules in policy/effective are commitTrailers.<key>.
 type CommitTrailers map[string]CommitTrailerValue
 
 type ConfigChoice struct {
@@ -3671,6 +3679,43 @@ type ControlAuth struct {
 	PublicKey Data `json:"publicKey,omitzero"`
 }
 
+type ControlCapacityBoard struct {
+	Copies []ControlCapacityCopy `json:"copies"`
+}
+
+// One live control plane copy's most recent capacity look (#6590).
+type ControlCapacityCopy struct {
+	Copy string `json:"copy"`
+
+	Level CapacityLevel `json:"level"`
+
+	Reason string `json:"reason"`
+
+	LoadPerCore float64 `json:"loadPerCore"`
+
+	LoadPerCore5 float64 `json:"loadPerCore5"`
+
+	PressureMemoryFullAvg60 float64 `json:"pressureMemoryFullAvg60"`
+
+	PressureIOFullAvg60 float64 `json:"pressureIOFullAvg60"`
+
+	MemoryAvailableBytes float64 `json:"memoryAvailableBytes"`
+
+	SwapUsedPercent float64 `json:"swapUsedPercent"`
+
+	HeapInuseBytes float64 `json:"heapInuseBytes"`
+
+	Goroutines int64 `json:"goroutines"`
+
+	OpenFiles int64 `json:"openFiles"`
+
+	StoreFiles int64 `json:"storeFiles"`
+
+	StoreBytes int64 `json:"storeBytes"`
+
+	At Date `json:"at"`
+}
+
 // control/clientChanged: a client paired, renamed, connected or went; nothing says list them all again.
 type ControlClientChanged struct {
 	Client *UUID `json:"client,omitzero"`
@@ -3754,6 +3799,9 @@ type ControlMachine struct {
 	// The capabilities this host said in its last machine/hello (#1748). None from a host older than #1748.
 	Capabilities []string `json:"capabilities,omitzero"`
 
+	// The levels of this host's capabilities that are not GA, as it said them in its last machine/hello (#6579). None from a host older than that.
+	Maturity Maturity `json:"maturity,omitzero"`
+
 	// Of the control plane's required capabilities for hosts, the ones this host does not have (#1748). Its state is then needsUpdate.
 	Missing []string `json:"missing,omitzero"`
 
@@ -3797,7 +3845,7 @@ type ControlNewKey struct {
 	Proof string `json:"proof"`
 }
 
-// control/notice (#1002): something an admin should know, that no click caused: lastAdminKept, groupSharesOrphaned or removeRequested; words to show, and whom it is about.
+// control/notice (#1002, #6590): something an admin should know, with no click: lastAdminKept, groupSharesOrphaned, removeRequested, control.busy or control.ok; words to show, and whom it is about.
 type ControlNotice struct {
 	Kind string `json:"kind"`
 
@@ -3881,6 +3929,9 @@ type ControlStatus struct {
 	// The capabilities the control plane has (#1748).
 	Capabilities []string `json:"capabilities,omitzero"`
 
+	// The levels of the control plane's capabilities that are not GA (#6579). None from a control plane older than that.
+	Maturity Maturity `json:"maturity,omitzero"`
+
 	Required *RequiredCapabilities `json:"required,omitzero"`
 
 	// Who this client belongs to (#994).
@@ -3932,6 +3983,38 @@ type CredentialsOffer struct {
 	NotRelayed map[string]SignInWantedReason `json:"notRelayed,omitzero"`
 
 	SignIns []string `json:"signIns,omitzero"`
+}
+
+// The landings in one hour or one day for cycle time (#6648): their samples, and how many merged PRs in it had no recorded start and so cannot be drawn.
+type CycleTimeBucket struct {
+	Samples []CycleTimeSample `json:"samples"`
+
+	NoStart int64 `json:"noStart"`
+}
+
+// cycletime/history's answer (#6648): the pull requests that landed, by the hour (168 hours) and the day (90 days), from this machine's lineage store on each ask. Each sample carries its durations, repo and level, so the clients take the medians, P85 and shares over the range a person picks.
+type CycleTimeHistory struct {
+	Hours map[string]CycleTimeBucket `json:"hours"`
+
+	Days map[string]CycleTimeBucket `json:"days"`
+
+	Now string `json:"now"`
+
+	// The host's time zone, an IANA identifier such as America/Los_Angeles, that its hour and day stamps are in (#1267). Absent from a host too old to say: read as the viewer's own.
+	TimeZone *string `json:"timeZone,omitzero"`
+}
+
+// One issue that landed in a cycle-time bucket (#6648). cycle is from the start of work (#3562) to its last PR's merge. coding is from that start to the PR's creation (#4553), and pr from the creation to the merge: when the PR's opening was not recorded, coding and pr are absent and do not add to cycle.
+type CycleTimeSample struct {
+	Cycle float64 `json:"cycle"`
+
+	Coding *float64 `json:"coding,omitzero"`
+
+	Pr *float64 `json:"pr,omitzero"`
+
+	Level string `json:"level"`
+
+	Repo string `json:"repo"`
 }
 
 type DaemonStatus struct {
@@ -4724,18 +4807,6 @@ type DomainClaimState string
 const DomainClaimStateNotProved DomainClaimState = "notProved"
 const DomainClaimStateProved DomainClaimState = "proved"
 
-type DraftCheck struct {
-	Passed bool `json:"passed"`
-
-	Workspaces []MachineInfo `json:"workspaces,omitzero"`
-
-	Problem *string `json:"problem,omitzero"`
-
-	SSH *string `json:"ssh,omitzero"`
-
-	NoSSH *bool `json:"noSSH,omitzero"`
-}
-
 type DraftOptionsNotification struct {
 	DraftID UUID `json:"draftID"`
 
@@ -4744,28 +4815,6 @@ type DraftOptionsNotification struct {
 	Commands []SlashCommand `json:"commands"`
 
 	Failure *string `json:"failure,omitzero"`
-}
-
-type DraftQuestion struct {
-	ID UUID `json:"id"`
-
-	Kind string `json:"kind"`
-
-	Workspace *string `json:"workspace,omitzero"`
-
-	Cost *string `json:"cost,omitzero"`
-
-	Text string `json:"text"`
-
-	Yes string `json:"yes"`
-}
-
-type DraftStep struct {
-	At Date `json:"at"`
-
-	Kind string `json:"kind"`
-
-	Text string `json:"text"`
 }
 
 // Whether an agent's lease of the browser or the screen waits on a person (#4264). ask: each lease opens a Needs you request of kind approve (secretUse, use browser or screen), the default on a machine that a person uses; always: it never asks, the default on a machine that only agents use (a bot's machine, a Codespace), where ask counts as always, as nobody answers there; off: the tools are not offered, and are refused.
@@ -6400,7 +6449,7 @@ type ForgeLinked struct {
 	URL *string `json:"url,omitzero"`
 }
 
-// forge/issues and forge/pulls (#3129): a page of items, the last updated first. cursor is the next page, absent at the end. errors says a forge that could not be read (not connected, a rate limit), and the items of the others still come. forges says what each forge on the page fills (#4361); absent from an earlier daemon. total is how many items the whole list has, the sum of each forge's count, kept from each forge's first page (#4396); absent when a forge on the list gives no count (ForgeCapabilities.total) or could not be read, and from an earlier daemon.
+// forge/issues and forge/pulls (#3129): a page of items, the last updated first. cursor is the next page, absent at the end. errors says a forge that could not be read (not connected, a rate limit), and the items of the others still come. forges says what each forge on the page fills (#4361); absent from an earlier daemon. total is how many items the whole list has, the sum of each forge's count, kept from each forge's first page (#4396); absent when a forge on the list gives no count (ForgeCapabilities.total) or could not be read, and from an earlier daemon. scopes says what the list reads (#6641).
 type ForgeList struct {
 	Items []ForgeItem `json:"items"`
 
@@ -6411,6 +6460,12 @@ type ForgeList struct {
 	Errors []ForgeListError `json:"errors,omitzero"`
 
 	Forges []ForgeCapabilities `json:"forges,omitzero"`
+
+	// When the forges were read for this answer (#6642): an answer agentsd kept has the time of its read, not of the call. Absent from an earlier daemon.
+	ReadAt *Date `json:"readAt,omitzero"`
+
+	// What the list reads (#6641): one entry per repo or project, as forge:name (github:example/shop), or one per forge that names no repos. Two machines whose lists read the same scopes give the same list, so a client asks one of them. Absent from an earlier daemon.
+	Scopes []string `json:"scopes,omitzero"`
 }
 
 // forge/listAll (#5592): each machine's ForgeList, as it answered, in the order of the caller's machines. The machines list the same repos, so a client merges the items by ref. unreached is the machines that have the method but did not answer (offline, too slow or an error); notAsked counts the machines past the most one call asks (50), as in DocsListAll.
@@ -6422,7 +6477,7 @@ type ForgeListAll struct {
 	NotAsked int64 `json:"notAsked"`
 }
 
-// forge/listAll (#5592): forge/issues (kind issues) or forge/pulls (kind pulls) of the caller's machines in one call. state, board, label, assignee (a login) and limit are as in ForgeListRequest, for each machine (label and assignee: #6383). pages, for a next page, names the machines to ask and each one's cursor, as its last list gave it; without pages every machine is asked for its first page.
+// forge/listAll (#5592): forge/issues (kind issues) or forge/pulls (kind pulls) of the caller's machines in one call. state, board, label, assignee (a login), sort and limit are as in ForgeListRequest, for each machine (label and assignee: #6383; sort: #6538). pages, for a next page, names the machines to ask and each one's cursor, as its last list gave it; without pages every machine is asked for its first page.
 type ForgeListAllRequest struct {
 	Kind string `json:"kind"`
 
@@ -6434,7 +6489,13 @@ type ForgeListAllRequest struct {
 
 	Assignee *string `json:"assignee,omitzero"`
 
+	// The order, as in ForgeListRequest (#6538): priority, else the last updated first; each machine sorts its own list.
+	Sort *string `json:"sort,omitzero"`
+
 	Limit *int64 `json:"limit,omitzero"`
+
+	// As in ForgeListRequest (#6642): each machine reads its forges, not its kept answer. A Refresh.
+	Fresh *bool `json:"fresh,omitzero"`
 
 	Pages []MachineCursor `json:"pages,omitzero"`
 }
@@ -6467,6 +6528,12 @@ type ForgeListRequest struct {
 	Board *string `json:"board,omitzero"`
 
 	UpdatedSince *Date `json:"updatedSince,omitzero"`
+
+	// The order (#6538): priority (High, then Medium, then Low, then none, each newest first; GitHub by the priority labels, Jira by its priority field), else the last updated first. A forge that cannot sort by priority (GitLab) lists the last updated first; an older daemon too.
+	Sort *string `json:"sort,omitzero"`
+
+	// true reads the forges, not the answer agentsd keeps for a minute (#6642): a Refresh. An earlier daemon leaves it out and can answer from its copy.
+	Fresh *bool `json:"fresh,omitzero"`
 }
 
 // forge/log (#3130): the last lines of each failed check's log, as plain text.
@@ -8213,6 +8280,9 @@ type LocalSecretRemoveRequest struct {
 // secrets/localList (#5122): every secret this machine keeps for itself, by name. No value.
 type LocalSecrets struct {
 	Secrets []LocalSecret `json:"secrets"`
+
+	// When this machine's key for its secrets does not read (#6632): what that stops and what the person does, in the person's words, with the key store's own error. Left out when the key reads. Status ▸ Secrets shows it at the top.
+	KeyProblem *string `json:"keyProblem,omitzero"`
 }
 
 // A person's machine lock (#3399, specs/3399-machine-lock): its chain of entries, the root first. lock/get, and machine/lock to a machine.
@@ -9313,6 +9383,9 @@ type MachineHello struct {
 
 	// The capabilities this host has (#1748): each one whose methods it all serves, and the ones it declares. None from a host older than #1748.
 	Capabilities []string `json:"capabilities,omitzero"`
+
+	// The levels of this host's capabilities that are not GA (#6579). None from a host older than that.
+	Maturity Maturity `json:"maturity,omitzero"`
 }
 
 // The control plane's answer to machine/hello (#4100): what it can do, so the host asks only what it answers, such as machine/accounts with machine.accounts/1. An older control plane answers {}: no list, so the host asks it nothing new.
@@ -9321,7 +9394,7 @@ type MachineHelloAnswer struct {
 	Capabilities []string `json:"capabilities,omitzero"`
 }
 
-// One workspace, as its provider last listed it. `state` is running, starting, stopping, stopped or unknown; or failed, for a make that failed, with the provider's `reason` (#3972). `joining` while New Machine waits for it to join the control plane, and `notJoined` once the control plane gave up waiting (#4610).
+// One workspace, as its provider last listed it. `state` is running, starting, stopping, stopped or unknown; or failed, for a make that failed, with the provider's `reason` (#3972). `joining` while New Machine waits for it to join the control plane, and `notJoined` once the control plane gave up waiting (#4610). `setup` while it is being made (#6073).
 type MachineInfo struct {
 	ID string `json:"id"`
 
@@ -9351,6 +9424,9 @@ type MachineInfo struct {
 
 	// Why the control plane gave up waiting for it to join, once it did (#4610): the row says so, with Delete.
 	NotJoined *string `json:"notJoined,omitzero"`
+
+	// The set-up of a machine New Machine is making (#6073), from the press of Make until it joins (then its machine's row has it): what each step did, with its time, and on a failure the provider's words. A client that opens late reads where it is here.
+	Setup *MachineSetup `json:"setup,omitzero"`
 }
 
 // machines/install (MachineInstall.Request): a server over ssh, with its key, the fingerprint trusted, a tunnel. Add as Machine… names the provider and the workspace too (#3497): a codespace whose provider a machine carries is installed from that machine, with the token kept there.
@@ -9533,17 +9609,6 @@ type MachineProjects struct {
 	Projects []ProjectTools `json:"projects"`
 }
 
-// machine/providerDraft: a writing agent called one of the writer's tools (#858).
-type MachineProviderDraftCall struct {
-	AgentID UUID `json:"agentID"`
-
-	Draft UUID `json:"draft"`
-
-	Tool string `json:"tool"`
-
-	Arguments JSONValue `json:"arguments,omitzero"`
-}
-
 type MachineRef string
 
 // machine/release (#2178): the release the control plane names, as X.Y.Z.
@@ -9606,6 +9671,28 @@ type MachineSetup struct {
 	ReadyAt *Date `json:"readyAt,omitzero"`
 }
 
+// A project folder a pool machine gets: path is the folder on its sources, project the project id it joins there, and sources the person's machines that have it, those online first.
+type MachineSetupProject struct {
+	Path string `json:"path"`
+
+	Project *string `json:"project,omitzero"`
+
+	Sources []MachineSetupSource `json:"sources"`
+}
+
+// setup/projects: how the host's get of the pool's projects stands (#6890). pool is false for a machine no warm pool made, which gets none. finished with no problem: folders are the folders here.
+type MachineSetupProjects struct {
+	Pool bool `json:"pool"`
+
+	Finished bool `json:"finished"`
+
+	Detail *string `json:"detail,omitzero"`
+
+	Problem *string `json:"problem,omitzero"`
+
+	Folders []string `json:"folders"`
+}
+
 // machine/setupStep: a step of the installer on the machine (agents-host install --join), as it starts, goes on and ends (#5355).
 type MachineSetupReport struct {
 	Step MachineSetupStepID `json:"step"`
@@ -9620,6 +9707,14 @@ type MachineSetupReport struct {
 
 	// The digits the host shows for its join token (controllink.TokenCode), said with the compare step: the control plane compares them with the ones it made (#5359).
 	Code *string `json:"code,omitzero"`
+}
+
+type MachineSetupSource struct {
+	Machine MachineRef `json:"machine"`
+
+	Name string `json:"name"`
+
+	Online bool `json:"online"`
 }
 
 type MachineSetupState string
@@ -9660,6 +9755,19 @@ const MachineSetupStepIDRuntimes MachineSetupStepID = "runtimes"
 const MachineSetupStepIDProjects MachineSetupStepID = "projects"
 const MachineSetupStepIDSignIn MachineSetupStepID = "signIn"
 const MachineSetupStepIDSmoke MachineSetupStepID = "smoke"
+
+// machine/setupWork: what the set-up of the machine that asks has left (#6890, #6896). pool: a warm pool made it. claimed: a person claimed it, and from is the first of steps 6 to 8 that waits to run (absent: none does now). done: nothing is left to ask for. projects: the project folders to get, at their last commit. An unclaimed machine does step 6 and stops.
+type MachineSetupWork struct {
+	Pool bool `json:"pool"`
+
+	Claimed bool `json:"claimed"`
+
+	Done bool `json:"done"`
+
+	From *MachineSetupStepID `json:"from,omitzero"`
+
+	Projects []MachineSetupProject `json:"projects"`
+}
 
 // machine/status on channel 0 (#691 US4): each agent working or waiting on a person, and the next scheduled workflow.
 type MachineStatus struct {
@@ -9966,6 +10074,16 @@ type MarketplacesListRequest struct {
 
 	Destination *SkillDestination `json:"destination,omitzero"`
 }
+
+// The levels of a part's capabilities that are not GA (#6052, #6579), capability to level, as Packages/Wire/maturity.json has them in that part's build. A capability it does not name is GA. A part older than #6579 sends none, and a client then reads the list it was built with.
+type Maturity map[string]MaturityLevel
+
+// How ready a capability that is not GA is (#6052).
+type MaturityLevel string
+
+const MaturityLevelPilot MaturityLevel = "pilot"
+const MaturityLevelAlpha MaturityLevel = "alpha"
+const MaturityLevelBeta MaturityLevel = "beta"
 
 // The kernel's memory pressure (#4578): macOS kern.memorystatus_vm_pressure_level, or Linux PSI memory (warn when some avg10 is 10% or more, critical when full avg10 is 10% or more).
 type MemoryPressure string
@@ -12014,7 +12132,6 @@ const PolicyRuleNameCommitTrailersFixes PolicyRuleName = "commitTrailers.Fixes"
 const PolicyRuleNameCommitTrailersEpic PolicyRuleName = "commitTrailers.Epic"
 const PolicyRuleNameCommitTrailersRequestedBy PolicyRuleName = "commitTrailers.Requested-by"
 const PolicyRuleNameCommitTrailersApprovedBy PolicyRuleName = "commitTrailers.Approved-by"
-const PolicyRuleNameCommitTrailersAttested PolicyRuleName = "commitTrailers.Attested"
 const PolicyRuleNameCommitTrailersCoAuthoredBy PolicyRuleName = "commitTrailers.Co-authored-by"
 
 // The rules a layer sets (#2957, data-model.md "PolicyRules"): the same shape on the organisation, your and a folder's layer (FR-002). Every field is optional: absent sets nothing.
@@ -12441,7 +12558,7 @@ type PromptRequest struct {
 	Voice *bool `json:"voice,omitzero"`
 }
 
-// providers/add and providers/update. `machine` is the machine that carries the provider (#3398): it runs the provider's server, and `secrets` go on to it, never kept by the control plane. None picks the caller's first online machine; an update without it keeps the one it has. `cli` is not kept; `draft` is the draft this accepts (#858).
+// providers/add and providers/update. `machine` is the machine that carries the provider (#3398): it runs the provider's server, and `secrets` go on to it, never kept by the control plane. None picks the caller's first online machine; an update without it keeps the one it has.
 type ProviderAdd struct {
 	ID *ProviderID `json:"id,omitzero"`
 
@@ -12449,35 +12566,24 @@ type ProviderAdd struct {
 
 	Kind string `json:"kind"`
 
-	Command *string `json:"command,omitzero"`
-
-	Args []string `json:"args,omitzero"`
-
-	URL *string `json:"url,omitzero"`
-
-	Headers map[string]string `json:"headers,omitzero"`
-
 	Commands JSONValue `json:"commands,omitzero"`
-
-	Map JSONValue `json:"map,omitzero"`
 
 	Machine *MachineRef `json:"machine,omitzero"`
 
 	Secrets map[string]string `json:"secrets,omitzero"`
-
-	CLI *string `json:"cli,omitzero"`
-
-	Draft *UUID `json:"draft,omitzero"`
 }
 
-// What a provider's machine answers to providers/carry, providers/keepSecrets, providers/forget and providers/ssh (#3398): the call's result, or why it failed, in words for the person. Channel 0 has no error path.
+// What a provider's machine answers to providers/carry, providers/keepSecrets, providers/forget and providers/ssh (#3398): the call's result, or why it failed, in words for the person, and for a failure a client can act on, its `code` (#6072). Channel 0 has no error path.
 type ProviderCarried struct {
 	Result JSONValue `json:"result,omitzero"`
 
 	Error *string `json:"error,omitzero"`
+
+	// Why it failed, for a client to say (#6072, W2b): denied (the person chose Deny), disconnected (the provider no longer takes the connection: it was removed there, or its refresh was refused), scope_missing (the person gave less than Agent Loops needs), account_inactive (the account can't make machines yet, such as no payment method), expired (the sign-in was not finished in time; start again).
+	Code *string `json:"code,omitzero"`
 }
 
-// providers/carry (#3398): the control plane asks the machine that carries a provider to call it. `record` is the provider's record, which never holds a secret; the machine runs its server with the secrets it keeps. `secrets` is only a draft's, for this call, and is not kept.
+// providers/carry (#3398): the control plane asks the machine that carries a provider to call it. `record` is the provider's record, which never holds a secret; the machine runs its server with the secrets it keeps. `secrets` is only those an add or an update was given to check with, for this call, and is not kept.
 type ProviderCarry struct {
 	Provider ProviderID `json:"provider"`
 
@@ -12517,85 +12623,6 @@ type ProviderCreated struct {
 	Joining bool `json:"joining"`
 }
 
-// providers/draftAnswer: yes or no to a question.
-type ProviderDraftAnswer struct {
-	Draft UUID `json:"draft"`
-
-	Question UUID `json:"question"`
-
-	Yes bool `json:"yes"`
-}
-
-// A draft answered with no agent: the server follows the contract, or a shipped map fits.
-type ProviderDraftAnswered struct {
-	Note string `json:"note"`
-
-	Map JSONValue `json:"map,omitzero"`
-
-	Preset *string `json:"preset,omitzero"`
-}
-
-// providers/draftCancel.
-type ProviderDraftRequest struct {
-	Draft UUID `json:"draft"`
-}
-
-// The writing agent's start, for the client that asked for the draft to sign (#3542): the machine that holds its person's lock takes no start the control plane sends in its own words. The client checks that it starts only a draft's writer (agents/start, the draft's purpose, sandboxed, no MCP servers or other folders), signs method and params as they are (a LockSignature to machine), and sends the signature with providers/draftSigned.
-type ProviderDraftSign struct {
-	Machine MachineRef `json:"machine"`
-
-	Method string `json:"method"`
-
-	Params string `json:"params"`
-}
-
-// providers/draftSigned (#3542): the signature of a draft's sign, which the control plane delivers with the start as it came.
-type ProviderDraftSigned struct {
-	Draft UUID `json:"draft"`
-
-	Lock LockSignature `json:"lock"`
-}
-
-// providers/draftStart (#858).
-type ProviderDraftStart struct {
-	Form ProviderAdd `json:"form"`
-
-	Secrets map[string]string `json:"secrets,omitzero"`
-
-	Provider *ProviderID `json:"provider,omitzero"`
-
-	RuntimeID string `json:"runtimeID"`
-}
-
-type ProviderDraftStarted struct {
-	Draft UUID `json:"draft"`
-
-	Answered *ProviderDraftAnswered `json:"answered,omitzero"`
-
-	Sign *ProviderDraftSign `json:"sign,omitzero"`
-}
-
-// control/providerDraft: how a draft stands, to the client that started it.
-type ProviderDraftUpdate struct {
-	Draft UUID `json:"draft"`
-
-	State string `json:"state"`
-
-	RuntimeName string `json:"runtimeName"`
-
-	Steps []DraftStep `json:"steps"`
-
-	Cost *string `json:"cost,omitzero"`
-
-	DraftJSON JSONValue `json:"draftJSON,omitzero"`
-
-	Check *DraftCheck `json:"check,omitzero"`
-
-	Question *DraftQuestion `json:"question,omitzero"`
-
-	Note *string `json:"note,omitzero"`
-}
-
 // providers/forget (#3398): the provider was removed; its machine ends its server and deletes its secrets.
 type ProviderForget struct {
 	Provider ProviderID `json:"provider"`
@@ -12615,6 +12642,86 @@ type ProviderList struct {
 	Providers []ProviderSummary `json:"providers"`
 }
 
+// A provider connected with OAuth (#6072): whose account and team its machine's token is for, and whether the provider still takes it. Never a token.
+type ProviderOAuth struct {
+	// The account's email, as the provider said at the connect.
+	Account *string `json:"account,omitzero"`
+
+	// The team the person chose on the provider's consent page.
+	Team *string `json:"team,omitzero"`
+
+	// disconnected: its last list was refused (the person removed Agent Loops at the provider, or its refresh failed): connect again.
+	State string `json:"state"`
+}
+
+// providers/oauth's result in ProviderCarried (#6072): for start, the address to open and its state; for finish, whose account the token is for and the names of the secrets kept. Never a token.
+type ProviderOAuthCarried struct {
+	URL *string `json:"url,omitzero"`
+
+	State *string `json:"state,omitzero"`
+
+	Account *string `json:"account,omitzero"`
+
+	Team *string `json:"team,omitzero"`
+
+	Scope *string `json:"scope,omitzero"`
+
+	SecretNames []string `json:"secretNames,omitzero"`
+}
+
+// providers/oauth (#6072): the control plane asks the machine that will carry a provider to start an OAuth connection (make and keep the PKCE verifier, about 10 minutes, and give the address to open) or to finish it (spend the code with the verifier, and keep the tokens for `provider` in ~/.agents-secrets). The verifier and the tokens never leave that machine.
+type ProviderOAuthCarry struct {
+	Op string `json:"op"`
+
+	Preset string `json:"preset"`
+
+	Provider *ProviderID `json:"provider,omitzero"`
+
+	// start: the web page's origin, for the hand-back page; none for the Mac and the Remote.
+	Origin *string `json:"origin,omitzero"`
+
+	State *string `json:"state,omitzero"`
+
+	Code *string `json:"code,omitzero"`
+
+	// finish: the provider's error from the callback, such as access_denied.
+	Error *string `json:"error,omitzero"`
+}
+
+// providers/oauthFinish (#6072): what the hand-back page gave the client (the code and the state, or the provider's error). The machine that started it spends the code; the control plane then adds the provider (or, with the `id` of one it started for, connects it again) with no secret of its own.
+type ProviderOAuthFinish struct {
+	State *string `json:"state,omitzero"`
+
+	Code *string `json:"code,omitzero"`
+
+	Error *string `json:"error,omitzero"`
+
+	// The new provider's name; none is the preset's provider's name, such as DigitalOcean.
+	Name *string `json:"name,omitzero"`
+}
+
+// providers/oauthStart (#6072): connect a provider with OAuth instead of a pasted token. `machine` carries it (the caller's first online one when none); `id` connects an existing provider again; `origin` is the web page's.
+type ProviderOAuthStart struct {
+	Preset string `json:"preset"`
+
+	Machine *MachineRef `json:"machine,omitzero"`
+
+	ID *ProviderID `json:"id,omitzero"`
+
+	Origin *string `json:"origin,omitzero"`
+}
+
+// providers/oauthStart's result: the provider's consent page to open (in ASWebAuthenticationSession, or a new window on the web), its state, and the machine that will keep the connection.
+type ProviderOAuthStarted struct {
+	URL string `json:"url"`
+
+	State string `json:"state"`
+
+	Machine MachineRef `json:"machine"`
+
+	MachineName *string `json:"machineName,omitzero"`
+}
+
 // providers/options: the New Machine form, a JSON Schema, with what New Machine would make (#4634). With no `id`, the person's default provider.
 type ProviderOptions struct {
 	Schema JSONValue `json:"schema"`
@@ -12632,23 +12739,6 @@ type ProviderOptions struct {
 // providers/remove, providers/refresh, providers/options (with no `id`, the default provider).
 type ProviderRequest struct {
 	ID *ProviderID `json:"id,omitzero"`
-}
-
-type ProviderRuntime struct {
-	ID string `json:"id"`
-
-	Name string `json:"name"`
-
-	IsDefault bool `json:"isDefault"`
-}
-
-// providers/runtimes: what may write, on which host, or why none.
-type ProviderRuntimes struct {
-	Runtimes []ProviderRuntime `json:"runtimes"`
-
-	Host *string `json:"host,omitzero"`
-
-	Why *string `json:"why,omitzero"`
 }
 
 // providers/ssh (#3398): the machine that carries a codespaces provider starts a codespace's agentsd over ssh (`start`), reads its host key (`hostKey`), installs Agents in it with a host code from the control plane (`install`, #3497), or holds an ssh session to it that GitHub counts as use while its machine works (`keepAwake`, renewed each few minutes, and `letSleep`, #4637), with the token it keeps. Its result is ProviderSSHResult.
@@ -12702,8 +12792,6 @@ type ProviderSummary struct {
 
 	Contract int64 `json:"contract"`
 
-	Mapped bool `json:"mapped"`
-
 	Preset *string `json:"preset,omitzero"`
 
 	Workspaces []MachineInfo `json:"workspaces"`
@@ -12733,6 +12821,9 @@ type ProviderSummary struct {
 
 	// The CLI its machines are reached through over ssh (gh, coder) when the control plane's machine has none (#3367). Absent when it needs none or has it.
 	SshToolMissing *string `json:"sshToolMissing,omitzero"`
+
+	// It is connected with OAuth (#6072), not a pasted token: whose account, and whether the connection still works. Absent for a pasted token.
+	Oauth *ProviderOAuth `json:"oauth,omitzero"`
 }
 
 // providers/deleteWorkspace (#4610): one of a provider's workspaces that no machine is linked to.
@@ -17188,7 +17279,7 @@ type WakeState struct {
 	OnPower bool `json:"onPower"`
 }
 
-// A warm pool (#5363, epic #5353, Part 2 of the machine set-up spec): a provider's machines kept made, joined, with Agents, runtimes and the pool's projects at their last commit, and signed in to nothing. minReady is what it keeps; maxSize is the most it holds, ready or being set up (a claimed machine leaves the pool and does not count). target is written by the control plane and is minReady until auto-scale. ready, settingUp, failedMakes and stoppedBecause are read-only. machines and claims are read-only too (#5366).
+// A warm pool (#5363, epic #5353, Part 2 of the machine set-up spec): a provider's machines kept made, joined, with Agents, runtimes and the pool's projects at their last commit, and signed in to nothing. minReady is what it keeps; maxSize is the most it holds, ready or being set up (a claimed machine leaves the pool and does not count). target is written by the control plane and is minReady until auto-scale. ready, settingUp, failedMakes, stoppedBecause and waitingBecause are read-only. machines and claims are read-only too (#5366).
 type WarmPool struct {
 	ID string `json:"id"`
 
@@ -17234,6 +17325,9 @@ type WarmPool struct {
 
 	// Why the pool stopped making, in the provider's words.
 	StoppedBecause *string `json:"stoppedBecause,omitzero"`
+
+	// Why a pool that is keeping makes no machine now: no machine that has its projects is online (#6890).
+	WaitingBecause *string `json:"waitingBecause,omitzero"`
 
 	// The machines the pool holds now, ready, setting up or failed (#5366): a line each on the pool's card.
 	Machines []WarmPoolMachine `json:"machines,omitzero"`

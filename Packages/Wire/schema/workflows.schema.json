@@ -798,33 +798,6 @@
       ],
       "additionalProperties": false
     },
-    "DraftCheck": {
-      "type": "object",
-      "properties": {
-        "passed": {
-          "type": "boolean"
-        },
-        "workspaces": {
-          "type": "array",
-          "items": {
-            "$ref": "machines.schema.json#/definitions/MachineInfo"
-          }
-        },
-        "problem": {
-          "type": "string"
-        },
-        "ssh": {
-          "type": "string"
-        },
-        "noSSH": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "passed"
-      ],
-      "additionalProperties": false
-    },
     "DraftOptionsNotification": {
       "type": "object",
       "properties": {
@@ -851,69 +824,6 @@
         "draftID",
         "options",
         "commands"
-      ],
-      "additionalProperties": false
-    },
-    "DraftQuestion": {
-      "type": "object",
-      "properties": {
-        "id": {
-          "$ref": "core.schema.json#/definitions/UUID"
-        },
-        "kind": {
-          "type": "string",
-          "enum": [
-            "start",
-            "stop",
-            "check"
-          ]
-        },
-        "workspace": {
-          "type": "string"
-        },
-        "cost": {
-          "type": "string"
-        },
-        "text": {
-          "type": "string"
-        },
-        "yes": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "id",
-        "kind",
-        "text",
-        "yes"
-      ],
-      "additionalProperties": false
-    },
-    "DraftStep": {
-      "type": "object",
-      "properties": {
-        "at": {
-          "$ref": "core.schema.json#/definitions/WireDate"
-        },
-        "kind": {
-          "type": "string",
-          "enum": [
-            "read",
-            "help",
-            "check",
-            "ask",
-            "prove",
-            "note"
-          ]
-        },
-        "text": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "at",
-        "kind",
-        "text"
       ],
       "additionalProperties": false
     },

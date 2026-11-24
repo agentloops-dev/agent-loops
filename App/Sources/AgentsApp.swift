@@ -114,6 +114,8 @@ struct AgentsApp: App {
             SettingsWindow()
                 .paperGround()
                 .environment(model)
+                // A folder's line in Agents ▸ Policy opens its Project Settings (#6534).
+                .environment(requests)
         }
         .defaultSize(width: SettingsWindow.size.width, height: SettingsWindow.size.height)
         .windowResizability(.contentMinSize)

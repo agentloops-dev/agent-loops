@@ -2213,6 +2213,14 @@ export type CapacityLevel =
   | "full";
 
 /**
+ * What put a machine near or at capacity (#6596): cpu (its load per core) or memory (critical
+ * memory pressure). It stays while the level waits to fall. Absent at ok.
+ */
+export type CapacityReason =
+  | "cpu"
+  | "memory";
+
+/**
  * machine/capacity (#5374): a host tells the control plane its capacity level and 5-minute load per
  * core, on connect and when either moves enough to matter.
  */
@@ -2232,6 +2240,7 @@ export interface CapacityState {
    * capacity". Absent at ok.
    */
   words?: string;
+  reason?: CapacityReason;
 }
 
 /** An approval of an MCP server or skill (#2019, M5): for a group, or for one person. */
@@ -2725,11 +2734,11 @@ export type CommitTrailerValue =
 
 /**
  * The trailers of an agent's commits, each on or off, by the trailer's key (#6365): Made-by, Cost,
- * Tokens, Duration, Session, Fixes, Epic, Requested-by, Approved-by, Attested, Co-authored-by.
- * Fixes also writes Refs. A key the machine does not know is kept and has no effect; a key no layer
- * sets has its default (every key on, Cost off). Record trailers (Made-by, Session, Fixes, Epic,
- * Requested-by, Approved-by, Attested, Co-authored-by): on is tighter. Spend trailers (Cost,
- * Tokens, Duration): off is tighter. Its rules in policy/effective are commitTrailers.<key>.
+ * Tokens, Duration, Session, Fixes, Epic, Requested-by, Approved-by, Co-authored-by. Fixes also
+ * writes Refs. A key the machine does not know is kept and has no effect; a key no layer sets has
+ * its default (every key on, Cost off). Record trailers (Made-by, Session, Fixes, Epic,
+ * Requested-by, Approved-by, Co-authored-by): on is tighter. Spend trailers (Cost, Tokens,
+ * Duration): off is tighter. Its rules in policy/effective are commitTrailers.<key>.
  */
 export type CommitTrailers = Record<string, CommitTrailerValue>;
 
@@ -3447,6 +3456,29 @@ export interface ControlAuth {
   publicKey?: Base64;
 }
 
+export interface ControlCapacityBoard {
+  copies: ControlCapacityCopy[];
+}
+
+/** One live control plane copy's most recent capacity look (#6590). */
+export interface ControlCapacityCopy {
+  copy: string;
+  level: CapacityLevel;
+  reason: string;
+  loadPerCore: number;
+  loadPerCore5: number;
+  pressureMemoryFullAvg60: number;
+  pressureIOFullAvg60: number;
+  memoryAvailableBytes: number;
+  swapUsedPercent: number;
+  heapInuseBytes: number;
+  goroutines: number;
+  openFiles: number;
+  storeFiles: number;
+  storeBytes: number;
+  at: WireDate;
+}
+
 /**
  * control/clientChanged: a client paired, renamed, connected or went; nothing says list them all
  * again.
@@ -3521,6 +3553,11 @@ export interface ControlMachine {
    */
   capabilities?: string[];
   /**
+   * The levels of this host's capabilities that are not GA, as it said them in its last
+   * machine/hello (#6579). None from a host older than that.
+   */
+  maturity?: Maturity;
+  /**
    * Of the control plane's required capabilities for hosts, the ones this host does not have
    * (#1748). Its state is then needsUpdate.
    */
@@ -3575,11 +3612,12 @@ export interface ControlNewKey {
 }
 
 /**
- * control/notice (#1002): something an admin should know, that no click caused: lastAdminKept,
- * groupSharesOrphaned or removeRequested; words to show, and whom it is about.
+ * control/notice (#1002, #6590): something an admin should know, with no click: lastAdminKept,
+ * groupSharesOrphaned, removeRequested, control.busy or control.ok; words to show, and whom it is
+ * about.
  */
 export interface ControlNotice {
-  kind: "lastAdminKept" | "groupSharesOrphaned" | "removeRequested";
+  kind: "lastAdminKept" | "groupSharesOrphaned" | "removeRequested" | "control.busy" | "control.ok";
   words: string;
   user?: string;
   group?: string;
@@ -3649,6 +3687,11 @@ export interface ControlStatus {
   unjoinedTunnels?: MachineTunnelChanged[];
   /** The capabilities the control plane has (#1748). */
   capabilities?: string[];
+  /**
+   * The levels of the control plane's capabilities that are not GA (#6579). None from a control
+   * plane older than that.
+   */
+  maturity?: Maturity;
   required?: RequiredCapabilities;
   /** Who this client belongs to (#994). */
   person?: ControlPerson;
@@ -3694,6 +3737,46 @@ export interface CredentialsOffer {
   ownSignInOnly: boolean;
   notRelayed?: Record<string, SignInWantedReason>;
   signIns?: string[];
+}
+
+/**
+ * The landings in one hour or one day for cycle time (#6648): their samples, and how many merged
+ * PRs in it had no recorded start and so cannot be drawn.
+ */
+export interface CycleTimeBucket {
+  samples: CycleTimeSample[];
+  noStart: number;
+}
+
+/**
+ * cycletime/history's answer (#6648): the pull requests that landed, by the hour (168 hours) and
+ * the day (90 days), from this machine's lineage store on each ask. Each sample carries its
+ * durations, repo and level, so the clients take the medians, P85 and shares over the range a
+ * person picks.
+ */
+export interface CycleTimeHistory {
+  hours: Record<string, CycleTimeBucket>;
+  days: Record<string, CycleTimeBucket>;
+  now: string;
+  /**
+   * The host's time zone, an IANA identifier such as America/Los_Angeles, that its hour and day
+   * stamps are in (#1267). Absent from a host too old to say: read as the viewer's own.
+   */
+  timeZone?: string;
+}
+
+/**
+ * One issue that landed in a cycle-time bucket (#6648). cycle is from the start of work (#3562) to
+ * its last PR's merge. coding is from that start to the PR's creation (#4553), and pr from the
+ * creation to the merge: when the PR's opening was not recorded, coding and pr are absent and do
+ * not add to cycle.
+ */
+export interface CycleTimeSample {
+  cycle: number;
+  coding?: number;
+  pr?: number;
+  level: string;
+  repo: string;
 }
 
 export interface DaemonStatus {
@@ -4459,34 +4542,11 @@ export type DomainClaimState =
   | "notProved"
   | "proved";
 
-export interface DraftCheck {
-  passed: boolean;
-  workspaces?: MachineInfo[];
-  problem?: string;
-  ssh?: string;
-  noSSH?: boolean;
-}
-
 export interface DraftOptionsNotification {
   draftID: UUID;
   options: ConfigOption[];
   commands: SlashCommand[];
   failure?: string;
-}
-
-export interface DraftQuestion {
-  id: UUID;
-  kind: "start" | "stop" | "check";
-  workspace?: string;
-  cost?: string;
-  text: string;
-  yes: string;
-}
-
-export interface DraftStep {
-  at: WireDate;
-  kind: "read" | "help" | "check" | "ask" | "prove" | "note";
-  text: string;
 }
 
 /**
@@ -6016,7 +6076,8 @@ export interface ForgeLinked {
  * limit), and the items of the others still come. forges says what each forge on the page fills
  * (#4361); absent from an earlier daemon. total is how many items the whole list has, the sum of
  * each forge's count, kept from each forge's first page (#4396); absent when a forge on the list
- * gives no count (ForgeCapabilities.total) or could not be read, and from an earlier daemon.
+ * gives no count (ForgeCapabilities.total) or could not be read, and from an earlier daemon. scopes
+ * says what the list reads (#6641).
  */
 export interface ForgeList {
   items: ForgeItem[];
@@ -6024,6 +6085,17 @@ export interface ForgeList {
   total?: number;
   errors?: ForgeListError[];
   forges?: ForgeCapabilities[];
+  /**
+   * When the forges were read for this answer (#6642): an answer agentsd kept has the time of its
+   * read, not of the call. Absent from an earlier daemon.
+   */
+  readAt?: WireDate;
+  /**
+   * What the list reads (#6641): one entry per repo or project, as forge:name
+   * (github:example/shop), or one per forge that names no repos. Two machines whose lists read the
+   * same scopes give the same list, so a client asks one of them. Absent from an earlier daemon.
+   */
+  scopes?: string[];
 }
 
 /**
@@ -6040,10 +6112,10 @@ export interface ForgeListAll {
 
 /**
  * forge/listAll (#5592): forge/issues (kind issues) or forge/pulls (kind pulls) of the caller's
- * machines in one call. state, board, label, assignee (a login) and limit are as in
- * ForgeListRequest, for each machine (label and assignee: #6383). pages, for a next page, names the
- * machines to ask and each one's cursor, as its last list gave it; without pages every machine is
- * asked for its first page.
+ * machines in one call. state, board, label, assignee (a login), sort and limit are as in
+ * ForgeListRequest, for each machine (label and assignee: #6383; sort: #6538). pages, for a next
+ * page, names the machines to ask and each one's cursor, as its last list gave it; without pages
+ * every machine is asked for its first page.
  */
 export interface ForgeListAllRequest {
   kind: "issues" | "pulls";
@@ -6051,7 +6123,16 @@ export interface ForgeListAllRequest {
   board?: string;
   label?: string;
   assignee?: string;
+  /**
+   * The order, as in ForgeListRequest (#6538): priority, else the last updated first; each machine
+   * sorts its own list.
+   */
+  sort?: "updated" | "priority";
   limit?: number;
+  /**
+   * As in ForgeListRequest (#6642): each machine reads its forges, not its kept answer. A Refresh.
+   */
+  fresh?: boolean;
   pages?: MachineCursor[];
 }
 
@@ -6083,6 +6164,17 @@ export interface ForgeListRequest {
   feature?: string;
   board?: string;
   updatedSince?: WireDate;
+  /**
+   * The order (#6538): priority (High, then Medium, then Low, then none, each newest first; GitHub
+   * by the priority labels, Jira by its priority field), else the last updated first. A forge that
+   * cannot sort by priority (GitLab) lists the last updated first; an older daemon too.
+   */
+  sort?: "updated" | "priority";
+  /**
+   * true reads the forges, not the answer agentsd keeps for a minute (#6642): a Refresh. An earlier
+   * daemon leaves it out and can answer from its copy.
+   */
+  fresh?: boolean;
 }
 
 /** forge/log (#3130): the last lines of each failed check's log, as plain text. */
@@ -7895,6 +7987,12 @@ export interface LocalSecretRemoveRequest {
 /** secrets/localList (#5122): every secret this machine keeps for itself, by name. No value. */
 export interface LocalSecrets {
   secrets: LocalSecret[];
+  /**
+   * When this machine's key for its secrets does not read (#6632): what that stops and what the
+   * person does, in the person's words, with the key store's own error. Left out when the key
+   * reads. Status ▸ Secrets shows it at the top.
+   */
+  keyProblem?: string;
 }
 
 /**
@@ -8778,6 +8876,11 @@ export interface MachineHello {
    * declares. None from a host older than #1748.
    */
   capabilities?: string[];
+  /**
+   * The levels of this host's capabilities that are not GA (#6579). None from a host older than
+   * that.
+   */
+  maturity?: Maturity;
 }
 
 /**
@@ -8794,7 +8897,7 @@ export interface MachineHelloAnswer {
  * One workspace, as its provider last listed it. `state` is running, starting, stopping, stopped or
  * unknown; or failed, for a make that failed, with the provider's `reason` (#3972). `joining` while
  * New Machine waits for it to join the control plane, and `notJoined` once the control plane gave
- * up waiting (#4610).
+ * up waiting (#4610). `setup` while it is being made (#6073).
  */
 export interface MachineInfo {
   id: string;
@@ -8825,6 +8928,12 @@ export interface MachineInfo {
    * with Delete.
    */
   notJoined?: string;
+  /**
+   * The set-up of a machine New Machine is making (#6073), from the press of Make until it joins
+   * (then its machine's row has it): what each step did, with its time, and on a failure the
+   * provider's words. A client that opens late reads where it is here.
+   */
+  setup?: MachineSetup;
 }
 
 /**
@@ -8995,14 +9104,6 @@ export interface MachineProjects {
   projects: ProjectTools[];
 }
 
-/** machine/providerDraft: a writing agent called one of the writer's tools (#858). */
-export interface MachineProviderDraftCall {
-  agentID: UUID;
-  draft: UUID;
-  tool: string;
-  arguments?: JSONValue;
-}
-
 /** machine/release (#2178): the release the control plane names, as X.Y.Z. */
 export interface MachineRelease {
   version: string;
@@ -9077,6 +9178,29 @@ export interface MachineSetup {
 }
 
 /**
+ * A project folder a pool machine gets: path is the folder on its sources, project the project id
+ * it joins there, and sources the person's machines that have it, those online first.
+ */
+export interface MachineSetupProject {
+  path: string;
+  project?: string;
+  sources: MachineSetupSource[];
+}
+
+/**
+ * setup/projects: how the host's get of the pool's projects stands (#6890). pool is false for a
+ * machine no warm pool made, which gets none. finished with no problem: folders are the folders
+ * here.
+ */
+export interface MachineSetupProjects {
+  pool: boolean;
+  finished: boolean;
+  detail?: string;
+  problem?: string;
+  folders: string[];
+}
+
+/**
  * machine/setupStep: a step of the installer on the machine (agents-host install --join), as it
  * starts, goes on and ends (#5355).
  */
@@ -9091,6 +9215,12 @@ export interface MachineSetupReport {
    * step: the control plane compares them with the ones it made (#5359).
    */
   code?: string;
+}
+
+export interface MachineSetupSource {
+  machine: MachineRef;
+  name: string;
+  online: boolean;
 }
 
 export type MachineSetupState =
@@ -9129,6 +9259,20 @@ export type MachineSetupStepID =
   | "projects"
   | "signIn"
   | "smoke";
+
+/**
+ * machine/setupWork: what the set-up of the machine that asks has left (#6890, #6896). pool: a warm
+ * pool made it. claimed: a person claimed it, and from is the first of steps 6 to 8 that waits to
+ * run (absent: none does now). done: nothing is left to ask for. projects: the project folders to
+ * get, at their last commit. An unclaimed machine does step 6 and stops.
+ */
+export interface MachineSetupWork {
+  pool: boolean;
+  claimed: boolean;
+  done: boolean;
+  from?: MachineSetupStepID;
+  projects: MachineSetupProject[];
+}
 
 /**
  * machine/status on channel 0 (#691 US4): each agent working or waiting on a person, and the next
@@ -9396,6 +9540,19 @@ export interface MarketplacesListRequest {
   kind?: CatalogKind;
   destination?: SkillDestination;
 }
+
+/**
+ * The levels of a part's capabilities that are not GA (#6052, #6579), capability to level, as
+ * Packages/Wire/maturity.json has them in that part's build. A capability it does not name is GA. A
+ * part older than #6579 sends none, and a client then reads the list it was built with.
+ */
+export type Maturity = Record<string, MaturityLevel>;
+
+/** How ready a capability that is not GA is (#6052). */
+export type MaturityLevel =
+  | "pilot"
+  | "alpha"
+  | "beta";
 
 /**
  * The kernel's memory pressure (#4578): macOS kern.memorystatus_vm_pressure_level, or Linux PSI
@@ -11396,7 +11553,6 @@ export type PolicyRuleName =
   | "commitTrailers.Epic"
   | "commitTrailers.Requested-by"
   | "commitTrailers.Approved-by"
-  | "commitTrailers.Attested"
   | "commitTrailers.Co-authored-by";
 
 /**
@@ -11823,44 +11979,45 @@ export interface PromptRequest {
 /**
  * providers/add and providers/update. `machine` is the machine that carries the provider (#3398):
  * it runs the provider's server, and `secrets` go on to it, never kept by the control plane. None
- * picks the caller's first online machine; an update without it keeps the one it has. `cli` is not
- * kept; `draft` is the draft this accepts (#858).
+ * picks the caller's first online machine; an update without it keeps the one it has.
  */
 export interface ProviderAdd {
   id?: ProviderID;
   name: string;
-  kind: "commands" | "stdio" | "http";
-  command?: string;
-  args?: string[];
-  url?: string;
-  headers?: Record<string, string>;
+  kind: "commands";
   commands?: JSONValue;
-  map?: JSONValue;
   machine?: MachineRef;
   secrets?: Record<string, string>;
-  cli?: string;
-  draft?: UUID;
 }
 
 /**
  * What a provider's machine answers to providers/carry, providers/keepSecrets, providers/forget and
- * providers/ssh (#3398): the call's result, or why it failed, in words for the person. Channel 0
- * has no error path.
+ * providers/ssh (#3398): the call's result, or why it failed, in words for the person, and for a
+ * failure a client can act on, its `code` (#6072). Channel 0 has no error path.
  */
 export interface ProviderCarried {
   result?: JSONValue;
   error?: string;
+  /**
+   * Why it failed, for a client to say (#6072, W2b): denied (the person chose Deny), disconnected
+   * (the provider no longer takes the connection: it was removed there, or its refresh was
+   * refused), scope_missing (the person gave less than Agent Loops needs), account_inactive (the
+   * account can't make machines yet, such as no payment method), expired (the sign-in was not
+   * finished in time; start again).
+   */
+  code?: "denied" | "disconnected" | "scope_missing" | "account_inactive" | "expired";
 }
 
 /**
  * providers/carry (#3398): the control plane asks the machine that carries a provider to call it.
  * `record` is the provider's record, which never holds a secret; the machine runs its server with
- * the secrets it keeps. `secrets` is only a draft's, for this call, and is not kept.
+ * the secrets it keeps. `secrets` is only those an add or an update was given to check with, for
+ * this call, and is not kept.
  */
 export interface ProviderCarry {
   provider: ProviderID;
   record: JSONValue;
-  call: "check" | "list" | "start" | "stop" | "options" | "create" | "delete" | "tools";
+  call: "check" | "list" | "start" | "stop" | "options" | "create" | "delete";
   workspace?: string;
   name?: string;
   options?: JSONValue;
@@ -11892,74 +12049,6 @@ export interface ProviderCreated {
   joining: boolean;
 }
 
-/** providers/draftAnswer: yes or no to a question. */
-export interface ProviderDraftAnswer {
-  draft: UUID;
-  question: UUID;
-  yes: boolean;
-}
-
-/** A draft answered with no agent: the server follows the contract, or a shipped map fits. */
-export interface ProviderDraftAnswered {
-  note: string;
-  map?: JSONValue;
-  preset?: string;
-}
-
-/** providers/draftCancel. */
-export interface ProviderDraftRequest {
-  draft: UUID;
-}
-
-/**
- * The writing agent's start, for the client that asked for the draft to sign (#3542): the machine
- * that holds its person's lock takes no start the control plane sends in its own words. The client
- * checks that it starts only a draft's writer (agents/start, the draft's purpose, sandboxed, no MCP
- * servers or other folders), signs method and params as they are (a LockSignature to machine), and
- * sends the signature with providers/draftSigned.
- */
-export interface ProviderDraftSign {
-  machine: MachineRef;
-  method: string;
-  params: string;
-}
-
-/**
- * providers/draftSigned (#3542): the signature of a draft's sign, which the control plane delivers
- * with the start as it came.
- */
-export interface ProviderDraftSigned {
-  draft: UUID;
-  lock: LockSignature;
-}
-
-/** providers/draftStart (#858). */
-export interface ProviderDraftStart {
-  form: ProviderAdd;
-  secrets?: Record<string, string>;
-  provider?: ProviderID;
-  runtimeID: string;
-}
-
-export interface ProviderDraftStarted {
-  draft: UUID;
-  answered?: ProviderDraftAnswered;
-  sign?: ProviderDraftSign;
-}
-
-/** control/providerDraft: how a draft stands, to the client that started it. */
-export interface ProviderDraftUpdate {
-  draft: UUID;
-  state: string;
-  runtimeName: string;
-  steps: DraftStep[];
-  cost?: string;
-  draftJSON?: JSONValue;
-  check?: DraftCheck;
-  question?: DraftQuestion;
-  note?: string;
-}
-
 /**
  * providers/forget (#3398): the provider was removed; its machine ends its server and deletes its
  * secrets.
@@ -11980,6 +12069,92 @@ export interface ProviderGroup {
 /** providers/list and control/providersChanged. */
 export interface ProviderList {
   providers: ProviderSummary[];
+}
+
+/**
+ * A provider connected with OAuth (#6072): whose account and team its machine's token is for, and
+ * whether the provider still takes it. Never a token.
+ */
+export interface ProviderOAuth {
+  /** The account's email, as the provider said at the connect. */
+  account?: string;
+  /** The team the person chose on the provider's consent page. */
+  team?: string;
+  /**
+   * disconnected: its last list was refused (the person removed Agent Loops at the provider, or its
+   * refresh failed): connect again.
+   */
+  state: "connected" | "disconnected";
+}
+
+/**
+ * providers/oauth's result in ProviderCarried (#6072): for start, the address to open and its
+ * state; for finish, whose account the token is for and the names of the secrets kept. Never a
+ * token.
+ */
+export interface ProviderOAuthCarried {
+  url?: string;
+  state?: string;
+  account?: string;
+  team?: string;
+  scope?: string;
+  secretNames?: string[];
+}
+
+/**
+ * providers/oauth (#6072): the control plane asks the machine that will carry a provider to start
+ * an OAuth connection (make and keep the PKCE verifier, about 10 minutes, and give the address to
+ * open) or to finish it (spend the code with the verifier, and keep the tokens for `provider` in
+ * ~/.agents-secrets). The verifier and the tokens never leave that machine.
+ */
+export interface ProviderOAuthCarry {
+  op: "start" | "finish";
+  preset: string;
+  provider?: ProviderID;
+  /** start: the web page's origin, for the hand-back page; none for the Mac and the Remote. */
+  origin?: string;
+  state?: string;
+  code?: string;
+  /** finish: the provider's error from the callback, such as access_denied. */
+  error?: string;
+}
+
+/**
+ * providers/oauthFinish (#6072): what the hand-back page gave the client (the code and the state,
+ * or the provider's error). The machine that started it spends the code; the control plane then
+ * adds the provider (or, with the `id` of one it started for, connects it again) with no secret of
+ * its own.
+ */
+export interface ProviderOAuthFinish {
+  state?: string;
+  code?: string;
+  error?: string;
+  /** The new provider's name; none is the preset's provider's name, such as DigitalOcean. */
+  name?: string;
+}
+
+/**
+ * providers/oauthStart (#6072): connect a provider with OAuth instead of a pasted token. `machine`
+ * carries it (the caller's first online one when none); `id` connects an existing provider again;
+ * `origin` is the web page's.
+ */
+export interface ProviderOAuthStart {
+  preset: "digitalocean-api";
+  machine?: MachineRef;
+  id?: ProviderID;
+  origin?: string;
+}
+
+/**
+ * providers/oauthStart's result: the provider's consent page to open (in
+ * ASWebAuthenticationSession, or a new window on the web), its state, and the machine that will
+ * keep the connection.
+ */
+export interface ProviderOAuthStarted {
+  url: string;
+  state: string;
+  machine: MachineRef;
+  machineName?: string;
 }
 
 /**
@@ -12004,19 +12179,6 @@ export interface ProviderOptions {
 /** providers/remove, providers/refresh, providers/options (with no `id`, the default provider). */
 export interface ProviderRequest {
   id?: ProviderID;
-}
-
-export interface ProviderRuntime {
-  id: string;
-  name: string;
-  isDefault: boolean;
-}
-
-/** providers/runtimes: what may write, on which host, or why none. */
-export interface ProviderRuntimes {
-  runtimes: ProviderRuntime[];
-  host?: string;
-  why?: string;
 }
 
 /**
@@ -12070,7 +12232,6 @@ export interface ProviderSummary {
   secrets: Record<string, boolean>;
   capabilities: string[];
   contract: number;
-  mapped: boolean;
   preset?: string;
   workspaces: MachineInfo[];
   listedAt?: WireDate;
@@ -12105,6 +12266,11 @@ export interface ProviderSummary {
    * has none (#3367). Absent when it needs none or has it.
    */
   sshToolMissing?: string;
+  /**
+   * It is connected with OAuth (#6072), not a pasted token: whose account, and whether the
+   * connection still works. Absent for a pasted token.
+   */
+  oauth?: ProviderOAuth;
 }
 
 /**
@@ -16105,8 +16271,8 @@ export interface WakeState {
  * made, joined, with Agents, runtimes and the pool's projects at their last commit, and signed in
  * to nothing. minReady is what it keeps; maxSize is the most it holds, ready or being set up (a
  * claimed machine leaves the pool and does not count). target is written by the control plane and
- * is minReady until auto-scale. ready, settingUp, failedMakes and stoppedBecause are read-only.
- * machines and claims are read-only too (#5366).
+ * is minReady until auto-scale. ready, settingUp, failedMakes, stoppedBecause and waitingBecause
+ * are read-only. machines and claims are read-only too (#5366).
  */
 export interface WarmPool {
   id: string;
@@ -16136,6 +16302,11 @@ export interface WarmPool {
   failedMakes?: number;
   /** Why the pool stopped making, in the provider's words. */
   stoppedBecause?: string;
+  /**
+   * Why a pool that is keeping makes no machine now: no machine that has its projects is online
+   * (#6890).
+   */
+  waitingBecause?: string;
   /**
    * The machines the pool holds now, ready, setting up or failed (#5366): a line each on the pool's
    * card.
@@ -17007,6 +17178,7 @@ export interface Methods {
   "console/live": { params: Empty; result: LiveBoard };
   "console/stopAgent": { params: ConsoleStopAgent; result: Empty };
   "console/teamWorkflows": { params: Empty; result: TeamWorkflows };
+  "control/capacity": { params: Empty; result: ControlCapacityBoard };
   "control/connectAnother": { params: ConnectAnotherRequest; result: Empty };
   "control/planeMove": { params: PlaneMoveAsk; result: Empty };
   "control/restart": { params: Empty; result: Empty };
@@ -17017,6 +17189,7 @@ export interface Methods {
   "control/status": { params: Empty; result: ControlStatus };
   "cost/state": { params: Empty; result: CostState };
   "credentials/offer": { params: CredentialsOffer; result: Empty };
+  "cycletime/history": { params: Empty; result: CycleTimeHistory };
   "daemon/policyState": { params: Empty; result: PolicyState };
   "dailyChecks/setSettings": { params: DailyChecksSettings; result: DailyChecksSettings };
   "dailyChecks/settings": { params: Empty; result: DailyChecksSettings };
@@ -17251,6 +17424,8 @@ export interface Methods {
   "providers/deleteWorkspace": { params: ProviderWorkspaceRequest; result: Empty };
   "providers/list": { params: Empty; result: ProviderList };
   "providers/makeDefault": { params: ProviderRequest; result: Empty };
+  "providers/oauthFinish": { params: ProviderOAuthFinish; result: ProviderSummary };
+  "providers/oauthStart": { params: ProviderOAuthStart; result: ProviderOAuthStarted };
   "providers/options": { params: ProviderRequest; result: ProviderOptions };
   "providers/refresh": { params: ProviderRequest; result: Empty };
   "providers/remove": { params: ProviderRequest; result: Empty };
@@ -17493,6 +17668,7 @@ export const MethodTarget = {
   "console/live": "control",
   "console/stopAgent": "control",
   "console/teamWorkflows": "control",
+  "control/capacity": "control",
   "control/connectAnother": "control",
   "control/planeMove": "control",
   "control/restart": "control",
@@ -17503,6 +17679,7 @@ export const MethodTarget = {
   "control/status": "control",
   "cost/state": "host",
   "credentials/offer": "host",
+  "cycletime/history": "host",
   "daemon/policyState": "host",
   "dailyChecks/setSettings": "host",
   "dailyChecks/settings": "host",
@@ -17737,6 +17914,8 @@ export const MethodTarget = {
   "providers/deleteWorkspace": "control",
   "providers/list": "control",
   "providers/makeDefault": "control",
+  "providers/oauthFinish": "control",
+  "providers/oauthStart": "control",
   "providers/options": "control",
   "providers/refresh": "control",
   "providers/remove": "control",
@@ -17882,6 +18061,7 @@ export interface Notifications {
   "clone/changed": CloneNotification;
   "control/budgetRequested": BudgetRequest;
   "control/capReached": CapReached;
+  "control/capacityChanged": ControlCapacityCopy;
   "control/clientChanged": ControlClientChanged;
   "control/connectReported": ConnectReport;
   "control/governanceRequested": CatalogRequest;
@@ -18098,7 +18278,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   CancelWaitRequest: { required: ["agentID"], optional: [] },
   CapReached: { required: ["user", "name", "spentUSD", "capUSD", "until"], optional: ["group"] },
   CapacityReport: { required: ["level"], optional: ["loadPerCore5"] },
-  CapacityState: { required: ["level"], optional: ["words"] },
+  CapacityState: { required: ["level"], optional: ["words", "reason"] },
   CatalogApproval: { required: ["kind", "name", "by", "at"], optional: ["source", "group", "groupName", "user", "userName"] },
   CatalogApprovalList: { required: ["approvals"], optional: [] },
   CatalogAsk: { required: ["kind", "name"], optional: ["source", "why"] },
@@ -18184,13 +18364,15 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   ContinueInNewSessionRequest: { required: ["agentID"], optional: ["requestID"] },
   ContinueWhenBack: { required: ["at", "resetKnown"], optional: [] },
   ControlAuth: { required: ["id", "nonce", "mac", "kind"], optional: ["epoch", "capabilities", "page", "publicKey"] },
+  ControlCapacityBoard: { required: ["copies"], optional: [] },
+  ControlCapacityCopy: { required: ["copy", "level", "reason", "loadPerCore", "loadPerCore5", "pressureMemoryFullAvg60", "pressureIOFullAvg60", "memoryAvailableBytes", "swapUsedPercent", "heapInuseBytes", "goroutines", "openFiles", "storeFiles", "storeBytes", "at"], optional: [] },
   ControlClientChanged: { required: [], optional: ["client", "removed"] },
   ControlCodeShown: { required: ["text", "expires"], optional: ["command"] },
   ControlCutOff: { required: ["why"], optional: ["provider"] },
   ControlEndpoint: { required: ["url"], optional: ["pin"] },
   ControlHello: { required: ["v", "name", "control", "nonce", "copy"], optional: ["previous"] },
   ControlInstallProgress: { required: ["name", "step"], optional: [] },
-  ControlMachine: { required: ["id", "name", "platform", "version", "state", "reach"], optional: ["machineID", "signInFrom", "gitFrom", "gitAsks", "tunnel", "workspace", "implementation", "capabilities", "missing", "owner", "capacity", "loadPerCore5", "capacityAt", "setup", "labels", "autoLabels"] },
+  ControlMachine: { required: ["id", "name", "platform", "version", "state", "reach"], optional: ["machineID", "signInFrom", "gitFrom", "gitAsks", "tunnel", "workspace", "implementation", "capabilities", "maturity", "missing", "owner", "capacity", "loadPerCore5", "capacityAt", "setup", "labels", "autoLabels"] },
   ControlMoved: { required: ["url", "controlKey", "name"], optional: ["pin"] },
   ControlNewKey: { required: ["key", "proof"], optional: [] },
   ControlNotice: { required: ["kind", "words"], optional: ["user", "group"] },
@@ -18198,11 +18380,14 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   ControlPerson: { required: ["id", "name", "role"], optional: ["localOwner"] },
   ControlPush: { required: ["sealed"], optional: [] },
   ControlPushItem: { required: ["needID", "alert"], optional: ["headline"] },
-  ControlStatus: { required: ["name", "version", "machineID"], optional: ["homeHost", "startedAt", "port", "you", "web", "restartable", "publicWeb", "publicViews", "thisMacHost", "folderDetection", "unjoinedTunnels", "capabilities", "required", "person", "joinCommand"] },
+  ControlStatus: { required: ["name", "version", "machineID"], optional: ["homeHost", "startedAt", "port", "you", "web", "restartable", "publicWeb", "publicViews", "thisMacHost", "folderDetection", "unjoinedTunnels", "capabilities", "maturity", "required", "person", "joinCommand"] },
   Cost: { required: ["amount", "currency"], optional: [] },
   CostLimits: { required: [], optional: ["perAgent", "daily", "perAgentTokens", "dailyTokens"] },
   CostState: { required: ["limits", "today", "day", "tokensToday"], optional: ["note", "organisation", "setBy"] },
   CredentialsOffer: { required: ["runtimes", "ownSignInOnly"], optional: ["notRelayed", "signIns"] },
+  CycleTimeBucket: { required: ["samples", "noStart"], optional: [] },
+  CycleTimeHistory: { required: ["hours", "days", "now"], optional: ["timeZone"] },
+  CycleTimeSample: { required: ["cycle", "level", "repo"], optional: ["coding", "pr"] },
   DaemonStatus: { required: ["turnsInFlight", "agentsLive"], optional: [] },
   DailyChecksSettings: { required: ["enabled", "every"], optional: [] },
   DayRecap: { required: ["agents", "peakAgents", "longestClear"], optional: ["prsMerged"] },
@@ -18265,10 +18450,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   DocsServer: { required: ["name", "state"], optional: ["proof", "message"] },
   DocsSource: { required: ["id", "kind", "name", "state"], optional: ["folder", "message"] },
   DomainClaim: { required: ["domain", "provider", "state", "txtName", "txtValue", "sendHere", "require"], optional: ["lastGood", "failingSince", "claimed"] },
-  DraftCheck: { required: ["passed"], optional: ["workspaces", "problem", "ssh", "noSSH"] },
   DraftOptionsNotification: { required: ["draftID", "options", "commands"], optional: ["failure"] },
-  DraftQuestion: { required: ["id", "kind", "text", "yes"], optional: ["workspace", "cost"] },
-  DraftStep: { required: ["at", "kind", "text"], optional: [] },
   DropboxPutRequest: { required: ["folder", "name", "data"], optional: ["subfolder"] },
   DropboxPutResponse: { required: ["path"], optional: [] },
   EarnedAchievement: { required: ["id", "at"], optional: [] },
@@ -18383,11 +18565,11 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   ForgeLabels: { required: ["labels"], optional: [] },
   ForgeLead: { required: ["session", "state"], optional: ["title"] },
   ForgeLinked: { required: ["node", "title", "state"], optional: ["url"] },
-  ForgeList: { required: ["items"], optional: ["cursor", "total", "errors", "forges"] },
+  ForgeList: { required: ["items"], optional: ["cursor", "total", "errors", "forges", "readAt", "scopes"] },
   ForgeListAll: { required: ["lists", "unreached", "notAsked"], optional: [] },
-  ForgeListAllRequest: { required: ["kind"], optional: ["state", "board", "label", "assignee", "limit", "pages"] },
+  ForgeListAllRequest: { required: ["kind"], optional: ["state", "board", "label", "assignee", "sort", "limit", "fresh", "pages"] },
   ForgeListError: { required: ["forge", "message"], optional: [] },
-  ForgeListRequest: { required: [], optional: ["folder", "state", "label", "assignee", "query", "cursor", "limit", "feature", "board", "updatedSince"] },
+  ForgeListRequest: { required: [], optional: ["folder", "state", "label", "assignee", "query", "cursor", "limit", "feature", "board", "updatedSince", "sort", "fresh"] },
   ForgeLog: { required: ["text"], optional: [] },
   ForgeLogRequest: { required: ["node"], optional: ["check"] },
   ForgeLogins: { required: [], optional: ["github", "gitlab", "linear", "jira", "forgejo", "bitbucket", "azureDevOps"] },
@@ -18520,7 +18702,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   LiveFrame: { required: ["source", "agentID", "capturedAt"], optional: ["image", "locked", "narration", "title", "width", "height"] },
   LocalSecret: { required: ["name", "setAt"], optional: ["lastOp", "backedUp", "needsApproval", "description"] },
   LocalSecretRemoveRequest: { required: ["name"], optional: [] },
-  LocalSecrets: { required: ["secrets"], optional: [] },
+  LocalSecrets: { required: ["secrets"], optional: ["keyProblem"] },
   Lock: { required: ["person", "entries"], optional: [] },
   LockAdd: { required: ["entries"], optional: [] },
   LockBody: { required: ["v", "kind", "person", "signer", "at", "key"], optional: ["previous", "sealingKey", "id", "name", "clientKind", "expires", "sealed"] },
@@ -18603,9 +18785,9 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   MachineFolderSent: { required: [], optional: ["state", "folder", "facts", "pack", "read"] },
   MachineForgeBoards: { required: ["machine", "machineName", "boards"], optional: [] },
   MachineForgeList: { required: ["machine", "machineName", "list"], optional: [] },
-  MachineHello: { required: ["version", "platform", "machineID"], optional: ["host", "name", "implementation", "capabilities"] },
+  MachineHello: { required: ["version", "platform", "machineID"], optional: ["host", "name", "implementation", "capabilities", "maturity"] },
   MachineHelloAnswer: { required: [], optional: ["capabilities"] },
-  MachineInfo: { required: ["id", "name", "state"], optional: ["ssh", "tunnel", "hostKeyRenews", "cost", "idleTimeoutMinutes", "host", "reason", "joining", "notJoined"] },
+  MachineInfo: { required: ["id", "name", "state"], optional: ["ssh", "tunnel", "hostKeyRenews", "cost", "idleTimeoutMinutes", "host", "reason", "joining", "notJoined", "setup"] },
   MachineInstall: { required: ["destination"], optional: ["name", "key", "trust", "tunnel", "provider", "workspace"] },
   MachineJoinAsk: { required: ["name", "platform", "publicKey"], optional: ["version", "machineID", "person"] },
   MachineJoinDecision: { required: ["result"], optional: ["host", "controlKey", "name"] },
@@ -18622,7 +18804,6 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   MachineOptions: { required: ["host"], optional: ["startWhenUsed", "stopWhenIdleMinutes", "startForSchedules"] },
   MachinePolicy: { required: [], optional: ["policy", "signature", "none"] },
   MachineProjects: { required: ["projects"], optional: [] },
-  MachineProviderDraftCall: { required: ["agentID", "draft", "tool"], optional: ["arguments"] },
   MachineRelease: { required: ["version"], optional: [] },
   MachineRequest: { required: ["host"], optional: ["purge"] },
   MachineSchedule: { required: [], optional: ["at", "workflow"] },
@@ -18631,8 +18812,12 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   MachineSessionCall: { required: ["host", "call"], optional: [] },
   MachineSessionStart: { required: ["host", "start"], optional: [] },
   MachineSetup: { required: ["steps", "startedAt"], optional: ["readyAt"] },
+  MachineSetupProject: { required: ["path", "sources"], optional: ["project"] },
+  MachineSetupProjects: { required: ["pool", "finished", "folders"], optional: ["detail", "problem"] },
   MachineSetupReport: { required: ["step", "state"], optional: ["detail", "error", "fromPool", "code"] },
+  MachineSetupSource: { required: ["machine", "name", "online"], optional: [] },
   MachineSetupStep: { required: ["id", "state"], optional: ["startedAt", "endedAt", "detail", "error", "fromPool", "slower"] },
+  MachineSetupWork: { required: ["pool", "claimed", "done", "projects"], optional: ["from"] },
   MachineStatus: { required: ["idle", "running"], optional: ["schedule"] },
   MachineStop: { required: ["host"], optional: ["confirmRunning"] },
   MachineTunnel: { required: ["up"], optional: ["problem"] },
@@ -18849,30 +19034,26 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   ProjectsChanged: { required: [], optional: ["id", "removed"] },
   ProjectsJoined: { required: ["folders"], optional: [] },
   PromptRequest: { required: ["agentID", "text", "attachments", "from"], optional: ["sendID", "voice"] },
-  ProviderAdd: { required: ["name", "kind"], optional: ["id", "command", "args", "url", "headers", "commands", "map", "machine", "secrets", "cli", "draft"] },
-  ProviderCarried: { required: [], optional: ["result", "error"] },
+  ProviderAdd: { required: ["name", "kind"], optional: ["id", "commands", "machine", "secrets"] },
+  ProviderCarried: { required: [], optional: ["result", "error", "code"] },
   ProviderCarry: { required: ["provider", "record", "call"], optional: ["workspace", "name", "options", "firstBoot", "secrets"] },
   ProviderCreate: { required: [], optional: ["id", "name", "options", "clones", "repository"] },
   ProviderCreated: { required: ["workspace", "joining"], optional: [] },
-  ProviderDraftAnswer: { required: ["draft", "question", "yes"], optional: [] },
-  ProviderDraftAnswered: { required: ["note"], optional: ["map", "preset"] },
-  ProviderDraftRequest: { required: ["draft"], optional: [] },
-  ProviderDraftSign: { required: ["machine", "method", "params"], optional: [] },
-  ProviderDraftSigned: { required: ["draft", "lock"], optional: [] },
-  ProviderDraftStart: { required: ["form", "runtimeID"], optional: ["secrets", "provider"] },
-  ProviderDraftStarted: { required: ["draft"], optional: ["answered", "sign"] },
-  ProviderDraftUpdate: { required: ["draft", "state", "runtimeName", "steps"], optional: ["cost", "draftJSON", "check", "question", "note"] },
   ProviderForget: { required: ["provider"], optional: [] },
   ProviderGroup: { required: ["provider"], optional: ["group"] },
   ProviderList: { required: ["providers"], optional: [] },
+  ProviderOAuth: { required: ["state"], optional: ["account", "team"] },
+  ProviderOAuthCarried: { required: [], optional: ["url", "state", "account", "team", "scope", "secretNames"] },
+  ProviderOAuthCarry: { required: ["op", "preset"], optional: ["provider", "origin", "state", "code", "error"] },
+  ProviderOAuthFinish: { required: [], optional: ["state", "code", "error", "name"] },
+  ProviderOAuthStart: { required: ["preset"], optional: ["machine", "id", "origin"] },
+  ProviderOAuthStarted: { required: ["url", "state", "machine"], optional: ["machineName"] },
   ProviderOptions: { required: ["schema"], optional: ["id", "values", "name"] },
   ProviderRequest: { required: [], optional: ["id"] },
-  ProviderRuntime: { required: ["id", "name", "isDefault"], optional: [] },
-  ProviderRuntimes: { required: ["runtimes"], optional: ["host", "why"] },
   ProviderSSH: { required: ["provider", "op", "destination"], optional: ["hostCode", "codespace", "knownHosts", "name", "renew", "trust"] },
   ProviderSSHResult: { required: [], optional: ["knownHosts", "needsTrust"] },
   ProviderSecretsKeep: { required: ["provider", "secrets"], optional: [] },
-  ProviderSummary: { required: ["id", "name", "kind", "secrets", "capabilities", "contract", "mapped", "workspaces", "current"], optional: ["preset", "listedAt", "problem", "group", "mayUse", "default", "machine", "machineName", "machineOffline", "sshToolMissing"] },
+  ProviderSummary: { required: ["id", "name", "kind", "secrets", "capabilities", "contract", "workspaces", "current"], optional: ["preset", "listedAt", "problem", "group", "mayUse", "default", "machine", "machineName", "machineOffline", "sshToolMissing", "oauth"] },
   ProviderWorkspaceRequest: { required: ["id", "workspace"], optional: [] },
   PushToken: { required: ["environment"], optional: ["token"] },
   QueuedPrompt: { required: ["id", "text", "attachments", "queuedAt", "from"], optional: ["preface", "sender"] },
@@ -19213,7 +19394,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   WaitingOffer: { required: ["name", "offer"], optional: [] },
   WakeSettings: { required: ["keepsAwake", "graceHours", "warmRuntimes", "awakeOnPower"], optional: ["backgroundHours", "releaseAfterMinutes"] },
   WakeState: { required: ["isHolding", "agentsInFlight", "heldBackByBattery", "onPower"], optional: ["batteryPercent", "since", "graceUntil"] },
-  WarmPool: { required: ["id", "name", "scope", "provider", "minReady", "maxSize", "target", "state"], optional: ["size", "region", "runtimes", "projects", "replaceAfter", "hours", "ready", "settingUp", "failedMakes", "stoppedBecause", "machines", "claims"] },
+  WarmPool: { required: ["id", "name", "scope", "provider", "minReady", "maxSize", "target", "state"], optional: ["size", "region", "runtimes", "projects", "replaceAfter", "hours", "ready", "settingUp", "failedMakes", "stoppedBecause", "waitingBecause", "machines", "claims"] },
   WarmPoolClaim: { required: ["provider"], optional: ["size", "region", "stopWhenIdle"] },
   WarmPoolClaimed: { required: ["workspace", "name", "fromPool"], optional: ["host", "pool", "note"] },
   WarmPoolClaims: { required: ["count", "empty"], optional: ["medianSeconds"] },

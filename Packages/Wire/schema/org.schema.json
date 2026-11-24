@@ -775,7 +775,7 @@
       "additionalProperties": {
         "$ref": "#/definitions/CommitTrailerValue"
       },
-      "description": "The trailers of an agent's commits, each on or off, by the trailer's key (#6365): Made-by, Cost, Tokens, Duration, Session, Fixes, Epic, Requested-by, Approved-by, Attested, Co-authored-by. Fixes also writes Refs. A key the machine does not know is kept and has no effect; a key no layer sets has its default (every key on, Cost off). Record trailers (Made-by, Session, Fixes, Epic, Requested-by, Approved-by, Attested, Co-authored-by): on is tighter. Spend trailers (Cost, Tokens, Duration): off is tighter. Its rules in policy/effective are commitTrailers.<key>."
+      "description": "The trailers of an agent's commits, each on or off, by the trailer's key (#6365): Made-by, Cost, Tokens, Duration, Session, Fixes, Epic, Requested-by, Approved-by, Co-authored-by. Fixes also writes Refs. A key the machine does not know is kept and has no effect; a key no layer sets has its default (every key on, Cost off). Record trailers (Made-by, Session, Fixes, Epic, Requested-by, Approved-by, Co-authored-by): on is tighter. Spend trailers (Cost, Tokens, Duration): off is tighter. Its rules in policy/effective are commitTrailers.<key>."
     },
     "ConfigChoiceGroup": {
       "type": "object",
@@ -1132,6 +1132,10 @@
             "type": "string"
           }
         },
+        "maturity": {
+          "$ref": "core.schema.json#/definitions/Maturity",
+          "description": "The levels of this host's capabilities that are not GA, as it said them in its last machine/hello (#6579). None from a host older than that."
+        },
         "missing": {
           "type": "array",
           "description": "Of the control plane's required capabilities for hosts, the ones this host does not have (#1748). Its state is then needsUpdate.",
@@ -1367,6 +1371,10 @@
           "items": {
             "type": "string"
           }
+        },
+        "maturity": {
+          "$ref": "core.schema.json#/definitions/Maturity",
+          "description": "The levels of the control plane's capabilities that are not GA (#6579). None from a control plane older than that."
         },
         "required": {
           "$ref": "machines.schema.json#/definitions/RequiredCapabilities"
@@ -2686,6 +2694,10 @@
           "items": {
             "$ref": "#/definitions/LocalSecret"
           }
+        },
+        "keyProblem": {
+          "type": "string",
+          "description": "When this machine's key for its secrets does not read (#6632): what that stops and what the person does, in the person's words, with the key store's own error. Left out when the key reads. Status ▸ Secrets shows it at the top."
         }
       },
       "required": [
@@ -5197,7 +5209,6 @@
         "commitTrailers.Epic",
         "commitTrailers.Requested-by",
         "commitTrailers.Approved-by",
-        "commitTrailers.Attested",
         "commitTrailers.Co-authored-by"
       ],
       "description": "One rule a policy layer can set (#2957, data-model.md \"EffectiveRule\")."

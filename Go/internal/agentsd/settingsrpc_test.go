@@ -2,7 +2,6 @@ package agentsd
 
 import (
 	"context"
-	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -19,17 +18,17 @@ func TestTheWindowSavesTheSettingsTheHostHadNoWriteFor(t *testing.T) {
 	defer d.Shutdown()
 
 	var cp wire.ClientPermissionSettings
-	json.Unmarshal(c.call(t, 1, "clientPermissions/set", wire.ClientPermissionSettings{Cursor: "alwaysApprove", Grok: "default", Opencode: "alwaysApprove"}), &cp)
+	mustUnmarshal(t, c.call(t, 1, "clientPermissions/set", wire.ClientPermissionSettings{Cursor: "alwaysApprove", Grok: "default", Opencode: "alwaysApprove"}), &cp)
 	if cp.Cursor != "alwaysApprove" || cp.Grok != "default" || cp.Opencode != "alwaysApprove" {
 		t.Fatalf("%+v", cp)
 	}
-	json.Unmarshal(c.call(t, 2, "clientPermissions/state", nil), &cp)
+	mustUnmarshal(t, c.call(t, 2, "clientPermissions/state", nil), &cp)
 	if cp.Opencode != "alwaysApprove" {
 		t.Fatalf("not kept %+v", cp)
 	}
 
 	var sb wire.SandboxSettings
-	json.Unmarshal(c.call(t, 3, "sandbox/set", wire.SandboxSettings{Defaults: map[string]wire.SandboxChoice{
+	mustUnmarshal(t, c.call(t, 3, "sandbox/set", wire.SandboxSettings{Defaults: map[string]wire.SandboxChoice{
 		"claude": "off", "gemini": "on", "cursor": "off", "codex": "runtime",
 	}}), &sb)
 	if len(sb.Defaults) != 1 || sb.Defaults["claude"] != "off" {
@@ -37,12 +36,12 @@ func TestTheWindowSavesTheSettingsTheHostHadNoWriteFor(t *testing.T) {
 	}
 
 	var limit wire.WorkflowLimitSettings
-	json.Unmarshal(c.call(t, 4, "workflows/limit", nil), &limit)
+	mustUnmarshal(t, c.call(t, 4, "workflows/limit", nil), &limit)
 	if limit.Total != nil {
 		t.Fatalf("a missing file is the default, got %+v", limit)
 	}
 	total := int64(12)
-	json.Unmarshal(c.call(t, 5, "workflows/setLimit", wire.WorkflowLimitSettings{Total: &total}), &limit)
+	mustUnmarshal(t, c.call(t, 5, "workflows/setLimit", wire.WorkflowLimitSettings{Total: &total}), &limit)
 	if limit.Total == nil || *limit.Total != 12 || d.workflowTotal() != 12 {
 		t.Fatalf("%+v total %d", limit, d.workflowTotal())
 	}
@@ -75,7 +74,7 @@ func TestRetentionDescribesADeleteUntilItIsConfirmed(t *testing.T) {
 	ask := func(id int, keep wire.RetentionKeepFor, confirmed bool) wire.RetentionSetResult {
 		t.Helper()
 		var r wire.RetentionSetResult
-		json.Unmarshal(c.call(t, id, "retention/set", wire.RetentionSetRequest{Settings: wire.RetentionSettings{KeepFor: keep}, Confirmed: confirmed}), &r)
+		mustUnmarshal(t, c.call(t, id, "retention/set", wire.RetentionSetRequest{Settings: wire.RetentionSettings{KeepFor: keep}, Confirmed: confirmed}), &r)
 		return r
 	}
 	preview := ask(1, wire.RetentionKeepForDays7, false)
@@ -85,8 +84,8 @@ func TestRetentionDescribesADeleteUntilItIsConfirmed(t *testing.T) {
 	if d.keepFor() != wire.RetentionKeepForDays30 || d.Store.Agent(a.ID) == nil {
 		t.Fatal("an unconfirmed delete was saved")
 	}
-	kept := ask(2, wire.RetentionKeepForForever, false)
-	if !kept.Applied || kept.WouldDelete != nil || kept.State == nil || kept.State.Settings.KeepFor != wire.RetentionKeepForForever || kept.State.ArchivedCount != 1 {
+	// Forever is 90 days (#6677), so it too would delete one archived 100 days ago.
+	if kept := ask(2, wire.RetentionKeepForForever, false); kept.Applied || kept.WouldDelete == nil || kept.WouldDelete.Count != 1 {
 		t.Fatalf("%+v", kept)
 	}
 	done := ask(3, wire.RetentionKeepForDays7, true)
@@ -143,7 +142,7 @@ func TestAPersonMovesAndDoesNotCancelTheAgentsOwnMove(t *testing.T) {
 	dir := repo(t)
 	a := seeded(t, d, dir, func(a *wire.Agent) { a.State, a.EndedReason = wire.AgentStateRunning, nil })
 	var ans wire.MoveAnswer
-	json.Unmarshal(c.call(t, 1, "agents/move", map[string]any{"agentID": a.ID, "target": map[string]any{"newWorktree": map[string]any{"name": "fix"}},
+	mustUnmarshal(t, c.call(t, 1, "agents/move", map[string]any{"agentID": a.ID, "target": map[string]any{"newWorktree": map[string]any{"name": "fix"}},
 		"removeLeft": false, "discardChanges": false}), &ans)
 	if ans.When != wire.MoveWhenAfterTurn || !strings.HasPrefix(ans.Message, "Moving to ") {
 		t.Fatalf("%+v", ans)
@@ -151,7 +150,7 @@ func TestAPersonMovesAndDoesNotCancelTheAgentsOwnMove(t *testing.T) {
 	if got := d.Store.Agent(a.ID); got.PendingMove == nil || got.PendingMove.AskedBy != wire.MoveAskerPerson {
 		t.Fatalf("%+v", got.PendingMove)
 	}
-	json.Unmarshal(c.call(t, 2, "agents/move", map[string]any{"agentID": a.ID, "removeLeft": false, "discardChanges": false}), &ans)
+	mustUnmarshal(t, c.call(t, 2, "agents/move", map[string]any{"agentID": a.ID, "removeLeft": false, "discardChanges": false}), &ans)
 	if ans.When != wire.MoveWhenNothing || ans.Message != "Move cancelled." || d.Store.Agent(a.ID).PendingMove != nil {
 		t.Fatalf("%+v pending %v", ans, d.Store.Agent(a.ID).PendingMove)
 	}
@@ -160,7 +159,7 @@ func TestAPersonMovesAndDoesNotCancelTheAgentsOwnMove(t *testing.T) {
 	d.change(a.ID, func(a *wire.Agent) {
 		a.PendingMove = &wire.PendingMove{AskedBy: wire.MoveAskerAgent, AskedAt: now(), Target: wire.MoveTarget{NewWorktree: &wire.MoveTargetNewWorktree{Name: &name}}}
 	})
-	json.Unmarshal(c.call(t, 3, "agents/move", map[string]any{"agentID": a.ID, "removeLeft": false, "discardChanges": false}), &ans)
+	mustUnmarshal(t, c.call(t, 3, "agents/move", map[string]any{"agentID": a.ID, "removeLeft": false, "discardChanges": false}), &ans)
 	if ans.When != wire.MoveWhenNothing || ans.Message != "No move was waiting." || d.Store.Agent(a.ID).PendingMove.AskedBy != wire.MoveAskerAgent {
 		t.Fatalf("%+v %+v", ans, d.Store.Agent(a.ID).PendingMove)
 	}

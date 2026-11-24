@@ -2,7 +2,8 @@ import Foundation
 
 /// How long archived agents are kept before they are deleted (051, #398).
 ///
-/// The person's, kept by the daemon. Forever is automatic deletion turned off.
+/// The person's, kept by the daemon. Forever is only an older host's: one from #6706 on
+/// keeps no conversation past 90 days, and says 90 days for it.
 public struct RetentionSettings: Codable, Hashable, Sendable {
     public var keepFor: KeepFor
 
@@ -15,6 +16,11 @@ public struct RetentionSettings: Codable, Hashable, Sendable {
 
     public enum KeepFor: String, Codable, Hashable, Sendable, CaseIterable {
         case days7, days14, days30, days90, forever
+
+        /// The choices: at most 90 days (#6677). Forever only while an older host says it.
+        public static func offered(with current: KeepFor) -> [KeepFor] {
+            allCases.filter { $0 != .forever || current == .forever }
+        }
 
         public var interval: TimeInterval? {
             switch self {

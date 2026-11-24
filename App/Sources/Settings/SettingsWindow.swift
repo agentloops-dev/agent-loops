@@ -9,6 +9,9 @@ import SwiftUI
 /// Agent Configuration and Machines list their own pages in a column inside the pane.
 struct SettingsWindow: View {
     @Environment(AppModel.self) private var model
+    /// The main window's requests: a folder's line in Agents ▸ Policy opens its Project Settings there (#6534).
+    @Environment(WindowRequests.self) private var requests: WindowRequests?
+    @Environment(\.openWindow) private var openWindow
     @AppStorage("settingsPane", store: WindowDefaults.store) private var paneRaw = SettingsPane.appearance.rawValue
     @AppStorage("settingsSharedPage", store: WindowDefaults.store) private var sharedPageRaw = AgentConfigurationPage.overview.rawValue
     @AppStorage("settingsRuntimeID", store: WindowDefaults.store) private var runtimeIDRaw = RuntimeCatalog.claude.id
@@ -125,6 +128,15 @@ struct SettingsWindow: View {
         }
     }
 
+    /// A folder's Project Settings ▸ Policy, on the main window (#6534), as a Stopped by a
+    /// policy card opens it: the folder is selected, then the sheet asked for.
+    private func openFolderPolicy(_ path: String, _ requests: WindowRequests) {
+        let folder = URL(filePath: path)
+        if model.selectedFolder?.standardizedFileURL != folder.standardizedFileURL { model.selectedFolder = folder }
+        requests.projectSettings = .policy
+        model.bringMainWindowForward(opening: openWindow)
+    }
+
     /// The control plane's model for the window's pairing now, or none when it has none.
     private func remakeControl(unpaired: Bool) {
         control?.stop()
@@ -188,9 +200,12 @@ struct SettingsWindow: View {
         case .agentsPolicy:
             FormColumn {
                 PolicyPane(host: model.policyHost, revision: model.policyRevision,
-                           openOrganisationPolicy: control == nil ? nil : { pane.wrappedValue = .policy })
+                           openOrganisationPolicy: control == nil ? nil : { pane.wrappedValue = .policy },
+                           trailersBehind: model.machinesNotFollowingCommitTrailers,
+                           openFolderPolicy: requests.map { requests in { path in openFolderPolicy(path, requests) } })
             }
         case .voice: FormColumn { Form { VoiceSettingsSection() }.paperForm() }
+        case .earlyFeatures: FormColumn { Form { EarlyFeaturesSection(said: model.partsMaturity) }.paperForm() }
         case .account: FormColumn { AccountSettingsView() }
         case .signIns:
             FormColumn {
@@ -270,7 +285,9 @@ extension SettingsScope {
         // How this app draws: Sidebar is kept on the Mac's host so every client draws the
         // same (#1033, #2079), but its subject is the app (#2157).
         // Notifications' limits are rules of Agents ▸ Policy now (#2957, FR-023).
-        case .thisApp: [.appearance, .sidebar, .voice]
+        // Early Features (#6052): the features that are not GA, which the person can turn off.
+        // Feature Flags (#6254): the features in work that the person turns on, on every client.
+        case .thisApp: [.appearance, .sidebar, .voice, .earlyFeatures]
         // What agents may do, what they spend and what they take (#2957, FR-018).
         case .agents: [.agentsPolicy, .spending, .resources]
         case .machines: [.machines, .runtimes, .browser, .agentConfiguration]
@@ -289,6 +306,10 @@ enum SettingsPane: String, Hashable, CaseIterable {
     case agentsPolicy
     /// Voice mode, its voice and its sounds (Alex, 2026-10-29): was in Appearance.
     case voice
+    /// The feature flags in work, off by default (#6254), then the features that are not GA, each
+    /// with its badge and a switch, on by default (#6052). One section since #6604: a window left
+    /// open on the old Feature Flags pane opens Appearance.
+    case earlyFeatures
     /// Every machine, and this Mac's own settings (#1759). Was the Mac pane: its raw value is
     /// what a window left open on it kept.
     case machines = "mac"
@@ -336,6 +357,7 @@ enum SettingsPane: String, Hashable, CaseIterable {
         case .sidebar: "Sidebar"
         case .agentsPolicy: PolicyLayersWords.title
         case .voice: "Voice"
+        case .earlyFeatures: EarlyFeaturesSection.title
         case .account: "Account"
         case .machines: "Machines"
         case .runtimes: "Agent Runtimes"
@@ -365,6 +387,7 @@ enum SettingsPane: String, Hashable, CaseIterable {
         case .sidebar: "sidebar.left"
         case .agentsPolicy: PolicyLayersWords.symbol
         case .voice: "waveform"
+        case .earlyFeatures: "sparkles"
         case .account: "person.crop.circle"
         case .machines: "desktopcomputer"
         case .runtimes: "cpu"

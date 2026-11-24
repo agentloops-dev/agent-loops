@@ -166,7 +166,7 @@ func TestComputeStartsStopsMakesAndDeletes(t *testing.T) {
 		t.Error("its startup script runs the first boot")
 	}
 	firstBoot := "curl -fsSL https://cp.example/v1/install.sh | sh -s -- 'HOSTCODE' 'vm-new'"
-	if _, err := p.Create("vm-new", map[string]any{"machineType": "e2-micro"}, firstBoot); err != nil {
+	if _, _, err := p.Create("vm-new", map[string]any{"machineType": "e2-micro"}, firstBoot); err != nil {
 		t.Fatal(err)
 	}
 	made, _ := json.Marshal(f.made)

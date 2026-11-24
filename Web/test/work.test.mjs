@@ -341,7 +341,9 @@ test("a forge that could not be read keeps its last rows, dimmed; a fresh read h
   const machine = carryStale({ host: "mac", items: [], errors: [{ forge: "", message: "offline" }] }, had);
   assert.equal(machine.items.length, 2);
   assert.equal(carryStale({ host: "mac", items: [], errors: [] }, had).items.length, 0);
-  assert.equal(w.errorWords({ forge: "forgejo", message: "Forgejo: Get …: refused" }, undefined), "Forgejo: Get …: refused");
+  // agentsd's message does not name the forge, so the line names it once (#6536).
+  assert.equal(w.errorWords({ forge: "github", message: "could not be reached (the connection was refused)" }, undefined),
+    "GitHub: could not be reached (the connection was refused)");
 });
 
 test("one machine's answer for a forge is enough: the others' errors for it do not show (#5449)", async () => {
@@ -527,4 +529,15 @@ test("an issue's events go between its comments in time order; one this client d
   assert.deepEqual(shape(w.timelineEntries(comments, events, true)), ["a", "alexec closed this", "b"]);
   assert.equal(w.eventsSayClose(events), true);
   assert.equal(w.eventsSayClose(undefined), false);
+});
+
+test("a Refresh asks fresh, and Last update is the forges' read, the oldest machine's, never after now (#6642)", () => {
+  assert.equal(w.forgeListAllRequest("issue", "open", "").fresh, undefined);
+  assert.equal(w.forgeListAllRequest("pr", "open", "", undefined, undefined, true).fresh, true);
+  const now = Date.parse("2026-11-22T10:01:00Z");
+  const list = (iso) => ({ machine: "m", machineName: "M", list: { items: [], ...iso ? { readAt: at(iso) } : {} } });
+  const all = (...lists) => ({ lists, unreached: [], notAsked: 0 });
+  assert.equal(w.listReadAt(all(list("2026-11-22T10:00:10Z"), list("2026-11-22T10:00:40Z"), list()), now), Date.parse("2026-11-22T10:00:10Z"));
+  assert.equal(w.listReadAt(all(list()), now), now);
+  assert.equal(w.listReadAt(all(list("2026-11-22T10:05:00Z")), now), now);
 });

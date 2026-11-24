@@ -85,3 +85,67 @@ func TestAnArchiveWhileACardWaitsStaysArchived(t *testing.T) {
 		t.Fatal(n)
 	}
 }
+
+// A change that sets a state from what it read before the archive (a turn's ending, a stop)
+// leaves the session archived (#6619): Save would clear its ArchivedAt, and the session would
+// come back. Only an unarchive takes it out.
+func TestALateChangeKeepsTheSessionArchived(t *testing.T) {
+	t.Parallel()
+
+	fakeRuntimes(t)
+	d, c := start(t, t.TempDir())
+	defer d.Shutdown()
+	id := startAgent(t, c, 1, t.TempDir(), "hello")
+	c.until(t, "finished", ended(id, wire.AgentStateFinished))
+	c.drain()
+	if err := d.archive(id); err != nil {
+		t.Fatal(err)
+	}
+	if got := d.change(id, func(a *wire.Agent) { a.State = wire.AgentStateFinished }); got != nil {
+		t.Fatalf("saved %s", got.State)
+	}
+	if a := d.Store.Agent(id); a.State != wire.AgentStateArchived || a.ArchivedAt == nil {
+		t.Fatalf("%s %v", a.State, a.ArchivedAt)
+	}
+	// A change that keeps it archived still saves.
+	if got := d.change(id, func(a *wire.Agent) { title := "renamed"; a.Title = &title }); got == nil || got.ArchivedAt == nil {
+		t.Fatalf("%+v", got)
+	}
+	if err := d.unarchive(id); err != nil {
+		t.Fatal(err)
+	}
+	if a := d.Store.Agent(id); a.State == wire.AgentStateArchived || a.ArchivedAt != nil {
+		t.Fatalf("%s %v", a.State, a.ArchivedAt)
+	}
+}
+
+// An archive while a turn ends (#6619): whichever comes first, the session stays archived,
+// with its archive time.
+func TestAnArchiveWhileATurnEndsStaysArchived(t *testing.T) {
+	t.Parallel()
+
+	fakeRuntimes(t)
+	d, c := start(t, t.TempDir())
+	defer d.Shutdown()
+	id := startAgent(t, c, 1, t.TempDir(), "hello")
+	c.until(t, "finished", ended(id, wire.AgentStateFinished))
+	c.drain()
+	for i := range 50 {
+		d.change(id, func(a *wire.Agent) { a.State = wire.AgentStateRunning })
+		ending := make(chan struct{})
+		go func() {
+			defer close(ending)
+			d.end(d.live(id), wire.AgentStateFinished, wire.EndedReasonEndTurn)
+		}()
+		if err := d.archive(id); err != nil {
+			t.Fatal(err)
+		}
+		<-ending
+		if a := d.Store.Agent(id); a.State != wire.AgentStateArchived || a.ArchivedAt == nil {
+			t.Fatalf("round %d: %s %v", i, a.State, a.ArchivedAt)
+		}
+		if err := d.unarchive(id); err != nil {
+			t.Fatal(err)
+		}
+	}
+}

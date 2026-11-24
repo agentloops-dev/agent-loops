@@ -41,7 +41,7 @@ func servePersonas(t *testing.T) *atomic.Bool {
 		p := r.URL.Path
 		switch {
 		case p == repo+".git/info/refs":
-			w.Write([]byte("001e# service=git-upload-pack\n0000" + "00a0" + head() + " HEAD\x00multi_ack symref=HEAD:refs/heads/main\n"))
+			check(t, errOnly(w.Write([]byte("001e# service=git-upload-pack\n0000"+"00a0"+head()+" HEAD\x00multi_ack symref=HEAD:refs/heads/main\n"))))
 		case strings.HasPrefix(p, "/api/repos"+repo+"/git/trees/"):
 			commit := strings.TrimPrefix(p, "/api/repos"+repo+"/git/trees/")
 			text, ok := personaFiles[commit]
@@ -50,16 +50,16 @@ func servePersonas(t *testing.T) *atomic.Bool {
 				return
 			}
 			size := int64(len(text))
-			json.NewEncoder(w).Encode(map[string]any{"tree": []skillcatalog.TreeEntry{
+			check(t, json.NewEncoder(w).Encode(map[string]any{"tree": []skillcatalog.TreeEntry{
 				{Path: "personas", Mode: "040000", Type: "tree", SHA: "aaaa"},
 				{Path: "personas/reviewer.md", Mode: "100644", Type: "blob", SHA: skillcatalog.BlobSHA([]byte(text)), Size: &size},
 				{Path: "personas/notes/deep.md", Mode: "100644", Type: "blob", SHA: "bbbb"},
 				{Path: "skills/x/SKILL.md", Mode: "100644", Type: "blob", SHA: "cccc"},
-			}})
+			}}))
 		case strings.HasPrefix(p, "/raw"+repo+"/"):
 			commit, rel, _ := strings.Cut(strings.TrimPrefix(p, "/raw"+repo+"/"), "/")
 			if text, ok := personaFiles[commit]; ok && rel == "personas/reviewer.md" {
-				w.Write([]byte(text))
+				check(t, errOnly(w.Write([]byte(text))))
 				return
 			}
 			http.NotFound(w, r)
@@ -84,21 +84,21 @@ func TestAPersonaSearchedPreviewedAddedUpdatedAndRemoved(t *testing.T) {
 	market := "provided:anthropic-skills"
 
 	var found wire.CatalogSearchAnswer
-	json.Unmarshal(c.call(t, 1, "personas/search", map[string]any{"query": "", "marketplace": market}), &found)
+	mustUnmarshal(t, c.call(t, 1, "personas/search", map[string]any{"query": "", "marketplace": market}), &found)
 	if found.Error != nil || len(found.Results) != 1 || found.Results[0].SkillID != "reviewer" ||
 		*found.Results[0].SkillPath != "personas/reviewer.md" {
 		t.Fatalf("%+v", found)
 	}
 
 	var preview wire.PersonaPreviewAnswer
-	json.Unmarshal(c.call(t, 2, "personas/preview", map[string]any{"result": found.Results[0], "destination": personal}), &preview)
+	mustUnmarshal(t, c.call(t, 2, "personas/preview", map[string]any{"result": found.Results[0], "destination": personal}), &preview)
 	p := preview.Preview
 	if preview.Error != nil || p == nil || p.Markdown != personaFiles[personaCommit] || p.Persona.ID != "reviewer" ||
 		p.Persona.Name != "Reviewer" || *p.Persona.Settings.RuntimeID != "codex" || p.DestinationState.Free == nil {
 		t.Fatalf("%+v %+v", preview.Error, p)
 	}
 	var added wire.PersonaAddAnswer
-	json.Unmarshal(c.call(t, 3, "personas/add", map[string]any{"previewID": p.PreviewID, "destination": personal, "replace": false}), &added)
+	mustUnmarshal(t, c.call(t, 3, "personas/add", map[string]any{"previewID": p.PreviewID, "destination": personal, "replace": false}), &added)
 	file := filepath.Join(home, ".agents", "personas", "reviewer.md")
 	if b, _ := os.ReadFile(file); string(b) != personaFiles[personaCommit] || added.Persona.ID != "reviewer" {
 		t.Fatalf("%q %+v", b, added)
@@ -109,7 +109,7 @@ func TestAPersonaSearchedPreviewedAddedUpdatedAndRemoved(t *testing.T) {
 	}
 
 	var updates wire.SkillUpdatesAnswer
-	json.Unmarshal(c.call(t, 4, "personas/check-updates", map[string]any{"destination": personal}), &updates)
+	mustUnmarshal(t, c.call(t, 4, "personas/check-updates", map[string]any{"destination": personal}), &updates)
 	if updates.Updates["reviewer"].Current == nil {
 		t.Fatalf("%+v", updates)
 	}
@@ -117,7 +117,7 @@ func TestAPersonaSearchedPreviewedAddedUpdatedAndRemoved(t *testing.T) {
 	// The source moves on and changes the runtime and the permission mode.
 	moved.Store(true)
 	d.catalog().updates = &skillcatalog.UpdateCache{}
-	json.Unmarshal(c.call(t, 5, "personas/check-updates", map[string]any{"destination": personal}), &updates)
+	mustUnmarshal(t, c.call(t, 5, "personas/check-updates", map[string]any{"destination": personal}), &updates)
 	if a := updates.Updates["reviewer"].Available; a == nil || a.Commit != personaNext {
 		t.Fatalf("%+v", updates)
 	}
@@ -126,14 +126,14 @@ func TestAPersonaSearchedPreviewedAddedUpdatedAndRemoved(t *testing.T) {
 		t.Fatal("updated without asking")
 	}
 	var update wire.PersonaUpdatePreviewAnswer
-	json.Unmarshal(c.call(t, 6, "personas/update-preview", map[string]any{"destination": personal, "name": "reviewer"}), &update)
+	mustUnmarshal(t, c.call(t, 6, "personas/update-preview", map[string]any{"destination": personal, "name": "reviewer"}), &update)
 	if update.Installed != personaFiles[personaCommit] || update.Edited || len(update.Changes) != 2 ||
 		update.Changes[0].Key != "runtime" || *update.Changes[0].Old != "codex" || *update.Changes[0].New != "claude" ||
 		update.Changes[1].Key != "permission-mode" || *update.Changes[1].New != "bypass" ||
 		update.Preview.DestinationState.SameSkill == nil || !update.Preview.DestinationState.SameSkill.Update {
 		t.Fatalf("%+v", update)
 	}
-	json.Unmarshal(c.call(t, 7, "personas/add", map[string]any{"previewID": update.Preview.PreviewID, "destination": personal, "replace": true}), &added)
+	mustUnmarshal(t, c.call(t, 7, "personas/add", map[string]any{"previewID": update.Preview.PreviewID, "destination": personal, "replace": true}), &added)
 	if b, _ := os.ReadFile(file); string(b) != personaFiles[personaNext] {
 		t.Fatalf("%q", b)
 	}
@@ -142,20 +142,20 @@ func TestAPersonaSearchedPreviewedAddedUpdatedAndRemoved(t *testing.T) {
 	}
 
 	// Edited after it was added: said so.
-	os.WriteFile(file, []byte(personaFiles[personaNext]+"\nMine.\n"), 0o644)
+	must(t, os.WriteFile(file, []byte(personaFiles[personaNext]+"\nMine.\n"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	var managed wire.PersonasManagedAnswer
-	json.Unmarshal(c.call(t, 8, "personas/managed", map[string]any{"destination": personal}), &managed)
+	mustUnmarshal(t, c.call(t, 8, "personas/managed", map[string]any{"destination": personal}), &managed)
 	if len(managed.Personas) != 1 || !managed.Personas[0].Edited {
 		t.Fatalf("%+v", managed)
 	}
 
 	// A persona the person made is never removed, and never replaced.
-	os.WriteFile(filepath.Join(home, ".agents", "personas", "mine.md"), []byte("Mine."), 0o644)
+	must(t, os.WriteFile(filepath.Join(home, ".agents", "personas", "mine.md"), []byte("Mine."), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	if e := c.callError(t, 9, "personas/remove", map[string]any{"destination": personal, "name": "mine"}); e.Code != wire.FailureCatalogRefused {
 		t.Fatalf("%+v", e)
 	}
 	var removed wire.SkillRemoveAnswer
-	json.Unmarshal(c.call(t, 10, "personas/remove", map[string]any{"destination": personal, "name": "reviewer"}), &removed)
+	mustUnmarshal(t, c.call(t, 10, "personas/remove", map[string]any{"destination": personal, "name": "reviewer"}), &removed)
 	if _, err := os.Stat(file); !os.IsNotExist(err) || !strings.Contains(removed.TrashedTo, filepath.Join(root, "trash")) {
 		t.Fatalf("%v %+v", err, removed)
 	}
@@ -163,8 +163,8 @@ func TestAPersonaSearchedPreviewedAddedUpdatedAndRemoved(t *testing.T) {
 	if _, ok := lock.Persona("reviewer"); ok {
 		t.Fatal("still in the lock")
 	}
-	os.WriteFile(file, []byte("Mine too."), 0o644)
-	json.Unmarshal(c.call(t, 11, "personas/preview", map[string]any{"result": found.Results[0], "destination": personal}), &preview)
+	must(t, os.WriteFile(file, []byte("Mine too."), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
+	mustUnmarshal(t, c.call(t, 11, "personas/preview", map[string]any{"result": found.Results[0], "destination": personal}), &preview)
 	if preview.Preview.DestinationState.Unmanaged == nil {
 		t.Fatalf("%+v", preview.Preview.DestinationState)
 	}

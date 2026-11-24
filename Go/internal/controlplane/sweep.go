@@ -43,7 +43,7 @@ var straysPrefixes = []string{"probe/", "handover/mark-"}
 
 // sweepReport is StoreSweep.Report.
 type sweepReport struct {
-	events, codes, tombstones, leftovers, dated, usage int
+	events, codes, tombstones, leftovers, dated, usage, releaseKeys int
 	// Leases of hosts that were removed, and org routes' tombstones (#2293).
 	orphans int
 	// Removed people cut to their tombstone (#3647).
@@ -51,7 +51,7 @@ type sweepReport struct {
 }
 
 func (r sweepReport) total() int {
-	return r.events + r.codes + r.tombstones + r.leftovers + r.usage + r.orphans + r.cut
+	return r.events + r.codes + r.tombstones + r.leftovers + r.usage + r.releaseKeys + r.orphans + r.cut
 }
 
 // full says whether a sweep of at most most deletions stopped at that bound, so more may
@@ -62,13 +62,14 @@ func (r sweepReport) add(o sweepReport) sweepReport {
 	return sweepReport{
 		events: r.events + o.events, codes: r.codes + o.codes, tombstones: r.tombstones + o.tombstones,
 		leftovers: r.leftovers + o.leftovers, dated: r.dated + o.dated, usage: r.usage + o.usage,
-		orphans: r.orphans + o.orphans, cut: r.cut + o.cut,
+		releaseKeys: r.releaseKeys + o.releaseKeys,
+		orphans:     r.orphans + o.orphans, cut: r.cut + o.cut,
 	}
 }
 
 func (r sweepReport) String() string {
-	return fmt.Sprintf("removed %d events, %d code files, %d tombstones, %d leftovers, %d usage periods, %d orphans; dated %d tombstones; cut %d removed people",
-		r.events, r.codes, r.tombstones, r.leftovers, r.usage, r.orphans, r.dated, r.cut)
+	return fmt.Sprintf("removed %d events, %d code files, %d tombstones, %d leftovers, %d usage periods, %d release-key records, %d orphans; dated %d tombstones; cut %d removed people",
+		r.events, r.codes, r.tombstones, r.leftovers, r.usage, r.releaseKeys, r.orphans, r.dated, r.cut)
 }
 
 // sweep is StoreSweep.run: old events, spent and expired codes, old tombstones and a
@@ -133,12 +134,18 @@ func sweep(ctx context.Context, rs *records.Records, now time.Time, most int, ev
 		return report, err
 	}
 
+	report.releaseKeys, err = sweepReleaseKeys(ctx, s, rs, now, left)
+	left -= report.releaseKeys
+	if err != nil {
+		return report, err
+	}
+
 	report.usage, err = sweepUsages(ctx, rs, now, left)
 	if err != nil {
 		return report, err
 	}
 
-	if folder, ok := s.(*store.Folder); ok {
+	if folder := folderOf(s); folder != nil {
 		report.leftovers = folder.RemoveLeftovers(now.Add(-leftoversKept))
 	}
 	// Probes and marks an hour after the sweep first saw them, on any store (#3748).
@@ -154,6 +161,21 @@ func sweep(ctx context.Context, rs *records.Records, now time.Time, most int, ev
 		}
 	}
 	return report, nil
+}
+
+// folderOf is the folder store under s and the wrappers that count it (#6585), or nil
+// when s keeps no folder.
+func folderOf(s store.Store) *store.Folder {
+	for {
+		switch t := s.(type) {
+		case *store.Folder:
+			return t
+		case interface{ Unwrap() store.Store }:
+			s = t.Unwrap()
+		default:
+			return nil
+		}
+	}
 }
 
 // sweepAllEvents deletes, at most most, the audit's events and seals and the copies'
@@ -365,9 +387,9 @@ func sweepUsages(ctx context.Context, rs *records.Records, now time.Time, left i
 	if err != nil {
 		return usage, err
 	}
-	// The bus log past its last busLogKept envelopes (#4729), counted with them too. Its own
-	// bound: a busy bus can add more than a sweep's in an hour.
-	busOld, err := sweepBus(ctx, s, busLogKept, busLogKept/10)
+	// The bus log's age, count and byte bounds (#4729), counted with them too. Its own
+	// deletion cap: a busy bus can add more records than one sweep removes.
+	busOld, err := sweepBusAt(ctx, s, now, busLogKept, busLogMaxBytes, busLogMaxAge, busLogKept/10)
 	usage += busOld
 	if err != nil {
 		return usage, err
@@ -782,6 +804,20 @@ func (s *Service) sweepServing(events *eventSweep, backupsSwept *string) (sweepR
 				return s.phase.now() == phaseServing
 			}
 		})
+	if err == nil {
+		st := s.cfg.Store
+		if unwrapped, ok := st.(interface{ Unwrap() store.Store }); ok {
+			st = unwrapped.Unwrap()
+		}
+		if folder, ok := st.(*store.Folder); ok {
+			files, size, statsErr := folder.Stats()
+			if statsErr == nil {
+				s.metrics.setStoreSize(files, size)
+			} else {
+				s.log("store: capacity size not read: " + statsErr.Error())
+			}
+		}
+	}
 	// Once a day, the backups no host of their owner prunes any more (#2293).
 	if day := time.Now().UTC().Format(sweptDayLayout); err == nil && s.backups != nil && day != *backupsSwept {
 		if err := s.backups.pruneOrphans(context.Background()); err != nil {

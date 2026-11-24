@@ -208,6 +208,12 @@ struct SecretsPageView<Source: LocalSecretsSource>: View {
                     Button("OK") { state.left = nil }
                 }
             }
+            if let keyProblem = local?.keyProblem {
+                // The machine's key does not read (#6632): said here once, not in the log at each delivery.
+                Label(keyProblem, icon: "exclamationmark.triangle")
+                    .appText(.supporting).tinted(.warning)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             if let only = SecretInfoWords.onlyMachine(state.secrets?.secrets ?? []) {
                 Label(SecretInfoWords.onlyMachineLine(only, names: machineNames), icon: "exclamationmark.triangle")
                     .appText(.supporting).tinted(.warning)

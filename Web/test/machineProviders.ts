@@ -3,3 +3,5 @@ export * from "../src/model/machineProviders";
 export { Providers } from "../src/model/providers";
 export { CallFailed, CallTimedOut, callTimeoutFor } from "../src/wire/link";
 export { Failure } from "../src/protocol/generated";
+export * from "../src/model/digitalOceanConnect";
+export { handedBack } from "../src/oauthHandBack";

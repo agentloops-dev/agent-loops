@@ -436,3 +436,23 @@ func TestSourcesOfNamesSourcesAsNodes(t *testing.T) {
 		t.Fatalf("jira: %+v", got)
 	}
 }
+
+// fixedScope is a scope that names no repos, as a forge's own type may be.
+type fixedScope struct{ key string }
+
+func (s fixedScope) Key() []any  { return []any{s.key} }
+func (s fixedScope) Empty() bool { return s.key == "" }
+
+func TestForgeListScopeNamesNamesEachRepoOnce(t *testing.T) {
+	t.Parallel()
+
+	got := forgeListScopeNames([]forgeListScoped{
+		{forge: githubForge{}, scope: githubScope{repos: []string{"example/web", "Example/Shop"}}},
+		{forge: githubForge{}, scope: githubScope{repos: []string{"example/shop"}}},
+		{forge: githubForge{}, scope: fixedScope{key: "k"}},
+	})
+	want := []string{`github:["k"]`, "github:example/shop", "github:example/web"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("scopes = %q, want %q", got, want)
+	}
+}

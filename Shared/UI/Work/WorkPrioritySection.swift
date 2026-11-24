@@ -12,6 +12,9 @@ struct WorkPrioritySection: View {
     let host: MachineRef
     let detail: DaemonAPI.ForgeItemDetail
     let writes: Bool
+    /// With Work's cache on (#6354): a choice goes through the cache, shown at once everywhere, with no spinner; nil to
+    /// wait for the forge.
+    var save: ((WorkChange) -> Void)?
     /// Reads the item again; the section shows the value a write set until it is done.
     let wrote: () async -> Void
 
@@ -110,12 +113,14 @@ struct WorkPrioritySection: View {
 
     private func set(priority choice: String?) {
         guard choice != priority, !busy else { return }
+        if let save { return save(.priority(choice)) }
         settingPriority = .some(choice)
         write(DaemonAPI.Method.forgePriority, DaemonAPI.ForgePriorityRequest(node: item.node, priority: choice))
     }
 
     private func set(hold on: Bool) {
         guard on != onHold, !busy else { return }
+        if let save { return save(.hold(on)) }
         settingHold = on
         write(DaemonAPI.Method.forgeHold, DaemonAPI.ForgeHoldRequest(node: item.node, on: on))
     }

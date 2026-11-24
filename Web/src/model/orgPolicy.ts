@@ -10,6 +10,8 @@ import { namesWords } from "./machineNames";
 import type { CallFailed } from "../wire/link";
 import { Failure } from "../protocol/generated";
 import { levelsOf, levelWords } from "./levels";
+import * as trailerWords from "./commitTrailers";
+import type { TrailerChoice } from "./commitTrailers";
 
 export const setBy = "Set by your organisation";
 /** The titles of a limit from the person's own layer and from a folder's (#2957, #3150). */
@@ -333,6 +335,8 @@ export interface PolicyForm {
   /** Each runtime's ways to the model (#999): any way when absent. */
   reach: Record<string, ReachChoice>;
   antigravityTerms: (typeof termsChoices)[number];
+  /** Each commit trailer's choice (#6365, #6375): on, off, or not set (""). */
+  trailers: Record<string, TrailerChoice>;
 }
 
 function names(text: string): string[] {
@@ -376,6 +380,7 @@ export function formOf(p: OrgPolicy | undefined): PolicyForm {
     requireFollowing: p?.requireFollowing === true,
     reach: Object.fromEntries(Object.entries(p?.runtimes ?? {}).filter(([, r]) => r.reach).map(([id, r]) => [id, reachChoiceOf(r.reach)])),
     antigravityTerms: p?.notices?.antigravityTerms ?? "show",
+    trailers: trailerWords.choicesOf(p?.commitTrailers),
   };
 }
 
@@ -473,13 +478,15 @@ export function policyOf(form: PolicyForm, base: OrgPolicy | undefined, me: Audi
   if (form.limitPassThrough && wrong) return { problem: `“${wrong}” is not a variable name: letters, digits and _, with * at the end allowed.` };
   set("environment", form.limitPassThrough ? { passThrough } : undefined);
   set("requireFollowing", form.requireFollowing ? true : undefined);
+  set("commitTrailers", trailerWords.ruleOf(form.trailers, base?.commitTrailers));
   return { policy: p };
 }
 
 /** What a saved policy changes from the one in force, rule by rule, in words: "Modes: any → up to Auto". */
 export function changes(before: OrgPolicy | undefined, after: OrgPolicy): string[] {
-  const was = new Map((before ? rules(before) : []).map((r) => [r.name, r] as const));
-  const now = new Map(rules(after).map((r) => [r.name, r] as const));
+  const all = (p: OrgPolicy) => [...rules(p), ...trailerRules(p)];
+  const was = new Map((before ? all(before) : []).map((r) => [r.name, r] as const));
+  const now = new Map(all(after).map((r) => [r.name, r] as const));
   const out: string[] = [];
   for (const [name, r] of now) {
     const old = was.get(name);
@@ -487,6 +494,19 @@ export function changes(before: OrgPolicy | undefined, after: OrgPolicy): string
     else if (old.words !== r.words) out.push(`${r.title}: ${old.words} → ${r.words}`);
   }
   for (const [name, r] of was) if (!now.has(name)) out.push(`${r.title}: no longer set`);
+  return out;
+}
+
+/**
+ * Each commit trailer the policy sets, in words, in the panes' order (#6375). Not in rules(): the
+ * person's own Policy pane says the trailers in a group of their own (#6373, #6374).
+ */
+export function trailerRules(p: OrgPolicy): Rule[] {
+  const out: Rule[] = [];
+  for (const t of trailerWords.trailers) {
+    const v = p.commitTrailers?.[t.key];
+    if (v === "on" || v === "off") out.push({ name: `commitTrailers.${t.key}`, title: `${t.key} trailer`, words: trailerWords.valueWords(t, v) });
+  }
   return out;
 }
 
@@ -532,6 +552,15 @@ export function warnings(p: OrgPolicy, machines: readonly FleetMachine[] | undef
     out.push(p.requireFollowing
       ? `${old.length === 1 ? "1 machine does" : `${old.length} machines do`} not follow policy and will start no agent: ${which}. Update Agent Loops on ${old.length === 1 ? "it" : "them"}.`
       : `${old.length === 1 ? "1 machine does" : `${old.length} machines do`} not follow policy: ${which}. Update Agent Loops on ${old.length === 1 ? "it" : "them"}.`);
+  }
+  // A machine that follows the policy but not Commit trailers yet (#6365): its agents' commits get no trailers.
+  if (p.commitTrailers && trailerRules(p).length > 0) {
+    const before = (machines ?? []).filter((m) => m.host.capabilities?.includes("host.policy/1") && !m.host.capabilities.includes(trailerWords.capability));
+    if (before.length > 0) {
+      const one = before.length === 1;
+      out.push(`${one ? "1 machine does" : `${before.length} machines do`} not follow Commit trailers yet: ${namesWords(before.map((m) => m.host.name).sort())}. `
+        + `${one ? "Its" : "Their"} agents’ commits get no trailers until ${one ? "it updates" : "they update"}.`);
+    }
   }
   return out;
 }

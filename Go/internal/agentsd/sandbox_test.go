@@ -59,12 +59,12 @@ func TestAnAgentsSandbox(t *testing.T) {
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	d.SettingsDir = t.TempDir()
-	os.WriteFile(filepath.Join(d.SettingsDir, "sandbox.json"), []byte(`{"defaults":{"claude":"on"}}`), 0o644)
+	must(t, os.WriteFile(filepath.Join(d.SettingsDir, "sandbox.json"), []byte(`{"defaults":{"claude":"on"}}`), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	if choice, why := d.resolveSandbox("claude", nil, nil); choice != wire.SandboxChoiceOn || why != nil {
 		t.Fatal(choice)
 	}
 	var id wire.UUID
-	json.Unmarshal(c.call(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(), "prompt": "hello"}), &id)
+	mustUnmarshal(t, c.call(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(), "prompt": "hello"}), &id)
 	c.until(t, "the turn", ended(id, wire.AgentStateFinished))
 	if e := d.Store.Agent(id).EffectiveSandbox; e == nil || e.State != wire.SandboxStateOn || e.Requested != wire.SandboxChoiceOn {
 		t.Fatalf("%+v", e)
@@ -75,7 +75,7 @@ func TestAnAgentsSandbox(t *testing.T) {
 		t.Fatal(choice)
 	}
 	var a wire.Agent
-	json.Unmarshal(c.call(t, 2, "agents/setSandbox", map[string]any{"agentID": id, "choice": "off"}), &a)
+	mustUnmarshal(t, c.call(t, 2, "agents/setSandbox", map[string]any{"agentID": id, "choice": "off"}), &a)
 	if a.SandboxOverride == nil || *a.SandboxOverride != wire.SandboxChoiceOff {
 		t.Fatalf("%+v", a.SandboxOverride)
 	}
@@ -83,7 +83,7 @@ func TestAnAgentsSandbox(t *testing.T) {
 		t.Fatal(choice)
 	}
 	a = wire.Agent{}
-	json.Unmarshal(c.call(t, 3, "agents/setSandbox", map[string]any{"agentID": id}), &a)
+	mustUnmarshal(t, c.call(t, 3, "agents/setSandbox", map[string]any{"agentID": id}), &a)
 	if a.SandboxOverride != nil {
 		t.Fatal(*a.SandboxOverride)
 	}
@@ -102,7 +102,7 @@ func TestASandboxThatCouldNotStart(t *testing.T) {
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	var id wire.UUID
-	json.Unmarshal(c.call(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(), "prompt": "the sandbox fails"}), &id)
+	mustUnmarshal(t, c.call(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(), "prompt": "the sandbox fails"}), &id)
 	c.until(t, "stopped with the card", ended(id, wire.AgentStateStopped))
 	a := d.Store.Agent(id)
 	if a.EndedReason == nil || *a.EndedReason != wire.EndedReasonSandboxFailed || a.PendingSandboxFailure == nil ||
@@ -121,7 +121,7 @@ func TestASandboxThatCouldNotStart(t *testing.T) {
 	})
 	// Carried on: off for this agent, and the person's prompt sent again.
 	var answered wire.Agent
-	json.Unmarshal(c.call(t, 2, "agents/answerSandbox", map[string]any{"agentID": id, "carryOn": true}), &answered)
+	mustUnmarshal(t, c.call(t, 2, "agents/answerSandbox", map[string]any{"agentID": id, "carryOn": true}), &answered)
 	if answered.SandboxOverride == nil || *answered.SandboxOverride != wire.SandboxChoiceOff || answered.PendingSandboxFailure != nil {
 		t.Fatalf("%+v", answered)
 	}

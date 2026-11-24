@@ -23,8 +23,6 @@ final class ControlSettingsModel {
     private(set) var groups: [DaemonAPI.Group] = []
     /// Whether this window's person is an admin, who adds and changes providers (#1761).
     var isAdmin: Bool { status?.person?.isAdmin ?? true }
-    /// Write It for Me (#858): where each draft this window started stands, by its id.
-    private(set) var drafts: [UUID: DaemonAPI.ProviderDraftUpdate] = [:]
     /// Servers added from a provider's workspace (Add as Host…), by name: linked to it once
     /// they join.
     private var linkOnJoin: [String: (provider: ProviderID, workspace: String, trust: String?)] = [:]
@@ -96,12 +94,6 @@ final class ControlSettingsModel {
                 for await note in self.client.notifications() where note.method.hasPrefix("control/") {
                     if note.method == DaemonAPI.Notification.controlInstallProgress {
                         self.installStep = note.params?["step"]?.stringValue
-                        continue
-                    }
-                    if note.method == DaemonAPI.Notification.controlProviderDraft {
-                        if let update = try? note.params?.decode(DaemonAPI.ProviderDraftUpdate.self) {
-                            self.drafts[update.draft] = update
-                        }
                         continue
                     }
                     if note.method == DaemonAPI.Notification.controlProvidersChanged,
@@ -206,58 +198,38 @@ final class ControlSettingsModel {
         }
     }
 
-    // MARK: Write It for Me (#858)
-
-    /// The runtimes that can write here, and the host they run on; nil when the control
-    /// plane can't be reached.
-    func writerRuntimes() async -> DaemonAPI.ProviderRuntimes? {
-        try? await client.call(DaemonAPI.Method.providersRuntimes, DaemonAPI.Empty(), returning: DaemonAPI.ProviderRuntimes.self)
+    /// Why an OAuth connection did not start or finish (#6074): the words, and data.reason.
+    struct OAuthRefusal: Error, Equatable {
+        var words: String
+        var reason: String?
     }
 
-    /// Starts a draft: answered at once when no agent is needed, or why it can't start. When
-    /// the host holds the person's lock, this Mac signs the writer's start (#3542).
-    func startDraft(_ request: DaemonAPI.ProviderDraftStart,
-                    signer: () async -> LockChannel.Signer?) async -> Result<DaemonAPI.ProviderDraftStarted, DraftRefusal> {
+    private static func oauthRefusal(_ error: any Error) -> OAuthRefusal {
+        guard let error = error as? JSONRPCError else { return OAuthRefusal(words: "The control plane can’t be reached.") }
+        return OAuthRefusal(words: HostProblem.controlRefusal(error), reason: error.data?["reason"]?.stringValue)
+    }
+
+    /// providers/oauthStart (#6072): the consent page to open, on the machine that keeps it.
+    func oauthStart(_ request: DaemonAPI.ProviderOAuthStart) async -> Result<DaemonAPI.ProviderOAuthStarted, OAuthRefusal> {
         do {
-            let started = try await client.call(DaemonAPI.Method.providersDraftStart, request,
-                                                returning: DaemonAPI.ProviderDraftStarted.self)
-            guard let sign = started.sign else { return .success(started) }
-            guard let signer = await signer() else {
-                await cancelDraft(started.draft)
-                return .failure(DraftRefusal(message: "The host takes only a start this Mac signs, and this Mac isn’t in your lock."))
-            }
-            let lock: DaemonAPI.LockSignature
-            do {
-                lock = try sign.signed(for: started.draft, runtimeID: request.runtimeID, by: signer.key)
-            } catch let refused as DaemonAPI.ProviderDraftSign.NotAWritersStart {
-                await cancelDraft(started.draft)
-                return .failure(DraftRefusal(message: "This Mac didn’t sign the writer’s start: \(refused.why)."))
-            }
-            _ = try await client.call(DaemonAPI.Method.providersDraftSigned, DaemonAPI.ProviderDraftSigned(draft: started.draft, lock: lock))
-            return .success(DaemonAPI.ProviderDraftStarted(draft: started.draft))
-        } catch let error as JSONRPCError {
-            return .failure(DraftRefusal(message: HostProblem.controlRefusal(error)))
+            return .success(try await client.call(DaemonAPI.Method.providersOAuthStart, request,
+                                                  returning: DaemonAPI.ProviderOAuthStarted.self))
         } catch {
-            return .failure(DraftRefusal(message: "The control plane can’t be reached."))
+            return .failure(Self.oauthRefusal(error))
         }
     }
 
-    struct DraftRefusal: Error {
-        var message: String
+    /// providers/oauthFinish (#6072): the provider, added or connected again.
+    func oauthFinish(_ request: DaemonAPI.ProviderOAuthFinish) async -> Result<DaemonAPI.ProviderSummary, OAuthRefusal> {
+        do {
+            let summary = try await client.call(DaemonAPI.Method.providersOAuthFinish, request,
+                                                returning: DaemonAPI.ProviderSummary.self)
+            await refresh()
+            return .success(summary)
+        } catch {
+            return .failure(Self.oauthRefusal(error))
+        }
     }
-
-    /// × , Back and Cancel: the agent stops and the draft goes.
-    func cancelDraft(_ id: UUID) async {
-        _ = try? await client.call(DaemonAPI.Method.providersDraftCancel, DaemonAPI.ProviderDraftRequest(draft: id))
-        drafts[id] = nil
-    }
-
-    func answerDraft(_ id: UUID, question: UUID, yes: Bool) async {
-        _ = try? await client.call(DaemonAPI.Method.providersDraftAnswer,
-                                   DaemonAPI.ProviderDraftAnswer(draft: id, question: question, yes: yes))
-    }
-
-    func forgetDraft(_ id: UUID) { drafts[id] = nil }
 
     /// Gives a provider to a group, or with nil to the admins alone (#1761).
     func setGroup(_ provider: ProviderID, _ group: String?) async {

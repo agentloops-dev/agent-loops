@@ -16,14 +16,15 @@ import { forgeName, shortRef } from "../model/work";
 import type { DiffFile } from "./chat/appViewBridge";
 import { FileDiff, type DiffLayout } from "./FileDiff";
 import { Icon } from "./Icon";
-import { LastUpdate } from "./LastUpdate";
 import { Modal } from "./Modal";
 import { OpenGlyph } from "./Work";
+import { WorkFooter } from "./WorkParts";
+import { pageFooterState } from "../model/workFooter";
 
 /** The Review page's key, so the choice is the same on both pages. */
 const layoutKey = "reviewDiffLayout";
 
-interface Read { files: DiffFile[]; cut: boolean; url?: string | undefined; at: number }
+interface Read { files: DiffFile[]; cut: boolean; url?: string | undefined }
 
 export function WorkFilesPage({ store, host, detail, back }: { store: Store; host: string; detail: ForgeItemDetail; back: () => void }) {
   const node = detail.item.node;
@@ -32,6 +33,7 @@ export function WorkFilesPage({ store, host, detail, back }: { store: Store; hos
   const read = useSignal<Read | null>(null);
   const problem = useSignal<string | null>(null);
   const asked = useSignal(0);
+  const reading = useSignal(false);
   const layout = useSignal<DiffLayout>(globalThis.localStorage?.getItem(layoutKey) === "sideBySide" ? "sideBySide" : "unified");
   const collapsed = useSignal<ReadonlySet<number>>(new Set());
   const filter = useSignal("");
@@ -42,9 +44,11 @@ export function WorkFilesPage({ store, host, detail, back }: { store: Store; hos
   useEffect(() => {
     let current = true;
     problem.value = null;
+    reading.value = true;
     store.link.call("forge/diff", { node }, host).then(
-      (d) => { if (current) read.value = { files: d.files, cut: d.cut, url: d.url, at: Date.now() }; },
-      (e) => { if (current) problem.value = describe(e); });
+      (d) => { if (current) read.value = { files: d.files, cut: d.cut, url: d.url }; },
+      (e) => { if (current) problem.value = describe(e); })
+      .finally(() => { if (current) reading.value = false; });
     return () => { current = false; };
   }, [asked.value]);
 
@@ -111,7 +115,7 @@ export function WorkFilesPage({ store, host, detail, back }: { store: Store; hos
   );
 
   return (
-    <section class={`work-files-page${wide ? " wide" : ""}`} aria-label="Files changed" ref={page}>
+    <section class={`work-files-page work-footed${wide ? " wide" : ""}`} aria-label="Files changed" ref={page}>
       <div class="work-page-bar">
         <nav class="work-place" aria-label="Place">
           <button type="button" class="link" onClick={back}><Icon name="chevron-left" />{ref}</button>
@@ -135,9 +139,8 @@ export function WorkFilesPage({ store, host, detail, back }: { store: Store; hos
         {url && <a class="files-open-on" href={url} target="_blank" rel="noopener noreferrer"><OpenGlyph />On {site}</a>}
         </span>
       </header>
-      {read.value && <p class="files-fresh"><LastUpdate at={read.value.at} /></p>}
-
-      {problem.value ? (
+      {/* The read's state is in the footer (#5971, the Mac's #5970); the diff is not kept, so it says no age. */}
+      {problem.value && !read.value ? (
         <div class="work-could-not" role="alert">
           <span class="mark" aria-hidden="true"><Icon name="triangle-alert" /></span>
           <p class="strong">{couldNotRead(ref)}</p>
@@ -184,6 +187,8 @@ export function WorkFilesPage({ store, host, detail, back }: { store: Store; hos
           </div>
         </div>
       )}
+      <WorkFooter state={pageFooterState(read.value !== null, reading.value, false, problem.value ? [problem.value] : [])}
+        retry={() => { asked.value++; }} />
       {picking.value && !wide && (
         <Modal label="Files" close={() => { picking.value = false; }}>
           <div class="files-sheet">

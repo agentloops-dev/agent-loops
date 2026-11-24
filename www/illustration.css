@@ -1,0 +1,24 @@
+/* The hero's picture (#6830): the Earth and the Blob in a space suit. Not tokens: a picture's
+   own colours, the same in light and dark (design/colour-allowlist.txt). The Blob's are its
+   mark's (design/logo/blob). */
+.lp-sea-lit { stop-color: #7cc4ff; }
+.lp-sea { stop-color: #2a7fd4; }
+.lp-sea-deep { stop-color: #0f3f86; }
+.lp-land path { fill: #4caf6a; }
+.lp-clouds path { fill: #ffffff; fill-opacity: 0.85; }
+.lp-day { stop-color: #001028; stop-opacity: 0; }
+.lp-night { stop-color: #001028; stop-opacity: 0.6; }
+.lp-air { fill: none; stroke: #9fd3ff; stroke-width: 8; stroke-opacity: 0.45; }
+.lp-pack { fill: #dfe5ee; stroke: #9aa6b8; stroke-width: 24; }
+.lp-blob-edge { fill: none; stroke: #3a78e6; stroke-width: 56; stroke-linejoin: round; }
+.lp-blob { fill: #ffffff; }
+.lp-eye { fill: #0e1a3a; }
+.lp-smile { fill: none; stroke: #0e1a3a; stroke-width: 28; stroke-linecap: round; }
+.lp-helmet { fill: #cfe3ff; fill-opacity: 0.22; stroke: #b8c7dc; stroke-width: 22; }
+.lp-glint { fill: none; stroke: #ffffff; stroke-width: 30; stroke-linecap: round; stroke-opacity: 0.8; }
+
+/* The redacted government file (fl-, Alex, PR #6960): typed paper and black marker bars. */
+.fl-paper { fill: #f3ecd8; stroke: #b9ad8c; stroke-width: 1; }
+.fl-shadow { fill: #000000; fill-opacity: 0.22; }
+.fl-bar { fill: #0b0b0b; }
+.fl-word { fill: #f3ecd8; }

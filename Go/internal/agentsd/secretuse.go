@@ -216,7 +216,7 @@ func (d *Daemon) secretUseAllowed(agent wire.UUID, name string, use wire.SecretU
 	}
 	// A grant counts only in a record that opens: one added by hand does not
 	// (sealedSecretAD binds the grants).
-	s, ok := readSealedSecrets(home).Secrets[name]
+	s, ok := sealedSecretsHere(home)[name]
 	if !ok || !slices.Contains(s.Grants, grantPlace(use, place)) {
 		return false
 	}
@@ -399,7 +399,10 @@ func (d *Daemon) changeGrant(name string, use wire.SecretUse, place string, add 
 	}
 	d.sealedSecretsMu.Lock()
 	defer d.sealedSecretsMu.Unlock()
-	f := readSealedSecrets(home)
+	f, err := readSealedSecrets(home)
+	if err != nil {
+		return Invalid("The grant was not changed: %s.", err)
+	}
 	s, ok := f.Secrets[name]
 	if !ok || s.NoAsk {
 		return Invalid("%s does not have Ask before use on this machine.", name)
@@ -428,7 +431,7 @@ func (d *Daemon) secretGrants() wire.SecretGrants {
 	if home == "" {
 		return out
 	}
-	f := readSealedSecrets(home)
+	f := sealedSecretsFile{Secrets: sealedSecretsHere(home)}
 	names := make([]string, 0, len(f.Secrets))
 	for n := range f.Secrets {
 		names = append(names, n)

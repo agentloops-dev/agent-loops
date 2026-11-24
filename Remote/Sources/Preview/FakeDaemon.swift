@@ -173,6 +173,9 @@ private actor FakeState {
             case DaemonAPI.Method.velocityHistory:
                 return .success(try JSONValue.encoding(Canned.velocity))
 
+            case DaemonAPI.Method.cycletimeHistory:
+                return .success(try JSONValue.encoding(Canned.cycleTime))
+
             // New Session's Suggested section (#5460): `-fakeSuggest none`, `one`, or more than 3 (the default).
             case DaemonAPI.Method.workSuggestLeads:
                 return .success(try JSONValue.encoding(Canned.suggestions(dismissed: dismissedLeads)))
@@ -304,6 +307,40 @@ private extension Canned {
         }
         return VelocityHistory(hours: hours, days: days, now: stamp(now, "yyyy-MM-dd'T'HH"),
                                timeZone: TimeZone.current.identifier)
+    }
+
+    static var cycleTime: CycleTimeHistory {
+        if noMultiplier { return CycleTimeHistory(now: stamp(Date(), "yyyy-MM-dd'T'HH")) }
+        let calendar = Calendar.current
+        let now = Date()
+        var days: [String: CycleTimeBucket] = [:]
+        for back in 0 ..< 91 {
+            guard let day = calendar.date(byAdding: .day, value: -back, to: now) else { continue }
+            let weekend = calendar.isDateInWeekend(day)
+            let count = weekend ? back % 2 : 1 + (back * 3) % 3
+            var samples: [CycleTimeSample] = []
+            for index in 0 ..< count {
+                let cycle = Double(1 + (back * 7 + index * 5) % 14) * 3600
+                let coding = index == 0 ? cycle * 0.35 : nil
+                let pr = index == 0 ? cycle * 0.65 : nil
+                samples.append(CycleTimeSample(cycle: cycle, coding: coding, pr: pr,
+                                               level: ["story", "task", "bug"][(back + index) % 3],
+                                               repo: index == 0 ? "github:example/shop" : "github:example/docs"))
+            }
+            days[stamp(day, "yyyy-MM-dd")] = CycleTimeBucket(samples: samples, noStart: back % 17 == 3 ? 1 : 0)
+        }
+        var hours: [String: CycleTimeBucket] = [:]
+        let hour = calendar.component(.hour, from: now)
+        for back in 0 ... min(hour, 8) where back % 2 == 0 {
+            guard let at = calendar.date(byAdding: .hour, value: -back, to: now) else { continue }
+            let cycle = Double(2 + back) * 3600
+            hours[stamp(at, "yyyy-MM-dd'T'HH")] = CycleTimeBucket(samples: [
+                CycleTimeSample(cycle: cycle, coding: cycle * 0.4, pr: cycle * 0.6,
+                                level: "task", repo: "github:example/shop")
+            ])
+        }
+        return CycleTimeHistory(hours: hours, days: days, now: stamp(now, "yyyy-MM-dd'T'HH"),
+                                timeZone: TimeZone.current.identifier)
     }
 
     private static func stamp(_ date: Date, _ format: String) -> String {

@@ -19,10 +19,14 @@ import {
   timelineLines, timelineRanges, timelineShows, titleWords, titleY, workingNow, zoomed, type Interval, type TimelineHit, type TimelineBand, type TimelineLine, type TimelineRange,
 } from "../model/workTimeline";
 import { go } from "../route";
-import { keepWork, keptWorkRead } from "../model/localCopy";
+import { keepWork, keptWorkRead } from "../model/workCache";
 import { Choice, workProjects } from "./Work";
 import { choiceFrom, choiceWords, rememberEach, remembered } from "../model/workRemembered";
-import { EmptyState, ErrorStrip, FilterMenu, FromDeviceStrip, LabelChip, OnHoldChip, PlaceholderRows, PriorityChip, RefreshButton, StateIcon } from "./WorkParts";
+import { EmptyState, ErrorStrip, FilterMenu, LabelChip, OnHoldChip, PlaceholderRows, PriorityChip, RefreshButton, StateIcon, WorkFooter } from "./WorkParts";
+import { pageCount, pageFooterState } from "../model/workFooter";
+
+/** The middle of Timeline when nothing was read (#5971). */
+const couldNotReadTimeline = "Could not read the timeline";
 import { shownLabels } from "../model/forgeNextOrder";
 
 // The range, the project and the board are what the Timeline had when it was last left (#5451).
@@ -45,13 +49,14 @@ const nowAsked = signal(0);
 const landed = signal<ReadonlySet<string>>(new Set());
 /** A read of `work/timeline` runs: Refresh spins (note 30). */
 const reading = signal(false);
-/** Every machine failed the last read: the plot is the one before it, dimmed under the strip (S12). */
-const stale = signal(false);
+/** How many of the machines asked have answered the read that runs: "Reading 1 of 3 machines…" in the footer (#5971). */
+const answered = signal(0);
+const machines = signal(0);
 let read: string | undefined;
 /** The plot on screen came from this device's copy (#4930), until the machines answer. */
 const fromDevice = signal(false);
-/** When the plot on screen was read (#5142): this device's copy's time, or the last read that worked. A stale plot says
- * it in the failure strip, not only by its dim. */
+/** When the plot on screen was read (#5142): this device's copy's time, or the last read that worked. The footer says it
+ * (#5971), also after a later read failed. */
 const plotAt = signal<number | undefined>(undefined);
 /**
  * Every machine's sessions on the epics and their children, from the control plane's merged copy
@@ -92,12 +97,14 @@ async function loadTimeline(store: Store) {
   const key = `${asked.value} ${chosen?.id} ${board.value} ${range.value} ${span.start} ${timelineHosts(store).map((h) => h.id).join(",")}`;
   if (read === key && timeline.value !== null) return;
   read = key;
-  if (!chosen) { timeline.value = { epics: [], releases: [] }; stale.value = false; return; }
+  if (!chosen) { timeline.value = { epics: [], releases: [] }; return; }
   if (project.value !== chosen.id) project.value = chosen.id;
   const on = new Set<string>([...chosen.folders].map((f) => f.slice(0, f.indexOf("|"))));
   const hosts = timelineHosts(store).filter((h) => on.has(h.id));
   const chosenBoard = board.value;
   reading.value = true;
+  answered.value = 0;
+  machines.value = hosts.length;
   // Seen before: this device's copy at once, until the machines answer (#4930). Kept by project, board and range.
   const kept = [chosen.id, chosenBoard, range.value].join("|");
   if (timeline.value === null) {
@@ -112,9 +119,9 @@ async function loadTimeline(store: Store) {
     const failed = got.flatMap((g) => g.problem ? [g.problem] : []);
     const none = hosts.length > 0 && failed.length === hosts.length;
     problem.value = all && none ? failed.join("\n") : null;
-    // With every machine failing, the last plot stays, dimmed.
-    stale.value = all && none && timeline.value !== null;
-    if (stale.value) return;
+    // With every machine failing, the last plot stays at full opacity, and the footer says what failed (#5971); with
+    // none, the middle says it.
+    if (all && none) return;
     const merged = mergeTimelines(got.flatMap((g) => g.t ? [g.t] : []));
     const epics = chosenBoard ? new Set(got.flatMap((g) => g.refs ?? [])) : undefined;
     if (epics) merged.epics = merged.epics.filter((e) => epics.has(e.item.node.ref));
@@ -148,11 +155,16 @@ async function loadTimeline(store: Store) {
           refs = list.items.map((i: ForgeItem) => i.node.ref);
         } catch { refs = []; }
       }
-      one = { t, refs };
+      // A machine whose forge failed answers with no epic and only the forge's error: a failed read, not an empty plot
+      // with "Last update just now" (#5971, as the Mac's #5969).
+      one = t.epics.length === 0 && (t.errors?.length ?? 0) > 0
+        ? { problem: (t.errors ?? []).map((e) => hosts.length > 1 ? `${h.name}: ${e}` : e).join("\n") }
+        : { t, refs };
     } catch (e) {
       one = { problem: hosts.length > 1 ? `${h.name}: ${describe(e)}` : describe(e) };
     }
     got.push(one);
+    if (read === key) answered.value = got.length;
     if (read === key && got.length < hosts.length && one.t) void draw(false);
   }));
   if (read !== key) return;
@@ -215,9 +227,13 @@ export function WorkTimeline({ store }: { store: Store }) {
   }, [project.value]);
   const t = timeline.value;
   const problems = [...problem.value ? problem.value.split("\n") : [], ...t?.errors ?? []];
+  const shownCount = t && projects.length > 0 ? epicCount(timelineLines(t, Date.now()), rangeWindow(range.value, anchor.value)) : undefined;
+  // The read's state, the count and Last update are in the footer, as on the lists (#5971, the Mac's #5969); no strip.
+  const footer = hosts.length === 0 || projects.length === 0 ? { kind: "none" as const }
+    : pageFooterState(t !== null, reading.value, fromDevice.value, problems, answered.value, machines.value);
   const refresh = () => { asked.value++; void loadBoards(store, true); };
   return (
-    <div class="work-list timeline-page">
+    <div class="work-list timeline-page work-footed">
       {/* The filter bar of parts.md section 4 (note 31 and 32): Project and Board at the leading edge, the title line, then
           the range and Now at the trailing edge, where Sort is on a list, and Refresh (note 30). */}
       <div class="work-filters timeline-bar" role="group" aria-label="Timeline">
@@ -250,12 +266,14 @@ export function WorkTimeline({ store }: { store: Store }) {
         : projects.length === 0 ? <EmptyState kind="timeline" title={noProjectTitle} line={noProject} />
         : (
           <>
-            <FromDeviceStrip at={fromDevice.value && problems.length === 0 ? plotAt.value : undefined} />
-            <ErrorStrip lines={problems} retry={refresh} at={stale.value || fromDevice.value ? plotAt.value : undefined} />
-            <Plot timeline={t ?? { epics: [], releases: [] }} drawn={t !== null} reading={reading.value} dim={stale.value}
-              working={t ? workingNow(t, sessions.value, Object.values(store.agents.value).flat()) : new Set()} />
+            {t === null && problems.length > 0 && !reading.value
+              ? <ErrorStrip lines={problems} retry={refresh} middle title={couldNotReadTimeline} />
+              : <Plot timeline={t ?? { epics: [], releases: [] }} drawn={t !== null} reading={reading.value}
+                  working={t ? workingNow(t, sessions.value, Object.values(store.agents.value).flat()) : new Set()} />}
           </>
         )}
+      <WorkFooter state={footer} retry={refresh} count={shownCount === undefined ? undefined : pageCount(shownCount, "epic")}
+        at={t !== null ? plotAt.value : undefined} />
     </div>
   );
 }
@@ -274,10 +292,11 @@ interface Hover { hit: TimelineHit; x: number; y: number }
 
 /** The plot; under 700 px the list of epics in its place (note 36). `drawn`: a read or a device's copy drew it;
  * `reading`: a read of the window runs. Until one draws, or while one runs and no epic is in the window, the axis and
- * Now with grey blocks that shimmer in rows (S10, #5925), never S11. `dim`: the last plot under the error strip (S12). `working`: the epics and
+ * Now with grey blocks that shimmer in rows (S10, #5925), never S11. A later read that failed leaves it at full opacity, and the
+ * footer says what failed (#5971). `working`: the epics and
  * children a session is in a turn on now (#4265); their blocks glow. */
-function Plot({ timeline: t, drawn, reading, dim, working }: {
-  timeline: Timeline; drawn: boolean; reading: boolean; dim: boolean; working: ReadonlySet<string>;
+function Plot({ timeline: t, drawn, reading, working }: {
+  timeline: Timeline; drawn: boolean; reading: boolean; working: ReadonlySet<string>;
 }) {
   const now = useMinute();
   const scroller = useRef<HTMLDivElement>(null);
@@ -370,7 +389,7 @@ function Plot({ timeline: t, drawn, reading, dim, working }: {
   const d = new Drawing(lines, axis, now, height, offset, visible, loading ? [] : bandsOf(lines));
   const last = shows === "empty" ? lastJoined(t, win.start) : undefined;
   return (
-    <div class={`timeline${dim ? " dim" : ""}`}>
+    <div class="timeline">
       <div class="timeline-scroll" ref={scroller} onScroll={onScroll}>
         <div class="timeline-content" style={{ width: `${axis.width + bandGutter}px` }}>
           {/* Each band's name on its first row (#6089, #6093): it stays at the leading edge while the plot scrolls in

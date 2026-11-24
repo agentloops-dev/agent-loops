@@ -68,7 +68,7 @@ func newEventsServer(t *testing.T) *eventsServer {
 			Method string          `json:"method"`
 			Params json.RawMessage `json:"params"`
 		}
-		json.NewDecoder(r.Body).Decode(&m)
+		check(t, json.NewDecoder(r.Body).Decode(&m))
 		if m.ID == nil {
 			w.WriteHeader(http.StatusAccepted)
 			return
@@ -87,7 +87,7 @@ func newEventsServer(t *testing.T) *eventsServer {
 				Name   string  `json:"name"`
 				Cursor *string `json:"cursor"`
 			}
-			json.Unmarshal(m.Params, &p)
+			check(t, json.Unmarshal(m.Params, &p))
 			s.mu.Lock()
 			cursor := ""
 			if p.Cursor != nil {
@@ -97,24 +97,24 @@ func newEventsServer(t *testing.T) *eventsServer {
 			if cursor == "c1" && s.refused {
 				s.mu.Unlock()
 				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": *m.ID, "error": map[string]any{
-					"code": -32012, "message": "this token may not read alexec/Agents", "data": map[string]any{"reason": "no access"}}})
+				check(t, json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": *m.ID, "error": map[string]any{
+					"code": -32012, "message": "this token may not read alexec/Agents", "data": map[string]any{"reason": "no access"}}}))
 				return
 			}
 			if cursor == "c1" && s.internal > 0 {
 				s.internal--
 				s.mu.Unlock()
 				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": *m.ID, "error": map[string]any{
-					"code": -32603, "message": "dial tcp: lookup api.github.com: no such host"}})
+				check(t, json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": *m.ID, "error": map[string]any{
+					"code": -32603, "message": "dial tcp: lookup api.github.com: no such host"}}))
 				return
 			}
 			if cursor == "c1" && s.notConnected > 0 {
 				s.notConnected--
 				s.mu.Unlock()
 				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": *m.ID, "error": map[string]any{
-					"code": -32012, "message": "GitHub is not connected, or its sign-in ended", "data": map[string]any{"reason": "not connected"}}})
+				check(t, json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": *m.ID, "error": map[string]any{
+					"code": -32012, "message": "GitHub is not connected, or its sign-in ended", "data": map[string]any{"reason": "not connected"}}}))
 				return
 			}
 			events := []map[string]any{}
@@ -139,7 +139,7 @@ func newEventsServer(t *testing.T) *eventsServer {
 		}
 		w.Header().Set("Mcp-Session-Id", "s1")
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": *m.ID, "result": result})
+		check(t, json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": *m.ID, "result": result}))
 	}))
 	t.Cleanup(s.Close)
 	return s
@@ -216,15 +216,15 @@ func quickPolls(d *Daemon) {
 func serverHome(t *testing.T, d *Daemon, url string) {
 	home := t.TempDir()
 	personalHomeFor(t, home)
-	os.MkdirAll(filepath.Join(home, ".agents"), 0o755)
+	must(t, os.MkdirAll(filepath.Join(home, ".agents"), 0o755)) //nolint:gosec // G301: the mode this folder always had; only its error is new
 	b, _ := json.Marshal(map[string]any{"mcpServers": map[string]any{"ci": map[string]any{"url": url}}})
-	os.WriteFile(filepath.Join(home, ".agents", "mcp.json"), b, 0o644)
+	must(t, os.WriteFile(filepath.Join(home, ".agents", "mcp.json"), b, 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 }
 
 func summaryOf(t *testing.T, c *conn, folder wire.URL, id string) wire.WorkflowSummary {
 	t.Helper()
 	var list []wire.WorkflowSummary
-	json.Unmarshal(c.call(t, 80, "workflows/list", map[string]any{"folder": folder}), &list)
+	mustUnmarshal(t, c.call(t, 80, "workflows/list", map[string]any{"folder": folder}), &list)
 	for _, s := range list {
 		if s.Workflow.WorkflowID == id {
 			return s
@@ -257,9 +257,9 @@ func TestAWorkflowHearsAServersEvent(t *testing.T) {
 	quickPolls(d)
 	dir := folder(t, c, 1)
 	folder := store.FolderURL(dir)
-	os.MkdirAll(workflowsFolder(dir), 0o755)
+	must(t, os.MkdirAll(workflowsFolder(dir), 0o755)) //nolint:gosec // G301: the mode this folder always had; only its error is new
 	write := func(id, text string) {
-		os.WriteFile(filepath.Join(workflowsFolder(dir), id+".md"), []byte(text), 0o644)
+		must(t, os.WriteFile(filepath.Join(workflowsFolder(dir), id+".md"), []byte(text), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	}
 	write("merged", "---\nname: Merged\non:\n  - pr.merged:\n      server: ci\n      repo: alexec/Agents\n---\nTidy up.\n")
 	write("closed", "---\non:\n  - pr.closed:\n      server: ci\n---\nLook.\n")
@@ -336,7 +336,7 @@ func TestAWorkflowHearsAServersEvent(t *testing.T) {
 
 	// Clear takes the missed mark off.
 	var cleared wire.WorkflowSummary
-	json.Unmarshal(c.call(t, 3, "workflows/mcpTrigger/clearMissed", map[string]any{"folder": folder, "workflowID": "merged", "name": "pr.merged", "server": "ci"}), &cleared)
+	mustUnmarshal(t, c.call(t, 3, "workflows/mcpTrigger/clearMissed", map[string]any{"folder": folder, "workflowID": "merged", "name": "pr.merged", "server": "ci"}), &cleared)
 	if len(cleared.McpTriggers) != 1 || cleared.McpTriggers[0].MissedSince != nil {
 		t.Fatalf("%+v", cleared.McpTriggers)
 	}
@@ -386,8 +386,8 @@ func TestEventsHalfDeliveredAreRaisedOnceAtTheNextStart(t *testing.T) {
 	quickPolls(d)
 	dir := folder(t, c, 1)
 	folder := store.FolderURL(dir)
-	os.MkdirAll(workflowsFolder(dir), 0o755)
-	os.WriteFile(filepath.Join(workflowsFolder(dir), "merged.md"), []byte("---\non:\n  - pr.merged:\n      server: ci\n---\nTidy up.\n"), 0o644)
+	must(t, os.MkdirAll(workflowsFolder(dir), 0o755))                                                                                                     //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(workflowsFolder(dir), "merged.md"), []byte("---\non:\n  - pr.merged:\n      server: ci\n---\nTidy up.\n"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	approveAll(t, c, folder)
 	key := mcpTrigger{event: "pr.merged", arguments: map[string]json.RawMessage{}}.subscriptionKey("ci")
 	// e8 reached the log before the host stopped; e9 did not.
@@ -397,7 +397,7 @@ func TestEventsHalfDeliveredAreRaisedOnceAtTheNextStart(t *testing.T) {
 	recs := mcpRecords{Subscriptions: map[string]*mcpRecord{store.FolderPath(folder) + "|" + key: {
 		Cursor: &c2, PreviousCursor: &c1, Seen: []mcpSeen{}, Delivering: []string{"e8", "e9"}, LastNamedAt: now()}}}
 	b, _ := diskjson.Marshal(recs)
-	os.WriteFile(filepath.Join(root, "mcp-events.json"), b, 0o644)
+	must(t, os.WriteFile(filepath.Join(root, "mcp-events.json"), b, 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	ci.mu.Lock()
 	ci.byCursor["c1"] = []map[string]any{{"eventId": "e8", "name": "pr.merged"}, {"eventId": "e9", "name": "pr.merged"}}
 	ci.mu.Unlock()
@@ -430,9 +430,9 @@ func TestATriggerNoServerHereOffers(t *testing.T) {
 	d.PersonalHome = t.TempDir()
 	dir := folder(t, c, 1)
 	folder := store.FolderURL(dir)
-	os.MkdirAll(workflowsFolder(dir), 0o755)
-	os.WriteFile(filepath.Join(workflowsFolder(dir), "w.md"), []byte("---\non: pr.mergd\n---\nLook.\n"), 0o644)
-	os.WriteFile(filepath.Join(workflowsFolder(dir), "named.md"), []byte("---\non:\n  - pr.merged:\n      server: gone\n---\nLook.\n"), 0o644)
+	must(t, os.MkdirAll(workflowsFolder(dir), 0o755))                                                                                                   //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(workflowsFolder(dir), "w.md"), []byte("---\non: pr.mergd\n---\nLook.\n"), 0o644))                                //nolint:gosec // G306: the mode this file always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(workflowsFolder(dir), "named.md"), []byte("---\non:\n  - pr.merged:\n      server: gone\n---\nLook.\n"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	approveAll(t, c, folder)
 	d.StartMCPEvents()
 	var lines []wire.MCPTriggerStatus
@@ -1054,11 +1054,14 @@ func TestAWorkflowForTwoServersSaysNothingOfTheOneNotHere(t *testing.T) {
 	quickPolls(d)
 	dir := folder(t, c, 1)
 	folder := store.FolderURL(dir)
-	os.MkdirAll(workflowsFolder(dir), 0o755)
-	os.WriteFile(filepath.Join(workflowsFolder(dir), "both.md"),
-		[]byte("---\non:\n  - pr.merged:\n      server: [ci, gone]\n  - review.posted\n---\nLook.\n"), 0o644)
-	os.WriteFile(filepath.Join(workflowsFolder(dir), "none.md"),
-		[]byte("---\non:\n  - pr.merged:\n      server: [gone, away]\n---\nLook.\n"), 0o644)
+	//nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.MkdirAll(workflowsFolder(dir), 0o755))
+	//nolint:gosec // G306: the mode this file always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(workflowsFolder(dir), "both.md"),
+		[]byte("---\non:\n  - pr.merged:\n      server: [ci, gone]\n  - review.posted\n---\nLook.\n"), 0o644))
+	//nolint:gosec // G306: the mode this file always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(workflowsFolder(dir), "none.md"),
+		[]byte("---\non:\n  - pr.merged:\n      server: [gone, away]\n---\nLook.\n"), 0o644))
 	approveAll(t, c, folder)
 	d.StartMCPEvents()
 	var lines []wire.MCPTriggerStatus
@@ -1087,8 +1090,10 @@ func TestAChannelMessageStartsWorkOnlyFromALinkedSender(t *testing.T) {
 	quickPolls(d)
 	dir := folder(t, c, 1)
 	folder := store.FolderURL(dir)
-	os.MkdirAll(workflowsFolder(dir), 0o755)
-	os.WriteFile(filepath.Join(workflowsFolder(dir), "merged.md"), []byte("---\nname: Merged\non:\n  - pr.merged:\n      server: ci\n---\nTidy up.\n"), 0o644)
+	//nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.MkdirAll(workflowsFolder(dir), 0o755))
+	//nolint:gosec // G306: the mode this file always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(workflowsFolder(dir), "merged.md"), []byte("---\nname: Merged\non:\n  - pr.merged:\n      server: ci\n---\nTidy up.\n"), 0o644))
 	approveAll(t, c, folder)
 
 	var mu sync.Mutex

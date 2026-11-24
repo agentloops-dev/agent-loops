@@ -38,7 +38,7 @@ func TestSweepRemovesTheFoldersOfAGoneRoot(t *testing.T) {
 		}
 	}
 	unmarked := filepath.Join(roots[0], "Old-12345678")
-	os.MkdirAll(unmarked, 0o755)
+	must(t, os.MkdirAll(unmarked, 0o755)) //nolint:gosec // G301: the mode this folder always had; only its error is new
 	if err := os.RemoveAll(gone); err != nil {
 		t.Fatal(err)
 	}
@@ -64,8 +64,8 @@ func TestSweepKeepsAFolderWhoseMarkIsNotItsOwn(t *testing.T) {
 	roots := scratchRoots(t)
 	gone := filepath.Join(t.TempDir(), "Gone")
 	other := filepath.Join(roots[0], "Other-00000000")
-	os.MkdirAll(other, 0o755)
-	os.WriteFile(filepath.Join(other, RootMark), []byte(gone), 0o600)
+	must(t, os.MkdirAll(other, 0o755)) //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(other, RootMark), []byte(gone), 0o600))
 	if removed := SweepGoneRoots(); len(removed) != 0 {
 		t.Fatalf("removed %v", removed)
 	}
@@ -78,7 +78,7 @@ func TestMarkOnlyARootsOwnFolders(t *testing.T) {
 	if l.OwnsFolders() {
 		t.Fatal("a temporary root owns no folders under roots/")
 	}
-	MarkOwnFolders(l)
+	must(t, MarkOwnFolders(l))
 	if _, err := os.Stat(l.Cache); !os.IsNotExist(err) {
 		t.Fatalf("%v", err)
 	}

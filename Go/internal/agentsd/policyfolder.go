@@ -51,14 +51,17 @@ func (d *Daemon) folderApprovedRules(folder string) wire.PolicyRules {
 // rule. Called instead of checkGuarded's own switch, which decides by whether an agent is
 // working there: that question does not apply to a folder's own rules.
 func (d *Daemon) checkFolderPolicyGuarded(folder string) {
-	digest, data := diskRead(folder, folderPolicyFile)
+	// Read under the lock, as checkGuarded reads (#6521, #6525): a check that read an older
+	// copy must not take the lock after a newer check and record that older copy.
 	d.guardedMu.Lock()
+	digest, data := diskRead(folder, folderPolicyFile)
 	s, known := d.stateOf(folder, folderPolicyFile)
 	moved, tightened := false, false
 	switch {
-	case !known && (len(data) == 0 || validPolicyRules(data)):
+	case !known && (digest == nil || validPolicyRules(data)):
 		// First seen: a missing file sets nothing, and a file already there (committed
-		// before this machine ever looked) is trusted only when it is valid.
+		// before this machine ever looked) is trusted only when it is valid. An empty or
+		// half-written file is not (#6525): it is a change against no approved copy.
 		s.ApprovedDigest, s.ApprovedContent, moved = digest, data, true
 	case same(s.ApprovedDigest, digest):
 		if s.Pending != nil {

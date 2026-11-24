@@ -76,6 +76,9 @@ type fakeForgeGitHub struct {
 	milestoneReads int
 	// hold, when set, keeps every Search waiting until it is closed (#5450).
 	hold chan struct{}
+	// sorts are each Search's sort, and entered, when set, hears each Search that hold keeps (#6538).
+	sorts   []string
+	entered chan struct{}
 }
 
 func (f *fakeForgeGitHub) Milestones(context.Context, string) ([]githubmcp.Milestone, error) {
@@ -90,11 +93,15 @@ func (f *fakeForgeGitHub) Search(_ context.Context, repos []string, sf githubmcp
 		f.mu.Lock()
 		f.searches = append(f.searches, "held")
 		f.mu.Unlock()
+		if f.entered != nil {
+			f.entered <- struct{}{}
+		}
 		<-f.hold
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.searches = append(f.searches, strings.Join(repos, ",")+" "+githubmcp.SearchQuery(repos, sf)+" after="+after)
+	f.sorts = append(f.sorts, sf.Sort)
 	if sf.Label == "epic" {
 		return githubmcp.SearchPage{Items: f.epics}, nil
 	}
@@ -689,5 +696,31 @@ func TestForgeLabelColor(t *testing.T) {
 	}
 	if l := forgeLabelsOf([]string{"bug", "odd"}, map[string]string{"bug": "D73A4A", "odd": "red"}); deref(l[0].Color) != "#d73a4a" || l[1].Color != nil {
 		t.Errorf("forgeLabelsOf: %+v", l)
+	}
+}
+
+// #6642: a kept list keeps the time of its read, and a Refresh (fresh) reads the forge again, not the kept answer.
+func TestForgeListFreshReadsAgainAndKeepsItsReadTime(t *testing.T) {
+	t.Parallel()
+
+	_, c, gh, _ := forgeDaemon(t)
+	var first, kept, fresh wire.ForgeList
+	mustUnmarshal(t, c.call(t, 1, "forge/pulls", wire.ForgeListRequest{Label: new("enhancement")}), &first)
+	if first.ReadAt == nil {
+		t.Fatalf("no readAt: %+v", first)
+	}
+	mustUnmarshal(t, c.call(t, 2, "forge/pulls", wire.ForgeListRequest{Label: new("enhancement")}), &kept)
+	if searches, _ := gh.asked(); len(searches) != 1 {
+		t.Fatalf("the same list within a minute asked again: %q", searches)
+	}
+	if kept.ReadAt == nil || !kept.ReadAt.Time().Equal(first.ReadAt.Time()) {
+		t.Fatalf("the kept answer's readAt %v is not its read's %v", kept.ReadAt, first.ReadAt)
+	}
+	mustUnmarshal(t, c.call(t, 3, "forge/pulls", wire.ForgeListRequest{Label: new("enhancement"), Fresh: new(true)}), &fresh)
+	if searches, _ := gh.asked(); len(searches) != 2 {
+		t.Fatalf("a fresh list did not read the forge: %q", searches)
+	}
+	if fresh.ReadAt == nil || fresh.ReadAt.Time().Before(first.ReadAt.Time()) || len(fresh.Items) != 1 {
+		t.Fatalf("fresh: %+v", fresh)
 	}
 }

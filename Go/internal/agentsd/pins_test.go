@@ -28,17 +28,17 @@ func TestPinsAreTheSwiftFile(t *testing.T) {
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := folder(t, c, 1)
-	os.MkdirAll(filepath.Join(dir, "docs"), 0o755)
-	os.WriteFile(filepath.Join(dir, "docs", "README.md"), []byte("# hi"), 0o644)
-	os.WriteFile(filepath.Join(dir, "plan.md"), []byte("# plan"), 0o644)
+	must(t, os.MkdirAll(filepath.Join(dir, "docs"), 0o755))                               //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(dir, "docs", "README.md"), []byte("# hi"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(dir, "plan.md"), []byte("# plan"), 0o644))         //nolint:gosec // G306: the mode this file always had; only its error is new
 	folder := store.FolderURL(dir)
 	var views []wire.PinView
-	json.Unmarshal(c.call(t, 2, "pins/pin", map[string]any{"folder": folder, "path": "docs/README.md"}), &views)
+	mustUnmarshal(t, c.call(t, 2, "pins/pin", map[string]any{"folder": folder, "path": "docs/README.md"}), &views)
 	if len(views) != 1 || views[0].Title != "docs" || views[0].Kind != wire.PinKindMarkdown || views[0].Missing ||
 		views[0].PinnedBy != (wire.PinnerView{Kind: wire.PinnerKindPerson, ID: "", Name: "the person"}) {
 		t.Fatalf("%+v", views)
 	}
-	json.Unmarshal(c.call(t, 3, "pins/pin", map[string]any{"folder": folder, "path": filepath.Join(dir, "plan.md"), "title": "The plan"}), &views)
+	mustUnmarshal(t, c.call(t, 3, "pins/pin", map[string]any{"folder": folder, "path": filepath.Join(dir, "plan.md"), "title": "The plan"}), &views)
 	b, _ := os.ReadFile(filepath.Join(dir, ".agents", "pins.json"))
 	want := `{
   "pins" : [
@@ -79,22 +79,22 @@ func TestPinsAreTheSwiftFile(t *testing.T) {
 			t.Fatalf("%d: %+v", i, e)
 		}
 	}
-	os.WriteFile(filepath.Join(dir, "x.txt"), nil, 0o644)
+	must(t, os.WriteFile(filepath.Join(dir, "x.txt"), nil, 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	if e := c.callError(t, 20, "pins/pin", map[string]any{"folder": folder, "path": "x.txt"}); e.Message != "Nothing was pinned: only a Markdown (.md) or HTML (.html) page can be pinned." {
 		t.Fatal(e.Message)
 	}
 	for i := 0; i < 8; i++ {
 		name := filepath.Join(dir, strings.Repeat("p", i+1)+".md")
-		os.WriteFile(name, nil, 0o644)
+		must(t, os.WriteFile(name, nil, 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 		c.call(t, 30+i, "pins/pin", map[string]any{"folder": folder, "path": filepath.Base(name)})
 	}
-	os.WriteFile(filepath.Join(dir, "eleven.md"), nil, 0o644)
+	must(t, os.WriteFile(filepath.Join(dir, "eleven.md"), nil, 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	if e := c.callError(t, 40, "pins/pin", map[string]any{"folder": folder, "path": "eleven.md"}); !strings.Contains(e.Message, "already has 10 pins") {
 		t.Fatal(e.Message)
 	}
 	// Read and typed on, as a page.
 	var r wire.FileReading
-	json.Unmarshal(c.call(t, 41, "pins/read", map[string]any{"folder": folder, "path": "plan.md"}), &r)
+	mustUnmarshal(t, c.call(t, 41, "pins/read", map[string]any{"folder": folder, "path": "plan.md"}), &r)
 	if r.Text == nil || *r.Text != "# plan" {
 		t.Fatalf("%+v", r)
 	}
@@ -110,7 +110,7 @@ func TestPinsAreTheSwiftFile(t *testing.T) {
 		t.Fatal(e.Message)
 	}
 	var all []wire.FolderPins
-	json.Unmarshal(c.call(t, 46, "pins/list", nil), &all)
+	mustUnmarshal(t, c.call(t, 46, "pins/list", nil), &all)
 	if len(all) != 1 || len(all[0].Pins) != 9 {
 		t.Fatalf("%+v", all)
 	}
@@ -125,17 +125,19 @@ func TestPinsThereBeforeTheFolderAreSaidOnAdd(t *testing.T) {
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := t.TempDir()
-	os.MkdirAll(filepath.Join(dir, ".agents"), 0o755)
-	os.WriteFile(filepath.Join(dir, "plan.md"), []byte("# plan"), 0o644)
-	os.WriteFile(filepath.Join(dir, ".agents", "pins.json"),
-		[]byte(`{"pins":[{"path":"plan.md","pinned_by":{"person":true}}]}`), 0o644)
+	must(t, os.MkdirAll(filepath.Join(dir, ".agents"), 0o755))                    //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(dir, "plan.md"), []byte("# plan"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(dir, ".agents", "pins.json"),              //nolint:gosec // G306: the mode this file always had; only its error is new
+		[]byte(`{"pins":[{"path":"plan.md","pinned_by":{"person":true}}]}`), 0o644))
 	c.in <- `{"jsonrpc":"2.0","id":1,"method":"folders/add","params":{"folder":"` + string(store.FolderURL(dir)) + `"}}`
 	c.until(t, "pins/changed with plan.md", func(method string, p json.RawMessage) bool {
 		if method != "pins/changed" {
 			return false
 		}
 		var n wire.PinsChangedNotification
-		json.Unmarshal(p, &n)
+		if json.Unmarshal(p, &n) != nil {
+			return false // another notification, or not this one yet
+		}
 		return len(n.Pins) == 1 && n.Pins[0].Path == "plan.md"
 	})
 }
@@ -188,9 +190,9 @@ func TestPreferencesMergeAndModes(t *testing.T) {
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	var got map[string]any
-	json.Unmarshal(c.call(t, 1, "preferences/set", map[string]any{"a": 1, "b": "x/y"}), &got)
+	mustUnmarshal(t, c.call(t, 1, "preferences/set", map[string]any{"a": 1, "b": "x/y"}), &got)
 	got = nil
-	json.Unmarshal(c.call(t, 2, "preferences/set", map[string]any{"a": nil, "c": true}), &got)
+	mustUnmarshal(t, c.call(t, 2, "preferences/set", map[string]any{"a": nil, "c": true}), &got)
 	if len(got) != 2 || got["b"] != "x/y" || got["c"] != true {
 		t.Fatalf("%v", got)
 	}
@@ -203,7 +205,7 @@ func TestPreferencesMergeAndModes(t *testing.T) {
 	})
 	c.call(t, 3, "agents/setOption", map[string]any{"agentID": a.ID, "optionID": "permission", "value": "plan"})
 	var modes map[string]string
-	json.Unmarshal(c.call(t, 4, "modes/remembered", nil), &modes)
+	mustUnmarshal(t, c.call(t, 4, "modes/remembered", nil), &modes)
 	if modes["claude"] != "plan" {
 		t.Fatalf("%v", modes)
 	}
@@ -216,14 +218,14 @@ func TestPersonas(t *testing.T) {
 	defer d.Shutdown()
 	dir := t.TempDir()
 	folder := filepath.Join(dir, ".agents", "personas")
-	os.MkdirAll(folder, 0o755)
-	os.WriteFile(filepath.Join(folder, "reviewer.md"), []byte("---\nname: Reviewer\ndescription: Reads code\nmodel: opus # the big one\noptions:\n  fast: true\nlabels: [review, Review]\nkeywords: [\"review\", \"#<n>\", Review, \" \"]\n---\n\nYou review.\n"), 0o644)
-	os.WriteFile(filepath.Join(folder, "plain.md"), []byte("Just a prompt"), 0o644)
-	os.WriteFile(filepath.Join(folder, "broken.md"), []byte("---\nname: x\n"), 0o644)
-	os.WriteFile(filepath.Join(folder, ".hidden.md"), nil, 0o644)
-	os.Symlink(filepath.Join(folder, "plain.md"), filepath.Join(folder, "linked.md"))
+	must(t, os.MkdirAll(folder, 0o755))                                                                                                                                                                                                                                            //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(folder, "reviewer.md"), []byte("---\nname: Reviewer\ndescription: Reads code\nmodel: opus # the big one\noptions:\n  fast: true\nlabels: [review, Review]\nkeywords: [\"review\", \"#<n>\", Review, \" \"]\n---\n\nYou review.\n"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(folder, "plain.md"), []byte("Just a prompt"), 0o644))                                                                                                                                                                                       //nolint:gosec // G306: the mode this file always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(folder, "broken.md"), []byte("---\nname: x\n"), 0o644))                                                                                                                                                                                     //nolint:gosec // G306: the mode this file always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(folder, ".hidden.md"), nil, 0o644))                                                                                                                                                                                                         //nolint:gosec // G306: the mode this file always had; only its error is new
+	must(t, os.Symlink(filepath.Join(folder, "plain.md"), filepath.Join(folder, "linked.md")))
 	var ps []wire.Persona
-	json.Unmarshal(c.call(t, 1, "personas/list", map[string]any{"folder": store.FolderURL(dir)}), &ps)
+	mustUnmarshal(t, c.call(t, 1, "personas/list", map[string]any{"folder": store.FolderURL(dir)}), &ps)
 	byID := map[string]wire.Persona{}
 	var names []string
 	for _, p := range ps {
@@ -256,18 +258,18 @@ func TestPersonaFilesCanBeManagedInEachScope(t *testing.T) {
 	content := "---\nname: Review\nfuture-key: keep me\n---\n\nRead carefully.\n"
 	c.call(t, 2, "personas/save", map[string]any{"folder": folderPath, "origin": "folder", "id": "review", "content": content})
 	var files wire.PersonaFilesAnswer
-	json.Unmarshal(c.call(t, 3, "personas/files", map[string]any{"folder": folderPath, "origin": "folder"}), &files)
+	mustUnmarshal(t, c.call(t, 3, "personas/files", map[string]any{"folder": folderPath, "origin": "folder"}), &files)
 	if len(files) != 1 || files[0].ID != "review" || files[0].Content != content || files[0].Origin != wire.PersonaOriginFolder {
 		t.Fatalf("folder files: %+v", files)
 	}
 	personalContent := "Plain personal prompt\n"
 	c.call(t, 4, "personas/save", map[string]any{"origin": "personal", "id": "review", "content": personalContent})
-	json.Unmarshal(c.call(t, 5, "personas/files", map[string]any{"origin": "personal"}), &files)
+	mustUnmarshal(t, c.call(t, 5, "personas/files", map[string]any{"origin": "personal"}), &files)
 	if len(files) != 1 || files[0].Content != personalContent || files[0].Origin != wire.PersonaOriginPersonal {
 		t.Fatalf("personal files: %+v", files)
 	}
 	c.call(t, 6, "personas/save", map[string]any{"folder": folderPath, "origin": "folder", "id": "review", "content": content, "delete": true})
-	json.Unmarshal(c.call(t, 7, "personas/files", map[string]any{"folder": folderPath, "origin": "folder"}), &files)
+	mustUnmarshal(t, c.call(t, 7, "personas/files", map[string]any{"folder": folderPath, "origin": "folder"}), &files)
 	if len(files) != 0 {
 		t.Fatalf("deleted folder persona remains: %+v", files)
 	}

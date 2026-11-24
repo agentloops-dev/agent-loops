@@ -126,16 +126,34 @@ func hostCapabilities(h records.MachineRecord) []string {
 	return list
 }
 
-// withCapabilities is the record with the list a host said, or without one when it said none.
-func withCapabilities(h records.MachineRecord, list []string) records.MachineRecord {
+// hostMaturity is the levels of a host's capabilities that are not GA, as it said them in its
+// last machine/hello (#6579); nil for a host older than that, so a client reads its own list.
+func hostMaturity(h records.MachineRecord) wire.Maturity {
+	raw, ok := h.Extra["maturity"]
+	if !ok {
+		return nil
+	}
+	var levels wire.Maturity
+	if json.Unmarshal(raw, &levels) != nil || levels == nil {
+		return nil
+	}
+	return levels
+}
+
+// withCapabilities is the record with the list and the levels a host said, or without each
+// one it said none of.
+func withCapabilities(h records.MachineRecord, list []string, levels wire.Maturity) records.MachineRecord {
 	extra := records.Extra{}
 	for k, v := range h.Extra {
-		if k != "capabilities" {
+		if k != "capabilities" && k != "maturity" {
 			extra[k] = v
 		}
 	}
 	if list != nil {
 		extra["capabilities"], _ = json.Marshal(list)
+	}
+	if levels != nil {
+		extra["maturity"], _ = json.Marshal(levels)
 	}
 	if len(extra) == 0 {
 		extra = nil

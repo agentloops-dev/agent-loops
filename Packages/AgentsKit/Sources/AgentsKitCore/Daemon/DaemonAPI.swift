@@ -459,6 +459,8 @@ public enum DaemonAPI {
         /// The PRs the agents worked on that landed, by hour and by day, per repository
         /// (#4596). No params.
         public static let velocityHistory = "velocity/history"
+        /// How long the person's work took to land, by hour and by day (#6648). No params.
+        public static let cycletimeHistory = "cycletime/history"
         /// Which features this host counted (#2165), for Reports ▸ Features. No params.
         public static let reportsFeatures = "reports/features"
         /// Report a Problem (#3718): the person's words made into a GitHub new-issue link,
@@ -551,6 +553,8 @@ public enum DaemonAPI {
     }
 
     public enum Notification {
+        /// A live control plane copy's capacity level moved (#6590).
+        public static let controlCapacityChanged = "control/capacityChanged"
         public static let agentChanged = "agent/changed"
         /// A file of variables changed on a machine (#5259): the Environment page reads `env/list` again.
         public static let envChanged = "env/changed"

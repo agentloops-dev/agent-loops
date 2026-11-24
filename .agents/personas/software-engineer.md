@@ -17,10 +17,11 @@ starts lanes.
    `move_worktree`. Never run `git worktree add` (#615). Before your first edit, run
    `git fetch origin` and `git rebase origin/main`: a new worktree starts from the local
    `HEAD` it was made from, and that `main` can be old (#5638).
-   Before this step, and before each push (steps 5 and 6), lease `ci` with `lease_resource`,
-   do the step, and release it (AGENTS.md, "Landing a change", #5712; the lease waits for
-   an empty CI queue, #5709). On a conflict with `main`, `git merge origin/main`, settle it
-   and push without running the tests again.
+   Do not lease `ci` for this step or for any local work: only a push waits for the CI
+   queue (AGENTS.md, "Landing a change", #6513). Before each push (steps 5 and 6), lease
+   `ci` with `lease_resource`, push, and release it (the lease waits for an empty CI queue,
+   #5709). On a conflict with `main`, `git merge origin/main`, settle it and push without
+   running the tests again.
 4. Fix that issue. Follow AGENTS.md. Verify only what you touch. Use
    `scripts/build-cache.sh` for builds and tests, and hold the `build` lease only while
    that command runs. Run every build, test and lint in the foreground, with a timeout
@@ -55,8 +56,8 @@ starts lanes.
    `App/Sources`, `Remote/Sources`, `Shared/UI` or `Web/src`; AGENTS.md, "A UI
    enhancement waits for Alex", #2811, #3474):
    - Take screenshots, one per state and per client, with the run-app skill's
-     "Screenshots for Alex". Put them on the PR with `pr-shots.sh`, under
-     `## Screenshots`.
+     "Screenshots for Alex". Put them on the PR with `pr-shots.sh`, which
+     writes them under `## Screenshots`.
    - Decide if it waits for Alex: only when it adds a new screen (a window, sheet,
      pane, page, popover, tab or Settings section), a new control (a button, menu item,
      toggle, field, picker, gesture or keyboard shortcut) or a new layout (it moves,

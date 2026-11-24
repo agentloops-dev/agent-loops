@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Agent Loops: run your coding agents together, and answer them from anywhere</title>
-<meta name="description" content="Keep your editor and the coding agents you already have. Agent Loops runs several of them at once on your Mac or your own servers, shows which one needs you, and lets you answer from your iPhone, iPad or a browser.">
-<meta property="og:title" content="Agent Loops">
-<meta property="og:description" content="Run several coding agents at once. See which one needs you. Answer from anywhere.">
+<title>Agent Loops: agentic software delivery, from idea to production, and back</title>
+<meta name="description" content="Agent Loops runs a team of coding agents for you. They plan the work with you, build it, get it through your CI, merge it and ship it. You stay in the loop for the decisions that need a person.">
+<meta property="og:title" content="Agent Loops: agentic software delivery">
+<meta property="og:description" content="From idea to production, and back. Agents do the work; you make the decisions that matter.">
 <meta property="og:image" content="https://agentloops.dev/assets/shots/mac.png">
 <meta property="og:url" content="https://agentloops.dev/">
 <link rel="canonical" href="https://agentloops.dev/">
@@ -15,124 +15,981 @@
 <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
 <link rel="stylesheet" href="tokens.css">
 <link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="brands.css">
+<link rel="stylesheet" href="illustration.css">
+<script src="pages.js" defer></script>
 </head>
 <body>
 
-<header class="top">
-  <a class="brand" href="/"><img src="assets/icon.svg" alt="" width="32" height="32">Agent Loops</a>
+<header class="top"><div class="wrap">
+  <a class="brand" href="/"><img src="assets/icon.svg" alt="" width="28" height="28">Agent Loops</a>
+  <span class="tagline">Agentic software delivery</span>
   <nav>
-    <a href="#clients">Clients</a>
     <a href="https://docs.agentloops.dev/">Docs</a>
   </nav>
-</header>
+  <a class="button small" href="#get">Get Agent Loops</a>
+</div></header>
 
 <main>
 
-<section class="hero">
-  <img class="hero-icon" src="assets/icon.svg" alt="The Agent Loops icon: a white blob with a smile, on blue" width="112" height="112">
-  <h1>Run several coding agents at once. See which one needs you.</h1>
-  <p class="lede">Keep your editor and the coding agents you already pay for. Agent Loops runs them on your Mac or on your own servers. You answer them from your iPhone, your iPad or a browser.</p>
-  <p class="actions">
-    <a class="button primary" href="https://docs.agentloops.dev/tutorials/first-agent/">Get it on TestFlight</a>
-    <a class="button" href="https://docs.agentloops.dev/">Read the docs</a>
-  </p>
-  <p class="small">An alpha, on TestFlight by invitation. Source visible. All rights reserved.</p>
-  <!-- The hero video goes here when #1078 makes it. Replace the figure with:
-       <div class="video"><iframe src="https://www.youtube-nocookie.com/embed/VIDEO_ID?rel=0"
-         title="Agent Loops in two minutes" loading="lazy" allowfullscreen
-         allow="encrypted-media; picture-in-picture"></iframe></div> -->
-  <figure class="shot hero-shot">
-    <img src="assets/shots/mac.png" alt="The Agent Loops window on a Mac: folders and their agents in the sidebar, grouped by what happens next, with one conversation open" width="1440" height="900">
+<!-- 1. Hero. The downloads are in "Get Agent Loops", lower down (Alex, 2026-11-22, PR #6862). -->
+<section class="page hero" id="top" aria-label="Agentic software delivery"><div class="wrap">
+  <h1>From idea to production, and back.</h1>
+  <p class="lede">Agent Loops runs a team of coding agents for you. They plan the work with you, build it, get it through your CI, merge it and ship it. You stay in the loop for the decisions that need a person, from your Mac, your phone, a browser or the terminal, and the agents get on with the rest.</p>
+  <!-- The loop (Alex, PR #6862): a wide drawing, and a tall one for a narrow window. Made from
+       eight steps placed at even lengths along an ellipse; the orbit changes shape over time, in CSS. -->
+  <figure class="loop">
+    <svg class="lp lp-wide" viewBox="0 0 1100 440" role="img" aria-labelledby="lp-title-wide lp-desc-wide" xmlns="http://www.w3.org/2000/svg">
+      <title id="lp-title-wide">The loop</title>
+      <desc id="lp-desc-wide">An idea becomes a feature. Agents build it, the pull requests merge and are tested, the change deploys, and it is monitored; then the loop starts again with the next idea. You approve the feature, the merge of new screens, and the deploy.</desc>
+      <defs><radialGradient id="lp-sea-w" cx="35%" cy="30%" r="75%"><stop class="lp-sea-lit" offset="0"/><stop class="lp-sea" offset="0.6"/><stop class="lp-sea-deep" offset="1"/></radialGradient><radialGradient id="lp-night-w" cx="32%" cy="28%" r="80%"><stop class="lp-day" offset="0.45"/><stop class="lp-night" offset="1"/></radialGradient><clipPath id="lp-clip-w"><circle cx="550" cy="220" r="70"/></clipPath></defs>
+      <circle class="lp-air" cx="550" cy="220" r="77"/>
+      <circle cx="550" cy="220" r="70" fill="url(#lp-sea-w)"/>
+      <g clip-path="url(#lp-clip-w)"><g class="lp-land"><path d="M 519.6 189.1 Q 526.2 195.5 520.7 202.6 Q 515.3 209.8 508.2 218.6 Q 501.1 227.5 491.1 220.4 Q 481.1 213.3 469.9 209.6 Q 458.6 205.8 460.7 196.1 Q 462.7 186.4 472.0 182.2 Q 481.3 177.9 490.9 172.2 Q 500.4 166.4 506.7 174.6 Q 513.0 182.7 519.6 189.1 Z"/><path d="M 585.9 222.7 Q 584.7 237.5 575.6 245.4 Q 566.4 253.2 557.4 257.7 Q 548.4 262.1 535.4 264.2 Q 522.3 266.2 507.4 259.2 Q 492.5 252.2 502.6 240.4 Q 512.7 228.7 519.0 220.9 Q 525.4 213.1 538.3 206.5 Q 551.3 200.0 569.1 204.0 Q 587.0 208.0 585.9 222.7 Z"/><path d="M 611.0 179.2 Q 616.2 185.0 611.7 191.3 Q 607.2 197.5 600.9 205.0 Q 594.6 212.6 587.1 205.0 Q 579.5 197.4 568.6 195.7 Q 557.6 194.0 562.6 186.4 Q 567.5 178.9 573.1 175.1 Q 578.6 171.3 585.2 170.6 Q 591.8 169.9 598.9 171.6 Q 605.9 173.3 611.0 179.2 Z"/><path d="M 685.0 217.2 Q 699.8 227.0 684.7 236.6 Q 669.6 246.2 659.7 256.6 Q 649.8 267.1 632.2 265.3 Q 614.6 263.6 607.2 251.3 Q 599.8 239.0 597.0 226.2 Q 594.3 213.4 609.3 208.6 Q 624.3 203.9 635.5 202.3 Q 646.8 200.8 658.5 204.1 Q 670.3 207.3 685.0 217.2 Z"/><path d="M 734.7 191.6 Q 743.4 199.0 736.4 207.5 Q 729.5 216.1 719.4 219.5 Q 709.3 223.0 697.4 223.8 Q 685.5 224.7 678.8 216.5 Q 672.2 208.3 674.0 199.5 Q 675.7 190.8 679.3 180.3 Q 682.9 169.8 696.9 168.7 Q 710.9 167.6 718.5 175.9 Q 726.0 184.2 734.7 191.6 Z"/><path d="M 753.4 251.9 Q 755.0 258.5 752.0 264.2 Q 749.1 269.9 742.9 275.1 Q 736.8 280.3 728.1 278.2 Q 719.3 276.1 716.9 269.8 Q 714.5 263.6 709.5 257.0 Q 704.5 250.5 714.3 248.9 Q 724.0 247.4 729.8 244.8 Q 735.6 242.3 743.7 243.7 Q 751.8 245.2 753.4 251.9 Z"/><g transform="translate(280 0)"><path d="M 519.6 189.1 Q 526.2 195.5 520.7 202.6 Q 515.3 209.8 508.2 218.6 Q 501.1 227.5 491.1 220.4 Q 481.1 213.3 469.9 209.6 Q 458.6 205.8 460.7 196.1 Q 462.7 186.4 472.0 182.2 Q 481.3 177.9 490.9 172.2 Q 500.4 166.4 506.7 174.6 Q 513.0 182.7 519.6 189.1 Z"/><path d="M 585.9 222.7 Q 584.7 237.5 575.6 245.4 Q 566.4 253.2 557.4 257.7 Q 548.4 262.1 535.4 264.2 Q 522.3 266.2 507.4 259.2 Q 492.5 252.2 502.6 240.4 Q 512.7 228.7 519.0 220.9 Q 525.4 213.1 538.3 206.5 Q 551.3 200.0 569.1 204.0 Q 587.0 208.0 585.9 222.7 Z"/><path d="M 611.0 179.2 Q 616.2 185.0 611.7 191.3 Q 607.2 197.5 600.9 205.0 Q 594.6 212.6 587.1 205.0 Q 579.5 197.4 568.6 195.7 Q 557.6 194.0 562.6 186.4 Q 567.5 178.9 573.1 175.1 Q 578.6 171.3 585.2 170.6 Q 591.8 169.9 598.9 171.6 Q 605.9 173.3 611.0 179.2 Z"/><path d="M 685.0 217.2 Q 699.8 227.0 684.7 236.6 Q 669.6 246.2 659.7 256.6 Q 649.8 267.1 632.2 265.3 Q 614.6 263.6 607.2 251.3 Q 599.8 239.0 597.0 226.2 Q 594.3 213.4 609.3 208.6 Q 624.3 203.9 635.5 202.3 Q 646.8 200.8 658.5 204.1 Q 670.3 207.3 685.0 217.2 Z"/><path d="M 734.7 191.6 Q 743.4 199.0 736.4 207.5 Q 729.5 216.1 719.4 219.5 Q 709.3 223.0 697.4 223.8 Q 685.5 224.7 678.8 216.5 Q 672.2 208.3 674.0 199.5 Q 675.7 190.8 679.3 180.3 Q 682.9 169.8 696.9 168.7 Q 710.9 167.6 718.5 175.9 Q 726.0 184.2 734.7 191.6 Z"/><path d="M 753.4 251.9 Q 755.0 258.5 752.0 264.2 Q 749.1 269.9 742.9 275.1 Q 736.8 280.3 728.1 278.2 Q 719.3 276.1 716.9 269.8 Q 714.5 263.6 709.5 257.0 Q 704.5 250.5 714.3 248.9 Q 724.0 247.4 729.8 244.8 Q 735.6 242.3 743.7 243.7 Q 751.8 245.2 753.4 251.9 Z"/></g></g><g class="lp-clouds"><path d="M 519.0 172.8 Q 519.6 178.0 518.1 182.4 Q 516.7 186.7 511.1 186.6 Q 505.6 186.4 500.0 184.8 Q 494.3 183.3 494.0 177.9 Q 493.7 172.5 499.2 169.6 Q 504.8 166.7 511.6 167.1 Q 518.4 167.6 519.0 172.8 Z"/><path d="M 565.8 219.5 Q 566.5 223.5 565.4 227.1 Q 564.2 230.7 559.4 231.4 Q 554.6 232.1 550.9 229.7 Q 547.2 227.3 547.5 223.6 Q 547.7 219.9 551.0 216.9 Q 554.3 213.9 559.6 214.7 Q 565.0 215.5 565.8 219.5 Z"/><path d="M 626.5 257.7 Q 628.5 263.4 626.1 268.7 Q 623.6 274.1 616.9 273.5 Q 610.3 273.0 603.8 271.2 Q 597.4 269.4 597.6 263.5 Q 597.8 257.5 603.2 252.8 Q 608.6 248.1 616.5 250.0 Q 624.4 252.0 626.5 257.7 Z"/><path d="M 677.6 206.4 Q 679.9 209.5 678.1 213.1 Q 676.2 216.7 671.1 218.3 Q 666.0 219.9 663.3 216.3 Q 660.6 212.7 659.4 209.0 Q 658.2 205.3 662.5 203.4 Q 666.7 201.5 671.0 202.4 Q 675.2 203.3 677.6 206.4 Z"/><path d="M 724.7 241.9 Q 726.2 244.5 725.8 248.2 Q 725.4 251.9 720.8 251.6 Q 716.1 251.2 712.9 249.4 Q 709.7 247.7 709.4 244.4 Q 709.1 241.1 712.1 237.9 Q 715.2 234.8 719.2 237.0 Q 723.2 239.3 724.7 241.9 Z"/><g transform="translate(280 0)"><path d="M 519.0 172.8 Q 519.6 178.0 518.1 182.4 Q 516.7 186.7 511.1 186.6 Q 505.6 186.4 500.0 184.8 Q 494.3 183.3 494.0 177.9 Q 493.7 172.5 499.2 169.6 Q 504.8 166.7 511.6 167.1 Q 518.4 167.6 519.0 172.8 Z"/><path d="M 565.8 219.5 Q 566.5 223.5 565.4 227.1 Q 564.2 230.7 559.4 231.4 Q 554.6 232.1 550.9 229.7 Q 547.2 227.3 547.5 223.6 Q 547.7 219.9 551.0 216.9 Q 554.3 213.9 559.6 214.7 Q 565.0 215.5 565.8 219.5 Z"/><path d="M 626.5 257.7 Q 628.5 263.4 626.1 268.7 Q 623.6 274.1 616.9 273.5 Q 610.3 273.0 603.8 271.2 Q 597.4 269.4 597.6 263.5 Q 597.8 257.5 603.2 252.8 Q 608.6 248.1 616.5 250.0 Q 624.4 252.0 626.5 257.7 Z"/><path d="M 677.6 206.4 Q 679.9 209.5 678.1 213.1 Q 676.2 216.7 671.1 218.3 Q 666.0 219.9 663.3 216.3 Q 660.6 212.7 659.4 209.0 Q 658.2 205.3 662.5 203.4 Q 666.7 201.5 671.0 202.4 Q 675.2 203.3 677.6 206.4 Z"/><path d="M 724.7 241.9 Q 726.2 244.5 725.8 248.2 Q 725.4 251.9 720.8 251.6 Q 716.1 251.2 712.9 249.4 Q 709.7 247.7 709.4 244.4 Q 709.1 241.1 712.1 237.9 Q 715.2 234.8 719.2 237.0 Q 723.2 239.3 724.7 241.9 Z"/></g></g></g>
+      <circle cx="550" cy="220" r="70" fill="url(#lp-night-w)"/>
+      <g transform="translate(712 205)"><g class="lp-astro lp-astro-w"><g transform="scale(0.09)"><rect class="lp-pack" x="-250" y="-200" width="500" height="430" rx="90"/><path class="lp-blob-edge" d="M0 -290 C188 -290 300 -186 300 4 C300 196 188 290 0 290 C-188 290 -300 196 -300 4 C-300 -186 -188 -290 0 -290 Z"/><path class="lp-blob" d="M0 -290 C188 -290 300 -186 300 4 C300 196 188 290 0 290 C-188 290 -300 196 -300 4 C-300 -186 -188 -290 0 -290 Z"/><ellipse class="lp-eye" cx="-92" cy="-30" rx="46" ry="62"/><ellipse class="lp-eye" cx="92" cy="-30" rx="46" ry="62"/><path class="lp-smile" d="M-64 80 Q0 150 64 80"/><circle class="lp-helmet" r="400"/><path class="lp-glint" d="M-250 -230 A 340 340 0 0 1 -60 -330"/></g></g></g>
+      <g class="lp-orbit lp-orbit-w">
+      <path class="lp-track" d="M 190 220 A 360 140 0 1 1 910 220 A 360 140 0 1 1 190 220" pathLength="100"/>
+      <path class="lp-comet" d="M 190 220 A 360 140 0 1 1 910 220 A 360 140 0 1 1 190 220" pathLength="100"/>
+      <g class="lp-step lp-s0" transform="translate(190.0 220.0)"><g class="lp-up lp-up-w">
+        <circle class="lp-dot" r="10"/>
+        <text class="lp-name" x="-22" y="6" text-anchor="end">Idea</text>
+      </g></g>
+      <g class="lp-step lp-s1" transform="translate(346.2 104.6)"><g class="lp-up lp-up-w">
+        <circle class="lp-dot" r="10"/>
+        <text class="lp-name" x="0" y="-22" text-anchor="middle">Feature</text>
+      </g></g>
+      <g class="lp-step lp-s2" transform="translate(550.0 80.0)"><g class="lp-up lp-up-w">
+        <circle class="lp-dot" r="10"/>
+        <text class="lp-name" x="0" y="-22" text-anchor="middle">Agents</text>
+      </g></g>
+      <g class="lp-step lp-s3" transform="translate(753.9 104.6)"><g class="lp-up lp-up-w">
+        <circle class="lp-dot" r="10"/>
+        <text class="lp-name" x="0" y="-22" text-anchor="middle">Build</text>
+      </g></g>
+      <g class="lp-step lp-s4" transform="translate(910.0 220.0)"><g class="lp-up lp-up-w">
+        <circle class="lp-dot" r="10"/>
+        <text class="lp-name" x="22" y="6" text-anchor="start">Merge</text>
+      </g></g>
+      <g class="lp-step lp-s5" transform="translate(753.8 335.4)"><g class="lp-up lp-up-w">
+        <circle class="lp-dot" r="10"/>
+        <text class="lp-name" x="0" y="36" text-anchor="middle">Test</text>
+      </g></g>
+      <g class="lp-step lp-s6" transform="translate(550.0 360.0)"><g class="lp-up lp-up-w">
+        <circle class="lp-dot" r="10"/>
+        <text class="lp-name" x="0" y="36" text-anchor="middle">Deploy</text>
+      </g></g>
+      <g class="lp-step lp-s7" transform="translate(346.1 335.4)"><g class="lp-up lp-up-w">
+        <circle class="lp-dot" r="10"/>
+        <text class="lp-name" x="0" y="36" text-anchor="middle">Monitor</text>
+      </g></g>
+      </g>
+    </svg>
+    <svg class="lp lp-tall" viewBox="0 0 520 820" role="img" aria-labelledby="lp-title-tall lp-desc-tall" xmlns="http://www.w3.org/2000/svg">
+      <title id="lp-title-tall">The loop</title>
+      <desc id="lp-desc-tall">An idea becomes a feature. Agents build it, the pull requests merge and are tested, the change deploys, and it is monitored; then the loop starts again with the next idea. You approve the feature, the merge of new screens, and the deploy.</desc>
+      <defs><radialGradient id="lp-sea-t" cx="35%" cy="30%" r="75%"><stop class="lp-sea-lit" offset="0"/><stop class="lp-sea" offset="0.6"/><stop class="lp-sea-deep" offset="1"/></radialGradient><radialGradient id="lp-night-t" cx="32%" cy="28%" r="80%"><stop class="lp-day" offset="0.45"/><stop class="lp-night" offset="1"/></radialGradient><clipPath id="lp-clip-t"><circle cx="260" cy="410" r="58"/></clipPath></defs>
+      <circle class="lp-air" cx="260" cy="410" r="65"/>
+      <circle cx="260" cy="410" r="58" fill="url(#lp-sea-t)"/>
+      <g clip-path="url(#lp-clip-t)"><g class="lp-land"><path d="M 234.8 384.4 Q 240.3 389.7 235.8 395.6 Q 231.2 401.5 225.3 408.9 Q 219.4 416.2 211.2 410.4 Q 202.9 404.5 193.6 401.4 Q 184.3 398.2 186.0 390.2 Q 187.7 382.2 195.4 378.6 Q 203.1 375.1 211.0 370.4 Q 218.9 365.6 224.1 372.3 Q 229.4 379.1 234.8 384.4 Z"/><path d="M 289.7 412.3 Q 288.8 424.5 281.2 431.0 Q 273.6 437.5 266.1 441.2 Q 258.7 444.9 247.9 446.6 Q 237.0 448.3 224.7 442.5 Q 212.3 436.7 220.7 426.9 Q 229.1 417.2 234.3 410.7 Q 239.6 404.3 250.3 398.8 Q 261.1 393.4 275.9 396.7 Q 290.7 400.0 289.7 412.3 Z"/><path d="M 310.6 376.2 Q 314.8 381.0 311.1 386.2 Q 307.4 391.4 302.1 397.6 Q 296.9 403.8 290.7 397.6 Q 284.5 391.3 275.4 389.9 Q 266.3 388.4 270.4 382.2 Q 274.5 375.9 279.1 372.8 Q 283.7 369.7 289.2 369.1 Q 294.7 368.4 300.5 369.9 Q 306.3 371.3 310.6 376.2 Z"/><path d="M 371.9 407.7 Q 384.1 415.8 371.6 423.8 Q 359.1 431.7 350.9 440.4 Q 342.7 449.0 328.1 447.6 Q 313.5 446.1 307.4 435.9 Q 301.3 425.7 299.0 415.1 Q 296.7 404.5 309.1 400.6 Q 321.6 396.6 330.9 395.3 Q 340.2 394.1 349.9 396.8 Q 359.7 399.5 371.9 407.7 Z"/><path d="M 413.0 386.5 Q 420.3 392.6 414.5 399.7 Q 408.7 406.8 400.3 409.6 Q 392.0 412.5 382.1 413.2 Q 372.2 413.9 366.7 407.1 Q 361.2 400.3 362.7 393.0 Q 364.2 385.8 367.1 377.1 Q 370.1 368.4 381.7 367.5 Q 393.3 366.6 399.6 373.5 Q 405.8 380.4 413.0 386.5 Z"/><path d="M 428.5 436.4 Q 429.9 441.9 427.4 446.6 Q 424.9 451.4 419.9 455.7 Q 414.8 459.9 407.5 458.2 Q 400.3 456.5 398.3 451.3 Q 396.3 446.1 392.2 440.7 Q 388.0 435.3 396.1 434.0 Q 404.2 432.7 409.0 430.6 Q 413.8 428.4 420.5 429.7 Q 427.2 430.9 428.5 436.4 Z"/><g transform="translate(232 0)"><path d="M 234.8 384.4 Q 240.3 389.7 235.8 395.6 Q 231.2 401.5 225.3 408.9 Q 219.4 416.2 211.2 410.4 Q 202.9 404.5 193.6 401.4 Q 184.3 398.2 186.0 390.2 Q 187.7 382.2 195.4 378.6 Q 203.1 375.1 211.0 370.4 Q 218.9 365.6 224.1 372.3 Q 229.4 379.1 234.8 384.4 Z"/><path d="M 289.7 412.3 Q 288.8 424.5 281.2 431.0 Q 273.6 437.5 266.1 441.2 Q 258.7 444.9 247.9 446.6 Q 237.0 448.3 224.7 442.5 Q 212.3 436.7 220.7 426.9 Q 229.1 417.2 234.3 410.7 Q 239.6 404.3 250.3 398.8 Q 261.1 393.4 275.9 396.7 Q 290.7 400.0 289.7 412.3 Z"/><path d="M 310.6 376.2 Q 314.8 381.0 311.1 386.2 Q 307.4 391.4 302.1 397.6 Q 296.9 403.8 290.7 397.6 Q 284.5 391.3 275.4 389.9 Q 266.3 388.4 270.4 382.2 Q 274.5 375.9 279.1 372.8 Q 283.7 369.7 289.2 369.1 Q 294.7 368.4 300.5 369.9 Q 306.3 371.3 310.6 376.2 Z"/><path d="M 371.9 407.7 Q 384.1 415.8 371.6 423.8 Q 359.1 431.7 350.9 440.4 Q 342.7 449.0 328.1 447.6 Q 313.5 446.1 307.4 435.9 Q 301.3 425.7 299.0 415.1 Q 296.7 404.5 309.1 400.6 Q 321.6 396.6 330.9 395.3 Q 340.2 394.1 349.9 396.8 Q 359.7 399.5 371.9 407.7 Z"/><path d="M 413.0 386.5 Q 420.3 392.6 414.5 399.7 Q 408.7 406.8 400.3 409.6 Q 392.0 412.5 382.1 413.2 Q 372.2 413.9 366.7 407.1 Q 361.2 400.3 362.7 393.0 Q 364.2 385.8 367.1 377.1 Q 370.1 368.4 381.7 367.5 Q 393.3 366.6 399.6 373.5 Q 405.8 380.4 413.0 386.5 Z"/><path d="M 428.5 436.4 Q 429.9 441.9 427.4 446.6 Q 424.9 451.4 419.9 455.7 Q 414.8 459.9 407.5 458.2 Q 400.3 456.5 398.3 451.3 Q 396.3 446.1 392.2 440.7 Q 388.0 435.3 396.1 434.0 Q 404.2 432.7 409.0 430.6 Q 413.8 428.4 420.5 429.7 Q 427.2 430.9 428.5 436.4 Z"/></g></g><g class="lp-clouds"><path d="M 234.3 370.9 Q 234.8 375.2 233.6 378.8 Q 232.4 382.4 227.8 382.3 Q 223.2 382.2 218.5 380.9 Q 213.9 379.6 213.6 375.1 Q 213.4 370.6 217.9 368.2 Q 222.5 365.8 228.2 366.2 Q 233.8 366.6 234.3 370.9 Z"/><path d="M 273.1 409.6 Q 273.7 412.9 272.7 415.9 Q 271.8 418.9 267.8 419.4 Q 263.8 420.0 260.7 418.0 Q 257.6 416.0 257.9 413.0 Q 258.1 409.9 260.8 407.5 Q 263.5 405.0 268.0 405.6 Q 272.4 406.2 273.1 409.6 Z"/><path d="M 323.4 441.2 Q 325.1 446.0 323.0 450.4 Q 321.0 454.8 315.5 454.3 Q 309.9 453.9 304.6 452.4 Q 299.3 450.9 299.4 446.0 Q 299.6 441.1 304.1 437.2 Q 308.6 433.3 315.1 434.9 Q 321.6 436.5 323.4 441.2 Z"/><path d="M 365.7 398.7 Q 367.7 401.3 366.1 404.3 Q 364.6 407.3 360.4 408.6 Q 356.2 409.9 353.9 406.9 Q 351.6 404.0 350.6 400.9 Q 349.6 397.8 353.2 396.3 Q 356.7 394.7 360.2 395.4 Q 363.7 396.2 365.7 398.7 Z"/><path d="M 404.7 428.1 Q 406.0 430.3 405.7 433.4 Q 405.4 436.5 401.5 436.1 Q 397.6 435.8 395.0 434.4 Q 392.4 432.9 392.1 430.2 Q 391.8 427.4 394.3 424.8 Q 396.9 422.3 400.2 424.1 Q 403.5 426.0 404.7 428.1 Z"/><g transform="translate(232 0)"><path d="M 234.3 370.9 Q 234.8 375.2 233.6 378.8 Q 232.4 382.4 227.8 382.3 Q 223.2 382.2 218.5 380.9 Q 213.9 379.6 213.6 375.1 Q 213.4 370.6 217.9 368.2 Q 222.5 365.8 228.2 366.2 Q 233.8 366.6 234.3 370.9 Z"/><path d="M 273.1 409.6 Q 273.7 412.9 272.7 415.9 Q 271.8 418.9 267.8 419.4 Q 263.8 420.0 260.7 418.0 Q 257.6 416.0 257.9 413.0 Q 258.1 409.9 260.8 407.5 Q 263.5 405.0 268.0 405.6 Q 272.4 406.2 273.1 409.6 Z"/><path d="M 323.4 441.2 Q 325.1 446.0 323.0 450.4 Q 321.0 454.8 315.5 454.3 Q 309.9 453.9 304.6 452.4 Q 299.3 450.9 299.4 446.0 Q 299.6 441.1 304.1 437.2 Q 308.6 433.3 315.1 434.9 Q 321.6 436.5 323.4 441.2 Z"/><path d="M 365.7 398.7 Q 367.7 401.3 366.1 404.3 Q 364.6 407.3 360.4 408.6 Q 356.2 409.9 353.9 406.9 Q 351.6 404.0 350.6 400.9 Q 349.6 397.8 353.2 396.3 Q 356.7 394.7 360.2 395.4 Q 363.7 396.2 365.7 398.7 Z"/><path d="M 404.7 428.1 Q 406.0 430.3 405.7 433.4 Q 405.4 436.5 401.5 436.1 Q 397.6 435.8 395.0 434.4 Q 392.4 432.9 392.1 430.2 Q 391.8 427.4 394.3 424.8 Q 396.9 422.3 400.2 424.1 Q 403.5 426.0 404.7 428.1 Z"/></g></g></g>
+      <circle cx="260" cy="410" r="58" fill="url(#lp-night-t)"/>
+      <g transform="translate(275 290)"><g class="lp-astro lp-astro-t"><g transform="scale(0.075)"><rect class="lp-pack" x="-250" y="-200" width="500" height="430" rx="90"/><path class="lp-blob-edge" d="M0 -290 C188 -290 300 -186 300 4 C300 196 188 290 0 290 C-188 290 -300 196 -300 4 C-300 -186 -188 -290 0 -290 Z"/><path class="lp-blob" d="M0 -290 C188 -290 300 -186 300 4 C300 196 188 290 0 290 C-188 290 -300 196 -300 4 C-300 -186 -188 -290 0 -290 Z"/><ellipse class="lp-eye" cx="-92" cy="-30" rx="46" ry="62"/><ellipse class="lp-eye" cx="92" cy="-30" rx="46" ry="62"/><path class="lp-smile" d="M-64 80 Q0 150 64 80"/><circle class="lp-helmet" r="400"/><path class="lp-glint" d="M-250 -230 A 340 340 0 0 1 -60 -330"/></g></g></g>
+      <g class="lp-orbit lp-orbit-t">
+      <path class="lp-track" d="M 164 410 A 96 300 0 1 1 356 410 A 96 300 0 1 1 164 410" pathLength="100"/>
+      <path class="lp-comet" d="M 164 410 A 96 300 0 1 1 356 410 A 96 300 0 1 1 164 410" pathLength="100"/>
+      <g class="lp-step lp-s0" transform="translate(164.0 410.0)"><g class="lp-up lp-up-t">
+        <circle class="lp-dot" r="10"/>
+        <text class="lp-name" x="-22" y="7" text-anchor="end">Idea</text>
+      </g></g>
+      <g class="lp-step lp-s1" transform="translate(179.8 245.0)"><g class="lp-up lp-up-t">
+        <circle class="lp-dot" r="10"/>
+        <text class="lp-name" x="-22" y="7" text-anchor="end">Feature</text>
+      </g></g>
+      <g class="lp-step lp-s2" transform="translate(260.0 110.0)"><g class="lp-up lp-up-t">
+        <circle class="lp-dot" r="10"/>
+        <text class="lp-name" x="0" y="-22" text-anchor="middle">Agents</text>
+      </g></g>
+      <g class="lp-step lp-s3" transform="translate(340.2 245.1)"><g class="lp-up lp-up-t">
+        <circle class="lp-dot" r="10"/>
+        <text class="lp-name" x="22" y="7" text-anchor="start">Build</text>
+      </g></g>
+      <g class="lp-step lp-s4" transform="translate(356.0 410.1)"><g class="lp-up lp-up-t">
+        <circle class="lp-dot" r="10"/>
+        <text class="lp-name" x="22" y="7" text-anchor="start">Merge</text>
+      </g></g>
+      <g class="lp-step lp-s5" transform="translate(340.2 575.0)"><g class="lp-up lp-up-t">
+        <circle class="lp-dot" r="10"/>
+        <text class="lp-name" x="22" y="7" text-anchor="start">Test</text>
+      </g></g>
+      <g class="lp-step lp-s6" transform="translate(260.0 710.0)"><g class="lp-up lp-up-t">
+        <circle class="lp-dot" r="10"/>
+        <text class="lp-name" x="0" y="38" text-anchor="middle">Deploy</text>
+      </g></g>
+      <g class="lp-step lp-s7" transform="translate(179.8 574.9)"><g class="lp-up lp-up-t">
+        <circle class="lp-dot" r="10"/>
+        <text class="lp-name" x="-22" y="7" text-anchor="end">Monitor</text>
+      </g></g>
+      </g>
+    </svg>
   </figure>
-</section>
+</div></section>
 
-<section class="pitch">
-  <article>
-    <h2>It runs the agents you already have</h2>
-    <p>Claude, Codex, Gemini, Antigravity, Grok, Copilot, Cursor and OpenCode, each signed in with your own account and plan. Agent Loops brings no model and no bill of its own. You choose the runtime, the model and the permission mode for each agent.</p>
-    <p class="more"><a href="https://docs.agentloops.dev/reference/runtimes/">What each runtime can do</a></p>
-  </article>
+<!-- 2. The whole lifecycle -->
+<section class="page" id="lifecycle"><div class="wrap">
+  <h2>The whole lifecycle, not only the code</h2>
+  <p class="lede">Writing the code is only one part of delivering a change. Agent Loops covers the whole journey, from the first idea to the change running in production. Agents do each step, and they come to you when a decision needs a person.</p>
+  <div class="grid3">
+    <div class="card"><span class="step">1</span><h3>Idea to feature</h3>
+      <ul>
+        <li>Tell a product owner agent your idea, by typing or out loud. It talks it through with you, then files the issues.</li>
+        <li>The feature lands in your tracker as ordered issues, each with a size and a priority.</li>
+        <li>You agree the plan before any agent starts work.</li>
+      </ul></div>
+    <div class="card"><span class="step">2</span><h3>Feature to merged PRs</h3>
+      <ul>
+        <li>A lead agent starts an agent for each issue, each in its own worktree, on whichever of your machines has room.</li>
+        <li>Your CI decides what is good enough. Agents run it, read each failure and fix it, so you do not have to.</li>
+        <li>A change that adds a new screen waits for you to approve it.</li>
+      </ul></div>
+    <div class="card"><span class="step">3</span><h3>Deploy, watch, roll back</h3>
+      <ul>
+        <li>See every deploy in every environment on one page.</li>
+        <li>When something breaks in production, the error goes back into work as a new issue.</li>
+        <li>A deploy that needs an approval comes to you, wherever you are.</li>
+        <li>Agents will watch a canary and roll it back when it goes wrong. <a class="tag soon" href="https://github.com/agentloops-dev/agent-loops/issues/6831">coming</a></li>
+      </ul></div>
+  </div>
+</div></section>
 
-  <article>
-    <h2>It shows which agent needs you</h2>
-    <p>Every agent is in one group: Needs you, Waiting, Working, Done or Paused. When an agent ends its turn, it says in one sentence how it went. Read the list and you know what to open, without reading a conversation.</p>
-    <p class="more"><a href="https://docs.agentloops.dev/reference/statuses/">Statuses and groups</a></p>
-  </article>
+<!-- 2b. A feature builds and deploys itself: a page of its own, so the animation starts when it comes into view. "Feature", not "epic" (Alex, PR #6862). -->
+<section class="page" id="feature"><div class="wrap">
+  <h2>A feature builds and deploys itself</h2>
+  <p class="lede">Here is one feature from idea to production. You say the idea out loud. A product owner agent turns it into five issues, and a lead agent shares them out across three machines. When every pull request has merged, the feature deploys and its monitoring watches it in production. Your only job is to approve the one new screen.</p>
+  <figure class="anim">
+    <svg class="ep" viewBox="0 0 720 458" role="img" aria-labelledby="ep-title ep-desc" xmlns="http://www.w3.org/2000/svg">
+      <title id="ep-title">A feature builds and deploys itself</title>
+      <desc id="ep-desc">A person says an idea: let people search their orders by number or e-mail. The product owner files feature 417, Order search, with five issues. A lead agent starts an agent for each issue that is ready, on three machines. Three agents work and their pull requests merge, one after you approve its new screen; the two blocked issues then start and merge too. Then the feature deploys to production, and its monitoring shows it is healthy.</desc>
+      <rect class="ep-frame" x="1" y="1" width="718" height="456" rx="14"/>
+      <rect class="ep-chrome" x="1" y="1" width="718" height="36" rx="14"/>
+      <rect class="ep-chrome" x="1" y="24" width="718" height="13"/>
+      <circle class="ep-light" cx="22" cy="19" r="5"/><circle class="ep-light" cx="40" cy="19" r="5"/><circle class="ep-light" cx="58" cy="19" r="5"/>
+      <text x="80" y="23" class="ep-s">A feature builds and deploys itself · one lead agent, an agent per issue, on several machines</text>
+      <g class="ep-a ep-fade ep-f1"><rect class="ep-idea" x="24" y="52" width="388" height="30" rx="15"/><text x="40" y="72" class="ep-t">Let people search their orders by number or e-mail.</text></g>
+      <g class="ep-a ep-fade ep-f2"><text x="24" y="112" class="ep-t ep-b">Feature &#35;417 · Order search</text></g>
+      <g class="ep-a ep-fade ep-f3 ep-s">
+        <text x="24" y="150">&#35;418 Index orders</text><text x="168" y="164">build-1</text><rect class="ep-track" x="168" y="140" width="400" height="12" rx="6"/>
+        <text x="24" y="194">&#35;419 Search API</text><text x="168" y="208">do-box-2</text><rect class="ep-track" x="168" y="184" width="400" height="12" rx="6"/>
+        <text x="24" y="238">&#35;420 Search field</text><text x="168" y="252">studio-mac</text><rect class="ep-track" x="168" y="228" width="400" height="12" rx="6"/>
+        <text x="24" y="282">&#35;421 Empty state</text><text x="168" y="296">build-1</text><rect class="ep-track" x="168" y="272" width="400" height="12" rx="6"/>
+        <text x="24" y="326">&#35;422 Search docs</text><text x="168" y="340">do-box-2</text><rect class="ep-track" x="168" y="316" width="400" height="12" rx="6"/>
+        <text x="24" y="370">Deploy</text><text x="168" y="384">production</text><rect class="ep-track" x="168" y="360" width="400" height="12" rx="6"/>
+        <text x="24" y="414">Monitoring</text><text x="168" y="428">production</text><rect class="ep-track" x="168" y="404" width="400" height="12" rx="6"/>
+      </g>
+      <rect class="ep-a ep-bar ep-g1" x="168" y="140" width="210" height="12" rx="6"/>
+      <rect class="ep-a ep-bar ep-g2" x="168" y="184" width="270" height="12" rx="6"/>
+      <rect class="ep-a ep-bar ep-g3" x="168" y="228" width="160" height="12" rx="6"/>
+      <rect class="ep-a ep-bar ep-g4" x="378" y="272" width="140" height="12" rx="6"/>
+      <rect class="ep-a ep-bar ep-g5" x="438" y="316" width="130" height="12" rx="6"/>
+      <rect class="ep-a ep-bar ep-g6" x="168" y="360" width="400" height="12" rx="6"/>
+      <rect class="ep-a ep-bar ep-g7" x="168" y="404" width="400" height="12" rx="6"/>
+      <g class="ep-chips">
+        <g class="ep-a ep-fade ep-c10 ep-run"><rect x="574" y="136" width="136" height="20" rx="10"/><g class="ep-ic" transform="translate(580 139) scale(0.5833)"><path class="ep-spin" d="M21 12a9 9 0 1 1-6.219-8.56"/></g><text x="598" y="150">working</text></g>
+        <g class="ep-a ep-fade ep-c11 ep-ok"><rect x="574" y="136" width="136" height="20" rx="10"/><g class="ep-ic" transform="translate(580 139) scale(0.5833)"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></g><text x="598" y="150">merged</text></g>
+        <g class="ep-a ep-fade ep-c20 ep-run"><rect x="574" y="180" width="136" height="20" rx="10"/><g class="ep-ic" transform="translate(580 183) scale(0.5833)"><path class="ep-spin" d="M21 12a9 9 0 1 1-6.219-8.56"/></g><text x="598" y="194">CI running</text></g>
+        <g class="ep-a ep-fade ep-c21 ep-ok"><rect x="574" y="180" width="136" height="20" rx="10"/><g class="ep-ic" transform="translate(580 183) scale(0.5833)"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></g><text x="598" y="194">merged</text></g>
+        <g class="ep-a ep-fade ep-c30 ep-run"><rect x="574" y="224" width="136" height="20" rx="10"/><g class="ep-ic" transform="translate(580 227) scale(0.5833)"><path class="ep-spin" d="M21 12a9 9 0 1 1-6.219-8.56"/></g><text x="598" y="238">working</text></g>
+        <g class="ep-a ep-fade ep-c31 ep-ok"><rect x="574" y="224" width="136" height="20" rx="10"/><g class="ep-ic" transform="translate(580 227) scale(0.5833)"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></g><text x="598" y="238">approved · merged</text></g>
+        <g class="ep-a ep-fade ep-c40 ep-wait"><rect x="574" y="268" width="136" height="20" rx="10"/><g class="ep-ic" transform="translate(580 271) scale(0.5833)"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></g><text x="598" y="282">blocked by &#35;418</text></g>
+        <g class="ep-a ep-fade ep-c41 ep-run"><rect x="574" y="268" width="136" height="20" rx="10"/><g class="ep-ic" transform="translate(580 271) scale(0.5833)"><path class="ep-spin" d="M21 12a9 9 0 1 1-6.219-8.56"/></g><text x="598" y="282">working</text></g>
+        <g class="ep-a ep-fade ep-c42 ep-ok"><rect x="574" y="268" width="136" height="20" rx="10"/><g class="ep-ic" transform="translate(580 271) scale(0.5833)"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></g><text x="598" y="282">merged</text></g>
+        <g class="ep-a ep-fade ep-c50 ep-wait"><rect x="574" y="312" width="136" height="20" rx="10"/><g class="ep-ic" transform="translate(580 315) scale(0.5833)"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></g><text x="598" y="326">blocked by &#35;419</text></g>
+        <g class="ep-a ep-fade ep-c51 ep-run"><rect x="574" y="312" width="136" height="20" rx="10"/><g class="ep-ic" transform="translate(580 315) scale(0.5833)"><path class="ep-spin" d="M21 12a9 9 0 1 1-6.219-8.56"/></g><text x="598" y="326">working</text></g>
+        <g class="ep-a ep-fade ep-c52 ep-ok"><rect x="574" y="312" width="136" height="20" rx="10"/><g class="ep-ic" transform="translate(580 315) scale(0.5833)"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></g><text x="598" y="326">merged</text></g>
+        <g class="ep-a ep-fade ep-c60 ep-wait"><rect x="574" y="356" width="136" height="20" rx="10"/><g class="ep-ic" transform="translate(580 359) scale(0.5833)"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></g><text x="598" y="370">waiting</text></g>
+        <g class="ep-a ep-fade ep-c61 ep-run"><rect x="574" y="356" width="136" height="20" rx="10"/><g class="ep-ic" transform="translate(580 359) scale(0.5833)"><path class="ep-spin" d="M21 12a9 9 0 1 1-6.219-8.56"/></g><text x="598" y="370">deploying</text></g>
+        <g class="ep-a ep-fade ep-c62 ep-ok"><rect x="574" y="356" width="136" height="20" rx="10"/><g class="ep-ic" transform="translate(580 359) scale(0.5833)"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></g><text x="598" y="370">deployed</text></g>
+        <g class="ep-a ep-fade ep-c70 ep-wait"><rect x="574" y="400" width="136" height="20" rx="10"/><g class="ep-ic" transform="translate(580 403) scale(0.5833)"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></g><text x="598" y="414">waiting</text></g>
+        <g class="ep-a ep-fade ep-c71 ep-run"><rect x="574" y="400" width="136" height="20" rx="10"/><g class="ep-ic" transform="translate(580 403) scale(0.5833)"><path class="ep-spin" d="M21 12a9 9 0 1 1-6.219-8.56"/></g><text x="598" y="414">watching</text></g>
+        <g class="ep-a ep-fade ep-c72 ep-ok"><rect x="574" y="400" width="136" height="20" rx="10"/><g class="ep-ic" transform="translate(580 403) scale(0.5833)"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></g><text x="598" y="414">healthy</text></g>
+      </g>
+    </svg>
+  </figure>
+</div></section>
 
-  <article>
-    <h2>You see the work, not only the chat</h2>
-    <p>A plan or a review that an agent writes opens beside the conversation and fills in as the agent writes. You can type on it while it grows. Code changes are coloured down to the word.</p>
-    <p class="more"><a href="https://docs.agentloops.dev/how-to/follow-a-live-document/">Follow a live document</a></p>
-  </article>
-
-  <article>
-    <h2>Agents that work together, and on their own</h2>
-    <p>An agent finishes a change. A workflow, a Markdown file in your repository, starts a second agent to test it. The tester needs the iOS simulator, but another agent has it. So the tester takes a place in line and ends its turn. It costs nothing while it waits, and it starts again when the simulator is free.</p>
-    <p>It fixes the failure, then waits for <code>main</code> to move so it can rebase. Nothing polls. When <code>main</code> moves, the agent wakes up and finishes. Nobody asked you for anything.</p>
-    <ul>
-      <li><strong>Leases.</strong> Agents take turns with a simulator, a browser, the screen, or anything they name. <a href="https://docs.agentloops.dev/explanation/leases/">Leases</a></li>
-      <li><strong>Events.</strong> An agent can wait for another agent, a branch, a pull request or the Mac waking. <a href="https://docs.agentloops.dev/reference/events/">Events</a></li>
-      <li><strong>Workflows.</strong> Start an agent on a schedule or when something happens. The file lives beside your code. <a href="https://docs.agentloops.dev/how-to/set-up-a-workflow/">Set up a workflow</a></li>
-      <li><strong>Agents that manage agents.</strong> An agent can start helpers, each in a worktree of its own, then brief them, wait for them and stop them. <a href="https://docs.agentloops.dev/reference/agent-tools/">Tools for agents</a></li>
+<!-- 3. Work management, in your tracker (#6857). "Feature", not "epic" (Alex, PR #6862). Next
+     lists only the work that is ready, as Work, Next does. -->
+<section class="page" id="work"><div class="wrap">
+  <h2>Work management, in your tracker</h2>
+  <p class="lede">Your issues and pull requests stay where they are, in GitHub, GitLab, Bitbucket, Jira, Linear or Azure Boards. Agent Loops reads them, puts them in one order, and has agents work through them. There is no second board to keep up to date.</p>
+  <div class="grid2">
+    <ul class="points">
+      <li><b>One queue.</b> Next puts the work that is ready in one order: priority first, then the milestone's date, then age.</li>
+      <li><b>Each feature has a lead.</b> A lead agent starts an agent for each issue as soon as nothing blocks it.</li>
+      <li><b>Know what it will take.</b> Estimates come from your own finished work, and a forecast gives the dates a feature is likely to land between.</li>
+      <li><b>See who is on it.</b> Issues, pull requests, releases, deploys and a timeline, and each issue and pull request says when an agent is working on it or needs you.</li>
     </ul>
-  </article>
-
-  <article>
-    <h2>They keep going without you</h2>
-    <p>Your agents run in a helper in the background, not in the window. Close the window or quit the app, and they carry on. The Mac stays awake while a turn runs. After a restart, the agents that were working pick up where they stopped.</p>
-    <p class="more"><a href="https://docs.agentloops.dev/explanation/window-and-daemon/">The window and the host</a></p>
-  </article>
-
-  <article>
-    <h2>Your machines, one figure for spending</h2>
-    <p>The work runs on your Mac, or on a Linux server of your own. The control plane that connects your devices runs on your Mac, or on hosting you rent. Every agent's spending, on every runtime and server, adds up to one figure for the day, and you can set a limit.</p>
-    <p class="more"><a href="https://docs.agentloops.dev/explanation/control-plane/">The control plane</a> · <a href="https://docs.agentloops.dev/how-to/limit-spending/">Limit spending</a></p>
-  </article>
-</section>
-
-<section class="clients" id="clients">
-  <h2>On the Mac, the iPhone and iPad, and the web</h2>
-  <p class="lede">The same agents, the same list and the same conversations on each. Read, answer, start and stop agents from any of them. When an agent needs you and you are away from the Mac, the device you used last gets a notification.</p>
-  <div class="three">
-    <figure class="shot">
-      <img src="assets/shots/mac-client.png" alt="The Mac window with an agent's conversation and its live document beside it" width="1440" height="900" loading="lazy">
-      <figcaption><strong>Mac.</strong> The window, with files, changes and a terminal beside each conversation.</figcaption>
-    </figure>
-    <figure class="shot phone">
-      <img src="assets/shots/iphone.png" alt="Agent Loops on an iPhone: the list of agents grouped by who needs you" width="603" height="1311" loading="lazy">
-      <figcaption><strong>iPhone and iPad.</strong> Answer a question from the sofa, or start an agent on the train.</figcaption>
-    </figure>
-    <figure class="shot">
-      <img src="assets/shots/web.png" alt="Agent Loops as a web page in a browser" width="1440" height="900" loading="lazy">
-      <figcaption><strong>Web.</strong> The same app as a page in any browser, served by your own Mac or control plane.</figcaption>
+    <figure class="mock">
+      <figcaption class="mock-bar"><span class="mock-lights" aria-hidden="true"><i></i><i></i><i></i></span>Work · Next</figcaption>
+      <div class="mock-body">
+        <ol class="nx">
+          <li><span class="nx-n">1</span><span class="nx-t"><b>Login fails after midnight</b><span class="small">&#35;501 · bug · size S</span></span><span class="pri high">high</span></li>
+          <li><span class="nx-n">2</span><span class="nx-t"><b>Gift card at checkout</b><span class="small">&#35;415 · Gift cards · size M</span></span><span class="pri medium">medium</span></li>
+          <li><span class="nx-n">3</span><span class="nx-t"><b>Search on the order page</b><span class="small">&#35;418 · Order search · size S</span></span><span class="pri medium">medium</span></li>
+          <li><span class="nx-n">4</span><span class="nx-t"><b>Faster image upload</b><span class="small">&#35;420 · size M · oldest</span></span></li>
+          <li><span class="nx-n">5</span><span class="nx-t"><b>Retry a failed webhook</b><span class="small">&#35;421 · size XS</span></span><span class="pri low">low</span></li>
+        </ol>
+        <p class="small nx-hold">On hold: &#35;398 New price list</p>
+      </div>
     </figure>
   </div>
-</section>
+</div></section>
 
-<!-- Videos (#1078, #1793). When the first one is on YouTube, take out `hidden` and add one
-     <div class="video"> per video, with a youtube-nocookie.com address only:
-     <div class="video"><iframe src="https://www.youtube-nocookie.com/embed/VIDEO_ID?rel=0"
-       title="…" loading="lazy" allowfullscreen allow="encrypted-media; picture-in-picture"></iframe></div> -->
-<section class="videos" id="videos" hidden>
-  <h2>See it work</h2>
-</section>
+<!-- 4. Agents that start on events, and wait for them (#6856). The workflow is a short form of
+     this repo's own .agents/workflows/fix-main.md. -->
+<section class="page" id="events"><div class="wrap">
+  <h2>Agents that start on events, and wait for them</h2>
+  <p class="lede">A workflow is a Markdown file in your repository. An event, such as a red build, a new issue, a review or a message, starts an agent on it. An agent that must wait, for CI, a review or another agent, ends its turn and wakes when the event comes. It costs nothing while it waits.</p>
+  <div class="grid2">
+    <figure class="mock">
+      <figcaption class="mock-bar"><span class="mock-lights" aria-hidden="true"><i></i><i></i><i></i></span>.agents/workflows/fix-main.md</figcaption>
+<pre class="mock-code"><code><span class="cd-p">---</span>
+<span class="cd-k">name:</span> <span class="cd-s">Fix main</span>
+<span class="cd-k">on:</span>
+  - <span class="cd-k">run.completed:</span>
+      <span class="cd-k">server:</span> <span class="cd-s">github</span>
+      <span class="cd-k">workflow:</span> <span class="cd-s">ci.yml</span>
+      <span class="cd-k">branch:</span> <span class="cd-s">main</span>
+      <span class="cd-k">conclusion:</span> <span class="cd-p">[</span><span class="cd-s">failure</span><span class="cd-p">]</span>
+<span class="cd-k">agent:</span> <span class="cd-s">standing</span>
+<span class="cd-p">---</span>
+Find why main is red.
+Fix it on a pull request of its own.</code></pre>
+    </figure>
+    <figure class="mock">
+      <figcaption class="mock-bar"><span class="mock-lights" aria-hidden="true"><i></i><i></i><i></i></span>An agent waits for CI</figcaption>
+      <div class="mock-body">
+        <p class="bubble">Pull request &#35;413 is ready. I will wait for CI.</p>
+        <p class="wait-row"><span class="chip wait"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>wait_for_event</span><span class="small">checks.passed · PR &#35;413</span></p>
+        <p class="wait-row"><span class="small">0 tokens while it waits</span><span class="small">12 min</span></p>
+        <p class="bubble">Checks passed. Auto-merge is on.</p>
+        <p class="wait-row"><span class="chip ok"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>merged</span><span class="small">squash · trailers on the commit</span></p>
+      </div>
+    </figure>
+  </div>
+  <p class="small events-from">Events come from GitHub, GitLab, Jira, Linear, Sentry, Slack, mail, your machines and your other agents, and on a schedule. Agents take turns on a simulator, a browser or the CI queue with leases.</p>
+</div></section>
 
-<section class="honest">
-  <h2>When something else is better</h2>
-  <ul>
-    <li><strong>You want one assistant beside the file you edit.</strong> The agent in your editor is closer to hand. Agent Loops is not an editor.</li>
-    <li><strong>You do not use a Mac.</strong> Agent Loops needs a Mac. Servers, phones and browsers connect to it.</li>
-    <li><strong>Your computer should be off while the work happens.</strong> A cloud agent does that. Agent Loops runs the work on machines you own.</li>
+<!-- 5. Use cases (#6856): the animations "Fix main, while you sleep" (fm-) and "An error in
+     production goes back into work" (er-), side by side, and a grid of twelve. Each card is a
+     workflow that runs today: a ready-made one, or one of this repo's own (.agents/workflows). -->
+<section class="page" id="use-cases"><div class="wrap">
+  <h2>Put agents on the work nobody wants at 2 a.m.</h2>
+  <p class="lede">Each use case is a workflow: an event starts an agent, the agent does the work, and you read what happened in the morning. Here are two of them, from the first alarm to the fix.</p>
+  <div class="anim2">
+    <figure class="anim">
+      <svg class="fm" viewBox="0 0 600 420" role="img" aria-labelledby="fm-title fm-desc" xmlns="http://www.w3.org/2000/svg">
+        <title id="fm-title">Fix main, while you sleep</title>
+        <desc id="fm-desc">At 02:13, CI fails on main. The Fix main workflow starts an agent on a machine called build-1, in its own worktree. The agent runs the failing test alone 20 times. It fails 20 of 20 times, so it is a bug, not a flaky test. The agent files issue 501, fixes the cause and opens pull request 502. It waits for CI at no cost. The checks pass and the pull request merges. At 02:41 main is green, and nothing needs you.</desc>
+        <rect class="fm-frame" x="1" y="1" width="598" height="418" rx="14"/>
+        <rect class="fm-chrome" x="1" y="1" width="598" height="36" rx="14"/>
+        <rect class="fm-chrome" x="1" y="24" width="598" height="13"/>
+        <circle class="fm-light" cx="22" cy="19" r="5"/><circle class="fm-light" cx="40" cy="19" r="5"/><circle class="fm-light" cx="58" cy="19" r="5"/>
+        <text x="80" y="23" class="fm-s">Fix main · started by an event · while you sleep</text>
+        <line class="fm-rail" x1="40" y1="70" x2="40" y2="330"/>
+        <g class="fm-a fm-s1">
+          <circle class="fm-dot fm-bad" cx="40" cy="70" r="12"/><g class="fm-ic fm-bad" transform="translate(32.8 62.8) scale(0.6)"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></g>
+          <text x="64" y="68" class="fm-t fm-b">02:13  CI failed on main</text>
+          <text x="64" y="85" class="fm-s">github · run.completed · ci.yml · failure · TestLogin</text>
+        </g>
+        <g class="fm-a fm-s2">
+          <circle class="fm-dot fm-run" cx="40" cy="118" r="12"/><g class="fm-ic fm-run" transform="translate(32.8 110.8) scale(0.6)"><path d="M6 3 20 12 6 21Z"/></g>
+          <text x="64" y="116" class="fm-t fm-b">The Fix main workflow starts an agent</text>
+          <text x="64" y="133" class="fm-s">fix-main.md · Claude · on build-1 · in its own worktree</text>
+        </g>
+        <g class="fm-a fm-s3">
+          <circle class="fm-dot fm-run" cx="40" cy="166" r="12"/><g class="fm-ic fm-run" transform="translate(32.8 158.8) scale(0.6)"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></g>
+          <text x="64" y="164" class="fm-t fm-b">Runs the test alone, 20 times</text>
+          <rect class="fm-term" x="64" y="174" width="318" height="24" rx="5"/>
+          <text x="74" y="190" class="fm-mono">go test -count=20 -run TestLogin</text>
+          <text x="394" y="190" class="fm-s"><tspan class="fm-red fm-b">20 of 20 fail:</tspan> a bug, not a flake</text>
+        </g>
+        <g class="fm-a fm-s4">
+          <circle class="fm-dot fm-ok" cx="40" cy="232" r="12"/><g class="fm-ic fm-ok" transform="translate(32.8 224.8) scale(0.6)"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><path d="M6 9v12"/></g>
+          <text x="64" y="230" class="fm-t fm-b">Files issue &#35;501, fixes the cause, opens PR &#35;502</text>
+          <text x="64" y="247" class="fm-s">The session clock used the machine's time zone, not UTC</text>
+        </g>
+        <g class="fm-a fm-s5">
+          <circle class="fm-dot fm-wait" cx="40" cy="280" r="12"/><g class="fm-ic fm-wait" transform="translate(32.8 272.8) scale(0.6)"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></g>
+          <text x="64" y="278" class="fm-t fm-b">Waits for CI, at no cost</text>
+          <text x="64" y="295" class="fm-s">wait_for_event · checks.passed · PR &#35;502 · 0 tokens</text>
+          <circle class="fm-pulse" cx="232" cy="275" r="4"/>
+        </g>
+        <g class="fm-a fm-s6">
+          <circle class="fm-dot fm-ok" cx="40" cy="330" r="12"/><g class="fm-ic fm-ok" transform="translate(32.8 322.8) scale(0.6)"><path d="M20 6 9 17l-5-5"/></g>
+          <text x="64" y="328" class="fm-t fm-b">Checks passed · squash auto-merge</text>
+          <text x="64" y="345" class="fm-s">$1.84 · 21 min · its cost and time on the commit</text>
+        </g>
+        <g class="fm-a fm-s7">
+          <rect class="fm-done" x="20" y="364" width="560" height="40" rx="10"/>
+          <g class="fm-ic fm-ok" transform="translate(32 372) scale(1)"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></g>
+          <text x="66" y="389" class="fm-t fm-b">02:41  main is green</text>
+          <text x="226" y="389" class="fm-s">Read it in Lineage in the morning.</text>
+          <text x="566" y="389" text-anchor="end" class="fm-t"><tspan class="fm-s">Needs you </tspan><tspan class="fm-b">0</tspan></text>
+        </g>
+      </svg>
+      <figcaption>Fix main, while you sleep</figcaption>
+    </figure>
+    <figure class="anim">
+      <svg class="er" viewBox="0 0 600 420" role="img" aria-labelledby="er-title er-desc" xmlns="http://www.w3.org/2000/svg">
+        <title id="er-title">An error in production goes back into work</title>
+        <desc id="er-desc">The checkout's errors in production go up after release v0.41, to 38 a minute. Sentry sees a new TypeError in applyCoupon. The ready-made workflow File a bug from Sentry files bug 509 with the stack and the release. An agent takes the bug, makes a test that shows the error, and fixes it in pull request 510. CI passes and it merges. The deploy of v0.42 waits for the production gate, and your iPhone asks you to approve it. You approve, v0.42 deploys, and the errors go back to normal, 47 minutes after the first error. Lineage links the Sentry issue, the bug, the pull request and the release.</desc>
+        <rect class="er-frame" x="1" y="1" width="598" height="418" rx="14"/>
+        <rect class="er-chrome" x="1" y="1" width="598" height="36" rx="14"/>
+        <rect class="er-chrome" x="1" y="24" width="598" height="13"/>
+        <circle class="er-light" cx="22" cy="19" r="5"/><circle class="er-light" cx="40" cy="19" r="5"/><circle class="er-light" cx="58" cy="19" r="5"/>
+        <text x="80" y="23" class="er-s">An error in production goes back into work</text>
+        <text x="20" y="62" class="er-s er-b">checkout · 5xx errors a minute · production</text>
+        <line class="er-axis" x1="20" y1="148" x2="580" y2="148"/>
+        <line class="er-alert" x1="20" y1="104" x2="580" y2="104"/>
+        <text x="580" y="98" text-anchor="end" class="er-s">alert</text>
+        <path class="er-a er-line" pathLength="100" d="M20 142 L58 140 L92 141 L125 139 L158 140 L183 112 L208 86 L242 82 L275 84 L308 80 L342 85 L375 83 L408 86 L433 84 L458 120 L483 138 L517 141 L550 140 L580 141"/>
+        <g class="er-a er-alarm"><circle class="er-pin" cx="208" cy="86" r="5"/><text x="196" y="74" text-anchor="end" class="er-s er-b er-red">v0.41 · 38 a minute</text></g>
+        <g class="er-a er-n6"><line class="er-deploy" x1="458" y1="66" x2="458" y2="148"/><text x="464" y="76" class="er-s er-b er-green">v0.42 deployed</text></g>
+        <g class="er-nodes">
+          <g class="er-a er-n1 er-bad"><rect x="20" y="172" width="100" height="62" rx="10"/><text x="70" y="194" text-anchor="middle" class="er-b">Sentry</text><text x="70" y="210" text-anchor="middle" class="er-l">TypeError in</text><text x="70" y="225" text-anchor="middle" class="er-l">applyCoupon()</text></g>
+          <g class="er-a er-n2 er-idle"><path class="er-arrow" d="m124 197 6 6-6 6"/><rect x="135" y="172" width="100" height="62" rx="10"/><text x="185" y="194" text-anchor="middle" class="er-b">Bug &#35;509</text><text x="185" y="210" text-anchor="middle" class="er-l">the stack and</text><text x="185" y="225" text-anchor="middle" class="er-l">the release</text></g>
+          <g class="er-a er-n3 er-run"><path class="er-arrow" d="m239 197 6 6-6 6"/><rect x="250" y="172" width="100" height="62" rx="10"/><text x="300" y="194" text-anchor="middle" class="er-b">An agent</text><text x="300" y="210" text-anchor="middle" class="er-l">shows it with</text><text x="300" y="225" text-anchor="middle" class="er-l">a failing test</text></g>
+          <g class="er-a er-n4 er-ok"><path class="er-arrow" d="m354 197 6 6-6 6"/><rect x="365" y="172" width="100" height="62" rx="10"/><text x="415" y="194" text-anchor="middle" class="er-b">PR &#35;510</text><text x="415" y="210" text-anchor="middle" class="er-l">the fix, a test</text><text x="415" y="225" text-anchor="middle" class="er-l">CI passed, merged</text></g>
+          <g class="er-a er-n5 er-gate"><path class="er-arrow" d="m469 197 6 6-6 6"/><rect x="480" y="172" width="100" height="62" rx="10"/><text x="530" y="194" text-anchor="middle" class="er-b">Deploy v0.42</text><text x="530" y="210" text-anchor="middle" class="er-l">waits for the</text><text x="530" y="225" text-anchor="middle" class="er-l">production gate</text></g>
+        </g>
+        <g class="er-a er-n3"><text x="20" y="268" class="er-s">"File a bug from Sentry", a ready-made</text><text x="20" y="285" class="er-s">workflow, files the bug, and an agent takes it.</text><text x="20" y="310" class="er-s">The deploy uses your own pipeline and gate.</text><text x="20" y="327" class="er-s">Agent Loops reads the gate and asks you.</text></g>
+        <g class="er-a er-phone">
+          <rect class="er-card" x="356" y="252" width="224" height="82" rx="14"/>
+          <text x="372" y="274" class="er-s">iPhone · Needs you</text>
+          <text x="372" y="294" class="er-t er-b">Deploy v0.42 to production?</text>
+          <g class="er-a er-tap"><rect class="er-yes" x="372" y="304" width="76" height="22" rx="6"/><text x="410" y="319" text-anchor="middle" class="er-btn er-on">Approve</text></g>
+          <rect class="er-no" x="456" y="304" width="60" height="22" rx="6"/><text x="486" y="319" text-anchor="middle" class="er-btn">Deny</text>
+        </g>
+        <g class="er-a er-n7">
+          <rect class="er-done" x="20" y="352" width="560" height="52" rx="10"/>
+          <g class="er-ic" transform="translate(32 366)"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></g>
+          <text x="66" y="373" class="er-t er-b">Errors back to normal, 47 min after the first one</text>
+          <text x="66" y="392" class="er-s">Lineage: Sentry issue → bug &#35;509 → PR &#35;510 → v0.42</text>
+        </g>
+      </svg>
+      <figcaption>An error in production goes back into work</figcaption>
+    </figure>
+  </div>
+  <div class="uc">
+    <div class="uc-card"><svg class="uc-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg><h3>Fix a broken build</h3><p>Main goes red, and an agent finds the cause and fixes forward.</p></div>
+    <div class="uc-card"><svg class="uc-ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg><h3>Fix failed checks</h3><p>A pull request's CI fails, and its agent reads the log and pushes a fix.</p></div>
+    <div class="uc-card"><svg class="uc-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><h3>Answer review comments</h3><p>A reviewer comments, and the agent changes the code and replies.</p></div>
+    <div class="uc-card"><svg class="uc-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r="1"/></svg><h3>Work an issue</h3><p>An issue gets the label <code>agent</code> in GitHub, GitLab, Jira or Linear, and an agent takes it.</p></div>
+    <div class="uc-card"><svg class="uc-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 2 1.88 1.88"/><path d="M14.12 3.88 16 2"/><path d="M9 7.13v-1a3 3 0 1 1 6 0v1"/><path d="M12 20c-3.3 0-6-2.7-6-6v-3a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v3c0 3.3-2.7 6-6 6"/><path d="M12 20v-9"/><path d="M6.53 9C4.6 8.8 3 7.1 3 5"/><path d="M6 13H2"/><path d="M3 21c0-2.1 1.7-3.9 3.8-4"/><path d="M20.97 5c0 2.1-1.6 3.8-3.5 4"/><path d="M22 13h-4"/><path d="M17.2 17c2.1.1 3.8 1.9 3.8 4"/></svg><h3>Errors become bugs</h3><p>Sentry sees a new error, or an old one comes back, and it becomes a bug with its stack.</p></div>
+    <div class="uc-card"><svg class="uc-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/></svg><h3>Make CI faster</h3><p>CI's median time goes over 15 minutes, and an agent makes one change that makes it faster.</p></div>
+    <div class="uc-card"><svg class="uc-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 2h4"/><path d="m12 14 3-3"/><circle cx="12" cy="14" r="8"/></svg><h3>Keep performance budgets</h3><p>Each night, an agent measures the app against its budgets and files an issue for a time that is over.</p></div>
+    <div class="uc-card"><svg class="uc-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg><h3>Security alerts</h3><p>A critical or high Dependabot alert becomes a high-priority bug, and the bug lane fixes it.</p></div>
+    <div class="uc-card"><svg class="uc-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg><h3>Flaky tests</h3><p>A test fails that the change does not touch. The agent runs it 20 times, then fixes the bug or puts the test aside with an issue.</p></div>
+    <div class="uc-card"><svg class="uc-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg><h3>Crash reports</h3><p>The app crashed, and an agent files an issue, or comments on the issue that has it already.</p></div>
+    <div class="uc-card"><svg class="uc-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg><h3>Release</h3><p>You say go, and an agent writes the notes, runs the checks, tags the version and sends the store build.</p></div>
+    <div class="uc-card"><svg class="uc-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/></svg><h3>Daily checks</h3><p>Every few hours, an agent looks for a red build, a stuck pull request or a missed workflow, and tells you.</p></div>
+  </div>
+</div></section>
+
+<!-- 6. Agents use the computer (#6858): the agent's own browser, desktop apps and the iOS simulator,
+     each a drawing (cu-). docs/reference/agent-tools.md (browser_*, fill_secret, browser_passkey,
+     drive_screen) and docs/how-to/use-the-simulator-pane.md say what each one does. -->
+<section class="page" id="computer"><div class="wrap">
+  <h2>Agents use the computer, as you do</h2>
+  <p class="lede">Plenty of work has no API. Your agents can use a browser, the apps on your Mac and the iOS simulator, so they can test what they built and finish the jobs that need a screen. You can watch them do it, live, on any of your devices.</p>
+  <div class="grid3 cu-grid">
+    <div class="cu-item"><figure class="anim cu-fig">
+      <svg class="cu" viewBox="0 0 340 250" role="img" aria-labelledby="cub-title cub-desc" xmlns="http://www.w3.org/2000/svg">
+        <title id="cub-title">An agent signs in to a site in its own browser</title>
+        <desc id="cub-desc">The agent types an e-mail address. The password field fills with dots, and a scrap of a government file, with black bars and the word REDACTED, lands on it, because the agent never sees the password. The agent uses a passkey, and it is signed in.</desc>
+        <rect class="cu-frame" x="1" y="1" width="338" height="248" rx="12"/><path class="cu-chrome" d="M1 35V13a12 12 0 0 1 12-12h314a12 12 0 0 1 12 12v22z"/><circle class="cu-light" cx="19" cy="18" r="4.5"/><circle class="cu-light" cx="34" cy="18" r="4.5"/><circle class="cu-light" cx="49" cy="18" r="4.5"/><text class="cu-s" x="66" y="22">Agent Browser · shop.example</text>
+        <text class="cu-t cu-b" x="36" y="68">Sign in</text>
+        <rect class="cu-field" x="36" y="80" width="268" height="32" rx="7"/><text class="cu-t cu-a cu-in cu-1" x="48" y="101">agent@shop.example</text>
+        <rect class="cu-field" x="36" y="122" width="268" height="32" rx="7"/><g class="cu-a cu-in cu-2"><text class="cu-t" x="48" y="143">••••••••••</text></g><g transform="translate(122 138) rotate(-2)"><g class="cu-a cu-in cu-stamp"><path class="fl-shadow" d="M-72 -21H74L72 23-70 25z" transform="translate(2 3)"/><path class="fl-paper" d="M-74 -22 -40 -23 0 -21 40 -23 74 -22 73 22 36 24 0 22 -38 24 -73 23z"/><path class="fl-bar" d="M-66 -17h34v7h-34zM-27 -17h52v7h-52zM30 -17h36v7h-36zM-66 12h58v7h-58zM-3 12h24v7h-24z"/><path class="fl-bar" d="M-68 -7 67 -8 68 8 -67 9z"/><text class="fl-word" x="0" y="5" text-anchor="middle">REDACTED</text></g></g>
+        <g class="cu-a cu-in cu-3"><rect class="cu-field" x="36" y="164" width="268" height="32" rx="7"/><text class="cu-t" x="48" y="185">Passkey</text><path class="cu-ok" d="m268 180 4 4 8 -9"/></g>
+        <g class="cu-a cu-in cu-4"><rect class="cu-done" x="36" y="206" width="268" height="30" rx="7"/><text class="cu-t cu-b" x="170" y="226" text-anchor="middle">Signed in</text></g>
+      </svg></figure>
+      <h3>Its own browser</h3>
+      <p>Agents have their own browser, with their own sign-ins. They fill in your passwords without seeing them, and they can use passkeys. Stuck on a CAPTCHA? They ask you to do that step, then carry on.</p>
+    </div>
+    <div class="cu-item"><figure class="anim cu-fig">
+      <svg class="cu" viewBox="0 0 340 250" role="img" aria-labelledby="cud-title cud-desc" xmlns="http://www.w3.org/2000/svg">
+        <title id="cud-title">An agent drives a desktop app</title>
+        <desc id="cud-desc">A live tile shows the Mac's screen. The pointer opens the File menu in Photos and clicks Export. Six photos are exported. Under the screen, the tile says the last action: Clicked Export in Photos.</desc>
+        <rect class="cu-frame" x="1" y="1" width="338" height="248" rx="12"/><path class="cu-chrome" d="M1 35V13a12 12 0 0 1 12-12h314a12 12 0 0 1 12 12v22z"/><circle class="cu-light" cx="19" cy="18" r="4.5"/><circle class="cu-light" cx="34" cy="18" r="4.5"/><circle class="cu-light" cx="49" cy="18" r="4.5"/><text class="cu-s" x="66" y="22">Driving the Mac's screen</text>
+        <rect class="cu-field" x="20" y="48" width="300" height="158" rx="7"/>
+        <text class="cu-s cu-b" x="34" y="68">Photos</text><text class="cu-s" x="90" y="68">File</text><text class="cu-s" x="126" y="68">Edit</text><text class="cu-s" x="162" y="68">Image</text>
+        <line class="cu-rule" x1="20" y1="78" x2="320" y2="78"/>
+        <g transform="translate(34 88)"><rect class="cu-sky-a" width="84" height="48" rx="5"/><circle class="cu-sun" cx="62" cy="14" r="6"/><path class="cu-hill" d="M0 38 24 24 44 36 62 22 84 34V43a5 5 0 0 1-5 5H5a5 5 0 0 1-5-5z"/></g><g transform="translate(126 88)"><rect class="cu-sky-b" width="84" height="48" rx="5"/><circle class="cu-sun" cx="20" cy="14" r="6"/><path class="cu-hill" d="M0 35 24 24 44 36 62 22 84 30V43a5 5 0 0 1-5 5H5a5 5 0 0 1-5-5z"/></g><g transform="translate(218 88)"><rect class="cu-sky-c" width="84" height="48" rx="5"/><circle class="cu-sun" cx="48" cy="14" r="6"/><path class="cu-hill" d="M0 32 24 24 44 36 62 22 84 34V43a5 5 0 0 1-5 5H5a5 5 0 0 1-5-5z"/></g><g transform="translate(34 144)"><rect class="cu-sky-b" width="84" height="48" rx="5"/><circle class="cu-sun" cx="26" cy="14" r="6"/><path class="cu-hill" d="M0 38 24 24 44 36 62 22 84 30V43a5 5 0 0 1-5 5H5a5 5 0 0 1-5-5z"/></g><g transform="translate(126 144)"><rect class="cu-sky-c" width="84" height="48" rx="5"/><circle class="cu-sun" cx="64" cy="14" r="6"/><path class="cu-hill" d="M0 35 24 24 44 36 62 22 84 34V43a5 5 0 0 1-5 5H5a5 5 0 0 1-5-5z"/></g><g transform="translate(218 144)"><rect class="cu-sky-a" width="84" height="48" rx="5"/><circle class="cu-sun" cx="40" cy="14" r="6"/><path class="cu-hill" d="M0 32 24 24 44 36 62 22 84 30V43a5 5 0 0 1-5 5H5a5 5 0 0 1-5-5z"/></g>
+        <g class="cu-a cu-menu"><rect class="cu-raise" x="84" y="82" width="126" height="84" rx="7"/><text class="cu-t" x="98" y="104">Import</text><rect class="cu-hl" x="88" y="112" width="118" height="24" rx="5"/><text class="cu-t cu-on" x="98" y="129">Export</text><text class="cu-t" x="98" y="154">Print</text></g>
+        <g class="cu-a cu-in cu-3"><rect class="cu-raise" x="52" y="104" width="236" height="78" rx="9"/><text class="cu-t" x="68" y="130">Exporting 6 photos</text><rect class="cu-track" x="68" y="141" width="204" height="8" rx="4"/><rect class="cu-a cu-bar" x="68" y="141" width="204" height="8" rx="4"/></g>
+        <g class="cu-a cu-in cu-5"><text class="cu-t cu-b" x="68" y="170">Exported</text><path class="cu-ok" d="m258 165 4 4 8 -9"/></g>
+        <g class="cu-a cu-point"><path class="cu-cur" d="M0 0v17l4.6-4.2 3 6.6 3-1.4-3-6.4h6.2z"/></g>
+        <text class="cu-s cu-a cu-in cu-2" x="22" y="230">Clicked Export in Photos.</text>
+      </svg></figure>
+      <h3>The apps on your Mac</h3>
+      <p>Turn on desktop control and an agent can use your Mac's screen, mouse and keyboard. Only one agent does that at a time. Touch your mouse and it stops, because it's still your Mac.</p>
+    </div>
+    <div class="cu-item"><figure class="anim cu-fig">
+      <svg class="cu" viewBox="0 0 340 250" role="img" aria-labelledby="cus-title cus-desc" xmlns="http://www.w3.org/2000/svg">
+        <title id="cus-title">An agent tests an app in the iOS simulator</title>
+        <desc id="cus-desc">Beside the chat, an iPhone simulator starts. The app's Order search page opens, the order number 4521 goes into the search field, and one result shows. The chat says that the test passed and that a screenshot is on the pull request.</desc>
+        <rect class="cu-frame" x="1" y="1" width="338" height="248" rx="12"/><path class="cu-chrome" d="M1 35V13a12 12 0 0 1 12-12h314a12 12 0 0 1 12 12v22z"/><circle class="cu-light" cx="19" cy="18" r="4.5"/><circle class="cu-light" cx="34" cy="18" r="4.5"/><circle class="cu-light" cx="49" cy="18" r="4.5"/><text class="cu-s" x="66" y="22">Simulator · iPhone 17</text>
+        <g class="cu-a cu-in cu-1"><rect class="cu-bub" x="18" y="60" width="150" height="30" rx="10"/><text class="cu-s" x="30" y="79">Open order search</text></g>
+        <g class="cu-a cu-in cu-3"><rect class="cu-bub" x="18" y="100" width="150" height="30" rx="10"/><text class="cu-s" x="30" y="119">Search for 4521</text></g>
+        <g class="cu-a cu-in cu-5"><rect class="cu-done" x="18" y="140" width="150" height="50" rx="10"/><text class="cu-s cu-okt cu-b" x="30" y="161">1 result, test passed</text><text class="cu-s" x="30" y="179">Screenshot on the PR</text></g>
+        <rect class="cu-phone" x="206" y="48" width="112" height="190" rx="20"/><rect class="cu-notch" x="246" y="56" width="32" height="8" rx="4"/>
+        <g class="cu-a cu-in cu-2"><text class="cu-t cu-b" x="218" y="90">Orders</text><rect class="cu-field" x="216" y="100" width="92" height="26" rx="7"/></g>
+        <text class="cu-t cu-a cu-in cu-4" x="226" y="118">4521</text>
+        <g class="cu-a cu-in cu-5"><rect class="cu-done" x="216" y="136" width="92" height="40" rx="7"/><text class="cu-s cu-b" x="224" y="153">Order 4521</text><text class="cu-s" x="224" y="168">Delivered</text></g>
+      </svg></figure>
+      <h3>The iOS simulator</h3>
+      <p>Agents run the app they just built, try it out, and put screenshots on the pull request. You see the simulator beside the chat. Agents take turns, so two of them never fight over one phone.</p>
+    </div>
+  </div>
+</div></section>
+
+<!-- 7. Lineage (#6857): the graph (ln-) draws itself from the feature to production and back,
+     then lights the part that answers each question in turn. -->
+<section class="page" id="lineage"><div class="wrap">
+  <h2>Lineage: know what really went into your delivery</h2>
+  <p class="lede">Agent Loops links every issue, agent session, pull request, release, deploy and error as the work happens. So you can ask the questions a status meeting cannot answer.</p>
+  <figure class="anim ln-pair">
+    <ul class="ln-qs">
+      <li class="ln-a ln-ask ln-k1"><b>How much did this feature really cost?</b><span class="small">Checkout v2: 5 agents, $31.40 and 9 hours of agent time.</span></li>
+      <li class="ln-a ln-ask ln-k2"><b>What went into this release?</b><span class="small">v0.42: 3 pull requests for 3 issues, and no reverts.</span></li>
+      <li class="ln-a ln-ask ln-k3"><b>Where is my change live?</b><span class="small">PR &#35;431 has been in production since 14:02.</span></li>
+      <li class="ln-a ln-ask ln-k4"><b>What broke, and what fixed it?</b><span class="small">A Sentry issue, first seen in v0.42. PR &#35;441 fixed it, in v0.42.1.</span></li>
+    </ul>
+    <div class="mock ln-mock"><p class="mock-bar"><span class="mock-lights" aria-hidden="true"><i></i><i></i><i></i></span>Lineage · Checkout v2</p>
+      <div class="ln-scroll"><svg class="ln" viewBox="0 0 718 360" role="img" aria-labelledby="ln-title ln-desc" xmlns="http://www.w3.org/2000/svg">
+        <title id="ln-title">The lineage of one feature</title>
+        <desc id="ln-desc">The feature Checkout v2 cost $31.40. It links to issues 412, 413 and 414, which link to five agent sessions that cost $8.20, $3.10, $11.40, $5.30 and $3.40. The sessions link to pull requests 430, 431 and 433, all merged. They went into release v0.42, in production since 14:02. A Sentry issue seen in v0.42 became bug 440, which pull request 441 fixed in v0.42.1. Four questions light up their part of the graph in turn: the cost, what went into the release, where a change is live, and what broke.</desc>
+        <g class="ln-a ln-in ln-c1"><g class="ln-node ln-feat"><rect x="14" y="128" width="96" height="44" rx="8"/><text x="62" y="147">Checkout v2</text><text class="ln-sub" x="62" y="163">$31.40</text></g></g>
+        <g class="ln-a ln-in ln-c2"><path class="ln-edge" d="M110 150 C125 150 125 70 140 70 M110 150 H140 M110 150 C125 150 125 230 140 230"/><g class="ln-node "><rect x="140" y="54" width="64" height="32" rx="8"/><text x="172" y="74">&#35;412</text></g><g class="ln-node "><rect x="140" y="134" width="64" height="32" rx="8"/><text x="172" y="154">&#35;413</text></g><g class="ln-node "><rect x="140" y="214" width="64" height="32" rx="8"/><text x="172" y="234">&#35;414</text></g></g>
+        <g class="ln-a ln-in ln-c3"><path class="ln-edge" d="M204 70 C220 70 220 46 236 46 M204 70 C220 70 220 96 236 96 M204 150 H236 M204 230 C220 230 220 204 236 204 M204 230 C220 230 220 254 236 254"/><g class="ln-node ln-ses"><rect x="236" y="30" width="106" height="32" rx="16"/><text x="289" y="50">agent · $8.20</text></g><g class="ln-node ln-ses"><rect x="236" y="80" width="106" height="32" rx="16"/><text x="289" y="100">agent · $3.10</text></g><g class="ln-node ln-ses"><rect x="236" y="134" width="106" height="32" rx="16"/><text x="289" y="154">agent · $11.40</text></g><g class="ln-node ln-ses"><rect x="236" y="188" width="106" height="32" rx="16"/><text x="289" y="208">agent · $5.30</text></g><g class="ln-node ln-ses"><rect x="236" y="238" width="106" height="32" rx="16"/><text x="289" y="258">agent · $3.40</text></g></g>
+        <g class="ln-a ln-in ln-c4"><path class="ln-edge" d="M342 46 C358 46 358 70 374 70 M342 96 C358 96 358 70 374 70 M342 150 H374 M342 204 C358 204 358 230 374 230 M342 254 C358 254 358 230 374 230"/><g class="ln-node ln-ok"><rect x="374" y="54" width="74" height="32" rx="8"/><text x="411" y="74">PR &#35;430</text></g><g class="ln-node ln-ok"><rect x="374" y="134" width="74" height="32" rx="8"/><text x="411" y="154">PR &#35;431</text></g><g class="ln-node ln-ok"><rect x="374" y="214" width="74" height="32" rx="8"/><text x="411" y="234">PR &#35;433</text></g></g>
+        <g class="ln-a ln-in ln-c5"><path class="ln-edge" d="M448 70 C465 70 465 150 482 150 M448 150 H482 M448 230 C465 230 465 150 482 150"/><g class="ln-node ln-rel"><rect x="482" y="134" width="70" height="32" rx="8"/><text x="517" y="154">v0.42</text></g></g>
+        <g class="ln-a ln-in ln-c6"><path class="ln-edge" d="M552 150 H588"/><g class="ln-node ln-ok"><rect x="588" y="128" width="116" height="44" rx="8"/><text x="646" y="147">production</text><text class="ln-sub" x="646" y="163">since 14:02</text></g></g>
+        <g class="ln-a ln-in ln-c7"><path class="ln-edge" d="M646 172 V298 M588 320 H556 M478 320 H448 M374 320 H342"/><g class="ln-node ln-bad"><rect x="588" y="298" width="116" height="44" rx="8"/><text x="646" y="317">Sentry issue</text><text class="ln-sub" x="646" y="333">seen in v0.42</text></g><g class="ln-node "><rect x="478" y="304" width="78" height="32" rx="8"/><text x="517" y="324">&#35;440 bug</text></g><g class="ln-node ln-ok"><rect x="374" y="304" width="74" height="32" rx="8"/><text x="411" y="324">PR &#35;441</text></g><g class="ln-node ln-rel"><rect x="236" y="304" width="106" height="32" rx="8"/><text x="289" y="324">v0.42.1</text></g></g>
+        <g class="ln-a ln-hot ln-h1"><path d="M110 150 C125 150 125 70 140 70 M110 150 H140 M110 150 C125 150 125 230 140 230 M204 70 C220 70 220 46 236 46 M204 70 C220 70 220 96 236 96 M204 150 H236 M204 230 C220 230 220 204 236 204 M204 230 C220 230 220 254 236 254"/><rect x="14" y="128" width="96" height="44" rx="8"/><rect x="140" y="54" width="64" height="32" rx="8"/><rect x="140" y="134" width="64" height="32" rx="8"/><rect x="140" y="214" width="64" height="32" rx="8"/><rect x="236" y="30" width="106" height="32" rx="16"/><rect x="236" y="80" width="106" height="32" rx="16"/><rect x="236" y="134" width="106" height="32" rx="16"/><rect x="236" y="188" width="106" height="32" rx="16"/><rect x="236" y="238" width="106" height="32" rx="16"/></g>
+        <g class="ln-a ln-hot ln-h2"><path d="M448 70 C465 70 465 150 482 150 M448 150 H482 M448 230 C465 230 465 150 482 150"/><rect x="374" y="54" width="74" height="32" rx="8"/><rect x="374" y="134" width="74" height="32" rx="8"/><rect x="374" y="214" width="74" height="32" rx="8"/><rect x="482" y="134" width="70" height="32" rx="8"/></g>
+        <g class="ln-a ln-hot ln-h3"><path d="M448 150 H482 M552 150 H588"/><rect x="374" y="134" width="74" height="32" rx="8"/><rect x="482" y="134" width="70" height="32" rx="8"/><rect x="588" y="128" width="116" height="44" rx="8"/></g>
+        <g class="ln-a ln-hot ln-h4"><path d="M646 172 V298 M588 320 H556 M478 320 H448 M374 320 H342"/><rect x="588" y="128" width="116" height="44" rx="8"/><rect x="588" y="298" width="116" height="44" rx="8"/><rect x="478" y="304" width="78" height="32" rx="8"/><rect x="374" y="304" width="74" height="32" rx="8"/><rect x="236" y="304" width="106" height="32" rx="8"/></g>
+      </svg></div>
+    </div>
+  </figure>
+</div></section>
+
+<!-- 8. Scale delivery (#6858): the points, and the machines as a mock (mc-): an agent asks for a
+     machine, you say yes, and work starts on it. docs/how-to/start-machines-from-agents.md,
+     docs/explanation/leases.md (capacity) and docs/reference/workflows.md (runs-on). -->
+<section class="page" id="machines"><div class="wrap">
+  <h2>Scale delivery the way you scale production</h2>
+  <p class="lede">You add machines when production gets busy. Do the same for development, and more work gets done at once. Your agents can start and stop cloud machines for you, and they ask before they make a new one.</p>
+  <div class="grid2">
+    <ul class="points">
+      <li><b>Any machine.</b> Use your Mac, your own Linux servers, or cloud machines on DigitalOcean, AWS, Google Cloud, GitHub Codespaces or Coder.</li>
+      <li><b>Capacity.</b> You can see how busy each machine is. Heavy work and new agents wait in line when one is nearly full, so it doesn't grind to a halt.</li>
+      <li><b>Labels.</b> Tell a workflow which machines to run on, such as <code>linux</code> or <code>macos</code>.</li>
+      <li><b>Priorities.</b> Urgent work goes to the front of the line.</li>
+      <li><b>Work that moves.</b> Send an agent to another machine, unpushed work and all. Bring the branch back when you want it.</li>
+      <li><b>Costs you control.</b> Cloud machines start when you need them and stop when they're idle. You set how many agents can run and how much they can spend.</li>
+    </ul>
+    <figure class="mock anim mc" role="img" aria-label="The list of machines. studio-mac is near its CPU capacity with 2 agents. build-1 has 4 agents and do-box-2 has 3. An agent asks to make do-box-3 on DigitalOcean, you press Make it, the card says Making, the machine starts, comes online and gets 2 agents. codespace-7 is idle, and stops.">
+      <figcaption class="mock-bar" aria-hidden="true"><span class="mock-lights"><i></i><i></i><i></i></span>Machines</figcaption>
+      <div class="mock-body" aria-hidden="true">
+        <div class="mc-list">
+          <div class="mc-row "><span class="mc-n"><b>studio-mac</b><span class="small">macOS · 2 agents</span></span><span class="mc-r"><span class="small">Near CPU capacity</span><span class="mc-meter"><i class="mc-w90 mc-near"></i></span></span></div>
+          <div class="mc-row "><span class="mc-n"><b>build-1</b><span class="small">Linux · 4 agents</span></span><span class="mc-r"><span class="small">OK</span><span class="mc-meter"><i class="mc-w60 "></i></span></span></div>
+          <div class="mc-row "><span class="mc-n"><b>do-box-2</b><span class="small">DigitalOcean · 3 agents</span></span><span class="mc-r"><span class="small">OK</span><span class="mc-meter"><i class="mc-w50 "></i></span></span></div>
+          <div class="mc-row "><span class="mc-n"><b>codespace-7</b><span class="small">GitHub Codespaces</span></span><span class="mc-r mc-stack"><span class="chip wait mc-a mc-idle">idle</span><span class="chip mc-a mc-in mc-stop">stopped</span></span></div>
+          <div class="mc-row mc-a mc-in mc-new"><span class="mc-n"><b>do-box-3</b><span class="small">DigitalOcean <span class="mc-a mc-in mc-two">· 2 agents</span></span></span><span class="mc-r mc-stack"><span class="chip wait mc-a mc-start">starting</span><span class="chip ok mc-a mc-in mc-on">online</span></span></div>
+        </div>
+        <div class="mc-ask mc-a mc-in mc-card"><span><b>An agent asks: make do-box-3?</b><span class="small">DigitalOcean · 4 CPUs · 8 GB</span></span><span class="mc-stack"><span class="mc-btn mc-a mc-press">Make it</span><span class="chip wait mc-a mc-making">Making…</span><span class="chip ok mc-a mc-in mc-made">Made</span></span></div>
+      </div>
+    </figure>
+  </div>
+</div></section>
+
+<!-- 9. Slack, Google Chat, email and more (#6859): chats (sl-), a mailbox (ml-), the other
+     sources (mr-) and the workflow file. The slack server asks with buttons; the email server reads and never sends. -->
+<section class="page" id="messages"><div class="wrap">
+  <h2>Slack, Google Chat, email and more drive the work</h2>
+  <p class="lede">Your team already reports bugs in chat and by email. Mention the bot, or send an email, and a workflow starts an agent on it. In chat, the agent answers where you asked and puts its questions there too, so nobody has to open another app.</p>
+  <div class="grid3">
+    <figure class="mock anim sl" role="img" aria-label="A Slack thread in the checkout channel. Sam mentions Agents: the coupon field is broken on mobile. Agents answers: On it, I filed bug 523. Agents asks: hide the field, or make it scroll? Sam presses Make it scroll. Agents answers: Fixed and merged in pull request 524.">
+      <figcaption class="mock-bar" aria-hidden="true"><span class="mock-lights" aria-hidden="true"><i></i><i></i><i></i></span>Slack · &#35;checkout</figcaption>
+      <div class="mock-body" aria-hidden="true">
+        <div class="sl-msg sl-a sl-in sl-1"><span class="sl-av sl-you" aria-hidden="true">S</span><div><b>Sam</b><p><span class="sl-at">@Agents</span> the coupon field is broken on mobile</p></div></div>
+        <div class="sl-msg sl-a sl-in sl-2"><span class="sl-av sl-bot" aria-hidden="true">A</span><div><b>Agents</b><p>On it. I filed bug &#35;523.</p></div></div>
+        <div class="sl-msg sl-a sl-in sl-3"><span class="sl-av sl-bot" aria-hidden="true">A</span><div><b>Agents</b><p>Hide the field, or make it scroll?</p><div class="sl-stack"><div class="sl-btns sl-a sl-ask"><span class="sl-btn">Hide it</span><span class="sl-btn sl-a sl-press">Make it scroll</span></div><p class="small sl-a sl-in sl-got">Sam chose <b>Make it scroll</b></p></div></div></div>
+        <div class="sl-msg sl-a sl-in sl-4"><span class="sl-av sl-bot" aria-hidden="true">A</span><div><b>Agents</b><p>Fixed and merged in PR &#35;524.</p></div></div>
+      </div>
+    </figure>
+    <figure class="mock anim sl" role="img" aria-label="Google Chat. Priya asks Agents: is the release ready? Agents answers: two bugs are left, and both have a pull request. Priya says: tell me when they merge. Agents answers: both merged, and main is green.">
+      <figcaption class="mock-bar" aria-hidden="true"><span class="mock-lights" aria-hidden="true"><i></i><i></i><i></i></span>Google Chat · Release</figcaption>
+      <div class="mock-body" aria-hidden="true">
+        <div class="sl-msg sl-a sl-in sl-1"><span class="sl-av sl-you">P</span><div><b>Priya</b><p><span class="sl-at">@Agents</span> is the release ready?</p></div></div>
+        <div class="sl-msg sl-a sl-in sl-2"><span class="sl-av sl-bot">A</span><div><b>Agents</b><p>Two bugs are left. Both have a pull request.</p></div></div>
+        <div class="sl-msg sl-a sl-in sl-3"><span class="sl-av sl-you">P</span><div><b>Priya</b><p><span class="sl-at">@Agents</span> tell me when they merge</p></div></div>
+        <div class="sl-msg sl-a sl-in sl-4"><span class="sl-av sl-bot">A</span><div><b>Agents</b><p>Both merged. Main is green.</p></div></div>
+      </div>
+    </figure>
+    <figure class="mock anim ml" role="img" aria-label="The agents' mailbox. A mail from a customer says that a refund failed, and an agent starts on it. A mail from GitLab has a sign-up code, black bars cover the code, as on a redacted government file, and the code goes to the agent that waits for it.">
+      <figcaption class="mock-bar" aria-hidden="true"><span class="mock-lights" aria-hidden="true"><i></i><i></i><i></i></span>Email · Inbox</figcaption>
+      <div class="mock-body" aria-hidden="true">
+        <div class="ml-mail ml-a ml-in ml-1"><span class="small">kim@customer.example</span><b>Refund failed</b><span>I sent it back last week, but…</span><span class="ml-a ml-in ml-2"><span class="chip wait ml-chip">agent started</span></span></div>
+        <div class="ml-mail ml-a ml-in ml-3"><span class="small">noreply@gitlab.com</span><b>Your sign-up code</b><span class="ml-code">Code: <span class="ml-secret">••••••••<svg class="ml-tape" viewBox="-80 -28 160 58" aria-hidden="true"><g class="ml-a ml-in ml-stamp"><path class="fl-shadow" d="M-72 -21H74L72 23-70 25z" transform="translate(2 3)"/><path class="fl-paper" d="M-74 -22 -40 -23 0 -21 40 -23 74 -22 73 22 36 24 0 22 -38 24 -73 23z"/><path class="fl-bar" d="M-66 -17h34v7h-34zM-27 -17h52v7h-52zM30 -17h36v7h-36zM-66 12h58v7h-58zM-3 12h24v7h-24z"/><path class="fl-bar" d="M-68 -7 67 -8 68 8 -67 9z"/><text class="fl-word" x="0" y="5" text-anchor="middle">REDACTED</text></g></svg></span></span><span class="ml-a ml-in ml-5"><span class="chip ok ml-chip">given to the waiting agent</span></span></div>
+      </div>
+    </figure>
+    <figure class="mock anim sl" role="img" aria-label="WhatsApp. Lee writes: the photos load slowly. Agents answers: they have no cache. Do I fix it now? Lee presses Fix it. Agents answers: fixed in pull request 529.">
+      <figcaption class="mock-bar" aria-hidden="true"><span class="mock-lights" aria-hidden="true"><i></i><i></i><i></i></span>WhatsApp</figcaption>
+      <div class="mock-body" aria-hidden="true">
+        <div class="sl-msg sl-a sl-in sl-1"><span class="sl-av sl-you">L</span><div><b>Lee</b><p>The photos load slowly</p></div></div>
+        <div class="sl-msg sl-a sl-in sl-2"><span class="sl-av sl-bot">A</span><div><b>Agents</b><p>I found it. They have no cache.</p></div></div>
+        <div class="sl-msg sl-a sl-in sl-3"><span class="sl-av sl-bot">A</span><div><b>Agents</b><p>Do I fix it now?</p><div class="sl-stack"><div class="sl-btns sl-a sl-ask"><span class="sl-btn">Wait</span><span class="sl-btn sl-a sl-press">Fix it</span></div><p class="small sl-a sl-in sl-got">Lee chose <b>Fix it</b></p></div></div></div>
+        <div class="sl-msg sl-a sl-in sl-4"><span class="sl-av sl-bot">A</span><div><b>Agents</b><p>Fixed in PR &#35;529.</p></div></div>
+      </div>
+    </figure>
+    <figure class="mock anim sl" role="img" aria-label="More sources that start an agent: an error in Sentry, an issue in Jira, an issue in Linear and a review on GitHub.">
+      <figcaption class="mock-bar" aria-hidden="true"><span class="mock-lights" aria-hidden="true"><i></i><i></i><i></i></span>And more</figcaption>
+      <div class="mock-body" aria-hidden="true">
+        <p class="mr-row sl-a sl-in sl-1"><span class="tile lg-sentry"><svg viewBox="0 0 24 24"><use href="assets/logos.svg#sentry"/></svg></span><span><b>A new error in Sentry</b><span class="small">starts an agent on the bug</span></span></p>
+        <p class="mr-row sl-a sl-in sl-2"><span class="tile lg-jira"><svg viewBox="0 0 24 24"><use href="assets/logos.svg#jira"/></svg></span><span><b>A new issue in Jira</b><span class="small">starts an agent on the issue</span></span></p>
+        <p class="mr-row sl-a sl-in sl-3"><span class="tile lg-linear"><svg viewBox="0 0 24 24"><use href="assets/logos.svg#linear"/></svg></span><span><b>An issue in Linear</b><span class="small">starts an agent on the issue</span></span></p>
+        <p class="mr-row sl-a sl-in sl-4"><span class="tile lg-github"><svg viewBox="0 0 24 24"><use href="assets/logos.svg#github"/></svg></span><span><b>A review on GitHub</b><span class="small">starts an agent on the comments</span></span></p>
+      </div>
+    </figure>
+    <figure class="mock">
+      <figcaption class="mock-bar"><span class="mock-lights" aria-hidden="true"><i></i><i></i><i></i></span>from-slack.md</figcaption>
+<pre class="mock-code"><code><span class="cd-p">---</span>
+<span class="cd-k">name:</span> <span class="cd-s">Work from Slack</span>
+<span class="cd-k">on:</span>
+  - <span class="cd-k">message.received:</span>
+      <span class="cd-k">server:</span> <span class="cd-s">slack</span>
+      <span class="cd-k">mentions:</span> <span class="cd-s">true</span>
+<span class="cd-k">agent:</span> <span class="cd-s">new</span>
+<span class="cd-p">---</span>
+Read the message and do
+what it asks.
+Answer in its thread.</code></pre>
+    </figure>
+  </div>
+  <p class="small events-from">Agents get messages and mail as data to read, never as instructions. The mailbox is theirs, and they can't send mail from it. Agents can search your team's docs in the repository, Confluence, Notion or Google Drive before they start.</p>
+</div></section>
+
+<!-- 10. Outputs (#6859): a proposal writes itself in the pane beside the chat (ot-, with the
+     document's own pictures, dc-), and you edit it. Kept artifacts are planned (#5713). -->
+<section class="page" id="outputs"><div class="wrap">
+  <h2>See the output, not a wall of text</h2>
+  <p class="lede">You shouldn't have to scroll through a chat to find the plan. What an agent makes opens in a pane beside the conversation, and you can read it there while the agent carries on.</p>
+  <figure class="mock anim ot" role="img" aria-label="A chat with a live document beside it. You ask for a proposal for order search that you can show to the whole company. The document builds itself: a cover that says Find any order before you blink, three figures (150 milliseconds, 5.6 times faster, 1 million orders), a chart of the search time that falls, a picture of how a search runs, and a rollout. You type Germany over the rollout's first step, and the agent draws the rollout again.">
+    <figcaption class="mock-bar" aria-hidden="true"><span class="mock-lights" aria-hidden="true"><i></i><i></i><i></i></span>Order search</figcaption>
+    <div class="ot-split" aria-hidden="true">
+      <div class="ot-chat">
+        <p class="ot-me">Write the proposal for order search. I want to show it to the whole company.</p>
+        <p class="bubble ot-a ot-in ot-m1">I'm writing it beside the chat.</p>
+        <p class="bubble ot-a ot-in ot-m2">I drew the speed-up, and how a search runs.</p>
+        <p class="ot-me ot-a ot-in ot-m3">I changed the rollout. Draw it again?</p>
+        <p class="bubble ot-a ot-in ot-m4">Done. Germany goes first.</p>
+      </div>
+      <div class="ot-pane">
+        <div class="ot-tabs"><span>Files<i></i></span><span>Changes</span><span>Terminal</span><span class="ot-name small">proposal.md <span class="ot-flag">Claude</span></span></div>
+        <div class="dc">
+          <div class="dc-a dc-in dc-1"><svg class="dc-cover" viewBox="0 0 660 184"><rect class="dc-sky" width="660" height="184" rx="10"/><g class="dc-tilt"><ellipse class="dc-ring" cx="500" cy="92" rx="60" ry="25"/><ellipse class="dc-ring" cx="500" cy="92" rx="110" ry="46"/><ellipse class="dc-ring" cx="500" cy="92" rx="165" ry="69"/><ellipse class="dc-ring" cx="500" cy="92" rx="225" ry="94"/></g><circle class="dc-star" cx="350" cy="30" r="2"/><circle class="dc-star" cx="420" cy="140" r="2.5"/><circle class="dc-star" cx="590" cy="26" r="3"/><circle class="dc-star" cx="630" cy="120" r="2"/><circle class="dc-star" cx="460" cy="40" r="1.6"/><circle class="dc-star" cx="300" cy="150" r="2"/><circle class="dc-star" cx="560" cy="155" r="2"/><circle class="dc-core" cx="500" cy="92" r="30"/><g class="dc-orb"><circle class="dc-sat" cx="610" cy="92" r="8"/></g><text class="dc-kick" x="32" y="52">PROPOSAL · ORDER SEARCH</text><text class="dc-big" x="30" y="98">Find any order</text><text class="dc-big" x="30" y="136">before you blink</text></svg></div>
+          <div class="dc-kpis dc-a dc-in dc-2"><p><b>150 ms</b><span class="small">to find an order</span></p><p><b>5.6×</b><span class="small">faster than today</span></p><p><b>1 million</b><span class="small">orders searched</span></p></div>
+          <div class="dc-pair"><div class="dc-a dc-in dc-3"><h4>The wait goes away</h4><svg viewBox="0 0 310 160"><path class="dc-grid" d="M8 30H302M8 78H302M8 126H302"/><path class="dc-area dc-a dc-in dc-5" d="M8 36C50 30 70 46 104 42S150 52 172 92 226 124 302 127V140H8z"/><path class="dc-line dc-a" pathLength="100" d="M8 36C50 30 70 46 104 42S150 52 172 92 226 124 302 127"/><text class="dc-t" x="10" y="22">840 ms</text><text class="dc-t dc-b" x="302" y="112" text-anchor="end">150 ms</text><text class="dc-t dc-dim" x="8" y="156">Today</text><text class="dc-t dc-dim" x="302" y="156" text-anchor="end">With the index</text></svg></div><div class="dc-a dc-in dc-4"><h4>How a search runs</h4><svg viewBox="0 0 310 160"><path class="dc-wire" d="M72 80C110 80 106 34 144 34M72 80C110 80 106 126 144 126M214 34C246 34 240 80 262 80M214 126C246 126 240 80 262 80"/><path class="dc-pulse" d="M72 80C110 80 106 34 144 34M72 80C110 80 106 126 144 126M214 34C246 34 240 80 262 80M214 126C246 126 240 80 262 80"/><g class="dc-node"><circle cx="42" cy="80" r="30"/><rect x="144" y="14" width="70" height="40" rx="9"/><rect x="144" y="106" width="70" height="40" rx="9"/><circle cx="276" cy="80" r="28"/></g><g class="dc-mid"><text x="42" y="85">Ask</text><text x="179" y="39">Index</text><text x="179" y="131">Cache</text><text x="276" y="85">Found</text></g></svg></div></div>
+          <div class="dc-a dc-in dc-6"><h4>Rollout: <span class="dc-edit"><span class="dc-a dc-old">everyone at 5%</span><span class="dc-a dc-in dc-typed">Germany first<i></i></span></span></h4><svg viewBox="0 0 660 84"><path class="dc-grid" d="M40 30H620"/><path class="dc-road dc-a" pathLength="100" d="M40 30H620"/><g class="dc-stop"><circle cx="60" cy="30" r="11"/><circle cx="330" cy="30" r="11"/><circle cx="600" cy="30" r="11"/></g><g class="dc-mid dc-stops"><text class="dc-a dc-old" x="60" y="66">Everyone, 5%</text><text class="dc-a dc-in dc-new" x="60" y="66">Germany</text><text x="330" y="66">Europe</text><text x="600" y="66">World</text></g></svg></div>
+        </div>
+      </div>
+    </div>
+  </figure>
+  <ul class="points ot-points">
+    <li><b>Live documents.</b> A plan, spec or review fills in as the agent writes it. Type on it yourself, and the agent builds on your words.</li>
+    <li><b>Drawn for you.</b> HTML pages, diagrams and charts show as pictures.</li>
+    <li><b>Every change.</b> See each file the agent touched, marked down to the word. Undo what one turn changed with one click.</li>
+    <li><b>The rest of the desk.</b> Files, a terminal, the iOS simulator and the agent's own browser sit beside the chat too.</li>
+    <li><b>Versions you keep.</b> Artifacts with a history, stored for as long as you choose. <a class="tag soon" href="https://github.com/agentloops-dev/agent-loops/issues/5713">coming</a></li>
   </ul>
+</div></section>
+
+<!-- 11. Reports (#6857): each figure is one that Reports, Delivery, Builds, Spend or Forecast
+     gives today (docs/reference/reports.md). A forecast is a range, never a point. -->
+<section class="page" id="reports"><div class="wrap">
+  <h2>Reports: see how delivery goes</h2>
+  <p class="lede">The figures come from the records your agents and your CI already make. There is no survey to fill in and no extra tool to run.</p>
+  <div class="grid3">
+    <figure class="mock">
+      <figcaption class="mock-bar"><span class="mock-lights" aria-hidden="true"><i></i><i></i><i></i></span>Delivery · DORA</figcaption>
+      <div class="mock-body kpis">
+        <p><span class="small">Lead time for changes</span><b>3.1 h</b></p>
+        <p><span class="small">Deployment frequency</span><b>6 a week</b></p>
+        <p><span class="small">Change failure rate</span><b>4%</b></p>
+        <p><span class="small">Recovery time</span><b>22 min</b></p>
+        <p><span class="small">Rework rate</span><b>7%</b></p>
+        <p><span class="small">Flow efficiency</span><b>61%</b></p>
+      </div>
+    </figure>
+    <figure class="mock">
+      <figcaption class="mock-bar"><span class="mock-lights" aria-hidden="true"><i></i><i></i><i></i></span>Builds · CI time</figcaption>
+      <div class="mock-body">
+        <svg class="rp" viewBox="0 0 304 138" role="img" aria-label="CI time for each day of a week. The run takes 16 to 22 minutes on most days, and 30 minutes on Thursday. On Wednesday the wait for a runner is longer, 9 minutes."><g class="rp-bar"><rect class="rp-run" x="8" y="55.2" width="28" height="60.8" rx="3"/><rect class="rp-wait" x="8" y="43.6" width="28" height="9.6" rx="3"/></g><text x="22" y="133">Sun</text><g class="rp-bar"><rect class="rp-run" x="50" y="48.8" width="28" height="67.2" rx="3"/><rect class="rp-wait" x="50" y="34" width="28" height="12.8" rx="3"/></g><text x="64" y="133">Mon</text><g class="rp-bar"><rect class="rp-run" x="92" y="52" width="28" height="64" rx="3"/><rect class="rp-wait" x="92" y="40.4" width="28" height="9.6" rx="3"/></g><text x="106" y="133">Tue</text><g class="rp-bar"><rect class="rp-run" x="134" y="45.6" width="28" height="70.4" rx="3"/><rect class="rp-wait" x="134" y="14.8" width="28" height="28.8" rx="3"/></g><text x="148" y="133">Wed</text><g class="rp-bar"><rect class="rp-run rp-slow" x="176" y="20" width="28" height="96" rx="3"/><rect class="rp-wait" x="176" y="8.4" width="28" height="9.6" rx="3"/></g><text x="190" y="133">Thu</text><g class="rp-bar"><rect class="rp-run" x="218" y="58.4" width="28" height="57.6" rx="3"/><rect class="rp-wait" x="218" y="46.8" width="28" height="9.6" rx="3"/></g><text x="232" y="133">Fri</text><g class="rp-bar"><rect class="rp-run" x="260" y="64.8" width="28" height="51.2" rx="3"/><rect class="rp-wait" x="260" y="56.4" width="28" height="6.4" rx="3"/></g><text x="274" y="133">Sat</text></svg>
+        <p class="small rp-key"><span><i class="k-run"></i>running</span><span><i class="k-wait"></i>waiting for a runner</span></p>
+        <p>Thursday: the <code>e2e</code> job takes 9 minutes more. See the first slow run, and the commits before it.</p>
+      </div>
+    </figure>
+    <figure class="mock">
+      <figcaption class="mock-bar"><span class="mock-lights" aria-hidden="true"><i></i><i></i><i></i></span>Spend and forecast</figcaption>
+      <div class="mock-body rp-rows">
+        <p><span>Spend this month</span><b>$412 of $600</b></p>
+        <p><span>Pull requests merged</span><b>64</b></p>
+        <p><span>Cost per merged PR</span><b>$6.44</b></p>
+        <p><span>Waste</span><b>$18</b></p>
+        <p><span>Order search lands</span><b>18 to 24 Nov</b></p>
+        <p><span>With one more agent</span><b>17 to 21 Nov</b></p>
+      </div>
+    </figure>
+  </div>
+  <p class="small events-from">There are pages for time, runtimes, adoption, workflows and estimates too, on the web. Save a view, export it as CSV, read it from your own tools with the read API, or send the figures to an OpenTelemetry collector.</p>
+</div></section>
+
+<!-- 12. On every screen you use (Alex, PR #6862), and voice mode (vm-, #6859). Icons after
+     Lucide (ISC). -->
+<section class="page" id="clients"><div class="wrap">
+  <h2>On every screen you use, and by voice</h2>
+  <p class="lede">Start a session on your Mac, answer it on your phone, and check on it from the terminal. Every client shows the same sessions as they happen, so you can pick up the work wherever you are.</p>
+  <div class="clients">
+    <a class="client" href="https://docs.agentloops.dev/how-to/set-up-on-this-mac/"><svg class="client-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 5a2 2 0 0 1 2 2v8.5a2 2 0 0 0 .2.9l1.1 2.1a1 1 0 0 1-.9 1.5H3.6a1 1 0 0 1-.9-1.5l1.1-2.1a2 2 0 0 0 .2-.9V7a2 2 0 0 1 2-2z"/><path d="M20 16H4"/></svg><h3>Mac</h3><p>The full app. It runs your agents, shows the files and changes beside each chat, and takes voice mode.</p></a>
+    <a class="client" href="https://docs.agentloops.dev/how-to/connect-a-window-or-phone/"><svg class="client-ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="2" width="12" height="20" rx="2.5"/><path d="M11 18h2"/></svg><h3>iPhone</h3><p>Answer a question or approve a new screen from wherever you are. A notice tells you when an agent needs you.</p></a>
+    <a class="client" href="https://docs.agentloops.dev/how-to/connect-a-window-or-phone/"><svg class="client-ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="2" width="16" height="20" rx="2.5"/><path d="M11 18h2"/></svg><h3>iPad</h3><p>The same sessions on a bigger screen, for reading a plan or a review away from your desk.</p></a>
+    <a class="client" href="https://docs.agentloops.dev/how-to/use-loops-in-a-terminal/"><svg class="client-ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2.5"/><path d="m7 9 3 3-3 3"/><path d="M12 15h5"/></svg><h3>Terminal</h3><p><code>loops</code> starts or continues a session in the folder you are in, and runs from a script or a CI job too.</p></a>
+    <a class="client" href="https://docs.agentloops.dev/how-to/use-agents-in-a-browser/"><svg class="client-ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg><h3>Web</h3><p>The whole app in any browser, served by your Mac or your own control plane. Nothing to install.</p></a>
+    <a class="client soon" href="https://github.com/agentloops-dev/agent-loops/issues/4456"><svg class="client-ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg><h3>Windows <span class="tag soon">coming soon</span></h3><p>A desktop app for Windows, with the same window as the Mac.</p></a>
+    <a class="client soon" href="https://github.com/agentloops-dev/agent-loops/issues/4454"><svg class="client-ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg><h3>Linux desktop <span class="tag soon">coming soon</span></h3><p>A desktop app for Linux, with the same window as the Mac.</p></a>
+    <a class="client soon" href="https://github.com/agentloops-dev/agent-loops/issues/4466"><svg class="client-ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="2" width="12" height="20" rx="2.5"/><path d="M11 18h2"/></svg><h3>Android <span class="tag soon">coming soon</span></h3><p>An app for Android phones and tablets, to answer your agents on the go.</p></a>
+  </div>
+  <div class="grid2 vm-pair">
+    <div>
+      <h3 class="vm-h">Talk to your agents</h3>
+      <p class="vm-p">Voice mode is on the Mac, iPhone and iPad. Press the voice button in a chat and speak. Pause, and your words go to the agent. It reads its answer back to you, so you can work while you cook or walk the dog.</p>
+      <ul class="points">
+        <li><b>Answer by voice.</b> The agent reads its question and the choices aloud. Say "one", or say the choice.</li>
+        <li><b>Interrupt it.</b> Talk over the reply. It stops and listens.</li>
+        <li><b>Approve safe steps.</b> You can say yes to a read, a search or an edit in the agent's own worktree. Anything else waits for your screen.</li>
+        <li><b>Speech stays on your device.</b> Your device turns your speech into text and makes the voice. Only the words go to the agent.</li>
+      </ul>
+    </div>
+    <figure class="mock anim vm" role="img" aria-label="Voice mode in a chat. You say: How is the checkout fix going? The agent says: It is done and the tests pass. Where do you want the retry limit? Two choices. One: per order. Two: per customer. One is recommended. You say: One. The agent says: Sending: Per order.">
+      <figcaption class="mock-bar" aria-hidden="true"><span class="mock-lights" aria-hidden="true"><i></i><i></i><i></i></span>Checkout fix · Voice mode</figcaption>
+      <div class="mock-body" aria-hidden="true">
+        <p class="vm-me vm-a vm-in vm-1">How's the checkout fix going?</p>
+        <p class="bubble vm-a vm-in vm-2">It's done, and the tests pass. Where do you want the retry limit?</p>
+        <p class="bubble vm-a vm-in vm-3">Two choices. One: per order. Two: per customer. One is recommended.</p>
+        <p class="vm-me vm-a vm-in vm-4">One.</p>
+        <p class="bubble vm-a vm-in vm-5">Sending: Per order.</p>
+        <div class="vm-bar"><span class="vm-wave"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="vm-state"><span class="vm-a vm-listen">Listening</span><span class="vm-a vm-in vm-speak">Speaking</span></span></div>
+      </div>
+    </figure>
+  </div>
+</div></section>
+
+<!-- 13. The human stays in the loop (#6860): the points, and three asks that you answer (hl-).
+     docs/reference/statuses.md, docs/how-to/answer-a-question.md, docs/explanation/policy-layers.md,
+     docs/how-to/limit-spending.md and set-an-organisation-policy.md. -->
+<section class="page" id="human"><div class="wrap">
+  <h2>The human stays in the loop</h2>
+  <p class="lede">Agents do the work, and you make the decisions that need a person. They ask when they need an answer, wait for it, and carry on when they have it. Until then, you can get on with something else.</p>
+  <div class="grid2">
+    <ul class="points">
+      <li><b>One list to answer.</b> Agents that need you are under <b>Needs you</b>. The rest are under Waiting, Working, Done or Paused, so you can leave them alone.</li>
+      <li><b>On the device in your hand.</b> You get one notification, on the device you used last. Answer there, and the question clears everywhere else.</li>
+      <li><b>You see what you approve.</b> Open a changed workflow, read the change, then approve it. A deploy that your forge holds for approval waits for you too.</li>
+      <li><b>Your rules.</b> Policy says what agents may do alone and what they must ask. Your organisation, you and each folder can make it tighter.</li>
+      <li><b>A limit on spending.</b> Set one for each agent, and one for the day. An agent that reaches it stops after its turn, and you can raise it.</li>
+      <li><b>A stop button.</b> Stop one agent at any time. An admin can stop all agent work in the organisation at once.</li>
+    </ul>
+    <figure class="mock anim hl" role="img" aria-label="The list Needs you, with three asks. Deploy version 0.42 to production: you press Approve, and the deploy starts. Make a machine for the tests: you press Make it, and the machine starts. Which payment provider: you choose Stripe, and the agent adds it. Then nothing needs you, and three agents are at work.">
+      <figcaption class="mock-bar" aria-hidden="true"><span class="mock-lights"><i></i><i></i><i></i></span>Sessions</figcaption>
+      <div class="mock-body" aria-hidden="true">
+        <p class="hl-head"><b>Needs you</b><span class="hl-count"><span class="hl-a hl-c3">3</span><span class="hl-a hl-c2">2</span><span class="hl-a hl-c1">1</span><span class="hl-a hl-in hl-c0">All clear</span></span></p>
+        <div class="hl-list">
+          <div class="hl-card"><i class="hl-edge hl-a hl-ask1"></i><span class="hl-n"><b>Deploy v0.42 to production?</b><span class="small">Checkout · release</span></span><span class="hl-stack"><span class="hl-btns hl-a hl-ask1"><span class="hl-btn">Deny</span><span class="hl-btn hl-go hl-a hl-press1">Approve</span></span><span class="chip ok hl-a hl-in hl-done1">Approved</span></span></div>
+          <div class="hl-card"><i class="hl-edge hl-a hl-ask2"></i><span class="hl-n"><b>Make a machine for the tests?</b><span class="small">Order search · do-box-3</span></span><span class="hl-stack"><span class="hl-btns hl-a hl-ask2"><span class="hl-btn hl-go hl-a hl-press2">Make it</span></span><span class="chip ok hl-a hl-in hl-done2">Making…</span></span></div>
+          <div class="hl-card"><i class="hl-edge hl-a hl-ask3"></i><span class="hl-n"><b>Which payment provider?</b><span class="small">Checkout v2 · question</span></span><span class="hl-stack"><span class="hl-btns hl-a hl-ask3"><span class="hl-btn">Adyen</span><span class="hl-btn hl-go hl-a hl-press3">Stripe</span></span><span class="chip ok hl-a hl-in hl-done3">Stripe</span></span></div>
+        </div>
+        <p class="hl-head"><b>Working</b></p>
+        <div class="hl-list hl-works">
+          <p class="hl-work hl-a hl-in hl-done1"><i class="hl-spin"></i>Deploying v0.42</p>
+          <p class="hl-work hl-a hl-in hl-done2"><i class="hl-spin"></i>Starting do-box-3 for the tests</p>
+          <p class="hl-work hl-a hl-in hl-done3"><i class="hl-spin"></i>Adding Stripe to the checkout</p>
+        </div>
+      </div>
+    </figure>
+  </div>
+</div></section>
+
+<!-- 14. Secrets and accounts (#6860): the points, and the secrets with a use that asks first (sk-).
+     docs/explanation/compliance/security-overview.md, docs/reference/agent-tools.md (fill_secret,
+     generate_secret, capture_secret, browser_passkey) and approval-words.md. -->
+<section class="page" id="secrets"><div class="wrap">
+  <h2>Secrets and accounts, kept safe</h2>
+  <p class="lede">Agents need passwords and API keys to get real work done. Give them the use of a secret without showing it in a chat, and see every time one was read.</p>
+  <div class="grid2">
+    <figure class="mock anim sk" role="img" aria-label="The list of secrets. A scrap of a government file, with black bars and the word REDACTED, lands on each value. An agent asks to fill the Stripe test key on stripe.com. You press Approve, the agent fills the key, and the record says that the Checkout agent read it just now.">
+      <figcaption class="mock-bar" aria-hidden="true"><span class="mock-lights"><i></i><i></i><i></i></span>Secrets</figcaption>
+      <div class="mock-body" aria-hidden="true">
+        <div class="sk-list">
+          <div class="sk-row"><span class="sk-n"><code>STRIPE_TEST_KEY</code><span class="small">Asks before use</span></span><span class="sk-val">••••••••••<svg class="sk-tape" viewBox="-80 -28 160 58" aria-hidden="true"><g class="sk-a sk-in sk-s1"><path class="fl-shadow" d="M-72 -21H74L72 23-70 25z" transform="translate(2 3)"/><path class="fl-paper" d="M-74 -22 -40 -23 0 -21 40 -23 74 -22 73 22 36 24 0 22 -38 24 -73 23z"/><path class="fl-bar" d="M-66 -17h34v7h-34zM-27 -17h52v7h-52zM30 -17h36v7h-36zM-66 12h58v7h-58zM-3 12h24v7h-24z"/><path class="fl-bar" d="M-68 -7 67 -8 68 8 -67 9z"/><text class="fl-word" x="0" y="5" text-anchor="middle">REDACTED</text></g></svg></span></div>
+          <div class="sk-row"><span class="sk-n"><code>SENTRY_TOKEN</code><span class="small">Agents may use it</span></span><span class="sk-val">••••••••••<svg class="sk-tape" viewBox="-80 -28 160 58" aria-hidden="true"><g class="sk-a sk-in sk-s2"><path class="fl-shadow" d="M-72 -21H74L72 23-70 25z" transform="translate(2 3)"/><path class="fl-paper" d="M-74 -22 -40 -23 0 -21 40 -23 74 -22 73 22 36 24 0 22 -38 24 -73 23z"/><path class="fl-bar" d="M-66 -17h34v7h-34zM-27 -17h52v7h-52zM30 -17h36v7h-36zM-66 12h58v7h-58zM-3 12h24v7h-24z"/><path class="fl-bar" d="M-68 -7 67 -8 68 8 -67 9z"/><text class="fl-word" x="0" y="5" text-anchor="middle">REDACTED</text></g></svg></span></div>
+          <div class="sk-row"><span class="sk-n"><code>GITLAB_PASSWORD</code><span class="small">Made by an agent</span></span><span class="sk-val">••••••••••<svg class="sk-tape" viewBox="-80 -28 160 58" aria-hidden="true"><g class="sk-a sk-in sk-s3"><path class="fl-shadow" d="M-72 -21H74L72 23-70 25z" transform="translate(2 3)"/><path class="fl-paper" d="M-74 -22 -40 -23 0 -21 40 -23 74 -22 73 22 36 24 0 22 -38 24 -73 23z"/><path class="fl-bar" d="M-66 -17h34v7h-34zM-27 -17h52v7h-52zM30 -17h36v7h-36zM-66 12h58v7h-58zM-3 12h24v7h-24z"/><path class="fl-bar" d="M-68 -7 67 -8 68 8 -67 9z"/><text class="fl-word" x="0" y="5" text-anchor="middle">REDACTED</text></g></svg></span></div>
+          <div class="sk-row"><span class="sk-n"><code>GITHUB_PASSKEY</code><span class="small">Asks before use</span></span><span class="sk-val">••••••••••<svg class="sk-tape" viewBox="-80 -28 160 58" aria-hidden="true"><g class="sk-a sk-in sk-s4"><path class="fl-shadow" d="M-72 -21H74L72 23-70 25z" transform="translate(2 3)"/><path class="fl-paper" d="M-74 -22 -40 -23 0 -21 40 -23 74 -22 73 22 36 24 0 22 -38 24 -73 23z"/><path class="fl-bar" d="M-66 -17h34v7h-34zM-27 -17h52v7h-52zM30 -17h36v7h-36zM-66 12h58v7h-58zM-3 12h24v7h-24z"/><path class="fl-bar" d="M-68 -7 67 -8 68 8 -67 9z"/><text class="fl-word" x="0" y="5" text-anchor="middle">REDACTED</text></g></svg></span></div>
+        </div>
+        <div class="sk-ask sk-a sk-in sk-card"><span class="sk-n"><b>Use STRIPE_TEST_KEY on stripe.com?</b><span class="small">Checkout agent · fills one field</span></span><span class="sk-stack"><span class="sk-btns sk-a sk-wait"><span class="sk-btn">Deny</span><span class="sk-btn sk-go sk-a sk-press">Approve</span></span><span class="chip ok sk-a sk-in sk-ok">Filled</span></span></div>
+        <p class="small sk-log sk-a sk-in sk-read">The Checkout agent read STRIPE_TEST_KEY just now</p>
+      </div>
+    </figure>
+    <ul class="points">
+      <li><b>Sealed to your machines.</b> Your own app encrypts your secrets for each of your machines. The control plane passes them on and has no key to open them.</li>
+      <li><b>Ask before use.</b> Say which secrets need your OK. Approve one use, or the whole session. Agent Loops records each read.</li>
+      <li><b>Filled in unseen.</b> Agents can fill a password into a page, make a new one, save a token that a page shows once, and use a passkey. They never see the value.</li>
+      <li><b>Accounts on record.</b> Agents note each outside account they make or use, so the next agent finds it and doesn't make another.</li>
+      <li><b>Your keys and gateways.</b> Use your organisation's Anthropic, OpenAI or xAI key, or go through Bedrock, Vertex AI, Azure, LiteLLM or Portkey.</li>
+      <li><b>Sign-in and audit.</b> Sign in with Apple, Google, GitHub or your own provider, and add people by SCIM. You can send the audit log to your SIEM.</li>
+    </ul>
+  </div>
+</div></section>
+
+<!-- 15. Works with the tools you already use. The count comes from docs/reference/integrations.md (2026-11-22). -->
+<section class="page" id="integrations"><div class="wrap">
+  <h2>Works with the tools you already use</h2>
+  <p class="lede">Agent Loops fits into the tools your team already has, with more than 40 integrations and room for any MCP server. Bring your own coding agents, forge, tracker and cloud. Each agent signs in with your own account and plan, so you keep the subscriptions you already pay for.</p>
+  <div class="int-rows">
+    <div class="int-row"><h3>Coding agents</h3>
+    <ul class="ints">
+      <li><span class="tile lg-claude"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/logos.svg#claude"/></svg></span>Claude</li>
+      <li><span class="tile mono" aria-hidden="true">Cx</span>Codex</li>
+      <li><span class="tile mono" aria-hidden="true">Ag</span>Antigravity</li>
+      <li><span class="tile mono" aria-hidden="true">Gk</span>Grok</li>
+      <li><span class="tile lg-githubcopilot"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/logos.svg#githubcopilot"/></svg></span>Copilot</li>
+      <li><span class="tile lg-cursor"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/logos.svg#cursor"/></svg></span>Cursor</li>
+      <li><span class="tile lg-opencode"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/logos.svg#opencode"/></svg></span>OpenCode</li>
+    </ul></div>
+    <div class="int-row"><h3>Forges</h3>
+    <ul class="ints">
+      <li><span class="tile lg-github"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/logos.svg#github"/></svg></span>GitHub</li>
+      <li><span class="tile lg-gitlab"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/logos.svg#gitlab"/></svg></span>GitLab</li>
+      <li><span class="tile lg-bitbucket"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/logos.svg#bitbucket"/></svg></span>Bitbucket</li>
+      <li><span class="tile mono" aria-hidden="true">Az</span>Azure DevOps</li>
+      <li><span class="tile lg-forgejo"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/logos.svg#forgejo"/></svg></span>Forgejo</li>
+    </ul></div>
+    <div class="int-row"><h3>Trackers</h3>
+    <ul class="ints">
+      <li><span class="tile lg-github"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/logos.svg#github"/></svg></span>GitHub Issues and Projects</li>
+      <li><span class="tile lg-jira"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/logos.svg#jira"/></svg></span>Jira</li>
+      <li><span class="tile lg-linear"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/logos.svg#linear"/></svg></span>Linear</li>
+      <li><span class="tile mono" aria-hidden="true">Az</span>Azure Boards</li>
+    </ul></div>
+    <div class="int-row"><h3>Machines</h3>
+    <ul class="ints">
+      <li><span class="tile lg-apple"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/logos.svg#apple"/></svg></span>Your Mac</li>
+      <li><span class="tile lg-linux"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/logos.svg#linux"/></svg></span>Linux over ssh</li>
+      <li><span class="tile lg-digitalocean"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/logos.svg#digitalocean"/></svg></span>DigitalOcean</li>
+      <li><span class="tile mono" aria-hidden="true">AWS</span>AWS EC2</li>
+      <li><span class="tile lg-googlecloud"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/logos.svg#googlecloud"/></svg></span>Google Compute</li>
+      <li><span class="tile lg-googlecloud"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/logos.svg#googlecloud"/></svg></span>Cloud Workstations</li>
+      <li><span class="tile lg-github"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/logos.svg#github"/></svg></span>Codespaces</li>
+      <li><span class="tile lg-coder"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/logos.svg#coder"/></svg></span>Coder</li>
+      <li><span class="tile lg-docker"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/logos.svg#docker"/></svg></span>Docker</li>
+    </ul></div>
+    <div class="int-row"><h3>Chat and mail</h3>
+    <ul class="ints">
+      <li><span class="tile mono" aria-hidden="true">Sl</span>Slack</li>
+      <li><span class="tile lg-googlechat"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/logos.svg#googlechat"/></svg></span>Google Chat</li>
+      <li><span class="tile lg-whatsapp"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/logos.svg#whatsapp"/></svg></span>WhatsApp</li>
+      <li><span class="tile mono" aria-hidden="true">@</span>E-mail</li>
+    </ul></div>
+    <div class="int-row"><h3>Errors and uptime</h3>
+    <ul class="ints">
+      <li><span class="tile lg-sentry"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/logos.svg#sentry"/></svg></span>Sentry</li>
+      <li><span class="tile lg-betterstack"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/logos.svg#betterstack"/></svg></span>Better Stack</li>
+    </ul></div>
+    <div class="int-row"><h3>Docs</h3>
+    <ul class="ints">
+      <li><span class="tile lg-confluence"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/logos.svg#confluence"/></svg></span>Confluence</li>
+      <li><span class="tile lg-notion"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/logos.svg#notion"/></svg></span>Notion</li>
+      <li><span class="tile lg-googledrive"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/logos.svg#googledrive"/></svg></span>Google Drive</li>
+    </ul></div>
+    <div class="int-row"><h3>AI gateways</h3>
+    <ul class="ints">
+      <li><span class="tile mono" aria-hidden="true">AWS</span>Amazon Bedrock</li>
+      <li><span class="tile lg-googlecloud"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/logos.svg#googlecloud"/></svg></span>Vertex AI</li>
+      <li><span class="tile mono" aria-hidden="true">Az</span>Azure</li>
+      <li><span class="tile mono" aria-hidden="true">LL</span>LiteLLM</li>
+      <li><span class="tile mono" aria-hidden="true">Pk</span>Portkey</li>
+    </ul></div>
+    <div class="int-row"><h3>Delivery and reports</h3>
+    <ul class="ints">
+      <li><span class="tile lg-googlecloud"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/logos.svg#googlecloud"/></svg></span>Cloud Run</li>
+      <li><span class="tile lg-appstore"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/logos.svg#appstore"/></svg></span>App Store and TestFlight</li>
+      <li><span class="tile lg-coderabbit"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/logos.svg#coderabbit"/></svg></span>CodeRabbit</li>
+      <li><span class="tile lg-opentelemetry"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/logos.svg#opentelemetry"/></svg></span>OTLP</li>
+      <li><span class="tile mono" aria-hidden="true">{ }</span>A read API</li>
+    </ul></div>
+  </div>
+</div></section>
+
+<!-- 16. Everything it does (#6860): each line links to its page in the docs, which says it works. -->
+<section class="page" id="everything"><div class="wrap">
+  <h2>Everything it does</h2>
+  <p class="lede">You've seen the big parts. Here is the longer list, and each line takes you to its page in the docs.</p>
+  <div class="feat">
+    <div><h3>Plan</h3>
+      <ul>
+        <li><a href="https://docs.agentloops.dev/reference/personas/">A product owner agent that files the work</a></li>
+        <li><a href="https://docs.agentloops.dev/explanation/planning/">Epics, with their issues in order</a></li>
+        <li><a href="https://docs.agentloops.dev/explanation/planning/#how-the-figures-earn-trust">Estimates and forecasts, scored later</a></li>
+        <li><a href="https://docs.agentloops.dev/how-to/use-github/#see-pull-requests-and-issues">Your issues beside your agents</a></li>
+        <li><a href="https://docs.agentloops.dev/how-to/build-your-first-app/">A new app, from the idea to a deploy</a></li>
+      </ul></div>
+    <div><h3>Build and land</h3>
+      <ul>
+        <li><a href="https://docs.agentloops.dev/reference/runtimes/">The coding agents you already use</a></li>
+        <li><a href="https://docs.agentloops.dev/how-to/choose-runtime-model-mode/">Model and mode for each agent</a></li>
+        <li><a href="https://docs.agentloops.dev/how-to/use-auto/">Auto picks the runtime</a></li>
+        <li><a href="https://docs.agentloops.dev/how-to/start-in-a-worktree/">A worktree for each agent</a></li>
+        <li><a href="https://docs.agentloops.dev/how-to/use-github/#let-agents-work-the-dev-loop">Failed checks and reviews answered</a></li>
+        <li><a href="https://docs.agentloops.dev/reference/agent-tools/">Conflict risk before a push</a></li>
+        <li><a href="https://docs.agentloops.dev/reference/policy/#commit-trailers-on-main">Cost on each merged commit</a></li>
+      </ul></div>
+    <div><h3>Ship</h3>
+      <ul>
+        <li><a href="https://docs.agentloops.dev/reference/events/#deploys">Deploys from GitHub, GitLab, Azure DevOps and Bitbucket</a></li>
+        <li><a href="https://docs.agentloops.dev/explanation/deploys/">One model for every deploy system</a></li>
+        <li><a href="https://docs.agentloops.dev/how-to/use-github/#approve-a-waiting-deploy">A held deploy, approved from anywhere</a></li>
+        <li><a href="https://docs.agentloops.dev/how-to/deploy-to-cloud-run/">Deploys to Cloud Run</a></li>
+        <li><a href="https://docs.agentloops.dev/how-to/use-sentry/">Sentry errors back into work</a></li>
+        <li><a href="https://docs.agentloops.dev/how-to/use-better-stack/">Better Stack incidents back into work</a></li>
+        <li>Canary and rollback <a class="tag soon" href="https://github.com/agentloops-dev/agent-loops/issues/6831">coming</a></li>
+      </ul></div>
+    <div><h3>Events and workflows</h3>
+      <ul>
+        <li><a href="https://docs.agentloops.dev/reference/workflows/">Workflows as Markdown in your repo</a></li>
+        <li><a href="https://docs.agentloops.dev/reference/events/">Every event, in one list</a></li>
+        <li><a href="https://docs.agentloops.dev/how-to/start-a-workflow-from-an-mcp-event/">Starts on events from your tools</a></li>
+        <li><a href="https://docs.agentloops.dev/how-to/wait-for-something/">Waits that use no tokens</a></li>
+        <li><a href="https://docs.agentloops.dev/explanation/leases/">Leases on what agents share</a></li>
+        <li><a href="https://docs.agentloops.dev/reference/workflows/#working-hours">Working hours</a></li>
+        <li><a href="https://docs.agentloops.dev/reference/workflows/#ready-made-versions">Ready-made workflows</a></li>
+      </ul></div>
+    <div><h3>Lineage and reports</h3>
+      <ul>
+        <li><a href="https://docs.agentloops.dev/explanation/deploys/#in-lineage">Where a change is live</a></li>
+        <li><a href="https://docs.agentloops.dev/explanation/deploys/#the-dora-figures-of-each-environment">DORA figures for each environment</a></li>
+        <li><a href="https://docs.agentloops.dev/reference/reports/">Delivery, Forecast and Estimates</a></li>
+        <li><a href="https://docs.agentloops.dev/how-to/see-usage-cost-and-time/">Cost, tokens and time</a></li>
+        <li><a href="https://docs.agentloops.dev/reference/reports/#the-read-api">A read API</a></li>
+        <li><a href="https://docs.agentloops.dev/reference/reports/#otlp-metrics">OTLP metrics</a></li>
+      </ul></div>
+    <div><h3>Machines</h3>
+      <ul>
+        <li><a href="https://docs.agentloops.dev/how-to/add-a-machine/">Your Mac and your Linux servers</a></li>
+        <li><a href="https://docs.agentloops.dev/how-to/set-up-a-cloud-machine-provider/">Cloud machines</a></li>
+        <li><a href="https://docs.agentloops.dev/how-to/start-machines-from-agents/">Machines that agents start and stop</a></li>
+        <li><a href="https://docs.agentloops.dev/how-to/send-a-folder-to-a-machine/">Work sent between machines</a></li>
+        <li><a href="https://docs.agentloops.dev/reference/agent-tools/">A browser that agents drive</a></li>
+        <li><a href="https://docs.agentloops.dev/how-to/let-an-agent-drive-desktop-apps/">Desktop apps that agents drive</a></li>
+        <li><a href="https://docs.agentloops.dev/how-to/use-the-simulator-pane/">The iOS simulator beside the chat</a></li>
+      </ul></div>
+    <div><h3>Human in the loop</h3>
+      <ul>
+        <li><a href="https://docs.agentloops.dev/reference/statuses/">What needs you, on every client</a></li>
+        <li><a href="https://docs.agentloops.dev/how-to/answer-a-question/">Questions and approvals</a></li>
+        <li><a href="https://docs.agentloops.dev/how-to/review-changes-and-approvals/">Review of changes before they count</a></li>
+        <li><a href="https://docs.agentloops.dev/how-to/follow-a-turn-on-the-lock-screen/">Turns on the Lock Screen</a></li>
+        <li><a href="https://docs.agentloops.dev/how-to/see-what-needs-you-from-your-home-screen/">A widget on the Home Screen</a></li>
+        <li><a href="https://docs.agentloops.dev/explanation/policy-layers/">Policy in three layers</a></li>
+        <li><a href="https://docs.agentloops.dev/how-to/limit-spending/">Spending limits</a></li>
+      </ul></div>
+    <div><h3>Outputs</h3>
+      <ul>
+        <li><a href="https://docs.agentloops.dev/how-to/follow-a-live-document/">Live documents</a></li>
+        <li><a href="https://docs.agentloops.dev/how-to/look-at-an-html-page/">Web pages beside the chat</a></li>
+        <li><a href="https://docs.agentloops.dev/reference/charts-and-diagrams/">Charts and diagrams</a></li>
+        <li><a href="https://docs.agentloops.dev/how-to/read-an-agents-changes/">Changes, with Undo</a></li>
+        <li><a href="https://docs.agentloops.dev/how-to/edit-files/">A file editor</a></li>
+        <li><a href="https://docs.agentloops.dev/how-to/use-a-shell/">A terminal</a></li>
+      </ul></div>
+    <div><h3>Messages and mail</h3>
+      <ul>
+        <li><a href="https://docs.agentloops.dev/how-to/reach-agents-from-slack/">Slack</a></li>
+        <li><a href="https://docs.agentloops.dev/how-to/use-google-chat/">Google Chat</a></li>
+        <li><a href="https://docs.agentloops.dev/how-to/use-whatsapp/">WhatsApp</a></li>
+        <li><a href="https://docs.agentloops.dev/how-to/wait-for-mail/">Mail that starts an agent</a></li>
+        <li><a href="https://docs.agentloops.dev/reference/channels/">Only linked people can start work</a></li>
+        <li><a href="https://docs.agentloops.dev/reference/agent-tools/">Search in your team's docs</a></li>
+      </ul></div>
+    <div><h3>Security</h3>
+      <ul>
+        <li><a href="https://docs.agentloops.dev/explanation/compliance/security-overview/#where-secrets-live">Secrets sealed to your machines</a></li>
+        <li><a href="https://docs.agentloops.dev/reference/agent-tools/">Passwords, tokens and passkeys unseen</a></li>
+        <li><a href="https://docs.agentloops.dev/explanation/compliance/security-overview/#the-machine-lock">A lock on your machines</a></li>
+        <li><a href="https://docs.agentloops.dev/reference/runtimes/#command-sandbox">A sandbox for commands</a></li>
+        <li><a href="https://docs.agentloops.dev/how-to/sign-in-with-your-organisation/">Single sign-on and SCIM</a></li>
+        <li><a href="https://docs.agentloops.dev/reference/events/#audit-who-did-what">An audit log you can export</a></li>
+      </ul></div>
+    <div><h3>Clients</h3>
+      <ul>
+        <li><a href="https://docs.agentloops.dev/how-to/set-up-on-this-mac/">Mac</a></li>
+        <li><a href="https://docs.agentloops.dev/explanation/phone-and-ipad/">iPhone and iPad</a></li>
+        <li><a href="https://docs.agentloops.dev/how-to/use-agents-in-a-browser/">Web</a></li>
+        <li><a href="https://docs.agentloops.dev/how-to/use-loops-in-a-terminal/">Terminal</a></li>
+        <li><a href="https://docs.agentloops.dev/reference/keyboard-shortcuts/">Keyboard shortcuts</a></li>
+      </ul></div>
+    <div><h3>Teams</h3>
+      <ul>
+        <li><a href="https://docs.agentloops.dev/how-to/invite-someone/">People and roles</a></li>
+        <li><a href="https://docs.agentloops.dev/reference/groups/">Groups</a></li>
+        <li><a href="https://docs.agentloops.dev/how-to/set-an-organisation-policy/">Organisation policy</a></li>
+        <li><a href="https://docs.agentloops.dev/how-to/add-an-org-key-or-gateway/">Organisation keys and gateways</a></li>
+        <li><a href="https://docs.agentloops.dev/reference/console/">The Console for admins</a></li>
+        <li><a href="https://docs.agentloops.dev/how-to/run-the-control-plane-in-the-cloud/">Your own control plane in the cloud</a></li>
+        <li><a href="https://docs.agentloops.dev/how-to/back-up-a-control-plane/">Backups</a></li>
+      </ul></div>
+  </div>
+</div></section>
+
+<!-- 17. Built with itself. Figures from the repo's records on 2026-11-22. No count of people. -->
+<section class="page proof" id="built"><div class="wrap">
+  <h2>Agent Loops is built with Agent Loops</h2>
+  <p class="lede">We build Agent Loops with Agent Loops. Agents plan, build, test and land the changes to this product, with the same workflows and approvals you see on this page. Here is how far that has got us.</p>
+  <div class="grid3">
+    <div class="card"><p class="figure" data-to="3212">3,212</p><p class="small">pull requests merged</p></div>
+    <div class="card"><p class="figure" data-to="520">520</p><p class="small">pull requests merged in the last 7 days</p></div>
+    <div class="card"><p class="figure" data-to="3080">3,080</p><p class="small">issues done</p></div>
+  </div>
+</div></section>
+
+<!-- Get Agent Loops. When sign-up is live (#3392), the first button becomes "Start free at agentloops.dev". -->
+<section class="page get" id="get"><div class="wrap">
+  <h2>Get Agent Loops</h2>
+  <p class="lede">The quickest way to start is the Mac app. Once it is running, you can answer your agents from your iPhone, your iPad, a browser or the terminal, wherever you happen to be.</p>
   <p class="actions">
-    <a class="button primary" href="https://docs.agentloops.dev/tutorials/first-agent/">Start your first agent</a>
-    <a class="button" href="https://docs.agentloops.dev/explanation/why-agents/">Why Agent Loops, in full</a>
+    <a class="button primary" href="https://github.com/agentloops-dev/agents-releases/releases/latest">Download for Mac</a>
+    <a class="button" href="https://docs.agentloops.dev/how-to/connect-a-window-or-phone/">iPhone and iPad on TestFlight</a>
+    <a class="button" href="https://docs.agentloops.dev/tutorials/first-agent/">Start your first agent</a>
   </p>
-</section>
+</div></section>
 
 </main>
 
-<footer>
+
+<footer><div class="wrap">
   <nav>
     <a href="https://docs.agentloops.dev/">Docs</a>
     <a href="https://docs.agentloops.dev/privacy/">Privacy</a>
@@ -140,7 +997,7 @@
     <a href="https://github.com/agentloops-dev/agents-releases/issues">Support</a>
   </nav>
   <p class="small">This site sets no cookies and has no tracking. Apple, Mac, iPhone, iPad and TestFlight are trademarks of Apple Inc.</p>
-</footer>
+</div></footer>
 
 </body>
 </html>

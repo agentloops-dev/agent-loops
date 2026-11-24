@@ -99,7 +99,7 @@ func fakeViewServer(t *testing.T, calls *atomic.Int32, catalogReadCounts ...*ato
 				URI  string `json:"uri"`
 			} `json:"params"`
 		}
-		json.Unmarshal(b, &m)
+		check(t, json.Unmarshal(b, &m))
 		var result any
 		switch m.Method {
 		case "notifications/initialized":
@@ -128,7 +128,7 @@ func fakeViewServer(t *testing.T, calls *atomic.Int32, catalogReadCounts ...*ato
 			result = map[string]any{"content": []any{}, "structuredContent": map[string]any{"called": m.Params.Name}}
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": m.ID, "result": result})
+		check(t, json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": m.ID, "result": result}))
 	}))
 	t.Cleanup(s.Close)
 	return s
@@ -141,9 +141,10 @@ func TestAPersonsServersViewIsDrawnOnceShownAndCallsOnlyItsOwnServer(t *testing.
 	server := fakeViewServer(t, &calls, &catalogReads)
 	home := t.TempDir()
 	personalHomeFor(t, home)
-	os.MkdirAll(filepath.Join(home, ".agents"), 0o755)
-	os.WriteFile(filepath.Join(home, ".agents", "mcp.json"), []byte(`{"mcpServers":{"ci":{"url":"`+server.URL+`"},
-		"local":{"command":"local-server"}}}`), 0o644)
+	must(t, os.MkdirAll(filepath.Join(home, ".agents"), 0o755)) //nolint:gosec // G301: the mode this folder always had; only its error is new
+	//nolint:gosec // G306: the mode this file always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(home, ".agents", "mcp.json"), []byte(`{"mcpServers":{"ci":{"url":"`+server.URL+`"},
+		"local":{"command":"local-server"}}}`), 0o644))
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := folder(t, c, 1)
@@ -173,7 +174,7 @@ func TestAPersonsServersViewIsDrawnOnceShownAndCallsOnlyItsOwnServer(t *testing.
 
 	// Pinned, with the server's own title, and drawn on the folder's page.
 	var pins []wire.PinView
-	json.Unmarshal(c.call(t, 12, "pins/pin", map[string]any{"folder": store.FolderURL(dir), "path": "ui://ci/board",
+	mustUnmarshal(t, c.call(t, 12, "pins/pin", map[string]any{"folder": store.FolderURL(dir), "path": "ui://ci/board",
 		"view": map[string]any{"server": "ci", "uri": "ui://ci/board", "tool": "board"}}), &pins)
 	if len(pins) != 1 || pins[0].Title != "Pull requests" || pins[0].Missing || pins[0].Kind != wire.PinKindView {
 		t.Fatalf("%+v", pins)
@@ -230,13 +231,13 @@ func personsViewShown(t *testing.T, d *Daemon, c *conn, agentID wire.UUID) {
 	e := c.callError(t, 2, "views/read", read)
 	var ask wire.ViewAsk
 	b, _ := json.Marshal(e.Data)
-	json.Unmarshal(b, &ask)
+	mustUnmarshal(t, b, &ask)
 	if e.Code != wire.FailureViewNeedsShow || !ask.IsNew || ask.Server != "ci" || ask.Hash == "" {
 		t.Fatalf("%+v", e)
 	}
 	c.call(t, 3, "views/show", map[string]any{"agentID": agentID, "server": "ci", "uri": "ui://ci/board", "hash": ask.Hash, "show": true})
 	var res wire.ViewResource
-	json.Unmarshal(c.call(t, 4, "views/read", read), &res)
+	mustUnmarshal(t, c.call(t, 4, "views/read", read), &res)
 	if res.HTML != "<!doctype html><p>board</p>" || res.MimeType != viewHTML || res.PrefersBorder == nil || !*res.PrefersBorder ||
 		strings.Join(res.Policy.ConnectDomains, " ") != "https://api.ci.dev" || res.Variables["--border-radius-md"] != "10px" {
 		t.Fatalf("%+v", res)

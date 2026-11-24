@@ -1,7 +1,6 @@
 package agentsd
 
 import (
-	"encoding/json"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -44,7 +43,7 @@ func TestAskingForASecret(t *testing.T) {
 	go func() { text, _ := m.tool(4, "ask_secret", ask); answered <- text }()
 	var pending []wire.ElicitationRequest
 	waitFor(t, "the card", func() bool {
-		json.Unmarshal(c.call(t, 1, "elicitations/pending", nil), &pending)
+		mustUnmarshal(t, c.call(t, 1, "elicitations/pending", nil), &pending)
 		return len(pending) == 1
 	})
 	s := pending[0].Secret
@@ -84,14 +83,14 @@ func TestAskingForASecret(t *testing.T) {
 		t.Fatalf("%+v", said)
 	}
 	time.Sleep(100 * time.Millisecond) // the call's line in app-tools.jsonl
-	filepath.WalkDir(root, func(p string, e fs.DirEntry, err error) error {
+	must(t, filepath.WalkDir(root, func(p string, e fs.DirEntry, err error) error {
 		if err == nil && !e.IsDir() {
 			if b, _ := os.ReadFile(p); strings.Contains(string(b), value) {
 				t.Errorf("the secret is in %s", p)
 			}
 		}
 		return nil
-	})
+	}))
 }
 
 // A secret asked for again says one is saved already, and a card left open brings the
@@ -121,7 +120,7 @@ func TestASecretLeftOpenBringsOnlyItsName(t *testing.T) {
 		t.Fatal(text)
 	}
 	var pending []wire.ElicitationRequest
-	json.Unmarshal(c.call(t, 1, "elicitations/pending", nil), &pending)
+	mustUnmarshal(t, c.call(t, 1, "elicitations/pending", nil), &pending)
 	if len(pending) != 1 || pending[0].Secret == nil || !pending[0].Secret.IsSet {
 		t.Fatalf("%+v", pending)
 	}

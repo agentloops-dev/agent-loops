@@ -1,0 +1,225 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 1174" width="1400" height="1174" font-family="-apple-system, Helvetica, Arial, sans-serif">
+<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#555"/></marker></defs>
+<rect width="1400" height="1174" fill="#fff"/>
+<text x="40" y="38" font-size="20" font-weight="700">Agent Loops · Where each component keeps its data</text>
+<text x="40" y="60" font-size="13" fill="#555">Each row is one store: what it holds, and its path or key. Agent records and transcripts live on their machine; the control plane holds them only in sealed host backups.</text>
+<rect x="40" y="76" width="92" height="20" rx="10" fill="#dbe7f3" stroke="#4a78a8" stroke-width="1.2"/>
+<text x="86.0" y="90" font-size="11" font-weight="600" fill="#1f3f63" text-anchor="middle">Files</text>
+<rect x="146" y="76" width="92" height="20" rx="10" fill="#dcefdc" stroke="#3f8a45" stroke-width="1.2"/>
+<text x="192.0" y="90" font-size="11" font-weight="600" fill="#1e4d22" text-anchor="middle">Database</text>
+<rect x="252" y="76" width="92" height="20" rx="10" fill="#ece0f5" stroke="#7b4fa3" stroke-width="1.2"/>
+<text x="298.0" y="90" font-size="11" font-weight="600" fill="#46276a" text-anchor="middle">Keychain</text>
+<rect x="358" y="76" width="92" height="20" rx="10" fill="#fbe9d4" stroke="#c07a2c" stroke-width="1.2"/>
+<text x="404.0" y="90" font-size="11" font-weight="600" fill="#6b3f0c" text-anchor="middle">Preferences</text>
+<rect x="464" y="76" width="92" height="20" rx="10" fill="#d5efee" stroke="#2b8a86" stroke-width="1.2"/>
+<text x="510.0" y="90" font-size="11" font-weight="600" fill="#0f4d4a" text-anchor="middle">Object store</text>
+<rect x="570" y="76" width="92" height="20" rx="10" fill="#efe4d6" stroke="#8a6239" stroke-width="1.2"/>
+<text x="616.0" y="90" font-size="11" font-weight="600" fill="#4d3216" text-anchor="middle">In the repo</text>
+<rect x="676" y="76" width="92" height="20" rx="10" fill="#ffffff" stroke="#888888" stroke-width="1.2" stroke-dasharray="4 3"/>
+<text x="722.0" y="90" font-size="11" font-weight="600" fill="#444444" text-anchor="middle">Memory only</text>
+<text x="788" y="90" font-size="11.5" fill="#555">Files are whole-file JSON (written atomically) or append-only JSONL.</text>
+<rect x="40" y="120" width="430" height="316" rx="12" fill="#fff" stroke="#08427b" stroke-width="2"/>
+<path d="M40 132 a12 12 0 0 1 12 -12 h406 a12 12 0 0 1 12 12 v34 h-430 z" fill="#08427b"/>
+<text x="56" y="142" font-size="15" font-weight="700" fill="#fff">Mac window</text>
+<text x="56" y="159" font-size="11.5" fill="#fff" opacity=".9">App/, Shared/UI · SwiftUI · one app with the host</text>
+<rect x="56.0" y="178" width="92" height="20" rx="10" fill="#fbe9d4" stroke="#c07a2c" stroke-width="1.2"/>
+<text x="102.0" y="192" font-size="11" font-weight="600" fill="#6b3f0c" text-anchor="middle">Preferences</text>
+<text x="158.0" y="189" font-size="12.5" font-weight="600" fill="#222">Window settings, drafts, feature flags</text>
+<text x="158.0" y="204" font-size="11" fill="#666" font-family="Menlo, monospace">UserDefaults (WindowDefaults.store)</text>
+<rect x="56.0" y="214" width="92" height="20" rx="10" fill="#fbe9d4" stroke="#c07a2c" stroke-width="1.2"/>
+<text x="102.0" y="228" font-size="11" font-weight="600" fill="#6b3f0c" text-anchor="middle">Preferences</text>
+<text x="158.0" y="225" font-size="12.5" font-weight="600" fill="#222">Pin to a control plane, from MDM</text>
+<text x="158.0" y="240" font-size="11" fill="#666" font-family="Menlo, monospace">Managed profile: ControlPlaneAddress</text>
+<rect x="56.0" y="250" width="92" height="20" rx="10" fill="#ece0f5" stroke="#7b4fa3" stroke-width="1.2"/>
+<text x="102.0" y="264" font-size="11" font-weight="600" fill="#46276a" text-anchor="middle">Keychain</text>
+<text x="158.0" y="261" font-size="12.5" font-weight="600" fill="#222">This window's client key</text>
+<text x="158.0" y="276" font-size="11" fill="#666" font-family="Menlo, monospace">com.alexecollins.agents.device</text>
+<rect x="56.0" y="286" width="92" height="20" rx="10" fill="#dbe7f3" stroke="#4a78a8" stroke-width="1.2"/>
+<text x="102.0" y="300" font-size="11" font-weight="600" fill="#1f3f63" text-anchor="middle">Files</text>
+<text x="158.0" y="297" font-size="12.5" font-weight="600" fill="#222">Pairing</text>
+<text x="158.0" y="312" font-size="11" fill="#666" font-family="Menlo, monospace">App Support/Agents/control-client.json</text>
+<rect x="56.0" y="322" width="92" height="20" rx="10" fill="#dbe7f3" stroke="#4a78a8" stroke-width="1.2"/>
+<text x="102.0" y="336" font-size="11" font-weight="600" fill="#1f3f63" text-anchor="middle">Files</text>
+<text x="158.0" y="333" font-size="12.5" font-weight="600" fill="#222">Local copy: folders, records, 20 chats</text>
+<text x="158.0" y="348" font-size="11" fill="#666" font-family="Menlo, monospace">Caches/com.alexecollins.agents/copy/</text>
+<rect x="56.0" y="358" width="92" height="20" rx="10" fill="#dcefdc" stroke="#3f8a45" stroke-width="1.2"/>
+<text x="102.0" y="372" font-size="11" font-weight="600" fill="#1e4d22" text-anchor="middle">Database</text>
+<text x="158.0" y="369" font-size="12.5" font-weight="600" fill="#222">Work cache, SQLite</text>
+<text x="158.0" y="384" font-size="11" fill="#666" font-family="Menlo, monospace">Caches/…/work-cache.sqlite</text>
+<rect x="56.0" y="394" width="92" height="20" rx="10" fill="#ffffff" stroke="#888888" stroke-width="1.2" stroke-dasharray="4 3"/>
+<text x="102.0" y="408" font-size="11" font-weight="600" fill="#444444" text-anchor="middle">Memory only</text>
+<text x="158.0" y="405" font-size="12.5" font-weight="600" fill="#222">Live model, from the daemon's notices</text>
+<text x="158.0" y="420" font-size="11" fill="#666" font-family="Menlo, monospace">—</text>
+<rect x="495" y="120" width="430" height="280" rx="12" fill="#fff" stroke="#08427b" stroke-width="2"/>
+<path d="M495 132 a12 12 0 0 1 12 -12 h406 a12 12 0 0 1 12 12 v34 h-430 z" fill="#08427b"/>
+<text x="511" y="142" font-size="15" font-weight="700" fill="#fff">Remote</text>
+<text x="511" y="159" font-size="11.5" fill="#fff" opacity=".9">Remote/ · iPhone and iPad, widget, share extension</text>
+<rect x="511.0" y="178" width="92" height="20" rx="10" fill="#ece0f5" stroke="#7b4fa3" stroke-width="1.2"/>
+<text x="557.0" y="192" font-size="11" font-weight="600" fill="#46276a" text-anchor="middle">Keychain</text>
+<text x="613.0" y="189" font-size="12.5" font-weight="600" fill="#222">Device key, lock signing key</text>
+<text x="613.0" y="204" font-size="11" fill="#666" font-family="Menlo, monospace">shared group …agents.shared</text>
+<rect x="511.0" y="214" width="92" height="20" rx="10" fill="#dbe7f3" stroke="#4a78a8" stroke-width="1.2"/>
+<text x="557.0" y="228" font-size="11" font-weight="600" fill="#1f3f63" text-anchor="middle">Files</text>
+<text x="613.0" y="225" font-size="12.5" font-weight="600" fill="#222">Pairing</text>
+<text x="613.0" y="240" font-size="11" fill="#666" font-family="Menlo, monospace">App Support/Agents/control-client.json</text>
+<rect x="511.0" y="250" width="92" height="20" rx="10" fill="#fbe9d4" stroke="#c07a2c" stroke-width="1.2"/>
+<text x="557.0" y="264" font-size="11" font-weight="600" fill="#6b3f0c" text-anchor="middle">Preferences</text>
+<text x="613.0" y="261" font-size="12.5" font-weight="600" fill="#222">Settings, drafts, lock pins</text>
+<text x="613.0" y="276" font-size="11" fill="#666" font-family="Menlo, monospace">UserDefaults.standard</text>
+<rect x="511.0" y="286" width="92" height="20" rx="10" fill="#dbe7f3" stroke="#4a78a8" stroke-width="1.2"/>
+<text x="557.0" y="300" font-size="11" font-weight="600" fill="#1f3f63" text-anchor="middle">Files</text>
+<text x="613.0" y="297" font-size="12.5" font-weight="600" fill="#222">Local copy, device log</text>
+<text x="613.0" y="312" font-size="11" fill="#666" font-family="Menlo, monospace">Caches/copy/, Caches/remote.log</text>
+<rect x="511.0" y="322" width="92" height="20" rx="10" fill="#dbe7f3" stroke="#4a78a8" stroke-width="1.2"/>
+<text x="557.0" y="336" font-size="11" font-weight="600" fill="#1f3f63" text-anchor="middle">Files</text>
+<text x="613.0" y="333" font-size="12.5" font-weight="600" fill="#222">Widget snapshot, share inbox</text>
+<text x="613.0" y="348" font-size="11" fill="#666" font-family="Menlo, monospace">app group group.com.alexecollins.agents</text>
+<rect x="511.0" y="358" width="92" height="20" rx="10" fill="#ffffff" stroke="#888888" stroke-width="1.2" stroke-dasharray="4 3"/>
+<text x="557.0" y="372" font-size="11" font-weight="600" fill="#444444" text-anchor="middle">Memory only</text>
+<text x="613.0" y="369" font-size="12.5" font-weight="600" fill="#222">Live model; Live Activities</text>
+<text x="613.0" y="384" font-size="11" fill="#666" font-family="Menlo, monospace">ActivityKit keeps them, no file</text>
+<rect x="950" y="120" width="430" height="280" rx="12" fill="#fff" stroke="#08427b" stroke-width="2"/>
+<path d="M950 132 a12 12 0 0 1 12 -12 h406 a12 12 0 0 1 12 12 v34 h-430 z" fill="#08427b"/>
+<text x="966" y="142" font-size="15" font-weight="700" fill="#fff">Web page</text>
+<text x="966" y="159" font-size="11.5" fill="#fff" opacity=".9">Web/ · TypeScript, in the browser</text>
+<rect x="966.0" y="178" width="92" height="20" rx="10" fill="#dcefdc" stroke="#3f8a45" stroke-width="1.2"/>
+<text x="1012.0" y="192" font-size="11" font-weight="600" fill="#1e4d22" text-anchor="middle">Database</text>
+<text x="1068.0" y="189" font-size="12.5" font-weight="600" fill="#222">Client key, lock key (not extractable)</text>
+<text x="1068.0" y="204" font-size="11" fill="#666" font-family="Menlo, monospace">IndexedDB agents › key</text>
+<rect x="966.0" y="214" width="92" height="20" rx="10" fill="#dcefdc" stroke="#3f8a45" stroke-width="1.2"/>
+<text x="1012.0" y="228" font-size="11" font-weight="600" fill="#1e4d22" text-anchor="middle">Database</text>
+<text x="1068.0" y="225" font-size="12.5" font-weight="600" fill="#222">Local copy</text>
+<text x="1068.0" y="240" font-size="11" fill="#666" font-family="Menlo, monospace">IndexedDB agents › copy</text>
+<rect x="966.0" y="250" width="92" height="20" rx="10" fill="#dcefdc" stroke="#3f8a45" stroke-width="1.2"/>
+<text x="1012.0" y="264" font-size="11" font-weight="600" fill="#1e4d22" text-anchor="middle">Database</text>
+<text x="1068.0" y="261" font-size="12.5" font-weight="600" fill="#222">Org sign-in in progress</text>
+<text x="1068.0" y="276" font-size="11" fill="#666" font-family="Menlo, monospace">IndexedDB agents-signin › pending</text>
+<rect x="966.0" y="286" width="92" height="20" rx="10" fill="#fbe9d4" stroke="#c07a2c" stroke-width="1.2"/>
+<text x="1012.0" y="300" font-size="11" font-weight="600" fill="#6b3f0c" text-anchor="middle">Preferences</text>
+<text x="1068.0" y="297" font-size="12.5" font-weight="600" fill="#222">Drafts, folds, pinned machines</text>
+<text x="1068.0" y="312" font-size="11" fill="#666" font-family="Menlo, monospace">localStorage agents.*</text>
+<rect x="966.0" y="322" width="92" height="20" rx="10" fill="#fbe9d4" stroke="#c07a2c" stroke-width="1.2"/>
+<text x="1012.0" y="336" font-size="11" font-weight="600" fill="#6b3f0c" text-anchor="middle">Preferences</text>
+<text x="1068.0" y="333" font-size="12.5" font-weight="600" fill="#222">Filters and sort, per tab</text>
+<text x="1068.0" y="348" font-size="11" fill="#666" font-family="Menlo, monospace">sessionStorage</text>
+<rect x="966.0" y="358" width="92" height="20" rx="10" fill="#ffffff" stroke="#888888" stroke-width="1.2" stroke-dasharray="4 3"/>
+<text x="1012.0" y="372" font-size="11" font-weight="600" fill="#444444" text-anchor="middle">Memory only</text>
+<text x="1068.0" y="369" font-size="12.5" font-weight="600" fill="#222">Live model (signals); no cookies</text>
+<text x="1068.0" y="384" font-size="11" fill="#666" font-family="Menlo, monospace">—</text>
+<line x1="700" y1="440" x2="700" y2="502" stroke="#555" stroke-width="1.4" stroke-dasharray="6 4" marker-end="url(#a)"/>
+<text x="712" y="474" font-size="11.5" fill="#333">wss, made outwards: pairing, requests, notices</text>
+<rect x="40" y="506" width="1320" height="208" rx="12" fill="#fff" stroke="#1168bd" stroke-width="2"/>
+<path d="M40 518 a12 12 0 0 1 12 -12 h1296 a12 12 0 0 1 12 12 v34 h-1320 z" fill="#1168bd"/>
+<text x="56" y="528" font-size="15" font-weight="700" fill="#fff">Control plane · agents-control</text>
+<text x="56" y="545" font-size="11.5" fill="#fff" opacity=".9">Go/internal/controlplane · on a Mac: a folder in ~/Library/Application Support/Agents Control/store · hosted: file:///data/store on the VM's disk, daily snapshots</text>
+<rect x="56.0" y="564" width="92" height="20" rx="10" fill="#d5efee" stroke="#2b8a86" stroke-width="1.2"/>
+<text x="102.0" y="578" font-size="11" font-weight="600" fill="#0f4d4a" text-anchor="middle">Object store</text>
+<text x="158.0" y="575" font-size="12.5" font-weight="600" fill="#222">The store: one JSON object per record</text>
+<text x="158.0" y="590" font-size="11" fill="#666" font-family="Menlo, monospace">file:///… (default) or s3://bucket/prefix</text>
+<rect x="56.0" y="600" width="92" height="20" rx="10" fill="#d5efee" stroke="#2b8a86" stroke-width="1.2"/>
+<text x="102.0" y="614" font-size="11" font-weight="600" fill="#0f4d4a" text-anchor="middle">Object store</text>
+<text x="158.0" y="611" font-size="12.5" font-weight="600" fill="#222">Who is paired: clients, machines, people</text>
+<text x="158.0" y="626" font-size="11" fill="#666" font-family="Menlo, monospace">v1/clients/ v1/machines/ v1/people/</text>
+<rect x="56.0" y="636" width="92" height="20" rx="10" fill="#d5efee" stroke="#2b8a86" stroke-width="1.2"/>
+<text x="102.0" y="650" font-size="11" font-weight="600" fill="#0f4d4a" text-anchor="middle">Object store</text>
+<text x="158.0" y="647" font-size="12.5" font-weight="600" fill="#222">Codes, settings, sign-in, policy, org routes</text>
+<text x="158.0" y="662" font-size="11" fill="#666" font-family="Menlo, monospace">v1/codes/ v1/users/ v1/signin* v1/policy*</text>
+<rect x="56.0" y="672" width="92" height="20" rx="10" fill="#d5efee" stroke="#2b8a86" stroke-width="1.2"/>
+<text x="102.0" y="686" font-size="11" font-weight="600" fill="#0f4d4a" text-anchor="middle">Object store</text>
+<text x="158.0" y="683" font-size="12.5" font-weight="600" fill="#222">Host backups: agents, transcripts, sealed</text>
+<text x="158.0" y="698" font-size="11" fill="#666" font-family="Menlo, monospace">v1/backups/&lt;owner&gt;/&lt;host&gt;/ (AES-256-GCM)</text>
+<rect x="716.0" y="564" width="92" height="20" rx="10" fill="#d5efee" stroke="#2b8a86" stroke-width="1.2"/>
+<text x="762.0" y="578" font-size="11" font-weight="600" fill="#0f4d4a" text-anchor="middle">Object store</text>
+<text x="818.0" y="575" font-size="12.5" font-weight="600" fill="#222">Lineage graph, usage, reports (no chat text)</text>
+<text x="818.0" y="590" font-size="11" fill="#666" font-family="Menlo, monospace">v1/lineage* v1/usage/ v1/reports/</text>
+<rect x="716.0" y="600" width="92" height="20" rx="10" fill="#d5efee" stroke="#2b8a86" stroke-width="1.2"/>
+<text x="762.0" y="614" font-size="11" font-weight="600" fill="#0f4d4a" text-anchor="middle">Object store</text>
+<text x="818.0" y="611" font-size="12.5" font-weight="600" fill="#222">Bus, runs, deploys, leases, audit events</text>
+<text x="818.0" y="626" font-size="11" fill="#666" font-family="Menlo, monospace">v1/bus/ v1/runs/ v1/deploys/ v1/events/</text>
+<rect x="716.0" y="636" width="92" height="20" rx="10" fill="#ece0f5" stroke="#7b4fa3" stroke-width="1.2"/>
+<text x="762.0" y="650" font-size="11" font-weight="600" fill="#46276a" text-anchor="middle">Keychain</text>
+<text x="818.0" y="647" font-size="12.5" font-weight="600" fill="#222">Control key: Keychain on a Mac, sealed if hosted</text>
+<text x="818.0" y="662" font-size="11" fill="#666" font-family="Menlo, monospace">control-key / v1/keys/control.sealed</text>
+<rect x="716.0" y="672" width="92" height="20" rx="10" fill="#ffffff" stroke="#888888" stroke-width="1.2" stroke-dasharray="4 3"/>
+<text x="762.0" y="686" font-size="11" font-weight="600" fill="#444444" text-anchor="middle">Memory only</text>
+<text x="818.0" y="683" font-size="12.5" font-weight="600" fill="#222">Routing table, sessions, presence, read cache</text>
+<text x="818.0" y="698" font-size="11" fill="#666" font-family="Menlo, monospace">bounded; rebuilt when it starts</text>
+<line x1="700" y1="780" x2="700" y2="718" stroke="#555" stroke-width="1.4" stroke-dasharray="6 4" marker-end="url(#a)"/>
+<text x="712" y="752" font-size="11.5" fill="#333">uplink, made outwards: backups, lineage, usage go up</text>
+<path d="M40 180 H22 V844 H36" fill="none" stroke="#555" stroke-width="1.4" stroke-dasharray="6 4" marker-end="url(#a)"/>
+<text x="60" y="474" font-size="11.5" fill="#333">The window reaches this Mac's daemon</text>
+<text x="60" y="489" font-size="11.5" fill="#333">directly: a socket in the app group (left line)</text>
+<rect x="40" y="784" width="1320" height="316" rx="12" fill="#fff" stroke="#1168bd" stroke-width="2"/>
+<path d="M40 796 a12 12 0 0 1 12 -12 h1296 a12 12 0 0 1 12 12 v34 h-1320 z" fill="#1168bd"/>
+<text x="56" y="806" font-size="15" font-weight="700" fill="#fff">Host daemon · agentsd (one per machine)</text>
+<text x="56" y="823" font-size="11.5" fill="#fff" opacity=".9">Go/internal/agentsd · &lt;root&gt; = ~/Library/Application Support/Agents (Linux: ~/.local/share/Agents) · &lt;cache&gt; = ~/Library/Caches/com.alexecollins.agents (Linux: $XDG_CACHE_HOME/agents)</text>
+<rect x="56.0" y="842" width="92" height="20" rx="10" fill="#dbe7f3" stroke="#4a78a8" stroke-width="1.2"/>
+<text x="102.0" y="856" font-size="11" font-weight="600" fill="#1f3f63" text-anchor="middle">Files</text>
+<text x="158.0" y="853" font-size="12.5" font-weight="600" fill="#222">Agent records</text>
+<text x="158.0" y="868" font-size="11" fill="#666" font-family="Menlo, monospace">&lt;root&gt;/agents/&lt;id&gt;/agent.json</text>
+<rect x="56.0" y="878" width="92" height="20" rx="10" fill="#dbe7f3" stroke="#4a78a8" stroke-width="1.2"/>
+<text x="102.0" y="892" font-size="11" font-weight="600" fill="#1f3f63" text-anchor="middle">Files</text>
+<text x="158.0" y="889" font-size="12.5" font-weight="600" fill="#222">Transcripts, read only when asked</text>
+<text x="158.0" y="904" font-size="11" fill="#666" font-family="Menlo, monospace">&lt;root&gt;/agents/&lt;id&gt;/transcript.jsonl</text>
+<rect x="56.0" y="914" width="92" height="20" rx="10" fill="#dbe7f3" stroke="#4a78a8" stroke-width="1.2"/>
+<text x="102.0" y="928" font-size="11" font-weight="600" fill="#1f3f63" text-anchor="middle">Files</text>
+<text x="158.0" y="925" font-size="12.5" font-weight="600" fill="#222">Events, lineage</text>
+<text x="158.0" y="940" font-size="11" fill="#666" font-family="Menlo, monospace">&lt;root&gt;/events.jsonl, lineage.jsonl</text>
+<rect x="56.0" y="950" width="92" height="20" rx="10" fill="#dbe7f3" stroke="#4a78a8" stroke-width="1.2"/>
+<text x="102.0" y="964" font-size="11" font-weight="600" fill="#1f3f63" text-anchor="middle">Files</text>
+<text x="158.0" y="961" font-size="12.5" font-weight="600" fill="#222">Folders, leases, workflow runs, cost, ~60 more</text>
+<text x="158.0" y="976" font-size="11" fill="#666" font-family="Menlo, monospace">&lt;root&gt;/folders.json, leases.json, workflows.json …</text>
+<rect x="56.0" y="986" width="92" height="20" rx="10" fill="#dbe7f3" stroke="#4a78a8" stroke-width="1.2"/>
+<text x="102.0" y="1000" font-size="11" font-weight="600" fill="#1f3f63" text-anchor="middle">Files</text>
+<text x="158.0" y="997" font-size="12.5" font-weight="600" fill="#222">Turns cache, archived summaries</text>
+<text x="158.0" y="1012" font-size="11" fill="#666" font-family="Menlo, monospace">&lt;cache&gt;/turns/&lt;id&gt;.jsonl</text>
+<rect x="56.0" y="1022" width="92" height="20" rx="10" fill="#dbe7f3" stroke="#4a78a8" stroke-width="1.2"/>
+<text x="102.0" y="1036" font-size="11" font-weight="600" fill="#1f3f63" text-anchor="middle">Files</text>
+<text x="158.0" y="1033" font-size="12.5" font-weight="600" fill="#222">Logs; daemon.sock, daemon.lock</text>
+<text x="158.0" y="1048" font-size="11" fill="#666" font-family="Menlo, monospace">~/Library/Logs/Agents, &lt;root&gt;/</text>
+<rect x="56.0" y="1058" width="92" height="20" rx="10" fill="#dbe7f3" stroke="#4a78a8" stroke-width="1.2"/>
+<text x="102.0" y="1072" font-size="11" font-weight="600" fill="#1f3f63" text-anchor="middle">Files</text>
+<text x="158.0" y="1069" font-size="12.5" font-weight="600" fill="#222">Backups while they go up or come down</text>
+<text x="158.0" y="1084" font-size="11" fill="#666" font-family="Menlo, monospace">&lt;root&gt;/backups*/  (.tar.gz)</text>
+<rect x="716.0" y="842" width="92" height="20" rx="10" fill="#dbe7f3" stroke="#4a78a8" stroke-width="1.2"/>
+<text x="762.0" y="856" font-size="11" font-weight="600" fill="#1f3f63" text-anchor="middle">Files</text>
+<text x="818.0" y="853" font-size="12.5" font-weight="600" fill="#222">The person's settings, shared skills</text>
+<text x="818.0" y="868" font-size="11" fill="#666" font-family="Menlo, monospace">~/.agents/settings/*.json, ~/.agents/</text>
+<rect x="716.0" y="878" width="92" height="20" rx="10" fill="#dbe7f3" stroke="#4a78a8" stroke-width="1.2"/>
+<text x="762.0" y="892" font-size="11" font-weight="600" fill="#1f3f63" text-anchor="middle">Files</text>
+<text x="818.0" y="889" font-size="12.5" font-weight="600" fill="#222">Secrets, sealed with AES-256-GCM</text>
+<text x="818.0" y="904" font-size="11" fill="#666" font-family="Menlo, monospace">~/.agents-secrets/sealed.json, sessions/</text>
+<rect x="716.0" y="914" width="92" height="20" rx="10" fill="#ece0f5" stroke="#7b4fa3" stroke-width="1.2"/>
+<text x="762.0" y="928" font-size="11" font-weight="600" fill="#46276a" text-anchor="middle">Keychain</text>
+<text x="818.0" y="925" font-size="12.5" font-weight="600" fill="#222">Machine key, person key, forge tokens</text>
+<text x="818.0" y="940" font-size="11" fill="#666" font-family="Menlo, monospace">Keychain on a Mac; 0600 files on Linux</text>
+<rect x="716.0" y="950" width="92" height="20" rx="10" fill="#efe4d6" stroke="#8a6239" stroke-width="1.2"/>
+<text x="762.0" y="964" font-size="11" font-weight="600" fill="#4d3216" text-anchor="middle">In the repo</text>
+<text x="818.0" y="961" font-size="12.5" font-weight="600" fill="#222">A folder's rules, workflows, skills, connectors</text>
+<text x="818.0" y="976" font-size="11" fill="#666" font-family="Menlo, monospace">&lt;folder&gt;/.agents/ (committed with the code)</text>
+<rect x="716.0" y="986" width="92" height="20" rx="10" fill="#ffffff" stroke="#888888" stroke-width="1.2" stroke-dasharray="4 3"/>
+<text x="762.0" y="1000" font-size="11" font-weight="600" fill="#444444" text-anchor="middle">Memory only</text>
+<text x="818.0" y="997" font-size="12.5" font-weight="600" fill="#222">Every agent record (a copy of the files)</text>
+<text x="818.0" y="1012" font-size="11" fill="#666" font-family="Menlo, monospace">loaded when it starts</text>
+<rect x="716.0" y="1022" width="92" height="20" rx="10" fill="#ffffff" stroke="#888888" stroke-width="1.2" stroke-dasharray="4 3"/>
+<text x="762.0" y="1036" font-size="11" font-weight="600" fill="#444444" text-anchor="middle">Memory only</text>
+<text x="818.0" y="1033" font-size="12.5" font-weight="600" fill="#222">Shell scrollback, open secret values</text>
+<text x="818.0" y="1048" font-size="11" fill="#666" font-family="Menlo, monospace">4 MiB ring per shell</text>
+<rect x="716.0" y="1058" width="92" height="20" rx="10" fill="#dbe7f3" stroke="#4a78a8" stroke-width="1.2"/>
+<text x="762.0" y="1072" font-size="11" font-weight="600" fill="#1f3f63" text-anchor="middle">Files</text>
+<text x="818.0" y="1069" font-size="12.5" font-weight="600" fill="#222">Runtimes' own sign-ins (read, never written)</text>
+<text x="818.0" y="1084" font-size="11" fill="#666" font-family="Menlo, monospace">~/.claude, Codex auth.json</text>
+<text x="40" y="1138" font-size="13" font-weight="700" fill="#333">Also</text>
+<rect x="90" y="1124" width="92" height="20" rx="10" fill="#dbe7f3" stroke="#4a78a8" stroke-width="1.2"/>
+<text x="136.0" y="1138" font-size="11" font-weight="600" fill="#1f3f63" text-anchor="middle">Files</text>
+<text x="192" y="1135" font-size="12.5" font-weight="600" fill="#222">loops (terminal client): hosts</text>
+<text x="192" y="1150" font-size="11" fill="#666" font-family="Menlo, monospace">~/.config/loops/hosts.json</text>
+<rect x="530" y="1124" width="92" height="20" rx="10" fill="#dbe7f3" stroke="#4a78a8" stroke-width="1.2"/>
+<text x="576.0" y="1138" font-size="11" font-weight="600" fill="#1f3f63" text-anchor="middle">Files</text>
+<text x="632" y="1135" font-size="12.5" font-weight="600" fill="#222">agentsctl: its settings</text>
+<text x="632" y="1150" font-size="11" fill="#666" font-family="Menlo, monospace">~/.agents-go/ctl.json</text>
+<rect x="970" y="1124" width="92" height="20" rx="10" fill="#d5efee" stroke="#2b8a86" stroke-width="1.2"/>
+<text x="1016.0" y="1138" font-size="11" font-weight="600" fill="#0f4d4a" text-anchor="middle">Object store</text>
+<text x="1072" y="1135" font-size="12.5" font-weight="600" fill="#222">agents-hosted: accounts</text>
+<text x="1072" y="1150" font-size="11" fill="#666" font-family="Menlo, monospace">the control plane's AGENTS_STORE</text>
+</svg>

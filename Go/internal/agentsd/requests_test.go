@@ -18,7 +18,7 @@ import (
 func listedRequests(t *testing.T, c *conn, id int, state string) []wire.Request {
 	t.Helper()
 	var out wire.RequestsListResult
-	json.Unmarshal(c.call(t, id, "requests/list", map[string]any{"state": state}), &out)
+	mustUnmarshal(t, c.call(t, id, "requests/list", map[string]any{"state": state}), &out)
 	return out.Requests
 }
 
@@ -30,7 +30,7 @@ func TestARequestIsOpenedKeptAndAnswered(t *testing.T) {
 	d, c := start(t, root)
 	defer d.Shutdown()
 	var id wire.UUID
-	json.Unmarshal(c.call(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(),
+	mustUnmarshal(t, c.call(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(),
 		"prompt": "a form please"}), &id)
 	var form wire.ElicitationRequest
 	c.until(t, "a form", asked(&form))
@@ -78,7 +78,7 @@ func TestADroppedRequestTakesItsFormDown(t *testing.T) {
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	var id wire.UUID
-	json.Unmarshal(c.call(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(),
+	mustUnmarshal(t, c.call(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(),
 		"prompt": "a form please"}), &id)
 	var form wire.ElicitationRequest
 	c.until(t, "a form", asked(&form))
@@ -216,7 +216,7 @@ func TestRequestsAreBounded(t *testing.T) {
 func formRequest(t *testing.T, d *Daemon, c *conn, root string) wire.UUID {
 	t.Helper()
 	var id wire.UUID
-	json.Unmarshal(c.call(t, 100, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + root,
+	mustUnmarshal(t, c.call(t, 100, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + root,
 		"prompt": "a form please"}), &id)
 	var form wire.ElicitationRequest
 	c.until(t, "a form", asked(&form))
@@ -250,7 +250,7 @@ func TestARequestDeferredToATimeComesBack(t *testing.T) {
 	}
 	var got wire.RequestUpdate
 	// An hour, so a slow runner cannot see it come back before it looks (#4389).
-	json.Unmarshal(c.call(t, 3, "requests/defer", map[string]any{"id": id, "until": wire.DateOf(time.Now().Add(time.Hour))}), &got)
+	mustUnmarshal(t, c.call(t, 3, "requests/defer", map[string]any{"id": id, "until": wire.DateOf(time.Now().Add(time.Hour))}), &got)
 	if got.Request.Deferred == nil || got.Request.Deferred.Until == nil || got.Request.State != wire.RequestStateOpen {
 		t.Fatalf("%+v", got.Request)
 	}

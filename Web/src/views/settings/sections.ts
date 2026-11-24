@@ -16,6 +16,7 @@ import { ClientsSection } from "./Clients";
 import { ConnectAnotherSection } from "./ConnectAnother";
 import { ControlOverviewSection } from "./ControlOverview";
 import { DesktopControlSection } from "./DesktopControl";
+import { EarlyFeaturesSection } from "./EarlyFeatures";
 import { ForgeLoginsSection } from "./ForgeLogins";
 import { GitAccessSection } from "./GitAccess";
 import { VersionsSection } from "./Machines";
@@ -62,6 +63,9 @@ export const settingsSections: readonly SettingsSection[] = [
   { name: "controlOverview", scope: "controlPlane", order: 1, Section: ControlOverviewSection, shows: (store) => store.canControlThisMac.value },
   // The off-by-default switch for drive_screen (#3004, US2).
   { name: "desktopControl", scope: "machines", order: 35, Section: DesktopControlSection },
+  // The feature flags in work, off by default (#6254), then the features that are not GA, each with its badge and a
+  // switch, on by default (#6052): one section since #6604.
+  { name: "earlyFeatures", scope: "thisApp", order: 45, Section: EarlyFeaturesSection },
   // Your GitHub, GitLab, Linear, Jira, Forgejo, Bitbucket and Azure DevOps logins, for the Team section and "An agent is on it" (#2951, #3160).
   { name: "forgeLogins", scope: "controlPlane", order: 7, Section: ForgeLoginsSection },
   { name: "gitAccess", scope: "machines", order: 10, Section: GitAccessSection },

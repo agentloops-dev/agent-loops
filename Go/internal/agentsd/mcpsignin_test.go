@@ -1,7 +1,6 @@
 package agentsd
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -43,7 +42,10 @@ func fakeSignInMCPServer(verifierSeen, resourceSeen *atomic.Value) *httptest.Ser
 		case "/register":
 			fmt.Fprint(w, `{"client_id":"c-1"}`)
 		case "/token":
-			r.ParseForm()
+			if err := r.ParseForm(); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
 			if r.Form.Get("code") != "the-code" || r.Form.Get("client_id") != "c-1" {
 				w.WriteHeader(400)
 				fmt.Fprint(w, `{"error":"invalid_request","error_description":"bad code"}`)
@@ -71,20 +73,20 @@ func TestSigningInToAnMCPServer(t *testing.T) {
 	defer srv.Close()
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
-	os.MkdirAll(filepath.Join(home, ".agents"), 0o755)
-	os.WriteFile(filepath.Join(home, ".agents", "mcp.json"), []byte(`{"mcpServers":{"remote":{"type":"http","url":"`+srv.URL+`/mcp"}}}`), 0o644)
+	must(t, os.MkdirAll(filepath.Join(home, ".agents"), 0o755))                                                                                           //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(home, ".agents", "mcp.json"), []byte(`{"mcpServers":{"remote":{"type":"http","url":"`+srv.URL+`/mcp"}}}`), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	personal := map[string]any{"kind": "personal"}
 
 	// The list asks it once, and it wants a sign-in.
 	var list wire.MCPListAnswer
-	json.Unmarshal(c.call(t, 1, "mcp/list", map[string]any{"destination": personal}), &list)
+	mustUnmarshal(t, c.call(t, 1, "mcp/list", map[string]any{"destination": personal}), &list)
 	if len(list.Servers) != 1 || list.Servers[0].SignIn == nil || *list.Servers[0].SignIn != wire.MCPSignInStateNeedsSignIn {
 		t.Fatalf("%+v", list)
 	}
 
 	target := map[string]any{"entry": map[string]any{"destination": personal, "name": "remote"}}
 	var started wire.MCPSignInAnswer
-	json.Unmarshal(c.call(t, 2, "mcp/sign-in", map[string]any{"target": target}), &started)
+	mustUnmarshal(t, c.call(t, 2, "mcp/sign-in", map[string]any{"target": target}), &started)
 	if started.Error != nil || started.FlowID == nil || started.AuthorizationURL == nil {
 		t.Fatalf("%+v", started)
 	}
@@ -110,7 +112,7 @@ func TestSigningInToAnMCPServer(t *testing.T) {
 		done <- string(b[:n])
 	}()
 	var waited wire.MCPSignInWaitAnswer
-	json.Unmarshal(c.call(t, 3, "mcp/sign-in/wait", map[string]any{"flowID": started.FlowID}), &waited)
+	mustUnmarshal(t, c.call(t, 3, "mcp/sign-in/wait", map[string]any{"flowID": started.FlowID}), &waited)
 	if waited.Status.SignedIn == nil {
 		t.Fatalf("%+v", waited.Status)
 	}
@@ -129,7 +131,7 @@ func TestSigningInToAnMCPServer(t *testing.T) {
 	}
 
 	list = wire.MCPListAnswer{}
-	json.Unmarshal(c.call(t, 4, "mcp/list", map[string]any{"destination": personal}), &list)
+	mustUnmarshal(t, c.call(t, 4, "mcp/list", map[string]any{"destination": personal}), &list)
 	if *list.Servers[0].SignIn != wire.MCPSignInStateSignedIn {
 		t.Fatalf("%+v", list)
 	}
@@ -139,9 +141,9 @@ func TestSigningInToAnMCPServer(t *testing.T) {
 	}
 
 	var out wire.MCPSignOutAnswer
-	json.Unmarshal(c.call(t, 5, "mcp/sign-out", map[string]any{"target": target}), &out)
+	mustUnmarshal(t, c.call(t, 5, "mcp/sign-out", map[string]any{"target": target}), &out)
 	list = wire.MCPListAnswer{}
-	json.Unmarshal(c.call(t, 6, "mcp/list", map[string]any{"destination": personal}), &list)
+	mustUnmarshal(t, c.call(t, 6, "mcp/list", map[string]any{"destination": personal}), &list)
 	if out.Error != nil || *list.Servers[0].SignIn != wire.MCPSignInStateNeedsSignIn {
 		t.Fatalf("%+v %+v", out, list)
 	}

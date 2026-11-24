@@ -31,16 +31,22 @@ struct WorkItemPage: View {
     /// The item on screen came from this device's copy (#4930): no writes until its machine answers.
     @State private var fromDevice = false
     /// When the item on screen was read from its machine (#5142): this device's copy's time, or
-    /// the last read that worked. The "Last update" line of the strips.
+    /// the last read that worked.
     @State private var detailRead: Date?
-    /// When the plan drawn from this device's copy was read, until its machine answers (#5142).
-    @State private var planCopyRead: Date?
+    /// The Plan's read, while the page shows one (#5970).
+    @State private var planRead: WorkPlanRead?
 
-    /// The page's one "From this device" strip (#5142): the oldest of the item's and the plan's
-    /// copies on screen, while a machine is asked again.
-    private var copyRead: Date? {
-        guard forgeProblem == nil else { return nil }
-        return [fromDevice ? detailRead : nil, planCopyRead].compactMap { $0 }.min()
+    /// The footer's left (#5970): what runs or failed of the item and its Plan, else from this device's copy.
+    private var footerState: WorkLook.FooterState {
+        WorkLook.pageFooterState(drawn: detail != nil, reading: reading || planRead?.reading == true,
+                                 fromDevice: fromDevice || planRead?.fromDevice == true,
+                                 lines: [forgeProblem, planRead?.problem].compactMap { $0 })
+    }
+
+    /// The footer's "Last update" (#5139): the older of the item's and the Plan's reads.
+    private var shownRead: Date? {
+        guard detail != nil else { return nil }
+        return WorkLook.oldestRead(planRead.map { [detailRead, $0.read] } ?? [detailRead])
     }
     @State private var olderLoading = false
     @State private var estimate: DaemonAPI.LineageEstimate?
@@ -82,54 +88,13 @@ struct WorkItemPage: View {
     private var writes: Bool { !fromDevice && (detail.map { model.forgeWrites(on: $0.host) } ?? false) }
 
     var body: some View {
-        ScrollView {
-            Group {
-                if detail == nil, let forgeProblem {
-                    couldNotRead(forgeProblem)
-                } else if narrow {
-                    VStack(alignment: .leading, spacing: 16) {
-                        header
-                        problemStrip
-                        Group {
-                            if let detail, let box = WorkLook.mergeBox(detail.got) {
-                                mergeBox(box, detail.got, on: detail.host)
-                            }
-                            if let detail, detail.got.item.node.kind == "pr" {
-                                WorkFilesChanged(model: model, detail: detail.got, compact: true)
-                            }
-                            // An epic's Plan before the panel's rows: it is what a person opens an epic for (epic.md note 15).
-                            plan
-                            sidePanel(compact: true) { details }
-                            main
-                            if detail != nil {
-                                sidePanel(compact: true) { connections }
-                            }
-                        }
-                        .opacity(forgeProblem == nil ? 1 : 0.5)
-                    }
-                } else {
-                    VStack(alignment: .leading, spacing: 16) {
-                        header
-                        problemStrip
-                        HStack(alignment: .top, spacing: 24) {
-                            VStack(alignment: .leading, spacing: 16) {
-                                plan
-                                main
-                            }
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                            sidePanel(compact: false) {
-                                details
-                                connections
-                            }
-                        }
-                        .opacity(forgeProblem == nil ? 1 : 0.5)
-                    }
-                }
+        // The read's state and Last update are in the footer bar, as on the lists (#5970); no strip.
+        VStack(spacing: 0) {
+            page.frame(maxHeight: .infinity)
+            if place.kind.fromForge {
+                WorkPageBar(state: footerState, count: nil, read: shownRead) { asked += 1 }
             }
-            .padding(compact ? 16 : 20)
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .onGeometryChange(for: CGFloat.self, of: \.size.width) { width = $0 }
         .environment(\.workPictures, detail.map { WorkPictures(model: model, host: $0.host) })
         #if os(iOS)
         .refreshable { asked += 1 }
@@ -146,9 +111,59 @@ struct WorkItemPage: View {
         .workTask(id: estimateAsk) { await loadEstimate() }
         .workTask(id: forecastAsk) { await loadForecast() }
         .workTask(id: lineageAsk) { await loadLineage() }
+        // A change to a kept item (#6354), from this page or a list: the kept item again, with no forge call.
+        .onChange(of: model.workSaves?.revision) { Task { await redrawCached() } }
         #if os(macOS)
         .workTask(id: pipelineAsk) { await loadPipeline() }
         #endif
+    }
+
+    /// The item's page above the footer: the header, the Plan, the timeline and the panel; nothing read, what failed.
+    private var page: some View {
+        ScrollView {
+            Group {
+                if detail == nil, let forgeProblem {
+                    couldNotRead(forgeProblem)
+                } else if narrow {
+                    VStack(alignment: .leading, spacing: 16) {
+                        header
+                        Group {
+                            if let detail, let box = WorkLook.mergeBox(detail.got) {
+                                mergeBox(box, detail.got, on: detail.host)
+                            }
+                            if let detail, detail.got.item.node.kind == "pr" {
+                                WorkFilesChanged(model: model, detail: detail.got, compact: true)
+                            }
+                            // An epic's Plan before the panel's rows: it is what a person opens an epic for (epic.md note 15).
+                            plan
+                            sidePanel(compact: true) { details }
+                            main
+                            if detail != nil {
+                                sidePanel(compact: true) { connections }
+                            }
+                        }
+                    }
+                } else {
+                    VStack(alignment: .leading, spacing: 16) {
+                        header
+                        HStack(alignment: .top, spacing: 24) {
+                            VStack(alignment: .leading, spacing: 16) {
+                                plan
+                                main
+                            }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            sidePanel(compact: false) {
+                                details
+                                connections
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(compact ? 16 : 20)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .onGeometryChange(for: CGFloat.self, of: \.size.width) { width = $0 }
     }
 
     // MARK: Toolbar (Mac)
@@ -286,7 +301,11 @@ struct WorkItemPage: View {
         return HStack(alignment: .center, spacing: 8) {
             if let item, let transitions = detail?.got.transitions, writes {
                 WorkStatusMenu(item: item, transitions: transitions) { transition in
-                    act(DaemonAPI.Method.forgeClose, DaemonAPI.ForgeCloseRequest(node: item.node, transition: transition))
+                    if let move = transitions.first(where: { $0.id == transition }), let saveChange {
+                        saveChange(.transition(move))
+                    } else {
+                        act(DaemonAPI.Method.forgeClose, DaemonAPI.ForgeCloseRequest(node: item.node, transition: transition))
+                    }
                 }
             } else {
                 WorkPagePill(kind: node.kind, state: item?.state ?? row?.state ?? "", draft: item?.draft ?? row?.draft ?? false,
@@ -443,15 +462,6 @@ struct WorkItemPage: View {
 
     // MARK: States
 
-    /// A read failed after one came: a strip under the header, the last read dimmed under it.
-    @ViewBuilder
-    private var problemStrip: some View {
-        if detail != nil, let forgeProblem {
-            WorkErrorStrip(lines: [forgeProblem], read: detailRead) { asked += 1 }
-        }
-        WorkFromDeviceStrip(read: copyRead)
-    }
-
     /// Nothing read: in the middle, the warning glyph, *Could not read #4331*, the forge's words,
     /// Try again and Open on GitHub.
     private func couldNotRead(_ words: String) -> some View {
@@ -484,7 +494,7 @@ struct WorkItemPage: View {
             WorkPlanSection(model: model, host: detail.host, lineageHost: lineageHost, detail: detail.got, asked: asked,
                             estimates: estimate?.children ?? [], compact: compact,
                             writes: writes, waiting: fromDevice, wrote: { Task { await reread() } },
-                            fromCopy: { planCopyRead = $0 })
+                            report: { planRead = $0 })
         }
     }
 
@@ -550,9 +560,17 @@ struct WorkItemPage: View {
                            closes: got.transitions == nil && got.item.standing != true && ["open", "closed"].contains(got.item.state)
                                ? got.item.state : nil,
                            noun: isIssue ? "issue" : "pull request",
-                           compact: narrow, said: said) { words, failed in
+                           compact: narrow, said: said, save: saveChange) { words, failed in
                 said = (words, failed)
                 if !failed { Task { await reread() } }
+            }
+            if let saves = model.workSaves, let line = saves.line, saves.saving.contains(where: { $0.node == node })
+                || saves.failed?.save.node == node {
+                // "Saving #12…", or why the forge refused it and that it changed back, with Try again (#6354).
+                WorkSaveLine(line: line) {
+                    if let cache = model.workCache { saves.retry(model: model, cache: cache) }
+                }
+                .appText(.supporting)
             }
         } else if !fromDevice, WorkLook.mergeBox(got) == nil {
             Text("No machine of yours can write to \(WorkList.forgeName(node.ref)).")
@@ -623,7 +641,7 @@ struct WorkItemPage: View {
         let item = item
         if let detail, node.kind == "issue" || detail.got.item.priority != nil || detail.got.item.onHold == true {
             // First, as the wireframe of #6092 has it: the menu and the toggle where the forge sets them, else the chip.
-            WorkPrioritySection(model: model, host: detail.host, detail: detail.got, writes: writes) { await reread() }
+            WorkPrioritySection(model: model, host: detail.host, detail: detail.got, writes: writes, save: saveChange) { await reread() }
         }
         WorkSideSection(title: "Assignees") {
             let assignees = item?.assignees ?? row?.assignees ?? []
@@ -786,6 +804,7 @@ struct WorkItemPage: View {
     private var labelsPicker: some View {
         if let detail {
             WorkLabelsPicker(model: model, host: detail.host, item: detail.got.item) { name, add in
+                if let saveChange { return saveChange(.label(name, add: add)) }
                 act(DaemonAPI.Method.forgeLabel,
                     DaemonAPI.ForgeLabelRequest(node: detail.got.item.node, add: add ? [name] : nil, remove: add ? nil : [name]))
             }
@@ -961,6 +980,22 @@ struct WorkItemPage: View {
         }
     }
 
+    /// With Work's cache on (#6354): a change through the cache, shown at once here and in every list, and changed
+    /// back with the forge's words when it refuses it; nil with the cache off, or before a machine answered.
+    private var saveChange: ((WorkChange) -> Void)? {
+        guard !fromDevice, let host = detail?.host, let cache = model.workCache, let saves = model.workSaves else { return nil }
+        return { [model, node] change in
+            said = nil
+            saves.save(change, on: node, host: host, model: model, cache: cache)
+        }
+    }
+
+    /// The kept item again after a change to it (#6354): its fields as the cache has them; the body and the comments stay.
+    private func redrawCached() async {
+        guard let cache = model.workCache, let had = detail, let item = await cache.item(node), detail?.host == had.host else { return }
+        detail?.got.item = item
+    }
+
     /// An image in the body or a comment, read by the machine that read the item (#4010,
     /// `forge/image`), so the app never loads the page's remote URL. Nil when it cannot.
     private func image(on host: MachineRef) -> RemoteImageLoader {
@@ -987,8 +1022,20 @@ struct WorkItemPage: View {
         guard !machines.isEmpty else { forgeProblem = WorkList.noForgeHere; return }
         reading = true
         defer { if asked == mine { reading = false } }
+        let cache = model.workCache
+        // Seen before, with Work's cache on (#6353): its kept page at once, with no forge call, until a machine
+        // answers. The writes wait for that answer, which says the machine that read it.
+        if detail == nil, let cache {
+            let start = ContinuousClock.now
+            if let kept = await cache.detail(node), asked == mine, detail == nil {
+                detail = (machines[0].id, kept.detail)
+                detailRead = kept.read
+                fromDevice = true
+                WorkCacheLog.note("drew \(node.kind) \(node.ref) from the kept page in \(WorkCacheLog.ms(since: start)) ms, 0 forge calls")
+            }
+        }
         // Seen before: this device's copy at once, until a machine answers (#4930).
-        if detail == nil, case let (kept, at)? = await model.keptWorkRead(KeptItem.self, .item, node.ref), asked == mine, detail == nil {
+        if cache == nil, detail == nil, case let (kept, at)? = await model.keptWorkRead(KeptItem.self, .item, node.ref), asked == mine, detail == nil {
             detail = (kept.host, kept.got)
             detailRead = at
             fromDevice = true
@@ -1023,11 +1070,20 @@ struct WorkItemPage: View {
             detailRead = Date()
             fromDevice = false
             forgeProblem = nil
-            model.keepWork(KeptItem(host: won.host, got: won.got), .item, node.ref)
+            keep(won.host, won.got)
             return
         }
         guard asked == mine else { return }
         forgeProblem = last ?? WorkList.notReadHere
+    }
+
+    /// A machine's answer, kept for the next open: in Work's cache when it is on (#6353), else in this device's copy.
+    private func keep(_ host: MachineRef, _ got: DaemonAPI.ForgeItemDetail) {
+        if let cache = model.workCache {
+            Task { await cache.keepDetail(got) }
+        } else {
+            model.keepWork(KeptItem(host: host, got: got), .item, node.ref)
+        }
     }
 
     /// The item again after a write (#3130), from the machine that read it, keeping the page
@@ -1039,7 +1095,7 @@ struct WorkItemPage: View {
             detail = (had.host, got)
             detailRead = Date()
             fromDevice = false
-            model.keepWork(KeptItem(host: had.host, got: got), .item, node.ref)
+            keep(had.host, got)
         } catch {
             forgeProblem = error.localizedDescription
         }

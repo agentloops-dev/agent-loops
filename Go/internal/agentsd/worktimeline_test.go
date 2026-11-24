@@ -61,8 +61,8 @@ func TestWorkTimelineForecastsTheOpenEpics(t *testing.T) {
 			break
 		}
 	}
-	os.MkdirAll(filepath.Join(folder, ".agents"), 0o755)
-	os.WriteFile(filepath.Join(folder, folderConfig), []byte(`{"project":"p1"}`), 0o644)
+	must(t, os.MkdirAll(filepath.Join(folder, ".agents"), 0o755))                                 //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(folder, folderConfig), []byte(`{"project":"p1"}`), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 
 	now := time.Now().UTC().Truncate(time.Minute)
 	stamp := func(h float64) string { return now.Add(time.Duration(h * float64(time.Hour))).Format(time.RFC3339) }
@@ -101,8 +101,10 @@ func TestWorkTimelineForecastsTheOpenEpics(t *testing.T) {
 		{Tag: "v1", PublishedAt: stamp(-5), URL: "u1"}, {Tag: "v0", PublishedAt: stamp(-24 * 9)}}}
 	// A session worked on the first open child: it started then, though no PR closes it yet.
 	first := forgeRepo{"github", "alexec/agents"}.issue(open.Children[2].Number)
-	d.lineage().Link(wire.LineageLinkRequest{From: wire.LineageNode{Kind: lineage.KindSession, Ref: "agents:session:#A"}, To: first,
-		Rel: lineage.RelWorksOn, Source: lineage.SourceStart}, now.Add(-8*time.Hour))
+	if _, err := d.lineage().Link(wire.LineageLinkRequest{From: wire.LineageNode{Kind: lineage.KindSession, Ref: "agents:session:#A"}, To: first,
+		Rel: lineage.RelWorksOn, Source: lineage.SourceStart}, now.Add(-8*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
 
 	req := wire.WorkTimelineRequest{Project: "p1", From: wire.DateOf(now.Add(-24 * time.Hour)), To: wire.DateOf(now.Add(24 * time.Hour))}
 	var tl wire.WorkTimeline
@@ -128,7 +130,7 @@ func TestWorkTimelineForecastsTheOpenEpics(t *testing.T) {
 		t.Fatalf("backtest %+v", tl.Backtest)
 	}
 	var again wire.WorkTimeline
-	json.Unmarshal(c.call(t, 2, "work/timeline", req), &again)
+	mustUnmarshal(t, c.call(t, 2, "work/timeline", req), &again)
 	gh.mu.Lock()
 	reads := gh.timelines
 	gh.mu.Unlock()

@@ -26,6 +26,8 @@ type SearchFilter struct {
 	// UpdatedSince and UpdatedBefore narrow the list to the items updated at or after, and at or
 	// before, a time in RFC 3339 (#6349); "" for no bound.
 	UpdatedSince, UpdatedBefore string
+	// Sort is the order: SortPriority, else the last updated first (#6538).
+	Sort string
 }
 
 // Item is an issue or a pull request as the forge reads list it.
@@ -427,8 +429,15 @@ func SearchQuery(repos []string, f SearchFilter) string {
 // Search is one page of the issues or pull requests of repos, at most first (1 to 100), after
 // the cursor after ("" for the first page).
 func (g *RealGitHub) Search(ctx context.Context, repos []string, f SearchFilter, after string, first int) (SearchPage, error) {
+	if f.Sort == SortPriority {
+		return g.prioritySearch(ctx, repos, f, after, first)
+	}
 	if len(repos) == 0 {
 		return SearchPage{Items: []Item{}, Cursors: []string{}}, nil
+	}
+	// GitHub's own list has no 1,000-result cap (#6637). A cursor of search, from before, goes on in search.
+	if rest, ok := strings.CutPrefix(after, listCursorPrefix); ok || after == "" && readsPlainList(repos, f) {
+		return g.listPage(ctx, repos[0], f, rest, first)
 	}
 	vars := map[string]any{"q": SearchQuery(repos, f), "first": max(1, min(first, perPage))}
 	if after != "" {
@@ -447,7 +456,7 @@ func (g *RealGitHub) Search(ctx context.Context, repos []string, f SearchFilter,
 			} `json:"edges"`
 		} `json:"search"`
 	}
-	if err := g.graphqlFields(ctx, searchQuery, vars, &data); err != nil {
+	if err := g.searchFields(ctx, searchQuery, vars, &data); err != nil {
 		return SearchPage{}, err
 	}
 	p := SearchPage{Items: []Item{}, Cursors: []string{}, Total: &data.Search.IssueCount}

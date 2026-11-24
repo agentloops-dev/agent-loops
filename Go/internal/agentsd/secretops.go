@@ -199,7 +199,7 @@ func (d *Daemon) heldSecretNames() map[string]bool {
 	for _, n := range skillcatalog.LoadSecrets(skillcatalog.SecretsPath(home)).Names() {
 		held[n] = true
 	}
-	for n := range readSealedSecrets(home).Secrets {
+	for n := range sealedSecretsHere(home) {
 		held[n] = true
 	}
 	if dir := d.sessionSecretsDir(); dir != "" {

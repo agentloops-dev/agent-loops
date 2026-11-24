@@ -1,13 +1,14 @@
 package agentsd
 
 import (
-	"encoding/json"
+	"os"
 	"path/filepath"
 	"slices"
 	"strconv"
 	"testing"
 	"time"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/internal/githubmcp"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
@@ -97,7 +98,7 @@ func TestWorkSuggestLeads(t *testing.T) {
 	lead("#2", wire.AgentStateArchived)
 
 	var out wire.WorkSuggestLeads
-	json.Unmarshal(c.call(t, 1, "work/suggest-leads", wire.WorkSuggestLeadsRequest{}), &out)
+	mustUnmarshal(t, c.call(t, 1, "work/suggest-leads", wire.WorkSuggestLeadsRequest{}), &out)
 	var got []string
 	for _, s := range out.Suggestions {
 		got = append(got, s.Node.Ref)
@@ -113,7 +114,7 @@ func TestWorkSuggestLeads(t *testing.T) {
 
 	c.call(t, 2, "work/dismiss-lead", wire.WorkDismissLeadRequest{Node: out.Suggestions[0].Node})
 	out = wire.WorkSuggestLeads{}
-	json.Unmarshal(c.call(t, 3, "work/suggest-leads", wire.WorkSuggestLeadsRequest{}), &out)
+	mustUnmarshal(t, c.call(t, 3, "work/suggest-leads", wire.WorkSuggestLeadsRequest{}), &out)
 	if len(out.Suggestions) != 3 || out.Suggestions[0].Node.Ref != "github:issue:alexec/agents#3" || out.More != 0 {
 		t.Fatalf("after dismiss: %+v", out)
 	}
@@ -123,7 +124,7 @@ func TestWorkSuggestLeads(t *testing.T) {
 		d.forgeCache = nil
 		d.forgeMu.Unlock()
 		var out wire.WorkSuggestLeads
-		json.Unmarshal(c.call(t, id, "work/suggest-leads", wire.WorkSuggestLeadsRequest{}), &out)
+		mustUnmarshal(t, c.call(t, id, "work/suggest-leads", wire.WorkSuggestLeadsRequest{}), &out)
 		return out
 	}
 
@@ -154,13 +155,39 @@ func TestNoPersonalHomeWritesNoRelativePath(t *testing.T) {
 	if p := d.dismissedLeadsPath(); p != filepath.Join(root, dismissedLeadsFile) {
 		t.Fatalf("dismissed leads at %q, not in the root", p)
 	}
-	if err := d.writeDismissedLeads(map[string]dismissedLead{"github:issue:o/r#1": {}}); err != nil {
+	if err := d.dismissedLeads.Update(func(m map[string]dismissedLead) error {
+		m["github:issue:o/r#1"] = dismissedLead{}
+		return nil
+	}); err != nil {
 		t.Fatal(err)
 	}
-	if got := d.readDismissedLeads(); len(got) != 1 {
+	if got, _ := d.dismissedLeads.Read(); len(got) != 1 {
 		t.Fatalf("read back %v", got)
 	}
 	if err := writeChecks("", checksRecord{}); err == nil {
 		t.Fatal("checks were written with no home")
+	}
+}
+
+// #6713: an epic dismissed 90 days ago goes in the hourly sweep; one from before entries had a
+// time is dated by it.
+func TestDismissedLeadsAgeOut(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	personalHomeFor(t, "")
+	d, _ := start(t, root)
+	t.Cleanup(d.Shutdown)
+	old, err := time.Now().Add(-store.MaxAge).UTC().MarshalText()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(d.dismissedLeadsPath(), []byte(`{"a": {"done": 1, "total": 2, "at": "`+string(old)+`"}, "b": {"done": 1, "total": 2}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	d.sweepSmallStores(time.Now())
+	got, err := d.dismissedLeads.Read()
+	if err != nil || len(got) != 1 || got["b"].Total != 2 || got["b"].At == 0 {
+		t.Fatalf("after the sweep: %v, %v", got, err)
 	}
 }

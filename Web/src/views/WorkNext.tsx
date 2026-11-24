@@ -10,7 +10,7 @@ import { fromWireDate, toWireDate } from "../protocol/dates";
 import type { Store } from "../model/store";
 import { describe } from "../model/errors";
 import { forgeHosts } from "../model/workLists";
-import { keepWork, keptWorkRead } from "../model/localCopy";
+import { keepWork, keptWorkRead } from "../model/workCache";
 import { choiceFrom, rememberEach, remembered } from "../model/workRemembered";
 import {
   allEpics, emptyLine, emptyTitle, epicChoices, epicNode, itemNumber, nextFolders, nextLevelTitle, nextLevels, nextProblem,
@@ -20,8 +20,11 @@ import {
 import { go, replace, route, routeHash } from "../route";
 import { ForgeTitle } from "../render/ForgeTitle";
 import { workProjects } from "./Work";
-import { LastUpdate } from "./LastUpdate";
-import { EmptyState, ErrorStrip, FilterMenu, FromDeviceStrip, LabelChip, PlaceholderRows, PriorityChip, RefreshButton, StateIcon } from "./WorkParts";
+import { EmptyState, ErrorStrip, FilterMenu, LabelChip, PlaceholderRows, PriorityChip, RefreshButton, StateIcon, WorkFooter } from "./WorkParts";
+import { pageCount, pageFooterState } from "../model/workFooter";
+
+/** The middle of Next when nothing was read (#5971). */
+const couldNotReadNext = "Could not read the order";
 
 // The project, the epic and the level are what the page had when it was last left (#5451).
 const kept = remembered("next");
@@ -87,7 +90,7 @@ async function load(store: Store) {
     problem.value = rows.got ? null : rows.failed.join("\n") || null;
     if (epicRows?.got) epics.value = epicRows.got;
     if (c.level === "epic" && rows.got) epics.value = rows.got;
-    // Every folder failed: what is on screen stays, with its time in the strip.
+    // Every folder failed: what is on screen stays, with its time in the footer.
     if (!rows.got) return;
     next.value = rows.got;
     readAt.value = fromWireDate(rows.got.readAt).getTime();
@@ -130,8 +133,12 @@ export function WorkNext({ store }: { store: Store }) {
   const c = choice.value;
   const { ready, onHold } = splitNext(next.value);
   const errors = [...problem.value ? problem.value.split("\n") : [], ...(next.value?.errors ?? []).map((e) => e.message)];
+  const n = next.value;
+  // The read's state, the count and Last update are in the footer, as on every Work page (#5971); no strip.
+  const footer = hosts.length === 0 || projects.length === 0 ? { kind: "none" as const }
+    : pageFooterState(n !== null, reading.value, fromDevice.value, errors);
   return (
-    <div class="work-list next-page">
+    <div class="work-list next-page work-footed">
       <div class="work-filters next-bar" role="group" aria-label="Next">
         <div class="work-menus">
           {projects.length > 1 && (
@@ -148,7 +155,6 @@ export function WorkNext({ store }: { store: Store }) {
               <button key={l} type="button" aria-pressed={c.level === l} onClick={() => set({ level: l })}>{nextLevelTitle[l]}</button>
             ))}
           </div>
-          {readAt.value !== undefined && !fromDevice.value && <LastUpdate at={readAt.value} />}
         </span>
         <RefreshButton busy={reading.value} onClick={refresh} />
       </div>
@@ -156,10 +162,8 @@ export function WorkNext({ store }: { store: Store }) {
         : projects.length === 0 ? <EmptyState kind="issue" title={noProjectTitle} line={noProject} />
         : (
           <>
-            <FromDeviceStrip at={fromDevice.value ? readAt.value : undefined} />
-            <ErrorStrip lines={errors} retry={refresh} at={readAt.value} />
-            {next.value === null ? (problem.value ? null : <PlaceholderRows />)
-              : ready.length === 0 && onHold.length === 0 ? <EmptyState kind="issue" title={emptyTitle(c)} line={emptyLine(c)} />
+            {next.value === null ? (errors.length > 0 && !reading.value ? <ErrorStrip lines={errors} retry={refresh} middle title={couldNotReadNext} /> : <PlaceholderRows />)
+              : ready.length === 0 && onHold.length === 0 ? reading.value ? <PlaceholderRows /> : <EmptyState kind="issue" title={emptyTitle(c)} line={emptyLine(c)} />
               : (
                 <>
                   {ready.length > 0 && <ul class="work-rows next-rows" aria-label={c.level === "epic" ? "Epics in order" : "Ready, in order"}>
@@ -178,6 +182,8 @@ export function WorkNext({ store }: { store: Store }) {
               )}
           </>
         )}
+      <WorkFooter state={footer} retry={refresh} at={n !== null ? readAt.value : undefined}
+        count={n !== null ? pageCount(ready.length + onHold.length, c.level === "epic" ? "epic" : "issue") : undefined} />
     </div>
   );
 }

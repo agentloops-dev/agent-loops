@@ -1,7 +1,6 @@
 package agentsd
 
 import (
-	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -179,14 +178,14 @@ func TestReleaseEndsBackgroundProcesses(t *testing.T) {
 		t.Fatal(err)
 	}
 	ended := make(chan struct{})
-	go func() { sleep.Wait(); close(ended) }()
+	go func() { _ = sleep.Wait(); close(ended) }() // its error is the signal the release sends
 	if !d.releaseWarm(d.live(id), "test", []acp.Command{{Pid: sleep.Process.Pid, Line: "sleep 300"}}, false) {
 		t.Fatal("not released")
 	}
 	select {
 	case <-ended:
 	case <-time.After(10 * time.Second):
-		sleep.Process.Kill()
+		_ = sleep.Process.Kill() // only tidies up: the test fails on the next line
 		t.Fatal("the background process was not ended")
 	}
 	if l := d.live(id); l.session != nil {
@@ -198,7 +197,7 @@ func TestReleaseEndsBackgroundProcesses(t *testing.T) {
 func warmAgent(t *testing.T, d *Daemon, c *conn, work string) wire.UUID {
 	t.Helper()
 	var id wire.UUID
-	json.Unmarshal(c.call(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + work, "prompt": "hello"}), &id)
+	mustUnmarshal(t, c.call(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + work, "prompt": "hello"}), &id)
 	waitFor(t, "the first turn's end", func() bool {
 		a := d.Store.Agent(id)
 		l := d.live(id)

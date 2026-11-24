@@ -155,7 +155,7 @@ func (d *Daemon) secretRecord(agent wire.UUID, name string) (string, sealedValue
 	if home == "" {
 		return "", sealedValue{}, false
 	}
-	s, ok := readSealedSecrets(home).Secrets[name]
+	s, ok := sealedSecretsHere(home)[name]
 	return sealedLocal, s, ok
 }
 

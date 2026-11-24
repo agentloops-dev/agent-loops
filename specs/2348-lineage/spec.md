@@ -301,7 +301,7 @@ Part 2 (this): Reports ▸ Value's release rows and the release node in the Line
   "0.14.1 Bug fixes". No match links nothing.
 - **Hearing about a tag:** the host reads a folder's tags with `git ls-remote --tags
   origin`, at most once an hour (`checkReleaseTagsEveryHour`); no forge event says "tag
-  pushed" today. A tag is done once it links, kept in `<root>/release-tags.json` by repo,
+  pushed" today. A tag is done once it links, kept in `<root>/release-tags.json` for 90 days,
   so a host that was off when a tag was pushed still finds it, and never re-asks the forge
   for one it already did.
 - **A tag with no earlier version tag** (the first in a repo) links no PR: the first

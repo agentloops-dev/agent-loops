@@ -7,6 +7,7 @@ What agents learnt about this repo: its code, tools, process and decisions. One 
 - [Waits hold no running place](approval-waits-hold-places.md) — since #4377 a lane in wait_for_event holds no running place; a woken one always runs; total bounds open work
 - [auto-approve-not-planned](auto-approve-not-planned.md) — Issue #46 Auto-approve (model judges Cursor/Grok permission requests) closed as won't do 2026-09-29; spike res
 - [Bound data, not concurrency](bound-data-not-concurrency.md) — performance fixes bound what is held/returned; every store has a controlle…
+- [Data principles](data-principles.md) — Alex 2026-11-21: stores bounded by size/count, 90-day age-out, config in .agents, roll-ups allowed
 - [A branch can move under a merge](branch-can-move-mid-merge.md) — another session's checkout lands your merge on…
 - [Brief, not AGENTS.md, for app tools](brief-not-agents-md-for-app-tools.md) — AGENTS.md/skills are this repo only; a new app tool gets a gated brief line
 - [Channels are MCP servers](channels-are-mcp-servers.md) — Alex 2026-10-16: no built-in Slack/Discord adapters; #1223 removed Slack + Need…
@@ -75,7 +76,6 @@ What agents learnt about this repo: its code, tools, process and decisions. One 
 - [Claude works after its prompt ends](claude-works-after-its-prompt-ends.md) — background command's end starts a cycle with no prompt; agentsd's unprompted turn (#4323)
 - [Browser screenshots land in the main checkout](browser-screenshots-land-in-the-main-checkout.md) — browser_take_screenshot writes only under ~/Agents; use your worktree's build/
 - [Lineage tests fail on Mac main](lineage-tests-fail-on-mac-main.md) — health/sessions/signin agentsd tests fail on main on the Mac; check on a main copy, let Linux CI prove them
-- [New names for each round of PR shots](pr-shots-need-new-names-each-round.md) — GitHub caches images by URL; a re-run of pr-shots.sh under the same names showed Alex old pictures (#4933)
 - [Toolbar draws catalogue symbols empty](toolbar-draws-catalogue-symbols-empty.md) — macOS 27 toolbar items lose Image("lucide.x"); use Image(toolbarIcon:) there, Image(icon:) elsewhere (#4976)
 - [Outside code is not built here](outside-code-is-not-built-here.md) — cloning/building SwiftDraw or running picosvg was refused; data tarballs are fine; prefer platform libraries (#4976)
 - [The repo is agent-loops](repo-is-agent-loops.md) — agentloops-dev/agent-loops since 2026-11-13 (#5296); old names redirect; daemon alias learnt daily
@@ -90,5 +90,8 @@ What agents learnt about this repo: its code, tools, process and decisions. One 
 - [A split column's least size is measured at no width](split-column-least-size-measured-at-no-width.md) — #5932: a foot banner's fixed-height text stood the split view 2116 pt tall; `.columnFloor()` on every column; repro: kill the scratch daemon
 - [Task tuples miscompile at -O](task-tuple-returns-miscompile.md) — #5946: a tuple returned from both a do that awaits and its catch loses its key in Swift 6.4.2 -O and crashed the window in completeFuture/TaskGroup::offer; use Result.catching, one return
 - [agentsd stacks on SIGUSR1](agentsd-stacks-on-sigusr1.md) — #6260: `kill -USR1` logs every goroutine to daemon.log, no stop; uplink logs handlers over 2 s
-- [Periphery index rules](periphery-index-rules.md) — one build per file per index or the answer changes; it misses $binding, \( ) and init-as-value uses
 - [Held calls and Mac sleep](held-calls-and-mac-sleep.md) — a call open over a sleep ends in the client's timeout; match timeouts to `pmset -g log` first (#6310)
+- [Periphery removed](periphery-removed.md) — Alex 2026-11-21 (#6526): no Swift dead-code gate; it cost ~8.5 min warm per swift-lint run and a 2.6 GB cache
+- [@AppStorage hears no key with a dot](appstorage-key-with-a-dot.md) — KVO reads a dot as a key path: a mirrored display key a view reads must have none (#6254, flag:<name>)
+- [Fix main asks the bug lane for root-cause lanes](fix-main-asks-the-bug-lane-for-root-cause-lanes.md) — the #4207 lead takes each new bug itself; Fix main messages it, starts no lane (2026-11-21 duplicates on #6603, #6619)
+- [No changed HOME for agentsd on a Mac](no-changed-home-for-agentsd-on-a-mac.md) — #6890: "Keychain Not Found" dialogs that stay; a pool-machine walk needs Linux

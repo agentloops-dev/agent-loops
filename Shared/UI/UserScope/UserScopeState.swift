@@ -23,9 +23,9 @@ final class UserScopeState {
     @ObservationIgnored weak var lock: LockState?
     /// The secrets agents saved on the person's machines that are not theirs yet (#5308).
     private(set) var offers: [DaemonAPI.SecretOffer] = []
-    /// The offers answered from here and not done yet, and why one failed.
-    private(set) var answeringOffers: Set<String> = []
-    private(set) var offerFailures: [String: String] = [:]
+    /// The offers answered from here and not done yet, and why one failed: by card (#6626), so
+    /// a new offer of the same name keeps them.
+    private(set) var offerAnswers = DaemonAPI.SecretOfferAnswers()
     /// This client's key, to take an offer (the Mac window). Nil on the Remote, which does not
     /// seal: it shows the offers only.
     @ObservationIgnored var sealing: (() -> (DeviceKey, UUID)?)?
@@ -59,18 +59,23 @@ final class UserScopeState {
                                                           signed: { recipients in
                                                               if let lock { await lock.signed(recipients, on: control) } else { recipients }
                                                           }) else { return }
-        offers = listed.offers.sorted { $0.savedAt < $1.savedAt }
+        offers = DaemonAPI.SecretOffer.waiting(listed.offers)
+        offerAnswers.keep(only: offers)
     }
 
     /// Use the Agent's (true) or Keep Yours (false) for an offer whose name the person has (#5308).
+    /// The card shows progress until the offers are read again, then goes, or says why not (#6626).
     func choose(_ offer: DaemonAPI.SecretOffer, useTheAgents: Bool, on control: DaemonClient?) async {
-        guard let control else { return }
-        answeringOffers.insert(offer.offer)
-        defer { answeringOffers.remove(offer.offer) }
-        offerFailures[offer.offer] = nil
+        offerAnswers.begin(offer)
+        offerAnswers.end(offer, failure: await answer(offer, useTheAgents: useTheAgents, on: control))
+    }
+
+    /// Why the answer failed, or nil once it is done and the offers are read again.
+    private func answer(_ offer: DaemonAPI.SecretOffer, useTheAgents: Bool, on control: DaemonClient?) async -> String? {
+        guard let control else { return "The control plane can’t be reached." }
         do {
             if useTheAgents {
-                guard let (key, client) = sealing?() else { return }
+                guard let (key, client) = sealing?() else { return SecretOfferWords.noKey }
                 let names = try await control.call(DaemonAPI.Method.userSecretNames, DaemonAPI.Empty(),
                                                    returning: DaemonAPI.UserSecretNames.self)
                 let lock = lock
@@ -84,8 +89,9 @@ final class UserScopeState {
                 _ = try await control.call(DaemonAPI.Method.userDropSecretOffer, DaemonAPI.SecretOfferRequest(offer: offer.offer))
             }
             await load(control)
+            return nil
         } catch {
-            offerFailures[offer.offer] = UserScopeWords.refusal(error)
+            return UserScopeWords.refusal(error)
         }
     }
 

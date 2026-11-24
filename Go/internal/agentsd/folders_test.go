@@ -182,7 +182,9 @@ func TestFolderChangedSummaryMatchesFolders(t *testing.T) {
 			return false
 		}
 		var s wire.FolderSummary
-		mustUnmarshal(t, params, &s)
+		if json.Unmarshal(params, &s) != nil {
+			return false // another notification, or not this one yet
+		}
 		if store.FolderPath(s.Folder.Folder) != target {
 			return false
 		}

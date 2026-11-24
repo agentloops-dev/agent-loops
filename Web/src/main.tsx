@@ -1,6 +1,8 @@
 // The web remote's entry point (spec 071).
 // First, so a code or an org provider's ticket in the address is gone before the router reads it (#109, #1002).
 import { linkedCode, oidcBack } from "./pairLink";
+// A sign-in's answer that the hand-back page sent here (#6074), given to the tab that waits for it.
+import { handBack } from "./oauthHandBack";
 import { render } from "preact";
 import { App } from "./App";
 import { Store } from "./model/store";
@@ -12,7 +14,9 @@ import { effect } from "@preact/signals";
 import { startAgentLinks } from "./model/agentLink";
 import { startSpinnerClock } from "./spinnerClock";
 import { LocalCopy, setWorkCopy, startLocalCopy } from "./model/localCopy";
+import { WorkCache, setWorkCache } from "./model/workCache";
 
+handBack();
 const session = new Session();
 const store = new Store(session.link);
 startPresence(store);
@@ -23,17 +27,21 @@ startSpinnerClock();
 const copy = new LocalCopy();
 startLocalCopy(store, copy);
 setWorkCopy(copy);
+// Work's cache (#6356): the Work records this device read, written only while signed in, and gone at sign-out.
+const work = new WorkCache();
+setWorkCache(work);
 effect(() => {
   const kind = session.state.value.kind;
-  if (kind === "open" || kind === "down") copy.writing = true;
+  if (kind === "open" || kind === "down") { copy.writing = true; work.open(); }
 });
 // Forgotten, here or in another tab (#3670): the drafts, the lock pins and the push subscription
 // were that control plane's, and go with it, as does the copy, deleted with the keys (#4790).
 effect(() => {
   const kind = session.state.value.kind;
-  if (kind === "unpaired" || kind === "pairing") copy.forget();
+  if (kind === "unpaired" || kind === "pairing") { copy.forget(); work.forget(); }
   if (kind !== "forgotten") return;
   copy.forget();
+  work.forget();
   store.drafts.clear();
   forgetPins();
   void dropWebPush();

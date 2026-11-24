@@ -17,12 +17,12 @@ func nextLiveFrame(t *testing.T, c *conn, wait time.Duration) *wire.DesktopContr
 		select {
 		case line := <-c.out:
 			var m message
-			json.Unmarshal([]byte(line), &m)
+			mustUnmarshal(t, []byte(line), &m)
 			if m.Method != wire.NotifyDesktopControlLiveFrame.Name {
 				continue
 			}
 			var f wire.DesktopControlLiveFrame
-			json.Unmarshal(m.Params, &f)
+			mustUnmarshal(t, m.Params, &f)
 			return &f
 		case <-deadline:
 			return nil
@@ -38,12 +38,12 @@ func nextLive(t *testing.T, c *conn, wait time.Duration) *wire.LiveFrame {
 		select {
 		case line := <-c.out:
 			var m message
-			json.Unmarshal([]byte(line), &m)
+			mustUnmarshal(t, []byte(line), &m)
 			if m.Method != wire.NotifyLiveFrame.Name {
 				continue
 			}
 			var f wire.LiveFrame
-			json.Unmarshal(m.Params, &f)
+			mustUnmarshal(t, m.Params, &f)
 			return &f
 		case <-deadline:
 			return nil

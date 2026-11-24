@@ -39,7 +39,7 @@ func TestASecretForThisSessionOnly(t *testing.T) {
 	}()
 	var pending []wire.ElicitationRequest
 	waitFor(t, "the card", func() bool {
-		json.Unmarshal(c.call(t, 1, "elicitations/pending", nil), &pending)
+		mustUnmarshal(t, c.call(t, 1, "elicitations/pending", nil), &pending)
 		return len(pending) == 1
 	})
 	if s := pending[0].Secret; s == nil || s.CanBeSessionOnly == nil || !*s.CanBeSessionOnly || s.CanAskBeforeUse == nil || !*s.CanAskBeforeUse {
@@ -83,9 +83,9 @@ func TestASecretForThisSessionOnly(t *testing.T) {
 	if env := d.sessionSecretEnv(other.ID); len(env) != 0 {
 		t.Fatal(env)
 	}
-	os.MkdirAll(filepath.Join(home, ".agents"), 0o700)
-	os.WriteFile(filepath.Join(home, ".agents", "mcp.json"),
-		[]byte(`{"mcpServers":{"shop":{"command":"shop-mcp","env":{"SHOP_PASSWORD":"${SHOP_PASSWORD}"}}}}`), 0o600)
+	must(t, os.MkdirAll(filepath.Join(home, ".agents"), 0o700))
+	must(t, os.WriteFile(filepath.Join(home, ".agents", "mcp.json"),
+		[]byte(`{"mcpServers":{"shop":{"command":"shop-mcp","env":{"SHOP_PASSWORD":"${SHOP_PASSWORD}"}}}}`), 0o600))
 	servers := func(e []sessionEntry) string {
 		var out []any
 		for _, each := range e {
@@ -104,7 +104,7 @@ func TestASecretForThisSessionOnly(t *testing.T) {
 	// Settings ▸ Secrets lists it with its session, never its value.
 	var list wire.SessionSecrets
 	raw := c.call(t, 3, "secrets/sessionList", map[string]any{})
-	json.Unmarshal(raw, &list)
+	mustUnmarshal(t, raw, &list)
 	if len(list.Secrets) != 1 || list.Secrets[0].Name != "SHOP_PASSWORD" || list.Secrets[0].AgentID != a.ID ||
 		list.Secrets[0].Title != title || strings.Contains(string(raw), value) {
 		t.Fatalf("%s", raw)
@@ -122,14 +122,14 @@ func TestASecretForThisSessionOnly(t *testing.T) {
 	}
 	assertNotUnder(t, home, value)
 	assertNotUnder(t, root, value)
-	json.Unmarshal(c.call(t, 4, "secrets/sessionList", map[string]any{}), &list)
+	mustUnmarshal(t, c.call(t, 4, "secrets/sessionList", map[string]any{}), &list)
 	if len(list.Secrets) != 0 {
 		t.Fatalf("%+v", list)
 	}
 	// A secret in secrets.env of the same name is the person's own, and still fills.
 	env := skillcatalog.Secrets{}
 	env.Set("SHOP_PASSWORD", "the-persons-own")
-	env.Save(skillcatalog.SecretsPath(home))
+	must(t, env.Save(skillcatalog.SecretsPath(home)))
 	if fill, refusal := d.fillSecretValue(a.ID, args); refusal != "" || fill.value != "the-persons-own" {
 		t.Fatalf("%q %q", fill.value, refusal)
 	}
@@ -146,7 +146,7 @@ func TestSessionSecretsFromSettings(t *testing.T) {
 	defer d.Shutdown()
 	a := seeded(t, d, t.TempDir(), nil)
 	var list wire.SessionSecrets
-	json.Unmarshal(c.call(t, 1, "secrets/sessionSet", map[string]any{"agentID": a.ID, "name": "GITLAB_TOKEN", "value": " glpat-3548 "}), &list)
+	mustUnmarshal(t, c.call(t, 1, "secrets/sessionSet", map[string]any{"agentID": a.ID, "name": "GITLAB_TOKEN", "value": " glpat-3548 "}), &list)
 	if len(list.Secrets) != 1 || list.Secrets[0].Name != "GITLAB_TOKEN" || list.Secrets[0].Title != "Untitled session" {
 		t.Fatalf("%+v", list)
 	}
@@ -159,7 +159,7 @@ func TestSessionSecretsFromSettings(t *testing.T) {
 	if e := c.callError(t, 3, "secrets/sessionSet", map[string]any{"agentID": a.ID, "name": "TWO", "value": "a\nb"}); e == nil {
 		t.Fatal("two lines were taken")
 	}
-	json.Unmarshal(c.call(t, 4, "secrets/sessionRemove", map[string]any{"agentID": a.ID, "name": "GITLAB_TOKEN"}), &list)
+	mustUnmarshal(t, c.call(t, 4, "secrets/sessionRemove", map[string]any{"agentID": a.ID, "name": "GITLAB_TOKEN"}), &list)
 	if len(list.Secrets) != 0 {
 		t.Fatalf("%+v", list)
 	}
@@ -170,7 +170,7 @@ func TestSessionSecretsFromSettings(t *testing.T) {
 
 	// An archived session takes none.
 	c.call(t, 5, "secrets/sessionSet", map[string]any{"agentID": a.ID, "name": "GITLAB_TOKEN", "value": "glpat-again"})
-	d.archive(a.ID)
+	must(t, d.archive(a.ID))
 	if e := c.callError(t, 6, "secrets/sessionSet", map[string]any{"agentID": a.ID, "name": "X_TOKEN", "value": "x-value"}); e == nil ||
 		!strings.Contains(e.Message, "is archived") {
 		t.Fatalf("%+v", e)
@@ -199,8 +199,8 @@ func TestSessionSecretsAreSweptAtStart(t *testing.T) {
 	})
 	gone := wire.UUID("0b0e5a1c-1111-4222-8333-944455556666")
 	f := sessionSecretFile{Secrets: map[string]sessionSecretValue{"PIN_CODE": {Value: "swept-3548", SetAt: now()}}}
-	d.writeSessionSecretsLocked(a.ID, f)
-	d.writeSessionSecretsLocked(gone, f)
+	must(t, d.writeSessionSecretsLocked(a.ID, f))
+	must(t, d.writeSessionSecretsLocked(gone, f))
 	d.sweepSessionSecrets()
 	assertNotUnder(t, home, "swept-3548")
 	if _, _, expired := d.sessionSecret(a.ID, "PIN_CODE"); !expired {

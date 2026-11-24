@@ -56,6 +56,49 @@ public extension DaemonAPI {
 
         public var id: String { offer }
         public var waitsForYou: Bool { conflict == true }
+        /// The card that shows it (#6626): its machine and name, not its id, so a new offer of
+        /// the same name keeps the card's progress and failure.
+        public var card: String { "\(machine)|\(name)" }
+
+        /// The offers a person sees, oldest first: for each machine and name, its newest offer
+        /// only. The web page's `waitingOffers`.
+        public static func waiting(_ offers: [SecretOffer]) -> [SecretOffer] {
+            var newest: [String: SecretOffer] = [:]
+            for offer in offers where newest[offer.card].map({ $0.savedAt <= offer.savedAt }) ?? true {
+                newest[offer.card] = offer
+            }
+            return newest.values.sorted { ($0.savedAt, $0.card) < ($1.savedAt, $1.card) }
+        }
+    }
+
+    /// What a client shows while it answers its offers (#6626): the cards being answered, and
+    /// why one failed. Keyed by `card`, so a new offer of the same name, read while the answer
+    /// is under way, keeps them.
+    struct SecretOfferAnswers: Sendable, Hashable {
+        public private(set) var answering: Set<String> = []
+        public private(set) var failures: [String: String] = [:]
+
+        public init() {}
+
+        public func isAnswering(_ offer: SecretOffer) -> Bool { answering.contains(offer.card) }
+        public func failure(_ offer: SecretOffer) -> String? { failures[offer.card] }
+
+        public mutating func begin(_ offer: SecretOffer) {
+            answering.insert(offer.card)
+            failures[offer.card] = nil
+        }
+
+        /// Done: `failure` is why not, or nil.
+        public mutating func end(_ offer: SecretOffer, failure: String?) {
+            answering.remove(offer.card)
+            failures[offer.card] = failure
+        }
+
+        /// After a read of the offers: a failure whose card went goes too.
+        public mutating func keep(only offers: [SecretOffer]) {
+            let cards = Set(offers.map(\.card))
+            failures = failures.filter { cards.contains($0.key) }
+        }
     }
 
     /// `user/secretOffers`; `user` is the person, as the associated data names them.
@@ -85,6 +128,9 @@ public enum SecretOfferWords {
     public static let useTheAgents = "Use the Agent's"
     /// On the Remote, which does not seal: where the person chooses.
     public static let chooseElsewhere = "Choose Keep Yours or Use the Agent's in Agents on your Mac or in the browser."
+    /// Use the Agent's on a Mac window with no key of its own on the control plane (#6626).
+    public static let noKey = "This Mac has no key on the control plane to open the agent's copy with. Choose in the browser, "
+        + "or sign this Mac in to the control plane again."
 
     /// Under an offer's name in Needs you: where it came from, and what happens next.
     public static func line(_ offer: DaemonAPI.SecretOffer) -> String {

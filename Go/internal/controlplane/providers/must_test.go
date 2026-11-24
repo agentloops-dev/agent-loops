@@ -17,3 +17,12 @@ func mustKeep(t testing.TB, f *Failure) {
 		t.Fatalf("not kept: %+v", f)
 	}
 }
+
+// mustParse is JSON text that a test writes, parsed; it panics on text that is not JSON.
+func mustParse(text string) any {
+	v, err := parseJSON([]byte(text))
+	if err != nil {
+		panic(err)
+	}
+	return v
+}

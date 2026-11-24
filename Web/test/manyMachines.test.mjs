@@ -3,7 +3,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { load } from "./load.mjs";
 
-const { Store, loadBoards, loadList, loadMore, workList, hostListsOf, notAnswered } = await load("test/manyMachines.ts");
+const { Store, loadBoards, loadList, loadMore, workList, hostListsOf, notAnswered, oneEach, MemoryWorkStore, WorkCache, setWorkCache } =
+  await load("test/manyMachines.ts");
 
 const machines = (n) => Array.from({ length: n }, (_, i) => ({ id: `m${i}`, name: `Machine ${i}`, state: "online" }));
 
@@ -63,4 +64,59 @@ test("forge/listAll's answer is a list for each machine asked, and an unreached 
   assert.deepEqual(lists.map((l) => l.host), ["a", "b"], "only the machines asked, in their order");
   assert.equal(lists[0].cursor, "c");
   assert.deepEqual(lists[1].errors, [{ forge: "", message: notAnswered }]);
+});
+
+test("oneEach leaves out a machine that reads only what another asked reads (#6823)", () => {
+  const scopes = new Map([["a", ["github:o/r"]], ["b", ["github:o/r", "github:o/s"]], ["c", ["github:o/t"]]]);
+  assert.deepEqual(oneEach(["a", "b", "c", "d"], scopes), { ask: ["b", "c", "d"], covered: ["a"] }, "the one that reads the most first; d is not known");
+  assert.deepEqual(oneEach(["a", "b"], new Map([["a", ["github:o/r"]], ["b", ["github:o/r"]]])), { ask: ["a"], covered: ["b"] });
+});
+
+test("two machines on the same repo: page 1 is asked of one of them, and the other's kept rows go (#6823)", async () => {
+  const cache = new WorkCache(new MemoryWorkStore());
+  cache.writing = true;
+  setWorkCache(cache);
+  try {
+    const hosts = [{ id: "a", name: "A", state: "online" }, { id: "b", name: "B", state: "online" }];
+    const pages = [];
+    let fail = false;
+    const link = {
+      notify: () => {}, onNotification: () => {}, onState: () => {},
+      call: async (method, params) => {
+        switch (method) {
+          case "machines/list": return hosts;
+          case "reports/nodes": return { nodes: [] };
+          case "forge/listAll": {
+            pages.push(params.pages?.map((p) => `${p.machine}${p.cursor}`) ?? "all");
+            const asked = params.pages ? hosts.filter((h) => params.pages.some((p) => p.machine === h.id)) : hosts;
+            return {
+              lists: asked.map((h) => ({ machine: h.id, machineName: h.name, list: fail && h.id === "a"
+                ? { items: [], errors: [{ forge: "github", message: "down" }] }
+                : { items: [{ node: { kind: "issue", ref: "github:o/r#1" }, title: "one" }], scopes: ["github:o/r"] } })),
+              unreached: [], notAsked: 0,
+            };
+          }
+          default: return [];
+        }
+      },
+    };
+    const store = new Store(link);
+    store.takeHosts(hosts);
+    const l = workList("issue");
+    l.read = undefined;
+    await loadList(store, l);
+    assert.deepEqual(l.lists.value.map((h) => h.host), ["a"], "b reads what a reads");
+    l.asked.value++;
+    await loadList(store, l);
+    assert.deepEqual(pages, ["all", ["a"]], "the second read names only a, at cursor \"\"");
+    assert.equal((await cache.answer({ kind: "issue", state: "open", sort: "updated" }, ["b"])), undefined, "b's kept answer went");
+    fail = true;
+    l.asked.value++;
+    await loadList(store, l);
+    assert.deepEqual(pages.at(-2), ["a"]);
+    assert.deepEqual(pages.at(-1), ["b"], "a failed, so b is asked too");
+    assert.deepEqual(l.lists.value.map((h) => h.host), ["a", "b"]);
+  } finally {
+    setWorkCache(undefined);
+  }
 });

@@ -71,6 +71,8 @@ struct OfflineStrip: View {
     @MainActor
     private static func line(_ host: MachineRef, model: AppModel) -> String? {
         guard !model.controlPlaneAway else { return nil }
+        // Just after a wake, the window is reconnecting, and says nothing yet (#6570).
+        if host == .mac, model.macHostQuietAfterWake { return nil }
         let offlineSince: String? = {
             guard case .offline(let since) = model.hosts.state(host) else { return nil }
             return since.formatted(date: .omitted, time: .shortened)

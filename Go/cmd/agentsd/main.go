@@ -26,6 +26,7 @@ import (
 	"github.com/agentloops-dev/agent-loops/Go/internal/machine"
 	"github.com/agentloops-dev/agent-loops/Go/internal/rolllog"
 	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // logLine writes each line as DaemonLog does: the time in UTC to the second, then the words,
@@ -205,6 +206,7 @@ func startWork(d *agentsd.Daemon) {
 	d.StartRepoAliases()
 	d.StartCITimings()
 	d.StartMachineWatch()
+	d.StartSleepWatch()
 }
 
 // commandLine is DaemonCommandLine: the flags the install script and ssh pass.
@@ -405,8 +407,9 @@ func machineHello(cl commandLine, d *agentsd.Daemon) controllink.MachineHello {
 	if name == "" {
 		name, _ = os.Hostname()
 	}
+	capabilities := d.Capabilities()
 	hello := controllink.MachineHello{Version: buildinfo.Version, Platform: platform(), MachineID: machine.ID(),
-		Implementation: new(buildinfo.Implementation), Capabilities: d.Capabilities()}
+		Implementation: new(buildinfo.Implementation), Capabilities: capabilities, Maturity: wire.MaturityOf(capabilities)}
 	if name != "" {
 		hello.Name = &name
 	}

@@ -24,6 +24,7 @@ import (
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/signin"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/signin/signintest"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -616,6 +617,7 @@ func (failing) RoundTrip(*http.Request) (*http.Response, error) { return nil, io
 // than at 100 users and 10 groups. The 200 ms is held only in a perf run
 // (AGENTS_RUN_PERF=1, no -race), as scripts/perf-tests.sh runs it.
 func TestSCIMAtSize(t *testing.T) {
+	flaky.UnderLoad(t, "#6931")
 	// Not parallel (#2512): a perf run holds a wall-clock limit, which other tests running beside it would make flaky.
 	if testing.Short() {
 		t.Skip("5,000 users")
@@ -726,6 +728,18 @@ func scimRequestCosts(t *testing.T, users, groups int) (storeCost, []time.Durati
 			t.Fatal(err)
 		}
 	}
+	settle(t, st, st.now().Events)
+	// The first SCIM request writes the token's last use in the background. Complete that
+	// one-off write before measuring the 200 requests, or runner load can move it into the
+	// measured window.
+	if status, _ := scimDo(t, base, token, "GET", "/ServiceProviderConfig", nil); status != 200 {
+		t.Fatal("warm SCIM request:", status)
+	}
+	var tokenList wire.SCIMTokenList
+	p.waitFor(func() bool {
+		must(t, json.Unmarshal(call(t, owner, "", "scim/tokens/list", wire.SCIMTokensRequest{Provider: "acme-okta"}), &tokenList))
+		return len(tokenList.Tokens) == 1 && tokenList.Tokens[0].LastUse != nil
+	}, "the SCIM token's first last-use write")
 	settle(t, st, st.now().Events)
 	before := st.now()
 	var took []time.Duration

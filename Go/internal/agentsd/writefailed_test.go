@@ -1,7 +1,6 @@
 package agentsd
 
 import (
-	"encoding/json"
 	"strings"
 	"syscall"
 	"testing"
@@ -32,7 +31,7 @@ func TestALineTheDiskRefusesIsShownToldAndWrittenLater(t *testing.T) {
 		t.Fatalf("told %d times", len(failed))
 	}
 	var f wire.WriteFailure
-	json.Unmarshal(failed[0], &f)
+	mustUnmarshal(t, failed[0], &f)
 	if f.Cause != wire.WriteFailureCauseDiskFull || !strings.Contains(f.Message, "Fix the build’s chat") {
 		t.Fatalf("%+v", f)
 	}

@@ -10,7 +10,7 @@
 // Blocked by. Start lead and Open lead are the page header's. Under 700 px (note 19) the bar takes the width with the
 // words under it, and a child is the phone row: its title on up to two lines, no level chip or pull request, a short
 // line 2.
-import { keepWork, keptWorkRead } from "../model/localCopy";
+import { keepWork, keptWorkRead } from "../model/workCache";
 import { useSignal } from "@preact/signals";
 import { useEffect, useRef } from "preact/hooks";
 import type { AgentState, ForgeDone, ForgeItemDetail, ForgePlan, ForgePlanChild, ForgePlanStep, ForgeStanding, LineageCostRollup, LineageEstimate, LineageLink } from "../protocol/generated";
@@ -27,21 +27,25 @@ import {
 import { isMenuKey, openContextMenu, type MenuItem } from "./ContextMenu";
 import { go, routeHash } from "../route";
 import { ForgeTitle } from "../render/ForgeTitle";
-import { ErrorStrip, LabelChip, PlaceholderRows, PriorityChip, OnHoldChip, StateIcon } from "./WorkParts";
+import { LabelChip, PlaceholderRows, PriorityChip, OnHoldChip, StateIcon } from "./WorkParts";
 import { Icon, type IconName } from "./Icon";
 
 const holdsRuntime = (s: AgentState) => s === "starting" || s === "running" || s === "waitingOnUser";
 /** The mark's icon before line 2's words; a closed child's state icon says it is done. */
 const markIcon: Record<PlanMark, IconName | undefined> = { done: undefined, working: "loader-circle", attention: "triangle-alert", waiting: "circle", blocked: "ban" };
 
-export function WorkPlan({ store, host, lineageHost, detail, asked, estimates = [], writes, waiting = false, wrote, fromCopy }: {
+/** A plan's read, for its item page's footer (#5971, the Mac's WorkPlanRead, #5970): when it was read, whether from this
+ * device's copy, what failed and whether a read runs. */
+export interface PlanRead { at: number | undefined; fromDevice: boolean; problem: string | null; reading: boolean }
+
+export function WorkPlan({ store, host, lineageHost, detail, asked, estimates = [], writes, waiting = false, wrote, onRead }: {
   store: Store; host: string; lineageHost: string | undefined; detail: ForgeItemDetail; asked: number;
   estimates?: readonly LineageEstimate[]; writes: boolean;
   /** The page is this device's copy (#4930): no changes, and no words on why, until the machine answers. */
   waiting?: boolean; wrote: () => void;
-  /** Told when the plan drawn from this device's copy was read, until its machine answers, and undefined after (#5142):
-   * the page's one "From this device" strip says the oldest of it and the item's. */
-  fromCopy?: (at: number | undefined) => void;
+  /** Told the plan's read as it changes, and undefined when the plan goes: the page's footer says the item's and the
+   * plan's together, and the older of their reads (#5971). */
+  onRead?: (read: PlanRead | undefined) => void;
 }) {
   const plan = useSignal<ForgePlan | null>(null);
   const problem = useSignal<string | null>(null);
@@ -57,6 +61,7 @@ export function WorkPlan({ store, host, lineageHost, detail, asked, estimates = 
   const level = useSignal("task");
   const busy = useSignal(false);
   const changed = useSignal(0);
+  const reading = useSignal(false);
   /** The steps a person folded or opened, until the page is read again. */
   const folded = useSignal<Readonly<Record<number, boolean>>>({});
   /** A standing epic's list past its first ten. */
@@ -64,10 +69,11 @@ export function WorkPlan({ store, host, lineageHost, detail, asked, estimates = 
   const field = useRef<HTMLInputElement>(null);
   const node = detail.item.node;
   useEffect(() => { folded.value = {}; }, [node.ref, asked]);
-  // The page's strip says when a plan from the copy was read, until the machine answers (#5142).
-  const copyAt = fromDevice.value && !problem.value ? planAt.value : undefined;
-  useEffect(() => { fromCopy?.(copyAt); }, [copyAt]);
-  useEffect(() => () => fromCopy?.(undefined), []);
+  // The page's footer says what runs or failed of the plan, and when it was read (#5971).
+  const at = planAt.value;
+  useEffect(() => { onRead?.({ at, fromDevice: fromDevice.value, problem: problem.value, reading: reading.value }); },
+    [at, fromDevice.value, problem.value, reading.value]);
+  useEffect(() => () => onRead?.(undefined), []);
   useEffect(() => {
     let current = true;
     // After a write the plan stays up while it is read again, and its line says what was done.
@@ -79,14 +85,16 @@ export function WorkPlan({ store, host, lineageHost, detail, asked, estimates = 
         if (current && kept && !plan.peek()) { plan.value = kept.value; planAt.value = kept.at; fromDevice.value = true; }
       }
       let got: ForgePlan;
+      reading.value = true;
       try {
         got = await store.link.call("forge/plan", { node }, host);
       } catch (e) {
-        // A read after one came keeps the last plan, dimmed under the strip (state 2).
-        if (current) problem.value = describe(e);
+        // A read after one came keeps the last plan at full opacity; the page's footer says what failed (#5971).
+        if (current) { problem.value = describe(e); reading.value = false; }
         return;
       }
       if (!current) return;
+      reading.value = false;
       plan.value = got;
       planAt.value = Date.now();
       fromDevice.value = false;
@@ -246,8 +254,7 @@ export function WorkPlan({ store, host, lineageHost, detail, asked, estimates = 
         <>
           <Header plan={p} running={running} rollups={Object.values(rollups.value)} estimates={estimates} />
           <LeadLine store={store} plan={p} open={openSession} />
-          {problem.value && <div class="work-plan-strip"><ErrorStrip lines={[problem.value]} retry={() => { changed.value++; }} at={planAt.value} /></div>}
-          <div class={`work-plan-body${problem.value ? " stale" : ""}`}>
+          <div class="work-plan-body">
             {p.standing && <Query plan={p} standing={p.standing} running={running} rollups={Object.values(rollups.value)} />}
             {p.children.length === 0 ? !p.standing?.error && (
               <div class="work-plan-empty">

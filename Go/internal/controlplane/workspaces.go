@@ -13,11 +13,10 @@ import (
 
 // Machine providers (#691), as ControlService.takeUp wires them: on a single copy, beside
 // the tunnels. Each runs on the machine that carries it (#3398). They keep prompts and starts for a
-// stopped workspace (US3), and an agent on this machine's own host writes a map for a new
-// one (Write It for Me, #858).
+// stopped workspace (US3).
 
-// makeProviders makes the providers, their kept requests and their drafts.
-func (s *Service) makeProviders(home string) *providers.Providers {
+// makeProviders makes the providers and their kept requests.
+func (s *Service) makeProviders() *providers.Providers {
 	timing := s.cfg.ProviderTiming
 	if timing.ListEvery == 0 {
 		timing = providers.StandardTiming
@@ -81,16 +80,10 @@ func (s *Service) makeProviders(home string) *providers.Providers {
 			},
 			SetupStep: s.madeStep,
 			MadeFor:   s.madeFor,
+			Setup:     func(host string) *wire.MachineSetup { return s.machineSetup(context.Background(), host) },
 			BackUp:    s.backUpBeforeDelete,
 		},
 	})
-	providers.NewDraftsFor(p, providers.DraftWiring{Router: adapter, Records: s.records, Home: home, Connect: connect,
-		Log: s.log, MachineID: func() string {
-			if settings := s.records.Settings(); settings != nil {
-				return settings.MachineID
-			}
-			return s.cfg.MachineID
-		}})
 	kept := providers.NewKeptFor(p, s.log)
 	s.router.SetKeeper(kept)
 	return p

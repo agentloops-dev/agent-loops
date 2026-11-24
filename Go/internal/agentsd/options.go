@@ -29,6 +29,8 @@ import (
 type optionBook struct {
 	optionMu   sync.Mutex
 	openDrafts map[wire.UUID]bool
+	// offersOf asks a runtime what it offers in a folder; nil is whatItOffers (a test's seam).
+	offersOf func(rt *runtimeDef, path string) (optionEntry, error)
 }
 
 // optionEntry is OptionCache.Entry.
@@ -98,6 +100,26 @@ func (d *Daemon) runtimeOffers(runtimeID string) []wire.ConfigOption {
 		}
 	}
 	return newest.Options
+}
+
+// refreshOffers asks the runtime what it offers now in the folder and keeps it (#6891): Auto
+// does this before it passes a runtime by for a model its cached offer lacks.
+func (d *Daemon) refreshOffers(rt *runtimeDef, cwd wire.URL) ([]wire.ConfigOption, error) {
+	d.optionMu.Lock()
+	ask := d.offersOf
+	d.optionMu.Unlock()
+	if ask == nil {
+		ask = d.whatItOffers
+	}
+	e, err := ask(rt, store.FolderPath(cwd))
+	if err != nil {
+		return nil, err
+	}
+	if len(e.Options) == 0 {
+		return nil, &Error{Code: CodeRuntimeWillNotStart, Message: rt.Name + " said no options"}
+	}
+	d.remember(optionKey(rt.ID, cwd, nil), e)
+	return e.Options, nil
 }
 
 // remember keeps what a runtime offered, the 50 newest.

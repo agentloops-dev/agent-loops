@@ -2,10 +2,12 @@ import AgentsKitCore
 import Foundation
 
 /// Step 7 of a machine's set-up (#5361, epic #5353, "Sign-in", board 2 note 4): each runtime that
-/// is not signed in on a new machine signs in with the first thing that works. First a key the
-/// person has in Secrets, written on the machine as its own user. Else the runtime's device-code
-/// sign-in, shown as a card with the code and **Open sign-in page**, while the step says it waits
-/// for the person. A login is never copied from this Mac.
+/// is not signed in on a new machine signs in with the first thing that works. First this Mac's own
+/// sign-in, lent through the relay when this Mac is signed in and the person says yes to the lend
+/// ask (056, T091, #6855): the token stays on this Mac. Then a key the person has in Secrets,
+/// written on the machine as its own user. Else the runtime's device-code sign-in, shown as a card
+/// with the code and **Open sign-in page**, while the step says it waits for the person. A login is
+/// never copied from this Mac.
 ///
 /// It runs while the machine's step 7 is running or waits for the person, from the window that
 /// hears of the machine, so the keys are written whether or not the page is open. The sign-ins a
@@ -79,9 +81,10 @@ final class MachineSignInDriver {
         cards[host] = nil
     }
 
-    /// A key first, then the runtime's own sign-in.
+    /// This Mac's sign-in lent first, then a key, then the runtime's own sign-in.
     private func attempt(_ status: RuntimeStatus, on host: MachineRef, model: AppModel) async {
         let id = status.runtime.id, name = status.runtime.name
+        if Self.clientSignIn.contains(id), await model.lendSignIn(id, to: host) { return }
         var card = Card(runtimeID: id, runtimeName: name)
         let found = try? await model.macClient.call(DaemonAPI.Method.secretsSignInKey,
                                                     DaemonAPI.SecretSignInKeyRequest(runtimeID: id),

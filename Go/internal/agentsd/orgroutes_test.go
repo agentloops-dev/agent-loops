@@ -55,7 +55,7 @@ func machineKeys(t *testing.T, root string) ([]byte, []byte) {
 	private, err := os.ReadFile(keyFile)
 	if err != nil {
 		private = controllink.NewPrivateKey()
-		os.WriteFile(keyFile, private, 0o600)
+		must(t, os.WriteFile(keyFile, private, 0o600))
 	}
 	public, err := controllink.PublicKey(private)
 	if err != nil {
@@ -172,7 +172,7 @@ func newFakeClouds(t *testing.T) *fakeClouds {
 	f := &fakeClouds{}
 	f.clock.Store(time.Now().UnixNano())
 	f.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		r.ParseForm()
+		check(t, r.ParseForm())
 		refused := func(n *atomic.Int32) bool {
 			n.Add(1)
 			if f.refuse.Load() {
@@ -194,10 +194,12 @@ func newFakeClouds(t *testing.T) *fakeClouds {
 			akid, _, _ := strings.Cut(strings.TrimPrefix(auth, "AWS4-HMAC-SHA256 Credential="), "/")
 			raw, _ := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(akid, "AKIA"))
 			var session map[string]string
-			json.Unmarshal(raw, &session)
-			w.Write([]byte(`<GetSessionTokenResponse><GetSessionTokenResult><Credentials><AccessKeyId>` + session["accessKeyId"] +
+			check(t, json.Unmarshal(raw, &session))
+			if _, err := w.Write([]byte(`<GetSessionTokenResponse><GetSessionTokenResult><Credentials><AccessKeyId>` + session["accessKeyId"] +
 				`</AccessKeyId><SecretAccessKey>` + session["secretAccessKey"] + `</SecretAccessKey><SessionToken>` + session["sessionToken"] +
-				`</SessionToken><Expiration>` + ends + `</Expiration></Credentials></GetSessionTokenResult></GetSessionTokenResponse>`))
+				`</SessionToken><Expiration>` + ends + `</Expiration></Credentials></GetSessionTokenResult></GetSessionTokenResponse>`)); err != nil {
+				t.Error(err)
+			}
 		case r.URL.Path == "/google":
 			if refused(&f.google) {
 				return
@@ -209,13 +211,13 @@ func newFakeClouds(t *testing.T) *fakeClouds {
 			}
 			raw, _ := base64.RawURLEncoding.DecodeString(parts[1])
 			var claims map[string]any
-			json.Unmarshal(raw, &claims)
-			json.NewEncoder(w).Encode(map[string]any{"access_token": claims["iss"], "expires_in": 3599})
+			check(t, json.Unmarshal(raw, &claims))
+			check(t, json.NewEncoder(w).Encode(map[string]any{"access_token": claims["iss"], "expires_in": 3599}))
 		case strings.HasPrefix(r.URL.Path, "/entra/"):
 			if refused(&f.entra) {
 				return
 			}
-			json.NewEncoder(w).Encode(map[string]any{"access_token": r.PostForm.Get("client_secret"), "expires_in": 86400})
+			check(t, json.NewEncoder(w).Encode(map[string]any{"access_token": r.PostForm.Get("client_secret"), "expires_in": 86400}))
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -261,7 +263,7 @@ func newFakeProvider(t *testing.T) *fakeProvider {
 	p := &fakeProvider{}
 	p.answer = func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		io.WriteString(w, `{"type":"message","role":"assistant","content":[{"type":"text","text":"Hi."}],"usage":{"input_tokens":12,"output_tokens":5,"cache_read_input_tokens":3,"cache_creation_input_tokens":2}}`)
+		check(t, errOnly(io.WriteString(w, `{"type":"message","role":"assistant","content":[{"type":"text","text":"Hi."}],"usage":{"input_tokens":12,"output_tokens":5,"cache_read_input_tokens":3,"cache_creation_input_tokens":2}}`)))
 	}
 	p.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		b, _ := io.ReadAll(r.Body)
@@ -332,7 +334,7 @@ func leaks(key string, where string, b []byte) []string {
 func leaksUnder(t *testing.T, key, dir string) []string {
 	t.Helper()
 	var found []string
-	filepath.WalkDir(dir, func(path string, e fs.DirEntry, err error) error {
+	must(t, filepath.WalkDir(dir, func(path string, e fs.DirEntry, err error) error {
 		if err != nil || e.IsDir() || e.Type()&fs.ModeSymlink != 0 {
 			return nil
 		}
@@ -340,7 +342,7 @@ func leaksUnder(t *testing.T, key, dir string) []string {
 			found = append(found, leaks(key, path, b)...)
 		}
 		return nil
-	})
+	}))
 	return found
 }
 
@@ -364,7 +366,7 @@ func TestNoOrgRouteChangesNothing(t *testing.T) {
 	d.SetControl(func(method string, params any) { mu.Lock(); told = append(told, method); mu.Unlock() })
 	deliver(t, d)
 	var list []wire.AccountProfile
-	json.Unmarshal(c.call(t, 1, "runtimes/accountProfiles", map[string]any{}), &list)
+	mustUnmarshal(t, c.call(t, 1, "runtimes/accountProfiles", map[string]any{}), &list)
 	if len(list) != 0 {
 		t.Fatalf("%+v", list)
 	}
@@ -452,7 +454,7 @@ func TestTheOrgKeyLeaksNowhere(t *testing.T) {
 	dir := t.TempDir()
 	var heard bytes.Buffer
 	var id wire.UUID
-	json.Unmarshal(c.call(t, 2, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + dir, "prompt": "call the model",
+	mustUnmarshal(t, c.call(t, 2, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + dir, "prompt": "call the model",
 		"startOptions": map[string]any{"values": map[string]any{}, "extraArguments": []string{}}, "accountID": "org:claude-key"}), &id)
 	c.until(t, "the turn's end", func(method string, params json.RawMessage) bool {
 		heard.Write(params)
@@ -529,7 +531,7 @@ func TestTheModelRelay(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		io.Copy(io.Discard, resp.Body)
+		must(t, errOnly(io.Copy(io.Discard, resp.Body)))
 		resp.Body.Close()
 		return resp
 	}
@@ -584,10 +586,10 @@ func TestTheModelRelay(t *testing.T) {
 	p.mu.Lock()
 	p.answer = func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
-		io.WriteString(w, "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":7,\"output_tokens\":1}}}\n\n")
+		check(t, errOnly(io.WriteString(w, "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":7,\"output_tokens\":1}}}\n\n")))
 		w.(http.Flusher).Flush()
 		<-release
-		io.WriteString(w, "data: {\"type\":\"message_delta\",\"usage\":{\"output_tokens\":9}}\n\n")
+		check(t, errOnly(io.WriteString(w, "data: {\"type\":\"message_delta\",\"usage\":{\"output_tokens\":9}}\n\n")))
 	}
 	p.mu.Unlock()
 	req, _ := http.NewRequest("POST", base+"/anthropic-key/v1/messages", strings.NewReader(`{"stream":true}`))
@@ -601,7 +603,7 @@ func TestTheModelRelay(t *testing.T) {
 		t.Fatalf("%q", first[:n])
 	}
 	close(release)
-	io.Copy(io.Discard, resp.Body)
+	must(t, errOnly(io.Copy(io.Discard, resp.Body)))
 	resp.Body.Close()
 }
 
@@ -629,7 +631,7 @@ func TestTheRelaySendsOnOnlyWhatATurnMay(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		io.Copy(io.Discard, resp.Body)
+		must(t, errOnly(io.Copy(io.Discard, resp.Body)))
 		resp.Body.Close()
 		return resp.StatusCode
 	}
@@ -885,7 +887,7 @@ func TestTheOrgPathOnly(t *testing.T) {
 	k := newControlKeys(t)
 	root := t.TempDir()
 	d, c, public := orgMachine(t, root, k)
-	os.MkdirAll(d.SettingsDir, 0o755)
+	must(t, os.MkdirAll(d.SettingsDir, 0o755)) //nolint:gosec // G301: the mode this folder always had; only its error is new
 	d.Told(wire.NotifyMachinePolicy.Name, k.signed(t, 1, map[string]any{
 		"runtimes": map[string]any{"claude": map[string]any{"reach": []string{"orgKey", "gateway"}}}, "requires": []string{wire.CapHostPolicy1, wire.CapHostOrgRoutes1}}))
 	dir := t.TempDir()
@@ -896,7 +898,7 @@ func TestTheOrgPathOnly(t *testing.T) {
 	r := testRoute(t, public, "acme-bedrock", 1, wire.OrgRouteKindBedrock, "", "", map[string]string{"apiKey": "k"}, "claude")
 	deliver(t, d, r)
 	var added wire.AccountProfile
-	json.Unmarshal(c.call(t, 2, "runtimes/addAccount", map[string]any{"runtimeID": "claude", "name": "Work"}), &added)
+	mustUnmarshal(t, c.call(t, 2, "runtimes/addAccount", map[string]any{"runtimeID": "claude", "name": "Work"}), &added)
 	// The own sign-in, named, and an added account: refused, with the route to use.
 	for i, account := range []string{"default", added.ID} {
 		p := startParams(dir, "claude", nil)
@@ -909,7 +911,7 @@ func TestTheOrgPathOnly(t *testing.T) {
 	}
 	// None named: the org default, the route.
 	var id wire.UUID
-	json.Unmarshal(c.call(t, 20, "agents/start", startParams(dir, "claude", nil)), &id)
+	mustUnmarshal(t, c.call(t, 20, "agents/start", startParams(dir, "claude", nil)), &id)
 	if a := d.Store.Agent(id); a == nil || a.AccountID == nil || *a.AccountID != "org:acme-bedrock" {
 		t.Fatalf("%+v", a)
 	}
@@ -937,7 +939,7 @@ func TestTheOrgPathOnly(t *testing.T) {
 	refused(t, c.callError(t, 22, "runtimes/setDefaultAccount", map[string]any{"runtimeID": "claude", "accountID": "default"}), "policy", "runtimes.claude.reach")
 	c.call(t, 23, "runtimes/setDefaultAccount", map[string]any{"runtimeID": "claude", "accountID": "org:acme-bedrock"})
 	var list []wire.AccountProfile
-	json.Unmarshal(c.call(t, 24, "runtimes/accountProfiles", map[string]any{}), &list)
+	mustUnmarshal(t, c.call(t, 24, "runtimes/accountProfiles", map[string]any{}), &list)
 	for _, p := range list {
 		switch p.ID {
 		case "org:acme-bedrock":
@@ -953,7 +955,7 @@ func TestTheOrgPathOnly(t *testing.T) {
 	// The person's own variables do not reach Claude, on the own sign-in's handshake either.
 	t.Setenv("ANTHROPIC_BASE_URL", "https://elsewhere.example")
 	t.Setenv("CLAUDE_CODE_USE_BEDROCK", "1")
-	os.WriteFile(filepath.Join(d.SettingsDir, passThroughFile), []byte(`{"names":["ANTHROPIC_BASE_URL","CLAUDE_CODE_USE_BEDROCK"]}`), 0o644)
+	must(t, os.WriteFile(filepath.Join(d.SettingsDir, passThroughFile), []byte(`{"names":["ANTHROPIC_BASE_URL","CLAUDE_CODE_USE_BEDROCK"]}`), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	l, _ := d.launchAs(runtimeByID("claude"), root, nil)
 	if e := envOf(l.Env); e["ANTHROPIC_BASE_URL"] != "" || e["CLAUDE_CODE_USE_BEDROCK"] != "" {
 		t.Fatalf("%v", e)
@@ -983,7 +985,7 @@ func TestAnOrgKeyReplacedAndRemoved(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		io.Copy(io.Discard, resp.Body)
+		must(t, errOnly(io.Copy(io.Discard, resp.Body)))
 		resp.Body.Close()
 		return resp.StatusCode
 	}
@@ -1026,11 +1028,10 @@ func TestAnOrgKeyReplacedAndRemoved(t *testing.T) {
 	start := startParams(dir, "claude", nil)
 	start["accountID"], start["prompt"] = "org:acme", "wait for me"
 	var id wire.UUID
-	json.Unmarshal(c.call(t, 1, "agents/start", start), &id)
+	mustUnmarshal(t, c.call(t, 1, "agents/start", start), &id)
 	c.until(t, "running", func(method string, params json.RawMessage) bool {
 		var a wire.Agent
-		json.Unmarshal(params, &a)
-		return method == "agent/changed" && a.ID == id && a.State == wire.AgentStateRunning
+		return method == "agent/changed" && json.Unmarshal(params, &a) == nil && a.ID == id && a.State == wire.AgentStateRunning
 	})
 	deliver(t, d)
 	c.until(t, "stopped", ended(id, wire.AgentStateStopped))
@@ -1054,11 +1055,10 @@ func TestAnOrgKeyReplacedAndRemoved(t *testing.T) {
 	// Continue in New moves it: a session in the same folder that reads this one, on the
 	// runtime's account for new sessions, here its own sign-in.
 	var moved wire.UUID
-	json.Unmarshal(c.call(t, 3, "agents/continueInNew", map[string]any{"agentID": id}), &moved)
+	mustUnmarshal(t, c.call(t, 3, "agents/continueInNew", map[string]any{"agentID": id}), &moved)
 	c.until(t, "moved", func(method string, params json.RawMessage) bool {
 		var a wire.Agent
-		json.Unmarshal(params, &a)
-		return method == "agent/changed" && a.ID == moved && a.State == wire.AgentStateRunning
+		return method == "agent/changed" && json.Unmarshal(params, &a) == nil && a.ID == moved && a.State == wire.AgentStateRunning
 	})
 	m := d.Store.Agent(moved)
 	if m.AccountID != nil || store.FolderPath(m.Cwd) != dir || m.RuntimeID != "claude" {
@@ -1087,7 +1087,7 @@ func TestOrgRoutesOffline(t *testing.T) {
 	other := controllink.NewPrivateKey()
 	otherPublic, _ := controllink.PublicKey(other)
 	b, _ := json.Marshal(testRoute(t, otherPublic, "copied", 1, wire.OrgRouteKindKey, wire.OrgRouteVendorAnthropic, "", map[string]string{"apiKey": "k"}, "claude"))
-	os.WriteFile(filepath.Join(root, orgRoutesFolder, "copied.json"), b, 0o600)
+	must(t, os.WriteFile(filepath.Join(root, orgRoutesFolder, "copied.json"), b, 0o600))
 
 	d2, _ := joined(t, root, k)
 	var asked []string
@@ -1166,8 +1166,8 @@ func TestAnEditedOrgRouteDoesNotOpen(t *testing.T) {
 		edit(&r)
 		b, _ = json.Marshal(r)
 		kept := filepath.Join(t.TempDir(), "acme.json")
-		os.Rename(file, kept)
-		os.WriteFile(file, b, 0o600)
+		must(t, os.Rename(file, kept))
+		must(t, os.WriteFile(file, b, 0o600))
 
 		d2, _ := joined(t, root, k)
 		if d2.accountProfile("claude", "org:acme") != nil {
@@ -1177,7 +1177,7 @@ func TestAnEditedOrgRouteDoesNotOpen(t *testing.T) {
 			t.Fatal("an edited route was not deleted")
 		}
 		d2.Shutdown()
-		os.Rename(kept, file)
+		must(t, os.Rename(kept, file))
 	}
 }
 
@@ -1251,7 +1251,7 @@ func TestTheRelayCountsTheProvidersTokens(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		io.Copy(io.Discard, resp.Body)
+		must(t, errOnly(io.Copy(io.Discard, resp.Body)))
 		resp.Body.Close()
 		got, _ := d.takeRelayTokens(agent)
 		if got == nil || *got != k.want {
@@ -1269,7 +1269,7 @@ func TestTheRelayCountsTheProvidersTokens(t *testing.T) {
 	p.answer = func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Retry-After", "60")
 		w.WriteHeader(429)
-		io.WriteString(w, `{"type":"error","error":{"type":"rate_limit_error"}}`)
+		check(t, errOnly(io.WriteString(w, `{"type":"error","error":{"type":"rate_limit_error"}}`)))
 	}
 	p.mu.Unlock()
 	token := r.standInFor(standIn{route: "acme", runtime: "claude", account: "org:acme"})
@@ -1308,7 +1308,9 @@ func relaySSEAnswer(events ...string) func(w http.ResponseWriter, r *http.Reques
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		for _, e := range events {
-			io.WriteString(w, "data: "+e+"\n\n")
+			if _, err := io.WriteString(w, "data: "+e+"\n\n"); err != nil {
+				return // the daemon hung up: nothing more to send
+			}
 			w.(http.Flusher).Flush()
 		}
 	}
@@ -1318,7 +1320,7 @@ func relaySSEAnswer(events ...string) func(w http.ResponseWriter, r *http.Reques
 func relayWholeAnswer(body string) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		io.WriteString(w, body)
+		_, _ = io.WriteString(w, body) // the daemon hung up: nothing more to send, and no test to tell
 	}
 }
 
@@ -1327,7 +1329,9 @@ func relayBedrockAnswer(events ...string) func(w http.ResponseWriter, r *http.Re
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/vnd.amazon.eventstream")
 		for _, e := range events {
-			w.Write(eventStreamFrame(`{"bytes":"` + base64.StdEncoding.EncodeToString([]byte(e)) + `"}`))
+			if _, err := w.Write(eventStreamFrame(`{"bytes":"` + base64.StdEncoding.EncodeToString([]byte(e)) + `"}`)); err != nil {
+				return // the daemon hung up: nothing more to send
+			}
 		}
 	}
 }
@@ -1401,9 +1405,9 @@ func TestTheRelayIsQuick(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			resp.Body.Read(make([]byte, 1))
+			must(t, errOnly(resp.Body.Read(make([]byte, 1))))
 			took = append(took, time.Since(at))
-			io.Copy(io.Discard, resp.Body)
+			must(t, errOnly(io.Copy(io.Discard, resp.Body)))
 			resp.Body.Close()
 		}
 		slices.Sort(took)
@@ -1437,7 +1441,7 @@ func TestARemovedRoutesFolderGoes(t *testing.T) {
 	if folder != filepath.Join(root, "runtimes", "org", "codex", "xkey") {
 		t.Fatalf("%s", folder)
 	}
-	os.WriteFile(filepath.Join(folder, "session.jsonl"), []byte("{}"), 0o600)
+	must(t, os.WriteFile(filepath.Join(folder, "session.jsonl"), []byte("{}"), 0o600))
 	deliver(t, d)
 	if _, err := os.Stat(folder); !os.IsNotExist(err) {
 		t.Fatalf("the folder stayed: %v", err)
@@ -1448,7 +1452,7 @@ func TestARemovedRoutesFolderGoes(t *testing.T) {
 		t.Fatal(err)
 	}
 	left := filepath.Join(root, "runtimes", "org", "opencode", "old")
-	os.MkdirAll(left, 0o700)
+	must(t, os.MkdirAll(left, 0o700))
 	d.sweepOrgAccountFolders()
 	if _, err := os.Stat(left); !os.IsNotExist(err) {
 		t.Fatalf("a folder with no route stayed: %v", err)
@@ -1467,7 +1471,7 @@ func TestAWaitingRouteAndAnOlderSeal(t *testing.T) {
 	k := newControlKeys(t)
 	root := t.TempDir()
 	d, c, public := orgMachine(t, root, k)
-	os.MkdirAll(d.SettingsDir, 0o755)
+	must(t, os.MkdirAll(d.SettingsDir, 0o755)) //nolint:gosec // G301: the mode this folder always had; only its error is new
 	d.Told(wire.NotifyMachinePolicy.Name, k.signed(t, 1, map[string]any{
 		"runtimes": map[string]any{"claude": map[string]any{"reach": []string{"orgKey", "gateway"}}}, "requires": []string{wire.CapHostPolicy1, wire.CapHostOrgRoutes2}}))
 	waiting := testRoute(t, public, "acme", 1, wire.OrgRouteKindKey, wire.OrgRouteVendorAnthropic, "", map[string]string{"apiKey": "k1"}, "claude")
@@ -1525,7 +1529,7 @@ func TestTheMachineMakesItsOwnTokens(t *testing.T) {
 		t.Fatal(clouds.google.Load())
 	}
 	clouds.clock.Add(int64(52 * time.Minute))
-	token()
+	must(t, errOnly(token()))
 	if clouds.google.Load() != 2 {
 		t.Fatal("no new token near the end of the last")
 	}
@@ -1537,7 +1541,7 @@ func TestTheMachineMakesItsOwnTokens(t *testing.T) {
 	}
 	for range 20 {
 		clouds.clock.Add(int64(time.Minute))
-		token()
+		_, _ = token() // refused, then the old token ends: these tries fail, and the count below is what they show
 	}
 	if got := clouds.google.Load(); got != 3+4 {
 		t.Fatalf("%d calls to Google", got)
@@ -1560,7 +1564,7 @@ func TestAMachineChecksARoute(t *testing.T) {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
-		w.Write([]byte(`{"data":[]}`))
+		check(t, errOnly(w.Write([]byte(`{"data":[]}`))))
 	}))
 	t.Cleanup(vendorAPI.Close)
 	d.orgEndpoints = &orgtoken.Endpoints{Vendor: map[wire.OrgRouteVendor]string{wire.OrgRouteVendorAnthropic: vendorAPI.URL},

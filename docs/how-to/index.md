@@ -31,8 +31,7 @@ something particular done.
   the server's work brought back.
 - [Start machines from Agent Loops](start-machines-from-agents.md): let the control plane
   start and stop the machines your servers run on, and press Start on a stopped one.
-- [Add a machine provider](add-a-machine-provider.md): a preset, your own commands, a
-  tool map, or a provider of your own.
+- [Add a machine provider](add-a-machine-provider.md): a preset, or your own commands.
 - [Set up a cloud machine provider](set-up-a-cloud-machine-provider.md): add AWS EC2,
   Compute Engine, Cloud Workstations, DigitalOcean, Codespaces or Coder, with the credentials
   each one needs.

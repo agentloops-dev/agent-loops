@@ -112,4 +112,6 @@ a.row { color: inherit; text-decoration: none; }
 .chips { display: flex; flex-wrap: wrap; gap: 4px; }
 .chip { font-size: 0.6875rem; font-weight: 600; padding: 0 6px; border-radius: var(--radius-pill); background: var(--paper-raised); box-shadow: inset 0 0 0 1px var(--paper-rule); color: var(--paper-secondary); }
 .chip.worktree { background: none; box-shadow: none; font-weight: 400; color: var(--paper-tertiary); padding: 0; }
+/* A feature's maturity badge (#6052): Pilot, Alpha or Beta beside its name. */
+.chip.maturity-badge { margin-left: 4px; white-space: nowrap; }
 

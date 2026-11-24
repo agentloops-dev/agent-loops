@@ -25,31 +25,21 @@ type Provider interface {
 	// Create makes one: what it made when the provider said, and whether firstBoot will run.
 	Create(name string, options any, firstBoot *string) (*MachineInfo, bool, error)
 	Delete(id string) error
-	// Tools is every tool the server offers, as it described them (#858).
-	Tools() ([]any, error)
 	End()
 }
 
-// CannotMake is WorkspaceProvider's defaults, for a stand-in to embed: it cannot make,
-// delete or list its tools.
-type CannotMake struct{}
-
-func (CannotMake) Options() (any, error) { return nil, providerFailure("It can’t make workspaces.") }
-func (CannotMake) Create(string, any, *string) (*MachineInfo, bool, error) {
-	return nil, false, providerFailure("It can’t make workspaces.")
+// Saying is a Provider whose make also says what it did, one line a step (#6073), such as
+// "Made an ssh key for Agent Loops and added it to your DigitalOcean account.": set-up step
+// 1's words. A Connection and a Carried one are; a stand-in need not be.
+type Saying interface {
+	CreateSaying(name string, options any, firstBoot *string) (made *MachineInfo, runs bool, said []string, err error)
 }
-func (CannotMake) Delete(string) error   { return providerFailure("It can’t delete workspaces.") }
-func (CannotMake) Tools() ([]any, error) { return nil, providerFailure("It can’t list its tools.") }
 
 // Checked is ProviderConnection.Checked: what Check found.
 type Checked struct {
 	Capabilities []string
 	Contract     int
 	Workspaces   []MachineInfo
-	// For a tool map: how many items were at list.items, and the first, so a writer can see
-	// what a map that reads none of them missed (#858). Items is -1 when not said.
-	Items     int
-	FirstItem any
 }
 
 // CallTiming is ProviderConnection.Timing: how long a call may take, a list, then a start
@@ -82,18 +72,10 @@ type Connection struct {
 }
 
 // NewConnection is ProviderConnection.init: an error when the record cannot be reached as
-// it is, a map that does not parse or no command provider to run. commandProvider is
+// it is, or no command provider to run. commandProvider is
 // CommandProvider's answer, "" for none.
 func NewConnection(record ProviderRecord, secrets map[string]string, cwd string, timing CallTiming,
 	commandProvider string, log func(string)) (*Connection, error) {
-	mapping := ContractMapping
-	if record.Map != nil {
-		m, err := MapFrom(record.Map)
-		if err != nil {
-			return nil, err
-		}
-		mapping = m
-	}
 	server, err := serverFor(record, secrets, commandProvider)
 	if err != nil {
 		return nil, err
@@ -101,50 +83,29 @@ func NewConnection(record ProviderRecord, secrets map[string]string, cwd string,
 	if log == nil {
 		log = func(string) {}
 	}
-	return &Connection{Record: record, server: server, mapping: mapping, cwd: cwd, timing: timing, log: log}, nil
+	return &Connection{Record: record, server: server, mapping: ContractMapping, cwd: cwd, timing: timing, log: log}, nil
 }
 
-// serverFor is ProviderConnection.server(for:): the MCP server a record stands for, with
-// its secrets as environment for one it runs, in its headers for one at an address.
+// serverFor is ProviderConnection.server(for:): the command provider a record stands for,
+// with its secrets as environment.
 func serverFor(record ProviderRecord, secrets map[string]string, commandProvider string) (mcpServer, error) {
-	name := "provider " + record.ID
-	switch record.Kind {
-	case KindCommands:
-		if commandProvider == "" {
-			return mcpServer{}, providerFailure("workspace-commands isn’t installed beside the control plane.")
-		}
-		commands := record.Commands
-		if commands == nil {
-			commands = map[string]any{}
-		}
-		config, _ := json.Marshal(commands)
-		env := map[string]string{}
-		for k, v := range secrets {
-			env[k] = v
-		}
-		env["WORKSPACE_COMMANDS_CONFIG"] = string(config)
-		return mcpServer{Name: name, Command: commandProvider, Args: []string{}, Env: env}, nil
-	case KindStdio:
-		command := ""
-		if record.Command != nil {
-			command = *record.Command
-		}
-		return mcpServer{Name: name, Command: command, Args: record.Args, Env: secrets}, nil
-	case KindHTTP:
-		headers := map[string]string{}
-		for k, v := range record.Headers {
-			for secret, value := range secrets {
-				v = strings.ReplaceAll(v, "${"+secret+"}", value)
-			}
-			headers[k] = v
-		}
-		address := ""
-		if record.URL != nil {
-			address = *record.URL
-		}
-		return mcpServer{Name: name, HTTP: true, URL: address, Headers: headers}, nil
+	if record.Kind != KindCommands {
+		return mcpServer{}, providerFailure("It is no kind of provider this control plane knows.")
 	}
-	return mcpServer{}, providerFailure("It is no kind of provider this control plane knows.")
+	if commandProvider == "" {
+		return mcpServer{}, providerFailure("workspace-commands isn’t installed beside the control plane.")
+	}
+	commands := record.Commands
+	if commands == nil {
+		commands = map[string]any{}
+	}
+	config, _ := json.Marshal(commands)
+	env := map[string]string{}
+	for k, v := range secrets {
+		env[k] = v
+	}
+	env["WORKSPACE_COMMANDS_CONFIG"] = string(config)
+	return mcpServer{Name: "provider " + record.ID, Command: commandProvider, Args: []string{}, Env: env}, nil
 }
 
 // CommandProvider is ProviderConnection.commandProvider: workspace-commands beside the
@@ -174,7 +135,7 @@ func CommandProvider() string {
 }
 
 // Check is ProviderConnection.check: whether the server is a provider (US2 AS2, AS6), the
-// contract's tools or the map's, and a contract this control plane reads. It lists once,
+// contract's tools, and a contract this control plane reads. It lists once,
 // so the list comes back too.
 func (c *Connection) Check() (Checked, error) {
 	var tools []string
@@ -184,51 +145,29 @@ func (c *Connection) Check() (Checked, error) {
 	}); err != nil {
 		return Checked{}, err
 	}
-	if err := c.checkTools(tools); err != nil {
+	if err := checkTools(tools); err != nil {
 		return Checked{}, err
 	}
 	content, err := c.call(c.mapping.List, map[string]any{"id": ""}, c.timing.Quick)
 	if err != nil {
 		return Checked{}, err
 	}
-	contract := 1
-	if c.mapping.Native {
-		if contract, err = checkContract(content); err != nil {
-			return Checked{}, err
-		}
-	} else if _, ok := arr(pathValue(c.mapping.Listing.Items, content)); !ok {
-		return Checked{}, providerFailure("The tool map’s list.items finds no list in what %s answered.%s", c.mapping.List.Tool,
-			keysWords(content))
+	contract, err := checkContract(content)
+	if err != nil {
+		return Checked{}, err
 	}
-	checked := Checked{Contract: contract, Workspaces: c.mapping.Workspaces(content), Items: -1}
-	if c.mapping.Native {
-		checked.Capabilities = []string{}
-		for tool, capability := range optionalTools {
-			if contains(tools, tool) {
-				checked.Capabilities = append(checked.Capabilities, capability)
-			}
-		}
-		sort.Strings(checked.Capabilities)
-	} else {
-		checked.Capabilities = c.mapping.Capabilities()
-		items, _ := arr(pathValue(c.mapping.Listing.Items, content))
-		checked.Items = len(items)
-		if len(items) > 0 {
-			checked.FirstItem = items[0]
+	checked := Checked{Contract: contract, Workspaces: c.mapping.Workspaces(content), Capabilities: []string{}}
+	for tool, capability := range optionalTools {
+		if contains(tools, tool) {
+			checked.Capabilities = append(checked.Capabilities, capability)
 		}
 	}
+	sort.Strings(checked.Capabilities)
 	return checked, nil
 }
 
-// checkTools says why a server with tools is not a provider: a native one lacks a
-// contract's tool, or a mapped one lacks a tool its map names.
-func (c *Connection) checkTools(tools []string) error {
-	if !c.mapping.Native {
-		if missing := c.mapping.Missing(tools); missing != "" {
-			return providerFailure("The tool map names %s, which the server doesn’t have.", missing)
-		}
-		return nil
-	}
+// checkTools says why a server with tools is not a provider: it lacks a contract's tool.
+func checkTools(tools []string) error {
 	var missing []string
 	for _, r := range RequiredTools {
 		if !contains(tools, r) {
@@ -260,31 +199,6 @@ func checkContract(content any) (int, error) {
 	return said, nil
 }
 
-// keysWords names the keys of an answer that is an object, for a failure; "" for one
-// that is not.
-func keysWords(content any) string {
-	o, ok := obj(content)
-	if !ok {
-		return ""
-	}
-	var names []string
-	for k := range o {
-		names = append(names, k)
-	}
-	sort.Strings(names)
-	return " Its answer has the keys " + strings.Join(names, ", ") + "."
-}
-
-// Tools is every tool the server offers, as it described them (#858).
-func (c *Connection) Tools() ([]any, error) {
-	var tools []any
-	err := c.connected(func(client *mcpClient) (err error) {
-		tools, err = client.listTools()
-		return err
-	})
-	return tools, err
-}
-
 func (c *Connection) List() ([]MachineInfo, error) {
 	content, err := c.call(c.mapping.List, map[string]any{"id": ""}, c.timing.Quick)
 	if err != nil {
@@ -304,9 +218,6 @@ func (c *Connection) Options() (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !c.mapping.Native {
-		return content, nil
-	}
 	if schema := get(content, "schema"); schema != nil {
 		return schema, nil
 	}
@@ -314,8 +225,14 @@ func (c *Connection) Options() (any, error) {
 }
 
 func (c *Connection) Create(name string, options any, firstBoot *string) (*MachineInfo, bool, error) {
+	made, runs, _, err := c.CreateSaying(name, options, firstBoot)
+	return made, runs, err
+}
+
+// CreateSaying is Create, with the words the server said for each step (its said, #6073).
+func (c *Connection) CreateSaying(name string, options any, firstBoot *string) (*MachineInfo, bool, []string, error) {
 	if c.mapping.Create == nil {
-		return nil, false, providerFailure("It can’t make workspaces.")
+		return nil, false, nil, providerFailure("It can’t make workspaces.")
 	}
 	values := map[string]any{"name": name, "options": options}
 	if firstBoot != nil {
@@ -330,16 +247,21 @@ func (c *Connection) Create(name string, options any, firstBoot *string) (*Machi
 	}
 	content, err := c.call(*c.mapping.Create, values, c.timing.Long)
 	if err != nil {
-		return nil, false, err
-	}
-	if !c.mapping.Native {
-		return nil, c.mapping.FirstBootRuns, nil
+		return nil, false, nil, err
 	}
 	runs, _ := boolean(get(content, "firstBootRuns"))
-	if w := get(content, "workspace"); w != nil {
-		return c.mapping.Workspace(w), runs, nil
+	var said []string
+	if lines, ok := get(content, "said").([]any); ok {
+		for _, line := range lines {
+			if text, ok := line.(string); ok && text != "" {
+				said = append(said, text)
+			}
+		}
 	}
-	return nil, runs, nil
+	if w := get(content, "workspace"); w != nil {
+		return c.mapping.Workspace(w), runs, said, nil
+	}
+	return nil, runs, said, nil
 }
 
 func (c *Connection) Delete(id string) error {
@@ -354,9 +276,6 @@ func (c *Connection) act(call Call, id string) (*MachineInfo, error) {
 	content, err := c.call(call, map[string]any{"id": id}, c.timing.Long)
 	if err != nil {
 		return nil, err
-	}
-	if !c.mapping.Native {
-		return nil, nil
 	}
 	if w := get(content, "workspace"); w != nil {
 		return c.mapping.Workspace(w), nil
@@ -401,7 +320,7 @@ func (c *Connection) connected(work func(*mcpClient) error) error {
 		}
 		var failure *mcpFailure
 		if !errors.As(err, &failure) {
-			return &ProviderFailure{err.Error()}
+			return &ProviderFailure{Words: err.Error()}
 		}
 		// Only a connection that went is tried again: a call the server heard and refused,
 		// or ran out of time on, could start a workspace twice.
@@ -418,7 +337,7 @@ func (c *Connection) connected(work func(*mcpClient) error) error {
 		if failure.kind == "timeout" {
 			return providerFailure("It didn’t answer in time.")
 		}
-		return &ProviderFailure{failure.Error()}
+		return &ProviderFailure{Words: failure.Error()}
 	}
 	return providerFailure("It can’t be reached.")
 }
@@ -436,7 +355,7 @@ func (c *Connection) live() (*mcpClient, error) {
 	client := newMCPClient(c.server, c.cwd, c.timing.Quick, c.log)
 	if err := client.connect(); err != nil {
 		client.end()
-		return nil, &ProviderFailure{unreachable(err)}
+		return nil, &ProviderFailure{Words: unreachable(err)}
 	}
 	c.mu.Lock()
 	c.client = client

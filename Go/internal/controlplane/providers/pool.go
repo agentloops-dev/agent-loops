@@ -14,19 +14,10 @@ import (
 // machine holds nothing of anyone's.
 
 // PoolMake makes a machine called name on a provider for a person, as providers/create does,
-// with the pool's size and region laid over the options last used there. It returns the
+// with the pool's size and region laid over what New Machine's form shows there. It returns the
 // provider's id of the workspace it made; the machine joins on its own first boot.
 func (p *Providers) PoolMake(person, provider, name, size, region string) (string, error) {
-	options := map[string]any{}
-	base := p.lastOptions(person, provider)
-	if base == nil {
-		base = p.defaultOptions(provider)
-	}
-	if chosen, ok := base.(map[string]any); ok {
-		for k, v := range chosen {
-			options[k] = v
-		}
-	}
+	options := p.formValues(person, provider)
 	if size = strings.TrimSpace(size); size != "" {
 		options["size"] = size
 	}

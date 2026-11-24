@@ -34,8 +34,11 @@ type machineNames struct {
 	Next int `json:"next"`
 	// The provider New Machine uses: the one made on last, or chosen with Make Default.
 	Default string `json:"default,omitempty"`
-	// The options each provider made a machine with last, by provider id.
-	Options map[string]json.RawMessage `json:"options,omitempty"`
+	// What the person chose on each provider's form the last time they made a machine on it,
+	// by provider id: only the values that were not the form's defaults then (#6686), so a
+	// default that changes later (#6615's size) is the next make's. The "options" of before
+	// held the defaults too, as if chosen, and is no longer read.
+	Chosen map[string]json.RawMessage `json:"chosen,omitempty"`
 }
 
 // keptFailedMakes is how many makes that failed a provider keeps as rows, newest last.
@@ -133,9 +136,10 @@ func (p *Providers) makeDefault(person, id string) error {
 	return nil
 }
 
-// lastOptions is what the person made a machine on the provider with last, or nil.
+// lastOptions is what the person chose on the provider the last time they made a machine on
+// it, or nil.
 func (p *Providers) lastOptions(person, id string) any {
-	raw, ok := p.choices(person).Options[id]
+	raw, ok := p.choices(person).Chosen[id]
 	if !ok {
 		return nil
 	}
@@ -146,20 +150,36 @@ func (p *Providers) lastOptions(person, id string) any {
 	return v
 }
 
-// madeOn keeps the provider and the options a make used (#3979), for the next New Machine.
-func (p *Providers) madeOn(person, id string, options json.RawMessage) {
+// madeOn keeps the provider a make used (#3979), and what the person chose on its form: the
+// options given that are not the form's defaults (#6686), for the next New Machine. A make
+// that took every default keeps no choice, so the next one takes the defaults of then.
+func (p *Providers) madeOn(person, id string, given any, form newMachineForm) {
+	options, _ := given.(map[string]any)
+	chosen := map[string]any{}
+	for key, value := range options {
+		if d, ok := form.defaults[key]; !ok || !sameValue(d, value) {
+			chosen[key] = value
+		}
+	}
 	err := p.changeChoices(person, func(c *machineNames) {
 		c.Default = id
-		if len(options) > 0 && string(options) != "null" {
-			if c.Options == nil {
-				c.Options = map[string]json.RawMessage{}
-			}
-			c.Options[id] = options
+		if len(chosen) == 0 {
+			delete(c.Chosen, id)
+			return
 		}
+		if c.Chosen == nil {
+			c.Chosen = map[string]json.RawMessage{}
+		}
+		c.Chosen[id] = rawOf(chosen)
 	})
 	if err != nil {
 		p.log("workspace: could not keep the options " + id + " made a machine with: " + errorWords(err))
 	}
+}
+
+// sameValue says two of a form's values are the same, as JSON.
+func sameValue(a, b any) bool {
+	return string(rawOf(a)) == string(rawOf(b))
 }
 
 // choices is the person's v1/machine-names record; empty when there is none or it can't be read.
@@ -204,25 +224,65 @@ func (p *Providers) changeChoices(person string, change func(*machineNames)) err
 	return fail(CodeInternalError, "Could not keep what New Machine makes. Try again.")
 }
 
-// defaultOptions is the provider's New Machine form filled with its defaults: each field's
+// newMachineForm is a provider's New Machine form, read once: its fields, and each field's
 // `default`, or else the first of its `enum`, as the Mac's form shows it.
-func (p *Providers) defaultOptions(id string) map[string]any {
-	chosen := map[string]any{}
+type newMachineForm struct {
+	properties map[string]any
+	defaults   map[string]any
+}
+
+// formOf reads the provider's New Machine form; an empty one when it can't be read.
+func (p *Providers) formOf(id string) newMachineForm {
+	form := newMachineForm{properties: map[string]any{}, defaults: map[string]any{}}
 	schema, err := p.providerCall(id, func(c Provider) (any, error) { return c.Options() })
 	if err != nil {
-		return chosen
+		return form
 	}
-	form, _ := valueOf(rawOf(schema)).(map[string]any)
-	properties, _ := form["properties"].(map[string]any)
-	for key, property := range properties {
+	object, _ := valueOf(rawOf(schema)).(map[string]any)
+	if properties, ok := object["properties"].(map[string]any); ok {
+		form.properties = properties
+	}
+	for key, property := range form.properties {
 		field, _ := property.(map[string]any)
 		if d, ok := field["default"]; ok {
-			chosen[key] = d
+			form.defaults[key] = d
 		} else if choices, _ := field["enum"].([]any); len(choices) > 0 {
-			chosen[key] = choices[0]
+			form.defaults[key] = choices[0]
 		}
 	}
-	return chosen
+	return form
+}
+
+// values is what New Machine makes with on the form: what the person chose last, over the
+// form's defaults, keeping only the fields the form still has and, where a field has an
+// enum, only a choice it still offers (#6686).
+func (form newMachineForm) values(last any) map[string]any {
+	values := map[string]any{}
+	for key, d := range form.defaults {
+		values[key] = d
+	}
+	chosen, _ := last.(map[string]any)
+	for key, v := range chosen {
+		property, ok := form.properties[key]
+		if !ok {
+			continue
+		}
+		if choices, _ := property.(map[string]any)["enum"].([]any); len(choices) > 0 && !offers(choices, v) {
+			continue
+		}
+		values[key] = v
+	}
+	return values
+}
+
+// offers says choices has v.
+func offers(choices []any, v any) bool {
+	for _, c := range choices {
+		if sameValue(c, v) {
+			return true
+		}
+	}
+	return false
 }
 
 // nextName is the person's next machine-N that neither the provider nor a host has yet,
@@ -289,26 +349,10 @@ func (p *Providers) newMachineForm(person, id string) (any, error) {
 	return ProviderOptions{Schema: rawOf(schema), ID: &provider, Values: jsonValue(p.formValues(person, id)), Name: &name}, nil
 }
 
-// formValues is what New Machine makes with on the provider: the options the person made a
-// machine with last, over the form's defaults, keeping only the fields the form still has.
+// formValues is what New Machine makes with on the provider, and what a make with no
+// options makes (#6686): the person's last choices over the form's defaults.
 func (p *Providers) formValues(person, id string) map[string]any {
-	values := p.defaultOptions(id)
-	last, _ := p.lastOptions(person, id).(map[string]any)
-	if len(last) == 0 {
-		return values
-	}
-	schema, err := p.providerCall(id, func(c Provider) (any, error) { return c.Options() })
-	if err != nil {
-		return values
-	}
-	form, _ := valueOf(rawOf(schema)).(map[string]any)
-	properties, _ := form["properties"].(map[string]any)
-	for key, v := range last {
-		if _, ok := properties[key]; ok {
-			values[key] = v
-		}
-	}
-	return values
+	return p.formOf(id).values(p.lastOptions(person, id))
 }
 
 // takenNames is every host's name and every workspace's name on the provider, in lower case.

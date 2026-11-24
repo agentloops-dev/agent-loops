@@ -412,6 +412,109 @@ public enum WorkLook {
         return "\(n)\(more ? "+" : "") \(one)"
     }
 
+    /// The footer while a Refresh or an open asks the machines (#6638): the rows on screen stay until each answers or
+    /// the ask gives up, and this is in the place of "Last update".
+    public static let refreshing = "Refreshing…"
+
+    // MARK: The Work footer's load states (#5968, #5967's rule in epic #6348)
+
+    /// The footer while a read runs and the page has nothing to draw: placeholders above it.
+    public static let loading = "Loading…"
+    /// The footer while a read runs again (Refresh, a filter, the poll): the rows on screen stay.
+    public static let updating = "Updating…"
+    /// The footer under "Could not read issues" in the middle: a read failed and nothing is shown.
+    public static let couldNotReadShort = "Could not read."
+
+    /// What a Work list's body draws (#5968): placeholders while a read runs with nothing to draw (never an empty state
+    /// then), what failed in the middle when nothing was read, the empty state once every read ended, else the rows.
+    public enum ListBody: Equatable, Sendable {
+        case placeholders, failed, empty, rows
+    }
+
+    /// The body for a list: `drawn` is false before its first answer (or a copy) is on screen; `read` the rows kept,
+    /// `shown` those the filters leave; `failed` whether a forge or a machine said something.
+    public static func listBody(drawn: Bool, read: Int, shown: Int, reading: Bool, failed: Bool) -> ListBody {
+        if shown > 0 { return .rows }
+        if !drawn || reading { return .placeholders }
+        return read == 0 && failed ? .failed : .empty
+    }
+
+    /// The left of the Work footer (#5968): what runs or what failed. A save's line and a next page come first, in
+    /// the view.
+    public enum FooterState: Equatable, Sendable {
+        case none
+        case loading
+        case updating
+        case fromDevice
+        /// A page that asks several machines (Timeline, #5969): "Reading 2 of 3 machines…" while some have answered.
+        case readingMachines(answered: Int, of: Int)
+        /// A read failed with rows on screen: "Could not update: GitHub said 502." with Try again; `help` has every line.
+        case couldNotUpdate(line: String, help: String)
+        /// A read failed with nothing on screen: "Could not read."
+        case couldNotRead
+        /// A state the page cannot read past, with the warning glyph and no Try again (#5970): "No machine keeps
+        /// lineage." on a release's page.
+        case notice(String)
+
+        public var words: String {
+            switch self {
+            case .none: ""
+            case .loading: WorkLook.loading
+            case .updating: WorkLook.updating
+            case .fromDevice: WorkLook.fromDevice
+            case .readingMachines(let answered, let of): "Reading \(answered) of \(of) machines…"
+            case .couldNotUpdate(let line, _): line
+            case .couldNotRead: WorkLook.couldNotReadShort
+            case .notice(let words): words
+            }
+        }
+
+        /// A spinner beside the words.
+        public var busy: Bool {
+            switch self {
+            case .loading, .updating, .fromDevice, .readingMachines: true
+            default: false
+            }
+        }
+        /// The warning glyph, and Try again where there are rows.
+        public var failure: Bool {
+            switch self {
+            case .couldNotUpdate, .couldNotRead, .notice: true
+            default: false
+            }
+        }
+    }
+
+    /// The footer's state for a list: `lines` are what the forges or machines said, one each.
+    public static func footerState(drawn: Bool, read: Int, reading: Bool, fromDevice: Bool, lines: [String]) -> FooterState {
+        if !lines.isEmpty {
+            guard read > 0 else { return reading ? .loading : .couldNotRead }
+            let line = lines.count == 1 ? "Could not update: \(lines[0])" : "\(lines.count) forges could not update"
+            return .couldNotUpdate(line: line, help: lines.joined(separator: "\n"))
+        }
+        if fromDevice { return .fromDevice }
+        guard reading else { return .none }
+        return drawn && read > 0 ? .updating : .loading
+    }
+
+    /// The footer's state for a page that is not a list (Deploys, Timeline; #5969): `drawn` whether anything is on
+    /// screen; `answered` of `machines` the machines that answered the read that runs. A read of several machines that
+    /// some have answered says how many; one that failed with something drawn says what, with Try again.
+    public static func pageFooterState(drawn: Bool, reading: Bool, fromDevice: Bool, lines: [String],
+                                       answered: Int = 0, machines: Int = 0) -> FooterState {
+        let state = footerState(drawn: drawn, read: drawn ? 1 : 0, reading: reading, fromDevice: fromDevice, lines: lines)
+        guard reading, lines.isEmpty, machines > 1, answered > 0, answered < machines else { return state }
+        return .readingMachines(answered: answered, of: machines)
+    }
+
+    /// When a page of several reads was read (#5970, #5139): the oldest part's, once every part has been read.
+    public static func oldestRead(_ reads: [Date?]) -> Date? {
+        reads.contains(where: { $0 == nil }) ? nil : reads.compactMap { $0 }.min()
+    }
+
+    /// "4 targets", "1 epic": a page's count at the right of its footer.
+    public static func pageCount(_ n: Int, _ noun: String) -> String { "\(n) \(noun)\(n == 1 ? "" : "s")" }
+
     /// The footer while the next page loads (lists.md section 2): "Loading more… · 50 shown";
     /// "Loading more… · 50 of 128 shown" with the forge's total (#4396).
     public static func loadingMore(shown: Int, total: Int? = nil) -> String {
@@ -420,9 +523,15 @@ public enum WorkLook {
 
     /// The end of the list, in grey: "128 issues", the forge's total where it gives one (#4396);
     /// with none, "50+ issues" while more pages are there, else the rows read.
+    /// A list that ends before its total (#6637): "1000 of 5000 issues", then why.
     public static func endWords(_ kind: WorkList.Kind, shown: Int, more: Bool, total: Int? = nil) -> String {
-        total.map { count(kind, $0) } ?? count(kind, shown, more: more)
+        if let total, !more, shown < total { return shownOf(kind, shown: shown, more: more, total: total) }
+        return total.map { count(kind, $0) } ?? count(kind, shown, more: more)
     }
+
+    /// Why a list ends before the forge's total (#6637): its search gives only so many (GitHub's, 1,000), so the
+    /// rest show only in a narrower list. The web page says the same.
+    public static let searchStops = "The forge’s search shows no more. Narrow the list to see the rest."
 
     /// The forge's total for a list as the person sees it, or nil: only from one machine's read
     /// (two machines read the same repos, so their counts overlap), and only while no filter
@@ -432,6 +541,23 @@ public enum WorkLook {
         var f = filter
         f.board = ""
         return narrows(f) ? nil : total
+    }
+
+    /// The forge's total for a list read through Work's cache (#6353): the forge is asked the label, the assignee and
+    /// the board too, so only the words, the project and the repo narrow it on this Mac.
+    public static func cachedListTotal(_ totals: [Int?], filter: WorkList.Filter) -> Int? {
+        var f = filter
+        f.label = ""
+        f.assignee = ""
+        return listTotal(totals, filter: f)
+    }
+
+    /// The end of a list read through Work's cache (#6353, #5967): "100 of 304 issues" when the forge has more than
+    /// the list shows, else "304 issues"; with no total, as `endWords`. A list that ends there says why (#6637).
+    public static func shownOf(_ kind: WorkList.Kind, shown: Int, more: Bool, total: Int?) -> String {
+        guard let total else { return count(kind, shown, more: more) }
+        guard shown < total else { return count(kind, total) }
+        return "\(shown) of \(count(kind, total))" + (more ? "" : " · " + searchStops)
     }
 
     /// A page after the first that did not load: one line at the end, and Try again.

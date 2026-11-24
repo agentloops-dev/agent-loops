@@ -20,6 +20,9 @@ const afterTurnLimit = 5 * time.Second
 type afterTurnState struct {
 	afterTurnMu     sync.Mutex
 	afterTurnClosed bool
+	// afterTurnGone closes when afterTurnClosed is set, so a write in line for a client stops
+	// waiting (#6603); nil until it is asked for or Shutdown begins.
+	afterTurnGone chan struct{}
 	// afterTurnsUnderWay is how many have started and not ended.
 	afterTurnsUnderWay int
 	// afterTurnsIdle closes when afterTurnsUnderWay goes back to 0; nil while it is 0.
@@ -72,8 +75,28 @@ func (d *Daemon) doneAfterTurnLocked() {
 // closeAfterTurns starts no more turns or writes after them.
 func (d *Daemon) closeAfterTurns() {
 	d.afterTurnMu.Lock()
+	defer d.afterTurnMu.Unlock()
+	if d.afterTurnClosed {
+		return
+	}
 	d.afterTurnClosed = true
-	d.afterTurnMu.Unlock()
+	if d.afterTurnGone == nil {
+		d.afterTurnGone = make(chan struct{})
+	}
+	close(d.afterTurnGone)
+}
+
+// shutdownBegun closes when Shutdown begins: shuttingDown, as a channel to wait on.
+func (d *Daemon) shutdownBegun() <-chan struct{} {
+	d.afterTurnMu.Lock()
+	defer d.afterTurnMu.Unlock()
+	if d.afterTurnGone == nil {
+		d.afterTurnGone = make(chan struct{})
+		if d.afterTurnClosed {
+			close(d.afterTurnGone)
+		}
+	}
+	return d.afterTurnGone
 }
 
 // shuttingDown is whether Shutdown has begun: no turn starts, and nothing more goes to a

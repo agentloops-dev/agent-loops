@@ -72,9 +72,9 @@ func TestTheSweepRemovesProvidersTombstones(t *testing.T) {
 	yes, now := true, time.Now()
 	removedAt := records.At(now)
 	for _, r := range []providers.ProviderRecord{
-		{ID: "live", Name: "Live", Kind: providers.KindHTTP},
-		{ID: "removed", Name: "Removed", Kind: providers.KindHTTP, Forgotten: &yes, ForgottenAt: &removedAt},
-		{ID: "legacy", Name: "Legacy", Kind: providers.KindHTTP, Forgotten: &yes},
+		{ID: "live", Name: "Live", Kind: providers.KindCommands},
+		{ID: "removed", Name: "Removed", Kind: providers.KindCommands, Forgotten: &yes, ForgottenAt: &removedAt},
+		{ID: "legacy", Name: "Legacy", Kind: providers.KindCommands, Forgotten: &yes},
 	} {
 		data, _ := records.Encode(r)
 		if _, err := s.Put(ctx, providers.ProviderKey(r.ID), data, store.Absent); err != nil {

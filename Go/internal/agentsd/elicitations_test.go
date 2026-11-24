@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -190,6 +191,7 @@ func TestStoppingAnAgentTakesItsFormDownWithIt(t *testing.T) {
 }
 
 func TestAWithdrawnFormTakesTheAgentOutOfWaiting(t *testing.T) {
+	flaky.UnderLoad(t, "#6832")
 	t.Parallel()
 
 	fakeRuntimes(t)

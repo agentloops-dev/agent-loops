@@ -173,7 +173,7 @@ function PageMark({ store, page }: { store: Store; page: NavPage }) {
 function MachineNeedLine({ store, host }: { store: Store; host: string }) {
   const row = store.hosts.value.find((h) => h.id === host);
   const need = row ? machineNeed(row, store.hostIsOnline(host), store.runtimes.value[host] ?? [],
-    store.disk.value[host]?.alarms ?? [], store.capacity.value[host]?.level) : null;
+    store.disk.value[host]?.alarms ?? [], store.capacity.value[host]?.level, store.capacity.value[host]?.reason) : null;
   if (!row) return null;
   // Nothing wrong: how many sessions run on it, or Idle (#5490), from the count the machine's page reads.
   const words = need ? machineNeedLine(need, row)

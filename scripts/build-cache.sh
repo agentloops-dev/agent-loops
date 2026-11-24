@@ -50,11 +50,6 @@
 # paths, and SwiftPM locks .build for one process at a time, so a shared one would make
 # lanes rebuild each other's or wait.
 #
-# AGENTS_BUILD_CACHE_INDEX=1 is for an index for Periphery (scripts/lint.sh periphery, #6336):
-# the same packages and checkouts, but no compilation cache and no prefix mapping, and
-# COMPILER_INDEX_STORE_ENABLE=YES. A replayed compile writes no index, and a mapped one writes
-# /^worktree paths into it, so Periphery would find nothing or everything.
-#
 # An xcodebuild that names no -derivedDataPath gets <worktree>/build/DerivedData (#2684),
 # not Xcode's ~/Library/Developer/Xcode/DerivedData/Agents-<hash>: deleting the worktree's
 # build/ then deletes its build output too. AGENTS_BUILD_CACHE=off keeps Xcode's default.
@@ -139,7 +134,6 @@ xcode() {
 		SWIFT_OTHER_PREFIX_MAPPINGS="\"$PWD=/^worktree\""
 		CLANG_OTHER_PREFIX_MAPPINGS="\"$PWD=/^worktree\""
 	)
-	[ "${AGENTS_BUILD_CACHE_INDEX:-}" = 1 ] && flags=("${flags[@]:0:4}" COMPILER_INDEX_STORE_ENABLE=YES)
 	# Two builds resolving into one checkouts folder at once can each write it: the first
 	# build on a new key resolves it under a lock and keeps the project's Package.resolved
 	# beside it; every build after copies that in and builds without resolving.

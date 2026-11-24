@@ -1,7 +1,6 @@
 package agentsd
 
 import (
-	"encoding/json"
 	"errors"
 	"io"
 	"os"
@@ -67,7 +66,7 @@ func TestAStartInANewWorktreeAndItsRemoval(t *testing.T) {
 	dir := repo(t)
 	c.call(t, 1, "folders/add", map[string]any{"folder": store.FolderURL(dir)})
 	var id wire.UUID
-	json.Unmarshal(c.call(t, 2, "agents/start", map[string]any{"runtimeID": "claude", "cwd": store.FolderURL(dir),
+	mustUnmarshal(t, c.call(t, 2, "agents/start", map[string]any{"runtimeID": "claude", "cwd": store.FolderURL(dir),
 		"prompt": "Please fix the login bug", "worktree": map[string]any{"new": map[string]any{}}}), &id)
 	a := d.Store.Agent(id)
 	root := filepath.Join(dir, ".agents", "worktrees", "fix-login-bug")
@@ -84,7 +83,7 @@ func TestAStartInANewWorktreeAndItsRemoval(t *testing.T) {
 	}
 	waitFor(t, "a starting point", func() bool { return d.Store.Agent(id).StartingPoint != nil })
 	var list wire.WorktreesListResponse
-	json.Unmarshal(c.call(t, 3, "worktrees/list", map[string]any{"folder": store.FolderURL(dir)}), &list)
+	mustUnmarshal(t, c.call(t, 3, "worktrees/list", map[string]any{"folder": store.FolderURL(dir)}), &list)
 	if !list.IsRepository || !list.CanMakeNew || len(list.Worktrees) != 2 {
 		t.Fatalf("%+v", list)
 	}
@@ -94,7 +93,7 @@ func TestAStartInANewWorktreeAndItsRemoval(t *testing.T) {
 	}
 	req := map[string]any{"folder": store.FolderURL(dir), "root": store.FolderURL(root)}
 	var check wire.RemovalCheck
-	json.Unmarshal(c.call(t, 4, "worktrees/check", req), &check)
+	mustUnmarshal(t, c.call(t, 4, "worktrees/check", req), &check)
 	if len(check.BlockedBy) != 1 || check.Unmerged {
 		t.Fatalf("%+v", check)
 	}
@@ -102,7 +101,7 @@ func TestAStartInANewWorktreeAndItsRemoval(t *testing.T) {
 		t.Fatalf("%+v", e)
 	}
 	// Untracked before the archive, and the archive removes it all the same (#3877).
-	os.WriteFile(filepath.Join(root, "new.txt"), []byte("x"), 0o644)
+	must(t, os.WriteFile(filepath.Join(root, "new.txt"), []byte("x"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	c.call(t, 6, "agents/archive", map[string]any{"agentID": id})
 	d.sweeps.Wait()
 	if isDir(root) {
@@ -116,14 +115,14 @@ func TestAStartInANewWorktreeAndItsRemoval(t *testing.T) {
 	if _, err := git(dir, "worktree", "add", "-q", "-b", "agents/loose", loose, "HEAD"); err != nil {
 		t.Fatal(err)
 	}
-	os.WriteFile(filepath.Join(loose, "new.txt"), []byte("x"), 0o644)
+	must(t, os.WriteFile(filepath.Join(loose, "new.txt"), []byte("x"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	req["root"] = store.FolderURL(loose)
 	if e := c.callError(t, 7, "worktrees/remove", req); !strings.Contains(e.Message, "would lose 1 uncommitted change. Confirm") {
 		t.Fatal(e.Message)
 	}
 	req["confirmed"] = true
 	var removed wire.WorktreeRemoved
-	json.Unmarshal(c.call(t, 8, "worktrees/remove", req), &removed)
+	mustUnmarshal(t, c.call(t, 8, "worktrees/remove", req), &removed)
 	if !removed.RemovedBranch || isDir(loose) {
 		t.Fatalf("%+v", removed)
 	}
@@ -147,9 +146,9 @@ func TestBuildOutputIsCleared(t *testing.T) {
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
 	dir := repo(t)
-	os.WriteFile(filepath.Join(dir, ".gitignore"), []byte("node_modules/\n"), 0o644)
-	git(dir, "add", ".gitignore")
-	git(dir, "commit", "-q", "-m", "ignore")
+	must(t, os.WriteFile(filepath.Join(dir, ".gitignore"), []byte("node_modules/\n"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
+	must(t, errOnly(git(dir, "add", ".gitignore")))
+	must(t, errOnly(git(dir, "commit", "-q", "-m", "ignore")))
 	wt, _, err := d.prepareWorktree(dir, wire.WorktreeChoice{Named: &wire.WorktreeChoiceNamed{Value: "Clean me"}}, "")
 	if err != nil {
 		t.Fatal(err)
@@ -158,11 +157,11 @@ func TestBuildOutputIsCleared(t *testing.T) {
 	if filepath.Base(root) != "clean-me" {
 		t.Fatal(root)
 	}
-	os.MkdirAll(filepath.Join(root, "node_modules", "x"), 0o755)
-	os.WriteFile(filepath.Join(root, "node_modules", "x", "big"), make([]byte, 10000), 0o644)
-	os.MkdirAll(filepath.Join(root, "build"), 0o755) // not ignored: kept
+	must(t, os.MkdirAll(filepath.Join(root, "node_modules", "x"), 0o755))                              //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(root, "node_modules", "x", "big"), make([]byte, 10000), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
+	must(t, os.MkdirAll(filepath.Join(root, "build"), 0o755))                                          //nolint:gosec // G301: the mode this folder always had; only its error is new; not ignored: kept
 	var out wire.BuildOutputRemoved
-	json.Unmarshal(c.call(t, 1, "worktrees/removeBuildOutput", map[string]any{"folder": store.FolderURL(dir), "root": wt.Root}), &out)
+	mustUnmarshal(t, c.call(t, 1, "worktrees/removeBuildOutput", map[string]any{"folder": store.FolderURL(dir), "root": wt.Root}), &out)
 	if len(out.Removed) != 1 || !strings.HasSuffix(out.Removed[0], "node_modules") || out.Freed.Bytes == 0 || !isDir(filepath.Join(root, "build")) {
 		t.Fatalf("%+v", out)
 	}

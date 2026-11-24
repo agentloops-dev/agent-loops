@@ -27,20 +27,20 @@ func TestAFoldersSkillsListedAndOneTakenOut(t *testing.T) {
 	c.call(t, 1, "folders/add", map[string]any{"folder": "file://" + folder})
 	skills := filepath.Join(folder, ".agents", "skills")
 	write := func(name, text string) {
-		os.MkdirAll(filepath.Join(skills, name), 0o755)
-		os.WriteFile(filepath.Join(skills, name, "SKILL.md"), []byte(text), 0o644)
+		must(t, os.MkdirAll(filepath.Join(skills, name), 0o755))                            //nolint:gosec // G301: the mode this folder always had; only its error is new
+		must(t, os.WriteFile(filepath.Join(skills, name, "SKILL.md"), []byte(text), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	}
 	write("added", "---\nname: added\ndescription: From a catalogue.\n---\n")
 	write("mine", "---\nname: mine\n---\n")
-	os.MkdirAll(filepath.Join(skills, "not-a-skill"), 0o755)
+	must(t, os.MkdirAll(filepath.Join(skills, "not-a-skill"), 0o755)) //nolint:gosec // G301: the mode this folder always had; only its error is new
 	hash, _ := skillcatalog.ComputedHash(filepath.Join(skills, "added"))
 	lock, _ := skillcatalog.LoadLock(skillcatalog.FolderScope, filepath.Join(folder, "skills-lock.json"))
 	lock.Upsert("added", "owner/repo", "skills/added/SKILL.md", hash, lockTime)
-	lock.Write()
+	must(t, lock.Write())
 
 	dest := map[string]any{"kind": "folder", "folder": folder}
 	var list wire.SkillsListAnswer
-	json.Unmarshal(c.call(t, 2, "skills/list", map[string]any{"destination": dest}), &list)
+	mustUnmarshal(t, c.call(t, 2, "skills/list", map[string]any{"destination": dest}), &list)
 	if len(list.Skills) != 2 || list.Skills[0].Name != "added" || *list.Skills[0].Description != "From a catalogue." ||
 		list.Skills[0].Managed == nil || list.Skills[0].Managed.Source != "owner/repo" || list.Skills[0].Managed.Edited ||
 		list.Skills[1].Name != "mine" || list.Skills[1].Managed != nil {
@@ -48,9 +48,9 @@ func TestAFoldersSkillsListedAndOneTakenOut(t *testing.T) {
 	}
 
 	// An edit since it was added shows.
-	os.WriteFile(filepath.Join(skills, "added", "notes.md"), []byte("mine now"), 0o644)
+	must(t, os.WriteFile(filepath.Join(skills, "added", "notes.md"), []byte("mine now"), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 	list = wire.SkillsListAnswer{}
-	json.Unmarshal(c.call(t, 3, "skills/list", map[string]any{"destination": dest}), &list)
+	mustUnmarshal(t, c.call(t, 3, "skills/list", map[string]any{"destination": dest}), &list)
 	if !list.Skills[0].Managed.Edited {
 		t.Fatalf("%+v", list.Skills[0].Managed)
 	}
@@ -58,12 +58,12 @@ func TestAFoldersSkillsListedAndOneTakenOut(t *testing.T) {
 	e := c.callError(t, 4, "skills/remove", map[string]any{"destination": dest, "name": "mine"})
 	var why wire.CatalogError
 	b, _ := json.Marshal(e.Data)
-	json.Unmarshal(b, &why)
+	mustUnmarshal(t, b, &why)
 	if e.Code != wire.FailureCatalogRefused || why.NotManaged == nil || e.Message != "mine was not added by the app or the skills tool." {
 		t.Fatalf("%+v", e)
 	}
 	var removed wire.SkillRemoveAnswer
-	json.Unmarshal(c.call(t, 5, "skills/remove", map[string]any{"destination": dest, "name": "added"}), &removed)
+	mustUnmarshal(t, c.call(t, 5, "skills/remove", map[string]any{"destination": dest, "name": "added"}), &removed)
 	if filepath.Dir(removed.TrashedTo) != filepath.Join(d.Store.Loc.Root, "trash") {
 		t.Fatal(removed.TrashedTo)
 	}
@@ -96,20 +96,20 @@ func TestAFolderPluginWaitsUntilApproved(t *testing.T) {
 	folder := t.TempDir()
 	c.call(t, 1, "folders/add", map[string]any{"folder": "file://" + folder})
 	plugins := filepath.Join(folder, ".agents", "plugins")
-	os.MkdirAll(filepath.Join(plugins, "old", "hooks"), 0o755)
-	os.WriteFile(filepath.Join(plugins, "old", ".mcp.json"), []byte(`{"mcpServers":{"x":{"command":"${CLAUDE_PLUGIN_ROOT}/x"}}}`), 0o644)
+	must(t, os.MkdirAll(filepath.Join(plugins, "old", "hooks"), 0o755))                                                                            //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(plugins, "old", ".mcp.json"), []byte(`{"mcpServers":{"x":{"command":"${CLAUDE_PLUGIN_ROOT}/x"}}}`), 0o644)) //nolint:gosec // G306: the mode this file always had; only its error is new
 
 	// Present when approval began: approved as it stands, with what it carries.
 	var list wire.PluginsList
-	json.Unmarshal(c.call(t, 2, "plugins/list", map[string]any{"folder": "file://" + folder}), &list)
+	mustUnmarshal(t, c.call(t, 2, "plugins/list", map[string]any{"folder": "file://" + folder}), &list)
 	if len(list.Plugins) != 1 || list.Plugins[0].Name != "old" || list.Plugins[0].AwaitingApproval != nil ||
 		len(list.Plugins[0].Carries) != 2 || list.Plugins[0].Carries[0] != "hooks" || list.Plugins[0].Carries[1] != "connectors" {
 		t.Fatalf("%+v", list)
 	}
 	// One that arrives after waits, and one changed after approval waits again.
-	os.MkdirAll(filepath.Join(plugins, "new", "skills"), 0o755)
-	os.WriteFile(filepath.Join(plugins, "old", "hooks", "run.sh"), []byte("echo hi"), 0o755)
-	json.Unmarshal(c.call(t, 3, "plugins/list", map[string]any{"folder": "file://" + folder}), &list)
+	must(t, os.MkdirAll(filepath.Join(plugins, "new", "skills"), 0o755))                              //nolint:gosec // G301: the mode this folder always had; only its error is new
+	must(t, os.WriteFile(filepath.Join(plugins, "old", "hooks", "run.sh"), []byte("echo hi"), 0o755)) //nolint:gosec // G306: the mode this file always had; only its error is new
+	mustUnmarshal(t, c.call(t, 3, "plugins/list", map[string]any{"folder": "file://" + folder}), &list)
 	if len(list.Plugins) != 2 || list.Plugins[0].Name != "new" || list.Plugins[0].AwaitingApproval == nil ||
 		!list.Plugins[0].AwaitingApproval.IsNew || list.Plugins[1].AwaitingApproval == nil || list.Plugins[1].AwaitingApproval.IsNew {
 		t.Fatalf("%+v", list)
@@ -123,13 +123,13 @@ func TestAFolderPluginWaitsUntilApproved(t *testing.T) {
 		t.Fatalf("%+v", e)
 	}
 	list = wire.PluginsList{}
-	json.Unmarshal(c.call(t, 6, "plugins/approve", map[string]any{"plugin": string(waiting.Folder), "digest": waiting.AwaitingApproval.Digest}), &list)
+	mustUnmarshal(t, c.call(t, 6, "plugins/approve", map[string]any{"plugin": string(waiting.Folder), "digest": waiting.AwaitingApproval.Digest}), &list)
 	if list.Plugins[0].AwaitingApproval != nil {
 		t.Fatalf("%+v", list.Plugins[0])
 	}
 	var records pluginApprovals
 	b, _ := os.ReadFile(filepath.Join(d.Store.Loc.Root, "plugin-approvals.json"))
-	diskjson.Unmarshal(b, &records)
+	must(t, diskjson.Unmarshal(b, &records))
 	if records.ApprovalsBegan == nil || records.Approved[filepath.Join(plugins, "new")] != waiting.AwaitingApproval.Digest {
 		t.Fatalf("%s", b)
 	}

@@ -807,6 +807,14 @@
         "full"
       ]
     },
+    "CapacityReason": {
+      "type": "string",
+      "description": "What put a machine near or at capacity (#6596): cpu (its load per core) or memory (critical memory pressure). It stays while the level waits to fall. Absent at ok.",
+      "enum": [
+        "cpu",
+        "memory"
+      ]
+    },
     "CapacityReport": {
       "type": "object",
       "description": "machine/capacity (#5374): a host tells the control plane its capacity level and 5-minute load per core, on connect and when either moves enough to matter.",
@@ -833,6 +841,9 @@
         "words": {
           "type": "string",
           "description": "The level as a sentence's subject and verb: \"this Mac is near capacity\" or \"this Mac is at capacity\". Absent at ok."
+        },
+        "reason": {
+          "$ref": "#/definitions/CapacityReason"
         }
       },
       "required": [
@@ -1155,6 +1166,35 @@
         "unreached",
         "notAsked"
       ],
+      "additionalProperties": false
+    },
+    "ControlCapacityBoard": {
+      "type": "object",
+      "properties": {"copies": {"type": "array", "items": {"$ref": "#/definitions/ControlCapacityCopy"}}},
+      "required": ["copies"],
+      "additionalProperties": false
+    },
+    "ControlCapacityCopy": {
+      "type": "object",
+      "description": "One live control plane copy's most recent capacity look (#6590).",
+      "properties": {
+        "copy": {"type": "string"},
+        "level": {"$ref": "#/definitions/CapacityLevel"},
+        "reason": {"type": "string"},
+        "loadPerCore": {"type": "number"},
+        "loadPerCore5": {"type": "number"},
+        "pressureMemoryFullAvg60": {"type": "number"},
+        "pressureIOFullAvg60": {"type": "number"},
+        "memoryAvailableBytes": {"type": "number"},
+        "swapUsedPercent": {"type": "number"},
+        "heapInuseBytes": {"type": "number"},
+        "goroutines": {"type": "integer"},
+        "openFiles": {"type": "integer"},
+        "storeFiles": {"type": "integer"},
+        "storeBytes": {"type": "integer"},
+        "at": {"$ref": "core.schema.json#/definitions/WireDate"}
+      },
+      "required": ["copy", "level", "reason", "loadPerCore", "loadPerCore5", "pressureMemoryFullAvg60", "pressureIOFullAvg60", "memoryAvailableBytes", "swapUsedPercent", "heapInuseBytes", "goroutines", "openFiles", "storeFiles", "storeBytes", "at"],
       "additionalProperties": false
     },
     "DaemonStatus": {
@@ -1583,7 +1623,7 @@
     },
     "ForgeListAllRequest": {
       "type": "object",
-      "description": "forge/listAll (#5592): forge/issues (kind issues) or forge/pulls (kind pulls) of the caller's machines in one call. state, board, label, assignee (a login) and limit are as in ForgeListRequest, for each machine (label and assignee: #6383). pages, for a next page, names the machines to ask and each one's cursor, as its last list gave it; without pages every machine is asked for its first page.",
+      "description": "forge/listAll (#5592): forge/issues (kind issues) or forge/pulls (kind pulls) of the caller's machines in one call. state, board, label, assignee (a login), sort and limit are as in ForgeListRequest, for each machine (label and assignee: #6383; sort: #6538). pages, for a next page, names the machines to ask and each one's cursor, as its last list gave it; without pages every machine is asked for its first page.",
       "properties": {
         "kind": {
           "type": "string",
@@ -1604,8 +1644,20 @@
         "assignee": {
           "type": "string"
         },
+        "sort": {
+          "description": "The order, as in ForgeListRequest (#6538): priority, else the last updated first; each machine sorts its own list.",
+          "type": "string",
+          "enum": [
+            "updated",
+            "priority"
+          ]
+        },
         "limit": {
           "type": "integer"
+        },
+        "fresh": {
+          "description": "As in ForgeListRequest (#6642): each machine reads its forges, not its kept answer. A Refresh.",
+          "type": "boolean"
         },
         "pages": {
           "type": "array",
@@ -2145,6 +2197,10 @@
           "items": {
             "type": "string"
           }
+        },
+        "maturity": {
+          "$ref": "core.schema.json#/definitions/Maturity",
+          "description": "The levels of this host's capabilities that are not GA (#6579). None from a host older than that."
         }
       },
       "required": [
@@ -2170,7 +2226,7 @@
     },
     "MachineInfo": {
       "type": "object",
-      "description": "One workspace, as its provider last listed it. `state` is running, starting, stopping, stopped or unknown; or failed, for a make that failed, with the provider's `reason` (#3972). `joining` while New Machine waits for it to join the control plane, and `notJoined` once the control plane gave up waiting (#4610).",
+      "description": "One workspace, as its provider last listed it. `state` is running, starting, stopping, stopped or unknown; or failed, for a make that failed, with the provider's `reason` (#3972). `joining` while New Machine waits for it to join the control plane, and `notJoined` once the control plane gave up waiting (#4610). `setup` while it is being made (#6073).",
       "properties": {
         "id": {
           "type": "string"
@@ -2212,6 +2268,10 @@
         "notJoined": {
           "type": "string",
           "description": "Why the control plane gave up waiting for it to join, once it did (#4610): the row says so, with Delete."
+        },
+        "setup": {
+          "$ref": "#/definitions/MachineSetup",
+          "description": "The set-up of a machine New Machine is making (#6073), from the press of Make until it joins (then its machine's row has it): what each step did, with its time, and on a failure the provider's words. A client that opens late reads where it is here."
         }
       },
       "required": [
@@ -2389,30 +2449,6 @@
       ],
       "additionalProperties": false
     },
-    "MachineProviderDraftCall": {
-      "type": "object",
-      "description": "machine/providerDraft: a writing agent called one of the writer's tools (#858).",
-      "properties": {
-        "agentID": {
-          "$ref": "core.schema.json#/definitions/UUID"
-        },
-        "draft": {
-          "$ref": "core.schema.json#/definitions/UUID"
-        },
-        "tool": {
-          "type": "string"
-        },
-        "arguments": {
-          "$ref": "core.schema.json#/definitions/JSONValue"
-        }
-      },
-      "required": [
-        "agentID",
-        "draft",
-        "tool"
-      ],
-      "additionalProperties": false
-    },
     "MachineRef": {
       "type": "string",
       "x-ts-type": "string & { readonly __brand: \"MachineRef\" }"
@@ -2515,6 +2551,59 @@
       ],
       "additionalProperties": false
     },
+    "MachineSetupProject": {
+      "type": "object",
+      "description": "A project folder a pool machine gets: path is the folder on its sources, project the project id it joins there, and sources the person's machines that have it, those online first.",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "project": {
+          "type": "string"
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/MachineSetupSource"
+          }
+        }
+      },
+      "required": [
+        "path",
+        "sources"
+      ],
+      "additionalProperties": false
+    },
+    "MachineSetupProjects": {
+      "type": "object",
+      "description": "setup/projects: how the host's get of the pool's projects stands (#6890). pool is false for a machine no warm pool made, which gets none. finished with no problem: folders are the folders here.",
+      "properties": {
+        "pool": {
+          "type": "boolean"
+        },
+        "finished": {
+          "type": "boolean"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "problem": {
+          "type": "string"
+        },
+        "folders": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "pool",
+        "finished",
+        "folders"
+      ],
+      "additionalProperties": false
+    },
     "MachineSetupReport": {
       "type": "object",
       "description": "machine/setupStep: a step of the installer on the machine (agents-host install --join), as it starts, goes on and ends (#5355).",
@@ -2542,6 +2631,26 @@
       "required": [
         "step",
         "state"
+      ],
+      "additionalProperties": false
+    },
+    "MachineSetupSource": {
+      "type": "object",
+      "properties": {
+        "machine": {
+          "$ref": "#/definitions/MachineRef"
+        },
+        "name": {
+          "type": "string"
+        },
+        "online": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "machine",
+        "name",
+        "online"
       ],
       "additionalProperties": false
     },
@@ -2603,6 +2712,37 @@
         "signIn",
         "smoke"
       ]
+    },
+    "MachineSetupWork": {
+      "type": "object",
+      "description": "machine/setupWork: what the set-up of the machine that asks has left (#6890, #6896). pool: a warm pool made it. claimed: a person claimed it, and from is the first of steps 6 to 8 that waits to run (absent: none does now). done: nothing is left to ask for. projects: the project folders to get, at their last commit. An unclaimed machine does step 6 and stops.",
+      "properties": {
+        "pool": {
+          "type": "boolean"
+        },
+        "claimed": {
+          "type": "boolean"
+        },
+        "done": {
+          "type": "boolean"
+        },
+        "from": {
+          "$ref": "#/definitions/MachineSetupStepID"
+        },
+        "projects": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/MachineSetupProject"
+          }
+        }
+      },
+      "required": [
+        "pool",
+        "claimed",
+        "done",
+        "projects"
+      ],
+      "additionalProperties": false
     },
     "MachineStatus": {
       "type": "object",
@@ -2851,18 +2991,48 @@
       "type": "object",
       "description": "move/changed (#4641): how a move to another machine goes, whoever asked for it. `sent` of `total` bytes of the branch are on that machine (0 of 0 while the bundle is made); `branchSent` once they are all there and the session itself goes; `finished` once it ended, whichever way: with no `problem` the session is there and gone from here, else `problem` says why it stopped, in the person's words, and the session stays here.",
       "properties": {
-        "agentID": { "$ref": "core.schema.json#/definitions/UUID" },
-        "machine": { "type": "string" },
-        "machineName": { "type": "string" },
-        "folder": { "type": "string" },
-        "startedAt": { "$ref": "core.schema.json#/definitions/WireDate" },
-        "sent": { "type": "integer" },
-        "total": { "type": "integer" },
-        "branchSent": { "type": "boolean" },
-        "finished": { "type": "boolean" },
-        "problem": { "type": "string" }
+        "agentID": {
+          "$ref": "core.schema.json#/definitions/UUID"
+        },
+        "machine": {
+          "type": "string"
+        },
+        "machineName": {
+          "type": "string"
+        },
+        "folder": {
+          "type": "string"
+        },
+        "startedAt": {
+          "$ref": "core.schema.json#/definitions/WireDate"
+        },
+        "sent": {
+          "type": "integer"
+        },
+        "total": {
+          "type": "integer"
+        },
+        "branchSent": {
+          "type": "boolean"
+        },
+        "finished": {
+          "type": "boolean"
+        },
+        "problem": {
+          "type": "string"
+        }
       },
-      "required": ["agentID", "machine", "machineName", "folder", "startedAt", "sent", "total", "branchSent", "finished"],
+      "required": [
+        "agentID",
+        "machine",
+        "machineName",
+        "folder",
+        "startedAt",
+        "sent",
+        "total",
+        "branchSent",
+        "finished"
+      ],
       "additionalProperties": false
     },
     "MoveRequest": {
@@ -3352,7 +3522,7 @@
     },
     "ProviderAdd": {
       "type": "object",
-      "description": "providers/add and providers/update. `machine` is the machine that carries the provider (#3398): it runs the provider's server, and `secrets` go on to it, never kept by the control plane. None picks the caller's first online machine; an update without it keeps the one it has. `cli` is not kept; `draft` is the draft this accepts (#858).",
+      "description": "providers/add and providers/update. `machine` is the machine that carries the provider (#3398): it runs the provider's server, and `secrets` go on to it, never kept by the control plane. None picks the caller's first online machine; an update without it keeps the one it has.",
       "properties": {
         "id": {
           "$ref": "core.schema.json#/definitions/ProviderID"
@@ -3363,33 +3533,10 @@
         "kind": {
           "type": "string",
           "enum": [
-            "commands",
-            "stdio",
-            "http"
+            "commands"
           ]
         },
-        "command": {
-          "type": "string"
-        },
-        "args": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "url": {
-          "type": "string"
-        },
-        "headers": {
-          "type": "object",
-          "additionalProperties": {
-            "type": "string"
-          }
-        },
         "commands": {
-          "$ref": "core.schema.json#/definitions/JSONValue"
-        },
-        "map": {
           "$ref": "core.schema.json#/definitions/JSONValue"
         },
         "machine": {
@@ -3400,12 +3547,6 @@
           "additionalProperties": {
             "type": "string"
           }
-        },
-        "cli": {
-          "type": "string"
-        },
-        "draft": {
-          "$ref": "core.schema.json#/definitions/UUID"
         }
       },
       "required": [
@@ -3416,20 +3557,31 @@
     },
     "ProviderCarried": {
       "type": "object",
-      "description": "What a provider's machine answers to providers/carry, providers/keepSecrets, providers/forget and providers/ssh (#3398): the call's result, or why it failed, in words for the person. Channel 0 has no error path.",
+      "description": "What a provider's machine answers to providers/carry, providers/keepSecrets, providers/forget and providers/ssh (#3398): the call's result, or why it failed, in words for the person, and for a failure a client can act on, its `code` (#6072). Channel 0 has no error path.",
       "properties": {
         "result": {
           "$ref": "core.schema.json#/definitions/JSONValue"
         },
         "error": {
           "type": "string"
+        },
+        "code": {
+          "type": "string",
+          "enum": [
+            "denied",
+            "disconnected",
+            "scope_missing",
+            "account_inactive",
+            "expired"
+          ],
+          "description": "Why it failed, for a client to say (#6072, W2b): denied (the person chose Deny), disconnected (the provider no longer takes the connection: it was removed there, or its refresh was refused), scope_missing (the person gave less than Agent Loops needs), account_inactive (the account can't make machines yet, such as no payment method), expired (the sign-in was not finished in time; start again)."
         }
       },
       "additionalProperties": false
     },
     "ProviderCarry": {
       "type": "object",
-      "description": "providers/carry (#3398): the control plane asks the machine that carries a provider to call it. `record` is the provider's record, which never holds a secret; the machine runs its server with the secrets it keeps. `secrets` is only a draft's, for this call, and is not kept.",
+      "description": "providers/carry (#3398): the control plane asks the machine that carries a provider to call it. `record` is the provider's record, which never holds a secret; the machine runs its server with the secrets it keeps. `secrets` is only those an add or an update was given to check with, for this call, and is not kept.",
       "properties": {
         "provider": {
           "$ref": "core.schema.json#/definitions/ProviderID"
@@ -3446,8 +3598,7 @@
             "stop",
             "options",
             "create",
-            "delete",
-            "tools"
+            "delete"
           ]
         },
         "workspace": {
@@ -3519,184 +3670,6 @@
       ],
       "additionalProperties": false
     },
-    "ProviderDraftAnswer": {
-      "type": "object",
-      "description": "providers/draftAnswer: yes or no to a question.",
-      "properties": {
-        "draft": {
-          "$ref": "core.schema.json#/definitions/UUID"
-        },
-        "question": {
-          "$ref": "core.schema.json#/definitions/UUID"
-        },
-        "yes": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "draft",
-        "question",
-        "yes"
-      ],
-      "additionalProperties": false
-    },
-    "ProviderDraftAnswered": {
-      "type": "object",
-      "description": "A draft answered with no agent: the server follows the contract, or a shipped map fits.",
-      "properties": {
-        "note": {
-          "type": "string"
-        },
-        "map": {
-          "$ref": "core.schema.json#/definitions/JSONValue"
-        },
-        "preset": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "note"
-      ],
-      "additionalProperties": false
-    },
-    "ProviderDraftRequest": {
-      "type": "object",
-      "description": "providers/draftCancel.",
-      "properties": {
-        "draft": {
-          "$ref": "core.schema.json#/definitions/UUID"
-        }
-      },
-      "required": [
-        "draft"
-      ],
-      "additionalProperties": false
-    },
-    "ProviderDraftSign": {
-      "type": "object",
-      "description": "The writing agent's start, for the client that asked for the draft to sign (#3542): the machine that holds its person's lock takes no start the control plane sends in its own words. The client checks that it starts only a draft's writer (agents/start, the draft's purpose, sandboxed, no MCP servers or other folders), signs method and params as they are (a LockSignature to machine), and sends the signature with providers/draftSigned.",
-      "properties": {
-        "machine": {
-          "$ref": "#/definitions/MachineRef"
-        },
-        "method": {
-          "type": "string"
-        },
-        "params": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "machine",
-        "method",
-        "params"
-      ],
-      "additionalProperties": false
-    },
-    "ProviderDraftSigned": {
-      "type": "object",
-      "description": "providers/draftSigned (#3542): the signature of a draft's sign, which the control plane delivers with the start as it came.",
-      "properties": {
-        "draft": {
-          "$ref": "core.schema.json#/definitions/UUID"
-        },
-        "lock": {
-          "$ref": "org.schema.json#/definitions/LockSignature"
-        }
-      },
-      "required": [
-        "draft",
-        "lock"
-      ],
-      "additionalProperties": false
-    },
-    "ProviderDraftStart": {
-      "type": "object",
-      "description": "providers/draftStart (#858).",
-      "properties": {
-        "form": {
-          "$ref": "#/definitions/ProviderAdd"
-        },
-        "secrets": {
-          "type": "object",
-          "additionalProperties": {
-            "type": "string"
-          }
-        },
-        "provider": {
-          "$ref": "core.schema.json#/definitions/ProviderID"
-        },
-        "runtimeID": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "form",
-        "runtimeID"
-      ],
-      "additionalProperties": false
-    },
-    "ProviderDraftStarted": {
-      "type": "object",
-      "properties": {
-        "draft": {
-          "$ref": "core.schema.json#/definitions/UUID"
-        },
-        "answered": {
-          "$ref": "#/definitions/ProviderDraftAnswered"
-        },
-        "sign": {
-          "$ref": "#/definitions/ProviderDraftSign"
-        }
-      },
-      "required": [
-        "draft"
-      ],
-      "additionalProperties": false
-    },
-    "ProviderDraftUpdate": {
-      "type": "object",
-      "description": "control/providerDraft: how a draft stands, to the client that started it.",
-      "properties": {
-        "draft": {
-          "$ref": "core.schema.json#/definitions/UUID"
-        },
-        "state": {
-          "type": "string"
-        },
-        "runtimeName": {
-          "type": "string"
-        },
-        "steps": {
-          "type": "array",
-          "items": {
-            "$ref": "workflows.schema.json#/definitions/DraftStep"
-          }
-        },
-        "cost": {
-          "type": "string"
-        },
-        "draftJSON": {
-          "$ref": "core.schema.json#/definitions/JSONValue"
-        },
-        "check": {
-          "$ref": "workflows.schema.json#/definitions/DraftCheck"
-        },
-        "question": {
-          "$ref": "workflows.schema.json#/definitions/DraftQuestion"
-        },
-        "note": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "draft",
-        "state",
-        "runtimeName",
-        "steps"
-      ],
-      "additionalProperties": false
-    },
     "ProviderList": {
       "type": "object",
       "description": "providers/list and control/providersChanged.",
@@ -3710,6 +3683,167 @@
       },
       "required": [
         "providers"
+      ],
+      "additionalProperties": false
+    },
+    "ProviderOAuth": {
+      "type": "object",
+      "description": "A provider connected with OAuth (#6072): whose account and team its machine's token is for, and whether the provider still takes it. Never a token.",
+      "properties": {
+        "account": {
+          "type": "string",
+          "description": "The account's email, as the provider said at the connect."
+        },
+        "team": {
+          "type": "string",
+          "description": "The team the person chose on the provider's consent page."
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "connected",
+            "disconnected"
+          ],
+          "description": "disconnected: its last list was refused (the person removed Agent Loops at the provider, or its refresh failed): connect again."
+        }
+      },
+      "required": [
+        "state"
+      ],
+      "additionalProperties": false
+    },
+    "ProviderOAuthCarried": {
+      "type": "object",
+      "description": "providers/oauth's result in ProviderCarried (#6072): for start, the address to open and its state; for finish, whose account the token is for and the names of the secrets kept. Never a token.",
+      "properties": {
+        "url": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        },
+        "account": {
+          "type": "string"
+        },
+        "team": {
+          "type": "string"
+        },
+        "scope": {
+          "type": "string"
+        },
+        "secretNames": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "ProviderOAuthCarry": {
+      "type": "object",
+      "description": "providers/oauth (#6072): the control plane asks the machine that will carry a provider to start an OAuth connection (make and keep the PKCE verifier, about 10 minutes, and give the address to open) or to finish it (spend the code with the verifier, and keep the tokens for `provider` in ~/.agents-secrets). The verifier and the tokens never leave that machine.",
+      "properties": {
+        "op": {
+          "type": "string",
+          "enum": [
+            "start",
+            "finish"
+          ]
+        },
+        "preset": {
+          "type": "string"
+        },
+        "provider": {
+          "$ref": "core.schema.json#/definitions/ProviderID"
+        },
+        "origin": {
+          "type": "string",
+          "description": "start: the web page's origin, for the hand-back page; none for the Mac and the Remote."
+        },
+        "state": {
+          "type": "string"
+        },
+        "code": {
+          "type": "string"
+        },
+        "error": {
+          "type": "string",
+          "description": "finish: the provider's error from the callback, such as access_denied."
+        }
+      },
+      "required": [
+        "op",
+        "preset"
+      ],
+      "additionalProperties": false
+    },
+    "ProviderOAuthFinish": {
+      "type": "object",
+      "description": "providers/oauthFinish (#6072): what the hand-back page gave the client (the code and the state, or the provider's error). The machine that started it spends the code; the control plane then adds the provider (or, with the `id` of one it started for, connects it again) with no secret of its own.",
+      "properties": {
+        "state": {
+          "type": "string"
+        },
+        "code": {
+          "type": "string"
+        },
+        "error": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string",
+          "description": "The new provider's name; none is the preset's provider's name, such as DigitalOcean."
+        }
+      },
+      "additionalProperties": false
+    },
+    "ProviderOAuthStart": {
+      "type": "object",
+      "description": "providers/oauthStart (#6072): connect a provider with OAuth instead of a pasted token. `machine` carries it (the caller's first online one when none); `id` connects an existing provider again; `origin` is the web page's.",
+      "properties": {
+        "preset": {
+          "type": "string",
+          "enum": [
+            "digitalocean-api"
+          ]
+        },
+        "machine": {
+          "$ref": "#/definitions/MachineRef"
+        },
+        "id": {
+          "$ref": "core.schema.json#/definitions/ProviderID"
+        },
+        "origin": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "preset"
+      ],
+      "additionalProperties": false
+    },
+    "ProviderOAuthStarted": {
+      "type": "object",
+      "description": "providers/oauthStart's result: the provider's consent page to open (in ASWebAuthenticationSession, or a new window on the web), its state, and the machine that will keep the connection.",
+      "properties": {
+        "url": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        },
+        "machine": {
+          "$ref": "#/definitions/MachineRef"
+        },
+        "machineName": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "url",
+        "state",
+        "machine"
       ],
       "additionalProperties": false
     },
@@ -3746,48 +3880,6 @@
           "$ref": "core.schema.json#/definitions/ProviderID"
         }
       },
-      "additionalProperties": false
-    },
-    "ProviderRuntime": {
-      "type": "object",
-      "properties": {
-        "id": {
-          "type": "string"
-        },
-        "name": {
-          "type": "string"
-        },
-        "isDefault": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "id",
-        "name",
-        "isDefault"
-      ],
-      "additionalProperties": false
-    },
-    "ProviderRuntimes": {
-      "type": "object",
-      "description": "providers/runtimes: what may write, on which host, or why none.",
-      "properties": {
-        "runtimes": {
-          "type": "array",
-          "items": {
-            "$ref": "#/definitions/ProviderRuntime"
-          }
-        },
-        "host": {
-          "type": "string"
-        },
-        "why": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "runtimes"
-      ],
       "additionalProperties": false
     },
     "ProviderSSH": {
@@ -3879,9 +3971,6 @@
         "contract": {
           "type": "integer"
         },
-        "mapped": {
-          "type": "boolean"
-        },
         "preset": {
           "type": "string"
         },
@@ -3926,6 +4015,10 @@
         "sshToolMissing": {
           "type": "string",
           "description": "The CLI its machines are reached through over ssh (gh, coder) when the control plane's machine has none (#3367). Absent when it needs none or has it."
+        },
+        "oauth": {
+          "$ref": "#/definitions/ProviderOAuth",
+          "description": "It is connected with OAuth (#6072), not a pasted token: whose account, and whether the connection still works. Absent for a pasted token."
         }
       },
       "required": [
@@ -3935,7 +4028,6 @@
         "secrets",
         "capabilities",
         "contract",
-        "mapped",
         "workspaces",
         "current"
       ],
@@ -5371,7 +5463,7 @@
     },
     "WarmPool": {
       "type": "object",
-      "description": "A warm pool (#5363, epic #5353, Part 2 of the machine set-up spec): a provider's machines kept made, joined, with Agents, runtimes and the pool's projects at their last commit, and signed in to nothing. minReady is what it keeps; maxSize is the most it holds, ready or being set up (a claimed machine leaves the pool and does not count). target is written by the control plane and is minReady until auto-scale. ready, settingUp, failedMakes and stoppedBecause are read-only. machines and claims are read-only too (#5366).",
+      "description": "A warm pool (#5363, epic #5353, Part 2 of the machine set-up spec): a provider's machines kept made, joined, with Agents, runtimes and the pool's projects at their last commit, and signed in to nothing. minReady is what it keeps; maxSize is the most it holds, ready or being set up (a claimed machine leaves the pool and does not count). target is written by the control plane and is minReady until auto-scale. ready, settingUp, failedMakes, stoppedBecause and waitingBecause are read-only. machines and claims are read-only too (#5366).",
       "properties": {
         "id": {
           "type": "string"
@@ -5441,6 +5533,10 @@
         "stoppedBecause": {
           "type": "string",
           "description": "Why the pool stopped making, in the provider's words."
+        },
+        "waitingBecause": {
+          "type": "string",
+          "description": "Why a pool that is keeping makes no machine now: no machine that has its projects is online (#6890)."
         },
         "machines": {
           "type": "array",

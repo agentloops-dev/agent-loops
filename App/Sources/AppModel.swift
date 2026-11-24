@@ -28,6 +28,10 @@ final class AppModel {
     /// This window's local copy (#4791): sessions and chat ends kept in its root's Caches,
     /// drawn at launch before the host answers. The host always wins.
     @ObservationIgnored var localCopy: LocalCopyKeeper?
+    /// Work's client cache (#6353), opened the first time a Work page asks for it with the flag on.
+    @ObservationIgnored var openedWorkCache: WorkCache?
+    /// Work's changes through the cache (#6354), one store for the window.
+    @ObservationIgnored let workSavesStore = WorkSaves()
 
     var runtimes: [RuntimeStatus] = []
     /// The start-up sheet offering to install what is missing (048). Raised once per
@@ -99,6 +103,14 @@ final class AppModel {
     @ObservationIgnored let controlBackoff = Backoff(first: .seconds(2), longest: .seconds(60))
     @ObservationIgnored private let wakeAndNetwork = WakeAndNetwork()
     @ObservationIgnored private var checkingAfterWake = false
+    /// The last wake, so a host lost with a sleep is quiet for a moment and then says the
+    /// sleep, not a lost connection (#6570).
+    /// Not watched itself, since each read of the clocks changes it.
+    @ObservationIgnored private var afterSleep = AfterSleep()
+    /// Counts the wakes seen and the ends of their quiet, so the notice is decided again then.
+    private var afterSleepChanges = 0
+    @ObservationIgnored private let sleepClocks = SleepClocks()
+    @ObservationIgnored private var afterSleepQuietTask: Task<Void, Never>?
     var problem: String?
     /// A send refused because the agent's folder has gone (#119), with the ways on. Said
     /// in the window's alert instead of `problem`, and the words stay in the bar.
@@ -251,6 +263,7 @@ final class AppModel {
             statusSecretsPage = nil
             showsTime = false
             showsVelocity = false
+            showsCycletime = false
             showsTokens = false
             machinePage = nil
             showsMachines = false
@@ -279,6 +292,7 @@ final class AppModel {
             statusSecretsPage = nil
             showsTime = false
             showsVelocity = false
+            showsCycletime = false
             showsTokens = false
             machinePage = nil
             showsMachines = false
@@ -306,6 +320,7 @@ final class AppModel {
             showsEvents = false
             showsTime = false
             showsVelocity = false
+            showsCycletime = false
             showsTokens = false
             machinePage = nil
             showsMachines = false
@@ -330,6 +345,7 @@ final class AppModel {
             showsRuntimes = false
             showsTime = false
             showsVelocity = false
+            showsCycletime = false
             showsTokens = false
             machinePage = nil
             showsMachines = false
@@ -350,6 +366,7 @@ final class AppModel {
         didSet {
             guard showsTime, showsTime != oldValue else { return }
             showsVelocity = false
+            showsCycletime = false
             showsSpending = false
             showsEvents = false
             showsRuntimes = false
@@ -392,6 +409,29 @@ final class AppModel {
         }
     }
 
+    var showsCycletime = false {
+        didSet {
+            guard showsCycletime, showsCycletime != oldValue else { return }
+            showsSpending = false
+            showsEvents = false
+            showsRuntimes = false
+            statusSecretsPage = nil
+            showsTime = false
+            showsVelocity = false
+            showsTokens = false
+            machinePage = nil
+            showsMachines = false
+            showsWork = false
+            showsDocs = false
+            showsMessages = false
+            showsAchievements = false
+            selection = nil
+            openWorkflow = nil
+            folderPage = nil
+            composing = false
+        }
+    }
+
     /// Whether the window is showing Tokens: what the work used in tokens, and the token
     /// limits (#956). A page like Cost, and not persisted for the same reason.
     var showsTokens = false {
@@ -403,6 +443,7 @@ final class AppModel {
             statusSecretsPage = nil
             showsTime = false
             showsVelocity = false
+            showsCycletime = false
             machinePage = nil
             showsMachines = false
             showsWork = false
@@ -431,6 +472,7 @@ final class AppModel {
             statusSecretsPage = nil
             showsTime = false
             showsVelocity = false
+            showsCycletime = false
             showsTokens = false
             showsMachines = false
             selection = nil
@@ -456,6 +498,7 @@ final class AppModel {
             statusSecretsPage = nil
             showsTime = false
             showsVelocity = false
+            showsCycletime = false
             showsTokens = false
             selection = nil
             openWorkflow = nil
@@ -479,6 +522,7 @@ final class AppModel {
             statusSecretsPage = nil
             showsTime = false
             showsVelocity = false
+            showsCycletime = false
             showsTokens = false
             machinePage = nil
             showsMachines = false
@@ -501,6 +545,7 @@ final class AppModel {
             statusSecretsPage = nil
             showsTime = false
             showsVelocity = false
+            showsCycletime = false
             showsTokens = false
             machinePage = nil
             showsMachines = false
@@ -525,6 +570,7 @@ final class AppModel {
             statusSecretsPage = nil
             showsTime = false
             showsVelocity = false
+            showsCycletime = false
             showsTokens = false
             machinePage = nil
             showsMachines = false
@@ -552,6 +598,7 @@ final class AppModel {
             statusSecretsPage = nil
             showsTime = false
             showsVelocity = false
+            showsCycletime = false
             showsTokens = false
             machinePage = nil
             showsMachines = false
@@ -666,6 +713,7 @@ final class AppModel {
         statusSecretsPage = nil
         showsTime = false
         showsVelocity = false
+        showsCycletime = false
         showsTokens = false
         machinePage = nil
         showsMachines = false
@@ -694,6 +742,7 @@ final class AppModel {
         statusSecretsPage = nil
         showsTime = false
         showsVelocity = false
+        showsCycletime = false
         showsTokens = false
         machinePage = nil
         showsMachines = false
@@ -748,6 +797,7 @@ final class AppModel {
             if showsTokens { return .tokens }
             if showsTime { return .time }
             if showsVelocity { return .velocity }
+            if showsCycletime { return .cycletime }
             if showsWork { return .work(workPlace.kind) }
             if showsDocs { return .docs }
             if showsMessages { return .messages }
@@ -776,6 +826,7 @@ final class AppModel {
                 statusSecretsPage = nil
                 showsTime = false
                 showsVelocity = false
+                showsCycletime = false
                 showsTokens = false
                 machinePage = nil
                 showsMachines = false
@@ -805,6 +856,8 @@ final class AppModel {
                 showsTime = true
             case .velocity:
                 showsVelocity = true
+            case .cycletime:
+                showsCycletime = true
             case .dashboard:
                 showDashboard()
             case .work(let kind):
@@ -838,6 +891,7 @@ final class AppModel {
                 statusSecretsPage = nil
                 showsTime = false
                 showsVelocity = false
+                showsCycletime = false
                 showsTokens = false
                 machinePage = nil
                 showsMachines = false
@@ -871,6 +925,7 @@ final class AppModel {
         statusSecretsPage = nil
         showsTime = false
         showsVelocity = false
+        showsCycletime = false
         showsTokens = false
         machinePage = nil
         showsMachines = false
@@ -889,6 +944,7 @@ final class AppModel {
         statusSecretsPage = nil
         showsTime = false
         showsVelocity = false
+        showsCycletime = false
         showsTokens = false
         machinePage = nil
         showsMachines = false
@@ -922,6 +978,7 @@ final class AppModel {
         statusSecretsPage = nil
         showsTime = false
         showsVelocity = false
+        showsCycletime = false
         showsTokens = false
         machinePage = nil
         showsMachines = false
@@ -1170,6 +1227,7 @@ final class AppModel {
         statusSecretsPage = nil
         showsTime = false
         showsVelocity = false
+        showsCycletime = false
         showsTokens = false
         machinePage = nil
         showsMachines = false
@@ -1325,7 +1383,11 @@ final class AppModel {
         let localCopy = LocalCopyKeeper(copy: Self.windowCopy(), work: work)
         self.localCopy = localCopy
         // At once, so the sidebar and a chat restored at launch draw before the host answers.
-        Task { await localCopy.drawMachines() }
+        Task { [weak self] in
+            await localCopy.drawMachines()
+            // Opened also when Work is not, so its records age out (#6788).
+            _ = self?.workCache
+        }
         // On `controlLink` itself, not a link of its own (#445): a second connection that
         // nothing else knew of was never let go of, so a wedged one stayed for good.
         if let controlLink { client = DaemonClient(link: hostLink(.mac, through: controlLink), machine: .mac) }
@@ -1395,6 +1457,15 @@ final class AppModel {
     /// Every host the control plane last listed, this Mac's included. Nil when the
     /// window is not its client; empty until the first list arrives (058, R11).
     var controlPlaneHosts: [DaemonAPI.ControlMachine]? = ControlConfig.endpoint == nil ? nil : []
+    /// `control/status.maturity` (#6579): the levels of the control plane's capabilities that are
+    /// not GA. Nil from one older than that, or before its status arrives.
+    var controlPlaneMaturity: [String: String]?
+    /// What each part says of its levels, for Early Features (#6579): the control plane's and each
+    /// host's. None without a control plane, and the window reads its own list.
+    var partsMaturity: [[String: String]?] {
+        guard let hosts = controlPlaneHosts else { return [] }
+        return [controlPlaneMaturity] + hosts.map(\.maturity)
+    }
     /// The control plane's list has arrived at least once, so an empty one means none.
     private var controlPlaneListed = false
     /// `control/status.thisMacHost` (#303): how this Mac's host says its join stands.
@@ -1420,6 +1491,12 @@ final class AppModel {
     /// the host said no list, or the window is not a control plane's client.
     func host(_ host: MachineRef, has capability: String) -> Bool {
         controlPlaneHosts?.first { $0.id == host }?.has(capability) ?? true
+    }
+
+    /// The online machines that do not follow the commitTrailers rule yet (#6373), by name: their
+    /// agents' commits get no trailers until they update.
+    var machinesNotFollowingCommitTrailers: [String] {
+        hosts.hosts.all.filter { !hosts.isOffline($0.id) && !host($0.id, has: Capability.hostCommitTrailers1) }.map(\.label)
     }
 
     /// Whether the host of an agent can do what `capability` names.
@@ -1567,8 +1644,20 @@ final class AppModel {
         return MacHostNotice.decide(planeOnThisMac: controlPlaneMachine == MachineID.current,
                                     macState: macHostState,
                                     join: macHostJoin,
-                                    windowMissed: hosts.macDownSince != nil)
+                                    windowMissed: hosts.macDownSince != nil,
+                                    afterSleep: macHostAfterSleep)
     }
+
+    /// Whether this Mac's host, lost now, was lost with a sleep (#6570).
+    private var macHostAfterSleep: AfterSleep.Verdict {
+        _ = afterSleepChanges
+        let now = Date()
+        return afterSleep.verdict(downSince: hosts.macDownSince ?? now, now: now)
+    }
+
+    /// For a moment after a wake, a lost host is the window reconnecting, and nothing says
+    /// it is offline (#6570).
+    var macHostQuietAfterWake: Bool { hosts.isOffline(.mac) && macHostAfterSleep == .quiet }
 
     /// The control plane is elsewhere and lists no host on this Mac (#1503): only the window
     /// is paired here, and servers alone are hosts. Nothing then answers for this Mac's own
@@ -2310,6 +2399,12 @@ final class AppModel {
     func velocityHistory() async -> VelocityHistory? {
         guard let history = try? await macClient.call(DaemonAPI.Method.velocityHistory, Optional<String>.none,
                                                     returning: VelocityHistory.self) else { return nil }
+        return .merged([history])
+    }
+
+    func cycleTimeHistory() async -> CycleTimeHistory? {
+        guard let history = try? await macClient.call(DaemonAPI.Method.cycletimeHistory, Optional<String>.none,
+                                                    returning: CycleTimeHistory.self) else { return nil }
         return .merged([history])
     }
 
@@ -3243,6 +3338,7 @@ final class AppModel {
         guard !needsFirstRun else { return }
         // Said at once, everywhere this Mac's host is the target (#83), rather than
         // when the next action has waited out a connect.
+        lookForSleep()
         if hosts.macDownSince == nil { hosts.macDownSince = Date() }
         listening = nil
         // The daemon forgot these screens with the connection. Marked, so they attach
@@ -3257,6 +3353,7 @@ final class AppModel {
         routeSharedFiles()
         // Nothing to connect to, and nothing to start: the first run says where.
         guard !needsFirstRun else { return }
+        lookForSleep()
         wakeAndNetwork.start { [weak self] reason in self?.goBackNow(reason) }
         await connect()
         if !isConnected { await reconnect() }
@@ -3266,6 +3363,11 @@ final class AppModel {
     /// connection the window still believes in is asked whether it is alive, since a
     /// sleep can leave one dead without a word. A try already in flight is left alone.
     private func goBackNow(_ reason: ReconnectTriggers.Reason) {
+        if reason == .wake {
+            afterSleep.woke(at: Date())
+            quietAfterWake()
+        }
+        lookForSleep()
         let host = backoff.nudge()
         let control = controlBackoff.nudge()
         WakeAndNetwork.log.info("reconnect: \(reason.rawValue, privacy: .public): host \(String(describing: host), privacy: .public), control plane \(String(describing: control), privacy: .public)")
@@ -3276,6 +3378,28 @@ final class AppModel {
             // under every host's goes too, so nothing dials back over the dead one.
             if await !client.answers(within: .seconds(4)) { controlLink?.disconnect() }
             checkingAfterWake = false
+        }
+    }
+
+    /// Reads the clocks for a sleep that no wake notification told of, such as a dark wake
+    /// (#6541, #6570). Cheap: it is read when this Mac's host is lost, and on a wake or a
+    /// network change, not on a timer.
+    private func lookForSleep() {
+        guard afterSleep.look(asleepSoFar: sleepClocks.asleepSoFar, now: Date()) else { return }
+        WakeAndNetwork.log.info("reconnect: the clocks say this Mac slept")
+        quietAfterWake()
+    }
+
+    /// When the quiet after a wake ends, the notice is decided again, so a host still lost
+    /// then says the sleep.
+    private func quietAfterWake() {
+        afterSleepChanges &+= 1
+        guard let end = afterSleep.quietEnds(now: Date()) else { return }
+        afterSleepQuietTask?.cancel()
+        afterSleepQuietTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(max(0, end.timeIntervalSinceNow) + 0.5))
+            guard !Task.isCancelled else { return }
+            self?.afterSleepChanges &+= 1
         }
     }
 
@@ -3302,7 +3426,7 @@ final class AppModel {
     /// Connect to Another… or Use This Mac Only (#4228): from one control plane straight to
     /// the next, with nothing of the first left dialling.
     func moveControlPlane(to endpoint: ControlConfig.Endpoint) async {
-        leaveControlPlane()
+        await leaveControlPlane()
         controlPlaneMoves += 1
         await adopt(endpoint)
     }
@@ -3310,7 +3434,7 @@ final class AppModel {
     /// Forget This Mac has gone through (#344): the control plane no longer knows this
     /// window, and its pairing is gone from disk. Everything dialled through it stops, and
     /// the window asks how to work again, as at first run.
-    func leaveControlPlane() {
+    func leaveControlPlane(forgetLocalData: Bool = false) async {
         needsFirstRun = true
         reconnecting?.cancel()
         reconnecting = nil
@@ -3335,6 +3459,11 @@ final class AppModel {
         DraftKeeper.shared.forgetAll()
         client = DaemonClient(link: UnreachableLink())
         isConnected = false
+        // Last: the window can connect again while these wait, so nothing may follow them.
+        if forgetLocalData {
+            await localCopy?.forget()
+            await workCache?.forget()
+        }
     }
 
     /// Keep going back until the daemon answers.
@@ -3426,6 +3555,7 @@ final class AppModel {
             isConnected = false
             // Neither way reached it: nor is it reached directly any more (#1118).
             wentDirect(.mac, false)
+            lookForSleep()
             if hosts.macDownSince == nil { hosts.macDownSince = Date() }
             // A control plane that cannot be reached is the strip, not an alert.
             if controlLink == nil { problem = describe(error) }
@@ -3732,6 +3862,7 @@ final class AppModel {
         gitAsksAnswered.formIntersection(GitLendAsk.waiting(in: listed))
         controlPlaneListed = true
         controlPlaneName = status.name
+        controlPlaneMaturity = status.maturity
         macHostJoin = status.thisMacHost
         controlPlaneMachine = status.machineID
         // `.mac` is `client`, already. Every other host, including another machine's
@@ -3764,6 +3895,7 @@ final class AppModel {
             work.replaceAgents([], from: id)
             pruneFolderDefaults(of: id, listed: [])
         }
+        localCopy?.listed(machines: listed.map(\.id))
     }
 
     /// A client for one of the control plane's hosts, connected: first directly over its

@@ -24,7 +24,7 @@ func said(text string) wire.TranscriptEntry {
 func TestLinesTheDiskRefusesAreWrittenInOrderOnceThereIsSpace(t *testing.T) {
 	s, _ := Open(t.TempDir())
 	id := NewUUID()
-	s.Append(id, said("one"))
+	must(t, errOnly(s.Append(id, said("one"))))
 	restore := refuseWrites(t)
 	for i, text := range []string{"two", "three"} {
 		n, _, err := s.AppendOne(id, said(text))
@@ -57,7 +57,9 @@ func TestWriteHeldWritesWhatIsHeld(t *testing.T) {
 	s, _ := Open(t.TempDir())
 	id := NewUUID()
 	restore := refuseWrites(t)
-	s.AppendOne(id, said("one"))
+	if _, _, err := s.AppendOne(id, said("one")); !errors.Is(err, ErrHeld) {
+		t.Fatalf("not held: %v", err)
+	}
 	if still, err := s.WriteHeld(); still != 1 || !errors.Is(err, syscall.ENOSPC) {
 		t.Fatalf("still %d, %v", still, err)
 	}
@@ -86,7 +88,9 @@ func TestAFullHoldSaysHowManyLinesWent(t *testing.T) {
 	}
 	id := NewUUID()
 	restore := refuseWrites(t)
-	s.AppendOne(id, said("kept"))
+	if _, _, err := s.AppendOne(id, said("kept")); !errors.Is(err, ErrHeld) {
+		t.Fatalf("not held: %v", err)
+	}
 	for range 2 {
 		if _, _, err := s.AppendOne(id, said("let go")); err == nil || errors.Is(err, ErrHeld) {
 			t.Fatalf("past the bound: %v", err)

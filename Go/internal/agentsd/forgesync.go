@@ -174,7 +174,7 @@ func (d *Daemon) forgeSourceList(ctx context.Context) wire.ForgeSources {
 			}
 			scope, err := f.Sources(ctx, folders, prs)
 			if err != nil && !slices.ContainsFunc(out.Errors, func(e wire.ForgeListError) bool { return e.Forge == f.Name() }) {
-				out.Errors = append(out.Errors, wire.ForgeListError{Forge: f.Name(), Message: err.Error()})
+				out.Errors = append(out.Errors, forgeListError(f.Name(), err))
 			}
 			if scope == nil || scope.Empty() {
 				continue
@@ -320,7 +320,7 @@ func (w *sweeper) step(ctx context.Context) {
 	// A forge that left folders out (another GitLab, no sign-in) says so; their items are not
 	// read until that changes, so the read's highWater still moves.
 	if s.err != nil && !slices.ContainsFunc(w.out.errors, func(e wire.ForgeListError) bool { return e.Forge == s.forge.Name() }) {
-		w.out.errors = append(w.out.errors, wire.ForgeListError{Forge: s.forge.Name(), Message: s.err.Error()})
+		w.out.errors = append(w.out.errors, forgeListError(s.forge.Name(), s.err))
 	}
 	if s.scope == nil {
 		w.nextStream()
@@ -328,7 +328,7 @@ func (w *sweeper) step(ctx context.Context) {
 	}
 	p, ended, err := w.read(ctx, s)
 	if err != nil {
-		w.out.errors = append(w.out.errors, wire.ForgeListError{Forge: s.forge.Name(), Message: err.Error()})
+		w.out.errors = append(w.out.errors, forgeListError(s.forge.Name(), err))
 		w.out.failed = true
 		w.nextStream()
 		return

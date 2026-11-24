@@ -50,4 +50,44 @@ struct SecretOfferTests {
         #expect(SecretOfferWords.keepYours == "Keep Yours")
         #expect(SecretOfferWords.useTheAgents == "Use the Agent's")
     }
+
+    /// #6626: a new offer of the same name (a new id) keeps the card's progress and failure.
+    @Test func answersFollowTheCardNotTheOffersID() {
+        let first = DaemonAPI.SecretOffer(offer: "OFFER-1", name: "PADDLE_SANDBOX_PASSWORD", machine: "MACHINE-30", machineName: "Mac",
+                                          savedAt: "2026-11-22T02:48:50Z", conflict: true)
+        var again = first
+        again.offer = "OFFER-2"
+        again.savedAt = "2026-11-22T02:48:51Z"
+        var other = first
+        other.machine = "MACHINE-31"
+        var answers = DaemonAPI.SecretOfferAnswers()
+        answers.begin(first)
+        #expect(answers.isAnswering(again))
+        #expect(!answers.isAnswering(other))
+        answers.end(first, failure: SecretOfferWords.noKey)
+        #expect(!answers.isAnswering(again))
+        #expect(answers.failure(again) == SecretOfferWords.noKey)
+        answers.keep(only: [again, other])
+        #expect(answers.failure(again) == SecretOfferWords.noKey)
+        answers.begin(again)
+        #expect(answers.failure(first) == nil)
+        answers.end(again, failure: "refused")
+        answers.keep(only: [other])
+        #expect(answers.failure(first) == nil)
+    }
+
+    /// #6626: one card per machine and name, with its newest offer.
+    @Test func oneCardPerMachineAndName() {
+        let first = DaemonAPI.SecretOffer(offer: "OFFER-1", name: "OKTA_ADMIN_PASSWORD", machine: "MACHINE-30", machineName: "Mac",
+                                          savedAt: "2026-11-22T02:48:50Z", conflict: true)
+        var again = first
+        again.offer = "OFFER-2"
+        again.savedAt = "2026-11-22T02:48:51Z"
+        var other = first
+        other.offer = "OFFER-3"
+        other.machine = "MACHINE-31"
+        other.savedAt = "2026-11-22T02:00:00Z"
+        #expect(DaemonAPI.SecretOffer.waiting([again, first, other]).map(\.offer) == ["OFFER-3", "OFFER-2"])
+        #expect(DaemonAPI.SecretOffer.waiting([]).isEmpty)
+    }
 }

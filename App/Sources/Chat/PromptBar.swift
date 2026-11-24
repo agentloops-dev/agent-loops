@@ -27,8 +27,6 @@ struct PromptBar: View {
     /// over a new session to look at it (#987).
     var presence: ((_ focused: Bool, _ typed: Int) -> Void)?
     @State private var text = ""
-    /// Where the cursor is, so dictation writes there (#427, #2515).
-    @State private var selection: TextSelection?
     @State private var dictation = Dictation()
     /// How far back Up has gone through the prompts sent here; nil at the prompt bar's
     /// own text (#1551).
@@ -477,7 +475,10 @@ struct PromptBar: View {
                     // Left before its first words: a new session's voice mode ends (#2388).
                     .onDisappear { if agent == nil { VoiceMode.shared.leave(nil) } }
             } else {
-                TextField(placeholder, text: $text, selection: $selection, axis: .vertical)
+                // No `selection:` binding (#6878): it trails the typing by one update, and each
+                // redraw while the agent works put that old place back, so the cursor jumped
+                // back a few letters. Dictation reads the field editor instead.
+                TextField(placeholder, text: $text, axis: .vertical)
                     .textFieldStyle(.plain)
                     .appText(.reading)
                     .lineLimit(2...12)
@@ -580,8 +581,11 @@ struct PromptBar: View {
                         // Typing is a prompt coming (#183).
                         if !text.isEmpty, let id = agent?.id { Task { await model.prewarm(id, .typing) } }
                     }
-                    .onChange(of: selection) {
-                        if let range = DictationCursor.range(of: selection, in: text) { dictation.selected(range) }
+                    // The person moved the cursor while dictating: the next words go there.
+                    .onReceive(NotificationCenter.default.publisher(for: NSTextView.didChangeSelectionNotification)) { note in
+                        guard dictation.isListening, focused, let editor = note.object as? NSTextView,
+                              let range = FieldEditorCursor.range(of: editor, in: text) else { return }
+                        dictation.selected(range)
                     }
                     .frame(minHeight: 44, alignment: .topLeading)
             }
@@ -723,10 +727,10 @@ struct PromptBar: View {
 
     private func beginDictation() {
         focused = true
-        dictation.start(in: text, selection: DictationCursor.range(of: selection, in: text),
+        dictation.start(in: text, selection: FieldEditorCursor.range(in: text),
                         vocabulary: speechSeeds) { field, cursor in
             text = field
-            selection = DictationCursor.selection(cursor, in: field)
+            FieldEditorCursor.place(cursor, in: field)
         }
     }
 

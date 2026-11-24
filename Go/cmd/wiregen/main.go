@@ -4,7 +4,8 @@
 //	wiregen [-root <repo>] [-check]
 //
 // It writes Go/wire/types_gen.go, Go/wire/methods_gen.go and Web/src/protocol/generated.ts,
-// and the capabilities for Go, TypeScript and Swift (#1748).
+// the capabilities for Go, TypeScript and Swift (#1748), and the feature flags (#6254) and the
+// capabilities that are not GA (#6052) for Swift and TypeScript.
 // With -check it writes nothing and fails when any of them is not what it would write.
 // scripts/wire.sh gen runs it.
 package main
@@ -39,6 +40,16 @@ const (
 	GoCapabilities    = "Go/wire/capabilities_gen.go"
 	TSCapabilities    = "Web/src/protocol/capabilities.generated.ts"
 	SwiftCapabilities = "Packages/AgentsKit/Sources/AgentsKitCore/Daemon/Capabilities.generated.swift"
+	// The feature flags in work (#6254), for the clients.
+	Flags      = "Packages/Wire/feature-flags.json"
+	SwiftFlags = "Packages/AgentsKit/Sources/AgentsKitCore/Model/FeatureFlag.generated.swift"
+	TSFlags    = "Web/src/protocol/flags.generated.ts"
+	// The capabilities that are not GA (#6052), for the clients.
+	Maturity      = "Packages/Wire/maturity.json"
+	SwiftMaturity = "Packages/AgentsKit/Sources/AgentsKitCore/Model/Maturity.generated.swift"
+	TSMaturity    = "Web/src/protocol/maturity.generated.ts"
+	// The same levels for a Go host and the control plane, which send them (#6579).
+	GoMaturity = "Go/wire/maturity_gen.go"
 )
 
 func main() {
@@ -51,7 +62,7 @@ func main() {
 		os.Exit(1)
 	}
 	stale := false
-	for _, path := range []string{GoTypes, GoMethods, TypeScript, GoAppTools, GoEvents, GoCapabilities, TSCapabilities, SwiftCapabilities} {
+	for _, path := range []string{GoTypes, GoMethods, TypeScript, GoAppTools, GoEvents, GoCapabilities, TSCapabilities, SwiftCapabilities, SwiftFlags, TSFlags, SwiftMaturity, TSMaturity, GoMaturity} {
 		full := filepath.Join(*root, path)
 		current, _ := os.ReadFile(full)
 		if bytes.Equal(current, []byte(files[path])) {
@@ -195,6 +206,24 @@ func generate(root string) (map[string]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	flagsFile, err := read(Flags)
+	if err != nil {
+		return nil, err
+	}
+	flags, err := readFlags(flagsFile)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", Flags, err)
+	}
+	maturityFile, err := read(Maturity)
+	if err != nil {
+		return nil, err
+	}
+	early, err := readMaturity(maturityFile, capabilities(rpcs))
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", Maturity, err)
+	}
 	return map[string]string{GoTypes: types, GoMethods: methods, TypeScript: typescript(doc, rpcs), GoAppTools: string(tools),
-		GoEvents: string(events), GoCapabilities: caps, TSCapabilities: tsCapabilities(rpcs), SwiftCapabilities: swiftCapabilities(rpcs)}, nil
+		GoEvents: string(events), GoCapabilities: caps, TSCapabilities: tsCapabilities(rpcs), SwiftCapabilities: swiftCapabilities(rpcs),
+		SwiftFlags: swiftFlags(flags), TSFlags: tsFlags(flags), SwiftMaturity: swiftMaturity(early), TSMaturity: tsMaturity(early),
+		GoMaturity: goMaturity(early)}, nil
 }

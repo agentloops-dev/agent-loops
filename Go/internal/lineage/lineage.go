@@ -130,6 +130,10 @@ type Store interface {
 	End(r wire.LineageEndRequest, at time.Time) ([]wire.LineageLink, error)
 	// Links is a node's links, either way, newest first, at most MostAnswer.
 	Links(n wire.LineageNode) wire.LineageLinks
+	// ActiveFrom is the active links from a node with relation rel, newest start first, out
+	// of all its links, not only the newest MostAnswer (#6530): an issue of a long lane has
+	// more, and its part-of link is among the oldest.
+	ActiveFrom(n wire.LineageNode, rel string) []wire.LineageLink
 	// Walk is the graph within depth links of a node, either way, with the state now of
 	// each node in it that has one.
 	Walk(n wire.LineageNode, depth int) wire.LineageGraph
@@ -792,6 +796,19 @@ func (f *Files) Links(n wire.LineageNode) wire.LineageLinks {
 	states := f.stateOf[n]
 	for i := len(states) - 1; i >= 0 && len(out.States) < MostAnswer; i-- {
 		out.States = append(out.States, f.states[states[i]].LineageSessionState)
+	}
+	return out
+}
+
+func (f *Files) ActiveFrom(n wire.LineageNode, rel string) []wire.LineageLink {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	n = f.canonLocked(n)
+	var out []wire.LineageLink
+	for _, i := range f.linksOf(n) {
+		if l := f.links[i]; l.From == n && l.Rel == rel && l.EndedAt == nil {
+			out = append(out, l)
+		}
 	}
 	return out
 }

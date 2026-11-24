@@ -40,7 +40,12 @@
 #                           run from the installed one; nothing is changed (#3451)
 #   ship.sh --control-plane also deploy this checkout to the live control plane,
 #                           control.agentloops.dev, with deploy/gcp/up.sh (#4712): the
-#                           release's image on a release tag, else built here (--build)
+#                           release's image on a release tag, else built (--build: Go and Node
+#                           here, the image on the VM, so this Mac needs no Docker)
+#   ship.sh --install-cli   also put loops, the command-line client, on the PATH (#6559):
+#                           with the Mac install, ~/.local/bin/loops links to the installed
+#                           app's Contents/Helpers/loops, so it updates with the app; with
+#                           --no-mac, it builds loops here and copies it there
 #
 # The jobs name their app by bundle id only, so launchd can start them from any copy that
 # LaunchServices knows, such as an old Debug build in some checkout (#3451). launchd keeps
@@ -287,7 +292,7 @@ if [[ ${1:-} == --install-device ]]; then
   exit
 fi
 
-BUILD=1 DEVICES=1 MAC=1 DELAY=20 LINUX=1 BUILD_ONLY=0 LIST_DEVICES=0 CONTROL_PLANE=0
+BUILD=1 DEVICES=1 MAC=1 DELAY=20 LINUX=1 BUILD_ONLY=0 LIST_DEVICES=0 CONTROL_PLANE=0 INSTALL_CLI=0
 typeset -a ONLY
 while (( $# )); do
   case $1 in
@@ -301,6 +306,7 @@ while (( $# )); do
     --build-only) BUILD_ONLY=1 ;;
     --list-devices) LIST_DEVICES=1 ;;
     --control-plane) CONTROL_PLANE=1 ;;
+    --install-cli) INSTALL_CLI=1 ;;
     *) echo "unknown option $1" >&2; exit 2 ;;
   esac
   shift
@@ -413,6 +419,9 @@ if (( BUILD )); then
     # serves: gitignored build outputs, so stale until rebuilt here.
     (( LINUX )) && run build-linux scripts/build-linux-agentsd.sh
     run build-host scripts/build-cache.sh xcodebuild -scheme AgentsHost -configuration $CONFIG -destination 'platform=macOS' -derivedDataPath build/DD-host $XFLAGS build
+  elif (( INSTALL_CLI )); then
+    # No app to carry loops: build it alone, for both Mac architectures (#6559).
+    run build-loops scripts/go-github-mcp.sh --force loops
   fi
   if (( DEVICES )); then
     # Xcode makes the Remote's profiles (the app, RemoteShare and their App Group) with an
@@ -499,4 +508,31 @@ if (( MAC )); then
 else
   echo "leaving the Mac app where it is: no copy into Applications, no login-item restart"
 fi
-(( ! CP_FAILED ))
+
+# loops on the PATH (#6559). With the Mac install it is a link into the installed app, which
+# the restart swaps in at the same path, so loops updates with the app.
+CLI_FAILED=0
+if (( INSTALL_CLI )); then
+  CLI_AT=$HOME/.local/bin/loops
+  mkdir -p ${CLI_AT:h}
+  if (( MAC )); then
+    if [[ -x "$LIVE/Agent Loops.app/Contents/Helpers/loops" ]]; then
+      rm -f $CLI_AT && ln -s "$HOSTAPP_AT/Contents/Helpers/loops" $CLI_AT
+      echo "$(date +%T) linked $CLI_AT to $HOSTAPP_AT/Contents/Helpers/loops"
+    else
+      CLI_FAILED=1
+      echo "FAILED: install-cli: the app carries no loops (built with no Go?); see $LOGS/build-host.log" >&2
+    fi
+  elif [[ -x $REPO/Go/out/helpers/loops ]]; then
+    # A file, not a link: Go/out is written over by every build in this checkout.
+    rm -f $CLI_AT && install -m 755 $REPO/Go/out/helpers/loops $CLI_AT
+    echo "$(date +%T) installed $CLI_AT, built from $SHA"
+  else
+    CLI_FAILED=1
+    echo "FAILED: install-cli: no $REPO/Go/out/helpers/loops (no Go here, or --no-build with none built)" >&2
+  fi
+  if (( ! CLI_FAILED )) && [[ :$PATH: != *:${CLI_AT:h}:* ]]; then
+    echo "note: ${CLI_AT:h} is not on PATH; add it in ~/.zprofile: export PATH=\"\$HOME/.local/bin:\$PATH\""
+  fi
+fi
+(( ! CP_FAILED && ! CLI_FAILED ))

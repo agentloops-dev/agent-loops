@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"log"
 	"maps"
-	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -50,6 +49,10 @@ type live struct {
 	prompting, stopped bool
 	// turnSeq counts turns, so a cancel sent again is only for the turn it was meant for.
 	turnSeq int
+	// changesKept is the turnSeq of the last turn whose changes were kept (keepTurnChanges):
+	// from then on that turn changes no file, though inTurn is true until it returns, after
+	// its record says it ended (#6274).
+	changesKept int
 	// reported is whether this turn said how it went itself (a wait on agents), so its
 	// ending keeps that rather than one worked out from its last words.
 	reported bool
@@ -205,14 +208,26 @@ func (d *Daemon) change(id wire.UUID, edit func(a *wire.Agent)) *wire.Agent {
 	return d.changeAgent(id, true, edit)
 }
 
+// changeFromArchive is change for the one edit that may take an agent out of the archive:
+// an unarchive, or a turn's words sent to an archived agent (moveState, #1611).
+func (d *Daemon) changeFromArchive(id wire.UUID, edit func(a *wire.Agent)) *wire.Agent {
+	return d.writeChange(id, true, true, edit)
+}
+
 // changeAgent is change; with moveOn false, the record keeps its last activity, so a mark
 // such as Mute (#2003) does not move the session up its list.
 func (d *Daemon) changeAgent(id wire.UUID, moveOn bool, edit func(a *wire.Agent)) *wire.Agent {
+	return d.writeChange(id, moveOn, false, edit)
+}
+
+// writeChange is changeAgent; with mayUnarchive, the edit may take the agent out of the
+// archive (changeFromArchive).
+func (d *Daemon) writeChange(id wire.UUID, moveOn, mayUnarchive bool, edit func(a *wire.Agent)) *wire.Agent {
 	// agentMu covers only the read, the edit and the save; the tell lock keeps this
 	// agent's tells in the order of its saves (agenttell.go, #4509).
 	unlockTell := d.lockAgentTell(id)
 	defer unlockTell()
-	a, before := d.saveChange(id, moveOn, edit)
+	a, before := d.saveChange(id, moveOn, mayUnarchive, edit)
 	if a == nil {
 		return nil
 	}
@@ -233,8 +248,9 @@ func (d *Daemon) changeAgent(id wire.UUID, moveOn bool, edit func(a *wire.Agent)
 }
 
 // saveChange is changeAgent's part under agentMu: the record after the edit, saved, and
-// the record before it; nil when there is no such agent or the save failed.
-func (d *Daemon) saveChange(id wire.UUID, moveOn bool, edit func(a *wire.Agent)) (*wire.Agent, wire.Agent) {
+// the record before it; nil when there is no such agent, the save failed, or the edit would
+// take an archived agent out of the archive without mayUnarchive.
+func (d *Daemon) saveChange(id wire.UUID, moveOn, mayUnarchive bool, edit func(a *wire.Agent)) (*wire.Agent, wire.Agent) {
 	d.agentMu.Lock()
 	defer d.agentMu.Unlock()
 	a := d.Store.Agent(id)
@@ -243,6 +259,12 @@ func (d *Daemon) saveChange(id wire.UUID, moveOn bool, edit func(a *wire.Agent))
 	}
 	before := *a
 	edit(a)
+	// An edit that set a state from what it saw before the archive (a turn's ending, a
+	// stop) would bring the session back, as Save clears ArchivedAt (#6619): it is dropped.
+	if before.State == wire.AgentStateArchived && a.State != wire.AgentStateArchived && !mayUnarchive {
+		log.Printf("agent %s: kept archived; a change to %s came after the archive", id, a.State)
+		return nil, wire.Agent{}
+	}
 	if moveOn {
 		a.LastActivityAt = now()
 	}
@@ -449,6 +471,16 @@ func (d *Daemon) newStartedAgent(r wire.StartRequest, by startedBy, path string,
 		StartedByAgent: by.agent, SandboxOverride: r.Sandbox, Persona: r.Persona, AccountID: r.AccountID,
 		Auto: pick, ClientPermission: client, PrioritySet: r.Priority,
 	}
+	// Start from what was asked for, or Auto's pick: OpenCode's Ask and Approve for me cells
+	// set the same native options, and without this the first match would always win (#6822).
+	requested := r.Levels
+	if pick != nil {
+		requested = &pick.Levels
+	}
+	if requested != nil {
+		levels := *requested
+		a.Levels = &levels
+	}
 	a.Levels = d.matchLevels(&a)
 	if q := by.queued; q != nil {
 		// Out of the queue, the same agent: its id, its title, when it was asked for and the
@@ -533,9 +565,8 @@ func (d *Daemon) enqueue(id wire.UUID, q wire.QueuedPrompt, first bool) error {
 }
 
 // hasTurn is whether something in the agent's queue may go now.
-func (d *Daemon) hasTurn(a *wire.Agent) bool {
-	_, _, ok := nextTurn(a.QueuedPrompts, d.heldMessages(a))
-	return ok
+func hasTurn(a *wire.Agent) bool {
+	return len(a.QueuedPrompts) > 0
 }
 
 // kick starts the agent's turns unless they are running, or the host is going.
@@ -551,28 +582,21 @@ func (l *live) kick() {
 
 // nextTurn is QueuedPrompt.nextTurn and merging: the run of the person's prompts at the
 // head goes as one (#346), since what was typed later so often corrects what came first;
-// anything else goes alone. A held message (heldMessage) is passed over, and waits where
-// it is, until the person has something in the queue too.
-func nextTurn(queue []wire.QueuedPrompt, held map[wire.UUID]bool) (wire.QueuedPrompt, []wire.QueuedPrompt, bool) {
-	start := 0
-	if !slices.ContainsFunc(queue, func(q wire.QueuedPrompt) bool { return q.From == wire.PromptOriginPerson }) {
-		for start < len(queue) && held[queue[start].ID] {
-			start++
-		}
-	}
-	if start == len(queue) {
+// anything else goes alone.
+func nextTurn(queue []wire.QueuedPrompt) (wire.QueuedPrompt, []wire.QueuedPrompt, bool) {
+	if len(queue) == 0 {
 		return wire.QueuedPrompt{}, queue, false
 	}
-	n := start + 1
-	if queue[start].From == wire.PromptOriginPerson {
+	n := 1
+	if queue[0].From == wire.PromptOriginPerson {
 		for n < len(queue) && queue[n].From == wire.PromptOriginPerson {
 			n++
 		}
 	}
-	merged := queue[start]
+	merged := queue[0]
 	var texts, prefaces []string
 	merged.Attachments = []wire.Attachment{}
-	for _, q := range queue[start:n] {
+	for _, q := range queue[:n] {
 		texts = append(texts, q.Text)
 		if q.Preface != nil {
 			prefaces = append(prefaces, *q.Preface)
@@ -585,7 +609,7 @@ func nextTurn(queue []wire.QueuedPrompt, held map[wire.UUID]bool) (wire.QueuedPr
 		p := strings.Join(prefaces, "\n\n")
 		merged.Preface = &p
 	}
-	return merged, append(append([]wire.QueuedPrompt(nil), queue[:start]...), queue[n:]...), true
+	return merged, append([]wire.QueuedPrompt(nil), queue[n:]...), true
 }
 
 // blocks is QueuedPrompt.blocks: the words, then what is attached.
@@ -616,7 +640,7 @@ func (l *live) run() {
 		// A queued record's words wait for its place: only startQueued takes it out of the
 		// queue, on the runtime Auto picks then (#4380). A day rolling over or a message
 		// kicks it too.
-		if a == nil || a.State == wire.AgentStateQueued || !l.d.hasTurn(a) {
+		if a == nil || a.State == wire.AgentStateQueued || !hasTurn(a) {
 			l.running = false
 			l.mu.Unlock()
 			return
@@ -693,7 +717,7 @@ func (l *live) turn() bool {
 	bs, from, branch, turnEntry := l.recordTurnPrompt(a, q)
 	// The folder as the turn begins, for Undo These Changes (#3437); its end is the second.
 	snap := d.snapshotTurn(l.id, turnEntry)
-	defer d.endTurnSnapshot(snap)
+	defer l.keepTurnChanges(snap)
 	l.clearForTurn(from)
 	// Archived or stopped while it got ready (#1611): its context is gone, and the state
 	// is left as the stop wrote it.
@@ -751,11 +775,7 @@ func (l *live) takeTurnWords() (wire.QueuedPrompt, bool) {
 	d := l.d
 	var q wire.QueuedPrompt
 	taken := false
-	held := map[wire.UUID]bool{}
-	if a := d.Store.Agent(l.id); a != nil {
-		held = d.heldMessages(a)
-	}
-	d.change(l.id, func(a *wire.Agent) { q, a.QueuedPrompts, taken = nextTurn(a.QueuedPrompts, held) })
+	d.change(l.id, func(a *wire.Agent) { q, a.QueuedPrompts, taken = nextTurn(a.QueuedPrompts) })
 	if !taken {
 		return q, false
 	}
@@ -1121,7 +1141,11 @@ func (d *Daemon) setState(id wire.UUID, s wire.AgentState) {
 // (#1611). With from, it moves only an agent in that state, in the same change (#6367).
 func (d *Daemon) moveState(id wire.UUID, s wire.AgentState, fromArchive bool, from *wire.AgentState) {
 	changed, started := false, false
-	d.change(id, func(a *wire.Agent) {
+	write := d.change
+	if fromArchive {
+		write = d.changeFromArchive
+	}
+	write(id, func(a *wire.Agent) {
 		if a.State == s || a.State == wire.AgentStateArchived && !fromArchive || from != nil && a.State != *from {
 			return
 		}
@@ -1163,10 +1187,7 @@ func (d *Daemon) end(l *live, s wire.AgentState, why wire.EndedReason) {
 		l.forgetTools()
 		d.endScreenDrive(l.id)
 		d.endBrowserDrive(l.id)
-		d.workflowRunFinished(l.id)
-		d.guardedTurnEnded(l.id)
-		d.checkQueueSoon(folderPath(a))
-		d.agentEnded(l.id)
+		d.endArchivedTurn(l.id, a)
 		return
 	}
 	why = d.endedReasonFor(l.id, s, why)
@@ -1174,7 +1195,9 @@ func (d *Daemon) end(l *live, s wire.AgentState, why wire.EndedReason) {
 	l.forgetTools()
 	d.endScreenDrive(l.id)
 	d.endBrowserDrive(l.id)
-	d.change(l.id, func(a *wire.Agent) {
+	// Archived since the look above (#6619): saveChange keeps it so, and the ending is
+	// not said. A save that failed goes on as before.
+	if d.change(l.id, func(a *wire.Agent) {
 		a.State, a.EndedReason, a.RunningTool = s, reason(why), nil
 		if why != wire.EndedReasonDaemonGone {
 			a.RestartPickUps = nil // any ending but the daemon's going clears the count
@@ -1185,7 +1208,12 @@ func (d *Daemon) end(l *live, s wire.AgentState, why wire.EndedReason) {
 			keptBlock = setFinishedTurnReport(a, last, held)
 		}
 		requested, archiveNow = d.settleArchiveRequest(a, s, why, showedFile)
-	})
+	}) == nil {
+		if a := d.Store.Agent(l.id); a != nil && a.State == wire.AgentStateArchived {
+			d.endArchivedTurn(l.id, a)
+			return
+		}
+	}
 	d.record(l.id, stateChanged(s, reason(why)))
 	// A stopped session holds nothing (#6190): a runtime that died, or an error that ended
 	// the turn, let go of its leases at once, not when they run out, so its line moves. Only
@@ -1222,6 +1250,15 @@ func (d *Daemon) end(l *live, s wire.AgentState, why wire.EndedReason) {
 	}
 	// A move to another machine asked for in this turn goes now (#3717).
 	d.afterTurnMachineMove(l.id, s)
+}
+
+// endArchivedTurn is the rest of the ending of a turn its archive cut off (#1611), after its
+// tools and drives: the session stays archived, and the ending is not said.
+func (d *Daemon) endArchivedTurn(id wire.UUID, a *wire.Agent) {
+	d.workflowRunFinished(id)
+	d.guardedTurnEnded(id)
+	d.checkQueueSoon(folderPath(a))
+	d.agentEnded(id)
 }
 
 // endedReasonFor is the reason a turn ends with: the daemon's going when the host's going
@@ -2064,7 +2101,7 @@ func (d *Daemon) stopAll() {
 
 // keepMode is the runtime moving itself to another mode (Claude leaving plan mode): the
 // agent's mode now, as the Swift host kept it, so that the checks that read it
-// (inheritedMode, looserThan) see the mode it runs in, not the one it started in.
+// (inheritedMode) see the mode it runs in, not the one it started in.
 func keepMode(a *wire.Agent, id string, v wire.JSONValue) {
 	values := make(map[string]wire.JSONValue, len(a.StartOptions.Values)+1)
 	for k, old := range a.StartOptions.Values {

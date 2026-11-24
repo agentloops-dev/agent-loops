@@ -230,8 +230,7 @@ func (d *Daemon) lineageIncidentEvent(e wire.Event) {
 // whose release node's first link is at or before it. It runs in lineageDo.
 func (d *Daemon) releaseOutAt(repo forgeRepo, at time.Time) (wire.LineageNode, bool) {
 	var tags []string
-	done, _ := d.doneReleaseTags(repo)
-	for tag := range done {
+	for tag := range d.doneReleaseTags(repo) {
 		if versionTagPattern.MatchString(tag) {
 			tags = append(tags, tag)
 		}

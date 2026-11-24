@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/capacity"
 	"github.com/shirou/gopsutil/v4/load"
 	"github.com/shirou/gopsutil/v4/mem"
 
@@ -32,10 +33,9 @@ import (
 // for minutes with 41% free and load 0.3 per core, and macOS keeps swap used long after the
 // pressure has gone (47% used with nothing running). Critical pressure still gives full.
 const (
-	capacityNearLoad    = 2.0
-	capacityFullLoad    = 3.0
-	capacityEvery       = 15 * time.Second
-	capacityLooksToFall = 2
+	capacityNearLoad = 2.0
+	capacityFullLoad = 3.0
+	capacityEvery    = 15 * time.Second
 )
 
 // capacitySample is one look at the machine.
@@ -91,25 +91,32 @@ func capacityTarget(s capacitySample) (wire.CapacityLevel, string) {
 	return wire.CapacityLevelOk, ""
 }
 
-var capacityRank = map[wire.CapacityLevel]int{"": 0, wire.CapacityLevelOk: 0, wire.CapacityLevelNear: 1, wire.CapacityLevelFull: 2}
-
-// nextCapacity is the level after a look: up to the target at once; down only when this
-// look and the one before it were both under the level (below is how many in a row were),
-// and then to the higher target of the two.
-func nextCapacity(was, target, lastBelow wire.CapacityLevel, below int) (level, nextLastBelow wire.CapacityLevel, nextBelow int) {
-	if was == "" {
-		was = wire.CapacityLevelOk
-	}
+// levelSignal is the signal that holds level after a look: none at ok; this look's when it
+// gave the level itself; else the one before, while the level waits to fall (#6596).
+func levelSignal(level, target wire.CapacityLevel, signal, was string) string {
 	switch {
-	case capacityRank[target] >= capacityRank[was]:
-		return target, "", 0
-	case below+1 >= capacityLooksToFall:
-		if capacityRank[lastBelow] > capacityRank[target] {
-			target = lastBelow
-		}
-		return target, "", 0
+	case capacity.Rank(level) == 0:
+		return ""
+	case signal != "" && capacity.Rank(target) == capacity.Rank(level):
+		return signal
+	case was == "":
+		return "load"
 	}
-	return was, target, below + 1
+	return was
+}
+
+// capacityReason is a signal as the rows say it: cpu for the load, memory for its pressure.
+func capacityReason(signal string) *wire.CapacityReason {
+	var r wire.CapacityReason
+	switch signal {
+	case "load":
+		r = wire.CapacityReasonCpu
+	case "memory_pressure":
+		r = wire.CapacityReasonMemory
+	default:
+		return nil
+	}
+	return &r
 }
 
 // capacityBook is the level and the last look, for machine/usage and for the leases and
@@ -123,6 +130,9 @@ type capacityBook struct {
 	// higher target of them.
 	capBelow     int
 	capLastBelow wire.CapacityLevel
+	// capSignal is the signal that set capLevel ("load" or "memory_pressure"; "" at ok), kept
+	// while the level waits to fall (#6596).
+	capSignal string
 	// What machine/capacity last told the control plane (#5374).
 	capSent capacitySent
 }
@@ -163,8 +173,11 @@ func (d *Daemon) checkCapacity(ctx context.Context) {
 	if was == "" {
 		was = wire.CapacityLevelOk
 	}
-	level, lastBelow, below := nextCapacity(was, target, d.capLastBelow, d.capBelow)
+	level, lastBelow, below := capacity.Next(was, target, d.capLastBelow, d.capBelow)
 	d.capLevel, d.capLastBelow, d.capBelow = level, lastBelow, below
+	wasSignal := d.capSignal
+	d.capSignal = levelSignal(level, target, signal, wasSignal)
+	signalMoved := d.capSignal != wasSignal
 	d.capSample, d.capSampled = s, true
 	d.capMu.Unlock()
 	d.sendCapacitySoon(level, s.load5)
@@ -175,6 +188,11 @@ func (d *Daemon) checkCapacity(ctx context.Context) {
 		d.goAfterTurn("helper queue", d.startQueuesAfterLook)
 	}
 	if level == was {
+		// The same level for another reason (#6596): the rows say the new one.
+		if signalMoved {
+			state := d.capacityState()
+			d.goJob("capacity/changed", func() { Broadcast(d, wire.NotifyCapacityChanged, state) })
+		}
 		return
 	}
 	log.Printf("capacity: %s (was %s; load %.2f per core, memory pressure %s, swap %.0f%%)",
@@ -286,7 +304,7 @@ func (d *Daemon) capacityHold() string {
 	d.capMu.Lock()
 	level, s := d.capLevel, d.capSample
 	d.capMu.Unlock()
-	if capacityRank[level] == 0 {
+	if capacity.Rank(level) == 0 {
 		return ""
 	}
 	words := "near capacity"
@@ -313,10 +331,17 @@ func capacityLevelWords(level wire.CapacityLevel) string {
 	return ""
 }
 
-// capacityState is capacity/state and capacity/changed (#4748): the level now.
+// capacityState is capacity/state and capacity/changed (#4748): the level now, and what set
+// it (#6596).
 func (d *Daemon) capacityState() wire.CapacityState {
 	level := d.capacityLevel()
+	d.capMu.Lock()
+	signal := d.capSignal
+	d.capMu.Unlock()
 	st := wire.CapacityState{Level: level}
+	if capacity.Rank(level) > 0 {
+		st.Reason = capacityReason(signal)
+	}
 	if w := capacityLevelWords(level); w != "" {
 		st.Words = &w
 	}

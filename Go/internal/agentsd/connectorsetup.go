@@ -528,20 +528,27 @@ func (d *Daemon) forgejoConnection() (connections.Connection, bool) {
 }
 
 func (d *Daemon) storedConnection(provider string) (connections.Connection, bool) {
+	c, ok, err := d.readConnection(provider)
+	return c, ok && err == nil
+}
+
+// readConnection is the provider's connection in the store, and an error when the store
+// does not read.
+func (d *Daemon) readConnection(provider string) (connections.Connection, bool, error) {
 	s, err := d.connectionStore()
 	if err == nil {
 		var c connections.Connection
 		var ok bool
 		if c, ok, err = s.Get(provider); err == nil {
 			d.connReadFailed.Store(false)
-			return c, ok
+			return c, ok, nil
 		}
 	}
 	// A store that does not read looks like no connection to the caller, so say why once (#6359).
 	if !d.connReadFailed.Swap(true) {
 		log.Printf("connections: the store did not read, so %s counts as not connected: %v", provider, err)
 	}
-	return connections.Connection{}, false
+	return connections.Connection{}, false, err
 }
 
 // connectionFor is the person's connection to f's forge, and whether it counts there: a

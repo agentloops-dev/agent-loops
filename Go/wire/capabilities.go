@@ -70,3 +70,16 @@ func set(names []string) map[string]bool {
 	}
 	return out
 }
+
+// MaturityOf is the level of each capability in list that is not GA (#6579), for machine/hello
+// and control/status: never nil, so a part that has none says {}, and a client tells it from
+// a part older than #6579, which says nothing and leaves the client to its own list.
+func MaturityOf(list []string) Maturity {
+	out := Maturity{}
+	for _, c := range list {
+		if level, ok := CapabilityLevels[c]; ok {
+			out[c] = level
+		}
+	}
+	return out
+}

@@ -1,7 +1,6 @@
 package agentsd
 
 import (
-	"encoding/json"
 	"os"
 	"testing"
 
@@ -45,7 +44,7 @@ func TestSessionSecretRowInfo(t *testing.T) {
 	defer d.Shutdown()
 	a := seeded(t, d, t.TempDir(), nil)
 	var list wire.SessionSecrets
-	json.Unmarshal(c.call(t, 1, "secrets/sessionSet", map[string]any{"agentID": a.ID, "name": "GITLAB_TOKEN", "value": "glpat-0123456789abWXYZ"}), &list)
+	mustUnmarshal(t, c.call(t, 1, "secrets/sessionSet", map[string]any{"agentID": a.ID, "name": "GITLAB_TOKEN", "value": "glpat-0123456789abWXYZ"}), &list)
 	if len(list.Secrets) != 1 {
 		t.Fatalf("%+v", list)
 	}
@@ -55,7 +54,7 @@ func TestSessionSecretRowInfo(t *testing.T) {
 		t.Fatalf("%+v", first)
 	}
 	list = wire.SessionSecrets{}
-	json.Unmarshal(c.call(t, 2, "secrets/sessionSet", map[string]any{"agentID": a.ID, "name": "GITLAB_TOKEN", "value": "short"}), &list)
+	mustUnmarshal(t, c.call(t, 2, "secrets/sessionSet", map[string]any{"agentID": a.ID, "name": "GITLAB_TOKEN", "value": "short"}), &list)
 	r := list.Secrets[0]
 	if r.Hint != nil || r.Created == nil || *r.Created != *first.Created || r.LastOp == nil || r.LastOp.What != wire.SecretOperationWhatReplaced {
 		t.Fatalf("%+v", r)
@@ -97,12 +96,12 @@ func TestAMachineKeepsTheHintOfItsCopy(t *testing.T) {
 		t.Fatal(info, err)
 	}
 	sent.Secrets = []wire.SealedUserSecret{sealedSecret(t, public, "sam", "GITHUB_TOKEN", 1, "an-old-value-that-is-long")}
-	d.ApplyUserSettings(sent)
+	must(t, d.ApplyUserSettings(sent))
 	if g := held()["GITHUB_TOKEN"]; g.Hint == nil || *g.Hint != "Q7zX" {
 		t.Fatalf("%+v", g)
 	}
 	sent.Secrets = nil
-	d.ApplyUserSettings(sent)
+	must(t, d.ApplyUserSettings(sent))
 	if len(held()) != 0 {
 		t.Fatal(held())
 	}
