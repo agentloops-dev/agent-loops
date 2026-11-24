@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -732,13 +733,19 @@ func sweepMeshEvents(ctx context.Context, s store.Store, now time.Time, most int
 
 // sweepProviders deletes, at most most, removed machine providers' tombstones a week
 // after their removal (#3748), and dates one written before forgottenAt was kept, so it
-// goes a week on. It says how many it deleted, and how many it dated.
+// goes a week on. Past providers.MostTombstones the oldest go sooner (#6762). It says how
+// many it deleted, and how many it dated.
 func sweepProviders(ctx context.Context, s store.Store, now time.Time, most int) (int, int, error) {
 	keys, err := s.List(ctx, providers.ProvidersPrefix)
 	if err != nil {
 		return 0, 0, err
 	}
 	deleted, dated := 0, 0
+	type tombstone struct {
+		key string
+		at  time.Time
+	}
+	var kept []tombstone
 	for _, k := range keys {
 		if deleted >= most {
 			break
@@ -766,12 +773,21 @@ func sweepProviders(ctx context.Context, s store.Store, now time.Time, most int)
 			continue
 		}
 		if !record.ForgottenAt.Before(now.Add(-tombstonesKept)) {
+			kept = append(kept, tombstone{k.Key, record.ForgottenAt.Time})
 			continue
 		}
 		if err := s.Delete(ctx, k.Key); err != nil {
 			return deleted, dated, err
 		}
 		deleted++
+	}
+	slices.SortFunc(kept, func(a, b tombstone) int { return a.at.Compare(b.at) })
+	for len(kept) > providers.MostTombstones && deleted < most {
+		if err := s.Delete(ctx, kept[0].key); err != nil {
+			return deleted, dated, err
+		}
+		deleted++
+		kept = kept[1:]
 	}
 	return deleted, dated, nil
 }

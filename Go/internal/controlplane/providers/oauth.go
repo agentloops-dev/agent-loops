@@ -86,6 +86,8 @@ func (p *Providers) oauthStart(request wire.ProviderOAuthStart, caller Caller) (
 			return wire.ProviderOAuthStarted{}, invalid("%s isn't a %s provider.", r.Name, flow.Name)
 		}
 		before, provider = &r, r.ID
+	} else if err := p.room(); err != nil {
+		return wire.ProviderOAuthStarted{}, err
 	}
 	machine, err := p.carrier(ProviderAdd{Machine: request.Machine}, before, caller)
 	if err != nil {
@@ -136,6 +138,10 @@ func (p *Providers) oauthFinish(request wire.ProviderOAuthFinish, caller Caller)
 		id := wire.ProviderID(before.ID)
 		request2.ID, request2.Name, request2.Commands = &id, before.Name, jsonValue(before.Commands)
 	} else {
+		// Before the machine spends the code: one more would be refused after it.
+		if err := p.room(); err != nil {
+			return ProviderSummary{}, err
+		}
 		request2.Name = strings.TrimSpace(deref(request.Name))
 		if request2.Name == "" {
 			request2.Name = flow.Name
