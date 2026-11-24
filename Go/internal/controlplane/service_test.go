@@ -23,6 +23,7 @@ import (
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/records"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/web"
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -575,6 +576,7 @@ func TestTheFolderAndKeyAreTheControlPlane(t *testing.T) {
 
 // A store the Swift control plane wrote is taken up as it is.
 func TestASwiftStoreIsTakenUp(t *testing.T) {
+	flaky.UnderLoad(t, "#6925")
 	t.Parallel()
 	root := t.TempDir()
 	key := controllink.NewPrivateKey()

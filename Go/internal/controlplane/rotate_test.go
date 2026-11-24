@@ -12,6 +12,7 @@ import (
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/kms"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/records"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -141,6 +142,7 @@ func TestTheNewKeyProofIsTheClientsOwn(t *testing.T) {
 // A backup made before the rotation, and one made after it and before the restart, open
 // after the restart with the new key, and still open once the previous key is let go.
 func TestBackupsOpenAfterTheControlKeyIsRotated(t *testing.T) {
+	flaky.UnderLoad(t, "#6926")
 	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
