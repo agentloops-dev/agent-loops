@@ -317,8 +317,9 @@ func (w *warmPools) nowMaking(name string, p *storedPool) {
 	w.making[name] = *p
 }
 
-// poolOf is the pool that holds an unclaimed machine, or that makes it now; nil for none.
-func (w *warmPools) poolOf(ctx context.Context, host *records.MachineRecord) (*storedPool, error) {
+// poolOf is the pool that holds an unclaimed machine, or that makes it now; nil for none. made
+// is the workspace it was made as: it asks for its work seconds before its link is there.
+func (w *warmPools) poolOf(ctx context.Context, host *records.MachineRecord, made *codeWorkspace) (*storedPool, error) {
 	if host == nil {
 		return nil, nil
 	}
@@ -328,8 +329,11 @@ func (w *warmPools) poolOf(ctx context.Context, host *records.MachineRecord) (*s
 	if ok && w.s.ownerOf(host.ID) == p.Owner {
 		return &p, nil
 	}
-	link := providers.LinkOf(host)
-	if link == nil {
+	at := made
+	if link := providers.LinkOf(host); link != nil {
+		at = &codeWorkspace{Provider: link.Provider, Workspace: link.Workspace}
+	}
+	if at == nil {
 		return nil, nil
 	}
 	pools, err := w.all(ctx, "")
@@ -338,7 +342,7 @@ func (w *warmPools) poolOf(ctx context.Context, host *records.MachineRecord) (*s
 	}
 	for i := range pools {
 		for _, m := range pools[i].Machines {
-			if pools[i].Provider == link.Provider && m.Workspace == link.Workspace {
+			if pools[i].Provider == at.Provider && m.Workspace == at.Workspace {
 				return &pools[i], nil
 			}
 		}

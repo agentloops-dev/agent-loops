@@ -163,11 +163,11 @@ func TestAMachineBeingMadeIsItsPools(t *testing.T) {
 	p, mac, _, pool := poolPlane(t)
 	h := p.s.records.Host(mac.member.Host)
 	p.s.pools.nowMaking(h.Name, pool)
-	if got, err := p.s.pools.poolOf(context.Background(), h); err != nil || got == nil || got.ID != pool.ID {
+	if got, err := p.s.pools.poolOf(context.Background(), h, nil); err != nil || got == nil || got.ID != pool.ID {
 		t.Fatal(got, err)
 	}
 	p.s.pools.nowMaking(h.Name, nil)
-	if got, err := p.s.pools.poolOf(context.Background(), h); err != nil || got != nil {
+	if got, err := p.s.pools.poolOf(context.Background(), h, nil); err != nil || got != nil {
 		t.Fatal(got, err)
 	}
 }
@@ -228,5 +228,23 @@ func TestAPoolStopsAfterThreeFailedSetUps(t *testing.T) {
 	set.ID = &pool.ID
 	if pool, err = w.set(ctx, "alex", set); err != nil || len(f.made) != 4 || pool.State != wire.WarmPoolStateKeeping {
 		t.Fatalf("%+v %v made %d", pool, err, len(f.made))
+	}
+}
+
+// #6890: a pool machine asks for its work before the control plane has linked it to the
+// workspace it was made as. It must hear of its projects, not that nothing is left.
+func TestAPoolMachineThatIsNotLinkedYetHasItsProjects(t *testing.T) {
+	t.Parallel()
+	p, _, made, _ := poolPlane(t)
+	ctx := context.Background()
+	record := p.s.records.Host(made)
+	record.Workspace = nil
+	must(t, p.s.records.SaveHost(ctx, *record))
+	work, err := p.s.setupWork(ctx, made)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !work.Pool || work.Done || len(work.Projects) != 1 {
+		t.Fatalf("%+v", work)
 	}
 }
