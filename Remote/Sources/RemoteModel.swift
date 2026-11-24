@@ -500,6 +500,7 @@ final class RemoteModel {
     /// every banner delivered from it.
     func forgetKept() {
         StartDraftKeeper.shared.forgetAll()
+        keptStartFolders = []
         // The copy of its sessions and chats goes with the pairing (#4791).
         Task { [localCopy] in await localCopy?.forget() }
         // Work's cache too (#6357): its items are that control plane's forges'.
@@ -660,8 +661,9 @@ final class RemoteModel {
     /// What has been chosen, by option id. Sent as the start's options.
     var startChosen: [String: JSONValue] = [:] { didSet { persistStartChoices() } }
 
-    var startFolders: [URL] = UserDefaults.standard.stringArray(forKey: "remote.startFolders")?.map { URL(fileURLWithPath: $0) } ?? [] {
-        didSet { UserDefaults.standard.set(startFolders.map(\.path), forKey: "remote.startFolders") }
+    /// The folders added to a new session's reach, on every machine (#6798).
+    var keptStartFolders = StartFolders.read(.standard) {
+        didSet { if keptStartFolders != oldValue { StartFolders.write(keptStartFolders, to: .standard) } }
     }
 
     /// The new agent's own sandbox choice (064). Nil follows its runtime's default.
