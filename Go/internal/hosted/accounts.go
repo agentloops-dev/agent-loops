@@ -320,7 +320,7 @@ func (a *accounts) remove(ctx context.Context, acc *Account) error {
 // removeInvites deletes each invite that user used (#3672), so no record keeps who they
 // were. The sign-up gate refuses a deleted invite as used, so nobody can use it again.
 func (a *accounts) removeInvites(ctx context.Context, user SignIn) error {
-	keys, err := a.store.List(ctx, hostedPrefix+"v1/invites/")
+	keys, err := a.store.List(ctx, invitesFolder)
 	if err != nil {
 		return err
 	}

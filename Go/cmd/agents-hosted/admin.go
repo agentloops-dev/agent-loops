@@ -17,7 +17,7 @@ import (
 
 const adminUsage = `usage: agents-hosted admin <verb> …
 
-  invite [days]              a new invite link, usable once (14 days)
+  invite [days]              a new invite link, usable once (14 days; 90 at most)
   allow <login>              let a GitHub login sign up, whatever its age
   disallow <login>           take it off the allowlist
   waitlist                   everyone waiting, in order
