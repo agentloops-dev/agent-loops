@@ -28,6 +28,9 @@ secrets: without them, it does not save a provider, and says why.
    - **Only by invite**: a person must have an invite first. This is the default.
    - **Anyone the provider signs in**: the provider's own app assignment decides.
    - **Only people from SCIM**: your provider adds each person by SCIM.
+   A removed person cannot sign in again. 90 days after you remove a person who signed in with
+   the provider, the control plane deletes their last record. From then on, each new person of
+   that provider needs an invite, whatever you choose here.
 7. Select **Add Provider**. The control plane reads the issuer's discovery document, and says
    what is missing if the provider cannot do the sign-in.
 8. Select **Check** at any time. It reads the discovery document again and counts the

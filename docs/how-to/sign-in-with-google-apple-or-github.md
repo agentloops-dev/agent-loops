@@ -26,7 +26,9 @@ You must be an admin.
    for says so, and you cannot turn it on.
 3. Optional: in **Allowed Google Workspace domains**, type your domains, for example
    `example.com`, and select **Save Domains**. A person with a Workspace account on one of
-   these domains can then join as a member with no invite.
+   these domains can then join as a member with no invite. 90 days after you remove a person
+   with a Google sign-in, this stops: each new person with Google needs an invite, so that the
+   removed person cannot join again.
 4. Optional: in **Allowed GitHub organisations**, type your organisations and select **Save
    Organisations**. Then each GitHub sign-in must be in one of them. This does not let a
    person join with no invite.

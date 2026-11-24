@@ -773,9 +773,10 @@ It is read only.
   (`machine/secretOps`, `held`; #4158). The control plane keeps both in memory only and puts
   them on the person's own rows (`user/secretNames`: `hint`, `lastOp`, `created`,
   `backedUp`). The store never has a hint.
-- **How long**: 90 days by default. An admin picks 30, 90, 180 or 365 days in the pane
-  (`control/setAuditDays`, 1 to 3,650); the menu marks the time set now. The control
-  plane's hourly sweep deletes older entries, by day. A shorter time asks first, with how
+- **How long**: 90 days by default. An admin picks 30, 60 or 90 days in the pane
+  (`control/setAuditDays`, 1 to 90; for a longer copy, use a [sink](#sinks)); the menu marks the time set now. The control
+  plane's hourly sweep deletes older entries, by day. It also keeps at most 1,000,000 entries,
+  and deletes the oldest over that, even when they are newer than the days set (#6755). A shorter time asks first, with how
   many days (and, when every entry is loaded, how many entries) it deletes, and the sweep
   keeps the older days for one more day: choose the longer time again in that day and
   nothing is lost (#2067).
@@ -788,7 +789,8 @@ It is read only.
   people (#994) are built, a control plane has one person, the local owner. That person is
   the admin, and every client belongs to them.
 
-Entries are stored in the control plane's store under `v1/events/<day>/`, one file each.
+Entries are stored in the control plane's store under `v1/events/<day>/`, one file each of at
+most 16 KiB: a longer text in an entry is cut.
 The methods are `audit/list`, `audit/export` and `control/setAuditDays`.
 
 ### The hash chain
@@ -801,7 +803,8 @@ chain's last place and its hash. Seals go with their day's entries.
 
 `agents-control audit verify` reads every entry and seal in the store. It says which
 entry was changed and which were removed, and exits 1 when it finds any. A day that the
-sweep deleted is not a removal. Entries written before the chain are counted, not checked.
+sweep deleted is not a removal, nor are the first entries of the oldest day, which go when
+the store is over its count (#6755). Entries written before the chain are counted, not checked.
 
 The chain shows a change. It does not stop one: a person who can write the store can also
 write a new chain. To keep a copy out of their reach, send the entries to a sink.
