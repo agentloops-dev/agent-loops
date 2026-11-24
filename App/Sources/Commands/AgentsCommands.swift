@@ -382,12 +382,12 @@ struct AgentsCommands: Commands {
             Divider()
             // Along every page the window showed (#5784), as the toolbar's ‹ ›.
             // A Work page's own window has its own (#5475).
-            Button("Back") { if let workWindow { workWindow.step(back: true) } else { model.goBack() } }
+            Button("Back") { if let workWindow { workWindow.pages.step(back: true) } else { model.goBack() } }
                 .keyboardShortcut(MenuKeys.back)
-                .disabled(!(workWindow?.canGoBack ?? model.canGoBack))
-            Button("Forward") { if let workWindow { workWindow.step(back: false) } else { model.goForward() } }
+                .disabled(!(workWindow?.pages.canGoBack ?? model.canGoBack))
+            Button("Forward") { if let workWindow { workWindow.pages.step(back: false) } else { model.goForward() } }
                 .keyboardShortcut(MenuKeys.forward)
-                .disabled(!(workWindow?.canGoForward ?? model.canGoForward))
+                .disabled(!(workWindow?.pages.canGoForward ?? model.canGoForward))
             Divider()
             // ⌥⌘↓ and ⌥⌘↑ go through the list in front: a Work page's list while one opened
             // from it is shown (#3257), else the folder's sessions. One item per key, so the

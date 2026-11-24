@@ -19,7 +19,7 @@ struct WorkWindow: View {
             .paperGround()
             .windowFloor(width: 480, height: 360)
             .tint(Paper.accent)
-            .focusedSceneValue(\.workWindow, shown)
+            .focusedSceneValue(\.workWindow, shown.map { FocusedWorkWindow(pages: $0) })
             .environment(\.showMainWindow, ShowMainWindow(run: showMain))
             // A session's link opens it where a notification would (#3353).
             .environment(\.openURL, OpenURLAction { url in
@@ -53,8 +53,16 @@ extension EnvironmentValues {
     @Entry var showMainWindow: ShowMainWindow? = nil
 }
 
+/// The pages of the key window's own window, of whichever kind. Equal by identity, so a new body of the
+/// same window is no new value: a value that always changes updates the toolbar again (#5947).
+struct FocusedWorkWindow: Equatable {
+    let pages: any WorkWindowPages
+
+    static func == (a: Self, b: Self) -> Bool { a.pages === b.pages }
+}
+
 extension FocusedValues {
     /// The Work page in the key window, when that is a window of its own (#5475): Go ▸ Back and Forward
     /// are its, and the Session menu has no session.
-    @Entry var workWindow: (any WorkWindowPages)?
+    @Entry var workWindow: FocusedWorkWindow?
 }
