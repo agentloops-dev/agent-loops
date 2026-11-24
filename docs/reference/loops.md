@@ -8,33 +8,52 @@ description: Every command, flag, exit code and JSON object of loops, the comman
 `loops` is a client of the control plane, as the Mac window is one. It works in the folder of
 the directory it runs in, on the machine of the control plane that is this computer. For the
 steps, see [Start or continue a session from a terminal](../how-to/use-loops-in-a-terminal.md).
-`loops help` shows a short form of this page.
+`loops --help` shows a short form of this page.
 
-## Commands
+Data goes to standard output. Messages, progress and hints go to standard error.
+
+## Grammar and commands
+
+The noun-verb form is `loops <noun> <verb> [id] [flags]`. The nouns of today are `sessions`,
+`auth` and `folders`. `loops` also keeps a short form for a prompt: `loops "..."` starts a
+session, and `loops` continues the newest session here.
+
+Flags can come before or after a command. A first word that is not a command is the
+start of a prompt: `loops fix the test` starts a session with the prompt "fix the test".
 
 | Command | What it does |
 |---|---|
 | `loops` | Continues the most recent session of the folder here, in the chat. With no session, it waits for the first prompt. When stdin is not a terminal and the session is idle, it writes the session's last entries and stops. |
 | `loops "<prompt>"` | Starts a new session here with this prompt, and shows it in the chat. |
+| `loops sessions create ["<prompt>"]` | Starts a new session here with this prompt, and shows it in the chat. |
+| `loops sessions follow [<id or title>]` | Continues the most recent session here, or one session by id or title. With no id, it is the same as `loops`. |
 | `loops -c ["<prompt>"]` | Continues the most recent session here, with the prompt when you give one. Also `--continue`. |
 | `loops -r <id or title> ["<prompt>"]` | Continues one session. Also `--resume`. |
+| `loops sessions list [--all]` | The 20 sessions here with the most recent activity. `--all` shows all of them, also the archived ones. |
+| `loops auth login '<code>'` | Pairs this terminal with a control plane, with a client code from **Settings ▸ Control plane ▸ Clients ▸ Pair a Mac…**. When you have a machine lock, it then asks to join it, shows six digits, and waits until you approve it on another device (below). |
+| `loops auth logout` | Deletes the pairing and the machine lock key here, and removes this terminal from the control plane's clients. When the control plane does not answer, it deletes them here only. |
+| `loops auth status` | The profile, the pairing, this machine, and the folder of the directory here. |
+| `loops folders add [dir]` | Adds this directory, or `dir`, as a folder of this machine. |
 | `loops -p "<prompt>"` | Print mode: starts a new session here, waits until its turn ends, and writes the agent's last reply. Also `--print`. |
+| `loops sessions create -p "<prompt>"` | Print mode with the noun-verb form. |
 | `loops --detach "<prompt>"` | Starts a new session here, writes its id, and stops at once. |
-| `loops ls [--all]` | The 20 sessions here with the most recent activity. `--all` shows all of them, also the archived ones. |
-| `loops folder add [dir]` | Adds this directory, or `dir`, as a folder of this machine. |
-| `loops pair '<code>'` | Pairs this terminal with a control plane, with a client code from **Settings ▸ Control plane ▸ Clients ▸ Pair a Mac…**. When you have a machine lock, it then asks to join it, shows six digits, and waits until you approve it on another device (below). |
-| `loops unpair` | Deletes the pairing and the machine lock key here, and removes this terminal from the control plane's clients. When the control plane does not answer, it deletes them here only. |
-| `loops status` | The pairing, this machine, and the folder of the directory here. |
+| `loops sessions create --detach "<prompt>"` | The noun-verb form of `--detach`. |
 | `loops help` | The commands, flags and exit codes. Also `-h` and `--help`. |
 
-Flags can come before or after the command. A first word that is not a command is the
-start of a prompt: `loops fix the test` starts a session with the prompt "fix the test".
+`loops sessions list` shows the columns `ID`, `TITLE`, `STATE`, `RUNTIME`, `FOLDER` and
+`UPDATED`. IDs are short, with at least 6 characters. A full list has more than 20 sessions
+when the count on standard error says `20 of many`. When the folder has no session, it writes
+`No sessions in <folder>.` and a start hint on standard error.
 
-### Which session `-r` finds
+A noun with no verb, or a verb that the noun does not have, is an error. It says the form to
+use, as `loops auth <login|logout|status>`.
 
-`-r` takes, in this order:
+### Which session `-r` or `sessions follow` finds
 
-1. a session's whole id, as `-p --json` writes it, which takes one read; or the start of an id, as `loops ls` shows it (6 characters or more);
+The id or title takes, in this order:
+
+1. a session's whole id, as `-p --json` writes it, which takes one read; or the start of an
+   id, as `loops sessions list` shows it (6 characters or more);
 2. a session's whole title, with no difference between capital and small letters;
 3. a part of a title that only one session has.
 
@@ -46,20 +65,28 @@ name one by its id.
 
 | Flag | Use with | What it does |
 |---|---|---|
-| `--folder <name or path>` | all but `pair` | Works in this folder, not the folder of the directory here. A word with no `/` is a folder's name on the machine; anything else is a path. |
-| `--machine <name or id>` | all but `pair` | Works on this machine of the control plane, not on this computer. |
-| `--control <host>` | all but `pair` | Uses this control plane, when the terminal is paired with more than one. |
+| `--folder <name or path>` | all but `auth login` | Works in this folder, not the folder of the directory here. A word with no `/` is a folder's name on the machine; anything else is a path. |
+| `--machine <name or id>` | all but `auth login` | Works on this machine of the control plane, not on this computer. |
+| `--control <host>` | all but `auth login` | Uses this control plane, when the terminal is paired with more than one. |
+| `--all` | `sessions list` | All the sessions, in pages of 20, also the archived ones. |
+| `-c`, `--continue` | a prompt or `sessions create` | Continues the newest session here. With a prompt, sends it at once. |
+| `-r`, `--resume <id or title>` | a prompt or `sessions create` | Continues one session. With a prompt, sends it at once. |
 | `--runtime <id>` | a new session | The runtime that a new session starts on, as `claude` or `codex`. Auto when you do not give it. |
 | `--mode <level>` | a new session | The permission that a new session starts at: `plan`, `ask`, `approve-for-me` or `bypass-permissions`. When you do not give it, the session starts at the model and permission that you chose last on a start form on any client (#3798, #6651). With no choice kept, the default is Ask, or your policy's limit. |
-| `--debug` | all | When `loops` cannot get to the control plane or the machine, it also writes the full error on a line that starts with `Debug:`. |
-| `--all` | `ls` | All the sessions, in pages of 20, also the archived ones. |
+| `-p`, `--print` | a prompt or `sessions create` | Starts here, follows the turn, and writes the last reply. |
+| `--detach` | a prompt or `sessions create` | Starts a session here, writes its id, and stops at once. |
 | `--json` | `-p`, `--detach` | One JSON object on each line (below). |
-| `--on-ask=wait` | `-p` | When a card waits, waits for an answer on any client. This is the default. |
-| `--on-ask=fail` | `-p` | When a card waits, stops with exit code 3. |
-| `--timeout <duration>` | `-p` | Stops waiting after this time, as `90s` or `10m`, with exit code 4. The time starts when the session starts. The session continues. It is also the longest time that `loops` tries to connect again (exit code 6). |
+| `--on-ask=wait` | `-p`, `--detach` | When a card waits, waits for an answer on any client. This is the default. |
+| `--on-ask=fail` | `-p`, `--detach` | When a card waits, stops with exit code 3. |
+| `--timeout <duration>` | `-p`, `--detach` | Stops waiting after this time, as `90s` or `10m`, with exit code 4. The time starts when the session starts. The session continues. It is also the longest time that `loops` tries to connect again (exit code 6). |
+| `--debug` | all | When `loops` cannot get to the control plane or the machine, it also writes the full error on a line that starts with `Debug:`. |
 
-`--json`, `--on-ask` and `--timeout` without `-p` or `--detach` are an error. `-p` always
-starts a new session: it does not take `-c` or `-r`.
+`--json`, `--on-ask` and `--timeout` without `-p` or `--detach` are an error.
+`--on-ask` is `wait` or `fail`. Print mode always starts a new session: it does not take
+`-c` or `-r`.
+
+`loops auth status` writes a table with the columns `PROFILE`, `CONTROL PLANE`, `CLIENT`,
+`MACHINE` and `FOLDER`. The profile is `default`.
 
 ## Exit codes
 
@@ -67,6 +94,11 @@ starts a new session: it does not take `-c` or `-r`.
 |---|---|
 | 0 | Done: the turn ended, or the command did its work. |
 | 1 | An error: the control plane or the machine did not answer, the session stopped with an error, or the command was not correct. Nothing changed when `loops` could not get to the control plane. |
+| 2 | The directory is not in a folder of the machine, or `--folder` names no folder. |
+| 3 | A card waits for an answer, or this terminal must join your machine lock, with `--on-ask=fail`. |
+| 4 | The time of `--timeout` went by. |
+| 5 | This terminal is not paired, or not with the control plane of `--control`. |
+| 6 | The connection to the control plane, or from it to the session's machine, was lost and did not come back (below). The session continues. |
 
 When `loops` cannot get to the control plane, it gives the cause in a few words, as
 `Cannot reach control.example (it refused the connection).`:
@@ -79,14 +111,9 @@ When `loops` cannot get to the control plane, it gives the cause in a few words,
 | `no such host` | The host name is not in DNS. |
 | `could not look up the host` | DNS did not answer. |
 | `its certificate is not the paired one` | The certificate is not the one that the pairing code pinned. |
-| `it takes requests only from your devices…` | The machine holds your machine lock, and this terminal is not in it. Type `loops status` to ask to join. |
+| `it takes requests only from your devices…` | The machine holds your machine lock, and this terminal is not in it. Type `loops auth status` to ask to join. |
 
 Other errors keep their own words. `--debug` adds the full error.
-| 2 | The directory is not in a folder of the machine, or `--folder` names no folder. |
-| 3 | A card waits for an answer, or this terminal must join your machine lock, with `--on-ask=fail`. |
-| 4 | The time of `--timeout` went by. |
-| 5 | This terminal is not paired, or not with the control plane of `--control`. |
-| 6 | The connection to the control plane, or from it to the session's machine, was lost and did not come back (below). The session continues. |
 
 ## When the connection is lost
 
@@ -125,16 +152,26 @@ With `--detach --json`, `loops` writes only the `session` line. Without `--json`
 writes only the id. When a command does not end with 0, its message is on standard error.
 
 Print mode takes the prompt from standard input when there are no words after the flags and
-standard input is not a terminal. The limit is 1 MB.
+standard input is not a terminal. The limit is 1 MB. Print mode needs a prompt.
 
 ## The chat
 
 | Key | What it does |
 |---|---|
 | Return | Sends what you typed, or answers the card. |
-| Option-Return | Starts a new line. |
+| Option-Return, Control-J | Starts a new line. |
+| Left, Right (`Control-B`, `Control-F`) | Moves one character. |
+| Option-Left, Option-Right, Control-Left, Control-Right (`Esc b`, `Esc f`) | Moves one word. |
+| Home, End (`Control-A`, `Control-E`) | Moves to the start or the end of the line. |
+| Backspace, Delete (`Control-D` on a line with text) | Deletes one character. |
+| Option-Backspace, Control-W | Deletes the word before the cursor. |
+| Option-Delete | Deletes the word after the cursor. |
+| Control-K, Control-U | Deletes to the end or the start of the line. |
+| Up, Down | Moves between lines in a prompt that has more than one line. |
 | Control-C | Stops the turn. Again in 2 seconds, or when no turn runs, leaves. |
-| Control-D | Leaves. The session continues on its machine. |
+| Control-D | Leaves when the line is empty. The session continues on its machine. |
+
+Pasted text keeps its lines.
 
 A card shows numbered answers. Type a number, or numbers as `1,3` when the card takes more
 than one. Push Return alone to leave out an answer that is not necessary. A card that asks
@@ -154,7 +191,7 @@ The chat has colour only on a terminal.
 
 A machine that holds your machine lock takes requests only from your devices
 (`specs/3399-machine-lock`). `loops` has a key of its own for each pairing. When the lock
-does not name that key, the first command (or `loops pair`) asks to join, writes
+does not name that key, the first command (or `loops auth login`) asks to join, writes
 `Digits:` and six digits, and waits until another of your devices compares them and
 approves, or until the request runs out. Then each request to a machine goes on a
 channel that the key opened (`lock/hello`), and `loops` takes an answer only when its MAC
