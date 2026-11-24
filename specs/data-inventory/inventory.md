@@ -284,7 +284,7 @@ Sessions are signed cookies (30 days); the server keeps nothing for them.
 
 | Store | Holds | Bound | Cleared |
 |---|---|---|---|
-| Defaults `draft.agent.<uuid>`, `draft.new.<folder>`, `draft.start` | Unsent prompts and attachments, ≤512 KiB each | 30 days (`DraftStore.swift:29`); removed on archive (`App/Sources/Chat/DraftKeeper.swift:47,221`) | archive, 30 days, send |
+| Defaults `draft.agent.<uuid>`, `draft.new.<folder>`, `draft.start` | Unsent prompts and attachments, ≤1 MiB each | 40 drafts, a new one over that refused; 30 days (`DraftStore.swift`); removed on archive (`App/Sources/Chat/DraftKeeper.swift`) | archive, 30 days, send |
 | Defaults `newSessionProjectFolders` | Last folder per project | **none** | never |
 | Defaults `sidebar.folds` / `folded` / `openSessions` | Sidebar fold state | `openSessions` 200; **fold sets none** | never |
 | Defaults `sidebar.<window>.width` / `.pane` | Inspector size per folder window | **none** | never |
@@ -302,7 +302,7 @@ Sessions are signed cookies (30 days); the server keeps nothing for them.
 
 | Store | Holds | Bound | Cleared |
 |---|---|---|---|
-| Defaults `draft.agent.<uuid>`, … | Unsent prompts and attachments, ≤512 KiB each | **none.** The Remote never calls `DraftStore.sweep`, so neither the 30 days nor archive applies. iOS loads all of `UserDefaults` at launch. | only on send |
+| Defaults `draft.agent.<uuid>`, … | Unsent prompts and attachments, ≤1 MiB each | As the Mac: 40 drafts, 30 days, archive (`Remote/Sources/StartAgent/StartDraftKeeper.swift`) | archive, 30 days, send |
 | App group `Library/Caches/attention-snapshot.json` | The widget's needs-you rows **with headlines in plain text** | 12 rows; stale after 15 minutes | **not on Forget**: the widget keeps showing the old pairing |
 | Defaults `machineLockPin.*`, `newSessionProjectFolders`, fold sets | As on the Mac | **none** | never |
 | Defaults `liveActivityTurns` | Turns covered by the Live Activity | the activity's sessions | when the activity ends |
@@ -469,7 +469,7 @@ newer than a row above for the same store.
 | Remote `Caches/copy/` (local copy) | cache | As the Mac's local copy | 50 MiB, 20 chats; 16 MiB a record; 90 days; a machine no longer listed is dropped (#6789) | `Packages/AgentsKit/Sources/AgentsKitCore/Client/LocalCopy.swift` | #6790 |
 | Web IndexedDB `agents` › `copy` | cache | As the Mac's local copy, and Work's pictures | 50 MiB, 20 chats, 2000 pictures; 16 MiB a record; 90 days; a machine no longer listed is dropped (#6792) | `Web/src/model/localCopy.ts` | #6792 |
 | Web `localStorage` `agents.drafts` | document | Drafts | 40, a new one over that refused; attachments under 256 KiB; 30 days since the last edit (#6793) | `Web/src/model/drafts.ts` | #6793 |
-| Mac and Remote defaults `draft.*` | document | Drafts | 512 KiB a draft and 30 days, but no count of drafts | `Packages/AgentsKit/Sources/AgentsKitCore/Model/DraftStore.swift:22-29` | #6794 |
+| Mac and Remote defaults `draft.*` | document | Drafts | 40, a new one over that refused; 1 MiB a draft, 512 KiB of it attachments; 30 days since the last edit (#6794) | `Packages/AgentsKit/Sources/AgentsKitCore/Model/DraftStore.swift` | #6794 |
 | Remote app group `shared-inbox.json` | blob | What was shared to Agent Loops | Each attachment capped; no count, total or age | `Packages/AgentsKit/Sources/AgentsKitCore/Widget/SharedInbox.swift:88,105-118` | #6795 |
 | Mac browser pane `WKWebsiteDataStore.default()` | blob | Cookies and site storage of every site the pane opened | None: only the caches are emptied, at launch; not on Forget | `App/Sources/Sidebar/BrowserPane.swift:171-195` | #6796 |
 | `machinePicker.pinned` (Mac, Remote, web) | key-value | Pinned machines | None; a removed machine's ID stays | `MachinePickerChoice.swift:9-11,86-100; Web/src/model/machinePicker.ts:7` | #6797 |
