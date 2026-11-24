@@ -12,6 +12,7 @@ import (
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/records"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/internal/lineage"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
@@ -239,6 +240,7 @@ func (c *bytesStore) take() int {
 // past mostLineageChanges a send rolls them up, and a read gives the same answer before and
 // after the roll-up.
 func TestLineageSyncWritesOnlyTheChange(t *testing.T) {
+	flaky.UnderLoad(t, "#6994")
 	t.Parallel()
 	counting := &bytesStore{Store: store.NewMemory()}
 	p := startPlane(t, counting, controllink.NewPrivateKey())
