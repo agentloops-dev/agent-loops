@@ -81,7 +81,7 @@ struct SuggestedLeadsSection: View {
             ForEach(answer.suggestions) { row in
                 SuggestedLeadRow(row: row, take: { take(row) }, dismiss: { Task { await dismiss(row) } })
             }
-            if let more = SuggestedLeads.more(answer.more) {
+            if model.flags.isOn(.work), let more = SuggestedLeads.more(answer.more) {
                 Button(more) { model.showWork(WorkPlace(kind: .timeline)) }
                     .buttonStyle(.plain)
                     .appText(.supporting)

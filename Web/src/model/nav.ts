@@ -4,6 +4,7 @@
 // use is left out for a member; the control plane still checks each call's role itself.
 import type { ActivityPage } from "../route";
 import { featuresSection, reportSections, type Section } from "./console";
+import { flagOn } from "./featureFlags";
 import { workKinds, workKindTitle, type WorkKind } from "./work";
 
 export type NavSection = "overview" | "agents" | "work" | "machines" | "workflows" | "reports" | "requests" | "people" | "status" | "settings";
@@ -14,6 +15,12 @@ export const navTitle: Record<NavSection, string> = {
   overview: "Overview", agents: "Agents", work: "Work", machines: "Machines", workflows: "Workflows", reports: "Reports",
   requests: "Requests", people: "People", status: "Status", settings: "Settings",
 };
+
+/** A section's title now: Work with its flag off (#6572) is the pages it still has, Docs (with its flag) and Messages. */
+export function sectionTitle(section: NavSection): string {
+  if (section !== "work" || flagOn("work")) return navTitle[section];
+  return flagOn("docs") ? "Docs and Messages" : "Messages";
+}
 
 /** The sections only an admin sees in the bar. */
 const adminSections: ReadonlySet<NavSection> = new Set(["requests", "people"]);
@@ -47,7 +54,22 @@ export interface NavPage {
   /** A page under another of the list (#5178): its row is indented under that page's, and its address is the
    * other page's item, #/reports/delivery/builds. */
   under?: string;
+  /** Only with this feature flag on (#6572): a page whose flag is off is in no list and opens by no address. */
+  flag?: "work" | "docs";
   draw: PageDraw;
+}
+
+/** Whether a page's feature flag, if it has one, is on. */
+export function flagged(p: NavPage): boolean {
+  return p.flag === undefined || flagOn(p.flag);
+}
+
+/** Whether an address names a page whose feature flag is off (#6572): it opens the Overview, the page's default. */
+export function hiddenPage(nav: NavSection, id: string | undefined): boolean {
+  if (nav !== "work" || id === undefined) return false;
+  const page = navPages.work.find((p) => p.id === id);
+  // An id Work does not have opens Work's own default, so it is Work's.
+  return page ? !flagged(page) : !flagOn("work");
 }
 
 const adminPage = (id: string, title: string, group: string, consoleID = id): NavPage =>
@@ -67,16 +89,16 @@ export const navPages: Record<NavSection, readonly NavPage[]> = {
   // Docs and Messages first (#5267), as the window's Work group has them; were sections of their own.
   work: [
     // The folders' docs and the docs connectors' (#3321, spec 3319); #/work/docs/<ref> is a doc's page.
-    { id: "docs", title: "Docs", group: "Work", draw: { kind: "docs" } },
+    { id: "docs", title: "Docs", group: "Work", flag: "docs", draw: { kind: "docs" } },
     // The messaging connectors' conversations (#4344), with a reply (#4345); #/work/messages/<key> is a conversation's.
     { id: "messages", title: "Messages", group: "Work", draw: { kind: "messages" } },
     ...workKinds.flatMap((k): NavPage[] => [
-      { id: k, title: workKindTitle[k], group: "Work", draw: { kind: "work", work: k } },
+      { id: k, title: workKindTitle[k], group: "Work", flag: "work", draw: { kind: "work", work: k } },
       // Next (#5691) after Issues: the ready work in one order, with the reason for each place, from forge/next.
-      ...k === "issue" ? [{ id: "next", title: "Next", group: "Work", draw: { kind: "next" } } satisfies NavPage] : [],
+      ...k === "issue" ? [{ id: "next", title: "Next", group: "Work", flag: "work", draw: { kind: "next" } } satisfies NavPage] : [],
       ...k === "release" ? [
-        { id: "deploys", title: "Deploys", group: "Work", draw: { kind: "deploys" } } satisfies NavPage,
-        { id: "timeline", title: "Timeline", group: "Work", draw: { kind: "timeline" } } satisfies NavPage,
+        { id: "deploys", title: "Deploys", group: "Work", flag: "work", draw: { kind: "deploys" } } satisfies NavPage,
+        { id: "timeline", title: "Timeline", group: "Work", flag: "work", draw: { kind: "timeline" } } satisfies NavPage,
       ] : [],
     ]),
   ],
@@ -158,7 +180,7 @@ export function sectionsShown(admin: boolean | null, current: NavSection): NavSe
 
 /** The pages in a section's list: every one for an admin; a member's, and the one open. */
 export function pagesShown(section: NavSection, admin: boolean | null, open?: string, more: readonly NavPage[] = []): NavPage[] {
-  return withPages(section, more).filter((p) => admin === true || !p.admin || p.id === open);
+  return withPages(section, more).filter((p) => flagged(p) && (admin === true || !p.admin || p.id === open));
 }
 
 /** The id of the page a route names: a page under another (#5178) is that page's item. */
@@ -174,7 +196,7 @@ export function pageRoute(section: Exclude<NavSection, "overview">, p: NavPage):
 /** The page a route opens: the one named, or the section's first that this person may use. */
 export function openPage(section: NavSection, id: string | undefined, admin: boolean | null,
                          more: readonly NavPage[] = []): NavPage | undefined {
-  const list = withPages(section, more);
+  const list = withPages(section, more).filter(flagged);
   return list.find((p) => p.id === id) ?? list.find((p) => p.id === sectionHome[section])
     ?? list.find((p) => admin === true || !p.admin) ?? list[0];
 }

@@ -6,11 +6,23 @@
 public enum FeatureFlag: String, CaseIterable, Sendable {
     /// Commit trailers (#6373).
     case commitTrailers = "commit-trailers"
+    /// Dashboard (#6572).
+    case dashboard = "dashboard"
+    /// Docs (#6572).
+    case docs = "docs"
+    /// Suggested (#6572).
+    case suggested = "suggested"
+    /// Work (#6572).
+    case work = "work"
 
     /// What Settings calls it.
     public var title: String {
         switch self {
         case .commitTrailers: "Commit trailers"
+        case .dashboard: "Dashboard"
+        case .docs: "Docs"
+        case .suggested: "Suggested"
+        case .work: "Work"
         }
     }
 
@@ -18,6 +30,10 @@ public enum FeatureFlag: String, CaseIterable, Sendable {
     public var about: String {
         switch self {
         case .commitTrailers: "The Commit trailers group in Agents ▸ Policy: the trailers on each agent's commits."
+        case .dashboard: "The Dashboard on the Mac: each work item with its sessions. The window opens to it."
+        case .docs: "Docs in the sidebar, and the Docs section on a work item's page. On the Mac and the web page."
+        case .suggested: "New Session ▸ Suggested: the epics with no lead."
+        case .work: "Work in the sidebar: issues, pull requests, releases, deploys and the timeline."
         }
     }
 
@@ -25,6 +41,10 @@ public enum FeatureFlag: String, CaseIterable, Sendable {
     public var issue: Int {
         switch self {
         case .commitTrailers: 6373
+        case .dashboard: 6572
+        case .docs: 6572
+        case .suggested: 6572
+        case .work: 6572
         }
     }
 }

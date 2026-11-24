@@ -1,7 +1,7 @@
 // The top bar's search (#2142): "Search or jump to…" finds, by name, the sections' pages, the machines
 // and the sessions this page holds. It makes no call: what it finds is what the page already has.
 import type { Route } from "../route";
-import { navSections, navTitle, pagesShown, type NavSection } from "./nav";
+import { navSections, navTitle, pagesShown, sectionTitle, type NavSection } from "./nav";
 import type { Placed } from "./overview";
 
 export interface Found {
@@ -39,10 +39,10 @@ export function searchFound(query: string, admin: boolean | null, machines: read
     if (section === "overview" || (!admin && (section === "requests" || section === "people"))) continue;
     const pages = pagesShown(section, admin);
     // A section's own name opens its first page; a page of the same name as its section is not listed twice.
-    add({ kind: "page", title: navTitle[section], detail: "Section", to: { nav: section as Exclude<NavSection, "overview"> } }, navTitle[section], 0);
+    add({ kind: "page", title: sectionTitle(section), detail: "Section", to: { nav: section as Exclude<NavSection, "overview"> } }, sectionTitle(section), 0);
     for (const p of pages) {
-      if (p.title === navTitle[section]) continue;
-      add({ kind: "page", title: p.title, detail: navTitle[section], to: { nav: section as Exclude<NavSection, "overview">, section: p.id } }, p.title, 0);
+      if (p.title === sectionTitle(section)) continue;
+      add({ kind: "page", title: p.title, detail: sectionTitle(section), to: { nav: section as Exclude<NavSection, "overview">, section: p.id } }, p.title, 0);
     }
   }
   for (const m of machines) add({ kind: "machine", title: m.name, detail: m.platform ? `Machine · ${m.platform}` : "Machine", to: { nav: "machines" } }, m.name, 1);

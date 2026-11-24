@@ -5,6 +5,7 @@
 import { useEffect, useMemo, useRef } from "preact/hooks";
 import { signal, useSignal } from "@preact/signals";
 import { go, replace, route, routeHash, usageAsked } from "../route";
+import { flagOn } from "../model/featureFlags";
 import { hasPage } from "../model/work";
 import type { Store } from "../model/store";
 import type { FeatureUsage, LineageForecast, ReportDelivery, LineageForecastAssumes, LineageForecastWhatIfEffect, LineageNode, MachineRef, ReportFormat, ReportPage, ReportRange, ReportRow, ReportScope, ReportScopeOption, ReportValue, ReportValueRow, ReportView,
@@ -424,7 +425,7 @@ function ValuePane({ store, scope, part, initial }: { store: Store; scope: Repor
     const n = r.node;
     return (
       <li key={n.ref}>
-        {hasPage(n) ? <a href={routeHash({ nav: "work", section: n.kind, item: n.ref })}>{nodeName(n)}</a> : <span>{nodeName(n)}</span>}
+        {flagOn("work") && hasPage(n) ? <a href={routeHash({ nav: "work", section: n.kind, item: n.ref })}>{nodeName(n)}</a> : <span>{nodeName(n)}</span>}
         <span class="quiet small">{rowLine(r)}</span>
       </li>
     );
@@ -592,7 +593,7 @@ function NextPart({ store, epics }: { store: Store; epics: readonly LineageNode[
         <ul class="report-list">
           {epics.map((n) => (
             <li key={n.ref}>
-              <a href={routeHash({ nav: "work", section: n.kind, item: n.ref })}>{nodeName(n)}</a>
+              {flagOn("work") ? <a href={routeHash({ nav: "work", section: n.kind, item: n.ref })}>{nodeName(n)}</a> : <span>{nodeName(n)}</span>}
               <span class="quiet small">{landsWords(lands.value[n.ref])}</span>
             </li>
           ))}
