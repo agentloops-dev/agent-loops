@@ -18,6 +18,8 @@ import (
 type maturityCompletionRequest struct {
 	FeatureID         string `json:"featureId"`
 	ID                string `json:"completionId"`
+	SessionID         string `json:"sessionId"`
+	BuildID           string `json:"buildId"`
 	Success           *bool  `json:"success"`
 	Completed         *bool  `json:"completed"`
 	Eligible          *bool  `json:"eligible"`
@@ -37,18 +39,27 @@ func (m *Methods) completeMaturity(ctx context.Context, params json.RawMessage, 
 	if from.Person == "" || m.maturity == nil {
 		return nil, fail(notPermitted, "An authenticated person is required.")
 	}
-	if request.Success == nil || request.Completed == nil || request.Eligible == nil || request.BackgroundRefresh == nil ||
-		!validMaturityCompletionID(request.ID) {
-		return nil, fail(invalidParams, "The source completion state is not valid.")
-	}
 	person := m.records.Person(m.callerPerson(from))
 	if person == nil || person.IsRemoved() || person.IsSuspended() {
 		return nil, fail(notPermitted, "An active person is required.")
 	}
-	record, err := m.maturity.Complete(ctx, request.FeatureID, maturity.Completion{
-		ID: hashCompletionID(request.ID), Actor: maturityActor(person, m.s.localOwner()), Success: *request.Success, Completed: *request.Completed,
-		Eligible: *request.Eligible, BackgroundRefresh: *request.BackgroundRefresh,
-	}, time.Now())
+	actor := maturityActor(person, m.s.localOwner())
+	if request.Success == nil || request.Completed == nil || request.Eligible == nil || request.BackgroundRefresh == nil ||
+		!validMaturityCompletionID(request.ID) || !validMaturityCompletionID(request.BuildID) ||
+		(actor != maturity.ActorAgent && !validMaturityCompletionID(request.SessionID)) {
+		return nil, fail(invalidParams, "The source completion state is not valid.")
+	}
+	completion := maturity.Completion{
+		ID: hashMaturityReference(request.ID), Actor: actor, Success: *request.Success, Completed: *request.Completed,
+		Eligible: *request.Eligible, BackgroundRefresh: *request.BackgroundRefresh, Build: hashMaturityReference(request.BuildID),
+	}
+	if actor != maturity.ActorAgent {
+		completion.Session = hashMaturityReference(request.SessionID)
+	}
+	if actor == maturity.ActorOther {
+		completion.ActorRef = hashMaturityReference(person.ID)
+	}
+	record, err := m.maturity.Complete(ctx, request.FeatureID, completion, time.Now())
 	if errors.Is(err, maturity.ErrInvalid) || errors.Is(err, maturity.ErrNotCompleted) {
 		return nil, fail(invalidParams, "The maturity completion is not eligible.")
 	}
@@ -58,7 +69,7 @@ func (m *Methods) completeMaturity(ctx context.Context, params json.RawMessage, 
 	return record, nil
 }
 
-func hashCompletionID(id string) string {
+func hashMaturityReference(id string) string {
 	sum := sha256.Sum256([]byte(id))
 	return hex.EncodeToString(sum[:])
 }
@@ -83,7 +94,7 @@ func maturityActor(person *records.Person, owner string) maturity.Actor {
 		return maturity.ActorAgent
 	}
 	if person.ID == owner {
-		return maturity.ActorOwner
+		return maturity.ActorAlex
 	}
-	return maturity.ActorMember
+	return maturity.ActorOther
 }
