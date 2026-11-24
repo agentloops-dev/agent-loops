@@ -246,7 +246,6 @@
 1 Host/Sources/LocalServices.swift write(to:)
 1 Packages/AgentsKit/Sources/AgentsKitCore/Client/AgentsExportTransfer.swift createFile
 1 Packages/AgentsKit/Sources/AgentsKitCore/Client/LocalCopy.swift write(to:)
-1 Packages/AgentsKit/Sources/AgentsKitCore/Client/WorkCache.swift sqlite3_open_v2
 1 Packages/AgentsKit/Sources/AgentsKitCore/Control/ControlMembership.swift write(to:)
 1 Packages/AgentsKit/Sources/AgentsKitCore/Control/HostJoinFile.swift write(to:)
 1 Packages/AgentsKit/Sources/AgentsKitCore/Model/MachineLock.swift createFile
