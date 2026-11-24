@@ -62,7 +62,7 @@ from the root (`agentsd/backups.go:69,72`). It holds nothing else.
 | `<cache>/turns/<ID>.jsonl` | Turn summaries | life. Media base64 is limited (`turns.go:1197`). | with the agent (`store/store.go:217`) | **no** (the backup reads the wrong path) |
 | `erasures.json` | Runtime copies still to erase | 1,000 entries, 3 tries, 7 days (`erasure.go:40-45`) | on write | no |
 | `erased.json` | Every agent deleted here | 10,000 IDs, 400 days | on write | yes |
-| `elsewhere.json` | Sessions started on or from other machines | 200 per list (`elsewhere.go:40`) | on save | no |
+| `elsewhere.json` | Sessions started on or from other machines | 800 entries of 64 KiB; 90 days from when last heard | hourly and on save | no |
 
 ### Events, usage, cost and lineage
 
@@ -395,8 +395,8 @@ newer than a row above for the same store.
 | `<root>/requests/<id>.json` | document | Open questions and forms | Ended ones 14 days, 1,000 files; an open one has no age | `Go/internal/agentsd/requests.go:27-28` | #6718 |
 | `<root>/lineage-deploys.json` | key-value | Each deploy's last event | 1,000 deploys of 16 KiB each, 90 days from the last event, the oldest first | `Go/internal/agentsd/lineagedeploy.go` (`openDeploys`) | #6719 |
 | `<root>/account-ops.json` | key-value | Last operation of each account and secret | 1,000 entries of 1 KiB each, 90 days, the oldest first | `Go/internal/agentsd/accountops.go` (`openAccountOps`) | #6720 |
+| `<root>/elsewhere.json` | key-value | Sessions on other machines | 800 entries of 64 KiB each, 90 days from when the machines last spoke of the session, the oldest first | `Go/internal/agentsd/elsewhere.go` (`openElsewhere`) | #6722 |
 | `<root>/secret-ops-pending.json` | log | Secret audit entries not yet sent | 1,000 operations of 16 KiB each, 90 days, the oldest first | `Go/internal/agentsd/secretops.go` (`openSecretOpsPending`) | #6721 |
-| `<root>/elsewhere.json` | document | Sessions on other machines | 200 a list, no age | `Go/internal/agentsd/elsewhere.go:39` | #6722 |
 | `<root>/lock-seen.json` | key-value | Replay IDs of signed requests | 4,096 of 128 bytes each, 2 days, the one signed first goes first; a cutoff refuses what went | `Go/internal/agentsd/lockcheck.go` (`openLockSeen`) | #6723 |
 | `<root>/assessments/` | document | Runtime assessments | The newest 50, applied only when one starts | `Go/internal/agentsd/assess.go:251` | #6724 |
 | `<folder>/.agents/pins.json` | key-value | Pinned sessions and hidden views | 10 and 50, no age | `Go/internal/agentsd/pins.go:27,32` | #6725 |
