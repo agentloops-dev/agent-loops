@@ -117,7 +117,6 @@
 3 Go/internal/agentsd/workflows.go WriteAtomically
 2 Go/internal/agentsd/workflows.go os.WriteFile
 1 Go/internal/agentsd/workflowtool.go WriteAtomically
-1 Go/internal/agentsd/worksuggest.go WriteAtomically
 1 Go/internal/agentsd/worktrees.go WriteAtomically
 1 Go/internal/browser/browser.go os.WriteFile
 1 Go/internal/citimings/store.go WriteAtomically

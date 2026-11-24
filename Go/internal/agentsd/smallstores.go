@@ -29,6 +29,21 @@ func (d *Daemon) sweepSmallStores(now time.Time) {
 	d.sweepPluginApprovals(gone)
 	d.sweepReviewFolders(gone)
 	d.sweepUnseenDevices(now)
+	for _, f := range d.smallFiles {
+		if n, err := f.Sweep(); err != nil {
+			log.Printf("retention: %s: %v", f.Name(), err)
+		} else if n > 0 {
+			log.Printf("retention: %d entries of %s past its limits", n, f.Name())
+		}
+	}
+}
+
+// smallFile opens a small file (store.JSONFile) that the hourly sweep holds to its limits. Only
+// newWith opens one.
+func smallFile[T any](d *Daemon, spec store.Spec, path func() string, at func(*T) *wire.Date) *store.JSONFile[T] {
+	f := store.OpenJSONFile(spec, path, at, func() time.Time { return nowFunc() })
+	d.smallFiles = append(d.smallFiles, f)
+	return f
 }
 
 // goneFolderTest says whether a folder is gone: no folder of this host, and not on disk. A
