@@ -4,7 +4,8 @@
    The page's CSP allows no inline style, so the inline SVGs' rules and keyframes are here too,
    with a prefix for each animation (ep- for "A feature builds and deploys itself", lp- for the loop, fm- for "Fix main, while
    you sleep", er- for "An error in production goes back into work", ln- for lineage, rp- for reports,
-   cu- for the computer, mc- for machines, sl- for Slack, ml- for mail, ot- and dc- for outputs, vm- for voice mode). */
+   cu- for the computer, mc- for machines, sl- for Slack, ml- for mail, ot- and dc- for outputs, vm- for voice mode,
+   hl- for the human in the loop, sk- for secrets). */
 
 :root {
   /* Words that come second: a caption, the small print, the nav. The web page's own mix. */
@@ -1112,6 +1113,94 @@ h3 { font-size: 1.05rem; margin: 0 0 0.4em; }
 .vm-5 { animation-name: vm-5; }
 @keyframes vm-5 { 0%, 76% { opacity: 0; } 79%, 96% { opacity: 1; } 100% { opacity: 0; } }
 
+/* 13. The human in the loop (hl-, #6860): three asks, answered one after the other; and 14. the
+   secrets (sk-): REDACTED lands on each value, and a use asks first. 16 s a loop. */
+.anim:is(.hl, .sk) { margin: 0; max-width: none; width: 100%; align-self: center; }
+:is(.hl, .sk) .mock-bar { margin: 0; }
+:is(.hl-a, .sk-a) { animation-duration: 16s; animation-iteration-count: infinite; animation-fill-mode: both; animation-timing-function: ease-out; }
+.js .anim:not(.playing) :is(.hl-a, .sk-a) { animation-name: none; }
+.js .anim:not(.playing) :is(.hl-in, .sk-in) { opacity: 0; }
+.hl-head { display: flex; align-items: center; justify-content: space-between; }
+.hl-count { display: grid; justify-items: end; min-width: 80px; font-weight: 700; color: var(--tint-attention); }
+.hl-count > * { grid-area: 1 / 1; }
+.hl-count .hl-c0 { color: var(--tint-vouched); }
+.hl-list { display: grid; gap: 8px; }
+.hl-card, .sk-ask { position: relative; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; padding: 12px 14px 12px 17px; border: 1px solid var(--paper-rule); border-radius: var(--radius-control); background: var(--paper-ground); overflow: hidden; }
+.hl-edge { position: absolute; inset: 0 auto 0 0; width: 3px; background: var(--tint-attention); }
+.hl-n, .sk-n { display: grid; min-width: 0; }
+.hl-stack, .sk-stack { display: grid; justify-items: end; align-items: center; margin-left: auto; }
+.hl-stack > *, .sk-stack > * { grid-area: 1 / 1; }
+:is(.hl-stack, .sk-stack) .chip { padding-left: 10px; }
+.hl-btns, .sk-btns { display: flex; gap: 8px; }
+.hl-btn, .sk-btn { padding: 4px 12px; border: 1px solid var(--paper-edge); border-radius: var(--radius-control); font-weight: 600; white-space: nowrap; }
+.hl-btn.hl-go, .sk-btn.sk-go { border-color: var(--accent); background: var(--accent); color: var(--paper-ground); }
+.hl-works { min-height: 88px; }
+.hl-work { display: flex; align-items: center; gap: 10px; }
+.hl-spin { width: 14px; height: 14px; border: 2px solid var(--paper-rule); border-top-color: var(--accent); border-radius: 50%; animation: hl-spin 1.2s linear infinite; }
+@keyframes hl-spin { to { transform: rotate(360deg); } }
+.js .anim:not(.playing) .hl-spin { animation-play-state: paused; }
+.hl-ask1 { opacity: 0; animation-name: hl-ask1; }
+@keyframes hl-ask1 { 0%, 19% { opacity: 1; } 21%, 100% { opacity: 0; } }
+.hl-press1 { animation-name: hl-press1; }
+@keyframes hl-press1 { 0%, 14% { transform: none; } 16% { transform: scale(0.92); } 18%, 100% { transform: none; } }
+.hl-done1 { animation-name: hl-done1; }
+@keyframes hl-done1 { 0%, 20% { opacity: 0; } 23%, 96% { opacity: 1; } 100% { opacity: 0; } }
+.hl-ask2 { opacity: 0; animation-name: hl-ask2; }
+@keyframes hl-ask2 { 0%, 41% { opacity: 1; } 43%, 100% { opacity: 0; } }
+.hl-press2 { animation-name: hl-press2; }
+@keyframes hl-press2 { 0%, 36% { transform: none; } 38% { transform: scale(0.92); } 40%, 100% { transform: none; } }
+.hl-done2 { animation-name: hl-done2; }
+@keyframes hl-done2 { 0%, 42% { opacity: 0; } 45%, 96% { opacity: 1; } 100% { opacity: 0; } }
+.hl-ask3 { opacity: 0; animation-name: hl-ask3; }
+@keyframes hl-ask3 { 0%, 63% { opacity: 1; } 65%, 100% { opacity: 0; } }
+.hl-press3 { animation-name: hl-press3; }
+@keyframes hl-press3 { 0%, 58% { transform: none; } 60% { transform: scale(0.92); } 62%, 100% { transform: none; } }
+.hl-done3 { animation-name: hl-done3; }
+@keyframes hl-done3 { 0%, 64% { opacity: 0; } 67%, 96% { opacity: 1; } 100% { opacity: 0; } }
+.hl-c3 { opacity: 0; animation-name: hl-c3; }
+@keyframes hl-c3 { 0%, 20% { opacity: 1; } 22%, 100% { opacity: 0; } }
+.hl-c2 { opacity: 0; animation-name: hl-c2; }
+@keyframes hl-c2 { 0%, 20% { opacity: 0; } 22%, 42% { opacity: 1; } 44%, 100% { opacity: 0; } }
+.hl-c1 { opacity: 0; animation-name: hl-c1; }
+@keyframes hl-c1 { 0%, 42% { opacity: 0; } 44%, 64% { opacity: 1; } 66%, 100% { opacity: 0; } }
+.hl-c0 { animation-name: hl-c0; }
+@keyframes hl-c0 { 0%, 64% { opacity: 0; } 67%, 96% { opacity: 1; } 100% { opacity: 0; } }
+.sk-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 68px; border-bottom: 1px solid var(--paper-rule); }
+.sk-n code { font-family: var(--font-mono); font-size: var(--type-code); font-weight: 700; overflow-wrap: anywhere; }
+.sk-val { position: relative; flex: none; width: 150px; text-align: center; letter-spacing: 0.1em; }
+.anim .sk-tape { position: absolute; left: 50%; top: 50%; width: 150px; min-width: 0; max-width: none; transform: translate(-50%, -50%) rotate(-2deg); overflow: visible; }
+.sk-row:nth-child(even) .sk-tape { transform: translate(-50%, -50%) rotate(1.5deg); }
+.sk-ask { margin-top: 6px; border-left: 3px solid var(--tint-attention); padding-left: 14px; }
+.sk-log { padding-left: 4px; }
+.sk-s1 { animation-name: sk-s1; }
+@keyframes sk-s1 { 0%, 4% { opacity: 0; transform: scale(2.2); } 7% { opacity: 1; transform: scale(0.9); } 9%, 96% { opacity: 1; transform: none; } 100% { opacity: 0; transform: none; } }
+.sk-s2 { animation-name: sk-s2; }
+@keyframes sk-s2 { 0%, 9% { opacity: 0; transform: scale(2.2); } 12% { opacity: 1; transform: scale(0.9); } 14%, 96% { opacity: 1; transform: none; } 100% { opacity: 0; transform: none; } }
+.sk-s3 { animation-name: sk-s3; }
+@keyframes sk-s3 { 0%, 14% { opacity: 0; transform: scale(2.2); } 17% { opacity: 1; transform: scale(0.9); } 19%, 96% { opacity: 1; transform: none; } 100% { opacity: 0; transform: none; } }
+.sk-s4 { animation-name: sk-s4; }
+@keyframes sk-s4 { 0%, 19% { opacity: 0; transform: scale(2.2); } 22% { opacity: 1; transform: scale(0.9); } 24%, 96% { opacity: 1; transform: none; } 100% { opacity: 0; transform: none; } }
+.sk-card { animation-name: sk-card; }
+@keyframes sk-card { 0%, 32% { opacity: 0; } 35%, 96% { opacity: 1; } 100% { opacity: 0; } }
+.sk-wait { opacity: 0; animation-name: sk-wait; }
+@keyframes sk-wait { 0%, 57% { opacity: 1; } 59%, 100% { opacity: 0; } }
+.sk-press { animation-name: sk-press; }
+@keyframes sk-press { 0%, 52% { transform: none; } 54% { transform: scale(0.92); } 56%, 100% { transform: none; } }
+.sk-ok { animation-name: sk-ok; }
+@keyframes sk-ok { 0%, 58% { opacity: 0; } 61%, 96% { opacity: 1; } 100% { opacity: 0; } }
+.sk-read { animation-name: sk-read; }
+@keyframes sk-read { 0%, 68% { opacity: 0; } 71%, 96% { opacity: 1; } 100% { opacity: 0; } }
+
+/* 16. Everything it does (#6860): the groups in columns, each line a link to the docs. */
+.feat { display: grid; grid-template-columns: repeat(4, 1fr); gap: 40px 28px; margin-top: 40px; }
+.feat h3 { padding-bottom: 8px; border-bottom: 1px solid var(--paper-rule); }
+.feat ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 7px; font-size: var(--type-supporting); color: var(--paper-secondary); }
+.feat li a:not(.tag) { color: var(--paper-secondary); text-decoration: none; }
+.feat li a:not(.tag):hover { color: var(--accent); text-decoration: underline; }
+.js .feat > .part.in:nth-child(4n+2) { transition-delay: 0.08s; }
+.js .feat > .part.in:nth-child(4n+3) { transition-delay: 0.16s; }
+.js .feat > .part.in:nth-child(4n) { transition-delay: 0.24s; }
+
 /* Less motion: no animation, and each picture drawn as it ends (every pull request merged, the feature deployed and healthy). */
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
@@ -1133,6 +1222,8 @@ h3 { font-size: 1.05rem; margin: 0 0 0.4em; }
   .dc-in, .js .anim:not(.playing) .dc-in { opacity: 1; }
   .sl-a, .ml-a, .ot-a, .vm-a, .vm-wave i, .js .anim:not(.playing) :is(.sl-a, .ml-a, .ot-a, .vm-a) { animation: none; }
   .sl-in, .ml-in, .ot-in, .vm-in, .js .anim:not(.playing) :is(.sl-in, .ml-in, .ot-in, .vm-in) { opacity: 1; }
+  .hl-a, .sk-a, .hl-spin, .js .anim:not(.playing) :is(.hl-a, .sk-a) { animation: none; }
+  .hl-in, .sk-in, .js .anim:not(.playing) :is(.hl-in, .sk-in) { opacity: 1; }
   .js .part .rp-bar, .js .part.in .rp-bar { transform: none; transition: none; }
 }
 
@@ -1146,7 +1237,7 @@ footer nav a { text-decoration: none; }
   .clients { grid-template-columns: repeat(2, 1fr); }
   .grid2, .anim2 { grid-template-columns: 1fr; }
   .anim2 .anim { max-width: 640px; margin: 0 auto; width: 100%; }
-  .uc { grid-template-columns: repeat(2, 1fr); }
+  .uc, .feat { grid-template-columns: repeat(2, 1fr); }
   .anim.ln-pair { grid-template-columns: 1fr; }
   .ot-split { grid-template-columns: 1fr; }
   .ot-chat { border-right: 0; border-bottom: 1px solid var(--paper-rule); }
@@ -1161,6 +1252,7 @@ footer nav a { text-decoration: none; }
   .int-row { grid-template-columns: 1fr; gap: 8px; }
   .clients { grid-template-columns: 1fr 1fr; }
   .uc { grid-template-columns: 1fr; }
+  .feat { gap: 32px 20px; }
   .lp-wide { display: none; }
   .lp-tall { display: block; }
   /* The animation keeps a size that can be read, and scrolls to the side. */
