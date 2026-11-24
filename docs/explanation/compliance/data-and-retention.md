@@ -69,7 +69,7 @@ Mac.
 | `release-tags.json` | log | Release tags already linked, for each repo | The newest 50 for each repo; an older tag counts as linked (#3652) | On write |
 | `achievements.json` | document | Milestones | A fixed set | — |
 | `ci-timings/<forge>/<path>/<day>.jsonl` | time series | CI runs, their jobs and steps | 90 days, 20,000 runs a repository; a pull request run's steps 14 days | On the sweep |
-| `lineage-deploys.json` | log | Each deploy's last event | 1,000. No age (#6719). | On write |
+| `lineage-deploys.json` | key-value | Each deploy's last event | 1,000 deploys of 16 KiB each, for 90 days from the last event; the oldest goes first (#6719) | Hourly, and on write: age and count |
 | `repo-aliases.json` | key-value | Repository renames | 1,000 renames of 2 KiB each, for 90 days; the oldest goes first. The daily check learns again a rename that a folder or the lineage still names (#6716) | Hourly, and on write: age and count |
 
 ### Workflows, assessments, approvals and devices

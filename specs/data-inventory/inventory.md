@@ -393,7 +393,7 @@ newer than a row above for the same store.
 | `<root>/repo-aliases.json` | key-value | Repo renames | 1,000 renames of 2 KiB each, 90 days, the oldest first | `Go/internal/agentsd/repoaliases.go` (`openRepoAliases`) | #6716 |
 | `<root>/release-tags.json` | log | Linked release tags | 50 a repo by key, no limit on repos, no age | `Go/internal/agentsd/lineagerelease.go:57` | #6717 |
 | `<root>/requests/<id>.json` | document | Open questions and forms | Ended ones 14 days, 1,000 files; an open one has no age | `Go/internal/agentsd/requests.go:27-28` | #6718 |
-| `<root>/lineage-deploys.json` | log | Each deploy's last event | 1,000, no age | `Go/internal/agentsd/lineagedeploy.go:42,237-244` | #6719 |
+| `<root>/lineage-deploys.json` | key-value | Each deploy's last event | 1,000 deploys of 16 KiB each, 90 days from the last event, the oldest first | `Go/internal/agentsd/lineagedeploy.go` (`openDeploys`) | #6719 |
 | `<root>/account-ops.json` | log | Last operation of each account and secret | 500 and 500, no age | `Go/internal/agentsd/accountops.go:27` | #6720 |
 | `<root>/secret-ops-pending.json` | log | Secret audit entries not yet sent | 1,000, no age | `Go/internal/agentsd/secretops.go:54,131,226-230` | #6721 |
 | `<root>/elsewhere.json` | document | Sessions on other machines | 200 a list, no age | `Go/internal/agentsd/elsewhere.go:39` | #6722 |

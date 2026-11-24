@@ -1,10 +1,12 @@
 package agentsd
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"log"
 	"maps"
+	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -14,6 +16,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/diskjson"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/internal/lineage"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
@@ -29,8 +33,8 @@ import (
 //     <target>:<id>/<version>, names the target's kind (testflight). Else it is the job's forge
 //     environment. A deploy that a notice moves to another environment leaves the forge one.
 //   - Its details (the artifacts, the state, the start and the end) are not links: each deploy's
-//     last event is kept in <root>/lineage-deploys.json, at most deploysKept, and a walk says them
-//     as the deploy's resolved title, state and labels.
+//     last event is kept in <root>/lineage-deploys.json, at most deploysKept, for 90 days
+//     from that event, and a walk says them as the deploy's resolved title, state and labels.
 //   - Computed, never stored: a succeeded deploy is replaced when it is live in none of its
 //     environments (#5246, below); it is a rollback when its release is older than the one it replaced;
 //     and what it brings is the PRs between the last deploy that succeeded in the same
@@ -58,8 +62,9 @@ type deployRecord struct {
 	Seen wire.Date `json:"seen"`
 }
 
+// deploysFile is the deploys kept, by ref, as last read from deployStore.
 type deploysFile struct {
-	Deploys map[string]deployRecord `json:"deploys,omitempty"`
+	Deploys map[string]deployRecord
 }
 
 // bringsEntry is what a deploy brings, worked out from prev, the deploy before it.
@@ -74,6 +79,7 @@ type bringsEntry struct {
 
 type lineageDeployBook struct {
 	deployBookMu sync.Mutex
+	deployStore  *store.JSONFile[deployRecord]
 	deployFile   *deploysFile
 	brings       map[string]bringsEntry
 	// bringsAsking is the deploys being worked out now; bringsSlots bounds them.
@@ -94,14 +100,40 @@ func (d *Daemon) deploysPath() string {
 	return filepath.Join(d.Store.Loc.Root, "lineage-deploys.json")
 }
 
+// openDeploys opens the deploys' file, which evicts: a deploy is the forge's record, not a person's.
+// Its age is from its last event. A file from before #6719 had its deploys under one key.
+func (d *Daemon) openDeploys() *store.JSONFile[deployRecord] {
+	f := smallFile(d, store.Spec{Name: "lineage-deploys.json", Kind: "key-value", Scope: "machine",
+		Bounds: store.Bounds{MaxRecordBytes: 16 << 10, MaxCount: deploysKept, MaxAge: store.MaxAge, Action: store.EvictOldest}},
+		d.deploysPath, func(r *deployRecord) *wire.Date { return &r.Seen })
+	var old struct {
+		Deploys map[string]deployRecord `json:"deploys"`
+	}
+	data, err := os.ReadFile(d.deploysPath())
+	if err != nil || diskjson.Unmarshal(data, &old) != nil || len(old.Deploys) == 0 {
+		return f
+	}
+	if err := f.Update(func(m map[string]deployRecord) error {
+		clear(m)
+		maps.Copy(m, old.Deploys)
+		return nil
+	}); err != nil {
+		log.Printf("lineage-deploys.json: could not bring over the deploys: %v", err)
+	}
+	return f
+}
+
+// deploysFileLocked is the deploys kept, without those past their age.
 func (d *Daemon) deploysFileLocked() *deploysFile {
 	if d.deployFile == nil {
-		d.deployFile = &deploysFile{}
-		readStore(d.deploysPath(), d.deployFile, "the deploys' details start again from the next deploy events")
-		if d.deployFile.Deploys == nil {
-			d.deployFile.Deploys = map[string]deployRecord{}
+		kept, err := d.deployStore.Read()
+		if err != nil {
+			log.Printf("%v; the deploys' details start again from the next deploy events", err)
 		}
+		d.deployFile = &deploysFile{Deploys: kept}
 	}
+	now := nowFunc()
+	maps.DeleteFunc(d.deployFile.Deploys, func(_ string, r deployRecord) bool { return now.Sub(r.Seen.Time()) >= store.MaxAge })
 	return d.deployFile
 }
 
@@ -225,28 +257,31 @@ func deployRunNode(repo forgeRepo, dep wire.Deploy) wire.LineageNode {
 func (d *Daemon) keepDeploy(ref string, rec deployRecord) deployRecord {
 	d.deployBookMu.Lock()
 	defer d.deployBookMu.Unlock()
-	f := d.deploysFileLocked()
-	if old, ok := f.Deploys[ref]; ok && deployEnded(old.Deploy.State) && !deployEnded(rec.Deploy.State) {
-		if old.Deploy.Started == nil {
-			old.Deploy.Started = rec.Deploy.Started
+	err := d.deployStore.Update(func(m map[string]deployRecord) error {
+		if old, ok := m[ref]; ok && deployEnded(old.Deploy.State) && !deployEnded(rec.Deploy.State) {
+			if old.Deploy.Started == nil {
+				old.Deploy.Started = rec.Deploy.Started
+			}
+			old.Seen = rec.Seen
+			rec = old
 		}
-		old.Seen = rec.Seen
-		rec = old
-	}
-	f.Deploys[ref] = rec
-	if len(f.Deploys) > deploysKept {
-		refs := make([]string, 0, len(f.Deploys))
-		for k := range f.Deploys {
-			refs = append(refs, k)
+		m[ref] = rec
+		// Not left to the sweep: the control plane takes no more than deploysKept in one send.
+		if len(m) > deploysKept {
+			refs := slices.SortedFunc(maps.Keys(m), func(a, b string) int {
+				return cmp.Or(cmp.Compare(m[a].Seen, m[b].Seen), cmp.Compare(a, b))
+			})
+			for _, k := range refs[:len(refs)-deploysKept] {
+				delete(m, k)
+			}
 		}
-		sort.Slice(refs, func(i, j int) bool { return f.Deploys[refs[i]].Seen < f.Deploys[refs[j]].Seen })
-		for _, k := range refs[:len(refs)-deploysKept] {
-			delete(f.Deploys, k)
-		}
-	}
-	if err := writeStore(d.deploysPath(), f); err != nil {
+		return nil
+	})
+	if err != nil {
 		log.Printf("lineage-deploys.json: could not save: %v", err)
 	}
+	// Read again from the file at the next use.
+	d.deployFile = nil
 	return rec
 }
 
