@@ -6,7 +6,7 @@ import Foundation
 /// sign-in, lent through the relay when this Mac is signed in and the person says yes to the lend
 /// ask (056, T091, #6855): the token stays on this Mac. Then a key the person has in Secrets,
 /// written on the machine as its own user. Else the runtime's device-code sign-in, shown as a card
-/// with the code and **Open sign-in page**, while the step says it waits for the person. A login is
+/// with the code and the link to its page, while the step says it waits for the person. A login is
 /// never copied from this Mac.
 ///
 /// It runs while the machine's step 7 is running or waits for the person, from the window that
