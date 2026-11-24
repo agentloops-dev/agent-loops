@@ -409,8 +409,15 @@ func TestRolesAndRemoval(t *testing.T) {
 	// An invite not used yet, and a code Sam made, are spent by nobody after the removal.
 	var shown wire.ControlCodeShown
 	must(t, json.Unmarshal(call(t, sam.window, "", "clients/startPairing", nil), &shown))
+	if _, err := p.s.busPublish(context.Background(), samMachine.member.Host,
+		wire.BusPublish{Events: []wire.BusEvent{prMerged(6671)}}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
 
 	call(t, alexWindow, "", "people/remove", wire.PersonRequest{User: sam.id})
+	if keys, err := p.store.List(context.Background(), busPrefix+busOf(sam.id)+"/"); err != nil || len(keys) != 0 {
+		t.Fatalf("removed person's bus still has %d keys: %v", len(keys), err)
+	}
 	p.waitFor(func() bool { return p.s.Records().Client(sam.member.Client) == nil }, "Sam's client forgotten")
 	if p.s.Records().Host(samMachine.member.Host) != nil {
 		t.Fatal("Sam's machine is still there")
