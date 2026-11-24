@@ -512,30 +512,33 @@ the pictures, not the walk, so take a set that shows the change as a person meet
 - **Name each file `<client>-<state>.png`**, with `mac`, `remote`, `ipad` or `web` and a
   short state: `mac-empty.png`, `web-error.png`, `remote-question.png`.
 - **Only scratch data.** The repo is public: a scratch root and the fake runtime, never a
-  real name, path, token, session or Alex's own windows. Read each PNG before you push it.
+  real name, path, token, session or Alex's own windows. Read each PNG before you upload it:
+  GitHub has no way to delete one.
 - **Not a video, but a clip for motion.** Screenshots are easier to review, so each state
   still gets one. When the change is a motion (a scroll, a gesture, an animation), add a
   short silent clip of it beside them (below). Voice mode is the other exception: Alex
   tests it on the installed Mac app, because a scratch app has no microphone or speech,
   and a PR whose change is a sound gets a clip with sound as well (below).
 
-Put them on the PR with `pr-shots.sh`. It commits them to the orphan branch `screenshots`
-as `pr-<n>/<file>` (so `main` gets no images and you need no worktree), takes away that
-PR's earlier set, and prints a Markdown image line per file:
+Put them on the PR with `pr-shots.sh`. It uploads them with `gh pr edit --attach` (#6963: no
+branch, no push, no `ci` lease) and replaces what is under `## Screenshots` in the PR's body:
 
 ```sh
-$S/pr-shots.sh 2850 /tmp/run-mychange-shots/*.png > /tmp/run-mychange-shots/body.md
+$S/pr-shots.sh 2850 /tmp/run-mychange-shots/*.png
 ```
 
-Put the lines under `## Screenshots` in the PR body (`gh pr edit <n> --body-file`). When Alex
-asks for changes, take the whole set again and run it again: Alex sees only the new set.
+Write captions after it, not before: it rewrites the whole section. When Alex asks for
+changes, take the whole set again and run it again: Alex sees only the new set. The upload
+uses the person's own `gh` login, because GitHub refuses the bot's App token (cli/cli#14309;
+Alex, 2026-11-23); the PR stays the bot's. Use that login for nothing else. On a machine with
+no such login it stops and says so. Never push to the old branch `screenshots`; it stays
+because old PRs link to it.
 The shots go with the root in "When you are done"; keep them under `/tmp/run-<slug>-*`.
 
 ### A silent clip (#4094)
 
 A change that is a motion (a scroll, a gesture, an animation) also gets a short clip of it:
-an animated WebP, which plays inline in the PR from the `screenshots` branch, as the PNGs
-do. A video file there shows only as a link. `scripts/video/clip.sh` records the window
+an animated WebP, which plays inline in the PR, as the PNGs show. `scripts/video/clip.sh` records the window
 through its walk socket (make.py's recorder), so no other window can be in it and a locked
 screen does not stop it; it works for `remote` too. Give it the walk steps after `--`, and
 it records from just before they start to a second after they end:
@@ -550,7 +553,7 @@ Several steps go in one `zsh -c '…'`. It keeps at most 20 s, at most 960 px wi
 (`--width`) and 10 frames a second (`--fps`), and makes the clip smaller until it is under
 5 MB, or fails; `pr-shots.sh` takes `.webp` and `.gif` and refuses a file over 5 MB. Name it
 `<client>-<state>.webp`, and read the contact sheet of its frames that it names (in the
-temporary folder, so `pr-shots.sh` never takes it) before you push it: scratch data only, as
+temporary folder, so `pr-shots.sh` never takes it) before you upload it: scratch data only, as
 for every shot. A frame in which the window is resized is padded to the largest frame. Put it on the PR with the PNGs: `$S/pr-shots.sh <n> /tmp/run-mychange-shots/*`.
 
 ### A clip with sound (#4856)

@@ -36,13 +36,13 @@ export function readyLine(pool: WarmPool): string {
   return `ready (min ${pool.minReady}, max ${pool.maxSize})`;
 }
 
-/** Why a pool makes nothing now, or null when it is keeping. */
+/** Why a pool makes nothing now, or null when it can make. */
 export function poolStateLine(pool: WarmPool): string | null {
   switch (pool.state) {
     case "stopped": return `Stopped: ${pool.stoppedBecause ?? "three makes failed in a row"}. Save the pool to try again.`;
     case "off-hours": return "Outside its hours: it holds no ready machine and makes none.";
     case "empty": return "Min ready is 0: it makes nothing.";
-    case "keeping": return null;
+    case "keeping": return pool.waitingBecause ? `Waiting to make a machine: ${pool.waitingBecause}.` : null;
   }
 }
 

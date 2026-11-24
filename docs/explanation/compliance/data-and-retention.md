@@ -198,7 +198,7 @@ the other copies of the control plane learn that it went.
 
 | Records | What they keep | How long, how large | Applied |
 | --- | --- | --- | --- |
-| Kept requests | Prompts and agent starts for a stopped workspace, **with their attachments** (up to 40 MiB each) | Until the machine starts and takes them, or is removed; 20 a machine, failed ones included (a new one pushes out the oldest that failed). One that failed goes after 7 days (#3647) | On delivery, on keep, hourly |
+| Kept requests | Prompts and agent starts for a stopped workspace, **with their attachments** (up to 40 MiB each) | Waiting requests expire after 90 days at most; failed requests expire after 7 days. At most 20 requests and 800 MiB per machine. The control plane refuses a new request at either limit; it does not evict a person's request (#3647, #6674) | On delivery, on keep, hourly |
 | Host copies | Each machine's last folders and agents, up to 500, **with titles** | One a machine | When the machine is forgotten |
 | Usage reports | Usage, cost and time by person, project, folder, machine and runtime | 7 days by the hour, 90 days by the day | Hourly |
 | Lineage | Cost of each issue, PR and session node | 5,000 nodes, 90 days | On write |

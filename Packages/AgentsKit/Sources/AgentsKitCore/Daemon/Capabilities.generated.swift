@@ -149,6 +149,7 @@ public enum Capability {
     public static let machineAccounts1 = "machine.accounts/1"
     public static let machineAccounts2 = "machine.accounts/2"
     public static let machineAgentSecrets1 = "machine.agent-secrets/1"
+    public static let machineSetup1 = "machine.setup/1"
     public static let machineUsage1 = "machine.usage/1"
     public static let machine1 = "machine/1"
     public static let machinesAll1 = "machines.all/1"
@@ -620,6 +621,7 @@ public enum Capability {
         "sessions/list": "sessions/1",
         "settings/passThrough": "host.policy/1",
         "settings/userPart": "host.user-settings/4",
+        "setup/projects": "machine.setup/1",
         "shell/attach": "shell/1",
         "shell/close": "shell/1",
         "shell/detach": "shell/1",
@@ -850,6 +852,7 @@ public enum Capability {
         "machine/secretOps": "machine/1",
         "machine/secretRelease": "host.secret-release/1",
         "machine/setupStep": "machine/1",
+        "machine/setupWork": "machine/1",
         "machine/status": "machine/1",
         "machines/agents": "machines/1",
         "machines/agentsChanges": "machines/1",

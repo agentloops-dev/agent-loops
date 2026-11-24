@@ -223,7 +223,7 @@ func TestEncodedRecordWithinLimit(t *testing.T) {
 
 func TestRatingGatesAndMissingEvidence(t *testing.T) {
 	day := time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)
-	r := Record{Agent: SuccessProof{Source: "agent-completion", Build: "build-a", Date: day}}
+	r := Record{StartedAt: day, Agent: SuccessProof{Source: "agent-completion", Build: "build-a", Date: day}}
 	if got := RatingFor(r); got != "alpha" {
 		t.Fatalf("alpha rating = %q", got)
 	}
@@ -249,6 +249,97 @@ func TestRatingGatesAndMissingEvidence(t *testing.T) {
 	}
 }
 
+func TestRatingDistinguishesUnmeasuredMeasuredZeroAndIncompleteEvidence(t *testing.T) {
+	if got := RatingFor(Record{}); got != "unmeasured" {
+		t.Fatalf("empty record rating = %q", got)
+	}
+	day := time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)
+	measuredZero := Record{StartedAt: day}
+	if got := RatingFor(measuredZero); got != "pending" {
+		t.Fatalf("measured zero rating = %q", got)
+	}
+	saturatedWithoutAgentProof := Record{StartedAt: day, Successes: math.MaxUint64, Failures: math.MaxUint64}
+	if got := RatingFor(saturatedWithoutAgentProof); got != "pending" {
+		t.Fatalf("saturated counters without agent proof rating = %q", got)
+	}
+	alexOnly := Record{StartedAt: day, Beta: [3]BetaProof{{Session: "alex-1", Date: day, Build: "build-1"}}}
+	if got := RatingFor(alexOnly); got != "pending" {
+		t.Fatalf("Alex evidence without an agent success rating = %q", got)
+	}
+	missingAgentDate := Record{StartedAt: day, Agent: SuccessProof{Source: "completion-1", Build: "build-1"}}
+	if got := RatingFor(missingAgentDate); got != "pending" {
+		t.Fatalf("agent proof without date rating = %q", got)
+	}
+	missingAgentSource := Record{StartedAt: day, Agent: SuccessProof{Build: "build-1", Date: day}}
+	if got := RatingFor(missingAgentSource); got != "pending" {
+		t.Fatalf("agent proof without source rating = %q", got)
+	}
+	missingBetaDate := Record{
+		StartedAt: day,
+		Agent:     SuccessProof{Source: "completion-1", Build: "build-1", Date: day},
+		Beta: [3]BetaProof{
+			{Session: "session-1", Date: day, Build: "build-1"},
+			{Session: "session-2", Build: "build-1"},
+			{Session: "session-3", Date: day.Add(24 * time.Hour), Build: "build-1"},
+		},
+	}
+	if got := RatingFor(missingBetaDate); got != "alpha" {
+		t.Fatalf("beta proof missing date rating = %q", got)
+	}
+}
+
+func TestEvaluateRecomputesRatingWhenRuleVersionChanges(t *testing.T) {
+	ctx := context.Background()
+	inner := store.NewMemory()
+	m, err := New(inner, []string{"chat/1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	day := time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)
+	record := Record{FeatureID: "chat/1", Rating: "ga", RuleVersion: 1, StartedAt: day, UpdatedAt: day}
+	data, err := json.Marshal(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := inner.Put(ctx, Key("chat/1"), data, store.Absent); err != nil {
+		t.Fatal(err)
+	}
+	got, err := m.Evaluate(ctx, "chat/1", 2, day.Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.RuleVersion != 2 || got.Rating != "pending" {
+		t.Fatalf("reevaluated record = version %d, rating %q", got.RuleVersion, got.Rating)
+	}
+}
+
+func TestGARequiresOnlyConfiguredSupportedClientWalks(t *testing.T) {
+	day := time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)
+	r := Record{
+		StartedAt: day,
+		Agent:     SuccessProof{Source: "agent-1", Build: "build-1", Date: day},
+		Beta: [3]BetaProof{
+			{Session: "alex-1", Date: day, Build: "build-1"},
+			{Session: "alex-2", Date: day, Build: "build-1"},
+			{Session: "alex-3", Date: day.Add(24 * time.Hour), Build: "build-1"},
+		},
+		GA: GAProof{
+			Person: "person-1", Dates: [2]time.Time{day, day.Add(24 * time.Hour)},
+			Sessions: [2]string{"other-1", "other-2"}, Source: [2]string{"source-1", "source-2"},
+			Builds: [2]string{"build-1", "build-1"},
+		},
+		Clients: ClientProof{Configured: true, Supported: ClientSet{Mac: true, Web: true},
+			Mac: true, Web: true, MacWalk: WalkProof{Build: "build-1", Date: day}, WebWalk: WalkProof{Build: "build-1", Date: day}},
+	}
+	if got := RatingFor(r); got != "ga" {
+		t.Fatalf("GA with supported Mac and web walks = %q", got)
+	}
+	r.Clients.Supported.Remote = true
+	if got := RatingFor(r); got != "beta" {
+		t.Fatalf("GA without supported Remote walk = %q", got)
+	}
+}
+
 func TestReadsPreviousClientChecklistShape(t *testing.T) {
 	var r Record
 	if err := json.Unmarshal([]byte(`{"featureId":"chat","clients":{"mac":true,"remote":false,"web":true}}`), &r); err != nil {
@@ -269,10 +360,17 @@ func TestBlockerSuspendsUntilSamePathFixedBuildRecovery(t *testing.T) {
 	if _, err := m.Evaluate(ctx, "feature", 1, now); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := m.RecordBlocker(ctx, "feature", "settings/save", now); err != nil {
+	if _, err := m.Complete(ctx, "feature", Completion{ID: "agent-1", Actor: ActorAgent, Build: "build-1", Success: true, Completed: true, Eligible: true}, now); err != nil {
 		t.Fatal(err)
 	}
 	r, err := m.Read(ctx, "feature")
+	if err != nil || r.Rating != "alpha" {
+		t.Fatalf("rating before blocker = %#v, err=%v", r, err)
+	}
+	if _, err := m.RecordBlocker(ctx, "feature", "settings/save", now); err != nil {
+		t.Fatal(err)
+	}
+	r, err = m.Read(ctx, "feature")
 	if err != nil || !r.Blocked || RatingFor(*r) != "pending" {
 		t.Fatalf("blocked record = %#v, err=%v", r, err)
 	}
@@ -284,7 +382,7 @@ func TestBlockerSuspendsUntilSamePathFixedBuildRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	r, err = m.Read(ctx, "feature")
-	if err != nil || r.Blocked || r.Blocker.FixedBuild != "build-fixed" || r.Blocker.RecoveryActor != "alex" || r.Blocker.RecoveryCompletion != "completion-1" || r.Blocker.RecoveredAt.IsZero() {
+	if err != nil || r.Blocked || r.Rating != "alpha" || r.Blocker.FixedBuild != "build-fixed" || r.Blocker.RecoveryActor != "alex" || r.Blocker.RecoveryCompletion != "completion-1" || r.Blocker.RecoveredAt.IsZero() {
 		t.Fatalf("recovered evidence = %#v, err=%v", r, err)
 	}
 }

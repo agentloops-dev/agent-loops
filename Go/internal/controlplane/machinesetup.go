@@ -61,6 +61,27 @@ type storedSetup struct {
 	// host that joins as this id is linked to it, also after the control plane restarted.
 	Provider  string `json:"provider,omitempty"`
 	Workspace string `json:"workspace,omitempty"`
+	// Projects are the pool's projects of a machine that a person claimed (#6890): its step 6.
+	Projects []string `json:"projects,omitempty"`
+}
+
+// claimed says that a person claimed the machine from a warm pool: the claim marks the steps
+// that the pool did.
+func (st *storedSetup) claimed() bool { return st.Steps[0].FromPool }
+
+// next is the first of steps 6 to 8 that waits for the host to run it, or nil. A failed step
+// waits for Try Again.
+func (st *storedSetup) next() *wire.MachineSetupStepID {
+	if st.failed() {
+		return nil
+	}
+	for i := 5; i < len(st.Steps); i++ {
+		if st.Steps[i].State != wire.MachineSetupStateDone {
+			id := st.Steps[i].ID
+			return &id
+		}
+	}
+	return nil
 }
 
 func machineSetupKey(host string) string {

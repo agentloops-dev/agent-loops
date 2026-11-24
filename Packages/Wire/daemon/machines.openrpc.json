@@ -613,6 +613,27 @@
       }
     },
     {
+      "name": "setup/projects",
+      "x-capability": "machine.setup/1",
+      "description": "The installer on this machine (#6890): gets the pool's projects from the machines that have them, in the background, and says how it stands. Asked again until finished.",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/core.schema.json#/definitions/Empty"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/machines.schema.json#/definitions/MachineSetupProjects"
+        }
+      }
+    },
+    {
       "name": "surface/identify",
       "x-capability": "surface/1",
       "tags": [

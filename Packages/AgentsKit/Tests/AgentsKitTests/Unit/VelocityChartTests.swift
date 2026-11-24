@@ -70,6 +70,24 @@ struct VelocityChartTests {
         #expect(chart.average == 0)
     }
 
+    @Test("the repository picker filters bars, shares and reverts")
+    func repositoryFilter() {
+        let siteChart = VelocityChart(history, range: .day, repo: site, calendar: pacific)
+        #expect(siteChart.repo == site)
+        #expect(siteChart.bars.first { $0.stamp == "2026-11-09T14" }?.merged == 1)
+        #expect(siteChart.total == 1)
+        #expect(siteChart.average == 1)
+        #expect(siteChart.reverted == 0)
+        #expect(siteChart.shares.map(\.name) == ["alexec/agents-site"])
+        #expect(siteChart.shares.map(\.merged) == [1])
+
+        let agentsChart = VelocityChart(history, range: .week, repo: agents, calendar: pacific)
+        #expect(agentsChart.total == 7)
+        #expect(agentsChart.reverted == 1)
+        #expect(agentsChart.shares.map(\.name) == ["alexec/agents"])
+        #expect(VelocityChart.repositories(in: history) == [agents, site])
+    }
+
     @Test("counts read as PRs, an average under 10 to one decimal")
     func words() {
         #expect(VelocityChart.words(0) == "0 PRs")
