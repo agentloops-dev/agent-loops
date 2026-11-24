@@ -9,7 +9,10 @@ import Foundation
 ///
 /// An actor, so encoding and the disk are off the main actor. One file per machine and
 /// one per session: a list change writes one small file, and a chat opened writes its own.
-public actor LocalCopy {
+///
+/// A cache (#6669): it evicts by its age, its counts and its cap, on each write and hourly, and never refuses. A record's
+/// age is since this device read it from its host, and its file's time says it; drawing it does not make it newer.
+public actor LocalCopy: CacheStore {
     /// The most the copy holds on a Mac and on a phone (spec 4777-fast).
     public static let macCap = 200 * 1024 * 1024
     public static let remoteCap = 50 * 1024 * 1024
@@ -19,6 +22,10 @@ public actor LocalCopy {
     public static let entriesKept = ChatOpening.wholeTurn
     /// Archived records kept for one machine: a page's worth, not every fold ever opened.
     public static let archivedKept = 200
+
+    /// The largest record. A machine over it loses its archived records and a chat its oldest entries; one still over
+    /// it, or a Work answer over it, is not kept, so it is read again next time.
+    public static let recordCap = 16 * 1024 * 1024
 
     /// One machine: its folders and session records.
     public struct Machine: Codable, Sendable, Equatable {
@@ -62,11 +69,31 @@ public actor LocalCopy {
     public let folder: URL
     public let cap: Int
     public let transcriptsKept: Int
+    public let recordCap: Int
+    /// A record goes this long after it was read from its host (#6789).
+    public let age: TimeInterval
+    let now: @Sendable () -> Date
+    private static let sweepEvery: TimeInterval = 60 * 60
 
-    public init(folder: URL, cap: Int, transcriptsKept: Int = LocalCopy.transcriptsKept) {
+    public init(folder: URL, cap: Int, transcriptsKept: Int = LocalCopy.transcriptsKept,
+                recordCap: Int = LocalCopy.recordCap, age: TimeInterval = cacheAgeLimit,
+                now: @escaping @Sendable () -> Date = { Date() }) {
         self.folder = folder
         self.cap = cap
         self.transcriptsKept = transcriptsKept
+        self.recordCap = recordCap
+        self.age = min(age, cacheAgeLimit)
+        self.now = now
+        // The hourly sweep, which ends with the copy. The first waits for the launch's draws; a read never gives an aged
+        // record.
+        Task(priority: .utility) { [weak self] in
+            var wait: TimeInterval = 10
+            while true {
+                try? await Task.sleep(for: .seconds(wait))
+                guard await self?.sweep() != nil else { return }
+                wait = Self.sweepEvery
+            }
+        }
     }
 
     /// The Mac window's copy: in its root's cache folder, so a scratch root has its own.
@@ -117,19 +144,22 @@ public actor LocalCopy {
 
     /// Every machine held, in no order, with when it was read from its host (#5141).
     public func machinesRead() -> [(machine: Machine, at: Date)] {
-        let files = (try? FileManager.default.contentsOfDirectory(at: machines, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
+        let files = (try? FileManager.default.contentsOfDirectory(at: machines, includingPropertiesForKeys: nil)) ?? []
         return files.compactMap { url -> (machine: Machine, at: Date)? in
             guard url.pathExtension == "json", let record = read(Machine.self, at: url) else { return nil }
             var machine = record.value
             // The host is the copy's to say, whatever a record's own coding keeps of it.
             machine.agents = machine.agents.map { var agent = $0; agent.host = machine.host; return agent }
-            let written = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
-            return (machine, record.at ?? written ?? .distantPast)
+            return (machine, record.at ?? .distantPast)
         }
     }
 
     /// `at` is when the client read the machine from its host; now when not given.
-    public func keep(_ machine: Machine, readAt at: Date = Date()) {
+    /// One with nothing to draw is not kept: a machine let go of lists nothing (#6789).
+    public func keep(_ machine: Machine, readAt at: Date? = nil) {
+        if machine.agents.isEmpty, machine.folders.isEmpty {
+            return drop(at: machines.appendingPathComponent(Self.fileName(Self.machineRef(machine.host))))
+        }
         var machine = machine
         // The live ones whole, and the archived ones newest first, at most a page of them.
         let live = machine.agents.filter { $0.state != .archived }
@@ -138,14 +168,37 @@ public actor LocalCopy {
             .prefix(Self.archivedKept)
         machine.agents = live + archived
         let ref = Self.machineRef(machine.host)
-        write(Record(ref: ref, value: machine, at: at), to: machines.appendingPathComponent(Self.fileName(ref)))
+        let url = machines.appendingPathComponent(Self.fileName(ref))
+        let at = at ?? now()
+        if !write(Record(ref: ref, value: machine, at: at), to: url) {
+            machine.agents = live
+            // The archived ones left out are not in the point's list.
+            machine.point = nil
+            write(Record(ref: ref, value: machine, at: at), to: url)
+        }
+        trim()
+    }
+
+    /// Drops each machine that is none of `hosts`, with the chats of its sessions (#6789).
+    public func dropMachines(except hosts: Set<MachineRef>) {
+        let names = Set(hosts.map { Self.fileName(Self.machineRef($0)) })
+        for file in Self.files(machines) where !names.contains(file.url.lastPathComponent) { drop(at: file.url) }
+    }
+
+    private func drop(at url: URL) {
+        for agent in read(Machine.self, at: url)?.value.agents ?? [] {
+            try? FileManager.default.removeItem(at: transcriptFile(Self.sessionRef(agent.id)))
+        }
+        try? FileManager.default.removeItem(at: url)
     }
 
     // MARK: Transcripts
 
+    private func transcriptFile(_ ref: WireRef) -> URL { transcripts.appendingPathComponent(Self.fileName(ref)) }
+
     public func transcript(of session: UUID) -> Transcript? {
         let ref = Self.sessionRef(session)
-        guard let record = read(Transcript.self, at: transcripts.appendingPathComponent(Self.fileName(ref))),
+        guard let record = read(Transcript.self, at: transcriptFile(ref)),
               record.ref == ref else { return nil }
         return record.value
     }
@@ -160,20 +213,27 @@ public actor LocalCopy {
             transcript.page.firstIndex += drop
         }
         let ref = Self.sessionRef(transcript.session)
-        write(Record(ref: ref, value: transcript, at: Date()), to: transcripts.appendingPathComponent(Self.fileName(ref)))
+        let at = now()
+        while !write(Record(ref: ref, value: transcript, at: at), to: transcriptFile(ref)), !transcript.page.entries.isEmpty {
+            let less = (transcript.page.entries.count + 1) / 2
+            transcript.page.entries.removeFirst(less)
+            transcript.page.firstIndex += less
+        }
         trim()
     }
 
-    /// Transcripts past the newest `transcriptsKept`, then, while the whole copy is over `cap`,
-    /// the oldest Work entry (#4930) and, with none left, the oldest transcript. Machines are
-    /// never dropped: all of them are well under a megabyte.
+    /// What has aged out, then transcripts past the newest `transcriptsKept`, then, while the whole copy is over `cap`,
+    /// the oldest Work entry (#4930), with none left the oldest transcript, and last the oldest machine.
     func trim() {
         let fm = FileManager.default
+        let cutoff = now() - age
+        for file in allFiles() where file.at < cutoff { try? fm.removeItem(at: file.url) }
         var held = Self.files(transcripts).sorted { $0.at > $1.at }
         while held.count > transcriptsKept, let oldest = held.popLast() { try? fm.removeItem(at: oldest.url) }
         var work = trimWork().sorted { $0.at > $1.at }
-        var total = (held + work + Self.files(machines)).reduce(0) { $0 + $1.bytes }
-        while total > cap, let oldest = work.popLast() ?? held.popLast() {
+        var kept = Self.files(machines).sorted { $0.at > $1.at }
+        var total = (held + work + kept).reduce(0) { $0 + $1.bytes }
+        while total > cap, let oldest = work.popLast() ?? held.popLast() ?? kept.popLast() {
             try? fm.removeItem(at: oldest.url)
             total -= oldest.bytes
         }
@@ -187,6 +247,23 @@ public actor LocalCopy {
         }
     }
 
+    /// Every file of the copy, whatever wrote it.
+    private func allFiles() -> [(url: URL, at: Date, bytes: Int)] {
+        let keys: Set<URLResourceKey> = [.contentModificationDateKey, .fileSizeKey, .isRegularFileKey]
+        guard let walk = FileManager.default.enumerator(at: folder, includingPropertiesForKeys: Array(keys)) else { return [] }
+        return walk.compactMap { found in
+            guard let url = found as? URL, let values = try? url.resourceValues(forKeys: keys), values.isRegularFile == true else { return nil }
+            return (url, values.contentModificationDate ?? .distantPast, values.fileSize ?? 0)
+        }
+    }
+
+    public func sweep() { trim() }
+
+    public func stats() -> CacheStats {
+        let files = allFiles()
+        return CacheStats(count: files.count, bytes: files.reduce(0) { $0 + $1.bytes }, oldest: files.map(\.at).min())
+    }
+
     /// Everything gone: the pairing went, and what this device kept of it goes with it.
     public func forget() {
         try? FileManager.default.removeItem(at: folder)
@@ -197,13 +274,27 @@ public actor LocalCopy {
     func read<Value: Codable & Sendable>(_: Value.Type, at url: URL) -> Record<Value>? {
         guard let data = try? Data(contentsOf: url) else { return nil }
         // A file that does not read (an older form, cut short) is only a copy missing.
-        return try? JSONDecoder().decode(Record<Value>.self, from: data)
+        guard var record = try? JSONDecoder().decode(Record<Value>.self, from: data) else { return nil }
+        let at = record.at ?? (try? FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate]) as? Date
+        record.at = at
+        // Aged out between two sweeps.
+        guard let at, at >= now() - age else { return nil }
+        return record
     }
 
-    func write<Value: Codable & Sendable>(_ record: Record<Value>, to url: URL) {
-        guard let data = try? JSONEncoder().encode(record) else { return }
+    /// False when the record is over `recordCap`: its file is then removed, as what it held is stale.
+    @discardableResult
+    func write<Value: Codable & Sendable>(_ record: Record<Value>, to url: URL) -> Bool {
+        guard let data = try? JSONEncoder().encode(record), data.count <= recordCap else {
+            try? FileManager.default.removeItem(at: url)
+            return false
+        }
         try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         // Atomic, so a reader never finds half a file.
+        // store-bounds: kind=cache; size=200MiB; age=90d; action=evict; record=16MiB; applied=on write and hourly
         try? data.write(to: url, options: .atomic)
+        // The file's time is when its record was read, which the sweep goes by.
+        if let at = record.at { try? FileManager.default.setAttributes([.modificationDate: at], ofItemAtPath: url.path) }
+        return true
     }
 }
