@@ -135,17 +135,20 @@ func (s *Service) renewConnected(ctx context.Context) {
 	}
 }
 
-// expiredKept is how long a machine is kept after its key expired (#3748): it can never
-// connect again, but its person still sees it, and why, for this long.
-const expiredKept = 90 * 24 * time.Hour
+// unusable is whether a machine goes in the sweep (#6758): its key expired, so it can never
+// connect again, and it is linked to no provider's workspace. A linked one stays until a
+// person removes it: they could still start or delete the workspace, and the record is the
+// way to it. A link that does not read is a link.
+func unusable(h records.MachineRecord, now time.Time) bool {
+	linked := len(h.Workspace) > 0 && string(h.Workspace) != "null"
+	return keyExpired(h.Expires, now) && !linked
+}
 
-// forgetExpired forgets, at most most, the clients whose key expired (#6757) and the
-// machines whose key expired expiredKept ago, as a forget or a removal by hand does: a
-// tombstone a week, and what was kept for it goes. A client connected here, or one renewed
-// since it was read, is in use and stays. A started machine's workspace is left as it is:
-// only its record goes. It says how many went.
+// forgetExpired forgets, at most most, the clients (#6757) and the machines (#6758) whose
+// key expired, as a forget or a removal by hand does: a tombstone a week, and what was kept
+// for it goes. One connected, or renewed since it was read, is in use and stays, and so
+// does a machine linked to a workspace. It says how many went.
 func (s *Service) forgetExpired(ctx context.Context, now time.Time, most int) int {
-	before := now.Add(-expiredKept)
 	gone := 0
 	connected := map[string]bool{}
 	for _, id := range s.router.ConnectedClients() {
@@ -172,17 +175,23 @@ func (s *Service) forgetExpired(ctx context.Context, now time.Time, most int) in
 		s.log("client " + c.Name + " forgotten: its key expired " + c.Expires.UTC().Format(time.DateOnly))
 		gone++
 	}
+	online := providerRouter{r: s.router}
 	for _, h := range s.records.Hosts() {
 		if gone >= most {
 			return gone
 		}
-		if h.Expires == nil || !h.Expires.Before(before) {
+		if online.Online(h.ID) || !unusable(h, now) {
 			continue
 		}
-		if _, err := s.methods.removeHost(ctx, h.ID, Caller{}); err != nil {
+		went, err := s.methods.removeHostIf(ctx, h.ID, Caller{}, func(h records.MachineRecord) bool { return unusable(h, now) })
+		if err != nil {
 			s.log("could not remove " + h.ID + ", whose key expired: " + err.Error())
 			continue
 		}
+		if !went {
+			continue
+		}
+		s.log("machine " + h.Name + " removed: its key expired " + h.Expires.UTC().Format(time.DateOnly))
 		gone++
 	}
 	return gone

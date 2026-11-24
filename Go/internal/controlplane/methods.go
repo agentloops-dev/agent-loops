@@ -1043,6 +1043,11 @@ func (m *Methods) ownHostNamed(from Caller, named string) (string, error) {
 
 // removeHost takes a machine off the control plane: machines/remove, or with its person.
 func (m *Methods) removeHost(ctx context.Context, host string, from Caller) (bool, error) {
+	return m.removeHostIf(ctx, host, from, nil)
+}
+
+// removeHostIf is removeHost for a machine that still passes still, when there is one.
+func (m *Methods) removeHostIf(ctx context.Context, host string, from Caller, still func(records.MachineRecord) bool) (bool, error) {
 	owner, name := m.s.ownerOf(host), host
 	var held []wire.OrgRouteVersion
 	if h := m.records.Host(host); h != nil {
@@ -1051,7 +1056,7 @@ func (m *Methods) removeHost(ctx context.Context, host string, from Caller) (boo
 		}
 		held = appliedOrgRoutes(*h)
 	}
-	gone, err := m.records.RemoveHost(ctx, host)
+	gone, err := m.records.RemoveHostIf(ctx, host, still)
 	if err != nil || !gone {
 		return gone, err
 	}

@@ -107,7 +107,10 @@ func (d *Daemon) terminalSecret(ctx context.Context, name, command string, hold 
 		return d.terminalValue(home, name)
 	}
 	ask := wire.RequestSecretUse{Name: name, Use: wire.SecretUseTerminal, Place: command}
-	id := d.openTerminalRequest(home, ask)
+	id, err := d.openTerminalRequest(home, ask)
+	if err != nil {
+		return wire.SecretTerminalValue{}, err
+	}
 	held := make(chan struct{}, 1)
 	d.secretUseMu.Lock()
 	if d.terminalHeld == nil {
@@ -188,14 +191,14 @@ func (d *Daemon) terminalAllowed(name string) bool {
 // openTerminalRequest is the open request for a terminal's use of name: the one opened before
 // for the same name and command, when it is still open, so a call made again does not ask
 // twice. It has no session; its folder is the personal home.
-func (d *Daemon) openTerminalRequest(home string, ask wire.RequestSecretUse) wire.UUID {
+func (d *Daemon) openTerminalRequest(home string, ask wire.RequestSecretUse) (wire.UUID, error) {
 	d.requests.mu.Lock()
 	for _, r := range d.requests.byID {
 		if s := r.Detail.SecretUse; s != nil && r.State == wire.RequestStateOpen && r.AskedBy == nil &&
 			s.Use == wire.SecretUseTerminal && s.Name == ask.Name && s.Place == ask.Place {
 			id := r.ID
 			d.requests.mu.Unlock()
-			return id
+			return id, nil
 		}
 	}
 	at := now()
@@ -203,18 +206,16 @@ func (d *Daemon) openTerminalRequest(home string, ask wire.RequestSecretUse) wir
 		State: wire.RequestStateOpen, Title: "Print " + ask.Name + " in a terminal (" + ask.Place + ")",
 		Detail: wire.RequestDetail{SecretUse: &ask}, Folder: string(fileURL(home, true)),
 		Waiters: []wire.RequestWaiter{}, AskedAt: at}
-	if d.requests.byID == nil {
-		d.requests.byID = map[wire.UUID]*wire.Request{}
-	}
-	d.requests.byID[r.ID] = r
-	d.saveRequestLocked(r)
-	c := copyRequest(r)
+	c, err := d.openRequestLocked(r)
 	d.requests.mu.Unlock()
+	if err != nil {
+		return "", err
+	}
 	log.Printf("secret use: a caller with no session (%s) asks to read %s", ask.Place, ask.Name)
 	Broadcast(d, wire.NotifyRequestsChanged, wire.RequestUpdate{Request: c})
 	d.raiseRequestEvent("request.opened", c, nil, nil)
 	d.reconsider() // its banner
-	return r.ID
+	return r.ID, nil
 }
 
 // answerTerminalUse is requests/answer for a terminal's use: once, hour or deny.

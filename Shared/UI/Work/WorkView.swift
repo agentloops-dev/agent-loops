@@ -31,6 +31,7 @@ struct WorkView: View {
                 WorkListPane(model: model, kind: place.kind, list: model.workLists[place.kind]).id(place.kind)
             }
         }
+        .modifier(WorkWindows())
         // The list's own title: its row in the sidebar chose it (#4004). On the Remote an item's
         // page says its number, *#4331*, as the bar's title (#4401).
         .navigationTitle(Self.title(place))
@@ -330,6 +331,16 @@ private struct WorkRowsList: View {
     let compact: Bool
     /// Back from an item's page gives the list the keys, so ↑ and ↓ go on from the row left.
     @FocusState private var focused: Bool
+    @Environment(\.openWorkWindow) private var openWorkWindow
+
+    /// A row's menu: Open in New Window (#5475), then Priority and On hold.
+    @ViewBuilder
+    private func rowMenu(_ ref: String) -> some View {
+        if openWorkWindow != nil {
+            Section { WorkWindowButton(WorkPlace(kind: kind, ref: ref)) }
+        }
+        priorityMenu(ref)
+    }
 
     /// A row's Priority and On hold (epic #6086), where its forge sets them; nothing for a row with neither.
     @ViewBuilder
@@ -344,7 +355,7 @@ private struct WorkRowsList: View {
     private func open(_ ref: String) {
         list.opened = ref
         list.selected = ref
-        model.showWork(WorkPlace(kind: kind, ref: ref, fromList: true))
+        model.follow(WorkPlace(kind: kind, ref: ref, fromList: true), window: openWorkWindow)
     }
 
     var body: some View {
@@ -365,7 +376,7 @@ private struct WorkRowsList: View {
                     // itself for the selection.
                     WorkListRow(model: model, row: row, several: several, compact: compact, latest: latest.contains(row.id), pick: pick,
                                 session: kind == .release ? nil : WorkSessions.workingSession(on: row.node, in: agents),
-                                open: open, menu: { priorityMenu(row.id) })
+                                open: open, menu: { rowMenu(row.id) })
                 }
                 WorkListFooter(model: model, list: list, kind: kind)
                 if !kind.fromForge {
@@ -394,7 +405,7 @@ private struct WorkRowsList: View {
         List(selection: $list.selected) { rows() }
             .focused($focused)
             .contextMenu(forSelectionType: String.self) { refs in
-                if refs.count == 1, let ref = refs.first { priorityMenu(ref) }
+                if refs.count == 1, let ref = refs.first { rowMenu(ref) }
             } primaryAction: { refs in
                 if let ref = refs.first { open(ref) }
             }
@@ -625,6 +636,7 @@ private struct WorkListRow<Menu: View>: View {
         .buttonStyle(WorkRowButtonStyle())
         #if os(iOS)
         .contextMenu { menu() }
+        .workWindowDrag(WorkPlace(kind: WorkList.kind(of: row.node) ?? .issue, ref: row.id), title: row.title)
         #endif
         .environment(\.workPictures, row.host.map { WorkPictures(model: model, host: $0) })
         // A change the forge refused went back (#6354): a short red wash on the row.

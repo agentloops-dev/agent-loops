@@ -89,6 +89,8 @@ struct AgentsCommands: Commands {
     @FocusedValue(\.poppedChat) private var popped
     /// The folder in the key window when that is a folder's own (#1089).
     @FocusedValue(\.folderWindow) private var folderWindow
+    /// The Work page in the key window when that is a window of its own (#5475).
+    @FocusedValue(\.workWindow) private var workWindow
     /// A Markdown page on screen in the key window (#1419), for View ▸ Zoom.
     @FocusedValue(\.pageZoom) private var pageZoom
     @Environment(\.openWindow) private var openWindow
@@ -100,6 +102,7 @@ struct AgentsCommands: Commands {
     /// window's selection unless a session's (#826) or a folder's (#1089) own window is
     /// in front.
     private var sessionAgent: Agent? {
+        if workWindow != nil { return nil }
         if let popped { return model.work.agent(popped.id) }
         if let folderWindow {
             guard case .session(let id)? = folderWindow.pick else { return nil }
@@ -378,17 +381,18 @@ struct AgentsCommands: Commands {
                 .disabled(model.selectedAgent == nil)
             Divider()
             // Along every page the window showed (#5784), as the toolbar's ‹ ›.
-            Button("Back") { model.goBack() }
+            // A Work page's own window has its own (#5475).
+            Button("Back") { if let workWindow { workWindow.step(back: true) } else { model.goBack() } }
                 .keyboardShortcut(MenuKeys.back)
-                .disabled(!model.canGoBack)
-            Button("Forward") { model.goForward() }
+                .disabled(!(workWindow?.workHistory.canGoBack ?? model.canGoBack))
+            Button("Forward") { if let workWindow { workWindow.step(back: false) } else { model.goForward() } }
                 .keyboardShortcut(MenuKeys.forward)
-                .disabled(!model.canGoForward)
+                .disabled(!(workWindow?.workHistory.canGoForward ?? model.canGoForward))
             Divider()
             // ⌥⌘↓ and ⌥⌘↑ go through the list in front: a Work page's list while one opened
             // from it is shown (#3257), else the folder's sessions. One item per key, so the
             // window never sees the key twice.
-            let item = model.showsWork ? model.workNeighbours : nil
+            let item = model.showsWork && workWindow == nil ? model.workNeighbours : nil
             Button(item == nil ? "Next Session" : "Next Item") {
                 if item == nil { step(by: 1) } else { Task { await model.stepWork(forward: true) } }
             }
@@ -539,14 +543,14 @@ struct AgentsCommands: Commands {
 
     /// New App… (#5132): the question page in the main window, in front.
     private func newApp() {
-        if popped != nil || folderWindow != nil { model.bringMainWindowForward(opening: openWindow) }
+        if popped != nil || folderWindow != nil || workWindow != nil { model.bringMainWindowForward(opening: openWindow) }
         model.newApp()
     }
 
     /// ⌘K (#4787): the main window's command menu, in front, with the actions that can be
     /// done now. A folder's or a session's own window brings the main window forward.
     private func openCommandMenu() {
-        if popped != nil || folderWindow != nil { model.bringMainWindowForward(opening: openWindow) }
+        if popped != nil || folderWindow != nil || workWindow != nil { model.bringMainWindowForward(opening: openWindow) }
         requests.showsFileSearch = false
         requests.commandMenu = commandMenuActions
         // With Work off (#6572) the menu has no issues or PRs, so nothing is read.

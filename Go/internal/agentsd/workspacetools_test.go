@@ -3,12 +3,14 @@ package agentsd
 import (
 	"context"
 	"encoding/json"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
@@ -267,21 +269,32 @@ func TestASlowCardIsPartOfTheHold(t *testing.T) {
 	l.inTurn = true
 	l.mu.Unlock()
 
-	// The card is held up as it is shown, until the hold is over.
+	// The disk is slow: the card's request is held up as it is written, until the hold is over.
+	begun, slow := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	store.SetWriteFault(func(file string, _ bool, _ []byte) error {
+		if filepath.Dir(file) == d.requestsDir() {
+			once.Do(func() { close(begun); <-slow })
+		}
+		return nil
+	})
+	t.Cleanup(func() { store.SetWriteFault(nil) })
 	type result struct {
 		text string
 		err  error
 	}
 	done := make(chan result, 1)
-	d.requests.mu.Lock()
 	go func() {
 		text, err := d.personSaysYes(a.ID, "wants to", "Go?", "Go", func(bool) (string, error) { return "went", nil })
 		done <- result{text, err}
 	}()
-	// Its record comes before its request, so the call has begun.
-	waitFor(t, "the card's record", func() bool { return slices.Contains(kinds(d, a.ID), "elicitationAsked") })
+	select {
+	case <-begun:
+	case <-afterLimit(t):
+		t.Error("the card's request was not written")
+	}
 	clock.add(2 * time.Hour)
-	d.requests.mu.Unlock()
+	close(slow)
 	select {
 	case r := <-done:
 		if r.err != nil || r.text != yesStillOpen {

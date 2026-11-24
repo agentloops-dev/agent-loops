@@ -85,7 +85,7 @@ func TestADroppedRequestTakesItsFormDown(t *testing.T) {
 	c.in <- `{"jsonrpc":"2.0","id":2,"method":"requests/drop","params":{"id":"` + string(form.ID) + `"}}`
 	c.until(t, "the form taken down", takenDown(form.ID))
 	r := d.request(form.ID)
-	if r.State != wire.RequestStateDropped || r.DroppedWhy == nil || *r.DroppedWhy != wire.RequestDroppedWhyByPerson {
+	if r.State != wire.RequestStateDropped || r.DroppedWhy == nil || *r.DroppedWhy != wire.RequestEndedWhyByPerson {
 		t.Fatalf("%+v", r)
 	}
 	if n := names(d); !contains(n, "request.dropped") {
@@ -403,5 +403,136 @@ func TestAFormAnsweredAsItIsShownLeavesNoOpenRequest(t *testing.T) {
 func (d *Daemon) openFormRequest(req wire.ElicitationRequest) {
 	if r := d.formRequest(req); r != nil {
 		d.requestOpened(d.keepFormRequest(r))
+	}
+}
+
+// #6718: an open request is dropped at 90 days, and its asker told once.
+func TestAnOpenRequestExpires(t *testing.T) {
+	t.Parallel()
+
+	fakeRuntimes(t)
+	d, _ := start(t, t.TempDir())
+	defer d.Shutdown()
+	asker := seeded(t, d, t.TempDir(), nil)
+	msg := "Which port?"
+	req := wire.ElicitationRequest{ID: store.NewUUID(), AgentID: asker.ID, Message: &msg, AskedAt: now()}
+	d.openFormRequest(req) // lost: its held call went with a restart
+	d.sweepRequests(time.Now().Add(89 * 24 * time.Hour))
+	if r := d.request(req.ID); r == nil || r.State != wire.RequestStateOpen {
+		t.Fatalf("expired before 90 days: %+v", r)
+	}
+	for range 2 {
+		d.sweepRequests(time.Now().Add(91 * 24 * time.Hour))
+	}
+	if r := d.request(req.ID); r != nil {
+		t.Fatalf("kept after 90 days: %+v", r)
+	}
+	if ids, _, _ := d.requestRecords().List("", 10); len(ids) != 0 {
+		t.Fatalf("files kept: %v", ids)
+	}
+	if !contains(names(d), "request.dropped") {
+		t.Fatal("no event")
+	}
+	told := func() (n int) {
+		for _, u := range userMessages(d, asker.ID) {
+			if strings.HasPrefix(u, "Your request \"Which port?\" expired") {
+				n++
+			}
+		}
+		return n
+	}
+	waitFor(t, "the asker told", func() bool { return told() > 0 })
+	if n := told(); n != 1 {
+		t.Fatalf("told %d times", n)
+	}
+	entries, _, _ := d.Store.Transcript(asker.ID, 0)
+	noted := false
+	for _, e := range entries {
+		noted = noted || e.Kind.RuntimeNote != nil && strings.Contains(e.Kind.RuntimeNote.Value, "in 90 days, so it expired")
+	}
+	if !noted {
+		t.Fatal("the chat has no line")
+	}
+}
+
+// A form whose call is still held hears cancel, and its card goes.
+func TestAHeldFormExpires(t *testing.T) {
+	t.Parallel()
+
+	d, _ := start(t, t.TempDir())
+	defer d.Shutdown()
+	asker := seeded(t, d, t.TempDir(), nil)
+	l := d.live(asker.ID)
+	pe := l.showForm(wire.ElicitationRequest{ID: store.NewUUID(), AgentID: asker.ID, AskedAt: now()})
+	d.expireRequests(time.Now().Add(91 * 24 * time.Hour))
+	select {
+	case r := <-pe.reply:
+		if r.action != wire.AnswerElicitationRequestActionCancel {
+			t.Fatalf("%+v", r)
+		}
+	case <-afterLimit(t):
+		t.Fatal("the held call did not hear")
+	}
+	if r := d.request(pe.req.ID); r == nil || r.DroppedWhy == nil || *r.DroppedWhy != wire.RequestEndedWhyExpired {
+		t.Fatalf("%+v", r)
+	}
+	if l.elicitationFor(pe.req.ID) != nil {
+		t.Fatal("the form is still there")
+	}
+}
+
+// A person's open request is never evicted: a new one past the count or the size is refused.
+func TestANewRequestPastTheBoundsIsRefused(t *testing.T) {
+	d, _ := start(t, t.TempDir())
+	defer d.Shutdown()
+	setFor(t, &requestFileLimit, 2)
+	asker := seeded(t, d, t.TempDir(), nil)
+	form := func(msg string) wire.ElicitationRequest {
+		return wire.ElicitationRequest{ID: store.NewUUID(), AgentID: asker.ID, Message: &msg, AskedAt: now()}
+	}
+	if err := d.formRefused(form(strings.Repeat("x", requestMaxNew))); err == nil {
+		t.Fatal("too large, not refused")
+	}
+	for range 2 {
+		req := form("q")
+		if err := d.formRefused(req); err != nil {
+			t.Fatal(err)
+		}
+		d.openFormRequest(req)
+	}
+	if err := d.formRefused(form("q")); err == nil {
+		t.Fatal("too many, not refused")
+	}
+	if _, err := d.openSecretUseRequest(asker.ID, wire.RequestSecretUse{Name: "N", Use: wire.SecretUseFill, Place: "x"}); err == nil {
+		t.Fatal("a secret's use past the count was not refused")
+	}
+	d.sweepRequests(time.Now())
+	if n := len(d.listRequests(wire.RequestsListStateOpen, "")); n != 2 {
+		t.Fatalf("%d open", n)
+	}
+	if err := d.requestRecords().Put("a", make([]byte, requestMaxBytes+1)); err == nil {
+		t.Fatal("a record over its size was written")
+	}
+}
+
+// A cut write and a file that is not a record age out too.
+func TestRequestFilesThatAreNoRecordAgeOut(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	for _, n := range []string{"bad.json", ".a.json.00.tmp", "good.json"} {
+		if err := os.WriteFile(filepath.Join(dir, n), []byte("{"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	files := requestFiles{dir: dir}
+	isRecord := func(id string) bool { return id == "good" }
+	files.Expire(time.Now().Add(-time.Hour), isRecord)
+	if e, _ := os.ReadDir(dir); len(e) != 3 {
+		t.Fatalf("new files went: %v", e)
+	}
+	files.Expire(time.Now().Add(time.Hour), isRecord)
+	if e, _ := os.ReadDir(dir); len(e) != 1 || e[0].Name() != "good.json" {
+		t.Fatalf("%v", e)
 	}
 }

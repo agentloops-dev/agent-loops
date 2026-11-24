@@ -13582,7 +13582,7 @@ type Request struct {
 	// A summary for the row; never a secret's value.
 	Answer *string `json:"answer,omitzero"`
 
-	DroppedWhy *RequestDroppedWhy `json:"droppedWhy,omitzero"`
+	DroppedWhy *RequestEndedWhy `json:"droppedWhy,omitzero"`
 
 	// Later (#4233): the request is still open, but out of Needs you, the counts and the notices until it comes back. Absent when it is not deferred; an answer or a drop clears it.
 	Deferred *RequestDeferral `json:"deferred,omitzero"`
@@ -13643,6 +13643,36 @@ const RequestDroppedWhyFolderArchived RequestDroppedWhy = "folderArchived"
 const RequestDroppedWhyForgeClosed RequestDroppedWhy = "forgeClosed"
 const RequestDroppedWhyRestarted RequestDroppedWhy = "restarted"
 const RequestDroppedWhyByPerson RequestDroppedWhy = "byPerson"
+
+// Why a request was dropped, on its record: a RequestDroppedWhy, which a caller can give, or expired, which only the host says (#6718).
+type RequestEndedWhy string
+
+const RequestEndedWhyAskerEnded RequestEndedWhy = "askerEnded"
+const RequestEndedWhyFolderArchived RequestEndedWhy = "folderArchived"
+const RequestEndedWhyForgeClosed RequestEndedWhy = "forgeClosed"
+const RequestEndedWhyRestarted RequestEndedWhy = "restarted"
+const RequestEndedWhyByPerson RequestEndedWhy = "byPerson"
+const RequestEndedWhyExpired RequestEndedWhy = "expired"
+
+// UnmarshalJSON reads a value this build does not know as "askerEnded".
+func (v *RequestEndedWhy) UnmarshalJSON(b []byte) error {
+	var s string
+	if err := json.Unmarshal(b, &s); err != nil {
+		return err
+	}
+	switch RequestEndedWhy(s) {
+	case RequestEndedWhyAskerEnded,
+		RequestEndedWhyFolderArchived,
+		RequestEndedWhyForgeClosed,
+		RequestEndedWhyRestarted,
+		RequestEndedWhyByPerson,
+		RequestEndedWhyExpired:
+		*v = RequestEndedWhy(s)
+	default:
+		*v = RequestEndedWhyAskerEnded
+	}
+	return nil
+}
 
 // The forge item a request is (spec 3862 §4).
 type RequestForge struct {

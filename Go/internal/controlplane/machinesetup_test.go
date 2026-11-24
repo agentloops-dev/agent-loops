@@ -7,6 +7,7 @@ import (
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/providers"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/records"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
@@ -278,4 +279,82 @@ func TestAMadeMachineIsLinkedAsItJoinsAfterARestart(t *testing.T) {
 		link := providers.LinkOf(after.s.Records().Host(made))
 		return link != nil && link.Provider == "do-1" && link.Workspace == "ws-6075"
 	})
+}
+
+// #6760: the set-up times go at 90 days, on write and in the sweep, at most 50 a step, and a
+// step with none left is never slower than usual.
+func TestMachineSetupTimesAgeOut(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	mem := store.NewMemory()
+	times := setupTimeSeries{mem}
+	now := time.Now()
+	step := wire.MachineSetupStepIDCreate
+	count := func(id wire.MachineSetupStepID) int {
+		t.Helper()
+		points, _, err := times.Range(ctx, string(id), now.Add(-10*setupTimesKept), now.Add(10*setupTimesKept), "hour", "", 1000)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return len(points)
+	}
+	add := func(id wire.MachineSetupStepID, at time.Time) {
+		t.Helper()
+		if err := times.Append(ctx, store.Point{Series: string(id), ID: "p", At: at, Value: 20}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// From before #6760, with no times: the sweep drops them.
+	if _, err := mem.Put(ctx, machineSetupTimes, []byte(`{"create":[10,20]}`), store.Absent); err != nil {
+		t.Fatal(err)
+	}
+	if n := count(step); n != 0 {
+		t.Fatalf("undated times were read: %d", n)
+	}
+	if _, err := sweep(ctx, records.New(mem), now, mostPerSweep, nil); err != nil {
+		t.Fatal(err)
+	}
+	if o, err := mem.Get(ctx, machineSetupTimes); err != nil || o == nil || string(o.Data) != "{}" {
+		t.Fatalf("undated times stayed: %v %v", o, err)
+	}
+	// On write: too old goes, the same twice is one, and 50 are kept.
+	add(step, now.Add(-setupTimesKept-time.Minute))
+	if n := count(step); n != 0 {
+		t.Fatalf("an old time was kept: %d", n)
+	}
+	add(step, now)
+	add(step, now)
+	if n := count(step); n != 1 {
+		t.Fatalf("a point twice: %d", n)
+	}
+	for i := range setupSteps {
+		for j := range mostSetupTimes + 5 {
+			add(setupSteps[i], now.Add(time.Duration(-j)*time.Second-time.Nanosecond))
+		}
+	}
+	if n := count(step); n != mostSetupTimes {
+		t.Fatalf("%d kept of one step", n)
+	}
+	if o, err := mem.Get(ctx, machineSetupTimes); err != nil || len(o.Data) > 32<<10 {
+		t.Fatalf("over 32 KiB: %v", err)
+	}
+	// What a running step is compared with, then nothing once the sweep has been.
+	s := &Service{cfg: Config{Store: mem}}
+	st := newStoredSetup(now)
+	if _, _, err := st.report(rep(step, wire.MachineSetupStateRunning), now); err != nil {
+		t.Fatal(err)
+	}
+	later := now.Add(3 * time.Minute)
+	if got := st.wire(later, s.readSetupTimes(ctx, st)).Steps[0].Slower; got == nil || !*got {
+		t.Fatal("slower than its median")
+	}
+	if _, err := sweep(ctx, records.New(mem), now.Add(setupTimesKept+time.Minute), mostPerSweep, nil); err != nil {
+		t.Fatal(err)
+	}
+	if n := count(step); n != 0 {
+		t.Fatalf("%d left after 90 days", n)
+	}
+	if got := st.wire(later, s.readSetupTimes(ctx, st)).Steps[0].Slower; got != nil {
+		t.Fatal("slower with no times left")
+	}
 }

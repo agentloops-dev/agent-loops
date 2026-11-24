@@ -437,7 +437,7 @@ func TestReadyMadeUpdatesOnlyTheUneditedCopy(t *testing.T) {
 }
 
 // #5853: the daily summary is gone from the ready-made set. Its copy and its skill's that the
-// person did not edit are removed; an edited copy, and the pages it saved, stay theirs.
+// person did not edit are removed; an edited copy stays theirs, and retiring it leaves the pages it saved (#6714).
 func TestTheRetiredDailySummaryGoesWhenUnedited(t *testing.T) {
 	t.Parallel()
 
