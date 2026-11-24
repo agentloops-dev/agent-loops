@@ -47,6 +47,25 @@ test("shares can be by level or by repository", () => {
     [["alexec/agents", 2], ["alexec/agents-site", 1]]);
 });
 
+test("the repository picker filters samples but keeps the no-start line global", () => {
+  const agents = "github:alexec/agents";
+  const chart = cycletime.cycleTimeChart(history(), "W", "repo", agents);
+  assert.equal(chart.repo, agents);
+  assert.equal(chart.bars[6].count, 1);
+  assert.equal(chart.count, 2);
+  assert.equal(chart.median, 9000);
+  assert.equal(chart.p85, 12780);
+  assert.deepEqual(chart.shares.map((s) => s.name), ["alexec/agents"]);
+  assert.deepEqual(chart.shares.map((s) => s.count), [2]);
+  assert.equal(chart.noStart, 1);
+  assert.equal(cycletime.noStartWords(chart.noStart, chart.repo !== null),
+    "1 PR without a recorded start across all repositories.");
+  assert.deepEqual(cycletime.cycleTimeRepositories(history()), [
+    "github:alexec/agents",
+    "github:alexec/agents-site",
+  ]);
+});
+
 test("D is today by the hour", () => {
   const chart = cycletime.cycleTimeChart(history(), "D");
   assert.equal(chart.bars.length, 24);

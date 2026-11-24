@@ -61,6 +61,21 @@ struct CycleTimeChartTests {
         #expect(byRepo.shares.map(\.count) == [2, 1])
     }
 
+    @Test("the repository picker filters the chart and keeps the no-start count global")
+    func repositoryFilter() {
+        let chart = CycleTimeChart(history, range: .week, breakdown: .repo, repo: agents, calendar: pacific)
+        #expect(chart.repo == agents)
+        #expect(chart.bars.last?.count == 1)
+        #expect(chart.count == 2)
+        #expect(chart.median == 4.5 * 3600)
+        #expect(chart.p85 == 8 * 3600)
+        #expect(chart.shares.map(\.name) == ["alexec/agents"])
+        #expect(chart.shares.map(\.count) == [2])
+        #expect(chart.noStart == 1)
+        #expect(chart.noStartLine == "1 PR had no start recorded across all repositories; not drawn.")
+        #expect(CycleTimeChart.repositories(in: history) == [agents, site])
+    }
+
     @Test("D is today by the hour, and its figure is the hour's median")
     func day() {
         let chart = CycleTimeChart(history, range: .day, calendar: pacific)

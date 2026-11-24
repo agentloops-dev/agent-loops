@@ -5,7 +5,7 @@
 import { useSignal } from "@preact/signals";
 import type { VelocityHistory } from "../protocol/generated";
 import { type UsageRange, usageRanges, usageRangeWords } from "../model/usage";
-import { prWords, repoWords, revertWords, velocityChart, velocityHeadline } from "../model/velocity";
+import { allRepositories, prWords, repoWords, revertWords, velocityChart, velocityHeadline, velocityRepositories } from "../model/velocity";
 import { Choice } from "./Choice";
 import { Icon } from "./Icon";
 import { label, tick, when } from "./UsageCharts";
@@ -21,6 +21,7 @@ export function VelocityCharts({ history, failed = false, retry }: {
   history: VelocityHistory | undefined; failed?: boolean; retry?: () => void;
 }) {
   const range = useSignal<UsageRange>("W");
+  const repo = useSignal("");
   const picked = useSignal<string | null>(null);
   if (!history && failed) {
     // Nothing read, and the read failed: no "Loading…" for ever.
@@ -33,7 +34,11 @@ export function VelocityCharts({ history, failed = false, retry }: {
     );
   }
   if (!history) return <p class="quiet">Loading…</p>;
-  const chart = velocityChart(history, range.value);
+  const repoOptions: [string, string][] = [["", allRepositories]];
+  for (const keyRepo of velocityRepositories(history)) {
+    repoOptions.push([keyRepo, repoWords(keyRepo)]);
+  }
+  const chart = velocityChart(history, range.value, repo.value || null);
   const bar = chart.bars.find((b) => b.stamp === picked.value) ?? null;
   // In 3M the bars are weeks, so the average line is a week's worth (note 3).
   const averageLine = chart.range === "3M" ? chart.average * 7 : chart.average;
@@ -50,6 +55,8 @@ export function VelocityCharts({ history, failed = false, retry }: {
       )}
       <Choice label="Range" value={range.value} options={usageRanges.map((r) => [r, usageRangeWords[r]] as const)}
         onPick={(r) => { range.value = r; picked.value = null; }} />
+      <Choice label="Repository" value={repo.value} options={repoOptions}
+        onPick={(keyRepo) => { repo.value = keyRepo; picked.value = null; }} />
       <div class="usage-headline">
         <p class="quiet small strong">{(bar ? "Total" : velocityHeadline).toUpperCase()}</p>
         <p class="usage-figure">{prWords(bar?.value ?? chart.average)}</p>

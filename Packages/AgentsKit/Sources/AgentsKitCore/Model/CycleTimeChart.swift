@@ -33,6 +33,7 @@ public struct CycleTimeChart: Sendable, Hashable {
 
     public let range: Range
     public let breakdown: Breakdown
+    public let repo: String?
     public let bars: [Bar]
     public let shares: [Share]
     /// The whole range's median and P85 cycle time, in seconds.
@@ -46,9 +47,11 @@ public struct CycleTimeChart: Sendable, Hashable {
     public let pr: Double?
 
     public init(_ history: CycleTimeHistory, range: Range,
-                breakdown: Breakdown = .level, calendar: Calendar = .current) {
+                breakdown: Breakdown = .level, repo: String? = nil,
+                calendar: Calendar = .current) {
         self.range = range
         self.breakdown = breakdown
+        self.repo = repo
         let now = UsageChart.date(history.now, calendar: calendar) ?? Date()
         let slots = UsageChart.slots(range, today: calendar.startOfDay(for: now), calendar: calendar)
         let tier = range == .day ? history.hours : history.days
@@ -60,7 +63,7 @@ public struct CycleTimeChart: Sendable, Hashable {
             var samples: [CycleTimeSample] = []
             for key in slot.keys {
                 guard let bucket = tier[key] else { continue }
-                samples.append(contentsOf: bucket.samples)
+                samples.append(contentsOf: bucket.samples.filter { repo == nil || $0.repo == repo })
                 noStart += bucket.noStart
             }
             all.append(contentsOf: samples)
@@ -109,10 +112,11 @@ public struct CycleTimeChart: Sendable, Hashable {
 
     /// The line under the bars: how many merged PRs had no recorded start, if any.
     public var noStartLine: String? {
+        let across = repo == nil ? "" : " across all repositories"
         switch noStart {
         case 0: return nil
-        case 1: return "1 PR had no start recorded; not drawn."
-        default: return "\(noStart.formatted()) PRs had no start recorded; not drawn."
+        case 1: return "1 PR had no start recorded\(across); not drawn."
+        default: return "\(noStart.formatted()) PRs had no start recorded\(across); not drawn."
         }
     }
 
@@ -134,5 +138,11 @@ public struct CycleTimeChart: Sendable, Hashable {
         let sorted = values.sorted()
         let rank = Int((Double(sorted.count) * fraction).rounded(.up))
         return sorted[max(0, min(sorted.count - 1, rank - 1))]
+    }
+
+    public static func repositories(in history: CycleTimeHistory) -> [String] {
+        let keys = Set(history.hours.values.flatMap { $0.samples.map(\.repo) })
+            .union(history.days.values.flatMap { $0.samples.map(\.repo) })
+        return keys.sorted { VelocityChart.repoName($0) < VelocityChart.repoName($1) }
     }
 }

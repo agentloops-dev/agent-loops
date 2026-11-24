@@ -10,6 +10,8 @@ import Foundation
 public struct VelocityChart: Sendable, Hashable {
     public typealias Range = UsageChart.Range
 
+    public static let allRepositories = "All repositories"
+
     public struct Bar: Sendable, Hashable, Identifiable {
         /// The first stamp the bar covers: an hour, a day, or a week's first day.
         public let stamp: String
@@ -30,6 +32,7 @@ public struct VelocityChart: Sendable, Hashable {
     }
 
     public let range: Range
+    public let repo: String?
     public let bars: [Bar]
     /// The whole range, by repository, most PRs first.
     public let shares: [Share]
@@ -41,8 +44,10 @@ public struct VelocityChart: Sendable, Hashable {
     /// day's total.
     public let average: Double
 
-    public init(_ history: VelocityHistory, range: Range, calendar: Calendar = .current) {
+    public init(_ history: VelocityHistory, range: Range, repo: String? = nil,
+                calendar: Calendar = .current) {
         self.range = range
+        self.repo = repo
         let now = UsageChart.date(history.now, calendar: calendar) ?? Date()
         let slots = UsageChart.slots(range, today: calendar.startOfDay(for: now), calendar: calendar)
         let tier = range == .day ? history.hours : history.days
@@ -55,10 +60,11 @@ public struct VelocityChart: Sendable, Hashable {
             var merged = 0
             for key in slot.keys {
                 guard let repos = tier[key] else { continue }
-                for (repo, bucket) in repos {
+                for (keyRepo, bucket) in repos {
+                    guard repo == nil || keyRepo == repo else { continue }
                     merged += bucket.merged
                     total.add(bucket)
-                    byRepo[repo, default: 0] += bucket.merged
+                    byRepo[keyRepo, default: 0] += bucket.merged
                 }
                 daysWithData.insert(String(key.prefix(10)))
             }
@@ -102,6 +108,12 @@ public struct VelocityChart: Sendable, Hashable {
     public static func repoName(_ repo: String) -> String {
         guard let colon = repo.firstIndex(of: ":") else { return repo }
         return String(repo[repo.index(after: colon)...])
+    }
+
+    public static func repositories(in history: VelocityHistory) -> [String] {
+        let keys = Set(history.hours.values.flatMap { $0.keys })
+            .union(history.days.values.flatMap { $0.keys })
+        return keys.sorted { repoName($0) < repoName($1) }
     }
 }
 
