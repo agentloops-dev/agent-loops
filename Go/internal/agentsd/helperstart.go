@@ -677,6 +677,10 @@ func (d *Daemon) startQueued(q wire.Agent, folder string) {
 		model = *s.Model
 	}
 	r := helperRequest(runtimeID, folderPath(&q), prompt, model, s.PermissionMode, s.Worktree, nil)
+	// Request cards or Always Approve chosen on the queued session is its own choice.
+	if q.ClientPermission != nil && clientAnswered[runtimeID] {
+		r.Levels = &wire.Levels{PermissionRequests: q.ClientPermission}
+	}
 	reuse := q
 	reuse.QueuedPrompts = nil
 	var err error
@@ -877,6 +881,26 @@ func (d *Daemon) helperRequests(r *wire.StartRequest, starter *wire.Agent) {
 	}
 	l.PermissionRequests = requestCards
 	r.Levels = &l
+}
+
+// inheritRequests gives a helper on its starter's own named runtime the starter's Always
+// Approve (#7064), as inheritedMode gives it the starter's mode: without it, a helper of a
+// starter that Settings answers for asks. The helper asks when the starter does, when its
+// record is gone, when the start says how requests are answered, and when the mode is not the
+// starter's now, so a plan mode named for it, or a starter made stricter while the start was
+// queued, is never loosened.
+func (d *Daemon) inheritRequests(r *wire.StartRequest, starter *wire.Agent) {
+	if starter == nil || r.RuntimeID != starter.RuntimeID || !clientAnswered[r.RuntimeID] || r.Levels != nil {
+		return
+	}
+	own := ""
+	if m := inheritedMode(starter, starter.RuntimeID); m != nil {
+		own = *m
+	}
+	if stringValue(r.StartOptions.Values["mode"]) != own || !d.agentAlwaysApproves(starter) {
+		return
+	}
+	r.Levels = &wire.Levels{PermissionRequests: yesToAll}
 }
 
 // approvesEverything is an agent that runs every command without asking: in Bypass

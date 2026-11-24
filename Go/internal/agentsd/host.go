@@ -275,7 +275,8 @@ func (d *Daemon) alwaysApproveRefusal() error {
 // FR-019).
 // Under a policy's mode ceiling below approving every request, neither answers (#2307
 // does the same for Copilot's). A helper or a workflow's agent follows its own choice
-// only: the person's in Settings is for the agents they start.
+// only: the person's in Settings is for the agents they start. A helper on its starter's
+// runtime gets the starter's answer as its own when it starts (inheritRequests).
 func (d *Daemon) agentAlwaysApproves(a *wire.Agent) bool {
 	if yr := d.yourPolicyRules().PermissionRequests; yr != nil && *yr == wire.ClientPermissionModeDefault {
 		return false
