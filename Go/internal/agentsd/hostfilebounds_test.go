@@ -76,7 +76,7 @@ func TestTheNewestAssessmentsAreKept(t *testing.T) {
 		at := old.Add(time.Duration(i) * time.Second)
 		must(t, os.Chtimes(kept, at, at))
 	}
-	d.dropOldAssessments()
+	d.sweepHourly()
 	got := dirNames(t, dir)
 	if len(got) != 3*assessmentsKept {
 		t.Fatalf("%d files, want %d", len(got), 3*assessmentsKept)
