@@ -49,7 +49,7 @@ func TestAProviderBeingAddedHasItsPlace(t *testing.T) {
 	h := newHarness(t)
 	var releases []func()
 	for n := range mostProviders {
-		release, err := h.providers.reserve(fmt.Sprintf("p%d", n))
+		release, err := h.providers.reserve(fmt.Sprintf("p%d", n), false)
 		must(t, err)
 		releases = append(releases, release)
 	}

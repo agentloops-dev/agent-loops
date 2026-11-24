@@ -38,8 +38,12 @@ func (p *Providers) roomLocked() error {
 }
 
 // reserve keeps room for the provider while it is checked and kept, so that two added at
-// once do not pass the limit together. The caller calls release when it is done.
-func (p *Providers) reserve(id string) (release func(), err error) {
+// once do not pass the limit together. The caller calls release when it is done. One that is
+// changed has its room.
+func (p *Providers) reserve(id string, updating bool) (release func(), err error) {
+	if updating {
+		return func() {}, nil
+	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if err := p.roomLocked(); err != nil {

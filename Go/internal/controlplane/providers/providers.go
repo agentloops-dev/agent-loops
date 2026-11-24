@@ -1034,13 +1034,11 @@ func (p *Providers) saveConnected(request ProviderAdd, updating bool, caller Cal
 	if connected != nil {
 		id = connected.id
 	}
-	if !updating {
-		release, err := p.reserve(id)
-		if err != nil {
-			return ProviderSummary{}, err
-		}
-		defer release()
+	release, err := p.reserve(id, updating)
+	if err != nil {
+		return ProviderSummary{}, err
 	}
+	defer release()
 	var machine string
 	if connected != nil {
 		machine = connected.machine
@@ -1136,6 +1134,11 @@ func (p *Providers) saveConnected(request ProviderAdd, updating bool, caller Cal
 	}
 	p.logSaved(record, updating, len(checked.Workspaces))
 	p.changed()
+	return p.savedSummary(id)
+}
+
+// savedSummary is the summary of the provider that was just kept.
+func (p *Providers) savedSummary(id string) (ProviderSummary, error) {
 	for _, s := range p.Summaries() {
 		if string(s.ID) == id {
 			return s, nil
