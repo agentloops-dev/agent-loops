@@ -18,7 +18,8 @@ import (
 const retentionSweepEvery = time.Hour
 
 // keepFor is retention.json's keepFor. A value this build cannot read is the default,
-// never Forever: a file it cannot read must not turn deletion off.
+// never the longest. Forever, from a file before #6706, is 90 days: no conversation is
+// kept longer (#6677).
 func (d *Daemon) keepFor() wire.RetentionKeepFor {
 	var raw struct {
 		KeepFor string `json:"keepFor"`
@@ -26,21 +27,19 @@ func (d *Daemon) keepFor() wire.RetentionKeepFor {
 	d.readSetting("retention.json", &raw)
 	keep := wire.RetentionKeepFor(raw.KeepFor)
 	switch keep {
-	case wire.RetentionKeepForDays7, wire.RetentionKeepForDays14, wire.RetentionKeepForDays30, wire.RetentionKeepForDays90,
-		wire.RetentionKeepForForever:
+	case wire.RetentionKeepForDays7, wire.RetentionKeepForDays14, wire.RetentionKeepForDays30, wire.RetentionKeepForDays90:
 		return keep
+	case wire.RetentionKeepForForever:
+		return wire.RetentionKeepForDays90
 	}
 	return wire.RetentionKeepForDays30
 }
 
 // dueArchived is what a sweep at keep would delete now. The same agents sweepArchived
-// keeps are left out: one with no archive time, and a pinned session. Nothing is written.
+// keeps are left out: one with no archive time, and a pinned session under 90 days. Nothing is written.
 func (d *Daemon) dueArchived(keep wire.RetentionKeepFor) (count int, bytes int64) {
-	days, ok := keepDays(keep)
-	if !ok {
-		return 0, 0
-	}
-	cutoff := nowFunc().Add(-days)
+	days := keepDays(keep)
+	cutoff, last := nowFunc().Add(-days), nowFunc().Add(-store.ConversationAge)
 	pinned := map[string]map[wire.UUID]bool{}
 	for _, a := range d.Store.Agents() {
 		if a.State != wire.AgentStateArchived || a.ArchivedAt == nil || !a.ArchivedAt.Time().Before(cutoff) {
@@ -53,7 +52,7 @@ func (d *Daemon) dueArchived(keep wire.RetentionKeepFor) (count int, bytes int64
 				pinned[folder][wire.UUID(strings.ToUpper(string(s.Session)))] = true
 			}
 		}
-		if pinned[folder][wire.UUID(strings.ToUpper(string(a.ID)))] {
+		if pinned[folder][wire.UUID(strings.ToUpper(string(a.ID)))] && !a.ArchivedAt.Time().Before(last) {
 			continue
 		}
 		count++
@@ -68,7 +67,9 @@ func (d *Daemon) setRetention(r wire.RetentionSetRequest) (wire.RetentionSetResu
 	keep := r.Settings.KeepFor
 	switch keep {
 	case wire.RetentionKeepForDays7, wire.RetentionKeepForDays14, wire.RetentionKeepForDays30,
-		wire.RetentionKeepForDays90, wire.RetentionKeepForForever:
+		wire.RetentionKeepForDays90:
+	case wire.RetentionKeepForForever: // an older client's
+		keep = wire.RetentionKeepForDays90
 	default:
 		keep = wire.RetentionKeepForDays30
 	}
@@ -85,12 +86,15 @@ func (d *Daemon) setRetention(r wire.RetentionSetRequest) (wire.RetentionSetResu
 	return wire.RetentionSetResult{Applied: true, State: &state}, nil
 }
 
-// keepDays is how long an archived agent is kept; false for Forever.
-func keepDays(keep wire.RetentionKeepFor) (time.Duration, bool) {
+// keepDays is how long an archived agent is kept: at most 90 days (#6677).
+func keepDays(keep wire.RetentionKeepFor) time.Duration {
 	days := map[wire.RetentionKeepFor]int{wire.RetentionKeepForDays7: 7, wire.RetentionKeepForDays14: 14,
 		wire.RetentionKeepForDays30: 30, wire.RetentionKeepForDays90: 90}
 	n, ok := days[keep]
-	return time.Duration(n) * 24 * time.Hour, ok
+	if !ok {
+		return store.ConversationAge
+	}
+	return time.Duration(n) * 24 * time.Hour
 }
 
 // StartRetention sweeps now, then every hour: archived agents, then attachments (#1556),
@@ -112,12 +116,15 @@ func (d *Daemon) retentionClock(started time.Time) {
 			return
 		case <-t.C:
 			d.sweepHourly()
+		case <-d.largeChat:
+			d.trimConversations()
 		}
 	}
 }
 
 func (d *Daemon) sweepHourly() {
 	d.sweepArchived()
+	d.trimConversations()
 	d.sweepAttachments()
 	d.sweepOldRuns()
 	sweepTransfers(d.outgoingFolder())
@@ -128,7 +135,53 @@ func (d *Daemon) sweepHourly() {
 	}
 	d.sweepHistories(nowFunc())
 	d.sweepSmallStores(nowFunc())
+	d.sweepAssessReports(nowFunc())
 	d.sweepGoneRoots()
+}
+
+// trimConversations applies the bounds of a conversation (#6706) to each agent's, live and
+// archived: its transcript and its record of app tool calls. What is made from a transcript
+// that lost lines (its turns, what was said, the attachments it names) is made again.
+func (d *Daemon) trimConversations() {
+	trimmed := 0
+	for _, a := range d.Store.Agents() {
+		if d.ctx.Err() != nil {
+			return
+		}
+		changed, err := d.trimConversation(a.ID)
+		if err != nil {
+			log.Printf("retention: %s: could not trim its conversation: %v", a.ID, err)
+		}
+		if changed {
+			trimmed++
+		}
+	}
+	if trimmed > 0 {
+		log.Printf("retention: trimmed %d conversations to %d MB and %v", trimmed, store.TranscriptBytes>>20, store.ConversationAge)
+		d.namedMu.Lock()
+		clear(d.namedBy)
+		d.namedMu.Unlock()
+	}
+}
+
+// trimConversation trims one, with turnMu held: a page of turns being made reads one
+// transcript, not the two sides of a trim.
+func (d *Daemon) trimConversation(id wire.UUID) (bool, error) {
+	d.turnMu.Lock()
+	defer d.turnMu.Unlock()
+	changed, err := d.Store.TrimConversation(d.ctx, id, nowFunc())
+	if !changed {
+		return false, err
+	}
+	delete(d.turnsOf, id)
+	saidMu.Lock()
+	defer saidMu.Unlock()
+	for _, made := range []string{d.Store.Loc.Turns(string(id)), saidFile(d.Store.Loc, id)} {
+		if rerr := os.Remove(made); rerr != nil && !os.IsNotExist(rerr) && err == nil {
+			err = rerr
+		}
+	}
+	return true, err
 }
 
 // sweepGoneRoots removes the cache and log folders of each root that is gone (#3746). A
@@ -190,11 +243,10 @@ func (d *Daemon) sweepCrashLeftovers(started time.Time) {
 }
 
 // sweepArchived deletes each archived agent archived longer ago than keepFor. A pinned
-// agent is kept. An archived record with no archive time (from before it was kept) gets
+// agent is kept until 90 days (#6677). An archived record with no archive time (from before it was kept) gets
 // the time of this sweep, so it goes keepFor from now (051 R5, legacy).
 func (d *Daemon) sweepArchived() (deleted int) {
-	keep, ok := keepDays(d.keepFor())
-	cutoff := nowFunc().Add(-keep)
+	cutoff, last := nowFunc().Add(-keepDays(d.keepFor())), nowFunc().Add(-store.ConversationAge)
 	pinned := map[string]map[wire.UUID]bool{}
 	// The runtime copies are queued in batches, each with one rewrite of the files (#2427).
 	var erase []*wire.Agent
@@ -207,7 +259,7 @@ func (d *Daemon) sweepArchived() (deleted int) {
 			d.stampArchived(a.ID)
 			continue
 		}
-		if !ok || !a.ArchivedAt.Time().Before(cutoff) {
+		if !a.ArchivedAt.Time().Before(cutoff) {
 			continue
 		}
 		folder := folderPath(&a)
@@ -217,7 +269,7 @@ func (d *Daemon) sweepArchived() (deleted int) {
 				pinned[folder][wire.UUID(strings.ToUpper(string(s.Session)))] = true
 			}
 		}
-		if pinned[folder][wire.UUID(strings.ToUpper(string(a.ID)))] {
+		if pinned[folder][wire.UUID(strings.ToUpper(string(a.ID)))] && !a.ArchivedAt.Time().Before(last) {
 			continue
 		}
 		// Unarchived since the list was read: kept.

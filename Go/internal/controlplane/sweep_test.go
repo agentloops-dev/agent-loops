@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/providers"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/records"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
 )
@@ -384,13 +385,35 @@ func TestTheSweepRemovesOrphans(t *testing.T) {
 	if _, err := s.Put(ctx, records.HostKey("ELSEWHERE"), []byte(`{"id":"ELSEWHERE"}`), store.Always); err != nil {
 		t.Fatal(err)
 	}
+	// A removed person's machine names go (#6759), and those of a person with no record. A
+	// live one's stay, as do the owner's and the admin's with no person, and those of one whose
+	// record this copy has not read yet.
+	here := records.Person{ID: records.NewPersonID(), Name: "Here", Role: "member"}
+	removed := records.Person{ID: records.NewPersonID(), Name: "Removed", Role: "member"}
+	if err := rs.SavePerson(ctx, here); err != nil {
+		t.Fatal(err)
+	}
+	if err := rs.SavePerson(ctx, removed.Tombstone(records.At(now))); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Put(ctx, records.PersonKey("AFAR"), []byte(`{"id":"AFAR"}`), store.Always); err != nil {
+		t.Fatal(err)
+	}
+	names := func(person string) string { return providers.MachineNamesPrefix + person + ".json" }
+	for _, person := range []string{here.ID, removed.ID, "AFAR", "GONE", "local", "-"} {
+		if _, err := s.Put(ctx, names(person), []byte(`{"next":3}`), store.Always); err != nil {
+			t.Fatal(err)
+		}
+	}
 	report, err := sweep(ctx, rs, now, mostPerSweep, nil)
-	if err != nil || report.orphans != 3 {
+	if err != nil || report.orphans != 5 {
 		t.Fatalf("%+v %v", report, err)
 	}
 	for key, kept := range map[string]bool{leaseKey("KNOWN"): true, leaseKey("GONE"): false, leaseKey("GOING"): true,
 		orgRouteKey("r1"): false, orgSecretKey("r1"): false, orgRouteKey("r2"): true, orgSecretKey("r2"): true,
-		projectFoldersKey("KNOWN"): true, projectFoldersKey("GONE"): false, projectFoldersKey("ELSEWHERE"): true} {
+		projectFoldersKey("KNOWN"): true, projectFoldersKey("GONE"): false, projectFoldersKey("ELSEWHERE"): true,
+		names(here.ID): true, names(removed.ID): false, names("AFAR"): true, names("GONE"): false,
+		names("local"): true, names("-"): true} {
 		if o, _ := s.Get(ctx, key); (o != nil) != kept {
 			t.Errorf("%s kept %v", key, o != nil)
 		}

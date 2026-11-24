@@ -151,8 +151,8 @@ func TestLinksReleasesFromTags(t *testing.T) {
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
 	repo := forgeRepo{"github", "alexec/agents"}
-	t013 := time.Date(2026, 10, 20, 9, 0, 0, 0, time.UTC)
-	t014 := time.Date(2026, 10, 27, 9, 0, 0, 0, time.UTC)
+	t014 := time.Now().Add(-24 * time.Hour).Truncate(time.Second)
+	t013 := t014.Add(-7 * 24 * time.Hour)
 	forge := &fakeReleases{
 		tags:       []string{"v0.14.0", "v0.13.0"}, // out of order on purpose: the linker sorts them.
 		commitTime: map[string]time.Time{"v0.13.0": t013, "v0.14.0": t014},

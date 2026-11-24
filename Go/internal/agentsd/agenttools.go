@@ -164,16 +164,16 @@ func (d *Daemon) asker(id wire.UUID, notWorking string) (*live, error) {
 // askQuestion is ask_question: the person asked, as a form held like the runtime's own, and the
 // call answered with what they said.
 func (d *Daemon) askQuestion(id wire.UUID, args map[string]json.RawMessage) (string, error) {
-	note, answered, err := d.askForm(id, args, nil, formHoldLimit)
+	note, answered, err := d.askForm(id, args, nil, nowFunc().Add(formHoldLimit))
 	if err == nil && !answered {
 		return formStillOpen, nil
 	}
 	return note, err
 }
 
-// askForm is askQuestion, false when the form is left open after hold (#4986); its answer
+// askForm is askQuestion, false when the form is left open at until (#4986); its answer
 // then goes to late when it is not nil (#4261), and as a prompt when it is.
-func (d *Daemon) askForm(id wire.UUID, args map[string]json.RawMessage, late func(note string), hold time.Duration) (string, bool, error) {
+func (d *Daemon) askForm(id wire.UUID, args map[string]json.RawMessage, late func(note string), until time.Time) (string, bool, error) {
 	title := strings.TrimSpace(argString(args, "title"))
 	var raw []struct {
 		ID            string `json:"id"`
@@ -229,7 +229,7 @@ func (d *Daemon) askForm(id wire.UUID, args map[string]json.RawMessage, late fun
 	req := wire.ElicitationRequest{ID: store.NewUUID(), AgentID: id, Message: message,
 		Mode: wire.ElicitationRequestMode{Form: &wire.ElicitationRequestModeForm{Value: schema}}, Scope: wire.ElicitationRequestScopeSession,
 		AskedAt: now()}
-	r, answered := l.holdAskedForm(req, late, hold)
+	r, answered := l.holdAskedForm(req, late, until)
 	if !answered {
 		return "", false, nil
 	}

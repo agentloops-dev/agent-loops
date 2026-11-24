@@ -176,21 +176,10 @@ func (d *Daemon) keepAppToolCall(agent wire.UUID, tool string, args map[string]j
 	if mErr != nil {
 		return
 	}
-	path := d.appToolsPath(agent)
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil { //nolint:gosec // G301: the mode this folder always had; only its error is new
-		log.Printf("could not keep a record of an app tool call: %v", err)
-		return
-	}
-	f, oErr := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
-	if oErr != nil {
-		log.Printf("could not keep a record of an app tool call: %v", oErr)
-		return
-	}
 	b, _ = redact.Bytes(b) // a call's arguments or answer can hold a token (#1001)
-	if _, err := f.Write(append(b, '\n')); err != nil {
+	if err := d.Store.AppTools(agent).Append(context.Background(), string(store.NewUUID()), began, b); err != nil {
 		log.Printf("could not keep a record of an app tool call: %v", err)
 	}
-	_ = f.Close() // the write's error is the one that matters, and it is logged
 }
 
 // cutAppToolArgument is an argument as app-tools.jsonl keeps it (#3687): whole when its
@@ -212,24 +201,22 @@ func cutAppToolArgument(v json.RawMessage) json.RawMessage {
 	return b
 }
 
-func (d *Daemon) appToolsPath(agent wire.UUID) string {
-	// The agent's folder, upper case as Delete removes it (#3651): Linux is case-sensitive.
-	return filepath.Join(d.Store.Loc.Agent(string(agent)), "app-tools.jsonl")
-}
-
 func (d *Daemon) appToolCalls(agent wire.UUID) []appToolCall {
-	b, err := os.ReadFile(d.appToolsPath(agent))
-	if err != nil {
-		return nil
-	}
+	records := d.Store.AppTools(agent)
 	var out []appToolCall
-	for _, line := range strings.Split(string(b), "\n") {
-		var c appToolCall
-		if line != "" && diskjson.Unmarshal([]byte(line), &c) == nil {
-			out = append(out, c)
+	for cursor := ""; ; {
+		page, next, err := records.Read(context.Background(), cursor, 1000)
+		if err != nil || len(page) == 0 {
+			return out
 		}
+		for _, r := range page {
+			var c appToolCall
+			if diskjson.Unmarshal(r.Value, &c) == nil {
+				out = append(out, c)
+			}
+		}
+		cursor = next
 	}
-	return out
 }
 
 // MARK: Starting one
@@ -252,7 +239,7 @@ const assessmentsKept = 50
 
 // dropOldAssessments deletes all but the newest assessmentsKept assessments, each its
 // <agentID>.start.json, its <agentID>.json score and its scope-<id>.txt (#2292). The
-// reports are in the folders, and stay.
+// reports have bounds of their own (assess_reports.go).
 func (d *Daemon) dropOldAssessments() {
 	dir := d.assessmentsPath()
 	starts, _ := filepath.Glob(filepath.Join(dir, "*.start.json"))
@@ -303,7 +290,7 @@ func assessModel(asked *string, options []wire.ConfigOption) *string {
 // not taken: a second assessment the same day opens its report empty, as the first did.
 func freshReportPath(folder, runtimeID string, at time.Time) string {
 	stem := runtimeID + "-" + at.Format("2006-01-02")
-	dir := filepath.Join(folder, ".agents", "reviews", "runtimes")
+	dir := reportsDir(folder)
 	path := filepath.Join(dir, stem+".md")
 	for n := 2; ; n++ {
 		if _, err := os.Stat(path); err != nil {
@@ -363,12 +350,14 @@ func (d *Daemon) assessRuntime(r wire.AssessRuntimeRequest) (wire.AssessRuntimeR
 	if err := writeStore(filepath.Join(d.assessmentsPath(), string(id)+".start.json"), kept); err != nil {
 		log.Printf("could not keep a runtime assessment's start: %v", err)
 	}
+	// The reports first: a start that goes can be the last word on where its report is.
+	d.sweepAssessReports(today)
 	d.dropOldAssessments()
 	return wire.AssessRuntimeResult{AgentID: id, Model: model, ReportPath: report}, nil
 }
 
 func freshReportPathFirst(folder, runtimeID string, at time.Time) string {
-	return filepath.Join(folder, ".agents", "reviews", "runtimes", runtimeID+"-"+at.Format("2006-01-02")+".md")
+	return filepath.Join(reportsDir(folder), runtimeID+"-"+at.Format("2006-01-02")+".md")
 }
 
 // MARK: Scoring
@@ -441,7 +430,9 @@ func (d *Daemon) assessment(id wire.UUID) (wire.RuntimeAssessmentScore, error) {
 	d.leaseMu.Unlock()
 	rec.reportPath = shownReport(rec.calls)
 	if rec.reportPath != "" {
-		if b, err := os.ReadFile(rec.reportPath); err == nil {
+		d.sweepAssessReports(nowFunc())
+		reports := reportFiles{filepath.Dir(rec.reportPath)}
+		if b, err := reports.Get(filepath.Base(rec.reportPath)); err == nil {
 			text := string(b)
 			rec.reportText = &text
 		}

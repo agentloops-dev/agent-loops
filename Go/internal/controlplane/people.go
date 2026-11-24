@@ -486,6 +486,13 @@ func (m *Methods) removePerson(ctx context.Context, user string, from Caller) er
 	if err != nil {
 		return err
 	}
+	// Their bus (#6671), last: a machine of theirs can publish until it is removed. Also when
+	// a step below fails, as a removed person cannot be removed again.
+	defer func() {
+		if err := deleteBus(ctx, m.s.cfg.Store, busOf(user)); err != nil {
+			m.s.log("person " + user + ": their bus could not be deleted: " + err.Error())
+		}
+	}()
 	for _, c := range m.records.Clients() {
 		if m.s.PersonOf(c.ID) == user {
 			if err := m.forget(ctx, c.ID, 0); err != nil {
@@ -531,6 +538,10 @@ func (m *Methods) removePerson(ctx context.Context, user string, from Caller) er
 		}
 	}
 	_ = m.s.cfg.Store.Delete(ctx, reportViewsKey(user))
+	// Their machine-N counter (#6759). The hourly sweep takes it when this does not.
+	if err := providers.ForgetMachineNames(ctx, m.s.cfg.Store, user); err != nil {
+		m.s.log("person " + user + ": their machine names could not be deleted: " + err.Error())
+	}
 	m.s.peopleChanged(user, true)
 	m.s.log("person " + user + " removed")
 	return nil

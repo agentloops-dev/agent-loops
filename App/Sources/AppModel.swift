@@ -1383,7 +1383,11 @@ final class AppModel {
         let localCopy = LocalCopyKeeper(copy: Self.windowCopy(), work: work)
         self.localCopy = localCopy
         // At once, so the sidebar and a chat restored at launch draw before the host answers.
-        Task { await localCopy.drawMachines() }
+        Task { [weak self] in
+            await localCopy.drawMachines()
+            // Opened also when Work is not, so its records age out (#6788).
+            _ = self?.workCache
+        }
         // On `controlLink` itself, not a link of its own (#445): a second connection that
         // nothing else knew of was never let go of, so a wedged one stayed for good.
         if let controlLink { client = DaemonClient(link: hostLink(.mac, through: controlLink), machine: .mac) }
@@ -3891,6 +3895,7 @@ final class AppModel {
             work.replaceAgents([], from: id)
             pruneFolderDefaults(of: id, listed: [])
         }
+        localCopy?.listed(machines: listed.map(\.id))
     }
 
     /// A client for one of the control plane's hosts, connected: first directly over its

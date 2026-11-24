@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -405,12 +406,12 @@ func TestManageAccountsRecordsEachOperation(t *testing.T) {
 	// A read of its secret, later than the account's own, is its last operation.
 	later := wire.DateOf(nowFunc().Add(time.Hour))
 	d.raise(wire.EventDraft{Name: "secret.read", At: later, Scope: macScope(), Sentence: "A secret was read.",
-		Details: map[string]string{"name": "GITLAB_TOKEN", "use": "fill", "place": "gitlab.com"}})
-	d.raise(wire.EventDraft{Name: "secret.read", At: later + 60, Scope: macScope(), Sentence: "A secret was read.",
 		Details: map[string]string{"name": "OTHER_TOKEN"}})
+	d.raise(wire.EventDraft{Name: "secret.read", At: later, Scope: macScope(), Sentence: "A secret was read.",
+		Details: map[string]string{"name": "GITLAB_TOKEN", "use": "fill", "place": "gitlab.com"}})
 	get(6)
-	if got.LastOp.What != wire.AccountOperationWhatRead || got.LastOp.At != later {
-		t.Fatalf("%+v, not %v", got.LastOp, later)
+	if got.LastOp.What != wire.AccountOperationWhatRead || got.LastOp.Agent != nil {
+		t.Fatalf("%+v is not the secret's read", got.LastOp)
 	}
 
 	// The record is kept on disk, for the next start.
@@ -420,16 +421,47 @@ func TestManageAccountsRecordsEachOperation(t *testing.T) {
 	}
 }
 
-// The record keeps the newest accountOpsMost of each kind.
+// #6720: an account's operation and a secret's read go 90 days after them, in the sweep too. One
+// with a name too long is not kept, and a file from before this record was one list starts again.
+func TestAccountOpsAgeOut(t *testing.T) {
+	clock := atTime(t, time.Date(2026, 11, 6, 12, 0, 0, 0, time.UTC))
+	d, _ := start(t, t.TempDir())
+	defer d.Shutdown()
+	old := `{"accounts":{"old.com#":{"what":"read","at":"2026-11-06T11:00:00.000Z"}},"secrets":{"OLD":"2026-11-06T11:00:00.000Z"}}`
+	if err := os.WriteFile(d.accountOpsPath(), []byte(old), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	read := func(service string) wire.AccountOperation {
+		return wire.AccountOperation{What: wire.AccountOperationWhatRead, Service: service}
+	}
+	last := func(a wire.OutsideAccount) *wire.AccountLastOp { return accountLastOp(d.readAccountOps(), a) }
+	secret := wire.OutsideAccount{Service: "other.com", Secret: new("TOKEN")}
+	d.noteAccountOps(wire.UUID("a"), []wire.AccountOperation{read(strings.Repeat("x", 2_000)), read("gitlab.com")})
+	d.noteSecretRead(wire.Event{Name: "secret.read", At: wire.DateOf(nowFunc()), Details: map[string]string{"name": "TOKEN"}})
+	if last(wire.OutsideAccount{Service: "old.com"}) != nil || last(wire.OutsideAccount{Service: "GitLab.com"}) == nil || last(secret) == nil {
+		t.Fatal(d.readAccountOps())
+	}
+	if raw, _ := os.ReadFile(d.accountOpsPath()); strings.Contains(string(raw), "xxx") {
+		t.Fatal("kept an account with a name too long")
+	}
+
+	clock.add(store.MaxAge)
+	d.sweepSmallStores(nowFunc())
+	if last(wire.OutsideAccount{Service: "gitlab.com"}) != nil || last(secret) != nil {
+		t.Fatal(d.readAccountOps())
+	}
+}
+
+// The last operations keep the newest secretOpsMost.
 func TestTrimOldest(t *testing.T) {
 	t.Parallel()
 
 	m := map[string]wire.Date{}
-	for i := range accountOpsMost + 3 {
+	for i := range secretOpsMost + 3 {
 		m[strconv.Itoa(i)] = wire.Date(i)
 	}
 	trimOldest(m, func(at wire.Date) wire.Date { return at })
-	if _, ok := m["2"]; len(m) != accountOpsMost || ok || m["3"] != 3 {
+	if _, ok := m["2"]; len(m) != secretOpsMost || ok || m["3"] != 3 {
 		t.Fatal(len(m))
 	}
 }

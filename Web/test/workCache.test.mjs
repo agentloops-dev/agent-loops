@@ -121,7 +121,7 @@ test("detail: the item's page with its machine, its body and comments to their b
 });
 
 test("pages: a page's own answer is kept by what it asked, with when it was read; one over its bound is not", async () => {
-  const { c } = cache({ ...webBounds, pageBytes: 100 });
+  const { c } = cache({ ...webBounds, recordBytes: 100 });
   await c.keep("plan", "github:o/r#1", { children: [] });
   assert.deepEqual(await c.kept("plan", "github:o/r#1"), { value: { children: [] }, at: 1_000 });
   assert.equal(await c.kept("plan", "github:o/r#2"), undefined);
@@ -130,12 +130,12 @@ test("pages: a page's own answer is kept by what it asked, with when it was read
 });
 
 test("bounds: over its size, the least recently drawn answer goes with the items no other answer holds", async () => {
-  const { c, tick } = cache({ ...webBounds, bytes: 700 });
+  const { c, tick } = cache({ ...webBounds, bytes: 1_100 });
   const other = { ...q, state: "closed" };
   await c.keepPage(q, "mac", 0, { items: [item(1), item(2), item(3)] });
   tick();
   await c.keepPage(other, "mac", 0, { items: [item(4), item(5), item(6)] });
-  assert.ok(c.bytes() <= 700, `${c.bytes()} bytes`);
+  assert.ok(c.bytes() <= 1_100, `${c.bytes()} bytes`);
   assert.equal(await c.answer(q, ["mac"]), undefined);
   assert.deepEqual(refs(await c.answer(other, ["mac"])), ["4", "5", "6"]);
   assert.equal(await c.item(item(1).node), undefined);
@@ -161,4 +161,98 @@ test("a kept answer of 300 items draws in under 10 ms once read", async () => {
   const got = await c.answer(q, ["mac"]);
   assert.equal(got.hosts[0].items.length, 300);
   assert.ok(performance.now() - start < 10);
+});
+
+const day = 24 * 60 * 60 * 1000;
+
+test("age: each kind of record goes 90 days after it was read, and drawing it does not keep it (#6976)", async () => {
+  const { c, tick } = cache();
+  const closed = { ...q, state: "closed" };
+  await c.keepPage(q, "mac", 0, { items: [item(1)] });
+  await c.keepFailure(closed, "mac", []);
+  await c.keepDetail("mac", { item: item(9), body: "body", comments: [] });
+  await c.keep("plan", "a", "plan");
+  tick(90 * day);
+  await c.sweep();
+  assert.equal((await c.stats()).oldest, 1_000, "90 days is kept");
+  assert.deepEqual(refs(await c.answer(q, ["mac"])), ["1"]);
+  assert.ok(await c.detail(item(9).node));
+  assert.ok(await c.kept("plan", "a"));
+  tick();
+  // Before a sweep too, nothing old draws.
+  assert.equal(await c.answer(q, ["mac"]), undefined);
+  assert.equal(await c.answer(closed, ["mac"]), undefined);
+  assert.equal(await c.detail(item(9).node), undefined);
+  assert.equal(await c.kept("plan", "a"), undefined);
+  assert.equal(await c.item(item(1).node), undefined);
+  await c.sweep();
+  assert.deepEqual(await c.stats(), { count: 0, bytes: 0, oldest: undefined });
+  assert.deepEqual([...c.store.held.keys()], ["@index"]);
+});
+
+test("age: a write ages old records out, a page opened later does too, and no bound is over 90 days", async () => {
+  const { c, tick, at } = cache({ ...webBounds, age: 400 * day });
+  assert.equal(c.bounds.age, 90 * day);
+  await c.keep("plan", "a", "plan");
+  tick(91 * day);
+  await c.keepItems([item(50)]);
+  assert.deepEqual([...c.store.held.keys()].sort(), ["@index", "item issue github:o/r#50"]);
+  tick(91 * day);
+  const again = new WorkCache(c.store, webBounds, at);
+  again.writing = true;
+  await again.sweep();
+  assert.deepEqual([...c.store.held.keys()], ["@index"]);
+});
+
+test("age: an answer loses only its aged pages, and their items", async () => {
+  const { c, tick } = cache();
+  await c.keepPage(q, "mac", 0, { items: [item(1, 30), item(2, 20)], cursor: "p2" });
+  await c.keepPage(q, "mac", 1, { items: [item(3, 10)], cursor: "p3" });
+  tick(60 * day);
+  await c.keepPage(q, "mac", 0, { items: [item(1, 30), item(2, 20)], cursor: "p2" });
+  assert.deepEqual(refs(await c.answer(q, ["mac"])), ["1", "2", "3"]);
+  tick(31 * day);
+  await c.sweep();
+  const got = await c.answer(q, ["mac"]);
+  assert.deepEqual(refs(got), ["1", "2"]);
+  assert.equal(got.hosts[0].cursor, "p2");
+  assert.equal(await c.item(item(3).node), undefined);
+  assert.ok(!c.store.held.has("item issue github:o/r#3"));
+});
+
+test("age: rows from before #6976 take their records' own read time", async () => {
+  const { c, tick, at } = cache();
+  await c.keepPage(q, "mac", 0, { items: [item(1)] });
+  await c.keep("plan", "a", "plan");
+  for (const row of Object.values(c.store.held.get("@index"))) delete row.read;
+  const again = new WorkCache(c.store, webBounds, at);
+  again.writing = true;
+  tick(day);
+  await again.sweep();
+  assert.deepEqual(refs(await again.answer(q, ["mac"])), ["1"]);
+  assert.equal((await again.stats()).oldest, 1_000);
+  assert.ok(Object.entries(c.store.held.get("@index")).filter(([k]) => !k.startsWith("item ")).every(([, r]) => r.read === 1_000));
+});
+
+test("tabs: one does not take the other's records out of the index; a record no index names goes", async () => {
+  const { c, at } = cache();
+  const other = new WorkCache(c.store, webBounds, at);
+  other.writing = true;
+  await other.stats();
+  await c.keep("plan", "a", "one");
+  await other.keep("plan", "b", "two");
+  c.store.held.set("page plan lost", { value: 1, at: 1 });
+  await c.sweep();
+  assert.equal((await c.stats()).count, 2);
+  assert.deepEqual([...c.store.held.keys()].sort(), ["@index", "page plan a", "page plan b"]);
+});
+
+test("largest record: a list's answer loses its last pages; an item's page over it is not kept (#6976)", async () => {
+  const { c } = cache({ ...webBounds, recordBytes: 1024 });
+  await c.keepPage(q, "mac", 0, { items: Array.from({ length: 10 }, (_, i) => item(i)), cursor: "p2" });
+  await c.keepPage(q, "mac", 1, { items: Array.from({ length: 50 }, (_, i) => item(i + 10)), cursor: "p3" });
+  assert.equal((await c.answer(q, ["mac"])).hosts[0].items.length, 10);
+  await c.keepDetail("mac", { item: item(1), body: "body", comments: [] });
+  await c.keepDetail("mac", { item: item(1), body: "body", comments: [{ id: "1", body: "c".repeat(2048) }] });
+  assert.equal(await c.detail(item(1).node), undefined);
 });

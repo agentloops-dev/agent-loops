@@ -14,11 +14,21 @@ import (
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/internal/browser"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
+	"github.com/agentloops-dev/agent-loops/Go/internal/repoalias"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // Daemon is one host: its root, the clients connected to it, and what it serves them.
 type Daemon struct {
+	// smallFiles are the bounded small files (smallFile), each swept hourly; set in newWith.
+	smallFiles []interface {
+		Name() string
+		Sweep() (int, error)
+	}
+	dismissedLeads *store.JSONFile[dismissedLead]
+	repoAliases    *store.JSONFile[repoalias.Alias]
+	erased         *store.JSONFile[wire.Date]
+
 	ctx context.Context
 	// opts are the daemon's own (#5926): set by New, and changed only by a test, as a test
 	// once changed the process's environment while its daemon ran.
@@ -31,7 +41,7 @@ type Daemon struct {
 	requestActors map[wire.UUID]*wire.AuditActor
 
 	// accountOps is each account's last operation, and each secret's last read (#4157).
-	accountOps accountOpBook
+	accountOps *store.JSONFile[wire.AccountLastOp]
 	// secretOps is each secret's last operation, and the reads waiting for the audit (#4156).
 	secretOps secretOpBook
 
@@ -56,6 +66,9 @@ type Daemon struct {
 	machineMoves sync.Map
 	// moves are the moves to another machine under way, whoever asked (#4641).
 	moves movesUnderWay
+
+	// largeChat asks the retention sweep to trim conversations before the hour (#6706).
+	largeChat chan struct{}
 
 	mu      sync.Mutex
 	clients map[int64]*Client
@@ -240,14 +253,28 @@ func newWith(ctx context.Context, root string, opts startOptions) (*Daemon, erro
 	}
 	// Shutdown ends this ctx last, so a goroutine that waits on d.ctx ends with the host (#5653).
 	ctx, cancel := context.WithCancel(ctx)
-	d := &Daemon{ctx: ctx, Store: st, handlers: map[string]Handler{}, clients: map[int64]*Client{}, unknown: map[string]int{},
+	d := &Daemon{ctx: ctx, largeChat: make(chan struct{}, 1), Store: st, handlers: map[string]Handler{}, clients: map[int64]*Client{}, unknown: map[string]int{},
 		lives: map[wire.UUID]*live{}, relays: map[string]*relay{}, sent: map[wire.UUID]bool{},
 		watches: map[string]*folderWatch{}, interests: map[string][]interest{}, shells: map[shellKey]*shell{},
 		SettingsDir: filepath.Join(st.Loc.Root, "settings"), HostKey: controllink.HostKeyFile{Root: st.Loc.Root},
 		PersonKey: controllink.PersonKeyFile{Root: st.Loc.Root}}
+	d.dismissedLeads = d.openDismissedLeads()
+	d.repoAliases = d.openRepoAliases()
+	d.erased = d.openErased()
+	d.deployStore = d.openDeploys()
+	d.releaseDone = d.openReleaseTags()
+	d.secretOps.pending = d.openSecretOpsPending()
+	d.accountOps = d.openAccountOps()
+	d.lockSeen = d.openLockSeen()
 	d.opts.Store(&opts)
 	d.jobCancel = cancel
 	st.OnGap = d.tellEntry
+	st.OnLarge = func() {
+		select {
+		case d.largeChat <- struct{}{}:
+		default:
+		}
+	}
 	// The sweep of roots that are gone finds this root's own folders by this (#3746).
 	if err := store.MarkOwnFolders(st.Loc); err != nil {
 		log.Printf("store: could not mark this root's cache and log folders: %v", err)

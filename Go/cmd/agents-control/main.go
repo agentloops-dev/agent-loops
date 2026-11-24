@@ -15,7 +15,7 @@
 //	agents-control serve … [--log-format text|json] [--log-level debug|info|warn|error]
 //	                                            JSON lines through log/slog (#2176); debug logs each request
 //	agents-control serve … [--metrics ADDR]      Prometheus /metrics on a listener of its own (#2176)
-//	agents-control serve … [--key-days N]       how long a client's or machine's key lives unused (#997, AGENTS_CONTROL_KEY_DAYS); 90
+//	agents-control serve … [--key-days N]       how long a client's or machine's key lives unused (#997, AGENTS_CONTROL_KEY_DAYS); 90, which is the most
 //	agents-control code (--client [--browser] | --host) [--minutes N] [--home DIR] [--command]
 //	agents-control hosts | clients
 //	agents-control key seal --key-fd N          seal a key handed in, with AGENTS_CONTROL_KMS
@@ -643,7 +643,7 @@ func serveTLS(cfg *controlplane.Config, u *url.URL) {
 // serveIdentity sets how long keys live, this copy's name and machine, and where machine
 // providers keep their secrets.
 func serveIdentity(cfg *controlplane.Config, u *url.URL) {
-	// How long a client's or machine's key lives unused (#997): 90 days unless said.
+	// How long a client's or machine's key lives unused (#997): 90 days unless said, and at most (#6757).
 	if days := value("--key-days"); days != "" || os.Getenv("AGENTS_CONTROL_KEY_DAYS") != "" {
 		if days == "" {
 			days = os.Getenv("AGENTS_CONTROL_KEY_DAYS")

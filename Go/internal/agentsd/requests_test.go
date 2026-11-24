@@ -366,7 +366,7 @@ func TestAFormAnsweredAsItIsShownLeavesNoOpenRequest(t *testing.T) {
 	for i := range 100 {
 		done := make(chan string, 1)
 		go func() {
-			note, _, _ := d.askForm(a.ID, map[string]json.RawMessage{"questions": q}, nil, time.Minute)
+			note, _, _ := d.askForm(a.ID, map[string]json.RawMessage{"questions": q}, nil, time.Now().Add(time.Minute))
 			done <- note
 		}()
 		// The first look that sees the card answers it, as a window that polls does.

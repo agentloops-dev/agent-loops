@@ -53,6 +53,8 @@ OPENINGS = {".go": GO, ".swift": SWIFT, ".ts": WEB, ".tsx": WEB}
 TREES = ("Go/", "App/", "Remote/", "Shared/", "Host/", "Packages/", "Web/src/")
 # A key family is a store only where a control plane's store is in hand.
 FAMILY_TREES = ("Go/internal/controlplane/", "Go/internal/hosted/")
+# The packages whose Spec and Bounds declare a store.
+STORE_PACKAGES = ("Go/internal/controlplane/store/", "Go/internal/agentsd/store/")
 TEST = re.compile(r"_test\.go$|_gen\.go$|/generated\.ts$|(^|/)\w*Tests?/|/tests?/|\.test\.tsx?$|/testdata/|^Go/internal/(wiretest|flaky)/|^Go/cmd/(wiregen|scale-[\w-]+)/")
 NOTE = re.compile(r"//\s*store-bounds:\s*(.*)$")
 LITERAL = re.compile(r"\b(?:store\.)?(Spec|Bounds)\{")
@@ -89,11 +91,12 @@ def note_problem(note):
 
 def literal_problems(rel, source):
     """Each Spec or Bounds literal of the store package that leaves a required field out."""
-    if not ("controlplane/store\"" in source or rel.startswith("Go/internal/controlplane/store/")):
+    inside = rel.startswith(STORE_PACKAGES)
+    if not (inside or any(p.removeprefix("Go/").rstrip("/") + '"' in source for p in STORE_PACKAGES)):
         return []
     found = []
     for m in LITERAL.finditer(source):
-        if not rel.startswith("Go/internal/controlplane/store/") and not m[0].startswith("store."):
+        if not inside and not m[0].startswith("store."):
             continue
         if re.match(r"\s*//", source[source.rfind("\n", 0, m.start()) + 1:m.start()]):
             continue
@@ -234,8 +237,9 @@ def selftest():
     assert not problems(full, kinds)
     for part in ('Name: "a", ', 'Kind: "log", ', 'Scope: "o", ', "MaxRecordBytes: 1, ", "MaxCount: 1, ", ", MaxAge: h"):
         assert problems(full.replace(part, ""), kinds), part
-    outside = 'import "x/controlplane/store"\n'
+    outside = 'import "x/internal/controlplane/store"\n'
     assert problems(outside + 'store.OpenLog(store.Spec{Name: "a"}, b)')
+    assert problems('import "x/internal/agentsd/store"\n' + 'store.Spec{Name: "a"}')
     assert not problems(outside + "other.Spec{}")
     assert TEST.search("Go/internal/a/a_test.go") and not TEST.search("App/Sources/A.swift")
     print("check-store-bounds: selftest ok")

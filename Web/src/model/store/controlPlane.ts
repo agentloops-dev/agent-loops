@@ -112,6 +112,7 @@ export const controlPlaneMethods = {
           this.loadRemoveRequests()])),
         this.loadSignInRequests()]);
       this.takeHosts(machineRows(hosts));
+      this.hostsListed = true;
       // A machine this device's copy drew that the control plane no longer lists goes (#4790).
       for (const host of this.fromDevice.value) {
         if (machineRows(hosts).some((h) => h.id === host)) continue;

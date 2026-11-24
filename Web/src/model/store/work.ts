@@ -90,6 +90,9 @@ export class Work {
 
   readonly copyReads = new Map<string, number>();
 
+  /** The control plane has listed its machines: `hosts` is not only what this device's copy drew (#6792). */
+  hostsListed = false;
+
   /** The page as the chat draws it, folded once as each entry lands. */
   readonly items = signal<Item[]>([]);
 

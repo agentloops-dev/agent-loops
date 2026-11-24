@@ -180,6 +180,33 @@ func TestBusSweepsListTheLogAndTheLeasesOnly(t *testing.T) {
 	}
 }
 
+func TestBusSweepExpiresOldEnvelopesAndEnforcesByteLimit(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	folder := store.NewFolder(t.TempDir())
+	const bus = "0011223344556677"
+	now := time.Date(2026, 11, 21, 12, 0, 0, 0, time.UTC)
+	seedBus(t, folder.Root, bus, 2, 100, now.Add(-20*24*time.Hour))
+	seedBus(t, folder.Root, bus, 3, 100, now.Add(-time.Hour))
+	all, err := folder.List(ctx, busLogPrefix(bus))
+	if err != nil || len(all) != 5 {
+		t.Fatalf("listed %d envelopes, %v; want 5", len(all), err)
+	}
+
+	n, err := sweepBusAt(ctx, folder, now, 100, 2*all[0].Size+1, 10*24*time.Hour, 10)
+	if err != nil || n != 3 {
+		t.Fatalf("swept %d, %v; want 2 aged and 1 over the byte limit", n, err)
+	}
+	logs, err := folder.List(ctx, busLogPrefix(bus))
+	if err != nil || len(logs) != 2 {
+		t.Fatalf("%d envelopes remain, %v; want 2", len(logs), err)
+	}
+	ids, err := folder.List(ctx, busPrefix+bus+"/ids/")
+	if err != nil || len(ids) != 2 {
+		t.Fatalf("%d dedupe ids remain, %v; want 2", len(ids), err)
+	}
+}
+
 // A folder store names a prefix's folders from that folder alone; any other store from
 // its keys.
 func TestFoldersNamesTheFoldersUnderAPrefix(t *testing.T) {

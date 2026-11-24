@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/internal/repoalias"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
@@ -257,5 +258,51 @@ func TestWorkSearchesAMovedRepoByItsNameNow(t *testing.T) {
 	s := githubForge{d: d}.scopeOf([]string{folder})
 	if !slices.Equal(s.repos, []string{"agentloops-dev/agent-loops"}) || s.folderOf["agentloops-dev/agent-loops"] != folder {
 		t.Fatalf("scope %+v", s)
+	}
+}
+
+// #6716: an alias goes 90 days after it was learnt, from the file in the sweep and from the book
+// in the check; a file from before entries had keys is set aside.
+func TestRepoAliasesAgeOut(t *testing.T) {
+	noAliases(t)
+	d, err := New(context.Background(), t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(d.Shutdown)
+	if err := os.WriteFile(d.repoAliasesPath(), []byte(`{"aliases": [{"provider": "github", "from": "a/r", "to": "b/r", "at": "2026-11-13T00:00:00Z"}]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	d.loadRepoAliases()
+	if _, err := os.Stat(d.repoAliasesPath()); !os.IsNotExist(err) {
+		t.Fatalf("the old file stayed: %v", err)
+	}
+
+	now := nowFunc()
+	repoalias.Add("github", "a/old", "b/old", now.Add(-store.MaxAge+time.Hour))
+	repoalias.Add("github", "a/new", "b/new", now)
+	d.saveRepoAliases()
+	repoalias.Set(nil)
+	d.loadRepoAliases()
+	if got := repoalias.All(); len(got) != 2 {
+		t.Fatalf("loaded %+v", got)
+	}
+	// The same file two hours later.
+	aged := repoalias.Alias{Provider: "github", From: "a/old", To: "b/old", At: wire.DateOf(now.Add(-store.MaxAge - time.Hour))}
+	repoalias.Set([]repoalias.Alias{aged, {Provider: "github", From: "a/new", To: "b/new", At: wire.DateOf(now)}})
+	b, _ := json.Marshal(map[string]any{aged.Key(): map[string]any{"provider": "github", "from": "a/old", "to": "b/old", "at": aged.At.Time().UTC().Format(time.RFC3339)}})
+	if err := os.WriteFile(d.repoAliasesPath(), b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	d.sweepSmallStores(now)
+	if got, err := d.repoAliases.Read(); err != nil || len(got) != 0 {
+		t.Fatalf("after the sweep: %v, %v", got, err)
+	}
+	d.checkRepoAliases(context.Background())
+	if got := repoalias.All(); len(got) != 1 || got[0].From != "a/new" {
+		t.Fatalf("after the check: %+v", got)
+	}
+	if got, err := d.repoAliases.Read(); err != nil || len(got) != 1 {
+		t.Fatalf("the file after the check: %v, %v", got, err)
 	}
 }

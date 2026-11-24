@@ -267,8 +267,8 @@ func trimAttachmentsToBound(files []attachment, keep string, remove func(string)
 
 // namedAttachments is, for each of files that a transcript of an agent kept here, in
 // root, names, the agent that names it. An archived agent counts: it can be brought back.
-// A file the last sweep found named by an agent still kept here is named still, as a
-// transcript only grows; only the others are looked for. A name is looked for by its
+// A file the last sweep found named by an agent still kept here is named still, until its
+// transcript is trimmed (trimConversations forgets them); only the others are looked for. A name is looked for by its
 // random prefix ("1A2B3C4D-"), which no escaping changes.
 func (d *Daemon) namedAttachments(root string, files []attachment) map[string]wire.UUID {
 	named := map[string]wire.UUID{}
@@ -296,7 +296,10 @@ func (d *Daemon) namedAttachments(root string, files []attachment) map[string]wi
 			break
 		}
 		found := map[string]bool{}
-		scanFor(d.Store.Loc.Transcript(string(id)), unknown, found)
+		if f, err := d.Store.OpenTranscript(id); err == nil {
+			scanFor(f, unknown, found)
+			_ = f.Close() // only read
+		}
 		rest := unknown[:0:0]
 		for _, f := range unknown {
 			if found[f.path] {
@@ -310,14 +313,9 @@ func (d *Daemon) namedAttachments(root string, files []attachment) map[string]wi
 	return named
 }
 
-// scanFor marks in named each file whose key the file at path has, read a piece at a
-// time: a transcript can be large.
-func scanFor(path string, files []attachment, named map[string]bool) {
-	f, err := os.Open(path)
-	if err != nil {
-		return
-	}
-	defer f.Close()
+// scanFor marks in named each file whose key f has, read a piece at a time: a transcript
+// can be large.
+func scanFor(f io.Reader, files []attachment, named map[string]bool) {
 	const piece = 1 << 20
 	overlap := 0
 	for _, a := range files {

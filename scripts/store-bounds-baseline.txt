@@ -14,10 +14,8 @@
 1 Go/cmd/agentsd/supervise.go rolllog.Open
 1 Go/cmd/loops/hosts.go os.CreateTemp
 1 Go/cmd/loops/lockkey.go WriteAtomically
-1 Go/internal/agentsd/accountops.go WriteAtomically
 1 Go/internal/agentsd/acp/session.go os.OpenFile
 1 Go/internal/agentsd/agentconfigeditor.go WriteAtomically
-1 Go/internal/agentsd/assess.go os.OpenFile
 2 Go/internal/agentsd/attachments.go WriteAtomically
 1 Go/internal/agentsd/attention.go WriteAtomically
 1 Go/internal/agentsd/backgroundended.go WriteAtomically
@@ -52,7 +50,6 @@
 1 Go/internal/agentsd/localpath.go os.WriteFile
 2 Go/internal/agentsd/lock.go WriteAtomically
 1 Go/internal/agentsd/lock.go os.WriteFile
-1 Go/internal/agentsd/lockcheck.go WriteAtomically
 1 Go/internal/agentsd/mac.go WriteAtomically
 1 Go/internal/agentsd/mcpcatalog.go WriteAtomically
 1 Go/internal/agentsd/mcpcatalog.go os.WriteFile
@@ -86,7 +83,7 @@
 1 Go/internal/agentsd/secretcmd.go execfile.Write
 1 Go/internal/agentsd/secrethints.go WriteAtomically
 1 Go/internal/agentsd/secretlist.go WriteAtomically
-2 Go/internal/agentsd/secretops.go WriteAtomically
+1 Go/internal/agentsd/secretops.go WriteAtomically
 2 Go/internal/agentsd/selfupdate.go WriteAtomically
 1 Go/internal/agentsd/selfupdate.go os.Create
 1 Go/internal/agentsd/send.go os.OpenFile
@@ -106,7 +103,6 @@
 1 Go/internal/agentsd/store/revisions.go WriteAtomically
 1 Go/internal/agentsd/store/roots.go WriteAtomically
 3 Go/internal/agentsd/store/store.go WriteAtomically
-1 Go/internal/agentsd/store/store.go os.OpenFile
 1 Go/internal/agentsd/store/summaries.go WriteAtomically
 2 Go/internal/agentsd/trailerhook.go os.WriteFile
 1 Go/internal/agentsd/turnscache.go os.OpenFile
@@ -119,7 +115,6 @@
 3 Go/internal/agentsd/workflows.go WriteAtomically
 2 Go/internal/agentsd/workflows.go os.WriteFile
 1 Go/internal/agentsd/workflowtool.go WriteAtomically
-1 Go/internal/agentsd/worksuggest.go WriteAtomically
 1 Go/internal/agentsd/worktrees.go WriteAtomically
 1 Go/internal/browser/browser.go os.WriteFile
 1 Go/internal/citimings/store.go WriteAtomically
@@ -138,7 +133,6 @@
 2 Go/internal/controlplane/backups.go v1/backups
 1 Go/internal/controlplane/bots.go v1/runs
 1 Go/internal/controlplane/builds.go v1/build-timings
-1 Go/internal/controlplane/bus.go v1/bus
 1 Go/internal/controlplane/capacity.go runtime/control-capacity
 2 Go/internal/controlplane/codes.go v1/codes
 1 Go/internal/controlplane/copies.go v1/copies
@@ -179,7 +173,6 @@
 1 Go/internal/controlplane/policy_ask.go v1/policy
 1 Go/internal/controlplane/projects.go v1/projectFolders
 1 Go/internal/controlplane/providers/defaults.go v1/failed-makes
-1 Go/internal/controlplane/providers/defaults.go v1/machine-names
 1 Go/internal/controlplane/providers/kept.go v1/kept
 1 Go/internal/controlplane/providers/records.go v1/providers
 1 Go/internal/controlplane/providers/secrets.go os.CreateTemp
@@ -187,7 +180,6 @@
 1 Go/internal/controlplane/records/groups.go v1/groups
 1 Go/internal/controlplane/records/people.go v1/people
 1 Go/internal/controlplane/records/projects.go v1/projects
-1 Go/internal/controlplane/records/records.go v1/clients
 1 Go/internal/controlplane/records/records.go v1/control
 1 Go/internal/controlplane/records/records.go v1/hosts
 1 Go/internal/controlplane/records/records.go v1/machines
@@ -238,7 +230,6 @@
 1 Go/internal/mac/signin/certs.go os.WriteFile
 1 Go/internal/mac/signin/codex.go os.WriteFile
 1 Go/internal/mac/signin/relays.go os.OpenFile
-1 Go/internal/repoalias/repoalias.go WriteAtomically
 1 Go/internal/rolllog/rolllog.go os.OpenFile
 2 Go/internal/whatsappmcp/store.go os.OpenFile
 1 Go/internal/whatsappmcp/store.go writeAtomically
@@ -247,8 +238,6 @@
 2 Host/Sources/HostSettings.swift write(to:)
 1 Host/Sources/LocalServices.swift write(to:)
 1 Packages/AgentsKit/Sources/AgentsKitCore/Client/AgentsExportTransfer.swift createFile
-1 Packages/AgentsKit/Sources/AgentsKitCore/Client/LocalCopy.swift write(to:)
-1 Packages/AgentsKit/Sources/AgentsKitCore/Client/WorkCache.swift sqlite3_open_v2
 1 Packages/AgentsKit/Sources/AgentsKitCore/Control/ControlMembership.swift write(to:)
 1 Packages/AgentsKit/Sources/AgentsKitCore/Control/HostJoinFile.swift write(to:)
 1 Packages/AgentsKit/Sources/AgentsKitCore/Model/MachineLock.swift createFile
