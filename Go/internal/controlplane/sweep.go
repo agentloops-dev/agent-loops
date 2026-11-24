@@ -442,11 +442,13 @@ func sweepUsages(ctx context.Context, rs *records.Records, now time.Time, left i
 // sweepOrphans deletes, at most most, what outlived what it belonged to (#2293): the lease
 // of a host that has no record, once it has run out (an expired lease fences no copy),
 // a host's folder list once its record is gone from the store too (#3125), and an org
-// route's tombstone, with its secret, that its removal could not delete.
+// route's tombstone, with its secret, that its removal could not delete, and what is kept of
+// machines that are gone (#6968, #6969) and of old failed makes (#6971).
 func sweepOrphans(ctx context.Context, rs *records.Records, now time.Time, most int) (int, error) {
 	deleted := 0
 	for _, step := range []func(context.Context, *records.Records, time.Time, int) (int, bool, error){
 		sweepOrphanLeases, sweepOrphanFolderLists, sweepRemovedOrgRoutes, sweepMachineNames, sweepRemovedOrgProviders, sweepRemovedSecrets,
+		sweepMachineSetups, sweepMachineVersions, providers.SweepFailedMakes,
 	} {
 		n, full, err := step(ctx, rs, now, most-deleted)
 		deleted += n

@@ -194,7 +194,9 @@ One sweep runs every hour. It removes old audit days, codes, tombstones, records
 owner, usage, workflow runs and lineage, join, lock-join, sign-in and link requests, and
 policy, governance and remove requests (#3649), old policy versions and SCIM and read
 tokens that stopped working (#6765 to #6767), and once a day the backups of removed
-servers. It also forgets clients whose key expired (#6757), and machines with no workspace whose key expired (#6758), and removes
+servers. It also forgets clients whose key expired (#6757), and machines with no workspace whose key expired (#6758), deletes old
+machine set-ups, updates and failed makes, and those of machines and providers that are gone
+(#6968, #6969, #6971), and removes
 the approvals of people and groups that are gone, and probes and move marks left by a
 copy that stopped (#3748).
 
@@ -221,9 +223,9 @@ the other copies of the control plane learn that it went. A removed person's sta
 | Machine locks | log | Each person's lock chain | 4,096 entries a person. Deleted when the person is removed (#3647) | On **Reset** and on remove |
 | A person's settings and secrets | key-value; secret | Settings that follow a person; secrets, sealed | 256 KiB of settings, 200 secrets of 16 KiB, each sealed to 200 machines and apps at most: 256 KiB a part (16 KiB for the small ones), 5 MiB of settings as kept and 5 MiB a sealed secret; 100 offers from agents; more is refused. A secret names the newest 200 removed machines it was on. They follow the person to each machine, so they are not in one machine's `~/.agents`, and they are the person's own data, so they have no age. A removed secret's tombstone (its name, version and time) goes after 90 days; at 200 tombstones a new name is refused (#6780) | Limits on write; tombstones hourly; all of it when the person is removed |
 | Channel links | document | Which person a channel identity is, and when it last acted | 4 KiB a record and 1 MiB in all: an approval over that is refused, and the request still waits. No link is evicted. A link goes 90 days after its identity last acted; a message from it renews the link (noted once a day). After that, a message asks the person again (#6763) | Size before an approval, age hourly; also on unlink, or when the person is removed |
-| Machine set-up | document | Each machine's set-up steps | One a machine, deleted when the machine is removed. No age. | On remove |
+| Machine set-up | document | Each machine's set-up steps | One a machine, 512 KiB at most; a step's words are cut at 2 KiB. One that ended (ready or failed) goes 90 days later. One that has not ended has no age. Deleted when the machine is removed; that of a machine that is gone, or never joined, 7 days after its last change (#6968) | On write; on remove; hourly |
 | Machine set-up times | time series | How long each set-up step took, and when it ended | 90 days, 50 a step (#6760), 32 KiB at most. No roll-up. | On write, hourly |
-| Machine versions | log | Each machine's version and its updates | 20 updates a machine, deleted when the machine is removed. No age. | On write; on remove |
+| Machine versions | document | Each machine's version and its updates | 20 updates a machine, 64 KiB at most; a version over 256 bytes is not kept. An update goes after 90 days; the version now has no age. Deleted when the machine is removed; that of a machine that is gone, a day after it was last seen (#6969) | On write; on remove; hourly |
 | Machine names | key-value | A person's machine counter and last choices | One a person, 64 KiB at most: choices past that are not kept. The counter has no age while the person is here, so that a number is never used twice. Deleted when the person is removed (#6759). | On write; on remove; hourly |
 | Approvals | document | Each person's signed approvals of workflows and connectors | 2,000 a person; a new one past that is dropped. No age, and not deleted with the person. | On write |
 
@@ -259,7 +261,7 @@ the other copies of the control plane learn that it went. A removed person's sta
 | Governance | document | Installed servers and skills; approvals | 500 items and 1 MiB a machine; 1,000 approvals of 8 KiB: one more, or a larger record, is refused. An approval in force has no age: it stays until an admin takes it back, or its person or group is gone (#3748, #6764) | Hourly |
 | Org keys and gateways | key-value; secret | Routes and their sealed secrets | 50 routes of 256 KiB, and 4 MiB of sealed copies each (200 machines and apps); more is refused (#6776) | On write; tombstone, hourly |
 | Warm pools | document | Pools of ready machines, and their claims | 10 a provider, over every person, and 256 KiB a pool: a pool past that is refused. Claims: 7 days and 500 a pool. The pool has no age. Deleted, with the machines nobody claimed, when the person is removed (#6761). | On write; every 30 s; on remove |
-| Failed machine makes | log | Why a machine could not be made | 5 a provider, deleted with the provider. No age. | On write; on remove |
+| Failed machine makes | log | Why a machine could not be made | 5 a provider, 64 KiB at most; a reason is cut at 4 KiB. 90 days: one kept with no time counts from the first write or sweep. Deleted with the provider (#6971) | On write; on remove; hourly |
 | Event bus | log | Events between a person's machines: refs, names and times, and sealed data | 90 days; 100,000 envelopes and 1 GiB of encoded log records a person, the oldest deleted first with their dedupe ids. An envelope is at most 24 MiB encoded: 64 sealed copies of 256 KiB, in base64. Deleted when the person is removed (#6671). | On write; hourly; on remove |
 | Budgets | key-value | The org's budgets | One record of 4 KiB, with one budget (#6778) | On write |
 | Feature maturity | document | Evidence for each feature's rating | 84 records of 4 KiB. No age. | On write |
