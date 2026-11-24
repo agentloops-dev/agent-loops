@@ -17274,7 +17274,7 @@ type WaitingOffer struct {
 	Offer UUID `json:"offer"`
 }
 
-// Whether this Mac is kept awake for agents, and for how long after they stop (024), as wake.json in the root.
+// Whether this Mac is kept awake for agents, and for how long after they stop (024), as wake.json in the settings of the person (#6745).
 type WakeSettings struct {
 	KeepsAwake bool `json:"keepsAwake"`
 

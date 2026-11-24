@@ -104,7 +104,7 @@ from the root (`agentsd/backups.go:69,72`). It holds nothing else.
 | `org-routes/<id>.json`, `runtimes/org/…` | Org key routes, stand-in homes | 50 routes (`orgroutes.go:46`) | on delivery | no |
 | `runtimes/accounts/<rt>/<id>/` | Homes of added runtime accounts, **with the runtime's own transcripts** | removed with the account (`accounts.go:343`) | on remove | no |
 | `browser/profile/` | Chromium profile shared by every browser sign-in | **none** | never | no |
-| Small fixed files (`folders.json`, `root-id.json`, `project-tools.json`, `wake.json`, `policy*.json`, `backup-settings.json`, `settings/*.json`, …) | Configuration | fixed shape | n/a | no |
+| Small fixed files (`folders.json`, `root-id.json`, `settings/*.json`, …) | Configuration | fixed shape | n/a | no |
 
 ### Transfers, backups and staging
 
@@ -421,16 +421,16 @@ newer than a row above for the same store.
 | `~/.agents-secrets/descriptions.json` | key-value | Secret descriptions (not secret) | No count limit; config outside .agents | `Go/internal/agentsd/secretlist.go:37` | #6742 |
 | Keychain `agents.connection.<hash>` (Linux `~/.agents-secrets/connections.json`) | secret | Forge connections: the token and settings that are not secret | No count limit; settings kept with the secret | `Go/internal/connections/store.go:110-156` | #6743 |
 | `<root>/folders.json` | key-value | The folders the person added | Config in the data root | `Go/internal/agentsd/store/locations.go:104` | #6744 |
-| `<root>/wake.json` | key-value | Keep awake, grace hours, warm runtimes | Config in the data root | `Go/internal/agentsd/wake_darwin.go:18` | #6745 |
-| `<root>/backup-settings.json` | key-value | Backup target and Keep | Config in the data root | `Go/internal/agentsd/backups.go:43,127` | #6746 |
+| `~/.agents/settings/wake.json` | key-value | Keep awake, grace hours, warm runtimes | One, 4 KiB. Moved from the data root; shared by the machines that share the folder (Alex, 2026-11-24) | `Go/internal/agentsd/wake.go` (`Set`) | #6745 |
+| `~/.agents/settings/backup-settings.json` | key-value | Backup target and Keep | One entry a machine, 100 of 32 KiB, else refused. Moved from the data root (Alex, 2026-11-24) | `Go/internal/agentsd/backups.go` (`keepBackupEntry`) | #6746 |
 | `<root>/allowances.json` | key-value | Allowance for each credential | Until its account is removed; config in the data root | `Go/internal/agentsd/allowances.go:32; accounts.go:361` | #6747 |
 | `<root>/runtime-accounts.json` | key-value | Runtime accounts the person added and named | Until removed; config in the data root | `Go/internal/agentsd/accounts.go:63` | #6748 |
 | `<root>/mcp-approvals.json` | key-value | The person's MCP server approvals | Until the folder goes; config in the data root | `Go/internal/agentsd/smallstores.go:28; mcpservers.go:315` | #6749 |
 | `<root>/plugin-approvals.json` | key-value | The person's plugin approvals | Until the folder goes; config in the data root | `Go/internal/agentsd/smallstores.go:29; plugins.go:56` | #6750 |
-| `<root>/policy.json`, `policy-seen.json` | key-value | Signed copy of the org policy | A copy of admin config, in the data root | `Go/internal/agentsd/policy.go:35-36` | #6751 |
-| `<root>/project-tools.json` | key-value | Project tools from the control plane | A copy, in the data root | `Go/internal/agentsd/store/locations.go:113` | #6752 |
-| `<root>/host-user.json` | key-value | The machine's user from the control plane | A copy, in the data root | `Go/internal/agentsd/hostuser.go:29` | #6753 |
-| `<root>/lock-pin.json` | key-value | The machine lock's trust pin | In the data root | `Go/internal/agentsd/lock.go:37` | #6754 |
+| `<root>/policy.json`, `policy-seen.json` | key-value | Signed copy of the org policy | 1 MiB (larger: applied, not kept) and 4 KiB. Stays in the data root: a trust source (Alex, 2026-11-24) | `Go/internal/agentsd/policy.go` (`toldPolicy`) | #6751 |
+| `<root>/project-tools.json` | key-value | Project tools from the control plane | 16 MiB (larger: applied, not kept). Stays in the data root (Alex, 2026-11-24) | `Go/internal/agentsd/projecttools.go` (`heardProjects`) | #6752 |
+| `<root>/host-user.json` | key-value | The machine's user from the control plane | 256 KiB (larger: without the bots' names). Stays in the data root (Alex, 2026-11-24) | `Go/internal/agentsd/hostuser.go` (`keepHostUser`) | #6753 |
+| `<root>/lock-pin.json` | key-value | The machine lock's trust pin | One, 4 KiB. Stays in the data root: a trust source (Alex, 2026-11-24) | `Go/internal/agentsd/lock.go` (`TakeLock`) | #6754 |
 | `v1/events/<day>/` (audit) | log | Audit events | 90 days by default; an admin sets 1 to 3,650; no count or size limit a day | `Go/internal/controlplane/audit/audit.go:31,241` | #6755 |
 | `v1/people/` tombstones | document | A removed person who had a sign-in | 90 days, swept hourly; then a cutoff for each provider (`v1/signin/cutoffs/`) refuses an account nobody has (#6756) | `Go/internal/controlplane/signin_cutoff.go` | #6756 |
 | `v1/clients/` | document | Paired clients | 16 KiB a record, 1 MiB in all; forgotten when its key expires, at most 90 days unused; tombstone 7 days | `Go/internal/controlplane/keylife.go:18,139,145-177` | #6757 |

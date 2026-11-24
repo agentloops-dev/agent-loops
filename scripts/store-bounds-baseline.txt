@@ -13,7 +13,7 @@
 2 Go/internal/agentsd/attachments.go WriteAtomically
 1 Go/internal/agentsd/attention.go WriteAtomically
 1 Go/internal/agentsd/backgroundended.go WriteAtomically
-3 Go/internal/agentsd/backups.go WriteAtomically
+2 Go/internal/agentsd/backups.go WriteAtomically
 2 Go/internal/agentsd/backups.go os.OpenFile
 1 Go/internal/agentsd/backups_store.go os.OpenFile
 1 Go/internal/agentsd/brief.go os.WriteFile
@@ -33,13 +33,12 @@
 2 Go/internal/agentsd/guarded.go WriteAtomically
 2 Go/internal/agentsd/host.go WriteAtomically
 1 Go/internal/agentsd/host.go os.WriteFile
-1 Go/internal/agentsd/hostuser.go os.WriteFile
 1 Go/internal/agentsd/install.go os.Create
 1 Go/internal/agentsd/install.go os.OpenFile
 3 Go/internal/agentsd/install.go os.WriteFile
 2 Go/internal/agentsd/leases.go WriteAtomically
 1 Go/internal/agentsd/localpath.go os.WriteFile
-2 Go/internal/agentsd/lock.go WriteAtomically
+1 Go/internal/agentsd/lock.go WriteAtomically
 1 Go/internal/agentsd/lock.go os.WriteFile
 1 Go/internal/agentsd/mac.go WriteAtomically
 1 Go/internal/agentsd/mcpcatalog.go WriteAtomically
@@ -53,10 +52,8 @@
 1 Go/internal/agentsd/orglaunch.go os.WriteFile
 1 Go/internal/agentsd/orgroutes.go WriteAtomically
 3 Go/internal/agentsd/plugins.go os.WriteFile
-2 Go/internal/agentsd/policy.go WriteAtomically
 1 Go/internal/agentsd/policyfolder.go WriteAtomically
 4 Go/internal/agentsd/policyyours.go WriteAtomically
-1 Go/internal/agentsd/projecttools.go WriteAtomically
 1 Go/internal/agentsd/publicrepo.go os.WriteFile
 7 Go/internal/agentsd/readymade.go WriteAtomically
 2 Go/internal/agentsd/readymadeskills.go WriteAtomically
@@ -98,7 +95,6 @@
 5 Go/internal/agentsd/usersettings.go WriteAtomically
 1 Go/internal/agentsd/usersuspend.go WriteAtomically
 1 Go/internal/agentsd/viewservers.go WriteAtomically
-1 Go/internal/agentsd/wake.go WriteAtomically
 1 Go/internal/agentsd/workflows.go os.WriteFile
 1 Go/internal/agentsd/worktrees.go WriteAtomically
 1 Go/internal/browser/browser.go os.WriteFile

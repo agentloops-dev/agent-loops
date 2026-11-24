@@ -43,9 +43,14 @@ type fakeMac struct {
 	holding bool
 }
 
+func wakeFileIn(t *testing.T) func() string {
+	file := filepath.Join(t.TempDir(), wakeFile)
+	return func() string { return file }
+}
+
 func newWaker(t *testing.T, m *fakeMac) *waker {
 	return &waker{
-		file:  filepath.Join(t.TempDir(), "wake.json"),
+		file:  wakeFileIn(t),
 		power: func() mac.Power { m.reads++; return m.power },
 		hold: func() (func(), error) {
 			m.holds++
@@ -177,7 +182,7 @@ func TestWakeOffHoldsNothingAndOnPowerHoldsIdle(t *testing.T) {
 	if m.holding || got.GraceHours != 8 || got.WarmRuntimes != 0 {
 		t.Fatalf("off: holding %v, settings %+v", m.holding, got)
 	}
-	if b, _ := os.ReadFile(w.file); !strings.Contains(string(b), `"graceHours":8`) {
+	if b, _ := os.ReadFile(w.file()); !strings.Contains(string(b), `"graceHours":8`) {
 		t.Fatalf("wake.json: %s", b)
 	}
 	w.Set(wire.WakeSettings{KeepsAwake: true, AwakeOnPower: true})
@@ -209,5 +214,40 @@ func TestReadWakeSettingsForgives(t *testing.T) {
 	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Fatal("a corrupt wake.json was not set aside")
+	}
+}
+
+// wake.json moves from the data folder once (#6745); one in the settings folder wins, and a
+// change to it counts without a restart.
+func TestWakeSettingsMoveAndFollowTheFile(t *testing.T) {
+	t.Parallel()
+
+	write := func(path, text string) { must(t, os.WriteFile(path, []byte(text), 0o600)) }
+	w := newWaker(t, &fakeMac{})
+	w.old = filepath.Join(t.TempDir(), wakeFile)
+	write(w.old, `{"graceHours":5}`)
+	if s := w.Settings(); s.GraceHours != 5 {
+		t.Fatalf("not read from the old place: %+v", s)
+	}
+	if fileExists(w.old) || !fileExists(w.file()) {
+		t.Fatal("not moved")
+	}
+	write(w.file(), `{"graceHours":2, "warmRuntimes":1}`)
+	if s := w.Settings(); s.GraceHours != 2 || s.WarmRuntimes != 1 {
+		t.Fatalf("a change by hand does not count: %+v", s)
+	}
+	write(w.old, `{"graceHours":7}`)
+	if s := w.Settings(); s.GraceHours != 2 || fileExists(w.old) || !fileExists(w.old+".moved") {
+		t.Fatalf("the shared file must win, and the old one be kept: %+v", s)
+	}
+	// A settings folder that cannot be written: the old file is read, and stays.
+	blocked := newWaker(t, &fakeMac{})
+	dir := t.TempDir()
+	write(filepath.Join(dir, "settings"), "a file")
+	blocked.file = func() string { return filepath.Join(dir, "settings", wakeFile) }
+	blocked.old = filepath.Join(t.TempDir(), wakeFile)
+	write(blocked.old, `{"graceHours":6}`)
+	if s := blocked.Settings(); s.GraceHours != 6 || !fileExists(blocked.old) {
+		t.Fatalf("lost when it could not be moved: %+v", s)
 	}
 }

@@ -15,7 +15,8 @@ import (
 // within FR-004's five; the power every fifteen, as tickWorkflows reads it.
 func (d *Daemon) registerWake() {
 	w := &waker{
-		file:  filepath.Join(d.Store.Loc.Root, "wake.json"),
+		old:   filepath.Join(d.Store.Loc.Root, wakeFile),
+		file:  func() string { return filepath.Join(d.SettingsDir, wakeFile) },
 		power: mac.ReadPower,
 		hold:  holdTheMac,
 		tell:  func(s wire.WakeState) { Broadcast(d, wire.NotifyWakeChanged, s) },
