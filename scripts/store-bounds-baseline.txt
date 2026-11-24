@@ -235,7 +235,6 @@
 1 Go/internal/mac/signin/certs.go os.WriteFile
 1 Go/internal/mac/signin/codex.go os.WriteFile
 1 Go/internal/mac/signin/relays.go os.OpenFile
-1 Go/internal/repoalias/repoalias.go WriteAtomically
 1 Go/internal/rolllog/rolllog.go os.OpenFile
 2 Go/internal/whatsappmcp/store.go os.OpenFile
 1 Go/internal/whatsappmcp/store.go writeAtomically

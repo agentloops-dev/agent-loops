@@ -38,7 +38,7 @@ Four parts, cut into slices by area (`.agents/areas`). Each slice is one pull re
 - **`erasures.json`** in the root: `[{agentID, runtimeID, sessionID, accountID, cwd, queuedAt, tries}]`, at most 1,000, written atomically.
 - **`deleteArchived`** adds an entry when the agent had a runtime session, then wakes the eraser. The `agent.deleted` event gets `runtimeCopy: queued`.
 - **The eraser** (one goroutine, `safe.Go`): for each entry, start the runtime as the agent was (`launchAs` with its account), 60 s at most. When it offers `session/delete`, call it. Then, for Claude and Codex, remove the known files in the home that the launch named (`CLAUDE_CONFIG_DIR` or `~/.claude`; `CODEX_HOME` or `~/.codex`). Success, or a third failure, or 7 days, removes the entry.
-- **`erased.json`**: `{id: erasedAt}`, at most 10,000 and 400 days. `restoreAgent` skips an ID in it. Backups carry the file, so a server's list survives a new machine.
+- **`erased.json`**: `{id: erasedAt}`, at most 10,000 and 90 days; an archive older than the cutoff is refused (#6715). `restoreAgent` skips an ID in it. Backups carry the file, so a server's list survives a new machine.
 
 ### c1: export and import, the machine side
 

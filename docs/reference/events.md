@@ -333,7 +333,8 @@ Every event, the app's own and every MCP server's, has the same envelope: the
   minute or two after it starts and then once a day, the daemon asks GitHub
   `GET /repos/<repo>` for each GitHub repo its folders and its lineage name. When the
   `full_name` in the answer is another name, it keeps the alias in `repo-aliases.json` in
-  its root. The subject, the topic, a `repo` or `project` in `where`, and lineage's nodes
+  its root for 90 days, then asks again when a folder or the lineage still names the old
+  repo. The subject, the topic, a `repo` or `project` in `where`, and lineage's nodes
   are then read by the new name. No file is written again for the move.
 
 ## The bus
