@@ -4,7 +4,7 @@ import type { AuditActor, AuditEntry } from "../protocol/generated";
 import { fromWireDate } from "../protocol/dates";
 
 /** AuditWords.dayChoices: how long entries may be kept. */
-export const dayChoices = [30, 90, 180, 365];
+export const dayChoices = [30, 60, 90];
 
 /** AuditWords.who: "Local owner · MacBook Pro"; a bot's names the event that started it. */
 export function who(actor: AuditActor): string {

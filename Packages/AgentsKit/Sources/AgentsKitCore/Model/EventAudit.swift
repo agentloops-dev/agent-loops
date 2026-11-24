@@ -102,7 +102,7 @@ public extension DaemonAPI.Method {
 /// page's are `Web/src/model/audit.ts`).
 public enum AuditWords {
     /// The choices for how long entries are kept.
-    public static let dayChoices = [30, 90, 180, 365]
+    public static let dayChoices = [30, 60, 90]
 
     /// "Local owner · MacBook Pro": the person, then the client they used; a bot's names
     /// the event that started it.

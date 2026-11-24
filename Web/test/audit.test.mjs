@@ -56,6 +56,6 @@ test("a shorter time says what it deletes (#2067)", () => {
     "Everyone's entries older than 30 days are deleted in a day (up to 335 days of them, 2 entries now). To keep them, choose 365 days again before then.");
   assert.equal(a.shorterMessage(2, 1, null),
     "Everyone's entries older than 1 day are deleted in a day (up to 1 day of them). To keep them, choose 2 days again before then.");
-  assert.deepEqual(a.choices(90), [30, 90, 180, 365]);
-  assert.deepEqual(a.choices(7), [7, 30, 90, 180, 365]);
+  assert.deepEqual(a.choices(90), [30, 60, 90]);
+  assert.deepEqual(a.choices(7), [7, 30, 60, 90]);
 });

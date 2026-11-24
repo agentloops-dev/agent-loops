@@ -215,7 +215,7 @@ the other copies of the control plane learn that it went.
 
 | Records | What they keep | How long, how large | Applied |
 | --- | --- | --- | --- |
-| Audit events | Who did what (see [Security overview](security-overview.md#who-did-what)) | 90 days by default; an admin sets 1 to 3,650 days (hosted: 7 or 90). No size limit a day. | Hourly, by day |
+| Audit events | Who did what (see [Security overview](security-overview.md#who-did-what)) | A log store (#6755). 90 days by default; an admin sets 1 to 90 days (hosted: 7 or 90). At most 1,000,000 entries, of at most 16 KiB each: the oldest over that go, even when they are newer than the days set. A longer text in an entry is cut. No roll-up: the long copy is the SIEM sink's. | Hourly, oldest first; before the hour at 2,000,000 entries |
 | Change events between copies | What changed, when the control plane has several copies | 1 day, in `v1/mesh/events/` (#3648) | Hourly, by day |
 | Audit seals and sinks | Each day's chain head; up to 4 SIEM sinks with sealed tokens | With the day; 4 sinks | Hourly |
 | Keys | The sealed control key and the previous one; the sealed key for server backups | 2; the previous one 30 days | — |

@@ -25,7 +25,7 @@ const (
 	mostPerSweep      = 1000
 	// Between two rounds of one hour's sweep, while a round stops at mostPerSweep (#2291).
 	sweepPause     = 5 * time.Second
-	eventsPrefix   = "v1/events/"
+	eventsPrefix   = audit.Prefix
 	codesPrefix    = "v1/codes/"
 	sweptDayLayout = "2006-01-02"
 )
@@ -185,16 +185,22 @@ func sweepAllEvents(ctx context.Context, rs *records.Records, now time.Time, mos
 	left := most
 	total := 0
 	// Events, by the day in their key: the audit's days (#996), or the days before a
-	// shorter time for a day after it (#2067).
-	cutoff := audit.Cutoff(audit.SweepDays(rs.Settings(), now), now)
-	n, err := events.sweep(ctx, s, cutoff, left)
+	// shorter time for a day after it (#2067). Then the oldest over the count (#6755).
+	days := audit.SweepDays(rs.Settings(), now)
+	if events.log == nil {
+		var err error
+		if events.log, err = audit.Open(s, nil); err != nil {
+			return total, err
+		}
+	}
+	n, err := events.log.Sweep(ctx, now, now.Add(-time.Duration(days)*24*time.Hour), left)
 	total += n
 	left -= n
 	if err != nil {
 		return total, err
 	}
 	// The audit chain's seals (#1001), a day's each, go with their day's entries.
-	n, err = audit.SweepSeals(ctx, s, cutoff)
+	n, err = audit.SweepSeals(ctx, s, audit.Cutoff(days, now))
 	total += n
 	left -= n
 	if err != nil {
@@ -601,12 +607,11 @@ func dateTombstone(ctx context.Context, s store.Store, key string, object *store
 	return true, nil
 }
 
-// eventSweep is what one sweep leaves the next. oldest is the oldest day that may still
-// hold events, so a sweep lists only the days that have expired, a day each, not every
-// day the audit keeps (#2053); the first sweep finds it from one list of every event.
+// eventSweep is what one sweep leaves the next. log is the audit's entries, which knows how
+// many each day holds, so a sweep does not list every day the audit keeps (#2053, #6755).
 // strays is when the sweep first saw each probe and mark (#3748), only those still there.
 type eventSweep struct {
-	oldest string
+	log    *store.DayLog
 	strays map[string]time.Time
 }
 
@@ -638,43 +643,6 @@ func (e *eventSweep) sweepStrays(ctx context.Context, s store.Store, now time.Ti
 		}
 	}
 	e.strays = seen
-	return deleted, nil
-}
-
-// sweep deletes, at most most, the events of each day before cutoff, from the oldest,
-// and says how many it deleted.
-func (e *eventSweep) sweep(ctx context.Context, s store.Store, cutoff string, most int) (int, error) {
-	if e.oldest == "" {
-		all, err := s.List(ctx, eventsPrefix)
-		if err != nil {
-			return 0, err
-		}
-		e.oldest = cutoff
-		for _, k := range all {
-			// Sorted, so the first that names a day names the oldest.
-			if day := audit.KeyDay(k.Key); audit.NextDay(day) != "" {
-				e.oldest = min(day, cutoff)
-				break
-			}
-		}
-	}
-	deleted := 0
-	for e.oldest < cutoff && deleted < most {
-		keys, err := s.List(ctx, audit.DayFolder(e.oldest))
-		if err != nil {
-			return deleted, err
-		}
-		for _, k := range keys {
-			if deleted >= most {
-				return deleted, nil
-			}
-			if err := s.Delete(ctx, k.Key); err != nil {
-				return deleted, err
-			}
-			deleted++
-		}
-		e.oldest = audit.NextDay(e.oldest)
-	}
 	return deleted, nil
 }
 
@@ -839,6 +807,14 @@ func (s *Service) sweepServing(events *eventSweep, backupsSwept *string) (sweepR
 	return report, err
 }
 
+// askSweep asks for a sweep before the hour: a store is past twice its limit (#6755).
+func (s *Service) askSweep(context.Context) {
+	select {
+	case s.sweepSoon <- struct{}{}:
+	default:
+	}
+}
+
 // sweepEveryHour runs the sweep once an hour, the first a minute after start (#174).
 func (s *Service) sweepEveryHour() {
 	select {
@@ -848,7 +824,7 @@ func (s *Service) sweepEveryHour() {
 	}
 	t := time.NewTicker(sweepEvery)
 	defer t.Stop()
-	var events eventSweep
+	events := eventSweep{log: s.auditEntries}
 	backupsSwept := ""
 	for {
 		// Only while serving: a receiving or forwarding copy leaves the store alone.
@@ -866,6 +842,7 @@ func (s *Service) sweepEveryHour() {
 		select {
 		case <-s.stop:
 			return
+		case <-s.sweepSoon:
 		case <-t.C:
 		}
 	}

@@ -133,7 +133,6 @@
 1 Go/internal/controllink/personkey.go os.WriteFile
 1 Go/internal/controllink/personkeypin.go os.WriteFile
 1 Go/internal/controlplane/approvals.go v1/approvals
-1 Go/internal/controlplane/audit/audit.go v1/events
 1 Go/internal/controlplane/audit/chain.go v1/audit-seals
 1 Go/internal/controlplane/auditing_sinks.go v1/audit-sinks
 2 Go/internal/controlplane/backups.go v1/backups
@@ -211,7 +210,6 @@
 2 Go/internal/controlplane/storecopy.go v1/leases
 1 Go/internal/controlplane/storeopen.go store.NewFolder
 1 Go/internal/controlplane/sweep.go v1/codes
-1 Go/internal/controlplane/sweep.go v1/events
 1 Go/internal/controlplane/sweep.go v1/mesh
 1 Go/internal/controlplane/usersettings/usersettings.go v1/users
 1 Go/internal/controlplane/warmpool.go v1/warm-pools

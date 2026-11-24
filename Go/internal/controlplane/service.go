@@ -193,6 +193,10 @@ type Service struct {
 	auditChain *audit.Chain
 	// auditWriter keeps the entries, one goroutine for all (#2433).
 	auditWriter *audit.Writer
+	// auditEntries is the log they are kept in, and sweepSoon asks for a sweep before the
+	// hour (#6755).
+	auditEntries *store.DayLog
+	sweepSoon    chan struct{}
 	auditSinks  *auditSinkState
 	// Servers' backups (#1815).
 	backups *backupStore
@@ -317,6 +321,11 @@ func New(cfg Config) (*Service, error) {
 		reads: readGate{every: readAgainEvery}, metrics: metrics}
 	s.sources = newSources(cfg.TrustedProxies, s.log)
 	s.auditChain, s.auditSinks = audit.NewChain(s.copyID), newAuditSinkState(cfg.Name, s.copyID)
+	s.sweepSoon = make(chan struct{}, 1)
+	s.auditEntries, err = audit.Open(cfg.Store, s.askSweep)
+	if err != nil {
+		return nil, err
+	}
 	s.auditWriter = audit.NewWriter(s.auditLog(), s.log)
 	s.downloads, s.socketsMost, s.refusals = newAddressRates(), socketsMost, newRefusalLog(s.log)
 	if cfg.Push != nil {
