@@ -214,7 +214,7 @@ func (d *Daemon) reportDirs() []string {
 	var out []string
 	for _, dir := range dirs {
 		// One directory by two paths is one; one that is not there has no reports.
-		real, err := filepath.EvalSymlinks(dir)
+		path, err := filepath.EvalSymlinks(dir)
 		if err == nil && !seen[path] {
 			seen[path] = true
 			out = append(out, path)
