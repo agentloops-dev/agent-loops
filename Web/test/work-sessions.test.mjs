@@ -4,7 +4,8 @@ import assert from "node:assert/strict";
 import { load } from "./load.mjs";
 
 const s = await load("src/model/workSessions.ts");
-const nav = await load("src/model/nav.ts");
+const nav = await load("test/nav-entry.ts");
+nav.preferencesSaid({ "flag:work": true, "flag:docs": true });
 
 const node = (n) => ({ kind: "issue", ref: `github:alexec/Agents#${n}` });
 const agent = (id, labels, state, at = 0) => ({ id, state, createdAt: at, labels: labels.map((value) => ({ value, owner: "agent", addedAt: 0 })) });

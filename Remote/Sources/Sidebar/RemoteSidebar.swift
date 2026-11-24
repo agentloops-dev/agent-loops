@@ -189,17 +189,20 @@ struct RemoteSidebar: View {
                 // Work (#3119, #3256): a row per list, as the window has them (#4004), above
                 // Status, and Timeline after Releases, as the window has it (#6044).
                 // No Deploys: it is Mac + web.
-                Section(isExpanded: $showsWork) {
-                    ForEach(WorkList.Kind.allCases.filter { $0 != .deploy }) { kind in
-                        HStack { Text(kind.title); Spacer() }
-                            .accessibilityHint(kind.sidebarHelp)
-                            .activityIcon(kind.sidebarIcon).appText(.supporting).paperTag(SidebarItem.work(kind))
+                // Only with Work's flag on (#6572): off, no list is read ahead either.
+                if model.flags.isOn(.work) {
+                    Section(isExpanded: $showsWork) {
+                        ForEach(WorkList.Kind.allCases.filter { $0 != .deploy }) { kind in
+                            HStack { Text(kind.title); Spacer() }
+                                .accessibilityHint(kind.sidebarHelp)
+                                .activityIcon(kind.sidebarIcon).appText(.supporting).paperTag(SidebarItem.work(kind))
+                        }
+                        // Work shown: its first list read ahead, so the page draws at once (#4930), and again when a
+                        // machine joins or a folder is added (#6152).
+                        .task(id: model.workSource) { await model.prefetchWork() }
+                    } header: {
+                        Text("Work")
                     }
-                    // Work shown: its first list read ahead, so the page draws at once (#4930), and again when a
-                    // machine joins or a folder is added (#6152).
-                    .task(id: model.workSource) { await model.prefetchWork() }
-                } header: {
-                    Text("Work")
                 }
 
                 // Pages about all the work rather than one folder, above the smart
@@ -611,9 +614,9 @@ private struct RemoteReviewPullRow: View {
         Task { await model.dismissReview(pull, in: folder.folder) }
     }
 
-    /// Opens its Work page, else its forge page, and draws it read from then on (#3464).
+    /// Opens its Work page, else (also with Work off, #6572) its forge page, and draws it read from then on (#3464).
     private func open() {
-        if let ref = pull.ref { model.showWork(WorkPlace(kind: .pr, ref: ref)) } else { openURL(pull.url) }
+        if model.flags.isOn(.work), let ref = pull.ref { model.showWork(WorkPlace(kind: .pr, ref: ref)) } else { openURL(pull.url) }
         Task { await model.openReview(pull, in: folder.folder) }
     }
 }

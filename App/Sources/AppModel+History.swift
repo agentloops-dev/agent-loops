@@ -31,7 +31,7 @@ extension AppModel {
     }
 
     /// Whether a place can still be shown: its session is not archived or deleted, its folder
-    /// not removed. Every page about all the work is always there.
+    /// not removed, its feature not turned off (#6572). Every other page is always there.
     func isThere(_ place: PagePlace) -> Bool {
         switch place.item {
         case .session(let id):
@@ -40,6 +40,12 @@ extension AppModel {
         case .folder(let key), .workflow(_, let key), .pin(_, let key), .archivedSessions(let key),
              .archivedWorkflows(let key), .folderMCPServers(let key), .review(_, let key):
             return work.folder(key).map { !$0.folder.isArchived } ?? false
+        case .work:
+            return flags.isOn(.work)
+        case .docs:
+            return flags.isOn(.docs)
+        case .dashboard:
+            return flags.isOn(.dashboard)
         default:
             return true
         }

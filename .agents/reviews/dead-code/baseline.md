@@ -6,7 +6,7 @@ false positive. Do not add broad suppressions to make a scan quiet.
 
 Tool pins for the first scan:
 
-- Periphery: pinned in `scripts/lint.sh` since #6336 (3.8.0)
+- Periphery: removed in #6526 (was 3.8.0)
 - `golang.org/x/tools/cmd/deadcode` v0.49.0
 - Knip: pinned in `Web/package.json` since #6337 (6.45.1)
 
@@ -35,11 +35,10 @@ Added 2026-10-29 (`2026-10-29.md`, the first complete `GOOS=darwin -test` scan):
 
 ### Periphery (Swift)
 
-- Since #6336, Periphery is a gate on every PR (`scripts/lint.sh periphery`, in
-  `swift-lint:lint`), not this review's: a Swift declaration kept on purpose is a line in
-  `.periphery-allowed.txt`, with why. Of the entries that were here, the whole-program scan no
-  longer reports `isAntigravityUsageLimit`; `Paper.forgeWaitingWash` and `forgeWaitingRule`
-  are in the allowlist; and `run_periphery` runs `xcodegen generate` itself (added 2026-11-19).
+- Periphery was a gate from #6336 until #6526 (2026-11-21) removed it. There is no Swift
+  dead-code gate, and `.periphery-allowed.txt` is gone with its reasons (its last version
+  is at `4d0babef5`). A Swift declaration kept on purpose is a line in this file again
+  (changed 2026-11-24).
 
 ### Knip (Web)
 
@@ -98,3 +97,24 @@ Added 2026-10-29 (`2026-10-29.md`, the first complete `GOOS=darwin -test` scan):
   it runs in a clean environment. Without it, the Mac's newer Go runs `go list` for a
   deadcode built with the older one, and the scan fails with "packages contain errors"
   (added 2026-11-19).
+- `Packages/AgentsKit/Sources/AgentsKitCore/Model/AppTool.swift` `retiredAgentTools`,
+  `retiredWriterTools`, `retiredPublishEvent`, `retiredPins` and `retiredEndOfTurn`
+  (read in `isServedByTheApp` and `PermissionRequest.swift`): the names of tools that old
+  conversations called, so that they draw as the app's own calls. Live while such a
+  conversation can be kept: 90 days (#6706). The newest is #6623 (2026-11-22), so
+  propose the removal of each list 90 days after its tools went (added 2026-11-24).
+- `Go/internal/agentsd/retention.go` `RetentionKeepForForever` in `setRetention`, and
+  `RetentionSettings.KeepFor.forever` in Swift (#6706): an older client or host of another
+  version, live in v0.x. `Go/cmd/loops/lock.go` `readLock`'s `methodNotFound` ("a control
+  plane from before the lock") is the same: peers of different versions (added 2026-11-24).
+- `Go/internal/agentsd/trailerhook.go` `refreshTrailerHooks`: each start also gives every
+  worktree the hooks folder's names of now, not only those from before #6529
+  (added 2026-11-24).
+- `Go/internal/controlplane/records/types.go`, `router.go` and Swift's `Grant.swift` "a
+  legacy client's bare lines": the Remote sends bare lines (#3225, #3235); live
+  (added 2026-11-24).
+- `WireRef.legacy` and the web page's `legacyRef`: they turn a ref to the form that the
+  words and addresses are made from (before #4800), for refs of now; live
+  (added 2026-11-24).
+- `App/Sources/Walk/WalkAX.swift` `legacy`, `SimDeviceLegacyHIDClient` and
+  `ssh.FingerprintLegacyMD5`: names of outside APIs (added 2026-11-24).
