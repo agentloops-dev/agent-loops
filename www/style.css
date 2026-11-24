@@ -3,7 +3,7 @@
    which scripts/design.sh gen makes from design/tokens.json: this file keeps only rules.
    The page's CSP allows no inline style, so the inline SVGs' rules and keyframes are here too,
    with a prefix for each animation (ep- for "A feature builds and deploys itself", lp- for the loop, fm- for "Fix main, while
-   you sleep", er- for "An error in production goes back into work"). */
+   you sleep", er- for "An error in production goes back into work", ln- for lineage, rp- for reports). */
 
 :root {
   /* Words that come second: a caption, the small print, the nav. The web page's own mix. */
@@ -750,6 +750,99 @@ h3 { font-size: 1.05rem; margin: 0 0 0.4em; }
 .er-tap { transform-box: fill-box; transform-origin: center; animation-name: er-tap; }
 @keyframes er-tap { 0%, 64% { transform: none; } 66% { transform: scale(0.9); } 68%, 100% { transform: none; } }
 
+/* 3. Work management (#6857): the points, and Work, Next as a mock. */
+.points { list-style: none; margin: 0; padding: 0; display: grid; gap: 18px; align-content: center; }
+.points li { padding-left: 16px; border-left: 3px solid var(--accent); color: var(--paper-secondary); }
+.points b { color: var(--paper-ink); }
+.nx { list-style: none; margin: 0; padding: 0; }
+.nx li { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--paper-rule); }
+.nx li:first-child { padding-top: 0; }
+.nx-n { flex: none; width: 18px; text-align: right; color: var(--paper-tertiary); font-variant-numeric: tabular-nums; }
+.nx-t { flex: 1; min-width: 0; display: grid; }
+.nx-t .small { font-size: var(--type-fine); }
+.pri { padding: 1px 10px; border: 1.5px solid var(--paper-edge); border-radius: var(--radius-pill); font-size: var(--type-fine); font-weight: 700; }
+.pri.high { border-color: var(--tint-failure); color: var(--tint-failure); }
+.pri.medium { border-color: var(--tint-attention); color: var(--tint-attention); }
+.pri.low { color: var(--paper-tertiary); }
+
+/* 7. Lineage (ln-, #6857): the graph draws itself, then each question lights its answer. 24 s a
+   loop. */
+.anim.ln-pair { max-width: none; margin: 28px 0 0; display: grid; grid-template-columns: 1fr 2fr; gap: 20px; align-items: center; }
+.ln-qs { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.ln-qs li { display: grid; gap: 2px; padding: 12px 16px; border: 1px solid var(--paper-rule); border-radius: var(--radius-card); background: var(--paper-raised); }
+.ln-mock { min-width: 0; }
+.ln-mock .mock-bar { margin: 0; }
+.ln-scroll { padding: 14px; }
+.ln { font-family: var(--font-text); font-size: 13px; }
+.ln text { text-anchor: middle; fill: var(--paper-ink); font-weight: 600; }
+.ln .ln-sub { font-size: 11.5px; font-weight: 400; fill: var(--paper-secondary); }
+.ln-edge { fill: none; stroke: var(--paper-edge); stroke-width: 1.5; }
+.ln-node rect { fill: var(--paper-raised); stroke: var(--paper-edge); stroke-width: 1.5; }
+.ln-ses rect { fill: var(--paper-wash); }
+.ln-ses text { font-size: 12px; font-weight: 400; }
+.ln-feat rect { stroke: var(--accent); }
+.ln-ok rect { stroke: var(--tint-vouched); }
+.ln-rel rect { stroke: var(--tint-attention); }
+.ln-bad rect { stroke: var(--tint-failure); }
+.ln-hot { fill: none; stroke: var(--accent); stroke-width: 3; opacity: 0; }
+.ln-hot rect { fill: var(--wash-accent); }
+.ln-a { animation-duration: 24s; animation-iteration-count: infinite; animation-fill-mode: both; animation-timing-function: ease-out; }
+.js .anim:not(.playing) .ln-a { animation-name: none; }
+.js .anim:not(.playing) .ln-in { opacity: 0; }
+.ln-c1 { animation-name: ln-c1; }
+@keyframes ln-c1 { 0% { opacity: 0; transform: translateX(-6px); } 3%, 96% { opacity: 1; transform: none; } 100% { opacity: 0; } }
+.ln-c2 { animation-name: ln-c2; }
+@keyframes ln-c2 { 0%, 3% { opacity: 0; transform: translateX(-6px); } 6%, 96% { opacity: 1; transform: none; } 100% { opacity: 0; } }
+.ln-c3 { animation-name: ln-c3; }
+@keyframes ln-c3 { 0%, 6% { opacity: 0; transform: translateX(-6px); } 9%, 96% { opacity: 1; transform: none; } 100% { opacity: 0; } }
+.ln-c4 { animation-name: ln-c4; }
+@keyframes ln-c4 { 0%, 9% { opacity: 0; transform: translateX(-6px); } 12%, 96% { opacity: 1; transform: none; } 100% { opacity: 0; } }
+.ln-c5 { animation-name: ln-c5; }
+@keyframes ln-c5 { 0%, 12% { opacity: 0; transform: translateX(-6px); } 15%, 96% { opacity: 1; transform: none; } 100% { opacity: 0; } }
+.ln-c6 { animation-name: ln-c6; }
+@keyframes ln-c6 { 0%, 15% { opacity: 0; transform: translateX(-6px); } 18%, 96% { opacity: 1; transform: none; } 100% { opacity: 0; } }
+.ln-c7 { animation-name: ln-c7; }
+@keyframes ln-c7 { 0%, 18% { opacity: 0; transform: translateX(-6px); } 21%, 96% { opacity: 1; transform: none; } 100% { opacity: 0; } }
+.ln-h1 { animation-name: ln-h1; }
+@keyframes ln-h1 { 0%, 24% { opacity: 0; } 26%, 40% { opacity: 1; } 42%, 100% { opacity: 0; } }
+.ln-k1 { animation-name: ln-k1; }
+@keyframes ln-k1 { 0%, 24% { border-color: var(--paper-rule); background: var(--paper-raised); } 26%, 40% { border-color: var(--accent); background: var(--wash-accent); } 42%, 100% { border-color: var(--paper-rule); background: var(--paper-raised); } }
+.ln-h2 { animation-name: ln-h2; }
+@keyframes ln-h2 { 0%, 42% { opacity: 0; } 44%, 58% { opacity: 1; } 60%, 100% { opacity: 0; } }
+.ln-k2 { animation-name: ln-k2; }
+@keyframes ln-k2 { 0%, 42% { border-color: var(--paper-rule); background: var(--paper-raised); } 44%, 58% { border-color: var(--accent); background: var(--wash-accent); } 60%, 100% { border-color: var(--paper-rule); background: var(--paper-raised); } }
+.ln-h3 { animation-name: ln-h3; }
+@keyframes ln-h3 { 0%, 60% { opacity: 0; } 62%, 76% { opacity: 1; } 78%, 100% { opacity: 0; } }
+.ln-k3 { animation-name: ln-k3; }
+@keyframes ln-k3 { 0%, 60% { border-color: var(--paper-rule); background: var(--paper-raised); } 62%, 76% { border-color: var(--accent); background: var(--wash-accent); } 78%, 100% { border-color: var(--paper-rule); background: var(--paper-raised); } }
+.ln-h4 { animation-name: ln-h4; }
+@keyframes ln-h4 { 0%, 78% { opacity: 0; } 80%, 94% { opacity: 1; } 96%, 100% { opacity: 0; } }
+.ln-k4 { animation-name: ln-k4; }
+@keyframes ln-k4 { 0%, 78% { border-color: var(--paper-rule); background: var(--paper-raised); } 80%, 94% { border-color: var(--accent); background: var(--wash-accent); } 96%, 100% { border-color: var(--paper-rule); background: var(--paper-raised); } }
+
+/* 11. Reports (#6857): three mocks. The bars grow when they come in. */
+.kpis { grid-template-columns: 1fr 1fr; gap: 18px 12px; }
+.kpis p { display: grid; }
+.kpis .small { font-size: var(--type-fine); }
+.kpis b { font-size: var(--type-title); font-variant-numeric: tabular-nums; }
+.rp { width: 100%; height: auto; display: block; font-family: var(--font-text); }
+.rp text { font-size: 11px; text-anchor: middle; fill: var(--paper-tertiary); }
+.rp-run { fill: var(--accent); }
+.rp-run.rp-slow { fill: var(--tint-failure); }
+.rp-wait { fill: var(--paper-edge); }
+.rp-bar { transform-origin: 0 116px; }
+.js .part .rp-bar { transform: scaleY(0); }
+.js .part.in .rp-bar { transform: none; transition: transform 0.9s ease-out 0.3s; }
+.rp-key { display: flex; gap: 16px; }
+.rp-key span { display: flex; align-items: center; gap: 6px; }
+.rp-key i { width: 10px; height: 10px; border-radius: var(--radius-code); }
+.k-run { background: var(--accent); }
+.k-wait { background: var(--paper-edge); }
+.rp-rows { gap: 0; }
+.rp-rows p { display: flex; justify-content: space-between; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--paper-rule); }
+.rp-rows p:first-child { padding-top: 0; }
+.rp-rows p:last-child { border-bottom: 0; padding-bottom: 0; }
+
 /* Less motion: no animation, and each picture drawn as it ends (every pull request merged, the feature deployed and healthy). */
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
@@ -763,6 +856,9 @@ h3 { font-size: 1.05rem; margin: 0 0 0.4em; }
   .fm-a, .fm-pulse, .er-a, .js .anim:not(.playing) .fm-a, .js .anim:not(.playing) .er-a { animation: none; }
   .fm-a, .er-n1, .er-n2, .er-n3, .er-n4, .er-n5, .er-n6, .er-n7, .er-alarm { opacity: 1; }
   .er-phone { opacity: 0; }
+  .ln-a, .js .anim:not(.playing) .ln-a { animation: none; }
+  .ln-in, .js .anim:not(.playing) .ln-in { opacity: 1; }
+  .js .part .rp-bar, .js .part.in .rp-bar { transform: none; transition: none; }
 }
 
 /* The footer */
@@ -776,6 +872,7 @@ footer nav a { text-decoration: none; }
   .grid2, .anim2 { grid-template-columns: 1fr; }
   .anim2 .anim { max-width: 640px; margin: 0 auto; width: 100%; }
   .uc { grid-template-columns: repeat(2, 1fr); }
+  .anim.ln-pair { grid-template-columns: 1fr; }
 }
 @media (max-width: 640px) {
   .top .wrap { gap: 14px; }
@@ -792,4 +889,6 @@ footer nav a { text-decoration: none; }
   /* The animation keeps a size that can be read, and scrolls to the side. */
   .anim { overflow-x: auto; }
   .anim svg { min-width: 600px; }
+  .anim.ln-pair { overflow-x: visible; }
+  .ln-scroll { overflow-x: auto; }
 }

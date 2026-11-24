@@ -216,6 +216,34 @@
   </figure>
 </div></section>
 
+<!-- 3. Work management, in your tracker (#6857). "Feature", not "epic" (Alex, PR #6862). Next
+     lists only the work that is ready, as Work, Next does. -->
+<section class="page" id="work"><div class="wrap">
+  <h2>Work management, in your tracker</h2>
+  <p class="lede">Your issues and pull requests stay where they are, in GitHub, GitLab, Bitbucket, Jira, Linear or Azure Boards. Agent Loops reads them, puts them in one order, and has agents work through them. There is no second board to keep up to date.</p>
+  <div class="grid2">
+    <ul class="points">
+      <li><b>One queue.</b> Next puts the work that is ready in one order: priority first, then the milestone's date, then age.</li>
+      <li><b>Each feature has a lead.</b> A lead agent starts an agent for each issue as soon as nothing blocks it.</li>
+      <li><b>Know what it will take.</b> Estimates come from your own finished work, and a forecast gives the dates a feature is likely to land between.</li>
+      <li><b>See who is on it.</b> Issues, pull requests, releases, deploys and a timeline, and each issue and pull request says when an agent is working on it or needs you.</li>
+    </ul>
+    <figure class="mock">
+      <figcaption class="mock-bar"><span class="mock-lights" aria-hidden="true"><i></i><i></i><i></i></span>Work · Next</figcaption>
+      <div class="mock-body">
+        <ol class="nx">
+          <li><span class="nx-n">1</span><span class="nx-t"><b>Login fails after midnight</b><span class="small">&#35;501 · bug · size S</span></span><span class="pri high">high</span></li>
+          <li><span class="nx-n">2</span><span class="nx-t"><b>Gift card at checkout</b><span class="small">&#35;415 · Gift cards · size M</span></span><span class="pri medium">medium</span></li>
+          <li><span class="nx-n">3</span><span class="nx-t"><b>Search on the order page</b><span class="small">&#35;418 · Order search · size S</span></span><span class="pri medium">medium</span></li>
+          <li><span class="nx-n">4</span><span class="nx-t"><b>Faster image upload</b><span class="small">&#35;420 · size M · oldest</span></span></li>
+          <li><span class="nx-n">5</span><span class="nx-t"><b>Retry a failed webhook</b><span class="small">&#35;421 · size XS</span></span><span class="pri low">low</span></li>
+        </ol>
+        <p class="small nx-hold">On hold: &#35;398 New price list</p>
+      </div>
+    </figure>
+  </div>
+</div></section>
+
 <!-- 4. Agents that start on events, and wait for them (#6856). The workflow is a short form of
      this repo's own .agents/workflows/fix-main.md. -->
 <section class="page" id="events"><div class="wrap">
@@ -366,6 +394,78 @@ Fix it on a pull request of its own.</code></pre>
     <div class="uc-card"><svg class="uc-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg><h3>Release</h3><p>You say go, and an agent writes the notes, runs the checks, tags the version and sends the store build.</p></div>
     <div class="uc-card"><svg class="uc-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/></svg><h3>Daily checks</h3><p>Every few hours, an agent looks for a red build, a stuck pull request or a missed workflow, and tells you.</p></div>
   </div>
+</div></section>
+
+<!-- 7. Lineage (#6857): the graph (ln-) draws itself from the feature to production and back,
+     then lights the part that answers each question in turn. -->
+<section class="page" id="lineage"><div class="wrap">
+  <h2>Lineage: know what really went into your delivery</h2>
+  <p class="lede">Agent Loops links every issue, agent session, pull request, release, deploy and error as the work happens. So you can ask the questions a status meeting cannot answer.</p>
+  <figure class="anim ln-pair">
+    <ul class="ln-qs">
+      <li class="ln-a ln-ask ln-k1"><b>How much did this feature really cost?</b><span class="small">Checkout v2: 5 agents, $31.40 and 9 hours of agent time.</span></li>
+      <li class="ln-a ln-ask ln-k2"><b>What went into this release?</b><span class="small">v0.42: 3 pull requests for 3 issues, and no reverts.</span></li>
+      <li class="ln-a ln-ask ln-k3"><b>Where is my change live?</b><span class="small">PR &#35;431 has been in production since 14:02.</span></li>
+      <li class="ln-a ln-ask ln-k4"><b>What broke, and what fixed it?</b><span class="small">A Sentry issue, first seen in v0.42. PR &#35;441 fixed it, in v0.42.1.</span></li>
+    </ul>
+    <div class="mock ln-mock"><p class="mock-bar"><span class="mock-lights" aria-hidden="true"><i></i><i></i><i></i></span>Lineage · Checkout v2</p>
+      <div class="ln-scroll"><svg class="ln" viewBox="0 0 718 360" role="img" aria-labelledby="ln-title ln-desc" xmlns="http://www.w3.org/2000/svg">
+        <title id="ln-title">The lineage of one feature</title>
+        <desc id="ln-desc">The feature Checkout v2 cost $31.40. It links to issues 412, 413 and 414, which link to five agent sessions that cost $8.20, $3.10, $11.40, $5.30 and $3.40. The sessions link to pull requests 430, 431 and 433, all merged. They went into release v0.42, in production since 14:02. A Sentry issue seen in v0.42 became bug 440, which pull request 441 fixed in v0.42.1. Four questions light up their part of the graph in turn: the cost, what went into the release, where a change is live, and what broke.</desc>
+        <g class="ln-a ln-in ln-c1"><g class="ln-node ln-feat"><rect x="14" y="128" width="96" height="44" rx="8"/><text x="62" y="147">Checkout v2</text><text class="ln-sub" x="62" y="163">$31.40</text></g></g>
+        <g class="ln-a ln-in ln-c2"><path class="ln-edge" d="M110 150 C125 150 125 70 140 70 M110 150 H140 M110 150 C125 150 125 230 140 230"/><g class="ln-node "><rect x="140" y="54" width="64" height="32" rx="8"/><text x="172" y="74">&#35;412</text></g><g class="ln-node "><rect x="140" y="134" width="64" height="32" rx="8"/><text x="172" y="154">&#35;413</text></g><g class="ln-node "><rect x="140" y="214" width="64" height="32" rx="8"/><text x="172" y="234">&#35;414</text></g></g>
+        <g class="ln-a ln-in ln-c3"><path class="ln-edge" d="M204 70 C220 70 220 46 236 46 M204 70 C220 70 220 96 236 96 M204 150 H236 M204 230 C220 230 220 204 236 204 M204 230 C220 230 220 254 236 254"/><g class="ln-node ln-ses"><rect x="236" y="30" width="106" height="32" rx="16"/><text x="289" y="50">agent · $8.20</text></g><g class="ln-node ln-ses"><rect x="236" y="80" width="106" height="32" rx="16"/><text x="289" y="100">agent · $3.10</text></g><g class="ln-node ln-ses"><rect x="236" y="134" width="106" height="32" rx="16"/><text x="289" y="154">agent · $11.40</text></g><g class="ln-node ln-ses"><rect x="236" y="188" width="106" height="32" rx="16"/><text x="289" y="208">agent · $5.30</text></g><g class="ln-node ln-ses"><rect x="236" y="238" width="106" height="32" rx="16"/><text x="289" y="258">agent · $3.40</text></g></g>
+        <g class="ln-a ln-in ln-c4"><path class="ln-edge" d="M342 46 C358 46 358 70 374 70 M342 96 C358 96 358 70 374 70 M342 150 H374 M342 204 C358 204 358 230 374 230 M342 254 C358 254 358 230 374 230"/><g class="ln-node ln-ok"><rect x="374" y="54" width="74" height="32" rx="8"/><text x="411" y="74">PR &#35;430</text></g><g class="ln-node ln-ok"><rect x="374" y="134" width="74" height="32" rx="8"/><text x="411" y="154">PR &#35;431</text></g><g class="ln-node ln-ok"><rect x="374" y="214" width="74" height="32" rx="8"/><text x="411" y="234">PR &#35;433</text></g></g>
+        <g class="ln-a ln-in ln-c5"><path class="ln-edge" d="M448 70 C465 70 465 150 482 150 M448 150 H482 M448 230 C465 230 465 150 482 150"/><g class="ln-node ln-rel"><rect x="482" y="134" width="70" height="32" rx="8"/><text x="517" y="154">v0.42</text></g></g>
+        <g class="ln-a ln-in ln-c6"><path class="ln-edge" d="M552 150 H588"/><g class="ln-node ln-ok"><rect x="588" y="128" width="116" height="44" rx="8"/><text x="646" y="147">production</text><text class="ln-sub" x="646" y="163">since 14:02</text></g></g>
+        <g class="ln-a ln-in ln-c7"><path class="ln-edge" d="M646 172 V298 M588 320 H556 M478 320 H448 M374 320 H342"/><g class="ln-node ln-bad"><rect x="588" y="298" width="116" height="44" rx="8"/><text x="646" y="317">Sentry issue</text><text class="ln-sub" x="646" y="333">seen in v0.42</text></g><g class="ln-node "><rect x="478" y="304" width="78" height="32" rx="8"/><text x="517" y="324">&#35;440 bug</text></g><g class="ln-node ln-ok"><rect x="374" y="304" width="74" height="32" rx="8"/><text x="411" y="324">PR &#35;441</text></g><g class="ln-node ln-rel"><rect x="236" y="304" width="106" height="32" rx="8"/><text x="289" y="324">v0.42.1</text></g></g>
+        <g class="ln-a ln-hot ln-h1"><path d="M110 150 C125 150 125 70 140 70 M110 150 H140 M110 150 C125 150 125 230 140 230 M204 70 C220 70 220 46 236 46 M204 70 C220 70 220 96 236 96 M204 150 H236 M204 230 C220 230 220 204 236 204 M204 230 C220 230 220 254 236 254"/><rect x="14" y="128" width="96" height="44" rx="8"/><rect x="140" y="54" width="64" height="32" rx="8"/><rect x="140" y="134" width="64" height="32" rx="8"/><rect x="140" y="214" width="64" height="32" rx="8"/><rect x="236" y="30" width="106" height="32" rx="16"/><rect x="236" y="80" width="106" height="32" rx="16"/><rect x="236" y="134" width="106" height="32" rx="16"/><rect x="236" y="188" width="106" height="32" rx="16"/><rect x="236" y="238" width="106" height="32" rx="16"/></g>
+        <g class="ln-a ln-hot ln-h2"><path d="M448 70 C465 70 465 150 482 150 M448 150 H482 M448 230 C465 230 465 150 482 150"/><rect x="374" y="54" width="74" height="32" rx="8"/><rect x="374" y="134" width="74" height="32" rx="8"/><rect x="374" y="214" width="74" height="32" rx="8"/><rect x="482" y="134" width="70" height="32" rx="8"/></g>
+        <g class="ln-a ln-hot ln-h3"><path d="M448 150 H482 M552 150 H588"/><rect x="374" y="134" width="74" height="32" rx="8"/><rect x="482" y="134" width="70" height="32" rx="8"/><rect x="588" y="128" width="116" height="44" rx="8"/></g>
+        <g class="ln-a ln-hot ln-h4"><path d="M646 172 V298 M588 320 H556 M478 320 H448 M374 320 H342"/><rect x="588" y="128" width="116" height="44" rx="8"/><rect x="588" y="298" width="116" height="44" rx="8"/><rect x="478" y="304" width="78" height="32" rx="8"/><rect x="374" y="304" width="74" height="32" rx="8"/><rect x="236" y="304" width="106" height="32" rx="8"/></g>
+      </svg></div>
+    </div>
+  </figure>
+</div></section>
+
+<!-- 11. Reports (#6857): each figure is one that Reports, Delivery, Builds, Spend or Forecast
+     gives today (docs/reference/reports.md). A forecast is a range, never a point. -->
+<section class="page" id="reports"><div class="wrap">
+  <h2>Reports: see how delivery goes</h2>
+  <p class="lede">The figures come from the records your agents and your CI already make. There is no survey to fill in and no extra tool to run.</p>
+  <div class="grid3">
+    <figure class="mock">
+      <figcaption class="mock-bar"><span class="mock-lights" aria-hidden="true"><i></i><i></i><i></i></span>Delivery · DORA</figcaption>
+      <div class="mock-body kpis">
+        <p><span class="small">Lead time for changes</span><b>3.1 h</b></p>
+        <p><span class="small">Deployment frequency</span><b>6 a week</b></p>
+        <p><span class="small">Change failure rate</span><b>4%</b></p>
+        <p><span class="small">Recovery time</span><b>22 min</b></p>
+        <p><span class="small">Rework rate</span><b>7%</b></p>
+        <p><span class="small">Flow efficiency</span><b>61%</b></p>
+      </div>
+    </figure>
+    <figure class="mock">
+      <figcaption class="mock-bar"><span class="mock-lights" aria-hidden="true"><i></i><i></i><i></i></span>Builds · CI time</figcaption>
+      <div class="mock-body">
+        <svg class="rp" viewBox="0 0 304 138" role="img" aria-label="CI time for each day of a week. The run takes 16 to 22 minutes on most days, and 30 minutes on Thursday. On Wednesday the wait for a runner is longer, 9 minutes."><g class="rp-bar"><rect class="rp-run" x="8" y="55.2" width="28" height="60.8" rx="3"/><rect class="rp-wait" x="8" y="43.6" width="28" height="9.6" rx="3"/></g><text x="22" y="133">Sun</text><g class="rp-bar"><rect class="rp-run" x="50" y="48.8" width="28" height="67.2" rx="3"/><rect class="rp-wait" x="50" y="34" width="28" height="12.8" rx="3"/></g><text x="64" y="133">Mon</text><g class="rp-bar"><rect class="rp-run" x="92" y="52" width="28" height="64" rx="3"/><rect class="rp-wait" x="92" y="40.4" width="28" height="9.6" rx="3"/></g><text x="106" y="133">Tue</text><g class="rp-bar"><rect class="rp-run" x="134" y="45.6" width="28" height="70.4" rx="3"/><rect class="rp-wait" x="134" y="14.8" width="28" height="28.8" rx="3"/></g><text x="148" y="133">Wed</text><g class="rp-bar"><rect class="rp-run rp-slow" x="176" y="20" width="28" height="96" rx="3"/><rect class="rp-wait" x="176" y="8.4" width="28" height="9.6" rx="3"/></g><text x="190" y="133">Thu</text><g class="rp-bar"><rect class="rp-run" x="218" y="58.4" width="28" height="57.6" rx="3"/><rect class="rp-wait" x="218" y="46.8" width="28" height="9.6" rx="3"/></g><text x="232" y="133">Fri</text><g class="rp-bar"><rect class="rp-run" x="260" y="64.8" width="28" height="51.2" rx="3"/><rect class="rp-wait" x="260" y="56.4" width="28" height="6.4" rx="3"/></g><text x="274" y="133">Sat</text></svg>
+        <p class="small rp-key"><span><i class="k-run"></i>running</span><span><i class="k-wait"></i>waiting for a runner</span></p>
+        <p>Thursday: the <code>e2e</code> job takes 9 minutes more. See the first slow run, and the commits before it.</p>
+      </div>
+    </figure>
+    <figure class="mock">
+      <figcaption class="mock-bar"><span class="mock-lights" aria-hidden="true"><i></i><i></i><i></i></span>Spend and forecast</figcaption>
+      <div class="mock-body rp-rows">
+        <p><span>Spend this month</span><b>$412 of $600</b></p>
+        <p><span>Pull requests merged</span><b>64</b></p>
+        <p><span>Cost per merged PR</span><b>$6.44</b></p>
+        <p><span>Waste</span><b>$18</b></p>
+        <p><span>Order search lands</span><b>18 to 24 Nov</b></p>
+        <p><span>With one more agent</span><b>17 to 21 Nov</b></p>
+      </div>
+    </figure>
+  </div>
+  <p class="small events-from">There are pages for time, runtimes, adoption, workflows and estimates too, on the web. Save a view, export it as CSV, read it from your own tools with the read API, or send the figures to an OpenTelemetry collector.</p>
 </div></section>
 
 <!-- 15. Works with the tools you already use. The count comes from docs/reference/integrations.md (2026-11-22). -->
