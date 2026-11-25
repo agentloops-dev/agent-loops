@@ -64,11 +64,11 @@
 .prompt-list .prompt-row-menu { flex: none; margin-right: 0; overflow: visible; }
 .picture { max-width: 100%; height: auto; border-radius: var(--radius-control); background: var(--paper-well); }
 .picture-view { display: flex; flex-direction: column; gap: 8px; }
-.picture-view .picture { max-width: none; cursor: zoom-in; }
+.picture-view .picture { max-width: none; cursor: zoom-in; touch-action: none; }
 .picture-bar { display: flex; align-items: center; gap: 4px; }
 .picture-bar .caption { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .page-picture { max-width: 100%; height: auto; border-radius: var(--radius-control); }
-/* A Work page's image (#4011): a click opens it in the viewer. */
+/* A Work page's image (#4011), or a Markdown page's (#6624): a click opens it in the viewer. */
 .page-picture-open { padding: 0; border: 0; background: none; max-width: 100%; cursor: zoom-in; vertical-align: bottom; }
 .page-picture-open .page-picture { display: block; }
 /* The viewer, as the Mac's sheet (#4010): the image over a bar with its name, the zoom and Done. */

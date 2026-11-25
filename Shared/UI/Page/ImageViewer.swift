@@ -1,7 +1,7 @@
 import AgentsKitCore
 import SwiftUI
 
-/// A forge page's image, large, in the app (#4010): on the Mac a sheet with the image fitted
+/// A forge page's image (#4010), or one in a Markdown page (#6624), large, in the app: on the Mac a sheet with the image fitted
 /// to it, a pinch, a double-click or ⌘+ and ⌘− to zoom, Esc or Done to close; on the Remote a
 /// full-screen cover with a pinch or a double tap to zoom and a swipe down to close. No
 /// browser: the person stays here.
@@ -297,29 +297,65 @@ struct ViewedImage: Identifiable {
 }
 
 /// The images of one message or page that the viewer goes through (#4954), as each is read: an
-/// image that opens large puts itself here, and the viewer takes them in `order`.
+/// image that opens large puts itself here, and the viewer takes them in the page's order.
 @MainActor
 final class ImageGallery {
     private var read: [URL: ViewedImage.Item] = [:]
+    /// Asked for already, so one that is small or cannot be read is asked for once.
+    private var asked: Set<URL> = []
 
-    func add(_ url: URL, _ item: ViewedImage.Item) { read[url] = item }
+    func add(_ url: URL, _ image: PlatformImage, alt: String) {
+        asked.insert(url)
+        guard ImageSequence.opensLarge(width: image.size.width, height: image.size.height) else { return }
+        read[url] = ViewedImage.Item(image: image, alt: alt)
+    }
 
-    /// The images read so far, in `order`, opened at `url`'s.
-    func viewed(at url: URL, order: [URL]) -> ViewedImage? {
+    /// Forgets them all: a picture's file changed, and what was read may be the old one.
+    func clear() {
+        read = [:]
+        asked = []
+    }
+
+    /// Reads the images that were never drawn (#6624): a page draws the passages near the screen
+    /// only, and the viewer goes through all of the page's. It stops waiting after a second, and
+    /// one that comes later is there the next time.
+    func readRest(of images: [ImageSequenceScope.Picture], with image: @escaping @MainActor (URL) async -> PlatformImage?) async {
+        let missing = images.filter { asked.insert($0.url).inserted }
+        var left = missing.count
+        for picture in missing {
+            Task {
+                if let found = await image(picture.url) { add(picture.url, found, alt: picture.alt) }
+                left -= 1
+            }
+        }
+        let waits = ContinuousClock.now + .seconds(1)
+        while left > 0, ContinuousClock.now < waits {
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+    }
+
+    /// The images read so far, in the page's order, opened at `url`'s.
+    func viewed(at url: URL, of images: [ImageSequenceScope.Picture]) -> ViewedImage? {
         guard let own = read[url] else { return nil }
-        let urls = order.filter { read[$0] != nil }
+        let urls = images.map(\.url).filter { read[$0] != nil }
         guard let start = urls.firstIndex(of: url) else { return ViewedImage(images: [own], start: 0) }
         return ViewedImage(images: urls.compactMap { read[$0] }, start: start)
     }
 }
 
-/// A message's or page's gallery and the order of its images, for its pictures to open in.
+/// A message's or page's gallery and its images in their order, for its pictures to open in.
 struct ImageSequenceScope {
+    struct Picture: Equatable {
+        let url: URL
+        let alt: String
+    }
+
     let gallery: ImageGallery
-    let order: [URL]
+    let images: [Picture]
 }
 
 extension EnvironmentValues {
-    /// Set by `MarkdownText` on a forge's page (#4954); nil elsewhere, where an image opens alone.
+    /// Set by `MarkdownText` on a forge's page (#4954), and by `LivePage` for all of a page's
+    /// passages (#6624); nil elsewhere, where an image opens alone.
     @Entry var imageSequence: ImageSequenceScope?
 }

@@ -211,11 +211,11 @@ function build(tokens: readonly Token[], images?: PageImages, openFile?: OpenFil
         // whose host reads it with forge/image (#4011).
         const path = images ? pageImagePath(src, images.document) : null;
         const url = forgeImages ? forgeImageURL(src) : null;
+        // An image that is a link's words (a badge, a logo) follows the link and does not open large (#4954).
+        const linked = stack.some((frame) => frame.tag === "a" || frame.props["class"] === "link reading");
         if (path && images) {
-          push(h(LocalPicture, { path, alt, revision: images.revision, read: images.read }));
+          push(h(LocalPicture, { path, alt, revision: images.revision, read: images.read, linked }));
         } else if (url && forgeImages) {
-          // An image that is a link's words (a badge, a logo) follows the link and does not open large (#4954).
-          const linked = stack.some((frame) => frame.tag === "a" || frame.props["class"] === "link reading");
           push(h(ForgePicture, { url, alt, read: forgeImages, linked }));
         } else {
           push(h("span", { class: "image-placeholder", title: src }, alt ? `[image: ${alt}]` : "[image]"));
