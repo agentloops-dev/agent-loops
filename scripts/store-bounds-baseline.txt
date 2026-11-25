@@ -183,7 +183,6 @@
 1 Packages/AgentsKit/Sources/AgentsKitCore/Platform/HangWatchdog.swift write(to:)
 1 Packages/AgentsKit/Sources/AgentsKitCore/Remote/RollingLog.swift write(to:)
 2 Packages/AgentsKit/Sources/AgentsKitCore/Widget/AttentionSnapshotStore.swift write(to:)
-1 Packages/AgentsKit/Sources/AgentsKitCore/Widget/SharedInbox.swift write(to:)
 1 Shared/UI/Voice/VoiceTape.swift write(to:)
 1 Web/src/views/Multiplier.tsx localStorage.setItem
 1 Web/src/wire/keys.ts indexedDB.open

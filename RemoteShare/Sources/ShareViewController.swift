@@ -45,9 +45,9 @@ final class ShareViewController: UIViewController {
 
     private func share(_ providers: sending [NSItemProvider]) async {
         let items = await ShareReader.read(providers)
-        guard SharedInbox.add(items) else {
-            finish(saying: items.isEmpty ? "There was nothing here Agent Loops can take." : "Agent Loops could not save this.")
-            return
+        if let refusal = SharedInbox.add(items) {
+            // Longer to read, and the only thing that says it was not saved.
+            return finish(saying: refusal.sentence, for: .seconds(4))
         }
         if await openRemote() {
             extensionContext?.completeRequest(returningItems: nil)
@@ -57,13 +57,13 @@ final class ShareViewController: UIViewController {
     }
 
     /// Said for a moment, then the sheet goes.
-    private func finish(saying words: String) {
+    private func finish(saying words: String, for time: Duration = .seconds(2)) {
         spinner.stopAnimating()
         spinner.isHidden = true
         label.text = words
         UIAccessibility.post(notification: .announcement, argument: words)
         Task {
-            try? await Task.sleep(for: .seconds(2))
+            try? await Task.sleep(for: time)
             extensionContext?.completeRequest(returningItems: nil)
         }
     }
