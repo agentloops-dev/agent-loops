@@ -18,7 +18,7 @@ These choices follow Alex's decisions on [#6670](https://github.com/agentloops-d
 | `daemon.log` | 7 days | 10 MB | Expire lines with no summary |
 | `mcp-logs/` | 7 days | 10 MB for the store | Expire lines with no summary |
 | `control.log` | 7 days | 10 MB | Expire lines with no summary |
-| Each Keep backup | 90 days | 10 MB per backup | Refuse an over-limit backup; do not roll up |
+| Each Keep backup | 90 days, but the machine's newest good one stays | 10 MB per backup, as a warning level (Alex, 2026-11-24, on #6787; reused for #6709) | Make an over-limit backup, and warn; do not roll up |
 | Each operator backup | 90 days, but the newest of an account that exists stays | 10 MB per account's backup, as a warning level (Alex, 2026-11-24, #6787) | Make an over-limit backup, and warn; do not roll up |
 
 The runtime-home budget is based on a 1 MB average per session over 12 weeks at 100 sessions per week.
