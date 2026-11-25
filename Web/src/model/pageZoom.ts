@@ -3,6 +3,7 @@
 // ⌘+, ⌘− and ⌘0 (Ctrl off a Mac) zoom the page while one is shown, and leave the browser's own
 // zoom to the rest of the time, so the sidebar and the chat stay their size.
 
+import { putEntry } from "./keyValue";
 import { signal } from "@preact/signals";
 
 export const zoomSteps = [0.75, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2] as const;
@@ -45,5 +46,6 @@ export const pageZoom = signal(snapped(Number(storage?.getItem(key) ?? actualSiz
 
 export function setPageZoom(level: number): void {
   pageZoom.value = snapped(level);
-  storage?.setItem(key, String(pageZoom.value));
+  // store-bounds: kind=key-value; count=1; age=until-deleted; action=refuse; record=16B; applied=on write
+  putEntry(storage, key, String(pageZoom.value), 16);
 }

@@ -8,6 +8,7 @@
 // Machines (#3491, D3, D8): a machine that asks is shown the same way and added with an
 // addMachine; a host code this browser shows carries an invite it put on the lock; and a
 // secret is sealed only to a machine whose key its owner's lock names.
+import { fits, putEntry } from "./keyValue";
 import { signal } from "@preact/signals";
 import {
   Failure, type ControlCodeShown, type Lock, type LockJoinDecided, type LockJoinRequest, type LockJoinStarted, type WireDate,
@@ -47,6 +48,26 @@ export function pinName(control: string | undefined): string {
   return key && key.length >= 8 ? `${pinKey}.${hex(key.subarray(0, 8))}` : pinKey;
 }
 
+/** The most pins and recovery marks this browser keeps, and the most bytes of one and of its name (#7253). One past that is
+ *  not kept, and no pin goes to make room: a pin shows that a lock went back. */
+export const pinsKept = 5000;
+export const pinBytes = 1024;
+
+/** Whether an entry of that name can be kept: it is there already, or there is room for one more. */
+function roomForPin(name: string): boolean {
+  if (!fits(name, pinBytes)) return false;
+  try {
+    const storage = globalThis.localStorage;
+    if (!storage) return false;
+    if (storage.getItem(name) !== null) return true;
+    let kept = 0;
+    for (let i = 0; i < storage.length; i++) if (under(storage.key(i) ?? "", pinKey)) kept++;
+    return kept < pinsKept;
+  } catch {
+    return false;
+  }
+}
+
 /** The pin kept in localStorage under key, or under the name key() gives at each use. */
 export function pinsAt(key: string | (() => string)): PinStore {
   const name = typeof key === "string" ? () => key : key;
@@ -63,11 +84,10 @@ export function pinsAt(key: string | (() => string)): PinStore {
       return zeroPin;
     },
     save(pin) {
-      try {
-        globalThis.localStorage?.setItem(name(), JSON.stringify(pin));
-      } catch {
-        // Storage that is full or off keeps no pin.
-      }
+      // A store that is full or off keeps no pin.
+      if (!roomForPin(name())) return;
+      // store-bounds: kind=key-value; count=5000; age=until-deleted; action=refuse; record=1KiB; applied=on write, when the control plane answers, and on Forget
+      putEntry(globalThis.localStorage, name(), JSON.stringify(pin), pinBytes);
     },
   };
 }
@@ -92,11 +112,11 @@ export function recoveryDoneAt(name: () => string): RecoveryDone {
       }
     },
     set(person) {
-      try {
-        globalThis.localStorage?.setItem(`${name()}.recoveryDone:${person}`, "1");
-      } catch {
-        // Storage that is full or off asks again next time.
-      }
+      // One not kept is asked again next time.
+      const mark = `${name()}.recoveryDone:${person}`;
+      if (!roomForPin(mark)) return;
+      // store-bounds: not a store: a mark is one of the pins' 5,000 entries, which pinsAt declares
+      putEntry(globalThis.localStorage, mark, "1", pinBytes);
     },
   };
 }

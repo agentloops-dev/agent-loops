@@ -275,3 +275,23 @@ test("largest record: a picture at it is kept, one over it is not, and the limit
   await copy.keepWork("image", "u", "é".repeat(n));
   assert.equal(await copy.work("image", "u"), undefined);
 });
+
+test("a record that an older build kept over the limit is not read, and the sweep drops it (#7253)", async () => {
+  const held = new MemoryCopyStore();
+  const machine = (id, extra) => ({ kind: "machine", ref: machineRef(id), host: { ...host(id), name: "x".repeat(extra) }, agents: [], at: 0 });
+  const bytes = (r) => Buffer.byteLength(JSON.stringify(r));
+  const fit = machine("a", 100);
+  const cap = bytes(fit);
+  const over = machine("b", 101);
+  const chat = { kind: "transcript", ref: sessionRef("s"), host: "a", session: "s", turns: { turns: [], firstTurn: 0, openStart: 0 },
+    page: { firstIndex: 0, total: 1, entries: [entry("é".repeat(cap))] }, at: 0 };
+  // As the older build wrote them: two bytes a UTF-16 unit, and no limit.
+  await held.write([fit, over, chat], () => [fit, over, chat].map((r) => ({ ref: r.ref, kind: r.kind, at: r.at,
+    bytes: JSON.stringify(r).length * 2, ...(r.kind === "transcript" ? { host: "a" } : {}) })));
+  const copy = new LocalCopy(held, undefined, cap, () => 1_000);
+  assert.deepEqual((await copy.machines()).map((m) => m.ref), [fit.ref]);
+  assert.equal(await copy.transcript("s"), null);
+  copy.writing = true;
+  await copy.sweep();
+  assert.deepEqual([...held.held.keys()].sort(), ["@index", fit.ref]);
+});

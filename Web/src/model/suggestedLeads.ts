@@ -1,5 +1,6 @@
 // New Session's Suggested section (#5457, #5461): the words of a row, and whether the person hid the section.
 // The rows come from work/suggest-leads (#5458); a tap fills the form as Start lead does and starts nothing.
+import { putEntry } from "./keyValue";
 import type { WorkLeadSuggestion, WorkSuggestLeads } from "../protocol/generated";
 
 /** The key under which the person's Hide is kept on this device. */
@@ -11,7 +12,13 @@ export function suggestedHidden(storage: Pick<Storage, "getItem"> | undefined): 
 }
 
 export function keepSuggestedHidden(storage: Pick<Storage, "setItem" | "removeItem"> | undefined, hidden: boolean): void {
-  try { if (hidden) storage?.setItem(suggestedHiddenKey, "1"); else storage?.removeItem(suggestedHiddenKey); } catch { /* the choice is for this visit only */ }
+  // A choice that is not kept is for this visit only.
+  if (hidden) {
+    // store-bounds: kind=key-value; count=1; age=until-deleted; action=refuse; record=1B; applied=on write
+    putEntry(storage, suggestedHiddenKey, "1", 1);
+    return;
+  }
+  try { storage?.removeItem(suggestedHiddenKey); } catch { /* storage off: nothing kept */ }
 }
 
 /** "Due 2026-11-20", the milestone's name before it when there is one. */
