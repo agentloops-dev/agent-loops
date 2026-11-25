@@ -42,6 +42,7 @@ server. A server is listed while it is online.
 1. In **Back up**, choose **Every day** (the default), **Every week** or **Never**.
 2. In **Keep**, choose how many backups of this machine to keep, from 1 to 10. The default
    is 3. When there are more, the oldest is deleted. Fewer takes effect at once.
+   A backup is deleted at 90 days too, but this machine's newest good one always stays.
 3. On the Mac, click **Choose…** beside **Folder** to keep the backups on a second disk, or
    in a folder that your Mac syncs to another place. The default is the `backups` folder in
    the machine's data folder, which is on the same disk as what it backs up: it lets you
@@ -80,7 +81,8 @@ already.** Nothing on the new machine is changed or deleted. The usage and
 time history come back only to a machine that has none of its own.
 
 A backup made 90 days ago or more cannot be restored: the machine no longer knows which of
-its agents you deleted.
+its agents you deleted. The newest one stays on the disk all the same: open the `.tar.gz`
+to read its conversations.
 
 A restored agent is kept for your **Archived agents** time from the day you restore it.
 
