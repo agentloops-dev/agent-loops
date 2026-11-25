@@ -718,13 +718,16 @@
     },
     "ForgeImage": {
       "type": "object",
-      "description": "forge/image (#4009): an image's bytes, so that a client never loads a forge page's remote URL. mimeType is image/png, image/jpeg, image/gif or image/webp, read from the bytes.",
+      "description": "forge/image (#4009): an image's bytes, so that a client never loads a forge page's remote URL. mimeType is image/png, image/jpeg, image/gif or image/webp, read from the bytes. keep false (#7138): the read went through a host that the person allowed or showed, so a client does not put it on disk; absent, only a forge's own image hosts.",
       "properties": {
         "mimeType": {
           "type": "string"
         },
         "data": {
           "$ref": "core.schema.json#/definitions/Base64"
+        },
+        "keep": {
+          "type": "boolean"
         }
       },
       "required": [
@@ -735,10 +738,17 @@
     },
     "ForgeImageRequest": {
       "type": "object",
-      "description": "forge/image (#4009): the url of an image on a forge page. Only a forge's own image hosts are read (for GitHub: github.com's user-attachments and repo assets, and user-images, private-user-images, raw and avatars on githubusercontent.com); the forge's token goes only to its own hosts.",
+      "description": "forge/image (#4009): the url of an image on a forge page. Only a forge's own image hosts (for GitHub: github.com's user-attachments and repo assets, and user-images, private-user-images, raw and avatars on githubusercontent.com), the hosts that the person allowed (imageHosts/list) and those in show are read; another host is the failure imageBlocked, with ImageBlocked as its data. show (#7138) is the exact hosts that the person accepts for this one read, at most 6, from the person's own clients only. The forge's token goes only to its own hosts, and to none after a hop through a host that the person chose.",
       "properties": {
         "url": {
           "type": "string"
+        },
+        "show": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 6
         }
       },
       "required": [
@@ -1873,6 +1883,68 @@
       "required": [
         "id",
         "name"
+      ],
+      "additionalProperties": false
+    },
+    "ImageBlocked": {
+      "type": "object",
+      "description": "The data of the failure imageBlocked of forge/image (#7138): host is the host that was refused, exact and in ASCII; from is the host that redirected to it, absent when it is the image's own.",
+      "properties": {
+        "host": {
+          "type": "string"
+        },
+        "from": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "host"
+      ],
+      "additionalProperties": false
+    },
+    "ImageHost": {
+      "type": "object",
+      "description": "A host that the person allowed forge/image to read images from on one machine (#7138): the exact host, lower case and in ASCII, and when.",
+      "properties": {
+        "host": {
+          "type": "string"
+        },
+        "addedAt": {
+          "$ref": "core.schema.json#/definitions/WireDate"
+        }
+      },
+      "required": [
+        "host",
+        "addedAt"
+      ],
+      "additionalProperties": false
+    },
+    "ImageHostRequest": {
+      "type": "object",
+      "description": "imageHosts/allow and imageHosts/remove (#7138): the host.",
+      "properties": {
+        "host": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "host"
+      ],
+      "additionalProperties": false
+    },
+    "ImageHosts": {
+      "type": "object",
+      "description": "imageHosts/list, and the list after imageHosts/allow and imageHosts/remove (#7138): at most 100 hosts, the first allowed first. The forges' own image hosts are not in it.",
+      "properties": {
+        "hosts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ImageHost"
+          }
+        }
+      },
+      "required": [
+        "hosts"
       ],
       "additionalProperties": false
     },

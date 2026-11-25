@@ -14,6 +14,8 @@ import (
 	"sync"
 	"time"
 
+	"code.dny.dev/ssrf"
+
 	"github.com/agentloops-dev/agent-loops/Go/internal/azuredevopsmcp"
 	"github.com/agentloops-dev/agent-loops/Go/internal/bitbucketmcp"
 	"github.com/agentloops-dev/agent-loops/Go/internal/connections"
@@ -27,8 +29,10 @@ import (
 // a client never loads a remote URL: a private repo's image needs the forge's token, which only
 // this machine holds, and a client that loads what a page names tells its host who reads it.
 //
-// Only a forge's own image hosts are read; any other URL is refused with no request made, and a
-// redirect off them is refused too. The forge's token is sent only to the hosts that need it,
+// Only a forge's own image hosts are read, and the hosts that the person allowed or showed for one
+// read (#7138, imagehosts.go), which get no token, no referrer and only a public address. Another
+// host is the failure imageBlocked, with no request made to it, also when a redirect goes there;
+// an URL that the person cannot allow is another failure. The forge's token is sent only to the hosts that need it,
 // never to the hosts a redirect goes to for the bytes. Only raster images are given (PNG, JPEG,
 // GIF and WebP, by their bytes, not by what the server says): an SVG can hold script. Each image
 // is capped, and the answers are kept in a small LRU, so scrolling a page again asks nothing.
@@ -593,45 +597,71 @@ type forgeImageCache struct {
 type forgeImageEntry struct {
 	url   string
 	image wire.ForgeImage
+	// hosts are the hosts that the person allowed which the read went through.
+	hosts []string
 }
 
-func (c *forgeImageCache) get(u string) (wire.ForgeImage, bool) {
+// get is the kept image of u, while every host that its read went through is still allowed.
+func (c *forgeImageCache) get(u string, allowed func(host string) bool) (wire.ForgeImage, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	e, ok := c.byURL[u]
 	if !ok {
 		return wire.ForgeImage{}, false
 	}
+	for _, h := range e.Value.(*forgeImageEntry).hosts {
+		if !allowed(h) {
+			c.drop(e)
+			return wire.ForgeImage{}, false
+		}
+	}
 	c.order.MoveToFront(e)
 	return e.Value.(*forgeImageEntry).image, true
 }
 
-func (c *forgeImageCache) put(u string, image wire.ForgeImage) {
+// drop takes e out. mu is held.
+func (c *forgeImageCache) drop(e *list.Element) {
+	old := e.Value.(*forgeImageEntry)
+	c.bytes -= len(old.image.Data)
+	c.order.Remove(e)
+	delete(c.byURL, old.url)
+}
+
+// dropHost takes out each image whose read went through host.
+func (c *forgeImageCache) dropHost(host string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for _, e := range c.byURL {
+		if slices.Contains(e.Value.(*forgeImageEntry).hosts, host) {
+			c.drop(e)
+		}
+	}
+}
+
+func (c *forgeImageCache) put(u string, image wire.ForgeImage, hosts []string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.byURL == nil {
 		c.order, c.byURL = list.New(), map[string]*list.Element{}
 	}
 	if e, ok := c.byURL[u]; ok {
-		c.bytes -= len(e.Value.(*forgeImageEntry).image.Data)
-		c.order.Remove(e)
-		delete(c.byURL, u)
+		c.drop(e)
 	}
-	c.byURL[u] = c.order.PushFront(&forgeImageEntry{url: u, image: image})
+	c.byURL[u] = c.order.PushFront(&forgeImageEntry{url: u, image: image, hosts: hosts})
 	c.bytes += len(image.Data)
 	for c.order.Len() > forgeImagesKept || c.bytes > forgeImageBytesKept {
-		last := c.order.Back()
-		old := last.Value.(*forgeImageEntry)
-		c.bytes -= len(old.image.Data)
-		c.order.Remove(last)
-		delete(c.byURL, old.url)
+		c.drop(c.order.Back())
 	}
 }
 
 func (d *Daemon) registerForgeImage() {
-	On(d, wire.CallForgeImage, func(ctx context.Context, _ *Client, r wire.ForgeImageRequest) (wire.ForgeImage, error) {
-		return d.forgeImage(ctx, r.URL)
+	On(d, wire.CallForgeImage, func(ctx context.Context, c *Client, r wire.ForgeImageRequest) (wire.ForgeImage, error) {
+		if len(r.Show) > 0 && !personsClient(c) {
+			return wire.ForgeImage{}, &Error{Code: CodeNotPermitted, Message: "Only your own clients can show a blocked image."}
+		}
+		return d.forgeImage(ctx, r.URL, r.Show)
 	})
+	d.registerImageHosts()
 }
 
 // forgeImageOf is the forge whose image u is, or nil.
@@ -644,22 +674,109 @@ func (d *Daemon) forgeImageOf(u *url.URL) forgeImageHost {
 	return nil
 }
 
-func (d *Daemon) forgeImage(ctx context.Context, raw string) (wire.ForgeImage, error) {
+// forgeImageRead is one read of one image: what its next request may be, and where it went.
+type forgeImageRead struct {
+	d    *Daemon
+	show map[string]bool
+	// forge is the forge whose image the request now is, nil for a host that the person chose.
+	forge forgeImageHost
+	// tokenless says that the read left its forge, so no later request gets a token.
+	tokenless bool
+	// chosen are the person's hosts it went through, and shown says that one was only shown.
+	chosen []string
+	shown  bool
+}
+
+// next checks the URL of the read's next request, which from redirected to ("" for the first
+// request), and sets how it is sent. A host on no list is the failure imageBlocked.
+func (r *forgeImageRead) next(u *url.URL, from string) error {
+	if r.forge != nil && r.forge.allows(r.d, u) {
+		return nil
+	}
+	if forge := r.d.forgeImageOf(u); forge != nil {
+		// A redirect from another forge, or from the person's host, carries no token here.
+		r.tokenless = r.tokenless || from != ""
+		r.forge = forge
+		return nil
+	}
+	host, ok := imageHostOf(u)
+	if !ok {
+		return fmt.Errorf("%s is not a host that images are read from", u.Host)
+	}
+	if !r.d.allowedImageHost(host) {
+		if !r.show[host] {
+			blocked := wire.ImageBlocked{Host: host}
+			words := "forge/image: " + host + " is blocked"
+			if from != "" {
+				blocked.From = &from
+				words = "forge/image: " + from + " redirects to " + host + ", which is blocked"
+			}
+			return &Error{Code: wire.FailureImageBlocked, Message: words, Data: blocked}
+		}
+		r.shown = true
+	}
+	r.chosen = append(r.chosen, host)
+	r.forge, r.tokenless = nil, true
+	// The host that is asked is the one that was checked, and named to the person.
+	u.Host = host
+	return nil
+}
+
+// RoundTrip sends a forge's request with its token where its host needs it, and one to a host that
+// the person chose with nothing, to a public address only.
+func (r *forgeImageRead) RoundTrip(req *http.Request) (*http.Response, error) {
+	req = req.Clone(req.Context())
+	req.Header.Del("Authorization")
+	req.Header.Del("Referer")
+	transport := r.d.forgeImageTransport
+	if transport == nil {
+		transport = http.DefaultTransport
+	}
+	if r.forge == nil {
+		if transport = r.d.publicImageTransport; transport == nil {
+			transport = publicImageTransport
+		}
+	} else if !r.tokenless {
+		r.forge.authorize(r.d, req)
+	}
+	res, err := transport.RoundTrip(req)
+	if errors.Is(err, ssrf.ErrProhibitedIP) {
+		return nil, &Error{Code: CodeServer, Message: "forge/image: " + req.URL.Hostname() + " is on a private network"}
+	}
+	return res, err
+}
+
+// forgeImage reads an image. show is the hosts that the person accepts for this one read.
+func (d *Daemon) forgeImage(ctx context.Context, raw string, show []string) (wire.ForgeImage, error) {
 	u, err := url.Parse(raw)
 	if err != nil || !u.IsAbs() {
 		return wire.ForgeImage{}, errors.New("forge/image: not a URL")
 	}
-	forge := d.forgeImageOf(u)
-	if forge == nil {
-		return wire.ForgeImage{}, fmt.Errorf("forge/image: %s is not a forge's image host", u.Hostname())
+	if len(show) > imageShowMost {
+		return wire.ForgeImage{}, Invalid("forge/image: at most %d hosts are shown.", imageShowMost)
+	}
+	r := &forgeImageRead{d: d, show: map[string]bool{}}
+	for _, s := range show {
+		host, ok := imageHostName(s)
+		if !ok {
+			return wire.ForgeImage{}, Invalid("forge/image: %q is not a host that can be shown.", s)
+		}
+		r.show[host] = true
 	}
 	key := u.String()
-	if image, ok := d.forgeImages.get(key); ok {
+	if err := r.next(u, ""); err != nil {
+		return wire.ForgeImage{}, forgeImageError(err)
+	}
+	if r.forge == nil {
+		// Kept apart from what was read as a forge's own image, with its token, before.
+		key = "chosen " + key
+	}
+	if image, ok := d.forgeImages.get(key, d.allowedImageHost); ok && !r.shown {
 		return image, nil
 	}
 	read := u
-	if s, ok := forge.(forgeImageSource); ok {
-		if read = s.source(d, u); !forge.allows(d, read) {
+	if s, ok := r.forge.(forgeImageSource); ok {
+		if read = s.source(d, u); !r.forge.allows(d, read) {
 			return wire.ForgeImage{}, fmt.Errorf("forge/image: %s is not a forge's image host", read.Hostname())
 		}
 	}
@@ -670,26 +787,18 @@ func (d *Daemon) forgeImage(ctx context.Context, raw string) (wire.ForgeImage, e
 		return wire.ForgeImage{}, fmt.Errorf("forge/image: %w", err)
 	}
 	req.Header.Set("Accept", "image/png, image/jpeg, image/gif, image/webp")
-	transport := d.forgeImageTransport
-	if transport == nil {
-		transport = http.DefaultTransport
-	}
 	client := &http.Client{
-		// Each request, the first and every redirect, gets the token only where its host needs it.
-		Transport: forgeImageAuth{d: d, forge: forge, next: transport},
+		Transport: r,
 		CheckRedirect: func(next *http.Request, via []*http.Request) error {
-			if len(via) >= forgeImageRedirects {
+			if len(via) > forgeImageRedirects {
 				return errors.New("too many redirects")
 			}
-			if !forge.allows(d, next.URL) {
-				return fmt.Errorf("a redirect to %s, not a forge's image host", next.URL.Hostname())
-			}
-			return nil
+			return r.next(next.URL, strings.ToLower(via[len(via)-1].URL.Hostname()))
 		},
 	}
 	res, err := client.Do(req)
 	if err != nil {
-		return wire.ForgeImage{}, fmt.Errorf("forge/image: %w", err)
+		return wire.ForgeImage{}, forgeImageError(err)
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
@@ -711,20 +820,22 @@ func (d *Daemon) forgeImage(ctx context.Context, raw string) (wire.ForgeImage, e
 		return wire.ForgeImage{}, fmt.Errorf("forge/image: %s is not a PNG, JPEG, GIF or WebP image", mime)
 	}
 	image := wire.ForgeImage{MimeType: mime, Data: data}
-	d.forgeImages.put(key, image)
+	if len(r.chosen) > 0 {
+		keep := false
+		image.Keep = &keep
+	}
+	if !r.shown {
+		d.forgeImages.put(key, image, r.chosen)
+	}
 	return image, nil
 }
 
-// forgeImageAuth is the forge's token on each request whose host needs it, never on another.
-type forgeImageAuth struct {
-	d     *Daemon
-	forge forgeImageHost
-	next  http.RoundTripper
-}
-
-func (a forgeImageAuth) RoundTrip(req *http.Request) (*http.Response, error) {
-	req = req.Clone(req.Context())
-	req.Header.Del("Authorization")
-	a.forge.authorize(a.d, req)
-	return a.next.RoundTrip(req)
+// forgeImageError is a read's failure: imageBlocked and the like as they are, not as the HTTP
+// client wraps them.
+func forgeImageError(err error) error {
+	var e *Error
+	if errors.As(err, &e) {
+		return e
+	}
+	return fmt.Errorf("forge/image: %w", err)
 }

@@ -134,6 +134,7 @@ public enum Capability {
     public static let hostWebPairing1 = "host.web-pairing/1"
     public static let hostWire1 = "host.wire/1"
     public static let hostsJoin1 = "hosts.join/1"
+    public static let imageHosts1 = "image-hosts/1"
     public static let lineageComment1 = "lineage.comment/1"
     public static let lineageEstimate1 = "lineage.estimate/1"
     public static let lineageFigures1 = "lineage.figures/1"
@@ -478,6 +479,9 @@ public enum Capability {
         "forge/sources": "forge-sync/1",
         "git/fill": "git/1",
         "git/trailers": "host.commit-trailers/1",
+        "imageHosts/allow": "image-hosts/1",
+        "imageHosts/list": "image-hosts/1",
+        "imageHosts/remove": "image-hosts/1",
         "lineage/cost": "lineage/1",
         "lineage/end": "lineage/1",
         "lineage/estimate": "lineage.estimate/1",

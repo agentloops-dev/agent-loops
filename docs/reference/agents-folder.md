@@ -92,12 +92,15 @@ which the audit keeps by name too.
 | `host.json` | The role of each of your Macs (its control plane here or elsewhere, and its web remote), one entry per Mac, by its local host name. | Agent Loops |
 | `wake.json` | Keep awake: the switch and the hours, and how many finished sessions stay ready. One value for all the Macs that share the folder | **Settings ▸ Machines ▸ This Mac** |
 | `backup-settings.json` | Backups: how often, how many, and where. One entry for each machine, by the ID in its `root-id.json`, so machines that share the folder keep their own. 100 machines at most: remove by hand one that is gone | A machine's **Backups** |
+| `image-hosts.json` | The hosts that you allowed images from on Work pages. One entry for each machine, by the ID in its `root-id.json`, with 100 hosts at most. A host that is not an exact name in lower case is ignored. 100 machines at most: remove by hand one that is gone | Agent Loops |
 
 A file you change by hand counts at once, without a restart. A file that cannot be read is
 set aside as `<name>.corrupt-<time>`, and the setting goes back to its default. For
 `host.json`, the file is left as it is, and Agent Loops starts with the defaults until you
 mend the file or remove it. `backup-settings.json` is left as it is too: until you mend it
-or remove it, the settings cannot be changed, and 10 backups are kept.
+or remove it, the settings cannot be changed, and 10 backups are kept. `image-hosts.json` is
+left as it is too: until you mend it or remove it, no host is allowed and the list cannot be
+changed.
 
 `wake.json` and `backup-settings.json` were in the machine's data folder before. Agent Loops
 moves each one once. When the settings folder has one already, that one is used, and the old
