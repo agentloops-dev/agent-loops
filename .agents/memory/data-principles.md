@@ -11,7 +11,7 @@ Alex's rules for this app's data (2026-11-21, design 2026-11-22). The full text 
 
 1. **Size:** a largest record, and a count or total-size limit on the store.
 2. **Time:** records age out within 90 days.
-3. **Config:** in `<repo>/.agents/` or `~/.agents/`. A control plane's config stays in its own store (Alex, 2026-11-24, #6761; also for #6762 and #6771 to #6781).
+3. **Config:** in `<repo>/.agents/` or `~/.agents/`. A control plane's config stays in its own store (Alex, 2026-11-24, #6761; also for #6762 and #6771 to #6781). A machine's approvals and added runtime accounts stay in its data folder (Alex, 2026-11-24, #6748 to #6750).
 4. **Roll-up:** only time series roll up (usage: hours for 7 days, days for 90). The audit, conversations and logs just age out.
 5. **Kind:** each store declares its kind (small file, document, log, time series, graph, blob, cache, secret) and is reached through that kind's interface.
 

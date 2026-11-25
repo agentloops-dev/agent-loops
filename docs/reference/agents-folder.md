@@ -144,6 +144,10 @@ not be able to change them:
   It holds the store, `secrets-key` and the certificate in `tls/`.
   The control key is in the keychain. To back them up together, and restore
   them on a new Mac, see [Back up and restore a control plane](../how-to/back-up-a-control-plane.md).
+- **Runtime accounts and approvals** (Alex, 2026-11-24, #6748 to #6750): `runtime-accounts.json`,
+  `mcp-approvals.json` and `plugin-approvals.json`, in the data folder. A copy from a repo, a
+  sync or another machine could approve what nobody saw here, or choose the settings and hooks
+  that a runtime loads.
 - **Caches and logs:** the system's cache and log folders. You can delete them at any time.
 - **Each device's own choices:** folder folds, drafts, the new-session form's folders,
   window sizes, the selected folder, and pairing.
