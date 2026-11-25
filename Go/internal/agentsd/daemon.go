@@ -226,6 +226,8 @@ type Daemon struct {
 type startOptions struct {
 	// namedHome is the personal home AGENTS_PERSONAL_HOME names, "" when none is named.
 	namedHome string
+	// controlHere is whether the control plane runs on this machine too (#6613).
+	controlHere bool
 	// locate finds a runtime in place of locateFor; nil is locateFor. A test's starts a fake.
 	locate func(*runtimeDef) (string, []string, []string)
 	// runtimeEnv goes into each runtime's environment, after the rest.
@@ -254,7 +256,8 @@ var newDiskFree func(wire.DiskReading) int64
 
 // New is a daemon on root, with the personal home AGENTS_PERSONAL_HOME names.
 func New(ctx context.Context, root string) (*Daemon, error) {
-	return newWith(ctx, root, startOptions{namedHome: os.Getenv("AGENTS_PERSONAL_HOME"), diskFree: newDiskFree})
+	return newWith(ctx, root, startOptions{namedHome: os.Getenv("AGENTS_PERSONAL_HOME"),
+		controlHere: os.Getenv(controlHereEnv) != "", diskFree: newDiskFree})
 }
 
 // newWith is New with its options given, not read from the process.

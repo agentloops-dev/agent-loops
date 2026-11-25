@@ -6,6 +6,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/capacity"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -162,4 +163,39 @@ func TestCapacityStateSaysTheReason(t *testing.T) {
 	look(quiet, wire.CapacityLevelFull, wire.CapacityReasonMemory)
 	look(quiet, wire.CapacityLevelOk, "")
 	look(capacitySample{load1: 2.2}, wire.CapacityLevelNear, wire.CapacityReasonCpu)
+}
+
+// With both roles the machine has the higher of the two levels, and keeps one core's load
+// free for the control plane (#6613).
+func TestCapacityTargetOfAMachineWithBothRoles(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		s      capacitySample
+		cores  int
+		p      capacity.Pressure
+		level  wire.CapacityLevel
+		signal string
+	}{
+		{capacitySample{load1: 1.5}, 2, capacity.Pressure{}, wire.CapacityLevelOk, ""},
+		{capacitySample{load1: 1.6}, 2, capacity.Pressure{}, wire.CapacityLevelNear, "load"},
+		{capacitySample{load1: 2.6}, 2, capacity.Pressure{}, wire.CapacityLevelFull, "load"},
+		{capacitySample{load1: 1.6}, 10, capacity.Pressure{}, wire.CapacityLevelOk, ""},
+		{capacitySample{load1: 0.4}, 2, capacity.Pressure{IO: 16}, wire.CapacityLevelNear, "pressure_io"},
+		{capacitySample{load1: 1.6}, 2, capacity.Pressure{IO: 26}, wire.CapacityLevelFull, "pressure_io"},
+		{capacitySample{load1: 0.4}, 2, capacity.Pressure{Memory: 6}, wire.CapacityLevelNear, "pressure_memory"},
+		{capacitySample{pressure: wire.MemoryPressureCritical}, 2, capacity.Pressure{Memory: 6}, wire.CapacityLevelFull, "memory_pressure"},
+	} {
+		s := tc.s.withControl(tc.cores, tc.p)
+		if level, signal := capacityTarget(s); level != tc.level || signal != tc.signal {
+			t.Errorf("%+v %+v: %s %q, want %s %q", tc.s, tc.p, level, signal, tc.level, tc.signal)
+		}
+	}
+	s := capacitySample{}.withControl(2, capacity.Pressure{IO: 16, Memory: 6})
+	if w := signalWords("pressure_io", s); w != "disk pressure 16%" {
+		t.Error(w)
+	}
+	if w := signalWords("pressure_memory", s); w != "memory pressure 6%" {
+		t.Error(w)
+	}
 }
