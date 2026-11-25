@@ -100,7 +100,6 @@ func TestTheSweepStoresAnOldLineageObjectAsMeasured(t *testing.T) {
 
 // A request's answer keeps it at its largest size, whoever answers it.
 func TestARequestsAnswerIsWithinItsLargest(t *testing.T) {
-	t.Skip("#7192")
 	t.Parallel()
 	st := store.NewMemory()
 	p := startPlane(t, st, controllink.NewPrivateKey())
@@ -111,17 +110,53 @@ func TestARequestsAnswerIsWithinItsLargest(t *testing.T) {
 	_, refused := p.s.governanceDecide(t.Context(), wire.AuditActor{User: r.User, UserName: &name}, wire.CatalogDecide{Request: r.ID}, time.Now())
 	object, err := st.Get(t.Context(), governanceRequestKey(r.ID))
 	must(t, err)
-	if refused != nil && len(object.Data) == 0 {
-		t.Fatal("a refused answer lost the request")
+	if refused != nil {
+		t.Fatalf("a request cannot be answered: %v", refused)
 	}
 	if len(object.Data) > governanceRecordBytes {
 		t.Fatalf("%d bytes are stored, and the most is %d", len(object.Data), governanceRecordBytes)
 	}
 }
 
+// A request at its largest can be approved for a group, and so can one that waits with it. The
+// approval is within its largest too, and has the whole source.
+func TestALargeRequestCanBeApproved(t *testing.T) {
+	t.Parallel()
+	st := store.NewMemory()
+	p := startPlane(t, st, controllink.NewPrivateKey())
+	long := strings.Repeat("<", governanceRecordBytes)
+	source, why := strings.Repeat("<", governanceSourceMost), strings.Repeat("<", governanceWhyMost)
+	_, err := p.s.records.ChangeGroup(t.Context(), "g", func(*records.Group) (*records.Group, error) {
+		return &records.Group{ID: "g", Name: long, Everyone: true}, nil
+	})
+	must(t, err)
+	for _, id := range []string{"one", "two"} {
+		keepJSON(t, st, governanceRequestKey(id), wire.CatalogRequest{ID: id, Kind: wire.CatalogKindMCP, Name: strings.Repeat("<", governanceNameMost),
+			Source: &source, Why: &why, User: p.s.localOwner(), UserName: long[:300], State: wire.CatalogRequestStateWaiting, At: dateOf(time.Now())})
+	}
+	_, err = p.s.governanceDecide(t.Context(), wire.AuditActor{User: p.s.localOwner(), UserName: &long},
+		wire.CatalogDecide{Request: "one", Approve: true, Group: new("g")}, time.Now())
+	must(t, err)
+	for _, id := range []string{"one", "two"} {
+		object, err := st.Get(t.Context(), governanceRequestKey(id))
+		must(t, err)
+		var r wire.CatalogRequest
+		must(t, json.Unmarshal(object.Data, &r))
+		if r.State != wire.CatalogRequestStateApproved || len(object.Data) > governanceRecordBytes {
+			t.Fatalf("%s: %s, %d bytes", id, r.State, len(object.Data))
+		}
+	}
+	keys, err := st.List(t.Context(), governanceApprovalPrefix)
+	must(t, err)
+	approvals, err := p.s.governanceApprovals(t.Context())
+	must(t, err)
+	if len(approvals) != 1 || deref(approvals[0].Source) != source || keys[0].Size > governanceRecordBytes {
+		t.Fatalf("%d approvals", len(approvals))
+	}
+}
+
 // A name or a reason that is cut is whole characters, and says that it is cut.
 func TestWhatGovernanceCutsSaysSo(t *testing.T) {
-	t.Skip("#7192")
 	t.Parallel()
 	if got := cut(strings.Repeat("é", 10), 5); !utf8.ValidString(got) || !strings.HasSuffix(got, "…") {
 		t.Fatalf("%q", got)

@@ -70,12 +70,16 @@ func governanceApprovalKey(kind wire.CatalogKind, name, group, user string) stri
 	return governanceApprovalPrefix + hex.EncodeToString(sum[:16]) + ".json"
 }
 
+// cut is s in at most most bytes: whole characters, and "…" at the end when some went.
 func cut(s string, most int) string {
 	s = strings.TrimSpace(s)
-	if len(s) > most {
-		return s[:most]
+	if len(s) <= most {
+		return s
 	}
-	return s
+	if most < len("…") {
+		return ""
+	}
+	return strings.ToValidUTF8(s[:most-len("…")], "") + "…"
 }
 
 func cutOptional(s *string, most int) *string { return optional(cut(deref(s), most)) }
@@ -307,8 +311,8 @@ func (s *Service) governanceRequest(ctx context.Context, actor wire.AuditActor, 
 	if a := s.approvedFor(approvals, user, ask.Kind, ask.Name); a != nil {
 		r.State, r.Group, r.GroupName, r.DecidedBy, r.DecidedAt = wire.CatalogRequestStateApproved, a.Group, a.GroupName, optional(a.By), optional(dateOf(now))
 	}
-	data, _ := json.Marshal(r)
-	if err := governanceFits(data, governanceRecordBytes); err != nil {
+	data, err := boundedRequest(&r)
+	if err != nil {
 		return wire.CatalogRequest{}, err
 	}
 	if _, err := s.cfg.Store.Put(ctx, governanceRequestKey(r.ID), data, store.Absent); err != nil {
@@ -342,13 +346,23 @@ func (s *Service) governanceDecide(ctx context.Context, actor wire.AuditActor, d
 	if by == "" {
 		by = actor.User
 	}
+	by = cut(by, governanceNameMost)
 	r.State, r.DecidedBy, r.DecidedAt = wire.CatalogRequestStateRefused, optional(by), optional(dateOf(now))
 	if d.Approve {
 		r.State = wire.CatalogRequestStateApproved
+		if group != "" {
+			r.Group, r.GroupName = &group, optional(s.groupName(group))
+		}
+	}
+	// Before the approval is kept: an answer that does not fit changes nothing.
+	data, err := boundedRequest(&r)
+	if err != nil {
+		return wire.CatalogRequest{}, err
+	}
+	if d.Approve {
 		approval := wire.CatalogApproval{Kind: r.Kind, Name: r.Name, Source: r.Source, By: by, At: dateOf(now)}
 		if group != "" {
-			approval.Group, approval.GroupName = &group, optional(s.groupName(group))
-			r.Group, r.GroupName = approval.Group, approval.GroupName
+			approval.Group, approval.GroupName = r.Group, r.GroupName
 		} else {
 			approval.User, approval.UserName = optional(r.User), optional(r.UserName)
 		}
@@ -356,7 +370,6 @@ func (s *Service) governanceDecide(ctx context.Context, actor wire.AuditActor, d
 			return wire.CatalogRequest{}, err
 		}
 	}
-	data, _ := json.Marshal(r)
 	if _, err := s.cfg.Store.Put(ctx, governanceRequestKey(r.ID), data, store.Matching(object.ETag)); err != nil {
 		if store.IsConflict(err) {
 			return wire.CatalogRequest{}, fail(changedElsewhere, "Another admin answered this request.")
@@ -391,7 +404,11 @@ func (s *Service) approveWaiting(ctx context.Context, actor wire.AuditActor, app
 		}
 		r.State, r.Group, r.GroupName, r.DecidedBy, r.DecidedAt = wire.CatalogRequestStateApproved, approved.Group, approved.GroupName,
 			approved.DecidedBy, optional(dateOf(now))
-		data, _ := json.Marshal(r)
+		data, err := boundedRequest(&r)
+		if err != nil {
+			s.log("governance: the request " + r.ID + " could not be answered: " + err.Error())
+			continue
+		}
 		if _, err := s.cfg.Store.Put(ctx, governanceRequestKey(r.ID), data, store.Always); err == nil {
 			s.tellAdmins(wire.NotifyControlGovernanceRequested.Name, r)
 			s.router.TellPerson(r.User, wire.NotifyControlGovernanceRequested.Name, r)
@@ -421,6 +438,22 @@ func (s *Service) keepApproval(ctx context.Context, a wire.CatalogApproval) erro
 		return fail(storeUnavailable, "The approval could not be kept: %v", err)
 	}
 	return nil
+}
+
+// boundedRequest is a request's record, within its largest size (#7192). The names that an
+// ask and an answer add are cut, and then the reason until the rest fits, so a request can
+// always be answered.
+func boundedRequest(r *wire.CatalogRequest) ([]byte, error) {
+	r.UserName = cut(r.UserName, governanceNameMost)
+	r.GroupName, r.DecidedBy = cutOptional(r.GroupName, governanceNameMost), cutOptional(r.DecidedBy, governanceNameMost)
+	for most := governanceWhyMost; ; most /= 2 {
+		r.Why = cutOptional(r.Why, most)
+		data, _ := json.Marshal(r)
+		err := governanceFits(data, governanceRecordBytes)
+		if err == nil || most == 0 {
+			return data, err
+		}
+	}
 }
 
 // governanceFits refuses a record over its largest size.
