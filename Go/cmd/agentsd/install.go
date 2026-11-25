@@ -90,7 +90,7 @@ func installCommand(args []string) int {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	if control {
-		c.Home, c.Executable, c.Name = o.Home, o.Executable, o.Name
+		c.Home, c.Executable, c.Name, c.Agents = o.Home, o.Executable, o.Name, !noAgents
 		if code, ok := installControl(ctx, c, noAgents); !ok {
 			return 1
 		} else if noAgents {

@@ -47,6 +47,8 @@ type Options struct {
 	Domain string
 	// ACMEEmail is the address Let's Encrypt writes to about the certificate.
 	ACMEEmail string
+	// Agents is whether this machine also runs agents: the control plane then goes first.
+	Agents bool
 	// Port is the serving port; DefaultPort, or 443 with a domain, when 0.
 	Port int
 	// Page says that the web page is in place, so the unit serves it; Install sets it.
@@ -66,19 +68,21 @@ type Deps struct {
 
 // Layout is where the install puts things, under Home.
 type Layout struct {
-	Bin     string // the host's bin folder, where agents-control sits beside agentsd
-	Control string // agents-control's own folder (--home): certificate, key and store
-	Unit    string
-	Web     string // the built web page (the release's web/), beside Bin
+	Bin      string // the host's bin folder, where agents-control sits beside agentsd
+	Control  string // agents-control's own folder (--home): certificate, key and store
+	Unit     string
+	HostUnit string // the host's drop-in on a machine with both roles (#6613)
+	Web      string // the built web page (the release's web/), beside Bin
 }
 
 // LayoutOf is the layout under home.
 func LayoutOf(home string) Layout {
 	return Layout{
-		Bin:     filepath.Join(home, ".agents-server", "bin"),
-		Control: filepath.Join(home, ".agents-control"),
-		Unit:    filepath.Join(home, ".config", "systemd", "user", UnitName),
-		Web:     filepath.Join(home, ".agents-server", "web"),
+		Bin:      filepath.Join(home, ".agents-server", "bin"),
+		Control:  filepath.Join(home, ".agents-control"),
+		Unit:     filepath.Join(home, ".config", "systemd", "user", UnitName),
+		HostUnit: filepath.Join(home, ".config", "systemd", "user", "agents-host.service.d", "10-control-first.conf"),
+		Web:      filepath.Join(home, ".agents-server", "web"),
 	}
 }
 
@@ -107,7 +111,38 @@ func (o *Options) URL() string {
 	return "https://" + o.Domain
 }
 
-// Unit is the systemd user unit's text.
+// hostDropIn puts agentsd and its agents after the control plane on a machine with both
+// roles (#6613): a starved control plane drops every client (#6569). It is a drop-in, as the
+// host's own unit is written by its installer and stays as it is. CPUWeight is what decides
+// between two units where the user manager has the cpu controller; Nice where it does not.
+// AGENTS_CONTROL_HERE makes the host's capacity level keep room for the control plane.
+const hostDropIn = `[Service]
+Environment=AGENTS_CONTROL_HERE=1
+Nice=5
+CPUWeight=50
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+`
+
+// writeHostDropIn writes the host's drop-in with both roles, and removes it with one. A host
+// that runs takes it at its next start: the install does not stop its agents.
+func writeHostDropIn(l Layout, agents bool) error {
+	if !agents {
+		if err := os.Remove(l.HostUnit); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(l.HostUnit), 0o700); err != nil {
+		return err
+	}
+	// store-bounds: not a store: the host unit's drop-in, one small file rewritten whole by each install
+	return os.WriteFile(l.HostUnit, []byte(hostDropIn), 0o600)
+}
+
+// Unit is the systemd user unit's text. Its weight, IO priority and kept memory are within
+// what a user manager allows with no root; it leaves out what it cannot apply (#6613). A
+// Nice below 0 needs a privilege, so the host is put lower instead (hostDropIn).
 func Unit(o Options) string {
 	args := []string{"serve", "--home", "%h/.agents-control", "--bind", "0.0.0.0", "--port", strconv.Itoa(o.port())}
 	if o.Name != "" {
@@ -140,6 +175,10 @@ After=network-online.target
 %sExecStart=%%h/.agents-server/bin/agents-control %s
 Restart=always
 RestartSec=5
+CPUWeight=400
+IOSchedulingClass=best-effort
+IOSchedulingPriority=0
+MemoryLow=128M
 
 [Install]
 WantedBy=default.target
@@ -181,6 +220,9 @@ func Install(ctx context.Context, o Options, d Deps) error {
 	}
 	// store-bounds: not a store: the systemd unit file, one small file rewritten whole by each install
 	if err := os.WriteFile(l.Unit, []byte(Unit(o)), 0o600); err != nil {
+		return err
+	}
+	if err := writeHostDropIn(l, o.Agents); err != nil {
 		return err
 	}
 	for _, step := range [][]string{{"daemon-reload"}, {"enable", UnitName}, {"restart", UnitName}} {

@@ -31,10 +31,13 @@ struct HostSettings: Codable, Sendable, Equatable {
     var serveWebRemote: Bool?
     var servesWebRemote: Bool { serveWebRemote ?? false }
 
+    /// The control plane serves here, beside this Mac's host (#6613): it goes first.
+    var runsControlPlane: Bool { role == .runHere && movedTo == nil && receiving != true }
+
     /// Whether the control plane here takes the place of the stores set aside (#6769).
     /// Settings that could not be read say nothing, so nothing is deleted.
     var planeAside: StoresAside.Plane {
-        if role == .runHere, movedTo == nil, receiving != true { return .serving }
+        if runsControlPlane { return .serving }
         return movedAt.map { .away(since: $0) } ?? .unknown
     }
 

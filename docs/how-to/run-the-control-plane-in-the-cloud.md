@@ -867,5 +867,6 @@ A Linux machine can run the control plane as a systemd user unit beside `agentsd
 - The web page is in the tarball (`web/`). The install puts it in `~/.agents-server/web`. With `--domain`, the control plane serves it at `https://<domain>`. Without `--domain`, it serves it at `http://localhost:8792` on that machine only, as on the Mac.
 - The unit is `~/.config/systemd/user/agents-control.service`. Its folder is `~/.agents-control`. Run the install again to change a flag.
 - To update, unpack the newer release's tarball and run the same install from it. The install replaces `agents-control` and the web page together, and restarts the unit.
+- With both roles, the control plane goes first (#6613). Its unit has a higher `CPUWeight` and IO priority, and `MemoryLow`. The drop-in `~/.config/systemd/user/agents-host.service.d/10-control-first.conf` puts the host and its agents lower. A setting that the user manager cannot apply has no effect. `MemoryLow` has an effect only when the slices above the unit also have it (root sets that). The machine's capacity level is the higher of the two roles' levels, and it keeps one core's load free. A host that already runs takes the drop-in at its next start.
 
 The container above stays for a machine that has a container and Cloudflare in front: its Caddy also serves the second (views) name.

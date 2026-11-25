@@ -148,3 +148,42 @@ func TestHostCodeWaitsForTheStore(t *testing.T) {
 		t.Error("no code, no error")
 	}
 }
+
+// With both roles the control plane goes first (#6613): the host gets a drop-in that puts it
+// lower, and a machine with the control role only has none.
+func TestBothRolesPutTheControlPlaneFirst(t *testing.T) {
+	home, exe := setup(t)
+	d := Deps{Systemd: func() bool { return true }, Run: (&fake{}).run}
+	o := Options{Home: home, Executable: exe, Agents: true}
+	if err := Install(context.Background(), o, d); err != nil {
+		t.Fatal(err)
+	}
+	l := LayoutOf(home)
+	b, err := os.ReadFile(l.HostUnit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"[Service]", "Environment=AGENTS_CONTROL_HERE=1", "Nice=5", "CPUWeight=50", "IOSchedulingPriority=7"} {
+		if !strings.Contains(string(b), want+"\n") {
+			t.Errorf("drop-in lacks %q:\n%s", want, b)
+		}
+	}
+	u := Unit(o)
+	for _, want := range []string{"CPUWeight=400", "IOSchedulingClass=best-effort", "IOSchedulingPriority=0", "MemoryLow=128M"} {
+		if !strings.Contains(u, want+"\n") {
+			t.Errorf("unit lacks %q:\n%s", want, u)
+		}
+	}
+	if strings.Contains(u, "Nice=-") {
+		t.Error("a user unit cannot have a Nice below 0")
+	}
+	o.Agents = false
+	for range 2 {
+		if err := Install(context.Background(), o, d); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := os.Stat(l.HostUnit); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("the drop-in stays with one role: %v", err)
+		}
+	}
+}

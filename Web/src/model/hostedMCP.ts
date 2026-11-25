@@ -181,8 +181,8 @@ export function removesWords(name: string, inFolder: boolean, machine?: string):
     + `${machine ? ` on ${machine}` : ""}. Agents started after that won't have it.${inFolder ? "" : removesKept}`;
 }
 
-/** Where a removed personal entry is kept (#2195), as MCPHealthWords.removesKept. */
-export const removesKept = " A copy of the entry is kept in ~/.agents/mcp.removed.json.";
+/** Where a removed personal entry is kept (#2195), and for how long (#7022), as MCPHealthWords.removesKept. */
+export const removesKept = " A copy of the entry is kept for 90 days in ~/.agents/mcp.removed.json.";
 
 /** Remove… found the machine offline (#2266), as MCPHealthWords.notRemoved. */
 export function notRemovedOffline(name: string, machine: string): string {

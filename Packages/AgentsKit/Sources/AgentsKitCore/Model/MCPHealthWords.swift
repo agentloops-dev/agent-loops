@@ -121,8 +121,9 @@ public enum MCPHealthWords {
             + (inFolder ? "" : removesKept)
     }
 
-    /// Where a removed personal entry is kept (#2195).
-    public static let removesKept = " A copy of the entry is kept in ~/.agents/mcp.removed.json."
+    /// Where a removed personal entry is kept (#2195), and for how long (#7022): the daemon's
+    /// `store.MaxAge`, which `openRemovedConnectors` takes (#6727).
+    public static let removesKept = " A copy of the entry is kept for 90 days in ~/.agents/mcp.removed.json."
 
     /// Remove… found the machine offline (#2266).
     public static func notRemoved(_ name: String, offline machine: String) -> String {
