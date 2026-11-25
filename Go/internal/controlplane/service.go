@@ -187,6 +187,9 @@ type Service struct {
 	origin  string
 	copyID  string
 	records *records.Records
+	// When the audit last said that the people are at their limit (#7019).
+	peopleFullMu   sync.Mutex
+	peopleFullSaid time.Time
 	codes   *Codes
 	router  *Router
 	// auditChain links the audit entries this copy writes, and auditSinks sends them (#1001).
@@ -2073,6 +2076,12 @@ func (s *Service) spendClientCode(ctx context.Context, id string, stored *stored
 	// Before the code is spent, so it can be used once there is room (#6757).
 	if err := s.records.ClientRoom(ctx, a.ID); err != nil {
 		return nil, err
+	}
+	if stored.Invite != nil && s.records.Person(personIDFor(id)) == nil {
+		if err := s.records.PersonRoom(); err != nil {
+			s.notePeopleFull(err, wire.AuditActor{User: "invite"}, "the invite of "+stored.Invite.Name)
+			return nil, err
+		}
 	}
 	spender := a.ID
 	sp, err := s.codes.Spend(ctx, id, spent{PublicKey: a.PublicKey, Client: &spender})

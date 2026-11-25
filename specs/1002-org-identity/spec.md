@@ -250,7 +250,7 @@ On the Mac, the Connect sheet shows **Sign in with Acme Okta** first. On the Rem
 - **A person of the org provider is removed by an admin in the Console, and SCIM still lists them**: the removal stands (spec 736 FR-029). A later SCIM `PATCH` for that id answers `404`, so the provider shows the error in its own logs.
 - **The keeper for secrets cannot be reached**: an org provider's secret cannot be opened, so new sign-ins with it say "This control plane cannot open its secrets." Paired clients keep working.
 - **The control plane's HTTPS address changes**: the redirect URI changes. The Console shows the new URI on each provider with "Update this in Acme Okta".
-- **A large organisation**: SCIM pushes 5,000 users and 500 groups in its first sync. The control plane answers each request in under 200 ms at the 95th percentile, and People pages the list.
+- **A large organisation**: SCIM pushes 1,000 users and 500 groups in its first sync. The control plane answers each request in under 200 ms at the 95th percentile, and People pages the list.
 
 ## Requirements *(mandatory)*
 
@@ -286,7 +286,7 @@ On the Mac, the Connect sheet shows **Sign in with Acme Okta** first. On the Rem
 - **FR-020**: An admin MUST be able to mark a SCIM group **Gives the admin role**. A person's role MUST be `admin` while they are in such a group, and `member` when they are in none, unless an admin set it by hand before SCIM managed it. `people/setRole` MUST refuse with `managedByProvider` for a person whose role a group gives.
 - **FR-021**: No SCIM change MUST leave the control plane with no admin. The change to the group MUST be made; the role change that would leave no admin MUST NOT be, and admins MUST get a notice.
 - **FR-022**: SCIM errors MUST use the RFC 7644 error schema and status codes, and unsupported features MUST be listed as not supported in `ServiceProviderConfig`.
-- **FR-023**: The SCIM endpoints MUST answer within 200 ms at the 95th percentile for 5,000 users and 500 groups, and list in pages of at most 100.
+- **FR-023**: The SCIM endpoints MUST answer within 200 ms at the 95th percentile for 1,000 users and 500 groups, and list in pages of at most 100.
 
 **Leavers without SCIM (slice 2, Q1 answer A)**
 
@@ -329,7 +329,7 @@ On the Mac, the Connect sheet shows **Sign in with Acme Okta** first. On the Rem
 - **SC-003**: A SCIM deactivation cuts off every client of the person within 5 seconds, on every copy of the control plane, in 100% of tests with two copies and three clients.
 - **SC-004**: A ticket, a `state`, an ID token or a SCIM token used where it was not made (another connection, another control plane, another provider) pairs nothing and writes nothing, in 100% of tests.
 - **SC-005**: In a test that searches for the client secret's bytes (and its base64 and hex), each test token and each refresh token, after a full sign-in and SCIM run, they are found in no store file in the clear, no log, no audit entry and no client message: 0 finds.
-- **SC-006**: The SCIM endpoints pass the recorded request sets of Okta and Entra (research R4) with no failed request, and answer within 200 ms at the 95th percentile for 5,000 users and 500 groups.
+- **SC-006**: The SCIM endpoints pass the recorded request sets of Okta and Entra (research R4) with no failed request, and answer within 200 ms at the 95th percentile for 1,000 users and 500 groups.
 - **SC-007**: The Okta, Entra and Google Workspace presets each pass a walk on a real tenant in Alex's account test (not a gate, #1782).
 
 ## Docs
@@ -347,6 +347,6 @@ On the Mac, the Connect sheet shows **Sign in with Acme Okta** first. On the Rem
 
 - **T1 to T4 are in code** (spec 736). T9 adds fields to people and groups, and does not move a record.
 - **The control plane has an HTTPS address** for an org provider (D18). On a Mac with no public address, the organisation runs the control plane in the cloud (`deploy/`).
-- **Sizes**: up to 5 org providers, 20 domains, 5,000 people and 500 groups per control plane for SCIM. Spec 736's sizing (about 20 active people) is for machines and sessions; a provider can provision many more people than sign in.
+- **Sizes**: up to 5 org providers, 20 domains, 1,000 people and 500 groups per control plane for SCIM (was 5,000 people: Alex kept the 1 MiB of people of #6669, on #7019, 2026-11-24; a person over it is refused). Spec 736's sizing (about 20 active people) is for machines and sessions; a provider can provision many more people than sign in.
 - **SAML is not in this spec.** Okta, Entra and Google Workspace all offer OIDC. A later spec can add SAML if an organisation asks.
 - **Not in this spec**: SCIM for bots; nested groups; SCIM `Bulk`; a provider's own device-trust signals beyond what the provider enforces at sign-in; group-layer policy (T5 later); many organisations on one service (T10), for which the store shape and the DNS proof are ready.

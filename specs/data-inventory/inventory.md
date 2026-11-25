@@ -196,7 +196,7 @@ handover also leaves out `v1/keys/` (`storecopy.go:21,25`).
 | `v1/control.json` | Owner, endpoints, epoch, control key public parts, audit days | 1, 64 KiB (#6771) | on write |
 | `v1/clients/<UUID>.json` | Name, kind, public key, last seen, APNs token, ≤16 Live Activity tokens (12 h each), Web Push subscription | 16 KiB a record, 1 MiB in all (#6757; hosted: 5/50 clients too). Key life 90 days (`keylife.go:18`). | Tombstone 7 days. A client whose key expired is forgotten by the hourly sweep (#6757). |
 | `v1/machines/<id>.json` | Name, key, platform, version, owner, workspace | 32 KiB a record, 1 MiB in all (#6758; hosted: 2/20 machines too) | Tombstone 7 days. A machine with no workspace whose key expired is removed by the hourly sweep (#6758); a linked one stays until removed. |
-| `v1/people/<id>.json` | Name, role, sign-ins (email, login), SCIM part, old names (90 days) | No cap | A removed person goes after 14 days, or 90 when they have a sign-in (#6756) |
+| `v1/people/<id>.json` | Name, role, sign-ins (email, login), SCIM part, old names (90 days) | 16 KiB a record, 1 MiB in all, removed people 1 MiB more (#7019) | A removed person goes after 14 days, or 90 when they have a sign-in (#6756) |
 | `v1/groups/<id>.json` | Name, members | 1,000 (`groups.go:20`) | tombstone 7 days |
 | `v1/projects/<id>.json` | Name, owner, slots, ≤20 boards | 500 per person (`projects.go:36`) | tombstone 7 days |
 | `v1/projectFolders/<host>.json` | A machine's joined folders | 1,000 | orphan sweep |
