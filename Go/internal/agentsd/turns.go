@@ -1169,6 +1169,9 @@ func (d *Daemon) moveState(id wire.UUID, s wire.AgentState, fromArchive bool, fr
 		a.State = s
 		a.EndedReason = nil
 		a.ArchivedReason = nil
+		if fromArchive {
+			a.ArchiveWhy = nil
+		}
 		if s == wire.AgentStateRunning && !answered {
 			a.Report = nil
 			a.RunningTool = nil // a new turn begins thinking (#1902)

@@ -84,11 +84,17 @@ public final class ShellClient {
     @ObservationIgnored private var held: [(bytes: Data, offset: Int?)]?
     /// The connection went while attached. The next connection attaches again.
     @ObservationIgnored private var lost = false
-    /// Typed and not yet sent, and the one task sending it. One request at a time, in
-    /// order, with whatever was typed meanwhile sent together: a task per keystroke
-    /// let them overtake each other (#401).
+    /// Typed and not yet sent. To an older host one request goes at a time, with whatever
+    /// was typed meanwhile sent together: it runs each on its own, and a task per keystroke
+    /// let them overtake each other (#401). So there each keystroke waits for the last one's
+    /// answer, a whole round trip on a far machine. A host that puts them in order by
+    /// `stream` and `seq` is sent each at once, up to `mostInFlight` unanswered (#7147).
     @ObservationIgnored private var outbox = Data()
-    @ObservationIgnored private var sender: Task<Void, Never>?
+    @ObservationIgnored private var inFlight = 0
+    @ObservationIgnored private var ordered = false
+    @ObservationIgnored private var stream = UUID()
+    @ObservationIgnored private var nextSeq = 0
+    static let mostInFlight = 32
 
     /// What an emulator is told to start again from blank: RIS, a full reset. It also
     /// turns off whatever modes a program left on (mouse, bracketed paste, the
@@ -120,6 +126,8 @@ public final class ShellClient {
                                              folder: folderContext),
                 returning: DaemonAPI.ShellAttachResponse.self)
             state = response.state
+            ordered = response.ordered ?? false
+            if startedAt != response.startedAt { beginStream() }
             dropped = response.dropped
             folder = response.folder
             isAttached = true
@@ -205,27 +213,48 @@ public final class ShellClient {
     public func type(_ data: Data) {
         guard state.isLive, !data.isEmpty else { return }
         outbox.append(data)
-        guard sender == nil else { return }
-        sender = Task { await self.drainOutbox() }
+        sendOutbox()
     }
 
-    private func drainOutbox() async {
-        while !outbox.isEmpty {
+    private func sendOutbox() {
+        while !outbox.isEmpty, inFlight < (ordered ? Self.mostInFlight : 1) {
             let bytes = outbox
             outbox = Data()
-            do {
-                _ = try await client.call(DaemonAPI.Method.shellInput,
-                                      DaemonAPI.ShellInputRequest(agentID: agentID, shell: shell, bytes: bytes,
-                                                                  rows: rows > 0 ? rows : nil,
-                                                                  cols: cols > 0 ? cols : nil))
-                sendProblem = nil
-            } catch {
-                // Typing queued behind a failure is not sent later out of context.
-                outbox = Data()
-                sendProblem = "What you typed did not reach the shell: \(describe(error))"
+            inFlight += 1
+            let stream = stream, seq = nextSeq, ordered = ordered
+            if ordered { nextSeq += 1 }
+            Task {
+                await self.send(bytes, stream: stream, seq: seq, ordered: ordered)
+                self.inFlight -= 1
+                self.sendOutbox()
             }
         }
-        sender = nil
+    }
+
+    private func send(_ bytes: Data, stream: UUID, seq: Int, ordered: Bool) async {
+        do {
+            _ = try await client.call(DaemonAPI.Method.shellInput,
+                                      DaemonAPI.ShellInputRequest(agentID: agentID, shell: shell, bytes: bytes,
+                                                                  rows: rows > 0 ? rows : nil,
+                                                                  cols: cols > 0 ? cols : nil,
+                                                                  stream: ordered ? stream : nil,
+                                                                  seq: ordered ? seq : nil))
+            if stream == self.stream { sendProblem = nil }
+        } catch {
+            // One of a stream whose first failure was said already.
+            guard stream == self.stream else { return }
+            // Typing queued behind a failure is not sent later out of context.
+            outbox = Data()
+            beginStream()
+            sendProblem = "What you typed did not reach the shell: \(describe(error))"
+        }
+    }
+
+    /// A shell knows a stream from its first input: a new shell, or one after a failure left
+    /// a place in the stream empty, starts a new one.
+    private func beginStream() {
+        stream = UUID()
+        nextSeq = 0
     }
 
     /// Say this screen's size again, as last laid out: a kept emulator coming back on
@@ -256,6 +285,8 @@ public final class ShellClient {
             if startedAt != response.startedAt { beginAgain() }
             startedAt = response.startedAt
             state = response.state
+            ordered = response.ordered ?? false
+            beginStream()
             dropped = 0
             folder = response.folder
             isAttached = true
@@ -321,6 +352,7 @@ public final class ShellClient {
 
     /// A new shell in this place: a blank screen, and its output from the start.
     private func beginAgain() {
+        beginStream()
         title = nil
         directory = nil
         onOutput?(Self.reset)

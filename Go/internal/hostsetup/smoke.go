@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -123,8 +125,37 @@ func waitSignedIn(ctx context.Context, d Deps, runtime string) error {
 	}
 }
 
+// ScratchProjectOf is the folder the smoke session runs in when the machine has no project:
+// inside the host's own folder, so the machine user's home never becomes a folder.
+func ScratchProjectOf(home string) string { return filepath.Join(LayoutOf(home).Dir, "smoke") }
+
+// makeScratchProject makes it empty.
+func makeScratchProject(home string) (string, error) {
+	dir := ScratchProjectOf(home)
+	if err := os.RemoveAll(dir); err != nil {
+		return "", fmt.Errorf("the scratch project: %w", err)
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", fmt.Errorf("the scratch project: %w", err)
+	}
+	return dir, nil
+}
+
+// smokeFolder is the first project, else a scratch project that cleanup removes.
+func smokeFolder(o Options) (folder string, cleanup func(), err error) {
+	if len(o.Projects) > 0 {
+		return o.Projects[0], func() {}, nil
+	}
+	scratch, err := makeScratchProject(o.Home)
+	if err != nil {
+		return "", nil, err
+	}
+	return scratch, func() { _ = os.RemoveAll(scratch) }, nil
+}
+
 // Smoke is step 8: one short session with the cheapest model of the first runtime, in the
-// first project (else the machine user's home), with a fixed prompt. It must answer and end
+// first project (else a scratch project of its own, never the machine user's home), with a
+// fixed prompt. It must answer and end
 // its turn; the step says the time to the first word. The session is archived at the end,
 // whatever came of it. A step that failed says the runtime's own error, after SmokeTimeout.
 func Smoke(ctx context.Context, o Options, d Deps, rep *Reporter, say func(string, ...any)) error {
@@ -134,15 +165,16 @@ func Smoke(ctx context.Context, o Options, d Deps, rep *Reporter, say func(strin
 	if len(o.Runtimes) > 0 {
 		runtime = o.Runtimes[0]
 	}
-	folder := o.Home
-	if len(o.Projects) > 0 {
-		folder = o.Projects[0]
-	}
 	fail := func(err error) error {
 		rep.Say(step, wire.MachineSetupStateFailed, "", err.Error())
 		say("%s: %v", step, err)
 		return fmt.Errorf("%s: %w", step, err)
 	}
+	folder, cleanup, err := smokeFolder(o)
+	if err != nil {
+		return fail(err)
+	}
+	defer cleanup()
 	if err := waitSignedIn(ctx, d, runtime); err != nil {
 		// Not step 8's failure: it did not begin. Step 7 says why the runtime is not signed in.
 		say("Smoke session: not started: %v", err)

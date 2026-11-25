@@ -222,6 +222,10 @@
         "archivedAt": {
           "$ref": "core.schema.json#/definitions/WireDate"
         },
+        "archiveWhy": {
+          "description": "Why an agent archived this session, in its own words (#6067): kept from archive_session to the end of that turn, and on the archived record. Absent when the agent gave none, or a person archived a session that did not ask.",
+          "type": "string"
+        },
         "sandboxOverride": {
           "$ref": "org.schema.json#/definitions/SandboxChoice"
         },
@@ -432,6 +436,10 @@
               "properties": {
                 "since": {
                   "$ref": "core.schema.json#/definitions/WireDate"
+                },
+                "reason": {
+                  "description": "Why, in the agent's own words (#6067): one line, at most 200 characters. Absent on a request from before #6067, and on one made for the agent with none.",
+                  "type": "string"
                 }
               },
               "required": [
@@ -453,6 +461,10 @@
               "properties": {
                 "at": {
                   "$ref": "core.schema.json#/definitions/WireDate"
+                },
+                "reason": {
+                  "description": "Why, in the agent's own words (#6067): one line, at most 200 characters. Absent on a request from before #6067, and on one made for the agent with none.",
+                  "type": "string"
                 }
               },
               "required": [
@@ -1243,6 +1255,10 @@
         "replace": {
           "description": "With op message: replace the message of the starter's that waits, as message_session's replace.",
           "type": "boolean"
+        },
+        "reason": {
+          "description": "With op archive: why, in the starter's words (#6067), as archive_session's reason.",
+          "type": "string"
         },
         "project": {
           "description": "The asking agent's project (#3277). The host also answers status, read and message for a session that from did not start, when its folder is in this project now; stop and archive stay the starter's. The control plane checks that the asking machine has a folder of it.",

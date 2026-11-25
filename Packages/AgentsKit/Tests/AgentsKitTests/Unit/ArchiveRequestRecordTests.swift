@@ -8,12 +8,16 @@ import Testing
 @Suite("The request to archive, on the record and on the wire")
 struct ArchiveRequestRecordTests {
     @Test(arguments: [ArchiveRequest.whenTurnEnds(since: Date(timeIntervalSince1970: 1_000)),
-                      .requested(at: Date(timeIntervalSince1970: 2_000))])
+                      .requested(at: Date(timeIntervalSince1970: 2_000)),
+                      .whenTurnEnds(since: Date(timeIntervalSince1970: 1_000), reason: "The epic is closed."),
+                      .requested(at: Date(timeIntervalSince1970: 2_000), reason: "PR #12 merged.")])
     func bothMarksSurviveBeingSaved(_ mark: ArchiveRequest) throws {
         var agent = Agent(runtimeID: "claude", cwd: URL(filePath: "/tmp"))
         agent.archiveRequest = mark
+        agent.archiveWhy = mark.reason
         let read = try StoreCoding.decoder.decode(Agent.self, from: StoreCoding.encoder.encode(agent))
         #expect(read.archiveRequest == mark)
+        #expect(read.archiveWhy == mark.reason)
         #expect(read.unknownFields.isEmpty, "a known key, not a stray one")
     }
 

@@ -201,8 +201,9 @@ struct AgentCard: View {
                     }
                     // As on the Mac's row (#584). Archive itself is the swipe and the menu:
                     // the card is a link, and a button inside it would open the chat too.
-                    if let line = ArchiveRequestWords.line(agent) {
-                        Label(line, icon: ArchiveRequestWords.symbol)
+                    // It has no tooltip, so the line says why too (#6067).
+                    if agent.asksToArchive {
+                        Label(ArchiveRequestWords.detail(agent), icon: ArchiveRequestWords.symbol)
                             .appText(.fine)
                             .foregroundStyle(Paper.secondary)
                     }
@@ -253,7 +254,7 @@ struct AgentCard: View {
         let words = model.queuedLine(agent) ?? StatusShape.words(row: agent, isComingBack: isComingBack)
         return ([agent.title ?? "Untitled", SessionPriorityWords.help(agent), agent.isMuted ? MuteWords.muted : nil,
                  model.startedByAgentLabel(agent), words, agent.report?.message]
-            .compactMap { $0 } + [model.work.waitMark(of: agent)?.detail, ArchiveRequestWords.line(agent),
+            .compactMap { $0 } + [model.work.waitMark(of: agent)?.detail, agent.asksToArchive ? ArchiveRequestWords.detail(agent) : nil,
                                 FileToSeeWords.line(agent)].compactMap { $0 })
             .joined(separator: ", ")
     }
