@@ -17,7 +17,7 @@ read and not run. A store below its total is no proof that a record was handled.
 | Time series (`OpenTimeSeries`) | control plane | test: refused, nothing written | test: the roll-up | none | test | #7196 (no caller yet) |
 | Time series | machine | test: CI timings | test | read | read | #7190, #7200 |
 | Graph | machine | test: a ref of 512 bytes, also after a repo's move | read | read | test: read again | Holds; a line is not declared (#7200) |
-| Graph | control plane | test | test | read | read: the sweep | #7193 |
+| Graph | control plane | test | test | test: an old indented object is written again by the sweep | read: the sweep | Holds (#7193 fixed) |
 | Document | machine | test: requests | read | read | read | #7185, #7200 |
 | Document, key-value | control plane | own tests for settings, policy, sinks, views, links, maturity, people, machines, clients; test here: governance, choices | read: approvals and bus check the whole batch first | read: renamed machine keys are copied as they are | read: checked in each conflict retry | #7192, #7194, #7201, #7203 |
 | Document, key-value | hosted | test | test: the sweep | test: an old invite | read: in each retry | #7197 |
