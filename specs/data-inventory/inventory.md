@@ -93,7 +93,7 @@ from the root (`agentsd/backups.go:69,72`). It holds nothing else.
 | `assessments/*.json` | Runtime assessments | newest 50; 90 days from the start; 256 KiB per file (`assess_store.go`, #6724) | hourly, on start and on score | no |
 | `mcp-events.json` | Seen MCP event IDs | 2,000 IDs, 7 days (`mcpevents.go:53-56`) | on write | no |
 | `mcp-views/*.json` | View catalogues | pruned (`viewservers.go:369`) | on write | no |
-| `mcp-approvals.json`, `plugin-approvals.json` | Approval digests | **none.** Grows with folders × servers. | MCP: only on explicit remove; plugins: never | no |
+| `mcp-approvals.json`, `plugin-approvals.json` | Approval digests | 2,000 of each kind of answer, 8 KiB each; 90 days after the server or plugin went | on write, hourly; on remove (MCP) | no |
 | `devices.json` | Paired devices | 256 of 4 KiB each, else refused; 90 days unseen (`devices.go`, #6734) | on write, hourly, Forget | no |
 | `review-dismissals.json` | Dismissed PRs | 2,000 of 8 KiB each, 90 days from the PR's last change or its dismissal (`reviews.go`, #6728) | hourly and on write | no |
 | `review-opened.json` | Opened PRs | 2,000 of 8 KiB each, 90 days from the PR's last change or its opening (`reviews.go`, #6729) | hourly and on write | no |
@@ -423,10 +423,10 @@ newer than a row above for the same store.
 | `<root>/folders.json` | key-value | The folders the person added | Config in the data root | `Go/internal/agentsd/store/locations.go:104` | #6744 |
 | `<root>/wake.json` | key-value | Keep awake, grace hours, warm runtimes | Config in the data root | `Go/internal/agentsd/wake_darwin.go:18` | #6745 |
 | `<root>/backup-settings.json` | key-value | Backup target and Keep | Config in the data root | `Go/internal/agentsd/backups.go:43,127` | #6746 |
-| `<root>/allowances.json` | key-value | Allowance for each credential | Until its account is removed; config in the data root | `Go/internal/agentsd/allowances.go:32; accounts.go:361` | #6747 |
-| `<root>/runtime-accounts.json` | key-value | Runtime accounts the person added and named | Until removed; config in the data root | `Go/internal/agentsd/accounts.go:63` | #6748 |
-| `<root>/mcp-approvals.json` | key-value | The person's MCP server approvals | Until the folder goes; config in the data root | `Go/internal/agentsd/smallstores.go:28; mcpservers.go:315` | #6749 |
-| `<root>/plugin-approvals.json` | key-value | The person's plugin approvals | Until the folder goes; config in the data root | `Go/internal/agentsd/smallstores.go:29; plugins.go:56` | #6750 |
+| `<root>/allowances.json` | key-value | Allowance for each credential | 90 days; 500 of 64 KiB, the oldest goes. Derived, stays in the data root | `Go/internal/agentsd/allowances.go` (`boundAllowancesLocked`) | #6747 |
+| `<root>/runtime-accounts.json` | key-value | Runtime accounts the person added and named | Until removed; 100 of 4 KiB, else refused. Stays in the data root (Alex, 2026-11-24) | `Go/internal/agentsd/accounts.go` (`saveAccountsLocked`) | #6748 |
+| `<root>/mcp-approvals.json` | key-value | The person's MCP server approvals | 2,000 of each kind, 8 KiB each, else refused; 90 days after the server went. Stays in the data root: a trust source | `Go/internal/agentsd/approvalbounds.go` | #6749 |
+| `<root>/plugin-approvals.json` | key-value | The person's plugin approvals | 2,000 of each kind, 8 KiB each, else refused; 90 days after the plugin went. Stays in the data root: a trust source | `Go/internal/agentsd/approvalbounds.go` | #6750 |
 | `<root>/policy.json`, `policy-seen.json` | key-value | Signed copy of the org policy | A copy of admin config, in the data root | `Go/internal/agentsd/policy.go:35-36` | #6751 |
 | `<root>/project-tools.json` | key-value | Project tools from the control plane | A copy, in the data root | `Go/internal/agentsd/store/locations.go:113` | #6752 |
 | `<root>/host-user.json` | key-value | The machine's user from the control plane | A copy, in the data root | `Go/internal/agentsd/hostuser.go:29` | #6753 |
