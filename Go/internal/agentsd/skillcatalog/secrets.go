@@ -2,6 +2,7 @@ package skillcatalog
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -113,8 +114,47 @@ func (s *Secrets) Remove(name string) {
 	s.lines = out
 }
 
+// The limits of secrets.env (#7247). Nothing is evicted: a file over one still opens and can be
+// made smaller.
+const (
+	secretsFileMost = 1 << 20
+	secretLineMost  = 64 << 10
+)
+
+// check refuses a line, or a file, that grows over its limit. Its words hold no name and no value.
+func (s Secrets) check(path string) error {
+	old, err := LoadSecretsForChange(path)
+	if err != nil {
+		return err
+	}
+	were := map[string]bool{}
+	for _, l := range old.lines {
+		were[l] = true
+	}
+	for _, l := range s.lines {
+		if len(l) > secretLineMost && !were[l] {
+			return store.LimitError{Words: fmt.Sprintf("a line of secrets.env is at most %d KiB", secretLineMost>>10)}
+		}
+	}
+	if n := len(s.text()); n > secretsFileMost && n > len(old.text()) {
+		return store.LimitError{Words: fmt.Sprintf("secrets.env is at most %d KiB; remove a secret first", secretsFileMost>>10)}
+	}
+	return nil
+}
+
+func (s Secrets) text() string {
+	text := strings.Join(s.lines, "\n")
+	if text != "" && !strings.HasSuffix(text, "\n") {
+		text += "\n"
+	}
+	return text
+}
+
 // Save writes it whole, mode 0600, in a folder only its owner can open.
 func (s Secrets) Save(path string) error {
+	if err := s.check(path); err != nil {
+		return err
+	}
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
@@ -122,9 +162,6 @@ func (s Secrets) Save(path string) error {
 	if err := os.Chmod(dir, 0o700); err != nil { //nolint:gosec // G302: a folder, which needs x to be opened
 		return err
 	}
-	text := strings.Join(s.lines, "\n")
-	if text != "" && !strings.HasSuffix(text, "\n") {
-		text += "\n"
-	}
-	return store.WriteAtomically(path, []byte(text), 0o600)
+	// store-bounds: kind=secret; size=1MiB; age=until-deleted; applied=on write, refused, and 64KiB a line, and each start moves it into sealed.json
+	return store.WriteAtomically(path, []byte(s.text()), 0o600)
 }
