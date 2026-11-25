@@ -186,7 +186,7 @@ struct SendToHostSheet: View {
     @State private var facts: DaemonAPI.SendFacts?
     @State private var chosen: Set<String> = []
     @State private var includeChanges = true
-    @State private var leaveOutUntracked = false
+    @State private var includeUntracked = false
     @State private var destination = ""
     @State private var state: DaemonAPI.ReceiveState?
     @State private var progress: String?
@@ -270,8 +270,8 @@ struct SendToHostSheet: View {
         Text(changesLine(facts))
             .appText(.fine).foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
-        if let untracked = facts.untracked, untracked.isWorthAWarning, includeChanges, changesCanGo {
-            untrackedWarning(untracked)
+        if let untracked = facts.untracked, includeChanges, changesCanGo {
+            untrackedChoice(untracked)
         }
     }
 
@@ -289,11 +289,18 @@ struct SendToHostSheet: View {
         return "A new copy, with the same origin as here."
     }
 
-    /// Untracked files that are large or look like build output go by accident (#7121).
-    @ViewBuilder private func untrackedWarning(_ untracked: DaemonAPI.SendUntracked) -> some View {
-        SheetNote(tone: .attention, text: untracked.warning, reservesSpace: false)
-        Toggle("Leave out untracked files", isOn: $leaveOutUntracked)
+    /// Files that git does not track go only when the person says so (#7121): build output
+    /// that no .gitignore names is among them.
+    @ViewBuilder private func untrackedChoice(_ untracked: DaemonAPI.SendUntracked) -> some View {
+        Toggle("Include untracked files", isOn: $includeUntracked)
             .toggleStyle(.checkbox)
+        if includeUntracked, untracked.isWorthAWarning {
+            SheetNote(tone: .attention, text: untracked.summary, reservesSpace: false)
+        } else {
+            Text(untracked.summary)
+                .appText(.fine).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     private func changesLine(_ facts: DaemonAPI.SendFacts) -> String {
@@ -301,7 +308,7 @@ struct SendToHostSheet: View {
         guard let current = facts.current, chosen.contains(current) else {
             return "The uncommitted changes go only with the branch checked out here."
         }
-        if leaveOutUntracked {
+        guard includeUntracked || facts.untracked == nil else {
             return "Changed files go as a patch on \(current). Files that git does not track or ignores do not go."
         }
         return "Changed and new files go as a patch on \(current). Files that git ignores do not go."
@@ -348,7 +355,7 @@ struct SendToHostSheet: View {
                 DaemonAPI.SendRequest(folder: request.folder, machine: request.host.rawValue, machineName: label,
                                       destination: destination, branches: facts.branches.filter(chosen.contains),
                                       checkout: checkout, includeChanges: includeChanges && changesCanGo,
-                                      leaveOutUntracked: leaveOutUntracked && facts.untracked?.isWorthAWarning == true ? true : nil,
+                                      leaveOutUntracked: !includeUntracked,
                                       origin: facts.origin),
                 from: request.from)
             dismiss()
@@ -363,11 +370,10 @@ private extension DaemonAPI.SendUntracked {
     /// Large enough to slow a send, or likely not meant to go.
     var isWorthAWarning: Bool { buildOutput || partial || size >= 25_000_000 }
 
-    var warning: String {
+    var summary: String {
         let much = size.formatted(.byteCount(style: .file))
         let count = files == 1 ? "1 untracked file" : "\(files.formatted()) untracked files"
-        let total = partial ? "More than \(count) (over \(much)) go too, if you do not leave them out."
-            : "\(count) (\(much)) \(files == 1 ? "goes" : "go") too, if you do not leave \(files == 1 ? "it" : "them") out."
+        let total = partial ? "More than \(count) (over \(much))." : "\(count) (\(much))."
         let names = largest.map { "\($0.path) (\($0.size.formatted(.byteCount(style: .file))))" }
         return names.isEmpty ? total : "\(total) Largest: \(names.formatted(.list(type: .and)))."
     }
