@@ -35,11 +35,12 @@ import (
 //	v1/linkRequests/<request>.json               a request, kept a day after it ends
 
 const (
-	// store-bounds: kind=document; size=1MiB (4KiB a record); age=90d; applied=size before an approval, age since its last use in the hourly sweep
-	linksPrefix        = "v1/links/"
+	// store-bounds: kind=document; count=1000; size=8KiB a record; age=2d; applied=on write (a new one over the count is not made), on read and hourly
 	linkRequestsPrefix = "v1/linkRequests/"
-	linkLifetime       = 24 * time.Hour
-	linkKept           = 24 * time.Hour
+	// store-bounds: kind=document; size=1MiB (4KiB a record); age=90d; applied=size before an approval, age since its last use in the hourly sweep
+	linksPrefix  = "v1/links/"
+	linkLifetime = 24 * time.Hour
+	linkKept     = 24 * time.Hour
 	// linksOpen is how many requests may wait at once.
 	linksOpen = 50
 	// requestsReadAgain is how long the requests read are used before they are read again,
@@ -217,7 +218,8 @@ func (l *links) ask(ctx context.Context, sender wire.ChannelSender) error {
 			waiting++
 		}
 	}
-	if waiting >= linksOpen {
+	// Denied ones are not evicted: they keep the sender from asking again for a day.
+	if waiting >= linksOpen || len(all) >= requestsKeptMost {
 		return nil
 	}
 	now := records.At(l.now())
@@ -225,6 +227,9 @@ func (l *links) ask(ctx context.Context, sender wire.ChannelSender) error {
 		Email: deref(sender.Email), For: l.personForEmail(deref(sender.Email)), Created: now, Expires: records.At(now.Add(linkLifetime))}
 	data, err := records.Encode(r)
 	if err != nil {
+		return err
+	}
+	if err := fitsRecord("The link request", data, requestCreateBytes); err != nil {
 		return err
 	}
 	if _, err := l.s.cfg.Store.Put(ctx, linkRequestKey(r.ID), data, store.Absent); err != nil {

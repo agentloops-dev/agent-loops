@@ -67,13 +67,35 @@ type Tunnel = wire.MachineTunnel
 type Changed = wire.MachineTunnelChanged
 
 // Prefix is HostTunnels.prefix.
+//
+// store-bounds: kind=document; count=1000; size=64KiB a record; age=until-deleted; applied=before an install, refused, one unjoined for 15 minutes, or whose host is gone, goes on use
 const Prefix = "v1/tunnels/"
+
+const (
+	// mostTunnels is how many tunnels there may be when one more is added.
+	mostTunnels = 1000
+	// mostRecordBytes is the largest record. What the control plane learns later, the host's
+	// id, is never refused.
+	mostRecordBytes = 64 << 10
+)
+
+// tooLarge refuses a record over its largest size, unless it is no larger than it was.
+func tooLarge(name string, data, was []byte) error {
+	if len(data) > mostRecordBytes && len(data) > len(was) {
+		return fmt.Errorf("the tunnel to %.80s is %d KiB, at most %d KiB", name, (len(data)+1023)>>10, mostRecordBytes>>10)
+	}
+	return nil
+}
 
 // Key is HostTunnels.key.
 func Key(id string) string { return Prefix + id + ".json" }
 
 // codeKey and spentKey are ControlCodes.key and ControlCodes.spentKey.
-func codeKey(id string) string  { return "v1/codes/" + id + ".json" }
+//
+// store-bounds: not a store: the codes, declared in codes.go
+func codeKey(id string) string { return "v1/codes/" + id + ".json" }
+
+// store-bounds: not a store: the codes, declared in codes.go
 func spentKey(id string) string { return "v1/codes/" + id + ".spent" }
 
 // UnjoinedKept is HostTunnels.unjoinedKept: a server that has not joined by then never
@@ -327,16 +349,43 @@ func (t *Tunnels) letGoLocked(ctx context.Context, destination, name string) {
 	}
 }
 
+// Room refuses a tunnel that Add would have no room for. It is asked before the one held for
+// the destination is let go, so a refusal takes no server's tunnel away (#7249).
+func (t *Tunnels) Room(record Record) error {
+	data, err := records.Encode(record)
+	if err != nil {
+		return err
+	}
+	if err := tooLarge(record.Name, data, nil); err != nil {
+		return err
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	others := 0
+	for _, r := range t.records {
+		if !strings.EqualFold(r.Destination, record.Destination) {
+			others++
+		}
+	}
+	if others >= mostTunnels {
+		return fmt.Errorf("there are %d tunnels already; remove a machine that has one first", others)
+	}
+	return nil
+}
+
 // Add is HostTunnels.add: a tunnel for a server just installed, held at once so its
 // first dial finds it. One held before for the same destination goes (LetGo).
 func (t *Tunnels) Add(ctx context.Context, record Record) error {
 	t.work.Lock()
 	defer t.work.Unlock()
-	t.letGoLocked(ctx, record.Destination, record.Name)
 	data, err := records.Encode(record)
 	if err != nil {
 		return err
 	}
+	if err := tooLarge(record.Name, data, nil); err != nil {
+		return err
+	}
+	t.letGoLocked(ctx, record.Destination, record.Name)
 	if _, err := t.store.Put(ctx, Key(record.ID), data, store.Absent); err != nil {
 		return err
 	}
@@ -405,9 +454,16 @@ func (t *Tunnels) Repin(ctx context.Context, host, knownHosts string) (bool, err
 	if !found {
 		return false, nil
 	}
+	was, err := records.Encode(record)
+	if err != nil {
+		return true, err
+	}
 	record.KnownHosts = knownHosts
 	data, err := records.Encode(record)
 	if err != nil {
+		return true, err
+	}
+	if err := tooLarge(record.Name, data, was); err != nil {
 		return true, err
 	}
 	// Only this copy writes tunnels, so nobody else's write can be lost.

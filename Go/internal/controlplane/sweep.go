@@ -28,8 +28,9 @@ const (
 	sweepEvery         = time.Hour
 	mostPerSweep       = 1000
 	// Between two rounds of one hour's sweep, while a round stops at mostPerSweep (#2291).
-	sweepPause     = 5 * time.Second
-	eventsPrefix   = audit.Prefix
+	sweepPause   = 5 * time.Second
+	eventsPrefix = audit.Prefix
+	// store-bounds: not a store: the codes, declared in codes.go
 	codesPrefix    = "v1/codes/"
 	sweptDayLayout = "2006-01-02"
 )
@@ -447,7 +448,7 @@ func sweepUsages(ctx context.Context, rs *records.Records, now time.Time, left i
 func sweepOrphans(ctx context.Context, rs *records.Records, now time.Time, most int) (int, error) {
 	deleted := 0
 	for _, step := range []func(context.Context, *records.Records, time.Time, int) (int, bool, error){
-		sweepOrphanLeases, sweepOrphanFolderLists, sweepRemovedOrgRoutes, sweepMachineNames, sweepRemovedOrgProviders, sweepRemovedSecrets,
+		sweepOrphanLeases, sweepOrphanFolderLists, sweepRemovedOrgRoutes, sweepMachineNames, sweepScimNames, sweepRemovedOrgProviders, sweepRemovedSecrets,
 		sweepMachineSetups, sweepMachineVersions, sweepApprovalsOfGone, providers.SweepFailedMakes,
 	} {
 		n, full, err := step(ctx, rs, now, most-deleted)
@@ -506,6 +507,51 @@ func personGone(ctx context.Context, rs *records.Records, person string) (bool, 
 	// One made at another copy, and not read here yet, has a record in the store.
 	record, err := rs.Store.Get(ctx, records.PersonKey(person))
 	return err == nil && record == nil, err
+}
+
+// sweepScimNames deletes, at most most, the SCIM names of removed people (#7249). A person whose
+// record is gone is left: a sync claims a name before it makes the person. full says it
+// stopped at most.
+func sweepScimNames(ctx context.Context, rs *records.Records, _ time.Time, most int) (deleted int, full bool, err error) {
+	s := rs.Store
+	keys, err := s.List(ctx, scimPrefix)
+	if err != nil {
+		return 0, false, err
+	}
+	for _, k := range keys {
+		if !strings.Contains(k.Key, "/names/") {
+			continue
+		}
+		if deleted >= most {
+			return deleted, true, nil
+		}
+		object, err := s.Get(ctx, k.Key)
+		if err != nil {
+			return deleted, false, err
+		}
+		var held struct {
+			User string `json:"user"`
+		}
+		if object == nil || json.Unmarshal(object.Data, &held) != nil {
+			continue
+		}
+		if p := rs.Person(held.User); p == nil || !p.IsRemoved() {
+			continue
+		}
+		// Read again just before: another person can have claimed it since.
+		again, err := s.Get(ctx, k.Key)
+		if err != nil {
+			return deleted, false, err
+		}
+		if again == nil || again.ETag != object.ETag {
+			continue
+		}
+		if err := s.Delete(ctx, k.Key); err != nil {
+			return deleted, false, err
+		}
+		deleted++
+	}
+	return deleted, false, nil
 }
 
 // sweepMachineNames deletes, at most most, the machine-N counters of removed people (#6759):

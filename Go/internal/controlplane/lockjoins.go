@@ -32,6 +32,7 @@ import (
 // addMachine whose key is the machine's.
 
 const (
+	// store-bounds: kind=document; count=1000; size=8KiB a record; age=2h; applied=on read and hourly, the oldest ended ones over the count go, names are cut
 	lockJoinsPrefix = "v1/lockjoins/"
 	// At most this many requests wait for one person, and for everyone.
 	lockJoinsPerPerson = 5
@@ -104,6 +105,10 @@ func (j *lockJoins) all(ctx context.Context) ([]lockJoinRecord, error) {
 		out = append(out, *r)
 	}
 	sort.Slice(out, func(a, b int) bool { return out[a].Created.Before(out[b].Created.Time) })
+	out = evictEnded(out, func(r lockJoinRecord) bool { return !j.open(r) }, func(r lockJoinRecord) {
+		// A key left is deleted by the next read.
+		_ = j.s.cfg.Store.Delete(ctx, lockJoinKey(r.ID))
+	})
 	return out, nil
 }
 
@@ -111,6 +116,12 @@ func (j *lockJoins) write(ctx context.Context, r lockJoinRecord, condition store
 	data, err := records.Encode(r)
 	if err != nil {
 		return err
+	}
+	if condition == store.Absent {
+		// Only a new request: an answer is never refused for the size.
+		if err := fitsRecord("The request", data, requestCreateBytes); err != nil {
+			return err
+		}
 	}
 	if _, err := j.s.cfg.Store.Put(ctx, lockJoinKey(r.ID), data, condition); err != nil {
 		if store.IsConflict(err) {
@@ -367,6 +378,7 @@ func (j *lockJoins) open1(ctx context.Context, asking lockJoinRecord, request wi
 	}
 	now := records.At(j.now())
 	r := asking
+	r.Name = cut(r.Name, requestNameMost)
 	r.ID, r.Key, r.Commitment, r.Created, r.Expires = newJoinID(), request.Key, request.Commitment, now, records.At(now.Add(joinLifetime))
 	if err := j.write(ctx, r, store.Absent); err != nil {
 		return nil, err

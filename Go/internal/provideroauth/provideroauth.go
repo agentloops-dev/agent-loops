@@ -99,6 +99,8 @@ func (f *Flow) SecretNames() []string {
 type Store interface {
 	Values(provider string) map[string]string
 	Set(provider string, secrets map[string]string) error
+	// Renew is Set for a refreshed token, which is never refused for its size.
+	Renew(provider string, secrets map[string]string) error
 	// Reload reads the file again, for a refresh another process may have won.
 	Reload()
 }
@@ -390,7 +392,7 @@ func (c *Carrier) Fresh(ctx context.Context, provider string) (bool, error) {
 		if a.RefreshToken == "" {
 			a.RefreshToken = refresh
 		}
-		if err := c.Store.Set(provider, c.kept(f, a)); err != nil {
+		if err := c.Store.Renew(provider, c.kept(f, a)); err != nil {
 			return false, errors.New("this machine could not keep the new token")
 		}
 		return true, nil
