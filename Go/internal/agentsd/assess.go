@@ -308,7 +308,11 @@ func (d *Daemon) assessRuntime(r wire.AssessRuntimeRequest) (wire.AssessRuntimeR
 	kept := assessStart{AgentID: id, RuntimeID: rt.ID, RuntimeVersion: version, Host: host, ReportPath: report, ScopePath: scope,
 		ShortID: shortID}
 	if err := d.assessments().Put(string(id), assessment{start: &kept}); err != nil {
-		log.Printf("could not keep a runtime assessment's start: %v", err)
+		// With no start kept it cannot be scored: it does not run on unseen.
+		if aerr := d.archive(id); aerr != nil {
+			log.Printf("could not archive a runtime assessment whose start was not kept: %v", aerr)
+		}
+		return wire.AssessRuntimeResult{}, &Error{Code: wire.FailureCouldNotSave, Message: "The assessment's start could not be kept, so it was archived: " + err.Error()}
 	}
 	d.sweepAssessReports(today)
 	d.sweepAssessments(today)
@@ -344,13 +348,18 @@ func (d *Daemon) scoreAssessmentIfDue(id wire.UUID) {
 	}
 	// A write after the turn, which Shutdown waits for: the score lands in the root.
 	d.goAfterTurn("assessment", func() {
-		if score, err := d.assessment(id); err == nil {
+		score, err := d.assessment(id)
+		switch {
+		case err == nil:
 			d.record(id, runtimeNote(assessNote(score)))
+		case score.AgentID != "":
+			d.record(id, runtimeNote(assessNote(score)+"\n\nThis score is not kept: "+err.Error()))
 		}
 	})
 }
 
-// assessment scores an assessing agent now, from the record, and keeps the score.
+// assessment scores an assessing agent now, from the record, and keeps the score. A score that
+// could not be kept comes with the error.
 func (d *Daemon) assessment(id wire.UUID) (wire.RuntimeAssessmentScore, error) {
 	a := d.Store.Agent(id)
 	if a == nil {
@@ -409,6 +418,7 @@ func (d *Daemon) assessment(id wire.UUID) (wire.RuntimeAssessmentScore, error) {
 	score := rec.score(nowFunc())
 	if err := d.assessments().Put(string(id), assessment{score: &score}); err != nil {
 		log.Printf("could not keep a runtime assessment's score: %v", err)
+		return score, &Error{Code: wire.FailureCouldNotSave, Message: "The assessment's score could not be kept: " + err.Error()}
 	}
 	d.sweepAssessments(nowFunc())
 	return score, nil

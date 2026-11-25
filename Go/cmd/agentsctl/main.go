@@ -161,7 +161,11 @@ func pair(ctx context.Context, rest []string, kind string) {
 	if err != nil {
 		die("pair: %v", err)
 	}
-	b, _ := json.MarshalIndent(m, "", "  ")
+	b, err := kept(m)
+	if err != nil {
+		_ = controllink.ForgetSelf(ctx, m) // best effort: its Devices list shows one that stays
+		die("pair: %v", err)
+	}
 	if err := os.MkdirAll(filepath.Dir(file()), 0o700); err != nil {
 		die("pair: %v", err)
 	}
@@ -170,6 +174,18 @@ func pair(ctx context.Context, rest []string, kind string) {
 		die("pair: %v", err)
 	}
 	fmt.Println("paired as", m.Client)
+}
+
+// mostPairing is the largest pairing kept; the control plane gives the client's id.
+const mostPairing = 4 << 10
+
+// kept is the pairing as the file has it, refused when it is too large.
+func kept(m *controllink.ClientMembership) ([]byte, error) {
+	b, err := json.MarshalIndent(m, "", "  ")
+	if err == nil && len(b) > mostPairing {
+		err = fmt.Errorf("the pairing is %d bytes, at most %d; it is not kept", len(b), mostPairing)
+	}
+	return b, err
 }
 
 // unpair deletes the pairing. The control plane forgets this client too; when it does not

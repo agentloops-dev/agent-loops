@@ -179,6 +179,11 @@ func cutUTF8(b []byte) []byte {
 	if len(b) < assessReportMaxBytes {
 		return b
 	}
+	return wholeUTF8(b)
+}
+
+// wholeUTF8 is b without a last rune that is not whole.
+func wholeUTF8(b []byte) []byte {
 	for n := len(b) - 1; n >= 0 && n >= len(b)-utf8.UTFMax; n-- {
 		if utf8.RuneStart(b[n]) {
 			if !utf8.FullRune(b[n:]) {
