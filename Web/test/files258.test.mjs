@@ -249,6 +249,10 @@ test("a chat draws no picture, and a page draws one only from beside itself", ()
   assert.equal(pictures[0].props.path, "/docs/cat.png");
   assert.equal(pictures[0].props.alt, "cat");
 
+  // A link's picture follows the link and does not open large (#6624).
+  const linked = find(renderMarkdown("[![cat](cat.png)](https://example.com) ![dog](dog.png)", page(doc)), (node) => node.type?.name === "LocalPicture");
+  assert.deepEqual(linked.map((p) => [p.props.path, p.props.linked]), [["/docs/cat.png", true], ["/docs/dog.png", false]]);
+
   const remote = renderMarkdown("![a cat](https://example.com/cat.png)", page(doc));
   assert.equal(find(remote, (node) => node.type?.name === "LocalPicture").length, 0);
   const held = find(remote, (node) => node.props?.class === "image-placeholder");

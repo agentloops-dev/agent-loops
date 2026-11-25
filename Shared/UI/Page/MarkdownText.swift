@@ -35,6 +35,7 @@ struct MarkdownText: View {
     @Environment(\.textZoom) private var zoom
     @Environment(\.dynamicTypeSize) private var dynamicType
     @Environment(\.selectsAcrossBlocks) private var selectsAcross
+    @Environment(\.imageSequence) private var pageSequence
     let markdown: String
     /// The document's own location, when there is one, so a relative image can be
     /// found. Nil in the conversation, where there is no document to be relative to —
@@ -65,11 +66,14 @@ struct MarkdownText: View {
         .environment(\.imageSequence, sequence)
     }
 
-    /// A forge page's images, in their order, for the viewer; nil where no image opens large.
+    /// A forge page's images, in their order, for the viewer; elsewhere those of the page this
+    /// text is a passage of, if any.
     private var sequence: ImageSequenceScope? {
-        guard remoteImage != nil else { return nil }
-        let order = ImageSequence.sources(in: MarkdownBlock.parsed(markdown)).compactMap(ForgeMarkdown.imageURL(of:))
-        return ImageSequenceScope(gallery: gallery, order: order)
+        guard remoteImage != nil else { return pageSequence }
+        let images = ImageSequence.items(in: MarkdownBlock.parsed(markdown)).compactMap { item in
+            ForgeMarkdown.imageURL(of: item.source).map { ImageSequenceScope.Picture(url: $0, alt: item.alt) }
+        }
+        return ImageSequenceScope(gallery: gallery, images: images)
     }
 
     private var content: AnyView {
@@ -261,8 +265,9 @@ struct MarkdownText: View {
     /// read is the app's: the Mac's disk, or the phone asking the Mac.
     ///
     /// A forge's page is the one exception (#4010): its `remoteImage` asks the machine that
-    /// read the page for an https image, and a click opens it in the image viewer. An image that
-    /// is a link is never here: it is the link's words, whose click follows the link (#4954).
+    /// read the page for an https image. A click on either opens it in the image viewer. An
+    /// image that is a link is never here: it is the link's words, whose click follows the
+    /// link (#4954).
     @ViewBuilder
     private func image(source: String, alt: String) -> some View {
         if let base, let url = ImageStamps.url(of: source, base: base) {
@@ -592,10 +597,11 @@ private struct Sideways<Content: View>: View {
 /// Loaded once per identity. The page gives a passage a new identity when its
 /// picture's file changes, which is what makes this read it again.
 ///
+/// It opens in the image viewer when clicked, with the page's other images to go through
+/// (#4954, #6624). A small one (a logo, a badge) does not open.
+///
 /// A forge page's picture (`remote`, #4010) is asked for once, shows its alternative text
-/// while it loads and when it cannot be read, is never drawn larger than it is, and opens
-/// in the image viewer when clicked, with the page's other images to go through (#4954). A
-/// small one (a logo, a badge) does not open.
+/// while it loads and when it cannot be read, and is never drawn larger than it is.
 private struct PagePicture: View {
     @Environment(\.pageActions) private var actions
     @Environment(\.imageSequence) private var sequence
@@ -607,25 +613,23 @@ private struct PagePicture: View {
     @State private var loaded: PlatformImage?
     @State private var tried = false
     @State private var viewed: ViewedImage?
+    /// While the page's other images are read, so a second click opens nothing.
+    @State private var opening = false
 
     var body: some View {
         Group {
-            if let loaded, remote != nil, opensLarge(loaded) {
-                Button { open(loaded) } label: {
-                    drawn(loaded).frame(maxWidth: loaded.size.width)
-                }
-                .buttonStyle(.plain)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .accessibilityHint("Opens the image")
-                #if os(macOS)
-                .pointerStyle(.link)
-                #endif
-                .imageViewer($viewed)
-            } else if let loaded, remote != nil {
-                drawn(loaded).frame(maxWidth: loaded.size.width)
+            if let loaded, opensLarge(loaded) {
+                Button { open(loaded) } label: { sized(loaded) }
+                    .buttonStyle(.plain)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityLabel(alt.isEmpty ? "Image" : alt)
+                    .accessibilityHint("Opens the image")
+                    #if os(macOS)
+                    .pointerStyle(.link)
+                    #endif
+                    .imageViewer($viewed)
             } else if let loaded {
-                drawn(loaded).frame(maxWidth: .infinity, alignment: .leading)
+                sized(loaded).frame(maxWidth: .infinity, alignment: .leading)
             } else if tried || remote != nil {
                 PictureAlternative(source: source, alt: alt)
             } else {
@@ -637,9 +641,7 @@ private struct PagePicture: View {
             if let remote {
                 loaded = await remote(url)
                 tried = true
-                if let loaded, opensLarge(loaded) {
-                    sequence?.gallery.add(url, ViewedImage.Item(image: loaded, alt: alt))
-                }
+                if let loaded { sequence?.gallery.add(url, loaded, alt: alt) }
                 return
             }
             // Asked more than once: on a phone a picture is drawn by WebKit, and a
@@ -649,7 +651,10 @@ private struct PagePicture: View {
                 if attempt > 0 { try? await Task.sleep(for: .milliseconds(600)) }
                 guard !Task.isCancelled else { return }
                 loaded = await actions.image(url)
-                if loaded != nil { break }
+                if let loaded {
+                    sequence?.gallery.add(url, loaded, alt: alt)
+                    break
+                }
             }
             tried = true
         }
@@ -659,10 +664,27 @@ private struct PagePicture: View {
         ImageSequence.opensLarge(width: image.size.width, height: image.size.height)
     }
 
-    /// The viewer, at this image, with the page's other images read so far.
+    /// The viewer, at this image, with the page's other images.
     private func open(_ image: PlatformImage) {
-        viewed = sequence?.gallery.viewed(at: url, order: sequence?.order ?? [url])
-            ?? ViewedImage(images: [ViewedImage.Item(image: image, alt: alt)], start: 0)
+        let alone = ViewedImage(images: [ViewedImage.Item(image: image, alt: alt)], start: 0)
+        guard let sequence else { viewed = alone; return }
+        sequence.gallery.add(url, image, alt: alt)
+        guard remote == nil else {
+            viewed = sequence.gallery.viewed(at: url, of: sequence.images) ?? alone
+            return
+        }
+        guard !opening else { return }
+        opening = true
+        Task {
+            await sequence.gallery.readRest(of: sequence.images, with: actions.image)
+            viewed = sequence.gallery.viewed(at: url, of: sequence.images) ?? alone
+            opening = false
+        }
+    }
+
+    /// A forge's picture no larger than it is; a page's as wide as the text.
+    private func sized(_ image: PlatformImage) -> some View {
+        drawn(image).frame(maxWidth: remote == nil ? nil : image.size.width)
     }
 
     private func drawn(_ image: PlatformImage) -> some View {
