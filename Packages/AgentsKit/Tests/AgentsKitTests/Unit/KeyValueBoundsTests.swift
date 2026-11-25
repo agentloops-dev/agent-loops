@@ -189,9 +189,9 @@ struct KeyValueBoundsTests {
         let empty = AttentionSnapshot(writtenAt: long.writtenAt, total: 1, sessions: [row("")])
         let room = AttentionSnapshotStore.mostBytes - (try JSONEncoder().encode(empty)).count
         var at = empty
-        at.sessions[0].title = String(repeating: "x", count: room)
+        at.sessions[0].title = String(repeating: "x", count: room) // index-ok: made with one row
         #expect(AttentionSnapshotStore.fitted(at)?.snapshot == at)
-        at.sessions[0].title += "x"
+        at.sessions[0].title += "x" // index-ok: made with one row
         #expect(AttentionSnapshotStore.fitted(at)?.snapshot.sessions == [])
     }
 
