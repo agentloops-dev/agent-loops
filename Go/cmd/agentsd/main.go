@@ -466,7 +466,7 @@ func enrolWithCode(ctx context.Context, root, code, codeFile string, pin *agents
 		if err := pin.Admits(c.ControlKey, c.URL); err != nil {
 			return nil, err
 		}
-		return controllink.Enroll(ctx, root, c, private, hello)
+		return controllink.EnrollAs(ctx, root, c, private, hello, controllink.RolesOf(root))
 	})
 	if member == nil {
 		return nil
@@ -482,6 +482,11 @@ func keepUplink(ctx context.Context, cl commandLine, d *agentsd.Daemon, member *
 	loc := d.Store.Loc
 	up := &controllink.Uplink{Root: loc.Root, Member: member, Private: private, Hello: hello, Accept: d.Accept,
 		Lend: d.LendingPort, Rotated: func(key []byte) { d.ControlKeyRotated(key); d.MoveLocal(key) }}
+	controlOnly := controllink.ControlOnly(loc.Root)
+	if controlOnly {
+		// The control role alone (#7314): the link is for the store copy and the handover.
+		up.Accept, up.Lend = agentsd.RefuseAgentWork, nil
+	}
 	d.Tunneler = up
 	// The needs it shows nowhere go to the control plane, offered again on each return (#1367).
 	up.OnChange = func(connected bool, problem string) {
@@ -501,6 +506,9 @@ func keepUplink(ctx context.Context, cl commandLine, d *agentsd.Daemon, member *
 	}
 	up.Told = d.Told
 	up.Asked = d.Asked
+	if controlOnly {
+		up.Asked = d.AskedControlOnly
+	}
 	// A window on this Mac reaches this host directly (#1118).
 	d.StartLocal(ctx, member, private)
 	// And a browser on it, through the page this host serves (#1951).

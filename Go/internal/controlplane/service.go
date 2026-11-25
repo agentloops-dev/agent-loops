@@ -2164,11 +2164,23 @@ func (s *Service) spendHostCode(ctx context.Context, id string, stored *storedCo
 	if err := s.records.MachineRoom(ctx, a.PublicKey); err != nil {
 		return nil, err
 	}
-	// Before the code is spent too, so another machine can use it (#7305).
-	if err := s.refuseBothRoles(a.MachineID, a.PublicKey); err != nil {
+	roles := records.NormalRoles(a.Roles)
+	controlOnly := roles != nil && !slices.Contains(roles, records.RoleAgents)
+	// Before the code is spent too, so another machine can use it (#7305). A machine with the
+	// control role alone gives none the agents role (#7314), but one that runs this control
+	// plane already is one record (#6609), not a second.
+	if controlOnly {
+		if err := s.refuseControlOnlyJoin(a.MachineID, a.PublicKey); err != nil {
+			return nil, err
+		}
+	} else if err := s.refuseBothRoles(a.MachineID, a.PublicKey); err != nil {
 		return nil, err
 	}
 	want := s.joiningHostID(stored, a)
+	if controlOnly && stored.MadeHost == "" {
+		// Never the home host's id, mac: the control plane's own machine is not this one.
+		want = records.NewHostID()
+	}
 	sp, err := s.codes.Spend(ctx, id, spent{PublicKey: a.PublicKey, Host: &want})
 	if err != nil {
 		return nil, err
@@ -2186,7 +2198,7 @@ func (s *Service) spendHostCode(ctx context.Context, id string, stored *storedCo
 	mid := a.MachineID
 	// The machine is the person's who made the code (FR-017).
 	record := records.MachineRecord{ID: host, Name: a.Name, PublicKey: a.PublicKey, Platform: a.Platform,
-		Version: a.Version, MachineID: &mid, Owner: stored.Owner, Expires: s.newExpiry()}
+		Version: a.Version, MachineID: &mid, Owner: stored.Owner, Expires: s.newExpiry(), Roles: roles}
 	if deref(a.Implementation) != "" {
 		impl, _ := json.Marshal(*a.Implementation)
 		record.Extra = records.Extra{"implementation": impl}

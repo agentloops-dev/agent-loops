@@ -8792,6 +8792,12 @@ export interface MachineAnnounce {
   version: string;
   machineID: string;
   implementation?: string;
+  /**
+   * What the machine does (#6609, #7314): agents, control or both, from its install. Absent means
+   * agents. A machine with control alone runs no agents: it keeps a link for the store copy and the
+   * handover, and the control plane opens no client's channel to it.
+   */
+  roles?: ("agents" | "control")[];
 }
 
 /**
@@ -19103,7 +19109,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   MachineAgents: { required: ["host", "version", "history", "others"], optional: ["since", "previous", "changes", "changesError"] },
   MachineAgentsOther: { required: ["host", "name", "version"], optional: ["since", "ahead", "behind"] },
   MachineAgentsVersion: { required: ["version"], optional: ["since"] },
-  MachineAnnounce: { required: ["publicKey", "name", "platform", "version", "machineID"], optional: ["implementation"] },
+  MachineAnnounce: { required: ["publicKey", "name", "platform", "version", "machineID"], optional: ["implementation", "roles"] },
   MachineBotKey: { required: ["host"], optional: ["copy", "drop"] },
   MachineCatalog: { required: ["items"], optional: [] },
   MachineClient: { required: ["id", "kind", "publicKey"], optional: ["person"] },

@@ -39,6 +39,9 @@ type Options struct {
 	Executable string
 	// Smoke runs step 8 after the others pass: one short session on this machine.
 	Smoke bool
+	// ControlOnly is a machine with the control role alone (#7314): the host joins with roles
+	// ["control"] and takes no agent work, so steps 5 to 8 have nothing to do.
+	ControlOnly bool
 }
 
 // Deps are what the installer does outside itself, so a test can stand in for each.
@@ -155,6 +158,15 @@ func Run(ctx context.Context, o Options, d Deps) error {
 		rep.Compared("Joined with the code the control plane made for this machine", "")
 	}
 
+	if o.ControlOnly {
+		// No runtimes, projects, sign-in or smoke session: it runs no agents.
+		for _, step := range []wire.MachineSetupStepID{wire.MachineSetupStepIDRuntimes, wire.MachineSetupStepIDProjects} {
+			rep.Say(step, wire.MachineSetupStateDone, controlOnlyStep, "")
+		}
+		say("%s", controlOnlyStep)
+		return nil
+	}
+
 	// 5 and 6, together.
 	var wg sync.WaitGroup
 	var mu sync.Mutex
@@ -194,6 +206,9 @@ func Run(ctx context.Context, o Options, d Deps) error {
 	// 8: Smoke session.
 	return Smoke(ctx, o, d, rep, say)
 }
+
+// controlOnlyStep is what steps 5 and 6 say on a control-only machine.
+const controlOnlyStep = "None: this machine runs the control plane and no agents"
 
 // Continue runs the set-up from step from (projects, sign-in or smoke) to the end, inside the
 // host, on a machine that a person claimed from a warm pool (#6896). root is the host's root.
@@ -239,6 +254,12 @@ func installAgents(ctx context.Context, o Options, d Deps, l Layout, rep *Report
 		return "", fmt.Errorf("could not put the host in place: %w", err)
 	}
 	if !l.joined() {
+		if o.ControlOnly {
+			// Before the code: the host enrols with the control role alone (#7314).
+			if err := controllink.MarkControlOnly(l.Root); err != nil {
+				return "", err
+			}
+		}
 		// The host enrols with this code when it starts; a code it was refused is replaced.
 		_ = os.Remove(filepath.Join(l.Root, "control-join-ask"))
 		if err := os.WriteFile(filepath.Join(l.Root, "control-join-code"), []byte(strings.TrimSpace(o.Join)), 0o600); err != nil {

@@ -1927,6 +1927,17 @@
         },
         "implementation": {
           "type": "string"
+        },
+        "roles": {
+          "type": "array",
+          "description": "What the machine does (#6609, #7314): agents, control or both, from its install. Absent means agents. A machine with control alone runs no agents: it keeps a link for the store copy and the handover, and the control plane opens no client's channel to it.",
+          "items": {
+            "type": "string",
+            "enum": [
+              "agents",
+              "control"
+            ]
+          }
         }
       },
       "required": [

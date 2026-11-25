@@ -79,6 +79,16 @@ func (s *Service) PersonOf(client string) string {
 // OwnerOf is the user a machine belongs to: its owner, else the local owner.
 func (s *Service) OwnerOf(host string) string { return s.ownerOf(host) }
 
+// NoAgentsRefusal is why a client's request does not reach a machine that runs the control
+// plane and no agents (#7314), or "" for one that runs agents.
+func (s *Service) NoAgentsRefusal(host string) string {
+	h := s.records.Host(host)
+	if h == nil || !h.ControlOnly() {
+		return ""
+	}
+	return h.Name + " runs the control plane and no agents: it takes no sessions, folders or other agent work."
+}
+
 func (s *Service) ownerOf(host string) string {
 	if h := s.records.Host(host); h != nil && h.Owner != nil && *h.Owner != "" {
 		return *h.Owner
