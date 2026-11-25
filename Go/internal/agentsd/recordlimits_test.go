@@ -2,6 +2,7 @@ package agentsd
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/diskjson"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/skillcatalog"
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
@@ -19,7 +21,6 @@ import (
 
 // A removed connector that is too large to carry over loses no copy, whatever the sweep does.
 func TestRemovedConnectorsTooLargeToCarryOverAreNotLost(t *testing.T) {
-	t.Skip("#7181")
 	t.Parallel()
 	home := t.TempDir()
 	personalHomeFor(t, home)
@@ -32,6 +33,37 @@ func TestRemovedConnectorsTooLargeToCarryOverAreNotLost(t *testing.T) {
 	must(t, err)
 	if !strings.Contains(string(b), `"mine"`) {
 		t.Fatalf("the sweep left %.200s", b)
+	}
+	// A second sweep and a new removal leave the copies as they are.
+	d.sweepSmallStores(nowFunc())
+	must(t, d.keepRemovedConnector("new", skillcatalog.Object()))
+	got, err := d.removedConnectors.Read()
+	must(t, err)
+	if len(got) != 3 || string(got["mine"].Entry) != `{"command":"a"}` || len(got["big"].Entry) < 256<<10 || got["big"].RemovedAt == 0 {
+		t.Fatalf("%d copies, mine %s, big of %d bytes", len(got), got["mine"].Entry, len(got["big"].Entry))
+	}
+}
+
+// More removed connectors than the count all come over, and none is added to them.
+func TestTooManyRemovedConnectorsToCarryOverAreNotLost(t *testing.T) {
+	t.Parallel()
+	home := t.TempDir()
+	personalHomeFor(t, home)
+	d, _ := start(t, t.TempDir())
+	defer d.Shutdown()
+	var old []string
+	for i := range 101 {
+		old = append(old, fmt.Sprintf(`"c%d": {"command": "a"}`, i))
+	}
+	writeFile(t, d.removedConnectorsPath(), `{"mcpServers": {`+strings.Join(old, ",")+`}}`)
+	d.sweepSmallStores(nowFunc())
+	if err := d.keepRemovedConnector("new", skillcatalog.Object()); !errors.Is(err, store.ErrLimit) {
+		t.Fatalf("one more when full: %v", err)
+	}
+	got, err := d.removedConnectors.Read()
+	must(t, err)
+	if len(got) != 101 || string(got["c100"].Entry) != `{"command":"a"}` {
+		t.Fatalf("%d copies", len(got))
 	}
 }
 

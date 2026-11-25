@@ -7,7 +7,7 @@ read and not run. A store below its total is no proof that a record was handled.
 
 | Kind | Where | At the limit and over it | Bulk | Migration | Replay | Result |
 | --- | --- | --- | --- | --- | --- | --- |
-| Small file (`store.JSONFile`) | machine | test: taken; refused with the limit in the words, the file unchanged | test: one over refuses all, nothing written | test: an old large entry does not stop others | test | The kind holds. Callers fail: #7181, #7184, #7186 |
+| Small file (`store.JSONFile`) | machine | test: taken; refused with the limit in the words, the file unchanged | test: one over refuses all, nothing written | test: an old large entry does not stop others; `UpdateKeepingAll` keeps it (#7181) | test | The kind holds. Callers fail: #7184, #7186 |
 | Other small files | machine | test: catalogue records; read: pins, approvals, folders, devices, policy copies, wake, lock | read | read: `moveSetting` copies as it is, the next write checks | read | #7188, #7189, #7203 |
 | Secret (`store.SecretFile`) | machine | test: refused, no name or value in the words, the earlier value intact | test | test (kind's own): a file over its limit opens and can shrink | test | Holds |
 | Secret | control plane | read: checked before the seal; a token's use and revoke are not | read | read | read, each retry | #7203 |

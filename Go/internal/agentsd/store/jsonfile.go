@@ -97,6 +97,18 @@ func (f *JSONFile[T]) Read() (map[string]T, error) {
 // is set aside and starts again from none. It refuses an entry changed to over its largest size,
 // and, for a store that refuses, an entry more than the count.
 func (f *JSONFile[T]) Update(change func(map[string]T) error) error {
+	return f.update(change, true)
+}
+
+// UpdateKeepingAll is Update for the entries of a file from before the store had its limits, when a
+// store that refuses must lose none (CarryOver's copy set aside is trimmed): it keeps an entry over the largest size, and more entries
+// than the count. They are dated, so they go by age, and Update refuses to add to them. In a
+// store that evicts, the sweep lets them go.
+func (f *JSONFile[T]) UpdateKeepingAll(change func(map[string]T) error) error {
+	return f.update(change, false)
+}
+
+func (f *JSONFile[T]) update(change func(map[string]T) error, limited bool) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	entries, old, err := f.read()
@@ -126,11 +138,11 @@ func (f *JSONFile[T]) Update(change func(map[string]T) error) error {
 		if err != nil {
 			return err
 		}
-		if len(key)+len(data) > b.MaxRecordBytes && !bytes.Equal(data, before[key]) {
+		if limited && len(key)+len(data) > b.MaxRecordBytes && !bytes.Equal(data, before[key]) {
 			return fmt.Errorf("%s: an entry of %d bytes, at most %d: %w", f.spec.Name, len(key)+len(data), b.MaxRecordBytes, ErrLimit)
 		}
 	}
-	if b.Action == Refuse && len(entries) > b.MaxCount && len(entries) > count {
+	if limited && b.Action == Refuse && len(entries) > b.MaxCount && len(entries) > count {
 		return fmt.Errorf("%s: full at %d entries; remove one first: %w", f.spec.Name, b.MaxCount, ErrLimit)
 	}
 	dropped += f.expire(entries)

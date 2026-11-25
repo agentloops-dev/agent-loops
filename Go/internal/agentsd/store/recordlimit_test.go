@@ -99,6 +99,26 @@ func TestRecordLimitOfAJSONFilesOldEntry(t *testing.T) {
 	}
 }
 
+// Entries from before the limits are carried over whole, over the largest and over the count, and
+// a store that refuses keeps them; a later write over the limits is still refused.
+func TestRecordLimitOfAnUpdateKeepingAll(t *testing.T) {
+	t.Parallel()
+	f, file, _ := testJSONFile(t, Refuse)
+	if err := f.UpdateKeepingAll(func(m map[string]jsonEntry) error {
+		for n := range 3 {
+			m[fmt.Sprint(n)] = jsonEntry{Text: fmt.Sprintf("%0200d", n)}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := f.Sweep(); n != 0 || err != nil || entryCount(t, f) != 3 {
+		t.Fatalf("the sweep took an entry: %d %v", n, err)
+	}
+	refusedWhole(t, file, 100, func() error { return putEntry(f, "0", fmt.Sprintf("%0300d", 0)) })
+	refusedWhole(t, file, 2, func() error { return putEntry(f, "3", "a") })
+}
+
 // #7182: an old file's entries come over up to the largest; a larger one is named in the log and
 // left in the old file, which is set aside. With none, it is not, unless it has more than
 // the entries.
