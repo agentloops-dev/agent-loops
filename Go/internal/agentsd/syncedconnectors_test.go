@@ -102,7 +102,7 @@ func TestADeliveredServerWaitsForApproval(t *testing.T) {
 		t.Fatalf("a sign-in would reach it: %v", err)
 	}
 	for _, h := range d.mcpHealthSnapshot().Servers {
-		if !h.Hosted && h.Check != wire.MCPCheckStateWaiting {
+		if h.Check != wire.MCPCheckStateWaiting {
 			t.Fatalf("%+v", h)
 		}
 	}
@@ -198,6 +198,45 @@ func TestADeliveredServerIsApprovedOnADevice(t *testing.T) {
 	checksDone(t, d)
 	if !exists(changed) {
 		t.Fatal("an approved server did not start")
+	}
+}
+
+// The whole entry is there to read, with no line left out and no character that does not show.
+func TestAWaitingEntryIsReadWhole(t *testing.T) {
+	d, _, dir, _, _ := syncedMachine(t)
+	args := make([]string, 0, 1001)
+	for range 1000 {
+		args = append(args, "x")
+	}
+	args = append(args, "last\u202e")
+	deliverServers(d, string(mustJSON(map[string]any{"long": map[string]any{"command": "c", "args": args}})))
+	r, err := d.readConnectorApproval(dir, "~|long")
+	must(t, err)
+	if len(r.Lines) != 1006 || r.Lines[1002].Text != `    "last\u202e"` || r.Lines[0].Kind != wire.GuardedDiffLineKindAdded {
+		t.Fatalf("%d lines, %+v", len(r.Lines), r.Lines[len(r.Lines)-5:])
+	}
+}
+
+// An entry with one name in two spellings is not approved.
+func TestAnEntryWithTwoSpellingsOfANameWaits(t *testing.T) {
+	d, _, _, _, _ := syncedMachine(t)
+	raw := `{"command":"a","Command":"b"}`
+	deliverServers(d, `{"x":`+raw+`}`)
+	if err := d.answerPersonalConnector(withCaller(context.Background(), true), "x", entryDigest(json.RawMessage(raw)), true); err == nil {
+		t.Fatal("it was approved")
+	}
+	if len(gatedNames(d)) != 0 {
+		t.Fatal("it starts")
+	}
+}
+
+// The Agent Configuration page says that no agent is given a waiting one.
+func TestTheSharedSnapshotLeavesOutAWaitingServer(t *testing.T) {
+	d, home, _, _, _ := syncedMachine(t)
+	deliverServers(d, `{"x":{"command":"x"}}`)
+	s := personalSnapshot(home, []sharedRule{{id: "claude", takesStdio: true}}, layoutRecord{Home: home}, nil, nil, d.personalGate())
+	if len(s.MCP.Servers) != 1 || !strings.Contains(string(s.MCP.Servers[0].Reach["claude"]), "waits for your approval") {
+		t.Fatalf("%+v", s.MCP.Servers)
 	}
 }
 

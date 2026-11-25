@@ -484,6 +484,7 @@ test("Connectors: every connector's health, the person's and each folder's, in t
   assert.equal(healthKind(local), "stdio · run in each session");
   assert.equal(healthKind(shared), "stdio · hosted");
   assert.equal(healthLine(tools), "Waiting for approval in this folder's settings, so it is not started");
+  assert.equal(healthLine({ ...shared, check: "waiting" }), healthLine({ ...local, check: "waiting" }));
   assert.equal(healthLine({ ...local, check: "waiting" }), "Waiting for your approval in Needs You, so it is not started");
   assert.equal(healthTone(local), "failing");
   assert.equal(healthTone(shared), "quiet");

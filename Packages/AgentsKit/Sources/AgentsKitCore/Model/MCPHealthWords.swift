@@ -27,7 +27,7 @@ public enum MCPHealthWords {
 
     /// How it is doing, in a line.
     public static func line(_ server: Server) -> String {
-        if server.hosted {
+        if server.hosted && server.check != .waiting {
             return server.live.map(HostedMCPWords.line) ?? "Hosted \u{00B7} starts on the first call"
         }
         switch server.check {

@@ -1,11 +1,14 @@
 package agentsd
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"log"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/mcpcatalog"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
@@ -51,17 +54,15 @@ func (d *Daemon) mcpDeniedLocked() map[string]string {
 
 // readConnectorApproval is the entry that waits, as approvals/read shows it.
 func (d *Daemon) readConnectorApproval(folder, name string) (wire.GuardedChangeReading, error) {
-	if _, ok := d.summaryFor(folder); !ok {
-		return wire.GuardedChangeReading{}, noSuchFolder(folder + " is not a folder.")
-	}
 	if own, ok := strings.CutPrefix(name, personalApprovalKey); ok {
 		e, err := d.personalEntry(own)
 		if err != nil {
 			return wire.GuardedChangeReading{}, err
 		}
-		digest, current := entryDigest(e.raw), string(e.raw)
-		return wire.GuardedChangeReading{Path: "~/.agents/mcp.json", Digest: &digest, Current: &current,
-			Lines: []wire.GuardedDiffLine{}}, nil
+		return entryReading("~/.agents/mcp.json", e), nil
+	}
+	if _, ok := d.summaryFor(folder); !ok {
+		return wire.GuardedChangeReading{}, noSuchFolder(folder + " is not a folder.")
 	}
 	entries, problem := readMCPFile(mcpcatalog.FolderFile(folder))
 	if problem != "" {
@@ -69,12 +70,34 @@ func (d *Daemon) readConnectorApproval(folder, name string) (wire.GuardedChangeR
 	}
 	for _, e := range entries {
 		if e.name == name {
-			digest, current := entryDigest(e.raw), string(e.raw)
-			return wire.GuardedChangeReading{Path: ".agents/mcp.json", Digest: &digest, Current: &current,
-				Lines: []wire.GuardedDiffLine{}}, nil
+			return entryReading(".agents/mcp.json", e), nil
 		}
 	}
 	return wire.GuardedChangeReading{}, Invalid("%s is not in this folder's .agents/mcp.json any more.", name)
+}
+
+// entryReading is a whole entry to read before it is approved: as it runs, its keys sorted, no
+// line left out, and a character that does not show written as its escape.
+func entryReading(path string, e mcpEntry) wire.GuardedChangeReading {
+	digest, current := entryDigest(e.raw), canonicalEntry(e.raw)
+	var indented bytes.Buffer
+	if json.Indent(&indented, []byte(current), "", "  ") == nil {
+		current = indented.String()
+	}
+	var shown strings.Builder
+	for _, r := range current {
+		if r == '\n' || unicode.IsPrint(r) {
+			shown.WriteRune(r)
+		} else {
+			shown.WriteString(strings.Trim(strconv.QuoteToASCII(string(r)), `"`))
+		}
+	}
+	current = shown.String()
+	lines := []wire.GuardedDiffLine{}
+	for text := range strings.SplitSeq(current, "\n") {
+		lines = append(lines, wire.GuardedDiffLine{Kind: wire.GuardedDiffLineKindAdded, Text: text})
+	}
+	return wire.GuardedChangeReading{Path: path, Digest: &digest, Current: &current, Lines: lines}
 }
 
 // answerConnector is approvals/answer for a waiting connector.

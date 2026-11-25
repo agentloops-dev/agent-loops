@@ -85,7 +85,7 @@ export function healthKind(server: MCPServerHealth): string {
 
 /** How it is doing, in a line. */
 export function healthLine(server: MCPServerHealth): string {
-  if (server.hosted) return server.live ? hostedLine(server.live) : "Hosted · starts on the first call";
+  if (server.hosted && server.check !== "waiting") return server.live ? hostedLine(server.live) : "Hosted · starts on the first call";
   switch (server.check) {
     case "unchecked": return "Not checked yet";
     case "checking": return "Checking…";

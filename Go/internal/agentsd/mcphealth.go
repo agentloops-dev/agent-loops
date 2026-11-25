@@ -315,6 +315,9 @@ func (d *Daemon) mcpHealthRowLocked(e mcpEntry, folder *string, cwd string, wait
 	switch {
 	case e.hosted:
 		h.Live = d.hostedStatus(folder, e.name)
+		if waiting {
+			h.Check = wire.MCPCheckStateWaiting
+		}
 		if waiting || len(gone) > 0 {
 			return h, nil
 		}

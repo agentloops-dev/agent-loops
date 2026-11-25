@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/mcpcatalog"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
@@ -75,7 +76,23 @@ func (g personalGate) waits(e mcpEntry) bool {
 	if _, ok := g.synced[key]; !ok {
 		return false
 	}
-	return g.approved[key] != entryDigest(e.raw)
+	return g.approved[key] != entryDigest(e.raw) || !plainNames(e.raw)
+}
+
+// entryNames is the names that mcpFileServer reads.
+var entryNames = []string{"command", "args", "env", "url", "headers", "type", "hosted"}
+
+// plainNames says whether an entry writes each name in its one spelling. Two spellings of a name
+// are one field to the reader of the file, and two to the digest, which sorts them.
+func plainNames(raw json.RawMessage) bool {
+	for _, k := range orderedKeys(raw) {
+		for _, n := range entryNames {
+			if k != n && strings.EqualFold(k, n) {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // rawServers is every server of a "mcpServers" object as it is written, whether it is one or not.
@@ -266,6 +283,9 @@ func (d *Daemon) answerPersonalConnector(ctx context.Context, name, digest strin
 		return mcpRefusal(mcpcatalog.StaleDigest())
 	}
 	key := personalMCPKey(name)
+	if approve && !plainNames(e.raw) {
+		return Invalid("%s has a name in its entry that is not written in lower case. Write it so, and approve it then.", name)
+	}
 	if approve {
 		if err := d.changeMCPApprovals(true, func(approved, _ map[string]string, gone map[string]wire.Date) error {
 			return keepApproval(approved, gone, "", key, digest)
