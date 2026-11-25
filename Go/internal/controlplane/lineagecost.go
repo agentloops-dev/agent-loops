@@ -1,6 +1,7 @@
 package controlplane
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -31,8 +32,8 @@ const (
 	// mostWorkNodes bounds one send.
 	mostWorkNodes   = 1_000
 	lineageNodeKept = 90 * 24 * time.Hour
-	// lineageNodeBytes is the largest node: one over it is not kept, and the rest of its
-	// send is (#6768).
+	// lineageNodeBytes is the largest node as stored: one sent over it is not kept, so the
+	// copy kept before it stays (#7193), and the rest of its send is kept (#6768).
 	lineageNodeBytes = 64 << 10
 	// lineageBytes is the most a machine's nodes come to: the oldest go past it.
 	lineageBytes = 32 << 20
@@ -45,6 +46,10 @@ type storedLineage struct {
 }
 
 func lineageKey(host string) string { return lineagePrefix + strings.ToLower(host) + ".json" }
+
+// encodeLineage is a machine's object as stored: not indented, as records.Encode has it, so
+// each node takes the bytes that its limits measure with json.Marshal (#7193).
+func encodeLineage(kept storedLineage) ([]byte, error) { return json.Marshal(kept) }
 
 // keepWork is usage/rollup's work: the nodes sent, over this machine's copies of them.
 func (s *Service) keepWork(ctx context.Context, host string, work []wire.LineageCostNode, now time.Time) error {
@@ -82,14 +87,20 @@ func (s *Service) keepWork(ctx context.Context, host string, work []wire.Lineage
 		n.Node = names.Name(n.Node)
 		byKey[n.Node] = n
 	}
+	large := 0
 	for _, n := range work {
+		n.LastAt = min(n.LastAt, wire.DateOf(now))
+		if data, err := json.Marshal(n); err != nil || len(data) > lineageNodeBytes {
+			large++
+			continue
+		}
 		byKey[n.Node] = n
 	}
-	nodes, large := boundLineage(slices.Collect(maps.Values(byKey)), now)
-	if large > 0 {
+	nodes, dropped := boundLineage(slices.Collect(maps.Values(byKey)), now)
+	if large += dropped; large > 0 {
 		s.log(fmt.Sprintf("lineage: %d nodes of machine %s are over %d KiB and are not kept", large, host, lineageNodeBytes>>10))
 	}
-	data, err := records.Encode(storedLineage{Nodes: nodes, At: records.At(now)})
+	data, err := encodeLineage(storedLineage{Nodes: nodes, At: records.At(now)})
 	if err != nil {
 		return err
 	}
@@ -188,11 +199,13 @@ func reboundLineage(ctx context.Context, st store.Store, key string, now time.Ti
 		return false, nil
 	}
 	nodes, _ := boundLineage(kept.Nodes, now)
-	if len(nodes) == len(kept.Nodes) {
+	// An object from a release before #7193 is indented, so larger than was measured: it is
+	// written again as it is now stored.
+	if len(nodes) == len(kept.Nodes) && !bytes.HasPrefix(object.Data, []byte("{\n")) {
 		return false, nil
 	}
 	kept.Nodes = nodes
-	data, err := records.Encode(kept)
+	data, err := encodeLineage(kept)
 	if err != nil {
 		return false, err
 	}

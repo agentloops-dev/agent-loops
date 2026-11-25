@@ -80,13 +80,7 @@ func (d *Daemon) openReviewMarks(name string) *store.JSONFile[reviewMark] {
 			entries[reviewMarkKey(folder, url)] = reviewMark{Folder: folder, URL: url, At: wire.DateOf(nowFunc())}
 		}
 	}
-	// Not by Update, which would set the old file aside as corrupt.
-	raw, err := diskjson.Marshal(entries)
-	if err == nil {
-		// store-bounds: not a store: the file above, in its new form
-		err = store.WriteAtomically(path, raw, 0o600)
-	}
-	if err != nil {
+	if err := f.CarryOver(data, true, entries); err != nil {
 		log.Printf("%s: could not bring over the pull requests: %v", name, err)
 	}
 	return f

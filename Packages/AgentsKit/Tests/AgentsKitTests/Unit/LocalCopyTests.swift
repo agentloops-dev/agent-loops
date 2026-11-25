@@ -165,6 +165,21 @@ struct LocalCopyTests {
         #expect(await copy.allMachines().isEmpty)
     }
 
+    /// #6908: a record at the largest is kept; one over it is not, and nor is what was there before.
+    @Test func aRecordAtTheLargestIsKeptAndOneOverItIsNot() async {
+        let copy = LocalCopy(folder: folder(), cap: LocalCopy.macCap, recordCap: 4096)
+        defer { Task { await copy.forget() } }
+        var size = 4096
+        while size > 2048 {
+            await copy.keepWork(Data(count: size), .image, "url")
+            if await copy.work(Data.self, .image, "url") != nil { break }
+            size -= 1
+        }
+        #expect(size > 2048)
+        await copy.keepWork(Data(count: size + 3), .image, "url")
+        #expect(await copy.work(Data.self, .image, "url") == nil)
+    }
+
     @Test func overTheCapTheOldestMachineGoesLast() async {
         let copy = LocalCopy(folder: folder(), cap: 1)
         defer { Task { await copy.forget() } }

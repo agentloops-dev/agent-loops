@@ -173,6 +173,9 @@ func TestWorkTimelineForecastsTheOpenEpics(t *testing.T) {
 	if len(tl.Errors) > 0 || len(tl.Releases) != 1 || tl.Releases[0].Tag != "v1" || tl.Releases[0].Repo != "alexec/agents" {
 		t.Fatalf("errors %v, releases %+v", tl.Errors, tl.Releases)
 	}
+	if !slices.Equal(tl.Scopes, []string{"github:alexec/agents"}) {
+		t.Fatalf("scopes %v", tl.Scopes)
+	}
 	got := map[int]wire.WorkTimelineEpic{}
 	for _, e := range tl.Epics {
 		n, _ := strconv.Atoi(e.Item.Node.Ref[len("github:issue:alexec/agents#"):])

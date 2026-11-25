@@ -782,6 +782,84 @@
           "$ref": "schema/forge.schema.json#/definitions/ForgeSources"
         }
       }
+    },
+    {
+      "name": "imageHosts/allow",
+      "x-capability": "image-hosts/1",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
+      "description": "Allow images from one exact host on this machine (#7138); a host already allowed stays. Refused notPermitted from any caller but the person's own clients: never an agent, an MCP tool or a workflow.",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/forge.schema.json#/definitions/ImageHostRequest"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/forge.schema.json#/definitions/ImageHosts"
+        }
+      }
+    },
+    {
+      "name": "imageHosts/list",
+      "x-capability": "image-hosts/1",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
+      "description": "The hosts that the person allowed images from on this machine (#7138). Refused notPermitted from any caller but the person's own clients: never an agent, an MCP tool or a workflow.",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/core.schema.json#/definitions/Empty"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/forge.schema.json#/definitions/ImageHosts"
+        }
+      }
+    },
+    {
+      "name": "imageHosts/remove",
+      "x-capability": "image-hosts/1",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
+      "description": "Take a host from the list (#7138), at once; a host not in it is no failure. Refused notPermitted from any caller but the person's own clients: never an agent, an MCP tool or a workflow.",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/forge.schema.json#/definitions/ImageHostRequest"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/forge.schema.json#/definitions/ImageHosts"
+        }
+      }
     }
   ]
 }

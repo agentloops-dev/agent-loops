@@ -43,7 +43,7 @@ public enum ImageSequence {
         func walk(_ blocks: [MarkdownBlock]) {
             for block in blocks {
                 switch block {
-                case .image(let source, let alt):
+                case .image(let source, let alt, _):
                     if seen.insert(source).inserted { found.append(Item(source: source, alt: alt)) }
                 case .list(_, _, let items):
                     for item in items { walk(item.blocks) }

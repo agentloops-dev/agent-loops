@@ -115,7 +115,7 @@ struct MarkdownHardTests {
             case .code(_, let code): code
             case .table(let table):
                 (table.header + table.rows.flatMap { $0 }).map { String($0.characters) }.joined(separator: " ")
-            case .image(let source, let alt): "\(alt) \(source)"
+            case .image(let source, let alt, _): "\(alt) \(source)"
             case .rule: ""
             }
         }.joined(separator: "\n")

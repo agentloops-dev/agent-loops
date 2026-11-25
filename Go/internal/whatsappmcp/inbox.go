@@ -29,7 +29,7 @@ import (
 const (
 	maxKept = 1000
 	keptFor = 24 * time.Hour
-	// maxBody is the largest webhook call read; Meta's are a few kilobytes.
+	// maxBody is the largest webhook call read; Meta's are 3 MB at most.
 	maxBody = 4 << 20
 )
 

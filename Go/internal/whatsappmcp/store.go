@@ -15,12 +15,14 @@ import (
 	"sync"
 	"syscall"
 	"time"
+	"unicode/utf8"
 )
 
 // The store (#4341): the messages the webhook was sent and the ones the number sent, which
 // list_conversations and read_messages read. The Cloud API reads no chat's history, so this
 // is the only history there is. It is bounded (the bounded-data rule): the newest maxStored,
-// for storedFor, and at most maxStoreBytes of text. On disk it is one JSON file for each
+// for storedFor, and at most maxStoreBytes of text, with a longer text than maxRecordBytes
+// cut (#7191), so one message never empties the store. On disk it is one JSON file for each
 // number, <dir>/<phone number id>.json, written to a temporary file and moved into place
 // under a lock, so each copy of the server (one for each session that has it) adds to the
 // same file and every copy reads all of it.
@@ -29,6 +31,12 @@ const (
 	maxStored     = 2000
 	storedFor     = 30 * 24 * time.Hour
 	maxStoreBytes = 4 << 20
+	// maxRecordBytes is the most of one message's text that is kept. Meta states no limit on
+	// a text a person sends, only 3 MB for a webhook call; a text the number sends is at most
+	// maxText characters, which is 16 KiB at most.
+	maxRecordBytes = 64 << 10
+	// cutMark ends a text that was cut.
+	cutMark = "… [cut: the message is too long to keep]"
 	// storedOverhead is what a message costs on disk beside its text.
 	storedOverhead = 256
 	storeVersion   = 1
@@ -158,7 +166,8 @@ func (s *Store) warn(msg string, err error) {
 	}
 }
 
-// merge is held with the new messages, oldest first; a message held already is left out.
+// merge is held with the new messages, oldest first, each text within maxRecordBytes; a
+// message held already is left out.
 func merge(held, msgs []Stored) []Stored {
 	ids := make(map[string]bool, len(held))
 	for _, m := range held {
@@ -172,8 +181,24 @@ func merge(held, msgs []Stored) []Stored {
 		ids[m.ID] = true
 		out = append(out, m)
 	}
+	for i := range out {
+		out[i].Text = cutText(out[i].Text)
+	}
 	slices.SortStableFunc(out, func(a, b Stored) int { return a.At.Compare(b.At) })
 	return out
+}
+
+// cutText is text, cut between characters to maxRecordBytes with cutMark at its end when it
+// is longer.
+func cutText(text string) string {
+	if len(text) <= maxRecordBytes {
+		return text
+	}
+	end := maxRecordBytes - len(cutMark)
+	for !utf8.RuneStart(text[end]) {
+		end--
+	}
+	return text[:end] + cutMark
 }
 
 // bound is the newest of msgs (oldest first) that the store's limits keep.

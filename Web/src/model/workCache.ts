@@ -372,7 +372,7 @@ export class WorkCache implements CacheStore {
       const at = this.now();
       // The forges' read time, not this call's (#6642): the daemon can answer from a copy up to a minute old.
       const readAt = list.readAt === undefined ? at : Math.min(at, fromWireDate(list.readAt).getTime());
-      const put = await this.itemsToPut(list.items, readAt);
+      const { put, drop } = await this.itemsToPut(list.items, readAt);
       const read: WorkPage = { refs: list.items.map((i) => itemKey(i.node)).filter((k) => this.memo.has(k)), cursor: list.cursor, read: readAt };
       let reads = had.slice(0, fresh);
       let stale = had.slice(fresh);
@@ -384,18 +384,18 @@ export class WorkCache implements CacheStore {
       else reads[page] = read;
       const pages = [...reads, ...await this.covered(stale, reads, q.sort)];
       const answer: KeptAnswer = { pages, total: list.total ?? kept?.total, forges: list.forges ?? kept?.forges, errors: list.errors };
-      await this.saveAnswer(key, answer, put);
+      await this.saveAnswer(key, answer, put, drop);
       await this.trim();
     });
   }
 
   /** Writes an answer, less its last pages when it is over `bounds.recordBytes`; one with nothing left goes. */
-  private saveAnswer(key: string, answer: KeptAnswer, put: readonly Put[] = []): Promise<void> {
+  private saveAnswer(key: string, answer: KeptAnswer, put: readonly Put[] = [], drop: readonly string[] = []): Promise<void> {
     let fit = answer;
     const over = () => utf8(JSON.stringify(fit)) > this.bounds.recordBytes;
     while (fit.pages.length > 0 && over()) fit = { ...fit, pages: fit.pages.slice(0, -1) };
-    if (over() || (fit.pages.length === 0 && fit.failed === undefined)) return this.save(put, [key]);
-    return this.save([...put, [key, fit, oldestRead(fit)]]);
+    if (over() || (fit.pages.length === 0 && fit.failed === undefined)) return this.save(put, [...drop, key]);
+    return this.save([...put, [key, fit, oldestRead(fit)]], drop);
   }
 
   /** The stale pages less what the fresh pages cover (#6636): the items they hold, and the items the server's order puts
@@ -440,28 +440,37 @@ export class WorkCache implements CacheStore {
   /** Items read or written outside a list (a write's answer, #6351, or an item's page): each replaces an older copy. */
   keepItems(items: readonly ForgeItem[]): Promise<void> {
     return this.serial(async () => {
-      await this.save(await this.itemsToPut(items, this.now()));
+      const { put, drop } = await this.itemsToPut(items, this.now());
+      await this.save(put, drop);
       await this.trim();
     });
   }
 
   /** The items to write: each replaces a kept one only when as new or newer, so a late answer does not undo a newer one;
-   * one over `bounds.itemBytes` after trimming is not kept. */
-  private async itemsToPut(items: readonly ForgeItem[], read: number): Promise<Put[]> {
+   * one over `bounds.itemBytes` after trimming is not kept, and its earlier copy is in `drop`, so no answer read now draws
+   * the item as it was (#7198). */
+  private async itemsToPut(items: readonly ForgeItem[], read: number): Promise<{ put: Put[]; drop: string[] }> {
     await this.load(items.map((i) => itemKey(i.node)));
-    const put: Put[] = [];
+    const put = new Map<string, Put>();
+    const drop = new Set<string>();
     for (const item of items) {
       const key = itemKey(item.node);
       const had = this.memo.get(key);
       if (had && (had.updatedAt > item.updatedAt || (this.edited.has(key) && had.updatedAt === item.updatedAt))) continue;
       const fit = this.fitted(item);
-      if (!fit) continue;
       this.edited.delete(key);
+      if (!fit) {
+        this.memo.delete(key);
+        put.delete(key);
+        drop.add(key);
+        continue;
+      }
+      drop.delete(key);
       this.memo.set(key, fit);
       // An answer from the daemon's copy can be older than the kept item's own read.
-      put.push([key, fit, Math.max(read, this.readOf(key) ?? 0)]);
+      put.set(key, [key, fit, Math.max(read, this.readOf(key) ?? 0)]);
     }
-    return put;
+    return { put: [...put.values()], drop: [...drop] };
   }
 
   /** The item cut to `bounds.itemBytes`: a long title, then labels and assignees beyond the first. */
@@ -526,12 +535,12 @@ export class WorkCache implements CacheStore {
   keepDetail(host: string, got: ForgeItemDetail): Promise<void> {
     return this.serial(async () => {
       const at = this.now();
-      const put = await this.itemsToPut([got.item], at);
+      const { put, drop } = await this.itemsToPut([got.item], at);
       const body = utf8(got.body) > this.bounds.bodyBytes ? prefixBytes(got.body, this.bounds.bodyBytes) : got.body;
       const kept: WorkDetail = { host, got: { ...got, body, comments: got.comments.slice(0, this.bounds.comments) }, read: at };
       const key = detailKey(got.item.node);
-      if (utf8(JSON.stringify(kept)) > this.bounds.recordBytes) await this.save(put, [key]);
-      else await this.save([...put, [key, kept, at]]);
+      if (utf8(JSON.stringify(kept)) > this.bounds.recordBytes) await this.save(put, [...drop, key]);
+      else await this.save([...put, [key, kept, at]], drop);
       await this.trim();
     });
   }

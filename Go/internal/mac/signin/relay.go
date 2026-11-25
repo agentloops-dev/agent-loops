@@ -2,7 +2,10 @@ package signin
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"crypto/subtle"
 	"crypto/tls"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net"
@@ -30,7 +33,7 @@ type Relay struct {
 	mu       sync.Mutex
 	listener net.Listener
 	server   *http.Server
-	bearer   string
+	bearer   string // the SHA-256 of the stand-in bearer, in hex; "" before a grant
 }
 
 // maxBody bounds a request the relay holds to ask again after a 401.
@@ -55,8 +58,10 @@ func (r *Relay) Start() (int, error) {
 		r.Client = &http.Client{Timeout: time.Hour}
 	}
 	r.listener = l
-	r.server = &http.Server{Handler: r, ReadHeaderTimeout: 30 * time.Second}
-	go func() { _ = r.server.Serve(l) }() // it ends with ErrServerClosed when Stop closes it
+	// The goroutine's own value: Stop clears r.server, maybe before the goroutine runs (#7225).
+	server := &http.Server{Handler: r, ReadHeaderTimeout: 30 * time.Second}
+	r.server = server
+	go func() { _ = server.Serve(l) }() // it ends with ErrServerClosed when Stop closes it
 	return l.Addr().(*net.TCPAddr).Port, nil
 }
 
@@ -73,8 +78,14 @@ func (r *Relay) Port() int {
 // ExpectClientBearer remembers the stand-in bearer given to a server with this grant.
 func (r *Relay) ExpectClientBearer(b string) {
 	r.mu.Lock()
-	r.bearer = b
+	r.bearer = bearerHash(b)
 	r.mu.Unlock()
+}
+
+// bearerHash is how a stand-in bearer is kept, in memory and in granted.json.
+func bearerHash(b string) string {
+	sum := sha256.Sum256([]byte(b))
+	return hex.EncodeToString(sum[:])
 }
 
 // Stop closes the listener.
@@ -83,6 +94,9 @@ func (r *Relay) Stop() {
 	defer r.mu.Unlock()
 	if r.server != nil {
 		r.server.Close()
+		// The server knows its listener only once Serve runs, so a Stop before that closes it
+		// here; after that it is closed already, and the error says so.
+		_ = r.listener.Close()
 	}
 	r.listener, r.server = nil, nil
 }
@@ -161,7 +175,7 @@ func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	r.mu.Lock()
 	expected := r.bearer
 	r.mu.Unlock()
-	if expected == "" || bearerOf(req.Header) != expected {
+	if expected == "" || subtle.ConstantTimeCompare([]byte(bearerHash(bearerOf(req.Header))), []byte(expected)) != 1 {
 		r.log("relay: %s %s -> 403 (not the stand-in)", req.Method, path)
 		http.Error(w, "", http.StatusForbidden)
 		return

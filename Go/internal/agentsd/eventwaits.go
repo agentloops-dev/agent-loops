@@ -1095,14 +1095,13 @@ func (d *Daemon) waitForEvent(agent wire.UUID, args map[string]json.RawMessage) 
 	d.waitMu.Unlock()
 	// What the files it watches are now is not raised as added (#3795). It is taken before the
 	// record says it waits (#6410): a file that goes once it waits was seen, so it is removed.
-	d.followFileGlobs(folderPath(a), waitFileGlobs(patterns)...)
-	if d.change(agent, func(a *wire.Agent) { a.EventWait = &wait }) == nil {
+	followed := d.followStartingFileWait(folderPath(a), waitFileGlobs(patterns))
+	recorded := d.change(agent, func(a *wire.Agent) { a.EventWait = &wait })
+	followed()
+	if recorded == nil {
 		d.takeOpenWait(agent)
-		d.followFileGlobs(folderPath(a))
 		return "", &Error{Code: CodeNoSuchAgent, Message: "That agent is not here."}
 	}
-	// Again, in case a workflow's look came in between and left this wait's globs out.
-	d.followFileGlobs(folderPath(a))
 	d.addEventWaitRequestWaiters(agent, patterns)
 	d.startMCPWait(servers)
 	d.tellEvents(nil)

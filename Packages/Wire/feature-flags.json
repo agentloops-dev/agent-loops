@@ -20,6 +20,12 @@
       "issue": 6572
     },
     {
+      "name": "image-hosts",
+      "title": "Image hosts",
+      "about": "A blocked image on a Work page says its host, with Show image and Always allow; the list is in Settings ▸ Machines ▸ Image Hosts. On the Mac.",
+      "issue": 7136
+    },
+    {
       "name": "suggested",
       "title": "Suggested",
       "about": "New Session ▸ Suggested: the epics with no lead.",
