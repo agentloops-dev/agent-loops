@@ -38,10 +38,15 @@ func (d *Daemon) sweepSmallStores(now time.Time) {
 	d.sweepHostedLogs(now)
 	d.sweepCatalogItems(now, gone)
 	d.sweepAccountHomes(now)
-	if err := d.carryRemovedConnectors(); err != nil {
-		log.Printf("retention: %v", err)
+	carryErr := d.carryRemovedConnectors()
+	if carryErr != nil {
+		log.Printf("retention: mcp.removed.json is not swept: its old copies could not be carried over: %v", carryErr)
 	}
 	for _, f := range d.smallFiles {
+		// The sweep would write over the copies that could not be carried over.
+		if carryErr != nil && f.Name() == d.removedConnectors.Name() {
+			continue
+		}
 		if n, err := f.Sweep(); err != nil {
 			log.Printf("retention: %s: %v", f.Name(), err)
 		} else if n > 0 {

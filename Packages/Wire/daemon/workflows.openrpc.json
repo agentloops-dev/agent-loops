@@ -1007,6 +1007,32 @@
       }
     },
     {
+      "name": "stores/list",
+      "x-capability": "stores.sizes/1",
+      "description": "The last measurement of this machine's declared stores (#6906), in pages of at most 100 by id. It measures nothing when it is read: the hourly retention sweep does.",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/reports.schema.json#/definitions/StoreSizesQuery"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/reports.schema.json#/definitions/StoreSizes"
+        }
+      }
+    },
+    {
       "name": "views/call",
       "x-capability": "views/1",
       "tags": [

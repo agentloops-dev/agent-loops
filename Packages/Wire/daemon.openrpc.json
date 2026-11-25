@@ -92,6 +92,11 @@
       "description": "The host still answers settings/userPart as 0.19.0 asked it. host.user-settings/4 (#5259): a client may ask for the part environment, which an older host does not know."
     },
     {
+      "name": "folders.send-parts/1",
+      "by": "host",
+      "description": "The host takes the parts of folders/receiveUpload after the first in any order, and folders/sendRead gives parts of 4 MB (#7120), so several can be in flight. The control plane says partsAtOnce to a sender only for such a machine."
+    },
+    {
       "name": "host.user-parts/1",
       "by": "host",
       "description": "The host keeps the parts person, auto and retention of machine/userSettings (#5573) as person/set, auto/set and a confirmed retention/set do. The Mac window sends them to a host that does not say it itself, one call each, as before. Declared: machine/userSettings is the control plane's (control.openrpc.json)."
@@ -182,6 +187,14 @@
       "hostKeyToTrust": {
         "code": -32069,
         "message": "hostKeyToTrust"
+      },
+      "imageBlocked": {
+        "code": -32109,
+        "message": "imageBlocked"
+      },
+      "imageNotPublic": {
+        "code": -32110,
+        "message": "imageNotPublic"
       },
       "importedAgent": {
         "code": -32096,

@@ -109,7 +109,9 @@ func controlCapacityTarget(s controlCapacity) (wire.CapacityLevel, string) {
 }
 
 func (s *Service) startCapacityMonitor() {
+	s.sampling.Add(1)
 	go func() {
+		defer s.sampling.Done()
 		t := time.NewTicker(controlCapacityEvery)
 		defer t.Stop()
 		previous := wire.CapacityLevelOk

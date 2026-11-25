@@ -84,6 +84,7 @@ public enum Capability {
     public static let folder1 = "folder/1"
     public static let foldersNotCommitted1 = "folders.not-committed/1"
     public static let foldersSeed1 = "folders.seed/1"
+    public static let foldersSendParts1 = "folders.send-parts/1"
     public static let foldersSendSeed1 = "folders.send-seed/1"
     public static let foldersSignedUpload1 = "folders.signed-upload/1"
     public static let foldersToMachine1 = "folders.to-machine/1"
@@ -133,6 +134,7 @@ public enum Capability {
     public static let hostWebPairing1 = "host.web-pairing/1"
     public static let hostWire1 = "host.wire/1"
     public static let hostsJoin1 = "hosts.join/1"
+    public static let imageHosts1 = "image-hosts/1"
     public static let lineageComment1 = "lineage.comment/1"
     public static let lineageEstimate1 = "lineage.estimate/1"
     public static let lineageFigures1 = "lineage.figures/1"
@@ -160,6 +162,7 @@ public enum Capability {
     public static let machines2 = "machines/2"
     public static let mailbox1 = "mailbox/1"
     public static let marketplaces1 = "marketplaces/1"
+    public static let maturity1 = "maturity/1"
     public static let mcpToolLevels1 = "mcp.tool-levels/1"
     public static let mcp1 = "mcp/1"
     public static let messagesAll1 = "messages.all/1"
@@ -238,6 +241,7 @@ public enum Capability {
     public static let skills1 = "skills/1"
     public static let storage1 = "storage/1"
     public static let store1 = "store/1"
+    public static let storesSizes1 = "stores.sizes/1"
     public static let suggestions1 = "suggestions/1"
     public static let surface1 = "surface/1"
     public static let time1 = "time/1"
@@ -475,6 +479,9 @@ public enum Capability {
         "forge/sources": "forge-sync/1",
         "git/fill": "git/1",
         "git/trailers": "host.commit-trailers/1",
+        "imageHosts/allow": "image-hosts/1",
+        "imageHosts/list": "image-hosts/1",
+        "imageHosts/remove": "image-hosts/1",
         "lineage/cost": "lineage/1",
         "lineage/end": "lineage/1",
         "lineage/estimate": "lineage.estimate/1",
@@ -647,6 +654,7 @@ public enum Capability {
         "skills/remove": "skills/1",
         "skills/update-preview": "skills/1",
         "store/notes": "store/1",
+        "stores/list": "stores.sizes/1",
         "suggestions/dismiss": "suggestions/1",
         "suggestions/start": "suggestions/1",
         "surface/identify": "surface/1",
@@ -897,6 +905,7 @@ public enum Capability {
         "machines/unlink": "machines/1",
         "machines/update": "machines/1",
         "machines/versions": "machines/1",
+        "maturity/complete": "maturity/1",
         "messages/conversationsAll": "messages.all/1",
         "multiplier/count": "multiplier/1",
         "notices/take": "notices/1",
@@ -959,6 +968,7 @@ public enum Capability {
         "reports/saveView": "reports.views/2",
         "reports/scopes": "reports.scope/1",
         "reports/setPolicy": "reports.scope/2",
+        "reports/storeSizes": "stores.sizes/1",
         "reports/usage": "reports/2",
         "reports/value": "reports.value/2",
         "reports/views": "reports.views/1",
@@ -1095,6 +1105,7 @@ public enum Capability {
             "host.lock/1",
             "host.lock/2",
             "host.user-settings/3",
+            "folders.send-parts/1",
             "host.user-parts/1",
         ],
     ]

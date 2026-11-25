@@ -729,9 +729,15 @@ func attachFakeRuntime(l acp.Launch) (acp.Attached, error) {
 	return acp.Attached{Stdin: inW, Stdout: outR, End: end, Done: done}, nil
 }
 
-// notes collects the notifications a client hears.
-func (c *conn) until(t *testing.T, what string, ok func(method string, params json.RawMessage) bool) {
+// until waits for a notification that ok accepts: first of those that the last call read
+// past, as a call's effect can come before its answer (#7227), then of those still to come.
+func (c *conn) until(t testing.TB, what string, ok func(method string, params json.RawMessage) bool) {
 	t.Helper()
+	for m, some := c.nextHeard(); some; m, some = c.nextHeard() {
+		if ok(m.Method, m.Params) {
+			return
+		}
+	}
 	deadline := afterLimit(t)
 	for {
 		select {

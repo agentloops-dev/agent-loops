@@ -10,17 +10,18 @@
 //     going first, then the oldest default-branch runs; the steps of a run on a branch other
 //     than the default branch (and not a tag) for StepDays, after which its day file is written
 //     once more without them.
+//   - A run over mostLine is kept without its steps, or without its jobs.
 //
 // The package reads and writes files and works out figures (figures.go) and change points
 // (changes.go). It asks no forge: the daemon fills it (agentsd/citimings.go).
 package citimings
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"slices"
@@ -40,7 +41,8 @@ const (
 	StepDays = 14
 	// MostRuns bounds the run attempts of one repository, as lineage's MostLinks.
 	MostRuns = 20_000
-	// mostLine bounds one line read back: a run with 100 jobs of 100 steps is far under it.
+	// mostLine bounds one run's line with its newline: a run with 100 jobs of 100 steps is far
+	// under it. A run over it loses its steps, then its jobs (lineOf).
 	mostLine = 4 << 20
 )
 
@@ -157,7 +159,8 @@ func (s *Store) dir(r Repo) (string, error) {
 
 func dayOf(t time.Time) string { return t.UTC().Format(time.DateOnly) }
 
-// Put keeps runs, each in place of the line of the same ref and attempt.
+// Put keeps runs, each in place of the line of the same ref and attempt. A run over mostLine is
+// kept with less (lineOf); it is no error, so that one run does not stop a reader at it for ever.
 func (s *Store) Put(r Repo, runs ...Run) error {
 	dir, err := s.dir(r)
 	if err != nil {
@@ -471,14 +474,19 @@ func stripSteps(day, stepsFrom string, runs []Run) ([]Run, bool) {
 	}
 	for i := range runs {
 		if runs[i].pullRequest() {
-			jobs := slices.Clone(runs[i].Jobs)
-			for j := range jobs {
-				jobs[j].Steps = nil
-			}
-			runs[i].Jobs = jobs
+			runs[i] = withoutSteps(runs[i])
 		}
 	}
 	return runs, true
+}
+
+// withoutSteps is run without its jobs' steps; the caller's jobs are left as they are.
+func withoutSteps(run Run) Run {
+	run.Jobs = slices.Clone(run.Jobs)
+	for j := range run.Jobs {
+		run.Jobs[j].Steps = nil
+	}
+	return run
 }
 
 // DayOK says day is a UTC day as the store names its files, YYYY-MM-DD.
@@ -567,7 +575,8 @@ func dayFiles(dir string) ([]string, error) {
 }
 
 // readDay is a day file's runs. A line that cannot be read is skipped: one bad line does not
-// lose the day.
+// lose the day. A line over mostLine, from before Put bounded one, is read, and the next write
+// bounds it.
 func readDay(path string) ([]Run, error) {
 	b, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -576,28 +585,46 @@ func readDay(path string) ([]Run, error) {
 	if err != nil {
 		return nil, err
 	}
-	sc := bufio.NewScanner(bytes.NewReader(b))
-	sc.Buffer(make([]byte, 0, 64<<10), mostLine)
 	var runs []Run
-	for sc.Scan() {
+	for line := range bytes.Lines(b) {
 		var run Run
-		if json.Unmarshal(sc.Bytes(), &run) == nil && run.Ref != "" {
+		if json.Unmarshal(line, &run) == nil && run.Ref != "" {
 			runs = append(runs, run)
 		}
 	}
 	return runs, nil
 }
 
+// lineOf is run's line, at most mostLine: without its steps when they do not fit, else without
+// its jobs, so the run keeps its times and is not read from the forge again. It is nil when the
+// run does not fit even so.
+func lineOf(run Run) ([]byte, error) {
+	bare := run
+	bare.Jobs = []Job{}
+	for _, r := range []Run{run, withoutSteps(run), bare} {
+		line, err := json.Marshal(r)
+		if err != nil {
+			return nil, err
+		}
+		if len(line) < mostLine {
+			return append(line, '\n'), nil
+		}
+	}
+	return nil, nil
+}
+
 func writeDay(path string, runs []Run) error {
 	sortRuns(runs)
 	var b bytes.Buffer
 	for _, run := range runs {
-		line, err := json.Marshal(run)
+		line, err := lineOf(run)
 		if err != nil {
 			return err
 		}
+		if line == nil {
+			log.Printf("build timings: run %d is over %d bytes and is left out", run.ID, mostLine)
+		}
 		b.Write(line)
-		b.WriteByte('\n')
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err

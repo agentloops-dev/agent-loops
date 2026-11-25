@@ -22,6 +22,8 @@ extension LocalCopy {
         case boards
         /// New Session's Suggested section (`work/suggest-leads`, #5457), by folder.
         case suggestions
+        /// A machine's allowed image hosts (`imageHosts/list`, #7139), by machine.
+        case imageHosts
         /// A forge's picture (`forge/image`), by URL: it does not change. Kept to its own cap.
         case image
 
@@ -34,6 +36,7 @@ extension LocalCopy {
             case .deploys: 5
             case .boards: 10
             case .suggestions: 10
+            case .imageHosts: 100
             case .image: 2000
             }
         }

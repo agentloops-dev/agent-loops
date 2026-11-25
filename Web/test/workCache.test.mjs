@@ -256,3 +256,28 @@ test("largest record: a list's answer loses its last pages; an item's page over 
   await c.keepDetail("mac", { item: item(1), body: "body", comments: [{ id: "1", body: "c".repeat(2048) }] });
   assert.equal(await c.detail(item(1).node), undefined);
 });
+
+test("largest record: a list's answer, a page and an item at their limit are kept, and over it are not (#6908)", async () => {
+  // A page's record is {"value":…} with its read time: find the size that fits, and one character more.
+  const { c } = cache({ ...webBounds, recordBytes: 1024 });
+  let n = 1024;
+  for (;; n--) {
+    await c.keep("plan", "a", "x".repeat(n));
+    if (await c.kept("plan", "a")) break;
+  }
+  assert.ok(n > 900, `${n}`);
+  await c.keep("plan", "a", "x".repeat(n + 1));
+  assert.equal(await c.kept("plan", "a"), undefined, "the earlier one is not shown as the new one");
+  await c.keep("plan", "a", "é".repeat(n));
+  assert.equal(await c.kept("plan", "a"), undefined, "the limit is in bytes");
+});
+
+test("largest record: an item over its limit after the cut does not show its earlier copy as new (#6908)", async () => {
+  const { c, tick } = cache();
+  await c.keepPage(q, "mac", 0, { items: [item(1), item(2)] });
+  tick();
+  const long = item(1, 2, { state: "closed", url: `https://x/${"u".repeat(5000)}` });
+  await c.keepPage(q, "mac", 0, { items: [long, item(2)] });
+  const drawn = (await c.answer(q, ["mac"])).hosts[0].items.find((i) => i.node.ref === long.node.ref);
+  assert.ok(!drawn || drawn.state === "closed", "the answer read now draws the item as it was before");
+});

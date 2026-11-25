@@ -27,7 +27,7 @@ func (m *mcpClient) tool(id int, name string, args map[string]any) (string, bool
 
 // tryTool is tool that says what failed rather than failing the test (#6495).
 func (m *mcpClient) tryTool(id int, name string, args map[string]any) (string, bool, error) {
-	_, r, err := m.tryPost("tools/call", map[string]any{"name": "mcp__agents__" + name, "arguments": args}, id)
+	code, r, err := m.tryPost("tools/call", map[string]any{"name": "mcp__agents__" + name, "arguments": args}, id)
 	if err != nil {
 		return "", false, err
 	}
@@ -39,7 +39,7 @@ func (m *mcpClient) tryTool(id int, name string, args map[string]any) (string, b
 		return "", false, fmt.Errorf("%s: %s: %w", name, r["result"], err)
 	}
 	if len(res.Content) == 0 {
-		return "", false, fmt.Errorf("%s: %s", name, r["error"])
+		return "", false, fmt.Errorf("%s: %d %s", name, code, r["error"])
 	}
 	return res.Content[0].Text, res.IsError, nil
 }

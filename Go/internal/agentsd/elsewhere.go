@@ -94,16 +94,17 @@ func (d *Daemon) elsewherePath() string { return filepath.Join(d.Store.Loc.Root,
 // openElsewhere opens the record, which evicts the ones heard of the longest ago. It is the
 // small-file type: a few entries, read and written whole.
 func (d *Daemon) openElsewhere() *store.JSONFile[elsewhereEntry] {
-	// The lists this file held before #6722, in use when the host is updated. They are read
-	// first, because Update sets a file in that shape aside.
+	// The lists this file held before #6722, in use when the host is updated.
 	var old struct {
 		Started  []startedThere `json:"started"`
 		From     []startedHere  `json:"from"`
 		Watched  []startedThere `json:"watched"`
 		Watchers []startedHere  `json:"watchers"`
 	}
-	if raw, err := os.ReadFile(d.elsewherePath()); err == nil {
-		_ = diskjson.Unmarshal(raw, &old)
+	raw, err := os.ReadFile(d.elsewherePath())
+	if err == nil {
+		// A list that cannot be read does not lose the others.
+		err = diskjson.Unmarshal(raw, &old)
 	}
 	f := smallFile(d, store.Spec{Name: "elsewhere.json", Kind: "key-value", Scope: "person",
 		Bounds: store.Bounds{MaxRecordBytes: 64 << 10, MaxCount: 800, MaxAge: store.MaxAge, Action: store.EvictOldest}},
@@ -111,21 +112,20 @@ func (d *Daemon) openElsewhere() *store.JSONFile[elsewhereEntry] {
 	if len(old.Started)+len(old.From)+len(old.Watched)+len(old.Watchers) == 0 {
 		return f
 	}
-	if err := f.Update(func(m map[string]elsewhereEntry) error {
-		for _, s := range old.Started {
-			putThere(m, elsewhereStarted, s)
-		}
-		for _, s := range old.Watched {
-			putThere(m, elsewhereWatched, s)
-		}
-		for _, h := range old.From {
-			putHere(m, elsewhereFrom, h)
-		}
-		for _, h := range old.Watchers {
-			putHere(m, elsewhereWatcher, h)
-		}
-		return nil
-	}); err != nil {
+	m := map[string]elsewhereEntry{}
+	for _, s := range old.Started {
+		putThere(m, elsewhereStarted, s)
+	}
+	for _, s := range old.Watched {
+		putThere(m, elsewhereWatched, s)
+	}
+	for _, h := range old.From {
+		putHere(m, elsewhereFrom, h)
+	}
+	for _, h := range old.Watchers {
+		putHere(m, elsewhereWatcher, h)
+	}
+	if err := f.CarryOver(raw, err == nil, m); err != nil {
 		log.Printf("elsewhere: could not carry over the sessions on other machines: %v", err)
 	}
 	return f

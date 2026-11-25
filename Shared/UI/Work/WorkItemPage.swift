@@ -25,11 +25,15 @@ struct WorkItemPage: View {
     #if os(macOS)
     /// Whether the person turned the Docs flag on (`FeatureFlag`, #6572).
     @AppStorage(FeatureFlag.docs.key, store: WindowDefaults.store) private var docsOn = false
+    /// Whether the person turned the Image hosts flag on (#7139).
+    @AppStorage(FeatureFlag.imageHosts.key, store: WindowDefaults.store) private var imageHostsOn = false
     #endif
     /// Opens a place on the web page; the Mac window sets it while it can open the page (#5180).
     @Environment(\.openWebPlace) private var openWebPlace
     let place: WorkPlace
 
+    /// The page's images: what was shown once stays until the page closes (#7139).
+    @State private var images: PageImages<PlatformImage>
     @State private var detail: (host: MachineRef, got: DaemonAPI.ForgeItemDetail)?
     @State private var forgeProblem: String?
     @State private var reading = false
@@ -40,6 +44,12 @@ struct WorkItemPage: View {
     @State private var detailRead: Date?
     /// The Plan's read, while the page shows one (#5970).
     @State private var planRead: WorkPlanRead?
+
+    init(model: any WorkModel, place: WorkPlace) {
+        self.model = model
+        self.place = place
+        _images = State(initialValue: model.pageImages())
+    }
 
     /// The footer's left (#5970): what runs or failed of the item and its Plan, else from this device's copy.
     private var footerState: WorkLook.FooterState {
@@ -539,7 +549,7 @@ struct WorkItemPage: View {
                 if got.body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     Text("No description.").foregroundStyle(.secondary)
                 } else {
-                    MarkdownText(markdown: ForgeMarkdown.markdown(got.body), remoteImage: image(on: host))
+                    MarkdownText(markdown: ForgeMarkdown.markdown(got.body), remoteImage: remoteImages(on: host))
                 }
             }
             if got.cursor != nil {
@@ -550,7 +560,7 @@ struct WorkItemPage: View {
                 switch entry {
                 case let .comment(c):
                     WorkCommentView(comment: c, compact: narrow) {
-                        MarkdownText(markdown: ForgeMarkdown.markdown(c.body), remoteImage: image(on: host))
+                        MarkdownText(markdown: ForgeMarkdown.markdown(c.body), remoteImage: remoteImages(on: host))
                     }
                 case let .event(e):
                     if let words = WorkLook.eventWords(e) {
@@ -994,13 +1004,17 @@ struct WorkItemPage: View {
         detail?.got.item = item
     }
 
-    /// An image in the body or a comment, read by the machine that read the item (#4010,
-    /// `forge/image`), so the app never loads the page's remote URL. Nil when it cannot.
-    private func image(on host: MachineRef) -> RemoteImageLoader {
-        { [model] url in
-            guard let data = await model.forgeImage(url.absoluteString, on: host) else { return nil }
-            return PlatformImage(data: data)
-        }
+    /// The images in the body and the comments, read by the machine that read the item (#4010,
+    /// `forge/image`), so the app never loads the page's remote URL. With the Image hosts flag on
+    /// and a machine that keeps the list, a blocked one has its controls (#7139).
+    private func remoteImages(on host: MachineRef) -> RemoteImages {
+        #if os(macOS)
+        let controls = imageHostsOn && model.readsImageHosts(on: host)
+        #else
+        let controls = false // The Remote's are #7140.
+        #endif
+        return RemoteImages(page: images, machine: host,
+                            machineName: model.forgeMachines.first { $0.id == host }?.name ?? "the machine", controls: controls)
     }
 
     // MARK: Loading

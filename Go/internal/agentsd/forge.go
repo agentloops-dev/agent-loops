@@ -78,7 +78,10 @@ type forgeGitHub interface {
 	// Releases are a repo's newest releases (#4426).
 	Releases(ctx context.Context, repo string, limit int) ([]githubmcp.RepoRelease, error)
 	// Timeline is the epics and releases work/timeline reads (#4172).
-	Timeline(ctx context.Context, repo, since string, skip func(labels []string) bool) (githubmcp.Timeline, error)
+	Timeline(ctx context.Context, repo, since, from string, skip func(labels []string) bool,
+		kept func(number int, updatedAt string) (githubmcp.TimelineEpic, bool)) (githubmcp.Timeline, error)
+	// TimelineRest reads the epics that Timeline left out (#7027).
+	TimelineRest(ctx context.Context, repo string, t githubmcp.Timeline) (githubmcp.Timeline, error)
 	// Milestones are the open milestones with their due dates (#4654).
 	Milestones(ctx context.Context, repo string) ([]githubmcp.Milestone, error)
 	forgeGitHubWrites
@@ -134,6 +137,8 @@ type forgeAnswer struct {
 	plan *forgePlanAnswer
 	// timeline is a repo's read for work/timeline (#4172).
 	timeline *githubmcp.Timeline
+	// timelineFrom is when a first timeline's epics start: those closed before it are in its Rest (#7027).
+	timelineFrom time.Time
 	// releases is a forge/releases answer (#4426).
 	releases *wire.ForgeReleases
 }
@@ -177,6 +182,11 @@ type forgeBook struct {
 	forgeImages forgeImageCache
 	// forgeImageTransport reads forge/image's images; a test gives a fake, nil is the default.
 	forgeImageTransport http.RoundTripper
+	// publicImageTransport reads from the hosts that the person chose; a test gives a fake, nil
+	// is the package's.
+	publicImageTransport http.RoundTripper
+	// imageHosts is the hosts that the person allowed (#7138).
+	imageHosts imageHostsState
 	// keptGitHub is forgeGitHubKept's client, as keptGitHubToken (#6349).
 	keptGitHub      forgeGitHub
 	keptGitHubToken string

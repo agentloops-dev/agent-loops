@@ -12,6 +12,16 @@ extension AppModel {
         }
     }
 
+    /// `selfUpdate/status` on a machine (#6114): nil while it is offline, and on one that does not
+    /// update itself (a release before it, or a host that is in no app and has no `bin/current`).
+    func selfUpdateReader(_ host: MachineRef) -> (@MainActor () async throws -> DaemonAPI.SelfUpdate)? {
+        guard !hosts.isOffline(host), self.host(host, has: Capability.hostUpdate1) else { return nil }
+        let client = client(for: host)
+        return {
+            try await client.call(DaemonAPI.Method.selfUpdateStatus, DaemonAPI.Empty(), returning: DaemonAPI.SelfUpdate.self)
+        }
+    }
+
     /// `machines/agentsChanges`: the changes from one version to another.
     func agentsChanges(_ request: DaemonAPI.AgentsChangesRequest) async throws -> DaemonAPI.AgentsChanges {
         guard let control = controlRequests else { throw CancellationError() }

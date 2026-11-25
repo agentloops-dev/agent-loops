@@ -111,6 +111,7 @@ final class WorkWindowModel: WorkModel, WorkWindowPages {
 
     func askWorkConnectors() -> Bool { base.askWorkConnectors() }
     func forgeWrites(on host: MachineRef) -> Bool { base.forgeWrites(on: host) }
+    func readsImageHosts(on host: MachineRef) -> Bool { base.readsImageHosts(on: host) }
     func workSessionTitle(_ id: UUID) -> String? { base.workSessionTitle(id) }
     func workSessionState(_ id: UUID) -> AgentState? { base.workSessionState(id) }
     func workLead(of epic: DaemonAPI.LineageNode) -> Agent? { base.workLead(of: epic) }

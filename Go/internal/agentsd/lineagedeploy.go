@@ -113,11 +113,7 @@ func (d *Daemon) openDeploys() *store.JSONFile[deployRecord] {
 	if err != nil || diskjson.Unmarshal(data, &old) != nil || len(old.Deploys) == 0 {
 		return f
 	}
-	if err := f.Update(func(m map[string]deployRecord) error {
-		clear(m)
-		maps.Copy(m, old.Deploys)
-		return nil
-	}); err != nil {
+	if err := f.CarryOver(data, true, old.Deploys); err != nil {
 		log.Printf("lineage-deploys.json: could not bring over the deploys: %v", err)
 	}
 	return f

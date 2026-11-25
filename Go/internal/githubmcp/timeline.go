@@ -2,6 +2,7 @@ package githubmcp
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"sync"
 )
@@ -36,6 +37,8 @@ type Release struct {
 type Timeline struct {
 	Epics    []TimelineEpic
 	Releases []Release
+	// Rest are the ids of the epics that a first read left for TimelineRest (#7027).
+	Rest []string
 }
 
 // The read is in two steps (so a first open of Work ▸ Timeline or Features is not a dozen
@@ -58,7 +61,7 @@ const (
 const timelineListQuery = `query($owner: String!, $name: String!, $states: [IssueState!], $since: DateTime, $first: Int!, $releases: Int!) {
   repository(owner: $owner, name: $name) {
     issues(labels: ["epic"], states: $states, filterBy: {since: $since}, first: $first, orderBy: {field: UPDATED_AT, direction: DESC}) {
-      nodes { id number labels(first: 50) { nodes { name } } } }
+      nodes { id number closedAt updatedAt labels(first: 50) { nodes { name } } } }
     releases(first: $releases, orderBy: {field: CREATED_AT, direction: DESC}) { nodes { tagName publishedAt url isDraft } } } }`
 
 // timelineChildFields are a sub-issue's: what its epic's block and forecast need, and no field of a list's row
@@ -87,15 +90,19 @@ type timelineNode struct {
 
 // Timeline is repo's open epics, and those closed since since (RFC 3339), with their
 // sub-issues, and its newest releases (drafts left out). An open epic whose labels skip says yes to
-// is left out, and its sub-issues are not read (#7026).
-func (g *RealGitHub) Timeline(ctx context.Context, repo, since string, skip func(labels []string) bool) (Timeline, error) {
+// is left out, and its sub-issues are not read (#7026). The epics closed before from are only listed,
+// in Rest, for TimelineRest to read (#7027); with "" every epic is read. kept is asked once for each listed closed epic:
+// one it gives is not read, and comes after those that are (#7028).
+func (g *RealGitHub) Timeline(ctx context.Context, repo, since, from string, skip func(labels []string) bool,
+	kept func(number int, updatedAt string) (TimelineEpic, bool)) (Timeline, error) {
 	owner, name, err := ownerName(repo)
 	if err != nil {
 		return Timeline{}, err
 	}
-	out := Timeline{Releases: []Release{}, Epics: []TimelineEpic{}}
+	var out Timeline
 	lists, listErrs := g.timelineLists(ctx, owner, name, since)
 	var ids []string
+	var had []TimelineEpic
 	seen := map[int]bool{}
 	for n := range lists {
 		if listErrs[n] != nil {
@@ -113,25 +120,51 @@ func (g *RealGitHub) Timeline(ctx context.Context, repo, since string, skip func
 			if labels, _ := labelsOf(e.Labels.Nodes); n == 0 && skip(labels) {
 				continue
 			}
+			if n == 1 {
+				if epic, ok := kept(e.Number, e.UpdatedAt); ok {
+					had = append(had, epic)
+					continue
+				}
+			}
+			// Both are UTC in RFC 3339, so the strings are in the order of the times.
+			if n == 1 && e.ClosedAt != "" && e.ClosedAt < from {
+				out.Rest = append(out.Rest, e.ID)
+				continue
+			}
 			ids = append(ids, e.ID)
 		}
 	}
-	for _, r := range lists[0].Repository.Releases.Nodes {
-		if !r.IsDraft && r.TagName != "" && r.PublishedAt != "" {
-			out.Releases = append(out.Releases, Release{Tag: r.TagName, PublishedAt: r.PublishedAt, URL: r.URL})
-		}
+	out.Releases = lists[0].releases()
+	if out.Epics, err = g.timelineEpics(ctx, repo, ids); err != nil {
+		return Timeline{}, err
 	}
-	batches, err := g.timelineBatches(ctx, ids)
+	out.Epics = append(out.Epics, had...)
+	return out, nil
+}
+
+// TimelineRest is t with the epics of its Rest read too (#7027). t is not changed.
+func (g *RealGitHub) TimelineRest(ctx context.Context, repo string, t Timeline) (Timeline, error) {
+	rest, err := g.timelineEpics(ctx, repo, t.Rest)
 	if err != nil {
 		return Timeline{}, err
 	}
+	return Timeline{Epics: slices.Concat(t.Epics, rest), Releases: t.Releases}, nil
+}
+
+// timelineEpics is the epics of ids with their sub-issues, in order.
+func (g *RealGitHub) timelineEpics(ctx context.Context, repo string, ids []string) ([]TimelineEpic, error) {
+	batches, err := g.timelineBatches(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	out := []TimelineEpic{}
 	for _, batch := range batches {
 		for _, e := range batch {
 			// An id GitHub no longer gives (deleted, or moved out of reach) is null.
 			if e == nil || e.Number < 1 {
 				continue
 			}
-			out.Epics = append(out.Epics, timelineEpicOf(*e, repo))
+			out = append(out, timelineEpicOf(*e, repo))
 		}
 	}
 	return out, nil
@@ -142,9 +175,11 @@ type timelineList struct {
 	Repository *struct {
 		Issues struct {
 			Nodes []struct {
-				ID     string    `json:"id"`
-				Number int       `json:"number"`
-				Labels gqlLabels `json:"labels"`
+				ID        string    `json:"id"`
+				Number    int       `json:"number"`
+				ClosedAt  string    `json:"closedAt"`
+				UpdatedAt string    `json:"updatedAt"`
+				Labels    gqlLabels `json:"labels"`
 			} `json:"nodes"`
 		} `json:"issues"`
 		Releases struct {
@@ -156,6 +191,17 @@ type timelineList struct {
 			} `json:"nodes"`
 		} `json:"releases"`
 	} `json:"repository"`
+}
+
+// releases are the list's published releases. Its repository is there.
+func (l timelineList) releases() []Release {
+	out := []Release{}
+	for _, r := range l.Repository.Releases.Nodes {
+		if !r.IsDraft && r.TagName != "" && r.PublishedAt != "" {
+			out = append(out, Release{Tag: r.TagName, PublishedAt: r.PublishedAt, URL: r.URL})
+		}
+	}
+	return out
 }
 
 // timelineLists asks for the ids: the open epics (with the releases) and those closed since

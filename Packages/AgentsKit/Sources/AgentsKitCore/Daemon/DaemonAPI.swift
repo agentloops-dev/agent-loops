@@ -2434,15 +2434,19 @@ public enum DaemonAPI {
         /// The offset of the replay's first byte, when it is not the whole buffer: an
         /// attach that said `since` gets only what came after. Nil means `dropped`.
         public var offset: Int?
+        /// The host puts `shell/input` in order by `stream` and `seq` (#7147), so typing need
+        /// not wait for the last keystroke's answer. An older host leaves it out.
+        public var ordered: Bool?
 
         public init(state: ShellState, scrollback: Data, dropped: Int, startedAt: Date, folder: URL,
-                    offset: Int? = nil) {
+                    offset: Int? = nil, ordered: Bool? = nil) {
             self.state = state
             self.scrollback = scrollback
             self.dropped = dropped
             self.startedAt = startedAt
             self.folder = folder
             self.offset = offset
+            self.ordered = ordered
         }
     }
 
@@ -2457,13 +2461,20 @@ public enum DaemonAPI {
         /// clients send neither and nothing is resized.
         public var rows: Int?
         public var cols: Int?
+        /// The run of typing this is part of, and its place in it from 0 (#7147): only to a
+        /// host whose attach said `ordered`.
+        public var stream: UUID?
+        public var seq: Int?
 
-        public init(agentID: UUID, shell: Int = 0, bytes: Data, rows: Int? = nil, cols: Int? = nil) {
+        public init(agentID: UUID, shell: Int = 0, bytes: Data, rows: Int? = nil, cols: Int? = nil,
+                    stream: UUID? = nil, seq: Int? = nil) {
             self.agentID = agentID
             self.shell = shell
             self.bytes = bytes
             self.rows = rows
             self.cols = cols
+            self.stream = stream
+            self.seq = seq
         }
 
         public init(from decoder: any Decoder) throws {
@@ -2473,6 +2484,8 @@ public enum DaemonAPI {
             bytes = try c.decode(Data.self, forKey: .bytes)
             rows = try c.decodeIfPresent(Int.self, forKey: .rows)
             cols = try c.decodeIfPresent(Int.self, forKey: .cols)
+            stream = try c.decodeIfPresent(UUID.self, forKey: .stream)
+            seq = try c.decodeIfPresent(Int.self, forKey: .seq)
         }
     }
 
@@ -2628,6 +2641,11 @@ public enum DaemonAPI {
         /// `user/sealedSecret` from a client the control plane keeps no copy for yet (#5114):
         /// it gets one when another of the person's clients is online (`sealing/work`).
         public static let noClientCopy = -32108
+        /// `forge/image` did not read a host that is on no list (#7138). `data`: `ImageBlocked`.
+        public static let imageBlocked = -32109
+        /// `forge/image` did not read a host that the person chose, as it is not at a public address
+        /// (#7139): reading it again does not help.
+        public static let imageNotPublic = -32110
     }
 
     // MARK: Workflows
@@ -3711,7 +3729,7 @@ public extension DaemonAPI {
         }
     }
 
-    /// `folders/sendRead`: a part of at most 8 MB from `offset`. The host removes the file
+    /// `folders/sendRead`: a part of at most 4 MB from `offset`. The host removes the file
     /// once its last part (`end`) is read.
     struct SendReadRequest: Codable, Hashable, Sendable {
         public var id: UUID

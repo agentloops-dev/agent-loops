@@ -22,7 +22,7 @@ today, see [Data and retention](compliance/data-and-retention.md).
 | Rule | What it says |
 | --- | --- |
 | **Size** | Every record has a largest size, and every store has a limit on its count of records or on its total size. A count is a size limit only when each record has a largest size too. |
-| **Time** | A record ages out at 90 days at most. A shorter time is fine. Current state (an approval in force, a feature's rating, configuration) has no age: it stays until it is removed, and only its size is bounded. One exception: the hosted service's accounts, with their sign-in links (`v1/github/`, `v1/apple/`, `v1/google/`), `v1/emails/` and `v1/usage/`, stay until Delete Account, at most 100 accounts, until epic #7092 (Alex, 2026-11-24). |
+| **Time** | A record ages out at 90 days at most. A shorter time is fine. Current state (an approval in force, a feature's rating, configuration) has no age: it stays until it is removed, and only its size is bounded. Two exceptions. The hosted service's accounts, with their sign-in links (`v1/github/`, `v1/apple/`, `v1/google/`), `v1/emails/` and `v1/usage/`, stay until Delete Account, at most 100 accounts, until epic #7092 (Alex, 2026-11-24). The daily checks' `~/.agents/checks/suggestions.json` has no age on its file or its dismissals, until #7023 removes the daily checks (Alex, 2026-11-24). |
 | **Config** | Configuration is in a `.agents` folder: `<repo>/.agents/` for a folder, or `~/.agents/` for a person. A control plane keeps its configuration in its own store, which is the system of record for it (Alex, 2026-11-24). A device's own pairing is not configuration: it is the identity of one device, so it stays in the app's own folder, out of backups and dotfile syncs (#6800). The pairings of `loops` and `agentsctl` are the same: they hold a private key, so they stay out of `~/.agents`, in the program's own folder with mode 0600 (#6807, #6808). A Mac's pin from its organisation stays in the MDM profile, which macOS delivers: the app only reads it, and a file that the person can edit must not replace it (#6801). The descriptions of a machine's own secrets stay beside the secrets, in `~/.agents-secrets`: people sync and commit `~/.agents`, and the file names the secrets of one machine (#6742). A connection's server, account and site stay with its token: they say where the token is sent, so an edit or a sync must not change them (Alex, 2026-11-24, #6743). A machine's approvals of connectors and plugins, and its added runtime accounts, stay in its data folder: an approval or a sign-in folder must not come from a repo, a sync or another machine (Alex, 2026-11-24, #6748 to #6750). What a control plane sent a machine, and the machine's own trust records (the signed policy, the projects' tools, the machine's user, the lock's pin), stay in its data folder: a copy that came with a sync or a commit must not become the trust source (Alex, 2026-11-24, #6751 to #6754). |
 | **Roll-up** | Only time series roll up: old detail becomes a summary (usage keeps hours for 7 days, then days for 90 days). The summary is a store too, so the size and time rules apply to it. Nothing else keeps a summary of data that has aged out. |
 | **Kind** | Each store has a declared kind, and the code reaches it through an interface of that kind. A database of that kind can then replace the file. |
@@ -122,8 +122,16 @@ other store does.
   (#6683).
 - **Test.** One shared test for each kind writes past every limit, and checks that the
   sweep brings the store back under it, and that a store that refuses does refuse.
-- **See.** Each store reports its count, its bytes and the age of its oldest record to its
-  machine's health, so that a store near its limit shows before it evicts or refuses.
+- **See.** A query gives each declared store's bytes, count, limits and percent used, from its
+  last completed measurement, with its time (#6906). It gives sizes and counts only. An admin
+  reads the control plane's stores with `reports/storeSizes`; each machine answers
+  `stores/list` for its own, and an agent on it calls `list_stores`. A machine measures once an
+  hour from the files' sizes, and reads a small JSON file to count its entries only when it
+  changed. A control plane measures every 6 hours from the store's listing, and reads no object.
+  A read measures nothing. A measurement more than twice as old is **stale**. Client stores are
+  **unavailable**, because a client does not send its measurements. The stores that are
+  measured are in `Go/internal/storesizes/catalogue.json`, which the check of **Declare** holds
+  to the declarations.
 
 ## Related
 

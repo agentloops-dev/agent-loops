@@ -838,18 +838,68 @@ public extension DaemonAPI {
         public init(boards: [ProjectBoard] = []) { self.boards = boards }
     }
 
-    /// `forge/image`'s question (#4009): the url of an image on a forge page.
+    /// `forge/image`'s question (#4009): the url of an image on a forge page, and the exact hosts that
+    /// the person accepts for this one read (#7138, at most 6).
     struct ForgeImageRequest: Codable, Sendable, Hashable {
         public var url: String
+        public var show: [String]?
 
-        public init(url: String) { self.url = url }
+        public init(url: String, show: [String]? = nil) {
+            self.url = url
+            self.show = show
+        }
     }
 
     /// `forge/image`'s answer: the image's bytes and their type (PNG, JPEG, GIF or WebP), so a
-    /// client never loads the page's remote URL.
+    /// client never loads the page's remote URL. `keep` false: read through a host that the person
+    /// allowed or showed, so not put on disk (#7138).
     struct ForgeImage: Codable, Sendable, Hashable {
         public var mimeType: String
         public var data: Data
+        public var keep: Bool?
+
+        public init(mimeType: String, data: Data, keep: Bool? = nil) {
+            self.mimeType = mimeType
+            self.data = data
+            self.keep = keep
+        }
+    }
+
+    /// The data of `forge/image`'s failure `imageBlocked` (#7138): the host that was refused, and the
+    /// host that redirected to it when it is not the image's own.
+    struct ImageBlocked: Codable, Sendable, Hashable {
+        public var host: String
+        public var from: String?
+
+        public init(host: String, from: String? = nil) {
+            self.host = host
+            self.from = from
+        }
+    }
+
+    /// A host that the person allowed images from on one machine (#7138).
+    struct ImageHost: Codable, Sendable, Hashable {
+        public var host: String
+        public var addedAt: Date
+
+        public init(host: String, addedAt: Date) {
+            self.host = host
+            self.addedAt = addedAt
+        }
+    }
+
+    /// `imageHosts/allow` and `imageHosts/remove` (#7138).
+    struct ImageHostRequest: Codable, Sendable, Hashable {
+        public var host: String
+
+        public init(host: String) { self.host = host }
+    }
+
+    /// The machine's list, as the three `imageHosts` methods answer it (#7138).
+    struct ImageHosts: Codable, Sendable, Hashable {
+        public var hosts: [ImageHost]
+
+        public init(hosts: [ImageHost]) { self.hosts = hosts }
     }
 }
 
@@ -1083,6 +1133,10 @@ public extension DaemonAPI.Method {
     static let forgeBoards = "forge/boards"
     /// `ForgeImageRequest` → `ForgeImage` (#4009).
     static let forgeImage = "forge/image"
+    /// `Empty` or `ImageHostRequest` → `ImageHosts` (#7138): the person's own clients only.
+    static let imageHostsList = "imageHosts/list"
+    static let imageHostsAllow = "imageHosts/allow"
+    static let imageHostsRemove = "imageHosts/remove"
     /// `ForgeReleasesRequest` → `ForgeReleases`, `ForgeReleaseRequest` → `ForgeReleaseDetail` (#4426).
     static let forgeReleases = "forge/releases"
     static let forgeRelease = "forge/release"
