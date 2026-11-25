@@ -25,6 +25,7 @@ var (
 	ErrInvalid      = errors.New("invalid maturity record")
 	ErrTooLarge     = errors.New("maturity record exceeds 4 KiB")
 	ErrNotCompleted = errors.New("source operation is not an eligible completion")
+	ErrFull         = errors.New("there are 84 maturity records already")
 	ErrEvidenceFull = errors.New("maturity evidence slots are full")
 )
 
@@ -157,8 +158,10 @@ func New(s store.Store, registered []string) (*Records, error) {
 	return r, nil
 }
 
+const prefix = "v1/maturity/" // store-bounds: kind=document; count=84; size=4KiB a record; age=until-deleted; applied=on write (refused): a rating is current state, updated in place, so an idle feature keeps it (#6972)
+
 // Key is the only object key for a feature in this organisation's scoped store.
-func Key(id string) string { return "v1/maturity/" + id + ".json" }
+func Key(id string) string { return prefix + id + ".json" }
 
 // Read returns one feature's record. Pass an organisation-scoped store to keep
 // identifiers and evidence private to that organisation.
@@ -326,6 +329,25 @@ func hasMeasurement(r Record) bool {
 
 func validWalk(proof WalkProof) bool { return proof.Build != "" && !proof.Date.IsZero() }
 
+// room refuses one more record past MaxRecords. A record of a feature that left the catalogue
+// keeps its place: no rating is deleted to make room (#6972).
+func (s *Records) room(ctx context.Context) error {
+	keys, err := s.inner.List(ctx, prefix)
+	if err == nil && len(keys) >= MaxRecords {
+		err = ErrFull
+	}
+	return err
+}
+
+// encode is a record as it is stored, refused over MaxBytes.
+func encode(r Record) ([]byte, error) {
+	data, err := json.Marshal(r)
+	if err == nil && len(data) > MaxBytes {
+		err = ErrTooLarge
+	}
+	return data, err
+}
+
 // update atomically replaces one feature record. It is private so callers must use
 // the outcome and evidence methods, which enforce the record's bounded contract.
 func (s *Records) update(ctx context.Context, id, completionID string, now time.Time, change func(*Record) error) (*Record, error) {
@@ -353,6 +375,9 @@ func (s *Records) update(ctx context.Context, id, completionID string, now time.
 			return &r, nil
 		}
 		if r.FeatureID == "" {
+			if err := s.room(ctx); err != nil {
+				return nil, err
+			}
 			r.FeatureID = id
 			r.StartedAt = now.UTC()
 		}
@@ -364,12 +389,9 @@ func (s *Records) update(ctx context.Context, id, completionID string, now time.
 			r.CompletionID = completionID
 		}
 		r.UpdatedAt = now.UTC()
-		data, err := json.Marshal(r)
+		data, err := encode(r)
 		if err != nil {
 			return nil, err
-		}
-		if len(data) > MaxBytes {
-			return nil, ErrTooLarge
 		}
 		if _, err := s.inner.Put(ctx, key, data, condition); err == nil {
 			return &r, nil

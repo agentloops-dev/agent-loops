@@ -44,7 +44,12 @@ func ClientKey(id string) string { return ClientsPrefix + strings.ToLower(id) + 
 func HostKey(id string) string { return MachinesPrefix + id + ".json" }
 
 // PersonKey is where a person is kept.
-func PersonKey(id string) string { return "v1/people/" + id + ".json" }
+func PersonKey(id string) string { return PeoplePrefix + id + ".json" }
+
+// personIDOfKey is the id in a person's key.
+func personIDOfKey(key string) string {
+	return strings.TrimSuffix(strings.TrimPrefix(key, PeoplePrefix), ".json")
+}
 
 type held[T any] struct {
 	record T
@@ -65,6 +70,8 @@ type Records struct {
 	settings *held[Settings]
 	// Every user, removed ones too (#994).
 	people map[string]held[Person]
+	// The bytes of each person's record, by id (#7019).
+	peopleBytes map[string]int
 	// Every group, removed ones too (#1761).
 	groups map[string]held[Group]
 	// Every project, removed ones too (#2317).
@@ -81,7 +88,7 @@ type Records struct {
 
 func New(s store.Store) *Records {
 	return &Records{Store: s, clients: map[string]held[ClientRecord]{}, hosts: map[string]held[MachineRecord]{},
-		people: map[string]held[Person]{}, groups: map[string]held[Group]{}, projects: map[string]held[Project]{}, tombstones: map[string]string{}, unreadable: map[string]string{}}
+		people: map[string]held[Person]{}, peopleBytes: map[string]int{}, groups: map[string]held[Group]{}, projects: map[string]held[Project]{}, tombstones: map[string]string{}, unreadable: map[string]string{}}
 }
 
 // OnUnreadable sets where an unreadable record is said, once per version (the log).

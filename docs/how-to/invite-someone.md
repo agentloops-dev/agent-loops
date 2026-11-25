@@ -67,6 +67,17 @@ When the provider deactivates a person, they are suspended within 5 seconds: the
 clients are cut off and their machines stop their work, and nothing is deleted. When the
 provider deletes a person, an admin is asked to remove them (`people/removeRequests`).
 
+## When the control plane is full
+
+A control plane keeps 1 MiB of people, which is 1,000 people or more. At the limit, people who
+are here still sign in, and a new person is refused:
+
+- **Invite a Person…** says so, and makes no code. A code sent before is not spent.
+- A person who joins by signing in is refused.
+- Okta or Entra shows a `403` with the reason in its provisioning log.
+
+The audit says it once an hour at most. Remove a person who is not needed, then try again.
+
 ## Change a role
 
 In **Settings ▸ People**, choose **Admin** or **Member** beside the person. A control plane

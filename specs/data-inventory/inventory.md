@@ -196,7 +196,7 @@ handover also leaves out `v1/keys/` (`storecopy.go:21,25`).
 | `v1/control.json` | Owner, endpoints, epoch, control key public parts, audit days | 1, 64 KiB (#6771) | on write |
 | `v1/clients/<UUID>.json` | Name, kind, public key, last seen, APNs token, ≤16 Live Activity tokens (12 h each), Web Push subscription | 16 KiB a record, 1 MiB in all (#6757; hosted: 5/50 clients too). Key life 90 days (`keylife.go:18`). | Tombstone 7 days. A client whose key expired is forgotten by the hourly sweep (#6757). |
 | `v1/machines/<id>.json` | Name, key, platform, version, owner, workspace | 32 KiB a record, 1 MiB in all (#6758; hosted: 2/20 machines too) | Tombstone 7 days. A machine with no workspace whose key expired is removed by the hourly sweep (#6758); a linked one stays until removed. |
-| `v1/people/<id>.json` | Name, role, sign-ins (email, login), SCIM part, old names (90 days) | No cap | A removed person goes after 14 days, or 90 when they have a sign-in (#6756) |
+| `v1/people/<id>.json` | Name, role, sign-ins (email, login), SCIM part, old names (90 days) | 16 KiB a record, 1 MiB in all, removed people 1 MiB more (#7019) | A removed person goes after 14 days, or 90 when they have a sign-in (#6756) |
 | `v1/groups/<id>.json` | Name, members | 1,000 (`groups.go:20`) | tombstone 7 days |
 | `v1/projects/<id>.json` | Name, owner, slots, ≤20 boards | 500 per person (`projects.go:36`) | tombstone 7 days |
 | `v1/projectFolders/<host>.json` | A machine's joined folders | 1,000 | orphan sweep |
@@ -461,7 +461,7 @@ newer than a row above for the same store.
 | hosted `v1/invites/` | document | Invite links | 1,000 of 4 KiB, else refused; until it expires, 90 days at most | `Go/internal/hosted/recordbounds.go` (`sweepInvites`) | #6782 |
 | hosted `v1/allow/` | key-value | The operator's allow list | 10,000 of 4 KiB, else refused; 90 days from the last allow | `Go/internal/hosted/recordbounds.go` (`sweepAllowed`) | #6783 |
 | hosted `v1/blocked/`, `v1/blocked/email/` | key-value | The operator's block lists | 10,000 each of 4 KiB, else refused; no age, until unblocked (Alex, 2026-11-24: a blocked person must not come back) | `Go/internal/hosted/recordbounds.go` (`putBlock`, `putEmailBlock`) | #6784 |
-| hosted `v1/accounts/`, sign-in links, `v1/emails/`, `v1/usage/` | document | Accounts | 100 accounts; until Delete Account | `Go/internal/hosted/signup.go:45; accounts.go:140-146,302-317` | #6785 |
+| hosted `v1/accounts/`, sign-in links, `v1/emails/`, `v1/usage/` | document | Accounts | 100 accounts of 8 KiB, links and usage 128 bytes; until Delete Account: an exception to the 90-day rule until epic #7092 (Alex, 2026-11-24) | `Go/internal/hosted/signup.go` (`MaxAccounts`), `accounts.go` (`accountRecordMost`, `remove`) | #6785, #7094 |
 | hosted `v1/waitlist/`, `v1/waiting/` | document | The waitlist | 10,000 of 4 KiB, else refused; 90 days, or sign-up or a block | `Go/internal/hosted/recordbounds.go` (`sweepWaitlist`) | #6786 |
 | Operator backups | blob | Each account's store | The newest 7; `--keep 0` keeps all; no age | `Go/internal/hosted/backup.go:58-83; Go/cmd/agents-hosted/admin.go:33-43` | #6787 |
 | `control.log` (`~/Library/Logs/Agents/control.log` or `/data/control.log`) | log | Operational log lines | 4 MB and one older file, 7 days; the oldest go first | `Go/internal/rolllog/rolllog.go` | #6901 |
@@ -507,9 +507,9 @@ These had no row above. Paths in the evidence are relative to `Go/internal/`.
 | `<root>/setup-reports.jsonl` | log | Steps of the machine's set-up | one run; a new run truncates it | `hostsetup/report.go:23` |
 | `v1/machine-setup/<host>.json` | document | A machine's set-up steps | 1 per machine, 512 KiB; 90 days after it ended, none while it runs; on machine removal, and hourly for a machine that is gone (7 days after its last change) (#6968) | `controlplane/machinesetup.go` (`sweepMachineSetups`) |
 | `v1/machine-versions/<host>.json` | document | A machine's versions | 20 deploys, 64 KiB; a deploy 90 days, the version now none; on machine removal, and hourly for a machine that is gone (a day after it was last seen) (#6969) | `controlplane/machineversions.go` (`sweepMachineVersions`) |
-| `v1/approvals/<person>/` | document | Signed approvals | 2,000 a person; no age, no delete found | `controlplane/approvals.go:22` |
+| `v1/approvals/<person>/` | document | Signed approvals | 2,000 of 8 KiB a person, else refused; until the person is removed (no age before, on purpose: the same file is not approved again; #6970) | `controlplane/approvals.go` (`forgetApprovals`, `sweepApprovalsOfGone`) |
 | `v1/failed-makes/<provider>.json` | log | Failed makes | 5 a provider, 64 KiB; 90 days, on write and hourly; deleted with the provider (#6971) | `controlplane/providers/defaults.go` (`SweepFailedMakes`) |
-| `v1/maturity/<id>.json` | document | Feature maturity evidence | 84 records of 4 KiB; no age | `controlplane/maturity/store.go:161` |
+| `v1/maturity/<id>.json` | document | Feature maturity evidence | 84 of 4 KiB, updated in place, else refused; no age, on purpose: a rating is current state (#6905, #6972) | `controlplane/maturity/store.go` (`update`) |
 
 Mixed files follow these decisions: `workflows.json` splits into document/configuration, key-value
 run state, and log history; `lineage.jsonl` stays an append log with a separate bounded graph
