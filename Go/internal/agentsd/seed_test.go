@@ -12,6 +12,7 @@ import (
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
+	"github.com/agentloops-dev/agent-loops/Go/internal/execfile"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -44,7 +45,7 @@ func newSeedPlane(t *testing.T) *seedPlane {
 	t.Helper()
 	bin := t.TempDir()
 	ssh := filepath.Join(bin, "ssh")
-	must(t, os.WriteFile(ssh, []byte(seedSSH), 0o700)) //nolint:gosec // G306: a program
+	must(t, execfile.Write(ssh, []byte(seedSSH), 0o700))
 	t.Setenv("GIT_SSH_COMMAND", ssh)
 	t.Setenv("SEED_TEST_PIDS", filepath.Join(bin, "pid"))
 	p := &seedPlane{src: repo(t), knows: true}
@@ -233,7 +234,7 @@ func TestASendCarriesOnlyWhatTheOriginHasNot(t *testing.T) {
 		}
 	}
 	// A branch of the folder's own there stays, and its commits stop the send, as ever.
-	sendGit(t, p.folder, nil, "commit", "-q", "--allow-empty", "-m", "mine")
+	sendGit(t, p.folder, nil, "-c", "user.name=m", "-c", "user.email=m@x", "commit", "-q", "--allow-empty", "-m", "mine")
 	mine := sendGit(t, p.folder, nil, "rev-parse", "HEAD")
 	p.commit(t, "more")
 	p.push(t, "main")
