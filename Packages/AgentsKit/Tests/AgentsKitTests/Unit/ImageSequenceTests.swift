@@ -41,9 +41,25 @@ struct ImageSequenceTests {
 
         ![one again](https://example.com/1.png)
         """)
-        #expect(ImageSequence.sources(in: blocks) == [
+        #expect(ImageSequence.items(in: blocks).map(\.source) == [
             "https://example.com/1.png", "https://example.com/2.png", "https://example.com/3.png",
         ])
+    }
+
+    @Test("each item has its alternative text")
+    func alts() {
+        let items = ImageSequence.items(in: MarkdownBlock.parse("![one](1.png)\n\n![two](2.png)"))
+        #expect(items == [.init(source: "1.png", alt: "one"), .init(source: "2.png", alt: "two")])
+    }
+
+    @Test("each image is a piece of its own, and the words between are one")
+    func pieces() {
+        let blocks = MarkdownBlock.parse("# Title\n\nWords.\n\n![one](1.png)\n\n![two](2.png)\n\nMore.")
+        #expect(ImageSequence.pieces(of: blocks) == [
+            .init(range: 0..<2, isImage: false), .init(range: 2..<3, isImage: true),
+            .init(range: 3..<4, isImage: true), .init(range: 4..<5, isImage: false),
+        ])
+        #expect(ImageSequence.pieces(of: MarkdownBlock.parse("Words only.")).contains { $0.isImage } == false)
     }
 
     @Test("an image that is a link is the link's words, so its click follows the link")

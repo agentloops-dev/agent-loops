@@ -30,8 +30,14 @@ folder.
 3. Choose the branches to send. The branch that is checked out on this Mac is chosen at
    first.
 4. Keep **Include uncommitted changes** on to send the changed files and the new files that
-   git does not ignore. Files that git ignores, such as `node_modules` and `build`, do not
-   go. The changes go only with the branch that is checked out on this Mac.
+   you staged. Files that git ignores, such as `node_modules` and `build`, do not go. The
+   changes go only with the branch that is checked out on this Mac.
+
+   Files that git does not track do not go at first, because they can be build output. The
+   sheet says how many there are, their size and the largest folders. Turn on **Include
+   untracked files** to send them too. The sheet marks them when they are 25 MB or more, or
+   are in a folder named `node_modules`, `build`, `.build`, `DerivedData`, `target` or `dist`.
+   A send that an agent starts takes them.
 5. Click **Send**.
 
    The sheet shows the progress. When the server has the copy, the folder is listed under the

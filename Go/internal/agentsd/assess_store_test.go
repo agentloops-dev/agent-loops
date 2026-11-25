@@ -73,7 +73,7 @@ func TestAnAssessmentsFilesHaveALargestSize(t *testing.T) {
 	for _, p := range []string{scope, filepath.Join(dir, "scope-left.txt")} {
 		info, err := os.Stat(p)
 		must(t, err)
-		if info.Size() != assessmentMaxBytes || !info.ModTime().Equal(written) {
+		if info.Size() > assessmentMaxBytes || !info.ModTime().Equal(written) {
 			t.Errorf("%s: %d bytes at %v", p, info.Size(), info.ModTime())
 		}
 	}

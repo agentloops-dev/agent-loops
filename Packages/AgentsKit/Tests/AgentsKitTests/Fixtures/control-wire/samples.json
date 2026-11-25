@@ -450,7 +450,8 @@
     "applied": true
   },
   "SendFactsRequest": {
-    "folder": "file:///Users/me/hello/"
+    "folder": "file:///Users/me/hello/",
+    "measureUntracked": true
   },
   "SendFacts": {
     "branches": [
@@ -459,7 +460,35 @@
     ],
     "current": "main",
     "origin": "git@github.com:example/hello.git",
-    "hasChanges": true
+    "hasChanges": true,
+    "untracked": {
+      "files": 3,
+      "size": 48000000,
+      "largest": [
+        {
+          "path": "node_modules/",
+          "size": 47000000
+        }
+      ],
+      "buildOutput": true,
+      "partial": false
+    }
+  },
+  "SendUntracked": {
+    "files": 3,
+    "size": 48000000,
+    "largest": [
+      {
+        "path": "node_modules/",
+        "size": 47000000
+      }
+    ],
+    "buildOutput": true,
+    "partial": false
+  },
+  "SendUntrackedItem": {
+    "path": "node_modules/",
+    "size": 47000000
   },
   "SendPackRequest": {
     "folder": "file:///Users/me/hello/",
@@ -469,7 +498,8 @@
     "leavingOut": [
       "0123456789abcdef0123456789abcdef01234567"
     ],
-    "includeChanges": true
+    "includeChanges": true,
+    "leaveOutUntracked": true
   },
   "SendFile": {
     "id": "6F0E1C2A-3B4D-4E5F-8A9B-0C1D2E3F4A5B",
@@ -507,6 +537,7 @@
     "branches": ["main", "fix-login"],
     "checkout": "fix-login",
     "includeChanges": true,
+    "leaveOutUntracked": true,
     "origin": "git@github.com:o/app.git"
   },
   "SendSummary": {

@@ -100,7 +100,6 @@ func TestTheSweepStoresAnOldLineageObjectAsMeasured(t *testing.T) {
 
 // A request's answer keeps it at its largest size, whoever answers it.
 func TestARequestsAnswerIsWithinItsLargest(t *testing.T) {
-	t.Skip("#7192")
 	t.Parallel()
 	st := store.NewMemory()
 	p := startPlane(t, st, controllink.NewPrivateKey())
@@ -111,19 +110,160 @@ func TestARequestsAnswerIsWithinItsLargest(t *testing.T) {
 	_, refused := p.s.governanceDecide(t.Context(), wire.AuditActor{User: r.User, UserName: &name}, wire.CatalogDecide{Request: r.ID}, time.Now())
 	object, err := st.Get(t.Context(), governanceRequestKey(r.ID))
 	must(t, err)
-	if refused != nil && len(object.Data) == 0 {
-		t.Fatal("a refused answer lost the request")
+	if refused != nil {
+		t.Fatalf("a request cannot be answered: %v", refused)
 	}
 	if len(object.Data) > governanceRecordBytes {
 		t.Fatalf("%d bytes are stored, and the most is %d", len(object.Data), governanceRecordBytes)
 	}
 }
 
+// A request at its largest can be approved for a group, and so can one that waits with it. The
+// approval is within its largest too, and has the whole source.
+func TestALargeRequestCanBeApproved(t *testing.T) {
+	t.Parallel()
+	st := store.NewMemory()
+	p := startPlane(t, st, controllink.NewPrivateKey())
+	long := strings.Repeat("<", governanceRecordBytes)
+	source, why := strings.Repeat("<", governanceSourceMost), strings.Repeat("<", governanceWhyMost)
+	_, err := p.s.records.ChangeGroup(t.Context(), "g", func(*records.Group) (*records.Group, error) {
+		return &records.Group{ID: "g", Name: long, Everyone: true}, nil
+	})
+	must(t, err)
+	for _, id := range []string{"one", "two"} {
+		keepJSON(t, st, governanceRequestKey(id), wire.CatalogRequest{ID: id, Kind: wire.CatalogKindMCP, Name: strings.Repeat("<", governanceNameMost),
+			Source: &source, Why: &why, User: p.s.localOwner(), UserName: long[:300], State: wire.CatalogRequestStateWaiting, At: dateOf(time.Now())})
+	}
+	_, err = p.s.governanceDecide(t.Context(), wire.AuditActor{User: p.s.localOwner(), UserName: &long},
+		wire.CatalogDecide{Request: "one", Approve: true, Group: new("g")}, time.Now())
+	must(t, err)
+	for _, id := range []string{"one", "two"} {
+		object, err := st.Get(t.Context(), governanceRequestKey(id))
+		must(t, err)
+		var r wire.CatalogRequest
+		must(t, json.Unmarshal(object.Data, &r))
+		if r.State != wire.CatalogRequestStateApproved || len(object.Data) > governanceRecordBytes {
+			t.Fatalf("%s: %s, %d bytes", id, r.State, len(object.Data))
+		}
+	}
+	keys, err := st.List(t.Context(), governanceApprovalPrefix)
+	must(t, err)
+	approvals, err := p.s.governanceApprovals(t.Context())
+	must(t, err)
+	if len(approvals) != 1 || deref(approvals[0].Source) != source || keys[0].Size > governanceRecordBytes {
+		t.Fatalf("%d approvals", len(approvals))
+	}
+}
+
 // A name or a reason that is cut is whole characters, and says that it is cut.
 func TestWhatGovernanceCutsSaysSo(t *testing.T) {
-	t.Skip("#7192")
 	t.Parallel()
 	if got := cut(strings.Repeat("é", 10), 5); !utf8.ValidString(got) || !strings.HasSuffix(got, "…") {
 		t.Fatalf("%q", got)
+	}
+}
+
+// #7203: a pool that is over its largest record already can shrink, so that it can end.
+func TestAPoolOverItsLargestCanEnd(t *testing.T) {
+	t.Parallel()
+	w, _ := testPools(t)
+	name := strings.Repeat("x", warmPoolMost)
+	for id, p := range map[string]storedPool{
+		"machines": {ID: "machines", Owner: "gone", Provider: "do", Name: name, Machines: []storedPoolMachine{{Name: "a", Workspace: "ws"}}},
+		"empty":    {ID: "empty", Owner: "gone", Provider: "do", Name: name},
+	} {
+		data, err := json.Marshal(p)
+		must(t, err)
+		_, err = w.s.cfg.Store.Put(t.Context(), warmPoolKey(id), data, store.Absent)
+		must(t, err)
+		kept, tag, err := w.read(t.Context(), id)
+		must(t, err)
+		if err := w.forget(t.Context(), kept, tag, time.Now()); err != nil {
+			t.Errorf("%s: %v", id, err)
+		}
+		if kept, _, _ := w.read(t.Context(), id); kept != nil {
+			t.Errorf("%s: the pool is still there", id)
+		}
+	}
+	// It does not grow.
+	p := &storedPool{ID: "grows", Name: name}
+	if err := w.write(t.Context(), p, ""); err == nil {
+		t.Error("a record over the limit was written")
+	}
+}
+
+// #7203: a version of the policy at its largest with the kill switch is kept, and one over the
+// largest version is not.
+func TestAPolicyVersionHasALargestSize(t *testing.T) {
+	t.Parallel()
+	st := store.NewMemory()
+	p := startPlane(t, st, controllink.NewPrivateKey())
+	p.s.keepPolicyVersion(t.Context(), 1, []byte(strings.Repeat("x", mostPolicyBytes+8<<10)))
+	p.s.keepPolicyVersion(t.Context(), 2, []byte(strings.Repeat("x", 1<<20)))
+	listed, err := st.List(t.Context(), policyVersionsKey)
+	must(t, err)
+	if len(listed) != 1 || !strings.HasSuffix(listed[0].Key, "0000000001.json") {
+		t.Fatalf("%v", listed)
+	}
+}
+
+// #7203: a token's use and its revoke keep its record within the largest, and no revoke is refused.
+func TestATokensUseAndRevokeAreWithinTheLargestRecord(t *testing.T) {
+	t.Parallel()
+	st := store.NewMemory()
+	p := startPlane(t, st, controllink.NewPrivateKey())
+	long := strings.Repeat("n", 32<<10)
+	actor := wire.AuditActor{User: "u", UserName: &long}
+	size := func(key string) int {
+		object, err := st.Get(t.Context(), key)
+		must(t, err)
+		return len(object.Data)
+	}
+	read := readTokenRecord{ID: "r", SHA256: strings.Repeat("a", 64)}
+	scim := scimTokenRecord{ID: strings.Repeat("b", 12), Provider: "o", SHA256: strings.Repeat("b", 64)}
+	put := func(key string, v any) string {
+		data, err := records.Encode(v)
+		must(t, err)
+		tag, err := st.Put(t.Context(), key, data, store.Always)
+		must(t, err)
+		return tag
+	}
+	tag := put(readTokenKey(read.SHA256), read)
+	put(scimTokenKey(scim.SHA256), scim)
+	if ok, err := p.s.readAPI.markRevoked(t.Context(), read, tag, &wire.OrgRouteStamp{By: actor, At: wire.DateOf(time.Now())}); err != nil || !ok {
+		t.Fatalf("%v: %v", ok, err)
+	}
+	must(t, p.s.scimTokens.revoke(t.Context(), scim.ID, actor))
+	for _, key := range []string{readTokenKey(read.SHA256), scimTokenKey(scim.SHA256)} {
+		if n := size(key); n > 32<<10 {
+			t.Errorf("%s is %d bytes", key, n)
+		}
+		object, err := st.Get(t.Context(), key)
+		must(t, err)
+		var kept struct{ Revoked *wire.OrgRouteStamp }
+		must(t, json.Unmarshal(object.Data, &kept))
+		if kept.Revoked == nil || kept.Revoked.By.User != "u" {
+			t.Errorf("%s is not revoked by u", key)
+		}
+	}
+	// A use is noted in the background: a short one says that the long one is done too.
+	for i, address := range []string{long, "10.0.0.1"} {
+		hash := strings.Repeat(string("cd"[i]), 64)
+		put(readTokenKey(hash), readTokenRecord{ID: "u", SHA256: hash})
+		put(scimTokenKey(hash), scimTokenRecord{ID: "u", SHA256: hash})
+		p.s.readAPI.noteUse(hash, address, time.Now())
+		p.s.scimTokens.noteUse(hash, address, time.Now())
+	}
+	short := strings.Repeat("d", 64)
+	waitFor(t, func() bool {
+		a, _ := st.Get(t.Context(), readTokenKey(short))
+		b, _ := st.Get(t.Context(), scimTokenKey(short))
+		return strings.Contains(string(a.Data), "10.0.0.1") && strings.Contains(string(b.Data), "10.0.0.1")
+	})
+	time.Sleep(50 * time.Millisecond)
+	for _, key := range []string{readTokenKey(strings.Repeat("c", 64)), scimTokenKey(strings.Repeat("c", 64))} {
+		if n := size(key); n > 16<<10 {
+			t.Errorf("a use made %s %d bytes", key, n)
+		}
 	}
 }

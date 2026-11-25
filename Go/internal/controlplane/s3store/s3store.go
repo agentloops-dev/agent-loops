@@ -152,8 +152,12 @@ type Store struct {
 
 var _ store.Store = (*Store)(nil)
 
-// maxBody is the most of a reply that is read: 16 MiB.
-const maxBody = 16 << 20
+// MaxRecord is the largest object that is written, and the most of a reply that is read
+// (#7195). It is over the largest record that a store declares (a kept request, 40 MiB), and
+// over all that an earlier build could write, which had no limit: an object it could read
+// (16 MiB) with a message (64 MiB) added. An object over it, which only another program can
+// have written, is left as it is: it can be listed, replaced and deleted, and not read.
+const MaxRecord = 128 << 20
 
 // New makes a store. A nil client is one with a 10 second timeout.
 func New(loc Location, creds Credentials, client *http.Client) *Store {
@@ -187,6 +191,9 @@ func (s *Store) Put(ctx context.Context, key string, data []byte, when store.Con
 	} else if tag, ok := when.Matching(); ok {
 		// Sent exactly as the bucket gave it, quotes and all (rule 9).
 		headers = append(headers, [2]string{"if-match", tag})
+	}
+	if len(data) > MaxRecord {
+		return "", &store.LimitError{Name: key, Size: int64(len(data)), Limit: MaxRecord}
 	}
 	if data == nil {
 		data = []byte{}
@@ -315,12 +322,12 @@ func (s *Store) send(ctx context.Context, method, key string, hasKey bool, body 
 		return reply{}, store.Unavailable("the bucket at %s could not be reached: %v", s.Location.Endpoint.Hostname(), err)
 	}
 	defer resp.Body.Close()
-	data, err := io.ReadAll(io.LimitReader(resp.Body, maxBody+1))
+	data, err := io.ReadAll(io.LimitReader(resp.Body, MaxRecord+1))
 	if err != nil {
 		return reply{}, store.Unavailable("the bucket at %s could not be reached: %v", s.Location.Endpoint.Hostname(), err)
 	}
-	if len(data) > maxBody {
-		return reply{}, store.Unavailable("the bucket answered more than %d bytes", maxBody)
+	if len(data) > MaxRecord {
+		return reply{}, store.Unavailable("the bucket answered more than %d bytes for %s", MaxRecord, key)
 	}
 	return reply{status: resp.StatusCode, etag: resp.Header.Get("ETag"), body: data}, nil
 }

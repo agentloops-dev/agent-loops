@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"slices"
@@ -417,8 +418,9 @@ func (w *warmPools) write(ctx context.Context, p *storedPool, tag string) error 
 	if err != nil {
 		return err
 	}
-	if len(data) > warmPoolMost {
-		return fail(invalidParams, "A warm pool is %d KiB at most.", warmPoolMost>>10)
+	// One that is over it already can shrink, so that it can end.
+	if err := records.Fits(ctx, w.s.cfg.Store, warmPoolKey(p.ID), "The warm pool", data, warmPoolMost); err != nil {
+		return err
 	}
 	_, err = w.s.cfg.Store.Put(ctx, warmPoolKey(p.ID), data, when)
 	return err
@@ -503,8 +505,16 @@ func (w *warmPools) forget(ctx context.Context, p *storedPool, tag string, now t
 		}
 		return err == nil
 	})
+	// No one is left to see its claims, or a word of why it stopped when there is no room for it.
+	p.Claims = nil
+	stopped := p.Stopped
 	p.Stopped = "its person was removed"
-	if err := w.write(ctx, p, tag); err != nil {
+	err := w.write(ctx, p, tag)
+	if _, large := errors.AsType[*records.TooLargeError](err); large {
+		p.Stopped = stopped
+		err = w.write(ctx, p, tag)
+	}
+	if err != nil {
 		if isConflict(err) {
 			delete(w.forgetTried, p.ID)
 			return nil
@@ -930,6 +940,9 @@ func (w *warmPools) set(ctx context.Context, person string, set wire.WarmPoolSet
 	}
 	err := w.write(ctx, p, tag)
 	w.mu.Unlock()
+	if large, ok := errors.AsType[*records.TooLargeError](err); ok {
+		return wire.WarmPool{}, fail(invalidParams, "%s", large.Words)
+	}
 	if err != nil {
 		return wire.WarmPool{}, fail(storeUnavailable, "The warm pool could not be kept: %v", err)
 	}

@@ -252,7 +252,7 @@ func TestAskQuestionAndWorkspacesAfterTheShelfQuestion(t *testing.T) {
 }
 
 // One call's arguments are cut as its answer is (#3687): a long one keeps its first
-// appToolAnswerMost runes as text, a short one is kept as it was, the token never.
+// appToolAnswerMost runes and a … as text, a short one is kept as it was, the token never.
 func TestAnAppToolCallsArgumentsAreCut(t *testing.T) {
 	t.Parallel()
 
@@ -272,10 +272,10 @@ func TestAnAppToolCallsArgumentsAreCut(t *testing.T) {
 	if err := diskjson.Unmarshal(b, &call); err != nil {
 		t.Fatal(err)
 	}
-	if got := argString(call.Arguments, "body"); got != long[:len("é")*appToolAnswerMost] {
+	if got := argString(call.Arguments, "body"); got != long[:len("é")*appToolAnswerMost]+"…" {
 		t.Fatalf("body is %d runes", len([]rune(got)))
 	}
-	if got := argString(call.Arguments, "ids"); len([]rune(got)) != appToolAnswerMost || !strings.HasPrefix(got, `["x","x"`) {
+	if got := argString(call.Arguments, "ids"); len([]rune(got)) != appToolAnswerMost+1 || !strings.HasSuffix(got, "…") || !strings.HasPrefix(got, `["x","x"`) {
 		t.Fatalf("ids %q", got)
 	}
 	if string(call.Arguments["title"]) != `"Done"` || call.Arguments["token"] != nil {

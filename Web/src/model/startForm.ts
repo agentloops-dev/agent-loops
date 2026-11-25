@@ -2,6 +2,7 @@
 // folders it may also reach, kept across starts and a reload, as the window's DraftKeeper keeps
 // its start form. The runtime and choices follow the person to every client (#1033). One form, as the window has one; a runtime that is gone takes its choices
 // with it, since they were that runtime's.
+import { putEntry } from "./keyValue";
 import type { JSONValue, Levels, ModelLevel, PermissionLevel } from "../protocol/generated";
 import { preferenceKeys, preferences, setPreferences } from "./preferences";
 
@@ -56,7 +57,9 @@ export function keptForm(storage: Storage | undefined): StartForm {
 }
 
 export function keepForm(storage: Storage | undefined, form: StartForm): void {
-  try { storage?.setItem(storageKey, JSON.stringify({ folders: form.folders })); } catch { /* full: not kept */ }
+  // folderRefusal says when a folder is refused, before it is in the form.
+  // store-bounds: kind=key-value; count=100; age=until-deleted; action=refuse; record=1KiB; applied=when a folder is added, on write, and on Forget
+  putEntry(storage, storageKey, JSON.stringify({ folders: form.folders }), 1024 * 1024);
   if (!form.runtimeID) return;
   const said = preferences.peek();
   const changes: Record<string, JSONValue> = {};

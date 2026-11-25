@@ -429,14 +429,12 @@ func (d *Daemon) writeRuntimeChoices(raw wire.JSONValue) error {
 		return err
 	}
 	if r.Sandbox != nil {
-		b, _ := json.Marshal(r.Sandbox)
-		if err := store.WriteAtomically(filepath.Join(d.SettingsDir, "sandbox.json"), b, 0o644); err != nil {
+		if err := d.writeSetting("sandbox.json", r.Sandbox); err != nil {
 			return err
 		}
 	}
 	if r.ClientPermissions != nil {
-		b, _ := json.Marshal(r.ClientPermissions)
-		if err := store.WriteAtomically(filepath.Join(d.SettingsDir, "client-permissions.json"), b, 0o600); err != nil {
+		if err := d.writeSetting("client-permissions.json", r.ClientPermissions); err != nil {
 			return err
 		}
 	}

@@ -33,9 +33,11 @@ const (
 	// deadTokenKept is how long a SCIM or read token is kept after it stopped working (#6766,
 	// #6767): an admin sees until then who revoked it, and when. A live one has no age.
 	deadTokenKept = 90 * 24 * time.Hour
-	// tokenMostBytes is the largest token record that is made. A revoke is never refused: it
-	// adds who revoked it, within a client record's bound (16 KiB).
+	// tokenMostBytes is the largest token record that is made, and tokenKeptBytes the largest
+	// that is kept: a use and a revoke add to it. A use that does not fit is not noted. A revoke
+	// is never refused: it names its actor by id alone when the names do not fit.
 	tokenMostBytes = 8 << 10
+	tokenKeptBytes = 32 << 10
 	// scimTokenKept is how long this copy trusts a token it read: a revoke at another copy
 	// is told at once (scimTokenRevoked), and this bounds a missed one.
 	scimTokenKept = 10 * time.Second
@@ -163,7 +165,7 @@ func (st *scimTokens) noteUse(hash, address string, now time.Time) {
 			return
 		}
 		t.LastUse = &wire.SCIMTokenUse{At: wire.DateOf(now), Address: optional(address)}
-		if data, err := records.Encode(t); err == nil {
+		if data, err := records.Encode(t); err == nil && len(data) <= tokenKeptBytes/2 {
 			// A revoke in between wins: its write moved the tag.
 			_, _ = st.s.cfg.Store.Put(ctx, key, data, store.Matching(object.ETag))
 		}
@@ -321,6 +323,11 @@ func (st *scimTokens) sweep(ctx context.Context, now time.Time) error {
 	return nil
 }
 
+// actorByID is an actor with no names, for a record with no room for them.
+func actorByID(a wire.AuditActor) wire.AuditActor {
+	return wire.AuditActor{User: a.User, Client: a.Client}
+}
+
 // revoke is scim/tokens/revoke: the token stops working at once, at every copy.
 func (st *scimTokens) revoke(ctx context.Context, id string, actor wire.AuditActor) error {
 	keys, err := st.s.cfg.Store.List(ctx, scimTokensPrefix)
@@ -343,7 +350,14 @@ func (st *scimTokens) revoke(ctx context.Context, id string, actor wire.AuditAct
 			return nil
 		}
 		t.Revoked = &wire.OrgRouteStamp{By: actor, At: wire.DateOf(time.Now())}
-		data, _ := records.Encode(t)
+		data, err := records.Encode(t)
+		if err == nil && len(data) > tokenKeptBytes {
+			t.Revoked.By = actorByID(actor)
+			data, err = records.Encode(t)
+		}
+		if err != nil {
+			return err
+		}
 		if _, err := st.s.cfg.Store.Put(ctx, k.Key, data, store.Matching(object.ETag)); err != nil {
 			if store.IsConflict(err) {
 				return fail(changedElsewhere, "The token was changed elsewhere a moment ago. Try again.")
