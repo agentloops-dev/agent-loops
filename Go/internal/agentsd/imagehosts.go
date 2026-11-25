@@ -195,7 +195,7 @@ func (d *Daemon) changeImageHosts(change func([]wire.ImageHost) ([]wire.ImageHos
 		err = os.MkdirAll(d.SettingsDir, 0o700)
 	}
 	if err == nil {
-		// store-bounds: kind=key-value; count=100 hosts a machine, 100 machines; size=32KiB a machine; age=until-deleted; applied=on write (refused)
+		// store-bounds: kind=key-value; count=100; size=32KiB a machine; age=until-deleted; applied=on write (refused)
 		err = store.WriteAtomically(d.imageHostsPath(), b, 0o600)
 	}
 	if err != nil {
