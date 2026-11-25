@@ -83,6 +83,7 @@ const CapFirstBuild1 = "first-build/1"
 const CapFolder1 = "folder/1"
 const CapFoldersNotCommitted1 = "folders.not-committed/1"
 const CapFoldersSeed1 = "folders.seed/1"
+const CapFoldersSendParts1 = "folders.send-parts/1"
 const CapFoldersSendSeed1 = "folders.send-seed/1"
 const CapFoldersSignedUpload1 = "folders.signed-upload/1"
 const CapFoldersToMachine1 = "folders.to-machine/1"
@@ -159,6 +160,7 @@ const CapMachines1 = "machines/1"
 const CapMachines2 = "machines/2"
 const CapMailbox1 = "mailbox/1"
 const CapMarketplaces1 = "marketplaces/1"
+const CapMaturity1 = "maturity/1"
 const CapMcpToolLevels1 = "mcp.tool-levels/1"
 const CapMcp1 = "mcp/1"
 const CapMessagesAll1 = "messages.all/1"
@@ -237,6 +239,7 @@ const CapSimulators1 = "simulators/1"
 const CapSkills1 = "skills/1"
 const CapStorage1 = "storage/1"
 const CapStore1 = "store/1"
+const CapStoresSizes1 = "stores.sizes/1"
 const CapSuggestions1 = "suggestions/1"
 const CapSurface1 = "surface/1"
 const CapTime1 = "time/1"
@@ -646,6 +649,7 @@ var HostCapabilities = pairs([][2]string{
 	{"skills/remove", "skills/1"},
 	{"skills/update-preview", "skills/1"},
 	{"store/notes", "store/1"},
+	{"stores/list", "stores.sizes/1"},
 	{"suggestions/dismiss", "suggestions/1"},
 	{"suggestions/start", "suggestions/1"},
 	{"surface/identify", "surface/1"},
@@ -959,6 +963,7 @@ var ControlCapabilities = pairs([][2]string{
 	{"machines/unlink", "machines/1"},
 	{"machines/update", "machines/1"},
 	{"machines/versions", "machines/1"},
+	{"maturity/complete", "maturity/1"},
 	{"messages/conversationsAll", "messages.all/1"},
 	{"multiplier/count", "multiplier/1"},
 	{"notices/take", "notices/1"},
@@ -1021,6 +1026,7 @@ var ControlCapabilities = pairs([][2]string{
 	{"reports/saveView", "reports.views/2"},
 	{"reports/scopes", "reports.scope/1"},
 	{"reports/setPolicy", "reports.scope/2"},
+	{"reports/storeSizes", "stores.sizes/1"},
 	{"reports/usage", "reports/2"},
 	{"reports/value", "reports.value/2"},
 	{"reports/views", "reports.views/1"},
@@ -1217,6 +1223,7 @@ var DeclaredCapabilities = map[string][]string{
 		"host.lock/1",
 		"host.lock/2",
 		"host.user-settings/3",
+		"folders.send-parts/1",
 		"host.user-parts/1",
 	},
 }

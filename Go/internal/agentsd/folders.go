@@ -33,6 +33,8 @@ type folderState struct {
 	clones       map[string]wire.CloneSummary
 	sendState
 	seedBook
+	uploadBook
+	partsBook
 	machineSetupBook
 	bringBackState
 }

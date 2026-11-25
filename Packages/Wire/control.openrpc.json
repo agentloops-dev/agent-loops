@@ -4543,6 +4543,27 @@
       }
     },
     {
+      "name": "maturity/complete",
+      "x-capability": "maturity/1",
+      "description": "Anyone's (#6934): a feature says that an operation of the caller's finished, for the feature's maturity record. Who it counts for is the signed-in caller, never a param. The IDs are kept only as hashes.",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/org.schema.json#/definitions/MaturityCompletion"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/core.schema.json#/definitions/Empty"
+        }
+      }
+    },
+    {
       "name": "messages/conversationsAll",
       "description": "The conversations of the caller's machines in one call, with a cap and a cursor (#5571).",
       "x-capability": "messages.all/1",
@@ -6127,6 +6148,32 @@
         "name": "result",
         "schema": {
           "$ref": "schema/reports.schema.json#/definitions/ReportPolicy"
+        }
+      }
+    },
+    {
+      "name": "reports/storeSizes",
+      "x-capability": "stores.sizes/1",
+      "description": "The last measurement of the control plane's declared stores, for an admin, and the client stores, for anyone (#6906), in pages of at most 100 by id. It measures nothing when it is read. Reports joins it with each machine's stores/list.",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/reports.schema.json#/definitions/StoreSizesQuery"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/reports.schema.json#/definitions/StoreSizes"
         }
       }
     },

@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/providers"
 )
 
 // slowHandler holds every lineage/sync until let go, and answers the rest at once. When
@@ -214,5 +216,62 @@ func TestAHostLaneWithNoRoomRefusesACall(t *testing.T) {
 	defer cancel()
 	if err := ws.Ping(ctx); err != nil {
 		t.Fatalf("no pong with a full lane: %v", err)
+	}
+}
+
+// partHandler holds each part of a send until let go, and answers the rest at once.
+type partHandler struct{ began, letGo chan struct{} }
+
+func (h *partHandler) Handles(string) bool { return false }
+func (h *partHandler) Handle(string, json.RawMessage, Caller) (any, error) {
+	return nil, nil
+}
+func (h *partHandler) HostSaid(_, method string, params json.RawMessage) (any, error) {
+	if providers.IsPart(method, params) {
+		h.began <- struct{}{}
+		<-h.letGo
+	}
+	return map[string]any{}, nil
+}
+
+// #7120: several parts of a machine's send are under way at once, and its other calls of the
+// same method do not wait for them.
+func TestAHostsOtherCallsDoNotWaitForItsSend(t *testing.T) {
+	t.Parallel()
+	h := &partHandler{began: make(chan struct{}, 8), letGo: make(chan struct{})}
+	r := NewRouter(h, nil)
+	ws, lines := hostLink(t, r)
+	for _, id := range []string{"p1", "p2", "p3", "p4"} {
+		line := `{"c":0,"m":{"jsonrpc":"2.0","id":"` + id + `","method":"machine/machines","params":` +
+			`{"agent":"You","method":"machines/sendFolder","params":{"host":"a","read":{"offset":0}}}}}`
+		if err := ws.Write(context.Background(), websocket.MessageText, []byte(line)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for range providers.SendPartsAtOnce {
+		select {
+		case <-h.began:
+		case <-time.After(5 * time.Second):
+			t.Fatal("the parts wait for each other")
+		}
+	}
+	callHost(t, ws, "list", "machine/machines")
+	if answer(t, lines, "list", 5*time.Second) {
+		t.Fatal("the list failed")
+	}
+	close(h.letGo)
+}
+
+// The link's other lines go before a send's parts (#7120), and a part's channel keeps its order.
+func TestAConnsOtherLinesGoBeforeBulk(t *testing.T) {
+	t.Parallel()
+	c := &Conn{out: make(chan string, 4), bulk: make(chan string, 4), done: make(chan struct{})}
+	if !c.SendBulk("open") || !c.SendBulk("part") || !c.Send("a") || !c.Send("b") {
+		t.Fatal("not queued")
+	}
+	for _, want := range []string{"a", "b", "open", "part"} {
+		if got, ok := c.next(); !ok || got != want {
+			t.Fatal(got, want)
+		}
 	}
 }

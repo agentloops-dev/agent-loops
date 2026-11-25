@@ -131,14 +131,18 @@ final class WorkTimelineState {
         // across ranges (#5506).
         let span = WorkTimeline.packSpan(anchor)
         let board = board
+        // A machine answers with its epics first, and again with the forecast when its history is read (#7027): its
+        // first answer is in firsts until then, and stays there when the second fails.
         var got: [DaemonAPI.WorkTimeline] = []
+        var firsts: [MachineRef: DaemonAPI.WorkTimeline] = [:]
         var epics: Set<String>?
         var failed: [String] = []
         func draw(all: Bool) async {
             problem = all && got.isEmpty && !failed.isEmpty ? failed.joined(separator: "\n") : nil
             // Every machine failed: the last plot stays, or with none, what they said in the middle (#5969).
             if all, got.isEmpty, !failed.isEmpty { return }
-            var merged = WorkTimeline.merge(got)
+            var merged = WorkTimeline.merge(got + firsts.values)
+            if !firsts.isEmpty { merged = WorkTimeline.keepForecasts(merged, shown: timeline) }
             if let epics { merged.epics = merged.epics.filter { epics.contains($0.item.node.ref) } }
             fromMachines = merged
             // The plot draws now, with the sessions it had (#5450); the new ones start their children when they come.
@@ -157,13 +161,15 @@ final class WorkTimelineState {
                 model.keepWork(Kept(timeline: drawn, boards: boards), .timeline, kept)
             }
         }
-        await withTaskGroup(of: (DaemonAPI.WorkTimeline?, [String]?, String?).self) { group in
-            for machine in machines {
+        await withTaskGroup(of: (Int, DaemonAPI.WorkTimeline?, [String]?, String?).self) { group in
+            func add(_ index: Int, first: Bool) {
+                let machine = machines[index]
                 group.addTask {
                     // The result first, then the tuple from one place (#5946, `Result.catching`).
                     let read = await Result.catching {
                         try await model.forge(DaemonAPI.Method.workTimeline,
-                                              DaemonAPI.WorkTimelineRequest(project: project.id, from: span.start, to: span.end),
+                                              DaemonAPI.WorkTimelineRequest(project: project.id, from: span.start, to: span.end,
+                                                                            first: first ? true : nil),
                                               returning: DaemonAPI.WorkTimeline.self, on: machine.id)
                     }
                     // A machine whose forge failed answers with no epic and the forge's words: a failed read, so the
@@ -173,24 +179,37 @@ final class WorkTimelineState {
                     let t = forgeFailed ? nil : answer
                     // A board narrows to its epics: the forge says which they are.
                     var refs: [String]?
-                    if t != nil, !board.isEmpty {
+                    if first, t != nil, !board.isEmpty {
                         let list = try? await model.forgeList(.issue, .init(state: "all", label: "epic", limit: 100, board: board),
                                                               on: machine.id)
                         refs = list?.items.map(\.node.ref) ?? []
                     }
                     let words = read.error?.localizedDescription ?? (forgeFailed ? answer?.errors?.joined(separator: "\n") : nil)
                     let problem = words.map { machines.count > 1 ? "\(machine.name): \($0)" : $0 }
-                    return (t, refs, problem)
+                    return (index, t, refs, problem)
                 }
             }
+            for index in machines.indices { add(index, first: true) }
             // The first machine to answer draws the plot (#5449), and each one after adds its epics: a slow or offline
             // machine does not hold it. A machine that failed says so only when no machine answered.
             var answered = 0
-            for await (t, refs, problem) in group {
+            while let (index, t, refs, problem) = await group.next() {
+                if let refs { epics = (epics ?? []).union(refs) }
+                if let t, t.partial == true {
+                    guard ask == mine else { continue }
+                    add(index, first: false)
+                    if !t.epics.isEmpty {
+                        firsts[machines[index].id] = t
+                        await draw(all: false)
+                    }
+                    continue
+                }
                 answered += 1
                 if ask == mine { self.answered = answered }
-                if let t { got.append(t) }
-                if let refs { epics = (epics ?? []).union(refs) }
+                if let t {
+                    got.append(t)
+                    firsts[machines[index].id] = nil
+                }
                 if let problem { failed.append(problem) }
                 if ask == mine, answered < machines.count, t != nil { await draw(all: false) }
             }

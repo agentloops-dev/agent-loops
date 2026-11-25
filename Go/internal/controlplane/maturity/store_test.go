@@ -45,6 +45,20 @@ func TestRecordBounds(t *testing.T) {
 	}
 }
 
+func TestRegisteredFeatureIDsAreBoundedAndCopied(t *testing.T) {
+	ids := RegisteredFeatureIDs()
+	if len(ids) != MaxRecords {
+		t.Fatalf("registered features = %d, want %d", len(ids), MaxRecords)
+	}
+	if _, err := New(store.NewMemory(), ids); err != nil {
+		t.Fatalf("registered feature catalogue: %v", err)
+	}
+	ids[0] = "not-registered"
+	if RegisteredFeatureIDs()[0] == "not-registered" {
+		t.Fatal("registered feature catalogue was mutated")
+	}
+}
+
 func TestOversizedUpdateLeavesOldRecord(t *testing.T) {
 	ctx := context.Background()
 	s := store.NewMemory()

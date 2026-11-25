@@ -61,6 +61,14 @@ type Uplink interface {
 	Close()
 }
 
+// sendBulk is conn's SendBulk, or its Send when it has one queue.
+func sendBulk(conn Uplink, line string) bool {
+	if c, ok := conn.(interface{ SendBulk(line string) bool }); ok {
+		return c.SendBulk(line)
+	}
+	return conn.Send(line)
+}
+
 // Router is ControlRouter.swift (058, R3): client sessions on one side, host uplinks on
 // the other, and a channel on a host's uplink for every pair of them.
 //
@@ -1271,7 +1279,12 @@ func (r *Router) deliver(line func(id string) string, client, kind, host string,
 	}
 	wait := make(chan *message, 1)
 	r.keptWaits[delivery] = wait
-	if !h.conn.Send(openFrame(c, open)) || !h.conn.Send(channelFrame(c, line("kept-"+delivery))) {
+	// A large delivery goes behind the link's other lines, its channel's frames in order.
+	frame, send := channelFrame(c, line("kept-"+delivery)), h.conn.Send
+	if conn := h.conn; len(frame) >= controllink.BulkLine {
+		send = func(line string) bool { return sendBulk(conn, line) }
+	}
+	if !send(openFrame(c, open)) || !send(frame) {
 		delete(h.channels, c)
 		delete(r.keptWaits, delivery)
 		r.mu.Unlock()
@@ -1286,7 +1299,7 @@ func (r *Router) deliver(line func(id string) string, client, kind, host string,
 		if h := r.hosts[host]; h != nil {
 			if _, open := h.channels[c]; open {
 				delete(h.channels, c)
-				h.conn.Send(closeFrame(c))
+				sendBulk(h.conn, closeFrame(c)) // never before its open
 			}
 		}
 		delete(r.keptWaits, delivery)

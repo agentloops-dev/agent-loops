@@ -1,9 +1,9 @@
 package agentsd
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -167,9 +167,7 @@ func (d *Daemon) bringPack(me *wire.Agent, machine, folder, path string, branche
 	var ids []wire.UUID
 	defer func() {
 		for _, id := range ids {
-			if file, err := d.incomingFile(id); err == nil {
-				os.Remove(file)
-			}
+			d.dropUpload(id)
 		}
 	}()
 	var total, done int64
@@ -191,7 +189,7 @@ func (d *Daemon) bringPack(me *wire.Agent, machine, folder, path string, branche
 		}
 		id := store.NewUUID()
 		ids = append(ids, id)
-		if err := d.readThere(me, machine, f.ID, id, part); err != nil {
+		if err := d.readThere(me, machine, *f, id, part); err != nil {
 			return wire.BringBack{}, err
 		}
 		if f == sent.Pack.Bundle {
@@ -204,31 +202,83 @@ func (d *Daemon) bringPack(me *wire.Agent, machine, folder, path string, branche
 	return d.bringBack(r)
 }
 
-// readThere reads machine's outgoing file id, in parts, into the upload here. read, when
-// not nil, hears the size of each part once it is here.
-func (d *Daemon) readThere(me *wire.Agent, machine string, id, upload wire.UUID, read func(int64)) error {
-	for offset := int64(0); ; {
+// readThere reads machine's outgoing file, in parts, into the upload here. read, when not
+// nil, hears the size of each part once it is here. The first part says how large a part is
+// there and how many at once; the last goes alone, since the file goes with it.
+func (d *Daemon) readThere(me *wire.Agent, machine string, file wire.SendFile, upload wire.UUID, read func(int64)) error {
+	var offset int64
+	one := func(ctx context.Context, offset int64) (wire.MachineFolderSent, error) {
+		return d.readPart(ctx, me, machine, file.ID, upload, offset)
+	}
+	// next reads the one part at offset; true when it was the last.
+	var first wire.MachineFolderSent
+	next := func() (bool, error) {
 		var sent wire.MachineFolderSent
-		if err := d.askSend(me, wire.MachineFolderSend{Host: machine, Read: &wire.SendReadRequest{ID: id, Offset: offset}}, &sent); err != nil {
+		err := d.inParts(0, 1, 1, func(ctx context.Context, _ int64) (err error) {
+			sent, err = one(ctx, offset)
+			return err
+		}, func(int64) {})
+		if err != nil {
+			return false, err
+		}
+		if offset == 0 {
+			first = sent
+		}
+		n := int64(len(sent.Read.Data))
+		if read != nil && (n > 0 || offset == 0) {
+			read(n)
+		}
+		offset += n
+		if n == 0 && !sent.Read.End {
+			return false, &Error{Code: wire.FailureNotSupported, Message: machine + " sent an empty part."}
+		}
+		return sent.Read.End, nil
+	}
+	if end, err := next(); err != nil || end {
+		return err
+	}
+	if atOnce := partsAtOnce(first); atOnce > 1 {
+		first = wire.MachineFolderSent{} // its data is on the disk
+		last, err := d.readMiddle(machine, file.Size, offset, atOnce, one, read)
+		if err != nil {
 			return err
 		}
-		if sent.Read == nil {
-			return &Error{Code: wire.FailureNotSupported, Message: "the control plane's answer could not be read."}
-		}
-		if len(sent.Read.Data) > 0 || offset == 0 {
-			if err := d.receiveUpload(wire.ReceiveUploadRequest{Upload: upload, Offset: offset, Data: sent.Read.Data}); err != nil {
-				return err
-			}
-			offset += int64(len(sent.Read.Data))
-			if read != nil {
-				read(int64(len(sent.Read.Data)))
-			}
-		}
-		if sent.Read.End {
-			return nil
-		}
-		if len(sent.Read.Data) == 0 {
-			return &Error{Code: wire.FailureNotSupported, Message: machine + " sent an empty part."}
+		offset = last
+	}
+	for {
+		if end, err := next(); err != nil || end {
+			return err
 		}
 	}
+}
+
+// readMiddle reads the parts between the first, of size bytes, and the last, which is at what
+// it answers.
+func (d *Daemon) readMiddle(machine string, total, size int64, atOnce int,
+	one func(ctx context.Context, offset int64) (wire.MachineFolderSent, error), read func(int64)) (int64, error) {
+	last := max((total-1)/size, 1)
+	err := d.inParts(1, last, atOnce, func(ctx context.Context, n int64) error {
+		sent, err := one(ctx, n*size)
+		if err == nil && (int64(len(sent.Read.Data)) != size || sent.Read.End) {
+			err = &Error{Code: wire.FailureNotSupported, Message: machine + " sent a part of the wrong size."}
+		}
+		return err
+	}, func(int64) {
+		if read != nil {
+			read(size)
+		}
+	})
+	return last * size, err
+}
+
+// readPart reads the part at offset of machine's outgoing file into the upload here.
+func (d *Daemon) readPart(ctx context.Context, me *wire.Agent, machine string, file, upload wire.UUID, offset int64) (wire.MachineFolderSent, error) {
+	sent, err := d.sendPartStep(ctx, me, wire.MachineFolderSend{Host: machine, Read: &wire.SendReadRequest{ID: file, Offset: offset}})
+	if err == nil && sent.Read == nil {
+		err = &Error{Code: wire.FailureNotSupported, Message: "the control plane's answer could not be read."}
+	}
+	if err == nil && (len(sent.Read.Data) > 0 || offset == 0) {
+		err = d.receiveUpload(wire.ReceiveUploadRequest{Upload: upload, Offset: offset, Data: sent.Read.Data})
+	}
+	return sent, err
 }

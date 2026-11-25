@@ -9351,7 +9351,7 @@ type MachineFolderSend struct {
 	Seed *ReceiveSeedRequest `json:"seed,omitzero"`
 }
 
-// What machines/sendFolder's step answered (#2929, #2947): state for state, folder for receive, facts for facts, pack for pack, read for read, seed for seed, none for upload.
+// What machines/sendFolder's step answered (#2929, #2947): state for state, folder for receive, facts for facts, pack for pack, read for read, seed for seed, none for upload. An upload or a read also says partsAtOnce.
 type MachineFolderSent struct {
 	State *ReceiveState `json:"state,omitzero"`
 
@@ -9364,6 +9364,9 @@ type MachineFolderSent struct {
 	Read *SendRead `json:"read,omitzero"`
 
 	Seed *ReceiveSeed `json:"seed,omitzero"`
+
+	// How many parts of one file the sender may have in flight to or from that machine (#7120). None from an older control plane, and for a machine without folders.send-parts/1: one part at a time.
+	PartsAtOnce *int64 `json:"partsAtOnce,omitzero"`
 }
 
 // A machine's ForgeBoards in forge/boardsAll (#5592).
@@ -10094,6 +10097,25 @@ type MarketplacesListRequest struct {
 
 // The levels of a part's capabilities that are not GA (#6052, #6579), capability to level, as Packages/Wire/maturity.json has them in that part's build. A capability it does not name is GA. A part older than #6579 sends none, and a client then reads the list it was built with.
 type Maturity map[string]MaturityLevel
+
+// maturity/complete (#6934): the finished state of one source operation, with no actor and no content. An operation that is not complete, not eligible or a background refresh is refused.
+type MaturityCompletion struct {
+	FeatureId string `json:"featureId"`
+
+	CompletionId string `json:"completionId"`
+
+	SessionId *string `json:"sessionId,omitzero"`
+
+	BuildId string `json:"buildId"`
+
+	Success bool `json:"success"`
+
+	Completed bool `json:"completed"`
+
+	Eligible bool `json:"eligible"`
+
+	BackgroundRefresh bool `json:"backgroundRefresh"`
+}
 
 // How ready a capability that is not GA is (#6052).
 type MaturityLevel string
@@ -13033,7 +13055,7 @@ type ReceiveStateRequest struct {
 	Folder string `json:"folder"`
 }
 
-// One part of a file a Mac sends (#1123), at `offset` in the upload. A part is at most 16 MB; the host keeps the upload until folders/receive uses it.
+// One part of a file a Mac sends (#1123), at `offset` in the upload. The part at 0 comes first; the others come in any order (#7120). A part is at most 16 MB; the host keeps the upload until folders/receive uses it.
 type ReceiveUploadRequest struct {
 	Upload UUID `json:"upload"`
 
@@ -14833,7 +14855,7 @@ type SendPackRequest struct {
 	IncludeChanges bool `json:"includeChanges"`
 }
 
-// A part of at most 1 MB (#1530). `end` is true for the last, and then the host removes the file.
+// A part of at most 4 MB (#7120); 1 MB for an export (#1530). `end` is true for the last, and then the host removes the file.
 type SendRead struct {
 	Data Data `json:"data"`
 
@@ -16084,6 +16106,83 @@ type StopBackgroundRequest struct {
 
 type StoreNotes struct {
 	Notes []string `json:"notes"`
+}
+
+// Where a store is (#6906): on a machine, on the control plane, or in a client.
+type StoreOwner string
+
+const StoreOwnerMachine StoreOwner = "machine"
+const StoreOwnerControlPlane StoreOwner = "controlPlane"
+const StoreOwnerClient StoreOwner = "client"
+
+// The last measurement of one declared store (#6906): sizes and counts only, never a path, a key, what is stored or the name of a person, project, machine or session. A measure or a percent that is not known is absent.
+type StoreSize struct {
+	// Stable, such as machine.transcripts or control.audit.
+	ID string `json:"id"`
+
+	Owner StoreOwner `json:"owner"`
+
+	// Whose data one store holds: organisation, person, machine, folder or session.
+	Scope string `json:"scope"`
+
+	// document, log, time series, graph, blob, key-value, cache or secret.
+	Kind string `json:"kind"`
+
+	State StoreSizeState `json:"state"`
+
+	// Why it is unavailable, in words for a person.
+	Why *string `json:"why,omitzero"`
+
+	// The whole store's bytes.
+	Bytes *int64 `json:"bytes,omitzero"`
+
+	// The whole store's records.
+	Records *int64 `json:"records,omitzero"`
+
+	// bytes over records, when both are measured and there are records.
+	AverageRecordBytes *int64 `json:"averageRecordBytes,omitzero"`
+
+	// The byte limit.
+	MaxBytes *int64 `json:"maxBytes,omitzero"`
+
+	// The record limit.
+	MaxRecords *int64 `json:"maxRecords,omitzero"`
+
+	// What each limit is for when it is not the whole store: person, machine, session, folder, … The percents are then of the largest one.
+	LimitPer *string `json:"limitPer,omitzero"`
+
+	// Of maxBytes; over 100 is over the limit.
+	PercentBytes *float64 `json:"percentBytes,omitzero"`
+
+	// Of maxRecords; over 100 is over the limit.
+	PercentRecords *float64 `json:"percentRecords,omitzero"`
+
+	// When this store's measurement ended.
+	MeasuredAt *Date `json:"measuredAt,omitzero"`
+}
+
+// over: past a limit, whatever the measurement's age. stale: older than twice the cadence (2 h on a machine, 12 h on the control plane). unavailable: not measured, or with no measure that a limit can be compared with; why says which.
+type StoreSizeState string
+
+const StoreSizeStateCurrent StoreSizeState = "current"
+const StoreSizeStateOver StoreSizeState = "over"
+const StoreSizeStateStale StoreSizeState = "stale"
+const StoreSizeStateUnavailable StoreSizeState = "unavailable"
+
+// A page of at most 100 stores by id (#6906). cursor asks for the next page; absent on the last. total is the stores of every page.
+type StoreSizes struct {
+	Stores []StoreSize `json:"stores"`
+
+	Total int64 `json:"total"`
+
+	Cursor *string `json:"cursor,omitzero"`
+}
+
+// stores/list and reports/storeSizes (#6906). cursor is the last page's. limit is 1 to 100, 100 when absent.
+type StoreSizesQuery struct {
+	Cursor *string `json:"cursor,omitzero"`
+
+	Limit *int64 `json:"limit,omitzero"`
 }
 
 type SuggestedPrompt struct {
@@ -17657,7 +17756,7 @@ type WorkSuggestLeadsRequest struct {
 	Folder *string `json:"folder,omitzero"`
 }
 
-// work/timeline (#4172, specs/time-stream/wireframe.md sections 4, 7 to 9): the epics of a project that overlap from to to, each from its first child's start to when its work stopped (#7058), with its children, its segments and, while open, its forecast (M10); and the releases published in the window. timeZone is the working clock's: this host's, an IANA name, absent when it has none. backtest is how the forecast did on the epics whose work ended in the last 30 days, run again at most once a day; absent when there are too few. errors are the forges that could not be read, as forge/issues says them.
+// work/timeline (#4172, specs/time-stream/wireframe.md sections 4, 7 to 9): the epics of a project that overlap from to to, each from its first child's start to when its work stopped (#7058), with its children, its segments and, while open, its forecast (M10); and the releases published in the window. timeZone is the working clock's: this host's, an IANA name, absent when it has none. backtest is how the forecast did on the epics whose work ended in the last 30 days, run again at most once a day; absent when there are too few. errors are the forges that could not be read, as forge/issues says them. partial (#7027): an answer to a first ask that did not read the forecast's history, so it has no forecast and no backtest, and not each epic whose block ends after its close; a host from before it gives all of it.
 type WorkTimeline struct {
 	Epics []WorkTimelineEpic `json:"epics"`
 
@@ -17668,6 +17767,8 @@ type WorkTimeline struct {
 	Backtest *WorkTimelineBacktest `json:"backtest,omitzero"`
 
 	Errors []string `json:"errors,omitzero"`
+
+	Partial *bool `json:"partial,omitzero"`
 }
 
 // work/timeline's backtest (#4172): the forecast stopped just after 25, 50, 75 and 90% of each past segment's children closed, made from what had ended before that moment, and set against the real close. error is the median of forecast/actual or actual/forecast, whichever is more than 1 (×2.2 says off by a factor of 2.2). cuts is how many forecasts it made, of epics segments; holds how many closes fell in P10 to P90. width is the factor that widens the band around P50 (in log terms) until it holds 8 in 10 of them; each forecast's band is already widened by it. at is when it ran.
@@ -17739,13 +17840,15 @@ type WorkTimelineRelease struct {
 	URL *string `json:"url,omitzero"`
 }
 
-// work/timeline (#4172): the epics of a project (its id, from a folder's .agents/folder.json) that overlap from to to.
+// work/timeline (#4172): the epics of a project (its id, from a folder's .agents/folder.json) that overlap from to to. With first, the answer can be partial (#7027): ask again without it for all of it.
 type WorkTimelineRequest struct {
 	Project string `json:"project"`
 
 	From Date `json:"from"`
 
 	To Date `json:"to"`
+
+	First *bool `json:"first,omitzero"`
 }
 
 // A line of an epic in work/timeline (#4172): from its first child's start to its last child's close.

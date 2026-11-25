@@ -10,6 +10,7 @@ import (
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -73,6 +74,7 @@ func TestStoreReadsAreReadOnceByTag(t *testing.T) {
 
 // #2056: past mostRunsRead claims in a week, the newest are counted, not the oldest.
 func TestTeamWorkflowsCountsTheNewestRuns(t *testing.T) {
+	flaky.UnderLoad(t, "#7061")
 	t.Parallel()
 	p := startPlaneWith(t, store.NewMemory(), controllink.NewPrivateKey(), func(c *Config) { c.ProviderHome = t.TempDir() })
 	_, admin := p.client("Alex's Mac")

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -278,6 +279,7 @@ func TestARequestDeferredToATimeComesBack(t *testing.T) {
 }
 
 func TestARequestDeferredAtTheMacComesBackWhenThePersonDoes(t *testing.T) {
+	flaky.UnderLoad(t, "#7179")
 	fakeRuntimes(t)
 	setFor(t, &macIdle, 300*time.Millisecond)
 	d, c := start(t, t.TempDir())

@@ -3724,7 +3724,7 @@ public extension DaemonAPI {
         }
     }
 
-    /// `folders/sendRead`: a part of at most 8 MB from `offset`. The host removes the file
+    /// `folders/sendRead`: a part of at most 4 MB from `offset`. The host removes the file
     /// once its last part (`end`) is read.
     struct SendReadRequest: Codable, Hashable, Sendable {
         public var id: UUID

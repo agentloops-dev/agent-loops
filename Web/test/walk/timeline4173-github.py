@@ -6,10 +6,13 @@ query: issues labelled epic, their subIssues with their dates, and the releases)
 Point a run-app host at it with --env AGENTS_TEST_GITHUB_URL=http://127.0.0.1:<port>, and give the
 host a folder whose origin is github.com/example/shop.
 
-    python3 Web/test/walk/timeline4173-github.py <port>
+    python3 Web/test/walk/timeline4173-github.py <port> [<seconds>]
+
+The seconds delay the oldest epics, which work/timeline reads last, so the plot without its forecast can be seen (#7027).
 """
 import json
 import sys
+import time
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -142,13 +145,16 @@ class Handler(BaseHTTPRequestHandler):
         # sub-issues (timelineEpicsQuery), as work/timeline reads them since #5154.
         if "releases(" in q:
             states = v.get("states") or ["OPEN", "CLOSED"]
-            nodes = [{"id": f"I_{n}", "number": n} for n in EPICS if epic(n)[0]["issueState"] in states]
+            nodes = [{"id": f"I_{n}", "number": n, "closedAt": epic(n)[0]["closedAt"],
+                      "updatedAt": epic(n)[0]["updatedAt"]} for n in EPICS if epic(n)[0]["issueState"] in states]
             releases = [{"tagName": t, "publishedAt": at(h), "url": f"https://github.com/{REPO}/releases/tag/{t}",
                          "isDraft": False} for t, h in RELEASES][: v.get("releases", 50)]
             return self.answer(200, {"data": {"repository": {
                 "issues": {"pageInfo": {"hasNextPage": False, "endCursor": None}, "nodes": nodes},
                 "releases": {"nodes": releases}}}})
         if "nodes(ids:" in q and "subIssues(" in q:
+            if "I_209" in v.get("ids", []) and len(sys.argv) > 2:
+                time.sleep(float(sys.argv[2]))
             return self.answer(200, {"data": {"nodes": [epic(int(i[2:]))[0] for i in v.get("ids", [])
                                                         if i.startswith("I_") and int(i[2:]) in EPICS]}})
         if "search(" in q:

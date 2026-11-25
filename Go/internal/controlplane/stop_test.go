@@ -102,3 +102,47 @@ func TestStopWaitsForABackgroundWrite(t *testing.T) {
 		t.Fatal("a write asked for after Stop ran")
 	}
 }
+
+// heldPut is a store whose first write of a capacity snapshot waits for release.
+type heldPut struct {
+	store.Store
+	held             atomic.Bool
+	writing, release chan struct{}
+}
+
+func (h *heldPut) Put(ctx context.Context, key string, data []byte, c store.Condition) (string, error) {
+	if strings.HasPrefix(key, controlCapacityPrefix) && h.held.CompareAndSwap(false, true) {
+		close(h.writing)
+		<-h.release
+	}
+	return h.Store.Put(ctx, key, data, c)
+}
+
+// #7171: Stop waits for the capacity monitor's sample, so it neither logs after Stop
+// returns nor puts back the snapshot Stop deletes.
+func TestStopWaitsForACapacitySample(t *testing.T) {
+	t.Parallel()
+	h := &heldPut{Store: store.NewMemory(), writing: make(chan struct{}), release: make(chan struct{})}
+	p := startPlaneWith(t, h, controllink.NewPrivateKey(), nil)
+	select {
+	case <-h.writing:
+	case <-time.After(10 * time.Second):
+		t.Fatal("no capacity snapshot was written")
+	}
+	stopped := make(chan struct{})
+	go func() {
+		p.s.Stop()
+		close(stopped)
+	}()
+	select {
+	case <-stopped:
+		t.Fatal("Stop returned while a capacity sample was still writing")
+	case <-time.After(200 * time.Millisecond):
+	}
+	close(h.release)
+	<-stopped
+	keys, err := h.List(context.Background(), controlCapacityPrefix)
+	if err != nil || len(keys) != 0 {
+		t.Fatalf("the snapshot after Stop: %v %v", keys, err)
+	}
+}
