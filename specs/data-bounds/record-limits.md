@@ -19,7 +19,7 @@ read and not run. A store below its total is no proof that a record was handled.
 | Graph | machine | test: a ref of 512 bytes, also after a repo's move | read | read | test: read again | Holds; a line is not declared (#7200) |
 | Graph | control plane | test | test | read | read: the sweep | #7193 |
 | Document | machine | test: requests | read | read | read | #7185, #7200 |
-| Document, key-value | control plane | own tests for settings, policy, sinks, views, links, maturity, people, machines, clients; test here: governance, choices | read: approvals and bus check the whole batch first | read: renamed machine keys are copied as they are | read: checked in each conflict retry | #7192, #7194, #7201, #7203 |
+| Document, key-value | control plane | own tests for settings, policy, sinks, views, links, maturity, people, machines, clients; test here: governance, choices | read: approvals and bus check the whole batch first | read: renamed machine keys are copied as they are | read: checked in each conflict retry | #7192, #7201, #7203 |
 | Document, key-value | hosted | test | test: the sweep | test: an old invite | read: in each retry | #7197 |
 | Blob | machine, control plane | read: attachment, dropbox, backup parts | read | read | none | #7203 (set-asides) |
 | Backend | control plane | test: memory, folder; S3 fake | none | none | none | #7195 |

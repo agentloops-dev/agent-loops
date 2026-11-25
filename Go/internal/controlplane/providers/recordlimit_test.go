@@ -10,7 +10,6 @@ import (
 
 // #6908: a choice too large to keep leaves the earlier one.
 func TestAChoiceOverTheLargestKeepsTheEarlierOne(t *testing.T) {
-	t.Skip("#7194")
 	h := newHarness(t)
 	id := h.add()
 	old, _ := json.Marshal(map[string]any{"next": 2, "chosen": map[string]any{id: map[string]any{"size": "big"}}})
