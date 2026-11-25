@@ -285,7 +285,7 @@ func (d *Daemon) mcpOfferedEvents(names []string, folder string) (map[string]off
 				mayComeBack = append(mayComeBack, mcpEventsWords(listing.failure, name))
 			}
 		case "waiting":
-			mayComeBack = append(mayComeBack, name+" is waiting for approval in this folder's Connectors.")
+			mayComeBack = append(mayComeBack, name+" is waiting for approval in Connectors.")
 		}
 	}
 	return offered, mayComeBack

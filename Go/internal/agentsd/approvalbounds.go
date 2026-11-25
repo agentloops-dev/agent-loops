@@ -144,7 +144,7 @@ func (d *Daemon) sweepMCPApprovals(gone func(string) bool, now time.Time) {
 	was := d.mcpGoneLocked()
 	marks := map[string]wire.Date{}
 	changed := false
-	for _, part := range []string{"approved", "denied", "from", "views"} {
+	for _, part := range []string{"approved", "denied", "from", "views", "synced"} {
 		m := map[string]string{}
 		if d.mcpApprovals[part] == nil || json.Unmarshal(d.mcpApprovals[part], &m) != nil {
 			continue

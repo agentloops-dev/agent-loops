@@ -4412,13 +4412,12 @@ final class AppModel {
         }
     }
 
-    /// Approve the entry the row showed, on the folder's own machine, as Remove does (#2199,
-    /// #5717). A digest that no longer matches comes back as an error.
-    func approveFolderMCP(_ name: String, digest: String, in folder: URL,
-                          on host: MachineRef = .mac) async -> DaemonAPI.MCPCatalogError? {
+    /// Approve the entry the row showed, on its own machine, as Remove does (#2199, #5717). A digest that no longer matches comes back as an error.
+    func approveMCP(_ name: String, digest: String, at destination: DaemonAPI.SkillDestination,
+                    on host: MachineRef = .mac) async -> DaemonAPI.MCPCatalogError? {
         do {
             _ = try await (host == .mac ? macClient : client(for: host)).call(DaemonAPI.Method.mcpApprove,
-                                      DaemonAPI.MCPApproveRequest(destination: .folder(folder: folder.path),
+                                      DaemonAPI.MCPApproveRequest(destination: destination,
                                                                   name: name, digest: digest),
                                       returning: DaemonAPI.MCPListAnswer.self)
             return nil

@@ -257,8 +257,9 @@ func (d *Daemon) mcpHealthPass() (wire.MCPHealthSnapshot, []mcpDue) {
 		if problem != "" {
 			snap.Problems = append(snap.Problems, wire.MCPHealthFileProblem{Message: problem})
 		}
+		gate := d.personalGate()
 		for _, e := range entries {
-			row(e, nil, home, false)
+			row(e, nil, home, gate.waits(e))
 		}
 	}
 	var folders []string
@@ -314,6 +315,9 @@ func (d *Daemon) mcpHealthRowLocked(e mcpEntry, folder *string, cwd string, wait
 	switch {
 	case e.hosted:
 		h.Live = d.hostedStatus(folder, e.name)
+		if waiting {
+			h.Check = wire.MCPCheckStateWaiting
+		}
 		if waiting || len(gone) > 0 {
 			return h, nil
 		}

@@ -505,6 +505,9 @@ func (d *Daemon) eventServerNamed(name, folder string, secrets map[string]string
 		personal, _ := readMCPFile(filepath.Join(home, ".agents", "mcp.json"))
 		for _, e := range personal {
 			if e.name == name {
+				if d.personalGate().waits(e) {
+					return eventServer{}, "waiting"
+				}
 				return ready(e, "~", home)
 			}
 		}
