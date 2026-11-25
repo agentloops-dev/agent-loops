@@ -2115,7 +2115,7 @@
     },
     "MachineFolderSent": {
       "type": "object",
-      "description": "What machines/sendFolder's step answered (#2929, #2947): state for state, folder for receive, facts for facts, pack for pack, read for read, seed for seed, none for upload.",
+      "description": "What machines/sendFolder's step answered (#2929, #2947): state for state, folder for receive, facts for facts, pack for pack, read for read, seed for seed, none for upload. An upload or a read also says partsAtOnce.",
       "properties": {
         "state": {
           "$ref": "#/definitions/ReceiveState"
@@ -2134,6 +2134,10 @@
         },
         "seed": {
           "$ref": "#/definitions/ReceiveSeed"
+        },
+        "partsAtOnce": {
+          "type": "integer",
+          "description": "How many parts of one file the sender may have in flight to or from that machine (#7120). None from an older control plane, and for a machine without folders.send-parts/1: one part at a time."
         }
       },
       "additionalProperties": false
@@ -4191,7 +4195,7 @@
     },
     "ReceiveUploadRequest": {
       "type": "object",
-      "description": "One part of a file a Mac sends (#1123), at `offset` in the upload. A part is at most 16 MB; the host keeps the upload until folders/receive uses it.",
+      "description": "One part of a file a Mac sends (#1123), at `offset` in the upload. The part at 0 comes first; the others come in any order (#7120). A part is at most 16 MB; the host keeps the upload until folders/receive uses it.",
       "properties": {
         "upload": {
           "$ref": "core.schema.json#/definitions/UUID"
@@ -4934,7 +4938,7 @@
     },
     "SendRead": {
       "type": "object",
-      "description": "A part of at most 1 MB (#1530). `end` is true for the last, and then the host removes the file.",
+      "description": "A part of at most 4 MB (#7120); 1 MB for an export (#1530). `end` is true for the last, and then the host removes the file.",
       "properties": {
         "data": {
           "$ref": "core.schema.json#/definitions/Base64"

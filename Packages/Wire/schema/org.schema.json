@@ -3504,6 +3504,46 @@
       ],
       "additionalProperties": false
     },
+    "MaturityCompletion": {
+      "type": "object",
+      "description": "maturity/complete (#6934): the finished state of one source operation, with no actor and no content. An operation that is not complete, not eligible or a background refresh is refused.",
+      "properties": {
+        "featureId": {
+          "type": "string"
+        },
+        "completionId": {
+          "type": "string"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "buildId": {
+          "type": "string"
+        },
+        "success": {
+          "type": "boolean"
+        },
+        "completed": {
+          "type": "boolean"
+        },
+        "eligible": {
+          "type": "boolean"
+        },
+        "backgroundRefresh": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "featureId",
+        "completionId",
+        "buildId",
+        "success",
+        "completed",
+        "eligible",
+        "backgroundRefresh"
+      ],
+      "additionalProperties": false
+    },
     "OrgPolicy": {
       "type": "object",
       "description": "The organisation's policy (#998, spec 998 FR-001, FR-002): one document, kept by the control plane at v1/policy.json, signed by its control key and sent to every machine that says host.policy/1. Each rule is optional; an absent rule sets no ceiling. Only an admin changes it. The control plane sets version, issued, changedBy and requires; stopAll and budgets.raises change only by policy/stopAll and policy/raise.",

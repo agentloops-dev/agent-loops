@@ -39,6 +39,10 @@ const noPerson = "-"
 // that are not kept; the counter always is (#6759).
 const machineNamesMost = 64 << 10
 
+// machineNamesRoom is the part of machineNamesMost that choices leave free, so that the
+// counter and the default provider's id, which are written with no check, always fit.
+const machineNamesRoom = 1 << 10
+
 // MachineNamesPerson is the person whose record the key holds. ok is false for the admin
 // with no person, and for a key of something else.
 func MachineNamesPerson(key string) (person string, ok bool) {
@@ -280,7 +284,8 @@ func (p *Providers) lastOptions(person, id string) any {
 // madeOn keeps the provider a make used (#3979), and what the person chose on its form: the
 // options given that are not the form's defaults (#6686), for the next New Machine. A make
 // that took every default keeps no choice, so the next one takes the defaults of then.
-// Choices for a provider that is gone go, and choices too large for the record are not kept.
+// Choices for a provider that is gone go, and choices too large for the record are not
+// kept: the earlier ones stay (#7194).
 func (p *Providers) madeOn(person, id string, given any, form newMachineForm) {
 	options, _ := given.(map[string]any)
 	chosen := map[string]any{}
@@ -304,10 +309,14 @@ func (p *Providers) madeOn(person, id string, given any, form newMachineForm) {
 		if c.Chosen == nil {
 			c.Chosen = map[string]json.RawMessage{}
 		}
+		earlier, had := c.Chosen[id]
 		c.Chosen[id] = rawOf(chosen)
-		// Room for the counter to grow by digits is left.
-		if tooLarge = len(rawOf(c)) > machineNamesMost-32; tooLarge {
-			delete(c.Chosen, id)
+		if tooLarge = len(rawOf(c)) > machineNamesMost-machineNamesRoom; tooLarge {
+			if had {
+				c.Chosen[id] = earlier
+			} else {
+				delete(c.Chosen, id)
+			}
 		}
 	})
 	if tooLarge {

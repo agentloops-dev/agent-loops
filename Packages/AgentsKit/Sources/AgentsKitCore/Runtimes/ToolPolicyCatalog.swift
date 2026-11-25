@@ -234,6 +234,19 @@ public enum ToolPolicyCatalog {
         lever: .sessionMetaDenyList(path: ["agy", "disabledTools"]),
         preferredAuthMethods: ["oauth-personal", "oauth-business"])
 
+    /// What OpenCode's built-in subagents are refused (#7220): each permission that would ask.
+    /// OpenCode's ACP server drops a child session's request, so the turn would hang for ever.
+    private static let openCodeSubagent: JSONValue = .object(["permission": .object([
+        "bash": .string("deny"),
+        "doom_loop": .string("deny"),
+        "edit": .string("deny"),
+        "external_directory": .string("deny"),
+        "read": .object([
+            "*.env": .string("deny"), "*.env.*": .string("deny"), "*.env.example": .string("allow"),
+        ]),
+        "webfetch": .string("deny"),
+    ])])
+
     /// OpenCode: its own configuration, inline, in `OPENCODE_CONFIG_CONTENT`, which OpenCode
     /// merges over the person's `opencode.json` for this process only (049 D4). Measured
     /// against OpenCode 1.18.33 on 2026-09-28 (research R3).
@@ -256,6 +269,7 @@ public enum ToolPolicyCatalog {
     public static let opencode = ToolPolicy(
         runtimeID: RuntimeCatalog.opencode.id,
         lever: .environmentJSON(variable: "OPENCODE_CONFIG_CONTENT", value: .object([
+            "agent": .object(["explore": openCodeSubagent, "general": openCodeSubagent]),
             "autoupdate": .bool(false),
             "permission": .object([
                 "bash": .string("ask"),

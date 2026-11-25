@@ -104,10 +104,12 @@ struct WorkPictures: Equatable {
 
     static func == (a: Self, b: Self) -> Bool { a.model === b.model && a.host == b.host }
 
-    func read(_ url: String) async -> PlatformImage? {
+    /// The picture, and whether it may be kept: not one from a host the person chose (#7139).
+    func read(_ url: String) async -> (image: PlatformImage?, keep: Bool) {
         // From this device's copy when it holds it (#4930): a picture does not change at its URL.
-        guard let data = await model.forgeImage(url, on: host) else { return nil }
-        return PlatformImage(data: data)
+        let (answer, keep) = await model.readForgeImage(url, on: host)
+        guard case .image(let data) = answer else { return (nil, true) }
+        return (PlatformImage(data: data), keep)
     }
 }
 
@@ -129,16 +131,17 @@ final class WorkPictureCache {
 
     private var got: [String: PlatformImage] = [:]
     private var failed: Set<String> = []
-    private var reading: [String: Task<PlatformImage?, Never>] = [:]
+    private var reading: [String: Task<(image: PlatformImage?, keep: Bool), Never>] = [:]
 
     func picture(_ url: String, _ pictures: WorkPictures) async -> PlatformImage? {
         if let image = got[url] { return image }
         if failed.contains(url) { return nil }
-        if let task = reading[url] { return await task.value }
+        if let task = reading[url] { return await task.value.image }
         let task = Task { await pictures.read(url) }
         reading[url] = task
-        let image = await task.value
+        let (image, keep) = await task.value
         reading[url] = nil
+        guard keep else { return image }
         if got.count + failed.count >= Self.most {
             got.removeAll()
             failed.removeAll()

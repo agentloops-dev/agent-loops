@@ -3,6 +3,7 @@ module github.com/agentloops-dev/agent-loops/Go
 go 1.26.11
 
 require (
+	code.dny.dev/ssrf v0.3.0
 	github.com/JohannesKaufmann/html-to-markdown/v2 v2.5.2
 	github.com/bmatcuk/doublestar/v4 v4.10.4
 	github.com/chromedp/cdproto v0.159.0

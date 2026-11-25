@@ -17,7 +17,13 @@ import (
 // (folders/sendPack), and the window reads them in parts (folders/sendRead) and hands
 // them to the receiving host (folders/receiveUpload).
 
-const sendPartSize = 1 << 20
+const (
+	// sendPartSize is the most of a file one folders/sendRead gives (#7120): well under each
+	// message limit once it is base64.
+	sendPartSize = 4 << 20
+	// exportPartSize is the most one agents/exportRead gives a client (#1530).
+	exportPartSize = 1 << 20
+)
 
 // transferLimit is how long a file of a send waits untouched in Outgoing or Incoming
 // before it is taken as abandoned (#1531): a sheet closed mid-send, a window that quit, a
@@ -158,12 +164,13 @@ func (d *Daemon) sendPack(r wire.SendPackRequest) (wire.SendPack, error) {
 }
 
 func (d *Daemon) sendRead(r wire.SendReadRequest) (wire.SendRead, error) {
-	return d.readOutgoing(r, "That file is gone. Send again.")
+	return d.readOutgoing(r, sendPartSize, "That file is gone. Send again.")
 }
 
-// readOutgoing reads one part of a file in Outgoing (a send's, or an export's, #1001);
-// gone is what to say when the file is not there.
-func (d *Daemon) readOutgoing(r wire.SendReadRequest, gone string) (wire.SendRead, error) {
+// readOutgoing reads one part, at most most bytes, of a file in Outgoing (a send's, or an
+// export's, #1001); gone is what to say when the file is not there. The file goes with its
+// last part, so a reader with several parts in flight asks for that one last (readThere).
+func (d *Daemon) readOutgoing(r wire.SendReadRequest, most int, gone string) (wire.SendRead, error) {
 	path, err := d.outgoingFile(r.ID)
 	if err != nil {
 		return wire.SendRead{}, err
@@ -173,7 +180,7 @@ func (d *Daemon) readOutgoing(r wire.SendReadRequest, gone string) (wire.SendRea
 		return wire.SendRead{}, Invalid("%s", gone)
 	}
 	defer f.Close()
-	buf := make([]byte, sendPartSize)
+	buf := make([]byte, most)
 	n, err := f.ReadAt(buf, r.Offset)
 	if err != nil && err != io.EOF {
 		return wire.SendRead{}, fileError(CodeFileNotReadable, err.Error())

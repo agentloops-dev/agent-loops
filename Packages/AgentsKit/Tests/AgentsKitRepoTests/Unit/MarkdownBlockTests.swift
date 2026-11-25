@@ -183,8 +183,17 @@ struct MarkdownBlockTests {
         let blocks = MarkdownBlock.parse("![alt text](./d.png)\n\nWith ![inline](./i.png) inside.")
         #expect(blocks == [.image(source: "./d.png", alt: "alt text"),
                            .paragraph("With"),
-                           .image(source: "./i.png", alt: "inline"),
+                           .image(source: "./i.png", alt: "inline", inline: true),
                            .paragraph("inside.")])
+    }
+
+    @Test func anImageIsInlineWhenItSharesItsLine() {
+        // An image alone on its line is not in words, also when the next line is (#7139).
+        let blocks = MarkdownBlock.parse("The chart:  \n![chart](./c.png)  \nIt is slow.\n\n![a](./a.png) ![b](./b.png)")
+        #expect(blocks == [.paragraph("The chart:"), .image(source: "./c.png", alt: "chart"), .paragraph("It is slow."),
+                           .image(source: "./a.png", alt: "a", inline: true),
+                           .image(source: "./b.png", alt: "b", inline: true)])
+        #expect(MarkdownBlock.parse("The chart:\n![chart](./c.png)").last == .image(source: "./c.png", alt: "chart"))
     }
 
     @Test func inlineMarksAreAttributesRatherThanCharacters() {

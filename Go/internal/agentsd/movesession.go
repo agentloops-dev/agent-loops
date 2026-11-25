@@ -420,6 +420,9 @@ func (d *Daemon) moveIn(r wire.SessionMoveIn) error {
 		return err
 	}
 	defer os.Remove(path)
+	if err := d.wholeUploads(path); err != nil {
+		return err
+	}
 	folder := filepath.Clean(r.Folder)
 	if !filepath.IsAbs(folder) {
 		return Invalid("%s is not an absolute path.", r.Folder)

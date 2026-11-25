@@ -10,6 +10,8 @@ public enum FeatureFlag: String, CaseIterable, Sendable {
     case dashboard = "dashboard"
     /// Docs (#6572).
     case docs = "docs"
+    /// Image hosts (#7136).
+    case imageHosts = "image-hosts"
     /// Suggested (#6572).
     case suggested = "suggested"
     /// Work (#6572).
@@ -23,6 +25,7 @@ public enum FeatureFlag: String, CaseIterable, Sendable {
         case .commitTrailers: "Commit trailers"
         case .dashboard: "Dashboard"
         case .docs: "Docs"
+        case .imageHosts: "Image hosts"
         case .suggested: "Suggested"
         case .work: "Work"
         case .workWindows: "Work in windows"
@@ -35,6 +38,7 @@ public enum FeatureFlag: String, CaseIterable, Sendable {
         case .commitTrailers: "The Commit trailers group in Agents ▸ Policy: the trailers on each agent's commits."
         case .dashboard: "The Dashboard on the Mac: each work item with its sessions. The window opens to it."
         case .docs: "Docs in the sidebar, and the Docs section on a work item's page. On the Mac and the web page."
+        case .imageHosts: "A blocked image on a Work page says its host, with Show image and Always allow; the list is in Settings ▸ Machines ▸ Image Hosts. On the Mac."
         case .suggested: "New Session ▸ Suggested: the epics with no lead."
         case .work: "Work in the sidebar: issues, pull requests, releases, deploys and the timeline."
         case .workWindows: "Open in New Window on Work's pages (Mac and iPad): an issue, a pull request or a release, and on the Mac a doc or a conversation of Messages, in a window of its own."
@@ -47,6 +51,7 @@ public enum FeatureFlag: String, CaseIterable, Sendable {
         case .commitTrailers: 6373
         case .dashboard: 6572
         case .docs: 6572
+        case .imageHosts: 7136
         case .suggested: 6572
         case .work: 6572
         case .workWindows: 5480

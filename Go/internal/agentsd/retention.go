@@ -142,6 +142,7 @@ func (d *Daemon) sweepHourly() {
 	d.sweepAssessments(nowFunc())
 	d.sweepRequests(nowFunc())
 	d.sweepGoneRoots()
+	d.measureStores()
 	if d.browser != nil {
 		// It may start the browser, so off the sweep.
 		d.goJob("sweep browser profiles", func() { d.browser.Sweep(nowFunc()) })

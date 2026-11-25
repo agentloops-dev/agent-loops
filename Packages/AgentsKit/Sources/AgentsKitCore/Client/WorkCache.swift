@@ -470,7 +470,8 @@ public actor WorkCache: WorkCaching {
     }
 
     /// Writes items in one transaction. A row is replaced only by a copy as new or newer, so a late answer does not
-    /// undo a newer one; an item whose row is over `bounds.itemBytes` after trimming is not kept.
+    /// undo a newer one; an item whose row is over `bounds.itemBytes` after trimming is not kept, and
+    /// its earlier copy goes, so no answer read now draws the item as it was (#7198).
     private func keep(items: [DaemonAPI.ForgeItem], at: Date) {
         guard !items.isEmpty, (try? run("BEGIN")) != nil else { return }
         defer { try? run("COMMIT") }
@@ -481,8 +482,12 @@ public actor WorkCache: WorkCaching {
                 try? run("UPDATE item SET read = ? WHERE key = ?", [.real(at), .text(key)])
                 continue
             }
-            guard let fit = fitted(item) else { continue }
             edited.remove(key)
+            guard let fit = fitted(item) else {
+                memo[key] = nil
+                try? run("DELETE FROM item WHERE key = ?", [.text(key)])
+                continue
+            }
             memo[key] = fit.item
             try? run("""
             INSERT INTO item(key, updated, read, json) VALUES(?, ?, ?, ?)

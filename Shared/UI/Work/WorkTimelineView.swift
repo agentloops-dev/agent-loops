@@ -78,6 +78,18 @@ final class WorkTimelineState {
         var boards: [DaemonAPI.ProjectBoard]
     }
 
+    /// What each machine read (#7029), and what Work read from then (`workSource`).
+    private struct KeptScopes: Codable, Sendable {
+        var scopes: [MachineRef: [String]]
+        var source: String
+    }
+
+    /// A machine's answer (its index, the timeline, the board's epics, what failed), or `lateAfter` is over.
+    private enum Read: Sendable {
+        case answer(Int, DaemonAPI.WorkTimeline?, [String]?, String?, boardFailed: Bool)
+        case late
+    }
+
     /// What the plot is kept under: the project, board and range.
     private func copyAsk(_ project: String) -> String { [project, board, range.rawValue].joined(separator: "|") }
 
@@ -125,20 +137,30 @@ final class WorkTimelineState {
         async let found = model.workBoards()
         let on = Set(project.folders.map { String($0.prefix { $0 != "|" }) })
         let machines = model.timelineMachines.filter { on.contains($0.id.rawValue) }
-        asking = machines.count
+        // Each repo is asked of one machine (#7029). What each read last is kept for the next launch.
+        let source = model.workSource
+        let keptScopes = await model.keptWork(KeptScopes.self, .timeline, "scopes|\(project.id)")
+        guard ask == mine else { return }
+        var readers = WorkTimeline.Readers(machines.map(\.id), scopes: keptScopes?.source == source ? keptScopes?.scopes ?? [:] : [:])
+        asking = 0
         answered = 0
         // The widest range's span, whatever the range: the rows are packed over it, so they stay put
         // across ranges (#5506).
         let span = WorkTimeline.packSpan(anchor)
         let board = board
+        // A machine answers with its epics first, and again with the forecast when its history is read (#7027): its
+        // first answer is in firsts until then, and stays there when the second fails.
         var got: [DaemonAPI.WorkTimeline] = []
+        var firsts: [MachineRef: DaemonAPI.WorkTimeline] = [:]
         var epics: Set<String>?
         var failed: [String] = []
+        var noBoard: Set<MachineRef> = []
         func draw(all: Bool) async {
             problem = all && got.isEmpty && !failed.isEmpty ? failed.joined(separator: "\n") : nil
             // Every machine failed: the last plot stays, or with none, what they said in the middle (#5969).
             if all, got.isEmpty, !failed.isEmpty { return }
-            var merged = WorkTimeline.merge(got)
+            var merged = WorkTimeline.merge(got + firsts.values)
+            if !firsts.isEmpty { merged = WorkTimeline.keepForecasts(merged, shown: timeline) }
             if let epics { merged.epics = merged.epics.filter { epics.contains($0.item.node.ref) } }
             fromMachines = merged
             // The plot draws now, with the sessions it had (#5450); the new ones start their children when they come.
@@ -157,13 +179,15 @@ final class WorkTimelineState {
                 model.keepWork(Kept(timeline: drawn, boards: boards), .timeline, kept)
             }
         }
-        await withTaskGroup(of: (DaemonAPI.WorkTimeline?, [String]?, String?).self) { group in
-            for machine in machines {
+        await withTaskGroup(of: Read.self) { group in
+            func add(_ index: Int, first: Bool) {
+                let machine = machines[index]
                 group.addTask {
                     // The result first, then the tuple from one place (#5946, `Result.catching`).
                     let read = await Result.catching {
                         try await model.forge(DaemonAPI.Method.workTimeline,
-                                              DaemonAPI.WorkTimelineRequest(project: project.id, from: span.start, to: span.end),
+                                              DaemonAPI.WorkTimelineRequest(project: project.id, from: span.start, to: span.end,
+                                                                            first: first ? true : nil),
                                               returning: DaemonAPI.WorkTimeline.self, on: machine.id)
                     }
                     // A machine whose forge failed answers with no epic and the forge's words: a failed read, so the
@@ -173,31 +197,75 @@ final class WorkTimelineState {
                     let t = forgeFailed ? nil : answer
                     // A board narrows to its epics: the forge says which they are.
                     var refs: [String]?
-                    if t != nil, !board.isEmpty {
+                    var boardFailed = false
+                    if first, t != nil, !board.isEmpty {
                         let list = try? await model.forgeList(.issue, .init(state: "all", label: "epic", limit: 100, board: board),
                                                               on: machine.id)
                         refs = list?.items.map(\.node.ref) ?? []
+                        if list == nil || list?.items.isEmpty == true && list?.errors?.isEmpty == false { boardFailed = true }
                     }
                     let words = read.error?.localizedDescription ?? (forgeFailed ? answer?.errors?.joined(separator: "\n") : nil)
                     let problem = words.map { machines.count > 1 ? "\(machine.name): \($0)" : $0 }
-                    return (t, refs, problem)
+                    return .answer(index, t, refs, problem, boardFailed: boardFailed)
                 }
+            }
+            var asks = 0
+            func addNext() {
+                for id in readers.next() {
+                    guard let index = machines.firstIndex(where: { $0.id == id }) else { continue }
+                    asks += 1
+                    add(index, first: true)
+                }
+            }
+            addNext()
+            asking = asks
+            group.addTask {
+                try? await Task.sleep(for: WorkTimeline.lateAfter)
+                return .late
             }
             // The first machine to answer draws the plot (#5449), and each one after adds its epics: a slow or offline
             // machine does not hold it. A machine that failed says so only when no machine answered.
             var answered = 0
-            for await (t, refs, problem) in group {
-                answered += 1
-                if ask == mine { self.answered = answered }
-                if let t { got.append(t) }
+            while answered < asks, let read = await group.next() {
+                guard ask == mine else { break }
+                guard case let .answer(index, t, refs, problem, boardFailed) = read else {
+                    if Task.isCancelled { continue }
+                    readers.late()
+                    addNext()
+                    asking = asks
+                    continue
+                }
+                let machine = machines[index].id
+                // Its board could not be read: it covers no other machine (the next one's board can be).
+                if boardFailed { noBoard.insert(machine) }
                 if let refs { epics = (epics ?? []).union(refs) }
+                if let t, t.partial == true {
+                    readers.first(machine)
+                    add(index, first: false)
+                    if !t.epics.isEmpty {
+                        firsts[machine] = t
+                        await draw(all: false)
+                    }
+                    continue
+                }
+                answered += 1
+                self.answered = answered
+                if let t {
+                    got.append(t)
+                    firsts[machine] = nil
+                }
                 if let problem { failed.append(problem) }
-                if ask == mine, answered < machines.count, t != nil { await draw(all: false) }
+                readers.done(machine, scopes: noBoard.contains(machine) ? nil : t?.scopes)
+                addNext()
+                asking = asks
+                if answered < asks, t != nil { await draw(all: false) }
             }
+            group.cancelAll()
         }
         let boardsFound = await found
         guard ask == mine else { return }
         boards = boardsFound
+        model.keepWork(KeptScopes(scopes: readers.scopes, source: source), .timeline, "scopes|\(project.id)")
         await draw(all: true)
     }
 

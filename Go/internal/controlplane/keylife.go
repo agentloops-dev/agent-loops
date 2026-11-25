@@ -102,8 +102,12 @@ func (s *Service) renewHost(ctx context.Context, id string) {
 	if next == nil || h.Expires != nil && s.suspended(s.ownerOf(id)) {
 		return
 	}
-	h.Expires = next
-	if err := s.records.SaveHost(ctx, *h); err != nil {
+	// Changed on the record as it is when written: an epoch noted since is kept (#7122).
+	err := s.records.ChangeHost(ctx, id, func(h *records.MachineRecord) bool {
+		h.Expires = next
+		return true
+	})
+	if err != nil {
 		s.log("could not renew " + id + "'s key: " + err.Error())
 	}
 }

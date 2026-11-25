@@ -16,10 +16,15 @@ Start: `<root>/tools/opencode/current/bin/opencode acp`, with the agent's folder
 ## `OPENCODE_CONFIG_CONTENT` (compact, sorted keys)
 
 ```json
-{"autoupdate":false,
+{"agent":{"explore":<subagent>,"general":<subagent>},
+ "autoupdate":false,
  "permission":{"bash":"ask","edit":"ask","webfetch":"ask"},
  "share":"disabled"}
 ```
+
+`<subagent>` is `{"permission":{"bash":"deny","doom_loop":"deny","edit":"deny","external_directory":"deny","read":{"*.env":"deny","*.env.*":"deny","*.env.example":"allow"},"webfetch":"deny"}}` (#7220): OpenCode's ACP server
+drops a subagent's permission request, so a call that asks hangs the turn for ever. A subagent
+still reads and searches.
 
 A test holds this byte for byte. `tools` was here with `{"task": false}` until 2026-09-29; there is
 no `tools` key at all now, and a runtime that is not in a policy's list is not taken away, so an

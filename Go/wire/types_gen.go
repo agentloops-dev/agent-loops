@@ -6284,16 +6284,20 @@ type ForgeIdsRequest struct {
 	PageCursor *string `json:"pageCursor,omitzero"`
 }
 
-// forge/image (#4009): an image's bytes, so that a client never loads a forge page's remote URL. mimeType is image/png, image/jpeg, image/gif or image/webp, read from the bytes.
+// forge/image (#4009): an image's bytes, so that a client never loads a forge page's remote URL. mimeType is image/png, image/jpeg, image/gif or image/webp, read from the bytes. keep false (#7138): the read went through a host that the person allowed or showed, so a client does not put it on disk; absent, only a forge's own image hosts.
 type ForgeImage struct {
 	MimeType string `json:"mimeType"`
 
 	Data Data `json:"data"`
+
+	Keep *bool `json:"keep,omitzero"`
 }
 
-// forge/image (#4009): the url of an image on a forge page. Only a forge's own image hosts are read (for GitHub: github.com's user-attachments and repo assets, and user-images, private-user-images, raw and avatars on githubusercontent.com); the forge's token goes only to its own hosts.
+// forge/image (#4009): the url of an image on a forge page. Only a forge's own image hosts (for GitHub: github.com's user-attachments and repo assets, and user-images, private-user-images, raw and avatars on githubusercontent.com), the hosts that the person allowed (imageHosts/list) and those in show are read; another host is the failure imageBlocked, with ImageBlocked as its data. A chosen host that is not at a public address is the failure imageNotPublic (#7139). show (#7138) is the exact hosts that the person accepts for this one read, at most 6, from the person's own clients only. The forge's token goes only to its own hosts, and to none after a hop through a host that the person chose.
 type ForgeImageRequest struct {
 	URL string `json:"url"`
+
+	Show []string `json:"show,omitzero"`
 }
 
 // An issue or a pull request (a GitLab merge request) as its forge says it (#3129): one model for GitHub, GitLab, Linear and Jira (#3260), so one page draws each. node is its lineage node (kind issue or pr, ref github:issue:alexec/agents#12). state is open, closed or merged; status is the tracker's own name for its step, where its workflow has steps (a Jira status, as In Progress; one in Jira's Done category is closed). folder is a folder on this machine on its repo, to act from. labels have their #rrggbb colour where the forge gives one (#2956). The pull request's own fields: draft; checks is passing, failing, running or none; review is approved, changes_requested or review_required; mergeable is mergeable, conflicting or unknown; autoMerge says auto-merge is on. The hierarchy (#3267): parent is the issue it is a sub-issue (a Linear or GitLab child) of; level is epic, story, task or spike, from its labels; feature is the name of its feature:<name> label; progress is a parent's closed children of all of them, where the forge says it: in a GitHub list, and on an issue's own read. standing says it has the label standing: a standing epic, whose plan is a query (#3659). authorAvatar is the author's picture, a URL that only forge/image reads (#4363), where the forge gives one (ForgeCapabilities.avatars). stateReason is why a closed issue closed (#4365): completed, not_planned or duplicate, where the forge says it (ForgeCapabilities.stateReason); absent on an open issue and on a pull request. createdAt is when it opened and closedAt when it closed or merged (#4373), where the forge says them (ForgeCapabilities.createdAt and closedAt); closedAt is absent while it is open. A pull request's branches (#4409): headRef is the branch it merges from and baseRef the one it merges into, where the forge says them (ForgeCapabilities.branches); on its own read at least, and on a list's row where the list says them. A merged pull request's mergedBy is who merged it and mergeCommit the commit it made on baseRef (ForgeCapabilities.mergedBy and mergeCommit); each is absent while it is open or closed unmerged. priority is high, medium or low, absent for none (#5688, #5747): from the forge's own priority field where it has one, and then its labels are not read for it: Linear's (Urgent and High → high; Low → low), Jira's (Highest and High → high; Low and Lowest → low), GitHub's Priority issue field when the repo has it (Urgent and High → high), Bitbucket's (blocker and critical → high; major, the default, → none; minor and trivial → low) and Azure DevOps' Priority (1 → high; 2, the default, → none; 3 and 4 → low); elsewhere from the labels priority:high, priority:medium and priority:low (any case; the higher of two). milestoneDue is the due date of the item's milestone, where the forge says it; absent with no milestone or no due date. onHold says the item is on hold (#5747): Bitbucket's state on hold; elsewhere the label on hold (any case; on-hold too), and on Jira a status named On hold too; absent is false.
@@ -7150,6 +7154,30 @@ type HostedMCPStatus struct {
 	Users int64 `json:"users"`
 
 	Folder *string `json:"folder,omitzero"`
+}
+
+// The data of the failure imageBlocked of forge/image (#7138): host is the host that was refused, exact and in ASCII; from is the host that redirected to it, absent when it is the image's own.
+type ImageBlocked struct {
+	Host string `json:"host"`
+
+	From *string `json:"from,omitzero"`
+}
+
+// A host that the person allowed forge/image to read images from on one machine (#7138): the exact host, lower case and in ASCII, and when.
+type ImageHost struct {
+	Host string `json:"host"`
+
+	AddedAt Date `json:"addedAt"`
+}
+
+// imageHosts/allow and imageHosts/remove (#7138): the host.
+type ImageHostRequest struct {
+	Host string `json:"host"`
+}
+
+// imageHosts/list, and the list after imageHosts/allow and imageHosts/remove (#7138): at most 100 hosts, the first allowed first. The forges' own image hosts are not in it.
+type ImageHosts struct {
+	Hosts []ImageHost `json:"hosts"`
 }
 
 type JoinApproved struct {
@@ -9351,7 +9379,7 @@ type MachineFolderSend struct {
 	Seed *ReceiveSeedRequest `json:"seed,omitzero"`
 }
 
-// What machines/sendFolder's step answered (#2929, #2947): state for state, folder for receive, facts for facts, pack for pack, read for read, seed for seed, none for upload.
+// What machines/sendFolder's step answered (#2929, #2947): state for state, folder for receive, facts for facts, pack for pack, read for read, seed for seed, none for upload. An upload or a read also says partsAtOnce.
 type MachineFolderSent struct {
 	State *ReceiveState `json:"state,omitzero"`
 
@@ -9364,6 +9392,9 @@ type MachineFolderSent struct {
 	Read *SendRead `json:"read,omitzero"`
 
 	Seed *ReceiveSeed `json:"seed,omitzero"`
+
+	// How many parts of one file the sender may have in flight to or from that machine (#7120). None from an older control plane, and for a machine without folders.send-parts/1: one part at a time.
+	PartsAtOnce *int64 `json:"partsAtOnce,omitzero"`
 }
 
 // A machine's ForgeBoards in forge/boardsAll (#5592).
@@ -10094,6 +10125,25 @@ type MarketplacesListRequest struct {
 
 // The levels of a part's capabilities that are not GA (#6052, #6579), capability to level, as Packages/Wire/maturity.json has them in that part's build. A capability it does not name is GA. A part older than #6579 sends none, and a client then reads the list it was built with.
 type Maturity map[string]MaturityLevel
+
+// maturity/complete (#6934): the finished state of one source operation, with no actor and no content. An operation that is not complete, not eligible or a background refresh is refused.
+type MaturityCompletion struct {
+	FeatureId string `json:"featureId"`
+
+	CompletionId string `json:"completionId"`
+
+	SessionId *string `json:"sessionId,omitzero"`
+
+	BuildId string `json:"buildId"`
+
+	Success bool `json:"success"`
+
+	Completed bool `json:"completed"`
+
+	Eligible bool `json:"eligible"`
+
+	BackgroundRefresh bool `json:"backgroundRefresh"`
+}
 
 // How ready a capability that is not GA is (#6052).
 type MaturityLevel string
@@ -13033,7 +13083,7 @@ type ReceiveStateRequest struct {
 	Folder string `json:"folder"`
 }
 
-// One part of a file a Mac sends (#1123), at `offset` in the upload. A part is at most 16 MB; the host keeps the upload until folders/receive uses it.
+// One part of a file a Mac sends (#1123), at `offset` in the upload. The part at 0 comes first; the others come in any order (#7120). A part is at most 16 MB; the host keeps the upload until folders/receive uses it.
 type ReceiveUploadRequest struct {
 	Upload UUID `json:"upload"`
 
@@ -14842,7 +14892,7 @@ type SendPackRequest struct {
 	LeaveOutUntracked *bool `json:"leaveOutUntracked,omitzero"`
 }
 
-// A part of at most 1 MB (#1530). `end` is true for the last, and then the host removes the file.
+// A part of at most 4 MB (#7120); 1 MB for an export (#1530). `end` is true for the last, and then the host removes the file.
 type SendRead struct {
 	Data Data `json:"data"`
 
@@ -16116,6 +16166,83 @@ type StopBackgroundRequest struct {
 
 type StoreNotes struct {
 	Notes []string `json:"notes"`
+}
+
+// Where a store is (#6906): on a machine, on the control plane, or in a client.
+type StoreOwner string
+
+const StoreOwnerMachine StoreOwner = "machine"
+const StoreOwnerControlPlane StoreOwner = "controlPlane"
+const StoreOwnerClient StoreOwner = "client"
+
+// The last measurement of one declared store (#6906): sizes and counts only, never a path, a key, what is stored or the name of a person, project, machine or session. A measure or a percent that is not known is absent.
+type StoreSize struct {
+	// Stable, such as machine.transcripts or control.audit.
+	ID string `json:"id"`
+
+	Owner StoreOwner `json:"owner"`
+
+	// Whose data one store holds: organisation, person, machine, folder or session.
+	Scope string `json:"scope"`
+
+	// document, log, time series, graph, blob, key-value, cache or secret.
+	Kind string `json:"kind"`
+
+	State StoreSizeState `json:"state"`
+
+	// Why it is unavailable, in words for a person.
+	Why *string `json:"why,omitzero"`
+
+	// The whole store's bytes.
+	Bytes *int64 `json:"bytes,omitzero"`
+
+	// The whole store's records.
+	Records *int64 `json:"records,omitzero"`
+
+	// bytes over records, when both are measured and there are records.
+	AverageRecordBytes *int64 `json:"averageRecordBytes,omitzero"`
+
+	// The byte limit.
+	MaxBytes *int64 `json:"maxBytes,omitzero"`
+
+	// The record limit.
+	MaxRecords *int64 `json:"maxRecords,omitzero"`
+
+	// What each limit is for when it is not the whole store: person, machine, session, folder, … The percents are then of the largest one.
+	LimitPer *string `json:"limitPer,omitzero"`
+
+	// Of maxBytes; over 100 is over the limit.
+	PercentBytes *float64 `json:"percentBytes,omitzero"`
+
+	// Of maxRecords; over 100 is over the limit.
+	PercentRecords *float64 `json:"percentRecords,omitzero"`
+
+	// When this store's measurement ended.
+	MeasuredAt *Date `json:"measuredAt,omitzero"`
+}
+
+// over: past a limit, whatever the measurement's age. stale: older than twice the cadence (2 h on a machine, 12 h on the control plane). unavailable: not measured, or with no measure that a limit can be compared with; why says which.
+type StoreSizeState string
+
+const StoreSizeStateCurrent StoreSizeState = "current"
+const StoreSizeStateOver StoreSizeState = "over"
+const StoreSizeStateStale StoreSizeState = "stale"
+const StoreSizeStateUnavailable StoreSizeState = "unavailable"
+
+// A page of at most 100 stores by id (#6906). cursor asks for the next page; absent on the last. total is the stores of every page.
+type StoreSizes struct {
+	Stores []StoreSize `json:"stores"`
+
+	Total int64 `json:"total"`
+
+	Cursor *string `json:"cursor,omitzero"`
+}
+
+// stores/list and reports/storeSizes (#6906). cursor is the last page's. limit is 1 to 100, 100 when absent.
+type StoreSizesQuery struct {
+	Cursor *string `json:"cursor,omitzero"`
+
+	Limit *int64 `json:"limit,omitzero"`
 }
 
 type SuggestedPrompt struct {
@@ -17689,7 +17816,7 @@ type WorkSuggestLeadsRequest struct {
 	Folder *string `json:"folder,omitzero"`
 }
 
-// work/timeline (#4172, specs/time-stream/wireframe.md sections 4, 7 to 9): the epics of a project that overlap from to to, each from its first child's start to when its work stopped (#7058), with its children, its segments and, while open, its forecast (M10); and the releases published in the window. timeZone is the working clock's: this host's, an IANA name, absent when it has none. backtest is how the forecast did on the epics whose work ended in the last 30 days, run again at most once a day; absent when there are too few. errors are the forges that could not be read, as forge/issues says them.
+// work/timeline (#4172, specs/time-stream/wireframe.md sections 4, 7 to 9): the epics of a project that overlap from to to, each from its first child's start to when its work stopped (#7058), with its children, its segments and, while open, its forecast (M10); and the releases published in the window. timeZone is the working clock's: this host's, an IANA name, absent when it has none. backtest is how the forecast did on the epics whose work ended in the last 30 days, run again at most once a day; absent when there are too few. errors are the forges that could not be read, as forge/issues says them. partial (#7027): an answer to a first ask that did not read the forecast's history, so it has no forecast and no backtest, and not each epic whose block ends after its close; a host from before it gives all of it.
 type WorkTimeline struct {
 	Epics []WorkTimelineEpic `json:"epics"`
 
@@ -17700,6 +17827,11 @@ type WorkTimeline struct {
 	Backtest *WorkTimelineBacktest `json:"backtest,omitzero"`
 
 	Errors []string `json:"errors,omitzero"`
+
+	Partial *bool `json:"partial,omitzero"`
+
+	// What was read (#7029): one entry per repo, as forge:name (github:example/shop). Two machines with the same scopes give the same epics, so a client asks one of them. Absent when a repo could not be read, and from an earlier daemon.
+	Scopes []string `json:"scopes,omitzero"`
 }
 
 // work/timeline's backtest (#4172): the forecast stopped just after 25, 50, 75 and 90% of each past segment's children closed, made from what had ended before that moment, and set against the real close. error is the median of forecast/actual or actual/forecast, whichever is more than 1 (×2.2 says off by a factor of 2.2). cuts is how many forecasts it made, of epics segments; holds how many closes fell in P10 to P90. width is the factor that widens the band around P50 (in log terms) until it holds 8 in 10 of them; each forecast's band is already widened by it. at is when it ran.
@@ -17771,13 +17903,15 @@ type WorkTimelineRelease struct {
 	URL *string `json:"url,omitzero"`
 }
 
-// work/timeline (#4172): the epics of a project (its id, from a folder's .agents/folder.json) that overlap from to to.
+// work/timeline (#4172): the epics of a project (its id, from a folder's .agents/folder.json) that overlap from to to. With first, the answer can be partial (#7027): ask again without it for all of it.
 type WorkTimelineRequest struct {
 	Project string `json:"project"`
 
 	From Date `json:"from"`
 
 	To Date `json:"to"`
+
+	First *bool `json:"first,omitzero"`
 }
 
 // A line of an epic in work/timeline (#4172): from its first child's start to its last child's close.

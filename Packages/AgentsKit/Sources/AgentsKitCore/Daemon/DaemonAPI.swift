@@ -2641,6 +2641,11 @@ public enum DaemonAPI {
         /// `user/sealedSecret` from a client the control plane keeps no copy for yet (#5114):
         /// it gets one when another of the person's clients is online (`sealing/work`).
         public static let noClientCopy = -32108
+        /// `forge/image` did not read a host that is on no list (#7138). `data`: `ImageBlocked`.
+        public static let imageBlocked = -32109
+        /// `forge/image` did not read a host that the person chose, as it is not at a public address
+        /// (#7139): reading it again does not help.
+        public static let imageNotPublic = -32110
     }
 
     // MARK: Workflows
@@ -3762,7 +3767,7 @@ public extension DaemonAPI {
         }
     }
 
-    /// `folders/sendRead`: a part of at most 8 MB from `offset`. The host removes the file
+    /// `folders/sendRead`: a part of at most 4 MB from `offset`. The host removes the file
     /// once its last part (`end`) is read.
     struct SendReadRequest: Codable, Hashable, Sendable {
         public var id: UUID

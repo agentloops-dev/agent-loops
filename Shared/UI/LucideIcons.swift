@@ -56,6 +56,7 @@ enum LucideIcons {
         "lucide.globe",
         "lucide.compass",
         "lucide.image",
+        "lucide.image-off",
         "lucide.camera",
         "lucide.link",
         "lucide.scan-qr-code",
@@ -254,6 +255,7 @@ enum LucideIcons {
         "globe": "lucide.globe", // Web page
         "safari": "lucide.compass", // Browser
         "photo": "lucide.image", // Picture
+        "photo.slash": "lucide.image-off", // A picture that is blocked or could not be read
         "camera": "lucide.camera", // Camera
         "link": "lucide.link", // Link
         "qrcode.viewfinder": "lucide.scan-qr-code", // Scan a code to pair

@@ -7,6 +7,7 @@
 import type { Agent, ForgeItem, ForgeLabel, LineageNode, LineageSessionOn, WireDate, WorkTimeline, WorkTimelineBacktest } from "../protocol/generated";
 import { fromWireDate } from "../protocol/dates";
 import { shortAge, shortRef } from "./work";
+import { oneEach } from "./workLists";
 import { nextRank } from "./forgeNextOrder";
 import { priorityWords } from "./epicPlan";
 import { sessionIdOf } from "../protocol/ref";
@@ -467,6 +468,58 @@ export function mergeTimelines(timelines: readonly WorkTimeline[]): WorkTimeline
   }
   out.releases.sort((a, b) => a.at - b.at);
   return out;
+}
+
+/** How long a machine may take to its first answer before the machines it covers are asked too, in ms: a read of one repo is
+ * about 4 s. */
+export const lateAfter = 8000;
+
+/** Which machines a read of the Timeline asks (#7029): each repo of one machine (`oneEach`), then the next with that repo when
+ * the first fails, did not read it all, or is late, so a slow machine does not hold the plot (#5449). One whose scopes are not
+ * known is always asked. As the window's `WorkTimeline.Readers`. */
+export class Readers {
+  readonly scopes: Map<string, readonly string[]>;
+  private readonly asked = new Set<string>();
+  private readonly heard = new Set<string>();
+
+  constructor(private readonly machines: readonly string[], scopes: Iterable<readonly [string, readonly string[]]>) {
+    this.scopes = new Map([...scopes].filter(([m, s]) => machines.includes(m) && s.length > 0));
+  }
+
+  /** The machines to ask now, each once a read. */
+  next(): string[] {
+    const ask = oneEach(this.machines, this.scopes).ask.filter((m) => !this.asked.has(m));
+    for (const m of ask) this.asked.add(m);
+    return ask;
+  }
+
+  /** A machine gave its first answer: it is not late. */
+  first(machine: string) { this.heard.add(machine); }
+
+  /** A machine gave its last answer, with what it read; undefined when it failed. */
+  done(machine: string, read: readonly string[] | undefined) {
+    this.heard.add(machine);
+    if (read && read.length > 0) this.scopes.set(machine, read);
+    else this.scopes.delete(machine);
+  }
+
+  /** `lateAfter` is over: a machine not heard from covers no other. */
+  late() {
+    for (const m of this.asked) if (!this.heard.has(m)) this.scopes.delete(m);
+  }
+}
+
+/** A first answer has no forecast (#7027): each open epic keeps the one on screen until its own comes. */
+export function keepForecasts(timeline: WorkTimeline, shown: WorkTimeline | null): WorkTimeline {
+  const kept = new Map((shown?.epics ?? []).flatMap((e) => e.forecast ? [[e.item.node.ref, e.forecast] as const] : []));
+  if (kept.size === 0) return timeline;
+  return {
+    ...timeline,
+    epics: timeline.epics.map((e) => {
+      const forecast = e.forecast ?? (e.closedAt === undefined ? kept.get(e.item.node.ref) : undefined);
+      return forecast ? { ...e, forecast } : e;
+    }),
+  };
 }
 
 /**

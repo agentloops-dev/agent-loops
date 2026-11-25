@@ -12,10 +12,10 @@ import { toWireDate } from "../protocol/dates";
 import type { Store } from "../model/store";
 import { describe } from "../model/errors";
 import { boardChoices, boardName, withBoard, type WorkProject } from "../model/work";
-import { boards, forgeHosts, loadBoards } from "../model/workLists";
+import { boards, forgeFolders, forgeHosts, loadBoards } from "../model/workLists";
 import {
   Axis, bandGutter, bandRuleY, bands as bandsOf, blockHeight, blockWords, cardRow, chipWidth, chipWords, priorityBand, colourIndex, epicCount, epicRows, errorWords, forWhiteText, hexOf, hit, lastJoined,
-  lastJoinedWords, layout, mergeTimelines, nextInRow, noEpicsWords, noMachine, noProject, noProjectTitle, overlapping,
+  lastJoinedWords, keepForecasts, layout, mergeTimelines, nextInRow, noEpicsWords, noMachine, noProject, noProjectTitle, overlapping, lateAfter, Readers,
   packSpan, rangeSpan, rangeTitle, rangeWindow, reach, rgbOf, rowCount, rowGap, rowTop, sessionNodes, showTheWeek, startedBySessions,
   timelineLines, timelineRanges, timelineShows, titleWords, titleY, workingNow, zoomed, type Interval, type TimelineBand, type TimelineLine, type TimelineRange,
 } from "../model/workTimeline";
@@ -88,6 +88,10 @@ function timelineProjects(store: Store): WorkProject[] {
   return workProjects(store).filter((p) => [...p.folders].some((f) => hosts.has(f.slice(0, f.indexOf("|")))));
 }
 
+/** What each machine read (#7029), and the machines and folders it was read from then. */
+interface KeptScopes { scopes: (readonly [string, readonly string[]])[]; source: string }
+const scopesPage = "timeline-scopes";
+
 async function loadTimeline(store: Store) {
   const projects = timelineProjects(store);
   const chosen = projects.find((p) => p.id === project.value) ?? projects[0];
@@ -103,26 +107,36 @@ async function loadTimeline(store: Store) {
   const chosenBoard = board.value;
   reading.value = true;
   answered.value = 0;
-  machines.value = hosts.length;
+  machines.value = 0;
   // Seen before: this device's copy at once, until the machines answer (#4930). Kept by project, board and range.
   const kept = [chosen.id, chosenBoard, range.value].join("|");
   if (timeline.value === null) {
     const copy = await keptWorkRead<Timeline>("timeline", kept);
     if (copy && read === key && timeline.value === null) { timeline.value = copy.value; plotAt.value = copy.at; fromDevice.value = true; }
   }
+  // Each repo is asked of one machine (#7029). What each read last is kept for the next visit.
+  const source = `${hosts.map((h) => h.id).join(",")}|${forgeFolders(store, hosts.map((h) => h.id))}`;
+  const scopesKept = (await keptWorkRead<KeptScopes>(scopesPage, `timeline|${chosen.id}`))?.value;
+  if (read !== key) return;
+  const readers = new Readers(hosts.map((h) => h.id), scopesKept?.source === source ? scopesKept.scopes : []);
   // The first machine to answer draws the plot (#5449), and each one after adds its epics: a slow or offline machine does
   // not hold it. A machine that failed says so only when no machine answered.
+  // A machine answers with its epics first, and again with the forecast when its history is read (#7027): its first
+  // answer is in firsts until then, and stays there when the second fails.
   const got: { t?: Timeline; refs?: string[] | undefined; problem?: string }[] = [];
+  const firsts = new Map<string, { t: Timeline; refs: string[] | undefined }>();
   const draw = async (all: boolean) => {
     if (all) reading.value = false;
     const failed = got.flatMap((g) => g.problem ? [g.problem] : []);
-    const none = hosts.length > 0 && failed.length === hosts.length;
+    const none = got.length > 0 && failed.length === got.length;
     problem.value = all && none ? failed.join("\n") : null;
     // With every machine failing, the last plot stays at full opacity, and the footer says what failed (#5971); with
     // none, the middle says it.
     if (all && none) return;
-    const merged = mergeTimelines(got.flatMap((g) => g.t ? [g.t] : []));
-    const epics = chosenBoard ? new Set(got.flatMap((g) => g.refs ?? [])) : undefined;
+    const answers = [...got, ...firsts.values()];
+    let merged = mergeTimelines(answers.flatMap((g) => g.t ? [g.t] : []));
+    if (firsts.size > 0) merged = keepForecasts(merged, timeline.value);
+    const epics = chosenBoard ? new Set(answers.flatMap((g) => g.refs ?? [])) : undefined;
     if (epics) merged.epics = merged.epics.filter((e) => epics.has(e.item.node.ref));
     fromMachines = merged;
     // The plot draws now, with the sessions it had (#5450); the new ones start their children when they come.
@@ -138,31 +152,64 @@ async function loadTimeline(store: Store) {
     // Kept for the window around now, read by every machine: a plot scrolled away is not the one a person opens on.
     if (all && failed.length === 0 && Math.abs(anchor.value - Date.now()) < 3_600_000) keepWork("timeline", kept, timeline.value);
   };
-  await Promise.all(hosts.map(async (h) => {
+  const askOne = async (h: (typeof hosts)[number]): Promise<void> => {
     let one: (typeof got)[number];
     try {
-      const t = await store.link.call("work/timeline", { project: chosen.id, from: toWireDate(new Date(span.start)), to: toWireDate(new Date(span.end)) }, h.id);
+      const ask = { project: chosen.id, from: toWireDate(new Date(span.start)), to: toWireDate(new Date(span.end)) };
+      let t = await store.link.call("work/timeline", { ...ask, first: true }, h.id);
       // A board narrows to its epics: the forge says which they are.
-      let refs: string[] | undefined;
+      // With its board not read, it covers no other machine (the next one's board can be).
+      let refs: string[] | undefined, boardFailed = false;
       if (chosenBoard) {
         try {
           const list = await store.link.call("forge/issues", withBoard({ state: "all", label: "epic", limit: 100 }, chosenBoard), h.id);
           refs = list.items.map((i: ForgeItem) => i.node.ref);
-        } catch { refs = []; }
+          boardFailed = list.items.length === 0 && (list.errors?.length ?? 0) > 0;
+        } catch { refs = []; boardFailed = true; }
+      }
+      if (t.partial) {
+        readers.first(h.id);
+        if (read !== key) return;
+        if (t.epics.length > 0) {
+          firsts.set(h.id, { t, refs });
+          void draw(false);
+        }
+        t = await store.link.call("work/timeline", ask, h.id);
       }
       // A machine whose forge failed answers with no epic and only the forge's error: a failed read, not an empty plot
       // with "Last update just now" (#5971, as the Mac's #5969).
       one = t.epics.length === 0 && (t.errors?.length ?? 0) > 0
         ? { problem: (t.errors ?? []).map((e) => hosts.length > 1 ? `${h.name}: ${e}` : e).join("\n") }
         : { t, refs };
+      if (one.t) firsts.delete(h.id);
+      readers.done(h.id, boardFailed ? undefined : one.t?.scopes);
     } catch (e) {
       one = { problem: hosts.length > 1 ? `${h.name}: ${describe(e)}` : describe(e) };
+      readers.done(h.id, undefined);
     }
     got.push(one);
-    if (read === key) answered.value = got.length;
-    if (read === key && got.length < hosts.length && one.t) void draw(false);
-  }));
+    if (read !== key) return;
+    answered.value = got.length;
+    const more = askNext();
+    if (got.length < machines.value && one.t) void draw(false);
+    await more;
+  };
+  const askNext = async () => {
+    const ids = new Set(readers.next());
+    machines.value += ids.size;
+    await Promise.all(hosts.filter((h) => ids.has(h.id)).map(askOne));
+  };
+  let late = Promise.resolve();
+  const timer = setTimeout(() => {
+    if (read !== key) return;
+    readers.late();
+    late = askNext();
+  }, lateAfter);
+  await askNext();
+  clearTimeout(timer);
+  await late;
   if (read !== key) return;
+  keepWork(scopesPage, `timeline|${chosen.id}`, { scopes: [...readers.scopes], source } satisfies KeptScopes);
   await draw(true);
 }
 

@@ -21,7 +21,8 @@ host installs it beside agentsd.
   [messaging contract](../reference/messaging-contract.md)).
 
 WhatsApp gives no history, so the server keeps its own: each message the webhook gets and
-each message the number sends, the newest 2,000 for 30 days (4 MB of text at most), in
+each message the number sends, the newest 2,000 for 30 days (4 MiB of text at most, and a text
+over 64 KiB is cut), in
 `~/.agents/whatsapp/<phone number id>.json` (`WHATSAPP_STORE_DIR` puts it somewhere else).
 A message from before the server ran, or older than that, is not there.
 

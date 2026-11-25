@@ -136,7 +136,7 @@ from the root (`agentsd/backups.go:69,72`). It holds nothing else.
 |---|---|---|---|
 | `~/.agents/settings/*.json` | Settings that follow the person (see `docs/reference/agents-folder.md`) | fixed shape | n/a |
 | `~/.agents/summaries/*` | Daily summaries, none written since #5853 | the newest 3, 90 days after their last change (#6714) | hourly |
-| `~/.agents/checks/suggestions.json` | Daily-check findings | 50 suggestions, 200 dismissals (`dailychecks.go:38,48`) | on write |
+| `~/.agents/checks/suggestions.json` | Daily-check findings | 50 suggestions, 200 dismissals (`dailychecks.go:38,48`); no 90-day age-out: an exception to the 90-day rule until [#7023](https://github.com/agentloops-dev/agent-loops/issues/7023) removes the daily checks (Alex, 2026-11-24) | on write |
 | `~/.agents-secrets/secrets.env`, `connections.json`, `provider-secrets.json` | Personal secrets, OAuth connections (Linux; the Keychain on a Mac), machine provider secrets | one per entry; `connections.json`: 16 of 64 KiB each (#6743) | the person edits them |
 | `~/.agents-secrets/sessions/<agent>.json` | Session-only secrets | Values go at archive; the file goes at delete; orphans are swept at start (`sessionsecrets.go:221-275`) | archive, delete, start |
 
@@ -403,7 +403,7 @@ newer than a row above for the same store.
 | `<root>/lock-seen.json` | key-value | Replay IDs of signed requests | 4,096 of 128 bytes each, 2 days, the one signed first goes first; a cutoff refuses what went | `Go/internal/agentsd/lockcheck.go` (`openLockSeen`) | #6723 |
 | `<root>/assessments/` | document | Runtime assessments | The newest 50; 90 days from the start; 256 KiB per file | `Go/internal/agentsd/assess_store.go` | #6724 |
 | `<folder>/.agents/pins.json` | key-value | Pinned pages, views, sessions and workflows, and hidden views | 10 of each and 50; 4 KiB a pin, 1 KiB a hidden view, 128 KiB a folder; until removed (no age, on purpose: a person's choices, committed with the folder) | `Go/internal/agentsd/pins.go` (`pinsFileMost`) | #6725 |
-| `~/.agents/checks/suggestions.json` | document | Daily-check findings and dismissals | 50 findings, 200 dismissals, no age | `Go/internal/agentsd/dailychecks.go:39,49` | #6726 |
+| `~/.agents/checks/suggestions.json` | document | Daily-check findings and dismissals | 50 findings, 200 dismissals; no 90-day age-out: an exception to the 90-day rule until [#7023](https://github.com/agentloops-dev/agent-loops/issues/7023) removes the daily checks (Alex, 2026-11-24) | `Go/internal/agentsd/dailychecks.go:39,49` | #6726, #7023 |
 | `~/.agents/mcp.removed.json` | key-value | Removed MCP servers | 100 of 256 KiB each, 90 days from the removal; refuses when full | `Go/internal/agentsd/removedconnectors.go` (`openRemovedConnectors`) | #6727 |
 | `<root>/review-dismissals.json` | key-value | Dismissed PR links | 2,000 of 8 KiB each, 90 days from the PR's last change or its dismissal, the oldest first; For Review leaves out a PR unchanged for 90 days; goes with its folder | `Go/internal/agentsd/reviews.go` (`openReviewMarks`) | #6728 |
 | `<root>/review-opened.json` | key-value | Opened PR links | 2,000 of 8 KiB each, 90 days from the PR's last change or its opening, the oldest first; goes with its folder | `Go/internal/agentsd/reviews.go` (`openReviewMarks`) | #6729 |
@@ -424,8 +424,10 @@ newer than a row above for the same store.
 | `<root>/folders.json` | key-value | The folders of this machine: path, added, archived, pinned | 10,000 of 16 KiB each, else refused; until deleted (no age, on purpose); stays in the data root on purpose: paths of one machine (Alex, 2026-11-24) | `Go/internal/agentsd/store/store.go` (`foldersMost`, `checkFolders`) | #6744 |
 | `~/.agents/settings/wake.json` | key-value | Keep awake, grace hours, warm runtimes | One, 4 KiB. Moved from the data root; shared by the machines that share the folder (Alex, 2026-11-24) | `Go/internal/agentsd/wake.go` (`Set`) | #6745 |
 | `~/.agents/settings/backup-settings.json` | key-value | Backup target and Keep | One entry a machine, 100 of 32 KiB, else refused. Moved from the data root (Alex, 2026-11-24) | `Go/internal/agentsd/backups.go` (`keepBackupEntry`) | #6746 |
+| `~/.agents/settings/image-hosts.json` | key-value | The hosts the person allowed images from | One entry a machine, 100 of 100 hosts and 32 KiB, else refused; until removed | `Go/internal/agentsd/imagehosts.go` (`changeImageHosts`) | #7138 |
 | `<root>/allowances.json` | key-value | Allowance for each credential | 90 days; 500 of 64 KiB, the oldest goes. Derived, stays in the data root | `Go/internal/agentsd/allowances.go` (`boundAllowancesLocked`) | #6747 |
 | `<root>/runtime-accounts.json` | key-value | Runtime accounts the person added and named | Until removed; 100 of 4 KiB, else refused. Stays in the data root (Alex, 2026-11-24) | `Go/internal/agentsd/accounts.go` (`saveAccountsLocked`) | #6748 |
+| `<root>/relay/granted.json` | key-value | A SHA-256 of the stand-in bearer last granted for each runtime whose sign-in this Mac lends | Until the next grant replaces it; 2 entries, one a runtime | `Go/internal/mac/signin/relays.go` (`keep`) | #7170 |
 | `<root>/mcp-approvals.json` | key-value | The person's MCP server approvals | 2,000 of each kind, 8 KiB each, else refused; 90 days after the server went. Stays in the data root: a trust source | `Go/internal/agentsd/approvalbounds.go` | #6749 |
 | `<root>/plugin-approvals.json` | key-value | The person's plugin approvals | 2,000 of each kind, 8 KiB each, else refused; 90 days after the plugin went. Stays in the data root: a trust source | `Go/internal/agentsd/approvalbounds.go` | #6750 |
 | `<root>/policy.json`, `policy-seen.json` | key-value | Signed copy of the org policy | 1 MiB (larger: applied, not kept) and 4 KiB. Stays in the data root: a trust source (Alex, 2026-11-24) | `Go/internal/agentsd/policy.go` (`toldPolicy`) | #6751 |
@@ -511,6 +513,8 @@ These had no row above. Paths in the evidence are relative to `Go/internal/`.
 | `v1/approvals/<person>/` | document | Signed approvals | 2,000 of 8 KiB a person, else refused; until the person is removed (no age before, on purpose: the same file is not approved again; #6970) | `controlplane/approvals.go` (`forgetApprovals`, `sweepApprovalsOfGone`) |
 | `v1/failed-makes/<provider>.json` | log | Failed makes | 5 a provider, 64 KiB; 90 days, on write and hourly; deleted with the provider (#6971) | `controlplane/providers/defaults.go` (`SweepFailedMakes`) |
 | `v1/maturity/<id>.json` | document | Feature maturity evidence | 84 of 4 KiB, updated in place, else refused; no age, on purpose: a rating is current state (#6905, #6972) | `controlplane/maturity/store.go` (`update`) |
+| `<root>/store-sizes.json` | key-value | The last measurement of each declared store | 200 of 4 KiB, 90 days; replaced hourly (#6906) | `agentsd/storesizes.go` (`openStoreSizes`) |
+| `v1/store-sizes.json` | key-value | The last measurement of each declared store | 1, 128 KiB; replaced every 6 hours (#6906) | `controlplane/storesizes.go` (`measureStores`) |
 
 Mixed files follow these decisions: `workflows.json` splits into document/configuration, key-value
 run state, and log history; `lineage.jsonl` stays an append log with a separate bounded graph

@@ -22,9 +22,15 @@ Each one must do one of these:
   opening. The baseline may only shrink: a count above the source's is stale and fails, and
   so does a line or a count that the branch's merge base with origin/main does not have.
 
+Each `kind=` comment, and each Spec of a store that no small file declares, has one row in
+Go/internal/storesizes/catalogue.json (#6906), which the store sizes are measured by: its
+`sources` names the file, with the same kind, and the same limits where the comment's are plain
+(`limitsNote` says why they differ).
+
 `--baseline` writes the baseline with no new entries; `--selftest` checks the check.
 """
 import collections
+import json
 import pathlib
 import re
 import subprocess
@@ -32,6 +38,7 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 BASELINE = "scripts/store-bounds-baseline.txt"
+CATALOGUE = "Go/internal/storesizes/catalogue.json"
 KINDS = {"document", "log", "time series", "graph", "blob", "key-value", "cache", "secret"}
 STATE_KINDS = {"document", "graph", "key-value", "secret", "blob"}
 
@@ -144,6 +151,53 @@ def openings(rel, source):
     return bare, bad
 
 
+def number(value):
+    """The bytes or count that a value of a note says first, and the words after it."""
+    m = re.match(r"([1-9][\d_]*)\s*(?:([KMGT])(i?)B|B)?\s*(.*)$", value)
+    scale = {"": 1, "K": 1, "M": 2, "G": 3, "T": 4}
+    size = 1024 if m[3] else 1000
+    return int(m[1].replace("_", "")) * (size ** scale[m[2]] if m[2] else 1), m[4]
+
+
+def catalogue_problems(sources, rows):
+    """Where the catalogue of store sizes (#6906) and the declarations do not agree."""
+    found, listed = [], collections.defaultdict(list)
+    for row in rows:
+        for rel in row["sources"]:
+            listed[rel].append(row)
+        if "spec" in row and not any(f'"{row["spec"]}"' in sources.get(rel, "") for rel in row["sources"]):
+            found.append(f"{CATALOGUE}: {row['id']}: no Spec named {row['spec']} in {row['sources']}")
+    for rel in sorted(listed.keys() | sources.keys()):
+        notes = []
+        for line in sources.get(rel, "").splitlines():
+            note = NOTE.search(line)
+            if note and note[1].startswith("kind="):
+                notes.append(dict(p.strip().split("=", 1) for p in note[1].split(";") if "=" in p))
+        left = [row for row in listed[rel] if "spec" not in row]
+        for note in notes:
+            row = next((r for r in left if r["kind"] == note["kind"] and limits_agree(r, note)), None)
+            if row:
+                left.remove(row)
+            else:
+                found.append(f"{rel}: store-bounds: no row in {CATALOGUE} has kind={note['kind']} "
+                             "and these limits; add one or change it")
+        found += [f"{CATALOGUE}: {row['id']}: {rel} does not declare it" for row in left]
+    return found
+
+
+def limits_agree(row, note):
+    if "limitsNote" in row:
+        return True
+    if "count" in note and row.get("maxRecords") != number(note["count"])[0]:
+        return False
+    if "size" in note:
+        size, words = number(note["size"])
+        # With a count, a size "a machine" is a record's.
+        if not words or "count" not in note and re.match(r"a (person|machine|home|folder)\b", words):
+            return row.get("maxBytes") == size
+    return True
+
+
 def read_baseline(text):
     out = {}
     for line in text.splitlines():
@@ -242,6 +296,16 @@ def selftest():
     assert problems('import "x/internal/agentsd/store"\n' + 'store.Spec{Name: "a"}')
     assert not problems(outside + "other.Spec{}")
     assert TEST.search("Go/internal/a/a_test.go") and not TEST.search("App/Sources/A.swift")
+    row = {"id": "a", "kind": "log", "maxBytes": 1 << 30, "sources": ["a.go"]}
+    assert not catalogue_problems({"a.go": good}, [row])
+    assert catalogue_problems({"a.go": good}, []), "a store in no row"
+    assert catalogue_problems({"a.go": ""}, [row]), "a row with no store"
+    assert catalogue_problems({"a.go": good + good}, [row]), "two stores, one row"
+    assert catalogue_problems({"a.go": good}, [row | {"kind": "blob"}])
+    assert catalogue_problems({"a.go": good}, [row | {"maxBytes": 1}])
+    assert not catalogue_problems({"a.go": good}, [row | {"maxBytes": 1, "limitsNote": "why"}])
+    assert not catalogue_problems({"a.go": '"s"'}, [row | {"spec": "s"}])
+    assert catalogue_problems({"a.go": ""}, [row | {"spec": "s"}])
     print("check-store-bounds: selftest ok")
 
 
@@ -260,6 +324,7 @@ def main():
         path.write_text(head + "".join(f"{n} {k}\n" for k, n in sorted(kept.items()) if n))
         return 0
     found, _ = check(sources, baseline, before)
+    found += catalogue_problems(sources, json.loads((ROOT / CATALOGUE).read_text()))
     for problem in found:
         print(problem, file=sys.stderr)
     return 1 if found else 0

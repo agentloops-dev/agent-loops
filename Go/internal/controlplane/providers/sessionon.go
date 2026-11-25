@@ -213,6 +213,11 @@ func (p *Providers) sendFolder(fromName, agent string, params json.RawMessage, c
 	if deliver != nil && deliver.Method != method {
 		return nil, invalid("The signed request is not that step.")
 	}
+	ended, err := p.partOf(method, host, name, &out)
+	if err != nil {
+		return nil, err
+	}
+	defer ended()
 	reply := p.deliverPeer(deliver, method, rawOf(step), caller, host, patience)
 	if reply == nil {
 		return nil, fail(CodeHostOffline, "%s did not answer.", name)
@@ -224,6 +229,73 @@ func (p *Providers) sendFolder(fromName, agent string, params json.RawMessage, c
 		return nil, fail(CodeHostOffline, "%s's answer could not be read.", name)
 	}
 	return out, nil
+}
+
+// SendPartsAtOnce is the most parts of sends in flight to one machine, and from one machine
+// off its lane (#7120): about 22 MB, well under what a link may have waiting (queuedBytes).
+const SendPartsAtOnce = 4
+
+// partWait is how long a part waits for a place: with the delivery, under the asking
+// machine's own wait (controllink's askWait).
+const partWait = 30 * time.Second
+
+// partOf takes a place for a step that carries a part of a file, says in out how many may be
+// in flight, and gives what ends it. Another step needs none.
+func (p *Providers) partOf(method, host, name string, out *wire.MachineFolderSent) (func(), error) {
+	if method != MethodReceiveUpload && method != MethodSendRead {
+		return func() {}, nil
+	}
+	ended, ok := p.partPlace(host)
+	if !ok {
+		return nil, fail(CodeHostOffline, "%s is busy with other sends.", name)
+	}
+	// Through another copy its parts would wait in line with the copies' other lines.
+	if p.router.HostCan(host, wire.CapFoldersSendParts1) && p.router.Holds(host) {
+		out.PartsAtOnce = new(int64(SendPartsAtOnce))
+	}
+	return ended, nil
+}
+
+// partPlace waits for one of host's places for a part, and gives what ends it.
+func (p *Providers) partPlace(host string) (func(), bool) {
+	p.mu.Lock()
+	if p.partPlaces == nil {
+		p.partPlaces = map[string]chan struct{}{}
+	}
+	places := p.partPlaces[host]
+	if places == nil {
+		places = make(chan struct{}, SendPartsAtOnce)
+		p.partPlaces[host] = places
+	}
+	p.mu.Unlock()
+	wait := time.NewTimer(partWait)
+	defer wait.Stop()
+	select {
+	case places <- struct{}{}:
+		return func() { <-places }, true
+	case <-wait.C:
+		return nil, false
+	}
+}
+
+// IsPart says a machine's call on channel 0 is a part of a send: machines/sendFolder with an
+// upload or a read, which another call need not wait for.
+func IsPart(method string, params json.RawMessage) bool {
+	if method != MethodHostMachines {
+		return false
+	}
+	var call struct {
+		Method string `json:"method"`
+		Params struct {
+			Upload       json.RawMessage `json:"upload"`
+			UploadSigned bool            `json:"uploadSigned"`
+			Read         json.RawMessage `json:"read"`
+		} `json:"params"`
+	}
+	if json.Unmarshal(params, &call) != nil || call.Method != MethodSendFolder {
+		return false
+	}
+	return call.Params.Upload != nil || call.Params.UploadSigned || call.Params.Read != nil
 }
 
 // inProject says host has a folder in project, as it joined it (#3277).

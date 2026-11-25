@@ -48,29 +48,10 @@ func (d *Daemon) receiveUpload(r wire.ReceiveUploadRequest) error {
 	if r.Offset+int64(len(r.Data)) > receiveLimit {
 		return Invalid("That is more than 8 GB.")
 	}
-	if r.Offset == 0 {
-		sweepTransfers(d.incomingFolder())
-		os.Remove(path)
+	if r.Offset < 0 {
+		return Invalid("That is not a part of an upload.")
 	}
-	if err := os.MkdirAll(d.incomingFolder(), 0o700); err != nil {
-		return fileError(CodeFileNotReadable, err.Error())
-	}
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY, 0o600)
-	if err != nil {
-		return fileError(CodeFileNotReadable, err.Error())
-	}
-	defer f.Close()
-	fi, err := f.Stat()
-	if err != nil {
-		return fileError(CodeFileNotReadable, err.Error())
-	}
-	if fi.Size() != r.Offset {
-		return Invalid("A part of the upload is missing. Send again.")
-	}
-	if _, err := f.WriteAt(r.Data, r.Offset); err != nil {
-		return fileError(CodeFileNotReadable, err.Error())
-	}
-	return nil
+	return d.writePart(r, path)
 }
 
 // receiveFolder is the folder a send names: absolute, or under the home with ~/.
@@ -230,6 +211,9 @@ func (d *Daemon) receiveInto(r wire.ReceiveRequest, keepChanges bool) (summary w
 		return summary, err
 	}
 	if err := receiveCheckBranches(r); err != nil {
+		return summary, err
+	}
+	if err := d.wholeUploads(bundle, patch); err != nil {
 		return summary, err
 	}
 	m, _ := receiveLocks.LoadOrStore(path, &sync.Mutex{})

@@ -106,6 +106,7 @@ func appToolCalls() []appTool {
 		{"docs_read", (*Daemon).docsReadTool},
 		{"estimate_issue", (*Daemon).estimateIssueTool},
 		{"conflict_risk_analysis", (*Daemon).conflictRiskTool},
+		{"list_stores", (*Daemon).listStoresTool},
 		{"commit_trailers", (*Daemon).commitTrailersTool},
 		{"set_ci_secret", (*Daemon).setCISecret},
 		{"set_ci_variable", (*Daemon).setCIVariable},
