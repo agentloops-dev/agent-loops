@@ -1,6 +1,7 @@
 package signin
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -22,8 +23,9 @@ var Policies = map[string]Policy{
 	"codex":  {Upstream: "chatgpt.com", File: ".codex/auth.json"},
 }
 
-// Relays is HostSignInRelays: one relay per runtime, started on its first grant and kept
-// for the host's life. Its keys and certificates are in <root>/relay; its log, which says
+// Relays is HostSignInRelays: one relay per runtime, started on its first grant, or on the
+// first tunnel after a restart of a host that granted it (#7170), and kept for the host's
+// life. Its keys and certificates are in <root>/relay; its log, which says
 // only what was asked and how it was answered, is host-relay.log, rolled at 1 MB.
 type Relays struct {
 	Root, Logs, Home string
@@ -33,6 +35,7 @@ type Relays struct {
 	mu      sync.Mutex
 	relays  map[string]*Relay
 	sources map[string]Source
+	stopped bool
 	logMu   sync.Mutex
 }
 
@@ -78,16 +81,9 @@ func (s *Relays) Grant(runtime string) (Grant, error) {
 	if _, err := src.Current(); err != nil {
 		return Grant{}, fmt.Errorf("This Mac is not signed in to %s the way a server can use.", runtime)
 	}
-	certs := Certificates{Folder: filepath.Join(s.Root, "relay")}
+	certs := s.certs()
 	s.mu.Lock()
-	r := s.relays[runtime]
-	if r == nil {
-		r = &Relay{Upstream: p.Upstream, Source: src, Certs: certs, Log: s.write}
-		if s.relays == nil {
-			s.relays = map[string]*Relay{}
-		}
-		s.relays[runtime] = r
-	}
+	r := s.relay(runtime, p, src)
 	s.mu.Unlock()
 	if _, err := r.Start(); err != nil {
 		return Grant{}, err
@@ -96,31 +92,113 @@ func (s *Relays) Grant(runtime string) (Grant, error) {
 	if err != nil {
 		return Grant{}, err
 	}
-	r.ExpectClientBearer(ClientBearer(standIn))
 	ca, err := certs.CAPEM()
 	if err != nil {
 		return Grant{}, err
+	}
+	bearer := ClientBearer(standIn)
+	r.ExpectClientBearer(bearer)
+	if err := s.keep(runtime, bearerHash(bearer)); err != nil {
+		// The lend works until this host restarts.
+		s.write("the grant of " + runtime + " could not be kept: " + err.Error())
 	}
 	s.write("granted " + runtime + " for a tunnel")
 	return Grant{Runtime: runtime, CACertificate: ca, StandIn: standIn}, nil
 }
 
 // Port is where runtime's relay listens once granted: what a tunnel connects to; 0 if none.
+// A borrower keeps its stand-in over this host's restart and does not ask again, so a grant
+// made before the restart starts its relay here (#7170). The sign-in itself is read only
+// when a request comes.
 func (s *Relays) Port(runtime string) int {
+	src := s.SignIn(runtime)
 	s.mu.Lock()
-	r := s.relays[runtime]
-	s.mu.Unlock()
-	if r == nil {
+	defer s.mu.Unlock()
+	if r := s.relays[runtime]; r != nil {
+		return r.Port()
+	}
+	if src == nil || s.stopped {
 		return 0
 	}
-	return r.Port()
+	hash := s.granted()[runtime]
+	if hash == "" {
+		return 0
+	}
+	r := s.relay(runtime, Policies[runtime], src)
+	r.bearer = hash // nobody else has r before s.mu is let go
+	port, err := r.Start()
+	if err != nil {
+		delete(s.relays, runtime)
+		s.write("relaying " + runtime + " again failed: " + err.Error())
+		return 0
+	}
+	s.write("relaying " + runtime + " again, as granted before the restart")
+	return port
+}
+
+// relay is runtime's relay, made if need be, with the lock held.
+func (s *Relays) relay(runtime string, p Policy, src Source) *Relay {
+	r := s.relays[runtime]
+	if r == nil {
+		r = &Relay{Upstream: p.Upstream, Source: src, Certs: s.certs(), Log: s.write}
+		if s.relays == nil {
+			s.relays = map[string]*Relay{}
+		}
+		s.relays[runtime] = r
+	}
+	return r
+}
+
+func (s *Relays) certs() Certificates { return Certificates{Folder: filepath.Join(s.Root, "relay")} }
+
+// grantedFile holds the hash of the last stand-in bearer granted for each runtime, never
+// the bearer: an entry per runtime of Policies at most.
+func (s *Relays) grantedFile() string { return filepath.Join(s.certs().Folder, "granted.json") }
+
+// granted is what grantedFile holds, with the lock held; empty when there is none to read.
+func (s *Relays) granted() map[string]string {
+	kept := map[string]string{}
+	b, err := os.ReadFile(s.grantedFile())
+	if err == nil {
+		err = json.Unmarshal(b, &kept)
+	}
+	if err != nil && !os.IsNotExist(err) {
+		s.write("the kept grants could not be read: " + err.Error())
+	}
+	if err != nil {
+		return map[string]string{}
+	}
+	out := map[string]string{}
+	for runtime := range Policies {
+		if h := kept[runtime]; h != "" {
+			out[runtime] = h
+		}
+	}
+	return out
+}
+
+// keep writes the hash of runtime's granted bearer, whole or not at all.
+func (s *Relays) keep(runtime, hash string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	all := s.granted()
+	all[runtime] = hash
+	b, err := json.Marshal(all)
+	if err != nil {
+		return err
+	}
+	next := s.grantedFile() + ".new"
+	if err := os.WriteFile(next, b, 0o600); err != nil {
+		return err
+	}
+	return os.Rename(next, s.grantedFile())
 }
 
 // Stop closes every relay.
 func (s *Relays) Stop() {
 	s.mu.Lock()
 	all := s.relays
-	s.relays = nil
+	s.relays, s.stopped = nil, true
 	s.mu.Unlock()
 	for _, r := range all {
 		r.Stop()
