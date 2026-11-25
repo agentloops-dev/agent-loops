@@ -5,7 +5,8 @@ It finds each place where product code opens a store (OPENINGS, below):
 
 - Go: a file written by path, a folder store, a rolling log, or a control-plane key family
   (a `"v1/<family>/"` literal);
-- Swift: a file written, or a SQLite file opened;
+- Swift: a file written, a SQLite file opened, or `UserDefaults` written (`set(_:forKey:)`, and `putEntry`, which
+  bounds an entry). An `@AppStorage` is not seen: it is one fixed key;
 - web: an IndexedDB database, `localStorage` or `sessionStorage` (`setItem` of any storage, and `putEntry`,
   which bounds an entry), or Cache Storage.
 
@@ -54,6 +55,9 @@ SWIFT = [
     (re.compile(r"(\.write)\(to:"), "write(to:)"),
     (re.compile(r"\b(createFile)\(atPath:"), None),
     (re.compile(r"\b(sqlite3_open\w*)\("), None),
+    # putEntry is the bounded UserDefaults (Packages/AgentsKit/Sources/AgentsKitCore/Model/KeyValueBounds.swift).
+    (re.compile(r"(?<!\w)(set)\(.*\bforKey:"), "UserDefaults.set"),
+    (re.compile(r"(?<!func )\b(putEntry)\("), None),
 ]
 # putEntry is the web's bounded localStorage and sessionStorage (Web/src/model/keyValue.ts).
 WEB = [
@@ -289,6 +293,12 @@ def selftest():
     assert not problems('const p = "v1/new/"')
     assert not problems(write, "Go/internal/a/a.go", {key: 1})
     assert problems("try data.write(to: url)", "App/Sources/A.swift")
+    for call in ("defaults.set(value, forKey: key)", "UserDefaults.standard.set(try? encode(x), forKey: Self.key)",
+                 "store.putEntry(value, forKey: key, most: 9)", "set(value, forKey: key)"):
+        assert problems(call, "App/Sources/A.swift"), call
+        assert not problems(good.replace("log", "key-value") + call, "App/Sources/A.swift"), call
+    assert not problems("public func putEntry(_ value: String, forKey key: String) -> Bool {", "App/Sources/A.swift")
+    assert not problems("set(value)", "App/Sources/A.swift")
     assert problems('indexedDB.open("x", 1)', "Web/src/a.ts")
     for call in ("localStorage.setItem(k, v)", "storage?.setItem(k, v)", "this.storage?.setItem(k, v)", "putEntry(s, k, v, 9)"):
         assert problems(call, "Web/src/a.ts"), call

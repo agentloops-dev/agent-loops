@@ -51,6 +51,8 @@ func (d *Daemon) storeBases(base string) []string {
 	switch base {
 	case "root":
 		base = d.Store.Loc.Root
+	case "cache":
+		base = d.Store.Loc.Cache
 	case "logs":
 		base = d.Store.Loc.Logs
 	case "settings":

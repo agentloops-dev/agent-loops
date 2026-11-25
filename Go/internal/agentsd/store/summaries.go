@@ -1,11 +1,14 @@
 package store
 
 import (
+	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"os"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/diskjson"
@@ -165,17 +168,51 @@ func (s *Store) WriteSummaries() error {
 // writeSummaries is WriteSummaries with summaryWrite held.
 func (s *Store) writeSummaries() error {
 	s.mu.Lock()
-	f := summaryFile{Version: summariesVersion, Records: make(map[wire.UUID]summaryRecord, len(s.stamps))}
+	type kept struct {
+		id   wire.UUID
+		last wire.Date
+		b    []byte
+	}
+	var all []kept
 	for id, st := range s.stamps {
-		if a := s.agents[id]; a != nil && a.State == wire.AgentStateArchived {
-			f.Records[id] = summaryRecord{Stamp: st, Agent: *a}
+		a := s.agents[id]
+		if a == nil || a.State != wire.AgentStateArchived {
+			continue
 		}
+		b, err := json.Marshal(summaryRecord{Stamp: st, Agent: *a})
+		if err != nil {
+			continue
+		}
+		if len(b) > summaryMost {
+			log.Printf("archived-summaries.json: the summary of agent %s is over %d bytes: left out; its record is read in full", id, summaryMost)
+			continue
+		}
+		all = append(all, kept{id, a.LastActivityAt, b})
 	}
 	s.mu.Unlock()
-	b, err := json.Marshal(f)
+	// The newest first, so that a file over its size leaves out the oldest, which are read in full.
+	slices.SortFunc(all, func(x, y kept) int {
+		if c := cmp.Compare(y.last.Time().UnixNano(), x.last.Time().UnixNano()); c != 0 {
+			return c
+		}
+		return strings.Compare(string(x.id), string(y.id))
+	})
+	total, records := 0, make(map[wire.UUID]json.RawMessage, len(all))
+	for i, r := range all {
+		if total += len(r.b); total > summariesMost {
+			log.Printf("archived-summaries.json: over %d bytes: %d older summaries left out; those records are read in full", summariesMost, len(all)-i)
+			break
+		}
+		records[r.id] = r.b
+	}
+	b, err := json.Marshal(struct {
+		Version int                           `json:"version"`
+		Records map[wire.UUID]json.RawMessage `json:"records"`
+	}{summariesVersion, records})
 	if err != nil {
 		return err
 	}
+	// store-bounds: kind=cache; size=64MiB; age=90d; applied=on write (the oldest are left out)
 	return WriteAtomically(s.Loc.Summaries(), b, 0o600)
 }
 

@@ -43,6 +43,12 @@ public enum FirstBuild {
         ideas[((tick % ideas.count) + ideas.count) % ideas.count]
     }
 
+    /// The most bytes an idea may take (#7252): a longer one is not sent, and its words stay in the box.
+    public static let ideaBytes = 64 * 1024
+    /// Said then. The web page's `ideaTooLong`.
+    public static let ideaTooLong = "This idea is not sent: it is over 64 KB. Make it shorter."
+    public static func isTooLong(_ idea: String) -> Bool { idea.utf8.count > ideaBytes }
+
     /// The words Submit sends: trimmed, or nil while there is nothing to send.
     public static func submission(_ text: String) -> String? {
         let words = text.trimmingCharacters(in: .whitespacesAndNewlines)

@@ -20,6 +20,7 @@ public enum ClientDefaults {
         for (key, value) in defaults.dictionaryRepresentation() {
             if key.hasPrefix("sidebar.folds") || key.hasPrefix("sidebar.folded"), let names = value as? [String] {
                 let left = names.filter { fold in folder(ofFold: fold).map { !gone($0) } ?? true }
+                // store-bounds: not a store: it only takes names out of the folds that SidebarFolds declares
                 if left.count != names.count { defaults.set(left, forKey: key) }
             } else if let stored = folder(ofWidthKey: key), gone(stored) {
                 defaults.removeObject(forKey: key)
@@ -33,6 +34,29 @@ public enum ClientDefaults {
                                            listed: some Sequence<FolderKey>) -> [String: String] {
         let kept = Set(listed.filter { $0.host == host }.map { name($0.stored) })
         return map.filter { !isOn(host, $0.value) || kept.contains(name($0.value)) }
+    }
+
+    /// `map` with the folder last used in the project `id`. One over a limit, or past the count, is not kept; none goes
+    /// to make room (#7252). What an older build kept over it stays until its folder goes.
+    public static func projectFolders(_ map: [String: String], remembering stored: String, for id: String) -> [String: String] {
+        let bounds = KeyValueBounds.projectFolders
+        guard id.utf8.count + stored.utf8.count <= bounds.bytes, map[id] != nil || map.count < bounds.count else { return map }
+        var map = map
+        map[id] = stored
+        return map
+    }
+
+    /// Keeps the folders last used in the projects.
+    public static func keepProjectFolders(_ map: [String: String], forKey key: String, in defaults: UserDefaults) {
+        // store-bounds: kind=key-value; count=1000; age=until-deleted; action=refuse; record=2KiB; applied=on write, and when a machine lists its folders or leaves
+        defaults.putEntry(map, forKey: key, most: KeyValueBounds.projectFolders.total)
+    }
+
+    /// Keeps the folder that New Session, or the window, was last in.
+    public static func keepFolder(_ folder: FolderKey?, forKey key: String, in defaults: UserDefaults) {
+        guard let stored = folder?.stored else { return defaults.removeObject(forKey: key) }
+        // store-bounds: kind=key-value; count=2; age=until-deleted; action=refuse; record=4KiB; applied=on write
+        defaults.putEntry(stored, forKey: key, most: KeyValueBounds.folder)
     }
 
     /// Drops the machine-lock pins kept under another name than `name`: another control

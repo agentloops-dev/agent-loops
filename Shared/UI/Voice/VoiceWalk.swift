@@ -19,6 +19,7 @@ enum VoiceWalk {
     static func perform(_ request: [String: Any]) -> [String: Any] {
         let voice = VoiceMode.shared
         if let enable = request["enable"] as? Bool {
+            // store-bounds: not a store: one fixed key, a switch
             WindowDefaults.store.set(enable, forKey: VoiceSettings.onKey)
         }
         if request["walk"] as? Bool == true {

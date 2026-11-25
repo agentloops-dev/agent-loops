@@ -8,6 +8,8 @@ public struct HeldDrafts {
         + "It stays until Agent Loops closes. Send or empty another draft to save it."
     public static let tooBig = "This draft is not saved: it is over 1 MB. It stays until Agent Loops closes. "
         + "Send it, or make it shorter to save it."
+    /// Said when the start form is refused, once until it fits (#7252).
+    public static let formTooBig = "The new session's choices are not saved: they are over 1 MB."
     /// A full store looks for drafts past their 30 days at most this often.
     static let sweepEvery: TimeInterval = 60 * 60
 

@@ -10,6 +10,7 @@
 # What it writes, per architecture (x86_64, aarch64):
 #   agentsd-linux-<arch>             the binary, static and stripped
 #   agentsd-linux-<arch>.sha256      its SHA-256, its identity on the server
+#   agents-control-linux-<arch>      the control plane (#6610), and its .sha256: `agentsd install --control`
 #   github-mcp-linux-<arch>          the github MCP server, and its .sha256
 #   linear-mcp-linux-<arch>          the linear MCP server, and its .sha256
 #   gitlab-mcp-linux-<arch>          the gitlab MCP server (#1629), and its .sha256
@@ -51,7 +52,7 @@ mkdir -p $work
 sha256() { if (( $+commands[shasum] )); then shasum -a 256 $1; else sha256sum $1; fi | cut -d' ' -f1 }
 
 for arch goarch in x86_64 amd64 aarch64 arm64; do
-    for product cmd in agentsd agentsd github-mcp github-mcp linear-mcp linear-mcp gitlab-mcp gitlab-mcp email-mcp email-mcp jira-mcp jira-mcp slack-mcp slack-mcp googlechat-mcp googlechat-mcp whatsapp-mcp whatsapp-mcp sentry-mcp sentry-mcp betterstack-mcp betterstack-mcp forgejo-mcp forgejo-mcp bitbucket-mcp bitbucket-mcp azuredevops-mcp azuredevops-mcp azureboards-mcp azureboards-mcp; do
+    for product cmd in agentsd agentsd agents-control agents-control github-mcp github-mcp linear-mcp linear-mcp gitlab-mcp gitlab-mcp email-mcp email-mcp jira-mcp jira-mcp slack-mcp slack-mcp googlechat-mcp googlechat-mcp whatsapp-mcp whatsapp-mcp sentry-mcp sentry-mcp betterstack-mcp betterstack-mcp forgejo-mcp forgejo-mcp bitbucket-mcp bitbucket-mcp azuredevops-mcp azuredevops-mcp azureboards-mcp azureboards-mcp; do
         print "building $product for $arch-linux…"
         GOOS=linux GOARCH=$goarch $root/Go/scripts/go.sh build -trimpath \
             -ldflags "-s -w -X github.com/agentloops-dev/agent-loops/Go/internal/buildinfo.Version=$version" \
@@ -63,7 +64,7 @@ done
 (( check )) && exit 0
 mkdir -p $out
 for arch in x86_64 aarch64; do
-    for product in agentsd github-mcp linear-mcp gitlab-mcp email-mcp jira-mcp slack-mcp googlechat-mcp whatsapp-mcp sentry-mcp betterstack-mcp forgejo-mcp bitbucket-mcp azuredevops-mcp azureboards-mcp; do
+    for product in agentsd agents-control github-mcp linear-mcp gitlab-mcp email-mcp jira-mcp slack-mcp googlechat-mcp whatsapp-mcp sentry-mcp betterstack-mcp forgejo-mcp bitbucket-mcp azuredevops-mcp azureboards-mcp; do
         cp $work/$product-linux-$arch $out/$product-linux-$arch
         sha256 $out/$product-linux-$arch > $out/$product-linux-$arch.sha256
     done
