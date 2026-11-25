@@ -78,10 +78,17 @@ struct FolderListView: View {
         let making = model.machinesBeingMade + model.machinesMaking.count
         // Seven or fewer are drawn as they are: nothing asks about their sessions (P20261117-1).
         let ranks = MachinesGroup.ranks(machines.count, making: making)
+        // The control plane's machines stay in the group, as a pinned one does (#6591).
         let listed = machines.map { host in
-            MachinesGroup.Machine(host: host, pinned: pins.contains(host), active: ranks && model.machineIsActive(host))
+            MachinesGroup.Machine(host: host, pinned: pins.contains(host) || model.runsControlPlane(host),
+                                  active: ranks && model.machineIsActive(host))
         }
         return MachinesGroup.rows(listed, making: making)
+    }
+
+    /// The machines that run the control plane first (#6591), when the person sees them as such.
+    private func controlFirst(_ hosts: [MachineRef]) -> [MachineRef] {
+        hosts.filter { model.runsControlPlane($0) } + hosts.filter { !model.runsControlPlane($0) }
     }
 
     /// No runtime can be started on: Runtimes' icon says so in red (#587); one nearly used
@@ -261,9 +268,16 @@ struct FolderListView: View {
                 // At most seven rows, then All Machines (N) (#5286).
                 let rows = machineRows
                 Section(isExpanded: $showsMachines) {
-                    ForEach(rows.machines, id: \.self) { host in
-                        MachineRow(host: host) { picked = [.machine(host)] }
-                            .appText(.supporting).sidebarInk(.machine(host)).tag(SidebarItem.machine(host))
+                    // The control plane's machines first, for an admin with its flag (#6591).
+                    ForEach(controlFirst(rows.machines), id: \.self) { host in
+                        Group {
+                            if model.runsControlPlane(host), ControlPlaneMachine.controlOnly(model.controlPlaneHosts?.first { $0.id == host }) {
+                                ControlPlaneRow(host: host) { picked = [.machine(host)] }
+                            } else {
+                                MachineRow(host: host) { picked = [.machine(host)] }
+                            }
+                        }
+                        .appText(.supporting).sidebarInk(.machine(host)).tag(SidebarItem.machine(host))
                     }
                     // The machines New Machine is making, and the ones the control plane gave up
                     // waiting for (#4610), and every other machine of the person's that never
