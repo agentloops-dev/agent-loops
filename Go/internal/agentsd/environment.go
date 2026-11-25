@@ -270,6 +270,7 @@ func (d *Daemon) writeYoursEnvLocked(home string, part wire.JSONValue, before us
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return false, err
 	}
+	// store-bounds: kind=key-value; count=1; size=64KiB; age=until-deleted; applied=on write (refused)
 	if err := store.WriteAtomically(path, []byte(u.Text), 0o600); err != nil {
 		return false, err
 	}
@@ -288,6 +289,7 @@ func (d *Daemon) discardYoursEnv() error {
 	path := d.yoursEnvPath()
 	err := os.MkdirAll(filepath.Dir(path), 0o700)
 	if err == nil {
+		// store-bounds: kind=key-value; count=1; size=64KiB; age=until-deleted; applied=on write (the text the settings sent, refused above this size)
 		err = store.WriteAtomically(path, []byte(mark.EnvText), 0o600)
 	}
 	if err == nil {
@@ -347,6 +349,7 @@ func (d *Daemon) envWrite(r wire.EnvWriteRequest) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return err
 	}
+	// store-bounds: not a store: a file in the person's project
 	if err := store.WriteAtomically(path, next, 0o644); err != nil {
 		return err
 	}

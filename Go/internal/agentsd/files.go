@@ -281,7 +281,7 @@ func (d *Daemon) registerFiles() {
 		if err != nil {
 			return wire.FilesWriteResponse{}, err
 		}
-		if len(r.Data) > 25<<20 {
+		if len(r.Data) > attachmentMost {
 			return wire.FilesWriteResponse{}, Invalid("That is more than 25 MB.")
 		}
 		path, err := d.writeAttachment(root, r.Name, r.Data)

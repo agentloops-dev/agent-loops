@@ -512,7 +512,7 @@ func (d *Daemon) mcpAddByHand(ctx context.Context, r wire.MCPAddByHandRequest) (
 		}
 	}
 	if err := mcpcatalog.Upsert(path, name, v.built.entry); err != nil {
-		return wire.MCPAddAnswer{}, mcpRefusal(mcpcatalog.Unreadable(path))
+		return wire.MCPAddAnswer{}, mcpRefusal(mcpcatalog.WriteError(path, err))
 	}
 	addedAt := nowFunc()
 	byHand := true

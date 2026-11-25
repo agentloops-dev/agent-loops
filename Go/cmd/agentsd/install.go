@@ -84,6 +84,10 @@ func installCommand(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
+	if why := refuseInstall(o.Home, control, noAgents); why != "" {
+		fmt.Fprintln(os.Stderr, "The machine is not set up:", why)
+		return 1
+	}
 	for i, p := range o.Projects {
 		o.Projects[i], _ = filepath.Abs(p)
 	}
@@ -114,6 +118,20 @@ func installCommand(args []string) int {
 	}
 	fmt.Println("This machine is set up.")
 	return 0
+}
+
+// refuseInstall says why this install would put the other role beside the one this machine
+// has (#7305), before it changes anything; "" when it would not. install --control, with the
+// agents too, asks the control plane itself (HostCode), as only it knows its people.
+func refuseInstall(home string, control, noAgents bool) string {
+	joined := hostsetup.LayoutOf(home).Joined()
+	switch {
+	case control && noAgents && joined:
+		return "agents run on this machine already, and could read the control plane's key and its data. Run the control plane on another machine, or remove this host first. When you are the only person, leave out --no-agents."
+	case !control && !joined && controlsetup.Installed(home):
+		return "this machine runs a control plane, and agents here could read its key and its data. Join another machine instead. When you are the only person, run agentsd install --control with no --no-agents."
+	}
+	return ""
 }
 
 // installControl runs the control role (#6610); with the agents role too, it returns the host

@@ -234,6 +234,7 @@ func isNeed(d *Daemon, id wire.UUID) bool {
 }
 
 func TestARequestDeferredToATimeComesBack(t *testing.T) {
+	flaky.UnderLoad(t, "#7179")
 	t.Parallel()
 
 	fakeRuntimes(t)

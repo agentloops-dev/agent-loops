@@ -58,7 +58,7 @@ func (d *Daemon) checkFolderPolicyGuarded(folder string) {
 	s, known := d.stateOf(folder, folderPolicyFile)
 	moved, tightened := false, false
 	switch {
-	case !known && (digest == nil || validPolicyRules(data)):
+	case !known && (digest == nil || len(data) <= guardedMostBytes && validPolicyRules(data)):
 		// First seen: a missing file sets nothing, and a file already there (committed
 		// before this machine ever looked) is trusted only when it is valid. An empty or
 		// half-written file is not (#6525): it is a change against no approved copy.
@@ -75,7 +75,7 @@ func (d *Daemon) checkFolderPolicyGuarded(folder string) {
 			approved, _ = policylayers.Validate(s.ApprovedContent)
 		}
 		next, err := policylayers.Validate(data)
-		if err == nil && !policylayers.Looser(approved, next) {
+		if err == nil && len(data) <= guardedMostBytes && !policylayers.Looser(approved, next) {
 			s.ApprovedDigest, s.ApprovedContent, s.Pending = digest, data, nil
 			tightened, moved = true, true
 		} else {
@@ -210,6 +210,9 @@ func (d *Daemon) setFolderPolicy(r wire.SetFolderPolicyRequest) (wire.PolicyRule
 	}
 	b, err := folderPolicyOrdered(r.Rules)
 	if err != nil {
+		return wire.PolicyRules{}, Invalid("%v", err)
+	}
+	if err := tooLarge(folderPolicyFile, b, guardedMostBytes); err != nil {
 		return wire.PolicyRules{}, Invalid("%v", err)
 	}
 	path := filepath.Join(folder, folderPolicyFile)

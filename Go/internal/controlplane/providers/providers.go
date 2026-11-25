@@ -585,6 +585,18 @@ func (p *Providers) agentHost(given map[string]any, person string) error {
 	if named, ok := str(given["host"]); ok && p.hooks.OwnerOf(named) != person {
 		return fail(CodeNoSuchHost, "No machine is called %s.", named)
 	}
+	if named, ok := str(given["host"]); ok {
+		return p.refuseControlOnly(named)
+	}
+	return nil
+}
+
+// refuseControlOnly refuses an action on a machine that only runs the control plane
+// (#7304): it has no workspace, and nothing on it answers.
+func (p *Providers) refuseControlOnly(host string) error {
+	if h := p.records.Host(host); h != nil && h.ControlOnly() {
+		return invalid("%s", h.ControlOnlyRefusal())
+	}
 	return nil
 }
 
@@ -685,6 +697,14 @@ func contains(list []string, s string) bool {
 
 func (p *Providers) answer(method string, params json.RawMessage, caller Caller, who string) (any, error) {
 	if err := p.refuse(method, params, caller); err != nil {
+		return nil, err
+	}
+	var named struct {
+		Host string `json:"host"`
+	}
+	// A call that names no machine, or does not read, is refused or answered below.
+	_ = decodeJSON(params, &named)
+	if err := p.refuseControlOnly(named.Host); err != nil {
 		return nil, err
 	}
 	switch method {

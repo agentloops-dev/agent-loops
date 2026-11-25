@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
@@ -58,6 +59,12 @@ func TestTheControlPlaneIsAMachine(t *testing.T) {
 	if _, err := window.Call(context.Background(), "", "machines/remove", map[string]any{"host": id}); err == nil {
 		t.Fatal("a machine with only the control role was removed")
 	}
+	for _, method := range []string{"machines/deletePreview", "machines/retrySetup"} {
+		if _, err := window.Call(context.Background(), "", method, map[string]any{"host": id}); err == nil ||
+			!strings.Contains(err.Error(), "runs the control plane and no agents") {
+			t.Errorf("%s: %v", method, err)
+		}
+	}
 	// Another start finds it and writes no second one.
 	must(t, p.s.ensureControlMachine(context.Background()))
 	if n := len(p.s.records.Machines()); n != 1 {
@@ -78,5 +85,28 @@ func TestAHostOnTheControlMachineHasBothRoles(t *testing.T) {
 	}
 	if p.s.controlMachineID() != box.member.Host {
 		t.Fatal("the copy names another record")
+	}
+}
+
+// A Linux control plane's record has the id control, and a host that joins from its machine
+// gets the id mac: the host's record gets both roles and the other is dropped (#7304).
+func TestAHostTakesOverALinuxControlMachine(t *testing.T) {
+	t.Parallel()
+	st := store.NewMemory()
+	mid := "MACHINE-1"
+	must(t, records.New(st).AddHost(context.Background(), records.MachineRecord{ID: "control", Name: "Box",
+		Platform: "Linux", MachineID: &mid, Roles: []string{records.RoleControl}}))
+	p := startPlane(t, st, controllink.NewPrivateKey())
+	if got := p.s.controlMachineID(); got != "control" {
+		t.Fatalf("the copy names %q before the join", got)
+	}
+	box := p.host(mid)
+	all := p.s.records.Machines()
+	if len(all) != 1 || all[0].ID != "mac" || box.member.Host != "mac" ||
+		!slices.Equal(all[0].Roles, []string{records.RoleAgents, records.RoleControl}) || len(all[0].PublicKey) == 0 {
+		t.Fatalf("%+v, joined as %s", all, box.member.Host)
+	}
+	if got := p.s.controlMachineID(); got != "mac" {
+		t.Fatalf("the copy names %q", got)
 	}
 }

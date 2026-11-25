@@ -101,6 +101,9 @@ func LayoutOf(home string) Layout {
 	return Layout{Dir: d, Bin: filepath.Join(d, "bin"), Root: filepath.Join(d, "root"), Logs: filepath.Join(d, "root", "logs")}
 }
 
+// Joined says whether a host of this install has joined a control plane.
+func (l Layout) Joined() bool { return l.joined() }
+
 func (l Layout) joined() bool {
 	_, err := os.Stat(filepath.Join(l.Root, "control-host.json"))
 	return err == nil

@@ -1,6 +1,7 @@
 package agentsd
 
 import (
+	"cmp"
 	"fmt"
 	"log"
 	"os"
@@ -145,6 +146,37 @@ type adoptedProcess struct {
 	Started int64  `json:"started"`
 }
 
+const (
+	// backgroundMost is the processes background.json holds, and backgroundLineMost the characters of
+	// each one's command line, which is only shown.
+	backgroundMost     = 1000
+	backgroundLineMost = 4 << 10
+)
+
+// boundBackground is h within background.json's limits: the processes started last, each with
+// its command line cut to size.
+func boundBackground(h backgroundHandover) backgroundHandover {
+	type one struct {
+		agent wire.UUID
+		p     adoptedProcess
+	}
+	var all []one
+	for id, ps := range h.Agents {
+		for _, p := range ps {
+			p.Line = cutMarked(p.Line, backgroundLineMost)
+			all = append(all, one{id, p})
+		}
+	}
+	slices.SortFunc(all, func(a, b one) int {
+		return cmp.Or(cmp.Compare(b.p.Started, a.p.Started), cmp.Compare(a.p.Pid, b.p.Pid))
+	})
+	out := backgroundHandover{Agents: map[wire.UUID][]adoptedProcess{}}
+	for _, o := range all[:min(len(all), backgroundMost)] {
+		out.Agents[o.agent] = append(out.Agents[o.agent], o.p)
+	}
+	return out
+}
+
 type backgroundHandover struct {
 	Agents map[wire.UUID][]adoptedProcess `json:"agents"`
 }
@@ -228,8 +260,9 @@ func (d *Daemon) handBackgroundOver() {
 		_ = os.Remove(path)
 		return
 	}
-	b, err := diskjson.Marshal(out)
+	b, err := diskjson.Marshal(boundBackground(out))
 	if err == nil {
+		// store-bounds: kind=key-value; count=1000; size=32KiB a process; age=until-deleted; applied=on write (the oldest are left out), the next start deletes the file
 		err = store.WriteAtomically(path, b, 0o644)
 	}
 	if err != nil {

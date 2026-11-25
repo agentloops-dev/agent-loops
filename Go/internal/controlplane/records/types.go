@@ -189,6 +189,15 @@ func (h MachineRecord) HasRole(role string) bool {
 // ControlOnly says the machine runs the control plane and no agents: nothing dials in with it.
 func (h MachineRecord) ControlOnly() bool { return !h.HasRole(RoleAgents) }
 
+// ControlOnlyRefusal is why a control-only machine is not removed or changed, in the words
+// a person reads; "" for a machine that runs agents.
+func (h MachineRecord) ControlOnlyRefusal() string {
+	if !h.ControlOnly() {
+		return ""
+	}
+	return h.Name + " runs the control plane and no agents. It cannot be removed or changed here: move the control plane first."
+}
+
 // RolesOf is the machine's roles, agents when it has none.
 func RolesOf(h MachineRecord) []string {
 	if len(h.Roles) == 0 {

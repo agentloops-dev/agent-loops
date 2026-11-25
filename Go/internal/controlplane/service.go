@@ -687,6 +687,7 @@ func (s *Service) takeUp(ctx context.Context) error {
 	if err := s.ensureControlMachine(ctx); err != nil {
 		s.log("the control plane's own machine record: " + err.Error())
 	}
+	s.warnBothRoles()
 	for _, h := range s.records.Hosts() {
 		s.router.Know(h.ID)
 	}
@@ -2159,6 +2160,10 @@ func (s *Service) spendHostCode(ctx context.Context, id string, stored *storedCo
 	}
 	// Before the code is spent, so it can be used once there is room (#6758).
 	if err := s.records.MachineRoom(ctx, a.PublicKey); err != nil {
+		return nil, err
+	}
+	// Before the code is spent too, so another machine can use it (#7305).
+	if err := s.refuseBothRoles(a.MachineID, a.PublicKey); err != nil {
 		return nil, err
 	}
 	want := s.joiningHostID(stored, a)

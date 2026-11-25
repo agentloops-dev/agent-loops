@@ -1,6 +1,10 @@
 package records
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/agentloops-dev/agent-loops/Go/internal/machine"
+)
 
 // The people's bounds (#7019, epic #6669). A person's record is never evicted: a new person
 // over a limit is refused, and so is a longer name, sign-in or SCIM user. What the control
@@ -26,8 +30,40 @@ type PersonLimitError struct {
 
 func (e *PersonLimitError) Error() string { return e.Words }
 
-// PersonRoom refuses when there is no room for one more invited person.
-func (r *Records) PersonRoom() error { return r.peopleWithin(invitedBytes) }
+// PersonRoom refuses when there is no room for one more invited person, or no second person
+// may join.
+func (r *Records) PersonRoom() error {
+	if err := r.secondPerson(""); err != nil {
+		return err
+	}
+	return r.peopleWithin(invitedBytes)
+}
+
+// secondPerson refuses the person id who would make a single-user control plane a team while
+// a machine of it runs agents too (#7305; Alex, 2026-11-25). A set-up that is a team with
+// both roles already stays as it is, so its third person is not refused.
+func (r *Records) secondPerson(id string) error {
+	if r.otherPeople(id) != 1 {
+		return nil
+	}
+	for _, h := range r.Machines() {
+		if h.HasRole(RoleControl) && h.HasRole(RoleAgents) {
+			return &PersonLimitError{Full: true, Words: machine.SecondPersonRefused}
+		}
+	}
+	return nil
+}
+
+// otherPeople counts the people but for id: no bots, no removed people.
+func (r *Records) otherPeople(id string) int {
+	n := 0
+	for _, p := range r.People() {
+		if p.ID != id && !p.IsRemoved() && !p.IsBot() {
+			n++
+		}
+	}
+	return n
+}
 
 // peopleWithin refuses when the people this copy holds and grow more bytes are over
 // PeopleMostBytes. It lists nothing: a first sync makes a person a call (#2430).
@@ -57,6 +93,11 @@ func (r *Records) personWithin(before *Person, after Person) error {
 	size, err := personSize(after)
 	if err != nil {
 		return err
+	}
+	if !after.IsBot() && !after.IsRemoved() && (before == nil || before.IsRemoved()) {
+		if err := r.secondPerson(after.ID); err != nil {
+			return err
+		}
 	}
 	grow := size
 	if before != nil {

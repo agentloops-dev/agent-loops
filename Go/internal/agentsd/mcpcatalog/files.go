@@ -92,13 +92,31 @@ func Remove(path, name string) error {
 	return write(root, path)
 }
 
+// MostBytes is the largest mcp.json the app writes. A file that is larger already can shrink.
+const MostBytes = 1 << 20
+
+// WriteError is what a person is told of an mcp.json that was not written.
+func WriteError(path string, err error) *Error {
+	if errors.Is(err, store.ErrLimit) {
+		return Failed(err.Error())
+	}
+	return Unreadable(path)
+}
+
 // write is whole and renamed over the old one, keeping the file's own permissions.
 func write(root skillcatalog.Value, path string) error {
 	mode := os.FileMode(0o644)
 	if info, err := os.Stat(path); err == nil {
 		mode = info.Mode().Perm()
 	}
-	return store.WriteAtomically(path, []byte(root.Stringified()+"\n"), mode)
+	b := []byte(root.Stringified() + "\n")
+	if len(b) > MostBytes {
+		if info, err := os.Stat(path); err != nil || int64(len(b)) > info.Size() {
+			return fmt.Errorf("%s: %d bytes, at most %d: %w", path, len(b), MostBytes, store.ErrLimit)
+		}
+	}
+	// store-bounds: kind=key-value; size=1MiB a file; count=1; age=until-deleted; applied=on write (refused)
+	return store.WriteAtomically(path, b, mode)
 }
 
 // Sidecar is catalog-mcp.json in the daemon's root: which servers the app added, from the

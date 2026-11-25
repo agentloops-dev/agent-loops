@@ -411,7 +411,7 @@ func (d *Daemon) mcpInstall(ctx context.Context, st mcpStaged, r wire.MCPAddRequ
 		entry.Set("env", envObj)
 	}
 	if err := mcpcatalog.Upsert(path, name, entry); err != nil {
-		return wire.ManagedMCPServer{}, mcpcatalog.Unreadable(path)
+		return wire.ManagedMCPServer{}, mcpcatalog.WriteError(path, err)
 	}
 	addedAt := nowFunc()
 	// The server is in and works: without its record it shows as one added by hand.
