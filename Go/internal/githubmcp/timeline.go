@@ -11,8 +11,9 @@ import (
 // daemon puts the epics of a project's repos on one time axis and forecasts the open ones
 // (lineage/forecast.go).
 
-// TimelineChild is an epic's sub-issue with its dates (the Item's CreatedAt and ClosedAt),
-// StateReason (completed, not_planned or ""), and when each pull request that closes it opened.
+// TimelineChild is an epic's sub-issue: of the Item only the repo, number, state, dates (CreatedAt and
+// ClosedAt) and labels (no colours), as no sub-issue is drawn (#7026); its StateReason (completed,
+// not_planned or ""), and when each pull request that closes it opened.
 type TimelineChild struct {
 	Item
 	StateReason string
@@ -57,13 +58,17 @@ const (
 const timelineListQuery = `query($owner: String!, $name: String!, $states: [IssueState!], $since: DateTime, $first: Int!, $releases: Int!) {
   repository(owner: $owner, name: $name) {
     issues(labels: ["epic"], states: $states, filterBy: {since: $since}, first: $first, orderBy: {field: UPDATED_AT, direction: DESC}) {
-      nodes { id number } }
+      nodes { id number labels(first: 50) { nodes { name } } } }
     releases(first: $releases, orderBy: {field: CREATED_AT, direction: DESC}) { nodes { tagName publishedAt url isDraft } } } }`
+
+// timelineChildFields are a sub-issue's: what its epic's block and forecast need, and no field of a list's row
+// (#7026). Each one costs the read time, the priority and the list's counts the most.
+const timelineChildFields = `issueState: state stateReason number createdAt closedAt repository { nameWithOwner } labels(first: 50) { nodes { name } }
+      closedByPullRequestsReferences(first: 5, includeClosedPrs: true) { nodes { createdAt } }`
 
 const timelineEpicsQuery = `query($ids: [ID!]!) {
   nodes(ids: $ids) { ... on Issue { issueState: state ` + itemFields + ` ` + issueFields + `
-    subIssues(first: 100) { nodes { issueState: state ` + itemFields + ` ` + issueFields + `
-      closedByPullRequestsReferences(first: 5, includeClosedPrs: true) { nodes { createdAt } } } } } } }`
+    subIssues(first: 100) { nodes { ` + timelineChildFields + ` } } } } }`
 
 // timelineNode is an epic as timelineEpicsQuery gives it.
 type timelineNode struct {
@@ -81,8 +86,9 @@ type timelineNode struct {
 }
 
 // Timeline is repo's open epics, and those closed since since (RFC 3339), with their
-// sub-issues, and its newest releases (drafts left out).
-func (g *RealGitHub) Timeline(ctx context.Context, repo, since string) (Timeline, error) {
+// sub-issues, and its newest releases (drafts left out). An open epic whose labels skip says yes to
+// is left out, and its sub-issues are not read (#7026).
+func (g *RealGitHub) Timeline(ctx context.Context, repo, since string, skip func(labels []string) bool) (Timeline, error) {
 	owner, name, err := ownerName(repo)
 	if err != nil {
 		return Timeline{}, err
@@ -103,6 +109,10 @@ func (g *RealGitHub) Timeline(ctx context.Context, repo, since string) (Timeline
 				continue
 			}
 			seen[e.Number] = true
+			// lists[0] is the open epics: a closed one is read for the forecast, whatever its labels.
+			if labels, _ := labelsOf(e.Labels.Nodes); n == 0 && skip(labels) {
+				continue
+			}
 			ids = append(ids, e.ID)
 		}
 	}
@@ -132,8 +142,9 @@ type timelineList struct {
 	Repository *struct {
 		Issues struct {
 			Nodes []struct {
-				ID     string `json:"id"`
-				Number int    `json:"number"`
+				ID     string    `json:"id"`
+				Number int       `json:"number"`
+				Labels gqlLabels `json:"labels"`
 			} `json:"nodes"`
 		} `json:"issues"`
 		Releases struct {

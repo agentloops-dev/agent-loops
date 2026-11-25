@@ -82,7 +82,7 @@ func TestForecastIsTheSameForTheSameHistory(t *testing.T) {
 	if !ok || !a.Mid.Equal(b.Mid) || !a.Low.Equal(b.Low) || !a.High.Equal(b.High) {
 		t.Fatalf("two forecasts of the same: %v and %v", a, b)
 	}
-	if !(now.Before(a.Low) && !a.Mid.Before(a.Low) && !a.High.Before(a.Mid)) || len(a.Children) != 5 || a.Children[4].After(a.Mid) {
+	if !(now.Before(a.Low) && !a.Mid.Before(a.Low) && !a.High.Before(a.Mid)) {
 		t.Fatalf("forecast out of order: %+v", a)
 	}
 	wide, _ := m.Forecast(now, 8, 3, 5, 2, Rng("github:issue:o/r#1"))

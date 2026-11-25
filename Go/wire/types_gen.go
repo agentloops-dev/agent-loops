@@ -17634,7 +17634,7 @@ type WorkTimelineBacktest struct {
 	At Date `json:"at"`
 }
 
-// A child of an epic in work/timeline (#4172). item has its labels with their colours, for the hover card's chips (#4428). stateReason is completed or not_planned, where the forge says it. startedAt is the earliest of the first session linked to it in lineage, the opening of the first pull request that closes it, and its close; absent while nothing has started it. waitsForPerson: it is open and labelled alex-todo or needs-account, so it is not forecast. forecastAt is an open child's forecast close: its epic's P50 shared out along the line, in the order of the children.
+// A child of an epic in work/timeline (#4172). item has only its node, state, stateReason, dates and labels (no colours): its title is empty, as no client draws a child (#7026). stateReason is completed or not_planned, where the forge says it. startedAt is the earliest of the first session linked to it in lineage, the opening of the first pull request that closes it, and its close; absent while nothing has started it. waitsForPerson: it is open and labelled alex-todo or needs-account, so it is not forecast.
 type WorkTimelineChild struct {
 	Item ForgeItem `json:"item"`
 
@@ -17647,8 +17647,6 @@ type WorkTimelineChild struct {
 	ClosedAt *Date `json:"closedAt,omitzero"`
 
 	WaitsForPerson *bool `json:"waitsForPerson,omitzero"`
-
-	ForecastAt *Date `json:"forecastAt,omitzero"`
 }
 
 // An epic in work/timeline (#4172). children are its sub-issues (at most 100). segments are its lines, the first first: a segment starts at its first child's start (absent when none has started) and ends at its last child's close (absent while one is open); a child filed after a segment ended starts a new one. forecast is the open segment's close, absent when it has no child to forecast or there is too little history.

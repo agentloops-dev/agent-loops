@@ -16,10 +16,10 @@ const item = (n, { feature, state = "open" } = {}) => drop({
   node: { kind: "issue", ref: `github:alexec/Agents#${n}` }, title: `Issue ${n}`, state, labels: [], assignees: [], updatedAt: 0, comments: 0, feature,
 });
 // `created` is when it was filed: by default when it started (or closed), so the ghost adds nothing.
-const child = (n, { created, started, closed, forecast, waits, reason } = {}) => drop({
+const child = (n, { created, started, closed, waits, reason } = {}) => drop({
   item: item(n, { state: closed === undefined ? "open" : "closed" }), stateReason: reason,
-  createdAt: wire(created ?? started ?? closed ?? forecast ?? -100),
-  startedAt: wire(started), closedAt: wire(closed), waitsForPerson: waits ? true : undefined, forecastAt: wire(forecast),
+  createdAt: wire(created ?? started ?? closed ?? -100),
+  startedAt: wire(started), closedAt: wire(closed), waitsForPerson: waits ? true : undefined,
 });
 const fc = (low, mid, high, waits) => drop({ low: wire(low), mid: wire(mid), high: wire(high), waits });
 // By default created with its first child, and closed with its last once all are.
@@ -104,12 +104,12 @@ test("only an open epic has a ghost, to its predicted finish; none on hold is sh
 
 test("an open line is forecast, waits or stops at Now", () => {
   const timeline = { epics: [
-    epic(4, [child(20, { started: -8, closed: -3 }), child(21, { started: -1, forecast: 3 }), child(22, { forecast: 5 })],
+    epic(4, [child(20, { started: -8, closed: -3 }), child(21, { started: -1 }), child(22)],
       { forecast: fc(2, 5, 11) }),
     epic(5, [child(23, { started: -4 }), child(24, { waits: true })], { forecast: fc(1, 2, 3, true) }),
     epic(6, [child(25, { started: -4 })]),
     // Not started, but forecast: a ghost from Now to the forecast.
-    epic(7, [child(26, { forecast: 6 })], { created: -3, forecast: fc(5, 6, 8) }),
+    epic(7, [child(26)], { created: -3, forecast: fc(5, 6, 8) }),
   ], releases: [] };
   const lines = t.timelineLines(timeline, now);
   assert.deepEqual(lines.map((l) => l.how), [{ how: "forecast" }, { how: "waits", count: 1 }, { how: "open" }, { how: "forecast" }]);
@@ -191,7 +191,7 @@ test("each priority is a band of rows, High at the top, and none on hold (#6093,
     with_(epic(31, [child(51, { started: -5, closed: -1 })]), "high"),
     with_(epic(32, [child(52, { started: -18, closed: -12 })]), "high"),
     with_(epic(33, [child(53, { started: -15, closed: -2 })]), "low"),
-    with_(epic(34, [child(54, { started: -15 }), child(55, { forecast: 6 })], { forecast: fc(4, 6, 10) }), "high", true),
+    with_(epic(34, [child(54, { started: -15 }), child(55)], { forecast: fc(4, 6, 10) }), "high", true),
   ], releases: [] };
   const lines = t.layout(t.timelineLines(timeline, now));
   const rowOf = Object.fromEntries(lines.map((l) => [l.number, l.row]));
@@ -229,7 +229,7 @@ test("the rows do not change between ranges for the same read", () => {
     epic(1, [child(10, { started: -150, closed: -100 })]),
     epic(2, [child(11, { started: -120, closed: -2 })]),
     epic(3, [child(12, { started: -90, closed: -60 })]),
-    epic(4, [child(13, { started: -20 }), child(14, { forecast: 6 })], { forecast: fc(4, 6, 10) }),
+    epic(4, [child(13, { started: -20 }), child(14)], { forecast: fc(4, 6, 10) }),
     epic(5, [child(15, { started: -5, closed: -1 })]),
   ], releases: [] };
   const lines = t.timelineLines(timeline, now);
@@ -302,7 +302,7 @@ test("the hit is the block", () => {
 });
 
 test("the hover card is a row of three lines: the title, the labels, the prediction", () => {
-  const labelled = epic(24, [child(94, { started: -3, closed: -1 }), child(95, { forecast: 2 })], { forecast: fc(1, 2, 4) });
+  const labelled = epic(24, [child(94, { started: -3, closed: -1 }), child(95)], { forecast: fc(1, 2, 4) });
   labelled.item.labels = [{ name: "enhancement", color: "a2eeef" }];
   const timeline = { epics: [labelled], releases: [], backtest: { error: 2.16, width: 1.3, cuts: 69, holds: 55, epics: 21, at: wire(0) } };
   const lines = t.timelineLines(timeline, now);
@@ -319,7 +319,7 @@ test("the hover card is a row of three lines: the title, the labels, the predict
 test("the words say about", () => {
   const backtest = { error: 2.16, width: 1.3, cuts: 69, holds: 55, epics: 21, at: wire(0) };
   const [line] = t.timelineLines({ epics: [
-    epic(22, [child(90, { started: -3, closed: -1 }), child(91, { forecast: 2 })], { forecast: fc(1, 2, 4) }),
+    epic(22, [child(90, { started: -3, closed: -1 }), child(91)], { forecast: fc(1, 2, 4) }),
   ], releases: [] }, now);
   const words = t.joinWords(line, backtest, now);
   assert.equal(words.length, 3);
@@ -334,10 +334,10 @@ test("the words say about", () => {
 test("under 700 px the epics are a list, in the order they close", () => {
   const timeline = { epics: [
     epic(30, [child(1, { started: -5, closed: -2 })]),
-    epic(31, [child(2, { started: -3, closed: -1 }), child(3, { forecast: 3 })], { forecast: fc(2, 3, 5) }),
+    epic(31, [child(2, { started: -3, closed: -1 }), child(3)], { forecast: fc(2, 3, 5) }),
     epic(32, [child(4, { started: -2, waits: true }), child(5, { started: -2, waits: true })]),
     epic(33, [child(6, { started: -4, closed: -3 })]),
-    epic(34, [child(7, { started: -1, closed: -0.5 }), child(8, { forecast: 1 })], { forecast: fc(0.5, 1, 2) }),
+    epic(34, [child(7, { started: -1, closed: -0.5 }), child(8)], { forecast: fc(0.5, 1, 2) }),
   ], releases: [] };
   const rows = t.epicRows(t.timelineLines(timeline, now), t.rangeWindow("twoDays", now), now);
   assert.deepEqual(rows.map((r) => r.line.number), ["#34", "#31", "#32", "#30", "#33"]);

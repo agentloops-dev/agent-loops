@@ -16,11 +16,11 @@ struct WorkTimelineTests {
     }
 
     /// `created` is when it was filed: by default when it started (or closed), so the ghost adds nothing.
-    static func child(_ n: Int, created: Double? = nil, started: Double? = nil, closed: Double? = nil, forecast: Double? = nil,
+    static func child(_ n: Int, created: Double? = nil, started: Double? = nil, closed: Double? = nil,
                       waits: Bool = false, reason: String? = nil) -> DaemonAPI.WorkTimelineChild {
         DaemonAPI.WorkTimelineChild(item: item(n, state: closed == nil ? "open" : "closed"), stateReason: reason,
-                                    createdAt: h(created ?? started ?? closed ?? forecast ?? -100), startedAt: started.map(h), closedAt: closed.map(h),
-                                    waitsForPerson: waits ? true : nil, forecastAt: forecast.map(h))
+                                    createdAt: h(created ?? started ?? closed ?? -100), startedAt: started.map(h), closedAt: closed.map(h),
+                                    waitsForPerson: waits ? true : nil)
     }
 
     /// By default created with its first child, and closed with its last once all are.
@@ -123,13 +123,13 @@ struct WorkTimelineTests {
     @Test func anOpenLineIsForecastWaitsOrStopsAtNow() throws {
         let forecast = DaemonAPI.WorkTimelineForecast(low: Self.h(2), mid: Self.h(5), high: Self.h(11))
         let timeline = DaemonAPI.WorkTimeline(epics: [
-            Self.epic(4, [Self.child(20, started: -8, closed: -3), Self.child(21, started: -1, forecast: 3),
-                          Self.child(22, forecast: 5)], forecast: forecast),
+            Self.epic(4, [Self.child(20, started: -8, closed: -3), Self.child(21, started: -1),
+                          Self.child(22)], forecast: forecast),
             Self.epic(5, [Self.child(23, started: -4), Self.child(24, waits: true)],
                       forecast: .init(low: Self.h(1), mid: Self.h(2), high: Self.h(3), waits: true)),
             Self.epic(6, [Self.child(25, started: -4)]),
             // Not started, but forecast: a ghost from Now to the forecast.
-            Self.epic(7, [Self.child(26, forecast: 6)], created: -3,
+            Self.epic(7, [Self.child(26)], created: -3,
                       forecast: .init(low: Self.h(5), mid: Self.h(6), high: Self.h(8))),
         ])
         let lines = WorkTimeline.lines(timeline, now: Self.now)
@@ -231,7 +231,7 @@ struct WorkTimelineTests {
             Self.with(Self.epic(32, [Self.child(72, started: -15, closed: -12)]), priority: "HIGH"),
             Self.with(Self.epic(33, [Self.child(73, started: -6, closed: -3)]), priority: "low"),
             // On hold: not shown (#7058).
-            Self.with(Self.epic(34, [Self.child(74, started: -4), Self.child(75, forecast: 2)],
+            Self.with(Self.epic(34, [Self.child(74, started: -4), Self.child(75)],
                                 forecast: forecast), priority: "high", onHold: true),
             Self.with(Self.epic(35, [Self.child(76, started: -30, closed: -25)]), priority: "medium"),
         ])
@@ -298,7 +298,7 @@ struct WorkTimelineTests {
             Self.epic(1, [Self.child(10, started: -150, closed: -100)]),
             Self.epic(2, [Self.child(11, started: -120, closed: -2)]),
             Self.epic(3, [Self.child(12, started: -90, closed: -60)]),
-            Self.epic(4, [Self.child(13, started: -20), Self.child(14, forecast: 6)], forecast: forecast),
+            Self.epic(4, [Self.child(13, started: -20), Self.child(14)], forecast: forecast),
             Self.epic(5, [Self.child(15, started: -5, closed: -1)]),
         ])
         let lines = WorkTimeline.lines(timeline, now: Self.now)
@@ -377,7 +377,7 @@ struct WorkTimelineTests {
         let backtest = DaemonAPI.WorkTimelineBacktest(error: 2.16, width: 1.3, cuts: 69, holds: 55, epics: 21, at: Self.now)
         let forecast = DaemonAPI.WorkTimelineForecast(low: Self.h(1), mid: Self.h(2), high: Self.h(4))
         let timeline = DaemonAPI.WorkTimeline(epics: [
-            Self.epic(22, [Self.child(90, started: -3, closed: -1), Self.child(91, forecast: 2)],
+            Self.epic(22, [Self.child(90, started: -3, closed: -1), Self.child(91)],
                       forecast: forecast),
         ])
         let line = WorkTimeline.lines(timeline, now: Self.now)[0]
@@ -428,9 +428,9 @@ struct WorkTimelineTests {
             Self.epic(50, [Self.child(51, started: -10, closed: -6)]),
             Self.epic(52, [Self.child(53, started: -3, closed: -2)]),
             Self.epic(54, [Self.child(55, started: -4)]),
-            Self.epic(56, [Self.child(57, started: -1, forecast: 6)],
+            Self.epic(56, [Self.child(57, started: -1)],
                       forecast: .init(low: Self.h(5), mid: Self.h(6), high: Self.h(9))),
-            Self.epic(58, [Self.child(59, started: -1, forecast: 2)],
+            Self.epic(58, [Self.child(59, started: -1)],
                       forecast: .init(low: Self.h(2), mid: Self.h(2), high: Self.h(2))),
             Self.epic(60, [Self.child(61, started: -2), Self.child(62, waits: true)],
                       forecast: .init(low: Self.h(1), mid: Self.h(1), high: Self.h(1), waits: true)),

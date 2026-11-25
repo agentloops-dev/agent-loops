@@ -55,8 +55,8 @@ public extension DaemonAPI {
         }
     }
 
-    /// A child of an epic: when it started (absent while nothing started it), closed, or is
-    /// forecast to close; `waitsForPerson` when it is labelled for the person, so not forecast.
+    /// A child of an epic: when it started (absent while nothing started it) and closed;
+    /// `waitsForPerson` when it is labelled for the person, so not forecast. Its `item` has no title (#7026).
     struct WorkTimelineChild: Codable, Sendable, Hashable {
         public var item: ForgeItem
         public var stateReason: String?
@@ -64,17 +64,15 @@ public extension DaemonAPI {
         public var startedAt: Date?
         public var closedAt: Date?
         public var waitsForPerson: Bool?
-        public var forecastAt: Date?
 
         public init(item: ForgeItem, stateReason: String? = nil, createdAt: Date, startedAt: Date? = nil,
-                    closedAt: Date? = nil, waitsForPerson: Bool? = nil, forecastAt: Date? = nil) {
+                    closedAt: Date? = nil, waitsForPerson: Bool? = nil) {
             self.item = item
             self.stateReason = stateReason
             self.createdAt = createdAt
             self.startedAt = startedAt
             self.closedAt = closedAt
             self.waitsForPerson = waitsForPerson
-            self.forecastAt = forecastAt
         }
     }
 
