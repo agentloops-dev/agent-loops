@@ -443,12 +443,4 @@ func (r *Records) ChangePeople(ctx context.Context, change func(map[string]Perso
 
 // SeveralPeople says whether more than one person uses the control plane. A bot is no
 // person, and a removed person does not count. One person is the single-user shape.
-func (r *Records) SeveralPeople() bool {
-	n := 0
-	for _, p := range r.People() {
-		if !p.IsRemoved() && !p.IsBot() {
-			n++
-		}
-	}
-	return n > 1
-}
+func (r *Records) SeveralPeople() bool { return r.otherPeople("") > 1 }

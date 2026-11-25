@@ -687,6 +687,7 @@ func (s *Service) takeUp(ctx context.Context) error {
 	if err := s.ensureControlMachine(ctx); err != nil {
 		s.log("the control plane's own machine record: " + err.Error())
 	}
+	s.warnBothRoles()
 	for _, h := range s.records.Hosts() {
 		s.router.Know(h.ID)
 	}

@@ -71,9 +71,8 @@ func TestATeamsControlMachineHellos(t *testing.T) {
 	t.Parallel()
 	p := startPlane(t, store.NewMemory(), controllink.NewPrivateKey())
 	_, owner := p.client("Window")
-	here, there := p.host("MACHINE-1"), p.host("MACHINE-2")
-	must(t, p.s.records.SavePerson(context.Background(), records.Person{ID: records.NewPersonID(), Name: "Sam", Kind: records.KindPerson, Role: records.RoleMember}))
-	_ = owner
+	p.invite(owner, "Sam", wire.UserRoleMember)
+	here, there := controlHostBeforeTheRule(p), p.host("MACHINE-2")
 	params, _ := json.Marshal(fakeHello("MACHINE-1"))
 	if _, err := p.s.methods.HostSaid(there.member.Host, "machine/hello", params); err == nil || !strings.Contains(err.Error(), machine.BothRolesRefused) {
 		t.Fatalf("%v", err)
@@ -81,10 +80,10 @@ func TestATeamsControlMachineHellos(t *testing.T) {
 	if h := p.s.records.Host(there.member.Host); h.MachineID == nil || *h.MachineID != "MACHINE-2" {
 		t.Fatalf("%+v", h)
 	}
-	if _, err := p.s.methods.HostSaid(here.member.Host, "machine/hello", params); err != nil {
+	if _, err := p.s.methods.HostSaid(here, "machine/hello", params); err != nil {
 		t.Fatal(err)
 	}
-	key := p.s.records.Host(here.member.Host).PublicKey
+	key := p.s.records.Host(here).PublicKey
 	if err := p.s.refuseBothRoles("MACHINE-1", key); err != nil {
 		t.Fatal(err)
 	}
@@ -100,4 +99,71 @@ func TestABotIsNoSecondPerson(t *testing.T) {
 		t.Fatal("a bot is counted")
 	}
 	p.host("MACHINE-1")
+}
+
+// controlHostBeforeTheRule makes the plane's machine a set-up from before #7305: it runs agents too.
+func controlHostBeforeTheRule(p *plane) string {
+	id := p.s.controlMachineID()
+	must(p.t, p.s.records.ChangeHost(context.Background(), id, func(h *records.MachineRecord) bool {
+		h.Roles, h.PublicKey = []string{records.RoleAgents, records.RoleControl}, mustPublic(p.t)
+		return true
+	}))
+	return id
+}
+
+// A control plane whose machine runs agents takes no second person, by any way in, and takes
+// one when the agents are gone; a bot is no person.
+func TestBothRolesTakeNoSecondPerson(t *testing.T) {
+	t.Parallel()
+	p := startPlane(t, store.NewMemory(), controllink.NewPrivateKey())
+	_, owner := p.client("Window")
+	// An invite from before the host joined.
+	var invited wire.PersonInvited
+	must(t, json.Unmarshal(call(t, owner, "", "people/invite", wire.PersonInvite{Name: "Sam", Role: wire.UserRoleMember}), &invited))
+	early, err := controllink.ParseCode(invited.Text)
+	must(t, err)
+	box := p.host("MACHINE-1")
+	if e := callError(t, owner, "", "people/invite", wire.PersonInvite{Name: "Kim", Role: wire.UserRoleMember}); !strings.Contains(e, machine.SecondPersonRefused) {
+		t.Fatal(e)
+	}
+	if _, err := controllink.PairClient(context.Background(), early, "Sam's Mac"); err == nil || !strings.Contains(err.Error(), machine.SecondPersonRefused) {
+		t.Fatalf("%v", err)
+	}
+	ctx := context.Background()
+	// A sign-in and SCIM both make a person by this write.
+	if err := p.s.records.SavePerson(ctx, records.Person{ID: records.NewPersonID(), Name: "Kim", Kind: records.KindPerson, Role: records.RoleMember}); err == nil {
+		t.Fatal("a second person was kept")
+	}
+	must(t, p.s.records.SavePerson(ctx, records.Person{ID: records.NewPersonID(), Name: "Bot", Kind: records.KindBot, Role: records.RoleMember}))
+	call(t, owner, "", "machines/remove", map[string]any{"host": box.member.Host})
+	if _, err := controllink.PairClient(ctx, early, "Sam's Mac"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A team with both roles from before the rule keeps them, takes a third person, and is
+// warned of at each start.
+func TestATeamWithBothRolesStays(t *testing.T) {
+	t.Parallel()
+	st, key := store.NewMemory(), controllink.NewPrivateKey()
+	p := startPlane(t, st, key)
+	_, owner := p.client("Window")
+	p.invite(owner, "Sam", wire.UserRoleMember)
+	id := controlHostBeforeTheRule(p)
+	p.invite(owner, "Kim", wire.UserRoleMember)
+	p.s.Stop()
+	again := startPlane(t, st, key)
+	if h := again.s.records.Host(id); h == nil || !h.HasRole(records.RoleAgents) || !h.HasRole(records.RoleControl) {
+		t.Fatalf("%+v", h)
+	}
+	for {
+		select {
+		case l := <-again.lines:
+			if strings.Contains(l, machine.BothRolesWarning) {
+				return
+			}
+		default:
+			t.Fatal("no warning at the start")
+		}
+	}
 }

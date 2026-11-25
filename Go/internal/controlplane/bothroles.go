@@ -52,3 +52,16 @@ func (s *Service) refuseMovedHello(known *records.MachineRecord, machineID strin
 	}
 	return s.refuseBothRoles(machineID, nil)
 }
+
+// warnBothRoles logs, at each start, a team's machine that runs agents and the control plane
+// from before this was refused (Alex, 2026-11-25: it stays, and no agent stops).
+func (s *Service) warnBothRoles() {
+	if s.cfg.Hosted || !s.records.SeveralPeople() {
+		return
+	}
+	for _, h := range s.records.Hosts() {
+		if h.HasRole(records.RoleControl) {
+			s.log("warning: machine " + h.ID + ": " + machine.BothRolesWarning)
+		}
+	}
+}
