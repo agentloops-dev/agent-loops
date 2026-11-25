@@ -2,7 +2,7 @@
 // `SidebarTree` (AgentsKitCore/Sidebar) works it out. Each session under the nearest of its
 // starters the list holds, at every depth, one more indent a level up to `maxIndent` (#3553).
 // Folded by default, the fold kept per row. A folded parent's mark is the most urgent of its own
-// and its live descendants'. A tree in each list: a session is still listed once (#587), under its
+// and its live descendants'. A tree in each list: a session is once in a list (#587, #5917), under its
 // parent only when the same list holds the parent, otherwise as a row of its own with the
 // started-by mark.
 import type { Agent } from "../protocol/generated";

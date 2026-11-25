@@ -24,14 +24,17 @@ struct AgentRow: View {
     private let toggleFold: () -> Void
     /// On the Archived Sessions page (#4448): the time is when it was archived, not its last activity.
     private let showsArchivedTime: Bool
+    /// This row's own id, so its title's field is in it alone (#5917).
+    private let rowID: UUID?
 
     init(agent: Agent, isCompact: Bool = false, place: String? = nil,
-         tree: SidebarTree.Row? = nil, showsArchivedTime: Bool = false, toggleFold: @escaping () -> Void = {}) {
+         tree: SidebarTree.Row? = nil, showsArchivedTime: Bool = false, rowID: UUID? = nil, toggleFold: @escaping () -> Void = {}) {
         given = agent
         self.isCompact = isCompact
         self.place = place
         self.tree = tree
         self.showsArchivedTime = showsArchivedTime
+        self.rowID = rowID
         self.toggleFold = toggleFold
     }
 
@@ -114,7 +117,7 @@ struct AgentRow: View {
                     if agent.drawsUnread, !isCompact {
                         UnreadDot()
                     }
-                    if model.renaming == Renaming(id: agent.id) {
+                    if model.renaming == Renaming(id: agent.id, place: .row(rowID)) {
                         // Edited in place (#751), as Finder renames a file.
                         RenameField(agent: agent)
                             .appText(isCompact ? .supporting : .reading)
@@ -394,7 +397,7 @@ struct AgentRow: View {
                 }
                 // The person's title, which the runtime's no longer replaces (#751).
                 // Each with the list's key (#4796), which works while the list has the keyboard.
-                Button("Rename…") { model.renaming = Renaming(id: agent.id) }
+                Button("Rename…") { model.renaming = Renaming(id: agent.id, place: .row(rowID)) }
                     .keyboardShortcut(ListKey.rename.shortcut)
                 // A question it asked, out of Needs you for an hour, as l does (#4796).
                 if let request = model.work.laterRequest(askedBy: agent.id) {

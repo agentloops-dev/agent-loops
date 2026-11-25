@@ -99,7 +99,7 @@ struct SidebarModelTests {
         #expect(!searched.showsNoSessions)
     }
 
-    @Test func pinnedComeFirstInTheirOrderAndLeaveTheirGroups() {
+    @Test func pinnedComeFirstInTheirOrderAndStayInTheirGroups() {
         let model = AgentsModel()
         let working = agent(api, .running, "working", at: 1)
         let done = agent(api, .finished, "done", at: 2)
@@ -113,8 +113,7 @@ struct SidebarModelTests {
         let fold = SidebarFolderFold(key, label: "api", in: model, isOpen: true)
         // In the order they were put in; never an archived one, nor another host's.
         #expect(fold.pinned.map(\.id) == [done.id, working.id])
-        #expect(fold.groups.map(\.group) == [.needsAttention, .finished])
-        #expect(fold.groups.flatMap(\.agents).map(\.id) == [asking.id, other.id])
+        #expect(Set(fold.groups.flatMap(\.agents).map(\.id)) == [asking.id, working.id, done.id, other.id])
         #expect(fold.archived.map(\.id) == [gone.id])
         #expect(fold.hasLive)
     }
@@ -269,8 +268,8 @@ struct SidebarModelTests {
         return made
     }
 
-    /// A folder folds open straight onto its sessions (#495): every live one no smart
-    /// group lists (#587), newest started first, whatever its state.
+    /// A folder folds open straight onto its sessions (#495): every live one, those a
+    /// smart group lists too (#5917), newest started first, whatever its state.
     @Test func aFoldersSessionsAreOneListNewestStartedFirst() {
         let model = AgentsModel()
         let asking = started(api, .waitingOnUser, "asking", at: 1)
@@ -282,7 +281,7 @@ struct SidebarModelTests {
         model.replacePins([FolderPins(folder: api, pins: [], sessions: [pinned.id])])
 
         let fold = SidebarFolderFold(key, label: "api", in: model, isOpen: true)
-        #expect(fold.sessions.map(\.id) == [done.id])
+        #expect(fold.sessions.map(\.id) == [pinned.id, working.id, done.id, asking.id])
         #expect(fold.pinned.map(\.id) == [pinned.id])
         #expect(SidebarFolderFold(key, label: "api", in: model, isOpen: false).sessions.isEmpty)
     }
@@ -502,7 +501,7 @@ struct SidebarModelTests {
     }
 
     /// Pinned gathers every folder's pinned sessions in pin order, never an archived one
-    /// (#495), and they are not among their folder's own sessions.
+    /// (#495), and they are in their folder's own sessions too (#5917).
     @Test func pinnedGathersEveryFoldersPinsInTheirOrder() {
         let model = AgentsModel()
         let first = started(api, .finished, "first", at: 1)
@@ -516,7 +515,7 @@ struct SidebarModelTests {
 
         #expect(SidebarSmartRow.pinned.agents(in: model, folders: folders).map(\.id) == [second.id, first.id, other.id])
         #expect(SidebarSmartRow.pinned.count(in: model, folders: folders) == 3)
-        #expect(SidebarFolderFold(key, label: "api", in: model, isOpen: true).sessions.isEmpty)
+        #expect(SidebarFolderFold(key, label: "api", in: model, isOpen: true).sessions.map(\.id) == [second.id, first.id])
     }
 
     /// A smart row with nothing in it is not drawn, nor one a search finds nothing in
@@ -535,9 +534,9 @@ struct SidebarModelTests {
         #expect(!SidebarSmartRow.needsYou.isShown(in: model, folders: folders, query: "nothing like it"))
     }
 
-    /// Each live session is listed once (#587): in Pinned, else Needs You, else Working,
-    /// else Unread, else under its folder; and every count says what its group lists.
-    @Test func aSessionIsListedOnceInItsFirstGroup() {
+    /// Each live session is in one smart group at most (#587): Pinned, else Needs You, else Working,
+    /// else Unread; its folder lists every one (#5917); and every count says what its group lists.
+    @Test func aSessionIsInItsFirstGroupAndItsFolder() {
         let model = AgentsModel()
         let pinnedAsking = started(api, .waitingOnUser, "pinned asking", at: 1)
         let asking = started(api, .waitingOnUser, "asking", at: 2)
@@ -559,19 +558,43 @@ struct SidebarModelTests {
         #expect(listed[.working] == [working.id])
         #expect(listed[.unread] == [unread.id])
         let fold = SidebarFolderFold(key, label: "api", in: model, isOpen: true)
-        #expect(fold.sessions.map(\.id) == [read.id])
+        #expect(fold.sessions.map(\.id) == [read, unread, pinnedUnread, working, pinnedWorking, asking, pinnedAsking].map(\.id))
 
         for row in SidebarSmartRow.allCases {
             #expect(row.count(in: model, folders: folders) == listed[row]?.count, "\(row)")
         }
-        let everyRow = listed.values.flatMap { $0 } + fold.sessions.map(\.id)
-        #expect(everyRow.count == Set(everyRow).count, "nothing is listed twice")
-        #expect(Set(everyRow).count == 7, "nothing is left out")
+        let everyRow = listed.values.flatMap { $0 }
+        #expect(everyRow.count == Set(everyRow).count, "no session is in two smart groups")
     }
 
-    /// The session opened from Unread, read now, stays in Unread alone until another is
-    /// opened (#689): not under its folder too.
-    @Test func theSessionUnreadKeepsIsNotUnderItsFolderToo() {
+    /// A failed run's agent and a request's asker have another row in Needs You, and an
+    /// archived starter hides no session: each is in its folder's Sessions (#5917).
+    @Test func aFoldersSessionsHoldAFailedRunAnAskerAndAStartedSession() {
+        let model = AgentsModel()
+        var failed = started(api, .finished, "failed run", at: 1)
+        failed.startedByWorkflow = "nightly"
+        let asking = started(api, .waitingOnUser, "asking", at: 2)
+        let starter = started(api, .archived, "starter", at: 3)
+        var child = started(api, .finished, "child", at: 4)
+        child.startedByAgent = starter.id
+        model.replaceAgents([failed, asking, starter, child])
+        var held = summary(api)
+        held.approvals = [Approval(kind: .workflowFailed, key: "nightly", title: "nightly", digest: nil, line: "failed",
+                                   actions: [], agentID: failed.id)]
+        model.upsert(held)
+        model.replaceRequests([NeedRequest(id: UUID(), kind: .decide, source: "question", title: "Which?", folder: api,
+                                           askedBy: asking.id, waiters: [.init(agent: asking.id, since: t0)],
+                                           askedAt: t0)])
+
+        #expect(SidebarSmartRow.needsYou.agents(in: model, folders: [key]).isEmpty)
+        let sessions = SidebarFolderFold(key, label: "api", in: model, isOpen: true).sessions
+        #expect(sessions.map(\.id) == [child.id, asking.id, failed.id])
+        #expect(SidebarTree.nest(sessions) { _ in nil }.tops.map(\.id) == [child.id, asking.id, failed.id])
+    }
+
+    /// The session opened from Unread, read now, stays in Unread until another is
+    /// opened (#495), and in its folder too (#5917).
+    @Test func theSessionUnreadKeepsIsUnderItsFolderToo() {
         let model = AgentsModel()
         let opened = started(api, .finished, "opened", at: 2)
         let read = started(api, .finished, "read", at: 1)
@@ -581,10 +604,8 @@ struct SidebarModelTests {
         model.replacePins([FolderPins(folder: api, pins: [], sessions: [pinned.id])])
 
         #expect(SidebarSmartRow.keptInUnread(opened.id, in: model)?.id == opened.id)
-        let fold = SidebarFolderFold(key, label: "api", in: model, isOpen: true, keptInUnread: opened.id)
-        #expect(fold.sessions.map(\.id) == [read.id])
-        // Let go, it is under its folder.
-        #expect(SidebarFolderFold(key, label: "api", in: model, isOpen: true).sessions.map(\.id) == [opened.id, read.id])
+        let fold = SidebarFolderFold(key, label: "api", in: model, isOpen: true)
+        #expect(fold.sessions.map(\.id) == [pinned.id, working.id, opened.id, read.id])
         // A search, or a home elsewhere, lets it go too.
         #expect(SidebarSmartRow.keptInUnread(opened.id, in: model, query: "opened") == nil)
         #expect(SidebarSmartRow.keptInUnread(working.id, in: model) == nil)
@@ -622,7 +643,7 @@ struct SidebarModelTests {
         let noReview = SidebarSmartRow.all.subtracting([.forReview])
         #expect(Set(SidebarSmartRow.unread.agents(in: model, folders: folders, on: noReview).map(\.id)) == [report.id, unread.id])
 
-        // Opened and read (the host clears the file), For Review keeps it, not its folder.
+        // Opened and read (the host clears the file), For Review keeps it, and its folder has it (#5917).
         var read = report
         read.isUnread = false
         read.fileToSee = nil
@@ -631,8 +652,8 @@ struct SidebarModelTests {
         #expect(SidebarSmartRow.keeper(fileToSee: true, on: noReview) == .unread)
         #expect(SidebarSmartRow.keeper(fileToSee: false) == .unread)
         #expect(SidebarSmartRow.keptInUnread(read.id, in: model, keptBy: .forReview)?.id == read.id)
-        let fold = SidebarFolderFold(key, label: "api", in: model, isOpen: true, keptInUnread: read.id, keptBy: .forReview)
-        #expect(!fold.sessions.contains { $0.id == read.id })
+        let fold = SidebarFolderFold(key, label: "api", in: model, isOpen: true)
+        #expect(fold.sessions.contains { $0.id == read.id })
         #expect(SidebarSmartRow.keptInUnread(read.id, in: model, on: noReview, keptBy: .forReview) == nil)
     }
 
@@ -689,7 +710,7 @@ struct SidebarModelTests {
     }
 
     /// A smart group turned off (#846) is not drawn, and its sessions go to the next group
-    /// they fit, or under their folder: still listed once, none left out.
+    /// they fit, which is one group at most; their folder lists all (#5917).
     @Test func aGroupTurnedOffPassesItsSessionsOn() {
         let model = AgentsModel()
         let pinnedAsking = started(api, .waitingOnUser, "pinned asking", at: 1)
@@ -713,15 +734,13 @@ struct SidebarModelTests {
                 #expect(row.count(in: model, folders: folders, on: on) == rows[row]?.count, "\(row) \(on)")
             }
             let own = SidebarFolderFold(key, label: "api", in: model, isOpen: true, on: on).sessions.map(\.id)
-            let every = rows.values.flatMap { $0 } + own
-            #expect(every.count == Set(every).count && Set(every).count == 7, "\(on): once each, none left out")
+            let every = rows.values.flatMap { $0 }
+            #expect(every.count == Set(every).count, "\(on): in one group at most")
+            #expect(own.count == 7 && Set(own).count == 7, "\(on): the folder lists each once")
             return (rows, own)
         }
 
-        // All on: those asking to be archived are in Needs You, not counted under their
-        // folder too (#937).
-        let all = listing(SidebarSmartRow.all)
-        #expect(all.own == [read.id])
+        _ = listing(SidebarSmartRow.all)
 
         // Pinned off: the pinned session that asks is in Needs You.
         let noPins = listing(SidebarSmartRow.all.subtracting([.pinned]))
@@ -729,19 +748,13 @@ struct SidebarModelTests {
         #expect(Set(noPins.rows[.needsYou] ?? []) == [pinnedAsking.id, asking.id, archiving.id, readArchiving.id])
         #expect(!SidebarSmartRow.pinned.isShown(in: model, folders: folders, on: SidebarSmartRow.all.subtracting([.pinned])))
 
-        // Needs You off: the unread one asking to be archived goes to Unread, the one
-        // asking a question under its folder.
+        // Needs You off: the unread one asking to be archived goes to Unread.
         let noNeeds = listing(SidebarSmartRow.all.subtracting([.needsYou]))
         #expect(Set(noNeeds.rows[.unread] ?? []) == [archiving.id, unread.id])
-        #expect(noNeeds.own.contains(asking.id))
 
-        // Working off: the working session goes under its folder.
-        let noWorking = listing(SidebarSmartRow.all.subtracting([.working]))
-        #expect(noWorking.own.contains(working.id))
-
-        // Every group off: all seven under the folder, the pinned one too.
-        let none = listing([])
-        #expect(Set(none.own) == Set([pinnedAsking, asking, working, archiving, unread, read, readArchiving].map(\.id)))
+        // Working off, and every group off.
+        _ = listing(SidebarSmartRow.all.subtracting([.working]))
+        _ = listing([])
         #expect(SidebarSmartRow.keptInUnread(read.id, in: model, on: []) == nil)
     }
 
