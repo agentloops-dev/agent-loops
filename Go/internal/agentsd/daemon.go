@@ -26,6 +26,7 @@ type Daemon struct {
 	// smallFiles are the bounded small files (smallFile), each swept hourly; set in newWith.
 	smallFiles []interface {
 		Name() string
+		Path() string
 		Sweep() (int, error)
 	}
 	// runsFile is workflow-runs.json; workflowMu guards what it is written from.

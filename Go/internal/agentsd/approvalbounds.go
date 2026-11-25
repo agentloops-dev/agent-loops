@@ -95,7 +95,7 @@ func keepUnreadable(path string) {
 	if err != nil {
 		return
 	}
-	// store-bounds: kind=blob; count=3 of each file; age=until-deleted; applied=on write (TrimSetAsides)
+	// store-bounds: kind=blob; size=100MiB a file; count=3; age=90d; applied=on write and hourly sweep
 	if err := os.WriteFile(fmt.Sprintf("%s.unreadable-%d", path, time.Now().Unix()), b, 0o644); err != nil { //nolint:gosec // G306: the mode this file always had; only its error is new
 		log.Printf("approvals: could not keep the unreadable %s aside: %v", filepath.Base(path), err) //nolint:gosec // G706: the same path
 	}

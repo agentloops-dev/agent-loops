@@ -31,6 +31,13 @@ struct HostSettings: Codable, Sendable, Equatable {
     var serveWebRemote: Bool?
     var servesWebRemote: Bool { serveWebRemote ?? false }
 
+    /// Whether the control plane here takes the place of the stores set aside (#6769).
+    /// Settings that could not be read say nothing, so nothing is deleted.
+    var planeAside: StoresAside.Plane {
+        if role == .runHere, movedTo == nil, receiving != true { return .serving }
+        return movedAt.map { .away(since: $0) } ?? .unknown
+    }
+
     /// This Mac's entry in `host.json`: its Bonjour name, which the person sees in Sharing.
     private static func key(_ paths: HostPaths) -> String {
         paths.scratchRoot == nil ? LocalHostName.current : "hostSettings.\(paths.suffix)"

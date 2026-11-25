@@ -176,6 +176,7 @@ func (d *Daemon) setAsideUnreadableEventsLocked(data []byte, unreadable int) {
 			log.Printf("events.jsonl: could not set it aside: %v", err)
 		}
 	} else {
+		// store-bounds: kind=blob; size=100MiB a file; count=3; age=90d; applied=on write and hourly sweep
 		if err := os.WriteFile(aside, data, 0o644); err != nil { //nolint:gosec // G306: the mode this file always had; only its error is new
 			log.Printf("events.jsonl: could not keep a copy: %v", err)
 		}
