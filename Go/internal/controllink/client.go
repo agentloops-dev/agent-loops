@@ -70,6 +70,20 @@ func PairClientAs(ctx context.Context, code *Code, name, kind string) (*ClientMe
 	return &ClientMembership{Client: id, Private: private, ControlKey: code.ControlKey, URL: code.URL, Pin: code.Pin, Name: code.Name}, nil
 }
 
+// ForgetSelf asks the control plane to forget this client, so that its key opens nothing
+// (clients/forgetSelf), in 15 seconds at most.
+func ForgetSelf(ctx context.Context, m *ClientMembership) error {
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	s, err := DialClient(ctx, m)
+	if err != nil {
+		return err
+	}
+	defer s.Close()
+	_, err = s.Call(ctx, "", "clients/forgetSelf", map[string]any{})
+	return err
+}
+
 // Session is a client's socket to the control plane: requests to it or to a host, and
 // the notifications every host sends.
 type Session struct {

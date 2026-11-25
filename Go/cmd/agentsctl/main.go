@@ -2,6 +2,7 @@
 // walk without the screen (#1125's spike, kept for #1136's proofs). Not shipped.
 //
 //	agentsctl pair [-kind iPhone] '<client code>'     keeps ~/.agents-go/ctl.json
+//	agentsctl unpair                                  forgets the pairing, here and there
 //	agentsctl hosts                                   control/status's hosts
 //	agentsctl call [-host H] METHOD ['{json}']        one request; prints the result
 //	agentsctl watch [-host H]                         prints notifications
@@ -17,6 +18,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -26,6 +28,9 @@ import (
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
+// file is one pairing, with its private key. It is not in ~/.agents, on purpose (#6808, as
+// #6800): it is the identity of one client, and a person syncs ~/.agents. It has no age, so
+// that a pairing that works is never lost: unpair deletes it.
 func file() string {
 	if f := os.Getenv("AGENTSCTL"); f != "" {
 		return f
@@ -39,16 +44,24 @@ func die(f string, a ...any) {
 	os.Exit(1)
 }
 
-func session(ctx context.Context) *controllink.Session {
+func membership() (*controllink.ClientMembership, error) {
 	b, err := os.ReadFile(file())
 	if err != nil {
-		die("not paired: agentsctl pair '<client code>' (%v)", err)
+		return nil, fmt.Errorf("not paired: agentsctl pair '<client code>' (%w)", err)
 	}
 	var m controllink.ClientMembership
 	if err := json.Unmarshal(b, &m); err != nil {
-		die("not paired: %s is not a membership (%v)", file(), err)
+		return nil, fmt.Errorf("not paired: %s is not a membership (%w)", file(), err)
 	}
-	s, err := controllink.DialClient(ctx, &m)
+	return &m, nil
+}
+
+func session(ctx context.Context) *controllink.Session {
+	m, err := membership()
+	if err != nil {
+		die("%v", err)
+	}
+	s, err := controllink.DialClient(ctx, m)
 	if err != nil {
 		die("dial: %v", err)
 	}
@@ -57,7 +70,7 @@ func session(ctx context.Context) *controllink.Session {
 
 func main() {
 	if len(os.Args) < 2 {
-		die("usage: agentsctl pair|hosts|call|watch|lend|turn|device …")
+		die("usage: agentsctl pair|unpair|hosts|call|watch|lend|turn|device …")
 	}
 	ctx := context.Background()
 	cmd, args := os.Args[1], os.Args[2:]
@@ -75,6 +88,10 @@ func main() {
 	switch cmd {
 	case "pair":
 		pair(ctx, rest, *kind)
+	case "unpair":
+		if err := unpair(ctx, os.Stdout); err != nil {
+			die("unpair: %v", err)
+		}
 	case "hosts":
 		s := session(ctx)
 		r, err := s.Call(ctx, "", "machines/list", nil)
@@ -133,6 +150,9 @@ func pair(ctx context.Context, rest []string, kind string) {
 	if len(rest) != 1 {
 		die("agentsctl pair '<client code>'")
 	}
+	if len(rest[0]) > 2<<10 {
+		die("the code is too long")
+	}
 	code, err := controllink.ParseCode(rest[0])
 	if err != nil {
 		die("%v", err)
@@ -145,10 +165,30 @@ func pair(ctx context.Context, rest []string, kind string) {
 	if err := os.MkdirAll(filepath.Dir(file()), 0o700); err != nil {
 		die("pair: %v", err)
 	}
+	// store-bounds: kind=secret; count=1; size=4KiB; age=until-deleted; applied=on pair, which replaces it, and unpair deletes it
 	if err := os.WriteFile(file(), b, 0o600); err != nil { //nolint:gosec // G703: agentsctl's own membership file
 		die("pair: %v", err)
 	}
 	fmt.Println("paired as", m.Client)
+}
+
+// unpair deletes the pairing. The control plane forgets this client too; when it does not
+// answer, the pairing goes here all the same, and its Devices list still shows it.
+func unpair(ctx context.Context, say io.Writer) error {
+	m, err := membership()
+	if err != nil {
+		return err
+	}
+	there := controllink.ForgetSelf(ctx, m)
+	if err := os.Remove(file()); err != nil {
+		return err
+	}
+	if there != nil {
+		fmt.Fprintf(say, "unpaired here; %s did not forget %s: forget it in Settings ▸ Devices (%v)\n", m.URL, m.Client, there)
+		return nil
+	}
+	fmt.Fprintf(say, "unpaired; %s forgets %s\n", m.URL, m.Client)
+	return nil
 }
 
 func out(r json.RawMessage, err error) {

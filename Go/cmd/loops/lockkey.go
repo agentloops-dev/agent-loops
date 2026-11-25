@@ -95,6 +95,7 @@ func (f fileLockKeys) save(client string, key []byte) error {
 	if err := os.MkdirAll(f.folder(), 0o700); err != nil {
 		return err
 	}
+	// store-bounds: kind=secret; count=20; size=32B a record; age=until-deleted; applied=one a pairing in hosts.json, deleted with it
 	return store.WriteAtomically(p, key, 0o600)
 }
 

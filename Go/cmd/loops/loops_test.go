@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
+	"github.com/agentloops-dev/agent-loops/Go/internal/machinelock"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -82,6 +83,38 @@ func TestHostsKeepsOnePairingPerControlPlaneInAFileOnlyItsOwnerReads(t *testing.
 	got.remove("wss://two.example")
 	if got.pick("") != nil || got.Default != "" {
 		t.Fatalf("none left: %+v", got)
+	}
+}
+
+// A pairing over the limit is refused, and none that is kept goes (#6807).
+func TestHostsRefusesAControlPlaneOverTheLimit(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	h := &hosts{LockPins: map[string]machinelock.Pin{"wss://gone.example": {}, "wss://c0.example": {}}}
+	for i := range maxHosts {
+		u := fmt.Sprintf("wss://c%d.example", i)
+		if err := h.room("code", u); err != nil {
+			t.Fatalf("%d: %v", i, err)
+		}
+		h.put(controllink.ClientMembership{Client: "A", URL: u})
+	}
+	if err := h.room("code", "wss://more.example"); codeOf(err) != exitError || !strings.Contains(err.Error(), "loops auth logout --control c0.example") {
+		t.Fatalf("one more: %v", err)
+	}
+	if err := h.room("code", "wss://c3.example"); err != nil {
+		t.Fatalf("a pairing again replaces: %v", err)
+	}
+	if err := h.room(strings.Repeat("x", maxCodeBytes+1), "wss://c3.example"); codeOf(err) != exitError {
+		t.Fatalf("a long code: %v", err)
+	}
+	if err := h.write(); err != nil {
+		t.Fatal(err)
+	}
+	got, err := readHosts()
+	if err != nil || len(got.Hosts) != maxHosts {
+		t.Fatalf("%d pairings, %v", len(got.Hosts), err)
+	}
+	if _, kept := got.LockPins["wss://c0.example"]; len(got.LockPins) != 1 || !kept {
+		t.Fatalf("pins: %+v", got.LockPins)
 	}
 }
 
