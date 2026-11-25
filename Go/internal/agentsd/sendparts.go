@@ -6,7 +6,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -85,7 +84,7 @@ func (d *Daemon) inParts(first, last int64, most int, part func(ctx context.Cont
 			n := next
 			next++
 			flying++
-			safe.Go("send part", func() {
+			started := d.goJobAt("send part", "sendparts.go", func() {
 				e := ended{n: n, err: &Error{Code: CodeInternal, Message: "a part could not be sent"}}
 				defer func() { ends <- e }()
 				select {
@@ -99,6 +98,9 @@ func (d *Daemon) inParts(first, last int64, most int, part func(ctx context.Cont
 				e.err = part(ctx, n)
 				e.took = time.Since(began)
 			})
+			if !started {
+				ends <- ended{n: n, err: sendStopped()}
+			}
 		}
 		if flying == 0 {
 			return failed
