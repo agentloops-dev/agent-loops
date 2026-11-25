@@ -16,6 +16,7 @@ import (
 // agentsKept is HostCopies.agentsKept: the most agents kept of a host's list.
 const agentsKept = 500
 
+// store-bounds: kind=document; size=4MiB a host's copy, 4KiB a live copy's heartbeat (500 agents at most in a host's copy); age=until-deleted; applied=on write (a list is cut to fit), a host's goes when it is removed, and any copy deletes a heartbeat 30 s after its last
 const copiesPrefix = "v1/copies/"
 
 // copyRestamp is how often a list that has not changed is written again, only so the
@@ -176,11 +177,26 @@ func (c *hostCopies) take(host, method, reply string) {
 	if method == "folders/list" {
 		same = copy != nil && bytes.Equal(next.Folders, answer.Result)
 		next.Folders = answer.Result
+		// Folders that alone come to more than the most are not kept (#7248).
+		if size, err := records.Encode(hostCopy{Folders: next.Folders, HeardAt: records.Now()}); err != nil || len(size) > hostCopyBytes {
+			next.Folders = nil
+		}
 	} else {
 		if len(items) > agentsKept {
 			items = items[:agentsKept]
 		}
-		agents, _ := json.Marshal(items)
+		// The agents listed first, as many as fit with the folders: the host lists them again.
+		kept, _, err := fitting(items, hostCopyBytes, func(some []json.RawMessage) ([]byte, error) {
+			agents, err := json.Marshal(some)
+			if err != nil {
+				return nil, err
+			}
+			return records.Encode(hostCopy{Folders: next.Folders, Agents: agents, HeardAt: records.Now()})
+		})
+		if err != nil {
+			return
+		}
+		agents, _ := json.Marshal(kept)
 		same = copy != nil && bytes.Equal(next.Agents, agents)
 		next.Agents = agents
 	}
@@ -196,7 +212,7 @@ func (c *hostCopies) take(host, method, reply string) {
 	if !due {
 		return
 	}
-	if data, err := records.Encode(next); err == nil {
+	if data, err := records.Encode(next); err == nil && len(data) <= hostCopyBytes {
 		// A copy not written is written again at the next due beat.
 		_, _ = c.store.Put(ctx, copyKey(host), data, store.Always)
 	}
