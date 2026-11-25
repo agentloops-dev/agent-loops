@@ -4,7 +4,6 @@ import (
 	"cmp"
 	"context"
 	"errors"
-	"fmt"
 	"slices"
 	"strings"
 
@@ -14,8 +13,8 @@ import (
 
 // forge/next (#5689, epic #5687): the work that is ready, in one order, with the reason for each
 // place, so a lead and Work take the same next item. The order is one for every folder (Alex,
-// 2026-11-15): on hold last, then priority, then the milestone's due date, then the oldest. A
-// standing epic's plan is in the same order (nextCompare), so the two never disagree.
+// 2026-11-15): on hold last, then priority, then size (Alex, 2026-11-24, #7034), then the oldest.
+// A milestone's due date gives no place (#7033). A standing epic's plan is in the same order (nextCompare), so the two never disagree.
 
 // nextMost is how many rows forge/next gives.
 const nextMost = 100
@@ -26,18 +25,48 @@ func (d *Daemon) registerForgeNext() {
 	})
 }
 
-// nextCompare is the one order (#5689): not on hold first; priority high, medium, none, low; the
-// milestone's due date, the earliest first and none last; the oldest first (createdAt, none
-// last), then the lowest number, then the ref, so the order is total.
+// nextCompare is the one order (#5689, #7034): not on hold first; priority high, medium, none,
+// low; size XS, S, M, L, XL, none last; the oldest first (createdAt, none last), then the lowest
+// number, then the ref, so the order is total.
 func nextCompare(a, b wire.ForgeItem) int {
 	return cmp.Or(nextKeys(a, b), compareLast(a.CreatedAt, b.CreatedAt),
 		cmp.Compare(refNumber(a.Node.Ref), refNumber(b.Node.Ref)), cmp.Compare(a.Node.Ref, b.Node.Ref))
 }
 
-// nextKeys compares on hold, priority and the milestone's due date: the keys before the age.
+// nextKeys compares on hold, priority and size: the keys before the age.
 func nextKeys(a, b wire.ForgeItem) int {
 	return cmp.Or(cmp.Compare(boolRank(onHold(a)), boolRank(onHold(b))),
-		cmp.Compare(standingRank(a), standingRank(b)), compareLast(a.MilestoneDue, b.MilestoneDue))
+		cmp.Compare(standingRank(a), standingRank(b)), cmp.Compare(sizeRank(a), sizeRank(b)))
+}
+
+// nextSizes are the sizes of the points rubric (#4532), the smallest first.
+var nextSizes = []string{"XS", "S", "M", "L", "XL"}
+
+// itemSize is the size of an item's size: label (#4532), in any case, as XS to XL: the larger of
+// two, and "" for none.
+func itemSize(i wire.ForgeItem) string {
+	size := -1
+	for _, l := range i.Labels {
+		name, ok := strings.CutPrefix(strings.ToLower(strings.TrimSpace(l.Name)), "size:")
+		if !ok {
+			continue
+		}
+		if n := slices.Index(nextSizes, strings.ToUpper(strings.TrimSpace(name))); n > size {
+			size = n
+		}
+	}
+	if size < 0 {
+		return ""
+	}
+	return nextSizes[size]
+}
+
+// sizeRank is an item's size as a rank, XS first and no size last.
+func sizeRank(i wire.ForgeItem) int {
+	if n := slices.Index(nextSizes, itemSize(i)); n >= 0 {
+		return n
+	}
+	return len(nextSizes)
 }
 
 func boolRank(b bool) int {
@@ -65,7 +94,7 @@ func nextOrder(items []wire.ForgeItem) { slices.SortStableFunc(items, nextCompar
 
 // nextReasons are the short words for the keys that put i where it is; aged says its age
 // put it above the next row, which ties with it on every key before the age.
-func nextReasons(i wire.ForgeItem, aged bool, now wire.Date) []string {
+func nextReasons(i wire.ForgeItem, aged bool) []string {
 	var out []string
 	if onHold(i) {
 		out = append(out, "on hold")
@@ -75,28 +104,15 @@ func nextReasons(i wire.ForgeItem, aged bool, now wire.Date) []string {
 	} else {
 		out = append(out, "no priority")
 	}
-	switch m := deref(i.Milestone); {
-	case m != "" && i.MilestoneDue != nil:
-		out = append(out, fmt.Sprintf("milestone %s, due %s", m, dueDay(*i.MilestoneDue, now)))
-	case m != "":
-		out = append(out, "milestone "+m+", no due date")
-	default:
-		out = append(out, "no milestone")
+	if size := itemSize(i); size != "" {
+		out = append(out, "size "+size)
+	} else {
+		out = append(out, "no size")
 	}
 	if aged {
 		out = append(out, "oldest")
 	}
 	return out
-}
-
-// dueDay is a due date as 20 Nov, with its year when that is not now's year. A milestone's due
-// date is a day, so it is said in UTC, as the forges keep it.
-func dueDay(due, now wire.Date) string {
-	t := due.Time().UTC()
-	if t.Year() != now.Time().UTC().Year() {
-		return t.Format("2 Jan 2006")
-	}
-	return t.Format("2 Jan")
 }
 
 // forgeNext is forge/next: the folder's open issues (or open epics, or one epic's children) that
@@ -139,7 +155,7 @@ func (d *Daemon) forgeNext(ctx context.Context, r wire.ForgeNextRequest) (wire.F
 	items = items[:min(len(items), nextMost)]
 	for n, i := range items {
 		aged := n+1 < len(items) && nextKeys(i, items[n+1]) == 0
-		out.Rows = append(out.Rows, wire.ForgeNextRow{Item: i, Place: int64(n + 1), Reasons: nextReasons(i, aged, out.ReadAt),
+		out.Rows = append(out.Rows, wire.ForgeNextRow{Item: i, Place: int64(n + 1), Reasons: nextReasons(i, aged),
 			OnHold: onHold(i)})
 	}
 	return out, nil

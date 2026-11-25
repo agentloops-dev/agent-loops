@@ -6312,10 +6312,11 @@ export interface ForgeNextRequest {
  * no open blocked by, and not taken: no session on this machine that is not archived is labelled
  * with it, no open pull request fixes it, and it has no assignee), or one that is on hold and
  * otherwise ready. place is its place, 1 first. The order: not on hold first; then priority high,
- * medium, none, low; then the milestone's due date, the earliest first, no due date last; then the
- * oldest (createdAt, then the lowest number). reasons are short words for the keys that put it
- * there, as priority high, milestone Work, due 20 Nov, and oldest (when its age put it above the
- * next row). onHold says it is on hold: it is never the next one, and its first reason is on hold.
+ * medium, none, low; then size (its size: label, #7034), XS, S, M, L, XL, no size last; then the
+ * oldest (createdAt, then the lowest number). A milestone's due date gives no place. reasons are
+ * short words for the keys that put it there, as priority high, size S (or no size), and oldest
+ * (when its age put it above the next row). onHold says it is on hold: it is never the next one,
+ * and its first reason is on hold.
  */
 export interface ForgeNextRow {
   item: ForgeItem;
@@ -6335,8 +6336,8 @@ export interface ForgeNodeRequest {
  * lead is the session on this machine, not archived, that works on the epic in lineage (its label
  * #<n>, or the Linear key) and is labelled lead. standing is set only for a standing epic (#3661):
  * its children are then the open issues of its query, not its sub-issues, at most 100, in the order
- * of forge/next (#5689: not on hold first, then priority, the milestone's due date and the oldest),
- * all in one step 1; its item has no progress.
+ * of forge/next (#5689: not on hold first, then priority, size and the oldest), all in one step 1;
+ * its item has no progress.
  */
 export interface ForgePlan {
   item: ForgeItem;
