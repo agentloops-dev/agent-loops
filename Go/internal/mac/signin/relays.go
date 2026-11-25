@@ -5,8 +5,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
+
+	"github.com/agentloops-dev/agent-loops/Go/internal/rolllog"
 )
 
 // Policy is a runtime's SignInRelay, as ToolPolicyCatalog has it: where its service is and
@@ -26,7 +29,8 @@ var Policies = map[string]Policy{
 // Relays is HostSignInRelays: one relay per runtime, started on its first grant, or on the
 // first tunnel after a restart of a host that granted it (#7170), and kept for the host's
 // life. Its keys and certificates are in <root>/relay; its log, which says
-// only what was asked and how it was answered, is host-relay.log, rolled at 1 MB.
+// only what was asked and how it was answered, is host-relay.log, rolled at 1 MB and kept
+// at most 7 days.
 type Relays struct {
 	Root, Logs, Home string
 	// TestKeychain is a walk's stand-in for Claude's item: never renewed (debug builds).
@@ -206,7 +210,33 @@ func (s *Relays) Stop() {
 	}
 }
 
-const logLimit = 1 << 20
+const (
+	logLimit = 1 << 20
+	// logLineMost is the most one line of host-relay.log is, its time included; a longer one is cut.
+	logLineMost = 4 << 10
+)
+
+func (s *Relays) logFile() string { return filepath.Join(s.Logs, "host-relay.log") }
+
+// Sweep holds host-relay.log to its age, when nothing writes it.
+func (s *Relays) Sweep() {
+	if s.Logs == "" {
+		return
+	}
+	s.logMu.Lock()
+	defer s.logMu.Unlock()
+	file := s.logFile()
+	_, err := os.Stat(file)
+	_, before := os.Stat(rolllog.Previous(file))
+	if os.IsNotExist(err) && os.IsNotExist(before) {
+		return
+	}
+	// Opening it rolls it, and removes a previous one past its age. The next sweep tries again.
+	// store-bounds: not a store: the log that write appends to
+	if f, err := rolllog.Open(file, logLimit, false); err == nil {
+		_ = f.Close()
+	}
+}
 
 func (s *Relays) write(line string) {
 	if s.Logs == "" {
@@ -214,15 +244,10 @@ func (s *Relays) write(line string) {
 	}
 	s.logMu.Lock()
 	defer s.logMu.Unlock()
-	file := filepath.Join(s.Logs, "host-relay.log")
-	if fi, err := os.Stat(file); err == nil && fi.Size() > logLimit {
-		// This is the log, so a failed roll has nowhere to be said; the log grows until one works.
-		_ = os.Rename(file, filepath.Join(s.Logs, "host-relay.previous.log"))
+	line = time.Now().UTC().Format("2006-01-02T15:04:05Z") + " " + line
+	if len(line) >= logLineMost {
+		line = strings.ToValidUTF8(line[:logLineMost-len("…\n")], "") + "…"
 	}
-	f, err := os.OpenFile(file, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
-	if err != nil {
-		return
-	}
-	defer f.Close()
-	fmt.Fprintf(f, "%s %s\n", time.Now().UTC().Format("2006-01-02T15:04:05Z"), line)
+	// store-bounds: kind=log; size=2MiB; age=7d; applied=on write and hourly sweep (1MiB and one older file, 4KiB a line)
+	_ = rolllog.Append(s.logFile(), logLimit, []byte(line+"\n")) // this is the log: a failed write has nowhere to be said
 }

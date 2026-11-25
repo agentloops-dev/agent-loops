@@ -186,6 +186,10 @@ var (
 // maxRef bounds a ref, so one line stays small.
 const maxRef = 512
 
+// lineMost is the most one line of the file is, its new line not counted (#7247). A larger change
+// is refused, and a larger line read is one that cannot be read.
+const lineMost = 4 << 10
+
 // CheckNode says what is wrong with a node's kind or ref, or nil.
 func CheckNode(n wire.LineageNode) error { return checkNode(n) }
 
@@ -319,7 +323,7 @@ type fileLoad struct {
 // write cut short.
 func (ld *fileLoad) read(raw []byte, last bool) {
 	var l line
-	bad := diskjson.Unmarshal(raw, &l) != nil
+	bad := len(raw) > lineMost || diskjson.Unmarshal(raw, &l) != nil
 	if !bad {
 		ld.fullLine(&l)
 	}
@@ -607,6 +611,7 @@ func (f *Files) rewrite() {
 		f.file.Close()
 		f.file = nil
 	}
+	// store-bounds: not a store: the file written again, declared where its lines are appended
 	if err := store.WriteAtomically(f.path, buf.Bytes(), 0o644); err != nil {
 		log.Printf("%s: could not rewrite: %v", filepath.Base(f.path), err)
 	}
@@ -622,10 +627,14 @@ func (f *Files) append(l line) error {
 	if b == nil {
 		return errors.New("could not encode the link")
 	}
+	if len(b)-1 > lineMost {
+		return fmt.Errorf("a line of %s is at most %d bytes: %w", filepath.Base(f.path), lineMost, store.ErrLimit)
+	}
 	if f.file == nil {
 		if err := os.MkdirAll(filepath.Dir(f.path), 0o755); err != nil { //nolint:gosec // G301: as readable as the lineage file in it
 			return err
 		}
+		// store-bounds: kind=graph; size=176MiB; age=until-deleted; applied=on write (20_000 links, 20_000 states and the lines past them, 4KiB a line, refused), at open and hourly sweep (ended links and old states 90d)
 		file, err := os.OpenFile(f.path, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o644)
 		if err != nil {
 			return err
