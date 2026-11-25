@@ -233,7 +233,7 @@ func CheckSums(sums []byte, version string) error {
 	var names []string
 	for line := range strings.Lines(string(sums)) {
 		f := strings.Fields(line)
-		if len(f) != 2 || len(f[0]) != 64 {
+		if len(f) != 2 || len(f[0]) != 64 || strings.Trim(f[0], "0123456789abcdef") != "" {
 			return fmt.Errorf("not a line of %s: %q", SumsName, line)
 		}
 		name := strings.TrimPrefix(f[1], "*")

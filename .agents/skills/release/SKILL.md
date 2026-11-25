@@ -304,6 +304,8 @@ open for item 2 and for the notes' known issues (`git merge-base --is-ancestor <
    "build" lease) says nothing. While it names a test key, end with `partly_done`: the tag's
    `release` run stops at its first job. The keys are Alex's to make
    (`docs/how-to/release-agents-host.md`, "The signing keys"). Never make one.
+   The run's `sign` job waits for Alex's approval (the `release-sign` environment). Never
+   approve it.
 
 ## 6. Version and notes
 

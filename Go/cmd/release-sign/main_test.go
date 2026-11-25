@@ -3,6 +3,9 @@ package main
 import (
 	"bytes"
 	"crypto/ed25519"
+	"crypto/sha256"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -96,21 +99,57 @@ func TestNewKeyShowsOnlyThePublicHalf(t *testing.T) {
 	}
 }
 
-func TestTheSecretIsTheKeyOfABuild(t *testing.T) {
-	t.Setenv("RELEASE_SIGNING_KEY", "")
-	if checkSecret(releasesig.TestCurrentKey) == nil {
-		t.Fatal("no secret passed")
-	}
-	key, err := os.ReadFile(testKeyFile)
-	if err != nil {
+func TestTheKeyIsTheKeyOfABuild(t *testing.T) {
+	if err := checkKey(testKeyFile, releasesig.TestSpareKey, releasesig.TestCurrentKey); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("RELEASE_SIGNING_KEY", string(key))
-	if err := checkSecret(releasesig.TestSpareKey, releasesig.TestCurrentKey); err != nil {
-		t.Fatal(err)
+	if checkKey(testKeyFile, releasesig.TestSpareKey) == nil || checkKey("main.go", releasesig.TestCurrentKey) == nil {
+		t.Fatal("another key passed")
 	}
-	if checkSecret(releasesig.TestSpareKey) == nil {
-		t.Fatal("another key's private half passed")
+	// A test key is never the key of a release, which has the test keys in the same file.
+	if check(testKeyFile) == nil {
+		t.Fatal("a test key passed")
+	}
+}
+
+func TestFilesAreTheBuildsAndNoOther(t *testing.T) {
+	names := []string{"agentsd-linux-x86_64-0.2.0.tar.gz", "agentsd-linux-aarch64-0.2.0.tar.gz", "Agent-Loops-0.2.0.zip"}
+	for name, change := range map[string]func(dir string) error{
+		"good":     func(string) error { return nil },
+		"no file":  func(dir string) error { return os.Remove(filepath.Join(dir, names[0])) },
+		"one more": func(dir string) error { return os.WriteFile(filepath.Join(dir, "x-0.2.0.zip"), nil, 0o600) },
+		"changed":  func(dir string) error { return os.WriteFile(filepath.Join(dir, names[1]), nil, 0o600) },
+		"a link": func(dir string) error {
+			p := filepath.Join(dir, names[2])
+			return errors.Join(os.Rename(p, p+"-"), os.Symlink(p+"-", p))
+		},
+		"other sums": func(dir string) error {
+			p := filepath.Join(dir, "SHA256SUMS")
+			b, err := os.ReadFile(p) //nolint:gosec // G304: a test's own file
+			return errors.Join(err, os.WriteFile(p, append(b, '\n'), 0o600)) //nolint:gosec // G703: a test's own file
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			sums := ""
+			for _, n := range names {
+				if err := os.WriteFile(filepath.Join(dir, n), []byte(n), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				sums += fmt.Sprintf("%x  %s\n", sha256.Sum256([]byte(n)), n)
+			}
+			file := filepath.Join(dir, "SHA256SUMS")
+			if err := os.WriteFile(file, []byte(sums), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			digest := fmt.Sprintf("%x", sha256.Sum256([]byte(sums)))
+			if err := change(dir); err != nil {
+				t.Fatal(err)
+			}
+			if err := run([]string{"files", digest, "0.2.0", file}, &bytes.Buffer{}); (err == nil) != (name == "good") {
+				t.Fatal(err)
+			}
+		})
 	}
 }
 

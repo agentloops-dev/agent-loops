@@ -80,22 +80,41 @@ public() {
 # equal): the current one and the spare.
 release_keys="MCowBQYDK2VwAyEAbK/TkG4B9kEq3EoU3wxL+UOmjOjCTaVMqvJQ6xIryhg=
 MCowBQYDK2VwAyEAW3GLYtpZB4egkA88jeiabbtP9ynkRMhM/1sU5w4vP60="
-# check_signature is 0 when a release key, or the one in the file AGENTS_RELEASE_KEY names,
-# signed $tmp/SHA256SUMS, 1 when none did, and 2 when this machine has nothing to check it
-# with: OpenSSL 3 is the first that reads such a signature.
+# check_signature stops when no release key, nor the one in the file AGENTS_RELEASE_KEY names,
+# signed $tmp/SHA256SUMS. OpenSSL 3 is the first that reads such a signature: with none, it
+# says so and goes on, or stops when AGENTS_RELEASE_REQUIRE_SIGNATURE is 1.
 check_signature() {
-    command -v openssl >/dev/null 2>&1 && openssl pkeyutl -help 2>&1 | grep -q -e '-rawin' || return 2
+    if ! { command -v openssl >/dev/null 2>&1 && openssl pkeyutl -help 2>&1 | grep -q -e '-rawin'; }; then
+        echo "This machine has no OpenSSL 3, so release $version's signature is not checked, only its checksum." >&2
+        [ "${AGENTS_RELEASE_REQUIRE_SIGNATURE:-}" != 1 ] || exit 1
+        return 0
+    fi
+    public "$releases/v$version/SHA256SUMS.sig" "$tmp/SHA256SUMS.sig" 2>/dev/null ||
+        { echo "Release $version's signature could not be downloaded." >&2; exit 1; }
     { printf 'agents-release/1\n'; cat "$tmp/SHA256SUMS"; } > "$tmp/signed"
-    openssl base64 -d -A -in "$tmp/SHA256SUMS.sig" -out "$tmp/signature" 2>/dev/null || return 1
+    openssl base64 -d -A -in "$tmp/SHA256SUMS.sig" -out "$tmp/signature" 2>/dev/null || : > "$tmp/signature"
     for key in $release_keys; do
         printf '%s\n' '-----BEGIN PUBLIC KEY-----' "$key" '-----END PUBLIC KEY-----' > "$tmp/key.pem"
-        signed_by "$tmp/key.pem" && return 0
+        openssl pkey -pubin -in "$tmp/key.pem" -noout >/dev/null 2>&1 ||
+            { echo "This machine's OpenSSL does not check Ed25519 signatures (in FIPS mode it may not)." >&2; exit 1; }
+        if signed_by "$tmp/key.pem"; then echo "Release $version's signature is good."; return 0; fi
     done
-    [ -n "${AGENTS_RELEASE_KEY:-}" ] && signed_by "$AGENTS_RELEASE_KEY"
+    if [ -n "${AGENTS_RELEASE_KEY:-}" ] && signed_by "$AGENTS_RELEASE_KEY"; then
+        echo "Release $version's signature is good, by AGENTS_RELEASE_KEY."
+        return 0
+    fi
+    echo "The download did not match its signature." >&2
+    exit 1
 }
 signed_by() {
     openssl pkeyutl -verify -pubin -inkey "$1" -rawin -in "$tmp/signed" -sigfile "$tmp/signature" >/dev/null 2>&1
 }
+# The same rule as agentsd's: a file that this account or root owns, and no other can write.
+if [ -n "${AGENTS_RELEASE_KEY:-}" ]; then
+    [ -f "$AGENTS_RELEASE_KEY" ] && [ -r "$AGENTS_RELEASE_KEY" ] &&
+        [ -n "$(find -L "$AGENTS_RELEASE_KEY" -prune \( -user "$(id -u)" -o -user 0 \) ! -perm -020 ! -perm -002 2>/dev/null)" ] ||
+        { echo "AGENTS_RELEASE_KEY names no key file that only this account can write." >&2; exit 1; }
+fi
 
 echo "Fetching the host for $arch-linux from $url…"
 if ! fetch "/v1/servers/agentsd-linux-$arch.sha256" "$tmp/sha256" 2>/dev/null; then
@@ -111,14 +130,7 @@ if ! fetch "/v1/servers/agentsd-linux-$arch.sha256" "$tmp/sha256" 2>/dev/null; t
     echo "This control plane has no host for $arch-linux; fetching release $version from $releases…"
     { public "$releases/v$version/SHA256SUMS" "$tmp/SHA256SUMS" && public "$releases/v$version/$tarball" "$tmp/$tarball"; } ||
         { echo "The releases offer no host $version for $arch-linux." >&2; exit 1; }
-    public "$releases/v$version/SHA256SUMS.sig" "$tmp/SHA256SUMS.sig" 2>/dev/null || : > "$tmp/SHA256SUMS.sig"
-    signature=0
-    check_signature || signature=$?
-    case $signature in
-        0) echo "Release $version's signature is good." ;;
-        2) echo "This machine has no OpenSSL 3, so release $version's signature is not checked, only its checksum." >&2 ;;
-        *) echo "The download did not match its signature." >&2; exit 1 ;;
-    esac
+    check_signature
     want=$(awk -v f="$tarball" '$2 == f || $2 == "*" f { print $1 }' "$tmp/SHA256SUMS")
     [ -n "$want" ] && echo "$want  $tmp/$tarball" | sha256sum -c - >/dev/null ||
         { echo "The download did not match its checksum." >&2; exit 1; }

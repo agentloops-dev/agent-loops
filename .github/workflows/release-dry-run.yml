@@ -23,6 +23,8 @@ on:
       - scripts/check-store-archive.sh
       - scripts/build-linux-agentsd.sh
       - scripts/build-loops.sh
+      - Go/cmd/release-sign/**
+      - Go/internal/releasesig/**
       - .github/workflows/release.yml
       - .github/workflows/release-dry-run.yml
       - project.yml

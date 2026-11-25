@@ -39,7 +39,7 @@ the App Store. Pushing a version tag on main publishes a release. The tag starts
   stay up gives `bin/current` back to the old one. Keep the tarball's names flat, as the
   server folder's;
 - creates the release, titled **Agent Loops <version>**, with these files and a
-  `SHA256SUMS`, which its `publish` job signs as `SHA256SUMS.sig`. Agent Loops on a Mac updates itself from them (#2178): agentsd downloads
+  `SHA256SUMS`, which its `sign` job signs as `SHA256SUMS.sig`. Agent Loops on a Mac updates itself from them (#2178): agentsd downloads
   `SHA256SUMS` and `Agent-Loops-<version>.zip`, first from its control plane
   (`GET /v1/releases/<version>/<file>`), and from the public releases
   (`https://github.com/agentloops-dev/agents-releases/releases/download/v<version>/`, #1064)
@@ -97,8 +97,7 @@ You set this up once, as the Apple Developer account's Account Holder.
    | `ASC_KEY_P8` | the App Store Connect API key's `.p8`, as text |
    | `ASC_KEY_ID`, `ASC_ISSUER_ID` | that key's ID and its issuer ID |
 
-   The signing key is one more secret of `release`, `RELEASE_SIGNING_KEY`: "The signing
-   keys", below.
+   The signing key is in an environment of its own: "The signing keys", below.
 
 3. **The TestFlight secrets.** Only the Remote is in the App Store (#4229). Export **Apple
    Distribution: …** from Keychain Access as a `.p12` file. Install the four App Store
@@ -167,10 +166,8 @@ You set this up once, as the Apple Developer account's Account Holder.
    0.2.0. `swift scripts/asc-submit.swift 0.2.0` does the same from this Mac.
 
 To make a release again from a tag that is already there (after fixing a secret, say), run
-the **release** workflow by hand and give it the tag. It replaces the release's files.
-
-To make a release again from a tag from before releases were signed, run the workflow of
-that tag: `gh workflow run release.yml --ref <tag> -f tag=<tag>`.
+the **release** workflow by hand from the tag: `gh workflow run release.yml --ref <tag> -f
+tag=<tag>`. A run from anything else stops at its first job. It replaces the release's files.
 
 ## The signing keys
 
@@ -178,48 +175,90 @@ that tag: `gh workflow run release.yml --ref <tag> -f tag=<tag>`.
 bytes of `SHA256SUMS`. Each file's name in `SHA256SUMS` holds the version, so a signature is
 good for one version only. Two public keys are in `Go/internal/releasesig/keys.go` and in
 `install.sh` (and `scripts/host-install.sh`, the same text): the **current** key, whose
-private half is the `RELEASE_SIGNING_KEY` secret of the `release` environment, and the
-**spare** key, whose private half is kept offline. A release signed with either is good.
+private half is the `RELEASE_SIGNING_KEY` secret of the `release-sign` environment, which
+only the `sign` job uses, and the **spare** key, whose private half is kept offline. A release signed with either is good.
 
 While the two are the test keys, the `release` workflow stops at its first job (`keys`) and
 `scripts/release-host.sh` stops too. The private halves of the test keys are in
 `Go/internal/releasesig/testdata`; only a Go test trusts them.
 
+### The two settings, first
+
+A person who administers the repository makes these before the key is a secret. The
+deployment rule of an environment looks at a tag's name only, so these two say who can use
+the key:
+
+1. **Who can make a tag.** Settings ▸ Rules ▸ Rulesets ▸ New tag ruleset: name `releases`,
+   Active, target `v*`, and the rules Restrict creations, Restrict updates and Restrict
+   deletions. Put only the identity that pushes the release's tag in the bypass list.
+2. **Who approves the signature.** `scripts/release-secrets.sh --signing-key` (step 6, below)
+   makes the `release-sign` environment with you as its required reviewer, for `v*` tags. In
+   Settings ▸ Environments ▸ release-sign, then turn off "Allow administrators to bypass
+   configured protection rules".
+
+Approve the `sign` job only for a tag that you expect, on a commit of main.
+
 ### Make the keys, one time
 
-The person who holds the keys does this. No agent does it.
+The person who holds the keys does this. No agent does it. A program that runs as the same
+account can read an open key image, so do steps 1 to 6 on an account that runs no agent, or
+on this Mac with Agent Loops quit and no `agentsd` running.
 
-1. Make an encrypted disk image and open it. Use a password that only you know:
+1. Clone main into a new folder, and look at its commit on github.com. Do not use a folder
+   that agents write in. The two scripts and `Go/` run with the key in hand:
 
    ```sh
-   hdiutil create -size 10m -fs APFS -encryption AES-256 -volname Release-Keys ~/release-keys.dmg
-   hdiutil attach ~/release-keys.dmg
+   git clone <the repository> ~/release-keys-checkout
+   cd ~/release-keys-checkout && git log -1
    ```
 
-2. Make the two key pairs. Each command shows only the public half:
+2. Make an image for the current key, with a password that only you know, and its key:
 
    ```sh
-   scripts/release-key.sh /Volumes/Release-Keys/current.pem
-   scripts/release-key.sh /Volumes/Release-Keys/spare.pem
+   hdiutil create -size 10m -fs APFS -encryption AES-256 -volname Release-Current ~/release-current.dmg
+   hdiutil attach ~/release-current.dmg
+   scripts/release-key.sh /Volumes/Release-Current/current.pem
+   hdiutil detach /Volumes/Release-Current
    ```
 
-3. Put the first line in `CurrentKey` and the second in `SpareKey` in
-   `Go/internal/releasesig/keys.go`, in quotes. Put the same two lines in `release_keys` in
-   `Go/internal/controlplane/install.sh`, and copy that file to `scripts/host-install.sh`.
-   `(cd Go && go run ./cmd/release-sign check)` then says nothing. The public halves are
-   not secret: an agent can do this step.
-4. Put the current private key in the `release` environment:
+3. Make a second image for the spare key, with **another** password, and its key:
 
    ```sh
-   scripts/release-secrets.sh --signing-key /Volumes/Release-Keys/current.pem
+   hdiutil create -size 10m -fs APFS -encryption AES-256 -volname Release-Spare ~/release-spare.dmg
+   hdiutil attach ~/release-spare.dmg
+   scripts/release-key.sh /Volumes/Release-Spare/spare.pem
+   hdiutil detach /Volumes/Release-Spare
    ```
 
-5. Copy `release-keys.dmg` to two USB sticks, and keep them in two places. Then close the
-   image and take it off the Mac:
+   Write down the two public lines. The two images are never open at the same time.
+4. Copy each image to two USB sticks, and keep the spare's sticks away from the current's.
+   Open each of the four copies, one at a time, and look at the public half. It must be the
+   line from step 2 or 3:
 
    ```sh
-   hdiutil detach /Volumes/Release-Keys
-   rm ~/release-keys.dmg
+   hdiutil attach "/Volumes/<stick>/release-spare.dmg"
+   Go/scripts/go.sh run ./cmd/release-sign public /Volumes/Release-Spare/spare.pem
+   hdiutil detach /Volumes/Release-Spare
+   ```
+
+5. Now agents can run. The public halves are not secret: an agent puts the first line in
+   `CurrentKey` and the second in `SpareKey` in `Go/internal/releasesig/keys.go`, the same
+   two in `release_keys` in `Go/internal/controlplane/install.sh`, and copies that file to
+   `scripts/host-install.sh`. It lands on main.
+6. Quit the agents again. Update the clean checkout, look at the two lines in `keys.go`, and
+   set the secret. Only the current image is open:
+
+   ```sh
+   git pull --ff-only
+   hdiutil attach ~/release-current.dmg
+   scripts/release-secrets.sh --signing-key /Volumes/Release-Current/current.pem
+   hdiutil detach /Volumes/Release-Current
+   ```
+
+7. Only now, with all four copies checked, take the images off the Mac:
+
+   ```sh
+   rm ~/release-current.dmg ~/release-spare.dmg
    ```
 
 ### Replace a key
@@ -228,7 +267,9 @@ The person who holds the keys does this. No agent does it.
   (`scripts/release-secrets.sh --signing-key …/spare.pem`). Every machine trusts it already.
   Make a new pair. In the next release, `CurrentKey` is the old spare and `SpareKey` is the
   new one. A machine trusts the old current key until it takes that release, so make it
-  soon.
+  soon. There is no list of keys that are no longer good. A machine that took a release
+  signed by somebody else keeps it, and a release it names later can have any number, so the
+  only certain way back for that machine is to install it again with its join command.
 - **The spare is lost.** Make a new pair and put it in `SpareKey`. The next release carries it.
 - **A planned change** is the same as a lost current key. Keep signing with the old spare
   until no machine has a release from before the change. A machine with two old keys cannot
@@ -236,17 +277,18 @@ The person who holds the keys does this. No agent does it.
 - **Both are lost.** No machine can take an update by itself. Make two new pairs, release,
   and install each Linux machine again with its join command. A Mac is not affected.
 
-Replacing a file of a release (the workflow run again) signs the new `SHA256SUMS`. A control
-plane that already kept the old files serves them together, until you remove
-`<version>` from its releases folder.
+Making a release again (the workflow run again) signs the new `SHA256SUMS`. A control plane
+keeps `SHA256SUMS` and its signature only as a pair that verifies. When a file that it
+fetches does not match them, it fetches the pair again and drops the files that are not the
+new release's. It never changes a folder that a person filled.
 
 ### What is checked, and where it is not
 
 | Download | The check |
 |---|---|
-| A Linux machine's own update, from its control plane, the public releases or a mirror | The signature, before the tarball is downloaded, opened or run. With no signature at one source, the next source is asked. With a bad one, nothing is installed |
-| An install over SSH, from the release | The control plane checks the signature before it unpacks the tarball |
-| `install.sh`, from the release | The signature, when the machine has OpenSSL 3. Without it, only the checksum, and the script says so |
+| A Linux machine's own update, from its control plane, the public releases or a mirror | The signature, before the tarball is downloaded, opened or run. A source with no signature, a bad one, or a tarball that does not match is left, and the next source is asked. With no good source, nothing is installed |
+| An install over SSH, from the release | The control plane checks the signature before it unpacks the tarball. Kept files that do not match are left for the public releases' |
+| `install.sh`, from the release | The signature, when the machine has OpenSSL 3. Without it, only the checksum, and the script says so; with `AGENTS_RELEASE_REQUIRE_SIGNATURE=1` it stops |
 | `install.sh` and an install over SSH, from the control plane's server folder (`/v1/servers/`) | The checksum only. These files are the control plane's own, and no signature covers them. The same control plane also sends `install.sh` itself |
 | The toolsets (`/v1/toolsets/`) | No signature. The control plane's manifest has the checksum of each download |
 | A Mac's update and its first install | Developer ID and the notarisation, as before. Not `SHA256SUMS.sig` |
@@ -272,7 +314,7 @@ checked all the same:
 
 `AGENTS_RELEASE_KEY` is one more key beside the two in the program. A file that is missing,
 is not a public key, or that another account owns or can write stops every update, and the
-host's log says why.
+host's log says why. `install.sh` stops on the same files.
 
 ### Older versions
 
@@ -309,9 +351,12 @@ the commit it will tag: `gh workflow run release-dry-run.yml -f ref=<sha>`.
 
 - **"CurrentKey is a test key":** the tag has no release keys. "The signing keys" says how
   to make them. No file was published.
-- **"RELEASE_SIGNING_KEY is not …":** the secret is missing, or is not the private half of a
-  key in the tag. Run `scripts/release-secrets.sh --signing-key`, then run the workflow
-  again with the tag.
+- **"Run it from the tag":** the run's ref is not the tag. The message has the command.
+- **The sign job fails with "no private key", or "not the one of this build's public keys":**
+  the secret is missing, or is not the private half of a key in the tag. Run
+  `scripts/release-secrets.sh --signing-key`, then run the failed jobs again.
+- **"not the build's", or a file "that SHA256SUMS lists":** the files are not what the `mac`
+  job made. Do not sign them. Find out which job wrote the artifact.
 - **"is not on main":** the tag points at a commit main doesn't have. Delete the tag
   (`git push origin :refs/tags/v0.2.0`), then tag a commit on main.
 - **No "Developer ID Application" identity:** `DEVELOPER_ID_P12` or its password is wrong.

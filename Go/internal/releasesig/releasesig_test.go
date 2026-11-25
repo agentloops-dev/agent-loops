@@ -120,7 +120,7 @@ func TestCheckSums(t *testing.T) {
 	if err := CheckSums([]byte(good), "0.2.0"); err != nil {
 		t.Fatal(err)
 	}
-	for _, bad := range []string{"", good + sum + "  Agent-Loops-0.1.0.zip\n", good + "short  a-0.2.0.zip\n",
+	for _, bad := range []string{"", good + sum + "  Agent-Loops-0.1.0.zip\n", good + "short  a-0.2.0.zip\n", good + strings.Repeat("z", 64) + "  a-0.2.0.zip\n",
 		good + sum + "  Agent-Loops-0.2.0.zip\n", strings.Replace(good, "aarch64", "riscv64", 1)} {
 		if CheckSums([]byte(bad), "0.2.0") == nil {
 			t.Errorf("%q passed", bad)

@@ -2,6 +2,7 @@ package agentsd
 
 import (
 	"crypto/ed25519"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -155,8 +156,8 @@ func TestReleaseWithNoGoodSignatureIsRefused(t *testing.T) {
 			if r.took("/v1/releases/0.12.0/" + r.tarball) {
 				t.Fatal("the tarball was downloaded before the signature was checked")
 			}
-			if r.took("/public/v0.12.0/SHA256SUMS") {
-				t.Fatal("another source was tried after a refusal")
+			if !r.took("/public/v0.12.0/SHA256SUMS") {
+				t.Fatal("the next source was not asked")
 			}
 		})
 	}
@@ -245,4 +246,26 @@ func TestOwnBuildNeedsTheAccountsOwnKey(t *testing.T) {
 	r.refuses(t, "signature")
 	must(t, os.Chmod(file, 0o600))
 	r.installs(t)
+}
+
+// A source with files that do not match each other is left for the next one: a signature of
+// other sums, a bad signature, or another tarball.
+func TestABadSourceIsLeftForAGoodOne(t *testing.T) {
+	for name, change := range map[string]func(r *signedRig){
+		"mixed pair":    func(r *signedRig) { r.files["SHA256SUMS.sig"] = releaseSig(t, "current", []byte("older sums")) },
+		"bad signature": func(r *signedRig) { r.files["SHA256SUMS.sig"] = []byte("bad") },
+		"other tarball": func(r *signedRig) { r.files[r.tarball] = []byte("another") },
+	} {
+		t.Run(name, func(t *testing.T) {
+			r := newSignedRig(t)
+			good := maps.Clone(r.files)
+			change(r)
+			public := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+				_, _ = w.Write(good[strings.TrimPrefix(req.URL.Path, "/v0.12.0/")])
+			}))
+			t.Cleanup(public.Close)
+			r.u.public = public.URL
+			r.installs(t)
+		})
+	}
 }

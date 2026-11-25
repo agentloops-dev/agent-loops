@@ -429,7 +429,7 @@ func (u *selfUpdater) betweenTurns() error {
 // opens it in work. It is the new copy: on a Mac the new Agent Loops.app, which goes where
 // this copy is, whatever that is named.
 func (u *selfUpdater) download(version, work string) (string, error) {
-	var lastErr, unsigned error
+	var lastErr, unsigned, refusal error
 	for _, src := range u.sources(version) {
 		file, err := u.downloadFrom(src, version, work)
 		if err == nil {
@@ -437,7 +437,11 @@ func (u *selfUpdater) download(version, work string) (string, error) {
 		}
 		var refused *refusedDownload
 		if errors.As(err, &refused) {
-			return "", err
+			if u.signed == nil {
+				return "", err
+			}
+			// Each source has to prove its own files, so the next one is safe to ask.
+			refusal = err
 		}
 		log.Printf("self-update: %s did not give release %s: %v", src.base, version, err)
 		lastErr = err
@@ -445,8 +449,8 @@ func (u *selfUpdater) download(version, work string) (string, error) {
 			unsigned = err
 		}
 	}
-	// A release that was there with no signature says more than a source that was not.
-	return "", cmp.Or(unsigned, lastErr)
+	// What a source's files were says more than a source that did not answer.
+	return "", cmp.Or(refusal, unsigned, lastErr)
 }
 
 // releaseSource is where a release's files are: a base address that ends in a slash, and
@@ -470,7 +474,7 @@ func (u *selfUpdater) sources(version string) []releaseSource {
 }
 
 // refusedDownload is a file that does not match its checksum, or checksums that do not
-// match their signature: no other source is tried.
+// match their signature. No other source is tried, but for a release that is signed.
 type refusedDownload struct{ version, why string }
 
 func (e *refusedDownload) Error() string {

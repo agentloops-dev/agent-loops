@@ -66,7 +66,7 @@ func TestReleaseFileIsFetchedOnceAndKept(t *testing.T) {
 			t.Fatalf("%d %q", code, body)
 		}
 	}
-	if hits.Load() != 2 { // SHA256SUMS and the zip, once
+	if hits.Load() != 3 { // SHA256SUMS, its signature and the zip, once
 		t.Fatalf("%d requests", hits.Load())
 	}
 	if code, _ := getRelease(rf, "0.12.0", "SHA256SUMS"); code != 200 {
