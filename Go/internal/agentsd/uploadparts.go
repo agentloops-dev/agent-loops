@@ -108,6 +108,7 @@ func (d *Daemon) openPart(r wire.ReceiveUploadRequest, path string) (*uploadGot,
 	if u == nil {
 		return nil, nil, partMissing()
 	}
+	// store-bounds: kind=blob; size=8GiB an upload; age=1h; applied=sweepTransfers, at start and at its use
 	f, err := os.OpenFile(path, flags, 0o600)
 	if os.IsNotExist(err) {
 		return nil, nil, partMissing() // swept, or used
