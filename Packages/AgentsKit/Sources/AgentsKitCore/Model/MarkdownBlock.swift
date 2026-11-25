@@ -28,7 +28,9 @@ public enum MarkdownBlock: Hashable, Sendable {
     case quote([MarkdownBlock])
     case code(language: String?, text: String)
     case table(Table)
-    case image(source: String, alt: String)
+    /// `inline` when it shares its line with words or another image, as a badge does (#7139): it is
+    /// taken out of its paragraph all the same.
+    case image(source: String, alt: String, inline: Bool = false)
     case rule
 
     /// One entry in a list.
@@ -96,7 +98,8 @@ public enum MarkdownBlock: Hashable, Sendable {
                 // so it is reversed once here rather than indexed backwards everywhere.
                 path: (run.presentationIntent?.components ?? []).reversed(),
                 text: text,
-                image: run.imageURL.map { (source: $0.absoluteString, alt: String(text.characters)) })
+                image: run.imageURL.map { (source: $0.absoluteString, alt: String(text.characters)) },
+                breaksLine: run.inlinePresentationIntent.map { !$0.isDisjoint(with: [.softBreak, .lineBreak]) } ?? false)
         }
         return build(pieces[...], depth: 0)
     }
@@ -249,6 +252,8 @@ private struct Piece {
     var path: [PresentationIntent.IntentType]
     var text: AttributedString
     var image: (source: String, alt: String)?
+    /// A soft or a hard line break.
+    var breaksLine = false
 }
 
 private extension MarkdownBlock {
@@ -335,16 +340,29 @@ private extension MarkdownBlock {
             text = AttributedString()
         }
 
-        for piece in pieces {
+        for (piece, inline) in zip(pieces, sharesLine(pieces)) {
             if let image = piece.image {
                 flush()
-                blocks.append(.image(source: image.source, alt: image.alt))
+                blocks.append(.image(source: image.source, alt: image.alt, inline: inline))
             } else {
                 text.append(piece.text)
             }
         }
         flush()
         return blocks
+    }
+
+    /// For each piece of a paragraph, whether its line has more than it: words or another image.
+    static func sharesLine(_ pieces: ArraySlice<Piece>) -> [Bool] {
+        var lines: [Int] = []
+        var filled: [Int: Int] = [:]
+        var line = 0
+        for piece in pieces {
+            if piece.breaksLine { line += 1 }
+            lines.append(line)
+            if piece.image != nil || !piece.text.characters.allSatisfy(\.isWhitespace) { filled[line, default: 0] += 1 }
+        }
+        return lines.map { filled[$0, default: 0] > 1 }
     }
 
     static func items(_ pieces: ArraySlice<Piece>, depth: Int) -> [Item] {

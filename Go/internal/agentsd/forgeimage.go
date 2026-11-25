@@ -741,7 +741,8 @@ func (r *forgeImageRead) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 	res, err := transport.RoundTrip(req)
 	if errors.Is(err, ssrf.ErrProhibitedIP) {
-		return nil, &Error{Code: CodeServer, Message: "forge/image: " + req.URL.Hostname() + " is on a private network"}
+		// A code of its own (#7139): a client offers no second try, as it does for other failures.
+		return nil, &Error{Code: wire.FailureImageNotPublic, Message: req.URL.Hostname() + " is on a private network"}
 	}
 	return res, err
 }
@@ -802,22 +803,26 @@ func (d *Daemon) forgeImage(ctx context.Context, raw string, show []string) (wir
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
-		return wire.ForgeImage{}, fmt.Errorf("forge/image: %s", res.Status)
+		host := res.Request.URL.Hostname()
+		if res.StatusCode == http.StatusNotFound {
+			return wire.ForgeImage{}, fmt.Errorf("%s says it is not there (404)", host)
+		}
+		return wire.ForgeImage{}, fmt.Errorf("%s answered %s", host, res.Status)
 	}
 	if res.ContentLength > forgeImageMost {
-		return wire.ForgeImage{}, fmt.Errorf("forge/image: the image is more than %d MB", forgeImageMost>>20)
+		return wire.ForgeImage{}, fmt.Errorf("the image is more than %d MB", forgeImageMost>>20)
 	}
 	data, err := io.ReadAll(io.LimitReader(res.Body, forgeImageMost+1))
 	if err != nil {
-		return wire.ForgeImage{}, fmt.Errorf("forge/image: %w", err)
+		return wire.ForgeImage{}, forgeImageError(err)
 	}
 	if len(data) > forgeImageMost {
-		return wire.ForgeImage{}, fmt.Errorf("forge/image: the image is more than %d MB", forgeImageMost>>20)
+		return wire.ForgeImage{}, fmt.Errorf("the image is more than %d MB", forgeImageMost>>20)
 	}
 	// The type is read from the bytes: a server's Content-Type can say image/png for an SVG.
 	mime := http.DetectContentType(data)
 	if !forgeImageTypes[mime] {
-		return wire.ForgeImage{}, fmt.Errorf("forge/image: %s is not a PNG, JPEG, GIF or WebP image", mime)
+		return wire.ForgeImage{}, fmt.Errorf("it is %s, not a PNG, JPEG, GIF or WebP image", mime)
 	}
 	image := wire.ForgeImage{MimeType: mime, Data: data}
 	if len(r.chosen) > 0 {
@@ -831,11 +836,19 @@ func (d *Daemon) forgeImage(ctx context.Context, raw string, show []string) (wir
 }
 
 // forgeImageError is a read's failure: imageBlocked and the like as they are, not as the HTTP
-// client wraps them.
+// client wraps them, which says the URL.
 func forgeImageError(err error) error {
 	var e *Error
 	if errors.As(err, &e) {
 		return e
 	}
-	return fmt.Errorf("forge/image: %w", err)
+	// The words go to the person after "The image could not be read:" (#7139).
+	var sent *url.Error
+	if errors.As(err, &sent) {
+		if sent.Timeout() {
+			return errors.New("it took too long")
+		}
+		err = sent.Err
+	}
+	return err
 }

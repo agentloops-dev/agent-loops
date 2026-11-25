@@ -411,6 +411,14 @@
       ]
     },
     {
+      "lucide": "image-off",
+      "group": "Things",
+      "meaning": "A picture that is blocked or could not be read",
+      "sf": [
+        "photo.slash"
+      ]
+    },
+    {
       "lucide": "camera",
       "group": "Things",
       "meaning": "Camera",

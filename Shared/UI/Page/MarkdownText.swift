@@ -50,7 +50,7 @@ struct MarkdownText: View {
     /// Where an image on the network is read from, on a forge's page only (#4010): through
     /// the machine's `forge/image`, never by the app. Nil everywhere else, where a remote
     /// image stays its alternative text, so documents and the chat do not change.
-    var remoteImage: RemoteImageLoader?
+    var remoteImage: RemoteImages?
     /// The images this text opens large, which the viewer goes through (#4954).
     @State private var gallery = ImageGallery()
 
@@ -200,8 +200,8 @@ struct MarkdownText: View {
         case .code(let language, let text):
             codeBlock(language: language, text: text, caret: caret)
 
-        case .image(let source, let alt):
-            trailed(image(source: source, alt: alt), by: caret)
+        case .image(let source, let alt, let inline):
+            trailed(image(source: source, alt: alt, inline: inline), by: caret)
 
         case .table(let table):
             // A short column keeps its width and a column of sentences wraps, so the
@@ -264,11 +264,11 @@ struct MarkdownText: View {
     /// read the page for an https image, and a click opens it in the image viewer. An image that
     /// is a link is never here: it is the link's words, whose click follows the link (#4954).
     @ViewBuilder
-    private func image(source: String, alt: String) -> some View {
+    private func image(source: String, alt: String, inline: Bool) -> some View {
         if let base, let url = ImageStamps.url(of: source, base: base) {
             PagePicture(url: url, source: source, alt: alt)
         } else if let remoteImage, let url = ForgeMarkdown.imageURL(of: source) {
-            PagePicture(url: url, source: source, alt: alt, remote: remoteImage)
+            RemotePagePicture(url: url, source: source, alt: alt, inline: inline, remote: remoteImage)
         } else {
             PictureAlternative(source: source, alt: alt)
         }
@@ -591,42 +591,20 @@ private struct Sideways<Content: View>: View {
 ///
 /// Loaded once per identity. The page gives a passage a new identity when its
 /// picture's file changes, which is what makes this read it again.
-///
-/// A forge page's picture (`remote`, #4010) is asked for once, shows its alternative text
-/// while it loads and when it cannot be read, is never drawn larger than it is, and opens
-/// in the image viewer when clicked, with the page's other images to go through (#4954). A
-/// small one (a logo, a badge) does not open.
 private struct PagePicture: View {
     @Environment(\.pageActions) private var actions
-    @Environment(\.imageSequence) private var sequence
     let url: URL
     let source: String
     let alt: String
-    var remote: RemoteImageLoader?
 
     @State private var loaded: PlatformImage?
     @State private var tried = false
-    @State private var viewed: ViewedImage?
 
     var body: some View {
         Group {
-            if let loaded, remote != nil, opensLarge(loaded) {
-                Button { open(loaded) } label: {
-                    drawn(loaded).frame(maxWidth: loaded.size.width)
-                }
-                .buttonStyle(.plain)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .accessibilityHint("Opens the image")
-                #if os(macOS)
-                .pointerStyle(.link)
-                #endif
-                .imageViewer($viewed)
-            } else if let loaded, remote != nil {
-                drawn(loaded).frame(maxWidth: loaded.size.width)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            } else if let loaded {
-                drawn(loaded).frame(maxWidth: .infinity, alignment: .leading)
-            } else if tried || remote != nil {
+            if let loaded {
+                DrawnPicture(image: loaded, alt: alt).frame(maxWidth: .infinity, alignment: .leading)
+            } else if tried {
                 PictureAlternative(source: source, alt: alt)
             } else {
                 // Held open while it loads, so the words below do not jump twice.
@@ -634,14 +612,6 @@ private struct PagePicture: View {
             }
         }
         .task(id: url) {
-            if let remote {
-                loaded = await remote(url)
-                tried = true
-                if let loaded, opensLarge(loaded) {
-                    sequence?.gallery.add(url, ViewedImage.Item(image: loaded, alt: alt))
-                }
-                return
-            }
             // Asked more than once: on a phone a picture is drawn by WebKit, and a
             // drawing that failed the first time can come out the second (034). On the
             // Mac a missing file is simply missing, and asking again costs a stat.
@@ -654,6 +624,72 @@ private struct PagePicture: View {
             tried = true
         }
     }
+}
+
+/// A forge page's picture (#4010): asked for once, shows its alternative text while it loads and
+/// when it cannot be read, is never drawn larger than it is, and opens in the image viewer when
+/// clicked, with the page's other images to go through (#4954). A small one (a logo, a badge) does
+/// not open. A blocked one says its host, with Show image and Always allow (#7139).
+private struct RemotePagePicture: View {
+    @Environment(\.imageSequence) private var sequence
+    let url: URL
+    let source: String
+    let alt: String
+    let inline: Bool
+    let remote: RemoteImages
+
+    @State private var viewed: ViewedImage?
+
+    private var loaded: PlatformImage? {
+        if case .image(let image) = remote.page.phase(url) { image } else { nil }
+    }
+
+    var body: some View {
+        Group {
+            if let loaded {
+                VStack(alignment: .leading, spacing: 4) {
+                    picture(loaded)
+                    if remote.controls, let host = remote.page.shownOnce(url) {
+                        ShownOnceCaption(host: host, url: url, remote: remote)
+                    }
+                }
+            } else if remote.controls, let card = BlockedImageView.State(remote.page.phase(url)) {
+                BlockedImageView(state: card, name: name, inline: inline, url: url, remote: remote)
+            } else {
+                PictureAlternative(source: source, alt: alt)
+            }
+        }
+        .task(id: Ask(url: url, machine: remote.machine)) { remote.page.load(url, on: remote.machine) }
+        .onChange(of: loaded, initial: true) {
+            if let loaded, opensLarge(loaded) { sequence?.gallery.add(url, ViewedImage.Item(image: loaded, alt: alt)) }
+        }
+    }
+
+    private struct Ask: Equatable {
+        let url: URL
+        let machine: MachineRef
+    }
+
+    private var name: String { PictureAlternative.name(source: source, alt: alt) }
+
+    @ViewBuilder
+    private func picture(_ image: PlatformImage) -> some View {
+        if opensLarge(image) {
+            Button { open(image) } label: {
+                DrawnPicture(image: image, alt: alt).frame(maxWidth: image.size.width)
+            }
+            .buttonStyle(.plain)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityHint("Opens the image")
+            #if os(macOS)
+            .pointerStyle(.link)
+            #endif
+            .imageViewer($viewed)
+        } else {
+            DrawnPicture(image: image, alt: alt).frame(maxWidth: image.size.width)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
 
     private func opensLarge(_ image: PlatformImage) -> Bool {
         ImageSequence.opensLarge(width: image.size.width, height: image.size.height)
@@ -664,8 +700,13 @@ private struct PagePicture: View {
         viewed = sequence?.gallery.viewed(at: url, order: sequence?.order ?? [url])
             ?? ViewedImage(images: [ViewedImage.Item(image: image, alt: alt)], start: 0)
     }
+}
 
-    private func drawn(_ image: PlatformImage) -> some View {
+private struct DrawnPicture: View {
+    let image: PlatformImage
+    let alt: String
+
+    var body: some View {
         Image(platformImage: image)
             .resizable()
             .scaledToFit()
@@ -673,9 +714,14 @@ private struct PagePicture: View {
     }
 }
 
-/// Reads an image on the network for a page, through the machine (#4010); nil when it
-/// cannot, and the page shows the image's alternative text.
-typealias RemoteImageLoader = @MainActor (URL) async -> PlatformImage?
+/// Where a forge page's images on the network are read (#4010): the page's own store (#7139), the
+/// machine that read the page, and whether a blocked one has its controls.
+struct RemoteImages {
+    let page: PageImages<PlatformImage>
+    let machine: MachineRef
+    let machineName: String
+    let controls: Bool
+}
 
 /// A picture that cannot be drawn: its alternative text, or its name.
 private struct PictureAlternative: View {
@@ -685,9 +731,14 @@ private struct PictureAlternative: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             Image(icon: "photo").foregroundStyle(.tertiary)
-            Text(alt.isEmpty ? URL(string: source)?.lastPathComponent ?? source : alt)
+            Text(Self.name(source: source, alt: alt))
                 .foregroundStyle(.secondary)
         }
         .appText(.supporting)
+    }
+
+    /// Its alternative text, or its file's name.
+    static func name(source: String, alt: String) -> String {
+        alt.isEmpty ? URL(string: source)?.lastPathComponent ?? source : alt
     }
 }
