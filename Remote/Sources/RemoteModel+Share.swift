@@ -29,6 +29,16 @@ extension RemoteModel {
         return SharedInbox.take()
     }
 
+    /// What was shared ages out (#6795) while the Remote runs, also with no folder to offer it in.
+    static func sweepShared() {
+        Task.detached(priority: .background) {
+            while !Task.isCancelled {
+                SharedInbox.sweep()
+                try? await Task.sleep(for: .seconds(SharedInbox.sweepEvery))
+            }
+        }
+    }
+
     /// The offer for the page in `folder`, taken once.
     func takeOfferedStart(in folder: FolderKey) -> AppViewStart? {
         guard let offered = offeredStart, offered.folder == folder else { return nil }
