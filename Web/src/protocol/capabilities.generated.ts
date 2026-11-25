@@ -84,6 +84,7 @@ export const Capability = {
   folder1: "folder/1",
   foldersNotCommitted1: "folders.not-committed/1",
   foldersSeed1: "folders.seed/1",
+  foldersSendParts1: "folders.send-parts/1",
   foldersSendSeed1: "folders.send-seed/1",
   foldersSignedUpload1: "folders.signed-upload/1",
   foldersToMachine1: "folders.to-machine/1",
@@ -1098,6 +1099,7 @@ export const DeclaredCapabilities: Readonly<Record<string, readonly Capability[]
     "host.lock/1",
     "host.lock/2",
     "host.user-settings/3",
+    "folders.send-parts/1",
     "host.user-parts/1",
   ],
 };

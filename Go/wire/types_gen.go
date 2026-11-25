@@ -9351,7 +9351,7 @@ type MachineFolderSend struct {
 	Seed *ReceiveSeedRequest `json:"seed,omitzero"`
 }
 
-// What machines/sendFolder's step answered (#2929, #2947): state for state, folder for receive, facts for facts, pack for pack, read for read, seed for seed, none for upload.
+// What machines/sendFolder's step answered (#2929, #2947): state for state, folder for receive, facts for facts, pack for pack, read for read, seed for seed, none for upload. An upload or a read also says partsAtOnce.
 type MachineFolderSent struct {
 	State *ReceiveState `json:"state,omitzero"`
 
@@ -9364,6 +9364,9 @@ type MachineFolderSent struct {
 	Read *SendRead `json:"read,omitzero"`
 
 	Seed *ReceiveSeed `json:"seed,omitzero"`
+
+	// How many parts of one file the sender may have in flight to or from that machine (#7120). None from an older control plane, and for a machine without folders.send-parts/1: one part at a time.
+	PartsAtOnce *int64 `json:"partsAtOnce,omitzero"`
 }
 
 // A machine's ForgeBoards in forge/boardsAll (#5592).
@@ -13033,7 +13036,7 @@ type ReceiveStateRequest struct {
 	Folder string `json:"folder"`
 }
 
-// One part of a file a Mac sends (#1123), at `offset` in the upload. A part is at most 16 MB; the host keeps the upload until folders/receive uses it.
+// One part of a file a Mac sends (#1123), at `offset` in the upload. The part at 0 comes first; the others come in any order (#7120). A part is at most 16 MB; the host keeps the upload until folders/receive uses it.
 type ReceiveUploadRequest struct {
 	Upload UUID `json:"upload"`
 
@@ -14833,7 +14836,7 @@ type SendPackRequest struct {
 	IncludeChanges bool `json:"includeChanges"`
 }
 
-// A part of at most 1 MB (#1530). `end` is true for the last, and then the host removes the file.
+// A part of at most 4 MB (#7120); 1 MB for an export (#1530). `end` is true for the last, and then the host removes the file.
 type SendRead struct {
 	Data Data `json:"data"`
 

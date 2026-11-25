@@ -34,7 +34,7 @@ func (d *Daemon) registerExports() {
 		return d.export(r)
 	})
 	On(d, wire.CallAgentsExportRead, func(ctx context.Context, c *Client, r wire.SendReadRequest) (wire.SendRead, error) {
-		return d.readOutgoing(r, "That export is gone. Export again.")
+		return d.readOutgoing(r, exportPartSize, "That export is gone. Export again.")
 	})
 	On(d, wire.CallAgentsImportUpload, func(ctx context.Context, c *Client, r wire.ReceiveUploadRequest) (wire.Empty, error) {
 		return wire.Empty{}, d.receiveUpload(r)
@@ -144,6 +144,9 @@ func (d *Daemon) importExport(r wire.AgentsImportRequest) (wire.BackupRestoreRes
 		return wire.BackupRestoreResult{}, err
 	}
 	defer os.Remove(path)
+	if err := d.wholeUploads(path); err != nil {
+		return wire.BackupRestoreResult{}, err
+	}
 	m, err := readExportManifest(path)
 	if err != nil {
 		return wire.BackupRestoreResult{}, err

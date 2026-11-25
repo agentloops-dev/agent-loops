@@ -42,6 +42,9 @@ func (d *Daemon) bringBack(r wire.BringBackRequest) (wire.BringBack, error) {
 	if err != nil {
 		return done, err
 	}
+	if err := d.wholeUploads(bundle, patch); err != nil {
+		return done, err
+	}
 	repo, _ := repositoryOf(path)
 	m, _ := receiveLocks.LoadOrStore(canonical(repo.commonDir), &sync.Mutex{})
 	m.(*sync.Mutex).Lock()

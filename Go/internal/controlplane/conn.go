@@ -13,13 +13,15 @@ import (
 // queue and never block the router: a peer that falls this far behind is closed, and
 // reconnects to read everything afresh, as the Swift transport's bound does.
 type Conn struct {
-	ws     *websocket.Conn
-	out    chan string
+	ws  *websocket.Conn
+	out chan string
+	// bulk lines go when out is empty (#7120).
+	bulk   chan string
 	done   chan struct{}
 	once   sync.Once
 	Remote string
 
-	// The bytes of the lines in out.
+	// The bytes of the lines in out and bulk.
 	waiting atomic.Int64
 }
 
@@ -34,7 +36,7 @@ const (
 func newConn(ws *websocket.Conn, remote string) *Conn {
 	// Until it proves a key; then by what proved one (#2150).
 	ws.SetReadLimit(unprovenMessageMost)
-	c := &Conn{ws: ws, out: make(chan string, queued), done: make(chan struct{}), Remote: remote}
+	c := &Conn{ws: ws, out: make(chan string, queued), bulk: make(chan string, queued), done: make(chan struct{}), Remote: remote}
 	go c.write()
 	go c.ping()
 	return c
@@ -42,19 +44,35 @@ func newConn(ws *websocket.Conn, remote string) *Conn {
 
 func (c *Conn) write() {
 	for {
-		select {
-		case line := <-c.out:
-			c.waiting.Add(-int64(len(line)))
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			err := c.ws.Write(ctx, websocket.MessageText, []byte(line))
-			cancel()
-			if err != nil {
-				c.Close()
-				return
-			}
-		case <-c.done:
+		line, ok := c.next()
+		if !ok {
 			return
 		}
+		c.waiting.Add(-int64(len(line)))
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		err := c.ws.Write(ctx, websocket.MessageText, []byte(line))
+		cancel()
+		if err != nil {
+			c.Close()
+			return
+		}
+	}
+}
+
+// next is the line to write now, a bulk one when no other waits; false when the socket closed.
+func (c *Conn) next() (string, bool) {
+	select {
+	case line := <-c.out:
+		return line, true
+	default:
+	}
+	select {
+	case line := <-c.out:
+		return line, true
+	case line := <-c.bulk:
+		return line, true
+	case <-c.done:
+		return "", false
 	}
 }
 
@@ -79,7 +97,13 @@ func (c *Conn) ping() {
 }
 
 // Send queues a line; false when the socket is closed, or too far behind and so closed.
-func (c *Conn) Send(line string) bool {
+func (c *Conn) Send(line string) bool { return c.queue(c.out, line) }
+
+// SendBulk is Send for a line that the others go before: a part of a machine's send (#7120).
+// Bulk lines keep their order among themselves.
+func (c *Conn) SendBulk(line string) bool { return c.queue(c.bulk, line) }
+
+func (c *Conn) queue(out chan string, line string) bool {
 	select {
 	case <-c.done:
 		return false
@@ -92,7 +116,7 @@ func (c *Conn) Send(line string) bool {
 		return false
 	}
 	select {
-	case c.out <- line:
+	case out <- line:
 		return true
 	default:
 		c.waiting.Add(-size)

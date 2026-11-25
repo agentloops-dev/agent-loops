@@ -8858,7 +8858,8 @@ export interface MachineFolderSend {
 
 /**
  * What machines/sendFolder's step answered (#2929, #2947): state for state, folder for receive,
- * facts for facts, pack for pack, read for read, seed for seed, none for upload.
+ * facts for facts, pack for pack, read for read, seed for seed, none for upload. An upload or a
+ * read also says partsAtOnce.
  */
 export interface MachineFolderSent {
   state?: ReceiveState;
@@ -8867,6 +8868,12 @@ export interface MachineFolderSent {
   pack?: SendPack;
   read?: SendRead;
   seed?: ReceiveSeed;
+  /**
+   * How many parts of one file the sender may have in flight to or from that machine (#7120). None
+   * from an older control plane, and for a machine without folders.send-parts/1: one part at a
+   * time.
+   */
+  partsAtOnce?: number;
 }
 
 /** A machine's ForgeBoards in forge/boardsAll (#5592). */
@@ -12473,8 +12480,9 @@ export interface ReceiveStateRequest {
 }
 
 /**
- * One part of a file a Mac sends (#1123), at `offset` in the upload. A part is at most 16 MB; the
- * host keeps the upload until folders/receive uses it.
+ * One part of a file a Mac sends (#1123), at `offset` in the upload. The part at 0 comes first; the
+ * others come in any order (#7120). A part is at most 16 MB; the host keeps the upload until
+ * folders/receive uses it.
  */
 export interface ReceiveUploadRequest {
   upload: UUID;
@@ -14155,7 +14163,8 @@ export interface SendPackRequest {
 }
 
 /**
- * A part of at most 1 MB (#1530). `end` is true for the last, and then the host removes the file.
+ * A part of at most 4 MB (#7120); 1 MB for an export (#1530). `end` is true for the last, and then
+ * the host removes the file.
  */
 export interface SendRead {
   data: Base64;
@@ -18861,7 +18870,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   MachineEventsPage: { required: ["machine", "machineName", "page"], optional: [] },
   MachineFeatureUsage: { required: ["machine", "machineName", "usage"], optional: [] },
   MachineFolderSend: { required: ["host"], optional: ["state", "upload", "uploadSigned", "receive", "facts", "pack", "read", "moveIn", "seed"] },
-  MachineFolderSent: { required: [], optional: ["state", "folder", "facts", "pack", "read", "seed"] },
+  MachineFolderSent: { required: [], optional: ["state", "folder", "facts", "pack", "read", "seed", "partsAtOnce"] },
   MachineForgeBoards: { required: ["machine", "machineName", "boards"], optional: [] },
   MachineForgeList: { required: ["machine", "machineName", "list"], optional: [] },
   MachineHello: { required: ["version", "platform", "machineID"], optional: ["host", "name", "implementation", "capabilities", "maturity"] },

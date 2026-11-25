@@ -428,7 +428,9 @@ func TestASignedUploadGoesWithoutASecondCopy(t *testing.T) {
 func TestTheBotsKeyGoesOnlyAsItsMachineSignedIt(t *testing.T) {
 	h := newHarness(t)
 	h.router.mu.Lock()
-	h.router.answer = func(host, method string, params json.RawMessage) *Reply { return &Reply{Result: rawOf(map[string]any{})} }
+	h.router.answer = func(host, method string, params json.RawMessage) *Reply {
+		return &Reply{Result: rawOf(map[string]any{})}
+	}
 	h.router.mu.Unlock()
 	h.router.setOnline(devbox, true)
 	sealed := `{"appId":42,"version":1,"sealed":{"encapsulated":"AQ==","ciphertext":"Ag=="}}`
@@ -463,5 +465,76 @@ func TestTheBotsKeyGoesOnlyAsItsMachineSignedIt(t *testing.T) {
 	}
 	if _, err := call(deliver); failureOf(err) == nil || failureOf(err).Code != CodeNoSuchHost {
 		t.Fatalf("another person's machine: %v", err)
+	}
+}
+
+// #7120: the control plane says how many parts may be in flight only for a machine that takes
+// them in any order, and holds no more than that many to one machine.
+func TestASendHasSeveralPartsInFlight(t *testing.T) {
+	h := newHarness(t)
+	began, letGo := make(chan struct{}, 2*SendPartsAtOnce), make(chan struct{})
+	h.router.mu.Lock()
+	h.router.answer = func(_, method string, _ json.RawMessage) *Reply {
+		if method == MethodReceiveUpload {
+			began <- struct{}{}
+			<-letGo
+		}
+		return &Reply{Result: rawOf(wire.SendRead{Data: wire.Data("hello"), End: true})}
+	}
+	h.router.mu.Unlock()
+	h.router.setOnline(devbox, true)
+	read := map[string]any{"host": "devbox", "read": map[string]any{"id": records.NewUUID(), "offset": 0}}
+
+	out, err := h.agentCall(MethodSendFolder, read)
+	if n := out.(wire.MachineFolderSent).PartsAtOnce; err != nil || n == nil || *n != SendPartsAtOnce {
+		t.Fatalf("%v %+v", err, out)
+	}
+	h.router.mu.Lock()
+	h.router.lacks = map[string]bool{devbox + " " + wire.CapFoldersSendParts1: true}
+	h.router.mu.Unlock()
+	out, err = h.agentCall(MethodSendFolder, read)
+	if n := out.(wire.MachineFolderSent).PartsAtOnce; err != nil || n != nil {
+		t.Fatalf("an older machine: %v %+v", err, out)
+	}
+
+	ended := make(chan error, SendPartsAtOnce+1)
+	for range SendPartsAtOnce + 1 {
+		go func() {
+			_, err := h.agentCall(MethodSendFolder, map[string]any{"host": "devbox",
+				"upload": map[string]any{"upload": records.NewUUID(), "offset": 0, "data": "aGVsbG8="}})
+			ended <- err
+		}()
+	}
+	for range SendPartsAtOnce {
+		<-began
+	}
+	select {
+	case <-began:
+		t.Fatal("more parts than places")
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(letGo)
+	for range SendPartsAtOnce + 1 {
+		if err := <-ended; err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestAPartOfASend(t *testing.T) {
+	for call, want := range map[string]bool{
+		`{"method":"machines/sendFolder","params":{"host":"a","upload":{"offset":0}}}`:    true,
+		`{"method":"machines/sendFolder","params":{"host":"a","uploadSigned":true}}`:      true,
+		`{"method":"machines/sendFolder","params":{"host":"a","read":{"offset":0}}}`:      true,
+		`{"method":"machines/sendFolder","params":{"host":"a","receive":{"folder":"x"}}}`: false,
+		`{"method":"machines/forAgent","params":{"read":{}}}`:                             false,
+		`[]`: false,
+	} {
+		if IsPart(MethodHostMachines, json.RawMessage(call)) != want {
+			t.Error(call)
+		}
+	}
+	if IsPart("machine/status", json.RawMessage(`{"method":"machines/sendFolder","params":{"read":{}}}`)) {
+		t.Error("another method")
 	}
 }

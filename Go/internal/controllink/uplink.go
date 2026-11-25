@@ -29,6 +29,15 @@ type Conn interface {
 	Device() string
 }
 
+// BulkConn is a Conn that writes a large line when the link has no other line to write.
+type BulkConn interface {
+	WriteBulk(line string) error
+}
+
+// BulkLine is the size from which a call of a machine, its answer and its delivery are bulk
+// (#7120): they go when no other line waits, so a send's parts hold up nothing.
+const BulkLine = 1 << 20
+
 // Accept is handed every channel the control plane opens; it serves it until In closes.
 type Accept func(Conn)
 
@@ -110,28 +119,32 @@ const (
 )
 
 type sender struct {
-	l    *Lines
-	out  chan string
+	l   *Lines
+	out chan string
+	// bulk lines go when out is empty.
+	bulk chan string
 	done chan struct{}
 	once sync.Once
 }
 
 func newSender(l *Lines, ping time.Duration) *sender {
-	s := &sender{l: l, out: make(chan string, upQueue), done: make(chan struct{})}
+	s := &sender{l: l, out: make(chan string, upQueue), bulk: make(chan string, upQueue), done: make(chan struct{})}
 	safe.Go("uplink write", s.writeAll)
 	safe.Go("uplink ping", func() { s.ping(ping) })
 	return s
 }
 
 // send queues a line; it never waits for the control plane.
-func (s *sender) send(line string) error {
+func (s *sender) send(line string) error { return s.queue(s.out, line) }
+
+func (s *sender) queue(out chan string, line string) error {
 	select {
 	case <-s.done:
 		return errOffline
 	default:
 	}
 	select {
-	case s.out <- line:
+	case out <- line:
 		return nil
 	case <-s.done:
 		return errOffline
@@ -141,7 +154,7 @@ func (s *sender) send(line string) error {
 	wait := time.NewTimer(upQueueWait)
 	defer wait.Stop()
 	select {
-	case s.out <- line:
+	case out <- line:
 		return nil
 	case <-s.done:
 		return errOffline
@@ -154,16 +167,34 @@ func (s *sender) send(line string) error {
 
 func (s *sender) writeAll() {
 	for {
-		select {
-		case <-s.done:
+		line, ok := s.next()
+		if !ok {
 			return
-		case line := <-s.out:
-			if err := s.l.Write(context.Background(), line); err != nil {
-				log.Printf("uplink: a write to the control plane failed: %v; dropped", err)
-				s.drop()
-				return
-			}
 		}
+		if err := s.l.Write(context.Background(), line); err != nil {
+			log.Printf("uplink: a write to the control plane failed: %v; dropped", err)
+			s.drop()
+			return
+		}
+	}
+}
+
+// next is the line to write now, a bulk one when no other waits; false when the link ended.
+func (s *sender) next() (string, bool) {
+	select {
+	case <-s.done:
+		return "", false
+	case line := <-s.out:
+		return line, true
+	default:
+	}
+	select {
+	case <-s.done:
+		return "", false
+	case line := <-s.out:
+		return line, true
+	case line := <-s.bulk:
+		return line, true
 	}
 }
 
@@ -395,6 +426,17 @@ func (u *Uplink) write(line string) error {
 	return out.send(line)
 }
 
+// writeBulk is write for a line that the others go before.
+func (u *Uplink) writeBulk(line string) error {
+	u.mu.Lock()
+	out := u.out
+	u.mu.Unlock()
+	if out == nil {
+		return errOffline
+	}
+	return out.queue(out.bulk, line)
+}
+
 type offline struct{}
 
 func (offline) Error() string { return "this host is not connected to its control plane" }
@@ -501,7 +543,11 @@ func (u *Uplink) request(method string, params any) (int64, chan askReply, error
 	}
 	u.asks[id] = wait
 	u.mu.Unlock()
-	if err := u.write(channelLine(0, string(m))); err != nil {
+	write := u.write
+	if method == "machine/machines" && len(m) >= BulkLine {
+		write = u.writeBulk
+	}
+	if err := write(channelLine(0, string(m))); err != nil {
 		u.forget(id)
 		return 0, nil, err
 	}
@@ -766,6 +812,14 @@ func (c *channel) Write(line string) error {
 		return errOffline
 	}
 	return c.up.write(channelLine(c.number, line))
+}
+
+// WriteBulk is Write for an answer that the link's other lines go before (#7120).
+func (c *channel) WriteBulk(line string) error {
+	if c.closed.Load() {
+		return errOffline
+	}
+	return c.up.writeBulk(channelLine(c.number, line))
 }
 
 func (c *channel) In() <-chan string { return c.in }
