@@ -6,14 +6,21 @@ import SwiftUI
 /// version the machine runs, since when, and the changes since the version before, newest
 /// first, with Show all; the person's other machines, each with how far it is behind this one,
 /// which opens those changes; and the versions this machine ran. Read from the control plane
-/// with `machines/agents` when the page opens, so it says when (#5139).
+/// with `machines/agents` when the page opens, so it says when (#5139). The window also says how the
+/// machine updates itself (#6114), read from the machine every few seconds while the page is open.
 struct MachineAgentsSections: View {
     let host: MachineRef
     /// `machines/agents` on the control plane; nil when there is none to ask.
     let read: (@MainActor (MachineRef) async throws -> DaemonAPI.MachineAgents)?
     /// `machines/agentsChanges` on the control plane.
     let changes: @MainActor (DaemonAPI.AgentsChangesRequest) async throws -> DaemonAPI.AgentsChanges
+    /// The machine's name, for the line when it does not answer `readUpdate`.
+    var name = ""
+    /// `selfUpdate/status` on the machine (#6114, tier Mac + web); nil when it can't be asked, and on the Remote.
+    var readUpdate: (@MainActor () async throws -> DaemonAPI.SelfUpdate)?
 
+    @State private var update: DaemonAPI.SelfUpdate?
+    @State private var updateFailed = false
     @State private var agents: DaemonAPI.MachineAgents?
     @State private var readAt: Date?
     @State private var failure: String?
@@ -33,6 +40,7 @@ struct MachineAgentsSections: View {
                 } else {
                     ProgressView().frame(maxWidth: .infinity, alignment: .leading)
                 }
+                if readUpdate != nil { updateRows }
             } header: {
                 Text(AgentsVersionWords.title)
             } footer: {
@@ -65,6 +73,48 @@ struct MachineAgentsSections: View {
             }
         }
         .task(id: host) { await load() }
+        .task(id: UpdateRead(host: host, asks: readUpdate != nil)) { await followUpdate() }
+    }
+
+    private struct UpdateRead: Hashable {
+        let host: MachineRef
+        let asks: Bool
+    }
+
+    /// Whether the machine updates itself, and where that is (#6114).
+    @ViewBuilder
+    private var updateRows: some View {
+        if let update {
+            LabeledContent(SelfUpdateWords.automatic, value: SelfUpdateWords.value(update))
+            Text(SelfUpdateWords.line(update))
+                .appText(.fine)
+                .foregroundStyle((SelfUpdateWords.failed(update) ? StateTint.failure : .none).style(or: Paper.secondary))
+                .textSelection(.enabled)
+        } else if updateFailed {
+            Text(SelfUpdateWords.noAnswer(name)).appText(.fine).foregroundStyle(Paper.secondary)
+        }
+    }
+
+    /// Reads the machine's own state while the page is open. A machine that runs another version
+    /// since the last read was updated, so its version and changes are read again.
+    private func followUpdate() async {
+        update = nil
+        updateFailed = false
+        guard let readUpdate else { return }
+        var running: String?
+        while !Task.isCancelled {
+            do {
+                let now = try await readUpdate()
+                update = now
+                updateFailed = false
+                if let running, running != now.running { await load() }
+                running = now.running
+            } catch {
+                update = nil
+                updateFailed = true
+            }
+            try? await Task.sleep(for: .seconds(3))
+        }
     }
 
     @ViewBuilder

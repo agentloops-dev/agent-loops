@@ -12,14 +12,14 @@ struct SelfUpdateSection: View {
     var body: some View {
         if let update = model.selfUpdate {
             Section {
-                Toggle("Update Agent Loops automatically", isOn: Binding(
+                Toggle(SelfUpdateWords.automatic, isOn: Binding(
                     get: { model.selfUpdate?.autoUpdate ?? false },
                     set: { on in Task { await model.setAutoUpdate(on) } }))
                 .disabled(update.state == .cannot)
                 LabeledContent("Version", value: update.running)
-                Text(Self.line(update))
+                Text(SelfUpdateWords.line(update))
                     .appText(.fine)
-                    .foregroundStyle((update.state == .failed ? StateTint.failure : .none).style(or: .secondary))
+                    .foregroundStyle((SelfUpdateWords.failed(update) ? StateTint.failure : .none).style(or: .secondary))
             } header: {
                 Text("Updates")
             } footer: {
@@ -28,18 +28,6 @@ struct SelfUpdateSection: View {
                     .foregroundStyle(.secondary)
             }
             .paperListRow()
-        }
-    }
-
-    static func line(_ update: DaemonAPI.SelfUpdate) -> String {
-        let release = update.release ?? ""
-        switch update.state {
-        case .upToDate: return "Up to date."
-        case .off: return release.isEmpty ? "Off." : "Off. Your control plane runs \(release)."
-        case .downloading: return "Downloading \(release)…"
-        case .waiting: return "\(release) is ready. It installs when no agent is in a turn."
-        case .restarting: return "Installed \(release). Restarting…"
-        case .failed, .cannot: return update.message ?? "Agent Loops cannot update itself."
         }
     }
 }

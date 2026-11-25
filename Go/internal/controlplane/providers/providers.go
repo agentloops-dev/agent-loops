@@ -265,6 +265,8 @@ type Providers struct {
 	// Why each host's last start or stop failed, until the next one.
 	problems map[string]string
 	kept     *Kept
+	// The places for parts of sends, by the machine they go to or come from (#7120).
+	partPlaces map[string]chan struct{}
 	// What each host last said about whether it is idle (US4).
 	statuses map[string]MachineStatus
 	// Each linked host's stop when idle, counting down while it stays idle.

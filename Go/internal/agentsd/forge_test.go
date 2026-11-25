@@ -43,6 +43,10 @@ type fakeForgeGitHub struct {
 	// timeline is what Timeline gives, and timelines how often it was asked (#4172).
 	timeline  githubmcp.Timeline
 	timelines int
+	// timelineRests is how often TimelineRest was asked (#7027).
+	timelineRests int
+	// timelineRead are the epics that the last Timeline read, not kept ones (#7028).
+	timelineRead []int
 	// reviews are what a list by a requested reviewer gives (#3330, #5803).
 	reviews []githubmcp.Item
 	// waiting are each repo's deploys waiting for a reviewer (#3587).

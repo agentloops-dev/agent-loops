@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"hash/fnv"
 	"time"
+
+	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/providers"
 )
 
 // A host's calls on channel 0 run off its link's read loop (#6223). The loop must keep
@@ -39,6 +42,8 @@ type hostCalls struct {
 	lanes []chan hostCall
 	of    map[string]chan hostCall
 	done  chan struct{}
+	// parts holds a place for each part of a send that runs off its lane.
+	parts chan struct{}
 	// refused is how many calls were refused since the last one a lane took. Its log
 	// lines go off the read loop (#6569): a write to a log file on a disk that is slow
 	// held the loop, and the loop answers the pings.
@@ -47,7 +52,8 @@ type hostCalls struct {
 
 // startHostCalls makes the lanes for host's link gen.
 func (r *Router) startHostCalls(host string, gen int64) *hostCalls {
-	return &hostCalls{r: r, host: host, gen: gen, of: map[string]chan hostCall{}, done: make(chan struct{})}
+	return &hostCalls{r: r, host: host, gen: gen, of: map[string]chan hostCall{}, done: make(chan struct{}),
+		parts: make(chan struct{}, providers.SendPartsAtOnce)}
 }
 
 // lane is a method's lane: its own while there is room for one more, else one it shares.
@@ -69,11 +75,29 @@ func (c *hostCalls) lane(method string) chan hostCall {
 			case <-c.done:
 				return
 			case call := <-lane:
-				c.r.answerHost(c.host, c.gen, call)
+				c.run(call)
 			}
 		}
 	}()
 	return lane
+}
+
+// run answers a call, a part of a send off the lane when there is a place for it, so the
+// machine's next part, and its calls about other things, do not wait for its answer (#7120).
+func (c *hostCalls) run(call hostCall) {
+	if !providers.IsPart(call.method, call.params) {
+		c.r.answerHost(c.host, c.gen, call)
+		return
+	}
+	select {
+	case c.parts <- struct{}{}:
+		go func() {
+			defer func() { <-c.parts }()
+			c.r.answerHost(c.host, c.gen, call)
+		}()
+	default:
+		c.r.answerHost(c.host, c.gen, call)
+	}
 }
 
 // take queues a call in its method's lane; false when that lane is full or the link ended.
@@ -125,7 +149,11 @@ func (r *Router) answerHost(host string, gen int64, call hostCall) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if h := r.hosts[host]; h != nil && h.gen == gen {
-		h.conn.Send(channelFrame(0, line))
+		send := h.conn.Send
+		if call.method == providers.MethodHostMachines && len(line) >= controllink.BulkLine {
+			send = func(line string) bool { return sendBulk(h.conn, line) }
+		}
+		send(channelFrame(0, line))
 	}
 }
 

@@ -50,7 +50,6 @@
 7 Go/internal/agentsd/readymade.go WriteAtomically
 2 Go/internal/agentsd/readymadeskills.go WriteAtomically
 1 Go/internal/agentsd/receive.go os.CreateTemp
-1 Go/internal/agentsd/receive.go os.OpenFile
 2 Go/internal/agentsd/receive.go os.WriteFile
 3 Go/internal/agentsd/relay.go os.WriteFile
 1 Go/internal/agentsd/restarts.go WriteAtomically

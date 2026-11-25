@@ -8898,7 +8898,8 @@ export interface MachineFolderSend {
 
 /**
  * What machines/sendFolder's step answered (#2929, #2947): state for state, folder for receive,
- * facts for facts, pack for pack, read for read, seed for seed, none for upload.
+ * facts for facts, pack for pack, read for read, seed for seed, none for upload. An upload or a
+ * read also says partsAtOnce.
  */
 export interface MachineFolderSent {
   state?: ReceiveState;
@@ -8907,6 +8908,12 @@ export interface MachineFolderSent {
   pack?: SendPack;
   read?: SendRead;
   seed?: ReceiveSeed;
+  /**
+   * How many parts of one file the sender may have in flight to or from that machine (#7120). None
+   * from an older control plane, and for a machine without folders.send-parts/1: one part at a
+   * time.
+   */
+  partsAtOnce?: number;
 }
 
 /** A machine's ForgeBoards in forge/boardsAll (#5592). */
@@ -9607,6 +9614,21 @@ export interface MarketplacesListRequest {
  * part older than #6579 sends none, and a client then reads the list it was built with.
  */
 export type Maturity = Record<string, MaturityLevel>;
+
+/**
+ * maturity/complete (#6934): the finished state of one source operation, with no actor and no
+ * content. An operation that is not complete, not eligible or a background refresh is refused.
+ */
+export interface MaturityCompletion {
+  featureId: string;
+  completionId: string;
+  sessionId?: string;
+  buildId: string;
+  success: boolean;
+  completed: boolean;
+  eligible: boolean;
+  backgroundRefresh: boolean;
+}
 
 /** How ready a capability that is not GA is (#6052). */
 export type MaturityLevel =
@@ -12513,8 +12535,9 @@ export interface ReceiveStateRequest {
 }
 
 /**
- * One part of a file a Mac sends (#1123), at `offset` in the upload. A part is at most 16 MB; the
- * host keeps the upload until folders/receive uses it.
+ * One part of a file a Mac sends (#1123), at `offset` in the upload. The part at 0 comes first; the
+ * others come in any order (#7120). A part is at most 16 MB; the host keeps the upload until
+ * folders/receive uses it.
  */
 export interface ReceiveUploadRequest {
   upload: UUID;
@@ -14195,7 +14218,8 @@ export interface SendPackRequest {
 }
 
 /**
- * A part of at most 1 MB (#1530). `end` is true for the last, and then the host removes the file.
+ * A part of at most 4 MB (#7120); 1 MB for an export (#1530). `end` is true for the last, and then
+ * the host removes the file.
  */
 export interface SendRead {
   data: Base64;
@@ -15350,6 +15374,81 @@ export interface StopBackgroundRequest {
 
 export interface StoreNotes {
   notes: string[];
+}
+
+/** Where a store is (#6906): on a machine, on the control plane, or in a client. */
+export type StoreOwner =
+  | "machine"
+  | "controlPlane"
+  | "client";
+
+/**
+ * The last measurement of one declared store (#6906): sizes and counts only, never a path, a key,
+ * what is stored or the name of a person, project, machine or session. A measure or a percent that
+ * is not known is absent.
+ */
+export interface StoreSize {
+  /** Stable, such as machine.transcripts or control.audit. */
+  id: string;
+  owner: StoreOwner;
+  /** Whose data one store holds: organisation, person, machine, folder or session. */
+  scope: string;
+  /** document, log, time series, graph, blob, key-value, cache or secret. */
+  kind: string;
+  state: StoreSizeState;
+  /** Why it is unavailable, in words for a person. */
+  why?: string;
+  /** The whole store's bytes. */
+  bytes?: number;
+  /** The whole store's records. */
+  records?: number;
+  /** bytes over records, when both are measured and there are records. */
+  averageRecordBytes?: number;
+  /** The byte limit. */
+  maxBytes?: number;
+  /** The record limit. */
+  maxRecords?: number;
+  /**
+   * What each limit is for when it is not the whole store: person, machine, session, folder, … The
+   * percents are then of the largest one.
+   */
+  limitPer?: string;
+  /** Of maxBytes; over 100 is over the limit. */
+  percentBytes?: number;
+  /** Of maxRecords; over 100 is over the limit. */
+  percentRecords?: number;
+  /** When this store's measurement ended. */
+  measuredAt?: WireDate;
+}
+
+/**
+ * over: past a limit, whatever the measurement's age. stale: older than twice the cadence (2 h on a
+ * machine, 12 h on the control plane). unavailable: not measured, or with no measure that a limit
+ * can be compared with; why says which.
+ */
+export type StoreSizeState =
+  | "current"
+  | "over"
+  | "stale"
+  | "unavailable";
+
+/**
+ * A page of at most 100 stores by id (#6906). cursor asks for the next page; absent on the last.
+ * total is the stores of every page.
+ */
+export interface StoreSizes {
+  stores: StoreSize[];
+  total: number;
+  cursor?: string;
+}
+
+/**
+ * stores/list and reports/storeSizes (#6906). cursor is the last page's. limit is 1 to 100, 100
+ * when absent.
+ */
+export interface StoreSizesQuery {
+  cursor?: string;
+  limit?: number;
 }
 
 export interface SuggestedPrompt {
@@ -16665,7 +16764,9 @@ export interface WorkSuggestLeadsRequest {
  * window. timeZone is the working clock's: this host's, an IANA name, absent when it has none.
  * backtest is how the forecast did on the epics whose work ended in the last 30 days, run again at
  * most once a day; absent when there are too few. errors are the forges that could not be read, as
- * forge/issues says them.
+ * forge/issues says them. partial (#7027): an answer to a first ask that did not read the
+ * forecast's history, so it has no forecast and no backtest, and not each epic whose block ends
+ * after its close; a host from before it gives all of it.
  */
 export interface WorkTimeline {
   epics: WorkTimelineEpic[];
@@ -16673,6 +16774,7 @@ export interface WorkTimeline {
   timeZone?: string;
   backtest?: WorkTimelineBacktest;
   errors?: string[];
+  partial?: boolean;
 }
 
 /**
@@ -16752,12 +16854,14 @@ export interface WorkTimelineRelease {
 
 /**
  * work/timeline (#4172): the epics of a project (its id, from a folder's .agents/folder.json) that
- * overlap from to to.
+ * overlap from to to. With first, the answer can be partial (#7027): ask again without it for all
+ * of it.
  */
 export interface WorkTimelineRequest {
   project: string;
   from: WireDate;
   to: WireDate;
+  first?: boolean;
 }
 
 /**
@@ -17567,6 +17671,7 @@ export interface Methods {
   "reports/saveView": { params: ReportView; result: ReportViews };
   "reports/scopes": { params: Empty; result: ReportScopes };
   "reports/setPolicy": { params: ReportPolicy; result: ReportPolicy };
+  "reports/storeSizes": { params: StoreSizesQuery; result: StoreSizes };
   "reports/usage": { params: ReportQuery; result: UsageReport };
   "reports/value": { params: ReportQuery; result: ReportValue };
   "reports/views": { params: Empty; result: ReportViews };
@@ -17602,6 +17707,7 @@ export interface Methods {
   "secrets/sessionRemove": { params: SessionSecretRemoveRequest; result: SessionSecrets };
   "secrets/sessionSet": { params: SessionSecretSetRequest; result: SessionSecrets };
   "secrets/setNeedsApproval": { params: SecretNeedsApprovalRequest; result: Empty };
+  "selfUpdate/status": { params: Empty; result: SelfUpdate };
   "sessions/previewStart": { params: AutoMachineRequest; result: AutoMachinePick };
   "settings/passThrough": { params: Empty; result: PassThroughState };
   "signIn/approve": { params: SignInDecide; result: Empty };
@@ -17627,6 +17733,7 @@ export interface Methods {
   "simulators/shutdown": { params: SimulatorRequest; result: Empty };
   "simulators/tap": { params: SimulatorTapRequest; result: Empty };
   "store/notes": { params: Empty; result: StoreNotes };
+  "stores/list": { params: StoreSizesQuery; result: StoreSizes };
   "suggestions/dismiss": { params: SuggestionRequest; result: Empty };
   "suggestions/start": { params: SuggestionRequest; result: UUID };
   "surface/identify": { params: SurfaceIdentification; result: Empty };
@@ -18060,6 +18167,7 @@ export const MethodTarget = {
   "reports/saveView": "control",
   "reports/scopes": "control",
   "reports/setPolicy": "control",
+  "reports/storeSizes": "control",
   "reports/usage": "control",
   "reports/value": "control",
   "reports/views": "control",
@@ -18095,6 +18203,7 @@ export const MethodTarget = {
   "secrets/sessionRemove": "host",
   "secrets/sessionSet": "host",
   "secrets/setNeedsApproval": "host",
+  "selfUpdate/status": "host",
   "sessions/previewStart": "control",
   "settings/passThrough": "host",
   "signIn/approve": "control",
@@ -18120,6 +18229,7 @@ export const MethodTarget = {
   "simulators/shutdown": "host",
   "simulators/tap": "host",
   "store/notes": "host",
+  "stores/list": "host",
   "suggestions/dismiss": "host",
   "suggestions/start": "host",
   "surface/identify": "host",
@@ -18911,7 +19021,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   MachineEventsPage: { required: ["machine", "machineName", "page"], optional: [] },
   MachineFeatureUsage: { required: ["machine", "machineName", "usage"], optional: [] },
   MachineFolderSend: { required: ["host"], optional: ["state", "upload", "uploadSigned", "receive", "facts", "pack", "read", "moveIn", "seed"] },
-  MachineFolderSent: { required: [], optional: ["state", "folder", "facts", "pack", "read", "seed"] },
+  MachineFolderSent: { required: [], optional: ["state", "folder", "facts", "pack", "read", "seed", "partsAtOnce"] },
   MachineForgeBoards: { required: ["machine", "machineName", "boards"], optional: [] },
   MachineForgeList: { required: ["machine", "machineName", "list"], optional: [] },
   MachineHello: { required: ["version", "platform", "machineID"], optional: ["host", "name", "implementation", "capabilities", "maturity"] },
@@ -18969,6 +19079,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   MarketplaceSetEnabledRequest: { required: ["id", "enabled"], optional: [] },
   MarketplacesListAnswer: { required: ["marketplaces"], optional: ["problem"] },
   MarketplacesListRequest: { required: [], optional: ["kind", "destination"] },
+  MaturityCompletion: { required: ["featureId", "completionId", "buildId", "success", "completed", "eligible", "backgroundRefresh"], optional: ["sessionId"] },
   MessageSender: { required: ["agentID", "title"], optional: [] },
   MessagesConversation: { required: ["server", "folder", "conversation"], optional: ["replyAs"] },
   MessagesConversations: { required: ["conversations"], optional: ["cursor", "errors"] },
@@ -19448,6 +19559,9 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   StartingPoint: { required: ["repository", "commit"], optional: [] },
   StopBackgroundRequest: { required: ["agentID", "itemID"], optional: [] },
   StoreNotes: { required: ["notes"], optional: [] },
+  StoreSize: { required: ["id", "owner", "scope", "kind", "state"], optional: ["why", "bytes", "records", "averageRecordBytes", "maxBytes", "maxRecords", "limitPer", "percentBytes", "percentRecords", "measuredAt"] },
+  StoreSizes: { required: ["stores", "total"], optional: ["cursor"] },
+  StoreSizesQuery: { required: [], optional: ["cursor", "limit"] },
   SuggestedPrompt: { required: ["id", "label", "prompt"], optional: [] },
   SuggestionRequest: { required: ["folder", "id"], optional: [] },
   SurfaceIdentification: { required: ["id", "name", "kind"], optional: [] },
@@ -19544,13 +19658,13 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   WorkReport: { required: ["outcome", "message", "at"], optional: ["block"] },
   WorkSuggestLeads: { required: ["suggestions", "more"], optional: ["errors"] },
   WorkSuggestLeadsRequest: { required: [], optional: ["folder"] },
-  WorkTimeline: { required: ["epics", "releases"], optional: ["timeZone", "backtest", "errors"] },
+  WorkTimeline: { required: ["epics", "releases"], optional: ["timeZone", "backtest", "errors", "partial"] },
   WorkTimelineBacktest: { required: ["error", "width", "cuts", "holds", "epics", "at"], optional: [] },
   WorkTimelineChild: { required: ["item", "createdAt"], optional: ["stateReason", "startedAt", "closedAt", "waitsForPerson"] },
   WorkTimelineEpic: { required: ["item", "createdAt", "children", "segments"], optional: ["stateReason", "closedAt", "forecast"] },
   WorkTimelineForecast: { required: ["low", "mid", "high"], optional: ["waits"] },
   WorkTimelineRelease: { required: ["tag", "at", "repo"], optional: ["url"] },
-  WorkTimelineRequest: { required: ["project", "from", "to"], optional: [] },
+  WorkTimelineRequest: { required: ["project", "from", "to"], optional: ["first"] },
   WorkTimelineSegment: { required: [], optional: ["startedAt", "closedAt"] },
   Workflow: { required: ["workflowID", "folder", "name", "triggers", "mode", "prompt", "unknownFields", "settings"], optional: ["problem", "cooldown", "hours", "enabled", "archived", "whenDone", "continueWhenBack", "muted", "runsOn"] },
   WorkflowApproval: { required: ["digest", "isNew"], optional: ["note"] },

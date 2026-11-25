@@ -111,7 +111,9 @@ An agent can make the same send, with `start_session` and `send`, before it star
 session on the server (#2929; see
 [Start machines from Agent Loops](start-machines-from-agents.md)). Then no window takes part:
 the agent's host makes the bundle and the patch, and sends them to the server in parts of
-4 MB, through the control plane (`machines/sendFolder`). You say yes on the agent's
+4 MB, through the control plane (`machines/sendFolder`). When the control plane and
+both machines are new enough, up to four parts go at once, and other traffic on the link goes
+first. You say yes on the agent's
 question card first.
 
 An agent can also bring a branch back, with `bring_back` (#2947), into the repository it
@@ -119,5 +121,5 @@ works in. It names the machine, the folder there and, if it wants, the branch (t
 checked out there at first) and the uncommitted changes. You say yes on its question card
 first. The checks are the same as for **Bring Back from ‹server›…**, and a branch the
 server does not have, or a server that is not running, stops it before you are asked. The
-server makes the bundle and the patch, and the agent's host reads them in parts of 1 MB,
+server makes the bundle and the patch, and the agent's host reads them in parts of 4 MB,
 through the control plane (`machines/sendFolder`).

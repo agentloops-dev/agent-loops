@@ -378,6 +378,14 @@ test("the window is loading, not empty, until every read ended (#5925)", () => {
   assert.equal(t.timelineShows(true, false, rows(first)), "empty");
 });
 
+test("a first answer keeps the forecasts on screen until its own come (#7027)", () => {
+  const forecast = { low: wire(1), mid: wire(2), high: wire(3) };
+  const first = { epics: [epic(1, [child(2, { started: -2 })]), epic(3, [child(4, { started: -2 })]), epic(5, [child(6, { closed: -1 })])], releases: [], partial: true };
+  const shown = { epics: [epic(1, [child(2, { started: -2 })], { forecast }), epic(5, [child(6, { started: -2 })], { forecast })], releases: [] };
+  assert.deepEqual(t.keepForecasts(first, shown).epics.map((e) => e.forecast), [forecast, undefined, undefined]);
+  assert.equal(t.keepForecasts(first, null), first);
+});
+
 test("machines merge each epic and release once", () => {
   const a = { epics: [epic(23, [child(1, { closed: -1 })])], releases: [{ tag: "v2", at: wire(-1), repo: "a/b" }], errors: ["x"] };
   const b = { epics: [epic(23, [child(1, { closed: -1 })])],

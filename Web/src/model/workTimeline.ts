@@ -469,6 +469,19 @@ export function mergeTimelines(timelines: readonly WorkTimeline[]): WorkTimeline
   return out;
 }
 
+/** A first answer has no forecast (#7027): each open epic keeps the one on screen until its own comes. */
+export function keepForecasts(timeline: WorkTimeline, shown: WorkTimeline | null): WorkTimeline {
+  const kept = new Map((shown?.epics ?? []).flatMap((e) => e.forecast ? [[e.item.node.ref, e.forecast] as const] : []));
+  if (kept.size === 0) return timeline;
+  return {
+    ...timeline,
+    epics: timeline.epics.map((e) => {
+      const forecast = e.forecast ?? (e.closedAt === undefined ? kept.get(e.item.node.ref) : undefined);
+      return forecast ? { ...e, forecast } : e;
+    }),
+  };
+}
+
 /**
  * The children's starts with every machine's sessions on them (#4276, `lineage/sessionsOn`), so a
  * child a sleeping machine's session started still starts then: a child starts at the earliest of

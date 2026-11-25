@@ -3,6 +3,7 @@ package agentsd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -110,5 +111,51 @@ func TestLineageSyncSendsWhatChanged(t *testing.T) {
 	d.syncMu.Unlock()
 	if f.Full || len(f.States) != 1 || f.States[0].State != wire.LineageSessionStateNameDeleted {
 		t.Fatalf("read again %+v", f)
+	}
+}
+
+// #7052: a link still to send when the host stops is sent once after it starts again, not
+// without end: the file keeps its start to the millisecond, and a file from before has a key
+// of the exact time.
+func TestLineageSyncEndsAfterARestart(t *testing.T) {
+	t.Parallel()
+
+	d, _ := start(t, t.TempDir())
+	defer d.Shutdown()
+	issue := func(ref string) wire.LineageNode { return wire.LineageNode{Kind: lineage.KindIssue, Ref: ref} }
+	l := wire.LineageLink{From: issue("github:issue:o/r#1"), To: issue("github:issue:o/r#2"),
+		Rel: lineage.RelPartOf, Source: lineage.SourceForge, At: wire.Date(816973878.767121)}
+	end := wire.Date(816973900)
+	ended := l
+	ended.EndedAt = &end
+	old := "issue\tgithub:issue:o/r#1\tissue\tgithub:issue:o/r#2\tpart-of\t"
+	d.syncMu.Lock()
+	d.syncFile = &lineageSyncFile{Kept: true, Refs: ledgerRefsFull, Links: map[string]wire.LineageLink{
+		old + "8.16973878767121e+08": l, old + "8.16973878767e+08": ended}}
+	d.syncMu.Unlock()
+	d.closeLineageSync()
+	d.syncMu.Lock()
+	d.syncFile = nil
+	d.syncMu.Unlock()
+
+	var mu sync.Mutex
+	var sent []wire.LineageSync
+	d.SetControlCapabilities(func() []string { return []string{wire.CapLineageGraph1} })
+	d.SetControlAsk(askControl(func(_ context.Context, method string, params any) (json.RawMessage, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		if method != wire.CallLineageSync.Name {
+			return json.RawMessage(`{}`), nil
+		}
+		if sent = append(sent, params.(wire.LineageSync)); len(sent) > 3 {
+			return nil, errors.New("sent again and again")
+		}
+		return json.RawMessage(`{}`), nil
+	}))
+	d.sendLineage()
+	mu.Lock()
+	defer mu.Unlock()
+	if len(sent) != 1 || len(sent[0].Links) != 1 || sent[0].Links[0].EndedAt == nil {
+		t.Fatalf("sent %+v", sent)
 	}
 }

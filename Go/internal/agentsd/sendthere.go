@@ -1,6 +1,7 @@
 package agentsd
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"log"
@@ -173,36 +174,48 @@ func (d *Daemon) uploadThere(me *wire.Agent, machine string, id wire.UUID, sent 
 		return "", fileError(CodeFileNotReadable, err.Error())
 	}
 	defer f.Close()
-	upload := store.NewUUID()
-	buf := make([]byte, sendThereParts)
-	for offset := int64(0); ; {
-		// A host that stops sends no more parts (#6001): Shutdown waits for this job.
-		if err := d.hostCtx().Err(); err != nil {
-			return "", &Error{Code: wire.FailureNotSupported, Message: "this machine stopped before the send was done."}
+	fi, err := f.Stat()
+	if err != nil {
+		return "", fileError(CodeFileNotReadable, err.Error())
+	}
+	upload, size := store.NewUUID(), fi.Size()
+	atOnce := 1
+	part := func(ctx context.Context, n int64) error {
+		offset := n * sendThereParts
+		buf := make([]byte, min(sendThereParts, size-offset))
+		if _, err := f.ReadAt(buf, offset); err != nil && err != io.EOF {
+			return fileError(CodeFileNotReadable, err.Error())
 		}
-		n, err := io.ReadFull(f, buf)
-		if n > 0 {
-			part := wire.ReceiveUploadRequest{Upload: upload, Offset: offset, Data: buf[:n]}
-			if err := d.askSend(me, wire.MachineFolderSend{Host: machine, Upload: &part}, nil); err != nil {
-				return "", err
-			}
-			offset += int64(n)
-			if sent != nil {
-				sent(int64(n))
-			}
+		answer, err := d.sendPartStep(ctx, me, wire.MachineFolderSend{Host: machine,
+			Upload: &wire.ReceiveUploadRequest{Upload: upload, Offset: offset, Data: buf}})
+		if err == nil && n == 0 {
+			atOnce = partsAtOnce(answer)
 		}
-		if err == io.EOF || err == io.ErrUnexpectedEOF {
-			return upload, nil
-		}
-		if err != nil {
-			return "", fileError(CodeFileNotReadable, err.Error())
+		return err
+	}
+	done := func(n int64) {
+		if sent != nil {
+			sent(min(sendThereParts, size-n*sendThereParts))
 		}
 	}
+	// The first part alone: it makes the file there, and its answer says how many at once.
+	parts := (size + sendThereParts - 1) / sendThereParts
+	if err := d.inParts(0, min(parts, 1), 1, part, done); err != nil {
+		return "", err
+	}
+	if err := d.inParts(1, parts, atOnce, part, done); err != nil {
+		return "", err
+	}
+	return upload, nil
 }
 
 // askSend is one machines/sendFolder; out, when not nil, takes its answer.
 func (d *Daemon) askSend(me *wire.Agent, step wire.MachineFolderSend, out *wire.MachineFolderSent) error {
-	raw, err := d.askWorkspaces(me.ID, sendFolderMethod, step)
+	return d.askSendCtx(d.ctx, me, step, out)
+}
+
+func (d *Daemon) askSendCtx(ctx context.Context, me *wire.Agent, step wire.MachineFolderSend, out *wire.MachineFolderSent) error {
+	raw, err := d.askWorkspacesCtx(ctx, me.ID, sendFolderMethod, step)
 	if err != nil || out == nil {
 		return err
 	}

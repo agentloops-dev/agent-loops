@@ -594,7 +594,12 @@
     {
       "name": "selfUpdate/status",
       "x-capability": "host.update/1",
-      "description": "A Mac's host: how it updates Agents Host to the release the control plane names (#2178). Only a Mac's host serves it.",
+      "description": "A Mac's (#2178) or a Linux machine's (#5788) host: how it updates Agent Loops to the release the control plane names. Asked while the machine's page is open (#6114).",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
       "paramStructure": "by-name",
       "params": [
         {
