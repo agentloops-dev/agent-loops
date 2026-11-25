@@ -440,3 +440,36 @@ test("Timeline is a row after Releases and Deploys in Work", () => {
   assert.deepEqual(ids.slice(-3), ["release", "deploys", "timeline"]);
   assert.deepEqual(nav.navPages.work.at(-1).draw, { kind: "timeline" });
 });
+
+// #7029: each repo is asked of one machine, and of the next when it fails or is late; as the window's test.
+test("a read asks one machine per repo, and the next when one fails", () => {
+  const shop = ["github:a/shop"], web = ["github:a/web"];
+  const all = [["a", shop], ["b", shop], ["c", shop], ["d", web]];
+  let r = new t.Readers(["a", "b", "c", "d"], all);
+  assert.deepEqual(r.next(), ["a", "d"]);
+  r.done("a", shop);
+  r.done("d", web);
+  r.late();
+  assert.deepEqual(r.next(), []);
+  assert.deepEqual([...r.scopes.keys()].sort(), ["a", "b", "c", "d"]);
+  // One fails: the next only, and then the one after it.
+  r = new t.Readers(["a", "b", "c", "d"], all);
+  r.next();
+  r.done("a", undefined);
+  assert.deepEqual(r.next(), ["b"]);
+  r.done("b", undefined);
+  assert.deepEqual(r.next(), ["c"]);
+  // Late with no first answer; one that gave its first is not late.
+  r = new t.Readers(["a", "b", "d"], all);
+  r.next();
+  r.first("d");
+  r.late();
+  assert.deepEqual(r.next(), ["b"]);
+  // Not known, or empty: always asked. One that no longer reads a repo no longer covers it.
+  assert.deepEqual(new t.Readers(["a", "b"], []).next(), ["a", "b"]);
+  assert.deepEqual(new t.Readers(["a", "b"], [["a", []], ["b", shop]]).next(), ["a", "b"]);
+  r = new t.Readers(["a", "b"], [["a", [...shop, ...web]], ["b", web]]);
+  assert.deepEqual(r.next(), ["a"]);
+  r.done("a", shop);
+  assert.deepEqual(r.next(), ["b"]);
+});
