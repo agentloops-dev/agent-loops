@@ -153,6 +153,7 @@ final class RemoteModel {
         let key = "device.id"
         if let text = UserDefaults.standard.string(forKey: key), let id = UUID(uuidString: text) { return id }
         let id = UUID()
+        // store-bounds: not a store: one fixed key, an id
         UserDefaults.standard.set(id.uuidString, forKey: key)
         return id
     }

@@ -74,6 +74,7 @@ public final class DisplayPreferenceMirror {
             if hosts[key] == nil, let local = defaults.string(forKey: key) {
                 if pending[key] == nil { changes[key] = .string(local) }
             } else {
+                // store-bounds: not a store: one mark for each of `DisplayPreference.moved`
                 defaults.set(true, forKey: Self.movedPrefix + key)
             }
         }
@@ -84,16 +85,23 @@ public final class DisplayPreferenceMirror {
     private func draw() {
         var preferences = hosts
         for (key, change) in pending { preferences[key] = change.value == .null ? nil : change.value }
+        // A word over the limit is none here (#7252): it is left out of both, so this client never sends that back.
+        for (key, kind) in DisplayPreference.mirrored where kind == .string {
+            if case .string(let value)? = preferences[key], value.utf8.count > KeyValueBounds.choice { preferences[key] = nil }
+        }
         self.preferences = preferences
         applying = true
         defer { applying = false }
         for (key, kind) in DisplayPreference.mirrored {
             switch (kind, preferences[key]) {
             case (.bool, .bool(let value)?):
+                // store-bounds: not a store: one fixed key for each of `DisplayPreference.mirrored`, a switch
                 if defaults.object(forKey: key) as? Bool != value { defaults.set(value, forKey: key) }
             case (.string, .string(let value)?):
-                if defaults.string(forKey: key) != value { defaults.set(value, forKey: key) }
+                // store-bounds: kind=key-value; count=100; age=until-deleted; action=refuse; record=4KiB; applied=when the host says its choices
+                if defaults.string(forKey: key) != value { defaults.putEntry(value, forKey: key, most: KeyValueBounds.choice) }
             case (.int, .int(let number)?):
+                // store-bounds: not a store: one fixed key for each of `DisplayPreference.mirrored`, a number
                 if defaults.object(forKey: key) as? Int != number { defaults.set(number, forKey: key) }
             default:
                 if unmoved(key) { continue }

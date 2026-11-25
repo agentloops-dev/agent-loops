@@ -31,7 +31,12 @@ extension AppModel {
 /// The achievements this window has shown, in `WindowDefaults`, so a scratch copy keeps its own.
 enum AchievementsSeenStore {
     static var seen: Set<String>? {
-        get { WindowDefaults.store.stringArray(forKey: "achievements.seen").map(Set.init) }
-        set { WindowDefaults.store.set(newValue.map { $0.sorted() }, forKey: "achievements.seen") }
+        get { WindowDefaults.store.stringArray(forKey: "achievements.seen").map { Set(KeyValueBounds.shown.kept($0)) } }
+        set {
+            guard let newValue else { return WindowDefaults.store.removeObject(forKey: "achievements.seen") }
+            // store-bounds: kind=key-value; count=100; age=until-deleted; action=refuse; record=64B; applied=on write
+            WindowDefaults.store.putEntry(KeyValueBounds.shown.kept(newValue.sorted()), forKey: "achievements.seen",
+                                          most: KeyValueBounds.shown.total)
+        }
     }
 }

@@ -64,18 +64,26 @@ struct HostSettings: Codable, Sendable, Equatable {
         return try? Data(contentsOf: root.appendingPathComponent("\(key).json"))
     }
 
-    private static func write(_ data: Data, _ key: String, _ paths: HostPaths) {
+    /// The most of one entry, and the entries of `host.json`: a role is the person's choice, so one over either is refused and
+    /// nothing goes to make room (#7252).
+    static let entryBytes = 64 * 1024
+    static let entriesMost = 100
+
+    /// Whether it was kept.
+    private static func write(_ data: Data, _ key: String, _ paths: HostPaths) -> Bool {
+        guard data.count <= entryBytes else { return false }
         guard let root = paths.scratchRoot else {
             // A file that will not parse is the person's to mend, never ours to replace.
-            guard var all = entries() else { return }
+            guard var all = entries(), all[key] != nil || all.count < entriesMost else { return false }
             all[key] = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])
             guard let whole = try? JSONSerialization.data(withJSONObject: all, options: [.prettyPrinted, .sortedKeys])
-            else { return }
+            else { return false }
             try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try? whole.write(to: file, options: .atomic)
-            return
+            // store-bounds: kind=document; count=100; age=until-deleted; action=refuse; record=64KiB; applied=on write
+            return (try? whole.write(to: file, options: .atomic)) != nil
         }
-        try? data.write(to: root.appendingPathComponent("\(key).json"), options: .atomic)
+        // store-bounds: not a store: a scratch root's copy of one entry, which goes with the root
+        return (try? data.write(to: root.appendingPathComponent("\(key).json"), options: .atomic)) != nil
     }
 
     /// Every Mac's entry: none when there is no file, and nil when there is one that will
@@ -101,14 +109,19 @@ struct HostSettings: Codable, Sendable, Equatable {
             + "with the defaults. What was saved is kept aside, under its own name, and never written over."
     }
 
+    static let notKept = "Agent Loops' settings on this Mac could not be saved, so they hold only until it quits. "
+        + "The file holds the settings of \(entriesMost) Macs at most, 64 KB each."
+
     /// A value that would not decode is copied aside first, so the defaults written now
     /// never take the only copy of what a newer build chose.
-    func save(_ paths: HostPaths) {
+    /// One that could not be copied aside stays as it is. Nil when it was kept, else what to tell the person.
+    @discardableResult
+    func save(_ paths: HostPaths) -> String? {
         if let old = Self.read(Self.key(paths), paths),
            (try? JSONDecoder().decode(HostSettings.self, from: old)) == nil,
-           Self.read(Self.asideKey(paths), paths) == nil {
-            Self.write(old, Self.asideKey(paths), paths)
-        }
-        if let data = try? JSONEncoder().encode(self) { Self.write(data, Self.key(paths), paths) }
+           Self.read(Self.asideKey(paths), paths) == nil,
+           !Self.write(old, Self.asideKey(paths), paths) { return Self.notKept }
+        guard let data = try? JSONEncoder().encode(self), Self.write(data, Self.key(paths), paths) else { return Self.notKept }
+        return nil
     }
 }
