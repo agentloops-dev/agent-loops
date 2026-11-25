@@ -15,7 +15,7 @@ import { boardChoices, boardName, withBoard, type WorkProject } from "../model/w
 import { boards, forgeHosts, loadBoards } from "../model/workLists";
 import {
   Axis, bandGutter, bandRuleY, bands as bandsOf, blockHeight, blockWords, cardRow, chipWidth, chipWords, priorityBand, colourIndex, epicCount, epicRows, errorWords, forWhiteText, hexOf, hit, lastJoined,
-  lastJoinedWords, layout, mergeTimelines, nextInRow, noEpicsWords, noMachine, noProject, noProjectTitle, overlapping,
+  lastJoinedWords, keepForecasts, layout, mergeTimelines, nextInRow, noEpicsWords, noMachine, noProject, noProjectTitle, overlapping,
   packSpan, rangeSpan, rangeTitle, rangeWindow, reach, rgbOf, rowCount, rowGap, rowTop, sessionNodes, showTheWeek, startedBySessions,
   timelineLines, timelineRanges, timelineShows, titleWords, titleY, workingNow, zoomed, type Interval, type TimelineBand, type TimelineLine, type TimelineRange,
 } from "../model/workTimeline";
@@ -112,7 +112,10 @@ async function loadTimeline(store: Store) {
   }
   // The first machine to answer draws the plot (#5449), and each one after adds its epics: a slow or offline machine does
   // not hold it. A machine that failed says so only when no machine answered.
+  // A machine answers with its epics first, and again with the forecast when its history is read (#7027): its first
+  // answer is in firsts until then, and stays there when the second fails.
   const got: { t?: Timeline; refs?: string[] | undefined; problem?: string }[] = [];
+  const firsts = new Map<string, { t: Timeline; refs: string[] | undefined }>();
   const draw = async (all: boolean) => {
     if (all) reading.value = false;
     const failed = got.flatMap((g) => g.problem ? [g.problem] : []);
@@ -121,8 +124,10 @@ async function loadTimeline(store: Store) {
     // With every machine failing, the last plot stays at full opacity, and the footer says what failed (#5971); with
     // none, the middle says it.
     if (all && none) return;
-    const merged = mergeTimelines(got.flatMap((g) => g.t ? [g.t] : []));
-    const epics = chosenBoard ? new Set(got.flatMap((g) => g.refs ?? [])) : undefined;
+    const answers = [...got, ...firsts.values()];
+    let merged = mergeTimelines(answers.flatMap((g) => g.t ? [g.t] : []));
+    if (firsts.size > 0) merged = keepForecasts(merged, timeline.value);
+    const epics = chosenBoard ? new Set(answers.flatMap((g) => g.refs ?? [])) : undefined;
     if (epics) merged.epics = merged.epics.filter((e) => epics.has(e.item.node.ref));
     fromMachines = merged;
     // The plot draws now, with the sessions it had (#5450); the new ones start their children when they come.
@@ -141,7 +146,8 @@ async function loadTimeline(store: Store) {
   await Promise.all(hosts.map(async (h) => {
     let one: (typeof got)[number];
     try {
-      const t = await store.link.call("work/timeline", { project: chosen.id, from: toWireDate(new Date(span.start)), to: toWireDate(new Date(span.end)) }, h.id);
+      const ask = { project: chosen.id, from: toWireDate(new Date(span.start)), to: toWireDate(new Date(span.end)) };
+      let t = await store.link.call("work/timeline", { ...ask, first: true }, h.id);
       // A board narrows to its epics: the forge says which they are.
       let refs: string[] | undefined;
       if (chosenBoard) {
@@ -150,11 +156,20 @@ async function loadTimeline(store: Store) {
           refs = list.items.map((i: ForgeItem) => i.node.ref);
         } catch { refs = []; }
       }
+      if (t.partial) {
+        if (read !== key) return;
+        if (t.epics.length > 0) {
+          firsts.set(h.id, { t, refs });
+          void draw(false);
+        }
+        t = await store.link.call("work/timeline", ask, h.id);
+      }
       // A machine whose forge failed answers with no epic and only the forge's error: a failed read, not an empty plot
       // with "Last update just now" (#5971, as the Mac's #5969).
       one = t.epics.length === 0 && (t.errors?.length ?? 0) > 0
         ? { problem: (t.errors ?? []).map((e) => hosts.length > 1 ? `${h.name}: ${e}` : e).join("\n") }
         : { t, refs };
+      if (one.t) firsts.delete(h.id);
     } catch (e) {
       one = { problem: hosts.length > 1 ? `${h.name}: ${describe(e)}` : describe(e) };
     }
