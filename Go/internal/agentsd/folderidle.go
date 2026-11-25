@@ -177,7 +177,7 @@ func (d *Daemon) isIdleJob(a *wire.Agent) bool {
 
 func (d *Daemon) doesIdleWorkLocked(a *wire.Agent) bool {
 	for _, r := range d.recordsLocked().Runs {
-		if r.AgentID != nil && *r.AgentID == a.ID && answersIdle(r.Trigger) {
+		if r.AgentID != nil && *r.AgentID == a.ID && ranOnIdle(r.Trigger) {
 			return true
 		}
 	}
@@ -202,6 +202,13 @@ func (d *Daemon) doesIdleWorkLocked(a *wire.Agent) bool {
 func answersIdle(t wire.WorkflowTrigger) bool {
 	p, ok := triggerPattern(t)
 	return ok && (p.name == "folder.idle" || p.name == "folder.*")
+}
+
+// ranOnIdle is answersIdle of a run that began: by name only, as its trigger can be kept cut
+// (cutTrigger).
+func ranOnIdle(t wire.WorkflowTrigger) bool {
+	name := triggerName(t)
+	return name == "folder.idle" || name == "folder.*"
 }
 
 func containsID(ids []wire.UUID, id wire.UUID) bool {

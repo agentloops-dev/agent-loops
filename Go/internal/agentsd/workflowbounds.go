@@ -3,6 +3,7 @@ package agentsd
 import (
 	"fmt"
 	"log"
+	"maps"
 	"os"
 	"slices"
 	"strings"
@@ -26,6 +27,7 @@ const (
 	workflowCopiesMost   = 64 << 20
 	workflowRunsMost     = 1000
 	workflowRunBytes     = 64 << 10
+	workflowTriggerCut   = 1 << 10 // the name of a cut trigger
 	workflowRanByMost    = 1000
 	workflowDetailsKept  = store.MaxAge
 	workflowStatesFull   = "This machine remembers as many workflows as it can. Delete some first."
@@ -65,20 +67,56 @@ func compareRuns(a, b workflowRun) int {
 	return strings.Compare(string(a.ID), string(b.ID))
 }
 
-// saveRunsLocked writes workflow-runs.json. A run too large for it is kept in memory only.
+// saveRunsLocked writes workflow-runs.json. Of a run too large for it, it keeps the run with its
+// trigger cut, and if that is too large too, the earlier form with the agent it has now.
 func (d *Daemon) saveRunsLocked(runs []workflowRun) error {
 	return d.runsFile.Update(func(entries map[string]workflowRun) error {
+		earlier := maps.Clone(entries)
 		clear(entries)
 		for _, run := range runs {
 			key := string(run.ID)
-			if b, err := diskjson.Marshal(run); err != nil || len(key)+len(b) > workflowRunBytes {
-				log.Printf("workflow-runs.json: the %s run is not kept: it is too large", run.WorkflowID)
+			if run.fits() {
+				entries[key] = run
 				continue
 			}
-			entries[key] = run
+			cut := run
+			cut.Trigger = cutTrigger(run.Trigger)
+			if cut.fits() {
+				log.Printf("workflow-runs.json: the %.200q run is over %d bytes: its trigger is kept cut", run.WorkflowID, workflowRunBytes)
+				entries[key] = cut
+				continue
+			}
+			old, there := earlier[key]
+			if !there {
+				log.Printf("workflow-runs.json: the %.200q run is not kept: it is over %d bytes", run.WorkflowID, workflowRunBytes)
+				continue
+			}
+			log.Printf("workflow-runs.json: the %.200q run is over %d bytes: its earlier form is kept", run.WorkflowID, workflowRunBytes)
+			entries[key] = old
+			old.AgentID = run.AgentID
+			if old.fits() {
+				entries[key] = old
+			}
 		}
 		return nil
 	})
+}
+
+// fits says whether workflow-runs.json takes the run.
+func (r workflowRun) fits() bool {
+	b, err := diskjson.Marshal(r)
+	return err == nil && len(r.ID)+len(b) <= workflowRunBytes
+}
+
+// cutTrigger is the trigger's name, with a key that says the rest is cut. Only the name of a
+// run's trigger is read again, to tell whether the run answers folder.idle.
+func cutTrigger(t wire.WorkflowTrigger) wire.WorkflowTrigger {
+	name := triggerName(t)
+	if len(name) > workflowTriggerCut {
+		name = strings.ToValidUTF8(name[:workflowTriggerCut], "") + "…"
+	}
+	return wire.WorkflowTrigger{Unrecognised: &wire.WorkflowTriggerStoredUnrecognised{
+		Name: name, Keys: map[string]wire.JSONValue{"cut": wire.JSONValue("true")}}}
 }
 
 // boundStates takes what a state over its largest size tells of the past and holds to

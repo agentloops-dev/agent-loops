@@ -130,7 +130,6 @@ func TestTheOldFilesComeOverWithinTheLargest(t *testing.T) {
 
 // A run that grows past its largest keeps its earlier form on the disk.
 func TestARunThatGrowsTooLargeKeepsItsEarlierForm(t *testing.T) {
-	t.Skip("#7184")
 	t.Parallel()
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -139,9 +138,39 @@ func TestARunThatGrowsTooLargeKeepsItsEarlierForm(t *testing.T) {
 	run := workflowRun{ID: store.NewUUID(), WorkflowID: "w", Folder: "file:///x/", StartedAt: now()}
 	must(t, d.saveRunsLocked([]workflowRun{run}))
 	run.Folder += wire.URL(strings.Repeat("x", workflowRunBytes))
+	agent := store.NewUUID()
+	run.AgentID = &agent
 	must(t, d.saveRunsLocked([]workflowRun{run}))
 	if runs, err := d.runsFile.Read(); err != nil || len(runs) != 1 {
 		t.Fatalf("%d runs on the disk (%v)", len(runs), err)
+	} else if kept := runs[string(run.ID)]; kept.Folder != "file:///x/" || kept.AgentID == nil || *kept.AgentID != agent {
+		t.Fatalf("the earlier form is %+v", kept)
+	}
+}
+
+// A run of an old workflows.json with a trigger that is too large comes over with it cut.
+func TestAnOldRunThatIsTooLargeComesOverWithItsTriggerCut(t *testing.T) {
+	t.Parallel()
+	d, _ := start(t, t.TempDir())
+	defer d.Shutdown()
+	d.workflowMu.Lock()
+	defer d.workflowMu.Unlock()
+	agent := store.NewUUID()
+	run := workflowRun{ID: store.NewUUID(), WorkflowID: "w", Folder: "file:///x/", AgentID: &agent, StartedAt: now(),
+		Trigger: wire.WorkflowTrigger{Unrecognised: &wire.WorkflowTriggerStoredUnrecognised{Name: "folder.idle",
+			Keys: map[string]wire.JSONValue{"k": wire.JSONValue(`"` + strings.Repeat("x", workflowRunBytes) + `"`)}}}}
+	must(t, writeStore(d.workflowsPath(), workflowRecords{States: []workflowState{}, Runs: []workflowRun{run},
+		ApprovalsBegan: d.recordsLocked().ApprovalsBegan}))
+	d.workflowRecs = nil
+	d.recordsLocked()
+	d.saveRecordsLocked(false)
+	d.workflowRecs = nil // a restart
+	runs := d.recordsLocked().Runs
+	if len(runs) != 1 || runs[0].AgentID == nil || *runs[0].AgentID != agent || !ranOnIdle(runs[0].Trigger) {
+		t.Fatalf("%d runs after a restart", len(runs))
+	}
+	if _, cut := runs[0].Trigger.Unrecognised.Keys["cut"]; !cut {
+		t.Fatal("nothing says that it is cut")
 	}
 }
 
