@@ -16553,11 +16553,12 @@ export interface WorkSuggestLeadsRequest {
 
 /**
  * work/timeline (#4172, specs/time-stream/wireframe.md sections 4, 7 to 9): the epics of a project
- * whose work overlaps from to to, each with its children, its segments and, while open, its
- * forecast (M10); and the releases published in the window. timeZone is the working clock's: this
- * host's, an IANA name, absent when it has none. backtest is how the forecast did on the epics
- * whose work ended in the last 30 days, run again at most once a day; absent when there are too
- * few. errors are the forges that could not be read, as forge/issues says them.
+ * that overlap from to to, each from its first child's start to when its work stopped (#7058), with
+ * its children, its segments and, while open, its forecast (M10); and the releases published in the
+ * window. timeZone is the working clock's: this host's, an IANA name, absent when it has none.
+ * backtest is how the forecast did on the epics whose work ended in the last 30 days, run again at
+ * most once a day; absent when there are too few. errors are the forges that could not be read, as
+ * forge/issues says them.
  */
 export interface WorkTimeline {
   epics: WorkTimelineEpic[];
@@ -16644,8 +16645,8 @@ export interface WorkTimelineRelease {
 }
 
 /**
- * work/timeline (#4172): the epics of a project (its id, from a folder's .agents/folder.json) whose
- * work overlaps from to to.
+ * work/timeline (#4172): the epics of a project (its id, from a folder's .agents/folder.json) that
+ * overlap from to to.
  */
 export interface WorkTimelineRequest {
   project: string;
