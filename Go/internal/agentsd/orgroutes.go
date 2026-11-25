@@ -44,6 +44,8 @@ const (
 	orgAccountPrefix = "org:"
 	// mostOrgRoutes bounds a delivery, as the control plane bounds routes.
 	mostOrgRoutes = 50
+	// orgRouteMostBytes bounds one route, as it came.
+	orgRouteMostBytes = 256 << 10
 )
 
 var orgRouteIDPattern = regexp.MustCompile(`^[a-z0-9-]{1,40}$`)
@@ -351,7 +353,12 @@ func (d *Daemon) keepOrgRoute(r wire.DeliveredRoute) error {
 	if err != nil {
 		return err
 	}
-	return store.WriteAtomically(filepath.Join(d.orgRoutesDir(), r.ID+".json"), b, 0o600)
+	path := filepath.Join(d.orgRoutesDir(), r.ID+".json")
+	if err := settingFits(path, b, orgRouteMostBytes); err != nil {
+		return err
+	}
+	// store-bounds: kind=secret; count=50; size=256KiB a route; age=until-deleted; applied=on write (refused), a route goes when a delivery leaves it out
+	return store.WriteAtomically(path, b, 0o600)
 }
 
 // stopRemovedOrgSessions stops each running session on an org account that is no longer

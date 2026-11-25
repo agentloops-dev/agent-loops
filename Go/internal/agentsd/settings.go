@@ -601,6 +601,7 @@ func savePersonaFile(base string, r wire.PersonaFileSaveRequest) error {
 	if err != nil && !os.IsNotExist(err) {
 		return fileError(CodeFileNotReadable, r.ID+".md can't be opened.")
 	}
+	// store-bounds: not a store: the person's own file, in their folder
 	if err := store.WriteAtomically(path, []byte(r.Content), 0o644); err != nil {
 		return fileError(CodeFileNotReadable, r.ID+".md can't be saved.")
 	}

@@ -190,6 +190,26 @@ func (d *Daemon) keepUntrustedAsideLocked() error {
 	return nil
 }
 
+const (
+	// yourPolicyMostBytes bounds policy-yours.json, as the organisation's policy is bounded.
+	yourPolicyMostBytes = 1 << 20
+	// yourPolicySeenMostBytes bounds policy-yours-seen.json, which has a fixed shape.
+	yourPolicySeenMostBytes = 4 << 10
+)
+
+// writeYoursLocked writes policy-yours.json. One over its largest size is refused before the file
+// there is touched. Called with yoursMu held.
+func (d *Daemon) writeYoursLocked(b []byte) error {
+	if err := settingFits(d.yourPolicyPath(), b, yourPolicyMostBytes); err != nil {
+		return err
+	}
+	if err := d.keepUntrustedAsideLocked(); err != nil {
+		return err
+	}
+	// store-bounds: kind=key-value; count=1; size=1MiB; age=until-deleted; applied=on write (refused)
+	return store.WriteAtomically(d.yourPolicyPath(), b, 0o600)
+}
+
 // saveYoursLocked signs next with this machine's person key and keeps it. Called with
 // yoursMu held.
 func (d *Daemon) saveYoursLocked(next wire.YourPolicy) error {
@@ -216,10 +236,7 @@ func (d *Daemon) saveYoursLocked(next wire.YourPolicy) error {
 	if err != nil {
 		return err
 	}
-	if err := d.keepUntrustedAsideLocked(); err != nil {
-		return err
-	}
-	if err := store.WriteAtomically(d.yourPolicyPath(), b, 0o600); err != nil {
+	if err := d.writeYoursLocked(b); err != nil {
 		return err
 	}
 	d.yoursNow = &kept
@@ -313,10 +330,7 @@ func (d *Daemon) takeSignedYours(signed wire.SignedYourPolicy, source string) (i
 	if err != nil {
 		return 0, nil, err
 	}
-	if err := d.keepUntrustedAsideLocked(); err != nil {
-		return 0, nil, err
-	}
-	if err := store.WriteAtomically(d.yourPolicyPath(), b, 0o600); err != nil {
+	if err := d.writeYoursLocked(b); err != nil {
 		return 0, nil, err
 	}
 	d.yoursNow = &kept
@@ -364,7 +378,12 @@ func (d *Daemon) saveYoursSeenLocked() {
 	if err != nil {
 		return
 	}
-	if err := store.WriteAtomically(d.yourPolicySeenPath(), b, 0o600); err != nil {
+	err = tooLarge(yourPolicySeenFile, b, yourPolicySeenMostBytes)
+	if err == nil {
+		// store-bounds: kind=key-value; count=1; size=4KiB; age=until-deleted; applied=on write (refused)
+		err = store.WriteAtomically(d.yourPolicySeenPath(), b, 0o600)
+	}
+	if err != nil {
 		log.Printf("policy: keep %s: %v", yourPolicySeenFile, err)
 	}
 }
@@ -544,19 +563,22 @@ func moveAsideLocked(path string) {
 // already means no limit (R5, R7). Called with yoursMu held, at most once.
 func (d *Daemon) firstStartMoveLocked() {
 	rules := wire.PolicyRules{}
-	d.firstStartMoveBudgetsLocked(&rules)
-	d.firstStartMoveWorkflowLimitLocked(&rules)
-	d.firstStartMoveDisplayLocked(&rules)
-	d.firstStartMoveEnvironmentLocked(&rules)
+	// The old files go once their rules are kept: a layer that is refused loses none of them.
+	old := []func(){d.firstStartMoveBudgetsLocked(&rules), d.firstStartMoveWorkflowLimitLocked(&rules),
+		d.firstStartMoveDisplayLocked(&rules), d.firstStartMoveEnvironmentLocked(&rules)}
 
 	next := wire.YourPolicy{Rules: rules, Revision: 1, Changed: wire.DateOf(nowFunc()), Person: d.personIDLocked(), Keeper: d.machineID()}
 	if err := d.saveYoursLocked(next); err != nil {
 		log.Printf("policy: the first-start move: %v", err)
+		return
+	}
+	for _, done := range old {
+		done()
 	}
 }
 
-// firstStartMoveBudgetsLocked moves limits.json into rules.Budgets and moves the file aside.
-func (d *Daemon) firstStartMoveBudgetsLocked(rules *wire.PolicyRules) {
+// firstStartMoveBudgetsLocked moves limits.json into rules.Budgets; done moves the file aside.
+func (d *Daemon) firstStartMoveBudgetsLocked(rules *wire.PolicyRules) (done func()) {
 	if b, err := os.ReadFile(d.limitsPath()); err == nil {
 		var l wire.CostLimits
 		if err := json.Unmarshal(b, &l); err != nil {
@@ -574,13 +596,14 @@ func (d *Daemon) firstStartMoveBudgetsLocked(rules *wire.PolicyRules) {
 		if budgets != (wire.PolicyRuleBudgets{}) {
 			rules.Budgets = &budgets
 		}
-		moveAsideLocked(d.limitsPath())
+		return func() { moveAsideLocked(d.limitsPath()) }
 	}
+	return func() {}
 }
 
 // firstStartMoveWorkflowLimitLocked moves workflow-limit.json's total into
-// rules.Workflows and moves the file aside.
-func (d *Daemon) firstStartMoveWorkflowLimitLocked(rules *wire.PolicyRules) {
+// rules.Workflows; done moves the file aside.
+func (d *Daemon) firstStartMoveWorkflowLimitLocked(rules *wire.PolicyRules) (done func()) {
 	workflowLimitPath := filepath.Join(d.SettingsDir, "workflow-limit.json")
 	if b, err := os.ReadFile(workflowLimitPath); err == nil {
 		var l struct {
@@ -592,26 +615,30 @@ func (d *Daemon) firstStartMoveWorkflowLimitLocked(rules *wire.PolicyRules) {
 		if l.Total != nil {
 			rules.Workflows = &wire.PolicyWorkflows{MostOn: l.Total}
 		}
-		moveAsideLocked(workflowLimitPath)
+		return func() { moveAsideLocked(workflowLimitPath) }
 	}
+	return func() {}
 }
 
 // firstStartMoveDisplayLocked moves the notice limits and agentsMayArchiveMyChats out of
-// display.json into rules, and writes display.json again without the moved keys.
-func (d *Daemon) firstStartMoveDisplayLocked(rules *wire.PolicyRules) {
+// display.json into rules; done writes display.json again without the moved keys.
+func (d *Daemon) firstStartMoveDisplayLocked(rules *wire.PolicyRules) (done func()) {
 	displayPath := d.displayFile()
 	b, err := os.ReadFile(displayPath)
 	if err != nil {
-		return
+		return func() {}
 	}
 	var fields map[string]wire.JSONValue
 	if json.Unmarshal(b, &fields) != nil {
-		return
+		return func() {}
 	}
 	changed := firstStartMoveNoticeBurst(fields, rules)
 	changed = firstStartMoveNoticeCooldown(fields, rules) || changed
 	changed = firstStartMoveArchiveMyChats(fields, rules) || changed
-	if changed {
+	if !changed {
+		return func() {}
+	}
+	return func() {
 		if err := d.writeDisplay(fields); err != nil {
 			log.Printf("policy: the first-start move: could not save %s: %v", filepath.Base(displayPath), err)
 		}
@@ -671,8 +698,8 @@ func firstStartMoveArchiveMyChats(fields map[string]wire.JSONValue, rules *wire.
 }
 
 // firstStartMoveEnvironmentLocked moves runtime-environment.json into rules.Environment
-// and moves the file aside.
-func (d *Daemon) firstStartMoveEnvironmentLocked(rules *wire.PolicyRules) {
+// and done moves the file aside.
+func (d *Daemon) firstStartMoveEnvironmentLocked(rules *wire.PolicyRules) (done func()) {
 	envPath := filepath.Join(d.SettingsDir, passThroughFile)
 	if b, err := os.ReadFile(envPath); err == nil {
 		var l passThroughList
@@ -682,6 +709,7 @@ func (d *Daemon) firstStartMoveEnvironmentLocked(rules *wire.PolicyRules) {
 		if len(l.Names) > 0 || len(l.Runtimes) > 0 {
 			rules.Environment = &wire.PolicyEnvironment{PassThrough: l.Names, Runtimes: l.Runtimes}
 		}
-		moveAsideLocked(envPath)
+		return func() { moveAsideLocked(envPath) }
 	}
+	return func() {}
 }

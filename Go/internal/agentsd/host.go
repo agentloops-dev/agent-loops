@@ -658,6 +658,7 @@ func (d *Daemon) writeArtifact(r wire.ArtifactWriteRequest) error {
 	if r.Base != nil && textDigest(string(old)) != *r.Base {
 		return &Error{Code: wire.FailureFileChanged, Message: filepath.Base(r.Path) + " changed on disk since you began editing it, so it was not saved."}
 	}
+	// store-bounds: not a store: a file in the person's project
 	if err := store.WriteAtomically(r.Path, []byte(r.Text), 0o644); err != nil {
 		return &Error{Code: CodeInternal, Message: "Could not save " + filepath.Base(r.Path) + ": " + err.Error()}
 	}

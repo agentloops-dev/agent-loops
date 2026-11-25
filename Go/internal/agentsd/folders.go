@@ -264,6 +264,10 @@ func setFolderConfig(folder, key string, v any) error {
 	if err != nil {
 		return err
 	}
+	// A larger one could not be approved (guarded.go).
+	if err := settingFits(path, append(b, '\n'), guardedMostBytes); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil { //nolint:gosec // G301: the mode this folder always had; only its error is new
 		return err
 	}

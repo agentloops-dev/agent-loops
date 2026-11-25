@@ -93,14 +93,22 @@ func (d *Daemon) loadBotCopiesLocked() botCopies {
 	return c
 }
 
-func (d *Daemon) saveBotCopiesLocked(c botCopies) {
+// botCopiesMostBytes bounds the file: a few words for each machine of the lock.
+const botCopiesMostBytes = 1 << 20
+
+func (d *Daemon) saveBotCopiesLocked(c botCopies) error {
 	b, err := json.Marshal(c)
 	if err == nil {
+		err = settingFits(d.botCopiesPath(), b, botCopiesMostBytes)
+	}
+	if err == nil {
+		// store-bounds: kind=key-value; count=1; size=1MiB; age=until-deleted; applied=on write (refused)
 		err = store.WriteAtomically(d.botCopiesPath(), b, 0o600)
 	}
 	if err != nil {
 		log.Printf("connections: what this machine knows of the bot's copies could not be kept: %v", err)
 	}
+	return err
 }
 
 func (c *botCopies) forget(app int64) {
@@ -211,7 +219,7 @@ func (d *Daemon) takeBot(r wire.ConnectionBotCopy) error {
 	if copies.AppID != bot.AppID {
 		copies.AppID, copies.Machines = bot.AppID, map[string]string{}
 	}
-	d.saveBotCopiesLocked(copies)
+	_ = d.saveBotCopiesLocked(copies) // logged; the key is kept, and its machines are found again
 	log.Printf("connections: took the bot's key from another of this person's machines")
 	return nil
 }
@@ -235,7 +243,9 @@ func (d *Daemon) dropBot(app int64) error {
 		err = s.Delete(connections.GitHubBot)
 	}
 	d.connRenew.Unlock()
-	d.saveBotCopiesLocked(copies)
+	if saved := d.saveBotCopiesLocked(copies); err == nil && saved != nil {
+		return saved
+	}
 	if err != nil {
 		log.Printf("connections: the bot's key not deleted")
 		return err
@@ -246,7 +256,7 @@ func (d *Daemon) dropBot(app int64) error {
 
 // forgetBotEverywhere is Forget the Bot: after this machine deleted the key, every other
 // machine of the lock is told to forget it too.
-func (d *Daemon) forgetBotEverywhere(app int64) {
+func (d *Daemon) forgetBotEverywhere(app int64) error {
 	state, _ := d.heldLock()
 	d.botMu.Lock()
 	copies := d.loadBotCopiesLocked()
@@ -259,9 +269,10 @@ func (d *Daemon) forgetBotEverywhere(app int64) {
 			}
 		}
 	}
-	d.saveBotCopiesLocked(copies)
+	err := d.saveBotCopiesLocked(copies)
 	d.botMu.Unlock()
 	d.goShareBotKey(true)
+	return err
 }
 
 // BotMachineRemoved is the control plane saying this machine is forgotten: the person
@@ -429,7 +440,7 @@ func (d *Daemon) shareBotKey(all bool, now time.Time) {
 	if all {
 		c.All = now
 	}
-	d.saveBotCopiesLocked(c)
+	_ = d.saveBotCopiesLocked(c) // logged; what it says is found again at the next share
 }
 
 // heldBot is the bot this machine keeps.
