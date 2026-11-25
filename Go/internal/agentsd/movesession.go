@@ -498,5 +498,6 @@ func (d *Daemon) arrive(a *wire.Agent, in *arrival) {
 		a.State, a.EndedReason = wire.AgentStateFinished, &end
 	}
 	a.EventWait, a.PendingMove, a.ArchiveRequest, a.AfterTurn = nil, nil, nil, nil
+	a.ArchiveWhy = nil
 	in.id = a.ID
 }

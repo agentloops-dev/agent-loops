@@ -3090,6 +3090,10 @@
         },
         "offset": {
           "type": "integer"
+        },
+        "ordered": {
+          "type": "boolean",
+          "description": "True when the host puts shell/input in order by stream and seq (#7147). Left out by an older host, which must be sent one input at a time."
         }
       },
       "required": [
@@ -3118,6 +3122,14 @@
         },
         "cols": {
           "type": "integer"
+        },
+        "stream": {
+          "$ref": "core.schema.json#/definitions/UUID",
+          "description": "One run of typing from one screen (#7147). With seq, the host writes a stream's inputs in the order of seq, whatever order their requests run in, so a screen can send the next before the last is answered. A client sends it only to a host whose shell/attach said ordered."
+        },
+        "seq": {
+          "type": "integer",
+          "description": "The input's place in its stream, from 0, with none left out."
         }
       },
       "required": [

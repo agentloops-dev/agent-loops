@@ -380,7 +380,7 @@ func (d *Daemon) callThere(caller wire.UUID, s *startedThere, call wire.SessionC
 	return reply, nil
 }
 
-// thereOp is a call that says only its words: read, stop and archive.
+// thereOp is a call that says only its words: read and stop.
 func (d *Daemon) thereOp(caller wire.UUID, s *startedThere, op string) (string, error) {
 	reply, err := d.callThere(caller, s, wire.SessionCall{Op: op}, 0)
 	if err != nil {
@@ -604,7 +604,7 @@ func (d *Daemon) fromStarter(r wire.SessionCall) (wire.SessionCallReply, error) 
 			reply.Said = "Stopped " + name + ", freeing its running place; it keeps its other place until it is archived."
 		}
 	case "archive":
-		reply.Said = d.archiveForStarter(t)
+		reply.Said = d.archiveForStarter(t, reasonLine(deref(r.Reason)))
 	default:
 		return reply, Invalid("Nothing was done: %s is not something a starter can ask.", r.Op)
 	}
@@ -620,10 +620,11 @@ func (d *Daemon) fromStarter(r wire.SessionCall) (wire.SessionCallReply, error) 
 // archiveForStarter is archive_session from the starter on another machine, as for a
 // helper here: archived now when this folder lets agents and it is not running, else the
 // person approves it.
-func (d *Daemon) archiveForStarter(t *wire.Agent) string {
+func (d *Daemon) archiveForStarter(t *wire.Agent, why *string) string {
 	name := quotedTitle(t.Title)
 	may := d.agentsMayArchive(folderPath(t))
 	if may && !helperBusy(t) {
+		d.sayArchiveWhy(t.ID, why)
 		if err := d.archiveBy(t.ID, wire.AgentArchivedReasonByAgent); err != nil {
 			return "Could not archive " + name + ": " + err.Error()
 		}
@@ -633,7 +634,7 @@ func (d *Daemon) archiveForStarter(t *wire.Agent) string {
 		return name + " already waits for the person to approve archiving it; nothing changed."
 	}
 	working := inFlight(t.State)
-	d.requestArchive(t.ID)
+	d.requestArchive(t.ID, why)
 	if working && may {
 		return name + " will be archived when its turn ends, if it ends done or with nothing to do; otherwise the person approves it."
 	}

@@ -11,10 +11,10 @@ public enum ArchiveRequest: Codable, Hashable, Sendable {
     /// Asked while a turn was in flight. The turn runs to its end, and the daemon makes
     /// this `requested` the moment it does, if the ending goes with it. Until then
     /// nothing is shown.
-    case whenTurnEnds(since: Date)
+    case whenTurnEnds(since: Date, reason: String? = nil)
     /// Asked. The row carries the mark until the person archives the session or sends
     /// it something, or a later turn ends needing them.
-    case requested(at: Date)
+    case requested(at: Date, reason: String? = nil)
 
     public var isRequested: Bool {
         if case .requested = self { return true }
@@ -23,8 +23,16 @@ public enum ArchiveRequest: Codable, Hashable, Sendable {
 
     /// When it was asked, if it has been.
     public var requestedAt: Date? {
-        if case .requested(let at) = self { return at }
+        if case .requested(let at, _) = self { return at }
         return nil
+    }
+
+    /// Why it was asked, in the agent's own words (#6067). Nil on a request from before
+    /// #6067, and on one made for the agent with none.
+    public var reason: String? {
+        switch self {
+        case .whenTurnEnds(_, let reason), .requested(_, let reason): reason
+        }
     }
 }
 
