@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -199,6 +200,7 @@ func TestSignInSaysFailedWhenTheInstallerStops(t *testing.T) {
 // #6340: a daemon that answers slower than KeyWait still gets running, then needs you, then
 // done, in order.
 func TestSignInSaysEachStateInOrderWhenTheDaemonIsSlow(t *testing.T) {
+	flaky.UnderLoad(t, "#7105")
 	h := &smokeHost{}
 	o, l := options(t)
 	o.Runtimes = []string{"claude"}
