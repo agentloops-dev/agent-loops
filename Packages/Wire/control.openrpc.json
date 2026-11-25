@@ -6152,6 +6152,32 @@
       }
     },
     {
+      "name": "reports/storeSizes",
+      "x-capability": "stores.sizes/1",
+      "description": "The last measurement of the control plane's declared stores, for an admin, and the client stores, for anyone (#6906), in pages of at most 100 by id. It measures nothing when it is read. Reports joins it with each machine's stores/list.",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/reports.schema.json#/definitions/StoreSizesQuery"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/reports.schema.json#/definitions/StoreSizes"
+        }
+      }
+    },
+    {
       "name": "reports/usage",
       "x-capability": "reports/2",
       "tags": [

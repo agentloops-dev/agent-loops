@@ -15,6 +15,7 @@ import (
 	"github.com/agentloops-dev/agent-loops/Go/internal/browser"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
 	"github.com/agentloops-dev/agent-loops/Go/internal/repoalias"
+	"github.com/agentloops-dev/agent-loops/Go/internal/storesizes"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -27,6 +28,7 @@ type Daemon struct {
 	smallFiles []interface {
 		Name() string
 		Path() string
+		Spec() store.Spec
 		Sweep() (int, error)
 	}
 	// runsFile is workflow-runs.json; workflowMu guards what it is written from.
@@ -36,6 +38,7 @@ type Daemon struct {
 	dismissedLeads    *store.JSONFile[dismissedLead]
 	repoAliases       *store.JSONFile[repoalias.Alias]
 	erased            *store.JSONFile[wire.Date]
+	storeSizes        *store.JSONFile[storesizes.Measure]
 
 	ctx context.Context
 	// opts are the daemon's own (#5926): set by New, and changed only by a test, as a test
@@ -280,6 +283,7 @@ func newWith(ctx context.Context, root string, opts startOptions) (*Daemon, erro
 	d.opened = d.openReviewMarks("review-opened.json")
 	d.lockSeen = d.openLockSeen()
 	d.runsFile = d.openWorkflowRuns()
+	d.storeSizes = d.openStoreSizes()
 	d.opts.Store(&opts)
 	d.jobCancel = cancel
 	st.OnGap = d.tellEntry
