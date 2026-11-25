@@ -529,6 +529,34 @@ struct WorkCacheTests {
         #expect(await cache.detail(item(1).node) == nil)
     }
 
+    /// #6908: a page's record at its limit is kept; one over it is not, and nor is what was there before.
+    @Test func aPageAtTheLargestIsKeptAndOneOverItIsNot() async throws {
+        let cache = try makeCache(Clock(), bounds: WorkCache.Bounds(recordBytes: 1024))
+        var size = 1024
+        while size > 900 {
+            await cache.keep(String(repeating: "x", count: size), "plan", asked: "a")
+            if await cache.kept(String.self, "plan", asked: "a") != nil { break }
+            size -= 1
+        }
+        #expect(size > 900)
+        await cache.keep(String(repeating: "x", count: size + 1), "plan", asked: "a")
+        #expect(await cache.kept(String.self, "plan", asked: "a") == nil)
+        await cache.keep(String(repeating: "é", count: size), "plan", asked: "a")
+        #expect(await cache.kept(String.self, "plan", asked: "a") == nil, "the limit is in bytes")
+    }
+
+    /// #6908: an item over its limit after the cut does not show its earlier copy as new.
+    @Test(.disabled("#7198")) func anItemOverItsLimitAfterTheCutIsNotDrawnAsItWas() async throws {
+        let cache = try makeCache(Clock())
+        await cache.keepPage(issues, host: mac, page: 0, list: page(1...2))
+        var long = item(1, updated: 10)
+        long.state = "closed"
+        long.url = "https://x/" + String(repeating: "u", count: 5000)
+        await cache.keepPage(issues, host: mac, page: 0, list: DaemonAPI.ForgeList(items: [long, item(2)]))
+        let drawn = await cache.answer(issues)?.hosts.first?.items.first { $0.node == long.node }
+        #expect(drawn == nil || drawn?.state == "closed")
+    }
+
     @Test func noBoundIsOver90Days() {
         #expect(WorkCache.Bounds.mac.age == 90 * day)
         #expect(WorkCache.Bounds.remote.age == 90 * day)

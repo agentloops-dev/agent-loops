@@ -154,3 +154,20 @@ test("a folder's old draft moves to its project's, never over one there (#5376)"
   assert.equal(drafts.get("new|project:p1").text, "from before");
   assert.equal(new Drafts(storage).get("new|project:p1").text, "from before");
 });
+
+test("largest record: one draft too large for the store does not stop the others being saved, and is said (#6908)", { skip: "#7199" }, () => {
+  class Quota extends Memory {
+    setItem(key, value) {
+      if (value.length > 5 * 1024 * 1024) throw new Error("QuotaExceededError");
+      super.setItem(key, value);
+    }
+  }
+  const storage = new Quota();
+  const said = [];
+  const drafts = new Drafts(storage, (sentence) => said.push(sentence));
+  drafts.set("mac|a", { text: "first", attachments: [] });
+  drafts.set("mac|big", { text: "x".repeat(6 * 1024 * 1024), attachments: [] });
+  drafts.set("mac|a", { text: "edited", attachments: [] });
+  assert.equal(new Drafts(storage).get("mac|a").text, "edited");
+  assert.equal(said.length, 1);
+});
