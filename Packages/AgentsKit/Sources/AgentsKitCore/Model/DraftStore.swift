@@ -62,10 +62,10 @@ public struct DraftStore: @unchecked Sendable {
         // moves here once, so an update loses nothing.
         guard let former = key.formerKey, let kept = stored(former) else { return nil }
         // Not `save`: a move is not a new draft, so a full store does not refuse it.
-        if let data = defaults.data(forKey: defaultsKey(for: former)) {
-            defaults.set(data, forKey: defaultsKey(for: key))
-        }
-        clear(former)
+        // One over the largest size (an older build's) is not moved: it is read where it is, until it is sent or ages out.
+        guard let data = defaults.data(forKey: defaultsKey(for: former)) else { return kept }
+        // store-bounds: not a store: a move of one of the drafts that `save` declares
+        if defaults.putEntry(data, forKey: defaultsKey(for: key), most: Self.draftBytes) { defaults.removeObject(forKey: defaultsKey(for: former)) }
         return kept
     }
 
@@ -93,7 +93,9 @@ public struct DraftStore: @unchecked Sendable {
         let name = defaultsKey(for: key)
         // The count reads every key, so only a new draft pays for it.
         if defaults.object(forKey: name) == nil, draftKeys().count >= Self.draftsKept { return .full }
-        defaults.set(data, forKey: name)
+        // store-bounds: kind=document; count=40; age=30d; action=refuse; record=1MiB; applied=on write, at start and on archive
+        guard defaults.putEntry(data, forKey: name, most: Self.draftBytes) else { return .tooBig }
+        dropLargeFormer(of: key)
         return .kept
     }
 
@@ -105,6 +107,14 @@ public struct DraftStore: @unchecked Sendable {
 
     public func clear(_ key: DraftKey) {
         defaults.removeObject(forKey: defaultsKey(for: key))
+        dropLargeFormer(of: key)
+    }
+
+    /// A draft too large to move was read from its former key: what replaces or ends it ends that too, or it comes back.
+    private func dropLargeFormer(of key: DraftKey) {
+        guard let former = key.formerKey.map(defaultsKey(for:)),
+              let data = defaults.data(forKey: former), data.count > Self.draftBytes else { return }
+        defaults.removeObject(forKey: former)
     }
 
     /// Let go of drafts that are over, and say which agents still have one.
@@ -165,8 +175,11 @@ public struct DraftStore: @unchecked Sendable {
         return form
     }
 
-    public func saveStartDraft(_ form: StartDraft) {
-        guard let data = try? JSONEncoder().encode(form) else { return }
-        defaults.set(data, forKey: startKey)
+    /// One over `draftBytes` is refused, and what was kept stays; whether it was kept.
+    @discardableResult
+    public func saveStartDraft(_ form: StartDraft) -> Bool {
+        guard let data = try? JSONEncoder().encode(form) else { return false }
+        // store-bounds: kind=document; count=1; age=until-deleted; action=refuse; record=1MiB; applied=on write, and on Forget
+        return defaults.putEntry(data, forKey: startKey, most: Self.draftBytes)
     }
 }

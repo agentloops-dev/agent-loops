@@ -226,7 +226,7 @@ final class AppModel {
     var selectedFolder: URL? {
         didSet {
             guard selectedFolder != oldValue else { return }
-            WindowDefaults.store.set(selectedFolderKey?.stored, forKey: Self.selectedFolderDefault)
+            ClientDefaults.keepFolder(selectedFolderKey, forKey: Self.selectedFolderDefault, in: WindowDefaults.store)
             // Picking a folder shows the folder, not a conversation, and not a
             // workflow either. Both are things you go into from here, and come back
             // out of.
@@ -1026,7 +1026,7 @@ final class AppModel {
         rememberProjectFolder(key)
         guard rememberedNewSessionFolder != key else { return }
         rememberedNewSessionFolder = key
-        WindowDefaults.store.set(key.stored, forKey: Self.newSessionFolderDefault)
+        ClientDefaults.keepFolder(key, forKey: Self.newSessionFolderDefault, in: WindowDefaults.store)
     }
 
     /// New Session's projects (#3279): the live folders in the sidebar's order, as
@@ -1059,15 +1059,15 @@ final class AppModel {
         let kept = ClientDefaults.pruneProjectFolders(rememberedProjectFolders, host: host, listed: keys)
         guard kept != rememberedProjectFolders else { return }
         rememberedProjectFolders = kept
-        WindowDefaults.store.set(kept, forKey: Self.newSessionProjectFoldersDefault)
+        ClientDefaults.keepProjectFolders(kept, forKey: Self.newSessionProjectFoldersDefault, in: WindowDefaults.store)
     }
 
     private func rememberProjectFolder(_ key: FolderKey) {
         guard let summary = liveFolders.first(where: { $0.key == key }) else { return }
         let id = NewSessionProject.id(of: summary)
         guard rememberedProjectFolders[id] != key.stored else { return }
-        rememberedProjectFolders[id] = key.stored
-        WindowDefaults.store.set(rememberedProjectFolders, forKey: Self.newSessionProjectFoldersDefault)
+        rememberedProjectFolders = ClientDefaults.projectFolders(rememberedProjectFolders, remembering: key.stored, for: id)
+        ClientDefaults.keepProjectFolders(rememberedProjectFolders, forKey: Self.newSessionProjectFoldersDefault, in: WindowDefaults.store)
     }
 
     /// A new session in the selected folder: the empty chat with its prompt, where a
@@ -1549,8 +1549,6 @@ final class AppModel {
     let machineSignIn = MachineSignInDriver()
     /// The Export… or Import Agents… on its way, drawn as a busy sheet with Cancel (#2437).
     var exportImport: ExportImportProgress?
-    /// A server asked for a sign-in this Mac relays; the window asks the person (T091).
-    var signInLendAsk: SignInLendAsk?
     /// Git asks answered here, until the control plane's list drops them (#1122).
     var gitAsksAnswered: Set<String> = []
     /// What a server with no connection answers through: nothing, at once.

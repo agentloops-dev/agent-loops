@@ -30,7 +30,8 @@ enum KeptThisMacHost {
             return
         }
         guard let data = try? JSONEncoder().encode(Kept(controlKey: controlKey, host: mine)) else { return }
-        defaults.set(data, forKey: defaultsKey)
+        // store-bounds: kind=key-value; count=1; age=until-deleted; action=refuse; record=64KiB; applied=when the machines are listed, and on Forget
+        defaults.putEntry(data, forKey: defaultsKey, most: KeyValueBounds.thisMacHost)
     }
 
     /// Forget This Mac (#344): the pairing goes, and the host kept for it.

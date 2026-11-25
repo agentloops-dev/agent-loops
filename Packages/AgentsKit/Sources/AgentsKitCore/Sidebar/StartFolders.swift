@@ -27,7 +27,8 @@ public enum StartFolders {
 
     public static func write(_ folders: [FolderKey], to store: UserDefaults) {
         guard !folders.isEmpty else { return store.removeObject(forKey: key) }
-        store.set(folders.map(\.stored), forKey: key)
+        // store-bounds: kind=key-value; count=100; age=until-deleted; action=refuse; record=1089B; applied=on write, when the machines are listed, and on Forget
+        store.putEntry(folders.map(\.stored), forKey: key, most: most * (pathMost + MachinePins.idMost + 1))
     }
 
     /// Adds a folder; one there already changes nothing. Returns what to say when it is refused.
