@@ -472,7 +472,7 @@ newer than a row above for the same store.
 | Web IndexedDB `agents` › `copy` | cache | As the Mac's local copy, and Work's pictures | 50 MiB, 20 chats, 2000 pictures; 16 MiB a record; 90 days; a machine no longer listed is dropped (#6792) | `Web/src/model/localCopy.ts` | #6792 |
 | Web `localStorage` `agents.drafts` | document | Drafts | 40, a new one over that refused; attachments under 256 KiB; 30 days since the last edit (#6793) | `Web/src/model/drafts.ts` | #6793 |
 | Mac and Remote defaults `draft.*` | document | Drafts | 40, a new one over that refused; 1 MiB a draft, 512 KiB of it attachments; 30 days since the last edit (#6794) | `Packages/AgentsKit/Sources/AgentsKitCore/Model/DraftStore.swift` | #6794 |
-| Remote app group `shared-inbox.json` | blob | What was shared to Agent Loops | Each attachment capped; no count, total or age | `Packages/AgentsKit/Sources/AgentsKitCore/Widget/SharedInbox.swift:88,105-118` | #6795 |
+| Remote app group `shared-inbox.json` | blob | What was shared to Agent Loops | 100 shares, 10 MB in all, one over either refused; 90 days, then New session says how many went | `Packages/AgentsKit/Sources/AgentsKitCore/Widget/SharedInbox.swift` | #6795 |
 | Mac browser pane `WKWebsiteDataStore.default()` | blob | Cookies and site storage of every site the pane opened | None: only the caches are emptied, at launch; not on Forget | `App/Sources/Sidebar/BrowserPane.swift:171-195` | #6796 |
 | `machinePicker.pinned` (Mac, Remote, web) | key-value | Pinned machines | 100 of 64 bytes each, one over that refused; until removed, or its machine is no longer listed (no age, on purpose: a person's choice) | `Packages/AgentsKit/Sources/AgentsKitCore/Sidebar/MachinesGroup.swift` (`MachinePins`); `Web/src/model/machinePicker.ts` | #6797 |
 | Remote defaults `remote.startFolders` | key-value | Start folders, each with its machine | 100 of 1,024 + 64 bytes each, one over that refused; until removed, its machine is no longer listed, or Forget (no age, on purpose: a person's choice) | `Packages/AgentsKit/Sources/AgentsKitCore/Sidebar/StartFolders.swift` | #6798 |
@@ -519,7 +519,7 @@ files expire without a summary. The `Forever` setting and a live conversation do
 90-day maximum age.
 
 Numeric product bounds still missing from responsible child issues include
-control-plane entity, release-key, and invite quotas; browser and
-shared-inbox quotas; and store-specific record and collection limits where the rows above say
+control-plane entity, release-key, and invite quotas; browser quotas; and store-specific
+record and collection limits where the rows above say
 **not specified**. The epic lead must track these in the existing responsible child issues or
 file a follow-up child issue when no owner exists. Do not replace this statement with estimates.
