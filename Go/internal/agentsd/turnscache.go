@@ -26,6 +26,9 @@ import (
 // turnsKept is the conversations whose turns are held in memory, at most.
 const turnsKept = 32
 
+// turnLineMost is the most one turn's line of turns.jsonl is; a larger one is cut (#7244).
+const turnLineMost = 64 << 10
+
 type turnState struct {
 	// asks is the lines that are an ask, up to scanned.
 	asks    []int
@@ -420,6 +423,10 @@ func encodeTurns(turns []wire.TurnSummary) []byte {
 	var buf bytes.Buffer
 	for _, s := range turns {
 		if b, err := diskjson.Marshal(s); err == nil {
+			if cut, was := store.CutLine(b, turnLineMost); was {
+				log.Printf("turn summary: a line of %d bytes is over %d: it is kept cut", len(b), turnLineMost)
+				b = cut
+			}
 			buf.Write(b)
 			buf.WriteByte('\n')
 		}
@@ -439,6 +446,7 @@ func (d *Daemon) writeTurns(id wire.UUID, turns []wire.TurnSummary) {
 		return
 	}
 	tmp := path + ".tmp"
+	// store-bounds: kind=cache; size=2MiB a session; age=90d; applied=on write (a line is cut)
 	if err := os.WriteFile(tmp, encodeTurns(turns), 0o644); err != nil {
 		log.Printf("agent %s: turns not kept: %v", id, err)
 		return
@@ -454,6 +462,7 @@ func (d *Daemon) appendTurns(id wire.UUID, turns []wire.TurnSummary) {
 		log.Printf("agent %s: turns not kept: %v", id, err)
 		return
 	}
+	// store-bounds: kind=cache; size=2MiB a session; age=90d; applied=on write (a line is cut)
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
 		log.Printf("agent %s: turns not kept: %v", id, err)
