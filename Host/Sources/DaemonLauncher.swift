@@ -7,11 +7,22 @@ import Foundation
 enum DaemonLauncher {
     static let argument = "--launch-daemon"
 
+    /// On a Mac that also runs the control plane (#6613), agentsd keeps room free for it, and
+    /// agentsd and its agents run at this niceness. Both jobs are `Interactive`, so launchd
+    /// throttles neither: a starved control plane drops every client (#6569).
+    static let controlHereVariable = "AGENTS_CONTROL_HERE"
+    static let niceBesideControl = 5
+
     static func run() -> Never {
         let paths = HostPaths.current
         let tool = paths.agentsd.path
+        let settings = HostSettings.load(paths)
+        if settings.runsControlPlane {
+            setenv(controlHereVariable, "1", 1)
+            setpriority(PRIO_PROCESS, 0, Int32(niceBesideControl))
+        }
         let rest = Array(CommandLine.arguments.dropFirst().filter { $0 != argument })
-            + pageArguments(HostSettings.load(paths), paths: paths)
+            + pageArguments(settings, paths: paths)
             + pinArguments()
         let argv = ([tool] + rest).map { strdup($0) } + [nil]
         execv(tool, argv)
