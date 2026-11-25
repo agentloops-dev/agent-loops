@@ -2,10 +2,14 @@
 // visits in localStorage, as the window and the Remote keep them in defaults (WorkRemembered.swift). One entry per page,
 // in the words of the page's address (`workQuery`), so a change to a filter's words changes both together. Clear on the
 // page is the way back to the defaults.
+import { fits, putEntry } from "./keyValue";
 import { effect } from "@preact/signals";
 
 /** The pages that remember: the lists by kind, then Timeline and Next (#5691). */
 export type WorkPage = "issue" | "pr" | "release" | "timeline" | "next";
+
+/** The most bytes of a page's choices (#7253): longer ones are not kept, nor read when an older build kept them. */
+export const rememberedBytes = 16 * 1024;
 
 export const rememberedKey = (page: WorkPage) => `agents.work.filters.${page}`;
 
@@ -20,7 +24,8 @@ function storage(): Storage | undefined {
 /** What the page had when it was last left, in its address's words; undefined when it has nothing kept. */
 export function remembered(page: WorkPage, from: Storage | undefined = storage()): string | undefined {
   try {
-    return from?.getItem(rememberedKey(page)) ?? undefined;
+    const kept = from?.getItem(rememberedKey(page)) ?? undefined;
+    return kept !== undefined && fits(kept, rememberedBytes) ? kept : undefined;
   } catch {
     return undefined;
   }
@@ -28,11 +33,15 @@ export function remembered(page: WorkPage, from: Storage | undefined = storage()
 
 /** Keeps what the page has now; the defaults (no words) remove the entry. */
 export function remember(page: WorkPage, words: string, to: Storage | undefined = storage()): void {
+  if (words) {
+    // store-bounds: kind=key-value; count=5; age=until-deleted; action=refuse; record=16KiB; applied=on write
+    putEntry(to, rememberedKey(page), words, rememberedBytes);
+    return;
+  }
   try {
-    if (words) to?.setItem(rememberedKey(page), words);
-    else to?.removeItem(rememberedKey(page));
+    to?.removeItem(rememberedKey(page));
   } catch {
-    // A full or refused storage only loses the memory, never the page.
+    // A refused storage only loses the memory, never the page.
   }
 }
 

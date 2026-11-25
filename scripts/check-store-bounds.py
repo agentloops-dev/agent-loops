@@ -7,7 +7,8 @@ It finds each place where product code opens a store (OPENINGS, below):
   (a `"v1/<family>/"` literal);
 - Swift: a file written, a SQLite file opened, or `UserDefaults` written (`set(_:forKey:)`, and `putEntry`, which
   bounds an entry). An `@AppStorage` is not seen: it is one fixed key;
-- web: an IndexedDB database, `localStorage` or Cache Storage.
+- web: an IndexedDB database, `localStorage` or `sessionStorage` (`setItem` of any storage, and `putEntry`,
+  which bounds an entry), or Cache Storage.
 
 Each one must do one of these:
 
@@ -58,7 +59,12 @@ SWIFT = [
     (re.compile(r"(?<!\w)(set)\(.*\bforKey:"), "UserDefaults.set"),
     (re.compile(r"(?<!func )\b(putEntry)\("), None),
 ]
-WEB = [(re.compile(r"\b(indexedDB\.open|localStorage\.setItem|caches\.open)\("), None)]
+# putEntry is the web's bounded localStorage and sessionStorage (Web/src/model/keyValue.ts).
+WEB = [
+    (re.compile(r"\b(indexedDB\.open|caches\.open)\("), None),
+    (re.compile(r"\.(setItem)\("), None),
+    (re.compile(r"(?<!function )\b(putEntry)\("), None),
+]
 OPENINGS = {".go": GO, ".swift": SWIFT, ".ts": WEB, ".tsx": WEB}
 
 TREES = ("Go/", "App/", "Remote/", "Shared/", "Host/", "Packages/", "Web/src/")
@@ -294,6 +300,11 @@ def selftest():
     assert not problems("public func putEntry(_ value: String, forKey key: String) -> Bool {", "App/Sources/A.swift")
     assert not problems("set(value)", "App/Sources/A.swift")
     assert problems('indexedDB.open("x", 1)', "Web/src/a.ts")
+    for call in ("localStorage.setItem(k, v)", "storage?.setItem(k, v)", "this.storage?.setItem(k, v)", "putEntry(s, k, v, 9)"):
+        assert problems(call, "Web/src/a.ts"), call
+        assert not problems(good.replace("log", "key-value") + call, "Web/src/a.ts"), call
+    assert not problems("interface Storage { setItem(key: string): void }", "Web/src/a.ts")
+    assert not problems("export function putEntry(s: Storage): boolean {", "Web/src/a.ts")
     assert not problems("f, err := os.OpenFile(p, os.O_RDONLY, 0)")
     assert problems("f, err := os.OpenFile(p, os.O_CREATE|os.O_WRONLY, 0)")
     kinds = "Go/internal/controlplane/store/x.go"

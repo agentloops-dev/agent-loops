@@ -1,5 +1,6 @@
 // A folder's Project (#2317): the words of ProjectWords in Packages/AgentsKit
 // (Model/Project.swift), the same on the Mac, the Remote and the web page.
+import { fits, putEntry } from "./keyValue";
 import { CallFailed, describe, methodNotFound } from "./errors";
 import { folderKey } from "./groups";
 import type { ConnectorSetup, ConnectorSlot, PersonRow, Project, ProjectBoard, ProjectFolder, ProjectSlot } from "../protocol/generated";
@@ -175,15 +176,27 @@ export function projectFolder<T>(project: NewSessionProject<T>, remembered: ((ro
 }
 
 const projectFoldersKey = "agents.newSession.projectFolders";
+/** The most projects whose folder is kept, and the most bytes of a project's name with its folder (#7253). A new one past
+ *  that is not kept, and the first folder stands in. */
+export const projectFoldersMost = 1000;
+export const projectFolderBytes = 2048;
+const projectFoldersBytes = 2 + projectFoldersMost * (6 * projectFolderBytes + 6);
 
 /** The folder last used in each project (`host|folder`), kept in localStorage as the window keeps it in defaults. */
 export function rememberedProjectFolders(storage: Storage | undefined): Record<string, string> {
   try {
     const stored = JSON.parse(storage?.getItem(projectFoldersKey) ?? "null");
-    return stored && typeof stored === "object" ? stored as Record<string, string> : {};
+    if (!stored || typeof stored !== "object") return {};
+    return Object.fromEntries(Object.entries(stored as Record<string, string>)
+      .filter(([project, folder]) => typeof folder === "string" && fits(project + folder, projectFolderBytes)).slice(0, projectFoldersMost));
   } catch {
     return {};
   }
+}
+
+function keepProjectFolders(storage: Storage | undefined, folders: Record<string, string>): void {
+  // store-bounds: kind=key-value; count=1000; age=until-deleted; action=refuse; record=2KiB; applied=on write, and when a machine lists its folders or leaves
+  putEntry(storage, projectFoldersKey, JSON.stringify(folders), projectFoldersBytes);
 }
 
 /**
@@ -195,18 +208,15 @@ export function pruneProjectFolders(storage: Storage | undefined, host: string, 
     const kept = new Set(folders.map((folder) => `${host}|${folderKey(folder)}`));
     const held = rememberedProjectFolders(storage);
     const left = Object.fromEntries(Object.entries(held).filter(([, folder]) => !folder.startsWith(`${host}|`) || kept.has(folder)));
-    if (Object.keys(left).length !== Object.keys(held).length) storage?.setItem(projectFoldersKey, JSON.stringify(left));
+    if (Object.keys(left).length !== Object.keys(held).length) keepProjectFolders(storage, left);
   } catch {
     // A private window may refuse to store; the map stays as it was.
   }
 }
 
 export function rememberProjectFolder(storage: Storage | undefined, project: string, folder: string): void {
-  try {
-    const kept = rememberedProjectFolders(storage);
-    if (kept[project] === folder) return;
-    storage?.setItem(projectFoldersKey, JSON.stringify({ ...kept, [project]: folder }));
-  } catch {
-    // A private window may refuse to store; the first folder stands in.
-  }
+  const kept = rememberedProjectFolders(storage);
+  if (kept[project] === folder || !fits(project + folder, projectFolderBytes)) return;
+  if (!Object.hasOwn(kept, project) && Object.keys(kept).length >= projectFoldersMost) return;
+  keepProjectFolders(storage, { ...kept, [project]: folder });
 }
