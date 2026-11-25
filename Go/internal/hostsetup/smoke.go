@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -123,8 +125,25 @@ func waitSignedIn(ctx context.Context, d Deps, runtime string) error {
 	}
 }
 
+// ScratchProjectOf is the folder the smoke session runs in when the machine has no project:
+// inside the host's own folder, so the machine user's home never becomes a folder.
+func ScratchProjectOf(home string) string { return filepath.Join(LayoutOf(home).Dir, "smoke") }
+
+// makeScratchProject makes it empty.
+func makeScratchProject(home string) (string, error) {
+	dir := ScratchProjectOf(home)
+	if err := os.RemoveAll(dir); err != nil {
+		return "", fmt.Errorf("the scratch project: %w", err)
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", fmt.Errorf("the scratch project: %w", err)
+	}
+	return dir, nil
+}
+
 // Smoke is step 8: one short session with the cheapest model of the first runtime, in the
-// first project (else the machine user's home), with a fixed prompt. It must answer and end
+// first project (else a scratch project of its own, never the machine user's home), with a
+// fixed prompt. It must answer and end
 // its turn; the step says the time to the first word. The session is archived at the end,
 // whatever came of it. A step that failed says the runtime's own error, after SmokeTimeout.
 func Smoke(ctx context.Context, o Options, d Deps, rep *Reporter, say func(string, ...any)) error {
@@ -134,9 +153,18 @@ func Smoke(ctx context.Context, o Options, d Deps, rep *Reporter, say func(strin
 	if len(o.Runtimes) > 0 {
 		runtime = o.Runtimes[0]
 	}
-	folder := o.Home
+	var folder string
 	if len(o.Projects) > 0 {
 		folder = o.Projects[0]
+	} else {
+		scratch, err := makeScratchProject(o.Home)
+		if err != nil {
+			rep.Say(step, wire.MachineSetupStateFailed, "", err.Error())
+			say("%s: %v", step, err)
+			return fmt.Errorf("%s: %w", step, err)
+		}
+		folder = scratch
+		defer func() { _ = os.RemoveAll(scratch) }()
 	}
 	fail := func(err error) error {
 		rep.Say(step, wire.MachineSetupStateFailed, "", err.Error())
