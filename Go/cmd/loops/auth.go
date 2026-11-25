@@ -75,6 +75,10 @@ func authLogin(ctx context.Context, say io.Writer, text string) error {
 	if err != nil {
 		return &exit{code: exitError, msg: fmt.Sprintf("Could not pair with %s (%s).", hostOf(code.URL), reason(err)) + debugLine(err)}
 	}
+	if err := fits(m); err != nil {
+		_ = controllink.ForgetSelf(ctx, m) // best effort: its Devices list shows one that stays
+		return &exit{code: exitError, msg: fmt.Sprintf("The pairing with %s is not kept: %v.", hostOf(code.URL), err)}
+	}
 	for _, old := range h.Hosts {
 		if old.URL == m.URL && old.Client != m.Client {
 			// The old pairing's key opens nothing now.

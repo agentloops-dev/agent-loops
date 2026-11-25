@@ -175,10 +175,15 @@ func (d *Daemon) writeSetting(name string, v any) error {
 	if err != nil {
 		return err
 	}
+	path := filepath.Join(d.SettingsDir, name)
+	if err := settingFits(path, b, settingMostBytes); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(d.SettingsDir, 0o700); err != nil {
 		return err
 	}
-	return store.WriteAtomically(filepath.Join(d.SettingsDir, name), b, 0o600)
+	// store-bounds: kind=key-value; count=6 (one a name); size=64KiB a file; age=until-deleted; applied=on write (refused)
+	return store.WriteAtomically(path, b, 0o600)
 }
 
 // sandboxState is sandbox/state: the saved defaults, and who required them when the

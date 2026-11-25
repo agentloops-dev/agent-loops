@@ -35,3 +35,15 @@ func TestUnpairDeletesThePairing(t *testing.T) {
 		t.Fatalf("said %q", say.String())
 	}
 }
+
+// #7203: a pairing is at most 4 KiB as it is kept: the control plane gives the client's id.
+func TestAPairingHasALargestSize(t *testing.T) {
+	m := &controllink.ClientMembership{Client: "A"}
+	if _, err := kept(m); err != nil {
+		t.Fatal(err)
+	}
+	m.Client = strings.Repeat("c", mostPairing)
+	if _, err := kept(m); err == nil {
+		t.Fatal("a pairing over 4 KiB is kept")
+	}
+}

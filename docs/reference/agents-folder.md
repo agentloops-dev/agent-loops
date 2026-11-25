@@ -94,6 +94,11 @@ which the audit keeps by name too.
 | `backup-settings.json` | Backups: how often, how many, and where. One entry for each machine, by the ID in its `root-id.json`, so machines that share the folder keep their own. 100 machines at most: remove by hand one that is gone | A machine's **Backups** |
 | `image-hosts.json` | The hosts that you allowed images from on Work pages. One entry for each machine, by the ID in its `root-id.json`, with 100 hosts at most. A host that is not an exact name in lower case is ignored. 100 machines at most: remove by hand one that is gone | Agent Loops |
 
+`display.json` holds 1000 settings at most, 64 KiB each and 256 KiB in all; `person.json` is
+4 KiB at most; and `auto.json`, `browser-control.json`, `client-permissions.json`,
+`desktop-control.json`, `modes.json`, `retention.json` and `sandbox.json` are 64 KiB at most
+each. A change over a limit is refused, and the earlier value stays.
+
 A file you change by hand counts at once, without a restart. A file that cannot be read is
 set aside as `<name>.corrupt-<time>`, and the setting goes back to its default. For
 `host.json`, the file is left as it is, and Agent Loops starts with the defaults until you
