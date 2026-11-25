@@ -194,6 +194,7 @@ var own = methodSet(
 	"reports/changes",
 	"reports/export",
 	"reports/nodes",
+	"reports/storeSizes",
 	"reports/usage",
 	"reports/value",
 	"scim/set",
@@ -441,7 +442,7 @@ func (m *Methods) Handle(method string, params json.RawMessage, from Caller) (an
 		"signIn/domains/check", "signIn/domains/claim", "signIn/domains/list", "signIn/domains/preview",
 		"signIn/domains/remove", "signIn/domains/set":
 		return m.signInMethod(ctx, method, params, from)
-	case "reports/usage", "reports/export", "reports/value", "reports/nodes", "reports/changes":
+	case "reports/usage", "reports/export", "reports/value", "reports/nodes", "reports/changes", wire.CallReportsStoreSizes.Name:
 		return m.reportMethod(ctx, method, params, from)
 	case "user/settings", "user/setAgentConfigFile", "user/setSettings", "user/setSecret", "user/removeSecret", "user/secretNames",
 		"user/secretRecipients", "user/sealedSecret", "user/secretOffers", "user/dropSecretOffer":

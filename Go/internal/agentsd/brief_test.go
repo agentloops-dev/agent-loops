@@ -280,6 +280,7 @@ var toolsBriefSkips = map[string]string{
 	"check_folders":  "the Daily checks workflow's prompt",
 	"cancel_wait":    "every wait's answer",
 	"cancel_message": "message_session's refusal of a second message",
+	"list_stores":    "its own description: only work on the app's own stores uses it",
 	"list_resources": "lease_resource's description; the declared resources are in the brief",
 }
 
