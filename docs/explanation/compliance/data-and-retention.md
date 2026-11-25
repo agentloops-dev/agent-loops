@@ -125,7 +125,7 @@ Mac.
 | `mcp-logs/`, in the log folder | log | What each hosted MCP server wrote to stderr | 7 days and 10 MB for the folder (#6736): 256 KB and one older file a server, and the files written longest ago go when the folder passes 7 MB. A larger write is split, so no file passes 256 KB. A line goes after 83 hours to 7 days, with no summary. | On write, when a server starts, and hourly |
 | `tools/<runtime>/`, in the cache folder | cache | Pinned runtime toolsets | The current one | At start |
 | `browser/`, in the cache folder | cache | The browser that agents drive, and its output | Old browser versions are left to Playwright. Output goes when the session ends; what a crash left goes at the next start (#3649) | On install; at session end; at start |
-| The Mac browser pane's website data (WebKit's default store) | blob | The sign-ins of every site the pane opened, and its caches | Sign-ins until the site ends them. The caches are emptied once each time the app starts (#3727). | At the first pane of each launch |
+| The Mac browser pane's website data (WebKit's default store), and the date each site was last opened (`browserPane.sites` in the app's defaults) | blob | The sign-ins and site storage of the sites the pane opened, and its caches | 10 MB and 100 sites; a site goes, with its sign-in, 90 days after a pane last opened it (#6796). Over a limit the caches go first, then the site opened longest ago. A site in an open pane stays, so the store can be over its size until that pane closes. The caches are also emptied when the app starts and once a day. The dates are of 100 sites, and of 1,000 hosts at most between two sweeps. | At launch, hourly, and sooner past 20 MB; Forget This Mac clears all of it |
 | `catalog-staging/`, in the cache folder | cache | Skill previews | 8 previews, 30 minutes; folders left by a restart go at the next start (#3649) | On use; at start |
 | `option-cache.json`, in the cache folder | cache | Runtime options | 50 | On write |
 | Cache and log folders of each other data folder (`roots/<name>-<hash>`) | cache | As above, for a second copy | Removed when that data folder is gone (#3746). Each keeps its data folder's path in `root-path`; a folder made before that is kept, and so is one whose data folder's parent is gone too, as on a disk that is not attached. | Hourly, by a machine whose data folder is not a temporary one |
@@ -409,7 +409,8 @@ also deletes what it kept of that control plane (#3670):
 
 - **The Mac window:** its drafts and the start form, its machine-lock pins, its pairing
   files (including the saved pairing with this Mac's own control plane), its local copy,
-  and its Work cache.
+  its Work cache, and the browser pane's website data (it is signed out of each site there,
+  #6796).
 - **The Remote:** its drafts, its machine-lock pins, the widget's file
   (`attention-snapshot.json`, with its headlines) and the badge, the Live Activity and its
   turns, and every banner it showed.

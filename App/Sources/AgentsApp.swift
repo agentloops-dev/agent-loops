@@ -25,6 +25,8 @@ struct AgentsApp: App {
         PaperFonts.register()
         // The defaults of scratch copies that have gone (#1029).
         Task.detached(priority: .utility) { WindowDefaults.sweep() }
+        // The browser pane's website data stays under its bounds (#6796).
+        Task { await BrowserPaneStore.run() }
         #if DEBUG
         // A scratch copy's walk socket (#1172), for run-app's walk.py; only with --walk.
         WalkServer.startIfWalking()
