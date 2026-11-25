@@ -53,7 +53,7 @@ struct ControlClientsPage: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This window is cut off at once, at home and away, until it is paired again.")
+            Text("This window is cut off at once, at home and away, until it is paired again. The Browser pane is signed out of every site.")
         }
     }
 
