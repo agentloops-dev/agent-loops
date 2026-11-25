@@ -4,13 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/records"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
-	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -170,7 +170,6 @@ func TestAHandoverMovesAMemberWithoutPairingAgain(t *testing.T) {
 // A Go host follows a move (R16, T125, #1490): told the new place in ok, it dials there,
 // keeps the list in its root, and never dials the forwarding copy in a tight loop.
 func TestAHostFollowsAMoveToAnotherCopy(t *testing.T) {
-	flaky.UnderLoad(t, "#7122")
 	t.Parallel()
 	key := controllink.NewPrivateKey()
 	old := startPlane(t, store.NewMemory(), key)
@@ -190,5 +189,66 @@ func TestAHostFollowsAMoveToAnotherCopy(t *testing.T) {
 	kept, err := controllink.LoadMembership(host.root)
 	if err != nil || kept.URL != fresh.url || kept.Epoch == nil || len(kept.Endpoints) != 1 {
 		t.Fatalf("%+v %v", kept, err)
+	}
+}
+
+// heldEpochStore holds the first write of a machine's record that notes an epoch.
+type heldEpochStore struct {
+	store.Store
+	once    sync.Once
+	reached chan struct{}
+	release chan struct{}
+}
+
+func (s *heldEpochStore) Put(ctx context.Context, key string, data []byte, when store.Condition) (string, error) {
+	if strings.HasPrefix(key, records.MachinesPrefix) && strings.Contains(string(data), `"knownEpoch"`) {
+		s.once.Do(func() {
+			close(s.reached)
+			<-s.release
+		})
+	}
+	return s.Store.Put(ctx, key, data, when)
+}
+
+// A host is online only once its epoch is noted, so announce never refuses one that has
+// just connected as a host that can't follow a move (#7122).
+func TestAHostIsOnlineOnlyOnceItsEpochIsNoted(t *testing.T) {
+	t.Parallel()
+	st := &heldEpochStore{Store: store.NewMemory(), reached: make(chan struct{}), release: make(chan struct{})}
+	p := startPlane(t, st, controllink.NewPrivateKey())
+	release := sync.OnceFunc(func() { close(st.release) })
+	t.Cleanup(release)
+	early := make(chan bool, 1)
+	go func() {
+		<-st.reached
+		online := false
+		for until := time.Now().Add(300 * time.Millisecond); !online && time.Now().Before(until); time.Sleep(5 * time.Millisecond) {
+			online = len(p.s.Router().ConnectedMembers()) > 0
+		}
+		early <- online
+		release()
+	}()
+	host := p.host("MACHINE-H")
+	if <-early {
+		t.Fatal("online before its epoch was noted")
+	}
+	if p.s.records.Host(host.member.Host).KnownEpoch == nil {
+		t.Fatal("no epoch noted")
+	}
+}
+
+// An epoch is noted over another copy's write of the same record, and both are kept (#7122).
+func TestAnEpochIsNotedOverAnotherCopysWrite(t *testing.T) {
+	t.Parallel()
+	p := startPlane(t, store.NewMemory(), controllink.NewPrivateKey())
+	id := p.host("MACHINE-H").member.Host
+	ctx := context.Background()
+	other := records.New(p.store)
+	must(t, other.Load(ctx))
+	must(t, other.ChangeHost(ctx, id, func(h *records.MachineRecord) bool { h.SignInFrom = map[string]string{"r": "x"}; return true }))
+	p.s.methods.NoteEpoch(ctx, controllink.Identity{Kind: 'h', ID: id}, 7)
+	must(t, other.Load(ctx))
+	if h := other.Host(id); h.KnownEpoch == nil || *h.KnownEpoch != 7 || h.SignInFrom["r"] != "x" {
+		t.Fatalf("%+v", h)
 	}
 }

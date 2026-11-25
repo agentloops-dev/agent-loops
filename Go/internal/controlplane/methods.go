@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/url"
 	"os"
 	"slices"
@@ -1186,28 +1187,36 @@ func (m *Methods) admitOnce(ctx context.Context, client records.ClientRecord) (b
 }
 
 // NoteEpoch is what a member said it holds of the endpoints (R16), written only when
-// it changes. A conflict is let go: the next connection says it again.
+// it changes. A member can stay connected for days, so a conflict with another copy's
+// write is tried once more on the record as it is now (#7122); another failure is let go
+// until the next connection says the epoch again.
 func (m *Methods) NoteEpoch(ctx context.Context, id controllink.Identity, epoch int) {
+	err := m.noteEpochOnce(ctx, id, epoch)
+	if store.IsConflict(err) {
+		if err = m.records.Load(ctx); err == nil {
+			err = m.noteEpochOnce(ctx, id, epoch)
+		}
+	}
+	if err != nil {
+		m.s.log(fmt.Sprintf("could not note the epoch of %c:%s: %v", id.Kind, id.ID, err))
+	}
+}
+
+func (m *Methods) noteEpochOnce(ctx context.Context, id controllink.Identity, epoch int) error {
+	note := func(known **int) bool {
+		if *known != nil && **known == epoch {
+			return false
+		}
+		*known = &epoch
+		return true
+	}
 	switch id.Kind {
 	case 'c':
-		// A failed write is let go: the next connection says the epoch again.
-		_ = m.records.ChangeClient(ctx, id.ID, func(c *records.ClientRecord) bool {
-			if c.KnownEpoch != nil && *c.KnownEpoch == epoch {
-				return false
-			}
-			c.KnownEpoch = &epoch
-			return true
-		})
+		return m.records.ChangeClient(ctx, id.ID, func(c *records.ClientRecord) bool { return note(&c.KnownEpoch) })
 	case 'h':
-		// A failed write is let go: the next connection says the epoch again.
-		_ = m.records.ChangeHost(ctx, id.ID, func(h *records.MachineRecord) bool {
-			if h.KnownEpoch != nil && *h.KnownEpoch == epoch {
-				return false
-			}
-			h.KnownEpoch = &epoch
-			return true
-		})
+		return m.records.ChangeHost(ctx, id.ID, func(h *records.MachineRecord) bool { return note(&h.KnownEpoch) })
 	}
+	return nil
 }
 
 // setPushToken is clients/setPushToken (#1460): a device's own APNs token, kept in its

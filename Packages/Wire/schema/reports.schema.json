@@ -3688,7 +3688,7 @@
     },
     "WorkTimeline": {
       "type": "object",
-      "description": "work/timeline (#4172, specs/time-stream/wireframe.md sections 4, 7 to 9): the epics of a project that overlap from to to, each from its first child's start to when its work stopped (#7058), with its children, its segments and, while open, its forecast (M10); and the releases published in the window. timeZone is the working clock's: this host's, an IANA name, absent when it has none. backtest is how the forecast did on the epics whose work ended in the last 30 days, run again at most once a day; absent when there are too few. errors are the forges that could not be read, as forge/issues says them.",
+      "description": "work/timeline (#4172, specs/time-stream/wireframe.md sections 4, 7 to 9): the epics of a project that overlap from to to, each from its first child's start to when its work stopped (#7058), with its children, its segments and, while open, its forecast (M10); and the releases published in the window. timeZone is the working clock's: this host's, an IANA name, absent when it has none. backtest is how the forecast did on the epics whose work ended in the last 30 days, run again at most once a day; absent when there are too few. errors are the forges that could not be read, as forge/issues says them. partial (#7027): an answer to a first ask that did not read the forecast's history, so it has no forecast and no backtest, and not each epic whose block ends after its close; a host from before it gives all of it.",
       "properties": {
         "epics": {
           "type": "array",
@@ -3713,6 +3713,9 @@
           "items": {
             "type": "string"
           }
+        },
+        "partial": {
+          "type": "boolean"
         }
       },
       "required": [
@@ -3873,7 +3876,7 @@
     },
     "WorkTimelineRequest": {
       "type": "object",
-      "description": "work/timeline (#4172): the epics of a project (its id, from a folder's .agents/folder.json) that overlap from to to.",
+      "description": "work/timeline (#4172): the epics of a project (its id, from a folder's .agents/folder.json) that overlap from to to. With first, the answer can be partial (#7027): ask again without it for all of it.",
       "properties": {
         "project": {
           "type": "string"
@@ -3883,6 +3886,9 @@
         },
         "to": {
           "$ref": "core.schema.json#/definitions/WireDate"
+        },
+        "first": {
+          "type": "boolean"
         }
       },
       "required": [

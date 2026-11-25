@@ -83,7 +83,7 @@ func TestTimelineReadsEpicsChildrenAndReleases(t *testing.T) {
 	}))
 	t.Cleanup(s.Close)
 	g := NewRealGitHub(s.URL, func() string { return "t" }, nil)
-	tl, err := g.Timeline(context.Background(), "alexec/Agents", "2026-10-09T00:00:00Z", func(labels []string) bool { return slices.Contains(labels, "on hold") })
+	tl, err := g.Timeline(context.Background(), "alexec/Agents", "2026-10-09T00:00:00Z", "", func(labels []string) bool { return slices.Contains(labels, "on hold") })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,7 +156,7 @@ func TestTimelineReadsEpicsInBatchesInOrder(t *testing.T) {
 	}))
 	t.Cleanup(s.Close)
 	g := NewRealGitHub(s.URL, func() string { return "t" }, nil)
-	tl, err := g.Timeline(context.Background(), "alexec/Agents", "2026-10-09T00:00:00Z", func([]string) bool { return false })
+	tl, err := g.Timeline(context.Background(), "alexec/Agents", "2026-10-09T00:00:00Z", "", func([]string) bool { return false })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -170,5 +170,47 @@ func TestTimelineReadsEpicsInBatchesInOrder(t *testing.T) {
 		if e.Number != n+1 {
 			t.Fatalf("epic %d is #%d", n, e.Number)
 		}
+	}
+}
+
+// #7027: a first read leaves the epics closed before from in Rest; TimelineRest reads those alone, and asks for no list.
+func TestTimelineFirstLeavesTheRest(t *testing.T) {
+	var mu sync.Mutex
+	lists := 0
+	var batches []string
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Variables map[string]any `json:"variables"`
+		}
+		body, _ := io.ReadAll(r.Body)
+		unmarshal(t, body, &req)
+		mu.Lock()
+		defer mu.Unlock()
+		if ids, ok := req.Variables["ids"].([]any); ok {
+			var nodes []string
+			for _, id := range ids {
+				batches = append(batches, id.(string))
+				nodes = append(nodes, `{"number":`+id.(string)[1:]+`}`)
+			}
+			reply(t, w, `{"data":{"nodes":[`+strings.Join(nodes, ",")+`]}}`)
+			return
+		}
+		lists++
+		ids := `{"id":"I2","number":2,"closedAt":"2026-11-03T00:00:00Z"},{"id":"I3","number":3,"closedAt":"2026-11-01T00:00:00Z"}`
+		if req.Variables["states"].([]any)[0] == "OPEN" {
+			ids = `{"id":"I1","number":1}`
+		}
+		reply(t, w, `{"data":{"repository":{"issues":{"nodes":[`+ids+`]},"releases":{"nodes":[{"tagName":"v1","publishedAt":"2026-11-05T00:00:00Z","url":"r1"}]}}}}`)
+	}))
+	t.Cleanup(s.Close)
+	g := NewRealGitHub(s.URL, func() string { return "t" }, nil)
+	first, err := g.Timeline(context.Background(), "alexec/Agents", "2026-10-09T00:00:00Z", "2026-11-02T00:00:00Z", func([]string) bool { return false })
+	if err != nil || len(first.Epics) != 2 || !slices.Equal(first.Rest, []string{"I3"}) || !slices.Equal(batches, []string{"I1", "I2"}) {
+		t.Fatalf("%v: first %+v, batches %v", err, first, batches)
+	}
+	all, err := g.TimelineRest(context.Background(), "alexec/Agents", first)
+	if err != nil || len(all.Epics) != 3 || all.Epics[2].Number != 3 || len(all.Rest) != 0 || len(all.Releases) != 1 ||
+		!slices.Equal(batches, []string{"I1", "I2", "I3"}) || lists != 2 || len(first.Epics) != 2 {
+		t.Fatalf("%v: all %+v, batches %v, %d lists", err, all, batches, lists)
 	}
 }

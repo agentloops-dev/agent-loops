@@ -17657,7 +17657,7 @@ type WorkSuggestLeadsRequest struct {
 	Folder *string `json:"folder,omitzero"`
 }
 
-// work/timeline (#4172, specs/time-stream/wireframe.md sections 4, 7 to 9): the epics of a project that overlap from to to, each from its first child's start to when its work stopped (#7058), with its children, its segments and, while open, its forecast (M10); and the releases published in the window. timeZone is the working clock's: this host's, an IANA name, absent when it has none. backtest is how the forecast did on the epics whose work ended in the last 30 days, run again at most once a day; absent when there are too few. errors are the forges that could not be read, as forge/issues says them.
+// work/timeline (#4172, specs/time-stream/wireframe.md sections 4, 7 to 9): the epics of a project that overlap from to to, each from its first child's start to when its work stopped (#7058), with its children, its segments and, while open, its forecast (M10); and the releases published in the window. timeZone is the working clock's: this host's, an IANA name, absent when it has none. backtest is how the forecast did on the epics whose work ended in the last 30 days, run again at most once a day; absent when there are too few. errors are the forges that could not be read, as forge/issues says them. partial (#7027): an answer to a first ask that did not read the forecast's history, so it has no forecast and no backtest, and not each epic whose block ends after its close; a host from before it gives all of it.
 type WorkTimeline struct {
 	Epics []WorkTimelineEpic `json:"epics"`
 
@@ -17668,6 +17668,8 @@ type WorkTimeline struct {
 	Backtest *WorkTimelineBacktest `json:"backtest,omitzero"`
 
 	Errors []string `json:"errors,omitzero"`
+
+	Partial *bool `json:"partial,omitzero"`
 }
 
 // work/timeline's backtest (#4172): the forecast stopped just after 25, 50, 75 and 90% of each past segment's children closed, made from what had ended before that moment, and set against the real close. error is the median of forecast/actual or actual/forecast, whichever is more than 1 (×2.2 says off by a factor of 2.2). cuts is how many forecasts it made, of epics segments; holds how many closes fell in P10 to P90. width is the factor that widens the band around P50 (in log terms) until it holds 8 in 10 of them; each forecast's band is already widened by it. at is when it ran.
@@ -17739,13 +17741,15 @@ type WorkTimelineRelease struct {
 	URL *string `json:"url,omitzero"`
 }
 
-// work/timeline (#4172): the epics of a project (its id, from a folder's .agents/folder.json) that overlap from to to.
+// work/timeline (#4172): the epics of a project (its id, from a folder's .agents/folder.json) that overlap from to to. With first, the answer can be partial (#7027): ask again without it for all of it.
 type WorkTimelineRequest struct {
 	Project string `json:"project"`
 
 	From Date `json:"from"`
 
 	To Date `json:"to"`
+
+	First *bool `json:"first,omitzero"`
 }
 
 // A line of an epic in work/timeline (#4172): from its first child's start to its last child's close.

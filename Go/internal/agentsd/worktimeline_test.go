@@ -16,13 +16,61 @@ import (
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
-func (f *fakeForgeGitHub) Timeline(_ context.Context, repo, _ string, skip func([]string) bool) (githubmcp.Timeline, error) {
+func (f *fakeForgeGitHub) Timeline(_ context.Context, repo, _, from string, skip func([]string) bool) (githubmcp.Timeline, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.timelines++
 	t := f.timeline
 	t.Epics = slices.DeleteFunc(slices.Clone(t.Epics), func(e githubmcp.TimelineEpic) bool { return e.State == "open" && skip(e.Labels) })
+	var first []githubmcp.TimelineEpic
+	for _, e := range t.Epics {
+		if e.ClosedAt != "" && e.ClosedAt < from {
+			t.Rest = append(t.Rest, strconv.Itoa(e.Number))
+		} else {
+			first = append(first, e)
+		}
+	}
+	t.Epics = first
 	return t, nil
+}
+
+func (f *fakeForgeGitHub) TimelineRest(_ context.Context, _ string, t githubmcp.Timeline) (githubmcp.Timeline, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.timelineRests++
+	t.Epics = slices.Clone(t.Epics)
+	for _, e := range f.timeline.Epics {
+		if slices.Contains(t.Rest, strconv.Itoa(e.Number)) {
+			t.Epics = append(t.Epics, e)
+		}
+	}
+	t.Rest = nil
+	return t, nil
+}
+
+// checkTimelineFirst asks for the first answer and then all of it (#7027): the window's epics with no forecast, read
+// once for two first asks; then the forecast, with only the rest read; then a first ask gets all that is kept.
+func checkTimelineFirst(t *testing.T, c *conn, gh *fakeForgeGitHub, req wire.WorkTimelineRequest) {
+	t.Helper()
+	ask := func(first bool, reads, rests int, partial bool) {
+		t.Helper()
+		r := req
+		if first {
+			r.First = new(true)
+		}
+		var tl wire.WorkTimeline
+		mustUnmarshal(t, c.call(t, 50, "work/timeline", r), &tl)
+		gh.mu.Lock()
+		defer gh.mu.Unlock()
+		if gh.timelines != reads || gh.timelineRests != rests || (tl.Partial != nil) != partial || len(tl.Epics) != 2 || len(tl.Releases) != 1 ||
+			(tl.Backtest == nil) != partial || (tl.Epics[0].Forecast == nil) != partial {
+			t.Fatalf("first %v: %d reads, %d rests, %+v", first, gh.timelines, gh.timelineRests, tl)
+		}
+	}
+	ask(true, 1, 0, true)
+	ask(true, 1, 0, true)
+	ask(false, 1, 1, false)
+	ask(true, 1, 1, false)
 }
 
 // checkTimelineOpenEpic checks the open epic of TestWorkTimelineForecastsTheOpenEpics: its
@@ -108,6 +156,7 @@ func TestWorkTimelineForecastsTheOpenEpics(t *testing.T) {
 	}
 
 	req := wire.WorkTimelineRequest{Project: "p1", From: wire.DateOf(now.Add(-24 * time.Hour)), To: wire.DateOf(now.Add(24 * time.Hour))}
+	checkTimelineFirst(t, c, gh, req)
 	var tl wire.WorkTimeline
 	if err := json.Unmarshal(c.call(t, 1, "work/timeline", req), &tl); err != nil {
 		t.Fatal(err)
