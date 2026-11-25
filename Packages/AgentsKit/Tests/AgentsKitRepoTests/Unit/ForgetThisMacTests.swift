@@ -17,6 +17,7 @@ struct ForgetThisMacTests {
         #expect(body.contains("if forgetLocalData"))
         #expect(body.contains("await localCopy?.forget()"))
         #expect(body.contains("await workCache?.forget()"))
+        #expect(body.contains("await BrowserPaneStore.shared.forget()"))
     }
 
     @Test func forgetRemovesTheSavedLocalControlPlanePairing() throws {
