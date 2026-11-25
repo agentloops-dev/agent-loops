@@ -119,7 +119,9 @@ agents it started.
 
 - **All passed:** the agent ends `done` and asks to be archived. Nothing to do but archive it.
 - **Anything failed:** it ends `needs_answer`, naming each failure and a likely fix (the app,
-  the adapter, the runtime's version, a setting). File the app ones as issues; the runtime
+  the adapter, the runtime's version, a setting). File the app ones as issues, each
+  `bug` with a priority and a `size:`, and a parent epic when one fits, else say in it that
+  the bug lane (#4207) takes it (AGENTS.md, "Every issue has an epic", #7033; never `on hold`); the runtime
   ones go with the nightly check (#39).
 - Archive the assessing agent once read. Its helper is archived by the agent itself.
 - The report is a file in the folder like any other: commit it only if asked.

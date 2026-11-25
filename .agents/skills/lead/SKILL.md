@@ -72,9 +72,9 @@ gh api repos/agentloops-dev/agent-loops/issues/<child>/dependencies/blocked_by \
 ## The order: `forge/next`
 
 The order of work is the one order of `forge/next` (#5689, #5692), the same order as Work's
-**Next**: not on hold first; then priority `high`, `medium`, none, `low`; then the
-milestone's due date, the earliest first, no milestone last; then the oldest (then the
-lowest number). Do not work out an order of your own from prose. `forge/next` with `epic`
+**Next**: not on hold first; then priority `high`, `medium`, none, `low`; then
+size `XS`, `S`, `M`, `L`, `XL`, no size last (#7033); then the oldest (then the
+lowest number). An epic has no size. Do not work out an order of your own from prose. `forge/next` with `epic`
 gives the epic's children that are ready (open, no open blocker, not taken, no assignee),
 and those on hold, in that order, with the reasons for each place; a standing epic's
 query comes in the same order. Its top row that is not on hold is the next one.
@@ -84,14 +84,15 @@ the same order with `gh` and `jq`. This reads the labels only; the daemon also r
 GitHub's **Priority** issue field where the repo has one (#5747):
 
 ```zsh
-gh issue list --limit 100 --json number,title,labels,milestone,createdAt \
+gh issue list --limit 100 --json number,title,labels,createdAt \
   --search "is:open -label:epic parent-issue:agentloops-dev/agent-loops#$epic" | jq -r '
   def rank: ([.labels[].name] as $l
     | if ($l|index("priority:high")) then 0 elif ($l|index("priority:medium")) then 1
       elif ($l|index("priority:low")) then 3 else 2 end);
-  map(. + {hold: ([.labels[].name|ascii_downcase]|any(. == "on hold" or . == "on-hold")),
-           due: (.milestone.dueOn // "9999")})
-  | sort_by([.hold, rank, .due, .createdAt, .number])
+  def size: [.labels[].name | ascii_downcase | select(startswith("size:")) | .[5:] as $s
+    | ["xs","s","m","l","xl"] | index($s) | select(. != null)] | max // 5;
+  map(. + {hold: ([.labels[].name|ascii_downcase]|any(. == "on hold" or . == "on-hold"))})
+  | sort_by([.hold, rank, size, .createdAt, .number])
   | .[] | "\(.number)\(if .hold then " (on hold)" else "" end) \(.title)"'
 ```
 
@@ -169,8 +170,10 @@ only the keys it has. A wait that names nothing is refused. When you start again
 - **New work that a lane finds** (a missing part, a bug in the epic's work): file it as a
   new child. Look for a duplicate first (`gh issue list --search`). Give it
   its level (`story`, `task`, `spike`, or `bug`), its type label, the epic's `feature:`
-  label, its `size:`, a priority (AGENTS.md, "Set a priority when you file"), and the
-  epic's milestone (a bug gets none, unless it blocks the milestone's goal). Then add it to the epic and set what it waits for:
+  label, its `size:`, a priority (AGENTS.md, "Set a priority when you file"; never `on hold`), and the
+  epic's milestone (a bug gets none, unless it blocks the milestone's goal). Then add it to the epic and set what it waits for, also in another
+  epic. Work that this epic does not need goes to the epic it serves, or, with none, is an
+  orphan (AGENTS.md, "Every issue has an epic"): say in it which standing epic takes it.
 
   ```zsh
   id=$(gh api repos/agentloops-dev/agent-loops/issues/<new> -q .id)
@@ -212,13 +215,13 @@ skill is done too; do not wait for its port or a follow-up):
 
 ## Standing epics
 
-A standing epic is a work stream, such as the bug lane or the lane for enhancements
-with no parent (#1570, #3212, #4335). Its body has one `standing` block:
+A standing epic is a work stream, such as the bug lane (#4207) or the lane for every
+other issue with no parent (#4208; #1570, #3212, #4335, #7033). Its body has one `standing` block:
 
 ````markdown
 ```standing
 labels: bug
-milestone: none
+parent: none
 lanes: 1
 ```
 ````
@@ -233,11 +236,11 @@ query with `gh`. Change the block into a search: `labels: a, b` is `label:a labe
 ```zsh
 gh issue view $epic --json body -q .body   # the standing block
 gh issue list --limit 100 --json number,title,labels,assignees \
-  --search "is:open -label:epic label:bug no:milestone"
+  --search "is:open -label:epic label:bug no:parent-issue"
 ```
 
 - **The order:** the one order of `forge/next` ("The order", above): on hold last, then
-  priority, the milestone's due date and the oldest. In the bug lane (#4207), a bug that
+  priority, size and the oldest. In the bug lane (#4207), a bug that
   names a quarantine (`flaky.UnderLoad`, `.flakyUnderLoad` or `flakyUnderLoad`) goes
   before the other bugs of its priority (Alex, 2026-11-17, #6037): while it waits, the
   bug it hides stays in `main`.
@@ -251,14 +254,14 @@ else 1), and never more than the folder's lane limit. Count the lanes you starte
 have not ended. Take the ready issues from the top of the order that are not taken, as
 step 2 says, until that count is `lanes`, in the order of `forge/next`, and never one on
 hold. When places run short,
-a standing epic's lane waits before a milestone epic's lane (AGENTS.md): start no new
-lane while a milestone epic's lane is queued, and start a paused one again only when a
+a standing epic's lane waits before another epic's lane (AGENTS.md): start no new
+lane while another (not standing) epic's lane is queued, and start a paused one again only when a
 lane ends.
 
 **Wait (step 3).** Also wake when new work comes into the query. One `where` serves all
 the events of a wait, and each event takes only the keys it has. So name the lanes'
-PRs with `fixes`, and the query with `label`: the block's first `labels:` label, else
-its first `any:` label (for #4208, `enhancement`). Do not set `issue`: it would narrow `issue.labelled` to the
+PRs with `fixes`, and the query with `label`: the block's first `labels:` label, else its first `any:` label, else the type label that most of its issues have (#4208 names neither:
+`enhancement`). Do not set `issue`: it would narrow `issue.labelled` to the
 lanes' own issues. A wait takes one label, so the time limit catches the issues of the
 other labels.
 
@@ -281,8 +284,8 @@ When you start again:
   epic.
 
 **Keep the plan true (step 4).** A new issue that a lane finds is not a sub-issue. File
-it with the labels that put it in the query (a bug: `bug`, no milestone), or in the
-epic that it serves. Do not add sub-issues to a standing epic. Do not change its block:
+it with the labels that put it in the query (a bug: `bug`, no parent), or, when an epic
+fits, as a sub-issue of that epic. Do not add sub-issues to a standing epic. Do not change its block:
 the query is the Product Owner's and Alex's.
 
 **Never close it.** Do not close a standing epic, also when its query is empty and no

@@ -137,7 +137,10 @@ In the review worktree:
   title in plain words, the body with the finding's fields (no screenshots of anything
   but the scratch set-up), label `bug` for high and for a parity delta, `enhancement`
   otherwise, and `priority:medium` (a UI change; AGENTS.md, "Set a priority when you file", #5692). Give it
-  `priority:high` only when it blocks a release or core use. One issue per finding; a parity delta names the client to change. File no Remote parity
+  `priority:high` only when it blocks a release or core use. Add a `size:` from the rubric in
+  `.agents/personas/product-owner.md`, and a parent epic when one fits, else say in the issue which
+  standing epic takes it: #4207 for a bug, #4208 for all else (AGENTS.md, "Every issue has an epic", #7033). Set "blocked by"
+  for what it waits for, and never add `on hold`. One issue per finding; a parity delta names the client to change. File no Remote parity
   issue for a Mac + web row.
 - **At most 5 issues a run**, highest severity first. The rest stay `open` in
   `findings.md` and are filed next run.
