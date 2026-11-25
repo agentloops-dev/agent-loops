@@ -168,30 +168,21 @@ final class WebHolder {
         // app has no access to Safari's cookies, history or passwords. They are
         // different applications with different containers, and there is nothing to
         // opt out of.
-        configuration.websiteDataStore = .default()
-        Self.dropCaches(configuration.websiteDataStore)
+        configuration.websiteDataStore = BrowserPaneStore.shared.store
+        BrowserPaneStore.shared.add(self)
         let view = WKWebView(frame: .zero, configuration: configuration)
         view.allowsBackForwardNavigationGestures = true
         return view
     }()
 
-    /// The caches the store's bound empties (#3727): what WebKit makes again, and what
-    /// grows with each site the pane opens. Cookies and site storage (sign-ins) stay.
-    static let cacheTypes: Set<String> = [
-        WKWebsiteDataTypeDiskCache,
-        WKWebsiteDataTypeMemoryCache,
-        WKWebsiteDataTypeFetchCache,
-    ]
-
-    /// Whether this run of the app has emptied the caches already.
-    private static var droppedCaches = false
-
-    /// Empties the store's caches once a run, before the first pane loads a page, so the
-    /// store keeps only its sign-ins from one launch to the next.
-    static func dropCaches(_ store: WKWebsiteDataStore) {
-        guard !droppedCaches else { return }
-        droppedCaches = true
-        store.removeData(ofTypes: cacheTypes, modifiedSince: .distantPast) {}
+    /// The page goes (Forget This Mac, #6796), and is not opened again by a load that was under way.
+    func clear() {
+        view.stopLoading()
+        view.navigationDelegate = nil
+        view.loadHTMLString("", baseURL: nil)
+        current = nil
+        failure = nil
+        refreshHistory()
     }
 
     func load(_ url: URL) {
@@ -258,6 +249,7 @@ private struct WebViewHost: NSViewRepresentable {
                      decisionHandler: @escaping @MainActor (WKNavigationActionPolicy) -> Void) {
             switch BrowserPolicy.decide(navigationAction.request.url) {
             case .allow:
+                BrowserPaneStore.shared.opened(navigationAction.request.url)
                 decisionHandler(.allow)
             case .refuse(let message):
                 holder.failure = message
@@ -289,6 +281,7 @@ private struct WebViewHost: NSViewRepresentable {
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             holder.refreshHistory()
+            BrowserPaneStore.shared.loaded()
             onNavigated(webView.url)
         }
 

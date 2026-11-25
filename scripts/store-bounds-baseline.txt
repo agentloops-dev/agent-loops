@@ -42,17 +42,13 @@
 2 Go/internal/agentsd/lock.go WriteAtomically
 1 Go/internal/agentsd/lock.go os.WriteFile
 1 Go/internal/agentsd/mac.go WriteAtomically
-1 Go/internal/agentsd/mcpcatalog.go WriteAtomically
-1 Go/internal/agentsd/mcpcatalog.go os.WriteFile
 1 Go/internal/agentsd/mcpcatalog/files.go WriteAtomically
 1 Go/internal/agentsd/mcpcatalog/signins.go WriteAtomically
 1 Go/internal/agentsd/mcpevents.go WriteAtomically
-1 Go/internal/agentsd/mcpservers.go WriteAtomically
 1 Go/internal/agentsd/modelrelay.go os.WriteFile
 1 Go/internal/agentsd/newapp.go os.WriteFile
 1 Go/internal/agentsd/orglaunch.go os.WriteFile
 1 Go/internal/agentsd/orgroutes.go WriteAtomically
-3 Go/internal/agentsd/plugins.go os.WriteFile
 2 Go/internal/agentsd/policy.go WriteAtomically
 1 Go/internal/agentsd/policyfolder.go WriteAtomically
 4 Go/internal/agentsd/policyyours.go WriteAtomically
