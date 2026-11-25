@@ -145,7 +145,8 @@ class Handler(BaseHTTPRequestHandler):
         # sub-issues (timelineEpicsQuery), as work/timeline reads them since #5154.
         if "releases(" in q:
             states = v.get("states") or ["OPEN", "CLOSED"]
-            nodes = [{"id": f"I_{n}", "number": n, "closedAt": epic(n)[0]["closedAt"]} for n in EPICS if epic(n)[0]["issueState"] in states]
+            nodes = [{"id": f"I_{n}", "number": n, "closedAt": epic(n)[0]["closedAt"],
+                      "updatedAt": epic(n)[0]["updatedAt"]} for n in EPICS if epic(n)[0]["issueState"] in states]
             releases = [{"tagName": t, "publishedAt": at(h), "url": f"https://github.com/{REPO}/releases/tag/{t}",
                          "isDraft": False} for t, h in RELEASES][: v.get("releases", 50)]
             return self.answer(200, {"data": {"repository": {

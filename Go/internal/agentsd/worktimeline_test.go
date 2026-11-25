@@ -16,18 +16,27 @@ import (
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
-func (f *fakeForgeGitHub) Timeline(_ context.Context, repo, _, from string, skip func([]string) bool) (githubmcp.Timeline, error) {
+func (f *fakeForgeGitHub) Timeline(_ context.Context, repo, _, from string, skip func([]string) bool,
+	kept func(int, string) (githubmcp.TimelineEpic, bool)) (githubmcp.Timeline, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.timelines++
 	t := f.timeline
 	t.Epics = slices.DeleteFunc(slices.Clone(t.Epics), func(e githubmcp.TimelineEpic) bool { return e.State == "open" && skip(e.Labels) })
 	var first []githubmcp.TimelineEpic
+	f.timelineRead = nil
 	for _, e := range t.Epics {
+		if e.State == "closed" {
+			if k, ok := kept(e.Number, e.UpdatedAt); ok {
+				first = append(first, k)
+				continue
+			}
+		}
 		if e.ClosedAt != "" && e.ClosedAt < from {
 			t.Rest = append(t.Rest, strconv.Itoa(e.Number))
 		} else {
 			first = append(first, e)
+			f.timelineRead = append(f.timelineRead, e.Number)
 		}
 	}
 	t.Epics = first

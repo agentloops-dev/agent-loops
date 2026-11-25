@@ -78,7 +78,8 @@ type forgeGitHub interface {
 	// Releases are a repo's newest releases (#4426).
 	Releases(ctx context.Context, repo string, limit int) ([]githubmcp.RepoRelease, error)
 	// Timeline is the epics and releases work/timeline reads (#4172).
-	Timeline(ctx context.Context, repo, since, from string, skip func(labels []string) bool) (githubmcp.Timeline, error)
+	Timeline(ctx context.Context, repo, since, from string, skip func(labels []string) bool,
+		kept func(number int, updatedAt string) (githubmcp.TimelineEpic, bool)) (githubmcp.Timeline, error)
 	// TimelineRest reads the epics that Timeline left out (#7027).
 	TimelineRest(ctx context.Context, repo string, t githubmcp.Timeline) (githubmcp.Timeline, error)
 	// Milestones are the open milestones with their due dates (#4654).

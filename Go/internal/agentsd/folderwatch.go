@@ -110,6 +110,7 @@ func (d *Daemon) syncFolderWatches() {
 		}
 	}
 	d.dropGoneBranchTips(live)
+	d.timelineForgetGone()
 	d.pwMu.Lock()
 	if d.pwStopped {
 		d.pwMu.Unlock()
