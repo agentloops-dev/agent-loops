@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -16,8 +17,6 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
-
-	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 )
 
 type fakeSource struct {
@@ -245,9 +244,27 @@ func TestCodexsFileIsLentAsAStandInAndRenewedInPlace(t *testing.T) {
 	}
 }
 
+// A stop right after a start: Stop may come before the relay's goroutine runs (#7225).
+func TestARelayStopsBeforeItServes(t *testing.T) {
+	certs := Certificates{Folder: t.TempDir()}
+	for range 200 {
+		r := &Relay{Certs: certs}
+		if _, err := r.Start(); err != nil {
+			t.Fatal(err)
+		}
+		l := r.listener
+		r.Stop()
+		if err := l.Close(); !errors.Is(err, net.ErrClosed) {
+			t.Fatalf("a stopped relay still listens: %v", err)
+		}
+		if p := r.Port(); p != 0 {
+			t.Fatalf("a stopped relay says port %d", p)
+		}
+	}
+}
+
 // #7170: the borrower keeps its stand-in over a restart of this host, and does not ask again.
 func TestAGrantOutlivesARestart(t *testing.T) {
-	flaky.UnderLoad(t, "#7225")
 	root := t.TempDir()
 	newHost := func() *Relays {
 		src := &fakeSource{}

@@ -58,8 +58,10 @@ func (r *Relay) Start() (int, error) {
 		r.Client = &http.Client{Timeout: time.Hour}
 	}
 	r.listener = l
-	r.server = &http.Server{Handler: r, ReadHeaderTimeout: 30 * time.Second}
-	go func() { _ = r.server.Serve(l) }() // it ends with ErrServerClosed when Stop closes it
+	// The goroutine's own value: Stop clears r.server, maybe before the goroutine runs (#7225).
+	server := &http.Server{Handler: r, ReadHeaderTimeout: 30 * time.Second}
+	r.server = server
+	go func() { _ = server.Serve(l) }() // it ends with ErrServerClosed when Stop closes it
 	return l.Addr().(*net.TCPAddr).Port, nil
 }
 
@@ -92,6 +94,9 @@ func (r *Relay) Stop() {
 	defer r.mu.Unlock()
 	if r.server != nil {
 		r.server.Close()
+		// The server knows its listener only once Serve runs, so a Stop before that closes it
+		// here; after that it is closed already, and the error says so.
+		_ = r.listener.Close()
 	}
 	r.listener, r.server = nil, nil
 }
