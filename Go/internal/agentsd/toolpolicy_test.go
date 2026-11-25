@@ -97,12 +97,14 @@ func TestAntigravitysToolPolicy(t *testing.T) {
 }
 
 // OpenCode's configuration rides in OPENCODE_CONFIG_CONTENT, the person's own replaced: it
-// asks before an edit, a command or a fetch, and never updates itself or shares.
+// asks before an edit, a command or a fetch, and never updates itself or shares. Its
+// subagents are refused what would ask, as nobody would be asked (#7220).
 func TestOpenCodesToolPolicy(t *testing.T) {
 	t.Setenv("OPENCODE_CONFIG_CONTENT", `{"permission":"allow"}`)
 	l, _ := launchOf(t, "opencode")
 	v, ok := envValue(l.Env, "OPENCODE_CONFIG_CONTENT")
-	if want := `{"autoupdate":false,"permission":{"bash":"ask","edit":"ask","webfetch":"ask"},"share":"disabled"}`; !ok || v != want {
+	subagent := `{"permission":{"bash":"deny","doom_loop":"deny","edit":"deny","external_directory":"deny","read":{"*.env":"deny","*.env.*":"deny","*.env.example":"allow"},"webfetch":"deny"}}`
+	if want := `{"agent":{"explore":` + subagent + `,"general":` + subagent + `},"autoupdate":false,"permission":{"bash":"ask","edit":"ask","webfetch":"ask"},"share":"disabled"}`; !ok || v != want {
 		t.Fatalf("%q", l.Env)
 	}
 	if sessionMeta("opencode") != nil || len(l.Args) != 0 {
