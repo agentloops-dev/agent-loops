@@ -26,6 +26,7 @@ import (
 
 // projectFoldersPrefix holds what each machine last said of its folders, one object a
 // machine, written only by that machine's projects/joined.
+// store-bounds: kind=document; count=1_000 folders a machine; size=512KiB a record (a machine's); age=until-deleted; applied=on write (the folders past it are cut), the hourly sweep deletes a removed machine's
 const projectFoldersPrefix = "v1/projectFolders/"
 
 const (
@@ -202,7 +203,10 @@ func cleanJoinedFolders(sent []wire.JoinedFolder) ([]wire.JoinedFolder, error) {
 // putJoinedFolders writes the machine's list over its last, and says whether it changed.
 // Only this machine writes its own list; the same list again changes nothing.
 func (s *Service) putJoinedFolders(ctx context.Context, host string, folders []wire.JoinedFolder) (bool, error) {
-	data, err := records.Encode(storedProjectFolders{Folders: folders})
+	// The folders sent first, as many as fit: the machine sends the list again (#7248).
+	folders, data, err := fitting(folders, projectFoldersBytes, func(some []wire.JoinedFolder) ([]byte, error) {
+		return records.Encode(storedProjectFolders{Folders: some})
+	})
 	if err != nil {
 		return false, err
 	}
