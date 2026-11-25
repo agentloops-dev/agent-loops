@@ -195,3 +195,72 @@ func TestForgeNextOfEpicsAndOfAnEpic(t *testing.T) {
 		t.Fatalf("children:\n%s", got)
 	}
 }
+
+// #7035: an epic on hold, at any depth, puts the issues and epics under it on hold ("epic on
+// hold"), and an epic with an open blocker, at any depth, leaves them out: in the folder, at level
+// epic and in one epic's children. The epics and their blockers are read once.
+func TestForgeNextFollowsTheEpicsAbove(t *testing.T) {
+	t.Parallel()
+
+	d, c, gh, _ := forgeDaemon(t)
+	folder := agentsFolder(t, d)
+	under := func(i githubmcp.Item, parent int) githubmcp.Item {
+		i.ParentRepo, i.ParentNumber = "alexec/agents", parent
+		return i
+	}
+	gh.epics = []githubmcp.Item{
+		planIssue(50, "open", "epic", "on hold"),
+		under(planIssue(51, "open", "epic", "priority:low"), 50),
+		planIssue(52, "open", "epic"),
+		planIssue(53, "open", "epic"),
+		under(planIssue(54, "open", "epic"), 52),
+	}
+	gh.open = []githubmcp.Item{
+		under(planIssue(60, "open", "priority:high"), 51),
+		under(planIssue(61, "open", "priority:high"), 54),
+		under(planIssue(62, "open", "priority:medium"), 53),
+		under(planIssue(63, "open", "priority:high"), 52),
+		planIssue(64, "open"),
+		under(planIssue(65, "open", "on hold"), 50),
+	}
+	gh.blockers = map[int][]githubmcp.Ref{52: {{Repo: "alexec/agents", Number: 99, Open: true}}}
+	call := func(id int, r wire.ForgeNextRequest) string {
+		t.Helper()
+		var next wire.ForgeNext
+		if err := json.Unmarshal(c.call(t, id, "forge/next", r), &next); err != nil {
+			t.Fatal(err)
+		}
+		return strings.Join(nextRows(t, next), "\n")
+	}
+
+	if got := call(1, wire.ForgeNextRequest{Folder: folder}); got != strings.Join([]string{
+		"62: priority medium; no size",
+		"64: no priority; no size",
+		"60: epic on hold; priority high; no size",
+		"65: on hold; no priority; no size",
+	}, "\n") {
+		t.Fatalf("issues:\n%s", got)
+	}
+	if got := call(2, wire.ForgeNextRequest{Folder: folder, Level: new("epic")}); got != strings.Join([]string{
+		"53: no priority; no size",
+		"50: on hold; no priority; no size",
+		"51: epic on hold; priority low; no size",
+	}, "\n") {
+		t.Fatalf("epics:\n%s", got)
+	}
+	gh.mu.Lock()
+	asked := len(gh.blocked)
+	gh.mu.Unlock()
+	if asked != 3 { // the epics, then the issues; the epics once more at level epic
+		t.Errorf("blockers read %d times: %v", asked, gh.blocked)
+	}
+
+	gh.plan = githubmcp.Plan{Epic: under(planIssue(51, "open", "epic"), 50), Children: []githubmcp.PlanChild{{Item: planIssue(70, "open", "task")}}}
+	if got := call(3, wire.ForgeNextRequest{Folder: folder, Epic: &wire.LineageNode{Kind: "issue", Ref: "github:issue:alexec/agents#51"}}); got != "70: epic on hold; no priority; no size" {
+		t.Fatalf("children of 51:\n%s", got)
+	}
+	gh.plan = githubmcp.Plan{Epic: under(planIssue(54, "open", "epic"), 52), Children: []githubmcp.PlanChild{{Item: planIssue(71, "open", "task")}}}
+	if got := call(4, wire.ForgeNextRequest{Folder: folder, Epic: &wire.LineageNode{Kind: "issue", Ref: "github:issue:alexec/agents#54"}}); got != "" {
+		t.Fatalf("children of 54:\n%s", got)
+	}
+}
