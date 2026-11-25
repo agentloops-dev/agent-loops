@@ -216,6 +216,23 @@ func TestAQueuedHelperInheritsWhenItStarts(t *testing.T) {
 	}
 }
 
+// A queue pass takes its list, then Request cards is chosen, then the session starts.
+func TestAQueuedHelpersChoiceAfterThePassTookItsListIsKept(t *testing.T) {
+	t.Parallel()
+
+	f := newRequestsFixture(t)
+	f.c.call(t, 2, "policy/setFolder", map[string]any{"folder": "file://" + f.dir + "/", "rules": map[string]any{"helpers": map[string]any{"mostRunning": 1}}})
+	lead := f.lead("opencode", "build", nil)
+	seeded(t, f.d, f.dir, func(a *wire.Agent) { a.State = wire.AgentStateRunning; a.StartedByAgent = &lead.ID })
+	queued := f.startSession(lead, map[string]any{})
+	listed := *f.d.Store.Agent(queued)
+	f.c.call(t, 5, "agents/setClientPermission", map[string]any{"agentID": queued, "mode": "default"})
+	f.d.startQueued(listed, f.dir)
+	if f.d.Store.Agent(queued).State == wire.AgentStateQueued || f.approves(queued) {
+		t.Fatalf("%+v", f.d.Store.Agent(queued))
+	}
+}
+
 func TestInheritedAlwaysApproveIsUnderThePolicies(t *testing.T) {
 	t.Parallel()
 

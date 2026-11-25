@@ -655,9 +655,12 @@ func (d *Daemon) startQueued(q wire.Agent, folder string) {
 		delete(d.startingFromQueue, q.ID)
 		d.queueMu.Unlock()
 	}()
-	if a := d.Store.Agent(q.ID); a == nil || a.State != wire.AgentStateQueued || a.StartedByAgent == nil {
+	a := d.Store.Agent(q.ID)
+	if a == nil || a.State != wire.AgentStateQueued || a.StartedByAgent == nil {
 		return
 	}
+	// The record now: a choice made on it since the pass took its list of the queue is kept.
+	q = *a
 	s := q.QueuedStart
 	if s == nil {
 		s = &wire.QueuedStart{}
