@@ -2,9 +2,7 @@ package mcpcatalog
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"os"
 	"path/filepath"
 	"sync"
 	"time"
@@ -52,12 +50,8 @@ func emptySignIns() SignInFile {
 }
 
 func loadSignIns(path string) (SignInFile, error) {
-	b, err := os.ReadFile(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return emptySignIns(), nil
-	}
-	f := emptySignIns()
-	if err != nil || json.Unmarshal(b, &f) != nil {
+	f, err := signInStore.Read(path)
+	if err != nil {
 		return emptySignIns(), ErrSignInsUnreadable
 	}
 	if f.Grants == nil {
@@ -70,6 +64,42 @@ func loadSignIns(path string) (SignInFile, error) {
 		f.Clients = map[string]Client{}
 	}
 	return f, nil
+}
+
+// The limits of the file (#6740): a write over one is refused, and no sign-in is evicted. A note
+// that a server needs a sign-in is not a secret: it ages out, and one more than there is room for
+// is left out, so it never stops a sign-out. The server's next 401 makes it again.
+const (
+	signInsMost      = 200
+	signInBytes      = 64 << 10
+	needsSignInMost  = 200
+	needsSignInBytes = 4 << 10
+	needsSignInKept  = store.MaxAge
+)
+
+// store-bounds: kind=secret; count=200 sign-ins, 200 clients and 200 servers that need one; size=64KiB a record; age=until-deleted; applied=on write, refused; a server that needs a sign-in goes at 90 days
+var signInStore = store.SecretFile[SignInFile]{Name: SignInFileName, Parts: []store.SecretPart[SignInFile]{
+	{What: "connector sign-ins", MaxRecordBytes: signInBytes, MaxCount: signInsMost, Remedy: "sign out of one first",
+		Entries: func(f SignInFile) map[string]any { return store.Entries(f.Grants) }},
+	{What: "clients of your own", MaxRecordBytes: signInBytes, MaxCount: signInsMost, Remedy: "sign in with one of them",
+		Entries: func(f SignInFile) map[string]any { return store.Entries(f.Clients) }},
+	{What: "servers that need a sign-in", MaxRecordBytes: needsSignInBytes, MaxCount: needsSignInMost, Remedy: "sign in to one first",
+		Entries: func(f SignInFile) map[string]any { return store.Entries(f.NeedsSignIn) }},
+}}
+
+// needs notes that key needs a sign-in, when there is room.
+func (f SignInFile) needs(key string, n NeedsSignIn) {
+	for k, old := range f.NeedsSignIn {
+		if n.SeenAt.Sub(old.SeenAt) >= needsSignInKept {
+			delete(f.NeedsSignIn, k)
+		}
+	}
+	if n.ResourceMetadata != nil && len(key)+len(*n.ResourceMetadata) > needsSignInBytes/2 {
+		n.ResourceMetadata = nil
+	}
+	if _, ok := f.NeedsSignIn[key]; ok || len(f.NeedsSignIn) < needsSignInMost && len(key) <= needsSignInBytes/2 {
+		f.NeedsSignIn[key] = n
+	}
 }
 
 func (f SignInFile) save(path string) error {
@@ -85,17 +115,7 @@ func (f SignInFile) save(path string) error {
 		n.SeenAt = n.SeenAt.UTC().Truncate(time.Second)
 		f.NeedsSignIn[k] = n
 	}
-	b, err := json.MarshalIndent(f, "", "  ")
-	if err != nil {
-		return err
-	}
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return err
-	}
-	// Only tightens a folder made before; the file itself is 0600 whatever the folder is.
-	_ = os.Chmod(dir, 0o700) //nolint:gosec // G302: a folder, which needs x to be opened
-	return store.WriteAtomically(path, b, 0o600)
+	return signInStore.Write(path, f)
 }
 
 // SignIns is the daemon's keeper of MCP sign-ins (MCPSignIns): what a server's row says,
@@ -233,10 +253,10 @@ func (s *SignIns) MarkNeedsSignIn(server, name, resourceMetadata string) {
 		if resourceMetadata != "" {
 			n.ResourceMetadata = &resourceMetadata
 		}
-		f.NeedsSignIn[key] = n
+		f.needs(key, n)
 	})
 	if err != nil {
-		s.log("mcp sign-in: " + name + " needs sign-in; " + SignInFileName + " could not be read, so nothing was kept")
+		s.log("mcp sign-in: " + name + " needs sign-in; it was not kept: " + err.Error())
 		return
 	}
 	s.log("mcp sign-in: " + name + " needs sign-in")
@@ -301,7 +321,7 @@ func (s *SignIns) SignOut(ctx context.Context, server, name string) error {
 	}
 	if err := s.change(func(f *SignInFile) {
 		delete(f.Grants, key)
-		f.NeedsSignIn[key] = NeedsSignIn{SeenAt: s.now()}
+		f.needs(key, NeedsSignIn{SeenAt: s.now()})
 	}); err != nil {
 		return err
 	}
@@ -404,7 +424,7 @@ func (s *SignIns) renew(ctx context.Context, key, name string, g Grant) Bearer {
 func (s *SignIns) expire(key, name, why string) Bearer {
 	if err := s.change(func(f *SignInFile) {
 		delete(f.Grants, key)
-		f.NeedsSignIn[key] = NeedsSignIn{SeenAt: s.now()}
+		f.needs(key, NeedsSignIn{SeenAt: s.now()})
 	}); err != nil {
 		s.log("mcp sign-in: " + name + " could not be saved as needing sign-in: " + err.Error())
 	}
