@@ -272,7 +272,7 @@ test("largest record: a list's answer, a page and an item at their limit are kep
   assert.equal(await c.kept("plan", "a"), undefined, "the limit is in bytes");
 });
 
-test("largest record: an item over its limit after the cut does not show its earlier copy as new (#6908)", { skip: "#7198" }, async () => {
+test("largest record: an item over its limit after the cut does not show its earlier copy as new (#6908)", async () => {
   const { c, tick } = cache();
   await c.keepPage(q, "mac", 0, { items: [item(1), item(2)] });
   tick();

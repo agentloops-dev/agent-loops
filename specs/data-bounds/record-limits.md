@@ -23,7 +23,7 @@ read and not run. A store below its total is no proof that a record was handled.
 | Document, key-value | hosted | test | test: the sweep | test: an old invite | read: in each retry | #7197 |
 | Blob | machine, control plane | read: attachment, dropbox, backup parts | read | read | none | #7203 (set-asides) |
 | Backend | control plane | test: memory, folder; S3 fake | none | none | none | #7195 |
-| Cache | Mac, Remote, web | test: a page and a picture kept at the limit, not over it, in bytes; a stale one goes | test: a list's pages | read: an old large record is read until it ages out (#7202) | read: an optimistic change over the limit is not made | #7198 |
+| Cache | Mac, Remote, web | test: a page and a picture kept at the limit, not over it, in bytes; a stale one goes | test: a list's pages | read: an old large record is read until it ages out (#7202) | read: an optimistic change over the limit is not made | Holds; an item over the limit goes, with its earlier copy (#7198) |
 | Drafts, settings | clients | test: web drafts; read: Mac's drafts, inbox, pins, start folders | read | read | read | #7202 (#7199 fixed) |
 
 A refused write tells its caller: `store.ErrLimit` or `LimitError` with the name, the size and the

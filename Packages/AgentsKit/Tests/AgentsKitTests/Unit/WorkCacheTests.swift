@@ -546,7 +546,7 @@ struct WorkCacheTests {
     }
 
     /// #6908: an item over its limit after the cut does not show its earlier copy as new.
-    @Test(.disabled("#7198")) func anItemOverItsLimitAfterTheCutIsNotDrawnAsItWas() async throws {
+    @Test func anItemOverItsLimitAfterTheCutIsNotDrawnAsItWas() async throws {
         let cache = try makeCache(Clock())
         await cache.keepPage(issues, host: mac, page: 0, list: page(1...2))
         var long = item(1, updated: 10)
