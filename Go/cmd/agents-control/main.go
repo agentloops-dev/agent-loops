@@ -16,7 +16,7 @@
 //	                                            JSON lines through log/slog (#2176); debug logs each request
 //	agents-control serve … [--metrics ADDR]      Prometheus /metrics on a listener of its own (#2176)
 //	agents-control serve … [--key-days N]       how long a client's or machine's key lives unused (#997, AGENTS_CONTROL_KEY_DAYS); 90, which is the most
-//	agents-control code (--client [--browser] | --host) [--minutes N] [--home DIR] [--command]
+//	agents-control code (--client [--browser] | --host [--here]) [--minutes N] [--home DIR] [--command]
 //	agents-control hosts | clients
 //	agents-control key seal --key-fd N          seal a key handed in, with AGENTS_CONTROL_KMS
 //	agents-control handover STEP --at URL|self … a step of a move to a copy elsewhere (R16, #1490)
@@ -108,6 +108,7 @@ import (
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/web"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/webpush"
+	"github.com/agentloops-dev/agent-loops/Go/internal/machine"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 	"golang.org/x/crypto/acme/autocert"
 )
@@ -669,10 +670,7 @@ func serveIdentity(cfg *controlplane.Config, u *url.URL) {
 			cfg.Name = controlplane.LocalName()
 		}
 	}
-	cfg.MachineID = os.Getenv("AGENTS_CONTROL_MACHINE_ID")
-	if cfg.MachineID == "" {
-		cfg.MachineID = controlplane.MachineID()
-	}
+	cfg.MachineID = controlMachineID()
 	// Machine providers (#691) keep their secrets beside the control plane's own key.
 	cfg.ProviderHome = home()
 	if cfg.ProviderHome == "" && os.Getenv("AGENTS_CONTROL_PROVIDER_HOME") != "" {
@@ -775,6 +773,11 @@ func code() {
 	if settings == nil || settings.URL == nil {
 		fail("this store has no control plane yet: start one with `agents-control serve` first")
 	}
+	// --here: the code is for a host on this machine, so a team's is not made (#7305). A
+	// host already here keeps what it has.
+	if host && has("--here") && r.SeveralPeople() && !runsAgents(r, controlMachineID()) {
+		fail("%s", machine.BothRolesRefused)
+	}
 	key := privateKey(st)
 	public, err := controllink.PublicKey(key)
 	if err != nil || !bytes.Equal(public, settings.ControlKey) {
@@ -800,6 +803,24 @@ func code() {
 	if has("--command") && host {
 		fmt.Println("command\t" + controlplane.InstallCommand(*settings.URL, pin, shown.Text))
 	}
+}
+
+// controlMachineID is this machine's id as the control plane says it.
+func controlMachineID() string {
+	if id := os.Getenv("AGENTS_CONTROL_MACHINE_ID"); id != "" {
+		return id
+	}
+	return controlplane.MachineID()
+}
+
+// runsAgents says whether a host on that machine has joined.
+func runsAgents(r *records.Records, machineID string) bool {
+	for _, h := range r.Hosts() {
+		if h.MachineID != nil && *h.MachineID == machineID {
+			return true
+		}
+	}
+	return false
 }
 
 // checkStore is the start-up probe on its own (contracts/store.md rule 4): Agents Host's
@@ -844,7 +865,7 @@ func list(hosts bool) {
 }
 
 const usage = `usage: agents-control serve [--port N] [--bind ADDR] [--self-signed DIR] [--name NAME] [--key-fd N]
-       agents-control code (--client [--browser] | --host) [--minutes N]
+       agents-control code (--client [--browser] | --host [--here]) [--minutes N]
        agents-control serve --home DIR [--no-bonjour]
        agents-control serve … [--host-root DIR] [--log FILE] [--web DIR] [--web-port N] [--no-web] [--restartable]
        agents-control serve … [--public-web DIR] [--views-url URL]

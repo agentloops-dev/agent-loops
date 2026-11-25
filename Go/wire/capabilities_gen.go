@@ -49,6 +49,7 @@ const CapConnections1 = "connections/1"
 const CapConnectorsSetup1 = "connectors.setup/1"
 const CapConsole1 = "console/1"
 const CapControlConnectAnother1 = "control.connect-another/1"
+const CapControlEligible1 = "control.eligible/1"
 const CapControlLocal1 = "control.local/1"
 const CapControlPlaneMove1 = "control.plane-move/1"
 const CapControlRotate1 = "control.rotate/1"
@@ -860,6 +861,7 @@ var ControlCapabilities = pairs([][2]string{
 	{"control/capacity", "console/1"},
 	{"control/connectAnother", "control.connect-another/1"},
 	{"control/connectReport", "control.connect-another/1"},
+	{"control/eligible", "control.eligible/1"},
 	{"control/ping", "control/1"},
 	{"control/planeMove", "control.plane-move/1"},
 	{"control/planeMoveReport", "control.plane-move/1"},

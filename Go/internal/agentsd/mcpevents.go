@@ -1,12 +1,15 @@
 package agentsd
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
 	"log"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -115,6 +118,48 @@ type mcpListing struct {
 	at      time.Time
 	failure *mcpEventsError
 	stale   bool
+}
+
+// What mcp-events.json holds at most: an event's id, a cursor, and the subscriptions.
+const (
+	mcpEventIDMost       = 1 << 10
+	mcpCursorMost        = 64 << 10
+	mcpSubscriptionsMost = 2000
+)
+
+// bounded is the records as mcp-events.json holds them: the subscriptions that a workflow named
+// last. One left out starts again from now after a restart.
+func (r *mcpRecords) bounded() *mcpRecords {
+	over := len(r.Subscriptions) - mcpSubscriptionsMost
+	if over <= 0 {
+		return r
+	}
+	ids := slices.SortedFunc(maps.Keys(r.Subscriptions), func(a, b string) int {
+		return cmp.Or(cmp.Compare(r.Subscriptions[a].LastNamedAt, r.Subscriptions[b].LastNamedAt), cmp.Compare(a, b))
+	})
+	out := &mcpRecords{Subscriptions: maps.Clone(r.Subscriptions)}
+	for _, id := range ids[:over] {
+		delete(out.Subscriptions, id)
+	}
+	log.Printf("mcp events: %d subscriptions, %d are kept", len(ids), mcpSubscriptionsMost)
+	return out
+}
+
+// mcpPollTooLarge refuses a poll's answer that cannot be kept, so its events are not delivered
+// and the cursor before it stays.
+func mcpPollTooLarge(r mcpPollResult) *mcpEventsError {
+	if r.Cursor != nil && len(*r.Cursor) > mcpCursorMost {
+		return &mcpEventsError{kind: "serverError", message: fmt.Sprintf("its cursor is %d bytes, at most %d", len(*r.Cursor), mcpCursorMost)}
+	}
+	if len(r.Events) > mcpSeenLimit {
+		return &mcpEventsError{kind: "serverError", message: fmt.Sprintf("it sent %d events at once, at most %d", len(r.Events), mcpSeenLimit)}
+	}
+	for _, e := range r.Events {
+		if e.EventID != nil && len(*e.EventID) > mcpEventIDMost {
+			return &mcpEventsError{kind: "serverError", message: fmt.Sprintf("an event's id is %d bytes, at most %d", len(*e.EventID), mcpEventIDMost)}
+		}
+	}
+	return nil
 }
 
 type mcpSeen struct {
@@ -1218,6 +1263,9 @@ func (d *Daemon) mcpPoll(s *mcpSubscription, cursor *string) (mcpPollResult, *mc
 	if err != nil {
 		return result, mcpEventsErrorOf(err)
 	}
+	if e := mcpPollTooLarge(result); e != nil {
+		return mcpPollResult{}, e
+	}
 	return result, nil
 }
 
@@ -1618,8 +1666,9 @@ func (d *Daemon) saveMCPRecordsLocked() {
 	recs := d.mcpRecordsLocked()
 	d.mcpUnsaved = false
 	d.mcpSavedAt = time.Now()
-	b, err := diskjson.Marshal(recs)
+	b, err := diskjson.Marshal(recs.bounded())
 	if err == nil {
+		// store-bounds: kind=key-value; count=2000; size=4MiB a subscription (2000 ids of 1KiB, 7 days); age=until-deleted; applied=on write (an answer over a limit is refused), one that no workflow names goes after a day
 		err = store.WriteAtomically(d.mcpEventsPath(), b, 0o644)
 	}
 	if err != nil {

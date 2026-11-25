@@ -347,6 +347,9 @@ func (j *joins) decide(ctx context.Context, id, user string, approve bool) (*wir
 	if err := j.s.records.MachineRoom(ctx, r.PublicKey); err != nil {
 		return nil, err
 	}
+	if err := j.s.refuseBothRoles(r.MachineID, r.PublicKey); err != nil {
+		return nil, err
+	}
 	owner := r.Person
 	if owner == "" {
 		owner = user

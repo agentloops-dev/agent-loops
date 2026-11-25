@@ -67,7 +67,9 @@ func (d *Daemon) registerGitHubBot() {
 		log.Printf("connections: github bot removed")
 		// The person's other machines forget it too (#3950).
 		if bot, ok := connections.BotOf(held); ok {
-			d.forgetBotEverywhere(bot.AppID)
+			if err := d.forgetBotEverywhere(bot.AppID); err != nil {
+				return wire.ConnectionBot{}, err
+			}
 		}
 		return wire.ConnectionBot{Made: false}, nil
 	})

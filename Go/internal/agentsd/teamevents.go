@@ -83,14 +83,17 @@ func (d *Daemon) sendTrigger(fr fireRequest, w wire.Workflow) (taken, ok bool) {
 
 // Asked answers what the control plane asks on channel 0: workflows/fire, git/fill
 // for a lend a person allowed (#1122), providers/* for a provider carried here (#3398),
-// machine/orgRouteCheck (#3397), and runtimes/list for Auto's machine pick (#5375). git/fill
-// is not registered as a window method, nor are providers/*.
+// machine/orgRouteCheck (#3397), runtimes/list for Auto's machine pick (#5375), and
+// machine/usage for control/eligible (#6611). git/fill is not registered as a window method, nor are providers/*.
 func (d *Daemon) Asked(method string, params json.RawMessage) (any, bool) {
 	switch method {
 	case wire.CallRuntimesList.Name:
 		// Which runtimes are installed and signed in here: sessions/previewStart asks each
 		// machine with the project (specs/5373-auto-machine). It reads, and starts nothing.
 		return d.markRuntimes(d.runtimeStatuses()), true
+	case wire.CallMachineUsage.Name:
+		// Its memory and disks: control/eligible checks them (#6611). It only reads.
+		return d.machineUsageState(d.ctx), true
 	case wire.CallMachineOrgRouteCheck.Name:
 		return d.checkOrgRoute(params), true
 	case wire.CallWorkflowsFire.Name:

@@ -3748,6 +3748,28 @@ type ControlCutOff struct {
 	Provider *string `json:"provider,omitzero"`
 }
 
+// control/eligible's answer (#6611): ok when there are no reasons.
+type ControlEligible struct {
+	Ok bool `json:"ok"`
+
+	Reasons []ControlEligibleReason `json:"reasons"`
+}
+
+// One reason a machine cannot take the control role (#6611), with its words for the person.
+type ControlEligibleReason struct {
+	Reason ControlIneligibility `json:"reason"`
+
+	Text string `json:"text"`
+}
+
+// control/eligible (#6611): which machine, and what the person has said yes to.
+type ControlEligibleRequest struct {
+	Machine MachineRef `json:"machine"`
+
+	// The person says yes to a control plane on a Mac, which can sleep. It counts only in the single-user shape.
+	AllowSleep *bool `json:"allowSleep,omitzero"`
+}
+
 // One place a control plane answers (R16).
 type ControlEndpoint struct {
 	URL string `json:"url"`
@@ -3770,6 +3792,16 @@ type ControlHello struct {
 	// The control plane's key before control/rotate (#997, spec 736 FR-043), for 30 days after: a member that still trusts it proves itself with it, and is given the new key in ok.
 	Previous *string `json:"previous,omitzero"`
 }
+
+// Why a machine cannot take the control role (#6611): notReachable, the control plane cannot reach it at a public address or its tunnel; macSleeps, a Mac that sleeps (refused unless the shape is single-user and the person says yes); stopsWhenIdle, its provider stops it when it is idle; belowFloor, its memory or disk is below the floor, or it is near or at capacity; bothRoles, it runs agents and the shape is not single-user; olderVersion, it runs an older version than the control plane.
+type ControlIneligibility string
+
+const ControlIneligibilityNotReachable ControlIneligibility = "notReachable"
+const ControlIneligibilityMacSleeps ControlIneligibility = "macSleeps"
+const ControlIneligibilityStopsWhenIdle ControlIneligibility = "stopsWhenIdle"
+const ControlIneligibilityBelowFloor ControlIneligibility = "belowFloor"
+const ControlIneligibilityBothRoles ControlIneligibility = "bothRoles"
+const ControlIneligibilityOlderVersion ControlIneligibility = "olderVersion"
 
 // control/installProgress: a step of Add a Machine.
 type ControlInstallProgress struct {

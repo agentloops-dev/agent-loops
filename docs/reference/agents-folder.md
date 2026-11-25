@@ -97,7 +97,7 @@ which the audit keeps by name too.
 `display.json` holds 1000 settings at most, 64 KiB each and 256 KiB in all; `person.json` is
 4 KiB at most; and `auto.json`, `browser-control.json`, `client-permissions.json`,
 `desktop-control.json`, `modes.json`, `retention.json` and `sandbox.json` are 64 KiB at most
-each. A change over a limit is refused, and the earlier value stays.
+each. `policy-yours.json` is 1 MiB at most. A change over a limit is refused, and the earlier value stays.
 
 A file you change by hand counts at once, without a restart. A file that cannot be read is
 set aside as `<name>.corrupt-<time>`, and the setting goes back to its default. For

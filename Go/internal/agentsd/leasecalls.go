@@ -222,6 +222,11 @@ func (d *Daemon) leaseResource(agent wire.UUID, args map[string]json.RawMessage)
 	if kind == "simulator" && simulator != "" {
 		display = simulator
 	}
+	if full := d.leaseOverLimitLocked(agent, name, display, wait); full != "" {
+		d.leaseMu.Unlock()
+		d.settle(loaded)
+		return "", leaseRefused(full)
+	}
 	told := d.takeNotices(agent)
 	e := d.leaseEntryOrNewLocked(name, kind, display)
 	length, capped := e.Rules.length(minutes)
@@ -280,6 +285,21 @@ func (d *Daemon) leaseResource(agent wire.UUID, args map[string]json.RawMessage)
 		return told + grantedWords(*granted, false), nil
 	}
 	return told + reply, nil
+}
+
+// leaseOverLimitLocked says why a lease would pass the book's limits, or "". A holder that extends,
+// and one in line already, add nothing. Call it with leaseMu held.
+func (d *Daemon) leaseOverLimitLocked(agent wire.UUID, name wire.ResourceName, display string, wait bool) string {
+	e := d.book.Entries[name]
+	switch {
+	case e == nil && (len(name) > leaseNameMost || len(display) > leaseNameMost):
+		return leaseNamesTooLong
+	case e == nil && len(d.book.Entries) >= leaseEntriesMost:
+		return leaseBookFull
+	case e != nil && wait && len(e.Line) >= leaseLineMost && holderIndex(e, agent) < 0 && lineIndex(e, agent) < 0:
+		return leaseLineFull
+	}
+	return ""
 }
 
 // leaseMinutesArg reads lease_resource's minutes, a number or a string of one, or nil.

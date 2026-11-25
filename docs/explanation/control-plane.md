@@ -23,6 +23,27 @@ none, shows it to admins only, and refuses to remove it. Each copy's record in
 `v1/copies/<id>.json` names its machine (`machine`). `machines/list` says each machine's
 `roles`; an older control plane does not, and a client reads that as `agents`.
 
+`control/eligible` (#6611, admins only) says whether a machine can take the control role, and
+each reason why it cannot. It changes nothing. A machine is refused when one of these is true:
+
+- **The control plane cannot reach it.** Clients must reach a control plane, while a machine
+  that runs agents only dials out. The machine's tunnel must be up, or a port must answer at
+  the public address that the machine connects from: 443 or 8791, where
+  `agentsd install --control` listens. The check opens a TCP connection and sends nothing. The
+  Linux install runs as a user, so port 443 needs a forward or the one-time `sysctl` that the
+  installer names.
+- **It is a Mac,** which can sleep. In the single-user shape, the person can say yes
+  (`allowSleep`).
+- **Its provider stops it when it is idle.**
+- **It is below the floor:** less than 1 GB of memory, a disk that is low or has no room for
+  the store and 2 GB more, or a capacity level of near or full. A machine that does not say
+  its memory and disk is refused too.
+- **It would have both roles outside the single-user shape.** An agent there could read the
+  control key. A control plane with more than one person (bots count) is not single-user.
+- **It runs an older version** than the control plane.
+
+A hosted control plane refuses the call: a customer's machine is never a copy of it.
+
 A **client** is a screen: the Agent Loops window on a Mac, Agent Loops on an iPhone or iPad, or a
 browser on the Mac that runs the control plane. A client runs nothing. It shows what the machines hold and passes on what you type and click.
 

@@ -1157,6 +1157,32 @@
       ]
     },
     {
+      "name": "control/eligible",
+      "x-capability": "control.eligible/1",
+      "description": "Whether a machine can take the control role (#6611, epic #6608), and each reason why it cannot. It changes nothing. Refused by a hosted control plane, and for the machine that runs this one. Admins only.",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/machines.schema.json#/definitions/ControlEligibleRequest"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/machines.schema.json#/definitions/ControlEligible"
+        }
+      }
+    },
+    {
       "name": "control/governanceRequested",
       "x-capability": "governance/1",
       "description": "To admins (#2019, M5): a request for an MCP server or skill waits, or was decided.",

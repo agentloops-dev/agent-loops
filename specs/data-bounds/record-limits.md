@@ -8,7 +8,7 @@ read and not run. A store below its total is no proof that a record was handled.
 | Kind | Where | At the limit and over it | Bulk | Migration | Replay | Result |
 | --- | --- | --- | --- | --- | --- | --- |
 | Small file (`store.JSONFile`) | machine | test: taken; refused with the limit in the words, the file unchanged | test: one over refuses all, nothing written | test: an old large entry does not stop others; `UpdateKeepingAll` keeps it (#7181) | test | The kind holds. Callers fail: #7186 |
-| Other small files | machine | test: catalogue records, settings, `host-user.json`, lock; read: pins, approvals, folders, devices, policy copies, wake | read | read: `moveSetting` copies as it is, the next write checks | read | Holds (#7188, #7189, #7203 fixed) |
+| Other small files | machine | test: the state files of #7246, catalogue records, settings, `host-user.json`, lock; read: pins, approvals, folders, devices, policy copies, wake | read | read: `moveSetting` copies as it is, the next write checks | read | Holds (#7188, #7189, #7203, #7246 fixed) |
 | Secret (`store.SecretFile`) | machine | test: refused, no name or value in the words, the earlier value intact | test | test (kind's own): a file over its limit opens and can shrink | test | Holds |
 | Secret | control plane | read: checked before the seal; test: a token's use and revoke | read | read | read, each retry | Holds (#7203 fixed) |
 | Log (`FolderLog`) | machine | test: refused; a transcript's entry becomes a notice that says so | test | test: an old large line is read | test: the retry is one record; held lines use the same write | #7183 (restore, import, move), #7187 |
@@ -41,7 +41,7 @@ next use, and a sealed control key opens. Read: `putBackRecords`.
 
 `recordlimit_test.go` in `Go/internal/agentsd/store`, `agentsd/skillcatalog`, `controlplane`,
 `controlplane/store`, `controlplane/providers`, `controlplane/s3store`, `hosted`, `lineage`,
-`citimings` and `whatsappmcp`; `Go/internal/agentsd/recordlimits_test.go`; `WorkCacheTests`,
+`citimings` and `whatsappmcp`; `Go/internal/agentsd/recordlimits_test.go` and `recordlimits_state_test.go`; `WorkCacheTests`,
 `LocalCopyTests`, and the web's `workCache`, `localCopy`, `drafts` and `keyValue` tests, and `KeyValueBoundsTests`. A test that a bug
 fails is skipped with the bug's number; the fix takes the skip out.
 
@@ -53,12 +53,12 @@ What each line of `scripts/store-bounds-baseline.txt` is. A **store** is owned b
 | --- | --- |
 | Not a store: temporary, staging or scratch | `ControlSettingsModel`, `ConnectLinearSheet`, `BackgroundPane`, `VoiceTape`; `agentsd/`: `brief`, `bringback`, `receive`, `send`, `backups` and `backups_store` staging (then #7183), `secretcmd`, `trailerhook`; `skillcatalog/`: `github`, `installer`, `preview`; `conflictrisk`, `hostinstall/`, `hosttunnels/session`, `releasefiles`, `linuxrelease` |
 | Not a store: an installer, a service or a lock file | `LocalServices`; `cmd/agentsd/`: `install`, `main` (the lock), `supervise`; `agentsd/`: `install`, `selfupdate`, `gitcredentials`, `modelrelay`, `relay`, `runtimes`, `orglaunch`; `hostsetup/install` (its log is declared, #7247), `controlplane/machine`, `mac/signin/certs`, `mac/signin/codex`, `whatsappmcp` lock, `controlplane/store/folder` lock |
-| Not a store: the person's file or their project | `HostModel`, `AgentsExportTransfer`; `acp/session`; `agentsd/`: `agentconfigeditor`, `files`, `newapp`, `publicrepo`, `policyfolder`, `folders`, `guarded` (its undo), `dotagents`, `readymade`, `readymadeskills`, `settings` (a persona), `environment` (a folder's), `worktrees`, `host` (an artifact), `skillcatalog/personas`; `codespacessh` |
-| Not a store: one fixed key or mark | `HostJoinFile`, `MachineLock`, `ControlMembership`, `keys.ts` (its caches are declared), `signIn.ts`; `cmd/agents-control/main`, `cmd/agentsd/enrol`, `cmd/agentsd/main`; `agentsd/`: `lock` (mark), `localpath` (below), `restarts`, `setupforward`, `setupprojects`, `usersuspend`, `runtimesignin`; `store/roots`, `store/store` (root id), `controllink/` (all), `kms/rotate` (the key file), `workspacecommands/digitalocean` |
+| Not a store: the person's file or their project | `HostModel`, `AgentsExportTransfer`; `acp/session`; `agentsd/`: `agentconfigeditor`, `files`, `newapp`, `publicrepo`, `policyfolder`, `folders`, `dotagents`, `readymade`, `readymadeskills`, `worktrees`, `skillcatalog/personas`; `codespacessh` |
+| Not a store: one fixed key or mark | `HostJoinFile`, `MachineLock`, `ControlMembership`, `keys.ts` (its caches are declared), `signIn.ts`; `cmd/agents-control/main`, `cmd/agentsd/enrol`, `cmd/agentsd/main`; `agentsd/`: `restarts`, `setupforward`, `setupprojects`, `usersuspend`, `runtimesignin`; `store/roots`, `store/store` (root id), `controllink/` (all), `kms/rotate` (the key file), `workspacecommands/digitalocean` |
 | Not a store: the helper or the backend itself | `store/files`, `execfile`, `store/folder`, `storeopen`, `records/records` (an old prefix, read only) |
-| Declared at another line | `cmd/agentsd/main` and `supervise` (the daemon log), `hosttunnels/tunnels` and `sweep` (`v1/codes`, itself #7201), `lock` pin, `links` (the links) |
+| Declared at another line | `cmd/agentsd/main` and `supervise` (the daemon log), `hosttunnels/tunnels` and `sweep` (`v1/codes`, itself #7201), `links` (the links) |
 | Store, bounded in code, not declared | `citimings/store`, `store/revisions`, `secretops` (`secret-ops.json`) (those of the control plane are declared, #7251) |
-| **Store with no largest record: machine, #7200** | `agentsd/`: `attachments`, `attention`, `backgroundended`, `dailychecks`, `environment`, `githubbotcopy`, `guarded`, `host`, `leases`, `localpath`, `lock`, `mcpcatalog/files`, `mcpevents`, `orgroutes`, `policyyours`, `usersettings`, `viewservers` |
+| **Store with no largest record: machine, #7200** | `agentsd/`: `dailychecks` (until #7023) |
 | **Store with its own bug** | `whatsappmcp/store` #7191, `providers/secrets` #7201 |
 | Store, with its largest record (#7248) | `bots` (`v1/runs`), `builds`, `copies`, `deploys`, `lineagegraph`, `mesh` (`v1/leases`, the heartbeats of `v1/copies`), `projects` (`v1/projectFolders`), `records/groups`, `records/projects`, `reports` (`v1/usage`), `sweep` (`v1/mesh/events`) |
 | **Store with no largest record: control plane, #7201** | `codes`, `hosttunnels/tunnels`, `links` (requests), `lockjoins`, `locks`, `orgrefresh`, `people_scim`, `policy_ask`, `secretrelease`, `signin_approvals`, `signin_org`, `hosted/billing` |

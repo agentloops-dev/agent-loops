@@ -253,7 +253,7 @@ func TestForgettingAndRemovingTakeTheBotsKeyAway(t *testing.T) {
 	d.askControl.Store(&ask)
 	must(t, file.Delete(connections.GitHubBot))
 	d.botRound.Lock()
-	d.forgetBotEverywhere(42)
+	must(t, d.forgetBotEverywhere(42))
 	d.shareBotKey(false, time.Now())
 	d.botRound.Unlock()
 	mu.Lock()

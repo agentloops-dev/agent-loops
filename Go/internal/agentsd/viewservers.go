@@ -1,11 +1,13 @@
 package agentsd
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -366,6 +368,58 @@ func (d *Daemon) keepViewCatalog(key string, c viewCatalog) {
 	}
 }
 
+const (
+	// viewCatalogMost is the largest catalog mcp-views/ keeps, and viewCatalogsMost how many.
+	viewCatalogMost  = 1 << 20
+	viewCatalogsMost = 200
+)
+
+// writeViewCatalog keeps c. One too large is not kept, and the one before it goes: it is stale.
+func (d *Daemon) writeViewCatalog(key string, c viewCatalog) error {
+	b, err := json.MarshalIndent(c, "", "  ")
+	if err == nil {
+		err = tooLarge(key+".json", b, viewCatalogMost)
+	}
+	if err != nil {
+		_ = os.Remove(d.viewCatalogPath(key))
+		return err
+	}
+	// store-bounds: kind=cache; count=200; size=1MiB a catalog; age=1d; applied=on write (size, count), hourly sweep (age, count)
+	return store.WriteAtomically(d.viewCatalogPath(key), b, 0o644)
+}
+
+// trimViewCatalogs removes the oldest catalogs over the count, never key's.
+func (d *Daemon) trimViewCatalogs(key string) {
+	dir := filepath.Dir(d.viewCatalogPath(key))
+	names, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	type file struct {
+		path string
+		at   time.Time
+	}
+	var files []file
+	for _, n := range names {
+		if info, err := n.Info(); err == nil && info.Mode().IsRegular() && strings.HasSuffix(n.Name(), ".json") && n.Name() != key+".json" {
+			files = append(files, file{filepath.Join(dir, n.Name()), info.ModTime()})
+		}
+	}
+	slices.SortFunc(files, func(a, b file) int { return cmp.Or(a.at.Compare(b.at), cmp.Compare(a.path, b.path)) })
+	most := viewCatalogsMost
+	if key != "" {
+		most--
+	}
+	for _, f := range files[:max(0, len(files)-most)] {
+		_ = os.Remove(f.path) // the next sweep tries again
+	}
+}
+
+// sweepViewCatalogs holds mcp-views/ to its age and its count.
+func (d *Daemon) sweepViewCatalogs() {
+	d.pruneViewCatalogs("", viewCatalog{})
+}
+
 // pruneViewCatalogs removes, after kept was written as key, each catalog no read can use:
 // one of the same server and scope from an entry since changed, and one too old to be read
 // (an entry removed, or a catalog from before Scope). So mcp-views/ holds about one file for
@@ -396,6 +450,7 @@ func (d *Daemon) pruneViewCatalogs(key string, kept viewCatalog) {
 			removed++
 		}
 	}
+	d.trimViewCatalogs(key)
 	if removed > 0 {
 		log.Printf("mcp views: %d old catalog(s) removed", removed)
 	}
@@ -477,12 +532,10 @@ func (d *Daemon) readViewCatalog(ctx context.Context, s viewServer, refresh bool
 		d.viewMu.Unlock()
 		return cached
 	}
-	if b, err := json.MarshalIndent(c, "", "  "); err == nil {
-		if store.WriteAtomically(d.viewCatalogPath(s.entry), b, 0o644) != nil {
-			log.Printf("mcp views: the catalog of %s could not be kept", s.name)
-		}
-		d.pruneViewCatalogs(s.entry, c)
+	if err := d.writeViewCatalog(s.entry, c); err != nil {
+		log.Printf("mcp views: the catalog of %s could not be kept: %v", s.name, err)
 	}
+	d.pruneViewCatalogs(s.entry, c)
 	d.keepViewCatalog(s.entry, c)
 	d.viewMu.Lock()
 	delete(d.viewFailures, s.entry)
