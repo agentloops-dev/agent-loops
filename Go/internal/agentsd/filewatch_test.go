@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -228,5 +229,35 @@ func TestAFileEventStaysOnItsMachine(t *testing.T) {
 	}
 	if g, ok := eventGroup("file.removed"); !ok || g != wire.EventGroupDropbox {
 		t.Fatal(g)
+	}
+}
+
+// A look that knows of no wait (the folder's watch starting, a workflow read again) runs while
+// a wait starts. Before #7210 it could drop what the wait follows, and the wait was recorded
+// with nothing followed. The many files make each look slow, so the gap is seen.
+func TestALookWhileAWaitStartsKeepsItsFilesFollowed(t *testing.T) {
+	folder := canonical(t.TempDir())
+	must(t, os.MkdirAll(filepath.Join(folder, "reports"), 0o755)) //nolint:gosec // G301: the mode the other tests' folders have
+	for i := range 500 {
+		must(t, os.WriteFile(filepath.Join(folder, "reports", strconv.Itoa(i)+".csv"), nil, 0o644)) //nolint:gosec // G306: the mode the other tests' files have
+	}
+	d, _ := watched(t, folder)
+	stop, stopped := make(chan struct{}), make(chan struct{})
+	go func() {
+		defer close(stopped)
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+				d.followFileGlobs(folder)
+			}
+		}
+	}()
+	defer func() { close(stop); <-stopped }()
+	for range 10 {
+		agent, answered := fileWait(t, d, folder, "file.added", "reports/*.csv")
+		d.endWait(agent, "person", false)
+		answer(t, answered)
 	}
 }

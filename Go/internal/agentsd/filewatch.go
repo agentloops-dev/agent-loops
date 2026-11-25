@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -119,12 +120,20 @@ func globsCouldHold(dir string, globs []string) bool {
 }
 
 // fileGlobs is every glob this folder's running waits and turned-on workflow triggers
-// watch, and more, sorted, each once.
-func (d *Daemon) fileGlobs(folder string, more ...string) []string {
+// watch, and those of the waits that are starting, sorted, each once.
+func (d *Daemon) fileGlobs(folder string) []string {
 	set := map[string]bool{}
-	for _, g := range more {
-		set[g] = true
+	// Read before the records: a wait leaves this list only once its record says it waits,
+	// so it is always in one of the two (#7210).
+	d.fileMu.Lock()
+	for s := range d.fileStarting {
+		if s.folder == folder {
+			for _, g := range s.globs {
+				set[g] = true
+			}
+		}
 	}
+	d.fileMu.Unlock()
 	add := func(p waitPattern) {
 		if isFileEvent(p.name) {
 			for _, g := range p.filters["paths"] {
@@ -240,11 +249,62 @@ func waitFileGlobs(patterns []waitPattern) []string {
 	return globs
 }
 
+// startingFileWait is the globs of a wait in folder that its agent's record does not say yet.
+type startingFileWait struct {
+	folder string
+	globs  []string
+}
+
+// followStartingFileWait follows the files of a wait not yet recorded (#6410), and keeps them
+// followed, whoever else looks at the folder, until the returned function is called: once the
+// wait is recorded, or is not to be (#7210).
+func (d *Daemon) followStartingFileWait(folder string, globs []string) func() {
+	if len(globs) == 0 {
+		// It can follow an earlier wait's end, whose globs go.
+		d.followFileGlobs(folder)
+		return func() {}
+	}
+	s := &startingFileWait{folder: folder, globs: globs}
+	d.fileMu.Lock()
+	if d.fileStarting == nil {
+		d.fileStarting = map[*startingFileWait]bool{}
+	}
+	d.fileStarting[s] = true
+	d.fileMu.Unlock()
+	d.followFileGlobs(folder)
+	return func() {
+		d.fileMu.Lock()
+		delete(d.fileStarting, s)
+		d.fileMu.Unlock()
+		// The wait may have ended, or never been recorded: its globs go.
+		d.followFileGlobs(folder)
+	}
+}
+
+// fileFollowLock is the lock that followFileGlobs holds for one folder.
+func (d *Daemon) fileFollowLock(folder string) *sync.Mutex {
+	d.fileMu.Lock()
+	defer d.fileMu.Unlock()
+	if d.fileFollow == nil {
+		d.fileFollow = map[string]*sync.Mutex{}
+	}
+	mu := d.fileFollow[folder]
+	if mu == nil {
+		mu = &sync.Mutex{}
+		d.fileFollow[folder] = mu
+	}
+	return mu
+}
+
 // followFileGlobs looks at a folder's matching files again when its globs changed, so what is
-// there now is not raised as added; with no globs it forgets them. more is the globs of a wait
-// not yet recorded (#6410).
-func (d *Daemon) followFileGlobs(folder string, more ...string) {
-	globs := d.fileGlobs(folder, more...)
+// there now is not raised as added; with no globs it forgets them. One call at a time for a
+// folder, from reading the globs to keeping them: a call that read older globs could otherwise
+// keep them last, or forget what a newer one follows (#7210).
+func (d *Daemon) followFileGlobs(folder string) {
+	mu := d.fileFollowLock(folder)
+	mu.Lock()
+	defer mu.Unlock()
+	globs := d.fileGlobs(folder)
 	d.fileMu.Lock()
 	st := d.fileWatches[folder]
 	if st != nil && strings.Join(st.globs, "\x00") == strings.Join(globs, "\x00") {
