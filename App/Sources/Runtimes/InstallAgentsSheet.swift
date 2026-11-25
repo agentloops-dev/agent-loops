@@ -212,7 +212,9 @@ enum InstallOffer {
     }
 
     static func remember(_ ids: [String]) {
-        WindowDefaults.store.set(Array(offered.union(ids)).sorted(), forKey: defaultsKey)
+        // store-bounds: kind=key-value; count=100; age=until-deleted; action=refuse; record=64B; applied=on write
+        WindowDefaults.store.putEntry(KeyValueBounds.shown.kept(offered.union(ids).sorted()), forKey: defaultsKey,
+                                      most: KeyValueBounds.shown.total)
     }
 
     /// Not here, or not here yet: what the sheet is for. Signed out is here.

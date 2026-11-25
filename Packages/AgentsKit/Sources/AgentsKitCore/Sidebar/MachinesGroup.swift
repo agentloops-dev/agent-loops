@@ -113,7 +113,13 @@ public enum MachinePins {
         let there = Set(listed).union([.mac])
         let left = joined(pinned(read(store)).filter(there.contains))
         guard store.object(forKey: key) != nil, store.string(forKey: key) != left else { return }
-        store.set(left, forKey: key)
+        put(left, in: store)
+    }
+
+    /// Keeps the pins, the defaults' string, which `toggled` and `keep` bound.
+    static func put(_ stored: String, in store: UserDefaults) {
+        // store-bounds: kind=key-value; count=100; age=until-deleted; action=refuse; record=64B; applied=on write, and when the machines are listed
+        store.putEntry(stored, forKey: key, most: most * (idMost + 1))
     }
 
     private static func joined(_ pins: [MachineRef]) -> String { pins.map(\.rawValue).joined(separator: "\n") }

@@ -27,6 +27,9 @@ public final class SidebarFolds {
     /// folded; only the last `sessionsKept` opened are kept, so the list stays small.
     public private(set) var openSessions: [UUID]
     @ObservationIgnored private let sessionsKey: String
+    /// The folds past the limit (#7252): they hold while the app runs.
+    @ObservationIgnored private var unkept: Set<String> = []
+    nonisolated static let bounds = KeyValueBounds.folds
     nonisolated public static let sessionsKept = 200
 
     public init(defaults: UserDefaults = .standard, scope: String) {
@@ -34,9 +37,9 @@ public final class SidebarFolds {
         key = "sidebar.folds" + scope
         closedKey = "sidebar.folded" + scope
         sessionsKey = "sidebar.openSessions" + scope
-        open = Set(defaults.stringArray(forKey: key) ?? [])
-        closed = Set(defaults.stringArray(forKey: closedKey) ?? [])
-        openSessions = (defaults.stringArray(forKey: sessionsKey) ?? []).compactMap(UUID.init(uuidString:))
+        open = Set(Self.bounds.kept(defaults.stringArray(forKey: key) ?? []))
+        closed = Set(Self.bounds.kept(defaults.stringArray(forKey: closedKey) ?? []))
+        openSessions = (defaults.stringArray(forKey: sessionsKey) ?? []).suffix(Self.sessionsKept).compactMap(UUID.init(uuidString:))
     }
 
     /// Whether a session's children are shown under it (#835). Folded by default.
@@ -50,7 +53,8 @@ public final class SidebarFolds {
         } else {
             openSessions.removeAll { $0 == id }
         }
-        defaults.set(openSessions.map(\.uuidString), forKey: sessionsKey)
+        // store-bounds: kind=key-value; count=200; age=until-deleted; action=evict; record=36B; applied=on write
+        defaults.putEntry(openSessions.map(\.uuidString), forKey: sessionsKey, most: Self.sessionsKept * 36)
     }
 
     /// What can be folded: a folder; one of its Archived folds; one of its session
@@ -115,17 +119,27 @@ public final class SidebarFolds {
     private func change(_ name: String, startsOpen: Bool, open isOpen: Bool) {
         if startsOpen {
             guard closed.contains(name) == isOpen else { return }
-            var kept = Set(defaults.stringArray(forKey: closedKey) ?? [])
-            if isOpen { kept.remove(name) } else { kept.insert(name) }
-            closed = kept
-            defaults.set(kept.sorted(), forKey: closedKey)
+            closed = kept(name, in: closedKey, !isOpen)
         } else {
             guard open.contains(name) != isOpen else { return }
-            var kept = Set(defaults.stringArray(forKey: key) ?? [])
-            if isOpen { kept.insert(name) } else { kept.remove(name) }
-            open = kept
-            defaults.set(kept.sorted(), forKey: key)
+            open = kept(name, in: key, isOpen)
         }
+    }
+
+    /// Puts `name` in the list under `key`, or takes it out. The list that holds now: what is kept, and what is past the limit.
+    private func kept(_ name: String, in key: String, _ isIn: Bool) -> Set<String> {
+        var kept = Set(Self.bounds.kept(defaults.stringArray(forKey: key) ?? []))
+        unkept.remove(key + "\n" + name)
+        if !isIn {
+            kept.remove(name)
+        } else if kept.count < Self.bounds.count, name.utf8.count <= Self.bounds.bytes {
+            kept.insert(name)
+        } else if !kept.contains(name) {
+            unkept.insert(key + "\n" + name)
+        }
+        // store-bounds: kind=key-value; count=2000; age=until-deleted; action=refuse; record=2KiB; applied=on write, and when a machine lists its folders or leaves
+        defaults.putEntry(kept.sorted(), forKey: key, most: Self.bounds.total)
+        return kept.union(unkept.compactMap { $0.hasPrefix(key + "\n") ? String($0.dropFirst(key.count + 1)) : nil })
     }
 
     /// The folders whose Archived fold is open: the ones a client holds a page of

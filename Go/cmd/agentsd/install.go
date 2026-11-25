@@ -8,14 +8,19 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlsetup"
 	"github.com/agentloops-dev/agent-loops/Go/internal/hostsetup"
 )
 
 const installUsage = `usage: agentsd install --join <host code> [--name NAME] [--runtime ID]... [--project DIR]... [--from-pool]
+       agentsd install --control [--no-agents] [--domain NAME [--acme-email ADDR]] [--port N] [--name NAME] [--runtime ID]...
+
+--control also runs the control plane (agents-control) as a systemd user unit beside this host (#6610): no root, no container. Alone with --no-agents, the machine only runs the control plane. With both roles the host joins that control plane by itself, so no --join: this is for one person's machine only, never a team's (an agent there could read the control key). --domain makes a publicly trusted certificate (ACME) in the unit; without it the certificate is its own, pinned in every code.
 
 Sets this machine up (#5356): installs this host, joins the control plane, installs the
 runtimes, runs each project's .agents/setup.sh, and starts one short session to check the machine answers (step 8; --no-smoke leaves it out). Each step is reported to the control plane
@@ -24,7 +29,8 @@ as it ends. Run it again to do only what is missing.`
 // installCommand is `agentsd install --join <code>`, the one installer.
 func installCommand(args []string) int {
 	var o hostsetup.Options
-	noSmoke := false
+	var c controlsetup.Options
+	noSmoke, control, noAgents := false, false, false
 	for i := 0; i < len(args); i++ {
 		next := func() string {
 			if i+1 < len(args) {
@@ -46,6 +52,16 @@ func installCommand(args []string) int {
 			noSmoke = true
 		case a == "--from-pool":
 			o.FromPool = true
+		case a == "--control":
+			control = true
+		case a == "--no-agents":
+			noAgents = true
+		case a == "--domain":
+			c.Domain = next()
+		case a == "--acme-email":
+			c.ACMEEmail = next()
+		case a == "--port":
+			c.Port, _ = strconv.Atoi(next())
 		case strings.HasPrefix(a, "--join="):
 			o.Join = strings.TrimPrefix(a, "--join=")
 		default:
@@ -54,7 +70,8 @@ func installCommand(args []string) int {
 		}
 	}
 	o.Smoke = !noSmoke
-	if o.Join == "" {
+	if noAgents && !control || control && o.Join != "" || (c.Domain != "" || c.Port != 0 || c.ACMEEmail != "") && !control ||
+		o.Join == "" && !control {
 		fmt.Fprintln(os.Stderr, installUsage)
 		return 2
 	}
@@ -72,6 +89,16 @@ func installCommand(args []string) int {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	if control {
+		c.Home, c.Executable, c.Name = o.Home, o.Executable, o.Name
+		if code, ok := installControl(ctx, c, noAgents); !ok {
+			return 1
+		} else if noAgents {
+			return 0
+		} else {
+			o.Join = code
+		}
+	}
 	socket := store.At(hostsetup.LayoutOf(o.Home).Root).Socket()
 	deps := hostsetup.Deps{
 		StartHost: startHost,
@@ -87,6 +114,26 @@ func installCommand(args []string) int {
 	}
 	fmt.Println("This machine is set up.")
 	return 0
+}
+
+// installControl runs the control role (#6610); with the agents role too, it returns the host
+// code the host joins with. The bool is false when it failed, having said why.
+func installControl(ctx context.Context, c controlsetup.Options, noAgents bool) (string, bool) {
+	deps := controlsetup.Deps{Systemd: controlsetup.SystemdUser, Run: controlsetup.RunCommand, Out: os.Stdout}
+	if err := controlsetup.Install(ctx, c, deps); err != nil {
+		fmt.Fprintln(os.Stderr, "The control plane is not set up:", err)
+		return "", false
+	}
+	if noAgents {
+		fmt.Println("This machine runs the control plane only.")
+		return "", true
+	}
+	code, err := controlsetup.HostCode(ctx, c.Home, deps)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "The control plane is not set up:", err)
+		return "", false
+	}
+	return code, true
 }
 
 // startHost starts the host as install.sh does: a systemd user service where systemd runs

@@ -269,6 +269,7 @@ public actor WorkCache: WorkCaching {
     /// When the records were last aged out; nil since the cache opened.
     private var aged: Date?
     private static let sweepEvery: TimeInterval = 60 * 60
+    private var droppedLarge = false
 
     /// The cache in `file`, made when missing; nil keeps it in memory only (the tests).
     public init(file: URL?, bounds: Bounds = .mac, now: @escaping @Sendable () -> Date = { Date() }) throws {
@@ -330,7 +331,7 @@ public actor WorkCache: WorkCaching {
         ageIfDue()
         let key = query.key
         var kept: [(host: MachineRef, kept: Kept)] = []
-        try? rows("SELECT host, json FROM answer WHERE query = ? ORDER BY host", [.text(key)]) { s in
+        try? rows("SELECT host, json FROM answer WHERE query = ? AND \(Self.within(bounds.recordBytes)) ORDER BY host", [.text(key)]) { s in
             if let answer = try? decoder.decode(Kept.self, from: blob(s, 1)) {
                 kept.append((MachineRef(rawValue: text(s, 0)), answer))
             }
@@ -438,7 +439,7 @@ public actor WorkCache: WorkCaching {
 
     private func keptAnswer(_ key: String, host: MachineRef) -> Kept? {
         var kept: Kept?
-        try? rows("SELECT json FROM answer WHERE query = ? AND host = ?", [.text(key), .text(host.rawValue)]) { s in
+        try? rows("SELECT json FROM answer WHERE query = ? AND host = ? AND \(Self.within(bounds.recordBytes))", [.text(key), .text(host.rawValue)]) { s in
             kept = try? decoder.decode(Kept.self, from: blob(s, 0))
         }
         return kept
@@ -547,7 +548,7 @@ public actor WorkCache: WorkCaching {
         for start in stride(from: 0, to: missing.count, by: chunk) {
             let part = missing[start..<min(start + chunk, missing.count)]
             let marks = Array(repeating: "?", count: part.count).joined(separator: ",")
-            try? rows("SELECT key, json FROM item WHERE key IN (\(marks))", part.map { .text($0) }) { s in
+            try? rows("SELECT key, json FROM item WHERE key IN (\(marks)) AND \(Self.within(bounds.itemBytes))", part.map { .text($0) }) { s in
                 if let item = try? decoder.decode(DaemonAPI.ForgeItem.self, from: blob(s, 1)) {
                     memo[text(s, 0)] = item
                 }
@@ -561,7 +562,7 @@ public actor WorkCache: WorkCaching {
         ageIfDue()
         let key = Self.key(node)
         var found: Detail?
-        try? rows("SELECT read, json FROM detail WHERE key = ?", [.text(key)]) { s in
+        try? rows("SELECT read, json FROM detail WHERE key = ? AND \(Self.within(bounds.recordBytes))", [.text(key)]) { s in
             if let detail = try? decoder.decode(DaemonAPI.ForgeItemDetail.self, from: blob(s, 1)) {
                 found = Detail(detail: detail, read: Date(timeIntervalSince1970: sqlite3_column_double(s, 0)))
             }
@@ -613,7 +614,7 @@ public actor WorkCache: WorkCaching {
     public func kept(_ page: String, asked: String) -> WorkCache.PageAnswer? {
         ageIfDue()
         var found: PageAnswer?
-        try? rows("SELECT read, json FROM page WHERE page = ? AND asked = ?", [.text(page), .text(asked)]) { s in
+        try? rows("SELECT read, json FROM page WHERE page = ? AND asked = ? AND \(Self.within(bounds.recordBytes))", [.text(page), .text(asked)]) { s in
             found = PageAnswer(json: blob(s, 1), read: Date(timeIntervalSince1970: sqlite3_column_double(s, 0)))
         }
         guard found != nil else { return nil }
@@ -652,7 +653,24 @@ public actor WorkCache: WorkCaching {
     }
 
     public func sweep() {
+        dropLarge()
         trim()
+    }
+
+    /// The rows that are read: one over the largest size, which an older build kept, is not (#7252). It reads no row's bytes.
+    private static func within(_ most: Int) -> String { "length(json) <= \(most)" }
+
+    /// Removes what an older build kept over the largest size, once: every write since is bounded.
+    private func dropLarge() {
+        guard !droppedLarge, (try? run("BEGIN")) != nil else { return }
+        droppedLarge = true
+        let before = bytes()
+        for (table, most) in [("item", bounds.itemBytes), ("answer", bounds.recordBytes), ("detail", bounds.recordBytes), ("page", bounds.recordBytes)] {
+            try? run("DELETE FROM \(table) WHERE NOT \(Self.within(most))", [])
+        }
+        let gone = bytes() != before
+        try? run("COMMIT")
+        if gone { vacuum() }
     }
 
     public func stats() -> CacheStats {

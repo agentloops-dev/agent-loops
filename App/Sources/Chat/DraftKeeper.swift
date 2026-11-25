@@ -18,6 +18,8 @@ final class DraftKeeper {
     static let shared = DraftKeeper()
 
     private let store: DraftStore
+    /// The start form was not kept last time, and the person was told.
+    private var formRefused = false
     private var held: HeldDrafts
     /// Told when a draft is refused (#6794): the app's usual message.
     var refused: ((String) -> Void)?
@@ -169,9 +171,11 @@ final class DraftKeeper {
     /// fresh launch fills in first would be written over what was left.
     func noteStartForm(from model: AppModel) {
         guard leftForm == nil, leftChoices == nil else { return }
-        store.saveStartDraft(StartDraft(cwd: model.draftCwd, runtimeID: model.draftRuntimeID,
-                                        folders: model.draftFolders, servers: model.draftServers,
-                                        chosen: model.draftChosen))
+        let kept = store.saveStartDraft(StartDraft(cwd: model.draftCwd, runtimeID: model.draftRuntimeID,
+                                                   folders: model.draftFolders, servers: model.draftServers,
+                                                   chosen: model.draftChosen))
+        if !kept, !formRefused { refused?(HeldDrafts.formTooBig) }
+        formRefused = !kept
         shareStartForm(from: model)
     }
 

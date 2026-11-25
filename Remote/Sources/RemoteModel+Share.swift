@@ -315,7 +315,8 @@ extension RemoteModel {
     func chooseRuntime(_ runtimeID: String) async {
         guard runtimeID != startRuntimeID else { return }
         startRuntimeID = runtimeID
-        UserDefaults.standard.set(runtimeID, forKey: Self.keptStartRuntime)
+        // store-bounds: kind=key-value; count=1; age=until-deleted; action=refuse; record=4KiB; applied=on write
+        UserDefaults.standard.putEntry(runtimeID, forKey: Self.keptStartRuntime, most: KeyValueBounds.choice)
         startAccountID = nil
         startSandbox = nil
         startRefusal = nil

@@ -47,13 +47,19 @@ needs). "Landing a change" is for the lanes that build, not for you.
   (`bug`, `enhancement`). When testing it needs
   someone to create an account with an outside service (Meta, Slack, Google Cloud, a
   second runtime account…), add `needs-account` and say which account in the issue.
+- **Give each issue its epic** (AGENTS.md, "Every issue has an epic", #7033): make it a
+  sub-issue of the epic that it serves. When no epic fits, leave it an orphan and say in
+  the issue which standing epic takes it: #4207 for a bug, #4208 for all else. Never make
+  it a sub-issue of a standing epic. Use "blocked by" for what it must wait for, also
+  between epics. Never add `on hold`: only Alex does (Alex, 2026-11-22).
 - **Add `linux-ok`** (#5810) when a lane can do all of the issue on a Linux machine (Go,
   the web page, docs or tooling), so a lead, or any agent that starts its lane, can start it there (#5877). Add it only when none of
   these is true: it changes `App/`, `Remote/`, `Shared/`, `Host/` or
   `Packages/AgentsKit`; it changes `Packages/Wire`; it needs a walk on the scratch Mac
   app or the simulator, or Alex's Mac or devices. When you are not sure, leave it out.
 - **Size each issue you file** (#4532) with one `size:` label, from the rubric below.
-  Every agent that files an issue uses this rubric (AGENTS.md, "Plans"). Size it when
+  Every agent that files an issue uses this rubric (AGENTS.md, "Plans"). Size breaks a tie in priority in
+  `forge/next`, the smallest first, no size last (#7033). Size it when
   you file it, before any work starts, and do not change it later: the
   backtest compares the size you gave with what the work cost. Do not size an epic: its
   estimate comes from its children. Add the points:

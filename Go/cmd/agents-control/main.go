@@ -109,6 +109,7 @@ import (
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/web"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/webpush"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
+	"golang.org/x/crypto/acme/autocert"
 )
 
 var (
@@ -617,7 +618,11 @@ func serveAddress() (string, *url.URL, int) {
 // serveTLS sets the certificate and its pin: self-signed with --self-signed or a home, else
 // the one AGENTS_CONTROL_TLS_CERT and AGENTS_CONTROL_TLS_KEY give.
 func serveTLS(cfg *controlplane.Config, u *url.URL) {
-	if dir := value("--self-signed"); dir != "" || home() != "" {
+	if domain := flagOrEnv("--acme-domain", "AGENTS_CONTROL_ACME_DOMAIN"); domain != "" {
+		// A publicly trusted certificate made in this process (#6610), as Caddy does in
+		// deploy/Caddyfile.public: no pin, and no second program to install.
+		cfg.TLS = acmeTLS(domain, flagOrEnv("--acme-email", "AGENTS_CONTROL_ACME_EMAIL"), expand(cmp.Or(value("--acme-cache"), filepath.Join(home(), "acme"))))
+	} else if dir := value("--self-signed"); dir != "" || home() != "" {
 		if dir == "" {
 			dir = filepath.Join(home(), "tls")
 		}
@@ -843,6 +848,7 @@ const usage = `usage: agents-control serve [--port N] [--bind ADDR] [--self-sign
        agents-control serve --home DIR [--no-bonjour]
        agents-control serve … [--host-root DIR] [--log FILE] [--web DIR] [--web-port N] [--no-web] [--restartable]
        agents-control serve … [--public-web DIR] [--views-url URL]
+       agents-control serve … [--acme-domain NAME [--acme-email ADDR] [--acme-cache DIR]]
        agents-control hosts | clients
        agents-control key seal (--key-fd N | AGENTS_CONTROL_KEY)
        agents-control handover status|announce|freeze|unfreeze|withdraw|copy|take|forward|stop|shares …
@@ -891,4 +897,21 @@ func main() {
 	default:
 		fail("%s", usage)
 	}
+}
+
+// acmeTLS is a TLS configuration whose certificate for domain (and only domain) comes from
+// Let's Encrypt, kept in cache and renewed before it ends. The TLS-ALPN-01 challenge is
+// answered on the serving port, so that port must be 443 as the internet sees it (a
+// forward or net.ipv4.ip_unprivileged_port_start: the installer never asks for root).
+func acmeTLS(domain, email, cache string) *tls.Config {
+	m := &autocert.Manager{
+		Prompt:     autocert.AcceptTOS,
+		Email:      email,
+		HostPolicy: autocert.HostWhitelist(domain),
+		Cache:      autocert.DirCache(cache),
+	}
+	c := m.TLSConfig()
+	// Agents' WebSockets run over HTTP/1.1: no h2.
+	c.NextProtos = []string{"http/1.1", "acme-tls/1"}
+	return c
 }

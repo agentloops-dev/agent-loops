@@ -1098,6 +1098,7 @@ struct PromptBar: View {
                 .fixedSize(horizontal: false, vertical: true)
             Spacer()
             Button(LevelWords.openAutoSettings) {
+                // store-bounds: not a store: one fixed key, an id
                 WindowDefaults.store.set(LevelWords.autoID, forKey: "settingsRuntimeID")
                 openSettings()
             }

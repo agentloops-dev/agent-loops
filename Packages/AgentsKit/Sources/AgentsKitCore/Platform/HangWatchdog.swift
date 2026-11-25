@@ -10,7 +10,8 @@ import os
 /// to a file in `folder` (the watched thread first), with the wall time, the load on the
 /// machine and the last few things the person did (`note`). One file per hang: a second
 /// sample is added to the same file if the hang is still on at `secondSample`, and the
-/// time it took is added when the queue answers again. At most `keep` files are kept.
+/// time it took is added when the queue answers again. At most `keep` files of
+/// `fileBytes` are kept, for 90 days (#7252): a longer sample is cut, and says so.
 ///
 /// Cheap by construction: one block on the queue and one wake of this thread every half
 /// second while all is well, and nothing sampled until something is wrong.
@@ -20,6 +21,8 @@ public final class HangWatchdog: Sendable {
         public var secondSample: Double = 10
         public var interval: Double = 0.5
         public var keep = 20
+        public var fileBytes = 2 * 1024 * 1024
+        public var age = cacheAgeLimit
 
         public init() {}
     }
@@ -111,7 +114,12 @@ public final class HangWatchdog: Sendable {
     }
 
     private func run() {
+        var pruned: Double?
         while !stopped.withLock({ $0 }) {
+            if pruned.map({ now() - $0 >= 3600 }) ?? true {
+                pruned = now()
+                prune()
+            }
             let answer = Answer()
             let sent = now()
             ping { answer.answered.withLock { $0 = true } }
@@ -162,7 +170,9 @@ public final class HangWatchdog: Sendable {
             let formatter = DateFormatter()
             formatter.dateFormat = "yyyy-MM-dd'T'HH-mm-ss.SSS"
             let file = folder.appending(path: formatter.string(from: Date()) + ".txt")
-            try text.write(to: file, atomically: true, encoding: .utf8)
+            // Half of it, so that the second sample and the end have room.
+            // store-bounds: kind=log; count=20; size=40MiB; age=90d; action=evict; record=2MiB; applied=on write and hourly
+            try Self.cut(text, to: settings.fileBytes / 2).write(to: file, atomically: true, encoding: .utf8)
             prune()
             Self.log.fault("the \(self.label, privacy: .public) thread is hung; stacks in \(file.path, privacy: .public)")
             return file
@@ -179,16 +189,34 @@ public final class HangWatchdog: Sendable {
     private func append(to file: URL?, _ text: String) {
         guard let file, let handle = try? FileHandle(forWritingTo: file) else { return }
         defer { try? handle.close() }
-        _ = try? handle.seekToEnd()
-        try? handle.write(contentsOf: Data(text.utf8))
+        guard let end = try? handle.seekToEnd() else { return }
+        // A long one leaves room for the line that says how long the hang took.
+        let room = settings.fileBytes - Int(end) - (text.utf8.count > Self.lineBytes ? Self.lineBytes : 0)
+        guard room > 0 else { return }
+        try? handle.write(contentsOf: Data(Self.cut(text, to: room).utf8))
     }
 
-    /// Keeps the newest `keep` write-ups. Their names are timestamps, so they sort by age.
-    func prune() {
+    private static let lineBytes = 256
+
+    /// `text` of at most `most` bytes: a longer one is cut at a character and says so.
+    static func cut(_ text: String, to most: Int) -> String {
+        guard text.utf8.count > most else { return text }
+        let mark = "\n… (cut)\n"
+        guard most >= mark.utf8.count else { return "" }
+        return String(decoding: text.utf8.prefix(most - mark.utf8.count), as: UTF8.self)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "\u{FFFD}")) + mark
+    }
+
+    /// Keeps the newest `keep` write-ups, less those past their age. Their names are timestamps, so they sort by age.
+    func prune(now: Date = Date()) {
         let files = ((try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? [])
             .filter { $0.pathExtension == "txt" }
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
-        for old in files.dropLast(settings.keep) { try? FileManager.default.removeItem(at: old) }
+        for (index, file) in files.enumerated() {
+            let written = (try? FileManager.default.attributesOfItem(atPath: file.path))?[.modificationDate] as? Date
+            let aged = written.map { now.timeIntervalSince($0) > settings.age } ?? false
+            if aged || index < files.count - settings.keep { try? FileManager.default.removeItem(at: file) }
+        }
     }
 
     /// Seconds of uptime, which stands still while the Mac sleeps: a sleep is no hang.
