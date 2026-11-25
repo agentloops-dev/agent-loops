@@ -10,6 +10,8 @@ import (
 // limit is refused, and nothing is evicted to make room. A write that keeps a joined
 // machine in use (its key renewed, its epoch, its hello, its workspace's state) is never
 // refused for room: it would cut the machine off. Room for a hello is kept at its join.
+// A record with only the control role does not count (#7304): the control plane makes one
+// for its own machine, and nobody can remove it.
 const (
 	// MachineMostBytes is the largest machine record.
 	MachineMostBytes = 32 << 10
@@ -45,7 +47,16 @@ func (r *Records) machinesWithin(ctx context.Context, grow int) error {
 	}
 	live, all := int64(grow), int64(grow)
 	r.mu.Lock()
+	control := map[string]bool{}
+	for id, h := range r.hosts {
+		if h.record.ControlOnly() {
+			control[HostKey(id)] = true
+		}
+	}
 	for _, k := range listed {
+		if control[k.Key] {
+			continue
+		}
 		size := k.Size
 		if size < 0 {
 			size = MachineMostBytes
@@ -74,13 +85,20 @@ func (r *Records) newMachineWithin(ctx context.Context, h MachineRecord) error {
 	if size > MachineMostBytes {
 		return machineTooLarge(size)
 	}
+	if h.ControlOnly() {
+		return nil
+	}
 	return r.machinesWithin(ctx, max(size, machineHelloBytes))
 }
 
 // machineChangeWithin refuses a change that grows a machine's record past
 // MachineMostBytes, and one that grows what a person set on it (its labels and what is lent
 // to it) while the machines are at their limit. A renewal, an owner and an epoch always pass.
+// A control-only record that gets the agents role counts from now on, as a new machine.
 func (r *Records) machineChangeWithin(ctx context.Context, before, after MachineRecord) error {
+	if before.ControlOnly() && !after.ControlOnly() {
+		return r.newMachineWithin(ctx, after)
+	}
 	was, err := machineSize(before)
 	if err != nil {
 		return err
@@ -97,6 +115,9 @@ func (r *Records) machineChangeWithin(ctx context.Context, before, after Machine
 	}
 	if size > MachineMostBytes {
 		return machineTooLarge(size)
+	}
+	if after.ControlOnly() {
+		return nil
 	}
 	set := func(h MachineRecord) (int, error) {
 		return machineSize(MachineRecord{Labels: h.Labels, SignInFrom: h.SignInFrom, GitFrom: h.GitFrom})

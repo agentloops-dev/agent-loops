@@ -177,6 +177,9 @@ func (p *Providers) carrier(request ProviderAdd, before *ProviderRecord, caller 
 	if h == nil || p.hooks.OwnerOf(machine) != caller.Person {
 		return "", invalid("No machine of yours is called %s.", machine)
 	}
+	if err := p.refuseControlOnly(machine); err != nil {
+		return "", err
+	}
 	if !p.router.Online(machine) {
 		return "", invalid("%s is offline: choose a machine that is online to carry it.", h.Name)
 	}

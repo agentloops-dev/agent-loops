@@ -133,3 +133,61 @@ func TestRemoveHostIfReadsAgain(t *testing.T) {
 		t.Fatalf("%s %v", o.Data, err)
 	}
 }
+
+// #7304: the control plane's own record, with only the control role, is written at the limit
+// and takes no machine's room; with the agents role too it counts.
+func TestAControlOnlyMachineIsNotInTheLimit(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	s := store.NewMemory()
+	r := New(s)
+	var full *MachineLimitError
+	for n := 0; ; n++ {
+		if n == 100 {
+			t.Fatal("no limit")
+		}
+		err := r.AddHost(ctx, MachineRecord{ID: fmt.Sprintf("m%03d", n), Name: strings.Repeat("n", 30<<10)})
+		if errors.As(err, &full) {
+			break
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	// No room is left for a small machine either.
+	if _, err := s.Put(ctx, HostKey("filler"), make([]byte, MachineMostBytes), store.Absent); err != nil {
+		t.Fatal(err)
+	}
+	control := MachineRecord{ID: "control", Name: "Box", Roles: []string{RoleControl}}
+	if err := r.AddHost(ctx, control); err != nil {
+		t.Fatalf("the control plane's own record at the limit: %v", err)
+	}
+	if err := r.ChangeHost(ctx, "control", func(h *MachineRecord) bool { h.Labels = []string{"eu"}; return true }); err != nil {
+		t.Fatalf("a change to it at the limit: %v", err)
+	}
+	both := *r.Host("control")
+	both.Roles = []string{RoleAgents, RoleControl}
+	if err := r.SaveHost(ctx, both); !errors.As(err, &full) {
+		t.Fatalf("the agents role at the limit: %v", err)
+	}
+	// It takes no room: the machines are as large with it as without it.
+	size := func() int {
+		grow := 0
+		for r.machinesWithin(ctx, grow) == nil {
+			grow += 16
+		}
+		return MachinesMostBytes - grow
+	}
+	for _, id := range []string{"m000", "m001", "m002"} {
+		if _, err := r.RemoveHost(ctx, id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	with := size()
+	if err := r.SaveHost(ctx, both); err != nil {
+		t.Fatal(err)
+	}
+	if got := size(); got <= with {
+		t.Fatalf("with both roles it does not count: %d, and %d before", got, with)
+	}
+}
