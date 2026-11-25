@@ -232,8 +232,8 @@ client, because it depends on the window's width and the font.
      closes of the last 30 days.
    - The gap pool: the gaps between child closes (on the working clock) of the epics that closed in the last
      30 days. Scope growth: the median of the same epics.
-   - For each open epic: 1,000 draws, P10, P50 and P90 of the close, turned back into time of day; the time
-     of each open child is the P50 shared out along the line.
+   - For each open epic: 1,000 draws, P10, P50 and P90 of the close, turned back into time of day. No issue has a
+     forecast of its own (#7058, #7026).
    - The host runs the backtest every night on the epics closed in the last 30 days. It keeps the error and
      a width factor that makes the band hold 8 times in 10. The help says the error.
 3. **The layout: lanes, in `AgentsKitCore`** (Swift, with tests; the web page gets a TypeScript copy later).

@@ -207,11 +207,9 @@ func median(v []float64) float64 {
 	return (s[n/2-1] + s[n/2]) / 2
 }
 
-// Forecast is when an open span probably closes: P50, and P10 to P90 (Low to High). Children
-// is each open child's time along the line: the P50 shared out.
+// Forecast is when an open span probably closes: P50, and P10 to P90 (Low to High).
 type Forecast struct {
 	Low, Mid, High time.Time
-	Children       []time.Time
 }
 
 // toCome is the children left to forecast for a span with known children, done of them closed
@@ -259,9 +257,6 @@ func (m Model) Forecast(now time.Time, known, done, open int, width float64, rng
 	// The width is learnt on wall hours (the backtest's), so the band is widened on them too.
 	low, midWall, high := widen(at(sums[ForecastDraws/10]), at(mid), at(sums[ForecastDraws*9/10]), width)
 	f := Forecast{Low: wallOf(t + low), Mid: wallOf(t + midWall), High: wallOf(t + high)}
-	for i := range open {
-		f.Children = append(f.Children, wallOf(m.Clock.after(t, mid*float64(i+1)/float64(n))))
-	}
 	return f, true
 }
 

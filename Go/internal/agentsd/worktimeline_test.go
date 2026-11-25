@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"testing"
 	"time"
@@ -15,15 +16,17 @@ import (
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
-func (f *fakeForgeGitHub) Timeline(_ context.Context, repo, _ string) (githubmcp.Timeline, error) {
+func (f *fakeForgeGitHub) Timeline(_ context.Context, repo, _ string, skip func([]string) bool) (githubmcp.Timeline, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.timelines++
-	return f.timeline, nil
+	t := f.timeline
+	t.Epics = slices.DeleteFunc(slices.Clone(t.Epics), func(e githubmcp.TimelineEpic) bool { return e.State == "open" && skip(e.Labels) })
+	return t, nil
 }
 
 // checkTimelineOpenEpic checks the open epic of TestWorkTimelineForecastsTheOpenEpics: its
-// forecast, its one segment, its children's starts, forecasts and labels. firstPR is the
+// forecast, its one segment, its children's starts and the one that waits. firstPR is the
 // date of the first child's PR.
 func checkTimelineOpenEpic(t *testing.T, e wire.WorkTimelineEpic, now time.Time, firstPR wire.Date) {
 	t.Helper()
@@ -37,12 +40,8 @@ func checkTimelineOpenEpic(t *testing.T, e wire.WorkTimelineEpic, now time.Time,
 	if *kids[2].StartedAt != wire.DateOf(now.Add(-8*time.Hour)) || kids[3].StartedAt != nil || *kids[0].StartedAt != firstPR {
 		t.Fatalf("starts: %v, %v, %v", kids[2].StartedAt, kids[3].StartedAt, kids[0].StartedAt)
 	}
-	if kids[2].ForecastAt == nil || kids[3].ForecastAt == nil || kids[4].ForecastAt != nil || kids[4].WaitsForPerson == nil || kids[0].ForecastAt != nil {
+	if kids[4].WaitsForPerson == nil || kids[3].WaitsForPerson != nil {
 		t.Fatalf("children: %+v", kids)
-	}
-	// The children's labels, with their colours, for the hover card's chips (#4428).
-	if l := kids[1].Item.Labels; len(l) != 2 || l[0].Name != "bug" || l[0].Color == nil || *l[0].Color != "#d73a4a" || l[1].Name != "ui" || l[1].Color != nil {
-		t.Fatalf("labels %+v", l)
 	}
 }
 
@@ -92,8 +91,9 @@ func TestWorkTimelineForecastsTheOpenEpics(t *testing.T) {
 		epics = append(epics, epic(10+i, base+9, child(base, base+2), child(base, base+4), child(base, base+6), child(base, base+8)))
 	}
 	open := epic(20, 0, child(-10, -6), child(-10, -3), child(-10, 0), child(-10, 0), child(-10, 0, "alex-todo"))
-	open.Children[1].Labels, open.Children[1].LabelColors = []string{"bug", "ui"}, map[string]string{"bug": "#d73a4a"}
-	epics = append(epics, open,
+	held := epic(25, 0, child(-10, -6), child(-10, 0)) // on hold: never drawn (#7058), so not read (#7026)
+	held.Labels = append(held.Labels, "On-Hold")
+	epics = append(epics, open, held,
 		epic(21, 0),                                 // no children: not drawn
 		epic(22, -24*60, child(-24*62, -24*61)),     // ended before the window
 		epic(24, -10, child(-24*62, -24*61)),        // closed in the window, but its work ended before it (#7058)

@@ -16595,12 +16595,12 @@ export interface WorkTimelineBacktest {
 }
 
 /**
- * A child of an epic in work/timeline (#4172). item has its labels with their colours, for the
- * hover card's chips (#4428). stateReason is completed or not_planned, where the forge says it.
- * startedAt is the earliest of the first session linked to it in lineage, the opening of the first
- * pull request that closes it, and its close; absent while nothing has started it. waitsForPerson:
- * it is open and labelled alex-todo or needs-account, so it is not forecast. forecastAt is an open
- * child's forecast close: its epic's P50 shared out along the line, in the order of the children.
+ * A child of an epic in work/timeline (#4172). item has only its node, state, stateReason, dates
+ * and labels (no colours): its title is empty, as no client draws a child (#7026). stateReason is
+ * completed or not_planned, where the forge says it. startedAt is the earliest of the first session
+ * linked to it in lineage, the opening of the first pull request that closes it, and its close;
+ * absent while nothing has started it. waitsForPerson: it is open and labelled alex-todo or
+ * needs-account, so it is not forecast.
  */
 export interface WorkTimelineChild {
   item: ForgeItem;
@@ -16609,7 +16609,6 @@ export interface WorkTimelineChild {
   startedAt?: WireDate;
   closedAt?: WireDate;
   waitsForPerson?: boolean;
-  forecastAt?: WireDate;
 }
 
 /**
@@ -19436,7 +19435,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   WorkSuggestLeadsRequest: { required: [], optional: ["folder"] },
   WorkTimeline: { required: ["epics", "releases"], optional: ["timeZone", "backtest", "errors"] },
   WorkTimelineBacktest: { required: ["error", "width", "cuts", "holds", "epics", "at"], optional: [] },
-  WorkTimelineChild: { required: ["item", "createdAt"], optional: ["stateReason", "startedAt", "closedAt", "waitsForPerson", "forecastAt"] },
+  WorkTimelineChild: { required: ["item", "createdAt"], optional: ["stateReason", "startedAt", "closedAt", "waitsForPerson"] },
   WorkTimelineEpic: { required: ["item", "createdAt", "children", "segments"], optional: ["stateReason", "closedAt", "forecast"] },
   WorkTimelineForecast: { required: ["low", "mid", "high"], optional: ["waits"] },
   WorkTimelineRelease: { required: ["tag", "at", "repo"], optional: ["url"] },
