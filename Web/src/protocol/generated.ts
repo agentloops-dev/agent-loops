@@ -16735,6 +16735,12 @@ export interface WorkTimeline {
   backtest?: WorkTimelineBacktest;
   errors?: string[];
   partial?: boolean;
+  /**
+   * What was read (#7029): one entry per repo, as forge:name (github:example/shop). Two machines
+   * with the same scopes give the same epics, so a client asks one of them. Absent when a repo
+   * could not be read, and from an earlier daemon.
+   */
+  scopes?: string[];
 }
 
 /**
@@ -19608,7 +19614,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   WorkReport: { required: ["outcome", "message", "at"], optional: ["block"] },
   WorkSuggestLeads: { required: ["suggestions", "more"], optional: ["errors"] },
   WorkSuggestLeadsRequest: { required: [], optional: ["folder"] },
-  WorkTimeline: { required: ["epics", "releases"], optional: ["timeZone", "backtest", "errors", "partial"] },
+  WorkTimeline: { required: ["epics", "releases"], optional: ["timeZone", "backtest", "errors", "partial", "scopes"] },
   WorkTimelineBacktest: { required: ["error", "width", "cuts", "holds", "epics", "at"], optional: [] },
   WorkTimelineChild: { required: ["item", "createdAt"], optional: ["stateReason", "startedAt", "closedAt", "waitsForPerson"] },
   WorkTimelineEpic: { required: ["item", "createdAt", "children", "segments"], optional: ["stateReason", "closedAt", "forecast"] },

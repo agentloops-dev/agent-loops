@@ -467,6 +467,42 @@ struct WorkTimelineTests {
         #expect(WorkTimeline.shows(drawn: true, reading: false, epics: count(first)) == .empty)
     }
 
+    /// #7029: each repo is asked of one machine, and of the next when it fails or is late.
+    @Test func aReadAsksOneMachinePerRepo() {
+        let a = MachineRef(rawValue: "a"), b = MachineRef(rawValue: "b"), c = MachineRef(rawValue: "c"), d = MachineRef(rawValue: "d")
+        let shop = ["github:a/shop"], web = ["github:a/web"]
+        let all = [a: shop, b: shop, c: shop, d: web]
+        var r = WorkTimeline.Readers([a, b, c, d], scopes: all)
+        #expect(r.next() == [a, d])
+        r.done(a, scopes: shop)
+        r.done(d, scopes: web)
+        r.late()
+        #expect(r.next().isEmpty)
+        #expect(r.scopes == all)
+        // One fails: the next only, and then the one after it.
+        r = WorkTimeline.Readers([a, b, c, d], scopes: all)
+        _ = r.next()
+        r.done(a, scopes: nil)
+        #expect(r.next() == [b])
+        r.done(b, scopes: nil)
+        #expect(r.next() == [c])
+        // Late with no first answer; one that gave its first is not late.
+        r = WorkTimeline.Readers([a, b, d], scopes: all)
+        _ = r.next()
+        r.first(d)
+        r.late()
+        #expect(r.next() == [b])
+        // Not known, or empty: always asked. One that no longer reads a repo no longer covers it.
+        r = WorkTimeline.Readers([a, b], scopes: [:])
+        #expect(r.next() == [a, b])
+        r = WorkTimeline.Readers([a, b], scopes: [a: [], b: shop])
+        #expect(r.next() == [a, b])
+        r = WorkTimeline.Readers([a, b], scopes: [a: shop + web, b: web])
+        #expect(r.next() == [a])
+        r.done(a, scopes: shop)
+        #expect(r.next() == [b])
+    }
+
     /// #7027: a first answer has no forecast; the ones on screen stay until its own come.
     @Test func aFirstAnswerKeepsTheForecastsOnScreen() {
         let forecast = DaemonAPI.WorkTimelineForecast(low: Self.h(1), mid: Self.h(2), high: Self.h(3))

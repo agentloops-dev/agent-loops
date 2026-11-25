@@ -29,15 +29,18 @@ public extension DaemonAPI {
         public var errors: [String]?
         /// An answer to a first ask, from before the forecast's history was read (#7027): no forecast yet.
         public var partial: Bool?
+        /// The repos it read, as `forge:name` (#7029); nil when one could not be read, and from an older host.
+        public var scopes: [String]?
 
         public init(epics: [WorkTimelineEpic] = [], releases: [WorkTimelineRelease] = [], timeZone: String? = nil,
-                    backtest: WorkTimelineBacktest? = nil, errors: [String]? = nil, partial: Bool? = nil) {
+                    backtest: WorkTimelineBacktest? = nil, errors: [String]? = nil, partial: Bool? = nil, scopes: [String]? = nil) {
             self.epics = epics
             self.releases = releases
             self.timeZone = timeZone
             self.backtest = backtest
             self.errors = errors
             self.partial = partial
+            self.scopes = scopes
         }
     }
 
@@ -738,6 +741,47 @@ public enum WorkTimeline {
     /// "Now · 2:40 PM": the list of epics' first line.
     public static func nowWords(_ now: Date, calendar: Calendar = .current) -> String {
         "Now · \(time(now, now: now, calendar: calendar))"
+    }
+
+    /// How long a machine may take to its first answer before the machines it covers are asked too: a read of one repo
+    /// is about 4 s.
+    public static let lateAfter = Duration.seconds(8)
+
+    /// Which machines a read of the Timeline asks (#7029): each repo of one machine (`WorkList.oneEach`), then the next
+    /// with that repo when the first fails, did not read it all, or is late, so a slow machine does not hold the plot
+    /// (#5449). One whose scopes are not known is always asked. `Readers` on the web page.
+    public struct Readers: Sendable {
+        private let machines: [MachineRef]
+        /// What each machine reads, as it said last.
+        public private(set) var scopes: [MachineRef: [String]]
+        private var asked: Set<MachineRef> = []
+        private var heard: Set<MachineRef> = []
+
+        public init(_ machines: [MachineRef], scopes: [MachineRef: [String]]) {
+            self.machines = machines
+            self.scopes = scopes.filter { machines.contains($0.key) && !$0.value.isEmpty }
+        }
+
+        /// The machines to ask now, each once a read.
+        public mutating func next() -> [MachineRef] {
+            let ask = WorkList.oneEach(machines, scopes: scopes).ask.filter { !asked.contains($0) }
+            asked.formUnion(ask)
+            return ask
+        }
+
+        /// A machine gave its first answer: it is not late.
+        public mutating func first(_ machine: MachineRef) { heard.insert(machine) }
+
+        /// A machine gave its last answer, with what it read; nil when it failed.
+        public mutating func done(_ machine: MachineRef, scopes read: [String]?) {
+            heard.insert(machine)
+            scopes[machine] = read?.isEmpty == true ? nil : read
+        }
+
+        /// `lateAfter` is over: a machine not heard from covers no other.
+        public mutating func late() {
+            for machine in asked.subtracting(heard) { scopes[machine] = nil }
+        }
     }
 
     /// Several machines' timelines of one project as one: each epic and release once.
