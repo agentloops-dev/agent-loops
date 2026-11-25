@@ -414,11 +414,11 @@ newer than a row above for the same store.
 | `<logs>/daemon.log` | log | What the machine did | 4 MB and one older file, 7 days; the oldest go first | `Go/internal/rolllog/rolllog.go` | #6735 |
 | `<logs>/mcp-logs/` | log | Hosted MCP servers' stderr | 256 KiB and one older file a server, 10 MB in all, 7 days; the oldest go first | `Go/internal/agentsd/hostedmcp.go` (`dropOldHostedLogs`) | #6736 |
 | `<file>.unreadable-*`, `<file>.corrupt-*` | blob | Stores set aside when unreadable | The newest 3 and 100 MB of each file and kind; 90 days | `Go/internal/agentsd/store/files.go` (`sweepSetAsides`) | #6737 |
-| `~/.agents-secrets/sealed.json` | secret | Sealed secrets | No count limit | `Go/internal/agentsd/sealedsecrets.go:122` | #6738 |
-| `~/.agents-secrets/sessions/` | secret | Secrets for one session | No count limit; values go on archive, the file on delete | `Go/internal/agentsd/sessionsecrets.go:57` | #6739 |
-| `~/.agents-secrets/mcp-sign-ins.json` | secret | MCP OAuth tokens | No count limit | `Go/internal/agentsd/mcpcatalog/signins.go:45,134` | #6740 |
-| `~/.agents-secrets/hints.json` | secret | Last 4 characters of each secret | No count limit | `Go/internal/agentsd/secrethints.go:19` | #6741 |
-| `~/.agents-secrets/descriptions.json` | key-value | Secret descriptions (not secret) | No count limit; config outside .agents | `Go/internal/agentsd/secretlist.go:37` | #6742 |
+| `~/.agents-secrets/sealed.json` | secret | Sealed secrets | 200 from the control plane and 200 of the machine's own, 16 KiB a value, 64 KiB a record; refuse | `Go/internal/agentsd/secretbounds.go` (`sealedFile`) | #6738 |
+| `~/.agents-secrets/sessions/` | secret | Secrets for one session | 1,000 sessions of 200 secrets, 16 KiB a value, 64 KiB a record, and 400 expired names; refuse; values go on archive, the file on delete | `Go/internal/agentsd/secretbounds.go` (`sessionFile`) | #6739 |
+| `~/.agents-secrets/mcp-sign-ins.json` | secret | MCP OAuth tokens | 200 sign-ins and 200 clients of 64 KiB; refuse; 200 notes of 4 KiB that a server needs a sign-in, 90 days | `Go/internal/agentsd/mcpcatalog/signins.go` (`signInStore`) | #6740 |
+| `~/.agents-secrets/hints.json` | secret | Last 4 characters of each secret | 200 of 256 bytes; refuse; with its secret | `Go/internal/agentsd/secretbounds.go` (`hintsFile`) | #6741 |
+| `~/.agents-secrets/descriptions.json` | key-value | Secret descriptions (not secret) | 400 of 2 KiB; refuse; with its secret; stays out of `.agents` (Alex, 2026-11-24) | `Go/internal/agentsd/secretbounds.go` (`descriptionsFile`) | #6742 |
 | Keychain `agents.connection.<hash>` (Linux `~/.agents-secrets/connections.json`) | secret | Forge connections: the token, and where it is sent (stays with the token, Alex, 2026-11-24) | Linux: 16 of 64 KiB each; Mac: one a provider, a `security` line of 4,095 bytes; else refused; until removed | `Go/internal/connections/store.go` (`MaxConnections`) | #6743 |
 | `<root>/folders.json` | key-value | The folders the person added | Config in the data root | `Go/internal/agentsd/store/locations.go:104` | #6744 |
 | `~/.agents/settings/wake.json` | key-value | Keep awake, grace hours, warm runtimes | One, 4 KiB. Moved from the data root; shared by the machines that share the folder (Alex, 2026-11-24) | `Go/internal/agentsd/wake.go` (`Set`) | #6745 |

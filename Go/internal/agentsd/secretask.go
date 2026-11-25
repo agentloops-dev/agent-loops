@@ -167,12 +167,20 @@ func (d *Daemon) saveAskedSecret(agent wire.UUID, s wire.ElicitationSecret, cont
 	if askedSessionOnly(content) {
 		return d.setSessionSecret(agent, s.Name, v, description, ask)
 	}
+	if given || description != "" {
+		if _, err := secretDescriptionsWith(d.personalHome(), s.Name, description); err != nil {
+			return Invalid("Nothing was saved: %s.", err)
+		}
+	}
 	if err := d.saveAgentSecret(agent, s.Name, v, ask); err != nil {
+		if errors.Is(err, store.ErrLimit) {
+			return Invalid("Nothing was saved: %s.", err)
+		}
 		return Invalid("%s was not saved: %s", s.Name, err.Error())
 	}
 	if given || description != "" {
 		if err := setSecretDescription(d.personalHome(), s.Name, description); err != nil {
-			log.Printf("ask_secret: %s's description: %v", s.Name, err)
+			log.Printf("ask_secret: a description was not saved: %v", err)
 		}
 	}
 	log.Printf("ask_secret: saved %s", s.Name)

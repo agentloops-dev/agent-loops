@@ -378,6 +378,9 @@ func (d *Daemon) finishSignIn(flow *signInFlow, redirect *loopback, plan mcpcata
 	if err := st.signIns.Keep(flow.server, name, plan, client, tokens); err != nil {
 		redirect.finish("Sign-in didn't finish", "The sign-in couldn't be kept. You can close this tab.")
 		log.Printf("mcp sign-in: %s could not be kept", name)
+		if errors.Is(err, store.ErrLimit) {
+			return failed("The sign-in couldn't be kept: " + err.Error() + ".")
+		}
 		return failed("The sign-in couldn't be kept: " + mcpcatalog.SignInFileName + " could not be read or written.")
 	}
 	if given != nil {
