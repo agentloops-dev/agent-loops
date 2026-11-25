@@ -90,11 +90,18 @@ which the audit keeps by name too.
 | `modes.json` | The mode last chosen for each runtime | The start form |
 | `display.json` | Your display choices, the same on every client: how much of a turn shows, the smart groups that are off, whether Archived folders, Status and Usage are open, the new-session form's runtime and choices, how a diff is drawn, and the marketplaces last chosen | Any client |
 | `host.json` | The role of each of your Macs (its control plane here or elsewhere, and its web remote), one entry per Mac, by its local host name. | Agent Loops |
+| `wake.json` | Keep awake: the switch and the hours, and how many finished sessions stay ready. One value for all the Macs that share the folder | **Settings ▸ Machines ▸ This Mac** |
+| `backup-settings.json` | Backups: how often, how many, and where. One entry for each machine, by the ID in its `root-id.json`, so machines that share the folder keep their own. 100 machines at most: remove by hand one that is gone | A machine's **Backups** |
 
 A file you change by hand counts at once, without a restart. A file that cannot be read is
 set aside as `<name>.corrupt-<time>`, and the setting goes back to its default. For
 `host.json`, the file is left as it is, and Agent Loops starts with the defaults until you
-mend the file or remove it.
+mend the file or remove it. `backup-settings.json` is left as it is too: until you mend it
+or remove it, the settings cannot be changed, and 10 backups are kept.
+
+`wake.json` and `backup-settings.json` were in the machine's data folder before. Agent Loops
+moves each one once. When the settings folder has one already, that one is used, and the old
+file is renamed `<name>.moved`.
 
 `retention.json`, `person.json`, `client-permissions.json`, `sandbox.json` and `auto.json`
 follow you to each of your machines. Your Mac sets each one once on the control plane
@@ -133,7 +140,7 @@ not be able to change them:
   starts. Set it in **Folder Settings ▸ General ▸ Project** on the Mac and the web page (the folder's menu, **Folder Settings…**). The last copy of each project's slots that the control
   plane sent is in `<root>/project-tools.json` on each machine (#2669).
 - **Secrets:** `~/.agents-secrets`, a separate folder that only you can read.
-- **This Mac's data:** agents, transcripts, and the sleep, resource, approval and
+- **This Mac's data:** agents, transcripts, and the resource, approval and
   retention-clock files, in `~/Library/Application Support/Agents`
   (`~/.agents-server/root` on a server). Its backups go to `backups/` in that folder unless
   you choose another: the same disk, so they do not survive the loss of the disk. Choose a
@@ -144,6 +151,14 @@ not be able to change them:
   It holds the store, `secrets-key` and the certificate in `tls/`.
   The control key is in the keychain. To back them up together, and restore
   them on a new Mac, see [Back up and restore a control plane](../how-to/back-up-a-control-plane.md).
+- **What the control plane sent this machine, and what the machine trusts** (Alex,
+  2026-11-24): `policy.json`, `policy-seen.json`, `project-tools.json`, `host-user.json` and
+  `lock-pin.json`, in the data folder. A copy synced from another machine could stop the work
+  here, let an older policy back, or make this a bot's machine.
+- **Runtime accounts and approvals** (Alex, 2026-11-24, #6748 to #6750): `runtime-accounts.json`,
+  `mcp-approvals.json` and `plugin-approvals.json`, in the data folder. A copy from a repo, a
+  sync or another machine could approve what nobody saw here, or choose the settings and hooks
+  that a runtime loads.
 - **Caches and logs:** the system's cache and log folders. You can delete them at any time.
 - **Each device's own choices:** folder folds, drafts, the new-session form's folders,
   window sizes, the selected folder, and pairing.

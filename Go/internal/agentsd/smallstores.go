@@ -1,7 +1,6 @@
 package agentsd
 
 import (
-	"encoding/json"
 	"errors"
 	"log"
 	"maps"
@@ -17,8 +16,8 @@ import (
 )
 
 // Small stores that grew and never shrank (#3652): each is pruned by the hourly sweep.
-// A workflow's state goes 30 days after its file went; the approvals and the review files
-// let go of a folder that is gone; a device not seen for 90 days is forgotten; the record of a
+// A workflow's state goes 30 days after its file went; the approvals (approvalbounds.go) and the
+// review files let go of a folder that is gone; a device not seen for 90 days is forgotten; the record of a
 // catalogue item goes 30 days after the item went.
 
 const (
@@ -30,13 +29,15 @@ const (
 func (d *Daemon) sweepSmallStores(now time.Time) {
 	d.sweepGoneWorkflowStates(now)
 	gone := d.goneFolderTest()
-	d.sweepMCPApprovals(gone)
-	d.sweepPluginApprovals(gone)
+	d.sweepMCPApprovals(gone, now)
+	d.sweepPluginApprovals(gone, now)
+	d.sweepAllowances(now)
 	d.sweepReviewFolders(gone)
 	d.sweepUnseenDevices(now)
 	d.sweepConnectorSetup()
 	d.sweepHostedLogs(now)
 	d.sweepCatalogItems(now, gone)
+	d.sweepAccountHomes(now)
 	if err := d.carryRemovedConnectors(); err != nil {
 		log.Printf("retention: %v", err)
 	}
@@ -122,73 +123,6 @@ func (d *Daemon) sweepGoneWorkflowStates(now time.Time) {
 func approvalKeyFolder(key string) string {
 	folder, _, _ := strings.Cut(key, "|")
 	return folder
-}
-
-// sweepMCPApprovals drops the approved servers and views of folders that are gone. A file
-// not there, or one that could not be read, is left as it is.
-func (d *Daemon) sweepMCPApprovals(gone func(string) bool) {
-	if _, err := os.Stat(d.mcpApprovalsPath()); err != nil {
-		return
-	}
-	d.mcpMu.Lock()
-	defer d.mcpMu.Unlock()
-	d.mcpApprovalsLocked()
-	if d.mcpApprovals == nil {
-		return
-	}
-	changed := false
-	for _, part := range []string{"approved", "views"} {
-		raw := d.mcpApprovals[part]
-		if raw == nil {
-			continue
-		}
-		m := map[string]string{}
-		if json.Unmarshal(raw, &m) != nil {
-			continue
-		}
-		n := len(m)
-		for k := range m {
-			if gone(approvalKeyFolder(k)) {
-				delete(m, k)
-			}
-		}
-		if len(m) != n {
-			d.mcpApprovals[part], _ = json.Marshal(m)
-			changed = true
-		}
-	}
-	if changed {
-		if err := d.saveMCPApprovalsLocked(false); err != nil {
-			log.Printf("mcp-approvals.json: could not save: %v", err)
-		}
-	}
-}
-
-// sweepPluginApprovals drops the approvals and denials of plugins whose folder is gone. A
-// plugin's key is its folder, <folder>/.agents/plugins/<name>.
-func (d *Daemon) sweepPluginApprovals(gone func(string) bool) {
-	if _, err := os.Stat(d.pluginApprovalsPath()); err != nil {
-		return
-	}
-	pluginMu.Lock()
-	defer pluginMu.Unlock()
-	records, unreadable := d.loadPluginApprovals()
-	if unreadable {
-		return
-	}
-	n := len(records.Approved) + len(records.Denied)
-	for _, m := range []map[string]string{records.Approved, records.Denied} {
-		for k := range m {
-			if folder, _, ok := strings.Cut(k, "/.agents/plugins/"); ok && gone(folder) {
-				delete(m, k)
-			}
-		}
-	}
-	if len(records.Approved)+len(records.Denied) != n {
-		if err := d.savePluginApprovals(records); err != nil {
-			log.Printf("plugin-approvals.json: could not save: %v", err)
-		}
-	}
 }
 
 // sweepReviewFolders drops the dismissed and opened pull requests of folders that are gone.

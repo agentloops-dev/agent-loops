@@ -292,9 +292,7 @@ func (d *Daemon) adoptSharedMCPFolder(folder string) bool {
 	if unreadable || approved == nil {
 		return false
 	}
-	from := map[string]string{}
-	// None yet, or not a map, is none.
-	_ = json.Unmarshal(d.mcpApprovals["from"], &from)
+	from, gone := d.mcpPartLocked("from"), d.mcpGoneLocked()
 	changed := false
 	for _, e := range entries {
 		digest, key := entryDigest(e.raw), mcpApprovalKey(folder, e.name)
@@ -305,8 +303,13 @@ func (d *Daemon) adoptSharedMCPFolder(folder string) bool {
 		if !ok {
 			continue
 		}
-		approved[key] = digest
-		from[key] = digest + "|" + approvedByWords(a)
+		if err := keepApproval(approved, gone, "", key, digest); err != nil {
+			log.Printf("mcp: %s in %s waits for approval: %v", e.name, folder, err)
+			continue
+		}
+		if err := keepApproval(from, gone, "", key, digest+"|"+approvedByWords(a)); err != nil {
+			log.Printf("mcp: %s in %s: not kept where its approval came from: %v", e.name, folder, err)
+		}
 		changed = true
 		log.Printf("mcp: %s in %s approved here, as the person approved it on %s", e.name, folder, a.Host)
 	}
@@ -327,10 +330,7 @@ func (d *Daemon) mcpApprovedFromLocked(folder, name, digest string) *string {
 	if d.mcpApprovals == nil {
 		return nil
 	}
-	from := map[string]string{}
-	// None yet, or not a map, is none.
-	_ = json.Unmarshal(d.mcpApprovals["from"], &from)
-	if v, ok := from[mcpApprovalKey(folder, name)]; ok {
+	if v, ok := d.mcpPartLocked("from")[mcpApprovalKey(folder, name)]; ok {
 		if d, words, found := strings.Cut(v, "|"); found && d == digest {
 			return &words
 		}

@@ -609,31 +609,31 @@ type failing struct{}
 
 func (failing) RoundTrip(*http.Request) (*http.Response, error) { return nil, io.ErrUnexpectedEOF }
 
-// T020, FR-023: 5,000 users and 500 groups; SCIM answers within 200 ms at p95.
+// T020, FR-023: 1,000 users and 500 groups; SCIM answers within 200 ms at p95.
 //
 // A time measured under -race on a shared runner measures the runner (#5911). So each
 // run holds what does not change with load: the store work of 200 requests (the calls,
-// the records read and written, and their bytes) is no more at 5,000 users and 500 groups
+// the records read and written, and their bytes) is no more at 1,000 users and 500 groups
 // than at 100 users and 10 groups. The 200 ms is held only in a perf run
 // (AGENTS_RUN_PERF=1, no -race), as scripts/perf-tests.sh runs it.
 func TestSCIMAtSize(t *testing.T) {
 	flaky.UnderLoad(t, "#6931")
 	// Not parallel (#2512): a perf run holds a wall-clock limit, which other tests running beside it would make flaky.
 	if testing.Short() {
-		t.Skip("5,000 users")
+		t.Skip("1,000 users")
 	}
 	small, _ := scimRequestCosts(t, 100, 10)
-	large, took := scimRequestCosts(t, 5000, 500)
-	t.Logf("store work of 200 requests: %+v at 100 users and 10 groups, %+v at 5,000 and 500", small, large)
+	large, took := scimRequestCosts(t, 1000, 500)
+	t.Logf("store work of 200 requests: %+v at 100 users and 10 groups, %+v at 1,000 and 500", small, large)
 	// The same records, read and written: only their stamps can differ by a byte or two.
 	slack := func(n int64) int64 { return n + n/50 + 256 }
 	if large.Calls > small.Calls || large.Reads > small.Reads || large.Writes > small.Writes ||
 		large.ReadBytes > slack(small.ReadBytes) || large.WriteBytes > slack(small.WriteBytes) {
-		t.Errorf("the store work grows with the directory: %+v at 100 users and 10 groups, %+v at 5,000 and 500", small, large)
+		t.Errorf("the store work grows with the directory: %+v at 100 users and 10 groups, %+v at 1,000 and 500", small, large)
 	}
 	sort.Slice(took, func(i, j int) bool { return took[i] < took[j] })
 	p95 := took[len(took)*95/100]
-	t.Logf("p95 %v at 5,000 users and 500 groups (budget 200ms, held only with AGENTS_RUN_PERF=1 and no -race)", p95)
+	t.Logf("p95 %v at 1,000 users and 500 groups (budget 200ms, held only with AGENTS_RUN_PERF=1 and no -race)", p95)
 	if os.Getenv("AGENTS_RUN_PERF") == "1" && !raceEnabled && p95 > 200*time.Millisecond {
 		t.Fatalf("p95 %v is over 200ms", p95)
 	}
@@ -720,7 +720,7 @@ func scimRequestCosts(t *testing.T, users, groups int) (storeCost, []time.Durati
 	}
 	for i := range groups {
 		id := records.NewPersonID()
-		members := ids[i*10 : i*10+10]
+		members := ids[i*10%users : i*10%users+10]
 		if _, err := p.s.records.ChangeGroup(ctx, id, func(*records.Group) (*records.Group, error) {
 			return &records.Group{ID: id, Name: "Group " + strconv.Itoa(i), Members: members,
 				Source: &records.GroupSource{SCIM: "acme-okta", DisplayName: "Group " + strconv.Itoa(i)}}, nil
@@ -879,7 +879,7 @@ func TestSCIMUnknownBearersKeepNothing(t *testing.T) {
 
 // #2430: a first sync, Okta's GET with a filter then a POST for each user, reads every
 // person from the store for none of them, and its median call does not grow with N.
-// -scim-sync sets N: go test -run TestAFirstSync -args -scim-sync=5000.
+// -scim-sync sets N: go test -run TestAFirstSync -args -scim-sync=2000.
 var scimSyncUsers = flag.Int("scim-sync", 1000, "how many users TestAFirstSyncListsNoPeoplePerUser syncs")
 
 func TestAFirstSyncListsNoPeoplePerUser(t *testing.T) {

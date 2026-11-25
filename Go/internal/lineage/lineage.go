@@ -285,6 +285,7 @@ func OpenWith(path string, now func() time.Time, topics Topics) *Files {
 	}
 	if ld.unreadable > 0 {
 		aside := fmt.Sprintf("%s.unreadable-%d", path, now().Unix())
+		// store-bounds: kind=blob; size=100MiB a file; count=3; age=90d; applied=on write and hourly sweep
 		if err := os.WriteFile(aside, data, 0o644); err != nil { //nolint:gosec // G306: the same mode as the lineage file it keeps
 			log.Printf("%s: could not keep the unreadable file as %s: %v", filepath.Base(path), filepath.Base(aside), err)
 		}

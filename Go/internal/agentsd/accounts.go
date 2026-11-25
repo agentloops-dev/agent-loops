@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/diskjson"
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
@@ -57,6 +58,24 @@ var accountKinds = map[string]accountKind{
 	"codex": {variable: "CODEX_HOME", defaultFolder: ".codex",
 		cleared: []string{"OPENAI_API_KEY"},
 		shared:  []string{"config.toml", "AGENTS.md", "prompts", "skills", "rules"}},
+}
+
+// The accounts stay in the data folder (Alex, 2026-11-24, #6748): each names a sign-in folder of
+// this machine, and one from a sync would choose the settings and hooks that a runtime loads. An
+// account has no age: it is a person's, until they remove it.
+const (
+	accountsMost     = 100
+	accountMostBytes = 4 << 10
+)
+
+// saveAccountsLocked writes runtime-accounts.json. With accountMu held.
+func (d *Daemon) saveAccountsLocked() error {
+	b, err := diskjson.Marshal(d.profiles)
+	if err != nil {
+		return err
+	}
+	// store-bounds: kind=key-value; count=100; size=4KiB an account; age=until-deleted; applied=on write (refused)
+	return store.WriteAtomically(d.accountsPath(), b, 0o644)
 }
 
 func (d *Daemon) accountsPath() string {
@@ -270,17 +289,27 @@ func (d *Daemon) addAccount(r wire.AddAccountRequest) (wire.AccountProfile, erro
 		d.accountMu.Unlock()
 		return wire.AccountProfile{}, Invalid("Default is the name of %s’s own sign-in. Choose another.", rt.Name)
 	}
+	if len(d.profilesLocked()) >= accountsMost {
+		d.accountMu.Unlock()
+		return wire.AccountProfile{}, Invalid("This machine has %d added accounts, the most it keeps. Remove one first.", accountsMost)
+	}
 	id := strings.ToLower(string(store.NewUUID()))
 	folder := filepath.Join(d.Store.Loc.Root, "runtimes", "accounts", r.RuntimeID, id)
+	p := wire.AccountProfile{ID: id, RuntimeID: r.RuntimeID, Name: name, AddedAt: now(),
+		Reach: wire.AccountReach{SignIn: &wire.AccountReachSignIn{Folder: folder}}}
+	if b, err := diskjson.Marshal(p); err != nil || len(b) > accountMostBytes {
+		d.accountMu.Unlock()
+		return wire.AccountProfile{}, Invalid("The account is too large to keep: %d bytes, and the most is %d.", len(b), accountMostBytes)
+	}
+	// The runtime's conversations in it, with no blob interface (#6707): accounthistory.go.
+	// store-bounds: kind=blob; size=1200MiB a home; age=90d; applied=hourly sweep
 	if err := os.MkdirAll(folder, 0o700); err != nil {
 		d.accountMu.Unlock()
 		return wire.AccountProfile{}, err
 	}
-	p := wire.AccountProfile{ID: id, RuntimeID: r.RuntimeID, Name: name, AddedAt: now(),
-		Reach: wire.AccountReach{SignIn: &wire.AccountReachSignIn{Folder: folder}}}
 	d.profiles = append(d.profiles, p)
 	sort.SliceStable(d.profiles, func(i, j int) bool { return d.profiles[i].RuntimeID < d.profiles[j].RuntimeID })
-	err := writeStore(d.accountsPath(), d.profiles)
+	err := d.saveAccountsLocked()
 	d.accountMu.Unlock()
 	if err != nil {
 		return wire.AccountProfile{}, err
@@ -339,7 +368,7 @@ func (d *Daemon) removeAccount(ctx context.Context, r wire.AccountRequest) ([]wi
 		}
 	}
 	d.profiles = kept
-	err := writeStore(d.accountsPath(), d.profiles)
+	err := d.saveAccountsLocked()
 	d.accountMu.Unlock()
 	if err != nil {
 		return stopped, err

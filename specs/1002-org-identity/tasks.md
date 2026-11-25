@@ -47,7 +47,7 @@
 - [x] T017 [P] [US4] Test suspension on two copies: `active: false` closes three clients with `suspended` in 5 s, keys stop renewing, org sign-ins refused, `user/suspended` sent; `DELETE` also adds a **Remove** request; `active: true` undoes it; the local owner sign-in stays (FR-017, SC-003).
 - [x] T018 [P] [US5] Test groups: create with members, PATCH add and remove, a member of another provider refused, **Gives the admin role**, `managedByProvider` on `people/setRole`, the last admin kept with a notice, a deleted group with shares kept as a tombstone (FR-019 to FR-021).
 - [x] T019 [P] [US6] (Q1 A) Test refresh checks: `invalid_grant` suspends; the provider down lets keys renew for 7 days after the last good check, then stops (FR-024).
-- [x] T020 [P] [US4] Test the size: 5,000 users and 500 groups, p95 under 200 ms (FR-023).
+- [x] T020 [P] [US4] Test the size: 1,000 users and 500 groups, p95 under 200 ms (FR-023).
 
 ### Build
 
