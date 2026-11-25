@@ -154,11 +154,10 @@ With **Suggest folders on a host** off, nothing is listed and only the folder bo
 
 ### Let the server use this Mac's Claude sign-in
 
-If Claude on the server has no sign-in of its own, the window asks **Let devbox use this
-Mac's Claude sign-in?** the first time an agent there needs it. Click **Allow**, and the
-server's agents use Claude as you, through this Mac, whenever this Mac is awake. The
-sign-in itself stays on this Mac. Click **Don't Allow** to sign Claude in on the server
-instead.
+If Claude on the server has no sign-in of its own, the window lends it this Mac's, and
+does not ask. The server's agents use Claude as you, through this Mac, whenever this Mac
+is awake. The sign-in itself stays on this Mac. Only your own machines get it. To not use
+this Mac's, sign Claude in on the server before an agent there needs it.
 
 ### Sign Claude or Codex in on the server from the web page
 
