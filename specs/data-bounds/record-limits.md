@@ -15,7 +15,7 @@ read and not run. A store below its total is no proof that a record was handled.
 | Log (`OpenLog`, `DayLog`) | control plane | test: refused, nothing written | one record a call | read | test | Holds; an audit entry is cut with `…` (its own test) |
 | Log (`rolllog`) | machine, control plane | read: a write is split, not lost | read | none | none | Holds. Baseline logs: #7200, #7202 |
 | Time series (`OpenTimeSeries`) | control plane | test: refused, nothing written | test: the roll-up | none | test | #7196 (no caller yet) |
-| Time series | machine | test: CI timings | test | read | read | #7190, #7200 |
+| Time series | machine | test: CI timings | test | read | read | #7200 |
 | Graph | machine | test: a ref of 512 bytes, also after a repo's move | read | read | test: read again | Holds; a line is not declared (#7200) |
 | Graph | control plane | test | test | read | read: the sweep | #7193 |
 | Document | machine | test: requests | read | read | read | #7185, #7200 |
@@ -49,8 +49,8 @@ What each line of `scripts/store-bounds-baseline.txt` is. A **store** is owned b
 | Not a store: one fixed key or mark | `HostJoinFile`, `MachineLock`, `ControlMembership`, `Multiplier`, `keys.ts` (its caches are declared), `signIn.ts`; `cmd/agents-control/main`, `cmd/agentsd/enrol`, `cmd/agentsd/main`; `agentsd/`: `lock` (mark), `localpath` (below), `restarts`, `setupforward`, `setupprojects`, `usersuspend`, `runtimesignin`; `store/roots`, `store/store` (root id), `controllink/` (all), `kms/`, `workspacecommands/digitalocean`, `controlplane/capacity`, `hosted/limits` |
 | Not a store: the helper or the backend itself | `store/files`, `execfile`, `store/folder`, `storeopen`, `storecopy`, `records/records` (an old prefix, read only), `homebackup` `NewFolder` |
 | Declared at another line | `cmd/agentsd/main` and `supervise` (the daemon log), `hosttunnels/tunnels` and `sweep` (`v1/codes`, itself #7201), `lock` pin, `links` (the links) |
-| Store, bounded in code, not declared | `store/revisions`, `secretops` (`secret-ops.json`), `providers/kept`, `controlplane/backups`, `joins`, `audit/chain` |
+| Store, bounded in code, not declared | `citimings/store`, `store/revisions`, `secretops` (`secret-ops.json`), `providers/kept`, `controlplane/backups`, `joins`, `audit/chain` |
 | **Store with no largest record: machine, #7200** | `agentsd/`: `attachments`, `attention`, `backgroundended`, `cost` (about 15 files), `dailychecks`, `environment`, `events`, `githubbotcopy`, `guarded`, `host`, `leases`, `localpath`, `lock`, `mac`, `mcpcatalog/files`, `mcpevents`, `orgroutes`, `policyyours`, `said`, `settings`, `turnscache`, `usersettings`, `viewservers`; `store/store` (`agent.json`), `store/summaries`; `skillcatalog/`: `lock`, `marketplaces`, `secrets`; `hostsetup/report`, `lineage`, `mac/signin/relays` |
-| **Store with its own bug** | `citimings/store` #7190, `whatsappmcp/store` #7191, `settings` (`display.json`) #7189, `providers/secrets` #7201 |
+| **Store with its own bug** | `whatsappmcp/store` #7191, `settings` (`display.json`) #7189, `providers/secrets` #7201 |
 | **Store with no largest record: control plane, #7201** | `bots`, `builds`, `codes`, `copies`, `deploys`, `hosttunnels/tunnels`, `lineagegraph`, `links` (requests), `lockjoins`, `locks`, `mesh`, `orgrefresh`, `people_scim`, `policy_ask`, `projects`, `records/groups`, `records/projects`, `reports`, `secretrelease`, `signin_approvals`, `signin_org`, `sweep` (`v1/mesh`), `hosted/billing` |
 | **Store with no largest record: clients, #7202** | `HostSettings`, `HangWatchdog`, `RollingLog`, `AttentionSnapshotStore` |
