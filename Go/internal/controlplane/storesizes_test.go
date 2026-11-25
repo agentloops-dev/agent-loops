@@ -28,19 +28,7 @@ func TestStoreSizes(t *testing.T) {
 	}
 	ask := func(s *controllink.Session) map[string]wire.StoreSize {
 		t.Helper()
-		out := map[string]wire.StoreSize{}
-		for q := (wire.StoreSizesQuery{}); ; {
-			var page wire.StoreSizes
-			if err := json.Unmarshal(call(t, s, "", "reports/storeSizes", q), &page); err != nil {
-				t.Fatal(err)
-			}
-			for _, s := range page.Stores {
-				out[s.ID] = s
-			}
-			if q.Cursor = page.Cursor; q.Cursor == nil {
-				return out
-			}
-		}
+		return everyStoreSize(t, s)
 	}
 	if s := ask(admin)["control.policy-versions"]; s.State != wire.StoreSizeStateUnavailable || s.Why == nil {
 		t.Errorf("before a measurement: %+v", s)
@@ -87,5 +75,23 @@ func TestStoreSizes(t *testing.T) {
 	}
 	if s := ask(admin)["control.setup-times"]; s.State != wire.StoreSizeStateCurrent || *s.Bytes != 0 {
 		t.Errorf("not measured again: %+v", s)
+	}
+}
+
+// everyStoreSize is each page of reports/storeSizes, by id.
+func everyStoreSize(t *testing.T, s *controllink.Session) map[string]wire.StoreSize {
+	t.Helper()
+	out := map[string]wire.StoreSize{}
+	for q := (wire.StoreSizesQuery{}); ; {
+		var page wire.StoreSizes
+		if err := json.Unmarshal(call(t, s, "", "reports/storeSizes", q), &page); err != nil {
+			t.Fatal(err)
+		}
+		for _, s := range page.Stores {
+			out[s.ID] = s
+		}
+		if q.Cursor = page.Cursor; q.Cursor == nil {
+			return out
+		}
 	}
 }
