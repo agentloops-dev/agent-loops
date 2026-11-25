@@ -1018,6 +1018,17 @@ func TestAFailedMakeIsThereAfterARestart(t *testing.T) {
 	if owner, ok := again.failedOwner(id, "failed-machine-7"); !ok || owner != "" {
 		t.Errorf("%q %v", owner, ok)
 	}
+	// A long reason is cut, and an old row is not shown until the sweep deletes it (#6971).
+	again.failed(id, "machine-8", "", strings.Repeat("é", failedReasonMost))
+	rows := again.failedMakes[id]
+	if got := deref(rows[len(rows)-1].info.Reason); len(got) > failedReasonMost || !strings.HasSuffix(got, "é…") {
+		t.Errorf("a reason of %d bytes", len(got))
+	}
+	again.showFailed(id, []keptFailedMake{{Name: "old", At: new(time.Now().Add(-failedMakesKept))}, {Name: "undated"}})
+	if rows := again.failedMakes[id]; len(rows) != 1 || rows[0].info.Name != "undated" || rows[0].old(time.Now()) ||
+		!rows[0].old(time.Now().Add(failedMakesKept)) {
+		t.Errorf("rows %+v", rows)
+	}
 	if err := again.remove(id); err != nil {
 		t.Fatal(err)
 	}

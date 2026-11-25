@@ -126,7 +126,7 @@ func TestSigningInToAnMCPServer(t *testing.T) {
 		t.Fatal(r)
 	}
 	kept, _ := os.ReadFile(filepath.Join(home, ".agents-secrets", "mcp-sign-ins.json"))
-	if info, _ := os.Stat(filepath.Join(home, ".agents-secrets", "mcp-sign-ins.json")); !strings.Contains(string(kept), `"access": "at-1"`) || info.Mode().Perm() != 0o600 {
+	if info, _ := os.Stat(filepath.Join(home, ".agents-secrets", "mcp-sign-ins.json")); !strings.Contains(string(kept), `"access":"at-1"`) || info.Mode().Perm() != 0o600 {
 		t.Fatal(string(kept))
 	}
 

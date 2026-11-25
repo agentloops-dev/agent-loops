@@ -3,8 +3,10 @@ package agentsd
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/internal/githubmcp"
@@ -31,15 +33,15 @@ func TestForReviewListsPullRequestsWaitingForApproval(t *testing.T) {
 	t.Parallel()
 
 	d, c, gh, _ := forgeDaemon(t)
-	pr := func(repo string, n int, updated string) githubmcp.Item {
-		return githubmcp.Item{Repo: repo, Number: n, PR: true, State: "open", Title: "PR " + updated,
+	pr := func(repo string, n, daysAgo int) githubmcp.Item {
+		return githubmcp.Item{Repo: repo, Number: n, PR: true, State: "open", Title: fmt.Sprint("PR ", n),
 			URL:    fmt.Sprintf("https://github.com/%s/pull/%d", repo, n),
-			Author: "alexec", UpdatedAt: updated + "T10:00:00Z"}
+			Author: "alexec", UpdatedAt: nowFunc().AddDate(0, 0, -daysAgo).UTC().Format(time.RFC3339)}
 	}
-	older, newer := pr("alexec/agents", 1, "2026-11-01"), pr("alexec/agents", 2, "2026-11-02")
-	draft := pr("alexec/agents", 5, "2026-11-03")
+	older, newer := pr("alexec/agents", 1, 3), pr("alexec/agents", 2, 2)
+	draft := pr("alexec/agents", 5, 1)
 	draft.Draft = true
-	web := pr("alexec/web", 6, "2026-11-01")
+	web := pr("alexec/web", 6, 3)
 	gh.reviews = []githubmcp.Item{newer, older, draft, web}
 
 	d.readReviews(d.ctx)
@@ -93,10 +95,10 @@ func TestForReviewListsPullRequestsWaitingForApproval(t *testing.T) {
 	if got := reviewsIn(t, d, c, 32, "alexec/agents"); len(got) != 1 || got[0].Opened == nil || !*got[0].Opened {
 		t.Fatalf("after open: %+v", got)
 	}
-	if b, err := os.ReadFile(d.reviewOpenedPath()); err != nil || !strings.Contains(string(b), older.URL) {
+	if b, err := os.ReadFile(filepath.Join(d.Store.Loc.Root, "review-opened.json")); err != nil || !strings.Contains(string(b), older.URL) {
 		t.Fatalf("the opened pull request is kept on disk: %s %v", b, err)
 	}
-	b, err := os.ReadFile(d.reviewDismissalsPath())
+	b, err := os.ReadFile(filepath.Join(d.Store.Loc.Root, "review-dismissals.json"))
 	if err != nil || !strings.Contains(string(b), newer.URL) {
 		t.Fatalf("the dismissal is kept on disk: %s %v", b, err)
 	}
@@ -106,5 +108,94 @@ func TestForReviewListsPullRequestsWaitingForApproval(t *testing.T) {
 	d.setReviews(map[string][]wire.ReviewPull{})
 	if got := reviewsIn(t, d, c, 7, "alexec/agents"); got != nil {
 		t.Fatalf("nothing waits: %+v", got)
+	}
+}
+
+// #6728: a dismissal ages out 90 days after its pull request last changed, and one that has not
+// changed for as long is not listed, so a dismissed pull request does not come back. A file from
+// before the limits keeps its dismissals, and the count is bounded.
+func TestReviewDismissalsAgeOut(t *testing.T) {
+	clock := atTime(t, time.Date(2026, 11, 24, 12, 0, 0, 0, time.UTC))
+	root, folder := t.TempDir(), t.TempDir()
+	must(t, os.WriteFile(filepath.Join(root, "review-dismissals.json"), []byte(`{"`+folder+`":["https://x/1","https://x/2"]}`), 0o600))
+	d, _ := start(t, root)
+	keys := func() map[string]reviewMark {
+		t.Helper()
+		m, err := d.dismissed.Read()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return m
+	}
+	began, changed := wire.DateOf(nowFunc()), wire.DateOf(nowFunc())
+	listed := func() string {
+		d.setReviews(map[string][]wire.ReviewPull{folder: {
+			{URL: "https://x/1", UpdatedAt: began}, {URL: "https://x/2", UpdatedAt: changed}, {URL: "https://x/3"}}})
+		var urls []string
+		for _, p := range d.reviewsFor(folder) {
+			urls = append(urls, string(p.URL))
+		}
+		return strings.Join(urls, " ")
+	}
+	if got := listed(); got != "https://x/3" || len(keys()) != 2 {
+		t.Fatalf("%q, %v", got, keys())
+	}
+	// 2 changes a day before the limit; its dismissal goes on from there.
+	clock.add(reviewKeep - 24*time.Hour)
+	changed = wire.DateOf(nowFunc())
+	if got := listed(); got != "https://x/3" {
+		t.Fatalf("changed: %q", got)
+	}
+	clock.add(24 * time.Hour)
+	d.sweepSmallStores(nowFunc())
+	if _, ok := keys()[reviewMarkKey(folder, "https://x/2")]; !ok || len(keys()) != 1 {
+		t.Fatalf("after 90 days: %v", keys())
+	}
+	if got := listed(); got != "https://x/3" {
+		t.Fatalf("a dismissed pull request came back: %q", got)
+	}
+
+	must(t, d.dismissed.Update(func(m map[string]reviewMark) error {
+		for n := range reviewMarksMost + 5 {
+			m[fmt.Sprint(n)] = reviewMark{Folder: folder, At: wire.DateOf(nowFunc())}
+		}
+		return nil
+	}))
+	d.sweepSmallStores(nowFunc())
+	if n := len(keys()); n != reviewMarksMost {
+		t.Fatalf("%d kept", n)
+	}
+}
+
+// #6729: an opened pull request ages out 90 days after it last changed, and is not drawn unread
+// again by it, as one that old is not listed. A file from before the limits keeps its own.
+func TestOpenedReviewsAgeOut(t *testing.T) {
+	clock := atTime(t, time.Date(2026, 11, 24, 12, 0, 0, 0, time.UTC))
+	root, folder := t.TempDir(), t.TempDir()
+	must(t, os.WriteFile(filepath.Join(root, "review-opened.json"), []byte(`{"`+folder+`":["https://x/1"]}`), 0o600))
+	d, _ := start(t, root)
+	d.openReview(folder, "https://x/2")
+	began, changed := wire.DateOf(nowFunc()), wire.DateOf(nowFunc())
+	opened := func() string {
+		d.setReviews(map[string][]wire.ReviewPull{folder: {{URL: "https://x/1", UpdatedAt: began}, {URL: "https://x/2", UpdatedAt: changed}}})
+		out := ""
+		for _, p := range d.reviewsFor(folder) {
+			out += fmt.Sprint(p.URL, " ", p.Opened != nil && *p.Opened, ";")
+		}
+		return out
+	}
+	if got := opened(); got != "https://x/1 true;https://x/2 true;" {
+		t.Fatal(got)
+	}
+	clock.add(reviewKeep - 24*time.Hour)
+	changed = wire.DateOf(nowFunc())
+	opened()
+	clock.add(24 * time.Hour)
+	d.sweepSmallStores(nowFunc())
+	if m, err := d.opened.Read(); err != nil || len(m) != 1 {
+		t.Fatalf("%v %v", m, err)
+	}
+	if got := opened(); got != "https://x/2 true;" {
+		t.Fatal(got)
 	}
 }

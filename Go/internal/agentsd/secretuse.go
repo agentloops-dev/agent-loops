@@ -417,7 +417,7 @@ func (d *Daemon) changeGrant(name string, use wire.SecretUse, place string, add 
 	sealed.From, sealed.SetAt = s.From, s.SetAt
 	f.Secrets[name] = sealed
 	if err := writeSealedSecrets(home, f); err != nil {
-		return Invalid("sealed.json could not be written.")
+		return Invalid("The grant was not changed: %s.", err)
 	}
 	return nil
 }

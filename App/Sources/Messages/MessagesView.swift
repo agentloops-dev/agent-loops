@@ -19,6 +19,25 @@ final class MessagesListState {
     var markingAll = false
     var markProblems: [String] = []
 
+    /// The conversation last opened in a window of its own (#5482), and how many were: its window starts from this row,
+    /// and one already open reads its messages again, as opening it in place does.
+    private(set) var windowRow: MessagesList.Row?
+    private(set) var windowAsks = 0
+    /// The lookup of the conversations that windows opened again at launch show (#7075), one for all of them.
+    @ObservationIgnored let lookup = ConversationLookup()
+
+    func openInWindow(_ row: MessagesList.Row, _ window: OpenWorkWindow) {
+        windowRow = row
+        windowAsks += 1
+        window(WorkWindowKey(conversation: row.id))
+    }
+
+    /// The conversation `key` as this window knows it now.
+    func known(_ key: String) -> MessagesList.Row? {
+        if let windowRow, windowRow.id == key { return windowRow }
+        return MessagesList.merged(lists ?? []).first { $0.id == key }
+    }
+
     var ask: [String] { [String(asked), String(unreadOnly)] }
     var rows: [MessagesList.Row] { MessagesList.merged(lists ?? [], source: source) }
     /// Where the next page of messages/conversationsAll starts (#5571); none at the end.
@@ -83,7 +102,7 @@ final class MessagesListState {
 
     /// Every machine's conversations in one call to the control plane (#5571): the first page, or the one after
     /// `cursor`, added to `into`; and where the next page starts. A failed call is a line of its own.
-    private static func read(model: AppModel, unread: Bool, cursor: String? = nil,
+    static func read(model: AppModel, unread: Bool, cursor: String? = nil,
                              into: [MessagesList.HostConversations] = [])
         async -> (lists: [MessagesList.HostConversations], cursor: String?) {
         guard !model.messagesMachines.isEmpty else { return (into, nil) }
@@ -134,12 +153,110 @@ struct MessagesView: View {
                     .help(MessagesList.nextHelp)
                     .accessibilityLabel(MessagesList.nextConversation)
             }
+            ToolbarItem(placement: .primaryAction) {
+                if let row = list.open { ConversationWindowButton(row: row, list: list, inToolbar: true) }
+            }
+        }
+        .modifier(WorkWindows())
+    }
+}
+
+/// **Open in New Window** on a conversation (#5482), in its row's menu and in its page's toolbar.
+private struct ConversationWindowButton: View {
+    @Environment(\.openWorkWindow) private var openWorkWindow
+    let row: MessagesList.Row
+    let list: MessagesListState
+    var inToolbar = false
+
+    var body: some View {
+        if let openWorkWindow {
+            if inToolbar {
+                Button { list.openInWindow(row, openWorkWindow) } label: { Image(toolbarIcon: "macwindow.badge.plus") }
+                    .help(OpenWorkWindow.words)
+                    .accessibilityLabel(OpenWorkWindow.words)
+            } else {
+                Button(OpenWorkWindow.words) { list.openInWindow(row, openWorkWindow) }
+            }
+        }
+    }
+}
+
+/// A conversation in a window of its own (#5482), as Messages shows it. One opened again at launch is found by its key
+/// in the machines' lists, with the same read as the list's, in one lookup for all the windows (#7075).
+struct ConversationWindow: View {
+    @Environment(AppModel.self) private var model
+    let conversation: String
+    let list: MessagesListState
+    @State private var row: MessagesList.Row?
+    /// What the lookup read when it did not find the conversation; nil before.
+    @State private var missing: ConversationLookup.Sweep?
+    @State private var tries = 0
+    @State private var asks = 0
+
+    private struct Ask: Equatable {
+        let machines: [MachineRef]
+        let tries: Int
+    }
+
+    var body: some View {
+        Group {
+            if let row {
+                ConversationPage(row: row, asks: asks) { list.markedRead(row.id) }
+            } else if let missing {
+                notFound(missing.lists)
+            } else if model.controlPlaneListed, model.messagesMachines.isEmpty {
+                Text(MessagesList.noMachine).foregroundStyle(.secondary).padding(24)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                List { WorkPlaceholderRows(count: 4) }.listStyle(.inset).disabled(true)
+            }
+        }
+        .navigationTitle(row?.conversation.title ?? MessagesList.title)
+        .task(id: Ask(machines: model.messagesMachines.map(\.id), tries: tries)) { await find() }
+        .onChange(of: list.windowAsks) {
+            guard let opened = list.windowRow, opened.id == conversation else { return }
+            row = opened
+            asks += 1
+        }
+    }
+
+    private func notFound(_ read: [MessagesList.HostConversations]) -> some View {
+        VStack(spacing: 12) {
+            ForEach(MessagesList.problems(read), id: \.self) { line in
+                Label(line, icon: "exclamationmark.triangle")
+            }
+            if MessagesList.problems(read).isEmpty { Text(MessagesList.notInList) }
+            Button("Try Again") { tries += 1 }.linkStyle()
+        }
+        .appText(.supporting)
+        .foregroundStyle(.secondary)
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func find() async {
+        guard row == nil else { return }
+        let before = missing
+        missing = nil
+        row = list.known(conversation)
+        let machines = model.messagesMachines
+        guard row == nil, !machines.isEmpty else { return }
+        let model = model
+        let answer = await list.lookup.find(conversation, machines: machines.map(\.id), after: before,
+                                            known: { row ?? list.known(conversation) },
+                                            read: { await MessagesListState.read(model: model, unread: false, cursor: $0, into: $1) })
+        guard !Task.isCancelled, row == nil else { return }
+        switch answer {
+        case let .found(found): row = found
+        case let .missing(sweep): missing = sweep
+        case .cancelled: break
         }
     }
 }
 
 private struct MessagesListPane: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.openWorkWindow) private var openWorkWindow
     @Bindable var list: MessagesListState
 
     var body: some View {
@@ -149,6 +266,15 @@ private struct MessagesListPane: View {
             content
         }
         .task(id: list.ask) { await list.load(model: model) }
+    }
+
+    /// The conversation here, or with ⌘ held in a window of its own (#5482).
+    private func open(_ row: MessagesList.Row) {
+        if let openWorkWindow, OpenWorkWindow.commandHeld {
+            list.openInWindow(row, openWorkWindow)
+        } else {
+            list.open = row
+        }
     }
 
     private var filters: some View {
@@ -191,8 +317,9 @@ private struct MessagesListPane: View {
                         Text(list.unreadOnly ? MessagesList.noUnread : MessagesList.noConversations).foregroundStyle(.secondary)
                     }
                     ForEach(rows) { row in
-                        Button { list.open = row } label: { ConversationRow(row: row) }
+                        Button { open(row) } label: { ConversationRow(row: row) }
                             .buttonStyle(.plain)
+                            .contextMenu { ConversationWindowButton(row: row, list: list) }
                     }
                     if list.hasMore {
                         Button(list.loadingMore ? "Loading…" : "More") { Task { await list.more(model: model) } }
@@ -270,11 +397,14 @@ private struct ConversationRow: View {
 
 /// A conversation's messages, the newest first, each with its sender, time, text (outside content,
 /// drawn as Markdown that loads nothing) and a link to the original; older pages with More. Under them, the reply
-/// field (#4345), when the connector can send: the person's own reply, which says who it goes as.
+/// field (#4345), when the connector can send: the person's own reply, which says who it goes as. The footer says how
+/// old the messages are, and Refresh (⌘R) reads them again (#7076).
 private struct ConversationPage: View {
     @Environment(AppModel.self) private var model
     @Environment(\.openURL) private var openURL
     let row: MessagesList.Row
+    /// Goes up when the person opens the conversation again while it is shown (#5482): it is read again.
+    var asks = 0
     /// The read marked the conversation read on its service (#5137).
     var markedRead: () -> Void = {}
 
@@ -282,6 +412,11 @@ private struct ConversationPage: View {
     @State private var cursor: String?
     @State private var problem: String?
     @State private var loading = false
+    /// When the newest page was read.
+    @State private var readAt: Date?
+    @State private var refreshes = 0
+    /// Goes up with each read of the newest page: an older read that ends after it is dropped.
+    @State private var generation = 0
     @State private var draft = ""
     /// The thread the reply answers in; nil: the conversation itself.
     @State private var thread: String?
@@ -292,9 +427,7 @@ private struct ConversationPage: View {
         VStack(alignment: .leading, spacing: 0) {
             header.padding(.horizontal, 16).padding(.vertical, 8)
             Divider()
-            if let problem {
-                Text(problem).foregroundStyle(.secondary).padding(24).frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if let messages {
+            if let messages {
                 List {
                     Label(MessagesList.outside, icon: "exclamationmark.shield").appText(.fine).foregroundStyle(.secondary)
                     if messages.isEmpty {
@@ -310,15 +443,23 @@ private struct ConversationPage: View {
                     }
                 }
                 .listStyle(.inset)
+            } else if let problem {
+                Text(problem).foregroundStyle(.secondary).padding(24).frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 List { WorkPlaceholderRows(count: 4) }.listStyle(.inset).disabled(true)
             }
-            if let replyAs = row.item.replyAs, problem == nil, messages != nil {
+            if let replyAs = row.item.replyAs, messages != nil {
                 Divider()
                 replyField(replyAs).padding(.horizontal, 16).padding(.vertical, 8)
             }
+            WorkPageBar(state: WorkLook.pageFooterState(drawn: messages != nil, reading: loading, fromDevice: false,
+                                                        lines: problem.map { [$0] } ?? []),
+                        count: nil, read: readAt) { refreshes += 1 }
         }
-        .task { await read(more: false) }
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) { WorkRefreshButton(running: loading) { refreshes += 1 } }
+        }
+        .workTask(id: [asks, refreshes]) { await read(more: false) }
     }
 
     private func replyField(_ replyAs: String) -> some View {
@@ -382,19 +523,25 @@ private struct ConversationPage: View {
     }
 
     private func read(more: Bool) async {
+        if !more { generation += 1 }
+        let mine = generation
         loading = true
-        defer { loading = false }
+        defer { if mine == generation { loading = false } }
         do {
             let got = try await model.messages(
                 DaemonAPI.Method.messagesRead,
                 DaemonAPI.MessagesReadRequest(server: row.item.server, folder: row.item.folder, conversation: row.conversation.id,
                                               cursor: more ? cursor : nil, limit: 50),
                 returning: DaemonAPI.MessagesRead.self, on: row.host)
+            guard mine == generation else { return }
             messages = (more ? messages ?? [] : []) + got.messages
             cursor = got.cursor
+            problem = nil
+            if !more { readAt = .now }
             if got.markedRead == true { markedRead() }
         } catch {
-            problem = error.localizedDescription
+            guard mine == generation, !Task.isCancelled else { return }
+            problem = model.describe(error)
         }
     }
 }

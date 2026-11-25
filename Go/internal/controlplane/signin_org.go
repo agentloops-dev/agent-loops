@@ -36,12 +36,19 @@ import (
 // or is written in the clear.
 
 const (
+	// store-bounds: kind=key-value; count=5 (100 with removed ones); size=16KiB a record and its sealed secret; age=until-deleted; applied=on write, and the hourly sweep deletes a removed one at 90 days once nothing names it
 	orgProvidersPrefix = "v1/signin/providers/"
 	orgProviderSecret  = ".secret.json"
 	// mostOrgProviders is how many org providers one control plane has (D7).
 	mostOrgProviders = 5
-	oidcStatePrefix  = "v1/oidc/state/"
-	oidcTicketPrefix = "v1/oidc/tickets/"
+	// orgProviderMostBytes is the largest org provider record, and the largest sealed secret
+	// (#6774).
+	orgProviderMostBytes = 16 << 10
+	// mostRemovedOrgProviders is how many removed org providers' tombstones there may be when
+	// one is added: each keeps its id from another provider.
+	mostRemovedOrgProviders = 95
+	oidcStatePrefix         = "v1/oidc/state/"
+	oidcTicketPrefix        = "v1/oidc/tickets/"
 	// stateLife is how long a started flow waits for its callback; ticketLife how long a
 	// ticket waits for signIn/ticket (D3). Both are swept an hour after they are made.
 	stateLife      = 10 * time.Minute
@@ -126,6 +133,8 @@ type orgTicket struct {
 type orgBits struct {
 	discoveries signin.Discoveries
 	mu          sync.Mutex
+	// Held while an org provider or a domain claim is counted and added.
+	adding sync.Mutex
 	// One checker per provider, so each keeps its JWKS.
 	checkers map[string]*signin.OIDC
 	// The claimed domains, read again at most once a minute (signin_domains.go).
@@ -543,16 +552,30 @@ func (si *signIns) setOrgProvider(ctx context.Context, set wire.OrgProviderSet, 
 		p.Created, p.Secret, p.Scim = kept.p.Created, kept.p.Secret, kept.p.Scim
 		p.Version = new(deref(kept.p.Version) + 1)
 	}
-	var restore func()
+	// The record first: one refused leaves the sealed secret as it was.
 	if secret != "" {
-		if restore, err = si.sealOrgProviderSecret(ctx, p.ID, secret); err != nil {
-			return wire.OrgProviderKept{}, err
-		}
 		p.Secret = &wire.OrgProviderSecret{Fingerprint: fingerprint(secret), SetBy: &actor, SetAt: wire.DateOf(now.Time)}
 	}
 	data, err := records.Encode(orgProviderStored{OrgProvider: p})
 	if err != nil {
 		return wire.OrgProviderKept{}, err
+	}
+	if err := records.Fits(ctx, si.s.cfg.Store, orgProviderKey(p.ID), "The org provider", data, orgProviderMostBytes); err != nil {
+		return wire.OrgProviderKept{}, err
+	}
+	si.org.adding.Lock()
+	defer si.org.adding.Unlock()
+	if kept == nil {
+		// Again, after the wait for the issuer, so that two added at once do not pass it together.
+		if err := si.orgProviderRoom(ctx); err != nil {
+			return wire.OrgProviderKept{}, err
+		}
+	}
+	var restore func()
+	if secret != "" {
+		if restore, err = si.sealOrgProviderSecret(ctx, p.ID, secret); err != nil {
+			return wire.OrgProviderKept{}, err
+		}
 	}
 	when := store.Absent
 	if kept != nil {
@@ -598,6 +621,11 @@ func (si *signIns) checkOrgProviderSet(ctx context.Context, set wire.OrgProvider
 	if kept != nil {
 		return nil
 	}
+	return si.orgProviderRoom(ctx)
+}
+
+// orgProviderRoom refuses one more org provider past the most there may be.
+func (si *signIns) orgProviderRoom(ctx context.Context) error {
 	all, err := si.readOrgProviders(ctx)
 	if err != nil {
 		return err
@@ -610,6 +638,9 @@ func (si *signIns) checkOrgProviderSet(ctx context.Context, set wire.OrgProvider
 	}
 	if live >= mostOrgProviders {
 		return fail(invalidParams, "A control plane has %d org providers at most.", mostOrgProviders)
+	}
+	if len(all)-live >= mostRemovedOrgProviders {
+		return fail(invalidParams, "Too many org providers were removed in the last 90 days. Change one that is there, or try again in a few days.")
 	}
 	return nil
 }
@@ -990,6 +1021,7 @@ func (si *signIns) joinByOrg(ctx context.Context, t *orgTicket) (string, error) 
 		return []records.Person{{ID: id, Name: name, Kind: records.KindPerson, Role: records.RoleMember, SignIns: []records.SignIn{in}}}, nil
 	})
 	if err != nil {
+		si.s.notePeopleFull(err, wire.AuditActor{User: t.Provider + ":" + t.Account}, t.Provider+" ("+t.Email+")")
 		return "", err
 	}
 	si.s.peopleChanged(id, false)

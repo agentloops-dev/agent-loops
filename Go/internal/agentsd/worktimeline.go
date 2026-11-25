@@ -15,7 +15,7 @@ import (
 )
 
 // Work ▸ Timeline's data (#4172, specs/time-stream/wireframe.md sections 4, 7 to 9): a project's
-// epics whose work overlaps a window, each child with when it started, the epic's lines
+// epics that overlap a window, each child with when it started, the epic's lines
 // (segments), and the open line's forecast (M10, lineage/forecast.go); and the releases in the
 // window. It reads GitHub's epics only for now: GitHub gives the sub-issues and their dates in
 // one query. The forecast learns from the epics of the last 30 days, so a read asks for those
@@ -255,21 +255,32 @@ func (e *timelineEpic) segment() {
 	}
 }
 
-// overlaps says whether a segment of the epic overlaps from to to; an open one with no start
-// yet (it forks in the forecast) always does.
+// overlaps says whether the epic's block (#7058: one, from its first child's start to when its work stopped)
+// overlaps from to to. An epic with an open child has no end, and one with no start yet (a ghost, from now to
+// its predicted finish) always does.
 func (e timelineEpic) overlaps(from, to wire.Date) bool {
+	var last wire.Date
+	started := false
 	for _, s := range e.wire.Segments {
-		if (s.StartedAt == nil || *s.StartedAt <= to) && (s.ClosedAt == nil || *s.ClosedAt >= from) {
-			return true
+		if s.StartedAt != nil && *s.StartedAt <= to {
+			started = true
+		}
+		if s.ClosedAt == nil {
+			if s.StartedAt == nil {
+				return true
+			}
+			last = max(last, from)
+		} else {
+			last = max(last, *s.ClosedAt)
 		}
 	}
-	return false
+	return started && last >= from
 }
 
-// forecast sets the open last segment's forecast: its children that wait for a person are not
+// forecast sets an open epic's forecast, its open last segment's: its children that wait for a person are not
 // forecast, and the line does not join while one is open.
 func (e *timelineEpic) forecast(m lineage.Model, now time.Time, width float64) {
-	if len(e.segments) == 0 || e.wire.Segments[len(e.segments)-1].ClosedAt != nil {
+	if e.wire.ClosedAt != nil || len(e.segments) == 0 || e.wire.Segments[len(e.segments)-1].ClosedAt != nil {
 		return
 	}
 	var forecast []int

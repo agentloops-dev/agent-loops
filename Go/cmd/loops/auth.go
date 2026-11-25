@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
@@ -61,16 +60,20 @@ func authLogin(ctx context.Context, say io.Writer, text string) error {
 	if err != nil {
 		return &exit{code: exitError, msg: fmt.Sprintf("That is not a pairing code: %v", err)}
 	}
+	h, err := readHosts()
+	if err != nil {
+		return &exit{code: exitError, msg: err.Error()}
+	}
+	// Before the code is used: a pairing that is not kept would stay on the control plane.
+	if err := h.room(text, code.URL); err != nil {
+		return err
+	}
 	name := pairedName()
 	// A terminal pairs as a Mac window does: the control plane has no kind for a CLI, and
 	// the kind is only the icon its Devices list shows.
 	m, err := controllink.PairClientAs(ctx, code, name, string(wire.ClientKindMac))
 	if err != nil {
 		return &exit{code: exitError, msg: fmt.Sprintf("Could not pair with %s (%s).", hostOf(code.URL), reason(err)) + debugLine(err)}
-	}
-	h, err := readHosts()
-	if err != nil {
-		return &exit{code: exitError, msg: err.Error()}
 	}
 	for _, old := range h.Hosts {
 		if old.URL == m.URL && old.Client != m.Client {
@@ -108,14 +111,7 @@ func authLogout(ctx context.Context, say io.Writer, o options) error {
 	u := m.URL
 	// The control plane forgets this client too, so its key opens nothing; when it does
 	// not answer, the pairing goes here all the same, and its Devices list still shows it.
-	forgot := false
-	cctx, cancel := context.WithTimeout(ctx, 15*time.Second)
-	if s, err := controllink.DialClient(cctx, m); err == nil {
-		_, err = s.Call(cctx, "", "clients/forgetSelf", map[string]any{})
-		forgot = err == nil
-		s.Close()
-	}
-	cancel()
+	forgot := controllink.ForgetSelf(ctx, m) == nil
 	if err := lockKeys.remove(m.Client); err != nil {
 		fmt.Fprintf(say, "loops: could not remove this terminal's machine lock key: %v\n", err)
 	}

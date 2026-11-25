@@ -83,6 +83,7 @@ export const Capability = {
   firstBuild1: "first-build/1",
   folder1: "folder/1",
   foldersNotCommitted1: "folders.not-committed/1",
+  foldersSignedUpload1: "folders.signed-upload/1",
   foldersToMachine1: "folders.to-machine/1",
   foldersWorkingHours1: "folders.working-hours/1",
   folders1: "folders/1",
@@ -1073,6 +1074,7 @@ export const DeclaredCapabilities: Readonly<Record<string, readonly Capability[]
   ],
   control: [
     "attention/1",
+    "folders.signed-upload/1",
     "machine.accounts/1",
     "user/3",
   ],

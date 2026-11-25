@@ -28,6 +28,7 @@ import (
 
 // usageKey is where an account's bytes are kept between its copy's runs, in the service's
 // own store, so a start does not read the whole store each time.
+// store-bounds: kind=key-value; count=100; size=128B a record; age=until-deleted; applied=on write, one an account, and on Delete Account (#7094)
 func usageKey(id string) string { return hostedPrefix + "v1/usage/" + id + ".json" }
 
 // Capacity samples are runtime telemetry, not account data held to the plan's storage

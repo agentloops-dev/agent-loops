@@ -155,15 +155,17 @@ Sign-up is by invitation at the start. A person with no invite goes on a waitlis
 their place in it. Agent Loops keeps no email address, so they sign in
 again later to see if their account is ready.
 
-- **Invite a person** with a link they can use once, within 14 days:
+- **Invite a person** with a link they can use once, within 14 days (`invite <days>`
+  sets it, 90 at most):
 
     ```sh
     docker compose -f deploy/compose.hosted.yaml exec hosted agents-hosted admin invite
     ```
 
 - **Allow a GitHub login**, or admit one from the waitlist: `agents-hosted admin allow <login>`.
-  An allowed login may sign up whatever its GitHub account's age.
-- **See the waitlist:** `agents-hosted admin waitlist`.
+  An allowed login may sign up whatever its GitHub account's age, within 90 days. After that, allow it again.
+- **See the waitlist:** `agents-hosted admin waitlist`. A person leaves it after 90 days, and
+  can join it again, at the back.
 
 These limits keep the service whole. Each is a setting below:
 
@@ -261,8 +263,12 @@ admin backup /data/backups/2026-10-22 <account>  # one
 Name each backup folder by its date, so the names sort oldest first. Each backup holds every
 account, so it is as large as the store. `--keep N` deletes all but the newest N backup folders
 beside the new one, after the new one is whole. It deletes only folders that `admin backup`
-wrote, and nothing else in `/data/backups`. Without `--keep`, the newest 7 are kept (#3648).
-`--keep 0` deletes none.
+wrote, and nothing else in `/data/backups`. N is 1 to 90; without `--keep`, the newest 7 are
+kept (#3648). An account's copy also goes at 90 days (#6787). The newest copy of an account that
+exists always stays, whatever its age. A copy in a bucket needs the bucket's own lifecycle rule.
+
+A backup that fails for one account goes on with the others, and the command then fails. A backup
+of an account over 10 MB is made, with a warning.
 
 `/data` is the service's volume, so a backup there is in the next snapshot too, but a loss of
 the disk takes it too. To keep a copy off the disk, copy each backup to a bucket in a different

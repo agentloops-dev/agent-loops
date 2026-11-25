@@ -71,6 +71,12 @@
 .connect-sheet .button-group { align-self: flex-start; margin-bottom: 8px; }
 .connect-sheet .token-form { display: flex; flex-direction: column; gap: 6px; margin: 0 0 8px; }
 .connect-sheet .token-form label { display: flex; flex-direction: column; gap: 2px; font-size: 0.8125rem; }
+/* A sign-in's link or its pasted code, with its icon (#5866). The link is cut in its middle. */
+.sign-in-field { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.sign-in-field a { display: flex; flex: 0 1 auto; min-width: 0; white-space: nowrap; }
+.sign-in-field a .head { overflow: hidden; text-overflow: ellipsis; }
+.sign-in-field input { flex: 1; min-width: 0; text-overflow: ellipsis; }
+.connect-sheet .token-form p { margin: 0; }
 .connect-sheet .token-form .link { align-self: flex-start; }
 .connect-sheet .token-form .attention { color: var(--tint-warning); }
 .user-code { font-size: 1.5rem; font-weight: 600; letter-spacing: 0.06em; user-select: all; }

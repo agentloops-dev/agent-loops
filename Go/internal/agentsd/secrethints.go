@@ -3,12 +3,12 @@ package agentsd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log"
 	"os"
 	"path/filepath"
 	"unicode"
 
-	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/diskjson"
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
@@ -61,12 +61,11 @@ func secretHintsPath(home string) string {
 }
 
 func readSecretHints(home string) map[string]secretHintRecord {
-	out := map[string]secretHintRecord{}
 	if home == "" {
-		return out
+		return map[string]secretHintRecord{}
 	}
-	if raw, err := os.ReadFile(secretHintsPath(home)); err == nil && diskjson.Unmarshal(raw, &out) != nil {
-		log.Printf("hints.json: unreadable, starting afresh")
+	out, err := hintsFile.Read(secretHintsPath(home))
+	if err != nil || out == nil {
 		return map[string]secretHintRecord{}
 	}
 	return out
@@ -84,18 +83,13 @@ func writeSecretHints(home string, hints map[string]secretHintRecord, names []st
 		}
 	}
 	p := secretHintsPath(home)
-	if len(kept) == 0 {
-		if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
-			log.Printf("hints.json: could not remove: %v", err)
+	err := hintsFile.Write(p, kept)
+	if errors.Is(err, store.ErrUndecodable) {
+		// The hints are worked out from the values, so they start afresh.
+		log.Printf("hints.json: unreadable, starting afresh")
+		if err = os.Remove(p); err == nil {
+			err = hintsFile.Write(p, kept)
 		}
-		return
-	}
-	raw, err := json.Marshal(kept)
-	if err == nil {
-		err = os.MkdirAll(filepath.Dir(p), 0o700)
-	}
-	if err == nil {
-		err = store.WriteAtomically(p, raw, 0o600)
 	}
 	if err != nil {
 		log.Printf("hints.json: could not save: %v", err)

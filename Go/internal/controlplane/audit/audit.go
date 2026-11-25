@@ -166,6 +166,7 @@ var controlActions = map[string]string{
 	"signIn/domains/remove":      "Removed a domain's claim",
 	"signIn/domains/lost":        "Lost a domain's proof",
 	"signIn/ticket":              "Signed in with an org provider",
+	"people/refusedFull":         "Refused a new person: the people are at their limit",
 	"signIn/refusedByRequire":    "Refused a sign-in the organisation does not allow",
 
 	// SCIM and suspension (#1002, slice 2a, FR-025): each writes its own entry. A SCIM

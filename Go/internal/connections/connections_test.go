@@ -2,6 +2,8 @@ package connections
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -228,7 +230,7 @@ func TestRefreshLeavesTheConnectionOnANetworkFailure(t *testing.T) {
 func TestTwoFilesOnOnePathLoseNoConnection(t *testing.T) {
 	path := filepath.Join(t.TempDir(), ".agents-secrets", FileName)
 	a, b := &File{Path: path}, &File{Path: path}
-	const each = 20
+	const each = MaxConnections / 2
 	var wg sync.WaitGroup
 	for i := range each {
 		for which, s := range []*File{a, b} {
@@ -281,6 +283,27 @@ func TestTheFileIsTheOwnersOnly(t *testing.T) {
 	if err := s.Put(Connection{Provider: GitHub}); !errors.Is(err, ErrUnreadable) {
 		t.Fatalf("got %v", err)
 	}
+}
+
+// Over a limit the file refuses, with the token in no error, and what was kept stays (#6743).
+func TestTheFileRefusesOverItsLimits(t *testing.T) {
+	s := &File{Path: filepath.Join(t.TempDir(), FileName)}
+	for i := range MaxConnections {
+		must(t, s.Put(Connection{Provider: fmt.Sprintf("p%d", i), Access: "kept"}))
+	}
+	if err := s.Put(Connection{Provider: GitHub, Access: "new"}); !errors.Is(err, ErrFull) {
+		t.Fatalf("one more: %v", err)
+	}
+	// A renewal of one it has is no new connection.
+	must(t, s.Put(Connection{Provider: "p0", Access: "renewed"}))
+	if err := s.Put(Connection{Provider: "p0", Access: strings.Repeat("s", MaxConnectionBytes)}); !errors.Is(err, ErrTooLarge) {
+		t.Fatal("a connection over the size was kept, or failed in another way")
+	}
+	if c, ok, err := s.Get("p0"); err != nil || !ok || c.Access != "renewed" {
+		t.Fatalf("the old one: %v %v", ok, err)
+	}
+	must(t, s.Delete("p1"))
+	must(t, s.Put(Connection{Provider: GitHub, Access: "new"}))
 }
 
 func TestTokenReaderReadsTheHostsStore(t *testing.T) {
@@ -377,6 +400,30 @@ func TestKeychainKeepsAConnection(t *testing.T) {
 	if err != nil || !ok || got.Access != "ghu_z" || got.Login != "octocat" || !got.AccessExpiresAt.Equal(c.AccessExpiresAt) {
 		t.Fatalf("got %+v %v %v", got, ok, err)
 	}
+	// security -i cuts a long line and would keep the cut value over the old one (#6743).
+	long := c
+	long.Access = strings.Repeat("s", maxSecurityLine)
+	if err := k.Put(long); !errors.Is(err, ErrTooLarge) {
+		t.Fatal("a connection over the size was kept, or failed in another way")
+	}
+	if got, ok, err = k.Get(GitHub); err != nil || !ok || got.Access != "ghu_z" {
+		t.Fatalf("the old one: %v %v", ok, err)
+	}
+	if err := k.Put(Connection{Provider: "other", Access: "x"}); err == nil {
+		t.Fatal("kept a provider that the app does not know")
+	}
+	// The longest line that is sent is kept whole.
+	line := len("add-generic-password -U -s  -a github -l Agents-github -w \n") + len(k.Service)
+	for long.Access = "s"; ; long.Access += "s" {
+		next := long
+		next.Access += "s"
+		b, err := json.Marshal(next)
+		must(t, err)
+		if line+base64.StdEncoding.EncodedLen(len(b)) > maxSecurityLine {
+			break
+		}
+	}
+	must(t, k.Put(long))
 	if err := k.Delete(GitHub); err != nil {
 		t.Fatal(err)
 	}

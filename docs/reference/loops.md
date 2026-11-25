@@ -209,7 +209,7 @@ When the link comes back after a loss, it does not ask either.
 
 | File | What it is |
 |---|---|
-| `~/.config/loops/hosts.json` | The pairing: one entry for each control plane, with its key, and the head of your machine lock that it saw last. Mode 0600. With `XDG_CONFIG_HOME` set, it is `$XDG_CONFIG_HOME/loops/hosts.json`. |
+| `~/.config/loops/hosts.json` | The pairing: one entry for each control plane, with its key, and the head of your machine lock that it saw last. Mode 0600. With `XDG_CONFIG_HOME` set, it is `$XDG_CONFIG_HOME/loops/hosts.json`. It keeps at most 20 control planes: `loops auth login` refuses one more, until you unpair from one with `loops auth logout --control`. It is not in `~/.agents`, because a pairing is for one terminal and a sync of `~/.agents` would copy it. |
 | The Keychain, `dev.agentloops.loops.lock` | On a Mac, the machine lock key of each pairing. Only `loops` reads it. |
 | `~/.config/loops/lock-keys/<client>.key` | On Linux, or with `LOOPS_KEY_FILES=1`, the machine lock key of each pairing. Mode 0600. |
 

@@ -173,6 +173,7 @@ func (d *Daemon) keepOrUndoWorkflow(folder, id string, digest *string, keep bool
 	err := errors.New("that is not a workflow's name")
 	if ok {
 		if had {
+			// store-bounds: not a store: the person's own workflow file
 			err = store.WriteAtomically(path, []byte(approved), 0o644)
 		} else if err = os.Remove(path); errors.Is(err, os.ErrNotExist) {
 			err = nil
@@ -186,6 +187,7 @@ func (d *Daemon) keepOrUndoWorkflow(folder, id string, digest *string, keep bool
 		if p, ok := skillPath(f.sourceFolder, s.name); !ok {
 			err = errors.New(skillChangePath(s.name) + " is not a file in its workflow scope")
 		} else if cur, _, _ := readWorkflowFile(p); cur != s.text {
+			// store-bounds: not a store: the person's own skill file
 			err = store.WriteAtomically(p, []byte(s.text), 0o644)
 		}
 	}

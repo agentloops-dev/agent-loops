@@ -91,7 +91,7 @@ these changes, since time X" (#5273):
   after `+g` (`scripts/version.sh`). That is the version's one artifact, so the changes
   between two versions are the forge's compare of their commits.
 - **Bounded:** one object for each machine, `v1/machine-versions/<host>.json`, with the
-  last 20 deploys. It goes when the machine is removed.
+  last 20 deploys, each for 90 days. It goes when the machine is removed.
 - **Read:** `machines/versions` gives the version now, when it was first and last seen, and
   the deploys, newest first, to the machine's own person.
 - **The page (#5273):** `machines/agents` gives a machine page's **Agent Loops** section: the

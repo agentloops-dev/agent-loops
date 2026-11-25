@@ -1482,7 +1482,7 @@ final class AppModel {
         return [controlPlaneMaturity] + hosts.map(\.maturity)
     }
     /// The control plane's list has arrived at least once, so an empty one means none.
-    private var controlPlaneListed = false
+    private(set) var controlPlaneListed = false
     /// `control/status.thisMacHost` (#303): how this Mac's host says its join stands.
     /// Nil when that process is not writing one, or this plane is not beside it.
     var macHostJoin: DaemonAPI.MachineJoinStatus?
@@ -3481,6 +3481,7 @@ final class AppModel {
         if forgetLocalData {
             await localCopy?.forget()
             await workCache?.forget()
+            await BrowserPaneStore.shared.forget()
         }
     }
 

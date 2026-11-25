@@ -28,15 +28,6 @@ test("thinking stays on the line; a tool tips it up, then down", () => {
   assert.ok(clock.ringDots(0.05, 0)[1].x > 0, "the front goes left to right");
 });
 
-test("the tilt comes from localStorage, between 0 and 90, else 30", () => {
-  assert.equal(clock.readRingTilt(null), 30);
-  assert.equal(clock.readRingTilt(""), 30);
-  assert.equal(clock.readRingTilt("abc"), 30);
-  assert.equal(clock.readRingTilt("45"), 45);
-  assert.equal(clock.readRingTilt("120"), 90);
-  assert.equal(clock.readRingTilt("-5"), 0);
-});
-
 test("six keyframes, one per dot and activity, that start on the line", () => {
   const css = clock.ringKeyframes(30, 12);
   for (const name of ["think", "do"]) for (const i of [0, 1, 2]) assert.match(css, new RegExp(`@keyframes ring-${name}-${i}\\{`));
@@ -52,16 +43,6 @@ test("the waiting beacon breathes (#2456, #2657): dim at the start, full halfway
   near(clock.breathOpacity(4, 8), 1, "a longer breath, stretched");
   assert.ok(clock.breathOpacity(0.1) - 0.3 < 0.01, "no corner at the bottom");
   assert.equal(clock.breathPeriod, 4);
-  assert.equal(clock.breathPeriodKey, "waitingMarkPeriod");
-});
-
-test("the breath's period comes from localStorage, between 1 and 30, else 4", () => {
-  assert.equal(clock.readBreathPeriod(null), 4);
-  assert.equal(clock.readBreathPeriod(""), 4);
-  assert.equal(clock.readBreathPeriod("slow"), 4);
-  assert.equal(clock.readBreathPeriod("6"), 6);
-  assert.equal(clock.readBreathPeriod("0.2"), 1);
-  assert.equal(clock.readBreathPeriod("90"), 30);
 });
 
 test("one breathe keyframe, dim at both ends, and the period twice as long under Reduce Motion", () => {

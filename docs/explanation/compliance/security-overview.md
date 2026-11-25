@@ -221,8 +221,8 @@ them as they pass.
 
 | Log | Where | What it holds | Size |
 | --- | --- | --- | --- |
-| `daemon.log` | `~/Library/Logs/Agents` on a Mac, `$XDG_STATE_HOME/agents/logs` on Linux | What the machine did | Rolls at 4 MB, keeps one older file |
-| `control.log` | Agent Loops' log folder, or the container's output in the cloud | Joins, people, keys, sign-in changes, refused connections with their address | Rolls at 4 MB, keeps one older file |
+| `daemon.log` | `~/Library/Logs/Agents` on a Mac, `$XDG_STATE_HOME/agents/logs` on Linux | What the machine did | Rolls at 4 MB, keeps one older file, and a line 7 days at most |
+| `control.log` | Agent Loops' log folder, or the container's output in the cloud | Joins, people, keys, sign-in changes, refused connections with their address | Rolls at 4 MB, keeps one older file, and a line 7 days at most |
 | `machine-relay.log` | The Mac's log folder | The sign-in relay (what was asked and how it was answered) | 1 MB |
 | `app-tools.jsonl` | Each agent's folder | Every call to the app's own tools, with a `token` argument left out and answers cut to 2,000 characters | Deleted with the agent |
 

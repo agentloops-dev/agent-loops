@@ -265,7 +265,7 @@ func (s *Service) addRouteCopies(ctx context.Context, item wire.SealingAddItem) 
 			if store.IsConflict(err) && try < orgRouteRetries {
 				continue
 			}
-			return false, fail(storeUnavailable, "The route's key could not be kept: %v", err)
+			return false, routeKeyFailure(err)
 		}
 		return true, nil
 	}

@@ -2,11 +2,35 @@ import AgentsKitCore
 import Observation
 import SwiftUI
 
+/// A window of its own's pages (#5475): what its Back and Forward go along.
+@MainActor
+protocol WorkWindowPages: AnyObject {
+    /// The page the window shows now.
+    var key: WorkWindowKey? { get }
+    var canGoBack: Bool { get }
+    var canGoForward: Bool { get }
+    func step(back: Bool)
+}
+
+/// The windows on screen now, of every kind, by the page each shows.
+@MainActor
+enum OpenWorkWindows {
+    private static var pages: [ObjectIdentifier: any WorkWindowPages] = [:]
+
+    static func opened(_ window: any WorkWindowPages) { pages[ObjectIdentifier(window)] = window }
+    static func closed(_ window: any WorkWindowPages) { pages[ObjectIdentifier(window)] = nil }
+
+    /// Whether a window other than this one shows the page: a page has one window at most.
+    static func shows(_ key: WorkWindowKey, besides window: any WorkWindowPages) -> Bool {
+        pages.values.contains { $0 !== window && $0.key == key }
+    }
+}
+
 /// A Work page in a window of its own (#5475, epic #5480), on the Mac and on an iPad: what its page
 /// asks of the app, with this window's own places, so Back in one window never moves another. Each
 /// read and write goes on to the app's model, so every window draws the same lists, cache and saves.
 @MainActor @Observable
-final class WorkWindowModel: WorkModel {
+final class WorkWindowModel: WorkModel, WorkWindowPages {
     @ObservationIgnored private let base: any WorkModel
     /// The main window, in front: what is not an item's page opens there.
     @ObservationIgnored private let showMain: @MainActor () -> Void
@@ -17,22 +41,20 @@ final class WorkWindowModel: WorkModel {
 
     var workHistory = LineageHistory<WorkPlace>()
 
-    /// The windows on screen now.
-    private static var open: [ObjectIdentifier: WorkWindowModel] = [:]
-
-    init(base: any WorkModel, place: WorkPlace, showMain: @escaping @MainActor () -> Void,
+    /// No place: a window of a page that no link moves (a conversation, #5482), so Back and Forward stay off.
+    init(base: any WorkModel, place: WorkPlace?, showMain: @escaping @MainActor () -> Void,
          showSession: @escaping @MainActor (UUID) -> Void) {
         self.base = base
         self.showMain = showMain
         self.showSession = showSession
-        workHistory.go(place)
+        if let place { workHistory.go(place) }
     }
-
-    func opened() { Self.open[ObjectIdentifier(self)] = self }
-    func closed() { Self.open[ObjectIdentifier(self)] = nil }
 
     /// The page the window shows now.
     var key: WorkWindowKey? { WorkWindowKey(workPlace) }
+
+    var canGoBack: Bool { workHistory.canGoBack }
+    var canGoForward: Bool { workHistory.canGoForward }
 
     var isOwnWindow: Bool { true }
 
@@ -57,8 +79,7 @@ final class WorkWindowModel: WorkModel {
 
     /// Another window shows the page, and comes forward: a page has one window at most.
     private func shownElsewhere(_ key: WorkWindowKey) -> Bool {
-        guard key != self.key, let bringForward,
-              Self.open.values.contains(where: { $0 !== self && $0.key == key }) else { return false }
+        guard key != self.key, let bringForward, OpenWorkWindows.shows(key, besides: self) else { return false }
         bringForward(key)
         return true
     }
@@ -157,18 +178,7 @@ struct WorkWindowPage: View {
         Group {
             if let model {
                 page(model, model.workPlace)
-                    .toolbar {
-                        ToolbarItemGroup(placement: Self.historyPlacement) {
-                            Button { model.step(back: true) } label: { Image(toolbarIcon: "chevron.left") }
-                                .disabled(!model.workHistory.canGoBack)
-                                .help("Back")
-                                .accessibilityLabel("Back")
-                            Button { model.step(back: false) } label: { Image(toolbarIcon: "chevron.right") }
-                                .disabled(!model.workHistory.canGoForward)
-                                .help("Forward")
-                                .accessibilityLabel("Forward")
-                        }
-                    }
+                    .toolbar { WorkWindowHistoryButtons(pages: model) }
             } else if key == nil || key?.place == nil {
                 ContentUnavailableView("No page", icon: "macwindow.badge.plus",
                                        description: Text("Open an issue, a pull request or a release from Work."))
@@ -182,7 +192,7 @@ struct WorkWindowPage: View {
             if let shown, shown != key { key = shown }
         }
         .onDisappear {
-            model?.closed()
+            if let model { OpenWorkWindows.closed(model) }
             model = nil
             opened(nil)
         }
@@ -190,10 +200,10 @@ struct WorkWindowPage: View {
 
     private func follow() {
         guard let key, model?.key != key, let place = key.place else { return }
-        model?.closed()
+        if let model { OpenWorkWindows.closed(model) }
         let made = WorkWindowModel(base: base, place: place, showMain: showMain, showSession: showSession)
         made.bringForward = { [openWindow] in openWindow(id: OpenWorkWindow.sceneID, value: $0) }
-        made.opened()
+        OpenWorkWindows.opened(made)
         model = made
         opened(made)
     }
@@ -208,8 +218,26 @@ struct WorkWindowPage: View {
             WorkItemPage(model: model, place: place).id(place)
         }
     }
+}
 
-    private static var historyPlacement: ToolbarItemPlacement {
+/// **Back** and **Forward** of a window of its own, along its pages.
+struct WorkWindowHistoryButtons: ToolbarContent {
+    let pages: any WorkWindowPages
+
+    var body: some ToolbarContent {
+        ToolbarItemGroup(placement: Self.placement) {
+            Button { pages.step(back: true) } label: { Image(toolbarIcon: "chevron.left") }
+                .disabled(!pages.canGoBack)
+                .help("Back")
+                .accessibilityLabel("Back")
+            Button { pages.step(back: false) } label: { Image(toolbarIcon: "chevron.right") }
+                .disabled(!pages.canGoForward)
+                .help("Forward")
+                .accessibilityLabel("Forward")
+        }
+    }
+
+    private static var placement: ToolbarItemPlacement {
         #if os(iOS)
         .topBarLeading
         #else
@@ -229,8 +257,17 @@ struct OpenWorkWindow: Equatable {
 
     @MainActor
     func callAsFunction(_ place: WorkPlace) {
-        if let key = WorkWindowKey(place) { open(id: Self.sceneID, value: key) }
+        if let key = WorkWindowKey(place) { self(key) }
     }
+
+    @MainActor
+    func callAsFunction(_ key: WorkWindowKey) { open(id: Self.sceneID, value: key) }
+
+    #if os(macOS)
+    /// The click now is a ⌘-click.
+    @MainActor
+    static var commandHeld: Bool { NSApp.currentEvent?.modifierFlags.contains(.command) == true }
+    #endif
 
     /// One action for the app: two are never different, so a row is not drawn again for one.
     static func == (_: Self, _: Self) -> Bool { true }
@@ -255,7 +292,7 @@ extension WorkModel {
     /// A row or a link pressed: its page here, or with ⌘ held on the Mac, in a window of its own.
     func follow(_ place: WorkPlace, window: OpenWorkWindow?) {
         #if os(macOS)
-        if let window, WorkWindowKey(place) != nil, NSApp.currentEvent?.modifierFlags.contains(.command) == true {
+        if let window, WorkWindowKey(place) != nil, OpenWorkWindow.commandHeld {
             return window(place)
         }
         #endif
@@ -266,16 +303,17 @@ extension WorkModel {
 /// **Open in New Window** in the menu of a row or a link; nothing where it has no window.
 struct WorkWindowButton: View {
     @Environment(\.openWorkWindow) private var openWorkWindow
-    let place: WorkPlace?
+    let key: WorkWindowKey?
 
-    init(_ place: WorkPlace?) { self.place = place }
+    init(_ place: WorkPlace?) { key = place.flatMap { WorkWindowKey($0) } }
+    init(key: WorkWindowKey) { self.key = key }
 
     var body: some View {
-        if let openWorkWindow, let place, WorkWindowKey(place) != nil {
+        if let openWorkWindow, let key {
             #if os(macOS)
-            Button(OpenWorkWindow.words) { openWorkWindow(place) }
+            Button(OpenWorkWindow.words) { openWorkWindow(key) }
             #else
-            Button(OpenWorkWindow.words, icon: "macwindow.badge.plus") { openWorkWindow(place) }
+            Button(OpenWorkWindow.words, icon: "macwindow.badge.plus") { openWorkWindow(key) }
             #endif
         }
     }
@@ -284,12 +322,14 @@ struct WorkWindowButton: View {
 /// **Open in New Window** in the toolbar of an item's page; none on a page in a window of its own.
 struct WorkWindowToolbarButton: View {
     @Environment(\.openWorkWindow) private var openWorkWindow
-    let model: any WorkModel
-    let place: WorkPlace
+    let key: WorkWindowKey?
+
+    init(model: any WorkModel, place: WorkPlace) { key = model.isOwnWindow ? nil : WorkWindowKey(place) }
+    init(key: WorkWindowKey) { self.key = key }
 
     var body: some View {
-        if let openWorkWindow, !model.isOwnWindow {
-            Button { openWorkWindow(place) } label: { Image(toolbarIcon: "macwindow.badge.plus") }
+        if let openWorkWindow, let key {
+            Button { openWorkWindow(key) } label: { Image(toolbarIcon: "macwindow.badge.plus") }
                 .help(OpenWorkWindow.words)
                 .accessibilityLabel(OpenWorkWindow.words)
         }

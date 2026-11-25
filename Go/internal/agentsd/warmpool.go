@@ -103,12 +103,22 @@ type warmLive struct {
 type warmBook struct {
 	// warmMu makes one pass at a time.
 	warmMu sync.Mutex
-	// wakeSettings reads the Mac's settings (wake_darwin.go); unset off a Mac, where the
-	// defaults hold.
+	// wakeSettings reads the Mac's settings (wake_darwin.go); unset off a Mac and before
+	// StartWake, where the defaults hold.
 	wakeSettings atomic.Pointer[func() wire.WakeSettings]
+	// startWake is StartWake's; nil off a Mac.
+	startWake func()
 	// pressure is the memory pressure at the last look (warmCap), "" with none.
 	pressureMu sync.Mutex
 	pressure   string
+}
+
+// StartWake keeps the Mac awake while agents work, on a Mac. It reads wake.json, so it is called
+// once SettingsDir is the person's: before that the file would move to the wrong folder (#6745).
+func (d *Daemon) StartWake() {
+	if d.startWake != nil {
+		d.startWake()
+	}
 }
 
 func (d *Daemon) warmSettings() wire.WakeSettings {

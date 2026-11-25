@@ -113,9 +113,7 @@ func (d *Daemon) removeLocalSecret(name string) error {
 		err = Invalid("%s was not removed: %s.", name, errPersonsSecret)
 	case inStore:
 		delete(f.Secrets, name)
-		if writeSealedSecrets(home, f) != nil {
-			err = errors.New("sealed.json could not be written")
-		}
+		err = writeSealedSecrets(home, f)
 	}
 	d.sealedSecretsMu.Unlock()
 	if err != nil {

@@ -82,6 +82,7 @@ const CapFiles1 = "files/1"
 const CapFirstBuild1 = "first-build/1"
 const CapFolder1 = "folder/1"
 const CapFoldersNotCommitted1 = "folders.not-committed/1"
+const CapFoldersSignedUpload1 = "folders.signed-upload/1"
 const CapFoldersToMachine1 = "folders.to-machine/1"
 const CapFoldersWorkingHours1 = "folders.working-hours/1"
 const CapFolders1 = "folders/1"
@@ -1192,6 +1193,7 @@ var DeclaredCapabilities = map[string][]string{
 	},
 	"control": {
 		"attention/1",
+		"folders.signed-upload/1",
 		"machine.accounts/1",
 		"user/3",
 	},

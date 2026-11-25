@@ -1,5 +1,4 @@
 import AgentsKitCore
-import AppKit
 import SwiftUI
 
 /// Sign In… on a server's Claude or Codex (#4698), as the web page's RuntimeSignInDialog (#3349)
@@ -13,7 +12,6 @@ import SwiftUI
 struct ServerRuntimeSignInSheet: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.openURL) private var openURL
     let host: MachineRef
     let runtime: Runtime
 
@@ -23,7 +21,7 @@ struct ServerRuntimeSignInSheet: View {
     @State private var key = ""
     @State private var busy = false
     @State private var problem: String?
-    @State private var copied: String?
+    @State private var copied = false
 
     private var ready: Bool {
         byKey ? !key.trimmed.isEmpty : step.map { !$0.wantsCode || !code.trimmed.isEmpty } ?? false
@@ -74,21 +72,14 @@ struct ServerRuntimeSignInSheet: View {
             }
         } else if let step {
             Section(RuntimeSignInWords.openLink) {
-                Text(step.url.absoluteString)
-                    .appText(.fine).foregroundStyle(.secondary)
-                    .lineLimit(2).truncationMode(.middle)
-                    .textSelection(.enabled)
-                HStack {
-                    Button(RuntimeSignInWords.open) { openURL(step.url) }
-                    Button(copied == "link" ? "Copied" : RuntimeSignInWords.copyLink) { copy(step.url.absoluteString, "link") }
-                }
+                SignInLinkRow(url: step.url)
             }
             if let userCode = step.userCode {
                 Section {
                     LabeledContent(RuntimeSignInWords.codeLabel) {
                         HStack {
                             Text(userCode).monospaced().textSelection(.enabled)
-                            Button(copied == "code" ? "Copied" : "Copy") { copy(userCode, "code") }
+                            Button(copied ? RuntimeSignInWords.copied : "Copy") { copy(userCode) }
                                 .controlSize(.small)
                         }
                     }
@@ -99,9 +90,7 @@ struct ServerRuntimeSignInSheet: View {
                 }
             } else if step.wantsCode {
                 Section(RuntimeSignInWords.pasteCode) {
-                    TextField(RuntimeSignInWords.codeLabel, text: $code, prompt: Text(RuntimeSignInWords.codeLabel))
-                        .labelsHidden()
-                        .autocorrectionDisabled()
+                    PastedCodeField(code: $code)
                 }
             }
         } else if problem == nil {
@@ -171,10 +160,9 @@ struct ServerRuntimeSignInSheet: View {
         }
     }
 
-    private func copy(_ text: String, _ what: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
-        copied = what
+    private func copy(_ text: String) {
+        Clipboard.copy(text)
+        copied = true
     }
 
     private static func words(_ error: any Error) -> String {

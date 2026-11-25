@@ -33,19 +33,24 @@ import (
 const CapHostPolicy = wire.CapHostPolicy1
 
 const (
-	policyKey         = "v1/policy.json"
-	policySigKey      = "v1/policy.sig"
+	// store-bounds: kind=key-value; count=1; size=64KiB a record, and the kill switch's few KiB; age=until-deleted; applied=on write
+	policyKey = "v1/policy.json"
+	// store-bounds: kind=key-value; count=1; size=1KiB a record (a signature); age=until-deleted; applied=on write
+	policySigKey = "v1/policy.sig"
+	// store-bounds: kind=document; count=100; size=64KiB a record; age=90d; applied=on write and hourly sweep, from when a version was replaced
 	policyVersionsKey = "v1/policy/versions/"
 	// mostPolicyBytes, mostPolicyItems and the rest bound the document (data-model.md),
 	// so a slip of the keyboard is refused.
-	mostPolicyBytes     = 64 << 10
-	mostPolicyItems     = 200
-	mostPolicyName      = 200
-	mostPolicyNote      = 500
-	mostPolicyDailyUSD  = 1_000_000
-	mostPolicyTokens    = 1_000_000_000_000
-	mostPolicyHelpers   = 1000
-	policyVersionsKept  = 100
+	mostPolicyBytes    = 64 << 10
+	mostPolicyItems    = 200
+	mostPolicyName     = 200
+	mostPolicyNote     = 500
+	mostPolicyDailyUSD = 1_000_000
+	mostPolicyTokens   = 1_000_000_000_000
+	mostPolicyHelpers  = 1000
+	policyVersionsKept = 100
+	// policyVersionAge is how long a version is kept after the next one replaced it (#6765).
+	policyVersionAge    = 90 * 24 * time.Hour
 	policyRetries       = 5
 	policyAppliedField  = "policyVersion"
 	policyDeliveryPause = 200 * time.Millisecond
@@ -316,9 +321,6 @@ func checkPolicyRawEnums(params json.RawMessage) error {
 
 // checkPolicy refuses a document out of bounds, in words for the admin.
 func checkPolicy(p wire.OrgPolicy) error {
-	if b, _ := json.Marshal(p); len(b) > mostPolicyBytes {
-		return fail(invalidParams, "The policy is larger than %d KiB.", mostPolicyBytes>>10)
-	}
 	if err := checkPolicyLayers(p); err != nil {
 		return err
 	}
@@ -494,7 +496,7 @@ func (s *Service) readPolicy(ctx context.Context) (keptPolicy, error) {
 	}
 	var policy wire.OrgPolicy
 	if err := json.Unmarshal(object.Data, &policy); err != nil {
-		return keptPolicy{}, fmt.Errorf("v1/policy.json: %w", err)
+		return keptPolicy{}, fmt.Errorf("%s: %w", policyKey, err)
 	}
 	kept := keptPolicy{raw: object.Data, policy: &policy, rev: object.ETag}
 	if sig, err := s.cfg.Store.Get(ctx, policySigKey); err == nil && sig != nil {
@@ -583,7 +585,9 @@ func (s *Service) changePolicy(ctx context.Context, actor wire.AuditActor, rev *
 }
 
 // nextPolicy is the change made to the kept policy, one version higher and stamped, and
-// its canonical JSON, which must fit the bound.
+// its canonical JSON, which must fit the bound. One that is over it already can be changed
+// to one no larger (#6772). The kill switch is never refused for its size: it is short, and
+// nothing else changes with it.
 func nextPolicy(kept keptPolicy, now time.Time, actor wire.AuditActor,
 	change func(now time.Time, current *wire.OrgPolicy) (wire.OrgPolicy, error)) (wire.OrgPolicy, []byte, error) {
 	next, err := change(now, kept.policy)
@@ -591,6 +595,12 @@ func nextPolicy(kept keptPolicy, now time.Time, actor wire.AuditActor,
 		return wire.OrgPolicy{}, nil, err
 	}
 	next.Version = 1
+	var stopped *wire.PolicyStopAll
+	if kept.policy != nil {
+		stopped = kept.policy.StopAll
+	}
+	// policy/set keeps the kill switch it read, so only policy/stopAll gives another.
+	switched := next.StopAll != stopped
 	if kept.policy != nil {
 		next.Version = kept.policy.Version + 1
 	}
@@ -607,7 +617,7 @@ func nextPolicy(kept keptPolicy, now time.Time, actor wire.AuditActor,
 	if err != nil {
 		return wire.OrgPolicy{}, nil, err
 	}
-	if len(raw) > mostPolicyBytes {
+	if len(raw) > mostPolicyBytes && len(raw) > len(kept.raw) && !switched {
 		return wire.OrgPolicy{}, nil, fail(invalidParams, "The policy is larger than %d KiB.", mostPolicyBytes>>10)
 	}
 	return next, raw, nil
@@ -686,22 +696,47 @@ func (s *Service) signPolicy(ctx context.Context, version int64, raw []byte) err
 }
 
 // keepPolicyVersion keeps each version as it was, so an admin sees what changed (FR-005):
-// the newest policyVersionsKept.
+// the newest policyVersionsKept, and an old one for policyVersionAge.
 func (s *Service) keepPolicyVersion(ctx context.Context, version int64, raw []byte) {
 	key := fmt.Sprintf("%s%010d.json", policyVersionsKey, version)
 	if _, err := s.cfg.Store.Put(ctx, key, raw, store.Absent); err != nil && !store.IsConflict(err) {
 		s.log("policy version " + fmt.Sprint(version) + " could not be kept: " + err.Error())
 		return
 	}
-	listed, err := s.cfg.Store.List(ctx, policyVersionsKey)
-	if err != nil || len(listed) <= policyVersionsKept {
-		return
+	if err := s.sweepPolicyVersions(ctx, time.Now()); err != nil {
+		s.log("the old policy versions could not be removed: " + err.Error())
 	}
-	for _, k := range listed[:len(listed)-policyVersionsKept] {
+}
+
+// sweepPolicyVersions deletes the versions past the newest policyVersionsKept, and those
+// replaced policyVersionAge ago (#6765). A version's age runs from when the next was issued,
+// so the one in force has none, and stays.
+func (s *Service) sweepPolicyVersions(ctx context.Context, now time.Time) error {
+	listed, err := s.cfg.Store.List(ctx, policyVersionsKey)
+	if err != nil {
+		return err
+	}
+	before := wire.DateOf(now.Add(-policyVersionAge))
+	for i, k := range listed[:max(len(listed)-1, 0)] {
+		if len(listed)-i <= policyVersionsKept {
+			object, err := s.cfg.Store.Get(ctx, listed[i+1].Key)
+			if err != nil {
+				return err
+			}
+			var next wire.OrgPolicy
+			if object == nil || json.Unmarshal(object.Data, &next) != nil {
+				continue
+			}
+			// In order: the rest were replaced later.
+			if next.Issued >= before {
+				return nil
+			}
+		}
 		if err := s.cfg.Store.Delete(ctx, k.Key); err != nil {
-			s.log("an old policy version could not be removed: " + err.Error())
+			return err
 		}
 	}
+	return nil
 }
 
 // resignPolicy signs the policy again with the control key, after a rotation (T4): the

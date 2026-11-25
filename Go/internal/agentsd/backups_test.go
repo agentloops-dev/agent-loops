@@ -4,12 +4,14 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -53,7 +55,7 @@ func TestBackupDefaults(t *testing.T) {
 		t.Fatalf("state %+v", s)
 	}
 	// A file from a later build, with a value this one can't read, keeps backups on.
-	writeFile(t, d.backupSettingsPath(), `{"every":"hourly","keep":99,"folder":"relative"}`)
+	writeFile(t, d.backupSettingsPath(), `{"`+d.Store.RootID+`":{"every":"hourly","keep":99,"folder":"relative"}}`)
 	if s := d.backupSettings(); s.Every != wire.BackupEveryDaily || s.Keep != backupKeepDefault || s.Folder != nil {
 		t.Fatalf("unreadable values %+v", s)
 	}
@@ -346,6 +348,69 @@ func TestBackupsKeepTheNewestOfThisMachine(t *testing.T) {
 	}
 }
 
+// #6709: a backup goes at 90 days, but the newest good one stays, also over 10 MB, and the
+// person's own files stay. A cut-short archive is not a good one.
+func TestBackupsAgeOutButTheNewestGoodOneStays(t *testing.T) {
+	clock := atTime(t, time.Date(2026, 10, 20, 9, 0, 0, 0, time.UTC))
+	d, c := start(t, t.TempDir())
+	c.call(t, 1, "backups/configure", map[string]any{"every": "off", "keep": 3})
+	a := seeded(t, d, folder(t, c, 2), nil)
+	big := make([]byte, backupWarnBytes+1<<20)
+	if _, err := rand.Read(big); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(d.Store.Loc.Agent(string(a.ID)), "said.json"), string(big))
+	var made []wire.Backup
+	for range 2 {
+		b, err := d.makeBackup()
+		if err != nil {
+			t.Fatal(err)
+		}
+		made = append(made, b)
+		clock.add(time.Hour)
+	}
+	if made[1].Bytes <= backupWarnBytes {
+		t.Fatalf("a backup of %d bytes is not over the warning", made[1].Bytes)
+	}
+	mine := filepath.Join(d.backupFolder(), d.Store.RootID)
+	own := filepath.Join(mine, "my copy.tar.gz")
+	writeFile(t, own, "x")
+	// Newer, but cut short: its archive is not the size that its manifest says.
+	writeFile(t, filepath.Join(mine, "20261021T000000Z.tar.gz"), "x")
+	writeFile(t, filepath.Join(mine, "20261021T000000Z.json"), fmt.Sprintf(`{"format":1,"rootID":%q,"machine":"M","madeAt":1,"bytes":99,"agents":0}`, d.Store.RootID))
+	clock.add(89 * 24 * time.Hour)
+	d.sweepBackups()
+	if got := backupNames(mine); len(got) != 4 {
+		t.Fatalf("within 90 days: %v", got)
+	}
+	// The count takes the older good one, never the newest good one.
+	d.pruneBackups(1)
+	if got := backupNames(mine); len(got) != 3 {
+		t.Fatalf("keep 1: %v", got)
+	}
+	// What is left restores on a new machine.
+	nd, nc := start(t, t.TempDir())
+	nc.call(t, 1, "backups/configure", map[string]any{"every": "off", "keep": 3, "folder": d.backupFolder()})
+	var res wire.BackupRestoreResult
+	mustUnmarshal(t, nc.call(t, 2, "backups/restore", map[string]any{"id": made[1].ID}), &res)
+	if got, _ := os.ReadFile(filepath.Join(nd.Store.Loc.Agent(string(a.ID)), "said.json")); res.Restored != 1 || len(got) != len(big) {
+		t.Fatalf("restored %+v, %d bytes", res, len(got))
+	}
+	clock.add(400 * 24 * time.Hour)
+	d.sweepHourly()
+	name := strings.TrimPrefix(made[1].ID, d.Store.RootID+"/")
+	if got := backupNames(mine); len(got) != 2 || got[0] != name || got[1] != "my copy" {
+		t.Fatalf("past 90 days: %v, want %s and the person's own", got, name)
+	}
+	// The default folder's age is applied when the person has a folder of their own.
+	c.call(t, 3, "backups/configure", map[string]any{"every": "off", "keep": 1, "folder": t.TempDir()})
+	writeFile(t, filepath.Join(mine, "20200101T000000Z.tar.gz"), "x")
+	d.sweepBackups()
+	if got := backupNames(mine); len(got) != 2 {
+		t.Fatalf("the default folder: %v", got)
+	}
+}
+
 func TestBackupIfDueFollowsTheSchedule(t *testing.T) {
 	clock := atTime(t, time.Date(2026, 10, 20, 9, 0, 0, 0, time.UTC))
 	d, c := start(t, t.TempDir())
@@ -596,5 +661,75 @@ func TestABackupFolderOnTheSameDiskIsSaid(t *testing.T) {
 	mustUnmarshal(t, cb.call(t, 2, "backups/restore", map[string]any{"id": made.ID}), &res)
 	if res.Restored != 1 || b.Store.Agent(agent.ID) == nil {
 		t.Fatalf("restored %+v", res)
+	}
+}
+
+// backup-settings.json moves from the data folder once, to an entry of this machine's own
+// (#6746): another machine's entry is kept and never used.
+func TestBackupSettingsMoveToOneEntryForEachMachine(t *testing.T) {
+	t.Parallel()
+
+	d, _ := start(t, t.TempDir())
+	writeFile(t, d.backupSettingsPath(), `{"OTHER":{"every":"off","keep":1,"later":true}}`)
+	if s := d.backupSettings(); s.Every != wire.BackupEveryDaily || s.Keep != backupKeepDefault {
+		t.Fatalf("another machine's entry was used: %+v", s)
+	}
+	writeFile(t, d.oldBackupSettingsPath(), `{"every":"weekly","keep":7}`)
+	for range 2 {
+		if s := d.backupSettings(); s.Every != wire.BackupEveryWeekly || s.Keep != 7 {
+			t.Fatalf("not moved: %+v", s)
+		}
+	}
+	if fileExists(d.oldBackupSettingsPath()) {
+		t.Fatal("the old file is still there")
+	}
+	must(t, d.configureBackups(wire.BackupSettings{Every: wire.BackupEveryDaily, Keep: 2}))
+	b, err := os.ReadFile(d.backupSettingsPath())
+	must(t, err)
+	if !strings.Contains(string(b), `"later": true`) {
+		t.Fatalf("another machine's entry was changed: %s", b)
+	}
+	// An old file that comes back does not win over the entry, and is kept.
+	writeFile(t, d.oldBackupSettingsPath(), `{"every":"weekly","keep":7}`)
+	if s := d.backupSettings(); s.Keep != 2 || !fileExists(d.oldBackupSettingsPath()+".moved") {
+		t.Fatalf("the old file won: %+v", s)
+	}
+}
+
+func TestBackupSettingsLimits(t *testing.T) {
+	t.Parallel()
+
+	d, _ := start(t, t.TempDir())
+	set := wire.BackupSettings{Every: wire.BackupEveryDaily, Keep: 2}
+	long := "/" + strings.Repeat("x", backupSettingsMostBytes)
+	if d.configureBackups(wire.BackupSettings{Every: wire.BackupEveryDaily, Keep: 2, Folder: &long}) == nil {
+		t.Fatal("an entry over the largest was taken")
+	}
+	full := map[string]any{}
+	for i := range backupSettingsMost {
+		full[strconv.Itoa(i)] = set
+	}
+	b, err := json.Marshal(full)
+	must(t, err)
+	writeFile(t, d.backupSettingsPath(), string(b))
+	if d.configureBackups(set) == nil {
+		t.Fatal("a machine past the most was taken")
+	}
+	// The settings of the old place stay there, and count, while there is no room.
+	writeFile(t, d.oldBackupSettingsPath(), `{"every":"weekly","keep":7}`)
+	if s := d.backupSettings(); s.Keep != 7 || !fileExists(d.oldBackupSettingsPath()) {
+		t.Fatalf("lost: %+v", s)
+	}
+	must(t, os.Remove(d.oldBackupSettingsPath()))
+	// A file that cannot be read is never written over, and no backup is deleted for it.
+	writeFile(t, d.backupSettingsPath(), `half`)
+	if s := d.backupSettings(); s.Keep != backupKeepMost {
+		t.Fatalf("unreadable: %+v", s)
+	}
+	if d.configureBackups(set) == nil || d.backupsState().LastError == nil {
+		t.Fatal("a file that cannot be read was not said")
+	}
+	if b, _ := os.ReadFile(d.backupSettingsPath()); string(b) != "half" {
+		t.Fatalf("written over: %s", b)
 	}
 }

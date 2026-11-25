@@ -1,34 +1,43 @@
 package agentsd
 
 import (
-	"encoding/json"
 	"errors"
 	"log"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/mcpcatalog"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/skillcatalog"
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // Small stores that grew and never shrank (#3652): each is pruned by the hourly sweep.
-// A workflow's state goes 30 days after its file went; the approvals and the review files
-// let go of a folder that is gone; a device not seen for 90 days is forgotten.
+// A workflow's state goes 30 days after its file went; the approvals (approvalbounds.go) and the
+// review files let go of a folder that is gone; a device not seen for 90 days is forgotten; the record of a
+// catalogue item goes 30 days after the item went.
 
 const (
 	workflowStateKeptGone = 30 * 24 * time.Hour
 	deviceKeptUnseen      = 90 * 24 * time.Hour
+	catalogItemKeptGone   = 30 * 24 * time.Hour
 )
 
 func (d *Daemon) sweepSmallStores(now time.Time) {
 	d.sweepGoneWorkflowStates(now)
 	gone := d.goneFolderTest()
-	d.sweepMCPApprovals(gone)
-	d.sweepPluginApprovals(gone)
+	d.sweepMCPApprovals(gone, now)
+	d.sweepPluginApprovals(gone, now)
+	d.sweepAllowances(now)
 	d.sweepReviewFolders(gone)
 	d.sweepUnseenDevices(now)
+	d.sweepConnectorSetup()
+	d.sweepHostedLogs(now)
+	d.sweepCatalogItems(now, gone)
+	d.sweepAccountHomes(now)
 	if err := d.carryRemovedConnectors(); err != nil {
 		log.Printf("retention: %v", err)
 	}
@@ -87,12 +96,15 @@ func (d *Daemon) sweepGoneWorkflowStates(now time.Time) {
 	for _, st := range r.States {
 		there := d.workflowFiles[store.FolderPath(st.Folder)][st.WorkflowID] != nil
 		switch {
-		case there && st.GoneSince != nil:
-			st.GoneSince, changed = nil, true
-		case !there && st.GoneSince == nil:
+		case there:
+			if st.GoneSince != nil {
+				st.GoneSince, changed = nil, true
+			}
+			changed = st.ageDetails(d.workflowFiles[store.FolderPath(st.Folder)][st.WorkflowID], now) || changed
+		case st.GoneSince == nil || st.GoneSince.Time().After(now):
 			t := wire.DateOf(now)
 			st.GoneSince, changed = &t, true
-		case !there && now.Sub(st.GoneSince.Time()) >= workflowStateKeptGone:
+		case now.Sub(st.GoneSince.Time()) >= workflowStateKeptGone:
 			log.Printf("workflows: let go of %s in %s: its file went 30 days ago", st.WorkflowID, st.Folder)
 			changed = true
 			continue
@@ -100,6 +112,7 @@ func (d *Daemon) sweepGoneWorkflowStates(now time.Time) {
 		kept = append(kept, st)
 	}
 	r.States = kept
+	changed = r.evictGone(0) || changed
 	if changed {
 		d.saveRecordsLocked(false)
 	}
@@ -112,92 +125,14 @@ func approvalKeyFolder(key string) string {
 	return folder
 }
 
-// sweepMCPApprovals drops the approved servers and views of folders that are gone. A file
-// not there, or one that could not be read, is left as it is.
-func (d *Daemon) sweepMCPApprovals(gone func(string) bool) {
-	if _, err := os.Stat(d.mcpApprovalsPath()); err != nil {
-		return
-	}
-	d.mcpMu.Lock()
-	defer d.mcpMu.Unlock()
-	d.mcpApprovalsLocked()
-	if d.mcpApprovals == nil {
-		return
-	}
-	changed := false
-	for _, part := range []string{"approved", "views"} {
-		raw := d.mcpApprovals[part]
-		if raw == nil {
-			continue
-		}
-		m := map[string]string{}
-		if json.Unmarshal(raw, &m) != nil {
-			continue
-		}
-		n := len(m)
-		for k := range m {
-			if gone(approvalKeyFolder(k)) {
-				delete(m, k)
-			}
-		}
-		if len(m) != n {
-			d.mcpApprovals[part], _ = json.Marshal(m)
-			changed = true
-		}
-	}
-	if changed {
-		if err := d.saveMCPApprovalsLocked(false); err != nil {
-			log.Printf("mcp-approvals.json: could not save: %v", err)
-		}
-	}
-}
-
-// sweepPluginApprovals drops the approvals and denials of plugins whose folder is gone. A
-// plugin's key is its folder, <folder>/.agents/plugins/<name>.
-func (d *Daemon) sweepPluginApprovals(gone func(string) bool) {
-	if _, err := os.Stat(d.pluginApprovalsPath()); err != nil {
-		return
-	}
-	pluginMu.Lock()
-	defer pluginMu.Unlock()
-	records, unreadable := d.loadPluginApprovals()
-	if unreadable {
-		return
-	}
-	n := len(records.Approved) + len(records.Denied)
-	for _, m := range []map[string]string{records.Approved, records.Denied} {
-		for k := range m {
-			if folder, _, ok := strings.Cut(k, "/.agents/plugins/"); ok && gone(folder) {
-				delete(m, k)
-			}
-		}
-	}
-	if len(records.Approved)+len(records.Denied) != n {
-		if err := d.savePluginApprovals(records); err != nil {
-			log.Printf("plugin-approvals.json: could not save: %v", err)
-		}
-	}
-}
-
 // sweepReviewFolders drops the dismissed and opened pull requests of folders that are gone.
 func (d *Daemon) sweepReviewFolders(gone func(string) bool) {
 	d.reviewMu.Lock()
 	defer d.reviewMu.Unlock()
-	for _, s := range []struct {
-		path string
-		m    map[string][]string
-	}{{d.reviewDismissalsPath(), d.dismissedLocked()}, {d.reviewOpenedPath(), d.openedLocked()}} {
-		n := len(s.m)
-		for folder := range s.m {
-			if gone(folder) {
-				delete(s.m, folder)
-			}
-		}
-		if len(s.m) != n {
-			if err := writeStore(s.path, s.m); err != nil {
-				log.Printf("%s: could not save: %v", filepath.Base(s.path), err)
-			}
-		}
+	for _, f := range []*store.JSONFile[reviewMark]{d.dismissed, d.opened} {
+		changeMarks(f, func(m map[string]reviewMark) {
+			maps.DeleteFunc(m, func(_ string, r reviewMark) bool { return gone(r.Folder) })
+		})
 	}
 }
 
@@ -231,5 +166,65 @@ func (d *Daemon) sweepUnseenDevices(now time.Time) {
 	for _, id := range gone {
 		log.Printf("devices: forgot %s: not seen for 90 days", id)
 		d.afterDeviceForgottenLocked(id)
+	}
+}
+
+// sweepCatalogItems marks each catalogue record whose item is not there with the time it went,
+// clears that when the item is back, and drops a record 30 days after. An item that is there
+// keeps its record, whatever its age (gate 1 of #6669). A folder on a drive not plugged in now
+// says nothing of its items.
+func (d *Daemon) sweepCatalogItems(now time.Time, gone func(string) bool) {
+	there := func(item func(scope, name string) bool) func(string) bool {
+		return func(key string) bool {
+			i := strings.LastIndex(key, "/")
+			if i < 0 {
+				return false
+			}
+			scope := key[:i]
+			if scope != "personal" {
+				if _, err := os.Stat(scope); errors.Is(err, os.ErrNotExist) { //nolint:gosec // G703: a folder the daemon wrote in its own file; only asked whether it is there
+					return !gone(scope)
+				}
+			}
+			return item(scope, key[i+1:])
+		}
+	}
+	skill := there(func(scope, name string) bool {
+		if scope == "personal" {
+			if scope = d.personalHome(); scope == "" {
+				return true
+			}
+		}
+		_, err := os.Lstat(filepath.Join(scope, ".agents", "skills", name)) //nolint:gosec // G703: as above
+		return !errors.Is(err, os.ErrNotExist)
+	})
+	inFile := d.mcpStillThere()
+	server := there(func(scope, name string) bool { return inFile(scope + "/" + name) })
+	if err := skillcatalog.UpdateSidecar(d.skillInstaller().Sidecar, func(m map[string]skillcatalog.SidecarRecord) {
+		sweepGoneItems(m, skill, now, func(r *skillcatalog.SidecarRecord) **time.Time { return &r.GoneSince })
+	}); err != nil {
+		log.Printf("catalog-skills.json: could not save: %v", err)
+	}
+	if err := mcpcatalog.UpdateSidecar(d.mcpSidecarPath(), func(m map[string]mcpcatalog.Record) {
+		sweepGoneItems(m, server, now, func(r *mcpcatalog.Record) **time.Time { return &r.GoneSince })
+	}); err != nil {
+		log.Printf("catalog-mcp.json: could not save: %v", err)
+	}
+}
+
+func sweepGoneItems[R any](m map[string]R, there func(key string) bool, now time.Time, since func(*R) **time.Time) {
+	for key, r := range m {
+		at := since(&r)
+		switch {
+		case there(key):
+			*at = nil
+		case *at == nil || (*at).After(now):
+			t := now.UTC().Truncate(time.Second)
+			*at = &t
+		case now.Sub(**at) >= catalogItemKeptGone:
+			delete(m, key)
+			continue
+		}
+		m[key] = r
 	}
 }

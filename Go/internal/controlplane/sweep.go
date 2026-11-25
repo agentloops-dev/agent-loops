@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/providers"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/records"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/usersettings"
 )
 
 // What the store keeps, and for how long (StoreSweep, #174, contracts/store.md rule 11).
@@ -395,7 +397,7 @@ func sweepUsages(ctx context.Context, rs *records.Records, now time.Time, left i
 	if err != nil {
 		return usage, err
 	}
-	// A removed machine's cost on links (#2350), counted with them too.
+	// A removed machine's cost on links (#2350), and old nodes (#6768), counted with them too.
 	work, err := sweepLineage(ctx, s, rs, now, left-usage)
 	usage += work
 	if err != nil {
@@ -440,11 +442,13 @@ func sweepUsages(ctx context.Context, rs *records.Records, now time.Time, left i
 // sweepOrphans deletes, at most most, what outlived what it belonged to (#2293): the lease
 // of a host that has no record, once it has run out (an expired lease fences no copy),
 // a host's folder list once its record is gone from the store too (#3125), and an org
-// route's tombstone, with its secret, that its removal could not delete.
+// route's tombstone, with its secret, that its removal could not delete, and what is kept of
+// machines that are gone (#6968, #6969) and of old failed makes (#6971).
 func sweepOrphans(ctx context.Context, rs *records.Records, now time.Time, most int) (int, error) {
 	deleted := 0
 	for _, step := range []func(context.Context, *records.Records, time.Time, int) (int, bool, error){
-		sweepOrphanLeases, sweepOrphanFolderLists, sweepRemovedOrgRoutes, sweepMachineNames,
+		sweepOrphanLeases, sweepOrphanFolderLists, sweepRemovedOrgRoutes, sweepMachineNames, sweepRemovedOrgProviders, sweepRemovedSecrets,
+		sweepMachineSetups, sweepMachineVersions, sweepApprovalsOfGone, providers.SweepFailedMakes,
 	} {
 		n, full, err := step(ctx, rs, now, most-deleted)
 		deleted += n
@@ -487,6 +491,23 @@ func sweepOrphanLeases(ctx context.Context, rs *records.Records, now time.Time, 
 	return deleted, false, nil
 }
 
+// personGone says a person was removed. The owner is never gone, also with no record, nor is
+// the admin who signs in with no person.
+func personGone(ctx context.Context, rs *records.Records, person string) (bool, error) {
+	if person == "" || person == "local" {
+		return false, nil
+	}
+	if settings := rs.Settings(); settings != nil && settings.Owner != nil && *settings.Owner == person {
+		return false, nil
+	}
+	if held := rs.Person(person); held != nil {
+		return held.IsRemoved(), nil
+	}
+	// One made at another copy, and not read here yet, has a record in the store.
+	record, err := rs.Store.Get(ctx, records.PersonKey(person))
+	return err == nil && record == nil, err
+}
+
 // sweepMachineNames deletes, at most most, the machine-N counters of removed people (#6759):
 // those removed before it went with them, and one a make wrote as its person was removed.
 // The owner keeps theirs, also with no record. full says it stopped at most.
@@ -496,26 +517,17 @@ func sweepMachineNames(ctx context.Context, rs *records.Records, _ time.Time, mo
 	if err != nil {
 		return 0, false, err
 	}
-	owner := ""
-	if settings := rs.Settings(); settings != nil && settings.Owner != nil {
-		owner = *settings.Owner
-	}
 	for _, k := range keys {
 		if deleted >= most {
 			return deleted, true, nil
 		}
 		person, ok := providers.MachineNamesPerson(k.Key)
-		if !ok || person == "local" || person == owner {
+		if !ok {
 			continue
 		}
-		if held := rs.Person(person); held != nil {
-			if !held.IsRemoved() {
-				continue
-			}
-		} else if record, err := s.Get(ctx, records.PersonKey(person)); err != nil {
+		if gone, err := personGone(ctx, rs, person); err != nil {
 			return deleted, false, err
-		} else if record != nil {
-			// Made at another copy, and not read here yet.
+		} else if !gone {
 			continue
 		}
 		if err := providers.ForgetMachineNames(ctx, s, person); err != nil {
@@ -594,12 +606,128 @@ func sweepRemovedOrgRoutes(ctx context.Context, rs *records.Records, _ time.Time
 	return deleted, false, nil
 }
 
+// sweepRemovedSecrets deletes, at most most, people's removed secrets' tombstones 90 days
+// after their removal (#6780). full says it stopped at most.
+func sweepRemovedSecrets(ctx context.Context, rs *records.Records, now time.Time, most int) (deleted int, full bool, err error) {
+	deleted, err = usersettings.SweepRemovedSecrets(ctx, rs.Store, now, most)
+	return deleted, deleted >= most, err
+}
+
+// removedOrgProvidersKept is how long a removed org provider's tombstone stays (#6774).
+const removedOrgProvidersKept = 90 * 24 * time.Hour
+
+// sweepRemovedOrgProviders deletes, at most most, removed org providers' tombstones 90 days
+// after their removal (#6774). A tombstone keeps a new provider from the id, and so from the
+// sign-ins, the suspensions and the SCIM tokens and names of the one before: while one of
+// those is there, it stays. full says it stopped at most.
+func sweepRemovedOrgProviders(ctx context.Context, rs *records.Records, now time.Time, most int) (deleted int, full bool, err error) {
+	s := rs.Store
+	keys, err := s.List(ctx, orgProvidersPrefix)
+	if err != nil {
+		return 0, false, err
+	}
+	var old []string
+	for _, k := range keys {
+		id, ok := strings.CutSuffix(strings.TrimPrefix(k.Key, orgProvidersPrefix), ".json")
+		if !ok || strings.HasSuffix(k.Key, orgProviderSecret) {
+			continue
+		}
+		object, err := s.Get(ctx, k.Key)
+		if err != nil {
+			return 0, false, err
+		}
+		var stored orgProviderStored
+		if object != nil && json.Unmarshal(object.Data, &stored) == nil && stored.ID == id && stored.Removed != nil &&
+			now.Sub(stored.Removed.Time) >= removedOrgProvidersKept {
+			old = append(old, id)
+		}
+	}
+	if len(old) == 0 {
+		return 0, false, nil
+	}
+	named, ok, err := orgProvidersNamed(ctx, rs)
+	if err != nil || !ok {
+		return 0, false, err
+	}
+	for _, id := range old {
+		if deleted >= most {
+			return deleted, true, nil
+		}
+		names, err := s.List(ctx, scimPrefix+id+"/")
+		if err != nil {
+			return deleted, false, err
+		}
+		if named[id] || len(names) > 0 {
+			continue
+		}
+		// Its secret too, which its removal could not delete.
+		if err := s.Delete(ctx, orgProviderSecretKey(id)); err != nil {
+			return deleted, false, err
+		}
+		if err := s.Delete(ctx, orgProviderKey(id)); err != nil {
+			return deleted, false, err
+		}
+		deleted++
+	}
+	return deleted, false, nil
+}
+
+// orgProvidersNamed is each provider that a person, removed or not, or a SCIM token names.
+// ok is false when a record cannot be read, and so may name any.
+func orgProvidersNamed(ctx context.Context, rs *records.Records) (names map[string]bool, ok bool, err error) {
+	named := map[string]bool{}
+	people, err := rs.Store.List(ctx, records.PeoplePrefix)
+	if err != nil {
+		return nil, false, err
+	}
+	tokens, err := rs.Store.List(ctx, scimTokensPrefix)
+	if err != nil {
+		return nil, false, err
+	}
+	for _, k := range append(people, tokens...) {
+		object, err := rs.Store.Get(ctx, k.Key)
+		if err != nil {
+			return nil, false, err
+		}
+		if object == nil {
+			continue
+		}
+		// What both records name a provider by: a person's parts, and a token's own field.
+		var r struct {
+			Provider string           `json:"provider"`
+			SignIns  []records.SignIn `json:"signIns"`
+			SCIM     *struct {
+				Provider string `json:"provider"`
+			} `json:"scim"`
+			Suspended *struct {
+				Provider string `json:"provider"`
+			} `json:"suspended"`
+		}
+		if err := json.Unmarshal(object.Data, &r); err != nil {
+			return nil, false, nil
+		}
+		named[r.Provider] = true
+		for _, in := range r.SignIns {
+			named[in.Provider] = true
+		}
+		if r.SCIM != nil {
+			named[r.SCIM.Provider] = true
+		}
+		if r.Suspended != nil {
+			named[r.Suspended.Provider] = true
+		}
+	}
+	return named, true, nil
+}
+
 // sweepRequests reads each request store, so the ended requests go within the hour
 // (#3649), not only when someone next lists them: each list deletes what is past its
 // own bound on the way (joins, lock joins and sign-ins an hour after they end, link
 // requests a day after, budget requests the next day, decided governance requests after
-// 30 days, and a removed person's or machine's at once), and the governance approvals of
-// a person or group that is gone (#3748).
+// 30 days, and a removed person's or machine's at once), the channel links not used for
+// linkUnusedKept (#6763), the governance approvals of a person or group that is gone
+// (#3748), the policy versions replaced policyVersionAge ago (#6765), and the SCIM and read
+// tokens that stopped working deadTokenKept ago (#6766, #6767).
 func (s *Service) sweepRequests(ctx context.Context, now time.Time) {
 	failed := func(what string, err error) {
 		if err != nil {
@@ -615,6 +743,7 @@ func (s *Service) sweepRequests(ctx context.Context, now time.Time) {
 	s.links.readAgain()
 	_, err = s.links.all(ctx)
 	failed("link requests", err)
+	failed("channel links", s.links.expire(ctx, now, mostPerSweep))
 	_, err = s.budgetRequests(ctx, now)
 	failed("budget requests", err)
 	_, err = s.governanceUsage(ctx)
@@ -622,6 +751,9 @@ func (s *Service) sweepRequests(ctx context.Context, now time.Time) {
 	_, err = s.governanceRequests(ctx, now)
 	failed("governance requests", err)
 	failed("governance approvals", s.sweepApprovals(ctx))
+	failed("policy versions", s.sweepPolicyVersions(ctx, now))
+	failed("SCIM tokens", s.scimTokens.sweep(ctx, now))
+	failed("read API tokens", s.readAPI.sweep(ctx, now))
 	_, err = s.removeRequests(ctx)
 	failed("remove requests", err)
 }
@@ -722,13 +854,19 @@ func sweepMeshEvents(ctx context.Context, s store.Store, now time.Time, most int
 
 // sweepProviders deletes, at most most, removed machine providers' tombstones a week
 // after their removal (#3748), and dates one written before forgottenAt was kept, so it
-// goes a week on. It says how many it deleted, and how many it dated.
+// goes a week on. Past providers.MostTombstones the oldest go sooner (#6762). It says how
+// many it deleted, and how many it dated.
 func sweepProviders(ctx context.Context, s store.Store, now time.Time, most int) (int, int, error) {
 	keys, err := s.List(ctx, providers.ProvidersPrefix)
 	if err != nil {
 		return 0, 0, err
 	}
 	deleted, dated := 0, 0
+	type tombstone struct {
+		key string
+		at  time.Time
+	}
+	var kept []tombstone
 	for _, k := range keys {
 		if deleted >= most {
 			break
@@ -756,12 +894,21 @@ func sweepProviders(ctx context.Context, s store.Store, now time.Time, most int)
 			continue
 		}
 		if !record.ForgottenAt.Before(now.Add(-tombstonesKept)) {
+			kept = append(kept, tombstone{k.Key, record.ForgottenAt.Time})
 			continue
 		}
 		if err := s.Delete(ctx, k.Key); err != nil {
 			return deleted, dated, err
 		}
 		deleted++
+	}
+	slices.SortFunc(kept, func(a, b tombstone) int { return a.at.Compare(b.at) })
+	for len(kept) > providers.MostTombstones && deleted < most {
+		if err := s.Delete(ctx, kept[0].key); err != nil {
+			return deleted, dated, err
+		}
+		deleted++
+		kept = kept[1:]
 	}
 	return deleted, dated, nil
 }

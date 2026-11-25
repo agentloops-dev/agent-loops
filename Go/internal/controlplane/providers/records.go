@@ -19,6 +19,9 @@ const KindCommands = "commands"
 func knownKind(kind string) bool { return kind == KindCommands }
 
 // ProvidersPrefix is WorkspaceProviders.prefix: where provider records are kept.
+//
+// A provider stays until it is removed, in the control plane's own store (Alex, #6761).
+// store-bounds: kind=document; count=10 (100 tombstones); size=64KiB a record; age=until-deleted; applied=on write, and the hourly sweep deletes a removed one's tombstone at 7 days
 const ProvidersPrefix = "v1/providers/"
 
 // ProviderKey is WorkspaceProviders.key.

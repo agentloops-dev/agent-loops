@@ -44,15 +44,7 @@ func (d *Daemon) connectorApprovals(folder string) []wire.Approval {
 
 // mcpDeniedLocked is mcp-approvals.json's "denied": a folder's entry and the digest denied.
 func (d *Daemon) mcpDeniedLocked() map[string]string {
-	denied := map[string]string{}
-	if d.mcpApprovals != nil {
-		if raw, ok := d.mcpApprovals["denied"]; ok {
-			if err := json.Unmarshal(raw, &denied); err != nil {
-				log.Printf("mcp: approvals' denied list unreadable: %v", err)
-			}
-		}
-	}
-	return denied
+	return d.mcpPartLocked("denied")
 }
 
 // readConnectorApproval is the entry that waits, as approvals/read shows it.
@@ -115,14 +107,16 @@ func (d *Daemon) denyConnector(folder, name, digest string) error {
 	if d.mcpApprovals == nil {
 		// Unreadable or missing: begin a new file, as Approve does, so the map is there.
 		if err := d.saveMCPApprovalsLocked(true); err != nil {
-			return mcpRefusal(mcpcatalog.Failed("mcp-approvals.json could not be written"))
+			return approvalNotKept(err)
 		}
 	}
 	denied := d.mcpDeniedLocked()
-	denied[mcpApprovalKey(folder, name)] = digest
+	if err := keepApproval(denied, d.mcpGoneLocked(), "", mcpApprovalKey(folder, name), digest); err != nil {
+		return approvalNotKept(err)
+	}
 	d.mcpApprovals["denied"], _ = json.Marshal(denied)
 	if err := d.saveMCPApprovalsLocked(true); err != nil {
-		return mcpRefusal(mcpcatalog.Failed("mcp-approvals.json could not be written"))
+		return approvalNotKept(err)
 	}
 	log.Printf("mcp: deny %s in %s", name, filepath.Base(folder))
 	return nil

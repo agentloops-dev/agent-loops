@@ -26,8 +26,11 @@ type Daemon struct {
 	// smallFiles are the bounded small files (smallFile), each swept hourly; set in newWith.
 	smallFiles []interface {
 		Name() string
+		Path() string
 		Sweep() (int, error)
 	}
+	// runsFile is workflow-runs.json; workflowMu guards what it is written from.
+	runsFile *store.JSONFile[workflowRun]
 	// removedConnectors is the copies of the personal connectors removed (#2195).
 	removedConnectors *store.JSONFile[removedConnector]
 	dismissedLeads    *store.JSONFile[dismissedLead]
@@ -273,7 +276,10 @@ func newWith(ctx context.Context, root string, opts startOptions) (*Daemon, erro
 	d.secretOps.pending = d.openSecretOpsPending()
 	d.accountOps = d.openAccountOps()
 	d.elsewhere = d.openElsewhere()
+	d.dismissed = d.openReviewMarks("review-dismissals.json")
+	d.opened = d.openReviewMarks("review-opened.json")
 	d.lockSeen = d.openLockSeen()
+	d.runsFile = d.openWorkflowRuns()
 	d.opts.Store(&opts)
 	d.jobCancel = cancel
 	st.OnGap = d.tellEntry

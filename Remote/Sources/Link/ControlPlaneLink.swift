@@ -16,7 +16,7 @@ enum RemoteControl {
             .appendingPathComponent("Agents", isDirectory: true)
     }
     /// Not backed up (#1031): a restored device pairs again. Its key is in the keychain,
-    /// this device only (`ControlClientKey`).
+    /// this device only (`ControlClientKey`). An app here has no `~/.agents` (#6800).
     private static var membershipFile: URL { folder.appendingPathComponent("control-client.json") }
     /// Present when the membership came from a move (T085): the key is this device's own,
     /// the one it paired with the Mac under, not `ControlClientKey`. Kept for a device

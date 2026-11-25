@@ -6,9 +6,10 @@ enum RuntimeSignInWords {
     static func title(_ runtime: String, machine: String) -> String { "Sign In to \(runtime) on \(machine)" }
     static func asking(_ runtime: String) -> String { "Asking \(runtime) for a link…" }
     static let openLink = "Open this link, and sign in to your account:"
-    static let open = "Open Link"
     static let copyLink = "Copy Link"
+    static let copied = "Copied"
     static let pasteCode = "Then paste the code the page gives:"
+    static let pasteCodeLabel = "Paste Code"
     static let typeCode = "Then type this code on the page:"
     static let codexNote = "If OpenAI does not take the code, turn on device code sign-in in ChatGPT’s security settings."
     static let codeLabel = "Code"

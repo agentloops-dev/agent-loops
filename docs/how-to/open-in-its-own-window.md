@@ -105,7 +105,8 @@ from the sidebar of every folder. Only the Mac's folder window shows them in pla
 
 ## A Work page in its own window
 
-An issue, a pull request or a release can open in a window of its own. This is a feature in
+An issue, a pull request or a release can open in a window of its own. On the Mac and the
+web page, a doc or a conversation in Messages can too. This is a feature in
 work: turn on **Work in windows** in **Settings ▸ This app ▸ Early Features**.
 
 **Mac**
@@ -115,16 +116,24 @@ Do one of these:
 - In Work ▸ Issues, Pull requests or Releases, right-click the row and choose **Open in New
   Window**. Or hold Command and click the row.
 - In Work ▸ Timeline, right-click an epic and choose **Open in New Window**.
-- On the item's page, click **Open in New Window** in the toolbar. A link on the page to a
+- In Docs, right-click a doc or a search result and choose **Open in New Window**. Or hold
+  Command and click it. A doc on an item's page has it too.
+- On the item's page or the doc's page, click **Open in New Window** in the toolbar. A link on the page to a
   different item has it in its right-click menu. Command-click opens it too.
+- In Work ▸ Messages, right-click a conversation and choose **Open in New Window**, or hold
+  Command and click it. On the conversation's page, click **Open in New Window** in the
+  toolbar.
 
 The window has its own **Back** and **Forward** (Command-[ and Command-]). A link to a
-different item opens in the same window. A link to a list, a session or **Start Agent**
+different item, or from one doc to another, opens in the same window. A link to a list, a session or **Start Agent**
 opens in the main window. The window opens again when Agent Loops starts.
+
+A conversation's window has no **Back** and **Forward**. It marks the conversation read, as
+its page in Messages does. When you open it again, it reads the messages again.
 
 **iPad**
 
-Touch and hold the row and choose **Open in New Window**, or drag the row out of the list.
+A doc or a conversation has no window here. For an issue, a pull request or a release, touch and hold the row and choose **Open in New Window**, or drag the row out of the list.
 On the item's page, tap **Open in New Window** in the bar.
 
 **iPhone**
@@ -133,7 +142,7 @@ An iPhone shows one window at a time, so it has no **Open in New Window**.
 
 **Web page**
 
-A row is a link. Use the browser: Command-click, middle-click, or choose **Open Link in New
+A row is a link, also a doc's and a search result's, which keeps its line. Use the browser: Command-click, middle-click, or choose **Open Link in New
 Tab** in its menu.
 
 There is one window for each page. Opening it again brings that window to the front.

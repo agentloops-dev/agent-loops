@@ -1,6 +1,6 @@
 // The #3349 walk: a server's Claude signed in from the web page, with no browser on the server.
 // Pairs, opens Runtimes, finds the server's Claude "Not signed in on this machine" with Sign In…,
-// opens the sheet (the link `claude setup-token` gave on the server), types a code Claude does
+// opens the sheet (the link `claude setup-token` gave on the server), pastes a code Claude does
 // not take, switches to an API key, and signs in with it. Fails on any error the page throws.
 //
 //   node Web/test/walk/signin3349.mjs <WEB_URL> <browser code> <server name> <out dir>
@@ -40,14 +40,14 @@ try {
 
   // Sign In… opens the sheet with the link from the server.
   await page.eval(`[...(${claudeRow}).querySelectorAll("button")].find((b) => b.textContent === "Sign In…").click()`);
-  await page.waitFor(`document.querySelector(".runtime-sign-in .sign-in-link a")`, 60_000);
-  const link = await page.eval(`document.querySelector(".runtime-sign-in .sign-in-link a").href`);
+  await page.waitFor(`document.querySelector(".runtime-sign-in .sign-in-field a")`, 60_000);
+  const link = await page.eval(`document.querySelector(".runtime-sign-in .sign-in-field a").href`);
   check(/^https:\/\/claude\.(ai|com)\/.*oauth\/authorize\?/.test(link), `the link is Claude's: ${link.slice(0, 60)}…`);
   await page.shot(`${out}/web-sheet.png`);
 
   // A code Claude does not take says so in the sheet.
-  await page.focus(`.runtime-sign-in input[aria-label=Code]`);
-  await page.type("not-a-real-code#walk");
+  await page.eval(`(() => { const data = new DataTransfer(); data.setData("text/plain", " not-a-real-code#walk ");
+    document.querySelector(".runtime-sign-in input[aria-label=Code]").dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true })); })()`);
   await sleep(200);
   await page.shot(`${out}/web-code.png`);
   await page.eval(`document.querySelector(".runtime-sign-in button[type=submit]").click()`);

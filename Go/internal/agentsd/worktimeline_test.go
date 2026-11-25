@@ -96,6 +96,7 @@ func TestWorkTimelineForecastsTheOpenEpics(t *testing.T) {
 	epics = append(epics, open,
 		epic(21, 0),                                 // no children: not drawn
 		epic(22, -24*60, child(-24*62, -24*61)),     // ended before the window
+		epic(24, -10, child(-24*62, -24*61)),        // closed in the window, but its work ended before it (#7058)
 		epic(23, 0, child(-48, -40), child(-20, 0))) // filed after the first line ended: a second line
 	gh.timeline = githubmcp.Timeline{Epics: epics, Releases: []githubmcp.Release{
 		{Tag: "v1", PublishedAt: stamp(-5), URL: "u1"}, {Tag: "v0", PublishedAt: stamp(-24 * 9)}}}
@@ -140,5 +141,32 @@ func TestWorkTimelineForecastsTheOpenEpics(t *testing.T) {
 	}
 	if err := c.callError(t, 3, "work/timeline", wire.WorkTimelineRequest{Project: "p1", From: 10, To: 5}); err == nil {
 		t.Fatal("to before from is not refused")
+	}
+}
+
+// An epic is one block (#7058): a window in a pause of its work is inside it.
+func TestTimelineEpicOverlapsAsOneBlock(t *testing.T) {
+	t.Parallel()
+
+	span := func(start, end wire.Date) wire.WorkTimelineSegment {
+		s := wire.WorkTimelineSegment{StartedAt: &start}
+		if end != 0 {
+			s.ClosedAt = &end
+		}
+		return s
+	}
+	for name, c := range map[string]struct {
+		segments []wire.WorkTimelineSegment
+		want     bool
+	}{
+		"a pause":     {[]wire.WorkTimelineSegment{span(10, 20), span(60, 70)}, true},
+		"before":      {[]wire.WorkTimelineSegment{span(10, 20)}, false},
+		"after":       {[]wire.WorkTimelineSegment{span(60, 70)}, false},
+		"open":        {[]wire.WorkTimelineSegment{span(10, 0)}, true},
+		"not started": {[]wire.WorkTimelineSegment{{}}, true},
+	} {
+		if got := (timelineEpic{wire: wire.WorkTimelineEpic{Segments: c.segments}}).overlaps(30, 50); got != c.want {
+			t.Errorf("%s: overlaps %v, want %v", name, got, c.want)
+		}
 	}
 }

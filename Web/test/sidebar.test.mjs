@@ -210,18 +210,17 @@ test("an approval's words are the window's, per kind (#773)", async () => {
   assert.ok(explanations.mcpServer.endsWith(".agents/mcp.json changes again."));
 });
 
-test("a folder's sessions are one list, the pinned out of it; Pinned keeps pin order (#495)", async () => {
+test("a folder's sessions are one list, the pinned in it too (#5917); Pinned keeps pin order (#495)", async () => {
   const { folderSessions, pinnedSessions, pinnedWorkflows } = await load("src/model/sidebar.ts");
   const live = [agent("a", 1), agent("b", 3), agent("c", 2)];
-  assert.deepEqual(folderSessions(live, []).map((a) => a.id), ["b", "c", "a"], "newest started first, no headings");
-  assert.deepEqual(folderSessions(live, ["b"]).map((a) => a.id), ["c", "a"]);
+  assert.deepEqual(folderSessions(live).map((a) => a.id), ["b", "c", "a"], "newest started first, no headings");
   assert.deepEqual(pinnedSessions(live, ["a", "gone", "b"]).map((a) => a.id), ["a", "b"], "pin order, held only");
   const flow = (workflowID, isArchived = false) => ({ workflow: { workflowID }, isArchived });
   assert.deepEqual(pinnedWorkflows([flow("x"), flow("y", true), flow("z")], ["z", "y", "x"]).map((w) => w.workflow.workflowID),
     ["z", "x"], "an archived one only under Archived");
 });
 
-test("a session is listed once, in its first group: Pinned, Needs You, Working, Unread, else its folder (#587)", async () => {
+test("a session is in its first group (Pinned, Needs You, Working, Unread) and in its folder (#587, #5917)", async () => {
   const { home, smartAgents, folderSessions } = await load("src/model/sidebar.ts");
   const live = [
     agent("pinned-asking", 1, { state: "waitingOnUser" }),
@@ -235,7 +234,9 @@ test("a session is listed once, in its first group: Pinned, Needs You, Working, 
   assert.deepEqual(smartAgents("needsYou", live, undefined, pins).map((a) => a.id), ["asking-unread"], "the pinned only in Pinned");
   assert.deepEqual(smartAgents("working", live, undefined, pins).map((a) => a.id), ["working-unread"]);
   assert.deepEqual(smartAgents("unread", live, undefined, pins).map((a) => a.id), ["unread"], "not those busy");
-  assert.deepEqual(folderSessions(live, pins).map((a) => a.id), ["read"], "its folder has the rest");
+  assert.deepEqual(folderSessions(live).map((a) => a.id), ["read", "unread", "working-unread", "asking-unread", "pinned-asking"],
+    "its folder has every one");
+  assert.deepEqual(folderSessions([...live, agent("gone", 9, { state: "archived" })]).length, 5, "never an archived one");
 });
 
 test("Unread keeps the session opened from it in its place (#495)", async () => {
@@ -247,12 +248,11 @@ test("Unread keeps the session opened from it in its place (#495)", async () => 
   assert.deepEqual(withKept(shown, undefined).map((a) => a.id), ["new", "old"]);
 });
 
-test("the session Unread keeps is not under its folder too, until another is opened (#689)", async () => {
+test("the session Unread keeps is under its folder too (#5917)", async () => {
   const { keepsInUnread, folderSessions } = await load("src/model/sidebar.ts");
   const live = [agent("opened", 2), agent("read", 1), agent("working", 3, { state: "running" })];
   assert.equal(keepsInUnread(live[0], []), true, "read now, still kept");
-  assert.deepEqual(folderSessions(live, [], undefined, "opened").map((a) => a.id), ["read"]);
-  assert.deepEqual(folderSessions(live, []).map((a) => a.id), ["opened", "read"], "under its folder once let go");
+  assert.deepEqual(folderSessions(live).map((a) => a.id), ["working", "opened", "read"]);
   assert.equal(keepsInUnread(live[0], ["opened"]), false, "pinned, it is in Pinned");
   assert.equal(keepsInUnread(live[2], []), false, "working, it is in Working");
   assert.equal(keepsInUnread(agent("gone", 4, { state: "archived" }), []), false);
@@ -273,17 +273,17 @@ test("For Review lists a session done with a file nobody opened, not Unread, and
   assert.equal(smartStartsOpen("forReview"), true);
   const noReview = new Set(smartRows.filter((row) => row !== "forReview"));
   assert.deepEqual(smartAgents("unread", live, undefined, [], noReview).map((a) => a.id), ["unread", "report"], "off, it is Unread's");
-  // Opened and read, the host clears the file: For Review keeps it, not its folder.
+  // Opened and read, the host clears the file: For Review keeps it, and its folder has it (#5917).
   const read = agent("report", 1);
   assert.equal(keeper(true), "forReview");
   assert.equal(keeper(true, noReview), "unread");
   assert.equal(keeper(false), "unread");
   assert.equal(keepsInUnread(read, [], undefined, "forReview"), true);
-  assert.deepEqual(folderSessions([read], [], undefined, "report").map((a) => a.id), []);
+  assert.deepEqual(folderSessions([read]).map((a) => a.id), ["report"]);
   assert.equal(keepsInUnread(read, [], noReview, "forReview"), false, "off, it keeps nothing");
 });
 
-test("a group turned off is not drawn, and its sessions go to the next group they fit, or under their folder (#846)", async () => {
+test("a group turned off is not drawn, and its sessions go to the next group they fit (#846); its folder lists all (#5917)", async () => {
   const { smartAgents, smartRows, folderSessions, keepsInUnread, pinnedSessions } = await load("src/model/sidebar.ts");
   const live = [
     agent("pinned-asking", 1, { state: "waitingOnUser" }),
@@ -301,11 +301,9 @@ test("a group turned off is not drawn, and its sessions go to the next group the
     const rows = Object.fromEntries(smartRows.map((row) => [row, !on.has(row) ? []
       : row === "pinned" ? pinnedSessions(live, pins).map((a) => a.id)
       : smartAgents(row, live, undefined, pins, on).map((a) => a.id)]));
-    const own = folderSessions(live, pins, undefined, undefined, on).map((a) => a.id);
-    const every = [...Object.values(rows).flat(), ...own];
-    assert.equal(new Set(every).size, every.length, "once each");
-    assert.equal(every.length, live.length, "none left out");
-    return { rows, own };
+    const every = Object.values(rows).flat();
+    assert.equal(new Set(every).size, every.length, "in one group at most");
+    return { rows };
   };
 
   listing(all);
@@ -313,15 +311,13 @@ test("a group turned off is not drawn, and its sessions go to the next group the
   const noPins = listing(without("pinned"));
   assert.deepEqual(noPins.rows.pinned, []);
   assert.deepEqual(new Set(noPins.rows.needsYou), new Set(["pinned-asking", "asking", "archiving"]));
-  // Needs You off: the unread one asking to be archived goes to Unread, the one asking under its folder.
+  // Needs You off: the unread one asking to be archived goes to Unread.
   const noNeeds = listing(without("needsYou"));
   assert.deepEqual(new Set(noNeeds.rows.unread), new Set(["archiving", "unread"]));
-  assert.ok(noNeeds.own.includes("asking"));
-  // Working off: the working session goes under its folder.
-  assert.ok(listing(without("working")).own.includes("working"));
-  // Every group off: all six under the folder, the pinned one too, and Unread keeps nothing.
-  const none = listing(new Set());
-  assert.deepEqual(new Set(none.own), new Set(live.map((a) => a.id)));
+  // Working off, then every group off: Unread keeps nothing.
+  listing(without("working"));
+  listing(new Set());
+  assert.deepEqual(folderSessions(live).length, live.length);
   assert.equal(keepsInUnread(live[5], [], new Set()), false, "Unread off keeps nothing");
   assert.equal(keepsInUnread(live[5], ["read"], without("pinned")), true, "a pin counts only while Pinned is on");
 });
@@ -768,7 +764,7 @@ test("a search for an epic groups what it found under each issue, the epic's own
   assert.deepEqual(groups.map((g) => g.sessions.map((a) => a.id)), [["named", "lead"], ["merged", "old"], ["lane"]],
     "a session no host placed is under the epic; live before archived");
   assert.deepEqual(smartAgents("working", [lead], query), [], "no group at the top takes one");
-  assert.deepEqual(folderSessions([lead], [], query).map((a) => a.id), ["lead"], "its folder lists it, working or not");
+  assert.deepEqual(folderSessions([lead], query).map((a) => a.id), ["lead"], "its folder lists it, working or not");
   assert.equal(groupsByIssue({ ...query, issueHeadings: [{ node: node(40) }] }), false, "an issue with no sub-issues keeps one list");
 });
 

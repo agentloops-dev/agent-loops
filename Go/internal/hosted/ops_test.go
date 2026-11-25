@@ -113,7 +113,7 @@ func TestPruneBackupsKeepsTheNewest(t *testing.T) {
 		if _, err := a.Backup(ctx, dir, nil); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := PruneBackups(dir, keep); err != nil {
+		if _, err := a.PruneBackups(ctx, dir, keep); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -130,14 +130,72 @@ func TestPruneBackupsKeepsTheNewest(t *testing.T) {
 	if _, err := a.Backup(ctx, again, nil); err != nil {
 		t.Fatal(err)
 	}
-	if gone, err := PruneBackups(again, keep); err != nil || len(gone) != 0 {
+	if gone, err := a.PruneBackups(ctx, again, keep); err != nil || len(gone) != 0 {
 		t.Fatal(gone, err)
 	}
 	if _, err := os.Stat(again); err != nil {
 		t.Fatal("deleted the backup just made:", err)
 	}
-	if _, err := PruneBackups(again, 0); err == nil {
+	if _, err := a.PruneBackups(ctx, again, 0); err == nil {
 		t.Fatal("kept no backup")
+	}
+}
+
+// #6787: a copy goes at 90 days, but never the newest of an account that is still here, also
+// past the count; a deleted account's goes, and one that fails does not stop the others.
+func TestPruneBackupsByAgeKeepsEachAccountsNewest(t *testing.T) {
+	ctx := context.Background()
+	now := time.Now()
+	st := store.NewMemory()
+	a := Admin{Store: st, Now: func() time.Time { return now }}
+	ana, _, _ := a.accounts().make(ctx, gitHubSignIn(1, "ana"))
+	bo, _, _ := a.accounts().make(ctx, gitHubSignIn(2, "bo"))
+	cy, _, _ := a.accounts().make(ctx, gitHubSignIn(3, "cy"))
+	root := t.TempDir()
+	first, second := filepath.Join(root, "2026-01-01"), filepath.Join(root, "2026-01-02")
+	for _, dir := range []string{first, second} {
+		if _, err := a.Backup(ctx, dir, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// What a cut-off backup left, and a folder of the operator's own.
+	for _, f := range []string{"2026-01-03/" + ana.ID + "/.records-1", "mine/" + ana.ID + "/notes.txt"} {
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(root, f)), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, f), []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := a.accounts().remove(ctx, cy); err != nil {
+		t.Fatal(err)
+	}
+	there := func(dir, id string) bool {
+		_, err := os.Stat(filepath.Join(dir, id))
+		return err == nil
+	}
+	now = now.Add(89 * 24 * time.Hour)
+	last := filepath.Join(root, "2026-04-01")
+	done, err := a.Backup(ctx, last, []string{"nosuchacct", ana.ID})
+	if err == nil || len(done) != 1 || done[0].ID != ana.ID || done[0].Bytes == 0 {
+		t.Fatal(done, err)
+	}
+	if gone, err := a.PruneBackups(ctx, last, 7); err != nil || len(gone) != 0 {
+		t.Fatal(gone, err)
+	}
+	now = now.Add(2 * 24 * time.Hour)
+	if _, err := a.PruneBackups(ctx, last, 7); err != nil {
+		t.Fatal(err)
+	}
+	if there(root, "2026-01-01") || there(second, ana.ID) || there(second, cy.ID) || there(root, "2026-01-03") {
+		t.Fatal("a copy past 90 days stayed")
+	}
+	// The account with no newer copy keeps this one, also past the count.
+	if _, err := a.PruneBackups(ctx, last, 1); err != nil {
+		t.Fatal(err)
+	}
+	if !there(second, bo.ID) || !there(last, ana.ID) || !there(root, "mine") {
+		t.Fatal("the newest copy of an account, or what is not a backup, went")
 	}
 }
 
@@ -319,4 +377,25 @@ func TestMetricsReadNoStorePerScrape(t *testing.T) {
 	clk.add(countsLife)
 	_, text = scrape(s, "127.0.0.1:4000")
 	accounts(text, 5)
+}
+
+// #7094: an account's record has a largest size, and one at it can still change back.
+func TestAnAccountsRecordHasALargestSize(t *testing.T) {
+	ctx := context.Background()
+	st := store.NewMemory()
+	accs := &accounts{store: st, now: time.Now}
+	acc, _, err := accs.make(ctx, gitHubSignIn(7, "ana"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	admin := Admin{Store: st}
+	if err := admin.Suspend(ctx, acc.ID, strings.Repeat("x", accountRecordMost)); err == nil {
+		t.Fatal("a record past the most was written")
+	}
+	if err := admin.Suspend(ctx, acc.ID, strings.Repeat("x", recordMost)); err != nil {
+		t.Fatal(err)
+	}
+	if err := admin.Unsuspend(ctx, acc.ID); err != nil {
+		t.Fatal(err)
+	}
 }

@@ -88,32 +88,51 @@ func TestTheNewestAssessmentsAreKept(t *testing.T) {
 	}
 }
 
-// mcp-logs keeps the newest 32 servers' logs, the one opened among them.
-func TestTheNewestServerLogsAreKept(t *testing.T) {
+// The sweep of mcp-logs drops what is past the age, and the oldest past the size (#6736).
+func TestMCPLogsAreSweptByAgeAndSize(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	old := time.Now().Add(-time.Hour)
-	for i := range hostedLogsKept + 1 {
-		p := filepath.Join(dir, fmt.Sprintf("server-%02d.log", i))
-		must(t, os.WriteFile(p, []byte("x"), 0o600))
-		must(t, os.WriteFile(p+".1", []byte("x"), 0o600))
-		at := old.Add(time.Duration(i) * time.Second)
-		must(t, os.Chtimes(p, at, at))
+	now := time.Now()
+	put := func(name string, size int, age time.Duration) {
+		p := filepath.Join(dir, name)
+		must(t, os.WriteFile(p, make([]byte, size), 0o600))
+		must(t, os.Chtimes(p, now.Add(-age), now.Add(-age)))
 	}
-	// The one opened is the oldest, and stays.
-	dropOldHostedLogs(dir, "server-00.log")
+	put("aged.log", 10, 7*24*time.Hour)
+	put("aged.log.1", 10, 8*24*time.Hour) // a name from before #6736
+	for i := range 4 {
+		put(fmt.Sprintf("big-%d.log", i), 2<<20, time.Duration(i)*time.Minute)
+	}
+	put("small.previous.log", 10, 10*time.Minute)
+	dropOldHostedLogs(dir, now)
 	got := dirNames(t, dir)
-	if len(got) != 2*hostedLogsKept {
-		t.Fatalf("%d files, want %d: %v", len(got), 2*hostedLogsKept, got)
+	slices.Sort(got)
+	if want := []string{"big-0.log", "big-1.log", "big-2.log", "small.previous.log"}; !slices.Equal(got, want) {
+		t.Fatalf("%v, want %v", got, want)
 	}
-	for _, gone := range []string{"server-01.log", "server-01.log.1"} {
-		if slices.Contains(got, gone) {
-			t.Errorf("%s was kept", gone)
+}
+
+// Busy servers do not take mcp-logs past 10 MB between two hourly sweeps.
+func TestBusyMCPLogsStayUnderTheCap(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	chunk := make([]byte, 32<<10)
+	for server := range 40 {
+		l := &hostedLog{path: filepath.Join(dir, fmt.Sprintf("s-%d.log", server))}
+		for range 20 {
+			l.write(chunk)
 		}
 	}
-	if !slices.Contains(got, "server-00.log") || !slices.Contains(got, "server-32.log") {
-		t.Errorf("the opened or the newest log went: %v", got)
+	var total int64
+	for _, name := range dirNames(t, dir) {
+		if fi, err := os.Stat(filepath.Join(dir, name)); err == nil {
+			total += fi.Size()
+		}
+	}
+	if total > 10_000_000 {
+		t.Fatalf("%d bytes", total)
 	}
 }
 

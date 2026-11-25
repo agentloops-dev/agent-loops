@@ -1,10 +1,9 @@
 import AgentsKitCore
-import AppKit
 import SwiftUI
 
 /// The cards under step 7 of a machine's set-up (#5361, board 2 note 4): for each runtime that no
-/// key signed in, its own sign-in. A code and **Open sign-in page**; Claude's page also gives a code to
-/// paste back. The step itself says **Waiting for you**.
+/// key signed in, its own sign-in. A code and the link to its page; Claude's page also gives a
+/// code to paste back. The step itself says **Waiting for you**.
 struct MachineSignInCards: View {
     @Environment(AppModel.self) private var model
     let host: MachineRef
@@ -35,16 +34,10 @@ private struct MachineSignInCard: View {
                         .appText(.code)
                         .textSelection(.enabled)
                 }
-                HStack {
-                    Button("Open sign-in page") { NSWorkspace.shared.open(step.url) }
-                    Button("Copy Link") {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(step.url.absoluteString, forType: .string)
-                    }
-                }
+                SignInLinkRow(url: step.url)
                 if step.wantsCode {
-                    TextField("Code from the page", text: $code)
-                        .autocorrectionDisabled()
+                    Text(RuntimeSignInWords.pasteCode)
+                    PastedCodeField(code: $code)
                 }
                 HStack(spacing: 8) {
                     Button("Done") {

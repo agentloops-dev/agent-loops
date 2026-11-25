@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -21,6 +22,7 @@ import (
 // at most are live for each provider, so one can be rotated with no gap.
 
 const (
+	// store-bounds: kind=secret; count=20 a provider; size=32KiB a record; age=until-deleted; applied=on write, and the hourly sweep deletes one 90 days after it was revoked or ended, or whose provider was removed
 	scimTokensPrefix = "v1/scim/tokens/"
 	scimTokenPrefix  = "agscim_"
 	// mostLiveSCIMTokens is how many tokens of a provider work at once.
@@ -28,6 +30,12 @@ const (
 	// mostSCIMTokens bounds what one provider keeps, revoked ones too: the oldest revoked
 	// go first.
 	mostSCIMTokens = 20
+	// deadTokenKept is how long a SCIM or read token is kept after it stopped working (#6766,
+	// #6767): an admin sees until then who revoked it, and when. A live one has no age.
+	deadTokenKept = 90 * 24 * time.Hour
+	// tokenMostBytes is the largest token record that is made. A revoke is never refused: it
+	// adds who revoked it, within a client record's bound (16 KiB).
+	tokenMostBytes = 8 << 10
 	// scimTokenKept is how long this copy trusts a token it read: a revoke at another copy
 	// is told at once (scimTokenRevoked), and this bounds a missed one.
 	scimTokenKept = 10 * time.Second
@@ -49,6 +57,11 @@ type scimTokenRecord struct {
 
 func (t scimTokenRecord) live(now time.Time) bool {
 	return t.Revoked == nil && (t.Ends == nil || now.Before(t.Ends.Time()))
+}
+
+// deadSince says it was revoked or ended before then.
+func (t scimTokenRecord) deadSince(then time.Time) bool {
+	return t.Revoked != nil && t.Revoked.At.Time().Before(then) || t.Ends != nil && t.Ends.Time().Before(then)
 }
 
 func (t scimTokenRecord) onWire() wire.SCIMToken {
@@ -166,6 +179,17 @@ func (st *scimTokens) forget() {
 
 // list is every token of a provider, newest first.
 func (st *scimTokens) list(ctx context.Context, provider string) ([]scimTokenRecord, map[string]string, error) {
+	all, etags, err := st.every(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	all = slices.DeleteFunc(all, func(t scimTokenRecord) bool { return t.Provider != provider })
+	sortNewestFirst(all)
+	return all, etags, nil
+}
+
+// every is every provider's tokens.
+func (st *scimTokens) every(ctx context.Context) ([]scimTokenRecord, map[string]string, error) {
 	keys, err := st.s.cfg.Store.List(ctx, scimTokensPrefix)
 	if err != nil {
 		return nil, nil, fail(storeUnavailable, "The SCIM tokens could not be read: %v", err)
@@ -178,13 +202,12 @@ func (st *scimTokens) list(ctx context.Context, provider string) ([]scimTokenRec
 			return nil, nil, fail(storeUnavailable, "The SCIM tokens could not be read: %v", err)
 		}
 		var t scimTokenRecord
-		if object == nil || json.Unmarshal(object.Data, &t) != nil || t.Provider != provider {
+		if object == nil || json.Unmarshal(object.Data, &t) != nil {
 			continue
 		}
 		out = append(out, t)
 		etags[t.ID] = object.ETag
 	}
-	sortNewestFirst(out)
 	return out, etags, nil
 }
 
@@ -233,30 +256,69 @@ func (st *scimTokens) make(ctx context.Context, r wire.SCIMTokenMake, actor wire
 	t := scimTokenRecord{ID: hash[:12], Provider: p.ID, Name: name, SHA256: hash, Made: wire.OrgRouteStamp{By: actor, At: wire.DateOf(now)},
 		Ends: r.Ends}
 	data, err := records.Encode(t)
+	if err == nil && len(data) > tokenMostBytes {
+		return wire.SCIMTokenMade{}, fail(invalidParams, "What is kept of this token is too large: %d bytes, and the most is %d.", len(data), tokenMostBytes)
+	}
 	if err == nil {
 		_, err = st.s.cfg.Store.Put(ctx, scimTokenKey(hash), data, store.Absent)
 	}
 	if err != nil {
 		return wire.SCIMTokenMade{}, fail(storeUnavailable, "The token could not be kept: %v", err)
 	}
-	st.trim(ctx, append(all, t))
+	if err := st.trim(ctx, append(all, t), now); err != nil {
+		st.s.log("the old SCIM tokens could not be deleted: " + err.Error())
+	}
 	st.s.signIns.auditOrg(actor, "scim/tokens/make", p.ID, "token "+t.ID+" ("+name+")")
 	st.s.log("a SCIM token " + t.ID + " was made for org provider " + p.ID)
 	return wire.SCIMTokenMade{Token: t.onWire(), Value: value, URL: base + scim.Base}, nil
 }
 
-// trim deletes the oldest revoked or ended tokens over mostSCIMTokens.
-func (st *scimTokens) trim(ctx context.Context, all []scimTokenRecord) {
+// trim deletes the oldest revoked or ended tokens over mostSCIMTokens, and those that
+// stopped working deadTokenKept ago.
+func (st *scimTokens) trim(ctx context.Context, all []scimTokenRecord, now time.Time) error {
 	sortNewestFirst(all)
-	now := time.Now()
 	kept := 0
 	for _, t := range all {
-		if t.live(now) || kept < mostSCIMTokens {
+		if t.live(now) || kept < mostSCIMTokens && !t.deadSince(now.Add(-deadTokenKept)) {
 			kept++
 			continue
 		}
-		_ = st.s.cfg.Store.Delete(ctx, scimTokenKey(t.SHA256))
+		if err := st.s.cfg.Store.Delete(ctx, scimTokenKey(t.SHA256)); err != nil {
+			return err
+		}
 	}
+	return nil
+}
+
+// sweep trims each provider's tokens, and deletes those of a removed provider, which work
+// no more. A provider that is off keeps its own.
+func (st *scimTokens) sweep(ctx context.Context, now time.Time) error {
+	all, _, err := st.every(ctx)
+	if err != nil {
+		return err
+	}
+	byProvider := map[string][]scimTokenRecord{}
+	for _, t := range all {
+		byProvider[t.Provider] = append(byProvider[t.Provider], t)
+	}
+	for provider, tokens := range byProvider {
+		kept, err := st.s.signIns.readOrgProvider(ctx, provider)
+		if err != nil {
+			return err
+		}
+		if kept == nil || !kept.removed {
+			if err := st.trim(ctx, tokens, now); err != nil {
+				return err
+			}
+			continue
+		}
+		for _, t := range tokens {
+			if err := st.s.cfg.Store.Delete(ctx, scimTokenKey(t.SHA256)); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // revoke is scim/tokens/revoke: the token stops working at once, at every copy.
@@ -321,6 +383,9 @@ func (si *signIns) setSCIM(ctx context.Context, r wire.SCIMSet, actor wire.Audit
 	p.RedirectURI = nil
 	data, err := records.Encode(orgProviderStored{OrgProvider: p})
 	if err != nil {
+		return wire.OrgProviderKept{}, err
+	}
+	if err := records.Fits(ctx, si.s.cfg.Store, orgProviderKey(p.ID), "The org provider", data, orgProviderMostBytes); err != nil {
 		return wire.OrgProviderKept{}, err
 	}
 	rev, err := si.s.cfg.Store.Put(ctx, orgProviderKey(p.ID), data, store.Matching(kept.rev))

@@ -4,7 +4,7 @@
 // (messages/reply, #4345) when its connector can send. Its text is outside content: drawn as Markdown
 // by renderMarkdown, which draws no HTML, fetches no image and follows only http, https and mailto links.
 import { signal, useSignal } from "@preact/signals";
-import { useEffect } from "preact/hooks";
+import { useEffect, useRef } from "preact/hooks";
 import type { MessagingMessage } from "../protocol/generated";
 import type { Store } from "../model/store";
 import { Capability } from "../protocol/capabilities.generated";
@@ -13,13 +13,14 @@ import { hostAnswers } from "../model/capabilities";
 import { channelName } from "../model/channelLinks";
 import { ago } from "../model/connectorSetup";
 import {
-  hasUnread, hostConversationsOf, inThread, lastConsequence, leaveThread, markAllHelp, markAllRead, markedRead, markingAllRead, markProblems, mergeConversations,
+  hasUnread, hostConversationsOf, inThread, lastConsequence, leaveThread, markAllHelp, markAllRead, markedRead, markingAllRead, markProblems, mergeConversations, mostPagesToFind,
   messagesStatusLine, unreadTotal, messagesProblems, messagesSources, nextConversation, nextHelp, nextRow, noConnector, noConnectorIn,
   noConversations, noMachine, noMessages, noUnread, outside, replyInThread, replyLabel, replyPlaceholder, replyText, send, senderName,
   sending, sentAs, setUp, sourceGlyph, unreadWords, type HostConversations, type MessagesRow,
 } from "../model/messages";
-import { go } from "../route";
-import { PlaceholderRows } from "./WorkParts";
+import { go, routeHash } from "../route";
+import { pageFooterState } from "../model/workFooter";
+import { PlaceholderRows, RefreshButton, WorkFooter } from "./WorkParts";
 import { renderMarkdown } from "../render/markdown";
 import { Glyph } from "./Icon";
 
@@ -59,28 +60,41 @@ async function markAll(store: Store) {
 /** Where the next page of messages/conversationsAll starts (#5571); none at the end. */
 const nextCursor = signal<string | undefined>(undefined);
 
+interface ConversationsPage { lists: HostConversations[]; cursor: string | undefined }
+
 /** Every machine's conversations in one call to the control plane (#5571): the first page, or the one after `cursor`, added to `into`. */
-async function readLists(store: Store, cursor?: string, into: HostConversations[] = []): Promise<HostConversations[]> {
+async function readLists(store: Store, cursor?: string, into: HostConversations[] = []): Promise<ConversationsPage> {
   try {
     const got = await store.link.call("messages/conversationsAll",
       { limit: 50, ...unreadOnly.value ? { unread: true } : {}, ...cursor ? { cursor } : {} });
-    nextCursor.value = got.cursor;
-    return hostConversationsOf(got, into);
+    return { lists: hostConversationsOf(got, into), cursor: got.cursor };
   } catch (e) {
-    nextCursor.value = undefined;
-    return [...into, { host: "", name: "Control plane", conversations: [], errors: [], problem: describe(e) }];
+    return { lists: [...into, { host: "", name: "Control plane", conversations: [], errors: [], problem: describe(e) }], cursor: undefined };
   }
 }
 
+/** A read's answer drawn, while no newer read started. */
+const take = (got: ConversationsPage) => { nextCursor.value = got.cursor; lists.value = got.lists; };
+
 /** Reads the lists when the machines or the Unread filter change, or on Refresh. */
 function useLists(store: Store) {
+  // A new tab knows its machines from this browser's copy before its link is open and its lock is read (#5482): it reads
+  // once the link is open, and again once it is in the lock, when it can ask the machines itself.
+  const up = useSignal(store.link.state.kind === "open");
+  useEffect(() => {
+    const opened = () => { if (store.link.state.kind === "open") up.value = true; };
+    opened();
+    const stop = store.link.onState(opened);
+    return () => { stop(); };
+  }, [store]);
   const hostKey = messagesHosts(store).map((h) => h.id).join(",");
   useEffect(() => {
     let current = true;
     lists.value = null;
-    void readLists(store).then((l) => { if (current) lists.value = l; });
+    if (!up.value) return;
+    void readLists(store).then((got) => { if (current) take(got); });
     return () => { current = false; };
-  }, [hostKey, asked.value, unreadOnly.value]);
+  }, [hostKey, asked.value, unreadOnly.value, up.value, store.machineLock.device.value.kind]);
 }
 
 /** How often the grey line is read again: the count asks every messaging connector over MCP. */
@@ -125,7 +139,8 @@ export function MessagesList({ store }: { store: Store }) {
   const loadMore = async () => {
     if (!l || more.value) return;
     more.value = true;
-    lists.value = await readLists(store, nextCursor.value, l);
+    const got = await readLists(store, nextCursor.value, l);
+    if (lists.value === l) take(got);
     more.value = false;
   };
 
@@ -173,8 +188,7 @@ function ConversationRow({ row }: { row: MessagesRow }) {
   const unread = unreadWords(c);
   return (
     <li data-key={row.key}>
-      <button type="button" class={`work-row messages-row${unread ? " unread" : ""}`}
-        onClick={() => go({ nav: "work", section: "messages", item: row.key })}>
+      <a class={`work-row messages-row${unread ? " unread" : ""}`} href={routeHash({ nav: "work", section: "messages", item: row.key })}>
         <span class="work-row-head">
           <span class="messages-source" title={channelName(c.source)} aria-label={channelName(c.source)}><Glyph of={sourceGlyph(c.source)} /></span>
           {c.sender && <span class="messages-sender" title={c.sender.identity}>{senderName(c.sender)}</span>}
@@ -182,26 +196,44 @@ function ConversationRow({ row }: { row: MessagesRow }) {
           {unread && <span class="messages-unread small">{unread}</span>}
           {c.lastActivity && <span class="quiet small docs-updated">{ago(new Date(c.lastActivity))}</span>}
         </span>
-      </button>
+      </a>
     </li>
   );
 }
 
 /** A conversation's page: its messages, the newest first, each with its sender, time, text and a link to the
  * original; older pages with Older; under them the reply field, when the connector can send. Found by its key
- * in the list, read again when the tab was opened on it. */
+ * in the list, read again when the tab was opened on it. The footer says how old the messages are, and Refresh reads them
+ * again (#7076). */
 export function ConversationPage({ store, conversationKey }: { store: Store; conversationKey: string }) {
   useLists(store);
   const messages = useSignal<MessagingMessage[] | null>(null);
   const cursor = useSignal<string | undefined>(undefined);
   const problem = useSignal<string | null>(null);
   const loading = useSignal(false);
+  /** When the newest page was read. */
+  const readAt = useSignal<number | undefined>(undefined);
+  /** Goes up with each read of the newest page: an older read that ends after it is dropped. */
+  const generation = useRef(0);
   const draft = useSignal("");
   const thread = useSignal<string | undefined>(undefined);
   const busy = useSignal(false);
   const sendProblem = useSignal<string | null>(null);
   const l = lists.value;
   const row = l ? mergeConversations(l).find((r) => r.key === conversationKey) : undefined;
+  // A new tab on a conversation past the first page (#5482) reads further pages, a few at most, until it has it.
+  const pages = useSignal(1);
+  const finding = useSignal(false);
+  const looking = l !== null && !row && nextCursor.value !== undefined && pages.value < mostPagesToFind;
+  useEffect(() => {
+    if (!looking) return;
+    pages.value++;
+    finding.value = true;
+    void readLists(store, nextCursor.value, l).then((got) => {
+      if (lists.value === l) take(got);
+      finding.value = false;
+    });
+  }, [l, looking]);
   // Next (#5137): the next conversation in the list as it is filtered and sorted now.
   const next = l ? nextRow(mergeConversations(l, source.value), conversationKey) : undefined;
   const goNext = () => { if (next) go({ nav: "work", section: "messages", item: next.key }); };
@@ -231,6 +263,8 @@ export function ConversationPage({ store, conversationKey }: { store: Store; con
     busy.value = false;
   };
   const read = async (older: boolean) => {
+    if (!older) generation.current++;
+    const mine = generation.current;
     if (!row) return;
     loading.value = true;
     try {
@@ -238,29 +272,41 @@ export function ConversationPage({ store, conversationKey }: { store: Store; con
         server: row.item.server, folder: row.item.folder, conversation: row.item.conversation.id, limit: 50,
         ...older && cursor.value ? { cursor: cursor.value } : {},
       }, row.host);
+      if (mine !== generation.current) return;
       messages.value = [...older ? messages.value ?? [] : [], ...got.messages];
       cursor.value = got.cursor;
+      problem.value = null;
+      if (!older) readAt.value = Date.now();
       if (got.markedRead && lists.value) {
         lists.value = markedRead(lists.value, row.key);
         marked.value++;
       }
     } catch (e) {
-      problem.value = describe(e);
+      if (mine === generation.current) problem.value = describe(e);
     }
-    loading.value = false;
+    if (mine === generation.current) loading.value = false;
   };
-  useEffect(() => { messages.value = null; problem.value = null; void read(false); }, [row?.key, row?.host]);
+  const refresh = () => { void read(false); };
+  useEffect(() => { messages.value = null; problem.value = null; readAt.value = undefined; loading.value = false; void read(false); }, [row?.key, row?.host]);
 
-  if (l === null) return <PlaceholderRows count={4} />;
+  if (l === null || looking || finding.value) return <PlaceholderRows count={4} />;
+  const problems = row ? [] : messagesProblems(l);
+  if (problems.length > 0) return (
+    <>
+      {problems.map((p) => <p key={p} class="hint">{p}</p>)}
+      <button type="button" class="link" onClick={() => { asked.value++; }}>Refresh</button>
+    </>
+  );
   if (!row) return <p class="hint">This conversation is not in the list any more. <button type="button" class="link" onClick={() => go({ nav: "work", section: "messages" })}>Messages</button></p>;
   const c = row.item.conversation;
   return (
-    <article class="work-page messages-page">
+    <article class="work-page messages-page work-footed">
       <div class="work-page-bar">
         <button type="button" title="Back" aria-label="Back" onClick={() => history.back()}>‹</button>
         <button type="button" title="Forward" aria-label="Forward" onClick={() => history.forward()}>›</button>
         <button type="button" class="link" onClick={() => go({ nav: "work", section: "messages" })}>All messages</button>
         <button type="button" class="link" title={nextHelp} disabled={!next} onClick={goNext}>{nextConversation} ↓</button>
+        <RefreshButton busy={loading.value} onClick={refresh} />
       </div>
       <header class="work-page-head">
         <h2><span class="work-title">{c.title}</span></h2>
@@ -270,7 +316,7 @@ export function ConversationPage({ store, conversationKey }: { store: Store; con
         </p>
       </header>
       <p class="hint">{outside}</p>
-      {problem.value ? <p class="hint">{problem.value}</p>
+      {messages.value === null && problem.value ? <p class="hint">{problem.value}</p>
         : messages.value === null ? <PlaceholderRows count={4} />
         : messages.value.length === 0 ? <p class="hint">{noMessages}</p>
         : (
@@ -289,10 +335,10 @@ export function ConversationPage({ store, conversationKey }: { store: Store; con
             ))}
           </ul>
         )}
-      {cursor.value && !problem.value && (
+      {cursor.value && messages.value !== null && (
         <button type="button" class="link" disabled={loading.value} onClick={() => { void read(true); }}>{loading.value ? "Loading…" : "Older"}</button>
       )}
-      {replyAs && !problem.value && messages.value !== null && (
+      {replyAs && messages.value !== null && (
         <form class="messages-reply" onSubmit={(e) => { e.preventDefault(); void reply(); }}>
           {thread.value && <p class="quiet small">↩ {inThread} · <button type="button" class="link" onClick={() => { thread.value = undefined; }}>{leaveThread}</button></p>}
           <div class="messages-reply-row">
@@ -305,6 +351,8 @@ export function ConversationPage({ store, conversationKey }: { store: Store; con
           {sendProblem.value && <p class="hint">{sendProblem.value}</p>}
         </form>
       )}
+      <WorkFooter state={pageFooterState(messages.value !== null, loading.value, false, problem.value ? [problem.value] : [])}
+        at={readAt.value} retry={refresh} />
     </article>
   );
 }

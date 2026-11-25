@@ -28,12 +28,19 @@ import (
 // <root>/policy-seen.json, so that a machine that had a policy and lost it (the file
 // deleted or edited) starts no work until the control plane sends it one again (FR-013).
 //
+// Both files stay in the data folder (Alex, 2026-11-24, #6751), not in ~/.agents: a synced or
+// committed copy from another machine would be a trust source here.
+//
 // This is no boundary against the machine's own user, who runs agentsd (spec 998,
 // Clarifications): the signature makes an edit to the file useless, nothing more.
 
 const (
 	orgPolicyFile     = "policy.json"
 	orgPolicySeenFile = "policy-seen.json"
+	// orgPolicyMostBytes bounds the kept policy. A control plane takes a policy of 64 KiB, or a
+	// longer one from before that limit, so a whole one fits well.
+	orgPolicyMostBytes     = 1 << 20
+	orgPolicySeenMostBytes = 4 << 10
 	// orgOldKeyFor is how long a policy signed by the control key before a rotation is
 	// still trusted (T4 keeps the old key 30 days).
 	orgOldKeyFor = 30 * 24 * time.Hour
@@ -172,7 +179,12 @@ func (d *Daemon) trustsLocked(k *keptOrgPolicy) bool {
 
 func (d *Daemon) saveOrgSeenLocked() {
 	b, _ := json.Marshal(d.orgWas)
-	if err := store.WriteAtomically(d.orgPath(orgPolicySeenFile), b, 0o600); err != nil {
+	err := tooLarge(orgPolicySeenFile, b, orgPolicySeenMostBytes)
+	if err == nil {
+		// store-bounds: kind=key-value; count=1; size=4KiB; age=until-deleted; applied=on write (refused)
+		err = store.WriteAtomically(d.orgPath(orgPolicySeenFile), b, 0o600)
+	}
+	if err != nil {
 		log.Printf("policy: keep %s: %v", orgPolicySeenFile, err)
 	}
 }
@@ -232,7 +244,12 @@ func (d *Daemon) toldPolicy(params json.RawMessage) {
 		return
 	}
 	b, _ := json.Marshal(kept)
-	if err := store.WriteAtomically(d.orgPath(orgPolicyFile), b, 0o600); err != nil {
+	if err := tooLarge(orgPolicyFile, b, orgPolicyMostBytes); err != nil {
+		// It applies, as its kill switch must, and is not kept: the version seen is, so after a
+		// restart no work starts until the control plane sends it again.
+		log.Printf("machine/policy: not kept: %v", err)
+		// store-bounds: kind=key-value; count=1; size=1MiB; age=until-deleted; applied=on write (not kept)
+	} else if err := store.WriteAtomically(d.orgPath(orgPolicyFile), b, 0o600); err != nil {
 		d.orgMu.Unlock()
 		log.Printf("machine/policy: keep %s: %v", orgPolicyFile, err)
 		return

@@ -127,6 +127,9 @@ test("Docs is Work's first page (#5267), #/work/docs/<ref> is a doc's page, and 
   assert.equal(hash, `#/work/docs/${encodeURIComponent(ref)}`);
   assert.deepEqual(route.parseRoute(hash), { nav: "work", section: "docs", item: ref });
   assert.deepEqual(route.parseRoute(`#/docs/${encodeURIComponent(ref)}`), { nav: "work", section: "docs", item: ref });
+  // A search result's link keeps its line (#5481).
+  assert.equal(route.routeHash({ nav: "work", section: "docs", item: ref, query: "line=12" }), hash + "?line=12");
+  assert.deepEqual(route.parseRoute(hash + "?line=12"), { nav: "work", section: "docs", item: ref, query: "line=12" });
   assert.deepEqual(route.parseRoute("#/docs"), { nav: "work", section: "docs" });
   assert.ok(route.isOldAddress("#/docs") && route.isOldAddress(`#/docs/${encodeURIComponent(ref)}`));
 });

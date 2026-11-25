@@ -277,6 +277,23 @@ func (p *plane) client(name string) (*controllink.ClientMembership, *controllink
 	return m, s
 }
 
+// A command-line client's unpair (#6808): the control plane takes its key no more.
+func TestForgetSelfEndsAClientsPairing(t *testing.T) {
+	t.Parallel()
+	p := startPlane(t, store.NewMemory(), controllink.NewPrivateKey())
+	m, err := controllink.PairClient(context.Background(), p.code(false), "agentsctl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := controllink.ForgetSelf(context.Background(), m); err != nil {
+		t.Fatal(err)
+	}
+	if s, err := controllink.DialClient(context.Background(), m); err == nil {
+		s.Close()
+		t.Fatal("the forgotten client still connects")
+	}
+}
+
 func (p *plane) waitFor(ok func() bool, what string) {
 	p.t.Helper()
 	deadline := time.Now().Add(10 * time.Second)

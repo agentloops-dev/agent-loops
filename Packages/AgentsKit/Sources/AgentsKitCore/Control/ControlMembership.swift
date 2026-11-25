@@ -41,8 +41,14 @@ public struct ControlMembership: Codable, Sendable, Hashable {
     /// `backedUp: false` keeps the file out of iCloud and Finder backups (#1031): a client's
     /// pairing is this device's, and a restored device pairs again rather than carry it.
     public func save(_ file: URL, backedUp: Bool = true) throws {
+        try Self.write(JSONEncoder().encode(self), to: file, backedUp: backedUp)
+    }
+
+    /// A membership's bytes, put in place as `save` puts them: 0600, and marked as not
+    /// backed up when asked. Every write of a pairing comes here, so none loses its mark (#6800).
+    public static func write(_ data: Data, to file: URL, backedUp: Bool = true) throws {
         try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try JSONEncoder().encode(self).write(to: file, options: .atomic)
+        try data.write(to: file, options: .atomic)
         chmod(file.path, 0o600)
         #if canImport(Darwin)
         if !backedUp {

@@ -1,6 +1,5 @@
 import AgentsKitCore
 import SwiftUI
-import UIKit
 
 /// Sign In… on a server's Claude or Codex (#4035), as the web page's RuntimeSignInDialog
 /// (#3349): the machine has no browser, so the runtime's own sign-in runs there and gives a
@@ -12,7 +11,6 @@ import UIKit
 struct RuntimeSignInSheet: View {
     @Environment(RemoteModel.self) private var model
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.openURL) private var openURL
     let host: MachineRef
     let runtime: Runtime
 
@@ -22,7 +20,7 @@ struct RuntimeSignInSheet: View {
     @State private var key = ""
     @State private var busy = false
     @State private var problem: String?
-    @State private var copied: String?
+    @State private var copied = false
 
     private var machine: String { model.machineName(host) }
     private var ready: Bool {
@@ -42,15 +40,14 @@ struct RuntimeSignInSheet: View {
                     }
                 } else if let step {
                     Section(RuntimeSignInWords.openLink) {
-                        Button(RuntimeSignInWords.open) { openURL(step.url) }
-                        Button(copied == "link" ? "Copied" : RuntimeSignInWords.copyLink) { copy(step.url.absoluteString, "link") }
+                        SignInLinkRow(url: step.url)
                     }
                     if let userCode = step.userCode {
                         Section {
                             LabeledContent(RuntimeSignInWords.codeLabel) {
                                 Text(userCode).monospaced().textSelection(.enabled)
                             }
-                            Button(copied == "code" ? "Copied" : "Copy") { copy(userCode, "code") }
+                            Button(copied ? RuntimeSignInWords.copied : "Copy") { copy(userCode) }
                         } header: {
                             Text(RuntimeSignInWords.typeCode)
                         } footer: {
@@ -58,9 +55,7 @@ struct RuntimeSignInSheet: View {
                         }
                     } else if step.wantsCode {
                         Section(RuntimeSignInWords.pasteCode) {
-                            TextField(RuntimeSignInWords.codeLabel, text: $code)
-                                .textInputAutocapitalization(.never)
-                                .autocorrectionDisabled()
+                            PastedCodeField(code: $code)
                         }
                     }
                 } else if problem == nil {
@@ -154,9 +149,9 @@ struct RuntimeSignInSheet: View {
         }
     }
 
-    private func copy(_ text: String, _ what: String) {
-        UIPasteboard.general.string = text
-        copied = what
+    private func copy(_ text: String) {
+        Clipboard.copy(text)
+        copied = true
     }
 
     private static func words(_ error: any Error) -> String {

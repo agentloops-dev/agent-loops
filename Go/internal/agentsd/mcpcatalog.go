@@ -414,18 +414,22 @@ func (d *Daemon) mcpInstall(st mcpStaged, r wire.MCPAddRequest) (wire.ManagedMCP
 		return wire.ManagedMCPServer{}, mcpcatalog.Unreadable(path)
 	}
 	addedAt := nowFunc()
-	side := mcpcatalog.LoadSidecar(d.mcpSidecarPath())
-	side.Servers[mcpcatalog.Key(r.Destination, name)] = mcpcatalog.Record{RegistryName: st.registryName, Version: st.version,
-		Run: string(st.preview.ChosenRun), AddedAt: addedAt}
-	if err := side.Save(d.mcpSidecarPath()); err != nil {
-		return wire.ManagedMCPServer{}, mcpcatalog.Failed("catalog-mcp.json could not be written")
-	}
+	// The server is in and works: without its record it shows as one added by hand.
+	d.recordCatalogServer(mcpcatalog.Key(r.Destination, name), mcpcatalog.Record{RegistryName: st.registryName,
+		Version: st.version, Run: string(st.preview.ChosenRun), AddedAt: addedAt})
 	if r.Destination.Kind == wire.SkillDestinationKindFolder {
 		d.recordMCPApproval(*r.Destination.Folder, name, json.RawMessage(entry.Stringified()))
 	}
 	byHand := false
 	return wire.ManagedMCPServer{Name: name, RegistryName: st.registryName, Version: st.version, Run: st.preview.ChosenRun,
 		AddedAt: wire.DateOf(addedAt), Destination: r.Destination, ByHand: &byHand}, nil
+}
+
+// recordCatalogServer keeps where a server came from. A failure is only said.
+func (d *Daemon) recordCatalogServer(key string, r mcpcatalog.Record) {
+	if err := mcpcatalog.UpdateSidecar(d.mcpSidecarPath(), func(m map[string]mcpcatalog.Record) { m[key] = r }); err != nil {
+		log.Printf("mcp: could not save %s: %v", d.mcpSidecarPath(), err)
+	}
 }
 
 // MARK: The approvals file, kept with mcpservers.go's reading of it
@@ -437,12 +441,7 @@ func (d *Daemon) saveMCPApprovalsLocked(replacing bool) error {
 		if !replacing {
 			return nil
 		}
-		if b, err := os.ReadFile(d.mcpApprovalsPath()); err == nil {
-			if err := os.WriteFile(fmt.Sprintf("%s.unreadable-%d", d.mcpApprovalsPath(), time.Now().Unix()), b, 0o644); err != nil { //nolint:gosec // G306: the mode this file always had; only its error is new
-				log.Printf("mcp: could not keep the unreadable %s aside: %v", filepath.Base(d.mcpApprovalsPath()), err)
-			}
-			store.TrimSetAsides(d.mcpApprovalsPath())
-		}
+		keepUnreadable(d.mcpApprovalsPath())
 		began, _ := json.Marshal(now())
 		d.mcpApprovals = map[string]json.RawMessage{"approvalsBegan": began, "approved": json.RawMessage("{}")}
 	}
@@ -450,11 +449,12 @@ func (d *Daemon) saveMCPApprovalsLocked(replacing bool) error {
 	if err != nil {
 		return err
 	}
+	// store-bounds: kind=key-value; count=2000 approved, 2000 denied, 2000 views; size=8KiB an answer; age=until-deleted; applied=on write (refused), and hourly sweep
 	return store.WriteAtomically(d.mcpApprovalsPath(), b, 0o644)
 }
 
 // changeMCPApprovals edits the approved map, or the views map, and writes the file.
-func (d *Daemon) changeMCPApprovals(replacing bool, change func(approved, views map[string]string)) error {
+func (d *Daemon) changeMCPApprovals(replacing bool, change func(approved, views map[string]string, gone map[string]wire.Date) error) error {
 	d.mcpMu.Lock()
 	defer d.mcpMu.Unlock()
 	d.mcpApprovalsLocked()
@@ -465,11 +465,10 @@ func (d *Daemon) changeMCPApprovals(replacing bool, change func(approved, views 
 		// This makes the new map; the save at the end writes it again and says if it fails.
 		_ = d.saveMCPApprovalsLocked(true)
 	}
-	approved, views := map[string]string{}, map[string]string{}
-	// A part that is missing or not a map starts empty.
-	_ = json.Unmarshal(d.mcpApprovals["approved"], &approved)
-	_ = json.Unmarshal(d.mcpApprovals["views"], &views)
-	change(approved, views)
+	approved, views := d.mcpPartLocked("approved"), d.mcpPartLocked("views")
+	if err := change(approved, views, d.mcpGoneLocked()); err != nil {
+		return err
+	}
 	d.mcpApprovals["approved"], _ = json.Marshal(approved)
 	if len(views) > 0 || d.mcpApprovals["views"] != nil {
 		d.mcpApprovals["views"], _ = json.Marshal(views)
@@ -479,8 +478,8 @@ func (d *Daemon) changeMCPApprovals(replacing bool, change func(approved, views 
 
 // recordMCPApproval: the sheet wrote this entry, so it is the one approved from now.
 func (d *Daemon) recordMCPApproval(folder, name string, raw json.RawMessage) {
-	if err := d.changeMCPApprovals(true, func(approved, _ map[string]string) {
-		approved[mcpApprovalKey(folder, name)] = entryDigest(raw)
+	if err := d.changeMCPApprovals(true, func(approved, _ map[string]string, gone map[string]wire.Date) error {
+		return keepApproval(approved, gone, "", mcpApprovalKey(folder, name), entryDigest(raw))
 	}); err != nil {
 		log.Printf("mcp: could not record the approval of %s: %v", name, err)
 		return
@@ -673,10 +672,10 @@ func (d *Daemon) mcpApprove(r wire.MCPApproveRequest) (wire.MCPListAnswer, error
 	if raw == nil || entryDigest(raw) != r.Digest {
 		return wire.MCPListAnswer{}, mcpRefusal(mcpcatalog.StaleDigest())
 	}
-	if err := d.changeMCPApprovals(true, func(approved, _ map[string]string) {
-		approved[mcpApprovalKey(folder, r.Name)] = r.Digest
+	if err := d.changeMCPApprovals(true, func(approved, _ map[string]string, gone map[string]wire.Date) error {
+		return keepApproval(approved, gone, "", mcpApprovalKey(folder, r.Name), r.Digest)
 	}); err != nil {
-		return wire.MCPListAnswer{}, mcpRefusal(mcpcatalog.Failed("mcp-approvals.json could not be written"))
+		return wire.MCPListAnswer{}, approvalNotKept(err)
 	}
 	log.Printf("mcp: approve %s in folder", r.Name)
 	d.sharePersonApproval(approvalKindConnector, r.Digest, r.Name)
@@ -697,12 +696,13 @@ func (d *Daemon) mcpForgetViews(r wire.MCPViewsForgetRequest) error {
 		scope = filepath.Clean(*r.Destination.Folder)
 	}
 	prefix := scope + "|" + r.Name + "|"
-	return d.changeMCPApprovals(true, func(_, views map[string]string) {
+	return d.changeMCPApprovals(true, func(_, views map[string]string, _ map[string]wire.Date) error {
 		for k := range views {
 			if strings.HasPrefix(k, prefix) {
 				delete(views, k)
 			}
 		}
+		return nil
 	})
 }
 
@@ -748,7 +748,6 @@ func (d *Daemon) mcpRemove(r wire.MCPRemoveRequest) (wire.MCPRemoveAnswer, error
 	if !slices.ContainsFunc(entries, func(e mcpEntry) bool { return e.name == r.Name }) {
 		return wire.MCPRemoveAnswer{}, mcpRefusal(mcpcatalog.Failed("There is no " + r.Name + " in " + path + "."))
 	}
-	side := mcpcatalog.LoadSidecar(d.mcpSidecarPath())
 	key := mcpcatalog.Key(r.Destination, r.Name)
 	forget := ""
 	if r.ForgetSecret != nil {
@@ -768,13 +767,15 @@ func (d *Daemon) mcpRemove(r wire.MCPRemoveRequest) (wire.MCPRemoveAnswer, error
 	if err := mcpcatalog.Remove(path, r.Name); err != nil {
 		return wire.MCPRemoveAnswer{}, mcpRefusal(mcpcatalog.Unreadable(path))
 	}
-	delete(side.Servers, key)
-	if err := side.Save(d.mcpSidecarPath()); err != nil {
+	if err := mcpcatalog.UpdateSidecar(d.mcpSidecarPath(), func(m map[string]mcpcatalog.Record) { delete(m, key) }); err != nil {
 		log.Printf("mcp: remove %s: could not save %s: %v", r.Name, d.mcpSidecarPath(), err)
 	}
 	if r.Destination.Kind == wire.SkillDestinationKindFolder {
 		folder := *r.Destination.Folder
-		if err := d.changeMCPApprovals(true, func(approved, _ map[string]string) { delete(approved, mcpApprovalKey(folder, r.Name)) }); err != nil {
+		if err := d.changeMCPApprovals(true, func(approved, _ map[string]string, _ map[string]wire.Date) error {
+			delete(approved, mcpApprovalKey(folder, r.Name))
+			return nil
+		}); err != nil {
 			log.Printf("mcp: remove %s: could not forget its approval: %v", r.Name, err)
 		}
 	}

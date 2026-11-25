@@ -107,6 +107,14 @@ func (d *Daemon) startThere(me *wire.Agent, here, machine, folder, title string,
 		}
 		sent = fmt.Sprintf("Sent %s, with its uncommitted changes, to %s on %s. ", sending.branch, folder, machine)
 	}
+	// The answer to permission requests goes with the mode (#7064), as the starter answers now:
+	// the person's yes can come late. That machine has no record of the starter, so its Settings
+	// would answer: a helper that does not inherit Always Approve says Request cards. That
+	// machine's own policy still applies.
+	d.inheritRequests(&r, d.Store.Agent(me.ID))
+	if r.RuntimeID == me.RuntimeID && clientAnswered[r.RuntimeID] && r.Levels == nil {
+		r.Levels = &wire.Levels{PermissionRequests: requestCards}
+	}
 	out, err := d.askWorkspaces(me.ID, sessionOnMachine, wire.MachineSessionStart{Host: machine, Start: r})
 	if e, ok := err.(*Error); ok && e.Code == wire.FailureKept {
 		return sent + fmt.Sprintf("%s is starting: the session starts in %s when it connects. Its id comes only then, so the tools for your sessions don’t reach it; the person sees it under %s.",

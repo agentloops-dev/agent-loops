@@ -22,6 +22,11 @@
       "description": "The control plane still reads attention/need as 0.18.0 sent it. attention/2 (#4095): a host may send the NeedKind `request`, which an older control plane does not know."
     },
     {
+      "name": "folders.signed-upload/1",
+      "by": "control",
+      "description": "The control plane takes machines/sendFolder's uploadSigned (#7118): a part of an upload that is only in the call's signed deliver. A machine sends upload and deliver to an older one, which does not know it."
+    },
+    {
       "name": "machine.accounts/1",
       "by": "control",
       "description": "The control plane still answers machine/accounts with add and ops (#3967). machine.accounts/2 (#5253): it also takes remove, which an older control plane does not know."

@@ -114,6 +114,8 @@ type Record struct {
 	Run          string    `json:"run"`
 	AddedAt      time.Time `json:"addedAt"`
 	ByHand       *bool     `json:"byHand,omitempty"`
+	// GoneSince is when the hourly sweep first found the server not in its mcp.json.
+	GoneSince *time.Time `json:"goneSince,omitempty"`
 }
 
 // Key is personal/<name>, or <folder>/<name>.
@@ -143,7 +145,18 @@ func LoadSidecar(path string) Sidecar {
 	return s
 }
 
-func (s Sidecar) Save(path string) error {
+// UpdateSidecar changes the records and writes the file, if they changed.
+func UpdateSidecar(path string, change func(map[string]Record)) error {
+	skillcatalog.SidecarMu.Lock()
+	defer skillcatalog.SidecarMu.Unlock()
+	s := LoadSidecar(path)
+	if changed, err := skillcatalog.ChangeRecords(s.Servers, change); !changed || err != nil {
+		return err
+	}
+	return s.save(path)
+}
+
+func (s Sidecar) save(path string) error {
 	for k, r := range s.Servers {
 		r.AddedAt = r.AddedAt.UTC().Truncate(time.Second)
 		s.Servers[k] = r
@@ -152,5 +165,6 @@ func (s Sidecar) Save(path string) error {
 	if err != nil {
 		return err
 	}
+	// store-bounds: kind=key-value; count=2000; size=8KiB a server; age=until-deleted; applied=on write (refused), and hourly sweep
 	return store.WriteAtomically(path, b, 0o644)
 }
