@@ -228,6 +228,7 @@ public extension DaemonAPI {
                 Row(Method.diskState, params: Empty.self, result: DiskState.self, kind: .hostRequest),
                 // What runs on a machine, on its page (#3453).
                 Row(Method.processesList, params: Empty.self, result: ProcessesState.self, kind: .hostRequest),
+                Row(Method.selfUpdateStatus, params: Empty.self, result: SelfUpdate.self, kind: .hostRequest),
                 // A machine's page: its CPU, memory and disks (#3626).
                 Row(Method.machineUsage, params: Empty.self, result: MachineUsageState.self, kind: .hostRequest),
                 Row(Method.capacityState, params: Empty.self, result: CapacityState.self, kind: .hostRequest),
