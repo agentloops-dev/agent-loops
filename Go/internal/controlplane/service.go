@@ -2160,6 +2160,10 @@ func (s *Service) spendHostCode(ctx context.Context, id string, stored *storedCo
 	if err := s.records.MachineRoom(ctx, a.PublicKey); err != nil {
 		return nil, err
 	}
+	// Before the code is spent too, so another machine can use it (#7305).
+	if err := s.refuseBothRoles(a.MachineID, a.PublicKey); err != nil {
+		return nil, err
+	}
 	want := s.joiningHostID(stored, a)
 	sp, err := s.codes.Spend(ctx, id, spent{PublicKey: a.PublicKey, Host: &want})
 	if err != nil {

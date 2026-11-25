@@ -861,7 +861,7 @@ A Linux machine can run the control plane as a systemd user unit beside `agentsd
 ./agentsd-linux-x86_64 install --control --no-agents --domain agents.example.com --acme-email you@example.com
 ```
 
-- `--no-agents` runs only the control plane, as the VM does. Without it, the host also joins this control plane by itself, with no `--join`. Use both roles only on one person's machine: an agent there runs as the same Unix user and can read the control key and the store.
+- `--no-agents` runs only the control plane, as the VM does. Without it, the host also joins this control plane by itself, with no `--join`. Use both roles only on one person's machine: an agent there runs as the same Unix user and can read the control key and the store. When more than one person uses the control plane, it refuses a new host on its own machine, and the install says to run the agents on another machine (#7305). A bot is not a person. `--no-agents` is refused on a machine that already runs a host, and `--join` on a machine that already runs a control plane.
 - With `--domain`, the control plane makes its own publicly trusted certificate (Let's Encrypt, TLS-ALPN-01) in the process, so there is no Caddy unit. Port 443 must reach the unit. A user cannot bind 443: forward it, or allow it once with `sysctl net.ipv4.ip_unprivileged_port_start=443`. The installer never asks for root.
 - Without `--domain`, the certificate is the control plane's own, and its pin is in every code, as on the Mac.
 - The unit is `~/.config/systemd/user/agents-control.service`. Its folder is `~/.agents-control`. Run the install again to change a flag.

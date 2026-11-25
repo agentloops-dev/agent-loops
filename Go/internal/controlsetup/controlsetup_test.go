@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/agentloops-dev/agent-loops/Go/internal/machine"
 )
 
 func TestUnitSelfSigned(t *testing.T) {
@@ -139,7 +141,7 @@ func TestHostCodeWaitsForTheStore(t *testing.T) {
 	if err != nil || code != "agents-control:4:h:x" {
 		t.Fatalf("code %q, err %v", code, err)
 	}
-	if len(f.calls) != 3 || !strings.Contains(f.calls[0], "code --host --home "+LayoutOf(home).Control) {
+	if len(f.calls) != 3 || !strings.Contains(f.calls[0], "code --host --here --home "+LayoutOf(home).Control) {
 		t.Errorf("calls %q", f.calls)
 	}
 	f = &fake{}
@@ -185,5 +187,25 @@ func TestBothRolesPutTheControlPlaneFirst(t *testing.T) {
 		if _, err := os.Stat(l.HostUnit); !errors.Is(err, os.ErrNotExist) {
 			t.Errorf("the drop-in stays with one role: %v", err)
 		}
+	}
+}
+
+// A team's control plane gives its own machine no agents (#7305): said at once, with no wait.
+func TestHostCodeStopsAtATeam(t *testing.T) {
+	home := t.TempDir()
+	l := LayoutOf(home)
+	if err := writeHostDropIn(l, true); err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	d := Deps{Run: func(string, ...string) (string, error) {
+		calls++
+		return machine.BothRolesRefused + "\n", errors.New("exit 1")
+	}, Poll: time.Millisecond, Wait: time.Minute}
+	if _, err := HostCode(context.Background(), home, d); err == nil || err.Error() != machine.BothRolesRefused {
+		t.Fatalf("err %v", err)
+	}
+	if _, err := os.Stat(l.HostUnit); calls != 1 || !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("%d calls, drop-in: %v", calls, err)
 	}
 }
