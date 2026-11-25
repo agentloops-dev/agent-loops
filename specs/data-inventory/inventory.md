@@ -461,7 +461,7 @@ newer than a row above for the same store.
 | hosted `v1/invites/` | document | Invite links | 1,000 of 4 KiB, else refused; until it expires, 90 days at most | `Go/internal/hosted/recordbounds.go` (`sweepInvites`) | #6782 |
 | hosted `v1/allow/` | key-value | The operator's allow list | 10,000 of 4 KiB, else refused; 90 days from the last allow | `Go/internal/hosted/recordbounds.go` (`sweepAllowed`) | #6783 |
 | hosted `v1/blocked/`, `v1/blocked/email/` | key-value | The operator's block lists | 10,000 each of 4 KiB, else refused; no age, until unblocked (Alex, 2026-11-24: a blocked person must not come back) | `Go/internal/hosted/recordbounds.go` (`putBlock`, `putEmailBlock`) | #6784 |
-| hosted `v1/accounts/`, sign-in links, `v1/emails/`, `v1/usage/` | document | Accounts | 100 accounts; until Delete Account | `Go/internal/hosted/signup.go:45; accounts.go:140-146,302-317` | #6785 |
+| hosted `v1/accounts/`, sign-in links, `v1/emails/`, `v1/usage/` | document | Accounts | 100 accounts of 8 KiB, links and usage 128 bytes; until Delete Account: an exception to the 90-day rule until epic #7092 (Alex, 2026-11-24) | `Go/internal/hosted/signup.go` (`MaxAccounts`), `accounts.go` (`accountRecordMost`, `remove`) | #6785, #7094 |
 | hosted `v1/waitlist/`, `v1/waiting/` | document | The waitlist | 10,000 of 4 KiB, else refused; 90 days, or sign-up or a block | `Go/internal/hosted/recordbounds.go` (`sweepWaitlist`) | #6786 |
 | Operator backups | blob | Each account's store | The newest 7, or 1 to 90; 90 days; the newest copy of an account that exists stays; over 10 MB is made, with a warning | `Go/internal/hosted/backup.go` (`PruneBackups`) | #6787 |
 | `control.log` (`~/Library/Logs/Agents/control.log` or `/data/control.log`) | log | Operational log lines | 4 MB and one older file, 7 days; the oldest go first | `Go/internal/rolllog/rolllog.go` | #6901 |
@@ -507,9 +507,9 @@ These had no row above. Paths in the evidence are relative to `Go/internal/`.
 | `<root>/setup-reports.jsonl` | log | Steps of the machine's set-up | one run; a new run truncates it | `hostsetup/report.go:23` |
 | `v1/machine-setup/<host>.json` | document | A machine's set-up steps | 1 per machine, 512 KiB; 90 days after it ended, none while it runs; on machine removal, and hourly for a machine that is gone (7 days after its last change) (#6968) | `controlplane/machinesetup.go` (`sweepMachineSetups`) |
 | `v1/machine-versions/<host>.json` | document | A machine's versions | 20 deploys, 64 KiB; a deploy 90 days, the version now none; on machine removal, and hourly for a machine that is gone (a day after it was last seen) (#6969) | `controlplane/machineversions.go` (`sweepMachineVersions`) |
-| `v1/approvals/<person>/` | document | Signed approvals | 2,000 a person; no age, no delete found | `controlplane/approvals.go:22` |
+| `v1/approvals/<person>/` | document | Signed approvals | 2,000 of 8 KiB a person, else refused; until the person is removed (no age before, on purpose: the same file is not approved again; #6970) | `controlplane/approvals.go` (`forgetApprovals`, `sweepApprovalsOfGone`) |
 | `v1/failed-makes/<provider>.json` | log | Failed makes | 5 a provider, 64 KiB; 90 days, on write and hourly; deleted with the provider (#6971) | `controlplane/providers/defaults.go` (`SweepFailedMakes`) |
-| `v1/maturity/<id>.json` | document | Feature maturity evidence | 84 records of 4 KiB; no age | `controlplane/maturity/store.go:161` |
+| `v1/maturity/<id>.json` | document | Feature maturity evidence | 84 of 4 KiB, updated in place, else refused; no age, on purpose: a rating is current state (#6905, #6972) | `controlplane/maturity/store.go` (`update`) |
 
 Mixed files follow these decisions: `workflows.json` splits into document/configuration, key-value
 run state, and log history; `lineage.jsonl` stays an append log with a separate bounded graph

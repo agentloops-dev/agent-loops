@@ -378,3 +378,24 @@ func TestMetricsReadNoStorePerScrape(t *testing.T) {
 	_, text = scrape(s, "127.0.0.1:4000")
 	accounts(text, 5)
 }
+
+// #7094: an account's record has a largest size, and one at it can still change back.
+func TestAnAccountsRecordHasALargestSize(t *testing.T) {
+	ctx := context.Background()
+	st := store.NewMemory()
+	accs := &accounts{store: st, now: time.Now}
+	acc, _, err := accs.make(ctx, gitHubSignIn(7, "ana"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	admin := Admin{Store: st}
+	if err := admin.Suspend(ctx, acc.ID, strings.Repeat("x", accountRecordMost)); err == nil {
+		t.Fatal("a record past the most was written")
+	}
+	if err := admin.Suspend(ctx, acc.ID, strings.Repeat("x", recordMost)); err != nil {
+		t.Fatal(err)
+	}
+	if err := admin.Unsuspend(ctx, acc.ID); err != nil {
+		t.Fatal(err)
+	}
+}
