@@ -102,7 +102,7 @@ from the root (`agentsd/backups.go:69,72`). It holds nothing else.
 | `leases.json`, `resources.json` | Resource leases | 240-minute lease cap; dropped on agent stop (`leases.go:28,383`) | on write | no |
 | `guarded-files.json` | Guarded file states | folders that exist | on save | no |
 | `org-routes/<id>.json`, `runtimes/org/…` | Org key routes, stand-in homes | 50 routes (`orgroutes.go:46`) | on delivery | no |
-| `runtimes/accounts/<rt>/<id>/` | Homes of added runtime accounts, **with the runtime's own transcripts** | removed with the account (`accounts.go:343`) | on remove | no |
+| `runtimes/accounts/<rt>/<id>/` | Homes of added runtime accounts, **with the runtime's own transcripts** | conversations: 1,200 MB a home, 90 days (`accounthistory.go`, #6707); the rest goes with the account (`accounts.go`) | hourly; on remove | no |
 | `browser/profile/` | Chromium profile shared by every browser sign-in | **none** | never | no |
 | Small fixed files (`folders.json`, `root-id.json`, `settings/*.json`, …) | Configuration | fixed shape | n/a | no |
 
@@ -383,7 +383,7 @@ newer than a row above for the same store.
 | Store | Kind | Holds | Bound | Evidence | Issue |
 |---|---|---|---|---|---|
 | `<root>/agents/<id>/` (agent.json, transcript.jsonl, app-tools.jsonl, said.json) and `<cache>/turns/` | log | Conversations | Archived agents go after 7/14/30/90 days or Forever; a live or pinned agent never ages; no size limit on a transcript | `Go/internal/agentsd/retention.go:89-93; store/locations.go:100-102` | #6706 |
-| `<root>/runtimes/accounts/<rt>/<id>/` | blob | Runtime account homes, with the runtimes' own transcripts | None, until the account is removed | `Go/internal/agentsd/accounts.go:274` | #6707 |
+| `<root>/runtimes/accounts/<rt>/<id>/` | blob | Runtime account homes, with the runtimes' own transcripts | Conversations: 1,200 MB a home and 90 days, the oldest first; those of sessions not archived, or written in the last 24 hours, stay | `Go/internal/agentsd/accounthistory.go` | #6707 |
 | `<folder>/.agents/worktrees/` | blob | Agent worktrees | User-owned: no bound, on purpose | `docs/explanation/compliance/data-and-retention.md (In each folder)` | #6708 |
 | `<root>/backups/` | blob | This machine's backups | The newest Keep (1-10); no size limit on a backup; no age | `Go/internal/agentsd/backups.go:44-45` | #6709 |
 | `<root>/browser/profile/` | blob | Browser sign-ins and cookies | Caches emptied at start, 64 MB HTTP cache; cookies until the site ends them | `Go/internal/agentsd/browser/browser.go:139,637` | #6710 |
