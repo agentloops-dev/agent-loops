@@ -11,11 +11,11 @@ runtime (#1811). The control plane adds them up from what each machine sends.
 
 ## The Reports pane
 
-The Spend page has two panes, **Spend** and **Reports**, on the Mac, the Remote and the web
+The Cost page has two panes, **Cost** and **Reports**, on the Mac, the Remote and the web
 page.
 
 - **The range:** D (the last 24 hours, by the hour), W, M or 3M (the last 7, 30 or 90
-  days, by the day), as the Spend page's charts.
+  days, by the day), as the Cost page's charts.
 - **By:** Person, Project, Folder, Machine or Runtime. The first line is the total. Under it
   is a line for each person, project, folder, machine or runtime, largest first, with a bar
   for its share of the largest. Each line says the cost, the tokens, the turns and the
@@ -37,13 +37,13 @@ page.
 ## Reports' pages, by question (#5280)
 
 The list groups Reports' pages by the question each answers (spec #5276, option A): **Cost**
-(Spend, Time), **Output** (Outcomes, Delivery), **Plan** (Forecast, Estimates), **Use**
+(Cost, with the tabs Spend, Tokens and Time, #6884), **Output** (Outcomes, Delivery), **Plan** (Forecast, Estimates), **Use**
 (Adoption, Runtimes, Workflows), **Storage** (Store sizes, behind a flag) and **Saved** (Saved Views); Audit is under Records, for admins.
 Usage and Multiplier are no longer pages: in the Me lens, Spend, Time and Outcomes end with **On
-your machines**, the charts of the pane each repeats (Spend and Tokens on Spend, Time on Time, the
+your machines**, the charts of the pane each repeats (Spend on Spend, Tokens on Tokens, Time on Time, the
 Multiplier and Velocity on Outcomes). Features is Status ▸ Features: it is about the product and
 the machines, not about work. An old `#/reports/usage`, `#/reports/multiplier` or
-`#/reports/features` opens its new place. The Mac's Spend ▸ Open Reports opens Spend in the Me lens,
+`#/reports/features` opens its new place. The Mac's Cost ▸ Open Reports opens Spend in the Me lens,
 as before.
 
 ## Reports ▸ Store sizes, on the web page
@@ -67,7 +67,7 @@ once, and says **Last update**. It has no lens.
 Reports is one of the control plane's three apps on the web page, beside Workspace and the
 [Console](console.md) (#1804). Its page **Spend** is the Reports pane with a scope:
 
-- **Me:** your own machines, as the Spend page's Reports pane on all three clients.
+- **Me:** your own machines, as the Cost page's Reports pane on all three clients.
 - **The organisation:** everyone, for an admin only.
 - **A budget:** when the scope has one (Console ▸ Report Policy), the page shows the spend
   of this calendar month (UTC) against it, with a forecast to the end of the month. The
@@ -223,7 +223,7 @@ machines' copies of one node add up, as each banked its own turns.
   those hours are in, added up from its own hours. One send has at most 48 hours. If a
   send fails, the machine tries again the next hour.
 - **UTC, not the machine's own time zone.** Thus machines in different time zones add up
-  into the same hour and day. The Spend page on each machine keeps its own local hours, as
+  into the same hour and day. The Cost page on each machine keeps its own local hours, as
   before.
 
 ## What the control plane keeps
@@ -242,7 +242,7 @@ machines' copies of one node add up, as each banked its own turns.
 
 ## Who sees what
 
-- **The Spend page's Reports pane** shows your own machines, also for an admin, and says
+- **The Cost page's Reports pane** shows your own machines, also for an admin, and says
   "Your machines" (#2071).
 - **Reports ▸ Spend** on the web page names its scope: your machines or everyone's. Only an admin sees everyone's.
 

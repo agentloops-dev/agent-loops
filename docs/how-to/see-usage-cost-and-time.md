@@ -1,29 +1,26 @@
 ---
 diataxis: how-to
 devices: [mac, iphone, ipad, web]
-description: Open the Spend, Tokens and Time pages, read their charts, and see how much of each runtime's allowance is used.
+description: Open the Cost report's Spend, Tokens and Time tabs, read their charts, and see how much of each runtime's allowance is used.
 ---
 
 # See usage, cost and time
 
 Agent Loops keeps a record of what your agents cost, the tokens they used, and where their
-time went. Three pages show it as charts: **Spend**, **Tokens** and **Time**. Use them to
+time went. The **Cost** report shows it in three tabs: **Spend**, **Tokens** and **Time**. Use them to
 see which days and which runtimes cost the most, and how long agents wait for you.
-These pages only show figures. To set a limit, see [Limit what agents spend](limit-spending.md).
+They only show figures. To set a limit, see [Limit what agents spend](limit-spending.md).
 
-## Open a page
+## Open the report
 
-The pages are in the group **Cost**: **Spend**, **Tokens** and **Time**.
+- **Mac:** click **Cost** in the sidebar's **Reports** group, or choose **View ▸ Cost**
+  (Option-Command-S). Then choose the tab **Spend**, **Tokens** or **Time**.
+- **Web page:** open **Reports ▸ Cost**, then choose a tab. Your own charts are under
+  **On your machines**.
+- **iPhone and iPad:** they do not have this report.
 
-- **Mac:** click the row in the sidebar's **Cost** group. You can also use the **View**
-  menu: **View ▸ Cost ▸ Spend** (Option-Command-S), **View ▸ Cost ▸ Tokens** or
-  **View ▸ Cost ▸ Time**.
-- **Web page:** open **Reports**. In the group **Cost**, **Spend** has the panes **Spend**
-  and **Tokens** under **On your machines**, and **Time** has the time charts.
-- **iPhone and iPad:** they do not have these pages.
-
-Hover over the **Spend** or **Tokens** row on the Mac to see today's figure, and what is
-left of a daily limit. Near a daily limit, the row's icon turns red. This tells you to look
+Hover over the **Cost** row on the Mac to see today's cost and tokens, and what is left of
+a daily limit. Near a daily limit, the row's icon turns red. This tells you to look
 before the limit stops new work.
 
 ## Read the charts
@@ -60,8 +57,8 @@ On the iPhone, iPad and web page, the page also shows **Today**, and each host's
 limit and limit for each agent, with what is left. You set limits only on the Mac, in
 **Settings ▸ Cost**.
 
-On the Mac, **Open Reports** opens **Reports ▸ Spend** on the web page. See
-[Reports](../reference/reports.md).
+On the Mac, **Open Reports** opens the same report on the web page, from what each machine
+sends to the control plane. See [Reports](../reference/reports.md).
 
 ## What Tokens shows
 
@@ -111,13 +108,13 @@ shows how much is used:
 
 The bar is the same on the Mac, the iPhone and iPad, and the web page. When a runtime
 gives only a reset time, there is no bar. On the iPhone and iPad, **Runtimes** is also
-at the foot of the **Spend** page.
+at the foot of the **Cost** page.
 
 ## If it doesn't work
 
 - **A chart says *Nothing was spent in this range*.** No runtime reported a price in
   that range. Choose a longer range, or open **Tokens**.
-- **The Spend figure seems low.** Look for **At least this much**. Some runtimes report
+- **The Cost figure seems low.** Look for **At least this much**. Some runtimes report
   tokens but no price. See [Runtimes](../reference/runtimes.md).
 - **Time says *No chat ran in this range*.** No turn ran in that range. Time between
   turns is not counted.

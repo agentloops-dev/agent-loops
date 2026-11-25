@@ -17,8 +17,7 @@ iPhone, and on a narrow web page, it is the first screen, and what you open goes
 | **Work** | **Docs**, **Messages**, then a row for each list: **Issues**, **Pull Requests** and the rest. On the web page, Work is a section of the bar, with the same pages. |
 | **Status** | What is going on, and no settings: **Runtimes** (each runtime once, with your accounts and a line per machine), **Events**, **Secrets** and **Accounts** (what happened to them last). To change your connectors, secrets and outside accounts, use **Settings ▸ You**. |
 | **Machines** | A page for each machine: its disks, CPU and memory, **Runtimes** installed, **Resources** and **Worktrees**. |
-| **Reports** | Pages about past work: **Achievements** (the Multiplier and the badges), **Velocity** and **Cycle time**. On the iPhone and the iPad, Reports has **Achievements** and **Velocity** only. |
-| **Cost** | What the work used: **Spend**, **Tokens** and **Time**. Not on the iPhone and the iPad. |
+| **Reports** | Pages about past work: **Achievements** (the Multiplier and the badges), **Cost** (with the tabs **Spend**, **Tokens** and **Time**), **Velocity** and **Cycle time**. On the iPhone and the iPad, Reports has **Achievements** and **Velocity** only. |
 | Smart groups | **Pinned**, **Needs You**, **For Review**, **Working** and **Unread**, each across every folder and host. See [Smart groups](#smart-groups). |
 | One group per project | Each project's sessions on every machine, and its folder's workflows. A project with one folder is that folder's group. See [A folder's group](#a-folders-group) and [A project with folders on several machines](#a-project-with-folders-on-several-machines). |
 | **Archived folders** | Folders you put away. The heading stays folded until you open it. Each has **Unarchive**. |
@@ -32,7 +31,7 @@ stays in its place however busy its folder is.
 The folders of one project are one group, in the place of the first of them. See
 [A project with folders on several machines](#a-project-with-folders-on-several-machines).
 
-**Work**, **Status**, **Machines**, **Reports** and **Cost** each fold, as a folder does. All start open.
+**Work**, **Status**, **Machines** and **Reports** each fold, as a folder does. All start open.
 They are in this order on the Mac, the iPhone and the iPad. On the web page, each is a
 section of the bar. **Status** is the same on all three clients. On the iPhone and the iPad,
 **Resources** is on This Mac's page only, and a chat's lease line opens it there. **Runtimes** shows its icon in red when no runtime

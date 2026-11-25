@@ -106,7 +106,7 @@ and iPad show, on every host:
 - use a folder's connector views, such as the GitHub **Pull requests** and **Issues**, the
   GitLab merge requests and pipelines, and **Linear issues** (see [Use GitHub](use-github.md),
   [Use GitLab](use-gitlab.md) and [Use Linear issues](use-linear-issues.md));
-- see **Spend**, **Tokens**, **Time**, **Events**, **Resources**, **Runtimes**, **Your
+- see **Cost** (Spend, Tokens and Time), **Events**, **Resources**, **Runtimes**, **Your
   Connectors** and **Worktrees** from the sidebar's Activity rows;
 - open **Settings**: **Sidebar** (which smart
   groups show), **Finished chats**, **Machine providers**, **Git access**, **Versions**,

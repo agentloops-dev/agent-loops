@@ -3,7 +3,7 @@ import SwiftUI
 
 /// What all of the work has cost, and where it went.
 ///
-/// A page in the detail column, picked from the last row of the sidebar. It was a
+/// The Cost report's Spend tab (#6884). It was a
 /// window of its own until the money was somewhere a person could find it: a window
 /// is a thing you have to know exists, and the figure that was supposed to advertise
 /// it sat at the foot of a column hiding itself whenever nothing had been banked.
@@ -37,7 +37,7 @@ struct SpendingView: View {
     }
 
     var body: some View {
-        cost.navigationTitle("Spend")
+        cost
             .toolbar {
                 if reportsShown {
                     ToolbarItem {

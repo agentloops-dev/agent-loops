@@ -104,7 +104,7 @@ test("an address from before #2141 opens its page's new place", async () => {
       "#/a/runtimes": { nav: "status", section: "runtimes" }, "#/a/mcp": { nav: "settings", section: "mcp" },
       "#/a/events": { nav: "status", section: "events" }, "#/a/achievements": { nav: "reports", section: "outcomes", query: "lens=me" },
       "#/a/velocity": { nav: "reports", section: "outcomes", query: "lens=me" },
-      "#/a/tokens": { nav: "reports", section: "spend", query: "lens=me" },
+      "#/a/tokens": { nav: "reports", section: "tokens", query: "lens=me" },
     };
     for (const [old, now] of Object.entries(moved)) {
       assert.deepEqual(r.parseRoute(old), now, old);

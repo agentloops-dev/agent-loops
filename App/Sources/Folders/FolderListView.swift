@@ -2,7 +2,7 @@ import AgentsKitCore
 import AppKit
 import SwiftUI
 
-/// The window's one sidebar (#145): Status, Machines, Reports and Cost at the top, then every folder, each a row
+/// The window's one sidebar (#145): Status, Machines and Reports at the top, then every folder, each a row
 /// that folds open on its sessions and workflows, and at the foot what this Mac and its
 /// hosts are doing.
 ///
@@ -26,8 +26,6 @@ struct FolderListView: View {
     @AppStorage("showsWork", store: WindowDefaults.store) private var showsWorkLists = true
     /// Reports, open until folded, and kept so (#915): its key from when it was Usage.
     @AppStorage("showsUsage", store: WindowDefaults.store) private var showsUsage = true
-    /// Cost (#6884), open until folded, and kept so.
-    @AppStorage("showsCost", store: WindowDefaults.store) private var showsCost = true
     /// The smart groups turned off in Settings ▸ Sidebar (#846).
     @AppStorage(SidebarSmartRow.offDefaultsKey, store: WindowDefaults.store) private var smartOff = SidebarSmartRow.offAtFirst
     private var smartOn: Set<SidebarSmartRow> { SidebarSmartRow.on(off: smartOff) }
@@ -291,6 +289,12 @@ struct FolderListView: View {
                 // The Achievements page (#3986), always first.
                 AchievementsRow().activityIcon("multiply.circle")
                     .appText(.supporting).sidebarInk(.achievements).tag(SidebarItem.achievements)
+                // One row for the Cost report's three tabs (#6884): its tag is the tab on show, so the row
+                // stays chosen on each, and Spend with another page open.
+                let cost = (model.costTab ?? .spend).item
+                CostRow().activityIcon("dollarsign.circle",
+                                       warns: model.costState?.daySpendIsCloseToFull == true || model.costState?.dayTokensAreCloseToFull == true)
+                    .appText(.supporting).sidebarInk(cost).tag(cost)
                 VelocityRow().activityIcon("arrow.triangle.merge")
                     .appText(.supporting).sidebarInk(.velocity).tag(SidebarItem.velocity)
                 CycleTimeRow().activityIcon("hourglass")
@@ -299,19 +303,6 @@ struct FolderListView: View {
                 // The size of every other group's heading (#495). Reports (Alex, 2026-11-12): every
                 // page that reports on the work, Multiplier and Velocity among them; was Usage.
                 Text("Reports").appText(.supporting)
-            }
-
-            // What the work used (#6884): money, tokens and time, in a group of their own.
-            Section(isExpanded: $showsCost) {
-                SpendingRow(selection: $selection).activityIcon("dollarsign.circle",
-                                                                warns: model.costState?.daySpendIsCloseToFull == true)
-                    .appText(.supporting).sidebarInk(.spending).tag(SidebarItem.spending)
-                TokensRow().activityIcon("number", warns: model.costState?.dayTokensAreCloseToFull == true)
-                    .appText(.supporting).sidebarInk(.tokens).tag(SidebarItem.tokens)
-                TimeRow().activityIcon("clock")
-                    .appText(.supporting).sidebarInk(.time).tag(SidebarItem.time)
-            } header: {
-                Text("Cost").appText(.supporting)
             }
 
             // Pinned, Needs You (with everything waiting for an OK, #773), Working, Unread: a group each, headed and folding as a
@@ -1333,23 +1324,34 @@ private struct RuntimeMissingLine: View {
 /// that hides itself until the first pound is spent is a row nobody can use to find
 /// out that nothing has been — and while the cost was going unbanked, it was the only
 /// way in and it was never there.
-private struct SpendingRow: View {
+private struct CostRow: View {
     @Environment(AppModel.self) private var model
-    @Binding var selection: SidebarItem?
 
     var body: some View {
         // The title alone (#587): the day's figure and what is left are the tooltip's,
         // and near the limit the row's icon turns red (`activityIcon(_:warns:)`).
         HStack(alignment: .firstTextBaseline) {
-            Text("Spend").foregroundStyle(.primary)
+            Text("Cost").foregroundStyle(.primary)
             Spacer()
         }
         .help(help)
         .accessibilityValue(figures ?? "")
     }
 
-    /// Today's cost, and what is left of a daily limit where there is one.
+    /// Today's cost and tokens, and what is left of each daily limit where there is one.
     private var figures: String? {
+        let parts = [spend, tokens].compactMap(\.self)
+        return parts.isEmpty ? nil : parts.joined(separator: ". ")
+    }
+
+    private var tokens: String? {
+        guard let state = model.costState else { return nil }
+        let today = "\(state.tokensToday.formatted()) tokens today"
+        guard let left = state.dayTokenHeadroom else { return today }
+        return "\(today), \(left.formatted()) left"
+    }
+
+    private var spend: String? {
         guard let today else { return nil }
         if let state = model.costState, let left = state.dayHeadroom, let daily = state.limits.daily {
             return "\(today) today, \(left.money(in: daily.currency)) left"
@@ -1358,7 +1360,7 @@ private struct SpendingRow: View {
     }
 
     private var help: String {
-        figures.map { "\($0). What every agent has cost. Opens Spend." } ?? "What all of the work has cost"
+        figures.map { "\($0). What every agent has cost, its tokens and its time. Opens Cost." } ?? "What all of the work has cost, its tokens and its time"
     }
 
     /// This Mac's day and every server's, as one figure: what the work cost is the
@@ -1386,7 +1388,7 @@ private struct WakefulnessRow: View {
     var body: some View {
         if let state = model.wakeState, state.hasSomethingToSay {
             // Stacked rather than headline-left/detail-right, which is the shape
-            // `SpendingRow` uses below. That shape wrapped: this column is about
+            // `CostRow` uses below. That shape wrapped: this column is about
             // 226pt wide and "Keeping this Mac awake" plus a trailing count is a few
             // points over, so it broke mid-phrase and read as a mistake. Two lines on
             // purpose, left-aligned, survives a narrower sidebar too.
