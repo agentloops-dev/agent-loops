@@ -171,7 +171,10 @@ Before you file an issue, look for an open one on the same cause
 comment with the new numbers instead. A filed issue gets `task` (or `bug` for a
 script that is wrong), one `size:` label from the rubric in
 `.agents/personas/product-owner.md`, a priority (AGENTS.md, "Set a priority when you file", #5692) (most have
-none), and the `feature:` label that fits (`feature:capacity` for leases and lanes, `feature:performance` for builds and tests).
+none), and the `feature:` label that fits (`feature:capacity` for leases and lanes, `feature:performance` for builds and tests). Give it a
+parent epic when one fits, else say in the issue which standing epic takes it: #4207 for a bug,
+#4208 for all else (AGENTS.md, "Every issue has an epic", #7033). Set "blocked by" for what it waits for, and never add
+`on hold`.
 Its body says the measured cost, the cause with one or two example commands, the fix
 and the expected saving.
 

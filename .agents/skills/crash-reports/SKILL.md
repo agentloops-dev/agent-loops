@@ -105,7 +105,10 @@ gh issue create --label bug --title "<process> crashes: <exception or what it wa
 ```
 
 Add a priority (AGENTS.md, "Set a priority when you file", #5692): `priority:high` when the crash
-blocks a release or Alex says so, else `priority:medium` (a crash is core usability, #2800).
+blocks a release or Alex says so, else `priority:medium` (a crash is core usability, #2800). Add a `size:` from
+the rubric in `.agents/personas/product-owner.md`, and a parent epic when one fits, else say in
+the issue that the bug lane (#4207) takes it (AGENTS.md, "Every issue has an epic", #7033). Set "blocked by" for what it waits
+for, and never add `on hold`.
 
 Titles say what happened in plain words, like *agentsd crashes on an out-of-range turn
 index in AgentStore.turns*. Keep the `Crash signature:` line at the end of every body and

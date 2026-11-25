@@ -133,8 +133,10 @@ In the review worktree:
   --search "<ghsa_id> in:body"`): title `Dependency (<severity>): <package> <advisory
   title>`, a body with the alert's number and link, the advisory, the manifest, the
   patched version, Dependabot's pull request if any, and the finding's id; the labels
-  `priority:high` (critical and high) or `priority:medium`, `bug` and `dependencies`. The
-  release (its step 3)
+  `priority:high` (critical and high) or `priority:medium`, `bug` and `dependencies`,
+  and a `size:` from the rubric in `.agents/personas/product-owner.md`. It has no parent: say in
+  it that the bug lane (#4207) takes it (AGENTS.md, "Every issue has an epic", #7033). Set "blocked by" for what it
+  waits for, and never add `on hold`. The release (its step 3)
   collects these issues with its other high and medium ones, so a high alert blocks the
   release as any high finding does, and the bug lane's lanes (#4207) fix it: they bump the
   dependency, or land Dependabot's own pull request when it is green. A low alert is only

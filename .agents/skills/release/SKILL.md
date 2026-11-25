@@ -35,11 +35,11 @@ Alex decided (2026-10-13, #914):
 - **Only high blocks** (Alex, 2026-10-19, #1661). The release tags as soon as no high is
   open; it never waits for a medium fix. Other medium findings are filed with
   `priority:medium`, listed as known issues, and worked by the ordinary lanes after the
-  release (a bug with no milestone, for the bug lane; the rest as labelled). Low is recorded and not
+  release (a bug with no parent, for the bug lane; the rest in its epic, or #4208). Low is recorded and not
   worked.
 - **Milestones are themes, not versions** (Alex, 2026-11-06, #3760; replaces #1348). A
   milestone is named by its theme (`Projects`, `Channels`), and its GitHub due date gives
-  the order. No milestone blocks a release: a release goes out from `main` when something
+  the order of the milestones, not of issues (#7033). No milestone blocks a release: a release goes out from `main` when something
   merged since the last tag, at most one a day (step 0). The one exception is
   `1.0 Public release`: the release that takes the version 1.0.0, which Alex starts, waits
   until all its items are closed.
@@ -153,7 +153,7 @@ Collect, in order:
   with the alert's number and link, the advisory (`security_advisory.ghsa_id`), the
   manifest, the first patched version, and Dependabot's own pull request if any (`gh pr
   list --author app/dependabot --search <package>`); the labels `bug`, `security`,
-  `dependencies`, `priority:high`. No milestone. A medium or low alert gets no issue: Dependabot's own
+  `dependencies`, `priority:high`, and a `size:`. No milestone and no parent. A medium or low alert gets no issue: Dependabot's own
   pull requests take it. Never dismiss an alert: that is Alex's.
 - **Draft security advisories** from earlier releases: see "Security findings" below.
 - **Runtimes:** open issues the runtime check filed in this release (their titles start with
@@ -163,13 +163,19 @@ Collect, in order:
   Dependabot bugs above too.
 
 For each runtime finding with no issue yet, file one: title `Runtime (<severity>): <title>`,
-the finding's fields in the body, the labels `priority:medium` and `bug`. No milestone.
+the finding's fields in the body, the labels `priority:medium`, `bug` and a
+`size:`. No milestone.
+
+Each issue that this skill files has a parent epic when one fits, else it says which standing
+epic takes it: #4207 for a bug, #4208 for all else (AGENTS.md, "Every issue has an epic", #7033). It has a priority and a `size:`
+from the rubric in `.agents/personas/product-owner.md`, and "blocked by" for what it waits
+for. Never add `on hold`.
 
 Then send the bug lane's lead one message (`list_sessions`, then `message_session` to the
 session not archived that is labelled `#4207` and `lead`): the high issues in priority order (security, runtimes, the rest), then the
 unfixed draft security advisory URLs as priority work. Say that the release waits for
 high issues and never waits for a draft advisory. A high issue that is a child of another epic goes to that epic's lead as well. Other medium issues go to the ordinary
-lanes after the release as their label and milestone say (a bug to the bug lane).
+lanes after the release: each to its epic's lead, an orphan to its standing epic's (a bug to the bug lane).
 
 **No bug lane lead running, and work to hand over** (#1908; in v0.7.0 the highs sat
 40 minutes with no owner): start one when there are high issues or unfixed draft
@@ -411,7 +417,7 @@ A tag that already exists for this version means another release ran: end with
 
    If `up.sh` or a check fails, never roll back the store and never run `down.sh`. File a
    bug: title `Release v<version>: the control plane deploy failed`, labels `bug`,
-   `priority:high`, with no milestone, with the step and its first
+   `priority:high` and a `size:`, with no milestone, with the step and its first
    error (never a secret). Say it in the report. It does not hold step 9: the release is
    out.
 6. **Remove the scratch worktree** when the deploy and its checks are done, also when they

@@ -89,7 +89,10 @@ only to see what the agent did before a correction.
    in:title,body" --state all`); on a match, add a comment with the new numbers
    instead. A new issue gets `task` (or `bug` for a script or skill that is wrong),
    one `size:` label from the rubric in `.agents/personas/product-owner.md`, a priority
-   (AGENTS.md, "Set a priority when you file", #5692), and the `feature:` label that fits. A missing measurement's issue names the number, where
+   (AGENTS.md, "Set a priority when you file", #5692), and the `feature:` label that fits. Give it a
+   parent epic when one fits, else say in the issue which standing epic takes it: #4207 for a bug,
+   #4208 for all else (AGENTS.md, "Every issue has an epic", #7033). Set "blocked by" for what it waits for, and never add
+   `on hold`. A missing measurement's issue names the number, where
    it comes from (records, `gh`, a log), and the limit that must start an agent, as
    #4833 does for speed. A proposed rule's issue says the rule, the sessions' count,
    and that it waits for Alex.
