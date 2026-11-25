@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -53,7 +54,7 @@ func TestBackupDefaults(t *testing.T) {
 		t.Fatalf("state %+v", s)
 	}
 	// A file from a later build, with a value this one can't read, keeps backups on.
-	writeFile(t, d.backupSettingsPath(), `{"every":"hourly","keep":99,"folder":"relative"}`)
+	writeFile(t, d.backupSettingsPath(), `{"`+d.Store.RootID+`":{"every":"hourly","keep":99,"folder":"relative"}}`)
 	if s := d.backupSettings(); s.Every != wire.BackupEveryDaily || s.Keep != backupKeepDefault || s.Folder != nil {
 		t.Fatalf("unreadable values %+v", s)
 	}
@@ -596,5 +597,75 @@ func TestABackupFolderOnTheSameDiskIsSaid(t *testing.T) {
 	mustUnmarshal(t, cb.call(t, 2, "backups/restore", map[string]any{"id": made.ID}), &res)
 	if res.Restored != 1 || b.Store.Agent(agent.ID) == nil {
 		t.Fatalf("restored %+v", res)
+	}
+}
+
+// backup-settings.json moves from the data folder once, to an entry of this machine's own
+// (#6746): another machine's entry is kept and never used.
+func TestBackupSettingsMoveToOneEntryForEachMachine(t *testing.T) {
+	t.Parallel()
+
+	d, _ := start(t, t.TempDir())
+	writeFile(t, d.backupSettingsPath(), `{"OTHER":{"every":"off","keep":1,"later":true}}`)
+	if s := d.backupSettings(); s.Every != wire.BackupEveryDaily || s.Keep != backupKeepDefault {
+		t.Fatalf("another machine's entry was used: %+v", s)
+	}
+	writeFile(t, d.oldBackupSettingsPath(), `{"every":"weekly","keep":7}`)
+	for range 2 {
+		if s := d.backupSettings(); s.Every != wire.BackupEveryWeekly || s.Keep != 7 {
+			t.Fatalf("not moved: %+v", s)
+		}
+	}
+	if fileExists(d.oldBackupSettingsPath()) {
+		t.Fatal("the old file is still there")
+	}
+	must(t, d.configureBackups(wire.BackupSettings{Every: wire.BackupEveryDaily, Keep: 2}))
+	b, err := os.ReadFile(d.backupSettingsPath())
+	must(t, err)
+	if !strings.Contains(string(b), `"later": true`) {
+		t.Fatalf("another machine's entry was changed: %s", b)
+	}
+	// An old file that comes back does not win over the entry, and is kept.
+	writeFile(t, d.oldBackupSettingsPath(), `{"every":"weekly","keep":7}`)
+	if s := d.backupSettings(); s.Keep != 2 || !fileExists(d.oldBackupSettingsPath()+".moved") {
+		t.Fatalf("the old file won: %+v", s)
+	}
+}
+
+func TestBackupSettingsLimits(t *testing.T) {
+	t.Parallel()
+
+	d, _ := start(t, t.TempDir())
+	set := wire.BackupSettings{Every: wire.BackupEveryDaily, Keep: 2}
+	long := "/" + strings.Repeat("x", backupSettingsMostBytes)
+	if d.configureBackups(wire.BackupSettings{Every: wire.BackupEveryDaily, Keep: 2, Folder: &long}) == nil {
+		t.Fatal("an entry over the largest was taken")
+	}
+	full := map[string]any{}
+	for i := range backupSettingsMost {
+		full[strconv.Itoa(i)] = set
+	}
+	b, err := json.Marshal(full)
+	must(t, err)
+	writeFile(t, d.backupSettingsPath(), string(b))
+	if d.configureBackups(set) == nil {
+		t.Fatal("a machine past the most was taken")
+	}
+	// The settings of the old place stay there, and count, while there is no room.
+	writeFile(t, d.oldBackupSettingsPath(), `{"every":"weekly","keep":7}`)
+	if s := d.backupSettings(); s.Keep != 7 || !fileExists(d.oldBackupSettingsPath()) {
+		t.Fatalf("lost: %+v", s)
+	}
+	must(t, os.Remove(d.oldBackupSettingsPath()))
+	// A file that cannot be read is never written over, and no backup is deleted for it.
+	writeFile(t, d.backupSettingsPath(), `half`)
+	if s := d.backupSettings(); s.Keep != backupKeepMost {
+		t.Fatalf("unreadable: %+v", s)
+	}
+	if d.configureBackups(set) == nil || d.backupsState().LastError == nil {
+		t.Fatal("a file that cannot be read was not said")
+	}
+	if b, _ := os.ReadFile(d.backupSettingsPath()); string(b) != "half" {
+		t.Fatalf("written over: %s", b)
 	}
 }
