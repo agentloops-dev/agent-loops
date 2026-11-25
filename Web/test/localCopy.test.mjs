@@ -261,3 +261,17 @@ test("largest record: a machine loses its archived records, a chat its oldest en
   assert.equal(await copy.work("image", "u"), undefined);
   assert.equal(held.held.has(workRef("image", "u")), false, "the stale one goes too");
 });
+
+test("largest record: a picture at it is kept, one over it is not, and the limit is in bytes (#6908)", async () => {
+  const { copy } = aged(undefined, 1_024);
+  let n = 1_024;
+  for (;; n--) {
+    await copy.keepWork("image", "u", "x".repeat(n));
+    if (await copy.work("image", "u")) break;
+  }
+  assert.ok(n > 800, `${n}`);
+  await copy.keepWork("image", "u", "x".repeat(n + 1));
+  assert.equal(await copy.work("image", "u"), undefined);
+  await copy.keepWork("image", "u", "é".repeat(n));
+  assert.equal(await copy.work("image", "u"), undefined);
+});
