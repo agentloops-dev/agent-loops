@@ -75,7 +75,7 @@ This maps the families named by #6669 and its machine, control-plane, hosted, an
 
 **`lineage.jsonl`:** keep the ordered append history as log; build bounded graph nodes, edges, and current state from it. Record a graph checkpoint cursor so replay is idempotent. Expire old log entries only after the graph checkpoint is durable; the graph has its own bounds and age. No log summary.
 
-**Keychain connection item:** keep the credential in the secret backend; move endpoint, provider, account id, state, and expiry to a document in `.agents` or the relevant scoped store. Reference the secret by opaque id. Do not copy plaintext into the control plane or a migration manifest.
+**Keychain connection item:** not split (Alex, 2026-11-24, #6743). The endpoint, account and site say where the token is sent and as whom, so they stay with it in the secret store; an older build reads them there too.
 
 ## Host daemon migration order
 

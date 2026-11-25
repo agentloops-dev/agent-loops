@@ -134,7 +134,7 @@ more answers `429` with `Retry-After`.
 | One group: `/Groups`, then `/<id>` | GET, PUT, PATCH, DELETE | PATCH `members` `add` and `remove` (by `value`, or `members[value eq "x"]`), `replace` `displayName`. A member that is not a user of the provider answers `400 invalidValue`; a group as a member too. |
 
 Errors are RFC 7644's: `400 invalidFilter`, `invalidValue`, `invalidSyntax`, `invalidPath`,
-`401`, `404`, `409 uniqueness`, `413`, `429`, and `501` for `Bulk`, `/Me` and `sortBy`. The
+`401`, `403` (the control plane keeps as many people as it can, #7019), `404`, `409 uniqueness`, `413`, `429`, and `501` for `Bulk`, `/Me` and `sortBy`. The
 Enterprise User extension and any attribute not read are kept as they came. A `password`
 is never kept.
 
@@ -158,7 +158,8 @@ is never kept.
 Each of these is an entry, with the actor and no secret: a provider added or changed (the
 fields changed, and "secret replaced" with its fingerprint), checked or removed; a domain
 claimed, checked, proved, changed, lost or removed; each org sign-in (joined, paired, or
-added); each sign-in that **Require** refused; SCIM turned on or off, each SCIM token made or
+added); each sign-in that **Require** refused; a person refused because the people are at their limit
+(once an hour at most, #7019); SCIM turned on or off, each SCIM token made or
 revoked, and each group's role mark; each SCIM write (the actor `scim:<provider>` with the
 token's id, never its value, and the fields changed); and each suspension and its end
 (by `scim`, or by `refresh` with the provider).

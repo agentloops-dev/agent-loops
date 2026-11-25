@@ -102,7 +102,6 @@
 2 Go/internal/codespacessh/codespacessh.go WriteAtomically
 1 Go/internal/conflictrisk/conflictrisk.go os.CreateTemp
 1 Go/internal/conflictrisk/conflictrisk.go os.WriteFile
-1 Go/internal/connections/store.go WriteAtomically
 1 Go/internal/controllink/hostkey.go os.WriteFile
 1 Go/internal/controllink/keys.go os.OpenFile
 2 Go/internal/controllink/membership.go os.WriteFile
@@ -144,10 +143,8 @@
 1 Go/internal/controlplane/providers/kept.go v1/kept
 1 Go/internal/controlplane/providers/secrets.go os.CreateTemp
 1 Go/internal/controlplane/records/groups.go v1/groups
-1 Go/internal/controlplane/records/people.go v1/people
 1 Go/internal/controlplane/records/projects.go v1/projects
 1 Go/internal/controlplane/records/records.go v1/hosts
-1 Go/internal/controlplane/records/records.go v1/people
 1 Go/internal/controlplane/releasefiles.go os.CreateTemp
 1 Go/internal/controlplane/releasefiles.go os.WriteFile
 2 Go/internal/controlplane/reports.go v1/usage
