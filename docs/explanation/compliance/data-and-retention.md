@@ -301,7 +301,7 @@ service keeps these records.
 
 **An exception to the 90-day rule (Alex, 2026-11-24):** an account, its sign-in links, its
 email link and its usage have no age. They stay until **Delete Account**, for at most 100
-accounts, until epic [#7092](https://github.com/agentloops-dev/agent-loops/issues/7092) deletes
+accounts, until epic #7092 deletes
 idle accounts safely.
 
 The service keeps nothing for a signed-in browser: a session is a signed cookie for 30 days.
