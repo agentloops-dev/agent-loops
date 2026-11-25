@@ -3102,6 +3102,133 @@
       "required": [],
       "additionalProperties": false
     },
+    "StoreOwner": {
+      "type": "string",
+      "enum": [
+        "machine",
+        "controlPlane",
+        "client"
+      ],
+      "description": "Where a store is (#6906): on a machine, on the control plane, or in a client."
+    },
+    "StoreSize": {
+      "type": "object",
+      "description": "The last measurement of one declared store (#6906): sizes and counts only, never a path, a key, what is stored or the name of a person, project, machine or session. A measure or a percent that is not known is absent.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Stable, such as machine.transcripts or control.audit."
+        },
+        "owner": {
+          "$ref": "#/definitions/StoreOwner"
+        },
+        "scope": {
+          "type": "string",
+          "description": "Whose data one store holds: organisation, person, machine, folder or session."
+        },
+        "kind": {
+          "type": "string",
+          "description": "document, log, time series, graph, blob, key-value, cache or secret."
+        },
+        "state": {
+          "$ref": "#/definitions/StoreSizeState"
+        },
+        "why": {
+          "type": "string",
+          "description": "Why it is unavailable, in words for a person."
+        },
+        "bytes": {
+          "type": "integer",
+          "description": "The whole store's bytes."
+        },
+        "records": {
+          "type": "integer",
+          "description": "The whole store's records."
+        },
+        "averageRecordBytes": {
+          "type": "integer",
+          "description": "bytes over records, when both are measured and there are records."
+        },
+        "maxBytes": {
+          "type": "integer",
+          "description": "The byte limit."
+        },
+        "maxRecords": {
+          "type": "integer",
+          "description": "The record limit."
+        },
+        "limitPer": {
+          "type": "string",
+          "description": "What each limit is for when it is not the whole store: person, machine, session, folder, \u2026 The percents are then of the largest one."
+        },
+        "percentBytes": {
+          "type": "number",
+          "description": "Of maxBytes; over 100 is over the limit."
+        },
+        "percentRecords": {
+          "type": "number",
+          "description": "Of maxRecords; over 100 is over the limit."
+        },
+        "measuredAt": {
+          "$ref": "core.schema.json#/definitions/WireDate",
+          "description": "When this store's measurement ended."
+        }
+      },
+      "required": [
+        "id",
+        "owner",
+        "scope",
+        "kind",
+        "state"
+      ],
+      "additionalProperties": false
+    },
+    "StoreSizeState": {
+      "type": "string",
+      "enum": [
+        "current",
+        "over",
+        "stale",
+        "unavailable"
+      ],
+      "description": "over: past a limit, whatever the measurement's age. stale: older than twice the cadence (2 h on a machine, 12 h on the control plane). unavailable: not measured, or with no measure that a limit can be compared with; why says which."
+    },
+    "StoreSizes": {
+      "type": "object",
+      "description": "A page of at most 100 stores by id (#6906). cursor asks for the next page; absent on the last. total is the stores of every page.",
+      "properties": {
+        "stores": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/StoreSize"
+          }
+        },
+        "total": {
+          "type": "integer"
+        },
+        "cursor": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "stores",
+        "total"
+      ],
+      "additionalProperties": false
+    },
+    "StoreSizesQuery": {
+      "type": "object",
+      "description": "stores/list and reports/storeSizes (#6906). cursor is the last page's. limit is 1 to 100, 100 when absent.",
+      "properties": {
+        "cursor": {
+          "type": "string"
+        },
+        "limit": {
+          "type": "integer"
+        }
+      },
+      "additionalProperties": false
+    },
     "TimeBucket": {
       "type": "object",
       "properties": {

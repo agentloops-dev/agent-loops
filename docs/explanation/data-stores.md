@@ -122,8 +122,16 @@ other store does.
   (#6683).
 - **Test.** One shared test for each kind writes past every limit, and checks that the
   sweep brings the store back under it, and that a store that refuses does refuse.
-- **See.** Each store reports its count, its bytes and the age of its oldest record to its
-  machine's health, so that a store near its limit shows before it evicts or refuses.
+- **See.** A query gives each declared store's bytes, count, limits and percent used, from its
+  last completed measurement, with its time (#6906). It gives sizes and counts only. An admin
+  reads the control plane's stores with `reports/storeSizes`; each machine answers
+  `stores/list` for its own, and an agent on it calls `list_stores`. A machine measures once an
+  hour from the files' sizes, and reads a small JSON file to count its entries only when it
+  changed. A control plane measures every 6 hours from the store's listing, and reads no object.
+  A read measures nothing. A measurement more than twice as old is **stale**. Client stores are
+  **unavailable**, because a client does not send its measurements. The stores that are
+  measured are in `Go/internal/storesizes/catalogue.json`, which the check of **Declare** holds
+  to the declarations.
 
 ## Related
 

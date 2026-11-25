@@ -511,6 +511,8 @@ These had no row above. Paths in the evidence are relative to `Go/internal/`.
 | `v1/approvals/<person>/` | document | Signed approvals | 2,000 of 8 KiB a person, else refused; until the person is removed (no age before, on purpose: the same file is not approved again; #6970) | `controlplane/approvals.go` (`forgetApprovals`, `sweepApprovalsOfGone`) |
 | `v1/failed-makes/<provider>.json` | log | Failed makes | 5 a provider, 64 KiB; 90 days, on write and hourly; deleted with the provider (#6971) | `controlplane/providers/defaults.go` (`SweepFailedMakes`) |
 | `v1/maturity/<id>.json` | document | Feature maturity evidence | 84 of 4 KiB, updated in place, else refused; no age, on purpose: a rating is current state (#6905, #6972) | `controlplane/maturity/store.go` (`update`) |
+| `<root>/store-sizes.json` | key-value | The last measurement of each declared store | 200 of 4 KiB, 90 days; replaced hourly (#6906) | `agentsd/storesizes.go` (`openStoreSizes`) |
+| `v1/store-sizes.json` | key-value | The last measurement of each declared store | 1, 128 KiB; replaced every 6 hours (#6906) | `controlplane/storesizes.go` (`measureStores`) |
 
 Mixed files follow these decisions: `workflows.json` splits into document/configuration, key-value
 run state, and log history; `lineage.jsonl` stays an append log with a separate bounded graph

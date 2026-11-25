@@ -323,6 +323,12 @@ func (m *Methods) reportMethod(ctx context.Context, method string, params json.R
 			return nil, err
 		}
 		return m.s.setReportPolicy(ctx, policy)
+	case wire.CallReportsStoreSizes.Name:
+		request, err := require[wire.StoreSizesQuery](params, "StoreSizesQuery")
+		if err != nil {
+			return nil, err
+		}
+		return m.s.storeSizes(ctx, request, user)
 	case "reports/changes":
 		request, err := require[wire.ReportChangesQuery](params, "ReportChangesQuery")
 		if err != nil {
