@@ -47,7 +47,7 @@ STATE_KINDS = {"document", "graph", "key-value", "secret", "blob"}
 GO = [
     (re.compile(r"\bos\.(WriteFile|Create|CreateTemp)\("), None),
     (re.compile(r"\bos\.OpenFile\(.*\bO_CREATE\b"), "os.OpenFile"),
-    (re.compile(r"\b([wW]riteAtomically)\("), None),
+    (re.compile(r"\b([wW]riteAtomically|writeStore)\("), None),
     (re.compile(r"\b(execfile\.Write|rolllog\.Open|store\.NewFolder)\("), None),
     (re.compile(r'"(v1/[A-Za-z][A-Za-z-]*|runtime/control-[a-z-]+)/?[^"]*"'), None),
 ]

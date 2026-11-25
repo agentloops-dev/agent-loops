@@ -16,6 +16,13 @@ built around it.
 A **machine** runs agents. Your Mac is one, once Agent Loops is installed on it. A Linux server is another, and so is a second Mac. A machine owns its agents: it starts
 their runtimes, holds their conversations and keeps their records on its own disk.
 
+A machine has **roles** (#6609): `agents`, `control` or both. A Mac that runs the control
+plane and agents has both. A machine that runs only the control plane, such as the VM of the live
+control plane, has only `control`: the control plane writes its record when its machine has
+none, shows it to admins only, and refuses to remove it. Each copy's record in
+`v1/copies/<id>.json` names its machine (`machine`). `machines/list` says each machine's
+`roles`; an older control plane does not, and a client reads that as `agents`.
+
 A **client** is a screen: the Agent Loops window on a Mac, Agent Loops on an iPhone or iPad, or a
 browser on the Mac that runs the control plane. A client runs nothing. It shows what the machines hold and passes on what you type and click.
 

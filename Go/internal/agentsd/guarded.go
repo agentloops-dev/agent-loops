@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -49,6 +50,16 @@ type guardedState struct {
 	ApprovedContent []byte          `json:"approvedContent,omitempty"`
 	Pending         *guardedPending `json:"pending,omitempty"`
 }
+
+const (
+	// guardedMostBytes is the largest approved copy that guarded-files.json holds: a larger file is
+	// never approved. guardedMost is the files it holds, and guardedFileMost the whole of it.
+	guardedMostBytes = 1 << 20
+	guardedMost      = 30_000
+	guardedFileMost  = 64 << 20
+	// guardedChangersMost is the agents a waiting change names.
+	guardedChangersMost = 100
+)
 
 type guardedRecords struct {
 	ApprovalsBegan *wire.Date     `json:"approvalsBegan,omitempty"`
@@ -105,6 +116,13 @@ func (d *Daemon) guardedRecs() *guardedRecords {
 }
 
 func (d *Daemon) saveGuarded() {
+	if err := d.writeGuarded(); err != nil {
+		log.Printf("guarded-files.json: could not save: %v", err)
+	}
+}
+
+// writeGuarded writes the records within their limits, or says why not: the file stays as it was.
+func (d *Daemon) writeGuarded() error {
 	r := d.guardedRecs()
 	if r.ApprovalsBegan == nil {
 		t := now()
@@ -120,11 +138,18 @@ func (d *Daemon) saveGuarded() {
 	if r.States == nil {
 		r.States = []guardedState{}
 	}
-	if b, err := diskjson.Marshal(r); err == nil {
-		if err := store.WriteAtomically(d.guardedFile(), b, 0o644); err != nil {
-			log.Printf("guarded-files.json: could not save: %v", err)
-		}
+	if len(r.States) > guardedMost {
+		return fmt.Errorf("guarded-files.json: %d files, at most %d: %w", len(r.States), guardedMost, store.ErrLimit)
 	}
+	b, err := diskjson.Marshal(r)
+	if err != nil {
+		return err
+	}
+	if err := settingFits(d.guardedFile(), b, guardedFileMost); err != nil {
+		return err
+	}
+	// store-bounds: kind=key-value; count=30_000; size=64MiB in all, 1MiB a copy; age=until-deleted; applied=on write (refused), a record goes with its folder
+	return store.WriteAtomically(d.guardedFile(), b, 0o644)
 }
 
 func (d *Daemon) stateOf(folder, path string) (*guardedState, bool) {
@@ -197,8 +222,8 @@ func (d *Daemon) checkGuarded(folder, path string, ended *wire.UUID) {
 	s, known := d.stateOf(folder, path)
 	moved := false
 	switch {
-	case !known && !readsWhole(digest, data):
-		// First seen while it is written (empty, or half of it): no copy is approved yet,
+	case !known && (!readsWhole(digest, data) || len(data) > guardedMostBytes):
+		// First seen while it is written (empty, or half of it), or too large to keep: no copy is approved yet,
 		// as if there were no file, so the whole copy is a change like any other (#6525).
 		s.ApprovedDigest, s.ApprovedContent, moved = nil, nil, true
 	case !known:
@@ -229,6 +254,10 @@ func (d *Daemon) checkGuarded(folder, path string, ended *wire.UUID) {
 // (#6523); until then it is false, and nothing is recorded. Call it with guardedMu held.
 func (d *Daemon) guardedChangedLocked(folder, path string, s *guardedState, digest *string, data []byte, ended *wire.UUID) bool {
 	working := d.guardedWorkingAgents(folder, ended)
+	// A copy too large to keep is not approved: the one before applies until it is undone.
+	if len(data) > guardedMostBytes && s.Pending == nil {
+		s.Pending = &guardedPending{Since: now(), ChangedByIDs: []wire.UUID{}, ChangedBy: []string{}}
+	}
 	switch {
 	case len(working) > 0:
 		d.dropUnsureLocked(folder, path)
@@ -238,6 +267,9 @@ func (d *Daemon) guardedChangedLocked(folder, path string, s *guardedState, dige
 		for _, a := range working {
 			addGuardedChanger(s.Pending, a)
 		}
+		s.Pending.Digest = digest
+	case len(data) > guardedMostBytes:
+		d.dropUnsureLocked(folder, path)
 		s.Pending.Digest = digest
 	case !inRepository(folder):
 		s.ApprovedDigest, s.ApprovedContent, s.Pending = digest, data, nil // the person's own edit
@@ -339,10 +371,13 @@ func addGuardedChanger(p *guardedPending, a wire.Agent) {
 			return
 		}
 	}
+	if len(p.ChangedByIDs) >= guardedChangersMost {
+		return
+	}
 	p.ChangedByIDs = append(p.ChangedByIDs, a.ID)
 	title := "An agent"
 	if a.Title != nil {
-		title = *a.Title
+		title = cut(*a.Title, 256)
 	}
 	p.ChangedBy = append(p.ChangedBy, title)
 }
@@ -383,13 +418,30 @@ func guardedRefusal(path, lead string) error {
 
 // approveWrite records the app's own write as approved.
 func (d *Daemon) approveWrite(folder, path string) {
+	if err := d.approveGuarded(folder, path); err != nil {
+		log.Printf("guarded-files.json: %s is not approved: %v", path, err)
+	}
+}
+
+// approveGuarded approves the file as it is on disk. Refused, the copy approved before stays.
+func (d *Daemon) approveGuarded(folder, path string) error {
 	d.guardedMu.Lock()
+	defer d.guardedMu.Unlock()
 	digest, data := diskRead(folder, path)
+	if err := tooLarge(path, data, guardedMostBytes); err != nil {
+		return err
+	}
 	s, _ := d.stateOf(folder, path)
+	was := *s
 	s.ApprovedDigest, s.ApprovedContent, s.Pending = digest, data, nil
+	if err := d.writeGuarded(); err != nil {
+		// writeGuarded can drop records, so the state is looked up again.
+		s, _ = d.stateOf(folder, path)
+		*s = was
+		return err
+	}
 	d.dropUnsureLocked(folder, path)
-	d.saveGuarded()
-	d.guardedMu.Unlock()
+	return nil
 }
 
 // guardedTurnEnded checks a folder's files as a turn there ends.
@@ -607,6 +659,7 @@ func (d *Daemon) keepOrUndo(r wire.GuardedChangeRequest, keep bool) (wire.Folder
 		} else if had {
 			// A folder that cannot be made fails the write below, which says so.
 			_ = os.MkdirAll(filepath.Dir(path), 0o755) //nolint:gosec // G301: the mode this folder always had; only its error is new
+			// store-bounds: not a store: a file in the person's project, put back as it was
 			err = store.WriteAtomically(path, content, 0o644)
 		} else if err = os.Remove(path); errors.Is(err, os.ErrNotExist) {
 			err = nil
@@ -615,7 +668,9 @@ func (d *Daemon) keepOrUndo(r wire.GuardedChangeRequest, keep bool) (wire.Folder
 			return wire.FolderSummary{}, &Error{Code: CodeInternal, Message: r.Path + " could not be put back: " + err.Error()}
 		}
 	}
-	d.approveWrite(folder, r.Path)
+	if err := d.approveGuarded(folder, r.Path); err != nil {
+		return wire.FolderSummary{}, &Error{Code: wire.FailureCouldNotSave, Message: r.Path + " was not " + verb + ": " + err.Error()}
+	}
 	d.guardedFilesMoved(folder)
 	s, _ := d.summaryFor(folder)
 	return s, nil

@@ -186,6 +186,9 @@ type Service struct {
 	autoBook
 	origin  string
 	copyID  string
+	// The id of the machine record this copy runs on (#6609).
+	controlMachine atomic.Pointer[string]
+	controlMu      sync.Mutex
 	records *records.Records
 	// When the audit last said that the people are at their limit (#7019).
 	peopleFullMu   sync.Mutex
@@ -681,6 +684,10 @@ func (s *Service) takeUp(ctx context.Context) error {
 	if err := s.records.Migrate(ctx); err != nil {
 		return err
 	}
+	if err := s.ensureControlMachine(ctx); err != nil {
+		s.log("the control plane's own machine record: " + err.Error())
+	}
+	s.warnBothRoles()
 	for _, h := range s.records.Hosts() {
 		s.router.Know(h.ID)
 	}
@@ -2154,6 +2161,10 @@ func (s *Service) spendHostCode(ctx context.Context, id string, stored *storedCo
 	if err := s.records.MachineRoom(ctx, a.PublicKey); err != nil {
 		return nil, err
 	}
+	// Before the code is spent too, so another machine can use it (#7305).
+	if err := s.refuseBothRoles(a.MachineID, a.PublicKey); err != nil {
+		return nil, err
+	}
 	want := s.joiningHostID(stored, a)
 	sp, err := s.codes.Spend(ctx, id, spent{PublicKey: a.PublicKey, Host: &want})
 	if err != nil {
@@ -2190,7 +2201,7 @@ func (s *Service) spendHostCode(ctx context.Context, id string, stored *storedCo
 // the control plane made the machine (#5765); mac, for the host on the control plane's own
 // machine, its home host, as a moved set-up's is (data-model.md); else a new id.
 func (s *Service) joiningHostID(stored *storedCode, a wire.MachineAnnounce) string {
-	home := s.cfg.MachineID != "" && a.MachineID == s.cfg.MachineID && s.records.Host("mac") == nil
+	home := s.cfg.MachineID != "" && a.MachineID == s.cfg.MachineID && s.macFree()
 	want := records.NewHostID()
 	if stored.MadeHost != "" {
 		want = stored.MadeHost
@@ -2206,6 +2217,15 @@ func (s *Service) joiningHostID(stored *storedCode, a wire.MachineAnnounce) stri
 func (s *Service) addJoiningHost(ctx context.Context, id string, a wire.MachineAnnounce, record records.MachineRecord) (string, error) {
 	host := record.ID
 	err := s.records.AddHost(ctx, record)
+	if errors.Is(err, records.ErrHostTaken) {
+		// The machine's record that the control plane made: this host takes it over.
+		if took, terr := s.takeOverControlMachine(ctx, record); took || terr != nil {
+			if terr != nil {
+				return "", terr
+			}
+			return host, nil
+		}
+	}
 	if errors.Is(err, records.ErrHostTaken) && host == "mac" {
 		// Another host on this machine enrolled as mac first, at this copy or another: this
 		// one gets an id of its own, and the code says so to a replay.
@@ -2224,6 +2244,7 @@ func (s *Service) addJoiningHost(ctx context.Context, id string, a wire.MachineA
 	if err != nil {
 		return "", err
 	}
+	s.mergeControlMachine(ctx, host, record)
 	return host, nil
 }
 

@@ -56,6 +56,7 @@ func (d *Daemon) featuresLocked() *featuresFile {
 		if d.features.Days == nil {
 			d.features.Days = map[string]map[string]map[string]int64{}
 		}
+		boundPeriods(d.features.Days, featureRows, sumUses)
 	}
 	return d.features
 }
@@ -75,10 +76,7 @@ func (d *Daemon) countFeature(method, client string) {
 		f.Days[today] = day
 		pruneFeatures(f, nowFunc())
 	}
-	if day[method] == nil {
-		day[method] = map[string]int64{}
-	}
-	day[method][client]++
+	addRow(day, method, featureRows, map[string]int64{client: 1}, sumUses)
 	d.featureDirty = true
 }
 
@@ -163,6 +161,7 @@ func (d *Daemon) saveFeatures() {
 	if !d.featureDirty || d.features == nil {
 		return
 	}
+	// store-bounds: kind=time series; count=90; size=2MiB a day; age=90d; applied=write (a method past 2,000 goes on "other") and hourly sweep
 	if err := writeStore(d.featuresPath(), d.features); err != nil {
 		log.Printf("features-history.json: could not save: %v", err)
 		return

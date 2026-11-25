@@ -180,6 +180,7 @@ func (d *Daemon) TakeLock(lock wire.Lock) bool {
 	if b, err := json.Marshal(lock); err == nil {
 		// Also one that an earlier write did not take.
 		if had, err := os.ReadFile(d.lockFilePath()); err != nil || !bytes.Equal(had, b) {
+			// store-bounds: kind=key-value; count=4096; size=8KiB an entry; age=until-deleted; applied=on write (machinelock refuses a longer lock, and an entry over 4KiB)
 			if err := store.WriteAtomically(d.lockFilePath(), b, 0o644); err != nil {
 				log.Printf("lock: the lock could not be kept: %v", err)
 			}
@@ -286,6 +287,7 @@ func (d *Daemon) toldLockJoin(params json.RawMessage) {
 	// passed on another key could only pass on that key's digits.
 	digits := machinelock.Digits(r.Key, ask.nonce, r.Nonce)
 	shown := digits[:3] + " " + digits[3:]
+	// store-bounds: kind=key-value; count=1; size=8B; age=until-deleted; applied=on write (six digits), it goes when this machine is in the lock
 	if err := os.WriteFile(filepath.Join(d.Store.Loc.Root, lockShownFile), []byte(shown+"\n"), 0o600); err != nil {
 		log.Printf("lock: could not keep the digits shown: %v", err)
 	}

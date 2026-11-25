@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/agentloops-dev/agent-loops/Go/wire"
@@ -166,7 +167,58 @@ type MachineRecord struct {
 	Expires *Stamp
 	// The labels a person set (#5284), key or key=value, sorted; the provider's are not here.
 	Labels []string
-	Extra  Extra
+	// What the machine does (#6609): RoleAgents, RoleControl or both. Empty is agents.
+	Roles []string
+	Extra Extra
+}
+
+// The roles of a machine (#6609, epic #6608).
+const (
+	RoleAgents  = "agents"
+	RoleControl = "control"
+)
+
+// HasRole says whether the machine has that role; a record with no roles runs agents.
+func (h MachineRecord) HasRole(role string) bool {
+	if len(h.Roles) == 0 {
+		return role == RoleAgents
+	}
+	return slices.Contains(h.Roles, role)
+}
+
+// ControlOnly says the machine runs the control plane and no agents: nothing dials in with it.
+func (h MachineRecord) ControlOnly() bool { return !h.HasRole(RoleAgents) }
+
+// ControlOnlyRefusal is why a control-only machine is not removed or changed, in the words
+// a person reads; "" for a machine that runs agents.
+func (h MachineRecord) ControlOnlyRefusal() string {
+	if !h.ControlOnly() {
+		return ""
+	}
+	return h.Name + " runs the control plane and no agents. It cannot be removed or changed here: move the control plane first."
+}
+
+// RolesOf is the machine's roles, agents when it has none.
+func RolesOf(h MachineRecord) []string {
+	if len(h.Roles) == 0 {
+		return []string{RoleAgents}
+	}
+	return slices.Clone(h.Roles)
+}
+
+// NormalRoles is roles as stored: only the known ones, once each, agents before control.
+// It is nil for the default, agents alone.
+func NormalRoles(roles []string) []string {
+	var out []string
+	for _, r := range []string{RoleAgents, RoleControl} {
+		if slices.Contains(roles, r) {
+			out = append(out, r)
+		}
+	}
+	if len(out) == 0 || (len(out) == 1 && out[0] == RoleAgents) {
+		return nil
+	}
+	return out
 }
 
 type hostJSON struct {
@@ -188,6 +240,7 @@ type hostJSON struct {
 	Workspace     json.RawMessage   `json:"workspace,omitempty"`
 	Expires       *Stamp            `json:"expires,omitempty"`
 	Labels        []string          `json:"labels,omitempty"`
+	Roles         []string          `json:"roles,omitempty"`
 }
 
 // dialOut is MachineReach.dialOut: every host connects out now (058, T073); a record that
@@ -197,7 +250,7 @@ var dialOut = json.RawMessage(`{"dialOut":{}}`)
 func (h MachineRecord) MarshalJSON() ([]byte, error) {
 	return encodeKeeping(hostJSON{h.ID, h.Name, h.PublicKey, dialOut, h.Platform, h.Version, h.Installed, h.MachineID,
 		h.SignInFrom, h.GitFrom, h.Owner, h.Rev, h.Forgotten, h.ForgottenAt, h.KnownEpoch,
-		h.Workspace, h.Expires, h.Labels}, h.Extra)
+		h.Workspace, h.Expires, h.Labels, NormalRoles(h.Roles)}, h.Extra)
 }
 
 func (h *MachineRecord) UnmarshalJSON(data []byte) error {
@@ -207,7 +260,7 @@ func (h *MachineRecord) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	*h = MachineRecord{j.ID, j.Name, j.PublicKey, j.Platform, j.Version, j.Installed, j.MachineID, j.SignInFrom,
-		j.GitFrom, j.Owner, j.Rev, j.Forgotten, j.ForgottenAt, j.KnownEpoch, j.Workspace, j.Expires, j.Labels, extra}
+		j.GitFrom, j.Owner, j.Rev, j.Forgotten, j.ForgottenAt, j.KnownEpoch, j.Workspace, j.Expires, j.Labels, j.Roles, extra}
 	return nil
 }
 

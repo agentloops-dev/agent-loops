@@ -149,6 +149,9 @@ machines/list
     "machineID": "MACHINE-2",
     "implementation": "go",
     "owner": "<uuid>",
+    "roles": [
+      "agents"
+    ],
     "labels": [
       "arch=arm64",
       "os=linux"
@@ -167,6 +170,9 @@ machines/list
     "reach": "dialOut",
     "machineID": "RAW-MAC",
     "owner": "<uuid>",
+    "roles": [
+      "agents"
+    ],
     "labels": [
       "arch=arm64",
       "os=macos"
@@ -186,6 +192,10 @@ machines/list
     "machineID": "MACHINE-1",
     "implementation": "go",
     "owner": "<uuid>",
+    "roles": [
+      "agents",
+      "control"
+    ],
     "labels": [
       "arch=arm64",
       "os=linux"
@@ -428,6 +438,9 @@ machines/list
     },
     "implementation": "go",
     "owner": "<uuid>",
+    "roles": [
+      "agents"
+    ],
     "labels": [
       "arch=arm64",
       "os=linux"
@@ -446,6 +459,9 @@ machines/list
     "reach": "dialOut",
     "machineID": "RAW-MAC",
     "owner": "<uuid>",
+    "roles": [
+      "agents"
+    ],
     "labels": [
       "arch=arm64",
       "os=macos"
@@ -465,6 +481,10 @@ machines/list
     "machineID": "MACHINE-1",
     "implementation": "go",
     "owner": "<uuid>",
+    "roles": [
+      "agents",
+      "control"
+    ],
     "labels": [
       "arch=arm64",
       "os=linux"

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -112,8 +113,72 @@ func LoadMarketplaces(path string) (MarketplaceFile, error) {
 	return f, nil
 }
 
+// The limits of a marketplaces.json (#7247). It is the person's: one more is refused, nothing is
+// evicted, and a file over a limit still opens and can be made smaller.
+const (
+	marketplacesMost      = 200
+	marketplaceRecordMost = 4 << 10
+	// marketplaceMarksMost is the ids in each of off and on.
+	marketplaceMarksMost = 1000
+)
+
+// CheckMarketplaces is whether SaveMarketplaces takes f, with nothing written.
+func CheckMarketplaces(f MarketplaceFile, path string) error {
+	old, err := LoadMarketplaces(path)
+	if err != nil {
+		return err
+	}
+	if n := len(f.Marketplaces); n > marketplacesMost && n > len(old.Marketplaces) {
+		return fmt.Errorf("at most %d marketplaces are kept; remove one first: %w", marketplacesMost, store.ErrLimit)
+	}
+	were := map[marketplaceKey]bool{}
+	for _, e := range old.Marketplaces {
+		were[e.key()] = true
+	}
+	for _, e := range f.Marketplaces {
+		b, err := json.Marshal(e)
+		if err != nil {
+			return err
+		}
+		if len(b) > marketplaceRecordMost && !were[e.key()] {
+			return fmt.Errorf("a marketplace is at most %d bytes: %w", marketplaceRecordMost, store.ErrLimit)
+		}
+	}
+	if err := checkMarks("off", f.Off, old.Off); err != nil {
+		return err
+	}
+	return checkMarks("on", f.On, old.On)
+}
+
+// marketplaceKey is an entry's fields, to compare it with another.
+type marketplaceKey struct{ format, name, token, url string }
+
+func (e MarketplaceEntry) key() marketplaceKey {
+	k := marketplaceKey{format: string(e.Format), name: e.Name, url: e.URL}
+	if e.Token != nil {
+		k.token = *e.Token
+	}
+	return k
+}
+
+func checkMarks(what string, ids, old []string) error {
+	if len(ids) > marketplaceMarksMost && len(ids) > len(old) {
+		return fmt.Errorf("at most %d marketplaces are kept as turned %s: %w", marketplaceMarksMost, what, store.ErrLimit)
+	}
+	were := set(old)
+	for _, id := range ids {
+		if len(id) > marketplaceRecordMost && !were[id] {
+			return fmt.Errorf("a marketplace's id is at most %d bytes: %w", marketplaceRecordMost, store.ErrLimit)
+		}
+	}
+	return nil
+}
+
 // SaveMarketplaces writes it sorted and pretty, as Foundation does.
 func SaveMarketplaces(f MarketplaceFile, path string) error {
+	if err := CheckMarketplaces(f, path); err != nil {
+		return err
+	}
 	if f.Marketplaces == nil {
 		f.Marketplaces = []MarketplaceEntry{}
 	}
@@ -128,6 +193,7 @@ func SaveMarketplaces(f MarketplaceFile, path string) error {
 		return err
 	}
 	text := regexp.MustCompile(`(?m)^(\s*"[^"]*"): `).ReplaceAll(buf.Bytes(), []byte("$1 : "))
+	// store-bounds: kind=key-value; count=200; size=4KiB a marketplace, and 1000 ids of 4KiB each in off and in on; age=until-deleted; applied=on write, refused
 	return store.WriteAtomically(path, text, 0o644)
 }
 

@@ -107,7 +107,6 @@ struct ContentView: View {
             // points tall while this Mac's host did not answer (#5932).
             .columnFloor()
             .navigationSplitViewColumnWidth(min: 240, ideal: 300, max: 420)
-            // A server asking to borrow a sign-in (T091) is the window's one alert, below.
             // A known server with a new key: rebuilt, or not what it says (043).
             // Agents missing at start-up, offered once each (048). Closed any way at
             // all, what was missing counts as offered.
@@ -445,9 +444,6 @@ struct ContentView: View {
         // problem, or a second arriving, waits for its button rather than closing it.
         .heldAlert(\.title, item: { WindowAlert.wanted(by: model) }, dismiss: { $0.closed() }) { alert in
             switch alert {
-            case .lend(let ask):
-                Button("Approve") { model.finishSignInLendAsk(ask, allowed: true) }
-                Button("Deny", role: .cancel) { model.finishSignInLendAsk(ask, allowed: false) }
             case .lendGit(let ask):
                 Button("Approve") { model.answerGitLend(ask, allowed: true) }
                 Button("Deny", role: .cancel) { model.answerGitLend(ask, allowed: false) }
@@ -483,37 +479,31 @@ struct ContentView: View {
 }
 
 /// What the window's one alert is about (#101): a choice that blocks the work, such as a
-/// server asking to borrow a sign-in. One at a time, the ask first, since a server is
-/// waiting on it. Something that could not be finished is a toast (`WindowToast`, #4737).
+/// machine asking to use this Mac's git access. One at a time. Something
+/// that could not be finished is a toast (`WindowToast`, #4737).
 enum WindowAlert: Identifiable {
-    case lend(SignInLendAsk)
     case lendGit(GitLendAsk)
 
     var id: String {
         switch self {
-        case .lend(let ask): "lend-\(ask.id)"
         case .lendGit(let ask): "lend-git-\(ask.id)"
         }
     }
 
     var title: String {
         switch self {
-        case .lend(let ask): "Let \(ask.label) use this Mac’s \(ask.runtimeName) sign-in?"
         case .lendGit(let ask): ask.title
         }
     }
 
     var message: String {
         switch self {
-        case .lend(let ask):
-            "Its agents will use \(ask.runtimeName) as you, through this Mac, whenever this Mac is awake. The sign-in itself stays on this Mac. You can stop it in Settings ▸ Machines."
         case .lendGit(let ask): ask.message
         }
     }
 
     @MainActor
     static func wanted(by model: AppModel) -> WindowAlert? {
-        if let ask = model.signInLendAsk { return .lend(ask) }
         if let ask = model.gitLendAsk { return .lendGit(ask) }
         return nil
     }
@@ -523,9 +513,6 @@ enum WindowAlert: Identifiable {
     @MainActor
     func closed() {
         switch self {
-        // Its buttons answer it, Escape as Deny, and only once: its answer is a
-        // continuation, so nothing here answers it again.
-        case .lend: break
         // Escape is Deny, which its cancel button has said.
         case .lendGit: break
         }

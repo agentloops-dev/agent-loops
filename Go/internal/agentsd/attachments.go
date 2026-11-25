@@ -29,6 +29,11 @@ const (
 	attachmentDays    = 7 * 24 * time.Hour
 	attachmentTmpAge  = 24 * time.Hour
 	attachmentsFolder = ".agents/attachments"
+	attachmentMost    = 25 << 20
+
+	// The folders that attachment-folders.json lists, and one of them.
+	attachmentFoldersMost     = 10_000
+	attachmentFolderMostBytes = 16 << 10
 )
 
 // attachmentFolderBytes is the most a folder's attachments come to: twenty of the
@@ -41,12 +46,21 @@ func (d *Daemon) writeAttachment(root, name string, data []byte) (string, error)
 	if err != nil {
 		return "", err
 	}
+	if len(data) > attachmentMost {
+		return "", fmt.Errorf("an attachment of %d bytes, at most %d: %w", len(data), attachmentMost, store.ErrLimit)
+	}
+	// The folder is listed first, and the sweep waits: no file is in a folder it does not find.
+	d.attachmentFoldersMu.Lock()
+	defer d.attachmentFoldersMu.Unlock()
+	if err := d.noteAttachmentFolderLocked(root); err != nil {
+		return "", err
+	}
 	path := filepath.Join(dir, string(store.NewUUID())[:8]+"-"+filepath.Base(name))
+	// store-bounds: kind=blob; size=500MiB a folder, 25MiB a file; age=90d; applied=on write (size), hourly sweep (7 days when no conversation names it)
 	if err := store.WriteAtomically(path, data, 0o600); err != nil {
 		return "", err
 	}
 	d.boundAttachments(root, path, false)
-	d.noteAttachmentFolder(root)
 	return path, nil
 }
 
@@ -97,22 +111,28 @@ func (d *Daemon) readAttachmentFolders() []string {
 	return folders
 }
 
-func (d *Daemon) writeAttachmentFolders(folders []string) {
-	data, _ := json.Marshal(folders)
-	if err := store.WriteAtomically(d.attachmentFoldersPath(), data, 0o600); err != nil {
-		log.Printf("attachments: %v", err)
+func (d *Daemon) writeAttachmentFolders(folders []string) error {
+	data, err := json.Marshal(folders)
+	if err != nil {
+		return err
 	}
+	// store-bounds: kind=key-value; count=10_000; size=16KiB a folder; age=until-deleted; applied=on write (refused), a folder goes with its last attachment
+	return store.WriteAtomically(d.attachmentFoldersPath(), data, 0o600)
 }
 
-// noteAttachmentFolder adds root to the list, once.
-func (d *Daemon) noteAttachmentFolder(root string) {
-	d.attachmentFoldersMu.Lock()
-	defer d.attachmentFoldersMu.Unlock()
+// noteAttachmentFolderLocked adds root to the list, once. Call it with attachmentFoldersMu held.
+func (d *Daemon) noteAttachmentFolderLocked(root string) error {
 	folders := d.readAttachmentFolders()
 	if slices.Contains(folders, root) {
-		return
+		return nil
 	}
-	d.writeAttachmentFolders(append(folders, root))
+	if len(folders) >= attachmentFoldersMost {
+		return fmt.Errorf("attachments in %d folders, at most %d: %w", len(folders)+1, attachmentFoldersMost, store.ErrLimit)
+	}
+	if b, err := json.Marshal(root); err != nil || len(b) > attachmentFolderMostBytes {
+		return fmt.Errorf("a folder's path of %d bytes, at most %d: %w", len(root), attachmentFolderMostBytes, store.ErrLimit)
+	}
+	return d.writeAttachmentFolders(append(folders, root))
 }
 
 // sweepAttachments bounds the attachments of every folder an agent here works in, and of
@@ -141,7 +161,9 @@ func (d *Daemon) sweepAttachments() {
 		}
 	}
 	if len(kept) != len(listed) {
-		d.writeAttachmentFolders(kept)
+		if err := d.writeAttachmentFolders(kept); err != nil {
+			log.Printf("attachments: %v", err)
+		}
 	}
 	d.attachmentFoldersMu.Unlock()
 	d.namedMu.Lock()
@@ -208,6 +230,10 @@ func (d *Daemon) boundAttachments(root, keep string, byAge bool) (deleted int) {
 			continue
 		}
 		f := attachment{path: path, size: info.Size(), at: info.ModTime()}
+		if byAge && path != keep && t.Sub(f.at) > store.MaxAge {
+			remove(path)
+			continue
+		}
 		if byAge && path != keep && t.Sub(f.at) > attachmentDays {
 			old = append(old, f)
 			continue

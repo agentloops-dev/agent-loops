@@ -31,7 +31,10 @@ const milestoneDueWait = 30 * time.Second
 // milestoneOf is a milestone in a repo, as its items' nodes keep them.
 type milestoneOf struct{ repo, name string }
 
-func (m milestoneOf) key() string { return strings.ToLower(m.repo + "\t" + m.name) }
+// key is at most costWordBytes: it is kept in the cost ledger.
+func (m milestoneOf) key() string {
+	return cutJSON(strings.ToLower(m.repo+"\t"+m.name), costWordBytes)
+}
 
 // milestonesDueLocked is the milestones of work's issues (and of a PR's fixed issues) not
 // checked in the last milestoneCheckEvery, marked as checked now. Called with workMu held.

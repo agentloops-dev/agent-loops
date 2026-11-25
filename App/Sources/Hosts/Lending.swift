@@ -1,15 +1,6 @@
 import AgentsKitCore
 import Foundation
 
-/// A server asked for a sign-in this Mac relays (058, T091): asked of the person, once per
-/// server and runtime, before the control plane lets the server reach this Mac's relay.
-struct SignInLendAsk: Identifiable {
-    let id = UUID()
-    let runtimeName: String
-    let label: String
-    let answer: CheckedContinuation<Bool, Never>
-}
-
 /// How a lend of this Mac's sign-in ended. `notLent` says why, when the person should know.
 enum SignInLend: Equatable {
     case lent
@@ -42,11 +33,11 @@ extension AppModel {
 
     /// A server of the control plane wants a sign-in this Mac relays (T091). This Mac's
     /// host starts the relay first, which fails when this Mac is not signed in to the
-    /// runtime the way a server can use, so the person is asked only about a sign-in this
-    /// Mac can lend (#6855). Then it asks the person the first time, the control plane
-    /// lets the server tunnel to this Mac's host, and the server is told where its gate
-    /// goes. The token never leaves this Mac (056 D1). `notLent` with no words when this is not
-    /// such a case, or the person said no; with words when a lend they allowed failed (#7108).
+    /// runtime the way a server can use (#6855). Then the control plane lets the server
+    /// tunnel to this Mac's host, and the server is told where its gate goes. The person is
+    /// not asked: the control plane lends only between machines of one user. The token
+    /// never leaves this Mac (056 D1). `notLent` with no words when this is not such a case;
+    /// with words when a lend failed (#7108).
     func relaySignInThroughControl(_ runtime: String, to id: MachineRef) async -> SignInLend {
         guard reachesThroughControl(id), ToolPolicyCatalog.policy(for: runtime).relay != nil,
               let lender = thisMacHostID, lender != id, let control = controlPlaneClient() else { return .notLent(nil) }
@@ -56,11 +47,6 @@ extension AppModel {
                                                               returning: DaemonAPI.RelayGrantReply.self) else { return .notLent(nil) }
         let allowed = controlPlaneHosts?.first { $0.id == id }?.signInFrom?[runtime] == lender
         if !allowed {
-            let name = RuntimeCatalog.runtime(id: runtime)?.name ?? runtime
-            let yes = await withCheckedContinuation { answer in
-                signInLendAsk = SignInLendAsk(runtimeName: name, label: hosts.label(id), answer: answer)
-            }
-            guard yes else { return .notLent(nil) }
             do {
                 try await control.connect(startIfNeeded: false, timeout: .seconds(5))
                 _ = try await control.call(DaemonAPI.Method.hostsLendSignIn,
@@ -80,14 +66,6 @@ extension AppModel {
 
     private static func lendFailed(_ error: any Error) -> String {
         "This Mac’s sign-in could not be lent: \((error as? JSONRPCError)?.message ?? error.localizedDescription)"
-    }
-
-    /// The person answered the lend ask: the one the window showed, which a second ask
-    /// may since have replaced (#101). The second is still asked. Once per ask: its
-    /// answer is a continuation.
-    func finishSignInLendAsk(_ ask: SignInLendAsk, allowed: Bool) {
-        if signInLendAsk?.id == ask.id { signInLendAsk = nil }
-        ask.answer.resume(returning: allowed)
     }
 
     /// What a server may be lent from here, sent on every connect (043). Names only. No

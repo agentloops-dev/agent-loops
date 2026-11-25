@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/agentloops-dev/agent-loops/Go/internal/machine"
 )
 
 func TestUnitSelfSigned(t *testing.T) {
@@ -139,12 +141,71 @@ func TestHostCodeWaitsForTheStore(t *testing.T) {
 	if err != nil || code != "agents-control:4:h:x" {
 		t.Fatalf("code %q, err %v", code, err)
 	}
-	if len(f.calls) != 3 || !strings.Contains(f.calls[0], "code --host --home "+LayoutOf(home).Control) {
+	if len(f.calls) != 3 || !strings.Contains(f.calls[0], "code --host --here --home "+LayoutOf(home).Control) {
 		t.Errorf("calls %q", f.calls)
 	}
 	f = &fake{}
 	d = Deps{Run: f.run, Poll: time.Millisecond, Wait: 5 * time.Millisecond}
 	if _, err := HostCode(context.Background(), home, d); err == nil {
 		t.Error("no code, no error")
+	}
+}
+
+// With both roles the control plane goes first (#6613): the host gets a drop-in that puts it
+// lower, and a machine with the control role only has none.
+func TestBothRolesPutTheControlPlaneFirst(t *testing.T) {
+	home, exe := setup(t)
+	d := Deps{Systemd: func() bool { return true }, Run: (&fake{}).run}
+	o := Options{Home: home, Executable: exe, Agents: true}
+	if err := Install(context.Background(), o, d); err != nil {
+		t.Fatal(err)
+	}
+	l := LayoutOf(home)
+	b, err := os.ReadFile(l.HostUnit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"[Service]", "Environment=AGENTS_CONTROL_HERE=1", "Nice=5", "CPUWeight=50", "IOSchedulingPriority=7"} {
+		if !strings.Contains(string(b), want+"\n") {
+			t.Errorf("drop-in lacks %q:\n%s", want, b)
+		}
+	}
+	u := Unit(o)
+	for _, want := range []string{"CPUWeight=400", "IOSchedulingClass=best-effort", "IOSchedulingPriority=0", "MemoryLow=128M"} {
+		if !strings.Contains(u, want+"\n") {
+			t.Errorf("unit lacks %q:\n%s", want, u)
+		}
+	}
+	if strings.Contains(u, "Nice=-") {
+		t.Error("a user unit cannot have a Nice below 0")
+	}
+	o.Agents = false
+	for range 2 {
+		if err := Install(context.Background(), o, d); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := os.Stat(l.HostUnit); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("the drop-in stays with one role: %v", err)
+		}
+	}
+}
+
+// A team's control plane gives its own machine no agents (#7305): said at once, with no wait.
+func TestHostCodeStopsAtATeam(t *testing.T) {
+	home := t.TempDir()
+	l := LayoutOf(home)
+	if err := writeHostDropIn(l, true); err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	d := Deps{Run: func(string, ...string) (string, error) {
+		calls++
+		return machine.BothRolesRefused + "\n", errors.New("exit 1")
+	}, Poll: time.Millisecond, Wait: time.Minute}
+	if _, err := HostCode(context.Background(), home, d); err == nil || err.Error() != machine.BothRolesRefused {
+		t.Fatalf("err %v", err)
+	}
+	if _, err := os.Stat(l.HostUnit); calls != 1 || !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("%d calls, drop-in: %v", calls, err)
 	}
 }

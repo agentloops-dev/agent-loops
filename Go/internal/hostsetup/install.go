@@ -101,6 +101,9 @@ func LayoutOf(home string) Layout {
 	return Layout{Dir: d, Bin: filepath.Join(d, "bin"), Root: filepath.Join(d, "root"), Logs: filepath.Join(d, "root", "logs")}
 }
 
+// Joined says whether a host of this install has joined a control plane.
+func (l Layout) Joined() bool { return l.joined() }
+
 func (l Layout) joined() bool {
 	_, err := os.Stat(filepath.Join(l.Root, "control-host.json"))
 	return err == nil
@@ -470,11 +473,16 @@ func prepareProjects(ctx context.Context, o *Options, d Deps, logs string, rep *
 			problems = append(problems, name+": the folder is not on this machine")
 			continue
 		}
-		logFile, _ := os.OpenFile(filepath.Join(logs, "setup-"+name+".log"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
-		had, err := RunScript(ctx, project, o.Name, o.FromPool, d.ScriptTimeout, logFile, func(line string) {
+		var output io.Writer
+		// store-bounds: kind=log; count=100 projects; size=1MiB a project; age=7d; applied=on write (the rest is not kept), and hourly sweep
+		logFile, err := os.OpenFile(filepath.Join(logs, "setup-"+name+".log"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+		if err == nil {
+			output = &scriptLog{file: logFile, left: scriptLogMost}
+		}
+		had, err := RunScript(ctx, project, o.Name, o.FromPool, d.ScriptTimeout, output, func(line string) {
 			rep.Say(step, wire.MachineSetupStateRunning, fmt.Sprintf("%s (%d of %d): %s", name, i+1, len(o.Projects), line), "")
 		})
-		if logFile != nil {
+		if output != nil {
 			logFile.Close()
 		}
 		switch {

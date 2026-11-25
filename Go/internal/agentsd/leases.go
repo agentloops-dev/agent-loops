@@ -1,12 +1,15 @@
 package agentsd
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"log"
+	"maps"
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -27,6 +30,21 @@ const (
 	leaseMaximumMinutes = 240
 	leaseWarning        = 5 * time.Minute
 	mostHolders         = 20
+)
+
+// What leases.json and resources.json hold at most: a resource's name, what is leased or waited
+// for, a resource's line, and the notices of the agents, each agent's, and their age.
+const (
+	leaseNameMost     = 256
+	leaseEntriesMost  = 1000
+	leaseLineMost     = 1000
+	leaseNoticesMost  = 100
+	leaseNoticeAgents = 1000
+	declaredMost      = 1000
+	declaredMostBytes = 16 << 10
+	leaseNamesTooLong = "A resource's name is at most 256 bytes, so nothing was leased."
+	leaseBookFull     = "This machine holds 1,000 resources, the most it can, so nothing was leased. Release one first."
+	leaseLineFull     = "1,000 agents are in line for that, the most there can be. Ask again later."
 )
 
 type leaseRules struct {
@@ -186,6 +204,7 @@ func rulesOf(r wire.DeclaredResource) leaseRules {
 func (d *Daemon) saveLeases() {
 	b, err := diskjson.Marshal(d.book)
 	if err == nil {
+		// store-bounds: kind=key-value; count=1000; size=1MiB a resource (20 leases and 1000 in line); age=until-deleted; applied=on write (refused), 100 notices an agent, of 1000 agents, for 90 days
 		err = store.WriteAtomically(d.leasesFile(), b, 0o644)
 	}
 	if err != nil {
@@ -210,7 +229,31 @@ func toldWhenItEnds(l wire.Lease, at wire.Date) bool {
 }
 
 func (d *Daemon) leaveNotice(n leaseNotice, agent wire.UUID) {
-	d.book.Notices[string(agent)] = append(d.book.Notices[string(agent)], n)
+	list := append(d.book.Notices[string(agent)], n)
+	d.book.Notices[string(agent)] = list[max(0, len(list)-leaseNoticesMost):]
+}
+
+// pruneNotices forgets the notices of 90 days, and those of the agents told longest ago over the
+// count. Called with leaseMu held.
+func (d *Daemon) pruneNotices(at time.Time) {
+	for agent, list := range d.book.Notices {
+		list = slices.DeleteFunc(list, func(n leaseNotice) bool { return at.Sub(n.At.Time()) >= store.MaxAge })
+		list = list[max(0, len(list)-leaseNoticesMost):]
+		if len(list) == 0 {
+			delete(d.book.Notices, agent)
+		} else {
+			d.book.Notices[agent] = list
+		}
+	}
+	if over := len(d.book.Notices) - leaseNoticeAgents; over > 0 {
+		last := func(agent string) wire.Date { l := d.book.Notices[agent]; return l[len(l)-1].At }
+		agents := slices.SortedFunc(maps.Keys(d.book.Notices), func(a, b string) int {
+			return cmp.Or(cmp.Compare(last(a), last(b)), cmp.Compare(a, b))
+		})
+		for _, agent := range agents[:over] {
+			delete(d.book.Notices, agent)
+		}
+	}
 }
 
 // handOn gives free places to the line, in its order (lineBefore: priority, `by`, first to
@@ -254,6 +297,7 @@ func (d *Daemon) setRules(name wire.ResourceName, rules leaseRules) []leaseEvent
 func (d *Daemon) lapse(at time.Time) []leaseEvent {
 	var events []leaseEvent
 	d.pruneKept(at)
+	d.pruneNotices(at)
 	for name, e := range d.book.Entries {
 		var kept []wire.Lease
 		for _, l := range e.Leases {
@@ -774,6 +818,12 @@ func (d *Daemon) declareResourceLocked(r wire.DeclareResourceRequest) ([]leaseEv
 	if r.Replacing != nil {
 		replacing, _ = resourceName(*r.Replacing)
 	}
+	if len(res.DisplayName) > leaseNameMost || len(res.Name) > leaseNameMost {
+		return nil, leaseRefused(fmt.Sprintf("A resource's name is at most %d bytes.", leaseNameMost))
+	}
+	if b, err := diskjson.Marshal(res); err != nil || len(b) > declaredMostBytes {
+		return nil, leaseRefused(fmt.Sprintf("A declared resource is at most %d KiB: shorten its description.", declaredMostBytes>>10))
+	}
 	var list []wire.DeclaredResource
 	for _, x := range d.declared {
 		if x.Name == res.Name && res.Name != replacing {
@@ -783,7 +833,9 @@ func (d *Daemon) declareResourceLocked(r wire.DeclareResourceRequest) ([]leaseEv
 			list = append(list, x)
 		}
 	}
-	list = append(list, res)
+	if list = append(list, res); len(list) > declaredMost && len(list) > len(d.declared) {
+		return nil, leaseRefused(fmt.Sprintf("This machine declares %d resources, the most it can. Remove one first.", declaredMost))
+	}
 	sort.Slice(list, func(i, j int) bool { return list[i].Name < list[j].Name })
 	if err := d.saveDeclared(list); err != nil {
 		return nil, leaseRefused("Could not save it: " + err.Error())
@@ -852,6 +904,7 @@ func (d *Daemon) saveDeclared(list []wire.DeclaredResource) error {
 	}
 	b, err := diskjson.Marshal(list)
 	if err == nil {
+		// store-bounds: kind=key-value; count=1000; size=16KiB a resource; age=until-deleted; applied=on write (refused)
 		err = store.WriteAtomically(d.resourcesFile(), b, 0o644)
 	}
 	if err == nil {

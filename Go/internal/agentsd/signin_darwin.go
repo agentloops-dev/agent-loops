@@ -46,6 +46,12 @@ func (d *Daemon) LendingPort(runtime string) int {
 	return d.signInRelays.Port(runtime)
 }
 
+func (d *Daemon) sweepSignInRelays() {
+	if d.signInRelays != nil {
+		d.signInRelays.Sweep()
+	}
+}
+
 func (d *Daemon) stopSignInRelays() {
 	if d.signInRelays != nil {
 		d.signInRelays.Stop()

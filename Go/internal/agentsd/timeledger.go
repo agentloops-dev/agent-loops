@@ -260,9 +260,7 @@ func addToHour(h *wire.TimeHistory, b wire.TimeBucket, runtime, hour string) {
 		if at.m[at.key] == nil {
 			at.m[at.key] = map[string]wire.TimeBucket{}
 		}
-		cur := at.m[at.key][runtime]
-		bucketAdd(&cur, b)
-		at.m[at.key][runtime] = cur
+		addRow(at.m[at.key], runtime, periodRows, b, sumTime)
 	}
 }
 
@@ -338,9 +336,17 @@ func (d *Daemon) timeLocked() *wire.TimeHistory {
 		if h.Recap == nil {
 			h.Recap = map[string]wire.DayRecap{}
 		}
+		boundTime(&h)
 		d.timeHeld = &h
 	}
 	return d.timeHeld
+}
+
+func (d *Daemon) saveTimeLocked() {
+	// store-bounds: kind=time series; count=348; size=64KiB an hour, a day or a recap; age=90d; applied=write (a runtime past 32 goes on "other") and hourly sweep
+	if err := writeStore(d.timePath(), d.timeLocked()); err != nil {
+		log.Printf("time-history.json: could not save: %v", err)
+	}
 }
 
 // noteTime is TimeLedger.note, for each entry recorded: banked, and written, when a turn
@@ -360,9 +366,7 @@ func (d *Daemon) noteTime(e wire.TranscriptEntry, agent wire.UUID, runtime strin
 	if ended {
 		h := d.timeLocked()
 		pruneTime(h, nowFunc())
-		if err := writeStore(d.timePath(), h); err != nil {
-			log.Printf("time-history.json: could not save: %v", err)
-		}
+		d.saveTimeLocked()
 	}
 }
 
