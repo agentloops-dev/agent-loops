@@ -418,15 +418,23 @@ func TestTheSweepRemovesOrphans(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	approval := func(person string) string { return approvalsOf(person) + "workflow-x.json" }
+	for _, person := range []string{here.ID, removed.ID, "AFAR", "GONE", "local", ""} {
+		if _, err := s.Put(ctx, approval(person), []byte("{}"), store.Always); err != nil {
+			t.Fatal(err)
+		}
+	}
 	report, err := sweep(ctx, rs, now, mostPerSweep, nil)
-	if err != nil || report.orphans != 5 {
+	if err != nil || report.orphans != 7 {
 		t.Fatalf("%+v %v", report, err)
 	}
 	for key, kept := range map[string]bool{leaseKey("KNOWN"): true, leaseKey("GONE"): false, leaseKey("GOING"): true,
 		orgRouteKey("r1"): false, orgSecretKey("r1"): false, orgRouteKey("r2"): true, orgSecretKey("r2"): true,
 		projectFoldersKey("KNOWN"): true, projectFoldersKey("GONE"): false, projectFoldersKey("ELSEWHERE"): true,
 		names(here.ID): true, names(removed.ID): false, names("AFAR"): true, names("GONE"): false,
-		names("local"): true, names("-"): true} {
+		names("local"): true, names("-"): true,
+		approval(here.ID): true, approval(removed.ID): false, approval("AFAR"): true, approval("GONE"): false,
+		approval("local"): true, approval(""): true} {
 		if o, _ := s.Get(ctx, key); (o != nil) != kept {
 			t.Errorf("%s kept %v", key, o != nil)
 		}

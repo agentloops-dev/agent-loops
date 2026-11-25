@@ -418,8 +418,15 @@ func TestRolesAndRemoval(t *testing.T) {
 	if _, err := p.store.Put(context.Background(), names, []byte(`{"next":3}`), store.Absent); err != nil {
 		t.Fatal(err)
 	}
+	approval := approvalsOf(sam.id) + "workflow-x.json"
+	if _, err := p.store.Put(context.Background(), approval, []byte("{}"), store.Absent); err != nil {
+		t.Fatal(err)
+	}
 
 	call(t, alexWindow, "", "people/remove", wire.PersonRequest{User: sam.id})
+	if o, err := p.store.Get(context.Background(), approval); err != nil || o != nil {
+		t.Fatalf("a removed person's approval stayed: %v %v", o, err)
+	}
 	if o, err := p.store.Get(context.Background(), names); err != nil || o != nil {
 		t.Fatalf("a removed person's machine names stayed: %v %v", o, err)
 	}
