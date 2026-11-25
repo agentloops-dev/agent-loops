@@ -340,6 +340,73 @@ func TestASignedStartGoesAsTheAskingMachineSignedIt(t *testing.T) {
 	}
 }
 
+// #7118: a part of an upload that is only in what the asking machine signed. The control
+// plane delivers it as it was signed, to that host, and only as one step, of that method.
+func TestASignedUploadGoesWithoutASecondCopy(t *testing.T) {
+	h := newHarness(t)
+	h.router.mu.Lock()
+	h.router.answer = func(host, method string, params json.RawMessage) *Reply {
+		return &Reply{Result: rawOf(map[string]any{})}
+	}
+	h.router.mu.Unlock()
+	h.router.setOnline(devbox, true)
+	part := `{"upload":"` + records.NewUUID() + `", "offset":0,"data":"aGVsbG8="}`
+	call := func(params map[string]any, d *wire.LockDelivery) error {
+		_, err := h.providers.HostSaid(other, MethodHostMachines, rawOf(MachineWorkspaceCall{Agent: "Claude (fix-login)", Method: MethodSendFolder,
+			Params: rawOf(params), Deliver: d}))
+		return err
+	}
+	signed := func(method, params string) *wire.LockDelivery {
+		return &wire.LockDelivery{Method: method, Params: params, Lock: wire.LockSignature{At: time.Now().Unix(), Key: []byte{4}, Sig: []byte{1}}}
+	}
+	step := map[string]any{"host": "devbox", "uploadSigned": true}
+	upload := map[string]any{"upload": records.NewUUID(), "offset": 0, "data": "aGVsbG8="}
+	for why, c := range map[string]struct {
+		params map[string]any
+		d      *wire.LockDelivery
+	}{
+		"not signed":              {step, nil},
+		"another method":          {step, signed("mac/terminal", part)},
+		"another step of a send":  {step, signed(MethodReceive, part)},
+		"not a part":              {step, signed(MethodReceiveUpload, `{"folder":"/home/me/app"}`)},
+		"not JSON":                {step, signed(MethodReceiveUpload, `{`)},
+		"two steps":               {map[string]any{"host": "devbox", "uploadSigned": true, "upload": upload}, signed(MethodReceiveUpload, part)},
+		"two steps, another kind": {map[string]any{"host": "devbox", "uploadSigned": true, "state": map[string]any{"folder": "/a"}}, signed(MethodReceiveUpload, part)},
+		"no step":                 {map[string]any{"host": "devbox", "uploadSigned": false}, signed(MethodReceiveUpload, part)},
+	} {
+		if err := call(c.params, c.d); failureOf(err) == nil || failureOf(err).Code != CodeInvalidParams {
+			t.Errorf("%s: %v", why, err)
+		}
+	}
+	if len(h.router.deliveries()) != 0 {
+		t.Fatal("it was delivered")
+	}
+	if err := call(step, signed(MethodReceiveUpload, part)); err != nil {
+		t.Fatal(err)
+	}
+	// A machine that does not know the form, or a machine's own step, goes as before.
+	if err := call(map[string]any{"host": "devbox", "upload": upload}, signed(MethodReceiveUpload, part)); err != nil {
+		t.Fatal(err)
+	}
+	if err := call(map[string]any{"host": "devbox", "upload": upload}, nil); err != nil {
+		t.Fatal(err)
+	}
+	sent := h.router.deliveries()
+	if len(sent) != 3 || sent[0].host != devbox || sent[0].method != MethodReceiveUpload || string(sent[0].params) != part ||
+		string(sent[1].params) != part || sent[2].method != MethodReceiveUpload {
+		t.Fatalf("not delivered as signed: %+v", sent)
+	}
+	h.providers.hooks.OwnerOf = func(host string) string {
+		if host == devbox {
+			return "kim"
+		}
+		return "lee"
+	}
+	if err := call(step, signed(MethodReceiveUpload, part)); failureOf(err) == nil || failureOf(err).Code != CodeNoSuchHost {
+		t.Fatalf("another person's machine: %v", err)
+	}
+}
+
 // The bot's key between the person's machines (#3950): it goes only as the asking machine
 // signed it, never in the control plane's own words, and never to another person's machine.
 func TestTheBotsKeyGoesOnlyAsItsMachineSignedIt(t *testing.T) {

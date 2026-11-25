@@ -8822,14 +8822,22 @@ export interface MachineFeatureUsage {
  * machines/sendFolder, through machine/machines: one step of an agent's start_session with send
  * (#2929), which sends this folder's branch to another of the person's machines first, or of its
  * bring_back (#2947), which brings a branch back from there, or of its move_session (#3717), which
- * moves a session there with its branch. Exactly one of state, upload, receive, facts, pack, read
- * and moveIn; the control plane sends that machine's folders/receiveState, folders/receiveUpload,
- * folders/receive, folders/sendFacts, folders/sendPack, folders/sendRead or agents/moveIn.
+ * moves a session there with its branch. Exactly one of state, upload, uploadSigned, receive,
+ * facts, pack, read and moveIn; the control plane sends that machine's folders/receiveState,
+ * folders/receiveUpload, folders/receive, folders/sendFacts, folders/sendPack, folders/sendRead or
+ * agents/moveIn.
  */
 export interface MachineFolderSend {
   host: string;
   state?: ReceiveStateRequest;
   upload?: ReceiveUploadRequest;
+  /**
+   * true in place of upload (#7118): the step is folders/receiveUpload, and its part is only in the
+   * call's deliver, as this machine signed it, so a part's data goes to the control plane once.
+   * Needs a signed deliver of that method. Needs folders.signed-upload/1: an older control plane
+   * does not know it.
+   */
+  uploadSigned?: boolean;
   receive?: ReceiveRequest;
   facts?: SendFactsRequest;
   pack?: SendPackRequest;
@@ -18793,7 +18801,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   MachineEnroll: { required: [], optional: ["as"] },
   MachineEventsPage: { required: ["machine", "machineName", "page"], optional: [] },
   MachineFeatureUsage: { required: ["machine", "machineName", "usage"], optional: [] },
-  MachineFolderSend: { required: ["host"], optional: ["state", "upload", "receive", "facts", "pack", "read", "moveIn"] },
+  MachineFolderSend: { required: ["host"], optional: ["state", "upload", "uploadSigned", "receive", "facts", "pack", "read", "moveIn"] },
   MachineFolderSent: { required: [], optional: ["state", "folder", "facts", "pack", "read"] },
   MachineForgeBoards: { required: ["machine", "machineName", "boards"], optional: [] },
   MachineForgeList: { required: ["machine", "machineName", "list"], optional: [] },
