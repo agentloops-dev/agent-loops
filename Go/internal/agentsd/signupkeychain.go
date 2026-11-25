@@ -119,12 +119,12 @@ func (d *Daemon) moveSignupKeychain() (int, error) {
 			continue
 		}
 		if err := d.saveAgentSecret("", name, value, true); err != nil {
-			log.Printf("sign-up passwords: %s was not saved: %v", name, err)
+			log.Printf("sign-up passwords: one was not saved: %v", err)
 			continue
 		}
 		description := fmt.Sprintf("Password of the agents' %s account, from the Keychain item %s (#5043). Not Alex's account.", domain, service)
 		if err := setSecretDescription(home, name, description); err != nil {
-			log.Printf("sign-up passwords: %s's description: %v", name, err)
+			log.Printf("sign-up passwords: a description was not saved: %v", err)
 		}
 		log.Printf("sign-up passwords: copied %s into %s", service, name)
 		copied++

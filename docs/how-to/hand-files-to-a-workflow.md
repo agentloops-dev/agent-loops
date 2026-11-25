@@ -68,8 +68,11 @@ into `dropbox/review/`, and leaves every other file alone.
 
 ## What happens to the file
 
-The app never moves or deletes a dropped file. The workflow's prompt says what to do with
-it: leave it, move it or delete it.
+The workflow's prompt says what to do with a dropped file: leave it, move it or delete it.
+The app never moves a file. **It deletes a file that has been in the drop box for 90 days**,
+counted from when it was last changed or put there, also one that you put there by hand. A file
+that git tracks stays, and so does a repository in the drop box. To keep a file, move it out of
+`.agents/dropbox/` or commit it.
 
 - **A file dropped under a name already there replaces it, and fires nothing.** Neither
   does a file changed where it lies. To send a file again, drop it under a new name.
@@ -82,7 +85,7 @@ it: leave it, move it or delete it.
 - **Files that arrive together are one event**, and one run: `paths` lists them all.
 - **`**` matches names starting with a dot too**, such as Finder's `.DS_Store`. Name the
   extensions, as above, to leave them out.
-- **There is no size or rate limit**, and `.gitignore` does not apply. Whether to commit
+- **There is no rate limit, and no size limit on a file you put there yourself**, and `.gitignore` does not apply. Whether to commit
   dropped files is up to the folder: add `.agents/dropbox/` to its `.gitignore` to keep
   them out of git.
 

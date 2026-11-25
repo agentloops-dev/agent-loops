@@ -1,8 +1,8 @@
 // What the Things-style sidebar (#495, #499) gathers and in what order, as the window's and the
 // Remote's `SidebarSmartRow` and `SidebarFolderFold` (AgentsKitCore/Sidebar) work it out: the
 // smart groups at the top across every folder (Pinned, Needs You, For Review, Working, Unread), and each
-// folder's sessions as one list, newest started first, the state the row's mark. Each session is
-// listed once, in its first group (#587). Needs You holds everything waiting for the person (#773):
+// folder's live sessions as one list, newest started first, the state the row's mark. A smart group
+// may list a session too (#5917), one of them only, its first (#587). Needs You holds everything waiting for the person (#773):
 // sessions asking or blocked, sessions asking to be archived (#584, #649, once a group of their own),
 // and each folder's approvals as rows of their own. For Review (#3194) holds what is ready to look at
 // but blocks no agent: a session done with a file it showed that nobody has opened, then each folder's
@@ -41,9 +41,9 @@ export function keeper(fileToSee: boolean, on: ReadonlySet<SmartRow> = allSmartR
 }
 
 /**
- * Where a live session is listed (#587), as `SidebarSmartRow.home`: once, in the first of the smart
- * groups it belongs to (Pinned, Needs You (asking, blocked, or asking to be archived, #773), For
- * Review (#3194), Working, Unread), or, in none of them, under its folder (null). A group turned off (#846) is passed over:
+ * The smart group that lists a live session (#587), as `SidebarSmartRow.home`: one, the first of those
+ * it belongs to (Pinned, Needs You (asking, blocked, or asking to be archived, #773), For
+ * Review (#3194), Working, Unread), or null for none. Its folder's Sessions list it as well (#5917). A group turned off (#846) is passed over:
  * its sessions go to the next one they fit, so one unread that asks to be archived goes to Unread
  * with Needs You off.
  */
@@ -100,19 +100,11 @@ export function pinnedWorkflows(held: readonly WorkflowSummary[], pins: readonly
 }
 
 /**
- * A folder's live sessions as one list (#495), those a smart group lists left out, as each is
- * listed once (#587): newest started first, not by last activity, so a working session does not
- * climb past the pointer with every line (#357). `kept` is the session Unread keeps while it is
- * open, listed there and not here (#689). `on` is the smart groups turned on (#846): with Pinned
- * off, the pinned are listed here as any other.
+ * A folder's live sessions as one list (#495), those a smart group lists too (#5917): newest started
+ * first, not by last activity, so a working session does not climb past the pointer with every line (#357).
  */
-export function folderSessions(live: readonly Agent[], pins: readonly string[], query?: LabelQuery,
-  kept?: string, on: ReadonlySet<SmartRow> = allSmartRows): Agent[] {
-  const pinned = new Set(pins);
-  // A search for an epic: each session it found is under its issue's heading here, none in a group at the top (#3900).
-  const grouped = groupsByIssue(query);
-  return live.filter((a) => (grouped || home(a, pinned.has(a.id), on) === null) && a.id !== kept
-    && (!query || queryMatches(query, a))).sort(byStart);
+export function folderSessions(live: readonly Agent[], query?: LabelQuery): Agent[] {
+  return live.filter((a) => a.state !== "archived" && (!query || queryMatches(query, a))).sort(byStart);
 }
 
 /**

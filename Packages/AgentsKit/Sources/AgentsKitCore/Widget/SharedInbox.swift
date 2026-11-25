@@ -84,8 +84,53 @@ public struct SharedItems: Codable, Equatable, Sendable {
 /// the person opens the Remote, which may be days, and the system may empty a cache.
 /// Both sides go through a file coordinator, so a share that lands while the Remote takes
 /// is either taken or left for the next time, never lost.
+///
+/// Bounded (#6795): `most` shares and `bytesMost` in all. It is the person's own data, so a share
+/// over either is refused, with a message in the share sheet, and nothing goes to make room. A
+/// share not taken in `ageLimit` is deleted, and the next `take` says so.
 public enum SharedInbox {
     public static let fileName = "shared-inbox.json"
+    /// The most shares that wait.
+    public static let most = 100
+    /// The most bytes of the file, and so of one share: both sides read it whole, and a share
+    /// extension has little memory.
+    public static let bytesMost = 10_000_000
+    public static let ageLimit: TimeInterval = 90 * 24 * 60 * 60
+    public static let sweepEvery: TimeInterval = 60 * 60
+
+    /// Why a share was not kept, in the share sheet's words.
+    public enum Refusal: Equatable, Sendable {
+        case nothing, full, tooBig, failed
+
+        public var sentence: String {
+            switch self {
+            case .nothing: "There was nothing here Agent Loops can take."
+            case .full: "Not saved. Too much is waiting in Agent Loops. Open Agent Loops to use it, then share this again."
+            case .tooBig: "Not saved. This is too big to share with Agent Loops."
+            case .failed: "Agent Loops could not save this."
+            }
+        }
+    }
+
+    /// The file. One kept before #6795 is a `SharedItems` alone.
+    private struct Waiting: Codable {
+        struct Share: Codable {
+            var at: Date
+            var items: SharedItems
+        }
+
+        var shares: [Share] = []
+        /// How many were deleted at their age, until that is said.
+        var expired = 0
+
+        /// Lets go of the shares past their age. Whether any went.
+        mutating func age(now: Date) -> Bool {
+            let before = shares.count
+            shares.removeAll { now.timeIntervalSince($0.at) > SharedInbox.ageLimit }
+            expired += before - shares.count
+            return shares.count < before
+        }
+    }
 
     /// The link the extension opens the Remote with. The Remote also looks each time it
     /// comes to the front, so the link is only a shortcut.
@@ -100,23 +145,49 @@ public enum SharedInbox {
         (container ?? SharedInbox.container)?.appendingPathComponent(fileName)
     }
 
-    /// Put these after whatever is already waiting. Whether they were written.
+    /// Put these after whatever is already waiting. Why they were not kept, or nil when they were.
     @discardableResult
-    public static func add(_ items: SharedItems, into container: URL? = nil) -> Bool {
-        guard !items.isEmpty, let url = url(in: container) else { return false }
-        var written = false
+    public static func add(_ items: SharedItems, into container: URL? = nil, now: Date = Date()) -> Refusal? {
+        guard !items.isEmpty else { return .nothing }
+        guard let url = url(in: container) else { return .failed }
+        var refusal: Refusal? = .failed
         coordinate(url, merging: true) { url in
-            var waiting = read(url) ?? SharedItems()
-            waiting.append(items)
+            var waiting = Waiting()
+            if FileManager.default.fileExists(atPath: url.path) {
+                // One from before the limit can be too big for the extension to read.
+                if size(url) > bytesMost { return refusal = .full }
+                // Not read is not empty: what waits is never written over.
+                guard let data = try? Data(contentsOf: url) else { return }
+                waiting = decode(data, url) ?? Waiting()
+            }
+            _ = waiting.age(now: now)
+            let share = Waiting(shares: [.init(at: now, items: items)])
+            guard waiting.shares.count < most else { return refusal = .full }
+            waiting.shares += share.shares
             guard let data = try? JSONEncoder().encode(waiting) else { return }
+            guard data.count <= bytesMost else {
+                let alone = (try? JSONEncoder().encode(share).count) ?? 0
+                return refusal = alone > bytesMost ? .tooBig : .full
+            }
             do {
                 try FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
                                                         withIntermediateDirectories: true)
-                try data.write(to: url, options: .atomic)
-                written = true
+                try write(data, to: url)
+                refusal = nil
             } catch {}
         }
-        return written
+        return refusal
+    }
+
+    /// Deletes the shares past their age, and keeps how many for `take` to say. The Remote does
+    /// this each hour, for shares with no folder to be offered in.
+    public static func sweep(in container: URL? = nil, now: Date = Date()) {
+        guard hasItems(in: container), let url = url(in: container) else { return }
+        coordinate(url, merging: true) { url in
+            guard let data = try? Data(contentsOf: url), var waiting = decode(data, url), waiting.age(now: now),
+                  let kept = try? JSONEncoder().encode(waiting) else { return }
+            try? write(kept, to: url)
+        }
     }
 
     /// Whether anything waits, without taking it. Cheap: asked each time the Remote comes to
@@ -127,12 +198,18 @@ public enum SharedInbox {
     }
 
     /// Everything waiting, in the order it was shared, and the file gone; nil when nothing
-    /// waits.
-    public static func take(from container: URL? = nil) -> SharedItems? {
+    /// waits. What was deleted at its age is said as a refusal.
+    public static func take(from container: URL? = nil, now: Date = Date()) -> SharedItems? {
         guard let url = url(in: container) else { return nil }
         var taken: SharedItems?
         coordinate(url, merging: false) { url in
-            taken = read(url)
+            if let data = try? Data(contentsOf: url), var waiting = decode(data, url) {
+                _ = waiting.age(now: now)
+                var items = SharedItems()
+                for share in waiting.shares { items.append(share.items) }
+                if waiting.expired > 0 { items.refusals.append(expiredWords(waiting.expired)) }
+                taken = items
+            }
             try? FileManager.default.removeItem(at: url)
         }
         return taken.flatMap { $0.isEmpty ? nil : $0 }
@@ -144,9 +221,25 @@ public enum SharedInbox {
         coordinate(url, merging: false) { try? FileManager.default.removeItem(at: $0) }
     }
 
-    private static func read(_ url: URL) -> SharedItems? {
-        guard let data = try? Data(contentsOf: url) else { return nil }
-        return try? JSONDecoder().decode(SharedItems.self, from: data)
+    static func expiredWords(_ count: Int) -> String {
+        count == 1 ? "1 share that waited more than 90 days was deleted."
+            : "\(count) shares that waited more than 90 days were deleted."
+    }
+
+    private static func decode(_ data: Data, _ url: URL) -> Waiting? {
+        if let waiting = try? JSONDecoder().decode(Waiting.self, from: data) { return waiting }
+        guard let items = try? JSONDecoder().decode(SharedItems.self, from: data) else { return nil }
+        let changed = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date
+        return Waiting(shares: [.init(at: changed ?? Date(), items: items)])
+    }
+
+    private static func size(_ url: URL) -> Int {
+        (try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? Int ?? 0
+    }
+
+    private static func write(_ data: Data, to url: URL) throws {
+        // store-bounds: kind=blob; size=10MB; count=100; age=90d; applied=on write, on take, hourly while the Remote runs
+        try data.write(to: url, options: .atomic)
     }
 
     private static func coordinate(_ url: URL, merging: Bool, _ body: (URL) -> Void) {

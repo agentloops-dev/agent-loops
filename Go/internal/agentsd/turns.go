@@ -304,7 +304,9 @@ func (d *Daemon) startFor(r wire.StartRequest, by startedBy) (wire.UUID, error) 
 	// Auto picks the runtime, and the shared words become the runtime's own settings
 	// (#2658), before anything else reads them.
 	if by.agent != nil {
-		d.helperRequests(&r, d.Store.Agent(*by.agent))
+		starter := d.Store.Agent(*by.agent)
+		d.helperRequests(&r, starter)
+		d.inheritRequests(&r, starter)
 	}
 	pick, client, levelsNote, err := d.resolveLevels(&r, by)
 	if err != nil {

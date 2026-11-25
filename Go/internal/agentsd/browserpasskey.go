@@ -281,7 +281,7 @@ func (d *Daemon) passkeySaver(agent wire.UUID, p *sessionPasskey) func(*webauthn
 		home := d.personalHome()
 		ask := !had || home == "" || isSealedSecret(home, p.secret)
 		if err := d.saveSecret(p.secret, string(b), ask); err != nil {
-			log.Printf("browser: couldn't save a passkey for %s as %s: %v", p.site, p.secret, err)
+			log.Printf("browser: couldn't save a passkey: %v", err)
 			return
 		}
 		if replaced {

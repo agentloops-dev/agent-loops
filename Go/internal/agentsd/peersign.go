@@ -87,6 +87,18 @@ func (d *Daemon) signedDelivery(agent wire.UUID, method string, params any) *wir
 	return &wire.LockDelivery{Method: deliver, Params: string(b), Lock: sig}
 }
 
+// sentOnce is params with no upload's part when deliver has it, signed, and the control plane
+// knows that form (#7118): only the signed copy goes on, so the part's data goes there once.
+// An older control plane gets both, as before.
+func (d *Daemon) sentOnce(params any, deliver *wire.LockDelivery) any {
+	send, ok := params.(wire.MachineFolderSend)
+	if !ok || deliver == nil || deliver.Method != wire.CallFoldersReceiveUpload.Name || !d.controlHas(wire.CapFoldersSignedUpload1) {
+		return params
+	}
+	send.Upload, send.UploadSigned = nil, new(true)
+	return send
+}
+
 // ownName is this machine's name as the person gave it in its join code, else its host name.
 func (d *Daemon) ownName() string {
 	if m, err := controllink.LoadMembership(d.Store.Loc.Root); err == nil && m.Name != "" {

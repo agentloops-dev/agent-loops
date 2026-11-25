@@ -3,13 +3,11 @@ package agentsd
 import (
 	"encoding/json"
 	"errors"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/skillcatalog"
-	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/usersettings"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
@@ -39,39 +37,42 @@ func secretDescriptionsPath(home string) string {
 
 // readSecretDescriptions is descriptions.json; missing or unreadable reads as none.
 func readSecretDescriptions(home string) map[string]string {
-	out := map[string]string{}
-	if b, err := os.ReadFile(secretDescriptionsPath(home)); err == nil {
-		_ = json.Unmarshal(b, &out) // unreadable reads as none, as the doc says
+	out, err := descriptionsFile.Read(secretDescriptionsPath(home))
+	if err != nil || out == nil {
+		return map[string]string{}
 	}
 	return out
 }
 
-// setSecretDescription keeps the description of a secret of this machine; empty takes it out.
-func setSecretDescription(home, name, description string) error {
-	all := readSecretDescriptions(home)
-	if all[name] == description {
-		return nil
+// secretDescriptionsWith is descriptions.json with name's description changed; empty takes it
+// out. Its error is a person's to read.
+func secretDescriptionsWith(home, name, description string) (map[string]string, error) {
+	p := secretDescriptionsPath(home)
+	all, err := descriptionsFile.Read(p)
+	if err != nil {
+		return nil, errors.New("descriptions.json could not be read")
+	}
+	if all == nil {
+		all = map[string]string{}
 	}
 	if description == "" {
 		delete(all, name)
 	} else {
 		all[name] = description
 	}
-	p := secretDescriptionsPath(home)
-	if len(all) == 0 {
-		if err := os.Remove(p); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return err
-		}
+	return all, descriptionsFile.Check(p, all)
+}
+
+// setSecretDescription keeps the description of a secret of this machine; empty takes it out.
+func setSecretDescription(home, name, description string) error {
+	if readSecretDescriptions(home)[name] == description {
 		return nil
 	}
-	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
-		return err
-	}
-	b, err := json.Marshal(all)
+	all, err := secretDescriptionsWith(home, name, description)
 	if err != nil {
 		return err
 	}
-	return store.WriteAtomically(p, b, 0o600)
+	return descriptionsFile.Write(secretDescriptionsPath(home), all)
 }
 
 // secretDescription is a description as a person or an agent gave it: trimmed, and refused

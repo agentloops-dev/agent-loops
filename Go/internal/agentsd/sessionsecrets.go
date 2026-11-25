@@ -2,9 +2,9 @@ package agentsd
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"log"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -93,9 +93,7 @@ func isAgentFileID(s string) bool {
 func (d *Daemon) readSessionSecrets(agent wire.UUID) sessionSecretFile {
 	var f sessionSecretFile
 	if p := d.sessionSecretsPath(agent); p != "" {
-		if b, err := os.ReadFile(p); err == nil {
-			_ = json.Unmarshal(b, &f) // unreadable reads as nothing (above)
-		}
+		f, _ = sessionFile.Read(p) // unreadable reads as nothing (above)
 	}
 	return f
 }
@@ -106,26 +104,14 @@ func (d *Daemon) writeSessionSecretsLocked(agent wire.UUID, f sessionSecretFile)
 	if p == "" {
 		return errors.New("this machine has no personal home")
 	}
-	if len(f.Secrets) == 0 && len(f.Expired) == 0 {
-		if err := os.Remove(p); err != nil && !errors.Is(err, os.ErrNotExist) {
+	// Names only, and the oldest go: a limit never keeps a value that expired.
+	f.Expired = f.Expired[max(0, len(f.Expired)-sessionExpiredMost):]
+	if len(f.Secrets) > 0 {
+		if err := checkSessionRoom(p); err != nil {
 			return err
 		}
-		return nil
 	}
-	dir := filepath.Dir(p)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return err
-	}
-	for _, folder := range []string{filepath.Dir(dir), dir} {
-		if err := os.Chmod(folder, 0o700); err != nil { //nolint:gosec // G302: a folder, which needs x to be opened
-			log.Printf("session secrets: could not make %s private: %v", folder, err)
-		}
-	}
-	b, err := json.Marshal(f)
-	if err != nil {
-		return err
-	}
-	return store.WriteAtomically(p, b, 0o600)
+	return sessionFile.Write(p, f)
 }
 
 // sessionSecret is the value a session's agent has for name, and whether it expired: it was
@@ -200,6 +186,9 @@ func (d *Daemon) setSessionSecret(agent wire.UUID, name, value, description stri
 	if strings.ContainsAny(value, "\n\r\x00") {
 		return Invalid("%s has to be one line.", name)
 	}
+	if err := checkSecretValue(value); err != nil {
+		return Invalid("Nothing was saved: %s.", err)
+	}
 	entry := sessionSecretValue{Value: value, SetAt: now(), Description: description}
 	if needsApproval {
 		sealed, err := d.sealSecret(sealedSessionStore(agent), name, value, nil)
@@ -229,6 +218,9 @@ func (d *Daemon) setSessionSecret(agent wire.UUID, name, value, description stri
 	f.Expired = slices.DeleteFunc(f.Expired, func(n string) bool { return n == name })
 	err := d.writeSessionSecretsLocked(agent, f)
 	d.sessionSecretsMu.Unlock()
+	if errors.Is(err, store.ErrLimit) {
+		return Invalid("Nothing was saved: %s.", err)
+	}
 	if err != nil {
 		log.Printf("session secrets: %s for %s: %v", name, agent, err)
 		return Invalid("%s was not saved: the session's secrets file could not be written.", name)
@@ -272,12 +264,11 @@ func (d *Daemon) expireSessionSecrets(agent wire.UUID) {
 	if len(f.Secrets) == 0 {
 		return
 	}
-	for n := range f.Secrets {
+	for _, n := range slices.Sorted(maps.Keys(f.Secrets)) {
 		if !slices.Contains(f.Expired, n) {
 			f.Expired = append(f.Expired, n)
 		}
 	}
-	sort.Strings(f.Expired)
 	f.Secrets = nil
 	if err := d.writeSessionSecretsLocked(agent, f); err != nil {
 		// Never leave a value behind: the file goes whole.

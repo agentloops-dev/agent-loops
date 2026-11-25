@@ -8822,14 +8822,22 @@ export interface MachineFeatureUsage {
  * machines/sendFolder, through machine/machines: one step of an agent's start_session with send
  * (#2929), which sends this folder's branch to another of the person's machines first, or of its
  * bring_back (#2947), which brings a branch back from there, or of its move_session (#3717), which
- * moves a session there with its branch. Exactly one of state, upload, receive, facts, pack, read
- * and moveIn; the control plane sends that machine's folders/receiveState, folders/receiveUpload,
- * folders/receive, folders/sendFacts, folders/sendPack, folders/sendRead or agents/moveIn.
+ * moves a session there with its branch. Exactly one of state, upload, uploadSigned, receive,
+ * facts, pack, read and moveIn; the control plane sends that machine's folders/receiveState,
+ * folders/receiveUpload, folders/receive, folders/sendFacts, folders/sendPack, folders/sendRead or
+ * agents/moveIn.
  */
 export interface MachineFolderSend {
   host: string;
   state?: ReceiveStateRequest;
   upload?: ReceiveUploadRequest;
+  /**
+   * true in place of upload (#7118): the step is folders/receiveUpload, and its part is only in the
+   * call's deliver, as this machine signed it, so a part's data goes to the control plane once.
+   * Needs a signed deliver of that method. Needs folders.signed-upload/1: an older control plane
+   * does not know it.
+   */
+  uploadSigned?: boolean;
   receive?: ReceiveRequest;
   facts?: SendFactsRequest;
   pack?: SendPackRequest;
@@ -16237,7 +16245,7 @@ export interface WaitingOffer {
 
 /**
  * Whether this Mac is kept awake for agents, and for how long after they stop (024), as wake.json
- * in the root.
+ * in the settings of the person (#6745).
  */
 export interface WakeSettings {
   keepsAwake: boolean;
@@ -16553,11 +16561,12 @@ export interface WorkSuggestLeadsRequest {
 
 /**
  * work/timeline (#4172, specs/time-stream/wireframe.md sections 4, 7 to 9): the epics of a project
- * whose work overlaps from to to, each with its children, its segments and, while open, its
- * forecast (M10); and the releases published in the window. timeZone is the working clock's: this
- * host's, an IANA name, absent when it has none. backtest is how the forecast did on the epics
- * whose work ended in the last 30 days, run again at most once a day; absent when there are too
- * few. errors are the forges that could not be read, as forge/issues says them.
+ * that overlap from to to, each from its first child's start to when its work stopped (#7058), with
+ * its children, its segments and, while open, its forecast (M10); and the releases published in the
+ * window. timeZone is the working clock's: this host's, an IANA name, absent when it has none.
+ * backtest is how the forecast did on the epics whose work ended in the last 30 days, run again at
+ * most once a day; absent when there are too few. errors are the forges that could not be read, as
+ * forge/issues says them.
  */
 export interface WorkTimeline {
   epics: WorkTimelineEpic[];
@@ -16644,8 +16653,8 @@ export interface WorkTimelineRelease {
 }
 
 /**
- * work/timeline (#4172): the epics of a project (its id, from a folder's .agents/folder.json) whose
- * work overlaps from to to.
+ * work/timeline (#4172): the epics of a project (its id, from a folder's .agents/folder.json) that
+ * overlap from to to.
  */
 export interface WorkTimelineRequest {
   project: string;
@@ -18793,7 +18802,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   MachineEnroll: { required: [], optional: ["as"] },
   MachineEventsPage: { required: ["machine", "machineName", "page"], optional: [] },
   MachineFeatureUsage: { required: ["machine", "machineName", "usage"], optional: [] },
-  MachineFolderSend: { required: ["host"], optional: ["state", "upload", "receive", "facts", "pack", "read", "moveIn"] },
+  MachineFolderSend: { required: ["host"], optional: ["state", "upload", "uploadSigned", "receive", "facts", "pack", "read", "moveIn"] },
   MachineFolderSent: { required: [], optional: ["state", "folder", "facts", "pack", "read"] },
   MachineForgeBoards: { required: ["machine", "machineName", "boards"], optional: [] },
   MachineForgeList: { required: ["machine", "machineName", "list"], optional: [] },

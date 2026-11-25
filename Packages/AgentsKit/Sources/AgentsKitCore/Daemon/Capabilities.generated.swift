@@ -83,6 +83,7 @@ public enum Capability {
     public static let firstBuild1 = "first-build/1"
     public static let folder1 = "folder/1"
     public static let foldersNotCommitted1 = "folders.not-committed/1"
+    public static let foldersSignedUpload1 = "folders.signed-upload/1"
     public static let foldersToMachine1 = "folders.to-machine/1"
     public static let foldersWorkingHours1 = "folders.working-hours/1"
     public static let folders1 = "folders/1"
@@ -1068,6 +1069,7 @@ public enum Capability {
         ],
         "control": [
             "attention/1",
+            "folders.signed-upload/1",
             "machine.accounts/1",
             "user/3",
         ],
