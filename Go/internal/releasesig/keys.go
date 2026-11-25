@@ -7,8 +7,8 @@ package releasesig
 // While they are the test keys, release.yml stops at its first job (CheckRelease), and a
 // machine trusts no release but one that its AGENTS_RELEASE_KEY signed.
 const (
-	CurrentKey = TestCurrentKey
-	SpareKey   = TestSpareKey
+	CurrentKey = "MCowBQYDK2VwAyEAbK/TkG4B9kEq3EoU3wxL+UOmjOjCTaVMqvJQ6xIryhg="
+	SpareKey   = "MCowBQYDK2VwAyEAW3GLYtpZB4egkA88jeiabbtP9ynkRMhM/1sU5w4vP60="
 )
 
 // The keys the tests sign with. Their private halves are in testdata, so only a Go test

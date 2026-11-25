@@ -78,8 +78,8 @@ public() {
 
 # The release's public keys, as Go/internal/releasesig/keys.go has them (a test keeps them
 # equal): the current one and the spare.
-release_keys="MCowBQYDK2VwAyEAg+yKeWGty0eECexXiUzhZYho1S9rg7gWaFv/joOAlM0=
-MCowBQYDK2VwAyEAZmXkulKLAIRvSOspl/hNtxAh6nRfFJGO5C08/B79qXE="
+release_keys="MCowBQYDK2VwAyEAbK/TkG4B9kEq3EoU3wxL+UOmjOjCTaVMqvJQ6xIryhg=
+MCowBQYDK2VwAyEAW3GLYtpZB4egkA88jeiabbtP9ynkRMhM/1sU5w4vP60="
 # check_signature is 0 when a release key, or the one in the file AGENTS_RELEASE_KEY names,
 # signed $tmp/SHA256SUMS, 1 when none did, and 2 when this machine has nothing to check it
 # with: OpenSSL 3 is the first that reads such a signature.
