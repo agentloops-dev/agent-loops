@@ -2,6 +2,7 @@ package agentsd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"regexp"
@@ -189,6 +190,21 @@ func (d *Daemon) openForgeRequest(url string, l forgeRequestLabel) *wire.Request
 	return nil
 }
 
+// setForgeLocked sets an open request's item as read again. One too large to leave room for an
+// answer keeps its earlier title and lines (#7185).
+func setForgeLocked(r *wire.Request, title string, f *wire.RequestForge) {
+	wasTitle, was := r.Title, r.Forge
+	r.Title, r.Forge = title, f
+	b, err := json.Marshal(r)
+	if err == nil && len(b) <= requestMaxGrown || was == nil {
+		return
+	}
+	log.Printf("requests: %s has grown to %d bytes, so its earlier form is kept", f.URL, len(b))
+	kept := *was
+	kept.UpdatedAt, kept.SeenAt = f.UpdatedAt, f.SeenAt
+	r.Title, r.Forge = wasTitle, &kept
+}
+
 // forgeRequestSeen opens the request for an item the sweep saw, or reads it again when the
 // item changed since.
 func (d *Daemon) forgeRequestSeen(ctx context.Context, l forgeRequestLabel, i wire.ForgeItem, repo forgeRepo, number int) {
@@ -244,7 +260,9 @@ func (d *Daemon) forgeRequestSeen(ctx context.Context, l forgeRequestLabel, i wi
 		}
 		d.requests.byID[r.ID] = r
 	}
-	r.Title, r.Forge = i.Title, f
+	if !opened {
+		setForgeLocked(r, i.Title, f)
+	}
 	d.saveRequestLocked(r)
 	c := copyRequest(r)
 	d.requests.mu.Unlock()
@@ -370,7 +388,9 @@ func (d *Daemon) answerForgeChecklist(ctx context.Context, gh forgeGitHub, rec w
 		d.requests.mu.Lock()
 		r := d.requests.byID[rec.ID]
 		if r != nil && r.Forge != nil {
-			r.Forge.Checklist = lines
+			f := *r.Forge
+			f.Checklist = lines
+			setForgeLocked(r, r.Title, &f)
 			d.saveRequestLocked(r)
 			rec = copyRequest(r)
 		}

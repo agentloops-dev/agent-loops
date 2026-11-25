@@ -90,11 +90,16 @@ func boundEntry(e *wire.TranscriptEntry, line []byte) ([]byte, error) {
 	if len(line) <= transcriptRecord {
 		return line, nil
 	}
-	detail := "The most one entry of a chat can be is 4 MB."
-	log.Printf("store: an entry of %d bytes is over the limit of %d, so a notice is kept in its place", len(line), transcriptRecord)
-	*e = wire.TranscriptEntry{ID: e.ID, At: e.At, Kind: wire.TranscriptEntryKind{Notice: &wire.TranscriptEntryKindNotice{Value: wire.SessionNotice{
-		Severity: "warning", Title: fmt.Sprintf("An entry of %d MB was too large to keep", len(line)>>20), Detail: &detail}}}}
+	*e = tooLarge(e.ID, e.At, int64(len(line)))
 	return diskjson.Marshal(*e)
+}
+
+// tooLarge is the notice in place of an entry of size bytes, with its id and time.
+func tooLarge(id wire.UUID, at wire.Date, size int64) wire.TranscriptEntry {
+	detail := "The most one entry of a chat can be is 4 MB."
+	log.Printf("store: an entry of %d bytes is over the limit of %d, so a notice is kept in its place", size, transcriptRecord)
+	return wire.TranscriptEntry{ID: id, At: at, Kind: wire.TranscriptEntryKind{Notice: &wire.TranscriptEntryKindNotice{Value: wire.SessionNotice{
+		Severity: "warning", Title: fmt.Sprintf("An entry of %d MB was too large to keep", size>>20), Detail: &detail}}}}
 }
 
 // removeLeftTrims removes the temporary files of trims that a stop cut off. One

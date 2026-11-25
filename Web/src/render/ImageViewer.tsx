@@ -10,6 +10,7 @@ import {
   clampMagnification, fitMagnification, magnificationAfterDoubleClick, magnificationAfterWheel,
   sequenceCounter, sequenceStep, stepMagnification, swipeStep, viewerSize, zoomMost,
 } from "../model/pageImage";
+import { followSafariPinch } from "./safariPinch";
 
 /** One image the viewer goes through. */
 export interface ViewerImage { src: string; alt: string; natural: { w: number; h: number } }
@@ -159,12 +160,14 @@ export function ImageViewer({ images, start, close }: {
       pointers.delete(event.pointerId);
       if (pointers.size < 2) pinch = null;
     };
+    const unfollow = followSafariPinch(el, { level: shownNow, busy: () => pointers.size > 0, zoom: (level, x, y) => zoomTo(clampMagnification(level, fitNow()), x, y) });
     el.addEventListener("wheel", onWheel, { passive: false });
     el.addEventListener("pointerdown", down);
     el.addEventListener("pointermove", move);
     el.addEventListener("pointerup", up);
     el.addEventListener("pointercancel", up);
     return () => {
+      unfollow();
       el.removeEventListener("wheel", onWheel);
       el.removeEventListener("pointerdown", down);
       el.removeEventListener("pointermove", move);

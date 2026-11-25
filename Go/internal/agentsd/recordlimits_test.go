@@ -176,7 +176,6 @@ func TestAnOldRunThatIsTooLargeComesOverWithItsTriggerCut(t *testing.T) {
 
 // An answer within its largest is on the disk when it is told, with a request at its largest too.
 func TestALargeRequestsAnswerIsOnTheDisk(t *testing.T) {
-	t.Skip("#7185")
 	t.Parallel()
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -200,7 +199,6 @@ func TestALargeRequestsAnswerIsOnTheDisk(t *testing.T) {
 
 // Dismiss of a pull request that cannot be kept is refused, and it stays in the list.
 func TestADismissalTooLargeToKeepIsRefused(t *testing.T) {
-	t.Skip("#7186")
 	t.Parallel()
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -209,7 +207,12 @@ func TestADismissalTooLargeToKeepIsRefused(t *testing.T) {
 	d.reviewMu.Lock()
 	d.reviews = map[string][]wire.ReviewPull{dir: {{URL: url}}}
 	d.reviewMu.Unlock()
-	d.dismissReview(dir, url)
+	if err := d.dismissReview(dir, url); err == nil {
+		t.Error("the dismissal was taken")
+	}
+	if err := d.openReview(dir, url); err == nil {
+		t.Error("the opened mark was taken")
+	}
 	marks, err := d.dismissed.Read()
 	must(t, err)
 	if len(marks) == 0 && len(d.reviewsFor(dir)) == 0 {
@@ -219,7 +222,6 @@ func TestADismissalTooLargeToKeepIsRefused(t *testing.T) {
 
 // An app tool call with many arguments, or a long one's name, is kept within its largest.
 func TestAnAppToolCallIsKeptWhateverItsArguments(t *testing.T) {
-	t.Skip("#7187")
 	t.Parallel()
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -236,7 +238,6 @@ func TestAnAppToolCallIsKeptWhateverItsArguments(t *testing.T) {
 
 // A cut argument says that it is cut.
 func TestACutAppToolArgumentSaysSo(t *testing.T) {
-	t.Skip("#7187")
 	t.Parallel()
 	v, _ := json.Marshal(strings.Repeat("x", appToolAnswerMost+1))
 	var got string
@@ -248,7 +249,6 @@ func TestACutAppToolArgumentSaysSo(t *testing.T) {
 
 // A transcript that is restored, imported or moved here has no entry over the largest.
 func TestARestoredTranscriptIsWithinTheLargestRecord(t *testing.T) {
-	t.Skip("#7183")
 	shared := t.TempDir()
 	a, ca := start(t, t.TempDir())
 	dir := folder(t, ca, 1)
@@ -283,5 +283,55 @@ func TestTheDisplaySettingsHaveALargestSize(t *testing.T) {
 	}
 	if got := string(d.preferences()["k"]); got != "1" {
 		t.Fatalf("the earlier value is %.20s", got)
+	}
+}
+
+// A restored record of an app tool call is within the largest, and so is a moved session's
+// transcript after it: said.json of a cut transcript is made again.
+func TestARestoredConversationIsBoundedWithWhatPointsAtIt(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	files := map[string]string{}
+	put := func(name, text string) {
+		files[name] = filepath.Join(dir, name)
+		writeFile(t, files[name], text)
+	}
+	put("transcript.jsonl", `{"id":"A","at":"2026-11-24T11:00:00.000Z","kind":{"t":"`+strings.Repeat("x", 5<<20)+`"}}`+"\n")
+	put("said.json", `{"offset":1,"size":5242880}`)
+	put("app-tools.jsonl", `{"at":"2026-11-24T11:00:00.000Z","method":"people/notify","ok":true,"answer":"`+strings.Repeat("x", 2<<20)+`"}`+"\n")
+	must(t, boundConversation(files))
+	if _, ok := files["said.json"]; ok {
+		t.Error("said.json points into the transcript as it was")
+	}
+	b, err := os.ReadFile(files["app-tools.jsonl"])
+	must(t, err)
+	var call appToolCall
+	must(t, diskjson.Unmarshal(b, &call))
+	if len(b) > 1<<20 || call.Method != "people/notify" || !call.Ok || !strings.Contains(answerOfCall(call), "too large") {
+		t.Fatalf("%d bytes, %+v", len(b), call)
+	}
+}
+
+// A form's answer that the disk refuses is not told: the request stays open.
+func TestAFormsAnswerThatIsNotKeptIsNotTold(t *testing.T) {
+	t.Parallel()
+	d, _ := start(t, t.TempDir())
+	defer d.Shutdown()
+	asker := seeded(t, d, t.TempDir(), nil)
+	msg := "which"
+	req := wire.ElicitationRequest{ID: store.NewUUID(), AgentID: asker.ID, Message: &msg, AskedAt: now()}
+	d.openFormRequest(req)
+	must(t, os.RemoveAll(d.requestsDir()))
+	writeFile(t, d.requestsDir(), "") // a file where the folder was
+	answer := "one"
+	if ended, err := d.answerFormRequest(req.ID, &answer, nil); err == nil || ended {
+		t.Fatalf("told: %v %v", ended, err)
+	}
+	if r := d.request(req.ID); r == nil || r.State != wire.RequestStateOpen || r.Answer != nil {
+		t.Fatalf("%+v", r)
+	}
+	must(t, os.Remove(d.requestsDir()))
+	if ended, err := d.answerFormRequest(req.ID, &answer, nil); err != nil || !ended {
+		t.Fatalf("not answered again: %v %v", ended, err)
 	}
 }

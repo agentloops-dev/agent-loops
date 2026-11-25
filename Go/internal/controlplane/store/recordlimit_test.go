@@ -130,16 +130,51 @@ func TestRecordLimitOfATimeSeries(t *testing.T) {
 
 // A point that a time series took rolls up: its series' name is in the day's record too.
 func TestRecordLimitOfATimeSeriesRollup(t *testing.T) {
-	t.Skip("#7196")
 	t.Parallel()
 	ctx, s := context.Background(), NewMemory()
 	ts := timeSeries(t, s, 256)
 	at := time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)
-	// The refused roll-up loses no point.
 	if err := ts.Append(ctx, Point{Series: strings.Repeat("s", 300), ID: "a", At: at, Value: 1}); err != nil {
 		return // a name that cannot roll up is refused at the start
 	}
 	if err := ts.Rollup(ctx, at.Add(24*time.Hour), time.Hour); err != nil {
 		t.Fatalf("a point that was taken does not roll up: %v", err)
+	}
+}
+
+// A series whose points cannot roll up (an older build took them) or be read, and one whose sum
+// is past the largest number, do not stop the others.
+func TestASeriesThatCannotRollUpDoesNotStopTheOthers(t *testing.T) {
+	t.Parallel()
+	ctx, s := context.Background(), NewMemory()
+	at := time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)
+	long, ts := Point{Series: strings.Repeat("a", 300), ID: "a", At: at, Value: 1}, timeSeries(t, s, 256)
+	if err := timeSeries(t, s, 4096).Append(ctx, long); err != nil {
+		t.Fatal(err)
+	}
+	unread := collectionPrefix(ts.(*timeSeriesStore).spec) + "detail/" + idKey("b") + "/20261101T000000.000000000Z/x"
+	if _, err := s.Put(ctx, unread, []byte("{"), Absent); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []Point{{Series: "huge", ID: "a", At: at, Value: 1.7e308}, {Series: "huge", ID: "b", At: at, Value: 1.7e308}, {Series: "s", ID: "a", At: at, Value: 1}} {
+		if err := ts.Append(ctx, p); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var limit *LimitError
+	if err := ts.Rollup(ctx, at.Add(24*time.Hour), time.Hour); !errors.As(err, &limit) {
+		t.Fatalf("the series that cannot roll up is not said: %v", err)
+	}
+	for _, series := range []string{"huge", "s"} {
+		if got, _, err := ts.Range(ctx, series, at, at.Add(24*time.Hour), "day", "", 10); err != nil || len(got) != 1 {
+			t.Fatalf("%s did not roll up: %v %v", series, got, err)
+		}
+	}
+	// What could not roll up is still there.
+	if got, _, err := ts.Range(ctx, long.Series, at, at.Add(time.Hour), "hour", "", 10); err != nil || len(got) != 1 {
+		t.Fatalf("%v %v", got, err)
+	}
+	if o, err := s.Get(ctx, unread); err != nil || o == nil {
+		t.Fatal("a point that cannot be read went")
 	}
 }

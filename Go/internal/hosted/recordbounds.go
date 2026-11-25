@@ -3,6 +3,7 @@ package hosted
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -97,22 +98,24 @@ func (s *Service) sweepRecords() {
 }
 
 // sweepRecords deletes what is past its age. A record it cannot read, or with no time, is
-// kept and counts against its list.
+// kept and counts against its list. A list that fails does not stop the others.
 func sweepRecords(ctx context.Context, st store.Store, now time.Time) error {
-	if err := sweepInvites(ctx, st, now); err != nil {
-		return fmt.Errorf("invites: %w", err)
+	var failed []error
+	for _, list := range []struct {
+		name  string
+		sweep func(context.Context, store.Store, time.Time) error
+	}{{"invites", sweepInvites}, {"allow list", sweepAllowed}, {"waitlist", sweepWaitlist}} {
+		if err := list.sweep(ctx, st, now); err != nil {
+			failed = append(failed, fmt.Errorf("%s: %w", list.name, err))
+		}
 	}
-	if err := sweepAllowed(ctx, st, now); err != nil {
-		return fmt.Errorf("allow list: %w", err)
-	}
-	if err := sweepWaitlist(ctx, st, now); err != nil {
-		return fmt.Errorf("waitlist: %w", err)
-	}
-	return nil
+	return errors.Join(failed...)
 }
 
 // sweepInvites deletes the invites past their expiry, used or not: the gate refuses one that
 // is not there as used. One made before the limit on an invite's life is cut to it.
+// One too large to write again (#7197) has who used it, so it is used: it goes recordLife after
+// its use.
 func sweepInvites(ctx context.Context, st store.Store, now time.Time) error {
 	return eachRecord(ctx, st, invitesFolder, func(key string, o *store.Object) error {
 		var rec Invite
@@ -125,6 +128,12 @@ func sweepInvites(ctx context.Context, st store.Store, now time.Time) error {
 		if latest := now.Add(recordLife).UTC(); rec.Expires.After(latest) {
 			rec.Expires = latest
 			data, _ := json.Marshal(rec)
+			if len(data) > recordMost {
+				if rec.Used != nil && now.Sub(rec.Used.At) <= recordLife {
+					return nil
+				}
+				return st.Delete(ctx, key)
+			}
 			if err := putRecord(ctx, st, key, data, store.Matching(o.ETag)); err != nil && !store.IsConflict(err) {
 				return err
 			}

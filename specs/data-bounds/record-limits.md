@@ -14,15 +14,15 @@ read and not run. A store below its total is no proof that a record was handled.
 | Log (`FolderLog`) | machine | test: refused; a transcript's entry becomes a notice that says so | test | test: an old large line is read | test: the retry is one record; held lines use the same write | #7183 (restore, import, move), #7187 |
 | Log (`OpenLog`, `DayLog`) | control plane | test: refused, nothing written | one record a call | read | test | Holds; an audit entry is cut with `…` (its own test) |
 | Log (`rolllog`) | machine, control plane | read: a write is split, not lost | read | none | none | Holds. Baseline logs: #7200, #7202 |
-| Time series (`OpenTimeSeries`) | control plane | test: refused, nothing written | test: the roll-up | none | test | #7196 (no caller yet) |
+| Time series (`OpenTimeSeries`) | control plane | test: refused, nothing written | test: the roll-up | none | test | Holds (#7196 fixed; no caller yet) |
 | Time series | machine | test: CI timings | test | read | read | #7200 |
 | Graph | machine | test: a ref of 512 bytes, also after a repo's move | read | read | test: read again | Holds; a line is not declared (#7200) |
 | Graph | control plane | test | test | test: an old indented object is written again by the sweep | read: the sweep | Holds (#7193 fixed) |
 | Document | machine | test: requests | read | read | read | #7185, #7200 |
-| Document, key-value | control plane | own tests for settings, policy, sinks, views, links, maturity, people, machines, clients; test here: governance, choices | read: approvals and bus check the whole batch first | read: renamed machine keys are copied as they are | read: checked in each conflict retry | #7192, #7201, #7203 |
-| Document, key-value | hosted | test | test: the sweep | test: an old invite | read: in each retry | #7197 |
+| Document, key-value | control plane | own tests for settings, policy, sinks, views, links, maturity, people, machines, clients; test here: governance, choices | read: approvals and bus check the whole batch first | read: renamed machine keys are copied as they are | read: checked in each conflict retry | #7201, #7203 (#7192 fixed) |
+| Document, key-value | hosted | test | test: the sweep | test: an old invite | read: in each retry | Holds (#7197 fixed) |
 | Blob | machine, control plane | read: attachment, dropbox, backup parts | read | read | none | #7203 (set-asides) |
-| Backend | control plane | test: memory, folder; S3 fake | none | none | none | #7195 |
+| Backend | control plane | test: memory, folder; S3 fake, to 128 MiB, and a write over it refused (the one cloud store) | none | test: an object of 16 to 128 MiB is read; a larger one stays, and can be listed, replaced and deleted | none | Holds (#7195 fixed) |
 | Cache | Mac, Remote, web | test: a page and a picture kept at the limit, not over it, in bytes; a stale one goes | test: a list's pages | test: the web's old large record is not read, and goes (#7253); read: the Mac's is read until it ages out (#7252) | read: an optimistic change over the limit is not made | Holds; an item over the limit goes, with its earlier copy (#7198) |
 | Drafts, settings | clients | test: web drafts, and the web's `localStorage` (`keyValue`, #7253); read: Mac's drafts, inbox, pins, start folders | read | read | read | #7252 (#7199, #7253 fixed) |
 
