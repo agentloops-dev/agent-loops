@@ -149,7 +149,8 @@ on every forge with no change to their clients. Alex can overrule.
 - "The oldest" is the lowest issue number: `ForgeItem` has no creation date.
 - Since #5689 and #5692 the order comes from `forge/next`, the one order for every folder: not on
   hold first, then priority (from the forge's own field where it has one, #5747, else the
-  `priority:` labels), then the milestone's due date, then the oldest (`createdAt`). The two
+  `priority:` labels), then size (the `size:` label, XS first, none last; #7034, in place of the
+  milestone's due date), then the oldest (`createdAt`). The two
   lines above are older: `ForgeItem` has a priority and a creation date since #5688. The lead
   takes the top row that is not on hold.
 - Only the epic's own repo, Linear team or Jira project is read.
