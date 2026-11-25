@@ -84,8 +84,14 @@ final class MachineSignInDriver {
     /// This Mac's sign-in lent first, then a key, then the runtime's own sign-in.
     private func attempt(_ status: RuntimeStatus, on host: MachineRef, model: AppModel) async {
         let id = status.runtime.id, name = status.runtime.name
-        if Self.clientSignIn.contains(id), await model.lendSignIn(id, to: host) { return }
         var card = Card(runtimeID: id, runtimeName: name)
+        if Self.clientSignIn.contains(id) {
+            switch await model.lendSignIn(id, to: host) {
+            case .lent: return
+            // Said above its own sign-in, which is the other way in (#7108).
+            case .notLent(let why): card.note = why
+            }
+        }
         let found = try? await model.macClient.call(DaemonAPI.Method.secretsSignInKey,
                                                     DaemonAPI.SecretSignInKeyRequest(runtimeID: id),
                                                     returning: DaemonAPI.SecretSignInKey.self)
@@ -101,9 +107,9 @@ final class MachineSignInDriver {
                 card.note = "\(secret) is in Secrets, but \(name) cannot take it from here yet."
             }
         } else if let refused = found?.refused.first {
-            card.note = "\(refused) has Ask before use, so it is not used here."
+            card.note = card.note ?? "\(refused) has Ask before use, so it is not used here."
         } else if let looked = found?.looked.first {
-            card.note = "No key in Secrets. Put \(looked) there to sign in without a code."
+            card.note = card.note ?? "No key in Secrets. Put \(looked) there to sign in without a code."
         }
         if Self.clientSignIn.contains(id) {
             do {
