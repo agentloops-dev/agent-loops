@@ -397,18 +397,24 @@ func (d *Daemon) marketplacesAdd(r wire.MarketplaceAddRequest) (wire.Marketplace
 	if r.Token != nil && strings.TrimSpace(*r.Token) != "" {
 		t := strings.TrimSpace(*r.Token)
 		token = &t
+	}
+	f.Marketplaces = append(f.Marketplaces, skillcatalog.MarketplaceEntry{Name: strings.TrimSpace(r.Name), Format: r.Format,
+		URL: address, Token: token})
+	// Before the token is kept: a refused add keeps none.
+	if err := skillcatalog.CheckMarketplaces(f, path); err != nil {
+		return wire.MarketplacesListAnswer{}, marketplaceRefusal("The marketplace was not added: " + err.Error())
+	}
+	if token != nil {
 		if r.TokenValue != nil && *r.TokenValue != "" {
 			home := d.personalHome()
 			if home == "" {
 				return wire.MarketplacesListAnswer{}, marketplaceRefusal("This machine has no personal home to keep the token in.")
 			}
-			if err := d.setPlainSecrets(home, map[string]string{t: *r.TokenValue}, ""); err != nil {
+			if err := d.setPlainSecrets(home, map[string]string{*token: *r.TokenValue}, ""); err != nil {
 				return wire.MarketplacesListAnswer{}, marketplaceRefusal("The token was not kept: " + err.Error())
 			}
 		}
 	}
-	f.Marketplaces = append(f.Marketplaces, skillcatalog.MarketplaceEntry{Name: strings.TrimSpace(r.Name), Format: r.Format,
-		URL: address, Token: token})
 	if err := skillcatalog.SaveMarketplaces(f, path); err != nil {
 		return wire.MarketplacesListAnswer{}, marketplaceRefusal("marketplaces.json could not be written: " + err.Error())
 	}
