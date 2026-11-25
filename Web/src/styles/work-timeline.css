@@ -1,5 +1,5 @@
-/* Work ▸ Timeline (#4206), as the window's (#4173): white by day, navy at night. Each epic a block (#5506): its
-   feature's colour, darkened until white text has 4.5:1, solid to Now; after Now a lighter tint with a dashed edge, and
+/* Work ▸ Timeline (#4206), as the window's (#4173): white by day, navy at night. Each epic one block (#5506, #7058): its
+   feature's colour, darkened until white text has 4.5:1, solid where the work happened; after Now a lighter tint with a dashed edge, and
    the words in the colour itself (lighter at night, to read on the navy). One background before and after Now, and Now
    grey (Alex, 2026-11-10). */
 /* --c-later is set where --c is, so it is that element's colour, not the page's. */
@@ -24,11 +24,10 @@
 .timeline-band-name.is-high text, .timeline-chip.is-high text { fill: var(--tint-failure); }
 .timeline-band-name.is-medium text, .timeline-chip.is-medium text { fill: var(--tint-warning); }
 .timeline-band-name line, .timeline-band-rule { stroke: var(--paper-rule); stroke-width: 1; }
-/* The priority chip after a block's title (#6089): the plot's ground, the tint in its text and line; on hold dashed. */
+/* The priority chip after a block's title (#6089): the plot's ground, the tint in its text and line. */
 .timeline-chip rect { fill: var(--timeline-plot); stroke: var(--timeline-faint); stroke-width: 1; }
 .timeline-chip.is-high rect { stroke: var(--line-failure); }
 .timeline-chip.is-medium rect { stroke: var(--line-warning); }
-.timeline-chip.is-on-hold rect { stroke-dasharray: 3 2; }
 .timeline-chip text { font-weight: 500; fill: var(--timeline-faint); }
 .timeline-list-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .timeline-plot, .timeline-axis, .timeline-foot { display: block; font: 11px var(--font-text); }
@@ -38,7 +37,7 @@
 .timeline-ground { fill: var(--timeline-plot); }
 .timeline-block rect.ghost, .timeline-block rect.past, .timeline-block rect.ahead, .timeline-block rect.breathing, .timeline-placeholder rect { rx: var(--radius-code); }
 .timeline-block .past { fill: var(--c); }
-/* The ghost (#6043): the lighter tint from created to closed; the solid span is drawn over it. */
+/* An open epic's ghost (#7058): the lighter tint with a dashed edge, to its predicted finish. */
 .timeline-block .ghost { fill: var(--c); fill-opacity: var(--timeline-tint); }
 .timeline-block .ahead { fill: none; stroke: var(--c-later); stroke-width: 1; stroke-dasharray: 4 3; }
 .timeline-block .band { fill: var(--c-later); opacity: 0.35; }
@@ -46,10 +45,6 @@
 .timeline-block .title.past { fill: var(--paper-on-fill); }
 .timeline-block .title.later, .timeline-block .outside { fill: var(--c-later); font-weight: 600; }
 .timeline-block.dropped .outside { fill: var(--timeline-faint); font-weight: 400; }
-.timeline-dot { fill: var(--paper-on-fill); }
-.timeline-dot.ahead { fill: none; stroke: var(--paper-on-fill); stroke-width: 1.2; }
-.timeline-dot.later { fill: var(--c-later); }
-.timeline-dot.ahead.later { fill: none; stroke: var(--c-later); }
 .timeline-working circle { fill: var(--timeline-plot); stroke: var(--c-later); stroke-width: 1.5; }
 .timeline-working path { fill: var(--c-later); }
 .timeline-now { stroke: var(--timeline-now); stroke-width: 1.5; }
@@ -109,11 +104,6 @@
 .timeline-card-row + .timeline-card-row { margin-top: 8px; }
 .timeline-card .work-chips { display: flex; flex-wrap: wrap; gap: 4px; }
 .timeline-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* A dot that landed while the page is open pulses once; not with Reduce Motion. */
-.timeline-pulse { fill: none; stroke: var(--paper-on-fill); stroke-width: 2; opacity: 0; }
-@media (prefers-reduced-motion: no-preference) {
-  .timeline-pulse { animation: timeline-pulse 1s ease-out 1; }
-}
 /* An epic worked on now: a soft glow round its block breathes every 1.6 s, one clock for every block; with Reduce
    Motion, a still glow. */
 .timeline-block .breathing { fill: none; stroke: var(--c); stroke-opacity: 0.3; stroke-width: 6px; filter: blur(2px); }
@@ -127,7 +117,6 @@
   0%, 100% { stroke-width: 4px; stroke-opacity: 0.15; }
   50% { stroke-width: 10px; stroke-opacity: 0.45; }
 }
-@keyframes timeline-pulse { from { r: 4px; opacity: 1; } to { r: 14px; opacity: 0; } }
 
 
 /* Work ▸ Next (#5691): the place before each row, the level and Last update at the bar's trailing edge, and the on hold
