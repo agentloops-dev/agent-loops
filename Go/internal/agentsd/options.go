@@ -3,6 +3,7 @@ package agentsd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log"
 	"os"
 	"path/filepath"
@@ -12,7 +13,6 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/acp"
-	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/diskjson"
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 	sdk "github.com/coder/acp-go-sdk"
@@ -25,10 +25,11 @@ import (
 // The Swift host keeps the session it opened, and the start takes it. This host opens one
 // only to ask, and lets it go: the start opens its own (#1136).
 
-// optionBook is the drafts a form holds open, and the remembered offers, under optionMu.
+// optionBook is the drafts a form holds open, under optionMu, and the remembered offers.
 type optionBook struct {
-	optionMu   sync.Mutex
-	openDrafts map[wire.UUID]bool
+	optionCache *store.JSONFile[optionEntry]
+	optionMu    sync.Mutex
+	openDrafts  map[wire.UUID]bool
 	// offersOf asks a runtime what it offers in a folder; nil is whatItOffers (a test's seam).
 	offersOf func(rt *runtimeDef, path string) (optionEntry, error)
 }
@@ -41,8 +42,6 @@ type optionEntry struct {
 }
 
 func (e optionEntry) worthKeeping() bool { return len(e.Options) > 0 || len(e.Commands) > 0 }
-
-const optionCacheLimit = 50
 
 // commandsWait is how long a new session waits for its commands, which come as an update a
 // moment after the session itself (whatItOffers).
@@ -71,12 +70,16 @@ func mcpServerName(s wire.MCPServer) string {
 	return v.Name
 }
 
+// openOptionCache opens the remembered offers. A runtime says them again, so the oldest go.
+func (d *Daemon) openOptionCache() *store.JSONFile[optionEntry] {
+	return smallFile(d, store.Spec{Name: "option-cache.json", Kind: "cache", Scope: "machine",
+		Bounds: store.Bounds{MaxRecordBytes: 256 << 10, MaxCount: 50, MaxAge: store.MaxAge, Action: store.EvictOldest}},
+		d.optionCachePath, func(e *optionEntry) *wire.Date { return &e.SavedAt })
+}
+
 func (d *Daemon) remembered(key string) (optionEntry, bool) {
-	d.optionMu.Lock()
-	defer d.optionMu.Unlock()
-	var cache map[string]optionEntry
-	b, err := os.ReadFile(d.optionCachePath())
-	if err != nil || diskjson.Unmarshal(b, &cache) != nil {
+	cache, err := d.optionCache.Read()
+	if err != nil {
 		return optionEntry{}, false
 	}
 	e, ok := cache[key]
@@ -86,11 +89,8 @@ func (d *Daemon) remembered(key string) (optionEntry, bool) {
 // runtimeOffers is the options a runtime last offered in any folder, newest first, or nil:
 // what a start's model is matched with before its session says its own (#2274).
 func (d *Daemon) runtimeOffers(runtimeID string) []wire.ConfigOption {
-	d.optionMu.Lock()
-	defer d.optionMu.Unlock()
-	var cache map[string]optionEntry
-	b, err := os.ReadFile(d.optionCachePath())
-	if err != nil || diskjson.Unmarshal(b, &cache) != nil {
+	cache, err := d.optionCache.Read()
+	if err != nil {
 		return nil
 	}
 	var newest optionEntry
@@ -122,31 +122,21 @@ func (d *Daemon) refreshOffers(rt *runtimeDef, cwd wire.URL) ([]wire.ConfigOptio
 	return e.Options, nil
 }
 
-// remember keeps what a runtime offered, the 50 newest.
+// remember keeps what a runtime offered. Of one that is too large nothing is kept, so a form
+// does not show an earlier offer for it.
 func (d *Daemon) remember(key string, e optionEntry) {
 	if !e.worthKeeping() {
 		return
 	}
-	d.optionMu.Lock()
-	defer d.optionMu.Unlock()
-	cache := map[string]optionEntry{}
-	if b, err := os.ReadFile(d.optionCachePath()); err == nil {
-		_ = diskjson.Unmarshal(b, &cache) // a cache that cannot be read starts again
-	}
 	e.SavedAt = now()
-	cache[key] = e
-	if len(cache) > optionCacheLimit {
-		keys := make([]string, 0, len(cache))
-		for k := range cache {
-			keys = append(keys, k)
-		}
-		sort.Slice(keys, func(i, j int) bool { return cache[keys[i]].SavedAt > cache[keys[j]].SavedAt })
-		for _, k := range keys[optionCacheLimit:] {
-			delete(cache, k)
-		}
+	err := os.MkdirAll(d.Store.Loc.Cache, 0o755) //nolint:gosec // G301: the mode this folder always had
+	if err == nil {
+		err = d.optionCache.Update(func(m map[string]optionEntry) error { m[key] = e; return nil })
 	}
-	_ = os.MkdirAll(d.Store.Loc.Cache, 0o755) //nolint:gosec // G301: the mode this folder always had; only its error is new; writeStore below fails, and says so, with no folder
-	if err := writeStore(d.optionCachePath(), cache); err != nil {
+	if errors.Is(err, store.ErrLimit) {
+		err = errors.Join(err, d.optionCache.Update(func(m map[string]optionEntry) error { delete(m, key); return nil }))
+	}
+	if err != nil {
 		log.Printf("option-cache.json: could not save: %v", err)
 	}
 }

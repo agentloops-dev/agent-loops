@@ -18,7 +18,6 @@
 1 Go/internal/agentsd/backups_store.go os.OpenFile
 1 Go/internal/agentsd/brief.go os.WriteFile
 1 Go/internal/agentsd/bringback.go os.CreateTemp
-1 Go/internal/agentsd/cost.go WriteAtomically
 1 Go/internal/agentsd/dailychecks.go WriteAtomically
 1 Go/internal/agentsd/dotagents.go WriteAtomically
 3 Go/internal/agentsd/environment.go WriteAtomically

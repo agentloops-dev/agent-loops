@@ -480,6 +480,12 @@ func accountRoute(p *wire.AccountProfile) string {
 
 const defaultAccountsFile = "default-accounts.json"
 
+// The most default accounts, and the largest. One more is refused: the person chose them.
+const (
+	defaultAccountsMost = 100
+	defaultAccountBytes = 1 << 10
+)
+
 // ownSignIn is the id a person names the runtime's own sign-in by.
 const ownSignIn = "default"
 
@@ -510,16 +516,27 @@ func (d *Daemon) chosenDefault(runtimeID string) string {
 // runtimes part of the person's settings (#1760, FR-016) is the team area's.
 func (d *Daemon) writeDefaultAccounts(m map[string]string) error {
 	d.orgRouteMu.Lock()
-	d.orgDefaultRead = true
+	defer d.orgRouteMu.Unlock()
+	old := d.defaultsLocked()
+	if len(m) > defaultAccountsMost && len(m) > len(old) {
+		return fmt.Errorf("the default account is not kept: %d are, and that is the most: %w", defaultAccountsMost, store.ErrLimit)
+	}
+	for runtime, id := range m {
+		if size := jsonSize(runtime) + jsonSize(id); size > defaultAccountBytes && old[runtime] != id {
+			return fmt.Errorf("the default account is not kept: it is %d bytes, at most %d: %w", size, defaultAccountBytes, store.ErrLimit)
+		}
+	}
+	if d.SettingsDir != "" {
+		if err := os.MkdirAll(d.SettingsDir, 0o755); err != nil {
+			return err
+		}
+		// store-bounds: kind=key-value; count=100; size=1KiB a runtime; age=until-deleted; applied=on write (refused)
+		if err := writeStore(d.defaultAccountsPath(), m); err != nil {
+			return err
+		}
+	}
 	d.orgDefaults = cloneDefaults(m)
-	d.orgRouteMu.Unlock()
-	if d.SettingsDir == "" {
-		return nil
-	}
-	if err := os.MkdirAll(d.SettingsDir, 0o755); err != nil {
-		return err
-	}
-	return writeStore(d.defaultAccountsPath(), m)
+	return nil
 }
 
 func (d *Daemon) defaultAccounts() map[string]string {

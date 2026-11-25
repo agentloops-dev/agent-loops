@@ -1,6 +1,7 @@
 package agentsd
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"log"
 	"strconv"
@@ -54,6 +55,15 @@ func ciSlowedID(c citimings.Change) string {
 	return c.FirstSlow.Ref + "@" + ciSlowedName + "/" + c.Workflow + "/" + c.Job
 }
 
+// ciSlowedKey is the change's id as it is kept: its digest, when it is long.
+func ciSlowedKey(c citimings.Change) string {
+	id := ciSlowedID(c)
+	if len(id) <= ciNameBytes {
+		return id
+	}
+	return fmt.Sprintf("%x", sha256.Sum256([]byte(id)))
+}
+
 // ciSendSlowed raises ci.slowed for each new step up in repo's change points.
 func (d *Daemon) ciSendSlowed(repo citimings.Repo) {
 	changes, err := d.ciChangesOf(repo)
@@ -79,7 +89,7 @@ func (d *Daemon) ciSendSlowed(repo citimings.Repo) {
 		if st.Slowed == nil {
 			st.Slowed = map[string]ciSlowedSent{}
 		}
-		st.Slowed[ciSlowedID(c)] = ciSlowedSent{Workflow: c.Workflow, Job: c.Job, Made: c.FirstSlow.Made, At: now}
+		st.Slowed[ciSlowedKey(c)] = ciSlowedSent{Workflow: cutJSON(c.Workflow, ciNameBytes), Job: cutJSON(c.Job, ciNameBytes), Made: c.FirstSlow.Made, At: now}
 		send = append(send, c)
 	}
 	if len(send) > 0 {
@@ -99,11 +109,11 @@ func (d *Daemon) ciSendSlowed(repo citimings.Repo) {
 
 // ciSlowedHas says c, or the same change found a run or two away, was sent.
 func ciSlowedHas(sent map[string]ciSlowedSent, c citimings.Change) bool {
-	if _, ok := sent[ciSlowedID(c)]; ok {
+	if _, ok := sent[ciSlowedKey(c)]; ok {
 		return true
 	}
 	for _, s := range sent {
-		if s.Workflow == c.Workflow && s.Job == c.Job && time.Duration(abs64(s.Made-c.FirstSlow.Made))*time.Second < ciSlowedNear {
+		if s.Workflow == cutJSON(c.Workflow, ciNameBytes) && s.Job == cutJSON(c.Job, ciNameBytes) && time.Duration(abs64(s.Made-c.FirstSlow.Made))*time.Second < ciSlowedNear {
 			return true
 		}
 	}

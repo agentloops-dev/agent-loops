@@ -111,7 +111,7 @@ func (d *Daemon) realiasLedgerLocked(f *costLedgerFile) bool {
 	changed := map[string]bool{}
 	nodes := make(map[string]wire.LineageCostNode, len(f.Nodes))
 	for k, c := range f.Nodes {
-		a := lineage.AliasCostNode(c, d.lineage().Canon)
+		a := boundCostNode(lineage.AliasCostNode(c, d.lineage().Canon))
 		nk := costKey(a.Node)
 		if nk != k {
 			rekey[k] = nk
@@ -123,6 +123,7 @@ func (d *Daemon) realiasLedgerLocked(f *costLedgerFile) bool {
 			a = lineage.MergeCostNodes(prev, a)
 			a.Sessions = a.Sessions[:min(len(a.Sessions), costSessionsSent)]
 		}
+		a = boundCostNode(a)
 		nodes[nk] = a
 	}
 	if len(changed) == 0 {
@@ -368,7 +369,7 @@ func (d *Daemon) noteCostLocked(n wire.LineageNode, at time.Time, change func(*w
 	}
 	change(&c)
 	c.LastAt = wire.DateOf(at)
-	f.Nodes[k] = c
+	f.Nodes[k] = boundCostNode(c)
 	f.Seq++
 	f.Unsent[k] = f.Seq
 }
@@ -446,7 +447,8 @@ func (d *Daemon) refreshCostLinksLocked() {
 		sort.Strings(partOf)
 		sort.Strings(sessions)
 		// reports/nodes counts them (#3118); a node more sessions worked on says the first.
-		sessions = sessions[:min(len(sessions), costSessionsSent)]
+		sessions = firstWithin(sessions[:min(len(sessions), costSessionsSent)], costListBytes)
+		fixes, partOf = firstWithin(fixes, costListBytes), firstWithin(partOf, costListBytes)
 		if slices.Equal(fixes, c.Fixes) && slices.Equal(partOf, c.PartOf) && slices.Equal(sessions, c.Sessions) &&
 			reflect.DeepEqual(started, c.StartedAt) {
 			continue
@@ -512,6 +514,7 @@ func (d *Daemon) refreshCostResolvedLocked() {
 			}
 			keep(&c.Milestone, e.milestone)
 		}
+		c = boundCostNode(c)
 		if reflect.DeepEqual(before, c) {
 			continue
 		}
@@ -620,6 +623,7 @@ func (d *Daemon) saveCostLocked() {
 	}
 	f := d.costLedgerLocked()
 	pruneCost(f, nowFunc())
+	// store-bounds: kind=graph; count=5000; size=64KiB a node, and 1000 notices told; age=90d; applied=write
 	if err := writeStore(d.costLedgerPath(), f); err != nil {
 		log.Printf("lineage-cost.json: could not save: %v", err)
 	}
@@ -651,6 +655,7 @@ func pruneCost(f *costLedgerFile, now time.Time) {
 			delete(f.Nodes, k)
 		}
 	}
+	boundNotices(f)
 	for k := range f.Unsent {
 		if _, ok := f.Nodes[k]; !ok {
 			delete(f.Unsent, k)
