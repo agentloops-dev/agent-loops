@@ -32,6 +32,11 @@ folder.
 4. Keep **Include uncommitted changes** on to send the changed files and the new files that
    git does not ignore. Files that git ignores, such as `node_modules` and `build`, do not
    go. The changes go only with the branch that is checked out on this Mac.
+
+   New files that git does not ignore can be build output. When they are 25 MB or more, or
+   are in a folder named `node_modules`, `build`, `.build`, `DerivedData`, `target` or `dist`, the sheet says
+   how many there are, their size and the largest folders. Turn on **Leave out untracked
+   files** to send only the changes to files that git tracks. A new file that you staged goes.
 5. Click **Send**.
 
    The sheet shows the progress. When the server has the copy, the folder is listed under the

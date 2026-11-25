@@ -262,6 +262,8 @@ struct WireSchemaTests {
             "BringBackNotification": Self.through(DaemonAPI.BringBackNotification.self),
             "SendFactsRequest": Self.through(DaemonAPI.SendFactsRequest.self),
             "SendFacts": Self.through(DaemonAPI.SendFacts.self),
+            "SendUntracked": Self.through(DaemonAPI.SendUntracked.self),
+            "SendUntrackedItem": Self.through(DaemonAPI.SendUntrackedItem.self),
             "SendPackRequest": Self.through(DaemonAPI.SendPackRequest.self),
             "SendFile": Self.through(DaemonAPI.SendFile.self),
             "SendPack": Self.through(DaemonAPI.SendPack.self),
