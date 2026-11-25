@@ -190,6 +190,7 @@ struct LocalServices {
                 + DaemonLauncher.pageArguments(HostSettings.load(paths), paths: paths)
                 + DaemonLauncher.pinArguments()
             variables = [StoreLocations.rootVariable: paths.hostRoot.path, "PATH": path]
+            if HostSettings.load(paths).runsControlPlane { variables[DaemonLauncher.controlHereVariable] = "1" }
         }
         #if DEBUG
         // A walk's stand-in for a public root (#61, Pebble), for the host to follow a move.
@@ -220,6 +221,7 @@ struct LocalServices {
             "ProcessType": "Interactive",
         ]
         if job == .daemon {
+            if HostSettings.load(paths).runsControlPlane { plist["Nice"] = DaemonLauncher.niceBesideControl }
             plist["StandardOutPath"] = paths.hostOut.path
             plist["StandardErrorPath"] = paths.hostOut.path
         }
