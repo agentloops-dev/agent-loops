@@ -689,7 +689,7 @@ func inScope(path string, folders []string) bool {
 const dropboxLimit = 25 * 1024 * 1024
 
 // dropboxTotal is the most a folder's drop box holds from dropbox/put (#3648), as
-// attachments do: one file put there by hand is the person's, and is never deleted.
+// attachments do. A put past it is refused: no file goes to make room.
 const dropboxTotal = 500 * 1024 * 1024
 
 // dropboxBytes is the bytes of every file under a drop box, but the file at but, which a
@@ -706,23 +706,6 @@ func dropboxBytes(dir, but string) int64 {
 		return nil
 	})
 	return n
-}
-
-// sweepDropboxParts removes what a put cut off left in each folder's drop box: a .part a
-// day old.
-func (d *Daemon) sweepDropboxParts() {
-	for _, p := range d.folders(true) {
-		root := filepath.Join(store.FolderPath(p.Folder.Folder), ".agents", "dropbox")
-		// The walk sweeps what it can read and goes on, so WalkDir returns no error.
-		_ = filepath.WalkDir(root, func(path string, e fs.DirEntry, err error) error {
-			if err == nil && e.Type().IsRegular() && strings.HasPrefix(e.Name(), ".") && strings.HasSuffix(e.Name(), ".part") {
-				if fi, err := e.Info(); err == nil && nowFunc().Sub(fi.ModTime()) > 24*time.Hour {
-					os.Remove(path)
-				}
-			}
-			return nil
-		})
-	}
 }
 
 // putInDropbox is dropbox/put: a file into a folder's .agents/dropbox, whole or not at all.
@@ -769,6 +752,7 @@ func (d *Daemon) putInDropbox(r wire.DropboxPutRequest) (wire.DropboxPutResponse
 		return wire.DropboxPutResponse{}, &Error{Code: wire.FailureCouldNotSave, Message: "The file could not be put in the drop box."}
 	}
 	part := filepath.Join(dir, "."+name+"."+strings.ToLower(string(store.NewUUID()))[:8]+".part")
+	// store-bounds: kind=blob; size=500MiB a folder, 25MiB a file, refuses; age=90d; applied=on put (size), hourly sweep (age)
 	if err := os.WriteFile(part, r.Data, 0o644); err != nil {
 		os.Remove(part)
 		return wire.DropboxPutResponse{}, &Error{Code: wire.FailureCouldNotSave, Message: "The file could not be put in the drop box."}

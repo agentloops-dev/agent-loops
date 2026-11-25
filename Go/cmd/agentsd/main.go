@@ -87,6 +87,7 @@ func main() {
 	}
 	d.Quit = stop // daemon/quit
 	configure(d, cl, loc)
+	d.StartWake()
 	// No secrets.env (#4177): one found here, from before the update or written by hand, is
 	// sealed into sealed.json and removed, before any call can read it.
 	d.MoveSecretsFile()

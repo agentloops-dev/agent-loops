@@ -145,7 +145,7 @@ func TestADropBoxAndAnArtifact(t *testing.T) {
 	old := time.Now().Add(-48 * time.Hour)
 	must(t, os.Chtimes(stale, old, old))
 	must(t, os.Chtimes(kept, old, old))
-	d.sweepDropboxParts()
+	d.sweepDropboxes(time.Now())
 	if _, err := os.Stat(stale); !os.IsNotExist(err) {
 		t.Fatal("a day-old .part stayed")
 	}

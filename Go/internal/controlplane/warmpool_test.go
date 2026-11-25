@@ -423,7 +423,8 @@ func TestAPoolsRecordIsBounded(t *testing.T) {
 	}
 	p := &storedPool{ID: "p", Owner: "alex", Name: "dev", Provider: "do", MinReady: 1, MaxSize: 1,
 		Claims: []storedPoolClaim{{At: time.Now().Add(-8 * 24 * time.Hour)}, {At: time.Now()}}}
-	for p.recordSize() <= warmPoolMakeMost {
+	// Well past the limit: the pass drops a claim, and a time takes more bytes or fewer.
+	for p.recordSize() <= warmPoolMakeMost+1000 {
 		workspace := fmt.Sprint("ws-", len(p.Machines))
 		f.stages[workspace] = stageFailed
 		p.Machines = append(p.Machines, storedPoolMachine{Name: strings.Repeat("n", 1000), Workspace: workspace})
