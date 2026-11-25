@@ -34,7 +34,11 @@ struct SettingsWindow: View {
 
     private var pane: Binding<SettingsPane> {
         Binding(
-            get: { SettingsPane(rawValue: paneRaw) ?? .appearance },
+            get: {
+                let kept = SettingsPane(rawValue: paneRaw) ?? .appearance
+                // Its flag can go off while it is open (#7139).
+                return kept == .imageHosts && !shows(.imageHosts) ? .appearance : kept
+            },
             set: { paneRaw = $0.rawValue })
     }
 
@@ -158,6 +162,8 @@ struct SettingsWindow: View {
         case .signIn: control != nil && model.people.you?.isAdmin == true
         // An admin's: a member sees only themselves, so no bots (#2132).
         case .bots: control != nil && model.people.you?.isAdmin == true
+        // A machine's list, behind its flag (#7139): the machines are the control plane's.
+        case .imageHosts: control != nil && model.flags.isOn(.imageHosts)
         // The control plane keeps them (#1760): no row without one.
         case .secrets, .accounts: control != nil
         default: true
@@ -241,6 +247,7 @@ struct SettingsWindow: View {
         case .spending: FormColumn { CostSettingsView() }
         case .resources: FormColumn { ResourcesSettingsView() }
         case .browser: FormColumn { BrowserSettingsView() }
+        case .imageHosts: FormColumn { ImageHostsSettingsView() }
         case .controlPlane:
             if let control { ControlSettingsView(control: control, page: .overview) }
         case .providers:
@@ -290,7 +297,7 @@ extension SettingsScope {
         case .thisApp: [.appearance, .sidebar, .voice, .earlyFeatures]
         // What agents may do, what they spend and what they take (#2957, FR-018).
         case .agents: [.agentsPolicy, .spending, .resources]
-        case .machines: [.machines, .runtimes, .browser, .agentConfiguration]
+        case .machines: [.machines, .runtimes, .browser, .imageHosts, .agentConfiguration]
         // The person's account first, shown with no control plane too (#2157).
         case .controlPlane: [.account, .signIns, .people, .bots, .groups, .channels, .signIn, .policy, .providers, .clients, .controlPlane]
         }
@@ -316,6 +323,8 @@ enum SettingsPane: String, Hashable, CaseIterable {
     case runtimes, spending, resources
     /// This Mac's browser, which agents drive (#3535): its sites with sign-ins and its download.
     case browser
+    /// The hosts whose images a machine's Work pages load (#7139), behind the Image hosts flag.
+    case imageHosts
     /// The control plane's Overview.
     case controlPlane
     /// The control plane's machine providers (#691) and its clients, pages of Control plane
@@ -365,6 +374,7 @@ enum SettingsPane: String, Hashable, CaseIterable {
         case .spending: "Spending"
         case .resources: "Resources"
         case .browser: BrowserSettingsWords.title
+        case .imageHosts: ImageHostsWords.title
         case .controlPlane: "Overview"
         case .providers: "Machine Providers"
         case .clients: "Clients"
@@ -395,6 +405,7 @@ enum SettingsPane: String, Hashable, CaseIterable {
         case .spending: "dollarsign.circle"
         case .resources: "lock"
         case .browser: BrowserSettingsWords.symbol
+        case .imageHosts: ImageHostsWords.symbol
         case .controlPlane: "point.3.connected.trianglepath.dotted"
         case .providers: "cloud"
         case .clients: "iphone"

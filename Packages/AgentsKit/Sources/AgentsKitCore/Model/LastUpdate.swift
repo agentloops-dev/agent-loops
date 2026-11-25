@@ -77,7 +77,7 @@ public enum LastUpdate {
     }
 
     /// "3 Nov" in the person's own order and time zone, with the year when it is not this one.
-    private static func date(_ read: Date, now: Date, calendar: Calendar, locale: Locale) -> String {
+    static func date(_ read: Date, now: Date, calendar: Calendar, locale: Locale) -> String {
         var style = Date.FormatStyle(date: .omitted, time: .omitted, locale: locale, calendar: calendar,
                                      timeZone: calendar.timeZone).day().month(.abbreviated)
         if calendar.component(.year, from: read) != calendar.component(.year, from: now) {

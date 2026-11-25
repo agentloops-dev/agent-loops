@@ -51,6 +51,7 @@ export const Failure = {
   hostKeyToTrust: -32069,
   hostOffline: -32090,
   imageBlocked: -32109,
+  imageNotPublic: -32110,
   importedAgent: -32096,
   kept: -32067,
   lastOperator: -32092,
@@ -5911,9 +5912,10 @@ export interface ForgeImage {
  * GitHub: github.com's user-attachments and repo assets, and user-images, private-user-images, raw
  * and avatars on githubusercontent.com), the hosts that the person allowed (imageHosts/list) and
  * those in show are read; another host is the failure imageBlocked, with ImageBlocked as its data.
- * show (#7138) is the exact hosts that the person accepts for this one read, at most 6, from the
- * person's own clients only. The forge's token goes only to its own hosts, and to none after a hop
- * through a host that the person chose.
+ * A chosen host that is not at a public address is the failure imageNotPublic (#7139). show (#7138)
+ * is the exact hosts that the person accepts for this one read, at most 6, from the person's own
+ * clients only. The forge's token goes only to its own hosts, and to none after a hop through a
+ * host that the person chose.
  */
 export interface ForgeImageRequest {
   url: string;

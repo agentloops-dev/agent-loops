@@ -2643,6 +2643,9 @@ public enum DaemonAPI {
         public static let noClientCopy = -32108
         /// `forge/image` did not read a host that is on no list (#7138). `data`: `ImageBlocked`.
         public static let imageBlocked = -32109
+        /// `forge/image` did not read a host that the person chose, as it is not at a public address
+        /// (#7139): reading it again does not help.
+        public static let imageNotPublic = -32110
     }
 
     // MARK: Workflows

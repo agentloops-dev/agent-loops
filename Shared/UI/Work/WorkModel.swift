@@ -36,6 +36,9 @@ protocol WorkModel: AnyObject, Sendable {
     var lineageMachines: [(id: MachineRef, name: String)] { get }
     /// Whether a machine takes the Work pages' writes (#3130).
     func forgeWrites(on host: MachineRef) -> Bool
+    /// Whether a machine keeps a list of the image hosts the person allowed (#7139). False on the
+    /// Remote until #7140.
+    func readsImageHosts(on host: MachineRef) -> Bool
     func forgeList(_ kind: WorkList.Kind, _ request: DaemonAPI.ForgeListRequest,
                    on host: MachineRef) async throws -> DaemonAPI.ForgeList
     func forgeItem(_ node: DaemonAPI.LineageNode, cursor: String?,
@@ -133,15 +136,43 @@ extension WorkModel {
     }
 
     /// A forge's picture (`forge/image`, #4010): from this device's copy when it holds it, as a
-    /// picture does not change at its URL (#4930); else read by the machine, and kept.
-    func forgeImage(_ url: String, on host: MachineRef) async -> Data? {
-        if let kept = await keptWork(Data.self, .image, url) { return kept }
-        guard let got = try? await forge(DaemonAPI.Method.forgeImage, DaemonAPI.ForgeImageRequest(url: url),
-                                         returning: DaemonAPI.ForgeImage.self, on: host) else { return nil }
-        keepWork(got.data, .image, url)
-        return got.data
+    /// picture does not change at its URL (#4930); else read by the machine, and kept, unless the
+    /// read went through a host that the person chose (`keep` false, #7139). `show` is the hosts
+    /// the person accepts for this one read.
+    func readForgeImage(_ url: String, show: [String] = [], on host: MachineRef) async -> (answer: PageImageAnswer, keep: Bool) {
+        if let kept = await keptWork(Data.self, .image, url) { return (.image(kept), true) }
+        // The result first, then the tuple from one place (#5946, `Result.catching`).
+        let read = await Result.catching {
+            try await forge(DaemonAPI.Method.forgeImage, DaemonAPI.ForgeImageRequest(url: url, show: show.isEmpty ? nil : show),
+                            returning: DaemonAPI.ForgeImage.self, on: host)
+        }
+        let answer: PageImageAnswer
+        var keep = false
+        switch read {
+        case .success(let got):
+            answer = .image(got.data)
+            keep = got.keep != false
+            if keep { keepWork(got.data, .image, url) }
+        case .failure(let error):
+            answer = PageImageAnswer(error)
+        }
+        return (answer, keep)
     }
 
+    /// The remote images of one Work page (#7139), for as long as it is open.
+    func pageImages() -> PageImages<PlatformImage> {
+        PageImages { [weak self] url, show, host in
+            guard let self else { return .failed("the page closed", again: false) }
+            return await readForgeImage(url.absoluteString, show: show, on: host).answer
+        } allow: { [weak self] imageHost, host in
+            guard let self else { return }
+            let list = try await forge(DaemonAPI.Method.imageHostsAllow, DaemonAPI.ImageHostRequest(host: imageHost),
+                                       returning: DaemonAPI.ImageHosts.self, on: host)
+            keepWork(list, .imageHosts, host.rawValue)
+        } decode: { PlatformImage(data: $0) }
+    }
+
+    func readsImageHosts(on host: MachineRef) -> Bool { false }
     var timelineMachines: [(id: MachineRef, name: String)] { [] }
     var deploysMachines: [(id: MachineRef, name: String)] { [] }
     func lineageSessionsOn(_ nodes: [DaemonAPI.LineageNode]) async -> DaemonAPI.LineageSessionsOn? { nil }

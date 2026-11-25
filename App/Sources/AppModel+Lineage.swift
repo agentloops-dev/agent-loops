@@ -211,6 +211,18 @@ extension AppModel {
         controlPlaneHosts?.first { $0.id == host }?.has(Capability.forgeWrite1) ?? false
     }
 
+    /// Whether a machine keeps a list of the image hosts the person allowed (#7139).
+    func readsImageHosts(on host: MachineRef) -> Bool {
+        controlPlaneHosts?.first { $0.id == host }?.has(Capability.imageHosts1) ?? false
+    }
+
+    /// The machines that keep such a list, also one that is offline: This Mac first. Settings ▸ Image Hosts.
+    var imageHostMachines: [DaemonAPI.ControlMachine] {
+        let mine = thisMacHostID
+        return (controlPlaneHosts ?? []).filter { $0.has(Capability.imageHosts1) }
+            .sorted { ($0.id == mine ? 0 : 1, $0.name) < ($1.id == mine ? 0 : 1, $1.name) }
+    }
+
     /// One of the Work pages' writes or reads (#3130), on the machine that read the item.
     func forge<R: Decodable & Sendable>(_ method: String, _ params: some Encodable & Sendable, returning: R.Type,
                              on host: MachineRef) async throws -> R {

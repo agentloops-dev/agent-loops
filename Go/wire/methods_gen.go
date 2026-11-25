@@ -516,6 +516,7 @@ const FailureFolderInTheWay = -32025
 const FailureHostKeyToTrust = -32069
 const FailureHostOffline = -32090
 const FailureImageBlocked = -32109
+const FailureImageNotPublic = -32110
 const FailureImportedAgent = -32096
 const FailureKept = -32067
 const FailureLastOperator = -32092

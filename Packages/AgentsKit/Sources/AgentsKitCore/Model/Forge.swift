@@ -857,6 +857,12 @@ public extension DaemonAPI {
         public var mimeType: String
         public var data: Data
         public var keep: Bool?
+
+        public init(mimeType: String, data: Data, keep: Bool? = nil) {
+            self.mimeType = mimeType
+            self.data = data
+            self.keep = keep
+        }
     }
 
     /// The data of `forge/image`'s failure `imageBlocked` (#7138): the host that was refused, and the
@@ -864,12 +870,22 @@ public extension DaemonAPI {
     struct ImageBlocked: Codable, Sendable, Hashable {
         public var host: String
         public var from: String?
+
+        public init(host: String, from: String? = nil) {
+            self.host = host
+            self.from = from
+        }
     }
 
     /// A host that the person allowed images from on one machine (#7138).
     struct ImageHost: Codable, Sendable, Hashable {
         public var host: String
         public var addedAt: Date
+
+        public init(host: String, addedAt: Date) {
+            self.host = host
+            self.addedAt = addedAt
+        }
     }
 
     /// `imageHosts/allow` and `imageHosts/remove` (#7138).
@@ -882,6 +898,8 @@ public extension DaemonAPI {
     /// The machine's list, as the three `imageHosts` methods answer it (#7138).
     struct ImageHosts: Codable, Sendable, Hashable {
         public var hosts: [ImageHost]
+
+        public init(hosts: [ImageHost]) { self.hosts = hosts }
     }
 }
 

@@ -471,8 +471,9 @@ func TestAChosenHostMustBePublic(t *testing.T) {
 			return private.RoundTrip(req)
 		})
 		for _, u := range []string{intranet, pics} {
-			if msg := x.mustFail(t, u, "pics.example.com", "intranet.example.com"); !strings.Contains(msg, "intranet.example.com is on a private network") {
-				t.Fatalf("%v, %s: %s", addr, u, msg)
+			_, err := x.read(u, "pics.example.com", "intranet.example.com")
+			if e := asError(err); e == nil || e.Code != wire.FailureImageNotPublic || !strings.Contains(e.Message, "intranet.example.com is on a private network") {
+				t.Fatalf("%v, %s: %v", addr, u, err)
 			}
 		}
 	}
