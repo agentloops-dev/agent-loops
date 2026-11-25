@@ -68,7 +68,7 @@ func TestSharedSnapshotSaysWhoGetsWhat(t *testing.T) {
 
 	home := sharedHome(t)
 	present := rulesFor("claude", "codex", "copilot")
-	s := personalSnapshot(home, present, layoutRecord{Home: home}, nil, map[string]string{})
+	s := personalSnapshot(home, present, layoutRecord{Home: home}, nil, map[string]string{}, personalGate{})
 	if !s.LaidOut || s.Home != filepath.Join(home, ".agents") || len(s.Runtimes) != 3 || s.Runtimes[0].Name != "Claude" ||
 		s.Runtimes[1].Name != "Codex" || s.Runtimes[2].Name != "Copilot" {
 		t.Fatalf("runtimes: %+v", s)
