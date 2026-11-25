@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -240,6 +241,25 @@ func TestCodexsFileIsLentAsAStandInAndRenewedInPlace(t *testing.T) {
 	// Renewed already by the runtime on this Mac: nothing is spent.
 	if r, err := c.Renew(context.Background(), tok); err != nil || r.Access != "new" {
 		t.Fatalf("%v %v", r, err)
+	}
+}
+
+// A stop right after a start: Stop may come before the relay's goroutine runs (#7225).
+func TestARelayStopsBeforeItServes(t *testing.T) {
+	certs := Certificates{Folder: t.TempDir()}
+	for range 200 {
+		r := &Relay{Certs: certs}
+		if _, err := r.Start(); err != nil {
+			t.Fatal(err)
+		}
+		l := r.listener
+		r.Stop()
+		if err := l.Close(); !errors.Is(err, net.ErrClosed) {
+			t.Fatalf("a stopped relay still listens: %v", err)
+		}
+		if p := r.Port(); p != 0 {
+			t.Fatalf("a stopped relay says port %d", p)
+		}
 	}
 }
 
