@@ -76,5 +76,6 @@ struct ControlPlaneMachineTests {
         let sections = ControlPlaneMachine.sections(look("a", machine: "m"))
         #expect(sections.map(\.title) == ["Memory", "Process", "Store"])
         #expect(sections[1].figures.map(\.value) == ["87", "42"])
+        #expect(!ControlPlaneMachine.bytes(0).contains("Zero"))
     }
 }

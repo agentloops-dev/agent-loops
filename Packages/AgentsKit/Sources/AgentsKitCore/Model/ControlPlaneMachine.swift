@@ -121,9 +121,12 @@ public enum ControlPlaneMachine {
         String(format: "%.2f", value)
     }
 
-    /// "184 MB", as Finder says it.
+    /// "184 MB", as Finder says it; "0 bytes", not Foundation's "Zero KB".
     public static func bytes(_ value: Double) -> String {
-        ByteCountFormatter.string(fromByteCount: Int64(max(0, value)), countStyle: .memory)
+        let format = ByteCountFormatter()
+        format.countStyle = .memory
+        format.allowsNonnumericFormatting = false
+        return format.string(fromByteCount: Int64(max(0, value)))
     }
 
     /// "1,284".
