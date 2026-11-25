@@ -8,6 +8,7 @@ import (
 	"os"
 	"runtime"
 	runtimemetrics "runtime/metrics"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -22,8 +23,16 @@ import (
 const controlCapacityEvery = 15 * time.Second
 
 // Control capacity samples are live telemetry, outside v1/ so a handover or backup never
-// treats them as durable store records.
+// treats them as durable store records. A copy that crashed leaves its sample, so the hourly
+// sweep deletes one not written again for controlCapacityKept.
+// store-bounds: kind=key-value; count=100; size=4KiB a record; age=1d; applied=on write (refused), one a copy, when the copy stops, and the hourly sweep
 const controlCapacityPrefix = "runtime/control-capacity/"
+
+const (
+	controlCapacityMost   = 100
+	controlCapacityRecord = 4 << 10
+	controlCapacityKept   = 24 * time.Hour
+)
 
 func controlCapacityKey(copy string) string { return controlCapacityPrefix + copy + ".json" }
 
@@ -197,8 +206,50 @@ func (s *Service) keepControlCapacity(c controlCapacity) wire.ControlCapacityCop
 	if err != nil {
 		return snapshot
 	}
+	if len(data) > controlCapacityRecord {
+		s.log(fmt.Sprintf("capacity snapshot not kept: it is over %d bytes", controlCapacityRecord))
+		return snapshot
+	}
 	if _, err := s.cfg.Store.Put(context.Background(), controlCapacityKey(s.copyID), data, store.Always); err != nil {
 		s.log("capacity snapshot could not be kept: " + err.Error())
 	}
 	return snapshot
+}
+
+// sweepControlCapacity deletes the samples of copies that stopped without deleting them: those
+// of controlCapacityKept ago, those it cannot read, and the oldest over controlCapacityMost.
+func sweepControlCapacity(ctx context.Context, st store.Store, now time.Time) error {
+	keys, err := st.List(ctx, controlCapacityPrefix)
+	if err != nil {
+		return err
+	}
+	type sample struct {
+		key string
+		at  time.Time
+	}
+	var kept []sample
+	for _, k := range keys {
+		object, err := st.Get(ctx, k.Key)
+		if err != nil {
+			return err
+		}
+		if object == nil {
+			continue
+		}
+		var c wire.ControlCapacityCopy
+		if json.Unmarshal(object.Data, &c) != nil || now.Sub(c.At.Time()) > controlCapacityKept {
+			if err := st.Delete(ctx, k.Key); err != nil {
+				return err
+			}
+			continue
+		}
+		kept = append(kept, sample{k.Key, c.At.Time()})
+	}
+	sort.Slice(kept, func(i, j int) bool { return kept[i].at.Before(kept[j].at) })
+	for _, c := range kept[:max(0, len(kept)-controlCapacityMost)] {
+		if err := st.Delete(ctx, c.key); err != nil {
+			return err
+		}
+	}
+	return nil
 }

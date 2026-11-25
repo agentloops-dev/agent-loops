@@ -17,6 +17,7 @@ import (
 // old one beside it while members still on it are accepted.
 
 // PreviousKey is where the sealed key before a rotation is in the store.
+// store-bounds: kind=secret; count=1; size=64KiB a record; age=30d; applied=on write (refused), and the previous key is dropped 30 days after a rotation
 const PreviousKey = "v1/keys/control-previous.sealed"
 
 func (f File) previousPath() string { return f.Path + ".previous" }
@@ -124,10 +125,5 @@ func (k Kept) seal(ctx context.Context, at string, key []byte) error {
 	if err != nil {
 		return err
 	}
-	b, err := json.MarshalIndent(sealed, "", "  ")
-	if err != nil {
-		return err
-	}
-	_, err = k.Store.Put(ctx, at, b, store.Always)
-	return err
+	return putSealed(ctx, k.Store, at, sealed, store.Always)
 }

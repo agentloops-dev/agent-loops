@@ -54,7 +54,8 @@ type Place struct {
 	// Count is what a record is: files (or objects), items (of the JSON file), items:<field>,
 	// or fields:<a>,<b>, where the limit is for each field. Empty counts none.
 	Count string `json:"count"`
-	// Part is what LimitPer counts: file, pattern, base or folder; object or folder of keys.
+	// Part is what LimitPer counts: file, pattern, base or folder; object, folder or folders (two
+	// levels of them) of keys.
 	Part string `json:"part"`
 }
 

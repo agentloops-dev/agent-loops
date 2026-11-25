@@ -3,6 +3,8 @@ package audit
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -181,5 +183,33 @@ func TestConcurrentWritesMakeOneChain(t *testing.T) {
 	must(t, c.Seal(context.Background(), s, time.Now()))
 	if r := verified(t, s); !r.OK() || r.Entries != 40 {
 		t.Fatalf("%+v", r)
+	}
+}
+
+// #7251: a seal is at most mostSeal, and the sweep keeps mostSeals, the oldest days going first.
+func TestSealsAreBounded(t *testing.T) {
+	ctx, s := context.Background(), store.NewMemory()
+	at := time.Date(2026, 10, 20, 0, 0, 0, 0, time.UTC)
+	chained(t, s, NewChain("aaaa1111"), at, 1)
+	c := NewChain("cccc1111")
+	chained(t, s, c, at, 1)
+	c.ID, c.sealed = strings.Repeat("c", mostSeal), map[string]int64{}
+	var over *store.LimitError
+	if err := c.Seal(ctx, s, at); !errors.As(err, &over) {
+		t.Fatalf("a seal over its largest: %v", err)
+	}
+	s = store.NewMemory()
+	for i := range mostSeals + 1 {
+		_, err := s.Put(ctx, sealKey(fmt.Sprintf("2026-10-%02d", 1+i%20), fmt.Sprint(i)), []byte("{}"), store.Always)
+		must(t, err)
+	}
+	if n, err := SweepSeals(ctx, s, "2026-01-01"); err != nil || n != 1 {
+		t.Fatalf("swept %d: %v", n, err)
+	}
+	if o, _ := s.Get(ctx, sealKey("2026-10-01", "0")); o != nil {
+		t.Fatal("the oldest was kept")
+	}
+	if n, err := SweepSeals(ctx, s, "2026-01-01"); err != nil || n != 0 {
+		t.Fatalf("at the limit it swept %d: %v", n, err)
 	}
 }

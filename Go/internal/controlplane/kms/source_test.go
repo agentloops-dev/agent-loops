@@ -3,6 +3,8 @@ package kms
 import (
 	"bytes"
 	"encoding/base64"
+	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -128,4 +130,38 @@ func TestExistingOpensTheSealedKeyAndMakesNone(t *testing.T) {
 	if _, err := Existing(ctx, st, localURL(2)); err == nil {
 		t.Fatal("another keeper opened the key")
 	}
+}
+
+// #7251: a sealed key at its largest is written; one a byte over is refused, with the key in
+// the store as it was. One that came larger still opens.
+func TestASealedKeyIsWithinItsLargest(t *testing.T) {
+	st := store.NewMemory()
+	sealed := &Sealed{Keeper: "k"}
+	b, err := json.MarshalIndent(sealed, "", "  ")
+	must(t, err)
+	sealed.Keeper += strings.Repeat("k", MostSealed-len(b))
+	must(t, putSealed(ctx, st, Key, sealed, store.Absent))
+	before, err := st.Get(ctx, Key)
+	must(t, err)
+	sealed.Keeper += "k"
+	var over *store.LimitError
+	if err := putSealed(ctx, st, Key, sealed, store.Always); !errors.As(err, &over) || over.Limit != MostSealed {
+		t.Fatalf("not refused: %v", err)
+	}
+	if after, _ := st.Get(ctx, Key); !bytes.Equal(after.Data, before.Data) || len(after.Data) != MostSealed {
+		t.Fatal("a refused write changed the key")
+	}
+
+	kept := Kept{Store: store.NewMemory(), Keeper: localURL(1)}
+	key, err := kept.ControlKey(ctx)
+	must(t, err)
+	o, err := kept.Store.Get(ctx, Key)
+	must(t, err)
+	large := append(bytes.Clone(o.Data), bytes.Repeat([]byte(" "), MostSealed)...)
+	_, err = kept.Store.Put(ctx, Key, large, store.Always)
+	must(t, err)
+	if again, err := kept.ControlKey(ctx); err != nil || !bytes.Equal(again, key) {
+		t.Fatalf("a large one no longer opens: %v", err)
+	}
+	must(t, kept.Rotate(ctx, key, bytes.Repeat([]byte{9}, 32)))
 }

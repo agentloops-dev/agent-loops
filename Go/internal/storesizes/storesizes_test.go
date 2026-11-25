@@ -225,6 +225,7 @@ func TestKeys(t *testing.T) {
 			{Row{ID: "x", MaxRecords: 2, At: &Place{Prefix: "v1/x/", Count: "files", Skip: ".secret.json"}}, 35, 2, wire.StoreSizeStateCurrent},
 			{Row{ID: "x", MaxBytes: 20, LimitPer: "person", At: &Place{Prefix: "v1/bus/", Count: "files", Walk: "folder", Sub: "log/", Part: "folder"}}, 30, 3, wire.StoreSizeStateCurrent},
 			{Row{ID: "x", MaxBytes: 19, LimitPer: "machine", At: &Place{Prefix: "v1/x/", Count: "files", Part: "object"}}, 35, 3, wire.StoreSizeStateOver},
+			{Row{ID: "x", MaxBytes: 20, LimitPer: "machine", At: &Place{Prefix: "v1/bus/", Count: "files", Part: "folders"}}, 129, 4, wire.StoreSizeStateOver},
 			{Row{ID: "x", MaxRecords: 1, At: &Place{Prefix: "v1/none/", Count: "files"}}, 0, 0, wire.StoreSizeStateCurrent},
 		} {
 			got := one(t, c.row, c.row.Keys(ctx, sealed{s, t}, now), now)

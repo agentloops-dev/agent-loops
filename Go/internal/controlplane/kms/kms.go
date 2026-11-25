@@ -35,7 +35,26 @@ import (
 // Timeout bounds the keeper calls at start. A test can make it shorter.
 var Timeout = 30 * time.Second
 
+// MostSealed is the largest sealed control key as stored: a wrapped data key is a few KiB at
+// most with each KMS. A larger one is refused before the write, so the key in the store stays
+// as it was. One that a restore brought is read at any size.
+const MostSealed = 64 << 10
+
+// putSealed writes an envelope, within MostSealed.
+func putSealed(ctx context.Context, s store.Store, at string, sealed *Sealed, when store.Condition) error {
+	b, err := json.MarshalIndent(sealed, "", "  ")
+	if err != nil {
+		return err
+	}
+	if len(b) > MostSealed {
+		return &store.LimitError{Name: "sealed control key", Size: int64(len(b)), Limit: MostSealed}
+	}
+	_, err = s.Put(ctx, at, b, when)
+	return err
+}
+
 // Key is where the sealed control key is in the store.
+// store-bounds: kind=secret; count=1; size=64KiB a record; age=until-deleted; applied=on write (refused)
 const Key = "v1/keys/control.sealed"
 
 // Sealed is the envelope as stored. Nothing in it opens without the keeper.
@@ -221,11 +240,7 @@ func ControlKey(ctx context.Context, s store.Store, keeperURL string, make func(
 		if err != nil {
 			return nil, err
 		}
-		b, err := json.MarshalIndent(sealed, "", "  ")
-		if err != nil {
-			return nil, err
-		}
-		if _, err := s.Put(ctx, Key, b, store.Absent); err == nil {
+		if err := putSealed(ctx, s, Key, sealed, store.Absent); err == nil {
 			return key, nil
 		} else if !store.IsConflict(err) {
 			return nil, err
