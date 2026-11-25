@@ -15460,6 +15460,9 @@ type ShellAttachResponse struct {
 	Folder URL `json:"folder"`
 
 	Offset *int64 `json:"offset,omitzero"`
+
+	// True when the host puts shell/input in order by stream and seq (#7147). Left out by an older host, which must be sent one input at a time.
+	Ordered *bool `json:"ordered,omitzero"`
 }
 
 type ShellInputRequest struct {
@@ -15472,6 +15475,12 @@ type ShellInputRequest struct {
 	Rows *int64 `json:"rows,omitzero"`
 
 	Cols *int64 `json:"cols,omitzero"`
+
+	// One run of typing from one screen (#7147). With seq, the host writes a stream's inputs in the order of seq, whatever order their requests run in, so a screen can send the next before the last is answered. A client sends it only to a host whose shell/attach said ordered.
+	Stream *UUID `json:"stream,omitzero"`
+
+	// The input's place in its stream, from 0, with none left out.
+	Seq *int64 `json:"seq,omitzero"`
 }
 
 type ShellListResponse struct {

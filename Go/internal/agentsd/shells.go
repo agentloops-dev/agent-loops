@@ -28,6 +28,7 @@ type shell struct {
 	dropped int64
 	started wire.Date
 	state   wire.ShellState
+	input   shellOrder
 }
 
 const scrollbackLimit = 4 << 20
@@ -158,7 +159,8 @@ func (d *Daemon) keepShell(s *shell) {
 func (s *shell) replay(since *int64, startedAt *wire.Date) wire.ShellAttachResponse {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	out := wire.ShellAttachResponse{State: s.state, Dropped: s.dropped, StartedAt: s.started, Folder: fileURL(s.folder, true)}
+	ordered := true
+	out := wire.ShellAttachResponse{Ordered: &ordered, State: s.state, Dropped: s.dropped, StartedAt: s.started, Folder: fileURL(s.folder, true)}
 	end := s.dropped + int64(len(s.buf))
 	if since != nil && startedAt != nil && *startedAt == s.started && *since >= s.dropped && *since <= end {
 		out.Scrollback = append(wire.Data{}, s.buf[*since-s.dropped:]...)
@@ -226,17 +228,7 @@ func (d *Daemon) registerShells() {
 		}
 		return wire.ShellListResponse{Shells: ns}, nil
 	})
-	On(d, wire.CallShellInput, func(ctx context.Context, c *Client, r wire.ShellInputRequest) (wire.Empty, error) {
-		s := d.shellFor(r.AgentID, number(r.Shell))
-		if s == nil || !s.isLive() {
-			return wire.Empty{}, &Error{Code: wire.FailureShellNotLive, Message: "That shell is not running."}
-		}
-		s.resize(r.Rows, r.Cols)
-		if _, err := s.pty.Write(r.Bytes); err != nil {
-			return wire.Empty{}, &Error{Code: wire.FailureShellNotLive, Message: "That shell is not running."}
-		}
-		return wire.Empty{}, nil
-	})
+	On(d, wire.CallShellInput, d.shellInput)
 	On(d, wire.CallShellResize, func(ctx context.Context, c *Client, r wire.ShellResizeRequest) (wire.Empty, error) {
 		if s := d.shellFor(r.AgentID, number(r.Shell)); s != nil {
 			s.resize(&r.Rows, &r.Cols)
@@ -269,6 +261,25 @@ func (d *Daemon) registerShells() {
 		d.mu.Unlock()
 		return wire.Empty{}, nil
 	})
+}
+
+func (d *Daemon) shellInput(ctx context.Context, _ *Client, r wire.ShellInputRequest) (wire.Empty, error) {
+	s := d.shellFor(r.AgentID, number(r.Shell))
+	if s == nil || !s.isLive() {
+		return wire.Empty{}, &Error{Code: wire.FailureShellNotLive, Message: "That shell is not running."}
+	}
+	if r.Stream != nil && r.Seq != nil {
+		done, err := s.input.turn(ctx, *r.Stream, *r.Seq)
+		if err != nil {
+			return wire.Empty{}, err
+		}
+		defer done()
+	}
+	s.resize(r.Rows, r.Cols)
+	if _, err := s.pty.Write(r.Bytes); err != nil {
+		return wire.Empty{}, &Error{Code: wire.FailureShellNotLive, Message: "That shell is not running."}
+	}
+	return wire.Empty{}, nil
 }
 
 func (d *Daemon) shellNumbers(agentID wire.UUID) []int64 {
