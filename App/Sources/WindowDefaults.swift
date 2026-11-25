@@ -18,6 +18,7 @@ enum WindowDefaults {
 
     nonisolated(unsafe) static let store: UserDefaults = {
         guard let scratchDomain, let own = UserDefaults(suiteName: scratchDomain) else { return .standard }
+        // store-bounds: not a store: one fixed key, a date
         own.set(Date(), forKey: launchedKey)
         return own
     }()

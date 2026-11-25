@@ -71,11 +71,27 @@ final class SidebarFrame {
     var isOpen = false
 
     var width: Double {
-        didSet { defaults.set(width, forKey: widthKey) }
+        didSet {
+            guard hasRoom(widthKey) else { return }
+            // store-bounds: kind=key-value; count=2000; age=until-deleted; action=refuse; record=2KiB; applied=on write, and when a machine lists its folders or leaves
+            defaults.set(width, forKey: widthKey)
+        }
     }
 
     var pane: SidebarPane {
-        didSet { defaults.set(pane.rawValue, forKey: paneKey) }
+        didSet {
+            guard hasRoom(paneKey) else { return }
+            // store-bounds: not a store: one of the entries that `width` declares
+            defaults.set(pane.rawValue, forKey: paneKey)
+        }
+    }
+
+    /// Whether a width or a pane can be kept: one past the limit holds while the window is open (#7252).
+    private func hasRoom(_ key: String) -> Bool {
+        key.utf8.count <= KeyValueBounds.folds.bytes
+            && defaults.hasRoom(forKey: key, most: KeyValueBounds.folderWindows) {
+                $0.hasPrefix("sidebar.") && ($0.hasSuffix(".width") || $0.hasSuffix(".pane"))
+            }
     }
 
     /// How wide the window and the pane beside the folder list are. Measured by the

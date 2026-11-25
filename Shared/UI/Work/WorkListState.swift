@@ -799,6 +799,8 @@ enum WorkRememberedStore {
     static func keep(_ words: String, for kind: WorkList.Kind) {
         let key = WorkRemembered.key(kind)
         guard WindowDefaults.store.string(forKey: key) != words else { return }
-        if words.isEmpty { WindowDefaults.store.removeObject(forKey: key) } else { WindowDefaults.store.set(words, forKey: key) }
+        guard !words.isEmpty else { return WindowDefaults.store.removeObject(forKey: key) }
+        // store-bounds: kind=key-value; count=5; age=until-deleted; action=refuse; record=16KiB; applied=on write
+        WindowDefaults.store.putEntry(words, forKey: key, most: KeyValueBounds.workFilters)
     }
 }

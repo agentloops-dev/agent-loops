@@ -139,7 +139,8 @@ final class BrowserPaneStore {
 
     private func save() {
         guard let data = try? JSONEncoder().encode(sites) else { return }
-        defaults.set(data, forKey: Self.sitesKey)
+        // store-bounds: kind=key-value; count=1000; age=90d; action=evict; record=512B; applied=on write, hourly, and on Forget
+        defaults.putEntry(data, forKey: Self.sitesKey, most: KeyValueBounds.browserSites)
     }
 
     /// The bytes of WebKit's folders, read off the main thread. WebKit has no call that says them.
