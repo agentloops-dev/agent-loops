@@ -33,6 +33,9 @@ public enum MachineSetupWords {
         return !isReady(setup)
     }
 
+    /// Why a new session on `name` cannot be sent yet, in a tooltip.
+    public static func noSessionYet(_ name: String) -> String { "\(name) is still setting up" }
+
     /// 7 of 8: the step that is on, which is the number of the first step not done.
     public static func position(_ setup: DaemonAPI.MachineSetup) -> Int {
         min(doneCount(setup) + 1, max(setup.steps.count, 1))
