@@ -194,6 +194,8 @@ type copyRecord struct {
 	PeerURL   string        `json:"peerURL"`
 	Started   records.Stamp `json:"started"`
 	Heartbeat records.Stamp `json:"heartbeat"`
+	// The id of the machine record that runs this copy (#6609). Absent from an older copy.
+	Machine string `json:"machine,omitempty"`
 }
 
 // controlEvent is ControlEvent: a change, for every copy to apply.
@@ -277,7 +279,7 @@ func (m *mesh) tick() {
 	defer cancel()
 	st := m.s.cfg.Store
 	me := m.s.copyID
-	record := copyRecord{ID: me, PeerURL: m.peerURL, Started: records.At(m.started), Heartbeat: records.Now()}
+	record := copyRecord{ID: me, PeerURL: m.peerURL, Started: records.At(m.started), Heartbeat: records.Now(), Machine: m.s.controlMachineID()}
 	// The next heartbeat writes it again.
 	if data, err := records.Encode(record); err == nil && len(data) <= copyRecordBytes {
 		_, _ = st.Put(ctx, copyRecordKey(me), data, store.Always)
