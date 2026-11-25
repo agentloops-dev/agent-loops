@@ -277,6 +277,7 @@ func (si *signIns) joinByDomain(ctx context.Context, c *checked, settings signIn
 			SignIns: []records.SignIn{c.signIn()}}}, nil
 	})
 	if err != nil {
+		si.s.notePeopleFull(err, wire.AuditActor{User: c.provider + ":" + c.account}, c.email)
 		return "", err
 	}
 	if p := si.s.records.Person(id); p == nil || p.IsRemoved() {

@@ -24,6 +24,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -69,6 +70,27 @@ type Connection struct {
 func (c Connection) Usable(now time.Time) bool {
 	return !c.SignInAgain && c.Access != "" && (c.AccessExpiresAt.IsZero() || now.Before(c.AccessExpiresAt))
 }
+
+// The store's limits (#6743). It is a secret store: one record per provider, until the person
+// disconnects it, so it has no age. The server, the account and the site stay with the token:
+// they say where it is sent, and an older build reads them here (Alex, 2026-11-24). Over a limit
+// a Put is refused, and what was kept stays.
+const (
+	// MaxConnections is how many connections the Linux file keeps. The Keychain has one for
+	// each provider the app knows.
+	MaxConnections = 16
+	// MaxConnectionBytes is the largest connection, as JSON.
+	MaxConnectionBytes = 64 << 10
+	// maxSecurityLine is the longest line `security -i` reads. It cuts a longer one, and keeps
+	// the cut value over the old item, so a longer one is never sent.
+	maxSecurityLine = 4095
+)
+
+// ErrTooLarge is a connection over the largest size.
+var ErrTooLarge = errors.New("this connection is too large for this machine to keep, so nothing was changed")
+
+// ErrFull is a new connection over the count.
+var ErrFull = fmt.Errorf("this machine has %d connections already. Disconnect one first", MaxConnections)
 
 // Store keeps connections, one per provider.
 type Store interface {
@@ -167,7 +189,7 @@ type File struct {
 // change runs edit on the file's connections and writes them when edit says so, under the
 // mutex and a lock on the file's folder. The folder, not a file beside the store, so the
 // folder holds only the store (a lock file would stay there, with nothing in it).
-func (f *File) change(edit func(all map[string]Connection) bool) error {
+func (f *File) change(edit func(all map[string]Connection) (bool, error)) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	dir := filepath.Dir(f.Path)
@@ -188,8 +210,8 @@ func (f *File) change(edit func(all map[string]Connection) bool) error {
 	if err != nil {
 		return err
 	}
-	if !edit(all) {
-		return nil
+	if write, err := edit(all); err != nil || !write {
+		return err
 	}
 	return f.write(all)
 }
@@ -221,6 +243,7 @@ func (f *File) write(all map[string]Connection) error {
 	if err != nil {
 		return err
 	}
+	// store-bounds: kind=secret; count=16; size=64KiB a record; age=until-deleted; applied=on write (a new connection over them is refused)
 	return store.WriteAtomically(f.Path, b, 0o600)
 }
 
@@ -236,19 +259,29 @@ func (f *File) Get(provider string) (Connection, bool, error) {
 }
 
 func (f *File) Put(c Connection) error {
-	return f.change(func(all map[string]Connection) bool {
+	b, err := json.Marshal(c)
+	if err != nil {
+		return err
+	}
+	if len(b) > MaxConnectionBytes {
+		return ErrTooLarge
+	}
+	return f.change(func(all map[string]Connection) (bool, error) {
+		if _, ok := all[c.Provider]; !ok && len(all) >= MaxConnections {
+			return false, ErrFull
+		}
 		all[c.Provider] = c
-		return true
+		return true, nil
 	})
 }
 
 func (f *File) Delete(provider string) error {
-	return f.change(func(all map[string]Connection) bool {
+	return f.change(func(all map[string]Connection) (bool, error) {
 		if _, ok := all[provider]; !ok {
-			return false
+			return false, nil
 		}
 		delete(all, provider)
-		return true
+		return true, nil
 	})
 }
 
@@ -318,6 +351,10 @@ func (k *Keychain) Put(c Connection) error {
 	if !plainWord(k.Service) || !plainWord(c.Provider) {
 		return errors.New("a connection's service and provider are plain words")
 	}
+	// One item for each provider the app knows is the Keychain's count.
+	if c.Provider != GitHubBot && !slices.Contains(Providers, c.Provider) {
+		return fmt.Errorf("the Keychain keeps no connection to %s", c.Provider)
+	}
 	b, err := json.Marshal(c)
 	if err != nil {
 		return err
@@ -327,6 +364,9 @@ func (k *Keychain) Put(c Connection) error {
 	// base64 has no space or quote, so the line needs no quoting in security's own shell.
 	line := fmt.Sprintf("add-generic-password -U -s %s -a %s -l %s -w %s\n",
 		k.Service, c.Provider, "Agents-"+c.Provider, base64.StdEncoding.EncodeToString(b))
+	if len(line) > maxSecurityLine {
+		return ErrTooLarge
+	}
 	if _, _, err := k.run(line, "-i"); err != nil {
 		return errors.New("the Keychain did not keep the connection")
 	}
