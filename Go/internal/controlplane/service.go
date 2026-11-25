@@ -1691,13 +1691,14 @@ func (s *Service) attachClient(conn *Conn, client *records.ClientRecord, auth *c
 		s.router.NoteCarried(session, via)
 	}
 	// Forgotten while it joined (#1229): the forget's sweep of sessions may have come
-	// before this one was attached, and admitting it would write it back over its
-	// tombstone. It is closed as any forgotten client is.
+	// before this one was attached. It is closed as any forgotten client is. Its calls are
+	// read only after this, so its own clients/forgetSelf is answered before it is closed.
 	if s.records.Client(client.ID) == nil && s.records.WasForgotten(client.ID) {
 		s.router.ForgetClient(client.ID)
 		return
 	}
-	if err := s.methods.Admit(context.Background(), *client); err != nil {
+	s.router.ReadClient(session, conn)
+	if err := s.methods.NoteSeen(context.Background(), client.ID); err != nil {
 		s.log("store: could not note " + client.Name + " connecting: " + err.Error())
 	}
 	s.renewClient(context.Background(), client.ID)
