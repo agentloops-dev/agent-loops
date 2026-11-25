@@ -253,36 +253,22 @@ export const runtimesAccountsMethods = {
     return why;
   },
   /**
-   * Approve a folder's connector that waits (#5717), on the folder's own host, as the window's
-   * Approve: the entry that host reads now, by its digest. Undefined when done, else the refusal's words.
+   * Approve a connector that waits, the person's own (no folder) or a folder's (#5717), on its own
+   * host: its whole entry is read and shown first, and the version shown is the one approved.
+   * Undefined when done or not wanted, else the refusal's words.
    */
-  async approveConnector(this: Store, host: string, name: string, folder: string): Promise<string | undefined> {
-    const destination = { kind: "folder", folder: hostedFolderPath(folder) } as never;
-    const why = await this.link.call("mcp/list", { destination }, host)
-      .then(async (list) => {
-        const row = list.servers.find((s) => s.name === name);
-        const approval = row?.approval;
-        if (approval === undefined || !("waiting" in approval)) return undefined;
-        await this.link.call("mcp/approve", { destination, name, digest: approval.waiting.digest }, host);
-        return undefined;
-      }, (error: unknown) => describe(error))
-      .catch((error: unknown) => describe(error));
-    if (why === undefined) await this.checkMCPHealth(host, folder);
-    return why;
-  },
-  /**
-   * Approve the person's own connector on this host: its whole entry is read and shown first, and
-   * the version shown is the one approved. Undefined when done or not wanted, else the refusal's words.
-   */
-  async approveOwnConnector(this: Store, host: string, name: string, show: (entry: string) => Promise<boolean>): Promise<string | undefined> {
+  async approveConnector(this: Store, host: string, name: string, folder: string | undefined,
+    show: (entry: string) => Promise<boolean>): Promise<string | undefined> {
+    const destination = folder === undefined ? { kind: "personal" } : { kind: "folder", folder: hostedFolderPath(folder) };
     try {
-      const reading = await this.link.call("approvals/read", { folder: "file:///" as never, kind: "mcpServer", key: `~|${name}` }, host);
-      if (!await show(reading.current ?? "")) return undefined;
-      await this.link.call("mcp/approve", { destination: { kind: "personal" } as never, name, digest: reading.digest ?? "" }, host);
+      const reading = await this.link.call("approvals/read", { folder: (folder === undefined ? "file:///" : folder.startsWith("file:") ? folder : `file://${encodeURI(folder)}`) as never,
+        kind: "mcpServer", key: folder === undefined ? `~|${name}` : name }, host);
+      if (reading.current === undefined || !await show(reading.current)) return undefined;
+      await this.link.call("mcp/approve", { destination: destination as never, name, digest: reading.digest ?? "" }, host);
     } catch (error) {
       return describe(error);
     }
-    await this.checkMCPHealth(host);
+    await this.checkMCPHealth(host, folder);
     return undefined;
   },
   /**

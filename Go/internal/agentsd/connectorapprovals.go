@@ -76,10 +76,13 @@ func (d *Daemon) readConnectorApproval(folder, name string) (wire.GuardedChangeR
 	return wire.GuardedChangeReading{}, Invalid("%s is not in this folder's .agents/mcp.json any more.", name)
 }
 
-// entryReading is a whole entry to read before it is approved: as it runs, its keys sorted, no
-// line left out, and a character that does not show written as its escape.
+// entryReading is a whole entry to read before it is approved: its keys sorted, or as it is
+// written when it repeats a field, no line left out, and a character that does not show written as its escape.
 func entryReading(path string, e mcpEntry) wire.GuardedChangeReading {
 	digest, current := entryDigest(e.raw), canonicalEntry(e.raw)
+	if !plainEntry(e.raw) {
+		current = string(e.raw)
+	}
 	var indented bytes.Buffer
 	if json.Indent(&indented, []byte(current), "", "  ") == nil {
 		current = indented.String()

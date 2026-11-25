@@ -94,7 +94,7 @@ export function healthLine(server: MCPServerHealth): string {
       return "Answered" + tools;
     }
     case "failed": return "Didn't answer";
-    case "waiting": return server.folder == null ? "Waiting for your approval in Needs You, so it is not started"
+    case "waiting": return server.folder == null ? "Not approved on this machine, so it is not started"
       : "Waiting for approval in this folder's settings, so it is not started";
     case "missingSecret": return "Needs a secret that isn't set here, so it is not started";
     case "signIn": return "Wants a sign-in first, in Settings";

@@ -57,9 +57,7 @@ export function MCPServersList({ store, host, folder }: { store: Store; host: st
     else setRemoveProblem(store.hostIsOnline(host) ? notRemoved(name, why) : notRemovedOffline(name, machine ?? "This Mac"));
   };
   const approve = async (name: string) => {
-    const why = folder === undefined
-      ? await store.approveOwnConnector(host, name, (entry) => ask(`Approve ${name}?\n\n${entry}`))
-      : await store.approveConnector(host, name, folder);
+    const why = await store.approveConnector(host, name, folder, (entry) => ask(`Approve ${name.replace(/\s+/g, " ")}?\n\n${entry}`));
     setRemoveProblem(why === undefined ? undefined : notApproved(name, why));
   };
   const checkNow = () => {

@@ -2,7 +2,10 @@ package agentsd
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -217,16 +220,87 @@ func TestAWaitingEntryIsReadWhole(t *testing.T) {
 	}
 }
 
-// An entry with one name in two spellings is not approved.
-func TestAnEntryWithTwoSpellingsOfANameWaits(t *testing.T) {
-	d, _, _, _, _ := syncedMachine(t)
-	raw := `{"command":"a","Command":"b"}`
-	deliverServers(d, `{"x":`+raw+`}`)
-	if err := d.answerPersonalConnector(withCaller(context.Background(), true), "x", entryDigest(json.RawMessage(raw)), true); err == nil {
-		t.Fatal("it was approved")
+// An approval of an entry that repeats a field is of the order it is written in, and the whole
+// of it is there to read.
+func TestAnEntryThatRepeatsAFieldIsApprovedAsWritten(t *testing.T) {
+	d, _, dir, _, _ := syncedMachine(t)
+	for _, pair := range [][2]string{
+		{`{"command":"a","Command":"b"}`, `{"Command":"b","command":"a"}`},
+		{`{"command":"a","env":{"A":"1"},"env":{"B":"2"}}`, `{"command":"a","env":{"B":"2"}}`},
+		{`{"command":"a","command":"b"}`, `{"command":"b"}`},
+		{`{"command":"a","ARG\u017f":["x"],"args":["y"]}`, `{"command":"a","args":["y"],"ARG\u017f":["x"]}`},
+	} {
+		one, other := entryDigest(json.RawMessage(pair[0])), entryDigest(json.RawMessage(pair[1]))
+		if one == other {
+			t.Fatalf("%s and %s have one digest", pair[0], pair[1])
+		}
+		deliverServers(d, `{"x":`+pair[0]+`}`)
+		r, err := d.readConnectorApproval(dir, "~|x")
+		must(t, err)
+		if *r.Digest != one || len(gatedNames(d)) != 0 {
+			t.Fatalf("%s: digest %s, starts %v", pair[0], *r.Digest, gatedNames(d))
+		}
+		must(t, d.answerPersonalConnector(withCaller(context.Background(), true), "x", one, true))
+		if len(gatedNames(d)) != 1 {
+			t.Fatalf("%s is approved and does not start", pair[0])
+		}
+		deliverServers(d, `{"x":`+pair[1]+`}`)
+		if len(gatedNames(d)) != 0 {
+			t.Fatalf("%s starts by the approval of %s", pair[1], pair[0])
+		}
 	}
-	if len(gatedNames(d)) != 0 {
-		t.Fatal("it starts")
+	// Both spellings are there to read, in their order.
+	deliverServers(d, `{"x":{"command":"a","Command":"b"}}`)
+	r, err := d.readConnectorApproval(dir, "~|x")
+	must(t, err)
+	if len(r.Lines) != 4 || r.Lines[1].Text != `  "command": "a",` || r.Lines[2].Text != `  "Command": "b"` {
+		t.Fatalf("%+v", r.Lines)
+	}
+}
+
+// A folder's entry approved before goes on when it gives each field once, in any case and order;
+// one that repeats a field waits once more.
+func TestAFoldersPlainApprovalsStay(t *testing.T) {
+	d, _, dir, _, _ := syncedMachine(t)
+	must(t, os.MkdirAll(filepath.Join(dir, ".agents"), 0o750))
+	write := func(servers string) {
+		must(t, os.WriteFile(filepath.Join(dir, ".agents", "mcp.json"), []byte(`{"mcpServers":`+servers+`}`), 0o600)) //nolint:gosec // the test's own temp folder
+	}
+	approved := map[string]string{}
+	for name, raw := range map[string]string{"plain": `{"args":["x"],"command":"a"}`, "upper": `{"Command":"a"}`, "twice": `{"Command":"b","command":"a"}`} {
+		sum := sha256.Sum256([]byte(canonicalEntry(json.RawMessage(raw)))) // as it was kept before
+		approved[mcpApprovalKey(dir, name)] = hex.EncodeToString(sum[:])
+	}
+	must(t, d.changeMCPApprovals(true, func(m, _ map[string]string, _ map[string]wire.Date) error {
+		maps.Copy(m, approved)
+		return nil
+	}))
+	write(`{"plain":{ "command":"a", "args":["x"] },"upper":{"Command":"a"},"twice":{"command":"a","Command":"b"}}`)
+	servers, waiting, _, _ := d.folderMCP(dir, nil, nil)
+	if len(servers) != 2 || servers[0].name != "plain" || servers[1].name != "upper" || len(waiting) != 1 || waiting[0] != "twice" {
+		t.Fatalf("%+v, waiting %v", servers, waiting)
+	}
+	for _, name := range []string{"plain", "twice"} {
+		_, problem := d.eventServerNamed(name, dir, nil)
+		if (problem == "waiting") != (name == "twice") {
+			t.Fatalf("%s: %q", name, problem)
+		}
+	}
+	r, err := d.readConnectorApproval(dir, "twice")
+	must(t, err)
+	if len(r.Lines) != 4 {
+		t.Fatalf("%+v", r.Lines)
+	}
+	if _, err := d.mcpApprove(context.Background(), wire.MCPApproveRequest{Destination: wire.SkillDestination{
+		Kind: wire.SkillDestinationKindFolder, Folder: &dir}, Name: "twice", Digest: *r.Digest}); err != nil {
+		t.Fatal(err)
+	}
+	if _, waiting, _, _ := d.folderMCP(dir, nil, nil); len(waiting) != 0 {
+		t.Fatalf("%v", waiting)
+	}
+	write(`{"twice":{"Command":"b","command":"a"}}`)
+	if _, waiting, _, _ := d.folderMCP(dir, nil, nil); len(waiting) != 1 {
+		t.Fatalf("%v", waiting)
 	}
 }
 

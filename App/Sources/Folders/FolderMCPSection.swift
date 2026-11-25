@@ -109,6 +109,7 @@ private struct FolderMCPRow: View {
     @State private var setting: [String] = []
     @State private var replacing = false
     @State private var removing = false
+    @State private var approving = false
     @State private var signingIn = false
     @State private var showingTools = false
 
@@ -195,18 +196,8 @@ private struct FolderMCPRow: View {
                         .buttonStyle(.paper)
                         .appText(.fine)
                     }
-                    if case .waiting(let digest, _) = server.approval {
-                        Button("Approve") {
-                            Task {
-                                if let error = await model.approveMCP(server.name, digest: digest, at: place.destination,
-                                                                       on: place.host(model)) {
-                                    failed(MCPCatalogWords.sentence(error))
-                                } else {
-                                    failed(nil)
-                                    changed()
-                                }
-                            }
-                        }
+                    if isWaiting {
+                        Button("Approve…") { approving = true }
                         .buttonStyle(.paper)
                         .appText(.fine)
                     }
@@ -240,6 +231,7 @@ private struct FolderMCPRow: View {
         .sheet(isPresented: Binding(get: { !setting.isEmpty }, set: { if !$0 { setting = [] } })) {
             SetSecretSheet(serverName: server.name, names: setting, replacing: replacing, onSaved: changed)
         }
+        .sheet(isPresented: $approving) { approveSheet }
         .sheet(isPresented: $signingIn) {
             MCPSignInSheet(target: signInTarget, onSignedIn: changed)
         }
@@ -252,6 +244,37 @@ private struct FolderMCPRow: View {
     }
 
     private var needsSignIn: Bool { server.signIn == .needsSignIn }
+
+    /// The whole entry, as its Review page shows it, before it is approved.
+    private var approveSheet: some View {
+        let key = switch place {
+        case .you: FolderKey(host: place.host(model), folder: URL(filePath: "/"))
+        case .folder(let folder): FolderKey(host: place.host(model), folder: folder)
+        }
+        let digest: String? = if case .waiting(let digest, _) = server.approval { digest } else { nil }
+        let approval = Approval(kind: .mcpServer, key: place == .you ? "~|" + server.name : server.name, title: server.name,
+                                digest: digest, line: note ?? "", actions: [.approve])
+        return VStack(spacing: 0) {
+            ReviewPage(approval: approval,
+                       read: { await model.readApproval(approval, for: key) },
+                       answer: { _, digest, _ in
+                           await model.approveMCP(server.name, digest: digest ?? "", at: place.destination, on: key.host)
+                               .map(MCPCatalogWords.sentence)
+                       },
+                       done: {
+                           approving = false
+                           failed(nil)
+                           changed()
+                       })
+            HStack {
+                Spacer()
+                Button("Cancel") { approving = false }.buttonStyle(.paper).keyboardShortcut(.cancelAction)
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 12)
+        }
+        .frame(width: 640, height: 460)
+    }
 
     private var signInTarget: DaemonAPI.MCPSignInTarget {
         .entry(destination: place.destination, name: server.name)

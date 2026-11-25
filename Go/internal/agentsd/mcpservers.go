@@ -293,8 +293,37 @@ func canonicalEntry(raw json.RawMessage) string {
 	return strings.TrimSuffix(buf.String(), "\n")
 }
 
+// entryFields is the fields of mcpFileServer.
+var entryFields = []string{"command", "args", "env", "url", "headers", "type", "hosted"}
+
+// plainEntry says whether an entry gives each of its fields once. The reader of the file takes a
+// field in any case, and more than once, so an entry that repeats one reads by its order.
+func plainEntry(raw json.RawMessage) bool {
+	seen := map[string]bool{}
+	for _, key := range orderedKeys(raw) {
+		for _, field := range entryFields {
+			if !strings.EqualFold(key, field) {
+				continue
+			}
+			if seen[field] {
+				return false
+			}
+			seen[field] = true
+		}
+	}
+	return true
+}
+
+// entryDigest is what an approval of an entry is kept by: the same however the entry is spaced
+// and its keys are ordered. An entry that repeats a field is kept by the order it is written in.
 func entryDigest(raw json.RawMessage) string {
-	sum := sha256.Sum256([]byte(canonicalEntry(raw)))
+	text := canonicalEntry(raw)
+	if !plainEntry(raw) {
+		var written bytes.Buffer
+		_ = json.Compact(&written, raw) // raw is an entry of a file that was read as JSON
+		text = "as written\n" + written.String()
+	}
+	sum := sha256.Sum256([]byte(text))
 	return hex.EncodeToString(sum[:])
 }
 
