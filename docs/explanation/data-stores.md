@@ -122,6 +122,8 @@ other store does.
   (#6683).
 - **Test.** One shared test for each kind writes past every limit, and checks that the
   sweep brings the store back under it, and that a store that refuses does refuse.
+  The results for the largest record, by kind, are in
+  [`specs/data-bounds/record-limits.md`](https://github.com/agentloops-dev/agent-loops/blob/main/specs/data-bounds/record-limits.md).
 - **See.** Each store reports its count, its bytes and the age of its oldest record to its
   machine's health, so that a store near its limit shows before it evicts or refuses.
 
