@@ -301,10 +301,8 @@ func (d *Daemon) packedThere(machine, path, folder string, state wire.ReceiveSta
 	receive = wire.ReceiveRequest{Folder: folder, Branches: sent.Pack.Commits, Checkout: branch, Origin: origin, Seed: seed}
 	if sent.Pack.Bundle != nil {
 		id := store.NewUUID()
-		if err := d.readThere(personSending, machine, sent.Pack.Bundle.ID, id, nil); err != nil {
-			if file, gone := d.incomingFile(id); gone == nil {
-				_ = os.Remove(file) // the sweep takes what is left
-			}
+		if err := d.readThere(personSending, machine, *sent.Pack.Bundle, id, nil); err != nil {
+			d.dropUpload(id)
 			return receive, err
 		}
 		receive.Bundle = &id

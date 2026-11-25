@@ -83,6 +83,7 @@ const CapFirstBuild1 = "first-build/1"
 const CapFolder1 = "folder/1"
 const CapFoldersNotCommitted1 = "folders.not-committed/1"
 const CapFoldersSeed1 = "folders.seed/1"
+const CapFoldersSendParts1 = "folders.send-parts/1"
 const CapFoldersSendSeed1 = "folders.send-seed/1"
 const CapFoldersSignedUpload1 = "folders.signed-upload/1"
 const CapFoldersToMachine1 = "folders.to-machine/1"
@@ -1219,6 +1220,7 @@ var DeclaredCapabilities = map[string][]string{
 		"host.lock/1",
 		"host.lock/2",
 		"host.user-settings/3",
+		"folders.send-parts/1",
 		"host.user-parts/1",
 	},
 }

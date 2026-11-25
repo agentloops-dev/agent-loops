@@ -84,6 +84,7 @@ public enum Capability {
     public static let folder1 = "folder/1"
     public static let foldersNotCommitted1 = "folders.not-committed/1"
     public static let foldersSeed1 = "folders.seed/1"
+    public static let foldersSendParts1 = "folders.send-parts/1"
     public static let foldersSendSeed1 = "folders.send-seed/1"
     public static let foldersSignedUpload1 = "folders.signed-upload/1"
     public static let foldersToMachine1 = "folders.to-machine/1"
@@ -1097,6 +1098,7 @@ public enum Capability {
             "host.lock/1",
             "host.lock/2",
             "host.user-settings/3",
+            "folders.send-parts/1",
             "host.user-parts/1",
         ],
     ]

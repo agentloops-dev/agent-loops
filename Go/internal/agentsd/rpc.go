@@ -100,6 +100,22 @@ func (c *Client) answer(m message) {
 	c.write(string(b))
 }
 
+// answerBulk is answer for a part of a file (#7120): the link's other lines go before it.
+// With a channel's MAC every line keeps its place, so it goes as any other.
+func (c *Client) answerBulk(m message) {
+	bulk, ok := c.conn.(controllink.BulkConn)
+	if !ok || c.lock.get() != nil {
+		c.answer(m)
+		return
+	}
+	b, err := json.Marshal(m)
+	if err != nil {
+		log.Printf("encode: %v", err)
+		return
+	}
+	_ = bulk.WriteBulk(string(b)) // the link is gone, and the caller with it
+}
+
 // Notify sends a notification to this client.
 func Notify[P any](c *Client, n wire.Notification[P], params P) {
 	p, err := json.Marshal(params)
@@ -200,6 +216,10 @@ func (d *Daemon) dispatch(c *Client, m message) {
 	b, merr := json.Marshal(result)
 	if merr != nil {
 		c.answer(message{JSONRPC: "2.0", ID: m.ID, Error: &Error{Code: CodeInternal, Message: merr.Error()}})
+		return
+	}
+	if _, part := result.(wire.SendRead); part {
+		c.answerBulk(message{JSONRPC: "2.0", ID: m.ID, Result: b})
 		return
 	}
 	c.answer(message{JSONRPC: "2.0", ID: m.ID, Result: b})
