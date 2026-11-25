@@ -98,12 +98,14 @@ func (d *Daemon) workTimeline(ctx context.Context, r wire.WorkTimelineRequest) (
 	d.keptEpics.use(conn)
 	d.timelineForgetGone()
 	var epics []timelineEpic
+	scopes := []string{}
 	for _, repo := range repos {
 		read, err := d.githubTimeline(ctx, gh, conn, repo.path, since, from)
 		if err != nil {
 			out.Errors = append(out.Errors, "GitHub: "+repo.path+": "+err.Error())
 			continue
 		}
+		scopes = append(scopes, repo.forge+":"+strings.ToLower(repo.path))
 		if len(read.Rest) > 0 {
 			out.Partial = new(true)
 		}
@@ -116,6 +118,10 @@ func (d *Daemon) workTimeline(ctx context.Context, r wire.WorkTimelineRequest) (
 				out.Releases = append(out.Releases, wire.WorkTimelineRelease{Tag: rel.Tag, At: at, Repo: repo.path, URL: optional(rel.URL)})
 			}
 		}
+	}
+	// With a repo not read, the client asks another machine for them all (#7029).
+	if len(scopes) == len(repos) {
+		out.Scopes = scopes
 	}
 	// The forecast draws from the epics in their order, so the order does not depend on which of them were kept.
 	slices.SortFunc(epics, func(a, b timelineEpic) int { return cmp.Compare(a.wire.Item.Node.Ref, b.wire.Item.Node.Ref) })

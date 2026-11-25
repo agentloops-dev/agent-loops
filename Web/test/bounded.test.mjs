@@ -293,10 +293,15 @@ test("a call that is never answered is given up", async () => {
     },
     backoff: [0.01], heartbeat: { every: 60_000, within: 1_000 }, random: () => 0, callTimeout: 20,
     authenticate: async () => ({ name: "test" }) });
+  // It waits for the state it needs, not a fixed time (#7207): a call made before the link is
+  // open is refused at once, and never gets to its timeout.
   l.start();
-  await wait(5);
-  await assert.rejects(l.call("machines/list", {}), (error) => error instanceof w.CallTimedOut);
-  l.stop();
+  try {
+    await eventually(() => l.state.kind === "open");
+    await assert.rejects(l.call("machines/list", {}), (error) => error instanceof w.CallTimedOut);
+  } finally {
+    l.stop();
+  }
 });
 
 test("out of sight, a dropped link waits for the tab to come back", async () => {

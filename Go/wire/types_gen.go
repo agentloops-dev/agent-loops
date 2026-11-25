@@ -17769,6 +17769,9 @@ type WorkTimeline struct {
 	Errors []string `json:"errors,omitzero"`
 
 	Partial *bool `json:"partial,omitzero"`
+
+	// What was read (#7029): one entry per repo, as forge:name (github:example/shop). Two machines with the same scopes give the same epics, so a client asks one of them. Absent when a repo could not be read, and from an earlier daemon.
+	Scopes []string `json:"scopes,omitzero"`
 }
 
 // work/timeline's backtest (#4172): the forecast stopped just after 25, 50, 75 and 90% of each past segment's children closed, made from what had ended before that moment, and set against the real close. error is the median of forecast/actual or actual/forecast, whichever is more than 1 (×2.2 says off by a factor of 2.2). cuts is how many forecasts it made, of epics segments; holds how many closes fell in P10 to P90. width is the factor that widens the band around P50 (in log terms) until it holds 8 in 10 of them; each forecast's band is already widened by it. at is when it ran.
