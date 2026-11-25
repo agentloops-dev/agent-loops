@@ -22,7 +22,7 @@ Both pages use Paper v2 (#4926, `design/tokens.json`): Atkinson Hyperlegible Nex
 | **Line** | The record: what happened | Transcript | No box, no glyph (#5675): bold head, quiet detail, one action link | 9, 12–14, 16 (settled), 20–22, 34 |
 | **Object** | A thing the agent made, to open | Transcript | Raised box, preview, name, kind, ⋯, › | 17, 18, 19 (frame), H2 |
 | **Ask** | The person must answer before the agent goes on | End of chat, under "Waiting for you" | Raised card, yellow left edge, fixed head and foot, one body | 15, 16 (raisable), 19 (asks), 26–28g, 30, 31, 33p, and the secret-use card of #4918 |
-| **Now** | What the agent works towards (top) or does and waits on (foot) | Goal and plan at the top; one card above the prompt bar | Well, mark, line, meta, bar, chevron | 6, 7, 14, 25, 29, 32, 33, 35 |
+| **Now** | What the agent works towards (top) or does and waits on (foot) | Goal and plan at the top; one card above the prompt bar | Ground, 1 px rule, mark, line, meta, bar, chevron | 6, 7, 14, 25, 29, 32, 33, 35 |
 
 Messages (bubbles) are not cards. Sheets and overlays (8, 38–40) are controls, not cards.
 

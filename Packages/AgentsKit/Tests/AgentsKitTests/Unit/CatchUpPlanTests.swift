@@ -144,7 +144,7 @@ struct CatchUpPlanTests {
         let folder = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("snap-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: folder) }
-        let at = Date(timeIntervalSince1970: 1_790_000_000)
+        let at = Date()
         let first = AttentionSnapshot(writtenAt: at, total: 1, sessions: [])
         #expect(AttentionSnapshotStore.write(first, into: folder))
         let same = AttentionSnapshot(writtenAt: at.addingTimeInterval(1), total: 1, sessions: [])

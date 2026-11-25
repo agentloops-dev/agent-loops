@@ -487,6 +487,7 @@ extension RemoteModel {
         controlHome = status.homeHost
         controlStatus = status
         let onHomeMac = ControlPlaneReach.onHomeMac(status, hosts: listed)
+        // store-bounds: not a store: one fixed key, a switch
         WindowDefaults.store.set(onHomeMac, forKey: Self.planeOnMacKey)
         controlPlaneReach = ControlPlaneReach(onHomeMac: onHomeMac, address: ControlPlaneReach.address(of: RemoteControl.membership?.url))
         OlderPeer.controlVersion = status.version

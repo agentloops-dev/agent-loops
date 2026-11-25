@@ -290,17 +290,17 @@ Sessions are signed cookies (30 days); the server keeps nothing for them.
 | Store | Holds | Bound | Cleared |
 |---|---|---|---|
 | Defaults `draft.agent.<uuid>`, `draft.new.<folder>`, `draft.start` | Unsent prompts and attachments, ≤1 MiB each | 40 drafts, a new one over that refused; 30 days (`DraftStore.swift`); removed on archive (`App/Sources/Chat/DraftKeeper.swift`) | archive, 30 days, send |
-| Defaults `newSessionProjectFolders` | Last folder per project | **none** | never |
-| Defaults `sidebar.folds` / `folded` / `openSessions` | Sidebar fold state | `openSessions` 200; **fold sets none** | never |
-| Defaults `sidebar.<window>.width` / `.pane` | Inspector size per folder window | **none** | never |
-| Defaults `machineLockPin.<ctrlkey>` (+ `.lock`, `:<person>`) | Machine-lock pins and the stored lock | **none**; one set per control plane and person | only on a lock reset. **Not on Forget.** |
+| Defaults `newSessionProjectFolders` | Last folder per project | 1,000 of 2 KiB, a new one past that not kept (#7252) | with its folder |
+| Defaults `sidebar.folds` / `folded` / `openSessions` | Sidebar fold state | `openSessions` 200; 1,000 open and 1,000 folded names of 2 KiB a scope (#7252) | with their folder |
+| Defaults `sidebar.<window>.width` / `.pane` | Inspector size per folder window | 2,000 (#7252) | with its folder |
+| Defaults `machineLockPin.<ctrlkey>` (+ `.lock`, `:<person>`) | Machine-lock pins and the stored lock | 5,000 of 1 KiB, and 100 whole locks of 1 MiB, one past that refused (#7252) | a lock reset, another control plane, Forget |
 | Defaults display and UI choices | Fixed key set | fixed | — |
 | Defaults domains `<bundle>.walk.*`, `.root.*` | A scratch copy's preferences | walk: when its folder is gone; root: 7 days (`WindowDefaults.swift:38`) | at launch |
 | `…/Application Support/Agents/control-client.json`, `control-client.here.json` | Pairing (0600, not backed up) | 1 | Forget This Mac |
 | Keychain `control-client-key`, `lock-signing-key` (+ `.walk.<name>`) | Client key, lock signing key | **one more per walk name, never removed** | never (Forget keeps the client key by design) |
 | `WKWebsiteDataStore.default()` (browser pane), and defaults `browserPane.sites` | Cookies, logins, localStorage, caches of the sites the pane opened, and when each was last opened (`App/Sources/Sidebar/BrowserPaneStore.swift`) | 10 MB, 100 sites, 90 days since last opened (#6796) | hourly sweep; Forget This Mac |
 | Kokoro voice models (FluidAudio cache) | TTS models, copied or downloaded | **none**; can be hundreds of MB (`Shared/UI/Voice/KokoroVoice.swift:89-107`) | never |
-| `~/Library/Logs/Agents/crashes/`, `hangs/` | Crash notes, hang stacks | 20 each | at launch |
+| `~/Library/Logs/Agents/crashes/`, `hangs/` | Crash notes, hang stacks | 20 each; a hang note 2 MiB, 90 days (#7252) | at launch, hourly |
 | `$TMPDIR/agents-output-*` | See section 3 | none | — |
 
 ### Remote (iPhone and iPad)
@@ -308,10 +308,10 @@ Sessions are signed cookies (30 days); the server keeps nothing for them.
 | Store | Holds | Bound | Cleared |
 |---|---|---|---|
 | Defaults `draft.agent.<uuid>`, … | Unsent prompts and attachments, ≤1 MiB each | As the Mac: 40 drafts, 30 days, archive (`Remote/Sources/StartAgent/StartDraftKeeper.swift`) | archive, 30 days, send |
-| App group `Library/Caches/attention-snapshot.json` | The widget's needs-you rows **with headlines in plain text** | 12 rows; stale after 15 minutes | **not on Forget**: the widget keeps showing the old pairing |
+| App group `Library/Caches/attention-snapshot.json` | The widget's needs-you rows **with headlines in plain text** | 12 rows, 64 KiB, 90 days (#7252); stale after 15 minutes | **not on Forget**: the widget keeps showing the old pairing |
 | Defaults `machineLockPin.*`, `newSessionProjectFolders`, fold sets | As on the Mac | **none** | never |
 | Defaults `liveActivityTurns` | Turns covered by the Live Activity | the activity's sessions | when the activity ends |
-| `Library/Caches/remote.log` (+ `.1`) | Device log | 256 KiB × 2 | rotation |
+| `Library/Caches/remote.log` (+ `.1`) | Device log | 256 KiB × 2, a line 64 KiB, 90 days (#7252) | rotation |
 | `Application Support/Agents/control-client.json` | Pairing | 1 | Forget This iPhone |
 | Keychain `device-key` (shared group), `control-client-key`, `lock-signing-key` | Device and client keys | 1 each | never |
 | Delivered notifications, categories | Banners | 32 categories | on reconnect; not on Forget |

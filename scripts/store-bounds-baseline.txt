@@ -22,8 +22,6 @@
 1 Go/internal/agentsd/dailychecks.go WriteAtomically
 1 Go/internal/agentsd/dotagents.go WriteAtomically
 3 Go/internal/agentsd/environment.go WriteAtomically
-2 Go/internal/agentsd/events.go WriteAtomically
-1 Go/internal/agentsd/events.go os.OpenFile
 1 Go/internal/agentsd/files.go WriteAtomically
 1 Go/internal/agentsd/folders.go WriteAtomically
 1 Go/internal/agentsd/gitcredentials.go os.WriteFile
@@ -54,7 +52,6 @@
 1 Go/internal/agentsd/restarts.go WriteAtomically
 1 Go/internal/agentsd/runtimes.go os.WriteFile
 1 Go/internal/agentsd/runtimesignin.go os.WriteFile
-1 Go/internal/agentsd/said.go WriteAtomically
 1 Go/internal/agentsd/secretcmd.go execfile.Write
 1 Go/internal/agentsd/secretops.go WriteAtomically
 2 Go/internal/agentsd/selfupdate.go WriteAtomically
@@ -73,11 +70,8 @@
 1 Go/internal/agentsd/store/files.go os.OpenFile
 1 Go/internal/agentsd/store/revisions.go WriteAtomically
 1 Go/internal/agentsd/store/roots.go WriteAtomically
-2 Go/internal/agentsd/store/store.go WriteAtomically
-1 Go/internal/agentsd/store/summaries.go WriteAtomically
+1 Go/internal/agentsd/store/store.go WriteAtomically
 2 Go/internal/agentsd/trailerhook.go os.WriteFile
-1 Go/internal/agentsd/turnscache.go os.OpenFile
-1 Go/internal/agentsd/turnscache.go os.WriteFile
 3 Go/internal/agentsd/usersettings.go WriteAtomically
 1 Go/internal/agentsd/usersuspend.go WriteAtomically
 1 Go/internal/agentsd/viewservers.go WriteAtomically
@@ -145,15 +139,11 @@
 1 Go/internal/whatsappmcp/store.go writeAtomically
 2 Go/internal/workspacecommands/digitalocean.go os.WriteFile
 1 Host/Sources/HostModel.swift write(to:)
-2 Host/Sources/HostSettings.swift write(to:)
 1 Host/Sources/LocalServices.swift write(to:)
 1 Packages/AgentsKit/Sources/AgentsKitCore/Client/AgentsExportTransfer.swift createFile
 1 Packages/AgentsKit/Sources/AgentsKitCore/Control/ControlMembership.swift write(to:)
 1 Packages/AgentsKit/Sources/AgentsKitCore/Control/HostJoinFile.swift write(to:)
 1 Packages/AgentsKit/Sources/AgentsKitCore/Model/MachineLock.swift createFile
-1 Packages/AgentsKit/Sources/AgentsKitCore/Platform/HangWatchdog.swift write(to:)
-1 Packages/AgentsKit/Sources/AgentsKitCore/Remote/RollingLog.swift write(to:)
-2 Packages/AgentsKit/Sources/AgentsKitCore/Widget/AttentionSnapshotStore.swift write(to:)
 1 Shared/UI/Voice/VoiceTape.swift write(to:)
 1 Web/src/wire/keys.ts indexedDB.open
 1 Web/src/wire/signIn.ts indexedDB.open
