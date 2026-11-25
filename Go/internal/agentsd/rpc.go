@@ -30,6 +30,8 @@ type message struct {
 	Error   *Error          `json:"error,omitempty"`
 	// Lock is a request's LockSignature, when its sender signed it (lockcheck.go).
 	Lock json.RawMessage `json:"lock,omitempty"`
+	// vouched is a request from a client's checked channel or a socket of this machine.
+	vouched bool
 }
 
 // Error is a JSON-RPC error, with DaemonAPI's codes.
@@ -180,6 +182,9 @@ func (d *Daemon) Accept(conn controllink.Conn) {
 		if m.Method == "" {
 			continue // a reply: nothing here asks a client anything yet
 		}
+		if _, own := conn.(*sockConn); own {
+			m.vouched = true
+		}
 		// In the order they come, before each runs on its own goroutine.
 		d.noteFirstList(c, m.Method, m.Params)
 		d.goJob("rpc "+m.Method, func() { d.dispatch(c, m) })
@@ -195,7 +200,7 @@ func (d *Daemon) dispatch(c *Client, m message) {
 	} else if h == nil {
 		d.logUnknown(m.Method)
 		err = &Error{Code: CodeMethodNotFound, Message: "Method not found: " + m.Method}
-	} else if v := safe.Catch("rpc "+m.Method, func() { result, err = h(d.ctx, c, m.Params) }); v != nil {
+	} else if v := safe.Catch("rpc "+m.Method, func() { result, err = h(withCaller(d.ctx, m.vouched), c, m.Params) }); v != nil {
 		err = &Error{Code: CodeInternal, Message: fmt.Sprintf("the machine hit a bug in %s: %v", m.Method, v)}
 	}
 	if err == nil && h != nil {

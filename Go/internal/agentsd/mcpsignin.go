@@ -169,6 +169,9 @@ func (d *Daemon) mcpSignInServer(t wire.MCPSignInTarget) (string, []sdk.HttpHead
 		if e.name != t.Entry.Name {
 			continue
 		}
+		if t.Entry.Destination.Kind == wire.SkillDestinationKindPersonal && d.personalGate().waits(e) {
+			return "", nil, invalid("This server waits for your approval on this machine.")
+		}
 		filled, missing := filledServer(e.server, d.secrets())
 		if len(missing) > 0 {
 			return "", nil, mcpcatalog.MissingSecret(missing[0])

@@ -85,7 +85,7 @@ export function healthKind(server: MCPServerHealth): string {
 
 /** How it is doing, in a line. */
 export function healthLine(server: MCPServerHealth): string {
-  if (server.hosted) return server.live ? hostedLine(server.live) : "Hosted · starts on the first call";
+  if (server.hosted && server.check !== "waiting") return server.live ? hostedLine(server.live) : "Hosted · starts on the first call";
   switch (server.check) {
     case "unchecked": return "Not checked yet";
     case "checking": return "Checking…";
@@ -94,7 +94,8 @@ export function healthLine(server: MCPServerHealth): string {
       return "Answered" + tools;
     }
     case "failed": return "Didn't answer";
-    case "waiting": return "Waiting for approval in this folder's settings, so it is not started";
+    case "waiting": return server.folder == null ? "Not approved on this machine, so it is not started"
+      : "Waiting for approval in this folder's settings, so it is not started";
     case "missingSecret": return "Needs a secret that isn't set here, so it is not started";
     case "signIn": return "Wants a sign-in first, in Settings";
     case "oldTransport": return "Uses the old sse transport, which isn't checked";

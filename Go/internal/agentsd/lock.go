@@ -150,20 +150,21 @@ func (d *Daemon) TakeLock(lock wire.Lock) bool {
 		log.Printf("lock: would refuse %s's lock of %d entries: %v", lock.Person, len(lock.Entries), err)
 		return false
 	}
-	d.lockHeld, d.lockRead = state, true
-	if b, err := json.Marshal(lock); err == nil && (state.Count() != kept.Count || !fileExists(d.lockFilePath())) {
-		if err := store.WriteAtomically(d.lockFilePath(), b, 0o644); err != nil {
-			log.Printf("lock: the lock could not be kept: %v", err)
-		}
-	}
 	if state.Count() != kept.Count {
-		b, _ := json.Marshal(state.Pin())
-		err := tooLarge(lockPinFile, b, lockPinMostBytes)
+		b, err := json.Marshal(state.Pin())
 		if err == nil {
-			// store-bounds: kind=key-value; count=1; size=4KiB; age=until-deleted; applied=on write (refused)
-			err = store.WriteAtomically(d.lockPinPath(), b, 0o644)
+			err = tooLarge(lockPinFile, b, lockPinMostBytes)
 		}
 		if err != nil {
+			log.Printf("lock: the lock is not taken: its head cannot be pinned: %v", err)
+			return false
+		}
+		// Its head is checked: it is followed from here, also when the disk does not take it, so
+		// that a key it removed opens nothing.
+		d.lockHeld, d.lockRead = state, true
+		// The pin first: no lock is on the disk that is ahead of it.
+		// store-bounds: kind=key-value; count=1; size=4KiB; age=until-deleted; applied=on write (refused)
+		if err := store.WriteAtomically(d.lockPinPath(), b, 0o644); err != nil {
 			log.Printf("lock: the head could not be pinned: %v", err)
 			return false
 		}
@@ -173,6 +174,15 @@ func (d *Daemon) TakeLock(lock wire.Lock) bool {
 		} else {
 			log.Printf("lock: %s's lock grew from %d to %d entries, head %s",
 				state.Person, pin.Count, state.Count(), state.Head().Short())
+		}
+	}
+	d.lockHeld, d.lockRead = state, true
+	if b, err := json.Marshal(lock); err == nil {
+		// Also one that an earlier write did not take.
+		if had, err := os.ReadFile(d.lockFilePath()); err != nil || !bytes.Equal(had, b) {
+			if err := store.WriteAtomically(d.lockFilePath(), b, 0o644); err != nil {
+				log.Printf("lock: the lock could not be kept: %v", err)
+			}
 		}
 	}
 	d.joinLockLocked(state, invite, time.Now())

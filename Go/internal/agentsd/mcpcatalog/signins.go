@@ -77,7 +77,7 @@ const (
 	needsSignInKept  = store.MaxAge
 )
 
-// store-bounds: kind=secret; count=200 sign-ins, 200 clients and 200 servers that need one; size=64KiB a record; age=until-deleted; applied=on write, refused; a server that needs a sign-in goes at 90 days
+// store-bounds: kind=secret; count=200 sign-ins, 200 clients and 200 servers that need one; size=64KiB a record, 4KiB a server that needs one; age=until-deleted; applied=on write, refused; a server that needs a sign-in goes at 90 days
 var signInStore = store.SecretFile[SignInFile]{Name: SignInFileName, Parts: []store.SecretPart[SignInFile]{
 	{What: "connector sign-ins", MaxRecordBytes: signInBytes, MaxCount: signInsMost, Remedy: "sign out of one first",
 		Entries: func(f SignInFile) map[string]any { return store.Entries(f.Grants) }},
@@ -130,6 +130,9 @@ type SignIns struct {
 	mu         sync.Mutex
 	refreshing map[string]*refresh
 	probed     map[string]bool
+	// spent is each refresh token that was used and could not be replaced or deleted on the disk.
+	// It is not sent again: a server that rotates them can end the whole sign-in for that.
+	spent map[string]string
 }
 
 type refresh struct {
@@ -356,6 +359,10 @@ func (s *SignIns) BearerFor(ctx context.Context, server, name string) Bearer {
 		s.mu.Unlock()
 		return Bearer{Kind: "token", Token: g.Access}
 	}
+	if g.Refresh != nil && s.spent[key] == *g.Refresh {
+		s.mu.Unlock()
+		return s.expire(key, name, "its new tokens could not be kept")
+	}
 	if g.Refresh == nil {
 		s.mu.Unlock()
 		if g.ExpiresAt.After(current) {
@@ -399,7 +406,7 @@ func (s *SignIns) renew(ctx context.Context, key, name string, g Grant) Bearer {
 			}
 			f.Grants[key] = kept
 		}); err != nil {
-			s.log("mcp sign-in: " + name + " refreshed, but could not be saved: " + err.Error())
+			return s.notKept(ctx, key, name, g, t, err)
 		}
 		s.log("mcp sign-in: " + name + " refreshed")
 		return Bearer{Kind: "token", Token: t.Access}
@@ -419,6 +426,26 @@ func (s *SignIns) renew(ctx context.Context, key, name string, g Grant) Bearer {
 	}
 	s.log("mcp sign-in: " + name + " refresh " + word)
 	return Bearer{Kind: "needsSignIn"}
+}
+
+// notKept is a refresh whose tokens the disk did not take. Where the old refresh token still
+// works, the new access token is used and the sign-in stays. Where it is spent, the new tokens
+// are revoked, the sign-in is deleted and the server needs a sign-in.
+func (s *SignIns) notKept(ctx context.Context, key, name string, g Grant, t Tokens, err error) Bearer {
+	s.log("mcp sign-in: " + name + " refreshed, but could not be saved: " + err.Error())
+	if t.Refresh == "" || t.Refresh == *g.Refresh {
+		return Bearer{Kind: "token", Token: t.Access}
+	}
+	s.mu.Lock()
+	if s.spent == nil {
+		s.spent = map[string]string{}
+	}
+	s.spent[key] = *g.Refresh
+	s.mu.Unlock()
+	if g.RevocationEndpoint != nil {
+		s.OAuth.Revoke(ctx, t.Refresh, *g.RevocationEndpoint, g.Client)
+	}
+	return s.expire(key, name, "its new tokens could not be kept")
 }
 
 func (s *SignIns) expire(key, name, why string) Bearer {
