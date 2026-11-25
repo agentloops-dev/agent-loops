@@ -188,6 +188,7 @@ func (s *Relays) keep(runtime, hash string) error {
 		return err
 	}
 	next := s.grantedFile() + ".new"
+	// store-bounds: kind=key-value; count=2; size=64B a runtime; age=until-deleted; applied=on write, an entry per runtime of Policies
 	if err := os.WriteFile(next, b, 0o600); err != nil {
 		return err
 	}
