@@ -11,6 +11,7 @@
 package controlsetup
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -24,6 +25,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/web"
 	"github.com/agentloops-dev/agent-loops/Go/internal/machine"
 )
 
@@ -50,6 +52,8 @@ type Options struct {
 	Agents bool
 	// Port is the serving port; DefaultPort, or 443 with a domain, when 0.
 	Port int
+	// Page says that the web page is in place, so the unit serves it; Install sets it.
+	Page bool
 }
 
 // Deps are what the installer does outside itself, so a test can stand in for each.
@@ -69,6 +73,7 @@ type Layout struct {
 	Control  string // agents-control's own folder (--home): certificate, key and store
 	Unit     string
 	HostUnit string // the host's drop-in on a machine with both roles (#6613)
+	Web      string // the built web page (the release's web/), beside Bin
 }
 
 // LayoutOf is the layout under home.
@@ -78,6 +83,7 @@ func LayoutOf(home string) Layout {
 		Control:  filepath.Join(home, ".agents-control"),
 		Unit:     filepath.Join(home, ".config", "systemd", "user", UnitName),
 		HostUnit: filepath.Join(home, ".config", "systemd", "user", "agents-host.service.d", "10-control-first.conf"),
+		Web:      filepath.Join(home, ".agents-server", "web"),
 	}
 }
 
@@ -149,6 +155,15 @@ func Unit(o Options) string {
 			args = append(args, "--acme-email", o.ACMEEmail)
 		}
 	}
+	if o.Page {
+		// At the domain's own origin, where a browser trusts the certificate; with no domain,
+		// on this machine's loopback, as on the Mac.
+		flag := "--web"
+		if o.Domain != "" {
+			flag = "--public-web"
+		}
+		args = append(args, flag, "%h/.agents-server/web")
+	}
 	env := ""
 	if u := o.URL(); u != "" {
 		env = "Environment=AGENTS_CONTROL_URL=" + u + "\n"
@@ -177,7 +192,7 @@ func Installed(home string) bool {
 	return err == nil
 }
 
-// Install puts agents-control in the host's bin, writes the unit, starts it, and waits for
+// Install puts agents-control in the host's bin and the web page beside it, writes the unit, starts it, and waits for
 // the store to be made, so that a host code can be issued. It does nothing a user cannot.
 func Install(ctx context.Context, o Options, d Deps) error {
 	if o.Home == "" {
@@ -196,6 +211,13 @@ func Install(ctx context.Context, o Options, d Deps) error {
 	}
 	if err := place(o.Executable, l); err != nil {
 		return err
+	}
+	var err error
+	if o.Page, err = placePage(o.Executable, l); err != nil {
+		return err
+	}
+	if !o.Page {
+		fmt.Fprintln(d.Out, "No web page: there is no web folder beside agentsd, so this control plane serves none.")
 	}
 	if err := os.MkdirAll(filepath.Dir(l.Unit), 0o700); err != nil {
 		return err
@@ -248,14 +270,12 @@ func HostCode(ctx context.Context, home string, d Deps) (string, error) {
 	}
 }
 
-// place puts agents-control in the host's bin: it is already there, or it is agentsd's
-// sibling (the release unpacked), else the install says what is missing.
+// place puts agents-control in the host's bin: agentsd's sibling (the release unpacked), also
+// in place of an older one, so that the install run again from a newer release updates it.
+// With no sibling, the one that is there stays; with neither, it says what is missing.
 func place(executable string, l Layout) error {
 	if err := os.MkdirAll(l.Bin, 0o700); err != nil {
 		return err
-	}
-	if _, err := os.Stat(l.Binary()); err == nil {
-		return nil
 	}
 	// The release's tarball names it agents-control-linux-<arch>; a built folder, agents-control.
 	var sibling string
@@ -266,19 +286,79 @@ func place(executable string, l Layout) error {
 			break
 		}
 	}
+	old, oldErr := os.ReadFile(l.Binary())
 	if sibling == "" {
+		if oldErr == nil {
+			return nil
+		}
 		return fmt.Errorf("agents-control is not beside agentsd (%s) or in %s: unpack the release's tarball and run agentsd from it", filepath.Dir(executable), l.Bin)
 	}
 	data, err := os.ReadFile(sibling)
 	if err != nil {
 		return err
 	}
+	if oldErr == nil && bytes.Equal(old, data) {
+		return nil
+	}
 	tmp := l.Binary() + ".new"
-	// store-bounds: not a store: the release's program, copied once beside agentsd
+	// store-bounds: not a store: the release's program, one copy beside agentsd
 	if err := os.WriteFile(tmp, data, 0o700); err != nil { //nolint:gosec // G306: a program must run
 		return err
 	}
 	return os.Rename(tmp, l.Binary())
+}
+
+// placePage puts the release's web folder, beside the running agentsd, in place of the one that
+// is there, so that the page and agents-control stay one release. It copies only what the
+// page's MANIFEST lists, with the hash it lists. With no folder beside agentsd, the page that is
+// there stays. It says whether there is a page.
+func placePage(executable string, l Layout) (bool, error) {
+	from := filepath.Join(filepath.Dir(executable), "web")
+	manifest, err := os.ReadFile(filepath.Join(from, "MANIFEST")) //nolint:gosec // G304: the release's own folder
+	if errors.Is(err, os.ErrNotExist) {
+		_, err := web.LoadFiles(l.Web)
+		return err == nil, nil
+	} else if err != nil {
+		return false, err
+	}
+	files, err := web.LoadFiles(from)
+	if err != nil {
+		return false, fmt.Errorf("the release's web page: %w", err)
+	}
+	next, old := l.Web+".new", l.Web+".old"
+	for _, dir := range []string{next, old} {
+		if err := os.RemoveAll(dir); err != nil {
+			return false, err
+		}
+	}
+	write := func(name string, data []byte) error {
+		if !filepath.IsLocal(name) {
+			return fmt.Errorf("the release's web page: %s is outside its folder", name)
+		}
+		file := filepath.Join(next, name)
+		if err := os.MkdirAll(filepath.Dir(file), 0o700); err != nil {
+			return err
+		}
+		// store-bounds: not a store: the release's web page, one copy, replaced whole by each install
+		return os.WriteFile(file, data, 0o600) //nolint:gosec // G703: a name from the checked manifest, local to our own folder
+	}
+	for name, f := range files {
+		if err := write(filepath.FromSlash(strings.TrimPrefix(name, "/")), f.Data); err != nil {
+			return false, err
+		}
+	}
+	if err := write("MANIFEST", manifest); err != nil {
+		return false, err
+	}
+	// agents-control reads the page into memory when it starts, so the swap is not seen by one
+	// that runs; the restart after it takes the new page.
+	if err := os.Rename(l.Web, old); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return false, err
+	}
+	if err := os.Rename(next, l.Web); err != nil {
+		return false, err
+	}
+	return true, os.RemoveAll(old)
 }
 
 // releaseArch is the architecture in the release's file names.
