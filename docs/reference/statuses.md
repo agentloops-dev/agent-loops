@@ -94,9 +94,12 @@ needs your approval, the row carries the mark once its turn ends. The session st
 until you archive it.
 
 - **A card at the end of the chat** says **The agent asks to archive this session**, in the
-  attention colour, with what the agent said last. **Approve** archives it; **Keep Session**
+  attention colour, with why the agent asks (#6067), or what it said last when it gave no
+  reason. **Approve** archives it; **Keep Session**
   keeps it. It is drawn as a permission question is, on the Mac, iPhone, iPad and web page
   (#827).
+- **The mark's tooltip** on the Mac and the web page says why, as the line on an iPhone or
+  iPad card does.
 - **Approve** is also beside the mark on the Mac's row. On the Remote and the web page,
   **Archive** is in the row's menu and its swipe.
 - **Needs You** lists every session waiting for approval, across every folder and host

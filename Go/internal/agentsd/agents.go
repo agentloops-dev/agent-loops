@@ -178,7 +178,7 @@ func (d *Daemon) prompt(r wire.PromptRequest) error {
 	var preface *string
 	if from == wire.PromptOriginPerson {
 		// The person's words take back an archive asked for and a question for after the turn.
-		d.change(a.ID, func(a *wire.Agent) { a.ArchiveRequest, a.AfterTurn = nil, nil })
+		d.change(a.ID, func(a *wire.Agent) { a.ArchiveRequest, a.AfterTurn, a.ArchiveWhy = nil, nil, nil })
 		// The person carries a blocked agent on past its block.
 		d.dropBlock(a.ID)
 		// And a wait: the runtime is told, ahead of the words.
@@ -533,6 +533,7 @@ func (d *Daemon) unarchive(id wire.UUID) error {
 		}
 		unread := next == wire.AgentStateFinished
 		a.State, a.ArchivedAt, a.ArchivedReason, a.AfterTurn, a.IsUnread = next, nil, nil, nil, &unread
+		a.ArchiveWhy = nil
 	})
 	d.record(id, stateChanged(next, said))
 	return nil

@@ -57,6 +57,7 @@ public enum AgentWrite: Sendable, Hashable {
             agent.state = .archived
             agent.archivedAt = agent.archivedAt ?? now
             agent.archivedReason = .byUser
+            agent.archiveWhy = agent.archiveWhy ?? agent.archiveRequest?.reason
             agent.archiveRequest = nil
         case .unarchive:
             guard agent.state == .archived else { break }
@@ -65,6 +66,7 @@ public enum AgentWrite: Sendable, Hashable {
             if agent.endedReason == nil { agent.endedReason = .unrecognised }
             agent.archivedAt = nil
             agent.archivedReason = nil
+            agent.archiveWhy = nil
         case .stop:
             guard Self.stops(agent.state) else { break }
             agent.state = .stopped

@@ -294,6 +294,9 @@ type Agent struct {
 
 	ArchivedAt *Date `json:"archivedAt,omitzero"`
 
+	// Why an agent archived this session, in its own words (#6067): kept from archive_session to the end of that turn, and on the archived record. Absent when the agent gave none, or a person archived a session that did not ask.
+	ArchiveWhy *string `json:"archiveWhy,omitzero"`
+
 	SandboxOverride *SandboxChoice `json:"sandboxOverride,omitzero"`
 
 	EffectiveSandbox *EffectiveSandbox `json:"effectiveSandbox,omitzero"`
@@ -884,10 +887,16 @@ type ArchiveRequest struct {
 
 type ArchiveRequestWhenTurnEnds struct {
 	Since Date `json:"since"`
+
+	// Why, in the agent's own words (#6067): one line, at most 200 characters. Absent on a request from before #6067, and on one made for the agent with none.
+	Reason *string `json:"reason,omitzero"`
 }
 
 type ArchiveRequestRequested struct {
 	At Date `json:"at"`
+
+	// Why, in the agent's own words (#6067): one line, at most 200 characters. Absent on a request from before #6067, and on one made for the agent with none.
+	Reason *string `json:"reason,omitzero"`
 }
 
 type ArtifactWriteRequest struct {
@@ -14957,6 +14966,9 @@ type SessionCall struct {
 
 	// With op message: replace the message of the starter's that waits, as message_session's replace.
 	Replace *bool `json:"replace,omitzero"`
+
+	// With op archive: why, in the starter's words (#6067), as archive_session's reason.
+	Reason *string `json:"reason,omitzero"`
 
 	// The asking agent's project (#3277). The host also answers status, read and message for a session that from did not start, when its folder is in this project now; stop and archive stay the starter's. The control plane checks that the asking machine has a folder of it.
 	Project *string `json:"project,omitzero"`

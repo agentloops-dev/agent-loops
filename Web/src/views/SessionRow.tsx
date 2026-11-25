@@ -13,7 +13,7 @@ import { leaseMark, lineResource, startedByAgentLabel, waitKind, waitMark, workt
 import { blockWaitNames, openBlock } from "../model/block";
 import { backgroundMark } from "../model/background";
 import { drawsUnread, folderPath } from "../model/groups";
-import { archiveLine, archiveMark } from "../model/archiveWords";
+import { archiveDetail, archiveLine, archiveMark } from "../model/archiveWords";
 import { fileToSeeLine, reportLine } from "../model/fileToSeeWords";
 import { needsYouLine, queuedLine, rowStatus, type StatusShape } from "../model/status";
 import { fromWireDate } from "../protocol/dates";
@@ -61,7 +61,8 @@ export function SidebarMark({ agent, comingBack = false }: { agent: Agent; comin
   const mark = comingBack ? null : sessionMark(agent);
   if (!mark) return <StatusMark agent={agent} comingBack={comingBack} />;
   const tool = mark === "tool" ? runningTool(agent) : null;
-  const words = tool !== null ? runningToolLabel(tool) : mark === "needsYou" ? status.words : markWords[mark];
+  const words = tool !== null ? runningToolLabel(tool) : mark === "needsYou" ? status.words
+    : mark === "asksToArchive" ? archiveDetail(agent) : markWords[mark];
   return (
     <span class={`sidebar-mark ${mark}`} role="img" aria-label={words} title={words}>
       {mark === "needsYou" && <Icon name="hand" class="glyph" />}
@@ -295,7 +296,7 @@ export function SessionRow({ agent, chosen, onPick, going, extras, inSidebar = f
           {extras?.wait && <span class="subtitle wait-line" title={extras.wait.detail}>{extras.wait.line}</span>}
           {/* While the sidebar searches: the line it said that matches (#1585). */}
           {extras?.said && <span class="subtitle" title={extras.said}>{extras.said}</span>}
-          {asks && <span class="subtitle quiet archive-mark">{asks}</span>}
+          {asks && <span class="subtitle quiet archive-mark" title={archiveDetail(agent)}>{asks}</span>}
         </>}
       </span>
       {archivedTime ? (() => {

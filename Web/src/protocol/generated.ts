@@ -354,6 +354,12 @@ export interface Agent {
   archiveRequest?: ArchiveRequest;
   afterTurn?: AfterTurn;
   archivedAt?: WireDate;
+  /**
+   * Why an agent archived this session, in its own words (#6067): kept from archive_session to the
+   * end of that turn, and on the archived record. Absent when the agent gave none, or a person
+   * archived a session that did not ask.
+   */
+  archiveWhy?: string;
   sandboxOverride?: SandboxChoice;
   effectiveSandbox?: EffectiveSandbox;
   pendingSandboxFailure?: SandboxFailureRecord;
@@ -844,8 +850,8 @@ export interface ApprovalReadRequest {
 }
 
 export type ArchiveRequest =
-  | { whenTurnEnds: { since: WireDate } }
-  | { requested: { at: WireDate } };
+  | { whenTurnEnds: { since: WireDate; reason?: string } }
+  | { requested: { at: WireDate; reason?: string } };
 
 export interface ArtifactWriteRequest {
   agentID: UUID;
@@ -14246,6 +14252,8 @@ export interface SessionCall {
    * With op message: replace the message of the starter's that waits, as message_session's replace.
    */
   replace?: boolean;
+  /** With op archive: why, in the starter's words (#6067), as archive_session's reason. */
+  reason?: string;
   /**
    * The asking agent's project (#3277). The host also answers status, read and message for a
    * session that from did not start, when its folder is in this project now; stop and archive stay
@@ -18193,7 +18201,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   AddFolderRequest: { required: ["folder"], optional: ["project"] },
   Admitted: { required: [], optional: ["client", "host"] },
   AdoptRequest: { required: ["runtimeID", "sessionID", "cwd"], optional: [] },
-  Agent: { required: ["id", "runtimeID", "cwd", "state", "startOptions", "advertisedOptions", "availableCommands", "createdAt", "lastActivityAt"], optional: ["revision", "title", "labels", "priority", "prioritySet", "prioritySource", "runtimeSessionID", "runtimeKeepsCopy", "browserUsedAt", "isUnread", "isMuted", "reportSeenAt", "endedReason", "archivedReason", "usage", "lastTurnUsage", "costToDate", "costCeiling", "tokensToDate", "tokenCeiling", "plans", "background", "additionalDirectories", "mcpServers", "queuedPrompts", "suggestedPrompts", "startedByWorkflow", "purpose", "startedByRun", "startedByAgent", "chainDepth", "eventWait", "worktree", "pendingMove", "startingPoint", "startRequestID", "persona", "restartPickUps", "report", "outcomeAsked", "archiveRequest", "afterTurn", "archivedAt", "sandboxOverride", "effectiveSandbox", "pendingSandboxFailure", "desktopControlPause", "missingFolder", "listsLeftOut", "titleIsPersons", "runtimeTitle", "madeInRoot", "queuedStart", "branchedFrom", "movedFrom", "fileToSee", "continueWhenBack", "runningTool", "accountID", "auto", "clientPermission", "levels", "voiceHungUpAt", "goal", "project"] },
+  Agent: { required: ["id", "runtimeID", "cwd", "state", "startOptions", "advertisedOptions", "availableCommands", "createdAt", "lastActivityAt"], optional: ["revision", "title", "labels", "priority", "prioritySet", "prioritySource", "runtimeSessionID", "runtimeKeepsCopy", "browserUsedAt", "isUnread", "isMuted", "reportSeenAt", "endedReason", "archivedReason", "usage", "lastTurnUsage", "costToDate", "costCeiling", "tokensToDate", "tokenCeiling", "plans", "background", "additionalDirectories", "mcpServers", "queuedPrompts", "suggestedPrompts", "startedByWorkflow", "purpose", "startedByRun", "startedByAgent", "chainDepth", "eventWait", "worktree", "pendingMove", "startingPoint", "startRequestID", "persona", "restartPickUps", "report", "outcomeAsked", "archiveRequest", "afterTurn", "archivedAt", "archiveWhy", "sandboxOverride", "effectiveSandbox", "pendingSandboxFailure", "desktopControlPause", "missingFolder", "listsLeftOut", "titleIsPersons", "runtimeTitle", "madeInRoot", "queuedStart", "branchedFrom", "movedFrom", "fileToSee", "continueWhenBack", "runningTool", "accountID", "auto", "clientPermission", "levels", "voiceHungUpAt", "goal", "project"] },
   AgentChanges: { required: ["epoch", "revision", "removed", "all"], optional: [] },
   AgentConfigEditorFile: { required: ["path", "content"], optional: [] },
   AgentConfigEditorRequest: { required: ["kind"], optional: ["folder"] },
@@ -19267,7 +19275,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   SentNotice: { required: ["title", "outcome"], optional: ["body", "nextAt", "to"] },
   ServedRequest: { required: ["kind", "outcome"], optional: [] },
   ServerReachabilityChange: { required: ["server", "online"], optional: [] },
-  SessionCall: { required: ["from", "session", "op"], optional: ["message", "replace", "project", "watch"] },
+  SessionCall: { required: ["from", "session", "op"], optional: ["message", "replace", "reason", "project", "watch"] },
   SessionCallReply: { required: ["said"], optional: ["title", "ended"] },
   SessionEnded: { required: ["machine", "session", "starter", "how"], optional: ["title"] },
   SessionLabel: { required: ["value", "owner", "addedAt"], optional: [] },

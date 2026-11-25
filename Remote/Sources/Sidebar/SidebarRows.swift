@@ -325,7 +325,7 @@ private struct SessionMark: View {
         case .waiting: "Waiting"
         case .paused: "Paused"
         case .done: "Done"
-        case .asksToArchive: ArchiveRequestWords.mark
+        case .asksToArchive: ArchiveRequestWords.detail(agent)
         }
     }
 }
