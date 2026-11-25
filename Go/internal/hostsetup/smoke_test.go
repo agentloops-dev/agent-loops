@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -112,16 +111,33 @@ func TestSmokeSaysNothingWhileTheRuntimeNeedsASignIn(t *testing.T) {
 	}
 }
 
-// signInLater is a host where claude is signed in once runtimes/list was asked after, so a
-// test can sign in long after the step's old time limit, with no second goroutine.
-func signInLater(h *smokeHost, after time.Duration) func(string, any) (json.RawMessage, error) {
-	begun := time.Now()
+// signInAfterAsked is a host where claude is signed in once step 7 has said needs you, and
+// after has passed since then. The sign-in follows what was said and not the test's own
+// clock: on a slow machine a clock signs in before the step asks, and running then done is
+// right for that (#7105).
+func signInAfterAsked(t *testing.T, h *smokeHost, l Layout, after time.Duration) func(string, any) (json.RawMessage, error) {
+	t.Helper()
+	var asked time.Time
 	return func(method string, params any) (json.RawMessage, error) {
-		if method == wire.CallRuntimesList.Name && time.Since(begun) > after {
-			h.signedIn = true
+		if method == wire.CallRuntimesList.Name {
+			r := lastOf(reports(t, l), wire.MachineSetupStepIDSignIn)
+			if asked.IsZero() && r != nil && r.State == wire.MachineSetupStateNeedsYou {
+				asked = time.Now()
+			}
+			if !asked.IsZero() && time.Since(asked) >= after {
+				h.signedIn = true
+			}
 		}
 		return h.call(method, params)
 	}
+}
+
+// signInContext ends a SignIn that never asks, so it fails its test and does not hang it.
+func signInContext(t *testing.T) context.Context {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	t.Cleanup(cancel)
+	return ctx
 }
 
 func signInStates(t *testing.T, l Layout) []wire.MachineSetupState {
@@ -145,8 +161,8 @@ func TestSignInWaitsForTheClientThenNeedsYouThenIsDone(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	d := Deps{Call: signInLater(h, 40*time.Millisecond), Poll: time.Millisecond, KeyWait: 5 * time.Millisecond}
-	if err := SignIn(context.Background(), o, d, rep, func(string, ...any) {}); err != nil {
+	d := Deps{Call: signInAfterAsked(t, h, l, 0), Poll: time.Millisecond, KeyWait: 5 * time.Millisecond}
+	if err := SignIn(signInContext(t), o, d, rep, func(string, ...any) {}); err != nil {
 		t.Fatal(err)
 	}
 	want := []wire.MachineSetupState{wire.MachineSetupStateRunning, wire.MachineSetupStateNeedsYou, wire.MachineSetupStateDone}
@@ -165,8 +181,8 @@ func TestSignInKeepsWaitingPastSignInWait(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	d := Deps{Call: signInLater(h, 60*time.Millisecond), Poll: time.Millisecond, KeyWait: time.Millisecond, SignInWait: 5 * time.Millisecond}
-	if err := SignIn(context.Background(), o, d, rep, func(string, ...any) {}); err != nil {
+	d := Deps{Call: signInAfterAsked(t, h, l, 50*time.Millisecond), Poll: time.Millisecond, KeyWait: time.Millisecond, SignInWait: 5 * time.Millisecond}
+	if err := SignIn(signInContext(t), o, d, rep, func(string, ...any) {}); err != nil {
 		t.Fatalf("a sign-in after SignInWait did not finish step 7: %v", err)
 	}
 	want := []wire.MachineSetupState{wire.MachineSetupStateRunning, wire.MachineSetupStateNeedsYou, wire.MachineSetupStateDone}
@@ -200,7 +216,6 @@ func TestSignInSaysFailedWhenTheInstallerStops(t *testing.T) {
 // #6340: a daemon that answers slower than KeyWait still gets running, then needs you, then
 // done, in order.
 func TestSignInSaysEachStateInOrderWhenTheDaemonIsSlow(t *testing.T) {
-	flaky.UnderLoad(t, "#7105")
 	h := &smokeHost{}
 	o, l := options(t)
 	o.Runtimes = []string{"claude"}
@@ -208,13 +223,13 @@ func TestSignInSaysEachStateInOrderWhenTheDaemonIsSlow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	later := signInLater(h, 50*time.Millisecond)
+	later := signInAfterAsked(t, h, l, 0)
 	slow := func(method string, params any) (json.RawMessage, error) {
 		time.Sleep(15 * time.Millisecond)
 		return later(method, params)
 	}
 	d := Deps{Call: slow, Poll: time.Millisecond, KeyWait: time.Millisecond, SignInWait: 10 * time.Millisecond}
-	if err := SignIn(context.Background(), o, d, rep, func(string, ...any) {}); err != nil {
+	if err := SignIn(signInContext(t), o, d, rep, func(string, ...any) {}); err != nil {
 		t.Fatal(err)
 	}
 	want := []wire.MachineSetupState{wire.MachineSetupStateRunning, wire.MachineSetupStateNeedsYou, wire.MachineSetupStateDone}
