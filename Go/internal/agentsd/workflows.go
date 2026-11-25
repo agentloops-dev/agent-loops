@@ -194,7 +194,7 @@ func (d *Daemon) saveRecordsLocked(replacing bool) {
 	}
 	if d.workflowRecsBad {
 		if b, err := os.ReadFile(d.workflowsPath()); err == nil {
-			// store-bounds: kind=blob; size=100MiB a file; count=3; age=90d; applied=on write and hourly sweep
+			// store-bounds: kind=blob; size=100MiB of a file's copies (the newest stays whatever its size); count=3; age=90d; applied=on write and hourly sweep
 			if err := os.WriteFile(fmt.Sprintf("%s.unreadable-%d", d.workflowsPath(), time.Now().Unix()), b, 0o644); err != nil { //nolint:gosec // G306: the mode this file always had; only its error is new
 				log.Printf("workflows.json: could not set the unreadable copy aside: %v", err)
 			}

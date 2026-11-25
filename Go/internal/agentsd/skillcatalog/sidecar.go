@@ -92,7 +92,9 @@ func UpdateSidecar(path string, change func(map[string]SidecarRecord)) error {
 }
 
 // ChangeRecords makes a change to a catalogue file's records, and says whether it changed them.
-// It refuses a record changed to over its largest size, and one more than the count.
+// It refuses a record changed to over its largest size, and one more than the count. The sweep's
+// mark (goneSince) is not in the size, and one that changes only there is never refused: a
+// record at its largest, or over it from before there was one, does not stop the sweep.
 func ChangeRecords[R any](records map[string]R, change func(map[string]R)) (bool, error) {
 	count := len(records)
 	before := make(map[string][]byte, count)
@@ -114,7 +116,18 @@ func ChangeRecords[R any](records map[string]R, change func(map[string]R)) (bool
 			continue
 		}
 		changed = true
-		if len(key)+len(b) > sidecarRecordMost {
+		bare, err := unmarked(b)
+		if err != nil {
+			return false, err
+		}
+		if len(key)+len(bare) <= sidecarRecordMost {
+			continue
+		}
+		was, err := unmarked(before[key])
+		if err != nil {
+			return false, err
+		}
+		if !bytes.Equal(was, bare) {
 			return false, fmt.Errorf("a catalogue item's record is at most %d bytes: %w", sidecarRecordMost, store.ErrLimit)
 		}
 	}
@@ -122,6 +135,19 @@ func ChangeRecords[R any](records map[string]R, change func(map[string]R)) (bool
 		return false, fmt.Errorf("at most %d catalogue items are kept; remove one first: %w", sidecarMost, store.ErrLimit)
 	}
 	return changed, nil
+}
+
+// unmarked is a record's JSON without the sweep's mark; nil for no record.
+func unmarked(record []byte) ([]byte, error) {
+	if record == nil {
+		return nil, nil
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(record, &fields); err != nil {
+		return nil, err
+	}
+	delete(fields, "goneSince")
+	return json.Marshal(fields)
 }
 
 func (s Sidecar) save(path string) error {
@@ -137,6 +163,6 @@ func (s Sidecar) save(path string) error {
 	if err != nil {
 		return err
 	}
-	// store-bounds: kind=key-value; count=2000; size=8KiB a skill; age=until-deleted; applied=on write (refused), and hourly sweep
+	// store-bounds: kind=key-value; count=2000; size=8KiB a skill, and the sweep's mark; age=until-deleted; applied=on write (refused), and hourly sweep
 	return store.WriteAtomically(path, b, 0o644)
 }

@@ -43,7 +43,20 @@ func (h *hosts) setLockPin(u string, p machinelock.Pin) {
 const (
 	maxHosts     = 20
 	maxCodeBytes = 2 << 10 // a pairing holds what its code holds, a key and two names
+	maxHostBytes = 4 << 10 // a pairing as it is kept: the control plane gives the client's id
 )
+
+// fits refuses a pairing that is too large to keep.
+func fits(m *controllink.ClientMembership) error {
+	b, err := json.MarshalIndent(m, "", "  ") //nolint:gosec // G117: only its size is used
+	if err != nil {
+		return err
+	}
+	if len(b) > maxHostBytes {
+		return fmt.Errorf("it is %d bytes, at most %d", len(b), maxHostBytes)
+	}
+	return nil
+}
 
 // room says why a pairing by the code text with the control plane at u cannot be kept, if
 // it cannot. A pairing with the same control plane replaces the old one.

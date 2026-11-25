@@ -457,3 +457,15 @@ func TestUnreachableSaysShortReasons(t *testing.T) {
 		t.Fatalf("--debug: %q", got)
 	}
 }
+
+// #7203: a pairing is at most 4 KiB as it is kept: the control plane gives the client's id.
+func TestAPairingHasALargestSize(t *testing.T) {
+	m := &controllink.ClientMembership{Client: "A", URL: "wss://one.example"}
+	if err := fits(m); err != nil {
+		t.Fatal(err)
+	}
+	m.Client = strings.Repeat("c", maxHostBytes)
+	if err := fits(m); err == nil {
+		t.Fatal("a pairing over 4 KiB fits")
+	}
+}
