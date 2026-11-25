@@ -67,6 +67,8 @@ struct MachinePage: View {
                             Section { Text(note).appText(.supporting).foregroundStyle(.secondary) }
                         }
                     }
+                    // Offline too, so a send that stopped keeps its Retry.
+                    MachineSendsSection(host: host)
                     MachineSessionsSection(host: host)
                     if offline {
                         Section {

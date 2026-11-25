@@ -65,7 +65,12 @@ extension AppModel {
         }
     }
 
-    /// Takes a send that stopped out of the Folders column.
+    /// The sends to `host`, for its page.
+    func sends(to host: MachineRef) -> [FolderSend] {
+        sends.filter { $0.state.send.machine == host.rawValue }
+    }
+
+    /// Takes a send that stopped off its machine's page.
     func putAwaySend(_ send: FolderSend) {
         sends.removeAll { $0.id == send.id }
     }
@@ -101,13 +106,29 @@ extension AppModel {
     }
 }
 
-/// A send in the Folders column (#4613): how it goes, and, when this window started it,
+/// A send on its machine's page (#4613): how it goes, and, when this window started it,
 /// what Retry sends again and from which host.
 struct FolderSend: Identifiable, Hashable {
     var state: DaemonAPI.SendNotification
     var request: DaemonAPI.SendRequest?
     var from: MachineRef
     var id: UUID { state.send.id }
+}
+
+/// A machine page's Sending section: the projects on their way to the machine, and those that
+/// stopped. No section when there are none. It shows nowhere else.
+struct MachineSendsSection: View {
+    @Environment(AppModel.self) private var model
+    let host: MachineRef
+
+    var body: some View {
+        let sends = model.sends(to: host)
+        if !sends.isEmpty {
+            Section("Sending") {
+                ForEach(sends) { SendingRow(send: $0) }
+            }
+        }
+    }
 }
 
 /// A send under way (#4613), as a clone's row is (027): the folder, and how far it is on its
@@ -121,8 +142,8 @@ struct SendingRow: View {
 
     private var line: String {
         let s = send.state
-        guard s.total >= 1_000_000 else { return "Sending to \(machine)…" }
-        return "Sending to \(machine): \(s.sent.formatted(.byteCount(style: .file))) of \(s.total.formatted(.byteCount(style: .file)))…"
+        guard s.total >= 1_000_000 else { return "Sending…" }
+        return "Sending: \(s.sent.formatted(.byteCount(style: .file))) of \(s.total.formatted(.byteCount(style: .file)))…"
     }
 
     var body: some View {
