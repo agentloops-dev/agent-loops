@@ -29,6 +29,7 @@ import (
 // Requests are kept in the store (v1/joins/<request>.json), so every copy sees them.
 
 const (
+	// store-bounds: kind=document; count=1_000; size=4KiB a record; age=2h; applied=on write (a large ask is refused, the oldest over the count deleted), on read and hourly sweep, 1 h after it expires
 	joinsPrefix  = "v1/joins/"
 	joinLifetime = 10 * time.Minute
 	// joinsOpen is how many requests may wait at once, and joinsPerSource from one address.
@@ -38,6 +39,12 @@ const (
 	joinsPerPerson = 10
 	// joinKept is how long an ended request stays, so the machine hears how it ended.
 	joinKept = time.Hour
+	// joinsMost is how many requests are kept, ended ones too; joinRecordMost is the largest.
+	joinsMost      = 1_000
+	joinRecordMost = 4 << 10
+	// joinDecisionRoom is what a decision adds to a record: the result, the person and the
+	// machine it makes. So an ask that was taken can always be decided.
+	joinDecisionRoom = 1 << 10
 )
 
 // joinRecord is v1/joins/<request>.json (data-model.md "Join request").
@@ -93,7 +100,12 @@ func (j *joins) all(ctx context.Context) ([]joinRecord, error) {
 	out := []joinRecord{}
 	for _, entry := range listed {
 		r, _, err := j.read(ctx, strings.TrimSuffix(strings.TrimPrefix(entry.Key, joinsPrefix), ".json"))
-		if err != nil || r == nil {
+		if err != nil {
+			continue
+		}
+		if r == nil {
+			// One that cannot be read has no expiry to go by, and nobody can decide it.
+			_ = j.s.cfg.Store.Delete(ctx, entry.Key)
 			continue
 		}
 		if now.Sub(r.Expires.Time) > joinKept {
@@ -207,6 +219,20 @@ func (j *joins) ask(ctx context.Context, a wire.MachineJoinAsk, from string) (*w
 	data, err := records.Encode(r)
 	if err != nil {
 		return nil, err
+	}
+	if len(data) > joinRecordMost-joinDecisionRoom {
+		return nil, fail(invalidParams, "The request to join is too large.")
+	}
+	// The oldest ended ones go to keep the count. No more than joinsOpen wait, so there is
+	// always one.
+	for over := len(all) + 1 - joinsMost; over > 0 && len(all) > 0; all = all[1:] {
+		if j.open(all[0]) {
+			continue
+		}
+		if err := j.s.cfg.Store.Delete(ctx, joinKey(all[0].ID)); err != nil {
+			return nil, err
+		}
+		over--
 	}
 	if _, err := j.s.cfg.Store.Put(ctx, joinKey(r.ID), data, store.Absent); err != nil {
 		return nil, err

@@ -34,6 +34,7 @@ func usageKey(id string) string { return hostedPrefix + "v1/usage/" + id + ".jso
 // Capacity samples are runtime telemetry, not account data held to the plan's storage
 // limit. The control plane replaces its sample during service start and removes it when
 // the service stops.
+// store-bounds: not a store: the prefix that a plan's count leaves out (controlplane/capacity.go declares the store)
 const runtimeCapacityPrefix = "runtime/control-capacity/"
 
 func runtimeCapacity(key string) bool { return strings.HasPrefix(key, runtimeCapacityPrefix) }

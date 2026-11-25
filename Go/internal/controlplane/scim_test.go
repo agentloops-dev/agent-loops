@@ -883,6 +883,7 @@ func TestSCIMUnknownBearersKeepNothing(t *testing.T) {
 var scimSyncUsers = flag.Int("scim-sync", 1000, "how many users TestAFirstSyncListsNoPeoplePerUser syncs")
 
 func TestAFirstSyncListsNoPeoplePerUser(t *testing.T) {
+	flaky.UnderLoad(t, "#7312")
 	// Not parallel (#2512): it holds a wall-clock limit, which other tests running beside it would make flaky.
 	n := *scimSyncUsers
 	p, _, _, _, _ := scimPlane(t, wire.OrgProviderJoinScim)

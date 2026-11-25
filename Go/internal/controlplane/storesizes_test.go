@@ -26,7 +26,10 @@ func TestStoreSizes(t *testing.T) {
 	if _, err := memory.Put(ctx, machineSetupTimes, make([]byte, 32<<10+1), store.Always); err != nil {
 		t.Fatal(err)
 	}
-	ask := func(s *controllink.Session) map[string]wire.StoreSize { return everyStoreSize(t, s) }
+	ask := func(s *controllink.Session) map[string]wire.StoreSize {
+		t.Helper()
+		return everyStoreSize(t, s)
+	}
 	if s := ask(admin)["control.policy-versions"]; s.State != wire.StoreSizeStateUnavailable || s.Why == nil {
 		t.Errorf("before a measurement: %+v", s)
 	}
@@ -75,22 +78,20 @@ func TestStoreSizes(t *testing.T) {
 	}
 }
 
-// everyStoreSize is reports/storeSizes, every page: there are more stores than one page holds.
+// everyStoreSize is each page of reports/storeSizes, by id.
 func everyStoreSize(t *testing.T, s *controllink.Session) map[string]wire.StoreSize {
 	t.Helper()
 	out := map[string]wire.StoreSize{}
-	var cursor *string
-	for {
+	for q := (wire.StoreSizesQuery{}); ; {
 		var page wire.StoreSizes
-		if err := json.Unmarshal(call(t, s, "", "reports/storeSizes", wire.StoreSizesQuery{Cursor: cursor}), &page); err != nil {
+		if err := json.Unmarshal(call(t, s, "", "reports/storeSizes", q), &page); err != nil {
 			t.Fatal(err)
 		}
-		for _, size := range page.Stores {
-			out[size.ID] = size
+		for _, s := range page.Stores {
+			out[s.ID] = s
 		}
-		if page.Cursor == nil || *page.Cursor == "" || len(page.Stores) == 0 {
+		if q.Cursor = page.Cursor; q.Cursor == nil {
 			return out
 		}
-		cursor = page.Cursor
 	}
 }

@@ -497,3 +497,59 @@ func TestWhatIsKeptIsShownToTheHostsOwnerAlone(t *testing.T) {
 		t.Error("told to everyone")
 	}
 }
+
+// #7251: a request at its largest is kept, and marked as not sent within 40 MiB; one over it is
+// refused; and one that cannot be read goes at 90 days.
+func TestAKeptRequestIsWithinItsLargest(t *testing.T) {
+	h := newHarness(t)
+	h.link(h.add(), devbox, "agents-devbox")
+	kept := h.keeper()
+	const most = 64 << 10
+	kept.most = most
+	ctx := context.Background()
+	key := func() string {
+		keys, err := h.store.List(ctx, KeptPrefix+devbox+"/")
+		if err != nil || len(keys) != 1 {
+			t.Fatal(keys, err)
+		}
+		return keys[0].Key
+	}
+	size := func() int {
+		o, err := h.store.Get(ctx, key())
+		if err != nil {
+			t.Fatal(err)
+		}
+		return len(o.Data)
+	}
+	// What a record of no text is, to make one of a known size.
+	mustKeep(t, kept.Keep(devbox, MethodAgentsPrompt, promptParams("x"), h.caller, nil))
+	kept.Forget(devbox)
+	mustKeep(t, kept.Keep(devbox, MethodAgentsPrompt, promptParams("x"), h.caller, nil))
+	least := size()
+	kept.Forget(devbox)
+	// Its time is of a varying length.
+	text := most - keptFailedRoom - least - 16
+	if f := kept.Keep(devbox, MethodAgentsPrompt, promptParams(strings.Repeat("x", text+64)), h.caller, nil); f == nil || f.Code != CodeHostOffline {
+		t.Fatalf("one over its largest: %v", f)
+	}
+	mustKeep(t, kept.Keep(devbox, MethodAgentsPrompt, promptParams(strings.Repeat("x", text)), h.caller, nil))
+	kept.fail(devbox, "", strings.Repeat("\x01", 1<<20))
+	if n := size(); n > most || n < most-keptFailedRoom {
+		t.Fatalf("a failed one is %d bytes", n)
+	}
+	if all := kept.All(); len(all) != 1 || !strings.HasSuffix(deref(all[0].Failed), "…") || len(*all[0].Failed) > keptFailedText {
+		t.Fatal("the reason was not cut")
+	}
+	kept.Forget(devbox)
+
+	now := time.Now()
+	for _, at := range []time.Time{now.Add(-KeptWaitingFor - time.Minute), now.Add(-KeptWaitingFor + time.Minute)} {
+		if _, err := h.store.Put(ctx, KeptPrefix+devbox+"/"+sequence(at)+"-X.json", []byte("{"), store.Always); err != nil {
+			t.Fatal(err)
+		}
+	}
+	kept.Expire(now)
+	if at, ok := keptAt(key()); !ok || at.Before(now.Add(-KeptWaitingFor)) {
+		t.Fatal("the wrong one went")
+	}
+}

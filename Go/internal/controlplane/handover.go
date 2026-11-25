@@ -128,7 +128,8 @@ func (s *Service) handoverAnswer(method string, params json.RawMessage) (any, er
 	case "store/get":
 		return s.handoverStoreGet(ctx, phase, p)
 	case "store/put":
-		// Create only, and only into a copy that is receiving.
+		// Create only, and only into a copy that is receiving. The bytes are kept as they are
+		// (copyStoreLeaving says why): the frozen copy's record can be the only one.
 		if phase != phaseReceiving {
 			return nil, refuseHandover("Only a receiving copy takes records.")
 		}

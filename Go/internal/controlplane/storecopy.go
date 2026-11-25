@@ -18,10 +18,12 @@ var ErrDestinationInUse = errors.New("The new store already holds a control plan
 // copySkipped is never carried across: leases and copies are rebuilt when a copy starts,
 // and each copy keeps the control key its own way (a Mac in a file or the keychain, a cloud
 // machine sealed in its store by its own keeper, #1458), so a sealed key stays where it is.
+// store-bounds: not a store: the prefixes that a copy leaves out
 var copySkipped = []string{"v1/leases/", "v1/copies/", "v1/keys/"}
 
 // backupSkipped is what a backup leaves out (#2137): only what a copy rebuilds when it
 // starts. A sealed key stays in, as a restore at the same keeper needs it.
+// store-bounds: not a store: the prefixes that a backup leaves out
 var backupSkipped = []string{"v1/leases/", "v1/copies/"}
 
 // leftOut says a key is under one of the prefixes skipped.
@@ -47,6 +49,9 @@ func BackupStore(ctx context.Context, from, to store.Store) (copied, skipped int
 	return copyStoreLeaving(ctx, from, to, backupSkipped)
 }
 
+// copyStoreLeaving writes each record's bytes as they are, with no largest record of its own
+// (#7251): the source can be the only copy of a record from an older build, so a copy, a
+// backup or a restore never refuses one. A declared store's next write and its sweep bound it.
 func copyStoreLeaving(ctx context.Context, from, to store.Store, leaving []string) (copied, skipped int, err error) {
 	if held, err := to.Get(ctx, records.SettingsKey); err != nil {
 		return 0, 0, err

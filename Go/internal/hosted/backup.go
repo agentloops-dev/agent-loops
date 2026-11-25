@@ -370,7 +370,8 @@ func (a Admin) checkRestorable(ctx context.Context, id string, now *Account, bac
 }
 
 // putBackRecords puts each record of from/records.jsonl back in the account's store, and
-// deletes each record the backup did not hold. It gives how many it put back.
+// deletes each record the backup did not hold. It gives how many it put back. The bytes go back
+// as they are, with no largest record (#7251): the backup can be the only copy of one.
 func (a Admin) putBackRecords(ctx context.Context, from, id string) (int, error) {
 	f, err := os.Open(filepath.Join(from, "records.jsonl"))
 	if err != nil {
