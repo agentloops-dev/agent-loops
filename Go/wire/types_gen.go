@@ -9317,13 +9317,16 @@ type MachineFeatureUsage struct {
 	Usage FeatureUsage `json:"usage"`
 }
 
-// machines/sendFolder, through machine/machines: one step of an agent's start_session with send (#2929), which sends this folder's branch to another of the person's machines first, or of its bring_back (#2947), which brings a branch back from there, or of its move_session (#3717), which moves a session there with its branch. Exactly one of state, upload, receive, facts, pack, read and moveIn; the control plane sends that machine's folders/receiveState, folders/receiveUpload, folders/receive, folders/sendFacts, folders/sendPack, folders/sendRead or agents/moveIn.
+// machines/sendFolder, through machine/machines: one step of an agent's start_session with send (#2929), which sends this folder's branch to another of the person's machines first, or of its bring_back (#2947), which brings a branch back from there, or of its move_session (#3717), which moves a session there with its branch. Exactly one of state, upload, uploadSigned, receive, facts, pack, read and moveIn; the control plane sends that machine's folders/receiveState, folders/receiveUpload, folders/receive, folders/sendFacts, folders/sendPack, folders/sendRead or agents/moveIn.
 type MachineFolderSend struct {
 	Host string `json:"host"`
 
 	State *ReceiveStateRequest `json:"state,omitzero"`
 
 	Upload *ReceiveUploadRequest `json:"upload,omitzero"`
+
+	// true in place of upload (#7118): the step is folders/receiveUpload, and its part is only in the call's deliver, as this machine signed it, so a part's data goes to the control plane once. Needs a signed deliver of that method. Needs folders.signed-upload/1: an older control plane does not know it.
+	UploadSigned *bool `json:"uploadSigned,omitzero"`
 
 	Receive *ReceiveRequest `json:"receive,omitzero"`
 

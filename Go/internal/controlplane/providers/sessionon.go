@@ -157,6 +157,19 @@ func (p *Providers) sendFolder(fromName, agent string, params json.RawMessage, c
 	if request.Upload != nil {
 		method, step, steps = MethodReceiveUpload, request.Upload, steps+1
 	}
+	if request.UploadSigned != nil && *request.UploadSigned {
+		// The part is only in what the asking machine signed (#7118), so there is no step of
+		// the control plane's own to send: it goes as it was signed, or not at all. It is a
+		// part of an upload, as upload's is.
+		if deliver == nil || deliver.Method != MethodReceiveUpload {
+			return nil, invalid("The signed request is not that step.")
+		}
+		var part wire.ReceiveUploadRequest
+		if err := requireParams(json.RawMessage(deliver.Params), &part, "ReceiveUploadRequest", "upload", "offset", "data"); err != nil {
+			return nil, err
+		}
+		method, steps = MethodReceiveUpload, steps+1
+	}
 	if request.Receive != nil {
 		// Fetching the bundle and checking out take a while on a large repository: as long
 		// as the asking host waits (controllink's askWait).
@@ -186,7 +199,7 @@ func (p *Providers) sendFolder(fromName, agent string, params json.RawMessage, c
 		p.log(fmt.Sprintf("workspace: agent %s on %s moves a session to %s, in %s", agent, fromName, name, in.Folder))
 	}
 	if steps != 1 {
-		return nil, invalid("Give exactly one of state, upload, receive, facts, pack, read and moveIn.")
+		return nil, invalid("Give exactly one of state, upload, uploadSigned, receive, facts, pack, read and moveIn.")
 	}
 	if !p.router.Online(host) {
 		return nil, fail(CodeHostOffline, "%s is offline.", name)
