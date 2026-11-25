@@ -9,6 +9,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/records"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
@@ -35,7 +36,6 @@ func keptLineage(t *testing.T, st store.Store, host string) (storedLineage, []js
 
 // A node sent again over the largest size is not kept, and the one kept before it is.
 func TestALineageNodeOverItsLargestKeepsTheEarlierOne(t *testing.T) {
-	t.Skip("#7193")
 	t.Parallel()
 	st := store.NewMemory()
 	p := startPlane(t, st, controllink.NewPrivateKey())
@@ -54,7 +54,6 @@ func TestALineageNodeOverItsLargestKeepsTheEarlierOne(t *testing.T) {
 
 // The largest size is of the node as the store has it.
 func TestALineageNodeIsAtMostItsLargestAsStored(t *testing.T) {
-	t.Skip("#7193")
 	t.Parallel()
 	st := store.NewMemory()
 	p := startPlane(t, st, controllink.NewPrivateKey())
@@ -68,6 +67,33 @@ func TestALineageNodeIsAtMostItsLargestAsStored(t *testing.T) {
 	for _, n := range raw {
 		if len(n) > lineageNodeBytes {
 			t.Fatalf("a node of %d bytes is stored, and the most is %d", len(n), lineageNodeBytes)
+		}
+	}
+}
+
+// A node that the limit took before #7193 stays, and the sweep writes its indented object again
+// as it is measured, once.
+func TestTheSweepStoresAnOldLineageObjectAsMeasured(t *testing.T) {
+	t.Parallel()
+	st := store.NewMemory()
+	p := startPlane(t, st, controllink.NewPrivateKey())
+	host, now := p.host("OWNERS-MAC").member.Host, time.Now()
+	many := make([]string, 15_000)
+	for i := range many {
+		many[i] = fmt.Sprint(i % 10)
+	}
+	old, err := records.Encode(storedLineage{Nodes: []wire.LineageCostNode{costNode("1", now, many...), costNode("2", now)}, At: records.At(now)})
+	must(t, err)
+	_, err = st.Put(t.Context(), lineageKey(host), old, store.Always)
+	must(t, err)
+	for _, want := range []int{1, 0} {
+		n, err := sweepLineage(t.Context(), st, p.s.records, now, 10)
+		if err != nil || n != want {
+			t.Fatalf("wrote %d, not %d: %v", n, want, err)
+		}
+		kept, raw := keptLineage(t, st, host)
+		if len(kept.Nodes) != 2 || len(kept.Nodes[0].Files) != len(many) || len(raw[0]) > lineageNodeBytes {
+			t.Fatalf("%d nodes, the first of %d bytes", len(kept.Nodes), len(raw[0]))
 		}
 	}
 }
