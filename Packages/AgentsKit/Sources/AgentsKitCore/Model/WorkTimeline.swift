@@ -8,11 +8,14 @@ public extension DaemonAPI {
         public var project: String
         public var from: Date
         public var to: Date
+        /// The answer can be partial (#7027): ask again without it for all of it.
+        public var first: Bool?
 
-        public init(project: String, from: Date, to: Date) {
+        public init(project: String, from: Date, to: Date, first: Bool? = nil) {
             self.project = project
             self.from = from
             self.to = to
+            self.first = first
         }
     }
 
@@ -24,14 +27,17 @@ public extension DaemonAPI {
         public var timeZone: String?
         public var backtest: WorkTimelineBacktest?
         public var errors: [String]?
+        /// An answer to a first ask, from before the forecast's history was read (#7027): no forecast yet.
+        public var partial: Bool?
 
         public init(epics: [WorkTimelineEpic] = [], releases: [WorkTimelineRelease] = [], timeZone: String? = nil,
-                    backtest: WorkTimelineBacktest? = nil, errors: [String]? = nil) {
+                    backtest: WorkTimelineBacktest? = nil, errors: [String]? = nil, partial: Bool? = nil) {
             self.epics = epics
             self.releases = releases
             self.timeZone = timeZone
             self.backtest = backtest
             self.errors = errors
+            self.partial = partial
         }
     }
 
@@ -746,6 +752,17 @@ public enum WorkTimeline {
             if let e = t.errors, !e.isEmpty { out.errors = (out.errors ?? []) + e.filter { !(out.errors ?? []).contains($0) } }
         }
         out.releases.sort { $0.at < $1.at }
+        return out
+    }
+
+    /// A first answer has no forecast (#7027): each open epic keeps the one on screen until its own comes.
+    public static func keepForecasts(_ timeline: DaemonAPI.WorkTimeline, shown: DaemonAPI.WorkTimeline?) -> DaemonAPI.WorkTimeline {
+        var kept: [String: DaemonAPI.WorkTimelineForecast] = [:]
+        for e in shown?.epics ?? [] { kept[e.item.node.ref] = e.forecast }
+        var out = timeline
+        for e in out.epics.indices where out.epics[e].closedAt == nil && out.epics[e].forecast == nil {
+            out.epics[e].forecast = kept[out.epics[e].item.node.ref]
+        }
         return out
     }
 

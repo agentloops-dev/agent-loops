@@ -19,7 +19,8 @@ import (
 // (segments), and the open line's forecast (M10, lineage/forecast.go); and the releases in the
 // window. It reads GitHub's epics only for now: GitHub gives the sub-issues and their dates in
 // one query. The forecast learns from the epics of the last 30 days, so a read asks for those
-// as well as the window's.
+// as well as the window's. A client that asks for the first answer gets the window's epics alone, with no forecast,
+// and asks again for all of it (#7027).
 
 // timelineWaitLabels mark a child that waits for a person: it is not forecast.
 var timelineWaitLabels = []string{"alex-todo", "needs-account"}
@@ -81,6 +82,11 @@ func (d *Daemon) workTimeline(ctx context.Context, r wire.WorkTimelineRequest) (
 		since = from
 	}
 	since = since.UTC().Truncate(24 * time.Hour)
+	// The epics the answer needs: with no from, the history's too.
+	var from time.Time
+	if r.First != nil && *r.First {
+		from = r.From.Time()
+	}
 	gh, err := d.forgeGitHub()
 	if err != nil {
 		out.Errors = append(out.Errors, err.Error())
@@ -88,10 +94,13 @@ func (d *Daemon) workTimeline(ctx context.Context, r wire.WorkTimelineRequest) (
 	}
 	var epics []timelineEpic
 	for _, repo := range repos {
-		read, err := d.githubTimeline(ctx, gh, repo.path, since)
+		read, err := d.githubTimeline(ctx, gh, repo.path, since, from)
 		if err != nil {
 			out.Errors = append(out.Errors, "GitHub: "+repo.path+": "+err.Error())
 			continue
+		}
+		if len(read.Rest) > 0 {
+			out.Partial = new(true)
 		}
 		for _, e := range read.Epics {
 			epics = append(epics, d.timelineEpicOf(e, folderOf[repo]))
@@ -103,23 +112,15 @@ func (d *Daemon) workTimeline(ctx context.Context, r wire.WorkTimelineRequest) (
 			}
 		}
 	}
-	spans, closes := timelineHistory(epics)
-	loc := time.Local
-	bt, btOK := d.timelineBacktest(r.Project, spans, closes, now, loc)
-	width := 1.0
-	if btOK {
-		width = bt.Width
-		out.Backtest = &wire.WorkTimelineBacktest{Error: bt.Error, Width: bt.Width, Cuts: int64(bt.Cuts), Holds: int64(bt.Holds),
-			Epics: int64(bt.Spans), At: wire.DateOf(d.timelineBacktestAt(r.Project))}
+	forecast := func(*timelineEpic) {}
+	if out.Partial == nil {
+		forecast = d.timelineForecast(r.Project, epics, now, &out)
 	}
-	model, modelOK := lineage.Learn(spans, closes, now, loc)
 	for _, e := range epics {
 		if len(e.wire.Children) == 0 || !e.overlaps(r.From, r.To) {
 			continue
 		}
-		if modelOK {
-			e.forecast(model, now, width)
-		}
+		forecast(&e)
 		out.Epics = append(out.Epics, e.wire)
 	}
 	slices.SortStableFunc(out.Epics, func(a, b wire.WorkTimelineEpic) int {
@@ -127,6 +128,25 @@ func (d *Daemon) workTimeline(ctx context.Context, r wire.WorkTimelineRequest) (
 	})
 	slices.SortFunc(out.Releases, func(a, b wire.WorkTimelineRelease) int { return cmp.Compare(a.At, b.At) })
 	return out, nil
+}
+
+// timelineForecast learns from the epics, sets the answer's backtest, and gives what forecasts an epic.
+func (d *Daemon) timelineForecast(project string, epics []timelineEpic, now time.Time, out *wire.WorkTimeline) func(*timelineEpic) {
+	spans, closes := timelineHistory(epics)
+	loc := time.Local
+	bt, btOK := d.timelineBacktest(project, spans, closes, now, loc)
+	width := 1.0
+	if btOK {
+		width = bt.Width
+		out.Backtest = &wire.WorkTimelineBacktest{Error: bt.Error, Width: bt.Width, Cuts: int64(bt.Cuts), Holds: int64(bt.Holds),
+			Epics: int64(bt.Spans), At: wire.DateOf(d.timelineBacktestAt(project))}
+	}
+	model, modelOK := lineage.Learn(spans, closes, now, loc)
+	return func(e *timelineEpic) {
+		if modelOK {
+			e.forecast(model, now, width)
+		}
+	}
 }
 
 // workTimelineRepos is each repo of a project's folders, once, with the folder it came
@@ -155,17 +175,39 @@ func (d *Daemon) workTimelineRepos(project string) (repos []forgeRepo, folderOf 
 // read (#7026), also not for the forecast.
 func epicOnHold(labels []string) bool { return slices.ContainsFunc(labels, isHoldName) }
 
-// githubTimeline is a repo's timeline read, kept for forgeCacheFor as the other forge reads are.
-func (d *Daemon) githubTimeline(ctx context.Context, gh forgeGitHub, repo string, since time.Time) (githubmcp.Timeline, error) {
+// githubTimeline is a repo's timeline read, kept for forgeCacheFor as the other forge reads are. With a from, the
+// epics closed before it can be left out, in the answer's Rest (#7027); with none, every epic is read, and only the
+// rest of a first read that is kept.
+func (d *Daemon) githubTimeline(ctx context.Context, gh forgeGitHub, repo string, since, from time.Time) (githubmcp.Timeline, error) {
 	key, _ := json.Marshal([]any{"work/timeline", repo, since})
+	firstKey := "first " + string(key)
 	if a, ok := d.forgeCached(string(key)); ok && a.timeline != nil {
 		return *a.timeline, nil
 	}
-	t, err := gh.Timeline(ctx, repo, since.Format(time.RFC3339), epicOnHold)
+	first, kept := d.forgeCached(firstKey)
+	kept = kept && first.timeline != nil
+	if kept && !from.IsZero() && !first.timelineFrom.After(from) {
+		return *first.timeline, nil
+	}
+	var t githubmcp.Timeline
+	var err error
+	if kept && from.IsZero() {
+		t, err = gh.TimelineRest(ctx, repo, *first.timeline)
+	} else {
+		closedFrom := ""
+		if !from.IsZero() {
+			closedFrom = from.UTC().Format(time.RFC3339)
+		}
+		t, err = gh.Timeline(ctx, repo, since.Format(time.RFC3339), closedFrom, epicOnHold)
+	}
 	if err != nil {
 		return githubmcp.Timeline{}, err
 	}
-	d.forgeRemember(string(key), forgeAnswer{timeline: &t})
+	if len(t.Rest) > 0 {
+		d.forgeRemember(firstKey, forgeAnswer{timeline: &t, timelineFrom: from})
+	} else {
+		d.forgeRemember(string(key), forgeAnswer{timeline: &t})
+	}
 	return t, nil
 }
 

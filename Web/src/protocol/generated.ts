@@ -16634,7 +16634,9 @@ export interface WorkSuggestLeadsRequest {
  * window. timeZone is the working clock's: this host's, an IANA name, absent when it has none.
  * backtest is how the forecast did on the epics whose work ended in the last 30 days, run again at
  * most once a day; absent when there are too few. errors are the forges that could not be read, as
- * forge/issues says them.
+ * forge/issues says them. partial (#7027): an answer to a first ask that did not read the
+ * forecast's history, so it has no forecast and no backtest, and not each epic whose block ends
+ * after its close; a host from before it gives all of it.
  */
 export interface WorkTimeline {
   epics: WorkTimelineEpic[];
@@ -16642,6 +16644,7 @@ export interface WorkTimeline {
   timeZone?: string;
   backtest?: WorkTimelineBacktest;
   errors?: string[];
+  partial?: boolean;
 }
 
 /**
@@ -16721,12 +16724,14 @@ export interface WorkTimelineRelease {
 
 /**
  * work/timeline (#4172): the epics of a project (its id, from a folder's .agents/folder.json) that
- * overlap from to to.
+ * overlap from to to. With first, the answer can be partial (#7027): ask again without it for all
+ * of it.
  */
 export interface WorkTimelineRequest {
   project: string;
   from: WireDate;
   to: WireDate;
+  first?: boolean;
 }
 
 /**
@@ -19503,13 +19508,13 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   WorkReport: { required: ["outcome", "message", "at"], optional: ["block"] },
   WorkSuggestLeads: { required: ["suggestions", "more"], optional: ["errors"] },
   WorkSuggestLeadsRequest: { required: [], optional: ["folder"] },
-  WorkTimeline: { required: ["epics", "releases"], optional: ["timeZone", "backtest", "errors"] },
+  WorkTimeline: { required: ["epics", "releases"], optional: ["timeZone", "backtest", "errors", "partial"] },
   WorkTimelineBacktest: { required: ["error", "width", "cuts", "holds", "epics", "at"], optional: [] },
   WorkTimelineChild: { required: ["item", "createdAt"], optional: ["stateReason", "startedAt", "closedAt", "waitsForPerson"] },
   WorkTimelineEpic: { required: ["item", "createdAt", "children", "segments"], optional: ["stateReason", "closedAt", "forecast"] },
   WorkTimelineForecast: { required: ["low", "mid", "high"], optional: ["waits"] },
   WorkTimelineRelease: { required: ["tag", "at", "repo"], optional: ["url"] },
-  WorkTimelineRequest: { required: ["project", "from", "to"], optional: [] },
+  WorkTimelineRequest: { required: ["project", "from", "to"], optional: ["first"] },
   WorkTimelineSegment: { required: [], optional: ["startedAt", "closedAt"] },
   Workflow: { required: ["workflowID", "folder", "name", "triggers", "mode", "prompt", "unknownFields", "settings"], optional: ["problem", "cooldown", "hours", "enabled", "archived", "whenDone", "continueWhenBack", "muted", "runsOn"] },
   WorkflowApproval: { required: ["digest", "isNew"], optional: ["note"] },

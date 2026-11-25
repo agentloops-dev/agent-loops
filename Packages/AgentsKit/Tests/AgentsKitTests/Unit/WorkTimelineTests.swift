@@ -467,6 +467,18 @@ struct WorkTimelineTests {
         #expect(WorkTimeline.shows(drawn: true, reading: false, epics: count(first)) == .empty)
     }
 
+    /// #7027: a first answer has no forecast; the ones on screen stay until its own come.
+    @Test func aFirstAnswerKeepsTheForecastsOnScreen() {
+        let forecast = DaemonAPI.WorkTimelineForecast(low: Self.h(1), mid: Self.h(2), high: Self.h(3))
+        let first = DaemonAPI.WorkTimeline(epics: [Self.epic(1, [Self.child(2, started: -2)]), Self.epic(3, [Self.child(4, started: -2)]),
+                                                   Self.epic(5, [Self.child(6, closed: -1)])], partial: true)
+        let shown = DaemonAPI.WorkTimeline(epics: [Self.epic(1, [Self.child(2, started: -2)], forecast: forecast),
+                                                   Self.epic(5, [Self.child(6, started: -2)], forecast: forecast)])
+        #expect(WorkTimeline.keepForecasts(first, shown: shown).epics.map(\.forecast) == [forecast, nil, nil])
+        #expect(WorkTimeline.keepForecasts(first, shown: nil) == first)
+        #expect(WorkTimeline.merge([first]).partial == nil)
+    }
+
     @Test func machinesMergeEachEpicAndReleaseOnce() {
         let a = DaemonAPI.WorkTimeline(epics: [Self.epic(23, [Self.child(1, closed: -1)])],
                                        releases: [.init(tag: "v2", at: Self.h(-1), repo: "a/b")], errors: ["x"])
