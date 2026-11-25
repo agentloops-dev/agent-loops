@@ -622,6 +622,8 @@ public extension DaemonAPI {
                 Row(Method.controlConnectAnother, params: ConnectAnother.Request.self, result: Empty.self, kind: .controlRequest),
                 // Move to Another Machine… and Run It Here Again… on the page (#4255).
                 Row(Method.controlPlaneMove, params: PlaneMove.Ask.self, result: Empty.self, kind: .controlRequest),
+                // Whether a machine can take the control role (#6611): #6614 draws it, so no Swift types yet.
+                Row("control/eligible", params: JSONValue.self, result: JSONValue.self, kind: .controlRequest),
                 // Reports (#1811): usage, cost and time by person, folder and machine.
                 Row(Method.reportsUsage, params: ReportQuery.self, result: UsageReport.self, kind: .controlRequest),
                 Row(Method.reportsExport, params: ReportQuery.self, result: ReportExport.self, kind: .controlRequest),

@@ -1197,6 +1197,72 @@
       "required": ["copy", "level", "reason", "loadPerCore", "loadPerCore5", "pressureMemoryFullAvg60", "pressureIOFullAvg60", "memoryAvailableBytes", "swapUsedPercent", "heapInuseBytes", "goroutines", "openFiles", "storeFiles", "storeBytes", "at"],
       "additionalProperties": false
     },
+    "ControlEligible": {
+      "type": "object",
+      "description": "control/eligible's answer (#6611): ok when there are no reasons.",
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        },
+        "reasons": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ControlEligibleReason"
+          }
+        }
+      },
+      "required": [
+        "ok",
+        "reasons"
+      ],
+      "additionalProperties": false
+    },
+    "ControlEligibleReason": {
+      "type": "object",
+      "description": "One reason a machine cannot take the control role (#6611), with its words for the person.",
+      "properties": {
+        "reason": {
+          "$ref": "#/definitions/ControlIneligibility"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "reason",
+        "text"
+      ],
+      "additionalProperties": false
+    },
+    "ControlEligibleRequest": {
+      "type": "object",
+      "description": "control/eligible (#6611): which machine, and what the person has said yes to.",
+      "properties": {
+        "machine": {
+          "$ref": "#/definitions/MachineRef"
+        },
+        "allowSleep": {
+          "type": "boolean",
+          "description": "The person says yes to a control plane on a Mac, which can sleep. It counts only in the single-user shape."
+        }
+      },
+      "required": [
+        "machine"
+      ],
+      "additionalProperties": false
+    },
+    "ControlIneligibility": {
+      "type": "string",
+      "description": "Why a machine cannot take the control role (#6611): notReachable, the control plane cannot reach it at a public address or its tunnel; macSleeps, a Mac that sleeps (refused unless the shape is single-user and the person says yes); stopsWhenIdle, its provider stops it when it is idle; belowFloor, its memory or disk is below the floor, or it is near or at capacity; bothRoles, it runs agents and the shape is not single-user; olderVersion, it runs an older version than the control plane.",
+      "enum": [
+        "notReachable",
+        "macSleeps",
+        "stopsWhenIdle",
+        "belowFloor",
+        "bothRoles",
+        "olderVersion"
+      ]
+    },
     "DaemonStatus": {
       "type": "object",
       "properties": {
