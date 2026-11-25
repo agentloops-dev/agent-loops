@@ -204,7 +204,7 @@ func cleanJoinedFolders(sent []wire.JoinedFolder) ([]wire.JoinedFolder, error) {
 // Only this machine writes its own list; the same list again changes nothing.
 func (s *Service) putJoinedFolders(ctx context.Context, host string, folders []wire.JoinedFolder) (bool, error) {
 	// The folders sent first, as many as fit: the machine sends the list again (#7248).
-	folders, data, err := fitting(folders, projectFoldersBytes, func(some []wire.JoinedFolder) ([]byte, error) {
+	_, data, err := fitting(folders, projectFoldersBytes, func(some []wire.JoinedFolder) ([]byte, error) {
 		return records.Encode(storedProjectFolders{Folders: some})
 	})
 	if err != nil {

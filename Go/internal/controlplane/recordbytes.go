@@ -32,15 +32,11 @@ const (
 	runClaimBytes = 4 << 10
 	runsMost      = 100_000
 	// The lineage graph: a link, a state, one send's change, and a machine's two files.
-	lineageLinkBytes    = 2 << 10
-	lineageStateBytes   = 1 << 10
-	lineageChangeBytes  = 6 << 20
-	lineageLinksBytes   = 48 << 20
-	lineageStatesBytes  = 24 << 20
-	groupMostBytes      = 256 << 10
-	groupsMost          = 1_000
-	projectMostBytes    = 64 << 10
-	projectsMostPerUser = 500
+	lineageLinkBytes   = 2 << 10
+	lineageStateBytes  = 1 << 10
+	lineageChangeBytes = 6 << 20
+	lineageLinksBytes  = 48 << 20
+	lineageStatesBytes = 24 << 20
 )
 
 // within refuses data over most bytes, in the words a machine reads.
