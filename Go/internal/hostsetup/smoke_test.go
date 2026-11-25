@@ -83,6 +83,19 @@ func TestSmokeAnswersWithTheCheapestModelAndArchives(t *testing.T) {
 	}
 }
 
+// With no project, the session runs in a scratch project, never the home folder (so home
+// does not become a folder on the machine), and the scratch project is gone at the end.
+func TestSmokeRunsInAScratchProjectNotHome(t *testing.T) {
+	h := &smokeHost{signedIn: true, state: wire.AgentStateFinished, message: "Hello.", finishCall: true}
+	err, _, _ := runSmoke(t, h, time.Second)
+	if err != nil || h.started == nil {
+		t.Fatalf("err=%v started=%v", err, h.started)
+	}
+	if cwd := string(h.started.Cwd); !strings.HasSuffix(cwd, "/.agents-server/smoke") {
+		t.Errorf("cwd = %s", cwd)
+	}
+}
+
 func TestSmokeFailsWithTheRuntimesErrorAndStillArchives(t *testing.T) {
 	why := wire.EndedReasonRuntimeError
 	h := &smokeHost{signedIn: true, state: wire.AgentStateStopped, reason: &why}
