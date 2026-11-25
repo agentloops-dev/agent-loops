@@ -18,8 +18,6 @@
 1 Go/internal/agentsd/cost.go WriteAtomically
 1 Go/internal/agentsd/dailychecks.go WriteAtomically
 1 Go/internal/agentsd/dotagents.go WriteAtomically
-2 Go/internal/agentsd/events.go WriteAtomically
-1 Go/internal/agentsd/events.go os.OpenFile
 1 Go/internal/agentsd/files.go WriteAtomically
 1 Go/internal/agentsd/folders.go WriteAtomically
 1 Go/internal/agentsd/gitcredentials.go os.WriteFile
@@ -39,7 +37,6 @@
 1 Go/internal/agentsd/restarts.go WriteAtomically
 1 Go/internal/agentsd/runtimes.go os.WriteFile
 1 Go/internal/agentsd/runtimesignin.go os.WriteFile
-1 Go/internal/agentsd/said.go WriteAtomically
 1 Go/internal/agentsd/secretcmd.go execfile.Write
 1 Go/internal/agentsd/secretops.go WriteAtomically
 2 Go/internal/agentsd/selfupdate.go WriteAtomically
@@ -57,11 +54,8 @@
 1 Go/internal/agentsd/store/files.go os.OpenFile
 1 Go/internal/agentsd/store/revisions.go WriteAtomically
 1 Go/internal/agentsd/store/roots.go WriteAtomically
-2 Go/internal/agentsd/store/store.go WriteAtomically
-1 Go/internal/agentsd/store/summaries.go WriteAtomically
+1 Go/internal/agentsd/store/store.go WriteAtomically
 2 Go/internal/agentsd/trailerhook.go os.WriteFile
-1 Go/internal/agentsd/turnscache.go os.OpenFile
-1 Go/internal/agentsd/turnscache.go os.WriteFile
 1 Go/internal/agentsd/usersuspend.go WriteAtomically
 1 Go/internal/agentsd/worktrees.go WriteAtomically
 1 Go/internal/citimings/store.go WriteAtomically

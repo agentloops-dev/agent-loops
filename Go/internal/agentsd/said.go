@@ -91,9 +91,10 @@ func (d *Daemon) said(id wire.UUID) []string {
 	}
 	index = saidIndex{Offset: currentAt, Size: size, Messages: boundSaid(kept)}
 	if current != nil {
-		index.Tail = findText(*current)
+		index.Tail = store.CutText(findText(*current), saidBytes)
 	}
 	if b, err := json.Marshal(index); err == nil {
+		// store-bounds: kind=cache; size=64KiB a session; age=90d; applied=on write (the tail is cut)
 		_ = store.WriteAtomically(saidFile(d.Store.Loc, id), b, 0o644)
 	}
 	return index.messages()

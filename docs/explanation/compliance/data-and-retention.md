@@ -37,16 +37,16 @@ Mac.
 
 | Store | Kind | What it keeps | How long, how large | Applied |
 | --- | --- | --- | --- | --- |
-| `agents/<id>/agent.json` | document | Each agent's record | Until the agent is deleted. An archived agent is deleted after **Archived agents** (7, 14, 30 or 90 days; 30 by default). A pinned agent is kept for longer than the setting, but not for longer than 90 days after it was archived (#6677). A record of an agent that is not archived stays, without the lines that aged out. | At start, then hourly |
+| `agents/<id>/agent.json` | document | Each agent's record | Until the agent is deleted. An archived agent is deleted after **Archived agents** (7, 14, 30 or 90 days; 30 by default). A pinned agent is kept for longer than the setting, but not for longer than 90 days after it was archived (#6677). A record of an agent that is not archived stays, without the lines that aged out. At most 1 MiB: of a larger record, the large parts are cut (commands, options, plans, prompts, labels, then long titles) and the log says so; the session is never dropped and its save never refused (#7244). | At start, then hourly |
 | `agents/<id>/transcript.jsonl` | log | The whole conversation. | 10 MB a conversation and 90 days, live and pinned agents too (#6677, #6706). The oldest lines go, with no summary. One entry is 4 MB at most: a larger one is kept as a notice. | At start, then hourly; soon after a write that passes 20 MB |
 | `agents/<id>/app-tools.jsonl` | log | Each call to the app's own tools. | 2 MB an agent and 90 days. Each argument and the answer are cut to 2,000 characters; one call is 1 MB at most. | At start, then hourly; soon after a write that passes 4 MB |
-| `agents/<id>/said.json` | cache | A search index of what was said. | 32 KiB, with the agent. Made again after its transcript loses lines. | On write |
-| `turns/<id>.jsonl`, in the cache folder | cache | A summary of each turn. | Only the turns of the transcript kept, with the agent. Deleted when its transcript loses lines, and made again from it when it is missing. | With the transcript |
+| `agents/<id>/said.json` | cache | A search index of what was said. | 32 KiB of messages and a tail of at most 32 KiB, with the agent. Made again after its transcript loses lines. | On write |
+| `turns/<id>.jsonl`, in the cache folder | cache | A summary of each turn. | A turn's line is at most 64 KiB: a larger one is cut. Only the turns of the transcript kept, with the agent. Deleted when its transcript loses lines, and made again from it when it is missing. | With the transcript |
 | `erasures.json` | document | Runtime copies of deleted agents still to erase | 1,000 entries, 3 tries, 7 days | On write |
 | `erased.json` | document | Every agent deleted here | 10,000 IDs of 128 bytes each, for 90 days; the oldest goes first (#6715) | Hourly, and on write: age, and the count when it is twice over |
 | `elsewhere.json` | key-value | Sessions started on or from other machines | 800 entries of 64 KiB each, for 90 days from when the two machines last spoke of the session, so one in use stays; the one heard of the longest ago goes first | Hourly, and on write: age, and the count when it is twice over |
 | `requests/<id>.json` | document | Open questions and forms | 1,000 records of 256 KiB each, and 90 days from when it was asked, open too (#6718). Ended ones 14 days; the oldest ended one goes first. An open one is never evicted: a new one past 1,000 open is refused. At 90 days an open one is dropped, and the session that asked is told once. An answer is cut to 16 KiB, and 100 waiters are listed. | Hourly and at start; on write when it is twice over the count |
-| `archived-summaries.json`, in the cache folder | cache | An index of the archived agents | With the agents. Made again when it is missing. | On write |
+| `archived-summaries.json`, in the cache folder | cache | An index of the archived agents | With the agents. 64 MiB, and 256 KiB for a summary: one over is left out (the newest are kept) and its record is read in full at the next start (#7244). Made again when it is missing. | On write |
 | `revisions.json` | log | Which records changed and went | 2,000 removals, 7 days | On write |
 | `alive.json` | key-value | When the machine last ran | One | On write |
 | `background.json` | key-value | The commands that outlive a stop | 1,000 commands, each command line cut to 4,096 characters; the ones started first are left out. The next start deletes it (#7246) | When the machine stops |
@@ -55,8 +55,8 @@ Mac.
 
 | Store | Kind | What it keeps | How long, how large | Applied |
 | --- | --- | --- | --- | --- |
-| `events.jsonl` | log | The machine's events | 7 days, and 10,000 events (pruned when it reaches 10,500). The consequences of an event have no count limit. | At start, hourly and on write |
-| `events-state.json` | key-value | Branch tips that `branch.moved` compares, cost crossings, disk levels | The live folders, and today only | On write |
+| `events.jsonl` | log | The machine's events | 7 days, and 10,000 events (pruned when it reaches 10,500). The consequences of an event have no count limit. A line is at most 64 KiB: a larger one is cut and the log says so (#7244). | At start, hourly and on write |
+| `events-state.json` | key-value | Branch tips that `branch.moved` compares, cost crossings, disk levels | The live folders, and today only. At most 256 KiB: past it, the later half of the largest part goes, never the next position (#7244) | On write |
 | `usage-history.json` | time series | Usage and cost | The last 168 hours and 90 days, by date | On write and hourly (#3686) |
 | `time-history.json` | time series | Time, recaps and records | The last 168 hours, 90 days and 90 recaps, by date | On write and hourly (#3686) |
 | `spend.json` | time series | Spend for the cost limits | The last 7 days, by date | On write and hourly (#3686) |
