@@ -99,6 +99,42 @@ func TestRecordLimitOfAJSONFilesOldEntry(t *testing.T) {
 	}
 }
 
+// #7182: an old file's entries come over up to the largest; a larger one is named in the log and
+// left in the old file, which is set aside. With none, it is not, unless it has more than
+// the entries.
+func TestRecordLimitOfACarryOver(t *testing.T) {
+	t.Parallel()
+	f, file, now := testJSONFile(t, EvictOldest)
+	old := []byte(`[["fits"], ["over"]]`)
+	must(t, os.WriteFile(file, old, 0o600))
+	at := wire.DateOf(now.Add(-time.Hour))
+	fits, over := jsonEntry{Text: entryOf(t, "fits", 100), At: at}, jsonEntry{Text: entryOf(t, "over", 101), At: at}
+	must(t, f.CarryOver(old, true, map[string]jsonEntry{"fits": fits, "over": over}))
+	m, err := f.Read()
+	must(t, err)
+	if len(m) != 1 || m["fits"] != fits {
+		t.Fatalf("carried over %v", m)
+	}
+	asides, _ := filepath.Glob(file + ".corrupt-*")
+	if len(asides) != 1 {
+		t.Fatalf("set aside %v", asides)
+	}
+	if b, _ := os.ReadFile(asides[0]); !bytes.Equal(b, old) {
+		t.Fatalf("the old file is %s", b)
+	}
+
+	g, file, _ := testJSONFile(t, EvictOldest)
+	must(t, os.WriteFile(file, old, 0o600))
+	must(t, g.CarryOver(old, true, map[string]jsonEntry{"fits": fits}))
+	if asides, _ := filepath.Glob(file + ".corrupt-*"); len(asides) != 0 || entryCount(t, g) != 1 {
+		t.Fatalf("set aside %v", asides)
+	}
+	must(t, g.CarryOver(old, false, map[string]jsonEntry{"fits": fits}))
+	if asides, _ := filepath.Glob(file + ".corrupt-*"); len(asides) != 1 {
+		t.Fatalf("an old file with more was not set aside: %v", asides)
+	}
+}
+
 func TestRecordLimitOfASecretFile(t *testing.T) {
 	t.Parallel()
 	path := filepath.Join(t.TempDir(), "s", "f.json")

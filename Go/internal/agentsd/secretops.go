@@ -157,13 +157,7 @@ func (d *Daemon) openSecretOpsPending() *store.JSONFile[wire.SecretOperation] {
 		op = boundedSecretOp(op)
 		byID[*op.ID] = op
 	}
-	// Not by Update, which would set the list aside as corrupt.
-	raw, err := diskjson.Marshal(byID)
-	if err == nil {
-		// store-bounds: not a store: the file above, in its new form
-		err = store.WriteAtomically(d.secretOpsPendingPath(), raw, 0o600)
-	}
-	if err != nil {
+	if err := f.CarryOver(data, true, byID); err != nil {
 		log.Printf("secret-ops-pending.json: could not bring over the operations: %v", err)
 		d.secretOps.unsaved = byID
 	}
