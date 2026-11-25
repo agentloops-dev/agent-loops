@@ -3716,6 +3716,13 @@
         },
         "partial": {
           "type": "boolean"
+        },
+        "scopes": {
+          "type": "array",
+          "description": "What was read (#7029): one entry per repo, as forge:name (github:example/shop). Two machines with the same scopes give the same epics, so a client asks one of them. Absent when a repo could not be read, and from an earlier daemon.",
+          "items": {
+            "type": "string"
+          }
         }
       },
       "required": [
