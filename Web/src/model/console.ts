@@ -28,14 +28,14 @@ export interface Section {
 /** Reports ▸ Store sizes' page (#6907): about the stores, not about work, so it has no lens. */
 export const storesID = "stores";
 
-/** Reports' pages, grouped by the question each answers (#5280, spec #5276 option A): Cost, Output, Time, Plan and
- * Use. Each takes the lens bar's lenses: Me, a project and the organisation (#5279). Planning went into Delivery,
+/** Reports' pages, grouped by the question each answers (#5280, spec #5276 option A): Cost (Time is in it since
+ * #6884), Output, Plan and Use. Each takes the lens bar's lenses: Me, a project and the organisation (#5279). Planning went into Delivery,
  * Forecast and Estimates; Usage and Multiplier into the Me lens of Spend, Time and Outcomes; Features to Status. */
 export const reportSections: readonly Section[] = [
   { id: "spend", title: "Spend", about: "Cost, tokens and time by person, folder, machine and runtime.", group: "Cost", built: true },
+  { id: "time", title: "Time", about: "Where the agents’ time goes: working, or waiting for a person.", group: "Cost", built: true },
   { id: "outcomes", title: "Outcomes", about: "What the agents shipped: pull requests opened, merged and reverted, and the cost of each.", group: "Output", built: true },
   { id: "delivery", title: "Delivery", about: "What the work cost and delivered: the cost of a merged pull request, waste, lead time, the DORA figures, and each issue and release.", group: "Output", built: true },
-  { id: "time", title: "Time", about: "Where the agents’ time goes: working, or waiting for a person.", group: "Time", built: true },
   { id: "forecast", title: "Forecast", about: "What comes next: the burn against each allowance, the spend at this pace, service levels, when each open epic lands, and What if.", group: "Plan", built: true },
   { id: "estimates", title: "Estimates", about: "How the estimates and the forecasts scored against what happened.", group: "Plan", built: true },
   { id: "adoption", title: "Adoption", about: "Who uses the agents each week, and which runtimes and workflows.", group: "Use", built: true },

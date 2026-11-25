@@ -61,6 +61,6 @@ the audit keeps.
 
 ## See also
 
-- [Reports](reports.md): Reports ▸ Spend, and the Reports pane on the Cost page.
+- [Reports](reports.md): Reports ▸ Spend, and the Reports pane on the Spend page.
 - [Groups](groups.md): groups of people.
 - [Channels](channels.md): channel identities and link requests.

@@ -233,10 +233,13 @@ struct AgentsCommands: Commands {
             // while a Markdown page is in front.
             Button("Achievements") { model.showAchievements() }
                 .keyboardShortcut(pageZoom == nil ? KeyboardShortcut("0") : nil)
-            Button("Cost") { model.showsSpending = true }
-                .keyboardShortcut(MenuKeys.cost)
-            Button("Tokens") { model.showsTokens = true }
-            Button("Time") { model.showsTime = true }
+            // As the sidebar's Cost group (#6884).
+            Menu("Cost") {
+                Button("Spend") { model.showsSpending = true }
+                    .keyboardShortcut(MenuKeys.cost)
+                Button("Tokens") { model.showsTokens = true }
+                Button("Time") { model.showsTime = true }
+            }
             Button("Velocity") { model.showsVelocity = true }
             Button("Cycle time") { model.showsCycletime = true }
             // Agents as a web page on this Mac, found from here (#109).
@@ -635,7 +638,7 @@ struct AgentsCommands: Commands {
             add("Work: \(kind.title)") { model.sidebarItem = .work(kind) }
         }
         add("Achievements") { model.showAchievements() }
-        add("Cost", MenuKeys.cost) { model.showsSpending = true }
+        add("Spend", MenuKeys.cost, keywords: ["cost"]) { model.showsSpending = true }
         add("Docs", when: model.flags.isOn(.docs)) { model.showDocs(model.docsHistory.current ?? DocsPlace()) }
         add("Settings…", KeyboardShortcut(","), keywords: ["preferences"]) { openSettings() }
         return actions

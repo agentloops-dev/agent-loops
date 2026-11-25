@@ -2,7 +2,7 @@ import AgentsKitCore
 import AppKit
 import SwiftUI
 
-/// The window's one sidebar (#145): Status, Machines and Reports at the top, then every folder, each a row
+/// The window's one sidebar (#145): Status, Machines, Reports and Cost at the top, then every folder, each a row
 /// that folds open on its sessions and workflows, and at the foot what this Mac and its
 /// hosts are doing.
 ///
@@ -26,6 +26,8 @@ struct FolderListView: View {
     @AppStorage("showsWork", store: WindowDefaults.store) private var showsWorkLists = true
     /// Reports, open until folded, and kept so (#915): its key from when it was Usage.
     @AppStorage("showsUsage", store: WindowDefaults.store) private var showsUsage = true
+    /// Cost (#6884), open until folded, and kept so.
+    @AppStorage("showsCost", store: WindowDefaults.store) private var showsCost = true
     /// The smart groups turned off in Settings ▸ Sidebar (#846).
     @AppStorage(SidebarSmartRow.offDefaultsKey, store: WindowDefaults.store) private var smartOff = SidebarSmartRow.offAtFirst
     private var smartOn: Set<SidebarSmartRow> { SidebarSmartRow.on(off: smartOff) }
@@ -289,13 +291,6 @@ struct FolderListView: View {
                 // The Achievements page (#3986), always first.
                 AchievementsRow().activityIcon("multiply.circle")
                     .appText(.supporting).sidebarInk(.achievements).tag(SidebarItem.achievements)
-                SpendingRow(selection: $selection).activityIcon("dollarsign.circle",
-                                                                warns: model.costState?.daySpendIsCloseToFull == true)
-                    .appText(.supporting).sidebarInk(.spending).tag(SidebarItem.spending)
-                TokensRow().activityIcon("number", warns: model.costState?.dayTokensAreCloseToFull == true)
-                    .appText(.supporting).sidebarInk(.tokens).tag(SidebarItem.tokens)
-                TimeRow().activityIcon("clock")
-                    .appText(.supporting).sidebarInk(.time).tag(SidebarItem.time)
                 VelocityRow().activityIcon("arrow.triangle.merge")
                     .appText(.supporting).sidebarInk(.velocity).tag(SidebarItem.velocity)
                 CycleTimeRow().activityIcon("hourglass")
@@ -304,6 +299,19 @@ struct FolderListView: View {
                 // The size of every other group's heading (#495). Reports (Alex, 2026-11-12): every
                 // page that reports on the work, Multiplier and Velocity among them; was Usage.
                 Text("Reports").appText(.supporting)
+            }
+
+            // What the work used (#6884): money, tokens and time, in a group of their own.
+            Section(isExpanded: $showsCost) {
+                SpendingRow(selection: $selection).activityIcon("dollarsign.circle",
+                                                                warns: model.costState?.daySpendIsCloseToFull == true)
+                    .appText(.supporting).sidebarInk(.spending).tag(SidebarItem.spending)
+                TokensRow().activityIcon("number", warns: model.costState?.dayTokensAreCloseToFull == true)
+                    .appText(.supporting).sidebarInk(.tokens).tag(SidebarItem.tokens)
+                TimeRow().activityIcon("clock")
+                    .appText(.supporting).sidebarInk(.time).tag(SidebarItem.time)
+            } header: {
+                Text("Cost").appText(.supporting)
             }
 
             // Pinned, Needs You (with everything waiting for an OK, #773), Working, Unread: a group each, headed and folding as a
@@ -1333,7 +1341,7 @@ private struct SpendingRow: View {
         // The title alone (#587): the day's figure and what is left are the tooltip's,
         // and near the limit the row's icon turns red (`activityIcon(_:warns:)`).
         HStack(alignment: .firstTextBaseline) {
-            Text("Cost").foregroundStyle(.primary)
+            Text("Spend").foregroundStyle(.primary)
             Spacer()
         }
         .help(help)
@@ -1350,7 +1358,7 @@ private struct SpendingRow: View {
     }
 
     private var help: String {
-        figures.map { "\($0). What every agent has cost. Opens Cost." } ?? "What all of the work has cost"
+        figures.map { "\($0). What every agent has cost. Opens Spend." } ?? "What all of the work has cost"
     }
 
     /// This Mac's day and every server's, as one figure: what the work cost is the

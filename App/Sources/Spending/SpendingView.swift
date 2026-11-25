@@ -37,7 +37,7 @@ struct SpendingView: View {
     }
 
     var body: some View {
-        cost.navigationTitle("Cost")
+        cost.navigationTitle("Spend")
             .toolbar {
                 if reportsShown {
                     ToolbarItem {
