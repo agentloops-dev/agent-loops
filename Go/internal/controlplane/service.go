@@ -2196,7 +2196,7 @@ func (s *Service) spendHostCode(ctx context.Context, id string, stored *storedCo
 // the control plane made the machine (#5765); mac, for the host on the control plane's own
 // machine, its home host, as a moved set-up's is (data-model.md); else a new id.
 func (s *Service) joiningHostID(stored *storedCode, a wire.MachineAnnounce) string {
-	home := s.cfg.MachineID != "" && a.MachineID == s.cfg.MachineID && s.records.Host("mac") == nil
+	home := s.cfg.MachineID != "" && a.MachineID == s.cfg.MachineID && s.macFree()
 	want := records.NewHostID()
 	if stored.MadeHost != "" {
 		want = stored.MadeHost

@@ -115,3 +115,10 @@ func (s *Service) mergeControlMachine(ctx context.Context, host string, record r
 	}
 	s.controlMachine.Store(&host)
 }
+
+// macFree says the id mac is free for the home host: no record has it, or the control
+// plane's own machine record of that id has no agents yet (#6609).
+func (s *Service) macFree() bool {
+	h := s.records.Host("mac")
+	return h == nil || (h.ControlOnly() && len(h.PublicKey) == 0)
+}
