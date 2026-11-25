@@ -50,7 +50,15 @@ const (
 	backupCheckEvery        = time.Hour
 	backupFirstCheck        = 10 * time.Minute
 	backupFormat            = 1
-	backupPartsMost         = 1024
+	// backupNameTime is how a backup's name says when it was made.
+	backupNameTime = "20060102T150405Z"
+	// backupWarnBytes is the size that a backup's log line warns of. The backup is made all
+	// the same, as an operator's is (Alex, 2026-11-24, #6787): a busy machine's is over 1 GB,
+	// and a machine is never left without one.
+	backupWarnBytes = 10 << 20
+	// backupAge is the most age of a backup, but of this machine's newest good one (#6709).
+	backupAge       = store.MaxAge
+	backupPartsMost = 1024
 	// backupStoreWait bounds a list of the store, so a control plane that does not answer
 	// does not hold the state up.
 	backupStoreWait = 10 * time.Second
@@ -304,8 +312,10 @@ func (d *Daemon) backupFolder() string {
 	if f := d.backupSettings().Folder; f != nil {
 		return *f
 	}
-	return filepath.Join(d.Store.Loc.Root, "backups")
+	return d.defaultBackupFolder()
 }
+
+func (d *Daemon) defaultBackupFolder() string { return filepath.Join(d.Store.Loc.Root, "backups") }
 
 // MARK: the list
 
@@ -414,34 +424,43 @@ func (d *Daemon) folderBackups() []wire.Backup {
 // backupPaths are a backup's archive and its .json, from its id <root id>/<name>; false
 // for an id that is not one.
 func (d *Daemon) backupPaths(id string) (archive, manifest string, ok bool) {
+	return backupPathsIn(d.backupFolder(), id)
+}
+
+func backupPathsIn(folder, id string) (archive, manifest string, ok bool) {
 	root, name, found := strings.Cut(id, "/")
 	if !found || root == "" || name == "" || strings.ContainsAny(name, `/\`) || strings.ContainsAny(root, `/\`) ||
 		strings.HasPrefix(root, ".") || strings.HasPrefix(name, ".") {
 		return "", "", false
 	}
-	base := filepath.Join(d.backupFolder(), root, name)
+	base := filepath.Join(folder, root, name)
 	return base + ".tar.gz", base + ".json", true
 }
 
 func (d *Daemon) readBackup(id string) (wire.Backup, bool) {
-	archive, manifest, ok := d.backupPaths(id)
+	m, size, ok := readBackupIn(d.backupFolder(), id)
 	if !ok {
 		return wire.Backup{}, false
 	}
+	return wire.Backup{ID: id, Machine: m.Machine, RootID: m.RootID, MadeAt: m.MadeAt, Bytes: size, Agents: m.Agents,
+		ThisMachine: m.RootID == d.Store.RootID}, true
+}
+
+// readBackupIn is a backup's manifest and its archive's size.
+func readBackupIn(folder, id string) (m backupManifest, size int64, ok bool) {
+	archive, manifest, ok := backupPathsIn(folder, id)
+	if !ok {
+		return m, 0, false
+	}
 	fi, err := os.Stat(archive)
 	if err != nil || !fi.Mode().IsRegular() {
-		return wire.Backup{}, false
+		return m, 0, false
 	}
 	b, err := os.ReadFile(manifest)
-	if err != nil {
-		return wire.Backup{}, false
+	if err != nil || json.Unmarshal(b, &m) != nil || m.RootID == "" {
+		return m, 0, false
 	}
-	var m backupManifest
-	if json.Unmarshal(b, &m) != nil || m.RootID == "" {
-		return wire.Backup{}, false
-	}
-	return wire.Backup{ID: id, Machine: m.Machine, RootID: m.RootID, MadeAt: m.MadeAt, Bytes: fi.Size(), Agents: m.Agents,
-		ThisMachine: m.RootID == d.Store.RootID}, true
+	return m, fi.Size(), true
 }
 
 // MARK: making one
@@ -553,7 +572,7 @@ func (d *Daemon) runBackup() error {
 // makeBackup writes one backup to the folder and keeps the newest Keep of this machine's.
 func (d *Daemon) makeBackup() (wire.Backup, error) {
 	at := nowFunc().UTC()
-	name := at.Format("20060102T150405Z")
+	name := at.Format(backupNameTime)
 	id := d.Store.RootID + "/" + name
 	archive, manifest, ok := d.backupPaths(id)
 	if !ok {
@@ -571,11 +590,15 @@ func (d *Daemon) makeBackup() (wire.Backup, error) {
 	if fi, err := os.Stat(tmp); err == nil {
 		m.Bytes = fi.Size()
 	}
+	if m.Bytes > backupWarnBytes {
+		log.Printf("backup: warning: %s is %.1f MB, over %d MB", name, float64(m.Bytes)/(1<<20), backupWarnBytes>>20)
+	}
 	if err := os.Rename(tmp, archive); err != nil {
 		os.Remove(tmp)
 		return wire.Backup{}, err
 	}
 	b, _ := json.MarshalIndent(m, "", "  ")
+	// store-bounds: kind=blob; count=11 backups, 3 by default; age=90d; applied=after each backup, and hourly sweep (pruneBackups)
 	if err := store.WriteAtomically(manifest, b, 0o600); err != nil {
 		os.Remove(archive)
 		return wire.Backup{}, err
@@ -588,6 +611,7 @@ func (d *Daemon) makeBackup() (wire.Backup, error) {
 // writeBackupArchive writes agents to path, with the root's files when withRoot: a backup
 // carries them, an export of some agents (#1001) does not.
 func (d *Daemon) writeBackupArchive(path string, m *backupManifest, agents []wire.Agent, withRoot bool) error {
+	// store-bounds: kind=blob; count=11 backups, 3 by default; age=90d; applied=after each backup, and hourly sweep (pruneBackups)
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 	if err != nil {
 		return err
@@ -689,73 +713,106 @@ func addTarFile(tw *tar.Writer, name string, b []byte, at time.Time) error {
 	return err
 }
 
-// otherBackupsKept is how long another machine's backups stay in a shared folder after its
-// newest, as the control plane keeps a removed host's (#3648).
-const otherBackupsKept = 90 * 24 * time.Hour
-
-// pruneBackups keeps the newest keep of this machine's backups and deletes the rest,
-// with any a cut-off backup left half-written. Other machines' backups are theirs, until
-// their newest is otherBackupsKept old: that machine is gone, or backs up elsewhere.
+// pruneBackups takes the backup folder under its bounds (#6709): the newest keep of this
+// machine's backups, and 90 days for each. This machine's newest good backup always stays,
+// past the count and the age. A folder of the person's is not the only one with backups: the
+// default one keeps what was made before they chose theirs, so its age is applied too.
 func (d *Daemon) pruneBackups(keep int64) {
-	defer d.pruneOtherBackups()
-	mine := filepath.Join(d.backupFolder(), d.Store.RootID)
-	files, _ := os.ReadDir(mine)
-	var names []string
-	for _, f := range files {
-		if strings.HasPrefix(f.Name(), ".") && strings.HasSuffix(f.Name(), ".tmp") {
-			if fi, err := f.Info(); err == nil && nowFunc().Sub(fi.ModTime()) > 24*time.Hour {
-				os.Remove(filepath.Join(mine, f.Name()))
-			}
-			continue
-		}
-		if name, ok := strings.CutSuffix(f.Name(), ".tar.gz"); ok {
-			names = append(names, name)
-		}
-	}
-	// Names are their times, so they sort oldest first.
-	slices.Sort(names)
-	for len(names) > int(keep) {
-		os.Remove(filepath.Join(mine, names[0]+".json"))
-		os.Remove(filepath.Join(mine, names[0]+".tar.gz"))
-		names = names[1:]
+	folder := d.backupFolder()
+	d.pruneBackupsIn(folder, keep)
+	if def := d.defaultBackupFolder(); def != folder {
+		d.pruneBackupsIn(def, backupKeepMost)
 	}
 }
 
-// pruneOtherBackups deletes the backups of each other machine in the folder whose newest
-// was made otherBackupsKept ago, and its folder once empty. A folder with no backup this
-// reads is left as it is.
-func (d *Daemon) pruneOtherBackups() {
-	folder := d.backupFolder()
+// sweepBackups applies the bounds in the hourly sweep: backups can be off.
+func (d *Daemon) sweepBackups() { d.pruneBackups(d.backupSettings().Keep) }
+
+func (d *Daemon) pruneBackupsIn(folder string, keep int64) {
+	now := nowFunc()
 	roots, _ := os.ReadDir(folder)
 	for _, r := range roots {
-		if !r.IsDir() || strings.HasPrefix(r.Name(), ".") || r.Name() == d.Store.RootID {
+		if !r.IsDir() || strings.HasPrefix(r.Name(), ".") {
 			continue
 		}
 		dir := filepath.Join(folder, r.Name())
-		files, _ := os.ReadDir(dir)
-		var names []string
-		var newest time.Time
-		for _, f := range files {
-			name, ok := strings.CutSuffix(f.Name(), ".tar.gz")
-			if !ok || strings.HasPrefix(name, ".") {
-				continue
-			}
-			if b, ok := d.readBackup(r.Name() + "/" + name); ok {
-				names = append(names, name)
-				if at := b.MadeAt.Time(); at.After(newest) {
-					newest = at
-				}
-			}
-		}
-		if len(names) == 0 || nowFunc().Sub(newest) <= otherBackupsKept {
+		if r.Name() == d.Store.RootID {
+			pruneMyBackups(folder, r.Name(), keep, now)
+			pruneBackupParts(dir, 24*time.Hour, now)
 			continue
 		}
-		for _, name := range names {
-			os.Remove(filepath.Join(dir, name+".json"))
-			os.Remove(filepath.Join(dir, name+".tar.gz"))
-		}
+		pruneOtherBackups(folder, r.Name(), now)
+		pruneBackupParts(dir, backupAge, now)
 		os.Remove(dir) // only when empty
 	}
+}
+
+// pruneBackupParts deletes what a cut-off backup left half-written.
+func pruneBackupParts(dir string, age time.Duration, now time.Time) {
+	files, _ := os.ReadDir(dir)
+	for _, f := range files {
+		if !strings.HasPrefix(f.Name(), ".") || !strings.HasSuffix(f.Name(), ".tar.gz.tmp") {
+			continue
+		}
+		if fi, err := f.Info(); err == nil && now.Sub(fi.ModTime()) > age {
+			os.Remove(filepath.Join(dir, f.Name()))
+		}
+	}
+}
+
+// pruneMyBackups keeps the newest keep of root's backups that are under backupAge, and the
+// newest good one whatever its age. A file not named as a backup is the person's own.
+func pruneMyBackups(folder, root string, keep int64, now time.Time) {
+	names := backupNames(filepath.Join(folder, root))
+	// Names are their times: newest first.
+	slices.Sort(names)
+	slices.Reverse(names)
+	var kept int64
+	good := false
+	for _, name := range names {
+		at, err := time.Parse(backupNameTime, name)
+		if err != nil {
+			continue
+		}
+		m, size, ok := readBackupIn(folder, root+"/"+name)
+		// One cut short, as by a full disk or a sync, is not one to come back from.
+		newestGood := !good && ok && m.RootID == root && (m.Bytes == 0 || m.Bytes == size)
+		if newestGood {
+			good = true
+		}
+		if newestGood || kept < keep && now.Sub(at) < backupAge {
+			kept++
+			continue
+		}
+		removeBackup(folder, root, name)
+	}
+}
+
+// pruneOtherBackups deletes another machine's backups that are backupAge old, its newest too:
+// that machine is gone, or backs up elsewhere (#3648). What this can't read is left as it is.
+func pruneOtherBackups(folder, root string, now time.Time) {
+	for _, name := range backupNames(filepath.Join(folder, root)) {
+		if m, _, ok := readBackupIn(folder, root+"/"+name); ok && now.Sub(m.MadeAt.Time()) >= backupAge {
+			removeBackup(folder, root, name)
+		}
+	}
+}
+
+// backupNames is the names of the archives in dir.
+func backupNames(dir string) []string {
+	files, _ := os.ReadDir(dir)
+	var names []string
+	for _, f := range files {
+		if name, ok := strings.CutSuffix(f.Name(), ".tar.gz"); ok && !strings.HasPrefix(name, ".") {
+			names = append(names, name)
+		}
+	}
+	return names
+}
+
+func removeBackup(folder, root, name string) {
+	os.Remove(filepath.Join(folder, root, name+".json"))
+	os.Remove(filepath.Join(folder, root, name+".tar.gz"))
 }
 
 // MARK: restoring one

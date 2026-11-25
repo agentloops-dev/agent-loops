@@ -120,7 +120,7 @@ Mac.
 
 | Store | Kind | What it keeps | How long, how large | Applied |
 | --- | --- | --- | --- | --- |
-| `backups/<machine>/` | blob | This machine's backups | The newest **Keep** (1 to 10, 3 by default); a `.tmp` after 24 hours. Another machine's backups in a shared backup folder go 90 days after its newest (#3648). | After each backup |
+| `backups/<machine>/` | blob | This machine's backups | The newest **Keep** (1 to 10, 3 by default), for 90 days. This machine's newest good backup always stays, past the count and the age, on purpose: it is the way back. A backup over 10 MB is made, with a line in the log: there is no limit on its size, on purpose, so a machine is never left without one (Alex, 2026-11-24, as for operator backups). A `.tmp` after 24 hours. Another machine's backups in a shared backup folder go at 90 days, its newest too (#3648). | After each backup, when **Keep** changes, and hourly |
 | `backups-upload/`, `backups-download/` | blob | A server backup on its way | Removed after use | On use |
 | `.restore-*` | blob | A restore in progress | Removed when it ends; one a crash left goes at the next start (#3649) | At end; at start |
 | `Outgoing/`, `Incoming/` | cache | Exports, sends and imports | 1 hour untouched | On the next transfer, at start and hourly (#3649) |
@@ -465,8 +465,8 @@ export, send or import, at the next start, or at the hourly sweep.
 
 See [Back up and restore a machine](../../how-to/back-up-and-restore.md).
 
-- **A machine** backs up every day by default, and keeps the newest 3 (1 to 10). A backup
-  holds each agent's record, conversation, tool log and search index, and the usage and
+- **A machine** backs up every day by default, and keeps the newest 3 (1 to 10), for 90
+  days. Its newest good backup always stays on disk. A backup holds each agent's record, conversation, tool log and search index, and the usage and
   time history and the list of deleted agents (`erased.json`). It holds no sign-in, key or
   secret, and no turn summaries: the machine makes them again from the conversation.
 - **A Mac** backs up to a folder, `backups` in its own data folder by default. That is the
