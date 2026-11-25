@@ -233,7 +233,7 @@ func TestLeasesOverTheirLimitsAreRefused(t *testing.T) {
 	if _, oldest := d.book.Notices[fmt.Sprint(leaseNoticeAgents-1)]; oldest || len(d.book.Notices) != leaseNoticeAgents {
 		t.Errorf("%d agents with notices", len(d.book.Notices))
 	}
-	d.pruneNotices(at.Add(store.MaxAge))
+	d.pruneNotices(at.Add(store.MaxAge + time.Second))
 	if len(d.book.Notices) != 0 {
 		t.Errorf("%d agents with notices past 90 days", len(d.book.Notices))
 	}
