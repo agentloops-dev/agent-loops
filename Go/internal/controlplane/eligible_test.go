@@ -150,17 +150,20 @@ func TestWhyUnreachableDialsTheUplinksAddress(t *testing.T) {
 	p.s.router.mu.Lock()
 	p.s.router.hosts[box.member.Host].conn.(*Conn).Remote = "203.0.113.7"
 	p.s.router.mu.Unlock()
-	answers := "203.0.113.7:8791"
-	p.s.dialMachine = func(_ context.Context, address string) error {
-		if address == answers {
-			return nil
+	// Each answers is never changed: the dial that did not win can outlive the call.
+	only := func(answers string) func(context.Context, string) error {
+		return func(_ context.Context, address string) error {
+			if address == answers {
+				return nil
+			}
+			return errors.New("refused")
 		}
-		return errors.New("refused")
 	}
+	p.s.dialMachine = only("203.0.113.7:8791")
 	if why := p.s.whyUnreachable(context.Background(), box.member.Host); why != "" {
 		t.Fatal(why)
 	}
-	answers = ""
+	p.s.dialMachine = only("")
 	if why := p.s.whyUnreachable(context.Background(), box.member.Host); !strings.Contains(why, "nothing answers at 203.0.113.7 on port 443 or 8791") {
 		t.Fatal(why)
 	}
