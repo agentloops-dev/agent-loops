@@ -242,3 +242,76 @@ func TestCodexsFileIsLentAsAStandInAndRenewedInPlace(t *testing.T) {
 		t.Fatalf("%v %v", r, err)
 	}
 }
+
+// #7170: the borrower keeps its stand-in over a restart of this host, and does not ask again.
+func TestAGrantOutlivesARestart(t *testing.T) {
+	root := t.TempDir()
+	newHost := func() *Relays {
+		src := &fakeSource{}
+		src.token.Store(Token{Access: "real"})
+		s := &Relays{Root: root, sources: map[string]Source{"claude": src, "codex": src}}
+		t.Cleanup(s.Stop)
+		return s
+	}
+	before := newHost()
+	if p := before.Port("claude"); p != 0 {
+		t.Fatalf("a sign-in never granted is lent on %d", p)
+	}
+	g, err := before.Grant("claude")
+	if err != nil {
+		t.Fatal(err)
+	}
+	before.Stop()
+	if p := before.Port("claude"); p != 0 {
+		t.Fatalf("a stopped host lends on %d", p)
+	}
+	kept, err := os.ReadFile(filepath.Join(root, "relay", "granted.json"))
+	if err != nil || strings.Contains(string(kept), g.StandIn) {
+		t.Fatalf("%v: the stand-in is kept as it is: %s", err, kept)
+	}
+	if fi, err := os.Stat(filepath.Join(root, "relay", "granted.json")); err != nil || fi.Mode().Perm() != 0o600 {
+		t.Fatalf("%v %v", fi, err)
+	}
+
+	after := newHost()
+	port := after.Port("claude")
+	if port == 0 || after.Port("claude") != port {
+		t.Fatalf("not lent again on one port: %d", port)
+	}
+	if p := after.Port("codex"); p != 0 {
+		t.Fatalf("codex was never granted, and is lent on %d", p)
+	}
+	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer real" {
+			t.Errorf("the service got %q", got)
+		}
+	}))
+	defer upstream.Close()
+	after.mu.Lock()
+	relay := after.relays["claude"]
+	// The test server's client dials it for example.com, whatever the port.
+	relay.Upstream, relay.Client = "example.com", upstream.Client()
+	after.mu.Unlock()
+	// The CA of the grant is what the borrower still trusts.
+	pool := x509.NewCertPool()
+	pool.AppendCertsFromPEM([]byte(g.CACertificate))
+	client := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: pool}}}
+	defer client.CloseIdleConnections()
+	for bearer, want := range map[string]int{g.StandIn: 200, "another": 403} {
+		req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("https://127.0.0.1:%d/v1/models", port), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Authorization", "Bearer "+bearer)
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := resp.Body.Close(); err != nil {
+			t.Error(err)
+		}
+		if resp.StatusCode != want {
+			t.Errorf("%s: %d, not %d", bearer, resp.StatusCode, want)
+		}
+	}
+}
