@@ -30,7 +30,9 @@ added it.
 5. Pick **at most three** gaps that users of those tools would expect from us. File each
    one with `gh issue create --label competitor --label enhancement`, after creating the
    `competitor` label if it does not exist yet, and a priority (AGENTS.md, "Set a priority when you file", #5692): a UI
-   change or core usability is `priority:medium`, the rest has none. Each issue says which tool has the feature
+   change or core usability is `priority:medium`, the rest has none. Add a `size:` from the rubric in `.agents/personas/product-owner.md`,
+   and a parent epic when one fits, else say in the issue that the standing epic #4208 takes it
+   (AGENTS.md, "Every issue has an epic", #7033). Set "blocked by" for what it waits for, and never add `on hold`. Each issue says which tool has the feature
    (with a link) and what Agent Loops does today. Do
    not file a duplicate of an existing issue: if one already covers the gap, add a
    comment to it instead.

@@ -83,13 +83,15 @@ public enum MachinePickerChoice {
     public static func pinned(_ store: UserDefaults) -> [String] {
         MachinePins.pinned(MachinePins.read(store)).map(\.rawValue)
     }
-    public static func recent(_ store: UserDefaults) -> [String] { store.stringArray(forKey: recentKey) ?? [] }
+    public static func recent(_ store: UserDefaults) -> [String] {
+        Array((store.stringArray(forKey: recentKey) ?? []).filter { $0.utf8.count <= MachinePins.idMost }.prefix(recentCap))
+    }
 
     /// A machine pinned, or let go when it is. Returns the new list; nil when the pin is refused.
     @discardableResult
     public static func togglePin(_ store: UserDefaults, _ id: String) -> [String]? {
         guard let next = MachinePins.toggled(MachineRef(rawValue: id), in: MachinePins.read(store)) else { return nil }
-        store.set(next, forKey: MachinePins.key)
+        MachinePins.put(next, in: store)
         return pinned(store)
     }
 
@@ -103,8 +105,10 @@ public enum MachinePickerChoice {
     /// A machine picked goes first in Recent; the list keeps the last five.
     @discardableResult
     public static func remember(_ store: UserDefaults, _ id: String) -> [String] {
+        guard id.utf8.count <= MachinePins.idMost else { return recent(store) }
         let next = Array(([id] + recent(store).filter { $0 != id }).prefix(recentCap))
-        store.set(next, forKey: recentKey)
+        // store-bounds: kind=key-value; count=5; age=until-deleted; action=evict; record=64B; applied=on write
+        store.putEntry(next, forKey: recentKey, most: recentCap * MachinePins.idMost)
         return next
     }
 

@@ -371,7 +371,7 @@ final class HostModel {
             for _ in 0..<20 where await services.state(job).loaded { try? await Task.sleep(for: .milliseconds(250)) }
         }
         settings.role = .none
-        settings.save(paths)
+        saveSettings()
         await refresh()
         if controlJob?.loaded == true || daemonJob?.loaded == true {
             problem = "macOS still has a login item for Agent Loops. Turn it off in System Settings ▸ General ▸ Login Items."
@@ -392,7 +392,7 @@ final class HostModel {
         }
         problem = nil
         settings.role = .runHere
-        settings.save(paths)
+        saveSettings()
         busy = "Starting the control plane…"
         defer { busy = nil }
         // Made before the launcher starts, so there is one key to begin with.
@@ -494,7 +494,7 @@ final class HostModel {
             }
         }
         settings.role = .joinElsewhere
-        settings.save(paths)
+        saveSettings()
         await services.unregister(.control)
         let wasRunning = await services.running(.daemon) != nil
         guard await start(.daemon) else { return }
@@ -519,7 +519,7 @@ final class HostModel {
         let kept = FileManager.default.fileExists(atPath: keptHereMembership.path)
         if kept { try FileManager.default.moveItem(at: keptHereMembership, to: membership) }
         settings.role = .none
-        settings.save(paths)
+        saveSettings()
         // Started again, the host dials this Mac's control plane, and waits until it is up.
         if kept, await services.running(.daemon) != nil { _ = await services.restart(.daemon) }
     }
@@ -536,7 +536,7 @@ final class HostModel {
         settings.movedTo = place
         settings.movedAt = Date()
         settings.forwardingUntil = until
-        settings.save(paths)
+        saveSettings()
         Task { await refresh() }
     }
 
@@ -556,7 +556,7 @@ final class HostModel {
     func stopForwarding() async {
         await services.unregister(.control)
         settings.forwardingUntil = nil
-        settings.save(paths)
+        saveSettings()
         forwarding = nil
     }
 
@@ -588,7 +588,7 @@ final class HostModel {
         }
         settings.forwardingUntil = nil
         settings.receiving = true
-        settings.save(paths)
+        saveSettings()
         _ = await start(.control)
         return aside
     }
@@ -599,11 +599,15 @@ final class HostModel {
         HostSecrets.pruneKeysAside(paths)
     }
 
+    private func saveSettings() {
+        if let refused = settings.save(paths) { problem = refused }
+    }
+
     /// Cancelled before this Mac took over: its empty copy stops again.
     func undoReturn() async {
         await services.unregister(.control)
         settings.receiving = false
-        settings.save(paths)
+        saveSettings()
     }
 
     /// The control plane is back: it runs here, and `place` forwards until `until`.
@@ -615,7 +619,7 @@ final class HostModel {
         settings.receiving = false
         settings.returnedFrom = place
         settings.returnForwardingUntil = until
-        settings.save(paths)
+        saveSettings()
         Task { await refresh() }
     }
 
@@ -636,14 +640,14 @@ final class HostModel {
         let stopped = await HandoverTool.run(["stop", "--at", place], model: self)
         if !stopped.ok { problem = stopped.problem; return }
         settings.returnForwardingUntil = Date()
-        settings.save(paths)
+        saveSettings()
     }
 
     /// The row goes: the other machine can be taken down.
     func dismissReturn() {
         settings.returnedFrom = nil
         settings.returnForwardingUntil = nil
-        settings.save(paths)
+        saveSettings()
         returnForwarding = nil
     }
 
@@ -655,7 +659,7 @@ final class HostModel {
     func setServeWebRemote(_ on: Bool) async {
         guard servesWebRemote != on else { return }
         settings.serveWebRemote = on
-        settings.save(paths)
+        saveSettings()
         // The page's switch keeps off in the control plane's web-off (#4252).
         if on { try? FileManager.default.removeItem(at: webOffFile) }
         if settings.role == .joinElsewhere {

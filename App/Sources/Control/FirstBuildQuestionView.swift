@@ -21,6 +21,7 @@ struct FirstBuildQuestionView: View {
     @State private var pointer: CGPoint?
     @State private var slow = false
     @State private var submitted: String?
+    @State private var tooLong = false
     @State private var showingDetails = false
     @FocusState private var focused: Bool
 
@@ -38,7 +39,13 @@ struct FirstBuildQuestionView: View {
                 .accessibilityAddTraits(.isHeader)
                 .padding(.bottom, 24)
             box
-            setUpLine
+            Group {
+                if tooLong {
+                    Text(FirstBuild.ideaTooLong).appText(.supporting).tinted(.warning)
+                } else {
+                    setUpLine
+                }
+            }
                 .frame(maxWidth: .infinity, minHeight: 44, alignment: .topLeading)
                 .padding(.top, 12)
             Spacer(minLength: 40)
@@ -87,6 +94,7 @@ struct FirstBuildQuestionView: View {
             }
         }
         // A Submit that waited goes on once the window is paired.
+        .onChange(of: text) { if tooLong { tooLong = false } }
         .onChange(of: model.needsFirstRun) { _, needs in
             if !needs, let submitted { model.submitFirstBuild(submitted) }
         }
@@ -198,6 +206,8 @@ struct FirstBuildQuestionView: View {
 
     private func submit() {
         guard canSubmit, let words = FirstBuild.submission(text) else { return }
+        tooLong = FirstBuild.isTooLong(words)
+        guard !tooLong else { return }
         if model.needsFirstRun {
             // Submit waits for the set-up, with the words kept.
             submitted = words

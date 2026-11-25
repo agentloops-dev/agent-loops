@@ -130,7 +130,7 @@ gives, and Node has no race detector. An XCTest test has no `--repeat-until`: ru
 
 1. Search for an open `bug` about the same test (`gh issue list --search "<test>
    in:title,body"`). When there is one, comment with the run's link and the failure lines.
-   Else file one `bug`, with no milestone, the labels `bug` and `size:XS` and no priority (the quarantine
+   Else file one `bug`, with no milestone and no parent (the bug lane, #4207, takes it; say so in it), the labels `bug` and `size:XS` and no priority (the quarantine
    unblocks `main`; #5692), titled by what fails, not "flaky" ("`<test>` times out
    waiting for <what>"). The body gives the job, the failure lines from the log (in a
    fence), the run's link, why it is a flake (step 2.5, and the run alone above) and the **probable cause**, with
@@ -169,7 +169,8 @@ Search for an open bug titled "Main broken:" (`gh issue list --state open --labe
 
 - **One is open:** comment on it with this run's link, the failed jobs and the failing
   tests. Use that bug for the rest of the spell.
-- **None is open:** file one, with no milestone (AGENTS.md, "Bugs have no milestone"),
+- **None is open:** file one, with no milestone (AGENTS.md, "Bugs have no milestone") and no parent (the
+  bug lane, #4207, takes it; say so in it),
   labels `bug`, `priority:high` and `size:S`, titled "Main broken: `<job>` since
   `<short sha>`". The body gives the run's link, the failed jobs, the failing tests or the
   build error (the lines from the log, in a fence), and the batch. Write down the time of

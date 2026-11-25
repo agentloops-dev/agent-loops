@@ -182,31 +182,40 @@ extension AppModel {
 enum FirstBuildStore {
     static var asking: Bool {
         get { WindowDefaults.store.bool(forKey: "firstBuild.asking") }
+        // store-bounds: not a store: one fixed key, a switch
         set { WindowDefaults.store.set(newValue, forKey: "firstBuild.asking") }
     }
 
     static var planning: Bool {
         get { WindowDefaults.store.bool(forKey: "firstBuild.planning") }
+        // store-bounds: not a store: one fixed key, a switch
         set { WindowDefaults.store.set(newValue, forKey: "firstBuild.planning") }
     }
 
     static var idea: String? {
         get { WindowDefaults.store.string(forKey: "firstBuild.idea") }
-        set { WindowDefaults.store.set(newValue, forKey: "firstBuild.idea") }
+        set {
+            guard let newValue else { return WindowDefaults.store.removeObject(forKey: "firstBuild.idea") }
+            // store-bounds: kind=key-value; count=1; age=until-deleted; action=refuse; record=64KiB; applied=on write, and on leaving the page
+            WindowDefaults.store.putEntry(newValue, forKey: "firstBuild.idea", most: FirstBuild.ideaBytes)
+        }
     }
 
     static var starter: FirstBuild.Starter? {
         get { WindowDefaults.store.string(forKey: "firstBuild.starter").flatMap(FirstBuild.Starter.init(rawValue:)) }
+        // store-bounds: not a store: one fixed key, an id
         set { WindowDefaults.store.set(newValue?.rawValue, forKey: "firstBuild.starter") }
     }
 
     static var another: Bool {
         get { WindowDefaults.store.bool(forKey: "firstBuild.another") }
+        // store-bounds: not a store: one fixed key, a switch
         set { WindowDefaults.store.set(newValue, forKey: "firstBuild.another") }
     }
 
     static var agentID: UUID? {
         get { WindowDefaults.store.string(forKey: "firstBuild.agentID").flatMap(UUID.init(uuidString:)) }
+        // store-bounds: not a store: one fixed key, an id
         set { WindowDefaults.store.set(newValue?.uuidString, forKey: "firstBuild.agentID") }
     }
 }

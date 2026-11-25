@@ -22,6 +22,7 @@ final class FolderTerminalFrame {
     var wantsFocus = false
 
     var height: Double {
+        // store-bounds: not a store: one fixed key, a number
         didSet { defaults.set(height, forKey: Self.heightKey) }
     }
 

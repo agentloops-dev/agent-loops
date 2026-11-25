@@ -41,11 +41,7 @@ final class TurnActivities {
 
     private typealias TurnActivity = Activity<TurnActivityAttributes>
 
-    /// A turn the activity speaks for: when it began, and the runtime and folder it runs in.
-    struct Turn: Codable, Hashable {
-        var startedAt: Date
-        var place: String
-    }
+    typealias Turn = LiveActivityTurn
 
     /// Starts asked for from here, by `requestID`, until the session they make is heard of.
     private var startsAsked: Set<UUID> = []
@@ -275,11 +271,13 @@ final class TurnActivities {
 
     private static func savedTurns() -> [UUID: Turn] {
         guard let data = WindowDefaults.store.data(forKey: turnsKey) else { return [:] }
-        return (try? JSONDecoder().decode([UUID: Turn].self, from: data)) ?? [:]
+        return Turn.kept((try? JSONDecoder().decode([UUID: Turn].self, from: data)) ?? [:])
     }
 
     private static func save(_ turns: [UUID: Turn]) {
-        WindowDefaults.store.set(try? JSONEncoder().encode(turns), forKey: turnsKey)
+        guard let data = try? JSONEncoder().encode(Turn.kept(turns)) else { return }
+        // store-bounds: kind=key-value; count=100; age=90d; action=evict; record=1KiB; applied=on write and at start
+        WindowDefaults.store.putEntry(data, forKey: turnsKey, most: Turn.bytes)
     }
 
     // An `Activity` is not `Sendable`, so a task is handed its id and finds it again.

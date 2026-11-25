@@ -222,12 +222,12 @@ public actor LocalCopy: CacheStore {
         trim()
     }
 
-    /// What has aged out, then transcripts past the newest `transcriptsKept`, then, while the whole copy is over `cap`,
+    /// What has aged out or is over the largest record, then transcripts past the newest `transcriptsKept`, then, while the whole copy is over `cap`,
     /// the oldest Work entry (#4930), with none left the oldest transcript, and last the oldest machine.
     func trim() {
         let fm = FileManager.default
         let cutoff = now() - age
-        for file in allFiles() where file.at < cutoff { try? fm.removeItem(at: file.url) }
+        for file in allFiles() where file.at < cutoff || file.bytes > recordCap { try? fm.removeItem(at: file.url) }
         var held = Self.files(transcripts).sorted { $0.at > $1.at }
         while held.count > transcriptsKept, let oldest = held.popLast() { try? fm.removeItem(at: oldest.url) }
         var work = trimWork().sorted { $0.at > $1.at }
@@ -272,7 +272,9 @@ public actor LocalCopy: CacheStore {
     // MARK: Files
 
     func read<Value: Codable & Sendable>(_: Value.Type, at url: URL) -> Record<Value>? {
-        guard let data = try? Data(contentsOf: url) else { return nil }
+        // One over the largest size, which an older build kept, is a copy missing; the sweep removes it (#7252).
+        guard let bytes = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? Int, bytes <= recordCap,
+              let data = try? Data(contentsOf: url) else { return nil }
         // A file that does not read (an older form, cut short) is only a copy missing.
         guard var record = try? JSONDecoder().decode(Record<Value>.self, from: data) else { return nil }
         let at = record.at ?? (try? FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate]) as? Date
