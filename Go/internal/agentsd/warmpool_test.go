@@ -106,7 +106,7 @@ func TestBackgroundHoursClamped(t *testing.T) {
 			t.Fatalf("%v: %d, want %d", c.in, *got.BackgroundHours, c.want)
 		}
 	}
-	w := &waker{file: filepath.Join(t.TempDir(), "wake.json"), hold: func() (func(), error) { return func() {}, nil }, tell: func(wire.WakeState) {}}
+	w := &waker{file: wakeFileIn(t), hold: func() (func(), error) { return func() {}, nil }, tell: func(wire.WakeState) {}}
 	w.settings = new(defaultWake())
 	if got := w.Set(wire.WakeSettings{KeepsAwake: true, WarmRuntimes: 3, BackgroundHours: new(int64(12))}); *got.BackgroundHours != 12 {
 		t.Fatalf("set %d", *got.BackgroundHours)
@@ -114,7 +114,7 @@ func TestBackgroundHoursClamped(t *testing.T) {
 	if got := w.Set(wire.WakeSettings{KeepsAwake: true, WarmRuntimes: 2}); *got.BackgroundHours != 12 || got.WarmRuntimes != 2 {
 		t.Fatalf("a client without the hours set them to %d", *got.BackgroundHours)
 	}
-	if s := readWakeSettings(w.file); *s.BackgroundHours != 12 {
+	if s := readWakeSettings(w.file()); *s.BackgroundHours != 12 {
 		t.Fatalf("read back %d", *s.BackgroundHours)
 	}
 }
@@ -344,7 +344,7 @@ func TestReleaseAfterMinutesClamped(t *testing.T) {
 			t.Fatalf("%v: %d, want %d", c.in, *got.ReleaseAfterMinutes, c.want)
 		}
 	}
-	w := &waker{file: filepath.Join(t.TempDir(), "wake.json"), hold: func() (func(), error) { return func() {}, nil }, tell: func(wire.WakeState) {}}
+	w := &waker{file: wakeFileIn(t), hold: func() (func(), error) { return func() {}, nil }, tell: func(wire.WakeState) {}}
 	w.settings = new(defaultWake())
 	if got := w.Set(wire.WakeSettings{KeepsAwake: true, WarmRuntimes: 3, ReleaseAfterMinutes: new(int64(0))}); *got.ReleaseAfterMinutes != 0 {
 		t.Fatalf("set %d", *got.ReleaseAfterMinutes)
@@ -352,7 +352,7 @@ func TestReleaseAfterMinutesClamped(t *testing.T) {
 	if got := w.Set(wire.WakeSettings{KeepsAwake: true, WarmRuntimes: 2}); *got.ReleaseAfterMinutes != 0 {
 		t.Fatalf("a client without the minutes set them to %d", *got.ReleaseAfterMinutes)
 	}
-	if s := readWakeSettings(w.file); *s.ReleaseAfterMinutes != 0 {
+	if s := readWakeSettings(w.file()); *s.ReleaseAfterMinutes != 0 {
 		t.Fatalf("read back %d", *s.ReleaseAfterMinutes)
 	}
 	if got := releaseAfterOf(wire.WakeSettings{}); got != warmIdle {

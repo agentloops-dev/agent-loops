@@ -41,11 +41,15 @@ import (
 
 const (
 	backupSettingsFile = "backup-settings.json"
-	backupKeepDefault  = 3
-	backupKeepMost     = 10
-	backupCheckEvery   = time.Hour
-	backupFirstCheck   = 10 * time.Minute
-	backupFormat       = 1
+	// backupSettingsMost and backupSettingsMostBytes bound backup-settings.json: its machines,
+	// and one machine's entry.
+	backupSettingsMost      = 100
+	backupSettingsMostBytes = 32 << 10
+	backupKeepDefault       = 3
+	backupKeepMost          = 10
+	backupCheckEvery        = time.Hour
+	backupFirstCheck        = 10 * time.Minute
+	backupFormat            = 1
 	// backupNameTime is how a backup's name says when it was made.
 	backupNameTime = "20060102T150405Z"
 	// backupWarnBytes is the size that a backup's log line warns of. The backup is made all
@@ -80,6 +84,8 @@ var backupRootFiles = []string{"usage-history.json", "time-history.json", erased
 
 type backupState struct {
 	backupMu sync.Mutex
+	// backupSettingsMu is backup-settings.json.
+	backupSettingsMu sync.Mutex
 	// backupMaking is a backup being made; only one at a time.
 	backupMaking bool
 	backupError  string
@@ -131,15 +137,100 @@ func (d *Daemon) registerBackups() {
 
 // MARK: settings
 
-func (d *Daemon) backupSettingsPath() string {
+// backupSettingsPath is <settings>/backup-settings.json (#6746): one entry for each machine, by
+// its root id, so machines that share ~/.agents keep their own.
+func (d *Daemon) backupSettingsPath() string { return filepath.Join(d.SettingsDir, backupSettingsFile) }
+
+// oldBackupSettingsPath is where this machine's settings were before #6746.
+func (d *Daemon) oldBackupSettingsPath() string {
 	return filepath.Join(d.Store.Loc.Root, backupSettingsFile)
 }
 
-// backupSettings is backup-settings.json, this machine's own: a value it cannot read is
+// backupEntries is every machine's entry, as it is in the file. backupSettingsMu is held.
+func (d *Daemon) backupEntries() (map[string]json.RawMessage, error) {
+	entries := map[string]json.RawMessage{}
+	b, err := os.ReadFile(d.backupSettingsPath())
+	if errors.Is(err, os.ErrNotExist) {
+		return entries, nil
+	}
+	if err == nil {
+		err = json.Unmarshal(b, &entries)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("%s could not be read: %w", d.backupSettingsPath(), err)
+	}
+	if entries == nil {
+		entries = map[string]json.RawMessage{}
+	}
+	return entries, nil
+}
+
+// keepBackupEntry writes this machine's entry among the others. backupSettingsMu is held.
+func (d *Daemon) keepBackupEntry(entries map[string]json.RawMessage, entry json.RawMessage) error {
+	if err := tooLarge(backupSettingsFile, entry, backupSettingsMostBytes); err != nil {
+		return err
+	}
+	if _, ok := entries[d.Store.RootID]; !ok && len(entries) >= backupSettingsMost {
+		return fmt.Errorf("%s has %d machines, the most it keeps; remove one that is gone: %w", d.backupSettingsPath(), len(entries), store.ErrLimit)
+	}
+	entries[d.Store.RootID] = entry
+	b, err := json.MarshalIndent(entries, "", "  ")
+	if err != nil {
+		return err
+	}
+	// store-bounds: kind=key-value; count=100; size=32KiB a machine; age=until-deleted; applied=on write (refused)
+	return store.WriteAtomically(d.backupSettingsPath(), b, 0o600)
+}
+
+// backupEntry is this machine's entry, nil for none. An entry in the old place is moved here
+// once; until it can be, it is read there.
+func (d *Daemon) backupEntry() (json.RawMessage, error) {
+	d.backupSettingsMu.Lock()
+	defer d.backupSettingsMu.Unlock()
+	old, oldErr := os.ReadFile(d.oldBackupSettingsPath())
+	isOld := oldErr == nil && json.Valid(old)
+	entries, err := d.backupEntries()
+	if err != nil {
+		if isOld {
+			return old, nil
+		}
+		return nil, err
+	}
+	entry := entries[d.Store.RootID]
+	switch {
+	case !isOld:
+		return entry, nil
+	case entry != nil:
+		setMovedAside(d.oldBackupSettingsPath())
+		return entry, nil
+	}
+	if err := d.keepBackupEntry(entries, old); err != nil {
+		log.Printf("backups: the settings were not moved: %v", err)
+		return old, nil
+	}
+	if err := os.Remove(d.oldBackupSettingsPath()); err != nil {
+		log.Printf("backups: %v", err)
+	}
+	log.Printf("backups: moved the settings to %s", d.backupSettingsPath())
+	return old, nil
+}
+
+// backupSettings is this machine's entry of backup-settings.json: a value it cannot read is
 // the default, so a file from a later build never turns backups off.
 func (d *Daemon) backupSettings() wire.BackupSettings {
+	s, _ := d.readBackupSettings()
+	return s
+}
+
+// readBackupSettings is backupSettings, and why the file could not be read. Then the most is
+// kept, so that no backup is deleted for settings nobody can read.
+func (d *Daemon) readBackupSettings() (wire.BackupSettings, error) {
 	s := wire.BackupSettings{Every: wire.BackupEveryDaily, Keep: backupKeepDefault}
-	if b, err := os.ReadFile(d.backupSettingsPath()); err == nil {
+	b, err := d.backupEntry()
+	if err != nil {
+		s.Keep = backupKeepMost
+	}
+	if b != nil {
 		var read wire.BackupSettings
 		if json.Unmarshal(b, &read) == nil {
 			s.Every = read.Every
@@ -155,7 +246,7 @@ func (d *Daemon) backupSettings() wire.BackupSettings {
 	if s.Every == "" {
 		s.Every = wire.BackupEveryDaily
 	}
-	return s
+	return s, err
 }
 
 func (d *Daemon) configureBackups(s wire.BackupSettings) error {
@@ -176,11 +267,28 @@ func (d *Daemon) configureBackups(s wire.BackupSettings) error {
 	if err != nil {
 		return err
 	}
-	if err := store.WriteAtomically(d.backupSettingsPath(), b, 0o600); err != nil {
-		return err
+	if err := d.setBackupEntry(b); err != nil {
+		return &Error{Code: CodeInvalidParams, Message: "The backup settings were not saved: " + err.Error()}
 	}
 	// Fewer kept takes effect now, not at the next backup.
 	d.pruneBackups(s.Keep)
+	return nil
+}
+
+// setBackupEntry writes this machine's entry, which then stands for one in the old place.
+func (d *Daemon) setBackupEntry(entry json.RawMessage) error {
+	d.backupSettingsMu.Lock()
+	defer d.backupSettingsMu.Unlock()
+	entries, err := d.backupEntries()
+	if err == nil {
+		err = d.keepBackupEntry(entries, entry)
+	}
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(d.oldBackupSettingsPath()); err != nil && !errors.Is(err, os.ErrNotExist) {
+		log.Printf("backups: %v", err)
+	}
 	return nil
 }
 
@@ -215,7 +323,10 @@ func (d *Daemon) backupsState() wire.BackupState {
 	d.backupMu.Lock()
 	making, lastError := d.backupMaking, d.backupError
 	d.backupMu.Unlock()
-	settings := d.backupSettings()
+	settings, unread := d.readBackupSettings()
+	if unread != nil && lastError == "" {
+		lastError = unread.Error()
+	}
 	target := d.backupTarget()
 	settings.Target = &target
 	backups, err := d.listBackups()
