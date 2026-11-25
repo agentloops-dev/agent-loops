@@ -2,12 +2,15 @@ package store
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/diskjson"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -187,6 +190,73 @@ func TestFoldersFile(t *testing.T) {
 	}
 }
 
+// TestFoldersBounds (#6744): one folder over the count and an entry over its size are refused, and
+// a list from before the bounds keeps every folder.
+func TestFoldersBounds(t *testing.T) {
+	s, _ := Open(t.TempDir())
+	ps := make([]wire.Folder, foldersMost, foldersMost+2)
+	for i := range ps {
+		ps[i] = wire.Folder{Folder: wire.URL(fmt.Sprintf("file:///w/%d", i)), AddedAt: 1}
+	}
+	if err := s.SaveFolders(ps); err != nil {
+		t.Fatal(err)
+	}
+	more := append(ps, wire.Folder{Folder: "file:///w/more", AddedAt: 1})
+	if err := s.SaveFolders(more); !errors.Is(err, ErrLimit) {
+		t.Fatalf("one over the count: %v", err)
+	}
+	if n := len(s.Folders()); n != foldersMost {
+		t.Fatalf("%d folders after a refusal", n)
+	}
+
+	huge := wire.Folder{Folder: wire.URL("file:///w/" + strings.Repeat("x", folderEntryMost)), AddedAt: 1}
+	if err := s.SaveFolders([]wire.Folder{huge}); !errors.Is(err, ErrLimit) {
+		t.Fatalf("an entry over its size: %v", err)
+	}
+
+	old := append(more, huge)
+	b, _ := diskjson.Marshal(old)
+	if err := os.WriteFile(s.Loc.Folders(), b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s, _ = Open(s.Loc.Root)
+	ps = s.Folders()
+	archived := wire.Date(2)
+	ps[0].ArchivedAt = &archived
+	if err := s.SaveFolders(ps); err != nil || len(s.Folders()) != foldersMost+2 {
+		t.Fatalf("a list from before the bounds: %v, %d folders", err, len(s.Folders()))
+	}
+}
+
+// TestUnreadableFoldersAreKept (#6744): a save never writes over a list that could not be read.
+func TestUnreadableFoldersAreKept(t *testing.T) {
+	s, _ := Open(t.TempDir())
+	if err := os.WriteFile(s.Loc.Folders(), []byte("not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s, _ = Open(s.Loc.Root)
+	if err := s.SaveFolders([]wire.Folder{{Folder: "file:///w/a", AddedAt: 1}}); err != nil {
+		t.Fatal(err)
+	}
+	kept, _ := filepath.Glob(s.Loc.Folders() + ".unreadable-*")
+	if len(kept) != 1 {
+		t.Fatalf("set aside: %v", kept)
+	}
+	if b, _ := os.ReadFile(kept[0]); string(b) != "not json" {
+		t.Fatalf("set aside %q", b)
+	}
+
+	// A folder in its place cannot be read as a file: the list is not changed.
+	s, _ = Open(t.TempDir())
+	if err := os.Mkdir(s.Loc.Folders(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	s, _ = Open(s.Loc.Root)
+	if err := s.SaveFolders(nil); err == nil || !strings.Contains(err.Error(), "could not be read") {
+		t.Fatalf("a save over a list that could not be read: %v", err)
+	}
+}
+
 func TestRootIDFileIsSwifts(t *testing.T) {
 	root := t.TempDir()
 	s, _ := Open(root)
@@ -286,7 +356,7 @@ func TestAWorktreeWithNoFolderIsFilled(t *testing.T) {
 		must(t, os.MkdirAll(dir, 0o755)) //nolint:gosec // G301: the mode this folder always had; only its error is new
 		b := `{"id":"` + id + `","runtimeID":"claude","cwd":"file:///w/","state":"stopped","endedReason":"endTurn",` +
 			`"advertisedOptions":[],"availableCommands":[],"worktree":` + worktree + `}`
-		if err := os.WriteFile(filepath.Join(dir, "agent.json"), []byte(b), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, "agent.json"), []byte(b), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}

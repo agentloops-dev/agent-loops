@@ -104,7 +104,8 @@ from the root (`agentsd/backups.go:69,72`). It holds nothing else.
 | `org-routes/<id>.json`, `runtimes/org/…` | Org key routes, stand-in homes | 50 routes (`orgroutes.go:46`) | on delivery | no |
 | `runtimes/accounts/<rt>/<id>/` | Homes of added runtime accounts, **with the runtime's own transcripts** | removed with the account (`accounts.go:343`) | on remove | no |
 | `browser/profile/` | Chromium profile shared by every browser sign-in | **none** | never | no |
-| Small fixed files (`folders.json`, `root-id.json`, `project-tools.json`, `wake.json`, `policy*.json`, `backup-settings.json`, `settings/*.json`, …) | Configuration | fixed shape | n/a | no |
+| `folders.json` | The folders of this machine | 10,000 of 16 KiB each, else refused; until deleted (no age, on purpose) | on write | no |
+| Small fixed files (`root-id.json`, `project-tools.json`, `wake.json`, `policy*.json`, `backup-settings.json`, `settings/*.json`, …) | Configuration | fixed shape | n/a | no |
 
 ### Transfers, backups and staging
 
@@ -420,7 +421,7 @@ newer than a row above for the same store.
 | `~/.agents-secrets/hints.json` | secret | Last 4 characters of each secret | No count limit | `Go/internal/agentsd/secrethints.go:19` | #6741 |
 | `~/.agents-secrets/descriptions.json` | key-value | Secret descriptions (not secret) | No count limit; config outside .agents | `Go/internal/agentsd/secretlist.go:37` | #6742 |
 | Keychain `agents.connection.<hash>` (Linux `~/.agents-secrets/connections.json`) | secret | Forge connections: the token and settings that are not secret | No count limit; settings kept with the secret | `Go/internal/connections/store.go:110-156` | #6743 |
-| `<root>/folders.json` | key-value | The folders the person added | Config in the data root | `Go/internal/agentsd/store/locations.go:104` | #6744 |
+| `<root>/folders.json` | key-value | The folders of this machine: path, added, archived, pinned | 10,000 of 16 KiB each, else refused; until deleted (no age, on purpose); stays in the data root on purpose: paths of one machine (Alex, 2026-11-24) | `Go/internal/agentsd/store/store.go` (`foldersMost`, `checkFolders`) | #6744 |
 | `<root>/wake.json` | key-value | Keep awake, grace hours, warm runtimes | Config in the data root | `Go/internal/agentsd/wake_darwin.go:18` | #6745 |
 | `<root>/backup-settings.json` | key-value | Backup target and Keep | Config in the data root | `Go/internal/agentsd/backups.go:43,127` | #6746 |
 | `<root>/allowances.json` | key-value | Allowance for each credential | Until its account is removed; config in the data root | `Go/internal/agentsd/allowances.go:32; accounts.go:361` | #6747 |
