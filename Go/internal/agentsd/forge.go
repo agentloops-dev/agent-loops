@@ -177,6 +177,11 @@ type forgeBook struct {
 	forgeImages forgeImageCache
 	// forgeImageTransport reads forge/image's images; a test gives a fake, nil is the default.
 	forgeImageTransport http.RoundTripper
+	// publicImageTransport reads from the hosts that the person chose; a test gives a fake, nil
+	// is the package's.
+	publicImageTransport http.RoundTripper
+	// imageHosts is the hosts that the person allowed (#7138).
+	imageHosts imageHostsState
 	// keptGitHub is forgeGitHubKept's client, as keptGitHubToken (#6349).
 	keptGitHub      forgeGitHub
 	keptGitHubToken string

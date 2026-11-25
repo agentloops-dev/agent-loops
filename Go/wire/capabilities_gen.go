@@ -132,6 +132,7 @@ const CapHostUserSettings4 = "host.user-settings/4"
 const CapHostWebPairing1 = "host.web-pairing/1"
 const CapHostWire1 = "host.wire/1"
 const CapHostsJoin1 = "hosts.join/1"
+const CapImageHosts1 = "image-hosts/1"
 const CapLineageComment1 = "lineage.comment/1"
 const CapLineageEstimate1 = "lineage.estimate/1"
 const CapLineageFigures1 = "lineage.figures/1"
@@ -474,6 +475,9 @@ var HostCapabilities = pairs([][2]string{
 	{"forge/sources", "forge-sync/1"},
 	{"git/fill", "git/1"},
 	{"git/trailers", "host.commit-trailers/1"},
+	{"imageHosts/allow", "image-hosts/1"},
+	{"imageHosts/list", "image-hosts/1"},
+	{"imageHosts/remove", "image-hosts/1"},
 	{"lineage/cost", "lineage/1"},
 	{"lineage/end", "lineage/1"},
 	{"lineage/estimate", "lineage.estimate/1"},

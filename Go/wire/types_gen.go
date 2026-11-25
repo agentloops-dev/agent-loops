@@ -6284,16 +6284,20 @@ type ForgeIdsRequest struct {
 	PageCursor *string `json:"pageCursor,omitzero"`
 }
 
-// forge/image (#4009): an image's bytes, so that a client never loads a forge page's remote URL. mimeType is image/png, image/jpeg, image/gif or image/webp, read from the bytes.
+// forge/image (#4009): an image's bytes, so that a client never loads a forge page's remote URL. mimeType is image/png, image/jpeg, image/gif or image/webp, read from the bytes. keep false (#7138): the read went through a host that the person allowed or showed, so a client does not put it on disk; absent, only a forge's own image hosts.
 type ForgeImage struct {
 	MimeType string `json:"mimeType"`
 
 	Data Data `json:"data"`
+
+	Keep *bool `json:"keep,omitzero"`
 }
 
-// forge/image (#4009): the url of an image on a forge page. Only a forge's own image hosts are read (for GitHub: github.com's user-attachments and repo assets, and user-images, private-user-images, raw and avatars on githubusercontent.com); the forge's token goes only to its own hosts.
+// forge/image (#4009): the url of an image on a forge page. Only a forge's own image hosts (for GitHub: github.com's user-attachments and repo assets, and user-images, private-user-images, raw and avatars on githubusercontent.com), the hosts that the person allowed (imageHosts/list) and those in show are read; another host is the failure imageBlocked, with ImageBlocked as its data. show (#7138) is the exact hosts that the person accepts for this one read, at most 6, from the person's own clients only. The forge's token goes only to its own hosts, and to none after a hop through a host that the person chose.
 type ForgeImageRequest struct {
 	URL string `json:"url"`
+
+	Show []string `json:"show,omitzero"`
 }
 
 // An issue or a pull request (a GitLab merge request) as its forge says it (#3129): one model for GitHub, GitLab, Linear and Jira (#3260), so one page draws each. node is its lineage node (kind issue or pr, ref github:issue:alexec/agents#12). state is open, closed or merged; status is the tracker's own name for its step, where its workflow has steps (a Jira status, as In Progress; one in Jira's Done category is closed). folder is a folder on this machine on its repo, to act from. labels have their #rrggbb colour where the forge gives one (#2956). The pull request's own fields: draft; checks is passing, failing, running or none; review is approved, changes_requested or review_required; mergeable is mergeable, conflicting or unknown; autoMerge says auto-merge is on. The hierarchy (#3267): parent is the issue it is a sub-issue (a Linear or GitLab child) of; level is epic, story, task or spike, from its labels; feature is the name of its feature:<name> label; progress is a parent's closed children of all of them, where the forge says it: in a GitHub list, and on an issue's own read. standing says it has the label standing: a standing epic, whose plan is a query (#3659). authorAvatar is the author's picture, a URL that only forge/image reads (#4363), where the forge gives one (ForgeCapabilities.avatars). stateReason is why a closed issue closed (#4365): completed, not_planned or duplicate, where the forge says it (ForgeCapabilities.stateReason); absent on an open issue and on a pull request. createdAt is when it opened and closedAt when it closed or merged (#4373), where the forge says them (ForgeCapabilities.createdAt and closedAt); closedAt is absent while it is open. A pull request's branches (#4409): headRef is the branch it merges from and baseRef the one it merges into, where the forge says them (ForgeCapabilities.branches); on its own read at least, and on a list's row where the list says them. A merged pull request's mergedBy is who merged it and mergeCommit the commit it made on baseRef (ForgeCapabilities.mergedBy and mergeCommit); each is absent while it is open or closed unmerged. priority is high, medium or low, absent for none (#5688, #5747): from the forge's own priority field where it has one, and then its labels are not read for it: Linear's (Urgent and High → high; Low → low), Jira's (Highest and High → high; Low and Lowest → low), GitHub's Priority issue field when the repo has it (Urgent and High → high), Bitbucket's (blocker and critical → high; major, the default, → none; minor and trivial → low) and Azure DevOps' Priority (1 → high; 2, the default, → none; 3 and 4 → low); elsewhere from the labels priority:high, priority:medium and priority:low (any case; the higher of two). milestoneDue is the due date of the item's milestone, where the forge says it; absent with no milestone or no due date. onHold says the item is on hold (#5747): Bitbucket's state on hold; elsewhere the label on hold (any case; on-hold too), and on Jira a status named On hold too; absent is false.
@@ -7150,6 +7154,30 @@ type HostedMCPStatus struct {
 	Users int64 `json:"users"`
 
 	Folder *string `json:"folder,omitzero"`
+}
+
+// The data of the failure imageBlocked of forge/image (#7138): host is the host that was refused, exact and in ASCII; from is the host that redirected to it, absent when it is the image's own.
+type ImageBlocked struct {
+	Host string `json:"host"`
+
+	From *string `json:"from,omitzero"`
+}
+
+// A host that the person allowed forge/image to read images from on one machine (#7138): the exact host, lower case and in ASCII, and when.
+type ImageHost struct {
+	Host string `json:"host"`
+
+	AddedAt Date `json:"addedAt"`
+}
+
+// imageHosts/allow and imageHosts/remove (#7138): the host.
+type ImageHostRequest struct {
+	Host string `json:"host"`
+}
+
+// imageHosts/list, and the list after imageHosts/allow and imageHosts/remove (#7138): at most 100 hosts, the first allowed first. The forges' own image hosts are not in it.
+type ImageHosts struct {
+	Hosts []ImageHost `json:"hosts"`
 }
 
 type JoinApproved struct {
