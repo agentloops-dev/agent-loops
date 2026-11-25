@@ -1193,9 +1193,9 @@ func (m *Methods) forgotten(id string, after time.Duration) {
 	}()
 }
 
-// Admit is ControlMethods.admit: a client that has paired, or connected again. lastSeen
-// is written at most hourly (R4): a connect is not a write. Only a client that is new
-// or renamed is said (#172); the router says a connect as the client's link changing.
+// Admit is ControlMethods.admit: a client that has paired, saved over its tombstone when
+// the same id was forgotten. Only a client that is new or renamed is said (#172). One that
+// only connected again is NoteSeen's.
 func (m *Methods) Admit(ctx context.Context, client records.ClientRecord) error {
 	said, err := m.admitOnce(ctx, client)
 	if err != nil {
@@ -1211,6 +1211,30 @@ func (m *Methods) Admit(ctx context.Context, client records.ClientRecord) error 
 		go m.s.tellHostClients()
 	}
 	return nil
+}
+
+// NoteSeen notes that a known client connected again. lastSeen is written at most hourly
+// (R4): a connect is not a write. One forgotten meanwhile, here or at another copy, stays
+// forgotten: unlike Admit, this never writes over its tombstone (#7308).
+func (m *Methods) NoteSeen(ctx context.Context, id string) error {
+	err := m.noteSeenOnce(ctx, id)
+	if store.IsConflict(err) {
+		if err = m.records.Load(ctx); err == nil {
+			err = m.noteSeenOnce(ctx, id)
+		}
+	}
+	return err
+}
+
+func (m *Methods) noteSeenOnce(ctx context.Context, id string) error {
+	return m.records.ChangeClient(ctx, id, func(known *records.ClientRecord) bool {
+		if known.LastSeen != nil && time.Since(known.LastSeen.Time) <= time.Hour {
+			return false
+		}
+		now := records.Now()
+		known.LastSeen = &now
+		return true
+	})
 }
 
 func (m *Methods) admitOnce(ctx context.Context, client records.ClientRecord) (bool, error) {

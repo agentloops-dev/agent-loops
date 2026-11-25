@@ -1334,6 +1334,11 @@ func (r *Router) AttachClient(client *records.ClientRecord, conn *Conn, capabili
 	}
 	r.noteLinkLocked(client.ID)
 	r.mu.Unlock()
+	return id
+}
+
+// ReadClient answers an attached session's lines until its socket ends, then detaches it.
+func (r *Router) ReadClient(id string, conn *Conn) {
 	go func() {
 		for {
 			line, err := conn.Read(context.Background())
@@ -1346,7 +1351,6 @@ func (r *Router) AttachClient(client *records.ClientRecord, conn *Conn, capabili
 		r.detachLocked(id, 0)
 		r.mu.Unlock()
 	}()
-	return id
 }
 
 // ForgottenCloseCode is what a forgotten client's sockets end with (071 browser-auth.md).
