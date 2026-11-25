@@ -510,13 +510,25 @@ func withClaudeTodoTools(env []string) []string {
 //   - OpenCode's own configuration in OPENCODE_CONFIG_CONTENT, merged over the person's
 //     opencode.json for this process (049 D4): it asks before an edit, a command or a fetch
 //     (its own default is to allow all three), and never updates itself or shares (#1445).
+//     Its subagents are refused what would ask (openCodeSubagent).
 var toolPolicyEnv = map[string]map[string]any{
 	"codex": {"CODEX_CONFIG": map[string]any{"features": map[string]any{
 		"sleep_tool": false, "goals": true, "in_app_local_automation": false, "apps": false,
 		"computer_use": false, "multi_agent": true, "default_mode_request_user_input": true}}},
-	"opencode": {"OPENCODE_CONFIG_CONTENT": map[string]any{"autoupdate": false,
+	"opencode": {"OPENCODE_CONFIG_CONTENT": map[string]any{
+		"agent":      map[string]any{"explore": openCodeSubagent, "general": openCodeSubagent},
+		"autoupdate": false,
 		"permission": map[string]any{"bash": "ask", "edit": "ask", "webfetch": "ask"}, "share": "disabled"}},
 }
+
+// openCodeSubagent denies OpenCode's built-in subagents each permission that would ask
+// (#7220). A subagent works in a child session, and OpenCode's ACP server (1.19.5) drops a
+// child session's request: no session/request_permission and no reply, so the turn hangs
+// for ever. A refused call goes back to the model, and reads and searches still work. Take
+// it out when OpenCode sends those requests.
+var openCodeSubagent = map[string]any{"permission": map[string]any{"bash": "deny", "doom_loop": "deny",
+	"edit": "deny", "external_directory": "deny", "read": map[string]any{"*.env": "deny", "*.env.*": "deny", "*.env.example": "allow"},
+	"webfetch": "deny"}}
 
 // toolPolicyArgs is the launchArguments lever (#1445): Copilot is not given the person's
 // software-factory server (a second copy of the app's whole remit) or its built-in MCP

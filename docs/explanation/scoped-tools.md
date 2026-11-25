@@ -96,7 +96,9 @@ each one has.
   it, so it is sent no list; its question tool stays, and its questions reach you as a card.
 - **OpenCode** takes its own settings in a variable set only for the sessions the app
   starts, laid over your `opencode.json` for that process. It keeps its subagent tool and
-  its to-do list, as Claude's does. Sharing a conversation to OpenCode's website
+  its to-do list, as Claude's does. Its built-in subagents can read and search, but not
+  edit, run commands or fetch: OpenCode does not pass on a question from a subagent, so the
+  call would wait for ever. Sharing a conversation to OpenCode's website
   and self-update are switched off, as switches your own settings cannot turn back on. Left
   to itself OpenCode asks for nothing, so the app makes it ask before editing files, running
   commands and fetching web pages. The **Default** or **Always Approve** capsule under the
