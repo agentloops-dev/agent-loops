@@ -17,8 +17,6 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
-
-	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 )
 
 type fakeSource struct {
@@ -267,7 +265,6 @@ func TestARelayStopsBeforeItServes(t *testing.T) {
 
 // #7170: the borrower keeps its stand-in over a restart of this host, and does not ask again.
 func TestAGrantOutlivesARestart(t *testing.T) {
-	flaky.UnderLoad(t, "#7225")
 	root := t.TempDir()
 	newHost := func() *Relays {
 		src := &fakeSource{}
