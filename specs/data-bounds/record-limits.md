@@ -23,8 +23,8 @@ read and not run. A store below its total is no proof that a record was handled.
 | Document, key-value | hosted | test | test: the sweep | test: an old invite | read: in each retry | #7197 |
 | Blob | machine, control plane | read: attachment, dropbox, backup parts | read | read | none | #7203 (set-asides) |
 | Backend | control plane | test: memory, folder; S3 fake | none | none | none | #7195 |
-| Cache | Mac, Remote, web | test: a page and a picture kept at the limit, not over it, in bytes; a stale one goes | test: a list's pages | read: an old large record is read until it ages out (#7202) | read: an optimistic change over the limit is not made | Holds; an item over the limit goes, with its earlier copy (#7198) |
-| Drafts, settings | clients | test: web drafts; read: Mac's drafts, inbox, pins, start folders | read | read | read | #7202 (#7199 fixed) |
+| Cache | Mac, Remote, web | test: a page and a picture kept at the limit, not over it, in bytes; a stale one goes | test: a list's pages | test: the web's old large record is not read, and goes (#7253); read: the Mac's is read until it ages out (#7252) | read: an optimistic change over the limit is not made | Holds; an item over the limit goes, with its earlier copy (#7198) |
+| Drafts, settings | clients | test: web drafts, and the web's `localStorage` (`keyValue`, #7253); read: Mac's drafts, inbox, pins, start folders | read | read | read | #7252 (#7199, #7253 fixed) |
 
 A refused write tells its caller: `store.ErrLimit` or `LimitError` with the name, the size and the
 limit. The stores that only log it have bugs above.
@@ -34,7 +34,7 @@ limit. The stores that only log it have bugs above.
 `recordlimit_test.go` in `Go/internal/agentsd/store`, `agentsd/skillcatalog`, `controlplane`,
 `controlplane/store`, `controlplane/providers`, `controlplane/s3store`, `hosted`, `lineage`,
 `citimings` and `whatsappmcp`; `Go/internal/agentsd/recordlimits_test.go`; `WorkCacheTests`,
-`LocalCopyTests`, and the web's `workCache`, `localCopy` and `drafts` tests. A test that a bug
+`LocalCopyTests`, and the web's `workCache`, `localCopy`, `drafts` and `keyValue` tests. A test that a bug
 fails is skipped with the bug's number; the fix takes the skip out.
 
 ## The entries left in the baseline
@@ -46,7 +46,7 @@ What each line of `scripts/store-bounds-baseline.txt` is. A **store** is owned b
 | Not a store: temporary, staging or scratch | `ControlSettingsModel`, `ConnectLinearSheet`, `BackgroundPane`, `VoiceTape`; `agentsd/`: `brief`, `bringback`, `receive`, `send`, `backups` and `backups_store` staging (then #7183), `secretcmd`, `trailerhook`; `skillcatalog/`: `github`, `installer`, `preview`; `conflictrisk`, `hostinstall/`, `hosttunnels/session`, `releasefiles`, `linuxrelease` |
 | Not a store: an installer, a service or a lock file | `LocalServices`; `cmd/agentsd/`: `install`, `main` (the lock), `supervise`; `agentsd/`: `install`, `selfupdate`, `gitcredentials`, `modelrelay`, `relay`, `runtimes`, `orglaunch`; `hostsetup/install` (its log: #7200), `controlplane/machine`, `mac/signin/certs`, `mac/signin/codex`, `whatsappmcp` lock, `controlplane/store/folder` lock |
 | Not a store: the person's file or their project | `HostModel`, `AgentsExportTransfer`; `acp/session`; `agentsd/`: `agentconfigeditor`, `files`, `newapp`, `publicrepo`, `policyfolder`, `folders`, `guarded` (its undo), `dotagents`, `readymade`, `readymadeskills`, `settings` (a persona), `environment` (a folder's), `worktrees`, `host` (an artifact), `skillcatalog/personas`; `codespacessh`, `controlplane/homebackup` |
-| Not a store: one fixed key or mark | `HostJoinFile`, `MachineLock`, `ControlMembership`, `Multiplier`, `keys.ts` (its caches are declared), `signIn.ts`; `cmd/agents-control/main`, `cmd/agentsd/enrol`, `cmd/agentsd/main`; `agentsd/`: `lock` (mark), `localpath` (below), `restarts`, `setupforward`, `setupprojects`, `usersuspend`, `runtimesignin`; `store/roots`, `store/store` (root id), `controllink/` (all), `kms/`, `workspacecommands/digitalocean`, `controlplane/capacity`, `hosted/limits` |
+| Not a store: one fixed key or mark | `HostJoinFile`, `MachineLock`, `ControlMembership`, `keys.ts` (its caches are declared), `signIn.ts`; `cmd/agents-control/main`, `cmd/agentsd/enrol`, `cmd/agentsd/main`; `agentsd/`: `lock` (mark), `localpath` (below), `restarts`, `setupforward`, `setupprojects`, `usersuspend`, `runtimesignin`; `store/roots`, `store/store` (root id), `controllink/` (all), `kms/`, `workspacecommands/digitalocean`, `controlplane/capacity`, `hosted/limits` |
 | Not a store: the helper or the backend itself | `store/files`, `execfile`, `store/folder`, `storeopen`, `storecopy`, `records/records` (an old prefix, read only), `homebackup` `NewFolder` |
 | Declared at another line | `cmd/agentsd/main` and `supervise` (the daemon log), `hosttunnels/tunnels` and `sweep` (`v1/codes`, itself #7201), `lock` pin, `links` (the links) |
 | Store, bounded in code, not declared | `citimings/store`, `store/revisions`, `secretops` (`secret-ops.json`), `providers/kept`, `controlplane/backups`, `joins`, `audit/chain` |

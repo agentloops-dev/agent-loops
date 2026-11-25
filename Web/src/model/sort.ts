@@ -2,6 +2,7 @@
 // (sessionStorage) as Agents' filters are (#2141), so a reload keeps it and another tab starts
 // with each table's own order.
 
+import { putEntry } from "./keyValue";
 export type SortDir = "asc" | "desc";
 export type SortOrder = { column: string; dir: SortDir };
 /** What a column sorts by: a number, a word, or nothing (which goes last either way). */
@@ -22,7 +23,9 @@ export function keptOrder(table: string, fallback: SortOrder, columns: readonly 
 }
 
 export function keepOrder(table: string, order: SortOrder): void {
-  try { storage?.setItem(prefix + table, JSON.stringify(order)); } catch { /* private mode: for this page only */ }
+  // One entry for each of the page's tables. The tab's own: the browser deletes it with the tab.
+  // store-bounds: kind=key-value; count=100; age=until-deleted; action=refuse; record=1KiB; applied=on write
+  putEntry(storage, prefix + table, JSON.stringify(order), 1024);
 }
 
 /** A header pressed: its column the first way it goes (`first`), or the other way when it is the column already. */

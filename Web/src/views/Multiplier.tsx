@@ -8,6 +8,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { Store } from "../model/store";
 import type { Multiplier } from "../protocol/generated";
+import { putEntry } from "../model/keyValue";
 import { achievementDay, achievementList } from "../model/achievements";
 import {
   BLINK_CHANCE, badgeGlyph, baselineLine, blinkers, blobSize, crowdCount, crowdFill, crowdLayout, earnedBadges, emptyLayout, emptyWords, newsOf, oneDecimal, whole,
@@ -46,11 +47,9 @@ function lastShown(): Figures {
 }
 
 function keepShown(figures: Figures): void {
-  try {
-    globalThis.window?.localStorage.setItem(storageKey, JSON.stringify(figures));
-  } catch {
-    // A private window may refuse to store; the next open counts from 0.
-  }
+  // Figures that are not kept: the next open counts from 0.
+  // store-bounds: kind=key-value; count=1; age=until-deleted; action=refuse; record=1KiB; applied=on write
+  putEntry(globalThis.window?.localStorage, storageKey, JSON.stringify(figures), 1024);
 }
 
 /** Counts from what it shows to `target` over about a second, eased out; jumps there with reduced motion. */

@@ -285,10 +285,42 @@ export class WorkCache implements CacheStore {
     await this.ready();
     await this.queue;
     try {
-      return (await this.store.get(keys)) as (T | undefined)[];
+      const got = (await this.store.get(keys)) as (T | undefined)[];
+      return got.map((value, i) => (value !== undefined && this.within(keys[i]!, value) ? value : undefined));
     } catch {
       return keys.map(() => undefined);
     }
+  }
+
+  private most(key: string): number {
+    return key.startsWith("item ") ? this.bounds.itemBytes : this.bounds.recordBytes;
+  }
+
+  /** Whether the index alone says that a record is within its largest size: a row from before #6976 counts UTF-16 units, of
+   * which UTF-8 takes at most three bytes each. */
+  private surelyWithin(key: string): boolean {
+    const row = this.index.get(key);
+    return row !== undefined && row.bytes * 3 <= this.most(key);
+  }
+
+  /** Whether a kept record is within its largest size: an older build kept larger ones (#7253). */
+  private within(key: string, value: unknown): boolean {
+    return this.surelyWithin(key) || utf8(JSON.stringify(value)) <= this.most(key);
+  }
+
+  /** Removes what an older build kept over the largest record. */
+  private async dropOver(): Promise<void> {
+    // An item's size was in UTF-8 in every build, so its row says when it is over.
+    const items = [...this.index].filter(([key, row]) => key.startsWith("item ") && row.bytes > this.bounds.itemBytes).map(([key]) => key);
+    const look = [...this.index.keys()].filter((key) => !key.startsWith("item ") && !this.surelyWithin(key));
+    const records = look.length > 0 ? await this.read(look) : [];
+    const drop = [...items, ...look.filter((_, i) => records[i] === undefined)];
+    if (drop.length === 0) return;
+    for (const key of drop) {
+      this.memo.delete(key);
+      this.edited.delete(key);
+    }
+    await this.save([], drop);
   }
 
   /** Writes records and their index rows, one write after another; `touch` only changes the rows of kept records. */
@@ -605,6 +637,7 @@ export class WorkCache implements CacheStore {
         // The next sweep tries again.
       }
       for (const key of this.memo.keys()) if (!this.index.has(key)) this.memo.delete(key);
+      await this.dropOver();
       await this.trim();
     });
   }

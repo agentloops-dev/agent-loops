@@ -3,7 +3,7 @@
 // placeholder rotates through ideas. No sidebar, no toolbar, no way past it. New App… (#5132) opens it
 // again for a person who is set up, with Cancel.
 import { useEffect, useRef, useState } from "preact/hooks";
-import { firstBuild, firstBuildIdeas, ideaInterval, nextIdea, type FirstBuildFacts } from "../model/firstBuild";
+import { firstBuild, firstBuildIdeas, ideaInterval, ideaTooLong, nextIdea, type FirstBuildFacts } from "../model/firstBuild";
 import type { Store } from "../model/store";
 import { Huddle } from "./Huddle";
 
@@ -39,6 +39,7 @@ export function QuestionPage() {
   const [words, setWords] = useState(sent ?? firstBuild.draft.peek());
   const [focused, setFocused] = useState(false);
   const [shown, setShown] = useState(0);
+  const [tooLong, setTooLong] = useState(false);
   const [still] = useState(reducedMotion);
   const box = useRef<HTMLTextAreaElement>(null);
   const empty = words.trim() === "";
@@ -54,7 +55,7 @@ export function QuestionPage() {
 
   const submit = () => {
     if (empty || sent) return;
-    firstBuild.send(words);
+    setTooLong(!firstBuild.send(words));
   };
 
   const keyDown = (e: KeyboardEvent) => {
@@ -84,7 +85,7 @@ export function QuestionPage() {
           <div class="first-build-field">
             <textarea ref={box} rows={4} value={words} aria-label="Your idea" readOnly={sent !== null}
               aria-describedby={words === "" ? "first-build-idea" : undefined}
-              onInput={(e) => setWords(e.currentTarget.value)} onKeyDown={keyDown}
+              onInput={(e) => { setWords(e.currentTarget.value); setTooLong(false); }} onKeyDown={keyDown}
               onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} />
             {words === "" && (
               <div class="first-build-ideas" aria-hidden="true">
@@ -97,7 +98,7 @@ export function QuestionPage() {
           </div>
           <div class="first-build-foot">
             <span class="quiet small" role="status">
-              {sent ? "Making your plan…" : ""}
+              {sent ? "Making your plan…" : tooLong ? ideaTooLong : ""}
             </span>
             {/* Only after New App… (#5132): a newcomer's first open has no way past it. */}
             {another && <button type="button" onClick={() => firstBuild.leave()}>Cancel</button>}

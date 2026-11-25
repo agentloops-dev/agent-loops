@@ -8,6 +8,7 @@
 import { computed, signal } from "@preact/signals";
 import { boolPreference, preferenceKeys, setPreferences } from "./preferences";
 import { folderKey } from "./groups";
+import { boundedNames, namesBytes, putEntry } from "./keyValue";
 import { smartStartsOpen, type SmartRow } from "./sidebar";
 
 const storageKey = "agents.sidebar.folds";
@@ -17,6 +18,10 @@ const closedKey = "agents.sidebar.folded";
 const sessionsKey = "agents.sidebar.openSessions";
 /** How many of those are kept, as `SidebarFolds.sessionsKept`, so the list stays small. */
 export const sessionsKept = 200;
+/** The most folds kept of each list, and the longest name of one (#7253): a new one past that holds for this visit only. */
+export const foldsKept = 1000;
+export const foldBytes = 2048;
+const sessionBytes = 64;
 
 function read(storage: Storage | undefined, key: string): Set<string> {
   try {
@@ -44,9 +49,9 @@ export class Folds {
   readonly openSessions;
 
   constructor(private readonly storage: Storage | undefined) {
-    this.open = signal(read(storage, storageKey));
-    this.closed = signal(read(storage, closedKey));
-    this.openSessions = signal([...read(storage, sessionsKey)]);
+    this.open = signal(new Set(boundedNames(read(storage, storageKey), foldsKept, foldBytes)));
+    this.closed = signal(new Set(boundedNames(read(storage, closedKey), foldsKept, foldBytes)));
+    this.openSessions = signal(boundedNames([...read(storage, sessionsKey)].slice(-sessionsKept), sessionsKept, sessionBytes));
   }
 
   // Archived folders, Status and Usage are the person's display choices, kept on their Mac
@@ -105,11 +110,8 @@ export class Folds {
     if (now.includes(id) === isOpen) return;
     const next = isOpen ? [...now, id].slice(-sessionsKept) : now.filter((kept) => kept !== id);
     this.openSessions.value = next;
-    try {
-      this.storage?.setItem(sessionsKey, JSON.stringify(next));
-    } catch {
-      // A private window may refuse to store; the fold still holds for this visit.
-    }
+    // store-bounds: kind=key-value; count=200; age=until-deleted; action=evict; record=64B; applied=on write
+    putEntry(this.storage, sessionsKey, JSON.stringify(boundedNames(next, sessionsKept, sessionBytes)), namesBytes(sessionsKept, sessionBytes));
   }
 
   /** Pinned and Needs You open until folded; Working and Unread folded until opened (#495). */
@@ -150,11 +152,7 @@ export class Folds {
       const next = new Set([...now].filter((name) => !gone(name)));
       if (next.size === now.size) continue;
       held.value = next;
-      try {
-        this.storage?.setItem(key, JSON.stringify([...next].sort()));
-      } catch {
-        // A private window may refuse to store; the folds still hold for this visit.
-      }
+      this.keep(key, next);
     }
   }
 
@@ -163,11 +161,13 @@ export class Folds {
     const next = new Set(kept.peek());
     if (has) next.add(name); else next.delete(name);
     kept.value = next;
-    try {
-      this.storage?.setItem(key, JSON.stringify([...next].sort()));
-    } catch {
-      // A private window may refuse to store; the folds still hold for this visit.
-    }
+    this.keep(key, next);
+  }
+
+  /** Those that are not kept still hold for this visit. The last opened are at the end, so they are the ones over the limit. */
+  private keep(key: string, names: ReadonlySet<string>): void {
+    // store-bounds: kind=key-value; count=2000; age=until-deleted; action=refuse; record=2KiB; applied=on write, and when a machine lists its folders or leaves
+    putEntry(this.storage, key, JSON.stringify(boundedNames(names, foldsKept, foldBytes).sort()), namesBytes(foldsKept, foldBytes));
   }
 }
 

@@ -265,6 +265,16 @@ export class LocalCopy implements CacheStore {
     this.timer ??= setInterval(() => void this.sweep(), sweepEvery);
   }
 
+  /** Whether a kept record is within the largest size: an older build kept larger ones (#7253). One whose
+   * row says at most two thirds of it is: an older build's row counts two bytes a UTF-16 unit, of which UTF-8 takes at most three. */
+  private within(record: unknown, row?: CopyIndexRow): boolean {
+    return (row !== undefined && row.bytes * 1.5 <= this.recordBytes) || utf8(JSON.stringify(record)) <= this.recordBytes;
+  }
+
+  private row(ref: string): CopyIndexRow | undefined {
+    return this.index.find((r) => r.ref === ref);
+  }
+
   private fresh(at: number): boolean {
     return at >= this.now() - cacheAgeLimit;
   }
@@ -292,8 +302,9 @@ export class LocalCopy implements CacheStore {
   async machines(): Promise<MachineCopy[]> {
     try {
       const rows = ((await this.store.get(indexKey)) as CopyIndexRow[] | undefined) ?? [];
-      const machines = (await Promise.all(rows.filter((r) => r.kind === "machine").map((r) => this.store.get(r.ref)))) as Array<MachineCopy | undefined>;
-      return machines.filter((m): m is MachineCopy => m?.kind === "machine" && this.fresh(m.at));
+      const named = rows.filter((r) => r.kind === "machine");
+      const machines = (await Promise.all(named.map((r) => this.store.get(r.ref)))) as Array<MachineCopy | undefined>;
+      return machines.filter((m, i): m is MachineCopy => m?.kind === "machine" && this.fresh(m.at) && this.within(m, named[i]));
     } catch {
       return [];
     }
@@ -302,7 +313,7 @@ export class LocalCopy implements CacheStore {
   async transcript(session: string): Promise<TranscriptCopy | null> {
     try {
       const got = (await this.store.get(sessionRef(session))) as TranscriptCopy | undefined;
-      return got?.kind === "transcript" && this.fresh(got.at) ? got : null;
+      return got?.kind === "transcript" && this.fresh(got.at) && this.within(got, this.row(got.ref)) ? got : null;
     } catch {
       return null;
     }
@@ -335,10 +346,21 @@ export class LocalCopy implements CacheStore {
     });
   }
 
-  /** At sign-in and each hour: what another tab wrote is counted, what the index does not name goes, then the bounds. */
+  /** At sign-in and each hour: what another tab wrote is counted, what the index does not name goes, with each record over
+   * the largest size, then the bounds. */
   sweep(): Promise<void> {
     return this.serial(async () => {
-      this.index = await this.store.write([], (stored) => this.bounded(stored), true);
+      const rows = ((await this.store.get(indexKey)) as CopyIndexRow[] | undefined) ?? [];
+      const over = new Map<string, CopyIndexRow>();
+      for (const row of rows) {
+        if (row.bytes * 1.5 <= this.recordBytes) continue;
+        const record = await this.store.get(row.ref);
+        if (record !== undefined && !this.within(record, row)) over.set(row.ref, row);
+      }
+      // Not one that another tab wrote again since.
+      const tooLarge = (r: CopyIndexRow) => over.get(r.ref)?.at === r.at && over.get(r.ref)?.bytes === r.bytes;
+      if (!this.writing) return;
+      this.index = await this.store.write([], (stored) => this.bounded(stored.filter((r) => !tooLarge(r))), true);
       this.loaded = true;
     });
   }
@@ -358,7 +380,7 @@ export class LocalCopy implements CacheStore {
   async workRead<T>(group: WorkGroup, asked: string): Promise<{ value: T; at: number } | undefined> {
     try {
       const got = (await this.store.get(workRef(group, asked))) as WorkCopy | undefined;
-      return got?.kind === "work" && got.group === group && this.fresh(got.at) ? { value: got.value as T, at: got.at } : undefined;
+      return got?.kind === "work" && got.group === group && this.fresh(got.at) && this.within(got, this.row(got.ref)) ? { value: got.value as T, at: got.at } : undefined;
     } catch {
       return undefined;
     }
