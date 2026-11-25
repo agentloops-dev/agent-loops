@@ -385,8 +385,10 @@ func TestLineageSyncMergesSmallChanges(t *testing.T) {
 	}
 	wantNoLineageChanges(ctx, t, counting, host)
 
+	// Enough for lineageRollUpBytes in all, and no more (#7213): a test that runs for a minute
+	// meets the control plane's own sweep, which rolls up part of them.
 	for range mostLineageChanges {
-		send(wire.LineageSync{Links: links})
+		send(wire.LineageSync{Links: links[:100]})
 	}
 	wantNoLineageChanges(ctx, t, counting, host)
 	// A link sent again as it was before it ended stays ended.
