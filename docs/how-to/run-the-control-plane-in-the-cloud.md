@@ -865,5 +865,6 @@ A Linux machine can run the control plane as a systemd user unit beside `agentsd
 - With `--domain`, the control plane makes its own publicly trusted certificate (Let's Encrypt, TLS-ALPN-01) in the process, so there is no Caddy unit. Port 443 must reach the unit. A user cannot bind 443: forward it, or allow it once with `sysctl net.ipv4.ip_unprivileged_port_start=443`. The installer never asks for root.
 - Without `--domain`, the certificate is the control plane's own, and its pin is in every code, as on the Mac.
 - The unit is `~/.config/systemd/user/agents-control.service`. Its folder is `~/.agents-control`. Run the install again to change a flag.
+- With both roles, the control plane goes first (#6613). Its unit has a higher `CPUWeight` and IO priority, and `MemoryLow`. The drop-in `~/.config/systemd/user/agents-host.service.d/10-control-first.conf` puts the host and its agents lower. A setting that the user manager cannot apply has no effect. `MemoryLow` has an effect only when the slices above the unit also have it (root sets that). The machine's capacity level is the higher of the two roles' levels, and it keeps one core's load free. A host that already runs takes the drop-in at its next start.
 
 The container above stays for a machine that has a container and Cloudflare in front: its Caddy also serves the second (views) name.

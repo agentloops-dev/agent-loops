@@ -11,7 +11,11 @@ import (
 // Projects (#2317, specs/2317-projects): what people work on, the record that folders
 // join. A folder names its project's id in its own .agents/folder.json.
 
+// store-bounds: kind=document; count=500 a person (removed ones too, for a week); size=64KiB a record; age=until-deleted; applied=on write (a project over it is refused, a person's own past the count too), removed projects go with the tombstones' sweep
 const ProjectsPrefix = "v1/projects/"
+
+// ProjectMostBytes is the largest project (#7248): its slots and boards, made by a person.
+const ProjectMostBytes = 64 << 10
 
 // ProjectKey is where a project is kept.
 func ProjectKey(id string) string { return ProjectsPrefix + id + ".json" }
@@ -192,6 +196,13 @@ func (r *Records) changeProject(ctx context.Context, id string, change func(*Pro
 	if there {
 		next.Rev = h.record.Rev + 1
 		condition = store.Matching(h.etag)
+	}
+	data, err := Encode(*next)
+	if err != nil {
+		return nil, err
+	}
+	if err := Fits(ctx, r.Store, ProjectKey(next.ID), "The project "+next.Name, data, ProjectMostBytes); err != nil {
+		return nil, err
 	}
 	kept, etag, err := write(ctx, r.Store, *next, ProjectKey(next.ID), condition)
 	if err != nil {

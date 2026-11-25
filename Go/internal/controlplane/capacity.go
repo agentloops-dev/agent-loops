@@ -4,13 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"math"
 	"os"
 	"runtime"
 	runtimemetrics "runtime/metrics"
 	"sort"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/capacity"
@@ -60,8 +57,8 @@ func sampleControlCapacity(ctx context.Context) controlCapacity {
 	if swap, err := mem.SwapMemoryWithContext(ctx); err == nil {
 		s.swapUsed = swap.UsedPercent
 	}
-	s.pressureMemory = readPSIFullAvg60("/proc/pressure/memory")
-	s.pressureIO = readPSIFullAvg60("/proc/pressure/io")
+	p := capacity.ReadPressure()
+	s.pressureMemory, s.pressureIO = p.Memory, p.IO
 	var sample [1]runtimemetrics.Sample
 	sample[0].Name = "/memory/classes/heap/objects:bytes"
 	runtimemetrics.Read(sample[:])
@@ -72,49 +69,6 @@ func sampleControlCapacity(ctx context.Context) controlCapacity {
 	}
 	s.at = time.Now().UTC()
 	return s
-}
-
-func readPSIFullAvg60(path string) float64 {
-	b, err := os.ReadFile(path)
-	if err != nil {
-		return 0
-	}
-	for _, line := range strings.Split(string(b), "\n") {
-		fields := strings.Fields(line)
-		if len(fields) < 3 || fields[0] != "full" {
-			continue
-		}
-		for _, field := range fields[1:] {
-			key, value, ok := strings.Cut(field, "=")
-			if key != "avg60" || !ok {
-				continue
-			}
-			v, err := strconv.ParseFloat(value, 64)
-			if err == nil && !math.IsNaN(v) && !math.IsInf(v, 0) {
-				return v
-			}
-		}
-	}
-	return 0
-}
-
-func controlCapacityTarget(s controlCapacity) (wire.CapacityLevel, string) {
-	switch {
-	case s.load1 > 3:
-		return wire.CapacityLevelFull, "load"
-	case s.pressureIO > 25:
-		return wire.CapacityLevelFull, "pressure_io"
-	case s.pressureMemory > 15:
-		return wire.CapacityLevelFull, "pressure_memory"
-	case s.load1 > 2:
-		return wire.CapacityLevelNear, "load"
-	case s.pressureIO > 10:
-		return wire.CapacityLevelNear, "pressure_io"
-	case s.pressureMemory > 5:
-		return wire.CapacityLevelNear, "pressure_memory"
-	default:
-		return wire.CapacityLevelOk, ""
-	}
 }
 
 func (s *Service) startCapacityMonitor() {
@@ -131,7 +85,7 @@ func (s *Service) startCapacityMonitor() {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			sample := sampleControlCapacity(ctx)
 			cancel()
-			target, reason := controlCapacityTarget(sample)
+			target, reason := capacity.ControlTarget(sample.load1, capacity.Pressure{Memory: sample.pressureMemory, IO: sample.pressureIO})
 			if reason != "" {
 				lastReason = reason
 			}

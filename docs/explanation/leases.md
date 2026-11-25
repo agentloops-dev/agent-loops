@@ -57,6 +57,8 @@ the same way, as well as its count. So an agent that leases `build` needs nothin
 - When the level is ok again, the line gets one grant for each look at the machine
   (each 15 seconds), the oldest first. Thus a burst does not make the machine full again
   at once.
+- On a machine that also runs the control plane (#6613), the level is the higher of the
+  two roles' levels, and the lines are one core's load lower, so there is room for it.
 - The browser, the screen and the simulators are not compute.
   They do not wait for the machine.
 - The clients say when a wait is for the machine, not for a holder (#4748). The chat's

@@ -36,6 +36,7 @@ const (
 
 // Copies' change events (#3648): only for a copy that missed one, so a day is plenty.
 const (
+	// store-bounds: kind=log; count=10_000; size=4KiB a record; age=1d; applied=on write (a long subject is cut), the hourly sweep deletes the oldest past the count and those of a day ago
 	meshEventsPrefix = "v1/mesh/events/"
 	meshEventsKept   = 24 * time.Hour
 )
@@ -835,15 +836,22 @@ func (e *eventSweep) sweepStrays(ctx context.Context, s store.Store, now time.Ti
 // sweepMeshEvents deletes, at most most, copies' change events from the days before
 // meshEventsKept ago. They are a day or two of changes, so one list holds them.
 func sweepMeshEvents(ctx context.Context, s store.Store, now time.Time, most int) (int, error) {
+	return sweepMeshEventsTo(ctx, s, now, most, meshEventsMost)
+}
+
+// sweepMeshEventsTo is sweepMeshEvents with at most kept events left.
+func sweepMeshEventsTo(ctx context.Context, s store.Store, now time.Time, most, kept int) (int, error) {
 	cutoff := now.UTC().Add(-meshEventsKept).Format(sweptDayLayout)
 	keys, err := s.List(ctx, meshEventsPrefix)
 	if err != nil {
 		return 0, err
 	}
 	deleted := 0
-	for _, k := range keys {
+	// Past meshEventsMost the oldest go, whatever their day (#7248).
+	over := len(keys) - kept
+	for i, k := range keys {
 		day, _, _ := strings.Cut(strings.TrimPrefix(k.Key, meshEventsPrefix), "/")
-		if deleted >= most || day >= cutoff {
+		if deleted >= most || day >= cutoff && i >= over {
 			break
 		}
 		if err := s.Delete(ctx, k.Key); err != nil {

@@ -36,7 +36,7 @@ struct ConnectorLevelsTests {
         #expect(MCPHealthWords.removes("github", inFolder: true, on: "devbox")
             == "This removes the github entry from .agents/mcp.json on devbox. Agents started after that won't have it.")
         #expect(MCPHealthWords.removes("github", inFolder: false)
-            == "This removes the github entry from ~/.agents/mcp.json. Agents started after that won't have it. A copy of the entry is kept in ~/.agents/mcp.removed.json.")
+            == "This removes the github entry from ~/.agents/mcp.json. Agents started after that won't have it. A copy of the entry is kept for 90 days in ~/.agents/mcp.removed.json.")
         #expect(MCPCatalogWords.notRemoved("github", .failed("devbox is offline")) == "github was not removed: devbox is offline.")
         #expect(MCPCatalogWords.notRemoved("github", .unreachable(host: "devbox")) == "github was not removed. Can't reach devbox.")
         #expect(MCPHealthWords.notRemoved("github", offline: "devbox") == "github was not removed: devbox is offline.")

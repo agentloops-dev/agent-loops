@@ -3,6 +3,7 @@ package controlplane
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"slices"
 	"strings"
 	"time"
@@ -28,6 +29,7 @@ import (
 //     deploy once.
 
 const (
+	// store-bounds: kind=document; count=1_000 deploys a machine; size=4MiB a record (a machine's); age=until-deleted; applied=on write (the deploys past it are cut), the hourly sweep deletes a removed machine's a day after its last send
 	deploysPrefix          = "v1/deploys/"
 	mostDeploys            = 1_000
 	mostDeployMerges       = 1_000
@@ -64,9 +66,18 @@ func (s *Service) keepDeploysSync(ctx context.Context, host string, sync wire.De
 		kept.Deploys = append(kept.Deploys, f)
 	}
 	kept.Resolving = sync.Resolving != nil && *sync.Resolving
-	data, err := records.Encode(kept)
+	// The deploys sent first, as many as fit: the machine sends them again (#7248).
+	all := kept.Deploys
+	var data []byte
+	var err error
+	kept.Deploys, data, err = fitting(all, deploysBytes, func(some []wire.DeployDeliveryFact) ([]byte, error) {
+		return records.Encode(storedDeploys{Deploys: some, Resolving: kept.Resolving, At: kept.At})
+	})
 	if err != nil {
 		return wire.Empty{}, err
+	}
+	if len(kept.Deploys) < len(all) {
+		s.log(fmt.Sprintf("deploys: %d of the %d deploys of machine %s are over %d bytes and are not kept", len(all)-len(kept.Deploys), len(all), host, deploysBytes))
 	}
 	if _, err := s.cfg.Store.Put(ctx, deploysKey(host), data, store.Always); err != nil {
 		return wire.Empty{}, err
