@@ -101,6 +101,11 @@ type Machine struct {
 	stopLoop chan struct{}
 	loopDone chan struct{}
 	stopped  bool
+	// woken is when a sweep last started the browser (Sweep).
+	woken time.Time
+	// sitesMu guards the files of the sites' last uses, and each process's visits (bounds.go).
+	// It is taken after mu and never before it.
+	sitesMu sync.Mutex
 }
 
 // process is a running Chromium.
@@ -125,6 +130,11 @@ type process struct {
 	// shown is how many hand-offs have its window on the screen now (ShowWindow), under
 	// the machine's lock: the keeper moves nothing then.
 	shown int
+	// watch hears the address of each page it opens, until it ends; visits is those sites since
+	// the last sweep, under sitesMu, and swept when that was (bounds.go).
+	watch  func(opened func(string))
+	visits siteUses
+	swept  time.Time
 }
 
 // mode is how Chromium starts: Google Chrome stable (#5207), always with a window; with a
@@ -165,6 +175,7 @@ func (m *Machine) Endpoint(progress func(string)) (string, error) {
 		select {
 		case <-m.running.done:
 			log.Printf("browser: Chromium (pid %d) exited; starting it again", m.running.pid)
+			m.keepVisits(m.running)
 			m.running = nil
 			m.Filter.Forget()
 		default:
@@ -196,11 +207,15 @@ func (m *Machine) Endpoint(progress func(string)) (string, error) {
 			return "", err
 		}
 	}
+	// store-bounds: kind=key-value; count=1; size=20B; age=until-deleted; applied=on write
 	if err := os.WriteFile(m.pidFile(), []byte(strconv.Itoa(p.pid)), 0o600); err != nil {
 		log.Printf("browser: couldn't write down Chromium's pid: %v", err)
 	}
 	m.running = p
 	m.startLoop()
+	if p.watch != nil {
+		go m.follow(p)
+	}
 	if p.below {
 		go m.keepBelow(p)
 	}
@@ -249,6 +264,7 @@ func (m *Machine) start(exe, profile string, env []string, how mode, progress fu
 		return nil, err
 	}
 	dropCaches(profile)
+	dropDownloads(profile, downloadBytes)
 	progress("Starting the browser")
 	return m.launch(exe, profile, env, how)
 }
@@ -407,6 +423,7 @@ func (m *Machine) stopLocked() {
 		return
 	}
 	m.running.stop()
+	m.keepVisits(m.running)
 	log.Printf("browser: Chromium (pid %d) stopped", m.running.pid)
 	endpoint := m.running.endpoint
 	m.running = nil
@@ -446,7 +463,7 @@ func (m *Machine) idle(now time.Time) bool {
 	return true
 }
 
-// startLoop runs the idle check once a minute while the machine lives. Under mu.
+// startLoop runs the idle check once a minute, and the sites' sweep once an hour, while the machine lives. Under mu.
 func (m *Machine) startLoop() {
 	if m.stopLoop != nil {
 		return
@@ -463,6 +480,7 @@ func (m *Machine) startLoop() {
 				return
 			case now := <-tick.C:
 				m.idle(now)
+				m.sweepRunning(now)
 			}
 		}
 	}()
@@ -769,7 +787,8 @@ func run(opts []chromedp.ExecAllocatorOption, how mode, place func(context.Conte
 		stop()
 		return nil, "", err
 	}
-	return &process{endpoint: endpoint, pid: b.Process().Pid, done: ctx.Done(), stop: stop, headed: how.headed, chrome: how.chrome, webauthn: how.webauthn, store: cdpStore{ctx}}, version.UserAgent, nil
+	return &process{endpoint: endpoint, pid: b.Process().Pid, done: ctx.Done(), stop: stop, headed: how.headed, chrome: how.chrome, webauthn: how.webauthn, store: cdpStore{ctx},
+		watch: func(opened func(string)) { watchPages(endpoint, opened) }}, version.UserAgent, nil
 }
 
 // moveOffScreen puts the first tab's window far off every screen. A Mac moves a window that
@@ -857,7 +876,7 @@ const diskCacheBytes = 64 << 20
 
 // cacheDirs are the profile's caches, relative to it: what Chromium makes again, and
 // what grows with each site an agent opens. Sign-ins (cookies, Local Storage,
-// IndexedDB) are not in them; Settings ▸ Browser clears those by site.
+// IndexedDB) are not in them; Settings ▸ Browser and the sweep (bounds.go) clear those by site.
 var cacheDirs = []string{
 	"Default/Cache",
 	"Default/Code Cache",
@@ -866,6 +885,7 @@ var cacheDirs = []string{
 	"Default/DawnWebGPUCache",
 	"Default/Service Worker/CacheStorage",
 	"Default/Service Worker/ScriptCache",
+	"GPUPersistentCache",
 	"GrShaderCache",
 	"GraphiteDawnCache",
 	"ShaderCache",

@@ -140,6 +140,10 @@ func (d *Daemon) sweepHourly() {
 	d.sweepAssessments(nowFunc())
 	d.sweepRequests(nowFunc())
 	d.sweepGoneRoots()
+	if d.browser != nil {
+		// It may start the browser, so off the sweep.
+		d.goJob("sweep browser profiles", func() { d.browser.Sweep(nowFunc()) })
+	}
 }
 
 // trimConversations applies the bounds of a conversation (#6706) to each agent's, live and

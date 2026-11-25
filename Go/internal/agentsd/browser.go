@@ -73,6 +73,7 @@ func writeBrowserToolset(dir string) error {
 		if err != nil {
 			return err
 		}
+		// store-bounds: not a store: this build's own toolset files, written over at each start
 		if err := os.WriteFile(filepath.Join(dir, n.Name()), b, 0o644); err != nil {
 			return err
 		}
