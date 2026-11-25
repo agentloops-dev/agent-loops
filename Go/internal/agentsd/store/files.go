@@ -1,14 +1,17 @@
 package store
 
 import (
+	"cmp"
 	"crypto/rand"
 	"encoding/hex"
 	"os"
 	"path/filepath"
-	"sort"
+	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
+	"time"
 )
 
 // SyncWrites is whether WriteAtomically syncs the file before it renames it. Only tests
@@ -75,29 +78,89 @@ func WriteAtomically(file string, data []byte, mode os.FileMode) error {
 	return err
 }
 
-// SetAsidesKept is how many set-aside copies of one file are kept, of each kind (#2292).
-const SetAsidesKept = 3
+// The bounds of the set-aside copies of one file, of each kind (#2292, #6737). The newest is
+// kept whatever its size, until its age.
+const (
+	SetAsidesKept  = 3
+	SetAsidesBytes = 100 << 20
+	SetAsidesAge   = MaxAge
+)
 
-// TrimSetAsides deletes all but the newest SetAsidesKept copies of a file that a read set
-// aside as <name>.unreadable-<time> or <name>.corrupt-<time> (#2292): each is a whole
-// copy, and a file that is unreadable again and again would fill the disk.
-func TrimSetAsides(file string) {
-	for _, kind := range []string{".unreadable-", ".corrupt-"} {
-		matches, _ := filepath.Glob(globEscape(file) + kind + "*")
-		at := func(p string) int64 {
-			n, _ := strconv.ParseInt(strings.TrimPrefix(p, file+kind), 10, 64)
-			return n
+// setAsideName is a set-aside copy's name: the file, the kind, and the time it was set aside, as
+// Unix seconds or as the Mac app's daemon wrote it.
+var setAsideName = regexp.MustCompile(`^(.+)\.(unreadable|corrupt)-(?:(\d{1,12})|(\d{4}-\d{2}-\d{2}T\d{6}Z)(?:-\d+)?)$`)
+
+// setAsideTime is when the copy called name was set aside, of which file and kind.
+func setAsideTime(name string) (file, kind string, at time.Time, ok bool) {
+	m := setAsideName.FindStringSubmatch(name)
+	if m == nil {
+		return "", "", at, false
+	}
+	if m[3] != "" {
+		n, err := strconv.ParseInt(m[3], 10, 64)
+		return m[1], m[2], time.Unix(n, 0), err == nil
+	}
+	at, err := time.Parse("2006-01-02T150405Z", m[4])
+	return m[1], m[2], at, err == nil
+}
+
+// TrimSetAsides takes the copies of a file that a read set aside as <name>.unreadable-<time> or
+// <name>.corrupt-<time> under their bounds (#2292): each is a whole copy, and a file that is
+// unreadable again and again would fill the disk.
+func TrimSetAsides(file string) { SweepSetAside(file, time.Now()) }
+
+// SweepSetAside is TrimSetAsides at a time, and says how many went.
+func SweepSetAside(file string, now time.Time) int {
+	return sweepSetAsides(filepath.Dir(file), filepath.Base(file), now)
+}
+
+// SweepSetAsides takes every file's set-aside copies in dir under their bounds, and says how
+// many went.
+func SweepSetAsides(dir string, now time.Time) int { return sweepSetAsides(dir, "", now) }
+
+func sweepSetAsides(dir, only string, now time.Time) int {
+	type aside struct {
+		path string
+		at   time.Time
+		size int64
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return 0
+	}
+	copies := map[[2]string][]aside{}
+	for _, e := range entries {
+		file, kind, at, ok := setAsideTime(e.Name())
+		if !ok || only != "" && file != only {
+			continue
 		}
-		sort.SliceStable(matches, func(i, j int) bool {
-			if a, b := at(matches[i]), at(matches[j]); a != b {
-				return a > b
-			}
-			return matches[i] > matches[j]
+		fi, err := e.Info()
+		if err != nil || !fi.Mode().IsRegular() {
+			continue
+		}
+		// A clock that was ahead: the file's own time, so that the copy still ages.
+		if at.After(now) {
+			at = fi.ModTime()
+		}
+		key := [2]string{file, kind}
+		copies[key] = append(copies[key], aside{filepath.Join(dir, e.Name()), at, fi.Size()})
+	}
+	gone := 0
+	for _, list := range copies {
+		slices.SortFunc(list, func(a, b aside) int {
+			return cmp.Or(b.at.Compare(a.at), cmp.Compare(b.path, a.path))
 		})
-		for _, p := range matches[min(len(matches), SetAsidesKept):] {
-			os.Remove(p)
+		var total int64
+		for i, c := range list {
+			total += c.size
+			if i >= SetAsidesKept || i > 0 && total > SetAsidesBytes || now.Sub(c.at) >= SetAsidesAge {
+				if os.Remove(c.path) == nil {
+					gone++
+				}
+			}
 		}
 	}
+	return gone
 }
 
 // globEscape is a path with the glob's own characters taken as they are.

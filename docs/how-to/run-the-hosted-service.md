@@ -263,8 +263,12 @@ admin backup /data/backups/2026-10-22 <account>  # one
 Name each backup folder by its date, so the names sort oldest first. Each backup holds every
 account, so it is as large as the store. `--keep N` deletes all but the newest N backup folders
 beside the new one, after the new one is whole. It deletes only folders that `admin backup`
-wrote, and nothing else in `/data/backups`. Without `--keep`, the newest 7 are kept (#3648).
-`--keep 0` deletes none.
+wrote, and nothing else in `/data/backups`. N is 1 to 90; without `--keep`, the newest 7 are
+kept (#3648). An account's copy also goes at 90 days (#6787). The newest copy of an account that
+exists always stays, whatever its age. A copy in a bucket needs the bucket's own lifecycle rule.
+
+A backup that fails for one account goes on with the others, and the command then fails. A backup
+of an account over 10 MB is made, with a warning.
 
 `/data` is the service's volume, so a backup there is in the next snapshot too, but a loss of
 the disk takes it too. To keep a copy off the disk, copy each backup to a bucket in a different

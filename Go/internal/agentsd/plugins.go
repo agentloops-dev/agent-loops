@@ -176,6 +176,7 @@ func (d *Daemon) approvePlugin(r wire.PluginApproveRequest) (wire.PluginsList, e
 	if unreadable {
 		path := d.pluginApprovalsPath()
 		if b, err := os.ReadFile(path); err == nil {
+			// store-bounds: kind=blob; size=100MiB a file; count=3; age=90d; applied=on write and hourly sweep
 			if err := os.WriteFile(fmt.Sprintf("%s.unreadable-%d", path, time.Now().Unix()), b, 0o644); err != nil { //nolint:gosec // G306: the mode this file always had; only its error is new
 				log.Printf("plugins: could not keep a copy of %s: %v", path, err)
 			}

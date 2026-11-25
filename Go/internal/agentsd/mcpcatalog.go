@@ -442,6 +442,7 @@ func (d *Daemon) saveMCPApprovalsLocked(replacing bool) error {
 			return nil
 		}
 		if b, err := os.ReadFile(d.mcpApprovalsPath()); err == nil {
+			// store-bounds: kind=blob; size=100MiB a file; count=3; age=90d; applied=on write and hourly sweep
 			if err := os.WriteFile(fmt.Sprintf("%s.unreadable-%d", d.mcpApprovalsPath(), time.Now().Unix()), b, 0o644); err != nil { //nolint:gosec // G306: the mode this file always had; only its error is new
 				log.Printf("mcp: could not keep the unreadable %s aside: %v", filepath.Base(d.mcpApprovalsPath()), err)
 			}

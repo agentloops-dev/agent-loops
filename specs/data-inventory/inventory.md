@@ -144,7 +144,7 @@ from the root (`agentsd/backups.go:69,72`). It holds nothing else.
 | Store | Holds | Bound | Swept |
 |---|---|---|---|
 | `attachments/` | Files attached to prompts | 500 MB per folder; 7 days if no kept transcript names the file; `.tmp` after 1 day (`attachments.go:27,28,34`) | hourly, at start, on write. **Only in folders that still have an agent** (`attachments.go:82-90`). |
-| `dropbox/**` | Files handed to a workflow | 25 MB per file (`host.go:587`). **No total, count or age limit.** | never |
+| `dropbox/**` | Files handed to a workflow | 25 MB per file and 500 MB a folder; 90 days (#6711). | hourly |
 | `worktrees/<name>` + branch `agents/<name>` | Git worktrees agentsd makes | **none, on purpose: user-owned** (#6708, closed as not planned) | when its agent is archived or deleted (#3726, #3877) |
 | `reviews/runtimes/<rt>-<date>.md` | Runtime assessment reports | 1 MiB per report; newest 50 per machine; 90 days; not those git tracks (`assess_reports.go`, #6712) | hourly, on start and on score |
 | `workflows/assess-<id>.md` | Assessment throwaway workflow | **none** | never |
@@ -369,7 +369,7 @@ access pattern shown; do not label the whole file with one kind.
 | Transcripts and ordered event histories | Log | Transcript: 10 MB per chat and 90 days (#6706); runtime home: 1,200 MB and 90 days (#6707). Audit detail: configured 1–90 days; byte/count limit **not specified** (#6755). |
 | Usage, cost, timing, health, and capacity samples | Time series | 168 hours of hourly detail, then daily roll-up through 90 days where the store is usage data; each store's byte or count bound is **not specified until its issue sets it**. |
 | Lineage links and provenance | Graph plus log | Graph projection and ordered change log are separate stores; each collection's numeric bound is **not specified until its responsible issue sets it**. |
-| Attachments, artifacts, exports, backups, binary request bodies | Blob | Use #5713. Per-blob and owner quotas are **not specified until the responsible store issue sets them**. Keep and operator backup: 10 MB each, 90 days (#6709, #6787). |
+| Attachments, artifacts, exports, backups, binary request bodies | Blob | Use #5713. Per-blob and owner quotas are **not specified until the responsible store issue sets them**. Keep backup: 10 MB each, 90 days (#6709). Operator backup: 90 days, and a warning over 10 MB (#6787). |
 | Current state, indexes, routes, policy, and workflow run state | Key-value | Per-record, collection, and age limits are **not specified until the responsible store issue sets them**. |
 | Local copies, work cache, browser data, derived indexes | Cache | Evict by declared byte/count and age limits; individual limits are **not specified until the responsible store issue sets them**. |
 | Credentials, signing keys, and sealed connection material | Secret | Never expose plaintext through a list operation. Record lifetime and size limits are **not specified until the responsible store issue sets them**. |
@@ -387,7 +387,7 @@ newer than a row above for the same store.
 | `<folder>/.agents/worktrees/` | blob | Agent worktrees | User-owned: no bound, on purpose | `docs/explanation/compliance/data-and-retention.md (In each folder)` | #6708 |
 | `<root>/backups/` | blob | This machine's backups | The newest Keep (1-10); no size limit on a backup; no age | `Go/internal/agentsd/backups.go:44-45` | #6709 |
 | `<root>/browser/profile/` | blob | Browser sign-ins and cookies | Caches emptied at start, 64 MB HTTP cache; cookies until the site ends them | `Go/internal/agentsd/browser/browser.go:139,637` | #6710 |
-| `<folder>/.agents/dropbox/` | blob | Files handed to workflows | 25 MB a file, 500 MB a folder; no age, on purpose (#3648) | `Go/internal/agentsd/host.go:689,693` | #6711 |
+| `<folder>/.agents/dropbox/` | blob | Files handed to workflows | 25 MB a file and 500 MB a folder from dropbox/put, which refuses; 90 days from the last change or arrival; what git tracks stays | `Go/internal/agentsd/dropbox.go`, `host.go` (`putInDropbox`) | #6711 |
 | `<folder>/.agents/reviews/runtimes/` | document | Runtime assessment reports | 1 MiB per report; newest 50 per machine; 90 days | `Go/internal/agentsd/assess_reports.go` | #6712 |
 | `~/.agents/dismissed-leads.json` | key-value | Dismissed epics | None: an entry goes only when its epic gets a lead | `Go/internal/agentsd/worksuggest.go:32,55-59,165` | #6713 |
 | `~/.agents/summaries/` | document | Daily summaries from before #5853 | 1 MiB per page; newest 3; 90 days | `Go/internal/agentsd/oldsummaries.go` | #6714 |
@@ -413,7 +413,7 @@ newer than a row above for the same store.
 | `<root>/devices.json` | document | Paired devices | 256 of 4 KiB each, a new one past that refused; 90 days unseen | `Go/internal/agentsd/devices.go` (`deviceLimit`) | #6734 |
 | `<logs>/daemon.log` | log | What the machine did | 4 MB and one older file, 7 days; the oldest go first | `Go/internal/rolllog/rolllog.go` | #6735 |
 | `<logs>/mcp-logs/` | log | Hosted MCP servers' stderr | 256 KiB and one older file a server, 10 MB in all, 7 days; the oldest go first | `Go/internal/agentsd/hostedmcp.go` (`dropOldHostedLogs`) | #6736 |
-| `<file>.unreadable-*`, `<file>.corrupt-*` | blob | Stores set aside when unreadable | The newest 3, no age | `Go/internal/agentsd/store/files.go:79` | #6737 |
+| `<file>.unreadable-*`, `<file>.corrupt-*` | blob | Stores set aside when unreadable | The newest 3 and 100 MB of each file and kind; 90 days | `Go/internal/agentsd/store/files.go` (`sweepSetAsides`) | #6737 |
 | `~/.agents-secrets/sealed.json` | secret | Sealed secrets | No count limit | `Go/internal/agentsd/sealedsecrets.go:122` | #6738 |
 | `~/.agents-secrets/sessions/` | secret | Secrets for one session | No count limit; values go on archive, the file on delete | `Go/internal/agentsd/sessionsecrets.go:57` | #6739 |
 | `~/.agents-secrets/mcp-sign-ins.json` | secret | MCP OAuth tokens | No count limit | `Go/internal/agentsd/mcpcatalog/signins.go:45,134` | #6740 |
@@ -463,7 +463,7 @@ newer than a row above for the same store.
 | hosted `v1/blocked/`, `v1/blocked/email/` | key-value | The operator's block lists | 10,000 each of 4 KiB, else refused; no age, until unblocked (Alex, 2026-11-24: a blocked person must not come back) | `Go/internal/hosted/recordbounds.go` (`putBlock`, `putEmailBlock`) | #6784 |
 | hosted `v1/accounts/`, sign-in links, `v1/emails/`, `v1/usage/` | document | Accounts | 100 accounts; until Delete Account | `Go/internal/hosted/signup.go:45; accounts.go:140-146,302-317` | #6785 |
 | hosted `v1/waitlist/`, `v1/waiting/` | document | The waitlist | 10,000 of 4 KiB, else refused; 90 days, or sign-up or a block | `Go/internal/hosted/recordbounds.go` (`sweepWaitlist`) | #6786 |
-| Operator backups | blob | Each account's store | The newest 7; `--keep 0` keeps all; no age | `Go/internal/hosted/backup.go:58-83; Go/cmd/agents-hosted/admin.go:33-43` | #6787 |
+| Operator backups | blob | Each account's store | The newest 7, or 1 to 90; 90 days; the newest copy of an account that exists stays; over 10 MB is made, with a warning | `Go/internal/hosted/backup.go` (`PruneBackups`) | #6787 |
 | `control.log` (`~/Library/Logs/Agents/control.log` or `/data/control.log`) | log | Operational log lines | 4 MB and one older file, 7 days; the oldest go first | `Go/internal/rolllog/rolllog.go` | #6901 |
 | Mac `<cache>/work-cache.sqlite` | cache | Work cache: forge items, bodies, comments, page answers | 200 MiB (Remote: 50 MiB), least recently drawn out first; 4 MiB a record; 90 days (#6788) | `Packages/AgentsKit/Sources/AgentsKitCore/Client/WorkCache.swift` (`Bounds`) | #6788 |
 | Web IndexedDB `agents` › `work` | cache | Work cache: forge items, bodies, comments, page answers | 50 MiB, least recently drawn out first; 4 MiB a record; 90 days (#6976) | `Web/src/model/workCache.ts` (`webBounds`) | #6976 |

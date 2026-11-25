@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
@@ -29,9 +30,25 @@ type backedUp struct {
 	Data []byte `json:"data"`
 }
 
+// The bounds of the operator's backups (#6787): they are applied after each backup, as the
+// service does not know the operator's folder.
+const (
+	MaxBackups = 90
+	backupAge  = 90 * 24 * time.Hour
+	// BackupWarnBytes is the size of an account's backup that Backup's caller warns of. The
+	// backup is made all the same (Alex, 2026-11-24): an account is never left without one.
+	BackupWarnBytes = 10 << 20
+)
+
+// AccountBackup is one account's backup that Backup made.
+type AccountBackup struct {
+	ID    string
+	Bytes int64
+}
+
 // Backup copies each account in ids, or every account when there are none, into dir, and
-// gives the ids it copied.
-func (a Admin) Backup(ctx context.Context, dir string, ids []string) ([]string, error) {
+// gives those it copied. One that fails does not stop the others.
+func (a Admin) Backup(ctx context.Context, dir string, ids []string) ([]AccountBackup, error) {
 	if len(ids) == 0 {
 		list, err := a.Accounts(ctx)
 		if err != nil {
@@ -41,92 +58,171 @@ func (a Admin) Backup(ctx context.Context, dir string, ids []string) ([]string, 
 			ids = append(ids, acc.ID)
 		}
 	}
-	var done []string
+	var done []AccountBackup
+	var failed []error
 	for _, id := range ids {
-		if err := a.backUp(ctx, dir, id); err != nil {
-			return done, fmt.Errorf("%s: %w", id, err)
+		n, err := a.backUp(ctx, dir, id)
+		if err != nil {
+			failed = append(failed, fmt.Errorf("%s: %w", id, err))
+			continue
 		}
-		done = append(done, id)
+		done = append(done, AccountBackup{ID: id, Bytes: n})
 	}
-	return done, nil
+	return done, errors.Join(failed...)
 }
 
-// PruneBackups keeps the newest keep backups beside dir, dir among them, and deletes the
-// rest (#3123): each backup holds the whole store, on the disk the store is on. Backups are
-// the folders in dir's parent that hold only accounts' folders, each with its account.json;
-// they are named by date, so their names sort oldest first. It gives the folders it deleted.
-func PruneBackups(dir string, keep int) ([]string, error) {
+// backupCopy is one account's copy in a backup.
+type backupCopy struct {
+	backup, id string // the backup's folder's name, and the account
+	at         time.Time
+	whole      bool
+}
+
+// PruneBackups takes the backups beside dir, dir among them, under their bounds (#3123, #6787):
+// the newest keep, and no copy of an account 90 days old. The newest whole copy of an account
+// that is still here always stays, and so does dir. Backups are the folders in dir's parent that
+// hold only what Backup writes; they are named by date, so their names sort oldest first. It
+// gives what it deleted.
+func (a Admin) PruneBackups(ctx context.Context, dir string, keep int) ([]string, error) {
 	if keep < 1 {
 		return nil, errors.New("keep at least the backup just made")
 	}
-	dir = filepath.Clean(dir)
-	parent := filepath.Dir(dir)
+	dir, err := filepath.Abs(dir)
+	if err != nil {
+		return nil, err
+	}
+	accounts, err := a.Accounts(ctx)
+	if err != nil {
+		return nil, err
+	}
+	live := map[string]bool{}
+	for _, acc := range accounts {
+		live[acc.ID] = true
+	}
+	parent, this := filepath.Dir(dir), filepath.Base(dir)
 	entries, err := os.ReadDir(parent)
 	if err != nil {
 		return nil, err
 	}
-	var older []string // ReadDir sorts by name
+	var names []string // ReadDir sorts by name
+	copies := map[string][]backupCopy{}
 	for _, e := range entries {
-		p := filepath.Join(parent, e.Name())
-		if p == dir || !e.IsDir() || !isBackup(p) {
+		if !e.IsDir() {
 			continue
 		}
-		if e.Name() > filepath.Base(dir) {
-			// A backup named after this one is newer: keep it, and count it.
-			keep--
-			continue
+		if list := backupCopies(parent, e.Name()); list != nil {
+			names = append(names, e.Name())
+			copies[e.Name()] = list
 		}
-		older = append(older, p)
 	}
-	keep-- // dir itself
+	stays := newestCopies(names, copies, live)
+	// dir is one of those kept, whatever its name, and so is a backup named after it: it is newer.
+	spare := len(names) - keep
 	var gone []string
-	for len(older) > max(keep, 0) {
-		if err := os.RemoveAll(older[0]); err != nil {
-			return gone, err
+	for _, name := range names {
+		over := spare > 0 && name < this
+		if over {
+			spare--
 		}
-		gone = append(gone, older[0])
-		older = older[1:]
+		left := len(copies[name])
+		for _, c := range copies[name] {
+			if stays[[2]string{name, c.id}] || !over && a.now().Sub(c.at) < backupAge {
+				continue
+			}
+			p := filepath.Join(parent, name, c.id)
+			if err := os.RemoveAll(p); err != nil {
+				return gone, err
+			}
+			gone = append(gone, p)
+			left--
+		}
+		if left == 0 {
+			if err := os.Remove(filepath.Join(parent, name)); err != nil {
+				return gone, err
+			}
+		}
 	}
 	return gone, nil
 }
 
-// isBackup is whether dir is what Backup writes: one or more accounts' folders, and
-// nothing else.
-func isBackup(dir string) bool {
-	entries, err := os.ReadDir(dir)
-	if err != nil || len(entries) == 0 {
-		return false
-	}
-	for _, e := range entries {
-		if !e.IsDir() || !validID(e.Name()) {
-			return false
+// newestCopies is the newest whole copy of each live account: by its backup's name, and by its
+// own time, as a folder can have another name or be copied back from elsewhere.
+func newestCopies(names []string, copies map[string][]backupCopy, live map[string]bool) map[[2]string]bool {
+	byName, byTime := map[string]backupCopy{}, map[string]backupCopy{}
+	for _, name := range names {
+		for _, c := range copies[name] {
+			if !c.whole || !live[c.id] {
+				continue
+			}
+			byName[c.id] = c
+			if was, ok := byTime[c.id]; !ok || !c.at.Before(was.at) {
+				byTime[c.id] = c
+			}
 		}
-		if _, err := os.Stat(filepath.Join(dir, e.Name(), "account.json")); err != nil {
-			return false
+	}
+	stays := map[[2]string]bool{}
+	for _, newest := range []map[string]backupCopy{byName, byTime} {
+		for id, c := range newest {
+			stays[[2]string{c.backup, id}] = true
 		}
 	}
-	return true
+	return stays
 }
 
-func (a Admin) backUp(ctx context.Context, dir, id string) error {
+// backupCopies is the accounts' copies in parent's folder name, or none when it holds anything
+// that Backup does not write. A copy that was cut short is not whole.
+func backupCopies(parent, name string) []backupCopy {
+	entries, err := os.ReadDir(filepath.Join(parent, name))
+	if err != nil {
+		return nil
+	}
+	var list []backupCopy
+	for _, e := range entries {
+		if !e.IsDir() || !validID(e.Name()) {
+			return nil
+		}
+		files, err := os.ReadDir(filepath.Join(parent, name, e.Name()))
+		if err != nil || len(files) == 0 {
+			return nil
+		}
+		c := backupCopy{backup: name, id: e.Name()}
+		has := map[string]bool{}
+		for _, f := range files {
+			fi, err := f.Info()
+			if err != nil || !fi.Mode().IsRegular() || f.Name() != "account.json" && f.Name() != "records.jsonl" && !strings.HasPrefix(f.Name(), ".records-") {
+				return nil
+			}
+			has[f.Name()] = true
+			if fi.ModTime().After(c.at) {
+				c.at = fi.ModTime()
+			}
+		}
+		c.whole = has["account.json"] && has["records.jsonl"]
+		list = append(list, c)
+	}
+	return list
+}
+
+func (a Admin) backUp(ctx context.Context, dir, id string) (int64, error) {
 	if !validID(id) {
-		return fmt.Errorf("%q is not an account's id", id)
+		return 0, fmt.Errorf("%q is not an account's id", id)
 	}
 	o, err := a.Store.Get(ctx, accountKey(id))
 	if err != nil {
-		return err
+		return 0, err
 	}
 	if o == nil {
-		return errors.New("there is no such account")
+		return 0, errors.New("there is no such account")
 	}
 	into := filepath.Join(dir, id)
 	if err := os.MkdirAll(into, 0o700); err != nil {
-		return err
+		return 0, err
 	}
 	// Written beside, then moved, so a backup cut short leaves the one before whole.
+	// store-bounds: kind=blob; count=90 backups at most, 7 by default; age=90d; applied=after each backup (PruneBackups)
 	tmp, err := os.CreateTemp(into, ".records-*")
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer os.Remove(tmp.Name())
 	w := bufio.NewWriter(tmp)
@@ -135,33 +231,41 @@ func (a Admin) backUp(ctx context.Context, dir, id string) error {
 	keys, err := st.List(ctx, "")
 	if err != nil {
 		_ = tmp.Close()
-		return err
+		return 0, err
 	}
 	for _, k := range keys {
 		r, err := st.Get(ctx, k.Key)
 		if err != nil {
 			_ = tmp.Close()
-			return err
+			return 0, err
 		}
 		if r == nil {
 			continue
 		}
 		if err := enc.Encode(backedUp{Key: k.Key, Data: r.Data}); err != nil {
 			_ = tmp.Close()
-			return err
+			return 0, err
 		}
 	}
 	if err := w.Flush(); err != nil {
 		_ = tmp.Close()
-		return err
+		return 0, err
 	}
 	if err := tmp.Close(); err != nil {
-		return err
+		return 0, err
 	}
 	if err := os.Rename(tmp.Name(), filepath.Join(into, "records.jsonl")); err != nil {
-		return err
+		return 0, err
 	}
-	return os.WriteFile(filepath.Join(into, "account.json"), o.Data, 0o600)
+	// store-bounds: kind=blob; count=90 backups at most, 7 by default; age=90d; applied=after each backup (PruneBackups)
+	if err := os.WriteFile(filepath.Join(into, "account.json"), o.Data, 0o600); err != nil {
+		return 0, err
+	}
+	size, err := os.Stat(filepath.Join(into, "records.jsonl"))
+	if err != nil {
+		return 0, err
+	}
+	return size.Size() + int64(len(o.Data)), nil
 }
 
 // Delete deletes an account and its control plane's records, as Delete Account does. It
