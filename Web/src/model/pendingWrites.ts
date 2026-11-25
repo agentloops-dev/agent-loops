@@ -52,16 +52,23 @@ function stops(state: AgentState): boolean {
   return state === "starting" || state === "running" || state === "waitingOnUser" || state === "queued";
 }
 
+function archiveWhy(agent: Agent): Pick<Agent, "archiveWhy"> {
+  const request = agent.archiveRequest;
+  const why = agent.archiveWhy ?? (request !== undefined && "requested" in request ? request.requested.reason : undefined);
+  return why === undefined ? {} : { archiveWhy: why };
+}
+
 /** The record as the person expects to see it once the host has done this. */
 export function applyWrite(agent: Agent, write: AgentWrite, now = new Date()): Agent {
   switch (write.kind) {
     case "archive":
-      return { ...omitting(agent, "archiveRequest"), state: "archived", archivedAt: agent.archivedAt ?? toWireDate(now),
+      // Why it asked stays on the archived record (#6067), as the host keeps it.
+      return { ...omitting(agent, "archiveRequest"), ...archiveWhy(agent), state: "archived", archivedAt: agent.archivedAt ?? toWireDate(now),
         archivedReason: "byUser" };
     case "unarchive":
       if (agent.state !== "archived") return agent;
       // As the host does: finished for a turn that ended itself, stopped otherwise.
-      return { ...omitting(agent, "archivedAt", "archivedReason"), state: agent.endedReason === "endTurn" ? "finished" : "stopped",
+      return { ...omitting(agent, "archivedAt", "archivedReason", "archiveWhy"), state: agent.endedReason === "endTurn" ? "finished" : "stopped",
         endedReason: agent.endedReason ?? "unrecognised" };
     case "stop":
       return stops(agent.state) ? { ...agent, state: "stopped", endedReason: "cancelled" } : agent;

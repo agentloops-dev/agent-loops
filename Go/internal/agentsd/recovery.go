@@ -111,6 +111,7 @@ func (d *Daemon) recoverLeftWorking() []leftAgent {
 			d.change(a.ID, func(a *wire.Agent) {
 				a.State, a.EndedReason = wire.AgentStateStopped, reason(wire.EndedReasonImported)
 				a.EventWait, a.PendingMove, a.ArchiveRequest, a.AfterTurn = nil, nil, nil, nil
+				a.ArchiveWhy = nil
 			})
 			d.record(a.ID, runtimeNote(importedNote))
 			continue

@@ -315,6 +315,7 @@ struct AgentRow: View {
                             Label(line, icon: ArchiveRequestWords.symbol)
                                 .appText(.fine)
                                 .foregroundStyle(Paper.secondary)
+                                .help(ArchiveRequestWords.detail(agent))
                             Button(ArchiveRequestWords.archive) {
                                 Task { await model.archive(agent.id, andLeave: true) }
                             }
@@ -568,7 +569,9 @@ private struct SessionMark: View {
         }
         .frame(width: 16 * scale, height: 16 * scale)
         // The tool by name on the pointer (#1902); the other marks say theirs in the row.
+        // and why it asks to be archived (#6067).
         .help(kind == .needsYou ? StatusShape.words(row: agent, isComingBack: false)
+            : kind == .asksToArchive ? ArchiveRequestWords.detail(agent)
             : tool.map(RunningToolWords.label) ?? "")
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(label)
@@ -582,7 +585,7 @@ private struct SessionMark: View {
         case .waiting: "Waiting"
         case .paused: "Paused"
         case .done: "Done"
-        case .asksToArchive: ArchiveRequestWords.mark
+        case .asksToArchive: ArchiveRequestWords.detail(agent)
         }
     }
 }

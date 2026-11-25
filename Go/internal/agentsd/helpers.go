@@ -270,9 +270,10 @@ func (d *Daemon) stopHelper(t *wire.Agent) bool {
 
 // requestArchiveHelper is archive_session with a helper's id: archived now when agents may
 // archive it and it is not running, else it waits for the person's approval.
-func (d *Daemon) requestArchiveHelper(caller, target wire.UUID) (string, error) {
+func (d *Daemon) requestArchiveHelper(caller, target wire.UUID, why *string) (string, error) {
 	if s := d.thereNamed(caller, string(target)); s != nil && d.Store.Agent(target) == nil {
-		return d.thereOp(caller, s, "archive")
+		reply, err := d.callThere(caller, s, wire.SessionCall{Op: "archive", Reason: why}, 0)
+		return reply.Said, err
 	}
 	t, err := d.helperTarget(caller, target, "request")
 	if err != nil {
@@ -281,6 +282,7 @@ func (d *Daemon) requestArchiveHelper(caller, target wire.UUID) (string, error) 
 	name, folder := quotedTitle(t.Title), folderPath(t)
 	may := d.agentsMayArchive(folder)
 	if may && !helperBusy(t) {
+		d.sayArchiveWhy(t.ID, why)
 		if err := d.archiveBy(t.ID, wire.AgentArchivedReasonByAgent); err != nil {
 			return "", err
 		}
@@ -292,7 +294,7 @@ func (d *Daemon) requestArchiveHelper(caller, target wire.UUID) (string, error) 
 		return name + " is already set to wait for approval when its turn ends; nothing changed.", nil
 	}
 	working := inFlight(t.State)
-	d.requestArchive(t.ID)
+	d.requestArchive(t.ID, why)
 	if working {
 		if may {
 			return name + " will be archived when its turn ends, if it ends done or with nothing to do; otherwise the person approves it. " +

@@ -507,7 +507,7 @@
     "title": "Stop a session you started"
   },
   {
-    "description": "With no id: call it when your work is done, you have cleaned up, and nothing is left for the person to see. It archives this session once this turn ends. Do not call it when you showed the person a file with show_file, asked them a question, or have a report for them: end the turn instead. It holds only if the turn ends done or nothing_to_do; anything the person sends first drops it. Where nobody needs to approve it — your workflow lets its run archive itself, the session that started you may archive you, or the person lets agents archive the chats they start (a setting, on unless they turn it off) — it is archived, if the turn ends done or nothing_to_do and, for the person's own chat, showed no file. Otherwise the person approves archiving it from your row, or leaves it. Goes with move_worktree: you move, and stay there waiting for approval.\n\nWith an id: the same for a session you started with start_session, or one it started, once its work is merged or abandoned. Where this folder lets you archive the sessions you started (a Folder Settings switch) it is archived now, or once its turn ends; otherwise the person approves it. Either way its running place is freed once it is done; it keeps its not-archived place until it is archived. Archive a finished session rather than removing its worktree under it. Never the person's own sessions or another session's.",
+    "description": "With no id: call it when your work is done, you have cleaned up, and nothing is left for the person to see. Say why in reason; with no id it is required, and the person reads it on the card that asks to archive this session. It archives this session once this turn ends. Do not call it when you showed the person a file with show_file, asked them a question, or have a report for them: end the turn instead. It holds only if the turn ends done or nothing_to_do; anything the person sends first drops it. Where nobody needs to approve it — your workflow lets its run archive itself, the session that started you may archive you, or the person lets agents archive the chats they start (a setting, on unless they turn it off) — it is archived, if the turn ends done or nothing_to_do and, for the person's own chat, showed no file. Otherwise the person approves archiving it from your row, or leaves it. Goes with move_worktree: you move, and stay there waiting for approval.\n\nWith an id: the same for a session you started with start_session, or one it started, once its work is merged or abandoned. Where this folder lets you archive the sessions you started (a Folder Settings switch) it is archived now, or once its turn ends; otherwise the person approves it. Either way its running place is freed once it is done; it keeps its not-archived place until it is archived. Archive a finished session rather than removing its worktree under it. Never the person's own sessions or another session's.",
     "inputSchema": {
       "properties": {
         "description": {
@@ -516,6 +516,10 @@
         },
         "id": {
           "description": "The id start_session or list_sessions gave. Leave out for yourself.",
+          "type": "string"
+        },
+        "reason": {
+          "description": "Required with no id: what is done, and why nothing is left for the person, in one short sentence (at most 200 characters), such as \"PR #12 merged and the worktree is removed\".",
           "type": "string"
         }
       },

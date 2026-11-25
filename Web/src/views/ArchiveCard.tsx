@@ -1,11 +1,11 @@
 // An agent's ask to be archived (#584, #649), as an Ask at the end of the transcript, the way a
-// tool's permission question is asked (#827, #5031): what the agent last said, and Archive or Keep
+// tool's permission question is asked (#827, #5031): why it asks (#6067), and Archive or Keep
 // Session. The window and the Remote draw ArchiveRequestCard.swift.
 import { useSignal } from "@preact/signals";
 import type { Agent } from "../protocol/generated";
 import type { Store } from "../model/store";
 import { asksToArchive } from "../model/groups";
-import { archiveHelp, archiveLabel, archiveQuestion, keepLabel, noReport } from "../model/archiveWords";
+import { archiveBody, archiveHelp, archiveLabel, archiveQuestion, keepLabel } from "../model/archiveWords";
 import { archiveWithChildren } from "./SessionMenu";
 import { Ask } from "./Ask";
 
@@ -24,7 +24,7 @@ export function ArchiveCard({ store, host, agent, disabled }: { store: Store; ho
         <button class="prominent" disabled={held} title={archiveHelp} data-default=""
           onClick={() => answer(() => archiveWithChildren(store, host, agent))}>{archiveLabel}</button>
       </>}>
-      <p class="quiet">{agent.report?.message ?? noReport}</p>
+      <p class="quiet">{archiveBody(agent)}</p>
     </Ask>
   );
 }

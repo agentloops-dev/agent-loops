@@ -62,7 +62,7 @@ mark is. It stays in its group, usually **Done**; a
 partly done one stays under **Needs you**. Nothing is hidden until you approve it.
 
 1. Open the chat. At the end of the conversation, a card in orange says **The agent asks
-   to archive this session**, with what the agent said last. Click **Approve** to archive
+   to archive this session**, with why the agent asks. Click **Approve** to archive
    it, or **Keep Session** to keep it. The card is the same on the Mac, iPhone, iPad and the
    web page. When you are scrolled up, **↓** takes you back to it at the end.
 2. Or use **Needs You**, at the top of the sidebar. It shows every chat waiting for

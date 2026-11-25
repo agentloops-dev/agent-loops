@@ -54,6 +54,10 @@ func startedByThePerson(a *wire.Agent) bool {
 // is being written to. It says whether a request was made now, and whether the agent is to
 // be archived instead. showedFile is whether the turn called show_file (#1802).
 func (d *Daemon) settleArchiveRequest(a *wire.Agent, next wire.AgentState, why wire.EndedReason, showedFile bool) (requested, archiveNow bool) {
+	said := a.ArchiveWhy
+	if r := a.ArchiveRequest; r != nil && r.WhenTurnEnds != nil && r.WhenTurnEnds.Reason != nil {
+		said = r.WhenTurnEnds.Reason
+	}
 	wasRequested := a.ArchiveRequest != nil && a.ArchiveRequest.Requested != nil
 	endedAsAsked := next == wire.AgentStateFinished && why == wire.EndedReasonEndTurn && len(a.QueuedPrompts) == 0
 	asked := false
@@ -81,13 +85,18 @@ func (d *Daemon) settleArchiveRequest(a *wire.Agent, next wire.AgentState, why w
 		case done && (mine || a.StartedByAgent != nil && d.agentsMayArchive(folderPath(a))):
 			a.ArchiveRequest, archiveNow = nil, true
 		case !wasRequested:
-			a.ArchiveRequest = &wire.ArchiveRequest{Requested: &wire.ArchiveRequestRequested{At: now()}}
+			a.ArchiveRequest = &wire.ArchiveRequest{Requested: &wire.ArchiveRequestRequested{At: now(), Reason: said}}
 			requested = true
+		case said != nil: // asked again: the newest reason is the true one
+			a.ArchiveRequest.Requested.Reason = said
 		}
 	case a.ArchiveRequest != nil && a.ArchiveRequest.WhenTurnEnds != nil:
 		a.ArchiveRequest = nil
 	}
-	a.AfterTurn = nil
+	a.AfterTurn, a.ArchiveWhy = nil, nil
+	if archiveNow {
+		a.ArchiveWhy = said
+	}
 	return requested, archiveNow
 }
 
@@ -127,7 +136,7 @@ func (d *Daemon) afterArchiveRequest(id wire.UUID, requested, archiveNow bool) {
 // archived once its turn ends. A helper's id is the helpers' call.
 func (d *Daemon) archiveSession(caller wire.UUID, args map[string]json.RawMessage) (string, error) {
 	if id := strings.TrimSpace(argString(args, "id")); id != "" && !strings.EqualFold(id, string(caller)) {
-		return d.requestArchiveHelper(caller, wire.UUID(strings.ToUpper(id)))
+		return d.requestArchiveHelper(caller, wire.UUID(strings.ToUpper(id)), archiveReason(args))
 	}
 	a := d.Store.Agent(caller)
 	if a == nil {
@@ -136,8 +145,12 @@ func (d *Daemon) archiveSession(caller wire.UUID, args map[string]json.RawMessag
 	if w := a.EventWait; w != nil && w.Ending == nil {
 		return "", Invalid("Nothing was recorded: you are waiting for %s, and a conversation asking to be archived is not waiting to be woken. Call cancel_wait first.", waitLabel(w))
 	}
+	why := archiveReason(args)
+	if why == nil {
+		return "", Invalid(archiveNeedsReason)
+	}
 	after := wire.AfterTurnRequestArchive
-	d.change(caller, func(a *wire.Agent) { a.AfterTurn = &after })
+	d.change(caller, func(a *wire.Agent) { a.AfterTurn, a.ArchiveWhy = &after, why })
 	note := "Once this turn ends, this conversation waits for the person to approve archiving it."
 	switch {
 	case startedByThePerson(a) && d.agentsMayArchiveMyChats():
@@ -150,8 +163,38 @@ func (d *Daemon) archiveSession(caller wire.UUID, args map[string]json.RawMessag
 	return note + " Anything the person sends before then drops it.", nil
 }
 
+// archiveReasonMost is the most characters of a reason kept: a line or two on the card.
+const archiveReasonMost = 200
+
+// archiveNeedsReason tells an agent that gave no reason what to do (#6067).
+const archiveNeedsReason = "Nothing was recorded: archive_session with no id needs a reason. Call it again with reason: " +
+	"one short sentence that says what is done, and why nothing is left for the person, such as “PR #12 merged and the worktree is removed”."
+
+// archiveReason is the reason in args on one line, cut to archiveReasonMost; nil for none.
+func archiveReason(args map[string]json.RawMessage) *string {
+	return reasonLine(argString(args, "reason"))
+}
+
+func reasonLine(said string) *string {
+	said = oneLine(said)
+	if said == "" {
+		return nil
+	}
+	if len([]rune(said)) > archiveReasonMost {
+		said = strings.TrimSpace(clip(said, archiveReasonMost-1)) + "…"
+	}
+	return &said
+}
+
+// sayArchiveWhy keeps why on the record of a session about to be archived.
+func (d *Daemon) sayArchiveWhy(id wire.UUID, why *string) {
+	if why != nil {
+		d.change(id, func(a *wire.Agent) { a.ArchiveWhy = why })
+	}
+}
+
 // requestArchive is DaemonCore.requestArchive: when its turn ends if it is working, now if not.
-func (d *Daemon) requestArchive(id wire.UUID) {
+func (d *Daemon) requestArchive(id wire.UUID, why *string) {
 	a := d.Store.Agent(id)
 	if a == nil || a.State == wire.AgentStateArchived {
 		return
@@ -164,9 +207,9 @@ func (d *Daemon) requestArchive(id wire.UUID) {
 	requested := false
 	d.change(id, func(a *wire.Agent) {
 		if working {
-			a.ArchiveRequest = &wire.ArchiveRequest{WhenTurnEnds: &wire.ArchiveRequestWhenTurnEnds{Since: now()}}
+			a.ArchiveRequest = &wire.ArchiveRequest{WhenTurnEnds: &wire.ArchiveRequestWhenTurnEnds{Since: now(), Reason: why}}
 		} else {
-			a.ArchiveRequest = &wire.ArchiveRequest{Requested: &wire.ArchiveRequestRequested{At: now()}}
+			a.ArchiveRequest = &wire.ArchiveRequest{Requested: &wire.ArchiveRequestRequested{At: now(), Reason: why}}
 			requested = true
 		}
 	})
