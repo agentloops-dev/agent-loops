@@ -102,6 +102,15 @@ func (m *Methods) setLabels(ctx context.Context, request wire.MachineLabelsReque
 	for _, l := range request.Remove {
 		remove[strings.ToLower(strings.TrimSpace(l))] = true
 	}
+	// A label is what a workflow's runs-on picks a machine by, and a control-only machine
+	// runs no work (#7310): a call that names one changes nothing.
+	for _, id := range request.Machines {
+		if m.owns(from, string(id)) {
+			if err := m.refuseControlOnly(string(id)); err != nil {
+				return wire.MachineLabelsResult{}, err
+			}
+		}
+	}
 	replace := request.Set != nil
 	changed := 0
 	for _, id := range request.Machines {
