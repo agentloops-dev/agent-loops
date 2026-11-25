@@ -257,7 +257,7 @@ func HostCode(ctx context.Context, home string, d Deps) (string, error) {
 		// A team's control plane gives this machine no agents (#7305): no wait changes that.
 		if strings.Contains(out, machine.BothRolesRefused) {
 			_ = writeHostDropIn(l, false)
-			return "", errors.New(machine.BothRolesRefused)
+			return "", fmt.Errorf("%s", machine.BothRolesRefused)
 		}
 		if time.Now().After(deadline) {
 			return "", fmt.Errorf("the control plane did not make a host code in %s: %v: %s", d.Wait, err, strings.TrimSpace(out))
