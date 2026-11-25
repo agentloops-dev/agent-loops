@@ -37,7 +37,6 @@ func TestRemovedConnectorsTooLargeToCarryOverAreNotLost(t *testing.T) {
 
 // The old file's deploys come over, less one that is too large.
 func TestADeployTooLargeToBringOverLeavesTheOthers(t *testing.T) {
-	t.Skip("#7182")
 	t.Parallel()
 	root := t.TempDir()
 	seen := deployRecord{Deploy: wire.Deploy{State: wire.DeployStateSucceeded}, Environments: []string{}, Seen: wire.DateOf(nowFunc())}
@@ -58,7 +57,6 @@ func TestADeployTooLargeToBringOverLeavesTheOthers(t *testing.T) {
 
 // The old lists come over, less an entry that is too large.
 func TestAnElsewhereEntryTooLargeToCarryLeavesTheOthers(t *testing.T) {
-	t.Skip("#7182")
 	t.Parallel()
 	root := t.TempDir()
 	entry := func(id wire.UUID, folder string) string {
@@ -75,7 +73,6 @@ func TestAnElsewhereEntryTooLargeToCarryLeavesTheOthers(t *testing.T) {
 
 // The old marks come over within the largest, and so does an old operation.
 func TestTheOldFilesComeOverWithinTheLargest(t *testing.T) {
-	t.Skip("#7182")
 	t.Parallel()
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, "review-dismissals.json"), `{"/a":["https://x/`+strings.Repeat("u", 8<<10)+`","https://x/1"]}`)

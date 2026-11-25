@@ -148,6 +148,50 @@ func (f *JSONFile[T]) Update(change func(map[string]T) error) error {
 	return nil
 }
 
+// CarryOver writes the entries of old, the file's bytes in an earlier form, in this form. An entry
+// over its largest size is left out and named in the log, and then old is kept whole, set aside.
+// So it is when whole is false: old has more than entries.
+func (f *JSONFile[T]) CarryOver(old []byte, whole bool, entries map[string]T) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	count := len(entries)
+	f.expire(entries)
+	dropped := count - len(entries)
+	var large []string
+	for key, v := range entries {
+		data, err := diskjson.Marshal(v)
+		if err != nil {
+			return err
+		}
+		if size := len(key) + len(data); size > f.spec.Bounds.MaxRecordBytes {
+			large = append(large, fmt.Sprintf("%.200q of %d bytes", key, size))
+			delete(entries, key)
+		}
+	}
+	if len(large) > 0 || !whole {
+		// A copy, not a rename: until the new file is written, the old one is there.
+		aside := f.asideName()
+		// store-bounds: not a store: the old file, under the set-aside copies' bounds
+		if err := WriteAtomically(aside, old, 0o600); err != nil {
+			return err
+		}
+		TrimSetAsides(f.path())
+		slices.Sort(large)
+		for _, l := range large {
+			log.Printf("%s: did not carry over %s, at most %d; the old file is %s", f.Name(), l, f.spec.Bounds.MaxRecordBytes, aside)
+		}
+	}
+	count = len(entries)
+	f.evict(entries)
+	if err := f.write(entries, old); err != nil {
+		return err
+	}
+	if dropped += count - len(entries); dropped > 0 {
+		log.Printf("retention: %d entries of %s past its limits", dropped, f.Name())
+	}
+	return nil
+}
+
 // Sweep takes the file under its limits, and says how many entries went.
 func (f *JSONFile[T]) Sweep() (int, error) {
 	f.mu.Lock()
@@ -208,11 +252,15 @@ func (f *JSONFile[T]) write(entries map[string]T, old []byte) error {
 
 func (f *JSONFile[T]) setAside() error {
 	file := f.path()
-	if err := os.Rename(file, file+".corrupt-"+strconv.FormatInt(f.now().Unix(), 10)); err != nil {
+	if err := os.Rename(file, f.asideName()); err != nil {
 		return err
 	}
 	TrimSetAsides(file)
 	return nil
+}
+
+func (f *JSONFile[T]) asideName() string {
+	return f.path() + ".corrupt-" + strconv.FormatInt(f.now().Unix(), 10)
 }
 
 // expire dates the entries with no time, and drops those past their age: how many.
