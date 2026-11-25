@@ -4,9 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 
@@ -35,6 +33,8 @@ type cookieStore interface {
 	setCookies(ctx context.Context, cs []*network.Cookie) error
 	clearOrigin(ctx context.Context, origin string) error
 	clearAll(ctx context.Context) error
+	pages(ctx context.Context) ([]string, error)
+	expire(ctx context.Context, cs []*network.Cookie) error
 }
 
 // Installed is whether this machine has a browser to start: Google Chrome (#5207), or a
@@ -49,17 +49,7 @@ func (m *Machine) Installed() bool {
 
 // DownloadBytes is the size on disk of the Chromium download, 0 before the first one.
 func (m *Machine) DownloadBytes() int64 {
-	var n int64
-	_ = filepath.WalkDir(m.Binaries, func(_ string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return nil
-		}
-		if fi, err := d.Info(); err == nil && fi.Mode().IsRegular() {
-			n += fi.Size()
-		}
-		return nil
-	})
-	return n
+	return bytesUnder(m.Binaries)
 }
 
 // Sites is every site with cookies in the kept profile, most cookies first. Before
@@ -104,33 +94,41 @@ func (m *Machine) Clear(ctx context.Context, site string) error {
 	if err != nil {
 		return err
 	}
-	hosts := map[string]bool{}
+	m.mu.Lock()
+	p := m.running
+	m.mu.Unlock()
+	if p == nil {
+		return errors.New("the browser stopped")
+	}
+	profile := m.profileOf(p)
+	origins := m.knownOrigins(p, site)
+	cookies := 0
 	var keep []*network.Cookie
 	for _, c := range all {
 		if site != "" && SiteOf(c.Domain) != site {
 			keep = append(keep, c)
 			continue
 		}
-		hosts[strings.TrimPrefix(c.Domain, ".")] = true
+		cookies++
+		host := strings.TrimPrefix(c.Domain, ".")
+		origins["https://"+host], origins["http://"+host] = true, true
 	}
-	if len(hosts) == 0 {
-		return nil
+	if cookies > 0 {
+		if err := store.clearAll(ctx); err != nil {
+			return err
+		}
 	}
-	if err := store.clearAll(ctx); err != nil {
-		return err
-	}
-	if len(keep) > 0 {
+	if cookies > 0 && len(keep) > 0 {
 		if err := store.setCookies(ctx, keep); err != nil {
 			return fmt.Errorf("the other sites' cookies were cleared too: %w", err)
 		}
 	}
-	for h := range hosts {
-		for _, scheme := range []string{"https://", "http://"} {
-			// Storage a host never had is no error to Chromium; a failure here leaves the
-			// cookies, which hold the sign-in, cleared all the same.
-			_ = store.clearOrigin(ctx, scheme+h)
-		}
+	for o := range origins {
+		// Storage an origin never had is no error to Chromium; a failure here leaves the
+		// cookies, which hold the sign-in, cleared all the same.
+		_ = store.clearOrigin(ctx, o)
 	}
+	m.forgetSite(profile, site)
 	return nil
 }
 
@@ -180,8 +178,10 @@ func (s cdpStore) cookies(ctx context.Context) ([]*network.Cookie, error) {
 }
 
 func (s cdpStore) setCookies(ctx context.Context, cs []*network.Cookie) error {
-	c, done := s.bound(ctx)
-	defer done()
+	return s.set(ctx, cookieParams(cs))
+}
+
+func cookieParams(cs []*network.Cookie) []*network.CookieParam {
 	params := make([]*network.CookieParam, 0, len(cs))
 	for _, ck := range cs {
 		p := &network.CookieParam{Name: ck.Name, Value: ck.Value, Domain: ck.Domain, Path: ck.Path,
@@ -192,6 +192,12 @@ func (s cdpStore) setCookies(ctx context.Context, cs []*network.Cookie) error {
 		}
 		params = append(params, p)
 	}
+	return params
+}
+
+func (s cdpStore) set(ctx context.Context, params []*network.CookieParam) error {
+	c, done := s.bound(ctx)
+	defer done()
 	_, err := chromedp.CallBrowser(c, storage.SetCookies, storage.SetCookiesParams{Cookies: params})
 	return err
 }

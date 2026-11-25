@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"sort"
 	"testing"
 
@@ -15,6 +16,18 @@ import (
 type fakeStore struct {
 	jar     []*network.Cookie
 	cleared []string
+	open    []string
+	refuse  error
+}
+
+func (s *fakeStore) pages(context.Context) ([]string, error) { return s.open, nil }
+func (s *fakeStore) expire(_ context.Context, cs []*network.Cookie) error {
+	gone := map[string]bool{}
+	for _, c := range cs {
+		gone[c.Name+c.Domain+c.Path] = true
+	}
+	s.jar = slices.DeleteFunc(s.jar, func(c *network.Cookie) bool { return gone[c.Name+c.Domain+c.Path] })
+	return nil
 }
 
 func (s *fakeStore) cookies(context.Context) ([]*network.Cookie, error) {
@@ -26,7 +39,7 @@ func (s *fakeStore) setCookies(_ context.Context, cs []*network.Cookie) error {
 }
 func (s *fakeStore) clearOrigin(_ context.Context, origin string) error {
 	s.cleared = append(s.cleared, origin)
-	return nil
+	return s.refuse
 }
 func (s *fakeStore) clearAll(context.Context) error { s.jar = nil; return nil }
 
