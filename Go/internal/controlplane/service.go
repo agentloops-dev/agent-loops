@@ -1630,7 +1630,14 @@ func (s *Service) sendOK(conn *Conn, p keyProof, auth *controllink.Auth) error {
 			epoch = *settings.Epoch
 		}
 		id := p.id
-		s.inBackground(func() { s.methods.NoteEpoch(context.Background(), id, epoch) })
+		note := func() { s.methods.NoteEpoch(context.Background(), id, epoch) }
+		if id.Kind == 'h' {
+			// Before the host is attached: a handover's announce refuses a host whose epoch is
+			// not noted, so one that is online has it noted (#7122).
+			note()
+		} else {
+			s.inBackground(note)
+		}
 	}
 	return nil
 }

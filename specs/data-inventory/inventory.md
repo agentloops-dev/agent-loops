@@ -136,7 +136,7 @@ from the root (`agentsd/backups.go:69,72`). It holds nothing else.
 |---|---|---|---|
 | `~/.agents/settings/*.json` | Settings that follow the person (see `docs/reference/agents-folder.md`) | fixed shape | n/a |
 | `~/.agents/summaries/*` | Daily summaries, none written since #5853 | the newest 3, 90 days after their last change (#6714) | hourly |
-| `~/.agents/checks/suggestions.json` | Daily-check findings | 50 suggestions, 200 dismissals (`dailychecks.go:38,48`) | on write |
+| `~/.agents/checks/suggestions.json` | Daily-check findings | 50 suggestions, 200 dismissals (`dailychecks.go:38,48`); no 90-day age-out: an exception to the 90-day rule until [#7023](https://github.com/agentloops-dev/agent-loops/issues/7023) removes the daily checks (Alex, 2026-11-24) | on write |
 | `~/.agents-secrets/secrets.env`, `connections.json`, `provider-secrets.json` | Personal secrets, OAuth connections (Linux; the Keychain on a Mac), machine provider secrets | one per entry; `connections.json`: 16 of 64 KiB each (#6743) | the person edits them |
 | `~/.agents-secrets/sessions/<agent>.json` | Session-only secrets | Values go at archive; the file goes at delete; orphans are swept at start (`sessionsecrets.go:221-275`) | archive, delete, start |
 
@@ -403,7 +403,7 @@ newer than a row above for the same store.
 | `<root>/lock-seen.json` | key-value | Replay IDs of signed requests | 4,096 of 128 bytes each, 2 days, the one signed first goes first; a cutoff refuses what went | `Go/internal/agentsd/lockcheck.go` (`openLockSeen`) | #6723 |
 | `<root>/assessments/` | document | Runtime assessments | The newest 50; 90 days from the start; 256 KiB per file | `Go/internal/agentsd/assess_store.go` | #6724 |
 | `<folder>/.agents/pins.json` | key-value | Pinned pages, views, sessions and workflows, and hidden views | 10 of each and 50; 4 KiB a pin, 1 KiB a hidden view, 128 KiB a folder; until removed (no age, on purpose: a person's choices, committed with the folder) | `Go/internal/agentsd/pins.go` (`pinsFileMost`) | #6725 |
-| `~/.agents/checks/suggestions.json` | document | Daily-check findings and dismissals | 50 findings, 200 dismissals, no age | `Go/internal/agentsd/dailychecks.go:39,49` | #6726 |
+| `~/.agents/checks/suggestions.json` | document | Daily-check findings and dismissals | 50 findings, 200 dismissals; no 90-day age-out: an exception to the 90-day rule until [#7023](https://github.com/agentloops-dev/agent-loops/issues/7023) removes the daily checks (Alex, 2026-11-24) | `Go/internal/agentsd/dailychecks.go:39,49` | #6726, #7023 |
 | `~/.agents/mcp.removed.json` | key-value | Removed MCP servers | 100 of 256 KiB each, 90 days from the removal; refuses when full | `Go/internal/agentsd/removedconnectors.go` (`openRemovedConnectors`) | #6727 |
 | `<root>/review-dismissals.json` | key-value | Dismissed PR links | 2,000 of 8 KiB each, 90 days from the PR's last change or its dismissal, the oldest first; For Review leaves out a PR unchanged for 90 days; goes with its folder | `Go/internal/agentsd/reviews.go` (`openReviewMarks`) | #6728 |
 | `<root>/review-opened.json` | key-value | Opened PR links | 2,000 of 8 KiB each, 90 days from the PR's last change or its opening, the oldest first; goes with its folder | `Go/internal/agentsd/reviews.go` (`openReviewMarks`) | #6729 |
