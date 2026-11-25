@@ -94,7 +94,7 @@ Mac.
 | `org-routes/`, `runtimes/org/` | key-value; secret | Org key routes and their stand-in homes | 50 routes | On delivery |
 | `runtimes/accounts/<runtime>/<id>/` | blob | The home of each runtime account you added, **with that runtime's own transcripts** | Until the account is removed | On remove |
 | `browser/profile/` | blob | One browser profile for every browser sign-in, and its caches | Sign-ins until the site ends them or you clear the site in Settings ▸ Browser. The caches are emptied before each start, and the HTTP cache stays under 64 MB while it runs (#3727). | At each browser start |
-| `folders.json`, `policy*.json`, `backup-settings.json`, `settings/`, and other small files | key-value | Configuration | A fixed shape | — |
+| `folders.json`, `settings/`, and other small files | key-value | Configuration | A fixed shape | — |
 | `<file>.unreadable-<time>`, `<file>.corrupt-<time>` | blob | A store that could not be read, set aside | The newest 3 of each kind for each file | On write |
 | `connector-setup.json` | key-value | Connector set-up for each folder | What a read found (a title, a link): 90 days. Which reads worked, and that the set-up added its connector: no age, on purpose, until the folder leaves the machine, so that a connector's set-up stays done. 2,000 folders of 64 KiB each: past that the one read longest ago goes, and a folder whose record is larger reads again (#6731) | On write, and hourly |
 | `catalog-skills.json`, `catalog-mcp.json` | key-value | Installed catalogue items | No age while the item is installed, on purpose, so that it stays known as one from a catalogue; 30 days after an item that is no longer there went. 2,000 in each file, 8 KiB each: one past that is not recorded, and its item shows as added by hand (#6732, #6733) | On write; on remove; and hourly |
@@ -105,8 +105,13 @@ Mac.
 | `allowances.json` | key-value | Each credential's allowance, as its runtime said it | 90 days after the last news, and each reading at 90 days; one that is out until a time still to come (90 days ahead at most) stays. 500 credentials of 64 KiB: the oldest goes first. Stays in the data folder: it is derived (#6747) | On write; on remove; and hourly |
 | `runtime-accounts.json` | key-value | Runtime accounts you added: the name and the sign-in folder | 100 accounts of 4 KiB: one more is refused, with a message. No age, on purpose: it is yours until you remove it. Stays in the data folder (Alex, 2026-11-24, #6748) | On write; on remove |
 | `github-bot-copies.json` | key-value | Which machines have the GitHub bot's key (not the key) | The lock's machines; 16 forgotten Apps | On write |
-| `control-clients.json`, `project-tools.json`, `host-user.json` | key-value | Copies of the control plane's lists | Replaced by each new list (#6752, #6753) | On write |
-| `wake.json`, `policy-seen.json`, `policy-yours-seen.json`, `lock-pin.json`, `lock.json`, `suspended.json` | key-value | Small settings and state | A fixed shape (#6745, #6751, #6754) | — |
+| `control-clients.json` | key-value | A copy of the control plane's list | Replaced by each new list | On write |
+| `policy.json` | key-value | The organisation's signed policy | One, of 1 MiB: a larger one applies and is not kept, so no work starts after a restart until it is sent again. No age, on purpose: it is in force until a newer one comes. Stays in the data folder (Alex, 2026-11-24, #6751) | On write |
+| `policy-seen.json` | key-value | The highest policy version applied, and the control key before a rotation | One, of 4 KiB. The old key is trusted for 30 days. No age, on purpose: it refuses an older policy. Stays in the data folder (#6751) | On write |
+| `project-tools.json` | key-value | The tools of the projects of this machine's folders | 16 MiB: a larger list applies and is not kept. Replaced by each new list. Stays in the data folder (#6752) | On write |
+| `host-user.json` | key-value | Whose machine this is | One, of 256 KiB: a larger one is kept without the bots' names. Replaced by each new one. Stays in the data folder (#6753) | On write |
+| `lock-pin.json` | key-value | The head of the machine lock that this machine trusts | One, of 4 KiB. No age, on purpose: only a lock that grows from it is taken. Stays in the data folder (#6754) | On write; `agentsd lock reset` removes it |
+| `policy-yours-seen.json`, `lock.json`, `suspended.json` | key-value | Small settings and state | A fixed shape | — |
 | `setup-reports.jsonl` | log | The steps of this machine's set-up | One run: a new run starts it again | At install |
 
 ### Transfers, backups and staging
@@ -138,6 +143,8 @@ Mac.
 | Store | Kind | What it keeps | How long, how large | Applied |
 | --- | --- | --- | --- | --- |
 | `~/.agents/settings/` | key-value | Settings that follow you (see [The `~/.agents` folder](../../reference/agents-folder.md)) | A fixed shape | — |
+| `~/.agents/settings/wake.json` | key-value | Keep awake, and the warm runtimes | One, of 4 KiB. No age, on purpose: a person's choice (#6745). `wake.json.moved` in the data folder is an old one that another machine's stood for | On write |
+| `~/.agents/settings/backup-settings.json` | key-value | Each machine's backup target, folder and Keep | 100 machines of 32 KiB each: one more is refused, with a message. No age, on purpose: a person's choice, and a machine off for 90 days keeps its own (#6746). `backup-settings.json.moved` in the data folder is an old one, as above | On write |
 | `~/.agents/summaries/` | document | Daily summaries saved before #5853, and `pages.json` with who wrote each: none is written now. A file that is not one of these is yours and stays | The newest 3 of at most 1 MiB, 90 days after their last change; `pages.json` goes with the last of them | Hourly |
 | `~/.agents/checks/suggestions.json` | document | Daily-check findings | 50 findings, 200 dismissals | On write |
 | `~/.agents-secrets` | secret | Secrets, connections and machine provider secrets (see [Security overview](security-overview.md#where-secrets-live)) | Until you remove them | — |

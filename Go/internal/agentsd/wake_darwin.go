@@ -10,18 +10,17 @@ import (
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
-// registerWake serves wake/state, wake/settings and wake/set, and keeps the Mac awake
+// registerWake serves wake/state, wake/settings and wake/set, for StartWake to keep the Mac awake
 // while an agent works (024). The count is looked at every two seconds, so a hold ends
 // within FR-004's five; the power every fifteen, as tickWorkflows reads it.
 func (d *Daemon) registerWake() {
 	w := &waker{
-		file:  filepath.Join(d.Store.Loc.Root, "wake.json"),
+		old:   filepath.Join(d.Store.Loc.Root, wakeFile),
+		file:  func() string { return filepath.Join(d.SettingsDir, wakeFile) },
 		power: mac.ReadPower,
 		hold:  holdTheMac,
 		tell:  func(s wire.WakeState) { Broadcast(d, wire.NotifyWakeChanged, s) },
 	}
-	settings := w.Settings
-	d.wakeSettings.Store(&settings)
 	On(d, wire.CallWakeState, func(context.Context, *Client, wire.Empty) (wire.WakeState, error) {
 		return w.State(), nil
 	})
@@ -31,6 +30,13 @@ func (d *Daemon) registerWake() {
 	On(d, wire.CallWakeSet, func(_ context.Context, _ *Client, s wire.WakeSettings) (wire.WakeSettings, error) {
 		return w.Set(s), nil
 	})
+	d.startWake = func() { d.runWake(w) }
+}
+
+// runWake gives the warm pool the settings, and keeps the Mac awake.
+func (d *Daemon) runWake(w *waker) {
+	settings := w.Settings
+	d.wakeSettings.Store(&settings)
 	d.goLoop("wake", func(ctx context.Context) {
 		w.Revise(d.agentsInFlight(), true)
 		count := time.NewTicker(2 * time.Second)

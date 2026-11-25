@@ -20,7 +20,12 @@ import (
 // them in projects/joined's answer and again in machine/projects; this machine keeps the last
 // it heard in <root>/project-tools.json, so a folder keeps its project's slots while the
 // control plane is away. A slot the project does not set is the folder's own, from its git
-// remote, as before.
+// remote, as before. The copy stays in the data folder (Alex, 2026-11-24, #6752): it is of this
+// machine's folders, and the control plane is the system of record.
+
+// projectToolsMostBytes bounds the kept copy: a machine names 1,000 folders at most, and a
+// project's slots and boards are a few KiB.
+const projectToolsMostBytes = 16 << 20
 
 type projectToolsBook struct {
 	projectToolsMu sync.Mutex
@@ -62,6 +67,10 @@ func (d *Daemon) heardProjects(m wire.MachineProjects) {
 		d.projectTools = next
 		b, err := json.Marshal(m)
 		if err == nil {
+			err = tooLarge("project-tools.json", b, projectToolsMostBytes)
+		}
+		if err == nil {
+			// store-bounds: kind=key-value; count=1000; size=16MiB; age=until-deleted; applied=on write (not kept)
 			err = store.WriteAtomically(d.projectToolsPath(), b, 0o600)
 		}
 		if err != nil {
