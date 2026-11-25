@@ -58,7 +58,7 @@ type assessmentDocuments interface {
 	Put(id string, doc assessment) error
 	// Delete deletes an assessment; one that is not there is not an error.
 	Delete(id string) error
-	// Cut brings an assessment's scope file to the largest size.
+	// Cut brings an assessment's scope file to the largest size, with scopeCutMark at its end.
 	Cut(id string) error
 	// List is the assessments after cursor, by id, and the cursor of the next page ("" at the end).
 	List(cursor string, limit int) ([]assessmentInfo, string, error)
@@ -226,10 +226,33 @@ func (f assessmentFiles) Cut(id string) error {
 	if err != nil || !info.Mode().IsRegular() || info.Size() <= assessmentMaxBytes {
 		return err
 	}
-	if err := os.Truncate(path, assessmentMaxBytes); err != nil {
+	if err := cutScopeFile(path); err != nil {
 		return err
 	}
 	return os.Chtimes(path, info.ModTime(), info.ModTime()) // its age goes on
+}
+
+// scopeCutMark is the end of a scope file that was cut.
+const scopeCutMark = "\n… cut: a scope file is at most 256 KiB\n"
+
+// cutScopeFile cuts a file to the largest size, at a whole character, with the mark in it. It is
+// cut where it is, with no second file.
+func cutScopeFile(path string) (err error) {
+	file, err := os.OpenFile(path, os.O_RDWR, 0)
+	if err != nil {
+		return err
+	}
+	defer func() { err = errors.Join(err, file.Close()) }()
+	b := make([]byte, assessmentMaxBytes-len(scopeCutMark))
+	if _, err := io.ReadFull(file, b); err != nil {
+		return err
+	}
+	b = wholeUTF8(b)
+	if err := file.Truncate(int64(len(b))); err != nil {
+		return err
+	}
+	_, err = file.WriteAt([]byte(scopeCutMark), int64(len(b)))
+	return err
 }
 
 func (f assessmentFiles) List(cursor string, limit int) ([]assessmentInfo, string, error) {

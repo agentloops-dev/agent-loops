@@ -24,6 +24,59 @@ import (
 // the settings folder, each new agent's options as last seen (option-cache.json, in the
 // cache), and the personas in a folder's .agents/personas.
 
+// The bounds of the settings here (#7189). They are the person's own, so one over is refused, with
+// the earlier value intact; one that is over it already can be changed to one no larger.
+const (
+	displayMostBytes  = 256 << 10 // display.json
+	displayValueMost  = 64 << 10  // one setting in it, its key and its value
+	displayMostValues = 1000
+	settingMostBytes  = 64 << 10 // modes.json, or a file of writeSetting
+	personMostBytes   = 4 << 10
+)
+
+// settingFits refuses b as the file at path when it is over most bytes and larger than the one
+// there.
+func settingFits(path string, b []byte, most int) error {
+	err := tooLarge(filepath.Base(path), b, most)
+	if err == nil {
+		return nil
+	}
+	if info, statErr := os.Stat(path); statErr == nil && int64(len(b)) <= info.Size() {
+		return nil
+	}
+	return err
+}
+
+// writeDisplay writes display.json, within its bounds.
+func (d *Daemon) writeDisplay(m map[string]wire.JSONValue) error {
+	b, err := storeJSON(m)
+	if err != nil {
+		return err
+	}
+	if err := settingFits(d.displayFile(), b, displayMostBytes); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(d.SettingsDir, 0o700); err != nil {
+		return err
+	}
+	// store-bounds: kind=key-value; count=1000; size=256KiB in all, 64KiB a setting; age=until-deleted; applied=on write (refused)
+	return store.WriteAtomically(d.displayFile(), b, 0o600)
+}
+
+// displayFits refuses a change that makes a setting over its largest size, or one more than the
+// count.
+func displayFits(m, change map[string]wire.JSONValue, count int) error {
+	for k := range change {
+		if size := len(k) + len(m[k]); size > displayValueMost {
+			return fmt.Errorf("a setting of %d bytes, at most %d: %w", size, displayValueMost, store.ErrLimit)
+		}
+	}
+	if len(m) > displayMostValues && len(m) > count {
+		return fmt.Errorf("%d settings, at most %d: %w", len(m), displayMostValues, store.ErrLimit)
+	}
+	return nil
+}
+
 type settingsState struct {
 	settingsMu  sync.Mutex
 	seenDisplay map[string]wire.JSONValue
@@ -69,6 +122,7 @@ func (d *Daemon) preferences() map[string]wire.JSONValue {
 func (d *Daemon) setPreferences(change map[string]wire.JSONValue) (map[string]wire.JSONValue, error) {
 	d.settingsMu.Lock()
 	m := readJSONMap(d.displayFile())
+	count := len(m)
 	for k, v := range change {
 		if len(v) == 0 || string(v) == "null" {
 			delete(m, k)
@@ -76,14 +130,15 @@ func (d *Daemon) setPreferences(change map[string]wire.JSONValue) (map[string]wi
 			m[k] = v
 		}
 	}
-	b, err := storeJSON(m)
+	err := displayFits(m, change, count)
 	if err == nil {
-		if err = os.MkdirAll(d.SettingsDir, 0o700); err == nil {
-			err = store.WriteAtomically(d.displayFile(), b, 0o600)
-		}
+		err = d.writeDisplay(m)
 	}
-	tell := !reflect.DeepEqual(normalized(m), normalized(d.seenDisplay))
-	d.seenDisplay = m
+	tell := false
+	if err == nil {
+		tell = !reflect.DeepEqual(normalized(m), normalized(d.seenDisplay))
+		d.seenDisplay = m
+	}
 	d.settingsMu.Unlock()
 	if err != nil {
 		return nil, &Error{Code: wire.FailureCouldNotSave, Message: "The display settings could not be saved: " + err.Error()}
@@ -154,12 +209,17 @@ func (d *Daemon) rememberMode(runtimeID, optionID string, v wire.JSONValue, opti
 	all[runtimeID] = entry
 	b, err := storeJSON(all)
 	if err == nil {
+		err = settingFits(d.modesFile(), b, settingMostBytes)
+	}
+	if err == nil {
 		if err = os.MkdirAll(d.SettingsDir, 0o700); err == nil {
+			// store-bounds: kind=key-value; count=1; size=64KiB; age=until-deleted; applied=on write (refused)
 			err = store.WriteAtomically(d.modesFile(), b, 0o600)
 		}
 	}
 	d.settingsMu.Unlock()
 	if err != nil {
+		log.Printf("settings: the mode of %s was not remembered: %v", runtimeID, err)
 		return
 	}
 	Broadcast(d, wire.NotifyModesChanged, d.modes())
