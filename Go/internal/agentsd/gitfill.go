@@ -3,6 +3,7 @@ package agentsd
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"os/exec"
 	"strings"
 	"time"
@@ -13,6 +14,10 @@ import (
 // git/fill is asked on the control-plane channel only (#1122). It is not a window method:
 // a window can call every method, and this one would hand it the git password. The
 // password is never logged.
+//
+// Once this machine holds its person's lock (#3399) it fills nothing: git/fill is the control
+// plane's own request, and no key of the lock vouches for one. A machine with no lock fills,
+// as it takes its other requests.
 
 // fillGitCredential runs `git credential fill`. A test replaces it. The returned text
 // holds the password, so a caller must not log it.
@@ -33,6 +38,10 @@ var fillGitCredential = func(attributes string) (string, error) {
 func (d *Daemon) fillGit(params json.RawMessage) wire.GitCredential {
 	var req wire.GitCredentialRequest
 	if json.Unmarshal(params, &req) != nil || req.Protocol != "https" || !gitServerName(req.Host) {
+		return wire.GitCredential{}
+	}
+	if _, pinned := d.heldLock(); pinned {
+		log.Printf("git/fill: not filled: this machine holds a lock, and no key of it signs git/fill")
 		return wire.GitCredential{}
 	}
 	text, err := fillGitCredential("protocol=https\nhost=" + req.Host + "\n\n")
