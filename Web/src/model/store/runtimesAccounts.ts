@@ -253,11 +253,11 @@ export const runtimesAccountsMethods = {
     return why;
   },
   /**
-   * Approve a folder's connector that waits (#5717), on the folder's own host, as the window's
+   * Approve a connector that waits, the person's own (no folder) or a folder's (#5717), on its own host, as the window's
    * Approve: the entry that host reads now, by its digest. Undefined when done, else the refusal's words.
    */
-  async approveConnector(this: Store, host: string, name: string, folder: string): Promise<string | undefined> {
-    const destination = { kind: "folder", folder: hostedFolderPath(folder) } as never;
+  async approveConnector(this: Store, host: string, name: string, folder?: string): Promise<string | undefined> {
+    const destination = (folder === undefined ? { kind: "personal" } : { kind: "folder", folder: hostedFolderPath(folder) }) as never;
     const why = await this.link.call("mcp/list", { destination }, host)
       .then(async (list) => {
         const row = list.servers.find((s) => s.name === name);

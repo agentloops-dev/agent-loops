@@ -195,11 +195,11 @@ private struct FolderMCPRow: View {
                         .buttonStyle(.paper)
                         .appText(.fine)
                     }
-                    if case .folder(let folder) = place, case .waiting(let digest, _) = server.approval {
+                    if case .waiting(let digest, _) = server.approval {
                         Button("Approve") {
                             Task {
-                                if let error = await model.approveFolderMCP(server.name, digest: digest, in: folder,
-                                                                             on: place.host(model)) {
+                                if let error = await model.approveMCP(server.name, digest: digest, at: place.destination,
+                                                                       on: place.host(model)) {
                                     failed(MCPCatalogWords.sentence(error))
                                 } else {
                                     failed(nil)
@@ -286,7 +286,8 @@ private struct FolderMCPRow: View {
 
     private var note: String? {
         if case .waiting(_, let isNew) = server.approval {
-            return (isNew ? "New with the last pull. " : "Changed since you approved it. ")
+            let new = if case .you = place { "New in your settings. " } else { "New with the last pull. " }
+            return (isNew ? new : "Changed since you approved it. ")
                 + "No agent is given it until you approve it."
         }
         if let name = server.missingSecrets.first {

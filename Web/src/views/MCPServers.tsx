@@ -57,7 +57,6 @@ export function MCPServersList({ store, host, folder }: { store: Store; host: st
     else setRemoveProblem(store.hostIsOnline(host) ? notRemoved(name, why) : notRemovedOffline(name, machine ?? "This Mac"));
   };
   const approve = async (name: string) => {
-    if (folder === undefined) return;
     const why = await store.approveConnector(host, name, folder);
     setRemoveProblem(why === undefined ? undefined : notApproved(name, why));
   };
@@ -91,9 +90,9 @@ export function MCPServersList({ store, host, folder }: { store: Store; host: st
                   <button class="small" aria-expanded={toolsOpen.has(server.name)} title="Allow, Ask or Off for each of its tools"
                     onClick={() => toggleTools(server.name)}>{toolsOpen.has(server.name) ? "Hide Tools" : "Tools"}</button>
                 )}{" "}
-                {folder !== undefined && server.check === "waiting" && (
+                {server.check === "waiting" && (
                   <>
-                    <button class="small" disabled={!store.hostIsOnline(host)} title={`Start ${server.name} in this folder's sessions`}
+                    <button class="small" disabled={!store.hostIsOnline(host)} title={folder === undefined ? `Start ${server.name} in sessions on this machine` : `Start ${server.name} in this folder's sessions`}
                       onClick={() => void approve(server.name)}>Approve</button>{" "}
                   </>
                 )}

@@ -17,7 +17,6 @@ import (
 
 	sdk "github.com/coder/acp-go-sdk"
 
-	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -325,6 +324,9 @@ func (d *Daemon) mcpApprovalsLocked() (approved map[string]string, begun, unread
 			if json.Unmarshal(b, &d.mcpApprovals) != nil {
 				d.mcpApprovals = nil
 			}
+		} else if !errors.Is(err, os.ErrNotExist) {
+			log.Printf("mcp: could not read %s: %v", d.mcpApprovalsPath(), err)
+			d.mcpApprovals = nil
 		}
 		if d.mcpApprovals != nil {
 			if _, ok := d.mcpApprovals["approvalsBegan"]; !ok {
@@ -341,8 +343,7 @@ func (d *Daemon) mcpApprovalsLocked() (approved map[string]string, begun, unread
 // beginApprovedLocked approves every folder entry there now as it stands, the first time.
 func (d *Daemon) beginApprovedLocked() {
 	all := map[string]string{}
-	for _, p := range d.folders(false) {
-		folder := store.FolderPath(p.Folder.Folder)
+	for _, folder := range d.folderPaths() {
 		entries, _ := readMCPFile(filepath.Join(folder, ".agents", "mcp.json"))
 		for _, e := range entries {
 			if err := keepApproval(all, nil, "", mcpApprovalKey(folder, e.name), entryDigest(e.raw)); err != nil {
@@ -384,13 +385,19 @@ func (d *Daemon) folderMCP(folder string, secrets map[string]string, flagged fun
 	return
 }
 
+// personalMCP is the person's own servers that may start here, with secrets filled, and those
+// missing a secret. One that waits for approval is in neither.
 func (d *Daemon) personalMCP(secrets map[string]string, flagged func(string) bool) (servers []mcpEntry, missing []string, problem string) {
 	home := d.personalHome()
 	if home == "" {
 		return nil, nil, ""
 	}
 	entries, problem := readMCPFile(filepath.Join(home, ".agents", "mcp.json"))
+	gate := d.personalGate()
 	for _, e := range entries {
+		if gate.waits(e) {
+			continue
+		}
 		s, gone, names := filledServerFlagged(e.server, secrets, flagged)
 		if len(gone) > 0 {
 			missing = append(missing, e.name)

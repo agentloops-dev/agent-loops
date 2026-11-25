@@ -123,7 +123,7 @@ func (d *Daemon) makePersonChange(folder string, ask wire.RequestSecretUse) (str
 		// The entry changed after the agent asked: the person saw another one.
 		return "Not approved: " + ask.Name + "'s entry changed after the agent asked", nil
 	}
-	if _, err := d.mcpApprove(wire.MCPApproveRequest{Destination: dest, Name: ask.Name, Digest: digest}); err != nil {
+	if _, err := d.mcpApprove(d.ctx, wire.MCPApproveRequest{Destination: dest, Name: ask.Name, Digest: digest}); err != nil {
 		return "", err
 	}
 	return "Approved: " + ask.Name + " may start", nil

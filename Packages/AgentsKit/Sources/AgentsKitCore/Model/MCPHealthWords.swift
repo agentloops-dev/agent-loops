@@ -37,7 +37,9 @@ public enum MCPHealthWords {
             let tools = server.tools.map { $0 == 1 ? " \u{00B7} 1 tool" : " \u{00B7} \($0) tools" } ?? ""
             return "Answered" + tools
         case .failed: return "Didn't answer"
-        case .waiting: return "Waiting for approval in this folder's settings, so it is not started"
+        case .waiting:
+            return server.folder == nil ? "Waiting for your approval in Needs You, so it is not started"
+                : "Waiting for approval in this folder's settings, so it is not started"
         case .missingSecret: return "Needs a secret that isn't set here, so it is not started"
         case .signIn: return "Wants a sign-in first, in Settings"
         case .oldTransport: return "Uses the old sse transport, which isn't checked"

@@ -690,7 +690,7 @@ func (d *Daemon) answerApproval(ctx context.Context, r wire.ApprovalAnswer) (wir
 		if r.Action == wire.ApprovalActionRequestChanges {
 			return wire.FolderSummary{}, Invalid("No agent made this change, so there is nobody to ask. Approve or deny it.")
 		}
-		return d.answerConnector(folder, r.Key, r.Digest, r.Action == wire.ApprovalActionApprove)
+		return d.answerConnector(ctx, folder, r.Key, r.Digest, r.Action == wire.ApprovalActionApprove)
 	case wire.ApprovalKindArchive:
 		return d.answerArchiveApproval(folder, r)
 	}

@@ -257,8 +257,9 @@ func (d *Daemon) mcpHealthPass() (wire.MCPHealthSnapshot, []mcpDue) {
 		if problem != "" {
 			snap.Problems = append(snap.Problems, wire.MCPHealthFileProblem{Message: problem})
 		}
+		gate := d.personalGate()
 		for _, e := range entries {
-			row(e, nil, home, false)
+			row(e, nil, home, gate.waits(e))
 		}
 	}
 	var folders []string

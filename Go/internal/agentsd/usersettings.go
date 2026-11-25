@@ -226,8 +226,9 @@ func (d *Daemon) saveUserMarkLocked(mark userSettingsSyncState) error {
 
 func partSent(v wire.JSONValue) bool { return len(v) > 0 && string(v) != "null" }
 
-// writeMCPServers is mcpServers as ~/.agents/mcp.json, with the file's other keys kept.
-func writeMCPServers(home string, servers wire.JSONValue) error {
+// writeMCPServers is mcpServers as ~/.agents/mcp.json, with the file's other keys kept. A new or
+// changed server waits for the person's approval here (syncedconnectors.go).
+func (d *Daemon) writeMCPServers(home string, servers wire.JSONValue) error {
 	if home == "" {
 		return errors.New("this machine has no personal home")
 	}
@@ -249,12 +250,22 @@ func writeMCPServers(home string, servers wire.JSONValue) error {
 			file = map[string]json.RawMessage{}
 		}
 	}
+	held := file["mcpServers"]
 	file["mcpServers"] = json.RawMessage(servers)
 	b, err := json.MarshalIndent(file, "", "  ")
 	if err != nil {
 		return err
 	}
-	return writeIfChanged(path, append(b, '\n'))
+	b = append(b, '\n')
+	on, readErr := os.ReadFile(path)
+	if err := d.writeSyncedServers(held, servers, func() error { return writeIfChanged(path, b) }); err != nil {
+		return err
+	}
+	if readErr == nil && bytes.Equal(on, b) {
+		return nil
+	}
+	d.goJob("personal connectors", d.tellPersonalConnectors)
+	return nil
 }
 
 // writeIfChanged writes a file only when its bytes on disk differ, so a delivery that
@@ -671,7 +682,7 @@ func asJSON(v any) json.RawMessage {
 // d.userScopeMu is held.
 func (d *Daemon) applyUserSettingsPartsLocked(home string, s wire.UserSettings, before userSettingsSyncState, mark *userSettingsSyncState, note func(wire.UserSettingsPartName, error)) (envChanged bool) {
 	if partSent(s.McpServers) {
-		note(wire.UserSettingsPartNameMcpServers, writeMCPServers(home, s.McpServers))
+		note(wire.UserSettingsPartNameMcpServers, d.writeMCPServers(home, s.McpServers))
 	}
 	if partSent(s.AgentConfig) {
 		files, err := writeAgentConfig(home, s.AgentConfig, agentConfigWrote(before.Files))
