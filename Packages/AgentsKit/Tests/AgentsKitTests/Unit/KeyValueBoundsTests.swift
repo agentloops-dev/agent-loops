@@ -242,7 +242,7 @@ struct KeyValueBoundsTests {
         log.flush()
         #expect(try String(contentsOf: log.previous, encoding: .utf8).hasSuffix(" two\n"))
         try FileManager.default.setAttributes([.modificationDate: now - 45 * day - 1], ofItemAtPath: log.previous.path)
-        _ = RollingLog(url: log.url).flush()
+        RollingLog(url: log.url).flush()
         #expect(!FileManager.default.fileExists(atPath: log.previous.path), "also at start, with no line")
     }
 
@@ -295,4 +295,15 @@ struct KeyValueBoundsTests {
         #expect(await cache.stats().count == 1)
         #expect(await cache.bytes() == 8)
     }
+}
+
+private struct TemporaryDirectory {
+    let url: URL
+
+    init() throws {
+        url = FileManager.default.temporaryDirectory.appendingPathComponent("bounds-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+    }
+
+    func remove() { try? FileManager.default.removeItem(at: url) }
 }
