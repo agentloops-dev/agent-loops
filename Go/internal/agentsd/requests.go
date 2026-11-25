@@ -255,14 +255,24 @@ func (d *Daemon) removeRequestLocked(id wire.UUID) {
 }
 
 func (d *Daemon) saveRequestLocked(r *wire.Request) {
-	b, _ := json.Marshal(r)
-	if err := d.requestRecords().Put(string(r.ID), b); err != nil {
+	if err := d.putRequestLocked(r); err != nil {
 		log.Printf("requests: %s: %v", r.ID, err)
+	}
+}
+
+func (d *Daemon) putRequestLocked(r *wire.Request) error {
+	b, err := json.Marshal(r)
+	if err != nil {
+		return err
+	}
+	if err := d.requestRecords().Put(string(r.ID), b); err != nil {
+		return err
 	}
 	// Past the high-water mark the ended ones go now, not in the hourly sweep.
 	if len(d.requests.byID) >= 2*requestFileLimit {
 		d.pruneEndedLocked(nowFunc())
 	}
+	return nil
 }
 
 // listRequests is requests/list: oldest first.
@@ -431,28 +441,79 @@ func (d *Daemon) addRequestWaiter(id, agent wire.UUID) {
 }
 
 // endRequest answers or drops an open request, once: its end raises the event that wakes
-// its waiters. It is false when the request had ended already, or is not here.
+// its waiters. It is false when the request had ended already, or is not here. What the
+// answer does is done already (a grant, a merge on the forge), so it ends here also when the
+// disk refuses the record.
 func (d *Daemon) endRequest(id wire.UUID, state wire.RequestState, answer *string, why wire.RequestEndedWhy, by *wire.AuditActor) bool {
+	ended, err := d.endRequestKept(id, state, answer, why, by, false)
+	if err != nil {
+		log.Printf("requests: %s: %v", id, err)
+	}
+	return ended
+}
+
+// answerFormRequest is endRequest for a form's answer. One that the disk refuses is not told:
+// it is an error and the request stays open, for it would be open after a restart (#7185).
+func (d *Daemon) answerFormRequest(id wire.UUID, answer *string, by *wire.AuditActor) (bool, error) {
+	ended, err := d.endRequestKept(id, wire.RequestStateAnswered, answer, "", by, true)
+	if err != nil {
+		return false, Invalid("The answer was not kept, so it was not given. Answer again. (%v)", err)
+	}
+	return ended, nil
+}
+
+// fitAnswerLocked cuts an ended request's answer to the room its record has, measured as it is
+// stored, where a character can be 6 bytes. requestMaxNew leaves room for an answer always.
+func fitAnswerLocked(r *wire.Request) {
+	if r.Answer == nil {
+		return
+	}
+	fits := func() bool {
+		b, err := json.Marshal(r)
+		return err != nil || len(b) <= requestMaxBytes
+	}
+	whole := *r.Answer
+	cutTo := func(n int) string { return strings.ToValidUTF8(whole[:n], "") + "…" }
+	if len(whole) > requestMaxAnswer {
+		r.Answer = new(cutTo(requestMaxAnswer))
+	}
+	if fits() {
+		return
+	}
+	over := sort.Search(min(len(whole), requestMaxAnswer), func(n int) bool {
+		r.Answer = new(cutTo(n))
+		return !fits()
+	})
+	r.Answer = new(cutTo(max(0, over-1)))
+}
+
+// endRequestKept ends an open request. With mustKeep, one that the disk refuses stays open.
+func (d *Daemon) endRequestKept(id wire.UUID, state wire.RequestState, answer *string, why wire.RequestEndedWhy, by *wire.AuditActor, mustKeep bool) (bool, error) {
 	d.requests.mu.Lock()
-	delete(d.requests.held, id)
 	r := d.requests.byID[id]
 	if r == nil || r.State != wire.RequestStateOpen {
+		delete(d.requests.held, id)
 		d.requests.mu.Unlock()
-		return false
+		return false, nil
 	}
+	was := *r
 	at := now()
 	r.State, r.AnsweredAt, r.AnsweredBy = state, &at, by
 	r.Deferred = nil // an end clears Later (#4233)
 	if state == wire.RequestStateAnswered {
-		if answer != nil && len(*answer) > requestMaxAnswer {
-			cut := strings.ToValidUTF8((*answer)[:requestMaxAnswer], "") + "…"
-			answer = &cut
-		}
 		r.Answer = answer
+		fitAnswerLocked(r)
+		answer = r.Answer
 	} else {
 		r.DroppedWhy = &why
 	}
-	d.saveRequestLocked(r)
+	err := d.putRequestLocked(r)
+	if err != nil && mustKeep {
+		*r = was
+		d.requests.mu.Unlock()
+		return false, err
+	}
+	delete(d.requests.held, id)
 	c := copyRequest(r)
 	d.requests.mu.Unlock()
 	Broadcast(d, wire.NotifyRequestsChanged, wire.RequestUpdate{Request: c})
@@ -464,7 +525,7 @@ func (d *Daemon) endRequest(id wire.UUID, state wire.RequestState, answer *strin
 	if c.Detail.SecretUse != nil {
 		d.reconsider() // its banner goes (#4017)
 	}
-	return true
+	return true, err
 }
 
 func actorName(a *wire.AuditActor) string {
@@ -598,7 +659,9 @@ func (d *Daemon) answerLostForm(req wire.ElicitationRequest, action wire.AnswerE
 		// Not lost: an answer that came first is ending it (#6475).
 		return &Error{Code: wire.FailureNoSuchAgent, Message: "That form has already been answered."}
 	}
-	if !d.endRequest(req.ID, wire.RequestStateAnswered, formAnswerSummary(action, said), "", by) {
+	if ended, err := d.answerFormRequest(req.ID, formAnswerSummary(action, said), by); err != nil {
+		return err
+	} else if !ended {
 		return &Error{Code: wire.FailureNoSuchAgent, Message: "That request has ended already."}
 	}
 	d.takeAnsweredBy(req.ID)

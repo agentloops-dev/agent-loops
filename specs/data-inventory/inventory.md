@@ -57,7 +57,7 @@ from the root (`agentsd/backups.go:69,72`). It holds nothing else.
 |---|---|---|---|---|
 | `agents/<ID>/agent.json` | The agent's record | **life.** An archived agent is deleted after 7/14/30/90 days, 30 by default, a pinned one after 90 (`retention.go`, `sweepArchived`). | at start, then hourly (`retention.go:15,96-110`) | yes |
 | `agents/<ID>/transcript.jsonl` | The whole conversation | **10 MB, 90 days**, live and pinned too; an entry 4 MB (`store/conversations.go`, #6706) | at start, then hourly; soon after a write past 20 MB | yes |
-| `agents/<ID>/app-tools.jsonl` | Each call to an app tool | **2 MB, 90 days**; answers and arguments cut to 2,000 runes (`store/conversations.go`, #6706) | at start, then hourly; soon after a write past 4 MB | yes |
+| `agents/<ID>/app-tools.jsonl` | Each call to an app tool | **2 MB, 90 days**; answers and arguments cut to 2,000 runes and a …, and a call to 512 KiB of arguments (#7187) (`store/conversations.go`, #6706) | at start, then hourly; soon after a write past 4 MB | yes |
 | `agents/<ID>/said.json` | Search index of what was said | 32 KiB (`said.go:22`) | with the agent | yes |
 | `<cache>/turns/<ID>.jsonl` | Turn summaries | life. Media base64 is limited (`turns.go:1197`). | with the agent (`store/store.go:217`) | **no** (the backup reads the wrong path) |
 | `erasures.json` | Runtime copies still to erase | 1,000 entries, 3 tries, 7 days (`erasure.go:40-45`) | on write | no |

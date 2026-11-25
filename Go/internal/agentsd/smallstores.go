@@ -135,9 +135,11 @@ func (d *Daemon) sweepReviewFolders(gone func(string) bool) {
 	d.reviewMu.Lock()
 	defer d.reviewMu.Unlock()
 	for _, f := range []*store.JSONFile[reviewMark]{d.dismissed, d.opened} {
-		changeMarks(f, func(m map[string]reviewMark) {
+		if err := changeMarks(f, func(m map[string]reviewMark) {
 			maps.DeleteFunc(m, func(_ string, r reviewMark) bool { return gone(r.Folder) })
-		})
+		}); err != nil {
+			log.Printf("for review: %s was not written: %v", f.Name(), err)
+		}
 	}
 }
 

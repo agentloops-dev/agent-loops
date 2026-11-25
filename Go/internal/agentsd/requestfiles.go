@@ -18,7 +18,9 @@ const (
 	requestMaxBytes = 256 << 10 // one record
 	// requestMaxNew leaves room in a record for what comes after it opens: its waiters, its
 	// deferral and its answer.
-	requestMaxNew     = 192 << 10
+	requestMaxNew = 192 << 10
+	// requestMaxGrown is the most an open one grows to, and leaves room for its answer.
+	requestMaxGrown   = 224 << 10
 	requestMaxWaiters = 100
 	requestMaxAnswer  = 16 << 10
 	requestPage       = 200
