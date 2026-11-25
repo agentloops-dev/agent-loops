@@ -3,9 +3,9 @@ import SwiftUI
 
 /// The Now family of session cards (#5033, `specs/session-cards/spec.md`, family 5): what
 /// the agent works towards, at the top, and what it does or waits on now, at the foot.
-/// Both are a card on the well with the same parts: a mark, a bold line and a quiet
-/// detail, a meta on the right, a chevron when it has more, and a bar when there is a
-/// deadline or a count. No colour fills it: the bar is the accent (Paper v2).
+/// Both are a card on the session's ground, with a rule round it, and have the same
+/// parts: a mark, a bold line and a quiet detail, a meta on the right, a chevron when it
+/// has more, and a bar when there is a deadline or a count. No colour fills it: the bar is the accent (Paper v2).
 ///
 /// The web page draws the same in `Web/src/views/Now.tsx`, with the words of
 /// `Web/src/model/nowWords.ts`.
@@ -118,14 +118,15 @@ struct NowBar: View {
     }
 }
 
-/// The Now card's well, the same at the top and the foot.
+/// The Now card's ground and rule, the same at the top and the foot (#6818).
 private struct NowWell: ViewModifier {
     func body(content: Content) -> some View {
         content
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .paperWell(in: RoundedRectangle(cornerRadius: Paper.Radius.card))
+            .background(Paper.ground, in: RoundedRectangle(cornerRadius: Paper.Radius.card))
+            .overlay(RoundedRectangle(cornerRadius: Paper.Radius.card).strokeBorder(Paper.rule, lineWidth: 1))
     }
 }
 
