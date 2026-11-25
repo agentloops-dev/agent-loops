@@ -186,6 +186,8 @@ type Service struct {
 	autoBook
 	origin  string
 	copyID  string
+	// The id of the machine record this copy runs on (#6609).
+	controlMachine atomic.Pointer[string]
 	records *records.Records
 	// When the audit last said that the people are at their limit (#7019).
 	peopleFullMu   sync.Mutex
@@ -680,6 +682,9 @@ func (s *Service) takeUp(ctx context.Context) error {
 	// People (#994): the existing person becomes the local owner and the admin.
 	if err := s.records.Migrate(ctx); err != nil {
 		return err
+	}
+	if err := s.ensureControlMachine(ctx); err != nil {
+		s.log("the control plane's own machine record: " + err.Error())
 	}
 	for _, h := range s.records.Hosts() {
 		s.router.Know(h.ID)
@@ -2194,6 +2199,9 @@ func (s *Service) joiningHostID(stored *storedCode, a wire.MachineAnnounce) stri
 	want := records.NewHostID()
 	if stored.MadeHost != "" {
 		want = stored.MadeHost
+	} else if only := s.controlOnlyOn(a.MachineID); only != "" && a.MachineID != "" {
+		// The machine's record is the control plane's: the host takes it over (#6609).
+		want = only
 	} else if home {
 		want = "mac"
 	}
@@ -2206,6 +2214,15 @@ func (s *Service) joiningHostID(stored *storedCode, a wire.MachineAnnounce) stri
 func (s *Service) addJoiningHost(ctx context.Context, id string, a wire.MachineAnnounce, record records.MachineRecord) (string, error) {
 	host := record.ID
 	err := s.records.AddHost(ctx, record)
+	if errors.Is(err, records.ErrHostTaken) {
+		// The machine's record that the control plane made: this host takes it over.
+		if took, terr := s.takeOverControlMachine(ctx, record); took || terr != nil {
+			if terr != nil {
+				return "", terr
+			}
+			return host, nil
+		}
+	}
 	if errors.Is(err, records.ErrHostTaken) && host == "mac" {
 		// Another host on this machine enrolled as mac first, at this copy or another: this
 		// one gets an id of its own, and the code says so to a replay.

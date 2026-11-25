@@ -1,0 +1,96 @@
+package controlplane
+
+import (
+	"context"
+	"errors"
+	"runtime"
+
+	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/records"
+)
+
+// controlMachine is the id of the machine record of the machine this copy runs on (#6609),
+// which a copy record names. "" before takeUp has found or made it.
+
+func (s *Service) controlMachineID() string {
+	if p := s.controlMachine.Load(); p != nil {
+		return *p
+	}
+	return ""
+}
+
+// controlMachineHostID is the id of a control-only machine record: mac, as the home host
+// of a Mac is called, so a host that joins from it takes the record over; else control.
+func controlMachineHostID() string {
+	if runtime.GOOS == "darwin" {
+		return "mac"
+	}
+	return "control"
+}
+
+// ensureControlMachine gives the machine this copy runs on a machine record with the control
+// role (#6609): a record that has none gets roles ["control"], one that runs a host gets
+// ["agents", "control"], so a machine that runs the control plane shows as a machine whether
+// or not it runs agents. A hosted copy is no customer's machine and has none.
+func (s *Service) ensureControlMachine(ctx context.Context) error {
+	if s.cfg.Hosted || s.cfg.MachineID == "" {
+		return nil
+	}
+	for _, h := range s.records.Machines() {
+		if h.MachineID == nil || *h.MachineID != s.cfg.MachineID {
+			continue
+		}
+		s.controlMachine.Store(&h.ID)
+		if h.HasRole(records.RoleControl) {
+			return nil
+		}
+		h.Roles = records.NormalRoles(append(records.RolesOf(h), records.RoleControl))
+		return s.records.SaveHost(ctx, h)
+	}
+	mid := s.cfg.MachineID
+	record := records.MachineRecord{ID: controlMachineHostID(), Name: s.cfg.Name, Platform: controlPlatform(),
+		Version: s.cfg.Version, MachineID: &mid, Roles: []string{records.RoleControl}}
+	if s.records.Host(record.ID) != nil {
+		// A host on another machine took the id: this one has its own.
+		record.ID = records.NewHostID()
+	}
+	err := s.records.AddHost(ctx, record)
+	if errors.Is(err, records.ErrHostTaken) {
+		record.ID = records.NewHostID()
+		err = s.records.AddHost(ctx, record)
+	}
+	if err != nil {
+		return err
+	}
+	s.controlMachine.Store(&record.ID)
+	return nil
+}
+
+func controlPlatform() string {
+	if runtime.GOOS == "darwin" {
+		return "macOS"
+	}
+	return "Linux"
+}
+
+// takeOverControlMachine is a host that joins from the machine the control plane runs on,
+// when that machine's record has only the control role: the record becomes the host's, with
+// both roles, so the machine stays one record. It says whether it did.
+func (s *Service) takeOverControlMachine(ctx context.Context, record records.MachineRecord) (bool, error) {
+	old := s.records.Host(record.ID)
+	if old == nil || !old.ControlOnly() || len(old.PublicKey) > 0 {
+		return false, nil
+	}
+	record.Roles = []string{records.RoleAgents, records.RoleControl}
+	record.Rev = old.Rev
+	return true, s.records.SaveHost(ctx, record)
+}
+
+// controlOnlyOn is the id of the control-only record of that machine, or "".
+func (s *Service) controlOnlyOn(machineID string) string {
+	for _, h := range s.records.Machines() {
+		if h.ControlOnly() && len(h.PublicKey) == 0 && h.MachineID != nil && *h.MachineID == machineID {
+			return h.ID
+		}
+	}
+	return ""
+}

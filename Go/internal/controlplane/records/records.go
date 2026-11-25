@@ -347,13 +347,21 @@ func (r *Records) Clients() []ClientRecord {
 	return out
 }
 
-// Hosts is every host, by id.
-func (r *Records) Hosts() []MachineRecord {
+// Hosts is every host that runs agents, by id. A machine with only the control role
+// (#6609) is not one: nothing dials in with it. Machines has both.
+func (r *Records) Hosts() []MachineRecord { return r.machines(false) }
+
+// Machines is every machine, by id, also one that only runs the control plane.
+func (r *Records) Machines() []MachineRecord { return r.machines(true) }
+
+func (r *Records) machines(all bool) []MachineRecord {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	out := make([]MachineRecord, 0, len(r.hosts))
 	for _, h := range r.hosts {
-		out = append(out, h.record)
+		if all || !h.record.ControlOnly() {
+			out = append(out, h.record)
+		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out
