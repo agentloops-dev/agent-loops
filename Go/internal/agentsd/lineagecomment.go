@@ -42,6 +42,8 @@ const (
 	prCommentsKept = 500
 	// prCommentKeep is how long after its merge a PR's comment is still edited.
 	prCommentKeep = 30 * 24 * time.Hour
+	// prCommentBytes is the largest record, with its ref.
+	prCommentBytes = 64 << 10
 )
 
 // prCommentAfter is how long the host waits after a change: the changes in it go in one edit.
@@ -232,6 +234,18 @@ func (d *Daemon) flushPRComments() {
 	d.saveComments()
 }
 
+// bound holds a record to its largest: the body goes first, which the next change makes again,
+// then the parts. It is false when the rest is still too large.
+func (r *prCommentRecord) bound(key int) bool {
+	if key+jsonSize(r) > prCommentBytes {
+		r.Body = ""
+	}
+	if key+jsonSize(r) > prCommentBytes {
+		r.Parts = nil
+	}
+	return key+jsonSize(r) <= prCommentBytes
+}
+
 // saveComments writes the file, the PRs merged longest ago dropped past the bounds.
 func (d *Daemon) saveComments() {
 	d.commentMu.Lock()
@@ -252,6 +266,13 @@ func (d *Daemon) saveComments() {
 			delete(f.PRs, ref)
 		}
 	}
+	for ref, r := range f.PRs {
+		if !r.bound(len(ref)) {
+			log.Printf("lineage-comments.json: %.200q is too large to keep", ref)
+			delete(f.PRs, ref)
+		}
+	}
+	// store-bounds: kind=document; count=500; size=64KiB a PR; age=30d; applied=write
 	if err := writeStore(d.prCommentsPath(), f); err != nil {
 		log.Printf("lineage-comments.json: could not save: %v", err)
 	}

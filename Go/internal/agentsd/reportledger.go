@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/boundmap"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -135,6 +136,7 @@ func (d *Daemon) reportLocked() *reportFile {
 		if d.report.Unsent == nil {
 			d.report.Unsent = map[string]int64{}
 		}
+		boundReport(d.report)
 	}
 	return d.report
 }
@@ -144,7 +146,7 @@ func addRollupRow(r *wire.UsageRollupRow, o wire.UsageRollupRow) {
 		r.Cost = map[string]float64{}
 	}
 	for c, v := range o.Cost {
-		r.Cost[c] += v
+		boundmap.AddMoney(r.Cost, c, v)
 	}
 	r.InputTokens += o.InputTokens
 	r.OutputTokens += o.OutputTokens
@@ -179,6 +181,8 @@ func pruneReport(r *reportFile, now time.Time) {
 			delete(r.Hours, h)
 		}
 	}
+	// A clock that was set ahead leaves hours that are never old.
+	keepSince(r.Hours, oldest, reportHoursKept+1, utcHour(now))
 	for h := range r.Unsent {
 		if _, ok := r.Hours[h]; !ok {
 			delete(r.Unsent, h)
@@ -199,17 +203,7 @@ func (d *Daemon) addReportLocked(folder, runtime, workflow, route, hour string, 
 	if r.Hours[hour] == nil {
 		r.Hours[hour] = map[string]wire.UsageRollupRow{}
 	}
-	k := reportKey(folder, runtime, workflow, route)
-	row := r.Hours[hour][k]
-	row.Folder, row.Runtime = folder, runtime
-	if workflow != "" {
-		row.Workflow = &workflow
-	}
-	if route != "" {
-		row.Route = &route
-	}
-	addRollupRow(&row, add)
-	r.Hours[hour][k] = row
+	addReportRow(r.Hours[hour], folder, runtime, workflow, route, add)
 	r.Seq++
 	r.Unsent[hour] = r.Seq
 }
@@ -249,6 +243,7 @@ func (d *Daemon) saveReportLocked(now time.Time) {
 	}
 	r := d.reportLocked()
 	pruneReport(r, now)
+	// store-bounds: kind=time series; count=193; size=4MiB an hour; age=8d; applied=write (a row past 200 goes on "other")
 	if err := writeStore(d.reportPath(), r); err != nil {
 		log.Printf("report-hours.json: could not save: %v", err)
 	}

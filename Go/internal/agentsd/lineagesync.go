@@ -38,6 +38,8 @@ const (
 	// send is to make instead, from what the store keeps.
 	lineageStatesHeld = 5_000
 	lineageLinksSaved = 2_000
+	// lineageSyncBytes is the largest link or state, with its key.
+	lineageSyncBytes = 4 << 10
 )
 
 type lineageSyncFile struct {
@@ -312,12 +314,30 @@ func (d *Daemon) saveLineageSync() {
 		return
 	}
 	saved := *d.syncFile
-	if len(saved.Links) > lineageLinksSaved || len(saved.States) > lineageStatesHeld {
+	if len(saved.Links) > lineageLinksSaved || len(saved.States) > lineageStatesHeld || !lineageSyncFits(saved, nowFunc()) {
 		saved.Full, saved.Reset, saved.Links, saved.States = true, false, nil, nil
 	}
+	// store-bounds: kind=key-value; count=7000; size=4KiB a link or a state; age=90d; applied=write (past them, only that all is to send)
 	if err := writeStore(d.lineageSyncPath(), saved); err != nil {
 		log.Printf("lineage-sync.json: could not save: %v", err)
 	}
+}
+
+// lineageSyncFits says that each link and state is within its largest, and that none has waited
+// to go for longer than the lineage keeps it.
+func lineageSyncFits(f lineageSyncFile, now time.Time) bool {
+	oldest := wire.DateOf(now.Add(-lineage.KeepEnded))
+	for k, l := range f.Links {
+		if l.EndedAt != nil && *l.EndedAt < oldest || len(k)+jsonSize(l) > lineageSyncBytes {
+			return false
+		}
+	}
+	for _, s := range f.States {
+		if s.At < oldest || jsonSize(s) > lineageSyncBytes {
+			return false
+		}
+	}
+	return true
 }
 
 // closeLineageSync saves what is unsent at shutdown.
