@@ -15,7 +15,7 @@ struct SendToHostRequest: Identifiable, Hashable {
 extension AppModel {
     /// The hosts a folder on this Mac can be sent to: the servers that are reachable now.
     var sendTargets: [MachineRef] {
-        hosts.servers.filter { $0 != .mac && !isOnThisMac($0) && !hostUnreachable($0) }
+        hosts.servers.filter { $0 != .mac && !isOnThisMac($0) && !hostUnreachable($0) && !hosts.settingUp($0) }
     }
 
     /// Whether a folder is this Mac's to send.

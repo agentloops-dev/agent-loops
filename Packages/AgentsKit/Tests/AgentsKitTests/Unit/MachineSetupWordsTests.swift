@@ -33,6 +33,7 @@ struct MachineSetupWordsTests {
         #expect(MachineSetupWords.isSettingUp(setup(done: 7)))
         #expect(!MachineSetupWords.isSettingUp(setup(done: 8, readyAfter: 5)))
         #expect(!MachineSetupWords.isSettingUp(nil))
+        #expect(MachineSetupWords.noSessionYet("vm-1") == "vm-1 is still setting up")
         var row = DaemonAPI.ControlMachine(id: MachineRef(rawValue: "dev"), name: "dev", platform: "linux", version: "1",
                                            state: "online", reach: "direct", machineID: nil)
         #expect(MachineNeed.most(row: row, offline: false, runtimes: []) == nil)

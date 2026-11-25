@@ -1,9 +1,14 @@
 package agentsd
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"log"
 	"path/filepath"
+	"strconv"
+	"strings"
+	"unicode"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/mcpcatalog"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
@@ -49,6 +54,13 @@ func (d *Daemon) mcpDeniedLocked() map[string]string {
 
 // readConnectorApproval is the entry that waits, as approvals/read shows it.
 func (d *Daemon) readConnectorApproval(folder, name string) (wire.GuardedChangeReading, error) {
+	if own, ok := strings.CutPrefix(name, personalApprovalKey); ok {
+		e, err := d.personalEntry(own)
+		if err != nil {
+			return wire.GuardedChangeReading{}, err
+		}
+		return entryReading("~/.agents/mcp.json", e), nil
+	}
 	if _, ok := d.summaryFor(folder); !ok {
 		return wire.GuardedChangeReading{}, noSuchFolder(folder + " is not a folder.")
 	}
@@ -58,24 +70,56 @@ func (d *Daemon) readConnectorApproval(folder, name string) (wire.GuardedChangeR
 	}
 	for _, e := range entries {
 		if e.name == name {
-			digest, current := entryDigest(e.raw), string(e.raw)
-			return wire.GuardedChangeReading{Path: ".agents/mcp.json", Digest: &digest, Current: &current,
-				Lines: []wire.GuardedDiffLine{}}, nil
+			return entryReading(".agents/mcp.json", e), nil
 		}
 	}
 	return wire.GuardedChangeReading{}, Invalid("%s is not in this folder's .agents/mcp.json any more.", name)
 }
 
+// entryReading is a whole entry to read before it is approved: its keys sorted, or as it is
+// written when it repeats a field, no line left out, and a character that does not show written as its escape.
+func entryReading(path string, e mcpEntry) wire.GuardedChangeReading {
+	digest, current := entryDigest(e.raw), canonicalEntry(e.raw)
+	if !plainEntry(e.raw) {
+		current = string(e.raw)
+	}
+	var indented bytes.Buffer
+	if json.Indent(&indented, []byte(current), "", "  ") == nil {
+		current = indented.String()
+	}
+	var shown strings.Builder
+	for _, r := range current {
+		if r == '\n' || unicode.IsPrint(r) {
+			shown.WriteRune(r)
+		} else {
+			shown.WriteString(strings.Trim(strconv.QuoteToASCII(string(r)), `"`))
+		}
+	}
+	current = shown.String()
+	lines := []wire.GuardedDiffLine{}
+	for text := range strings.SplitSeq(current, "\n") {
+		lines = append(lines, wire.GuardedDiffLine{Kind: wire.GuardedDiffLineKindAdded, Text: text})
+	}
+	return wire.GuardedChangeReading{Path: path, Digest: &digest, Current: &current, Lines: lines}
+}
+
 // answerConnector is approvals/answer for a waiting connector.
-func (d *Daemon) answerConnector(folder, name string, digest *string, approve bool) (wire.FolderSummary, error) {
+func (d *Daemon) answerConnector(ctx context.Context, folder, name string, digest *string, approve bool) (wire.FolderSummary, error) {
 	if digest == nil {
 		return wire.FolderSummary{}, Invalid("Say which version you were shown.")
 	}
 	if _, ok := d.summaryFor(folder); !ok {
 		return wire.FolderSummary{}, noSuchFolder(folder + " is not a folder.")
 	}
+	if own, ok := strings.CutPrefix(name, personalApprovalKey); ok {
+		if err := d.answerPersonalConnector(ctx, own, *digest, approve); err != nil {
+			return wire.FolderSummary{}, err
+		}
+		s, _ := d.summaryFor(folder)
+		return s, nil
+	}
 	if approve {
-		if _, err := d.mcpApprove(wire.MCPApproveRequest{Destination: wire.SkillDestination{
+		if _, err := d.mcpApprove(ctx, wire.MCPApproveRequest{Destination: wire.SkillDestination{
 			Kind: wire.SkillDestinationKindFolder, Folder: &folder}, Name: name, Digest: *digest}); err != nil {
 			return wire.FolderSummary{}, err
 		}
@@ -101,6 +145,15 @@ func (d *Daemon) denyConnector(folder, name, digest string) error {
 	if raw == nil || entryDigest(raw) != digest {
 		return mcpRefusal(mcpcatalog.StaleDigest())
 	}
+	if err := d.keepDenied(mcpApprovalKey(folder, name), digest); err != nil {
+		return err
+	}
+	log.Printf("mcp: deny %s in %s", name, filepath.Base(folder))
+	return nil
+}
+
+// keepDenied keeps the denial of one entry's digest.
+func (d *Daemon) keepDenied(key, digest string) error {
 	d.mcpMu.Lock()
 	defer d.mcpMu.Unlock()
 	d.mcpApprovalsLocked()
@@ -111,13 +164,12 @@ func (d *Daemon) denyConnector(folder, name, digest string) error {
 		}
 	}
 	denied := d.mcpDeniedLocked()
-	if err := keepApproval(denied, d.mcpGoneLocked(), "", mcpApprovalKey(folder, name), digest); err != nil {
+	if err := keepApproval(denied, d.mcpGoneLocked(), "", key, digest); err != nil {
 		return approvalNotKept(err)
 	}
 	d.mcpApprovals["denied"], _ = json.Marshal(denied)
 	if err := d.saveMCPApprovalsLocked(true); err != nil {
 		return approvalNotKept(err)
 	}
-	log.Printf("mcp: deny %s in %s", name, filepath.Base(folder))
 	return nil
 }

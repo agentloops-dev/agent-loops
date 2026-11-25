@@ -613,7 +613,7 @@ func (s *Store) AppendOne(id wire.UUID, e wire.TranscriptEntry) (int, wire.Trans
 // openTranscript opens a transcript to append to; a test counts the opens through it, or
 // refuses them as a full disk does.
 var openTranscript = func(file string) (*os.File, error) {
-	// store-bounds: kind=log; size=10MiB; age=90d; applied=hourly sweep (FolderLog)
+	// store-bounds: kind=log; size=10MiB a session (4MiB a record); age=90d; applied=hourly sweep (FolderLog)
 	return os.OpenFile(file, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 }
 

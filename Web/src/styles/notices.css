@@ -44,7 +44,7 @@
 /* An alert: a choice that blocks the work, in place of window.confirm. */
 dialog.message-alert { width: min(420px, calc(100vw - 32px)); }
 .message-alert h2 { margin: 0 0 6px; }
-.message-alert-detail { margin: 0; white-space: pre-line; color: var(--paper-secondary); }
+.message-alert-detail { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--paper-secondary); }
 .message-alert .sheet-actions { margin-top: 16px; }
 .message-alert button.destructive { color: var(--tint-failure); }
 

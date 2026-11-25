@@ -95,7 +95,7 @@ func keepUnreadable(path string) {
 	if err != nil {
 		return
 	}
-	// store-bounds: kind=blob; size=100MiB a file; count=3; age=90d; applied=on write and hourly sweep
+	// store-bounds: kind=blob; size=100MiB of a file's copies (the newest stays whatever its size); count=3; age=90d; applied=on write and hourly sweep
 	if err := os.WriteFile(fmt.Sprintf("%s.unreadable-%d", path, time.Now().Unix()), b, 0o644); err != nil { //nolint:gosec // G306: the mode this file always had; only its error is new
 		log.Printf("approvals: could not keep the unreadable %s aside: %v", filepath.Base(path), err) //nolint:gosec // G706: the same path
 	}
@@ -144,7 +144,7 @@ func (d *Daemon) sweepMCPApprovals(gone func(string) bool, now time.Time) {
 	was := d.mcpGoneLocked()
 	marks := map[string]wire.Date{}
 	changed := false
-	for _, part := range []string{"approved", "denied", "from", "views"} {
+	for _, part := range []string{"approved", "denied", "from", "views", "synced"} {
 		m := map[string]string{}
 		if d.mcpApprovals[part] == nil || json.Unmarshal(d.mcpApprovals[part], &m) != nil {
 			continue

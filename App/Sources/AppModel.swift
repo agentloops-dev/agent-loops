@@ -3887,10 +3887,9 @@ final class AppModel {
         // `.mac` is `client`, already. Every other host, including another machine's
         // home host, gets a client of its own on the same link.
         let others = listed.filter { $0.id != .mac }
-        // A machine that is still setting itself up takes no session until step 8 passes (#5357).
-        hosts.controlled = Dictionary(uniqueKeysWithValues: others.map {
-            ($0.id, (label: $0.name, online: $0.answers && !MachineSetupWords.isSettingUp($0.setup)))
-        })
+        // Online is whether it answers, also while it sets itself up (#7108): its page has to ask
+        // it, and sign its runtimes in. New sessions wait for step 8 in `settingUp` (#5357).
+        hosts.controlled = Dictionary(uniqueKeysWithValues: others.map { ($0.id, (label: $0.name, online: $0.answers)) })
         hosts.controlRows = Dictionary(uniqueKeysWithValues: others.map { ($0.id, $0) })
         // Step 7 of a machine's set-up signs its runtimes in (#5361).
         for host in others { machineSignIn.follow(host.id, model: self) }
@@ -4413,13 +4412,12 @@ final class AppModel {
         }
     }
 
-    /// Approve the entry the row showed, on the folder's own machine, as Remove does (#2199,
-    /// #5717). A digest that no longer matches comes back as an error.
-    func approveFolderMCP(_ name: String, digest: String, in folder: URL,
-                          on host: MachineRef = .mac) async -> DaemonAPI.MCPCatalogError? {
+    /// Approve the entry the row showed, on its own machine, as Remove does (#2199, #5717). A digest that no longer matches comes back as an error.
+    func approveMCP(_ name: String, digest: String, at destination: DaemonAPI.SkillDestination,
+                    on host: MachineRef = .mac) async -> DaemonAPI.MCPCatalogError? {
         do {
             _ = try await (host == .mac ? macClient : client(for: host)).call(DaemonAPI.Method.mcpApprove,
-                                      DaemonAPI.MCPApproveRequest(destination: .folder(folder: folder.path),
+                                      DaemonAPI.MCPApproveRequest(destination: destination,
                                                                   name: name, digest: digest),
                                       returning: DaemonAPI.MCPListAnswer.self)
             return nil

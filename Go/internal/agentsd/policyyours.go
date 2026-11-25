@@ -604,7 +604,7 @@ func (d *Daemon) firstStartMoveDisplayLocked(rules *wire.PolicyRules) {
 	if err != nil {
 		return
 	}
-	var fields map[string]json.RawMessage
+	var fields map[string]wire.JSONValue
 	if json.Unmarshal(b, &fields) != nil {
 		return
 	}
@@ -612,17 +612,15 @@ func (d *Daemon) firstStartMoveDisplayLocked(rules *wire.PolicyRules) {
 	changed = firstStartMoveNoticeCooldown(fields, rules) || changed
 	changed = firstStartMoveArchiveMyChats(fields, rules) || changed
 	if changed {
-		if nb, err := json.Marshal(fields); err == nil {
-			if err := store.WriteAtomically(displayPath, nb, 0o644); err != nil {
-				log.Printf("policy: the first-start move: could not save %s: %v", filepath.Base(displayPath), err)
-			}
+		if err := d.writeDisplay(fields); err != nil {
+			log.Printf("policy: the first-start move: could not save %s: %v", filepath.Base(displayPath), err)
 		}
 	}
 }
 
 // firstStartMoveNoticeBurst moves the noticeBurst key of fields into rules.NoticeLimits.
 // It returns true when the key was there.
-func firstStartMoveNoticeBurst(fields map[string]json.RawMessage, rules *wire.PolicyRules) bool {
+func firstStartMoveNoticeBurst(fields map[string]wire.JSONValue, rules *wire.PolicyRules) bool {
 	raw, ok := fields[noticeBurstKey]
 	if !ok {
 		return false
@@ -640,7 +638,7 @@ func firstStartMoveNoticeBurst(fields map[string]json.RawMessage, rules *wire.Po
 
 // firstStartMoveNoticeCooldown moves the noticeCooldownMinutes key of fields into
 // rules.NoticeLimits. It returns true when the key was there.
-func firstStartMoveNoticeCooldown(fields map[string]json.RawMessage, rules *wire.PolicyRules) bool {
+func firstStartMoveNoticeCooldown(fields map[string]wire.JSONValue, rules *wire.PolicyRules) bool {
 	raw, ok := fields[noticeCooldownKey]
 	if !ok {
 		return false
@@ -659,7 +657,7 @@ func firstStartMoveNoticeCooldown(fields map[string]json.RawMessage, rules *wire
 
 // firstStartMoveArchiveMyChats moves the agentsMayArchiveMyChats key of fields into
 // rules.ArchiveMyChats. It returns true when the key was there.
-func firstStartMoveArchiveMyChats(fields map[string]json.RawMessage, rules *wire.PolicyRules) bool {
+func firstStartMoveArchiveMyChats(fields map[string]wire.JSONValue, rules *wire.PolicyRules) bool {
 	raw, ok := fields[agentsMayArchiveMyChatsKey]
 	if !ok {
 		return false
