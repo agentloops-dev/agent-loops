@@ -115,6 +115,8 @@ func TestAHelperOnItsStartersRuntimeInheritsAlwaysApprove(t *testing.T) {
 
 		f := newRequestsFixture(t)
 		first := f.startSession(f.lead("opencode", "", nil), map[string]any{})
+		// Its runtime takes back the token a client of it held when it starts (#7146): let its turn end first.
+		waitFor(t, "ended the first helper's turn", func() bool { return f.d.Store.Agent(first).State == wire.AgentStateFinished })
 		second := f.startSession(*f.d.Store.Agent(first), map[string]any{})
 		if !f.approves(second) {
 			t.Fatal("it asks")
