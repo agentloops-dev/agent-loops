@@ -33,6 +33,11 @@ func Fits(ctx context.Context, s store.Store, key, what string, data []byte, mos
 	return TooLarge(what, len(data), most)
 }
 
+// TooMany is the refusal of one more of what is at its count, most.
+func TooMany(what string, most int) error {
+	return &TooLargeError{fmt.Sprintf("%s are at their most, %d. Remove one first.", what, most)}
+}
+
 // TooLarge is the refusal of a record of size bytes, over most.
 func TooLarge(what string, size, most int) error {
 	return &TooLargeError{fmt.Sprintf("%s would be too large: %d KiB, and the most is %d KiB. Remove something first.", what, (size+1023)>>10, most>>10)}

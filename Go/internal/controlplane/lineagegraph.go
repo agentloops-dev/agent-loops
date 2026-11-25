@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -43,6 +44,7 @@ import (
 // its copy and each state is kept once.
 
 const (
+	// store-bounds: kind=graph; count=20_000 links and 20_000 states a machine; size=72MiB a machine (2KiB a link, 1KiB a state); age=90d; applied=on write (a link or state over its size is not kept), the hourly sweep applies the age and the counts and deletes a removed machine's
 	lineageGraphPrefix = "v1/lineage-graph/"
 	// mostSyncLinks and mostSyncStates bound one send.
 	mostSyncLinks  = 2_000
@@ -103,6 +105,30 @@ var sessionStates = map[wire.LineageSessionStateName]bool{
 	wire.LineageSessionStateNameStopped: true, wire.LineageSessionStateNameArchived: true, wire.LineageSessionStateNameDeleted: true,
 }
 
+// keepLineageWithinLargest is sync without the links and states over their largest size, as
+// the machine's store has them (#7248): one is not kept, and the rest of the send is.
+func (s *Service) keepLineageWithinLargest(host string, sync wire.LineageSync) wire.LineageSync {
+	large := 0
+	fits := func(v any, most int) bool {
+		data, err := json.Marshal(v)
+		if err != nil || len(data) > most {
+			large++
+			return false
+		}
+		return true
+	}
+	if sync.Links != nil {
+		sync.Links = slices.DeleteFunc(slices.Clone(sync.Links), func(l wire.LineageLink) bool { return !fits(l, lineageLinkBytes) })
+	}
+	if sync.States != nil {
+		sync.States = slices.DeleteFunc(slices.Clone(sync.States), func(c wire.LineageStateChange) bool { return !fits(c, lineageStateBytes) })
+	}
+	if large > 0 {
+		s.log(fmt.Sprintf("lineage: %d links or states of machine %s are over their largest size and are not kept", large, host))
+	}
+	return sync
+}
+
 // keepLineageSync is lineage/sync: the links over this machine's copies of them, and the
 // state changes after its own. Full says the control plane has no copy of its links.
 func (s *Service) keepLineageSync(ctx context.Context, host string, sync wire.LineageSync, now time.Time) (wire.LineageSyncAnswer, error) {
@@ -117,6 +143,7 @@ func (s *Service) keepLineageSync(ctx context.Context, host string, sync wire.Li
 			return wire.LineageSyncAnswer{}, fail(invalidParams, "A lineage link: %v.", err)
 		}
 	}
+	sync = s.keepLineageWithinLargest(host, sync)
 	for _, c := range sync.States {
 		if c.Node.Kind != lineage.KindSession || lineage.CheckNode(c.Node) != nil {
 			return wire.LineageSyncAnswer{}, fail(invalidParams, "A state is a session node's, not %s %s.", c.Node.Kind, c.Node.Ref)
@@ -208,6 +235,9 @@ func (s *Service) keepSyncChanges(ctx context.Context, host string, links []wire
 	if err != nil {
 		return false, err
 	}
+	if err := within("A lineage change", data, lineageChangeBytes); err != nil {
+		return false, err
+	}
 	if _, err := s.cfg.Store.Put(ctx, lineageChangeKey(host, now), data, store.Absent); err != nil {
 		return false, err
 	}
@@ -253,6 +283,9 @@ func compactLineageChanges(ctx context.Context, st store.Store, host string, key
 	if len(one.Links) > 0 || len(one.States) > 0 {
 		data, err := records.Encode(one)
 		if err != nil {
+			return err
+		}
+		if err := within("A lineage change", data, lineageChangeBytes); err != nil {
 			return err
 		}
 		id := make([]byte, 4)
@@ -337,7 +370,7 @@ func rollUpLineage(ctx context.Context, st store.Store, host string, reset []wir
 	keptLinks.Links = mergeLinks(keptLinks.Links, changed)
 	keptStates.States = boundStates(append(keptStates.States, states...), now)
 	keptStates.At = records.At(now)
-	if err := putOver(ctx, st, lineageStatesKey(host), statesObject, keptStates); err != nil {
+	if err := putOver(ctx, st, lineageStatesKey(host), statesObject, keptStates, lineageStatesBytes); err != nil {
 		return false, err
 	}
 	switch {
@@ -347,7 +380,7 @@ func rollUpLineage(ctx context.Context, st store.Store, host string, reset []wir
 			keptLinks.Links = []wire.LineageLink{}
 		}
 		keptLinks.At = records.At(now)
-		if err := putOver(ctx, st, lineageLinksKey(host), linksObject, keptLinks); err != nil {
+		if err := putOver(ctx, st, lineageLinksKey(host), linksObject, keptLinks, lineageLinksBytes); err != nil {
 			return false, err
 		}
 	case linksObject != nil:
@@ -365,11 +398,14 @@ func rollUpLineage(ctx context.Context, st store.Store, host string, reset []wir
 }
 
 // putOver writes v at key over the object read (nil: none was).
-func putOver(ctx context.Context, st store.Store, key string, read *store.Object, v any) error {
+func putOver(ctx context.Context, st store.Store, key string, read *store.Object, v any, most int) error {
 	// Compact, and not through records.Encode: its sorted, indented form took three more
 	// copies of megabytes and twice the bytes (#6863). Any JSON reader reads it.
 	data, err := json.Marshal(v)
 	if err != nil {
+		return err
+	}
+	if err := within("A machine's lineage", data, most); err != nil {
 		return err
 	}
 	when := store.Absent
