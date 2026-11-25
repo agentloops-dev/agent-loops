@@ -16237,7 +16237,7 @@ export interface WaitingOffer {
 
 /**
  * Whether this Mac is kept awake for agents, and for how long after they stop (024), as wake.json
- * in the root.
+ * in the settings of the person (#6745).
  */
 export interface WakeSettings {
   keepsAwake: boolean;
