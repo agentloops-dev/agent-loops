@@ -124,6 +124,7 @@ Mac.
 | `backups-upload/`, `backups-download/` | blob | A server backup on its way | Removed after use | On use |
 | `.restore-*` | blob | A restore in progress | Removed when it ends; one a crash left goes at the next start (#3649) | At end; at start |
 | `Outgoing/`, `Incoming/` | cache | Exports, sends and imports | 1 hour untouched | On the next transfer, at start and hourly (#3649) |
+| `Seeds/<id>` | blob | The commits that a send's new folder gets from its origin (#7119) | Until the folder is made; 1 hour if it never is; a get ends after 10 minutes, or 1 minute after the sender last asked; 4 at once | On use; 1 hour after the get; at start |
 | `Clones/<id>` | blob | A clone in progress | Removed after the clone | After the clone, and at start |
 
 ### Caches and logs

@@ -428,7 +428,8 @@
       }
     ],
     "checkout": "main",
-    "origin": "git@github.com:example/hello.git"
+    "origin": "git@github.com:example/hello.git",
+    "seed": "6F0E1C2A-3B4D-4E5F-8A9B-0C1D2E3F4A5B"
   },
   "BringBackRequest": {
     "folder": "file:///Users/me/hello/",

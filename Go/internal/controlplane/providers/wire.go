@@ -149,6 +149,7 @@ const (
 	MethodAgentsEndedThere         = "agents/endedElsewhere"
 	MethodFoldersClone             = "folders/clone"
 	MethodReceiveState             = "folders/receiveState"
+	MethodReceiveSeed              = "folders/receiveSeed"
 	MethodReceiveUpload            = "folders/receiveUpload"
 	MethodReceive                  = "folders/receive"
 	MethodSendFacts                = "folders/sendFacts"

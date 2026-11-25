@@ -169,6 +169,7 @@ var CallFoldersList = Method[FoldersListRequest, []FolderSummary]{"folders/list"
 var CallFoldersNotCommitted = Method[FolderRequest, NotCommittedResponse]{"folders/notCommitted"}
 var CallFoldersReadGuardedChange = Method[GuardedChangeRequest, GuardedChangeReading]{"folders/readGuardedChange"}
 var CallFoldersReceive = Method[ReceiveRequest, FolderSummary]{"folders/receive"}
+var CallFoldersReceiveSeed = Method[ReceiveSeedRequest, ReceiveSeed]{"folders/receiveSeed"}
 var CallFoldersReceiveState = Method[ReceiveStateRequest, ReceiveState]{"folders/receiveState"}
 var CallFoldersReceiveUpload = Method[ReceiveUploadRequest, Empty]{"folders/receiveUpload"}
 var CallFoldersSend = Method[SendRequest, SendSummary]{"folders/send"}
