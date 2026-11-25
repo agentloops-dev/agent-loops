@@ -59,7 +59,7 @@ func (d *Daemon) uploadFolder() string { return filepath.Join(d.Store.Loc.Root, 
 // storeBackup makes one backup and sends it to the store, which keeps the newest Keep.
 func (d *Daemon) storeBackup() error {
 	at := nowFunc().UTC()
-	name := at.Format("20060102T150405Z")
+	name := at.Format(backupNameTime)
 	folder := d.uploadFolder()
 	// What a backup cut off left: nothing here is wanted once its upload ends.
 	os.RemoveAll(folder)

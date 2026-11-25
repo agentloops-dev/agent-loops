@@ -129,6 +129,7 @@ func (d *Daemon) sweepHourly() {
 	d.sweepOldRuns()
 	sweepTransfers(d.outgoingFolder())
 	sweepTransfers(d.incomingFolder())
+	d.sweepBackups()
 	d.sweepDropboxes(nowFunc())
 	d.sweepSetAsides(nowFunc())
 	if n := d.lineage().Prune(); n > 0 {
