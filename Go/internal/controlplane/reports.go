@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/csv"
 	"encoding/json"
+	"fmt"
 	"sort"
 	"strconv"
 	"strings"
@@ -25,12 +26,14 @@ import (
 // The person is the machine's owner (#994): each machine is one user's.
 
 const (
+	// store-bounds: kind=time series; count=200_000 hours of all machines; size=1MiB a record; age=7d; applied=on write (a larger period is not kept), the hourly sweep deletes the oldest past the count and those past the age
 	usageHoursPrefix = "v1/usage/hours/"
-	usageDaysPrefix  = "v1/usage/days/"
-	usageHoursKept   = 7 * 24 * time.Hour
-	usageDaysKept    = 90 * 24 * time.Hour
-	usageHourLayout  = "2006-01-02T15"
-	usageDayLayout   = "2006-01-02"
+	// store-bounds: kind=time series; count=100_000 days of all machines; size=1MiB a record; age=90d; applied=on write (a larger period is not kept), the hourly sweep deletes the oldest past the count and those past the age
+	usageDaysPrefix = "v1/usage/days/"
+	usageHoursKept  = 7 * 24 * time.Hour
+	usageDaysKept   = 90 * 24 * time.Hour
+	usageHourLayout = "2006-01-02T15"
+	usageDayLayout  = "2006-01-02"
 	// mostRollupRows bounds one period of one machine: folders × runtimes.
 	mostRollupRows = 1000
 	// mostRollupPeriods bounds one send.
@@ -80,6 +83,11 @@ func (s *Service) keepRollup(ctx context.Context, host string, rollup wire.Usage
 			if err != nil {
 				return err
 			}
+			// A period over its largest size is not kept, and the others sent are (#7248).
+			if len(data) > usageBytes {
+				s.log(fmt.Sprintf("usage: the period %s of machine %s is %d bytes, over %d, and is not kept", at.At, host, len(data), usageBytes))
+				continue
+			}
 			// Only this machine writes its own period.
 			if _, err := s.cfg.Store.Put(ctx, usageKey(p.prefix, at.At, host), data, store.Always); err != nil {
 				return err
@@ -91,22 +99,30 @@ func (s *Service) keepRollup(ctx context.Context, host string, rollup wire.Usage
 
 // sweepUsage deletes hours older than 7 days and days older than 90, at most most.
 func sweepUsage(ctx context.Context, s store.Store, now time.Time, most int) (int, error) {
+	return sweepUsageTo(ctx, s, now, most, usageHoursMost, usageDaysMost)
+}
+
+// sweepUsageTo is sweepUsage with at most hours and days kept of all machines.
+func sweepUsageTo(ctx context.Context, s store.Store, now time.Time, most, hours, days int) (int, error) {
 	n := 0
 	for _, p := range []struct {
 		prefix string
 		oldest string
-	}{{usageHoursPrefix, now.Add(-usageHoursKept).UTC().Format(usageHourLayout)},
-		{usageDaysPrefix, now.Add(-usageDaysKept).UTC().Format(usageDayLayout)}} {
+		most   int
+	}{{usageHoursPrefix, now.Add(-usageHoursKept).UTC().Format(usageHourLayout), hours},
+		{usageDaysPrefix, now.Add(-usageDaysKept).UTC().Format(usageDayLayout), days}} {
 		keys, err := s.List(ctx, p.prefix)
 		if err != nil {
 			return n, err
 		}
-		for _, k := range keys {
+		// Keys sort by period: past the most, the oldest go whatever their age (#7248).
+		over := len(keys) - p.most
+		for i, k := range keys {
 			if n >= most {
 				return n, nil
 			}
 			at, _, _ := strings.Cut(strings.TrimPrefix(k.Key, p.prefix), "/")
-			if at >= p.oldest {
+			if at >= p.oldest && i >= over {
 				continue
 			}
 			if err := s.Delete(ctx, k.Key); err != nil {

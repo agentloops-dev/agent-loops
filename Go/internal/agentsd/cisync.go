@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"maps"
 	"path/filepath"
+	"slices"
 	"sort"
 	"sync"
 	"time"
@@ -33,6 +35,9 @@ const (
 	ciSyncRuns = 1_000
 	// ciSyncDays bounds the days of one send, as the control plane does.
 	ciSyncDays = 31
+	// ciReposKept and ciRepoKeyBytes bound the repositories of sync.json and state.json.
+	ciReposKept    = 100
+	ciRepoKeyBytes = 512
 )
 
 type ciSyncFile struct {
@@ -330,8 +335,37 @@ func (d *Daemon) saveCISync() {
 	if d.ciSyncFile == nil {
 		return
 	}
+	boundCISync(d.ciSyncFile, nowFunc())
+	// store-bounds: kind=key-value; count=100; size=8KiB a repository; age=90d; applied=write
 	if err := writeStore(d.ciSyncPath(), d.ciSyncFile); err != nil {
 		log.Printf("ci-timings/sync.json: could not save: %v", err)
+	}
+}
+
+// boundCISync drops the days that the timings no longer have, then the repositories past
+// ciReposKept, those with nothing to send first. One that goes is sent whole when it changes next.
+func boundCISync(f *ciSyncFile, now time.Time) {
+	oldest := now.UTC().AddDate(0, 0, -citimings.KeepDays).Format(time.DateOnly)
+	idle := func(r *ciSyncRepo) bool { return !r.Full && !r.Reset && r.Meta == 0 && len(r.Days) == 0 }
+	for key, r := range f.Repos {
+		if r == nil || len(key) > ciRepoKeyBytes {
+			delete(f.Repos, key)
+			continue
+		}
+		keepSince(r.Days, oldest, citimings.KeepDays+1, "")
+	}
+	keys := slices.Sorted(maps.Keys(f.Repos))
+	slices.SortStableFunc(keys, func(a, b string) int {
+		switch x, y := idle(f.Repos[a]), idle(f.Repos[b]); {
+		case x == y:
+			return 0
+		case x:
+			return -1
+		}
+		return 1
+	})
+	for _, key := range keys[:max(0, len(keys)-ciReposKept)] {
+		delete(f.Repos, key)
 	}
 }
 

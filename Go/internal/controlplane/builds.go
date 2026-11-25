@@ -31,6 +31,7 @@ import (
 //     builds/run do, over the machines in the scope (as reports/value's).
 
 const (
+	// store-bounds: kind=time series; count=31 days a repository of a machine; size=4MiB a record (a day's runs); age=90d; applied=on write (the oldest runs of a day are cut to fit), the hourly sweep deletes days past the age and a removed machine's
 	buildsPrefix = "v1/build-timings/"
 	buildsMeta   = "meta.json"
 	// mostBuildsDays and mostBuildsRuns bound one send; mostBuildsJobs and mostBuildsSteps one run.
@@ -138,7 +139,7 @@ func (s *Service) putBuildsDays(ctx context.Context, dir string, sent []wire.Bui
 			}
 			continue
 		}
-		data, err := records.Encode(storedBuildsDay{Runs: runs, At: records.At(now)})
+		data, err := encodeBuildsDay(runs, now)
 		if err != nil {
 			return err
 		}
@@ -147,6 +148,15 @@ func (s *Service) putBuildsDays(ctx context.Context, dir string, sent []wire.Bui
 		}
 	}
 	return nil
+}
+
+// encodeBuildsDay is a day's runs as stored. Runs are oldest first, so those over buildsDayBytes
+// that the machine sent last go: it sends them again (#7248).
+func encodeBuildsDay(runs []citimings.Run, now time.Time) ([]byte, error) {
+	_, data, err := fitting(runs, buildsDayBytes, func(some []citimings.Run) ([]byte, error) {
+		return records.Encode(storedBuildsDay{Runs: some, At: records.At(now)})
+	})
+	return data, err
 }
 
 // putBuildsMeta writes the copy's meta.json: what the machine said of the repository, and now.
@@ -161,8 +171,12 @@ func (s *Service) putBuildsMeta(ctx context.Context, dir string, sync wire.Build
 	if sync.FilledFrom != nil {
 		meta.FilledFrom = new(sync.FilledFrom.Time().UTC())
 	}
+	meta.DefaultBranch = cut(meta.DefaultBranch, 1<<10)
 	data, err := records.Encode(meta)
 	if err != nil {
+		return err
+	}
+	if err := within("The repository's meta", data, buildsMetaBytes); err != nil {
 		return err
 	}
 	_, err = s.cfg.Store.Put(ctx, dir+buildsMeta, data, store.Always)
@@ -567,7 +581,7 @@ func (o *objectDays) Read(day string) ([]citimings.Run, error) {
 }
 
 func (o *objectDays) Write(day string, runs []citimings.Run) error {
-	data, err := records.Encode(storedBuildsDay{Runs: runs, At: records.At(o.now)})
+	data, err := encodeBuildsDay(runs, o.now)
 	if err != nil {
 		return err
 	}

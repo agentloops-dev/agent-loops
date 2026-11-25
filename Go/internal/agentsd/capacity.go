@@ -33,8 +33,8 @@ import (
 // for minutes with 41% free and load 0.3 per core, and macOS keeps swap used long after the
 // pressure has gone (47% used with nothing running). Critical pressure still gives full.
 const (
-	capacityNearLoad = 2.0
-	capacityFullLoad = 3.0
+	capacityNearLoad = capacity.NearLoad
+	capacityFullLoad = capacity.FullLoad
 	capacityEvery    = 15 * time.Second
 )
 
@@ -45,6 +45,22 @@ type capacitySample struct {
 	// pressure is "" when the kernel does not say.
 	pressure wire.MemoryPressure
 	swap     float64
+	// reserve is the load per core kept free for the control plane on this machine, 0 when it
+	// runs elsewhere; and control is then the kernel's pressure, as the control plane reads
+	// it (#6613).
+	reserve float64
+	control *capacity.Pressure
+}
+
+// controlHereEnv is set for a host whose machine also runs the control plane (#6613): by
+// `agentsd install --control`'s drop-in on Linux, and by the Mac app's launcher.
+const controlHereEnv = "AGENTS_CONTROL_HERE"
+
+// withControl is s as a machine with both roles has it: one core's load is the control
+// plane's, and its pressure counts.
+func (s capacitySample) withControl(cores int, p capacity.Pressure) capacitySample {
+	s.reserve, s.control = 1/float64(max(1, cores)), &p
+	return s
 }
 
 // capacitySampler is the look; a test puts a fake here with setCapacitySampler. It is an
@@ -78,14 +94,26 @@ func sampleCapacity(ctx context.Context) capacitySample {
 }
 
 // capacityTarget is the level one look gives, and the signal that gave it ("" for ok):
-// the worst of load and critical memory pressure, load first.
+// the worst of load and critical memory pressure, load first. On a machine with both roles
+// it is the higher of that, with one core's load kept free, and the control plane's own
+// level, so Auto, the leases and the helper starts all make room for it (#6613).
 func capacityTarget(s capacitySample) (wire.CapacityLevel, string) {
+	level, signal := hostTarget(s)
+	if s.control != nil {
+		if c, why := capacity.ControlTarget(s.load1, *s.control); capacity.Higher(level, c) != level {
+			return c, why
+		}
+	}
+	return level, signal
+}
+
+func hostTarget(s capacitySample) (wire.CapacityLevel, string) {
 	switch {
-	case s.load1 > capacityFullLoad:
+	case s.load1 > capacityFullLoad-s.reserve:
 		return wire.CapacityLevelFull, "load"
 	case s.pressure == wire.MemoryPressureCritical:
 		return wire.CapacityLevelFull, "memory_pressure"
-	case s.load1 > capacityNearLoad:
+	case s.load1 > capacityNearLoad-s.reserve:
 		return wire.CapacityLevelNear, "load"
 	}
 	return wire.CapacityLevelOk, ""
@@ -111,7 +139,7 @@ func capacityReason(signal string) *wire.CapacityReason {
 	switch signal {
 	case "load":
 		r = wire.CapacityReasonCpu
-	case "memory_pressure":
+	case "memory_pressure", "pressure_memory":
 		r = wire.CapacityReasonMemory
 	default:
 		return nil
@@ -226,6 +254,10 @@ func signalWords(signal string, s capacitySample) string {
 	switch signal {
 	case "memory_pressure":
 		return "memory pressure " + string(s.pressure)
+	case "pressure_memory":
+		return fmt.Sprintf("memory pressure %.0f%%", s.control.Memory)
+	case "pressure_io":
+		return fmt.Sprintf("disk pressure %.0f%%", s.control.IO)
 	}
 	return fmt.Sprintf("load %.1f per core", s.load1)
 }
@@ -262,6 +294,14 @@ const capacityOverrideFile = "capacity-override"
 
 // sampleNow is a look: the walk's load when its root sets one, the machine's otherwise.
 func (d *Daemon) sampleNow(ctx context.Context) capacitySample {
+	s := d.sampleMachine(ctx)
+	if d.startOpts().controlHere {
+		s = s.withControl(goruntime.NumCPU(), capacity.ReadPressure())
+	}
+	return s
+}
+
+func (d *Daemon) sampleMachine(ctx context.Context) capacitySample {
 	if d.Store != nil {
 		if v, ok := overriddenLoad(d.Store.Loc.Root); ok {
 			return capacitySample{load1: v, load5: v}

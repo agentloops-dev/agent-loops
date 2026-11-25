@@ -214,16 +214,12 @@ func (d *Daemon) sweepHistories(now time.Time) {
 		d.flushSpendLocked()
 	}
 	if n := pruneUsage(d.usageLocked(), now); n > 0 {
-		if err := writeStore(d.usagePath(), d.usage); err != nil {
-			log.Printf("usage-history.json: could not save: %v", err)
-		}
+		d.saveUsageLocked()
 	}
 	d.costMu.Unlock()
 	d.timeMu.Lock()
 	if n := pruneTime(d.timeLocked(), now); n > 0 {
-		if err := writeStore(d.timePath(), d.timeHeld); err != nil {
-			log.Printf("time-history.json: could not save: %v", err)
-		}
+		d.saveTimeLocked()
 	}
 	d.timeMu.Unlock()
 	d.featureMu.Lock()

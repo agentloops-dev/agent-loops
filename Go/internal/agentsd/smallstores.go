@@ -12,6 +12,7 @@ import (
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/mcpcatalog"
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/skillcatalog"
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/hostsetup"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -36,6 +37,10 @@ func (d *Daemon) sweepSmallStores(now time.Time) {
 	d.sweepUnseenDevices(now)
 	d.sweepConnectorSetup()
 	d.sweepHostedLogs(now)
+	if d.Store != nil {
+		hostsetup.Sweep(d.Store.Loc.Root, now)
+	}
+	d.sweepSignInRelays()
 	d.sweepCatalogItems(now, gone)
 	d.sweepAccountHomes(now)
 	d.sweepViewCatalogs()

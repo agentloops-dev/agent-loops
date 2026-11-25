@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"maps"
 	"os"
 	"path/filepath"
 	"sort"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/diskjson"
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/boundmap"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -118,11 +120,13 @@ func readStore(path string, v any, meaning string) string {
 	return filepath.Base(path) + " could not be read, so it was set aside as " + filepath.Base(aside) + "."
 }
 
+// writeStore writes a store whole. Each call declares its store.
 func writeStore(path string, v any) error {
 	b, err := diskjson.Marshal(v)
 	if err != nil {
 		return err
 	}
+	// store-bounds: not a store: each call of writeStore declares its own
 	return store.WriteAtomically(path, b, 0o644)
 }
 
@@ -141,6 +145,7 @@ func (d *Daemon) spendLocked() *spendFile {
 		if d.spend.Tokens == nil {
 			d.spend.Tokens = map[string]int64{}
 		}
+		boundSpend(d.spend)
 	}
 	return d.spend
 }
@@ -188,6 +193,7 @@ func pruneUsage(u *usageFile, now time.Time) int {
 func (d *Daemon) flushSpendLocked() {
 	s := d.spendLocked()
 	pruneSpend(s, nowFunc())
+	// store-bounds: kind=time series; count=7; size=4KiB a day; age=7d; applied=write (a currency past 16 goes on "other") and hourly sweep
 	if err := writeStore(d.spendPath(), s); err != nil {
 		log.Printf("spend.json: could not save: %v", err)
 	}
@@ -205,6 +211,7 @@ func (d *Daemon) usageLocked() *usageFile {
 		if d.usage.Hours == nil {
 			d.usage.Hours = map[string]map[string]wire.UsageBucket{}
 		}
+		boundUsage(d.usage)
 	}
 	return d.usage
 }
@@ -213,12 +220,17 @@ func addBucket(m map[string]map[string]wire.UsageBucket, key, runtime string, ad
 	if m[key] == nil {
 		m[key] = map[string]wire.UsageBucket{}
 	}
-	b := m[key][runtime]
+	addRow(m[key], runtime, periodRows, add, sumUsage)
+}
+
+// sumUsage is b and add together, in maps of its own.
+func sumUsage(b, add wire.UsageBucket) wire.UsageBucket {
+	b.Cost = maps.Clone(b.Cost)
 	if b.Cost == nil {
 		b.Cost = map[string]float64{}
 	}
 	for c, v := range add.Cost {
-		b.Cost[c] += v
+		boundmap.AddMoney(b.Cost, c, v)
 	}
 	b.InputTokens += add.InputTokens
 	b.OutputTokens += add.OutputTokens
@@ -227,7 +239,7 @@ func addBucket(m map[string]map[string]wire.UsageBucket, key, runtime string, ad
 	b.CachedWriteTokens += add.CachedWriteTokens
 	b.Turns += add.Turns
 	b.UnpricedTurns += add.UnpricedTurns
-	m[key][runtime] = b
+	return b
 }
 
 func (d *Daemon) recordUsageLocked(runtime string, add wire.UsageBucket) {
@@ -237,7 +249,12 @@ func (d *Daemon) recordUsageLocked(runtime string, add wire.UsageBucket) {
 	addBucket(u.Days, hour[:10], runtime, add)
 	pruneUsage(u, nowFunc())
 	u.Now = ""
-	if err := writeStore(d.usagePath(), u); err != nil {
+	d.saveUsageLocked()
+}
+
+func (d *Daemon) saveUsageLocked() {
+	// store-bounds: kind=time series; count=258; size=128KiB an hour or a day; age=90d; applied=write (a runtime past 32 goes on "other") and hourly sweep
+	if err := writeStore(d.usagePath(), d.usageLocked()); err != nil {
 		log.Printf("usage-history.json: could not save: %v", err)
 	}
 }
@@ -336,7 +353,7 @@ func (d *Daemon) bankSessionCost(id wire.UUID, c wire.Cost) {
 	if s.Days[today] == nil {
 		s.Days[today] = map[string]float64{}
 	}
-	s.Days[today][c.Currency] += added
+	boundmap.AddMoney(s.Days[today], c.Currency, added)
 	d.flushSpendLocked()
 	a := d.Store.Agent(id)
 	runtime := ""

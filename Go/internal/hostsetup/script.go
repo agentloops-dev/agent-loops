@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -71,10 +72,10 @@ func (t *tail) last() string {
 }
 
 // RunScript runs project's .agents/setup.sh with `bash -e`, as this user, in the project's
-// folder. Its output goes in full to log and, line by line, to progress. It returns false and
+// folder. Its output goes to log and, line by line, to progress. It returns false and
 // nil when the project has no script. A non-zero exit, or more than timeout, is an error that
 // holds the last lines of output.
-func RunScript(ctx context.Context, project, machine string, fromPool bool, timeout time.Duration, log *os.File, progress func(string)) (bool, error) {
+func RunScript(ctx context.Context, project, machine string, fromPool bool, timeout time.Duration, log io.Writer, progress func(string)) (bool, error) {
 	script := filepath.Join(project, SetupScript)
 	if info, err := os.Stat(script); err != nil || info.IsDir() {
 		return false, nil

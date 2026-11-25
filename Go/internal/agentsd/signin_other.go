@@ -16,3 +16,5 @@ func (d *Daemon) stopSignInRelays() {
 	// keeps that shared field in this build.
 	_ = d.macState
 }
+
+func (d *Daemon) sweepSignInRelays() {}

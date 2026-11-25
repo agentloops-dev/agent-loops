@@ -26,6 +26,7 @@ import (
 
 const (
 	// runsPrefix keeps a claim per trigger, by the UTC day it was claimed, swept after a week.
+	// store-bounds: kind=log; count=100_000; size=4KiB a record; age=7d; applied=on write (a claim over it is refused), the hourly sweep deletes the oldest past the count and those of 7 days
 	runsPrefix = "v1/runs/"
 	runsKept   = 7 * 24 * time.Hour
 	// mostBotName bounds a bot's name, as a person's.
@@ -275,6 +276,9 @@ func (s *Service) claimAs(ctx context.Context, owner, host string, claim wire.Wo
 	if err != nil {
 		return wire.WorkflowClaimed{}, err
 	}
+	if err := within("The claim of this run", data, runClaimBytes); err != nil {
+		return wire.WorkflowClaimed{}, err
+	}
 	if _, err := s.cfg.Store.Put(ctx, runsPrefix+today+"/"+name, data, store.Absent); err != nil {
 		if store.IsConflict(err) {
 			return wire.WorkflowClaimed{Won: false}, nil
@@ -305,18 +309,25 @@ func claimName(owner string, claim wire.WorkflowClaim) string {
 
 // sweepRuns deletes claims of days older than a week, at most most.
 func sweepRuns(ctx context.Context, st store.Store, now time.Time, most int) (int, error) {
+	return sweepRunsTo(ctx, st, now, most, runsMost)
+}
+
+// sweepRunsTo is sweepRuns with at most kept claims left.
+func sweepRunsTo(ctx context.Context, st store.Store, now time.Time, most, kept int) (int, error) {
 	oldest := now.Add(-runsKept).UTC().Format(usageDayLayout)
 	keys, err := st.List(ctx, runsPrefix)
 	if err != nil {
 		return 0, err
 	}
 	n := 0
-	for _, k := range keys {
+	// Keys sort by day: past runsMost the oldest go whatever their day (#7248).
+	over := len(keys) - kept
+	for i, k := range keys {
 		if n >= most {
 			break
 		}
 		day, _, _ := strings.Cut(strings.TrimPrefix(k.Key, runsPrefix), "/")
-		if day >= oldest {
+		if day >= oldest && i >= over {
 			continue
 		}
 		if err := st.Delete(ctx, k.Key); err != nil {
