@@ -73,6 +73,8 @@ func (d *Daemon) sendFacts(r wire.SendFactsRequest) (wire.SendFacts, error) {
 		return f, err
 	}
 	if origin, err := git(path, "remote", "get-url", "origin"); err == nil && origin != "" {
+		// Never with a credential (#7119): the origin goes to other machines.
+		origin = withoutCredential(origin)
 		f.Origin = &origin
 	}
 	status, err := git(path, "status", "--porcelain")
@@ -111,13 +113,8 @@ func (d *Daemon) sendPack(r wire.SendPackRequest) (wire.SendPack, error) {
 
 	// Only the receiving host's commits this repository has too can be left out.
 	var known []string
-	if len(r.LeavingOut) > 0 {
-		out, _ := gitRaw(path, []byte(strings.Join(r.LeavingOut, "\n")+"\n"), "cat-file", "--batch-check")
-		for _, l := range strings.Split(string(out), "\n") {
-			if f := strings.Fields(l); len(f) >= 2 && f[1] == "commit" {
-				known = append(known, "^"+f[0])
-			}
-		}
+	for _, commit := range knownCommits(path, r.LeavingOut) {
+		known = append(known, "^"+commit)
 	}
 	id := store.NewUUID()
 	file, _ := d.outgoingFile(id)

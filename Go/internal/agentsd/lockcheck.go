@@ -63,7 +63,7 @@ var clientSigned = methodSet([]string{wire.CallAgentsStart.Name, wire.CallAgents
 // (#3717), and the bot's key (#3950). Not terminals, nor any other file.
 var machineSigned = methodSet([]string{
 	wire.CallAgentsStart.Name, "agents/fromStarter", "agents/endedElsewhere", wire.CallAgentsMoveIn.Name,
-	"folders/receiveState", "folders/receiveUpload", "folders/receive",
+	"folders/receiveState", "folders/receiveUpload", "folders/receive", wire.CallFoldersReceiveSeed.Name,
 	"folders/sendFacts", "folders/sendPack", "folders/sendRead",
 	wire.CallConnectionsBotTake.Name, wire.CallConnectionsBotDrop.Name,
 })

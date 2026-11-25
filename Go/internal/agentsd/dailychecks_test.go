@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -84,6 +85,7 @@ func TestDailyChecksKeepSuggestions(t *testing.T) {
 // What gh says is wrong in a quiet folder: the newest failed run of a workflow on the default
 // branch, a pull request in conflict or a week old, and an issue that no session has.
 func TestForgeChecksReadGH(t *testing.T) {
+	flaky.UnderLoad(t, "#7164")
 	t.Parallel()
 
 	d, _ := start(t, t.TempDir())

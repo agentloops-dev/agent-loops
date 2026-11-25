@@ -3,7 +3,9 @@ package agentsd
 import (
 	"encoding/json"
 	"io"
+	"log"
 	"os"
+	"slices"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
@@ -77,8 +79,33 @@ func (d *Daemon) sendThere(me *wire.Agent, machine, folder string, b sendingBran
 
 // packThere makes what pack asks for, sends it to machine, and has receive make or bring up
 // to date the folder there with it, which it answers with; me asks. sent, when not nil,
-// hears the bytes sent and the total after each part (#4613).
+// hears the bytes sent and the total after each part (#4613), and before that the bytes the
+// machine got from the folder's origin (#7119).
 func (d *Daemon) packThere(me *wire.Agent, machine string, pack wire.SendPackRequest, receive wire.ReceiveRequest,
+	sent func(done, total int64)) (wire.FolderSummary, error) {
+	if receive.Origin != nil {
+		origin := withoutCredential(*receive.Origin)
+		receive.Origin = &origin
+	}
+	// The folder there gets what its origin has from there (#7119), and the bundle the rest.
+	heads, seed := d.seedThere(me, machine, pack, receive, sent)
+	if seed == nil {
+		return d.packRest(me, machine, pack, receive, sent)
+	}
+	pack.LeavingOut = append(slices.Clone(pack.LeavingOut), heads...)
+	receive.Seed = seed
+	made, err := d.packRest(me, machine, pack, receive, sent)
+	if err != nil {
+		stop := wire.ReceiveSeedRequest{Seed: *seed, Folder: receive.Folder, Origin: *receive.Origin, Stop: new(true)}
+		if err := d.askSend(me, wire.MachineFolderSend{Host: machine, Seed: &stop}, nil); err != nil {
+			log.Printf("send: could not stop a seed: %v", err)
+		}
+	}
+	return made, err
+}
+
+// packRest is packThere once the machine has what the folder's origin gave it.
+func (d *Daemon) packRest(me *wire.Agent, machine string, pack wire.SendPackRequest, receive wire.ReceiveRequest,
 	sent func(done, total int64)) (wire.FolderSummary, error) {
 	packed, err := d.sendPack(pack)
 	for _, f := range []*wire.SendFile{packed.Bundle, packed.Patch} {

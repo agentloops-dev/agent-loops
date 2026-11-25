@@ -2073,7 +2073,7 @@
     },
     "MachineFolderSend": {
       "type": "object",
-      "description": "machines/sendFolder, through machine/machines: one step of an agent's start_session with send (#2929), which sends this folder's branch to another of the person's machines first, or of its bring_back (#2947), which brings a branch back from there, or of its move_session (#3717), which moves a session there with its branch. Exactly one of state, upload, uploadSigned, receive, facts, pack, read and moveIn; the control plane sends that machine's folders/receiveState, folders/receiveUpload, folders/receive, folders/sendFacts, folders/sendPack, folders/sendRead or agents/moveIn.",
+      "description": "machines/sendFolder, through machine/machines: one step of an agent's start_session with send (#2929), which sends this folder's branch to another of the person's machines first, or of its bring_back (#2947), which brings a branch back from there, or of its move_session (#3717), which moves a session there with its branch. Exactly one of state, upload, uploadSigned, receive, facts, pack, read, moveIn and seed; the control plane sends that machine's folders/receiveState, folders/receiveUpload, folders/receive, folders/sendFacts, folders/sendPack, folders/sendRead, agents/moveIn or folders/receiveSeed.",
       "properties": {
         "host": {
           "type": "string"
@@ -2102,6 +2102,10 @@
         },
         "moveIn": {
           "$ref": "#/definitions/SessionMoveIn"
+        },
+        "seed": {
+          "$ref": "#/definitions/ReceiveSeedRequest",
+          "description": "The step is folders/receiveSeed (#7119). Needs folders.send-seed/1: an older control plane does not know it."
         }
       },
       "required": [
@@ -2111,7 +2115,7 @@
     },
     "MachineFolderSent": {
       "type": "object",
-      "description": "What machines/sendFolder's step answered (#2929, #2947): state for state, folder for receive, facts for facts, pack for pack, read for read, none for upload.",
+      "description": "What machines/sendFolder's step answered (#2929, #2947): state for state, folder for receive, facts for facts, pack for pack, read for read, seed for seed, none for upload.",
       "properties": {
         "state": {
           "$ref": "#/definitions/ReceiveState"
@@ -2127,6 +2131,9 @@
         },
         "read": {
           "$ref": "#/definitions/SendRead"
+        },
+        "seed": {
+          "$ref": "#/definitions/ReceiveSeed"
         }
       },
       "additionalProperties": false
@@ -4073,6 +4080,10 @@
         },
         "origin": {
           "type": "string"
+        },
+        "seed": {
+          "$ref": "core.schema.json#/definitions/UUID",
+          "description": "The folders/receiveSeed (#7119) whose commits a new folder starts from. Needs folders.seed/1, which the machine showed with its answer to the seed."
         }
       },
       "required": [
@@ -4082,9 +4093,60 @@
       ],
       "additionalProperties": false
     },
+    "ReceiveSeed": {
+      "type": "object",
+      "description": "How a seed (folders/receiveSeed, #7119) stands. `done` bytes came from the origin. Once `finished`: `heads` are the commits that the send can leave out of its bundle, or `problem` says why there are none, and the send carries everything.",
+      "properties": {
+        "finished": {
+          "type": "boolean"
+        },
+        "done": {
+          "type": "integer"
+        },
+        "heads": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "problem": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "finished",
+        "done",
+        "heads"
+      ],
+      "additionalProperties": false
+    },
+    "ReceiveSeedRequest": {
+      "type": "object",
+      "description": "folders/receiveSeed (#7119): the machine gets the commits of a send from `origin`, before the send. `seed` is an id of the sender's own: its first call starts the seed, and each later one says how it stands. A folder that is there fetches its own origin, when that is the same repository; a new one is fetched beside, and folders/receive with `seed` starts the folder from it, so a seed makes no folder. `origin` holds no credential. `stop` ends the seed and drops what it got.",
+      "properties": {
+        "seed": {
+          "$ref": "core.schema.json#/definitions/UUID"
+        },
+        "folder": {
+          "type": "string"
+        },
+        "origin": {
+          "type": "string"
+        },
+        "stop": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "seed",
+        "folder",
+        "origin"
+      ],
+      "additionalProperties": false
+    },
     "ReceiveState": {
       "type": "object",
-      "description": "What a host has at a folder before a send (#1123). `heads` are the commits of its branches, so the Mac's bundle carries only what the host lacks. `ownChanges` is true when the folder has changes that the last send did not put there.",
+      "description": "What a host has at a folder before a send (#1123). `heads` are the commits of its branches and of its newest remote-tracking branches (#7119), so the Mac's bundle carries only what the host lacks. `ownChanges` is true when the folder has changes that the last send did not put there.",
       "properties": {
         "folder": {
           "$ref": "core.schema.json#/definitions/URLString"

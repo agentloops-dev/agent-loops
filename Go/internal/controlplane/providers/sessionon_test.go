@@ -185,6 +185,8 @@ func TestAnAgentSendsAFolderToAnotherMachine(t *testing.T) {
 			return &Reply{Result: rawOf(wire.SendPack{Commits: []wire.SentBranch{{Name: "main", Commit: "0123456789012345678901234567890123456789"}}})}
 		case MethodSendRead:
 			return &Reply{Result: rawOf(wire.SendRead{Data: wire.Data("hello"), End: true})}
+		case MethodReceiveSeed:
+			return &Reply{Result: rawOf(wire.ReceiveSeed{Finished: true, Heads: []string{"abc"}})}
 		}
 		return &Reply{Result: rawOf(map[string]any{})}
 	}
@@ -232,6 +234,20 @@ func TestAnAgentSendsAFolderToAnotherMachine(t *testing.T) {
 		t.Fatalf("%+v", sent)
 	}
 
+	// The seed from the folder's origin (#7119).
+	seed := map[string]any{"seed": records.NewUUID(), "folder": "/home/me/app", "origin": "https://host.test/a/b"}
+	out, err = h.agentCall(MethodSendFolder, map[string]any{"host": "devbox", "seed": seed})
+	if s := out.(wire.MachineFolderSent).Seed; err != nil || s == nil || !s.Finished || len(s.Heads) != 1 {
+		t.Fatalf("%v %+v", err, out)
+	}
+	if sent = h.router.deliveries(); len(sent) != 7 || sent[6].method != MethodReceiveSeed {
+		t.Fatalf("%+v", sent)
+	}
+	if _, err := h.agentCall(MethodSendFolder, map[string]any{"host": "devbox", "seed": seed,
+		"state": map[string]any{"folder": "/home/me/app"}}); failureOf(err) == nil || failureOf(err).Code != CodeInvalidParams {
+		t.Fatalf("two steps: %v", err)
+	}
+
 	if _, err := h.agentCall(MethodSendFolder, map[string]any{"host": "devbox"}); failureOf(err) == nil || failureOf(err).Code != CodeInvalidParams {
 		t.Fatalf("%v", err)
 	}
@@ -239,7 +255,7 @@ func TestAnAgentSendsAFolderToAnotherMachine(t *testing.T) {
 	if _, err := h.agentCall(MethodSendFolder, map[string]any{"host": "devbox", "state": map[string]any{"folder": "/a"}}); failureOf(err) == nil || failureOf(err).Code != CodeHostOffline {
 		t.Fatalf("%v", err)
 	}
-	if len(h.router.deliveries()) != 6 {
+	if len(h.router.deliveries()) != 7 {
 		t.Fatal("sent to an offline machine")
 	}
 }

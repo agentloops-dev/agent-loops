@@ -83,6 +83,8 @@ public enum Capability {
     public static let firstBuild1 = "first-build/1"
     public static let folder1 = "folder/1"
     public static let foldersNotCommitted1 = "folders.not-committed/1"
+    public static let foldersSeed1 = "folders.seed/1"
+    public static let foldersSendSeed1 = "folders.send-seed/1"
     public static let foldersSignedUpload1 = "folders.signed-upload/1"
     public static let foldersToMachine1 = "folders.to-machine/1"
     public static let foldersWorkingHours1 = "folders.working-hours/1"
@@ -424,6 +426,7 @@ public enum Capability {
         "folders/notCommitted": "folders.not-committed/1",
         "folders/readGuardedChange": "folders/1",
         "folders/receive": "folders/1",
+        "folders/receiveSeed": "folders.seed/1",
         "folders/receiveState": "folders/1",
         "folders/receiveUpload": "folders/1",
         "folders/send": "send/1",
@@ -1069,6 +1072,7 @@ public enum Capability {
         ],
         "control": [
             "attention/1",
+            "folders.send-seed/1",
             "folders.signed-upload/1",
             "machine.accounts/1",
             "user/3",

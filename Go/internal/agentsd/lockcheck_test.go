@@ -219,6 +219,22 @@ func TestSignedRequestsFromAClientOrAMachineOfTheLock(t *testing.T) {
 	if got := c.answer(t, 3); notInLockAnswer(got) {
 		t.Fatalf("a machine's call was refused: %s", got)
 	}
+	// A send's seed (#7119): only from another machine of the lock.
+	seed := map[string]any{"seed": "11111111-1111-1111-1111-111111111111", "folder": "/tmp/none", "origin": "/not/an/address"}
+	for name, l := range map[string]string{
+		"a client's seed":   signed(4, phone, "h-1", wire.CallFoldersReceiveSeed.Name, seed),
+		"a stranger's seed": signed(4, newLockKey(t), "", wire.CallFoldersReceiveSeed.Name, seed),
+		"an unsigned seed":  requestLine(4, wire.CallFoldersReceiveSeed.Name, seed),
+	} {
+		c.send(l)
+		if got := c.answer(t, 4); !notInLockAnswer(got) {
+			t.Fatalf("%s was taken: %s", name, got)
+		}
+	}
+	c.send(signed(5, peer, "", wire.CallFoldersReceiveSeed.Name, seed))
+	if got := c.answer(t, 5); notInLockAnswer(got) {
+		t.Fatalf("a machine's seed was refused: %s", got)
+	}
 }
 
 // A replay is refused after its ID ages out (#6723): the request is stale by then, also one
