@@ -1,23 +1,49 @@
 // A machine page's Agent Loops sections (#5273, spec 5239 board 6), as the window's and the Remote's MachineAgentsSections:
 // the version the machine runs, since when, and the changes since the version before, newest first, with Show all; the
 // person's other machines, each with how far it is behind this one, which opens those changes; and the versions this
-// machine ran. Read from the control plane with machines/agents when the page opens, so it says when (#5139).
+// machine ran. Read from the control plane with machines/agents when the page opens, so it says when (#5139). How the machine updates itself (#6114) is read
+// from the machine every few seconds while the page is open and the tab is seen.
 import { useEffect, useState } from "preact/hooks";
 import type { Store } from "../model/store";
-import type { AgentsChange, AgentsChanges, MachineAgents as Agents, MachineAgentsOther, MachineRef } from "../protocol/generated";
+import type { AgentsChange, AgentsChanges, MachineAgents as Agents, MachineAgentsOther, MachineRef, SelfUpdate } from "../protocol/generated";
 import {
   agentsTitle, behindLine, changeLabel, changesShown, changeLink, compareWith, dayWords, isBehind, listHeading, noVersion, otherLine,
   shortVersion, showAllWords, sinceLine, versionParts, whenWords,
 } from "../model/agentsVersions";
+import { automaticUpdates, updateFailed, updateLine, updateNoAnswer, updateValue } from "../model/selfUpdate";
 import { LastUpdate } from "./LastUpdate";
 
-export function MachineAgents({ store, host }: { store: Store; host: string }) {
+export function MachineAgents({ store, host, name, asksUpdate }: { store: Store; host: string; name: string; asksUpdate: boolean }) {
   const [agents, setAgents] = useState<Agents | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   const [readAt, setReadAt] = useState<number | null>(null);
   const [all, setAll] = useState<AgentsChanges | null>(null);
   const [opened, setOpened] = useState<Record<string, AgentsChanges>>({});
   const [asking, setAsking] = useState<string | null>(null);
+  // How often the machine came back with another version: an update, so the section is read again.
+  const [updates, setUpdates] = useState(0);
+  const [update, setUpdate] = useState<SelfUpdate | null>(null);
+  const [updateGone, setUpdateGone] = useState(false);
+  useEffect(() => {
+    setUpdate(null); setUpdateGone(false);
+    if (!asksUpdate) return;
+    let gone = false;
+    let running: string | null = null;
+    const read = () => {
+      if (document.visibilityState !== "visible") return;
+      store.link.call("selfUpdate/status", {}, host).then(
+        (u) => {
+          if (gone) return;
+          setUpdate(u); setUpdateGone(false);
+          if (running !== null && running !== u.running) setUpdates((n) => n + 1);
+          running = u.running;
+        },
+        () => { if (!gone) { setUpdate(null); setUpdateGone(true); } });
+    };
+    read();
+    const timer = setInterval(read, 3_000);
+    return () => { gone = true; clearInterval(timer); };
+  }, [store, host, asksUpdate]);
   useEffect(() => {
     let gone = false;
     setAgents(null); setFailure(null); setReadAt(null); setAll(null); setOpened({});
@@ -25,7 +51,7 @@ export function MachineAgents({ store, host }: { store: Store; host: string }) {
       (a) => { if (!gone) { setAgents(a); setReadAt(Date.now()); } },
       () => { if (!gone) setFailure("The control plane can’t say which version runs here now."); });
     return () => { gone = true; };
-  }, [store, host]);
+  }, [store, host, updates]);
 
   const showAll = (a: Agents) => {
     if (a.previous === undefined) return;
@@ -57,6 +83,13 @@ export function MachineAgents({ store, host }: { store: Store; host: string }) {
             {sinceLine(agents) && <p class="quiet small">{sinceLine(agents)}</p>}
           </>
         )}
+        {update && (
+          <>
+            <div class="setting"><span>{automaticUpdates}</span><span>{updateValue(update)}</span></div>
+            <p class={`small ${updateFailed(update) ? "failure" : "quiet"}`}>{updateLine(update)}</p>
+          </>
+        )}
+        {updateGone && <p class="quiet small">{updateNoAnswer(name)}</p>}
         {readAt !== null && <p class="quiet small"><LastUpdate at={readAt} /></p>}
       </section>
       {agents && shown && shown.changes.length > 0 && (

@@ -17546,6 +17546,7 @@ export interface Methods {
   "secrets/sessionRemove": { params: SessionSecretRemoveRequest; result: SessionSecrets };
   "secrets/sessionSet": { params: SessionSecretSetRequest; result: SessionSecrets };
   "secrets/setNeedsApproval": { params: SecretNeedsApprovalRequest; result: Empty };
+  "selfUpdate/status": { params: Empty; result: SelfUpdate };
   "sessions/previewStart": { params: AutoMachineRequest; result: AutoMachinePick };
   "settings/passThrough": { params: Empty; result: PassThroughState };
   "signIn/approve": { params: SignInDecide; result: Empty };
@@ -18036,6 +18037,7 @@ export const MethodTarget = {
   "secrets/sessionRemove": "host",
   "secrets/sessionSet": "host",
   "secrets/setNeedsApproval": "host",
+  "selfUpdate/status": "host",
   "sessions/previewStart": "control",
   "settings/passThrough": "host",
   "signIn/approve": "control",
