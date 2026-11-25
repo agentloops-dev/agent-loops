@@ -33,7 +33,8 @@ const adminUsage = `usage: agents-hosted admin <verb> …
   backup [--keep N] <dir> [account…]
                              copy accounts (every one when none is named) into dir;
                              --keep N deletes all but the newest N backups beside it
-                             (7 when not set; --keep 0 deletes none)
+                             (1 to 90, 7 when not set), and any account's copy 90 days
+                             old; the newest copy of an account that exists always stays
   restore <dir> <account>    put one suspended or deleted account back from dir
   delete <account>           delete a suspended account and everything it keeps
 
@@ -231,7 +232,7 @@ func backupKeep(rest []string) (int, []string, error) {
 		n, rest = rest[0], rest[1:]
 	}
 	k, err := strconv.Atoi(n)
-	if err != nil || k < 0 {
+	if err != nil || k < 1 || k > hosted.MaxBackups {
 		return 0, nil, errUsage
 	}
 	return k, rest, nil
@@ -246,19 +247,23 @@ func adminBackup(ctx context.Context, a hosted.Admin, rest []string, out io.Writ
 	if len(rest) < 1 {
 		return errUsage
 	}
-	done, err := a.Backup(ctx, rest[0], rest[1:])
-	for _, id := range done {
-		fmt.Fprintln(out, "backed up "+id)
+	done, failed := a.Backup(ctx, rest[0], rest[1:])
+	for _, b := range done {
+		fmt.Fprintln(out, "backed up "+b.ID)
+		if b.Bytes > hosted.BackupWarnBytes {
+			fmt.Fprintf(out, "warning: the backup of %s is %.1f MB, over %d MB\n", b.ID, float64(b.Bytes)/(1<<20), hosted.BackupWarnBytes>>20)
+		}
 	}
-	if err != nil || keep == 0 {
-		return err
+	if len(done) == 0 {
+		return failed
 	}
-	// Only after a whole backup, so a failed one never costs an older one.
-	gone, err := hosted.PruneBackups(rest[0], keep)
+	// Also when an account failed, or one that always fails would let the backups grow: its
+	// newest copy stays.
+	gone, err := a.PruneBackups(ctx, rest[0], keep)
 	for _, p := range gone {
 		fmt.Fprintln(out, "deleted "+p)
 	}
-	return err
+	return errors.Join(failed, err)
 }
 
 // adminRestore puts one account back from a folder: restore <dir> <account>.

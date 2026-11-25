@@ -162,6 +162,9 @@ func (f *JSONFile[T]) Sweep() (int, error) {
 	return count - len(entries), f.write(entries, old)
 }
 
+// Path is the store's file.
+func (f *JSONFile[T]) Path() string { return f.path() }
+
 // Name is the store's name.
 func (f *JSONFile[T]) Name() string { return f.spec.Name }
 
