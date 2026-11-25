@@ -56,18 +56,20 @@ Mac.
 | --- | --- | --- | --- | --- |
 | `events.jsonl` | log | The machine's events | 7 days, and 10,000 events (pruned when it reaches 10,500). The consequences of an event have no count limit. A line is at most 64 KiB: a larger one is cut and the log says so (#7244). | At start, hourly and on write |
 | `events-state.json` | key-value | Branch tips that `branch.moved` compares, cost crossings, disk levels | The live folders, and today only. At most 256 KiB: past it, the later half of the largest part goes, never the next position (#7244) | On write |
-| `usage-history.json` | time series | Usage and cost | The last 168 hours and 90 days, by date | On write and hourly (#3686) |
-| `time-history.json` | time series | Time, recaps and records | The last 168 hours, 90 days and 90 recaps, by date | On write and hourly (#3686) |
-| `spend.json` | time series | Spend for the cost limits | The last 7 days, by date | On write and hourly (#3686) |
-| `report-hours.json` | time series | Hourly totals sent to the control plane | 8 days | On write |
-| `features-history.json` | time series | How often each feature is used | The last 90 days, by date | On write and hourly (#3686) |
+| `usage-history.json` | time series | Usage and cost | The last 168 hours and 90 days, by date; 128 KiB each. Past 32 runtimes or 16 currencies, the rest is on `other`, so no total is lost (#7245) | On write and hourly (#3686) |
+| `time-history.json` | time series | Time, recaps and records | The last 168 hours, 90 days and 90 recaps, by date; 64 KiB each. Past 32 runtimes, the rest is on `other` (#7245) | On write and hourly (#3686) |
+| `spend.json` | time series | Spend for the cost limits | The last 7 days, by date; 4 KiB each. Past 16 currencies, the rest is on `other` (#7245) | On write and hourly (#3686) |
+| `report-hours.json` | time series | Hourly totals sent to the control plane | 8 days, 193 hours of 4 MiB. Past 200 rows in an hour, the rest is on the folder `other` of the same runtime and route; past 300, on one row (#7245) | On write |
+| `features-history.json` | time series | How often each feature is used | The last 90 days, by date; 2 MiB each. Past 2,000 methods, the rest is on `other` (#7245) | On write and hourly (#3686) |
 | `lineage.jsonl` | log; graph | Links between issues, PRs, sessions and deploys, and each session's changes of state (#4274) | Ended links 90 days, 20,000 links; changes of state 90 days (each session's latest kept), 20,000. The oldest go first. A line is 4 KiB at most: a larger change is refused (#7247) | When it opens, when it grows by 2,000, and hourly (#3649); a line's size on write |
-| `lineage-cost.json` | graph | Cost of each lineage node | 90 days, 5,000 nodes | On write |
-| `lineage-sync.json` | key-value | Lineage links and session states not yet sent to the control plane (#4275) | 2,000 links and 5,000 state changes; past that, it keeps only a note to send everything again from `lineage.jsonl` | On write |
-| `ci-timings/sync.json` | key-value | The days of build timings not yet sent to the control plane, for each repository (#5232) | 90 days of at most 20 repositories | On send |
-| `lineage-comments.json` | log | Cost comments on PRs | 500, 30 days | On write |
+| `lineage-cost.json` | graph | Cost of each lineage node | 90 days, 5,000 nodes of 64 KiB, and 1,000 notices told of each kind. Of a larger node, its lists, title and labels are cut; its total stays (#7245) | On write |
+| `lineage-sync.json` | key-value | Lineage links and session states not yet sent to the control plane (#4275) | 2,000 links and 5,000 state changes; past that, it keeps only a note to send everything again from `lineage.jsonl`. So it does when one is over 4 KiB, or has waited 90 days (#7245) | On write |
+| `ci-timings/sync.json` | key-value | The days of build timings not yet sent to the control plane, for each repository (#5232) | 90 days of at most 100 repositories of 8 KiB; the one with nothing to send goes first, and one that goes is sent whole when it changes next (#7245) | On send |
+| `ci-timings/state.json` | key-value | Where the reading of each repository's build timings has got to | 100 repositories of 2 MiB, for 90 days from the last read; the oldest goes first, and is read again from the newest (#7245) | On write |
+| `lineage-comments.json` | document | Cost comments on PRs | 500 of 64 KiB, 30 days; a larger one keeps its ID without its text, or goes (#7245) | On write |
 | `release-tags.json` | log | Release tags already linked, for each repo | 5,000 tags of 1 KiB each, for 90 days; the oldest goes first. Only the newest 50 tags of a repo (#3652), and releases of the last 90 days, are linked, so a tag that goes is not linked again (#6717) | Hourly, and on write: age, and the count when it is twice over |
-| `achievements.json` | document | Milestones | A fixed set | — |
+| `achievements.json` | key-value | Milestones | A fixed set, at most 100 of 1 KiB; no age (#7245) | On write |
+| `default-accounts.json`, in the settings folder | key-value | The default account of each runtime | 100 of 1 KiB; one more, or a larger one, is refused. No age: a person's choice (#7245) | On write |
 | `ci-timings/<forge>/<path>/<day>.jsonl` | time series | CI runs, their jobs and steps | 90 days, 20,000 runs a repository; a pull request run's steps 14 days | On the sweep |
 | `lineage-deploys.json` | key-value | Each deploy's last event | 1,000 deploys of 16 KiB each, for 90 days from the last event; the oldest goes first (#6719) | Hourly, and on write: age and count |
 | `repo-aliases.json` | key-value | Repository renames | 1,000 renames of 2 KiB each, for 90 days; the oldest goes first. The daily check learns again a rename that a folder or the lineage still names (#6716) | Hourly, and on write: age and count |
@@ -142,7 +144,7 @@ Mac.
 | `browser/`, in the cache folder | cache | The browser that agents drive, and its output | Old browser versions are left to Playwright. Output goes when the session ends; what a crash left goes at the next start (#3649) | On install; at session end; at start |
 | The Mac browser pane's website data (WebKit's default store), and the date each site was last opened (`browserPane.sites` in the app's defaults) | blob | The sign-ins and site storage of the sites the pane opened, and its caches | 10 MB and 100 sites; a site goes, with its sign-in, 90 days after a pane last opened it (#6796). Over a limit the caches go first, then the site opened longest ago. A site in an open pane stays, so the store can be over its size until that pane closes. The caches are also emptied when the app starts and once a day. The dates are of 100 sites, and of 1,000 hosts at most between two sweeps. | At launch, hourly, and sooner past 20 MB; Forget This Mac clears all of it |
 | `catalog-staging/`, in the cache folder | cache | Skill previews | 8 previews, 30 minutes; folders left by a restart go at the next start (#3649) | On use; at start |
-| `option-cache.json`, in the cache folder | cache | Runtime options | 50 | On write |
+| `option-cache.json`, in the cache folder | cache | Runtime options | 50 of 256 KiB, for 90 days; the oldest goes first. A larger one is not kept, and its earlier one goes (#7245) | Hourly, and on write: age, and the count when it is twice over |
 | Cache and log folders of each other data folder (`roots/<name>-<hash>`) | cache | As above, for a second copy | Removed when that data folder is gone (#3746). Each keeps its data folder's path in `root-path`; a folder made before that is kept, and so is one whose data folder's parent is gone too, as on a disk that is not attached. | Hourly, by a machine whose data folder is not a temporary one |
 | Terminal scrollback | log | What a terminal showed | In memory only, 4 MiB a terminal | On write |
 

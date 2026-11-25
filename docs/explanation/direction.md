@@ -147,8 +147,10 @@ The control plane adopts an id that it does not know, so a clone joins with noth
   the data folder `~/Library/Application Support/Agents` and the program
   `Contents/MacOS/Agents Host` (#5297). A change to these names would break the copies that
   are installed, their settings and their records, and the links to them, so they stay.
-- **Machine:** a computer that runs agents, such as a Mac, a Linux box or a computer a
-  provider starts.
+- **Machine:** a computer that runs Agent Loops: its agents, its control plane, or both,
+  such as a Mac, a Linux box or a computer a provider starts. Its record has `roles`:
+  `agents`, `control` or both (#6609). With no roles, it runs agents. A machine with
+  only `control` (the VM of the live control plane) has no key, and nothing dials in with it.
 - **Machine provider:** an MCP server that makes, starts and stops machines.
 - **Folder:** a folder on one machine where agents work. A folder is not always a Git
   repository.

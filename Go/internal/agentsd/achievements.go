@@ -37,6 +37,9 @@ const (
 	firstCloudHost    = "firstCloudHost"
 	firstLandedPR     = "firstLandedPR"
 	fiveAtOnce        = "fiveAtOnce"
+
+	// achievementsMost is more than the ones there are.
+	achievementsMost = 100
 )
 
 func (d *Daemon) achievementsPath() string {
@@ -226,7 +229,7 @@ func (d *Daemon) earnAchievements(found map[string]time.Time, at time.Time) {
 	sort.Strings(ids)
 	earned := false
 	for _, id := range ids {
-		if hasAchievement(m, id) {
+		if hasAchievement(m, id) || len(m.Earned) >= achievementsMost {
 			continue
 		}
 		t := found[id]
@@ -240,6 +243,7 @@ func (d *Daemon) earnAchievements(found map[string]time.Time, at time.Time) {
 		d.achievementMu.Unlock()
 		return
 	}
+	// store-bounds: kind=key-value; count=100; size=1KiB an achievement; age=until-deleted; applied=write
 	if err := writeStore(d.achievementsPath(), m); err != nil {
 		log.Printf("achievements.json: could not save: %v", err)
 	}

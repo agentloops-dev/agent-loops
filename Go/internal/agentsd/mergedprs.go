@@ -152,7 +152,5 @@ func (d *Daemon) setPRsMerged(counts map[string]int64, days []string) {
 		changeRecap(h, day, func(r *wire.DayRecap) { r.PrsMerged = &n })
 	}
 	pruneTime(h, nowFunc())
-	if err := writeStore(d.timePath(), h); err != nil {
-		log.Printf("time-history.json: could not save: %v", err)
-	}
+	d.saveTimeLocked()
 }

@@ -3829,6 +3829,9 @@ type ControlMachine struct {
 	// How its set-up stands, while it sets itself up and after (#5355). Absent for a machine that was not set up by the control plane.
 	Setup *MachineSetup `json:"setup,omitzero"`
 
+	// What it does (#6609): agents, control or both. Absent from an older control plane, which means agents.
+	Roles []string `json:"roles,omitzero"`
+
 	// Its labels (#5284): key or key=value, sorted. The ones its provider sets (os=, arch=, provider=) come first in autoLabels and are here too; a person adds others with machines/setLabels.
 	Labels []string `json:"labels,omitzero"`
 

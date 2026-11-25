@@ -34,7 +34,7 @@ func TestScaleFixtureListsAThousandMachinesWithinBudget(t *testing.T) {
 		if err := json.Unmarshal(raw, &page); err != nil {
 			t.Fatal(err)
 		}
-		if len(page.Machines) != 50 || page.Total != n || page.Next == nil {
+		if len(page.Machines) != 50 || page.Total != n+1 || page.Next == nil {
 			t.Fatalf("machines/list limit 50: %d rows, total %d, next %v", len(page.Machines), page.Total, page.Next)
 		}
 	}
@@ -73,7 +73,7 @@ func TestMachinesListFiltersSortsPagesAndCounts(t *testing.T) {
 	}
 
 	// Every machine once, by name, through the cursors.
-	if seen := machinesThroughThePages(t, list); len(seen) != 1000 {
+	if seen := machinesThroughThePages(t, list); len(seen) != 1001 {
 		t.Fatalf("%d machines through the pages", len(seen))
 	}
 
@@ -83,14 +83,15 @@ func TestMachinesListFiltersSortsPagesAndCounts(t *testing.T) {
 	if one.Total != 1 || one.Machines[0].ID != "fake-0042" {
 		t.Fatalf("query: %+v", one.Total)
 	}
-	if none := list(map[string]any{"state": "online"}); none.Total != 0 || none.Counts.State["offline"] != 1000 {
+	if none := list(map[string]any{"state": "online"}); none.Total != 0 || none.Counts.State["offline"] != 1001 {
 		t.Fatalf("online: total %d, counts %v", none.Total, none.Counts.State)
 	}
 
 	// Sorts: by version, the numbers in order (0.10.0 after 0.9.1).
 	byVersion := list(map[string]any{"sort": "version", "limit": 200})
-	if byVersion.Machines[0].Version != "0.9.0" || list(map[string]any{"sort": "version", "limit": 200, "cursor": pageCursor(900)}).Machines[99].Version != "0.10.0" {
-		t.Fatalf("version sort starts at %s", byVersion.Machines[0].Version)
+	// The control plane's own machine ("dev") sorts first (#6609).
+	if byVersion.Machines[1].Version != "0.9.0" || list(map[string]any{"sort": "version", "limit": 200, "cursor": pageCursor(900)}).Machines[100].Version != "0.10.0" {
+		t.Fatalf("version sort starts at %s", byVersion.Machines[1].Version)
 	}
 	if byName := list(map[string]any{"sort": "name", "limit": 2}); byName.Machines[0].ID != "fake-0001" {
 		t.Fatalf("name sort: %v", byName.Machines[0].ID)
@@ -106,7 +107,7 @@ func TestMachinesListFiltersSortsPagesAndCounts(t *testing.T) {
 }
 
 // machinesThroughThePages lists every machine, 200 a page, through the cursors; it checks no
-// machine is on two pages and there are 5 pages, and returns the machines it saw.
+// machine is on two pages and there are 6 pages (the 1,000 and the control plane's own machine), and returns the machines it saw.
 func machinesThroughThePages(t *testing.T, list func(map[string]any) wire.MachineList) map[string]bool {
 	t.Helper()
 	seen, cursor := map[string]bool{}, ""
@@ -123,8 +124,8 @@ func machinesThroughThePages(t *testing.T, list func(map[string]any) wire.Machin
 			seen[string(m.ID)] = true
 		}
 		if page.Next == nil {
-			if pages != 4 {
-				t.Fatalf("%d pages, want 5", pages+1)
+			if pages != 5 {
+				t.Fatalf("%d pages, want 6", pages+1)
 			}
 			break
 		}

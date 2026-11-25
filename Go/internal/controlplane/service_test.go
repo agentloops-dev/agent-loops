@@ -580,7 +580,8 @@ func TestTheFolderAndKeyAreTheControlPlane(t *testing.T) {
 	defer window.Close()
 	var hosts []wire.ControlMachine
 	must(t, json.Unmarshal(call(t, window, "", "machines/list", nil), &hosts))
-	if len(hosts) != 1 || string(hosts[0].ID) != h.member.Host {
+	// The host, and the control plane's own machine, which has no agents (#6609).
+	if len(hosts) != 2 || string(hosts[0].ID) != h.member.Host || !slices.Equal(hosts[1].Roles, []string{records.RoleControl}) {
 		t.Fatalf("%+v", hosts)
 	}
 	// Another key is not this store's control plane.

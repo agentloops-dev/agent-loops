@@ -93,6 +93,10 @@ func listedHosts(t *testing.T, s *controllink.Session) []string {
 	must(t, json.Unmarshal(call(t, s, "", "machines/list", nil), &list))
 	out := []string{}
 	for _, h := range list {
+		// The control plane's own machine, with no agents (#6609), is no host of a person's.
+		if slices.Equal(h.Roles, []string{records.RoleControl}) {
+			continue
+		}
 		out = append(out, string(h.ID))
 	}
 	sort.Strings(out)
