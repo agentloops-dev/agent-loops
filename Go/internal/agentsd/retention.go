@@ -130,7 +130,8 @@ func (d *Daemon) sweepHourly() {
 	sweepTransfers(d.outgoingFolder())
 	sweepTransfers(d.incomingFolder())
 	d.sweepBackups()
-	d.sweepDropboxParts()
+	d.sweepDropboxes(nowFunc())
+	d.sweepSetAsides(nowFunc())
 	if n := d.lineage().Prune(); n > 0 {
 		log.Printf("retention: %d ended lineage links past %v", n, lineage.KeepEnded)
 	}

@@ -35,8 +35,6 @@ final class WorkTimelineState {
     var answered = 0
     /// Now was clicked: the plot scrolls back to it.
     var nowAsked = 0
-    /// Children that closed since the last read, and when they were seen: their dots pulse once.
-    var landed: [String: Date] = [:]
     /// Every machine's sessions on the epics and their children, from the control plane's merged
     /// copy (#4276): a sleeping machine's sessions still start their children.
     var sessions: [DaemonAPI.LineageSessionOn] = []
@@ -142,15 +140,6 @@ final class WorkTimelineState {
             if all, got.isEmpty, !failed.isEmpty { return }
             var merged = WorkTimeline.merge(got)
             if let epics { merged.epics = merged.epics.filter { epics.contains($0.item.node.ref) } }
-            // A child that closed since the last read of the same window lands: its dot pulses once.
-            if let before = timeline {
-                let was = Set(before.epics.flatMap(\.children).filter { $0.closedAt != nil }.map(\.item.node.ref))
-                let seen = Date.now
-                for child in merged.epics.flatMap(\.children) where child.closedAt != nil && !was.contains(child.item.node.ref)
-                    && before.epics.contains(where: { $0.children.contains { $0.item.node.ref == child.item.node.ref } }) {
-                    landed[child.item.node.ref] = seen
-                }
-            }
             fromMachines = merged
             // The plot draws now, with the sessions it had (#5450); the new ones start their children when they come.
             timeline = WorkTimeline.started(merged, by: sessions)
@@ -222,9 +211,10 @@ final class WorkTimelineState {
     }
 }
 
-/// Work ▸ Timeline (#4173): time across, each epic a block in its own row: the ghost (a lighter tint)
-/// from when its first child was created to when its last one closes, solid only from when its first
-/// child started to when the work stopped (#6043), a dashed edge after Now (the forecast), then a thin bar to where it closes 8 times in 10 (#5506, Alex, 2026-11-14). A SwiftUI
+/// Work ▸ Timeline (#4173): time across, each epic one block in its own row (#7058): solid from when its
+/// first child started to when the work stopped (#6043), then for an open epic a ghost (a lighter tint with
+/// a dashed edge) to its predicted finish, and a thin bar to where it closes 8 times in 10 (#5506, Alex,
+/// 2026-11-14). A SwiftUI
 /// `Canvas` (spike #4171): the rows and the marks come from `WorkTimeline` in AgentsKitCore.
 /// Core since #6044: on the Remote the bar's controls are the navigation bar's, a tap shows the card
 /// that a pointer's hover shows on the Mac, and a phone in portrait draws the list of epics.
@@ -250,7 +240,7 @@ struct WorkTimelinePane: View {
     @State private var hover: Hover?
 
     struct Hover: Equatable {
-        var hit: WorkTimeline.Hit
+        var line: WorkTimeline.Line
         var at: CGPoint
     }
 
@@ -543,13 +533,13 @@ struct WorkTimelinePane: View {
                     .listRowSeparator(.hidden)
             case .epics:
                 ForEach(rows) { row in
-                    Button { open(.line(row.line)) } label: {
+                    Button { open(row.line) } label: {
                         epicRow(row, colour: Drawing.colour(row.line, night: night), working: row.line.working > 0)
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel(WorkTimeline.spoken([row.line], now: now).first?.words ?? row.line.title)
                     .accessibilityHint("Opens the epic")
-                    .workWindowMenu(place(.line(row.line)))
+                    .workWindowMenu(place(row.line))
                 }
             }
         }
@@ -569,8 +559,7 @@ struct WorkTimelinePane: View {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(line.title).appText(.supporting).fontWeight(.semibold).lineLimit(2)
-                    WorkPriorityChip(priority: line.onHold ? nil : line.priority)
-                    WorkOnHoldChip(onHold: line.onHold)
+                    WorkPriorityChip(priority: line.priority)
                     if working { WorkTimelineHalfRing(colour: colour, moving: !reduceMotion) }
                 }
                 Text(row.line2).appText(.fine)
@@ -661,10 +650,9 @@ struct WorkTimelinePane: View {
     private func canvas(_ drawing: Drawing) -> some View {
         Canvas { context, _ in drawing.draw(&context) }
             .overlay { working(drawing) }
-            .overlay { pulses(drawing) }
             .overlay(alignment: .topLeading) {
                 if let hover {
-                    card(hover.hit, drawing: drawing)
+                    card(hover.line, drawing: drawing)
                         .offset(x: cardX(hover.at.x, drawing: drawing), y: hover.at.y + 14)
                         .allowsHitTesting(false)
                 }
@@ -673,13 +661,13 @@ struct WorkTimelinePane: View {
             .onContinuousHover { phase in
                 switch phase {
                 case .active(let p):
-                    hover = WorkTimeline.hit((Double(p.x), Double(p.y)), lines: drawing.lines, axis: drawing.axis).map { Hover(hit: $0, at: p) }
+                    hover = WorkTimeline.hit((Double(p.x), Double(p.y)), lines: drawing.lines, axis: drawing.axis).map { Hover(line: $0, at: p) }
                 case .ended:
                     hover = nil
                 }
             }
-            // The mark under the pointer has Open in New Window (#5475).
-            .workWindowMenu(hover.map { place($0.hit) })
+            // The block under the pointer has Open in New Window (#5475).
+            .workWindowMenu(hover.map { place($0.line) })
             #endif
             .onTapGesture { p in
                 let hit = WorkTimeline.hit((Double(p.x), Double(p.y)), lines: drawing.lines, axis: drawing.axis)
@@ -688,7 +676,7 @@ struct WorkTimelinePane: View {
                 #else
                 // The Remote (#6044): a tap shows the card a pointer's hover shows; a second tap on it opens it.
                 guard let hit else { hover = nil; return }
-                if hover?.hit == hit { hover = nil; open(hit) } else { hover = Hover(hit: hit, at: p) }
+                if hover?.line.id == hit.id { hover = nil; open(hit) } else { hover = Hover(line: hit, at: p) }
                 #endif
             }
             .accessibilityElement(children: .contain)
@@ -696,26 +684,9 @@ struct WorkTimelinePane: View {
             .accessibilityChildren {
                 // A list in time order (section 5), each opening its epic's Plan.
                 ForEach(WorkTimeline.spoken(drawing.lines, now: drawing.now), id: \.line.id) { row in
-                    Button(row.words) { open(.line(row.line)) }
+                    Button(row.words) { open(row.line) }
                 }
             }
-    }
-
-    /// A dot that landed while the page is open pulses once; not with Reduce Motion.
-    @ViewBuilder
-    private func pulses(_ drawing: Drawing) -> some View {
-        let landed = state.landed
-        if !landed.isEmpty, !reduceMotion {
-            TimelineView(.animation) { context in
-                Canvas { gc, _ in drawing.drawPulses(&gc, landed: landed, at: context.date) }
-            }
-            .allowsHitTesting(false)
-            .task(id: landed.count) {
-                try? await Task.sleep(for: .seconds(1.2))
-                let old = Date.now.addingTimeInterval(-1.1)
-                state.landed = state.landed.filter { $0.value > old }
-            }
-        }
     }
 
     /// An epic a session is in a turn on now (#4265): a soft glow round its block breathes and its ◐
@@ -742,38 +713,24 @@ struct WorkTimelinePane: View {
         #endif
     }
 
-    private func open(_ hit: WorkTimeline.Hit) {
-        model.follow(place(hit), window: openWorkWindow)
+    private func open(_ line: WorkTimeline.Line) {
+        model.follow(place(line), window: openWorkWindow)
     }
 
-    private func place(_ hit: WorkTimeline.Hit) -> WorkPlace {
-        switch hit {
-        case .dot(_, let dot): WorkPlace(kind: .issue, ref: dot.ref)
-        case .line(let line): WorkPlace(kind: .issue, ref: line.epic.ref)
-        }
-    }
+    private func place(_ line: WorkTimeline.Line) -> WorkPlace { WorkPlace(kind: .issue, ref: line.epic.ref) }
 
     // MARK: The hover card
 
     /// A mini row (milestones.md note 33) on three lines (Alex, 2026-11-10): the state glyph and the
     /// title; the label chips where the wire has them (#4428); then the prediction. No cost (Alex,
     /// 2026-11-14).
-    private func card(_ hit: WorkTimeline.Hit, drawing: Drawing) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            switch hit {
-            case .dot(_, let dot):
-                let child = self.child(dot.ref)
-                miniRow(glyph: dotGlyph(dot), title: dot.title, labels: child?.item.labels ?? [],
-                        onHold: child.map { WorkPlan.onHold($0.item) } ?? false, line: WorkTimeline.dotLine(dot, now: drawing.now))
-            case .line(let line):
-                lineRow(line, drawing: drawing)
-            }
-        }
-        .frame(maxWidth: 360, alignment: .leading)
-        .padding(10)
-        .background(RoundedRectangle(cornerRadius: Paper.Radius.control).fill(Paper.raised))
-        .overlay(RoundedRectangle(cornerRadius: Paper.Radius.control).strokeBorder(Paper.rule))
-        .fixedSize(horizontal: false, vertical: true)
+    private func card(_ line: WorkTimeline.Line, drawing: Drawing) -> some View {
+        lineRow(line, drawing: drawing)
+            .frame(maxWidth: 360, alignment: .leading)
+            .padding(10)
+            .background(RoundedRectangle(cornerRadius: Paper.Radius.control).fill(Paper.raised))
+            .overlay(RoundedRectangle(cornerRadius: Paper.Radius.control).strokeBorder(Paper.rule))
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     private func lineRow(_ line: WorkTimeline.Line, drawing: Drawing) -> some View {
@@ -781,14 +738,13 @@ struct WorkTimelinePane: View {
         let glyph = AnyView(WorkStateIcon(kind: "issue", state: epic?.item.state ?? (line.open ? "open" : "closed"),
                                           stateReason: epic?.stateReason))
         return miniRow(glyph: glyph, title: line.title, labels: epic?.item.labels ?? [],
-                       onHold: epic.map { WorkPlan.onHold($0.item) } ?? false, line: WorkTimeline.lineLine(line, now: drawing.now),
+                       line: WorkTimeline.lineLine(line, now: drawing.now),
                        priority: epic?.item.priority)
     }
 
-    private func miniRow(glyph: AnyView, title: String, labels: [DaemonAPI.ForgeLabel], onHold: Bool,
+    private func miniRow(glyph: AnyView, title: String, labels: [DaemonAPI.ForgeLabel],
                          line: String, priority: String? = nil) -> some View {
-        // The On hold chip first, and the `on hold` label not again (#6090).
-        let chips = WorkLook.shownLabels(WorkPlan.labels(labels, onHold: onHold), limit: WorkLook.rowChips)
+        let chips = WorkLook.shownLabels(labels, limit: WorkLook.rowChips)
         return VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 glyph
@@ -796,9 +752,8 @@ struct WorkTimelinePane: View {
                 // The priority chip, as an Issues row has it (#6089).
                 WorkPriorityChip(priority: priority)
             }
-            if !chips.shown.isEmpty || onHold {
+            if !chips.shown.isEmpty {
                 HStack(spacing: 4) {
-                    WorkOnHoldChip(onHold: onHold)
                     ForEach(chips.shown, id: \.name) { WorkLabelChip(label: $0) }
                     WorkMoreChips(count: chips.more)
                 }
@@ -806,15 +761,6 @@ struct WorkTimelinePane: View {
             }
             Text(line).appText(.fine).foregroundStyle(.secondary).lineLimit(1).padding(.leading, 22)
         }
-    }
-
-    /// A child's glyph: open, done, or not planned (a ring with a slash).
-    private func dotGlyph(_ dot: WorkTimeline.Dot) -> AnyView {
-        AnyView(WorkStateIcon(kind: "issue", state: dot.closed ? "closed" : "open", stateReason: dot.notPlanned ? "not_planned" : nil))
-    }
-
-    private func child(_ ref: String) -> DaemonAPI.WorkTimelineChild? {
-        state.timeline?.epics.lazy.flatMap(\.children).first { $0.item.node.ref == ref }
     }
 
     #if canImport(AppKit)
@@ -851,7 +797,7 @@ private struct Drawing {
     var bands: [WorkTimeline.Band] = []
 
     /// A band's name and a chip's words take the priority chip's tint (#6089): High the failure's
-    /// red, Medium the warning's orange, Low, none and on hold plain.
+    /// red, Medium the warning's orange, Low and none plain.
     static func bandTint(_ band: Int) -> StateTint {
         switch band {
         case 0: .failure
@@ -894,11 +840,11 @@ private struct Drawing {
     var faint: Color { night ? Color(white: 0.6) : Color(white: 0.55) }
 
     /// A block's fill: its feature's colour, darkened until white has 4.5:1; grey when closed as not
-    /// planned or on hold (#6089).
+    /// planned.
     func colour(_ line: WorkTimeline.Line) -> Color { Self.colour(line) }
 
     static func colour(_ line: WorkTimeline.Line) -> Color {
-        fills[line.how == .dropped || line.onHold ? fills.count - 1 : WorkTimeline.colour(line.feature, of: fills.count)]
+        fills[line.how == .dropped ? fills.count - 1 : WorkTimeline.colour(line.feature, of: fills.count)]
     }
 
     /// The list of epics' edge (#6044): the block's fill, lighter at night as the words after Now are.
@@ -916,17 +862,26 @@ private struct Drawing {
     var seen: ClosedRange<Double> { (offset - visible)...(offset + 2 * visible) }
 
     func block(_ line: WorkTimeline.Line) -> CGRect {
-        let sx = axis.x(line.from)
-        return CGRect(x: sx, y: WorkTimeline.rowTop(line.row), width: max(axis.x(line.end) - sx, 2), height: WorkTimeline.blockHeight)
+        // An epic can be months old: no further than just past the plot's edges, so no layer is that wide.
+        let sx = max(axis.x(line.from), -20), ex = min(axis.x(line.end), axis.width + 20)
+        return CGRect(x: sx, y: WorkTimeline.rowTop(line.row), width: max(ex - sx, 2), height: WorkTimeline.blockHeight)
     }
 
-    /// The solid span, full height: from when the work started to when it stopped (#6043). Clip to it.
+    /// The solid span, full height: from when the work started to when it stopped (#6043); empty while no
+    /// child has started. Clip to it.
     func solid(_ line: WorkTimeline.Line) -> CGRect {
-        let sx = axis.x(line.start)
-        return CGRect(x: sx, y: -100, width: max(axis.x(line.stoppedAt) - sx, 0), height: height + 200)
+        let from = axis.x(line.work?.start ?? line.from), to = axis.x(line.work?.end ?? line.from)
+        return CGRect(x: from, y: -100, width: max(to - from, 0), height: height + 200)
     }
 
-    /// The ghost's tint: the lighter one the forecast had (#6043).
+    /// The dashed ghost's span, full height: from when the work stopped (Now, when none started) to the
+    /// predicted finish (#7058); empty with no forecast. Clip to it.
+    func ahead(_ line: WorkTimeline.Line) -> CGRect {
+        let from = axis.x(line.ghost?.start ?? line.end), to = axis.x(line.ghost?.end ?? line.end)
+        return CGRect(x: from, y: -100, width: max(to - from + (line.ghost == nil ? 0 : 2), 0), height: height + 200)
+    }
+
+    /// The ghost's tint: the lighter one (#6043).
     func ghost(_ line: WorkTimeline.Line) -> Color { colour(line).opacity(night ? 0.32 : 0.22) }
 
     /// The wait pill's words: 👤 and the number, no words (Alex, 2026-11-14).
@@ -937,7 +892,6 @@ private struct Drawing {
         let nowX = axis.x(now)
         gc.fill(Path(CGRect(x: 0, y: 0, width: axis.width, height: height)), with: .color(plot))
         let shown = lines.filter { axis.x($0.from) <= seen.upperBound && axis.x(WorkTimeline.reach($0)) >= seen.lowerBound }
-        let ahead = Path(CGRect(x: nowX, y: 0, width: max(axis.width - nowX + 100, 0), height: height))
         let left = offset, right = offset + visible
 
         // A rule above each priority band but the first (#6089).
@@ -958,20 +912,19 @@ private struct Drawing {
                     layer.stroke(shape, with: .color(c.opacity(0.35)), lineWidth: 6)
                 }
             }
-            // The ghost from created to closed (or Now, or the forecast), then solid only where the work
-            // happened, from started to stopped (#6043).
+            // Solid where the work happened, from started to stopped (#6043).
             let solidRect = solid(line), work = Path(solidRect)
             let idle = Path(CGRect(x: -100, y: -100, width: max(solidRect.minX + 100, 0), height: height + 200))
                 .union(Path(CGRect(x: solidRect.maxX, y: -100, width: max(axis.width - solidRect.maxX + 100, 0), height: height + 200)))
-            gc.fill(shape, with: .color(ghost(line)))
             gc.drawLayer { layer in
                 layer.clip(to: work)
                 layer.fill(shape, with: .color(c))
             }
-            // After Now, the forecast: the ghost with a dashed edge.
-            if line.how == .forecast || { if case .waits = line.how { true } else { false } }() {
+            // Then an open epic's ghost to its predicted finish, with a dashed edge (#7058).
+            if line.ghost != nil {
                 gc.drawLayer { layer in
-                    layer.clip(to: ahead)
+                    layer.clip(to: Path(ahead(line)))
+                    layer.fill(shape, with: .color(ghost(line)))
                     layer.stroke(shape, with: .color(later(line)), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
                 }
             }
@@ -979,14 +932,6 @@ private struct Drawing {
             if let band = line.band, axis.x(band.end) > rect.maxX {
                 let bar = CGRect(x: rect.maxX, y: mid - 2, width: axis.x(band.end) - rect.maxX, height: 4)
                 gc.fill(Path(roundedRect: bar, cornerRadius: 2), with: .color(later(line).opacity(0.35)))
-            }
-            // The children: white dots for the closed ones, rings for those ahead.
-            for dot in line.dots {
-                let x = WorkTimeline.dotX(dot, on: line, axis: axis)
-                let r = dot.closed ? 2.0 : 2.5
-                let circle = Path(ellipseIn: CGRect(x: x - r, y: WorkTimeline.dotY(line.row) - r, width: 2 * r, height: 2 * r))
-                let mark = x >= solidRect.minX && x <= solidRect.maxX + 0.5 && solidRect.width > 0 ? Color.white : later(line)
-                if dot.closed { gc.fill(circle, with: .color(mark)) } else { gc.stroke(circle, with: .color(mark), lineWidth: 1.2) }
             }
             // The words: the title in the block, white on the solid span and the colour on the ghost; or after the block.
             var trailing = 0.0
@@ -1037,7 +982,7 @@ private struct Drawing {
     }
 
     /// The priority chip after a block's title (#6089): `WorkPriorityChip`'s look, drawn in the canvas,
-    /// on the plot's own background so it reads on any block; on hold has a dashed edge.
+    /// on the plot's own background so it reads on any block.
     func drawChip(_ gc: inout GraphicsContext, _ words: String, line: WorkTimeline.Line, x: Double, y: Double) {
         let width = WorkTimeline.chipWidth(words, measure: WorkTimelinePane.measure)
         let rect = CGRect(x: x, y: y - 8, width: width, height: 16)
@@ -1049,7 +994,7 @@ private struct Drawing {
         default: faint
         }
         gc.fill(shape, with: .color(plot))
-        gc.stroke(shape, with: .color(edge), style: StrokeStyle(lineWidth: 1, dash: line.onHold ? [3, 2] : []))
+        gc.stroke(shape, with: .color(edge), lineWidth: 1)
         gc.draw(Text(words).stepped(.fine).fontWeight(.medium).foregroundStyle(tint.color ?? faint),
                 at: CGPoint(x: rect.midX, y: y))
     }
@@ -1105,9 +1050,9 @@ private struct Drawing {
         pill(&gc, now.formatted(date: .omitted, time: .shortened), at: CGPoint(x: axis.x(now), y: 12), fill: Self.nowGrey, text: .white)
     }
 
-    /// A child of the block is worked on now, and the block is open at Now.
+    /// The epic or a child of it is worked on now, and the block is open at Now.
     func isWorking(_ line: WorkTimeline.Line) -> Bool {
-        line.working > 0 && line.start <= now && line.end >= now
+        line.working > 0 && line.from <= now && line.end >= now
     }
 
     /// ◐: a ring at Now, half of it filled; `turn` of a full turn on from the left half, clockwise.
@@ -1129,28 +1074,13 @@ private struct Drawing {
         let turn = SpinnerClock.fraction(at: time, period: Self.pulsePeriod)
         let phase = 0.5 - 0.5 * cos(2 * .pi * turn)
         let nowX = axis.x(now)
-        for line in lines where isWorking(line) && axis.x(line.start) <= seen.upperBound && axis.x(line.end) >= seen.lowerBound {
+        for line in lines where isWorking(line) && axis.x(line.from) <= seen.upperBound && axis.x(line.end) >= seen.lowerBound {
             let shape = Path(roundedRect: block(line), cornerRadius: Paper.Radius.code)
             gc.drawLayer { layer in
                 layer.addFilter(.blur(radius: 2))
                 layer.stroke(shape, with: .color(colour(line).opacity(0.15 + 0.3 * phase)), lineWidth: 4 + 6 * phase)
             }
             drawHalfRing(&gc, line, x: nowX, turn: turn)
-        }
-    }
-
-    /// The dots that landed: a ring that grows and fades over a second.
-    func drawPulses(_ gc: inout GraphicsContext, landed: [String: Date], at time: Date) {
-        for line in lines {
-            for dot in line.dots {
-                guard let seen = landed[dot.ref] else { continue }
-                let t = time.timeIntervalSince(seen)
-                guard t >= 0, t < 1 else { continue }
-                let r = 4 + 10 * t
-                let x = WorkTimeline.dotX(dot, on: line, axis: axis)
-                let ring = Path(ellipseIn: CGRect(x: x - r, y: WorkTimeline.dotY(line.row) - r, width: 2 * r, height: 2 * r))
-                gc.stroke(ring, with: .color(later(line).opacity(1 - t)), lineWidth: 2)
-            }
         }
     }
 }

@@ -386,6 +386,7 @@ final class RemoteModel {
         let localCopy = LocalCopyKeeper(copy: .remote(), work: work)
         self.localCopy = localCopy
         Task { await localCopy.drawMachines() }
+        Self.sweepShared()
         #if DEBUG
         WalkNotify.model = work
         WalkNotify.also = { [weak self] method, params in

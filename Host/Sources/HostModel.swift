@@ -60,16 +60,16 @@ final class HostModel {
         // bucket it was once given go.
         HostSecrets.forgetBucketKeys(paths)
         Task { await registerOutdatedJobsAgain() }
-        sweepKeysAside()
+        sweepAside()
         if !paths.scratch { SelfUpdateRelaunch.watch() }
     }
 
-    /// The old control plane keys' hourly sweep (#6770), the first at launch.
-    private func sweepKeysAside() {
-        let paths = self.paths
-        Task.detached(priority: .utility) {
+    /// The hourly sweep of the stores and the keys set aside (#6769, #6770), the first at launch.
+    private func sweepAside() {
+        Task { [weak self] in
             while !Task.isCancelled {
-                HostSecrets.pruneKeysAside(paths)
+                guard let (paths, plane) = self.map({ ($0.paths, $0.settings.planeAside) }) else { return }
+                await Task.detached(priority: .utility) { Self.pruneAside(paths, plane: plane) }.value
                 try? await Task.sleep(for: .seconds(3600))
             }
         }
@@ -584,7 +584,7 @@ final class HostModel {
                 throw ControlService.Failure("This Mac's store could not be kept aside, so nothing was changed: \(error.localizedDescription)")
             }
             aside = name
-            pruneStoresAside()
+            Self.pruneAside(paths, plane: settings.planeAside)
         }
         settings.forwardingUntil = nil
         settings.receiving = true
@@ -593,9 +593,9 @@ final class HostModel {
         return aside
     }
 
-    /// Only the newest 2 stores set aside stay, and the keys set aside with them (#3671).
-    private func pruneStoresAside() {
-        StoresAside.pruneFolders(in: paths.controlHome)
+    /// The stores set aside that are past a limit go (#6769), then the keys none needs.
+    nonisolated private static func pruneAside(_ paths: HostPaths, plane: StoresAside.Plane) {
+        StoresAside.pruneFolders(in: paths.controlHome, plane: plane)
         HostSecrets.pruneKeysAside(paths)
     }
 

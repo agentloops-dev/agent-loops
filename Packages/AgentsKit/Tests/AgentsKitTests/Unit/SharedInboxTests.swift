@@ -66,15 +66,71 @@ struct SharedInboxTests {
         let container = try scratch()
         defer { try? FileManager.default.removeItem(at: container) }
         #expect(!SharedInbox.hasItems(in: container))
-        #expect(!SharedInbox.add(SharedItems(), into: container))
-        #expect(SharedInbox.add(SharedItems(texts: ["first"]), into: container))
-        #expect(SharedInbox.add(SharedItems(texts: ["second"], refusals: ["no"]), into: container))
+        #expect(SharedInbox.add(SharedItems(), into: container) == .nothing)
+        #expect(SharedInbox.add(SharedItems(texts: ["first"]), into: container) == nil)
+        #expect(SharedInbox.add(SharedItems(texts: ["second"], refusals: ["no"]), into: container) == nil)
         #expect(SharedInbox.hasItems(in: container))
         let taken = try #require(SharedInbox.take(from: container))
         #expect(taken.texts == ["first", "second"])
         #expect(taken.refusals == ["no"])
         #expect(!SharedInbox.hasItems(in: container))
         #expect(SharedInbox.take(from: container) == nil)
+    }
+
+    @Test func aShareOverTheCountIsRefusedAndNothingWaitingGoes() throws {
+        let container = try scratch()
+        defer { try? FileManager.default.removeItem(at: container) }
+        let texts = (0..<SharedInbox.most).map { "share \($0)" }
+        for text in texts { #expect(SharedInbox.add(SharedItems(texts: [text]), into: container) == nil) }
+        #expect(SharedInbox.add(SharedItems(texts: ["over"]), into: container) == .full)
+        #expect(SharedInbox.take(from: container)?.texts == texts)
+        #expect(SharedInbox.add(SharedItems(texts: ["over"]), into: container) == nil)
+    }
+
+    @Test func aShareOverTheSizeIsRefusedAndNothingWaitingGoes() throws {
+        let container = try scratch()
+        defer { try? FileManager.default.removeItem(at: container) }
+        let big = String(repeating: "a", count: SharedInbox.bytesMost)
+        let half = String(big.prefix(SharedInbox.bytesMost / 2))
+        #expect(SharedInbox.add(SharedItems(texts: [big]), into: container) == .tooBig)
+        #expect(SharedInbox.add(SharedItems(texts: [half]), into: container) == nil)
+        #expect(SharedInbox.add(SharedItems(texts: [half]), into: container) == .full)
+        #expect(SharedInbox.take(from: container)?.texts == [half])
+    }
+
+    @Test func aShareAgesOutAndTheNextTakeSaysSo() throws {
+        let container = try scratch()
+        defer { try? FileManager.default.removeItem(at: container) }
+        let start = Date(timeIntervalSince1970: 1_000_000), over = start + SharedInbox.ageLimit + 1
+        SharedInbox.add(SharedItems(texts: ["old"]), into: container, now: start)
+        SharedInbox.add(SharedItems(texts: ["new"]), into: container, now: over - 60)
+        SharedInbox.sweep(in: container, now: start + SharedInbox.ageLimit)
+        SharedInbox.sweep(in: container, now: over)
+        SharedInbox.sweep(in: container, now: over)
+        let url = try #require(SharedInbox.url(in: container))
+        #expect(!(try String(contentsOf: url, encoding: .utf8)).contains("\"old\""))
+        let taken = try #require(SharedInbox.take(from: container, now: over))
+        #expect(taken.texts == ["new"])
+        #expect(taken.refusals == [SharedInbox.expiredWords(1)])
+    }
+
+    @Test func aFileFromBeforeTheBoundsIsKept() throws {
+        let container = try scratch()
+        defer { try? FileManager.default.removeItem(at: container) }
+        let url = try #require(SharedInbox.url(in: container))
+        let old = SharedItems(texts: ["one", "two"])
+        try JSONEncoder().encode(old).write(to: url)
+        #expect(SharedInbox.add(SharedItems(texts: ["three"]), into: container) == nil)
+        #expect(SharedInbox.take(from: container)?.texts == ["one", "two", "three"])
+
+        let big = SharedItems(texts: [String(repeating: "a", count: SharedInbox.bytesMost)])
+        try JSONEncoder().encode(big).write(to: url)
+        #expect(SharedInbox.add(SharedItems(texts: ["over"]), into: container) == .full)
+        #expect(SharedInbox.take(from: container) == big)
+
+        try JSONEncoder().encode(old).write(to: url)
+        let late = Date() + SharedInbox.ageLimit + 60
+        #expect(SharedInbox.take(from: container, now: late)?.note == SharedInbox.expiredWords(1))
     }
 
     @Test func forgettingThePairingClearsWhatWaits() throws {

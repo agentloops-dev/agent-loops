@@ -1,6 +1,7 @@
-// Work ▸ Timeline (#4206), as the window's WorkTimelinePane (#4173): time across, each epic a filled block in its
-// own row from when its first child starts to when its last one closes, a lighter tint with a dashed edge after Now
-// (the forecast), then a thin bar to where it closes 8 times in 10 (#5506, Alex, 2026-11-14). Drawn in SVG; the rows
+// Work ▸ Timeline (#4206), as the window's WorkTimelinePane (#4173): time across, each epic one block in its own row
+// (#7058): solid from when its first child started to when the work stopped (#6043), then for an open epic a ghost (a
+// lighter tint with a dashed edge) to its predicted finish, and a thin bar to where it closes 8 times in 10 (#5506,
+// Alex, 2026-11-14). Drawn in SVG; the rows
 // and the marks come from model/workTimeline. The state lives for the tab, so Back from an issue's page finds the
 // Timeline as it was left.
 import { signal } from "@preact/signals";
@@ -13,16 +14,16 @@ import { describe } from "../model/errors";
 import { boardChoices, boardName, withBoard, type WorkProject } from "../model/work";
 import { boards, forgeHosts, loadBoards } from "../model/workLists";
 import {
-  Axis, bandGutter, bandRuleY, bands as bandsOf, blockHeight, blockWords, cardRow, chipWidth, chipWords, priorityBand, colourIndex, dotX, dotY, epicCount, epicRows, errorWords, forWhiteText, hexOf, hit, lastJoined,
-  lastJoinedWords, landed as landedRefs, layout, mergeTimelines, nextInRow, noEpicsWords, noMachine, noProject, noProjectTitle, overlapping,
+  Axis, bandGutter, bandRuleY, bands as bandsOf, blockHeight, blockWords, cardRow, chipWidth, chipWords, priorityBand, colourIndex, epicCount, epicRows, errorWords, forWhiteText, hexOf, hit, lastJoined,
+  lastJoinedWords, layout, mergeTimelines, nextInRow, noEpicsWords, noMachine, noProject, noProjectTitle, overlapping,
   packSpan, rangeSpan, rangeTitle, rangeWindow, reach, rgbOf, rowCount, rowGap, rowTop, sessionNodes, showTheWeek, startedBySessions,
-  timelineLines, timelineRanges, timelineShows, titleWords, titleY, workingNow, zoomed, type Interval, type TimelineHit, type TimelineBand, type TimelineLine, type TimelineRange,
+  timelineLines, timelineRanges, timelineShows, titleWords, titleY, workingNow, zoomed, type Interval, type TimelineBand, type TimelineLine, type TimelineRange,
 } from "../model/workTimeline";
 import { go } from "../route";
 import { keepWork, keptWorkRead } from "../model/workCache";
 import { Choice, workProjects } from "./Work";
 import { choiceFrom, choiceWords, rememberEach, remembered } from "../model/workRemembered";
-import { EmptyState, ErrorStrip, FilterMenu, LabelChip, OnHoldChip, PlaceholderRows, PriorityChip, RefreshButton, StateIcon, WorkFooter } from "./WorkParts";
+import { EmptyState, ErrorStrip, FilterMenu, LabelChip, PlaceholderRows, PriorityChip, RefreshButton, StateIcon, WorkFooter } from "./WorkParts";
 import { pageCount, pageFooterState } from "../model/workFooter";
 
 /** The middle of Timeline when nothing was read (#5971). */
@@ -45,8 +46,6 @@ const problem = signal<string | null>(null);
 const asked = signal(0);
 /** Now was clicked: the plot scrolls back to it. */
 const nowAsked = signal(0);
-/** Children that closed since the last read: their dots pulse once. */
-const landed = signal<ReadonlySet<string>>(new Set());
 /** A read of `work/timeline` runs: Refresh spins (note 30). */
 const reading = signal(false);
 /** How many of the machines asked have answered the read that runs: "Reading 1 of 3 machines…" in the footer (#5971). */
@@ -125,10 +124,6 @@ async function loadTimeline(store: Store) {
     const merged = mergeTimelines(got.flatMap((g) => g.t ? [g.t] : []));
     const epics = chosenBoard ? new Set(got.flatMap((g) => g.refs ?? [])) : undefined;
     if (epics) merged.epics = merged.epics.filter((e) => epics.has(e.item.node.ref));
-    if (timeline.value) {
-      const fresh = landedRefs(timeline.value, merged);
-      if (fresh.length > 0) landed.value = new Set(fresh);
-    }
     fromMachines = merged;
     // The plot draws now, with the sessions it had (#5450); the new ones start their children when they come.
     timeline.value = startedBySessions(merged, sessions.value);
@@ -288,7 +283,7 @@ function useMinute(): number {
   return now;
 }
 
-interface Hover { hit: TimelineHit; x: number; y: number }
+interface Hover { line: TimelineLine; x: number; y: number }
 
 /** The plot; under 700 px the list of epics in its place (note 36). `drawn`: a read or a device's copy drew it;
  * `reading`: a read of the window runs. Until one draws, or while one runs and no epic is in the window, the axis and
@@ -380,7 +375,7 @@ function Plot({ timeline: t, drawn, reading, working }: {
     return { x: e.clientX - r.left, y: e.clientY - r.top };
   };
   const hitAt = (p: { x: number; y: number }) => hit(p, lines, axis);
-  const open = (h: TimelineHit) => go({ nav: "work", section: "issue", item: h.kind === "dot" ? h.dot.ref : h.line.epic });
+  const open = (l: TimelineLine) => go({ nav: "work", section: "issue", item: l.epic });
 
   const win = rangeWindow(range.value, anchor.value);
   const rows = epicRows(timelineLines(t, now), win, now);
@@ -401,7 +396,7 @@ function Plot({ timeline: t, drawn, reading, working }: {
           <div class="timeline-plot-column">
           <svg class="timeline-axis" width={axis.width} height={axisHeight} aria-hidden="true">{d.axisMarks()}</svg>
           <svg class={`timeline-plot${hover ? " pointing" : ""}`} width={axis.width} height={height} aria-hidden="true"
-            onMouseMove={(e) => { const p = point(e); const h = hitAt(p); setHover(h ? { hit: h, ...p } : null); }}
+            onMouseMove={(e) => { const p = point(e); const h = hitAt(p); setHover(h ? { line: h, ...p } : null); }}
             onMouseLeave={() => setHover(null)}
             onClick={(e) => { const h = hitAt(point(e)); if (h) open(h); }}>
             {d.plot()}
@@ -436,7 +431,6 @@ function Plot({ timeline: t, drawn, reading, working }: {
                     <span class="timeline-list-head">
                       <span class="title strong">{line.title}</span>
                       <PriorityChip priority={line.priority} />
-                      <OnHoldChip onHold={line.onHold} />
                     </span>
                     <span class={`quiet small${line.how.how === "waits" ? " waits" : ""}`}>{line2}</span>
                   </span>
@@ -457,8 +451,8 @@ function Plot({ timeline: t, drawn, reading, working }: {
 /** The card beside the pointer, on the left of it near the plot's right edge, so it stays in sight. A row on three
  * lines (Alex, 2026-11-10): the title; the label chips, where the wire has them; the prediction. */
 function Card({ hover, timeline: t, now, right }: { hover: Hover; timeline: Timeline; now: number; right: number }) {
-  const row = cardRow(hover.hit, t, now);
-  const labels = shownLabels(row.labels, row.onHold);
+  const row = cardRow(hover.line, t, now);
+  const labels = shownLabels(row.labels, false);
   return (
     <div class="timeline-card" style={hover.x + 14 + 370 > right
       ? { left: `${hover.x - 14}px`, transform: "translateX(-100%)", top: `${hover.y + axisHeight + 14}px` }
@@ -467,11 +461,10 @@ function Card({ hover, timeline: t, now, right }: { hover: Hover; timeline: Time
         <div class="timeline-card-title">
           <StateIcon kind="issue" state={row.state} size={14} /><span class="strong">{row.title}</span>
         </div>
-        {(labels.length > 0 || row.priority || row.onHold) && (
+        {(labels.length > 0 || row.priority) && (
           <div class="work-chips">
-            {/* The priority chip and the On hold chip first (#6089, #6090), and the on hold label not again. */}
+            {/* The priority chip first (#6089). */}
             <PriorityChip priority={row.priority} />
-            <OnHoldChip onHold={row.onHold} />
             {labels.slice(0, 3).map((l) => <LabelChip key={l.name} label={l} />)}
             {labels.length > 3 && <span class="work-chips-more quiet small">+{labels.length - 3}</span>}
           </div>
@@ -483,12 +476,12 @@ function Card({ hover, timeline: t, now, right }: { hover: Hover; timeline: Time
 }
 
 /** A band's class for its tint (#6089): High the failure's red, Medium the warning's orange, the rest plain. */
-const bandClass = (band: number) => ["high", "medium", "none", "low", "on-hold"][band] ?? "none";
+const bandClass = (band: number) => ["high", "medium", "none", "low"][band] ?? "none";
 
-/** What a screen reader says after an epic's title (#6089): ", priority high", ", on hold" or nothing. */
+/** What a screen reader says after an epic's title (#6089): ", priority high" or nothing. */
 function spokenChip(l: TimelineLine): string {
   const chip = chipWords(l);
-  return chip ? l.onHold ? `, ${chip.toLowerCase()}` : `, priority ${chip.toLowerCase()}` : "";
+  return chip ? `, priority ${chip.toLowerCase()}` : "";
 }
 
 /** What one frame of the plot draws: the window, and a screen on each side of it. */
@@ -499,19 +492,18 @@ class Drawing {
   constructor(readonly lines: TimelineLine[], readonly axis: Axis, readonly now: number, readonly height: number,
               readonly offset: number, readonly visible: number, readonly bands: readonly TimelineBand[] = []) {
     this.nowX = axis.x(now);
-    this.shown = lines.filter((l) => axis.x(l.createdAt) <= this.seenTo && axis.x(reach(l)) >= this.seenFrom);
+    this.shown = lines.filter((l) => axis.x(l.from) <= this.seenTo && axis.x(reach(l)) >= this.seenFrom);
   }
 
   get seenFrom() { return this.offset - this.visible; }
   get seenTo() { return this.offset + 2 * this.visible; }
   seen(x: number) { return x >= this.seenFrom && x <= this.seenTo; }
 
-  /** A block's fill: its feature's colour, darkened until white has 4.5:1; grey when closed as not planned or on hold
-   * (#6089). */
-  colour(l: TimelineLine) { return fills[l.how.how === "dropped" || l.onHold ? fills.length - 1 : colourIndex(l.feature, fills.length)]!; }
+  /** A block's fill: its feature's colour, darkened until white has 4.5:1; grey when closed as not planned. */
+  colour(l: TimelineLine) { return fills[l.how.how === "dropped" ? fills.length - 1 : colourIndex(l.feature, fills.length)]!; }
 
-  /** A child of the block is worked on now, and the block is open at Now. */
-  isWorking(l: TimelineLine) { return l.working > 0 && l.start <= this.now && l.end >= this.now; }
+  /** The epic or a child of it is worked on now, and the block is open at Now. */
+  isWorking(l: TimelineLine) { return l.working > 0 && l.from <= this.now && l.end >= this.now; }
 
   /** The wait pill's width: 👤 and the number, no words (Alex, 2026-11-14). */
   pillWidth(count: number) { return measure(`👤 ${count}`) + 12; }
@@ -520,9 +512,6 @@ class Drawing {
     const { axis, nowX, height, shown } = this;
     const left = this.offset, right = this.offset + this.visible;
     const out = [
-      <defs key="defs">
-        <clipPath id="timeline-ahead"><rect x={nowX} y={0} width={Math.max(axis.width - nowX + 100, 0)} height={height} /></clipPath>
-      </defs>,
       <rect key="plot" class="timeline-ground" x={0} y={0} width={axis.width} height={height} />,
       // A rule above each priority band but the first (#6089, #6093).
       ...this.bands.filter((b) => b.row > 0).map((b) => (
@@ -531,12 +520,13 @@ class Drawing {
     ];
     shown.forEach((l, i) => {
       const c = this.colour(l), top = rowTop(l.row), mid = top + blockHeight / 2;
-      const sx = axis.x(l.createdAt), ex = Math.max(axis.x(l.end), sx + 2), w = ex - sx;
-      // The ghost from created to closed (or Now, or the forecast), solid only from started to stopped (#6043).
-      const wx = axis.x(l.start), wex = Math.max(axis.x(l.stoppedAt), wx);
+      // An epic can be months old: no further than just past the plot's edges.
+      const sx = Math.max(axis.x(l.from), -20), ex = Math.max(Math.min(axis.x(l.end), axis.width + 20), sx + 2), w = ex - sx;
+      // Solid from started to stopped (#6043), then an open epic's dashed ghost to its predicted finish (#7058).
+      const wx = axis.x(l.work?.start ?? l.from), wex = Math.max(axis.x(l.work?.end ?? l.from), wx);
       const onSolid = (x: number) => wex > wx && x >= wx && x <= wex + 0.5;
-      const solid = `timeline-solid-${i}`, idle = `timeline-idle-${i}`;
-      const forecast = l.how.how === "forecast" || l.how.how === "waits";
+      const gx = axis.x(l.ghost?.start ?? l.end);
+      const solid = `timeline-solid-${i}`, idle = `timeline-idle-${i}`, ahead = `timeline-ahead-${i}`;
       const block = (cls: string, clip?: string) => (
         <rect class={cls} x={sx} y={top} width={w} height={blockHeight} clip-path={clip ? `url(#${clip})` : undefined} />
       );
@@ -548,31 +538,19 @@ class Drawing {
           {/* An epic a session is in a turn on now (#4265): a soft glow that breathes; with Reduce Motion, still. */}
           <defs>
             <clipPath id={solid}><rect x={wx} y={-100} width={wex - wx} height={height + 200} /></clipPath>
+            <clipPath id={ahead}><rect x={gx} y={-100} width={Math.max(ex - gx + 2, 0)} height={height + 200} /></clipPath>
             <clipPath id={idle}>
               <rect x={-100} y={-100} width={Math.max(wx + 100, 0)} height={height + 200} />
               <rect x={wex} y={-100} width={Math.max(axis.width - wex + 100, 0)} height={height + 200} />
             </clipPath>
           </defs>
           {this.isWorking(l) && <rect class="breathing" x={sx} y={top} width={w} height={blockHeight} />}
-          {block("ghost")}
           {block("past", solid)}
-          {forecast && block("ahead", "timeline-ahead")}
+          {l.ghost && <>{block("ghost", ahead)}{block("ahead", ahead)}</>}
           {/* 8 times in 10: a thin bar after the forecast. */}
           {l.band && axis.x(l.band.end) > ex && (
             <rect class="band" x={ex} y={mid - 2} width={axis.x(l.band.end) - ex} height={4} rx={2} />
           )}
-          {l.dots.map((dot) => {
-            const x = dotX(dot, l, axis);
-            return (
-              <g key={dot.ref}>
-                <circle class={`timeline-dot${dot.closed ? "" : " ahead"}${onSolid(x) ? "" : " later"}`} cx={x} cy={dotY(l.row)} r={dot.closed ? 2 : 2.5} />
-                {landed.value.has(dot.ref) && (
-                  <circle class="timeline-pulse" cx={x} cy={dotY(l.row)} r={4}
-                    onAnimationEnd={() => { const next = new Set(landed.value); next.delete(dot.ref); landed.value = next; }} />
-                )}
-              </g>
-            );
-          })}
           {words.inside && (
             <>
               <text class="title past" clip-path={`url(#${solid})`} x={words.insideX} y={titleY(l.row)} dy="0.35em">{words.inside}</text>
@@ -613,7 +591,7 @@ class Drawing {
   }
 
   /** The priority chip after a block's title (#6089, #6093): the priority chip's look, on the plot's own ground so it
-   * reads on any block; on hold has a dashed edge. */
+   * reads on any block. */
   chip(words: string, l: TimelineLine, x: number, y: number) {
     const w = chipWidth(words, measure);
     return (

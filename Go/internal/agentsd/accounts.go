@@ -301,6 +301,8 @@ func (d *Daemon) addAccount(r wire.AddAccountRequest) (wire.AccountProfile, erro
 		d.accountMu.Unlock()
 		return wire.AccountProfile{}, Invalid("The account is too large to keep: %d bytes, and the most is %d.", len(b), accountMostBytes)
 	}
+	// The runtime's conversations in it, with no blob interface (#6707): accounthistory.go.
+	// store-bounds: kind=blob; size=1200MiB a home; age=90d; applied=hourly sweep
 	if err := os.MkdirAll(folder, 0o700); err != nil {
 		d.accountMu.Unlock()
 		return wire.AccountProfile{}, err

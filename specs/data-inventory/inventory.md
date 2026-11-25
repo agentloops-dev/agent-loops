@@ -102,7 +102,7 @@ from the root (`agentsd/backups.go:69,72`). It holds nothing else.
 | `leases.json`, `resources.json` | Resource leases | 240-minute lease cap; dropped on agent stop (`leases.go:28,383`) | on write | no |
 | `guarded-files.json` | Guarded file states | folders that exist | on save | no |
 | `org-routes/<id>.json`, `runtimes/org/…` | Org key routes, stand-in homes | 50 routes (`orgroutes.go:46`) | on delivery | no |
-| `runtimes/accounts/<rt>/<id>/` | Homes of added runtime accounts, **with the runtime's own transcripts** | removed with the account (`accounts.go:343`) | on remove | no |
+| `runtimes/accounts/<rt>/<id>/` | Homes of added runtime accounts, **with the runtime's own transcripts** | conversations: 1,200 MB a home, 90 days (`accounthistory.go`, #6707); the rest goes with the account (`accounts.go`) | hourly; on remove | no |
 | `browser/profile/` | Chromium profile shared by every browser sign-in | **none** | never | no |
 | Small fixed files (`folders.json`, `root-id.json`, `settings/*.json`, …) | Configuration | fixed shape | n/a | no |
 
@@ -144,7 +144,7 @@ from the root (`agentsd/backups.go:69,72`). It holds nothing else.
 | Store | Holds | Bound | Swept |
 |---|---|---|---|
 | `attachments/` | Files attached to prompts | 500 MB per folder; 7 days if no kept transcript names the file; `.tmp` after 1 day (`attachments.go:27,28,34`) | hourly, at start, on write. **Only in folders that still have an agent** (`attachments.go:82-90`). |
-| `dropbox/**` | Files handed to a workflow | 25 MB per file (`host.go:587`). **No total, count or age limit.** | never |
+| `dropbox/**` | Files handed to a workflow | 25 MB per file and 500 MB a folder; 90 days (#6711). | hourly |
 | `worktrees/<name>` + branch `agents/<name>` | Git worktrees agentsd makes | **none, on purpose: user-owned** (#6708, closed as not planned) | when its agent is archived or deleted (#3726, #3877) |
 | `reviews/runtimes/<rt>-<date>.md` | Runtime assessment reports | 1 MiB per report; newest 50 per machine; 90 days; not those git tracks (`assess_reports.go`, #6712) | hourly, on start and on score |
 | `workflows/assess-<id>.md` | Assessment throwaway workflow | **none** | never |
@@ -275,7 +275,7 @@ Sessions are signed cookies (30 days); the server keeps nothing for them.
 | Store | Holds | Bound |
 |---|---|---|
 | `~/Library/Application Support/Agents Control/` | `store/`, `tls/`, `secrets-key`, `apns.p8`, `web.json`, `control-key` (scratch) | fixed |
-| `…/Agents Control/store-before-<…>` | A whole old store, set aside on a store switch or a move back (`Host/…/HostModel.swift:561,791`) | **none; never pruned.** Each holds the audit, sealed secrets and server backups. |
+| `…/Agents Control/store-before-<…>` | A whole old store, set aside on a store switch or a move back (`HostModel.prepareReturn`) | The newest 2, 1 GiB in all, 90 days once superseded (#6769). Each holds the audit, sealed secrets and server backups. |
 | Keychain `com.alexecollins.agentshost` | `control-key`, `bucket-keys`, `control-key-before-<unix>` | `control-key-before-*`: the newest 2; 90 days once no `store-before-*` folder is left (#6770) |
 | `~/Library/Logs/Agents/control.log` | Control plane log | 4 MB + 1 older, 7 days (`rolllog/rolllog.go`, #6901) |
 | Web Push VAPID key (`AGENTS_WEBPUSH_KEY_FILE`) | Push signing key | 1. **Not in `agents-control backup`**, so a restore breaks browser push. |
@@ -383,11 +383,11 @@ newer than a row above for the same store.
 | Store | Kind | Holds | Bound | Evidence | Issue |
 |---|---|---|---|---|---|
 | `<root>/agents/<id>/` (agent.json, transcript.jsonl, app-tools.jsonl, said.json) and `<cache>/turns/` | log | Conversations | Archived agents go after 7/14/30/90 days or Forever; a live or pinned agent never ages; no size limit on a transcript | `Go/internal/agentsd/retention.go:89-93; store/locations.go:100-102` | #6706 |
-| `<root>/runtimes/accounts/<rt>/<id>/` | blob | Runtime account homes, with the runtimes' own transcripts | None, until the account is removed | `Go/internal/agentsd/accounts.go:274` | #6707 |
+| `<root>/runtimes/accounts/<rt>/<id>/` | blob | Runtime account homes, with the runtimes' own transcripts | Conversations: 1,200 MB a home and 90 days, the oldest first; those of sessions not archived, or written in the last 24 hours, stay | `Go/internal/agentsd/accounthistory.go` | #6707 |
 | `<folder>/.agents/worktrees/` | blob | Agent worktrees | User-owned: no bound, on purpose | `docs/explanation/compliance/data-and-retention.md (In each folder)` | #6708 |
 | `<root>/backups/` | blob | This machine's backups | The newest Keep (1-10); 90 days; the newest good one stays; over 10 MB is made, with a warning | `Go/internal/agentsd/backups.go` (`pruneBackups`) | #6709 |
 | `<root>/browser/profile/` | blob | Browser sign-ins and cookies | Caches emptied at start, 64 MB HTTP cache; cookies until the site ends them | `Go/internal/agentsd/browser/browser.go:139,637` | #6710 |
-| `<folder>/.agents/dropbox/` | blob | Files handed to workflows | 25 MB a file, 500 MB a folder; no age, on purpose (#3648) | `Go/internal/agentsd/host.go:689,693` | #6711 |
+| `<folder>/.agents/dropbox/` | blob | Files handed to workflows | 25 MB a file and 500 MB a folder from dropbox/put, which refuses; 90 days from the last change or arrival; what git tracks stays | `Go/internal/agentsd/dropbox.go`, `host.go` (`putInDropbox`) | #6711 |
 | `<folder>/.agents/reviews/runtimes/` | document | Runtime assessment reports | 1 MiB per report; newest 50 per machine; 90 days | `Go/internal/agentsd/assess_reports.go` | #6712 |
 | `~/.agents/dismissed-leads.json` | key-value | Dismissed epics | None: an entry goes only when its epic gets a lead | `Go/internal/agentsd/worksuggest.go:32,55-59,165` | #6713 |
 | `~/.agents/summaries/` | document | Daily summaries from before #5853 | 1 MiB per page; newest 3; 90 days | `Go/internal/agentsd/oldsummaries.go` | #6714 |
@@ -413,7 +413,7 @@ newer than a row above for the same store.
 | `<root>/devices.json` | document | Paired devices | 256 of 4 KiB each, a new one past that refused; 90 days unseen | `Go/internal/agentsd/devices.go` (`deviceLimit`) | #6734 |
 | `<logs>/daemon.log` | log | What the machine did | 4 MB and one older file, 7 days; the oldest go first | `Go/internal/rolllog/rolllog.go` | #6735 |
 | `<logs>/mcp-logs/` | log | Hosted MCP servers' stderr | 256 KiB and one older file a server, 10 MB in all, 7 days; the oldest go first | `Go/internal/agentsd/hostedmcp.go` (`dropOldHostedLogs`) | #6736 |
-| `<file>.unreadable-*`, `<file>.corrupt-*` | blob | Stores set aside when unreadable | The newest 3, no age | `Go/internal/agentsd/store/files.go:79` | #6737 |
+| `<file>.unreadable-*`, `<file>.corrupt-*` | blob | Stores set aside when unreadable | The newest 3 and 100 MB of each file and kind; 90 days | `Go/internal/agentsd/store/files.go` (`sweepSetAsides`) | #6737 |
 | `~/.agents-secrets/sealed.json` | secret | Sealed secrets | No count limit | `Go/internal/agentsd/sealedsecrets.go:122` | #6738 |
 | `~/.agents-secrets/sessions/` | secret | Secrets for one session | No count limit; values go on archive, the file on delete | `Go/internal/agentsd/sessionsecrets.go:57` | #6739 |
 | `~/.agents-secrets/mcp-sign-ins.json` | secret | MCP OAuth tokens | No count limit | `Go/internal/agentsd/mcpcatalog/signins.go:45,134` | #6740 |
@@ -445,8 +445,8 @@ newer than a row above for the same store.
 | `v1/scim/tokens/` | secret | SCIM token hashes, revoked ones too | 20 a provider, 8 KiB when made; live until revoked or ended, then 90 days; until the provider is removed | `Go/internal/controlplane/scim_tokens.go` (`sweep`) | #6766 |
 | `v1/read/tokens/` | secret | Read token hashes, revoked ones too | 50, 8 KiB when made; live until revoked, then 90 days | `Go/internal/controlplane/readapi.go` (`sweep`) | #6767 |
 | `v1/lineage/<host>.json` | graph | Lineage node cost | 5,000 nodes of 64 KiB, 32 MiB and 90 days a machine, on write and hourly | `Go/internal/controlplane/lineagecost.go` (`boundLineage`, `sweepLineage`) | #6768 |
-| `Agents Control/store-before-*` (Mac) | blob | Whole old stores | The newest 2, of any size, no age | `Host/Sources/HostModel.swift:567,584` | #6769 |
-| Keychain `control-key-before-*` (Mac) | secret | Old control keys | The newest 2, 32 bytes each; 90 days, on write and hourly, but held while a `store-before-*` folder is left (#6769); evict | `Host/Sources/ControlKey.swift` (`pruneKeysAside`), `StoresAside.expiredKeys` | #6770 |
+| `Agents Control/store-before-*` (Mac) | blob | Whole old stores | The newest 2, 1 GiB in all, 90 days, on write and hourly; evict the oldest. Count and size never take the newest, and nothing ages out while the control plane is away from this Mac (Alex, 2026-11-24) | `StoresAside.expiredFolders`, `Host/Sources/HostModel.swift` (`sweepAside`) | #6769 |
+| Keychain `control-key-before-*` (Mac) | secret | Old control keys | The newest 2, 32 bytes each; 90 days, on write and hourly, but held while a `store-before-*` folder is left; evict | `Host/Sources/ControlKey.swift` (`pruneKeysAside`), `StoresAside.expiredKeys` | #6770 |
 | `v1/control.json` | key-value | Control plane settings | 64 KiB, else a person's change is refused. Stays in the control plane's store (Alex, 2026-11-24) | `Go/internal/controlplane/records/fits.go` | #6771 |
 | `v1/policy.json`, `v1/policy.sig` | key-value | The org policy | 64 KiB and 1 KiB, else refused; the kill switch never is. Stays in the control plane's store (Alex, 2026-11-24) | `Go/internal/controlplane/policy.go` (`nextPolicy`) | #6772 |
 | `v1/signin.json` | key-value | Sign-in providers that are on | 16 KiB, else refused. Stays in the control plane's store (Alex, 2026-11-24) | `Go/internal/controlplane/signin.go` | #6773 |
@@ -463,7 +463,7 @@ newer than a row above for the same store.
 | hosted `v1/blocked/`, `v1/blocked/email/` | key-value | The operator's block lists | 10,000 each of 4 KiB, else refused; no age, until unblocked (Alex, 2026-11-24: a blocked person must not come back) | `Go/internal/hosted/recordbounds.go` (`putBlock`, `putEmailBlock`) | #6784 |
 | hosted `v1/accounts/`, sign-in links, `v1/emails/`, `v1/usage/` | document | Accounts | 100 accounts of 8 KiB, links and usage 128 bytes; until Delete Account: an exception to the 90-day rule until epic #7092 (Alex, 2026-11-24) | `Go/internal/hosted/signup.go` (`MaxAccounts`), `accounts.go` (`accountRecordMost`, `remove`) | #6785, #7094 |
 | hosted `v1/waitlist/`, `v1/waiting/` | document | The waitlist | 10,000 of 4 KiB, else refused; 90 days, or sign-up or a block | `Go/internal/hosted/recordbounds.go` (`sweepWaitlist`) | #6786 |
-| Operator backups | blob | Each account's store | The newest 7; `--keep 0` keeps all; no age | `Go/internal/hosted/backup.go:58-83; Go/cmd/agents-hosted/admin.go:33-43` | #6787 |
+| Operator backups | blob | Each account's store | The newest 7, or 1 to 90; 90 days; the newest copy of an account that exists stays; over 10 MB is made, with a warning | `Go/internal/hosted/backup.go` (`PruneBackups`) | #6787 |
 | `control.log` (`~/Library/Logs/Agents/control.log` or `/data/control.log`) | log | Operational log lines | 4 MB and one older file, 7 days; the oldest go first | `Go/internal/rolllog/rolllog.go` | #6901 |
 | Mac `<cache>/work-cache.sqlite` | cache | Work cache: forge items, bodies, comments, page answers | 200 MiB (Remote: 50 MiB), least recently drawn out first; 4 MiB a record; 90 days (#6788) | `Packages/AgentsKit/Sources/AgentsKitCore/Client/WorkCache.swift` (`Bounds`) | #6788 |
 | Web IndexedDB `agents` › `work` | cache | Work cache: forge items, bodies, comments, page answers | 50 MiB, least recently drawn out first; 4 MiB a record; 90 days (#6976) | `Web/src/model/workCache.ts` (`webBounds`) | #6976 |
@@ -472,7 +472,7 @@ newer than a row above for the same store.
 | Web IndexedDB `agents` › `copy` | cache | As the Mac's local copy, and Work's pictures | 50 MiB, 20 chats, 2000 pictures; 16 MiB a record; 90 days; a machine no longer listed is dropped (#6792) | `Web/src/model/localCopy.ts` | #6792 |
 | Web `localStorage` `agents.drafts` | document | Drafts | 40, a new one over that refused; attachments under 256 KiB; 30 days since the last edit (#6793) | `Web/src/model/drafts.ts` | #6793 |
 | Mac and Remote defaults `draft.*` | document | Drafts | 40, a new one over that refused; 1 MiB a draft, 512 KiB of it attachments; 30 days since the last edit (#6794) | `Packages/AgentsKit/Sources/AgentsKitCore/Model/DraftStore.swift` | #6794 |
-| Remote app group `shared-inbox.json` | blob | What was shared to Agent Loops | Each attachment capped; no count, total or age | `Packages/AgentsKit/Sources/AgentsKitCore/Widget/SharedInbox.swift:88,105-118` | #6795 |
+| Remote app group `shared-inbox.json` | blob | What was shared to Agent Loops | 100 shares, 10 MB in all, one over either refused; 90 days, then New session says how many went | `Packages/AgentsKit/Sources/AgentsKitCore/Widget/SharedInbox.swift` | #6795 |
 | Mac browser pane `WKWebsiteDataStore.default()` | blob | Cookies and site storage of the sites the pane opened | 10 MB (caches go first) and 100 sites, the site opened longest ago out first; 90 days since a pane last opened it; a site in an open pane stays; all of it on Forget (Alex, 2026-11-24) | `App/Sources/Sidebar/BrowserPaneStore.swift`, `Packages/AgentsKit/Sources/AgentsKitCore/Client/BrowserSites.swift` (`Bounds`) | #6796 |
 | `machinePicker.pinned` (Mac, Remote, web) | key-value | Pinned machines | 100 of 64 bytes each, one over that refused; until removed, or its machine is no longer listed (no age, on purpose: a person's choice) | `Packages/AgentsKit/Sources/AgentsKitCore/Sidebar/MachinesGroup.swift` (`MachinePins`); `Web/src/model/machinePicker.ts` | #6797 |
 | Remote defaults `remote.startFolders` | key-value | Start folders, each with its machine | 100 of 1,024 + 64 bytes each, one over that refused; until removed, its machine is no longer listed, or Forget (no age, on purpose: a person's choice) | `Packages/AgentsKit/Sources/AgentsKitCore/Sidebar/StartFolders.swift` | #6798 |
@@ -519,7 +519,7 @@ files expire without a summary. The `Forever` setting and a live conversation do
 90-day maximum age.
 
 Numeric product bounds still missing from responsible child issues include
-control-plane entity, release-key, and invite quotas; browser and
-shared-inbox quotas; and store-specific record and collection limits where the rows above say
+control-plane entity, release-key, and invite quotas; browser quotas; and store-specific
+record and collection limits where the rows above say
 **not specified**. The epic lead must track these in the existing responsible child issues or
 file a follow-up child issue when no owner exists. Do not replace this statement with estimates.
