@@ -622,6 +622,7 @@ var CallConsoleTeamWorkflows = Method[Empty, TeamWorkflows]{"console/teamWorkflo
 var CallControlCapacity = Method[Empty, ControlCapacityBoard]{"control/capacity"}
 var CallControlConnectAnother = Method[ConnectAnotherRequest, Empty]{"control/connectAnother"}
 var CallControlConnectReport = Method[ConnectReport, Empty]{"control/connectReport"}
+var CallControlEligible = Method[ControlEligibleRequest, ControlEligible]{"control/eligible"}
 var CallControlPing = Method[Empty, Empty]{"control/ping"}
 var CallControlPlaneMove = Method[PlaneMoveAsk, Empty]{"control/planeMove"}
 var CallControlPlaneMoveReport = Method[PlaneMoveReport, Empty]{"control/planeMoveReport"}

@@ -3515,6 +3515,28 @@ export interface ControlCutOff {
   provider?: string;
 }
 
+/** control/eligible's answer (#6611): ok when there are no reasons. */
+export interface ControlEligible {
+  ok: boolean;
+  reasons: ControlEligibleReason[];
+}
+
+/** One reason a machine cannot take the control role (#6611), with its words for the person. */
+export interface ControlEligibleReason {
+  reason: ControlIneligibility;
+  text: string;
+}
+
+/** control/eligible (#6611): which machine, and what the person has said yes to. */
+export interface ControlEligibleRequest {
+  machine: MachineRef;
+  /**
+   * The person says yes to a control plane on a Mac, which can sleep. It counts only in the
+   * single-user shape.
+   */
+  allowSleep?: boolean;
+}
+
 /** One place a control plane answers (R16). */
 export interface ControlEndpoint {
   url: string;
@@ -3534,6 +3556,22 @@ export interface ControlHello {
    */
   previous?: string;
 }
+
+/**
+ * Why a machine cannot take the control role (#6611): notReachable, the control plane cannot reach
+ * it at a public address or its tunnel; macSleeps, a Mac that sleeps (refused unless the shape is
+ * single-user and the person says yes); stopsWhenIdle, its provider stops it when it is idle;
+ * belowFloor, its memory or disk is below the floor, or it is near or at capacity; bothRoles, it
+ * runs agents and the shape is not single-user; olderVersion, it runs an older version than the
+ * control plane.
+ */
+export type ControlIneligibility =
+  | "notReachable"
+  | "macSleeps"
+  | "stopsWhenIdle"
+  | "belowFloor"
+  | "bothRoles"
+  | "olderVersion";
 
 /** control/installProgress: a step of Add a Machine. */
 export interface ControlInstallProgress {
@@ -17456,6 +17494,7 @@ export interface Methods {
   "console/teamWorkflows": { params: Empty; result: TeamWorkflows };
   "control/capacity": { params: Empty; result: ControlCapacityBoard };
   "control/connectAnother": { params: ConnectAnotherRequest; result: Empty };
+  "control/eligible": { params: ControlEligibleRequest; result: ControlEligible };
   "control/planeMove": { params: PlaneMoveAsk; result: Empty };
   "control/restart": { params: Empty; result: Empty };
   "control/retryWeb": { params: Empty; result: WebRemoteStatus };
@@ -17952,6 +17991,7 @@ export const MethodTarget = {
   "console/teamWorkflows": "control",
   "control/capacity": "control",
   "control/connectAnother": "control",
+  "control/eligible": "control",
   "control/planeMove": "control",
   "control/restart": "control",
   "control/retryWeb": "control",
@@ -18657,6 +18697,9 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   ControlClientChanged: { required: [], optional: ["client", "removed"] },
   ControlCodeShown: { required: ["text", "expires"], optional: ["command"] },
   ControlCutOff: { required: ["why"], optional: ["provider"] },
+  ControlEligible: { required: ["ok", "reasons"], optional: [] },
+  ControlEligibleReason: { required: ["reason", "text"], optional: [] },
+  ControlEligibleRequest: { required: ["machine"], optional: ["allowSleep"] },
   ControlEndpoint: { required: ["url"], optional: ["pin"] },
   ControlHello: { required: ["v", "name", "control", "nonce", "copy"], optional: ["previous"] },
   ControlInstallProgress: { required: ["name", "step"], optional: [] },
