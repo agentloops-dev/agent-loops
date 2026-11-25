@@ -279,7 +279,6 @@ func (p *plane) client(name string) (*controllink.ClientMembership, *controllink
 
 // A command-line client's unpair (#6808): the control plane takes its key no more.
 func TestForgetSelfEndsAClientsPairing(t *testing.T) {
-	flaky.UnderLoad(t, "#7308")
 	t.Parallel()
 	p := startPlane(t, store.NewMemory(), controllink.NewPrivateKey())
 	m, err := controllink.PairClient(context.Background(), p.code(false), "agentsctl")
