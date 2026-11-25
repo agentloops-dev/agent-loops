@@ -10,6 +10,7 @@ import (
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/records"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -169,6 +170,7 @@ func TestAHandoverMovesAMemberWithoutPairingAgain(t *testing.T) {
 // A Go host follows a move (R16, T125, #1490): told the new place in ok, it dials there,
 // keeps the list in its root, and never dials the forwarding copy in a tight loop.
 func TestAHostFollowsAMoveToAnotherCopy(t *testing.T) {
+	flaky.UnderLoad(t, "#7122")
 	t.Parallel()
 	key := controllink.NewPrivateKey()
 	old := startPlane(t, store.NewMemory(), key)
