@@ -439,6 +439,14 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ inputs.sha || github.event.pull_request.head.sha || github.sha }}
+      # Each tracked file's time from its content, as in `go` (#5677), here for Xcode's incremental
+      # build. The restored DerivedData saved almost nothing: a checkout's own times made every
+      # source newer than its object, and Xcode's compilation cache is not in the CI cache (there
+      # is no room for it in the 10 GB), so each run compiled everything again. Xcode compares a
+      # file's time for equality, not for newer, so a changed file has another time and builds.
+      - name: Content times
+        if: env.APPS != 'skip'
+        run: python3 scripts/ci-mtimes.py
       # The Xcode that .xcode-version names, which every Swift task's hash reads (rule 4 of
       # #5627).
       - name: Xcode
