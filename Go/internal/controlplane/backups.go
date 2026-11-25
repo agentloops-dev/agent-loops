@@ -45,22 +45,27 @@ import (
 //
 // Bounded: the newest Keep of each host's (1–10, the host's own setting), and no more than
 // backupHostQuota bytes of them, the newest always kept (#3648); parts left by a backup cut
-// off are deleted after a day, and the backups of a host that was removed go once its
-// newest is backupOrphanAge old. A name is its time, and a host can name no time more than
+// off are deleted after a day. A backup backupAge old goes, but the newest of a host that is
+// here stays; a host that was removed keeps none past that age (#7251). A name is its time, and a host can name no time more than
 // backupStrayAge ahead, so a stray part with a time in the future goes too.
 
 const (
+	// store-bounds: kind=blob; size=20GiB a machine (8MiB a part, 4KiB a list entry), the newest always kept; age=90d; applied=on write (refused), after each backup and daily: the newest Keep, 1 to 10, and at 90 days all but the newest of a machine that is here
 	backupsPrefix   = "v1/backups/"
 	backupPartMost  = 8 << 20
 	backupPartsMost = 1024
 	backupKeepMost  = 10
 	backupHostQuota = 20 << 30
-	backupOrphanAge = 90 * 24 * time.Hour
+	backupAge       = 90 * 24 * time.Hour
 	backupStrayAge  = 24 * time.Hour
+	backupRecord    = 4 << 10 // a backup's .json
+	backupMachine   = 256     // the machine's name in it, cut
+	backupDataMost  = 4 << 10
 	backupNameTime  = "20060102T150405Z"
 	backupKeyInfo   = "agents backups v1"
-	backupDataKey   = "v1/backups.key"
-	backupDataInfo  = "agents backups data key v1"
+	// store-bounds: kind=secret; count=1; size=4KiB a record; age=until-deleted; applied=on write: only the seals of the current and the previous control key
+	backupDataKey  = "v1/backups.key"
+	backupDataInfo = "agents backups data key v1"
 )
 
 var backupName = regexp.MustCompile(`^[0-9]{8}T[0-9]{6}Z$`)
@@ -151,8 +156,11 @@ func (b *backupStore) dataKey(ctx context.Context, create bool) (cipher.AEAD, er
 		}
 		if next, changed, err := sealDataKey(held, key, keys); err != nil {
 			return nil, err
-		} else if changed {
-			data, _ := json.MarshalIndent(next, "", "  ")
+		} else if changed || o != nil && len(o.Data) > backupDataMost {
+			data, err := encodeDataKey(next, key, keys)
+			if err != nil {
+				return nil, err
+			}
 			if _, err := b.store.Put(ctx, backupDataKey, data, when); store.IsConflict(err) {
 				continue
 			} else if err != nil {
@@ -234,6 +242,19 @@ func sealDataKey(held storedDataKey, key []byte, keys controlKeys) (storedDataKe
 	}
 	changed := len(next.Sealed) != len(held.Sealed) || !bytes.Equal(next.Sealed[0].ControlKey, held.Sealed[0].ControlKey)
 	return next, changed, nil
+}
+
+// encodeDataKey is next as stored. One over backupDataMost is not refused, as it is the only
+// copy of the key: it becomes a single fresh seal, of a few hundred bytes.
+func encodeDataKey(next storedDataKey, key []byte, keys controlKeys) ([]byte, error) {
+	data, err := json.MarshalIndent(next, "", "  ")
+	if err != nil || len(data) <= backupDataMost {
+		return data, err
+	}
+	if next, _, err = sealDataKey(storedDataKey{}, key, keys); err != nil {
+		return nil, err
+	}
+	return json.MarshalIndent(next, "", "  ")
 }
 
 // owner is the folder of the host's owner: the host's record's, else the control plane's.
@@ -380,9 +401,12 @@ func (b *backupStore) commit(ctx context.Context, owner, host string, c wire.Bac
 			return wire.Backup{}, fail(invalidParams, "Part %d of the backup %s is not here.", part, c.Name)
 		}
 	}
-	record := storedBackup{Host: host, Name: c.Name, Parts: c.Parts, Machine: c.Machine, RootID: c.RootID,
+	record := storedBackup{Host: host, Name: c.Name, Parts: c.Parts, Machine: cut(c.Machine, backupMachine), RootID: c.RootID,
 		MadeAt: c.MadeAt, Bytes: c.Bytes, Agents: c.Agents}
 	data, _ := json.MarshalIndent(record, "", "  ")
+	if len(data) > backupRecord {
+		return wire.Backup{}, fail(invalidParams, "The backup's entry is over %d KiB.", backupRecord>>10)
+	}
 	if _, err := b.store.Put(ctx, folder+c.Name+".json", data, store.Absent); err != nil && !store.IsConflict(err) {
 		return wire.Backup{}, err
 	}
@@ -510,8 +534,8 @@ func partsBytes(keys []store.Key, but string) int64 {
 
 // prune keeps the newest keep of the host's backups, and of those no more than
 // backupHostQuota bytes, the newest always kept; deletes parts a cut-off backup left a day
-// ago, or named for a time not yet come; and deletes the backups of a removed host once
-// its newest is old. The .json goes first, so a backup half deleted is never listed.
+// ago, or named for a time not yet come; and deletes a backup backupAge old, the newest only
+// of a removed host. The .json goes first, so a backup half deleted is never listed.
 func (b *backupStore) prune(ctx context.Context, owner, host string, keep int64) {
 	hosts, err := b.scan(ctx, owner)
 	if err != nil {
@@ -524,8 +548,12 @@ func (b *backupStore) prune(ctx context.Context, owner, host string, keep int64)
 		switch {
 		case id == host:
 			drop = b.overKeep(h, keep)
-		case b.records.Host(id) == nil && len(h.complete) > 0 && b.older(h.complete[len(h.complete)-1], now, backupOrphanAge):
+		case b.records.Host(id) == nil && len(h.complete) > 0 && b.older(h.complete[len(h.complete)-1], now, backupAge):
 			drop = h.complete
+		}
+		// The newest stays past the age: it is the way back.
+		for i := len(drop); i < len(h.complete)-1 && b.older(h.complete[i], now, backupAge); i++ {
+			drop = h.complete[:i+1]
 		}
 		b.deleteBackups(ctx, folder, h, drop)
 		b.deleteStrayParts(ctx, h, now)

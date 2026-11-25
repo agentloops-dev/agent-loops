@@ -18,6 +18,7 @@ import (
 )
 
 // KeptPrefix is KeptRequests.prefix.
+// store-bounds: kind=document; count=20 a machine; size=800MiB a machine (40MiB a record); age=90d; applied=on keep (refused), on delivery, and the hourly sweep deletes one not sent at 7 days and any at 90
 const KeptPrefix = "v1/kept/"
 
 // KeptLimit is KeptRequests.limit: at most this many per host, waiting or not sent.
@@ -25,6 +26,14 @@ const KeptLimit = 20
 
 // KeptRecordBytes is the maximum stored size of one kept request, including attachments.
 const KeptRecordBytes = 40 << 20
+
+// keptFailedText is the most bytes of why a request was not sent, and keptFailedRoom what that
+// adds to its record, escaped. A keep leaves the room, so a request at the limit can still be
+// marked as not sent.
+const (
+	keptFailedText = 512
+	keptFailedRoom = 4 << 10
+)
 
 // KeptBytes is the maximum stored size of kept requests for one host (20 × 40 MiB).
 const KeptBytes = KeptLimit * KeptRecordBytes
@@ -109,6 +118,7 @@ type Kept struct {
 	router Router
 	hooks  KeptHooks
 	log    func(string)
+	most   int // KeptRecordBytes, but in a test
 
 	mu         sync.Mutex
 	kept       map[string][]keptEntry
@@ -124,7 +134,7 @@ func NewKept(s store.Store, router Router, hooks KeptHooks, log func(string)) *K
 	if hooks.OwnerOf == nil {
 		hooks.OwnerOf = func(string) string { return "" }
 	}
-	return &Kept{store: s, router: router, hooks: hooks, log: log, kept: map[string][]keptEntry{}, delivering: map[string]bool{}}
+	return &Kept{store: s, router: router, hooks: hooks, log: log, most: KeptRecordBytes, kept: map[string][]keptEntry{}, delivering: map[string]bool{}}
 }
 
 // NewKeptFor is KeptRequests wired to providers as ControlService wires it, and handed to
@@ -195,7 +205,7 @@ func (k *Kept) Keep(host, method string, params json.RawMessage, caller Caller, 
 	}
 	key := KeptPrefix + host + "/" + sequence(record.At.Time) + "-" + record.ID + ".json"
 	data, err := records.Encode(record)
-	if err == nil && len(data) > KeptRecordBytes {
+	if err == nil && len(data) > k.most-keptFailedRoom {
 		return fail(CodeHostOffline, "%s is stopped; this request and its attachments exceed the 40 MiB kept-request limit.", name)
 	}
 	// Hold the lock through the store write so concurrent keeps cannot exceed the quota.
@@ -412,6 +422,9 @@ func (k *Kept) Forget(host string) {
 }
 
 func (k *Kept) fail(host, only, reason string) {
+	if len(reason) > keptFailedText {
+		reason = strings.ToValidUTF8(reason[:keptFailedText-len("…")], "") + "…"
+	}
 	now := records.Now()
 	k.mu.Lock()
 	var writes []keptEntry
@@ -433,7 +446,8 @@ func (k *Kept) fail(host, only, reason string) {
 }
 
 // Expire drops failed requests after KeptFailedFor and all other requests after
-// KeptWaitingFor, with their attachments, then refreshes the owning person's list.
+// KeptWaitingFor, with their attachments, then refreshes the owning person's list. One that
+// this copy does not hold (it could not be read) goes by the time in its key.
 func (k *Kept) Expire(now time.Time) int {
 	k.Load()
 	k.mu.Lock()
@@ -454,6 +468,15 @@ func (k *Kept) Expire(now time.Time) int {
 			}
 			return r.At.Before(now.Add(-KeptWaitingFor))
 		})
+	}
+	if keys, err := k.store.List(context.Background(), KeptPrefix); err != nil {
+		k.log("kept requests not listed: " + err.Error())
+	} else {
+		for _, key := range keys {
+			if at, ok := keptAt(key.Key); ok && at.Before(now.Add(-KeptWaitingFor)) {
+				k.forget(key.Key)
+			}
+		}
 	}
 	if dropped > 0 {
 		k.log(fmt.Sprintf("workspace: expired %d kept requests after their retention limit", dropped))
@@ -580,6 +603,17 @@ func summary(r keptRecord) KeptRequest {
 // sequence is KeptRequests.sequence: milliseconds since 1970, sixteen digits, so keys sort
 // as they were kept.
 func sequence(t time.Time) string { return fmt.Sprintf("%016d", t.UnixMilli()) }
+
+// keptAt is when the request at a key was kept, by sequence.
+func keptAt(key string) (time.Time, bool) {
+	_, name, _ := strings.Cut(strings.TrimPrefix(key, KeptPrefix), "/")
+	at, _, ok := strings.Cut(name, "-")
+	if !ok || len(at) != 16 {
+		return time.Time{}, false
+	}
+	ms, err := strconv.ParseInt(at, 10, 64)
+	return time.UnixMilli(ms), err == nil
+}
 
 func requireKeptID(params json.RawMessage) (KeptRequestID, error) {
 	var which KeptRequestID

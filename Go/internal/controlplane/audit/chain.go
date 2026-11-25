@@ -27,7 +27,14 @@ import (
 // write the store can write a new chain. A sink (slice d2) keeps a copy out of reach.
 
 // SealsPrefix is where the seals are: <SealsPrefix><day>/<chain>.json.
+// store-bounds: kind=log; count=100_000; size=1KiB a record; age=90d; applied=on write (refused), and the hourly sweep deletes a day's seals with its entries and the oldest over the count
 const SealsPrefix = "v1/audit-seals/"
+
+// A chain has one seal a day, and each start of a copy is a chain.
+const (
+	mostSeals = 100_000
+	mostSeal  = 1 << 10
+)
 
 // Chain is one copy's chain. Entries are linked one at a time, under its lock; a Writer
 // puts them outside it (#2433).
@@ -39,7 +46,7 @@ type Chain struct {
 	head, day string
 	// The last entry known to be in the store, and its day: what a seal holds, so a seal
 	// never names an entry still on its way.
-	landedSeq           int64
+	landedSeq             int64
 	landedHead, landedDay string
 	// sealed is the head the last seal of day holds, so an unchanged one is not written.
 	sealed map[string]int64
@@ -149,6 +156,9 @@ func (c *Chain) sealLocked(ctx context.Context, s store.Store, day string, now t
 	if err != nil {
 		return err
 	}
+	if len(data) > mostSeal {
+		return &store.LimitError{Name: "audit seal", Size: int64(len(data)), Limit: mostSeal}
+	}
 	if _, err := s.Put(ctx, sealKey(day, c.ID), data, store.Always); err != nil {
 		return err
 	}
@@ -157,16 +167,19 @@ func (c *Chain) sealLocked(ctx context.Context, s store.Store, day string, now t
 	return nil
 }
 
-// SweepSeals deletes the seals of the days before cutoff, as the sweep deletes entries.
+// SweepSeals deletes the seals of the days before cutoff, as the sweep deletes entries, and
+// the oldest days' over mostSeals.
 func SweepSeals(ctx context.Context, s store.Store, cutoff string) (int, error) {
 	keys, err := s.List(ctx, SealsPrefix)
 	if err != nil {
 		return 0, err
 	}
+	// A key begins with its day, so the order of the keys is the order of the days.
+	sort.Slice(keys, func(i, j int) bool { return keys[i].Key < keys[j].Key })
 	n := 0
-	for _, k := range keys {
+	for i, k := range keys {
 		day, _, _ := strings.Cut(strings.TrimPrefix(k.Key, SealsPrefix), "/")
-		if day < cutoff {
+		if day < cutoff || i < len(keys)-mostSeals {
 			if err := s.Delete(ctx, k.Key); err != nil {
 				return n, err
 			}

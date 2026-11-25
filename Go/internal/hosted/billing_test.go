@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -299,5 +300,52 @@ func TestUpgradeWhenStripeIsDown(t *testing.T) {
 	res, page := b.post("https://"+domain+"/account/upgrade", url.Values{"token": {s.sessions.form(id)}})
 	if res.StatusCode != http.StatusOK || !strings.Contains(page, "Stripe could not be reached") {
 		t.Fatalf("%d %s", res.StatusCode, page)
+	}
+}
+
+// #7251: an event's record is within its largest, whatever its type; and the sweep keeps
+// stripeEventsMost, the oldest going first.
+func TestStripeEventsAreBounded(t *testing.T) {
+	ctx, st := context.Background(), store.NewMemory()
+	s, b, _ := startBilling(t, st, &fakeStripe{})
+	now := time.Now()
+	for id, kind := range map[string]string{"evt_long": strings.Repeat("é", 4000), "evt_escaped": strings.Repeat("\x01", 4000)} {
+		if code := deliver(b, event(id, kind, nil), webhookSecret, now); code != http.StatusOK {
+			t.Fatal(id, code)
+		}
+		if o, _ := st.Get(ctx, stripeEventKey(id)); o == nil || len(o.Data) > 1<<10 {
+			t.Fatalf("%s: %v", id, o)
+		}
+		if err := st.Delete(ctx, stripeEventKey(id)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	put := func(id string, at time.Time) {
+		data, _ := json.Marshal(map[string]any{"at": at})
+		if _, err := st.Put(ctx, stripeEventKey(id), data, store.Always); err != nil {
+			t.Fatal(err)
+		}
+	}
+	put("evt_oldest", now.Add(-time.Hour))
+	for i := range stripeEventsMost - 1 {
+		put(fmt.Sprintf("evt_%d", i), now)
+	}
+	sweep := func() int {
+		s.mu.Lock()
+		s.stripeSwept = time.Time{}
+		s.mu.Unlock()
+		s.sweepStripeEvents(ctx)
+		keys, _ := st.List(ctx, stripePrefix)
+		return len(keys)
+	}
+	if n := sweep(); n != stripeEventsMost {
+		t.Fatalf("%d left at the limit", n)
+	}
+	put("evt_more", now)
+	if n := sweep(); n != stripeEventsMost {
+		t.Fatalf("%d left above it", n)
+	}
+	if o, _ := st.Get(ctx, stripeEventKey("evt_oldest")); o != nil {
+		t.Fatal("the oldest was kept")
 	}
 }

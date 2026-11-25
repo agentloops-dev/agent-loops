@@ -11,6 +11,19 @@ import (
 // mostKeys is how many keys one store's measurement lists.
 const mostKeys = 2_000_000
 
+// part is the part of the store that key counts to: the object, its folder, or its two.
+func (p *Place) part(key string) string {
+	first, rest, _ := strings.Cut(strings.TrimPrefix(key, p.Prefix), "/")
+	switch p.Part {
+	case "folder":
+		return first
+	case "folders":
+		second, _, _ := strings.Cut(rest, "/")
+		return first + "/" + second
+	}
+	return key
+}
+
 // Keys measures a family of keys from the store's listing alone: no object is read. A family
 // with Walk is listed a folder at a time, so memory holds one folder's keys.
 func (r Row) Keys(ctx context.Context, s store.Store, now time.Time) Measure {
@@ -39,10 +52,7 @@ func (r Row) Keys(ctx context.Context, s store.Store, now time.Time) Measure {
 			if !strings.HasSuffix(r.At.Prefix, "/") && k.Key != r.At.Prefix {
 				continue
 			}
-			part := k.Key
-			if r.At.Part == "folder" {
-				part, _, _ = strings.Cut(strings.TrimPrefix(k.Key, r.At.Prefix), "/")
-			}
+			part := r.At.part(k.Key)
 			n := int64(1)
 			if r.At.Skip != "" && strings.HasSuffix(k.Key, r.At.Skip) || !strings.Contains(k.Key, r.At.Only) {
 				n = 0

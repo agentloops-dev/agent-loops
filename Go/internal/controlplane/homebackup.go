@@ -87,6 +87,7 @@ func Backup(ctx context.Context, st store.Store, parts HomeParts, to string) (*B
 	}
 	list := &BackupList{Made: time.Now().UTC(), Files: []string{}}
 	if parts.GivenKey != nil {
+		// store-bounds: not a store: a backup that the operator asks for, in the folder they name; each file as it is
 		if err := os.WriteFile(filepath.Join(to, "control-key"), parts.GivenKey, 0o600); err != nil {
 			return nil, err
 		}
@@ -103,17 +104,20 @@ func Backup(ctx context.Context, st store.Store, parts HomeParts, to string) (*B
 		if err != nil {
 			return nil, err
 		}
+		// store-bounds: not a store: a backup that the operator asks for, in the folder they name; each file as it is
 		if err := os.WriteFile(filepath.Join(to, f.name), data, 0o600); err != nil {
 			return nil, err
 		}
 		list.Files = append(list.Files, f.name)
 	}
+	// store-bounds: not a store: a backup that the operator asks for, in the folder they name; each file as it is
 	copied, _, err := BackupStore(ctx, st, store.NewFolder(filepath.Join(to, "store")))
 	if err != nil {
 		return nil, fmt.Errorf("the store: %w", err)
 	}
 	list.Records = copied
 	data, _ := json.MarshalIndent(list, "", "  ")
+	// store-bounds: not a store: a backup that the operator asks for, in the folder they name; each file as it is
 	if err := os.WriteFile(filepath.Join(to, BackupFileName), append(data, '\n'), 0o600); err != nil {
 		return nil, err
 	}
@@ -159,6 +163,7 @@ func Restore(ctx context.Context, from string, parts HomeParts, st store.Store, 
 	if newKeeper {
 		copyAll = CopyStore
 	}
+	// store-bounds: not a store: the backup that a restore reads
 	if _, _, err := copyAll(ctx, store.NewFolder(filepath.Join(from, "store")), st); err != nil {
 		return nil, fmt.Errorf("the store: %w", err)
 	}
@@ -180,6 +185,7 @@ func Restore(ctx context.Context, from string, parts HomeParts, st store.Store, 
 		if filepath.Base(f.from) == "cert.pem" {
 			mode = 0o644
 		}
+		// store-bounds: not a store: a restore puts the home's own key files back as they are; it never refuses the only copy (#7251)
 		if err := os.WriteFile(f.from, data, mode); err != nil {
 			return nil, err
 		}

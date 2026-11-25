@@ -29,6 +29,14 @@ read and not run. A store below its total is no proof that a record was handled.
 A refused write tells its caller: `store.ErrLimit` or `LimitError` with the name, the size and the
 limit. The stores that only log it have bugs above.
 
+## Raw writers
+
+`storecopy`, `homebackup`'s restore, `store/put` in `handover` and `putBackRecords` in
+`hosted/backup` are below every kind. They write bytes as they are, by design (#7251): a restore
+or a handover never refuses the only copy of a record. Test: a record over its limit goes
+through the copy, the backup, the restore and `store/put`; the backups' key is made small at its
+next use, and a sealed control key opens. Read: `putBackRecords`.
+
 ## The tests
 
 `recordlimit_test.go` in `Go/internal/agentsd/store`, `agentsd/skillcatalog`, `controlplane`,
@@ -45,11 +53,11 @@ What each line of `scripts/store-bounds-baseline.txt` is. A **store** is owned b
 | --- | --- |
 | Not a store: temporary, staging or scratch | `ControlSettingsModel`, `ConnectLinearSheet`, `BackgroundPane`, `VoiceTape`; `agentsd/`: `brief`, `bringback`, `receive`, `send`, `backups` and `backups_store` staging (then #7183), `secretcmd`, `trailerhook`; `skillcatalog/`: `github`, `installer`, `preview`; `conflictrisk`, `hostinstall/`, `hosttunnels/session`, `releasefiles`, `linuxrelease` |
 | Not a store: an installer, a service or a lock file | `LocalServices`; `cmd/agentsd/`: `install`, `main` (the lock), `supervise`; `agentsd/`: `install`, `selfupdate`, `gitcredentials`, `modelrelay`, `relay`, `runtimes`, `orglaunch`; `hostsetup/install` (its log is declared, #7247), `controlplane/machine`, `mac/signin/certs`, `mac/signin/codex`, `whatsappmcp` lock, `controlplane/store/folder` lock |
-| Not a store: the person's file or their project | `HostModel`, `AgentsExportTransfer`; `acp/session`; `agentsd/`: `agentconfigeditor`, `files`, `newapp`, `publicrepo`, `policyfolder`, `folders`, `dotagents`, `readymade`, `readymadeskills`, `worktrees`, `skillcatalog/personas`; `codespacessh`, `controlplane/homebackup` |
-| Not a store: one fixed key or mark | `HostJoinFile`, `MachineLock`, `ControlMembership`, `keys.ts` (its caches are declared), `signIn.ts`; `cmd/agents-control/main`, `cmd/agentsd/enrol`, `cmd/agentsd/main`; `agentsd/`: `restarts`, `setupforward`, `setupprojects`, `usersuspend`, `runtimesignin`; `store/roots`, `store/store` (root id), `controllink/` (all), `kms/`, `workspacecommands/digitalocean`, `controlplane/capacity`, `hosted/limits` |
-| Not a store: the helper or the backend itself | `store/files`, `execfile`, `store/folder`, `storeopen`, `storecopy`, `records/records` (an old prefix, read only), `homebackup` `NewFolder` |
+| Not a store: the person's file or their project | `HostModel`, `AgentsExportTransfer`; `acp/session`; `agentsd/`: `agentconfigeditor`, `files`, `newapp`, `publicrepo`, `policyfolder`, `folders`, `dotagents`, `readymade`, `readymadeskills`, `worktrees`, `skillcatalog/personas`; `codespacessh` |
+| Not a store: one fixed key or mark | `HostJoinFile`, `MachineLock`, `ControlMembership`, `keys.ts` (its caches are declared), `signIn.ts`; `cmd/agents-control/main`, `cmd/agentsd/enrol`, `cmd/agentsd/main`; `agentsd/`: `restarts`, `setupforward`, `setupprojects`, `usersuspend`, `runtimesignin`; `store/roots`, `store/store` (root id), `controllink/` (all), `kms/rotate` (the key file), `workspacecommands/digitalocean` |
+| Not a store: the helper or the backend itself | `store/files`, `execfile`, `store/folder`, `storeopen`, `records/records` (an old prefix, read only) |
 | Declared at another line | `cmd/agentsd/main` and `supervise` (the daemon log), `hosttunnels/tunnels` and `sweep` (`v1/codes`, itself #7201), `links` (the links) |
-| Store, bounded in code, not declared | `citimings/store`, `store/revisions`, `secretops` (`secret-ops.json`), `providers/kept`, `controlplane/backups`, `joins`, `audit/chain` |
+| Store, bounded in code, not declared | `citimings/store`, `store/revisions`, `secretops` (`secret-ops.json`) (those of the control plane are declared, #7251) |
 | **Store with no largest record: machine, #7200** | `agentsd/`: `dailychecks` (until #7023) |
 | **Store with its own bug** | `whatsappmcp/store` #7191, `providers/secrets` #7201 |
 | Store, with its largest record (#7248) | `bots` (`v1/runs`), `builds`, `copies`, `deploys`, `lineagegraph`, `mesh` (`v1/leases`, the heartbeats of `v1/copies`), `projects` (`v1/projectFolders`), `records/groups`, `records/projects`, `reports` (`v1/usage`), `sweep` (`v1/mesh/events`) |

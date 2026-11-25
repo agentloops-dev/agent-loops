@@ -188,7 +188,8 @@ and lineage, and it runs the backups' `pruneOrphans` once a day. **Joins, lockjo
 linkRequests, and policy, governance and remove requests are pruned only when read.**
 
 `agents-control backup` copies all of `v1/` except `v1/leases/` and `v1/copies/`. A store copy or
-handover also leaves out `v1/keys/` (`storecopy.go:21,25`).
+handover also leaves out `v1/keys/` (`storecopy.go:21,25`). These, a restore and the hosted restore write
+each record's bytes as they are, by design (#7251, `docs/explanation/data-stores.md`).
 
 ### People, machines and clients
 
@@ -210,7 +211,7 @@ handover also leaves out `v1/keys/` (`storecopy.go:21,25`).
 | Key | Holds | Bound | Swept |
 |---|---|---|---|
 | `v1/codes/<id>.json`, `.spent` | Purpose, owner, invite name and role, expiry | **No count cap**; only rate limited (2/s, burst 20, `limits.go:46-47`) | 24 h after expiry |
-| `v1/joins/`, `v1/lockjoins/`, `v1/signins/` | Waiting join, lock-join and sign-in asks (keys, source IP) | 50 / 200 / 50 open, per-person caps; 10-minute life | 1 h after expiry, **on read only** |
+| `v1/joins/`, `v1/lockjoins/`, `v1/signins/` | Waiting join, lock-join and sign-in asks (keys, source IP) | 50 / 200 / 50 open, per-person caps; 10-minute life; joins 1,000 kept of 4 KiB (#7251) | 1 h after expiry, on read and hourly (#3649) |
 | `v1/linkRequests/<id>.json` | Link asks | 50 open; 24 h | on read only |
 | `v1/oidc/state/`, `v1/oidc/tickets/` | PKCE verifier, sealed refresh token | 10 / 2 minutes. **No count cap.** | 1 h, hourly |
 | `v1/signin.json`, `v1/signin/providers/`, `v1/signin/domains/` | Sign-in settings, org OIDC providers, domain claims | 16 KiB; 5 providers of 16 KiB (95 tombstones); 20 domains of 4 KiB (#6773 to #6775) | on write, on remove; a removed provider's tombstone hourly at 90 days, once nothing names it |
@@ -224,7 +225,7 @@ handover also leaves out `v1/keys/` (`storecopy.go:21,25`).
 
 | Key | Holds | Bound | Swept |
 |---|---|---|---|
-| `v1/kept/<host>/<seq>-<id>.json` | Prompts and agent starts for a stopped workspace, **with attachments** | 20 per host, **waiting ones only** (`providers/kept.go:21,176`); each up to 40 MiB | on delivery or host removal. **Failed ones are never deleted.** |
+| `v1/kept/<host>/<seq>-<id>.json` | Prompts and agent starts for a stopped workspace, **with attachments** | 20 and 800 MiB per host, failed ones too; each up to 40 MiB (#6674, #7251) | on delivery or host removal; hourly, failed ones at 7 days and any at 90 |
 | `v1/copies/<host>.json` | A host's last folders and agents (≤500, **with titles**) | 1 per host, 4 MiB; a heartbeat 4 KiB (#7248) | on host forget |
 | `v1/usage/hours/`, `v1/usage/days/` | Usage and cost by person, project, folder, machine, runtime | 7 days / 90 days (`reports.go`); 1 MiB a period, 200,000 hours and 100,000 days (#7248) | hourly |
 | `v1/lineage/<host>.json` | Cost per issue, PR and session node | 5,000 nodes of 64 KiB, 32 MiB, 90 days (`lineagecost.go`, `boundLineage`, #6768) | on write, hourly |
@@ -246,10 +247,11 @@ handover also leaves out `v1/keys/` (`storecopy.go:21,25`).
 |---|---|---|---|
 | `v1/events/<day>/…` | Audit entries (who, method, host, target) | 90 days by default, 1–3,650 (`audit/audit.go:29-33`); hosted plans 7 / 90 days. **No size cap per day.** | hourly, by day |
 | `v1/events/<day>/<ms>-<rand>.json` | **Mesh change events** (several copies only) | **The audit's days, so up to 10 years** (`mesh.go:675`) | same sweep |
-| `v1/audit-seals/`, `v1/audit-sinks.json` | Daily chain heads; ≤4 SIEM sinks with sealed tokens | with the day; 4, 64 KiB (#6777) | on write (sinks) |
-| `v1/keys/control.sealed` (+ previous) | KMS-sealed control key | 2; previous after 30 days | — |
-| `v1/backups.key` | Sealed key for server backups | 1 | — |
-| `v1/backups/<owner>/<host>/<name>/…` | Servers' sealed backups (transcripts) | 8 MiB × 1,024 parts = 8 GiB a backup; Keep 1–10, **so up to ≈80 GiB a host**; a removed host's for 90 days (`backups.go:52-56`) | on commit, daily. Stray parts age by a **name time the host chooses**, so a future time never ages. |
+| `v1/audit-seals/`, `v1/audit-sinks.json` | Daily chain heads; ≤4 SIEM sinks with sealed tokens | with the day, 100,000 seals of 1 KiB (#7251); 4, 64 KiB (#6777) | hourly; on write (sinks) |
+| `v1/keys/control.sealed` (+ previous) | KMS-sealed control key | 2 of 64 KiB (#7251); previous after 30 days | on write |
+| `v1/backups.key` | Sealed key for server backups | 1 of 4 KiB (#7251) | on write |
+| `v1/backups/<owner>/<host>/<name>/…` | Servers' sealed backups (transcripts) | 8 MiB × 1,024 parts = 8 GiB a backup; Keep 1–10, 20 GiB a host (#3648); 90 days, but the newest of a host that is here stays (#7251) | on commit, daily. A name more than a day ahead is refused, and its parts deleted. |
+| `runtime/control-capacity/<copyID>.json` | A copy's capacity sample | 1 per copy of 4 KiB, 100; 1 day (#7251) | on stop; hourly |
 | `v1/leases/`, `v1/copies/<copyID>.json` | Mesh leases and heartbeats | 30 s; a lease 1 KiB, a heartbeat 4 KiB (#7248) | orphan sweep |
 | `handover/forwarding-*`, `handover/mark-*` | Move forwarding; move check marks | forwarding ≤30 days. **An abandoned mark stays for ever.** | — |
 | `probe/<copy>-<hex>` | Start-up probe | removed with `defer`; a folder store sweeps after 1 h. **On S3, never.** | — |
@@ -264,7 +266,7 @@ handover also leaves out `v1/keys/` (`storecopy.go:21,25`).
 | `hosted/v1/waiting/`, `waitlist/` | Waitlist | 10,000 of 4 KiB, else refused; 90 days (#6786) | hourly; on sign-up or a block |
 | `hosted/v1/allow/` | Operator's allow list | 10,000 of 4 KiB, else refused; 90 days from the last allow (#6783) | hourly; operator |
 | `hosted/v1/blocked/`, `blocked/email/` | Operator's block lists | 10,000 each of 4 KiB, else refused; no age (#6784) | operator |
-| `hosted/v1/stripe/<evt>.json` | Stripe events seen | 30 days, daily (`billing.go:25`) | daily |
+| `hosted/v1/stripe/<evt>.json` | Stripe events seen | 30 days, 10,000 of 1 KiB (#7251) | daily |
 | `hosted/v1/usage/<id>.json` | Account byte count | 1 per account | with the account |
 | `accounts/<id>/v1/…` | That account's whole control-plane store (section 4) | Plan: storage 1 / 20 GB, machines 2 / 20, clients 5 / 50, events 7 / 90 days (`hosted/plans.go:37-40`) | Delete Account |
 | `<dir>/<date>/<account>/…` (operator's disk) | Per-account backups | **none unless `--keep N`** (`cmd/agents-hosted/admin.go:162-191`) | — |

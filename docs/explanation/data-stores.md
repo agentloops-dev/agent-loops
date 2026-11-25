@@ -90,6 +90,16 @@ Each store declares what happens when it is over its limit:
   a person made: the dropbox, secrets, drafts, kept requests, backups. A person's data is
   never deleted to make room.
 
+### Copies write bytes as they are
+
+A store copy, a handover, a control plane's backup and its restore, and a hosted account's
+restore are below every kind's interface: they write each record's bytes as they are, and
+check no limit (#7251). This is by design. The source can be the only copy of a record, and
+an older build may have made one larger than today's limit, so a restore or a handover never
+refuses it. They cannot make a record larger. After that, a write by its store checks its
+size, and the store's sweep applies its age and, where it evicts, its count and size. The
+backend's own largest object still applies.
+
 ### Eviction is in the background
 
 A store may be over its count or size limit for a while. A sweep evicts later, as a

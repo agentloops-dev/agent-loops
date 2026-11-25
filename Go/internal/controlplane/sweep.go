@@ -728,7 +728,8 @@ func orgProvidersNamed(ctx context.Context, rs *records.Records) (names map[stri
 // 30 days, and a removed person's or machine's at once), the channel links not used for
 // linkUnusedKept (#6763), the governance approvals of a person or group that is gone
 // (#3748), the policy versions replaced policyVersionAge ago (#6765), and the SCIM and read
-// tokens that stopped working deadTokenKept ago (#6766, #6767).
+// tokens that stopped working deadTokenKept ago (#6766, #6767). Last, the capacity samples of copies that
+// crashed (#7251).
 func (s *Service) sweepRequests(ctx context.Context, now time.Time) {
 	failed := func(what string, err error) {
 		if err != nil {
@@ -757,6 +758,7 @@ func (s *Service) sweepRequests(ctx context.Context, now time.Time) {
 	failed("read API tokens", s.readAPI.sweep(ctx, now))
 	_, err = s.removeRequests(ctx)
 	failed("remove requests", err)
+	failed("capacity samples", sweepControlCapacity(ctx, s.cfg.Store, now))
 }
 
 // dateTombstone gives a tombstone from before forgottenAt today's date, against the

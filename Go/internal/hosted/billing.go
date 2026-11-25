@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -24,6 +25,16 @@ import (
 // How long an event acted on is kept, so a retry of it is not acted on again.
 const stripeEventLife = 30 * 24 * time.Hour
 
+const (
+	stripePrefix = hostedPrefix + "v1/stripe/" // store-bounds: not a store: the prefix that the sweep lists (stripeEventKey declares the store)
+	// The most events kept; the sweep deletes the oldest over it. Stripe retries an event for
+	// three days, so only those of the last days must be there.
+	stripeEventsMost = 10_000
+	// The most of an event's type that a record keeps, so a record is within 1 KiB.
+	stripeEventType = 128
+)
+
+// store-bounds: kind=key-value; count=10_000; size=1KiB a record; age=30d; applied=type cut on write, and the daily sweep deletes the old ones and the oldest over the count
 func stripeEventKey(id string) string { return hostedPrefix + "v1/stripe/" + id + ".json" }
 
 func (s *Service) billingOn() bool { return s.stripe != nil }
@@ -101,7 +112,7 @@ func (s *Service) webhook(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	// Seen first, written only if absent, so two deliveries at once act once; taken back
 	// when acting fails, so Stripe's retry acts.
-	seen, _ := json.Marshal(map[string]any{"type": event.Type, "at": s.cfg.Now().UTC()})
+	seen, _ := json.Marshal(map[string]any{"type": strings.ToValidUTF8(event.Type[:min(len(event.Type), stripeEventType)], ""), "at": s.cfg.Now().UTC()})
 	if _, err := s.cfg.Store.Put(ctx, stripeEventKey(event.ID), seen, store.Absent); err != nil {
 		if store.IsConflict(err) {
 			plain(w, http.StatusOK, "Already done.\n")
@@ -205,11 +216,10 @@ func (s *Service) planChanged(acc *Account) {
 	}
 }
 
-// sweepStripeEvents deletes the events acted on more than stripeEventLife ago, once a day.
+// sweepStripeEvents deletes the events acted on more than stripeEventLife ago, those it
+// cannot read, and the oldest over stripeEventsMost, once a day; with billing off too, so
+// that the events left then go.
 func (s *Service) sweepStripeEvents(ctx context.Context) {
-	if !s.billingOn() {
-		return
-	}
 	now := s.cfg.Now()
 	s.mu.Lock()
 	due := now.Sub(s.stripeSwept) >= 24*time.Hour
@@ -220,11 +230,16 @@ func (s *Service) sweepStripeEvents(ctx context.Context) {
 	if !due {
 		return
 	}
-	keys, err := s.cfg.Store.List(ctx, hostedPrefix+"v1/stripe/")
+	keys, err := s.cfg.Store.List(ctx, stripePrefix)
 	if err != nil {
 		s.log("stripe events sweep: " + err.Error())
 		return
 	}
+	type seenAt struct {
+		key string
+		at  time.Time
+	}
+	var kept []seenAt
 	for _, k := range keys {
 		o, err := s.cfg.Store.Get(ctx, k.Key)
 		if err != nil || o == nil {
@@ -233,9 +248,15 @@ func (s *Service) sweepStripeEvents(ctx context.Context) {
 		var seen struct {
 			At time.Time `json:"at"`
 		}
-		if json.Unmarshal(o.Data, &seen) == nil && now.Sub(seen.At) > stripeEventLife {
+		if json.Unmarshal(o.Data, &seen) != nil || now.Sub(seen.At) > stripeEventLife {
 			_ = s.cfg.Store.Delete(ctx, k.Key)
+			continue
 		}
+		kept = append(kept, seenAt{k.Key, seen.At})
+	}
+	sort.Slice(kept, func(i, j int) bool { return kept[i].at.Before(kept[j].at) })
+	for _, e := range kept[:max(0, len(kept)-stripeEventsMost)] {
+		_ = s.cfg.Store.Delete(ctx, e.key)
 	}
 }
 
