@@ -141,6 +141,18 @@ func makeScratchProject(home string) (string, error) {
 	return dir, nil
 }
 
+// smokeFolder is the first project, else a scratch project that cleanup removes.
+func smokeFolder(o Options) (folder string, cleanup func(), err error) {
+	if len(o.Projects) > 0 {
+		return o.Projects[0], func() {}, nil
+	}
+	scratch, err := makeScratchProject(o.Home)
+	if err != nil {
+		return "", nil, err
+	}
+	return scratch, func() { _ = os.RemoveAll(scratch) }, nil
+}
+
 // Smoke is step 8: one short session with the cheapest model of the first runtime, in the
 // first project (else a scratch project of its own, never the machine user's home), with a
 // fixed prompt. It must answer and end
@@ -153,24 +165,16 @@ func Smoke(ctx context.Context, o Options, d Deps, rep *Reporter, say func(strin
 	if len(o.Runtimes) > 0 {
 		runtime = o.Runtimes[0]
 	}
-	var folder string
-	if len(o.Projects) > 0 {
-		folder = o.Projects[0]
-	} else {
-		scratch, err := makeScratchProject(o.Home)
-		if err != nil {
-			rep.Say(step, wire.MachineSetupStateFailed, "", err.Error())
-			say("%s: %v", step, err)
-			return fmt.Errorf("%s: %w", step, err)
-		}
-		folder = scratch
-		defer func() { _ = os.RemoveAll(scratch) }()
-	}
 	fail := func(err error) error {
 		rep.Say(step, wire.MachineSetupStateFailed, "", err.Error())
 		say("%s: %v", step, err)
 		return fmt.Errorf("%s: %w", step, err)
 	}
+	folder, cleanup, err := smokeFolder(o)
+	if err != nil {
+		return fail(err)
+	}
+	defer cleanup()
 	if err := waitSignedIn(ctx, d, runtime); err != nil {
 		// Not step 8's failure: it did not begin. Step 7 says why the runtime is not signed in.
 		say("Smoke session: not started: %v", err)
