@@ -33,7 +33,7 @@ test("only imageBlocked is blocked; a host that is not public has no Try Again",
 
 test("one Show accepts one host: a redirect is blocked again and names both", async () => {
   const asked = [];
-  const page = new PageImages(async (url, show) => {
+  const page = new PageImages(async (_url, show) => {
     asked.push(show);
     if (show.length === 0) return answerOf(blocked("pics.example.com"));
     if (show.length === 1) return answerOf(blocked("cdn.example.net", "pics.example.com"));
@@ -86,7 +86,7 @@ test("Always allow asks the machine again for a host the page allowed before (#7
 
 test("an image that fails as it loads is its alternative text; after a press, why and Try Again", async () => {
   let pressed = false;
-  const page = new PageImages(async (url, show) => {
+  const page = new PageImages(async (_url, show) => {
     if (show.length === 0 && !pressed) { pressed = true; return answerOf(new CallFailed(-32000, "not there")); }
     return show.length === 0 ? answerOf(blocked("pics.example.com")) : answerOf(new CallFailed(-32000, "it is not there (404)"));
   }, async () => {});
