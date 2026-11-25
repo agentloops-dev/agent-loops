@@ -43,6 +43,7 @@ func (d *Daemon) sweepSmallStores(now time.Time) {
 	d.sweepSignInRelays()
 	d.sweepCatalogItems(now, gone)
 	d.sweepAccountHomes(now)
+	d.sweepViewCatalogs()
 	carryErr := d.carryRemovedConnectors()
 	if carryErr != nil {
 		log.Printf("retention: mcp.removed.json is not swept: its old copies could not be carried over: %v", carryErr)

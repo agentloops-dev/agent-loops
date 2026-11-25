@@ -18,6 +18,7 @@ import (
 	"sync/atomic"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/diskjson"
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/mcpcatalog"
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
 	"github.com/agentloops-dev/agent-loops/Go/internal/envfile"
@@ -45,7 +46,14 @@ import (
 // other machines, nor write the ones a control plane sends (agentConfigFiles), so one
 // machine cannot change what runs on the others.
 
-const userSettingsSyncFile = "user-settings-sync.json"
+const (
+	userSettingsSyncFile = "user-settings-sync.json"
+	// userMarkMostBytes bounds that file.
+	userMarkMostBytes = 1 << 20
+	// The files that the agentConfig part writes: one, and all of them.
+	agentConfigFileMost  = 1 << 20
+	agentConfigFilesMost = 1000
+)
 
 // userSettingsSyncState never holds a secret's value.
 type userSettingsSyncState struct {
@@ -195,8 +203,7 @@ func (d *Daemon) ApplyUserSettings(u wire.MachineUserSettings) error {
 	if err != nil {
 		mark.About = before.About
 	}
-	b, _ := diskjson.Marshal(mark)
-	if err := store.WriteAtomically(d.userSettingsSyncPath(), b, 0o644); err != nil {
+	if err := d.writeUserMark(mark); err != nil {
 		problems = append(problems, err.Error())
 	} else {
 		_ = os.Remove(filepath.Join(d.Store.Loc.Root, "from-control-plane.json"))
@@ -213,15 +220,23 @@ func (d *Daemon) ApplyUserSettings(u wire.MachineUserSettings) error {
 
 // saveUserMarkLocked writes the mark and keeps it. Called with userScopeMu held.
 func (d *Daemon) saveUserMarkLocked(mark userSettingsSyncState) error {
-	b, err := diskjson.Marshal(mark)
-	if err != nil {
-		return err
-	}
-	if err := store.WriteAtomically(d.userSettingsSyncPath(), b, 0o644); err != nil {
+	if err := d.writeUserMark(mark); err != nil {
 		return err
 	}
 	d.userMark = &mark
 	return nil
+}
+
+func (d *Daemon) writeUserMark(mark userSettingsSyncState) error {
+	b, err := diskjson.Marshal(mark)
+	if err != nil {
+		return err
+	}
+	if err := settingFits(d.userSettingsSyncPath(), b, userMarkMostBytes); err != nil {
+		return err
+	}
+	// store-bounds: kind=key-value; count=1; size=1MiB; age=until-deleted; applied=on write (refused)
+	return store.WriteAtomically(d.userSettingsSyncPath(), b, 0o644)
 }
 
 func partSent(v wire.JSONValue) bool { return len(v) > 0 && string(v) != "null" }
@@ -257,6 +272,9 @@ func (d *Daemon) writeMCPServers(home string, servers wire.JSONValue) error {
 		return err
 	}
 	b = append(b, '\n')
+	if err := settingFits(path, b, mcpcatalog.MostBytes); err != nil {
+		return err
+	}
 	on, readErr := os.ReadFile(path)
 	if err := d.writeSyncedServers(held, servers, func() error { return writeIfChanged(path, b) }); err != nil {
 		return err
@@ -274,6 +292,7 @@ func writeIfChanged(path string, b []byte) error {
 	if on, err := os.ReadFile(path); err == nil && bytes.Equal(on, b) {
 		return nil
 	}
+	// store-bounds: kind=key-value; count=1000; size=1MiB a file; age=until-deleted; applied=on write (refused)
 	return store.WriteAtomically(path, b, 0o644)
 }
 
@@ -304,6 +323,15 @@ func writeAgentConfig(home string, raw wire.JSONValue, wroteBefore []string) ([]
 		files[filepath.Join("skills", name, "SKILL.md")] = text
 	}
 	base := filepath.Join(home, ".agents")
+	// Refused whole, before any file is written.
+	if len(files) > agentConfigFilesMost {
+		return wroteBefore, fmt.Errorf("%d files, at most %d: %w", len(files), agentConfigFilesMost, store.ErrLimit)
+	}
+	for rel, text := range files {
+		if err := settingFits(filepath.Join(base, rel), []byte(text), agentConfigFileMost); err != nil {
+			return wroteBefore, fmt.Errorf("%s: %w", rel, err)
+		}
+	}
 	var wrote []string
 	for rel, text := range files {
 		path := filepath.Join(base, rel)

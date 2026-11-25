@@ -13,6 +13,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -63,6 +64,49 @@ func LocalSocketDir(home string) string {
 	return filepath.Join(home, "Library", "Group Containers", LocalGroup)
 }
 
+const (
+	localClientMost      = 4 << 10
+	localClientsMost     = 1000
+	localClientsFileMost = 1 << 20
+)
+
+// boundLocalClients is list as localClientsFile holds it, and how many of its windows are left
+// out: one over its largest size, and those over the count or the file's size. A window of kept,
+// what the file holds now, goes before a new one. A window that the list does not name is in
+// neither, so it is not let in after a restart.
+func boundLocalClients(list, kept wire.MachineClients) (wire.MachineClients, int) {
+	was := map[wire.UUID]bool{}
+	for _, c := range kept.Clients {
+		was[c.ID] = true
+	}
+	order := slices.Clone(list.Clients)
+	slices.SortStableFunc(order, func(a, b wire.MachineClient) int {
+		switch {
+		case was[a.ID] == was[b.ID]:
+			return 0
+		case was[a.ID]:
+			return -1
+		}
+		return 1
+	})
+	fits, total := map[wire.UUID]bool{}, 0
+	for _, c := range order {
+		b, err := json.Marshal(c)
+		if err != nil || len(b) > localClientMost || len(fits) == localClientsMost || total+len(b)+1 > localClientsFileMost-localClientMost {
+			continue
+		}
+		fits[c.ID], total = true, total+len(b)+1
+	}
+	out := list
+	out.Clients = []wire.MachineClient{}
+	for _, c := range list.Clients {
+		if fits[c.ID] {
+			out.Clients = append(out.Clients, c)
+		}
+	}
+	return out, len(list.Clients) - len(out.Clients)
+}
+
 type localBook struct {
 	localMu sync.Mutex
 	// localClients is the last machine/clients, by upper-case id; nil until read.
@@ -96,10 +140,6 @@ func (d *Daemon) MoveLocal(controlKey []byte) {
 // kept in the root, and a window no longer listed (forgotten) is cut off at once.
 func (d *Daemon) SetLocalClients(list wire.MachineClients) {
 	clients := ownUsersWindows(list)
-	if list.Clients == nil {
-		list.Clients = []wire.MachineClient{}
-	}
-	b, _ := json.Marshal(list)
 	file := filepath.Join(d.Store.Loc.Root, localClientsFile)
 	d.localMu.Lock()
 	d.localClients = clients
@@ -112,7 +152,11 @@ func (d *Daemon) SetLocalClients(list wire.MachineClients) {
 	if d.localKept == nil {
 		d.localKept, _ = os.ReadFile(file)
 	}
-	same := bytes.Equal(b, d.localKept)
+	var kept wire.MachineClients
+	_ = json.Unmarshal(d.localKept, &kept) // none, or one that cannot be read, keeps no window's place
+	bounded, left := boundLocalClients(list, kept)
+	b, err := json.Marshal(bounded)
+	same := err == nil && bytes.Equal(b, d.localKept)
 	if !same {
 		d.localKept = b
 	}
@@ -120,10 +164,18 @@ func (d *Daemon) SetLocalClients(list wire.MachineClients) {
 	for _, sc := range gone {
 		sc.Close()
 	}
+	if left > 0 {
+		log.Printf("local: %d of %d windows are not kept in %s, which holds %d of %d bytes: they are let in until a restart", left, len(list.Clients), localClientsFile, localClientsMost, localClientMost)
+	}
 	if same {
 		return
 	}
+	if err != nil {
+		log.Printf("local: keep %s: %v", localClientsFile, err)
+		return
+	}
 	tmp := file + ".tmp"
+	// store-bounds: kind=key-value; count=1000; size=1MiB in all, 4KiB a window; age=until-deleted; applied=on write (left out)
 	if err := os.WriteFile(tmp, b, 0o600); err == nil {
 		err = os.Rename(tmp, file)
 		if err != nil {

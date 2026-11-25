@@ -139,6 +139,27 @@ func token(id wire.NeedID) string {
 	return ""
 }
 
+const (
+	// attentionMost is the needs of each list that attention.json holds, and attentionMostBytes one
+	// entry of it: what is over is left out of the file, and is raised again after a restart.
+	attentionMost      = 1000
+	attentionMostBytes = 16 << 10
+)
+
+// boundAttention is list within attention.json's limits, its first entries.
+func boundAttention[T any](list []T) []T {
+	kept := make([]T, 0, min(len(list), attentionMost))
+	for _, e := range list {
+		if len(kept) == attentionMost {
+			break
+		}
+		if b, err := diskjson.Marshal(e); err == nil && len(b) <= attentionMostBytes {
+			kept = append(kept, e)
+		}
+	}
+	return kept
+}
+
 func (d *Daemon) attentionFile() string { return filepath.Join(d.Store.Loc.Root, "attention.json") }
 
 // loadAttention reads the notes back: when each need was first seen, and where it went.
@@ -219,9 +240,15 @@ func (d *Daemon) records() attentionRecords {
 	sort.Slice(r.Forwarded, func(i, j int) bool { return token(r.Forwarded[i]) < token(r.Forwarded[j]) })
 	sort.Slice(r.Raised, func(i, j int) bool { return token(r.Raised[i].Need) < token(r.Raised[j].Need) })
 	sort.Slice(r.Deliveries, func(i, j int) bool { return token(r.Deliveries[i].NeedID) < token(r.Deliveries[j].NeedID) })
-	if r.Withdrawing == nil {
-		r.Withdrawing = []json.RawMessage{}
+	// Over the count, the newest are kept.
+	if len(r.Raised) > attentionMost {
+		sort.SliceStable(r.Raised, func(i, j int) bool { return r.Raised[i].At > r.Raised[j].At })
 	}
+	if len(r.Deliveries) > attentionMost {
+		sort.SliceStable(r.Deliveries, func(i, j int) bool { return r.Deliveries[i].AlertedAt > r.Deliveries[j].AlertedAt })
+	}
+	r.Raised, r.Deliveries = boundAttention(r.Raised), boundAttention(r.Deliveries)
+	r.Withdrawing, r.Forwarded = boundAttention(r.Withdrawing), boundAttention(r.Forwarded)
 	return r
 }
 
@@ -237,6 +264,7 @@ func (d *Daemon) writeAttentionIfMoved() {
 	}
 	b, err := diskjson.Marshal(r)
 	if err == nil {
+		// store-bounds: kind=key-value; count=4000 (1000 of each kind); size=16KiB an entry; age=until-deleted; applied=on write (the oldest are left out), an entry goes with its need
 		err = store.WriteAtomically(d.attentionFile(), b, 0o644)
 	}
 	if err != nil {
