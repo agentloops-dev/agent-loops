@@ -63,8 +63,12 @@ func (d *Daemon) setPerson(p wire.PersonSettings) (wire.PersonSettings, error) {
 		if had, readErr := os.ReadFile(d.personFile()); readErr == nil && bytes.Equal(had, b) {
 			return p, nil
 		}
-		err = os.MkdirAll(d.SettingsDir, 0o700)
+		err = settingFits(d.personFile(), b, personMostBytes)
 		if err == nil {
+			err = os.MkdirAll(d.SettingsDir, 0o700)
+		}
+		if err == nil {
+			// store-bounds: kind=key-value; count=1; size=4KiB; age=until-deleted; applied=on write (refused)
 			err = store.WriteAtomically(d.personFile(), b, 0o644)
 		}
 	}

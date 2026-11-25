@@ -97,6 +97,12 @@ final class HostSet {
         return true
     }
 
+    /// A machine that still sets itself up takes no new session until step 8 passes (#5357). It
+    /// can be online all the same (#7108).
+    func settingUp(_ id: MachineRef) -> Bool {
+        id != .mac && MachineSetupWords.isSettingUp(controlRows[id]?.setup)
+    }
+
     func client() -> DaemonClient? { nil }
     func start() {}
     func retryNow() {}

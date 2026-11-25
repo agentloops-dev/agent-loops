@@ -3,6 +3,7 @@ package agentsd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log"
 	"os"
 	"path/filepath"
@@ -62,14 +63,17 @@ func (d *Daemon) toldHostUser(params json.RawMessage) {
 		log.Printf("machine/user: %v", err)
 		return
 	}
-	d.user()
-	d.hostUserMu.Lock()
-	was := d.hostUser
-	d.hostUser = &u
-	d.hostUserMu.Unlock()
-	if err := d.keepHostUser(u); err != nil {
+	was := d.user()
+	if err := d.keepHostUser(u); errors.Is(err, store.ErrLimit) {
+		// Memory stays as the disk is.
+		log.Printf("machine/user: refused: %v", err)
+		return
+	} else if err != nil {
 		log.Printf("machine/user: not kept: %v", err)
 	}
+	d.hostUserMu.Lock()
+	d.hostUser = &u
+	d.hostUserMu.Unlock()
 	if was == nil || was.Kind != u.Kind || strings.Join(was.Labels, ",") != strings.Join(u.Labels, ",") ||
 		strings.Join(was.Bots, ",") != strings.Join(u.Bots, ",") {
 		log.Printf("machine/user: %s %s, labels %s", u.Kind, u.Name, strings.Join(u.Labels, ", "))
@@ -78,12 +82,17 @@ func (d *Daemon) toldHostUser(params json.RawMessage) {
 	}
 }
 
-// keepHostUser writes host-user.json. The bots' names are the part that grows: one too long is
-// kept without them, so whose machine this is stays known.
+// keepHostUser writes host-user.json. The bots' names and the labels are the parts that grow: one
+// too long is kept without the first, then without both, so whose machine this is stays known.
+// With fewer labels, fewer workflows run here. One that is too long without them is refused.
 func (d *Daemon) keepHostUser(u wire.MachineUser) error {
 	b, err := json.Marshal(u)
 	if err == nil && tooLarge(hostUserFile, b, hostUserMostBytes) != nil {
 		u.Bots = nil
+		b, err = json.Marshal(u)
+	}
+	if err == nil && tooLarge(hostUserFile, b, hostUserMostBytes) != nil {
+		u.Labels = []string{}
 		b, err = json.Marshal(u)
 	}
 	if err == nil {
@@ -92,7 +101,7 @@ func (d *Daemon) keepHostUser(u wire.MachineUser) error {
 	if err != nil {
 		return err
 	}
-	// store-bounds: kind=key-value; count=1; size=256KiB; age=until-deleted; applied=on write (cut to size)
+	// store-bounds: kind=key-value; count=1; size=256KiB; age=until-deleted; applied=on write (its bots and labels are left out, then refused)
 	return store.WriteAtomically(d.hostUserPath(), b, 0o600)
 }
 

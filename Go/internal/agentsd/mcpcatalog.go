@@ -31,13 +31,13 @@ func (d *Daemon) registerMCPCatalog() {
 		return d.mcpPreview(ctx, r), nil
 	})
 	On(d, wire.CallMCPAdd, func(ctx context.Context, c *Client, r wire.MCPAddRequest) (wire.MCPAddAnswer, error) {
-		return d.mcpAdd(r)
+		return d.mcpAdd(ctx, r)
 	})
 	On(d, wire.CallMCPList, func(ctx context.Context, c *Client, r wire.MCPListRequest) (wire.MCPListAnswer, error) {
 		return d.mcpList(r.Destination)
 	})
 	On(d, wire.CallMCPApprove, func(ctx context.Context, c *Client, r wire.MCPApproveRequest) (wire.MCPListAnswer, error) {
-		return d.mcpApprove(r)
+		return d.mcpApprove(ctx, r)
 	})
 	On(d, wire.CallMCPForgetViews, func(ctx context.Context, c *Client, r wire.MCPViewsForgetRequest) (wire.Empty, error) {
 		return wire.Empty{}, d.mcpForgetViews(r)
@@ -336,7 +336,7 @@ func (d *Daemon) mcpDestinationState(nameHere, registryName string, dest wire.Sk
 	return wire.MCPDestinationState{Free: &struct{}{}}, nil
 }
 
-func (d *Daemon) mcpAdd(r wire.MCPAddRequest) (wire.MCPAddAnswer, error) {
+func (d *Daemon) mcpAdd(ctx context.Context, r wire.MCPAddRequest) (wire.MCPAddAnswer, error) {
 	if err := d.requireMCPFolder(r.Destination); err != nil {
 		return wire.MCPAddAnswer{}, mcpRefusal(err)
 	}
@@ -347,7 +347,7 @@ func (d *Daemon) mcpAdd(r wire.MCPAddRequest) (wire.MCPAddAnswer, error) {
 	if !ok || time.Now().After(st.until) {
 		return wire.MCPAddAnswer{}, mcpRefusal(mcpcatalog.PreviewExpired())
 	}
-	server, err := d.mcpInstall(st, r)
+	server, err := d.mcpInstall(ctx, st, r)
 	if err != nil {
 		log.Printf("mcp: add refused: %v", err)
 		return wire.MCPAddAnswer{}, mcpRefusal(err)
@@ -359,7 +359,7 @@ func (d *Daemon) mcpAdd(r wire.MCPAddRequest) (wire.MCPAddAnswer, error) {
 
 // mcpInstall is MCPInstaller.add: its secrets into sealed.json, the entry into mcp.json, the
 // sidecar's record, and for a folder, the entry approved as it was written.
-func (d *Daemon) mcpInstall(st mcpStaged, r wire.MCPAddRequest) (wire.ManagedMCPServer, error) {
+func (d *Daemon) mcpInstall(ctx context.Context, st mcpStaged, r wire.MCPAddRequest) (wire.ManagedMCPServer, error) {
 	home := d.personalHome()
 	if home == "" {
 		return wire.ManagedMCPServer{}, mcpcatalog.NoPersonalHome()
@@ -419,6 +419,8 @@ func (d *Daemon) mcpInstall(st mcpStaged, r wire.MCPAddRequest) (wire.ManagedMCP
 		Version: st.version, Run: string(st.preview.ChosenRun), AddedAt: addedAt})
 	if r.Destination.Kind == wire.SkillDestinationKindFolder {
 		d.recordMCPApproval(*r.Destination.Folder, name, json.RawMessage(entry.Stringified()))
+	} else {
+		d.recordPersonalApproval(ctx, name, json.RawMessage(entry.Stringified()))
 	}
 	byHand := false
 	return wire.ManagedMCPServer{Name: name, RegistryName: st.registryName, Version: st.version, Run: st.preview.ChosenRun,
@@ -441,9 +443,14 @@ func (d *Daemon) saveMCPApprovalsLocked(replacing bool) error {
 		if !replacing {
 			return nil
 		}
+		own, err := d.syncedFromFile()
+		if err != nil {
+			return err
+		}
+		synced, _ := json.Marshal(own)
 		keepUnreadable(d.mcpApprovalsPath())
 		began, _ := json.Marshal(now())
-		d.mcpApprovals = map[string]json.RawMessage{"approvalsBegan": began, "approved": json.RawMessage("{}")}
+		d.mcpApprovals = map[string]json.RawMessage{"approvalsBegan": began, "approved": json.RawMessage("{}"), "synced": synced}
 	}
 	b, err := json.Marshal(d.mcpApprovals)
 	if err != nil {
@@ -510,7 +517,7 @@ func (d *Daemon) mcpList(dest wire.SkillDestination) (wire.MCPListAnswer, error)
 		_ = json.Unmarshal(d.mcpApprovals["views"], &views)
 	}
 	d.mcpMu.Unlock()
-	if folder && unreadable {
+	if unreadable {
 		note := "mcp-approvals.json could not be read, so nothing is approved until you approve it again."
 		answer.ApprovalsProblem = &note
 	}
@@ -530,6 +537,10 @@ func (d *Daemon) mcpList(dest wire.SkillDestination) (wire.MCPListAnswer, error)
 	if folder {
 		scope = filepath.Clean(*dest.Folder)
 	}
+	var gate personalGate
+	if !folder {
+		gate = d.personalGate()
+	}
 	var waiting, ready []wire.FolderMCPServer
 	for _, e := range entries {
 		digest := entryDigest(e.raw)
@@ -544,6 +555,9 @@ func (d *Daemon) mcpList(dest wire.SkillDestination) (wire.MCPListAnswer, error)
 				row.ApprovedFrom = d.mcpApprovedFromLocked(*dest.Folder, e.name, digest)
 				d.mcpMu.Unlock()
 			}
+		} else if gate.waits(e) {
+			_, had := gate.approved[personalMCPKey(e.name)]
+			row.Approval = wire.MCPApprovalState{Waiting: &wire.MCPApprovalStateWaiting{Digest: digest, IsNew: !had}}
 		}
 		if record, ok := side.Servers[mcpcatalog.Key(dest, e.name)]; ok {
 			byHand := record.ByHand != nil && *record.ByHand
@@ -650,7 +664,13 @@ func viewsWord(views map[string]string, scope, server string) *string {
 	return &word
 }
 
-func (d *Daemon) mcpApprove(r wire.MCPApproveRequest) (wire.MCPListAnswer, error) {
+func (d *Daemon) mcpApprove(ctx context.Context, r wire.MCPApproveRequest) (wire.MCPListAnswer, error) {
+	if r.Destination.Kind == wire.SkillDestinationKindPersonal {
+		if err := d.answerPersonalConnector(ctx, r.Name, r.Digest, true); err != nil {
+			return wire.MCPListAnswer{}, err
+		}
+		return d.mcpList(r.Destination)
+	}
 	if r.Destination.Kind != wire.SkillDestinationKindFolder || r.Destination.Folder == nil {
 		return wire.MCPListAnswer{}, mcpRefusal(mcpcatalog.Failed("Only a folder's server waits for approval."))
 	}
@@ -770,14 +790,15 @@ func (d *Daemon) mcpRemove(r wire.MCPRemoveRequest) (wire.MCPRemoveAnswer, error
 	if err := mcpcatalog.UpdateSidecar(d.mcpSidecarPath(), func(m map[string]mcpcatalog.Record) { delete(m, key) }); err != nil {
 		log.Printf("mcp: remove %s: could not save %s: %v", r.Name, d.mcpSidecarPath(), err)
 	}
+	approvalKey := personalMCPKey(r.Name)
 	if r.Destination.Kind == wire.SkillDestinationKindFolder {
-		folder := *r.Destination.Folder
-		if err := d.changeMCPApprovals(true, func(approved, _ map[string]string, _ map[string]wire.Date) error {
-			delete(approved, mcpApprovalKey(folder, r.Name))
-			return nil
-		}); err != nil {
-			log.Printf("mcp: remove %s: could not forget its approval: %v", r.Name, err)
-		}
+		approvalKey = mcpApprovalKey(*r.Destination.Folder, r.Name)
+	}
+	if err := d.changeMCPApprovals(true, func(approved, _ map[string]string, _ map[string]wire.Date) error {
+		delete(approved, approvalKey)
+		return nil
+	}); err != nil {
+		log.Printf("mcp: remove %s: could not forget its approval: %v", r.Name, err)
 	}
 	if forget != "" {
 		if err := d.forgetPlainSecret(home, forget); err != nil {

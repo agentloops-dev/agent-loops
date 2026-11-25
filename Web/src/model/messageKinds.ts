@@ -58,6 +58,7 @@ const verbs: Record<string, { label: string; destructive: boolean }> = {
   keep: { label: "Keep", destructive: true },
   require: { label: "Require", destructive: false },
   start: { label: "Start", destructive: false },
+  approve: { label: "Approve", destructive: false },
 };
 
 /** The confirm button of an alert: its question's first verb, or Continue; destructive for a verb that

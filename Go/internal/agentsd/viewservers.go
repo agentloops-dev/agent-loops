@@ -138,6 +138,9 @@ func (d *Daemon) viewServerFor(name, folder string) (viewServer, viewTrouble) {
 		entries, _ := readMCPFile(filepath.Join(home, ".agents", "mcp.json"))
 		for _, e := range entries {
 			if e.name == name {
+				if d.personalGate().waits(e) {
+					return viewServer{}, viewWaiting
+				}
 				return ready(e, viewScope(""))
 			}
 		}

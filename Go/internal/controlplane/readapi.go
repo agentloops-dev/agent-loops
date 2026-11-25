@@ -145,7 +145,7 @@ func (rt *readTokens) noteUse(hash, address string, now time.Time) {
 			return
 		}
 		t.LastUse = &wire.SCIMTokenUse{At: wire.DateOf(now), Address: optional(address)}
-		if data, err := records.Encode(t); err == nil {
+		if data, err := records.Encode(t); err == nil && len(data) <= tokenKeptBytes/2 {
 			// A revoke in between wins: its write moved the tag.
 			_, _ = rt.s.cfg.Store.Put(ctx, readTokenKey(hash), data, store.Matching(object.ETag))
 		}
@@ -398,6 +398,10 @@ func (rt *readTokens) markRevoked(ctx context.Context, t readTokenRecord, etag s
 	for try := 0; ; try++ {
 		t.Revoked = stamp
 		data, err := records.Encode(t)
+		if err == nil && stamp != nil && len(data) > tokenKeptBytes {
+			t.Revoked = &wire.OrgRouteStamp{By: actorByID(stamp.By), At: stamp.At}
+			data, err = records.Encode(t)
+		}
 		if err != nil {
 			return false, err
 		}
