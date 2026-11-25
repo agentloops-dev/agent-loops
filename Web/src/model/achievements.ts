@@ -5,6 +5,7 @@
 import { signal } from "@preact/signals";
 import type { Achievements } from "../protocol/generated";
 import { fromWireDate } from "../protocol/dates";
+import { boundedNames, namesBytes, putEntry } from "./keyValue";
 
 export type AchievementID =
   | "firstAgent" | "firstPairing" | "firstRemoteAnswer" | "firstWorkflow" | "firstCloudHost" | "firstLandedPR" | "fiveAtOnce";
@@ -48,6 +49,9 @@ export function achievementDay(date: Date): string {
 }
 
 const storageKey = "agents.achievements.seen";
+/** The most names kept, and the longest one: a newer host's achievements are kept too. */
+export const seenMost = 100;
+const seenBytes = 64;
 
 /** The achievements this browser has shown a card for; null before its first look. */
 export class AchievementsSeen {
@@ -56,7 +60,7 @@ export class AchievementsSeen {
   constructor(private readonly storage: Storage | undefined) {
     try {
       const stored = JSON.parse(storage?.getItem(storageKey) ?? "null");
-      if (Array.isArray(stored)) this.seen.value = new Set(stored.filter((id) => typeof id === "string"));
+      if (Array.isArray(stored)) this.seen.value = new Set(boundedNames(stored.filter((id) => typeof id === "string"), seenMost, seenBytes));
     } catch {
       // Unreadable: a first look again, which shows no card.
     }
@@ -78,11 +82,9 @@ export class AchievementsSeen {
 
   private keep(seen: Set<string>): void {
     this.seen.value = seen;
-    try {
-      this.storage?.setItem(storageKey, JSON.stringify([...seen].sort()));
-    } catch {
-      // A private window may refuse to store; the card still goes for this visit.
-    }
+    // One that is not kept still goes for this visit.
+    // store-bounds: kind=key-value; count=100; age=until-deleted; action=refuse; record=64B; applied=on write
+    putEntry(this.storage, storageKey, JSON.stringify(boundedNames(seen, seenMost, seenBytes).sort()), namesBytes(seenMost, seenBytes));
   }
 }
 

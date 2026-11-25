@@ -3,6 +3,7 @@
 // Remote's. Each is one of the person's display choices, `flag:<name>`, a bool, kept on their
 // Mac's host with the others (./preferences.ts), so a flag is the same on every client of theirs.
 // The store takes any name: a capability's toggle (#6052) is kept the same way, with its own default.
+import { putEntry } from "./keyValue";
 import { effect } from "@preact/signals";
 import { boolPreference, heardOnce, preferences, setPreferences } from "./preferences";
 
@@ -15,6 +16,8 @@ export function flagKey(name: string): string {
 /** The flags as this browser heard them last (#6572), read until the Mac says them: a reload does not draw a page
  *  without the features the person has on, and they stay while the Mac is away. */
 const copyKey = "featureFlags";
+/** The most bytes of the copy; one over it is not kept, and the flags are read from the Mac alone. */
+export const flagsBytes = 64 * 1024;
 const storage = typeof localStorage === "undefined" ? undefined : localStorage;
 const copy = readCopy();
 
@@ -30,11 +33,8 @@ function readCopy(): Record<string, boolean> {
 effect(() => {
   if (!heardOnce.value) return;
   const flags = Object.fromEntries(Object.entries(preferences.value).filter(([key]) => key.startsWith("flag:")));
-  try {
-    storage?.setItem(copyKey, JSON.stringify(flags));
-  } catch {
-    // Full or refused: the flags are read from the Mac alone.
-  }
+  // store-bounds: kind=key-value; count=1; age=until-deleted; action=refuse; record=64KiB; applied=each time the Mac says the choices
+  putEntry(storage, copyKey, JSON.stringify(flags), flagsBytes);
 });
 
 /** Whether the person has `name` on; `fallback` when they have not chosen. Reads a signal, so a view that

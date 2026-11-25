@@ -4,6 +4,7 @@
 // localStorage, as the achievements' cards are; the Mac window keeps the same in its defaults.
 import { signal } from "@preact/signals";
 import type { Agent, PlanEntry } from "../protocol/generated";
+import { fits, putEntry } from "./keyValue";
 
 export type Starter = "iphone-app" | "web-service";
 
@@ -40,6 +41,10 @@ export interface FirstBuildFacts {
 export function isSetUp(facts: FirstBuildFacts): boolean {
   return facts.hasFolder || facts.hasAgent || facts.ranAgent;
 }
+
+/** The most bytes an idea may take (#7253): a longer one is not sent, and its words stay in the box. */
+export const ideaBytes = 64 * 1024;
+export const ideaTooLong = "This idea is not sent: it is over 64 KB. Make it shorter.";
 
 export type Kept = "showing" | "gone";
 
@@ -226,14 +231,15 @@ export class FirstBuildStore {
     if (kept) this.write(keptKey, kept);
   }
 
-  /** Submit: the words, kept for the plan page, with the starter they pick (section 3). */
-  send(idea: string): void {
+  /** Submit: the words, kept for the plan page, with the starter they pick (section 3); false when they are too long. */
+  send(idea: string): boolean {
     const words = idea.trim();
-    if (!words) return;
+    if (!words || !fits(words, ideaBytes)) return false;
     this.sent.value = words;
     this.write(ideaKey, words);
     const pick = firstBuildStarter(words);
     this.choose(pick === "unknown" || pick === "neither" ? null : pick);
+    return true;
   }
 
   /** The plan page's Change, or its choice for words that named no starter. */
@@ -281,12 +287,13 @@ export class FirstBuildStore {
   }
 
   private write(key: string, value: string | null): void {
-    try {
-      if (value === null) this.storage?.removeItem(key);
-      else this.storage?.setItem(key, value);
-    } catch {
-      // Storage full or off: this look still holds it.
+    if (value !== null) {
+      // One that is not kept is still held for this look.
+      // store-bounds: kind=key-value; count=5; age=until-deleted; action=refuse; record=64KiB; applied=on write, and on leaving the page
+      putEntry(this.storage, key, value, ideaBytes);
+      return;
     }
+    try { this.storage?.removeItem(key); } catch { /* storage off: nothing kept */ }
   }
 }
 

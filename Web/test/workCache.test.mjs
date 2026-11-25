@@ -281,3 +281,20 @@ test("largest record: an item over its limit after the cut does not show its ear
   const drawn = (await c.answer(q, ["mac"])).hosts[0].items.find((i) => i.node.ref === long.node.ref);
   assert.ok(!drawn || drawn.state === "closed", "the answer read now draws the item as it was before");
 });
+
+test("a record that an older build kept over the limit is not read, and the sweep drops it (#7253)", async () => {
+  const store = new MemoryWorkStore();
+  const page = (text) => ({ value: text, at: 1_000 });
+  const cap = Buffer.byteLength(JSON.stringify(page("é".repeat(600))));
+  const bounds = { ...webBounds, recordBytes: cap };
+  const records = [["page at 1", page("é".repeat(600))], ["page over 1", page("é".repeat(601))], ["item issue big", item(1, 1, { title: "x".repeat(bounds.itemBytes) })]];
+  // As the older build counted: UTF-16 units.
+  await store.write(records, [], () => Object.fromEntries(records.map(([key, value]) => [key, { bytes: JSON.stringify(value).length, used: 1_000, read: 1_000 }])));
+  const c = new WorkCache(store, bounds, () => 2_000);
+  assert.equal((await c.kept("at", "1")).value.length, 600);
+  assert.equal(await c.kept("over", "1"), undefined);
+  assert.equal(await c.item({ kind: "issue", ref: "big" }), undefined);
+  c.writing = true;
+  await c.sweep();
+  assert.deepEqual([...store.held.keys()].sort(), ["@index", "page at 1"]);
+});
