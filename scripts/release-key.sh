@@ -16,7 +16,10 @@ set -euo pipefail
 root=${0:A:h:h}
 file=${1:?usage: release-key.sh FILE}
 file=${file:a}
-[[ -d ${file:h} ]] || { print -u2 "There is no folder ${file:h}."; exit 1 }
+[[ -d ${file:h} ]] || {
+    print -u2 "There is no folder ${file:h}. If it is the key image, open it first: hdiutil attach ~/release-keys.dmg"
+    exit 1
+}
 [[ -e $file || -L $file ]] && { print -u2 "$file is there already."; exit 1 }
 if git -C ${file:h} rev-parse --git-dir >/dev/null 2>&1; then
     print -u2 "${file:h} is in a git checkout: a private key does not go there."
