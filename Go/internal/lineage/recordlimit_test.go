@@ -1,11 +1,15 @@
 package lineage
 
 import (
+	"errors"
+	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/internal/repoalias"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
@@ -57,5 +61,45 @@ func TestALinkWhoseRefAMoveMakesLongerIsReadAgain(t *testing.T) {
 	}
 	if got := openAt(t, path, t0).Links(issue("2")); len(got.Links) != 2 {
 		t.Fatalf("%d of 2 links read again", len(got.Links))
+	}
+}
+
+// #7247: the largest change is inside the largest line, a line at it is read, and one over it is
+// refused, or set aside when it is in the file.
+func TestTheLargestLine(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "lineage.jsonl")
+	f := openAt(t, path, t0)
+	word := strings.Repeat("w", 40)
+	large := func(c string) wire.LineageNode {
+		ref := "github:issue:o/r#"
+		return wire.LineageNode{Kind: word, Ref: ref + strings.Repeat(c, maxRef-len(ref))}
+	}
+	if _, err := f.Link(wire.LineageLinkRequest{From: large("1"), To: large("2"), Rel: word, Source: word}, t0); err != nil {
+		t.Fatal(err)
+	}
+	_, err := f.Link(wire.LineageLinkRequest{From: large("\x01"), To: large("\x02"), Rel: word, Source: word}, t0)
+	if !errors.Is(err, store.ErrLimit) || len(f.Links(large("\x01")).Links) != 0 {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pad := func(n int) string {
+		line := `{"pad":"","state":{"node":{"kind":"session","ref":"agents:session:o/r#` + strconv.Itoa(n) + `"},"state":"working"},"at":1}`
+		return strings.Replace(line, `"pad":"`, `"pad":"`+strings.Repeat("p", n-len(line)), 1) + "\n"
+	}
+	data = append(data, pad(lineMost)+pad(lineMost+1)+pad(lineMost-1)...)
+	if err := os.WriteFile(path, data, 0o600); err != nil { //nolint:gosec // G703: a path in the test's own folder
+		t.Fatal(err)
+	}
+	if _, states := openAt(t, path, t0).All(); len(states) != 2 {
+		t.Fatalf("%d states", len(states))
+	}
+	if aside, _ := filepath.Glob(path + ".unreadable-*"); len(aside) != 1 {
+		t.Fatalf("%d set aside", len(aside))
 	}
 }

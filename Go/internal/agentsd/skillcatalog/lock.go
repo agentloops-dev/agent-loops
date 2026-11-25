@@ -2,8 +2,10 @@ package skillcatalog
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"time"
@@ -49,6 +51,8 @@ type Lock struct {
 	Kind LockKind
 	Path string
 	root Value
+	// old is each collection as read, for the limits of a write.
+	old map[string][]Pair
 }
 
 // PersonalLockPath is $XDG_STATE_HOME/skills/.skill-lock.json when that is set, as the CLI
@@ -90,7 +94,9 @@ func LoadLock(kind LockKind, path string) (*Lock, error) {
 	if !ok || v.Kind != 'n' || nerr != nil || int(n) < want || !sok || skills.Kind != 'o' {
 		return nil, LockUnreadable(path)
 	}
-	return &Lock{Kind: kind, Path: path, root: root}, nil
+	l := &Lock{Kind: kind, Path: path, root: root}
+	l.keepOld()
+	return l, nil
 }
 
 func emptyLock(kind LockKind) Value {
@@ -180,12 +186,67 @@ func (l *Lock) Text() string {
 	return out.Stringified() + "\n"
 }
 
+// The limits of a lock (#7247), of its skills and of its personas. It is the CLI's file too and
+// its entries are current state: an entry that grows over its size, or one more than the count, is
+// refused, and nothing is evicted.
+const (
+	lockMost       = 2000
+	lockRecordMost = 8 << 10
+)
+
+func (l *Lock) keepOld() {
+	l.old = map[string][]Pair{"skills": slices.Clone(l.skills().Pairs), "personas": slices.Clone(l.personas().Pairs)}
+}
+
+func (l *Lock) check() error {
+	for what, v := range map[string]Value{"skills": l.skills(), "personas": l.personas()} {
+		old := l.old[what]
+		if n := len(v.Pairs); n > lockMost && n > len(old) {
+			return fmt.Errorf("%s keeps at most %d %s; remove one first: %w", filepath.Base(l.Path), lockMost, what, store.ErrLimit)
+		}
+		was := make(map[string]Value, len(old))
+		for _, p := range old {
+			was[p.Key] = p.Value
+		}
+		for _, p := range v.Pairs {
+			size := lockRecordSize(p.Key, p.Value)
+			if size <= lockRecordMost {
+				continue
+			}
+			if o, ok := was[p.Key]; !ok || size > lockRecordSize(p.Key, o) {
+				return fmt.Errorf("an entry of %s is at most %d bytes: %w", filepath.Base(l.Path), lockRecordMost, store.ErrLimit)
+			}
+		}
+	}
+	return nil
+}
+
+func lockRecordSize(key string, v Value) int { return len(key) + len(v.Stringified()) }
+
+// writeFailed is what the person reads when a lock was not written; a limit says itself.
+func (l *Lock) writeFailed(err error) *Error {
+	if errors.Is(err, store.ErrLimit) {
+		return Failed(err.Error())
+	}
+	return Failed("could not write " + filepath.Base(l.Path))
+}
+
 // Write puts the file whole, beside it and renamed, so a reader never sees half of one.
 func (l *Lock) Write() error {
+	if err := l.check(); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(filepath.Dir(l.Path), 0o755); err != nil {
 		return err
 	}
-	return store.WriteAtomically(l.Path, []byte(l.Text()), 0o644)
+	// The person's lock, and a folder's.
+	// store-bounds: kind=key-value; count=4000 (2000 skills, 2000 personas); size=8KiB an entry; age=until-deleted; applied=on write, refused
+	// store-bounds: kind=key-value; count=4000 (2000 skills, 2000 personas) a folder; size=8KiB an entry; age=until-deleted; applied=on write, refused
+	if err := store.WriteAtomically(l.Path, []byte(l.Text()), 0o644); err != nil {
+		return err
+	}
+	l.keepOld()
+	return nil
 }
 
 // Stamp is `new Date().toISOString()`: milliseconds, UTC, Z.
