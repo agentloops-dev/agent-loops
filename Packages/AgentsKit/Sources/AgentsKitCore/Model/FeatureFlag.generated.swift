@@ -10,8 +10,6 @@ public enum FeatureFlag: String, CaseIterable, Sendable {
     case dashboard = "dashboard"
     /// Docs (#6572).
     case docs = "docs"
-    /// Image hosts (#7136).
-    case imageHosts = "image-hosts"
     /// Store sizes (#6907).
     case storeSizes = "store-sizes"
     /// Suggested (#6572).
@@ -27,7 +25,6 @@ public enum FeatureFlag: String, CaseIterable, Sendable {
         case .commitTrailers: "Commit trailers"
         case .dashboard: "Dashboard"
         case .docs: "Docs"
-        case .imageHosts: "Image hosts"
         case .storeSizes: "Store sizes"
         case .suggested: "Suggested"
         case .work: "Work"
@@ -41,7 +38,6 @@ public enum FeatureFlag: String, CaseIterable, Sendable {
         case .commitTrailers: "The Commit trailers group in Agents ▸ Policy: the trailers on each agent's commits."
         case .dashboard: "The Dashboard on the Mac: each work item with its sessions. The window opens to it."
         case .docs: "Docs in the sidebar, and the Docs section on a work item's page. On the Mac and the web page."
-        case .imageHosts: "A blocked image on a Work page says its host, with Show image and Always allow; the list is in Settings ▸ Machines ▸ Image Hosts. On the Mac."
         case .storeSizes: "Reports ▸ Store sizes on the web page: how large each data store is, and how much of its limits it uses."
         case .suggested: "New Session ▸ Suggested: the epics with no lead."
         case .work: "Work in the sidebar: issues, pull requests, releases, deploys and the timeline."
@@ -55,7 +51,6 @@ public enum FeatureFlag: String, CaseIterable, Sendable {
         case .commitTrailers: 6373
         case .dashboard: 6572
         case .docs: 6572
-        case .imageHosts: 7136
         case .storeSizes: 6907
         case .suggested: 6572
         case .work: 6572
