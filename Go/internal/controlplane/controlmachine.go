@@ -76,6 +76,8 @@ func controlPlatform() string {
 // when that machine's record has only the control role: the record becomes the host's, with
 // both roles, so the machine stays one record. It says whether it did.
 func (s *Service) takeOverControlMachine(ctx context.Context, record records.MachineRecord) (bool, error) {
+	s.controlMu.Lock()
+	defer s.controlMu.Unlock()
 	old := s.records.Host(record.ID)
 	if old == nil || !old.ControlOnly() || len(old.PublicKey) > 0 {
 		return false, nil
@@ -85,24 +87,17 @@ func (s *Service) takeOverControlMachine(ctx context.Context, record records.Mac
 	return true, s.records.SaveHost(ctx, record)
 }
 
-// controlOnlyOn is the id of the control-only record of that machine, or "".
-func (s *Service) controlOnlyOn(machineID string) string {
-	for _, h := range s.records.Machines() {
-		if h.ControlOnly() && len(h.PublicKey) == 0 && h.MachineID != nil && *h.MachineID == machineID {
-			return h.ID
-		}
-	}
-	return ""
-}
-
 // mergeControlMachine is for a host that enrolled under an id of its own on the machine the
 // control plane runs on: its record gets both roles and the control-only one is dropped, so
 // the machine is one record (#6609).
 func (s *Service) mergeControlMachine(ctx context.Context, host string, record records.MachineRecord) {
+	// Only the home host (mac) takes the machine's record: one machine, one record.
 	mine := s.controlMachineID()
-	if mine == "" || mine == host || record.MachineID == nil || s.cfg.MachineID == "" || *record.MachineID != s.cfg.MachineID {
+	if host != "mac" || mine == "" || mine == host || record.MachineID == nil || s.cfg.MachineID == "" || *record.MachineID != s.cfg.MachineID {
 		return
 	}
+	s.controlMu.Lock()
+	defer s.controlMu.Unlock()
 	only := s.records.Host(mine)
 	if only == nil || !only.ControlOnly() {
 		return

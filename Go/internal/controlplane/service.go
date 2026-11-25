@@ -188,6 +188,7 @@ type Service struct {
 	copyID  string
 	// The id of the machine record this copy runs on (#6609).
 	controlMachine atomic.Pointer[string]
+	controlMu      sync.Mutex
 	records *records.Records
 	// When the audit last said that the people are at their limit (#7019).
 	peopleFullMu   sync.Mutex
@@ -2201,9 +2202,6 @@ func (s *Service) joiningHostID(stored *storedCode, a wire.MachineAnnounce) stri
 		want = stored.MadeHost
 	} else if home {
 		want = "mac"
-	} else if only := s.controlOnlyOn(a.MachineID); only != "" && a.MachineID != "" {
-		// The machine's record is the control plane's: the host takes it over (#6609).
-		want = only
 	}
 	return want
 }
