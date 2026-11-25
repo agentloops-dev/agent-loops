@@ -2641,6 +2641,8 @@ public enum DaemonAPI {
         /// `user/sealedSecret` from a client the control plane keeps no copy for yet (#5114):
         /// it gets one when another of the person's clients is online (`sealing/work`).
         public static let noClientCopy = -32108
+        /// `forge/image` did not read a host that is on no list (#7138). `data`: `ImageBlocked`.
+        public static let imageBlocked = -32109
     }
 
     // MARK: Workflows

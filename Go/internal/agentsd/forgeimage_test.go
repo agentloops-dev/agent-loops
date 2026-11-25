@@ -238,22 +238,22 @@ func TestForgeImageCacheIsBounded(t *testing.T) {
 
 	var c forgeImageCache
 	for i := range forgeImagesKept + 1 {
-		c.put(string(rune('a'+i)), wire.ForgeImage{MimeType: "image/png", Data: []byte{1}})
+		c.put(string(rune('a'+i)), wire.ForgeImage{MimeType: "image/png", Data: []byte{1}}, nil)
 		if i == 0 {
 			continue
 		}
-		c.get("a") // a stays the most recently read
+		c.get("a", nil) // a stays the most recently read
 	}
-	if _, ok := c.get("a"); !ok {
+	if _, ok := c.get("a", nil); !ok {
 		t.Fatal("a went")
 	}
-	if _, ok := c.get("b"); ok {
+	if _, ok := c.get("b", nil); ok {
 		t.Fatal("b stayed")
 	}
 	if c.order.Len() != forgeImagesKept || c.bytes != forgeImagesKept {
 		t.Fatalf("%d kept, %d bytes", c.order.Len(), c.bytes)
 	}
-	c.put("huge", wire.ForgeImage{Data: make([]byte, forgeImageBytesKept)})
+	c.put("huge", wire.ForgeImage{Data: make([]byte, forgeImageBytesKept)}, nil)
 	if c.bytes > forgeImageBytesKept {
 		t.Fatalf("%d bytes", c.bytes)
 	}
