@@ -14728,6 +14728,11 @@ export interface ShellAttachResponse {
   startedAt: WireDate;
   folder: URLString;
   offset?: number;
+  /**
+   * True when the host puts shell/input in order by stream and seq (#7147). Left out by an older
+   * host, which must be sent one input at a time.
+   */
+  ordered?: boolean;
 }
 
 export interface ShellInputRequest {
@@ -14736,6 +14741,14 @@ export interface ShellInputRequest {
   bytes: Base64;
   rows?: number;
   cols?: number;
+  /**
+   * One run of typing from one screen (#7147). With seq, the host writes a stream's inputs in the
+   * order of seq, whatever order their requests run in, so a screen can send the next before the
+   * last is answered. A client sends it only to a host whose shell/attach said ordered.
+   */
+  stream?: UUID;
+  /** The input's place in its stream, from 0, with none left out. */
+  seq?: number;
 }
 
 export interface ShellListResponse {
@@ -19323,8 +19336,8 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   SharedSkill: { required: ["name", "path", "source", "reach"], optional: ["description", "clash", "managed"] },
   SharedSnapshot: { required: ["home", "laidOut", "runtimes", "skills", "mcp", "plugins", "otherFiles", "needsALook"], optional: ["instructions"] },
   ShellAttachRequest: { required: ["agentID"], optional: ["shell", "rows", "cols", "since", "startedAt", "folder"] },
-  ShellAttachResponse: { required: ["state", "scrollback", "dropped", "startedAt", "folder"], optional: ["offset"] },
-  ShellInputRequest: { required: ["agentID", "bytes"], optional: ["shell", "rows", "cols"] },
+  ShellAttachResponse: { required: ["state", "scrollback", "dropped", "startedAt", "folder"], optional: ["offset", "ordered"] },
+  ShellInputRequest: { required: ["agentID", "bytes"], optional: ["shell", "rows", "cols", "stream", "seq"] },
   ShellListResponse: { required: ["shells"], optional: [] },
   ShellOpenResponse: { required: ["shell"], optional: [] },
   ShellOutputNotification: { required: ["agentID", "shell", "bytes"], optional: ["offset"] },

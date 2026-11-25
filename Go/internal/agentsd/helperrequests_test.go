@@ -9,7 +9,6 @@ import (
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
-	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -112,11 +111,12 @@ func TestAHelperOnItsStartersRuntimeInheritsAlwaysApprove(t *testing.T) {
 		}
 	})
 	t.Run("a helper's helper", func(t *testing.T) {
-		flaky.UnderLoad(t, "#7146")
 		t.Parallel()
 
 		f := newRequestsFixture(t)
 		first := f.startSession(f.lead("opencode", "", nil), map[string]any{})
+		// Its runtime takes back the token a client of it held when it starts (#7146): let its turn end first.
+		waitFor(t, "ended the first helper's turn", func() bool { return f.d.Store.Agent(first).State == wire.AgentStateFinished })
 		second := f.startSession(*f.d.Store.Agent(first), map[string]any{})
 		if !f.approves(second) {
 			t.Fatal("it asks")
