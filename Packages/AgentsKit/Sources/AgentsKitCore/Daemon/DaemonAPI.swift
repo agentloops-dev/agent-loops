@@ -3674,7 +3674,39 @@ public extension DaemonAPI {
     /// `folders/sendFacts`, on this Mac's host.
     struct SendFactsRequest: Codable, Hashable, Sendable {
         public var folder: URL
-        public init(folder: URL) { self.folder = folder }
+        /// Measures the untracked files too, with a bound (#7121): the sheet only.
+        public var measureUntracked: Bool?
+        public init(folder: URL, measureUntracked: Bool? = nil) {
+            self.folder = folder
+            self.measureUntracked = measureUntracked
+        }
+    }
+
+    /// The files git neither tracks nor ignores, which a send of the changes takes (#7121).
+    /// `partial` when the measure stopped at its bound.
+    struct SendUntracked: Codable, Hashable, Sendable {
+        public var files: Int
+        public var size: Int
+        public var largest: [SendUntrackedItem]
+        public var buildOutput: Bool
+        public var partial: Bool
+        public init(files: Int, size: Int, largest: [SendUntrackedItem], buildOutput: Bool, partial: Bool) {
+            self.files = files
+            self.size = size
+            self.largest = largest
+            self.buildOutput = buildOutput
+            self.partial = partial
+        }
+    }
+
+    /// An untracked folder (its path ends in /) or file, from the repository's top.
+    struct SendUntrackedItem: Codable, Hashable, Sendable {
+        public var path: String
+        public var size: Int
+        public init(path: String, size: Int) {
+            self.path = path
+            self.size = size
+        }
     }
 
     /// The local branches, the one checked out (nil when detached), the origin, and
@@ -3684,11 +3716,14 @@ public extension DaemonAPI {
         public var current: String?
         public var origin: String?
         public var hasChanges: Bool
-        public init(branches: [String], current: String? = nil, origin: String? = nil, hasChanges: Bool) {
+        public var untracked: SendUntracked?
+        public init(branches: [String], current: String? = nil, origin: String? = nil, hasChanges: Bool,
+                    untracked: SendUntracked? = nil) {
             self.branches = branches
             self.current = current
             self.origin = origin
             self.hasChanges = hasChanges
+            self.untracked = untracked
         }
     }
 
@@ -3699,11 +3734,14 @@ public extension DaemonAPI {
         public var branches: [String]
         public var leavingOut: [String]
         public var includeChanges: Bool
-        public init(folder: URL, branches: [String], leavingOut: [String], includeChanges: Bool) {
+        public var leaveOutUntracked: Bool?
+        public init(folder: URL, branches: [String], leavingOut: [String], includeChanges: Bool,
+                    leaveOutUntracked: Bool? = nil) {
             self.folder = folder
             self.branches = branches
             self.leavingOut = leavingOut
             self.includeChanges = includeChanges
+            self.leaveOutUntracked = leaveOutUntracked
         }
     }
 
@@ -3760,9 +3798,11 @@ public extension DaemonAPI {
         public var branches: [String]
         public var checkout: String
         public var includeChanges: Bool
+        /// Leaves out of the changes the files git does not track (#7121).
+        public var leaveOutUntracked: Bool?
         public var origin: String?
         public init(folder: URL, machine: String, machineName: String? = nil, destination: String, branches: [String],
-                    checkout: String, includeChanges: Bool, origin: String? = nil) {
+                    checkout: String, includeChanges: Bool, leaveOutUntracked: Bool? = nil, origin: String? = nil) {
             self.folder = folder
             self.machine = machine
             self.machineName = machineName
@@ -3770,6 +3810,7 @@ public extension DaemonAPI {
             self.branches = branches
             self.checkout = checkout
             self.includeChanges = includeChanges
+            self.leaveOutUntracked = leaveOutUntracked
             self.origin = origin
         }
     }

@@ -65,7 +65,10 @@ func receiveFolder(p string) (string, error) {
 
 // ownTree is the commit dir is on and the tree of everything in it that git does not
 // ignore, made with an index of its own so the folder's index is not changed.
-func ownTree(dir string) (head, tree string, err error) {
+func ownTree(dir string) (head, tree string, err error) { return ownTreeOf(dir, true) }
+
+// ownTreeOf is ownTree, without the files git does not track unless untracked (#7121).
+func ownTreeOf(dir string, untracked bool) (head, tree string, err error) {
 	index, err := git(dir, "rev-parse", "--path-format=absolute", "--git-path", "index")
 	if err != nil {
 		return "", "", err
@@ -84,7 +87,19 @@ func ownTree(dir string) (head, tree string, err error) {
 		os.Remove(tmp.Name())
 	}
 	env := []string{"GIT_INDEX_FILE=" + tmp.Name()}
-	if _, err := gitRawEnv(dir, env, nil, "add", "-A"); err != nil {
+	add := "-A"
+	if !untracked {
+		add = "-u"
+		// With no copy of the index nothing is tracked, and every file would be a deletion:
+		// the commit's files are the tracked ones then.
+		if fi, err := os.Stat(tmp.Name()); err != nil || fi.Size() == 0 {
+			_ = os.Remove(tmp.Name()) // git reads an empty file as a broken index
+			if _, err := gitRawEnv(dir, env, nil, "read-tree", "HEAD"); err != nil {
+				return "", "", err
+			}
+		}
+	}
+	if _, err := gitRawEnv(dir, env, nil, "add", add); err != nil {
 		return "", "", err
 	}
 	out, err := gitRawEnv(dir, env, nil, "write-tree")

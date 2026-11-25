@@ -29,8 +29,9 @@ extension AppModel {
     }
 
     /// What the sheet shows of the repository at `folder`, from this Mac's host.
-    func sendFacts(_ folder: URL, on from: MachineRef) async throws -> DaemonAPI.SendFacts {
-        try await client(for: from).call(DaemonAPI.Method.foldersSendFacts, DaemonAPI.SendFactsRequest(folder: folder),
+    /// `measureUntracked` is for this sheet alone (#7121).
+    func sendFacts(_ folder: URL, on from: MachineRef, measureUntracked: Bool = false) async throws -> DaemonAPI.SendFacts {
+        try await client(for: from).call(DaemonAPI.Method.foldersSendFacts, DaemonAPI.SendFactsRequest(folder: folder, measureUntracked: measureUntracked ? true : nil),
                                          returning: DaemonAPI.SendFacts.self)
     }
 
@@ -185,6 +186,7 @@ struct SendToHostSheet: View {
     @State private var facts: DaemonAPI.SendFacts?
     @State private var chosen: Set<String> = []
     @State private var includeChanges = true
+    @State private var includeUntracked = false
     @State private var destination = ""
     @State private var state: DaemonAPI.ReceiveState?
     @State private var progress: String?
@@ -215,6 +217,7 @@ struct SendToHostSheet: View {
             } else if problem == nil {
                 ProgressView().controlSize(.small)
             }
+            if facts == nil { Spacer(minLength: 0) }
             // The sheet's note (#4737): it failed, or it is under way.
             SheetNote(tone: problem == nil ? .neutral : .failure, text: problem ?? progress)
             HStack {
@@ -231,6 +234,10 @@ struct SendToHostSheet: View {
         }
         .padding(20)
         .frame(width: 460)
+        // One height from the first: a sheet that opens as small as its spinner does not grow
+        // with the form when the facts come, and cuts its controls off (#7121).
+        .frame(minHeight: 460, idealHeight: 460)
+        .presentationSizing(.fitted)
         .task { await load() }
     }
 
@@ -256,13 +263,16 @@ struct SendToHostSheet: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(maxHeight: 140)
+        .frame(minHeight: 60, maxHeight: .infinity)
         Toggle("Include uncommitted changes", isOn: $includeChanges)
             .toggleStyle(.checkbox)
             .disabled(!changesCanGo)
         Text(changesLine(facts))
             .appText(.fine).foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
+        if let untracked = facts.untracked, includeChanges, changesCanGo {
+            untrackedChoice(untracked)
+        }
     }
 
     private var stateLine: String {
@@ -279,10 +289,27 @@ struct SendToHostSheet: View {
         return "A new copy, with the same origin as here."
     }
 
+    /// Files that git does not track go only when the person says so (#7121): build output
+    /// that no .gitignore names is among them.
+    @ViewBuilder private func untrackedChoice(_ untracked: DaemonAPI.SendUntracked) -> some View {
+        Toggle("Include untracked files", isOn: $includeUntracked)
+            .toggleStyle(.checkbox)
+        if includeUntracked, untracked.isWorthAWarning {
+            SheetNote(tone: .attention, text: untracked.summary, reservesSpace: false)
+        } else {
+            Text(untracked.summary)
+                .appText(.fine).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
     private func changesLine(_ facts: DaemonAPI.SendFacts) -> String {
         guard facts.hasChanges else { return "Nothing is uncommitted." }
         guard let current = facts.current, chosen.contains(current) else {
             return "The uncommitted changes go only with the branch checked out here."
+        }
+        guard includeUntracked || facts.untracked == nil else {
+            return "Changed files go as a patch on \(current). Files that git does not track or ignores do not go."
         }
         return "Changed and new files go as a patch on \(current). Files that git ignores do not go."
     }
@@ -295,7 +322,7 @@ struct SendToHostSheet: View {
     private func load() async {
         destination = "~/\(name)"
         do {
-            let facts = try await model.sendFacts(request.folder, on: request.from)
+            let facts = try await model.sendFacts(request.folder, on: request.from, measureUntracked: true)
             guard !facts.branches.isEmpty else {
                 problem = "\(name) has no branch with a commit to send."
                 return
@@ -327,12 +354,27 @@ struct SendToHostSheet: View {
             try await model.startSend(
                 DaemonAPI.SendRequest(folder: request.folder, machine: request.host.rawValue, machineName: label,
                                       destination: destination, branches: facts.branches.filter(chosen.contains),
-                                      checkout: checkout, includeChanges: includeChanges && changesCanGo, origin: facts.origin),
+                                      checkout: checkout, includeChanges: includeChanges && changesCanGo,
+                                      leaveOutUntracked: !includeUntracked,
+                                      origin: facts.origin),
                 from: request.from)
             dismiss()
         } catch {
             progress = nil
             problem = model.describe(error)
         }
+    }
+}
+
+private extension DaemonAPI.SendUntracked {
+    /// Large enough to slow a send, or likely not meant to go.
+    var isWorthAWarning: Bool { buildOutput || partial || size >= 25_000_000 }
+
+    var summary: String {
+        let much = size.formatted(.byteCount(style: .file))
+        let count = files == 1 ? "1 untracked file" : "\(files.formatted()) untracked files"
+        let total = partial ? "More than \(count) (over \(much))." : "\(count) (\(much))."
+        let names = largest.map { "\($0.path) (\($0.size.formatted(.byteCount(style: .file))))" }
+        return names.isEmpty ? total : "\(total) Largest: \(names.formatted(.list(type: .and)))."
     }
 }

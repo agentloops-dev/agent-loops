@@ -14169,11 +14169,18 @@ export interface SendFacts {
   current?: string;
   origin?: string;
   hasChanges: boolean;
+  /**
+   * The files git neither tracks nor ignores, when `measureUntracked` asked and there are some
+   * (#7121).
+   */
+  untracked?: SendUntracked;
 }
 
 /** Asks this Mac's host about a repository to send (Send to ‹host›…, #1123). */
 export interface SendFactsRequest {
   folder: URLString;
+  /** Measures the untracked files too, with a bound (#7121). Only the Send sheet asks. */
+  measureUntracked?: boolean;
 }
 
 /** A file the host made for a send, read with folders/sendRead (#1123). */
@@ -14217,6 +14224,11 @@ export interface SendPackRequest {
   branches: string[];
   leavingOut: string[];
   includeChanges: boolean;
+  /**
+   * With `includeChanges`, leaves out the files git does not track (#7121). Absent is false: they
+   * go.
+   */
+  leaveOutUntracked?: boolean;
 }
 
 /**
@@ -14249,6 +14261,11 @@ export interface SendRequest {
   branches: string[];
   checkout: string;
   includeChanges: boolean;
+  /**
+   * With `includeChanges`, leaves out the files git does not track (#7121). Absent is false: they
+   * go.
+   */
+  leaveOutUntracked?: boolean;
   origin?: string;
 }
 
@@ -14262,6 +14279,29 @@ export interface SendSummary {
   machineName: string;
   destination: string;
   startedAt: WireDate;
+}
+
+/**
+ * What a send of the uncommitted changes takes of files git neither tracks nor ignores (#7121): how
+ * many, their bytes, and the largest folders. `partial` when the measure stopped at its bound, so
+ * there is more; `buildOutput` when some are in a folder named as build output is (node_modules,
+ * build, .build, DerivedData, target, dist).
+ */
+export interface SendUntracked {
+  files: number;
+  size: number;
+  largest: SendUntrackedItem[];
+  buildOutput: boolean;
+  partial: boolean;
+}
+
+/**
+ * An untracked folder (its path ends in /) or file of SendUntracked, from the repository's top, and
+ * its bytes.
+ */
+export interface SendUntrackedItem {
+  path: string;
+  size: number;
 }
 
 /** A branch the Mac sends, at the commit it has (#1123). */
@@ -19443,16 +19483,18 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   SecretsLeft: { required: ["host", "name", "secrets"], optional: [] },
   SelfUpdate: { required: ["autoUpdate", "state", "running"], optional: ["release", "message"] },
   SelfUpdateSet: { required: ["autoUpdate"], optional: [] },
-  SendFacts: { required: ["branches", "hasChanges"], optional: ["current", "origin"] },
-  SendFactsRequest: { required: ["folder"], optional: [] },
+  SendFacts: { required: ["branches", "hasChanges"], optional: ["current", "origin", "untracked"] },
+  SendFactsRequest: { required: ["folder"], optional: ["measureUntracked"] },
   SendFile: { required: ["id", "size"], optional: [] },
   SendNotification: { required: ["send", "sent", "total", "finished"], optional: ["problem", "received"] },
   SendPack: { required: ["commits"], optional: ["bundle", "patch"] },
-  SendPackRequest: { required: ["folder", "branches", "leavingOut", "includeChanges"], optional: [] },
+  SendPackRequest: { required: ["folder", "branches", "leavingOut", "includeChanges"], optional: ["leaveOutUntracked"] },
   SendRead: { required: ["data", "end"], optional: [] },
   SendReadRequest: { required: ["id", "offset"], optional: [] },
-  SendRequest: { required: ["folder", "machine", "destination", "branches", "checkout", "includeChanges"], optional: ["machineName", "origin"] },
+  SendRequest: { required: ["folder", "machine", "destination", "branches", "checkout", "includeChanges"], optional: ["machineName", "leaveOutUntracked", "origin"] },
   SendSummary: { required: ["id", "folder", "machine", "machineName", "destination", "startedAt"], optional: [] },
+  SendUntracked: { required: ["files", "size", "largest", "buildOutput", "partial"], optional: [] },
+  SendUntrackedItem: { required: ["path", "size"], optional: [] },
   SentBranch: { required: ["name", "commit"], optional: [] },
   SentNotice: { required: ["title", "outcome"], optional: ["body", "nextAt", "to"] },
   ServedRequest: { required: ["kind", "outcome"], optional: [] },

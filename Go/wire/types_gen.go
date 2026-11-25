@@ -14834,11 +14834,17 @@ type SendFacts struct {
 	Origin *string `json:"origin,omitzero"`
 
 	HasChanges bool `json:"hasChanges"`
+
+	// The files git neither tracks nor ignores, when `measureUntracked` asked and there are some (#7121).
+	Untracked *SendUntracked `json:"untracked,omitzero"`
 }
 
 // Asks this Mac's host about a repository to send (Send to ‹host›…, #1123).
 type SendFactsRequest struct {
 	Folder URL `json:"folder"`
+
+	// Measures the untracked files too, with a bound (#7121). Only the Send sheet asks.
+	MeasureUntracked *bool `json:"measureUntracked,omitzero"`
 }
 
 // A file the host made for a send, read with folders/sendRead (#1123).
@@ -14881,6 +14887,9 @@ type SendPackRequest struct {
 	LeavingOut []string `json:"leavingOut"`
 
 	IncludeChanges bool `json:"includeChanges"`
+
+	// With `includeChanges`, leaves out the files git does not track (#7121). Absent is false: they go.
+	LeaveOutUntracked *bool `json:"leaveOutUntracked,omitzero"`
 }
 
 // A part of at most 4 MB (#7120); 1 MB for an export (#1530). `end` is true for the last, and then the host removes the file.
@@ -14913,6 +14922,9 @@ type SendRequest struct {
 
 	IncludeChanges bool `json:"includeChanges"`
 
+	// With `includeChanges`, leaves out the files git does not track (#7121). Absent is false: they go.
+	LeaveOutUntracked *bool `json:"leaveOutUntracked,omitzero"`
+
 	Origin *string `json:"origin,omitzero"`
 }
 
@@ -14929,6 +14941,26 @@ type SendSummary struct {
 	Destination string `json:"destination"`
 
 	StartedAt Date `json:"startedAt"`
+}
+
+// What a send of the uncommitted changes takes of files git neither tracks nor ignores (#7121): how many, their bytes, and the largest folders. `partial` when the measure stopped at its bound, so there is more; `buildOutput` when some are in a folder named as build output is (node_modules, build, .build, DerivedData, target, dist).
+type SendUntracked struct {
+	Files int64 `json:"files"`
+
+	Size int64 `json:"size"`
+
+	Largest []SendUntrackedItem `json:"largest"`
+
+	BuildOutput bool `json:"buildOutput"`
+
+	Partial bool `json:"partial"`
+}
+
+// An untracked folder (its path ends in /) or file of SendUntracked, from the repository's top, and its bytes.
+type SendUntrackedItem struct {
+	Path string `json:"path"`
+
+	Size int64 `json:"size"`
 }
 
 // A branch the Mac sends, at the commit it has (#1123).
