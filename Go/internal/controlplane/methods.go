@@ -753,6 +753,10 @@ func (m *Methods) updateMachine(ctx context.Context, params json.RawMessage) (an
 	if h == nil {
 		return nil, &RPCError{Code: wire.FailureNoSuchHost, Message: "There is no such host."}
 	}
+	// It updates the host on the machine, and a control-only machine has none (#7310).
+	if err := m.refuseControlOnly(h.ID); err != nil {
+		return nil, err
+	}
 	return m.s.installer.Update(ctx, request, h.Name)
 }
 
@@ -803,6 +807,9 @@ func (m *Methods) lendSignIn(ctx context.Context, params json.RawMessage, from C
 	record := m.records.Host(string(request.Host))
 	if record == nil || m.records.Host(string(request.From)) == nil || !m.sameUser(record.ID, string(request.From)) {
 		return nil, fail(noSuchHost, "No such host.")
+	}
+	if err := m.refuseLendControlOnly(request.Host, request.From); err != nil {
+		return nil, err
 	}
 	lends := map[string]string{}
 	for k, v := range record.SignInFrom {
@@ -885,6 +892,15 @@ func (m *Methods) refuseControlOnly(host string) error {
 		return fail(invalidParams, "%s", h.ControlOnlyRefusal())
 	}
 	return nil
+}
+
+// refuseLendControlOnly refuses a lend to or from a machine that only runs the control
+// plane (#7310): no runtime or git on it signs in for agents, and none of its agents uses one.
+func (m *Methods) refuseLendControlOnly(host, from wire.MachineRef) error {
+	if err := m.refuseControlOnly(string(host)); err != nil {
+		return err
+	}
+	return m.refuseControlOnly(string(from))
 }
 
 // retryMachineSetup is machines/retrySetup: Try Again on a machine's set-up (#5355).
@@ -1177,9 +1193,9 @@ func (m *Methods) forgotten(id string, after time.Duration) {
 	}()
 }
 
-// Admit is ControlMethods.admit: a client that has paired, or connected again. lastSeen
-// is written at most hourly (R4): a connect is not a write. Only a client that is new
-// or renamed is said (#172); the router says a connect as the client's link changing.
+// Admit is ControlMethods.admit: a client that has paired, saved over its tombstone when
+// the same id was forgotten. Only a client that is new or renamed is said (#172). One that
+// only connected again is NoteSeen's.
 func (m *Methods) Admit(ctx context.Context, client records.ClientRecord) error {
 	said, err := m.admitOnce(ctx, client)
 	if err != nil {
@@ -1195,6 +1211,30 @@ func (m *Methods) Admit(ctx context.Context, client records.ClientRecord) error 
 		go m.s.tellHostClients()
 	}
 	return nil
+}
+
+// NoteSeen notes that a known client connected again. lastSeen is written at most hourly
+// (R4): a connect is not a write. One forgotten meanwhile, here or at another copy, stays
+// forgotten: unlike Admit, this never writes over its tombstone (#7308).
+func (m *Methods) NoteSeen(ctx context.Context, id string) error {
+	err := m.noteSeenOnce(ctx, id)
+	if store.IsConflict(err) {
+		if err = m.records.Load(ctx); err == nil {
+			err = m.noteSeenOnce(ctx, id)
+		}
+	}
+	return err
+}
+
+func (m *Methods) noteSeenOnce(ctx context.Context, id string) error {
+	return m.records.ChangeClient(ctx, id, func(known *records.ClientRecord) bool {
+		if known.LastSeen != nil && time.Since(known.LastSeen.Time) <= time.Hour {
+			return false
+		}
+		now := records.Now()
+		known.LastSeen = &now
+		return true
+	})
 }
 
 func (m *Methods) admitOnce(ctx context.Context, client records.ClientRecord) (bool, error) {
@@ -1994,6 +2034,9 @@ func (m *Methods) lendGit(ctx context.Context, request wire.LendGit) error {
 	record := m.records.Host(host)
 	if record == nil || m.records.Host(string(request.From)) == nil || !m.sameUser(host, string(request.From)) {
 		return fail(noSuchHost, "No such host.")
+	}
+	if err := m.refuseLendControlOnly(request.Host, request.From); err != nil {
+		return err
 	}
 	lends := map[string]string{}
 	for k, v := range record.GitFrom {
