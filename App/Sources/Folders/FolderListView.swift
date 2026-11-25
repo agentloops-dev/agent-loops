@@ -341,15 +341,11 @@ struct FolderListView: View {
                 ForEach(model.clones) { clone in
                     CloningRow(clone: clone).appText(.supporting)
                 }
-                // A folder on its way to another machine, until it is a folder there (#4613).
-                ForEach(model.sends) { send in
-                    SendingRow(send: send).appText(.supporting)
-                }
                 // Branches on their way back from another machine, and what came (#4640).
                 ForEach(model.bringBacks) { bringBack in
                     BringingBackRow(bringBack: bringBack).appText(.supporting)
                 }
-                if model.folders.isEmpty, model.clones.isEmpty, model.sends.isEmpty, model.bringBacks.isEmpty, model.hasLoadedFolders, model.isConnected {
+                if model.folders.isEmpty, model.clones.isEmpty, model.bringBacks.isEmpty, model.hasLoadedFolders, model.isConnected {
                     EmptyFolderList(isChoosingFolder: $isChoosingFolder, isCloning: $isCloning)
                         .appText(.supporting)
                 }
