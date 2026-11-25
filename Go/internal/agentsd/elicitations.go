@@ -376,10 +376,7 @@ func (d *Daemon) answerElicitation(r wire.AnswerElicitationRequest) error {
 	if content == nil {
 		content = map[string]wire.JSONValue{}
 	}
-	reason := ""
-	if r.Reason != nil && action != wire.AnswerElicitationRequestActionAccept {
-		reason = strings.TrimSpace(*r.Reason)
-	}
+	reason := declineReason(r.Reason, action)
 	form := pe.req.Mode.Form
 	secret := pe.req.Secret
 	sessionOnly := secret != nil && askedSessionOnly(content)
@@ -397,7 +394,7 @@ func (d *Daemon) answerElicitation(r wire.AnswerElicitationRequest) error {
 			return Invalid("%s", strings.Join(why, ". "))
 		}
 	}
-	if l.take(r.RequestID) == nil {
+	if pe = l.take(r.RequestID); pe == nil {
 		return &Error{Code: wire.FailureNoSuchAgent, Message: "That form has already been answered."}
 	}
 	var said []wire.ElicitationAnswer
@@ -412,7 +409,9 @@ func (d *Daemon) answerElicitation(r wire.AnswerElicitationRequest) error {
 	if reason != "" {
 		kept = []wire.ElicitationAnswer{{Question: declinedBecause(action), Answer: reason}}
 	}
-	d.endRequest(r.RequestID, wire.RequestStateAnswered, formAnswerSummary(action, kept), "", d.takeAnsweredBy(r.RequestID))
+	if err := l.answerTaken(pe, formAnswerSummary(action, kept)); err != nil {
+		return err
+	}
 	d.record(l.id, wire.TranscriptEntryKind{ElicitationAnswered: &wire.TranscriptEntryKindElicitationAnswered{ID: r.RequestID,
 		Summary: answeredSummary(action), Answers: kept}})
 	d.moveIf(l.id, wire.AgentStateWaitingOnUser, wire.AgentStateRunning)
@@ -442,6 +441,26 @@ func (d *Daemon) answerElicitation(r wire.AnswerElicitationRequest) error {
 	// The runtime hears last, so what it says next follows the answer in the record.
 	pe.reply <- elicitationReply{action: action, content: content, reason: reason, dismissed: dismissed}
 	return nil
+}
+
+// declineReason is why the person declined or dismissed a form, or "".
+func declineReason(reason *string, action wire.AnswerElicitationRequestAction) string {
+	if reason == nil || action == wire.AnswerElicitationRequestActionAccept {
+		return ""
+	}
+	return strings.TrimSpace(*reason)
+}
+
+// answerTaken ends the request of a form that was taken. One whose answer is not kept is put
+// back, so its card stays.
+func (l *live) answerTaken(pe *pendingElicitation, answer *string) error {
+	_, err := l.d.answerFormRequest(pe.req.ID, answer, l.d.takeAnsweredBy(pe.req.ID))
+	if err != nil {
+		l.mu.Lock()
+		l.elicitations[pe.req.ID] = pe
+		l.mu.Unlock()
+	}
+	return err
 }
 
 // formAnsweredWords is the prompt that brings an answer to a form left open.
