@@ -280,6 +280,19 @@ func TestSignInTestsRunOnlyTheFakes(t *testing.T) {
 	}
 }
 
+// control/eligible asks a machine for its memory and disks on channel 0 (#6611).
+func TestTheControlPlaneAsksAMachinesUsage(t *testing.T) {
+	t.Parallel()
+
+	d, _ := start(t, t.TempDir())
+	defer d.Shutdown()
+	out, ok := d.Asked(wire.CallMachineUsage.Name, nil)
+	usage, is := out.(wire.MachineUsageState)
+	if !ok || !is || usage.Machine.MemoryTotal <= 0 {
+		t.Fatalf("%v %+v", ok, out)
+	}
+}
+
 // Auto's machine pick (#5375): the control plane asks each machine on channel 0 which
 // runtimes are installed and signed in, and gets the list a client gets.
 func TestTheControlPlaneAsksWhichRuntimesAreReady(t *testing.T) {

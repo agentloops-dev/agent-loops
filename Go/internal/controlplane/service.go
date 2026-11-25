@@ -184,17 +184,19 @@ type Service struct {
 	secretOpsSeen secretOpsSeen
 	// Each machine's capacity and each person's last start, for Auto (#5374): memory only.
 	autoBook
-	origin  string
-	copyID  string
+	origin string
+	copyID string
 	// The id of the machine record this copy runs on (#6609).
 	controlMachine atomic.Pointer[string]
 	controlMu      sync.Mutex
-	records *records.Records
+	// dialMachine is set by tests; nil opens a TCP connection (control/eligible, #6611).
+	dialMachine func(ctx context.Context, address string) error
+	records     *records.Records
 	// When the audit last said that the people are at their limit (#7019).
 	peopleFullMu   sync.Mutex
 	peopleFullSaid time.Time
-	codes   *Codes
-	router  *Router
+	codes          *Codes
+	router         *Router
 	// auditChain links the audit entries this copy writes, and auditSinks sends them (#1001).
 	auditChain *audit.Chain
 	// auditWriter keeps the entries, one goroutine for all (#2433).
@@ -203,7 +205,7 @@ type Service struct {
 	// hour (#6755).
 	auditEntries *store.DayLog
 	sweepSoon    chan struct{}
-	auditSinks  *auditSinkState
+	auditSinks   *auditSinkState
 	// Servers' backups (#1815).
 	backups *backupStore
 	methods *Methods

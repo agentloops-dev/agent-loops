@@ -50,6 +50,7 @@ public enum Capability {
     public static let connectorsSetup1 = "connectors.setup/1"
     public static let console1 = "console/1"
     public static let controlConnectAnother1 = "control.connect-another/1"
+    public static let controlEligible1 = "control.eligible/1"
     public static let controlLocal1 = "control.local/1"
     public static let controlPlaneMove1 = "control.plane-move/1"
     public static let controlRotate1 = "control.rotate/1"
@@ -798,6 +799,7 @@ public enum Capability {
         "control/capacity": "console/1",
         "control/connectAnother": "control.connect-another/1",
         "control/connectReport": "control.connect-another/1",
+        "control/eligible": "control.eligible/1",
         "control/ping": "control/1",
         "control/planeMove": "control.plane-move/1",
         "control/planeMoveReport": "control.plane-move/1",
