@@ -9,7 +9,8 @@
 #                                          or an Agents Host, which renames it Agent Loops.app
 #                                          (#5297, #4225)
 #   agentsd-linux-<arch>-<version>.tar.gz  the Linux agentsd (Go, #1136), with the MCP
-#                                          servers Agents ships (#700)
+#                                          servers Agents ships (#700), agents-control (#6610)
+#                                          and the web page it serves (#7288)
 #   loops-<os>-<arch>-<version>.tar.gz    loops, the command-line client (#6448), for darwin and
 #                                          linux, arm64 and amd64; the macOS ones signed and
 #                                          notarized (scripts/build-loops.sh)
