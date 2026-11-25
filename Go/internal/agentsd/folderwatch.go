@@ -50,10 +50,15 @@ type folderWatchState struct {
 	// (the first seed and a move) let the one that read first write its older tips last, and
 	// the move after it was not raised (#1278).
 	branchCheckMu sync.Mutex
-	// fileMu holds fileWatches, what each folder's file events know (#3795), and fileKicked.
+	// fileMu holds fileWatches, what each folder's file events know (#3795), fileStarting,
+	// fileFollow and fileKicked. fileFollow's own locks are taken before it.
 	fileMu      sync.Mutex
 	fileWatches map[string]*watchedFiles
-	fileKicked  bool
+	// fileStarting is the waits on files that no record says yet; fileFollow is the lock of
+	// each folder's followFileGlobs (#7210).
+	fileStarting map[*startingFileWait]bool
+	fileFollow   map[string]*sync.Mutex
+	fileKicked   bool
 }
 
 // skipWatched is what a folder's watch leaves out (folderWatchExclusions, WatchFilter):

@@ -50,6 +50,8 @@ export const Failure = {
   folderInTheWay: -32025,
   hostKeyToTrust: -32069,
   hostOffline: -32090,
+  imageBlocked: -32109,
+  imageNotPublic: -32110,
   importedAgent: -32096,
   kept: -32067,
   lastOperator: -32092,
@@ -5895,20 +5897,29 @@ export interface ForgeIdsRequest {
 
 /**
  * forge/image (#4009): an image's bytes, so that a client never loads a forge page's remote URL.
- * mimeType is image/png, image/jpeg, image/gif or image/webp, read from the bytes.
+ * mimeType is image/png, image/jpeg, image/gif or image/webp, read from the bytes. keep false
+ * (#7138): the read went through a host that the person allowed or showed, so a client does not put
+ * it on disk; absent, only a forge's own image hosts.
  */
 export interface ForgeImage {
   mimeType: string;
   data: Base64;
+  keep?: boolean;
 }
 
 /**
- * forge/image (#4009): the url of an image on a forge page. Only a forge's own image hosts are read
- * (for GitHub: github.com's user-attachments and repo assets, and user-images, private-user-images,
- * raw and avatars on githubusercontent.com); the forge's token goes only to its own hosts.
+ * forge/image (#4009): the url of an image on a forge page. Only a forge's own image hosts (for
+ * GitHub: github.com's user-attachments and repo assets, and user-images, private-user-images, raw
+ * and avatars on githubusercontent.com), the hosts that the person allowed (imageHosts/list) and
+ * those in show are read; another host is the failure imageBlocked, with ImageBlocked as its data.
+ * A chosen host that is not at a public address is the failure imageNotPublic (#7139). show (#7138)
+ * is the exact hosts that the person accepts for this one read, at most 6, from the person's own
+ * clients only. The forge's token goes only to its own hosts, and to none after a hop through a
+ * host that the person chose.
  */
 export interface ForgeImageRequest {
   url: string;
+  show?: string[];
 }
 
 /**
@@ -6771,6 +6782,37 @@ export interface HostedMCPStatus {
   restarts: number;
   users: number;
   folder?: string;
+}
+
+/**
+ * The data of the failure imageBlocked of forge/image (#7138): host is the host that was refused,
+ * exact and in ASCII; from is the host that redirected to it, absent when it is the image's own.
+ */
+export interface ImageBlocked {
+  host: string;
+  from?: string;
+}
+
+/**
+ * A host that the person allowed forge/image to read images from on one machine (#7138): the exact
+ * host, lower case and in ASCII, and when.
+ */
+export interface ImageHost {
+  host: string;
+  addedAt: WireDate;
+}
+
+/** imageHosts/allow and imageHosts/remove (#7138): the host. */
+export interface ImageHostRequest {
+  host: string;
+}
+
+/**
+ * imageHosts/list, and the list after imageHosts/allow and imageHosts/remove (#7138): at most 100
+ * hosts, the first allowed first. The forges' own image hosts are not in it.
+ */
+export interface ImageHosts {
+  hosts: ImageHost[];
 }
 
 export interface JoinApproved {
@@ -16735,6 +16777,12 @@ export interface WorkTimeline {
   backtest?: WorkTimelineBacktest;
   errors?: string[];
   partial?: boolean;
+  /**
+   * What was read (#7029): one entry per repo, as forge:name (github:example/shop). Two machines
+   * with the same scopes give the same epics, so a client asks one of them. Absent when a repo
+   * could not be read, and from an earlier daemon.
+   */
+  scopes?: string[];
 }
 
 /**
@@ -17468,6 +17516,9 @@ export interface Methods {
   "groups/remove": { params: GroupRequest; result: Empty };
   "groups/set": { params: GroupSet; result: Group };
   "groups/setRole": { params: GroupRoleSet; result: Group };
+  "imageHosts/allow": { params: ImageHostRequest; result: ImageHosts };
+  "imageHosts/list": { params: Empty; result: ImageHosts };
+  "imageHosts/remove": { params: ImageHostRequest; result: ImageHosts };
   "lineage/cost": { params: LineageNodeRequest; result: LineageCostRollup };
   "lineage/estimate": { params: LineageEstimateRequest; result: LineageEstimate };
   "lineage/figures": { params: LineageNodeRequest; result: LineageFigures };
@@ -17961,6 +18012,9 @@ export const MethodTarget = {
   "groups/remove": "control",
   "groups/set": "control",
   "groups/setRole": "control",
+  "imageHosts/allow": "host",
+  "imageHosts/list": "host",
+  "imageHosts/remove": "host",
   "lineage/cost": "host",
   "lineage/estimate": "host",
   "lineage/figures": "host",
@@ -18744,8 +18798,8 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   ForgeHoldRequest: { required: ["node", "on"], optional: [] },
   ForgeIds: { required: ["at", "nodes"], optional: ["nextPageCursor"] },
   ForgeIdsRequest: { required: ["source", "kinds"], optional: ["states", "pageCursor"] },
-  ForgeImage: { required: ["mimeType", "data"], optional: [] },
-  ForgeImageRequest: { required: ["url"], optional: [] },
+  ForgeImage: { required: ["mimeType", "data"], optional: ["keep"] },
+  ForgeImageRequest: { required: ["url"], optional: ["show"] },
   ForgeItem: { required: ["node", "title", "state", "labels", "assignees", "updatedAt", "comments"], optional: ["stateReason", "status", "url", "folder", "author", "authorAvatar", "milestone", "milestoneDue", "priority", "onHold", "createdAt", "closedAt", "draft", "checks", "review", "mergeable", "autoMerge", "headRef", "baseRef", "mergedBy", "mergeCommit", "parent", "level", "feature", "progress", "standing"] },
   ForgeItemDetail: { required: ["item", "body", "comments"], optional: ["viewer", "cursor", "checks", "reviewThreads", "filesChanged", "additions", "deletions", "commits", "reviewers", "closes", "head", "mergeMethods", "start", "transitions", "actions", "children", "linkedPulls", "events"] },
   ForgeItemRequest: { required: ["node"], optional: ["cursor"] },
@@ -18811,6 +18865,10 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   HelperLimits: { required: [], optional: ["running", "notArchived", "queued", "agentsMayArchive", "continueWhenBack", "archiveWhenMerged", "agentsMayStartOnMachines"] },
   HostedMCPSnapshot: { required: ["servers", "at"], optional: [] },
   HostedMCPStatus: { required: ["name", "state", "restarts", "users"], optional: ["since", "retryAt", "lastError", "folder"] },
+  ImageBlocked: { required: ["host"], optional: ["from"] },
+  ImageHost: { required: ["host", "addedAt"], optional: [] },
+  ImageHostRequest: { required: ["host"], optional: [] },
+  ImageHosts: { required: ["hosts"], optional: [] },
   JoinApproved: { required: ["host"], optional: [] },
   JoinDecided: { required: ["request", "result"], optional: [] },
   JoinRequest: { required: ["request", "name", "platform", "code", "expires", "for"], optional: ["forName"] },
@@ -19608,7 +19666,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   WorkReport: { required: ["outcome", "message", "at"], optional: ["block"] },
   WorkSuggestLeads: { required: ["suggestions", "more"], optional: ["errors"] },
   WorkSuggestLeadsRequest: { required: [], optional: ["folder"] },
-  WorkTimeline: { required: ["epics", "releases"], optional: ["timeZone", "backtest", "errors", "partial"] },
+  WorkTimeline: { required: ["epics", "releases"], optional: ["timeZone", "backtest", "errors", "partial", "scopes"] },
   WorkTimelineBacktest: { required: ["error", "width", "cuts", "holds", "epics", "at"], optional: [] },
   WorkTimelineChild: { required: ["item", "createdAt"], optional: ["stateReason", "startedAt", "closedAt", "waitsForPerson"] },
   WorkTimelineEpic: { required: ["item", "createdAt", "children", "segments"], optional: ["stateReason", "closedAt", "forecast"] },

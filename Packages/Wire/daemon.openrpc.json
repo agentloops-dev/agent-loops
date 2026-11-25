@@ -188,6 +188,14 @@
         "code": -32069,
         "message": "hostKeyToTrust"
       },
+      "imageBlocked": {
+        "code": -32109,
+        "message": "imageBlocked"
+      },
+      "imageNotPublic": {
+        "code": -32110,
+        "message": "imageNotPublic"
+      },
       "importedAgent": {
         "code": -32096,
         "message": "importedAgent"

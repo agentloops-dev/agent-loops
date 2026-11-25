@@ -20,6 +20,12 @@
       "issue": 6572
     },
     {
+      "name": "image-hosts",
+      "title": "Image hosts",
+      "about": "A blocked image on a Work page says its host, with Show image and Always allow; the list is in Settings ▸ Machines ▸ Image Hosts. On the Mac.",
+      "issue": 7136
+    },
+    {
       "name": "store-sizes",
       "title": "Store sizes",
       "about": "Reports ▸ Store sizes on the web page: how large each data store is, and how much of its limits it uses.",

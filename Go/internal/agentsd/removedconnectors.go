@@ -50,7 +50,8 @@ func (d *Daemon) keepRemovedConnector(name string, entry skillcatalog.Value) err
 }
 
 // carryRemovedConnectors dates the copies in a file from before #6727, which has mcp.json's own
-// shape, so each is kept 90 days from now. It runs before each read of the file: the typed file
+// shape, so each is kept 90 days from now. A copy can be the person's only one, so one over the
+// limits comes over as it was (#7181). It runs before each read of the file: the typed file
 // reads that shape as one empty entry.
 func (d *Daemon) carryRemovedConnectors() error {
 	const top = "mcpServers"
@@ -68,7 +69,7 @@ func (d *Daemon) carryRemovedConnectors() error {
 	if json.Unmarshal(raw, &old) != nil || old.Servers == nil || old.Servers["removedAt"] != nil {
 		return nil //nolint:nilerr // a file in no shape known is left to the typed file, which sets it aside
 	}
-	return d.removedConnectors.Update(func(m map[string]removedConnector) error {
+	return d.removedConnectors.UpdateKeepingAll(func(m map[string]removedConnector) error {
 		delete(m, top)
 		for name, entry := range old.Servers {
 			if _, there := m[name]; !there {

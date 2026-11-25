@@ -10,7 +10,7 @@ class Memory {
   removeItem(key) { this.items.delete(key); }
 }
 
-const { Drafts, draftsKept, draftAge, draftsFull, attachmentsKept, newSessionDraftKey } = await load("src/model/drafts.ts");
+const { Drafts, draftsKept, draftAge, draftsFull, draftBytes, draftTooBig, draftNoRoom, attachmentsCut, attachmentsKept, newSessionDraftKey } = await load("src/model/drafts.ts");
 const { promptPlaceholder, willQueue } = await load("src/model/promptWords.ts");
 
 test("a draft comes back on the next visit; an emptied or sent one does not", () => {
@@ -153,4 +153,77 @@ test("a folder's old draft moves to its project's, never over one there (#5376)"
   drafts.move("new|box|a", "new|project:p1");
   assert.equal(drafts.get("new|project:p1").text, "from before");
   assert.equal(new Drafts(storage).get("new|project:p1").text, "from before");
+});
+
+class Quota extends Memory {
+  room = 5 * 1024 * 1024;
+  setItem(key, value) {
+    if (value.length > this.room) throw new Error("QuotaExceededError");
+    super.setItem(key, value);
+  }
+}
+
+test("largest record: one draft too large for the store does not stop the others being saved, and is said (#6908)", () => {
+  const storage = new Quota();
+  const said = [];
+  const drafts = new Drafts(storage, (sentence) => said.push(sentence));
+  drafts.set("mac|a", { text: "first", attachments: [] });
+  drafts.set("mac|big", { text: "x".repeat(6 * 1024 * 1024), attachments: [] });
+  drafts.set("mac|a", { text: "edited", attachments: [] });
+  assert.equal(new Drafts(storage).get("mac|a").text, "edited");
+  drafts.set("mac|big", { text: "x".repeat(6 * 1024 * 1024 + 1), attachments: [] });
+  assert.deepEqual(said, [draftTooBig], "said once");
+  assert.equal(drafts.get("mac|big").text.length, 6 * 1024 * 1024 + 1, "held while the page is open");
+  drafts.set("mac|big", { text: "short", attachments: [] });
+  assert.equal(new Drafts(storage).get("mac|big").text, "short");
+});
+
+test("a draft over the limit in bytes is refused, and its last words that fitted stay kept (#7199)", () => {
+  const storage = new Quota();
+  const said = [];
+  const drafts = new Drafts(storage, (sentence) => said.push(sentence));
+  drafts.set("mac|a", { text: "before", attachments: [] });
+  drafts.set("mac|a", { text: "é".repeat(draftBytes / 2), attachments: [] });
+  drafts.set("mac|b", { text: "b", attachments: [] });
+  assert.deepEqual(said, [draftTooBig]);
+  assert.equal(new Drafts(storage).get("mac|a").text, "before");
+  assert.equal(new Drafts(storage).get("mac|b").text, "b");
+});
+
+test("a draft the browser has no room for is refused, the others are saved, and room saves it (#7199)", () => {
+  const storage = new Quota();
+  storage.room = 2000;
+  const said = [];
+  const drafts = new Drafts(storage, (sentence) => said.push(sentence));
+  drafts.set("mac|a", { text: "a".repeat(1000), attachments: [] });
+  drafts.set("mac|b", { text: "b", attachments: [] });
+  drafts.set("mac|b", { text: "b".repeat(1500), attachments: [] });
+  assert.deepEqual(said, [draftNoRoom]);
+  assert.equal(new Drafts(storage).get("mac|b").text, "b");
+  drafts.set("mac|c", { text: "c", attachments: [] });
+  assert.equal(new Drafts(storage).get("mac|c").text, "c");
+  drafts.set("mac|a", { text: "a", attachments: [] });
+  assert.equal(new Drafts(storage).get("mac|b").text.length, 1500, "a shorter draft made room");
+  assert.deepEqual(said, [draftNoRoom]);
+});
+
+test("a move never drops a kept draft, also one kept from before the limit (#7199)", () => {
+  const storage = new Quota();
+  const text = "x".repeat(2 * draftBytes);
+  storage.setItem("agents.drafts", JSON.stringify([["old", { text, attachments: [], editedAt: Date.now() }]]));
+  const drafts = new Drafts(storage);
+  drafts.move("old", "new");
+  assert.equal(new Drafts(storage).get("new").text.length, text.length);
+  assert.equal(new Drafts(storage).get("old"), undefined);
+});
+
+test("attachments let go are said once, and counted in bytes (#7199)", () => {
+  const storage = new Memory();
+  const said = [];
+  const drafts = new Drafts(storage, (sentence) => said.push(sentence));
+  const wide = [{ id: "x", displayName: "é".repeat(attachmentsKept / 2), block: {} }];
+  drafts.set("mac|a", { text: "one", attachments: wide });
+  drafts.set("mac|a", { text: "two", attachments: wide });
+  assert.deepEqual(said, [attachmentsCut]);
+  assert.deepEqual(new Drafts(storage).get("mac|a"), { text: "two", attachments: [] });
 });

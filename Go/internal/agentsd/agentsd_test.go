@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -18,6 +19,9 @@ type conn struct {
 	in   chan string
 	out  chan string
 	gone chan struct{} // closed once the daemon has shut down: drain stops
+
+	heardMu sync.Mutex
+	heard   []message // the notifications the last call read past: until takes them first
 }
 
 func newConn() *conn {
@@ -51,8 +55,11 @@ func (c *conn) In() <-chan string { return c.in }
 func (c *conn) Close()            {}
 func (c *conn) Device() string    { return "" }
 
+// call makes a call, and is its answer. A notification that comes before the answer may be
+// the call's own effect, so until hears it first (#7227). One from before the call is dropped.
 func (c *conn) call(t testing.TB, id int, method string, params any) json.RawMessage {
 	t.Helper()
+	c.forget()
 	p, _ := json.Marshal(params)
 	b, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": id, "method": method, "params": json.RawMessage(p)})
 	c.in <- string(b)
@@ -63,7 +70,8 @@ func (c *conn) call(t testing.TB, id int, method string, params any) json.RawMes
 			var m message
 			mustUnmarshal(t, []byte(line), &m)
 			if string(m.ID) != strings.TrimSpace(string(mustJSON(id))) {
-				continue // a notification
+				c.keep(m) // a notification, or another call's answer
+				continue
 			}
 			if m.Error != nil {
 				t.Fatalf("%s: %v", method, m.Error)
@@ -73,6 +81,40 @@ func (c *conn) call(t testing.TB, id int, method string, params any) json.RawMes
 			waitFailed(t, "%s: no answer", method)
 		}
 	}
+}
+
+// forget drops what the client has not taken yet.
+func (c *conn) forget() {
+	c.heardMu.Lock()
+	defer c.heardMu.Unlock()
+	c.heard = nil
+	for {
+		select {
+		case <-c.out:
+		default:
+			return
+		}
+	}
+}
+
+func (c *conn) keep(m message) {
+	c.heardMu.Lock()
+	defer c.heardMu.Unlock()
+	if m.Method != "" {
+		c.heard = append(c.heard, m)
+	}
+}
+
+// nextHeard takes the first notification that the last call read past.
+func (c *conn) nextHeard() (message, bool) {
+	c.heardMu.Lock()
+	defer c.heardMu.Unlock()
+	if len(c.heard) == 0 {
+		return message{}, false
+	}
+	m := c.heard[0]
+	c.heard = c.heard[1:]
+	return m, true
 }
 
 // aCard takes the first agent/permission notification, and keeps its request in into.
