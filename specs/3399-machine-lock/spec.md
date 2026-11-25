@@ -105,6 +105,10 @@ How step 4 is built (#3492):
   writes what the other is to get, in its own words (its name from its join code), and signs
   it (`MachineWorkspaceCall.deliver`); the control plane delivers it as it is. A machine may
   leave out `to`, since an agent names the other machine by name.
+- Decided: a part of an upload is only in the signed copy (#7118, `MachineFolderSend.uploadSigned`),
+  because its data would go to the control plane twice. The control plane checks the host, that
+  it is the one step, and that the signed method is `folders/receiveUpload` with a part in it. A
+  control plane without `folders.signed-upload/1` gets both, as before.
 - Decided: a peer machine may call `agents/start`, `agents/fromStarter`,
   `agents/endedElsewhere`, and the steps of send and bring back (`folders/receiveState`,
   `receiveUpload`, `receive`, `sendFacts`, `sendPack`, `sendRead`), because those are the

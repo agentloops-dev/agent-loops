@@ -892,9 +892,7 @@ struct RemoteFolderFold: View {
     var body: some View {
         let on = smartGroups ?? SidebarSmartRow.on(off: smartOff)
         let fold = SidebarFolderFold(key, label: label, in: model.work, query: query, isOpen: folds.isOpen(key),
-                                      keptInUnread: model.keptInUnread,
-                                      keptBy: SidebarSmartRow.keeper(fileToSee: model.keptHadFile, on: on), on: on,
-                                      alsoIn: group.otherKeys)
+                                      on: on, alsoIn: group.otherKeys)
         let isOpen = fold.isUnfolded
         if fold.isShown {
             // A search holds every match open.

@@ -103,7 +103,7 @@ from the root (`agentsd/backups.go:69,72`). It holds nothing else.
 | `guarded-files.json` | Guarded file states | folders that exist | on save | no |
 | `org-routes/<id>.json`, `runtimes/org/…` | Org key routes, stand-in homes | 50 routes (`orgroutes.go:46`) | on delivery | no |
 | `runtimes/accounts/<rt>/<id>/` | Homes of added runtime accounts, **with the runtime's own transcripts** | conversations: 1,200 MB a home, 90 days (`accounthistory.go`, #6707); the rest goes with the account (`accounts.go`) | hourly; on remove | no |
-| `browser/profile/` | Chromium profile shared by every browser sign-in | **none** | never | no |
+| `browser/profile/`, `browser/chrome-profile/`, and each one's `-sites.json` | Chromium profiles shared by every browser sign-in, and each site's last use | 200 sites, 256 MB of site data (a site used in the last 30 days stays), 90 days since last use; Chrome's downloads 1 GB (#6710) | hourly sweep, at each start | no |
 | Small fixed files (`folders.json`, `root-id.json`, `settings/*.json`, …) | Configuration | fixed shape | n/a | no |
 
 ### Transfers, backups and staging
@@ -386,7 +386,7 @@ newer than a row above for the same store.
 | `<root>/runtimes/accounts/<rt>/<id>/` | blob | Runtime account homes, with the runtimes' own transcripts | Conversations: 1,200 MB a home and 90 days, the oldest first; those of sessions not archived, or written in the last 24 hours, stay | `Go/internal/agentsd/accounthistory.go` | #6707 |
 | `<folder>/.agents/worktrees/` | blob | Agent worktrees | User-owned: no bound, on purpose | `docs/explanation/compliance/data-and-retention.md (In each folder)` | #6708 |
 | `<root>/backups/` | blob | This machine's backups | The newest Keep (1-10); 90 days; the newest good one stays; over 10 MB is made, with a warning | `Go/internal/agentsd/backups.go` (`pruneBackups`) | #6709 |
-| `<root>/browser/profile/` | blob | Browser sign-ins and cookies | Caches emptied at start, 64 MB HTTP cache; cookies until the site ends them | `Go/internal/agentsd/browser/browser.go:139,637` | #6710 |
+| `<root>/browser/profile/`, `<root>/browser/chrome-profile/`, `<root>/browser/*-sites.json` | blob | Browser sign-ins and site storage, and each site's last use (key-value) | A site 90 days after its last use; over 200 sites or 256 MB the ones used longest ago, none used in the last 30 days; a profile not run for 90 days whole; caches emptied at start, 64 MB HTTP cache, Chrome's downloads 1 GB; the last uses 1,000 sites (Alex, 2026-11-24) | `Go/internal/browser/bounds.go` | #6710 |
 | `<folder>/.agents/dropbox/` | blob | Files handed to workflows | 25 MB a file and 500 MB a folder from dropbox/put, which refuses; 90 days from the last change or arrival; what git tracks stays | `Go/internal/agentsd/dropbox.go`, `host.go` (`putInDropbox`) | #6711 |
 | `<folder>/.agents/reviews/runtimes/` | document | Runtime assessment reports | 1 MiB per report; newest 50 per machine; 90 days | `Go/internal/agentsd/assess_reports.go` | #6712 |
 | `~/.agents/dismissed-leads.json` | key-value | Dismissed epics | None: an entry goes only when its epic gets a lead | `Go/internal/agentsd/worksuggest.go:32,55-59,165` | #6713 |

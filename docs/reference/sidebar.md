@@ -55,9 +55,9 @@ you without opening each folder.
 
 **Working** and **Unread** start off, so the sidebar first shows only what needs you.
 
-- **Each session is listed once.** It goes in the first group it fits, in the order of the
-  table. A session in no smart group is under its folder only. An archived session is in
-  no smart group.
+- **Each session is in one smart group at most.** It goes in the first group it fits, in the
+  order of the table. Its folder's **Sessions** lists it as well, so one session can have two
+  rows. An archived session is in no smart group.
 - **A group with nothing in it is not shown.** While you search, a group shows only when
   something in it matches.
 - **A row in a smart group shows its folder's name** after its title, in grey.
@@ -83,7 +83,7 @@ Turn each group on or off under **Smart groups** in **Settings ▸ This app ▸ 
 in **Settings…** at the foot of the sidebar on iPhone and iPad (under **This app**), and under
 **Sidebar** in **Settings ▸ This browser** on the web page. The choice is kept on your Mac, so every
 client shows the same groups. A group that is off is not shown. Its sessions go to the next
-group they fit, or under their folder. With **Needs You** off, approvals are not listed
+group they fit, if there is one. With **Needs You** off, approvals are not listed
 in the sidebar.
 
 The choice is kept on your Mac, with your other display choices, so every client shows
@@ -115,8 +115,8 @@ heading to open it. In order, an open folder holds:
 - **Its pinned pages,** when it has some.
 - **Sessions,** a fold with a grey count of the folder's live sessions, newest started
   first. A folder with no live session has no fold. To start a session in the folder, use
-  the folder's menu, or **New Session** in the **+**. Its pinned
-  sessions are in **Pinned** instead. Each row's mark says its state. See
+  the folder's menu, or **New Session** in the **+**. A session in a smart group is here
+  too, until it is archived, and each list counts it. Each row's mark says its state. See
   [Statuses and groups](statuses.md).
 - **Workflows,** a fold with a grey count of the folder's workflows. It is closed at
   first, and each folder keeps its own fold. A search opens it to show what matched. It
@@ -170,7 +170,7 @@ lead, oldest first. This keeps the sidebar to a fixed depth however deep the cha
 - **A folded parent shows the most urgent mark** of itself and the live sessions under
   it, so a folded child that needs you is not hidden.
 - **A child is under its parent only when the same list holds the parent.** When the
-  parent is in another group, the child is a row of its own, with a mark that says which
+  list does not hold the parent, the child is a row of its own, with a mark that says which
   agent started it.
 - **Archive takes the children too.** Archive on a parent, from its menu, its swipe or
   the Delete key, archives its live children as well.

@@ -402,7 +402,7 @@ export class Store extends Work {
   readonly prewarmed = new Map<string, number>();
 
   /** The session whose title is being edited (#751), and whether in the chat's header or its row. */
-  readonly renaming = signal<{ id: string; inChat: boolean } | null>(null);
+  readonly renaming = signal<{ id: string; inChat: boolean; row?: object } | null>(null);
 
   /** One start's id per folder, kept until that start succeeds, so a retry is not a second agent (#291). */
   startRequests = new Map<string, UUID>();
