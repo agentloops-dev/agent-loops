@@ -934,6 +934,14 @@ final class AppModel {
     /// folder page, pin, workflow and chat closed, as the window opens and as it is when the
     /// selection clears. From its row under Work or View ▸ Dashboard.
     func showDashboard() {
+        closePages()
+        showNothing()
+    }
+
+    /// Every page about all the work closed (Cost, Time, Work, Messages, …), so the detail
+    /// column draws the folder, chat, pin or workflow under them: `ContentView.detail` draws
+    /// a page first.
+    func closePages() {
         showsSpending = false
         showsEvents = false
         showsRuntimes = false
@@ -948,7 +956,6 @@ final class AppModel {
         showsDocs = false
         showsMessages = false
         showsAchievements = false
-        showNothing()
     }
 
     /// A folder's workflows or its archive, from its row in the sidebar (#495).
@@ -987,20 +994,7 @@ final class AppModel {
         // Going to a folder is going away from Spending, wherever the ask came from
         // — a new folder being added, a menu item, its New session row. And from
         // Resources, for the same reason.
-        showsSpending = false
-        showsEvents = false
-        showsRuntimes = false
-        statusSecretsPage = nil
-        showsTime = false
-        showsVelocity = false
-        showsCycletime = false
-        showsTokens = false
-        machinePage = nil
-        showsMachines = false
-        showsWork = false
-        showsDocs = false
-        showsMessages = false
-        showsAchievements = false
+        closePages()
         select(key)
         // A new session in it (#366): the folder's own page is where a session starts,
         // as New Session has it. The folder's row in the sidebar only folds (#375).
@@ -1075,6 +1069,8 @@ final class AppModel {
     var composing = false {
         didSet {
             guard composing, !oldValue else { return }
+            // New Session (⌘N) over a page shows the new session, not the page (#6979).
+            closePages()
             selection = nil
             openWorkflow = nil
             openPin = nil
