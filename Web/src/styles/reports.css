@@ -116,3 +116,13 @@
 .report-yours { margin-top: 20px; }
 .report-yours .tabs { margin-bottom: 8px; }
 .multiplier-page.in-reports { flex: none; min-height: 0; padding: 12px 0; overflow: visible; }
+/* Reports ▸ Store sizes (#6907): three cards, then a row a store with a bar for each of its limits. */
+.stores-cards { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+.stores-cards .delivery-value { font-size: 1.25rem; font-variant-numeric: tabular-nums; }
+.stores-over { color: var(--tint-failure); font-weight: 600; }
+.stores-limits { display: flex; flex-direction: column; gap: 4px; }
+.stores-limits .report-bar { width: 90px; height: 6px; margin-bottom: 2px; }
+.stores-problems { margin: 4px 0 0; padding-left: 18px; }
+.stores-empty { text-align: center; padding: 48px 20px; border: 1px solid var(--paper-rule); border-radius: var(--radius-card); background: var(--paper-raised); }
+.stores-page .message-banner { margin-left: 0; margin-right: 0; }
+.stores-status { white-space: nowrap; }

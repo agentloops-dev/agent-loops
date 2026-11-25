@@ -28,11 +28,12 @@ import { deliveryCards, deliveryNote, noDelivery, repoTitle, sparkPath } from ".
 import { deploysQuery } from "../model/deploys";
 import { buildsLinkQuery } from "../model/builds";
 import { Capability } from "../protocol/capabilities.generated";
-import type { Section } from "../model/console";
+import { storesID, type Section } from "../model/console";
 import { usagePaneTitle, usagePanesOf } from "../model/nav";
 import { ActivityPageView } from "./Activity";
 import { MultiplierPage } from "./Multiplier";
 import { Choice } from "./Choice";
+import { StoreSizesPage } from "./StoreSizes";
 import { ask } from "./MessageKinds";
 
 function sentence(error: unknown): string {
@@ -727,6 +728,9 @@ function LensBar({ options, current, onPick }: { options: readonly ReportScopeOp
   );
 }
 
+/** The pages with no lens: they are not about the work of a scope. */
+const noLens: ReadonlySet<string> = new Set(["saved", "features", storesID]);
+
 const valueParts: Record<ValuePart, true> = { delivery: true, forecast: true, estimates: true };
 
 /** A page of Reports (#1804), the control plane's app beside the Workspace and the Console: Me, a project
@@ -754,7 +758,7 @@ export function ReportsPage({ store, section, down }: { store: Store; section: S
   }, [view?.id, section.id]);
   // The lens stays when the person goes to another page: an address with none takes the last one chosen (#5279).
   const named = new URLSearchParams(route.value.query ?? "").has("lens");
-  useEffect(() => { if (!named && !view && lastLens.value.kind !== "me" && section.id !== "features") setLens(lastLens.value); }, [section.id]);
+  useEffect(() => { if (!named && !view && lastLens.value.kind !== "me" && section.id !== "features" && section.id !== storesID) setLens(lastLens.value); }, [section.id]);
   // Cost's Open Reports on the Mac (#4938) names the range in the address: #/reports/spend?range=month.
   const asked = rangeAsked(route.value.query);
   const initial = view ? { range: view.range, by: viewBy(view) } : asked ? { range: asked } : undefined;
@@ -762,14 +766,15 @@ export function ReportsPage({ store, section, down }: { store: Store; section: S
   const wanted = scopeKey(lensAsked(route.value.query));
   // A lens the person cannot see is not offered: the page shows Me.
   const option = list.find((o) => scopeKey(o.scope) === wanted) ?? list.find((o) => o.scope.kind === "me") ?? list[0];
-  useEffect(() => { lensName.value = option?.scope.kind === "project" && section.id !== "features" ? option.name : undefined; return () => { lensName.value = undefined; }; }, [option?.name, option && scopeKey(option.scope)]);
-  const bar = section.id !== "saved" && section.id !== "features" && list.length > 0;
+  useEffect(() => { lensName.value = option?.scope.kind === "project" && section.id !== "features" && section.id !== storesID ? option.name : undefined; return () => { lensName.value = undefined; }; }, [option?.name, option && scopeKey(option.scope)]);
+  const bar = !noLens.has(section.id) && list.length > 0;
   const lens = option?.scope;
   return (
     <>
       {bar && <LensBar options={list} current={option ? scopeKey(option.scope) : "me"} onPick={setLens} />}
       {view && isGroupView(view) && <p class="quiet small" role="status">{groupViewNote}</p>}
       {section.id === "features" ? <FeaturesPane store={store} />
+        : section.id === storesID ? <StoreSizesPage store={store} down={down} />
         : scopes.value !== null && (section.id === "saved" ? <SavedPage store={store} scopes={list} />
         : section.id in countsPages
         ? <CountsPane key={`${section.id}:${view?.id ?? ""}:${wanted}`} store={store} runtimeName={runtimeNameIn(store)} scope={lens}

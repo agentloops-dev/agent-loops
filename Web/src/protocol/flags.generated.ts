@@ -15,6 +15,7 @@ export const featureFlags: readonly FeatureFlagInfo[] = [
   { name: "dashboard", title: "Dashboard", about: "The Dashboard on the Mac: each work item with its sessions. The window opens to it.", issue: 6572 },
   { name: "docs", title: "Docs", about: "Docs in the sidebar, and the Docs section on a work item's page. On the Mac and the web page.", issue: 6572 },
   { name: "image-hosts", title: "Image hosts", about: "A blocked image on a Work page says its host, with Show image and Always allow; the list is in Settings ▸ Machines ▸ Image Hosts. On the Mac.", issue: 7136 },
+  { name: "store-sizes", title: "Store sizes", about: "Reports ▸ Store sizes on the web page: how large each data store is, and how much of its limits it uses.", issue: 6907 },
   { name: "suggested", title: "Suggested", about: "New Session ▸ Suggested: the epics with no lead.", issue: 6572 },
   { name: "work", title: "Work", about: "Work in the sidebar: issues, pull requests, releases, deploys and the timeline.", issue: 6572 },
   { name: "work-windows", title: "Work in windows", about: "Open in New Window on Work's pages (Mac and iPad): an issue, a pull request or a release, and on the Mac a doc or a conversation of Messages, in a window of its own.", issue: 5480 },

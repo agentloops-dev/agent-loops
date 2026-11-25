@@ -20,7 +20,7 @@ export type Column<T> = {
   class?: string;
 };
 
-export function DataTable<T>({ id, label, columns, rows, rowKey, order, empty, onOpen, rowClass }: {
+export function DataTable<T>({ id, label, columns, rows, rowKey, order, empty, onOpen, rowClass, most }: {
   /** Names the table's kept order. */
   id: string;
   label: string;
@@ -31,10 +31,13 @@ export function DataTable<T>({ id, label, columns, rows, rowKey, order, empty, o
   empty: string;
   onOpen?: (row: T) => void;
   rowClass?: (row: T) => string | undefined;
+  /** Only the first this many, in the order shown. */
+  most?: number;
 }) {
   const sorted = useSignal<SortOrder>(keptOrder(id, order, columns.filter((c) => c.sort).map((c) => c.id)));
   const by = columns.find((c) => c.id === sorted.value.column && c.sort);
-  const shown = by?.sort ? sortRows(rows, by.sort, sorted.value.dir) : rows;
+  const ordered = by?.sort ? sortRows(rows, by.sort, sorted.value.dir) : rows;
+  const shown = most === undefined ? ordered : ordered.slice(0, most);
   const press = (c: Column<T>) => {
     sorted.value = nextOrder(sorted.value, c.id, c.first);
     keepOrder(id, sorted.value);

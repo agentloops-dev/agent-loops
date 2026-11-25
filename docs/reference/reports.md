@@ -38,13 +38,29 @@ page.
 
 The list groups Reports' pages by the question each answers (spec #5276, option A): **Cost**
 (Spend), **Output** (Outcomes, Delivery), **Time** (Time), **Plan** (Forecast, Estimates), **Use**
-(Adoption, Runtimes, Workflows) and **Saved** (Saved Views); Audit is under Records, for admins.
+(Adoption, Runtimes, Workflows), **Storage** (Store sizes, behind a flag) and **Saved** (Saved Views); Audit is under Records, for admins.
 Usage and Multiplier are no longer pages: in the Me lens, Spend, Time and Outcomes end with **On
 your machines**, the charts of the pane each repeats (Cost and Tokens on Spend, Time on Time, the
 Multiplier and Velocity on Outcomes). Features is Status ▸ Features: it is about the product and
 the machines, not about work. An old `#/reports/usage`, `#/reports/multiplier` or
 `#/reports/features` opens its new place. The Mac's Cost ▸ Open Reports opens Spend in the Me lens,
 as before.
+
+## Reports ▸ Store sizes, on the web page
+
+**Store sizes** (#6907, `#/reports/stores`, under **Storage**) is behind the **Store sizes** switch in
+Settings ▸ This app ▸ Early Features. It lists each declared store of the control plane
+(`reports/storeSizes`, for an admin) and of each of your machines (`stores/list`): its size, its records,
+its average record, each of its limits with how much of it is used, when it was measured and its status.
+A limit for each person, machine or session shows the largest one.
+
+- **Over limit:** past its byte or its record limit. **Near limit:** 90% or more of one.
+- **Stale:** measured more than 2 h ago on a machine, or 12 h ago on the control plane.
+- **Unavailable:** not measured, or with no measure that its limits count; the row says why.
+- **A machine that does not answer** is named in the banner, with the age of what is shown of it.
+
+The page reads the last measurements and measures nothing. It shows what this browser read before at
+once, and says **Last update**. It has no lens.
 
 ## Reports ▸ Spend, on the web page
 

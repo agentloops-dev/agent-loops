@@ -25,6 +25,9 @@ export interface Section {
   built: boolean;
 }
 
+/** Reports ▸ Store sizes' page (#6907): about the stores, not about work, so it has no lens. */
+export const storesID = "stores";
+
 /** Reports' pages, grouped by the question each answers (#5280, spec #5276 option A): Cost, Output, Time, Plan and
  * Use. Each takes the lens bar's lenses: Me, a project and the organisation (#5279). Planning went into Delivery,
  * Forecast and Estimates; Usage and Multiplier into the Me lens of Spend, Time and Outcomes; Features to Status. */
@@ -38,6 +41,7 @@ export const reportSections: readonly Section[] = [
   { id: "adoption", title: "Adoption", about: "Who uses the agents each week, and which runtimes and workflows.", group: "Use", built: true },
   { id: "runtimes", title: "Runtimes", about: "Which runtime earns its cost: cost per merged pull request, and the sessions that failed.", group: "Use", built: true },
   { id: "workflows", title: "Workflows", about: "Each workflow’s runs, its failed runs, and the cost of a run.", group: "Use", built: true },
+  { id: storesID, title: "Store sizes", about: "How much space each store uses, how much of its limits that is, and when it was measured.", group: "Storage", built: true },
   { id: "saved", title: "Saved Views", about: "Your saved views, each to open or copy as a digest.", group: "Saved", built: true },
 ];
 
