@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/boundmap"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -35,7 +36,7 @@ func AddCost(c *wire.LineageCost, o wire.LineageCost) {
 		c.Cost = map[string]float64{}
 	}
 	for k, v := range o.Cost {
-		c.Cost[k] += v
+		boundmap.AddMoney(c.Cost, k, v)
 	}
 	c.InputTokens += o.InputTokens
 	c.OutputTokens += o.OutputTokens

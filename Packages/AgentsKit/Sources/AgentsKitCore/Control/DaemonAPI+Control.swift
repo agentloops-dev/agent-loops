@@ -340,6 +340,8 @@ public extension DaemonAPI {
         public var labels: [String]?
         /// The labels its provider sets itself; a person cannot change them.
         public var autoLabels: [String]?
+        /// What it does (#6609): `agents`, `control` or both; nil from an older control plane, which means agents.
+        public var roles: [String]?
 
         /// The labels a person set: all of them but the provider's.
         public var ownLabels: [String] {
