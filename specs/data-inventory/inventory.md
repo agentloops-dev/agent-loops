@@ -136,7 +136,7 @@ from the root (`agentsd/backups.go:69,72`). It holds nothing else.
 | `~/.agents/settings/*.json` | Settings that follow the person (see `docs/reference/agents-folder.md`) | fixed shape | n/a |
 | `~/.agents/summaries/*` | Daily summaries, none written since #5853 | the newest 3, 90 days after their last change (#6714) | hourly |
 | `~/.agents/checks/suggestions.json` | Daily-check findings | 50 suggestions, 200 dismissals (`dailychecks.go:38,48`) | on write |
-| `~/.agents-secrets/secrets.env`, `connections.json`, `provider-secrets.json` | Personal secrets, OAuth connections (Linux; the Keychain on a Mac), machine provider secrets | one per entry | the person edits them |
+| `~/.agents-secrets/secrets.env`, `connections.json`, `provider-secrets.json` | Personal secrets, OAuth connections (Linux; the Keychain on a Mac), machine provider secrets | one per entry; `connections.json`: 16 of 64 KiB each (#6743) | the person edits them |
 | `~/.agents-secrets/sessions/<agent>.json` | Session-only secrets | Values go at archive; the file goes at delete; orphans are swept at start (`sessionsecrets.go:221-275`) | archive, delete, start |
 
 ## 2. In each folder (`<folder>/.agents/`)
@@ -419,7 +419,7 @@ newer than a row above for the same store.
 | `~/.agents-secrets/mcp-sign-ins.json` | secret | MCP OAuth tokens | 200 sign-ins and 200 clients of 64 KiB; refuse; 200 notes of 4 KiB that a server needs a sign-in, 90 days | `Go/internal/agentsd/mcpcatalog/signins.go` (`signInStore`) | #6740 |
 | `~/.agents-secrets/hints.json` | secret | Last 4 characters of each secret | 200 of 256 bytes; refuse; with its secret | `Go/internal/agentsd/secretbounds.go` (`hintsFile`) | #6741 |
 | `~/.agents-secrets/descriptions.json` | key-value | Secret descriptions (not secret) | 400 of 2 KiB; refuse; with its secret; stays out of `.agents` (Alex, 2026-11-24) | `Go/internal/agentsd/secretbounds.go` (`descriptionsFile`) | #6742 |
-| Keychain `agents.connection.<hash>` (Linux `~/.agents-secrets/connections.json`) | secret | Forge connections: the token and settings that are not secret | No count limit; settings kept with the secret | `Go/internal/connections/store.go:110-156` | #6743 |
+| Keychain `agents.connection.<hash>` (Linux `~/.agents-secrets/connections.json`) | secret | Forge connections: the token, and where it is sent (stays with the token, Alex, 2026-11-24) | Linux: 16 of 64 KiB each; Mac: one a provider, a `security` line of 4,095 bytes; else refused; until removed | `Go/internal/connections/store.go` (`MaxConnections`) | #6743 |
 | `<root>/folders.json` | key-value | The folders the person added | Config in the data root | `Go/internal/agentsd/store/locations.go:104` | #6744 |
 | `<root>/wake.json` | key-value | Keep awake, grace hours, warm runtimes | Config in the data root | `Go/internal/agentsd/wake_darwin.go:18` | #6745 |
 | `<root>/backup-settings.json` | key-value | Backup target and Keep | Config in the data root | `Go/internal/agentsd/backups.go:43,127` | #6746 |

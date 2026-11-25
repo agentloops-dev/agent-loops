@@ -101,7 +101,6 @@
 2 Go/internal/codespacessh/codespacessh.go WriteAtomically
 1 Go/internal/conflictrisk/conflictrisk.go os.CreateTemp
 1 Go/internal/conflictrisk/conflictrisk.go os.WriteFile
-1 Go/internal/connections/store.go WriteAtomically
 1 Go/internal/controllink/hostkey.go os.WriteFile
 1 Go/internal/controllink/keys.go os.OpenFile
 2 Go/internal/controllink/membership.go os.WriteFile
