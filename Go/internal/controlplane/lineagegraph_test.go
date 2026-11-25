@@ -241,8 +241,7 @@ func (c *bytesStore) take() int {
 }
 
 // #6584: a lineage/sync of one change writes the same bytes, whatever the machine holds;
-// past mostLineageChanges a send merges them into one change (#6863), and a read gives the same answer before and
-// after the roll-up.
+// a read gives the same answer before and after a roll-up.
 func TestLineageSyncWritesOnlyTheChange(t *testing.T) {
 	t.Parallel()
 	counting := &bytesStore{Store: store.NewMemory(), prefix: lineageGraphPrefix}
@@ -329,40 +328,69 @@ func TestLineageSyncWritesOnlyTheChange(t *testing.T) {
 		!reflect.DeepEqual(before.states, after.states) {
 		t.Fatal("a roll-up changed the read's answer")
 	}
+}
 
-	// The send that makes mostLineageChanges merges them into one, at the cost of what they
-	// bring, not of what the machine holds (#6863, #7052).
-	each(0, mostLineageChanges-1)
-	n := one(big, 0)
-	if n <= bigBytes || n > mostLineageChanges*bigBytes {
-		t.Fatalf("%d bytes for a merge of %d changes of %d", n, mostLineageChanges-1, bigBytes)
+// #6863, #7052: the send that makes mostLineageChanges merges them into one, at the cost of
+// what they bring, not of what the machine holds; only changes of lineageRollUpBytes roll up.
+func TestLineageSyncMergesSmallChanges(t *testing.T) {
+	t.Parallel()
+	counting := &bytesStore{Store: store.NewMemory(), prefix: lineageGraphPrefix}
+	p := startPlane(t, counting, controllink.NewPrivateKey())
+	host := p.host("MAC").member.Host
+	ctx := context.Background()
+	now := time.Now()
+	session := wire.LineageNode{Kind: "session", Ref: "agents:session:#a1"}
+	links := make([]wire.LineageLink, mostSyncLinks)
+	for i := range links {
+		links[i] = wire.LineageLink{From: session, To: wire.LineageNode{Kind: "issue", Ref: fmt.Sprintf("github:issue:o/r#%05d", i)},
+			Rel: "works-on", Source: "start", At: wire.DateOf(now.Add(-time.Hour))}
 	}
-	if left := keptLineageChanges(ctx, t, counting, big); len(left) != 2 {
+	send := func(sync wire.LineageSync) int {
+		t.Helper()
+		counting.take()
+		if _, err := sendLineageSync(t, p, host, sync); err != nil {
+			t.Fatal(err)
+		}
+		return counting.take()
+	}
+	scope := func() *mergedLineage {
+		t.Helper()
+		g, err := p.s.keptLineageGraph(ctx, func(string) bool { return true })
+		if err != nil {
+			t.Fatal(err)
+		}
+		return g
+	}
+	yes := true
+	whole := send(wire.LineageSync{Links: links, Reset: &yes})
+	end := wire.DateOf(now)
+	last := 0
+	for i := range mostLineageChanges {
+		ended := links[i]
+		ended.EndedAt = &end
+		last = send(wire.LineageSync{Links: []wire.LineageLink{ended}})
+	}
+	if last > whole/10 {
+		t.Fatalf("%d bytes for a merge of %d changes; the machine's links are %d", last, mostLineageChanges-1, whole)
+	}
+	if left := keptLineageChanges(ctx, t, counting, host); len(left) != 2 {
 		t.Fatalf("%d changes left after the merge", len(left))
 	}
-	merged := scope()
+	before := scope()
 	if n, err := sweepLineageGraph(ctx, counting, p.s.records, now, 10); err != nil || n != 1 {
 		t.Fatalf("swept %d %v", n, err)
 	}
-	if after := scope(); !reflect.DeepEqual(merged.links, after.links) || !reflect.DeepEqual(merged.states, after.states) ||
-		endedLinks(after.links) != mostLineageChanges-1 {
+	if after := scope(); !reflect.DeepEqual(before.links, after.links) || endedLinks(after.links) != mostLineageChanges {
 		t.Fatal("a roll-up of merged changes changed the read's answer")
 	}
-	wantNoLineageChanges(ctx, t, counting, big)
+	wantNoLineageChanges(ctx, t, counting, host)
 
-	// Changes of lineageRollUpBytes are rolled up at once.
-	links := make([]wire.LineageLink, mostSyncLinks)
-	for i := range links {
-		links[i] = linkTo(i)
-	}
 	for range mostLineageChanges {
-		if _, err := sendLineageSync(t, p, big, wire.LineageSync{Links: links}); err != nil {
-			t.Fatal(err)
-		}
+		send(wire.LineageSync{Links: links})
 	}
-	wantNoLineageChanges(ctx, t, counting, big)
+	wantNoLineageChanges(ctx, t, counting, host)
 	// A link sent again as it was before it ended stays ended.
-	if got := endedLinks(scope().links); got != mostLineageChanges-1 {
+	if got := endedLinks(scope().links); got != mostLineageChanges {
 		t.Fatalf("%d ended", got)
 	}
 }
