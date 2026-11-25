@@ -94,3 +94,29 @@ func (s *Service) controlOnlyOn(machineID string) string {
 	}
 	return ""
 }
+
+// mergeControlMachine is for a host that enrolled under an id of its own on the machine the
+// control plane runs on: its record gets both roles and the control-only one is dropped, so
+// the machine is one record (#6609).
+func (s *Service) mergeControlMachine(ctx context.Context, host string, record records.MachineRecord) {
+	mine := s.controlMachineID()
+	if mine == "" || mine == host || record.MachineID == nil || s.cfg.MachineID == "" || *record.MachineID != s.cfg.MachineID {
+		return
+	}
+	only := s.records.Host(mine)
+	if only == nil || !only.ControlOnly() {
+		return
+	}
+	if err := s.records.ChangeHost(ctx, host, func(h *records.MachineRecord) bool {
+		h.Roles = []string{records.RoleAgents, records.RoleControl}
+		return true
+	}); err != nil {
+		s.log("could not give " + host + " the control role: " + err.Error())
+		return
+	}
+	if _, err := s.records.RemoveHost(ctx, mine); err != nil {
+		s.log("could not drop the control machine record " + mine + ": " + err.Error())
+		return
+	}
+	s.controlMachine.Store(&host)
+}

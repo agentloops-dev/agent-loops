@@ -2199,11 +2199,11 @@ func (s *Service) joiningHostID(stored *storedCode, a wire.MachineAnnounce) stri
 	want := records.NewHostID()
 	if stored.MadeHost != "" {
 		want = stored.MadeHost
+	} else if home {
+		want = "mac"
 	} else if only := s.controlOnlyOn(a.MachineID); only != "" && a.MachineID != "" {
 		// The machine's record is the control plane's: the host takes it over (#6609).
 		want = only
-	} else if home {
-		want = "mac"
 	}
 	return want
 }
@@ -2241,6 +2241,7 @@ func (s *Service) addJoiningHost(ctx context.Context, id string, a wire.MachineA
 	if err != nil {
 		return "", err
 	}
+	s.mergeControlMachine(ctx, host, record)
 	return host, nil
 }
 
