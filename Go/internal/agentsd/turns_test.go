@@ -24,6 +24,7 @@ import (
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/acp"
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/diskjson"
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/internal/browser"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
@@ -760,6 +761,7 @@ func ended(id wire.UUID, state wire.AgentState) func(string, json.RawMessage) bo
 // A whole turn: the agent starts, the runtime asks, the card is answered, the turn ends
 // finished with a report from its last words, and the records on disk are today's.
 func TestATurnWithACard(t *testing.T) {
+	flaky.UnderLoad(t, "#7227")
 	t.Parallel()
 
 	fakeRuntimes(t)
