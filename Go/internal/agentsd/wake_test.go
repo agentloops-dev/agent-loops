@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	goruntime "runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -249,5 +250,26 @@ func TestWakeSettingsMoveAndFollowTheFile(t *testing.T) {
 	write(blocked.old, `{"graceHours":6}`)
 	if s := blocked.Settings(); s.GraceHours != 6 || !fileExists(blocked.old) {
 		t.Fatalf("lost when it could not be moved: %+v", s)
+	}
+}
+
+// Nothing reads or moves wake.json before StartWake: the settings folder is not known yet.
+func TestWakeWaitsForTheSettingsFolder(t *testing.T) {
+	t.Parallel()
+
+	if goruntime.GOOS != "darwin" {
+		t.Skip("a Mac's")
+	}
+	root := t.TempDir()
+	old := filepath.Join(root, wakeFile)
+	must(t, os.WriteFile(old, []byte(`{"graceHours":5,"warmRuntimes":1}`), 0o600))
+	d, _ := start(t, root)
+	d.SettingsDir = filepath.Join(t.TempDir(), "settings")
+	if d.warmSettings(); !fileExists(old) || fileExists(filepath.Join(root, "settings", wakeFile)) {
+		t.Fatal("moved before StartWake")
+	}
+	d.StartWake()
+	if s := d.warmSettings(); s.WarmRuntimes != 1 || fileExists(old) || !fileExists(filepath.Join(d.SettingsDir, wakeFile)) {
+		t.Fatalf("%+v", s)
 	}
 }
