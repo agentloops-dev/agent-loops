@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
@@ -126,12 +127,15 @@ func (d *Daemon) forgeNext(ctx context.Context, r wire.ForgeNextRequest) (wire.F
 		return isEpic == epics && !d.prTakes(i.Node)
 	}
 
+	tree, err := d.forgeNextEpicTree(ctx, method, r.Folder, &out)
+	if err != nil {
+		return wire.ForgeNext{}, err
+	}
 	var items []wire.ForgeItem
-	var err error
 	if r.Epic != nil {
-		items, err = d.forgeNextEpicChildren(ctx, method, *r.Epic, keep)
+		items, err = d.forgeNextEpicChildren(ctx, method, *r.Epic, keep, tree)
 	} else {
-		items, err = d.forgeNextFolderItems(ctx, method, r.Folder, epics, keep, &out)
+		items, err = d.forgeNextFolderItems(ctx, method, r.Folder, epics, keep, tree, &out)
 	}
 	if err != nil {
 		return wire.ForgeNext{}, err
@@ -139,25 +143,111 @@ func (d *Daemon) forgeNext(ctx context.Context, r wire.ForgeNextRequest) (wire.F
 	items = items[:min(len(items), nextMost)]
 	for n, i := range items {
 		aged := n+1 < len(items) && nextKeys(i, items[n+1]) == 0
-		out.Rows = append(out.Rows, wire.ForgeNextRow{Item: i, Place: int64(n + 1), Reasons: nextReasons(i, aged, out.ReadAt),
-			OnHold: onHold(i)})
+		reasons := nextReasons(i, aged, out.ReadAt)
+		if tree.heldByEpic[i.Node] {
+			reasons[0] = "epic on hold"
+		}
+		out.Rows = append(out.Rows, wire.ForgeNextRow{Item: i, Place: int64(n + 1), Reasons: reasons, OnHold: onHold(i)})
 	}
 	return out, nil
 }
 
+// nextEpicTree is the folder's open epics, read once (#7035): an issue under an epic on hold,
+// at any depth, is on hold, and one under an epic with an open blocker is not ready.
+type nextEpicTree struct {
+	all     []wire.ForgeItem
+	epics   map[wire.LineageNode]wire.ForgeItem
+	blocked map[wire.LineageNode]bool
+	// heldByEpic are the items that are on hold only because an epic above them is.
+	heldByEpic map[wire.LineageNode]bool
+}
+
+// forgeNextEpicTree reads the folder's open epics, as many pages as a plan reads, and their
+// blockers, a page at a time.
+func (d *Daemon) forgeNextEpicTree(ctx context.Context, method, folder string, out *wire.ForgeNext) (nextEpicTree, error) {
+	tree := nextEpicTree{epics: map[wire.LineageNode]wire.ForgeItem{}, blocked: map[wire.LineageNode]bool{},
+		heldByEpic: map[wire.LineageNode]bool{}}
+	all, err := d.forgeNextReadOpen(ctx, method, folder, true, func(i wire.ForgeItem) bool {
+		return i.Node.Kind == lineage.KindIssue && i.State == "open" && (deref(i.Level) == "epic" || hasLabel(i, "epic"))
+	}, out)
+	if err != nil {
+		return tree, err
+	}
+	tree.all = all
+	for _, e := range all {
+		tree.epics[e.Node] = e
+	}
+	for len(all) > 0 {
+		page := all[:min(len(all), forgeListMost)]
+		all = all[len(page):]
+		blocked, err := d.openBlockers(ctx, method, page)
+		if err != nil {
+			return tree, err
+		}
+		maps.Copy(tree.blocked, blocked)
+	}
+	return tree, nil
+}
+
+// from says whether the open epic at node, or an open epic above it, is on hold, and whether one
+// has an open blocker. It ends at a node that is not an open epic of the folder, and at a loop.
+func (t nextEpicTree) from(node *wire.LineageNode) (held, blocked bool) {
+	seen := map[wire.LineageNode]bool{}
+	for node != nil && !seen[*node] {
+		e, ok := t.epics[*node]
+		if !ok {
+			break
+		}
+		seen[*node] = true
+		held = held || onHold(e)
+		blocked = blocked || t.blocked[*node]
+		node = e.Parent
+	}
+	return held, blocked
+}
+
+// apply keeps the items that no epic above blocks, and puts on hold those under an epic on hold;
+// held and blocked are what the epic above them all says, when they share one.
+func (t nextEpicTree) apply(items []wire.ForgeItem, above func(wire.ForgeItem) (held, blocked bool)) []wire.ForgeItem {
+	var out []wire.ForgeItem
+	for _, i := range items {
+		held, blocked := above(i)
+		if blocked {
+			continue
+		}
+		if held && !onHold(i) {
+			i.OnHold = new(true)
+			t.heldByEpic[i.Node] = true
+		}
+		out = append(out, i)
+	}
+	return out
+}
+
 // forgeNextEpicChildren is one epic's children that keep keeps and that have
 // no open blocker: its plan, with their blockers, as forge/plan reads it. They are in the one order.
-func (d *Daemon) forgeNextEpicChildren(ctx context.Context, method string, epic wire.LineageNode, keep func(wire.ForgeItem) bool) ([]wire.ForgeItem, error) {
+// The epic on hold, or one above it, puts them all on hold; an open blocker of the epic, or of
+// one above it, leaves none ready (#7035).
+func (d *Daemon) forgeNextEpicChildren(ctx context.Context, method string, epic wire.LineageNode, keep func(wire.ForgeItem) bool, tree nextEpicTree) ([]wire.ForgeItem, error) {
 	var items []wire.ForgeItem
-	_, children, _, err := d.forgePlanRead(ctx, method, epic)
+	e, children, _, err := d.forgePlanRead(ctx, method, epic)
 	if err != nil {
 		return nil, err
+	}
+	held, blocked := tree.from(&e.Node)
+	held = held || onHold(e)
+	if blocked {
+		return nil, nil
 	}
 	for _, c := range children {
 		if keep(c.item) && !slices.ContainsFunc(c.blockedBy, func(b planRef) bool { return b.open }) {
 			items = append(items, c.item)
 		}
 	}
+	items = tree.apply(items, func(i wire.ForgeItem) (bool, bool) {
+		h, b := tree.from(i.Parent)
+		return held || h, b
+	})
 	nextOrder(items)
 	return items, nil
 }
@@ -165,19 +255,27 @@ func (d *Daemon) forgeNextEpicChildren(ctx context.Context, method string, epic 
 // forgeNextFolderItems is the folder's open issues or epics that keep keeps, as many pages as
 // a plan reads, then their blockers in order, a page at a time, only until the rows are full.
 // It adds the errors of the forges to out.
-func (d *Daemon) forgeNextFolderItems(ctx context.Context, method, folder string, epics bool, keep func(wire.ForgeItem) bool, out *wire.ForgeNext) ([]wire.ForgeItem, error) {
-	all, err := d.forgeNextReadOpen(ctx, method, folder, epics, keep, out)
-	if err != nil {
+// An epic above an item that is on hold puts it on hold, and one with an open blocker leaves it
+// out (#7035); the epics and their own blockers are the tree's, not read again.
+func (d *Daemon) forgeNextFolderItems(ctx context.Context, method, folder string, epics bool, keep func(wire.ForgeItem) bool, tree nextEpicTree, out *wire.ForgeNext) ([]wire.ForgeItem, error) {
+	var err error
+	var all []wire.ForgeItem
+	if epics {
+		all = slices.DeleteFunc(slices.Clone(tree.all), func(i wire.ForgeItem) bool { return !keep(i) })
+	} else if all, err = d.forgeNextReadOpen(ctx, method, folder, false, keep, out); err != nil {
 		return nil, err
 	}
+	all = tree.apply(all, func(i wire.ForgeItem) (bool, bool) { return tree.from(i.Parent) })
 	nextOrder(all)
 	var items []wire.ForgeItem
 	for len(all) > 0 && len(items) < nextMost {
 		page := all[:min(len(all), forgeListMost)]
 		all = all[len(page):]
-		blocked, err := d.openBlockers(ctx, method, page)
-		if err != nil {
-			return nil, err
+		blocked := tree.blocked
+		if !epics {
+			if blocked, err = d.openBlockers(ctx, method, page); err != nil {
+				return nil, err
+			}
 		}
 		for _, i := range page {
 			if !blocked[i.Node] {
