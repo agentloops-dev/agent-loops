@@ -7,7 +7,7 @@ read and not run. A store below its total is no proof that a record was handled.
 
 | Kind | Where | At the limit and over it | Bulk | Migration | Replay | Result |
 | --- | --- | --- | --- | --- | --- | --- |
-| Small file (`store.JSONFile`) | machine | test: taken; refused with the limit in the words, the file unchanged | test: one over refuses all, nothing written | test: an old large entry does not stop others; `UpdateKeepingAll` keeps it (#7181) | test | The kind holds. Callers fail: #7184, #7186 |
+| Small file (`store.JSONFile`) | machine | test: taken; refused with the limit in the words, the file unchanged | test: one over refuses all, nothing written | test: an old large entry does not stop others; `UpdateKeepingAll` keeps it (#7181) | test | The kind holds. Callers fail: #7186 |
 | Other small files | machine | test: catalogue records; read: pins, approvals, folders, devices, policy copies, wake, lock | read | read: `moveSetting` copies as it is, the next write checks | read | #7188, #7189, #7203 |
 | Secret (`store.SecretFile`) | machine | test: refused, no name or value in the words, the earlier value intact | test | test (kind's own): a file over its limit opens and can shrink | test | Holds |
 | Secret | control plane | read: checked before the seal; a token's use and revoke are not | read | read | read, each retry | #7203 |
@@ -24,7 +24,7 @@ read and not run. A store below its total is no proof that a record was handled.
 | Blob | machine, control plane | read: attachment, dropbox, backup parts | read | read | none | #7203 (set-asides) |
 | Backend | control plane | test: memory, folder; S3 fake | none | none | none | #7195 |
 | Cache | Mac, Remote, web | test: a page and a picture kept at the limit, not over it, in bytes; a stale one goes | test: a list's pages | read: an old large record is read until it ages out (#7202) | read: an optimistic change over the limit is not made | Holds; an item over the limit goes, with its earlier copy (#7198) |
-| Drafts, settings | clients | test: web drafts; read: Mac's drafts, inbox, pins, start folders | read | read | read | #7199, #7202 |
+| Drafts, settings | clients | test: web drafts; read: Mac's drafts, inbox, pins, start folders | read | read | read | #7202 (#7199 fixed) |
 
 A refused write tells its caller: `store.ErrLimit` or `LimitError` with the name, the size and the
 limit. The stores that only log it have bugs above.
