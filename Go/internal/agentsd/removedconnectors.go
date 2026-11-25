@@ -69,7 +69,7 @@ func (d *Daemon) carryRemovedConnectors() error {
 	if json.Unmarshal(raw, &old) != nil || old.Servers == nil || old.Servers["removedAt"] != nil {
 		return nil //nolint:nilerr // a file in no shape known is left to the typed file, which sets it aside
 	}
-	return d.removedConnectors.CarryOver(func(m map[string]removedConnector) error {
+	return d.removedConnectors.UpdateKeepingAll(func(m map[string]removedConnector) error {
 		delete(m, top)
 		for name, entry := range old.Servers {
 			if _, there := m[name]; !there {
