@@ -28,15 +28,19 @@ func TestStoreSizes(t *testing.T) {
 	}
 	ask := func(s *controllink.Session) map[string]wire.StoreSize {
 		t.Helper()
-		var page wire.StoreSizes
-		if err := json.Unmarshal(call(t, s, "", "reports/storeSizes", wire.StoreSizesQuery{}), &page); err != nil {
-			t.Fatal(err)
-		}
 		out := map[string]wire.StoreSize{}
-		for _, s := range page.Stores {
-			out[s.ID] = s
+		for q := (wire.StoreSizesQuery{}); ; {
+			var page wire.StoreSizes
+			if err := json.Unmarshal(call(t, s, "", "reports/storeSizes", q), &page); err != nil {
+				t.Fatal(err)
+			}
+			for _, s := range page.Stores {
+				out[s.ID] = s
+			}
+			if q.Cursor = page.Cursor; q.Cursor == nil {
+				return out
+			}
 		}
-		return out
 	}
 	if s := ask(admin)["control.policy-versions"]; s.State != wire.StoreSizeStateUnavailable || s.Why == nil {
 		t.Errorf("before a measurement: %+v", s)
