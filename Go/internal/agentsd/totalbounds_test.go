@@ -24,6 +24,8 @@ func TestUsageAndTimePastTheirRowsLoseNoTotal(t *testing.T) {
 	defer d.Shutdown()
 	d.costMu.Lock()
 	defer d.costMu.Unlock()
+	d.timeMu.Lock()
+	defer d.timeMu.Unlock()
 	const n = 100
 	for i := range n {
 		name := fmt.Sprintf("r%d", i)
