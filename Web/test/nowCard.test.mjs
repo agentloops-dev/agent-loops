@@ -59,11 +59,12 @@ test("one Now card at the foot, after Waiting for you, and nothing of it over th
   }
 });
 
-test("the Now card is on the well, with its bar in the accent and no state colour", () => {
+test("the Now card is on the ground with a rule round it (#6818), with its bar in the accent and no state colour", () => {
   const css = appCss();
   const card = css.match(/^\.now-card \{([^}]*)\}/m);
   assert.ok(card, "a .now-card rule");
-  assert.match(card[1], /background: var\(--paper-well\)/);
+  assert.match(card[1], /background: var\(--paper-ground\)/);
+  assert.match(card[1], /border: 1px solid var\(--paper-rule\)/);
   assert.match(css, /\.now-bar > span \{[^}]*background: var\(--accent\)/);
   assert.doesNotMatch(read("Shared/UI/Chat/NowCard.swift"), /StateTint|tinted\(/);
 });

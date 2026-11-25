@@ -18,6 +18,13 @@ struct MachineLabelsTests {
         #expect(row.ownLabels == ["gpu", "team=a"])
     }
 
+    @Test func rolesAreReadWhenSaidAndNilFromAnOlderControlPlane() throws {
+        let said = Data(#"{"id":"m","name":"M","platform":"linux","version":"1","state":"online","reach":"dialOut","roles":["agents","control"]}"#.utf8)
+        #expect(try JSONDecoder().decode(DaemonAPI.ControlMachine.self, from: said).roles == ["agents", "control"])
+        let older = Data(#"{"id":"m","name":"M","platform":"linux","version":"1","state":"online","reach":"dialOut"}"#.utf8)
+        #expect(try JSONDecoder().decode(DaemonAPI.ControlMachine.self, from: older).roles == nil)
+    }
+
     @Test func typedLabelsAreSplitAndKeptOnce() {
         #expect(MachineLabels.parse("gpu, team=a  GPU") == ["gpu", "team=a"])
     }

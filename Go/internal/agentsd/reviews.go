@@ -104,23 +104,23 @@ func marked(f *store.JSONFile[reviewMark], read map[string][]wire.ReviewPull) ma
 		}
 	}
 	if len(newer) > 0 {
-		changeMarks(f, func(m map[string]reviewMark) { maps.Copy(m, newer) })
+		if err := changeMarks(f, func(m map[string]reviewMark) { maps.Copy(m, newer) }); err != nil {
+			log.Printf("for review: %s was not written: %v", f.Name(), err)
+		}
 	}
 	return marks
 }
 
-// changeMarks changes the file's marks. A failure is only said.
-func changeMarks(f *store.JSONFile[reviewMark], change func(map[string]reviewMark)) {
-	if err := f.Update(func(m map[string]reviewMark) error {
+// changeMarks changes the file's marks.
+func changeMarks(f *store.JSONFile[reviewMark], change func(map[string]reviewMark)) error {
+	return f.Update(func(m map[string]reviewMark) error {
 		change(m)
 		return nil
-	}); err != nil {
-		log.Printf("for review: %s was not written: %v", f.Name(), err)
-	}
+	})
 }
 
-func markReview(f *store.JSONFile[reviewMark], folder string, url wire.URL) {
-	changeMarks(f, func(m map[string]reviewMark) {
+func markReview(f *store.JSONFile[reviewMark], folder string, url wire.URL) error {
+	return changeMarks(f, func(m map[string]reviewMark) {
 		m[reviewMarkKey(folder, url)] = reviewMark{Folder: folder, URL: url, At: wire.DateOf(nowFunc())}
 	})
 }
@@ -238,10 +238,14 @@ func (d *Daemon) setReviews(read map[string][]wire.ReviewPull) {
 	}
 }
 
-// dismissReview takes a pull request out of a folder's For Review.
-func (d *Daemon) dismissReview(folder string, url wire.URL) {
+// dismissReview takes a pull request out of a folder's For Review. A dismissal that can't be
+// kept is refused, and the pull request stays: the next poll would bring it back (#7186).
+func (d *Daemon) dismissReview(folder string, url wire.URL) error {
 	d.reviewMu.Lock()
-	markReview(d.dismissed, folder, url)
+	if err := markReview(d.dismissed, folder, url); err != nil {
+		d.reviewMu.Unlock()
+		return Invalid("The pull request was not dismissed: %v", err)
+	}
 	prs := slices.DeleteFunc(slices.Clone(d.reviews[folder]), func(p wire.ReviewPull) bool { return p.URL == url })
 	if len(prs) == 0 {
 		delete(d.reviews, folder)
@@ -250,18 +254,23 @@ func (d *Daemon) dismissReview(folder string, url wire.URL) {
 	}
 	d.reviewMu.Unlock()
 	d.pinsChanged(folder)
+	return nil
 }
 
 // openReview keeps that the person opened a pull request, so its row is drawn read.
-func (d *Daemon) openReview(folder string, url wire.URL) {
+func (d *Daemon) openReview(folder string, url wire.URL) error {
 	d.reviewMu.Lock()
 	if _, ok := marked(d.opened, nil)[reviewMarkKey(folder, url)]; ok {
 		d.reviewMu.Unlock()
-		return
+		return nil
 	}
-	markReview(d.opened, folder, url)
+	err := markReview(d.opened, folder, url)
 	d.reviewMu.Unlock()
+	if err != nil {
+		return Invalid("The pull request was not marked as opened: %v", err)
+	}
 	d.pinsChanged(folder)
+	return nil
 }
 
 func (d *Daemon) registerReviews() {
@@ -273,8 +282,7 @@ func (d *Daemon) registerReviews() {
 		if strings.TrimSpace(string(r.URL)) == "" {
 			return wire.Empty{}, Invalid("reviews/dismiss names the pull request's url.")
 		}
-		d.dismissReview(folder, r.URL)
-		return wire.Empty{}, nil
+		return wire.Empty{}, d.dismissReview(folder, r.URL)
 	})
 	On(d, wire.CallReviewsOpen, func(ctx context.Context, c *Client, r wire.ReviewOpenRequest) (wire.Empty, error) {
 		folder, err := d.knownPinFolder(r.Folder)
@@ -284,8 +292,7 @@ func (d *Daemon) registerReviews() {
 		if strings.TrimSpace(string(r.URL)) == "" {
 			return wire.Empty{}, Invalid("reviews/open names the pull request's url.")
 		}
-		d.openReview(folder, r.URL)
-		return wire.Empty{}, nil
+		return wire.Empty{}, d.openReview(folder, r.URL)
 	})
 }
 

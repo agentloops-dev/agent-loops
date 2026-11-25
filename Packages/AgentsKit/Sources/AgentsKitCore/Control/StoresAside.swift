@@ -7,7 +7,8 @@ import Foundation
 /// folders also have a size and an age (#6769).
 public enum StoresAside {
     public static let kept = 2
-    /// The most bytes of all the folders together, but the newest is never deleted for size.
+    /// The most bytes of all the folders together, but the newest is never deleted for size (Alex, #6769). So a folder has
+    /// no largest size of its own: it is the control plane's whole store, moved, which its families' limits bound.
     public static let mostBytes = 1 << 30
     /// The most age of a folder, once the control plane here has taken its place.
     public static let folderAge: TimeInterval = 90 * 86_400
@@ -115,7 +116,7 @@ public enum StoresAside {
         }
     }
 
-    // store-bounds: kind=blob; count=2; size=1GiB; age=90d; action=evict; record=1GiB; applied=on write and hourly, the newest by age only, and no age while the control plane is away
+    // store-bounds: kind=blob; count=2; size=1GiB; age=90d; action=evict; applied=on write and hourly, the newest by age only, and no age while the control plane is away
     /// Deletes the `store-before-*` folders in `home` that are past a limit. `home`'s own
     /// `store` with no records takes no folder's place. Answers the names deleted; one that
     /// could not be deleted is left for the next time.

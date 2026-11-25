@@ -12,6 +12,7 @@ import (
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/mcpcatalog"
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/skillcatalog"
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/hostsetup"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -36,6 +37,10 @@ func (d *Daemon) sweepSmallStores(now time.Time) {
 	d.sweepUnseenDevices(now)
 	d.sweepConnectorSetup()
 	d.sweepHostedLogs(now)
+	if d.Store != nil {
+		hostsetup.Sweep(d.Store.Loc.Root, now)
+	}
+	d.sweepSignInRelays()
 	d.sweepCatalogItems(now, gone)
 	d.sweepAccountHomes(now)
 	carryErr := d.carryRemovedConnectors()
@@ -135,9 +140,11 @@ func (d *Daemon) sweepReviewFolders(gone func(string) bool) {
 	d.reviewMu.Lock()
 	defer d.reviewMu.Unlock()
 	for _, f := range []*store.JSONFile[reviewMark]{d.dismissed, d.opened} {
-		changeMarks(f, func(m map[string]reviewMark) {
+		if err := changeMarks(f, func(m map[string]reviewMark) {
 			maps.DeleteFunc(m, func(_ string, r reviewMark) bool { return gone(r.Folder) })
-		})
+		}); err != nil {
+			log.Printf("for review: %s was not written: %v", f.Name(), err)
+		}
 	}
 }
 

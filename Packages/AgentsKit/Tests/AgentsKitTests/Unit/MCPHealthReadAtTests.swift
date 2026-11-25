@@ -16,6 +16,10 @@ struct MCPHealthReadAtTests {
         let hosted = DaemonAPI.MCPServerHealth(name: "shared", folder: nil, transport: .stdio, hosted: true)
         #expect(MCPHealthWords.line(github) == "Answered \u{00B7} 3 tools")
         #expect(MCPHealthWords.line(local) == "Didn't answer")
+        let mine = DaemonAPI.MCPServerHealth(name: "mine", folder: nil, transport: .stdio, check: .waiting)
+        let waiting = DaemonAPI.MCPServerHealth(name: "shared", folder: nil, transport: .stdio, hosted: true, check: .waiting)
+        #expect(MCPHealthWords.line(waiting) == MCPHealthWords.line(mine))
+        #expect(MCPHealthWords.line(mine) == "Not approved on this machine, so it is not started")
         #expect(MCPHealthWords.readAt([github, local, hosted]) == old)
         #expect(MCPHealthWords.readAt([hosted]) == nil)
     }

@@ -682,7 +682,8 @@ struct PromptBar: View {
                     .disabled(!canSend && !isGoing)
                     .keyboardShortcut(.return, modifiers: .command)
                     .help(targetOffline ? model.offlineHelp(for: targetHost)
-                                        : PromptWords.sendHelp(willQueue: willQueue))
+                          : targetSettingUp ? MachineSetupWords.noSessionYet(model.hosts.label(targetHost))
+                          : PromptWords.sendHelp(willQueue: willQueue))
                     .accessibilityLabel(PromptWords.sendLabel(willQueue: willQueue))
                 }
             }
@@ -1097,6 +1098,7 @@ struct PromptBar: View {
                 .fixedSize(horizontal: false, vertical: true)
             Spacer()
             Button(LevelWords.openAutoSettings) {
+                // store-bounds: not a store: one fixed key, an id
                 WindowDefaults.store.set(LevelWords.autoID, forKey: "settingsRuntimeID")
                 openSettings()
             }
@@ -1182,6 +1184,9 @@ struct PromptBar: View {
     /// Offline, and not a stopped workspace that keeps what is sent until it is up (#691 US3).
     private var targetOffline: Bool { model.hosts.isOffline(targetHost) && !model.startsWhenUsed(targetHost) }
 
+    /// A new session waits until its machine's set-up is done (#5357, #7108).
+    private var targetSettingUp: Bool { agent == nil && model.hosts.settingUp(targetHost) }
+
     /// Who the prompt goes to, as the pending mark says it.
     private var recipient: String {
         if let agent { return model.answerRecipient(agent.id) }
@@ -1204,7 +1209,7 @@ struct PromptBar: View {
         // One new agent at a time: a second Return is not a second agent (#87).
         if agent == nil, model.isStarting { return false }
         // Kept in the field, never sent into nothing.
-        guard !targetOffline else { return false }
+        guard !targetOffline, !targetSettingUp else { return false }
         if agent != nil { return true }
         return model.draftCwd != nil && model.draftRuntimeID != nil
     }

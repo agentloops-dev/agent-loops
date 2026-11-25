@@ -10,7 +10,15 @@ import (
 // Groups (#1761, spec 736 data-model.md "Group"): everyone, or named users. A group owns
 // machine providers, and a bot's cost (FR-027, FR-028, FR-033).
 
+// store-bounds: kind=document; count=1_000 (not removed); size=256KiB a record; age=until-deleted; applied=on write (a group over it is refused, and so is a new one past the count), removed groups go with the tombstones' sweep
 const GroupsPrefix = "v1/groups/"
+
+// The largest group, and the most groups, removed ones too (#7248). A person or SCIM made a
+// group: it is refused over them, never cut.
+const (
+	GroupMostBytes = 256 << 10
+	GroupsMost     = 1_000
+)
 
 // GroupKey is where a group is kept.
 func GroupKey(id string) string { return GroupsPrefix + id + ".json" }
@@ -86,6 +94,19 @@ func (g *Group) Has(user string) bool {
 		}
 	}
 	return false
+}
+
+// liveGroups is how many groups are not removed.
+func (r *Records) liveGroups() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	n := 0
+	for _, h := range r.groups {
+		if !h.record.IsRemoved() {
+			n++
+		}
+	}
+	return n
 }
 
 func (r *Records) loadGroups(ctx context.Context) error {
@@ -181,6 +202,16 @@ func (r *Records) ChangeGroup(ctx context.Context, id string, change func(*Group
 	if there {
 		next.Rev = h.record.Rev + 1
 		condition = store.Matching(h.etag)
+	}
+	if !there && r.liveGroups() >= GroupsMost {
+		return nil, TooMany("The control plane's groups", GroupsMost)
+	}
+	data, err := Encode(*next)
+	if err != nil {
+		return nil, err
+	}
+	if err := Fits(ctx, r.Store, GroupKey(next.ID), "The group "+next.Name, data, GroupMostBytes); err != nil {
+		return nil, err
 	}
 	kept, etag, err := write(ctx, r.Store, *next, GroupKey(next.ID), condition)
 	if err != nil {

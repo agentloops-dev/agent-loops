@@ -53,12 +53,12 @@ func (d *Daemon) forwardSetupReports(ctx context.Context, file string, every tim
 		if err != nil {
 			continue
 		}
+		before := offset
 		if int64(len(data)) < offset {
 			// The installer began a new run.
 			offset, prelude = 0, false
 			watch = true
 		}
-		before := offset
 		offset, tries, prelude = d.forwardSetupReportLines(ctx, *ask, data, offset, tries, prelude)
 		if offset != before {
 			if err := store.WriteAtomically(file+".sent", []byte(strconv.FormatInt(offset, 10)), 0o600); err != nil {

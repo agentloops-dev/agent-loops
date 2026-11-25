@@ -2,6 +2,7 @@
 // tab (sessionStorage), so a reload keeps them and another tab starts with every session.
 import { signal } from "@preact/signals";
 import type { Agent } from "../protocol/generated";
+import { putEntry } from "./keyValue";
 import { sessionMark } from "./sidebar";
 
 export type StateFilter = "any" | "needsYou" | "working" | "done";
@@ -17,7 +18,13 @@ function read(key: string): string | null {
 }
 
 function write(key: string, value: string | null): void {
-  try { if (value === null) storage?.removeItem(key); else storage?.setItem(key, value); } catch { /* private mode: for this page only */ }
+  if (value !== null) {
+    // The tab's own: the browser deletes it with the tab.
+    // store-bounds: kind=key-value; count=2; age=until-deleted; action=refuse; record=1KiB; applied=on write
+    putEntry(storage, key, value, 1024);
+    return;
+  }
+  try { storage?.removeItem(key); } catch { /* private mode: for this page only */ }
 }
 
 /** The machine whose folders show, by id; null for every machine. */

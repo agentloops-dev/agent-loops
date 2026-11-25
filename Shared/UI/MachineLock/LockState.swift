@@ -559,7 +559,9 @@ struct LockPins {
     }
 
     func save(_ pin: MachineLock.Pin) {
-        if let data = try? JSONEncoder().encode(pin) { defaults.set(data, forKey: name) }
+        guard let data = try? JSONEncoder().encode(pin), roomForPin(name) else { return }
+        // store-bounds: kind=key-value; count=5000; age=until-deleted; action=refuse; record=1KiB; applied=on write, when the control plane answers, and on Forget
+        defaults.putEntry(data, forKey: name, most: KeyValueBounds.lockPin)
     }
 
     /// The whole lock last checked (#3492), beside its pin.
@@ -568,7 +570,11 @@ struct LockPins {
     }
 
     func saveLock(_ lock: DaemonAPI.Lock) {
-        if let data = try? JSONEncoder().encode(lock) { defaults.set(data, forKey: name + ".lock") }
+        let key = name + ".lock"
+        guard let data = try? JSONEncoder().encode(lock),
+              defaults.hasRoom(forKey: key, most: KeyValueBounds.locks, counted: { $0.hasSuffix(".lock") && isPin($0) }) else { return }
+        // store-bounds: kind=document; count=100; age=until-deleted; action=refuse; record=1MiB; applied=on write, when the control plane answers, and on Forget
+        defaults.putEntry(data, forKey: key, most: KeyValueBounds.lock)
     }
 
     /// Forgets the lock, for a new one (#3493): the next lock read is taken on first use.
@@ -593,5 +599,18 @@ struct LockPins {
     /// The person saved or skipped the recovery key on this device (#3493).
     func recoveryDone(_ person: String) -> Bool { defaults.bool(forKey: "\(name).recoveryDone.\(person)") }
 
-    func setRecoveryDone(_ person: String) { defaults.set(true, forKey: "\(name).recoveryDone.\(person)") }
+    func setRecoveryDone(_ person: String) {
+        let key = "\(name).recoveryDone.\(person)"
+        guard roomForPin(key) else { return }
+        // store-bounds: not a store: a mark is one of the pins' 5,000 entries, which `save` declares
+        defaults.set(true, forKey: key)
+    }
+
+    /// Whether a pin or a mark can be kept under `key`: a pin shows that a lock went back, so none goes to make room (#7252).
+    private func roomForPin(_ key: String) -> Bool {
+        key.utf8.count <= KeyValueBounds.lockPin
+            && defaults.hasRoom(forKey: key, most: KeyValueBounds.lockPins, counted: { !$0.hasSuffix(".lock") && isPin($0) })
+    }
+
+    private func isPin(_ key: String) -> Bool { key == name || key.hasPrefix(name + ".") || key.hasPrefix(name + ":") }
 }

@@ -57,7 +57,7 @@ from the root (`agentsd/backups.go:69,72`). It holds nothing else.
 |---|---|---|---|---|
 | `agents/<ID>/agent.json` | The agent's record | **life.** An archived agent is deleted after 7/14/30/90 days, 30 by default, a pinned one after 90 (`retention.go`, `sweepArchived`). | at start, then hourly (`retention.go:15,96-110`) | yes |
 | `agents/<ID>/transcript.jsonl` | The whole conversation | **10 MB, 90 days**, live and pinned too; an entry 4 MB (`store/conversations.go`, #6706) | at start, then hourly; soon after a write past 20 MB | yes |
-| `agents/<ID>/app-tools.jsonl` | Each call to an app tool | **2 MB, 90 days**; answers and arguments cut to 2,000 runes (`store/conversations.go`, #6706) | at start, then hourly; soon after a write past 4 MB | yes |
+| `agents/<ID>/app-tools.jsonl` | Each call to an app tool | **2 MB, 90 days**; answers and arguments cut to 2,000 runes and a …, and a call to 512 KiB of arguments (#7187) (`store/conversations.go`, #6706) | at start, then hourly; soon after a write past 4 MB | yes |
 | `agents/<ID>/said.json` | Search index of what was said | 32 KiB (`said.go:22`) | with the agent | yes |
 | `<cache>/turns/<ID>.jsonl` | Turn summaries | life. Media base64 is limited (`turns.go:1197`). | with the agent (`store/store.go:217`) | **no** (the backup reads the wrong path) |
 | `erasures.json` | Runtime copies still to erase | 1,000 entries, 3 tries, 7 days (`erasure.go:40-45`) | on write | no |
@@ -198,9 +198,9 @@ handover also leaves out `v1/keys/` (`storecopy.go:21,25`).
 | `v1/clients/<UUID>.json` | Name, kind, public key, last seen, APNs token, ≤16 Live Activity tokens (12 h each), Web Push subscription | 16 KiB a record, 1 MiB in all (#6757; hosted: 5/50 clients too). Key life 90 days (`keylife.go:18`). | Tombstone 7 days. A client whose key expired is forgotten by the hourly sweep (#6757). |
 | `v1/machines/<id>.json` | Name, key, platform, version, owner, workspace | 32 KiB a record, 1 MiB in all (#6758; hosted: 2/20 machines too) | Tombstone 7 days. A machine with no workspace whose key expired is removed by the hourly sweep (#6758); a linked one stays until removed. |
 | `v1/people/<id>.json` | Name, role, sign-ins (email, login), SCIM part, old names (90 days) | 16 KiB a record, 1 MiB in all, removed people 1 MiB more (#7019) | A removed person goes after 14 days, or 90 when they have a sign-in (#6756) |
-| `v1/groups/<id>.json` | Name, members | 1,000 (`groups.go:20`) | tombstone 7 days |
-| `v1/projects/<id>.json` | Name, owner, slots, ≤20 boards | 500 per person (`projects.go:36`) | tombstone 7 days |
-| `v1/projectFolders/<host>.json` | A machine's joined folders | 1,000 | orphan sweep |
+| `v1/groups/<id>.json` | Name, members | 1,000, 256 KiB each (`records/groups.go`, #7248) | tombstone 7 days |
+| `v1/projects/<id>.json` | Name, owner, slots, ≤20 boards | 500 per person, 64 KiB each (`records/projects.go`, #7248) | tombstone 7 days |
+| `v1/projectFolders/<host>.json` | A machine's joined folders | 1,000, 512 KiB (#7248) | orphan sweep |
 | `v1/locks/<person>/<n>.json` | Machine-lock chain | 4,096 per person (`machinelock/lock.go:40`) | only on Reset. **Not deleted when the person is removed.** |
 | `v1/users/<u>/settings.json`, `notices.json`, `secrets/<NAME>.json`, `offers/` | Person settings, notice bucket, sealed secrets, agents' offers | 256 KiB a part, 5 MiB of settings, 16 KiB a secret sealed to 200 (5 MiB), 200 secrets, 200 tombstones, 100 offers (`usersettings/usersettings.go`) | on write; on person removal; a removed secret's tombstone hourly at 90 days (#6780) |
 | `v1/links/<channel>/<sha>.json` | Channel identity → person, and when it last acted | 4 KiB a record, 1 MiB in all (#6763) | 90 days unused, hourly; on unlink or person removal |
@@ -225,13 +225,13 @@ handover also leaves out `v1/keys/` (`storecopy.go:21,25`).
 | Key | Holds | Bound | Swept |
 |---|---|---|---|
 | `v1/kept/<host>/<seq>-<id>.json` | Prompts and agent starts for a stopped workspace, **with attachments** | 20 per host, **waiting ones only** (`providers/kept.go:21,176`); each up to 40 MiB | on delivery or host removal. **Failed ones are never deleted.** |
-| `v1/copies/<host>.json` | A host's last folders and agents (≤500, **with titles**) | 1 per host | on host forget |
-| `v1/usage/hours/`, `v1/usage/days/` | Usage and cost by person, project, folder, machine, runtime | 7 days / 90 days (`reports.go:30-31`) | hourly |
+| `v1/copies/<host>.json` | A host's last folders and agents (≤500, **with titles**) | 1 per host, 4 MiB; a heartbeat 4 KiB (#7248) | on host forget |
+| `v1/usage/hours/`, `v1/usage/days/` | Usage and cost by person, project, folder, machine, runtime | 7 days / 90 days (`reports.go`); 1 MiB a period, 200,000 hours and 100,000 days (#7248) | hourly |
 | `v1/lineage/<host>.json` | Cost per issue, PR and session node | 5,000 nodes of 64 KiB, 32 MiB, 90 days (`lineagecost.go`, `boundLineage`, #6768) | on write, hourly |
 | `v1/lineage-graph/<host>/links.json`, `states.json`, `changes/*.json` | A machine's lineage links and its sessions' state changes (#4275); each send's changes since the last roll-up (#6584) | Links by `lineage.Bound` (ended 90 days, 20,000); states as on the machine (90 days, each session's last, `lineage.MostStates`); at most `mostLineageChanges` (32) changes before a send or the hourly sweep rolls them up; a removed machine's after a day (`lineagegraph.go`) | on write, hourly |
 | `v1/deploys/<host>.json` | A machine's deploys, as deploys/delivery's figures need them: refs, names, states, times, tiers, merge times; no titles or logs (#5496) | 1,000 deploys a send, each in place of the last; of each deploy the newest 1,000 merges and 200 health signals, 20 environments; a removed machine's after a day (`deploys.go`) | on write, hourly |
 | `v1/build-timings/<host>/<forge>/<path>/<day>.json`, `meta.json` | A machine's CI runs, jobs and steps of a repository: refs, times, conclusions, runner labels, names; no titles or logs (#5232) | As on the machine (`citimings`: 90 days, 20,000 runs a repository, PR steps 14 days), each day bounded on write; a stopped machine's swept once a day; a removed machine's after a day (`builds.go`) | on write, hourly |
-| `v1/runs/<day>/<hash>.json` | Workflow trigger claims | 7 days; **no per-day cap** | hourly |
+| `v1/runs/<day>/<hash>.json` | Workflow trigger claims | 7 days; 4 KiB a claim; 100,000 claims (#7248) | hourly |
 | `v1/reports/views/<user>.json` | Saved report views | 50, 64 KiB a person (#6779) | on write; person removal |
 | `v1/providers/<id>.json` | Machine providers | 10, 64 KiB each, more is refused (#6762) | on remove; a tombstone after 7 days, and past 100 the oldest |
 | `v1/machine-names/<person>.json` | The person's machine-N counter (#3972), the provider New Machine uses and what the person chose on each provider's form last (#3979; only the values that were not the form's defaults, in `chosen`, #6686) | 1 per person: one number, one provider id, one set of choices per provider that is still here; 64 KiB (#6759) | person removal, and hourly for a removed person; no age before that (a number is never used again) |
@@ -250,7 +250,7 @@ handover also leaves out `v1/keys/` (`storecopy.go:21,25`).
 | `v1/keys/control.sealed` (+ previous) | KMS-sealed control key | 2; previous after 30 days | — |
 | `v1/backups.key` | Sealed key for server backups | 1 | — |
 | `v1/backups/<owner>/<host>/<name>/…` | Servers' sealed backups (transcripts) | 8 MiB × 1,024 parts = 8 GiB a backup; Keep 1–10, **so up to ≈80 GiB a host**; a removed host's for 90 days (`backups.go:52-56`) | on commit, daily. Stray parts age by a **name time the host chooses**, so a future time never ages. |
-| `v1/leases/`, `v1/copies/<copyID>.json` | Mesh leases and heartbeats | 30 s | orphan sweep |
+| `v1/leases/`, `v1/copies/<copyID>.json` | Mesh leases and heartbeats | 30 s; a lease 1 KiB, a heartbeat 4 KiB (#7248) | orphan sweep |
 | `handover/forwarding-*`, `handover/mark-*` | Move forwarding; move check marks | forwarding ≤30 days. **An abandoned mark stays for ever.** | — |
 | `probe/<copy>-<hex>` | Start-up probe | removed with `defer`; a folder store sweeps after 1 h. **On S3, never.** | — |
 
@@ -288,17 +288,17 @@ Sessions are signed cookies (30 days); the server keeps nothing for them.
 | Store | Holds | Bound | Cleared |
 |---|---|---|---|
 | Defaults `draft.agent.<uuid>`, `draft.new.<folder>`, `draft.start` | Unsent prompts and attachments, ≤1 MiB each | 40 drafts, a new one over that refused; 30 days (`DraftStore.swift`); removed on archive (`App/Sources/Chat/DraftKeeper.swift`) | archive, 30 days, send |
-| Defaults `newSessionProjectFolders` | Last folder per project | **none** | never |
-| Defaults `sidebar.folds` / `folded` / `openSessions` | Sidebar fold state | `openSessions` 200; **fold sets none** | never |
-| Defaults `sidebar.<window>.width` / `.pane` | Inspector size per folder window | **none** | never |
-| Defaults `machineLockPin.<ctrlkey>` (+ `.lock`, `:<person>`) | Machine-lock pins and the stored lock | **none**; one set per control plane and person | only on a lock reset. **Not on Forget.** |
+| Defaults `newSessionProjectFolders` | Last folder per project | 1,000 of 2 KiB, a new one past that not kept (#7252) | with its folder |
+| Defaults `sidebar.folds` / `folded` / `openSessions` | Sidebar fold state | `openSessions` 200; 1,000 open and 1,000 folded names of 2 KiB a scope (#7252) | with their folder |
+| Defaults `sidebar.<window>.width` / `.pane` | Inspector size per folder window | 2,000 (#7252) | with its folder |
+| Defaults `machineLockPin.<ctrlkey>` (+ `.lock`, `:<person>`) | Machine-lock pins and the stored lock | 5,000 of 1 KiB, and 100 whole locks of 1 MiB, one past that refused (#7252) | a lock reset, another control plane, Forget |
 | Defaults display and UI choices | Fixed key set | fixed | — |
 | Defaults domains `<bundle>.walk.*`, `.root.*` | A scratch copy's preferences | walk: when its folder is gone; root: 7 days (`WindowDefaults.swift:38`) | at launch |
 | `…/Application Support/Agents/control-client.json`, `control-client.here.json` | Pairing (0600, not backed up) | 1 | Forget This Mac |
 | Keychain `control-client-key`, `lock-signing-key` (+ `.walk.<name>`) | Client key, lock signing key | **one more per walk name, never removed** | never (Forget keeps the client key by design) |
 | `WKWebsiteDataStore.default()` (browser pane), and defaults `browserPane.sites` | Cookies, logins, localStorage, caches of the sites the pane opened, and when each was last opened (`App/Sources/Sidebar/BrowserPaneStore.swift`) | 10 MB, 100 sites, 90 days since last opened (#6796) | hourly sweep; Forget This Mac |
 | Kokoro voice models (FluidAudio cache) | TTS models, copied or downloaded | **none**; can be hundreds of MB (`Shared/UI/Voice/KokoroVoice.swift:89-107`) | never |
-| `~/Library/Logs/Agents/crashes/`, `hangs/` | Crash notes, hang stacks | 20 each | at launch |
+| `~/Library/Logs/Agents/crashes/`, `hangs/` | Crash notes, hang stacks | 20 each; a hang note 2 MiB, 90 days (#7252) | at launch, hourly |
 | `$TMPDIR/agents-output-*` | See section 3 | none | — |
 
 ### Remote (iPhone and iPad)
@@ -306,10 +306,10 @@ Sessions are signed cookies (30 days); the server keeps nothing for them.
 | Store | Holds | Bound | Cleared |
 |---|---|---|---|
 | Defaults `draft.agent.<uuid>`, … | Unsent prompts and attachments, ≤1 MiB each | As the Mac: 40 drafts, 30 days, archive (`Remote/Sources/StartAgent/StartDraftKeeper.swift`) | archive, 30 days, send |
-| App group `Library/Caches/attention-snapshot.json` | The widget's needs-you rows **with headlines in plain text** | 12 rows; stale after 15 minutes | **not on Forget**: the widget keeps showing the old pairing |
+| App group `Library/Caches/attention-snapshot.json` | The widget's needs-you rows **with headlines in plain text** | 12 rows, 64 KiB, 90 days (#7252); stale after 15 minutes | **not on Forget**: the widget keeps showing the old pairing |
 | Defaults `machineLockPin.*`, `newSessionProjectFolders`, fold sets | As on the Mac | **none** | never |
 | Defaults `liveActivityTurns` | Turns covered by the Live Activity | the activity's sessions | when the activity ends |
-| `Library/Caches/remote.log` (+ `.1`) | Device log | 256 KiB × 2 | rotation |
+| `Library/Caches/remote.log` (+ `.1`) | Device log | 256 KiB × 2, a line 64 KiB, 90 days (#7252) | rotation |
 | `Application Support/Agents/control-client.json` | Pairing | 1 | Forget This iPhone |
 | Keychain `device-key` (shared group), `control-client-key`, `lock-signing-key` | Device and client keys | 1 each | never |
 | Delivered notifications, categories | Banners | 32 categories | on reconnect; not on Forget |

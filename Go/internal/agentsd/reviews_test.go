@@ -174,7 +174,7 @@ func TestOpenedReviewsAgeOut(t *testing.T) {
 	root, folder := t.TempDir(), t.TempDir()
 	must(t, os.WriteFile(filepath.Join(root, "review-opened.json"), []byte(`{"`+folder+`":["https://x/1"]}`), 0o600))
 	d, _ := start(t, root)
-	d.openReview(folder, "https://x/2")
+	must(t, d.openReview(folder, "https://x/2"))
 	began, changed := wire.DateOf(nowFunc()), wire.DateOf(nowFunc())
 	opened := func() string {
 		d.setReviews(map[string][]wire.ReviewPull{folder: {{URL: "https://x/1", UpdatedAt: began}, {URL: "https://x/2", UpdatedAt: changed}}})

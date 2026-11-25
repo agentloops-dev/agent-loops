@@ -1163,6 +1163,17 @@
           "$ref": "machines.schema.json#/definitions/MachineSetup",
           "description": "How its set-up stands, while it sets itself up and after (#5355). Absent for a machine that was not set up by the control plane."
         },
+        "roles": {
+          "type": "array",
+          "description": "What it does (#6609): agents, control or both. Absent from an older control plane, which means agents.",
+          "items": {
+            "type": "string",
+            "enum": [
+              "agents",
+              "control"
+            ]
+          }
+        },
         "labels": {
           "type": "array",
           "description": "Its labels (#5284): key or key=value, sorted. The ones its provider sets (os=, arch=, provider=) come first in autoLabels and are here too; a person adds others with machines/setLabels.",

@@ -322,7 +322,7 @@ func (in PersonaInstaller) Add(st StagedPersona, place Place, replace bool, now 
 	lock.UpsertPersona(id, PersonaEntry{Source: source, Path: p.Path, Commit: p.Commit, BlobSHA: p.BlobSHA}, now)
 	if err := lock.Write(); err != nil {
 		putBack()
-		return wire.ManagedPersona{}, Failed("could not write " + filepath.Base(place.Lock))
+		return wire.ManagedPersona{}, lock.writeFailed(err)
 	}
 	return wire.ManagedPersona{Destination: place.Destination, ID: id, Source: source, Path: p.Path, Commit: optional(p.Commit),
 		Update: wire.UpdateState{Current: &struct{}{}}}, nil
@@ -352,7 +352,7 @@ func (PersonaInstaller) Remove(id string, place Place, now time.Time) (string, e
 				log.Printf("personas: could not put %s back from the Trash: %v", filepath.Base(target), err)
 			}
 		}
-		return "", Failed("could not write " + filepath.Base(place.Lock))
+		return "", lock.writeFailed(err)
 	}
 	if trashed == "" {
 		return target, nil

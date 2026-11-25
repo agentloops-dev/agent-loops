@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
 	goruntime "runtime"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -34,6 +36,11 @@ const (
 	assessNeverBranch = "assess-never"
 	assessLongWait    = 1440
 	appToolAnswerMost = 2000
+	// appToolNameMost is the most runes of an argument's or a tool's name, and
+	// appToolArgsMost the most bytes of one call's arguments, as app-tools.jsonl keeps them.
+	// The log refuses a record over 1 MiB (#7187).
+	appToolNameMost = 200
+	appToolArgsMost = 512 << 10
 )
 
 func (d *Daemon) registerAssess() {
@@ -147,12 +154,7 @@ var uuidIn = regexp.MustCompile(`[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0
 
 // keepAppToolCall keeps one call, as answered: a line a call, the token never in it.
 func (d *Daemon) keepAppToolCall(agent wire.UUID, tool string, args map[string]json.RawMessage, note string, err error, began time.Time) {
-	call := appToolCall{At: wire.DateOf(began), Method: appToolMethod(tool), Ok: err == nil, Arguments: map[string]json.RawMessage{}}
-	for k, v := range args {
-		if k != "token" {
-			call.Arguments[k] = cutAppToolArgument(v)
-		}
-	}
+	call := appToolCall{At: wire.DateOf(began), Method: cutMarked(appToolMethod(tool), appToolNameMost), Ok: err == nil, Arguments: boundAppToolArguments(args)}
 	answer := note
 	if err != nil {
 		answer = err.Error()
@@ -160,9 +162,7 @@ func (d *Daemon) keepAppToolCall(agent wire.UUID, tool string, args map[string]j
 			answer = e.Message
 		}
 	}
-	if r := []rune(answer); len(r) > appToolAnswerMost {
-		answer = string(r[:appToolAnswerMost])
-	}
+	answer = cutMarked(answer, appToolAnswerMost)
 	call.Answer = &answer
 	if tool == "start_session" && err == nil {
 		if id := uuidIn.FindString(note); id != "" {
@@ -182,9 +182,54 @@ func (d *Daemon) keepAppToolCall(agent wire.UUID, tool string, args map[string]j
 	}
 }
 
+// cutMarked is s, or its first n runes and a … that says it is cut.
+func cutMarked(s string, n int) string {
+	if cut := clip(s, n); len(cut) < len(s) {
+		return cut + "…"
+	}
+	return s
+}
+
+// boundAppToolArguments is a call's arguments but its token, each one cut, and within
+// appToolArgsMost. The ones that do not fit are left out, by name, and … says how many.
+func boundAppToolArguments(args map[string]json.RawMessage) map[string]json.RawMessage {
+	out := map[string]json.RawMessage{}
+	size, left := 0, 0
+	for _, k := range slices.Sorted(maps.Keys(args)) {
+		if k == "token" {
+			continue
+		}
+		v, name := cutAppToolArgument(args[k]), cutMarked(k, appToolNameMost)
+		// As stored, where a character can be 6 bytes.
+		one, err := diskjson.Marshal(map[string]json.RawMessage{name: v})
+		if _, taken := out[name]; err != nil || taken || size+len(one) > appToolArgsMost {
+			left++
+			continue
+		}
+		size += len(one)
+		out[name] = v
+	}
+	if left > 0 {
+		out["…"] = json.RawMessage(fmt.Sprintf(`"%d more arguments were too large to keep"`, left))
+	}
+	return out
+}
+
+// cutAppToolRecord is in place of a record of app-tools.jsonl that is over the record limit
+// (a restored one): head is the first of its bytes, size all of them.
+func cutAppToolRecord(head store.LineHead, size int64) ([]byte, error) {
+	answer := fmt.Sprintf("A call of %d MB was too large to keep", size>>20)
+	call := appToolCall{At: head.At, Answer: &answer}
+	// No value of an older record is needed to say that it is cut.
+	_ = json.Unmarshal(head.Values["method"], &call.Method)
+	_ = json.Unmarshal(head.Values["ok"], &call.Ok)
+	call.Method = cutMarked(call.Method, appToolNameMost)
+	return diskjson.Marshal(call)
+}
+
 // cutAppToolArgument is an argument as app-tools.jsonl keeps it (#3687): whole when its
 // JSON is at most appToolAnswerMost runes, else the first appToolAnswerMost runes of its
-// text (a string's own, anything else's JSON) as a string.
+// text (a string's own, anything else's JSON) and a … as a string.
 func cutAppToolArgument(v json.RawMessage) json.RawMessage {
 	if utf8.RuneCount(v) <= appToolAnswerMost {
 		return v
@@ -194,10 +239,7 @@ func cutAppToolArgument(v json.RawMessage) json.RawMessage {
 	if json.Unmarshal(v, &s) == nil {
 		text = s
 	}
-	if r := []rune(text); len(r) > appToolAnswerMost {
-		text = string(r[:appToolAnswerMost])
-	}
-	b, _ := json.Marshal(text)
+	b, _ := json.Marshal(cutMarked(text, appToolAnswerMost))
 	return b
 }
 
@@ -308,7 +350,11 @@ func (d *Daemon) assessRuntime(r wire.AssessRuntimeRequest) (wire.AssessRuntimeR
 	kept := assessStart{AgentID: id, RuntimeID: rt.ID, RuntimeVersion: version, Host: host, ReportPath: report, ScopePath: scope,
 		ShortID: shortID}
 	if err := d.assessments().Put(string(id), assessment{start: &kept}); err != nil {
-		log.Printf("could not keep a runtime assessment's start: %v", err)
+		// With no start kept it cannot be scored: it does not run on unseen.
+		if aerr := d.archive(id); aerr != nil {
+			log.Printf("could not archive a runtime assessment whose start was not kept: %v", aerr)
+		}
+		return wire.AssessRuntimeResult{}, &Error{Code: wire.FailureCouldNotSave, Message: "The assessment's start could not be kept, so it was archived: " + err.Error()}
 	}
 	d.sweepAssessReports(today)
 	d.sweepAssessments(today)
@@ -344,13 +390,18 @@ func (d *Daemon) scoreAssessmentIfDue(id wire.UUID) {
 	}
 	// A write after the turn, which Shutdown waits for: the score lands in the root.
 	d.goAfterTurn("assessment", func() {
-		if score, err := d.assessment(id); err == nil {
+		score, err := d.assessment(id)
+		switch {
+		case err == nil:
 			d.record(id, runtimeNote(assessNote(score)))
+		case score.AgentID != "":
+			d.record(id, runtimeNote(assessNote(score)+"\n\nThis score is not kept: "+err.Error()))
 		}
 	})
 }
 
-// assessment scores an assessing agent now, from the record, and keeps the score.
+// assessment scores an assessing agent now, from the record, and keeps the score. A score that
+// could not be kept comes with the error.
 func (d *Daemon) assessment(id wire.UUID) (wire.RuntimeAssessmentScore, error) {
 	a := d.Store.Agent(id)
 	if a == nil {
@@ -409,6 +460,7 @@ func (d *Daemon) assessment(id wire.UUID) (wire.RuntimeAssessmentScore, error) {
 	score := rec.score(nowFunc())
 	if err := d.assessments().Put(string(id), assessment{score: &score}); err != nil {
 		log.Printf("could not keep a runtime assessment's score: %v", err)
+		return score, &Error{Code: wire.FailureCouldNotSave, Message: "The assessment's score could not be kept: " + err.Error()}
 	}
 	d.sweepAssessments(nowFunc())
 	return score, nil

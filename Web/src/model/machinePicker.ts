@@ -1,6 +1,7 @@
 // The one machine picker (#5287, epic #5281): a search, then the pinned and the recently used machines, then the rest grouped
 // by label, each with a state dot. It asks machines/list (#5283) with the typed words, so it holds only a page, never every
 // machine. Pinned and recent are this browser's, kept in localStorage as the window keeps them in its defaults.
+import { boundedNames, namesBytes, putEntry } from "./keyValue";
 import type { ControlMachine, MachineListQuery } from "../protocol/generated";
 
 export const pickerLimit = 30;
@@ -78,12 +79,18 @@ function read(storage: Storage | undefined, key: string): string[] {
 export const pinnedMachines = (s: Storage | undefined): string[] => read(s, pinnedKey);
 export const recentMachines = (s: Storage | undefined): string[] => read(s, recentKey);
 
+/** A pin that storage does not take lasts this page only. */
+function keepPinned(s: Storage | undefined, pins: readonly string[]): void {
+  // store-bounds: kind=key-value; count=100; age=until-deleted; action=refuse; record=64B; applied=on write, and when the machines are listed
+  putEntry(s, pinnedKey, JSON.stringify(pins), namesBytes(pinnedMost, idMost));
+}
+
 /** A machine pinned, or let go when it is. Returns the new list; null when the pin is refused. */
 export function togglePin(s: Storage | undefined, id: string): string[] | null {
   const now = pinnedMachines(s);
   if (!now.includes(id) && (now.length >= pinnedMost || id.length > idMost)) return null;
   const next = now.includes(id) ? now.filter((x) => x !== id) : [...now, id];
-  try { s?.setItem(pinnedKey, JSON.stringify(next)); } catch { /* storage full or off: the pin lasts this page only */ }
+  keepPinned(s, next);
   return next;
 }
 
@@ -91,16 +98,15 @@ export function togglePin(s: Storage | undefined, id: string): string[] | null {
 export function keepPins(s: Storage | undefined, there: (id: string) => boolean): string[] {
   const now = pinnedMachines(s);
   const next = now.filter(there);
-  if (next.length < now.length) {
-    try { s?.setItem(pinnedKey, JSON.stringify(next)); } catch { /* as above */ }
-  }
+  if (next.length < now.length) keepPinned(s, next);
   return next;
 }
 
 /** A machine picked goes first in Recent; the list keeps the last five. */
 export function rememberMachine(s: Storage | undefined, id: string): string[] {
   const next = [id, ...recentMachines(s).filter((x) => x !== id)].slice(0, recentCap);
-  try { s?.setItem(recentKey, JSON.stringify(next)); } catch { /* as above */ }
+  // store-bounds: kind=key-value; count=5; age=until-deleted; action=evict; record=64B; applied=on write
+  putEntry(s, recentKey, JSON.stringify(boundedNames(next, recentCap, idMost)), namesBytes(recentCap, idMost));
   return next;
 }
 

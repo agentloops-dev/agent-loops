@@ -88,7 +88,8 @@ func (d *Daemon) startSend(r wire.SendRequest) (wire.SendSummary, error) {
 	d.sendMu.Unlock()
 	Broadcast(d, wire.NotifySendChanged, *n)
 
-	pack := wire.SendPackRequest{Folder: s.Folder, Branches: r.Branches, LeavingOut: heads, IncludeChanges: r.IncludeChanges}
+	pack := wire.SendPackRequest{Folder: s.Folder, Branches: r.Branches, LeavingOut: heads, IncludeChanges: r.IncludeChanges,
+		LeaveOutUntracked: r.LeaveOutUntracked}
 	receive := wire.ReceiveRequest{Folder: destination, Checkout: r.Checkout, Origin: r.Origin}
 	d.goJob("send "+path+" to "+name, func() {
 		made, err := d.packThere(personSending, machine, pack, receive, func(done, total int64) {

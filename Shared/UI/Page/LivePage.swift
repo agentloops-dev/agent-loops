@@ -62,6 +62,10 @@ struct LivePage: View {
     @State private var marked: [Int: Date] = [:]
     /// The pictures on the page and when each file last changed.
     @State private var images = ImageStamps()
+    /// The page's pictures, which the image viewer goes through (#6624): one gallery for all
+    /// of its passages.
+    @State private var pictures: [ImageSequenceScope.Picture] = []
+    @State private var gallery = ImageGallery()
     /// Bumped for each save handed out, so an older answer landing late is not taken
     /// for the newer one's.
     @State private var saving = 0
@@ -104,6 +108,7 @@ struct LivePage: View {
                 // `PageMetrics` carries that arithmetic.
                 .appText(.reading)
                 .environment(\.textZoom, zoom)
+                .environment(\.imageSequence, ImageSequenceScope(gallery: gallery, images: pictures))
                 #if os(macOS)
                 // AppKit's magnify events, not a `MagnifyGesture`: under the scroll view
                 // and the selectable text, that gesture did not see a trackpad pinch (#3980).
@@ -128,6 +133,7 @@ struct LivePage: View {
                     Task {
                         let (fresh, changed) = await images.refreshed(look: actions.stamp)
                         images = fresh
+                        if !changed.isEmpty { gallery.clear() }
                         guard let first = changed.first, !page.isEditing else { return }
                         await go(to: first, proxy: proxy)
                     }
@@ -241,18 +247,7 @@ struct LivePage: View {
                 // rendered passage is a plain `Button` whose label is the text, the
                 // shape that keeps its clicks (see the SwiftUI card memory), and
                 // copying from the page is done from the editor it opens.
-                Button {
-                    begin(index)
-                } label: {
-                    MarkdownText(markdown: page.shown(index), base: url,
-                                 caret: page.revealing?.index == index ? .agent(agentName) : nil)
-                        // A new identity when a picture in it changed, which is what
-                        // makes the file be read again rather than redrawn.
-                        .id(images.token(for: index))
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .disabled(!actions.canEdit)
+                reading(index)
             }
         }
             .frame(maxWidth: metrics.measure, alignment: .leading)
@@ -268,6 +263,57 @@ struct LivePage: View {
             .animation(ResponseMotion.response, value: isMarked)
             .padding(.horizontal, metrics.padding - 8)
             .frame(maxWidth: .infinity)
+    }
+
+    /// A passage as it is read: one button, or when it holds pictures (#6624) the words as
+    /// buttons and each picture beside them as its own, which opens the image viewer. A
+    /// button in another's label would get no press from VoiceOver.
+    @ViewBuilder
+    private func reading(_ index: Int) -> some View {
+        let caret: CursorFlag? = page.revealing?.index == index ? .agent(agentName) : nil
+        let shown = page.shown(index)
+        let pieces = caret == nil ? ImageSequence.pieces(of: MarkdownBlock.parsed(shown)) : []
+        Group {
+            if pieces.contains(where: \.isImage) {
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach(pieces, id: \.self) { piece in
+                        if piece.isImage {
+                            MarkdownText(markdown: shown, base: url, range: piece.range)
+                                // A click opens the picture, so its Markdown is edited from here.
+                                .contextMenu {
+                                    if actions.canEdit { Button("Edit Passage") { begin(index) } }
+                                }
+                                .accessibilityAction(named: "Edit Passage") {
+                                    if actions.canEdit { begin(index) }
+                                }
+                        } else {
+                            words(index, MarkdownText(markdown: shown, base: url, range: piece.range))
+                        }
+                    }
+                }
+            } else {
+                words(index, MarkdownText(markdown: shown, base: url, caret: caret))
+            }
+        }
+        // A new identity when a picture in it changed, which is what
+        // makes the file be read again rather than redrawn.
+        .id(images.token(for: index))
+    }
+
+    // The passage is the button. A tap gesture under the page's text
+    // selection never fired — selection takes the click — which the
+    // 2026-09-24 walk saw: a click, no caret, keystrokes gone. So the
+    // rendered passage is a plain `Button` whose label is the text, the
+    // shape that keeps its clicks (see the SwiftUI card memory), and
+    // copying from the page is done from the editor it opens.
+    private func words(_ index: Int, _ text: MarkdownText) -> some View {
+        Button {
+            begin(index)
+        } label: {
+            text.contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!actions.canEdit)
     }
 
     // MARK: When the agent wrote the same passage
@@ -365,6 +411,10 @@ struct LivePage: View {
     }
 
     private func retakeImages() async {
+        let blocks = page.passages.flatMap { MarkdownBlock.parsed($0.source) }
+        pictures = ImageSequence.items(in: blocks).compactMap { item in
+            ImageStamps.url(of: item.source, base: url).map { ImageSequenceScope.Picture(url: $0, alt: item.alt) }
+        }
         images = await ImageStamps.take(passages: page.passages, base: url, look: actions.stamp)
     }
 

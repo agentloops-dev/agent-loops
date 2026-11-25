@@ -36,8 +36,8 @@ servers=$root/App/Resources/servers
 cd $root
 
 for arch in x86_64 aarch64; do
-    [[ -f $servers/agentsd-linux-$arch && -f $servers/github-mcp-linux-$arch && -f $servers/linear-mcp-linux-$arch && -f $servers/gitlab-mcp-linux-$arch && -f $servers/email-mcp-linux-$arch && -f $servers/jira-mcp-linux-$arch && -f $servers/slack-mcp-linux-$arch && -f $servers/googlechat-mcp-linux-$arch && -f $servers/whatsapp-mcp-linux-$arch && -f $servers/sentry-mcp-linux-$arch && -f $servers/betterstack-mcp-linux-$arch && -f $servers/forgejo-mcp-linux-$arch && -f $servers/bitbucket-mcp-linux-$arch && -f $servers/azuredevops-mcp-linux-$arch && -f $servers/azureboards-mcp-linux-$arch ]] || {
-        print -u2 "No $servers/agentsd-linux-$arch, github-mcp-linux-$arch, linear-mcp-linux-$arch, gitlab-mcp-linux-$arch, email-mcp-linux-$arch, jira-mcp-linux-$arch, slack-mcp-linux-$arch, googlechat-mcp-linux-$arch, whatsapp-mcp-linux-$arch, sentry-mcp-linux-$arch, betterstack-mcp-linux-$arch, forgejo-mcp-linux-$arch, bitbucket-mcp-linux-$arch, azuredevops-mcp-linux-$arch or azureboards-mcp-linux-$arch: run scripts/build-linux-agentsd.sh first (with Docker or Go)."
+    [[ -f $servers/agentsd-linux-$arch && -f $servers/agents-control-linux-$arch && -f $servers/github-mcp-linux-$arch && -f $servers/linear-mcp-linux-$arch && -f $servers/gitlab-mcp-linux-$arch && -f $servers/email-mcp-linux-$arch && -f $servers/jira-mcp-linux-$arch && -f $servers/slack-mcp-linux-$arch && -f $servers/googlechat-mcp-linux-$arch && -f $servers/whatsapp-mcp-linux-$arch && -f $servers/sentry-mcp-linux-$arch && -f $servers/betterstack-mcp-linux-$arch && -f $servers/forgejo-mcp-linux-$arch && -f $servers/bitbucket-mcp-linux-$arch && -f $servers/azuredevops-mcp-linux-$arch && -f $servers/azureboards-mcp-linux-$arch ]] || {
+        print -u2 "No $servers/agentsd-linux-$arch, agents-control-linux-$arch, github-mcp-linux-$arch, linear-mcp-linux-$arch, gitlab-mcp-linux-$arch, email-mcp-linux-$arch, jira-mcp-linux-$arch, slack-mcp-linux-$arch, googlechat-mcp-linux-$arch, whatsapp-mcp-linux-$arch, sentry-mcp-linux-$arch, betterstack-mcp-linux-$arch, forgejo-mcp-linux-$arch, bitbucket-mcp-linux-$arch, azuredevops-mcp-linux-$arch or azureboards-mcp-linux-$arch: run scripts/build-linux-agentsd.sh first (with Docker or Go)."
         exit 1
     }
 done
@@ -126,23 +126,9 @@ for old zip in Agents Agents "Agents Host" Agents-Host; do
 done
 
 for arch in x86_64 aarch64; do
-    # The MCP servers Agent Loops ships (#700) go beside it: a Linux host puts them in its bin/.
-    tar -czf $out/agentsd-linux-$arch-$version.tar.gz -C $servers agentsd-linux-$arch \
-        agentsd-linux-$arch.sha256 \
-        github-mcp-linux-$arch github-mcp-linux-$arch.sha256 \
-        linear-mcp-linux-$arch linear-mcp-linux-$arch.sha256 \
-        gitlab-mcp-linux-$arch gitlab-mcp-linux-$arch.sha256 \
-        email-mcp-linux-$arch email-mcp-linux-$arch.sha256 \
-        jira-mcp-linux-$arch jira-mcp-linux-$arch.sha256 \
-        slack-mcp-linux-$arch slack-mcp-linux-$arch.sha256 \
-        googlechat-mcp-linux-$arch googlechat-mcp-linux-$arch.sha256 \
-        whatsapp-mcp-linux-$arch whatsapp-mcp-linux-$arch.sha256 \
-        sentry-mcp-linux-$arch sentry-mcp-linux-$arch.sha256 \
-        betterstack-mcp-linux-$arch betterstack-mcp-linux-$arch.sha256 \
-        forgejo-mcp-linux-$arch forgejo-mcp-linux-$arch.sha256 \
-        bitbucket-mcp-linux-$arch bitbucket-mcp-linux-$arch.sha256 \
-        azuredevops-mcp-linux-$arch azuredevops-mcp-linux-$arch.sha256 \
-        azureboards-mcp-linux-$arch azureboards-mcp-linux-$arch.sha256 VERSION
+    # The MCP servers and the web page go beside it: a Linux host puts the servers in its bin/,
+    # and one with the control role serves the page (#7288), which the archive above built.
+    $root/scripts/release-linux-tarball.sh $servers $root/Web/dist $arch $out/agentsd-linux-$arch-$version.tar.gz
 done
 # loops, the command-line client (#6448), on its own for macOS and Linux: a person who has no
 # Agent Loops.app, or a Linux machine, downloads it from here.

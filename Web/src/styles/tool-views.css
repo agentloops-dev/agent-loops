@@ -18,8 +18,8 @@ button.plain { background: none; border: none; padding: 0; color: inherit; opaci
 button.plain:hover { opacity: 1; }
 .view-context { font-size: 0.75rem; }
 .view-box[hidden] { display: none !important; }
-/* The Now card (#5033, specs/session-cards/spec.md, family 5), as NowCard.swift: a card on the well
-   with a mark, a bold line and a quiet detail, the meta on the right, a chevron when it has more, and a
+/* The Now card (#5033, specs/session-cards/spec.md, family 5), as NowCard.swift: a card on the ground
+   with a rule round it, a mark, a bold line and a quiet detail, the meta on the right, a chevron when it has more, and a
    bar in the accent, never a state colour (#776). At the top: the goal and the plan, two rows. At the
    foot: what the agent does or waits on now, the last thing before the prompt bar. */
 /* The Strip family (#5034): one at a time at the top, on the well; an orange glyph for a warning, grey for a
@@ -39,7 +39,7 @@ button.plain:hover { opacity: 1; }
 .strip-more-menu .ask-more-menu { top: calc(100% + 4px); bottom: auto; }
 .strip button.prominent { background: var(--paper-raised); color: var(--accent); border-color: var(--accent); font-weight: 650; box-shadow: inset 0 0 0 0.5px var(--accent); }
 @media (max-width: 480px) { .strip { flex-wrap: wrap; } .strip-words { white-space: normal; } .strip-actions { width: 100%; justify-content: flex-end; } }
-.now-card { background: var(--paper-well); border-radius: var(--radius-card); padding: 10px 14px;
+.now-card { background: var(--paper-ground); border: 1px solid var(--paper-rule); border-radius: var(--radius-card); padding: 10px 14px;
   display: flex; flex-direction: column; gap: 10px; font-size: 0.8125rem; }
 .now-top { padding: 6px 16px; }
 .now-top .now-card { gap: 0; }

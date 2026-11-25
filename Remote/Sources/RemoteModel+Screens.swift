@@ -175,7 +175,7 @@ extension RemoteModel {
         rememberProjectFolder(key)
         guard rememberedNewSessionFolder != key else { return }
         rememberedNewSessionFolder = key
-        UserDefaults.standard.set(key.stored, forKey: Self.newSessionFolderDefault)
+        ClientDefaults.keepFolder(key, forKey: Self.newSessionFolderDefault, in: UserDefaults.standard)
     }
 
     /// New Session's projects (#3279): the live folders in the sidebar's order, as
@@ -203,15 +203,15 @@ extension RemoteModel {
         let kept = ClientDefaults.pruneProjectFolders(rememberedProjectFolders, host: host, listed: keys)
         guard kept != rememberedProjectFolders else { return }
         rememberedProjectFolders = kept
-        UserDefaults.standard.set(kept, forKey: Self.newSessionProjectFoldersDefault)
+        ClientDefaults.keepProjectFolders(kept, forKey: Self.newSessionProjectFoldersDefault, in: UserDefaults.standard)
     }
 
     func rememberProjectFolder(_ key: FolderKey) {
         guard let summary = work.folder(key) else { return }
         let id = NewSessionProject.id(of: summary)
         guard rememberedProjectFolders[id] != key.stored else { return }
-        rememberedProjectFolders[id] = key.stored
-        UserDefaults.standard.set(rememberedProjectFolders, forKey: Self.newSessionProjectFoldersDefault)
+        rememberedProjectFolders = ClientDefaults.projectFolders(rememberedProjectFolders, remembering: key.stored, for: id)
+        ClientDefaults.keepProjectFolders(rememberedProjectFolders, forKey: Self.newSessionProjectFoldersDefault, in: UserDefaults.standard)
     }
 
     var selectedAgent: Agent? { work.agent(selection) }

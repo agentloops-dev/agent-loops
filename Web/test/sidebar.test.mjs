@@ -484,6 +484,8 @@ test("Connectors: every connector's health, the person's and each folder's, in t
   assert.equal(healthKind(local), "stdio · run in each session");
   assert.equal(healthKind(shared), "stdio · hosted");
   assert.equal(healthLine(tools), "Waiting for approval in this folder's settings, so it is not started");
+  assert.equal(healthLine({ ...shared, check: "waiting" }), healthLine({ ...local, check: "waiting" }));
+  assert.equal(healthLine({ ...local, check: "waiting" }), "Not approved on this machine, so it is not started");
   assert.equal(healthTone(local), "failing");
   assert.equal(healthTone(shared), "quiet");
   assert.equal(healthTally([]), null);
@@ -661,7 +663,7 @@ test("Remove…'s words name a server and say a refusal as a removal (#2266)", a
   const { removesWords, notRemoved, notRemovedOffline } = await load("src/model/hostedMCP.ts");
   assert.equal(removesWords("github", true, "devbox"),
     "This removes the github entry from .agents/mcp.json on devbox. Agents started after that won't have it.");
-  assert.equal(removesWords("github", false), "This removes the github entry from ~/.agents/mcp.json. Agents started after that won't have it. A copy of the entry is kept in ~/.agents/mcp.removed.json.");
+  assert.equal(removesWords("github", false), "This removes the github entry from ~/.agents/mcp.json. Agents started after that won't have it. A copy of the entry is kept for 90 days in ~/.agents/mcp.removed.json.");
   assert.equal(notRemovedOffline("github", "devbox"), "github was not removed: devbox is offline.");
   assert.equal(notRemoved("github", "That machine is offline."), "github was not removed. That machine is offline.");
 });

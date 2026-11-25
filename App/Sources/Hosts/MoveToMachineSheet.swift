@@ -12,7 +12,7 @@ extension AppModel {
     func moveTargets(for agent: Agent) -> [MachineRef]? {
         guard agent.state != .archived, !hostUnreachable(agent.host), host(agent.host, has: Capability.sessionsMove1) else { return nil }
         let here: Set<MachineRef> = agent.host == .mac ? [.mac, thisMacHostID ?? .mac] : [agent.host]
-        return hosts.servers.filter { !here.contains($0) && !hostUnreachable($0) }
+        return hosts.servers.filter { !here.contains($0) && !hostUnreachable($0) && !hosts.settingUp($0) }
     }
 
     /// Moves `agent` to `machine`, into `folder` there, or the folder of its project there

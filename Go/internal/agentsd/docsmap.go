@@ -209,7 +209,7 @@ func (d *Daemon) docsServerFor(name, folder string, secrets map[string]string) (
 	s, problem := d.eventServerNamed(name, folder, secrets)
 	switch problem {
 	case "waiting":
-		return sdk.McpServer{}, "", docsSearchError("This folder's mcp.json waits for your approval.")
+		return sdk.McpServer{}, "", docsSearchError("Its entry in mcp.json waits for your approval.")
 	case "missingSecret":
 		return sdk.McpServer{}, "", docsSearchError("It needs a secret that isn't set.")
 	case "oldTransport":

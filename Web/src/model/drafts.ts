@@ -220,6 +220,7 @@ export class Drafts {
   /** Whether storage took them. When it did not, it holds what it held before. */
   private write(drafts: Array<[string, Kept]>): boolean {
     const json = JSON.stringify(drafts);
+    // store-bounds: kind=document; count=40; age=30d; action=refuse; record=1MiB; applied=on write, at start and hourly
     try { this.storage?.setItem(storageKey, json); } catch { return false; }
     this.written = json.length;
     return true;

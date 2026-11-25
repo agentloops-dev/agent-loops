@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -250,6 +251,15 @@ func (s *timeSeriesStore) Append(ctx context.Context, p Point) error {
 	if int64(len(data)) > s.spec.Bounds.MaxRecordBytes {
 		return &LimitError{Name: s.spec.Name, Size: int64(len(data)), Limit: s.spec.Bounds.MaxRecordBytes}
 	}
+	// The day's record has the series' name, which the point's has not, so a point whose
+	// roll-up could not fit is refused here (#7196). These are its longest numbers.
+	longest, err := encodeRollup(&rollupBucket{series: series, day: rollupDay(p.At), sum: longestSum, count: math.MinInt64})
+	if err != nil {
+		return err
+	}
+	if int64(len(longest)) > s.spec.Bounds.MaxRecordBytes {
+		return &LimitError{Name: s.spec.Name, Size: int64(len(longest)), Limit: s.spec.Bounds.MaxRecordBytes}
+	}
 	key := collectionPrefix(s.spec) + "detail/" + series + "/" + p.At.UTC().Format("20060102T150405.000000000Z") + "/" + idKey(p.ID)
 	_, err = s.store.Put(ctx, key, data, Absent)
 	if IsConflict(err) {
@@ -353,7 +363,8 @@ func (s *timeSeriesStore) Rollup(ctx context.Context, before time.Time, interval
 	if err != nil {
 		return err
 	}
-	buckets, err := s.collectRollups(ctx, prefix, keys, before)
+	// A series that cannot roll up does not stop the others, or the days from ageing out.
+	buckets, failed, err := s.collectRollups(ctx, prefix, keys, before)
 	if err != nil {
 		return err
 	}
@@ -364,26 +375,30 @@ func (s *timeSeriesStore) Rollup(ctx context.Context, before time.Time, interval
 	sort.Strings(ids)
 	for _, id := range ids {
 		if err := s.writeRollup(ctx, buckets[id]); err != nil {
-			return err
+			failed = append(failed, fmt.Errorf("roll up %s: %w", id, err))
 		}
 	}
-	return trimStore(ctx, s.store, collectionPrefix(s.spec)+"daily/", s.spec.Bounds, before.Add(-s.spec.Bounds.MaxAge))
+	failed = append(failed, trimStore(ctx, s.store, collectionPrefix(s.spec)+"daily/", s.spec.Bounds, before.Add(-s.spec.Bounds.MaxAge)))
+	return errors.Join(failed...)
 }
 
-func (s *timeSeriesStore) collectRollups(ctx context.Context, prefix string, keys []Key, before time.Time) (map[string]*rollupBucket, error) {
+// collectRollups is the days to roll up, and the points that could not be read.
+func (s *timeSeriesStore) collectRollups(ctx context.Context, prefix string, keys []Key, before time.Time) (map[string]*rollupBucket, []error, error) {
+	var failed []error
 	buckets := map[string]*rollupBucket{}
 	cutoff := before.Add(-s.spec.Bounds.DetailAge)
 	for _, key := range keys {
 		obj, err := s.store.Get(ctx, key.Key)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if obj == nil {
 			continue
 		}
 		var record storedRecord
 		if err = json.Unmarshal(obj.Data, &record); err != nil {
-			return nil, err
+			failed = append(failed, fmt.Errorf("decode %s: %w", key.Key, err))
+			continue
 		}
 		if record.At.After(cutoff) || record.At.After(before) {
 			continue
@@ -394,9 +409,10 @@ func (s *timeSeriesStore) collectRollups(ctx context.Context, prefix string, key
 		}
 		var value float64
 		if err = json.Unmarshal(record.Value, &value); err != nil {
-			return nil, err
+			failed = append(failed, fmt.Errorf("decode %s: %w", key.Key, err))
+			continue
 		}
-		day := time.Date(record.At.UTC().Year(), record.At.UTC().Month(), record.At.UTC().Day(), 0, 0, 0, 0, time.UTC)
+		day := rollupDay(record.At)
 		id := parts[0] + "/" + day.Format("20060102")
 		bucket := buckets[id]
 		if bucket == nil {
@@ -407,16 +423,28 @@ func (s *timeSeriesStore) collectRollups(ctx context.Context, prefix string, key
 		bucket.count++
 		bucket.keys = append(bucket.keys, key.Key)
 	}
-	return buckets, nil
+	return buckets, failed, nil
+}
+
+// longestSum is a number of the most characters that a float64 has in JSON (25).
+const longestSum = -0.0000012345678901234567
+
+func rollupDay(at time.Time) time.Time { return at.UTC().Truncate(24 * time.Hour) }
+
+// encodeRollup is a day's record. A sum past the largest number is the largest number, which
+// JSON can say.
+func encodeRollup(bucket *rollupBucket) ([]byte, error) {
+	sum := max(-math.MaxFloat64, min(math.MaxFloat64, bucket.sum))
+	data, err := json.Marshal(Aggregate{Series: bucket.series, Day: bucket.day, Sum: sum, Count: bucket.count})
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(storedRecord{ID: "daily", At: bucket.day, Value: data})
 }
 
 func (s *timeSeriesStore) writeRollup(ctx context.Context, bucket *rollupBucket) error {
-	data, err := json.Marshal(Aggregate{Series: bucket.series, Day: bucket.day, Sum: bucket.sum, Count: bucket.count})
-	if err != nil {
-		return err
-	}
 	key := collectionPrefix(s.spec) + "daily/" + bucket.series + "/" + bucket.day.Format("20060102")
-	stored, err := json.Marshal(storedRecord{ID: "daily", At: bucket.day, Value: data})
+	stored, err := encodeRollup(bucket)
 	if err != nil {
 		return err
 	}

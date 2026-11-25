@@ -33,15 +33,18 @@ import (
 const CapHostPolicy = wire.CapHostPolicy1
 
 const (
-	// store-bounds: kind=key-value; count=1; size=64KiB a record, and the kill switch's few KiB; age=until-deleted; applied=on write
+	// store-bounds: kind=key-value; count=1; size=64KiB a record, 96KiB with the kill switch; age=until-deleted; applied=on write
 	policyKey = "v1/policy.json"
 	// store-bounds: kind=key-value; count=1; size=1KiB a record (a signature); age=until-deleted; applied=on write
 	policySigKey = "v1/policy.sig"
-	// store-bounds: kind=document; count=100; size=64KiB a record; age=90d; applied=on write and hourly sweep, from when a version was replaced
+	// store-bounds: kind=document; count=100; size=96KiB a record; age=90d; applied=on write (not kept) and hourly sweep, from when a version was replaced
 	policyVersionsKey = "v1/policy/versions/"
 	// mostPolicyBytes, mostPolicyItems and the rest bound the document (data-model.md),
 	// so a slip of the keyboard is refused.
-	mostPolicyBytes    = 64 << 10
+	mostPolicyBytes = 64 << 10
+	// mostPolicyVersion is the largest version kept: mostPolicyBytes, and room for the kill
+	// switch, whose note and two actors are short. A policy from before the limit can be over it.
+	mostPolicyVersion  = 96 << 10
 	mostPolicyItems    = 200
 	mostPolicyName     = 200
 	mostPolicyNote     = 500
@@ -698,6 +701,10 @@ func (s *Service) signPolicy(ctx context.Context, version int64, raw []byte) err
 // keepPolicyVersion keeps each version as it was, so an admin sees what changed (FR-005):
 // the newest policyVersionsKept, and an old one for policyVersionAge.
 func (s *Service) keepPolicyVersion(ctx context.Context, version int64, raw []byte) {
+	if len(raw) > mostPolicyVersion {
+		s.log(fmt.Sprintf("policy version %d could not be kept: %d bytes, and the most is %d; the policy itself is kept", version, len(raw), mostPolicyVersion))
+		return
+	}
 	key := fmt.Sprintf("%s%010d.json", policyVersionsKey, version)
 	if _, err := s.cfg.Store.Put(ctx, key, raw, store.Absent); err != nil && !store.IsConflict(err) {
 		s.log("policy version " + fmt.Sprint(version) + " could not be kept: " + err.Error())

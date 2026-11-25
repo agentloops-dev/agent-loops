@@ -2,6 +2,7 @@
 // and the Remote's choice. Off unless turned on: most people do not want to read the agent's
 // thinking. This browser's own choice, kept in localStorage, as the icon's mood is.
 
+import { putEntry } from "./keyValue";
 import { signal } from "@preact/signals";
 import { omittingThoughts, type Item } from "./turns";
 
@@ -14,7 +15,8 @@ export const showsThoughts = signal(storage?.getItem(key) === "true");
 
 export function setShowsThoughts(on: boolean): void {
   showsThoughts.value = on;
-  storage?.setItem(key, String(on));
+  // store-bounds: kind=key-value; count=1; age=until-deleted; action=refuse; record=16B; applied=on write
+  putEntry(storage, key, String(on), 16);
 }
 
 /** Each page with its thoughts left off, the same array while the page is, so a memo'd turn is not drawn again. */

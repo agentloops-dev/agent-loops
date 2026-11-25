@@ -1393,7 +1393,7 @@ func (d *Daemon) addOurConnector(ctx context.Context, folder string, ours mcpcat
 	if preview.Preview == nil {
 		return errors.New("its entry could not be prepared")
 	}
-	if _, err := d.mcpAdd(wire.MCPAddRequest{PreviewID: preview.Preview.PreviewID, Destination: dest}); err != nil {
+	if _, err := d.mcpAdd(ctx, wire.MCPAddRequest{PreviewID: preview.Preview.PreviewID, Destination: dest}); err != nil {
 		return err
 	}
 	log.Printf("connectors: the %s connector was added to a folder for its events", ours.NameHere())

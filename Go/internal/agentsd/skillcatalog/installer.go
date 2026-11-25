@@ -132,7 +132,7 @@ func (in Installer) Remove(name string, place Place, now time.Time) (string, err
 		if trashed != "" {
 			putBack(trashed, folder)
 		}
-		return "", Failed("could not write " + filepath.Base(place.Lock))
+		return "", lock.writeFailed(err)
 	}
 	if err := UpdateSidecar(in.Sidecar, func(m map[string]SidecarRecord) { delete(m, SidecarKey(place.Destination, name)) }); err != nil {
 		log.Printf("skills: could not write %s: %v", filepath.Base(in.Sidecar), err)
@@ -315,7 +315,7 @@ func (in Installer) Add(st Staged, place Place, replace bool, now time.Time) (wi
 			putBack(trashed, target)
 		}
 		os.Remove(in.journal())
-		return wire.ManagedSkill{}, Failed("could not write " + filepath.Base(place.Lock))
+		return wire.ManagedSkill{}, lock.writeFailed(err)
 	}
 	os.Remove(in.journal())
 	// 4. The folder's Claude link, if it has none.

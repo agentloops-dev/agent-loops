@@ -439,13 +439,14 @@ func AgentFolder(a *wire.Agent) string {
 }
 
 func (s *Store) write(a *wire.Agent) error {
-	b, err := diskjson.Marshal(a)
+	b, err := boundedRecord(a)
 	if err != nil {
 		return err
 	}
 	if err := os.MkdirAll(s.Loc.Agent(string(a.ID)), 0o755); err != nil {
 		return err
 	}
+	// store-bounds: kind=document; size=1MiB a session; age=until-deleted; applied=on write (a large part is cut)
 	return WriteAtomically(s.Loc.Record(string(a.ID)), b, 0o644)
 }
 
@@ -613,7 +614,7 @@ func (s *Store) AppendOne(id wire.UUID, e wire.TranscriptEntry) (int, wire.Trans
 // openTranscript opens a transcript to append to; a test counts the opens through it, or
 // refuses them as a full disk does.
 var openTranscript = func(file string) (*os.File, error) {
-	// store-bounds: kind=log; size=10MiB; age=90d; applied=hourly sweep (FolderLog)
+	// store-bounds: kind=log; size=10MiB a session (4MiB a record); age=90d; applied=hourly sweep (FolderLog)
 	return os.OpenFile(file, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 }
 

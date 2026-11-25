@@ -6,9 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -37,6 +39,11 @@ const (
 	maximumEventDetails      = 10
 	maximumEventDetailLength = 200
 	maximumEventMessage      = 500
+
+	// eventLineMost is the most one line of events.jsonl is; a larger one is cut (#7244).
+	eventLineMost = 64 << 10
+	// eventStateMost is the most events-state.json is.
+	eventStateMost = 256 << 10
 )
 
 // eventState is EventState, events-state.json.
@@ -176,7 +183,7 @@ func (d *Daemon) setAsideUnreadableEventsLocked(data []byte, unreadable int) {
 			log.Printf("events.jsonl: could not set it aside: %v", err)
 		}
 	} else {
-		// store-bounds: kind=blob; size=100MiB a file; count=3; age=90d; applied=on write and hourly sweep
+		// store-bounds: kind=blob; size=100MiB of a file's copies (the newest stays whatever its size); count=3; age=90d; applied=on write and hourly sweep
 		if err := os.WriteFile(aside, data, 0o644); err != nil { //nolint:gosec // G306: the mode this file always had; only its error is new
 			log.Printf("events.jsonl: could not keep a copy: %v", err)
 		}
@@ -320,6 +327,10 @@ func encodeEventLine(l eventLine) []byte {
 		log.Printf("events.jsonl: encode: %v", err)
 		return nil
 	}
+	if cut, was := store.CutLine(b, eventLineMost); was {
+		log.Printf("events.jsonl: a line of %d bytes is over %d: it is kept cut", len(b), eventLineMost)
+		b = cut
+	}
 	return append(b, '\n')
 }
 
@@ -334,6 +345,7 @@ func (d *Daemon) appendEventLocked(l eventLine) {
 		path := d.eventsPath()
 		// A folder that cannot be made fails the open below, which logs.
 		_ = os.MkdirAll(filepath.Dir(path), 0o755) //nolint:gosec // G301: the mode this folder always had; only its error is new
+		// store-bounds: kind=log; count=10_000 events; size=64KiB a line; age=7d; applied=at start, hourly and on write (a large line is cut)
 		f, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o644) //nolint:gosec // G302: the mode events.jsonl always had
 		if err != nil {
 			log.Printf("events.jsonl: could not append: %v", err)
@@ -393,6 +405,7 @@ func (d *Daemon) rewriteEventsLocked() {
 		d.eventFile.Close()
 		d.eventFile = nil
 	}
+	// store-bounds: not a store: the rewrite of events.jsonl, declared where its lines are appended
 	if err := store.WriteAtomically(d.eventsPath(), buf.Bytes(), 0o644); err != nil {
 		log.Printf("events.jsonl: could not rewrite: %v", err)
 		return
@@ -411,15 +424,66 @@ func (d *Daemon) saveEventStateLocked() {
 	if s.CostCrossings == nil {
 		s.CostCrossings = map[string][]string{}
 	}
-	b, err := diskjson.Marshal(s)
+	b, err := diskjson.Marshal(boundEventState(s))
 	if err != nil || bytes.Equal(b, d.eventStateSaved) {
 		return
 	}
+	// store-bounds: kind=key-value; size=256KiB; age=until-deleted; applied=on write (the entries over it go)
 	if err := store.WriteAtomically(d.eventStatePath(), b, 0o644); err != nil {
 		log.Printf("events-state.json: could not save: %v", err)
 		return
 	}
 	d.eventStateSaved = b
+}
+
+// boundEventState is s held to eventStateMost. While it is over, the later half of the entries
+// of its largest part goes, by key, and the log says so. The next position is never cut.
+func boundEventState(s eventState) eventState {
+	size := func() int { b, _ := diskjson.Marshal(s); return len(b) }
+	if size() <= eventStateMost {
+		return s
+	}
+	parts := map[string]int{}
+	parts["waitRestarts"] = len(s.WaitRestarts)
+	parts["diskLevels"] = len(s.DiskLevels)
+	parts["costCrossings"] = len(s.CostCrossings)
+	parts["branchTips"] = len(s.BranchTips)
+	s.WaitRestarts, s.DiskLevels = maps.Clone(s.WaitRestarts), maps.Clone(s.DiskLevels)
+	s.CostCrossings, s.BranchTips = maps.Clone(s.CostCrossings), maps.Clone(s.BranchTips)
+	for size() > eventStateMost {
+		var largest string
+		for name, n := range parts {
+			if n > parts[largest] || (n == parts[largest] && n > 0 && name < largest) {
+				largest = name
+			}
+		}
+		if parts[largest] == 0 {
+			break
+		}
+		keep := parts[largest] / 2
+		switch largest {
+		case "waitRestarts":
+			keepFirst(s.WaitRestarts, keep)
+		case "diskLevels":
+			keepFirst(s.DiskLevels, keep)
+		case "costCrossings":
+			keepFirst(s.CostCrossings, keep)
+		case "branchTips":
+			keepFirst(s.BranchTips, keep)
+		}
+		parts[largest] = keep
+	}
+	log.Printf("events-state.json: over %d bytes: some of what the sources remember is not kept", eventStateMost)
+	return s
+}
+
+// keepFirst deletes all but the first n keys of m, in order.
+func keepFirst[V any](m map[string]V, n int) {
+	for i, k := range slices.Sorted(maps.Keys(m)) {
+		if i >= n {
+			delete(m, k)
+		}
+	}
 }
 
 func sameScope(a, b wire.EventScope) bool {

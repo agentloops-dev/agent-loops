@@ -869,7 +869,19 @@ func (m *Methods) ownMachine(params json.RawMessage, from Caller) (string, error
 	if m.records.Host(host) == nil || !m.owns(from, host) {
 		return "", fail(noSuchHost, "No machine is called %s.", host)
 	}
+	if err := m.refuseControlOnly(host); err != nil {
+		return "", err
+	}
 	return host, nil
+}
+
+// refuseControlOnly refuses a machine that only runs the control plane (#6609): it is not
+// removed, forgotten or given a provider's action. Moving it is a control move (#6612).
+func (m *Methods) refuseControlOnly(host string) error {
+	if h := m.records.Host(host); h != nil && h.ControlOnly() {
+		return fail(invalidParams, "%s runs the control plane and no agents. It cannot be removed or changed here: move the control plane first.", h.Name)
+	}
+	return nil
 }
 
 // retryMachineSetup is machines/retrySetup: Try Again on a machine's set-up (#5355).
@@ -1012,8 +1024,10 @@ func (m *Methods) hostList(from Caller, params json.RawMessage) (any, error) {
 		}
 	}
 	var rows []machineFacts
-	for _, h := range m.records.Hosts() {
-		if m.owns(from, h.ID) {
+	admin := m.s.isAdmin(m.callerPerson(from))
+	for _, h := range m.records.Machines() {
+		// A machine with only the control role is shown to admins only (#6609).
+		if (h.ControlOnly() && admin) || (!h.ControlOnly() && m.owns(from, h.ID)) {
 			rows = append(rows, m.machineFactsOf(h))
 		}
 	}
@@ -1050,6 +1064,9 @@ func (m *Methods) removeHost(ctx context.Context, host string, from Caller) (boo
 
 // removeHostIf is removeHost for a machine that still passes still, when there is one.
 func (m *Methods) removeHostIf(ctx context.Context, host string, from Caller, still func(records.MachineRecord) bool) (bool, error) {
+	if err := m.refuseControlOnly(host); err != nil {
+		return false, err
+	}
 	owner, name := m.s.ownerOf(host), host
 	var held []wire.OrgRouteVersion
 	if h := m.records.Host(host); h != nil {
@@ -1095,6 +1112,7 @@ func (m *Methods) hostRow(h records.MachineRecord) wire.ControlMachine {
 		Reach: "dialOut", MachineID: h.MachineID, SignInFrom: hostIDs(m.sameUsers(h.ID, h.SignInFrom)),
 		GitFrom: hostIDs(m.sameUsers(h.ID, h.GitFrom)),
 		Owner:   optional(m.s.ownerOf(h.ID))}
+	row.Roles = machineRoles(h)
 	if raw, ok := h.Extra["implementation"]; ok {
 		var impl string
 		// An implementation that is not a string is not said.
@@ -1124,6 +1142,14 @@ func (m *Methods) hostRow(h records.MachineRecord) wire.ControlMachine {
 		row.Tunnel = m.s.tunnels.State(h.ID)
 	}
 	return row
+}
+
+// machineRoles is a machine's roles as the wire says them: always set, agents when none.
+func machineRoles(h records.MachineRecord) []string {
+	if h.ControlOnly() || len(h.Roles) > 0 {
+		return records.RolesOf(h)
+	}
+	return []string{records.RoleAgents}
 }
 
 // forget writes a client's tombstone, then ends its sessions and tells every window.

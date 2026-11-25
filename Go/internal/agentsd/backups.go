@@ -1033,6 +1033,9 @@ func (d *Daemon) restoreAgent(id wire.UUID, raw []byte, files map[string]string,
 	} else if err := d.restored(&a, madeIn, mine); err != nil {
 		return false, err
 	}
+	if err := boundConversation(files); err != nil {
+		return false, err
+	}
 	folder := d.Store.Loc.Agent(string(id))
 	if err := os.MkdirAll(folder, 0o755); err != nil {
 		return false, err
@@ -1048,6 +1051,28 @@ func (d *Daemon) restoreAgent(id wire.UUID, raw []byte, files map[string]string,
 	d.tellChanged(a, nil)
 	d.noteSessionState(nil, a)
 	return true, nil
+}
+
+// boundConversation holds an agent's staged files to the record limits of their logs (#7183):
+// a record over its limit is a notice, as on a write, and the others come back as they were.
+func boundConversation(files map[string]string) error {
+	if p, ok := files["transcript.jsonl"]; ok {
+		cut, err := store.BoundTranscript(p)
+		if err != nil {
+			return err
+		}
+		if said, ok := files["said.json"]; ok && cut {
+			// Its place in the transcript is wrong now. It is made again from the transcript.
+			if err := os.Remove(said); err != nil {
+				return err
+			}
+			delete(files, "said.json")
+		}
+	}
+	if p, ok := files["app-tools.jsonl"]; ok {
+		return store.BoundAppTools(p, cutAppToolRecord)
+	}
+	return nil
 }
 
 // restored is restoreAgent's change to a record from a backup or an import: archived, and

@@ -27,7 +27,7 @@ func (d *Daemon) registerMCPVerify() {
 		return d.mcpVerify(ctx, r), nil
 	})
 	On(d, wire.CallMCPAddByHand, func(ctx context.Context, c *Client, r wire.MCPAddByHandRequest) (wire.MCPAddAnswer, error) {
-		return d.mcpAddByHand(r)
+		return d.mcpAddByHand(ctx, r)
 	})
 }
 
@@ -478,7 +478,7 @@ func sameDestination(a, b wire.SkillDestination) bool {
 
 // mcpAddByHand writes a server that answered Verify, exactly as it was verified: its
 // secrets to secrets.env first, the name still free.
-func (d *Daemon) mcpAddByHand(r wire.MCPAddByHandRequest) (wire.MCPAddAnswer, error) {
+func (d *Daemon) mcpAddByHand(ctx context.Context, r wire.MCPAddByHandRequest) (wire.MCPAddAnswer, error) {
 	if err := d.customServerRefusal(); err != nil {
 		return wire.MCPAddAnswer{}, err
 	}
@@ -519,6 +519,8 @@ func (d *Daemon) mcpAddByHand(r wire.MCPAddByHandRequest) (wire.MCPAddAnswer, er
 	d.recordCatalogServer(mcpcatalog.Key(r.Destination, name), mcpcatalog.Record{Run: string(v.built.run), AddedAt: addedAt, ByHand: &byHand})
 	if r.Destination.Kind == wire.SkillDestinationKindFolder {
 		d.recordMCPApproval(*r.Destination.Folder, name, json.RawMessage(v.built.entry.Stringified()))
+	} else {
+		d.recordPersonalApproval(ctx, name, json.RawMessage(v.built.entry.Stringified()))
 	}
 	log.Printf("mcp: add %s by hand", name)
 	d.mcpChanged()

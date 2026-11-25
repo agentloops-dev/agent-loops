@@ -4802,6 +4802,10 @@
         },
         "hasChanges": {
           "type": "boolean"
+        },
+        "untracked": {
+          "$ref": "#/definitions/SendUntracked",
+          "description": "The files git neither tracks nor ignores, when `measureUntracked` asked and there are some (#7121)."
         }
       },
       "required": [
@@ -4816,6 +4820,10 @@
       "properties": {
         "folder": {
           "$ref": "core.schema.json#/definitions/URLString"
+        },
+        "measureUntracked": {
+          "type": "boolean",
+          "description": "Measures the untracked files too, with a bound (#7121). Only the Send sheet asks."
         }
       },
       "required": [
@@ -4914,6 +4922,10 @@
         },
         "includeChanges": {
           "type": "boolean"
+        },
+        "leaveOutUntracked": {
+          "type": "boolean",
+          "description": "With `includeChanges`, leaves out the files git does not track (#7121). Absent is false: they go."
         }
       },
       "required": [
@@ -4986,6 +4998,10 @@
         "includeChanges": {
           "type": "boolean"
         },
+        "leaveOutUntracked": {
+          "type": "boolean",
+          "description": "With `includeChanges`, leaves out the files git does not track (#7121). Absent is false: they go."
+        },
         "origin": {
           "type": "string"
         }
@@ -5030,6 +5046,55 @@
         "machineName",
         "destination",
         "startedAt"
+      ],
+      "additionalProperties": false
+    },
+    "SendUntracked": {
+      "type": "object",
+      "description": "What a send of the uncommitted changes takes of files git neither tracks nor ignores (#7121): how many, their bytes, and the largest folders. `partial` when the measure stopped at its bound, so there is more; `buildOutput` when some are in a folder named as build output is (node_modules, build, .build, DerivedData, target, dist).",
+      "properties": {
+        "files": {
+          "type": "integer"
+        },
+        "size": {
+          "type": "integer"
+        },
+        "largest": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/SendUntrackedItem"
+          }
+        },
+        "buildOutput": {
+          "type": "boolean"
+        },
+        "partial": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "files",
+        "size",
+        "largest",
+        "buildOutput",
+        "partial"
+      ],
+      "additionalProperties": false
+    },
+    "SendUntrackedItem": {
+      "type": "object",
+      "description": "An untracked folder (its path ends in /) or file of SendUntracked, from the repository's top, and its bytes.",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "size": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "path",
+        "size"
       ],
       "additionalProperties": false
     },

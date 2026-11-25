@@ -27,7 +27,7 @@ public enum MCPHealthWords {
 
     /// How it is doing, in a line.
     public static func line(_ server: Server) -> String {
-        if server.hosted {
+        if server.hosted && server.check != .waiting {
             return server.live.map(HostedMCPWords.line) ?? "Hosted \u{00B7} starts on the first call"
         }
         switch server.check {
@@ -37,7 +37,9 @@ public enum MCPHealthWords {
             let tools = server.tools.map { $0 == 1 ? " \u{00B7} 1 tool" : " \u{00B7} \($0) tools" } ?? ""
             return "Answered" + tools
         case .failed: return "Didn't answer"
-        case .waiting: return "Waiting for approval in this folder's settings, so it is not started"
+        case .waiting:
+            return server.folder == nil ? "Not approved on this machine, so it is not started"
+                : "Waiting for approval in this folder's settings, so it is not started"
         case .missingSecret: return "Needs a secret that isn't set here, so it is not started"
         case .signIn: return "Wants a sign-in first, in Settings"
         case .oldTransport: return "Uses the old sse transport, which isn't checked"
@@ -119,8 +121,9 @@ public enum MCPHealthWords {
             + (inFolder ? "" : removesKept)
     }
 
-    /// Where a removed personal entry is kept (#2195).
-    public static let removesKept = " A copy of the entry is kept in ~/.agents/mcp.removed.json."
+    /// Where a removed personal entry is kept (#2195), and for how long (#7022): the daemon's
+    /// `store.MaxAge`, which `openRemovedConnectors` takes (#6727).
+    public static let removesKept = " A copy of the entry is kept for 90 days in ~/.agents/mcp.removed.json."
 
     /// Remove… found the machine offline (#2266).
     public static func notRemoved(_ name: String, offline machine: String) -> String {

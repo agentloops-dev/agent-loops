@@ -31,6 +31,27 @@ public enum AttentionSnapshotStore {
         #endif
     }
 
+    /// The most the file takes (#7252). Rows that do not fit are left out, the oldest first; the count stays.
+    static let mostBytes = 64 * 1024
+
+    /// The file's bytes, and the snapshot in them.
+    static func fitted(_ snapshot: AttentionSnapshot) -> (snapshot: AttentionSnapshot, data: Data)? {
+        var snapshot = snapshot
+        snapshot.sessions = Array(snapshot.sessions.prefix(AttentionSnapshot.rowLimit))
+        while let data = try? JSONEncoder().encode(snapshot) {
+            if data.count <= mostBytes { return (snapshot, data) }
+            guard snapshot.sessions.popLast() != nil else { return nil }
+        }
+        return nil
+    }
+
+    private static func put(_ data: Data, at url: URL) throws {
+        // The group's Library/Caches is not there until something makes it.
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        // store-bounds: kind=cache; size=64KiB; count=1; age=90d; action=evict; record=64KiB; applied=on write, the age on read
+        try data.write(to: url, options: .atomic)
+    }
+
     /// The file itself, or nil when there is no container.
     public static func url(in container: URL? = nil) -> URL? {
         (container ?? AttentionSnapshotStore.container)?.appendingPathComponent(fileName)
@@ -51,13 +72,10 @@ public enum AttentionSnapshotStore {
         // notifications for one change, and a redraw costs more than the write. Written
         // again when the same count has grown old, so a connected phone's widget is not
         // called stale.
-        guard snapshot.needsWriting(over: last ?? read(from: container)),
-              let data = try? JSONEncoder().encode(snapshot) else { return false }
+        // As it will be kept, so rows that did not fit do not make each call a write.
+        guard let fit = fitted(snapshot), fit.snapshot.needsWriting(over: last ?? read(from: container)) else { return false }
         do {
-            // The group's Library/Caches is not there until something makes it.
-            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
-                                                    withIntermediateDirectories: true)
-            try data.write(to: url, options: .atomic)
+            try put(fit.data, at: url)
             return true
         } catch {
             return false
@@ -88,13 +106,10 @@ public enum AttentionSnapshotStore {
     }
 
     private static func replace(_ next: AttentionSnapshot?, into container: URL?) -> AttentionSnapshot? {
-        guard let next, let url = url(in: container), let data = try? JSONEncoder().encode(next) else { return nil }
+        guard let next, let url = url(in: container), let fit = fitted(next) else { return nil }
         do {
-            // The group's Library/Caches is not there until something makes it.
-            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
-                                                    withIntermediateDirectories: true)
-            try data.write(to: url, options: .atomic)
-            return next
+            try put(fit.data, at: url)
+            return fit.snapshot
         } catch {
             return nil
         }
@@ -109,8 +124,20 @@ public enum AttentionSnapshotStore {
 
     /// The last snapshot the app wrote, or nil when there is none — which the widget says
     /// out loud rather than showing a zero (FR-009).
-    public static func read(from container: URL? = nil) -> AttentionSnapshot? {
-        guard let url = url(in: container), let data = try? Data(contentsOf: url) else { return nil }
-        return try? JSONDecoder().decode(AttentionSnapshot.self, from: data)
+    /// One over the size of an older build, or 90 days old, is none, and goes.
+    public static func read(from container: URL? = nil, now: Date = Date()) -> AttentionSnapshot? {
+        guard let url = url(in: container),
+              let size = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? Int else { return nil }
+        guard size <= mostBytes else {
+            clear(in: container)
+            return nil
+        }
+        guard let data = try? Data(contentsOf: url),
+              let snapshot = try? JSONDecoder().decode(AttentionSnapshot.self, from: data) else { return nil }
+        guard now.timeIntervalSince(snapshot.writtenAt) <= cacheAgeLimit else {
+            clear(in: container)
+            return nil
+        }
+        return snapshot
     }
 }

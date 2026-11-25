@@ -24,16 +24,27 @@ public enum ImageSequence {
         count > 1 ? "\(index + 1) of \(count)" : nil
     }
 
-    /// The sources of the images in `blocks`, in their order, each once. An image that is a link
+    /// One image of a message or page: its source and its alternative text.
+    public struct Item: Equatable, Sendable {
+        public let source: String
+        public let alt: String
+
+        public init(source: String, alt: String) {
+            self.source = source
+            self.alt = alt
+        }
+    }
+
+    /// The images in `blocks`, in their order, each source once. An image that is a link
     /// is not an image block at all: Foundation reads it as the link's words, whose click follows it.
-    public static func sources(in blocks: [MarkdownBlock]) -> [String] {
+    public static func items(in blocks: [MarkdownBlock]) -> [Item] {
         var seen = Set<String>()
-        var found: [String] = []
+        var found: [Item] = []
         func walk(_ blocks: [MarkdownBlock]) {
             for block in blocks {
                 switch block {
-                case .image(let source, _, _):
-                    if seen.insert(source).inserted { found.append(source) }
+                case .image(let source, let alt, _):
+                    if seen.insert(source).inserted { found.append(Item(source: source, alt: alt)) }
                 case .list(_, _, let items):
                     for item in items { walk(item.blocks) }
                 case .quote(let inner):
@@ -45,5 +56,32 @@ public enum ImageSequence {
         }
         walk(blocks)
         return found
+    }
+
+    /// A run of blocks that are drawn together on a live page: one image, or the words between.
+    public struct Piece: Hashable, Sendable {
+        public let range: Range<Int>
+        public let isImage: Bool
+
+        public init(range: Range<Int>, isImage: Bool) {
+            self.range = range
+            self.isImage = isImage
+        }
+    }
+
+    /// `blocks` with each image on its own (#6624), so it can open in the viewer beside words
+    /// whose click does something else. An image in a list or a quote stays in its piece.
+    public static func pieces(of blocks: [MarkdownBlock]) -> [Piece] {
+        var pieces: [Piece] = []
+        for (index, block) in blocks.enumerated() {
+            if case .image = block {
+                pieces.append(Piece(range: index..<(index + 1), isImage: true))
+            } else if let last = pieces.last, !last.isImage {
+                pieces[pieces.count - 1] = Piece(range: last.range.lowerBound..<(index + 1), isImage: false)
+            } else {
+                pieces.append(Piece(range: index..<(index + 1), isImage: false))
+            }
+        }
+        return pieces
     }
 }

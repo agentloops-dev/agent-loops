@@ -88,6 +88,9 @@ func (d *Daemon) sendFacts(r wire.SendFactsRequest) (wire.SendFacts, error) {
 		return f, err
 	}
 	f.HasChanges = status != ""
+	if r.MeasureUntracked != nil && *r.MeasureUntracked {
+		f.Untracked = measureUntracked(path, untrackedFilesLimit, untrackedTimeLimit)
+	}
 	return f, nil
 }
 
@@ -135,7 +138,7 @@ func (d *Daemon) sendPack(r wire.SendPackRequest) (wire.SendPack, error) {
 	}
 
 	if r.IncludeChanges {
-		head, tree, err := ownTree(path)
+		head, tree, err := ownTreeOf(path, r.LeaveOutUntracked == nil || !*r.LeaveOutUntracked)
 		if err != nil {
 			return p, err
 		}

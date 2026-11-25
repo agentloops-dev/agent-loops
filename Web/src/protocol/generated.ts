@@ -3591,6 +3591,11 @@ export interface ControlMachine {
    */
   setup?: MachineSetup;
   /**
+   * What it does (#6609): agents, control or both. Absent from an older control plane, which means
+   * agents.
+   */
+  roles?: ("agents" | "control")[];
+  /**
    * Its labels (#5284): key or key=value, sorted. The ones its provider sets (os=, arch=,
    * provider=) come first in autoLabels and are here too; a person adds others with
    * machines/setLabels.
@@ -14169,11 +14174,18 @@ export interface SendFacts {
   current?: string;
   origin?: string;
   hasChanges: boolean;
+  /**
+   * The files git neither tracks nor ignores, when `measureUntracked` asked and there are some
+   * (#7121).
+   */
+  untracked?: SendUntracked;
 }
 
 /** Asks this Mac's host about a repository to send (Send to ‹host›…, #1123). */
 export interface SendFactsRequest {
   folder: URLString;
+  /** Measures the untracked files too, with a bound (#7121). Only the Send sheet asks. */
+  measureUntracked?: boolean;
 }
 
 /** A file the host made for a send, read with folders/sendRead (#1123). */
@@ -14217,6 +14229,11 @@ export interface SendPackRequest {
   branches: string[];
   leavingOut: string[];
   includeChanges: boolean;
+  /**
+   * With `includeChanges`, leaves out the files git does not track (#7121). Absent is false: they
+   * go.
+   */
+  leaveOutUntracked?: boolean;
 }
 
 /**
@@ -14249,6 +14266,11 @@ export interface SendRequest {
   branches: string[];
   checkout: string;
   includeChanges: boolean;
+  /**
+   * With `includeChanges`, leaves out the files git does not track (#7121). Absent is false: they
+   * go.
+   */
+  leaveOutUntracked?: boolean;
   origin?: string;
 }
 
@@ -14262,6 +14284,29 @@ export interface SendSummary {
   machineName: string;
   destination: string;
   startedAt: WireDate;
+}
+
+/**
+ * What a send of the uncommitted changes takes of files git neither tracks nor ignores (#7121): how
+ * many, their bytes, and the largest folders. `partial` when the measure stopped at its bound, so
+ * there is more; `buildOutput` when some are in a folder named as build output is (node_modules,
+ * build, .build, DerivedData, target, dist).
+ */
+export interface SendUntracked {
+  files: number;
+  size: number;
+  largest: SendUntrackedItem[];
+  buildOutput: boolean;
+  partial: boolean;
+}
+
+/**
+ * An untracked folder (its path ends in /) or file of SendUntracked, from the repository's top, and
+ * its bytes.
+ */
+export interface SendUntrackedItem {
+  path: string;
+  size: number;
 }
 
 /** A branch the Mac sends, at the commit it has (#1123). */
@@ -18615,7 +18660,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   ControlEndpoint: { required: ["url"], optional: ["pin"] },
   ControlHello: { required: ["v", "name", "control", "nonce", "copy"], optional: ["previous"] },
   ControlInstallProgress: { required: ["name", "step"], optional: [] },
-  ControlMachine: { required: ["id", "name", "platform", "version", "state", "reach"], optional: ["machineID", "signInFrom", "gitFrom", "gitAsks", "tunnel", "workspace", "implementation", "capabilities", "maturity", "missing", "owner", "capacity", "loadPerCore5", "capacityAt", "setup", "labels", "autoLabels"] },
+  ControlMachine: { required: ["id", "name", "platform", "version", "state", "reach"], optional: ["machineID", "signInFrom", "gitFrom", "gitAsks", "tunnel", "workspace", "implementation", "capabilities", "maturity", "missing", "owner", "capacity", "loadPerCore5", "capacityAt", "setup", "roles", "labels", "autoLabels"] },
   ControlMoved: { required: ["url", "controlKey", "name"], optional: ["pin"] },
   ControlNewKey: { required: ["key", "proof"], optional: [] },
   ControlNotice: { required: ["kind", "words"], optional: ["user", "group"] },
@@ -19443,16 +19488,18 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   SecretsLeft: { required: ["host", "name", "secrets"], optional: [] },
   SelfUpdate: { required: ["autoUpdate", "state", "running"], optional: ["release", "message"] },
   SelfUpdateSet: { required: ["autoUpdate"], optional: [] },
-  SendFacts: { required: ["branches", "hasChanges"], optional: ["current", "origin"] },
-  SendFactsRequest: { required: ["folder"], optional: [] },
+  SendFacts: { required: ["branches", "hasChanges"], optional: ["current", "origin", "untracked"] },
+  SendFactsRequest: { required: ["folder"], optional: ["measureUntracked"] },
   SendFile: { required: ["id", "size"], optional: [] },
   SendNotification: { required: ["send", "sent", "total", "finished"], optional: ["problem", "received"] },
   SendPack: { required: ["commits"], optional: ["bundle", "patch"] },
-  SendPackRequest: { required: ["folder", "branches", "leavingOut", "includeChanges"], optional: [] },
+  SendPackRequest: { required: ["folder", "branches", "leavingOut", "includeChanges"], optional: ["leaveOutUntracked"] },
   SendRead: { required: ["data", "end"], optional: [] },
   SendReadRequest: { required: ["id", "offset"], optional: [] },
-  SendRequest: { required: ["folder", "machine", "destination", "branches", "checkout", "includeChanges"], optional: ["machineName", "origin"] },
+  SendRequest: { required: ["folder", "machine", "destination", "branches", "checkout", "includeChanges"], optional: ["machineName", "leaveOutUntracked", "origin"] },
   SendSummary: { required: ["id", "folder", "machine", "machineName", "destination", "startedAt"], optional: [] },
+  SendUntracked: { required: ["files", "size", "largest", "buildOutput", "partial"], optional: [] },
+  SendUntrackedItem: { required: ["path", "size"], optional: [] },
   SentBranch: { required: ["name", "commit"], optional: [] },
   SentNotice: { required: ["title", "outcome"], optional: ["body", "nextAt", "to"] },
   ServedRequest: { required: ["kind", "outcome"], optional: [] },

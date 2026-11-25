@@ -1,15 +1,18 @@
 package agentsd
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log"
+	"maps"
 	"net/http"
 	"net/url"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -68,7 +71,11 @@ const (
 	ciMostRepos = 20
 	// ciDefaultEvery is how often a repository's default branch is asked again.
 	ciDefaultEvery = 24 * time.Hour
-	githubAPI      = "https://api.github.com"
+	// ciNameBytes is the longest branch, workflow or job name that state.json keeps, and
+	// ciSlowedKept the most changes of a repository.
+	ciNameBytes  = 1 << 10
+	ciSlowedKept = 100
+	githubAPI    = "https://api.github.com"
 	// ciGitLabJobPages bounds the pages of one pipeline's jobs: 500.
 	ciGitLabJobPages = 5
 )
@@ -149,8 +156,45 @@ func (d *Daemon) ciFileLocked() *ciTimingsFile {
 }
 
 func (d *Daemon) saveCIFileLocked() {
+	boundCIFile(d.ciFileLocked(), nowFunc())
+	// store-bounds: kind=key-value; count=100; size=2MiB a repository; age=90d; applied=write
 	if err := writeStore(filepath.Join(d.ciTimingsDir(), "state.json"), d.ciFileLocked()); err != nil {
 		log.Printf("build timings: state not saved: %v", err)
+	}
+}
+
+// boundCIFile drops the repositories not read for as long as a run is kept, then the ones read
+// longest ago past ciReposKept, and holds what is kept of each to its largest. A repository that
+// goes is read again from the newest, when it is read again.
+func boundCIFile(f *ciTimingsFile, now time.Time) {
+	last := func(r *ciRepoState) time.Time {
+		at := r.DefaultAt
+		for _, t := range []*time.Time{r.ReadAt, &r.SweptAt} {
+			if t != nil && t.After(at) {
+				at = *t
+			}
+		}
+		if at.IsZero() {
+			return now // made now, and not read yet
+		}
+		return at
+	}
+	for key, r := range f.Repos {
+		if r == nil || len(key) > ciRepoKeyBytes || now.Sub(last(r)) > citimings.KeepDays*24*time.Hour {
+			delete(f.Repos, key)
+			continue
+		}
+		if len(r.Default) > ciNameBytes {
+			r.Default = ""
+		}
+		sent := slices.SortedFunc(maps.Keys(r.Slowed), func(a, b string) int { return cmp.Compare(r.Slowed[a].Made, r.Slowed[b].Made) })
+		for _, id := range sent[:max(0, len(sent)-ciSlowedKept)] {
+			delete(r.Slowed, id)
+		}
+	}
+	keys := slices.SortedFunc(maps.Keys(f.Repos), func(a, b string) int { return last(f.Repos[a]).Compare(last(f.Repos[b])) })
+	for _, key := range keys[:max(0, len(keys)-ciReposKept)] {
+		delete(f.Repos, key)
 	}
 }
 

@@ -7,6 +7,7 @@
 // and each folder's approvals as rows of their own. For Review (#3194) holds what is ready to look at
 // but blocks no agent: a session done with a file it showed that nobody has opened, then each folder's
 // open pull requests with a review requested from the person (#3330, #5803), then the read-only daily checks' suggestions (#3331).
+import { putEntry } from "./keyValue";
 import type { Agent, Approval, CheckSuggestion, LineageNode, LineageSessionIssue, ReviewPull, WorkflowSummary } from "../protocol/generated";
 import { asksToArchive, byArchived, byStart, folderKey, groupOf, showsUnread } from "./groups";
 import { queryMatches, type LabelQuery } from "./labels";
@@ -259,6 +260,8 @@ export function newSessionFolder(live: readonly FolderKey[], remembered: FolderK
 }
 
 const rememberedKey = "agents.sidebar.newSessionFolder";
+/** The most bytes of it (#7253). */
+export const rememberedFolderBytes = 4096;
 
 /** The folder New Session last opened in, kept in localStorage as the window keeps it in defaults. */
 export function rememberedFolder(storage: Storage | undefined): FolderKey | undefined {
@@ -272,13 +275,11 @@ export function rememberedFolder(storage: Storage | undefined): FolderKey | unde
 }
 
 export function rememberFolder(storage: Storage | undefined, folder: FolderKey): void {
-  try {
-    const was = rememberedFolder(storage);
-    if (was && sameFolder(was, folder)) return;
-    storage?.setItem(rememberedKey, JSON.stringify({ host: folder.host, folder: folder.folder }));
-  } catch {
-    // A private window may refuse to store; the first folder stands in.
-  }
+  const was = rememberedFolder(storage);
+  if (was && sameFolder(was, folder)) return;
+  // One that is not kept: the first folder stands in.
+  // store-bounds: kind=key-value; count=1; age=until-deleted; action=refuse; record=4KiB; applied=on write
+  putEntry(storage, rememberedKey, JSON.stringify({ host: folder.host, folder: folder.folder }), rememberedFolderBytes);
 }
 
 // The sidebar's groups (#3278, spec 3273), as `SidebarProjects` in AgentsKitCore: one per project,

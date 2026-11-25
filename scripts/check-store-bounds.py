@@ -5,8 +5,10 @@ It finds each place where product code opens a store (OPENINGS, below):
 
 - Go: a file written by path, a folder store, a rolling log, or a control-plane key family
   (a `"v1/<family>/"` literal);
-- Swift: a file written, or a SQLite file opened;
-- web: an IndexedDB database, `localStorage` or Cache Storage.
+- Swift: a file written, a SQLite file opened, or `UserDefaults` written (`set(_:forKey:)`, and `putEntry`, which
+  bounds an entry). An `@AppStorage` is not seen: it is one fixed key;
+- web: an IndexedDB database, `localStorage` or `sessionStorage` (`setItem` of any storage, and `putEntry`,
+  which bounds an entry), or Cache Storage.
 
 Each one must do one of these:
 
@@ -45,7 +47,7 @@ STATE_KINDS = {"document", "graph", "key-value", "secret", "blob"}
 GO = [
     (re.compile(r"\bos\.(WriteFile|Create|CreateTemp)\("), None),
     (re.compile(r"\bos\.OpenFile\(.*\bO_CREATE\b"), "os.OpenFile"),
-    (re.compile(r"\b([wW]riteAtomically)\("), None),
+    (re.compile(r"\b([wW]riteAtomically|writeStore)\("), None),
     (re.compile(r"\b(execfile\.Write|rolllog\.Open|store\.NewFolder)\("), None),
     (re.compile(r'"(v1/[A-Za-z][A-Za-z-]*|runtime/control-[a-z-]+)/?[^"]*"'), None),
 ]
@@ -53,8 +55,16 @@ SWIFT = [
     (re.compile(r"(\.write)\(to:"), "write(to:)"),
     (re.compile(r"\b(createFile)\(atPath:"), None),
     (re.compile(r"\b(sqlite3_open\w*)\("), None),
+    # putEntry is the bounded UserDefaults (Packages/AgentsKit/Sources/AgentsKitCore/Model/KeyValueBounds.swift).
+    (re.compile(r"(?<!\w)(set)\(.*\bforKey:"), "UserDefaults.set"),
+    (re.compile(r"(?<!func )\b(putEntry)\("), None),
 ]
-WEB = [(re.compile(r"\b(indexedDB\.open|localStorage\.setItem|caches\.open)\("), None)]
+# putEntry is the web's bounded localStorage and sessionStorage (Web/src/model/keyValue.ts).
+WEB = [
+    (re.compile(r"\b(indexedDB\.open|caches\.open)\("), None),
+    (re.compile(r"\.(setItem)\("), None),
+    (re.compile(r"(?<!function )\b(putEntry)\("), None),
+]
 OPENINGS = {".go": GO, ".swift": SWIFT, ".ts": WEB, ".tsx": WEB}
 
 TREES = ("Go/", "App/", "Remote/", "Shared/", "Host/", "Packages/", "Web/src/")
@@ -283,7 +293,18 @@ def selftest():
     assert not problems('const p = "v1/new/"')
     assert not problems(write, "Go/internal/a/a.go", {key: 1})
     assert problems("try data.write(to: url)", "App/Sources/A.swift")
+    for call in ("defaults.set(value, forKey: key)", "UserDefaults.standard.set(try? encode(x), forKey: Self.key)",
+                 "store.putEntry(value, forKey: key, most: 9)", "set(value, forKey: key)"):
+        assert problems(call, "App/Sources/A.swift"), call
+        assert not problems(good.replace("log", "key-value") + call, "App/Sources/A.swift"), call
+    assert not problems("public func putEntry(_ value: String, forKey key: String) -> Bool {", "App/Sources/A.swift")
+    assert not problems("set(value)", "App/Sources/A.swift")
     assert problems('indexedDB.open("x", 1)', "Web/src/a.ts")
+    for call in ("localStorage.setItem(k, v)", "storage?.setItem(k, v)", "this.storage?.setItem(k, v)", "putEntry(s, k, v, 9)"):
+        assert problems(call, "Web/src/a.ts"), call
+        assert not problems(good.replace("log", "key-value") + call, "Web/src/a.ts"), call
+    assert not problems("interface Storage { setItem(key: string): void }", "Web/src/a.ts")
+    assert not problems("export function putEntry(s: Storage): boolean {", "Web/src/a.ts")
     assert not problems("f, err := os.OpenFile(p, os.O_RDONLY, 0)")
     assert problems("f, err := os.OpenFile(p, os.O_CREATE|os.O_WRONLY, 0)")
     kinds = "Go/internal/controlplane/store/x.go"

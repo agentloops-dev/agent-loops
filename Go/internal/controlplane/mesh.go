@@ -42,10 +42,20 @@ type hostLease struct {
 	Expires records.Stamp `json:"expires"`
 }
 
+// store-bounds: kind=key-value; count=1 a machine; size=1KiB a record; age=until-deleted; applied=on write, and the hourly sweep deletes the lease of a machine that is gone
 const leasesPrefix = "v1/leases/"
 
 func leaseKey(host string) string      { return leasesPrefix + host + ".json" }
-func copyRecordKey(copy string) string { return "v1/copies/" + copy + ".json" }
+func copyRecordKey(copy string) string { return copiesPrefix + copy + ".json" }
+
+// leaseData is a lease as stored, or why it cannot be (#7248).
+func leaseData(l hostLease) ([]byte, error) {
+	data, err := records.Encode(l)
+	if err != nil {
+		return nil, err
+	}
+	return data, within("The lease", data, leaseBytes)
+}
 
 type heldLease struct {
 	etag  string
@@ -77,7 +87,10 @@ func (l *leases) take(ctx context.Context, host string) (int, error) {
 			when = store.Matching(existing.ETag)
 		}
 		next := hostLease{Host: host, Copy: l.copy, Epoch: previous.Epoch + 1, Expires: records.At(time.Now().Add(leaseLife))}
-		data, _ := records.Encode(next)
+		data, err := leaseData(next)
+		if err != nil {
+			return 0, err
+		}
 		etag, err := l.store.Put(ctx, leaseKey(host), data, when)
 		if store.IsConflict(err) {
 			continue
@@ -104,9 +117,10 @@ func (l *leases) release(ctx context.Context, host string) int {
 	}
 	over := mine.lease
 	over.Expires = records.Now()
-	data, _ := records.Encode(over)
 	// A release not written: the lease runs out by itself.
-	_, _ = l.store.Put(ctx, leaseKey(host), data, store.Matching(mine.etag))
+	if data, err := leaseData(over); err == nil {
+		_, _ = l.store.Put(ctx, leaseKey(host), data, store.Matching(mine.etag))
+	}
 	return over.Epoch
 }
 
@@ -141,7 +155,10 @@ func (l *leases) renewAll(ctx context.Context) {
 	for host, mine := range held {
 		renewed := mine.lease
 		renewed.Expires = records.At(time.Now().Add(leaseLife))
-		data, _ := records.Encode(renewed)
+		data, err := leaseData(renewed)
+		if err != nil {
+			continue
+		}
 		etag, err := l.store.Put(ctx, leaseKey(host), data, store.Matching(mine.etag))
 		l.mu.Lock()
 		now, still := l.held[host]
@@ -154,9 +171,10 @@ func (l *leases) renewAll(ctx context.Context) {
 			l.mu.Unlock()
 			over := renewed
 			over.Expires = records.Now()
-			data, _ := records.Encode(over)
 			// A release not written: the lease runs out by itself.
-			_, _ = l.store.Put(ctx, leaseKey(host), data, store.Matching(etag))
+			if data, err := leaseData(over); err == nil {
+				_, _ = l.store.Put(ctx, leaseKey(host), data, store.Matching(etag))
+			}
 		case store.IsConflict(err) && still && now.etag == mine.etag:
 			delete(l.held, host)
 			lost := l.lost
@@ -176,6 +194,8 @@ type copyRecord struct {
 	PeerURL   string        `json:"peerURL"`
 	Started   records.Stamp `json:"started"`
 	Heartbeat records.Stamp `json:"heartbeat"`
+	// The id of the machine record that runs this copy (#6609). Absent from an older copy.
+	Machine string `json:"machine,omitempty"`
 }
 
 // controlEvent is ControlEvent: a change, for every copy to apply.
@@ -259,11 +279,12 @@ func (m *mesh) tick() {
 	defer cancel()
 	st := m.s.cfg.Store
 	me := m.s.copyID
-	record := copyRecord{ID: me, PeerURL: m.peerURL, Started: records.At(m.started), Heartbeat: records.Now()}
-	data, _ := records.Encode(record)
+	record := copyRecord{ID: me, PeerURL: m.peerURL, Started: records.At(m.started), Heartbeat: records.Now(), Machine: m.s.controlMachineID()}
 	// The next heartbeat writes it again.
-	_, _ = st.Put(ctx, copyRecordKey(me), data, store.Always)
-	listed, err := st.List(ctx, "v1/copies/")
+	if data, err := records.Encode(record); err == nil && len(data) <= copyRecordBytes {
+		_, _ = st.Put(ctx, copyRecordKey(me), data, store.Always)
+	}
+	listed, err := st.List(ctx, copiesPrefix)
 	if err != nil {
 		return
 	}
@@ -692,7 +713,8 @@ func (s *Service) announce(kind, subject, by string) {
 	event := controlEvent{Kind: kind, Subject: subject, At: at.Format("2006-01-02T15:04:05Z"), By: by}
 	s.mesh.broadcast(encodePeer("event", event))
 	key := fmt.Sprintf("%s%s/%013d-%s.json", meshEventsPrefix, at.Format(sweptDayLayout), at.UnixMilli(), strings.ToLower(records.NewUUID()[:8]))
-	if data, err := records.Encode(map[string]any{"kind": kind, "subject": subject, "at": records.At(at), "by": by}); err == nil {
+	// An event is a hint to load the records again: a long subject or name is cut (#7248).
+	if data, err := records.Encode(map[string]any{"kind": kind, "subject": cut(subject, meshEventBytes/4), "at": records.At(at), "by": cut(by, meshEventBytes/4)}); err == nil && len(data) <= meshEventBytes {
 		if _, err := s.cfg.Store.Put(context.Background(), key, data, store.Absent); err != nil {
 			s.log("mesh: event " + kind + " could not be kept: " + err.Error())
 		}

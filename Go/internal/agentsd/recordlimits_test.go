@@ -1,18 +1,24 @@
 package agentsd
 
 import (
+	"crypto/ecdsa"
+	"crypto/rand"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/diskjson"
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/skillcatalog"
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/machinelock"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -176,7 +182,6 @@ func TestAnOldRunThatIsTooLargeComesOverWithItsTriggerCut(t *testing.T) {
 
 // An answer within its largest is on the disk when it is told, with a request at its largest too.
 func TestALargeRequestsAnswerIsOnTheDisk(t *testing.T) {
-	t.Skip("#7185")
 	t.Parallel()
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -200,7 +205,6 @@ func TestALargeRequestsAnswerIsOnTheDisk(t *testing.T) {
 
 // Dismiss of a pull request that cannot be kept is refused, and it stays in the list.
 func TestADismissalTooLargeToKeepIsRefused(t *testing.T) {
-	t.Skip("#7186")
 	t.Parallel()
 	d, c := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -209,7 +213,12 @@ func TestADismissalTooLargeToKeepIsRefused(t *testing.T) {
 	d.reviewMu.Lock()
 	d.reviews = map[string][]wire.ReviewPull{dir: {{URL: url}}}
 	d.reviewMu.Unlock()
-	d.dismissReview(dir, url)
+	if err := d.dismissReview(dir, url); err == nil {
+		t.Error("the dismissal was taken")
+	}
+	if err := d.openReview(dir, url); err == nil {
+		t.Error("the opened mark was taken")
+	}
 	marks, err := d.dismissed.Read()
 	must(t, err)
 	if len(marks) == 0 && len(d.reviewsFor(dir)) == 0 {
@@ -219,7 +228,6 @@ func TestADismissalTooLargeToKeepIsRefused(t *testing.T) {
 
 // An app tool call with many arguments, or a long one's name, is kept within its largest.
 func TestAnAppToolCallIsKeptWhateverItsArguments(t *testing.T) {
-	t.Skip("#7187")
 	t.Parallel()
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -236,7 +244,6 @@ func TestAnAppToolCallIsKeptWhateverItsArguments(t *testing.T) {
 
 // A cut argument says that it is cut.
 func TestACutAppToolArgumentSaysSo(t *testing.T) {
-	t.Skip("#7187")
 	t.Parallel()
 	v, _ := json.Marshal(strings.Repeat("x", appToolAnswerMost+1))
 	var got string
@@ -248,7 +255,6 @@ func TestACutAppToolArgumentSaysSo(t *testing.T) {
 
 // A transcript that is restored, imported or moved here has no entry over the largest.
 func TestARestoredTranscriptIsWithinTheLargestRecord(t *testing.T) {
-	t.Skip("#7183")
 	shared := t.TempDir()
 	a, ca := start(t, t.TempDir())
 	dir := folder(t, ca, 1)
@@ -272,7 +278,6 @@ func TestARestoredTranscriptIsWithinTheLargestRecord(t *testing.T) {
 
 // The display settings have a largest size.
 func TestTheDisplaySettingsHaveALargestSize(t *testing.T) {
-	t.Skip("#7189")
 	t.Parallel()
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
@@ -283,5 +288,214 @@ func TestTheDisplaySettingsHaveALargestSize(t *testing.T) {
 	}
 	if got := string(d.preferences()["k"]); got != "1" {
 		t.Fatalf("the earlier value is %.20s", got)
+	}
+}
+
+// #7189: the other settings files have a largest size too, and one over it from before can shrink.
+func TestTheSettingsFilesHaveALargestSize(t *testing.T) {
+	t.Parallel()
+	d, _ := start(t, t.TempDir())
+	defer d.Shutdown()
+	big := strings.Repeat("x", 300<<10)
+	name := "Sam"
+	_, err := d.setPerson(wire.PersonSettings{Name: &name})
+	must(t, err)
+	if _, err := d.setPerson(wire.PersonSettings{Name: &big}); err == nil {
+		t.Error("a name of 300 KiB was taken")
+	}
+	if p := readPerson(d.personFile()); p.Name == nil || *p.Name != name {
+		t.Error("the earlier name is gone")
+	}
+	must(t, d.writeSetting("auto.json", map[string]string{"a": "1"}))
+	if err := d.writeSetting("auto.json", map[string]string{"a": big}); !errors.Is(err, store.ErrLimit) {
+		t.Errorf("a setting file of 300 KiB: %v", err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(d.SettingsDir, "auto.json")); string(b) != `{"a":"1"}` {
+		t.Errorf("auto.json is %.40s", b)
+	}
+	if err := d.writeRuntimeChoices(wire.JSONValue(`{"sandbox":{"defaults":{"` + big + `":"on"}}}`)); err == nil {
+		t.Error("the sandbox of the user settings, of 300 KiB, was taken")
+	}
+	category := "mode"
+	options := []wire.ConfigOption{{ID: "m", Type: "select", Category: &category}}
+	d.rememberMode("claude", "m", wire.JSONValue(`"plan"`), options)
+	d.rememberMode("claude", "m", wire.JSONValue(`"`+big+`"`), options)
+	if got := string(d.modes()["claude"]); got != `"plan"` {
+		t.Errorf("the mode is %.40s", got)
+	}
+	// Many settings, and many small ones, are too much; what is there already can be made smaller.
+	change := map[string]wire.JSONValue{}
+	for i := range 1001 {
+		change[fmt.Sprint("k", i)] = wire.JSONValue("1")
+	}
+	if _, err := d.setPreferences(change); err == nil {
+		t.Error("1001 settings were taken")
+	}
+	writeFile(t, d.displayFile(), `{"a":"`+big+`","b":1}`)
+	_, err = d.setPreferences(map[string]wire.JSONValue{"b": wire.JSONValue("2")})
+	must(t, err)
+	if _, err := d.setPreferences(map[string]wire.JSONValue{"c": wire.JSONValue("2")}); err == nil {
+		t.Error("a full file grew")
+	}
+	_, err = d.setPreferences(map[string]wire.JSONValue{"a": wire.JSONValue("null")})
+	must(t, err)
+	if got := d.preferences(); len(got) != 1 || string(got["b"]) != "2" {
+		t.Errorf("%d settings", len(got))
+	}
+}
+
+// #7203: a machine's user that is too large is kept without its labels, or not taken at all, and
+// memory is as the disk is.
+func TestAHostUserTooLargeIsTheSameInMemoryAndOnTheDisk(t *testing.T) {
+	t.Parallel()
+	d, _ := start(t, t.TempDir())
+	defer d.Shutdown()
+	tell := func(u wire.MachineUser) wire.MachineUser {
+		b, err := json.Marshal(u)
+		must(t, err)
+		d.toldHostUser(b)
+		var kept wire.MachineUser
+		b, err = os.ReadFile(d.hostUserPath())
+		must(t, err)
+		must(t, json.Unmarshal(b, &kept))
+		return kept
+	}
+	big := strings.Repeat("x", hostUserMostBytes)
+	tell(wire.MachineUser{User: "p1", Kind: "person", Name: "p", Labels: []string{}})
+	if kept := tell(wire.MachineUser{User: "b1", Kind: "bot", Name: "b", Labels: []string{big}, Bots: []string{big}}); kept.User != "b1" || kept.Kind != "bot" || !d.isBot() {
+		t.Errorf("kept %s, a bot in memory: %v", kept.User, d.isBot())
+	}
+	kept := tell(wire.MachineUser{User: "p2", Kind: "person", Name: big, Labels: []string{}})
+	if got := d.user(); got.User != kept.User {
+		t.Errorf("%s in memory, %s on the disk", got.User, kept.User)
+	}
+}
+
+// #7203: a lock whose head cannot be pinned is not taken: not on the disk and not in memory.
+func TestALockWhoseHeadCannotBePinnedIsNotTaken(t *testing.T) {
+	t.Parallel()
+	d, _ := start(t, t.TempDir())
+	defer d.Shutdown()
+	key := newLockKey(t)
+	// An entry's own limit holds its name, but the pin writes each < in six bytes.
+	person := strings.Repeat("<", lockPinMostBytes/2)
+	body, err := json.Marshal(wire.LockBody{V: machinelock.Version, Kind: wire.LockEntryKindRoot, Person: person, At: wire.DateOf(time.Now()),
+		Key: machinelock.PublicKey(key), Signer: machinelock.PublicKey(key)})
+	must(t, err)
+	body = []byte(strings.ReplaceAll(string(body), `\u003c`, "<"))
+	sum := sha256.Sum256(append([]byte("agents-lock/1\n"), body...))
+	r, s, err := ecdsa.Sign(rand.Reader, key, sum[:])
+	must(t, err)
+	entry := wire.LockEntry{Body: body, Sig: append(r.FillBytes(make([]byte, 32)), s.FillBytes(make([]byte, 32))...)}
+	if d.TakeLock(wire.Lock{Person: person, Entries: []wire.LockEntry{entry}}) {
+		t.Fatal("it was taken")
+	}
+	if fileExists(d.lockFilePath()) || fileExists(d.lockPinPath()) {
+		t.Error("it is on the disk")
+	}
+	if state, pinned := d.heldLock(); pinned || state != nil {
+		t.Error("it is in memory")
+	}
+}
+
+// #7203: a lock that the disk did not take is written when it comes again.
+func TestALockThatWasNotKeptIsKeptWhenItComesAgain(t *testing.T) {
+	t.Parallel()
+	d, _ := start(t, t.TempDir())
+	defer d.Shutdown()
+	mac, phone := newLockKey(t), newLockKey(t)
+	root := lockEntry(t, mac, wire.LockEntryKindRoot, mac, nil)
+	add := lockEntry(t, mac, wire.LockEntryKindAddClient, phone, &root)
+	first, both := wire.Lock{Person: "sam", Entries: []wire.LockEntry{root}}, wire.Lock{Person: "sam", Entries: []wire.LockEntry{root, add}}
+	d.TakeLock(first)
+	old, err := os.ReadFile(d.lockFilePath())
+	must(t, err)
+	d.TakeLock(both)
+	must(t, store.WriteAtomically(d.lockFilePath(), old, 0o600)) // as if the write had failed
+	d.TakeLock(both)
+	d.lockMu.Lock()
+	d.lockHeld, d.lockRead = nil, false
+	d.lockMu.Unlock()
+	if state, _ := d.heldLock(); state == nil || state.Count() != 2 {
+		t.Fatal("the lock after a restart is not the one that was pinned")
+	}
+}
+
+// #7203: a score that cannot be kept is not told as kept.
+func TestAnAssessmentsScoreThatCannotBeKeptIsRefused(t *testing.T) {
+	t.Parallel()
+	d, _ := start(t, t.TempDir())
+	defer d.Shutdown()
+	agent := seeded(t, d, t.TempDir(), nil)
+	writeFile(t, d.assessmentsPath(), "not a folder")
+	if _, err := d.assessment(agent.ID); err == nil {
+		t.Fatal("a score that is not kept was told as a success")
+	}
+}
+
+// #7203: a scope file is cut at a whole character, and says so.
+func TestAScopeFileThatIsCutSaysSo(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	in := assessmentFiles{dir: dir, mu: &sync.Mutex{}}
+	path := filepath.Join(dir, "scope-a.txt")
+	for pad := range 3 {
+		writeFile(t, path, strings.Repeat("x", pad)+strings.Repeat("€", assessmentMaxBytes/2))
+		must(t, in.Cut("scope-a.txt"))
+		b, err := os.ReadFile(path)
+		must(t, err)
+		if len(b) > assessmentMaxBytes || !utf8.Valid(b) || !strings.Contains(string(b), "cut") {
+			t.Fatalf("%d bytes, whole characters: %v, ends in %.60q", len(b), utf8.Valid(b), b[max(0, len(b)-60):])
+		}
+	}
+}
+
+// A restored record of an app tool call is within the largest, and so is a moved session's
+// transcript after it: said.json of a cut transcript is made again.
+func TestARestoredConversationIsBoundedWithWhatPointsAtIt(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	files := map[string]string{}
+	put := func(name, text string) {
+		files[name] = filepath.Join(dir, name)
+		writeFile(t, files[name], text)
+	}
+	put("transcript.jsonl", `{"id":"A","at":"2026-11-24T11:00:00.000Z","kind":{"t":"`+strings.Repeat("x", 5<<20)+`"}}`+"\n")
+	put("said.json", `{"offset":1,"size":5242880}`)
+	put("app-tools.jsonl", `{"at":"2026-11-24T11:00:00.000Z","method":"people/notify","ok":true,"answer":"`+strings.Repeat("x", 2<<20)+`"}`+"\n")
+	must(t, boundConversation(files))
+	if _, ok := files["said.json"]; ok {
+		t.Error("said.json points into the transcript as it was")
+	}
+	b, err := os.ReadFile(files["app-tools.jsonl"])
+	must(t, err)
+	var call appToolCall
+	must(t, diskjson.Unmarshal(b, &call))
+	if len(b) > 1<<20 || call.Method != "people/notify" || !call.Ok || !strings.Contains(answerOfCall(call), "too large") {
+		t.Fatalf("%d bytes, %+v", len(b), call)
+	}
+}
+
+// A form's answer that the disk refuses is not told: the request stays open.
+func TestAFormsAnswerThatIsNotKeptIsNotTold(t *testing.T) {
+	t.Parallel()
+	d, _ := start(t, t.TempDir())
+	defer d.Shutdown()
+	asker := seeded(t, d, t.TempDir(), nil)
+	msg := "which"
+	req := wire.ElicitationRequest{ID: store.NewUUID(), AgentID: asker.ID, Message: &msg, AskedAt: now()}
+	d.openFormRequest(req)
+	must(t, os.RemoveAll(d.requestsDir()))
+	writeFile(t, d.requestsDir(), "") // a file where the folder was
+	answer := "one"
+	if ended, err := d.answerFormRequest(req.ID, &answer, nil); err == nil || ended {
+		t.Fatalf("told: %v %v", ended, err)
+	}
+	if r := d.request(req.ID); r == nil || r.State != wire.RequestStateOpen || r.Answer != nil {
+		t.Fatalf("%+v", r)
+	}
+	must(t, os.Remove(d.requestsDir()))
+	if ended, err := d.answerFormRequest(req.ID, &answer, nil); err != nil || !ended {
+		t.Fatalf("not answered again: %v %v", ended, err)
 	}
 }
