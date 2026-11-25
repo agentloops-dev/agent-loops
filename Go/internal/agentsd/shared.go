@@ -145,7 +145,7 @@ func (d *Daemon) sharedSnapshot() wire.SharedSnapshot {
 			present = append(present, r)
 		}
 	}
-	return personalSnapshot(home, present, d.layoutRecord(home), d.appHomes(), d.secrets())
+	return personalSnapshot(home, present, d.layoutRecord(home), d.appHomes(), d.secrets(), d.personalGate())
 }
 
 // withManagedSkills marks each personal skill a lock says the app or `npx skills` added (059).
@@ -164,7 +164,7 @@ func (d *Daemon) withManagedSkills(s wire.SharedSnapshot) wire.SharedSnapshot {
 }
 
 func personalSnapshot(home string, present []sharedRule, record layoutRecord, appHomes map[string]string,
-	secrets map[string]string) wire.SharedSnapshot {
+	secrets map[string]string, gate personalGate) wire.SharedSnapshot {
 	shared := filepath.Join(home, ".agents")
 	s := emptySnapshot(shared, true)
 	for _, r := range present {
@@ -182,7 +182,7 @@ func personalSnapshot(home string, present []sharedRule, record layoutRecord, ap
 	s.Instructions = &instructions
 	plugins := pluginFoldersIn(filepath.Join(shared, "plugins"))
 	s.Skills = sharedSkills(home, present, plugins, record, appHomes, &looks)
-	s.MCP = sharedMCP(home, present, secrets, &looks)
+	s.MCP = sharedMCP(home, present, secrets, gate, &looks)
 	for _, p := range plugins {
 		s.Plugins = append(s.Plugins, sharedPlugin(home, p, present, record))
 	}
@@ -477,7 +477,7 @@ func skillDescription(skill string) *string {
 	return nil
 }
 
-func sharedMCP(home string, present []sharedRule, secrets map[string]string, looks *[]wire.SharedLook) wire.SharedMCP {
+func sharedMCP(home string, present []sharedRule, secrets map[string]string, gate personalGate, looks *[]wire.SharedLook) wire.SharedMCP {
 	file := filepath.Join(home, ".agents", "mcp.json")
 	result := wire.SharedMCP{File: file, Servers: []wire.SharedServer{}, RuntimeOnly: []wire.SharedRuntimeOnlyServer{}}
 	own := map[string]map[string]bool{}
@@ -527,7 +527,15 @@ func sharedMCP(home string, present []sharedRule, secrets map[string]string, loo
 			}
 		}
 		sharedServerClashLooks(home, e.name, clash, looks)
-		sharedServerLeaveOutUnready(e, present, secrets, signIns, reach, looks)
+		if gate.waits(e) {
+			for _, r := range present {
+				reach[r.id] = leftOut("waits for your approval")
+			}
+			*looks = append(*looks, wire.SharedLook{Kind: wire.SharedLookKindLeftOut, Page: wire.SharedLookPageMCP, Item: e.name,
+				Text: e.name + " waits for your approval on this machine, so agents start without it."})
+		} else {
+			sharedServerLeaveOutUnready(e, present, secrets, signIns, reach, looks)
+		}
 		result.Servers = append(result.Servers, serverRow(e, clash, reach))
 	}
 	sharedSSELeftOutLooks(sseLeftOut, looks)

@@ -217,7 +217,10 @@ func (d *Daemon) readChecked(c *Client, line string) (message, bool) {
 	}
 	state, pinned := d.heldLock()
 	switch {
-	case sealed, !pinned:
+	case sealed:
+		m.vouched = true
+		return m, true
+	case !pinned:
 		return m, true
 	case state == nil && !controlAsks[m.Method]:
 		return m, d.refuse(c, m, "it has not read your lock yet; try again in a moment")
