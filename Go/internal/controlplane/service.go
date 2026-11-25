@@ -295,7 +295,10 @@ type Service struct {
 	accepting sync.WaitGroup
 	// The writes a socket starts and does not wait for (a member's epoch): Stop waits for
 	// them too, so none writes into the store after it returns (#5001).
-	writing  sync.WaitGroup
+	writing sync.WaitGroup
+	// The capacity monitor: Stop waits for a sample it is in, so none logs or keeps its
+	// snapshot after Stop returns (#7171).
+	sampling sync.WaitGroup
 	ready    bool
 	loopback *web.Listener
 	// One control/setWeb at a time (#4252).
@@ -703,7 +706,6 @@ func (s *Service) Stop() {
 	sockets := s.sockets
 	s.sockets = map[*Conn]bool{}
 	s.mu.Unlock()
-	_ = s.cfg.Store.Delete(context.Background(), controlCapacityKey(s.copyID))
 	for _, srv := range servers {
 		srv.Close()
 	}
@@ -719,6 +721,9 @@ func (s *Service) Stop() {
 	}
 	s.accepting.Wait()
 	s.writing.Wait()
+	s.sampling.Wait()
+	// After the last sample, which would keep it again.
+	_ = s.cfg.Store.Delete(context.Background(), controlCapacityKey(s.copyID))
 	if tunnels != nil {
 		tunnels.Stop()
 	}
