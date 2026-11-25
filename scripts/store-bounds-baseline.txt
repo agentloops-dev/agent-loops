@@ -108,7 +108,6 @@
 2 Go/internal/controllink/membership.go os.WriteFile
 1 Go/internal/controllink/personkey.go os.WriteFile
 1 Go/internal/controllink/personkeypin.go os.WriteFile
-1 Go/internal/controlplane/approvals.go v1/approvals
 1 Go/internal/controlplane/audit/chain.go v1/audit-seals
 2 Go/internal/controlplane/backups.go v1/backups
 1 Go/internal/controlplane/bots.go v1/runs
@@ -135,7 +134,6 @@
 1 Go/internal/controlplane/lockjoins.go v1/lockjoins
 1 Go/internal/controlplane/locks/locks.go v1/locks
 2 Go/internal/controlplane/machine.go os.WriteFile
-1 Go/internal/controlplane/maturity/store.go v1/maturity
 2 Go/internal/controlplane/mesh.go v1/copies
 1 Go/internal/controlplane/mesh.go v1/leases
 1 Go/internal/controlplane/orgrefresh.go v1/signin
@@ -164,13 +162,10 @@
 1 Go/internal/controlplane/sweep.go v1/codes
 1 Go/internal/controlplane/sweep.go v1/mesh
 1 Go/internal/execfile/execfile.go os.WriteFile
-4 Go/internal/hosted/accounts.go v1/accounts
-1 Go/internal/hosted/accounts.go v1/emails
 1 Go/internal/hosted/backup.go os.CreateTemp
 1 Go/internal/hosted/backup.go os.WriteFile
 2 Go/internal/hosted/billing.go v1/stripe
 1 Go/internal/hosted/limits.go runtime/control-capacity
-1 Go/internal/hosted/limits.go v1/usage
 1 Go/internal/hostsetup/install.go os.OpenFile
 2 Go/internal/hostsetup/install.go os.WriteFile
 1 Go/internal/hostsetup/report.go os.OpenFile
