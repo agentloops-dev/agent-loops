@@ -1,14 +1,19 @@
 package agentsd
 
 import (
+	"bytes"
+	"cmp"
 	"context"
 	"log"
+	"maps"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/diskjson"
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
@@ -38,19 +43,144 @@ func (d *Daemon) allowancesLocked() map[string]wire.AllowanceState {
 		var list []wire.AllowanceState
 		readStore(d.allowancesPath(), &list, "starting with every runtime available")
 		for _, s := range list {
-			d.allowances[s.CredentialKey] = s
+			if s, ok := agedAllowance(s, nowFunc()); ok {
+				d.allowances[s.CredentialKey] = s
+			}
 		}
 	}
 	return d.allowances
 }
 
+// An allowance is made from what the runtimes said, so it ages out, and the oldest goes first
+// (#6747). It stays in the data folder: it is this machine's reading, and no configuration. What
+// a person said ("it works again") is what a credential with no record is, so nothing is lost.
+const (
+	allowancesMost     = 500
+	allowanceMostBytes = 64 << 10
+	allowanceKept      = store.MaxAge
+)
+
+// allowanceNews is when a credential's record last heard something.
+func allowanceNews(s wire.AllowanceState) wire.Date {
+	at := s.ChangedAt
+	if s.Reading != nil {
+		at = max(at, s.Reading.At)
+	}
+	for _, w := range s.Weeks {
+		at = max(at, w.At)
+	}
+	return at
+}
+
+// fromTheFuture says if a time is more than a day ahead: two machines' clocks differ by less.
+func fromTheFuture(d wire.Date, at time.Time) bool { return d.Time().Sub(at) > 24*time.Hour }
+
+// agedAllowance is a credential's record without what is past 90 days; false when nothing is
+// left of it. One that is out until a time still to come stays, whatever its age.
+func agedAllowance(s wire.AllowanceState, at time.Time) (wire.AllowanceState, bool) {
+	old := func(d wire.Date) bool { return at.Sub(d.Time()) >= allowanceKept }
+	// A clock that was wrong must not keep a record for longer.
+	honest := func(d wire.Date) wire.Date {
+		if fromTheFuture(d, at) {
+			return wire.DateOf(at)
+		}
+		return d
+	}
+	s.ChangedAt = honest(s.ChangedAt)
+	if s.Reading != nil {
+		r := *s.Reading
+		r.At = honest(r.At)
+		s.Reading = &r
+	}
+	s.Weeks = slices.Clone(s.Weeks)
+	for i := range s.Weeks {
+		s.Weeks[i].At = honest(s.Weeks[i].At)
+	}
+	out := false
+	if o := s.Status.Out; o != nil && o.Until != nil {
+		out = o.Until.Time().After(at) && o.Until.Time().Sub(at) < allowanceKept
+	}
+	if old(allowanceNews(s)) && !out {
+		return s, false
+	}
+	s.Weeks = slices.DeleteFunc(s.Weeks, func(w wire.AllowanceReading) bool { return old(w.At) })
+	s.RateLimitStreak = slices.DeleteFunc(slices.Clone(s.RateLimitStreak), old)
+	if s.Reading != nil && old(s.Reading.At) {
+		s.Reading = nil
+	}
+	if s.LastRateLimit != nil && old(allowanceRateLimitAt(s)) {
+		s.LastRateLimit = nil
+	}
+	return s, true
+}
+
+// allowanceRateLimitAt is the last time that a rate limit could have been said: it has no time
+// of its own, so when it resets, or else when the record changed.
+func allowanceRateLimitAt(s wire.AllowanceState) wire.Date {
+	if s.LastRateLimit.ResetsAt != nil {
+		return max(*s.LastRateLimit.ResetsAt, s.ChangedAt)
+	}
+	return s.ChangedAt
+}
+
+// boundAllowancesLocked holds the records to their limits.
+func (d *Daemon) boundAllowancesLocked(at time.Time) {
+	for key, s := range d.allowances {
+		s, ok := agedAllowance(s, at)
+		if ok && allowanceBytes(s) > allowanceMostBytes {
+			s.LastRateLimit, s.Reading, s.Weeks, s.RateLimitStreak = nil, nil, nil, []wire.Date{}
+			ok = allowanceBytes(s) <= allowanceMostBytes
+		}
+		if !ok {
+			delete(d.allowances, key)
+			continue
+		}
+		d.allowances[key] = s
+	}
+	keys := slices.SortedFunc(maps.Keys(d.allowances), func(a, b string) int {
+		return cmp.Or(cmp.Compare(allowanceNews(d.allowances[a]), allowanceNews(d.allowances[b])), cmp.Compare(a, b))
+	})
+	for _, key := range keys[:max(0, len(keys)-allowancesMost)] {
+		delete(d.allowances, key)
+	}
+}
+
+func allowanceBytes(s wire.AllowanceState) int {
+	b, err := diskjson.Marshal(s)
+	if err != nil {
+		return allowanceMostBytes + 1
+	}
+	return len(b)
+}
+
+// sweepAllowances is the hourly sweep: the file is written only when a record went or changed.
+func (d *Daemon) sweepAllowances(at time.Time) {
+	d.allowMu.Lock()
+	defer d.allowMu.Unlock()
+	was, err := diskjson.Marshal(d.allowancesLocked())
+	if err != nil {
+		log.Printf("allowances: could not sweep: %v", err)
+		return
+	}
+	d.boundAllowancesLocked(at)
+	if is, err := diskjson.Marshal(d.allowances); err != nil || !bytes.Equal(was, is) {
+		d.saveAllowancesLocked()
+	}
+}
+
 func (d *Daemon) saveAllowancesLocked() {
+	d.boundAllowancesLocked(nowFunc())
 	list := []wire.AllowanceState{}
 	for _, s := range d.allowances {
 		list = append(list, s)
 	}
 	sort.Slice(list, func(i, j int) bool { return list[i].CredentialKey < list[j].CredentialKey })
-	if err := writeStore(d.allowancesPath(), list); err != nil {
+	b, err := diskjson.Marshal(list)
+	if err == nil {
+		// store-bounds: kind=key-value; count=500; size=64KiB a credential; age=90d; applied=on write, and hourly sweep
+		err = store.WriteAtomically(d.allowancesPath(), b, 0o644)
+	}
+	if err != nil {
 		log.Printf("allowances: could not save: %v", err)
 	}
 }
@@ -307,6 +437,13 @@ func (d *Daemon) applyAllowances(states []wire.AllowanceState) bool {
 		if !isSharedKey(s.CredentialKey) {
 			continue
 		}
+		// Another machine can still have what aged out here.
+		ahead := fromTheFuture(allowanceNews(s), nowFunc())
+		s, fresh := agedAllowance(s, nowFunc())
+		if ahead || !fresh {
+			continue
+		}
+		s.Weeks, _ = withWeeks(nil, s.Weeks)
 		had, ok := mine[s.CredentialKey]
 		switch {
 		case !ok || s.ChangedAt > had.ChangedAt:
