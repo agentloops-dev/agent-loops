@@ -1812,6 +1812,9 @@ func (m *Methods) openTunnel(ctx context.Context, host string, params json.RawMe
 // something, and the home host settled.
 func (m *Methods) hello(ctx context.Context, host string, hello wire.MachineHello) error {
 	known := m.records.Host(host)
+	if err := m.s.refuseMovedHello(known, hello.MachineID); err != nil {
+		return err
+	}
 	changed := known == nil
 	if known == nil {
 		record := records.MachineRecord{ID: host, Name: host}

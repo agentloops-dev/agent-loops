@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/web"
+	"github.com/agentloops-dev/agent-loops/Go/internal/machine"
 )
 
 // UnitName is the systemd user unit.
@@ -185,6 +186,12 @@ WantedBy=default.target
 `, env, strings.Join(args, " "))
 }
 
+// Installed says whether this machine has the control role by this install.
+func Installed(home string) bool {
+	_, err := os.Stat(LayoutOf(home).Unit)
+	return err == nil
+}
+
 // Install puts agents-control in the host's bin and the web page beside it, writes the unit, starts it, and waits for
 // the store to be made, so that a host code can be issued. It does nothing a user cannot.
 func Install(ctx context.Context, o Options, d Deps) error {
@@ -241,11 +248,16 @@ func HostCode(ctx context.Context, home string, d Deps) (string, error) {
 	l := LayoutOf(home)
 	deadline := time.Now().Add(d.Wait)
 	for {
-		out, err := d.Run(l.Binary(), "code", "--host", "--home", l.Control)
+		out, err := d.Run(l.Binary(), "code", "--host", "--here", "--home", l.Control)
 		if err == nil {
 			if code := strings.TrimSpace(out); strings.HasPrefix(code, "agents-control:") {
 				return code, nil
 			}
+		}
+		// A team's control plane gives this machine no agents (#7305): no wait changes that.
+		if strings.Contains(out, machine.BothRolesRefused) {
+			_ = writeHostDropIn(l, false)
+			return "", fmt.Errorf("%s", machine.BothRolesRefused)
 		}
 		if time.Now().After(deadline) {
 			return "", fmt.Errorf("the control plane did not make a host code in %s: %v: %s", d.Wait, err, strings.TrimSpace(out))
