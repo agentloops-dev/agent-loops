@@ -879,7 +879,7 @@ func (m *Methods) ownMachine(params json.RawMessage, from Caller) (string, error
 // removed, forgotten or given a provider's action. Moving it is a control move (#6612).
 func (m *Methods) refuseControlOnly(host string) error {
 	if h := m.records.Host(host); h != nil && h.ControlOnly() {
-		return fail(invalidParams, "%s runs the control plane and no agents. It cannot be removed or changed here: move the control plane first.", h.Name)
+		return fail(invalidParams, "%s", h.ControlOnlyRefusal())
 	}
 	return nil
 }
@@ -907,6 +907,9 @@ func (m *Methods) deletePreview(params json.RawMessage, from Caller) (any, error
 	h := m.records.Host(host)
 	if h == nil {
 		return nil, fail(noSuchHost, "No machine is called %s.", host)
+	}
+	if err := m.refuseControlOnly(host); err != nil {
+		return nil, err
 	}
 	return m.unpushedOn(*h, from), nil
 }
