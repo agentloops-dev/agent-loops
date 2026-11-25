@@ -478,6 +478,9 @@ func (d *Daemon) archiveSweeping(id wire.UUID, by wire.AgentArchivedReason, swee
 	t := now()
 	d.change(id, func(a *wire.Agent) {
 		a.State, a.ArchivedAt, a.ArchivedReason = wire.AgentStateArchived, &t, &by
+		if r := a.ArchiveRequest; a.ArchiveWhy == nil && r != nil && r.Requested != nil {
+			a.ArchiveWhy = r.Requested.Reason // why it asked, for the archived record (#6067)
+		}
 		a.ArchiveRequest, a.AfterTurn, a.ContinueWhenBack, a.RunningTool = nil, nil, nil, nil
 	})
 	d.record(id, stateChanged(wire.AgentStateArchived, nil))

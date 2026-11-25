@@ -229,6 +229,10 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
     /// deleted. Cleared on unarchiving.
     public var archivedAt: Date?
 
+    /// Why an agent archived this session, in its own words (#6067): kept from
+    /// `archive_session` to the end of that turn, and on the archived record.
+    public var archiveWhy: String?
+
     /// What Archived is in order of (#2153): when it was archived, or its last activity
     /// for a record from before `archivedAt`.
     public var archivedOrder: Date { archivedAt ?? lastActivityAt }
@@ -438,6 +442,7 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         afterTurn = (try? c.decodeIfPresent(AfterTurn.self, forKey: .afterTurn)) ?? nil
         // Stamped whenever an agent is archived (051), and absent on one that is not.
         archivedAt = try c.decodeIfPresent(Date.self, forKey: .archivedAt)
+        archiveWhy = try c.decodeIfPresent(String.self, forKey: .archiveWhy)
         // New in 064. Absent on everything written before it: the runtime's default.
         sandboxOverride = try c.decodeIfPresent(SandboxChoice.self, forKey: .sandboxOverride)
         effectiveSandbox = (try? c.decodeIfPresent(EffectiveSandbox.self, forKey: .effectiveSandbox)) ?? nil
@@ -532,6 +537,7 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         try c.encodeIfPresent(archiveRequest, forKey: .archiveRequest)
         try c.encodeIfPresent(afterTurn, forKey: .afterTurn)
         try c.encodeIfPresent(archivedAt, forKey: .archivedAt)
+        try c.encodeIfPresent(archiveWhy, forKey: .archiveWhy)
         try c.encodeIfPresent(sandboxOverride, forKey: .sandboxOverride)
         try c.encodeIfPresent(effectiveSandbox, forKey: .effectiveSandbox)
         try c.encodeIfPresent(pendingSandboxFailure, forKey: .pendingSandboxFailure)
@@ -585,7 +591,7 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         case archiveRequest
         case afterTurn
         case background
-        case archivedAt
+        case archivedAt, archiveWhy
         case sandboxOverride, effectiveSandbox, pendingSandboxFailure, desktopControlPause
         case missingFolder
         case listsLeftOut

@@ -26,7 +26,7 @@ func TestAnAgentAsksToBeArchived(t *testing.T) {
 	a := seeded(t, d, t.TempDir(), func(a *wire.Agent) { a.State, a.EndedReason = wire.AgentStateRunning, nil })
 	m := appClient(t, d, a.ID)
 	m.post("initialize", map[string]any{}, 1)
-	if text, _ := m.tool(2, "archive_session", nil); text != "Once this turn ends, this conversation waits for the person to approve archiving it. Anything the person sends before then drops it." {
+	if text, _ := m.tool(2, "archive_session", map[string]any{"reason": "Done here."}); text != "Once this turn ends, this conversation waits for the person to approve archiving it. Anything the person sends before then drops it." {
 		t.Fatal(text)
 	}
 	got := d.Store.Agent(a.ID)
@@ -60,7 +60,7 @@ func TestThePersonsChatArchivesItself(t *testing.T) {
 	a := seeded(t, d, t.TempDir(), func(a *wire.Agent) { a.State, a.EndedReason = wire.AgentStateRunning, nil })
 	m := appClient(t, d, a.ID)
 	m.post("initialize", map[string]any{}, 1)
-	if text, _ := m.tool(2, "archive_session", nil); !strings.Contains(text, "as the person lets agents archive the chats they start") {
+	if text, _ := m.tool(2, "archive_session", map[string]any{"reason": "Done here."}); !strings.Contains(text, "as the person lets agents archive the chats they start") {
 		t.Fatal(text)
 	}
 	after := d.Store.Agent(a.ID).AfterTurn
@@ -138,10 +138,11 @@ func TestALeadStopsAndArchivesItsHelpers(t *testing.T) {
 		t.Fatal(text)
 	}
 	// One below one it started is its to archive too.
-	if text, _ := m.tool(4, "archive_session", map[string]any{"id": string(below.ID)}); text != "Archived “Below”, freeing its place; the person can unarchive it. This folder now has 0 of 3 running, 1 of 5 not archived." {
+	if text, _ := m.tool(4, "archive_session", map[string]any{"id": string(below.ID), "reason": "PR #12\n merged."}); text != "Archived “Below”, freeing its place; the person can unarchive it. This folder now has 0 of 3 running, 1 of 5 not archived." {
 		t.Fatal(text)
 	}
-	if a := d.Store.Agent(below.ID); a.State != wire.AgentStateArchived || *a.ArchivedReason != wire.AgentArchivedReasonByAgent {
+	if a := d.Store.Agent(below.ID); a.State != wire.AgentStateArchived || *a.ArchivedReason != wire.AgentArchivedReasonByAgent ||
+		deref(a.ArchiveWhy) != "PR #12 merged." {
 		t.Fatalf("%+v", a)
 	}
 	if n := names(d); !strings.Contains(strings.Join(n, " "), "agent.archived") {
@@ -149,5 +150,77 @@ func TestALeadStopsAndArchivesItsHelpers(t *testing.T) {
 	}
 	if e := logged(d)[0]; e.Name != "agent.archived" || e.Details["by"] != "agent" {
 		t.Fatalf("%+v", e)
+	}
+}
+
+// #6067: an agent says why it asks, or is told to; the reason is on one line, at most 200
+// characters, goes on the request, and stays on the archived record.
+func TestAnAgentSaysWhyItAsksToBeArchived(t *testing.T) {
+	t.Parallel()
+
+	d, _ := start(t, t.TempDir())
+	defer d.Shutdown()
+	if _, err := d.setPreferences(map[string]wire.JSONValue{agentsMayArchiveMyChatsKey: wire.JSONValue("false")}); err != nil {
+		t.Fatal(err)
+	}
+	a := seeded(t, d, t.TempDir(), func(a *wire.Agent) { a.State, a.EndedReason = wire.AgentStateRunning, nil })
+	m := appClient(t, d, a.ID)
+	m.post("initialize", map[string]any{}, 1)
+	for i, args := range []map[string]any{nil, {"reason": " \n "}, {"id": string(a.ID)}, {"description": "Done."}} {
+		if text, isErr := m.tool(2+i, "archive_session", args); !isErr || text != archiveNeedsReason {
+			t.Fatalf("%v: %v %s", args, isErr, text)
+		}
+		if got := d.Store.Agent(a.ID); got.AfterTurn != nil || got.ArchiveWhy != nil {
+			t.Fatalf("recorded: %+v", got)
+		}
+	}
+	if text, isErr := m.tool(9, "archive_session", map[string]any{"reason": "PR #12 merged:\n  " + strings.Repeat("é", 300)}); isErr {
+		t.Fatal(text)
+	}
+	got := d.Store.Agent(a.ID)
+	why := deref(got.ArchiveWhy)
+	if len([]rune(why)) != archiveReasonMost || !strings.HasPrefix(why, "PR #12 merged: é") || !strings.HasSuffix(why, "…") {
+		t.Fatal(why)
+	}
+	done := &wire.WorkReport{Outcome: wire.WorkOutcomeDone, Message: "Done.", At: now()}
+	settle := func(to *wire.Agent) (bool, bool) {
+		to.ID, to.Cwd, to.AfterTurn, to.ArchiveWhy, to.Report, to.State = a.ID, a.Cwd, got.AfterTurn, got.ArchiveWhy, done, wire.AgentStateFinished
+		return d.settleArchiveRequest(to, wire.AgentStateFinished, wire.EndedReasonEndTurn, false)
+	}
+	// On the request that the person approves, and no longer beside it.
+	var asks wire.Agent
+	if requested, _ := settle(&asks); !requested || deref(asks.ArchiveRequest.Requested.Reason) != why || asks.ArchiveWhy != nil {
+		t.Fatalf("%+v", asks)
+	}
+	// A helper archived with nobody asked keeps it for its record.
+	h := wire.Agent{StartedByAgent: &a.ID}
+	if _, archiveNow := settle(&h); !archiveNow || deref(h.ArchiveWhy) != why {
+		t.Fatalf("%+v", h)
+	}
+	// Archived by the person, or by its workflow: the request's reason stays on the record,
+	// and unarchiving takes it away.
+	d.change(a.ID, func(x *wire.Agent) {
+		x.State, x.ArchiveRequest, x.AfterTurn, x.ArchiveWhy = wire.AgentStateFinished, asks.ArchiveRequest, nil, nil
+	})
+	if err := d.archive(a.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got := d.Store.Agent(a.ID); deref(got.ArchiveWhy) != why || got.ArchiveRequest != nil {
+		t.Fatalf("%+v", got)
+	}
+	if err := d.unarchive(a.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got := d.Store.Agent(a.ID); got.ArchiveWhy != nil {
+		t.Fatal(*got.ArchiveWhy)
+	}
+	// A request its starter made while it worked: with the starter's reason, or none.
+	d.change(a.ID, func(x *wire.Agent) { x.State = wire.AgentStateRunning })
+	d.requestArchive(a.ID, reasonLine("The epic is closed."))
+	w := *d.Store.Agent(a.ID)
+	w.Report, w.State = done, wire.AgentStateFinished
+	if requested, _ := d.settleArchiveRequest(&w, wire.AgentStateFinished, wire.EndedReasonEndTurn, false); !requested ||
+		deref(w.ArchiveRequest.Requested.Reason) != "The epic is closed." {
+		t.Fatalf("%+v", w.ArchiveRequest)
 	}
 }

@@ -77,7 +77,7 @@ func endingBrief(runtimeID string) string {
 		"archive. When such a turn, or a done reply, leaves one clear next step for me, call " +
 		"suggest_next_prompt with it before you end the turn; not with a question waiting, nor " +
 		"when you archive. If you are done and have nothing for me, clean up, then call " +
-		"archive_session with no id."
+		"archive_session with no id, and say why in reason."
 }
 
 // compatibilitySystemPromptDelivery describes runtime-specific fallback routes, used only

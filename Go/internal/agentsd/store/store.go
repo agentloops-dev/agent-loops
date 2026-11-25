@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -52,6 +53,8 @@ type Store struct {
 	summaryTimer *time.Timer
 	summaryWrite sync.Mutex
 	folders      []wire.Folder
+	// foldersUnread is why folders.json could not be read at open; it is not written then.
+	foldersUnread error
 	// lines is each transcript's count of lines, once counted, for an entry's index.
 	lines map[wire.UUID]int
 	// ib is where the lines of the transcripts read most recently end (lineindex.go).
@@ -701,14 +704,36 @@ func (s *Store) Transcript(id wire.UUID, from int) ([]wire.TranscriptEntry, []in
 
 // MARK: folders.json
 
+// The bounds of folders.json. It stays in the root, not in ~/.agents: each entry is a path of
+// this machine, and a sync that keeps one machine's copy would lose the other's folders (#6744).
+// It has no age: a folder stays until the person deletes it.
+const (
+	foldersMost     = 10_000
+	folderEntryMost = 16 << 10
+)
+
+// loadFolders reads the list. A file that does not decode is set aside, so the next save does not
+// write over it; while one cannot be read at all, SaveFolders refuses.
 func (s *Store) loadFolders() []wire.Folder {
-	b, err := os.ReadFile(s.Loc.Folders())
+	path := s.Loc.Folders()
+	b, err := os.ReadFile(path)
 	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			log.Printf("folders.json could not be read, so it is not changed: %v", err)
+			s.foldersUnread = err
+		}
 		return nil
 	}
 	var ps []wire.Folder
 	if err := diskjson.Unmarshal(b, &ps); err != nil {
-		log.Printf("folders.json could not be read, starting with no archived folders: %v", err)
+		aside := fmt.Sprintf("%s.unreadable-%d", path, time.Now().Unix())
+		if moved := os.Rename(path, aside); moved != nil {
+			log.Printf("folders.json could not be read or set aside, so it is not changed: %v; %v", err, moved)
+			s.foldersUnread = err
+			return nil
+		}
+		TrimSetAsides(path)
+		log.Printf("folders.json could not be read, starting with no folders; kept as %s: %v", filepath.Base(aside), err)
 		return nil
 	}
 	seen := map[wire.URL]bool{}
@@ -733,16 +758,53 @@ func (s *Store) Folders() []wire.Folder {
 func (s *Store) SaveFolders(ps []wire.Folder) error {
 	ps = append([]wire.Folder(nil), ps...)
 	sort.SliceStable(ps, func(i, j int) bool { return FolderPath(ps[i].Folder) < FolderPath(ps[j].Folder) })
+	if err := s.checkFolders(ps); err != nil {
+		return err
+	}
 	b, err := diskjson.Marshal(ps)
 	if err != nil {
 		return err
 	}
+	// store-bounds: kind=key-value; count=10_000; size=16KiB a folder; age=until-deleted; applied=on write (refused)
 	if err := WriteAtomically(s.Loc.Folders(), b, 0o644); err != nil {
 		return err
 	}
 	s.mu.Lock()
 	s.folders = ps
 	s.mu.Unlock()
+	return nil
+}
+
+// checkFolders refuses a list that passes the bounds. Folders from before the bounds stay: only
+// one more over the count, or an entry changed to over its size, is refused.
+func (s *Store) checkFolders(ps []wire.Folder) error {
+	if s.foldersUnread != nil {
+		return fmt.Errorf("folders.json could not be read, so it is not changed: %w", s.foldersUnread)
+	}
+	old := s.Folders()
+	if len(ps) > foldersMost && len(ps) > len(old) {
+		return fmt.Errorf("this machine keeps at most %d folders; delete an archived one first: %w", foldersMost, ErrLimit)
+	}
+	was := make(map[wire.URL]wire.Folder, len(old))
+	for _, p := range old {
+		was[p.Folder] = p
+	}
+	for _, p := range ps {
+		b, err := diskjson.Marshal(p)
+		if err != nil {
+			return err
+		}
+		if len(b) <= folderEntryMost {
+			continue
+		}
+		before, err := diskjson.Marshal(was[p.Folder])
+		if err != nil {
+			return err
+		}
+		if !bytes.Equal(b, before) {
+			return fmt.Errorf("a folder's entry is at most %d bytes: %w", folderEntryMost, ErrLimit)
+		}
+	}
 	return nil
 }
 

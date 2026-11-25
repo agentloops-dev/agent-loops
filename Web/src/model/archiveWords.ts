@@ -13,6 +13,23 @@ export const archiveHelp = "The agent is done with this session: approve archivi
 /** Deny (#773): the request goes, and the session stays where it is. */
 export const keepLabel = "Keep Session";
 
+/** Why the agent asks (#6067), or undefined: an older record, or a request made with none. */
+function reason(agent: Agent): string | undefined {
+  const request = agent.archiveRequest;
+  return request === undefined ? undefined : "requested" in request ? request.requested.reason : request.whenTurnEnds.reason;
+}
+
+/** ArchiveRequestWords.body: why it asks; what its turn said for a request with no reason; noReport with neither. */
+export function archiveBody(agent: Agent): string {
+  return reason(agent) ?? agent.report?.message ?? noReport;
+}
+
+/** ArchiveRequestWords.detail, the mark's tooltip: "Archiving needs approval: PR #12 merged". */
+export function archiveDetail(agent: Agent): string {
+  const why = reason(agent);
+  return why === undefined ? archiveMark : `${archiveMark}: ${why}`;
+}
+
 /** ArchiveRequestWords.line: "Archiving needs approval", or null for a session that does not. */
 export function archiveLine(agent: Agent): string | null {
   return asksToArchive(agent) ? archiveMark : null;

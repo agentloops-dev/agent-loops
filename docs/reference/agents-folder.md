@@ -140,6 +140,8 @@ not be able to change them:
   starts. Set it in **Folder Settings ▸ General ▸ Project** on the Mac and the web page (the folder's menu, **Folder Settings…**). The last copy of each project's slots that the control
   plane sent is in `<root>/project-tools.json` on each machine (#2669).
 - **Secrets:** `~/.agents-secrets`, a separate folder that only you can read.
+- **The machine's list of folders:** `folders.json`, beside this Mac's data (below). Each entry
+  is a path of one machine, so it stays there: a sync could lose a folder (#6744).
 - **This Mac's data:** agents, transcripts, and the resource, approval and
   retention-clock files, in `~/Library/Application Support/Agents`
   (`~/.agents-server/root` on a server). Its backups go to `backups/` in that folder unless

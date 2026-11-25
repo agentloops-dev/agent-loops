@@ -27,6 +27,10 @@ today, see [Data and retention](compliance/data-and-retention.md).
 | **Roll-up** | Only time series roll up: old detail becomes a summary (usage keeps hours for 7 days, then days for 90 days). The summary is a store too, so the size and time rules apply to it. Nothing else keeps a summary of data that has aged out. |
 | **Kind** | Each store has a declared kind, and the code reaches it through an interface of that kind. A database of that kind can then replace the file. |
 
+A machine's list of folders (`folders.json`) is also outside `.agents`, in the machine's data
+folder: each entry is a path of one machine, and a sync could lose a folder (Alex, 2026-11-24,
+#6744).
+
 ## Kinds of store
 
 | Kind | What it holds | Today | Library or backend |

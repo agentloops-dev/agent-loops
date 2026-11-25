@@ -75,7 +75,7 @@
 1 Go/internal/agentsd/store/files.go os.OpenFile
 1 Go/internal/agentsd/store/revisions.go WriteAtomically
 1 Go/internal/agentsd/store/roots.go WriteAtomically
-3 Go/internal/agentsd/store/store.go WriteAtomically
+2 Go/internal/agentsd/store/store.go WriteAtomically
 1 Go/internal/agentsd/store/summaries.go WriteAtomically
 2 Go/internal/agentsd/trailerhook.go os.WriteFile
 1 Go/internal/agentsd/turnscache.go os.OpenFile
