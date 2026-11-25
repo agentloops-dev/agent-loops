@@ -16,7 +16,6 @@ import (
 	"strings"
 	"sync"
 	"syscall"
-	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/diskjson"
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
@@ -48,6 +47,8 @@ type pluginApprovals struct {
 	Approved       map[string]string `json:"approved"`
 	// Denied is the person's Deny, by plugin: the digest denied. Kept as it is.
 	Denied map[string]string `json:"denied,omitempty"`
+	// Gone is when the hourly sweep first found a plugin not there.
+	Gone map[string]wire.Date `json:"gone,omitempty"`
 }
 
 var pluginMu sync.Mutex
@@ -58,6 +59,13 @@ func (d *Daemon) pluginApprovalsPath() string {
 
 func beganMarker(path string) string {
 	return filepath.Join(filepath.Dir(path), "."+filepath.Base(path)+".began")
+}
+
+func markBegan(path string) {
+	// store-bounds: not a store: one mark with a fixed text
+	if err := os.WriteFile(beganMarker(path), []byte(approvalsBeganNote), 0o644); err != nil { //nolint:gosec // G306: the mode this file always had; only its error is new
+		log.Printf("plugins: could not write %s: %v", beganMarker(path), err)
+	}
 }
 
 // loadPluginApprovals reads the file (ApprovalFile.read). One that is there and cannot be
@@ -84,7 +92,9 @@ func (d *Daemon) loadPluginApprovals() (r pluginApprovals, unreadable bool) {
 		for _, p := range d.folders(true) {
 			for _, plugin := range pluginFolders(store.FolderPath(p.Folder.Folder)) {
 				if digest, ok := pluginDigest(plugin); ok {
-					r.Approved[pluginKey(plugin)] = digest
+					if err := keepApproval(r.Approved, nil, "", pluginKey(plugin), digest); err != nil {
+						log.Printf("plugins: %s waits for approval: %v", plugin, err)
+					}
 				}
 			}
 		}
@@ -94,9 +104,7 @@ func (d *Daemon) loadPluginApprovals() (r pluginApprovals, unreadable bool) {
 			log.Printf("plugins: could not save approvals: %v", err)
 		}
 	} else if !marked {
-		if err := os.WriteFile(beganMarker(path), []byte(approvalsBeganNote), 0o644); err != nil { //nolint:gosec // G306: the mode this file always had; only its error is new
-			log.Printf("plugins: could not write %s: %v", beganMarker(path), err)
-		}
+		markBegan(path)
 	}
 	return r, false
 }
@@ -105,14 +113,17 @@ func (d *Daemon) loadPluginApprovals() (r pluginApprovals, unreadable bool) {
 // Approve writes, and the old one is kept aside first.
 func (d *Daemon) savePluginApprovals(r pluginApprovals) error {
 	path := d.pluginApprovalsPath()
-	if err := writeStore(path, r); err != nil {
+	b, err := diskjson.Marshal(r)
+	if err != nil {
+		return err
+	}
+	// store-bounds: kind=key-value; count=2000 approved, 2000 denied; size=8KiB an answer; age=until-deleted; applied=on write (refused), and hourly sweep
+	if err := store.WriteAtomically(path, b, 0o644); err != nil {
 		return err
 	}
 	if r.ApprovalsBegan != nil {
 		if _, err := os.Stat(beganMarker(path)); err != nil {
-			if err := os.WriteFile(beganMarker(path), []byte(approvalsBeganNote), 0o644); err != nil { //nolint:gosec // G306: the mode this file always had; only its error is new
-				log.Printf("plugins: could not write %s: %v", beganMarker(path), err)
-			}
+			markBegan(path)
 		}
 	}
 	return nil
@@ -174,17 +185,14 @@ func (d *Daemon) approvePlugin(r wire.PluginApproveRequest) (wire.PluginsList, e
 	pluginMu.Lock()
 	records, unreadable := d.loadPluginApprovals()
 	if unreadable {
-		path := d.pluginApprovalsPath()
-		if b, err := os.ReadFile(path); err == nil {
-			if err := os.WriteFile(fmt.Sprintf("%s.unreadable-%d", path, time.Now().Unix()), b, 0o644); err != nil { //nolint:gosec // G306: the mode this file always had; only its error is new
-				log.Printf("plugins: could not keep a copy of %s: %v", path, err)
-			}
-			store.TrimSetAsides(path)
-		}
+		keepUnreadable(d.pluginApprovalsPath())
 		began := now()
 		records = pluginApprovals{ApprovalsBegan: &began, Approved: map[string]string{}}
 	}
-	records.Approved[pluginKey(plugin)] = r.Digest
+	if err := keepApproval(records.Approved, records.Gone, "", pluginKey(plugin), r.Digest); err != nil {
+		pluginMu.Unlock()
+		return wire.PluginsList{}, err
+	}
 	err := d.savePluginApprovals(records)
 	pluginMu.Unlock()
 	if err != nil {

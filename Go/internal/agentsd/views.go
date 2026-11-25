@@ -513,10 +513,10 @@ func (d *Daemon) answerViewShow(r wire.ViewShowRequest) error {
 	if r.Show {
 		word = "show"
 	}
-	if err := d.changeMCPApprovals(true, func(_, views map[string]string) {
-		views[viewKey(s.scope, s.name, r.URI)] = word + ":" + r.Hash
+	if err := d.changeMCPApprovals(true, func(_, views map[string]string, gone map[string]wire.Date) error {
+		return keepApproval(views, gone, mcpGonePrefix("views"), viewKey(s.scope, s.name, r.URI), word+":"+r.Hash)
 	}); err != nil {
-		return &Error{Code: CodeInternal, Message: "mcp-approvals.json could not be written."}
+		return &Error{Code: CodeInternal, Message: whyNotKept(err)}
 	}
 	said := "not shown"
 	if r.Show {

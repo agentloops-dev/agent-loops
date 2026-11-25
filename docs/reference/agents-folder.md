@@ -155,6 +155,10 @@ not be able to change them:
   2026-11-24): `policy.json`, `policy-seen.json`, `project-tools.json`, `host-user.json` and
   `lock-pin.json`, in the data folder. A copy synced from another machine could stop the work
   here, let an older policy back, or make this a bot's machine.
+- **Runtime accounts and approvals** (Alex, 2026-11-24, #6748 to #6750): `runtime-accounts.json`,
+  `mcp-approvals.json` and `plugin-approvals.json`, in the data folder. A copy from a repo, a
+  sync or another machine could approve what nobody saw here, or choose the settings and hooks
+  that a runtime loads.
 - **Caches and logs:** the system's cache and log folders. You can delete them at any time.
 - **Each device's own choices:** folder folds, drafts, the new-session form's folders,
   window sizes, the selected folder, and pairing.
