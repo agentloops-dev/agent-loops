@@ -1509,6 +1509,27 @@
       }
     },
     {
+      "name": "folders/receiveSeed",
+      "x-capability": "folders.seed/1",
+      "description": "A machine gets the commits of a send from the folder's origin, so the send carries only what the origin does not have (#7119).",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/machines.schema.json#/definitions/ReceiveSeedRequest"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/machines.schema.json#/definitions/ReceiveSeed"
+        }
+      }
+    },
+    {
       "name": "folders/receiveState",
       "x-capability": "folders/1",
       "paramStructure": "by-name",

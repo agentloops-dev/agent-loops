@@ -151,13 +151,17 @@ func (d *Daemon) workTimelineRepos(project string) (repos []forgeRepo, folderOf 
 	return repos, folderOf, other
 }
 
+// epicOnHold says that an epic's labels say on hold: the Timeline never draws it (#7058), so its sub-issues are not
+// read (#7026), also not for the forecast.
+func epicOnHold(labels []string) bool { return slices.ContainsFunc(labels, isHoldName) }
+
 // githubTimeline is a repo's timeline read, kept for forgeCacheFor as the other forge reads are.
 func (d *Daemon) githubTimeline(ctx context.Context, gh forgeGitHub, repo string, since time.Time) (githubmcp.Timeline, error) {
 	key, _ := json.Marshal([]any{"work/timeline", repo, since})
 	if a, ok := d.forgeCached(string(key)); ok && a.timeline != nil {
 		return *a.timeline, nil
 	}
-	t, err := gh.Timeline(ctx, repo, since.Format(time.RFC3339))
+	t, err := gh.Timeline(ctx, repo, since.Format(time.RFC3339), epicOnHold)
 	if err != nil {
 		return githubmcp.Timeline{}, err
 	}
@@ -283,8 +287,7 @@ func (e *timelineEpic) forecast(m lineage.Model, now time.Time, width float64) {
 	if e.wire.ClosedAt != nil || len(e.segments) == 0 || e.wire.Segments[len(e.segments)-1].ClosedAt != nil {
 		return
 	}
-	var forecast []int
-	known, done, waits := 0, 0, false
+	known, done, open, waits := 0, 0, 0, false
 	for _, i := range e.segments[len(e.segments)-1] {
 		k := e.wire.Children[i]
 		switch {
@@ -295,15 +298,12 @@ func (e *timelineEpic) forecast(m lineage.Model, now time.Time, width float64) {
 			done++
 		default:
 			known++
-			forecast = append(forecast, i)
+			open++
 		}
 	}
-	f, ok := m.Forecast(now, known, done, len(forecast), width, lineage.Rng(e.wire.Item.Node.Ref))
+	f, ok := m.Forecast(now, known, done, open, width, lineage.Rng(e.wire.Item.Node.Ref))
 	if !ok {
 		return
-	}
-	for n, i := range forecast {
-		e.wire.Children[i].ForecastAt = new(wire.DateOf(f.Children[n]))
 	}
 	e.wire.Forecast = &wire.WorkTimelineForecast{Low: wire.DateOf(f.Low), Mid: wire.DateOf(f.Mid), High: wire.DateOf(f.High)}
 	if waits {

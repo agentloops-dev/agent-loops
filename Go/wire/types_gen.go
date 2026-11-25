@@ -9317,7 +9317,7 @@ type MachineFeatureUsage struct {
 	Usage FeatureUsage `json:"usage"`
 }
 
-// machines/sendFolder, through machine/machines: one step of an agent's start_session with send (#2929), which sends this folder's branch to another of the person's machines first, or of its bring_back (#2947), which brings a branch back from there, or of its move_session (#3717), which moves a session there with its branch. Exactly one of state, upload, uploadSigned, receive, facts, pack, read and moveIn; the control plane sends that machine's folders/receiveState, folders/receiveUpload, folders/receive, folders/sendFacts, folders/sendPack, folders/sendRead or agents/moveIn.
+// machines/sendFolder, through machine/machines: one step of an agent's start_session with send (#2929), which sends this folder's branch to another of the person's machines first, or of its bring_back (#2947), which brings a branch back from there, or of its move_session (#3717), which moves a session there with its branch. Exactly one of state, upload, uploadSigned, receive, facts, pack, read, moveIn and seed; the control plane sends that machine's folders/receiveState, folders/receiveUpload, folders/receive, folders/sendFacts, folders/sendPack, folders/sendRead, agents/moveIn or folders/receiveSeed.
 type MachineFolderSend struct {
 	Host string `json:"host"`
 
@@ -9337,9 +9337,12 @@ type MachineFolderSend struct {
 	Read *SendReadRequest `json:"read,omitzero"`
 
 	MoveIn *SessionMoveIn `json:"moveIn,omitzero"`
+
+	// The step is folders/receiveSeed (#7119). Needs folders.send-seed/1: an older control plane does not know it.
+	Seed *ReceiveSeedRequest `json:"seed,omitzero"`
 }
 
-// What machines/sendFolder's step answered (#2929, #2947): state for state, folder for receive, facts for facts, pack for pack, read for read, none for upload.
+// What machines/sendFolder's step answered (#2929, #2947): state for state, folder for receive, facts for facts, pack for pack, read for read, seed for seed, none for upload.
 type MachineFolderSent struct {
 	State *ReceiveState `json:"state,omitzero"`
 
@@ -9350,6 +9353,8 @@ type MachineFolderSent struct {
 	Pack *SendPack `json:"pack,omitzero"`
 
 	Read *SendRead `json:"read,omitzero"`
+
+	Seed *ReceiveSeed `json:"seed,omitzero"`
 }
 
 // A machine's ForgeBoards in forge/boardsAll (#5592).
@@ -12993,9 +12998,34 @@ type ReceiveRequest struct {
 	Checkout string `json:"checkout"`
 
 	Origin *string `json:"origin,omitzero"`
+
+	// The folders/receiveSeed (#7119) whose commits a new folder starts from. Needs folders.seed/1, which the machine showed with its answer to the seed.
+	Seed *UUID `json:"seed,omitzero"`
 }
 
-// What a host has at a folder before a send (#1123). `heads` are the commits of its branches, so the Mac's bundle carries only what the host lacks. `ownChanges` is true when the folder has changes that the last send did not put there.
+// How a seed (folders/receiveSeed, #7119) stands. `done` bytes came from the origin. Once `finished`: `heads` are the commits that the send can leave out of its bundle, or `problem` says why there are none, and the send carries everything.
+type ReceiveSeed struct {
+	Finished bool `json:"finished"`
+
+	Done int64 `json:"done"`
+
+	Heads []string `json:"heads"`
+
+	Problem *string `json:"problem,omitzero"`
+}
+
+// folders/receiveSeed (#7119): the machine gets the commits of a send from `origin`, before the send. `seed` is an id of the sender's own: its first call starts the seed, and each later one says how it stands. A folder that is there fetches its own origin, when that is the same repository; a new one is fetched beside, and folders/receive with `seed` starts the folder from it, so a seed makes no folder. `origin` holds no credential. `stop` ends the seed and drops what it got.
+type ReceiveSeedRequest struct {
+	Seed UUID `json:"seed"`
+
+	Folder string `json:"folder"`
+
+	Origin string `json:"origin"`
+
+	Stop *bool `json:"stop,omitzero"`
+}
+
+// What a host has at a folder before a send (#1123). `heads` are the commits of its branches and of its newest remote-tracking branches (#7119), so the Mac's bundle carries only what the host lacks. `ownChanges` is true when the folder has changes that the last send did not put there.
 type ReceiveState struct {
 	Folder URL `json:"folder"`
 
@@ -17653,7 +17683,7 @@ type WorkTimelineBacktest struct {
 	At Date `json:"at"`
 }
 
-// A child of an epic in work/timeline (#4172). item has its labels with their colours, for the hover card's chips (#4428). stateReason is completed or not_planned, where the forge says it. startedAt is the earliest of the first session linked to it in lineage, the opening of the first pull request that closes it, and its close; absent while nothing has started it. waitsForPerson: it is open and labelled alex-todo or needs-account, so it is not forecast. forecastAt is an open child's forecast close: its epic's P50 shared out along the line, in the order of the children.
+// A child of an epic in work/timeline (#4172). item has only its node, state, stateReason, dates and labels (no colours): its title is empty, as no client draws a child (#7026). stateReason is completed or not_planned, where the forge says it. startedAt is the earliest of the first session linked to it in lineage, the opening of the first pull request that closes it, and its close; absent while nothing has started it. waitsForPerson: it is open and labelled alex-todo or needs-account, so it is not forecast.
 type WorkTimelineChild struct {
 	Item ForgeItem `json:"item"`
 
@@ -17666,8 +17696,6 @@ type WorkTimelineChild struct {
 	ClosedAt *Date `json:"closedAt,omitzero"`
 
 	WaitsForPerson *bool `json:"waitsForPerson,omitzero"`
-
-	ForecastAt *Date `json:"forecastAt,omitzero"`
 }
 
 // An epic in work/timeline (#4172). children are its sub-issues (at most 100). segments are its lines, the first first: a segment starts at its first child's start (absent when none has started) and ends at its last child's close (absent while one is open); a child filed after a segment ended starts a new one. forecast is the open segment's close, absent when it has no child to forecast or there is too little history.

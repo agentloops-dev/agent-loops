@@ -8823,9 +8823,9 @@ export interface MachineFeatureUsage {
  * (#2929), which sends this folder's branch to another of the person's machines first, or of its
  * bring_back (#2947), which brings a branch back from there, or of its move_session (#3717), which
  * moves a session there with its branch. Exactly one of state, upload, uploadSigned, receive,
- * facts, pack, read and moveIn; the control plane sends that machine's folders/receiveState,
- * folders/receiveUpload, folders/receive, folders/sendFacts, folders/sendPack, folders/sendRead or
- * agents/moveIn.
+ * facts, pack, read, moveIn and seed; the control plane sends that machine's folders/receiveState,
+ * folders/receiveUpload, folders/receive, folders/sendFacts, folders/sendPack, folders/sendRead,
+ * agents/moveIn or folders/receiveSeed.
  */
 export interface MachineFolderSend {
   host: string;
@@ -8843,11 +8843,16 @@ export interface MachineFolderSend {
   pack?: SendPackRequest;
   read?: SendReadRequest;
   moveIn?: SessionMoveIn;
+  /**
+   * The step is folders/receiveSeed (#7119). Needs folders.send-seed/1: an older control plane does
+   * not know it.
+   */
+  seed?: ReceiveSeedRequest;
 }
 
 /**
  * What machines/sendFolder's step answered (#2929, #2947): state for state, folder for receive,
- * facts for facts, pack for pack, read for read, none for upload.
+ * facts for facts, pack for pack, read for read, seed for seed, none for upload.
  */
 export interface MachineFolderSent {
   state?: ReceiveState;
@@ -8855,6 +8860,7 @@ export interface MachineFolderSent {
   facts?: SendFacts;
   pack?: SendPack;
   read?: SendRead;
+  seed?: ReceiveSeed;
 }
 
 /** A machine's ForgeBoards in forge/boardsAll (#5592). */
@@ -12420,12 +12426,44 @@ export interface ReceiveRequest {
   branches: SentBranch[];
   checkout: string;
   origin?: string;
+  /**
+   * The folders/receiveSeed (#7119) whose commits a new folder starts from. Needs folders.seed/1,
+   * which the machine showed with its answer to the seed.
+   */
+  seed?: UUID;
 }
 
 /**
- * What a host has at a folder before a send (#1123). `heads` are the commits of its branches, so
- * the Mac's bundle carries only what the host lacks. `ownChanges` is true when the folder has
- * changes that the last send did not put there.
+ * How a seed (folders/receiveSeed, #7119) stands. `done` bytes came from the origin. Once
+ * `finished`: `heads` are the commits that the send can leave out of its bundle, or `problem` says
+ * why there are none, and the send carries everything.
+ */
+export interface ReceiveSeed {
+  finished: boolean;
+  done: number;
+  heads: string[];
+  problem?: string;
+}
+
+/**
+ * folders/receiveSeed (#7119): the machine gets the commits of a send from `origin`, before the
+ * send. `seed` is an id of the sender's own: its first call starts the seed, and each later one
+ * says how it stands. A folder that is there fetches its own origin, when that is the same
+ * repository; a new one is fetched beside, and folders/receive with `seed` starts the folder from
+ * it, so a seed makes no folder. `origin` holds no credential. `stop` ends the seed and drops what
+ * it got.
+ */
+export interface ReceiveSeedRequest {
+  seed: UUID;
+  folder: string;
+  origin: string;
+  stop?: boolean;
+}
+
+/**
+ * What a host has at a folder before a send (#1123). `heads` are the commits of its branches and of
+ * its newest remote-tracking branches (#7119), so the Mac's bundle carries only what the host
+ * lacks. `ownChanges` is true when the folder has changes that the last send did not put there.
  */
 export interface ReceiveState {
   folder: URLString;
@@ -16610,12 +16648,12 @@ export interface WorkTimelineBacktest {
 }
 
 /**
- * A child of an epic in work/timeline (#4172). item has its labels with their colours, for the
- * hover card's chips (#4428). stateReason is completed or not_planned, where the forge says it.
- * startedAt is the earliest of the first session linked to it in lineage, the opening of the first
- * pull request that closes it, and its close; absent while nothing has started it. waitsForPerson:
- * it is open and labelled alex-todo or needs-account, so it is not forecast. forecastAt is an open
- * child's forecast close: its epic's P50 shared out along the line, in the order of the children.
+ * A child of an epic in work/timeline (#4172). item has only its node, state, stateReason, dates
+ * and labels (no colours): its title is empty, as no client draws a child (#7026). stateReason is
+ * completed or not_planned, where the forge says it. startedAt is the earliest of the first session
+ * linked to it in lineage, the opening of the first pull request that closes it, and its close;
+ * absent while nothing has started it. waitsForPerson: it is open and labelled alex-todo or
+ * needs-account, so it is not forecast.
  */
 export interface WorkTimelineChild {
   item: ForgeItem;
@@ -16624,7 +16662,6 @@ export interface WorkTimelineChild {
   startedAt?: WireDate;
   closedAt?: WireDate;
   waitsForPerson?: boolean;
-  forecastAt?: WireDate;
 }
 
 /**
@@ -18817,8 +18854,8 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   MachineEnroll: { required: [], optional: ["as"] },
   MachineEventsPage: { required: ["machine", "machineName", "page"], optional: [] },
   MachineFeatureUsage: { required: ["machine", "machineName", "usage"], optional: [] },
-  MachineFolderSend: { required: ["host"], optional: ["state", "upload", "uploadSigned", "receive", "facts", "pack", "read", "moveIn"] },
-  MachineFolderSent: { required: [], optional: ["state", "folder", "facts", "pack", "read"] },
+  MachineFolderSend: { required: ["host"], optional: ["state", "upload", "uploadSigned", "receive", "facts", "pack", "read", "moveIn", "seed"] },
+  MachineFolderSent: { required: [], optional: ["state", "folder", "facts", "pack", "read", "seed"] },
   MachineForgeBoards: { required: ["machine", "machineName", "boards"], optional: [] },
   MachineForgeList: { required: ["machine", "machineName", "list"], optional: [] },
   MachineHello: { required: ["version", "platform", "machineID"], optional: ["host", "name", "implementation", "capabilities", "maturity"] },
@@ -19103,7 +19140,9 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   ReadTokenMade: { required: ["token", "value", "url"], optional: [] },
   ReadTokenMake: { required: ["name"], optional: [] },
   ReadTokenRevoke: { required: ["id"], optional: [] },
-  ReceiveRequest: { required: ["folder", "branches", "checkout"], optional: ["bundle", "patch", "origin"] },
+  ReceiveRequest: { required: ["folder", "branches", "checkout"], optional: ["bundle", "patch", "origin", "seed"] },
+  ReceiveSeed: { required: ["finished", "done", "heads"], optional: ["problem"] },
+  ReceiveSeedRequest: { required: ["seed", "folder", "origin"], optional: ["stop"] },
   ReceiveState: { required: ["folder", "exists", "repository", "ownChanges", "heads"], optional: [] },
   ReceiveStateRequest: { required: ["folder"], optional: [] },
   ReceiveUploadRequest: { required: ["upload", "offset", "data"], optional: [] },
@@ -19452,7 +19491,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   WorkSuggestLeadsRequest: { required: [], optional: ["folder"] },
   WorkTimeline: { required: ["epics", "releases"], optional: ["timeZone", "backtest", "errors"] },
   WorkTimelineBacktest: { required: ["error", "width", "cuts", "holds", "epics", "at"], optional: [] },
-  WorkTimelineChild: { required: ["item", "createdAt"], optional: ["stateReason", "startedAt", "closedAt", "waitsForPerson", "forecastAt"] },
+  WorkTimelineChild: { required: ["item", "createdAt"], optional: ["stateReason", "startedAt", "closedAt", "waitsForPerson"] },
   WorkTimelineEpic: { required: ["item", "createdAt", "children", "segments"], optional: ["stateReason", "closedAt", "forecast"] },
   WorkTimelineForecast: { required: ["low", "mid", "high"], optional: ["waits"] },
   WorkTimelineRelease: { required: ["tag", "at", "repo"], optional: ["url"] },
