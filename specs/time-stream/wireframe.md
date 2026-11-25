@@ -227,6 +227,7 @@ client, because it depends on the window's width and the font.
    child labelled `alex-todo` or `needs-account`. GitHub gives sub-issues in one GraphQL read; a forge with
    no sub-issues uses `forge/plan`'s rules. With `first`, the answer is the window's epics alone (`partial`),
    with no forecast; the client asks again for all of it (#7027).
+   The host keeps the closed epics in memory, at most a day, and reads again only those that changed (#7028).
 2. **The forecast: M10 (section 4), in Go,** in `Go/internal/lineage/forecast.go` beside `estimate.go`
    (#3559), with the same fixed-seed PCG simulation, so a forecast does not move when nothing changed.
    - The working clock: 24 rates, one for each hour of the day in the project's time zone, from the child

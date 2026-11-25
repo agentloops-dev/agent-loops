@@ -71,6 +71,7 @@ Mac.
 | `ci-timings/<forge>/<path>/<day>.jsonl` | time series | CI runs, their jobs and steps | 90 days, 20,000 runs a repository; a pull request run's steps 14 days | On the sweep |
 | `lineage-deploys.json` | key-value | Each deploy's last event | 1,000 deploys of 16 KiB each, for 90 days from the last event; the oldest goes first (#6719) | Hourly, and on write: age and count |
 | `repo-aliases.json` | key-value | Repository renames | 1,000 renames of 2 KiB each, for 90 days; the oldest goes first. The daily check learns again a rename that a folder or the lineage still names (#6716) | Hourly, and on write: age and count |
+| `store-sizes.json` | key-value | The last measurement of each declared store of this machine: its bytes and its count, never a path or what is stored (#6906) | 200 stores of 4 KiB, for 90 days; each measurement replaces the last | Hourly |
 
 ### Workflows, assessments, approvals and devices
 
@@ -278,6 +279,7 @@ the other copies of the control plane learn that it went. A removed person's sta
 | Event bus | log | Events between a person's machines: refs, names and times, and sealed data | 90 days; 100,000 envelopes and 1 GiB of encoded log records a person, the oldest deleted first with their dedupe ids. An envelope is at most 24 MiB encoded: 64 sealed copies of 256 KiB, in base64. Deleted when the person is removed (#6671). | On write; hourly; on remove |
 | Budgets | key-value | The org's budgets | One record of 4 KiB, with one budget (#6778) | On write |
 | Feature maturity | document | Evidence for each feature's rating | 84 records of 4 KiB, each updated in place: one more, or a larger one, is refused. A rating is current state, so it has no age: an idle feature keeps it (#6905, #6972). | On write |
+| Store sizes | key-value | The last measurement of each declared store of the control plane: its bytes and its count, never a key or what is stored (`v1/store-sizes.json`, #6906) | One record of 128 KiB; a larger one is refused | Each measurement, every 6 hours, replaces the last |
 
 ### Audit, keys and backups
 

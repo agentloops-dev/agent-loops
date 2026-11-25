@@ -45,6 +45,8 @@ type timelineBook struct {
 	backtestMu sync.Mutex
 	// backtests are each project's last backtest, ok false when it had too few cuts.
 	backtests map[string]timelineBacktest
+	// keptEpics are the closed epics (#7028).
+	keptEpics timelineKeep
 }
 
 type timelineBacktest struct {
@@ -87,14 +89,17 @@ func (d *Daemon) workTimeline(ctx context.Context, r wire.WorkTimelineRequest) (
 	if r.First != nil && *r.First {
 		from = r.From.Time()
 	}
-	gh, err := d.forgeGitHub()
-	if err != nil {
-		out.Errors = append(out.Errors, err.Error())
+	c, ok := d.githubConnection()
+	if !ok || !c.Usable(now) {
+		out.Errors = append(out.Errors, githubmcp.NotConnected)
 		return out, nil
 	}
+	gh, conn := d.forgeGitHubAs(c.Access), timelineConn(c)
+	d.keptEpics.use(conn)
+	d.timelineForgetGone()
 	var epics []timelineEpic
 	for _, repo := range repos {
-		read, err := d.githubTimeline(ctx, gh, repo.path, since, from)
+		read, err := d.githubTimeline(ctx, gh, conn, repo.path, since, from)
 		if err != nil {
 			out.Errors = append(out.Errors, "GitHub: "+repo.path+": "+err.Error())
 			continue
@@ -112,6 +117,8 @@ func (d *Daemon) workTimeline(ctx context.Context, r wire.WorkTimelineRequest) (
 			}
 		}
 	}
+	// The forecast draws from the epics in their order, so the order does not depend on which of them were kept.
+	slices.SortFunc(epics, func(a, b timelineEpic) int { return cmp.Compare(a.wire.Item.Node.Ref, b.wire.Item.Node.Ref) })
 	forecast := func(*timelineEpic) {}
 	if out.Partial == nil {
 		forecast = d.timelineForecast(r.Project, epics, now, &out)
@@ -177,9 +184,9 @@ func epicOnHold(labels []string) bool { return slices.ContainsFunc(labels, isHol
 
 // githubTimeline is a repo's timeline read, kept for forgeCacheFor as the other forge reads are. With a from, the
 // epics closed before it can be left out, in the answer's Rest (#7027); with none, every epic is read, and only the
-// rest of a first read that is kept.
-func (d *Daemon) githubTimeline(ctx context.Context, gh forgeGitHub, repo string, since, from time.Time) (githubmcp.Timeline, error) {
-	key, _ := json.Marshal([]any{"work/timeline", repo, since})
+// rest of a first read that is kept. A closed epic that keptEpics has is not read again (#7028).
+func (d *Daemon) githubTimeline(ctx context.Context, gh forgeGitHub, conn, repo string, since, from time.Time) (githubmcp.Timeline, error) {
+	key, _ := json.Marshal([]any{"work/timeline", conn, repo, since})
 	firstKey := "first " + string(key)
 	if a, ok := d.forgeCached(string(key)); ok && a.timeline != nil {
 		return *a.timeline, nil
@@ -191,17 +198,29 @@ func (d *Daemon) githubTimeline(ctx context.Context, gh forgeGitHub, repo string
 	}
 	var t githubmcp.Timeline
 	var err error
-	if kept && from.IsZero() {
+	now, listed, had := nowFunc(), map[int]bool{}, map[int]bool{}
+	rest := kept && from.IsZero()
+	if rest {
 		t, err = gh.TimelineRest(ctx, repo, *first.timeline)
 	} else {
 		closedFrom := ""
 		if !from.IsZero() {
 			closedFrom = from.UTC().Format(time.RFC3339)
 		}
-		t, err = gh.Timeline(ctx, repo, since.Format(time.RFC3339), closedFrom, epicOnHold)
+		t, err = gh.Timeline(ctx, repo, since.Format(time.RFC3339), closedFrom, epicOnHold, func(number int, updatedAt string) (githubmcp.TimelineEpic, bool) {
+			e, ok := d.keptEpics.get(conn, repo, number, updatedAt, now)
+			listed[number], had[number] = true, ok
+			return e, ok
+		})
 	}
 	if err != nil {
 		return githubmcp.Timeline{}, err
+	}
+	if rest {
+		d.keptEpics.put(conn, repo, t.Epics[len(first.timeline.Epics):], now)
+	} else {
+		d.keptEpics.put(conn, repo, slices.DeleteFunc(slices.Clone(t.Epics), func(e githubmcp.TimelineEpic) bool { return had[e.Number] }), now)
+		d.keptEpics.trim(conn, repo, listed, now)
 	}
 	if len(t.Rest) > 0 {
 		d.forgeRemember(firstKey, forgeAnswer{timeline: &t, timelineFrom: from})

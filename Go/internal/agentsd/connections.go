@@ -248,11 +248,17 @@ type forgettingStore struct {
 
 func (s forgettingStore) Put(c connections.Connection) error {
 	defer s.d.forgetViewers()
+	if c.Provider == connections.GitHub {
+		s.d.keptEpics.use(timelineConn(c))
+	}
 	return s.Store.Put(c)
 }
 
 func (s forgettingStore) Delete(provider string) error {
 	defer s.d.forgetViewers()
+	if provider == connections.GitHub {
+		s.d.keptEpics.use("")
+	}
 	return s.Store.Delete(provider)
 }
 

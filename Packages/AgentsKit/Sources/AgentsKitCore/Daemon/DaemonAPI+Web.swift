@@ -176,6 +176,8 @@ public extension DaemonAPI {
                 Row(Method.cycletimeHistory, params: Empty.self, result: CycleTimeHistory.self, kind: .hostRequest),
                 // Reports ▸ Features (#2165).
                 Row(Method.reportsFeatures, params: Empty.self, result: FeatureUsage.self, kind: .hostRequest),
+                // How large each declared store is (#6906): Reports ▸ Store sizes.
+                Row(Method.storesList, params: StoreSizesQuery.self, result: StoreSizes.self, kind: .hostRequest),
                 Row(Method.reportsProblem, params: ProblemReportRequest.self, result: ProblemReport.self, kind: .hostRequest),
                 // The Time page's achievements (#984).
                 Row(Method.achievementsState, params: Empty.self, result: Achievements.self, kind: .hostRequest),
@@ -625,6 +627,7 @@ public extension DaemonAPI {
                 Row(Method.reportsNodes, params: ReportNodesQuery.self, result: ReportNodes.self, kind: .controlRequest),
                 // The figures changed since a cursor, for Work's local cache (#6350).
                 Row(Method.reportsChanges, params: ReportChangesQuery.self, result: ReportChanges.self, kind: .controlRequest),
+                Row(Method.reportsStoreSizes, params: StoreSizesQuery.self, result: StoreSizes.self, kind: .controlRequest),
                 Row(Method.reportsScopes, params: Empty.self, result: ReportScopes.self, kind: .controlRequest),
                 // Lineage over every machine's copy (#4276): Work ▸ Timeline's sessions.
                 Row(Method.lineageWalkAll, params: LineageWalkAllRequest.self, result: LineageGraph.self, kind: .controlRequest),

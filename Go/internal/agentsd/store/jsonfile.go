@@ -165,6 +165,9 @@ func (f *JSONFile[T]) Sweep() (int, error) {
 // Path is the store's file.
 func (f *JSONFile[T]) Path() string { return f.path() }
 
+// Spec is the store as declared.
+func (f *JSONFile[T]) Spec() Spec { return f.spec }
+
 // Name is the store's name.
 func (f *JSONFile[T]) Name() string { return f.spec.Name }
 
