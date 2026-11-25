@@ -13,8 +13,8 @@
 2 Go/internal/agentsd/attachments.go WriteAtomically
 1 Go/internal/agentsd/attention.go WriteAtomically
 1 Go/internal/agentsd/backgroundended.go WriteAtomically
-2 Go/internal/agentsd/backups.go WriteAtomically
-2 Go/internal/agentsd/backups.go os.OpenFile
+1 Go/internal/agentsd/backups.go WriteAtomically
+1 Go/internal/agentsd/backups.go os.OpenFile
 1 Go/internal/agentsd/backups_store.go os.OpenFile
 1 Go/internal/agentsd/brief.go os.WriteFile
 1 Go/internal/agentsd/bringback.go os.CreateTemp

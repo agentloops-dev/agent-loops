@@ -111,7 +111,7 @@ from the root (`agentsd/backups.go:69,72`). It holds nothing else.
 
 | Store | Holds | Bound | Swept | In backup |
 |---|---|---|---|---|
-| `backups/<rootID>/*.tar.gz` | Machine backups | Keep 1–10, 3 by default (`backups.go:45-46`); `.tmp` after 24 h | after each backup. **Other machines' folders in a shared backup folder are never pruned.** | n/a |
+| `backups/<rootID>/*.tar.gz` | Machine backups | Keep 1–10, 3 by default; 90 days, but this machine's newest good one stays; `.tmp` after 24 h (#6709) | after each backup, when Keep changes, hourly. Other machines' backups in a shared folder at 90 days. | n/a |
 | `backups-upload/`, `backups-download/` | Server backup staging | removed after use | on use | no |
 | `.restore-*` | Restore staging | deferred `RemoveAll`. **A crash leaves it.** | never | no |
 | `Outgoing/`, `Incoming/` | Export, send, import | 1 hour untouched (`send.go:25`) | **only on the next transfer, or at start** | no |
@@ -370,7 +370,7 @@ access pattern shown; do not label the whole file with one kind.
 | Transcripts and ordered event histories | Log | Transcript: 10 MB per chat and 90 days (#6706); runtime home: 1,200 MB and 90 days (#6707). Audit detail: configured 1–90 days; byte/count limit **not specified** (#6755). |
 | Usage, cost, timing, health, and capacity samples | Time series | 168 hours of hourly detail, then daily roll-up through 90 days where the store is usage data; each store's byte or count bound is **not specified until its issue sets it**. |
 | Lineage links and provenance | Graph plus log | Graph projection and ordered change log are separate stores; each collection's numeric bound is **not specified until its responsible issue sets it**. |
-| Attachments, artifacts, exports, backups, binary request bodies | Blob | Use #5713. Per-blob and owner quotas are **not specified until the responsible store issue sets them**. Keep backup: 10 MB each, 90 days (#6709). Operator backup: 90 days, and a warning over 10 MB (#6787). |
+| Attachments, artifacts, exports, backups, binary request bodies | Blob | Use #5713. Per-blob and owner quotas are **not specified until the responsible store issue sets them**. Keep backup: 90 days, and a warning over 10 MB (#6709). Operator backup: 90 days, and a warning over 10 MB (#6787). |
 | Current state, indexes, routes, policy, and workflow run state | Key-value | Per-record, collection, and age limits are **not specified until the responsible store issue sets them**. |
 | Local copies, work cache, browser data, derived indexes | Cache | Evict by declared byte/count and age limits; individual limits are **not specified until the responsible store issue sets them**. |
 | Credentials, signing keys, and sealed connection material | Secret | Never expose plaintext through a list operation. Record lifetime and size limits are **not specified until the responsible store issue sets them**. |
@@ -386,7 +386,7 @@ newer than a row above for the same store.
 | `<root>/agents/<id>/` (agent.json, transcript.jsonl, app-tools.jsonl, said.json) and `<cache>/turns/` | log | Conversations | Archived agents go after 7/14/30/90 days or Forever; a live or pinned agent never ages; no size limit on a transcript | `Go/internal/agentsd/retention.go:89-93; store/locations.go:100-102` | #6706 |
 | `<root>/runtimes/accounts/<rt>/<id>/` | blob | Runtime account homes, with the runtimes' own transcripts | Conversations: 1,200 MB a home and 90 days, the oldest first; those of sessions not archived, or written in the last 24 hours, stay | `Go/internal/agentsd/accounthistory.go` | #6707 |
 | `<folder>/.agents/worktrees/` | blob | Agent worktrees | User-owned: no bound, on purpose | `docs/explanation/compliance/data-and-retention.md (In each folder)` | #6708 |
-| `<root>/backups/` | blob | This machine's backups | The newest Keep (1-10); no size limit on a backup; no age | `Go/internal/agentsd/backups.go:44-45` | #6709 |
+| `<root>/backups/` | blob | This machine's backups | The newest Keep (1-10); 90 days; the newest good one stays; over 10 MB is made, with a warning | `Go/internal/agentsd/backups.go` (`pruneBackups`) | #6709 |
 | `<root>/browser/profile/`, `<root>/browser/chrome-profile/`, `<root>/browser/*-sites.json` | blob | Browser sign-ins and site storage, and each site's last use (key-value) | A site 90 days after its last use; over 200 sites or 256 MB the ones used longest ago, none used in the last 30 days; a profile not run for 90 days whole; caches emptied at start, 64 MB HTTP cache, Chrome's downloads 1 GB; the last uses 1,000 sites (Alex, 2026-11-24) | `Go/internal/browser/bounds.go` | #6710 |
 | `<folder>/.agents/dropbox/` | blob | Files handed to workflows | 25 MB a file and 500 MB a folder from dropbox/put, which refuses; 90 days from the last change or arrival; what git tracks stays | `Go/internal/agentsd/dropbox.go`, `host.go` (`putInDropbox`) | #6711 |
 | `<folder>/.agents/reviews/runtimes/` | document | Runtime assessment reports | 1 MiB per report; newest 50 per machine; 90 days | `Go/internal/agentsd/assess_reports.go` | #6712 |
