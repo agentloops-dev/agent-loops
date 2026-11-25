@@ -99,6 +99,26 @@ func TestRecordLimitOfAJSONFilesOldEntry(t *testing.T) {
 	}
 }
 
+// Entries from before the limits are carried over whole, over the largest and over the count, and
+// a store that refuses keeps them; a later write over the limits is still refused.
+func TestRecordLimitOfAJSONFilesCarryOver(t *testing.T) {
+	t.Parallel()
+	f, file, _ := testJSONFile(t, Refuse)
+	if err := f.CarryOver(func(m map[string]jsonEntry) error {
+		for n := range 3 {
+			m[fmt.Sprint(n)] = jsonEntry{Text: fmt.Sprintf("%0200d", n)}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := f.Sweep(); n != 0 || err != nil || entryCount(t, f) != 3 {
+		t.Fatalf("the sweep took an entry: %d %v", n, err)
+	}
+	refusedWhole(t, file, 100, func() error { return putEntry(f, "0", fmt.Sprintf("%0300d", 0)) })
+	refusedWhole(t, file, 2, func() error { return putEntry(f, "3", "a") })
+}
+
 func TestRecordLimitOfASecretFile(t *testing.T) {
 	t.Parallel()
 	path := filepath.Join(t.TempDir(), "s", "f.json")
