@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/linuxrelease"
+	"github.com/agentloops-dev/agent-loops/Go/internal/releasesig"
 )
 
 // What a Linux machine's self-update does to ~/.agents-server/bin (#5788), with no build
@@ -43,6 +44,20 @@ func restartsItself(root string) bool {
 	}
 	pid, err := strconv.Atoi(strings.TrimSpace(string(b)))
 	return err == nil && pid == os.Getppid()
+}
+
+// asLinux makes u the updater of a Linux host that runs from current, as bin/current.
+func (u *selfUpdater) asLinux(current, arch string) {
+	u.asset = func(version string) string { return linuxrelease.Tarball(arch, version) }
+	u.open = func(version, work, file string) (string, error) {
+		return openLinuxRelease(current, arch, version, work, file)
+	}
+	u.place = func(work string) error { placeLinuxServers(current, arch, work); return nil }
+	u.version = func(next string) (string, error) { return linkedVersion(current, next) }
+	// SHA256SUMS is checked against its signature, the tarball against SHA256SUMS, and each
+	// program in it against its own .sha256, all before version runs the new host.
+	u.signed = releasesig.Verify
+	u.verify = func(string, string) error { return nil }
 }
 
 // openLinuxRelease unpacks a checked tarball in work and puts its agentsd at

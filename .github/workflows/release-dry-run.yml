@@ -114,6 +114,12 @@ jobs:
           test ! -e "$AGENTS_BUILD_CACHE"
           scripts/release-host.sh --dry-run "$VERSION" "${{ github.run_number }}"
 
+      # As release.yml's publish job signs them, with the tests' key.
+      - name: Sign SHA256SUMS (dry run)
+        run: |
+          Go/scripts/go.sh run ./cmd/release-sign sign -own -key internal/releasesig/testdata/test-current.pem \
+            "$VERSION" "$PWD/build/release/SHA256SUMS"
+
       - name: Logs
         if: failure()
         uses: actions/upload-artifact@v5

@@ -24,13 +24,14 @@ the App Store. Pushing a version tag on main publishes a release. The tag starts
   takes it when its control plane's server folder has no host for the machine (#5787):
   `install.sh` asks the control plane for its release (`GET /v1/releases/VERSION`),
   downloads the tarball and `SHA256SUMS` from the public releases itself
-  (`AGENTS_RELEASE_DOWNLOADS` replaces them, for a test), checks the sum and unpacks it; an
-  install over SSH has the control plane take the tarball as a release file (below),
+  (`AGENTS_RELEASE_DOWNLOADS` replaces them, for a test or a mirror), checks the signature
+  ("The signing keys", below) and the sum and unpacks it; an install over SSH has the
+  control plane take the tarball as a release file (below), check its signature and sum,
   unpack it in its releases folder and copy it over SSH as from its server folder. A
   Linux machine then updates itself from the same tarball (#5788), as a Mac does from its
-  zip (below): agentsd downloads `SHA256SUMS` and `agentsd-linux-<arch>-<version>.tar.gz`
+  zip (below): agentsd downloads `SHA256SUMS`, its signature and `agentsd-linux-<arch>-<version>.tar.gz`
   from its control plane first, and from the public releases when it does not answer,
-  checks the sum and each program's `.sha256`, asks the new agentsd its `--version`, puts
+  checks the signature before it downloads the tarball, then the sum and each program's `.sha256`, asks the new agentsd its `--version`, puts
   it at `bin/agentsd-<sha256>` and the MCP servers beside it between turns, points
   `bin/current` at it in one step and ends with status 75. systemd's `Restart=always`, or
   the supervisor that `--detach` starts (which starts itself again from `bin/current`),
@@ -38,15 +39,16 @@ the App Store. Pushing a version tag on main publishes a release. The tag starts
   stay up gives `bin/current` back to the old one. Keep the tarball's names flat, as the
   server folder's;
 - creates the release, titled **Agent Loops <version>**, with these files and a
-  `SHA256SUMS`. Agent Loops on a Mac updates itself from them (#2178): agentsd downloads
+  `SHA256SUMS`, which its `publish` job signs as `SHA256SUMS.sig`. Agent Loops on a Mac updates itself from them (#2178): agentsd downloads
   `SHA256SUMS` and `Agent-Loops-<version>.zip`, first from its control plane
   (`GET /v1/releases/<version>/<file>`), and from the public releases
   (`https://github.com/agentloops-dev/agents-releases/releases/download/v<version>/`, #1064)
-  when the control plane does not answer or answers 404. The control plane takes a file
+  when the control plane does not answer or answers 404. A Linux machine also takes
+  `SHA256SUMS.sig`. The control plane takes a file
   from there the first time a machine asks, checks it against that release's `SHA256SUMS`,
   keeps it in its releases folder (`AGENTS_CONTROL_RELEASES`, or `releases` in its
   `--home`), and keeps only its own release and the one before it (#5786).
-  `AGENTS_RELEASE_DOWNLOADS` replaces both sources, for a test. It checks the sum, then
+  `AGENTS_RELEASE_DOWNLOADS` replaces both sources, for a test or a mirror. It checks the sum, then
   the app's signature (the same team and identifier), its notarisation and its
   `CFBundleShortVersionString`. Keep these names. Keep the app in
   `Agent-Loops-<version>.zip` stapled and named `Agent Loops.app`, the app in
@@ -94,6 +96,9 @@ You set this up once, as the Apple Developer account's Account Holder.
    | `DEVELOPER_ID_P12_PASSWORD` | the password from step 1 |
    | `ASC_KEY_P8` | the App Store Connect API key's `.p8`, as text |
    | `ASC_KEY_ID`, `ASC_ISSUER_ID` | that key's ID and its issuer ID |
+
+   The signing key is one more secret of `release`, `RELEASE_SIGNING_KEY`: "The signing
+   keys", below.
 
 3. **The TestFlight secrets.** Only the Remote is in the App Store (#4229). Export **Apple
    Distribution: …** from Keychain Access as a `.p12` file. Install the four App Store
@@ -164,6 +169,120 @@ You set this up once, as the Apple Developer account's Account Holder.
 To make a release again from a tag that is already there (after fixing a secret, say), run
 the **release** workflow by hand and give it the tag. It replaces the release's files.
 
+To make a release again from a tag from before releases were signed, run the workflow of
+that tag: `gh workflow run release.yml --ref <tag> -f tag=<tag>`.
+
+## The signing keys
+
+`SHA256SUMS.sig` is the Ed25519 signature, in base64, of the line `agents-release/1` and the
+bytes of `SHA256SUMS`. Each file's name in `SHA256SUMS` holds the version, so a signature is
+good for one version only. Two public keys are in `Go/internal/releasesig/keys.go` and in
+`install.sh` (and `scripts/host-install.sh`, the same text): the **current** key, whose
+private half is the `RELEASE_SIGNING_KEY` secret of the `release` environment, and the
+**spare** key, whose private half is kept offline. A release signed with either is good.
+
+While the two are the test keys, the `release` workflow stops at its first job (`keys`) and
+`scripts/release-host.sh` stops too. The private halves of the test keys are in
+`Go/internal/releasesig/testdata`; only a Go test trusts them.
+
+### Make the keys, one time
+
+The person who holds the keys does this. No agent does it.
+
+1. Make an encrypted disk image and open it. Use a password that only you know:
+
+   ```sh
+   hdiutil create -size 10m -fs APFS -encryption AES-256 -volname Release-Keys ~/release-keys.dmg
+   hdiutil attach ~/release-keys.dmg
+   ```
+
+2. Make the two key pairs. Each command shows only the public half:
+
+   ```sh
+   scripts/release-key.sh /Volumes/Release-Keys/current.pem
+   scripts/release-key.sh /Volumes/Release-Keys/spare.pem
+   ```
+
+3. Put the first line in `CurrentKey` and the second in `SpareKey` in
+   `Go/internal/releasesig/keys.go`, in quotes. Put the same two lines in `release_keys` in
+   `Go/internal/controlplane/install.sh`, and copy that file to `scripts/host-install.sh`.
+   `(cd Go && go run ./cmd/release-sign check)` then says nothing. The public halves are
+   not secret: an agent can do this step.
+4. Put the current private key in the `release` environment:
+
+   ```sh
+   scripts/release-secrets.sh --signing-key /Volumes/Release-Keys/current.pem
+   ```
+
+5. Copy `release-keys.dmg` to two USB sticks, and keep them in two places. Then close the
+   image and take it off the Mac:
+
+   ```sh
+   hdiutil detach /Volumes/Release-Keys
+   rm ~/release-keys.dmg
+   ```
+
+### Replace a key
+
+- **The current key is lost, or somebody else may have it.** Set the spare as the secret
+  (`scripts/release-secrets.sh --signing-key …/spare.pem`). Every machine trusts it already.
+  Make a new pair. In the next release, `CurrentKey` is the old spare and `SpareKey` is the
+  new one. A machine trusts the old current key until it takes that release, so make it
+  soon.
+- **The spare is lost.** Make a new pair and put it in `SpareKey`. The next release carries it.
+- **A planned change** is the same as a lost current key. Keep signing with the old spare
+  until no machine has a release from before the change. A machine with two old keys cannot
+  take a release that only a newer key signed.
+- **Both are lost.** No machine can take an update by itself. Make two new pairs, release,
+  and install each Linux machine again with its join command. A Mac is not affected.
+
+Replacing a file of a release (the workflow run again) signs the new `SHA256SUMS`. A control
+plane that already kept the old files serves them together, until you remove
+`<version>` from its releases folder.
+
+### What is checked, and where it is not
+
+| Download | The check |
+|---|---|
+| A Linux machine's own update, from its control plane, the public releases or a mirror | The signature, before the tarball is downloaded, opened or run. With no signature at one source, the next source is asked. With a bad one, nothing is installed |
+| An install over SSH, from the release | The control plane checks the signature before it unpacks the tarball |
+| `install.sh`, from the release | The signature, when the machine has OpenSSL 3. Without it, only the checksum, and the script says so |
+| `install.sh` and an install over SSH, from the control plane's server folder (`/v1/servers/`) | The checksum only. These files are the control plane's own, and no signature covers them. The same control plane also sends `install.sh` itself |
+| The toolsets (`/v1/toolsets/`) | No signature. The control plane's manifest has the checksum of each download |
+| A Mac's update and its first install | Developer ID and the notarisation, as before. Not `SHA256SUMS.sig` |
+| The control plane's image | cosign, as before |
+
+A control plane passes `SHA256SUMS.sig` on as it is. One with no internet serves the files
+in its releases folder: put `SHA256SUMS`, `SHA256SUMS.sig` and the Linux tarballs in
+`<releases folder>/<version>/`.
+
+### A mirror, or your own build
+
+`AGENTS_RELEASE_DOWNLOADS` changes only where the files come from. Their signature is
+checked all the same:
+
+- **A mirror of these releases** works with no other setting. Copy `SHA256SUMS.sig` too.
+- **Your own build** needs your own key. Make one with `scripts/release-key.sh`, sign with
+  `release-sign sign -own -key <private key> <version> <full path of SHA256SUMS>`, and write
+  the public half with `release-sign public -pem <private key>`. On each machine, put that
+  file where its account owns it and no other account can write it, and set
+  `AGENTS_RELEASE_KEY` to its full path in the host's environment (for the systemd user
+  service, `systemctl --user edit agents-host` and `Environment=AGENTS_RELEASE_KEY=…`). Set
+  it for `install.sh` and for a control plane that installs over SSH too.
+
+`AGENTS_RELEASE_KEY` is one more key beside the two in the program. A file that is missing,
+is not a public key, or that another account owns or can write stops every update, and the
+host's log says why.
+
+### Older versions
+
+- **An older agentsd** does not ask for the signature. It takes its next update as it did
+  before, and checks signatures from that version on.
+- **An older control plane** keeps and answers no `SHA256SUMS.sig`, unless the file is in
+  its releases folder. A Linux machine then asks the public releases. When they do not
+  answer, the machine stays on its version, and its update state says that it could not
+  download the signature. Update the control plane first.
+
 ## Build one on this Mac
 
 `scripts/release-host.sh 0.2.0` does what the workflow's Mac job does. It needs the
@@ -188,6 +307,11 @@ the commit it will tag: `gh workflow run release-dry-run.yml -f ref=<sha>`.
 
 ## If something goes wrong
 
+- **"CurrentKey is a test key":** the tag has no release keys. "The signing keys" says how
+  to make them. No file was published.
+- **"RELEASE_SIGNING_KEY is not …":** the secret is missing, or is not the private half of a
+  key in the tag. Run `scripts/release-secrets.sh --signing-key`, then run the workflow
+  again with the tag.
 - **"is not on main":** the tag points at a commit main doesn't have. Delete the tag
   (`git push origin :refs/tags/v0.2.0`), then tag a commit on main.
 - **No "Developer ID Application" identity:** `DEVELOPER_ID_P12` or its password is wrong.

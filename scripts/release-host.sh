@@ -18,6 +18,9 @@
 #   - the "Developer ID Application" identity in a keychain;
 #   - ASC_KEY_ID, ASC_ISSUER_ID and ASC_KEY_PATH (the App Store Connect key's .p8), for
 #     notarytool.
+# A release's build also needs the release's public keys in Go/internal/releasesig/keys.go; it
+# refuses the test keys. SHA256SUMS is signed after it, by cmd/release-sign (release.yml's
+# publish job).
 # The Linux agentsd (Go, #1136) has to be in App/Resources/servers already
 # (scripts/build-linux-agentsd.sh, or the release workflow's linux job): Agent Loops carries
 # it for servers, and the release offers it on its own for Linux hosts.
@@ -38,6 +41,8 @@ for arch in x86_64 aarch64; do
         exit 1
     }
 done
+
+(( dry )) || Go/scripts/go.sh run ./cmd/release-sign check
 
 rm -rf $out
 mkdir -p $out

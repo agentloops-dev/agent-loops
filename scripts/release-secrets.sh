@@ -21,6 +21,12 @@
 # The App Review gate (#3657): the `app-store` environment, for v* tags only, with the reviewer
 # (the signed-in GitHub user by default) required, and the App Store Connect key from
 # ~/.private_keys. Without a required reviewer app-store.yml submits nothing.
+#
+#   scripts/release-secrets.sh --signing-key path/to/current.pem
+#
+# The key that signs SHA256SUMS, from scripts/release-key.sh, into the `release` environment
+# as RELEASE_SIGNING_KEY, once its public half is one of this checkout's two. Lease "build"
+# first: it builds cmd/release-sign.
 set -euo pipefail
 
 # The repo is this checkout's, so it follows a transfer (#4929).
@@ -77,6 +83,20 @@ if [[ ${1:-} == --store ]]; then
     done
     gh secret list --env release -R $repo
     print "Done. Delete the .p12 file. The next v* tag also uploads to TestFlight."
+    exit 0
+fi
+
+if [[ ${1:-} == --signing-key ]]; then
+    key=${2:?usage: release-secrets.sh --signing-key current.pem}
+    gh api repos/$repo/environments/release --silent ||
+        { print -u2 "No release environment: run release-secrets.sh with the Developer ID .p12 first."; exit 1 }
+    ${0:A:h:h}/Go/scripts/go.sh run ./cmd/release-sign check
+    public=$(${0:A:h:h}/Go/scripts/go.sh run ./cmd/release-sign public ${key:a})
+    grep -qF "\"$public\"" ${0:A:h:h}/Go/internal/releasesig/keys.go ||
+        { print -u2 "$key is not the private half of a key in Go/internal/releasesig/keys.go; no secret was set."; exit 1 }
+    gh secret set RELEASE_SIGNING_KEY --env release -R $repo < $key
+    gh secret list --env release -R $repo
+    print "Done. Take $key off this Mac, and keep its copy offline."
     exit 0
 fi
 

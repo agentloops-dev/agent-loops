@@ -16,6 +16,7 @@ import (
 
 func releaseRig(t *testing.T, version string, files map[string]string, sumOf map[string]string) (*releaseFiles, *atomic.Int64) {
 	t.Helper()
+	t.Setenv("AGENTS_RELEASE_KEY", "")
 	var hits atomic.Int64
 	sums := ""
 	for name, body := range files {
@@ -32,7 +33,14 @@ func releaseRig(t *testing.T, version string, files map[string]string, sumOf map
 			_, _ = io.WriteString(w, sums)
 			return
 		}
+		if _, ok := files["SHA256SUMS.sig"]; !ok && r.URL.Path == dir+"SHA256SUMS.sig" {
+			_, _ = io.WriteString(w, releaseSig(t, "current", sums))
+			return
+		}
 		for name, body := range files {
+			if body == "" {
+				continue
+			}
 			if r.URL.Path == dir+name {
 				_, _ = io.WriteString(w, body)
 				return

@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/linuxrelease"
+	"github.com/agentloops-dev/agent-loops/Go/internal/releasesig"
 	"github.com/agentloops-dev/agent-loops/Go/internal/safe"
 )
 
@@ -26,7 +27,8 @@ import (
 // names (its own version). A Linux file that is in its server folder comes from there.
 // Any other file comes from the public releases the first time a machine asks: it is
 // checked against that release's SHA256SUMS, kept in ReleaseFolder, and served from there
-// after that. Only the files of its own release and the one before it are kept.
+// after that. SHA256SUMS.sig, which no checksum lists, is kept with SHA256SUMS and passed
+// on as it is: the machine checks it (releasesig). Only the files of its own release and the one before it are kept.
 //
 // A Linux machine's first install takes them too (#5787): GET /v1/releases/VERSION names
 // the release for install.sh, and an install over SSH with no host for the machine in the
@@ -39,7 +41,7 @@ const ReleaseDownloads = "https://github.com/agentloops-dev/agents-releases/rele
 const (
 	releaseFileLimit = 1 << 30 // the release's zip is about 100 MB
 	releaseSumsLimit = 1 << 16
-	releaseSumsName  = "SHA256SUMS"
+	releaseSumsName  = releasesig.SumsName
 )
 
 var (
@@ -136,7 +138,9 @@ func (rf *releaseFiles) find(ctx context.Context, version, name string) (string,
 }
 
 // fetch takes a file from the public releases, checks it against the release's
-// SHA256SUMS, and keeps it. A file whose sum does not match is not kept.
+// SHA256SUMS, and keeps it. A file whose sum does not match is not kept. SHA256SUMS and its
+// signature are taken together, so the two kept are of the same release; a release with no
+// signature keeps SHA256SUMS alone.
 func (rf *releaseFiles) fetch(ctx context.Context, version, name string) error {
 	dir := filepath.Join(rf.folder, version)
 	if err := os.MkdirAll(dir, 0o750); err != nil { //nolint:gosec // G7xx: built from a checked version and file name, never a request path
@@ -144,14 +148,19 @@ func (rf *releaseFiles) fetch(ctx context.Context, version, name string) error {
 	}
 	base := rf.source + "/v" + version + "/"
 	sums := filepath.Join(dir, releaseSumsName)
-	if name == releaseSumsName {
-		_, err := rf.download(ctx, base+name, sums, releaseSumsLimit)
-		return err
-	}
 	if !fileExists(sums) {
 		if _, err := rf.download(ctx, base+releaseSumsName, sums, releaseSumsLimit); err != nil {
 			return err
 		}
+	}
+	if sig := filepath.Join(dir, releasesig.SigName); !fileExists(sig) && (name == releaseSumsName || name == releasesig.SigName) {
+		_, err := rf.download(ctx, base+releasesig.SigName, sig, releasesig.Limit)
+		if name == releasesig.SigName {
+			return err
+		}
+	}
+	if name == releaseSumsName || name == releasesig.SigName {
+		return nil
 	}
 	text, err := os.ReadFile(sums) //nolint:gosec // G7xx: built from a checked version and file name, never a request path
 	if err != nil {
@@ -210,8 +219,9 @@ func (rf *releaseFiles) download(ctx context.Context, url, dest string, limit in
 // linux is a folder with this control plane's release of the Linux host for arch (x86_64
 // or aarch64), laid out as the server folder is (agentsd-linux-<arch> and the MCP
 // servers, each with its .sha256, and VERSION), for an install over SSH when the server
-// folder has none (#5787). The release's tarball is fetched and checked against
-// SHA256SUMS as any other release file, and unpacked once beside it.
+// folder has none (#5787). The release's tarball is fetched as any other release file,
+// checked against SHA256SUMS and that against its signature, also when it was put in the
+// folder by hand, and unpacked once beside it.
 func (rf *releaseFiles) linux(ctx context.Context, arch string) (string, error) {
 	if rf.folder == "" || rf.version == "" {
 		return "", errors.New("this control plane keeps no release files")
@@ -225,6 +235,9 @@ func (rf *releaseFiles) linux(ctx context.Context, arch string) (string, error) 
 	}
 	tarball, err := rf.find(ctx, rf.version, linuxrelease.Tarball(arch, rf.version))
 	if err != nil {
+		return "", err
+	}
+	if err := rf.checkSigned(ctx, tarball); err != nil {
 		return "", err
 	}
 	rf.mu.Lock()
@@ -248,6 +261,29 @@ func (rf *releaseFiles) linux(ctx context.Context, arch string) (string, error) 
 	}
 	_ = os.RemoveAll(dir)
 	return dir, os.Rename(tmp, dir)
+}
+
+// checkSigned checks a kept file of this control plane's release against SHA256SUMS, and
+// SHA256SUMS against its signature.
+func (rf *releaseFiles) checkSigned(ctx context.Context, path string) error {
+	var texts [2][]byte
+	for i, name := range []string{releaseSumsName, releasesig.SigName} {
+		kept, err := rf.find(ctx, rf.version, name)
+		if err != nil {
+			return fmt.Errorf("release %s has no %s: %w", rf.version, name, err)
+		}
+		if texts[i], err = os.ReadFile(kept); err != nil { //nolint:gosec // G304: a kept release file
+			return err
+		}
+	}
+	if err := releasesig.Verify(texts[0], texts[1]); err != nil {
+		return fmt.Errorf("release %s: %w", rf.version, err)
+	}
+	name := filepath.Base(path)
+	if want := sumLine(string(texts[0]), name); want == "" || want != linuxrelease.FileSum(path) {
+		return fmt.Errorf("%s does not match release %s's checksum", name, rf.version)
+	}
+	return nil
 }
 
 // prune keeps the folders of this release and of the newest one before it.

@@ -13,7 +13,7 @@
 #   loops-<os>-<arch>-<version>.tar.gz    loops, the command-line client (#6448), for darwin and
 #                                          linux, arm64 and amd64; the macOS ones signed and
 #                                          notarized (scripts/build-loops.sh)
-#   SHA256SUMS
+#   SHA256SUMS, and SHA256SUMS.sig, its signature (Go/internal/releasesig)
 #
 # and the control plane's image, ghcr.io/<owner>/agents-control:<version> (#2140, #4958), signed.
 #
@@ -30,6 +30,9 @@
 #   DEVELOPER_ID_P12, DEVELOPER_ID_P12_PASSWORD   the Developer ID Application identity
 #   ASC_KEY_P8, ASC_KEY_ID, ASC_ISSUER_ID         the App Store Connect key, for notarytool
 #                                                 and altool
+#   RELEASE_SIGNING_KEY                           the private key that signs SHA256SUMS, for the
+#                                                 publish job (scripts/release-key.sh makes it,
+#                                                 scripts/release-secrets.sh --signing-key sets it)
 # and for the testflight job (scripts/release-secrets.sh --store sets them):
 #   APPLE_DISTRIBUTION_P12, APPLE_DISTRIBUTION_P12_PASSWORD   the Apple Distribution identity
 #   PROFILE_REMOTE          "Agents Remote App Store"
@@ -57,9 +60,34 @@ env:
   TAG: ${{ github.event.inputs.tag || github.ref_name }}
 
 jobs:
+  # Nothing is built, pushed or uploaded while the tag's public keys are the test keys, or
+  # the release environment has no private key of theirs.
+  keys:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: release
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ env.TAG }}
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: Go/go.mod
+          cache: false
+
+      - name: The release's public keys are there
+        run: Go/scripts/go.sh run ./cmd/release-sign check
+
+      - name: The signing key is theirs
+        env:
+          RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+        run: Go/scripts/go.sh run ./cmd/release-sign check -secret
+
   # The Linux agentsd (Go, #1136) and the MCP servers beside it, with Go/go.mod's Go. The
   # Swift one, and the Static Linux SDK it was built with, went in #1314.
   linux:
+    needs: keys
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -100,6 +128,7 @@ jobs:
   # <owner> is the repo's owner (#4958): a package belongs to its owner, and a release can
   # push only to its own owner's packages, so after a transfer the new owner gets the image.
   image:
+    needs: keys
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -164,7 +193,7 @@ jobs:
     timeout-minutes: 75
     environment: release
     permissions:
-      contents: write
+      contents: read
     env:
       DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
     steps:
@@ -238,6 +267,63 @@ jobs:
           name: release-logs
           path: build/release/*.log
 
+      - uses: actions/upload-artifact@v5
+        with:
+          name: release-files
+          path: |
+            build/release/*.dmg
+            build/release/*.zip
+            build/release/*.tar.gz
+            build/release/SHA256SUMS
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 3
+
+  # Signs SHA256SUMS and publishes the release, on a runner that built nothing, so the
+  # signing key is never beside a build. release-sign uses Go's standard library only.
+  publish:
+    needs: mac
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ env.TAG }}
+
+      - name: The tag is on main
+        run: |
+          git fetch --quiet origin main
+          git merge-base --is-ancestor HEAD origin/main || {
+            echo "::error::$TAG is not on main"; exit 1; }
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: Go/go.mod
+          cache: false
+
+      - uses: actions/download-artifact@v6
+        with:
+          name: release-files
+          path: build/release
+
+      - name: The release's public keys are there
+        run: Go/scripts/go.sh run ./cmd/release-sign check
+
+      # It fails when the private key is not that of one of the two public keys in the
+      # tag's Go/internal/releasesig/keys.go.
+      - name: Sign SHA256SUMS
+        env:
+          RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+        run: |
+          (cd build/release && sha256sum -c --strict SHA256SUMS)
+          Go/scripts/go.sh run ./cmd/release-sign sign "${TAG#v}" "$PWD/build/release/SHA256SUMS"
+
+      - name: The signature is good
+        run: Go/scripts/go.sh run ./cmd/release-sign verify "$PWD/build/release/SHA256SUMS"
+
       # The tag's message is the notes when it has one: checkout leaves the tag lightweight,
       # so it is fetched again as the annotated tag it is.
       - name: Publish the release
@@ -251,9 +337,9 @@ jobs:
             notes=(--notes-file "$RUNNER_TEMP/notes.md")
           cd build/release
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" *.dmg *.zip *.tar.gz SHA256SUMS --clobber
+            gh release upload "$TAG" *.dmg *.zip *.tar.gz SHA256SUMS SHA256SUMS.sig --clobber
           else
-            gh release create "$TAG" *.dmg *.zip *.tar.gz SHA256SUMS --title "Agent Loops ${TAG#v}" \
+            gh release create "$TAG" *.dmg *.zip *.tar.gz SHA256SUMS SHA256SUMS.sig --title "Agent Loops ${TAG#v}" \
               "${notes[@]}" --verify-tag
           fi
 
@@ -272,15 +358,16 @@ jobs:
           fi
           cd build/release
           if gh release view "$TAG" --repo "$PUBLIC_REPO" >/dev/null 2>&1; then
-            gh release upload "$TAG" *.dmg *.zip *.tar.gz SHA256SUMS --clobber --repo "$PUBLIC_REPO"
+            gh release upload "$TAG" *.dmg *.zip *.tar.gz SHA256SUMS SHA256SUMS.sig --clobber --repo "$PUBLIC_REPO"
           else
-            gh release create "$TAG" *.dmg *.zip *.tar.gz SHA256SUMS --repo "$PUBLIC_REPO" \
+            gh release create "$TAG" *.dmg *.zip *.tar.gz SHA256SUMS SHA256SUMS.sig --repo "$PUBLIC_REPO" \
               --title "Agent Loops ${TAG#v}" --notes-file "$RUNNER_TEMP/notes.md"
           fi
 
   # The Remote on TestFlight (#914). It needs nothing from the other jobs, and a
   # failure here leaves the GitHub release as it is.
   testflight:
+    needs: keys
     runs-on: xcode-27
     timeout-minutes: 90
     environment: release

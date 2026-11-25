@@ -294,6 +294,11 @@ open for item 2 and for the notes' known issues (`git merge-base --is-ancestor <
    release with `partly_done`. A job cancelled because the pin moved is not a failure
    either (see the pin, above).
 
+5. **The release keys are there:** `Go/scripts/go.sh run ./cmd/release-sign check` (under the
+   "build" lease) says nothing. While it names a test key, end with `partly_done`: the tag's
+   `release` run stops at its first job. The keys are Alex's to make
+   (`docs/how-to/release-agents-host.md`, "The signing keys"). Never make one.
+
 ## 6. Version and notes
 
 1. Run `release-plan.py --ref <sha>` again, so the plan lists what the pin holds and nothing
@@ -344,7 +349,7 @@ A tag that already exists for this version means another release ran: end with
    A job that no runner took is not a failure: look and run it again once, as in step 5,
    item 4 (#3445). Only a job that ran and failed goes to items 2–4.
 2. **GitHub:** `gh release view v<version> --json assets` has the `.dmg`, the `.zip`,
-   both `agentsd-linux-*.tar.gz` and `SHA256SUMS`. Macs update Agent Loops from the `.zip`
+   both `agentsd-linux-*.tar.gz`, `SHA256SUMS` and `SHA256SUMS.sig`. Macs update Agent Loops from the `.zip`
    and `SHA256SUMS` by these names (#2178): a release without them updates no Mac.
    **The image** (#2140): the `image` job passed, and
    `docker buildx imagetools inspect ghcr.io/agentloops-dev/agents-control:<version>` lists
