@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -175,7 +177,7 @@ func (d *Daemon) getSetupProjects(ctx context.Context, patience, every time.Dura
 // has the pool's copy.
 func (d *Daemon) getOrWait(ctx context.Context, work *wire.MachineSetupWork, i int, folder string, say func(string), pause func() bool) error {
 	for {
-		wait, err := d.getSetupProject(work.Projects[i], folder, work.Claimed)
+		wait, err := d.getSetupProject(work.Projects[i], folder, work.Claimed, say)
 		if err == nil || !wait || work.Claimed && isDir(filepath.Join(folder, ".git")) || !pause() {
 			return err
 		}
@@ -191,7 +193,7 @@ func (d *Daemon) getOrWait(ctx context.Context, work *wire.MachineSetupWork, i i
 // getSetupProject gets one project into folder from the first of its sources that gives it.
 // wait says that the error can go away without a change: a source is offline, or this
 // machine is not in its lock yet.
-func (d *Daemon) getSetupProject(p wire.MachineSetupProject, folder string, claimed bool) (wait bool, err error) {
+func (d *Daemon) getSetupProject(p wire.MachineSetupProject, folder string, claimed bool, say func(string)) (wait bool, err error) {
 	if len(p.Sources) == 0 {
 		return false, Invalid("no machine of yours has %s in a project", p.Path)
 	}
@@ -202,7 +204,7 @@ func (d *Daemon) getSetupProject(p wire.MachineSetupProject, folder string, clai
 			}
 			continue
 		}
-		got := d.getFolderFrom(string(s.Machine), p, folder, claimed)
+		got := d.getFolderFrom(string(s.Machine), p, folder, claimed, say)
 		if got == nil {
 			return false, nil
 		}
@@ -216,7 +218,7 @@ func (d *Daemon) getSetupProject(p wire.MachineSetupProject, folder string, clai
 // getFolderFrom brings the branch that p's folder on machine is on into folder here, at its
 // last commit: never with uncommitted changes. With keepChanges it leaves a folder that has
 // changes as it is, also those a Send to ‹machine›… put there: they are newer.
-func (d *Daemon) getFolderFrom(machine string, p wire.MachineSetupProject, folder string, keepChanges bool) error {
+func (d *Daemon) getFolderFrom(machine string, p wire.MachineSetupProject, folder string, keepChanges bool, say func(string)) error {
 	state, err := d.receiveState(wire.ReceiveStateRequest{Folder: folder})
 	if err != nil {
 		return err
@@ -226,7 +228,7 @@ func (d *Daemon) getFolderFrom(machine string, p wire.MachineSetupProject, folde
 			return err
 		}
 	}
-	receive, err := d.packedThere(machine, p.Path, folder, state.Heads)
+	receive, err := d.packedThere(machine, p.Path, folder, state, say)
 	if err != nil {
 		return err
 	}
@@ -251,9 +253,10 @@ func (d *Daemon) getFolderFrom(machine string, p wire.MachineSetupProject, folde
 	return nil
 }
 
-// packedThere has machine pack the branch that its folder at path is on, less heads, reads it
-// here, and is the receive that puts it in folder.
-func (d *Daemon) packedThere(machine, path, folder string, heads []string) (receive wire.ReceiveRequest, err error) {
+// packedThere has machine pack the branch that its folder at path is on, less what folder, as
+// state says it is, has or gets from its origin (#7119), reads it here, and is the receive
+// that puts it in folder. say, when not nil, hears how the origin's part goes.
+func (d *Daemon) packedThere(machine, path, folder string, state wire.ReceiveState, say func(string)) (receive wire.ReceiveRequest, err error) {
 	there := store.PathURL(path)
 	var sent wire.MachineFolderSent
 	if err := d.askSend(personSending, wire.MachineFolderSend{Host: machine, Facts: &wire.SendFactsRequest{Folder: there}}, &sent); err != nil {
@@ -271,7 +274,22 @@ func (d *Daemon) packedThere(machine, path, folder string, heads []string) (rece
 	if branch == "" {
 		return receive, Invalid("%s has no commit", path)
 	}
-	origin := sent.Facts.Origin
+	origin, heads := sent.Facts.Origin, state.Heads
+	var seed *wire.UUID
+	if origin != nil && !state.OwnChanges {
+		// An older source says its origin as it is.
+		clean := withoutCredential(*origin)
+		origin = &clean
+		var got []string
+		if got, seed = d.seedHere(folder, clean, say); seed != nil {
+			heads = append(slices.Clone(heads), got...)
+			defer func() {
+				if err != nil {
+					d.dropSeed(*seed)
+				}
+			}()
+		}
+	}
 	pack := wire.SendPackRequest{Folder: there, Branches: []string{branch}, LeavingOut: heads}
 	sent = wire.MachineFolderSent{}
 	if err := d.askSend(personSending, wire.MachineFolderSend{Host: machine, Pack: &pack}, &sent); err != nil {
@@ -280,7 +298,7 @@ func (d *Daemon) packedThere(machine, path, folder string, heads []string) (rece
 	if sent.Pack == nil {
 		return receive, Invalid("the control plane's answer could not be read")
 	}
-	receive = wire.ReceiveRequest{Folder: folder, Branches: sent.Pack.Commits, Checkout: branch, Origin: origin}
+	receive = wire.ReceiveRequest{Folder: folder, Branches: sent.Pack.Commits, Checkout: branch, Origin: origin, Seed: seed}
 	if sent.Pack.Bundle != nil {
 		id := store.NewUUID()
 		if err := d.readThere(personSending, machine, sent.Pack.Bundle.ID, id, nil); err != nil {
@@ -292,6 +310,21 @@ func (d *Daemon) packedThere(machine, path, folder string, heads []string) (rece
 		receive.Bundle = &id
 	}
 	return receive, nil
+}
+
+// seedHere is seedThere for a folder of this machine that it gets itself.
+func (d *Daemon) seedHere(folder, origin string, say func(string)) ([]string, *wire.UUID) {
+	remote, ok := seedOrigin(origin)
+	if !ok {
+		return nil, nil
+	}
+	var said func(done int64)
+	if say != nil {
+		said = func(done int64) {
+			say(fmt.Sprintf("Getting %s from its origin: %d MB", filepath.Base(folder), done/1_000_000))
+		}
+	}
+	return d.waitSeed(wire.ReceiveSeedRequest{Seed: store.NewUUID(), Folder: folder, Origin: remote.url}, said, d.receiveSeed)
 }
 
 // continueSetup asks what the machine's set-up has left, and runs it. It says false when

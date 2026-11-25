@@ -171,9 +171,7 @@ func (d *Daemon) receiveState(r wire.ReceiveStateRequest) (wire.ReceiveState, er
 		return s, err
 	}
 	s.OwnChanges = own
-	if out, err := git(path, "for-each-ref", "--format=%(objectname)", "refs/heads"); err == nil && out != "" {
-		s.Heads = strings.Split(out, "\n")
-	}
+	s.Heads = folderHeads(path)
 	return s, nil
 }
 
@@ -208,6 +206,9 @@ func (d *Daemon) receiveInto(r wire.ReceiveRequest, keepChanges bool) (summary w
 			return summary, err
 		}
 		defer os.Remove(patch)
+	}
+	if r.Seed != nil {
+		defer d.dropSeed(*r.Seed) // a receive that refuses below uses no seed
 	}
 	path, err := receiveFolder(r.Folder)
 	if err != nil {
@@ -263,7 +264,13 @@ func (d *Daemon) receiveIntoLocked(r wire.ReceiveRequest, path, bundle, patch st
 			os.RemoveAll(filepath.Join(path, ".git"))
 		}
 	}()
-	if err := receiveInitOrCheckChanges(path, here, fresh); err != nil {
+	staged := ""
+	if r.Seed != nil {
+		var used func()
+		staged, used = d.takeSeed(*r.Seed, path)
+		defer used()
+	}
+	if err := receiveInitOrCheckChanges(path, here, staged, fresh); err != nil {
 		return summary, err
 	}
 
@@ -315,9 +322,12 @@ func receivePrepareFolder(path, here string) (fresh, made bool, err error) {
 	return false, false, nil
 }
 
-// receiveInitOrCheckChanges makes a repository in a fresh folder, or refuses a repository
-// that has changes of its own.
-func receiveInitOrCheckChanges(path, here string, fresh bool) error {
+// receiveInitOrCheckChanges makes a repository in a fresh folder, from the one staged by a
+// seed when it is not "" (#7119), or refuses a repository that has changes of its own.
+func receiveInitOrCheckChanges(path, here, staged string, fresh bool) error {
+	if fresh && staged != "" {
+		return receiveStartFromSeed(path, staged)
+	}
 	if fresh {
 		_, err := git(path, "init", "-q")
 		return err
@@ -410,10 +420,14 @@ func receiveApplyMoves(path string, fresh bool, moves []receiveMove, checkout st
 	return err
 }
 
-// receiveSetOrigin sets the origin remote to origin, or adds it when there is none.
+// receiveSetOrigin sets the origin remote to origin, or adds it when there is none. The same
+// address with this machine's own credential in it stays: a send brings none (#7119).
 func receiveSetOrigin(path, origin string) error {
-	var err error
-	if _, err = git(path, "remote", "get-url", "origin"); err == nil {
+	have, err := git(path, "remote", "get-url", "origin")
+	if err == nil && withoutCredential(have) == origin {
+		return nil
+	}
+	if err == nil {
 		_, err = git(path, "remote", "set-url", "origin", origin)
 	} else {
 		_, err = git(path, "remote", "add", "origin", origin)
@@ -439,6 +453,12 @@ func receiveApplyPatch(path, patch string) error {
 
 func (d *Daemon) registerReceive() {
 	os.RemoveAll(d.incomingFolder())
+	if err := os.RemoveAll(d.seedsFolder()); err != nil {
+		log.Printf("receive: could not remove old seeds: %v", err)
+	}
+	On(d, wire.CallFoldersReceiveSeed, func(ctx context.Context, c *Client, r wire.ReceiveSeedRequest) (wire.ReceiveSeed, error) {
+		return d.receiveSeed(r)
+	})
 	On(d, wire.CallFoldersReceiveUpload, func(ctx context.Context, c *Client, r wire.ReceiveUploadRequest) (wire.Empty, error) {
 		return wire.Empty{}, d.receiveUpload(r)
 	})

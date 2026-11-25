@@ -78,7 +78,17 @@ It stops, and changes nothing, when:
 
 ## How it works
 
-This Mac's host makes a `git bundle` of the branches, without the commits that the server
+When the folder's origin is an HTTPS or SSH address that has commits the server lacks, the
+server gets them from the origin first (#7119), with its own sign-in. Git asks for no password
+there, and SSH does not wait for a prompt. A folder that is there fetches its origin, into its
+remote-tracking branches only. The commits for a new folder wait in the server's `Seeds` folder
+until the send ends, so a send that stops leaves no folder. When the server cannot reach the
+origin, gets nothing from it for 90 seconds, or does not know this step, the send carries
+everything. The origin goes to the server with no credential from its address: a copy there
+signs in with what the server has. The same is true for `start_session` with `send`,
+`move_session` and the projects that a pool machine gets.
+
+This Mac's host then makes a `git bundle` of the branches, without the commits that the server
 has, and a patch of the uncommitted changes. The patch is made with an index of its own, so
 the index of your repository does not change. The window sends both to the server in parts
 of 1 MB, over the connection it already has to the server through the control plane. It

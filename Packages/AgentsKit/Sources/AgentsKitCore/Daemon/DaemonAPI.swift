@@ -3825,14 +3825,17 @@ public extension DaemonAPI {
         public var branches: [SentBranch]
         public var checkout: String
         public var origin: String?
+        /// The `folders/receiveSeed` (#7119) a new folder starts from.
+        public var seed: UUID?
         public init(folder: String, bundle: UUID? = nil, patch: UUID? = nil, branches: [SentBranch],
-                    checkout: String, origin: String? = nil) {
+                    checkout: String, origin: String? = nil, seed: UUID? = nil) {
             self.folder = folder
             self.bundle = bundle
             self.patch = patch
             self.branches = branches
             self.checkout = checkout
             self.origin = origin
+            self.seed = seed
         }
     }
 
