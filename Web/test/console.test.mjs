@@ -23,6 +23,7 @@ test("Reports' pages are grouped by the question each answers (#5280)", async ()
     ["Time", ["Time"]],
     ["Plan", ["Forecast", "Estimates"]],
     ["Use", ["Adoption", "Runtimes", "Workflows"]],
+    ["Storage", ["Store sizes"]], // behind its flag (#6907)
     ["Saved", ["Saved Views"]],
     ["Records", ["Audit"]],
   ]);

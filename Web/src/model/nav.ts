@@ -3,7 +3,7 @@
 // every other section is a list of pages beside the page open. A section or page only an admin can
 // use is left out for a member; the control plane still checks each call's role itself.
 import type { ActivityPage } from "../route";
-import { featuresSection, reportSections, type Section } from "./console";
+import { featuresSection, reportSections, storesID, type Section } from "./console";
 import { flagOn } from "./featureFlags";
 import { workKinds, workKindTitle, type WorkKind } from "./work";
 
@@ -55,7 +55,7 @@ export interface NavPage {
    * other page's item, #/reports/delivery/builds. */
   under?: string;
   /** Only with this feature flag on (#6572): a page whose flag is off is in no list and opens by no address. */
-  flag?: "work" | "docs";
+  flag?: "work" | "docs" | "store-sizes";
   draw: PageDraw;
 }
 
@@ -111,7 +111,7 @@ export const navPages: Record<NavSection, readonly NavPage[]> = {
   ],
   reports: [
     ...reportSections.flatMap((s): NavPage[] => [
-      { id: s.id, title: s.title, group: s.group, draw: { kind: "report", section: s } },
+      { id: s.id, title: s.title, group: s.group, ...s.id === storesID ? { flag: "store-sizes" as const } : {}, draw: { kind: "report", section: s } },
       // Build trends (#5178, spec 5166) and the DORA figures of each environment (#5245, spec 5239 board 5) under Delivery
       // (#5280; were under Planning): #/reports/delivery/builds, #/reports/delivery/environments.
       ...s.id === "delivery" ? [
