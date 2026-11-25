@@ -3519,6 +3519,16 @@ export interface ControlCutOff {
 export interface ControlEligible {
   ok: boolean;
   reasons: ControlEligibleReason[];
+  /**
+   * Where the control plane reached the machine's control role, as a person reads it (#7313): its
+   * domain, or its public address, with the port when it is not 443. Absent when it did not reach
+   * it there, or reached it by its tunnel.
+   */
+  address?: string;
+  /** The machine's memory, as it said it (#7313). Absent when it did not say. */
+  memoryBytes?: number;
+  /** The free space on its fullest disk, as it said it (#7313). Absent when it did not say. */
+  diskFreeBytes?: number;
 }
 
 /** One reason a machine cannot take the control role (#6611), with its words for the person. */
@@ -8847,6 +8857,17 @@ export interface MachineConnections {
   connections: ConnectionsList;
 }
 
+/**
+ * Where a machine's control role serves (#7313): the domain its certificate is for, when it has
+ * one, and the port. With no domain, the control plane dials the public address that the machine's
+ * uplink comes from.
+ */
+export interface MachineControlAddress {
+  domain?: string;
+  /** From 1 to 65535; a hello with another is taken as none. */
+  port: number;
+}
+
 /** A conversation of messages/conversationsAll (#5571) with the machine whose connector has it. */
 export interface MachineConversation {
   machine: MachineRef;
@@ -8993,6 +9014,11 @@ export interface MachineHello {
    * that.
    */
   maturity?: Maturity;
+  /**
+   * Where this machine's own control plane serves, when its install gave it the control role
+   * (agentsd install --control, #6610, #7313). Absent when it has none, and from an older host.
+   */
+  control?: MachineControlAddress;
 }
 
 /**
@@ -18697,7 +18723,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   ControlClientChanged: { required: [], optional: ["client", "removed"] },
   ControlCodeShown: { required: ["text", "expires"], optional: ["command"] },
   ControlCutOff: { required: ["why"], optional: ["provider"] },
-  ControlEligible: { required: ["ok", "reasons"], optional: [] },
+  ControlEligible: { required: ["ok", "reasons"], optional: ["address", "memoryBytes", "diskFreeBytes"] },
   ControlEligibleReason: { required: ["reason", "text"], optional: [] },
   ControlEligibleRequest: { required: ["machine"], optional: ["allowSleep"] },
   ControlEndpoint: { required: ["url"], optional: ["pin"] },
@@ -19108,6 +19134,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   MachineClient: { required: ["id", "kind", "publicKey"], optional: ["person"] },
   MachineClients: { required: ["clients"], optional: ["user"] },
   MachineConnections: { required: ["machine", "machineName", "connections"], optional: [] },
+  MachineControlAddress: { required: ["port"], optional: ["domain"] },
   MachineConversation: { required: ["machine", "machineName", "conversation"], optional: [] },
   MachineCounts: { required: ["state", "labels", "provider", "os", "version"], optional: [] },
   MachineCursor: { required: ["machine", "cursor"], optional: [] },
@@ -19120,7 +19147,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   MachineFolderSent: { required: [], optional: ["state", "folder", "facts", "pack", "read", "seed", "partsAtOnce"] },
   MachineForgeBoards: { required: ["machine", "machineName", "boards"], optional: [] },
   MachineForgeList: { required: ["machine", "machineName", "list"], optional: [] },
-  MachineHello: { required: ["version", "platform", "machineID"], optional: ["host", "name", "implementation", "capabilities", "maturity"] },
+  MachineHello: { required: ["version", "platform", "machineID"], optional: ["host", "name", "implementation", "capabilities", "maturity", "control"] },
   MachineHelloAnswer: { required: [], optional: ["capabilities"] },
   MachineInfo: { required: ["id", "name", "state"], optional: ["ssh", "tunnel", "hostKeyRenews", "cost", "idleTimeoutMinutes", "host", "reason", "joining", "notJoined", "setup"] },
   MachineInstall: { required: ["destination"], optional: ["name", "key", "trust", "tunnel", "provider", "workspace"] },

@@ -3753,6 +3753,15 @@ type ControlEligible struct {
 	Ok bool `json:"ok"`
 
 	Reasons []ControlEligibleReason `json:"reasons"`
+
+	// Where the control plane reached the machine's control role, as a person reads it (#7313): its domain, or its public address, with the port when it is not 443. Absent when it did not reach it there, or reached it by its tunnel.
+	Address *string `json:"address,omitzero"`
+
+	// The machine's memory, as it said it (#7313). Absent when it did not say.
+	MemoryBytes *int64 `json:"memoryBytes,omitzero"`
+
+	// The free space on its fullest disk, as it said it (#7313). Absent when it did not say.
+	DiskFreeBytes *int64 `json:"diskFreeBytes,omitzero"`
 }
 
 // One reason a machine cannot take the control role (#6611), with its words for the person.
@@ -9319,6 +9328,14 @@ type MachineConnections struct {
 	Connections ConnectionsList `json:"connections"`
 }
 
+// Where a machine's control role serves (#7313): the domain its certificate is for, when it has one, and the port. With no domain, the control plane dials the public address that the machine's uplink comes from.
+type MachineControlAddress struct {
+	Domain *string `json:"domain,omitzero"`
+
+	// From 1 to 65535; a hello with another is taken as none.
+	Port int64 `json:"port"`
+}
+
 // A conversation of messages/conversationsAll (#5571) with the machine whose connector has it.
 type MachineConversation struct {
 	Machine MachineRef `json:"machine"`
@@ -9469,6 +9486,9 @@ type MachineHello struct {
 
 	// The levels of this host's capabilities that are not GA (#6579). None from a host older than that.
 	Maturity Maturity `json:"maturity,omitzero"`
+
+	// Where this machine's own control plane serves, when its install gave it the control role (agentsd install --control, #6610, #7313). Absent when it has none, and from an older host.
+	Control *MachineControlAddress `json:"control,omitzero"`
 }
 
 // The control plane's answer to machine/hello (#4100): what it can do, so the host asks only what it answers, such as machine/accounts with machine.accounts/1. An older control plane answers {}: no list, so the host asks it nothing new.

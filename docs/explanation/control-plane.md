@@ -27,9 +27,12 @@ none, shows it to admins only, and refuses to remove it. Each copy's record in
 each reason why it cannot. It changes nothing. A machine is refused when one of these is true:
 
 - **The control plane cannot reach it.** Clients must reach a control plane, while a machine
-  that runs agents only dials out. The machine's tunnel must be up, or a port must answer at
-  the public address that the machine connects from: 443 or 8791, where
-  `agentsd install --control` listens. The check opens a TCP connection and sends nothing. The
+  that runs agents only dials out. The machine's tunnel must be up, or its control port must
+  answer. A machine with the control role (`agentsd install --control`) says in each
+  `machine/hello` where it serves (#7313): its port, and the domain of its certificate when it
+  has one. The check dials that port at the domain's public address, or, with no domain, at the
+  public address that the machine connects from. A machine that says nothing is tried on 443
+  and 8791, where the install listens. The check opens a TCP connection and sends nothing. The
   Linux install runs as a user, so port 443 needs a forward or the one-time `sysctl` that the
   installer names.
 - **It is a Mac,** which can sleep. In the single-user shape, the person can say yes
@@ -41,6 +44,10 @@ each reason why it cannot. It changes nothing. A machine is refused when one of 
 - **It would have both roles outside the single-user shape.** An agent there could read the
   control key. A control plane with more than one person (bots count) is not single-user.
 - **It runs an older version** than the control plane.
+
+With the reasons, the answer says what the screen shows of the machine (#7313): `address`,
+where the check reached its control port (absent by a tunnel), `memoryBytes`, and
+`diskFreeBytes`, the free space on its fullest disk.
 
 A hosted control plane refuses the call: a customer's machine is never a copy of it.
 

@@ -1850,6 +1850,7 @@ func (m *Methods) hello(ctx context.Context, host string, hello wire.MachineHell
 		return err
 	}
 	m.noteCapabilities(host, hello.Capabilities, hello.Version)
+	m.router.SetControlAddress(host, validControlAddress(hello.Control))
 	// A new version is an observed deploy (#5272); a store that does not take it costs the
 	// hello nothing.
 	if err := m.s.noteVersion(ctx, host, hello.Version, time.Now()); err != nil {
