@@ -10095,6 +10095,25 @@ type MarketplacesListRequest struct {
 // The levels of a part's capabilities that are not GA (#6052, #6579), capability to level, as Packages/Wire/maturity.json has them in that part's build. A capability it does not name is GA. A part older than #6579 sends none, and a client then reads the list it was built with.
 type Maturity map[string]MaturityLevel
 
+// maturity/complete (#6934): the finished state of one source operation, with no actor and no content. An operation that is not complete, not eligible or a background refresh is refused.
+type MaturityCompletion struct {
+	FeatureId string `json:"featureId"`
+
+	CompletionId string `json:"completionId"`
+
+	SessionId *string `json:"sessionId,omitzero"`
+
+	BuildId string `json:"buildId"`
+
+	Success bool `json:"success"`
+
+	Completed bool `json:"completed"`
+
+	Eligible bool `json:"eligible"`
+
+	BackgroundRefresh bool `json:"backgroundRefresh"`
+}
+
 // How ready a capability that is not GA is (#6052).
 type MaturityLevel string
 

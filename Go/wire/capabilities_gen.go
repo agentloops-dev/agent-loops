@@ -159,6 +159,7 @@ const CapMachines1 = "machines/1"
 const CapMachines2 = "machines/2"
 const CapMailbox1 = "mailbox/1"
 const CapMarketplaces1 = "marketplaces/1"
+const CapMaturity1 = "maturity/1"
 const CapMcpToolLevels1 = "mcp.tool-levels/1"
 const CapMcp1 = "mcp/1"
 const CapMessagesAll1 = "messages.all/1"
@@ -959,6 +960,7 @@ var ControlCapabilities = pairs([][2]string{
 	{"machines/unlink", "machines/1"},
 	{"machines/update", "machines/1"},
 	{"machines/versions", "machines/1"},
+	{"maturity/complete", "maturity/1"},
 	{"messages/conversationsAll", "messages.all/1"},
 	{"multiplier/count", "multiplier/1"},
 	{"notices/take", "notices/1"},

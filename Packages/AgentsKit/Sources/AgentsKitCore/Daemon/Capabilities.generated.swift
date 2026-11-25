@@ -160,6 +160,7 @@ public enum Capability {
     public static let machines2 = "machines/2"
     public static let mailbox1 = "mailbox/1"
     public static let marketplaces1 = "marketplaces/1"
+    public static let maturity1 = "maturity/1"
     public static let mcpToolLevels1 = "mcp.tool-levels/1"
     public static let mcp1 = "mcp/1"
     public static let messagesAll1 = "messages.all/1"
@@ -897,6 +898,7 @@ public enum Capability {
         "machines/unlink": "machines/1",
         "machines/update": "machines/1",
         "machines/versions": "machines/1",
+        "maturity/complete": "maturity/1",
         "messages/conversationsAll": "messages.all/1",
         "multiplier/count": "multiplier/1",
         "notices/take": "notices/1",

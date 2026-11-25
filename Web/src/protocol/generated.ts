@@ -9568,6 +9568,21 @@ export interface MarketplacesListRequest {
  */
 export type Maturity = Record<string, MaturityLevel>;
 
+/**
+ * maturity/complete (#6934): the finished state of one source operation, with no actor and no
+ * content. An operation that is not complete, not eligible or a background refresh is refused.
+ */
+export interface MaturityCompletion {
+  featureId: string;
+  completionId: string;
+  sessionId?: string;
+  buildId: string;
+  success: boolean;
+  completed: boolean;
+  eligible: boolean;
+  backgroundRefresh: boolean;
+}
+
 /** How ready a capability that is not GA is (#6052). */
 export type MaturityLevel =
   | "pilot"
@@ -18924,6 +18939,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   MarketplaceSetEnabledRequest: { required: ["id", "enabled"], optional: [] },
   MarketplacesListAnswer: { required: ["marketplaces"], optional: ["problem"] },
   MarketplacesListRequest: { required: [], optional: ["kind", "destination"] },
+  MaturityCompletion: { required: ["featureId", "completionId", "buildId", "success", "completed", "eligible", "backgroundRefresh"], optional: ["sessionId"] },
   MessageSender: { required: ["agentID", "title"], optional: [] },
   MessagesConversation: { required: ["server", "folder", "conversation"], optional: ["replyAs"] },
   MessagesConversations: { required: ["conversations"], optional: ["cursor", "errors"] },

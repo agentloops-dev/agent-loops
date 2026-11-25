@@ -317,7 +317,7 @@ func TestEveryClientMethodChecksTheOwner(t *testing.T) {
 		"audit/export": true, "control/setAuditDays": true, "people/list": true, "people/invite": true,
 		"people/setRole": true, "people/remove": true, "people/removePreview": true, "people/forViews": true,
 		"people/setForgeLogins": true, "machines/joinRequests": true, "machines/approveJoin": true,
-		"machines/denyJoin": true, "control/rotate": true,
+		"machines/denyJoin": true, "control/rotate": true, "maturity/complete": true,
 		"control/connectAnother": true, "control/connectReport": true, "control/planeMove": true, "control/planeMoveReport": true,
 		"providers/list": true, "providers/refresh": true, "providers/add": true, "providers/update": true,
 		"providers/remove": true, "providers/options": true, "providers/create": true, "providers/deleteWorkspace": true, "providers/makeDefault": true, "providers/oauthStart": true, "providers/oauthFinish": true, "machines/listKept": true,
