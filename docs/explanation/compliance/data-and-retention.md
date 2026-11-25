@@ -82,7 +82,8 @@ Mac.
 | `assessments/` | document | Each runtime assessment's start, score and scope | 90 days from its start, and the newest 50; the oldest goes first. 256 KiB a file: a larger start or score is refused, and a longer scope file is cut (#6724) | Hourly, and when an assessment starts or is scored |
 | `mcp-events.json` | key-value | MCP event IDs already seen | 2,000 IDs, 7 days | On write |
 | `mcp-views/` | cache | View catalogues | Pruned to the live servers | On write |
-| `mcp-approvals.json`, `plugin-approvals.json` | key-value | Digests of approved MCP servers and plugins | The folders that exist: a folder that is not on disk and not in the app goes (#3652) | Hourly; MCP also on remove |
+| `mcp-approvals.json` | key-value | The answers about MCP servers and their views: digests of the approved and denied ones | 2,000 approved, 2,000 denied and 2,000 views, of 8 KiB each: one more is refused, after the one whose server went the longest ago made room. No age while the server is in its file, on purpose: an approval in force stays. 90 days after the server went, its answers go and are asked again. Those of a folder that is not on disk and not in the app go (#3652). Stays in the data folder (#6749) | On write; on remove; and hourly |
+| `plugin-approvals.json` | key-value | The answers about plugins: digests of the approved and denied ones | 2,000 approved and 2,000 denied, of 8 KiB each, with the same rules for a plugin and its folder. Stays in the data folder (#6750) | On write, and hourly |
 | `devices.json` | document | Paired devices | 256 of 4 KiB each; a new one past that is refused, with a message, and one in use stays. 90 days after a device was last seen (#3652, #6734) | On write; hourly; and **Forget** |
 | `review-dismissals.json` | key-value | PRs dismissed from For Review | 2,000 of 8 KiB each, for 90 days from the PR's last change (or its dismissal, when that is later); the oldest goes first. For Review leaves out a PR that has not changed for 90 days, so one whose dismissal aged out does not come back (#6728). A folder that is not on disk and not in the app goes (#3652) | Hourly, and on write: age, and the count when it is twice over |
 | `review-opened.json` | key-value | PRs opened from For Review | 2,000 of 8 KiB each, for 90 days from the PR's last change (or its opening, when that is later); the oldest goes first. A folder that is not on disk and not in the app goes (#3652, #6729) | Hourly, and on write: age, and the count when it is twice over |
@@ -93,7 +94,7 @@ Mac.
 | `org-routes/`, `runtimes/org/` | key-value; secret | Org key routes and their stand-in homes | 50 routes | On delivery |
 | `runtimes/accounts/<runtime>/<id>/` | blob | The home of each runtime account you added, **with that runtime's own transcripts** | Until the account is removed | On remove |
 | `browser/profile/` | blob | One browser profile for every browser sign-in, and its caches | Sign-ins until the site ends them or you clear the site in Settings ▸ Browser. The caches are emptied before each start, and the HTTP cache stays under 64 MB while it runs (#3727). | At each browser start |
-| `folders.json`, `policy*.json`, `backup-settings.json`, `settings/`, and other small files | key-value | Configuration | A fixed shape | — |
+| `folders.json`, `settings/`, and other small files | key-value | Configuration | A fixed shape | — |
 | `<file>.unreadable-<time>`, `<file>.corrupt-<time>` | blob | A store that could not be read, set aside | The newest 3 of each kind for each file | On write |
 | `connector-setup.json` | key-value | Connector set-up for each folder | What a read found (a title, a link): 90 days. Which reads worked, and that the set-up added its connector: no age, on purpose, until the folder leaves the machine, so that a connector's set-up stays done. 2,000 folders of 64 KiB each: past that the one read longest ago goes, and a folder whose record is larger reads again (#6731) | On write, and hourly |
 | `catalog-skills.json`, `catalog-mcp.json` | key-value | Installed catalogue items | No age while the item is installed, on purpose, so that it stays known as one from a catalogue; 30 days after an item that is no longer there went. 2,000 in each file, 8 KiB each: one past that is not recorded, and its item shows as added by hand (#6732, #6733) | On write; on remove; and hourly |
@@ -101,10 +102,16 @@ Mac.
 | `account-ops.json` | key-value | The last operation of each account, and the last read of each secret | 1,000 entries of 1 KiB each, for 90 days; the oldest goes first | Hourly, and on write: age, and the count when it is twice over |
 | `secret-ops.json` | key-value | The last operation of each secret held | Goes with its secret | On write |
 | `secret-ops-pending.json` | log | Secret audit entries not yet sent | 1,000 operations of 16 KiB each, for 90 days; the oldest goes first, with a log line, and the audit never has it (#6721) | Hourly, and on write: age, and the count when it is twice over |
-| `allowances.json`, `runtime-accounts.json` | key-value | Runtime accounts you added, and each credential's allowance | Until the account is removed (#6747, #6748) | On remove |
+| `allowances.json` | key-value | Each credential's allowance, as its runtime said it | 90 days after the last news, and each reading at 90 days; one that is out until a time still to come (90 days ahead at most) stays. 500 credentials of 64 KiB: the oldest goes first. Stays in the data folder: it is derived (#6747) | On write; on remove; and hourly |
+| `runtime-accounts.json` | key-value | Runtime accounts you added: the name and the sign-in folder | 100 accounts of 4 KiB: one more is refused, with a message. No age, on purpose: it is yours until you remove it. Stays in the data folder (Alex, 2026-11-24, #6748) | On write; on remove |
 | `github-bot-copies.json` | key-value | Which machines have the GitHub bot's key (not the key) | The lock's machines; 16 forgotten Apps | On write |
-| `control-clients.json`, `project-tools.json`, `host-user.json` | key-value | Copies of the control plane's lists | Replaced by each new list (#6752, #6753) | On write |
-| `wake.json`, `policy-seen.json`, `policy-yours-seen.json`, `lock-pin.json`, `lock.json`, `suspended.json` | key-value | Small settings and state | A fixed shape (#6745, #6751, #6754) | — |
+| `control-clients.json` | key-value | A copy of the control plane's list | Replaced by each new list | On write |
+| `policy.json` | key-value | The organisation's signed policy | One, of 1 MiB: a larger one applies and is not kept, so no work starts after a restart until it is sent again. No age, on purpose: it is in force until a newer one comes. Stays in the data folder (Alex, 2026-11-24, #6751) | On write |
+| `policy-seen.json` | key-value | The highest policy version applied, and the control key before a rotation | One, of 4 KiB. The old key is trusted for 30 days. No age, on purpose: it refuses an older policy. Stays in the data folder (#6751) | On write |
+| `project-tools.json` | key-value | The tools of the projects of this machine's folders | 16 MiB: a larger list applies and is not kept. Replaced by each new list. Stays in the data folder (#6752) | On write |
+| `host-user.json` | key-value | Whose machine this is | One, of 256 KiB: a larger one is kept without the bots' names. Replaced by each new one. Stays in the data folder (#6753) | On write |
+| `lock-pin.json` | key-value | The head of the machine lock that this machine trusts | One, of 4 KiB. No age, on purpose: only a lock that grows from it is taken. Stays in the data folder (#6754) | On write; `agentsd lock reset` removes it |
+| `policy-yours-seen.json`, `lock.json`, `suspended.json` | key-value | Small settings and state | A fixed shape | — |
 | `setup-reports.jsonl` | log | The steps of this machine's set-up | One run: a new run starts it again | At install |
 
 ### Transfers, backups and staging
@@ -125,7 +132,7 @@ Mac.
 | `mcp-logs/`, in the log folder | log | What each hosted MCP server wrote to stderr | 7 days and 10 MB for the folder (#6736): 256 KB and one older file a server, and the files written longest ago go when the folder passes 7 MB. A larger write is split, so no file passes 256 KB. A line goes after 83 hours to 7 days, with no summary. | On write, when a server starts, and hourly |
 | `tools/<runtime>/`, in the cache folder | cache | Pinned runtime toolsets | The current one | At start |
 | `browser/`, in the cache folder | cache | The browser that agents drive, and its output | Old browser versions are left to Playwright. Output goes when the session ends; what a crash left goes at the next start (#3649) | On install; at session end; at start |
-| The Mac browser pane's website data (WebKit's default store) | blob | The sign-ins of every site the pane opened, and its caches | Sign-ins until the site ends them. The caches are emptied once each time the app starts (#3727). | At the first pane of each launch |
+| The Mac browser pane's website data (WebKit's default store), and the date each site was last opened (`browserPane.sites` in the app's defaults) | blob | The sign-ins and site storage of the sites the pane opened, and its caches | 10 MB and 100 sites; a site goes, with its sign-in, 90 days after a pane last opened it (#6796). Over a limit the caches go first, then the site opened longest ago. A site in an open pane stays, so the store can be over its size until that pane closes. The caches are also emptied when the app starts and once a day. The dates are of 100 sites, and of 1,000 hosts at most between two sweeps. | At launch, hourly, and sooner past 20 MB; Forget This Mac clears all of it |
 | `catalog-staging/`, in the cache folder | cache | Skill previews | 8 previews, 30 minutes; folders left by a restart go at the next start (#3649) | On use; at start |
 | `option-cache.json`, in the cache folder | cache | Runtime options | 50 | On write |
 | Cache and log folders of each other data folder (`roots/<name>-<hash>`) | cache | As above, for a second copy | Removed when that data folder is gone (#3746). Each keeps its data folder's path in `root-path`; a folder made before that is kept, and so is one whose data folder's parent is gone too, as on a disk that is not attached. | Hourly, by a machine whose data folder is not a temporary one |
@@ -136,6 +143,8 @@ Mac.
 | Store | Kind | What it keeps | How long, how large | Applied |
 | --- | --- | --- | --- | --- |
 | `~/.agents/settings/` | key-value | Settings that follow you (see [The `~/.agents` folder](../../reference/agents-folder.md)) | A fixed shape | — |
+| `~/.agents/settings/wake.json` | key-value | Keep awake, and the warm runtimes | One, of 4 KiB. No age, on purpose: a person's choice (#6745). `wake.json.moved` in the data folder is an old one that another machine's stood for | On write |
+| `~/.agents/settings/backup-settings.json` | key-value | Each machine's backup target, folder and Keep | 100 machines of 32 KiB each: one more is refused, with a message. No age, on purpose: a person's choice, and a machine off for 90 days keeps its own (#6746). `backup-settings.json.moved` in the data folder is an old one, as above | On write |
 | `~/.agents/summaries/` | document | Daily summaries saved before #5853, and `pages.json` with who wrote each: none is written now. A file that is not one of these is yours and stays | The newest 3 of at most 1 MiB, 90 days after their last change; `pages.json` goes with the last of them | Hourly |
 | `~/.agents/checks/suggestions.json` | document | Daily-check findings | 50 findings, 200 dismissals | On write |
 | `~/.agents-secrets` | secret | Secrets, connections and machine provider secrets (see [Security overview](security-overview.md#where-secrets-live)) | Until you remove them | — |
@@ -409,7 +418,8 @@ also deletes what it kept of that control plane (#3670):
 
 - **The Mac window:** its drafts and the start form, its machine-lock pins, its pairing
   files (including the saved pairing with this Mac's own control plane), its local copy,
-  and its Work cache.
+  its Work cache, and the browser pane's website data (it is signed out of each site there,
+  #6796).
 - **The Remote:** its drafts, its machine-lock pins, the widget's file
   (`attention-snapshot.json`, with its headlines) and the badge, the Live Activity and its
   turns, and every banner it showed.

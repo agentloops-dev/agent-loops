@@ -3481,6 +3481,7 @@ final class AppModel {
         if forgetLocalData {
             await localCopy?.forget()
             await workCache?.forget()
+            await BrowserPaneStore.shared.forget()
         }
     }
 

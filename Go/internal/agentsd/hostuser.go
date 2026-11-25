@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -25,8 +26,12 @@ import (
 const kindBot = "bot"
 
 // hostUserFile keeps the last machine/user, so a machine started with its control plane away
-// is still a bot's.
+// is still a bot's. It stays in the data folder (Alex, 2026-11-24, #6753): a copy synced from a
+// bot's machine would make this one a bot's.
 const hostUserFile = "host-user.json"
+
+// hostUserMostBytes bounds the kept machine/user.
+const hostUserMostBytes = 256 << 10
 
 type hostUserState struct {
 	hostUserMu   sync.Mutex
@@ -62,10 +67,8 @@ func (d *Daemon) toldHostUser(params json.RawMessage) {
 	was := d.hostUser
 	d.hostUser = &u
 	d.hostUserMu.Unlock()
-	if b, err := json.Marshal(u); err == nil {
-		if err := os.WriteFile(d.hostUserPath(), b, 0o600); err != nil {
-			log.Printf("machine/user: %v", err)
-		}
+	if err := d.keepHostUser(u); err != nil {
+		log.Printf("machine/user: not kept: %v", err)
 	}
 	if was == nil || was.Kind != u.Kind || strings.Join(was.Labels, ",") != strings.Join(u.Labels, ",") ||
 		strings.Join(was.Bots, ",") != strings.Join(u.Bots, ",") {
@@ -73,6 +76,24 @@ func (d *Daemon) toldHostUser(params json.RawMessage) {
 		// Which workflows run here may have changed.
 		d.tellEveryWorkflow()
 	}
+}
+
+// keepHostUser writes host-user.json. The bots' names are the part that grows: one too long is
+// kept without them, so whose machine this is stays known.
+func (d *Daemon) keepHostUser(u wire.MachineUser) error {
+	b, err := json.Marshal(u)
+	if err == nil && tooLarge(hostUserFile, b, hostUserMostBytes) != nil {
+		u.Bots = nil
+		b, err = json.Marshal(u)
+	}
+	if err == nil {
+		err = tooLarge(hostUserFile, b, hostUserMostBytes)
+	}
+	if err != nil {
+		return err
+	}
+	// store-bounds: kind=key-value; count=1; size=256KiB; age=until-deleted; applied=on write (cut to size)
+	return store.WriteAtomically(d.hostUserPath(), b, 0o600)
 }
 
 // isBot says this machine is a bot's: nobody answers here.

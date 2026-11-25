@@ -25,7 +25,8 @@ import (
 // the code it joined with carried the lock's head (D3): then it pins that one. A lock that
 // fails the check is logged, and the pin stays where it was. The lock it took is kept in
 // <root>/lock.json, so after a restart it checks requests before the control plane sends
-// the lock again (lockcheck.go, #3492).
+// the lock again (lockcheck.go, #3492). The pin stays in the data folder (Alex, 2026-11-24,
+// #6754): one synced from another machine would be a trust source here.
 //
 // A machine joins the lock (#3491, D3): with the invite from its join code it signs its
 // own addMachine (machine/lockAdd). With none (it asked to join, a provider started it with no
@@ -34,9 +35,11 @@ import (
 // log and in <root>/lock-join-shown for the person to compare.
 
 const (
-	lockPinFile   = "lock-pin.json"
-	lockFile      = "lock.json"
-	lockShownFile = "lock-join-shown"
+	lockPinFile = "lock-pin.json"
+	// lockPinMostBytes bounds the pin, which has a fixed shape.
+	lockPinMostBytes = 4 << 10
+	lockFile         = "lock.json"
+	lockShownFile    = "lock-join-shown"
 	// lockAskAgain is how long one request to join waits before the machine asks again, as
 	// the control plane's requests last.
 	lockAskAgain = 10 * time.Minute
@@ -155,7 +158,12 @@ func (d *Daemon) TakeLock(lock wire.Lock) bool {
 	}
 	if state.Count() != kept.Count {
 		b, _ := json.Marshal(state.Pin())
-		if err := store.WriteAtomically(d.lockPinPath(), b, 0o644); err != nil {
+		err := tooLarge(lockPinFile, b, lockPinMostBytes)
+		if err == nil {
+			// store-bounds: kind=key-value; count=1; size=4KiB; age=until-deleted; applied=on write (refused)
+			err = store.WriteAtomically(d.lockPinPath(), b, 0o644)
+		}
+		if err != nil {
 			log.Printf("lock: the head could not be pinned: %v", err)
 			return false
 		}

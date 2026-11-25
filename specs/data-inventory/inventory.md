@@ -93,7 +93,7 @@ from the root (`agentsd/backups.go:69,72`). It holds nothing else.
 | `assessments/*.json` | Runtime assessments | newest 50; 90 days from the start; 256 KiB per file (`assess_store.go`, #6724) | hourly, on start and on score | no |
 | `mcp-events.json` | Seen MCP event IDs | 2,000 IDs, 7 days (`mcpevents.go:53-56`) | on write | no |
 | `mcp-views/*.json` | View catalogues | pruned (`viewservers.go:369`) | on write | no |
-| `mcp-approvals.json`, `plugin-approvals.json` | Approval digests | **none.** Grows with folders × servers. | MCP: only on explicit remove; plugins: never | no |
+| `mcp-approvals.json`, `plugin-approvals.json` | Approval digests | 2,000 of each kind of answer, 8 KiB each; 90 days after the server or plugin went | on write, hourly; on remove (MCP) | no |
 | `devices.json` | Paired devices | 256 of 4 KiB each, else refused; 90 days unseen (`devices.go`, #6734) | on write, hourly, Forget | no |
 | `review-dismissals.json` | Dismissed PRs | 2,000 of 8 KiB each, 90 days from the PR's last change or its dismissal (`reviews.go`, #6728) | hourly and on write | no |
 | `review-opened.json` | Opened PRs | 2,000 of 8 KiB each, 90 days from the PR's last change or its opening (`reviews.go`, #6729) | hourly and on write | no |
@@ -104,7 +104,7 @@ from the root (`agentsd/backups.go:69,72`). It holds nothing else.
 | `org-routes/<id>.json`, `runtimes/org/…` | Org key routes, stand-in homes | 50 routes (`orgroutes.go:46`) | on delivery | no |
 | `runtimes/accounts/<rt>/<id>/` | Homes of added runtime accounts, **with the runtime's own transcripts** | removed with the account (`accounts.go:343`) | on remove | no |
 | `browser/profile/` | Chromium profile shared by every browser sign-in | **none** | never | no |
-| Small fixed files (`folders.json`, `root-id.json`, `project-tools.json`, `wake.json`, `policy*.json`, `backup-settings.json`, `settings/*.json`, …) | Configuration | fixed shape | n/a | no |
+| Small fixed files (`folders.json`, `root-id.json`, `settings/*.json`, …) | Configuration | fixed shape | n/a | no |
 
 ### Transfers, backups and staging
 
@@ -295,7 +295,7 @@ Sessions are signed cookies (30 days); the server keeps nothing for them.
 | Defaults domains `<bundle>.walk.*`, `.root.*` | A scratch copy's preferences | walk: when its folder is gone; root: 7 days (`WindowDefaults.swift:38`) | at launch |
 | `…/Application Support/Agents/control-client.json`, `control-client.here.json` | Pairing (0600, not backed up) | 1 | Forget This Mac |
 | Keychain `control-client-key`, `lock-signing-key` (+ `.walk.<name>`) | Client key, lock signing key | **one more per walk name, never removed** | never (Forget keeps the client key by design) |
-| `WKWebsiteDataStore.default()` (browser pane) | Cookies, logins, localStorage, caches of every site any agent opened (`App/Sources/Sidebar/BrowserPane.swift:172`) | **none from the app** | never |
+| `WKWebsiteDataStore.default()` (browser pane), and defaults `browserPane.sites` | Cookies, logins, localStorage, caches of the sites the pane opened, and when each was last opened (`App/Sources/Sidebar/BrowserPaneStore.swift`) | 10 MB, 100 sites, 90 days since last opened (#6796) | hourly sweep; Forget This Mac |
 | Kokoro voice models (FluidAudio cache) | TTS models, copied or downloaded | **none**; can be hundreds of MB (`Shared/UI/Voice/KokoroVoice.swift:89-107`) | never |
 | `~/Library/Logs/Agents/crashes/`, `hangs/` | Crash notes, hang stacks | 20 each | at launch |
 | `$TMPDIR/agents-output-*` | See section 3 | none | — |
@@ -421,16 +421,16 @@ newer than a row above for the same store.
 | `~/.agents-secrets/descriptions.json` | key-value | Secret descriptions (not secret) | No count limit; config outside .agents | `Go/internal/agentsd/secretlist.go:37` | #6742 |
 | Keychain `agents.connection.<hash>` (Linux `~/.agents-secrets/connections.json`) | secret | Forge connections: the token, and where it is sent (stays with the token, Alex, 2026-11-24) | Linux: 16 of 64 KiB each; Mac: one a provider, a `security` line of 4,095 bytes; else refused; until removed | `Go/internal/connections/store.go` (`MaxConnections`) | #6743 |
 | `<root>/folders.json` | key-value | The folders the person added | Config in the data root | `Go/internal/agentsd/store/locations.go:104` | #6744 |
-| `<root>/wake.json` | key-value | Keep awake, grace hours, warm runtimes | Config in the data root | `Go/internal/agentsd/wake_darwin.go:18` | #6745 |
-| `<root>/backup-settings.json` | key-value | Backup target and Keep | Config in the data root | `Go/internal/agentsd/backups.go:43,127` | #6746 |
-| `<root>/allowances.json` | key-value | Allowance for each credential | Until its account is removed; config in the data root | `Go/internal/agentsd/allowances.go:32; accounts.go:361` | #6747 |
-| `<root>/runtime-accounts.json` | key-value | Runtime accounts the person added and named | Until removed; config in the data root | `Go/internal/agentsd/accounts.go:63` | #6748 |
-| `<root>/mcp-approvals.json` | key-value | The person's MCP server approvals | Until the folder goes; config in the data root | `Go/internal/agentsd/smallstores.go:28; mcpservers.go:315` | #6749 |
-| `<root>/plugin-approvals.json` | key-value | The person's plugin approvals | Until the folder goes; config in the data root | `Go/internal/agentsd/smallstores.go:29; plugins.go:56` | #6750 |
-| `<root>/policy.json`, `policy-seen.json` | key-value | Signed copy of the org policy | A copy of admin config, in the data root | `Go/internal/agentsd/policy.go:35-36` | #6751 |
-| `<root>/project-tools.json` | key-value | Project tools from the control plane | A copy, in the data root | `Go/internal/agentsd/store/locations.go:113` | #6752 |
-| `<root>/host-user.json` | key-value | The machine's user from the control plane | A copy, in the data root | `Go/internal/agentsd/hostuser.go:29` | #6753 |
-| `<root>/lock-pin.json` | key-value | The machine lock's trust pin | In the data root | `Go/internal/agentsd/lock.go:37` | #6754 |
+| `~/.agents/settings/wake.json` | key-value | Keep awake, grace hours, warm runtimes | One, 4 KiB. Moved from the data root; shared by the machines that share the folder (Alex, 2026-11-24) | `Go/internal/agentsd/wake.go` (`Set`) | #6745 |
+| `~/.agents/settings/backup-settings.json` | key-value | Backup target and Keep | One entry a machine, 100 of 32 KiB, else refused. Moved from the data root (Alex, 2026-11-24) | `Go/internal/agentsd/backups.go` (`keepBackupEntry`) | #6746 |
+| `<root>/allowances.json` | key-value | Allowance for each credential | 90 days; 500 of 64 KiB, the oldest goes. Derived, stays in the data root | `Go/internal/agentsd/allowances.go` (`boundAllowancesLocked`) | #6747 |
+| `<root>/runtime-accounts.json` | key-value | Runtime accounts the person added and named | Until removed; 100 of 4 KiB, else refused. Stays in the data root (Alex, 2026-11-24) | `Go/internal/agentsd/accounts.go` (`saveAccountsLocked`) | #6748 |
+| `<root>/mcp-approvals.json` | key-value | The person's MCP server approvals | 2,000 of each kind, 8 KiB each, else refused; 90 days after the server went. Stays in the data root: a trust source | `Go/internal/agentsd/approvalbounds.go` | #6749 |
+| `<root>/plugin-approvals.json` | key-value | The person's plugin approvals | 2,000 of each kind, 8 KiB each, else refused; 90 days after the plugin went. Stays in the data root: a trust source | `Go/internal/agentsd/approvalbounds.go` | #6750 |
+| `<root>/policy.json`, `policy-seen.json` | key-value | Signed copy of the org policy | 1 MiB (larger: applied, not kept) and 4 KiB. Stays in the data root: a trust source (Alex, 2026-11-24) | `Go/internal/agentsd/policy.go` (`toldPolicy`) | #6751 |
+| `<root>/project-tools.json` | key-value | Project tools from the control plane | 16 MiB (larger: applied, not kept). Stays in the data root (Alex, 2026-11-24) | `Go/internal/agentsd/projecttools.go` (`heardProjects`) | #6752 |
+| `<root>/host-user.json` | key-value | The machine's user from the control plane | 256 KiB (larger: without the bots' names). Stays in the data root (Alex, 2026-11-24) | `Go/internal/agentsd/hostuser.go` (`keepHostUser`) | #6753 |
+| `<root>/lock-pin.json` | key-value | The machine lock's trust pin | One, 4 KiB. Stays in the data root: a trust source (Alex, 2026-11-24) | `Go/internal/agentsd/lock.go` (`TakeLock`) | #6754 |
 | `v1/events/<day>/` (audit) | log | Audit events | 90 days by default; an admin sets 1 to 3,650; no count or size limit a day | `Go/internal/controlplane/audit/audit.go:31,241` | #6755 |
 | `v1/people/` tombstones | document | A removed person who had a sign-in | 90 days, swept hourly; then a cutoff for each provider (`v1/signin/cutoffs/`) refuses an account nobody has (#6756) | `Go/internal/controlplane/signin_cutoff.go` | #6756 |
 | `v1/clients/` | document | Paired clients | 16 KiB a record, 1 MiB in all; forgotten when its key expires, at most 90 days unused; tombstone 7 days | `Go/internal/controlplane/keylife.go:18,139,145-177` | #6757 |
@@ -473,7 +473,7 @@ newer than a row above for the same store.
 | Web `localStorage` `agents.drafts` | document | Drafts | 40, a new one over that refused; attachments under 256 KiB; 30 days since the last edit (#6793) | `Web/src/model/drafts.ts` | #6793 |
 | Mac and Remote defaults `draft.*` | document | Drafts | 40, a new one over that refused; 1 MiB a draft, 512 KiB of it attachments; 30 days since the last edit (#6794) | `Packages/AgentsKit/Sources/AgentsKitCore/Model/DraftStore.swift` | #6794 |
 | Remote app group `shared-inbox.json` | blob | What was shared to Agent Loops | Each attachment capped; no count, total or age | `Packages/AgentsKit/Sources/AgentsKitCore/Widget/SharedInbox.swift:88,105-118` | #6795 |
-| Mac browser pane `WKWebsiteDataStore.default()` | blob | Cookies and site storage of every site the pane opened | None: only the caches are emptied, at launch; not on Forget | `App/Sources/Sidebar/BrowserPane.swift:171-195` | #6796 |
+| Mac browser pane `WKWebsiteDataStore.default()` | blob | Cookies and site storage of the sites the pane opened | 10 MB (caches go first) and 100 sites, the site opened longest ago out first; 90 days since a pane last opened it; a site in an open pane stays; all of it on Forget (Alex, 2026-11-24) | `App/Sources/Sidebar/BrowserPaneStore.swift`, `Packages/AgentsKit/Sources/AgentsKitCore/Client/BrowserSites.swift` (`Bounds`) | #6796 |
 | `machinePicker.pinned` (Mac, Remote, web) | key-value | Pinned machines | 100 of 64 bytes each, one over that refused; until removed, or its machine is no longer listed (no age, on purpose: a person's choice) | `Packages/AgentsKit/Sources/AgentsKitCore/Sidebar/MachinesGroup.swift` (`MachinePins`); `Web/src/model/machinePicker.ts` | #6797 |
 | Remote defaults `remote.startFolders` | key-value | Start folders, each with its machine | 100 of 1,024 + 64 bytes each, one over that refused; until removed, its machine is no longer listed, or Forget (no age, on purpose: a person's choice) | `Packages/AgentsKit/Sources/AgentsKitCore/Sidebar/StartFolders.swift` | #6798 |
 | Mac and Remote `App Support/Agents/control-client.json` | key-value | The pairing with a control plane | One, until Forget; stays outside `.agents` on purpose: one device's identity, not backed up (Alex, 2026-11-24) | `App/Sources/Control/ControlConfig.swift:40; Remote/Sources/Link/ControlPlaneLink.swift:20` | #6800 |

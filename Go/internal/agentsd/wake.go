@@ -14,9 +14,16 @@ import (
 )
 
 // Keeping the Mac awake while agents work (024, #992), as DaemonCore+Wakefulness: the
-// switch and the grace in wake.json, the verdict over the agents and the power, and the
+// switch and the grace in <settings>/wake.json (#6745: all the machines that share ~/.agents
+// share it), the verdict over the agents and the power, and the
 // one hold. Only a Mac host holds (wake_darwin.go); the rules are here so they test
 // anywhere.
+
+const (
+	wakeFile = "wake.json"
+	// wakeMostBytes bounds wake.json, which has a fixed shape.
+	wakeMostBytes = 4 << 10
+)
 
 // batteryFloor is the charge at or below which a Mac on battery is left to sleep.
 const batteryFloor = 20
@@ -52,9 +59,15 @@ func verdictFor(working bool, p mac.Power) wakeVerdict {
 
 // waker decides and holds. What it remembers is only what it last acted on.
 type waker struct {
-	mu       sync.Mutex
-	file     string
+	mu sync.Mutex
+	// file is where the settings are, asked at each use: the person's home is known only after
+	// the daemon is made. old is where they were before #6745; "" for none.
+	file func() string
+	old  string
+	// settings is what stamp's file says: a change by hand, or by another machine that shares
+	// the folder, counts at once.
 	settings *wire.WakeSettings
+	stamp    settingStamp
 	power    func() mac.Power
 	hold     func() (release func(), err error)
 	tell     func(wire.WakeState)
@@ -136,9 +149,11 @@ func clampWake(s wire.WakeSettings) wire.WakeSettings {
 }
 
 func (w *waker) load() wire.WakeSettings {
-	if w.settings == nil {
-		s := readWakeSettings(w.file)
-		w.settings = &s
+	file := moveSetting(w.old, w.file())
+	if w.settings == nil || stampOf(file) != w.stamp {
+		s := readWakeSettings(file)
+		// After the read, which can set the file aside.
+		w.settings, w.stamp = &s, stampOf(file)
 	}
 	return *w.settings
 }
@@ -162,13 +177,20 @@ func (w *waker) Set(s wire.WakeSettings) wire.WakeSettings {
 		s.ReleaseAfterMinutes = w.load().ReleaseAfterMinutes
 	}
 	s = clampWake(s)
-	w.settings = &s
-	if b, err := storeJSON(s); err == nil {
-		err = store.WriteAtomically(w.file, b, 0o644)
-		if err != nil {
-			log.Printf("wake.json: could not write: %v", err)
-		}
+	// An old file is moved first, so that it is not taken for another machine's later.
+	file := moveSetting(w.old, w.file())
+	b, err := storeJSON(s)
+	if err == nil {
+		err = tooLarge(wakeFile, b, wakeMostBytes)
 	}
+	if err == nil {
+		// store-bounds: kind=key-value; count=1; size=4KiB; age=until-deleted; applied=on write (refused)
+		err = store.WriteAtomically(file, b, 0o644)
+	}
+	if err != nil {
+		log.Printf("wake.json: could not write: %v", err)
+	}
+	w.settings, w.stamp = &s, stampOf(file)
 	w.mu.Unlock()
 	w.Revise(-1, true)
 	return s

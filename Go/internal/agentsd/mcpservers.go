@@ -328,32 +328,35 @@ func (d *Daemon) mcpApprovalsLocked() (approved map[string]string, begun, unread
 		}
 		if d.mcpApprovals != nil {
 			if _, ok := d.mcpApprovals["approvalsBegan"]; !ok {
-				all := map[string]string{}
-				for _, p := range d.folders(false) {
-					folder := store.FolderPath(p.Folder.Folder)
-					entries, _ := readMCPFile(filepath.Join(folder, ".agents", "mcp.json"))
-					for _, e := range entries {
-						all[mcpApprovalKey(folder, e.name)] = entryDigest(e.raw)
-					}
-				}
-				b, _ := json.Marshal(all)
-				d.mcpApprovals["approved"] = b
-				began, _ := json.Marshal(now())
-				d.mcpApprovals["approvalsBegan"] = began
-				if out, err := json.Marshal(d.mcpApprovals); err == nil {
-					if err := store.WriteAtomically(d.mcpApprovalsPath(), out, 0o644); err != nil {
-						log.Printf("mcp: could not keep %s: %v", d.mcpApprovalsPath(), err)
-					}
-				}
+				d.beginApprovedLocked()
 			}
 		}
 	}
 	if d.mcpApprovals == nil {
 		return nil, true, true
 	}
-	approved = map[string]string{}
-	_ = json.Unmarshal(d.mcpApprovals["approved"], &approved) // none kept yet: none approved
-	return approved, true, false
+	return d.mcpPartLocked("approved"), true, false
+}
+
+// beginApprovedLocked approves every folder entry there now as it stands, the first time.
+func (d *Daemon) beginApprovedLocked() {
+	all := map[string]string{}
+	for _, p := range d.folders(false) {
+		folder := store.FolderPath(p.Folder.Folder)
+		entries, _ := readMCPFile(filepath.Join(folder, ".agents", "mcp.json"))
+		for _, e := range entries {
+			if err := keepApproval(all, nil, "", mcpApprovalKey(folder, e.name), entryDigest(e.raw)); err != nil {
+				log.Printf("mcp: %s in %s waits for approval: %v", e.name, folder, err)
+			}
+		}
+	}
+	b, _ := json.Marshal(all)
+	d.mcpApprovals["approved"] = b
+	began, _ := json.Marshal(now())
+	d.mcpApprovals["approvalsBegan"] = began
+	if err := d.saveMCPApprovalsLocked(false); err != nil {
+		log.Printf("mcp: could not keep %s: %v", d.mcpApprovalsPath(), err)
+	}
 }
 
 // folderServers is folderContribution: approved entries, with secrets filled; the names

@@ -74,42 +74,53 @@ func lastPart(key string) string { return key[strings.LastIndex(key, "/")+1:] }
 // mcp.json is read once a report. One that cannot be read, or that is not valid, settles
 // nothing: its entries stay, as the sidecar is all that is known of them.
 func (d *Daemon) mcpStillThere() func(key string) bool {
-	type names struct {
-		known bool
-		has   map[string]bool
-	}
-	files := map[string]names{}
+	files := d.mcpFileNames()
 	return func(key string) bool {
 		i := strings.LastIndex(key, "/")
-		if i < 0 {
-			return true
-		}
-		scope, name := key[:i], key[i+1:]
-		path := ""
-		if scope == "personal" {
-			if home := d.personalHome(); home != "" {
-				path = mcpcatalog.PersonalFile(home)
-			}
-		} else {
-			path = mcpcatalog.FolderFile(scope)
-		}
-		if path == "" {
-			return true
-		}
-		f, ok := files[path]
-		if !ok {
-			if _, err := mcpcatalog.LoadFile(path); err == nil {
-				if entries, problem := readMCPFile(path); problem == "" {
-					f = names{known: true, has: map[string]bool{}}
-					for _, e := range entries {
-						f.has[e.name] = true
-					}
+		return i < 0 || files.has(key[:i], key[i+1:])
+	}
+}
+
+// mcpFileNames is the servers that each mcp.json has, each read once.
+type mcpFileNames struct {
+	home  string
+	files map[string]mcpNames
+}
+
+type mcpNames struct {
+	known bool
+	has   map[string]bool
+}
+
+func (d *Daemon) mcpFileNames() *mcpFileNames {
+	return &mcpFileNames{home: d.personalHome(), files: map[string]mcpNames{}}
+}
+
+// has says whether the file of a scope (personal, or a folder) has the server, or settles nothing.
+func (n *mcpFileNames) has(scope, name string) bool {
+	path := ""
+	switch {
+	case scope != "personal":
+		path = mcpcatalog.FolderFile(scope)
+	case n.home != "":
+		path = mcpcatalog.PersonalFile(n.home)
+	}
+	if path == "" {
+		return true
+	}
+	f, ok := n.files[path]
+	if !ok {
+		if _, err := mcpcatalog.LoadFile(path); err == nil {
+			if entries, problem := readMCPFile(path); problem == "" {
+				f = mcpNames{known: true, has: map[string]bool{}}
+				for _, e := range entries {
+					f.has[e.name] = true
 				}
 			}
-			files[path] = f
 		}
-		return !f.known || f.has[name]
+		n.files[path] = f
 	}
+	return !f.known || f.has[name]
 }
 
 func optionalString(s string) *string {

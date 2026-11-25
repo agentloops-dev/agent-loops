@@ -5395,7 +5395,7 @@
     },
     "WakeSettings": {
       "type": "object",
-      "description": "Whether this Mac is kept awake for agents, and for how long after they stop (024), as wake.json in the root.",
+      "description": "Whether this Mac is kept awake for agents, and for how long after they stop (024), as wake.json in the settings of the person (#6745).",
       "properties": {
         "keepsAwake": {
           "type": "boolean"
