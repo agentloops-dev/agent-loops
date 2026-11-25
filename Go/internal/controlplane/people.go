@@ -206,6 +206,10 @@ func (m *Methods) invitePerson(ctx context.Context, params json.RawMessage, user
 	if request.Role != wire.UserRoleAdmin && request.Role != wire.UserRoleMember {
 		return nil, fail(invalidParams, "A role is admin or member.")
 	}
+	// An invite nobody could use is not made (#7019).
+	if err := m.records.PersonRoom(); err != nil {
+		return nil, err
+	}
 	shown, err := m.s.codes.Invite(ctx, invite{Name: name, Role: string(request.Role), By: user}, inviteLifetime)
 	if err != nil {
 		return nil, err
@@ -541,6 +545,10 @@ func (m *Methods) removePerson(ctx context.Context, user string, from Caller) er
 	// Their machine-N counter (#6759). The hourly sweep takes it when this does not.
 	if err := providers.ForgetMachineNames(ctx, m.s.cfg.Store, user); err != nil {
 		m.s.log("person " + user + ": their machine names could not be deleted: " + err.Error())
+	}
+	// What they approved on their machines (#6970). The hourly sweep takes what this does not.
+	if err := forgetApprovals(ctx, m.s.cfg.Store, user); err != nil {
+		m.s.log("person " + user + ": their approvals could not be deleted: " + err.Error())
 	}
 	// Their warm pools, with the machines nobody claimed (#6761). It may take minutes, as a
 	// started machine's delete; a pass of the pools tries again what this does not delete.

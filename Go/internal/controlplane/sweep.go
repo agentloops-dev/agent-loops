@@ -448,7 +448,7 @@ func sweepOrphans(ctx context.Context, rs *records.Records, now time.Time, most 
 	deleted := 0
 	for _, step := range []func(context.Context, *records.Records, time.Time, int) (int, bool, error){
 		sweepOrphanLeases, sweepOrphanFolderLists, sweepRemovedOrgRoutes, sweepMachineNames, sweepRemovedOrgProviders, sweepRemovedSecrets,
-		sweepMachineSetups, sweepMachineVersions, providers.SweepFailedMakes,
+		sweepMachineSetups, sweepMachineVersions, sweepApprovalsOfGone, providers.SweepFailedMakes,
 	} {
 		n, full, err := step(ctx, rs, now, most-deleted)
 		deleted += n

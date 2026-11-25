@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"slices"
@@ -271,7 +272,8 @@ func (d scimDirectory) CreateUser(ctx context.Context, c scim.Caller, u scim.Use
 		if linked == nil {
 			d.dropName(ctx, c.Provider, u.UserName, id)
 		}
-		return nil, scim.Errorf(http.StatusServiceUnavailable, "", "The person could not be kept. Try again.")
+		d.s.notePeopleFull(err, d.s.scimActor(c), u.UserName)
+		return nil, notKept(err)
 	}
 	actor := d.s.scimActor(c)
 	what := "made " + person.Name + " (" + u.UserName + ")"
@@ -286,6 +288,21 @@ func (d scimDirectory) CreateUser(ctx context.Context, c scim.Caller, u scim.Use
 	kept := d.s.records.Person(id)
 	out := userOf(*kept)
 	return &out, nil
+}
+
+// notKept is the SCIM answer to a person who could not be kept. A limit answers 403, which a
+// provider does not try again at once, with the words its admin reads in its log (#7019).
+func notKept(err error) error {
+	if refused := (*scim.Error)(nil); errors.As(err, &refused) {
+		return refused
+	}
+	if limit := (*records.PersonLimitError)(nil); errors.As(err, &limit) {
+		if limit.Full {
+			return scim.Errorf(http.StatusForbidden, "", "%s", limit.Words)
+		}
+		return scim.InvalidValue("%s", limit.Words)
+	}
+	return scim.Errorf(http.StatusServiceUnavailable, "", "The person could not be kept. Try again.")
 }
 
 // changePerson changes one person against the version this copy holds, and once more
@@ -350,10 +367,14 @@ func (d scimDirectory) ReplaceUser(ctx context.Context, c scim.Caller, u scim.Us
 		if renamed {
 			d.dropName(ctx, c.Provider, u.UserName, u.ID)
 		}
-		if _, ok := err.(*scim.Error); ok {
-			return nil, err
+		if limit := (*records.PersonLimitError)(nil); errors.As(err, &limit) && before.SCIM.Active && !u.Active {
+			// The rest of the write has no room, and the person loses their access all the same.
+			off := userOf(*before)
+			off.Active = false
+			return d.ReplaceUser(ctx, c, off)
 		}
-		return nil, scim.Errorf(http.StatusServiceUnavailable, "", "The person could not be kept. Try again.")
+		d.s.notePeopleFull(err, d.s.scimActor(c), u.UserName)
+		return nil, notKept(err)
 	}
 	if renamed {
 		d.dropName(ctx, c.Provider, before.SCIM.UserName, u.ID)

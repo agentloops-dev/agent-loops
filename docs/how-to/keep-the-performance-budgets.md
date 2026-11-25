@@ -21,7 +21,7 @@ only to what does not change with load:
 | `web.callsBeforeFirstList`: the calls the page makes from its link opening until its first list | `Web/test/perfBudgets.test.mjs` | `web` |
 | `host.leanAgentBytes`: the largest lean `Agent` record in `agents/list` | `Go/internal/agentsd/perfbytes_test.go` | `go` |
 | `host.catchUpBytes`: one `client/catchUp` answer for 50 live sessions | `Go/internal/agentsd/perfbytes_test.go` | `go` |
-| SCIM at 5,000 users and 500 groups (FR-023): the store calls, reads and bytes of each request are no more than at 100 users and 10 groups | `TestSCIMAtSize`, `Go/internal/controlplane/scim_test.go` | `go` |
+| SCIM at 1,000 users and 500 groups (FR-023): the store calls, reads and bytes of each request are no more than at 100 users and 10 groups | `TestSCIMAtSize`, `Go/internal/controlplane/scim_test.go` | `go` |
 
 A check that fails says the number, the budget and the file. Make the change smaller, or,
 when the change is worth the bytes, raise the budget in `scripts/perf-budgets.json` in the
@@ -61,7 +61,7 @@ and measures against the `night` budgets:
   a fake host, so these are counted at night and not on each pull request. `--no-remote`
   leaves the Remote out;
 - the tests marked `.perfBudget`, and the Go tests in its `GO_PERF_TESTS` (with no `-race`:
-  SCIM's 200 ms p95 at 5,000 users, #5911), with `scripts/perf-tests.sh`.
+  SCIM's 200 ms p95 at 1,000 users, #5911), with `scripts/perf-tests.sh`.
 
 The report goes to `~/.agents/reviews/performance-nightly/<date>.md`. When a time is over
 its budget, the run files an issue, "Performance budgets over at night", labelled

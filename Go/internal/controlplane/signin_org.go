@@ -1021,6 +1021,7 @@ func (si *signIns) joinByOrg(ctx context.Context, t *orgTicket) (string, error) 
 		return []records.Person{{ID: id, Name: name, Kind: records.KindPerson, Role: records.RoleMember, SignIns: []records.SignIn{in}}}, nil
 	})
 	if err != nil {
+		si.s.notePeopleFull(err, wire.AuditActor{User: t.Provider + ":" + t.Account}, t.Provider+" ("+t.Email+")")
 		return "", err
 	}
 	si.s.peopleChanged(id, false)
