@@ -21,6 +21,7 @@
       "{workspaceRoot}/Web/test/vectors.json",
       "{workspaceRoot}/deploy/**/*",
       "{workspaceRoot}/scripts/host-install.sh",
+      "{workspaceRoot}/scripts/release-linux-tarball.sh",
       "{workspaceRoot}/scripts/perf-budgets.json",
       "{workspaceRoot}/App/Resources/toolsets/**/*",
       "{workspaceRoot}/Host/AgentsWatch/**/*",
