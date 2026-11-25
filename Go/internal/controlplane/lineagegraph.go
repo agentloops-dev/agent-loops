@@ -26,9 +26,10 @@ import (
 //   - links.json and states.json are the machine's links and states as of the last roll-up.
 //   - changes/<time>-<id>.json is one send's links and states since then (#6584), so one send
 //     writes what it brought, not the machine's whole copy: a read merges them in, in order,
-//     over the two files. A send that finds mostLineageChanges of them rolls them up into the
-//     two files, and so does the hourly sweep, so the two files are written at most once in
-//     mostLineageChanges sends, and a read merges at most that many.
+//     over the two files. A send that finds mostLineageChanges of them merges them into
+//     one change (#6863), which costs what changed and not what the machine holds. It rolls
+//     them up into the two files only when they come to lineageRollUpBytes, and the hourly
+//     sweep rolls them up too. A read merges at most mostLineageChanges.
 //   - Links are bounded as the machine bounds its own file (lineage.Bound): an ended link
 //     90 days after its end, at most lineage.MostLinks a machine.
 //   - States are each change with its time, bounded as the machine bounds its own (#4274):
@@ -48,6 +49,10 @@ const (
 	mostSyncStates = 1_000
 	// mostLineageChanges bounds the changes a machine has that are not rolled up yet.
 	mostLineageChanges = 32
+	// lineageRollUpBytes is the changes' size from which they are rolled up. The two files
+	// at their bounds are about 11 MB: a roll-up of a few small changes cost the same as one
+	// of thousands, and used the live control plane's whole CPU (#7052).
+	lineageRollUpBytes = 256 << 10
 )
 
 // storedLinks is one machine's links as the store keeps them, oldest start first.
@@ -169,7 +174,7 @@ func (s *Service) keepSyncLinks(ctx context.Context, host string, links []wire.L
 // keepSyncChanges keeps one send: links over the machine's copies of them, or in place of
 // them all with reset, and the changes of state. It says full when there is no copy of the
 // links to put them over; the states are kept all the same. Without reset it writes only what
-// was sent, as a change; with reset, or past mostLineageChanges, it rolls them up.
+// was sent, as a change; with reset, or past mostLineageChanges, it merges them.
 func (s *Service) keepSyncChanges(ctx context.Context, host string, links []wire.LineageLink, states []wire.LineageStateChange, reset bool, now time.Time) (bool, error) {
 	if reset {
 		if links == nil {
@@ -182,13 +187,13 @@ func (s *Service) keepSyncChanges(ctx context.Context, host string, links []wire
 		return false, err
 	}
 	full := true
-	changes := 0
+	var changes []store.Key
 	for _, k := range keys {
 		switch {
 		case k.Key == lineageLinksKey(host):
 			full = false
 		case strings.HasPrefix(k.Key, lineageChangesPrefix(host)):
-			changes++
+			changes = append(changes, k)
 		}
 	}
 	if full {
@@ -206,13 +211,64 @@ func (s *Service) keepSyncChanges(ctx context.Context, host string, links []wire
 	if _, err := s.cfg.Store.Put(ctx, lineageChangeKey(host, now), data, store.Absent); err != nil {
 		return false, err
 	}
-	if changes+1 >= mostLineageChanges {
-		// The send is kept: a roll-up that loses to another is the next one's.
-		if err := s.rollUpLineageSoon(ctx, host, nil, nil, now); err != nil && !store.IsConflict(err) {
-			return full, err
-		}
+	if len(changes)+1 < mostLineageChanges {
+		return full, nil
+	}
+	size := int64(len(data))
+	for _, k := range changes {
+		size += max(k.Size, 0)
+	}
+	if size < lineageRollUpBytes {
+		// The send's own change stays apart: the next merge takes it.
+		return full, compactLineageChanges(ctx, s.cfg.Store, host, changes, now)
+	}
+	// The send is kept: a roll-up that loses to another is the next one's.
+	if err := s.rollUpLineageSoon(ctx, host, nil, nil, now); err != nil && !store.IsConflict(err) {
+		return full, err
 	}
 	return full, nil
+}
+
+// compactLineageChanges merges a machine's changes (keys, oldest first) into one, each link
+// and each state once, and deletes them, oldest first. The one goes just before the last of
+// them, so a stop part way leaves changes that merge to the same answer. A roll-up at the
+// same time is safe: it deletes only what it read, and mergeLinks starts no ended link again.
+func compactLineageChanges(ctx context.Context, st store.Store, host string, keys []store.Key, now time.Time) error {
+	var one storedChanges
+	for _, k := range keys {
+		object, err := st.Get(ctx, k.Key)
+		if err != nil {
+			return err
+		}
+		var change storedChanges
+		if object == nil || json.Unmarshal(object.Data, &change) != nil {
+			continue
+		}
+		one.Links = append(one.Links, change.Links...)
+		one.States = append(one.States, change.States...)
+	}
+	one.Links = mergeLinks(nil, one.Links)
+	one.States = boundStates(one.States, now)
+	one.At = records.At(now)
+	if len(one.Links) > 0 || len(one.States) > 0 {
+		data, err := records.Encode(one)
+		if err != nil {
+			return err
+		}
+		id := make([]byte, 4)
+		_, _ = rand.Read(id)
+		// "-" sorts before ".": before the last one, after the rest.
+		key := fmt.Sprintf("%s-%s.json", strings.TrimSuffix(keys[len(keys)-1].Key, ".json"), hex.EncodeToString(id))
+		if _, err := st.Put(ctx, key, data, store.Absent); err != nil {
+			return err
+		}
+	}
+	for _, k := range keys {
+		if err := st.Delete(ctx, k.Key); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // rollUpLineageSoon is rollUpLineage, again while another copy's roll-up (or the sweep's)
@@ -310,7 +366,9 @@ func rollUpLineage(ctx context.Context, st store.Store, host string, reset []wir
 
 // putOver writes v at key over the object read (nil: none was).
 func putOver(ctx context.Context, st store.Store, key string, read *store.Object, v any) error {
-	data, err := records.Encode(v)
+	// Compact, and not through records.Encode: its sorted, indented form took three more
+	// copies of megabytes and twice the bytes (#6863). Any JSON reader reads it.
+	data, err := json.Marshal(v)
 	if err != nil {
 		return err
 	}
@@ -323,6 +381,7 @@ func putOver(ctx context.Context, st store.Store, key string, read *store.Object
 }
 
 // mergeLinks puts links over kept's copies of them, and the rest after, oldest start first.
+// A link that ended stays ended: a new start is a new link.
 func mergeLinks(kept, links []wire.LineageLink) []wire.LineageLink {
 	if len(links) == 0 {
 		return kept
@@ -334,7 +393,9 @@ func mergeLinks(kept, links []wire.LineageLink) []wire.LineageLink {
 	for _, l := range links {
 		k := syncLinkKey{l.From, l.To, l.Rel, l.At}
 		if i, ok := at[k]; ok {
-			kept[i] = l
+			if l.EndedAt != nil || kept[i].EndedAt == nil {
+				kept[i] = l
+			}
 			continue
 		}
 		at[k] = len(kept)

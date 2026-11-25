@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"math"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -98,9 +99,12 @@ func (s notingStore) SetState(n wire.LineageNode, state wire.LineageSessionState
 	return moved, err
 }
 
+// lineageSyncKey is a link apart from its end. Its start is to the millisecond, as the file
+// keeps it: a key of the exact time was not the key of the link read back, so after a restart
+// a link that was sent was never dropped, and went again without end (#7052).
 func lineageSyncKey(l wire.LineageLink) string {
 	return l.From.Kind + "\t" + l.From.Ref + "\t" + l.To.Kind + "\t" + l.To.Ref + "\t" + l.Rel + "\t" +
-		strconv.FormatFloat(float64(l.At), 'g', -1, 64)
+		strconv.FormatInt(int64(math.Round(float64(l.At)*1000)), 10)
 }
 
 func (d *Daemon) lineageSyncPath() string {
@@ -121,12 +125,23 @@ func (d *Daemon) syncLocked() *lineageSyncFile {
 		if f.Refs < ledgerRefsFull {
 			*f = lineageSyncFile{Kept: true, Full: true, Refs: ledgerRefsFull}
 		}
-		if f.Links == nil {
-			f.Links = map[string]wire.LineageLink{}
-		}
+		f.Links = linksByKey(f.Links)
 		d.syncFile = f
 	}
 	return d.syncFile
+}
+
+// linksByKey is links under their lineageSyncKey. A file from before #7052 has other keys, and
+// can hold one link under two: the ended one is the newer.
+func linksByKey(links map[string]wire.LineageLink) map[string]wire.LineageLink {
+	out := make(map[string]wire.LineageLink, len(links))
+	for _, l := range links {
+		k := lineageSyncKey(l)
+		if l.EndedAt != nil || !hasLink(out, k) {
+			out[k] = l
+		}
+	}
+	return out
 }
 
 // noteLinkChanged keeps l for the next send.

@@ -204,9 +204,13 @@ func (g *mergedLineage) addLinks(data []byte, changes []storedChanges, host stri
 		return
 	}
 	if len(changes) > 0 {
+		// Merged once, as a roll-up is (#6597): a merge for each change indexes and sorts
+		// every kept link again, in each read (#7052).
+		var changed []wire.LineageLink
 		for _, change := range changes {
-			kept.Links = mergeLinks(kept.Links, change.Links)
+			changed = append(changed, change.Links...)
 		}
+		kept.Links = mergeLinks(kept.Links, changed)
 		kept.Links = lineage.Bound(kept.Links, time.Now())
 	}
 	for _, l := range kept.Links {
