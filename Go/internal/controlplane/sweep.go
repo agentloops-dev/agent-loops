@@ -985,6 +985,11 @@ func (s *Service) sweepServing(events *eventSweep, backupsSwept *string) (sweepR
 			}
 		}
 	}
+	if err == nil {
+		if sizesErr := s.measureStores(context.Background(), time.Now()); sizesErr != nil {
+			s.log("store: sizes not measured: " + sizesErr.Error())
+		}
+	}
 	// Once a day, the backups no host of their owner prunes any more (#2293).
 	if day := time.Now().UTC().Format(sweptDayLayout); err == nil && s.backups != nil && day != *backupsSwept {
 		if err := s.backups.pruneOrphans(context.Background()); err != nil {

@@ -83,7 +83,8 @@ struct MachinePage: View {
                         disksSection
                     }
                     // What it runs, from the control plane, offline or not (#5273).
-                    MachineAgentsSections(host: host, read: model.machineAgentsReader, changes: model.agentsChanges)
+                    MachineAgentsSections(host: host, read: model.machineAgentsReader, changes: model.agentsChanges,
+                                          name: name, readUpdate: model.selfUpdateReader(host))
                     if let row = model.hosts.controlRows[host] {
                         MachineLabelsSection(row: row) { labels in Task { await model.setMachineLabels(host, labels) } }
                     }

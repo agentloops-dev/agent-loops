@@ -15336,6 +15336,81 @@ export interface StoreNotes {
   notes: string[];
 }
 
+/** Where a store is (#6906): on a machine, on the control plane, or in a client. */
+export type StoreOwner =
+  | "machine"
+  | "controlPlane"
+  | "client";
+
+/**
+ * The last measurement of one declared store (#6906): sizes and counts only, never a path, a key,
+ * what is stored or the name of a person, project, machine or session. A measure or a percent that
+ * is not known is absent.
+ */
+export interface StoreSize {
+  /** Stable, such as machine.transcripts or control.audit. */
+  id: string;
+  owner: StoreOwner;
+  /** Whose data one store holds: organisation, person, machine, folder or session. */
+  scope: string;
+  /** document, log, time series, graph, blob, key-value, cache or secret. */
+  kind: string;
+  state: StoreSizeState;
+  /** Why it is unavailable, in words for a person. */
+  why?: string;
+  /** The whole store's bytes. */
+  bytes?: number;
+  /** The whole store's records. */
+  records?: number;
+  /** bytes over records, when both are measured and there are records. */
+  averageRecordBytes?: number;
+  /** The byte limit. */
+  maxBytes?: number;
+  /** The record limit. */
+  maxRecords?: number;
+  /**
+   * What each limit is for when it is not the whole store: person, machine, session, folder, … The
+   * percents are then of the largest one.
+   */
+  limitPer?: string;
+  /** Of maxBytes; over 100 is over the limit. */
+  percentBytes?: number;
+  /** Of maxRecords; over 100 is over the limit. */
+  percentRecords?: number;
+  /** When this store's measurement ended. */
+  measuredAt?: WireDate;
+}
+
+/**
+ * over: past a limit, whatever the measurement's age. stale: older than twice the cadence (2 h on a
+ * machine, 12 h on the control plane). unavailable: not measured, or with no measure that a limit
+ * can be compared with; why says which.
+ */
+export type StoreSizeState =
+  | "current"
+  | "over"
+  | "stale"
+  | "unavailable";
+
+/**
+ * A page of at most 100 stores by id (#6906). cursor asks for the next page; absent on the last.
+ * total is the stores of every page.
+ */
+export interface StoreSizes {
+  stores: StoreSize[];
+  total: number;
+  cursor?: string;
+}
+
+/**
+ * stores/list and reports/storeSizes (#6906). cursor is the last page's. limit is 1 to 100, 100
+ * when absent.
+ */
+export interface StoreSizesQuery {
+  cursor?: string;
+  limit?: number;
+}
+
 export interface SuggestedPrompt {
   id: UUID;
   label: string;
@@ -17553,6 +17628,7 @@ export interface Methods {
   "reports/saveView": { params: ReportView; result: ReportViews };
   "reports/scopes": { params: Empty; result: ReportScopes };
   "reports/setPolicy": { params: ReportPolicy; result: ReportPolicy };
+  "reports/storeSizes": { params: StoreSizesQuery; result: StoreSizes };
   "reports/usage": { params: ReportQuery; result: UsageReport };
   "reports/value": { params: ReportQuery; result: ReportValue };
   "reports/views": { params: Empty; result: ReportViews };
@@ -17588,6 +17664,7 @@ export interface Methods {
   "secrets/sessionRemove": { params: SessionSecretRemoveRequest; result: SessionSecrets };
   "secrets/sessionSet": { params: SessionSecretSetRequest; result: SessionSecrets };
   "secrets/setNeedsApproval": { params: SecretNeedsApprovalRequest; result: Empty };
+  "selfUpdate/status": { params: Empty; result: SelfUpdate };
   "sessions/previewStart": { params: AutoMachineRequest; result: AutoMachinePick };
   "settings/passThrough": { params: Empty; result: PassThroughState };
   "signIn/approve": { params: SignInDecide; result: Empty };
@@ -17613,6 +17690,7 @@ export interface Methods {
   "simulators/shutdown": { params: SimulatorRequest; result: Empty };
   "simulators/tap": { params: SimulatorTapRequest; result: Empty };
   "store/notes": { params: Empty; result: StoreNotes };
+  "stores/list": { params: StoreSizesQuery; result: StoreSizes };
   "suggestions/dismiss": { params: SuggestionRequest; result: Empty };
   "suggestions/start": { params: SuggestionRequest; result: UUID };
   "surface/identify": { params: SurfaceIdentification; result: Empty };
@@ -18043,6 +18121,7 @@ export const MethodTarget = {
   "reports/saveView": "control",
   "reports/scopes": "control",
   "reports/setPolicy": "control",
+  "reports/storeSizes": "control",
   "reports/usage": "control",
   "reports/value": "control",
   "reports/views": "control",
@@ -18078,6 +18157,7 @@ export const MethodTarget = {
   "secrets/sessionRemove": "host",
   "secrets/sessionSet": "host",
   "secrets/setNeedsApproval": "host",
+  "selfUpdate/status": "host",
   "sessions/previewStart": "control",
   "settings/passThrough": "host",
   "signIn/approve": "control",
@@ -18103,6 +18183,7 @@ export const MethodTarget = {
   "simulators/shutdown": "host",
   "simulators/tap": "host",
   "store/notes": "host",
+  "stores/list": "host",
   "suggestions/dismiss": "host",
   "suggestions/start": "host",
   "surface/identify": "host",
@@ -19428,6 +19509,9 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   StartingPoint: { required: ["repository", "commit"], optional: [] },
   StopBackgroundRequest: { required: ["agentID", "itemID"], optional: [] },
   StoreNotes: { required: ["notes"], optional: [] },
+  StoreSize: { required: ["id", "owner", "scope", "kind", "state"], optional: ["why", "bytes", "records", "averageRecordBytes", "maxBytes", "maxRecords", "limitPer", "percentBytes", "percentRecords", "measuredAt"] },
+  StoreSizes: { required: ["stores", "total"], optional: ["cursor"] },
+  StoreSizesQuery: { required: [], optional: ["cursor", "limit"] },
   SuggestedPrompt: { required: ["id", "label", "prompt"], optional: [] },
   SuggestionRequest: { required: ["folder", "id"], optional: [] },
   SurfaceIdentification: { required: ["id", "name", "kind"], optional: [] },

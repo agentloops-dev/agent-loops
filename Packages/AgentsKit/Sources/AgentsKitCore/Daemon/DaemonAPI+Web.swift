@@ -176,6 +176,8 @@ public extension DaemonAPI {
                 Row(Method.cycletimeHistory, params: Empty.self, result: CycleTimeHistory.self, kind: .hostRequest),
                 // Reports ▸ Features (#2165).
                 Row(Method.reportsFeatures, params: Empty.self, result: FeatureUsage.self, kind: .hostRequest),
+                // How large each declared store is (#6906): Reports ▸ Store sizes.
+                Row(Method.storesList, params: StoreSizesQuery.self, result: StoreSizes.self, kind: .hostRequest),
                 Row(Method.reportsProblem, params: ProblemReportRequest.self, result: ProblemReport.self, kind: .hostRequest),
                 // The Time page's achievements (#984).
                 Row(Method.achievementsState, params: Empty.self, result: Achievements.self, kind: .hostRequest),
@@ -228,6 +230,7 @@ public extension DaemonAPI {
                 Row(Method.diskState, params: Empty.self, result: DiskState.self, kind: .hostRequest),
                 // What runs on a machine, on its page (#3453).
                 Row(Method.processesList, params: Empty.self, result: ProcessesState.self, kind: .hostRequest),
+                Row(Method.selfUpdateStatus, params: Empty.self, result: SelfUpdate.self, kind: .hostRequest),
                 // A machine's page: its CPU, memory and disks (#3626).
                 Row(Method.machineUsage, params: Empty.self, result: MachineUsageState.self, kind: .hostRequest),
                 Row(Method.capacityState, params: Empty.self, result: CapacityState.self, kind: .hostRequest),
@@ -625,6 +628,7 @@ public extension DaemonAPI {
                 Row(Method.reportsNodes, params: ReportNodesQuery.self, result: ReportNodes.self, kind: .controlRequest),
                 // The figures changed since a cursor, for Work's local cache (#6350).
                 Row(Method.reportsChanges, params: ReportChangesQuery.self, result: ReportChanges.self, kind: .controlRequest),
+                Row(Method.reportsStoreSizes, params: StoreSizesQuery.self, result: StoreSizes.self, kind: .controlRequest),
                 Row(Method.reportsScopes, params: Empty.self, result: ReportScopes.self, kind: .controlRequest),
                 // Lineage over every machine's copy (#4276): Work ▸ Timeline's sessions.
                 Row(Method.lineageWalkAll, params: LineageWalkAllRequest.self, result: LineageGraph.self, kind: .controlRequest),

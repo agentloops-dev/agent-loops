@@ -1319,6 +1319,33 @@
     }
   },
   {
+    "name": "list_stores",
+    "title": "Check data store sizes",
+    "annotations": {
+      "readOnlyHint": true
+    },
+    "description": "How large each of the app's own data stores on this machine is, as last measured (once an hour), and how much of its limits it uses: its id, scope, kind, bytes, records, limits, percent of each limit, average record bytes, the time it was measured, and current, over, stale or unavailable with why. Sizes and counts only: never what is stored, a path or a name. A read measures nothing. Use it when you work on the app's own stores or their limits. Pages by id: cursor in the answer asks for the next.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "description": {
+          "description": "Why you are making this call, in one short sentence for the person.",
+          "type": "string"
+        },
+        "cursor": {
+          "type": "string",
+          "description": "The last page's cursor; left out, the first page."
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "description": "How many stores, 1 to 100; 50 when not said."
+        }
+      }
+    }
+  },
+  {
     "name": "commit_trailers",
     "title": "Get the trailers for a commit",
     "annotations": {

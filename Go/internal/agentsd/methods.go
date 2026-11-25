@@ -24,6 +24,7 @@ func (d *Daemon) register() {
 	Quiet(d, wire.CallCredentialsOffer.Name)
 	d.registerFiles()
 	d.registerFeatures()
+	d.registerStoreSizes()
 	d.registerMac()
 	d.registerAgents()
 	d.registerPins()

@@ -129,7 +129,8 @@ export function MachinePage({ store, host }: { store: Store; host: string }) {
           </>
         )}
       {/* What it runs, from the control plane, offline or not (#5273). */}
-      <MachineAgents store={store} host={host} />
+      <MachineAgents store={store} host={host} name={name}
+        asksUpdate={answers && hostHas(hosts, host, Capability.hostUpdate1)} />
       {answers && <MachineWorktrees store={store} host={host} />}
       {answers && <MachineRuntimes store={store} host={host} name={name} />}
       {answers && <Resources store={store} host={host} />}
