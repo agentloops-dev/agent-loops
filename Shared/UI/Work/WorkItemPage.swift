@@ -26,7 +26,6 @@ struct WorkItemPage: View {
     /// Whether the person turned the Docs flag on (`FeatureFlag`, #6572).
     @AppStorage(FeatureFlag.docs.key, store: WindowDefaults.store) private var docsOn = false
     /// Whether the person turned the Image hosts flag on (#7139).
-    @AppStorage(FeatureFlag.imageHosts.key, store: WindowDefaults.store) private var imageHostsOn = false
     #endif
     /// Opens a place on the web page; the Mac window sets it while it can open the page (#5180).
     @Environment(\.openWebPlace) private var openWebPlace
@@ -1005,16 +1004,12 @@ struct WorkItemPage: View {
     }
 
     /// The images in the body and the comments, read by the machine that read the item (#4010,
-    /// `forge/image`), so the app never loads the page's remote URL. With the Image hosts flag on
-    /// and a machine that keeps the list, a blocked one has its controls (#7139).
+    /// `forge/image`), so the app never loads the page's remote URL. With a machine that keeps the
+    /// list of image hosts, a blocked one has its controls (#7139, #7140).
     private func remoteImages(on host: MachineRef) -> RemoteImages {
-        #if os(macOS)
-        let controls = imageHostsOn && model.readsImageHosts(on: host)
-        #else
-        let controls = false // The Remote's are #7140.
-        #endif
-        return RemoteImages(page: images, machine: host,
-                            machineName: model.forgeMachines.first { $0.id == host }?.name ?? "the machine", controls: controls)
+        RemoteImages(page: images, machine: host,
+                     machineName: model.forgeMachines.first { $0.id == host }?.name ?? "the machine",
+                     controls: model.readsImageHosts(on: host))
     }
 
     // MARK: Loading

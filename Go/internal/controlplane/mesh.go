@@ -769,6 +769,12 @@ func (s *Service) apply(e controlEvent) {
 		if json.Unmarshal([]byte(e.Subject), &n) == nil {
 			s.noticeAdminsHere(n)
 		}
+	case "capacityChanged":
+		// A copy's level changed (#7361): its admins connected here see it too.
+		var c wire.ControlCapacityCopy
+		if json.Unmarshal([]byte(e.Subject), &c) == nil {
+			s.capacityChangedAdminsHere(c)
+		}
 	case "peopleChanged":
 		// Another copy's invite or removal makes this one a team, or not (#1763).
 		s.noteTeam()

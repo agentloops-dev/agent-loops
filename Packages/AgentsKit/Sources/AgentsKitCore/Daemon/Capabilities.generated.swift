@@ -53,7 +53,9 @@ public enum Capability {
     public static let controlConnectAnother1 = "control.connect-another/1"
     public static let controlEligible1 = "control.eligible/1"
     public static let controlLocal1 = "control.local/1"
+    public static let controlMove1 = "control.move/1"
     public static let controlPlaneMove1 = "control.plane-move/1"
+    public static let controlReceive1 = "control.receive/1"
     public static let controlRotate1 = "control.rotate/1"
     public static let control1 = "control/1"
     public static let cost1 = "cost/1"
@@ -373,6 +375,7 @@ public enum Capability {
         "connectors/codespaces": "connectors.setup/1",
         "connectors/setup": "connectors.setup/1",
         "connectors/setup/skip": "connectors.setup/1",
+        "control/receive": "control.receive/1",
         "cost/setLimits": "cost/1",
         "cost/state": "cost/1",
         "credentials/offer": "credentials/1",
@@ -803,6 +806,8 @@ public enum Capability {
         "control/connectAnother": "control.connect-another/1",
         "control/connectReport": "control.connect-another/1",
         "control/eligible": "control.eligible/1",
+        "control/move": "control.move/1",
+        "control/moves/list": "control.move/1",
         "control/ping": "control/1",
         "control/planeMove": "control.plane-move/1",
         "control/planeMoveReport": "control.plane-move/1",
@@ -892,6 +897,7 @@ public enum Capability {
         "machines/link": "machines/1",
         "machines/list": "machines/2",
         "machines/listKept": "machines/2",
+        "machines/previewStart": "auto-machine/1",
         "machines/projectFolders": "sessions.project/1",
         "machines/projectSessions": "sessions.project/1",
         "machines/remove": "machines/1",
@@ -1045,6 +1051,7 @@ public enum Capability {
         "control/lockChanged": "lock/1",
         "control/lockJoinDecided": "lock-join/1",
         "control/lockJoinRequested": "lock-join/1",
+        "control/moveChanged": "control.move/1",
         "control/moved": "control/1",
         "control/notice": "org-identity/1",
         "control/orgRoutesChanged": "org-routes/2",

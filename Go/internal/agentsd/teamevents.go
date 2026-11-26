@@ -84,7 +84,7 @@ func (d *Daemon) sendTrigger(fr fireRequest, w wire.Workflow) (taken, ok bool) {
 // Asked answers what the control plane asks on channel 0: workflows/fire, git/fill
 // for a lend a person allowed (#1122), providers/* for a provider carried here (#3398),
 // machine/orgRouteCheck (#3397), runtimes/list for Auto's machine pick (#5375), and
-// machine/usage for control/eligible (#6611). git/fill is not registered as a window method, nor are providers/*.
+// machine/usage for control/eligible (#6611), and control/receive for control/move (#6612). git/fill is not registered as a window method, nor are providers/*.
 func (d *Daemon) Asked(method string, params json.RawMessage) (any, bool) {
 	switch method {
 	case wire.CallRuntimesList.Name:
@@ -96,6 +96,10 @@ func (d *Daemon) Asked(method string, params json.RawMessage) (any, bool) {
 		return d.machineUsageState(d.ctx), true
 	case wire.CallMachineOrgRouteCheck.Name:
 		return d.checkOrgRoute(params), true
+	case wire.CallControlReceive.Name:
+		// The control plane moves here (#6612): only a machine with the control role has a
+		// copy to start.
+		return d.controlReceive(params), true
 	case wire.CallWorkflowsFire.Name:
 		var t wire.TeamTrigger
 		if err := json.Unmarshal(params, &t); err != nil {

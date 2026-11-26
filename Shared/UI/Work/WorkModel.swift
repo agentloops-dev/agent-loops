@@ -36,8 +36,7 @@ protocol WorkModel: AnyObject, Sendable {
     var lineageMachines: [(id: MachineRef, name: String)] { get }
     /// Whether a machine takes the Work pages' writes (#3130).
     func forgeWrites(on host: MachineRef) -> Bool
-    /// Whether a machine keeps a list of the image hosts the person allowed (#7139). False on the
-    /// Remote until #7140.
+    /// Whether a machine keeps a list of the image hosts the person allowed (#7139, #7140).
     func readsImageHosts(on host: MachineRef) -> Bool
     func forgeList(_ kind: WorkList.Kind, _ request: DaemonAPI.ForgeListRequest,
                    on host: MachineRef) async throws -> DaemonAPI.ForgeList
@@ -172,7 +171,6 @@ extension WorkModel {
         } decode: { PlatformImage(data: $0) }
     }
 
-    func readsImageHosts(on host: MachineRef) -> Bool { false }
     var timelineMachines: [(id: MachineRef, name: String)] { [] }
     var deploysMachines: [(id: MachineRef, name: String)] { [] }
     func lineageSessionsOn(_ nodes: [DaemonAPI.LineageNode]) async -> DaemonAPI.LineageSessionsOn? { nil }

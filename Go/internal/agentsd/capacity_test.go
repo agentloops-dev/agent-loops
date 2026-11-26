@@ -165,6 +165,18 @@ func TestCapacityStateSaysTheReason(t *testing.T) {
 	look(capacitySample{load1: 2.2}, wire.CapacityLevelNear, wire.CapacityReasonCpu)
 }
 
+// Disk pressure on a machine that also runs the control plane says disk (#7300).
+func TestCapacityReasonOfDiskPressure(t *testing.T) {
+	t.Parallel()
+
+	s := capacitySample{load1: 0.4}.withControl(2, capacity.Pressure{IO: 16})
+	level, signal := capacityTarget(s)
+	r := capacityReason(levelSignal(level, level, signal, ""))
+	if level != wire.CapacityLevelNear || r == nil || *r != wire.CapacityReasonDisk {
+		t.Errorf("%s %v, want near for disk", level, r)
+	}
+}
+
 // With both roles the machine has the higher of the two levels, and keeps one core's load
 // free for the control plane (#6613).
 func TestCapacityTargetOfAMachineWithBothRoles(t *testing.T) {

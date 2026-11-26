@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/records"
@@ -92,5 +93,45 @@ func TestTheControlMachineDoesNotJoinAsControlOnly(t *testing.T) {
 	// The code is kept for another machine.
 	if _, err := controllink.EnrollAs(context.Background(), t.TempDir(), code, controllink.NewPrivateKey(), fakeHello("MACHINE-8"), []string{records.RoleControl}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// A machine that joined with the control role alone and runs no copy is removed as any
+// other; while a live copy record names it, it is not (#7346).
+func TestAControlOnlyMachineIsRemovedWhenItRunsNoCopy(t *testing.T) {
+	t.Parallel()
+	st := store.NewMemory()
+	p := startPlane(t, st, controllink.NewPrivateKey())
+	_, window := p.client("Window")
+	running := p.controlOnlyHost("MACHINE-7").member.Host
+	idle := p.controlOnlyHost("MACHINE-8").member.Host
+	ctx := context.Background()
+	data, err := records.Encode(copyRecord{ID: "copy-2", PeerURL: "https://copy-2.example", Started: records.Now(),
+		Heartbeat: records.Now(), Machine: running})
+	must(t, err)
+	_, err = st.Put(ctx, copyRecordKey("copy-2"), data, store.Always)
+	must(t, err)
+	for _, method := range []string{"machines/deletePreview", "machines/remove"} {
+		if e := callError(t, window, "", method, map[string]any{"host": running}); !strings.Contains(e, "move the control plane first") {
+			t.Fatalf("%s: %s", method, e)
+		}
+	}
+	if p.s.records.Host(running) == nil {
+		t.Fatal("the machine that runs a copy was removed")
+	}
+	call(t, window, "", "machines/deletePreview", map[string]any{"host": idle})
+	call(t, window, "", "machines/remove", map[string]any{"host": idle})
+	if p.s.records.Host(idle) != nil {
+		t.Fatal("a control-only machine that runs no copy was not removed")
+	}
+	// A copy whose record is stale runs there no more.
+	data, err = records.Encode(copyRecord{ID: "copy-2", PeerURL: "https://copy-2.example", Started: records.Now(),
+		Heartbeat: records.At(time.Now().Add(-2 * copyGone)), Machine: running})
+	must(t, err)
+	_, err = st.Put(ctx, copyRecordKey("copy-2"), data, store.Always)
+	must(t, err)
+	call(t, window, "", "machines/remove", map[string]any{"host": running})
+	if p.s.records.Host(running) != nil {
+		t.Fatal("a control-only machine whose copy is gone was not removed")
 	}
 }

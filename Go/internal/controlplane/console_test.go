@@ -3,7 +3,9 @@ package controlplane
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -64,6 +66,127 @@ func TestControlCapacityListsLastLookOfLiveCopies(t *testing.T) {
 	must(t, json.Unmarshal(call(t, admin, "", "control/capacity", map[string]any{}), &got))
 	if len(got.Copies) != 1 || got.Copies[0].Copy != want.Copy || got.Copies[0].Level != want.Level || got.Copies[0].LoadPerCore != want.LoadPerCore {
 		t.Fatalf("got %+v, want %+v", got, want)
+	}
+}
+
+// readsOf is a store that records the keys read in a context that carries readsKey.
+type readsOf struct {
+	store.Store
+	mu   sync.Mutex
+	read []string
+}
+
+type readsKey struct{}
+
+func (r *readsOf) Get(ctx context.Context, key string) (*store.Object, error) {
+	if ctx.Value(readsKey{}) != nil {
+		r.mu.Lock()
+		r.read = append(r.read, key)
+		r.mu.Unlock()
+	}
+	return r.Store.Get(ctx, key)
+}
+
+// #7360: control/capacity finds the copies from their samples, so it never reads a host's
+// kept list in v1/copies/, however large, and leaves out the sample of a copy that is gone.
+func TestControlCapacityReadsNoHostsKeptList(t *testing.T) {
+	t.Parallel()
+	st := &readsOf{Store: store.NewMemory()}
+	p := startPlane(t, st, controllink.NewPrivateKey())
+	ctx := context.Background()
+	live := copyRecord{ID: p.s.copyID, PeerURL: p.url, Started: records.Now(), Heartbeat: records.Now()}
+	data, err := json.Marshal(live)
+	must(t, err)
+	_, err = st.Put(ctx, copyRecordKey(live.ID), data, store.Always)
+	must(t, err)
+	for _, id := range []string{live.ID, "deadc0de"} {
+		data, err := json.Marshal(wire.ControlCapacityCopy{Copy: id, Level: wire.CapacityLevelOk, At: wire.DateOf(time.Now())})
+		must(t, err)
+		_, err = st.Put(ctx, controlCapacityKey(id), data, store.Always)
+		must(t, err)
+	}
+	agents := make([]map[string]any, 500)
+	for i := range agents {
+		agents[i] = map[string]any{"id": fmt.Sprintf("A%d", i), "state": "running", "title": strings.Repeat("x", 200)}
+	}
+	list, err := json.Marshal(map[string]any{"agents": agents})
+	must(t, err)
+	for i := range 20 {
+		_, err = st.Put(ctx, copyKey(fmt.Sprintf("HOST-%d", i)), list, store.Always)
+		must(t, err)
+	}
+
+	got, err := p.s.methods.controlCapacity(context.WithValue(ctx, readsKey{}, true))
+	must(t, err)
+	if len(got.Copies) != 1 || got.Copies[0].Copy != live.ID {
+		t.Fatalf("only the live copy's sample: %+v", got)
+	}
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	for _, key := range st.read {
+		if strings.HasPrefix(key, copiesPrefix) && key != copyRecordKey(live.ID) && key != copyRecordKey("deadc0de") {
+			t.Errorf("control/capacity read %s", key)
+		}
+	}
+	// This copy's own sample needs no copy record (#6591).
+	if len(st.read) != 3 {
+		t.Errorf("two samples and the other copy's record, not %v", st.read)
+	}
+}
+
+// A copy's look names the machine record that runs it (#6591), so Machines can give that row
+// its level; a sample kept before the copy knew its machine takes the copy record's.
+func TestControlCapacityNamesTheCopysMachine(t *testing.T) {
+	t.Parallel()
+	st := store.NewMemory()
+	p := startPlane(t, st, controllink.NewPrivateKey())
+	_, admin := p.client("Owner's window")
+	copy := copyRecord{ID: "copy-b", PeerURL: p.url, Started: records.Now(), Heartbeat: records.Now(), Machine: "control"}
+	copyData, err := json.Marshal(copy)
+	must(t, err)
+	_, err = st.Put(context.Background(), copyRecordKey(copy.ID), copyData, store.Always)
+	must(t, err)
+	capacityData, err := json.Marshal(wire.ControlCapacityCopy{Copy: copy.ID, Level: wire.CapacityLevelOk, At: wire.DateOf(time.Now())})
+	must(t, err)
+	_, err = st.Put(context.Background(), controlCapacityKey(copy.ID), capacityData, store.Always)
+	must(t, err)
+
+	var got wire.ControlCapacityBoard
+	must(t, json.Unmarshal(call(t, admin, "", "control/capacity", map[string]any{}), &got))
+	for _, c := range got.Copies {
+		if c.Copy == copy.ID {
+			if c.Machine == nil || *c.Machine != "control" {
+				t.Fatalf("got %+v, want the machine control", c)
+			}
+			return
+		}
+	}
+	t.Fatalf("no look of %s in %+v", copy.ID, got)
+}
+
+// A single copy has no mesh and so no copy record: its own look is on the board all the same.
+func TestControlCapacityHasTheOneCopysOwnLook(t *testing.T) {
+	t.Parallel()
+	st := store.NewMemory()
+	p := startPlane(t, st, controllink.NewPrivateKey())
+	_, admin := p.client("Owner's window")
+	p.s.keepControlCapacity(controlCapacity{level: wire.CapacityLevelOk, at: time.Now()})
+
+	var got wire.ControlCapacityBoard
+	must(t, json.Unmarshal(call(t, admin, "", "control/capacity", map[string]any{}), &got))
+	if len(got.Copies) != 1 || got.Copies[0].Copy != p.s.copyID {
+		t.Fatalf("got %+v, want the look of %s", got, p.s.copyID)
+	}
+}
+
+func TestKeptControlCapacityNamesItsMachine(t *testing.T) {
+	t.Parallel()
+	p := startPlane(t, store.NewMemory(), controllink.NewPrivateKey())
+	id := "control"
+	p.s.controlMachine.Store(&id)
+	got := p.s.keepControlCapacity(controlCapacity{level: wire.CapacityLevelNear, reason: "pressure_io", at: time.Now()})
+	if got.Machine == nil || *got.Machine != "control" {
+		t.Fatalf("got %+v, want the machine control", got)
 	}
 }
 
@@ -177,5 +300,35 @@ func TestConsoleLiveIsEveryRunningAgent(t *testing.T) {
 	}
 	if e := callError(t, admin, "", "console/stopAgent", wire.ConsoleStopAgent{Host: "NOWHERE", Agent: "B1"}); !strings.Contains(e, "No machine") {
 		t.Fatal(e)
+	}
+}
+
+// With two copies, an admin connected to one hears the other's change of level (#7361), as it
+// hears its notice: the strip and the rows do not wait for Machines to open.
+func TestAnAdminHearsAnotherCopysCapacityChange(t *testing.T) {
+	t.Parallel()
+	st, key := store.NewMemory(), controllink.NewPrivateKey()
+	a, b := startCopyWith(t, st, key, nil), startCopyWith(t, st, key, nil)
+	a.waitFor(func() bool { return len(a.s.mesh.peers()) == 1 && len(b.s.mesh.peers()) == 1 }, "the copies linked")
+	_, admin := a.client("Owner's window")
+	call(t, admin, "", "control/status", nil) // a window's first call: it then hears notices
+	want := wire.ControlCapacityCopy{Copy: b.s.copyID, Level: wire.CapacityLevelFull, Reason: "the control plane is at capacity: its memory is short", LoadPerCore: 3.1, At: wire.DateOf(time.Now())}
+	b.s.capacityChangedAdmins(want)
+	deadline := time.After(5 * time.Second)
+	for {
+		select {
+		case n := <-admin.Notes:
+			if n.Method != wire.NotifyControlCapacityChanged.Name {
+				continue
+			}
+			var got wire.ControlCapacityCopy
+			must(t, json.Unmarshal(n.Params, &got))
+			if got.Copy != want.Copy || got.Level != want.Level || got.Reason != want.Reason {
+				t.Fatalf("got %+v, want %+v", got, want)
+			}
+			return
+		case <-deadline:
+			t.Fatal("the admin at copy a did not hear copy b's change of level")
+		}
 	}
 }
