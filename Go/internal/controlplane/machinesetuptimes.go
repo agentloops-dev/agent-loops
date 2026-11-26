@@ -59,7 +59,7 @@ func (t setupTimeSeries) read(ctx context.Context) (setupTimeLists, *store.Objec
 // bounded keeps, of each step there is, the newest points that are no older than before.
 func (times setupTimeLists) bounded(before time.Time) setupTimeLists {
 	out := setupTimeLists{}
-	for _, id := range setupSteps {
+	for _, id := range setupOrder {
 		var list []setupTime
 		for _, p := range times[id] {
 			if !p.At.Before(before) {
@@ -105,7 +105,7 @@ func (t setupTimeSeries) change(ctx context.Context, change func(setupTimeLists)
 // Append keeps a point once: the same one again, as a retry says it, changes nothing.
 func (t setupTimeSeries) Append(ctx context.Context, p store.Point) error {
 	id := wire.MachineSetupStepID(p.Series)
-	if stepIndex(id) < 0 || p.At.IsZero() {
+	if !knownStep(id) || p.At.IsZero() {
 		return errors.New("a set-up time needs a step and a time")
 	}
 	point := setupTime{At: p.At.UTC(), Seconds: p.Value}

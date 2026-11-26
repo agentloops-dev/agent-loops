@@ -2910,6 +2910,14 @@
         "code": {
           "type": "string",
           "description": "The digits the host shows for its join token (controllink.TokenCode), said with the compare step: the control plane compares them with the ones it made (#5359)."
+        },
+        "hash": {
+          "type": "string",
+          "description": "The SHA-256, in lower-case hexadecimal, of the script that the root or user step runs (#7167)."
+        },
+        "warning": {
+          "type": "boolean",
+          "description": "The step is done with a warning in its detail, such as a provider that cannot run root set-up (#7167)."
         }
       },
       "required": [
@@ -2975,6 +2983,14 @@
         },
         "slower": {
           "type": "boolean"
+        },
+        "hash": {
+          "type": "string",
+          "description": "The SHA-256, in lower-case hexadecimal, of the script that the root or user step runs (#7167)."
+        },
+        "warning": {
+          "type": "boolean",
+          "description": "The step is done with a warning in its detail, such as a provider that cannot run root set-up (#7167)."
         }
       },
       "required": [
@@ -2985,7 +3001,7 @@
     },
     "MachineSetupStepID": {
       "type": "string",
-      "description": "The eight steps, in order: create machine, join machine, install Agents, compare digits, install runtimes, send projects, sign in to runtimes, smoke session.",
+      "description": "The steps: create machine, join machine, install Agents, compare digits, install runtimes, send projects, sign in to runtimes, smoke session (#5353), and root set-up and your set-up, each only when its script was sent (#7167). The control plane reads a set-up by step id: a client that does not know an id shows it as its name.",
       "enum": [
         "create",
         "join",
@@ -2994,7 +3010,9 @@
         "runtimes",
         "projects",
         "signIn",
-        "smoke"
+        "smoke",
+        "root",
+        "user"
       ]
     },
     "MachineSetupWork": {
@@ -5470,6 +5488,97 @@
       "required": [
         "runtimeID",
         "providerID"
+      ],
+      "additionalProperties": false
+    },
+    "SetupApprove": {
+      "type": "object",
+      "description": "setup/approve (#7167): a client of the person's lock approves the text of one of this machine's set-up scripts as it is now, for machines as they are made (scope made) or for one machine (m:<id>). approval is a setup.script record whose subject is script and whose content is the script's hash and size; empty content takes the approval of that scope away. The machine keeps the text and the approval only when the record checks against its lock, its number is not lower than the last of its scope, and the file is that text.",
+      "properties": {
+        "script": {
+          "type": "string",
+          "enum": [
+            "root",
+            "setup"
+          ]
+        },
+        "approval": {
+          "$ref": "org.schema.json#/definitions/LockRecord"
+        }
+      },
+      "required": [
+        "script",
+        "approval"
+      ],
+      "additionalProperties": false
+    },
+    "SetupScript": {
+      "type": "object",
+      "description": "One set-up script on this machine (#7167): root (root.sh) or setup (setup.sh) in ~/.agents/machine-setup/. present: the file is there. text, hash and size are the file as it is now (hash: SHA-256 in lower-case hexadecimal); problem says why they are absent from a file that is there (over its limit, or unreadable). approvedText and approvedHash are the text a client approved last, and approvals the records in force for it, one a scope. changed: the file is not the approved text, so it is not used until a client approves it. nextSeq is the number to sign the next approval with.",
+      "properties": {
+        "name": {
+          "type": "string",
+          "enum": [
+            "root",
+            "setup"
+          ]
+        },
+        "present": {
+          "type": "boolean"
+        },
+        "text": {
+          "type": "string"
+        },
+        "hash": {
+          "type": "string"
+        },
+        "size": {
+          "type": "integer"
+        },
+        "problem": {
+          "type": "string"
+        },
+        "approvedText": {
+          "type": "string"
+        },
+        "approvedHash": {
+          "type": "string"
+        },
+        "approvals": {
+          "type": "array",
+          "items": {
+            "$ref": "org.schema.json#/definitions/LockRecord"
+          }
+        },
+        "changed": {
+          "type": "boolean"
+        },
+        "nextSeq": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "name",
+        "present",
+        "approvals",
+        "changed",
+        "nextSeq"
+      ],
+      "additionalProperties": false
+    },
+    "SetupScripts": {
+      "type": "object",
+      "description": "setup/scripts (#7167): this machine's two set-up scripts, root then setup, as a client reads them to approve one.",
+      "properties": {
+        "scripts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/SetupScript"
+          }
+        }
+      },
+      "required": [
+        "scripts"
       ],
       "additionalProperties": false
     },
