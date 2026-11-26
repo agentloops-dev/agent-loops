@@ -19,7 +19,13 @@ import (
 )
 
 // Prefix is where every person's lock is in the store.
+//
+// store-bounds: kind=document; count=4096 entries a person; size=8KiB an entry; age=until-deleted; applied=on write, refused, deleted on Reset and with the person
 const Prefix = "v1/locks/"
+
+// mostEntryBytes is the largest entry as stored: machinelock.MostBody and a signature, in
+// base64. An entry that checks always fits.
+const mostEntryBytes = 8 << 10
 
 // MostAdded bounds the entries one lock/add takes.
 const MostAdded = 16
@@ -116,6 +122,9 @@ func (b *Book) Add(ctx context.Context, person string, entries []wire.LockEntry)
 		data, err := json.Marshal(e)
 		if err != nil {
 			return wire.LockHead{}, err
+		}
+		if len(data) > mostEntryBytes {
+			return wire.LockHead{}, fmt.Errorf("%w: an entry is at most %d KiB", ErrInvalid, mostEntryBytes>>10)
 		}
 		if _, err := b.store.Put(ctx, entryKey(person, state.Count()-1), data, store.Absent); err != nil {
 			if store.IsConflict(err) {

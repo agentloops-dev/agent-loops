@@ -21,6 +21,7 @@ import (
 // requests are next read, as a raise does.
 
 const (
+	// store-bounds: kind=document; count=1000; size=8KiB a record; age=2d; applied=on write, refused past the count, the reason and names cut to size, on read and hourly
 	policyRequestsPrefix = "v1/policy/requests/"
 	policyRequestsMost   = 1000
 )
@@ -29,6 +30,22 @@ const (
 func budgetRequestID(day, user string) string {
 	sum := sha256.Sum256([]byte(day + "\x00" + user))
 	return hex.EncodeToString(sum[:12])
+}
+
+// boundedBudgetRequest is a request's record, within its largest size (#7249): the names are
+// cut, and then the reason until the rest fits, so a request can always be answered.
+func boundedBudgetRequest(r *wire.BudgetRequest) ([]byte, error) {
+	r.UserName, r.DecidedBy = cut(r.UserName, governanceNameMost), cutOptional(r.DecidedBy, governanceNameMost)
+	for most := governanceWhyMost; ; most /= 2 {
+		r.Why = cutOptional(r.Why, most)
+		data, err := json.Marshal(r)
+		if err != nil {
+			return nil, err
+		}
+		if err = fitsRecord("The request", data, requestMostBytes); err == nil || most == 0 {
+			return data, err
+		}
+	}
 }
 
 func budgetRequestKey(id string) string { return policyRequestsPrefix + id + ".json" }
@@ -87,7 +104,10 @@ func (s *Service) askForMore(ctx context.Context, actor wire.AuditActor, ask wir
 	}
 	r := wire.BudgetRequest{ID: id, User: actor.User, UserName: s.shownPerson(actor.User), Day: day, At: dateOf(now),
 		Why: cutOptional(ask.Why, governanceWhyMost), State: wire.BudgetRequestStateWaiting}
-	data, _ := json.Marshal(r)
+	data, err := boundedBudgetRequest(&r)
+	if err != nil {
+		return wire.BudgetRequest{}, err
+	}
 	if _, err := s.cfg.Store.Put(ctx, budgetRequestKey(id), data, store.Absent); err != nil {
 		if store.IsConflict(err) {
 			// Asked twice at once: the first one stands.
@@ -135,7 +155,10 @@ func (s *Service) answerBudgetRequest(ctx context.Context, actor wire.AuditActor
 	if raise != nil {
 		r.State, r.Daily, r.DailyTokens = wire.BudgetRequestStateRaised, raise.Daily, raise.DailyTokens
 	}
-	data, _ := json.Marshal(r)
+	data, err := boundedBudgetRequest(&r)
+	if err != nil {
+		return wire.BudgetRequest{}, err
+	}
 	if _, err := s.cfg.Store.Put(ctx, budgetRequestKey(id), data, store.Matching(object.ETag)); err != nil {
 		if store.IsConflict(err) {
 			return wire.BudgetRequest{}, fail(changedElsewhere, "Another admin answered this request.")

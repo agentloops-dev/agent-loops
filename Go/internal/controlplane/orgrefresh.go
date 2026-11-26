@@ -23,7 +23,11 @@ import (
 // clear.
 
 const (
+	// store-bounds: kind=secret; count=20000 (one a person and org provider, which the people bound); size=32KiB a record (a token of 16 KiB when it is first kept, a renewed one is never refused, and its answer is at most 1 MiB); age=until-deleted; applied=on sign-in, refused, deleted with the person, or on a check once the sign-in or the provider is gone
 	refreshPrefix = "v1/signin/refresh/"
+	// refreshTokenMost is the largest refresh token that a sign-in keeps. With a larger one the
+	// sign-in works, and the person is checked at sign-in only.
+	refreshTokenMost = 16 << 10
 	// refreshGrace is how long keys renew while the provider cannot be reached.
 	refreshGrace = 7 * 24 * time.Hour
 	// refreshEvery is how often each person is checked with no renewal.
@@ -48,6 +52,10 @@ type refreshRecord struct {
 // ticket's key, so the ticket in the store holds nothing to use.
 func (si *signIns) sealTicketRefresh(ctx context.Context, ticketKey, refresh string) *kms.Sealed {
 	if refresh == "" {
+		return nil
+	}
+	if len(refresh) > refreshTokenMost {
+		si.s.log("an org sign-in's refresh token is too large to keep; its person is checked at sign-in only")
 		return nil
 	}
 	sealed, err := si.s.users.SealFor(ctx, []byte(refresh), []byte(ticketKey+"#refresh"))
@@ -171,6 +179,7 @@ func (si *signIns) checkRefresh(ctx context.Context, person, provider string) re
 	case err != nil:
 		return down()
 	}
+	// Whatever its size: the old one may be spent, and a spent one suspends its person.
 	if err := si.writeRefresh(ctx, person, provider, next, records.At(now), nil, store.Matching(object.ETag)); err != nil {
 		si.s.log("a refresh token could not be kept again: " + err.Error())
 	}

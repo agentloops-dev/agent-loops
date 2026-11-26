@@ -213,6 +213,10 @@ func (si *signIns) serveCallback(ctx context.Context, w http.ResponseWriter, r *
 		Bind: s.Bind, Person: s.Person, Made: records.At(now), Ends: records.At(now.Add(ticketLife)),
 		Refresh: si.sealTicketRefresh(ctx, ticketKey, c.refresh)}
 	data, err := records.Encode(t)
+	if err == nil && len(data) > oidcTicketMostBytes {
+		refuse("refused", "The provider's account name is too long. Ask your IT team to use a shorter account claim.")
+		return
+	}
 	if err == nil {
 		_, err = si.s.cfg.Store.Put(ctx, ticketKey+".json", data, store.Absent)
 	}
