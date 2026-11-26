@@ -30,7 +30,7 @@ struct ContinueChoicesTests {
         let choices = AccountChoices(runtimeID: "claude", profiles: list).continueChoices(from: "work", allowances: allowances)
         #expect(choices == [ContinueChoice(accountID: "default", title: "Claude · Your Own Sign-In"),
                             ContinueChoice(accountID: "personal", title: "Claude · Personal")])
-        #expect(AccountWords.continueOn(choices[1].title) == "Continue on Claude · Personal")
+        #expect(AccountWords.continueOn("Claude · Personal") == "Continue on Claude · Personal")
     }
 
     @Test func onItsOwnSignInOffersOnlyTheAddedOnes() {
