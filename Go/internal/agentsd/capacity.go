@@ -133,7 +133,7 @@ func levelSignal(level, target wire.CapacityLevel, signal, was string) string {
 	return was
 }
 
-// capacityReason is a signal as the rows say it: cpu for the load, memory for its pressure.
+// capacityReason is a signal as the rows say it: cpu for the load, memory for its pressure, disk for its disk pressure (#7300).
 func capacityReason(signal string) *wire.CapacityReason {
 	var r wire.CapacityReason
 	switch signal {
@@ -141,6 +141,8 @@ func capacityReason(signal string) *wire.CapacityReason {
 		r = wire.CapacityReasonCpu
 	case "memory_pressure", "pressure_memory":
 		r = wire.CapacityReasonMemory
+	case "pressure_io":
+		r = wire.CapacityReasonDisk
 	default:
 		return nil
 	}
