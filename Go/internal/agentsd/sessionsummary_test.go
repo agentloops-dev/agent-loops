@@ -10,38 +10,48 @@ import (
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
-func TestSummariseWritesOnlyWhenAskedAndReadsEachTurnOnce(t *testing.T) {
+// summaryRig is a daemon with an agent, a stub for the runtime call, and what a test needs
+// to talk and to wait on the summary's changes.
+type summaryRig struct {
+	d       *Daemon
+	a       wire.Agent
+	calls   atomic.Int32
+	prompts []string
+	say     func(ask, answer string)
+	wait    func(want wire.SessionSummaryState) *wire.SessionSummary
+}
+
+func newSummaryRig(t *testing.T) *summaryRig {
+	t.Helper()
 	d, _ := start(t, t.TempDir())
-	defer d.Shutdown()
-	a := seeded(t, d, t.TempDir(), func(a *wire.Agent) { a.State = wire.AgentStateRunning })
-	var calls atomic.Int32
-	var prompts []string
+	t.Cleanup(d.Shutdown)
+	r := &summaryRig{d: d, a: seeded(t, d, t.TempDir(), func(a *wire.Agent) { a.State = wire.AgentStateRunning })}
 	d.summaryWrite = func(ctx context.Context, _ *Daemon, _ wire.Agent, prompt string) (string, string, error) {
-		calls.Add(1)
-		prompts = append(prompts, prompt)
+		r.calls.Add(1)
+		r.prompts = append(r.prompts, prompt)
 		return "  It adds file names to the index.  ", "haiku", nil
 	}
-	say := func(ask, answer string) {
+	r.say = func(ask, answer string) {
 		t.Helper()
 		for _, k := range []wire.TranscriptEntryKind{
 			{UserMessage: &wire.TranscriptEntryKindUserMessage{Value: ask}},
 			{AgentMessage: &wire.TranscriptEntryKindAgentMessage{Text: answer}},
 		} {
-			if _, err := d.Store.Append(a.ID, wire.TranscriptEntry{ID: store.NewUUID(), At: now(), Kind: k}); err != nil {
+			if _, err := d.Store.Append(r.a.ID, wire.TranscriptEntry{ID: store.NewUUID(), At: now(), Kind: k}); err != nil {
 				t.Fatal(err)
 			}
 		}
 	}
 	changes := make(chan wire.SessionSummary, 64)
 	d.changeTold = func(c wire.Agent) {
-		if c.ID == a.ID && c.Summary != nil {
+		if c.ID == r.a.ID && c.Summary != nil {
 			select {
 			case changes <- *c.Summary:
 			default:
 			}
 		}
 	}
-	wait := func(want wire.SessionSummaryState) *wire.SessionSummary {
+	r.wait = func(want wire.SessionSummaryState) *wire.SessionSummary {
 		t.Helper()
 		limit := afterLimit(t)
 		for {
@@ -51,10 +61,16 @@ func TestSummariseWritesOnlyWhenAskedAndReadsEachTurnOnce(t *testing.T) {
 					return &s
 				}
 			case <-limit:
-				t.Fatalf("no summary in state %s: %+v", want, d.Store.Agent(a.ID).Summary)
+				t.Fatalf("no summary in state %s: %+v", want, d.Store.Agent(r.a.ID).Summary)
 			}
 		}
 	}
+	return r
+}
+
+func TestSummariseWritesOnlyWhenAskedAndReadsEachTurnOnce(t *testing.T) {
+	r := newSummaryRig(t)
+	d, a, say, wait, calls, prompts := r.d, r.a, r.say, r.wait, &r.calls, &r.prompts
 
 	// Nothing is written until a client asks, and a session with no ended turn has none.
 	say("first ask", "first answer")
@@ -78,8 +94,8 @@ func TestSummariseWritesOnlyWhenAskedAndReadsEachTurnOnce(t *testing.T) {
 	if s.Text != "It adds file names to the index." || s.Model == nil || *s.Model != "haiku" || s.At == nil || s.ThroughTurn == nil {
 		t.Fatalf("%+v", s)
 	}
-	if !strings.Contains(prompts[0], "first ask") || strings.Contains(prompts[0], "second ask") {
-		t.Fatalf("prompt: %s", prompts[0])
+	if !strings.Contains((*prompts)[0], "first ask") || strings.Contains((*prompts)[0], "second ask") {
+		t.Fatalf("prompt: %s", (*prompts)[0])
 	}
 
 	// Asked again with no new ended turn: no call.
