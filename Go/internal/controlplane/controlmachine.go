@@ -37,6 +37,10 @@ func (s *Service) ensureControlMachine(ctx context.Context) error {
 	if s.cfg.Hosted || s.cfg.MachineID == "" {
 		return nil
 	}
+	if s.mesh == nil {
+		// One copy over this store: every other control-only record is a copy that is gone.
+		s.dropControlMachines(ctx, func(records.MachineRecord) bool { return true })
+	}
 	for _, h := range s.records.Machines() {
 		if h.MachineID == nil || *h.MachineID != s.cfg.MachineID {
 			continue
@@ -149,4 +153,33 @@ func (s *Service) runsCopy(ctx context.Context, host string) (bool, error) {
 		}
 	}
 	return false, nil
+}
+
+// dropControlMachines removes each control-only machine record that gone says no copy runs on
+// any more (#7399), so an old deploy, or a container named by its host name before
+// AGENTS_CONTROL_MACHINE_ID_FILE, leaves no second control plane in Machines. This copy's own
+// record, and one that has a host's key, stay.
+func (s *Service) dropControlMachines(ctx context.Context, gone func(records.MachineRecord) bool) {
+	if s.cfg.Hosted {
+		return
+	}
+	mine := s.controlMachineID()
+	stale := func(h records.MachineRecord) bool {
+		return h.ControlOnly() && len(h.PublicKey) == 0 && h.ID != mine &&
+			(h.MachineID == nil || s.cfg.MachineID == "" || *h.MachineID != s.cfg.MachineID)
+	}
+	for _, h := range s.records.Machines() {
+		if !stale(h) || !gone(h) {
+			continue
+		}
+		s.controlMu.Lock()
+		removed, err := s.records.RemoveHostIf(ctx, h.ID, stale)
+		s.controlMu.Unlock()
+		switch {
+		case err != nil:
+			s.log("could not drop the control machine record " + h.ID + ": " + err.Error())
+		case removed:
+			s.log("dropped the control machine record " + h.ID + " (" + h.Name + "): no copy runs on it")
+		}
+	}
 }
