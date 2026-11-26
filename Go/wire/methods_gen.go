@@ -712,6 +712,7 @@ var CallMachinesLendSignIn = Method[LendSignIn, Empty]{"machines/lendSignIn"}
 var CallMachinesLink = Method[MachineLink, ControlMachine]{"machines/link"}
 var CallMachinesList = Method[MachineListQuery, JSONValue]{"machines/list"}
 var CallMachinesListKept = Method[KeptListQuery, KeptList]{"machines/listKept"}
+var CallMachinesPreviewStart = Method[AutoMachineRequest, AutoMachinePick]{"machines/previewStart"}
 var CallMachinesProjectFolders = Method[ProjectFoldersRequest, ProjectFolders]{"machines/projectFolders"}
 var CallMachinesProjectSessions = Method[ProjectSessionsRequest, ProjectSessions]{"machines/projectSessions"}
 var CallMachinesRemove = Method[MachineRequest, Empty]{"machines/remove"}

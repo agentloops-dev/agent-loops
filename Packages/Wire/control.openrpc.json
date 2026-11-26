@@ -4147,6 +4147,27 @@
       }
     },
     {
+      "name": "machines/previewStart",
+      "x-capability": "auto-machine/1",
+      "description": "Through machine/machines only (#5876): sessions/previewStart for an agent, so its start_session with machine auto starts where the New Session form's Auto would.",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/machines.schema.json#/definitions/AutoMachineRequest"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/machines.schema.json#/definitions/AutoMachinePick"
+        }
+      }
+    },
+    {
       "name": "machines/projectFolders",
       "x-capability": "sessions.project/1",
       "description": "Through machine/machines only (#3277): the project's folders on each of the person's machines, so an agent's start_session with machine alone starts in the project's folder there.",

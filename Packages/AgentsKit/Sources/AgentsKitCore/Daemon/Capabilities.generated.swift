@@ -889,6 +889,7 @@ public enum Capability {
         "machines/link": "machines/1",
         "machines/list": "machines/2",
         "machines/listKept": "machines/2",
+        "machines/previewStart": "auto-machine/1",
         "machines/projectFolders": "sessions.project/1",
         "machines/projectSessions": "sessions.project/1",
         "machines/remove": "machines/1",
