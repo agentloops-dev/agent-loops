@@ -43,3 +43,10 @@ test("the QR code is square, with a border, and its finder patterns where a scan
   assert.ok(!on.has("0,0"), "the border is light");
   for (const [x, y] of [[1, 1], [7, 1], [1, 7], [size - 2, 1], [1, size - 2]]) assert.ok(on.has(`${x},${y}`), `${x},${y} is dark`);
 });
+
+test("a Mac's code pairs a terminal too, and Command line says how to install loops (#6875)", () => {
+  assert.equal(p.terminalLogin("agents-control:2:c:-:k:s:u:-:n"), "loops auth login 'agents-control:2:c:-:k:s:u:-:n'");
+  assert.equal(p.commandLine.heading, "Command line");
+  assert.ok(p.commandLine.lines.some((l) => l.line.includes("Contents/Helpers/loops") && l.line.includes("~/.local/bin/loops") && !l.line.includes("sudo")));
+  assert.ok(p.commandLine.lines.some((l) => l.line.startsWith("tar -xzf loops-")));
+});

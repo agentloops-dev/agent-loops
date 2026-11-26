@@ -25,6 +25,8 @@ final class FirstOpen {
     /// macOS wants the person to allow Agents in System Settings ▸ General ▸ Login Items.
     var needsApproval: Bool { host.needsApproval }
     private var running = false
+    /// Why set-up could not link loops (#6875); nil when it did, or another program is there.
+    private(set) var commandLineProblem: String?
 
     init(host: HostModel) { self.host = host }
 
@@ -49,6 +51,9 @@ final class FirstOpen {
                 return needsApproval ? fail(problem) : fail("Agent Loops could not start on this Mac.", why: problem)
             }
         }
+        // loops on the PATH (#6875), with no question: a failure does not stop set-up, and
+        // shows one line under the box.
+        commandLineProblem = await LoopsCommand.shared.installAtSetUp()
         step = .working("Connecting this window…")
         // The control plane has just started: its listener may be a moment behind its store.
         var last = "No code could be made."

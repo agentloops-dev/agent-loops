@@ -161,6 +161,11 @@ struct FirstBuildQuestionView: View {
     /// once the window is paired.
     @ViewBuilder
     private var setUpLine: some View {
+        // The loops step (#6875) failed: one line, which does not stop set-up.
+        if let problem = firstOpen?.commandLineProblem {
+            Text(problem).appText(.supporting).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
         if model.needsFirstRun, let firstOpen {
             switch firstOpen.step {
             case .working(let words):

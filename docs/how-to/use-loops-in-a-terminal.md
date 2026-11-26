@@ -28,16 +28,31 @@ the newest one.
 
 Do one of these.
 
-**From Agent Loops.app, on a Mac that has it.** The app has `loops` in it. Link it into a
-directory on your `PATH`:
+**From Agent Loops.app, on a Mac that has it.** The app has `loops` in it, and its first-run
+set-up links it to `~/.local/bin/loops` for you. It does not ask a question, and it does
+not need an administrator password (#6875). The link goes to the app, so when the app
+updates itself, `loops` updates too.
+
+To see the link, or to install it again after you removed it, open **Settings ▸ Machines ▸
+This Mac ▸ Command line**, or choose **Agent Loops ▸ Install loops Command…**. The section
+shows **Installed at ~/.local/bin/loops** or **Not installed**, with **Install** or
+**Remove**, and whether `loops` is paired. When another program is at `~/.local/bin/loops`
+(a release download, for example), Agent Loops does not change it.
+
+Agent Loops does not edit your shell's files. When `~/.local/bin` is not on your login
+shell's `PATH`, the section shows the line to add, with **Copy**. For zsh, add this line to
+`~/.zshrc`:
 
 ```sh
-sudo ln -sf "/Applications/Agent Loops.app/Contents/Helpers/loops" /usr/local/bin/loops
+export PATH="$HOME/.local/bin:$PATH"
 ```
 
-When the app is in `~/Applications`, use that path, and a directory of your own on `PATH`,
-such as `~/.local/bin`, with no `sudo`. The link goes to the app, so when the app updates
-itself, `loops` updates too.
+To make the link by hand:
+
+```sh
+mkdir -p ~/.local/bin
+ln -sf "/Applications/Agent Loops.app/Contents/Helpers/loops" ~/.local/bin/loops
+```
 
 **From a checkout of this repository.** `.agents/skills/ship-app/scripts/ship.sh
 --install-cli` makes the same link in `~/.local/bin` when it installs the app. With
@@ -60,9 +75,29 @@ The macOS programs are signed with Developer ID and notarized.
 
 You pair a terminal one time, as you pair a window.
 
+**On a Mac with Agent Loops,** you need no code (#6875). Run any `loops` command, or
+`loops auth login` with no code:
+
+1. `loops` asks Agent Loops on this Mac to pair it. It says
+   **Asked Agent Loops on this Mac to pair this terminal**, and waits.
+2. In the Mac window, **Needs you** shows **Wants to pair loops on <this Mac's name>**, with
+   the program that ran `loops` (your shell, for example). Click **Approve**.
+3. The window makes a pairing code for this Mac's control plane. When you have a machine
+   lock, the window also puts the terminal's key in the lock. Then it gives the code to
+   `loops`, and `loops` says **Paired with**. There are no digits to compare.
+
+Only the Mac window can approve this request, because that Mac makes the code. On the web page
+and the iPhone and iPad app, the request shows only **Deny**. Agent Loops cannot tell a
+terminal from an agent, so approve only a request that you started. Click **Deny** for a
+request that you did not start. When you click **Deny**, or nobody answers, `loops` is not
+paired.
+
+**On Linux, or on a Mac without Agent Loops,** pair the terminal with a code:
+
 1. In a paired window, open **Settings ▸ Control plane**, and click **Show** beside
    **Clients**. On the web page, open **Settings ▸ Control plane ▸ Clients**.
-2. Click **Pair a Mac…**, then click **Copy**.
+2. Click **Pair a Mac…**, then click **Copy**. On the web page, **Copy Command** copies
+   the whole `loops auth login` line.
 3. In the terminal, type:
 
    ```sh

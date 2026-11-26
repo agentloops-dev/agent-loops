@@ -95,6 +95,9 @@ Then it:
    user's own window's pairing, which lives in the same container.
 
 `--no-window` leaves the window out, for work the socket proves on its own.
+`--window-env KEY=VALUE` gives the window one more variable, as `--env` gives the host one:
+`--window-env AGENTS_TEST_HOME=$ROOT/home` makes Settings ▸ Machines ▸ This Mac ▸ Command
+line link `loops` under that home, never in the real `~/.local/bin` (#6875).
 It runs the `agents-control` and `agentsd` the build carries (Go, the only ones since #1314),
 as the app's launch agents do, and says which on stderr.
 `CONTROL_BIN=<path>` and `AGENTSD_BIN=<path>` run others in their place, such as a Go one

@@ -129,6 +129,7 @@ const CapHostSecretTerminal1 = "host.secret-terminal/1"
 const CapHostSessionSecrets1 = "host.session-secrets/1"
 const CapHostSuspend1 = "host.suspend/1"
 const CapHostTeam1 = "host.team/1"
+const CapHostTerminalPairing1 = "host.terminal-pairing/1"
 const CapHostUpdate1 = "host.update/1"
 const CapHostUserParts1 = "host.user-parts/1"
 const CapHostUserSettings1 = "host.user-settings/1"
@@ -359,6 +360,7 @@ var HostCapabilities = pairs([][2]string{
 	{"client/catchUp", "client/1"},
 	{"clientPermissions/set", "client-permissions/1"},
 	{"clientPermissions/state", "client-permissions/1"},
+	{"clients/pairTerminal", "host.terminal-pairing/1"},
 	{"connection/bindDevice", "connection/1"},
 	{"connections/bot", "connections.bot/1"},
 	{"connections/bot/complete", "connections.bot/1"},

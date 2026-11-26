@@ -348,6 +348,18 @@ final class LockState {
         }
     }
 
+    /// A terminal this Mac pairs (#6875): its key, signed here as an addClient for the id it
+    /// pairs with, so it does not ask to join. False when this device is not a member of a lock
+    /// (no lock yet, or still asking): the terminal then joins as any client does.
+    @discardableResult
+    func addTerminal(key: Data, client: String, name: String, on control: DaemonClient?) async throws -> Bool {
+        guard place == .member, let control else { return false }
+        let body = DaemonAPI.LockBody(kind: .addClient, person: "", key: key, id: client, name: name,
+                                      clientKind: MachineLock.clientKind(.mac))
+        try await put(body, on: control)
+        return true
+    }
+
     /// A host code with an invite (#3491, D3), for a caller with no `LockState` of its own: Add
     /// a Machine, on its own connection. The client puts an invite on the lock and adds its key
     /// to the code, so the machine adds itself. A control plane with no lock, or no signing key, gives the code back.

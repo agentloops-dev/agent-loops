@@ -14075,6 +14075,12 @@ type RequestSecretUse struct {
 
 	// The machine is Linux (#4058): the value opens only with the release key its control plane keeps, which the control plane gives only for an approval the person's client signed. An answer that allows the use carries approval; one without it is refused.
 	NeedsSignature *bool `json:"needsSignature,omitzero"`
+
+	// For pairing (#6875): the client id the terminal pairs with, which the approving window names in its addClient.
+	Client *string `json:"client,omitzero"`
+
+	// For pairing (#6875): the terminal's machine lock key (P-256, X9.63), which the approving window puts on the lock as an addClient.
+	Key Data `json:"key,omitzero"`
 }
 
 // A person's answer to a secret's use (#4015). once allows this use; session every use at this place until the session ends or is archived; always adds a grant for this place, for every session; hour (terminal only, #4179) allows every call of agents-secret NAME with no session's grant for one hour, kept in agentsd's memory only; deny refuses it. A terminal's use takes once, hour or deny. Only the control and device roles answer.
@@ -14083,6 +14089,9 @@ type RequestSecretUseAnswer struct {
 
 	// The answering client's signature of its answer (#4058), required when the request says needsSignature and the action is not deny: method secrets/approveUse, params the JSON text {"request":<the request's id>,"name","use","place","action"} as the request names them, and a LockSignature to this machine by the client's lock key. The machine checks it against its lock and sends it to the control plane, which gives the release key only for a fresh one it has not seen.
 	Approval *LockDelivery `json:"approval,omitzero"`
+
+	// For pairing (#6875): the client code that the approving window made with clients/startPairing for this Mac's control plane, required with once. agentsd gives it to the terminal that asked, and keeps it nowhere.
+	PairingCode *string `json:"pairingCode,omitzero"`
 }
 
 type RequestSource string
@@ -15009,7 +15018,7 @@ type SecretTerminalValue struct {
 	Words *string `json:"words,omitzero"`
 }
 
-// What agentsd does with a secret with Ask before use (#4015): fill types it into a page (fill_secret), ci sends it to GitHub (set_ci_secret), mcp adds it to an HTTP MCP server's header or URL on each request agentsd sends the server for a session (#4120). terminal (#4179) prints a secret that does not ask to `agents-secret NAME` run with no session's grant, such as from a terminal: agentsd cannot tell that caller from an agent that dropped its grant. account (#4163) is not a secret's use: manage_accounts reads an account with Ask before use; the request names the account, and Always Approve turns its Ask before use off. browser and screen (#4264) are not a secret's use either: an agent's lease of the browser or the screen on a machine whose Browser or Desktop control is ask; name is the browser or the screen, place the machine, app the app drive_screen names, and Always Approve sets the setting to always. workflow and connector (#4538) are not a secret's use either: an agent asks to turn on a workflow of its folder that is the person's to turn on (manage_workflows enable), or to approve a server waiting in its folder's .agents/mcp.json (manage_connectors approve); name is the workflow's id or the server's name, place the folder's name, digest the server's entry as the agent saw it. Their answers are once (Approve: agentsd makes the change as the person) and deny.
+// What agentsd does with a secret with Ask before use (#4015): fill types it into a page (fill_secret), ci sends it to GitHub (set_ci_secret), mcp adds it to an HTTP MCP server's header or URL on each request agentsd sends the server for a session (#4120). terminal (#4179) prints a secret that does not ask to `agents-secret NAME` run with no session's grant, such as from a terminal: agentsd cannot tell that caller from an agent that dropped its grant. account (#4163) is not a secret's use: manage_accounts reads an account with Ask before use; the request names the account, and Always Approve turns its Ask before use off. browser and screen (#4264) are not a secret's use either: an agent's lease of the browser or the screen on a machine whose Browser or Desktop control is ask; name is the browser or the screen, place the machine, app the app drive_screen names, and Always Approve sets the setting to always. workflow and connector (#4538) are not a secret's use either: an agent asks to turn on a workflow of its folder that is the person's to turn on (manage_workflows enable), or to approve a server waiting in its folder's .agents/mcp.json (manage_connectors approve); name is the workflow's id or the server's name, place the folder's name, digest the server's entry as the agent saw it. Their answers are once (Approve: agentsd makes the change as the person) and deny. pairing (#6875) is not a secret's use either: loops with no pairing asks this Mac's agentsd for one (clients/pairTerminal); name is the terminal's name, place the command that asked, client and key the client id and lock key it will pair with. Its answers are once (Approve, only from Agent Loops on this Mac, with pairingCode) and deny.
 type SecretUse string
 
 const SecretUseFill SecretUse = "fill"
@@ -15021,6 +15030,7 @@ const SecretUseBrowser SecretUse = "browser"
 const SecretUseScreen SecretUse = "screen"
 const SecretUseWorkflow SecretUse = "workflow"
 const SecretUseConnector SecretUse = "connector"
+const SecretUsePairing SecretUse = "pairing"
 
 // control/secretsLeft (#1760, FR-026): to the person's own clients, when one of their machines was removed with secrets on it.
 type SecretsLeft struct {
@@ -16707,6 +16717,31 @@ type TeamWorkflowRuns struct {
 // console/teamWorkflows' answer (#1804, M6): every bot, for an admin.
 type TeamWorkflows struct {
 	Bots []TeamBot `json:"bots"`
+}
+
+// clients/pairTerminal's answer: the code, once a person approved it; else the open request it waits on, and the words to say while it waits.
+type TerminalPairingReply struct {
+	// A one-use client code, as loops auth login takes it.
+	Code *string `json:"code,omitzero"`
+
+	Request *UUID `json:"request,omitzero"`
+
+	Words *string `json:"words,omitzero"`
+}
+
+// clients/pairTerminal (#6875): loops with no pairing on this Mac asks for one.
+type TerminalPairingRequest struct {
+	// The terminal's name, as it pairs: loops on <host name>.
+	Name string `json:"name"`
+
+	// The client id it pairs with. The same id again waits on the same request.
+	Client string `json:"client"`
+
+	// Its machine lock key (P-256, X9.63).
+	Key Data `json:"key"`
+
+	// The name of the program that asked, as it says it: the request's place. agentsd cannot check it.
+	Command *string `json:"command,omitzero"`
 }
 
 type TimeBucket struct {

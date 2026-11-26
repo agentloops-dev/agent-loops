@@ -130,6 +130,7 @@ public enum Capability {
     public static let hostSessionSecrets1 = "host.session-secrets/1"
     public static let hostSuspend1 = "host.suspend/1"
     public static let hostTeam1 = "host.team/1"
+    public static let hostTerminalPairing1 = "host.terminal-pairing/1"
     public static let hostUpdate1 = "host.update/1"
     public static let hostUserParts1 = "host.user-parts/1"
     public static let hostUserSettings1 = "host.user-settings/1"
@@ -360,6 +361,7 @@ public enum Capability {
         "client/catchUp": "client/1",
         "clientPermissions/set": "client-permissions/1",
         "clientPermissions/state": "client-permissions/1",
+        "clients/pairTerminal": "host.terminal-pairing/1",
         "connection/bindDevice": "connection/1",
         "connections/bot": "connections.bot/1",
         "connections/bot/complete": "connections.bot/1",
