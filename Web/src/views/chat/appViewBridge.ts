@@ -4,6 +4,7 @@
 // two are kept to it. Pure, so test/appViews.test.mjs reads every row.
 import type { Agent, AppViewCall, AppViewPolicy, JSONValue, UUID, ViewPin } from "../../protocol/generated";
 import { folderKey, folderPath } from "../../model/groups";
+import { setRefusal } from "../../model/labels";
 import type { Hunk } from "../../model/fileDiff";
 
 export const protocolVersion = "2026-01-26";
@@ -203,7 +204,6 @@ export interface Start {
 /** The most a view may put in the field, in characters. */
 export const startPromptLimit = 8000;
 /** A session's own label rules (SessionLabelPolicy), so the form never holds a label its start would refuse. */
-export const startLabelLimit = 5;
 export const startLabelLength = 24;
 
 /** Characters as Swift counts them. */
@@ -222,7 +222,8 @@ export function readStart(params: Record<string, unknown>): { start: Start } | {
     }
     if (!labels.some((l) => l.toLowerCase() === label.toLowerCase())) labels.push(label);
   }
-  if (labels.length > startLabelLimit) return { refused: "A session can have at most five labels." };
+  const tooMany = setRefusal(labels);
+  if (tooMany) return { refused: tooMany };
   const worktree = typeof params.worktree === "string" ? characters(params.worktree.trim()).slice(0, 100).join("") : "";
   const branch = typeof params.branch === "string" ? params.branch.trim() : "";
   if (characters(branch).length > branchLimit) return { refused: `The branch is longer than ${branchLimit} characters.` };
