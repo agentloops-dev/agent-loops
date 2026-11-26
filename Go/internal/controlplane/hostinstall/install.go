@@ -308,6 +308,7 @@ func holdKey(folder string, given *string) (string, error) {
 	if !strings.HasSuffix(key, "\n") {
 		key += "\n"
 	}
+	// store-bounds: not a store: a key in the install's temporary folder, removed when the install ends
 	if os.WriteFile(keyFile, []byte(key), 0o600) != nil {
 		return "", &Failure{Code: InternalError, Message: "The key could not be held for the install."}
 	}
@@ -626,6 +627,7 @@ func (i *Installer) pinned(ctx context.Context, destination, knownHosts string, 
 		if renew {
 			pinned = ""
 		}
+		// store-bounds: not a store: a known_hosts file in a temporary folder, removed when the start ends
 		if err := os.WriteFile(file, []byte(pinned), 0o600); err != nil {
 			done()
 			return ssh, "", func() {}, err

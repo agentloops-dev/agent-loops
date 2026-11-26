@@ -314,6 +314,7 @@ func (in PersonaInstaller) Add(st StagedPersona, place Place, replace bool, now 
 			}
 		}
 	}
+	// store-bounds: not a store: an install: a persona into the person's folder.
 	if err := store.WriteAtomically(target, st.Data, 0o644); err != nil {
 		putBack()
 		return wire.ManagedPersona{}, Failed("could not write " + id + ".md")

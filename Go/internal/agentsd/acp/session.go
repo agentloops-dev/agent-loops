@@ -973,6 +973,7 @@ func (c *client) WriteTextFile(ctx context.Context, p sdk.WriteTextFileRequest) 
 		return sdk.WriteTextFileResponse{}, err
 	}
 	// The resolved path, and no link followed at its end, so what was checked is what is written.
+	// store-bounds: not a store: a file in the person's project that the agent writes, with the person's approval.
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC|syscall.O_NOFOLLOW, 0o644)
 	if err != nil {
 		return sdk.WriteTextFileResponse{}, err

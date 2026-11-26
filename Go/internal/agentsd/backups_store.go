@@ -130,6 +130,7 @@ func (d *Daemon) restoreStored(id string) (wire.BackupRestoreResult, error) {
 	}
 	defer os.RemoveAll(folder)
 	archive := filepath.Join(folder, "backup.tar.gz")
+	// store-bounds: not a store: a temporary download, removed when the restore ends.
 	f, err := os.OpenFile(archive, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 	if err != nil {
 		return wire.BackupRestoreResult{}, err

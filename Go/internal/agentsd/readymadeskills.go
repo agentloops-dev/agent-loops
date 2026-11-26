@@ -80,6 +80,7 @@ func ensureReadyMadeSkill(home, id, skill, madeDigest string) {
 			return // the person's own edit
 		}
 	}
+	// store-bounds: not a store: an install: a ready-made skill into the person's .agents.
 	if store.WriteAtomically(path, []byte(skill), 0o644) != nil {
 		return
 	}
