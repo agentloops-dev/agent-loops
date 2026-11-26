@@ -3333,6 +3333,20 @@ final class AppModel {
             returning: DaemonAPI.NotCommittedResponse.self)
     }
 
+    /// What Autopilot did in a folder and why each item waits (#5904, #5898), read by its own machine.
+    func autopilotStatus(in key: FolderKey) async throws -> DaemonAPI.AutopilotStatus {
+        try await client(for: key.host).call(
+            DaemonAPI.Method.autopilotStatus, DaemonAPI.AutopilotRequest(folder: key.folder),
+            returning: DaemonAPI.AutopilotStatus.self)
+    }
+
+    /// What Autopilot starts in a folder (#5904); the status after the change.
+    func setAutopilot(_ mode: DaemonAPI.AutopilotMode, in key: FolderKey) async throws -> DaemonAPI.AutopilotStatus {
+        try await client(for: key.host).call(
+            DaemonAPI.Method.autopilotSet, DaemonAPI.AutopilotSetRequest(folder: key.folder, mode: mode),
+            returning: DaemonAPI.AutopilotStatus.self)
+    }
+
     /// The project's working hours (#4821); nil takes them out, back to 09:00-17:00 Mon-Fri.
     func setWorkingHours(_ hours: WorkflowHours?, for key: FolderKey) async {
         do {
