@@ -15,6 +15,7 @@ import (
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/internal/connections"
+	"github.com/agentloops-dev/agent-loops/Go/internal/execfile"
 	"github.com/agentloops-dev/agent-loops/Go/internal/githubmcp"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
@@ -346,7 +347,7 @@ func writeGHShim(bin, agentsd, gh string) error {
 	}
 	tmp := path + ".tmp"
 	// store-bounds: not a store: an install: the gh shim.
-	if err := os.WriteFile(tmp, []byte(script), 0o700); err != nil {
+	if err := execfile.Write(tmp, []byte(script), 0o700); err != nil {
 		return err
 	}
 	return os.Rename(tmp, path)
