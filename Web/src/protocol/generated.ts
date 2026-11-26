@@ -17675,7 +17675,6 @@ export interface Methods {
   "agents/startNow": { params: AgentRequest; result: Empty };
   "agents/stop": { params: AgentStopRequest; result: Empty };
   "agents/stopBackground": { params: StopBackgroundRequest; result: JSONValue };
-  "agents/summarise": { params: AgentRequest; result: SessionSummary };
   "agents/touchedPaths": { params: AgentRequest; result: string[] };
   "agents/transcript": { params: TranscriptRequest; result: TranscriptPage };
   "agents/turns": { params: TurnsRequest; result: TurnsPage };
@@ -18175,7 +18174,6 @@ export const MethodTarget = {
   "agents/startNow": "host",
   "agents/stop": "host",
   "agents/stopBackground": "host",
-  "agents/summarise": "host",
   "agents/touchedPaths": "host",
   "agents/transcript": "host",
   "agents/turns": "host",

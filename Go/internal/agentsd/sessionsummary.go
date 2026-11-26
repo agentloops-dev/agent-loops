@@ -91,7 +91,6 @@ func (d *Daemon) keepSummary(id wire.UUID, s wire.SessionSummary) {
 }
 
 func (d *Daemon) writeSummary(a wire.Agent, through wire.UUID, prompt string) {
-	defer d.endSummary(a.ID)
 	have := wire.SessionSummary{State: wire.SessionSummaryStateWritten}
 	if a.Summary != nil {
 		have = *a.Summary
@@ -104,6 +103,9 @@ func (d *Daemon) writeSummary(a wire.Agent, through wire.UUID, prompt string) {
 	defer cancel()
 	text, model, err := write(ctx, d, a, prompt)
 	text = cleanSummary(text)
+	// The write is over before its result is saved, so a client that sees the result and
+	// asks again is not told "writing" for a write that has ended.
+	d.endSummary(a.ID)
 	if err != nil || text == "" {
 		if err == nil {
 			err = fmt.Errorf("the runtime wrote no text")

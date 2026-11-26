@@ -5,7 +5,6 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
@@ -33,16 +32,28 @@ func TestSummariseWritesOnlyWhenAskedAndReadsEachTurnOnce(t *testing.T) {
 			}
 		}
 	}
+	changes := make(chan wire.SessionSummary, 64)
+	d.changeTold = func(c wire.Agent) {
+		if c.ID == a.ID && c.Summary != nil {
+			select {
+			case changes <- *c.Summary:
+			default:
+			}
+		}
+	}
 	wait := func(want wire.SessionSummaryState) *wire.SessionSummary {
 		t.Helper()
-		for range 200 {
-			if s := d.Store.Agent(a.ID).Summary; s != nil && s.State == want {
-				return s
+		limit := afterLimit(t)
+		for {
+			select {
+			case s := <-changes:
+				if s.State == want {
+					return &s
+				}
+			case <-limit:
+				t.Fatalf("no summary in state %s: %+v", want, d.Store.Agent(a.ID).Summary)
 			}
-			time.Sleep(10 * time.Millisecond)
 		}
-		t.Fatalf("no summary in state %s: %+v", want, d.Store.Agent(a.ID).Summary)
-		return nil
 	}
 
 	// Nothing is written until a client asks, and a session with no ended turn has none.
