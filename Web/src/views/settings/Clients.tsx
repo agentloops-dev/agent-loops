@@ -1,12 +1,13 @@
 // Settings ▸ Control plane ▸ Clients (#4253), as the window's: Pair a Device… shows a QR code for the Remote to
 // scan, and Pair a Mac… and Add a Browser… a code to paste. Each code is made when its dialog opens and works once;
-// the dialog names the client it let in. Listed in ./sections.ts.
+// the dialog names the client it let in. A Mac's code also shows as loops auth login takes it, and Command line the
+// lines that put loops on the PATH, each to copy (#6875). Listed in ./sections.ts.
 import { useEffect, useState } from "preact/hooks";
 import { useSignal } from "@preact/signals";
 import type { ClientRecord, ControlCodeShown } from "../../protocol/generated";
 import { fromWireDate } from "../../protocol/dates";
 import { describe } from "../../model/errors";
-import { codeInstructions, type PairPurpose, pairPurposes, pairWords as words, qrModules, remainingLine } from "../../model/pairClients";
+import { codeInstructions, commandLine, type PairPurpose, pairPurposes, pairWords as words, qrModules, remainingLine, terminalLogin } from "../../model/pairClients";
 import type { Store } from "../../model/store";
 import { Modal } from "../Modal";
 
@@ -21,8 +22,33 @@ export function ClientsSection({ store, down }: { store: Store; down: boolean })
         ))}
       </div>
       <p class="hint">{words.hint}</p>
+      <CommandLine />
       {pairing && <PairDialog store={store} purpose={pairing} close={() => setPairing(null)} />}
     </section>
+  );
+}
+
+/** The lines that put loops on the PATH (#6875), each with Copy. */
+function CommandLine() {
+  const copied = useSignal<string | null>(null);
+  const copy = (line: string) => {
+    void navigator.clipboard?.writeText(line).then(() => { copied.value = line; }).catch(() => {});
+  };
+  return (
+    <div class="join-command" role="group" aria-labelledby="settings-command-line">
+      <h4 class="section-head" id="settings-command-line">{commandLine.heading}</h4>
+      <p class="hint">{commandLine.hint}</p>
+      {commandLine.lines.map(({ label, line }) => (
+        <div key={line}>
+          <p class="hint">{label}</p>
+          <div class="join-command-line">
+            <code class="code-text">{line}</code>
+            <button type="button" onClick={() => copy(line)}>{copied.value === line ? "Copied" : "Copy"}</button>
+          </div>
+        </div>
+      ))}
+      <p class="hint">{commandLine.releases}</p>
+    </div>
   );
 }
 
@@ -56,8 +82,13 @@ function PairDialog({ store, purpose, close }: { store: Store; purpose: PairPurp
   }, [changes]);
   const code = shown.value;
   const expires = code ? fromWireDate(code.expires).getTime() : 0;
+  const copiedLogin = useSignal(false);
   const copy = () => {
     if (code) void navigator.clipboard?.writeText(code.text).then(() => { copied.value = true; }).catch(() => {});
+  };
+  // A Mac's code pairs a terminal too, as the command that takes it (#6875).
+  const copyLogin = () => {
+    if (code) void navigator.clipboard?.writeText(terminalLogin(code.text)).then(() => { copiedLogin.value = true; }).catch(() => {});
   };
   const title = words.title(purpose);
   const plane = store.plane.value;
@@ -83,11 +114,20 @@ function PairDialog({ store, purpose, close }: { store: Store; purpose: PairPurp
             <>
               <code class="code-text" aria-label="Code">{code.text}</code>
               <p class="sheet-note">{codeInstructions(purpose, expires, now, plane?.web, plane?.publicWeb)}</p>
+              {purpose === "mac" && (
+                <>
+                  <p class="sheet-note">{words.terminal}</p>
+                  <code class="code-text" aria-label="Command">{terminalLogin(code.text)}</code>
+                </>
+              )}
             </>
           )
         ) : !problem.value && <p class="sheet-note" role="status">{words.making}</p>}
         {problem.value && <p class="sheet-note failure" role="alert">{problem.value}</p>}
         <div class="sheet-actions">
+          {code && !joined.value && purpose === "mac" && (
+            <button type="button" onClick={copyLogin}>{copiedLogin.value ? "Copied" : "Copy Command"}</button>
+          )}
           {code && !joined.value && purpose !== "device" && (
             <button type="button" onClick={copy}>{copied.value ? "Copied" : "Copy"}</button>
           )}

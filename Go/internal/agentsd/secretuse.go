@@ -287,6 +287,9 @@ func (d *Daemon) answerSecretUse(rec wire.Request, a *wire.RequestSecretUseAnswe
 	if ask.Use == wire.SecretUseTerminal {
 		return d.answerTerminalUse(rec, a, by)
 	}
+	if ask.Use == wire.SecretUsePairing {
+		return d.answerPairing(rec, a, by)
+	}
 	if ask.Use == wire.SecretUseAccount {
 		return d.answerAccountUse(rec, a, by)
 	}

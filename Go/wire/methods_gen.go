@@ -93,6 +93,7 @@ var CallChangesUndoTurn = Method[UndoTurnRequest, UndoTurnResult]{"changes/undoT
 var CallClientCatchUp = Method[CatchUpRequest, CatchUpSnapshot]{"client/catchUp"}
 var CallClientPermissionsSet = Method[ClientPermissionSettings, ClientPermissionSettings]{"clientPermissions/set"}
 var CallClientPermissionsState = Method[Empty, ClientPermissionSettings]{"clientPermissions/state"}
+var CallClientsPairTerminal = Method[TerminalPairingRequest, TerminalPairingReply]{"clients/pairTerminal"}
 var CallConnectionBindDevice = Method[DeviceBinding, Empty]{"connection/bindDevice"}
 var CallConnectionsBot = Method[Empty, ConnectionBot]{"connections/bot"}
 var CallConnectionsBotComplete = Method[ConnectionBotCompleteRequest, ConnectionBot]{"connections/bot/complete"}
