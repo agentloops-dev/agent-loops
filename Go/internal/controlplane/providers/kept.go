@@ -441,12 +441,17 @@ func (k *Kept) fail(host, only, reason string) {
 	if len(reason) > keptFailedText {
 		reason = strings.ToValidUTF8(reason[:keptFailedText-len("…")], "") + "…"
 	}
-	now := records.Now()
+	k.markNotSent(host, reason, records.Now(), func(r keptRecord) bool { return only == "" || r.ID == only })
+}
+
+// markNotSent marks each request of host that waits and that pick takes as not sent, for
+// reason, at now, and says how many.
+func (k *Kept) markNotSent(host, reason string, now records.Stamp, pick func(keptRecord) bool) int {
 	k.mu.Lock()
 	var writes []keptEntry
 	for i := range k.kept[host] {
 		e := &k.kept[host][i]
-		if e.record.Failed == "" && (only == "" || e.record.ID == only) {
+		if e.record.Failed == "" && pick(e.record) {
 			e.record.Failed, e.record.FailedAt = reason, &now
 			writes = append(writes, *e)
 		}
@@ -459,6 +464,7 @@ func (k *Kept) fail(host, only, reason string) {
 			}
 		}
 	}
+	return len(writes)
 }
 
 // Expire shows a request that waited keptExpiresAfter as not sent, with why (#7406), drops
@@ -479,7 +485,9 @@ func (k *Kept) Expire(now time.Time) int {
 	k.mu.Unlock()
 	expired := 0
 	for _, h := range hosts {
-		expired += k.expireWaiting(h, now.Add(-keptExpiresAfter), now)
+		cutoff := now.Add(-keptExpiresAfter)
+		expired += k.markNotSent(h, keptExpired, records.Stamp{Time: now.UTC().Truncate(time.Millisecond)},
+			func(r keptRecord) bool { return r.At.Before(cutoff) })
 	}
 	dropped := 0
 	for _, h := range hosts {
@@ -515,30 +523,6 @@ func (k *Kept) Expire(now time.Time) int {
 		k.changed()
 	}
 	return dropped
-}
-
-// expireWaiting marks each request of host that waits since before cutoff as not sent, because
-// it expired, and says how many.
-func (k *Kept) expireWaiting(host string, cutoff, now time.Time) int {
-	stamp := records.Stamp{Time: now.UTC().Truncate(time.Millisecond)}
-	k.mu.Lock()
-	var writes []keptEntry
-	for i := range k.kept[host] {
-		e := &k.kept[host][i]
-		if e.record.Failed == "" && e.record.At.Before(cutoff) {
-			e.record.Failed, e.record.FailedAt = keptExpired, &stamp
-			writes = append(writes, *e)
-		}
-	}
-	k.mu.Unlock()
-	for _, e := range writes {
-		if data, err := records.Encode(e.record); err == nil {
-			if _, err := k.store.Put(context.Background(), e.key, data, store.Always); err != nil {
-				k.log("kept request " + e.key + ": could not be written: " + err.Error())
-			}
-		}
-	}
-	return len(writes)
 }
 
 func keptBytes(entries []keptEntry) int {
