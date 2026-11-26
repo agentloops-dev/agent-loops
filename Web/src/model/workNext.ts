@@ -3,7 +3,9 @@
 // reasons for it. A filter for one epic, and the epics in order (level epic). On hold rows go at the end, under their
 // own heading, with no place: no lead takes one next. The page is Web + Mac link (#4937): the Mac's Issues list has
 // Next ↗, which opens #/work/next?folder=<path>.
-import type { ForgeNext, ForgeNextRow, LineageNode } from "../protocol/generated";
+import type { AutopilotRow, AutopilotStatus, ForgeNext, ForgeNextRow, LineageNode } from "../protocol/generated";
+import { fromWireDate } from "../protocol/dates";
+import { shortAge } from "./work";
 import type { WorkProject } from "./work";
 
 /** What the page shows: the ready issues, or the open epics in the same order. */
@@ -108,3 +110,45 @@ export function emptyLine(c: NextChoice): string {
 export function nextProblem(words: string): string {
   return /method not found|unknown method|no such method/i.test(words) ? "This machine’s Agent Loops is older than Work ▸ Next. Update it." : words;
 }
+
+// Autopilot (#5905, epic #5897): what it starts next and why each item waits, from autopilot/status (#5898).
+
+/** The strip at the top: Off, or On with when it last ran, or Paused with the oldest pause's reason and age. */
+export function autopilotStrip(st: AutopilotStatus | null, now: number): { text: string; paused: boolean } | null {
+  if (!st) return null;
+  if (st.mode === "off") return { text: "Autopilot: Off · turn it on in Project Settings", paused: false };
+  const paused = st.rows.filter((r) => r.state === "paused").sort((a, b) => fromWireDate(a.since).getTime() - fromWireDate(b.since).getTime())[0];
+  if (paused) return { text: `Paused: ${paused.reason.replace(/^paused: /, "")} for ${ageWords(fromWireDate(paused.since).getTime(), now)}`, paused: true };
+  const mode = st.mode === "high" ? "On, high priority only" : "On";
+  return { text: st.lastRunAt ? `Autopilot: ${mode} · last run ${ageWords(fromWireDate(st.lastRunAt).getTime(), now)} ago` : `Autopilot: ${mode} · not run yet`, paused: false };
+}
+
+/** "2 min", "3 h": how long ago, without "ago". */
+function ageWords(t: number, now: number): string {
+  const age = shortAge(Math.max(0, (now - t) / 1000));
+  return age === "now" ? "a moment" : age;
+}
+
+/** Autopilot's row for an item: its status rows name an item as the forge does (#123). */
+export function autopilotRowOf(st: AutopilotStatus | null, ref: string): AutopilotRow | undefined {
+  const number = itemNumber(ref);
+  return st?.rows.find((r) => r.ref === number || r.ref === ref);
+}
+
+/** The Autopilot cell: Starts next (the first ready item with no row), Started, or the wait reason. */
+export function autopilotCell(st: AutopilotStatus | null, row: ForgeNextRow, firstFree: boolean): { words: string; resume: string | null } | null {
+  if (!st || st.mode === "off") return null;
+  const a = autopilotRowOf(st, row.item.node.ref);
+  if (!a) return row.onHold ? { words: "on hold", resume: null } : { words: firstFree ? "Starts next" : "", resume: null };
+  if (a.state === "started") return { words: "Started", resume: null };
+  return { words: a.reason, resume: a.state === "paused" ? a.ref : null };
+}
+
+/** The ref of the first ready row that Autopilot has no row for: the item it starts next. */
+export function startsNext(st: AutopilotStatus | null, ready: readonly ForgeNextRow[]): string | undefined {
+  if (!st || st.mode === "off") return undefined;
+  return ready.find((r) => !autopilotRowOf(st, r.item.node.ref))?.item.node.ref;
+}
+
+export const resumeTitle = "Resume";
+export const resumeHelp = "Autopilot may start this epic's work again";

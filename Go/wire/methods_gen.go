@@ -67,6 +67,7 @@ var CallAutoMappings = Method[Empty, AutoMappings]{"auto/mappings"}
 var CallAutoPreview = Method[AutoPreviewRequest, AutoPreview]{"auto/preview"}
 var CallAutoSet = Method[AutoSettings, AutoSettings]{"auto/set"}
 var CallAutoState = Method[Empty, AutoSettings]{"auto/state"}
+var CallAutopilotResume = Method[AutopilotResumeRequest, AutopilotStatus]{"autopilot/resume"}
 var CallAutopilotSet = Method[AutopilotSetRequest, AutopilotStatus]{"autopilot/set"}
 var CallAutopilotStatus = Method[AutopilotRequest, AutopilotStatus]{"autopilot/status"}
 var CallBackupsConfigure = Method[BackupSettings, BackupState]{"backups/configure"}

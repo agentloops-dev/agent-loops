@@ -152,6 +152,7 @@ each issue or epic: `kind` (`lead` or `lane`), `state` (`started`, `waiting` or 
 waits for one of `limit running`, `limit open-prs`, `capacity near`, `capacity full`, `on hold`,
 `blocked by #n` or `mode high`, or is paused for `paused: main red` or `paused: over budget`. The daemon keeps
 the rows in `autopilot-status.json`, a bounded small file (the newest 100 rows of each folder, 90 days). With the mode off there are no rows.
+`autopilot/resume { folder, ref }` drops a paused row, raises `autopilot.resumed` with the reason it cleared and wakes the loop (#5905); a `ref` that is not paused is left as it is.
 
 Autopilot pauses itself when the work goes bad (#5902). Main red for more than 60 minutes (the newest `ci.yml` runs on the default branch fail) pauses the row `main`: nothing new starts in the folder until main is green. An epic whose spend is 2× its estimate (the overrun notice's point, #4529) is paused, and its lead is told to start no new lane; it resumes when the estimate is raised. Each pause posts one notice, on the epic's lead or the folder's newest session, with the reason.
 

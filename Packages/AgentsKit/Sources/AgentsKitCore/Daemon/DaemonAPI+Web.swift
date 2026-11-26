@@ -499,6 +499,7 @@ public extension DaemonAPI {
                 // Autopilot in Project Settings (#5904), as the window's has it.
                 Row(Method.autopilotSet, params: AutopilotSetRequest.self, result: AutopilotStatus.self, kind: .hostRequest),
                 Row(Method.autopilotStatus, params: AutopilotRequest.self, result: AutopilotStatus.self, kind: .hostRequest),
+                Row(Method.autopilotResume, params: AutopilotResumeRequest.self, result: AutopilotStatus.self, kind: .hostRequest),
                 // Working hours in Project Settings ▸ General (#4821), as the window's has them.
                 Row(Method.foldersSetWorkingHours, params: SetWorkingHoursRequest.self, result: FolderSummary.self,
                     kind: .hostRequest),

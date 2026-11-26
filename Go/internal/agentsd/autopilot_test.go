@@ -129,6 +129,31 @@ func TestAutopilotHear(t *testing.T) {
 	}
 }
 
+func TestAutopilotResume(t *testing.T) {
+	t.Parallel()
+
+	d, c := start(t, t.TempDir())
+	defer d.Shutdown()
+	dir := folder(t, c, 1)
+	url := store.FolderURL(dir)
+	var st wire.AutopilotStatus
+	mustUnmarshal(t, c.call(t, 2, "autopilot/set", map[string]any{"folder": url, "mode": "on"}), &st)
+	for ref, state := range map[string]wire.AutopilotRowState{"#1": wire.AutopilotRowStatePaused, "#2": wire.AutopilotRowStateWaiting} {
+		if err := d.autopilotNote(dir, wire.AutopilotRow{Ref: ref, Kind: wire.AutopilotRowKindLead, State: state, Reason: "paused: main red"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A waiting row is not paused: it stays.
+	mustUnmarshal(t, c.call(t, 3, "autopilot/resume", map[string]any{"folder": url, "ref": "#2"}), &st)
+	if len(st.Rows) != 2 {
+		t.Fatalf("%+v", st.Rows)
+	}
+	mustUnmarshal(t, c.call(t, 4, "autopilot/resume", map[string]any{"folder": url, "ref": "#1"}), &st)
+	if len(st.Rows) != 1 || st.Rows[0].Ref != "#2" {
+		t.Fatalf("%+v", st.Rows)
+	}
+}
+
 func ciRun(ref string, made int64, conclusion string, attempt int) citimings.Run {
 	return citimings.Run{Ref: ref, Attempt: attempt, Workflow: "ci.yml", Default: true, Made: made, Ended: 600, Conclusion: conclusion}
 }
