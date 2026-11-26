@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/machine"
+	"github.com/agentloops-dev/agent-loops/Go/internal/sizewords"
 )
 
 // The people's bounds (#7019, epic #6669). A person's record is never evicted: a new person
@@ -120,7 +121,7 @@ func (r *Records) personWithin(before *Person, after Person) error {
 		grow = size - was
 	}
 	if size > PersonMostBytes {
-		return &PersonLimitError{Words: fmt.Sprintf("What is kept of this person is too large: %d bytes, and the most is %d.", size, PersonMostBytes)}
+		return &PersonLimitError{Words: fmt.Sprintf("This person's details are too large to keep: %s, and the most is %s. Remove some of their sign-ins or logins.", sizewords.Int(size), sizewords.Int(PersonMostBytes))}
 	}
 	return r.peopleWithin(grow)
 }

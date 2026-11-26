@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/sizewords"
 )
 
 // Secrets is ~/.agents-secrets/secrets.env (SecretsEnv): NAME=value lines, mode 0600, every
@@ -133,11 +134,11 @@ func (s Secrets) check(path string) error {
 	}
 	for _, l := range s.lines {
 		if len(l) > secretLineMost && !were[l] {
-			return store.LimitError{Words: fmt.Sprintf("a line of secrets.env is at most %d KiB", secretLineMost>>10)}
+			return store.LimitError{Words: fmt.Sprintf("a line of secrets.env can be at most %s; make it shorter", sizewords.Int(secretLineMost))}
 		}
 	}
 	if n := len(s.text()); n > secretsFileMost && n > len(old.text()) {
-		return store.LimitError{Words: fmt.Sprintf("secrets.env is at most %d KiB; remove a secret first", secretsFileMost>>10)}
+		return store.LimitError{Words: fmt.Sprintf("secrets.env can be at most %s; remove a secret that is not in use, then try again", sizewords.Int(secretsFileMost))}
 	}
 	return nil
 }
