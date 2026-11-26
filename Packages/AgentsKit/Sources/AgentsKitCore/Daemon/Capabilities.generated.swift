@@ -123,6 +123,7 @@ public enum Capability {
     public static let hostPolicy1 = "host.policy/1"
     public static let hostSecretApproval1 = "host.secret-approval/1"
     public static let hostSecretGrants1 = "host.secret-grants/1"
+    public static let hostSecretGrants2 = "host.secret-grants/2"
     public static let hostSecretRelease1 = "host.secret-release/1"
     public static let hostSecretSignIn1 = "host.secret-sign-in/1"
     public static let hostSecretTerminal1 = "host.secret-terminal/1"
@@ -625,11 +626,11 @@ public enum Capability {
         "runtimes/signInStart": "runtimes.sign-in/1",
         "sandbox/set": "sandbox/1",
         "sandbox/state": "sandbox/1",
-        "secrets/addGrant": "host.secret-grants/1",
-        "secrets/grants": "host.secret-grants/1",
+        "secrets/addGrant": "host.secret-grants/2",
+        "secrets/grants": "host.secret-grants/2",
         "secrets/localList": "host.local-secrets/1",
         "secrets/localRemove": "host.local-secrets/2",
-        "secrets/removeGrant": "host.secret-grants/1",
+        "secrets/removeGrant": "host.secret-grants/2",
         "secrets/sessionList": "host.session-secrets/1",
         "secrets/sessionRemove": "host.session-secrets/1",
         "secrets/sessionSet": "host.session-secrets/1",
@@ -1115,6 +1116,7 @@ public enum Capability {
             "host.browser-settings/1",
             "host.secret-approval/1",
             "host.secret-grants/1",
+            "host.secret-grants/2",
             "host.session-secrets/1",
             "host.desktop-control/1",
             "host.drive-approval/1",

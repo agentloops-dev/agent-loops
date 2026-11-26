@@ -454,7 +454,7 @@
     },
     {
       "name": "secrets/addGrant",
-      "x-capability": "host.secret-grants/1",
+      "x-capability": "host.secret-grants/2",
       "description": "Allow a secret with Ask before use always at one place (#4015): a fill on a domain, or CI in owner/repo. A use there no longer asks. The person's own clients only (the control and device roles).",
       "paramStructure": "by-name",
       "params": [
@@ -475,7 +475,7 @@
     },
     {
       "name": "secrets/grants",
-      "x-capability": "host.secret-grants/1",
+      "x-capability": "host.secret-grants/2",
       "description": "Every grant of this machine's secrets with Ask before use (#4015). The person's own clients only (the control and device roles).",
       "paramStructure": "by-name",
       "params": [
@@ -548,7 +548,7 @@
     },
     {
       "name": "secrets/removeGrant",
-      "x-capability": "host.secret-grants/1",
+      "x-capability": "host.secret-grants/2",
       "description": "Take away a grant (#4015): the next use at that place asks again. The person's own clients only (the control and device roles).",
       "paramStructure": "by-name",
       "params": [
