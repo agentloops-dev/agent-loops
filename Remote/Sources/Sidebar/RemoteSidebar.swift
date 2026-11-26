@@ -691,7 +691,7 @@ private struct RemoteRequestRow: View {
     private func answers(_ row: some View) -> some View {
         row
             .swipeActions(edge: .leading, allowsFullSwipe: false) {
-                if request.secretUse != nil {
+                if let use = request.secretUse, use.awayActions.contains(.once) {
                     Button(NeedRequest.Action.once.word, icon: "checkmark") { answerNow(.once) }
                         .tint(Paper.accent)
                 }
@@ -710,7 +710,7 @@ private struct RemoteRequestRow: View {
             }
             .contextMenu {
                 if let use = request.secretUse {
-                    ForEach(use.actions, id: \.self) { action in
+                    ForEach(use.awayActions, id: \.self) { action in
                         Button(action.word, role: action == .deny ? .destructive : nil) { answerNow(action) }
                     }
                     Divider()

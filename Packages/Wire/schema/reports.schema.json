@@ -4024,7 +4024,7 @@
     },
     "WorkTimelineRequest": {
       "type": "object",
-      "description": "work/timeline (#4172): the epics of a project (its id, from a folder's .agents/folder.json) that overlap from to to. With first, the answer can be partial (#7027): ask again without it for all of it.",
+      "description": "work/timeline (#4172): the epics of a project (its id, from a folder's .agents/folder.json) that overlap from to to. With first, the answer can be partial (#7027): ask again without it for all of it. With onHold (#7335), the open epics on hold come too, each with its children and with no forecast, after the others in the order of forge/next; with none, an epic on hold is left out and its children are not read. Either way they are not in the forecast's history.",
       "properties": {
         "project": {
           "type": "string"
@@ -4036,6 +4036,9 @@
           "$ref": "core.schema.json#/definitions/WireDate"
         },
         "first": {
+          "type": "boolean"
+        },
+        "onHold": {
           "type": "boolean"
         }
       },

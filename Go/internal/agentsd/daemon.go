@@ -109,6 +109,7 @@ type Daemon struct {
 	secretUseState
 	driveApprovalState
 	terminalState
+	pairingState
 	secretProxyState
 	lockState
 	lockRecords

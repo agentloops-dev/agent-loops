@@ -2,13 +2,13 @@
 // on a linear time axis (#5506, #7058): solid from when its first child started to when the work stopped (#6043), then
 // for an open epic a ghost (the lighter tint with a dashed edge) to its predicted finish; one that has not started has
 // only that ghost, from Now.
-// No individual issue and no epic on hold is drawn (Alex, 2026-11-24). The range, the blocks, their rows, the marks and the words; the
+// No individual issue is drawn, and an epic on hold only with the On hold toggle on (Alex, 2026-11-24, 2026-11-25; #7335). The range, the blocks, their rows, the marks and the words; the
 // view draws them in SVG. Times are milliseconds since 1970.
 import type { Agent, ForgeItem, ForgeLabel, LineageNode, LineageSessionOn, WireDate, WorkTimeline, WorkTimelineBacktest } from "../protocol/generated";
 import { fromWireDate } from "../protocol/dates";
 import { shortAge, shortRef } from "./work";
 import { oneEach } from "./workLists";
-import { nextRank } from "./forgeNextOrder";
+import { nextRank, onHoldWords } from "./forgeNextOrder";
 import { priorityWords } from "./epicPlan";
 import { sessionIdOf } from "../protocol/ref";
 
@@ -70,8 +70,10 @@ export class Axis {
 
 /** How an epic's block ends: joined (the epic closed: it ends where its work stopped), dropped (closed as not planned: grey, then
  * ✕), forecast (a lighter tint with a dashed edge after Now), waits (children wait for the person: a
- * pill after it), open (nothing to forecast: it ends where its work stopped). */
-export type TimelineEnd = { how: "joined" } | { how: "dropped" } | { how: "forecast" } | { how: "waits"; count: number } | { how: "open" };
+ * pill after it), open (nothing to forecast: it ends where its work stopped), held (on hold, #7335: dimmed, with "On hold"
+ * after it, and no forecast). */
+export type TimelineEnd = { how: "joined" } | { how: "dropped" } | { how: "forecast" } | { how: "waits"; count: number } | { how: "open" }
+  | { how: "held" };
 
 /** One line: an epic's block (#7058). */
 export interface TimelineLine {
@@ -105,31 +107,44 @@ export interface TimelineLine {
   row: number;
 }
 
-/** A priority's band (#6089), the top first: High 0, Medium 1, none 2, Low 3. */
-export const priorityBand = (l: Pick<TimelineLine, "priority">) => nextRank({ priority: l.priority });
+/** The band of the epics on hold (#7335): below the four priorities. */
+export const heldBand = 4;
+
+/** A priority's band (#6089), the top first: High 0, Medium 1, none 2, Low 3; an epic on hold's is `heldBand` (#7335). */
+export const priorityBand = (l: Pick<TimelineLine, "priority"> & { how?: TimelineEnd }) =>
+  l.how?.how === "held" ? heldBand : nextRank({ priority: l.priority });
 
 /** A block's chip, after its title (#6089): High, Medium or Low; undefined for none. */
 export const chipWords = (l: Pick<TimelineLine, "priority">) => priorityWords(l.priority);
 
-/** A band's name at the plot's leading edge (#6089). */
-export const bandWords = (band: number) => ["High", "Medium", "None", "Low"][band] ?? "None";
+/** A band's name at the plot's leading edge (#6089, #7335). */
+export const bandWords = (band: number) => ["High", "Medium", "None", "Low", onHoldWords][band] ?? "None";
+
+/** How wide the mark of an epic on hold with no work yet is, in pixels (#7335): a short dimmed mark at Now. */
+export const heldMarkWidth = 10;
+
+/** The width in pixels that a block is drawn past its end: an epic on hold with no work yet's mark (#7335), else 0. */
+export const markWidth = (l: Pick<TimelineLine, "how" | "work">) => l.how.how === "held" && l.work === undefined ? heldMarkWidth : 0;
 
 /** The figures of a hover card: `#n · 6 of 8`. A block shows its title only (Alex, 2026-11-14). */
 export const figures = (l: TimelineLine) => `${l.number} · ${l.done} of ${l.total}`;
 /** Whether a line runs on (it has not ended). */
-export const isOpen = (l: TimelineLine) => l.how.how === "forecast" || l.how.how === "waits" || l.how.how === "open";
+export const isOpen = (l: TimelineLine) => l.how.how === "forecast" || l.how.how === "waits" || l.how.how === "open" || l.how.how === "held";
 /** When the work stopped, on an open block where that was before Now (a minute's slack): the hover card says so (#6043). */
 export const stoppedAt = (l: TimelineLine, now: number) => isOpen(l) && l.work && l.work.end < now - 60_000 ? l.work.end : undefined;
 
-/** The lines of a timeline, past and forecast: one per epic (#7058). Not drawn: an epic with no children, one on hold,
- * and one that has not started and has no forecast. `forecast` off draws the past only. `working` is the refs a session
- * is in a turn on now (`workingNow`): only an open epic works. */
+/** The lines of a timeline, past and forecast: one per epic (#7058). Not drawn: an epic with no children, one on hold
+ * unless `held` (the On hold toggle, #7335), and one that has not started and has no forecast. `forecast` off draws the
+ * past only. `working` is the refs a session is in a turn on now (`workingNow`): only an open epic works. An open epic
+ * on hold has its solid span and no forecast; with no work yet, it is a mark at Now. */
 export function timelineLines(timeline: WorkTimeline, now: number, forecast = true,
-  working: ReadonlySet<string> = new Set()): TimelineLine[] {
+  working: ReadonlySet<string> = new Set(), held = false): TimelineLine[] {
   return timeline.epics.flatMap((epic): TimelineLine[] => {
     const children = epic.children;
-    if (children.length === 0 || epic.item.onHold === true) return [];
     const open = epic.closedAt === undefined;
+    const onHold = epic.item.onHold === true;
+    if (onHold && !(held && open)) return [];
+    if (children.length === 0 && !onHold) return [];
     const worked = !open ? 0
       : children.filter((c) => c.closedAt === undefined && working.has(c.item.node.ref)).length + (working.has(epic.item.node.ref) ? 1 : 0);
     const times = (dates: (WireDate | undefined)[]) => dates.map(ms).filter((t): t is number => t !== undefined);
@@ -142,14 +157,16 @@ export function timelineLines(timeline: WorkTimeline, now: number, forecast = tr
       const last = worked > 0 ? now : Math.max(...starts, ...times(children.map((c) => c.closedAt)));
       work = { start, end: Math.max(Math.min(last, now), start) };
     }
-    const f = open && forecast ? epic.forecast : undefined;
+    const f = open && forecast && !onHold ? epic.forecast : undefined;
     const ghost = f ? { start: work?.end ?? now, end: Math.max(ms(f.mid)!, now) } : undefined;
-    const from = work?.start ?? ghost?.start, end = ghost?.end ?? work?.end;
+    const from = work?.start ?? ghost?.start ?? (onHold ? now : undefined), end = ghost?.end ?? work?.end ?? (onHold ? now : undefined);
     if (from === undefined || end === undefined) return [];
     let how: TimelineEnd = { how: "open" };
     let band: Interval | undefined;
     const waiting = children.filter((c) => c.closedAt === undefined && c.waitsForPerson === true).length;
-    if (!open) {
+    if (onHold) {
+      how = { how: "held" };
+    } else if (!open) {
       how = epic.stateReason === "not_planned" || children.every((c) => c.stateReason === "not_planned") ? { how: "dropped" } : { how: "joined" };
     } else if (waiting > 0) {
       how = { how: "waits", count: waiting };
@@ -209,7 +226,10 @@ export function layout(lines: readonly TimelineLine[], gap = packGap): TimelineL
     }
     first += busy.length;
   }
-  return out;
+  // The epics on hold (#7335): below the rest, a row each, in the order of forge/next (the read's order breaks a tie).
+  const held = lines.filter((l) => priorityBand(l) === heldBand)
+    .map((l, i) => ({ l, i })).sort((a, b) => nextRank({ priority: a.l.priority }) - nextRank({ priority: b.l.priority }) || a.i - b.i);
+  return [...out, ...held.map(({ l }, i) => ({ ...l, row: first + i }))];
 }
 
 /** A band in use (#6089): its name, its first row and how many rows it has. */
@@ -291,13 +311,14 @@ export const chipWidth = (words: string, measure: (s: string) => number) => meas
 
 export function blockWords(line: TimelineLine, axis: Axis, measure: (s: string) => number,
                            { next, left = -Infinity, trailing = 0 }: { next?: number | undefined; left?: number; trailing?: number } = {}): BlockWords {
-  const sx = axis.x(line.from), ex = Math.max(axis.x(line.end), sx);
+  const sx = axis.x(line.from), ex = Math.max(axis.x(line.end), sx) + markWidth(line);
   const fits = measure(line.title) + 2 * titleInset <= ex - sx;
   const arrow = fits && sx < left;
   const insideX = (arrow ? left : sx) + titleInset;
   const inside = fits ? cut(arrow ? `← ${line.title}` : line.title, ex - insideX - titleInset, measure) : undefined;
-  const outsideX = axis.x(reach(line)) + 6 + (trailing > 0 ? trailing + 6 : 0);
-  const words = [fits ? "" : line.title, line.how.how === "dropped" ? droppedWords : ""].filter((w) => w).join("  ");
+  const outsideX = axis.x(reach(line)) + markWidth(line) + 6 + (trailing > 0 ? trailing + 6 : 0);
+  const words = [fits ? "" : line.title, line.how.how === "dropped" ? droppedWords : line.how.how === "held" ? onHoldWords : ""]
+    .filter((w) => w).join("  ");
   const room = (next === undefined ? Infinity : axis.x(next) - 6) - outsideX;
   const out: BlockWords = { inside, insideX, arrow, outside: words ? cut(words, room, measure) : undefined, outsideX };
   const chip = chipWords(line);
@@ -356,7 +377,7 @@ export const hexOf = (rgb: readonly number[]) => `#${rgb.map((v) => Math.round(v
 export function hit(p: { x: number; y: number }, lines: readonly TimelineLine[], axis: Axis): TimelineLine | undefined {
   return lines.find((l) => {
     const top = rowTop(l.row);
-    return p.y >= top && p.y <= top + blockHeight && p.x >= axis.x(l.from) - 2 && p.x <= axis.x(reach(l)) + 2;
+    return p.y >= top && p.y <= top + blockHeight && p.x >= axis.x(l.from) - 2 && p.x <= axis.x(reach(l)) + markWidth(l) + 2;
   });
 }
 
@@ -394,6 +415,7 @@ export function lineWords(line: TimelineLine, backtest: WorkTimelineBacktest | u
     case "forecast": out.push(...joinWords(line, backtest, now)); break;
     case "waits": { const w = waitWords(line.how.count); out.push(w.charAt(0).toUpperCase() + w.slice(1)); break; }
     case "open": out.push("Open"); break;
+    case "held": out.push(onHoldWords); break;
   }
   const stopped = stoppedAt(line, now);
   if (stopped !== undefined) out.push(`Stopped ${agoWords(stopped, now)}`);
@@ -431,6 +453,7 @@ export function lineLine(line: TimelineLine, now: number): string {
       break;
     case "waits": out.push(waitWords(line.how.count)); break;
     case "open": out.push("open"); break;
+    case "held": out.push(onHoldWords); break;
   }
   return out.join(" · ");
 }
@@ -581,13 +604,14 @@ export interface EpicRow { line: TimelineLine; line2: string }
  * about 5:00 PM · 3:00 PM–9:00 PM", "3 wait for you", "joined 9:40 AM". */
 export function epicRows(lines: readonly TimelineLine[], window: Interval, now: number): EpicRow[] {
   const closes = (l: TimelineLine) => l.closedAt ?? l.end;
-  const rank = (l: TimelineLine) => ({ forecast: 0, waits: 1, open: 2, joined: 3, dropped: 3 })[l.how.how];
+  const rank = (l: TimelineLine) => ({ forecast: 0, waits: 1, open: 2, held: 2, joined: 3, dropped: 3 })[l.how.how];
   const line2 = (l: TimelineLine): string => {
     switch (l.how.how) {
       case "forecast": return [`closes about ${timeWords(l.end, now)}`,
         ...l.band ? [`${timeWords(l.band.start, now)}–${timeWords(l.band.end, now)}`] : []].join(" · ");
       case "waits": return waitWords(l.how.count);
       case "open": return "open";
+      case "held": return onHoldWords;
       case "joined": return `joined ${timeWords(l.closedAt ?? l.end, now)}`;
       case "dropped": return "closed as not planned";
     }

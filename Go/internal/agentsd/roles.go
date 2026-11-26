@@ -46,8 +46,9 @@ var hostAppMethods = methodSet(append([]string{"folders/list", "agents/list"}, s
 
 // `agentsd lock reset` (#3493) is any process of the account: the spec lets this machine's
 // own account reset its lock, from any shell of it. So is `agents-secret NAME` from a
-// terminal (#4179): it only opens a request that a person answers.
-var strangerOnly = methodSet(append([]string{"daemon/lockReset", "secrets/terminalValue"}, strangerMethods...))
+// terminal (#4179): it only opens a request that a person answers. So is loops with no
+// pairing (#6875): it opens a request that a person approves on this Mac.
+var strangerOnly = methodSet(append([]string{"daemon/lockReset", "secrets/terminalValue", "clients/pairTerminal"}, strangerMethods...))
 
 func methodSet(names []string) map[string]bool {
 	s := make(map[string]bool, len(names))

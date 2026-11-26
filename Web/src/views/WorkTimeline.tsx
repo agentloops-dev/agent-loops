@@ -15,7 +15,7 @@ import { boardChoices, boardName, withBoard, type WorkProject } from "../model/w
 import { boards, forgeFolders, forgeHosts, loadBoards } from "../model/workLists";
 import {
   Axis, bandGutter, bandRuleY, bands as bandsOf, blockHeight, blockWords, cardRow, chipWidth, chipWords, priorityBand, colourIndex, epicCount, epicRows, errorWords, forWhiteText, hexOf, hit, lastJoined,
-  lastJoinedWords, keepForecasts, layout, mergeTimelines, nextInRow, noEpicsWords, noMachine, noProject, noProjectTitle, overlapping, lateAfter, Readers,
+  lastJoinedWords, keepForecasts, layout, markWidth, mergeTimelines, nextInRow, noEpicsWords, noMachine, noProject, noProjectTitle, overlapping, lateAfter, Readers,
   packSpan, rangeSpan, rangeTitle, rangeWindow, reach, rgbOf, rowCount, rowGap, rowTop, sessionNodes, showTheWeek, startedBySessions,
   timelineLines, timelineRanges, timelineShows, titleWords, titleY, workingNow, zoomed, type Interval, type TimelineBand, type TimelineLine, type TimelineRange,
 } from "../model/workTimeline";
@@ -28,7 +28,10 @@ import { pageCount, pageFooterState } from "../model/workFooter";
 
 /** The middle of Timeline when nothing was read (#5971). */
 const couldNotReadTimeline = "Could not read the timeline";
-import { shownLabels } from "../model/forgeNextOrder";
+import { onHoldWords, shownLabels } from "../model/forgeNextOrder";
+
+/** The On hold toggle's help (#7335). */
+const heldToggleHelp = "Show the epics on hold too";
 
 // The range, the project and the board are what the Timeline had when it was last left (#5451).
 const kept = remembered("timeline");
@@ -37,8 +40,10 @@ const range = signal<TimelineRange>(choiceFrom(kept, "range", "twoDays", timelin
 const project = signal<string>(choiceFrom(kept, "project", ""));
 /** The board the epics are narrowed to (#3282), by its url; "" for every board. */
 const board = signal<string>(choiceFrom(kept, "board", ""));
-rememberEach("timeline", () => choiceWords({ range: range.value, project: project.value, board: board.value },
-  { range: "twoDays", project: "", board: "" }));
+/** The On hold toggle (#7335): the epics on hold are drawn too. Off by default; kept with the range. */
+const held = signal<boolean>(choiceFrom<"" | "on">(kept, "held", "", ["", "on"]) === "on");
+rememberEach("timeline", () => choiceWords({ range: range.value, project: project.value, board: board.value, held: held.value ? "on" : "" },
+  { range: "twoDays", project: "", board: "", held: "" }));
 /** Where the window is: Now, until the plot is scrolled past an edge. */
 const anchor = signal(Date.now());
 const timeline = signal<Timeline | null>(null);
@@ -97,7 +102,7 @@ async function loadTimeline(store: Store) {
   const chosen = projects.find((p) => p.id === project.value) ?? projects[0];
   // The widest range's span, whatever the range: the rows are packed over it, so they stay put across ranges (#5506).
   const span = packSpan(anchor.value);
-  const key = `${asked.value} ${chosen?.id} ${board.value} ${range.value} ${span.start} ${timelineHosts(store).map((h) => h.id).join(",")}`;
+  const key = `${asked.value} ${chosen?.id} ${board.value} ${range.value} ${held.value} ${span.start} ${timelineHosts(store).map((h) => h.id).join(",")}`;
   if (read === key && timeline.value !== null) return;
   read = key;
   if (!chosen) { timeline.value = { epics: [], releases: [] }; return; }
@@ -105,11 +110,12 @@ async function loadTimeline(store: Store) {
   const on = new Set<string>([...chosen.folders].map((f) => f.slice(0, f.indexOf("|"))));
   const hosts = timelineHosts(store).filter((h) => on.has(h.id));
   const chosenBoard = board.value;
+  const withHeld = held.value;
   reading.value = true;
   answered.value = 0;
   machines.value = 0;
   // Seen before: this device's copy at once, until the machines answer (#4930). Kept by project, board and range.
-  const kept = [chosen.id, chosenBoard, range.value].join("|");
+  const kept = [chosen.id, chosenBoard, range.value, ...withHeld ? ["held"] : []].join("|");
   if (timeline.value === null) {
     const copy = await keptWorkRead<Timeline>("timeline", kept);
     if (copy && read === key && timeline.value === null) { timeline.value = copy.value; plotAt.value = copy.at; fromDevice.value = true; }
@@ -155,7 +161,7 @@ async function loadTimeline(store: Store) {
   const askOne = async (h: (typeof hosts)[number]): Promise<void> => {
     let one: (typeof got)[number];
     try {
-      const ask = { project: chosen.id, from: toWireDate(new Date(span.start)), to: toWireDate(new Date(span.end)) };
+      const ask = { project: chosen.id, from: toWireDate(new Date(span.start)), to: toWireDate(new Date(span.end)), ...withHeld ? { onHold: true } : {} };
       let t = await store.link.call("work/timeline", { ...ask, first: true }, h.id);
       // A board narrows to its epics: the forge says which they are.
       // With its board not read, it covers no other machine (the next one's board can be).
@@ -253,7 +259,7 @@ export function WorkTimeline({ store }: { store: Store }) {
   const projects = timelineProjects(store);
   const hostKey = hosts.map((h) => h.id).join(",");
   const projectKey = projects.map((p) => p.id).join(",");
-  useEffect(() => { void loadTimeline(store); }, [asked.value, project.value, board.value, range.value, anchor.value, hostKey, projectKey]);
+  useEffect(() => { void loadTimeline(store); }, [asked.value, project.value, board.value, range.value, held.value, anchor.value, hostKey, projectKey]);
   useEffect(() => { void loadBoards(store); }, [hostKey]);
   // A machine sent new lineage to the control plane (#4276): the sessions again, no polling.
   const lineageChanges = store.lineageChanges.value;
@@ -269,7 +275,7 @@ export function WorkTimeline({ store }: { store: Store }) {
   }, [project.value]);
   const t = timeline.value;
   const problems = [...problem.value ? problem.value.split("\n") : [], ...t?.errors ?? []];
-  const shownCount = t && projects.length > 0 ? epicCount(timelineLines(t, Date.now()), rangeWindow(range.value, anchor.value)) : undefined;
+  const shownCount = t && projects.length > 0 ? epicCount(timelineLines(t, Date.now(), true, new Set(), held.value), rangeWindow(range.value, anchor.value)) : undefined;
   // The read's state, the count and Last update are in the footer, as on the lists (#5971, the Mac's #5969); no strip.
   const footer = hosts.length === 0 || projects.length === 0 ? { kind: "none" as const }
     : pageFooterState(t !== null, reading.value, fromDevice.value, problems, answered.value, machines.value);
@@ -290,11 +296,14 @@ export function WorkTimeline({ store }: { store: Store }) {
           {t && projects.length > 0 && (
             <span class="quiet timeline-title" title={t.backtest ? `The forecast after now. ${errorWords(t.backtest)}.` : "The forecast after now"}>
               {titleWords(projects.length > 1 ? "" : projects[0]!.name,
-                epicCount(timelineLines(t, Date.now()), rangeWindow(range.value, anchor.value)), range.value)}
+                epicCount(timelineLines(t, Date.now(), true, new Set(), held.value), rangeWindow(range.value, anchor.value)), range.value)}
             </span>
           )}
         </div>
         <span class="timeline-trailing">
+          {/* The epics on hold too (#7335), dimmed, below the rest. */}
+          <button type="button" class="timeline-now-button timeline-held-toggle" aria-pressed={held.value} title={heldToggleHelp}
+            onClick={() => { held.value = !held.value; }}>{onHoldWords}</button>
           <div class="diff-choice" role="group" aria-label="Range">
             {timelineRanges.map((r) => (
               <button key={r} type="button" aria-pressed={range.value === r} onClick={() => { range.value = r; goToNow(); }}>{rangeTitle[r]}</button>
@@ -365,7 +374,7 @@ function Plot({ timeline: t, drawn, reading, working }: {
   const span = content();
   const axis = new Axis(span, visible * (span.end - span.start) / rangeSpan[range.value]);
   // Packed over the widest range's span, so a block keeps its row when the range changes or the plot scrolls (#5506).
-  const lines = layout(overlapping(timelineLines(t, now, true, working), packSpan(anchor.value)));
+  const lines = layout(overlapping(timelineLines(t, now, true, working, held.value), packSpan(anchor.value)));
   const height = Math.max(rowTop(Math.max(rowCount(lines), 3)) + rowGap, size.height - axisHeight - footHeight);
 
   // The window starts a screen in: a range's width is before it.
@@ -425,7 +434,7 @@ function Plot({ timeline: t, drawn, reading, working }: {
   const open = (l: TimelineLine) => go({ nav: "work", section: "issue", item: l.epic });
 
   const win = rangeWindow(range.value, anchor.value);
-  const rows = epicRows(timelineLines(t, now), win, now);
+  const rows = epicRows(timelineLines(t, now, true, new Set(), held.value), win, now);
   const shows = timelineShows(drawn, reading, rows.length);
   const loading = shows === "loading";
   const d = new Drawing(lines, axis, now, height, offset, visible, loading ? [] : bandsOf(lines));
@@ -568,9 +577,10 @@ class Drawing {
     shown.forEach((l, i) => {
       const c = this.colour(l), top = rowTop(l.row), mid = top + blockHeight / 2;
       // An epic can be months old: no further than just past the plot's edges.
-      const sx = Math.max(axis.x(l.from), -20), ex = Math.max(Math.min(axis.x(l.end), axis.width + 20), sx + 2), w = ex - sx;
-      // Solid from started to stopped (#6043), then an open epic's dashed ghost to its predicted finish (#7058).
-      const wx = axis.x(l.work?.start ?? l.from), wex = Math.max(axis.x(l.work?.end ?? l.from), wx);
+      const sx = Math.max(axis.x(l.from), -20), ex = Math.max(Math.min(axis.x(l.end), axis.width + 20), sx + Math.max(2, markWidth(l))), w = ex - sx;
+      // Solid from started to stopped (#6043), then an open epic's dashed ghost to its predicted finish (#7058). An epic on
+      // hold with no work yet is all mark (#7335).
+      const wx = axis.x(l.work?.start ?? l.from), wex = markWidth(l) > 0 ? ex : Math.max(axis.x(l.work?.end ?? l.from), wx);
       const onSolid = (x: number) => wex > wx && x >= wx && x <= wex + 0.5;
       const gx = axis.x(l.ghost?.start ?? l.end);
       const solid = `timeline-solid-${i}`, idle = `timeline-idle-${i}`, ahead = `timeline-ahead-${i}`;
@@ -580,7 +590,7 @@ class Drawing {
       const pill = l.how.how === "waits" ? this.pillWidth(l.how.count) : 0;
       const words = blockWords(l, axis, measure, { next: nextInRow(this.lines, l), left: left + 2, trailing: pill });
       out.push(
-        <g key={`block ${l.id}`} class={`timeline-block${this.isWorking(l) ? " working" : ""}${l.how.how === "dropped" ? " dropped" : ""}`}
+        <g key={`block ${l.id}`} class={`timeline-block${this.isWorking(l) ? " working" : ""}${l.how.how === "dropped" ? " dropped" : ""}${l.how.how === "held" ? " held" : ""}`}
           style={{ "--c": c }}>
           {/* An epic a session is in a turn on now (#4265): a soft glow that breathes; with Reduce Motion, still. */}
           <defs>
@@ -616,7 +626,7 @@ class Drawing {
             </g>
           )}
           {/* → for a block that goes on past the right edge. */}
-          {axis.x(reach(l)) > right && (
+          {axis.x(reach(l)) + markWidth(l) > right && (
             <text class={`timeline-more${onSolid(right - 10) ? "" : " later"}`} x={right - 10} y={mid} dy="0.35em" text-anchor="middle">→</text>
           )}
         </g>,

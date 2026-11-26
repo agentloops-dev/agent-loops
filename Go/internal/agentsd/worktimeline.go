@@ -89,6 +89,7 @@ func (d *Daemon) workTimeline(ctx context.Context, r wire.WorkTimelineRequest) (
 	if r.First != nil && *r.First {
 		from = r.From.Time()
 	}
+	withHeld := r.OnHold != nil && *r.OnHold
 	c, ok := d.githubConnection()
 	if !ok || !c.Usable(now) {
 		out.Errors = append(out.Errors, githubmcp.NotConnected)
@@ -100,7 +101,7 @@ func (d *Daemon) workTimeline(ctx context.Context, r wire.WorkTimelineRequest) (
 	var epics []timelineEpic
 	scopes := []string{}
 	for _, repo := range repos {
-		read, err := d.githubTimeline(ctx, gh, conn, repo.path, since, from)
+		read, err := d.githubTimeline(ctx, gh, conn, repo.path, since, from, withHeld)
 		if err != nil {
 			out.Errors = append(out.Errors, "GitHub: "+repo.path+": "+err.Error())
 			continue
@@ -110,7 +111,9 @@ func (d *Daemon) workTimeline(ctx context.Context, r wire.WorkTimelineRequest) (
 			out.Partial = new(true)
 		}
 		for _, e := range read.Epics {
-			epics = append(epics, d.timelineEpicOf(e, folderOf[repo]))
+			if e := d.timelineEpicOf(e, folderOf[repo]); withHeld || !e.held {
+				epics = append(epics, e)
+			}
 		}
 		for _, rel := range read.Releases {
 			at := forgeDate(rel.PublishedAt)
@@ -129,18 +132,33 @@ func (d *Daemon) workTimeline(ctx context.Context, r wire.WorkTimelineRequest) (
 	if out.Partial == nil {
 		forecast = d.timelineForecast(r.Project, epics, now, &out)
 	}
-	for _, e := range epics {
-		if len(e.wire.Children) == 0 || !e.overlaps(r.From, r.To) {
-			continue
-		}
-		forecast(&e)
-		out.Epics = append(out.Epics, e.wire)
-	}
-	slices.SortStableFunc(out.Epics, func(a, b wire.WorkTimelineEpic) int {
-		return cmp.Or(cmp.Compare(firstStart(a), firstStart(b)), cmp.Compare(a.Item.Node.Ref, b.Item.Node.Ref))
-	})
+	out.Epics = timelineAnswer(epics, r.From, r.To, forecast)
 	slices.SortFunc(out.Releases, func(a, b wire.WorkTimelineRelease) int { return cmp.Compare(a.At, b.At) })
 	return out, nil
+}
+
+// timelineAnswer is the epics drawn in from to to: those with children that overlap it, forecast, by their first start;
+// then the open epics on hold (#7335), with no forecast (nobody works them; one with no work yet is marked at now), in
+// the order of forge/next.
+func timelineAnswer(epics []timelineEpic, from, to wire.Date, forecast func(*timelineEpic)) []wire.WorkTimelineEpic {
+	out := []wire.WorkTimelineEpic{}
+	var held []wire.WorkTimelineEpic
+	for _, e := range epics {
+		switch {
+		case e.held:
+			if len(e.wire.Children) == 0 || e.overlaps(from, to) {
+				held = append(held, e.wire)
+			}
+		case len(e.wire.Children) > 0 && e.overlaps(from, to):
+			forecast(&e)
+			out = append(out, e.wire)
+		}
+	}
+	slices.SortStableFunc(out, func(a, b wire.WorkTimelineEpic) int {
+		return cmp.Or(cmp.Compare(firstStart(a), firstStart(b)), cmp.Compare(a.Item.Node.Ref, b.Item.Node.Ref))
+	})
+	slices.SortFunc(held, func(a, b wire.WorkTimelineEpic) int { return nextCompare(a.Item, b.Item) })
+	return append(out, held...)
 }
 
 // timelineForecast learns from the epics, sets the answer's backtest, and gives what forecasts an epic.
@@ -184,15 +202,19 @@ func (d *Daemon) workTimelineRepos(project string) (repos []forgeRepo, folderOf 
 	return repos, folderOf, other
 }
 
-// epicOnHold says that an epic's labels say on hold: the Timeline never draws it (#7058), so its sub-issues are not
-// read (#7026), also not for the forecast.
+// epicOnHold says that an epic's labels say on hold: the Timeline draws it only when a person asks (#7058, #7335), so
+// otherwise its sub-issues are not read (#7026). The forecast never learns from it.
 func epicOnHold(labels []string) bool { return slices.ContainsFunc(labels, isHoldName) }
+
+// readAllEpics skips no open epic: the read for a Timeline that shows the epics on hold (#7335).
+func readAllEpics([]string) bool { return false }
 
 // githubTimeline is a repo's timeline read, kept for forgeCacheFor as the other forge reads are. With a from, the
 // epics closed before it can be left out, in the answer's Rest (#7027); with none, every epic is read, and only the
-// rest of a first read that is kept. A closed epic that keptEpics has is not read again (#7028).
-func (d *Daemon) githubTimeline(ctx context.Context, gh forgeGitHub, conn, repo string, since, from time.Time) (githubmcp.Timeline, error) {
-	key, _ := json.Marshal([]any{"work/timeline", conn, repo, since})
+// rest of a first read that is kept. A closed epic that keptEpics has is not read again (#7028). The open epics on
+// hold are read only withHeld (#7335).
+func (d *Daemon) githubTimeline(ctx context.Context, gh forgeGitHub, conn, repo string, since, from time.Time, withHeld bool) (githubmcp.Timeline, error) {
+	key, _ := json.Marshal([]any{"work/timeline", conn, repo, since, withHeld})
 	firstKey := "first " + string(key)
 	if a, ok := d.forgeCached(string(key)); ok && a.timeline != nil {
 		return *a.timeline, nil
@@ -213,7 +235,11 @@ func (d *Daemon) githubTimeline(ctx context.Context, gh forgeGitHub, conn, repo 
 		if !from.IsZero() {
 			closedFrom = from.UTC().Format(time.RFC3339)
 		}
-		t, err = gh.Timeline(ctx, repo, since.Format(time.RFC3339), closedFrom, epicOnHold, func(number int, updatedAt string) (githubmcp.TimelineEpic, bool) {
+		skip := epicOnHold
+		if withHeld {
+			skip = readAllEpics
+		}
+		t, err = gh.Timeline(ctx, repo, since.Format(time.RFC3339), closedFrom, skip, func(number int, updatedAt string) (githubmcp.TimelineEpic, bool) {
 			e, ok := d.keptEpics.get(conn, repo, number, updatedAt, now)
 			listed[number], had[number] = true, ok
 			return e, ok
@@ -241,13 +267,16 @@ func (d *Daemon) githubTimeline(ctx context.Context, gh forgeGitHub, conn, repo 
 type timelineEpic struct {
 	wire       wire.WorkTimelineEpic
 	notPlanned bool
-	segments   [][]int
+	// held says it is open and on hold (#7335): it is not forecast and the forecast does not learn from it.
+	held     bool
+	segments [][]int
 }
 
 func (d *Daemon) timelineEpicOf(e githubmcp.TimelineEpic, folder string) timelineEpic {
 	out := timelineEpic{wire: wire.WorkTimelineEpic{Item: forgeItemOf(e.Item, folder), StateReason: optional(e.StateReason),
 		CreatedAt: forgeDate(e.CreatedAt), ClosedAt: forgeDateOptional(e.ClosedAt), Children: []wire.WorkTimelineChild{},
 		Segments: []wire.WorkTimelineSegment{}}, notPlanned: e.StateReason == "not_planned"}
+	out.held = out.wire.Item.State == "open" && onHold(out.wire.Item)
 	for _, c := range e.Children {
 		child := wire.WorkTimelineChild{Item: forgeItemOf(c.Item, d.repoFolder(forgeRepo{"github", strings.ToLower(c.Repo)})),
 			StateReason: optional(c.StateReason), CreatedAt: forgeDate(c.CreatedAt), ClosedAt: forgeDateOptional(c.ClosedAt)}
@@ -379,11 +408,14 @@ func (e *timelineEpic) forecast(m lineage.Model, now time.Time, width float64) {
 }
 
 // timelineHistory is what the forecast learns from: each closed segment of an epic not closed as
-// not planned, and every child's close.
+// not planned, and every child's close; nothing of an epic on hold (#7335), so showing them changes no forecast.
 func timelineHistory(epics []timelineEpic) ([]lineage.Span, []time.Time) {
 	var spans []lineage.Span
 	var closes []time.Time
 	for _, e := range epics {
+		if e.held {
+			continue
+		}
 		for _, k := range e.wire.Children {
 			if k.ClosedAt != nil {
 				closes = append(closes, k.ClosedAt.Time())

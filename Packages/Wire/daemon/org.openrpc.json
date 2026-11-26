@@ -32,6 +32,27 @@
       }
     },
     {
+      "name": "clients/pairTerminal",
+      "x-capability": "host.terminal-pairing/1",
+      "description": "loops with no pairing on this Mac (#6875): a pairing code for this Mac's control plane, once a person approved it in Agent Loops on this Mac. A call with no answer yet opens a Needs you request (secretUse, use pairing) and is held up to 45 seconds on it; while it stays open the answer names it, and the same call again (the same client id) waits on the same request. The window that approves makes the code with clients/startPairing and, with a machine lock, puts the terminal's key on it as an addClient, so the terminal does not ask to join. Any process of this machine's account may call it on daemon.sock: agentsd cannot tell a terminal from an agent, which the request's words say. A denied call is an error.",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/org.schema.json#/definitions/TerminalPairingRequest"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/org.schema.json#/definitions/TerminalPairingReply"
+        }
+      }
+    },
+    {
       "name": "credentials/offer",
       "x-capability": "credentials/1",
       "tags": [
@@ -433,7 +454,7 @@
     },
     {
       "name": "secrets/addGrant",
-      "x-capability": "host.secret-grants/1",
+      "x-capability": "host.secret-grants/2",
       "description": "Allow a secret with Ask before use always at one place (#4015): a fill on a domain, or CI in owner/repo. A use there no longer asks. The person's own clients only (the control and device roles).",
       "paramStructure": "by-name",
       "params": [
@@ -454,7 +475,7 @@
     },
     {
       "name": "secrets/grants",
-      "x-capability": "host.secret-grants/1",
+      "x-capability": "host.secret-grants/2",
       "description": "Every grant of this machine's secrets with Ask before use (#4015). The person's own clients only (the control and device roles).",
       "paramStructure": "by-name",
       "params": [
@@ -527,7 +548,7 @@
     },
     {
       "name": "secrets/removeGrant",
-      "x-capability": "host.secret-grants/1",
+      "x-capability": "host.secret-grants/2",
       "description": "Take away a grant (#4015): the next use at that place asks again. The person's own clients only (the control and device roles).",
       "paramStructure": "by-name",
       "params": [

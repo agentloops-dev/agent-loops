@@ -70,9 +70,10 @@ for i in range(10):
     ])
     EPICS[200 + i][3][-1] = (EPICS[200 + i][3][-1][0], end - 30, end - 2, end, [])
 
-# The open epics' priorities, for the bands of #6089 (High at the top, on hold not shown, #7058).
+# The open epics' priorities, for the bands of #6089 (High at the top, on hold shown only with the On hold toggle,
+# #7058, #7335): #150 is on hold with work, #190 on hold with no work yet.
 EPIC_LABELS = {100: ["priority:high"], 110: ["priority:medium"], 130: ["priority:high"], 140: ["priority:low"],
-               150: ["on hold"]}
+               150: ["on hold"], 190: ["on hold", "priority:medium"]}
 EPICS[150] = ("Epic: Loyalty points", "accounts", -30, [
     ("Points in the store's API", -30, -20, -16, []),
     ("Show points at checkout", -29, -12, None, []),
@@ -90,6 +91,10 @@ EPICS[170] = ("Epic: Wish lists", "accounts", -15, [
 ])
 EPICS[180] = ("Epic: Pay by fax", "checkout", -20, [
     ("A fax number on the payment form", -19, -16, -13, []),
+])
+EPICS[190] = ("Epic: Gift wrapping", "checkout", -10, [
+    ("Wrapping options in the store's API", -10, None, None, []),
+    ("A gift wrap box on the cart", -10, None, None, []),
 ])
 EPIC_CLOSED = {160: -4, 180: -10}
 NOT_PLANNED = {180}
@@ -145,8 +150,9 @@ class Handler(BaseHTTPRequestHandler):
         # sub-issues (timelineEpicsQuery), as work/timeline reads them since #5154.
         if "releases(" in q:
             states = v.get("states") or ["OPEN", "CLOSED"]
-            nodes = [{"id": f"I_{n}", "number": n, "closedAt": epic(n)[0]["closedAt"],
-                      "updatedAt": epic(n)[0]["updatedAt"]} for n in EPICS if epic(n)[0]["issueState"] in states]
+            nodes = [{"id": f"I_{n}", "number": n, "closedAt": epic(n)[0]["closedAt"], "updatedAt": epic(n)[0]["updatedAt"],
+                      "labels": {"nodes": [{"name": l["name"]} for l in epic(n)[0]["labels"]["nodes"]]}}
+                     for n in EPICS if epic(n)[0]["issueState"] in states]
             releases = [{"tagName": t, "publishedAt": at(h), "url": f"https://github.com/{REPO}/releases/tag/{t}",
                          "isDraft": False} for t, h in RELEASES][: v.get("releases", 50)]
             return self.answer(200, {"data": {"repository": {

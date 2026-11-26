@@ -35,14 +35,15 @@ public enum WorkRemembered {
     }
 
     /// Work ▸ Timeline's range, project and board as words.
-    public static func timeline(range: WorkTimeline.Range, project: String, board: String) -> String {
-        words([("range", range == .twoDays ? "" : range.rawValue), ("project", project), ("board", board)])
+    /// `held` is the On hold toggle (#7335): `held=on`, as the web page keeps it.
+    public static func timeline(range: WorkTimeline.Range, project: String, board: String, held: Bool = false) -> String {
+        words([("range", range == .twoDays ? "" : range.rawValue), ("project", project), ("board", board), ("held", held ? "on" : "")])
     }
 
-    /// Work ▸ Timeline's range, project and board from words; the defaults for what they leave out.
-    public static func timeline(_ words: String?) -> (range: WorkTimeline.Range, project: String, board: String) {
+    /// Work ▸ Timeline's range, project, board and On hold toggle from words; the defaults for what they leave out.
+    public static func timeline(_ words: String?) -> (range: WorkTimeline.Range, project: String, board: String, held: Bool) {
         let q = values(words)
-        return (q["range"].flatMap(WorkTimeline.Range.init(rawValue:)) ?? .twoDays, q["project"] ?? "", q["board"] ?? "")
+        return (q["range"].flatMap(WorkTimeline.Range.init(rawValue:)) ?? .twoDays, q["project"] ?? "", q["board"] ?? "", q["held"] == "on")
     }
 
     private static func words(_ pairs: [(String, String)]) -> String {

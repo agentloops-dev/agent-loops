@@ -13509,6 +13509,16 @@ export interface RequestSecretUse {
    * that allows the use carries approval; one without it is refused.
    */
   needsSignature?: boolean;
+  /**
+   * For pairing (#6875): the client id the terminal pairs with, which the approving window names in
+   * its addClient.
+   */
+  client?: string;
+  /**
+   * For pairing (#6875): the terminal's machine lock key (P-256, X9.63), which the approving window
+   * puts on the lock as an addClient.
+   */
+  key?: Base64;
 }
 
 /**
@@ -13529,6 +13539,12 @@ export interface RequestSecretUseAnswer {
    * seen.
    */
   approval?: LockDelivery;
+  /**
+   * For pairing (#6875): the client code that the approving window made with clients/startPairing
+   * for this Mac's control plane, required with once. agentsd gives it to the terminal that asked,
+   * and keeps it nowhere.
+   */
+  pairingCode?: string;
 }
 
 export type RequestSource =
@@ -14392,7 +14408,11 @@ export interface SecretTerminalValue {
  * person's to turn on (manage_workflows enable), or to approve a server waiting in its folder's
  * .agents/mcp.json (manage_connectors approve); name is the workflow's id or the server's name,
  * place the folder's name, digest the server's entry as the agent saw it. Their answers are once
- * (Approve: agentsd makes the change as the person) and deny.
+ * (Approve: agentsd makes the change as the person) and deny. pairing (#6875) is not a secret's use
+ * either: loops with no pairing asks this Mac's agentsd for one (clients/pairTerminal); name is the
+ * terminal's name, place the command that asked, client and key the client id and lock key it will
+ * pair with. Its answers are once (Approve, only from Agent Loops on this Mac, with pairingCode)
+ * and deny.
  */
 export type SecretUse =
   | "fill"
@@ -14403,7 +14423,8 @@ export type SecretUse =
   | "browser"
   | "screen"
   | "workflow"
-  | "connector";
+  | "connector"
+  | "pairing";
 
 /**
  * control/secretsLeft (#1760, FR-026): to the person's own clients, when one of their machines was
@@ -16072,6 +16093,32 @@ export interface TeamWorkflows {
   bots: TeamBot[];
 }
 
+/**
+ * clients/pairTerminal's answer: the code, once a person approved it; else the open request it
+ * waits on, and the words to say while it waits.
+ */
+export interface TerminalPairingReply {
+  /** A one-use client code, as loops auth login takes it. */
+  code?: string;
+  request?: UUID;
+  words?: string;
+}
+
+/** clients/pairTerminal (#6875): loops with no pairing on this Mac asks for one. */
+export interface TerminalPairingRequest {
+  /** The terminal's name, as it pairs: loops on <host name>. */
+  name: string;
+  /** The client id it pairs with. The same id again waits on the same request. */
+  client: string;
+  /** Its machine lock key (P-256, X9.63). */
+  key: Base64;
+  /**
+   * The name of the program that asked, as it says it: the request's place. agentsd cannot check
+   * it.
+   */
+  command?: string;
+}
+
 export interface TimeBucket {
   agent: number;
   tools: number;
@@ -17357,13 +17404,16 @@ export interface WorkTimelineRelease {
 /**
  * work/timeline (#4172): the epics of a project (its id, from a folder's .agents/folder.json) that
  * overlap from to to. With first, the answer can be partial (#7027): ask again without it for all
- * of it.
+ * of it. With onHold (#7335), the open epics on hold come too, each with its children and with no
+ * forecast, after the others in the order of forge/next; with none, an epic on hold is left out and
+ * its children are not read. Either way they are not in the forecast's history.
  */
 export interface WorkTimelineRequest {
   project: string;
   from: WireDate;
   to: WireDate;
   first?: boolean;
+  onHold?: boolean;
 }
 
 /**
@@ -19875,8 +19925,8 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   RequestDetail: { required: [], optional: ["elicitation", "secretUse"] },
   RequestForge: { required: ["provider", "repo", "item", "number", "url", "label", "checklist", "seenAt"], optional: ["screenshots", "author", "updatedAt"] },
   RequestFormAnswer: { required: ["action"], optional: ["content"] },
-  RequestSecretUse: { required: ["name", "use", "place"], optional: ["call", "app", "digest", "sessionOnly", "needsSignature"] },
-  RequestSecretUseAnswer: { required: ["action"], optional: ["approval"] },
+  RequestSecretUse: { required: ["name", "use", "place"], optional: ["call", "app", "digest", "sessionOnly", "needsSignature", "client", "key"] },
+  RequestSecretUseAnswer: { required: ["action"], optional: ["approval", "pairingCode"] },
   RequestUpdate: { required: ["request"], optional: [] },
   RequestWaiter: { required: ["agent", "since"], optional: [] },
   RequestsAnswer: { required: ["id", "answer"], optional: [] },
@@ -20106,6 +20156,8 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   TeamTriggerSent: { required: ["taken"], optional: [] },
   TeamWorkflowRuns: { required: ["workflow", "runs"], optional: ["lastRunAt"] },
   TeamWorkflows: { required: ["bots"], optional: [] },
+  TerminalPairingReply: { required: [], optional: ["code", "request", "words"] },
+  TerminalPairingRequest: { required: ["name", "client", "key"], optional: ["command"] },
   TimeBucket: { required: ["agent", "tools", "others", "person", "turns"], optional: [] },
   TimeHistory: { required: ["hours", "days", "now", "recap", "records"], optional: ["timeZone", "approvalWait"] },
   TimeRecord: { required: ["value", "day"], optional: [] },
@@ -20197,7 +20249,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   WorkTimelineEpic: { required: ["item", "createdAt", "children", "segments"], optional: ["stateReason", "closedAt", "forecast"] },
   WorkTimelineForecast: { required: ["low", "mid", "high"], optional: ["waits"] },
   WorkTimelineRelease: { required: ["tag", "at", "repo"], optional: ["url"] },
-  WorkTimelineRequest: { required: ["project", "from", "to"], optional: ["first"] },
+  WorkTimelineRequest: { required: ["project", "from", "to"], optional: ["first", "onHold"] },
   WorkTimelineSegment: { required: [], optional: ["startedAt", "closedAt"] },
   Workflow: { required: ["workflowID", "folder", "name", "triggers", "mode", "prompt", "unknownFields", "settings"], optional: ["problem", "cooldown", "hours", "enabled", "archived", "whenDone", "continueWhenBack", "muted", "runsOn"] },
   WorkflowApproval: { required: ["digest", "isNew"], optional: ["note"] },

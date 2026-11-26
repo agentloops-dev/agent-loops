@@ -10,12 +10,15 @@ public extension DaemonAPI {
         public var to: Date
         /// The answer can be partial (#7027): ask again without it for all of it.
         public var first: Bool?
+        /// The open epics on hold come too (#7335), with their children and no forecast, after the others.
+        public var onHold: Bool?
 
-        public init(project: String, from: Date, to: Date, first: Bool? = nil) {
+        public init(project: String, from: Date, to: Date, first: Bool? = nil, onHold: Bool? = nil) {
             self.project = project
             self.from = from
             self.to = to
             self.first = first
+            self.onHold = onHold
         }
     }
 
@@ -258,6 +261,8 @@ public enum WorkTimeline {
         case waits(Int)
         /// Open, with nothing to forecast: it ends where its work stopped.
         case open
+        /// On hold (#7335): dimmed, with "On hold" after it, and no forecast.
+        case held
     }
 
     /// One line: an epic's block (#7058).
@@ -290,8 +295,11 @@ public enum WorkTimeline {
         /// The row, 0 at the top (#5506).
         public var row: Int = 0
 
-        /// Its band (#6089): High 0, Medium 1, none 2, Low 3.
-        public var priorityBand: Int { WorkTimeline.priorityBand(priority) }
+        /// Its band (#6089): High 0, Medium 1, none 2, Low 3; an epic on hold's is `heldBand` (#7335).
+        public var priorityBand: Int { how == .held ? WorkTimeline.heldBand : WorkTimeline.priorityBand(priority) }
+
+        /// The width in points that it is drawn past its end: an epic on hold with no work yet's mark (#7335), else 0.
+        public var markWidth: Double { how == .held && work == nil ? WorkTimeline.heldMarkWidth : 0 }
 
         /// Its chip's words, after its title (#6089): *High*, *Medium* or *Low*; nil for none.
         public var chip: String? { WorkPlan.priorityWords(priority) }
@@ -310,21 +318,24 @@ public enum WorkTimeline {
         /// Whether the line runs past `date` (it has not ended by then).
         public var open: Bool {
             switch how {
-            case .forecast, .waits, .open: true
+            case .forecast, .waits, .open, .held: true
             case .joined, .dropped: false
             }
         }
     }
 
     /// The lines of a timeline, past and forecast: one per epic (#7058). Not drawn: an epic with no
-    /// children, one on hold, and one that has not started and has no forecast. `forecast` off draws the
-    /// past only. `working` is the refs a session is in a turn on now (`workingNow`): only an open epic works.
+    /// children, one on hold unless `held` (the On hold toggle, #7335), and one that has not started and has no
+    /// forecast. `forecast` off draws the past only. `working` is the refs a session is in a turn on now
+    /// (`workingNow`): only an open epic works. An open epic on hold has its solid span and no forecast; with no
+    /// work yet, it is a mark at Now.
     public static func lines(_ timeline: DaemonAPI.WorkTimeline, now: Date, forecast: Bool = true,
-                             working: Set<String> = []) -> [Line] {
+                             working: Set<String> = [], held: Bool = false) -> [Line] {
         timeline.epics.compactMap { epic -> Line? in
             let children = epic.children
-            guard !children.isEmpty, epic.item.onHold != true else { return nil }
             let isOpen = epic.closedAt == nil
+            let onHold = epic.item.onHold == true
+            if onHold ? !(held && isOpen) : children.isEmpty { return nil }
             let working = !isOpen ? 0
                 : children.filter { $0.closedAt == nil && working.contains($0.item.node.ref) }.count
                     + (working.contains(epic.item.node.ref) ? 1 : 0)
@@ -336,13 +347,16 @@ public enum WorkTimeline {
                 let last = working > 0 ? now : (starts + children.compactMap(\.closedAt)).max() ?? start
                 return DateInterval(start: start, end: max(min(last, now), start))
             }
-            let predicted = isOpen && forecast ? epic.forecast : nil
+            let predicted = isOpen && forecast && !onHold ? epic.forecast : nil
             let ghost = predicted.map { DateInterval(start: work?.end ?? now, end: max($0.mid, now)) }
-            guard let from = work?.start ?? ghost?.start, let end = ghost?.end ?? work?.end else { return nil }
+            let mark: Date? = onHold ? now : nil
+            guard let from = work?.start ?? ghost?.start ?? mark, let end = ghost?.end ?? work?.end ?? mark else { return nil }
             var how = End.open
             var band: DateInterval?
             let waiting = children.filter { $0.closedAt == nil && $0.waitsForPerson == true }.count
-            if !isOpen {
+            if onHold {
+                how = .held
+            } else if !isOpen {
                 let dropped = epic.stateReason == "not_planned" || children.allSatisfy { $0.stateReason == "not_planned" }
                 how = dropped ? .dropped : .joined
             } else if waiting > 0 {
@@ -395,12 +409,22 @@ public enum WorkTimeline {
         }
     }
 
-    /// A band's name at the plot's leading edge (#6089).
+    /// The band of the epics on hold (#7335): below the four priorities.
+    public static let heldBand = 4
+
+    /// The On hold toggle's help (#7335), as the web page's.
+    public static let heldToggleHelp = "Show the epics on hold too"
+
+    /// How wide the mark of an epic on hold with no work yet is, in points (#7335): a short dimmed mark at Now.
+    public static let heldMarkWidth: Double = 10
+
+    /// A band's name at the plot's leading edge (#6089, #7335).
     public static func bandWords(_ band: Int) -> String {
         switch band {
         case 0: "High"
         case 1: "Medium"
         case 3: "Low"
+        case heldBand: WorkPlan.onHoldWords
         default: "None"
         }
     }
@@ -429,6 +453,14 @@ public enum WorkTimeline {
                 out.append(placed)
             }
             first += busy.count
+        }
+        // The epics on hold (#7335): below the rest, a row each, in the order of forge/next (the read's order breaks a tie).
+        let held = lines.filter { $0.priorityBand == heldBand }.enumerated()
+            .sorted { (priorityBand($0.element.priority), $0.offset) < (priorityBand($1.element.priority), $1.offset) }
+        for (row, line) in held.map(\.element).enumerated() {
+            var placed = line
+            placed.row = first + row
+            out.append(placed)
         }
         return out
     }
@@ -518,13 +550,14 @@ public enum WorkTimeline {
     /// `trailing` is the width of what is drawn after the block first (the wait pill).
     public static func blockWords(_ line: Line, axis: Axis, measure: (String) -> Double, next: Date? = nil,
                                   left: Double = -.infinity, trailing: Double = 0) -> BlockWords {
-        let sx = axis.x(line.from), ex = max(axis.x(line.end), sx)
+        let sx = axis.x(line.from), ex = max(axis.x(line.end), sx) + line.markWidth
         let fits = measure(line.title) + 2 * titleInset <= ex - sx
         let arrow = fits && sx < left
         let insideX = (arrow ? left : sx) + titleInset
         let inside = fits ? cut(arrow ? "← \(line.title)" : line.title, room: ex - insideX - titleInset, measure: measure) : nil
-        let outsideX = axis.x(reach(line)) + 6 + (trailing > 0 ? trailing + 6 : 0)
-        let words = [fits ? "" : line.title, line.how == .dropped ? droppedWords : ""].filter { !$0.isEmpty }.joined(separator: "  ")
+        let outsideX = axis.x(reach(line)) + line.markWidth + 6 + (trailing > 0 ? trailing + 6 : 0)
+        let after = line.how == .dropped ? droppedWords : line.how == .held ? WorkPlan.onHoldWords : ""
+        let words = [fits ? "" : line.title, after].filter { !$0.isEmpty }.joined(separator: "  ")
         let room = (next.map { axis.x($0) - 6 } ?? .infinity) - outsideX
         var out = BlockWords(inside: inside, insideX: insideX, arrow: arrow,
                              outside: words.isEmpty ? nil : cut(words, room: room, measure: measure), outsideX: outsideX)
@@ -594,7 +627,7 @@ public enum WorkTimeline {
         lines.first { line in
             let top = rowTop(line.row)
             return point.y >= top && point.y <= top + blockHeight
-                && point.x >= axis.x(line.from) - 2 && point.x <= axis.x(reach(line)) + 2
+                && point.x >= axis.x(line.from) - 2 && point.x <= axis.x(reach(line)) + line.markWidth + 2
         }
     }
 
@@ -630,6 +663,7 @@ public enum WorkTimeline {
             }
         case .waits(let n): out.append(waitWords(n))
         case .open: out.append("open")
+        case .held: out.append(WorkPlan.onHoldWords)
         }
         return out.joined(separator: " · ")
     }
@@ -688,6 +722,7 @@ public enum WorkTimeline {
             case .forecast: "closes about \(time(line.end, now: now, calendar: calendar))"
             case .waits(let n): waitWords(n)
             case .open: "open"
+            case .held: WorkPlan.onHoldWords
             }
             let chip = line.chip.map { ", priority \($0.lowercased())" } ?? ""
             let stopped = line.stopped(now: now).map { ", \(stoppedWords($0, now: now))" } ?? ""
@@ -710,7 +745,7 @@ public enum WorkTimeline {
             switch line.how {
             case .forecast: 0
             case .waits: 1
-            case .open: 2
+            case .open, .held: 2
             case .joined, .dropped: 3
             }
         }
@@ -722,6 +757,7 @@ public enum WorkTimeline {
                 return "\(about) · \(time(band.start, now: now, calendar: calendar))–\(time(band.end, now: now, calendar: calendar))"
             case .waits(let n): return waitWords(n)
             case .open: return "open"
+            case .held: return WorkPlan.onHoldWords
             case .joined: return "joined \(time(line.closedAt ?? line.end, now: now, calendar: calendar))"
             case .dropped: return "closed as not planned"
             }

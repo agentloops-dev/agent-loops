@@ -19,6 +19,8 @@ final class WorkTimelineState {
     var project = "" { didSet { remember() } }
     /// The board the epics are narrowed to (#3282), by its url; "" for every board.
     var board = "" { didSet { remember() } }
+    /// The On hold toggle (#7335): the epics on hold are drawn too. Off by default; kept with the range.
+    var held = false { didSet { remember() } }
     var boards: [DaemonAPI.ProjectBoard] = []
     /// Where the window is: Now, until the plot is scrolled past an edge.
     var anchor = Date.now
@@ -47,10 +49,11 @@ final class WorkTimelineState {
         var project: String
         var board: String
         var range: WorkTimeline.Range
+        var held: Bool
         var anchor: Date
     }
 
-    var ask: Ask { Ask(asked: asked, project: project, board: board, range: range, anchor: anchor) }
+    var ask: Ask { Ask(asked: asked, project: project, board: board, range: range, held: held, anchor: anchor) }
 
     /// A read of the window runs or is still to start.
     var pending: Bool { reading || done != ask }
@@ -60,10 +63,11 @@ final class WorkTimelineState {
         range = kept.range
         project = kept.project
         board = kept.board
+        held = kept.held
     }
 
     private func remember() {
-        WorkRememberedStore.keep(WorkRemembered.timeline(range: range, project: project, board: board), for: .timeline)
+        WorkRememberedStore.keep(WorkRemembered.timeline(range: range, project: project, board: board, held: held), for: .timeline)
     }
 
     /// The plot on screen came from this device's copy (#4930), until the machines answer.
@@ -91,7 +95,7 @@ final class WorkTimelineState {
     }
 
     /// What the plot is kept under: the project, board and range.
-    private func copyAsk(_ project: String) -> String { [project, board, range.rawValue].joined(separator: "|") }
+    private func copyAsk(_ project: String) -> String { ([project, board, range.rawValue] + (held ? ["held"] : [])).joined(separator: "|") }
 
     /// What the plot holds: the window, and a range's width on each side of it to scroll through.
     var content: DateInterval {
@@ -148,6 +152,7 @@ final class WorkTimelineState {
         // across ranges (#5506).
         let span = WorkTimeline.packSpan(anchor)
         let board = board
+        let held = held
         // A machine answers with its epics first, and again with the forecast when its history is read (#7027): its
         // first answer is in firsts until then, and stays there when the second fails.
         var got: [DaemonAPI.WorkTimeline] = []
@@ -187,7 +192,7 @@ final class WorkTimelineState {
                     let read = await Result.catching {
                         try await model.forge(DaemonAPI.Method.workTimeline,
                                               DaemonAPI.WorkTimelineRequest(project: project.id, from: span.start, to: span.end,
-                                                                            first: first ? true : nil),
+                                                                            first: first ? true : nil, onHold: held ? true : nil),
                                               returning: DaemonAPI.WorkTimeline.self, on: machine.id)
                     }
                     // A machine whose forge failed answers with no epic and the forge's words: a failed read, so the
@@ -392,6 +397,11 @@ struct WorkTimelinePane: View {
             .labelsHidden()
             .fixedSize()
             .onChange(of: state.range) { goToNow() }
+            // The epics on hold too (#7335), dimmed, below the rest.
+            Toggle(WorkPlan.onHoldWords, isOn: $state.held)
+                .toggleStyle(.button)
+                .buttonStyle(.bordered)
+                .help(WorkTimeline.heldToggleHelp)
             Button("Now") { goToNow() }
                 .buttonStyle(.bordered)
                 .help("Back to now")
@@ -420,6 +430,8 @@ struct WorkTimelinePane: View {
                 }
                 .pickerStyle(.menu)
             }
+            // The epics on hold too (#7335), dimmed, below the rest.
+            Toggle(WorkPlan.onHoldWords, isOn: $state.held)
         } label: {
             Text(state.range.title)
         }
@@ -441,7 +453,7 @@ struct WorkTimelinePane: View {
     /// "Agents · 6 epics in these 2 days", once a read has drawn something.
     private var title: String? {
         guard let timeline = state.timeline, !projects.isEmpty else { return nil }
-        let lines = WorkTimeline.lines(timeline, now: .now)
+        let lines = WorkTimeline.lines(timeline, now: .now, held: state.held)
         // With the Project menu beside it, the menu names the project.
         return WorkTimeline.titleWords(project: projects.count > 1 ? "" : projectName, epics: WorkTimeline.epicCount(lines, in: state.range.window(now: state.anchor)),
                                        range: state.range)
@@ -497,7 +509,7 @@ struct WorkTimelinePane: View {
 
     /// The epics in the window, for the footer's count.
     private func epics(_ timeline: DaemonAPI.WorkTimeline) -> Int {
-        WorkTimeline.epicCount(WorkTimeline.lines(timeline, now: .now), in: state.range.window(now: state.anchor))
+        WorkTimeline.epicCount(WorkTimeline.lines(timeline, now: .now, held: state.held), in: state.range.window(now: state.anchor))
     }
 
     private func problems(_ timeline: DaemonAPI.WorkTimeline) -> [String] {
@@ -514,7 +526,7 @@ struct WorkTimelinePane: View {
             // Packed over the widest range's span, so a block keeps its row when the range changes or the plot
             // scrolls (#5506).
             let lines = WorkTimeline.layout(
-                WorkTimeline.overlapping(WorkTimeline.lines(timeline, now: now, working: working), WorkTimeline.packSpan(state.anchor)))
+                WorkTimeline.overlapping(WorkTimeline.lines(timeline, now: now, working: working, held: state.held), WorkTimeline.packSpan(state.anchor)))
             // S10 until a read draws, and while one runs with no epic in the window; S11 only after every read (#5925).
             let shows = WorkTimeline.shows(drawn: drawn, reading: reading,
                                            epics: WorkTimeline.overlapping(lines, state.range.window(now: state.anchor)).count)
@@ -584,7 +596,7 @@ struct WorkTimelinePane: View {
     /// the web page draws them under 700 px (note 36). A tap opens the epic.
     private func epicList(_ timeline: DaemonAPI.WorkTimeline, now: Date, drawn: Bool) -> some View {
         let working = WorkTimeline.workingNow(timeline, sessions: state.sessions, agents: model.workAgents)
-        let lines = WorkTimeline.lines(timeline, now: now, working: working)
+        let lines = WorkTimeline.lines(timeline, now: now, working: working, held: state.held)
         let window = state.range.window(now: state.anchor)
         let rows = WorkTimeline.epicRows(lines, window: window, now: now)
         let shows = WorkTimeline.shows(drawn: drawn, reading: state.pending, epics: rows.count)
@@ -932,13 +944,14 @@ private struct Drawing {
     func block(_ line: WorkTimeline.Line) -> CGRect {
         // An epic can be months old: no further than just past the plot's edges, so no layer is that wide.
         let sx = max(axis.x(line.from), -20), ex = min(axis.x(line.end), axis.width + 20)
-        return CGRect(x: sx, y: WorkTimeline.rowTop(line.row), width: max(ex - sx, 2), height: WorkTimeline.blockHeight)
+        return CGRect(x: sx, y: WorkTimeline.rowTop(line.row), width: max(ex - sx, 2, line.markWidth), height: WorkTimeline.blockHeight)
     }
 
     /// The solid span, full height: from when the work started to when it stopped (#6043); empty while no
     /// child has started. Clip to it.
     func solid(_ line: WorkTimeline.Line) -> CGRect {
-        let from = axis.x(line.work?.start ?? line.from), to = axis.x(line.work?.end ?? line.from)
+        // An epic on hold with no work yet is all mark (#7335).
+        let from = axis.x(line.work?.start ?? line.from), to = axis.x(line.work?.end ?? line.from) + line.markWidth
         return CGRect(x: from, y: -100, width: max(to - from, 0), height: height + 200)
     }
 
@@ -986,7 +999,8 @@ private struct Drawing {
                 .union(Path(CGRect(x: solidRect.maxX, y: -100, width: max(axis.width - solidRect.maxX + 100, 0), height: height + 200)))
             gc.drawLayer { layer in
                 layer.clip(to: work)
-                layer.fill(shape, with: .color(c))
+                // An epic on hold (#7335): its feature's colour, dimmed.
+                layer.fill(shape, with: .color(line.how == .held ? c.opacity(0.4) : c))
             }
             // Then an open epic's ghost to its predicted finish, with a dashed edge (#7058).
             if line.ghost != nil {
@@ -1015,7 +1029,8 @@ private struct Drawing {
                 let at = CGPoint(x: words.insideX, y: WorkTimeline.titleY(line.row))
                 gc.drawLayer { layer in
                     layer.clip(to: work)
-                    layer.draw(Text(inside).stepped(.fine).fontWeight(.semibold).foregroundStyle(.white), at: at, anchor: .leading)
+                    layer.draw(Text(inside).stepped(.fine).fontWeight(.semibold).foregroundStyle(line.how == .held ? later(line) : .white),
+                               at: at, anchor: .leading)
                 }
                 gc.drawLayer { layer in
                     layer.clip(to: idle)
@@ -1026,7 +1041,7 @@ private struct Drawing {
                 drawChip(&gc, chip, line: line, x: words.chipX, y: words.chipInside ? WorkTimeline.titleY(line.row) : mid)
             }
             if let outside = words.outside {
-                let text = line.how == .dropped
+                let text = line.how == .dropped || line.how == .held
                     ? Text(outside).stepped(.fine).foregroundStyle(faint)
                     : Text(outside).stepped(.fine).fontWeight(.semibold).foregroundStyle(later(line))
                 gc.draw(text, at: CGPoint(x: words.outsideX, y: mid), anchor: .leading)
@@ -1034,7 +1049,7 @@ private struct Drawing {
             // With motion the ◐ turns in the overlay; with Reduce Motion it is still, here.
             if isWorking(line), !moving { drawHalfRing(&gc, line, x: nowX, turn: 0) }
             // → for a block that goes on past the right edge.
-            if axis.x(WorkTimeline.reach(line)) > right {
+            if axis.x(WorkTimeline.reach(line)) + line.markWidth > right {
                 gc.draw(Text("→").stepped(.fine).fontWeight(.bold).foregroundStyle(right - 10 > solidRect.maxX || right - 10 < solidRect.minX ? later(line) : .white),
                         at: CGPoint(x: right - 10, y: mid))
             }
