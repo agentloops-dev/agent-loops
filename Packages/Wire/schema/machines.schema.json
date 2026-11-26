@@ -76,6 +76,18 @@
         },
         "state": {
           "type": "string"
+        },
+        "capacity": {
+          "$ref": "#/definitions/CapacityLevel",
+          "description": "The machine's capacity level as it last pushed it (#5875), so an agent does not start heavy work on a full machine. Absent before its first push."
+        },
+        "loadPerCore5": {
+          "type": "number",
+          "description": "Its 5-minute load per core when it last pushed."
+        },
+        "capacityAt": {
+          "$ref": "core.schema.json#/definitions/WireDate",
+          "description": "When the control plane last heard its capacity. A figure older than 2 minutes is no figure (Auto's rule)."
         }
       },
       "required": [

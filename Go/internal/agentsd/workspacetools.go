@@ -562,7 +562,31 @@ func noProvider(given string, listed wire.AgentMachines) string {
 
 // workspacesNote is list_machines for an agent to read: each provider, its workspaces and
 // their hosts, and what a new one takes.
-func workspacesNote(listed wire.AgentMachines) string {
+func workspacesNote(listed wire.AgentMachines) string { return workspacesNoteAt(listed, time.Now()) }
+
+// capacityTrusted is how old a machine's capacity figure may be before it is no figure: the
+// control plane's rule for Auto (#5875).
+const capacityTrusted = 2 * time.Minute
+
+// hostCapacityNote is a machine's level, load per core and the figure's age, or "no figure"
+// when it has none or it is older than capacityTrusted (#5875).
+func hostCapacityNote(h wire.AgentMachinesHost, now time.Time) string {
+	if h.Capacity == nil || h.CapacityAt == nil {
+		return "no figure"
+	}
+	age := now.Sub(h.CapacityAt.Time())
+	if age > capacityTrusted {
+		return "no figure"
+	}
+	age = max(age, 0).Round(time.Second)
+	note := "capacity " + string(*h.Capacity)
+	if h.LoadPerCore5 != nil {
+		note += fmt.Sprintf(", load %.2f per core (5 min)", *h.LoadPerCore5)
+	}
+	return note + ", " + age.String() + " ago"
+}
+
+func workspacesNoteAt(listed wire.AgentMachines, now time.Time) string {
 	var lines []string
 	if len(listed.Providers) == 0 {
 		lines = append(lines, "This control plane has no machine providers. The person adds them in Settings ▸ Machine Providers.")
@@ -577,7 +601,7 @@ func workspacesNote(listed wire.AgentMachines) string {
 	if len(listed.Hosts) > 0 {
 		lines = append(lines, "The person's machines, where start_session with machine starts a session, in this project's folder there or in folder, once the person says yes:")
 		for _, h := range listed.Hosts {
-			lines = append(lines, "  - "+h.Name+": "+h.State)
+			lines = append(lines, "  - "+h.Name+": "+h.State+" ("+hostCapacityNote(h, now)+")")
 		}
 	}
 	return strings.Join(lines, "\n")
