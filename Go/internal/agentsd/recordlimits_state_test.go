@@ -143,11 +143,13 @@ func TestAGuardedFileOverItsLimitIsNotApproved(t *testing.T) {
 	if got, ok := d.guardedContent(dir, folderConfig); !ok || len(got) != guardedMostBytes {
 		t.Fatalf("at the limit: %d", len(got))
 	}
+	// The folder's watch hears the larger copy and records it as a change that waits (on
+	// Linux, a moment after the write: #7342). Check it here first, so the record read
+	// below is what that check makes, and only the refusal can change it.
+	writeFile(t, path, text(guardedMostBytes+1))
+	d.checkGuarded(dir, folderConfig, nil)
 	was := readText(t, d.guardedFile())
-	overLimit(t, func() error {
-		writeFile(t, path, text(guardedMostBytes+1))
-		return d.approveGuarded(dir, folderConfig)
-	}())
+	overLimit(t, d.approveGuarded(dir, folderConfig))
 	if readText(t, d.guardedFile()) != was {
 		t.Error("the refusal changed the record")
 	}
