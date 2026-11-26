@@ -55,13 +55,13 @@ func (f *Folder) PutAs(ctx context.Context, d Digest, data []byte) (Info, bool, 
 		return infoOf(d, fi), false, nil
 	}
 	dir := f.dir()
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return Info{}, false, err
 	}
 	b := make([]byte, 8)
 	_, _ = rand.Read(b)
 	tmp := filepath.Join(dir, "."+hex.EncodeToString(b)+".tmp")
-	w, err := os.OpenFile(tmp, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o444)
+	w, err := os.OpenFile(tmp, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o400)
 	if err != nil {
 		return Info{}, false, err
 	}

@@ -38,7 +38,7 @@ func TestPutGetHeadDedupeDelete(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		r.Close()
+		_ = r.Close()
 		if h, err := s.Head(ctx, in.Digest); err != nil || h.Size != 5 {
 			t.Fatalf("head: %+v %v", h, err)
 		}
@@ -147,11 +147,11 @@ func TestFolderCrashSafeWrite(t *testing.T) {
 	root := t.TempDir()
 	f := NewFolder(root)
 	dir := f.dir()
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o750); err != nil {
 		t.Fatal(err)
 	}
 	torn := filepath.Join(dir, ".deadbeef.tmp")
-	if err := os.WriteFile(torn, []byte("par"), 0o644); err != nil {
+	if err := os.WriteFile(torn, []byte("par"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if p, _ := f.List(ctx, "", 0); len(p.Blobs) != 0 {
@@ -180,8 +180,8 @@ func TestFolderDetectsCorruptBlob(t *testing.T) {
 	f := NewFolder(t.TempDir())
 	in, _, _ := f.Put(ctx, []byte("good"))
 	p := f.path(in.Digest)
-	_ = os.Chmod(p, 0o644)
-	if err := os.WriteFile(p, []byte("evil"), 0o644); err != nil {
+	_ = os.Chmod(p, 0o600)
+	if err := os.WriteFile(p, []byte("evil"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := f.Get(ctx, in.Digest); !errors.Is(err, ErrMismatch) {
