@@ -23,9 +23,16 @@ lead for the top open epic with no lead, as **Start lead** does: the lead prompt
 the forge changes, a session ends, a machine comes back or a PR merges, and at least every
 ten minutes. In `high` mode an epic that is not `priority:high` waits.
 
-Starting a lane for a ready issue that no epic takes (#5900), starting a lead again when it ends
-while its epic is open (#5901) and pausing an epic whose work goes bad (#5902) are the
-next slices of the epic.
+After the leads, it reads `forge/next` for issues and starts a lane (#5900) for the top row that
+has no parent and that no standing epic's query takes (their leads start those, so two starters
+never race): the Software Engineer persona, the labels `#<n>` and `lane`, the issue's own
+prompt. At most one lane starts for each run, in the same limits; in `high` mode only a
+`priority:high` issue. A `linux-ok` issue goes to an online Linux machine of the project (the
+machine list says each one's `platform`); else, when the project is on several machines, to
+the one Auto picks; else, or when that start fails, to this machine.
+
+Starting a lead again when it ends while its epic is open (#5901) and pausing an epic whose
+work goes bad (#5902) are the next slices of the epic.
 
 ## Its limits
 

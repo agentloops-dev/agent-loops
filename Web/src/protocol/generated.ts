@@ -546,6 +546,11 @@ export interface AgentMachinesHost {
    * (Auto's rule).
    */
   capacityAt?: WireDate;
+  /**
+   * The machine's platform as it announced it (macOS 15, Linux), so Autopilot (#5900) sends a
+   * linux-ok issue to a Linux machine. Absent when it did not say.
+   */
+  platform?: string;
 }
 
 export interface AgentMachinesMachine {
@@ -18805,7 +18810,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   AgentConfigFileRequest: { required: ["path", "time", "counter"], optional: ["contents", "deleted"] },
   AgentConfigFiles: { required: ["files"], optional: ["updated"] },
   AgentMachines: { required: ["providers"], optional: ["hosts"] },
-  AgentMachinesHost: { required: ["name", "state"], optional: ["capacity", "loadPerCore5", "capacityAt"] },
+  AgentMachinesHost: { required: ["name", "state"], optional: ["capacity", "loadPerCore5", "capacityAt", "platform"] },
   AgentMachinesMachine: { required: ["id", "name", "state"], optional: ["host", "hostState", "cost", "reason"] },
   AgentMachinesProvider: { required: ["id", "name", "canMake", "canDelete", "workspaces"], optional: ["options"] },
   AgentRemovedNotification: { required: ["agentID"], optional: [] },

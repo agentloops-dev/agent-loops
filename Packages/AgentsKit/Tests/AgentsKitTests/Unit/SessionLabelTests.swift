@@ -50,6 +50,25 @@ struct SessionLabelTests {
         }
     }
 
+    /// #7241: a lane that joins five issues still adds lane, its PR and merged, and the
+    /// refusal says which labels it counted.
+    @Test func linksAndFinishedWordsHaveARoomOfTheirOwn() throws {
+        let issues = try SessionLabelPolicy.change(current: [], add: ["#1", "#2", "#3", "#4", "#5"],
+                                                   actor: .agent, folderLabels: [])
+        let more = try SessionLabelPolicy.change(current: issues, add: ["lane", "P#9", "merged", "a", "b", "c", "d"],
+                                                 actor: .agent, folderLabels: [])
+        #expect(more.count == 12)
+        #expect(throws: SessionLabelPolicy.Refusal.tooMany(["lane", "a", "b", "c", "d"])) {
+            try SessionLabelPolicy.change(current: more, add: ["e"], actor: .agent, folderLabels: [])
+        }
+        let links = (100..<120).map { "#\($0)" }
+        #expect(SessionLabelPolicy.refusal(of: links) == nil)
+        #expect(SessionLabelPolicy.refusal(of: links + ["P#1"]) == .tooManyLinks(links))
+        #expect(SessionLabelPolicy.refusal(of: links + ["merged", "closed", "archived", "x"]) == nil)
+        #expect(SessionLabelPolicy.hasRoom(existing: ["a", "b", "c", "d", "e"]))
+        #expect(!SessionLabelPolicy.hasRoom(existing: ["a", "b", "c", "d", "e"] + links))
+    }
+
     @Test func refusesSixthWithoutChangingFive() throws {
         let five = try SessionLabelPolicy.change(current: [],
                                                  add: ["one", "two", "three", "four", "five"],

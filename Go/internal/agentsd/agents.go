@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -366,7 +368,56 @@ func (d *Daemon) rename(r wire.RenameRequest) (wire.Agent, error) {
 
 // MARK: labels (SessionLabelPolicy)
 
-const labelLength, labelCount = 24, 5
+// A session has at most labelCount plain labels, and apart from them at most linkLabelCount
+// links (#12, ENG-4, P#12) and the finished words (merged, closed, archived), which are only
+// three (#7241): a lane that joins several issues still links its PR and shows it merged.
+const labelLength, labelCount, linkLabelCount = 24, 5, 20
+
+var (
+	issueLabelPattern = regexp.MustCompile(`^(#[0-9]+|[A-Z][A-Z0-9]*-[0-9]+)$`)
+	prLabelPattern    = regexp.MustCompile(`^[Pp]#[0-9]+$`)
+)
+
+// labelKind is SessionLabel.Kind: what a label names, by its text alone.
+type labelKind int
+
+const (
+	labelPlain labelKind = iota
+	labelLink
+	labelFinished
+)
+
+func kindOfLabel(v string) labelKind {
+	v = strings.TrimSpace(v)
+	switch {
+	case issueLabelPattern.MatchString(v), prLabelPattern.MatchString(v):
+		return labelLink
+	case slices.Contains([]string{"merged", "closed", "archived"}, strings.ToLower(v)):
+		return labelFinished
+	}
+	return labelPlain
+}
+
+// labelRoomRefusal is why one more label of v's kind does not fit on result, or nil.
+func labelRoomRefusal(result []wire.SessionLabel, v string) error {
+	kind := kindOfLabel(v)
+	if kind == labelFinished {
+		return nil
+	}
+	var same []string
+	for _, l := range result {
+		if kindOfLabel(l.Value) == kind {
+			same = append(same, l.Value)
+		}
+	}
+	switch {
+	case kind == labelLink && len(same) >= linkLabelCount:
+		return Invalid("A session can have at most %d links to issues and pull requests (#12, P#12). It has %s.", linkLabelCount, strings.Join(same, ", "))
+	case kind == labelPlain && len(same) >= labelCount:
+		return Invalid("A session can have at most five labels, apart from links (#12, P#12) and merged, closed or archived. It has %s.", strings.Join(same, ", "))
+	}
+	return nil
+}
 
 func labelKey(v string) string { return strings.ToLower(strings.TrimSpace(v)) }
 
@@ -456,8 +507,8 @@ func addLabelsAs(actor wire.SessionLabelOwner, result []wire.SessionLabel, addin
 		if found {
 			continue
 		}
-		if len(result) >= labelCount {
-			return nil, Invalid("A session can have at most five labels.")
+		if err := labelRoomRefusal(result, v); err != nil {
+			return nil, err
 		}
 		canonical := v
 		for _, l := range folder {
