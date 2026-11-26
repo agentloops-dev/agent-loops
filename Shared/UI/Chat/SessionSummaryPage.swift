@@ -80,20 +80,7 @@ struct SessionSummaryPage: View {
     }
 
     private var nowCard: NowCard {
-        let agentID = agent.id
-        var background = BackgroundActions(output: actions.backgroundOutput)
-        if let stop = actions.stopBackground {
-            background.stop = { item in await stop(item, agentID) }
-        }
-        if let steps = actions.subagentSteps {
-            background.steps = { item in steps(item.id) }
-        }
-        return NowCard(agent: agent, isComingBack: isComingBack,
-                       parts: cards.filter { !$0.asks },
-                       leases: actions.leaseStatus(agentID)?.without(agent.eventWait),
-                       capacityStart: actions.capacityStart(agent),
-                       background: background,
-                       openLease: actions.openLease)
+        NowCard(agent: agent, isComingBack: isComingBack, cards: cards, actions: actions)
     }
 }
 
