@@ -75,7 +75,11 @@ these states, in this order:
   the wire. A control-only machine answers `control/receive` too.
 - **frozen:** the old copy changes no record.
 - **copying:** the store goes to the new copy over a handover session, and the new copy takes
-  over.
+  over. The records go in batches of at most 1,000 records or 4 MiB (`store/putMany`), and the
+  check reads their hashes 2,000 keys a call (`store/sums`), so the time frozen is about 2 round
+  trips for each 1,000 records, not 2 for each record (#7394): 5,000 records at 50 ms a round
+  trip are frozen for under a second, and 40,000 for about 3 s, plus the time to read and send
+  the bytes.
 - **forwarding:** when the new address is not the old one, the old copy sends each member to
   the new one, for 30 days at most. Agent Loops changes no DNS record. **done:** the same
   address.

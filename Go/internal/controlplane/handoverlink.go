@@ -3,6 +3,7 @@ package controlplane
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -29,6 +30,8 @@ type HandoverLink struct {
 	mu    sync.Mutex
 	lines *controllink.Lines
 	next  int
+	// delay is added before each call: a test's link between two machines (#7394).
+	delay time.Duration
 }
 
 // DialHandover opens a handover session with the copy at base, as this control plane.
@@ -62,6 +65,7 @@ func (f *HandoverFailure) Error() string { return f.Message }
 func (l *HandoverLink) Call(method string, params any) (json.RawMessage, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	time.Sleep(l.delay)
 	id := l.next
 	l.next++
 	if params == nil {
@@ -143,6 +147,45 @@ func (p PeerStore) Put(_ context.Context, key string, data []byte, when store.Co
 		return "", fmt.Errorf("store/put: the tag: %w", err)
 	}
 	return tag, nil
+}
+
+// createAll is store/putMany: a batch of records, created in one call (#7394).
+func (p PeerStore) createAll(_ context.Context, batch []copyRecord) error {
+	type sent struct {
+		Key  string `json:"key"`
+		Data string `json:"data"`
+	}
+	out := make([]sent, len(batch))
+	for i, r := range batch {
+		out[i] = sent{Key: r.Key, Data: base64.StdEncoding.EncodeToString(r.Data)}
+	}
+	_, err := p.Link.Call("store/putMany", map[string]any{"records": out})
+	var refused *HandoverFailure
+	if errors.As(err, &refused) && refused.Code == wire.FailureChangedElsewhere {
+		return &store.ConflictError{Key: batch[0].Key}
+	}
+	return err
+}
+
+// sums is store/sums: the SHA-256 of each key's record at the copy, in one call (#7394).
+func (p PeerStore) sums(_ context.Context, keys []string) (map[string][sha256.Size]byte, error) {
+	reply, err := p.Link.Call("store/sums", map[string]any{"keys": keys})
+	if err != nil {
+		return nil, err
+	}
+	var hexes map[string]string
+	if err := json.Unmarshal(reply, &hexes); err != nil {
+		return nil, fmt.Errorf("store/sums: %w", err)
+	}
+	out := make(map[string][sha256.Size]byte, len(hexes))
+	for key, h := range hexes {
+		var sum [sha256.Size]byte
+		if b, err := hex.DecodeString(h); err == nil && len(b) == sha256.Size {
+			copy(sum[:], b)
+			out[key] = sum
+		}
+	}
+	return out, nil
 }
 
 func (p PeerStore) Delete(context.Context, string) error {

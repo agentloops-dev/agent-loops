@@ -2,7 +2,9 @@ package controlplane
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -139,6 +141,10 @@ func (s *Service) handoverAnswer(method string, params json.RawMessage) (any, er
 			return nil, refuseHandover("Say the key and the data.")
 		}
 		return s.cfg.Store.Put(ctx, key, data, store.Absent)
+	case "store/putMany":
+		return s.handoverStorePutMany(ctx, phase, params)
+	case "store/sums":
+		return s.handoverStoreSums(ctx, phase, params)
 	case "handover/mark":
 		return s.handoverMark(ctx, phase, p)
 	case "handover/announce":
@@ -220,6 +226,67 @@ func (s *Service) handoverStoreGet(ctx context.Context, phase string, p handover
 		return nil, nil
 	}
 	return map[string]string{"data": base64.StdEncoding.EncodeToString(object.Data), "etag": object.ETag}, nil
+}
+
+// handoverStorePutMany is store/putMany: store/put for a batch of records, so a move copies
+// the store in a call per batch, not per record (#7394). Each key and its data are read
+// before any is written; the records are created in order, and a key held already stops it.
+func (s *Service) handoverStorePutMany(ctx context.Context, phase string, params json.RawMessage) (any, error) {
+	if phase != phaseReceiving {
+		return nil, refuseHandover("Only a receiving copy takes records.")
+	}
+	var p struct {
+		Records []struct {
+			Key  string  `json:"key"`
+			Data *string `json:"data"`
+		} `json:"records"`
+	}
+	if json.Unmarshal(params, &p) != nil || len(p.Records) == 0 {
+		return nil, refuseHandover("Say the records.")
+	}
+	batch := make([]copyRecord, len(p.Records))
+	for i, r := range p.Records {
+		if !strings.HasPrefix(r.Key, "v1/") || r.Data == nil {
+			return nil, refuseHandover("Say each record's key and data.")
+		}
+		data, err := base64.StdEncoding.DecodeString(*r.Data)
+		if err != nil {
+			return nil, refuseHandover("Say each record's key and data.")
+		}
+		batch[i] = copyRecord{Key: r.Key, Data: data}
+	}
+	for _, r := range batch {
+		if _, err := s.cfg.Store.Put(ctx, r.Key, r.Data, store.Absent); err != nil {
+			return nil, err
+		}
+	}
+	return map[string]int{"written": len(batch)}, nil
+}
+
+// handoverStoreSums is store/sums: the SHA-256 of each key's record, in hex, for the check
+// of a copy (#7394); a key with no record is not in the answer. At most sumsBatchKeys keys.
+func (s *Service) handoverStoreSums(ctx context.Context, phase string, params json.RawMessage) (any, error) {
+	if phase == phaseServing {
+		return nil, refuseHandover("Freeze this copy before reading its store.")
+	}
+	var p struct {
+		Keys []string `json:"keys"`
+	}
+	if json.Unmarshal(params, &p) != nil || len(p.Keys) == 0 || len(p.Keys) > sumsBatchKeys {
+		return nil, refuseHandover(fmt.Sprintf("Say from 1 to %d keys.", sumsBatchKeys))
+	}
+	out := make(map[string]string, len(p.Keys))
+	for _, key := range p.Keys {
+		object, err := s.cfg.Store.Get(ctx, key)
+		if err != nil {
+			return nil, err
+		}
+		if object != nil {
+			sum := sha256.Sum256(object.Data)
+			out[key] = hex.EncodeToString(sum[:])
+		}
+	}
+	return out, nil
 }
 
 // handoverMark is handover/mark: it leaves a mark in the store, or finds and removes one.
