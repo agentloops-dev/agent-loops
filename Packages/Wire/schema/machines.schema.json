@@ -88,6 +88,10 @@
         "capacityAt": {
           "$ref": "core.schema.json#/definitions/WireDate",
           "description": "When the control plane last heard its capacity. A figure older than 2 minutes is no figure (Auto's rule)."
+        },
+        "platform": {
+          "type": "string",
+          "description": "The machine's platform as it announced it (macOS 15, Linux), so Autopilot (#5900) sends a linux-ok issue to a Linux machine. Absent when it did not say."
         }
       },
       "required": [

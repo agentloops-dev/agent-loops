@@ -25,8 +25,10 @@ snapshot_start=10:00
 dry_run=0
 project=''
 vm_account=''
-# The control plane's image (#2140): a release pushes ghcr.io/agentloops-dev/agents-control:X.Y.Z, and
-# up.sh --build tags its own build the same way.
+# The control plane's image (#2140): a release pushes ghcr.io/<the repo's owner>/agents-control:X.Y.Z
+# (release.yml, #4958), and up.sh --build tags its own build the same way. up.sh reads the owner
+# with image_of_repo (#5472), so a move of the repo cannot leave the deploy behind;
+# deploy/gcp/hosted-up.sh builds its own image here, with this name, as compose.hosted.yaml says.
 image=ghcr.io/agentloops-dev/agents-control
 build=0
 
@@ -116,4 +118,34 @@ pick_version() {
 	tag=${version//+/-}
 	((build)) || [[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] ||
 		die "no release is $version, so there is no image to pull: give --build to build this checkout, or AGENTS_VERSION=X.Y.Z for a release"
+}
+
+# owner_of_url URL: the owner in a GitHub remote's URL (https://github.com/O/R(.git),
+# git@github.com:O/R(.git) or ssh://git@github.com/O/R), in lower case as ghcr.io names it;
+# nothing when URL is not GitHub's.
+owner_of_url() {
+	local url=$1 owner=''
+	if [[ $url =~ ^(https://|ssh://git@|git@)github\.com[:/]([A-Za-z0-9-]+)/[^/]+$ ]]; then
+		owner=${BASH_REMATCH[2]}
+	fi
+	printf '%s' "$owner" | tr '[:upper:]' '[:lower:]'
+}
+
+# image_of_repo ROOT: set image to the one a release of the repo at ROOT pushes,
+# ghcr.io/<owner>/agents-control (#5472), as release.yml names it with github.repository_owner.
+# The owner is AGENTS_IMAGE_OWNER when set; else the one GitHub gives for the repo (gh follows a
+# moved repo's redirect, so an old origin URL still gives the new owner); else the owner in
+# origin's URL. When none says, it stops here, before anything is made or pulled.
+image_of_repo() {
+	local root=$1 owner=${AGENTS_IMAGE_OWNER:-}
+	if [[ -z $owner ]] && command -v gh >/dev/null; then
+		owner=$(cd "$root" && gh repo view --json owner -q .owner.login 2>/dev/null) || owner=''
+	fi
+	if [[ -z $owner ]]; then
+		owner=$(owner_of_url "$(git -C "$root" remote get-url origin 2>/dev/null || true)")
+	fi
+	owner=$(printf '%s' "$owner" | tr '[:upper:]' '[:lower:]')
+	[[ $owner =~ ^[a-z0-9-]+$ ]] ||
+		die "cannot tell the image's owner: $root has no GitHub origin and gh does not say; give AGENTS_IMAGE_OWNER=<the owner release.yml pushes to>"
+	image=ghcr.io/$owner/agents-control
 }

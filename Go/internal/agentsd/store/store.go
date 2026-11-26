@@ -872,6 +872,12 @@ type rootIdentity struct {
 	Path   string `json:"path"`
 }
 
+// rootIdentityText is root-id.json as Swift's JSONEncoder with .prettyPrinted and .sortedKeys
+// writes it, which escapes slashes.
+func rootIdentityText(made rootIdentity) string {
+	return fmt.Sprintf("{\n  \"id\" : %s,\n  \"madeAt\" : %s,\n  \"path\" : %s\n}", quote(made.ID), quote(made.MadeAt), quote(made.Path))
+}
+
 // loadOrMakeRootID is RootIdentity.loadOrMake: the root's id, and whether it was made
 // just now for a root that had none (then unstamped records are this root's own).
 func loadOrMakeRootID(file, root string) (string, bool) {
@@ -891,8 +897,9 @@ func loadOrMakeRootID(file, root string) (string, bool) {
 		}
 	}
 	made := rootIdentity{ID: newUUID(), MadeAt: time.Now().UTC().Format("2006-01-02T15:04:05Z"), Path: here}
-	// Swift's JSONEncoder with .prettyPrinted and .sortedKeys, which escapes slashes.
-	text := fmt.Sprintf("{\n  \"id\" : %s,\n  \"madeAt\" : %s,\n  \"path\" : %s\n}", quote(made.ID), quote(made.MadeAt), quote(made.Path))
+	text := rootIdentityText(made)
+	// An id, a time and the root's path, which the system holds to 4 KiB (twice that with its escapes).
+	// store-bounds: kind=key-value; size=16KiB; count=1; age=until-deleted; applied=on write (#7350)
 	if err := WriteAtomically(file, []byte(text), 0o644); err != nil {
 		log.Printf("could not write %s: %v", file, err)
 	}

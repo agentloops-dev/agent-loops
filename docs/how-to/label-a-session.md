@@ -7,7 +7,10 @@ description: Add session labels, find labeled work, see who owns each label, and
 # Label a session
 
 Use labels to tell similar sessions apart and find them later in the same folder.
-Each session can have up to five labels. A label has 1–24 characters; surrounding
+Each session can have up to five labels, and apart from them up to 20 links to issues
+and pull requests (`#12`, `ENG-4`, `P#12`) and the words `merged`, `closed` and `archived`
+(#7241), so a session that works on several issues can still link its pull request. When
+a label does not fit, the refusal names the labels it counted. A label has 1–24 characters; surrounding
 spaces are removed, and capitalization does not make a second label.
 Server folders can be labeled from the Mac. iPhone and iPad show Mac folders only.
 
