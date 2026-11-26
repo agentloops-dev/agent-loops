@@ -130,8 +130,8 @@ func doctl(o map[string]any) (Config, error) {
 	}
 	tunnel, _ := o["tunnel"].(bool)
 	return newConfig(nil, &Listing{
-		Command: "doctl compute droplet list --tag-name " + ShellQuoted(tag) + " --format ID,Name,Status,PublicIPv4 --no-header",
-		Shape:   Shape{Columns: []string{"id", "name", "state", "ip"}},
+		Command: "doctl compute droplet list --tag-name " + ShellQuoted(tag) + " --format ID,Name,Status,PublicIPv4,PublicIPv6 --no-header",
+		Shape:   Shape{Columns: []string{"id", "name", "state", "ip", "ip6"}},
 		Commands: Commands{Start: "doctl compute droplet-action power-on ${id} --wait",
 			Stop: "doctl compute droplet-action power-off ${id} --wait",
 			SSH:  ptr(user + "@${ip}"), Tunnel: tunnel},
@@ -290,7 +290,7 @@ func digitalOceanAPI(o map[string]any) (Config, error) {
 		Request: &Request{Method: "GET", Headers: headers,
 			URL: base + "/v2/droplets?per_page=200&tag_name=" + url.QueryEscape(tag)},
 		Shape: Shape{Items: "droplets", Fields: map[string]string{"id": "id", "name": "name", "state": "status",
-			"ip": "networks.v4[type=public].ip_address"}},
+			"ip": "networks.v4[type=public].ip_address", "ip6": "networks.v6[type=public].ip_address"}},
 		Commands: Commands{StartRequest: action("power_on"), StopRequest: action("power_off"),
 			SSH: ptr(user + "@${ip}"), Tunnel: tunnel},
 	}, digitalOceanStates, Making{
@@ -438,7 +438,8 @@ func awsEC2API(o map[string]any) (Config, error) {
 	return newConfig(nil, &Listing{
 		Request: query("DescribeInstances", list),
 		Shape: Shape{Items: "reservationSet[].instancesSet", Fields: map[string]string{"id": "instanceId",
-			"name": "tagSet[key=Name].value", "state": "instanceState.name", "ip": "ipAddress"}},
+			"name": "tagSet[key=Name].value", "state": "instanceState.name", "ip": "ipAddress",
+			"ip6": "ipv6Address"}},
 		Commands: Commands{StartRequest: query("StartInstances", "&InstanceId.1=${id}"),
 			StopRequest: query("StopInstances", "&InstanceId.1=${id}"),
 			SSH:         ptr(user + "@${ip}"), Tunnel: tunnel},
@@ -542,7 +543,7 @@ func gcpComputeAPI(o map[string]any) (Config, error) {
 	return newConfig(nil, &Listing{
 		Request: &Request{Method: "GET", URL: instances + "?filter=" + url.QueryEscape("labels."+label+":*"), Google: auth},
 		Shape: Shape{Items: "items", Fields: map[string]string{"id": "name", "name": "name", "state": "status",
-			"ip": "networkInterfaces[0].accessConfigs[0].natIP"}},
+			"ip": "networkInterfaces[0].accessConfigs[0].natIP", "ip6": "networkInterfaces[0].ipv6AccessConfigs[0].externalIpv6"}},
 		Commands: Commands{
 			StartRequest: &Request{Method: "POST", URL: instances + "/${id}/start", Google: auth},
 			StopRequest:  &Request{Method: "POST", URL: instances + "/${id}/stop", Google: auth},

@@ -104,7 +104,7 @@ func TestAnAgentsWorkspaceTools(t *testing.T) {
 		t.Fatalf("%+v", pending[0])
 	}
 	c.call(t, 2, "elicitations/answer", map[string]any{"requestID": pending[0].ID, "action": "accept", "content": map[string]any{"go": "yes"}})
-	if text := <-answered; text != "Made second. It joins as the host second on its first boot: wait for server.online." {
+	if text := <-answered; text != "Made second. list_machines gives its public addresses once its provider has them. It joins as the host second on its first boot: wait for server.online." {
 		t.Fatal(text)
 	}
 
@@ -226,7 +226,7 @@ func TestAYesAfterTheHoldStillMakesTheMachine(t *testing.T) {
 	waitFor(t, "both results in its chat", func() bool {
 		said := userMessages(d, a.ID)
 		return slices.Contains(said, "The person answered your card \"Claude (fix-login) wants to make a machine\". "+
-			"Made second. It joins as the host second on its first boot: wait for server.online.") &&
+			"Made second. list_machines gives its public addresses once its provider has them. It joins as the host second on its first boot: wait for server.online.") &&
 			slices.Contains(said, "The person answered your card \"Claude (fix-login) wants to delete a machine\". "+
 				"Nothing was deleted: the person said no, or didn’t answer.")
 	})
@@ -589,5 +589,18 @@ func TestListMachinesShowsCapacityAndItsAge(t *testing.T) {
 		if !strings.Contains(note, want) {
 			t.Errorf("missing %q in\n%s", want, note)
 		}
+	}
+}
+
+// list_machines gives a made machine's public addresses, from its provider's record (#7466).
+func TestListMachinesGivesAMachinesPublicAddresses(t *testing.T) {
+	listed := wire.AgentMachines{Providers: []wire.AgentMachinesProvider{{ID: "do", Name: "DigitalOcean",
+		Workspaces: []wire.AgentMachinesMachine{
+			{ID: "w1", Name: "pool-1", State: "running", Addresses: []string{"203.0.113.7", "2001:db8::7"}},
+			{ID: "w2", Name: "pool-2", State: "starting"}}}}}
+	note := workspacesNote(listed)
+	if !strings.Contains(note, "  - pool-1: running — not a host, addresses 203.0.113.7, 2001:db8::7\n") ||
+		!strings.Contains(note, "  - pool-2: starting — not a host\n") {
+		t.Fatal(note)
 	}
 }

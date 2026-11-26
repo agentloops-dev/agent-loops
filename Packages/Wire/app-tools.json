@@ -901,7 +901,7 @@
     "annotations": {
       "readOnlyHint": true
     },
-    "description": "The machines this control plane's hosts run on, from every machine provider: each machine's state, the host it is linked to and that host's state, and, for a provider that can make machines, the choices a new one takes. Then every machine of the person's by name and state, made by a provider or not, where start_session with machine can start a session.",
+    "description": "The machines this control plane's hosts run on, from every machine provider: each machine's state, the host it is linked to and that host's state, its public addresses (IPv4 and IPv6, from the provider's record), and, for a provider that can make machines, the choices a new one takes. Then every machine of the person's by name and state, made by a provider or not, where start_session with machine can start a session.",
     "inputSchema": {
       "properties": {
         "description": {
