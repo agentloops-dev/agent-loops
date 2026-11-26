@@ -69,12 +69,12 @@ struct ControlPlaneMachineTests {
         #expect(ControlPlaneMachine.worst([]) == nil)
     }
 
-    @Test func thePageHasEachFigure() {
+    @Test func thePageHasEachFigure() throws {
         let figures = ControlPlaneMachine.summary(look("a", machine: "m"))
         #expect(figures.map(\.label) == ["Capacity", "Load per core", "Memory pressure", "I/O pressure"])
         #expect(figures.map(\.value) == ["Near", "1.42", "0.0%", "16.7%"])
         let sections = ControlPlaneMachine.sections(look("a", machine: "m"))
-        #expect(sections.map(\.title) == ["Memory", "Process", "Store"])
+        try #require(sections.map(\.title) == ["Memory", "Process", "Store"])
         #expect(sections[1].figures.map(\.value) == ["87", "42"])
         #expect(!ControlPlaneMachine.bytes(0).contains("Zero"))
     }
