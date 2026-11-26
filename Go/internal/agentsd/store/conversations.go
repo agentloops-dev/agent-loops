@@ -110,3 +110,23 @@ func removeLeftTrims(loc Locations, id string) {
 		_ = os.Remove(p) // the next sweep tries again
 	}
 }
+
+// StartRemoved is the line each client shows where a chat's start was, when its trims took
+// any of it (#7405), with why: the 90-day age, the size limit, or either for a trim made
+// before the cause was kept. Nil when the chat has all its lines.
+func StartRemoved(lines Lines) *string {
+	if lines.First() == 0 {
+		return nil
+	}
+	days, mb := int(ConversationAge/(24*time.Hour)), TranscriptBytes>>20
+	var why string
+	switch r := lines.Removed(); {
+	case r.Age && !r.Size:
+		why = fmt.Sprintf("it was older than %d days", days)
+	case r.Size && !r.Age:
+		why = fmt.Sprintf("a chat keeps only its last %d MB", mb)
+	default:
+		why = fmt.Sprintf("it was older than %d days or the chat was more than %d MB", days, mb)
+	}
+	return new("The start of this chat was removed because " + why + ".")
+}

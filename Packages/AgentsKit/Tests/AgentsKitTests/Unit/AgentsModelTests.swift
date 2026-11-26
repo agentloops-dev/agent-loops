@@ -679,6 +679,19 @@ struct AgentsModelTests {
         #expect(model.act(of: id) == nil)
     }
 
+    /// A chat that lost its start says so once its first kept turn is in hand (#7405).
+    @Test func aTrimmedChatSaysItsStartWasRemovedAtItsTop() {
+        let model = AgentsModel()
+        model.isFollowingEnd = false
+        let line = "The start of this chat was removed because it was older than 90 days."
+        model.replaceTurns(with: TurnsPage(turns: [turnSummary(2)], firstTurn: 1, openStart: 4, startRemoved: line))
+        #expect(model.removedStartLine == nil)
+        model.prependTurns(TurnsPage(turns: [turnSummary(1)], firstTurn: 0, openStart: 4, startRemoved: line))
+        #expect(model.removedStartLine == line)
+        model.replaceTurns(with: TurnsPage(turns: [turnSummary(1)], firstTurn: 0, openStart: 4))
+        #expect(model.removedStartLine == nil)
+    }
+
     /// A followed chat lets old turns go. One being read does not (#285).
     @Test func followedTurnsAreTrimmedAndAReaderUpThePageKeepsTheirs() {
         let model = AgentsModel()

@@ -98,12 +98,17 @@ public final class AgentsModel {
     /// How many of the person's prompts come before `turns`, as the host counts them (#1862).
     /// Nil from a host too old to say.
     public private(set) var firstPrompt: Int?
+    /// The host's line for a chat whose start the trim took (#7405), from its last page of turns.
+    public private(set) var startRemoved: String?
     public private(set) var openTurnStart = 0
     /// The prompt of the turn `entries` start in, when it is not among them: a long turn
     /// trimmed at the front, or opened from its end. Drawn above them, so the turn keeps its
     /// prompt whatever is trimmed, as on the web page (#3249, #3948).
     private var leadAsk: TranscriptEntry?
     public var hasMoreTurns: Bool { firstTurn > 0 }
+    /// The line drawn above the first turn kept, once nothing is before it in hand: the trim
+    /// took the chat's start (#7405).
+    public var removedStartLine: String? { hasMoreBefore || hasMoreTurns ? nil : startRemoved }
     /// Whether anything of the conversation comes before what is in hand, and the chat will
     /// still take it. At the history cap it waits until the reader is back at the end, as on
     /// the web page (#3650).
@@ -1984,6 +1989,7 @@ public final class AgentsModel {
         turns = page.turns.keepingLastTurnWithEachID()
         firstTurn = page.firstTurn
         firstPrompt = page.firstPrompt
+        startRemoved = page.startRemoved
         openTurnStart = page.openStart
         trimTurns()
     }
@@ -1995,6 +2001,7 @@ public final class AgentsModel {
         turns = (page.turns + turns).keepingLastTurnWithEachID()
         firstTurn = page.firstTurn
         firstPrompt = page.firstPrompt
+        startRemoved = page.startRemoved
         trimTurns()
     }
 
@@ -2040,7 +2047,8 @@ public final class AgentsModel {
         guard shown.id == session, !transcriptFromCopy, !entries.isEmpty || !turns.isEmpty else { return nil }
         return LocalCopy.Transcript(
             session: session,
-            turns: TurnsPage(turns: turns, firstTurn: firstTurn, openStart: openTurnStart, firstPrompt: firstPrompt),
+            turns: TurnsPage(turns: turns, firstTurn: firstTurn, openStart: openTurnStart, firstPrompt: firstPrompt,
+                             startRemoved: startRemoved),
             // The host's count, not this one's: a reconnect resumes from it (#4794), and an
             // entry heard but never written would count past it.
             page: TranscriptPage(firstIndex: firstEntryIndex, total: transcriptEnd ?? firstEntryIndex + entries.count,
@@ -2142,6 +2150,7 @@ public final class AgentsModel {
         turns = []
         firstTurn = 0
         firstPrompt = nil
+        startRemoved = nil
         openTurnStart = 0
         leadAsk = nil
         refold()
