@@ -23,6 +23,8 @@ on:
       - scripts/check-store-archive.sh
       - scripts/build-linux-agentsd.sh
       - scripts/build-loops.sh
+      - Go/cmd/release-sign/**
+      - Go/internal/releasesig/**
       - .github/workflows/release.yml
       - .github/workflows/release-dry-run.yml
       - project.yml
@@ -113,6 +115,12 @@ jobs:
           export AGENTS_BUILD_CACHE="$RUNNER_TEMP/build-cache"
           test ! -e "$AGENTS_BUILD_CACHE"
           scripts/release-host.sh --dry-run "$VERSION" "${{ github.run_number }}"
+
+      # As release.yml's publish job signs them, with the tests' key.
+      - name: Sign SHA256SUMS (dry run)
+        run: |
+          Go/scripts/go.sh run ./cmd/release-sign sign -own -key internal/releasesig/testdata/test-current.pem \
+            "$VERSION" "$PWD/build/release/SHA256SUMS"
 
       - name: Logs
         if: failure()
