@@ -527,6 +527,18 @@ export interface AgentMachines {
 export interface AgentMachinesHost {
   name: string;
   state: string;
+  /**
+   * The machine's capacity level as it last pushed it (#5875), so an agent does not start heavy
+   * work on a full machine. Absent before its first push.
+   */
+  capacity?: CapacityLevel;
+  /** Its 5-minute load per core when it last pushed. */
+  loadPerCore5?: number;
+  /**
+   * When the control plane last heard its capacity. A figure older than 2 minutes is no figure
+   * (Auto's rule).
+   */
+  capacityAt?: WireDate;
 }
 
 export interface AgentMachinesMachine {
@@ -18505,7 +18517,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   AgentConfigFileRequest: { required: ["path", "time", "counter"], optional: ["contents", "deleted"] },
   AgentConfigFiles: { required: ["files"], optional: ["updated"] },
   AgentMachines: { required: ["providers"], optional: ["hosts"] },
-  AgentMachinesHost: { required: ["name", "state"], optional: [] },
+  AgentMachinesHost: { required: ["name", "state"], optional: ["capacity", "loadPerCore5", "capacityAt"] },
   AgentMachinesMachine: { required: ["id", "name", "state"], optional: ["host", "hostState", "cost", "reason"] },
   AgentMachinesProvider: { required: ["id", "name", "canMake", "canDelete", "workspaces"], optional: ["options"] },
   AgentRemovedNotification: { required: ["agentID"], optional: [] },

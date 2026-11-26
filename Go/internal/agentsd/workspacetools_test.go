@@ -568,3 +568,26 @@ func TestAMachineIsFoundByEitherName(t *testing.T) {
 		}
 	}
 }
+
+// list_machines shows each host's capacity with the figure's age, and "no figure" when it has
+// none or it is older than Auto trusts (#5875).
+func TestListMachinesShowsCapacityAndItsAge(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 11, 26, 12, 0, 0, 0, time.UTC)
+	at := func(ago time.Duration) *wire.Date { return new(wire.DateOf(now.Add(-ago))) }
+	level := func(l wire.CapacityLevel) *wire.CapacityLevel { return &l }
+	listed := wire.AgentMachines{Hosts: []wire.AgentMachinesHost{
+		{Name: "fresh", State: "online", Capacity: level(wire.CapacityLevelFull), LoadPerCore5: new(3.25), CapacityAt: at(30 * time.Second)},
+		{Name: "stale", State: "online", Capacity: level(wire.CapacityLevelOk), LoadPerCore5: new(0.5), CapacityAt: at(3 * time.Minute)},
+		{Name: "none", State: "online"}}}
+	note := workspacesNoteAt(listed, now)
+	for _, want := range []string{
+		"  - fresh: online (capacity full, load 3.25 per core (5 min), 30s ago)\n",
+		"  - stale: online (no figure)\n",
+		"  - none: online (no figure)"} {
+		if !strings.Contains(note, want) {
+			t.Errorf("missing %q in\n%s", want, note)
+		}
+	}
+}
