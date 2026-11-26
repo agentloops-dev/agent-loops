@@ -90,7 +90,9 @@ func (d *Daemon) autopilotRun(ctx context.Context) {
 		if mode == wire.AutopilotModeOff || ctx.Err() != nil {
 			continue
 		}
-		d.autopilotLeads(ctx, store.FolderPath(p.Folder), mode)
+		folder := store.FolderPath(p.Folder)
+		d.autopilotLeads(ctx, folder, mode)
+		d.autopilotLanes(ctx, folder, mode)
 	}
 }
 
@@ -102,39 +104,13 @@ func (d *Daemon) autopilotLeads(ctx context.Context, folder string, mode wire.Au
 		return
 	}
 	dismissed, _ := d.dismissedLeads.Read()
-	// A paused folder or epic starts nothing (#5902).
-	since, red := d.autopilotMainRed(folder)
-	if red {
-		d.autopilotPause(folder, autopilotMainRef, wire.AutopilotRowKindLead, autopilotMainWords(since), nil)
-	} else {
-		d.autopilotResume(folder, autopilotMainRef, wire.AutopilotRowKindLead, "main is green")
-	}
+	red := d.autopilotMainCheck(folder)
 	ledger := d.autopilotLedger()
 	var epics []autopilotEpic
 	at := now()
 	restarts := d.autopilotRestarts(folder, at)
 	for _, r := range next.Rows {
-		e := autopilotEpic{row: r}
-		prev := d.autopilotLastLead(r.Item.Node)
-		lead := d.leadOf(r.Item.Node)
-		e.led, e.lead = lead != nil, lead
-		e.over = autopilotOverBudget(ledger, r.Item.Node)
-		if prev != nil {
-			e.prev = prev.ID
-			e.capped = len(restarts[r.Item.Node.Ref]) >= autopilotMostRestarts
-			// A lead that stopped or ended is replaced, unless the epic is capped (the person looks).
-			if e.led && !e.capped && e.over == "" && autopilotStalled(*prev, at) {
-				if err := d.archiveBy(prev.ID, wire.AgentArchivedReasonByAgent); err != nil {
-					log.Printf("autopilot: %s: lead %s not archived: %v", folder, prev.ID, err)
-				} else {
-					e.led = false
-				}
-			}
-		}
-		x, ok := dismissed[r.Item.Node.Ref]
-		p := progressOf(r.Item)
-		e.dismissed = ok && x.Done == p.Done && x.Total == p.Total
-		epics = append(epics, e)
+		epics = append(epics, d.autopilotEpicOf(folder, r, ledger, dismissed, restarts, at))
 	}
 	room := autopilotRoom{limit: d.helperLimitRefusal(folder) != "", capacity: d.capacityLevel(), mainRed: red}
 	// The open-PR count is read only when an epic could start.
@@ -172,6 +148,45 @@ func (d *Daemon) autopilotLeads(ctx context.Context, folder string, mode wire.Au
 			d.autopilotResume(folder, e.row.Item.Node.Ref, wire.AutopilotRowKindLead, "back under its estimate")
 		}
 	}
+}
+
+// autopilotMainCheck pauses the folder when its main has been red too long (#5902), and resumes
+// it when main is green; it says whether the folder is paused.
+func (d *Daemon) autopilotMainCheck(folder string) bool {
+	since, red := d.autopilotMainRed(folder)
+	if red {
+		d.autopilotPause(folder, autopilotMainRef, wire.AutopilotRowKindLead, autopilotMainWords(since), nil)
+	} else {
+		d.autopilotResume(folder, autopilotMainRef, wire.AutopilotRowKindLead, "main is green")
+	}
+	return red
+}
+
+// autopilotEpicOf is an epic of forge/next with its lead, its spend and its last lead (#5899,
+// #5901, #5902). A lead that stopped or ended is archived, to be replaced, unless the epic is
+// capped (the person looks) or over budget.
+func (d *Daemon) autopilotEpicOf(folder string, r wire.ForgeNextRow, ledger []wire.LineageCostNode,
+	dismissed map[string]dismissedLead, restarts map[string][]wire.Date, at wire.Date) autopilotEpic {
+	e := autopilotEpic{row: r}
+	prev := d.autopilotLastLead(r.Item.Node)
+	lead := d.leadOf(r.Item.Node)
+	e.led, e.lead = lead != nil, lead
+	e.over = autopilotOverBudget(ledger, r.Item.Node)
+	if prev != nil {
+		e.prev = prev.ID
+		e.capped = len(restarts[r.Item.Node.Ref]) >= autopilotMostRestarts
+		if e.led && !e.capped && e.over == "" && autopilotStalled(*prev, at) {
+			if err := d.archiveBy(prev.ID, wire.AgentArchivedReasonByAgent); err != nil {
+				log.Printf("autopilot: %s: lead %s not archived: %v", folder, prev.ID, err)
+			} else {
+				e.led = false
+			}
+		}
+	}
+	x, ok := dismissed[r.Item.Node.Ref]
+	p := progressOf(r.Item)
+	e.dismissed = ok && x.Done == p.Done && x.Total == p.Total
+	return e
 }
 
 // autopilotLeadRequest is Start lead's request for an epic: Auto runtime, the lead prompt, the
@@ -223,6 +238,22 @@ type autopilotRoom struct {
 	prLimit  int
 	capacity wire.CapacityLevel
 	mainRed  bool // main has been red for too long (#5902)
+}
+
+// wait is why the room has no place for a start: the helper limits, the open-PR limit or the
+// machine's capacity; "" when it has one.
+func (r autopilotRoom) wait() string {
+	switch {
+	case r.limit:
+		return autopilotLimitRunning
+	case r.prLimit > 0 && r.openPRs >= r.prLimit:
+		return autopilotLimitPRs
+	case r.capacity == wire.CapacityLevelNear:
+		return "capacity near"
+	case r.capacity == wire.CapacityLevelFull:
+		return "capacity full"
+	}
+	return ""
 }
 
 // autopilotOutcome is what a run does for one epic: start it, or wait with a reason.
@@ -277,14 +308,8 @@ func autopilotLeadPlan(epics []autopilotEpic, mode wire.AutopilotMode, room auto
 			o.why = autopilotModeHigh
 		case started:
 			o.why = "one lead a run"
-		case room.limit:
-			o.why = autopilotLimitRunning
-		case room.prLimit > 0 && room.openPRs >= room.prLimit:
-			o.why = autopilotLimitPRs
-		case room.capacity == wire.CapacityLevelNear:
-			o.why = "capacity near"
-		case room.capacity == wire.CapacityLevelFull:
-			o.why = "capacity full"
+		case room.wait() != "":
+			o.why = room.wait()
 		default:
 			o.start, started = true, true
 		}

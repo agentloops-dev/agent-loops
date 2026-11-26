@@ -25,7 +25,7 @@ struct LabelTagField: View {
     @State private var chosen: Int?
     @FocusState private var focused: Bool
 
-    private var hasRoom: Bool { labels.count < SessionLabelPolicy.maximumCount }
+    private var hasRoom: Bool { SessionLabelPolicy.hasRoom(existing: labels.map(\.value)) }
 
     var body: some View {
         WrappingHStack(spacing: 5) {

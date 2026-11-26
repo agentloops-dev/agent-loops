@@ -472,6 +472,9 @@ type AgentMachinesHost struct {
 
 	// When the control plane last heard its capacity. A figure older than 2 minutes is no figure (Auto's rule).
 	CapacityAt *Date `json:"capacityAt,omitzero"`
+
+	// The machine's platform as it announced it (macOS 15, Linux), so Autopilot (#5900) sends a linux-ok issue to a Linux machine. Absent when it did not say.
+	Platform *string `json:"platform,omitzero"`
 }
 
 type AgentMachinesMachine struct {
