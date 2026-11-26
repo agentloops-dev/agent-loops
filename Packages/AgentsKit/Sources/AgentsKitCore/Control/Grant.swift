@@ -150,9 +150,6 @@ public struct MachineRecord: Codable, Hashable, Sendable, Identifiable {
     /// The hosts whose sign-in this host may use, by runtime, relayed through the control
     /// plane (058, T091): an operator said yes to each.
     public var signInFrom: [String: MachineRef]?
-    /// The hosts whose git access this host may use, by git server (`github.com`), lent
-    /// through the control plane (#1122): an operator said yes to each.
-    public var gitFrom: [String: MachineRef]?
     public var owner: PersonID?
     /// As `ClientRecord.rev`.
     public var rev: Int

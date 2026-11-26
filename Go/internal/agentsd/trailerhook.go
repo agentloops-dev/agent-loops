@@ -354,16 +354,22 @@ func commentChar() string {
 }
 
 // singleTrailers are the keys with one value a commit: the block's line takes the place of
-// one already there. The others (Fixes, Refs, Requested-by, Approved-by, Co-authored-by) add
-// a line that is not there yet.
+// one already there. The others (Fixes, Refs, Requested-by, Approved-by) add a line that is
+// not there yet.
 var singleTrailers = map[string]bool{
-	"made-by": true, "session": true, "epic": true,
+	"managed-by": true, "runtime": true, "model": true, "session": true, "epic": true,
 	"cost": true, "tokens": true, "duration": true,
 }
 
+// runtimesOwnTrailer is the key the hook never adds, changes or removes (#7174): a runtime's
+// Co-authored-by is its own, also when an old layer still turns "Co-authored-by" off.
+const runtimesOwnTrailer = "co-authored-by"
+
 // rewriteTrailers is msg with the block as its last paragraph: each trailer of a key in off
 // taken out (Fixes also takes out Refs), each line of lines added unless it is there, in place
-// of a single-valued key's line. Other trailers stay where they are. Comment lines and a
+// of a single-valued key's line. Other trailers stay where they are: a runtime's own
+// Co-authored-by too, whatever off and lines say, so it and the block end in one last
+// paragraph, where git reads both. Comment lines and a
 // scissors line at the end (an editor's template, `commit -v`) stay after it, for git's
 // cleanup. A message with no words is left as it is, for git to refuse.
 func rewriteTrailers(msg, comment string, lines, off []string) string {
@@ -434,6 +440,9 @@ func cutTrailerBlock(body []string) (rest []string, trailers [][]string) {
 func mergeTrailers(kept [][]string, lines, off []string) []string {
 	drop := map[string]bool{}
 	for _, k := range off {
+		if strings.EqualFold(k, runtimesOwnTrailer) {
+			continue
+		}
 		drop[strings.ToLower(k)] = true
 		if strings.EqualFold(k, "Fixes") {
 			drop["refs"] = true
@@ -458,7 +467,7 @@ func mergeTrailers(kept [][]string, lines, off []string) []string {
 	}
 	for _, l := range lines {
 		k, v, ok := trailerLine(l)
-		if !ok || have[strings.ToLower(k)+":"+v] {
+		if !ok || have[strings.ToLower(k)+":"+v] || strings.EqualFold(k, runtimesOwnTrailer) {
 			continue
 		}
 		have[strings.ToLower(k)+":"+v] = true

@@ -465,7 +465,8 @@ struct WorkCacheTests {
         #expect(await cache.stats().oldest == clock.now)
     }
 
-    @Test func aFileOpenedAfterItAgedDrawsNothing() async throws {
+    /// Quarantined (#7463): its second open of the file said "database is locked" in CI (PR #7433); 20 of 20 pass alone.
+    @Test(.flakyUnderLoad) func aFileOpenedAfterItAgedDrawsNothing() async throws {
         let file = FileManager.default.temporaryDirectory.appendingPathComponent("work-cache-\(UUID().uuidString).sqlite")
         defer {
             for suffix in ["", "-wal", "-shm"] { try? FileManager.default.removeItem(atPath: file.path + suffix) }

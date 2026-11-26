@@ -467,6 +467,11 @@ func (p *Provider) CreateRooted(name string, options map[string]any, firstBoot, 
 		}
 	}
 	values := map[string]string{"name": name, "firstBoot": firstBoot, "rootBoot": rootBoot}
+	removeRootBoot, err := putRootBootFile(making, values)
+	if err != nil {
+		return Workspace{}, nil, err
+	}
+	defer removeRootBoot()
 	// A choice left out takes the form's default, as the form showed it: the account's
 	// choices where the preset reads them (#6686), else the plain form.
 	chosen := map[string]any{}

@@ -2818,12 +2818,14 @@ export type CommitTrailerValue =
   | "off";
 
 /**
- * The trailers of an agent's commits, each on or off, by the trailer's key (#6365): Made-by, Cost,
- * Tokens, Duration, Session, Fixes, Epic, Requested-by, Approved-by, Co-authored-by. Fixes also
- * writes Refs. A key the machine does not know is kept and has no effect; a key no layer sets has
- * its default (every key on, Cost off). Record trailers (Made-by, Session, Fixes, Epic,
- * Requested-by, Approved-by, Co-authored-by): on is tighter. Spend trailers (Cost, Tokens,
- * Duration): off is tighter. Its rules in policy/effective are commitTrailers.<key>.
+ * The trailers of an agent's commits, each on or off, by the trailer's key (#6365, #7174):
+ * Managed-by, Runtime, Model, Cost, Tokens, Duration, Session, Fixes, Epic, Requested-by,
+ * Approved-by. Fixes also writes Refs. Co-authored-by is not a key: it is the runtime's own line,
+ * and the app never adds, changes or removes it. A key the machine does not know (also the old
+ * Made-by and Co-authored-by) is kept and has no effect; a key no layer sets has its default (every
+ * key on, Cost off). Record trailers (Managed-by, Runtime, Model, Session, Fixes, Epic,
+ * Requested-by, Approved-by): on is tighter. Spend trailers (Cost, Tokens, Duration): off is
+ * tighter. Its rules in policy/effective are commitTrailers.<key>.
  */
 export type CommitTrailers = Record<string, CommitTrailerValue>;
 
@@ -3686,8 +3688,6 @@ export interface ControlMachine {
   reach: string;
   machineID?: string;
   signInFrom?: Record<string, MachineRef>;
-  gitFrom?: Record<string, MachineRef>;
-  gitAsks?: GitAsk[];
   tunnel?: MachineTunnel;
   workspace?: MachineWorkspace;
   implementation?: string;
@@ -6761,27 +6761,6 @@ export interface FoundFolder {
   isFolder: boolean;
 }
 
-export interface GitAsk {
-  server: string;
-  from: MachineRef;
-}
-
-/** A credential for one git command. Never printed, logged or kept. */
-export interface GitCredential {
-  username: string;
-  password: string;
-}
-
-/**
- * git/credential, git/fill (#1122): only https, and only the server. `path` is the Go host's,
- * unread by Swift.
- */
-export interface GitCredentialRequest {
-  protocol: string;
-  host: string;
-  path?: string;
-}
-
 /**
  * The trailer block for a commit or a squash message (#6365), in order, one "Key: value" line each;
  * empty when the rule turns every trailer off.
@@ -7179,13 +7158,6 @@ export interface LeaseSnapshot {
 
 export interface LeaseTokenRequest {
   token: string;
-}
-
-export interface LendGit {
-  host: MachineRef;
-  from: MachineRef;
-  server: string;
-  allowed: boolean;
 }
 
 /** machines/lendSignIn (T091). */
@@ -11935,7 +11907,9 @@ export type PolicyRuleName =
   | "marketplaces.customServers"
   | "environment"
   | "connectorTools"
-  | "commitTrailers.Made-by"
+  | "commitTrailers.Managed-by"
+  | "commitTrailers.Runtime"
+  | "commitTrailers.Model"
   | "commitTrailers.Cost"
   | "commitTrailers.Tokens"
   | "commitTrailers.Duration"
@@ -11943,8 +11917,7 @@ export type PolicyRuleName =
   | "commitTrailers.Fixes"
   | "commitTrailers.Epic"
   | "commitTrailers.Requested-by"
-  | "commitTrailers.Approved-by"
-  | "commitTrailers.Co-authored-by";
+  | "commitTrailers.Approved-by";
 
 /**
  * The rules a layer sets (#2957, data-model.md "PolicyRules"): the same shape on the organisation,
@@ -15011,6 +14984,32 @@ export interface SetupApprove {
   approval: LockRecord;
 }
 
+/** setup/rootAgain (#7159): read root.sh's result on this machine again. */
+export interface SetupRootAgain {
+  /** Then run the steps after Root set-up too, as Try Again does after it failed. */
+  rest: boolean;
+}
+
+/**
+ * setup/rootCommand (#7159): the command a person runs as root on a machine that cannot run root.sh
+ * by itself, such as their own server or a made machine whose root.sh failed. It runs the root.sh
+ * that a client approved for made machines, once, and leaves its result where Root set-up reads it.
+ */
+export interface SetupRootCommand {
+  /** One line to paste in a terminal there: the script in base64, run with sudo. */
+  command: string;
+  /** The hash of the root.sh it runs. */
+  hash: string;
+}
+
+/** setup/rootLog (#7159): this machine's root.log, from its last root.sh run, for Show Log. */
+export interface SetupRootLog {
+  /** The end of root.log, at most 64 KiB; empty when there is none. */
+  text: string;
+  /** The log is longer, and text is only its end. */
+  cut: boolean;
+}
+
 /**
  * One set-up script on this machine (#7167): root (root.sh) or setup (setup.sh) in
  * ~/.agents/machine-setup/. present: the file is there. text, hash and size are the file as it is
@@ -18008,7 +18007,6 @@ export interface Methods {
   "machines/install": { params: MachineInstall; result: JSONValue };
   "machines/joinRequests": { params: Empty; result: JoinRequest[] };
   "machines/lastHeard": { params: MachineRequest; result: MachineLastHeard };
-  "machines/lendGit": { params: LendGit; result: Empty };
   "machines/link": { params: MachineLink; result: ControlMachine };
   "machines/list": { params: MachineListQuery; result: ControlMachine[] | MachineList };
   "machines/listKept": { params: KeptListQuery; result: KeptList };
@@ -18507,7 +18505,6 @@ export const MethodTarget = {
   "machines/install": "control",
   "machines/joinRequests": "control",
   "machines/lastHeard": "control",
-  "machines/lendGit": "control",
   "machines/link": "control",
   "machines/list": "control",
   "machines/listKept": "control",
@@ -19080,7 +19077,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   ControlEndpoint: { required: ["url"], optional: ["pin"] },
   ControlHello: { required: ["v", "name", "control", "nonce", "copy"], optional: ["previous"] },
   ControlInstallProgress: { required: ["name", "step"], optional: [] },
-  ControlMachine: { required: ["id", "name", "platform", "version", "state", "reach"], optional: ["machineID", "signInFrom", "gitFrom", "gitAsks", "tunnel", "workspace", "implementation", "capabilities", "maturity", "missing", "owner", "capacity", "loadPerCore5", "capacityAt", "setup", "roles", "labels", "autoLabels"] },
+  ControlMachine: { required: ["id", "name", "platform", "version", "state", "reach"], optional: ["machineID", "signInFrom", "tunnel", "workspace", "implementation", "capabilities", "maturity", "missing", "owner", "capacity", "loadPerCore5", "capacityAt", "setup", "roles", "labels", "autoLabels"] },
   ControlMove: { required: ["id", "from", "to", "toName", "phase", "startedAt", "updatedAt", "by"], optional: ["failedPhase", "address", "copied", "total", "forwardingUntil", "error"] },
   ControlMoveRequest: { required: ["machine"], optional: [] },
   ControlMoveResult: { required: ["move"], optional: [] },
@@ -19313,9 +19310,6 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   ForgeStart: { required: ["prompt", "labels"], optional: ["worktree"] },
   ForgeTransition: { required: ["id", "name"], optional: ["category"] },
   FoundFolder: { required: ["folder", "exists", "isRepository", "isFolder"], optional: ["typed"] },
-  GitAsk: { required: ["server", "from"], optional: [] },
-  GitCredential: { required: ["username", "password"], optional: [] },
-  GitCredentialRequest: { required: ["protocol", "host"], optional: ["path"] },
   GitTrailers: { required: ["lines"], optional: [] },
   GitTrailersRequest: { required: ["session"], optional: ["pr"] },
   Goal: { required: ["objective", "status", "at"], optional: ["iterations", "reason", "tokensUsed", "tokenBudget", "timeUsedSeconds"] },
@@ -19359,7 +19353,6 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   LeaseRequest: { required: ["token", "name"], optional: ["minutes", "wait"] },
   LeaseSnapshot: { required: ["resources", "at"], optional: [] },
   LeaseTokenRequest: { required: ["token"], optional: [] },
-  LendGit: { required: ["host", "from", "server", "allowed"], optional: [] },
   LendSignIn: { required: ["host", "from", "runtime", "allowed"], optional: [] },
   Levels: { required: [], optional: ["model", "permission", "permissionRequests"] },
   LineMember: { required: ["agentID", "askedAt", "isCallOpen"], optional: [] },
@@ -19967,6 +19960,9 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   SetYourPolicyRequest: { required: ["rules", "revision"], optional: [] },
   SettleUntrustedYourPolicyRequest: { required: ["file", "revision", "sign"], optional: [] },
   SetupApprove: { required: ["script", "approval"], optional: [] },
+  SetupRootAgain: { required: ["rest"], optional: [] },
+  SetupRootCommand: { required: ["command", "hash"], optional: [] },
+  SetupRootLog: { required: ["text", "cut"], optional: [] },
   SetupScript: { required: ["name", "present", "approvals", "changed", "nextSeq"], optional: ["text", "hash", "size", "problem", "approvedText", "approvedHash"] },
   SetupScriptApproval: { required: ["hash", "size"], optional: [] },
   SetupScripts: { required: ["scripts"], optional: [] },

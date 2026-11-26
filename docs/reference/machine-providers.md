@@ -56,7 +56,7 @@ Contract 1 keeps these tool names and the `workspace`/`workspaces` payload field
   in the background, and the first boot waits for it after `firstBoot`. It may call a shell
   function `agents_root_done` when the first boot defines one. Answer `rootBootRuns: true` if
   you will. A provider that does not declare it is not sent it, and the step says that it
-  can't run root set-up.
+  can't run root set-up. Which presets run it: [Set up new machines with your scripts](../how-to/set-up-machines-with-scripts.md#where-root-sh-runs).
 - **`workspace_delete`** deletes the machine and everything on it. The control plane then
   removes its host, as **Remove** does.
 
@@ -190,7 +190,13 @@ WORKSPACE_COMMANDS_CONFIG='{"preset":"docker","containers":["devbox"],"ssh":"dev
 - `create`, `delete` and `options` need `list`, which finds what `create` made by its
   name. `create` fills in `${name}`, `${firstBoot}`, `${rootBoot}` and each option's key (an
   option named `firstBoot` or `rootBoot` fills in nothing); with `${firstBoot}` it answers
-  `firstBootRuns: true`, and with `${rootBoot}`, `rootBootRuns: true`. `delete` fills in `${id}` and the machine's columns.
+  `firstBootRuns: true`, and with `${rootBoot}`, `rootBootRuns: true`. In a command,
+  `${rootBoot}` is the path of a file that holds the lines, readable only by the control
+  plane's user and removed after the create (#7159), because the lines can be too long for a
+  command line, and a command line shows in `ps`; it is empty when there is no `root.sh`.
+  Start the lines as root on the machine, detached: a create has a limit of 10 minutes too.
+  For example, `scp ${rootBoot} root@${name}:/tmp/r.sh && ssh root@${name} 'nohup sh /tmp/r.sh >/dev/null 2>&1 &'`.
+  In a `create` request, `${rootBoot}` is the lines themselves, as for user data. `delete` fills in `${id}` and the machine's columns.
   `options` is the New Machine form's JSON Schema; a property's `default` fills in a
   choice left out.
   Of the presets, `docker` with an `image` and `digitalocean-api` have them.
@@ -242,7 +248,7 @@ Its parameters fill them in.
 
 | Preset | Parameters | List / start / stop | ssh |
 |---|---|---|---|
-| `docker` | `containers` (names, optional), `ssh`, `image` (optional) | With `containers`: `docker inspect -f '{{.State.Status}}' ${id}` / `docker start ${id}` / `docker stop ${id}`. Without: `docker ps -a --filter label=agents.machine --format '{{.Names}}\t{{.State}}\t{{.Label "agents.ssh"}}'`, columns `id state ssh`, with the same start and stop. A container opts in with `docker run --label agents.machine --label agents.ssh='…'`. With `image` and no `containers`: create `docker run -d --name ${name} --label agents.machine ${image} && docker exec ${name} sh -c ${firstBoot}`, delete `docker rm -f -v ${id}`, options `image` (default the given one). States: running→running, exited/created→stopped, restarting→starting. | each container's `agents.ssh` label; else `ssh` as given |
+| `docker` | `containers` (names, optional), `ssh`, `image` (optional) | With `containers`: `docker inspect -f '{{.State.Status}}' ${id}` / `docker start ${id}` / `docker stop ${id}`. Without: `docker ps -a --filter label=agents.machine --format '{{.Names}}\t{{.State}}\t{{.Label "agents.ssh"}}'`, columns `id state ssh`, with the same start and stop. A container opts in with `docker run --label agents.machine --label agents.ssh='…'`. With `image` and no `containers`: create `docker run -d --name ${name} --label agents.machine ${image}`, then, with a `root.sh`, `docker cp ${rootBoot} ${name}:/tmp/agents-root-boot.sh && docker exec -d -u root ${name} sh /tmp/agents-root-boot.sh` (detached, #7159), then `docker exec ${name} sh -c ${firstBoot}`, delete `docker rm -f -v ${id}`, options `image` (default the given one). States: running→running, exited/created→stopped, restarting→starting. | each container's `agents.ssh` label; else `ssh` as given |
 | `doctl` | `tag` | `doctl compute droplet list --tag-name ${tag} …` / `droplet-action power-on --wait` / `power-off --wait`. States: active/new/off. | `root@${ip}` or `user` param |
 | `codespaces` | `repo` (optional) | `gh codespace list --json name,displayName,state` / `gh codespace ssh -c ${id} -- true` (a codespace starts when used) / `gh codespace stop -c ${id}`. States: Available→running, Shutdown→stopped, Starting→starting. | `gh codespace ssh --config` alias, `tunnel: true` |
 | `coder` | none | `coder list -o json` / `coder start -y ${id}` / `coder stop -y ${id}`. Read as JSON (`latest_build.status`). | `coder.${name}` (from `coder config-ssh`) |

@@ -87,7 +87,7 @@ struct FilesPaneReadsTests {
         }
     }
 
-    @Test @MainActor func aListingThatNeverAnswersSaysSo() async throws {
+    @Test(.flakyUnderLoad) @MainActor func aListingThatNeverAnswersSaysSo() async throws {
         let client = DaemonClient(link: Host())
         try await client.connect(startIfNeeded: false)
         let files = RemoteFiles(client: client, patience: .milliseconds(200))

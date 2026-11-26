@@ -21,7 +21,7 @@ func TestEachRuntimesSandboxAsItTakesIt(t *testing.T) {
 
 	l, meta := withSandbox(acp.Launch{Args: []string{"acp"}, Env: []string{"GEMINI_SANDBOX=true"}}, sessionMeta("claude"), "claude", wire.SandboxChoiceOff)
 	b, _ := json.Marshal(meta)
-	if string(b) != `{"claudeCode":{"options":{"disallowedTools":["Workflow","CronCreate","CronList","CronDelete","ScheduleWakeup","Monitor","RemoteTrigger","PushNotification","EnterWorktree","ExitWorktree"],"extraArgs":{"settings":"{\"attribution\":{\"commit\":\"\"},\"includeCoAuthoredBy\":false}"},"sandbox":{"enabled":false}}}}` || len(l.Args) != 1 {
+	if string(b) != `{"claudeCode":{"options":{"disallowedTools":["Workflow","CronCreate","CronList","CronDelete","ScheduleWakeup","Monitor","RemoteTrigger","PushNotification","EnterWorktree","ExitWorktree"],"sandbox":{"enabled":false}}}}` || len(l.Args) != 1 {
 		t.Fatalf("%s %v", b, l.Args)
 	}
 	if l, _ := withSandbox(acp.Launch{Args: []string{"acp"}}, nil, "grok", wire.SandboxChoiceOn); !slices.Equal(l.Args, []string{"acp"}) {

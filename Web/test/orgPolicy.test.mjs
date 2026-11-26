@@ -276,13 +276,13 @@ test("every runtime named only for its ways to the model says Every runtime", ()
 });
 
 test("commit trailers go to the form and back, with a key a newer machine knows kept (#6375)", () => {
-  const p = policy({ commitTrailers: { "Made-by": "on", Cost: "off", "Future-key": "on" } });
+  const p = policy({ commitTrailers: { "Runtime": "on", Cost: "off", "Future-key": "on" } });
   const form = o.formOf(p);
-  assert.equal(form.trailers["Made-by"], "on");
+  assert.equal(form.trailers["Runtime"], "on");
   assert.equal(form.trailers.Cost, "off");
   assert.equal(form.trailers.Tokens, "");
   assert.deepEqual(o.policyOf(form, p, priya).policy, p);
-  form.trailers["Made-by"] = "";
+  form.trailers["Runtime"] = "";
   form.trailers.Tokens = "off";
   assert.deepEqual(o.policyOf(form, p, priya).policy.commitTrailers, { Cost: "off", Tokens: "off", "Future-key": "on" });
   const none = o.formOf(undefined);
@@ -291,9 +291,9 @@ test("commit trailers go to the form and back, with a key a newer machine knows 
 
 test("a trailer change is said by its direction, and not in the person's rules (#6375)", () => {
   const before = policy();
-  const after = policy({ commitTrailers: { "Made-by": "on", Session: "off", Cost: "on", Tokens: "off" } });
+  const after = policy({ commitTrailers: { "Runtime": "on", Session: "off", Cost: "on", Tokens: "off" } });
   assert.deepEqual(o.changes(before, after), [
-    "Made-by trailer: On, required",
+    "Runtime trailer: On, required",
     "Session trailer: Off unless a folder or person turns it on",
     "Cost trailer: On unless a folder or person turns it off",
     "Tokens trailer: Off, kept out of commits",

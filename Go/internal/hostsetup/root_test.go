@@ -145,3 +145,55 @@ func TestTheRootStepSaysTheLastLineAsItRunsAndWaitsForTheResult(t *testing.T) {
 		t.Errorf("%+v", rs)
 	}
 }
+
+// Try Again on a failed Root set-up (#7159).
+
+func TestTryAgainReadsRootShsNewResultThenRunsTheStepsAfterIt(t *testing.T) {
+	var d Deps
+	rs, l, err := rootRun(t, "E: no package\n", "100\n", func(deps *Deps) { d = *deps })
+	if err == nil || lastOf(rs, wire.MachineSetupStepIDRoot).State != wire.MachineSetupStateFailed {
+		t.Fatalf("%v %+v", err, rs)
+	}
+	// The person ran the copied command: a new log and result.
+	must(t, os.WriteFile(filepath.Join(d.RootFolder, "root.log"), []byte("Setting up gh\n"), 0o600))
+	must(t, os.WriteFile(filepath.Join(d.RootFolder, "root.exit"), []byte("0\n"), 0o600))
+	o, _ := options(t)
+	o.Smoke = false
+	d.Running = nil
+	if err := Continue(context.Background(), o, d, l.Root, wire.MachineSetupStepIDRoot); err != nil {
+		t.Fatal(err)
+	}
+	rs = reports(t, l)
+	for _, step := range []wire.MachineSetupStepID{wire.MachineSetupStepIDRoot, wire.MachineSetupStepIDRuntimes, wire.MachineSetupStepIDProjects} {
+		if r := lastOf(rs, step); r == nil || r.State != wire.MachineSetupStateDone {
+			t.Errorf("%s: %+v", step, r)
+		}
+	}
+}
+
+func TestTryAgainOnAStillFailedRootShRunsNothingAfterIt(t *testing.T) {
+	var d Deps
+	_, l, _ := rootRun(t, "E: no package\n", "100\n", func(deps *Deps) { d = *deps })
+	o, _ := options(t)
+	if err := Continue(context.Background(), o, d, l.Root, wire.MachineSetupStepIDRoot); err == nil {
+		t.Fatal("no error")
+	}
+	rs := reports(t, l)
+	if lastOf(rs, wire.MachineSetupStepIDRoot).State != wire.MachineSetupStateFailed || lastOf(rs, wire.MachineSetupStepIDRuntimes) != nil {
+		t.Errorf("%+v", rs)
+	}
+}
+
+func TestRootLogIsItsEndFromAWholeLine(t *testing.T) {
+	folder := t.TempDir()
+	if text, cut := RootLog(folder, 100); text != "" || cut {
+		t.Errorf("%q %v", text, cut)
+	}
+	must(t, os.WriteFile(filepath.Join(folder, "root.log"), []byte("one\ntwo\n"), 0o600))
+	if text, cut := RootLog(folder, 100); text != "one\ntwo\n" || cut {
+		t.Errorf("%q %v", text, cut)
+	}
+	if text, cut := RootLog(folder, 6); text != "two\n" || !cut {
+		t.Errorf("%q %v", text, cut)
+	}
+}

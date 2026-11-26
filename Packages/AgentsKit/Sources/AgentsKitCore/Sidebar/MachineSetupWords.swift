@@ -31,7 +31,24 @@ public enum MachineSetupWords {
     /// What a failed Root set-up says to do (#7154, gate 2's *page root failed*): root.sh runs
     /// once, on the first boot, so a fixed one needs a new machine.
     public static func rootFailedAdvice(_ machine: String) -> String {
-        "Fix root.sh, then make a new machine: \(machine) can’t run it again by itself. You can start sessions here."
+        "Fix root.sh, then make a new machine: \(machine) can’t run it again by itself. "
+            + "Or copy a command that you run as root there, then press Try Again. You can start sessions here."
+    }
+
+    /// The root command sheet (#7159, gate 2's *own server*): why the person runs it, for a machine
+    /// that no provider made, or one whose root.sh failed.
+    public static func rootCommandLead(_ machine: String, failed: Bool) -> String {
+        failed
+            ? "Run this as root, or with sudo, on \(machine):"
+            : "No provider makes \(machine), so Agent Loops can’t be root there. Run this as root, or with sudo, on \(machine):"
+    }
+
+    /// Under the command (#7159).
+    public static let rootCommandAfter = "It runs the root.sh that you approved, once. Then press Check."
+
+    /// The spec's "left as they are" (#7151, section 8): sudo on the machine is root for its agents.
+    public static func rootSudoWarning(_ machine: String) -> String {
+        "Where your user on \(machine) has sudo, agents there can become root too."
     }
 
     /// The step that stopped the run, if one failed.

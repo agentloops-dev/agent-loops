@@ -826,7 +826,7 @@ def open_pr(run, record, rid, entry, dry_run):
         sh(["git", "-C", work, "add", "-A", target], check=True)
         message = (f"{title} (nightly runtime check, #39)\n\n"
                    f"{entry['from']} → {entry['to']}: update, build, runtime tests, handshake, tools and "
-                   f"a real turn all passed.\n\nCo-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>")
+                   f"a real turn all passed.")
         sh(["git", "-C", work, "commit", "-q", "-m", message], check=True)
         print("  " + sh(["git", "-C", work, "show", "--stat", "--format=%h %s", "HEAD"])[1].strip().replace("\n", "\n  "))
         status, _ = do(["git", "-C", work, "push", "-f", "-q", "origin", f"HEAD:refs/heads/{branch}"], dry_run)
@@ -1029,8 +1029,7 @@ def open_assessments_pr(run, record, reviews, rows, dry_run):
         title = f"Weekly runtime check {date}: assessments and the integrations page"
         each = "\n".join(f"- {RUNTIMES[rid]['name']}: " + (f"skipped, {value}" if kind == "skipped" else
                          f"{value[0]}; {value[1]}") for rid, (kind, value) in rows.items())
-        message = (f"{title} (#1284)\n\n{each}\n\nmac: docs only, remote: docs only, web: docs only\n\n"
-                   f"Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>")
+        message = f"{title} (#1284)\n\n{each}\n\nmac: docs only, remote: docs only, web: docs only"
         sh(["git", "-C", work, "commit", "-q", "-m", message], check=True)
         print("  " + sh(["git", "-C", work, "show", "--stat", "--format=%h %s", "HEAD"])[1].strip().replace("\n", "\n  "))
         if dry_run:

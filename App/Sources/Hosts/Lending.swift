@@ -8,29 +8,6 @@ enum SignInLend: Equatable {
 }
 
 extension AppModel {
-    /// The first git ask no window here has answered yet (#1122). Any client may answer it;
-    /// the control plane takes the first answer.
-    var gitLendAsk: GitLendAsk? {
-        GitLendAsk.first(in: controlPlaneHosts ?? [], thisMac: thisMacHostID, answered: gitAsksAnswered)
-    }
-
-    /// Approve or Deny (#1122): said to the control plane, which answers the waiting git.
-    func answerGitLend(_ ask: GitLendAsk, allowed: Bool) {
-        gitAsksAnswered.insert(ask.id)
-        lendGit(host: ask.host, from: ask.from, server: ask.server, allowed: allowed)
-    }
-
-    /// A machine's page (#3975): a host stops using a Mac's git access for a server.
-    func lendGit(host: MachineRef, from: MachineRef, server: String, allowed: Bool) {
-        guard let control = controlPlaneClient() else { return }
-        Task {
-            defer { Task { await control.disconnect() } }
-            try? await control.connect(startIfNeeded: false, timeout: .seconds(5))
-            _ = try? await control.call(DaemonAPI.Method.hostsLendGit,
-                                        DaemonAPI.LendGit(host: host, from: from, server: server, allowed: allowed))
-        }
-    }
-
     /// A server of the control plane wants a sign-in this Mac relays (T091). This Mac's
     /// host starts the relay first, which fails when this Mac is not signed in to the
     /// runtime the way a server can use (#6855). Then the control plane lets the server

@@ -1,4 +1,4 @@
-// The #6373 walk's organisation policy: a scratch control plane's policy that requires Made-by and keeps
+// The #6373 walk's organisation policy: a scratch control plane's policy that requires Runtime and keeps
 // Tokens out of commits, for the capped state of Settings ▸ Agents ▸ Policy's Commit trailers group (Mac now,
 // the web page in #6374). A third argument sets other trailers instead; '{}' clears them.
 //
@@ -62,7 +62,7 @@ function linesOf(socket) {
 const admin = await paired(webURL, setterCode, "trailers6373 admin");
 try {
   const policy = { version: 0, issued: 0, changedBy: { user: "walk" }, requires: ["host.policy/1"],
-    commitTrailers: trailers ? JSON.parse(trailers) : { "Made-by": "on", Tokens: "off" } };
+    commitTrailers: trailers ? JSON.parse(trailers) : { "Runtime": "on", Tokens: "off" } };
   const kept = await admin.ask("policy/get");
   const set = await admin.ask("policy/set", { policy, rev: kept.result?.rev });
   console.log("policy/set:", set.error ? `REFUSED ${set.error.message}` : `v${set.result.policy?.version}`);

@@ -66,12 +66,11 @@ func TestTheControlPlaneIsAMachine(t *testing.T) {
 			t.Errorf("%s: %v", method, err)
 		}
 	}
-	// It has no host to update, no runtime or git to lend or be lent, and runs no work a
+	// It has no host to update, no runtime to lend or be lent, and runs no work a
 	// label picks it for (#7310).
 	for method, params := range map[string]any{
 		"machines/update":     wire.MachineUpdate{Host: wire.MachineRef(id), Destination: "box"},
 		"machines/lendSignIn": wire.LendSignIn{Host: wire.MachineRef(id), From: wire.MachineRef(id), Runtime: "claude", Allowed: true},
-		"machines/lendGit":    wire.LendGit{Host: wire.MachineRef(id), From: wire.MachineRef(id), Server: "github.com", Allowed: true},
 		"machines/setLabels":  wire.MachineLabelsRequest{Machines: []wire.MachineRef{wire.MachineRef(id)}, Add: []string{"gpu"}},
 	} {
 		if _, err := window.Call(context.Background(), "", method, params); err == nil ||
@@ -79,7 +78,7 @@ func TestTheControlPlaneIsAMachine(t *testing.T) {
 			t.Errorf("%s: %v", method, err)
 		}
 	}
-	if h := p.s.records.Host(id); h == nil || len(h.Labels) > 0 || len(h.SignInFrom) > 0 || len(h.GitFrom) > 0 {
+	if h := p.s.records.Host(id); h == nil || len(h.Labels) > 0 || len(h.SignInFrom) > 0 {
 		t.Fatalf("a refused call changed the record: %+v", h)
 	}
 	// Another start finds it and writes no second one.

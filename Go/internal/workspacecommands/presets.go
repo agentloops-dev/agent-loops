@@ -52,7 +52,8 @@ func ptr(s string) *string { return &s }
 // docker is containers on the machine that runs the control plane, such as the Linux
 // devbox: the ones named in containers, or else every container labelled agents.workspace,
 // each reached by its agents.ssh label or the shared ssh line. With an image, it makes
-// labelled containers from it, which install Agents and join by themselves (#1025), and
+// labelled containers from it, which run the person's root.sh as root (#7159), install Agents
+// and join by themselves (#1025), and
 // deletes them with their volumes and image when no other container uses them (#3728).
 func docker(o map[string]any) Config {
 	var containers []string
@@ -89,7 +90,7 @@ func docker(o map[string]any) Config {
 	making := Making{}
 	if image := nonEmpty(o["image"]); image != nil {
 		making = Making{
-			Create: "docker run -d --name ${name} --label agents.workspace ${image} && docker exec ${name} sh -c ${firstBoot}",
+			Create: dockerCreate,
 			Delete: dockerDelete,
 			Options: map[string]any{"type": "object", "properties": map[string]any{
 				"image": map[string]any{"type": "string", "title": "Image", "description": *image, "default": *image}}},
@@ -97,6 +98,14 @@ func docker(o map[string]any) Config {
 	}
 	return newConfig(nil, listing, states, making)
 }
+
+// dockerCreate makes a labelled container from the image, starts the person's root.sh in it as
+// root (${rootBoot}, a file of the lines, #7159) detached, so a slow one never holds the create
+// up, then installs Agents as the image's user beside it. With no root.sh, ${rootBoot} is empty.
+const dockerCreate = `docker run -d --name ${name} --label agents.workspace ${image} && ` +
+	`{ [ -z ${rootBoot} ] || { docker cp ${rootBoot} ${name}:/tmp/agents-root-boot.sh && ` +
+	`docker exec -d -u root ${name} sh /tmp/agents-root-boot.sh; }; } && ` +
+	`docker exec ${name} sh -c ${firstBoot}`
 
 // dockerDelete deletes a workspace's container with its anonymous volumes, then its named
 // volumes and its image when no container uses them any more (#3728). It asks Docker
