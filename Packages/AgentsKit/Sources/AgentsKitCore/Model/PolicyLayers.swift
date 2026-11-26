@@ -65,8 +65,8 @@ public extension DaemonAPI {
         public var tools: [String: ConnectorToolLevel]?
     }
 
-    /// One trailer's value in a layer's `commitTrailers` (#6365). Record trailers (Made-by,
-    /// Session, Fixes, …): on is tighter. Spend trailers (Cost, Tokens, Duration): off is tighter.
+    /// One trailer's value in a layer's `commitTrailers` (#6365). Record trailers (Managed-by,
+    /// Runtime, Model, Session, Fixes, …): on is tighter. Spend trailers (Cost, Tokens, Duration): off is tighter.
     enum CommitTrailerValue: String, Codable, Sendable, Hashable, CaseIterable {
         case on, off
     }

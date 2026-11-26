@@ -2813,12 +2813,14 @@ export type CommitTrailerValue =
   | "off";
 
 /**
- * The trailers of an agent's commits, each on or off, by the trailer's key (#6365): Made-by, Cost,
- * Tokens, Duration, Session, Fixes, Epic, Requested-by, Approved-by, Co-authored-by. Fixes also
- * writes Refs. A key the machine does not know is kept and has no effect; a key no layer sets has
- * its default (every key on, Cost off). Record trailers (Made-by, Session, Fixes, Epic,
- * Requested-by, Approved-by, Co-authored-by): on is tighter. Spend trailers (Cost, Tokens,
- * Duration): off is tighter. Its rules in policy/effective are commitTrailers.<key>.
+ * The trailers of an agent's commits, each on or off, by the trailer's key (#6365, #7174):
+ * Managed-by, Runtime, Model, Cost, Tokens, Duration, Session, Fixes, Epic, Requested-by,
+ * Approved-by. Fixes also writes Refs. Co-authored-by is not a key: it is the runtime's own line,
+ * and the app never adds, changes or removes it. A key the machine does not know (also the old
+ * Made-by and Co-authored-by) is kept and has no effect; a key no layer sets has its default (every
+ * key on, Cost off). Record trailers (Managed-by, Runtime, Model, Session, Fixes, Epic,
+ * Requested-by, Approved-by): on is tighter. Spend trailers (Cost, Tokens, Duration): off is
+ * tighter. Its rules in policy/effective are commitTrailers.<key>.
  */
 export type CommitTrailers = Record<string, CommitTrailerValue>;
 
@@ -11930,7 +11932,9 @@ export type PolicyRuleName =
   | "marketplaces.customServers"
   | "environment"
   | "connectorTools"
-  | "commitTrailers.Made-by"
+  | "commitTrailers.Managed-by"
+  | "commitTrailers.Runtime"
+  | "commitTrailers.Model"
   | "commitTrailers.Cost"
   | "commitTrailers.Tokens"
   | "commitTrailers.Duration"
@@ -11938,8 +11942,7 @@ export type PolicyRuleName =
   | "commitTrailers.Fixes"
   | "commitTrailers.Epic"
   | "commitTrailers.Requested-by"
-  | "commitTrailers.Approved-by"
-  | "commitTrailers.Co-authored-by";
+  | "commitTrailers.Approved-by";
 
 /**
  * The rules a layer sets (#2957, data-model.md "PolicyRules"): the same shape on the organisation,

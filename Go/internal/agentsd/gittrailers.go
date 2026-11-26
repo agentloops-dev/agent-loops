@@ -3,6 +3,7 @@ package agentsd
 import (
 	"context"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -16,7 +17,10 @@ import (
 // (policylayers.TrailersOn). The worktree's commit-msg hook and the agents' tool
 // commit_trailers ask it; an agent types no trailer by hand.
 //
-//   - Made-by is <runtime>:<model>, the shape of the kernel's Assisted-by.
+//   - Managed-by is Agent Loops, the app that ran the work (#7174). It does not say that the
+//     app wrote the code: the runtime's own Co-authored-by says who did.
+//   - Runtime is the runtime's name (claude-code, codex, opencode) and Model the model's id,
+//     without Claude's claude- prefix (opus-5-5); another model's id stays as it is.
 //   - Cost, Tokens and Duration are the totals of the sessions labelled with the PR (P#<n>) or
 //     its issues, from the cost on the link (lineagecost.go): the PR, the issues it fixes, and
 //     the session's own #n. With no PR, the session's #n issues; with none, the session itself.
@@ -30,17 +34,19 @@ import (
 //     approves it, one read of the PR. At most two forge calls, at the same time (#6530).
 //   - Requested-by is the login the person's forge connection has.
 //   - A trailer with no value is left out.
-//   - Co-authored-by is the runtime's own line for GitHub's commit page, where it is known
-//     (Claude's); the daemon turns the runtime's own attribution off (sessionMeta), so this is
-//     the only copy, and the rule can turn it off.
+//   - Co-authored-by is the runtime's, never ours (#7174): the block has none, and the
+//     runtime's own settings (the person's and the project's) decide whether it writes one.
 
 // trailerForgeWait bounds each forge read: a commit waits on it.
 const trailerForgeWait = 5 * time.Second
 
-// trailerBlockOrder is the order of the block's lines: the records, then the spend, then
-// Co-authored-by last, where GitHub reads it (the Preview of the gate 2 wireframes).
-var trailerBlockOrder = []string{"Made-by", "Session", "Fixes", "Epic", "Requested-by", "Approved-by",
-	"Cost", "Tokens", "Duration", "Co-authored-by"}
+// managedBy is Managed-by's value: the app, with an address that takes no mail.
+const managedBy = "Agent Loops <noreply@agentloops.dev>"
+
+// trailerBlockOrder is the order of the block's lines: the records, then the spend (the
+// Preview of the gate 2 wireframes).
+var trailerBlockOrder = []string{"Managed-by", "Runtime", "Model", "Session", "Fixes", "Epic", "Requested-by",
+	"Approved-by", "Cost", "Tokens", "Duration"}
 
 // trailerItem reads an issue or a PR for the block, from the forge cache within its minute.
 // Tests replace it. Set in init: its own value reaches back to it through the app tools
@@ -106,8 +112,14 @@ func (d *Daemon) trailerValues(ctx context.Context, a *wire.Agent, folder string
 		issues = appendNew(issues, d.prFixes(*prNode)...)
 	}
 
-	if on["Made-by"] {
-		add("Made-by", madeBy(a))
+	if on["Managed-by"] {
+		add("Managed-by", managedBy)
+	}
+	if on["Runtime"] {
+		add("Runtime", trailerRuntimeName(a))
+	}
+	if on["Model"] {
+		add("Model", modelID(a))
 	}
 	if on["Session"] {
 		add("Session", string(a.ID))
@@ -150,9 +162,6 @@ func (d *Daemon) trailerValues(ctx context.Context, a *wire.Agent, folder string
 		for key, v := range spendTrailers(d.trailerTotals(a, prNode, issues)) {
 			add(key, v)
 		}
-	}
-	if on["Co-authored-by"] {
-		add("Co-authored-by", coAuthor(a))
 	}
 	return out
 }
@@ -267,57 +276,32 @@ func (d *Daemon) prApprovers(ctx context.Context, pr wire.LineageNode) []string 
 	return out
 }
 
-// madeByRuntime is a runtime's name in Made-by, where it is not its id: the product's own
+// trailerRuntime is a runtime's name in Runtime, where it is not its id: the product's own
 // name, as the kernel's Assisted-by takes it.
-var madeByRuntime = map[string]string{"claude": "claude-code"}
+var trailerRuntime = map[string]string{"claude": "claude-code"}
 
-// madeBy is <runtime>:<model>, as claude-code:claude-opus-5-5; the runtime alone when its
-// model is not known.
-func madeBy(a *wire.Agent) string {
-	rt := a.RuntimeID
-	if rt == "" {
-		return ""
+// trailerRuntimeName is a's runtime as Runtime names it: claude-code, codex, opencode; "" when it
+// is not known.
+func trailerRuntimeName(a *wire.Agent) string {
+	if name, ok := trailerRuntime[a.RuntimeID]; ok {
+		return name
 	}
-	if name, ok := madeByRuntime[rt]; ok {
-		rt = name
-	}
+	return a.RuntimeID
+}
+
+// modelID is a's model as Model names it: the runtime's full id of the model (an alias such
+// as "opus" is read through the runtime's choices), without Claude's claude- prefix, as
+// opus-5-5. Another runtime's id keeps its prefix (gpt-6-luna), which says whose model it is.
+// "" when the model is not known.
+func modelID(a *wire.Agent) string {
 	model := agentModel(a)
 	if model == "" {
-		return rt
+		return ""
 	}
 	if names := modelNames(a.RuntimeID, model, runtimeModelChoices(a.RuntimeID, a.AdvertisedOptions)); len(names) > 0 {
 		model = names[len(names)-1]
 	}
-	return rt + ":" + bareModel(model)
-}
-
-// coAuthor is the runtime's own Co-authored-by, where it is known: Claude's, with the
-// model's name, as Claude Code writes it. "" for any other runtime.
-func coAuthor(a *wire.Agent) string {
-	if a.RuntimeID != "claude" {
-		return ""
-	}
-	name := "Claude"
-	if model := modelName(a); model != "" {
-		name += " " + model
-	}
-	return name + " <noreply@anthropic.com>"
-}
-
-// modelName is the name the runtime gives a's model ("Opus 5.5"), or "".
-func modelName(a *wire.Agent) string {
-	model := agentModel(a)
-	if model == "" {
-		return ""
-	}
-	choices := runtimeModelChoices(a.RuntimeID, a.AdvertisedOptions)
-	names := modelNames(a.RuntimeID, model, choices)
-	for _, c := range choices {
-		if c.Value != "default" && c.Name != "" && (c.Value == model || slices.Contains(names, c.Value)) {
-			return c.Name
-		}
-	}
-	return ""
+	return strings.TrimPrefix(bareModel(model), "claude-")
 }
 
 func sumCost(m map[string]float64) float64 {

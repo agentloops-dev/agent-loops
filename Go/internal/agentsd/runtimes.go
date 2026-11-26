@@ -569,12 +569,6 @@ var toolPolicyFiles = map[string][]policyFile{
 // falls back to its stock profile and every tool comes back.
 var grokRemoved = []string{"scheduler_create", "scheduler_delete", "scheduler_list", "workflow", "monitor", "send_feedback"}
 
-// claudeNoAttribution is Claude Code's --settings for each session (#6371): no commit
-// attribution of its own (attribution.commit, and includeCoAuthoredBy before it), so its
-// commits get no Co-authored-by that the commitTrailers rule turns off, and no second copy
-// of the one git/trailers writes. Flag settings sit over the person's and the project's.
-const claudeNoAttribution = `{"attribution":{"commit":""},"includeCoAuthoredBy":false}`
-
 // sessionMeta is the _meta on session/new, session/load and session/fork: Claude's tools
 // and Grok's tools the app takes away, Grok's as a profile (ToolPolicyCatalog.swift), and
 // Grok's rules with the app's tools written out (grokRules).
@@ -583,8 +577,7 @@ func sessionMeta(runtimeID string) map[string]any {
 	case "claude":
 		return map[string]any{"claudeCode": map[string]any{"options": map[string]any{"disallowedTools": []string{
 			"Workflow", "CronCreate", "CronList", "CronDelete", "ScheduleWakeup", "Monitor", "RemoteTrigger", "PushNotification",
-			"EnterWorktree", "ExitWorktree"},
-			"extraArgs": map[string]any{"settings": claudeNoAttribution}}}}
+			"EnterWorktree", "ExitWorktree"}}}}
 	case "grok":
 		return map[string]any{"agentProfile": map[string]any{"disallowedTools": grokRemoved, "name": "agents-app",
 			"description": "An agent hosted by the Agent Loops app."}, "rules": grokRules()}
