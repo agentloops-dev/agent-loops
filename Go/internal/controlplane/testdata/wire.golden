@@ -49,7 +49,6 @@ control/status
     "folders.send-seed/1",
     "folders.signed-upload/1",
     "folders.to-machine/1",
-    "git/1",
     "governance/1",
     "groups/1",
     "handover/1",
@@ -287,9 +286,6 @@ control/setFolderDetection
 machines/lendSignIn
 {}
 
-machines/lendGit
-{}
-
 control/status
 {
   "name": "Test plane",
@@ -336,7 +332,6 @@ control/status
     "folders.send-seed/1",
     "folders.signed-upload/1",
     "folders.to-machine/1",
-    "git/1",
     "governance/1",
     "groups/1",
     "handover/1",
@@ -440,9 +435,6 @@ machines/list
     "machineID": "MACHINE-2",
     "signInFrom": {
       "claude": "mac"
-    },
-    "gitFrom": {
-      "github.com": "mac"
     },
     "implementation": "go",
     "owner": "<uuid>",
@@ -555,8 +547,4 @@ host reads
 
 # notifications
 
-control/hostChanged
-{
-  "host": "<host a>",
-  "state": "online"
-}
+

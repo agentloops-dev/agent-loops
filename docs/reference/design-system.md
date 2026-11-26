@@ -263,7 +263,7 @@ The client stories (#4600) move each pattern to its kind. Inline error text in a
 | Pattern today | Client | Kind | Tone |
 |---|---|---|---|
 | `WindowAlert.problem` ("Could not finish that"), `.makeFailed` (`ContentView.swift`) | Mac | Toast | Failure |
-| `WindowAlert.lend`, `.lendGit`, `.folderGone`; Delete archived agents now? | Mac | Alert (no change) | — |
+| Delete archived agents now? | Mac | Alert (no change) | — |
 | `.alert` for a failed action (`RemoteApp.swift`, `RuntimesView.swift`) | Remote | Toast | Failure |
 | `.problem` strip (`Errors.tsx`), with OK | Web | Toast | Failure |
 | `ControlAwayStrip` | Mac | Banner | Neutral; attention when the address refused and Open Account shows |

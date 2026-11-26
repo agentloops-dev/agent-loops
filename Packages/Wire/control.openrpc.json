@@ -2320,27 +2320,6 @@
       }
     },
     {
-      "name": "git/credential",
-      "x-capability": "git/1",
-      "description": "A host, on its channel 0, for its own git (#1122).",
-      "paramStructure": "by-name",
-      "params": [
-        {
-          "name": "params",
-          "required": true,
-          "schema": {
-            "$ref": "schema/org.schema.json#/definitions/GitCredentialRequest"
-          }
-        }
-      ],
-      "result": {
-        "name": "result",
-        "schema": {
-          "$ref": "schema/org.schema.json#/definitions/GitCredential"
-        }
-      }
-    },
-    {
       "name": "governance/approvals",
       "x-capability": "governance/1",
       "description": "An admin's (#2019, M5): every approval.",
@@ -4086,31 +4065,6 @@
         "name": "result",
         "schema": {
           "$ref": "schema/machines.schema.json#/definitions/MachineLastHeard"
-        }
-      }
-    },
-    {
-      "name": "machines/lendGit",
-      "x-capability": "machines/1",
-      "tags": [
-        {
-          "name": "web"
-        }
-      ],
-      "paramStructure": "by-name",
-      "params": [
-        {
-          "name": "params",
-          "required": true,
-          "schema": {
-            "$ref": "schema/org.schema.json#/definitions/LendGit"
-          }
-        }
-      ],
-      "result": {
-        "name": "result",
-        "schema": {
-          "$ref": "schema/core.schema.json#/definitions/Empty"
         }
       }
     },

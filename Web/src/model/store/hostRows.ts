@@ -5,7 +5,6 @@ import { CallFailed } from "../../wire/link";
 import { knowVersions } from "../errors";
 import { folderKey } from "../groups";
 import { blockLines, openBlock } from "../block";
-import { waiting } from "../gitLending";
 import { hostAnswers } from "../capabilities";
 import type { Work } from "./work";
 import { byAsked } from "./shared";
@@ -15,11 +14,9 @@ export const hostRowsMethods = {
   takeHosts(this: Work, hosts: ControlMachine[], now = Date.now()): void {
     const since: Record<string, number> = {};
     for (const host of hosts) if (!hostAnswers(host.state)) since[host.id] = this.downSince.value[host.id] ?? now;
-    const still = waiting(hosts);
     batch(() => {
       this.hosts.value = hosts;
       this.downSince.value = since;
-      this.gitAsksAnswered.value = new Set([...this.gitAsksAnswered.value].filter((id) => still.has(id)));
     });
     this.knowVersions();
   },

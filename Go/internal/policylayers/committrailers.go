@@ -11,14 +11,16 @@ import (
 // key. Each key is a rule of its own in the effective policy (commitTrailers.<key>), and
 // "tighter" has one meaning for each key, by its kind:
 //
-//   - a record trailer (Made-by, Session, Fixes, Epic, Requested-by, Approved-by,
-//     Co-authored-by): on is tighter. A folder or an organisation can make a record of agent
+//   - a record trailer (Managed-by, Runtime, Model, Session, Fixes, Epic, Requested-by,
+//     Approved-by): on is tighter. A folder or an organisation can make a record of agent
 //     work required; a person cannot remove it.
 //   - a spend trailer (Cost, Tokens, Duration): off is tighter. A folder or an organisation
 //     can keep spend out of git history; a person cannot add it there.
 //
 // A key no layer sets has its default: every record trailer on, Cost off, Tokens and
-// Duration on. A key this machine does not know is kept in the layer and has no effect.
+// Duration on. A key this machine does not know is kept in the layer and has no effect: so
+// are the old Made-by and Co-authored-by (#7174). Co-authored-by is the runtime's own line,
+// not a key of the rule: a switch for it would let the app take the runtime's credit out.
 
 // TrailerKind says which way a trailer's rule is tighter.
 type TrailerKind int
@@ -39,9 +41,11 @@ type Trailer struct {
 }
 
 // Trailers is every key this machine knows, in the order the block writes them (the epic's,
-// #6365, and policy.schema's PolicyRuleName).
+// #6365, #7174, and policy.schema's PolicyRuleName).
 var Trailers = []Trailer{
-	{"Made-by", wire.PolicyRuleNameCommitTrailersMadeBy, TrailerRecord, true},
+	{"Managed-by", wire.PolicyRuleNameCommitTrailersManagedBy, TrailerRecord, true},
+	{"Runtime", wire.PolicyRuleNameCommitTrailersRuntime, TrailerRecord, true},
+	{"Model", wire.PolicyRuleNameCommitTrailersModel, TrailerRecord, true},
 	{"Cost", wire.PolicyRuleNameCommitTrailersCost, TrailerSpend, false},
 	{"Tokens", wire.PolicyRuleNameCommitTrailersTokens, TrailerSpend, true},
 	{"Duration", wire.PolicyRuleNameCommitTrailersDuration, TrailerSpend, true},
@@ -50,7 +54,6 @@ var Trailers = []Trailer{
 	{"Epic", wire.PolicyRuleNameCommitTrailersEpic, TrailerRecord, true},
 	{"Requested-by", wire.PolicyRuleNameCommitTrailersRequestedBy, TrailerRecord, true},
 	{"Approved-by", wire.PolicyRuleNameCommitTrailersApprovedBy, TrailerRecord, true},
-	{"Co-authored-by", wire.PolicyRuleNameCommitTrailersCoAuthoredBy, TrailerRecord, true},
 }
 
 // trailerForRule is the trailer whose rule is name; ok is false for any other rule.
@@ -113,7 +116,7 @@ func TrailersOn(eff wire.EffectivePolicy) map[string]bool {
 	return out
 }
 
-// trailerCapPhrase is a capped trailer's line after the layer's name: "Made-by is required",
+// trailerCapPhrase is a capped trailer's line after the layer's name: "Runtime is required",
 // "Tokens is kept out of commits".
 func trailerCapPhrase(t Trailer) string {
 	if t.Kind == TrailerRecord {

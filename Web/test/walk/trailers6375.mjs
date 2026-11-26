@@ -1,5 +1,5 @@
 // The #6375 walk: Commit Trailers in Console ▸ Organisation Policy. Pairs as the control plane's admin,
-// shoots the trailers as no rule sets them, sets Made-by On and Tokens Off, shoots What Changes, saves,
+// shoots the trailers as no rule sets them, sets Runtime On and Tokens Off, shoots What Changes, saves,
 // and shoots the form read back from the control plane. Screenshots go to <out dir>.
 //
 //   node Web/test/walk/trailers6375.mjs <WEB_URL> <browser code> <out dir>
@@ -30,16 +30,16 @@ try {
   await page.eval(`location.hash = "#/settings/policy"`);
   await page.waitFor(`${section("org-policy-trailers")}`, 20_000);
   check(await page.eval(`${select("Cost")}.selectedOptions[0].textContent === "Not set (Off)"`), "Cost is Not set (Off)");
-  check(await page.eval(`${select("Made-by")}.selectedOptions[0].textContent === "Not set (On)"`), "Made-by is Not set (On)");
+  check(await page.eval(`${select("Runtime")}.selectedOptions[0].textContent === "Not set (On)"`), "Runtime is Not set (On)");
   await page.eval(`${section("org-policy-trailers")}.scrollIntoView()`);
   await page.shot(`${out}/web-not-set.png`);
 
-  check(await page.eval(choose("Made-by", "on")), "set Made-by On");
+  check(await page.eval(choose("Runtime", "on")), "set Runtime On");
   check(await page.eval(choose("Tokens", "off")), "set Tokens Off");
   check(await page.eval(choose("Cost", "on")), "set Cost On");
   await page.waitFor(`${section("org-policy-preview")}`);
   const preview = await page.text("[aria-labelledby=org-policy-preview]");
-  for (const line of ["Made-by trailer: On, required", "Tokens trailer: Off, kept out of commits",
+  for (const line of ["Runtime trailer: On, required", "Tokens trailer: Off, kept out of commits",
     "Cost trailer: On unless a folder or person turns it off"]) {
     check(preview.includes(line), `What Changes says ${line}`);
   }
@@ -54,7 +54,7 @@ try {
   await page.eval(`location.hash = "#/settings"`);
   await page.eval(`location.hash = "#/settings/policy"`);
   await page.waitFor(`${section("org-policy-trailers")}`, 20_000);
-  check(await page.eval(`${select("Made-by")}.value === "on"`), "Made-by On reads back");
+  check(await page.eval(`${select("Runtime")}.value === "on"`), "Runtime On reads back");
   check(await page.eval(`${select("Tokens")}.value === "off"`), "Tokens Off reads back");
   check(await page.eval(`${select("Epic")}.value === ""`), "Epic stays Not set");
   await page.eval(`${section("org-policy-trailers")}.scrollIntoView()`);

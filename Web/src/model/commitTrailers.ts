@@ -15,15 +15,19 @@ export interface Trailer {
   example: string;
 }
 
-/** Every trailer this client knows: the record trailers, then the spend trailers, as the panes list them. */
+/**
+ * Every trailer this client knows: the record trailers, then the spend trailers, as the panes list them.
+ * No Co-authored-by: it is the runtime's own line, which the app never adds, changes or removes (#7174).
+ */
 export const trailers: readonly Trailer[] = [
-  { key: "Made-by", kind: "record", on: true, example: "claude-code:claude-opus-5-5" },
+  { key: "Managed-by", kind: "record", on: true, example: "Agent Loops <noreply@agentloops.dev>" },
+  { key: "Runtime", kind: "record", on: true, example: "claude-code" },
+  { key: "Model", kind: "record", on: true, example: "opus-5-5" },
   { key: "Session", kind: "record", on: true, example: "4f2c9a1e-…" },
   { key: "Fixes", kind: "record", on: true, example: "#6334" },
   { key: "Epic", kind: "record", on: true, example: "#5627" },
   { key: "Requested-by", kind: "record", on: true, example: "alexec" },
   { key: "Approved-by", kind: "record", on: true, example: "alexec" },
-  { key: "Co-authored-by", kind: "record", on: true, example: "Claude Opus 5.5 <noreply@anthropic.com>" },
   { key: "Cost", kind: "spend", on: false, example: "$1.84" },
   { key: "Tokens", kind: "spend", on: true, example: "in=412.0k out=38.0k" },
   { key: "Duration", kind: "spend", on: true, example: "47m" },

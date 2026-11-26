@@ -18,7 +18,6 @@ import { ControlOverviewSection } from "./ControlOverview";
 import { DesktopControlSection } from "./DesktopControl";
 import { EarlyFeaturesSection } from "./EarlyFeatures";
 import { ForgeLoginsSection } from "./ForgeLogins";
-import { GitAccessSection } from "./GitAccess";
 import { ImageHostsSection, imageHostsSectionShows } from "./ImageHosts";
 import { VersionsSection } from "./Machines";
 import { NotificationsSection } from "./Notifications";
@@ -69,7 +68,6 @@ export const settingsSections: readonly SettingsSection[] = [
   { name: "earlyFeatures", scope: "thisApp", order: 45, Section: EarlyFeaturesSection },
   // Your GitHub, GitLab, Linear, Jira, Forgejo, Bitbucket and Azure DevOps logins, for the Team section and "An agent is on it" (#2951, #3160).
   { name: "forgeLogins", scope: "controlPlane", order: 7, Section: ForgeLoginsSection },
-  { name: "gitAccess", scope: "machines", order: 10, Section: GitAccessSection },
   // Groups own machine providers (#1761).
   { name: "groups", scope: "controlPlane", order: 20, Section: GroupsSection },
   // The hosts a machine's Work pages load images from (#7140), after Browser, with its own Machine menu.

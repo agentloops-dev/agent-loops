@@ -2818,12 +2818,14 @@ export type CommitTrailerValue =
   | "off";
 
 /**
- * The trailers of an agent's commits, each on or off, by the trailer's key (#6365): Made-by, Cost,
- * Tokens, Duration, Session, Fixes, Epic, Requested-by, Approved-by, Co-authored-by. Fixes also
- * writes Refs. A key the machine does not know is kept and has no effect; a key no layer sets has
- * its default (every key on, Cost off). Record trailers (Made-by, Session, Fixes, Epic,
- * Requested-by, Approved-by, Co-authored-by): on is tighter. Spend trailers (Cost, Tokens,
- * Duration): off is tighter. Its rules in policy/effective are commitTrailers.<key>.
+ * The trailers of an agent's commits, each on or off, by the trailer's key (#6365, #7174):
+ * Managed-by, Runtime, Model, Cost, Tokens, Duration, Session, Fixes, Epic, Requested-by,
+ * Approved-by. Fixes also writes Refs. Co-authored-by is not a key: it is the runtime's own line,
+ * and the app never adds, changes or removes it. A key the machine does not know (also the old
+ * Made-by and Co-authored-by) is kept and has no effect; a key no layer sets has its default (every
+ * key on, Cost off). Record trailers (Managed-by, Runtime, Model, Session, Fixes, Epic,
+ * Requested-by, Approved-by): on is tighter. Spend trailers (Cost, Tokens, Duration): off is
+ * tighter. Its rules in policy/effective are commitTrailers.<key>.
  */
 export type CommitTrailers = Record<string, CommitTrailerValue>;
 
@@ -3686,8 +3688,6 @@ export interface ControlMachine {
   reach: string;
   machineID?: string;
   signInFrom?: Record<string, MachineRef>;
-  gitFrom?: Record<string, MachineRef>;
-  gitAsks?: GitAsk[];
   tunnel?: MachineTunnel;
   workspace?: MachineWorkspace;
   implementation?: string;
@@ -6761,27 +6761,6 @@ export interface FoundFolder {
   isFolder: boolean;
 }
 
-export interface GitAsk {
-  server: string;
-  from: MachineRef;
-}
-
-/** A credential for one git command. Never printed, logged or kept. */
-export interface GitCredential {
-  username: string;
-  password: string;
-}
-
-/**
- * git/credential, git/fill (#1122): only https, and only the server. `path` is the Go host's,
- * unread by Swift.
- */
-export interface GitCredentialRequest {
-  protocol: string;
-  host: string;
-  path?: string;
-}
-
 /**
  * The trailer block for a commit or a squash message (#6365), in order, one "Key: value" line each;
  * empty when the rule turns every trailer off.
@@ -7179,13 +7158,6 @@ export interface LeaseSnapshot {
 
 export interface LeaseTokenRequest {
   token: string;
-}
-
-export interface LendGit {
-  host: MachineRef;
-  from: MachineRef;
-  server: string;
-  allowed: boolean;
 }
 
 /** machines/lendSignIn (T091). */
@@ -11945,7 +11917,9 @@ export type PolicyRuleName =
   | "marketplaces.customServers"
   | "environment"
   | "connectorTools"
-  | "commitTrailers.Made-by"
+  | "commitTrailers.Managed-by"
+  | "commitTrailers.Runtime"
+  | "commitTrailers.Model"
   | "commitTrailers.Cost"
   | "commitTrailers.Tokens"
   | "commitTrailers.Duration"
@@ -11953,8 +11927,7 @@ export type PolicyRuleName =
   | "commitTrailers.Fixes"
   | "commitTrailers.Epic"
   | "commitTrailers.Requested-by"
-  | "commitTrailers.Approved-by"
-  | "commitTrailers.Co-authored-by";
+  | "commitTrailers.Approved-by";
 
 /**
  * The rules a layer sets (#2957, data-model.md "PolicyRules"): the same shape on the organisation,
@@ -18078,7 +18051,6 @@ export interface Methods {
   "machines/install": { params: MachineInstall; result: JSONValue };
   "machines/joinRequests": { params: Empty; result: JoinRequest[] };
   "machines/lastHeard": { params: MachineRequest; result: MachineLastHeard };
-  "machines/lendGit": { params: LendGit; result: Empty };
   "machines/link": { params: MachineLink; result: ControlMachine };
   "machines/list": { params: MachineListQuery; result: ControlMachine[] | MachineList };
   "machines/listKept": { params: KeptListQuery; result: KeptList };
@@ -18577,7 +18549,6 @@ export const MethodTarget = {
   "machines/install": "control",
   "machines/joinRequests": "control",
   "machines/lastHeard": "control",
-  "machines/lendGit": "control",
   "machines/link": "control",
   "machines/list": "control",
   "machines/listKept": "control",
@@ -19150,7 +19121,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   ControlEndpoint: { required: ["url"], optional: ["pin"] },
   ControlHello: { required: ["v", "name", "control", "nonce", "copy"], optional: ["previous"] },
   ControlInstallProgress: { required: ["name", "step"], optional: [] },
-  ControlMachine: { required: ["id", "name", "platform", "version", "state", "reach"], optional: ["machineID", "signInFrom", "gitFrom", "gitAsks", "tunnel", "workspace", "implementation", "capabilities", "maturity", "missing", "owner", "capacity", "loadPerCore5", "capacityAt", "setup", "roles", "labels", "autoLabels"] },
+  ControlMachine: { required: ["id", "name", "platform", "version", "state", "reach"], optional: ["machineID", "signInFrom", "tunnel", "workspace", "implementation", "capabilities", "maturity", "missing", "owner", "capacity", "loadPerCore5", "capacityAt", "setup", "roles", "labels", "autoLabels"] },
   ControlMove: { required: ["id", "from", "to", "toName", "phase", "startedAt", "updatedAt", "by"], optional: ["failedPhase", "address", "copied", "total", "forwardingUntil", "error"] },
   ControlMoveRequest: { required: ["machine"], optional: [] },
   ControlMoveResult: { required: ["move"], optional: [] },
@@ -19383,9 +19354,6 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   ForgeStart: { required: ["prompt", "labels"], optional: ["worktree"] },
   ForgeTransition: { required: ["id", "name"], optional: ["category"] },
   FoundFolder: { required: ["folder", "exists", "isRepository", "isFolder"], optional: ["typed"] },
-  GitAsk: { required: ["server", "from"], optional: [] },
-  GitCredential: { required: ["username", "password"], optional: [] },
-  GitCredentialRequest: { required: ["protocol", "host"], optional: ["path"] },
   GitTrailers: { required: ["lines"], optional: [] },
   GitTrailersRequest: { required: ["session"], optional: ["pr"] },
   Goal: { required: ["objective", "status", "at"], optional: ["iterations", "reason", "tokensUsed", "tokenBudget", "timeUsedSeconds"] },
@@ -19429,7 +19397,6 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   LeaseRequest: { required: ["token", "name"], optional: ["minutes", "wait"] },
   LeaseSnapshot: { required: ["resources", "at"], optional: [] },
   LeaseTokenRequest: { required: ["token"], optional: [] },
-  LendGit: { required: ["host", "from", "server", "allowed"], optional: [] },
   LendSignIn: { required: ["host", "from", "runtime", "allowed"], optional: [] },
   Levels: { required: [], optional: ["model", "permission", "permissionRequests"] },
   LineMember: { required: ["agentID", "askedAt", "isCallOpen"], optional: [] },
