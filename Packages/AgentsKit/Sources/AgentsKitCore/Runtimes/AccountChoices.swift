@@ -67,4 +67,42 @@ public struct AccountChoices: Sendable {
         if let account = accounts.first(where: { $0.id == accountID }) { return account.setBy?.words }
         return accountID.hasPrefix("org:") ? OrgAccountWords.routeRemoved("this way to the model") : nil
     }
+
+    /// The other accounts a chat whose allowance ran out can continue on (#7459), in the
+    /// picker's order: the runtime's own sign-in, then each account. Only one the chat is not
+    /// on, that the organisation does not refuse, that is signed in, and whose allowance row,
+    /// when it has one, says it can be used and is not out. `accountID` is the chat's (nil: its own sign-in).
+    /// `Web/src/model/runtimes.ts` `continueChoices` says the same.
+    public func continueChoices(from accountID: String?, allowances: RuntimeAllowances?) -> [ContinueChoice] {
+        guard let allowances else { return [] }
+        let current = accountID == AccountProfile.ownSignInID ? nil : accountID
+        // No row yet is an account nothing has happened to: nothing says it is out.
+        func usable(_ row: RuntimeAllowances.Row?) -> Bool {
+            guard let row else { return true }
+            return row.unusable == nil && !row.state.isOut
+        }
+        var out: [ContinueChoice] = []
+        if current != nil, ownSetBy == nil, usable(allowances.row(runtimeID, account: nil)) {
+            out.append(ContinueChoice(accountID: AccountProfile.ownSignInID,
+                                      title: AccountWords.continueTitle(runtimeID, account: AccountProfile.defaultName)))
+        }
+        for account in accounts where account.id != current && account.setBy == nil
+            && (account.signedIn || account.isOrganisation) && usable(allowances.row(runtimeID, account: account.id)) {
+            out.append(ContinueChoice(accountID: account.id, title: AccountWords.continueTitle(runtimeID, account: account.name)))
+        }
+        return out
+    }
+}
+
+/// An account a chat whose allowance ran out can continue on (#7459): what
+/// `agents/continueOnAccount` is sent, and its name, "Claude · Personal".
+public struct ContinueChoice: Hashable, Sendable, Identifiable {
+    public var accountID: String
+    public var title: String
+    public var id: String { accountID }
+
+    public init(accountID: String, title: String) {
+        self.accountID = accountID
+        self.title = title
+    }
 }

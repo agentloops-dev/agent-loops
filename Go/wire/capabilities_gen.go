@@ -35,6 +35,7 @@ const CapChangesUndo1 = "changes.undo/1"
 const CapChanges1 = "changes/1"
 const CapChatBranch1 = "chat.branch/1"
 const CapChatContinueInNewSession1 = "chat.continue-in-new-session/1"
+const CapChatContinueOnAccount1 = "chat.continue-on-account/1"
 const CapChatContinueWhenBack1 = "chat.continue-when-back/1"
 const CapClientPermissions1 = "client-permissions/1"
 const CapClientTeam1 = "client.team/1"
@@ -283,6 +284,7 @@ var HostCapabilities = pairs([][2]string{
 	{"agents/continueInFolder", "agents/1"},
 	{"agents/continueInNew", "host.org-routes/1"},
 	{"agents/continueInNewSession", "chat.continue-in-new-session/1"},
+	{"agents/continueOnAccount", "chat.continue-on-account/1"},
 	{"agents/continueWhenBack", "chat.continue-when-back/1"},
 	{"agents/delete", "agents/1"},
 	{"agents/discardDraft", "agents/1"},

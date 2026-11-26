@@ -62,7 +62,7 @@ import { hasTurnInFlight, promptPlaceholder, willQueue } from "../model/promptWo
 import { carryOnStop } from "../model/carryOn";
 import { eventCarryOnPrompt, eventWaitCardTitle, eventWaitKind, eventWaitLine, eventWaitMinutes, eventWaitSummaryLines, eventWaitTime, leaseMark, lineCarryOnPrompt, lineResource, triggerURL } from "../model/rowLines";
 import { routeHash } from "../route";
-import { sessionRuntimeName } from "../model/runtimes";
+import { continueChoices, sessionRuntimeName } from "../model/runtimes";
 import { GuardedChangeCard } from "./GuardedChange";
 import { Capability } from "../protocol/capabilities.generated";
 import { fromLine } from "../model/asker";
@@ -179,6 +179,12 @@ export function Chat({ store, host, session, down: linkDown }: { store: Store; h
   const continueTitle = agent ? continueButton(resetsAt(store.runtimeAllowances.value[host], agent.runtimeID)) : "";
   const spentLine = agent && offersContinue(agent) ? allowanceOutLine(rows) : null;
   const canStartNew = store.has(host, Capability.chatContinueInNewSession1);
+  // The other accounts of its runtime that can take it (#7459): this Mac's only, as the account
+  // picker has them (#2257). A host without the capability offers none.
+  const continueOn = agent && spentLine && store.isMac(host) && store.has(host, Capability.chatContinueOnAccount1)
+    ? continueChoices(agent.runtimeID, agent.accountID, store.addedAccounts(host, agent.runtimeID),
+      store.policyStates.value[host]?.policy, store.runtimeAllowances.value[host])
+    : [];
   // What a call's line asks of the background is only whether its call still runs: the list
   // changes when that does, and not with every other change to the agent.
   const allBackground = agent?.background;
@@ -246,6 +252,14 @@ export function Chat({ store, host, session, down: linkDown }: { store: Store; h
           const id = await store.continueInNewSession(host, session);
           if (id) go({ host, folder, session: id });
         } : undefined,
+        // Continue on another account (#7459): the same chat, or a new one there.
+        continueOn: store.has(host, Capability.chatContinueOnAccount1) ? async (accountID: string) => {
+          const current = store.agent(host, session);
+          if (!current) return;
+          const folder = folderPath(current);
+          const id = await store.continueOnAccount(host, session, accountID);
+          if (id && id !== session) go({ host, folder, session: id });
+        } : undefined,
       } : undefined,
       // With no Mac, no window shows terminal output (#3425).
       hasMac: store.hasMac.value,
@@ -253,7 +267,7 @@ export function Chat({ store, host, session, down: linkDown }: { store: Store; h
   }, [host, session, agent?.pendingSandboxFailure, agent?.state, agent?.endedReason, agent?.continueWhenBack,
     down, !agent || agent.state === "archived", store.has(host, Capability.chatBranch1),
     store.has(host, Capability.changesUndo1), store.has(host, Capability.chatContinueWhenBack1),
-    store.has(host, Capability.chatContinueInNewSession1),
+    store.has(host, Capability.chatContinueInNewSession1), store.has(host, Capability.chatContinueOnAccount1),
     store.hasMac.value]);
 
   const scroller = useRef<HTMLDivElement>(null);
@@ -735,7 +749,7 @@ export function Chat({ store, host, session, down: linkDown }: { store: Store; h
             fetched={fetched.value[turn.id] && shownItems(fetched.value[turn.id]!.items)} fetchFailed={!!failedTurns.value[turn.id]} hasEarlier={fetched.value[turn.id]?.hasEarlier ?? false}
             auto={i >= rows.length - openTurnsHeld}
             isLive={i === rows.length - 1 && live} background={background}
-            allowance={spentLine && turnHoldsAllowance(turn, spentLine) ? { line: spentLine, title: continueTitle, canStart: canStartNew } : null}
+            allowance={spentLine && turnHoldsAllowance(turn, spentLine) ? { line: spentLine, title: continueTitle, canStart: canStartNew, accounts: continueOn } : null}
             loadDetail={turnActions.loadDetail} loadEarlier={turnActions.loadEarlier} />
         ))}
         {/* A prompt on its way (#4814): the person's bubble at once, dimmed until the host's own entry lands. */}

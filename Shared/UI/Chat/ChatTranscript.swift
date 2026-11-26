@@ -58,6 +58,9 @@ struct ChatTranscript: View {
     /// Passed only into the turn that holds the line, so that turn is drawn again when
     /// the host gains it.
     var allowanceCanStart = false
+    /// The accounts **Continue on** offers under the line, by name (#7459). Passed only into
+    /// the turn that holds the line.
+    var allowanceAccounts: [String] = []
     /// Told whether the pane is following the end. The model lets the oldest entries
     /// go only while it is, so nothing leaves from above somebody reading back.
     var onFollowing: (Bool) -> Void = { _ in }
@@ -309,7 +312,8 @@ struct ChatTranscript: View {
                                  isLastRow: part.isLast,
                                  allowanceLine: onThisTurn,
                                  allowanceAt: onThisTurn == nil ? nil : allowanceResetsAt,
-                                 allowanceCanStart: onThisTurn != nil && allowanceCanStart)
+                                 allowanceCanStart: onThisTurn != nil && allowanceCanStart,
+                                 allowanceAccounts: onThisTurn == nil ? [] : allowanceAccounts)
                             .equatable()
                             .inColumn(column)
                             .layoutValue(key: TranscriptRowID.self, value: part.id)

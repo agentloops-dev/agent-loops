@@ -391,6 +391,9 @@ public extension DaemonAPI {
                 // Continue in a new session (#5919): a chat whose allowance ran out.
                 Row(Method.agentsContinueInNewSession, params: ContinueInNewSessionRequest.self, result: UUID.self,
                     kind: .hostRequest),
+                // Continue on another account (#7459): a chat whose allowance ran out.
+                Row(Method.agentsContinueOnAccount, params: ContinueOnAccountRequest.self, result: UUID.self,
+                    kind: .hostRequest),
                 Row(Method.agentsRecreateWorktree, params: AgentRequest.self, result: Agent.self, kind: .hostRequest),
                 Row(Method.agentsContinueWhenBack, params: AgentRequest.self, result: Agent.self, kind: .hostRequest),
                 Row(Method.agentsCancelContinue, params: AgentRequest.self, result: Agent.self, kind: .hostRequest),

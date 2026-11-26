@@ -35,7 +35,8 @@ import { terminalOutput } from "../../model/onTheMac";
 import { Icon } from "../Icon";
 import { nowPlan } from "../../model/nowWords";
 import { RecordLine } from "./RecordLine";
-import { continueHelp, continueInNewSession, continueInNewSessionHelp } from "../../model/continueWhenBack";
+import { continueHelp, continueInNewSession, continueInNewSessionHelp, continueOnAccount, continueOnAccountHelp } from "../../model/continueWhenBack";
+import type { ContinueChoice } from "../../model/runtimes";
 
 /** The text of a message's blocks: text blocks as Markdown, anything else named. */
 export function Blocks({ blocks, text }: { blocks: ContentBlock[] | undefined; text: string }) {
@@ -169,7 +170,12 @@ export interface CallActions {
   /** Undo These Changes on a turn's card (ChatActions.undoTurn, #3437). Not on an archived session, nor a host too old. */
   undoTurn?: ((turn: string, confirmed: boolean) => Promise<UndoTurnResult>) | undefined;
   /** The buttons under "Its allowance ran out" (ChatActions.allowanceOut, #5919). */
-  allowanceOut?: { wait: () => Promise<void>; startNew?: (() => Promise<void>) | undefined } | undefined;
+  allowanceOut?: {
+    wait: () => Promise<void>;
+    startNew?: (() => Promise<void>) | undefined;
+    /** Continue on another account (#7459), by the id it sends. */
+    continueOn?: ((accountID: string) => Promise<void>) | undefined;
+  } | undefined;
 }
 export const CallActionsContext = createContext<CallActions | null>(null);
 
@@ -178,6 +184,8 @@ export interface AllowanceOutOffer {
   line: string;
   title: string;
   canStart: boolean;
+  /** The other accounts Continue on offers (#7459); empty for none. */
+  accounts: readonly ContinueChoice[];
 }
 export const AllowanceOutContext = createContext<AllowanceOutOffer | null>(null);
 
@@ -382,6 +390,7 @@ export function EntryRow({ entry }: { entry: TranscriptEntry }) {
     void action().finally(() => setBusy(false));
   };
   const startNew = offer?.startNew;
+  const continueOn = offer?.continueOn;
   const buttons = allowance && offer && entry.id === allowance.line && kindOf(entry) === "stateChanged" ? (
     <div class="allowance-out">
       <button type="button" class="prominent" title={continueHelp} disabled={busy} onClick={() => run(offer.wait)}>
@@ -392,6 +401,13 @@ export function EntryRow({ entry }: { entry: TranscriptEntry }) {
           {continueInNewSession}
         </button>
       ) : null}
+      {/* The person chooses the account: the app never changes it by itself (#7459). */}
+      {continueOn ? allowance.accounts.map((choice) => (
+        <button key={choice.accountID} type="button" title={continueOnAccountHelp} disabled={busy}
+          onClick={() => run(() => continueOn(choice.accountID))}>
+          {continueOnAccount(choice.title)}
+        </button>
+      )) : null}
     </div>
   ) : null;
   return (

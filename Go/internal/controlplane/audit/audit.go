@@ -71,6 +71,7 @@ var hostActions = map[string]string{
 	"agents/branchFrom":           "Branched an agent",
 	"agents/continueInFolder":     "Continued an agent in a folder",
 	"agents/continueInNewSession": "Continued an agent in a new session",
+	"agents/continueOnAccount":    "Continued an agent on another account",
 	"sessions/delete":             "Deleted a session",
 	"approvals/answer":            "Answered an approval",
 	"permissions/answer":          "Answered a permission card",

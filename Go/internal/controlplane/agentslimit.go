@@ -14,6 +14,7 @@ var startsAgent = methodSet(
 	"agents/continueInFolder",
 	"agents/continueInNew",
 	"agents/continueInNewSession",
+	"agents/continueOnAccount",
 	"agents/fork",
 	"agents/start",
 )

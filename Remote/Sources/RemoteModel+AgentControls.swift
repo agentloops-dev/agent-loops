@@ -304,6 +304,38 @@ extension RemoteModel {
         }
     }
 
+    /// The other accounts of the runtime a chat on the Mac whose allowance ran out can continue
+    /// on (#7459). None for a server's chat: no client has a server's accounts.
+    func continueChoices(_ agent: Agent) -> [ContinueChoice] {
+        guard agent.host == .mac, accountProfilesRead, host(agent.host, has: Capability.chatContinueOnAccount1) else { return [] }
+        return AccountChoices(runtimeID: agent.runtimeID, profiles: accountProfiles, policy: policyState?.policy)
+            .continueChoices(from: agent.accountID, allowances: runtimeAllowances)
+    }
+
+    /// **Continue on Claude · Personal** (#7459): the same chat on the account the person chose,
+    /// or a new session there when the conversation could not move. Opens the one that goes on.
+    @discardableResult
+    func continueOnAccount(_ agentID: UUID, accountID: String) async -> Bool {
+        guard !isStale else {
+            problem = "Your Mac is not answering, so that could not be sent."
+            return false
+        }
+        do {
+            let id = try await sendOnce(DaemonAPI.Method.agentsContinueOnAccount,
+                                        DaemonAPI.ContinueOnAccountRequest(agentID: agentID, accountID: accountID, requestID: UUID()))
+                .decode(UUID.self)
+            await loadWholeAgent(id)
+            selection = id
+            return true
+        } catch let error as JSONRPCError {
+            problem = error.message
+            return false
+        } catch {
+            problem = "That did not reach your Mac."
+            return false
+        }
+    }
+
     /// Carry on when the allowance is back, or no longer (#1859).
     func continueWhenBack(_ agentID: UUID) async { await waitForAllowance(agentID, DaemonAPI.Method.agentsContinueWhenBack) }
 

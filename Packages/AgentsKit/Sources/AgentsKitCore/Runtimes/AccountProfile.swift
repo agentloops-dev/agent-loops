@@ -190,6 +190,22 @@ public extension DaemonAPI {
             self.requestID = requestID
         }
     }
+
+    /// `agents/continueOnAccount` (#7459): a chat whose allowance ran out continues on another
+    /// account of the same runtime, which the person chose. Answered with the session that
+    /// goes on: this one, or a new one on that account when the conversation could not move.
+    struct ContinueOnAccountRequest: Codable, Sendable {
+        public var agentID: UUID
+        /// An added or org account's id, or `default` for the runtime's own sign-in.
+        public var accountID: String
+        /// As `StartRequest.requestID`: a retry answers as the first try did.
+        public var requestID: UUID?
+        public init(agentID: UUID, accountID: String, requestID: UUID? = nil) {
+            self.agentID = agentID
+            self.accountID = accountID
+            self.requestID = requestID
+        }
+    }
 }
 
 public extension DaemonAPI.Method {
@@ -199,6 +215,8 @@ public extension DaemonAPI.Method {
     static let agentsContinueInNew = "agents/continueInNew"
     /// `ContinueInNewSessionRequest` → the new agent's id (#5919).
     static let agentsContinueInNewSession = "agents/continueInNewSession"
+    /// `ContinueOnAccountRequest` → the session that goes on: this one, or a new one (#7459).
+    static let agentsContinueOnAccount = "agents/continueOnAccount"
 }
 
 /// The id `runtimes/setDefaultAccount` names a runtime's own sign-in by (#999).

@@ -158,6 +158,7 @@ struct RemoteChatView: View {
                                onHeight: { model.measure(transcriptHeight: $0) },
                                allowanceResetsAt: model.runtimeAllowances?.resetsAt(agent.runtimeID),
                                allowanceCanStart: model.host(agent.host, has: Capability.chatContinueInNewSession1),
+                               allowanceAccounts: model.continueChoices(agent).map(\.title),
                                onFollowing: { page.isFollowingEnd = $0 })
                     // Voice mode speaks a turn's reply when it ends (#2322).
                     .voiceModeObserves(agent, items: page.transcriptItems,
@@ -606,7 +607,7 @@ struct RemoteChatView: View {
             allowanceOut: allowanceOut)
     }
 
-    /// The buttons under "Its allowance ran out" (#5919). Nil unless this chat offers them
+    /// The buttons under "Its allowance ran out" (#5919, #7459). Nil unless this chat offers them
     /// and the host can wait. **Continue in new session** is left out when the host is too old.
     private var allowanceOut: AllowanceOutActions? {
         guard let agent, ContinueWhenBackWords.offers(agent),
@@ -619,9 +620,14 @@ struct RemoteChatView: View {
         } else {
             startNew = nil
         }
+        // Each other account that can take it (#7459): the person chooses.
+        let accounts = model.continueChoices(agent).map { choice in
+            AllowanceAccountAction(choice: choice) { [model] in _ = await model.continueOnAccount(id, accountID: choice.accountID) }
+        }
         return AllowanceOutActions(resetsAt: model.runtimeAllowances?.resetsAt(agent.runtimeID),
                                    wait: { [model] in await model.continueWhenBack(id) },
-                                   startNew: startNew)
+                                   startNew: startNew,
+                                   accounts: accounts)
     }
 
     /// Undo These Changes on a turn's card (#3437): not on an archived session, nor on a
