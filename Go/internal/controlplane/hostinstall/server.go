@@ -385,6 +385,7 @@ func shippedFor(arch, folder string) []struct{ name, file, sha256 string } {
 // a file in folder, and read its SHA-256 fingerprint. The connection fails at
 // authentication; what matters is that the key was written down first.
 func fetchHostKey(ctx context.Context, ssh sshCommand, folder string) (file, fingerprint string, err error) {
+	// store-bounds: not a store: a host key in the install's temporary folder
 	f, err := os.CreateTemp(folder, "hostkey-")
 	if err != nil {
 		return "", "", err

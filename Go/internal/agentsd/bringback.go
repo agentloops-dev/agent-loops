@@ -235,6 +235,7 @@ func patchApplies(dir, patchOn string, branches []wire.SentBranch, patch string)
 			commit = b.Commit
 		}
 	}
+	// store-bounds: not a store: a temporary git index.
 	tmp, err := os.CreateTemp("", "agents-back-index-")
 	if err != nil {
 		return err

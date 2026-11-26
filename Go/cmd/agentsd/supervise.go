@@ -38,6 +38,7 @@ func supervise(args []string) {
 		setLog(f)
 	}
 	lock := filepath.Join(root, "supervise.lock")
+	// store-bounds: not a store: a lock file that holds the pid of the supervisor.
 	if err := os.WriteFile(lock, []byte(fmt.Sprint(os.Getpid())), 0o600); err != nil {
 		log.Printf("supervise: %v", err)
 	}
@@ -103,6 +104,7 @@ func supervise(args []string) {
 			signal.Stop(sigs)
 			err := syscall.Exec(current, append([]string{current, "supervise"}, args...), os.Environ()) //nolint:gosec // G204: this host's own bin/current
 			log.Printf("supervise: could not start again from %s: %v", current, err)
+			// store-bounds: not a store: a lock file that holds the pid of the supervisor.
 			_ = os.WriteFile(lock, []byte(fmt.Sprint(os.Getpid())), 0o600)
 			signal.Notify(sigs, syscall.SIGTERM, syscall.SIGINT)
 			what = "a restart for its update"

@@ -21,6 +21,7 @@ public enum AgentsExportTransfer {
     /// A cancelled task stops between parts with `CancellationError` (#2437).
     public static func read(_ made: DaemonAPI.AgentsExport, from client: DaemonClient, into file: URL,
                             progress: Progress? = nil) async throws {
+        // store-bounds: not a store: a file that the person picks for the export
         guard FileManager.default.createFile(atPath: file.path, contents: nil) else {
             throw CocoaError(.fileWriteNoPermission)
         }

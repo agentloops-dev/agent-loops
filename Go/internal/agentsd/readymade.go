@@ -136,6 +136,7 @@ func (d *Daemon) ensureReadyMadeUserWorkflowsLocked() {
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			continue
 		}
+		// store-bounds: not a store: an install: a ready-made workflow into the person's .agents.
 		if err := store.WriteAtomically(path, []byte(workflow), 0o644); err != nil {
 			continue
 		}
@@ -363,7 +364,7 @@ func (d *Daemon) takeReadyMade(r wire.WorkflowRequest) (wire.WorkflowSummary, er
 			err = &Error{Code: wire.FailureWorkflowUnreadable, Message: why}
 		} else if text, kerr := withStateKeys(old, workflow, r.WorkflowID, home); kerr != nil {
 			err = &Error{Code: wire.FailureWorkflowUnreadable, Message: kerr.Error()}
-		} else if werr := store.WriteAtomically(path, []byte(text), 0o644); werr != nil {
+		} else if werr := store.WriteAtomically(path, []byte(text), 0o644); werr != nil { // store-bounds: not a store: an install: a ready-made workflow into the person's .agents.
 			err = &Error{Code: wire.FailureWorkflowUnreadable, Message: r.WorkflowID + ".md was not changed: " + werr.Error() + "."}
 		} else {
 			markReadyMadeMade(home, r.WorkflowID, want)
@@ -425,6 +426,7 @@ func (d *Daemon) updateReadyMadeLocked(home, id, path, workflow, madeDigest stri
 	if err != nil {
 		return
 	}
+	// store-bounds: not a store: an install: a ready-made workflow into the person's .agents.
 	if err := store.WriteAtomically(path, []byte(text), 0o644); err != nil {
 		return
 	}

@@ -71,6 +71,7 @@ func Unpack(tarball, dir, arch string, limit int64) error {
 		if h.Typeflag != tar.TypeReg || !FileNames[name] || !strings.Contains(name, "-linux-"+arch) {
 			continue
 		}
+		// store-bounds: not a store: this unpacks release files into the caller's folder
 		out, err := os.OpenFile(filepath.Join(dir, name), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644) //nolint:gosec // G302, G304: a checked name in our own folder; public file
 		if err != nil {
 			return err

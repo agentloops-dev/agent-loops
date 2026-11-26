@@ -144,6 +144,7 @@ func (d *Daemon) sendPack(r wire.SendPackRequest) (wire.SendPack, error) {
 		}
 		id := store.NewUUID()
 		file, _ := d.outgoingFile(id)
+		// store-bounds: not a store: a handoff file in Outgoing, which sweepTransfers removes.
 		out, err := os.OpenFile(file, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 		if err != nil {
 			return p, fileError(CodeFileNotReadable, err.Error())
