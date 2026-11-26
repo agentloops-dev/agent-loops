@@ -1,7 +1,7 @@
 // Part of the Store (#5384): runtimesAccounts.
 import { folderPath as hostedFolderPath, healthTally, personalServers } from "../hostedMCP";
 import { batch } from "@preact/signals";
-import type { HelperLimits, DiskThresholds, NotCommittedResponse, AccountProfile, RuntimeAccount, RuntimeSignInStep, RuntimeStatus, UUID, AutoMachinePick, AutoPreview, AutoPreviewRequest, AutoSettings, ClientPermissionMode, Levels, ModelLevel, PermissionLevel, DirectoryListing, MCPHealthSnapshot, MCPToolsAnswer, ConnectorToolLevel, WorkflowHours, ClientPermissionSettings, PRCostComment, Connection } from "../../protocol/generated";
+import type { AutopilotMode, AutopilotStatus, HelperLimits, DiskThresholds, NotCommittedResponse, AccountProfile, RuntimeAccount, RuntimeSignInStep, RuntimeStatus, UUID, AutoMachinePick, AutoPreview, AutoPreviewRequest, AutoSettings, ClientPermissionMode, Levels, ModelLevel, PermissionLevel, DirectoryListing, MCPHealthSnapshot, MCPToolsAnswer, ConnectorToolLevel, WorkflowHours, ClientPermissionSettings, PRCostComment, Connection } from "../../protocol/generated";
 import { endedConnections, endedLine, hasEnded } from "../connectorSetup";
 import { describe } from "../errors";
 import { freeProjectName } from "../projectSettings";
@@ -35,6 +35,14 @@ export const runtimesAccountsMethods = {
   async setFolderWorkingHours(this: Store, host: string, folder: string, hours: WorkflowHours | undefined): Promise<void> {
     const summary = await this.link.call("folders/setWorkingHours", { folder: folder as never, ...(hours ? { hours } : {}) }, host);
     this.upsertFolder(summary, host);
+  },
+  /** What Autopilot did in a folder and why each item waits (#5904, #5898). Throws a refusal. */
+  autopilotStatus(this: Store, host: string, folder: string): Promise<AutopilotStatus> {
+    return this.link.call("autopilot/status", { folder: folder as never }, host);
+  },
+  /** What Autopilot starts in a folder (#5904, #5898); the status after the change. Throws a refusal. */
+  setAutopilot(this: Store, host: string, folder: string, mode: AutopilotMode): Promise<AutopilotStatus> {
+    return this.link.call("autopilot/set", { folder: folder as never, mode }, host);
   },
   /** A folder's helper limits and switches in `.agents/folder.json` (#64), from Project Settings (#3280). Throws a refusal. */
   async setFolderHelperLimits(this: Store, host: string, folder: string, limits: HelperLimits): Promise<void> {

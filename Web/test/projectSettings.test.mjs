@@ -37,3 +37,18 @@ test("project settings: the folder's own project takes a free name", () => {
   assert.equal(p.freeProjectName("shop", [{ name: "Shop" }, { name: "shop 2" }]), "shop 3");
   assert.equal(p.freeProjectName("  ", []), "Project");
 });
+
+test("project settings: Autopilot is a pane, and turning it on asks once (#5904)", async () => {
+  assert.ok(p.projectPanes.some((x) => x.id === "autopilot"));
+  const a = await load("src/model/autopilotSettings.ts");
+  assert.deepEqual(a.autopilotModes.map((m) => m.mode), ["off", "high", "on"]);
+  assert.equal(a.needsConfirm("off", "on"), true);
+  assert.equal(a.needsConfirm("off", "high"), true);
+  assert.equal(a.needsConfirm("high", "on"), false);
+  assert.equal(a.needsConfirm("on", "off"), false);
+  const row = (state) => ({ ref: "#1", kind: "lane", state, reason: "", since: 0 });
+  const now = (100 + 978_307_200) * 1000 + 120_000;
+  assert.equal(a.lastRunLine({ mode: "on", lastRunAt: 100, rows: [row("started"), row("waiting"), row("waiting")] }, now),
+    "Last run 2 min ago · 1 started, 2 waiting");
+  assert.equal(a.lastRunLine({ mode: "on", rows: [] }, now), a.autopilotWords.never);
+});
