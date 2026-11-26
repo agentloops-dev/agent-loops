@@ -33,6 +33,7 @@ type args struct {
 	run                          int
 	prs                          []int
 	issues                       []int
+	parent                       int
 	fixes                        []string
 	conclusions                  []string // run.completed's, as failure (#5775)
 	anyone, mine, all            bool
@@ -90,7 +91,7 @@ func check(s schema, raw json.RawMessage) (args, *rpcError) {
 	}
 	return args{repo: v.String("repo"), branch: v.String("branch"), label: v.String("label"), workflow: v.String("workflow"),
 		environment: v.String("environment"), tier: v.String("tier"), component: v.String("component"),
-		prs: v.Ints("pr"), run: v.Int("run"), issues: v.Ints("issue"), fixes: v.Strings("fixes"),
+		prs: v.Ints("pr"), run: v.Int("run"), issues: v.Ints("issue"), parent: v.Int("parent"), fixes: v.Strings("fixes"),
 		conclusions: v.Strings("conclusion"), anyone: v.Bool("anyone"), mine: v.Bool("mine"), all: v.Bool("any")}, nil
 }
 

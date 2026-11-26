@@ -35,6 +35,7 @@
               "issue.opened",
               "issue.labelled",
               "issue.commented",
+              "issue.parented",
               "issue.closed",
               "issue.assigned"
             ],

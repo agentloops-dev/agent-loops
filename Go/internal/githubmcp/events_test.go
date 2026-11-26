@@ -23,6 +23,7 @@ type fakeGitHub struct {
 	runs       []fakeRun
 	prs        map[int]*fakePR
 	activity   []IssueActivity
+	parents    map[int]int
 	prLabels   []PRLabelActivity
 	reviewed   []ReviewedPR
 	rabbit     []CodeRabbitComment
@@ -335,6 +336,12 @@ func (f *fakeGitHub) IssueActivity(_ context.Context, _ string, kind IssueKind, 
 	return out, false, nil
 }
 
+func (f *fakeGitHub) IssueParent(_ context.Context, _ string, n int) (int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.parents[n], f.err
+}
+
 func (f *fakeGitHub) PRLabelActivity(_ context.Context, _ string, kind PRLabelKind, since string) ([]PRLabelActivity, bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -491,10 +498,10 @@ func TestEventsListGivesEveryEventPollOnlyWithTheirSchemas(t *testing.T) {
 		equal(t, hasFixes, named[name], name+" fixes")
 		_, hasAny := props["any"]
 		equal(t, hasAny, named[name] || name == "run.completed" || name == "issue.closed" || name == "issue.commented" ||
-			name == "issue.labelled", name+" any")
+			name == "issue.labelled" || name == "issue.parented", name+" any")
 		if strings.HasPrefix(name, "issue.") {
 			_, hasIssue := props["issue"]
-			equal(t, hasIssue, name != "issue.opened", name+" issue")
+			equal(t, hasIssue, name != "issue.opened" && name != "issue.parented", name+" issue")
 		} else if name == "run.completed" {
 			equal(t, props["run"].(map[string]any)["type"], "integer", name+" run")
 		} else if name == "deploy.waiting" {
@@ -508,7 +515,7 @@ func TestEventsListGivesEveryEventPollOnlyWithTheirSchemas(t *testing.T) {
 		}
 	}
 	sort.Strings(names)
-	equal(t, names, []string{"checks.failed", "checks.passed", "deploy.failed", "deploy.started", "deploy.succeeded", "deploy.waiting", "issue.assigned", "issue.closed", "issue.commented", "issue.labelled", "issue.opened",
+	equal(t, names, []string{"checks.failed", "checks.passed", "deploy.failed", "deploy.started", "deploy.succeeded", "deploy.waiting", "issue.assigned", "issue.closed", "issue.commented", "issue.labelled", "issue.opened", "issue.parented",
 		"pr.blocked", "pr.closed", "pr.commented", "pr.conflicted", "pr.labelled", "pr.merged", "pr.opened", "pr.reviewed", "pr.unlabelled", "review.comment", "review.posted",
 		"review.requested", "run.completed"}, "names")
 }
@@ -800,6 +807,24 @@ func TestPRTakesAList(t *testing.T) {
 			t.Fatalf("%v: %v", bad, err)
 		}
 	}
+}
+
+// #5945: a lead sees a new child of its epic at once, and filters other issue events by parent.
+func TestIssueParentedAndParentFilter(t *testing.T) {
+	h := newHarness(t)
+	issue := func(n int) Issue { return Issue{Number: n, Title: fmt.Sprintf("Issue %d", n), Author: "someone"} }
+	h.fake.parents = map[int]int{501: 500, 502: 600}
+	where := map[string]any{"repo": repo, "parent": 500}
+	parented, closed := h.poll("issue.parented", where, nil), h.poll("issue.closed", where, nil)
+	h.fake.addActivity(IssueActivity{ID: "1", At: h.at(5), Issue: issue(501), Kind: IssueParented, By: "alexec", Trusted: true})
+	h.fake.addActivity(IssueActivity{ID: "2", At: h.at(5), Issue: issue(502), Kind: IssueParented, By: "alexec", Trusted: true})
+	h.fake.addActivity(IssueActivity{ID: "3", At: h.at(6), Issue: issue(501), Kind: IssueClosed, By: "alexec", Trusted: true})
+	h.fake.addActivity(IssueActivity{ID: "4", At: h.at(6), Issue: issue(502), Kind: IssueClosed, By: "alexec", Trusted: true})
+	p := h.poll("issue.parented", where, parented["cursor"])
+	equal(t, ids(p), []string{"issue.parented:" + repo + ":1"}, "parented")
+	d := eventsOf(p)[0]["data"].(map[string]any)
+	equal(t, d["parent"], float64(500), "parent")
+	equal(t, ids(h.poll("issue.closed", where, closed["cursor"])), []string{"issue.closed:" + repo + ":3"}, "closed by parent")
 }
 
 func TestIssueEventsLabelsAndReasons(t *testing.T) {
