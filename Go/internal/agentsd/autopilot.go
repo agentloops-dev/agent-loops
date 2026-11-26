@@ -14,7 +14,7 @@ import (
 // Autopilot's setting and its status (#5898, epic #5897). The setting is Folder.autopilot in the
 // folder's record: off, high or on, absent is off. The status is what Autopilot did in the folder
 // and why each item waits: at most autopilotMostRows rows, kept in autopilot-status.json, one
-// entry for each folder. Nothing starts anything yet: the loop (#5899) calls autopilotNote.
+// entry for each folder. The loop (autopilotrun.go, #5899) calls autopilotNote.
 // With the mode off the status has no rows.
 
 const (
