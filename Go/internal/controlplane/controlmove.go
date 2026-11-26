@@ -59,6 +59,9 @@ type moveState struct {
 	running string
 	// dialEvery is the wait between dials of the new copy; tests make it short.
 	dialEvery time.Duration
+	// linkDelay is added to each call on the handover session; tests make a link between
+	// two machines with it (#7394).
+	linkDelay time.Duration
 }
 
 func (m *moveState) take(id string) bool {
@@ -291,6 +294,7 @@ func (s *Service) moveDial(ctx context.Context, endpoint records.Endpoint) (*Han
 				link.Close()
 				return nil, fail(internalError, "The new copy at %s has another control key.", endpoint.URL)
 			}
+			link.delay = s.moving.linkDelay
 			return link, nil
 		}
 		if time.Now().After(deadline) {

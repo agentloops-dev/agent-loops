@@ -31,7 +31,7 @@ limit. The stores that only log it have bugs above.
 
 ## Raw writers
 
-`storecopy`, `homebackup`'s restore, `store/put` in `handover` and `putBackRecords` in
+`storecopy`, `homebackup`'s restore, `store/put` and `store/putMany` in `handover` and `putBackRecords` in
 `hosted/backup` are below every kind. They write bytes as they are, by design (#7251): a restore
 or a handover never refuses the only copy of a record. Test: a record over its limit goes
 through the copy, the backup, the restore and `store/put`; the backups' key is made small at its
