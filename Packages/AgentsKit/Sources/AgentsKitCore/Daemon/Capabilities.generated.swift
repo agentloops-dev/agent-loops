@@ -116,6 +116,7 @@ public enum Capability {
     public static let hostLock2 = "host.lock/2"
     public static let hostLock3 = "host.lock/3"
     public static let hostLock4 = "host.lock/4"
+    public static let hostMachineSetup1 = "host.machine-setup/1"
     public static let hostOrgRoutes1 = "host.org-routes/1"
     public static let hostOrgRoutes2 = "host.org-routes/2"
     public static let hostPolicyLayers1 = "host.policy-layers/1"
@@ -636,7 +637,9 @@ public enum Capability {
         "sessions/list": "sessions/1",
         "settings/passThrough": "host.policy/1",
         "settings/userPart": "host.user-settings/4",
+        "setup/approve": "host.machine-setup/1",
         "setup/projects": "machine.setup/1",
+        "setup/scripts": "host.machine-setup/1",
         "shell/attach": "shell/1",
         "shell/close": "shell/1",
         "shell/detach": "shell/1",
