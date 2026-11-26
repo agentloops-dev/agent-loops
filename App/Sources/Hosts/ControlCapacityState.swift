@@ -25,9 +25,10 @@ final class ControlCapacityState {
         ControlPlaneMachine.look(for: machine, in: looks, controlMachines: controlMachines)
     }
 
-    /// The copy the window's strip names: the highest level, near or full only.
-    var warning: DaemonAPI.ControlCapacityCopy? {
-        ControlPlaneMachine.worst(looks).flatMap { $0.level == .ok ? nil : $0 }
+    /// The copy the window's strip names: the highest level, near or full only; none while the
+    /// control plane is away (#7363).
+    func warning(controlAway: Bool) -> DaemonAPI.ControlCapacityCopy? {
+        ControlPlaneMachine.warning(looks, controlAway: controlAway)
     }
 
     func read(_ control: DaemonClient) async {

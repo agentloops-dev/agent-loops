@@ -43,6 +43,14 @@ public enum ControlPlaneMachine {
         copies.max { rank($0.level) < rank($1.level) || (rank($0.level) == rank($1.level) && $0.at < $1.at) }
     }
 
+    /// The copy the window's strip names: the highest level, near or full only. None while the
+    /// window cannot reach the control plane (#7363): the level is then the last one known, not
+    /// now, and the strip "Can't reach the control plane" says how old the window's data is.
+    public static func warning(_ copies: [DaemonAPI.ControlCapacityCopy], controlAway: Bool) -> DaemonAPI.ControlCapacityCopy? {
+        guard !controlAway else { return nil }
+        return worst(copies).flatMap { $0.level == .ok ? nil : $0 }
+    }
+
     static func rank(_ level: DaemonAPI.CapacityLevel) -> Int {
         switch level {
         case .ok: 0

@@ -69,6 +69,15 @@ struct ControlPlaneMachineTests {
         #expect(ControlPlaneMachine.worst([]) == nil)
     }
 
+    @Test func theStripSaysNothingWhileTheControlPlaneIsAway() {
+        let ok = look("a", machine: "m", level: .ok)
+        let full = look("b", machine: "n", level: .full)
+        #expect(ControlPlaneMachine.warning([ok, full], controlAway: false)?.copy == "b")
+        #expect(ControlPlaneMachine.warning([ok], controlAway: false) == nil)
+        // #7363: the last level is not now while the window cannot reach the control plane.
+        #expect(ControlPlaneMachine.warning([ok, full], controlAway: true) == nil)
+    }
+
     @Test func thePageHasEachFigure() throws {
         let figures = ControlPlaneMachine.summary(look("a", machine: "m"))
         #expect(figures.map(\.label) == ["Capacity", "Load per core", "Memory pressure", "I/O pressure"])
