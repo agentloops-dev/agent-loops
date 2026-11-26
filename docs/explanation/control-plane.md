@@ -85,7 +85,9 @@ these states, in this order:
   address.
 
 The call answers once the checks pass. `control/moveChanged` tells the admins each step, and
-`control/moves/list` gives the newest 20 moves (`v1/moves/`, kept 90 days). A step that fails
+`control/moves/list` gives the newest 20 moves (`v1/moves/`, kept 90 days). A client reads the
+list when it connects, and then each step from `control/moveChanged`. The list writes nothing;
+each write of a move deletes the moves past those bounds. A step that fails
 before the new copy takes over leaves the old copy serving, and the move says which step failed
 and why. The audit says who started the move.
 

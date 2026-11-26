@@ -7,6 +7,7 @@ import (
 	"errors"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -245,29 +246,85 @@ func TestControlMoveThatFailsLeavesTheOldCopyServing(t *testing.T) {
 	}
 }
 
-// At most 20 moves are kept, and none older than 90 days; one that no copy runs any more
-// failed at its step.
+// movesStore counts the calls on the moves' records.
+type movesStore struct {
+	store.Store
+	lists, gets, writes atomic.Int64
+}
+
+func (m *movesStore) List(ctx context.Context, prefix string) ([]store.Key, error) {
+	if prefix == movesPrefix {
+		m.lists.Add(1)
+	}
+	return m.Store.List(ctx, prefix)
+}
+
+func (m *movesStore) Get(ctx context.Context, key string) (*store.Object, error) {
+	if strings.HasPrefix(key, movesPrefix) {
+		m.gets.Add(1)
+	}
+	return m.Store.Get(ctx, key)
+}
+
+func (m *movesStore) Put(ctx context.Context, key string, data []byte, when store.Condition) (string, error) {
+	if strings.HasPrefix(key, movesPrefix) {
+		m.writes.Add(1)
+	}
+	return m.Store.Put(ctx, key, data, when)
+}
+
+func (m *movesStore) Delete(ctx context.Context, key string) error {
+	if strings.HasPrefix(key, movesPrefix) {
+		m.writes.Add(1)
+	}
+	return m.Store.Delete(ctx, key)
+}
+
+// At most 20 moves are kept, and none older than 90 days, pruned on write from the keys; one
+// that no copy runs any more failed at its step. A read is one list and a get for each of the
+// 20, and writes nothing (#7396); the next move writes the left one failed.
 func TestControlMovesAreBounded(t *testing.T) {
 	t.Parallel()
-	p := startPlane(t, store.NewMemory(), controllink.NewPrivateKey())
+	st := &movesStore{Store: store.NewMemory()}
+	p := startPlane(t, st, controllink.NewPrivateKey())
 	ctx := context.Background()
-	old := dateOf(time.Now().Add(-91 * 24 * time.Hour))
-	must(t, p.s.putMove(ctx, wire.ControlMove{ID: "0000000000001-aa", Phase: wire.ControlMovePhaseDone, UpdatedAt: old}))
+	must(t, p.s.putMove(ctx, wire.ControlMove{ID: "0000000000001-aa", Phase: wire.ControlMovePhaseDone, UpdatedAt: dateOf(time.Now())}))
+	if keys, err := p.store.List(ctx, movesPrefix); err != nil || len(keys) != 0 {
+		t.Fatal("a move that started 90 days ago is kept", keys, err)
+	}
 	for i := range 22 {
 		must(t, p.s.putMove(ctx, wire.ControlMove{ID: newMoveID(), Phase: wire.ControlMovePhaseDone, UpdatedAt: dateOf(time.Now()), By: itoa(i)}))
 		time.Sleep(2 * time.Millisecond)
 	}
 	stuck := wire.ControlMove{ID: newMoveID(), Phase: wire.ControlMovePhaseCopying, UpdatedAt: dateOf(time.Now())}
 	must(t, p.s.putMove(ctx, stuck))
+	keys, err := p.store.List(ctx, movesPrefix)
+	must(t, err)
+	if len(keys) != movesKept {
+		t.Fatal(len(keys))
+	}
+	lists, gets, writes := st.lists.Load(), st.gets.Load(), st.writes.Load()
 	moves := p.s.listMoves(ctx)
 	if len(moves) != movesKept || moves[0].ID != stuck.ID || moves[0].Phase != wire.ControlMovePhaseFailed ||
 		*moves[0].FailedPhase != wire.ControlMovePhaseCopying {
 		t.Fatalf("%d %+v", len(moves), moves[0])
 	}
-	keys, err := p.store.List(ctx, movesPrefix)
+	if l, g, w := st.lists.Load()-lists, st.gets.Load()-gets, st.writes.Load()-writes; l != 1 || g != movesKept || w != 0 {
+		t.Fatalf("a read made %d lists, %d gets and %d writes", l, g, w)
+	}
+	held, err := p.store.Get(ctx, moveKey(stuck.ID))
 	must(t, err)
-	if len(keys) != movesKept {
-		t.Fatal(len(keys))
+	var kept wire.ControlMove
+	must(t, json.Unmarshal(held.Data, &kept))
+	if kept.Phase != wire.ControlMovePhaseCopying {
+		t.Fatal("the read wrote the move", kept.Phase)
+	}
+	p.s.failLeftMoves(ctx)
+	held, err = p.store.Get(ctx, moveKey(stuck.ID))
+	must(t, err)
+	must(t, json.Unmarshal(held.Data, &kept))
+	if kept.Phase != wire.ControlMovePhaseFailed || *kept.FailedPhase != wire.ControlMovePhaseCopying {
+		t.Fatalf("%+v", kept)
 	}
 }
 

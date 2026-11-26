@@ -92,7 +92,7 @@ struct ControlMoveSection: View {
 
     private func check() async {
         guard let control = model.controlRequests else { return }
-        await model.controlMove.read(control)
+        // The moves come when the window connects and by control/moveChanged (#7396).
         await model.controlMove.check(control, page: host, machine: record.id)
     }
 }
