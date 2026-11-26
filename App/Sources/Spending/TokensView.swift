@@ -5,7 +5,7 @@ import SwiftUI
 /// against the token limits. It was a switch on Cost; a page of its own is one place to
 /// look for one question.
 ///
-/// A page in the detail column, picked from Usage in the sidebar. Read-only: the limits
+/// The Cost report's Tokens tab (#6884). Read-only: the limits
 /// are set in Settings ▸ Agents ▸ Policy (#2957).
 struct TokensView: View {
     @Environment(AppModel.self) private var model
@@ -22,7 +22,6 @@ struct TokensView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(24)
         }
-        .navigationTitle("Tokens")
     }
 }
 
@@ -50,28 +49,5 @@ private struct TokensToday: View {
                     .foregroundStyle(.secondary)
             }
         }
-    }
-}
-
-/// Tokens' row in Usage: the title alone (#587), the day's tokens in the tooltip, and
-/// near the daily token limit the row's icon turns red.
-struct TokensRow: View {
-    @Environment(AppModel.self) private var model
-
-    var body: some View {
-        HStack(alignment: .firstTextBaseline) {
-            Text("Tokens").foregroundStyle(.primary)
-            Spacer()
-        }
-        .help(figures.map { "\($0). What the work used in tokens. Opens Tokens." } ?? "What the work used in tokens")
-        .accessibilityValue(figures ?? "")
-    }
-
-    /// Today's tokens, and what is left of a daily token limit where there is one.
-    private var figures: String? {
-        guard let state = model.costState else { return nil }
-        let today = "\(state.tokensToday.formatted()) tokens today"
-        guard let left = state.dayTokenHeadroom else { return today }
-        return "\(today), \(left.formatted()) left"
     }
 }

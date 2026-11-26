@@ -136,12 +136,8 @@ struct ContentView: View {
             MachinePage(host: host).id(host).paperGround()
         } else if model.showsMachines {
             MachinesListPage().paperGround()
-        } else if model.showsSpending {
-            SpendingView().paperGround()
-        } else if model.showsTokens {
-            TokensView().paperGround()
-        } else if model.showsTime {
-            TimeView().paperGround()
+        } else if model.costTab != nil {
+            CostView().paperGround()
         } else if model.showsVelocity {
             VelocityView().paperGround()
         } else if model.showsCycletime {

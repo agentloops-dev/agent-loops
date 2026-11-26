@@ -135,8 +135,8 @@ something particular done.
   OAuth, such as GitHub's, signed in to in your browser so agents start with it.
 - [Keep going when a runtime runs out](keep-going-when-a-runtime-runs-out.md): see which
   runtimes are out, and continue a chat's work in a new chat on another.
-- [See usage, cost and time](see-usage-cost-and-time.md): open the Cost, Tokens and Time
-  pages, read their charts, and see how much of a runtime's allowance is used.
+- [See usage, cost and time](see-usage-cost-and-time.md): open the Cost report's Spend, Tokens and Time
+  tabs, read their charts, and see how much of a runtime's allowance is used.
 - [Limit what agents spend](limit-spending.md): the Spending page, and a limit per agent
   or per day.
 

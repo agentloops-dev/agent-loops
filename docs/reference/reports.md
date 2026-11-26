@@ -37,10 +37,10 @@ page.
 ## Reports' pages, by question (#5280)
 
 The list groups Reports' pages by the question each answers (spec #5276, option A): **Cost**
-(Spend), **Output** (Outcomes, Delivery), **Time** (Time), **Plan** (Forecast, Estimates), **Use**
+(Cost, with the tabs Spend, Tokens and Time, #6884), **Output** (Outcomes, Delivery), **Plan** (Forecast, Estimates), **Use**
 (Adoption, Runtimes, Workflows), **Storage** (Store sizes, behind a flag) and **Saved** (Saved Views); Audit is under Records, for admins.
 Usage and Multiplier are no longer pages: in the Me lens, Spend, Time and Outcomes end with **On
-your machines**, the charts of the pane each repeats (Cost and Tokens on Spend, Time on Time, the
+your machines**, the charts of the pane each repeats (Spend on Spend, Tokens on Tokens, Time on Time, the
 Multiplier and Velocity on Outcomes). Features is Status ▸ Features: it is about the product and
 the machines, not about work. An old `#/reports/usage`, `#/reports/multiplier` or
 `#/reports/features` opens its new place. The Mac's Cost ▸ Open Reports opens Spend in the Me lens,

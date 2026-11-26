@@ -21,6 +21,7 @@ export function rangeAsked(query: string | undefined): ReportRange | undefined {
 export const rangeSpoken: Record<ReportRange, string> = { day: "Day", week: "Week", month: "Month", threeMonths: "3 months" };
 /** What Spend's bars measure (#2440). */
 export const spendBarCaption = "Each bar is the cost against the largest, or the tokens when nothing has a price.";
+export const tokensBarCaption = "Each bar is the tokens against the largest.";
 export const rangeSpan: Record<ReportRange, string> = { day: "The last 24 hours", week: "The last 7 days", month: "The last 30 days", threeMonths: "The last 90 days" };
 
 export const removedOwner = "A removed machine";
@@ -59,6 +60,9 @@ export interface ReportGroup {
   waitingSeconds: number;
 }
 
+/** What a page of rows is ordered and drawn by: Cost's tabs Spend and Tokens (#6884). */
+export type ReportMetric = "cost" | "tokens";
+
 export interface ReportTotals {
   groups: ReportGroup[];
   total: ReportGroup;
@@ -94,7 +98,8 @@ function key(r: ReportRow, by: ReportDimension, runtimeName: (id: string) => str
   }
 }
 
-export function reportTotals(rows: readonly ReportRow[], by: ReportDimension, runtimeName: (id: string) => string = (id) => id): ReportTotals {
+export function reportTotals(rows: readonly ReportRow[], by: ReportDimension, runtimeName: (id: string) => string = (id) => id,
+  metric: ReportMetric = "cost"): ReportTotals {
   const groups = new Map<string, ReportGroup>();
   const total = blank("", "Total");
   for (const r of rows) {
@@ -105,7 +110,8 @@ export function reportTotals(rows: readonly ReportRow[], by: ReportDimension, ru
     }
     add(total, r);
   }
-  const currencies = Object.entries(total.cost).sort(([a, x], [b, y]) => y - x || a.localeCompare(b)).map(([c]) => c);
+  // By tokens, no currency orders the groups or scales the bars.
+  const currencies = metric === "tokens" ? [] : Object.entries(total.cost).sort(([a, x], [b, y]) => y - x || a.localeCompare(b)).map(([c]) => c);
   const first = currencies[0];
   const sorted = [...groups.values()].sort((a, b) => {
     const ca = first ? a.cost[first] ?? 0 : 0, cb = first ? b.cost[first] ?? 0 : 0;
@@ -122,9 +128,9 @@ export function share(totals: ReportTotals, g: ReportGroup): number {
   return totals.most > 0 ? value / totals.most : 0;
 }
 
-/** The figures under a name: cost, tokens, turns and working time. */
-export function line(g: ReportGroup): string {
-  const parts = Object.entries(g.cost).sort(([a], [b]) => a.localeCompare(b)).map(([c, v]) => money(v, c));
+/** The figures under a name: cost (not on Tokens), tokens, turns and working time. */
+export function line(g: ReportGroup, metric: ReportMetric = "cost"): string {
+  const parts = metric === "tokens" ? [] : Object.entries(g.cost).sort(([a], [b]) => a.localeCompare(b)).map(([c, v]) => money(v, c));
   parts.push(`${tokenWords(g.tokens)} tokens`, g.turns === 1 ? "1 turn" : `${g.turns} turns`, `${timeWords(g.workingSeconds)} working`);
   return parts.join(" · ");
 }

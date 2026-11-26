@@ -13,9 +13,9 @@ import type { FeatureUsage, LineageForecast, ReportDelivery, LineageForecastAssu
 import { CallFailed } from "../wire/link";
 import { adoption, adoptionLine, rangeAsked, barCaption, adoptionNote, budgetWords, dimensionTitle, empty, exportName, groupViewNote, isGroupView, line, meNote,
   memberNote, noOutcomes, noWorkflows, outcomeLine, outcomeTotals, outcomesNote, rangeSpan, ranges, reportTotals, runtimeLine,
-  runtimesNote, sameScope, spendBarCaption, scopeKey, lensAsked, lensQuery, dimensionsFor, scopeNote, share, timeLine, timeNote, utcNote, waitingShare, weekTitle, workflowLine,
+  runtimesNote, sameScope, spendBarCaption, tokensBarCaption, scopeKey, lensAsked, lensQuery, dimensionsFor, scopeNote, share, timeLine, timeNote, utcNote, waitingShare, weekTitle, workflowLine,
   workflowRows, workflowsNote, deleteViewWords, digestText, noCopy, noViews, noViewsHere, viewBy, viewWords, viewsNote } from "../model/reports";
-import type { OutcomeGroup, OutcomeOrder, ReportDimension, ReportGroup } from "../model/reports";
+import type { OutcomeGroup, OutcomeOrder, ReportDimension, ReportGroup, ReportMetric } from "../model/reports";
 import { featureLine, featureUnused, featuresNote, mergeFeatures, noFeatures } from "../model/features";
 import { hostAnswers } from "../model/capabilities";
 import {
@@ -29,7 +29,7 @@ import { deploysQuery } from "../model/deploys";
 import { buildsLinkQuery } from "../model/builds";
 import { Capability } from "../protocol/capabilities.generated";
 import { storesID, type Section } from "../model/console";
-import { usagePaneTitle, usagePanesOf } from "../model/nav";
+import { costTabs, usagePaneTitle, usagePanesOf } from "../model/nav";
 import { ActivityPageView } from "./Activity";
 import { MultiplierPage } from "./Multiplier";
 import { Choice } from "./Choice";
@@ -73,8 +73,8 @@ function useReport(store: Store, range: ReportRange, scope: ReportScope | undefi
 /** With no `scope`, the Cost page's pane: the caller's own machines, an admin's too (#2071).
  * `seesMore` says whether reports/scopes offers the caller more than Me; the Cost page's pane asks
  * it itself (#2200). */
-export function ReportsPane({ store, runtimeName, scope, seesMore, initial }: { store: Store; runtimeName: (id: string) => string;
-  scope?: ReportScope | undefined; seesMore?: boolean; initial?: Initial | undefined }) {
+export function ReportsPane({ store, runtimeName, scope, seesMore, initial, metric = "cost" }: { store: Store; runtimeName: (id: string) => string;
+  scope?: ReportScope | undefined; seesMore?: boolean; initial?: Initial | undefined; metric?: ReportMetric }) {
   const range = useSignal<ReportRange>(initial?.range ?? "week");
   const by = useSignal<ReportDimension>(initial?.by ?? "person");
   const { problem, shown } = useReport(store, range.value, scope);
@@ -103,11 +103,11 @@ export function ReportsPane({ store, runtimeName, scope, seesMore, initial }: { 
   const way = ways.includes(by.value) ? by.value : ways[0]!;
   // Added up once per report and way, not at each draw (#2057).
   const names = store.runtimes.value;
-  const totals = useMemo(() => shown ? reportTotals(shown.rows, way, runtimeName) : null, [shown, way, names]);
+  const totals = useMemo(() => shown ? reportTotals(shown.rows, way, runtimeName, metric) : null, [shown, way, names, metric]);
   const row = (g: ReportGroup, bar: number | null) => (
     <li key={g.id} class={bar === null ? "report-total" : ""}>
       <span class={bar === null ? "strong" : ""}>{g.name}</span>
-      <span class="quiet small">{line(g)}</span>
+      <span class="quiet small">{line(g, metric)}</span>
       {bar !== null && <span class="report-bar" aria-hidden="true"><span style={{ width: `${Math.max(1, bar * 100)}%` }} /></span>}
     </li>
   );
@@ -118,12 +118,12 @@ export function ReportsPane({ store, runtimeName, scope, seesMore, initial }: { 
         <span class="reports-export">
           <button title="Save the rows of this range as CSV" onClick={() => void exportRows("csv")}>Export CSV</button>
           <button title="Save the rows of this range as JSON lines" onClick={() => void exportRows("jsonl")}>Export JSON lines</button>
-          {scope && <SaveView store={store} page="spend" scope={scope} range={range.value} by={way} />}
+          {scope && metric === "cost" && <SaveView store={store} page="spend" scope={scope} range={range.value} by={way} />}
         </span>
       </div>
       <Choice label="By" value={way} options={ways.map((d) => [d, dimensionTitle[d]] as const)} onPick={(d) => { by.value = d; }} />
       <p class="quiet small">{rangeSpan[range.value]}</p>
-      {scope && shown?.budgetUSD !== undefined && shown.monthSpentUSD !== undefined && <Budget spent={shown.monthSpentUSD} budget={shown.budgetUSD} />}
+      {metric === "cost" && scope && shown?.budgetUSD !== undefined && shown.monthSpentUSD !== undefined && <Budget spent={shown.monthSpentUSD} budget={shown.budgetUSD} />}
       {problem.value && <p class="hint">{problem.value}</p>}
       {!totals && !problem.value && <p class="hint">Loading…</p>}
       {totals && shown && (
@@ -134,7 +134,7 @@ export function ReportsPane({ store, runtimeName, scope, seesMore, initial }: { 
               {totals.groups.map((g) => row(g, share(totals, g)))}
             </ul>
           )}
-          {totals.groups.length > 0 && <p class="quiet small">{spendBarCaption}</p>}
+          {totals.groups.length > 0 && <p class="quiet small">{metric === "tokens" ? tokensBarCaption : spendBarCaption}</p>}
           <p class="quiet small">{`${note(shown, scope, more)} ${utcNote}`}</p>
         </>
       )}
@@ -772,6 +772,14 @@ export function ReportsPage({ store, section, down }: { store: Store; section: S
   return (
     <>
       {bar && <LensBar options={list} current={option ? scopeKey(option.scope) : "me"} onPick={setLens} />}
+      {costTabs.some(([id]) => id === section.id) && (
+        <div class="tabs" role="tablist" aria-label="Cost">
+          {costTabs.map(([id, title]) => (
+            <button key={id} role="tab" aria-selected={section.id === id} class={section.id === id ? "on" : ""}
+              onClick={() => { const { query } = route.value; go({ nav: "reports", section: id, ...query ? { query } : {} }); }}>{title}</button>
+          ))}
+        </div>
+      )}
       {view && isGroupView(view) && <p class="quiet small" role="status">{groupViewNote}</p>}
       {section.id === "features" ? <FeaturesPane store={store} />
         : section.id === storesID ? <StoreSizesPage store={store} down={down} />
@@ -782,7 +790,7 @@ export function ReportsPage({ store, section, down }: { store: Store; section: S
         : section.id in valueParts ? <ValuePane key={`${section.id}:${view?.id ?? ""}:${wanted}`} store={store} scope={lens}
           part={section.id as ValuePart} initial={initial} />
         : section.id === "adoption" ? <AdoptionPane key={`${view?.id ?? ""}:${wanted}`} store={store} scope={lens} initial={initial} />
-        : <ReportsPane key={`${view?.id ?? asked ?? ""}:${wanted}`} store={store} runtimeName={runtimeNameIn(store)} scope={lens} seesMore={list.length > 1} initial={initial} />)}
+        : <ReportsPane key={`${section.id}:${view?.id ?? asked ?? ""}:${wanted}`} metric={section.id === "tokens" ? "tokens" : "cost"} store={store} runtimeName={runtimeNameIn(store)} scope={lens} seesMore={list.length > 1} initial={initial} />)}
       {scopes.value !== null && (!lens || lens.kind === "me") && usagePanesOf(section.id).length > 0 && <YoursPart key={section.id} store={store} section={section.id} />}
     </>
   );
