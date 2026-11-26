@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/buildinfo"
-	"github.com/agentloops-dev/agent-loops/Go/internal/linuxrelease"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -54,16 +53,7 @@ func (d *Daemon) registerSelfUpdate() {
 	}
 	u := newSelfUpdater(file, current, buildinfo.Version)
 	u.control = func() []releaseSource { return controlSources(d.Store.Loc.Root) }
-	arch := linuxArch(goruntime.GOARCH)
-	u.asset = func(version string) string { return linuxrelease.Tarball(arch, version) }
-	u.open = func(version, work, file string) (string, error) {
-		return openLinuxRelease(current, arch, version, work, file)
-	}
-	u.place = func(work string) error { placeLinuxServers(current, arch, work); return nil }
-	u.version = func(next string) (string, error) { return linkedVersion(current, next) }
-	// The tarball is checked against SHA256SUMS, and each program in it against its own
-	// .sha256: a Linux host has no signature to check besides.
-	u.verify = func(string, string) error { return nil }
+	u.asLinux(current, linuxArch(goruntime.GOARCH))
 	u.restart = func() error {
 		if d.Quit == nil {
 			return fmt.Errorf("this host cannot stop itself")
