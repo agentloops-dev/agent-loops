@@ -347,6 +347,7 @@ func running(file string, patience time.Duration) bool {
 // takeLock is DaemonLock: an exclusive flock on daemon.lock, holding this pid, so two
 // hosts never share a root. The install script stops a host by the pid in it.
 func takeLock(file string) (*os.File, error) {
+	// store-bounds: not a store: a lock file that holds the pid of this host.
 	f, err := os.OpenFile(file, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return nil, err
@@ -536,6 +537,7 @@ func keepUplink(ctx context.Context, cl commandLine, d *agentsd.Daemon, member *
 func askToJoin(ctx context.Context, root string, ask controllink.JoinAsk, private []byte, hello controllink.MachineHello) *controllink.Membership {
 	for {
 		member, err := controllink.AskToJoin(ctx, root, ask, private, hello, func(code string) {
+			// store-bounds: not a store: a handoff: the join code for the install script, which removes it.
 			if err := os.WriteFile(filepath.Join(root, "control-join-shown"), []byte(code+"\n"), 0o600); err != nil {
 				log.Printf("control-join-shown: %v", err)
 			}

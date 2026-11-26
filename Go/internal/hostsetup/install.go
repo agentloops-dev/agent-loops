@@ -262,6 +262,7 @@ func installAgents(ctx context.Context, o Options, d Deps, l Layout, rep *Report
 		}
 		// The host enrols with this code when it starts; a code it was refused is replaced.
 		_ = os.Remove(filepath.Join(l.Root, "control-join-ask"))
+		// store-bounds: not a store: a one-time hand-off of the join code to the host, which reads it when it starts
 		if err := os.WriteFile(filepath.Join(l.Root, "control-join-code"), []byte(strings.TrimSpace(o.Join)), 0o600); err != nil {
 			return "", err
 		}
@@ -304,6 +305,7 @@ func placeBinary(exe string, l Layout) (string, error) {
 		}
 	}
 	tmp := filepath.Join(l.Bin, target+".tmp")
+	// store-bounds: not a store: an install of the host's program
 	if err := os.WriteFile(tmp, data, 0o700); err != nil {
 		return "", err
 	}

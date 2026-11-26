@@ -271,6 +271,7 @@ func setFolderConfig(folder, key string, v any) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil { //nolint:gosec // G301: the mode this folder always had; only its error is new
 		return err
 	}
+	// store-bounds: not a store: the folder's .agents/folder.json in the person's project, at most guardedMostBytes.
 	return store.WriteAtomically(path, append(b, '\n'), 0o644)
 }
 

@@ -245,6 +245,7 @@ func (d *Daemon) getFolderFrom(machine string, p wire.MachineSetupProject, folde
 			return err
 		}
 		if now, err := worktreeFingerprint(folder); err == nil {
+			// store-bounds: not a store: a one-line mark in the repository's git folder, written again each time.
 			if err := os.WriteFile(sentMark(folder), []byte(now+"\n"), 0o600); err != nil {
 				log.Printf("set-up: could not mark %s as sent: %v", folder, err)
 			}

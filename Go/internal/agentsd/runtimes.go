@@ -372,6 +372,7 @@ func (d *Daemon) launchOn(r *runtimeDef, dir string, account *wire.AccountProfil
 		if err := os.MkdirAll(filepath.Dir(file), 0o700); err != nil {
 			return acp.Launch{}, err
 		}
+		// store-bounds: not a store: a launch file: the runtime's tool policy, written again at each launch.
 		if err := os.WriteFile(file, []byte(f.contents), 0o600); err != nil {
 			return acp.Launch{}, err
 		}

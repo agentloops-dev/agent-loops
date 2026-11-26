@@ -334,6 +334,7 @@ final class HostModel {
         defer { busy = nil }
         let text = await HostDiagnostics(paths: paths).report()
         do {
+            // store-bounds: not a store: a file that the person picks
             try Data(text.utf8).write(to: url, options: .atomic)
             NSWorkspace.shared.activateFileViewerSelecting([url])
         } catch {

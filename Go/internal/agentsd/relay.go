@@ -46,6 +46,7 @@ func (d *Daemon) offerRelay(o wire.RelayOffer) error {
 		return err
 	}
 	ca := filepath.Join(dir, o.Runtime+"-relay-ca.pem")
+	// store-bounds: not a store: a launch file: the CA of a relay offer, written again at each offer.
 	if err := os.WriteFile(ca, []byte(o.CaCertificate), 0o600); err != nil {
 		return err
 	}
@@ -135,9 +136,11 @@ func writeCodexHome(dir string, port int, standIn string) error {
 		return err
 	}
 	config := "chatgpt_base_url = \"https://127.0.0.1:" + strconv.Itoa(port) + "/backend-api/\"\n"
+	// store-bounds: not a store: a launch file of a lent sign-in, written again at each lend.
 	if err := os.WriteFile(filepath.Join(home, "config.toml"), []byte(config), 0o600); err != nil {
 		return err
 	}
+	// store-bounds: not a store: a launch file of a lent sign-in, written again at each lend.
 	return os.WriteFile(filepath.Join(home, "auth.json"), []byte(standIn), 0o600)
 }
 

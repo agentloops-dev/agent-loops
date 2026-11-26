@@ -61,6 +61,7 @@ func Merge(path, label string, generated []byte) error {
 	if info, err := os.Stat(path); err == nil {
 		mode = info.Mode().Perm()
 	}
+	// store-bounds: not a store: the person's own SSH configuration; this changes only its Agent Loops block
 	if err := store.WriteAtomically(path, []byte(text), mode); err != nil {
 		return fmt.Errorf("Could not save the Codespaces SSH configuration")
 	}
@@ -105,6 +106,7 @@ func Remove(path, label string) (bool, error) {
 	if info, err := os.Stat(path); err == nil {
 		mode = info.Mode().Perm()
 	}
+	// store-bounds: not a store: the person's own SSH configuration; this removes only its Agent Loops block
 	if err := store.WriteAtomically(path, []byte(text), mode); err != nil {
 		return false, fmt.Errorf("Could not save the SSH configuration")
 	}

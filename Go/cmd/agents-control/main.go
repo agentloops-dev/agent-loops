@@ -701,6 +701,7 @@ func serveWeb(cfg *controlplane.Config) {
 	cfg.WebChanged = func(status web.Status) {
 		data, _ := json.Marshal(map[string]any{"pid": os.Getpid(), "status": status})
 		tmp := file + ".tmp"
+		// store-bounds: not a store: the status of this run, with its pid, for Agents Host; removed at each start.
 		if os.WriteFile(tmp, data, 0o644) == nil {
 			if err := os.Rename(tmp, file); err != nil {
 				fail("web.json: %v", err)

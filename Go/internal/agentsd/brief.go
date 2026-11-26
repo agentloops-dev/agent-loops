@@ -109,6 +109,7 @@ func withBriefFile(l acp.Launch, runtimeID, folder, words string) (acp.Launch, e
 		return l, err
 	}
 	file := filepath.Join(folder, briefFileName)
+	// store-bounds: not a store: a launch file, written again at each launch, in the agent's own folder.
 	if err := os.WriteFile(file, []byte(words+"\n"), 0o600); err != nil {
 		return l, err
 	}

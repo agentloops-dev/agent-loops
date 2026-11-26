@@ -534,6 +534,7 @@ final class ControlSettingsModel {
     /// The default browser, or for a walk the file its headless browser is pointed at by.
     private static func open(_ url: URL) {
         if let file = ControlConfig.walkOpenedURL {
+            // store-bounds: not a store: a walk's hand-off file, that the walk's own browser reads once
             try? Data(url.absoluteString.utf8).write(to: file, options: .atomic)
             return
         }

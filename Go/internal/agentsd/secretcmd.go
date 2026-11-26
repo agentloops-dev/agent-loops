@@ -217,6 +217,7 @@ func writeCommand(path, script string) error {
 		return nil
 	}
 	tmp := path + ".tmp-" + string(store.NewUUID())
+	// store-bounds: not a store: an install: a command script that the session runs.
 	if err := execfile.Write(tmp, []byte(script), 0o700); err != nil {
 		return err
 	}

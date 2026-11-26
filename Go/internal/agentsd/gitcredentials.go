@@ -345,6 +345,7 @@ func writeGHShim(bin, agentsd, gh string) error {
 		return nil
 	}
 	tmp := path + ".tmp"
+	// store-bounds: not a store: an install: the gh shim.
 	if err := os.WriteFile(tmp, []byte(script), 0o700); err != nil {
 		return err
 	}
