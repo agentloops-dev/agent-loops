@@ -41,6 +41,15 @@ struct ChatView: View {
             if let agent {
                 ZStack(alignment: .bottom) {
                     page(for: agent)
+                        // Voice mode speaks a turn's reply when it ends (#2322), and its
+                        // questions and permissions, whether the summary or the chat is
+                        // shown (#7479): above the choice, so a switch does not end it.
+                        .voiceModeObserves(agent, items: (popped?.work ?? model.work).transcriptItems,
+                                           question: model.work.elicitation(for: agent.id),
+                                           permission: model.work.permission(for: agent.id),
+                                           approve: { await model.answer($0, optionID: $1) }) {
+                            await model.answerElicitation($0, action: .accept, content: $1)
+                        }
                         // What was exchanged, a swipe away, as on the phone.
                         .swipeToShowPane(show: {
                             // A session's own window has no inspector (#826).
