@@ -59,7 +59,14 @@ func (f PersonKeyFile) Load() ([]byte, bool, error) {
 	return b, true, nil
 }
 
-func (f PersonKeyFile) Save(key []byte) error { return os.WriteFile(f.path(), key, 0o600) }
+// Save keeps key, the store's one key of 32 bytes; a longer one is refused and the key before stays.
+func (f PersonKeyFile) Save(key []byte) error {
+	if err := fits("A person key", key, 32); err != nil {
+		return err
+	}
+	// store-bounds: kind=secret; count=1; size=32B; age=until-deleted; applied=on write (refused), made once, and kept while the machine is
+	return os.WriteFile(f.path(), key, 0o600)
+}
 
 // PersonKeyService is the root's own Keychain service for the person key: distinct from
 // HostKeyService's prefix (the machine key), so the two never collide in the same Keychain,
