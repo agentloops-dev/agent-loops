@@ -23,7 +23,7 @@ struct AutopilotWordsTests {
     }
 
     @Test func theStatusDecodesFromTheWire() throws {
-        let json = #"{"mode":"high","lastRunAt":100,"rows":[{"ref":"#7","kind":"lead","state":"paused","reason":"on hold","since":50}]}"#
+        let json = ##"{"mode":"high","lastRunAt":100,"rows":[{"ref":"#7","kind":"lead","state":"paused","reason":"on hold","since":50}]}"##
         let status = try JSONDecoder().decode(DaemonAPI.AutopilotStatus.self, from: Data(json.utf8))
         #expect(status.mode == .high)
         #expect(status.rows.first?.state == .paused)
