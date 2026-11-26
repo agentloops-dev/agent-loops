@@ -19,7 +19,7 @@ export function levelWords(level: CapacityLevel | undefined): string | null {
 export function levelReasonWords(level: CapacityLevel | undefined, reason: CapacityReason | undefined): string | null {
   const words = levelWords(level);
   if (!words || !reason) return words;
-  return words.replace(" capacity", ` ${reason === "cpu" ? "CPU" : "memory"} capacity`);
+  return words.replace(" capacity", ` ${reason === "cpu" ? "CPU" : reason} capacity`);
 }
 
 /** The class for the level's tint: attention at near, failure at full. */

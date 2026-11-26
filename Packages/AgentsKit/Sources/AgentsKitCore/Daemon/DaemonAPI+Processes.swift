@@ -25,9 +25,9 @@ extension DaemonAPI {
     }
 
     /// What put a machine near or at capacity (#6596): its load per core (cpu), or critical
-    /// memory pressure (memory). It stays while the level waits to fall.
+    /// memory pressure (memory), or disk pressure (disk, #7300). It stays while the level waits to fall.
     public enum CapacityReason: String, Codable, Hashable, Sendable, CaseIterable {
-        case cpu, memory
+        case cpu, memory, disk
     }
 
     /// What capacity/state answers and capacity/changed carries (#4748): the level, and at

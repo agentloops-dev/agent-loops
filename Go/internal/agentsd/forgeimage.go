@@ -66,12 +66,15 @@ type forgeImageHost interface {
 // screenshots, #4522), and the githubusercontent.com hosts they redirect to.
 type githubImages struct{}
 
-// githubImageHosts are read at any path; github.com only at its image paths.
+// githubImageHosts are read at any path; github.com only at its image paths. The S3 host is the
+// one exact bucket that a public repo's github.com/user-attachments/assets/<id> redirects to, with
+// a signed URL (gh's --attach, pr-shots.sh's screenshots since #6963; #7130), not all of S3.
 var githubImageHosts = map[string]bool{
-	"user-images.githubusercontent.com":         true,
-	"private-user-images.githubusercontent.com": true,
-	"raw.githubusercontent.com":                 true,
-	"avatars.githubusercontent.com":             true,
+	"user-images.githubusercontent.com":                    true,
+	"private-user-images.githubusercontent.com":            true,
+	"raw.githubusercontent.com":                            true,
+	"avatars.githubusercontent.com":                        true,
+	"github-production-user-asset-6210df.s3.amazonaws.com": true,
 }
 
 // publicHost is u's host, in lower case, when u is https on the default port with no user; else "".

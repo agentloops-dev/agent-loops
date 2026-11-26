@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
+	"io"
 	"log"
 	"net"
 	"os"
@@ -11,14 +13,50 @@ import (
 	"strconv"
 	"sync"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
 
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
+const (
+	// relaysFile keeps each sign-in lent to this machine, in <root>/runtimes, so that its
+	// gate opens again after a restart of this host (#7369). The stand-in in it opens the
+	// lender's relay, not the lender's own sign-in, and only while the lender keeps its hash
+	// (#7170). It is never logged and goes nowhere else.
+	relaysFile = "relays.json"
+	// relaysMostBytes bounds the file: a stand-in and a CA for each runtime that is lent.
+	relaysMostBytes = 64 << 10
+	// notPermitted is the control plane's refusal of a tunnel that no lend allows now.
+	notPermitted = -32045
+)
+
+// lentRuntimes are the runtimes whose sign-in another host lends (Lending.swift): one entry
+// each, at most, in relaysFile.
+var lentRuntimes = map[string]bool{"claude": true, "codex": true}
+
+// keptRelay is one offer as relaysFile keeps it.
+type keptRelay struct {
+	StandIn       string `json:"standIn"`
+	CaCertificate string `json:"caCertificate"`
+}
+
 // Tunneler opens a tunnel to the host that lends a runtime's sign-in.
 type Tunneler interface {
 	OpenTunnel(ctx context.Context, runtime string) (controllink.Conn, error)
+}
+
+type tunnelerOf struct{ Tunneler }
+
+// SetTunneler is the control plane's link, that a sign-in lent to this host tunnels through.
+func (d *Daemon) SetTunneler(t Tunneler) { d.tunneler.Store(&tunnelerOf{t}) }
+
+// tunnels is the link that SetTunneler set; nil when there is none.
+func (d *Daemon) tunnels() Tunneler {
+	if t := d.tunneler.Load(); t != nil {
+		return t.Tunneler
+	}
+	return nil
 }
 
 // relay is a sign-in lent by another host (056, T091): a TCP gate on loopback the runtime
@@ -38,10 +76,27 @@ func (d *Daemon) relayFor(runtime string) *relay {
 }
 
 func (d *Daemon) offerRelay(o wire.RelayOffer) error {
-	if d.Tunneler == nil {
+	if d.tunnels() == nil {
 		return &Error{Code: CodeServer, Message: "this machine has no control plane to tunnel through"}
 	}
-	dir := filepath.Join(d.Store.Loc.Root, "runtimes")
+	if !lentRuntimes[o.Runtime] {
+		return Invalid("relay/offer: %s's sign-in is not lent", o.Runtime)
+	}
+	if err := d.openRelay(o); err != nil {
+		return err
+	}
+	// A fresh offer replaces the kept one. One that is not kept still works until a restart.
+	if err := d.keepRelay(o.Runtime, &keptRelay{StandIn: o.StandIn, CaCertificate: o.CaCertificate}); err != nil {
+		log.Printf("relay: %s's lent sign-in is not kept over a restart: %v", o.Runtime, err)
+	}
+	return nil
+}
+
+func (d *Daemon) relaysDir() string { return filepath.Join(d.Store.Loc.Root, "runtimes") }
+
+// openRelay opens runtime's gate, or points the open one at the new stand-in.
+func (d *Daemon) openRelay(o wire.RelayOffer) error {
+	dir := d.relaysDir()
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
@@ -80,18 +135,156 @@ func (d *Daemon) offerRelay(o wire.RelayOffer) error {
 			if err != nil {
 				return
 			}
-			d.goJob("relay pump", func() { d.pump(o.Runtime, c) })
+			d.goJob("relay pump", func() { d.pump(o.Runtime, r, c) })
 		}
 	})
 	return nil
 }
 
+// relaysPath is relaysFile's place.
+func (d *Daemon) relaysPath() string { return filepath.Join(d.relaysDir(), relaysFile) }
+
+// keptRelays is what relaysFile holds: none when it is missing, too large or not readable.
+func (d *Daemon) keptRelays() map[string]keptRelay {
+	kept := map[string]keptRelay{}
+	f, err := os.Open(d.relaysPath())
+	if err != nil {
+		return kept
+	}
+	defer f.Close()
+	b, err := io.ReadAll(io.LimitReader(f, relaysMostBytes+1))
+	if err == nil {
+		err = tooLarge(relaysFile, b, relaysMostBytes)
+	}
+	if err == nil {
+		err = json.Unmarshal(b, &kept)
+	}
+	if err != nil {
+		log.Printf("relay: the kept lent sign-ins are not read: %v", err)
+		return map[string]keptRelay{}
+	}
+	for runtime := range kept {
+		if !lentRuntimes[runtime] {
+			delete(kept, runtime)
+		}
+	}
+	return kept
+}
+
+// keepRelay writes runtime's offer into relaysFile, or takes it out with nil: whole, 0600.
+func (d *Daemon) keepRelay(runtime string, k *keptRelay) error {
+	d.relaysFileMu.Lock()
+	defer d.relaysFileMu.Unlock()
+	kept := d.keptRelays()
+	if k == nil {
+		if _, had := kept[runtime]; !had {
+			return nil
+		}
+		delete(kept, runtime)
+	} else {
+		kept[runtime] = *k
+	}
+	if len(kept) == 0 {
+		if err := os.Remove(d.relaysPath()); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		return nil
+	}
+	b, err := json.Marshal(kept)
+	if err == nil {
+		err = tooLarge(relaysFile, b, relaysMostBytes)
+	}
+	if err != nil {
+		return err
+	}
+	// store-bounds: kind=secret; count=2; size=64KiB; age=until-deleted; applied=on write (refused), an entry per lent runtime
+	return store.WriteAtomically(d.relaysPath(), b, 0o600)
+}
+
+// reopenRelays opens again each gate that relaysFile keeps (#7369), before the pick-ups ask
+// whether a runtime needs a sign-in. Tunnels go through the control plane once it is
+// connected; the lender's kept hash answers the kept stand-in (#7170).
+func (d *Daemon) reopenRelays() {
+	for runtime, k := range d.keptRelays() {
+		if err := d.openRelay(wire.RelayOffer{Runtime: runtime, StandIn: k.StandIn, CaCertificate: k.CaCertificate}); err != nil {
+			log.Printf("relay: %s's lent sign-in could not be opened again: %v", runtime, err)
+			continue
+		}
+		log.Printf("relay: %s's lent sign-in is open again, as lent before the restart", runtime)
+	}
+}
+
+// dropRelay closes runtime's gate and forgets its offer, here and on the disk: the lend was
+// taken back, or this machine left the lock. A runtime is then signed out until lent again.
+func (d *Daemon) dropRelay(runtime, why string) {
+	d.mu.Lock()
+	r := d.relays[runtime]
+	delete(d.relays, runtime)
+	d.mu.Unlock()
+	if r != nil && r.ln != nil {
+		_ = r.ln.Close() // a gate closed already is closed
+	}
+	if err := d.keepRelay(runtime, nil); err != nil {
+		log.Printf("relay: %s's kept sign-in could not be removed: %v", runtime, err)
+	}
+	dir := d.relaysDir()
+	// What the offer wrote for the runtime goes with it; one that is not there is gone.
+	_ = os.Remove(filepath.Join(dir, runtime+"-relay-ca.pem"))
+	if runtime == "codex" {
+		_ = os.Remove(filepath.Join(dir, "codex-relay-home", "auth.json"))
+	}
+	if r != nil {
+		log.Printf("relay: %s's lent sign-in is dropped: %s", runtime, why)
+	}
+}
+
+// dropRelays drops every lent sign-in.
+func (d *Daemon) dropRelays(why string) {
+	runtimes := map[string]bool{}
+	d.mu.Lock()
+	for runtime := range d.relays {
+		runtimes[runtime] = true
+	}
+	d.mu.Unlock()
+	for runtime := range d.keptRelays() {
+		runtimes[runtime] = true
+	}
+	for runtime := range runtimes {
+		d.dropRelay(runtime, why)
+	}
+}
+
+// stopRelayGates closes the gates at shutdown; what relaysFile keeps stays for the next start.
+func (d *Daemon) stopRelayGates() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	for _, r := range d.relays {
+		if r.ln != nil {
+			_ = r.ln.Close() // the next start opens it again from relaysFile
+		}
+	}
+}
+
+// refusedLend says that the control plane refused a tunnel because no lend allows it now.
+func refusedLend(err error) bool {
+	var refused *controllink.AskError
+	return errors.As(err, &refused) && refused.Code == notPermitted
+}
+
 // pump carries one TCP connection through one tunnel: bytes as base64 JSON strings, 32 KiB at most.
-func (d *Daemon) pump(runtime string, c net.Conn) {
+func (d *Daemon) pump(runtime string, r *relay, c net.Conn) {
 	defer c.Close()
-	t, err := d.Tunneler.OpenTunnel(d.ctx, runtime)
+	tunnels := d.tunnels()
+	if tunnels == nil {
+		return
+	}
+	t, err := tunnels.OpenTunnel(d.ctx, runtime)
 	if err != nil {
 		log.Printf("relay: %v", err)
+		// The lend was taken back: only a gate that a newer offer did not replace goes.
+		if refusedLend(err) && d.relayFor(runtime) == r {
+			d.dropRelay(runtime, "the control plane says no host lends it now")
+		}
 		return
 	}
 	var once sync.Once

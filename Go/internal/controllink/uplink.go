@@ -75,6 +75,7 @@ type Uplink struct {
 	// Asked answers what the control plane asks this host on channel 0, such as
 	// workflows/fire (#2011): the result, or false to leave it unanswered, as a host that
 	// does not know the method; nil answers nothing.
+	// An AskFailure is answered as an error.
 	Asked func(method string, params json.RawMessage) (any, bool)
 	// Rotated is handed the control plane's new key once this host has taken it (#997),
 	// for what is named by it, such as the local socket; nil hears nothing.
@@ -730,8 +731,13 @@ func (u *Uplink) message(n int, message string) {
 				if !ok {
 					return
 				}
-				r, _ := json.Marshal(result)
-				m, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": told.ID, "result": json.RawMessage(r)})
+				var m []byte
+				if failure, isFailure := result.(AskFailure); isFailure {
+					m, _ = json.Marshal(map[string]any{"jsonrpc": "2.0", "id": told.ID, "error": failure})
+				} else {
+					r, _ := json.Marshal(result)
+					m, _ = json.Marshal(map[string]any{"jsonrpc": "2.0", "id": told.ID, "result": json.RawMessage(r)})
+				}
 				_ = u.write(channelLine(0, string(m)))
 			})
 		}
@@ -857,7 +863,8 @@ func (c *channel) end(tell bool) {
 
 // OpenTunnel asks the control plane for a tunnel to the host that lends runtime's sign-in
 // (T091): tunnel/open on channel 0, then an open frame with the same ref. Its lines are
-// bytes, base64 in a JSON string.
+// bytes, base64 in a JSON string. The control plane's refusal is an *AskError (#7369): a
+// notPermitted one says that no host lends this one runtime's sign-in now.
 func (u *Uplink) OpenTunnel(ctx context.Context, runtime string) (Conn, error) {
 	ref := strings.ToLower(newRef())
 	wait := make(chan *channel, 1)
@@ -868,14 +875,27 @@ func (u *Uplink) OpenTunnel(ctx context.Context, runtime string) (Conn, error) {
 	u.tunnels[ref] = wait
 	u.mu.Unlock()
 	defer func() { u.mu.Lock(); delete(u.tunnels, ref); u.mu.Unlock() }()
-	u.Tell("tunnel/open", map[string]string{"runtime": runtime, "ref": ref})
-	select {
-	case c := <-wait:
-		return c, nil
-	case <-time.After(15 * time.Second):
-		return nil, errors.New("the control plane did not open the tunnel")
-	case <-ctx.Done():
-		return nil, ctx.Err()
+	id, answer, err := u.request("tunnel/open", map[string]string{"runtime": runtime, "ref": ref})
+	if err != nil {
+		return nil, err
+	}
+	defer u.forget(id)
+	timeout := time.After(15 * time.Second)
+	for {
+		select {
+		case c := <-wait:
+			return c, nil
+		case r := <-answer:
+			if r.err != nil {
+				return nil, r.err
+			}
+			// Opened: the channel's open frame comes on wait.
+			answer = nil
+		case <-timeout:
+			return nil, errors.New("the control plane did not open the tunnel")
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
 	}
 }
 

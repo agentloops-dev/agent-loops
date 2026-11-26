@@ -23,13 +23,25 @@ none, shows it to admins only, and refuses to remove it. Each copy's record in
 `v1/copies/<id>.json` names its machine (`machine`). `machines/list` says each machine's
 `roles`; an older control plane does not, and a client reads that as `agents`.
 
+The control plane finds its record by its machine's id (#7399): `AGENTS_CONTROL_MACHINE_ID`, else
+the id kept in the file `AGENTS_CONTROL_MACHINE_ID_FILE` names, made there the first time, else
+the machine's own id (the Mac's hardware UUID, Linux's `/etc/machine-id`, else its host name).
+The image sets that file to `/data/machine-id`, in its data volume, because a container has no
+machine id and a new host name each time it is made: without it, each deploy was a new machine.
+A control-only record that no copy runs on any more goes away: one copy over its store drops the
+others when it starts, and several copies drop one that no live copy record has named for
+30 seconds. A record with a host's key stays.
+
 `control/eligible` (#6611, admins only) says whether a machine can take the control role, and
 each reason why it cannot. It changes nothing. A machine is refused when one of these is true:
 
 - **The control plane cannot reach it.** Clients must reach a control plane, while a machine
-  that runs agents only dials out. The machine's tunnel must be up, or a port must answer at
-  the public address that the machine connects from: 443 or 8791, where
-  `agentsd install --control` listens. The check opens a TCP connection and sends nothing. The
+  that runs agents only dials out. The machine's tunnel must be up, or its control port must
+  answer. A machine with the control role (`agentsd install --control`) says in each
+  `machine/hello` where it serves (#7313): its port, and the domain of its certificate when it
+  has one. The check dials that port at the domain's public address, or, with no domain, at the
+  public address that the machine connects from. A machine that says nothing is tried on 443
+  and 8791, where the install listens. The check opens a TCP connection and sends nothing. The
   Linux install runs as a user, so port 443 needs a forward or the one-time `sysctl` that the
   installer names.
 - **It is a Mac,** which can sleep. In the single-user shape, the person can say yes
@@ -42,7 +54,36 @@ each reason why it cannot. It changes nothing. A machine is refused when one of 
   control key. A control plane with more than one person (bots count) is not single-user.
 - **It runs an older version** than the control plane.
 
+With the reasons, the answer says what the screen shows of the machine (#7313): `address`,
+where the check reached its control port (absent by a tunnel), `memoryBytes`, and
+`diskFreeBytes`, the free space on its fullest disk.
+
 A hosted control plane refuses the call: a customer's machine is never a copy of it.
+
+`control/move {machine}` (#6612, admins only) moves the control plane to an eligible machine in
+one call. It runs the handover below by itself, from the copy that moves. The move goes through
+these states, in this order:
+
+- **checking:** the checks of `control/eligible`. The machine also needs an address of its
+  own, not only its tunnel, and a key. Only one move runs at a time, and a control plane
+  with more than one copy over one store does not move.
+- **receiving:** the copy seals the control key to the machine's own key (HPKE, as a secret
+  is sealed) and asks its host `control/receive` on channel 0. The host opens the key, keeps
+  it as `~/.agents-control/control-key` (0600), sets the copy's old store aside, and starts
+  the copy again empty, to receive, at the address that the check found
+  (`agents-control.service.d/20-receive.conf`). The key is never in clear in a store or on
+  the wire. A control-only machine answers `control/receive` too.
+- **frozen:** the old copy changes no record.
+- **copying:** the store goes to the new copy over a handover session, and the new copy takes
+  over.
+- **forwarding:** when the new address is not the old one, the old copy sends each member to
+  the new one, for 30 days at most. Agent Loops changes no DNS record. **done:** the same
+  address.
+
+The call answers once the checks pass. `control/moveChanged` tells the admins each step, and
+`control/moves/list` gives the newest 20 moves (`v1/moves/`, kept 90 days). A step that fails
+before the new copy takes over leaves the old copy serving, and the move says which step failed
+and why. The audit says who started the move.
 
 A **client** is a screen: the Agent Loops window on a Mac, Agent Loops on an iPhone or iPad, or a
 browser on the Mac that runs the control plane. A client runs nothing. It shows what the machines hold and passes on what you type and click.

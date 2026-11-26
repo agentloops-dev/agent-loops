@@ -222,6 +222,8 @@ type mesh struct {
 	links    map[string]*peerLink
 	dialling map[string]bool
 	proxies  map[string]*proxyUplink
+	// Since when each control-only machine record has had no live copy naming it (#7399).
+	unnamed map[string]time.Time
 }
 
 func newMesh(s *Service, peerURL string, beat time.Duration) *mesh {
@@ -288,6 +290,9 @@ func (m *mesh) tick() {
 	if err != nil {
 		return
 	}
+	// The machine records that live copies name (#7399).
+	live := map[string]bool{record.Machine: true}
+	defer m.dropUnnamed(ctx, live)
 	for _, e := range listed {
 		object, err := st.Get(ctx, e.Key)
 		if err != nil || object == nil {
@@ -304,6 +309,7 @@ func (m *mesh) tick() {
 			_ = st.Delete(ctx, e.Key)
 			continue
 		}
+		live[c.Machine] = true
 		m.mu.Lock()
 		dial := c.ID != me && m.links[c.ID] == nil && !m.dialling[c.ID] && me < c.ID
 		if dial {
@@ -315,6 +321,30 @@ func (m *mesh) tick() {
 		}
 	}
 	m.findHosts(ctx)
+}
+
+// dropUnnamed removes a control-only machine record that no live copy has named for longer
+// than copyGone (#7399): its copies stopped or crashed, or it is from an older deploy. The
+// wait lets a copy that has just made its record write its first heartbeat.
+func (m *mesh) dropUnnamed(ctx context.Context, live map[string]bool) {
+	now := time.Now()
+	unnamed := map[string]time.Time{}
+	m.mu.Lock()
+	for _, h := range m.s.records.Machines() {
+		if h.ControlOnly() && !live[h.ID] {
+			since, ok := m.unnamed[h.ID]
+			if !ok {
+				since = now
+			}
+			unnamed[h.ID] = since
+		}
+	}
+	m.unnamed = unnamed
+	m.mu.Unlock()
+	m.s.dropControlMachines(ctx, func(h records.MachineRecord) bool {
+		since, ok := unnamed[h.ID]
+		return ok && now.Sub(since) > copyGone
+	})
 }
 
 func (m *mesh) dial(id, peerURL string) {
@@ -768,6 +798,12 @@ func (s *Service) apply(e controlEvent) {
 		var n wire.ControlNotice
 		if json.Unmarshal([]byte(e.Subject), &n) == nil {
 			s.noticeAdminsHere(n)
+		}
+	case "capacityChanged":
+		// A copy's level changed (#7361): its admins connected here see it too.
+		var c wire.ControlCapacityCopy
+		if json.Unmarshal([]byte(e.Subject), &c) == nil {
+			s.capacityChangedAdminsHere(c)
 		}
 	case "peopleChanged":
 		// Another copy's invite or removal makes this one a team, or not (#1763).

@@ -198,6 +198,9 @@ type hostSession struct {
 	local bool
 	// A peer's stream "peer/channel" to the channel it was given here.
 	proxied map[string]int
+	// Where the host's control role serves, as its last machine/hello on this uplink said
+	// (#7313); nil when it has none.
+	control *wire.MachineControlAddress
 }
 
 type hostAsk struct {

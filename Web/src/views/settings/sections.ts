@@ -19,6 +19,7 @@ import { DesktopControlSection } from "./DesktopControl";
 import { EarlyFeaturesSection } from "./EarlyFeatures";
 import { ForgeLoginsSection } from "./ForgeLogins";
 import { GitAccessSection } from "./GitAccess";
+import { ImageHostsSection, imageHostsSectionShows } from "./ImageHosts";
 import { VersionsSection } from "./Machines";
 import { NotificationsSection } from "./Notifications";
 import { PlaneMoveSection } from "./PlaneMove";
@@ -71,6 +72,8 @@ export const settingsSections: readonly SettingsSection[] = [
   { name: "gitAccess", scope: "machines", order: 10, Section: GitAccessSection },
   // Groups own machine providers (#1761).
   { name: "groups", scope: "controlPlane", order: 20, Section: GroupsSection },
+  // The hosts a machine's Work pages load images from (#7140), after Browser, with its own Machine menu.
+  { name: "imageHosts", scope: "machines", order: 56, Section: ImageHostsSection, shows: imageHostsSectionShows },
   // Whether this page shows notices (#2860, #1486); how many agents may send is in Agents ▸ Policy (#2957).
   { name: "notifications", scope: "thisApp", order: 40, Section: NotificationsSection },
   // Who belongs to the control plane, and their machines and clients (#994).

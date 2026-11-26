@@ -332,6 +332,19 @@ func (p *Providers) projectFolders(params json.RawMessage, caller Caller) (any, 
 	return out, nil
 }
 
+// previewStart is machines/previewStart (#5876): sessions/previewStart for an agent, the
+// pick Auto makes for the project and runtime, with the reason or why none fits.
+func (p *Providers) previewStart(params json.RawMessage, caller Caller) (any, error) {
+	var request wire.AutoMachineRequest
+	if err := requireParams(params, &request, "AutoMachineRequest", "project", "runtimeID"); err != nil {
+		return nil, err
+	}
+	if p.hooks.PreviewStart == nil {
+		return nil, fail(CodeNotPermitted, "This control plane cannot pick a machine.")
+	}
+	return p.hooks.PreviewStart(request, caller)
+}
+
 // projectSessions is machines/projectSessions (#3277): projects/sessions for an agent on
 // host, which must have a folder of the project.
 func (p *Providers) projectSessions(host string, params json.RawMessage, caller Caller) (any, error) {

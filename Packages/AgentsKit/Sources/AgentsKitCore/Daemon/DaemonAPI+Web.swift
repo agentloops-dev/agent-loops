@@ -622,8 +622,12 @@ public extension DaemonAPI {
                 Row(Method.controlConnectAnother, params: ConnectAnother.Request.self, result: Empty.self, kind: .controlRequest),
                 // Move to Another Machine… and Run It Here Again… on the page (#4255).
                 Row(Method.controlPlaneMove, params: PlaneMove.Ask.self, result: Empty.self, kind: .controlRequest),
-                // Whether a machine can take the control role (#6611): #6614 draws it, so no Swift types yet.
-                Row("control/eligible", params: JSONValue.self, result: JSONValue.self, kind: .controlRequest),
+                // Make This the Control Plane… on a machine's page (#6614): its checks (#6611), the move and its
+                // steps (#6612).
+                Row(Method.controlEligible, params: ControlEligibleRequest.self, result: ControlEligible.self,
+                    kind: .controlRequest),
+                Row(Method.controlMove, params: ControlMoveRequest.self, result: ControlMoveResult.self, kind: .controlRequest),
+                Row(Method.controlMovesList, params: Empty.self, result: ControlMoves.self, kind: .controlRequest),
                 // Reports (#1811): usage, cost and time by person, folder and machine.
                 Row(Method.reportsUsage, params: ReportQuery.self, result: UsageReport.self, kind: .controlRequest),
                 Row(Method.reportsExport, params: ReportQuery.self, result: ReportExport.self, kind: .controlRequest),
@@ -900,6 +904,7 @@ public extension DaemonAPI {
                     kind: .controlNotification),
                 Row(Notification.controlCapacityChanged, params: ControlCapacityCopy.self, result: Empty.self,
                     kind: .controlNotification),
+                Row(Notification.controlMoveChanged, params: ControlMove.self, result: Empty.self, kind: .controlNotification),
             ]
         }
     }

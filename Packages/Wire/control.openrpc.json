@@ -1483,6 +1483,53 @@
       ]
     },
     {
+      "name": "control/move",
+      "x-capability": "control.move/1",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
+      "description": "Move the control plane to an eligible machine in one call (#6612, epic #6608): control/eligible's checks, then the control key sealed to the machine, its copy started empty, this copy frozen, the store copied, the handover, and forwarding for up to 30 days when the address changes. No DNS record is changed. It answers once the checks pass; control/moveChanged says each step after. A failed step leaves this copy serving, and says which step. Refused while another move runs, by a hosted control plane, and with more than one copy. Admins only.",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/machines.schema.json#/definitions/ControlMoveRequest"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/machines.schema.json#/definitions/ControlMoveResult"
+        }
+      }
+    },
+    {
+      "name": "control/moveChanged",
+      "x-capability": "control.move/1",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
+      "description": "To the admins: a move of the control plane changed its step (#6612).",
+      "x-notification": true,
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/machines.schema.json#/definitions/ControlMove"
+          }
+        }
+      ]
+    },
+    {
       "name": "control/moved",
       "x-capability": "control/1",
       "x-notification": true,
@@ -1496,6 +1543,32 @@
           }
         }
       ]
+    },
+    {
+      "name": "control/moves/list",
+      "x-capability": "control.move/1",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
+      "description": "The moves of the control plane, the newest first, at most 20 (#6612). Admins only.",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/core.schema.json#/definitions/Empty"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/machines.schema.json#/definitions/ControlMoves"
+        }
+      }
     },
     {
       "name": "control/notice",
@@ -4143,6 +4216,27 @@
         "name": "result",
         "schema": {
           "$ref": "schema/workflows.schema.json#/definitions/KeptList"
+        }
+      }
+    },
+    {
+      "name": "machines/previewStart",
+      "x-capability": "auto-machine/1",
+      "description": "Through machine/machines only (#5876): sessions/previewStart for an agent, so its start_session with machine auto starts where the New Session form's Auto would.",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/machines.schema.json#/definitions/AutoMachineRequest"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/machines.schema.json#/definitions/AutoMachinePick"
         }
       }
     },

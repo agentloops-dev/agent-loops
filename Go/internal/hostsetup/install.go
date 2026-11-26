@@ -487,7 +487,6 @@ func prepareProjects(ctx context.Context, o *Options, d Deps, logs string, rep *
 		return pool, nil
 	}
 	rep.Say(step, wire.MachineSetupStateRunning, fmt.Sprintf("0 of %d projects", len(o.Projects)), "")
-	_ = os.MkdirAll(logs, 0o700)
 	var problems []string
 	ran := 0
 	for i, project := range o.Projects {
@@ -496,18 +495,11 @@ func prepareProjects(ctx context.Context, o *Options, d Deps, logs string, rep *
 			problems = append(problems, name+": the folder is not on this machine")
 			continue
 		}
-		var output io.Writer
-		// store-bounds: kind=log; count=100 projects; size=1MiB a project; age=7d; applied=on write (the rest is not kept), and hourly sweep
-		logFile, err := os.OpenFile(filepath.Join(logs, "setup-"+name+".log"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
-		if err == nil {
-			output = &scriptLog{file: logFile, left: scriptLogMost}
-		}
+		output, closeLog := OpenScriptLog(logs, project)
 		had, err := RunScript(ctx, project, o.Name, o.FromPool, d.ScriptTimeout, output, func(line string) {
 			rep.Say(step, wire.MachineSetupStateRunning, fmt.Sprintf("%s (%d of %d): %s", name, i+1, len(o.Projects), line), "")
 		})
-		if output != nil {
-			logFile.Close()
-		}
+		closeLog()
 		switch {
 		case err != nil:
 			problems = append(problems, name+": "+err.Error())

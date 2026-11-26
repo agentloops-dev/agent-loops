@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/netip"
 	"slices"
 	"strings"
@@ -143,7 +144,7 @@ func TestControlEligible(t *testing.T) {
 }
 
 // A machine at a public address is reachable when one of the control plane's ports answers.
-func TestWhyUnreachableDialsTheUplinksAddress(t *testing.T) {
+func TestReachDialsTheUplinksAddress(t *testing.T) {
 	t.Parallel()
 	p := startPlane(t, store.NewMemory(), controllink.NewPrivateKey())
 	box := p.host("MACHINE-2")
@@ -159,12 +160,119 @@ func TestWhyUnreachableDialsTheUplinksAddress(t *testing.T) {
 			return errors.New("refused")
 		}
 	}
+	reach := func() (string, string) { return p.s.reach(context.Background(), box.member.Host) }
 	p.s.dialMachine = only("203.0.113.7:8791")
-	if why := p.s.whyUnreachable(context.Background(), box.member.Host); why != "" {
-		t.Fatal(why)
+	if address, why := reach(); why != "" || address != "203.0.113.7:8791" {
+		t.Fatal(address, why)
+	}
+	p.s.dialMachine = only("203.0.113.7:443")
+	if address, why := reach(); why != "" || address != "203.0.113.7" {
+		t.Fatal(address, why)
 	}
 	p.s.dialMachine = only("")
-	if why := p.s.whyUnreachable(context.Background(), box.member.Host); !strings.Contains(why, "nothing answers at 203.0.113.7 on port 443 or 8791") {
+	if _, why := reach(); !strings.Contains(why, "nothing answers at 203.0.113.7 on port 443 or 8791") {
 		t.Fatal(why)
+	}
+
+	// A machine with the control role said its port (#7313): only that one is tried.
+	p.s.router.SetControlAddress(box.member.Host, &wire.MachineControlAddress{Port: 9000})
+	p.s.dialMachine = only("203.0.113.7:8791")
+	if _, why := reach(); !strings.Contains(why, "nothing answers at 203.0.113.7 on port 9000. Open the port there.") {
+		t.Fatal(why)
+	}
+	p.s.dialMachine = only("203.0.113.7:9000")
+	if address, why := reach(); why != "" || address != "203.0.113.7:9000" {
+		t.Fatal(address, why)
+	}
+
+	// With a domain, the domain's public address is dialled, and the domain is shown.
+	p.s.router.SetControlAddress(box.member.Host, &wire.MachineControlAddress{Domain: new("ams3-1.example.dev"), Port: 443})
+	dns := map[string][]netip.Addr{"ams3-1.example.dev": {netip.MustParseAddr("10.0.0.4"), netip.MustParseAddr("198.51.100.9")}}
+	p.s.lookupMachine = func(_ context.Context, host string) ([]netip.Addr, error) {
+		if a, ok := dns[host]; ok {
+			return a, nil
+		}
+		return nil, errors.New("no such host")
+	}
+	p.s.dialMachine = only("198.51.100.9:443")
+	if address, why := reach(); why != "" || address != "ams3-1.example.dev" {
+		t.Fatal(address, why)
+	}
+	dns["ams3-1.example.dev"] = []netip.Addr{netip.MustParseAddr("10.0.0.4")}
+	if _, why := reach(); !strings.Contains(why, "ams3-1.example.dev has no public address") {
+		t.Fatal(why)
+	}
+	delete(dns, "ams3-1.example.dev")
+	if _, why := reach(); !strings.Contains(why, "can’t find ams3-1.example.dev") {
+		t.Fatal(why)
+	}
+}
+
+// A hello names a port and a domain name, nothing else (#7313).
+func TestValidControlAddress(t *testing.T) {
+	for _, c := range []struct {
+		in   *wire.MachineControlAddress
+		want string
+	}{
+		{nil, "none"},
+		{&wire.MachineControlAddress{Port: 0}, "none"},
+		{&wire.MachineControlAddress{Port: 70000}, "none"},
+		{&wire.MachineControlAddress{Port: 8791}, ":8791"},
+		{&wire.MachineControlAddress{Port: 443, Domain: new(" AMS3-1.Example.dev. ")}, "ams3-1.example.dev:443"},
+		{&wire.MachineControlAddress{Port: 443, Domain: new("203.0.113.7")}, "none"},
+		{&wire.MachineControlAddress{Port: 443, Domain: new("localhost")}, "none"},
+		{&wire.MachineControlAddress{Port: 443, Domain: new("evil.example/path")}, "none"},
+		{&wire.MachineControlAddress{Port: 443, Domain: new("-a.example.dev")}, "none"},
+	} {
+		got := "none"
+		if a := validControlAddress(c.in); a != nil {
+			got = ":" + fmt.Sprint(a.Port)
+			if a.Domain != nil {
+				got = *a.Domain + got
+			}
+		}
+		if got != c.want {
+			t.Errorf("%+v: %s, want %s", c.in, got, c.want)
+		}
+	}
+}
+
+// The answer says the machine's address, memory and fullest disk (#7313).
+func TestEligibleAnswerSaysTheMachine(t *testing.T) {
+	usage := goodUsage()
+	usage.Disks = append(usage.Disks, wire.DiskAlarm{Reading: wire.DiskReading{Mount: "/data", FreeBytes: 30_000_000_000}, Level: wire.DiskLevelOk})
+	got := eligibleAnswer(eligibleFacts{address: "ams3-1.example.dev", usage: usage}, nil)
+	if !got.Ok || got.Address == nil || *got.Address != "ams3-1.example.dev" ||
+		got.MemoryBytes == nil || *got.MemoryBytes != 2_000_000_000 || got.DiskFreeBytes == nil || *got.DiskFreeBytes != 30_000_000_000 {
+		t.Fatalf("%+v", got)
+	}
+	if got := eligibleAnswer(eligibleFacts{unreachable: "It is offline."}, []wire.ControlEligibleReason{{}}); got.Ok || got.Address != nil || got.MemoryBytes != nil || got.DiskFreeBytes != nil {
+		t.Fatalf("%+v", got)
+	}
+}
+
+// A host's hello says where its control role serves, and the next hello with none forgets it.
+func TestHelloKeepsTheControlAddress(t *testing.T) {
+	t.Parallel()
+	p := startPlane(t, store.NewMemory(), controllink.NewPrivateKey())
+	box := p.host("MACHINE-5")
+	hello := func(control *wire.MachineControlAddress) {
+		params, _ := json.Marshal(wire.MachineHello{Version: "0.6.0", Platform: "linux x86_64", MachineID: "MACHINE-5", Control: control})
+		if _, err := p.s.methods.HostSaid(box.member.Host, "machine/hello", params); err != nil {
+			t.Fatal(err)
+		}
+	}
+	hello(&wire.MachineControlAddress{Domain: new("Ams3-1.example.dev"), Port: 8443})
+	if a := p.s.router.ControlAddress(box.member.Host); a == nil || a.Port != 8443 || a.Domain == nil || *a.Domain != "ams3-1.example.dev" {
+		t.Fatalf("%+v", a)
+	}
+	hello(&wire.MachineControlAddress{Domain: new("not a name"), Port: 443})
+	if a := p.s.router.ControlAddress(box.member.Host); a != nil {
+		t.Fatalf("a bad domain is kept: %+v", a)
+	}
+	hello(&wire.MachineControlAddress{Port: 9000})
+	hello(nil)
+	if a := p.s.router.ControlAddress(box.member.Host); a != nil {
+		t.Fatalf("a hello with none keeps %+v", a)
 	}
 }

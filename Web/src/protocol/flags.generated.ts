@@ -12,9 +12,10 @@ export interface FeatureFlagInfo {
 
 export const featureFlags: readonly FeatureFlagInfo[] = [
   { name: "commit-trailers", title: "Commit trailers", about: "The Commit trailers group in Agents ▸ Policy: the trailers on each agent's commits.", issue: 6373 },
+  { name: "control-plane-machine", title: "Control plane machine", about: "For admins on the Mac: the control plane's machine in Machines, with its capacity level, its page, and a strip while it is near or at capacity.", issue: 6591 },
+  { name: "control-plane-move", title: "Make This the Control Plane", about: "For admins on the Mac and the web page: Make This the Control Plane… on a machine's page, with its checks, and a strip with the move's steps.", issue: 6614 },
   { name: "dashboard", title: "Dashboard", about: "The Dashboard on the Mac: each work item with its sessions. The window opens to it.", issue: 6572 },
   { name: "docs", title: "Docs", about: "Docs in the sidebar, and the Docs section on a work item's page. On the Mac and the web page.", issue: 6572 },
-  { name: "image-hosts", title: "Image hosts", about: "A blocked image on a Work page says its host, with Show image and Always allow; the list is in Settings ▸ Machines ▸ Image Hosts. On the Mac.", issue: 7136 },
   { name: "store-sizes", title: "Store sizes", about: "Reports ▸ Store sizes on the web page: how large each data store is, and how much of its limits it uses.", issue: 6907 },
   { name: "suggested", title: "Suggested", about: "New Session ▸ Suggested: the epics with no lead.", issue: 6572 },
   { name: "work", title: "Work", about: "Work in the sidebar: issues, pull requests, releases, deploys and the timeline.", issue: 6572 },

@@ -67,6 +67,13 @@ struct MachinePage: View {
                             Section { Text(note).appText(.supporting).foregroundStyle(.secondary) }
                         }
                     }
+                    // It runs the control plane too: its level and figures, for an admin (#6591).
+                    if model.runsControlPlane(host) { ControlPlaneSection(host: host) }
+                    // Make This the Control Plane…, on a machine that does not run it, for an admin (#6614).
+                    if model.showsControlPlaneMove, let record = model.controlRecord(host),
+                       !ControlPlaneMachine.runsControl(record) {
+                        ControlMoveSection(host: host, record: record)
+                    }
                     // Offline too, so a send that stopped keeps its Retry.
                     MachineSendsSection(host: host)
                     MachineSessionsSection(host: host)
@@ -350,6 +357,11 @@ struct MachineRow: View {
     @Environment(AppModel.self) private var model
     let host: MachineRef
     let open: () -> Void
+
+    /// "Control plane near capacity", when it runs the control plane too (#6591).
+    private var controlLine: String? {
+        model.runsControlPlane(host) ? ControlPlaneMachine.agentsRowLine(model.controlPlaneLook(host)) : nil
+    }
     @State private var deleting = false
     /// What Delete loses: the worktrees on it with work not pushed (#3979), asked as it opens.
     @State private var deleteWork: DaemonAPI.StartedMachinePreview?
@@ -374,7 +386,8 @@ struct MachineRow: View {
         let dot = MachineDot.of(row, online: !model.hostUnreachable(host),
                                 starting: model.hostsBeingStarted.contains(host))
         let online = dot == .online && !model.diskWarns(host)
-        let words = state ?? (online ? model.work.sessionCounts(on: host).runningLine : nil)
+        // It runs the control plane too, and that is near or at capacity (#6591).
+        let words = state ?? controlLine ?? (online ? model.work.sessionCounts(on: host).runningLine : nil)
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             // A laptop, a cloud or a rack, in its state's colour (#4113): the row has no dot.
             MachineIconView(symbol: MachineIcon.symbol(isThisMac: host == .mac, row: row),

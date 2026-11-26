@@ -3,3 +3,4 @@ export * from "../src/wire/keys";
 export * from "../src/wire/link";
 export * from "../src/wire/lockChannel";
 export * from "../src/wire/machineLock";
+export * from "../src/wire/lockRecords";

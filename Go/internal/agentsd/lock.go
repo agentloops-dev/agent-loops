@@ -136,8 +136,35 @@ func (d *Daemon) toldLock(params json.RawMessage) {
 // when this machine is not in it yet. It says whether it took it. A lock that fails is only
 // logged, as what this host would refuse.
 func (d *Daemon) TakeLock(lock wire.Lock) bool {
+	took, left := d.takeLock(lock)
+	if left {
+		// A machine taken out of the lock keeps no sign-in lent to it (#7369).
+		d.dropRelays("this machine is no longer in the lock")
+	}
+	return took
+}
+
+// inLockLocked says that the lock names this machine as a machine.
+func (d *Daemon) inLockLocked(state *machinelock.State) bool {
+	if state == nil {
+		return false
+	}
+	_, _, key, ok := d.lockIdentity()
+	if !ok {
+		return false
+	}
+	m, in := state.Member(key)
+	return in && m.Kind == wire.LockEntryKindAddMachine
+}
+
+// takeLock is TakeLock with the lock held; left says this machine was in the lock it held and
+// is not in the one it took.
+func (d *Daemon) takeLock(lock wire.Lock) (took, left bool) {
 	d.lockMu.Lock()
 	defer d.lockMu.Unlock()
+	held, _ := d.heldLockLocked()
+	wasIn := d.inLockLocked(held)
+	defer func() { left = took && wasIn && !d.inLockLocked(d.lockHeld) }()
 	kept := d.LockPin()
 	pin := kept
 	invite := controllink.LoadLockInvite(d.Store.Loc.Root)
@@ -148,7 +175,7 @@ func (d *Daemon) TakeLock(lock wire.Lock) bool {
 	state, err := machinelock.Follow(pin, lock)
 	if err != nil {
 		log.Printf("lock: would refuse %s's lock of %d entries: %v", lock.Person, len(lock.Entries), err)
-		return false
+		return false, false
 	}
 	if state.Count() != kept.Count {
 		b, err := json.Marshal(state.Pin())
@@ -157,7 +184,7 @@ func (d *Daemon) TakeLock(lock wire.Lock) bool {
 		}
 		if err != nil {
 			log.Printf("lock: the lock is not taken: its head cannot be pinned: %v", err)
-			return false
+			return false, false
 		}
 		// Its head is checked: it is followed from here, also when the disk does not take it, so
 		// that a key it removed opens nothing.
@@ -166,7 +193,7 @@ func (d *Daemon) TakeLock(lock wire.Lock) bool {
 		// store-bounds: kind=key-value; count=1; size=4KiB; age=until-deleted; applied=on write (refused)
 		if err := store.WriteAtomically(d.lockPinPath(), b, 0o644); err != nil {
 			log.Printf("lock: the head could not be pinned: %v", err)
-			return false
+			return false, false
 		}
 		if pin.Count == 0 {
 			log.Printf("lock: pinned %s's lock on first use, %d entries, root %s, head %s",
@@ -191,7 +218,7 @@ func (d *Daemon) TakeLock(lock wire.Lock) bool {
 		// A machine new to the lock waits for the bot's key (#3950).
 		d.goShareBotKey(false)
 	}
-	return true
+	return true, false
 }
 
 // lockIdentity is this machine's id, name and public key; ok false before it joined a

@@ -27,6 +27,7 @@ import (
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/web"
 	"github.com/agentloops-dev/agent-loops/Go/internal/machine"
+	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
 // UnitName is the systemd user unit.
@@ -397,4 +398,42 @@ func SystemdUser() bool {
 func RunCommand(name string, args ...string) (string, error) {
 	out, err := exec.Command(name, args...).CombinedOutput()
 	return string(out), err
+}
+
+// Address is where this machine's control role serves, as its unit says (#7313): the domain
+// of its certificate, when it has one, and its port. Nil when the install gave it no control
+// role. The host says it in each machine/hello, so control/eligible dials this port.
+func Address(home string) *wire.MachineControlAddress {
+	text, err := os.ReadFile(LayoutOf(home).Unit)
+	if err != nil {
+		return nil
+	}
+	return addressOf(string(text))
+}
+
+// addressOf reads the domain and the port from the unit's ExecStart.
+func addressOf(unit string) *wire.MachineControlAddress {
+	for line := range strings.Lines(unit) {
+		exec, ok := strings.CutPrefix(strings.TrimSpace(line), "ExecStart=")
+		if !ok {
+			continue
+		}
+		var address wire.MachineControlAddress
+		fields := strings.Fields(exec)
+		for i := 0; i+1 < len(fields); i++ {
+			switch fields[i] {
+			case "--port":
+				if p, err := strconv.Atoi(fields[i+1]); err == nil && p > 0 && p <= 65535 {
+					address.Port = int64(p)
+				}
+			case "--acme-domain":
+				address.Domain = new(fields[i+1])
+			}
+		}
+		if address.Port == 0 {
+			return nil
+		}
+		return &address
+	}
+	return nil
 }
