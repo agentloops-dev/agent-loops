@@ -102,6 +102,7 @@ func (c *Codex) Renew(ctx context.Context, stale Token) (Token, error) {
 	object["last_refresh"] = stamp(c.Now())
 	out, _ := json.MarshalIndent(object, "", "  ")
 	tmp := c.File + ".agents-tmp"
+	// store-bounds: not a store: the Codex CLI's own sign-in file, which it reads
 	if err := os.WriteFile(tmp, out, 0o600); err != nil {
 		return Token{}, err
 	}

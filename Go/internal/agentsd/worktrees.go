@@ -153,6 +153,7 @@ func excludeLine(commonDir, comment, line string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil { //nolint:gosec // G301: the mode this folder always had; only its error is new
 		return err
 	}
+	// store-bounds: not a store: the repository's info/exclude, a file of git.
 	return store.WriteAtomically(path, []byte(text), mode)
 }
 

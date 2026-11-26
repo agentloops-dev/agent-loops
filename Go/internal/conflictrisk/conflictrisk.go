@@ -441,6 +441,7 @@ func headOf(ctx context.Context, r runner, given string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	// store-bounds: not a store: a temporary git index, removed when the analysis ends
 	idx, err := os.CreateTemp("", "conflict-risk-index-")
 	if err != nil {
 		return "", err
@@ -452,6 +453,7 @@ func headOf(ctx context.Context, r runner, given string) (string, error) {
 		if err != nil {
 			return "", err
 		}
+		// store-bounds: not a store: a temporary git index, removed when the analysis ends
 		if err := os.WriteFile(idx.Name(), b, 0o600); err != nil { //nolint:gosec // G703: our own CreateTemp file
 			return "", err
 		}

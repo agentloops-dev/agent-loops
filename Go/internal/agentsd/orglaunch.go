@@ -78,6 +78,7 @@ func writeOrgFile(file string, contents []byte) error {
 	if b, err := os.ReadFile(file); err == nil && string(b) == string(contents) {
 		return nil
 	}
+	// store-bounds: not a store: a launch file, written again at each launch of an org account.
 	return os.WriteFile(file, contents, 0o600)
 }
 

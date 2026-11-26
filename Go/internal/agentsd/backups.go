@@ -968,6 +968,7 @@ func (r *archiveRestore) takeEntry(tr *tar.Reader, h *tar.Header) error {
 		}
 		p := filepath.Join(r.d.Store.Loc.Root, h.Name)
 		if _, err := os.Stat(p); errors.Is(err, os.ErrNotExist) {
+			// store-bounds: not a store: a restore writes the bytes of the backup as they are (data-stores.md, #7251).
 			if err := store.WriteAtomically(p, b, 0o600); err != nil {
 				return err
 			}
@@ -1120,6 +1121,7 @@ func readHeld(tr *tar.Reader, h *tar.Header) ([]byte, error) {
 // writeStaged copies an archive's entry of size bytes to a new file at p, synced, so the
 // rename into the agent's folder leaves a whole file.
 func writeStaged(p string, r io.Reader, size int64) error {
+	// store-bounds: not a store: a restore writes the bytes of the backup as they are (data-stores.md, #7251).
 	f, err := os.OpenFile(p, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
 	if err != nil {
 		return err

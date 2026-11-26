@@ -32,6 +32,7 @@ const (
 	MachinesPrefix = "v1/machines/"
 	// OldMachinesPrefix is where builds before #2316 kept machines: moved to
 	// MachinesPrefix when a store opens or is copied (#2662).
+	// store-bounds: not a store: the old prefix; the store's open moves its records to MachinesPrefix and writes none here
 	OldMachinesPrefix = "v1/hosts/"
 	// store-bounds: kind=key-value; count=1; size=64KiB a record; age=until-deleted; applied=on write
 	SettingsKey = "v1/control.json"

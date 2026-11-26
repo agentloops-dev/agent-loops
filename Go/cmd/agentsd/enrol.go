@@ -111,6 +111,7 @@ func writeJoinStatus(root string, connected bool, problem string) {
 		return
 	}
 	file := filepath.Join(root, joinStatusFile)
+	// store-bounds: not a store: the join status of this run, with its pid, for Agents Host.
 	if err := os.WriteFile(file+".tmp", data, 0o600); err == nil {
 		if err := os.Rename(file+".tmp", file); err != nil {
 			log.Printf("%s: %v", joinStatusFile, err)

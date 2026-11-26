@@ -330,6 +330,7 @@ func untarEntry(r io.Reader, h *tar.Header, path string) error {
 		if h.Mode&0o111 != 0 {
 			mode = 0o755
 		}
+		// store-bounds: not a store: an install: a file of a skill.
 		f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
 		if err != nil {
 			return err
