@@ -16,7 +16,7 @@ import (
 // takes: no parent, and no standing epic's query matches it (the standing epics' leads start
 // those, #3659; two starters of one issue would race). It starts in the same room as a lead:
 // the folder's helper limits, its open-PR limit and the machine's capacity; at most one lane a
-// run; in mode high only an issue of priority high. A linux-ok issue goes to a Linux machine
+// run; a ready child of an open epic with no lead gets a lane too when the epic needs no lead (#5944); in mode high only an issue of priority high. A linux-ok issue goes to a Linux machine
 // that is online, else the project's machine that Auto picks when it has several (#5876), else
 // this one; a start that fails there runs here.
 
@@ -35,7 +35,7 @@ func (d *Daemon) autopilotLanes(ctx context.Context, folder string, mode wire.Au
 	}
 	var cands []wire.ForgeNextRow
 	for _, r := range next.Rows {
-		if r.Item.Parent == nil && !r.OnHold && (mode != wire.AutopilotModeHigh || isHigh(r.Item)) {
+		if !r.OnHold && (mode != wire.AutopilotModeHigh || isHigh(r.Item)) {
 			cands = append(cands, r)
 		}
 	}
@@ -44,9 +44,17 @@ func (d *Daemon) autopilotLanes(ctx context.Context, folder string, mode wire.Au
 	}
 	standing := d.autopilotStanding(ctx, folder)
 	var top *wire.ForgeNextRow
+	why := ""
 	for _, r := range cands {
-		if !slicesAny(standing, func(q wire.ForgeStanding) bool { return standingMatches(q, r.Item) }) {
-			top = &r
+		if r.Item.Parent == nil {
+			if !slicesAny(standing, func(q wire.ForgeStanding) bool { return standingMatches(q, r.Item) }) {
+				top = &r
+				break
+			}
+			continue
+		}
+		if epic, ok := d.autopilotStray(ctx, r.Item); ok {
+			top, why = &r, "child of "+epic+", which has no lead"
 			break
 		}
 	}
@@ -56,18 +64,62 @@ func (d *Daemon) autopilotLanes(ctx context.Context, folder string, mode wire.Au
 	room := autopilotRoom{limit: d.helperLimitRefusal(folder) != "", capacity: d.capacityLevel()}
 	room.openPRs, room.prLimit = d.autopilotOpenPRs(ctx, folder)
 	row := wire.AutopilotRow{Ref: top.Item.Node.Ref, Kind: wire.AutopilotRowKindLane, State: wire.AutopilotRowStateWaiting, Reason: room.wait()}
+	if row.Reason != "" && why != "" {
+		row.Reason += "; " + why
+	}
 	if row.Reason == "" {
 		id, err := d.autopilotStartLane(ctx, folder, top.Item)
 		if err != nil {
 			_, row.Reason = errMessage(err)
 			row.Reason = "start failed: " + row.Reason
 		} else {
-			row.State, row.Reason, row.Session = wire.AutopilotRowStateStarted, "", id
+			row.State, row.Reason, row.Session = wire.AutopilotRowStateStarted, why, id
 		}
 	}
 	if err := d.autopilotNote(folder, row); err != nil {
 		log.Printf("autopilot: %s: %v", folder, err)
 	}
+}
+
+// autopilotStray says whether a ready child of an open epic gets a lane with no lead (#5944): the
+// epic has no lead and does not need one, because the child is its only ready child and no other
+// open child waits for it. It returns the epic's ref.
+func (d *Daemon) autopilotStray(ctx context.Context, child wire.ForgeItem) (string, bool) {
+	if child.Parent == nil || d.leadOf(*child.Parent) != nil {
+		return "", false
+	}
+	epic, children, standing, err := d.forgePlanRead(ctx, "autopilot", *child.Parent)
+	if err != nil || standing != nil || epic.State != "open" || !hasLabel(epic, "epic") {
+		return "", false
+	}
+	if !strayOf(children, child.Node) {
+		return "", false
+	}
+	return epic.Node.Ref, true
+}
+
+// strayOf is true when child is the epic's only ready open child and blocks no other open child.
+func strayOf(children []planChild, child wire.LineageNode) bool {
+	ready, found := 0, false
+	for _, c := range children {
+		if c.item.State != "open" {
+			continue
+		}
+		if c.item.Node == child {
+			found = true
+		}
+		blocked := false
+		for _, b := range c.blockedBy {
+			if b.node == child && b.open {
+				return false
+			}
+			blocked = blocked || b.open
+		}
+		if !blocked {
+			ready++
+		}
+	}
+	return found && ready == 1
 }
 
 func slicesAny[T any](s []T, f func(T) bool) bool {
