@@ -1,3 +1,9 @@
+---
+diataxis: how-to
+devices: [mac, server]
+description: Install your own packages on each new machine with root.sh, which runs as root on its first boot.
+---
+
 # Set up new machines with your scripts
 
 A new machine has none of your own tools. Two scripts of yours set it up: `root.sh`, which
