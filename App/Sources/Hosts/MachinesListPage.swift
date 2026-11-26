@@ -253,7 +253,7 @@ struct MachinesListPage: View {
     @ViewBuilder
     private func controlLines(_ row: DaemonAPI.ControlMachine) -> some View {
         let look = model.controlPlaneLook(row.id)
-        Text(ControlPlaneMachine.controlOnly(row) ? ControlPlanePage.meta(row) : "Runs the control plane \u{00B7} \(MachineListChoice.stateWords(row))")
+        Text(ControlPlaneMachine.controlOnly(row) ? ControlPlanePage.meta(row, among: model.controlPlaneHosts ?? rows) : "Runs the control plane \u{00B7} \(MachineListChoice.stateWords(row))")
             .appText(.fine).foregroundStyle(.secondary).lineLimit(1)
         HStack(spacing: 5) {
             Circle().fill((look?.level == .ok ? StateTint.vouched : MachinePage.tint(look?.level)).style(or: .secondary))
@@ -273,7 +273,9 @@ struct MachinesListPage: View {
     }
 
     private func name(_ row: DaemonAPI.ControlMachine) -> String {
-        if model.showsControlPlaneMachine, ControlPlaneMachine.controlOnly(row) { return ControlPlaneMachine.title }
+        if model.showsControlPlaneMachine, ControlPlaneMachine.controlOnly(row) {
+            return ControlPlaneMachine.title(row, among: model.controlPlaneHosts ?? rows)
+        }
         return row.id == .mac ? "This Mac" : row.name
     }
 

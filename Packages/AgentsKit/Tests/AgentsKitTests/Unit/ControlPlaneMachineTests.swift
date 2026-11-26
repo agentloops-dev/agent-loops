@@ -87,4 +87,26 @@ struct ControlPlaneMachineTests {
         #expect(sections[1].figures.map(\.value) == ["87", "42"])
         #expect(!ControlPlaneMachine.bytes(0).contains("Zero"))
     }
+
+    /// Two control-only machines have different titles and sentences; one keeps "Control plane" (#7362).
+    @Test func severalControlOnlyMachinesAreNamedApart() throws {
+        let one = try row("control", roles: ["control"])
+        var two = try row("h-2", roles: ["control"])
+        let both = try row("mac", roles: ["agents", "control"])
+        #expect(ControlPlaneMachine.title(one, among: [one, both]) == "Control plane")
+        #expect(ControlPlaneMachine.label(one, among: [one, both]) == nil)
+        #expect(ControlPlaneMachine.title(one, among: [one, two]) == "Control plane · control")
+        #expect(ControlPlaneMachine.title(two, among: [one, two]) == "Control plane · h-2")
+        // The same name on both: the id tells them apart.
+        var first = one
+        first.name = "eu-1"
+        two.name = "eu-1"
+        #expect(ControlPlaneMachine.label(first, among: [first, two]) == "control")
+        two.name = "eu-2"
+        #expect(ControlPlaneMachine.label(two, among: [first, two]) == "eu-2")
+        let near = look("a", machine: "h-2")
+        #expect(ControlPlaneMachine.sentence(near, on: "eu-2") == "The control plane on eu-2 is near capacity: its disk is busy.")
+        #expect(ControlPlaneMachine.sentence(near, on: nil) == "The control plane is near capacity: its disk is busy.")
+        #expect(ControlPlaneMachine.sentence(look("a", machine: "h-2", reason: "disk is busy"), on: "eu-2") == "eu-2: Disk is busy.")
+    }
 }

@@ -14,8 +14,9 @@ struct ControlCapacityStrip: View {
         if model.showsControlPlaneMachine, let look = model.controlCapacity.warning(controlAway: model.controlPlaneAway) {
             let machine = look.machine.map(MachineRef.init(rawValue:))
                 ?? (model.controlPlaneHosts ?? []).first { ControlPlaneMachine.runsControl($0) }?.id
+            let rows = model.controlPlaneHosts ?? []
             Strip(tone: .warning,
-                  line: ControlPlaneMachine.sentence(look),
+                  line: ControlPlaneMachine.sentence(look, on: ControlPlaneMachine.label(rows.first { $0.id == machine }, among: rows)),
                   primary: machine.map { host in
                       StripButton(title: "Show Control Plane", help: "Its level and figures, on its page in Machines") {
                           model.machinePage = host
