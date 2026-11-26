@@ -316,8 +316,6 @@ public extension DaemonAPI {
                 Row(Method.forgeDiff, params: ForgeNodeRequest.self, result: ForgeDiff.self, kind: .hostRequest),
                 Row(Method.forgePlan, params: ForgePlanRequest.self, result: ForgePlan.self, kind: .hostRequest),
                 Row(Method.forgeNext, params: ForgeNextRequest.self, result: ForgeNext.self, kind: .hostRequest),
-                Row(Method.autopilotStatus, params: AutopilotRequest.self, result: AutopilotStatus.self, kind: .hostRequest),
-                Row(Method.autopilotResume, params: AutopilotResumeRequest.self, result: AutopilotStatus.self, kind: .hostRequest),
                 Row(Method.forgeBoards, params: ForgeBoardsRequest.self, result: ForgeBoards.self, kind: .hostRequest),
                 Row(Method.forgeImage, params: ForgeImageRequest.self, result: ForgeImage.self, kind: .hostRequest),
                 Row(Method.imageHostsList, params: Empty.self, result: ImageHosts.self, kind: .hostRequest),
@@ -498,6 +496,7 @@ public extension DaemonAPI {
                 // Autopilot in Project Settings (#5904), as the window's has it.
                 Row(Method.autopilotSet, params: AutopilotSetRequest.self, result: AutopilotStatus.self, kind: .hostRequest),
                 Row(Method.autopilotStatus, params: AutopilotRequest.self, result: AutopilotStatus.self, kind: .hostRequest),
+                Row(Method.autopilotResume, params: AutopilotResumeRequest.self, result: AutopilotStatus.self, kind: .hostRequest),
                 // Working hours in Project Settings ▸ General (#4821), as the window's has them.
                 Row(Method.foldersSetWorkingHours, params: SetWorkingHoursRequest.self, result: FolderSummary.self,
                     kind: .hostRequest),
