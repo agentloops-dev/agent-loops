@@ -17311,13 +17311,16 @@ export interface WorkTimelineRelease {
 /**
  * work/timeline (#4172): the epics of a project (its id, from a folder's .agents/folder.json) that
  * overlap from to to. With first, the answer can be partial (#7027): ask again without it for all
- * of it.
+ * of it. With onHold (#7335), the open epics on hold come too, each with its children and with no
+ * forecast, after the others in the order of forge/next; with none, an epic on hold is left out and
+ * its children are not read. Either way they are not in the forecast's history.
  */
 export interface WorkTimelineRequest {
   project: string;
   from: WireDate;
   to: WireDate;
   first?: boolean;
+  onHold?: boolean;
 }
 
 /**
@@ -20150,7 +20153,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   WorkTimelineEpic: { required: ["item", "createdAt", "children", "segments"], optional: ["stateReason", "closedAt", "forecast"] },
   WorkTimelineForecast: { required: ["low", "mid", "high"], optional: ["waits"] },
   WorkTimelineRelease: { required: ["tag", "at", "repo"], optional: ["url"] },
-  WorkTimelineRequest: { required: ["project", "from", "to"], optional: ["first"] },
+  WorkTimelineRequest: { required: ["project", "from", "to"], optional: ["first", "onHold"] },
   WorkTimelineSegment: { required: [], optional: ["startedAt", "closedAt"] },
   Workflow: { required: ["workflowID", "folder", "name", "triggers", "mode", "prompt", "unknownFields", "settings"], optional: ["problem", "cooldown", "hours", "enabled", "archived", "whenDone", "continueWhenBack", "muted", "runsOn"] },
   WorkflowApproval: { required: ["digest", "isNew"], optional: ["note"] },
