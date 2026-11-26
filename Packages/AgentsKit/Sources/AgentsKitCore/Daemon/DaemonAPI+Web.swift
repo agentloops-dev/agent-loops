@@ -495,6 +495,9 @@ public extension DaemonAPI {
                 // Cost on Pull Requests… on a folder's menu (#2352), as the window's Folder Settings has it.
                 Row(Method.foldersSetPRCostComment, params: SetPRCostCommentRequest.self, result: FolderSummary.self,
                     kind: .hostRequest),
+                // Autopilot in Project Settings (#5904), as the window's has it.
+                Row(Method.autopilotSet, params: AutopilotSetRequest.self, result: AutopilotStatus.self, kind: .hostRequest),
+                Row(Method.autopilotStatus, params: AutopilotRequest.self, result: AutopilotStatus.self, kind: .hostRequest),
                 // Working hours in Project Settings ▸ General (#4821), as the window's has them.
                 Row(Method.foldersSetWorkingHours, params: SetWorkingHoursRequest.self, result: FolderSummary.self,
                     kind: .hostRequest),

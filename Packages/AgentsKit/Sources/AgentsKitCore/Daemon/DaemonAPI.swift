@@ -267,6 +267,10 @@ public enum DaemonAPI {
         /// choose to publish what its work cost.
         public static let foldersSetPRCostComment = "folders/setPRCostComment"
         public static let foldersSetWorkingHours = "folders/setWorkingHours"
+        /// What Autopilot starts in a folder, and what it did (#5898, #5904): Project Settings ▸
+        /// Autopilot. Not in `ConnectionRole.agentMethods`: only the person turns it on.
+        public static let autopilotSet = "autopilot/set"
+        public static let autopilotStatus = "autopilot/status"
         /// A change to an app-owned file in `.agents` made outside the app (#502): what the
         /// file was and is, line by line; and the person's Keep (the change is used from
         /// now on) or Undo (the approved copy is written back). Not in
@@ -722,6 +726,58 @@ public enum DaemonAPI {
     public struct FolderRequest: Codable, Sendable {
         public var folder: URL
         public init(folder: URL) { self.folder = folder }
+    }
+
+    /// What Autopilot starts in a folder (#5898, epic #5897). Off starts nothing; high starts only
+    /// work whose priority is high; on starts any ready work.
+    public enum AutopilotMode: String, Codable, Sendable, CaseIterable {
+        case off, high, on
+    }
+
+    public struct AutopilotRequest: Codable, Sendable {
+        public var folder: URL
+        public init(folder: URL) { self.folder = folder }
+    }
+
+    public struct AutopilotSetRequest: Codable, Sendable {
+        public var folder: URL
+        public var mode: AutopilotMode
+        public init(folder: URL, mode: AutopilotMode) {
+            self.folder = folder
+            self.mode = mode
+        }
+    }
+
+    /// One issue or epic Autopilot started work for, or why it waits (`autopilot/status`).
+    public struct AutopilotRow: Codable, Hashable, Sendable {
+        public enum Kind: String, Codable, Sendable { case lead, lane }
+        public enum State: String, Codable, Sendable { case started, waiting, paused }
+        public var ref: String
+        public var kind: Kind
+        public var state: State
+        public var reason: String
+        public var session: UUID?
+        public var since: Date
+        public init(ref: String, kind: Kind, state: State, reason: String = "", session: UUID? = nil, since: Date) {
+            self.ref = ref
+            self.kind = kind
+            self.state = state
+            self.reason = reason
+            self.session = session
+            self.since = since
+        }
+    }
+
+    /// What Autopilot did in a folder (#5898): the mode, when it last looked, and at most 100 rows.
+    public struct AutopilotStatus: Codable, Hashable, Sendable {
+        public var mode: AutopilotMode
+        public var lastRunAt: Date?
+        public var rows: [AutopilotRow]
+        public init(mode: AutopilotMode, lastRunAt: Date? = nil, rows: [AutopilotRow] = []) {
+            self.mode = mode
+            self.lastRunAt = lastRunAt
+            self.rows = rows
+        }
     }
 
     /// `folders/notCommitted` (#3448): what in the folder's `.agents` Git ignores, so it stays on
