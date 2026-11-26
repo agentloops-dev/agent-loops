@@ -36,6 +36,15 @@ func (d *Daemon) startOnMachine(me *wire.Agent, args map[string]json.RawMessage,
 	if d.askControl.Load() == nil {
 		return "", &Error{Code: wire.FailureNotSupported, Message: "Nothing was started: this machine isn’t on a control plane, so it has no other machines."}
 	}
+	// Auto (#5876): the control plane picks, as the New Session form's Auto does.
+	autoWhy := ""
+	if strings.EqualFold(machine, autoMachineWord) {
+		picked, why, err := d.autoMachine(me, r.RuntimeID)
+		if err != nil {
+			return "", err
+		}
+		machine, autoWhy = picked, why
+	}
 	if folder == "" {
 		// Machine alone: the project's folder there (#3277).
 		there, err := d.projectFolderOn(me, machine)
@@ -83,6 +92,9 @@ func (d *Daemon) startOnMachine(me *wire.Agent, args map[string]json.RawMessage,
 	title := titleFrom(r.Prompt)
 	if !d.agentsMayStartOnMachines(here) {
 		ask := fmt.Sprintf("Start a session on %s, in %s, to %s?", machine, folder, quotedTitle(&title))
+		if autoWhy != "" {
+			ask += " " + autoWhy
+		}
 		if sending != nil {
 			ask = fmt.Sprintf("Send %s, with its uncommitted changes, to %s on %s, then start a session there to %s?",
 				sending.branch, folder, machine, quotedTitle(&title))
@@ -91,21 +103,60 @@ func (d *Daemon) startOnMachine(me *wire.Agent, args map[string]json.RawMessage,
 			if !yes {
 				return "Nothing was started: the person said no, or didn’t answer.", nil
 			}
-			return d.startThere(me, here, machine, folder, title, r, sending)
+			return d.startThere(me, here, machine, folder, title, r, sending, autoWhy)
 		})
 	}
-	return d.startThere(me, here, machine, folder, title, r, sending)
+	return d.startThere(me, here, machine, folder, title, r, sending, autoWhy)
+}
+
+// autoMachineWord is start_session's machine for "let the control plane pick" (#5876).
+const autoMachineWord = "auto"
+
+// previewStartMethod is the control plane's sessions/previewStart for an agent, through machine/machines.
+const previewStartMethod = "machines/previewStart"
+
+// autoMachine asks the control plane which machine Auto picks for this folder's project and
+// the runtime, as the New Session form does: its name and Auto's reason, or Auto's own
+// words when no machine fits.
+func (d *Daemon) autoMachine(me *wire.Agent, runtime string) (name, why string, err error) {
+	project := projectOfFolder(folderPath(me))
+	if project == "" {
+		return "", "", Invalid("Nothing was started: this folder is in no project, so Auto has no machines to choose from. Name a machine and a folder.")
+	}
+	out, err := d.askWorkspaces(me.ID, previewStartMethod, wire.AutoMachineRequest{Project: project, RuntimeID: runtime})
+	if err != nil {
+		_, msg := errMessage(err)
+		return "", "", Invalid("Nothing was started: Auto could not pick a machine (%s).", strings.TrimSuffix(msg, "."))
+	}
+	var pick wire.AutoMachinePick
+	if json.Unmarshal(out, &pick) != nil {
+		return "", "", &Error{Code: wire.FailureNotSupported, Message: "Nothing was started: the control plane's answer could not be read."}
+	}
+	text := ""
+	if pick.Text != nil {
+		text = *pick.Text
+	}
+	if pick.Machine == nil || pick.MachineName == nil || *pick.MachineName == "" {
+		if text == "" {
+			text = "Auto found no machine for this project."
+		}
+		return "", "", Invalid("Nothing was started: %s", text)
+	}
+	return *pick.MachineName, text, nil
 }
 
 // startThere is start_session on another machine once it may start (#4261: also after a late yes).
-func (d *Daemon) startThere(me *wire.Agent, here, machine, folder, title string, r wire.StartRequest, sending *sendingBranch) (string, error) {
+func (d *Daemon) startThere(me *wire.Agent, here, machine, folder, title string, r wire.StartRequest, sending *sendingBranch, autoWhy string) (string, error) {
 	sent := ""
+	if autoWhy != "" {
+		sent = autoWhy + " "
+	}
 	if sending != nil {
 		if err := d.sendThere(me, machine, folder, *sending); err != nil {
 			code, msg := errMessage(err)
 			return "", &Error{Code: code, Message: "Nothing was started: " + sending.branch + " was not sent to " + machine + ": " + msg}
 		}
-		sent = fmt.Sprintf("Sent %s, with its uncommitted changes, to %s on %s. ", sending.branch, folder, machine)
+		sent += fmt.Sprintf("Sent %s, with its uncommitted changes, to %s on %s. ", sending.branch, folder, machine)
 	}
 	// The answer to permission requests goes with the mode (#7064), as the starter answers now:
 	// the person's yes can come late. That machine has no record of the starter, so its Settings

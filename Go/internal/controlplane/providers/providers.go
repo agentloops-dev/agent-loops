@@ -153,6 +153,9 @@ type Hooks struct {
 	ProjectFolders func(project string) map[string][]string
 	// ProjectSessions is projects/sessions for an agent's person (#3277). Nil: refused.
 	ProjectSessions func(request wire.ProjectSessionsRequest, caller Caller) (wire.ProjectSessions, error)
+	// PreviewStart is sessions/previewStart for an agent's person (#5876): which machine
+	// Auto picks. Nil: refused.
+	PreviewStart func(request wire.AutoMachineRequest, caller Caller) (wire.AutoMachinePick, error)
 	// HasTool says this machine has a CLI on its PATH (#3367). Nil: exec.LookPath.
 	HasTool func(name string) bool
 }
@@ -550,6 +553,8 @@ func (p *Providers) AgentCall(host, agent, method string, params json.RawMessage
 		return p.projectFolders(rawOf(given), caller)
 	case MethodProjectSessions:
 		return p.projectSessions(host, rawOf(given), caller)
+	case MethodPreviewStart:
+		return p.previewStart(rawOf(given), caller)
 	}
 	if method == MethodProvidersCreate || method == MethodProvidersOptions || method == MethodProvidersDeleteWorkspace {
 		if err := p.agentProvider(given); err != nil {

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -327,5 +328,25 @@ func TestAControlOnlyMachineJoinsAndInstallsNoAgents(t *testing.T) {
 	}
 	if lastOf(rs, wire.MachineSetupStepIDSmoke) != nil {
 		t.Fatal("a control-only machine ran a smoke session")
+	}
+}
+
+// A run of the installer marks the checkout, so a send of the same script runs nothing (#7158).
+func TestRunScriptMarksTheCheckout(t *testing.T) {
+	project := t.TempDir()
+	if out, err := exec.Command("git", "-C", project, "init", "-q").CombinedOutput(); err != nil {
+		t.Fatalf("%v %s", err, out)
+	}
+	must(t, os.MkdirAll(filepath.Join(project, ".agents"), 0o700))
+	must(t, os.WriteFile(filepath.Join(project, SetupScript), []byte("echo hi\n"), 0o600))
+	if had, err := RunScript(context.Background(), project, "m", false, time.Minute, nil, nil); !had || err != nil {
+		t.Fatal(had, err)
+	}
+	if had, err := RunScriptIfChanged(context.Background(), project, "m", false, time.Minute, nil, nil); had || err != nil {
+		t.Fatalf("the same script ran again: %v %v", had, err)
+	}
+	must(t, os.WriteFile(filepath.Join(project, SetupScript), []byte("echo changed\n"), 0o600))
+	if had, err := RunScriptIfChanged(context.Background(), project, "m", false, time.Minute, nil, nil); !had || err != nil {
+		t.Fatalf("a changed script did not run: %v %v", had, err)
 	}
 }

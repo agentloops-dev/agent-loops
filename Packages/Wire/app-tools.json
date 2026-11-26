@@ -440,7 +440,7 @@
           "type": "array"
         },
         "machine": {
-          "description": "Optional. Another of the person's machines, by name, as list_machines shows it, to start the session there instead of here, in this project's folder there unless folder names another.",
+          "description": "Optional. Another of the person's machines, by name, as list_machines shows it, to start the session there instead of here, in this project's folder there unless folder names another. Or \"auto\": the control plane picks the machine that has this project and the runtime, by capacity and then load, as New Session's Auto does, and the answer says why.",
           "type": "string"
         },
         "model": {

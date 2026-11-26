@@ -15,10 +15,12 @@ import (
 const NoAgentsRefusal = "This machine runs the control plane and no agents: it takes no sessions, folders or other agent work."
 
 // controlOnlyAsks are the control plane's channel-0 asks that a control-only machine answers:
-// only what reads the machine itself, for control/eligible (#6611). The store copy (#6612)
-// adds its own here.
+// what reads the machine itself, for control/eligible (#6611), and control/receive, which
+// starts its copy empty for control/move (#6612). The store itself then goes to that copy
+// over its own handover session, not this link.
 var controlOnlyAsks = map[string]bool{
-	wire.CallMachineUsage.Name: true,
+	wire.CallMachineUsage.Name:   true,
+	wire.CallControlReceive.Name: true,
 }
 
 // AskedControlOnly is Asked on a control-only machine: the asks of controlOnlyAsks, and no

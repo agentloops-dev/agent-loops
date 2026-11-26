@@ -735,7 +735,17 @@ func (s *Service) noticeAdminsHere(n wire.ControlNotice) {
 	}
 }
 
+// capacityChangedAdmins tells this copy's admins a copy's new level, and the other copies,
+// whose admins it tells too (#7361): an admin connected to any copy sees each copy's level.
 func (s *Service) capacityChangedAdmins(snapshot wire.ControlCapacityCopy) {
+	s.capacityChangedAdminsHere(snapshot)
+	if s.mesh != nil {
+		data, _ := json.Marshal(snapshot)
+		s.announce("capacityChanged", string(data), "")
+	}
+}
+
+func (s *Service) capacityChangedAdminsHere(snapshot wire.ControlCapacityCopy) {
 	told := map[string]bool{}
 	for _, p := range s.records.People() {
 		if p.IsAdmin() && !p.IsRemoved() {

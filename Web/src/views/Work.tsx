@@ -38,6 +38,7 @@ import { fromWireDate } from "../protocol/dates";
 import { type ForgeImages, Markdown } from "../render/markdown";
 import { bytesOf } from "../model/pageImage";
 import { keptPicture } from "../model/localCopy";
+import { newPageImages } from "../model/imageHosts";
 import { workCache } from "../model/workCache";
 import { forgeMarkdown } from "../model/forgeMarkdown";
 import { ForgeTitle } from "../render/ForgeTitle";
@@ -410,10 +411,17 @@ export function WorkPage({ store, kind, ref }: { store: Store; kind: WorkKind; r
   const lineageHosts = store.hosts.value.filter((h) => hostAnswers(h.state) && store.has(h.id, Capability.lineage1));
   // The page's images, read by the machine that read the page (#4011); without forge/image there, their words.
   const imageHost = detail.value && store.has(detail.value.host, Capability.forgeImage1) ? detail.value.host : null;
-  const forgeImages = useMemo<ForgeImages | undefined>(() => imageHost === null ? undefined
-    : (url) => keptPicture(url, (u) => store.link.call("forge/image", { url: u }, imageHost))
-      .then((got) => ({ bytes: bytesOf(got.data), type: got.mimeType })),
-  [imageHost]);
+  // With a machine that keeps image hosts, a blocked image has its controls (#7140); the page's choices last while it is open.
+  const pageImages = useMemo(() => newPageImages(store), [store, kind, ref]);
+  const controlsOn = imageHost !== null && store.has(imageHost, Capability.imageHosts1);
+  const imageMachineName = store.hosts.value.find((h) => h.id === imageHost)?.name ?? "the machine";
+  const forgeImages = useMemo<ForgeImages | undefined>(() => {
+    if (imageHost === null) return undefined;
+    const read: ForgeImages = (url) => keptPicture(url, (u) => store.link.call("forge/image", { url: u }, imageHost))
+      .then((got) => ({ bytes: bytesOf(got.data), type: got.mimeType }));
+    if (controlsOn) read.controls = { images: pageImages, machine: imageHost, machineName: imageMachineName };
+    return read;
+  }, [imageHost, controlsOn, imageMachineName, pageImages]);
   // Lineage from the machine that read the forge, else this Mac, else the first that keeps links.
   const lineageHost = lineageHosts.find((h) => h.id === detail.value?.host)?.id
     ?? lineageHosts.find((h) => h.id === store.macHostID.value)?.id ?? lineageHosts[0]?.id;

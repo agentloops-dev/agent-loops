@@ -302,7 +302,7 @@ func TestAStartOnAnotherMachineCarriesAlwaysApprove(t *testing.T) {
 	}{{nil, "cursor", "agent"}, {asking, "cursor", "agent"}, {nil, "cursor", "plan"}, {nil, "opencode", "build"}} {
 		lead := f.lead("cursor", "agent", c.edit)
 		r := helperRequest(c.runtime, "", "x", "", &c.mode, nil, nil)
-		if _, err := f.d.startThere(&lead, f.dir, "pc", "/home/me/app", "x", r, nil); err != nil {
+		if _, err := f.d.startThere(&lead, f.dir, "pc", "/home/me/app", "x", r, nil, ""); err != nil {
 			t.Fatal(err)
 		}
 	}

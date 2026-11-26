@@ -2329,11 +2329,12 @@ const CapacityLevelOk CapacityLevel = "ok"
 const CapacityLevelNear CapacityLevel = "near"
 const CapacityLevelFull CapacityLevel = "full"
 
-// What put a machine near or at capacity (#6596): cpu (its load per core) or memory (critical memory pressure). It stays while the level waits to fall. Absent at ok.
+// What put a machine near or at capacity (#6596): cpu (its load per core), memory (critical memory pressure) or disk (disk pressure, #7300). It stays while the level waits to fall. Absent at ok.
 type CapacityReason string
 
 const CapacityReasonCpu CapacityReason = "cpu"
 const CapacityReasonMemory CapacityReason = "memory"
+const CapacityReasonDisk CapacityReason = "disk"
 
 // machine/capacity (#5374): a host tells the control plane its capacity level and 5-minute load per core, on connect and when either moves enough to matter.
 type CapacityReport struct {
@@ -3705,6 +3706,9 @@ type ControlCapacityBoard struct {
 type ControlCapacityCopy struct {
 	Copy string `json:"copy"`
 
+	// The id of the machine record that runs this copy (#6609, #6591): the row in Machines it is the level of. Absent from an older copy, and from a hosted copy, which has no machine record.
+	Machine *string `json:"machine,omitzero"`
+
 	Level CapacityLevel `json:"level"`
 
 	Reason string `json:"reason"`
@@ -3889,6 +3893,61 @@ type ControlMachine struct {
 	AutoLabels []string `json:"autoLabels,omitzero"`
 }
 
+// One move of the control plane to another machine (#6612, epic #6608), as v1/moves/<id>.json keeps it: at most 20, for 90 days. At most one runs at a time.
+type ControlMove struct {
+	ID string `json:"id"`
+
+	// The copy that moves: its id.
+	From string `json:"from"`
+
+	To MachineRef `json:"to"`
+
+	// The machine's name when the move started.
+	ToName string `json:"toName"`
+
+	Phase ControlMovePhase `json:"phase"`
+
+	// With failed: the step that failed.
+	FailedPhase *ControlMovePhase `json:"failedPhase,omitzero"`
+
+	// Where the new copy answers, once it said so.
+	Address *string `json:"address,omitzero"`
+
+	// With forwarding: until when the old copy sends members to the new one (30 days at most).
+	ForwardingUntil *Date `json:"forwardingUntil,omitzero"`
+
+	StartedAt Date `json:"startedAt"`
+
+	UpdatedAt Date `json:"updatedAt"`
+
+	// With failed: what went wrong, in words. The old copy serves again.
+	Error *string `json:"error,omitzero"`
+
+	// The person who started it.
+	By string `json:"by"`
+}
+
+// Where a move stands (#6612), in this order: checking, control/eligible's checks; receiving, the new machine is given the control key, sealed to its own key, and starts a copy that is empty; frozen, the old copy changes no record; copying, the store goes to the new copy; forwarding, the new copy took over and the old one sends members to it (30 days at most); done, the new copy took over at the old address. failed: a step failed, and the old copy serves again.
+type ControlMovePhase string
+
+const ControlMovePhaseChecking ControlMovePhase = "checking"
+const ControlMovePhaseCopying ControlMovePhase = "copying"
+const ControlMovePhaseReceiving ControlMovePhase = "receiving"
+const ControlMovePhaseFrozen ControlMovePhase = "frozen"
+const ControlMovePhaseForwarding ControlMovePhase = "forwarding"
+const ControlMovePhaseDone ControlMovePhase = "done"
+const ControlMovePhaseFailed ControlMovePhase = "failed"
+
+// control/move (#6612): the machine to move the control plane to.
+type ControlMoveRequest struct {
+	Machine MachineRef `json:"machine"`
+}
+
+// control/move's answer: the move, started. control/moveChanged says each step after.
+type ControlMoveResult struct {
+	Move ControlMove `json:"move"`
+}
+
 // control/moved: where the control plane is now (T085).
 type ControlMoved struct {
 	URL string `json:"url"`
@@ -3898,6 +3957,11 @@ type ControlMoved struct {
 	ControlKey Data `json:"controlKey"`
 
 	Name string `json:"name"`
+}
+
+// control/moves/list (#6612): the newest moves first, at most 20.
+type ControlMoves struct {
+	Moves []ControlMove `json:"moves"`
 }
 
 // The control plane's new key (#997, spec 736 FR-043), in ok to a member that proved itself with the previous one. proof is the HMAC of the new key under the member's shared key from the previous one, so only the holder of the previous key could have made it. The member trusts the new key from then on, with no new pairing.
@@ -3954,6 +4018,26 @@ type ControlPushItem struct {
 	Alert bool `json:"alert"`
 
 	Headline *Headline `json:"headline,omitzero"`
+}
+
+// control/receive's answer: where the machine's copy answers now, empty and receiving, and its certificate's pin when it has its own.
+type ControlReceive struct {
+	URL string `json:"url"`
+
+	Pin *string `json:"pin,omitzero"`
+}
+
+// control/receive (#6612): the control plane asks a machine with the control role to start its copy empty, to receive a move. The control key is sealed to the machine's own key, with the move, the machine and the control key's public half as its associated data.
+type ControlReceiveRequest struct {
+	Move string `json:"move"`
+
+	// The address that clients reach the machine at, as control/eligible found it.
+	URL string `json:"url"`
+
+	// The control key's public half (X9.63).
+	ControlKey Data `json:"controlKey"`
+
+	Key SealedEnvelope `json:"key"`
 }
 
 type ControlStatus struct {
@@ -8532,6 +8616,29 @@ type LockJoinStarted struct {
 	Expires Date `json:"expires"`
 }
 
+// A record that a client of a person's machine lock signed, for one or more of the person's machines (#7167). v is 1. person and root name the lock (root is the SHA-256 of its root entry's body). kind and subject say what the value is: setup.script is the approval of a set-up script (SetupScriptApproval), with the subject root or setup. scope says which machines take it: "m:<machine id>" (that one) or "made" (a machine as it is made). seq is at least 1 and goes up with each record of one kind and subject that one machine can take. content is the value's exact bytes, at most 256 KiB; empty content says that the value is removed. key is the signing key (X9.63) of a client of the lock. sig is ECDSA P-256 (r then s) with SHA-256 over "agents-lock-record/1", person, root in lower-case hex, kind, subject, scope, seq in decimal and the lower-case hex SHA-256 of content, each ended by a newline.
+type LockRecord struct {
+	V int64 `json:"v"`
+
+	Person string `json:"person"`
+
+	Root Data `json:"root"`
+
+	Kind string `json:"kind"`
+
+	Subject string `json:"subject"`
+
+	Scope string `json:"scope"`
+
+	Seq int64 `json:"seq"`
+
+	Content Data `json:"content"`
+
+	Key Data `json:"key"`
+
+	Sig Data `json:"sig"`
+}
+
 // A request signed by its sender's own key (#3492, D6, D7): a client's kept request for a machine that is not there, or a machine's call to another of its person's machines. It goes as the request's "lock" member. sig is ECDSA P-256 (r then s) with SHA-256 over "agents-lock-request/1\n", to, "\n", at in decimal, "\n", the method, "\n", then the params as sent. to is the machine's id; a machine may leave it out for another machine it named by name. at is seconds since 1970. The machine refuses one whose key its lock does not name, older than a day, or seen before.
 type LockSignature struct {
 	To *string `json:"to,omitzero"`
@@ -9822,6 +9929,12 @@ type MachineSetupReport struct {
 
 	// The digits the host shows for its join token (controllink.TokenCode), said with the compare step: the control plane compares them with the ones it made (#5359).
 	Code *string `json:"code,omitzero"`
+
+	// The SHA-256, in lower-case hexadecimal, of the script that the root or user step runs (#7167).
+	Hash *string `json:"hash,omitzero"`
+
+	// The step is done with a warning in its detail, such as a provider that cannot run root set-up (#7167).
+	Warning *bool `json:"warning,omitzero"`
 }
 
 type MachineSetupSource struct {
@@ -9857,9 +9970,15 @@ type MachineSetupStep struct {
 	FromPool *bool `json:"fromPool,omitzero"`
 
 	Slower *bool `json:"slower,omitzero"`
+
+	// The SHA-256, in lower-case hexadecimal, of the script that the root or user step runs (#7167).
+	Hash *string `json:"hash,omitzero"`
+
+	// The step is done with a warning in its detail, such as a provider that cannot run root set-up (#7167).
+	Warning *bool `json:"warning,omitzero"`
 }
 
-// The eight steps, in order: create machine, join machine, install Agents, compare digits, install runtimes, send projects, sign in to runtimes, smoke session.
+// The steps: create machine, join machine, install Agents, compare digits, install runtimes, send projects, sign in to runtimes, smoke session (#5353), and root set-up and your set-up, each only when its script was sent (#7167). The control plane reads a set-up by step id: a client that does not know an id shows it as its name.
 type MachineSetupStepID string
 
 const MachineSetupStepIDCreate MachineSetupStepID = "create"
@@ -9870,6 +9989,8 @@ const MachineSetupStepIDRuntimes MachineSetupStepID = "runtimes"
 const MachineSetupStepIDProjects MachineSetupStepID = "projects"
 const MachineSetupStepIDSignIn MachineSetupStepID = "signIn"
 const MachineSetupStepIDSmoke MachineSetupStepID = "smoke"
+const MachineSetupStepIDRoot MachineSetupStepID = "root"
+const MachineSetupStepIDUser MachineSetupStepID = "user"
 
 // machine/setupWork: what the set-up of the machine that asks has left (#6890, #6896). pool: a warm pool made it. claimed: a person claimed it, and from is the first of steps 6 to 8 that waits to run (absent: none does now). done: nothing is left to ask for. projects: the project folders to get, at their last commit. An unclaimed machine does step 6 and stops.
 type MachineSetupWork struct {
@@ -15402,6 +15523,50 @@ type SettleUntrustedYourPolicyRequest struct {
 	Revision int64 `json:"revision"`
 
 	Sign bool `json:"sign"`
+}
+
+// setup/approve (#7167): a client of the person's lock approves the text of one of this machine's set-up scripts as it is now, for machines as they are made (scope made) or for one machine (m:<id>). approval is a setup.script record whose subject is script and whose content is the script's hash and size; empty content takes the approval of that scope away. The machine keeps the text and the approval only when the record checks against its lock, its number is not lower than the last of its scope, and the file is that text.
+type SetupApprove struct {
+	Script string `json:"script"`
+
+	Approval LockRecord `json:"approval"`
+}
+
+// One set-up script on this machine (#7167): root (root.sh) or setup (setup.sh) in ~/.agents/machine-setup/. present: the file is there. text, hash and size are the file as it is now (hash: SHA-256 in lower-case hexadecimal); problem says why they are absent from a file that is there (over its limit, or unreadable). approvedText and approvedHash are the text a client approved last, and approvals the records in force for it, one a scope. changed: the file is not the approved text, so it is not used until a client approves it. nextSeq is the number to sign the next approval with.
+type SetupScript struct {
+	Name string `json:"name"`
+
+	Present bool `json:"present"`
+
+	Text *string `json:"text,omitzero"`
+
+	Hash *string `json:"hash,omitzero"`
+
+	Size *int64 `json:"size,omitzero"`
+
+	Problem *string `json:"problem,omitzero"`
+
+	ApprovedText *string `json:"approvedText,omitzero"`
+
+	ApprovedHash *string `json:"approvedHash,omitzero"`
+
+	Approvals []LockRecord `json:"approvals"`
+
+	Changed bool `json:"changed"`
+
+	NextSeq int64 `json:"nextSeq"`
+}
+
+// The content of a setup.script record (#7167): the script's SHA-256 in lower-case hexadecimal, and its length in bytes (at least 1).
+type SetupScriptApproval struct {
+	Hash string `json:"hash"`
+
+	Size int64 `json:"size"`
+}
+
+// setup/scripts (#7167): this machine's two set-up scripts, root then setup, as a client reads them to approve one.
+type SetupScripts struct {
+	Scripts []SetupScript `json:"scripts"`
 }
 
 type SharedInstructions struct {

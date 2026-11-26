@@ -38,6 +38,7 @@ import gitPullRequest from "lucide:git-pull-request";
 import globe from "lucide:globe";
 import hand from "lucide:hand";
 import image from "lucide:image";
+import imageOff from "lucide:image-off";
 import info from "lucide:info";
 import layers from "lucide:layers";
 import layoutGrid from "lucide:layout-grid";
@@ -113,7 +114,7 @@ const icons = {
   circle, "circle-check": circleCheck, "circle-dashed": circleDashed, "circle-dot": circleDot, "circle-help": circleHelp,
   "circle-pause": circlePause, "circle-stop": circleStop, "circle-x": circleX, clock, dot, ellipsis, file,
   "file-question-mark": fileQuestionMark, "file-text": fileText, folder, "git-pull-request": gitPullRequest, globe, hand,
-  image, info, layers, "layout-grid": layoutGrid, "list-ordered": listOrdered, lock, mail,
+  image, "image-off": imageOff, info, layers, "layout-grid": layoutGrid, "list-ordered": listOrdered, lock, mail,
   "message-circle": messageCircle, "messages-square": messagesSquare, "octagon-alert": octagonAlert, paperclip,
   phone, play, plug, plus, radio, "refresh-cw": refreshCw, "rotate-cw": rotateCw, sparkles, "square-check": squareCheck, "square-pen": squarePen,
   "square-terminal": squareTerminal, sun, target, "trash-2": trash2, "triangle-alert": triangleAlert, workflow, x, zap,

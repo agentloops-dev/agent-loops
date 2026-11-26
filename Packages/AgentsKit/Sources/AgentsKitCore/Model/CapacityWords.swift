@@ -26,6 +26,7 @@ public enum CapacityWords {
         let what = switch reason {
         case .cpu: "CPU"
         case .memory: "memory"
+        case .disk: "disk"
         }
         return words.replacingOccurrences(of: " capacity", with: " \(what) capacity")
     }
