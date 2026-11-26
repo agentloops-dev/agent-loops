@@ -244,7 +244,7 @@ func (s *Service) handoverStorePutMany(ctx context.Context, phase string, params
 	if json.Unmarshal(params, &p) != nil || len(p.Records) == 0 {
 		return nil, refuseHandover("Say the records.")
 	}
-	batch := make([]copyRecord, len(p.Records))
+	batch := make([]storeRecord, len(p.Records))
 	for i, r := range p.Records {
 		if !strings.HasPrefix(r.Key, "v1/") || r.Data == nil {
 			return nil, refuseHandover("Say each record's key and data.")
@@ -253,7 +253,7 @@ func (s *Service) handoverStorePutMany(ctx context.Context, phase string, params
 		if err != nil {
 			return nil, refuseHandover("Say each record's key and data.")
 		}
-		batch[i] = copyRecord{Key: r.Key, Data: data}
+		batch[i] = storeRecord{Key: r.Key, Data: data}
 	}
 	for _, r := range batch {
 		if _, err := s.cfg.Store.Put(ctx, r.Key, r.Data, store.Absent); err != nil {

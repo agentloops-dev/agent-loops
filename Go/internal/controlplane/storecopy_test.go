@@ -49,11 +49,11 @@ func TestCopyStoreCarriesRecordsAndRefusesAStoreInUse(t *testing.T) {
 // countingBulk is a store that takes batches, and counts its calls.
 type countingBulk struct {
 	store.Store
-	batches [][]copyRecord
+	batches [][]storeRecord
 	sumCalls int
 }
 
-func (c *countingBulk) createAll(ctx context.Context, batch []copyRecord) error {
+func (c *countingBulk) createAll(ctx context.Context, batch []storeRecord) error {
 	c.batches = append(c.batches, slices.Clone(batch))
 	for _, r := range batch {
 		if _, err := c.Put(ctx, r.Key, r.Data, store.Absent); err != nil {
@@ -124,7 +124,7 @@ func TestCopyStoreFindsABatchThatDidNotLand(t *testing.T) {
 
 type wrongBulk struct{ countingBulk }
 
-func (w *wrongBulk) createAll(ctx context.Context, batch []copyRecord) error {
+func (w *wrongBulk) createAll(ctx context.Context, batch []storeRecord) error {
 	for _, r := range batch {
 		if _, err := w.Put(ctx, r.Key, []byte("changed"), store.Absent); err != nil {
 			return err

@@ -150,7 +150,7 @@ func (p PeerStore) Put(_ context.Context, key string, data []byte, when store.Co
 }
 
 // createAll is store/putMany: a batch of records, created in one call (#7394).
-func (p PeerStore) createAll(_ context.Context, batch []copyRecord) error {
+func (p PeerStore) createAll(_ context.Context, batch []storeRecord) error {
 	type sent struct {
 		Key  string `json:"key"`
 		Data string `json:"data"`

@@ -57,13 +57,13 @@ func BackupStore(ctx context.Context, from, to store.Store) (copied, skipped int
 type bulkStore interface {
 	// createAll creates each record, create only, in order; a key held already is a
 	// *store.ConflictError.
-	createAll(ctx context.Context, batch []copyRecord) error
+	createAll(ctx context.Context, batch []storeRecord) error
 	// sums is the SHA-256 of each key's bytes; a key with no record is not in it.
 	sums(ctx context.Context, keys []string) (map[string][sha256.Size]byte, error)
 }
 
-// copyRecord is one record that a copy writes.
-type copyRecord struct {
+// storeRecord is one record that a copy writes.
+type storeRecord struct {
 	Key  string
 	Data []byte
 }
@@ -94,27 +94,12 @@ func copyStoreLeaving(ctx context.Context, from, to store.Store, leaving []strin
 	}
 	// A store of a build before #2316 keeps machines under v1/hosts (#2662): they land
 	// under v1/machines, unless the store has both.
-	oldMachines := true
-	for _, k := range keys {
-		if strings.HasPrefix(k.Key, records.MachinesPrefix) {
-			oldMachines = false
-		}
-	}
-	bulk, _ := to.(bulkStore)
+	oldMachines := !slices.ContainsFunc(keys, func(k store.Key) bool { return strings.HasPrefix(k.Key, records.MachinesPrefix) })
 	// Each object is held only while it is written (or while its batch is): what is kept to
 	// check the copy is a hash per key, so a backup of a large store (server backups
 	// included) does not hold the whole store in memory (#3650).
-	written := map[string][sha256.Size]byte{}
-	var batch []copyRecord
-	batchBytes := 0
-	flush := func() error {
-		if len(batch) == 0 {
-			return nil
-		}
-		err := bulk.createAll(ctx, batch)
-		batch, batchBytes = batch[:0], 0
-		return err
-	}
+	w := &copyWriter{to: to}
+	w.bulk, _ = to.(bulkStore)
 	for _, k := range keys {
 		if leftOut(k.Key, leaving) {
 			skipped++
@@ -131,30 +116,64 @@ func copyStoreLeaving(ctx context.Context, from, to store.Store, leaving []strin
 		if oldMachines && strings.HasPrefix(key, records.OldMachinesPrefix) {
 			key = records.MachinesPrefix + strings.TrimPrefix(key, records.OldMachinesPrefix)
 		}
-		written[key] = sha256.Sum256(object.Data)
-		if bulk == nil {
-			// Create only: a destination written to meanwhile is a conflict, not overwritten.
-			if _, err := to.Put(ctx, key, object.Data, store.Absent); err != nil {
-				return 0, 0, err
-			}
-			continue
-		}
-		if len(batch) > 0 && (len(batch) >= copyBatchRecords || batchBytes+len(object.Data) > copyBatchBytes) {
-			if err := flush(); err != nil {
-				return 0, 0, err
-			}
-		}
-		batch = append(batch, copyRecord{Key: key, Data: object.Data})
-		batchBytes += len(object.Data)
-	}
-	if bulk != nil {
-		if err := flush(); err != nil {
+		if err := w.write(ctx, key, object.Data); err != nil {
 			return 0, 0, err
 		}
 	}
-	landed, err := to.List(ctx, "v1/")
-	if err != nil {
+	if err := w.flush(ctx); err != nil {
 		return 0, 0, err
+	}
+	if err := w.check(ctx, leaving); err != nil {
+		return 0, 0, err
+	}
+	return len(w.written), skipped, nil
+}
+
+// copyWriter is one copy's writes into its destination, by record or, into a bulkStore, by
+// batch, and the hash of each record it wrote.
+type copyWriter struct {
+	to         store.Store
+	bulk       bulkStore
+	written    map[string][sha256.Size]byte
+	batch      []storeRecord
+	batchBytes int
+}
+
+func (w *copyWriter) write(ctx context.Context, key string, data []byte) error {
+	if w.written == nil {
+		w.written = map[string][sha256.Size]byte{}
+	}
+	w.written[key] = sha256.Sum256(data)
+	if w.bulk == nil {
+		// Create only: a destination written to meanwhile is a conflict, not overwritten.
+		_, err := w.to.Put(ctx, key, data, store.Absent)
+		return err
+	}
+	if len(w.batch) > 0 && (len(w.batch) >= copyBatchRecords || w.batchBytes+len(data) > copyBatchBytes) {
+		if err := w.flush(ctx); err != nil {
+			return err
+		}
+	}
+	w.batch = append(w.batch, storeRecord{Key: key, Data: data})
+	w.batchBytes += len(data)
+	return nil
+}
+
+// flush sends the batch held, if any.
+func (w *copyWriter) flush(ctx context.Context) error {
+	if len(w.batch) == 0 {
+		return nil
+	}
+	err := w.bulk.createAll(ctx, w.batch)
+	w.batch, w.batchBytes = nil, 0
+	return err
+}
+
+// check is the copy's check: as many records landed as were written, each with its bytes.
+func (w *copyWriter) check(ctx context.Context, leaving []string) error {
+	landed, err := w.to.List(ctx, "v1/")
+	if err != nil {
+		return err
 	}
 	count := 0
 	for _, k := range landed {
@@ -162,33 +181,31 @@ func copyStoreLeaving(ctx context.Context, from, to store.Store, leaving []strin
 			count++
 		}
 	}
-	mismatch := func(what string) error {
-		return fmt.Errorf("The copy did not come out the same (%s). The old store is untouched; the new one should be emptied before trying again.", what)
+	if count != len(w.written) {
+		return copyMismatch(fmt.Sprintf("%d records copied, %d found", len(w.written), count))
 	}
-	if count != len(written) {
-		return 0, 0, mismatch(fmt.Sprintf("%d records copied, %d found", len(written), count))
+	if w.bulk != nil {
+		return checkSums(ctx, w.bulk, w.written)
 	}
-	if bulk != nil {
-		if err := checkSums(ctx, bulk, written, mismatch); err != nil {
-			return 0, 0, err
-		}
-		return len(written), skipped, nil
-	}
-	for key, sum := range written {
-		back, err := to.Get(ctx, key)
+	for key, sum := range w.written {
+		back, err := w.to.Get(ctx, key)
 		if err != nil {
-			return 0, 0, err
+			return err
 		}
 		if back == nil || sha256.Sum256(back.Data) != sum {
-			return 0, 0, mismatch(key)
+			return copyMismatch(key)
 		}
 	}
-	return len(written), skipped, nil
+	return nil
+}
+
+func copyMismatch(what string) error {
+	return fmt.Errorf("The copy did not come out the same (%s). The old store is untouched; the new one should be emptied before trying again.", what)
 }
 
 // checkSums checks what landed in a bulkStore against the hashes written, sumsBatchKeys keys
 // a call.
-func checkSums(ctx context.Context, bulk bulkStore, written map[string][sha256.Size]byte, mismatch func(string) error) error {
+func checkSums(ctx context.Context, bulk bulkStore, written map[string][sha256.Size]byte) error {
 	keys := slices.Sorted(maps.Keys(written))
 	for chunk := range slices.Chunk(keys, sumsBatchKeys) {
 		back, err := bulk.sums(ctx, chunk)
@@ -197,7 +214,7 @@ func checkSums(ctx context.Context, bulk bulkStore, written map[string][sha256.S
 		}
 		for _, key := range chunk {
 			if sum, ok := back[key]; !ok || sum != written[key] {
-				return mismatch(key)
+				return copyMismatch(key)
 			}
 		}
 	}
