@@ -284,15 +284,15 @@ export function SectionPage({ store, section, down }: { store: Store; section: E
               {machinesHead(group) ? (
                 <h2 class="section-head" onContextMenu={(e) => openContextMenu(e, headItems())}>{group}</h2>
               ) : <h2 class="section-head">{section === "work" ? sectionTitle(section) : group}</h2>}
-              {pages.map((p) => p.draw.kind === "machine" ? (
+              {pages.filter((p) => !p.tabOf).map((p) => p.draw.kind === "machine" ? (
                 <MachineRow key={p.id} store={store} host={p.draw.host} on={p.id === open?.id}
                   open={() => go({ nav: section, section: p.id })}>
                   <MachineNeedLine store={store} host={p.draw.host} />
                 </MachineRow>
               ) : (
                 <Fragment key={p.id}>
-                  <button type="button" class={`sub-app-row${p.id === open?.id ? " on" : ""}${p.under ? " under" : ""}`}
-                    aria-current={p.id === open?.id ? "page" : undefined} onClick={() => go(pageRoute(section, p))}>
+                  <button type="button" class={`sub-app-row${p.id === (open?.tabOf ?? open?.id) ? " on" : ""}${p.under ? " under" : ""}`}
+                    aria-current={p.id === (open?.tabOf ?? open?.id) ? "page" : undefined} onClick={() => go(pageRoute(section, p))}>
                     {p.title}
                     <PageMark store={store} page={p} />
                   </button>
@@ -334,7 +334,7 @@ export function PageView({ store, page, down }: { store: Store; page: NavPage; d
   // A page under another (#5178) names that page in its breadcrumb: Reports › Delivery › Builds.
   const parent = page.under ? navPages[section].find((p) => p.id === page.under) : undefined;
   return (
-    <Framed title={page.draw.kind === "report" ? lensTitle(page.title, lensAsked(route.value.query), lensName.value) : page.title} section={section} parent={parent && { title: parent.title, to: { nav: section, section: parent.id } }}>
+    <Framed title={page.draw.kind === "report" ? lensTitle(navPages[section].find((p) => p.id === page.tabOf)?.title ?? page.title, lensAsked(route.value.query), lensName.value) : page.title} section={section} parent={parent && { title: parent.title, to: { nav: section, section: parent.id } }}>
       {gated(page, admin) ? <p class="hint">{admin === null ? "Loading…" : roleProblemOf(store) ?? adminsOnly}</p>
         : page.draw.kind === "console" ? <ConsoleSection store={store} id={page.draw.id} down={down} />
         : page.draw.kind === "report" ? <ReportsPage store={store} section={page.draw.section} down={down} />

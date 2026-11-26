@@ -54,6 +54,8 @@ export interface NavPage {
   /** A page under another of the list (#5178): its row is indented under that page's, and its address is the
    * other page's item, #/reports/delivery/builds. */
   under?: string;
+  /** A tab of another page of the list (#6884): that page's row and title are its own. */
+  tabOf?: string;
   /** Only with this feature flag on (#6572): a page whose flag is off is in no list and opens by no address. */
   flag?: "work" | "docs" | "store-sizes";
   draw: PageDraw;
@@ -111,7 +113,7 @@ export const navPages: Record<NavSection, readonly NavPage[]> = {
   ],
   reports: [
     ...reportSections.flatMap((s): NavPage[] => [
-      { id: s.id, title: s.title, group: s.group, ...s.id === storesID ? { flag: "store-sizes" as const } : {}, draw: { kind: "report", section: s } },
+      { id: s.id, title: s.title, group: s.group, ...s.tabOf ? { tabOf: s.tabOf } : {}, ...s.id === storesID ? { flag: "store-sizes" as const } : {}, draw: { kind: "report", section: s } },
       // Build trends (#5178, spec 5166) and the DORA figures of each environment (#5245, spec 5239 board 5) under Delivery
       // (#5280; were under Planning): #/reports/delivery/builds, #/reports/delivery/environments.
       ...s.id === "delivery" ? [
@@ -217,14 +219,17 @@ export function groupedPages(list: readonly NavPage[]): [string, NavPage[]][] {
   return [...out];
 }
 
-/** Usage's panes: Activity's Cost, Tokens and Time, then Velocity, the PRs that landed (#4598). Since #5280 each is in the
+/** Usage's panes: Activity's Spend, Tokens and Time, then Velocity, the PRs that landed (#4598). Since #5280 each is in the
  * Me lens of the report it repeats (usageReport). */
 export type UsagePane = "spending" | "tokens" | "time" | "velocity" | "cycletime";
 export const usagePanes: readonly UsagePane[] = ["spending", "tokens", "time", "velocity", "cycletime"];
-export const usagePaneTitle: Record<UsagePane, string> = { spending: "Cost", tokens: "Tokens", time: "Time", velocity: "Velocity", cycletime: "Cycle time" };
+export const usagePaneTitle: Record<UsagePane, string> = { spending: "Spend", tokens: "Tokens", time: "Time", velocity: "Velocity", cycletime: "Cycle time" };
 
-/** The report whose Me lens draws each of Usage's panes (#5280): Cost and Tokens on Spend, Time on Time, Velocity and Cycle time on Outcomes. */
-export const usageReport: Record<UsagePane, string> = { spending: "spend", tokens: "spend", time: "time", velocity: "outcomes", cycletime: "outcomes" };
+/** The report whose Me lens draws each of Usage's panes (#5280): Spend, Tokens and Time on the Cost report's tabs (#6884), Velocity and Cycle time on Outcomes. */
+export const usageReport: Record<UsagePane, string> = { spending: "spend", tokens: "tokens", time: "time", velocity: "outcomes", cycletime: "outcomes" };
+
+/** The Cost report's tabs (#6884), each a page of Reports with its own address: Spend, Tokens and Time. */
+export const costTabs: readonly (readonly [id: string, title: string])[] = [["spend", "Spend"], ["tokens", "Tokens"], ["time", "Time"]];
 
 /** The panes of Usage that a report's Me lens draws (#5280), in Usage's order. */
 export function usagePanesOf(report: string): UsagePane[] {

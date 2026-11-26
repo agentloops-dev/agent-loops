@@ -52,7 +52,7 @@ ones every Mac app has.
 | Option-Command-E | **View ▸ Events** | Opens the Events page. |
 | Option-Command-L | **View ▸ Resources** | Opens the Resources page, which shows who holds or is waiting for the simulators, browsers and screen. |
 | Option-Command-R | **View ▸ Runtimes** | Opens the Runtimes page, which shows what each runtime can be started on right now and where its allowance stands. |
-| Option-Command-S | **View ▸ Cost** | Opens the Cost page. See [See usage, cost and time](../how-to/see-usage-cost-and-time.md) and See [Limit what agents spend](../how-to/limit-spending.md). |
+| Option-Command-S | **View ▸ Cost** | Opens the Cost report. See [See usage, cost and time](../how-to/see-usage-cost-and-time.md) and See [Limit what agents spend](../how-to/limit-spending.md). |
 | Command-F | **View ▸ Find in Chat** | With a chat open in the main window, finds words in its prompts and replies. See [Find in a chat or a session](../how-to/find-in-a-chat-or-a-session.md). With no chat open, Command-F is **Find Session**. |
 | Option-Command-F | **View ▸ Find Session** | With a chat open, puts the keyboard in the sessions column's search field. |
 | Command-P | **Go ▸ Open File…** | Finds a file in the open session's folders by name, to read or edit. |

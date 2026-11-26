@@ -29,7 +29,7 @@ work.
 
 **See what has been spent**
 
-1. Click **Cost** in the sidebar's **Usage** group, or press Option-Command-S.
+1. Click **Cost** in the sidebar's **Reports** group, or press Option-Command-S.
 
    The page shows **All time** at the top, then each folder with what its agents cost,
    in each currency the runtimes reported. Archived folders are shown greyed. A line
