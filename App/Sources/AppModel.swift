@@ -1443,6 +1443,8 @@ final class AppModel {
     let people = PeopleState()
     /// The control plane's capacity, for an admin's Machines (#6591).
     let controlCapacity = ControlCapacityState()
+    /// Make This the Control Plane… and the moves' steps, for an admin's Machines (#6614).
+    let controlMove = ControlMoveState()
     /// The GitHub sign-ins waiting for this person's Approve (#995).
     let signIn = SignInState()
     /// This window's place in the person's machine lock, and the clients asking to join it (#3490).
@@ -2661,6 +2663,18 @@ final class AppModel {
     /// behind its flag, and for an admin only.
     var showsControlPlaneMachine: Bool {
         flags.isOn(.controlPlaneMachine) && people.you?.isAdmin == true
+    }
+
+    /// Make This the Control Plane… on a machine's page, and the strip of a move (#6614): behind its
+    /// flag, and for an admin only.
+    var showsControlPlaneMove: Bool {
+        flags.isOn(.controlPlaneMove) && people.you?.isAdmin == true
+    }
+
+    /// The machine record a page is of, as the control plane lists it: this Mac's too (#6614).
+    func controlRecord(_ host: MachineRef) -> DaemonAPI.ControlMachine? {
+        let id = host == .mac ? ThisMacHost.resolve(controlPlaneHosts) : host
+        return controlPlaneHosts?.first { $0.id == id }
     }
 
     /// The machines that run the control plane, for matching a copy that names none (#6591).

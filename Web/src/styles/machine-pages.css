@@ -216,3 +216,15 @@
    an OAuth card's account line and Reconnect… do not squeeze the line into a column. */
 .setup-card.provider-card > .connection { flex-wrap: wrap; }
 .setup-card.provider-card > .connection > .grow { flex: 1 1 100%; }
+
+/* Make This the Control Plane… on a machine's page (#6614): the steps of a move, in the order it runs them. */
+.control-move .vouched { color: var(--tint-vouched); margin: 0; }
+.control-move .section-head .spinner { margin-left: 6px; }
+.control-move-why { margin: 6px 0 0; padding-left: 18px; color: var(--paper-secondary); }
+.control-move-happens { padding-left: 18px; color: var(--paper-secondary); }
+.control-move-steps { display: flex; gap: 6px; list-style: none; margin: 4px 0 8px; padding: 0; }
+.control-move-steps li { flex: 1; text-align: center; padding: 3px 0; border-radius: 5px; font-size: 11px;
+  background: var(--paper-wash); color: var(--paper-tertiary); }
+.control-move-steps .step-done { background: var(--line-vouched); color: var(--paper-ink); }
+.control-move-steps .step-current { background: var(--line-accent); color: var(--paper-ink); }
+.control-move-steps .step-failed { background: var(--line-failure); color: var(--paper-ink); }

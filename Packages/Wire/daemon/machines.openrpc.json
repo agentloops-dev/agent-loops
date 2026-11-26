@@ -639,6 +639,27 @@
       }
     },
     {
+      "name": "setup/approve",
+      "x-capability": "host.machine-setup/1",
+      "description": "A client of the person's lock approves the text of a set-up script on this machine, the sender (#7167, gate 1 of #7151, section 2). It answers the script as setup/scripts does once the approval is kept in <root>/machine-setup-approved.json. It refuses an approval that is not signed by a client of the lock this machine holds, whose content is not the file's hash and size now, or whose number is lower than the last of its scope.",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/machines.schema.json#/definitions/SetupApprove"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/machines.schema.json#/definitions/SetupScript"
+        }
+      }
+    },
+    {
       "name": "setup/projects",
       "x-capability": "machine.setup/1",
       "description": "The installer on this machine (#6890): gets the pool's projects from the machines that have them, in the background, and says how it stands. Asked again until finished.",
@@ -656,6 +677,27 @@
         "name": "result",
         "schema": {
           "$ref": "schema/machines.schema.json#/definitions/MachineSetupProjects"
+        }
+      }
+    },
+    {
+      "name": "setup/scripts",
+      "x-capability": "host.machine-setup/1",
+      "description": "This machine's two set-up scripts, as a client reads them to approve one (#7167): each file's text and hash now, the text approved last and its approvals, and the number to sign the next one with.",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/core.schema.json#/definitions/Empty"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/machines.schema.json#/definitions/SetupScripts"
         }
       }
     },
