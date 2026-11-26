@@ -129,6 +129,10 @@ type Hooks struct {
 	// Setup is a made machine's set-up as it stands (#6073), for its row while it is made and
 	// until it joins. Nil, or nil for a host, shows none.
 	Setup func(host string) *wire.MachineSetup
+	// Capacity is the host's last pushed capacity level and 5-minute load per core, and when
+	// the control plane heard them (#5875), for forAgent's list of machines. False for no
+	// figure. Nil shows none.
+	Capacity func(host string) (level wire.CapacityLevel, load5 *float64, at time.Time, ok bool)
 	// BackUp makes a backup of the host, and waits for it, before its workspace is deleted
 	// (#1815). False when the host can't make one: it is offline, or older than backups.
 	// Nil makes none.
@@ -685,7 +689,13 @@ func (p *Providers) forAgent(person string) AgentMachines {
 	out.Hosts = []AgentHost{}
 	for _, h := range hosts {
 		if p.hooks.OwnerOf(h.ID) == person {
-			out.Hosts = append(out.Hosts, AgentHost{Name: h.Name, State: p.router.HostState(h.ID)})
+			host := AgentHost{Name: h.Name, State: p.router.HostState(h.ID)}
+			if p.hooks.Capacity != nil {
+				if level, load5, at, ok := p.hooks.Capacity(h.ID); ok {
+					host.Capacity, host.LoadPerCore5, host.CapacityAt = &level, load5, new(wire.DateOf(at))
+				}
+			}
+			out.Hosts = append(out.Hosts, host)
 		}
 	}
 	return out
