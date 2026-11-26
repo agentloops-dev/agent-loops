@@ -91,6 +91,15 @@ struct ControlPlaneMachineTests {
         #expect(ControlPlaneMachine.agentsRowLine(look("a", machine: "m", level: .ok)) == nil)
     }
 
+    @Test func theShortRowKeepsTheLevelAndItsMainFigure() {
+        #expect(ControlPlaneMachine.shortRowLine(nil) == "No capacity reading yet")
+        #expect(ControlPlaneMachine.shortRowLine(look("a", machine: "m")) == "Near capacity · I/O 16.7%")
+        #expect(ControlPlaneMachine.shortRowLine(look("a", machine: "m", level: .ok)) == "OK · Load 1.4")
+        #expect(ControlPlaneMachine.rowHelp(look("a", machine: "m"))
+                == "Near capacity · I/O pressure 16.7% · Load 1.4 per core\nThe control plane is near capacity: its disk is busy.")
+        #expect(ControlPlaneMachine.rowHelp(look("a", machine: "m", level: .ok)) == "OK · Load 1.4 per core")
+    }
+
     @Test func theSentenceIsTheReasonAsASentence() {
         #expect(ControlPlaneMachine.sentence(look("a", machine: "m")) == "The control plane is near capacity: its disk is busy.")
         #expect(ControlPlaneMachine.sentence(look("a", machine: "m", level: .full, reason: "")) == "The control plane is at capacity.")
