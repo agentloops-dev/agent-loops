@@ -4,13 +4,14 @@ import SwiftUI
 /// Across the top of the window while a copy of the control plane is near or at capacity (#6591),
 /// as a machine's capacity warning (#4582), for an admin with the flag on. It says why, in the
 /// control plane's words, opens the control plane's machine, and opens the guide that says what
-/// to do (#6589). The control plane keeps serving at every level: the strip only tells.
+/// to do (#6589). The control plane keeps serving at every level: the strip only tells. While the
+/// control plane is away it is hidden (#7363): its level is the last one known, not now.
 struct ControlCapacityStrip: View {
     @Environment(AppModel.self) private var model
     @Environment(\.openURL) private var openURL
 
     var body: some View {
-        if model.showsControlPlaneMachine, let look = model.controlCapacity.warning {
+        if model.showsControlPlaneMachine, let look = model.controlCapacity.warning(controlAway: model.controlPlaneAway) {
             let machine = look.machine.map(MachineRef.init(rawValue:))
                 ?? (model.controlPlaneHosts ?? []).first { ControlPlaneMachine.runsControl($0) }?.id
             Strip(tone: .warning,
