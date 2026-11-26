@@ -30,7 +30,7 @@ func TestTheSupervisorsOwnOutputRollsAtTheLimit(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer logf.Close()
-	cmd := exec.Command(os.Args[0], "-test.run=^TestTheSupervisorsOwnOutputRollsAtTheLimit$")
+	cmd := exec.Command(os.Args[0], "-test.run=^TestTheSupervisorsOwnOutputRollsAtTheLimit$") //nolint:gosec // G204: this test binary, run again as the helper
 	cmd.Env = append(os.Environ(), superviseLogRoot+"="+root)
 	cmd.Stdout, cmd.Stderr = logf, logf
 	if err := cmd.Run(); err != nil {
