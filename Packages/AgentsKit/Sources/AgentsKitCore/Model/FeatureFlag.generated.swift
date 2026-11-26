@@ -16,6 +16,8 @@ public enum FeatureFlag: String, CaseIterable, Sendable {
     case docs = "docs"
     /// Machine scripts (#7151).
     case machineScripts = "machine-scripts"
+    /// Session summary (#7318).
+    case sessionSummary = "session-summary"
     /// Store sizes (#6907).
     case storeSizes = "store-sizes"
     /// Suggested (#6572).
@@ -34,6 +36,7 @@ public enum FeatureFlag: String, CaseIterable, Sendable {
         case .dashboard: "Dashboard"
         case .docs: "Docs"
         case .machineScripts: "Machine scripts"
+        case .sessionSummary: "Session summary"
         case .storeSizes: "Store sizes"
         case .suggested: "Suggested"
         case .work: "Work"
@@ -50,6 +53,7 @@ public enum FeatureFlag: String, CaseIterable, Sendable {
         case .dashboard: "The Dashboard on the Mac: each work item with its sessions. The window opens to it."
         case .docs: "Docs in the sidebar, and the Docs section on a work item's page. On the Mac and the web page."
         case .machineScripts: "On the Mac: your root.sh and setup.sh set up each new machine. A failed Root set-up shows its last lines and what to do."
+        case .sessionSummary: "On the Mac: a session opens on its summary (what is going on, the goal and plan, the last turn and what waits for you), with the full chat one click away."
         case .storeSizes: "Reports ▸ Store sizes on the web page: how large each data store is, and how much of its limits it uses."
         case .suggested: "New Session ▸ Suggested: the epics with no lead."
         case .work: "Work in the sidebar: issues, pull requests, releases, deploys and the timeline."
@@ -66,6 +70,7 @@ public enum FeatureFlag: String, CaseIterable, Sendable {
         case .dashboard: 6572
         case .docs: 6572
         case .machineScripts: 7151
+        case .sessionSummary: 7318
         case .storeSizes: 6907
         case .suggested: 6572
         case .work: 6572
