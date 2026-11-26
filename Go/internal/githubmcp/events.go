@@ -230,6 +230,8 @@ func issueEvents() []event {
 			"Only issues with this label.",
 			map[string]any{"comment": object(map[string]any{"author": str, "url": str, "body": str}), "commentedAt": str},
 			"Only comments by"},
+		{IssueParented, "Issue parented", "An issue became a sub-issue of another: one event per issue added, with its parent's number (#5945). A lead waits on it with parent set to its epic.",
+			"Only issues with this label.", map[string]any{"parent": integer, "by": str, "parentedAt": str}, "Only sub-issues added by"},
 		{IssueClosed, "Issue closed", "An issue was closed, as completed or not planned.", "Only issues with this label.",
 			map[string]any{"reason": map[string]any{"type": "string", "enum": []string{"completed", "not_planned"}}, "by": str, "closedAt": str},
 			"Only issues closed by"},
@@ -237,9 +239,14 @@ func issueEvents() []event {
 	out := make([]event, len(kinds))
 	for i, k := range kinds {
 		label := property{Name: "label", Kind: "string", Description: k.label}
-		input := schema{repoProperty, label, issue, anyoneProperty, anyProperty}
-		if k.kind == IssueOpened {
-			input = schema{repoProperty, label, anyoneProperty}
+		parent := property{Name: "parent", Kind: "integer", Description: "Only issues whose parent is this issue, by number (#5945)."}
+		input := schema{repoProperty, label, issue, parent, anyoneProperty, anyProperty}
+		switch k.kind {
+		case IssueOpened:
+			input = schema{repoProperty, label, parent, anyoneProperty}
+		case IssueParented:
+			// No issue key: a lead's one where names its open children, and a new one is not in it.
+			input = schema{repoProperty, label, parent, anyoneProperty, anyProperty}
 		}
 		description := k.description + " " + k.who + " the repo's owner, members and collaborators, never a bot, unless anyone is true."
 		if k.kind == IssueClosed {
@@ -570,14 +577,44 @@ func issueCandidates(ctx context.Context, gh GitHub, name string, kind IssueKind
 		return nil, false, err
 	}
 	var list []candidate
+	parents := parentCache{}
 	for _, it := range items {
 		if at := mcpevents.Normalized(it.At); at != "" && a.wantsIssueActivity(it) {
+			if kind == IssueParented || a.parent != 0 {
+				p, err := parents.of(ctx, gh, repo, it)
+				if err != nil {
+					return nil, false, err
+				}
+				if a.parent != 0 && p != a.parent {
+					continue
+				}
+				it.Parent = p
+			}
 			list = append(list, candidate{EventID: name + ":" + repo + ":" + it.ID, Time: at, Key: it.ID,
 				Subject: issueRef(repo, it.Issue.Number),
 				Data:    func() (map[string]any, error) { return it.data(), nil }})
 		}
 	}
 	return list, truncated, nil
+}
+
+// parentCache is the parents looked up in one poll, by issue number.
+type parentCache map[int]int
+
+// of is the parent of it's issue: for a parented event, the one it names, else GitHub's answer now.
+func (c parentCache) of(ctx context.Context, gh GitHub, repo string, it IssueActivity) (int, error) {
+	if it.Parent != 0 {
+		return it.Parent, nil
+	}
+	if p, ok := c[it.Issue.Number]; ok {
+		return p, nil
+	}
+	p, err := gh.IssueParent(ctx, repo, it.Issue.Number)
+	if err != nil {
+		return 0, err
+	}
+	c[it.Issue.Number] = p
+	return p, nil
 }
 
 // wantsIssueActivity says whether an issue's activity passes the issue, trust and label filters.
