@@ -52,23 +52,24 @@ where the check reached its control port (absent by a tunnel), `memoryBytes`, an
 A hosted control plane refuses the call: a customer's machine is never a copy of it.
 
 `control/move {machine}` (#6612, admins only) moves the control plane to an eligible machine in
-one call. It runs the handover below by itself, from the copy that moves, in these steps:
+one call. It runs the handover below by itself, from the copy that moves. The move goes through
+these states, in this order:
 
-1. **checking:** the checks of `control/eligible`. The machine also needs an address of its
-   own, not only its tunnel, and a key. Only one move runs at a time, and a control plane
-   with more than one copy over one store does not move.
-2. **receiving:** the copy seals the control key to the machine's own key (HPKE, as a secret
-   is sealed) and asks its host `control/receive` on channel 0. The host opens the key, keeps
-   it as `~/.agents-control/control-key` (0600), sets the copy's old store aside, and starts
-   the copy again empty, to receive, at the address that the check found
-   (`agents-control.service.d/20-receive.conf`). The key is never in clear in a store or on
-   the wire. A control-only machine answers `control/receive` too.
-3. **frozen:** the old copy changes no record.
-4. **copying:** the store goes to the new copy over a handover session, and the new copy takes
-   over.
-5. **forwarding:** when the new address is not the old one, the old copy sends each member to
-   the new one, for 30 days at most. Agent Loops changes no DNS record. **done:** the same
-   address.
+- **checking:** the checks of `control/eligible`. The machine also needs an address of its
+  own, not only its tunnel, and a key. Only one move runs at a time, and a control plane
+  with more than one copy over one store does not move.
+- **receiving:** the copy seals the control key to the machine's own key (HPKE, as a secret
+  is sealed) and asks its host `control/receive` on channel 0. The host opens the key, keeps
+  it as `~/.agents-control/control-key` (0600), sets the copy's old store aside, and starts
+  the copy again empty, to receive, at the address that the check found
+  (`agents-control.service.d/20-receive.conf`). The key is never in clear in a store or on
+  the wire. A control-only machine answers `control/receive` too.
+- **frozen:** the old copy changes no record.
+- **copying:** the store goes to the new copy over a handover session, and the new copy takes
+  over.
+- **forwarding:** when the new address is not the old one, the old copy sends each member to
+  the new one, for 30 days at most. Agent Loops changes no DNS record. **done:** the same
+  address.
 
 The call answers once the checks pass. `control/moveChanged` tells the admins each step, and
 `control/moves/list` gives the newest 20 moves (`v1/moves/`, kept 90 days). A step that fails
