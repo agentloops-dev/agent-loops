@@ -202,3 +202,29 @@ func TestAutopilotStalledAndCapped(t *testing.T) {
 		t.Fatal(p)
 	}
 }
+
+// A child is a stray (#5944) only when it is the epic's one ready open child and blocks none.
+func TestAutopilotStrayOf(t *testing.T) {
+	t.Parallel()
+	n := func(ref string) wire.LineageNode { return wire.LineageNode{Ref: ref} }
+	c := func(ref, state string, blockers ...planRef) planChild {
+		return planChild{item: wire.ForgeItem{Node: n(ref), State: state}, blockedBy: blockers}
+	}
+	open := func(ref string) planRef { return planRef{node: n(ref), open: true} }
+	closed := func(ref string) planRef { return planRef{node: n(ref)} }
+	for _, tc := range []struct {
+		name     string
+		children []planChild
+		want     bool
+	}{
+		{"one open", []planChild{c("#1", "closed"), c("#2", "open", closed("#1"))}, true},
+		{"two ready", []planChild{c("#2", "open"), c("#3", "open")}, false},
+		{"blocks another", []planChild{c("#2", "open"), c("#3", "open", open("#2"))}, false},
+		{"other waits on outside", []planChild{c("#2", "open"), c("#3", "open", open("#9"))}, true},
+		{"absent", []planChild{c("#3", "open")}, false},
+	} {
+		if got := strayOf(tc.children, n("#2")); got != tc.want {
+			t.Errorf("%s: %v", tc.name, got)
+		}
+	}
+}
