@@ -107,6 +107,34 @@
       "at": 812345678.5
     }]
   },
+  "ControlEligibleRequest": { "machine": "droplet", "allowSleep": true },
+  "ControlEligible": {
+    "ok": false,
+    "reasons": [{ "reason": "macSleeps", "text": "It sleeps." }],
+    "address": "ams3-1.example.dev",
+    "memoryBytes": 2147483648,
+    "diskFreeBytes": 42949672960
+  },
+  "ControlEligibleReason": { "reason": "olderVersion", "text": "Update it first." },
+  "ControlMove": {
+    "id": "m1", "from": "copy", "to": "droplet", "toName": "droplet-ams3-1", "phase": "failed",
+    "failedPhase": "copying", "address": "https://ams3-1.example.dev", "forwardingUntil": 812345678.5,
+    "startedAt": 812345678.5, "updatedAt": 812345679.5, "error": "The store did not copy: no space left", "by": "alex"
+  },
+  "ControlMoveRequest": { "machine": "droplet" },
+  "ControlMoveResult": {
+    "move": {
+      "id": "m1", "from": "copy", "to": "droplet", "toName": "droplet-ams3-1", "phase": "forwarding",
+      "address": "https://ams3-1.example.dev", "forwardingUntil": 812345678.5,
+      "startedAt": 812345678.5, "updatedAt": 812345679.5, "by": "alex"
+    }
+  },
+  "ControlMoves": {
+    "moves": [{
+      "id": "m1", "from": "copy", "to": "droplet", "toName": "droplet-ams3-1", "phase": "copying",
+      "startedAt": 812345678.5, "updatedAt": 812345679.5, "by": "alex"
+    }]
+  },
   "ControlEndpoint": {
     "url": "url",
     "pin": "pin"
