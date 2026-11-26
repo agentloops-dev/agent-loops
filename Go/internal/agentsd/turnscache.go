@@ -104,7 +104,7 @@ func (d *Daemon) turns(r wire.TurnsRequest) (wire.TurnsPage, error) {
 	if err := d.makeTurns(r.AgentID, t, needed, starts, ends); err != nil {
 		return wire.TurnsPage{}, err
 	}
-	page := wire.TurnsPage{Turns: []wire.TurnSummary{}, FirstTurn: int64(start), OpenStart: int64(ends.First())}
+	page := wire.TurnsPage{Turns: []wire.TurnSummary{}, FirstTurn: int64(start), OpenStart: int64(ends.First()), StartRemoved: store.StartRemoved(ends)}
 	if len(starts) > 0 {
 		page.OpenStart = int64(starts[len(starts)-1])
 	}

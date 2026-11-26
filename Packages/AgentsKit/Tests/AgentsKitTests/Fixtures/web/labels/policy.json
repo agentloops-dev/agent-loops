@@ -118,6 +118,35 @@
   {
     "expected" : {
       "accepted" : [
+        "#7",
+        "P#8",
+        "merged"
+      ],
+      "finished" : [
+        "#7",
+        "P#8",
+        "merged",
+        "x"
+      ],
+      "remainder" : ""
+    },
+    "input" : {
+      "existing" : [
+        "a",
+        "b",
+        "c",
+        "d",
+        "e",
+        "#1",
+        "#2"
+      ],
+      "typed" : "#7,P#8,merged,x,"
+    },
+    "name" : "links have their own room"
+  },
+  {
+    "expected" : {
+      "accepted" : [
 
       ],
       "finished" : [

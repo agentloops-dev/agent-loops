@@ -58,4 +58,24 @@ struct ControlMoveTests {
         #expect(same.contains("The address stays control.example.dev."))
         #expect(same.count == 4)
     }
+
+    /// #7395: the strip counts the copy's records, and the confirmation's time is the store's.
+    @Test func theCopyCountsItsRecordsAndTheConfirmationSaysHowLongItIsFrozen() {
+        var copying = Self.move(.copying)
+        copying.copied = 1_200
+        copying.total = 5_000
+        #expect(ControlMoveWords.line(copying)
+                == "Moving the control plane to droplet-ams3-1: copying the store, \(Int64(1_200).formatted()) of \(Int64(5_000).formatted()) records.")
+        copying.total = 0
+        #expect(ControlMoveWords.line(copying) == "Moving the control plane to droplet-ams3-1: copying the store.")
+        #expect(ControlMoveWords.about(5) == "about 10 seconds")
+        #expect(ControlMoveWords.about(35) == "about 40 seconds")
+        #expect(ControlMoveWords.about(80) == "about a minute")
+        #expect(ControlMoveWords.about(271) == "about 5 minutes")
+        let lines = ControlMoveWords.happens(name: "droplet-ams3-1", address: nil, now: nil, frozenSeconds: 35)
+        #expect(lines.last
+                == "Agents keep working. For about 40 seconds, the control plane is frozen: it refuses changes, and screens can’t reach machines.")
+        #expect(ControlMoveWords.happens(name: "droplet-ams3-1", address: nil, now: nil).last
+                == "Agents keep working. While the store copies, the control plane is frozen: it refuses changes, and screens can’t reach machines.")
+    }
 }

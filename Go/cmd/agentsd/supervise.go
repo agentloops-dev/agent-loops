@@ -27,13 +27,21 @@ import (
 // SIGTERM to it stops the host and then the supervisor. A host that ends with
 // agentsd.ExitRestart has a self-update in bin/current (#5788): the supervisor starts
 // itself again from there, so the supervisor is the new copy too.
+// openSuperviseLog is the supervisor's daemon.log. Detached (#7348), the rolled file takes the
+// supervisor's own standard output and error too, which detach opened on daemon.log for it: what
+// the runtime writes there (a panic, a library's output) then goes round the log's roll, its
+// limit and its age, as the host's does.
+func openSuperviseLog(root string) (*rolllog.File, error) {
+	// store-bounds: kind=log; size=8MiB; age=7d; applied=on write, at open and every 30 s (#6735)
+	return rolllog.Open(store.At(root).Log(), rolllog.Limit, !isTerminal())
+}
+
 func supervise(args []string) {
 	root := parse(args).root
 	// The host's output at each start: the log as it is then (the host opens its own,
 	// rolled, as soon as it starts).
 	out := func() io.Writer { return os.Stderr }
-	// store-bounds: kind=log; size=8MiB; age=7d; applied=on write, at open and every 30 s (#6735)
-	if f, err := rolllog.Open(store.At(root).Log(), rolllog.Limit, false); err == nil {
+	if f, err := openSuperviseLog(root); err == nil {
 		out = func() io.Writer { return f.File() }
 		setLog(f)
 	}

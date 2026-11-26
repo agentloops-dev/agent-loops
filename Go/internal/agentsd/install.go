@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/buildinfo"
+	"github.com/agentloops-dev/agent-loops/Go/internal/execfile"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 	"github.com/ulikunitz/xz"
 )
@@ -687,7 +688,7 @@ func writeShim(part, name string, lines []string) error {
 		return err
 	}
 	// store-bounds: not a store: an install: a shim of a toolset.
-	if err := os.WriteFile(filepath.Join(bin, name), []byte(strings.Join(lines, "\n")+"\n"), 0o700); err != nil {
+	if err := execfile.Write(filepath.Join(bin, name), []byte(strings.Join(lines, "\n")+"\n"), 0o700); err != nil {
 		return err
 	}
 	// Last: a toolset without this is never used.

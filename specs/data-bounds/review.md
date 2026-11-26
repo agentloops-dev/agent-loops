@@ -25,6 +25,12 @@ at its bounds, a 1 MiB host copy each (3,000 sessions in all), and their usage h
   and 0.13 s each 6 hours.
 - **Fault, #7403:** the first sweep after an update lists the store again in each round. Its cost
   is rounds × keys, and its allocation is far above the live `GOMEMLIMIT` of 200 MiB.
+  Fixed: a round skips the steps that have no deletions left, and the rounds of an hour do
+  not run a step again once it has found all it could delete. At the same data (seeded as
+  plain files, 157,650 with no lock files), the first sweep went from 876 lists, 1,562,900
+  keys and 2,749 MB to 67 lists, 231,600 keys and 1,190 MB. Its CPU went from 22 s to 10 to
+  18 s (this Mac was under load), most of it the deletion of the 39,000 files and the one
+  list of every event.
 - A read of Reports measures nothing, as declared.
 - The `store-sizes.json` record is 8,078 bytes of its 128 KiB.
 

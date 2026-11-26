@@ -56,12 +56,21 @@ type logHead struct {
 	lines int
 	bytes int64
 	size  int64
+	// why is what took the lines: by age, by size, or both (#7405). An older header says neither.
+	why TrimCause
+}
+
+// TrimCause is what a log's trims took lines for.
+type TrimCause struct {
+	Age  bool `json:"age,omitempty"`
+	Size bool `json:"size,omitempty"`
 }
 
 type headLine struct {
 	Trimmed struct {
 		Lines int   `json:"lines"`
 		Bytes int64 `json:"bytes"`
+		TrimCause
 	} `json:"trimmed"`
 }
 
@@ -81,13 +90,13 @@ func readHead(f io.ReaderAt) logHead {
 	if json.Unmarshal(buf[:end], &h) != nil || h.Trimmed.Lines < 0 || h.Trimmed.Bytes < 0 {
 		return logHead{}
 	}
-	return logHead{lines: h.Trimmed.Lines, bytes: h.Trimmed.Bytes, size: int64(end) + 1}
+	return logHead{lines: h.Trimmed.Lines, bytes: h.Trimmed.Bytes, size: int64(end) + 1, why: h.Trimmed.TrimCause}
 }
 
-func headOf(lines int, size int64) []byte {
+func headOf(lines int, size int64, why TrimCause) []byte {
 	var h headLine
-	h.Trimmed.Lines, h.Trimmed.Bytes = lines, size
-	b, _ := json.Marshal(h) // two whole numbers always encode
+	h.Trimmed.Lines, h.Trimmed.Bytes, h.Trimmed.TrimCause = lines, size, why
+	b, _ := json.Marshal(h) // whole numbers and booleans always encode
 	return append(b, '\n')
 }
 
@@ -329,7 +338,7 @@ func (l *FolderLog) trim(ctx context.Context, before time.Time) (bool, error) {
 		return false, err
 	}
 	defer f.Close()
-	lines, cut, err := l.cut(ctx, f, h, size, before)
+	lines, cut, why, err := l.cut(ctx, f, h, size, before)
 	if err != nil || cut == h.bytes {
 		return false, err
 	}
@@ -341,7 +350,8 @@ func (l *FolderLog) trim(ctx context.Context, before time.Time) (bool, error) {
 	defer os.Remove(tmp.Name())
 	defer tmp.Close()
 	// The kept records are copied with no lock held, and then only what was appended since.
-	if _, err := tmp.Write(headOf(lines, cut)); err != nil {
+	why.Age, why.Size = why.Age || h.why.Age, why.Size || h.why.Size
+	if _, err := tmp.Write(headOf(lines, cut, why)); err != nil {
 		return false, err
 	}
 	if _, err := io.Copy(tmp, io.NewSectionReader(f, h.at(cut), size-cut)); err != nil {
@@ -381,10 +391,11 @@ func (l *FolderLog) trim(ctx context.Context, before time.Time) (bool, error) {
 
 // cut is the lines and the place up to which a trim takes. A record is too old by its own
 // time; a line with no time goes with the record before it. Records are in order, so the
-// first record that stays ends the cut.
-func (l *FolderLog) cut(ctx context.Context, f io.ReaderAt, h logHead, size int64, before time.Time) (int, int64, error) {
+// first record that stays ends the cut. why says what this cut takes lines for.
+func (l *FolderLog) cut(ctx context.Context, f io.ReaderAt, h logHead, size int64, before time.Time) (int, int64, TrimCause, error) {
 	lines, place := h.lines, h.bytes
 	cutLines, cut := lines, place
+	var why TrimCause
 	over := int64(0)
 	if most := l.spec.Bounds.MaxBytes; most > 0 {
 		over = max(0, size-most)
@@ -404,13 +415,14 @@ func (l *FolderLog) cut(ctx context.Context, f io.ReaderAt, h logHead, size int6
 		lines, place = lines+1, place+int64(len(b))
 		if tooBig || timed {
 			cutLines, cut = lines, place
+			why.Size, why.Age = why.Size || tooBig, why.Age || timed
 		}
 		return true
 	})
 	if err == nil {
 		err = ctx.Err()
 	}
-	return cutLines, cut, err
+	return cutLines, cut, why, err
 }
 
 // RecordStamp is the id and the time of a record that has them as "id" and "at", as a

@@ -99,3 +99,6 @@
 .time-bar.others { fill: color-mix(in srgb, currentColor 35%, transparent); }
 .time-bar.person { fill: var(--tint-attention); }
 .time-charts g.dim { opacity: 0.35; }
+/* The connectors list needs no bullet (#7291), in any page shell. */
+.mcp-servers > ul { list-style: none; margin: 0; padding: 0; }
+.mcp-servers > ul > li { list-style: none; }

@@ -62,6 +62,7 @@ func writeKeyFile(path string, key []byte) error {
 	b := make([]byte, 8)
 	rand.Read(b)
 	tmp := filepath.Join(dir, fmt.Sprintf(".%s.%x.tmp", filepath.Base(path), b))
+	// store-bounds: kind=secret; count=2 (the key and the previous one); size=32B a record; age=until-deleted; applied=on rotation, which replaces the previous key, and it is dropped 30 days after
 	w, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
 		return err

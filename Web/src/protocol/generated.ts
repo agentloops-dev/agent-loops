@@ -546,6 +546,11 @@ export interface AgentMachinesHost {
    * (Auto's rule).
    */
   capacityAt?: WireDate;
+  /**
+   * The machine's platform as it announced it (macOS 15, Linux), so Autopilot (#5900) sends a
+   * linux-ok issue to a Linux machine. Absent when it did not say.
+   */
+  platform?: string;
 }
 
 export interface AgentMachinesMachine {
@@ -3606,6 +3611,12 @@ export interface ControlEligible {
   memoryBytes?: number;
   /** The free space on its fullest disk, as it said it (#7313). Absent when it did not say. */
   diskFreeBytes?: number;
+  /**
+   * About how long a move to the machine keeps the control plane frozen, in seconds, from the
+   * store's size and the copy's batches (#7395). Changes are refused while it is frozen. Absent
+   * from a control plane before #7395.
+   */
+  frozenSeconds?: number;
 }
 
 /** One reason a machine cannot take the control role (#6611), with its words for the person. */
@@ -3746,6 +3757,13 @@ export interface ControlMove {
   failedPhase?: ControlMovePhase;
   /** Where the new copy answers, once it said so. */
   address?: string;
+  /**
+   * With copying: the records copied so far (#7395). control/moveChanged says it every few seconds
+   * during the copy.
+   */
+  copied?: number;
+  /** With copying: the records the copy takes (#7395). */
+  total?: number;
   /** With forwarding: until when the old copy sends members to the new one (30 days at most). */
   forwardingUntil?: WireDate;
   startedAt: WireDate;
@@ -15805,6 +15823,17 @@ export interface StopBackgroundRequest {
   itemID: string;
 }
 
+/**
+ * What happens to a store over its limit (#7408), by its declaration: refuse, a new write is
+ * refused until it is within its limit again; write, the next write removes what is past the limit;
+ * hourly or daily, the sweep removes what is past the limit each hour or each day.
+ */
+export type StoreAtLimit =
+  | "refuse"
+  | "write"
+  | "hourly"
+  | "daily";
+
 export interface StoreNotes {
   notes: string[];
 }
@@ -15852,6 +15881,10 @@ export interface StoreSize {
   percentRecords?: number;
   /** When this store's measurement ended. */
   measuredAt?: WireDate;
+  /**
+   * What happens to the store when it is over its limit (#7408). Absent from a host too old to say.
+   */
+  atLimit?: StoreAtLimit;
 }
 
 /**
@@ -16248,6 +16281,11 @@ export interface TurnsPage {
   firstTurn: number;
   openStart: number;
   firstPrompt?: number;
+  /**
+   * When the 90-day or size trim took the start of this chat (#7405): the line every client shows
+   * where its start was, once it shows the first turn kept. Absent when nothing was removed.
+   */
+  startRemoved?: string;
 }
 
 export interface TurnsRequest {
@@ -18851,7 +18889,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   AgentConfigFileRequest: { required: ["path", "time", "counter"], optional: ["contents", "deleted"] },
   AgentConfigFiles: { required: ["files"], optional: ["updated"] },
   AgentMachines: { required: ["providers"], optional: ["hosts"] },
-  AgentMachinesHost: { required: ["name", "state"], optional: ["capacity", "loadPerCore5", "capacityAt"] },
+  AgentMachinesHost: { required: ["name", "state"], optional: ["capacity", "loadPerCore5", "capacityAt", "platform"] },
   AgentMachinesMachine: { required: ["id", "name", "state"], optional: ["host", "hostState", "cost", "reason"] },
   AgentMachinesProvider: { required: ["id", "name", "canMake", "canDelete", "workspaces"], optional: ["options"] },
   AgentRemovedNotification: { required: ["agentID"], optional: [] },
@@ -19080,14 +19118,14 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   ControlClientChanged: { required: [], optional: ["client", "removed"] },
   ControlCodeShown: { required: ["text", "expires"], optional: ["command"] },
   ControlCutOff: { required: ["why"], optional: ["provider"] },
-  ControlEligible: { required: ["ok", "reasons"], optional: ["address", "memoryBytes", "diskFreeBytes"] },
+  ControlEligible: { required: ["ok", "reasons"], optional: ["address", "memoryBytes", "diskFreeBytes", "frozenSeconds"] },
   ControlEligibleReason: { required: ["reason", "text"], optional: [] },
   ControlEligibleRequest: { required: ["machine"], optional: ["allowSleep"] },
   ControlEndpoint: { required: ["url"], optional: ["pin"] },
   ControlHello: { required: ["v", "name", "control", "nonce", "copy"], optional: ["previous"] },
   ControlInstallProgress: { required: ["name", "step"], optional: [] },
   ControlMachine: { required: ["id", "name", "platform", "version", "state", "reach"], optional: ["machineID", "signInFrom", "gitFrom", "gitAsks", "tunnel", "workspace", "implementation", "capabilities", "maturity", "missing", "owner", "capacity", "loadPerCore5", "capacityAt", "setup", "roles", "labels", "autoLabels"] },
-  ControlMove: { required: ["id", "from", "to", "toName", "phase", "startedAt", "updatedAt", "by"], optional: ["failedPhase", "address", "forwardingUntil", "error"] },
+  ControlMove: { required: ["id", "from", "to", "toName", "phase", "startedAt", "updatedAt", "by"], optional: ["failedPhase", "address", "copied", "total", "forwardingUntil", "error"] },
   ControlMoveRequest: { required: ["machine"], optional: [] },
   ControlMoveResult: { required: ["move"], optional: [] },
   ControlMoved: { required: ["url", "controlKey", "name"], optional: ["pin"] },
@@ -20054,7 +20092,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   StartingPoint: { required: ["repository", "commit"], optional: [] },
   StopBackgroundRequest: { required: ["agentID", "itemID"], optional: [] },
   StoreNotes: { required: ["notes"], optional: [] },
-  StoreSize: { required: ["id", "owner", "scope", "kind", "state"], optional: ["why", "bytes", "records", "averageRecordBytes", "maxBytes", "maxRecords", "limitPer", "percentBytes", "percentRecords", "measuredAt"] },
+  StoreSize: { required: ["id", "owner", "scope", "kind", "state"], optional: ["why", "bytes", "records", "averageRecordBytes", "maxBytes", "maxRecords", "limitPer", "percentBytes", "percentRecords", "measuredAt", "atLimit"] },
   StoreSizes: { required: ["stores", "total"], optional: ["cursor"] },
   StoreSizesQuery: { required: [], optional: ["cursor", "limit"] },
   SuggestedPrompt: { required: ["id", "label", "prompt"], optional: [] },
@@ -20085,7 +20123,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   TurnSummary: { required: ["id", "start", "end"], optional: ["ask", "outcome", "steps", "usage"] },
   TurnUndo: { required: ["turn", "putBack"], optional: [] },
   TurnUsage: { required: ["totalTokens", "inputTokens", "outputTokens"], optional: ["thoughtTokens", "cachedReadTokens", "cachedWriteTokens", "cost", "route", "relayTokens"] },
-  TurnsPage: { required: ["turns", "firstTurn", "openStart"], optional: ["firstPrompt"] },
+  TurnsPage: { required: ["turns", "firstTurn", "openStart"], optional: ["firstPrompt", "startRemoved"] },
   TurnsRequest: { required: ["agentID", "limit"], optional: ["before"] },
   UndoTurnRequest: { required: ["agentID", "turn"], optional: ["confirmed"] },
   UndoTurnResult: { required: ["putBack", "changedSince"], optional: [] },

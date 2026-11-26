@@ -8,6 +8,8 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+
+	"github.com/agentloops-dev/agent-loops/Go/internal/sizewords"
 )
 
 // The secret kind (#6669, docs/explanation/data-stores.md): a small file in ~/.agents-secrets,
@@ -137,7 +139,7 @@ func (p SecretPart[T]) check(old, entries map[string]any) error {
 			}
 		}
 		if size > was {
-			return LimitError{fmt.Sprintf("each of the %s is at most %s as kept", p.What, sizeWords(p.MaxRecordBytes))}
+			return LimitError{fmt.Sprintf("each of the %s can be at most %s; give it a shorter name or value", p.What, sizewords.Int(p.MaxRecordBytes))}
 		}
 	}
 	return nil
@@ -146,11 +148,4 @@ func (p SecretPart[T]) check(old, entries map[string]any) error {
 func entryBytes(key string, v any) (int, error) {
 	b, err := json.Marshal(v)
 	return len(key) + len(b), err
-}
-
-func sizeWords(n int) string {
-	if n >= 1<<10 && n%(1<<10) == 0 {
-		return fmt.Sprintf("%d KiB", n>>10)
-	}
-	return fmt.Sprintf("%d bytes", n)
 }

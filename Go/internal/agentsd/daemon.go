@@ -36,6 +36,7 @@ type Daemon struct {
 	// removedConnectors is the copies of the personal connectors removed (#2195).
 	removedConnectors *store.JSONFile[removedConnector]
 	dismissedLeads    *store.JSONFile[dismissedLead]
+	autopilotKick     chan struct{}
 	repoAliases       *store.JSONFile[repoalias.Alias]
 	erased            *store.JSONFile[wire.Date]
 	storeSizes        *store.JSONFile[storesizes.Measure]
@@ -353,6 +354,8 @@ func newWith(ctx context.Context, root string, opts startOptions) (*Daemon, erro
 	d.watchDisk()
 	// The machine's capacity, ok, near or full (#4578).
 	d.watchCapacity()
+	// Autopilot starts a lead for the top epic with no lead (#5899).
+	d.startAutopilot()
 	// The counts on the servers' list view rows (#2033).
 	d.startViewCounts()
 	// The pull requests waiting for the person, in For Review (#3330).

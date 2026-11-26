@@ -36,6 +36,8 @@ func MarkOwnFolders(l Locations) error {
 			errs = append(errs, err)
 			continue
 		}
+		// The root's path, which the system holds to 1 KiB on a Mac and 4 KiB on Linux.
+		// store-bounds: kind=key-value; size=4KiB a folder; count=1 a folder; age=until-deleted; applied=on write (#7350)
 		errs = append(errs, WriteAtomically(mark, []byte(l.Root), 0o600))
 	}
 	return errors.Join(errs...)

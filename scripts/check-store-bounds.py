@@ -27,7 +27,9 @@ Each one must do one of these:
 Each `kind=` comment, and each Spec of a store that no small file declares, has one row in
 Go/internal/storesizes/catalogue.json (#6906), which the store sizes are measured by: its
 `sources` names the file, with the same kind, and the same limits where the comment's are plain
-(`limitsNote` says why they differ).
+(`limitsNote` says why they differ). Its `atLimit` says what happens to a store over its limit,
+by the comment's `applied=` (#7408): `refuse` (it says refused), `daily` or `hourly` (a sweep),
+else `write`. A Spec's row says it by hand.
 
 `--baseline` writes the baseline with no new entries; `--selftest` checks the check.
 """
@@ -175,6 +177,8 @@ def catalogue_problems(sources, rows):
     for row in rows:
         for rel in row["sources"]:
             listed[rel].append(row)
+        if row.get("atLimit") not in AT_LIMIT:
+            found.append(f"{CATALOGUE}: {row['id']}: atLimit must be one of {', '.join(sorted(AT_LIMIT))}")
         if "spec" in row and not any(f'"{row["spec"]}"' in sources.get(rel, "") for rel in row["sources"]):
             found.append(f"{CATALOGUE}: {row['id']}: no Spec named {row['spec']} in {row['sources']}")
     for rel in sorted(listed.keys() | sources.keys()):
@@ -188,11 +192,27 @@ def catalogue_problems(sources, rows):
             row = next((r for r in left if r["kind"] == note["kind"] and limits_agree(r, note)), None)
             if row:
                 left.remove(row)
+                if "atLimit" in row and row["atLimit"] != at_limit(note.get("applied", "")):
+                    found.append(f"{CATALOGUE}: {row['id']}: atLimit is {row['atLimit']}, but {rel} applies its bounds "
+                                 f"{note.get('applied', '')!r}: {at_limit(note.get('applied', ''))}")
             else:
                 found.append(f"{rel}: store-bounds: no row in {CATALOGUE} has kind={note['kind']} "
                              "and these limits; add one or change it")
         found += [f"{CATALOGUE}: {row['id']}: {rel} does not declare it" for row in left]
     return found
+
+
+AT_LIMIT = {"refuse", "write", "hourly", "daily"}
+
+
+def at_limit(applied):
+    """What happens to a store over its limit, by when its bounds are applied (#7408)."""
+    a = applied.lower()
+    if "refus" in a:
+        return "refuse"
+    if "daily" in a:
+        return "daily"
+    return "hourly" if "hourly" in a or "sweep" in a else "write"
 
 
 def limits_agree(row, note):
@@ -317,8 +337,12 @@ def selftest():
     assert problems('import "x/internal/agentsd/store"\n' + 'store.Spec{Name: "a"}')
     assert not problems(outside + "other.Spec{}")
     assert TEST.search("Go/internal/a/a_test.go") and not TEST.search("App/Sources/A.swift")
-    row = {"id": "a", "kind": "log", "maxBytes": 1 << 30, "sources": ["a.go"]}
+    row = {"id": "a", "kind": "log", "maxBytes": 1 << 30, "atLimit": "hourly", "sources": ["a.go"]}
     assert not catalogue_problems({"a.go": good}, [row])
+    assert catalogue_problems({"a.go": good}, [row | {"atLimit": "refuse"}]), "an atLimit its applied= does not say"
+    assert catalogue_problems({"a.go": good}, [{k: v for k, v in row.items() if k != "atLimit"}]), "no atLimit"
+    assert [at_limit(a) for a in ("on write (refused), and hourly sweep", "type cut on write, and the daily sweep",
+                                  "hourly sweep", "on write")] == ["refuse", "daily", "hourly", "write"]
     assert catalogue_problems({"a.go": good}, []), "a store in no row"
     assert catalogue_problems({"a.go": ""}, [row]), "a row with no store"
     assert catalogue_problems({"a.go": good + good}, [row]), "two stores, one row"

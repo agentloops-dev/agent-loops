@@ -29,6 +29,8 @@ type Row struct {
 	MaxBytes   int64  `json:"maxBytes"`
 	MaxRecords int64  `json:"maxRecords"`
 	LimitPer   string `json:"limitPer"`
+	// AtLimit is what happens to it over its limit, by its declaration (#7408).
+	AtLimit wire.StoreAtLimit `json:"atLimit"`
 	// At is where it is measured; nil when it is not, and Why says why not.
 	At  *Place `json:"at"`
 	Why string `json:"why"`
@@ -121,6 +123,9 @@ func (r Row) size(m Measure, measured bool, now time.Time, staleAfter time.Durat
 		MaxBytes: some(r.MaxBytes), MaxRecords: some(r.MaxRecords)}
 	if r.LimitPer != "" {
 		s.LimitPer = &r.LimitPer
+	}
+	if r.AtLimit != "" {
+		s.AtLimit = &r.AtLimit
 	}
 	why := r.Why
 	switch {

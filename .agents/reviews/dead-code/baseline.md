@@ -118,3 +118,8 @@ Added 2026-10-29 (`2026-10-29.md`, the first complete `GOOS=darwin -test` scan):
   (added 2026-11-24).
 - `App/Sources/Walk/WalkAX.swift` `legacy`, `SimDeviceLegacyHIDClient` and
   `ssh.FingerprintLegacyMD5`: names of outside APIs (added 2026-11-24).
+- `Packages/AgentsKit/Sources/AgentsKitCore/Daemon/DaemonAPI.swift` method names and error
+  codes that no Swift client uses yet (for example `agentsSummarise`, `setupScriptChanged`):
+  they mirror the OpenRPC documents, and `WireSchemaTests` compares the two. Not dead
+  while the wire has the method or code. A missing caller is a parity question
+  (added 2026-11-26).

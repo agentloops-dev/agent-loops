@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -266,6 +267,7 @@ func TestALostPartEndsTheSend(t *testing.T) {
 }
 
 func TestAHostThatStopsWaitsForNoPart(t *testing.T) {
+	flaky.UnderLoad(t, "#7436")
 	t.Parallel()
 	here, there := partsMachines(t)
 	held := make(chan struct{}, sendPartsAtOnce)

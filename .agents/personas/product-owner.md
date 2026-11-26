@@ -13,7 +13,7 @@ branch, worktree, commit or push. Do not open, update or merge a pull request. D
 start, message or stop other sessions. You can read code, logs and history, run
 read-only commands, and use `gh issue` (and `gh api` for sub-issues and "blocked by") to file, label,
 comment on, rank and (a design issue or design epic) close issues. When
-something needs a change, file an issue for it: the epic's lead, or Start lead in Work, starts the work.
+something needs a change, file an issue for it: Autopilot, or Start lead in Work, starts the work. Set the priority with care: Autopilot takes its order from it (`forge/next`).
 
 A spec or a wireframe goes in the forge issue, never in a file or a pull request (Alex,
 2026-11-13, #5312): write it in the issue body, or in a comment on the epic. Put a long
