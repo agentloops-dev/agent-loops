@@ -38,7 +38,7 @@ down for a runtime that has none. [Overall score](#overall-score), after the
 tables, adds every feature up.
 
 The matrix was filled in on 2026-10-12 from each app's own docs, changelog, README,
-releases and, where open, source. Agent Loops' row was last brought up to date on 2026-11-14. Every app is held to the same bar, Agent Loops included: a ●
+releases and, where open, source. Agent Loops' row was last brought up to date on 2026-11-26. Every app is held to the same bar, Agent Loops included: a ●
 needs the whole feature, documented by the app itself, and a ○ needs evidence, such as an
 app that ships for macOS alone having no Android app. Once per release, after the
 Competitor check, the Feature matrix workflow (`.agents/workflows/feature-matrix.md`)
@@ -187,6 +187,7 @@ Agent Loops has none of these at all:
 | Threadlines | ● | ○ | ○ | ● | ● | ● | 67% |
 | CodeAgentSwarm | ● | ◐ | ◐ | ◐ | ?⃝ | ● | 58% |
 | Nuphos | ● | ● | ◐ | ?⃝ | ○ | ● | 58% |
+| Paradev (was Superset) | ◐ | ● | ● | ○ | ?⃝ | ● | 58% |
 | Warp | ● | ○ | ○ | ● | ◐ | ● | 58% |
 | **Agent Loops** | ○ | ● | ○ | ● | ○ | ● | 50% |
 | Maestro | ● | ○ | ○ | ● | ○ | ● | 50% |
@@ -194,7 +195,6 @@ Agent Loops has none of these at all:
 | Vibe Kanban | ● | ○ | ○ | ● | ?⃝ | ● | 50% |
 | VibeiDE | ● | ○ | ○ | ● | ● | ?⃝ | 50% |
 | Agentastic | ○ | ◐ | ○ | ○ | ● | ● | 42% |
-| Paradev (was Superset) | ◐ | ● | ○ | ○ | ?⃝ | ● | 42% |
 | DockTerm | ● | ○ | ○ | ○ | ○ | ● | 33% |
 | Emdash | ● | ○ | ○ | ○ | ○ | ● | 33% |
 | Helicon | ● | ○ | ○ | ● | ○ | ?⃝ | 33% |
@@ -231,8 +231,8 @@ Agent Loops has none of these at all:
 | Maestro | ● | ● | ◐ | ● | ?⃝ | ◐ | ?⃝ | ● | 63% |
 | Paradev (was Superset) | ● | ● | ◐ | ● | ● | ◐ | ?⃝ | ○ | 63% |
 | Pragma | ● | ● | ◐ | ● | ?⃝ | ◐ | ?⃝ | ◐ | 56% |
+| Conductor | ● | ?⃝ | ?⃝ | ● | ◐ | ● | ?⃝ | ◐ | 50% |
 | Emdash | ● | ● | ?⃝ | ● | ◐ | ◐ | ?⃝ | ○ | 50% |
-| Conductor | ● | ?⃝ | ?⃝ | ● | ◐ | ◐ | ?⃝ | ◐ | 44% |
 | DockTerm | ● | ● | ◐ | ?⃝ | ● | ?⃝ | ?⃝ | ○ | 44% |
 | tuios | ● | ● | ◐ | ● | ?⃝ | ○ | ○ | ○ | 44% |
 | Helicon | ● | ?⃝ | ?⃝ | ● | ?⃝ | ?⃝ | ?⃝ | ● | 38% |
@@ -298,13 +298,13 @@ Agent Loops has none of these at all:
 | Nimbalyst | ● | ● | ● | ?⃝ | ● | ◐ | 70% |
 | Orca | ● | ● | ● | ◐ | ● | ○ | 70% |
 | Warp | ● | ?⃝ | ◐ | ?⃝ | ● | ● | 70% |
+| Ace | ● | ○ | ● | ?⃝ | ● | ?⃝ | 60% |
 | Atelier (was Acepe) | ?⃝ | ● | ● | ?⃝ | ● | ● | 60% |
 | Codeg | ● | ● | ● | ?⃝ | ● | ?⃝ | 60% |
 | Maestro | ● | ● | ● | ?⃝ | ● | ?⃝ | 60% |
 | Paradev (was Superset) | ● | ● | ● | ○ | ● | ?⃝ | 60% |
 | Paseo | ● | ● | ● | ?⃝ | ● | ○ | 60% |
 | Pragma | ● | ● | ● | ?⃝ | ● | ?⃝ | 60% |
-| Ace | ● | ○ | ○ | ?⃝ | ● | ?⃝ | 40% |
 | Conductor | ● | ◐ | ?⃝ | ?⃝ | ● | ?⃝ | 40% |
 | DockTerm | ● | ?⃝ | ○ | ○ | ● | ○ | 40% |
 | Nuphos | ● | ● | ● | ?⃝ | ?⃝ | ?⃝ | 40% |
@@ -328,7 +328,7 @@ Agent Loops has none of these at all:
 | App | Task board | Starts agents from issues | Trackers beyond GitHub | Scheduled or triggered runs | Agents start agents | The app's own tools for agents | Leases on shared resources | Wait for an event without polling | Workflows as files in the repository | From an idea to a first deploy | Score |
 |---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|--:|
 | **Agent Loops** | ● | ● | ● | ● | ● | ● | ● | ● | ● | ● | 100% |
-| Codeg | ● | ● | ● | ● | ● | ● | ○ | ○ | ○ | ◐ | 65% |
+| Codeg | ● | ● | ● | ● | ● | ● | ○ | ◐ | ○ | ◐ | 70% |
 | Cursor | ?⃝ | ● | ● | ● | ● | ● | ?⃝ | ?⃝ | ● | ◐ | 65% |
 | OpenAI Codex | ?⃝ | ● | ● | ● | ● | ● | ?⃝ | ?⃝ | ● | ◐ | 65% |
 | Orca | ● | ● | ● | ● | ● | ● | ○ | ◐ | ○ | ○ | 65% |
@@ -336,17 +336,17 @@ Agent Loops has none of these at all:
 | Warp | ?⃝ | ● | ● | ● | ● | ● | ?⃝ | ?⃝ | ● | ◐ | 65% |
 | Agentastic | ● | ● | ● | ● | ● | ● | ?⃝ | ?⃝ | ○ | ○ | 60% |
 | Claude Code | ?⃝ | ● | ◐ | ● | ● | ● | ?⃝ | ◐ | ● | ○ | 60% |
+| Conductor | ?⃝ | ● | ● | ● | ● | ● | ?⃝ | ◐ | ?⃝ | ◐ | 60% |
 | GitHub Copilot | ?⃝ | ● | ● | ● | ● | ● | ?⃝ | ?⃝ | ◐ | ◐ | 60% |
 | Maestro | ?⃝ | ● | ?⃝ | ● | ● | ● | ○ | ○ | ● | ◐ | 55% |
 | Paseo | ?⃝ | ● | ○ | ● | ● | ● | ○ | ◐ | ● | ○ | 55% |
 | Rove | ● | ● | ◐ | ● | ● | ● | ○ | ○ | ○ | ○ | 55% |
-| Conductor | ?⃝ | ● | ● | ● | ◐ | ● | ?⃝ | ?⃝ | ?⃝ | ◐ | 50% |
 | Nimbalyst | ● | ?⃝ | ◐ | ● | ● | ● | ?⃝ | ?⃝ | ?⃝ | ◐ | 50% |
 | Parallel Code | ● | ● | ◐ | ?⃝ | ● | ● | ○ | ◐ | ○ | ○ | 50% |
+| Nuphos | ?⃝ | ?⃝ | ● | ● | ● | ● | ○ | ◐ | ○ | ○ | 45% |
 | Pragma | ● | ◐ | ?⃝ | ● | ● | ● | ?⃝ | ?⃝ | ?⃝ | ○ | 45% |
 | Threadlines | ?⃝ | ● | ?⃝ | ● | ● | ● | ○ | ◐ | ○ | ○ | 45% |
 | Ace | ● | ?⃝ | ◐ | ?⃝ | ● | ● | ?⃝ | ◐ | ?⃝ | ○ | 40% |
-| Nuphos | ?⃝ | ?⃝ | ● | ● | ● | ● | ○ | ○ | ○ | ○ | 40% |
 | CodeAgentSwarm | ● | ?⃝ | ◐ | ?⃝ | ● | ● | ?⃝ | ?⃝ | ?⃝ | ?⃝ | 35% |
 | Emdash | ○ | ● | ● | ● | ?⃝ | ○ | ○ | ○ | ○ | ◐ | 35% |
 | T3 Code | ?⃝ | ?⃝ | ○ | ● | ● | ● | ○ | ◐ | ○ | ○ | 35% |
@@ -390,13 +390,13 @@ Agent Loops has none of these at all:
 | T3 Code | ?⃝ | ?⃝ | ● | ?⃝ | ● | ◐ | 40% |
 | tuios | ?⃝ | ● | ◐ | ?⃝ | ?⃝ | ?⃝ | 30% |
 | Atelier (was Acepe) | ?⃝ | ?⃝ | ● | ?⃝ | ?⃝ | ?⃝ | 20% |
+| Conductor | ?⃝ | ?⃝ | ● | ?⃝ | ?⃝ | ?⃝ | 20% |
 | DockTerm | ?⃝ | ?⃝ | ● | ?⃝ | ?⃝ | ?⃝ | 20% |
 | Nuphos | ?⃝ | ?⃝ | ● | ?⃝ | ?⃝ | ?⃝ | 20% |
 | Parallel Code | ?⃝ | ?⃝ | ● | ?⃝ | ?⃝ | ?⃝ | 20% |
 | Sculptor | ?⃝ | ● | ?⃝ | ?⃝ | ?⃝ | ?⃝ | 20% |
 | Vibe Kanban | ● | ?⃝ | ?⃝ | ?⃝ | ?⃝ | ?⃝ | 20% |
 | VibeiDE | ?⃝ | ?⃝ | ● | ?⃝ | ?⃝ | ?⃝ | 20% |
-| Conductor | ?⃝ | ?⃝ | ◐ | ?⃝ | ?⃝ | ?⃝ | 10% |
 | Claude Squad | ?⃝ | ?⃝ | ?⃝ | ?⃝ | ?⃝ | ?⃝ | 0% |
 | ReevesAgents | ?⃝ | ?⃝ | ○ | ○ | ?⃝ | ?⃝ | 0% |
 | Roamgate | ?⃝ | ?⃝ | ?⃝ | ?⃝ | ?⃝ | ?⃝ | 0% |
@@ -451,23 +451,23 @@ Each app's score in every table, and overall: its points over the 51 scored feat
 | 3 | Paseo | 100% | 100% | 69% | 90% | 60% | 55% | 60% | 100% | **77%** |
 | 4 | Cursor | 83% | 67% | 81% | 100% | 80% | 65% | 80% | 50% | **75%** |
 | 5 | Claude Code | 67% | 83% | 81% | 80% | 70% | 60% | 80% | 67% | **73%** |
-| 6 | Codeg | 100% | 67% | 69% | 90% | 60% | 65% | 40% | 83% | **72%** |
-| 6 | Nimbalyst | 83% | 83% | 75% | 70% | 70% | 50% | 70% | 83% | **72%** |
+| 5 | Codeg | 100% | 67% | 69% | 90% | 60% | 70% | 40% | 83% | **73%** |
+| 7 | Nimbalyst | 83% | 83% | 75% | 70% | 70% | 50% | 70% | 83% | **72%** |
 | 8 | Orca | 75% | 67% | 69% | 80% | 70% | 65% | 70% | 75% | **71%** |
-| 9 | OpenAI Codex | 67% | 83% | 75% | 70% | 40% | 65% | 80% | 67% | **69%** |
-| 9 | Paradev (was Superset) | 75% | 42% | 63% | 70% | 60% | 65% | 80% | 100% | **69%** |
+| 8 | Paradev (was Superset) | 75% | 58% | 63% | 70% | 60% | 65% | 80% | 100% | **71%** |
+| 10 | OpenAI Codex | 67% | 83% | 75% | 70% | 40% | 65% | 80% | 67% | **69%** |
 | 11 | Agentastic | 100% | 42% | 69% | 90% | 80% | 60% | 80% | 33% | **68%** |
 | 12 | Warp | 83% | 58% | 75% | 60% | 70% | 65% | 70% | 50% | **67%** |
 | 13 | T3 Code | 83% | 92% | 69% | 80% | 80% | 35% | 40% | 67% | **66%** |
 | 13 | Threadlines | 83% | 67% | 75% | 100% | 40% | 45% | 60% | 67% | **66%** |
 | 15 | Pragma | 75% | 83% | 56% | 60% | 60% | 45% | 60% | 50% | **60%** |
-| 16 | Nuphos | 83% | 58% | 69% | 70% | 40% | 40% | 20% | 83% | **58%** |
+| 16 | Nuphos | 83% | 58% | 69% | 70% | 40% | 45% | 20% | 83% | **59%** |
+| 17 | Ace | 67% | 67% | 75% | 50% | 60% | 40% | 40% | 50% | **56%** |
 | 17 | Happy | 92% | 100% | 69% | 30% | 20% | 30% | 40% | 67% | **56%** |
-| 18 | Maestro | 50% | 50% | 63% | 50% | 60% | 55% | 60% | 50% | **55%** |
-| 19 | Ace | 67% | 67% | 75% | 50% | 40% | 40% | 40% | 50% | **54%** |
-| 19 | Emdash | 83% | 33% | 50% | 70% | 70% | 35% | 40% | 67% | **54%** |
-| 21 | Parallel Code | 67% | 75% | 69% | 60% | 20% | 50% | 20% | 33% | **51%** |
-| 22 | Conductor | 75% | 25% | 44% | 80% | 40% | 50% | 10% | 67% | **49%** |
+| 19 | Maestro | 50% | 50% | 63% | 50% | 60% | 55% | 60% | 50% | **55%** |
+| 20 | Emdash | 83% | 33% | 50% | 70% | 70% | 35% | 40% | 67% | **54%** |
+| 21 | Conductor | 75% | 25% | 50% | 80% | 40% | 60% | 20% | 67% | **53%** |
+| 22 | Parallel Code | 67% | 75% | 69% | 60% | 20% | 50% | 20% | 33% | **51%** |
 | 23 | Rove | 67% | 33% | 25% | 60% | 20% | 55% | 40% | 50% | **44%** |
 | 24 | Atelier (was Acepe) | 50% | 8% | 63% | 60% | 60% | 30% | 20% | 50% | **42%** |
 | 24 | CodeAgentSwarm | 67% | 58% | 31% | 30% | 30% | 35% | 80% | 17% | **42%** |
@@ -495,8 +495,8 @@ thing. A ?⃝ has no link: the app's docs did not say.
 - **Claude Code:** Leases ?⃝; Waits ◐ ([source](https://code.claude.com/docs/en/tools-reference)); Workflows in the repository ● ([source](https://code.claude.com/docs/en/github-actions)); Live documents ?⃝.
 - **Claude Squad:** Leases ○ ([source](https://github.com/smtg-ai/claude-squad)); Waits ○ ([source](https://github.com/smtg-ai/claude-squad)); Workflows in the repository ○ ([source](https://github.com/smtg-ai/claude-squad)); Live documents ○ ([source](https://github.com/smtg-ai/claude-squad/blob/HEAD/README.md)).
 - **CodeAgentSwarm:** Leases ?⃝; Waits ?⃝; Workflows in the repository ?⃝; Live documents ?⃝.
-- **Codeg:** Leases ○ ([source](https://github.com/spacering-net/codeg)); Waits ○ ([source](https://github.com/spacering-net/codeg)); Workflows in the repository ○ ([source](https://github.com/spacering-net/codeg/blob/HEAD/src-tauri/src/db/entities/automation.rs)); Live documents ?⃝.
-- **Conductor:** Leases ?⃝; Waits ?⃝; Workflows in the repository ?⃝; Live documents ?⃝.
+- **Codeg:** Leases ○ ([source](https://github.com/spacering-net/codeg)); Waits ◐, a task run waits for the agent's own background work and its follow-up reply ([source](https://github.com/xintaofei/codeg/releases/tag/v0.45.0)); Workflows in the repository ○ ([source](https://github.com/spacering-net/codeg/blob/HEAD/src-tauri/src/db/entities/automation.rs)); Live documents ?⃝.
+- **Conductor:** Leases ?⃝; Waits ◐, an agent waits for the reply of a chat it started ([source](https://www.conductor.build/changelog/0.95.0-agents-that-manage-your-local-workspaces)); Workflows in the repository ?⃝; Live documents ?⃝.
 - **Cursor:** Leases ?⃝; Waits ?⃝; Workflows in the repository ● ([source](https://cursor.com/docs/cli/github-actions)); Live documents ● ([source](https://cursor.com/help/ai-features/agent)).
 - **DockTerm:** Leases ○ ([source](https://github.com/munvard/dockterm)); Waits ○ ([source](https://github.com/munvard/dockterm)); Workflows in the repository ○ ([source](https://github.com/munvard/dockterm)); Live documents ?⃝.
 - **Emdash:** Leases ○ ([source](https://github.com/generalaction/emdash)); Waits ○ ([source](https://github.com/generalaction/emdash)); Workflows in the repository ○ ([source](https://github.com/generalaction/emdash)); Live documents ?⃝.
@@ -505,7 +505,7 @@ thing. A ?⃝ has no link: the app's docs did not say.
 - **Helicon:** Leases ○ ([source](https://github.com/HarjjotSinghh/helicon)); Waits ◐ ([source](https://github.com/HarjjotSinghh/helicon/blob/HEAD/docs/CHANGELOG.md)); Workflows in the repository ○ ([source](https://github.com/HarjjotSinghh/helicon)); Live documents ?⃝.
 - **Maestro:** Leases ○ ([source](https://github.com/RunMaestro/Maestro)); Waits ○ ([source](https://github.com/RunMaestro/Maestro)); Workflows in the repository ● ([source](https://github.com/RunMaestro/Maestro/blob/HEAD/docs/maestro-cue-configuration.md)); Live documents ?⃝.
 - **Nimbalyst:** Leases ?⃝; Waits ?⃝; Workflows in the repository ?⃝; Live documents ● ([source](https://nimbalyst.com/docs/visual-editors-powered-by-ai/markdown-wysiwyg/ai-editing-red-green-diff-approval/)).
-- **Nuphos:** Leases ○ ([source](https://github.com/nuphos/nuphos)); Waits ○ ([source](https://github.com/nuphos/nuphos)); Workflows in the repository ○ ([source](https://github.com/nuphos/nuphos)); Live documents ?⃝.
+- **Nuphos:** Leases ○ ([source](https://github.com/nuphos/nuphos)); Waits ◐, a session wakes on its linked pull request's checks or issue's comments ([source](https://github.com/nuphos/nuphos/releases/tag/backend-v0.150.0)); Workflows in the repository ○ ([source](https://github.com/nuphos/nuphos)); Live documents ?⃝.
 - **Orca:** Leases ○ ([source](https://github.com/stablyai/orca)); Waits ◐ ([source](https://www.onorca.dev/docs/cli/orchestration)); Workflows in the repository ○ ([source](https://www.onorca.dev/docs/model/orca-yaml)); Live documents ◐ ([source](https://www.onorca.dev/docs/editing/file-explorer)).
 - **OpenAI Codex:** Leases ?⃝; Waits ?⃝; Workflows in the repository ● ([source](https://developers.openai.com/codex/github-action)); Live documents ?⃝.
 - **Paradev (was Superset):** Leases ?⃝; Waits ?⃝; Workflows in the repository ?⃝; Live documents ?⃝.
