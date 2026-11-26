@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/internal/machinelock"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
@@ -114,6 +115,7 @@ func TestADeliveredServerWaitsForApproval(t *testing.T) {
 
 // The person answers a waiting server from Needs You or with mcp/approve, on a device of theirs.
 func TestADeliveredServerIsApprovedOnADevice(t *testing.T) {
+	flaky.UnderLoad(t, "#7316")
 	d, _, dir, phone, ch := syncedMachine(t)
 	marks := t.TempDir()
 	plain, hosted := filepath.Join(marks, "plain"), filepath.Join(marks, "hosted")

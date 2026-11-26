@@ -3471,6 +3471,11 @@ export interface ControlCapacityBoard {
 /** One live control plane copy's most recent capacity look (#6590). */
 export interface ControlCapacityCopy {
   copy: string;
+  /**
+   * The id of the machine record that runs this copy (#6609, #6591): the row in Machines it is the
+   * level of. Absent from an older copy, and from a hosted copy, which has no machine record.
+   */
+  machine?: string;
   level: CapacityLevel;
   reason: string;
   loadPerCore: number;
@@ -3519,6 +3524,16 @@ export interface ControlCutOff {
 export interface ControlEligible {
   ok: boolean;
   reasons: ControlEligibleReason[];
+  /**
+   * Where the control plane reached the machine's control role, as a person reads it (#7313): its
+   * domain, or its public address, with the port when it is not 443. Absent when it did not reach
+   * it there, or reached it by its tunnel.
+   */
+  address?: string;
+  /** The machine's memory, as it said it (#7313). Absent when it did not say. */
+  memoryBytes?: number;
+  /** The free space on its fullest disk, as it said it (#7313). Absent when it did not say. */
+  diskFreeBytes?: number;
 }
 
 /** One reason a machine cannot take the control role (#6611), with its words for the person. */
@@ -6312,10 +6327,11 @@ export interface ForgeNextRequest {
  * no open blocked by, and not taken: no session on this machine that is not archived is labelled
  * with it, no open pull request fixes it, and it has no assignee), or one that is on hold and
  * otherwise ready. place is its place, 1 first. The order: not on hold first; then priority high,
- * medium, none, low; then the milestone's due date, the earliest first, no due date last; then the
- * oldest (createdAt, then the lowest number). reasons are short words for the keys that put it
- * there, as priority high, milestone Work, due 20 Nov, and oldest (when its age put it above the
- * next row). onHold says it is on hold: it is never the next one, and its first reason is on hold.
+ * medium, none, low; then size (its size: label, #7034), XS, S, M, L, XL, no size last; then the
+ * oldest (createdAt, then the lowest number). A milestone's due date gives no place. reasons are
+ * short words for the keys that put it there, as priority high, size S (or no size), and oldest
+ * (when its age put it above the next row). onHold says it is on hold: it is never the next one,
+ * and its first reason is on hold.
  */
 export interface ForgeNextRow {
   item: ForgeItem;
@@ -6335,8 +6351,8 @@ export interface ForgeNodeRequest {
  * lead is the session on this machine, not archived, that works on the epic in lineage (its label
  * #<n>, or the Linear key) and is labelled lead. standing is set only for a standing epic (#3661):
  * its children are then the open issues of its query, not its sub-issues, at most 100, in the order
- * of forge/next (#5689: not on hold first, then priority, the milestone's due date and the oldest),
- * all in one step 1; its item has no progress.
+ * of forge/next (#5689: not on hold first, then priority, size and the oldest), all in one step 1;
+ * its item has no progress.
  */
 export interface ForgePlan {
   item: ForgeItem;
@@ -8791,6 +8807,12 @@ export interface MachineAnnounce {
   version: string;
   machineID: string;
   implementation?: string;
+  /**
+   * What the machine does (#6609, #7314): agents, control or both, from its install. Absent means
+   * agents. A machine with control alone runs no agents: it keeps a link for the store copy and the
+   * handover, and the control plane opens no client's channel to it.
+   */
+  roles?: ("agents" | "control")[];
 }
 
 /**
@@ -8845,6 +8867,17 @@ export interface MachineConnections {
   machine: MachineRef;
   machineName: string;
   connections: ConnectionsList;
+}
+
+/**
+ * Where a machine's control role serves (#7313): the domain its certificate is for, when it has
+ * one, and the port. With no domain, the control plane dials the public address that the machine's
+ * uplink comes from.
+ */
+export interface MachineControlAddress {
+  domain?: string;
+  /** From 1 to 65535; a hello with another is taken as none. */
+  port: number;
 }
 
 /** A conversation of messages/conversationsAll (#5571) with the machine whose connector has it. */
@@ -8993,6 +9026,11 @@ export interface MachineHello {
    * that.
    */
   maturity?: Maturity;
+  /**
+   * Where this machine's own control plane serves, when its install gave it the control role
+   * (agentsd install --control, #6610, #7313). Absent when it has none, and from an older host.
+   */
+  control?: MachineControlAddress;
 }
 
 /**
@@ -18693,11 +18731,11 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   ContinueWhenBack: { required: ["at", "resetKnown"], optional: [] },
   ControlAuth: { required: ["id", "nonce", "mac", "kind"], optional: ["epoch", "capabilities", "page", "publicKey"] },
   ControlCapacityBoard: { required: ["copies"], optional: [] },
-  ControlCapacityCopy: { required: ["copy", "level", "reason", "loadPerCore", "loadPerCore5", "pressureMemoryFullAvg60", "pressureIOFullAvg60", "memoryAvailableBytes", "swapUsedPercent", "heapInuseBytes", "goroutines", "openFiles", "storeFiles", "storeBytes", "at"], optional: [] },
+  ControlCapacityCopy: { required: ["copy", "level", "reason", "loadPerCore", "loadPerCore5", "pressureMemoryFullAvg60", "pressureIOFullAvg60", "memoryAvailableBytes", "swapUsedPercent", "heapInuseBytes", "goroutines", "openFiles", "storeFiles", "storeBytes", "at"], optional: ["machine"] },
   ControlClientChanged: { required: [], optional: ["client", "removed"] },
   ControlCodeShown: { required: ["text", "expires"], optional: ["command"] },
   ControlCutOff: { required: ["why"], optional: ["provider"] },
-  ControlEligible: { required: ["ok", "reasons"], optional: [] },
+  ControlEligible: { required: ["ok", "reasons"], optional: ["address", "memoryBytes", "diskFreeBytes"] },
   ControlEligibleReason: { required: ["reason", "text"], optional: [] },
   ControlEligibleRequest: { required: ["machine"], optional: ["allowSleep"] },
   ControlEndpoint: { required: ["url"], optional: ["pin"] },
@@ -19102,12 +19140,13 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   MachineAgents: { required: ["host", "version", "history", "others"], optional: ["since", "previous", "changes", "changesError"] },
   MachineAgentsOther: { required: ["host", "name", "version"], optional: ["since", "ahead", "behind"] },
   MachineAgentsVersion: { required: ["version"], optional: ["since"] },
-  MachineAnnounce: { required: ["publicKey", "name", "platform", "version", "machineID"], optional: ["implementation"] },
+  MachineAnnounce: { required: ["publicKey", "name", "platform", "version", "machineID"], optional: ["implementation", "roles"] },
   MachineBotKey: { required: ["host"], optional: ["copy", "drop"] },
   MachineCatalog: { required: ["items"], optional: [] },
   MachineClient: { required: ["id", "kind", "publicKey"], optional: ["person"] },
   MachineClients: { required: ["clients"], optional: ["user"] },
   MachineConnections: { required: ["machine", "machineName", "connections"], optional: [] },
+  MachineControlAddress: { required: ["port"], optional: ["domain"] },
   MachineConversation: { required: ["machine", "machineName", "conversation"], optional: [] },
   MachineCounts: { required: ["state", "labels", "provider", "os", "version"], optional: [] },
   MachineCursor: { required: ["machine", "cursor"], optional: [] },
@@ -19120,7 +19159,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   MachineFolderSent: { required: [], optional: ["state", "folder", "facts", "pack", "read", "seed", "partsAtOnce"] },
   MachineForgeBoards: { required: ["machine", "machineName", "boards"], optional: [] },
   MachineForgeList: { required: ["machine", "machineName", "list"], optional: [] },
-  MachineHello: { required: ["version", "platform", "machineID"], optional: ["host", "name", "implementation", "capabilities", "maturity"] },
+  MachineHello: { required: ["version", "platform", "machineID"], optional: ["host", "name", "implementation", "capabilities", "maturity", "control"] },
   MachineHelloAnswer: { required: [], optional: ["capabilities"] },
   MachineInfo: { required: ["id", "name", "state"], optional: ["ssh", "tunnel", "hostKeyRenews", "cost", "idleTimeoutMinutes", "host", "reason", "joining", "notJoined", "setup"] },
   MachineInstall: { required: ["destination"], optional: ["name", "key", "trust", "tunnel", "provider", "workspace"] },

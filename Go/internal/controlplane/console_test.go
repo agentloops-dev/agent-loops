@@ -128,8 +128,65 @@ func TestControlCapacityReadsNoHostsKeptList(t *testing.T) {
 			t.Errorf("control/capacity read %s", key)
 		}
 	}
-	if len(st.read) != 4 {
-		t.Errorf("two samples and two copy records, not %v", st.read)
+	// This copy's own sample needs no copy record (#6591).
+	if len(st.read) != 3 {
+		t.Errorf("two samples and the other copy's record, not %v", st.read)
+	}
+}
+
+// A copy's look names the machine record that runs it (#6591), so Machines can give that row
+// its level; a sample kept before the copy knew its machine takes the copy record's.
+func TestControlCapacityNamesTheCopysMachine(t *testing.T) {
+	t.Parallel()
+	st := store.NewMemory()
+	p := startPlane(t, st, controllink.NewPrivateKey())
+	_, admin := p.client("Owner's window")
+	copy := copyRecord{ID: "copy-b", PeerURL: p.url, Started: records.Now(), Heartbeat: records.Now(), Machine: "control"}
+	copyData, err := json.Marshal(copy)
+	must(t, err)
+	_, err = st.Put(context.Background(), copyRecordKey(copy.ID), copyData, store.Always)
+	must(t, err)
+	capacityData, err := json.Marshal(wire.ControlCapacityCopy{Copy: copy.ID, Level: wire.CapacityLevelOk, At: wire.DateOf(time.Now())})
+	must(t, err)
+	_, err = st.Put(context.Background(), controlCapacityKey(copy.ID), capacityData, store.Always)
+	must(t, err)
+
+	var got wire.ControlCapacityBoard
+	must(t, json.Unmarshal(call(t, admin, "", "control/capacity", map[string]any{}), &got))
+	for _, c := range got.Copies {
+		if c.Copy == copy.ID {
+			if c.Machine == nil || *c.Machine != "control" {
+				t.Fatalf("got %+v, want the machine control", c)
+			}
+			return
+		}
+	}
+	t.Fatalf("no look of %s in %+v", copy.ID, got)
+}
+
+// A single copy has no mesh and so no copy record: its own look is on the board all the same.
+func TestControlCapacityHasTheOneCopysOwnLook(t *testing.T) {
+	t.Parallel()
+	st := store.NewMemory()
+	p := startPlane(t, st, controllink.NewPrivateKey())
+	_, admin := p.client("Owner's window")
+	p.s.keepControlCapacity(controlCapacity{level: wire.CapacityLevelOk, at: time.Now()})
+
+	var got wire.ControlCapacityBoard
+	must(t, json.Unmarshal(call(t, admin, "", "control/capacity", map[string]any{}), &got))
+	if len(got.Copies) != 1 || got.Copies[0].Copy != p.s.copyID {
+		t.Fatalf("got %+v, want the look of %s", got, p.s.copyID)
+	}
+}
+
+func TestKeptControlCapacityNamesItsMachine(t *testing.T) {
+	t.Parallel()
+	p := startPlane(t, store.NewMemory(), controllink.NewPrivateKey())
+	id := "control"
+	p.s.controlMachine.Store(&id)
+	got := p.s.keepControlCapacity(controlCapacity{level: wire.CapacityLevelNear, reason: "pressure_io", at: time.Now()})
+	if got.Machine == nil || *got.Machine != "control" {
+		t.Fatalf("got %+v, want the machine control", got)
 	}
 }
 

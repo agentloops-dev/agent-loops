@@ -47,8 +47,10 @@ const (
 	// mostRemovedOrgProviders is how many removed org providers' tombstones there may be when
 	// one is added: each keeps its id from another provider.
 	mostRemovedOrgProviders = 95
-	oidcStatePrefix         = "v1/oidc/state/"
-	oidcTicketPrefix        = "v1/oidc/tickets/"
+	// store-bounds: kind=secret; count=1000 (and a mark each); size=16KiB a record; age=2h; applied=on write, refused, hourly, an hour after it is made
+	oidcStatePrefix = "v1/oidc/state/"
+	// store-bounds: kind=secret; count=1000 (one a state, and a mark each); size=64KiB a record; age=2h; applied=on write, refused, hourly, an hour after it is made
+	oidcTicketPrefix = "v1/oidc/tickets/"
 	// stateLife is how long a started flow waits for its callback; ticketLife how long a
 	// ticket waits for signIn/ticket (D3). Both are swept an hour after they are made.
 	stateLife      = 10 * time.Minute
@@ -56,7 +58,12 @@ const (
 	oidcSweepAfter = time.Hour
 	// How many started flows the store holds at most; each makes at most one ticket.
 	oidcStatesMost = 1000
-	usedSuffix     = ".used"
+	// oidcStateMostBytes and oidcTicketMostBytes are the largest records (#7249). A ticket has
+	// room for a refresh token of refreshTokenMost, sealed, and an account that a person's
+	// record can hold.
+	oidcStateMostBytes  = 16 << 10
+	oidcTicketMostBytes = 64 << 10
+	usedSuffix          = ".used"
 )
 
 const (
@@ -846,6 +853,9 @@ func (si *signIns) orgStart(ctx context.Context, start wire.SignInOrgStart, b bi
 		LoginHint: hint, Made: records.At(now), Ends: records.At(now.Add(stateLife)), Sealed: sealed}
 	data, err := records.Encode(state)
 	if err != nil {
+		return wire.SignInOrgStarted{}, err
+	}
+	if err := fitsRecord("The sign-in", data, oidcStateMostBytes); err != nil {
 		return wire.SignInOrgStarted{}, err
 	}
 	if _, err := si.s.cfg.Store.Put(ctx, key+".json", data, store.Absent); err != nil {

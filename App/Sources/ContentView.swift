@@ -133,15 +133,17 @@ struct ContentView: View {
             StatusSecretsView(kind: kind).id(kind).paperGround()
         } else if let host = model.machinePage {
             // A page of its own per machine, so one machine's readings never show on another's.
-            MachinePage(host: host).id(host).paperGround()
+            if model.runsControlPlane(host),
+               ControlPlaneMachine.controlOnly(model.controlPlaneHosts?.first { $0.id == host }) {
+                // A machine that only runs the control plane has its level and figures (#6591).
+                ControlPlanePage(host: host).id(host).paperGround()
+            } else {
+                MachinePage(host: host).id(host).paperGround()
+            }
         } else if model.showsMachines {
             MachinesListPage().paperGround()
-        } else if model.showsSpending {
-            SpendingView().paperGround()
-        } else if model.showsTokens {
-            TokensView().paperGround()
-        } else if model.showsTime {
-            TimeView().paperGround()
+        } else if model.costTab != nil {
+            CostView().paperGround()
         } else if model.showsVelocity {
             VelocityView().paperGround()
         } else if model.showsCycletime {
@@ -331,6 +333,8 @@ struct ContentView: View {
         // under an inset and hide their first rows behind it.
         VStack(spacing: 0) {
         if model.controlPlaneAway { ControlAwayStrip() }
+        // The control plane near or at capacity, for an admin (#6591).
+        ControlCapacityStrip()
         // The organisation stopped all agent work, or this Mac follows no policy it can trust (#998).
         OrgPolicyStrip(state: model.policyState)
         Group {

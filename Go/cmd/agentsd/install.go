@@ -13,14 +13,16 @@ import (
 	"syscall"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlsetup"
 	"github.com/agentloops-dev/agent-loops/Go/internal/hostsetup"
 )
 
 const installUsage = `usage: agentsd install --join <host code> [--name NAME] [--runtime ID]... [--project DIR]... [--from-pool]
        agentsd install --control [--no-agents] [--domain NAME [--acme-email ADDR]] [--port N] [--name NAME] [--runtime ID]...
+       agentsd install --control --no-agents --join <host code> [--domain NAME [--acme-email ADDR]] [--port N] [--name NAME]
 
---control also runs the control plane (agents-control) as a systemd user unit beside this host (#6610): no root, no container. Alone with --no-agents, the machine only runs the control plane. With both roles the host joins that control plane by itself, so no --join: this is for one person's machine only, never a team's (an agent there could read the control key). --domain makes a publicly trusted certificate (ACME) in the unit; without it the certificate is its own, pinned in every code.
+--control also runs the control plane (agents-control) as a systemd user unit beside this host (#6610): no root, no container. Alone with --no-agents, the machine only runs the control plane. With both roles the host joins that control plane by itself, so no --join: this is for one person's machine only, never a team's (an agent there could read the control key). With --no-agents and --join, the machine also joins the current control plane with the control role alone (#7314), so a team's control plane can move to it: it takes no sessions, folders or providers. --domain makes a publicly trusted certificate (ACME) in the unit; without it the certificate is its own, pinned in every code.
 
 Sets this machine up (#5356): installs this host, joins the control plane, installs the
 runtimes, runs each project's .agents/setup.sh, and starts one short session to check the machine answers (step 8; --no-smoke leaves it out). Each step is reported to the control plane
@@ -70,7 +72,8 @@ func installCommand(args []string) int {
 		}
 	}
 	o.Smoke = !noSmoke
-	if noAgents && !control || control && o.Join != "" || (c.Domain != "" || c.Port != 0 || c.ACMEEmail != "") && !control ||
+	if noAgents && !control || control && !noAgents && o.Join != "" || (c.Domain != "" || c.Port != 0 || c.ACMEEmail != "") && !control ||
+		noAgents && (len(o.Runtimes) > 0 || len(o.Projects) > 0 || o.FromPool) ||
 		o.Join == "" && !control {
 		fmt.Fprintln(os.Stderr, installUsage)
 		return 2
@@ -84,6 +87,7 @@ func installCommand(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
+	o.ControlOnly = noAgents && o.Join != ""
 	if why := refuseInstall(o.Home, control, noAgents); why != "" {
 		fmt.Fprintln(os.Stderr, "The machine is not set up:", why)
 		return 1
@@ -97,9 +101,9 @@ func installCommand(args []string) int {
 		c.Home, c.Executable, c.Name, c.Agents = o.Home, o.Executable, o.Name, !noAgents
 		if code, ok := installControl(ctx, c, noAgents); !ok {
 			return 1
-		} else if noAgents {
+		} else if noAgents && o.Join == "" {
 			return 0
-		} else {
+		} else if !noAgents {
 			o.Join = code
 		}
 	}
@@ -124,12 +128,15 @@ func installCommand(args []string) int {
 // has (#7305), before it changes anything; "" when it would not. install --control, with the
 // agents too, asks the control plane itself (HostCode), as only it knows its people.
 func refuseInstall(home string, control, noAgents bool) string {
-	joined := hostsetup.LayoutOf(home).Joined()
+	l := hostsetup.LayoutOf(home)
+	joined, controlOnly := l.Joined(), controllink.ControlOnly(l.Root)
 	switch {
-	case control && noAgents && joined:
+	case control && noAgents && joined && !controlOnly:
 		return "agents run on this machine already, and could read the control plane's key and its data. Run the control plane on another machine, or remove this host first. When you are the only person, leave out --no-agents."
 	case !control && !joined && controlsetup.Installed(home):
 		return "this machine runs a control plane, and agents here could read its key and its data. Join another machine instead. When you are the only person, run agentsd install --control with no --no-agents."
+	case controlOnly && !noAgents:
+		return "this machine joined with the control role alone (#7314), and agents here could read the control plane's key and its data. Join another machine instead."
 	}
 	return ""
 }

@@ -3696,6 +3696,9 @@ type ControlCapacityBoard struct {
 type ControlCapacityCopy struct {
 	Copy string `json:"copy"`
 
+	// The id of the machine record that runs this copy (#6609, #6591): the row in Machines it is the level of. Absent from an older copy, and from a hosted copy, which has no machine record.
+	Machine *string `json:"machine,omitzero"`
+
 	Level CapacityLevel `json:"level"`
 
 	Reason string `json:"reason"`
@@ -3753,6 +3756,15 @@ type ControlEligible struct {
 	Ok bool `json:"ok"`
 
 	Reasons []ControlEligibleReason `json:"reasons"`
+
+	// Where the control plane reached the machine's control role, as a person reads it (#7313): its domain, or its public address, with the port when it is not 443. Absent when it did not reach it there, or reached it by its tunnel.
+	Address *string `json:"address,omitzero"`
+
+	// The machine's memory, as it said it (#7313). Absent when it did not say.
+	MemoryBytes *int64 `json:"memoryBytes,omitzero"`
+
+	// The free space on its fullest disk, as it said it (#7313). Absent when it did not say.
+	DiskFreeBytes *int64 `json:"diskFreeBytes,omitzero"`
 }
 
 // One reason a machine cannot take the control role (#6611), with its words for the person.
@@ -6649,7 +6661,7 @@ type ForgeNextRequest struct {
 	Level *string `json:"level,omitzero"`
 }
 
-// A row of forge/next (#5689): an item that is ready (open, not an epic unless the level is epic, no open blocked by, and not taken: no session on this machine that is not archived is labelled with it, no open pull request fixes it, and it has no assignee), or one that is on hold and otherwise ready. place is its place, 1 first. The order: not on hold first; then priority high, medium, none, low; then the milestone's due date, the earliest first, no due date last; then the oldest (createdAt, then the lowest number). reasons are short words for the keys that put it there, as priority high, milestone Work, due 20 Nov, and oldest (when its age put it above the next row). onHold says it is on hold: it is never the next one, and its first reason is on hold.
+// A row of forge/next (#5689): an item that is ready (open, not an epic unless the level is epic, no open blocked by, and not taken: no session on this machine that is not archived is labelled with it, no open pull request fixes it, and it has no assignee), or one that is on hold and otherwise ready. place is its place, 1 first. The order: not on hold first; then priority high, medium, none, low; then size (its size: label, #7034), XS, S, M, L, XL, no size last; then the oldest (createdAt, then the lowest number). A milestone's due date gives no place. reasons are short words for the keys that put it there, as priority high, size S (or no size), and oldest (when its age put it above the next row). onHold says it is on hold: it is never the next one, and its first reason is on hold.
 type ForgeNextRow struct {
 	Item ForgeItem `json:"item"`
 
@@ -6665,7 +6677,7 @@ type ForgeNodeRequest struct {
 	Node LineageNode `json:"node"`
 }
 
-// forge/plan (#3267): an epic and its plan. children are its sub-issues (at most 100), step by step, in the forge's order within a step. steps are the children of each step, the first first. lead is the session on this machine, not archived, that works on the epic in lineage (its label #<n>, or the Linear key) and is labelled lead. standing is set only for a standing epic (#3661): its children are then the open issues of its query, not its sub-issues, at most 100, in the order of forge/next (#5689: not on hold first, then priority, the milestone's due date and the oldest), all in one step 1; its item has no progress.
+// forge/plan (#3267): an epic and its plan. children are its sub-issues (at most 100), step by step, in the forge's order within a step. steps are the children of each step, the first first. lead is the session on this machine, not archived, that works on the epic in lineage (its label #<n>, or the Linear key) and is labelled lead. standing is set only for a standing epic (#3661): its children are then the open issues of its query, not its sub-issues, at most 100, in the order of forge/next (#5689: not on hold first, then priority, size and the oldest), all in one step 1; its item has no progress.
 type ForgePlan struct {
 	Item ForgeItem `json:"item"`
 
@@ -9273,6 +9285,9 @@ type MachineAnnounce struct {
 	MachineID string `json:"machineID"`
 
 	Implementation *string `json:"implementation,omitzero"`
+
+	// What the machine does (#6609, #7314): agents, control or both, from its install. Absent means agents. A machine with control alone runs no agents: it keeps a link for the store copy and the handover, and the control plane opens no client's channel to it.
+	Roles []string `json:"roles,omitzero"`
 }
 
 // machines/botKey through machine/machines (#3950): one of the person's machines gives the bot's key, sealed, to another of theirs (copy), or tells it to forget it (drop). Exactly one of them.
@@ -9317,6 +9332,14 @@ type MachineConnections struct {
 	MachineName string `json:"machineName"`
 
 	Connections ConnectionsList `json:"connections"`
+}
+
+// Where a machine's control role serves (#7313): the domain its certificate is for, when it has one, and the port. With no domain, the control plane dials the public address that the machine's uplink comes from.
+type MachineControlAddress struct {
+	Domain *string `json:"domain,omitzero"`
+
+	// From 1 to 65535; a hello with another is taken as none.
+	Port int64 `json:"port"`
 }
 
 // A conversation of messages/conversationsAll (#5571) with the machine whose connector has it.
@@ -9469,6 +9492,9 @@ type MachineHello struct {
 
 	// The levels of this host's capabilities that are not GA (#6579). None from a host older than that.
 	Maturity Maturity `json:"maturity,omitzero"`
+
+	// Where this machine's own control plane serves, when its install gave it the control role (agentsd install --control, #6610, #7313). Absent when it has none, and from an older host.
+	Control *MachineControlAddress `json:"control,omitzero"`
 }
 
 // The control plane's answer to machine/hello (#4100): what it can do, so the host asks only what it answers, such as machine/accounts with machine.accounts/1. An older control plane answers {}: no list, so the host asks it nothing new.

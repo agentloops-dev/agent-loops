@@ -16,7 +16,7 @@ import { pageImagePath } from "../model/pageImage";
 import { pageLinkTarget } from "../model/pageLink";
 import { agentLinkID, openAgentLink } from "../model/agentLink";
 import { LocalPicture } from "./LocalPicture";
-import { ForgePicture } from "./ForgePicture";
+import { BlockedChip, ForgePicture, type ReadForgePicture } from "./ForgePicture";
 import { forgeImageURL } from "../model/forgeMarkdown";
 import { memo } from "./memo";
 import { highlightCode } from "./codeHighlight";
@@ -36,7 +36,8 @@ export interface PageImages {
  * A forge page's images (#4011): read through the machine that read the page, with forge/image,
  * never from their address. Only the Work page gives one; null is an image it does not read.
  */
-export type ForgeImages = (url: string) => Promise<{ bytes: Uint8Array; type: string } | null>;
+/** A Work page's image reader, with the controls of a blocked image when the machine keeps image hosts (#7140). */
+export type ForgeImages = ReadForgePicture;
 
 const parser = new MarkdownIt({ html: false, linkify: true, typographer: false, breaks: false });
 // markdown-it drops a file: link to its bare text; it is kept as a link token so `build` can
@@ -101,10 +102,13 @@ interface Frame {
   tag: string;
   props: Record<string, unknown>;
   children: ComponentChildren[];
+  /** Drawn after the frame, beside it: a linked image's Blocked chip, not in the link (#7140). */
+  after?: ComponentChildren[];
 }
 
 /** Builds nodes from a flat token list with nesting, as markdown-it hands them over. */
-function build(tokens: readonly Token[], images?: PageImages, openFile?: OpenFile, forgeImages?: ForgeImages, links?: PageLinks): ComponentChildren[] {
+function build(tokens: readonly Token[], images?: PageImages, openFile?: OpenFile, forgeImages?: ForgeImages, links?: PageLinks,
+  inWords = false): ComponentChildren[] {
   const root: Frame = { tag: "", props: {}, children: [] };
   const stack: Frame[] = [root];
   const top = () => stack[stack.length - 1]!;
@@ -155,6 +159,7 @@ function build(tokens: readonly Token[], images?: PageImages, openFile?: OpenFil
       // only when it is too wide at its least, as on the Mac (#3895, #3943).
       else if (frame.tag === "table") push(h("div", { class: "table-scroll" }, h("table", frame.props, ...frame.children)));
       else push(h(frame.tag, frame.props, ...frame.children));
+      if (frame.after) top().children.push(...frame.after);
       continue;
     }
     switch (token.type) {
@@ -176,7 +181,10 @@ function build(tokens: readonly Token[], images?: PageImages, openFile?: OpenFil
         }
         // A cell of more than a few words may wrap, but not under 12em, as the Mac's TableColumns (#3943).
         if ((top().tag === "td" || top().tag === "th") && token.content.length > 16) top().props["class"] = "long";
-        top().children.push(...build(children, images, openFile, forgeImages, links));
+        // An image with words beside it is in them: a blocked one is a chip, not a card (#7140).
+        const words = children.some((child) => !["image", "softbreak", "hardbreak", "link_open", "link_close"].includes(child.type)
+          && !(child.type === "text" && child.content.trim() === ""));
+        top().children.push(...build(children, images, openFile, forgeImages, links, words));
         break;
       }
       case "text":
@@ -212,11 +220,13 @@ function build(tokens: readonly Token[], images?: PageImages, openFile?: OpenFil
         const path = images ? pageImagePath(src, images.document) : null;
         const url = forgeImages ? forgeImageURL(src) : null;
         // An image that is a link's words (a badge, a logo) follows the link and does not open large (#4954).
-        const linked = stack.some((frame) => frame.tag === "a" || frame.props["class"] === "link reading");
+        const link = [...stack].reverse().find((frame) => frame.tag === "a" || frame.props["class"] === "link reading");
+        const linked = link !== undefined;
         if (path && images) {
           push(h(LocalPicture, { path, alt, revision: images.revision, read: images.read, linked }));
         } else if (url && forgeImages) {
-          push(h(ForgePicture, { url, alt, read: forgeImages, linked }));
+          push(h(ForgePicture, { url, alt, read: forgeImages, linked, inWords }));
+          if (link && forgeImages.controls) (link.after ??= []).push(h(BlockedChip, { url, read: forgeImages }));
         } else {
           push(h("span", { class: "image-placeholder", title: src }, alt ? `[image: ${alt}]` : "[image]"));
         }

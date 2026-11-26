@@ -31,7 +31,10 @@
     "platform": "platform",
     "version": "version",
     "machineID": "machineID",
-    "implementation": "implementation"
+    "implementation": "implementation",
+    "roles": [
+      "control"
+    ]
   },
   "Admitted": {
     "client": "6F9619FF-8B86-D011-B42D-00C04FC964FF",
@@ -68,6 +71,7 @@
   },
   "ControlCapacityCopy": {
     "copy": "copy",
+    "machine": "control",
     "level": "near",
     "reason": "the control plane is near capacity: its disk is busy",
     "loadPerCore": 2.3,
@@ -86,6 +90,7 @@
   "ControlCapacityBoard": {
     "copies": [{
       "copy": "copy",
+      "machine": "control",
       "level": "near",
       "reason": "the control plane is near capacity: its disk is busy",
       "loadPerCore": 2.3,

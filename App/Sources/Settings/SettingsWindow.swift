@@ -34,11 +34,7 @@ struct SettingsWindow: View {
 
     private var pane: Binding<SettingsPane> {
         Binding(
-            get: {
-                let kept = SettingsPane(rawValue: paneRaw) ?? .appearance
-                // Its flag can go off while it is open (#7139).
-                return kept == .imageHosts && !shows(.imageHosts) ? .appearance : kept
-            },
+            get: { SettingsPane(rawValue: paneRaw) ?? .appearance },
             set: { paneRaw = $0.rawValue })
     }
 
@@ -162,8 +158,8 @@ struct SettingsWindow: View {
         case .signIn: control != nil && model.people.you?.isAdmin == true
         // An admin's: a member sees only themselves, so no bots (#2132).
         case .bots: control != nil && model.people.you?.isAdmin == true
-        // A machine's list, behind its flag (#7139): the machines are the control plane's.
-        case .imageHosts: control != nil && model.flags.isOn(.imageHosts)
+        // A machine's list (#7139): the machines are the control plane's.
+        case .imageHosts: control != nil
         // The control plane keeps them (#1760): no row without one.
         case .secrets, .accounts: control != nil
         default: true

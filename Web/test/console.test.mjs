@@ -18,9 +18,8 @@ test("Reports' pages are grouped by the question each answers (#5280)", async ()
   const n = await load("src/model/nav.ts");
   const groups = n.groupedPages(n.navPages.reports).map(([g, list]) => [g, list.map((p) => p.title)]);
   assert.deepEqual(groups, [
-    ["Cost", ["Spend"]],
+    ["Cost", ["Cost", "Tokens", "Time"]],
     ["Output", ["Outcomes", "Delivery", "Builds", "Environments"]], // no Summary since #5853
-    ["Time", ["Time"]],
     ["Plan", ["Forecast", "Estimates"]],
     ["Use", ["Adoption", "Runtimes", "Workflows"]],
     ["Storage", ["Store sizes"]], // behind its flag (#6907)
@@ -31,7 +30,11 @@ test("Reports' pages are grouped by the question each answers (#5280)", async ()
   assert.ok(n.navPages.status.some((p) => p.id === "features" && p.draw.kind === "report"));
   assert.ok(!n.navPages.reports.some((p) => ["value", "usage", "multiplier", "features"].includes(p.id)));
   // Each of Usage's panes is in the Me lens of the page it repeats.
-  assert.deepEqual(n.usagePanesOf("spend"), ["spending", "tokens"]);
+  assert.equal(n.usagePaneTitle.spending, "Spend"); // #6884, was Cost
+  assert.deepEqual(n.usagePanesOf("spend"), ["spending"]);
+  assert.deepEqual(n.usagePanesOf("tokens"), ["tokens"]);
+  assert.deepEqual(n.costTabs.map(([id]) => id), ["spend", "tokens", "time"]);
+  assert.deepEqual(n.navPages.reports.filter((p) => p.tabOf).map((p) => p.id), ["tokens", "time"]);
   assert.deepEqual(n.usagePanesOf("time"), ["time"]);
   assert.deepEqual(n.usagePanesOf("outcomes"), ["velocity", "cycletime"]);
   assert.deepEqual(n.usagePanesOf("adoption"), []);

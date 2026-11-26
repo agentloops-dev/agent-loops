@@ -186,7 +186,8 @@ func (h MachineRecord) HasRole(role string) bool {
 	return slices.Contains(h.Roles, role)
 }
 
-// ControlOnly says the machine runs the control plane and no agents: nothing dials in with it.
+// ControlOnly says the machine runs the control plane and no agents. Its host, when one
+// joined with the control role alone (#7314), links only for the store copy and the handover.
 func (h MachineRecord) ControlOnly() bool { return !h.HasRole(RoleAgents) }
 
 // ControlOnlyRefusal is why a control-only machine is not removed or changed, in the words

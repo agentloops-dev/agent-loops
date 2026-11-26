@@ -30,7 +30,7 @@ test("a member sees no admin page in a list, and opens the first they may use", 
 
 test("every page has a title, and its group headings come in order", () => {
   for (const s of n.navSections) for (const p of n.navPages[s]) assert.ok(p.title, `${s}/${p.id}`);
-  assert.deepEqual(n.groupedPages(n.navPages.reports).map(([g]) => g), ["Cost", "Output", "Time", "Plan", "Use", "Storage", "Saved", "Records"],
+  assert.deepEqual(n.groupedPages(n.navPages.reports).map(([g]) => g), ["Cost", "Output", "Plan", "Use", "Storage", "Saved", "Records"],
     "grouped by the question each page answers (#5280)");
   assert.deepEqual(n.groupedPages(n.navPages.machines).map(([g]) => g), ["Machines"]);
   assert.deepEqual(n.navPages.status.map((p) => p.id), ["runtimes", "events", "secrets", "accounts", "environment", "features"],
@@ -104,7 +104,7 @@ test("an address from before #2141 opens its page's new place", async () => {
       "#/a/runtimes": { nav: "status", section: "runtimes" }, "#/a/mcp": { nav: "settings", section: "mcp" },
       "#/a/events": { nav: "status", section: "events" }, "#/a/achievements": { nav: "reports", section: "outcomes", query: "lens=me" },
       "#/a/velocity": { nav: "reports", section: "outcomes", query: "lens=me" },
-      "#/a/tokens": { nav: "reports", section: "spend", query: "lens=me" },
+      "#/a/tokens": { nav: "reports", section: "tokens", query: "lens=me" },
     };
     for (const [old, now] of Object.entries(moved)) {
       assert.deepEqual(r.parseRoute(old), now, old);

@@ -1179,6 +1179,7 @@
       "description": "One live control plane copy's most recent capacity look (#6590).",
       "properties": {
         "copy": {"type": "string"},
+        "machine": {"type": "string", "description": "The id of the machine record that runs this copy (#6609, #6591): the row in Machines it is the level of. Absent from an older copy, and from a hosted copy, which has no machine record."},
         "level": {"$ref": "#/definitions/CapacityLevel"},
         "reason": {"type": "string"},
         "loadPerCore": {"type": "number"},
@@ -1209,6 +1210,18 @@
           "items": {
             "$ref": "#/definitions/ControlEligibleReason"
           }
+        },
+        "address": {
+          "type": "string",
+          "description": "Where the control plane reached the machine's control role, as a person reads it (#7313): its domain, or its public address, with the port when it is not 443. Absent when it did not reach it there, or reached it by its tunnel."
+        },
+        "memoryBytes": {
+          "type": "integer",
+          "description": "The machine's memory, as it said it (#7313). Absent when it did not say."
+        },
+        "diskFreeBytes": {
+          "type": "integer",
+          "description": "The free space on its fullest disk, as it said it (#7313). Absent when it did not say."
         }
       },
       "required": [
@@ -1927,6 +1940,17 @@
         },
         "implementation": {
           "type": "string"
+        },
+        "roles": {
+          "type": "array",
+          "description": "What the machine does (#6609, #7314): agents, control or both, from its install. Absent means agents. A machine with control alone runs no agents: it keeps a link for the store copy and the handover, and the control plane opens no client's channel to it.",
+          "items": {
+            "type": "string",
+            "enum": [
+              "agents",
+              "control"
+            ]
+          }
         }
       },
       "required": [
@@ -2001,6 +2025,23 @@
         "machine",
         "machineName",
         "connections"
+      ],
+      "additionalProperties": false
+    },
+    "MachineControlAddress": {
+      "type": "object",
+      "description": "Where a machine's control role serves (#7313): the domain its certificate is for, when it has one, and the port. With no domain, the control plane dials the public address that the machine's uplink comes from.",
+      "properties": {
+        "domain": {
+          "type": "string"
+        },
+        "port": {
+          "type": "integer",
+          "description": "From 1 to 65535; a hello with another is taken as none."
+        }
+      },
+      "required": [
+        "port"
       ],
       "additionalProperties": false
     },
@@ -2282,6 +2323,10 @@
         "maturity": {
           "$ref": "core.schema.json#/definitions/Maturity",
           "description": "The levels of this host's capabilities that are not GA (#6579). None from a host older than that."
+        },
+        "control": {
+          "$ref": "#/definitions/MachineControlAddress",
+          "description": "Where this machine's own control plane serves, when its install gave it the control role (agentsd install --control, #6610, #7313). Absent when it has none, and from an older host."
         }
       },
       "required": [

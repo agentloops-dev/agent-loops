@@ -155,7 +155,7 @@ func controlCapacityWhy(reason string) string {
 
 func (s *Service) keepControlCapacity(c controlCapacity) wire.ControlCapacityCopy {
 	files, bytes := s.metrics.storeSize()
-	snapshot := wire.ControlCapacityCopy{Copy: s.copyID, Level: c.level, Reason: controlCapacityReason(c.level, c.reason), LoadPerCore: c.load1, LoadPerCore5: c.load5, PressureMemoryFullAvg60: c.pressureMemory, PressureIOFullAvg60: c.pressureIO, MemoryAvailableBytes: c.memoryAvailable, SwapUsedPercent: c.swapUsed, HeapInuseBytes: c.heapInuse, Goroutines: int64(c.goroutines), OpenFiles: int64(c.openFiles), StoreFiles: files, StoreBytes: bytes, At: wire.DateOf(c.at)}
+	snapshot := wire.ControlCapacityCopy{Copy: s.copyID, Machine: optional(s.controlMachineID()), Level: c.level, Reason: controlCapacityReason(c.level, c.reason), LoadPerCore: c.load1, LoadPerCore5: c.load5, PressureMemoryFullAvg60: c.pressureMemory, PressureIOFullAvg60: c.pressureIO, MemoryAvailableBytes: c.memoryAvailable, SwapUsedPercent: c.swapUsed, HeapInuseBytes: c.heapInuse, Goroutines: int64(c.goroutines), OpenFiles: int64(c.openFiles), StoreFiles: files, StoreBytes: bytes, At: wire.DateOf(c.at)}
 	data, err := json.Marshal(snapshot)
 	if err != nil {
 		return snapshot

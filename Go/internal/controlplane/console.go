@@ -76,7 +76,16 @@ func (m *Methods) controlCapacity(ctx context.Context) (wire.ControlCapacityBoar
 		if json.Unmarshal(capacity.Data, &snapshot) != nil || snapshot.Copy == "" || controlCapacityKey(snapshot.Copy) != key.Key {
 			continue
 		}
-		// Only a live copy's sample: a copy that crashed leaves one until the hourly sweep.
+		// A single copy keeps no copy record (no mesh), so its own look needs none (#6591).
+		if snapshot.Copy == m.s.copyID {
+			if snapshot.Machine == nil {
+				snapshot.Machine = optional(m.s.controlMachineID())
+			}
+			board.Copies = append(board.Copies, snapshot)
+			continue
+		}
+		// Another copy's only while it is live: one that crashed leaves its sample until the
+		// hourly sweep.
 		object, err := m.s.cfg.Store.Get(ctx, copyRecordKey(snapshot.Copy))
 		if err != nil {
 			return board, err
@@ -87,6 +96,10 @@ func (m *Methods) controlCapacity(ctx context.Context) (wire.ControlCapacityBoar
 		var copy copyRecord
 		if json.Unmarshal(object.Data, &copy) != nil || copy.ID != snapshot.Copy {
 			continue
+		}
+		// A sample kept before its copy knew its machine takes the copy record's (#6591).
+		if snapshot.Machine == nil {
+			snapshot.Machine = optional(copy.Machine)
 		}
 		board.Copies = append(board.Copies, snapshot)
 	}

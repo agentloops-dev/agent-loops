@@ -934,6 +934,14 @@ final class AppModel {
     /// folder page, pin, workflow and chat closed, as the window opens and as it is when the
     /// selection clears. From its row under Work or View ▸ Dashboard.
     func showDashboard() {
+        closePages()
+        showNothing()
+    }
+
+    /// Every page about all the work closed (Cost, Time, Work, Messages, …), so the detail
+    /// column draws the folder, chat, pin or workflow under them: `ContentView.detail` draws
+    /// a page first.
+    func closePages() {
         showsSpending = false
         showsEvents = false
         showsRuntimes = false
@@ -948,7 +956,6 @@ final class AppModel {
         showsDocs = false
         showsMessages = false
         showsAchievements = false
-        showNothing()
     }
 
     /// A folder's workflows or its archive, from its row in the sidebar (#495).
@@ -987,20 +994,7 @@ final class AppModel {
         // Going to a folder is going away from Spending, wherever the ask came from
         // — a new folder being added, a menu item, its New session row. And from
         // Resources, for the same reason.
-        showsSpending = false
-        showsEvents = false
-        showsRuntimes = false
-        statusSecretsPage = nil
-        showsTime = false
-        showsVelocity = false
-        showsCycletime = false
-        showsTokens = false
-        machinePage = nil
-        showsMachines = false
-        showsWork = false
-        showsDocs = false
-        showsMessages = false
-        showsAchievements = false
+        closePages()
         select(key)
         // A new session in it (#366): the folder's own page is where a session starts,
         // as New Session has it. The folder's row in the sidebar only folds (#375).
@@ -1075,6 +1069,8 @@ final class AppModel {
     var composing = false {
         didSet {
             guard composing, !oldValue else { return }
+            // New Session (⌘N) over a page shows the new session, not the page (#6979).
+            closePages()
             selection = nil
             openWorkflow = nil
             openPin = nil
@@ -1445,6 +1441,8 @@ final class AppModel {
     let endedConnections = EndedConnections()
     /// People (#994): the machines waiting for this person's approval, fed from the watch.
     let people = PeopleState()
+    /// The control plane's capacity, for an admin's Machines (#6591).
+    let controlCapacity = ControlCapacityState()
     /// The GitHub sign-ins waiting for this person's Approve (#995).
     let signIn = SignInState()
     /// This window's place in the person's machine lock, and the clients asking to join it (#3490).
@@ -2658,6 +2656,28 @@ final class AppModel {
 
     /// The feature flags the person has on (#6572), as the mirror keeps them.
     let flags = FeatureFlagStates(defaults: WindowDefaults.store)
+
+    /// The control plane as a machine in Machines, with its level, its page and a strip (#6591):
+    /// behind its flag, and for an admin only.
+    var showsControlPlaneMachine: Bool {
+        flags.isOn(.controlPlaneMachine) && people.you?.isAdmin == true
+    }
+
+    /// The machines that run the control plane, for matching a copy that names none (#6591).
+    var controlPlaneMachineCount: Int {
+        (controlPlaneHosts ?? []).filter { ControlPlaneMachine.runsControl($0) }.count
+    }
+
+    /// The machine runs the control plane and the person sees it as one (#6591). This Mac too,
+    /// which `hosts.controlRows` leaves out.
+    func runsControlPlane(_ host: MachineRef) -> Bool {
+        showsControlPlaneMachine && ControlPlaneMachine.runsControl(controlPlaneHosts?.first { $0.id == host })
+    }
+
+    /// The latest look of the control plane on that machine; nil when it runs none, or before the first.
+    func controlPlaneLook(_ host: MachineRef) -> DaemonAPI.ControlCapacityCopy? {
+        controlCapacity.look(for: host, controlMachines: controlPlaneMachineCount)
+    }
 
     /// The person's display choices (#1033): this Mac's host keeps them, and the window's
     /// defaults mirror them so every view reads them where it always did.

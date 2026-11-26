@@ -17,7 +17,7 @@ iPhone, and on a narrow web page, it is the first screen, and what you open goes
 | **Work** | **Docs**, **Messages**, then a row for each list: **Issues**, **Pull Requests** and the rest. On the web page, Work is a section of the bar, with the same pages. |
 | **Status** | What is going on, and no settings: **Runtimes** (each runtime once, with your accounts and a line per machine), **Events**, **Secrets** and **Accounts** (what happened to them last). To change your connectors, secrets and outside accounts, use **Settings ▸ You**. |
 | **Machines** | A page for each machine: its disks, CPU and memory, **Runtimes** installed, **Resources** and **Worktrees**. |
-| **Reports** | Pages about past work: **Achievements** (the Multiplier and the badges), **Cost**, **Tokens**, **Time**, **Velocity**, and **Milestones** until you have done every first step. On the iPhone and the iPad, Reports has **Achievements** and **Velocity** only. |
+| **Reports** | Pages about past work: **Achievements** (the Multiplier and the badges), **Cost** (with the tabs **Spend**, **Tokens** and **Time**), **Velocity** and **Cycle time**. On the iPhone and the iPad, Reports has **Achievements** and **Velocity** only. |
 | Smart groups | **Pinned**, **Needs You**, **For Review**, **Working** and **Unread**, each across every folder and host. See [Smart groups](#smart-groups). |
 | One group per project | Each project's sessions on every machine, and its folder's workflows. A project with one folder is that folder's group. See [A folder's group](#a-folders-group) and [A project with folders on several machines](#a-project-with-folders-on-several-machines). |
 | **Archived folders** | Folders you put away. The heading stays folded until you open it. Each has **Unarchive**. |

@@ -195,3 +195,16 @@ test("the title names the lens, and By leaves out its dimension (#5279)", () => 
   assert.ok(!r.dimensionsFor({ kind: "project", project: "p1" }).includes("project"));
   assert.ok(r.dimensionsFor({ kind: "me" }).includes("project"));
 });
+
+test("Cost's Tokens tab orders and says tokens, not cost (#6884)", async () => {
+  const r = await load("src/model/reports.ts");
+  const row = (person, inputTokens, usd) => ({ person, personName: person, cost: { USD: usd }, inputTokens, outputTokens: 0, thoughtTokens: 0,
+    cachedWriteTokens: 0, turns: 1, unpricedTurns: 0, workingSeconds: 0, waitingSeconds: 0 });
+  const rows = [row("a", 10, 9), row("b", 1000, 1)];
+  assert.deepEqual(r.reportTotals(rows, "person").groups.map((g) => g.id), ["a", "b"]);
+  const t = r.reportTotals(rows, "person", undefined, "tokens");
+  assert.deepEqual(t.groups.map((g) => g.id), ["b", "a"]);
+  assert.equal(r.share(t, t.groups[0]), 1);
+  assert.equal(r.share(t, t.groups[1]), 0.01);
+  assert.ok(!r.line(t.groups[0], "tokens").includes("$"));
+});

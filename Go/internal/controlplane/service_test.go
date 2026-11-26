@@ -279,7 +279,6 @@ func (p *plane) client(name string) (*controllink.ClientMembership, *controllink
 
 // A command-line client's unpair (#6808): the control plane takes its key no more.
 func TestForgetSelfEndsAClientsPairing(t *testing.T) {
-	flaky.UnderLoad(t, "#7308")
 	t.Parallel()
 	p := startPlane(t, store.NewMemory(), controllink.NewPrivateKey())
 	m, err := controllink.PairClient(context.Background(), p.code(false), "agentsctl")
@@ -292,6 +291,40 @@ func TestForgetSelfEndsAClientsPairing(t *testing.T) {
 	if s, err := controllink.DialClient(context.Background(), m); err == nil {
 		s.Close()
 		t.Fatal("the forgotten client still connects")
+	}
+}
+
+// A client forgotten while its connect is noted, at this copy or at another, stays
+// forgotten: the note never writes it back over its tombstone (#7308).
+func TestAForgetWhileAConnectIsNotedStands(t *testing.T) {
+	t.Parallel()
+	for name, elsewhere := range map[string]bool{"here": false, "at another copy": true} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			ctx := context.Background()
+			p := startPlane(t, store.NewMemory(), controllink.NewPrivateKey())
+			m, err := controllink.PairClient(ctx, p.code(false), "agentsctl")
+			must(t, err)
+			// Last seen long ago, so that the connect is written.
+			must(t, p.s.records.ChangeClient(ctx, m.Client, func(c *records.ClientRecord) bool {
+				long := records.At(time.Now().Add(-2 * time.Hour))
+				c.LastSeen = &long
+				return true
+			}))
+			by := p.s.records
+			if elsewhere {
+				by = records.New(p.store)
+			}
+			must(t, by.ForgetClient(ctx, m.Client))
+			must(t, p.s.methods.NoteSeen(ctx, m.Client))
+			if p.s.records.Client(m.Client) != nil || !p.s.records.WasForgotten(m.Client) {
+				t.Fatal("noting the connect brought the forgotten client back")
+			}
+			if s, err := controllink.DialClient(ctx, m); err == nil {
+				s.Close()
+				t.Fatal("the forgotten client still connects")
+			}
+		})
 	}
 }
 

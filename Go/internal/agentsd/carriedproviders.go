@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/internal/codespacessh"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/hostinstall"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/providers"
@@ -344,6 +345,9 @@ func (c *carriedProviders) end(provider string) {
 // keep is providers/keepSecrets. Never logged.
 func (c *carriedProviders) keep(request wire.ProviderSecretsKeep) wire.ProviderCarried {
 	if err := c.store.Set(string(request.Provider), c.oauth.Pasted(request.Secrets)); err != nil {
+		if limit := (store.LimitError{}); errors.As(err, &limit) {
+			return carriedError("This machine could not keep the provider's secrets: " + limit.Words + ".")
+		}
 		return carriedError("This machine could not keep the provider's secrets.")
 	}
 	c.end(string(request.Provider))
