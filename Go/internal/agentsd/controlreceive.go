@@ -17,7 +17,7 @@ import (
 // receive the store. Only the control plane asks it, on channel 0: it is no window's method.
 
 // receiveControl is the step the copy is started again with; a test stands in for it.
-func (d *Daemon) receiveControl(key []byte, url string) (string, string, error) {
+func (d *Daemon) receiveControl(key []byte, move, url string) (string, string, error) {
 	if d.ReceiveControl != nil {
 		return d.ReceiveControl(key, url)
 	}
@@ -25,7 +25,7 @@ func (d *Daemon) receiveControl(key []byte, url string) (string, string, error) 
 	if err != nil {
 		return "", "", err
 	}
-	return controlsetup.Receive(home, key, url, controlsetup.Deps{Systemd: controlsetup.SystemdUser, Run: controlsetup.RunCommand})
+	return controlsetup.Receive(home, key, move, url, controlsetup.Deps{Systemd: controlsetup.SystemdUser, Run: controlsetup.RunCommand})
 }
 
 // controlReceive is control/receive's answer, or its refusal in words.
@@ -54,7 +54,7 @@ func (d *Daemon) controlReceive(params json.RawMessage) any {
 	if public, err := controllink.PublicKey(key); err != nil || !bytes.Equal(public, request.ControlKey) {
 		return controllink.AskFailure{Code: CodeNotPermitted, Message: "The key sent is not the control plane's."}
 	}
-	url, pin, err := d.receiveControl(key, request.URL)
+	url, pin, err := d.receiveControl(key, request.Move, request.URL)
 	clear(key)
 	if err != nil {
 		log.Printf("control/receive: %v", err)

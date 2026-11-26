@@ -56,7 +56,7 @@ func TestReceiveStartsTheCopyEmptyWithTheKey(t *testing.T) {
 	home, l, wantPin := installedHome(t, Unit(Options{}))
 	f := &fake{}
 	key := bytes.Repeat([]byte{7}, 32)
-	url, pin, err := Receive(home, key, "https://203.0.113.7:8791", Deps{Run: f.run, Poll: time.Millisecond, Wait: time.Second})
+	url, pin, err := Receive(home, key, "1764000000000-0a1b2c3d", "https://203.0.113.7:8791", Deps{Run: f.run, Poll: time.Millisecond, Wait: time.Second})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +82,7 @@ func TestReceiveStartsTheCopyEmptyWithTheKey(t *testing.T) {
 	}
 	// With a domain the certificate is publicly trusted: no pin.
 	home, _, _ = installedHome(t, Unit(Options{Domain: "ams3-1.example.dev"}))
-	if _, pin, err := Receive(home, key, "https://ams3-1.example.dev", Deps{Run: (&fake{}).run}); err != nil || pin != "" {
+	if _, pin, err := Receive(home, key, "1764000000000-0a1b2c3d", "https://ams3-1.example.dev", Deps{Run: (&fake{}).run}); err != nil || pin != "" {
 		t.Fatal(pin, err)
 	}
 }
@@ -90,13 +90,120 @@ func TestReceiveStartsTheCopyEmptyWithTheKey(t *testing.T) {
 func TestReceiveRefusesWithoutTheControlRole(t *testing.T) {
 	t.Parallel()
 	key := bytes.Repeat([]byte{7}, 32)
-	if _, _, err := Receive(t.TempDir(), key, "https://203.0.113.7", Deps{Run: (&fake{}).run}); err == nil || !strings.Contains(err.Error(), "no control role") {
+	if _, _, err := Receive(t.TempDir(), key, "1764000000000-0a1b2c3d", "https://203.0.113.7", Deps{Run: (&fake{}).run}); err == nil || !strings.Contains(err.Error(), "no control role") {
 		t.Fatal(err)
 	}
 	home, _, _ := installedHome(t, Unit(Options{}))
 	for _, url := range []string{"http://203.0.113.7", "https://a b", "https://x\nExecStart=/bin/sh"} {
-		if _, _, err := Receive(home, key, url, Deps{Run: (&fake{}).run}); err == nil {
+		if _, _, err := Receive(home, key, "1764000000000-0a1b2c3d", url, Deps{Run: (&fake{}).run}); err == nil {
 			t.Errorf("%q was taken", url)
+		}
+	}
+}
+
+// putMoveRecord leaves the move's record in the copy's store, as the moving copy does.
+func putMoveRecord(t *testing.T, l Layout, move, phase string) {
+	t.Helper()
+	dir := filepath.Join(l.Control, "store", "v1", "moves")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, move+".json"), []byte(`{"id":"`+move+`","phase":"`+phase+`"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func asides(t *testing.T, l Layout) []string {
+	t.Helper()
+	dirs, err := filepath.Glob(filepath.Join(l.Control, storeAsidePrefix+"*"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return dirs
+}
+
+// The store a move set aside goes once the move is done (#7372), and so once the copy
+// forwards; while the move is not known to be done it stays.
+func TestSweepDeletesTheStoreSetAsideWhenTheMoveIsDone(t *testing.T) {
+	t.Parallel()
+	for _, phase := range []string{"done", "forwarding"} {
+		home, l, _ := installedHome(t, Unit(Options{Domain: "ams3-1.example.dev"}))
+		const move = "1764000000000-0a1b2c3d"
+		if _, _, err := Receive(home, bytes.Repeat([]byte{7}, 32), move, "https://ams3-1.example.dev", Deps{Run: (&fake{}).run}); err != nil {
+			t.Fatal(err)
+		}
+		Sweep(home, time.Now())
+		if len(asides(t, l)) != 1 {
+			t.Fatal("swept before the copy received the move", phase)
+		}
+		putMoveRecord(t, l, move, "copying")
+		Sweep(home, time.Now())
+		if len(asides(t, l)) != 1 {
+			t.Fatal("swept while the move is not done", phase)
+		}
+		putMoveRecord(t, l, "1764000000001-ffffffff", phase)
+		Sweep(home, time.Now())
+		if len(asides(t, l)) != 1 {
+			t.Fatal("swept for another move", phase)
+		}
+		putMoveRecord(t, l, move, phase)
+		Sweep(home, time.Now())
+		if got := asides(t, l); len(got) != 0 {
+			t.Fatal(phase, got)
+		}
+		if _, err := os.Stat(filepath.Join(l.Control, "store", "v1", "moves", move+".json")); err != nil {
+			t.Fatal("the copy's own store went too", err)
+		}
+	}
+}
+
+// A move that failed keeps the store until its retry, which sets the store aside again, or
+// until 90 days, also for a store set aside before its name said its move.
+func TestSweepKeepsTheStoreOfAFailedMoveFor90Days(t *testing.T) {
+	t.Parallel()
+	home, l, _ := installedHome(t, Unit(Options{Domain: "ams3-1.example.dev"}))
+	const move = "1764000000000-0a1b2c3d"
+	if _, _, err := Receive(home, bytes.Repeat([]byte{7}, 32), move, "https://ams3-1.example.dev", Deps{Run: (&fake{}).run}); err != nil {
+		t.Fatal(err)
+	}
+	putMoveRecord(t, l, move, "failed")
+	Sweep(home, time.Now().Add(storeAsideAge-time.Hour))
+	if len(asides(t, l)) != 1 {
+		t.Fatal("a failed move's store went before 90 days")
+	}
+	// The retry: the store the failed move left is set aside, the one before it goes.
+	const retry = "1764000000002-0a1b2c3e"
+	if _, _, err := Receive(home, bytes.Repeat([]byte{7}, 32), retry, "https://ams3-1.example.dev", Deps{Run: (&fake{}).run}); err != nil {
+		t.Fatal(err)
+	}
+	if got := asides(t, l); len(got) != 1 || !strings.HasSuffix(got[0], "-"+retry) {
+		t.Fatal(got)
+	}
+	Sweep(home, time.Now().Add(storeAsideAge+time.Minute))
+	if got := asides(t, l); len(got) != 0 {
+		t.Fatal(got)
+	}
+	// One named before #7372: by its time alone.
+	old := filepath.Join(l.Control, storeAsidePrefix+"1764000000")
+	if err := os.MkdirAll(filepath.Join(old, "v1"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	Sweep(home, time.Unix(1764000000, 0).Add(storeAsideAge-time.Hour))
+	if len(asides(t, l)) != 1 {
+		t.Fatal("an old one went before 90 days")
+	}
+	Sweep(home, time.Unix(1764000000, 0).Add(storeAsideAge))
+	if got := asides(t, l); len(got) != 0 {
+		t.Fatal(got)
+	}
+}
+
+func TestReceiveRefusesAMoveThatIsNotOne(t *testing.T) {
+	t.Parallel()
+	home, _, _ := installedHome(t, Unit(Options{}))
+	for _, move := range []string{"", "../store", "1764000000000-0a1b/../x", "1764000000000"} {
+		if _, _, err := Receive(home, bytes.Repeat([]byte{7}, 32), move, "https://203.0.113.7", Deps{Run: (&fake{}).run}); err == nil {
+			t.Errorf("%q was taken", move)
 		}
 	}
 }
