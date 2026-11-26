@@ -3883,6 +3883,61 @@ type ControlMachine struct {
 	AutoLabels []string `json:"autoLabels,omitzero"`
 }
 
+// One move of the control plane to another machine (#6612, epic #6608), as v1/moves/<id>.json keeps it: at most 20, for 90 days. At most one runs at a time.
+type ControlMove struct {
+	ID string `json:"id"`
+
+	// The copy that moves: its id.
+	From string `json:"from"`
+
+	To MachineRef `json:"to"`
+
+	// The machine's name when the move started.
+	ToName string `json:"toName"`
+
+	Phase ControlMovePhase `json:"phase"`
+
+	// With failed: the step that failed.
+	FailedPhase *ControlMovePhase `json:"failedPhase,omitzero"`
+
+	// Where the new copy answers, once it said so.
+	Address *string `json:"address,omitzero"`
+
+	// With forwarding: until when the old copy sends members to the new one (30 days at most).
+	ForwardingUntil *Date `json:"forwardingUntil,omitzero"`
+
+	StartedAt Date `json:"startedAt"`
+
+	UpdatedAt Date `json:"updatedAt"`
+
+	// With failed: what went wrong, in words. The old copy serves again.
+	Error *string `json:"error,omitzero"`
+
+	// The person who started it.
+	By string `json:"by"`
+}
+
+// Where a move stands (#6612), in this order: checking, control/eligible's checks; receiving, the new machine is given the control key, sealed to its own key, and starts a copy that is empty; frozen, the old copy changes no record; copying, the store goes to the new copy; forwarding, the new copy took over and the old one sends members to it (30 days at most); done, the new copy took over at the old address. failed: a step failed, and the old copy serves again.
+type ControlMovePhase string
+
+const ControlMovePhaseChecking ControlMovePhase = "checking"
+const ControlMovePhaseCopying ControlMovePhase = "copying"
+const ControlMovePhaseReceiving ControlMovePhase = "receiving"
+const ControlMovePhaseFrozen ControlMovePhase = "frozen"
+const ControlMovePhaseForwarding ControlMovePhase = "forwarding"
+const ControlMovePhaseDone ControlMovePhase = "done"
+const ControlMovePhaseFailed ControlMovePhase = "failed"
+
+// control/move (#6612): the machine to move the control plane to.
+type ControlMoveRequest struct {
+	Machine MachineRef `json:"machine"`
+}
+
+// control/move's answer: the move, started. control/moveChanged says each step after.
+type ControlMoveResult struct {
+	Move ControlMove `json:"move"`
+}
+
 // control/moved: where the control plane is now (T085).
 type ControlMoved struct {
 	URL string `json:"url"`
@@ -3892,6 +3947,11 @@ type ControlMoved struct {
 	ControlKey Data `json:"controlKey"`
 
 	Name string `json:"name"`
+}
+
+// control/moves/list (#6612): the newest moves first, at most 20.
+type ControlMoves struct {
+	Moves []ControlMove `json:"moves"`
 }
 
 // The control plane's new key (#997, spec 736 FR-043), in ok to a member that proved itself with the previous one. proof is the HMAC of the new key under the member's shared key from the previous one, so only the holder of the previous key could have made it. The member trusts the new key from then on, with no new pairing.
@@ -3948,6 +4008,26 @@ type ControlPushItem struct {
 	Alert bool `json:"alert"`
 
 	Headline *Headline `json:"headline,omitzero"`
+}
+
+// control/receive's answer: where the machine's copy answers now, empty and receiving, and its certificate's pin when it has its own.
+type ControlReceive struct {
+	URL string `json:"url"`
+
+	Pin *string `json:"pin,omitzero"`
+}
+
+// control/receive (#6612): the control plane asks a machine with the control role to start its copy empty, to receive a move. The control key is sealed to the machine's own key, with the move, the machine and the control key's public half as its associated data.
+type ControlReceiveRequest struct {
+	Move string `json:"move"`
+
+	// The address that clients reach the machine at, as control/eligible found it.
+	URL string `json:"url"`
+
+	// The control key's public half (X9.63).
+	ControlKey Data `json:"controlKey"`
+
+	Key SealedEnvelope `json:"key"`
 }
 
 type ControlStatus struct {

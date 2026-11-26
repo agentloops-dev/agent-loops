@@ -209,6 +209,9 @@ type Daemon struct {
 	// DiskOverride lets the root's disk-free-override say each volume's free space
 	// (#195, #4851): an unreleased build on a scratch root, as RaiseByHand.
 	DiskOverride bool
+	// ReceiveControl starts this machine's copy of the control plane empty, with the key
+	// given, for control/receive (#6612); nil runs controlsetup.Receive. Tests set it.
+	ReceiveControl func(key []byte, url string) (string, string, error)
 	// HostKey keeps this machine's private key: control-host-key in the root unless the
 	// command sets the platform's store (controllink.HostKeyFor, the Keychain on a Mac).
 	HostKey controllink.HostKeyStore

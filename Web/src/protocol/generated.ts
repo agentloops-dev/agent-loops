@@ -3658,12 +3658,69 @@ export interface ControlMachine {
   autoLabels?: string[];
 }
 
+/**
+ * One move of the control plane to another machine (#6612, epic #6608), as v1/moves/<id>.json keeps
+ * it: at most 20, for 90 days. At most one runs at a time.
+ */
+export interface ControlMove {
+  id: string;
+  /** The copy that moves: its id. */
+  from: string;
+  to: MachineRef;
+  /** The machine's name when the move started. */
+  toName: string;
+  phase: ControlMovePhase;
+  /** With failed: the step that failed. */
+  failedPhase?: ControlMovePhase;
+  /** Where the new copy answers, once it said so. */
+  address?: string;
+  /** With forwarding: until when the old copy sends members to the new one (30 days at most). */
+  forwardingUntil?: WireDate;
+  startedAt: WireDate;
+  updatedAt: WireDate;
+  /** With failed: what went wrong, in words. The old copy serves again. */
+  error?: string;
+  /** The person who started it. */
+  by: string;
+}
+
+/**
+ * Where a move stands (#6612), in this order: checking, control/eligible's checks; receiving, the
+ * new machine is given the control key, sealed to its own key, and starts a copy that is empty;
+ * frozen, the old copy changes no record; copying, the store goes to the new copy; forwarding, the
+ * new copy took over and the old one sends members to it (30 days at most); done, the new copy took
+ * over at the old address. failed: a step failed, and the old copy serves again.
+ */
+export type ControlMovePhase =
+  | "checking"
+  | "copying"
+  | "receiving"
+  | "frozen"
+  | "forwarding"
+  | "done"
+  | "failed";
+
+/** control/move (#6612): the machine to move the control plane to. */
+export interface ControlMoveRequest {
+  machine: MachineRef;
+}
+
+/** control/move's answer: the move, started. control/moveChanged says each step after. */
+export interface ControlMoveResult {
+  move: ControlMove;
+}
+
 /** control/moved: where the control plane is now (T085). */
 export interface ControlMoved {
   url: string;
   pin?: string;
   controlKey: Base64;
   name: string;
+}
+
+/** control/moves/list (#6612): the newest moves first, at most 20. */
+export interface ControlMoves {
+  moves: ControlMove[];
 }
 
 /**
@@ -3722,6 +3779,29 @@ export interface ControlPushItem {
   needID: NeedID;
   alert: boolean;
   headline?: Headline;
+}
+
+/**
+ * control/receive's answer: where the machine's copy answers now, empty and receiving, and its
+ * certificate's pin when it has its own.
+ */
+export interface ControlReceive {
+  url: string;
+  pin?: string;
+}
+
+/**
+ * control/receive (#6612): the control plane asks a machine with the control role to start its copy
+ * empty, to receive a move. The control key is sealed to the machine's own key, with the move, the
+ * machine and the control key's public half as its associated data.
+ */
+export interface ControlReceiveRequest {
+  move: string;
+  /** The address that clients reach the machine at, as control/eligible found it. */
+  url: string;
+  /** The control key's public half (X9.63). */
+  controlKey: Base64;
+  key: SealedEnvelope;
 }
 
 export interface ControlStatus {
@@ -18776,13 +18856,19 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   ControlHello: { required: ["v", "name", "control", "nonce", "copy"], optional: ["previous"] },
   ControlInstallProgress: { required: ["name", "step"], optional: [] },
   ControlMachine: { required: ["id", "name", "platform", "version", "state", "reach"], optional: ["machineID", "signInFrom", "gitFrom", "gitAsks", "tunnel", "workspace", "implementation", "capabilities", "maturity", "missing", "owner", "capacity", "loadPerCore5", "capacityAt", "setup", "roles", "labels", "autoLabels"] },
+  ControlMove: { required: ["id", "from", "to", "toName", "phase", "startedAt", "updatedAt", "by"], optional: ["failedPhase", "address", "forwardingUntil", "error"] },
+  ControlMoveRequest: { required: ["machine"], optional: [] },
+  ControlMoveResult: { required: ["move"], optional: [] },
   ControlMoved: { required: ["url", "controlKey", "name"], optional: ["pin"] },
+  ControlMoves: { required: ["moves"], optional: [] },
   ControlNewKey: { required: ["key", "proof"], optional: [] },
   ControlNotice: { required: ["kind", "words"], optional: ["user", "group"] },
   ControlOK: { required: ["mac"], optional: ["host", "endpoints", "epoch", "newKey"] },
   ControlPerson: { required: ["id", "name", "role"], optional: ["localOwner"] },
   ControlPush: { required: ["sealed"], optional: [] },
   ControlPushItem: { required: ["needID", "alert"], optional: ["headline"] },
+  ControlReceive: { required: ["url"], optional: ["pin"] },
+  ControlReceiveRequest: { required: ["move", "url", "controlKey", "key"], optional: [] },
   ControlStatus: { required: ["name", "version", "machineID"], optional: ["homeHost", "startedAt", "port", "you", "web", "restartable", "publicWeb", "publicViews", "thisMacHost", "folderDetection", "unjoinedTunnels", "capabilities", "maturity", "required", "person", "joinCommand"] },
   Cost: { required: ["amount", "currency"], optional: [] },
   CostLimits: { required: [], optional: ["perAgent", "daily", "perAgentTokens", "dailyTokens"] },
