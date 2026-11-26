@@ -531,10 +531,10 @@ trigger is:
   | `pr.merged`, `pr.closed`, `pr.conflicted`, `pr.blocked`, `pr.commented`, `pr.reviewed`, `pr.labelled`, `pr.unlabelled`, `review.posted`, `review.comment` | `pr`, `branch`, `fixes` or `mine` | yes |
   | `checks.failed`, `checks.passed` | `pr`, `branch`, `fixes` or `mine` | yes |
   | `run.completed` | `run`, `branch`, `workflow` or `pipeline` (Azure DevOps) | yes |
-  | `issue.closed`, `issue.commented`, `issue.labelled` | `issue` or `label` | yes |
+  | `issue.closed`, `issue.commented`, `issue.labelled`, `issue.parented` | `issue`, `label` or `parent` | yes |
   | `branch.moved` (the app's) | `branch` | yes |
 
-  `pr.opened` and `issue.opened` are not checked, because a wait on a new one cannot name
+  `issue.parented` (#5945) is named by `parent` or `label`; the `parent` filter also narrows `issue.opened`, `issue.labelled`, `issue.commented` and `issue.closed` to the sub-issues of one issue. `pr.opened` and `issue.opened` are not checked, because a wait on a new one cannot name
   it. `issue.assigned` and `review.requested` are not checked, because they are only the
   connected account's. Only the keys that a server offers are named: GitHub's
   `pr.commented` has no `branch`. `fixes` is a list of issues, `"#12"` (the repo's own) or
