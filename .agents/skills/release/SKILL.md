@@ -416,7 +416,11 @@ A tag that already exists for this version means another release ran: end with
    in that worktree, only when the worktree is at the tag `v<version>` and the tag is on origin.
    `.claude/settings.json` allows that one command, so Claude Code's auto-mode check does not
    refuse it as a production deploy (#3934); never run `up.sh` by hand here. It acts as `~/.agents/secrets/gcp-agents-control.json`
-   and keeps the store and the APNs key. Then check, from this Mac:
+   and keeps the store and the APNs key. The image it pulls is the one this release pushed,
+   `ghcr.io/<the repo's owner>/agents-control:<version>`: `up.sh` reads the owner from the repo
+   (`deploy/gcp/common.sh`, `image_of_repo`, #5472) and puts it in the VM's `deploy/.env` as
+   `AGENTS_IMAGE`, which `deploy/compose.public.yaml` reads; when it cannot tell the owner, it stops
+   before anything is made, and says so. Do not edit the deploy files for an image name. Then check, from this Mac:
    - `curl -fsS https://control.agentloops.dev/healthz` says `ok`;
    - the version it serves, the one Settings ▸ Control plane shows, is `<version>`. `up.sh`
      checks it last and prints `agents-control <version> (go)`; to look again:
