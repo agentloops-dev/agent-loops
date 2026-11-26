@@ -2,8 +2,10 @@ package controlplane
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"runtime"
+	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/records"
 )
@@ -121,4 +123,30 @@ func (s *Service) mergeControlMachine(ctx context.Context, host string, record r
 func (s *Service) macFree() bool {
 	h := s.records.Host("mac")
 	return h == nil || (h.ControlOnly() && len(h.PublicKey) == 0)
+}
+
+// runsCopy says whether a copy of this control plane runs on the machine (#7346): this
+// copy, or another whose live copy record names it.
+func (s *Service) runsCopy(ctx context.Context, host string) (bool, error) {
+	if host != "" && s.controlMachineID() == host {
+		return true, nil
+	}
+	listed, err := s.cfg.Store.List(ctx, copiesPrefix)
+	if err != nil {
+		return false, err
+	}
+	for _, e := range listed {
+		object, err := s.cfg.Store.Get(ctx, e.Key)
+		if err != nil {
+			return false, err
+		}
+		var c copyRecord
+		if object == nil || json.Unmarshal(object.Data, &c) != nil || c.ID == "" || c.PeerURL == "" {
+			continue
+		}
+		if c.Machine == host && time.Since(c.Heartbeat.Time) <= copyGone {
+			return true, nil
+		}
+	}
+	return false, nil
 }
