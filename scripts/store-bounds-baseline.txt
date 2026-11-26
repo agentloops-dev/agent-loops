@@ -1,19 +1,4 @@
 # Stores with no declared kind and bounds yet (#6669). It may only shrink: scripts/check-store-bounds.py.
-1 Go/cmd/agentsd/main.go os.OpenFile
-1 Go/internal/agentsd/dailychecks.go WriteAtomically
-1 Go/internal/agentsd/dotagents.go WriteAtomically
-4 Go/internal/agentsd/readymade.go WriteAtomically
-1 Go/internal/agentsd/readymadeskills.go WriteAtomically
-1 Go/internal/agentsd/restarts.go WriteAtomically
-1 Go/internal/agentsd/runtimesignin.go os.WriteFile
-1 Go/internal/agentsd/secretops.go WriteAtomically
-1 Go/internal/agentsd/selfupdate.go WriteAtomically
-1 Go/internal/agentsd/setupforward.go WriteAtomically
-1 Go/internal/agentsd/store/revisions.go WriteAtomically
-1 Go/internal/agentsd/store/roots.go WriteAtomically
-1 Go/internal/agentsd/store/store.go WriteAtomically
-1 Go/internal/agentsd/usersuspend.go WriteAtomically
-1 Go/internal/citimings/store.go WriteAtomically
 1 Go/internal/controllink/hostkey.go os.WriteFile
 1 Go/internal/controllink/keys.go os.OpenFile
 2 Go/internal/controllink/membership.go os.WriteFile
@@ -21,10 +6,7 @@
 1 Go/internal/controllink/personkeypin.go os.WriteFile
 1 Go/internal/controlplane/kms/rotate.go os.OpenFile
 2 Go/internal/controlplane/machine.go os.WriteFile
-1 Go/internal/controlplane/releasefiles.go os.CreateTemp
-1 Go/internal/controlplane/releasefiles.go os.WriteFile
 1 Go/internal/mac/signin/certs.go os.WriteFile
-1 Go/internal/whatsappmcp/store.go writeAtomically
 2 Go/internal/workspacecommands/digitalocean.go os.WriteFile
 1 Packages/AgentsKit/Sources/AgentsKitCore/Control/ControlMembership.swift write(to:)
 1 Packages/AgentsKit/Sources/AgentsKitCore/Model/MachineLock.swift createFile

@@ -121,6 +121,7 @@ func (s *Store) Add(number string, msgs ...Stored) error {
 	if err != nil {
 		return err
 	}
+	// store-bounds: kind=document; count=2_000 a number; size=4MiB of text a number; age=30d; applied=on write (the oldest go first, a text over 64 KiB is cut) (#7191, #7352)
 	return writeAtomically(p, data)
 }
 
