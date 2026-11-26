@@ -1,5 +1,5 @@
-// Which smart groups at the top of the sidebar are on (#846): Pinned, Needs You, For Review, Working and
-// Unread; with nothing kept, Working and Unread are off (#979). The person's, kept on their Mac
+// Which smart groups at the top of the sidebar are on (#846): Pinned, Working and Unread can be off, and
+// Needs You and For Review are always on (#6835); with nothing kept, Working and Unread are off (#979). The person's, kept on their Mac
 // with the other display choices (#1033, SidebarSmartRow.offDefaultsKey): the groups turned
 // off, by name, comma-separated, so a new group starts on.
 import { computed } from "@preact/signals";
@@ -10,15 +10,27 @@ import { smartRows, type SmartRow } from "./sidebar";
  *  Unread off. One that keeps a choice, "" (every group on) too, keeps it. */
 export const smartRowsOffAtFirst = "working,unread";
 
-/** The groups on, from what is kept: a name that is not a group's is passed over. */
-export function smartRowsOn(off: string | null | undefined): ReadonlySet<SmartRow> {
-  const names = new Set((off ?? smartRowsOffAtFirst).split(","));
-  return new Set(smartRows.filter((row) => !names.has(row)));
+/** The groups that are always on (#6835), as SidebarSmartRow.alwaysOn: Needs You and For Review are the
+ *  person's to-do list, so Settings ▸ Sidebar has no switch for them. A kept value that names one is not an
+ *  error: the read passes it over, and the next write drops it. */
+export const alwaysOnSmartRows: ReadonlySet<SmartRow> = new Set<SmartRow>(["needsYou", "forReview"]);
+
+/** Whether Settings ▸ Sidebar draws a switch for it: Pinned, Working and Unread. */
+export function canTurnOff(row: SmartRow): boolean {
+  return !alwaysOnSmartRows.has(row);
 }
 
-/** What is kept for the groups on: those off, in the sidebar's order, or "" with every one on. */
+/** The groups on, from what is kept: a name that is not a group's is passed over, and the groups that are
+ *  always on are on. */
+export function smartRowsOn(off: string | null | undefined): ReadonlySet<SmartRow> {
+  const names = new Set((off ?? smartRowsOffAtFirst).split(","));
+  return new Set(smartRows.filter((row) => !canTurnOff(row) || !names.has(row)));
+}
+
+/** What is kept for the groups on: those off, in the sidebar's order, or "" with every one on. It never names
+ *  a group that is always on. */
 export function smartRowsOff(on: ReadonlySet<SmartRow>): string {
-  return smartRows.filter((row) => !on.has(row)).join(",");
+  return smartRows.filter((row) => canTurnOff(row) && !on.has(row)).join(",");
 }
 
 /** The groups on, from the person's choice on their Mac (#1033). */

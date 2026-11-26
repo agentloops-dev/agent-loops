@@ -762,10 +762,19 @@ struct SidebarModelTests {
     @Test func theGroupsOnRoundTripThroughDefaults() {
         #expect(SidebarSmartRow.on(off: "") == SidebarSmartRow.all)
         #expect(SidebarSmartRow.off(on: SidebarSmartRow.all) == "")
-        #expect(SidebarSmartRow.off(on: [.needsYou, .unread]) == "pinned,forReview,working")
+        #expect(SidebarSmartRow.off(on: [.needsYou, .unread]) == "pinned,working")
         #expect(SidebarSmartRow.on(off: "pinned,working,gone") == [.needsYou, .forReview, .unread])
         // Nothing kept (#979): Pinned, Needs You and For Review (#3194) on.
         #expect(SidebarSmartRow.on(off: SidebarSmartRow.offAtFirst) == [.pinned, .needsYou, .forReview])
+    }
+
+    /// Needs You and For Review are always on (#6835): no switch, and a kept value that
+    /// names them is passed over on the read and dropped on the next write.
+    @Test func needsYouAndForReviewAreAlwaysOn() {
+        #expect(SidebarSmartRow.allCases.filter(\.canTurnOff) == [.pinned, .working, .unread])
+        #expect(SidebarSmartRow.on(off: "pinned,needsYou,forReview,working,unread") == [.needsYou, .forReview])
+        #expect(SidebarSmartRow.off(on: SidebarSmartRow.on(off: "needsYou,forReview,unread")) == "unread")
+        #expect(SidebarSmartRow.off(on: []) == "pinned,working,unread")
     }
 
     // MARK: One group per project (#3278)

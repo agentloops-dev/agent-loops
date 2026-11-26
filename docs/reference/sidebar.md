@@ -79,12 +79,16 @@ you without opening each folder.
 
 ### Turn a smart group on or off
 
-Turn each group on or off under **Smart groups** in **Settings ▸ This app ▸ Sidebar** on the Mac,
+Turn **Pinned**, **Working** and **Unread** on or off under **Smart groups** in **Settings ▸ This app ▸ Sidebar** on the Mac,
 in **Settings…** at the foot of the sidebar on iPhone and iPad (under **This app**), and under
 **Sidebar** in **Settings ▸ This browser** on the web page. The choice is kept on your Mac, so every
 client shows the same groups. A group that is off is not shown. Its sessions go to the next
-group they fit, if there is one. With **Needs You** off, approvals are not listed
-in the sidebar.
+group they fit, if there is one.
+
+**Needs You** and **For Review** are always on (#6835). They are your to-do list, so they
+have no switch: with **Needs You** off, an approval would not be in the sidebar at all, and
+an agent could wait for ever. A choice kept from before that turned one of them off is
+passed over, and the next change drops it.
 
 The choice is kept on your Mac, with your other display choices, so every client shows
 the same groups.
