@@ -3,10 +3,12 @@ package agentsd
 import (
 	"context"
 	"log"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/lineage"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -31,6 +33,15 @@ const (
 	autopilotLimitPRs     = "limit open-prs"
 	autopilotOnHold       = "on hold"
 	autopilotModeHigh     = "mode high"
+	autopilotLeadStopping = "lead keeps stopping"
+)
+
+// A lead of an open epic that stops or ends is replaced after autopilotStalledFor, at most
+// autopilotMostRestarts times for an epic in autopilotRestartDay (#5901).
+const (
+	autopilotStalledFor   = 10 * time.Minute
+	autopilotMostRestarts = 2
+	autopilotRestartDay   = 24 * time.Hour
 )
 
 // startAutopilot runs the loop until the daemon stops: on an event of autopilotWakes and every
@@ -94,9 +105,24 @@ func (d *Daemon) autopilotLeads(ctx context.Context, folder string, mode wire.Au
 	}
 	dismissed, _ := d.dismissedLeads.Read()
 	var epics []autopilotEpic
+	at := now()
+	restarts := d.autopilotRestarts(folder, at)
 	for _, r := range next.Rows {
 		e := autopilotEpic{row: r}
+		prev := d.autopilotLastLead(r.Item.Node)
 		e.led = d.leadOf(r.Item.Node) != nil
+		if prev != nil {
+			e.prev = prev.ID
+			e.capped = len(restarts[r.Item.Node.Ref]) >= autopilotMostRestarts
+			// A lead that stopped or ended is replaced, unless the epic is capped (the person looks).
+			if e.led && !e.capped && autopilotStalled(*prev, at) {
+				if err := d.archiveBy(prev.ID, wire.AgentArchivedReasonByAgent); err != nil {
+					log.Printf("autopilot: %s: lead %s not archived: %v", folder, prev.ID, err)
+				} else {
+					e.led = false
+				}
+			}
+		}
 		x, ok := dismissed[r.Item.Node.Ref]
 		p := progressOf(r.Item)
 		e.dismissed = ok && x.Done == p.Done && x.Total == p.Total
@@ -109,13 +135,19 @@ func (d *Daemon) autopilotLeads(ctx context.Context, folder string, mode wire.Au
 	}
 	for _, o := range autopilotLeadPlan(epics, mode, room) {
 		row := wire.AutopilotRow{Ref: o.epic.Node.Ref, Kind: wire.AutopilotRowKindLead, State: wire.AutopilotRowStateWaiting, Reason: o.why}
+		if o.paused {
+			row.State = wire.AutopilotRowStatePaused
+		}
 		if o.start {
-			id, err := d.startFor(autopilotLeadRequest(folder, o.epic), startedBy{owner: wire.SessionLabelOwnerAgent})
+			id, err := d.startFor(autopilotLeadRequest(folder, o.epic, o.prev), startedBy{owner: wire.SessionLabelOwnerAgent})
 			if err != nil {
 				_, row.Reason = errMessage(err)
 				row.Reason = "start failed: " + row.Reason
 			} else {
 				row.State, row.Reason, row.Session = wire.AutopilotRowStateStarted, "", &id
+				if o.prev != "" {
+					d.autopilotRestarted(folder, o.epic.Node.Ref, at)
+				}
 			}
 		}
 		if err := d.autopilotNote(folder, row); err != nil {
@@ -125,9 +157,14 @@ func (d *Daemon) autopilotLeads(ctx context.Context, folder string, mode wire.Au
 }
 
 // autopilotLeadRequest is Start lead's request for an epic: Auto runtime, the lead prompt, the
-// labels #<n> and lead, no worktree. The session's priority follows its issue's (#5846).
-func autopilotLeadRequest(folder string, epic wire.ForgeItem) wire.StartRequest {
+// labels #<n> and lead, no worktree. The session's priority follows its issue's (#5846). A lead
+// that replaces one (before is its id) is told to read the last summary of the one before.
+func autopilotLeadRequest(folder string, epic wire.ForgeItem, before wire.UUID) wire.StartRequest {
 	s := leadStartOf(epic)
+	if before != "" {
+		s.Prompt += "\n\nA lead of this epic stopped before you: session " + string(before) +
+			". Read its last summary with read_session first, then carry on its plan."
+	}
 	return helperRequest(autoRuntimeID, folder, s.Prompt, "", nil, nil, s.Labels)
 }
 
@@ -154,6 +191,8 @@ type autopilotEpic struct {
 	row       wire.ForgeNextRow
 	led       bool
 	dismissed bool
+	prev      wire.UUID // the newest lead the epic had, in any state ("" for none)
+	capped    bool      // it has been restarted autopilotMostRestarts times in a day
 }
 
 // autopilotRoom is what the folder and the machine allow.
@@ -182,9 +221,11 @@ func (r autopilotRoom) wait() string {
 
 // autopilotOutcome is what a run does for one epic: start it, or wait with a reason.
 type autopilotOutcome struct {
-	epic  wire.ForgeItem
-	start bool
-	why   string
+	epic   wire.ForgeItem
+	start  bool
+	paused bool
+	why    string
+	prev   wire.UUID
 }
 
 func isHigh(i wire.ForgeItem) bool {
@@ -211,8 +252,10 @@ func autopilotLeadPlan(epics []autopilotEpic, mode wire.AutopilotMode, room auto
 		if e.led || e.dismissed {
 			continue
 		}
-		o := autopilotOutcome{epic: e.row.Item}
+		o := autopilotOutcome{epic: e.row.Item, prev: e.prev}
 		switch {
+		case e.prev != "" && e.capped && !e.row.OnHold:
+			o.why, o.paused = autopilotLeadStopping, true
 		case e.row.OnHold:
 			o.why = autopilotOnHold
 		case mode == wire.AutopilotModeHigh && !isHigh(e.row.Item):
@@ -227,4 +270,86 @@ func autopilotLeadPlan(epics []autopilotEpic, mode wire.AutopilotMode, room auto
 		out = append(out, o)
 	}
 	return out
+}
+
+// autopilotLastLead is the newest lead session the epic had, archived or not.
+func (d *Daemon) autopilotLastLead(epic wire.LineageNode) *wire.Agent {
+	var best *wire.Agent
+	seen := map[string]bool{}
+	for _, l := range d.lineage().Links(epic).Links {
+		if l.To != epic || l.From.Kind != lineage.KindSession || l.Rel != lineage.RelWorksOn || seen[l.From.Ref] {
+			continue
+		}
+		seen[l.From.Ref] = true
+		id, ok := lineage.SessionID(l.From.Ref)
+		if !ok {
+			continue
+		}
+		a := d.Store.Agent(wire.UUID(id))
+		if a == nil || !slices.ContainsFunc(a.Labels, func(s wire.SessionLabel) bool { return s.Value == "lead" }) {
+			continue
+		}
+		if best == nil || a.CreatedAt > best.CreatedAt {
+			best = a
+		}
+	}
+	return best
+}
+
+// autopilotStalled is whether a lead that is not archived has stopped or ended for
+// autopilotStalledFor. One a person stopped (EndedReasonCancelled) is not: the person meant it.
+func autopilotStalled(a wire.Agent, at wire.Date) bool {
+	switch a.State {
+	case wire.AgentStateStopped:
+		if a.EndedReason != nil && *a.EndedReason == wire.EndedReasonCancelled {
+			return false
+		}
+	case wire.AgentStateFinished:
+	default:
+		return false
+	}
+	return float64(at-a.LastActivityAt) >= autopilotStalledFor.Seconds()
+}
+
+// autopilotRestarts is, for each epic of the folder, when Autopilot started a lead again within
+// the last autopilotRestartDay.
+func (d *Daemon) autopilotRestarts(folder string, at wire.Date) map[string][]wire.Date {
+	out := map[string][]wire.Date{}
+	m, err := d.autopilotFile.Read()
+	if err != nil {
+		return out
+	}
+	for ref, ts := range m[folder].Restarts {
+		for _, t := range ts {
+			if float64(at-t) < autopilotRestartDay.Seconds() {
+				out[ref] = append(out[ref], t)
+			}
+		}
+	}
+	return out
+}
+
+// autopilotRestarted keeps one restart of an epic's lead, and drops those older than a day.
+func (d *Daemon) autopilotRestarted(folder, ref string, at wire.Date) {
+	err := d.autopilotFile.Update(func(m map[string]autopilotRecord) error {
+		e := m[folder]
+		kept := map[string][]wire.Date{}
+		for r, ts := range e.Restarts {
+			for _, t := range ts {
+				if float64(at-t) < autopilotRestartDay.Seconds() {
+					kept[r] = append(kept[r], t)
+				}
+			}
+		}
+		kept[ref] = append(kept[ref], at)
+		e.Restarts = kept
+		if e.Updated == 0 {
+			e.Updated = at
+		}
+		m[folder] = e
+		return nil
+	})
+	if err != nil {
+		log.Printf("autopilot: %s: restart not kept: %v", folder, err)
+	}
 }
