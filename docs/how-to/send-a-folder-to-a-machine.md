@@ -56,6 +56,26 @@ A send never overwrites work done on the server. The send stops, and changes not
   then send again;
 - a branch on the server has commits of its own that this Mac does not have.
 
+## The project's set-up script
+
+When the folder has a script `.agents/setup.sh`, the server runs it after the send (#7158),
+as [Add a machine](add-a-machine.md#set-the-machine-up-with-one-command) does for each
+project at set-up: with `bash -e`, as the machine's user, in the folder, with
+`AGENTS_SETUP=1`, `AGENTS_PROJECT`, `AGENTS_MACHINE` and `AGENTS_FROM_POOL=0`, no
+credentials, and for up to 10 minutes. The send does not wait for it.
+
+- It runs at the first send, and at each send after which the script is not the one that
+  last ran to its end there with exit code 0: a changed script, or one whose last run failed.
+- The same script does not run again. To run it again, change it.
+- One script runs at a time on a machine. A send while one runs waits for it.
+- A failure is for that folder only. Its output is in `logs/setup-‹folder›.log` in the
+  host's data folder on the server (at most 1 MB), and the server is still ready for
+  sessions.
+
+Put the script's own checks at its end, and write it so that it is safe to run again. A file
+that it makes in the folder, and that git does not ignore, is a change of the server's own,
+and stops the next send.
+
 ## Bring the work back
 
 Work done on the server does not come to this Mac until you push it, or bring it back.

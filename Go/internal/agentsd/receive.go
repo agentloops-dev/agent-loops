@@ -465,6 +465,12 @@ func (d *Daemon) registerReceive() {
 		return d.receiveState(r)
 	})
 	On(d, wire.CallFoldersReceive, func(ctx context.Context, c *Client, r wire.ReceiveRequest) (wire.FolderSummary, error) {
-		return d.receive(r)
+		summary, err := d.receive(r)
+		if err == nil {
+			if path, err := receiveFolder(r.Folder); err == nil {
+				_ = d.afterReceive(path) // the send does not wait for the script
+			}
+		}
+		return summary, err
 	})
 }
