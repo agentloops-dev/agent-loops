@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -53,7 +52,6 @@ func toldSecretOps(d *Daemon) func() []wire.SecretOperation {
 // secret's last operation, removed with the secret. Neither the value nor its last four
 // characters is in any of them.
 func TestEachUseOfASecretIsRecorded(t *testing.T) {
-	flaky.UnderLoad(t, "#7440")
 	// The test sends the batch itself, after the last read (#6298): on a timer, a slow runner
 	// split the MCP server's three reads over two batches, nine operations, not eight.
 	setFor(t, &secretOpsBatch, time.Hour)
