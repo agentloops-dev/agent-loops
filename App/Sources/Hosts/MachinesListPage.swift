@@ -259,7 +259,7 @@ struct MachinesListPage: View {
             Circle().fill((look?.level == .ok ? StateTint.vouched : MachinePage.tint(look?.level)).style(or: .secondary))
                 .frame(width: 7, height: 7)
                 .accessibilityHidden(true)
-            Text(ControlPlaneMachine.rowLine(look))
+            Text(look == nil ? model.controlCapacity.noReadingWords.line : ControlPlaneMachine.rowLine(look))
                 .foregroundStyle(look.map { MachinePage.tint($0.level) }?.style(or: .secondary) ?? AnyShapeStyle(.secondary))
         }
         .appText(.fine)
