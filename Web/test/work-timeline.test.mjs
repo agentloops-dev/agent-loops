@@ -473,3 +473,38 @@ test("a read asks one machine per repo, and the next when one fails", () => {
   r.done("a", shop);
   assert.deepEqual(r.next(), ["b"]);
 });
+
+test("with the On hold toggle, an open epic on hold is drawn dimmed, below the rest, with no forecast (#7335)", () => {
+  const held = (e, priority) => ({ ...e, item: { ...e.item, onHold: true, ...priority ? { priority } : {} } });
+  const timeline = { epics: [
+    epic(40, [child(60, { started: -10 }), child(61)], { forecast: fc(2, 5, 11) }),
+    // On hold with work: its solid span, and no ghost or band though it has a forecast.
+    held(epic(41, [child(62, { started: -6, closed: -4 }), child(63)], { forecast: fc(2, 5, 11) }), "low"),
+    // On hold with no work yet, and no children: a mark at Now. High, so first of the held.
+    held(epic(42, []), "high"),
+    // Closed and on hold: never drawn.
+    held(epic(43, [child(64, { started: -6, closed: -4 })])),
+  ], releases: [] };
+  assert.deepEqual(t.timelineLines(timeline, now).map((l) => l.number), ["#40"], "off: none on hold");
+  const lines = t.layout(t.timelineLines(timeline, now, true, new Set(), true));
+  const by = Object.fromEntries(lines.map((l) => [l.number, l]));
+  assert.deepEqual(Object.keys(by).sort(), ["#40", "#41", "#42"]);
+  assert.deepEqual([by["#41"].how.how, by["#41"].ghost, by["#41"].band], ["held", undefined, undefined]);
+  assert.deepEqual(by["#41"].work, { start: h(-6), end: h(-4) });
+  assert.deepEqual([by["#42"].how.how, by["#42"].work, by["#42"].from, by["#42"].end], ["held", undefined, now, now]);
+  assert.equal(t.markWidth(by["#42"]), t.heldMarkWidth);
+  assert.equal(t.markWidth(by["#41"]), 0);
+  // Below the rest, a row each, in the order of forge/next: High before Low.
+  assert.deepEqual([by["#40"].row, by["#42"].row, by["#41"].row], [0, 1, 2]);
+  assert.deepEqual(t.bands(lines).map((b) => [b.words, b.row, b.rows]), [["None", 0, 1], ["On hold", 1, 2]]);
+  // The words: after the block, in the hover card and in the list.
+  const measure = (s) => s.length * 6;
+  assert.match(t.blockWords(by["#42"], axis, measure).outside, /On hold$/);
+  assert.equal(t.blockWords(by["#42"], axis, measure).outsideX, axis.x(now) + t.heldMarkWidth + 6);
+  assert.match(t.lineLine(by["#41"], now), /· On hold$/);
+  assert.ok(t.lineWords(by["#41"], undefined, now).includes("On hold"));
+  const rows = t.epicRows(lines, { start: h(-48), end: h(48) }, now);
+  assert.equal(rows.find((r) => r.line.number === "#42").line2, "On hold");
+  // A click on the mark opens the epic.
+  assert.equal(t.hit({ x: axis.x(now) + t.heldMarkWidth, y: t.rowTop(by["#42"].row) + 4 }, lines, axis)?.number, "#42");
+});

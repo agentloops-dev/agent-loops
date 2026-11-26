@@ -52,6 +52,10 @@ struct WorkRememberedTests {
         #expect(t.project == "p1")
         #expect(t.board == "b")
         #expect(WorkRemembered.timeline("range=year").range == .twoDays)
+        // The On hold toggle (#7335): off by default, kept as the web page keeps it.
+        #expect(t.held == false)
+        #expect(WorkRemembered.timeline(range: .twoDays, project: "", board: "", held: true) == "held=on")
+        #expect(WorkRemembered.timeline("held=on").held)
     }
 
     @Test func eachPageHasItsOwnKey() {

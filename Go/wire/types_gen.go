@@ -18245,7 +18245,7 @@ type WorkTimelineRelease struct {
 	URL *string `json:"url,omitzero"`
 }
 
-// work/timeline (#4172): the epics of a project (its id, from a folder's .agents/folder.json) that overlap from to to. With first, the answer can be partial (#7027): ask again without it for all of it.
+// work/timeline (#4172): the epics of a project (its id, from a folder's .agents/folder.json) that overlap from to to. With first, the answer can be partial (#7027): ask again without it for all of it. With onHold (#7335), the open epics on hold come too, each with its children and with no forecast, after the others in the order of forge/next; with none, an epic on hold is left out and its children are not read. Either way they are not in the forecast's history.
 type WorkTimelineRequest struct {
 	Project string `json:"project"`
 
@@ -18254,6 +18254,8 @@ type WorkTimelineRequest struct {
 	To Date `json:"to"`
 
 	First *bool `json:"first,omitzero"`
+
+	OnHold *bool `json:"onHold,omitzero"`
 }
 
 // A line of an epic in work/timeline (#4172): from its first child's start to its last child's close.
