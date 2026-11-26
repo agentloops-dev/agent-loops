@@ -16,8 +16,14 @@ import (
 // root where nothing can run root.sh for them, the log of the last run, and Root set-up read
 // again, by Try Again or Check.
 
-// rootSetupFolder is where root.sh, its log and its result are on this machine; a test's own.
-var rootSetupFolder = hostsetup.RootFolder
+// rootSetupFolder is where root.sh, its log and its result are on this machine; a test's own,
+// or a walk's (AGENTS_TEST_ROOT_SETUP_FOLDER, run-app's --env).
+var rootSetupFolder = func() string {
+	if o := os.Getenv("AGENTS_TEST_ROOT_SETUP_FOLDER"); o != "" {
+		return o
+	}
+	return hostsetup.RootFolder
+}()
 
 func (d *Daemon) registerRootSetup() {
 	On(d, wire.CallSetupRootCommand, func(context.Context, *Client, wire.Empty) (wire.SetupRootCommand, error) {

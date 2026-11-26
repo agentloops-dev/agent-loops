@@ -150,14 +150,19 @@ struct RootLogSheet: View {
             } else {
                 ProgressView().controlSize(.small)
             }
+            Spacer(minLength: 0)
             HStack {
                 Spacer()
                 Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
             }
         }
         .padding(20)
-        .frame(width: 640, height: 420)
+        .frame(width: 640, height: 420, alignment: .topLeading)
         .task {
+            guard !model.hosts.isOffline(host) else {
+                problem = "\(name) is offline, so its log can’t be read now."
+                return
+            }
             do {
                 log = try await model.client(for: host).call(DaemonAPI.Method.setupRootLog, DaemonAPI.Empty(),
                                                              returning: DaemonAPI.SetupRootLog.self)
