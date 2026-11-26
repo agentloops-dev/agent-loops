@@ -380,6 +380,10 @@
         "code": -32097,
         "message": "sessionLiveElsewhere"
       },
+      "setupScriptChanged": {
+        "code": -32111,
+        "message": "setupScriptChanged"
+      },
       "shellNotLive": {
         "code": -32011,
         "message": "shellNotLive"
