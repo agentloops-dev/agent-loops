@@ -91,21 +91,35 @@ func (d *Daemon) autopilotLeads(ctx context.Context, folder string, mode wire.Au
 		return
 	}
 	dismissed, _ := d.dismissedLeads.Read()
+	// A paused folder or epic starts nothing (#5902).
+	since, red := d.autopilotMainRed(folder)
+	if red {
+		d.autopilotPause(folder, autopilotMainRef, wire.AutopilotRowKindLead, autopilotMainWords(since), nil)
+	} else {
+		d.autopilotResume(folder, autopilotMainRef, wire.AutopilotRowKindLead, "main is green")
+	}
+	ledger := d.autopilotLedger()
 	var epics []autopilotEpic
 	for _, r := range next.Rows {
 		e := autopilotEpic{row: r}
-		e.led = d.leadOf(r.Item.Node) != nil
+		lead := d.leadOf(r.Item.Node)
+		e.led, e.lead = lead != nil, lead
+		e.over = autopilotOverBudget(ledger, r.Item.Node)
 		x, ok := dismissed[r.Item.Node.Ref]
 		p := progressOf(r.Item)
 		e.dismissed = ok && x.Done == p.Done && x.Total == p.Total
 		epics = append(epics, e)
 	}
-	room := autopilotRoom{limit: d.helperLimitRefusal(folder) != "", capacity: d.capacityLevel()}
+	room := autopilotRoom{limit: d.helperLimitRefusal(folder) != "", capacity: d.capacityLevel(), mainRed: red}
 	// The open-PR count is read only when an epic could start.
-	if autopilotCanStart(epics, mode) {
+	if !red && autopilotCanStart(epics, mode) {
 		room.openPRs, room.prLimit = d.autopilotOpenPRs(ctx, folder)
 	}
 	for _, o := range autopilotLeadPlan(epics, mode, room) {
+		if o.paused {
+			d.autopilotPause(folder, o.epic.Node.Ref, wire.AutopilotRowKindLead, o.why, o.lead)
+			continue
+		}
 		row := wire.AutopilotRow{Ref: o.epic.Node.Ref, Kind: wire.AutopilotRowKindLead, State: wire.AutopilotRowStateWaiting, Reason: o.why}
 		if o.start {
 			id, err := d.startFor(autopilotLeadRequest(folder, o.epic), startedBy{owner: wire.SessionLabelOwnerAgent})
@@ -118,6 +132,12 @@ func (d *Daemon) autopilotLeads(ctx context.Context, folder string, mode wire.Au
 		}
 		if err := d.autopilotNote(folder, row); err != nil {
 			log.Printf("autopilot: %s: %v", folder, err)
+		}
+	}
+	// An epic that has a lead and is not over budget now is resumed.
+	for _, e := range epics {
+		if e.over == "" && (e.led || e.dismissed) {
+			d.autopilotResume(folder, e.row.Item.Node.Ref, wire.AutopilotRowKindLead, "back under its estimate")
 		}
 	}
 }
@@ -152,6 +172,9 @@ type autopilotEpic struct {
 	row       wire.ForgeNextRow
 	led       bool
 	dismissed bool
+	lead      *wire.ForgeLead
+	// over is why the epic is paused for its spend, "" when it is not.
+	over string
 }
 
 // autopilotRoom is what the folder and the machine allow.
@@ -160,6 +183,7 @@ type autopilotRoom struct {
 	openPRs  int
 	prLimit  int
 	capacity wire.CapacityLevel
+	mainRed  bool // main has been red for too long (#5902)
 }
 
 // autopilotOutcome is what a run does for one epic: start it, or wait with a reason.
@@ -167,6 +191,9 @@ type autopilotOutcome struct {
 	epic  wire.ForgeItem
 	start bool
 	why   string
+	// paused: the epic is over budget (#5902); lead is its lead, which is told.
+	paused bool
+	lead   *wire.ForgeLead
 }
 
 func isHigh(i wire.ForgeItem) bool {
@@ -176,7 +203,7 @@ func isHigh(i wire.ForgeItem) bool {
 // autopilotCanStart is whether some epic could start before the limits are looked at.
 func autopilotCanStart(epics []autopilotEpic, mode wire.AutopilotMode) bool {
 	for _, e := range epics {
-		if !e.led && !e.dismissed && !e.row.OnHold && (mode != wire.AutopilotModeHigh || isHigh(e.row.Item)) {
+		if !e.led && !e.dismissed && e.over == "" && !e.row.OnHold && (mode != wire.AutopilotModeHigh || isHigh(e.row.Item)) {
 			return true
 		}
 	}
@@ -190,11 +217,17 @@ func autopilotLeadPlan(epics []autopilotEpic, mode wire.AutopilotMode, room auto
 	var out []autopilotOutcome
 	started := false
 	for _, e := range epics {
+		if e.over != "" {
+			out = append(out, autopilotOutcome{epic: e.row.Item, paused: true, why: e.over, lead: e.lead})
+			continue
+		}
 		if e.led || e.dismissed {
 			continue
 		}
 		o := autopilotOutcome{epic: e.row.Item}
 		switch {
+		case room.mainRed:
+			o.why = "main red"
 		case e.row.OnHold:
 			o.why = autopilotOnHold
 		case mode == wire.AutopilotModeHigh && !isHigh(e.row.Item):
