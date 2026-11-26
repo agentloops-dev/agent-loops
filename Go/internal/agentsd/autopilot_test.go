@@ -1,6 +1,7 @@
 package agentsd
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
@@ -110,7 +111,7 @@ func TestAutopilotLeadPlan(t *testing.T) {
 // The lead's request is Start lead's: Auto, the lead prompt, the labels, no worktree.
 func TestAutopilotLeadRequest(t *testing.T) {
 	t.Parallel()
-	r := autopilotLeadRequest("/x", wire.ForgeItem{Node: wire.LineageNode{Kind: "issue", Ref: "o/r#7"}, Title: "Epic"})
+	r := autopilotLeadRequest("/x", wire.ForgeItem{Node: wire.LineageNode{Kind: "issue", Ref: "o/r#7"}, Title: "Epic"}, "")
 	if r.Worktree != nil || r.RuntimeID != autoRuntimeID || len(r.Labels) == 0 || r.Labels[len(r.Labels)-1] != "lead" {
 		t.Fatalf("%+v", r)
 	}
@@ -166,13 +167,13 @@ func TestAutopilotPausePlan(t *testing.T) {
 	}
 	ok := autopilotRoom{prLimit: 5, capacity: wire.CapacityLevelOk}
 	out := autopilotLeadPlan(epics, wire.AutopilotModeOn, ok)
-	if len(out) != 2 || !out[0].paused || out[0].lead != lead || !out[1].start {
+	if len(out) != 2 || !out[0].over || out[0].lead != lead || !out[1].start {
 		t.Fatalf("%+v", out)
 	}
 	red := ok
 	red.mainRed = true
 	out = autopilotLeadPlan(epics, wire.AutopilotModeOn, red)
-	if len(out) != 2 || !out[0].paused || out[1].start || out[1].why != "main red" {
+	if len(out) != 2 || !out[0].over || out[1].start || out[1].why != "main red" {
 		t.Fatalf("%+v", out)
 	}
 	if autopilotCanStart(epics[:1], wire.AutopilotModeOn) {
@@ -194,5 +195,44 @@ func TestAutopilotPauseResume(t *testing.T) {
 	d.autopilotResume(dir, "o/r#9", wire.AutopilotRowKindLead, "back under its estimate")
 	if d.autopilotRowState(dir, "o/r#9") != wire.AutopilotRowStateWaiting {
 		t.Fatal("resumed")
+	}
+}
+
+// A lead that stopped or ended for 10 minutes is replaced, except one a person stopped; an epic
+// restarted twice in a day is paused (#5901).
+func TestAutopilotStalledAndCapped(t *testing.T) {
+	t.Parallel()
+	at := wire.Date(10000)
+	mk := func(s wire.AgentState, why *wire.EndedReason, ago float64) wire.Agent {
+		return wire.Agent{State: s, EndedReason: why, LastActivityAt: at - wire.Date(ago)}
+	}
+	died, byPerson := wire.EndedReasonProcessDied, wire.EndedReasonCancelled
+	for name, c := range map[string]struct {
+		a    wire.Agent
+		want bool
+	}{
+		"stopped 11m":     {mk(wire.AgentStateStopped, &died, 660), true},
+		"stopped 5m":      {mk(wire.AgentStateStopped, &died, 300), false},
+		"finished 11m":    {mk(wire.AgentStateFinished, nil, 660), true},
+		"person's stop":   {mk(wire.AgentStateStopped, &byPerson, 6000), false},
+		"waiting on user": {mk(wire.AgentStateWaitingOnUser, nil, 6000), false},
+		"running":         {mk(wire.AgentStateRunning, nil, 6000), false},
+	} {
+		if got := autopilotStalled(c.a, at); got != c.want {
+			t.Errorf("%s: %v", name, got)
+		}
+	}
+	e := autopilotEpic{row: epicRow("#9", "", false), prev: "A", capped: true}
+	o := autopilotLeadPlan([]autopilotEpic{e}, wire.AutopilotModeOn, autopilotRoom{capacity: wire.CapacityLevelOk})
+	if len(o) != 1 || o[0].start || !o[0].paused || o[0].why != autopilotLeadStopping {
+		t.Fatalf("%+v", o)
+	}
+	e.capped = false
+	o = autopilotLeadPlan([]autopilotEpic{e}, wire.AutopilotModeOn, autopilotRoom{capacity: wire.CapacityLevelOk})
+	if !o[0].start || o[0].prev != "A" {
+		t.Fatalf("%+v", o)
+	}
+	if p := autopilotLeadRequest("/x", e.row.Item, "A").Prompt; !strings.Contains(p, "read_session") || !strings.Contains(p, "A") {
+		t.Fatal(p)
 	}
 }

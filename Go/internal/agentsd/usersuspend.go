@@ -2,6 +2,7 @@ package agentsd
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"os"
 
@@ -22,6 +23,19 @@ import (
 // escalate; the control plane cannot reach it), and then hears the state before anything.
 
 const userSuspendedFile = "suspended.json"
+
+// userSuspendedMost bounds suspended.json (#7350): a person, a provider and a time.
+const userSuspendedMost = 4 << 10
+
+// keepSuspension writes suspended.json; a larger one than userSuspendedMost is refused, and the
+// suspension is applied all the same.
+func keepSuspension(path string, b []byte) error {
+	if len(b) > userSuspendedMost {
+		return fmt.Errorf("%d bytes, at most %d: %w", len(b), userSuspendedMost, store.ErrLimit)
+	}
+	// store-bounds: kind=key-value; size=4KiB; count=1; age=until-deleted; applied=on write (a larger one is applied, not kept) (#7350)
+	return store.WriteAtomically(path, b, 0o600)
+}
 
 // suspendedWords is what the person's clients and chats show (FR-029).
 const suspendedWords = "Your organisation's sign-in turned your access off."
@@ -76,7 +90,7 @@ func (d *Daemon) toldUserSuspended(params json.RawMessage) {
 		}
 	} else {
 		b, _ := json.Marshal(note)
-		if err := store.WriteAtomically(d.orgPath(userSuspendedFile), b, 0o600); err != nil {
+		if err := keepSuspension(d.orgPath(userSuspendedFile), b); err != nil {
 			// Applied all the same: the control plane says it again at the next hello.
 			log.Printf("user/suspended: keep %s: %v", userSuspendedFile, err)
 		}
