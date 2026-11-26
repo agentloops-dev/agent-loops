@@ -23,21 +23,13 @@ ControlCodeShown full
 ControlCodeShown zero
 {"text":"","expires":0}
 ControlMachine full
-{"id":"ID","name":"NAME","platform":"PLATFORM","version":"VERSION","state":"STATE","reach":"REACH","machineID":"MACHINEID","signInFrom":{"KEY":"SIGNINFROM"},"gitFrom":{"KEY":"GITFROM"},"gitAsks":[{"server":"SERVER","from":"FROM"}],"tunnel":{"up":true,"problem":"PROBLEM"},"workspace":{"provider":"PROVIDER","providerName":"PROVIDERNAME","workspace":"WORKSPACE","workspaceName":"WORKSPACENAME","workspaceState":"WORKSPACESTATE","hostState":"HOSTSTATE","phase":"PHASE","since":813922215.25,"problem":"PROBLEM","stoppedBy":"STOPPEDBY","canStart":true,"canStop":true,"startWhenUsed":true,"stopWhenIdleMinutes":7,"cost":"COST","current":true,"startForSchedules":true,"tellsSchedule":true,"nextWorkflow":"NEXTWORKFLOW","nextWorkflowAt":813922215.25,"wakeAt":813922215.25},"implementation":"IMPLEMENTATION"}
+{"id":"ID","name":"NAME","platform":"PLATFORM","version":"VERSION","state":"STATE","reach":"REACH","machineID":"MACHINEID","signInFrom":{"KEY":"SIGNINFROM"},"tunnel":{"up":true,"problem":"PROBLEM"},"workspace":{"provider":"PROVIDER","providerName":"PROVIDERNAME","workspace":"WORKSPACE","workspaceName":"WORKSPACENAME","workspaceState":"WORKSPACESTATE","hostState":"HOSTSTATE","phase":"PHASE","since":813922215.25,"problem":"PROBLEM","stoppedBy":"STOPPEDBY","canStart":true,"canStop":true,"startWhenUsed":true,"stopWhenIdleMinutes":7,"cost":"COST","current":true,"startForSchedules":true,"tellsSchedule":true,"nextWorkflow":"NEXTWORKFLOW","nextWorkflowAt":813922215.25,"wakeAt":813922215.25},"implementation":"IMPLEMENTATION"}
 ControlMachine zero
 {"id":"","name":"","platform":"","version":"","state":"","reach":""}
 ControlStatus full
 {"name":"NAME","version":"VERSION","homeHost":"HOMEHOST","machineID":"MACHINEID","startedAt":813922215.25,"port":7,"you":"YOU","web":{"port":7,"served":true,"reason":"REASON","detail":"DETAIL"},"thisMacHost":{"member":true,"connected":true,"problem":"PROBLEM","at":813922215.25},"folderDetection":{"enabled":true,"paths":["PATHS"]},"unjoinedTunnels":[{"name":"NAME","host":"HOST","tunnel":{"up":true,"problem":"PROBLEM"}}]}
 ControlStatus zero
 {"name":"","version":"","machineID":""}
-GitAsk full
-{"server":"SERVER","from":"FROM"}
-GitAsk zero
-{"server":"","from":""}
-GitCredentialRequest full
-{"protocol":"PROTOCOL","host":"HOST","path":"PATH"}
-GitCredentialRequest zero
-{"protocol":"","host":""}
 HandoverMember full
 {"id":"ID","name":"NAME","kind":"KIND","knownEpoch":7,"version":"VERSION","online":true,"lastSeen":813922215.25}
 HandoverMember zero
@@ -62,10 +54,6 @@ MachineRequest full
 {"host":"HOST","purge":true}
 MachineRequest zero
 {"host":""}
-LendGit full
-{"host":"HOST","from":"FROM","server":"SERVER","allowed":true}
-LendGit zero
-{"host":"","from":"","server":"","allowed":false}
 LendSignIn full
 {"host":"HOST","from":"FROM","runtime":"RUNTIME","allowed":true}
 LendSignIn zero

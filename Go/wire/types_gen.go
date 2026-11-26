@@ -3093,7 +3093,7 @@ type CommitTrailerValue string
 const CommitTrailerValueOn CommitTrailerValue = "on"
 const CommitTrailerValueOff CommitTrailerValue = "off"
 
-// The trailers of an agent's commits, each on or off, by the trailer's key (#6365): Made-by, Cost, Tokens, Duration, Session, Fixes, Epic, Requested-by, Approved-by, Co-authored-by. Fixes also writes Refs. A key the machine does not know is kept and has no effect; a key no layer sets has its default (every key on, Cost off). Record trailers (Made-by, Session, Fixes, Epic, Requested-by, Approved-by, Co-authored-by): on is tighter. Spend trailers (Cost, Tokens, Duration): off is tighter. Its rules in policy/effective are commitTrailers.<key>.
+// The trailers of an agent's commits, each on or off, by the trailer's key (#6365, #7174): Managed-by, Runtime, Model, Cost, Tokens, Duration, Session, Fixes, Epic, Requested-by, Approved-by. Fixes also writes Refs. Co-authored-by is not a key: it is the runtime's own line, and the app never adds, changes or removes it. A key the machine does not know (also the old Made-by and Co-authored-by) is kept and has no effect; a key no layer sets has its default (every key on, Cost off). Record trailers (Managed-by, Runtime, Model, Session, Fixes, Epic, Requested-by, Approved-by): on is tighter. Spend trailers (Cost, Tokens, Duration): off is tighter. Its rules in policy/effective are commitTrailers.<key>.
 type CommitTrailers map[string]CommitTrailerValue
 
 type ConfigChoice struct {
@@ -3913,10 +3913,6 @@ type ControlMachine struct {
 	MachineID *string `json:"machineID,omitzero"`
 
 	SignInFrom map[string]MachineRef `json:"signInFrom,omitzero"`
-
-	GitFrom map[string]MachineRef `json:"gitFrom,omitzero"`
-
-	GitAsks []GitAsk `json:"gitAsks,omitzero"`
 
 	Tunnel *MachineTunnel `json:"tunnel,omitzero"`
 
@@ -7071,28 +7067,6 @@ type FoundFolder struct {
 	IsFolder bool `json:"isFolder"`
 }
 
-type GitAsk struct {
-	Server string `json:"server"`
-
-	From MachineRef `json:"from"`
-}
-
-// A credential for one git command. Never printed, logged or kept.
-type GitCredential struct {
-	Username string `json:"username"`
-
-	Password string `json:"password"`
-}
-
-// git/credential, git/fill (#1122): only https, and only the server. `path` is the Go host's, unread by Swift.
-type GitCredentialRequest struct {
-	Protocol string `json:"protocol"`
-
-	Host string `json:"host"`
-
-	Path *string `json:"path,omitzero"`
-}
-
 // The trailer block for a commit or a squash message (#6365), in order, one "Key: value" line each; empty when the rule turns every trailer off.
 type GitTrailers struct {
 	Lines []string `json:"lines"`
@@ -7559,16 +7533,6 @@ type LeaseSnapshot struct {
 
 type LeaseTokenRequest struct {
 	Token string `json:"token"`
-}
-
-type LendGit struct {
-	Host MachineRef `json:"host"`
-
-	From MachineRef `json:"from"`
-
-	Server string `json:"server"`
-
-	Allowed bool `json:"allowed"`
 }
 
 // machines/lendSignIn (T091).
@@ -12461,7 +12425,9 @@ const PolicyRuleNameMarketplacesAllowed PolicyRuleName = "marketplaces.allowed"
 const PolicyRuleNameMarketplacesCustomServers PolicyRuleName = "marketplaces.customServers"
 const PolicyRuleNameEnvironment PolicyRuleName = "environment"
 const PolicyRuleNameConnectorTools PolicyRuleName = "connectorTools"
-const PolicyRuleNameCommitTrailersMadeBy PolicyRuleName = "commitTrailers.Made-by"
+const PolicyRuleNameCommitTrailersManagedBy PolicyRuleName = "commitTrailers.Managed-by"
+const PolicyRuleNameCommitTrailersRuntime PolicyRuleName = "commitTrailers.Runtime"
+const PolicyRuleNameCommitTrailersModel PolicyRuleName = "commitTrailers.Model"
 const PolicyRuleNameCommitTrailersCost PolicyRuleName = "commitTrailers.Cost"
 const PolicyRuleNameCommitTrailersTokens PolicyRuleName = "commitTrailers.Tokens"
 const PolicyRuleNameCommitTrailersDuration PolicyRuleName = "commitTrailers.Duration"
@@ -12470,7 +12436,6 @@ const PolicyRuleNameCommitTrailersFixes PolicyRuleName = "commitTrailers.Fixes"
 const PolicyRuleNameCommitTrailersEpic PolicyRuleName = "commitTrailers.Epic"
 const PolicyRuleNameCommitTrailersRequestedBy PolicyRuleName = "commitTrailers.Requested-by"
 const PolicyRuleNameCommitTrailersApprovedBy PolicyRuleName = "commitTrailers.Approved-by"
-const PolicyRuleNameCommitTrailersCoAuthoredBy PolicyRuleName = "commitTrailers.Co-authored-by"
 
 // The rules a layer sets (#2957, data-model.md "PolicyRules"): the same shape on the organisation, your and a folder's layer (FR-002). Every field is optional: absent sets nothing.
 type PolicyRules struct {

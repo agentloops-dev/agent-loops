@@ -171,18 +171,10 @@
     "tunnelRef": "tunnelRef",
     "fanOut": true
   },
-  "GitCredentialRequest": {
-    "protocol": "protocol",
-    "host": "host"
-  },
-  "GitCredential": {
-    "username": "username",
-    "password": "password"
-  },
   "PolicyRules": {
     "archiveMyChats": false,
     "commitTrailers": {
-      "Made-by": "on",
+      "Managed-by": "on",
       "Cost": "off",
       "Next-trailer": "on"
     }

@@ -49,7 +49,6 @@ func TestASuspendedPersonsMachineGetsNoRouteAndStartsNothing(t *testing.T) {
 	said := map[string]any{
 		"workflows/trigger":  wire.TeamTrigger{Workflow: "app/review", Trigger: "schedule:x", RunsOn: []string{"linux"}},
 		"links/check":        wire.ChannelSender{},
-		"git/credential":     wire.GitCredentialRequest{},
 		"tunnel/open":        wire.TunnelOpen{Runtime: "claude"},
 		"backups/upload":     map[string]any{},
 		"backups/commit":     map[string]any{},

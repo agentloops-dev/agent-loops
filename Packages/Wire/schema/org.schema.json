@@ -775,7 +775,7 @@
       "additionalProperties": {
         "$ref": "#/definitions/CommitTrailerValue"
       },
-      "description": "The trailers of an agent's commits, each on or off, by the trailer's key (#6365): Made-by, Cost, Tokens, Duration, Session, Fixes, Epic, Requested-by, Approved-by, Co-authored-by. Fixes also writes Refs. A key the machine does not know is kept and has no effect; a key no layer sets has its default (every key on, Cost off). Record trailers (Made-by, Session, Fixes, Epic, Requested-by, Approved-by, Co-authored-by): on is tighter. Spend trailers (Cost, Tokens, Duration): off is tighter. Its rules in policy/effective are commitTrailers.<key>."
+      "description": "The trailers of an agent's commits, each on or off, by the trailer's key (#6365, #7174): Managed-by, Runtime, Model, Cost, Tokens, Duration, Session, Fixes, Epic, Requested-by, Approved-by. Fixes also writes Refs. Co-authored-by is not a key: it is the runtime's own line, and the app never adds, changes or removes it. A key the machine does not know (also the old Made-by and Co-authored-by) is kept and has no effect; a key no layer sets has its default (every key on, Cost off). Record trailers (Managed-by, Runtime, Model, Session, Fixes, Epic, Requested-by, Approved-by): on is tighter. Spend trailers (Cost, Tokens, Duration): off is tighter. Its rules in policy/effective are commitTrailers.<key>."
     },
     "ConfigChoiceGroup": {
       "type": "object",
@@ -1102,18 +1102,6 @@
           "type": "object",
           "additionalProperties": {
             "$ref": "machines.schema.json#/definitions/MachineRef"
-          }
-        },
-        "gitFrom": {
-          "type": "object",
-          "additionalProperties": {
-            "$ref": "machines.schema.json#/definitions/MachineRef"
-          }
-        },
-        "gitAsks": {
-          "type": "array",
-          "items": {
-            "$ref": "#/definitions/GitAsk"
           }
         },
         "tunnel": {
@@ -1973,59 +1961,6 @@
         "mac"
       ]
     },
-    "GitAsk": {
-      "type": "object",
-      "properties": {
-        "server": {
-          "type": "string"
-        },
-        "from": {
-          "$ref": "machines.schema.json#/definitions/MachineRef"
-        }
-      },
-      "required": [
-        "server",
-        "from"
-      ],
-      "additionalProperties": false
-    },
-    "GitCredential": {
-      "type": "object",
-      "description": "A credential for one git command. Never printed, logged or kept.",
-      "properties": {
-        "username": {
-          "type": "string"
-        },
-        "password": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "username",
-        "password"
-      ],
-      "additionalProperties": false
-    },
-    "GitCredentialRequest": {
-      "type": "object",
-      "description": "git/credential, git/fill (#1122): only https, and only the server. `path` is the Go host's, unread by Swift.",
-      "properties": {
-        "protocol": {
-          "type": "string"
-        },
-        "host": {
-          "type": "string"
-        },
-        "path": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "protocol",
-        "host"
-      ],
-      "additionalProperties": false
-    },
     "GitTrailers": {
       "type": "object",
       "description": "The trailer block for a commit or a squash message (#6365), in order, one \"Key: value\" line each; empty when the rule turns every trailer off.",
@@ -2599,30 +2534,6 @@
         "folder",
         "name",
         "project"
-      ],
-      "additionalProperties": false
-    },
-    "LendGit": {
-      "type": "object",
-      "properties": {
-        "host": {
-          "$ref": "machines.schema.json#/definitions/MachineRef"
-        },
-        "from": {
-          "$ref": "machines.schema.json#/definitions/MachineRef"
-        },
-        "server": {
-          "type": "string"
-        },
-        "allowed": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "host",
-        "from",
-        "server",
-        "allowed"
       ],
       "additionalProperties": false
     },
@@ -5300,7 +5211,9 @@
         "marketplaces.customServers",
         "environment",
         "connectorTools",
-        "commitTrailers.Made-by",
+        "commitTrailers.Managed-by",
+        "commitTrailers.Runtime",
+        "commitTrailers.Model",
         "commitTrailers.Cost",
         "commitTrailers.Tokens",
         "commitTrailers.Duration",
@@ -5308,8 +5221,7 @@
         "commitTrailers.Fixes",
         "commitTrailers.Epic",
         "commitTrailers.Requested-by",
-        "commitTrailers.Approved-by",
-        "commitTrailers.Co-authored-by"
+        "commitTrailers.Approved-by"
       ],
       "description": "One rule a policy layer can set (#2957, data-model.md \"EffectiveRule\")."
     },

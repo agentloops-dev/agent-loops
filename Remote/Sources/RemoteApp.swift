@@ -288,14 +288,6 @@ struct RemoteView: View {
                     .environment(model)
             }
         }
-        // A host's git asked to use a Mac's git access (#1122).
-        .alert(model.gitLendAsk?.title ?? "", isPresented: Binding(get: { model.gitLendAsk != nil }, set: { _ in }),
-               presenting: model.gitLendAsk) { ask in
-            Button("Approve") { Task { await model.answerGitLend(ask, allowed: true) } }
-            Button("Deny", role: .cancel) { Task { await model.answerGitLend(ask, allowed: false) } }
-        } message: { ask in
-            Text(ask.message)
-        }
         // Where this device is, told to the Mac on every change (021).
         .onChange(of: scenePhase, initial: true) { _, phase in model.scenePhase(phase, of: sceneID) }
         // A tap on the Home-screen widget (068). The one place a URL is taken from

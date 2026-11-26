@@ -78,7 +78,6 @@ func TestTheWireIsWhatItWas(t *testing.T) {
 	answer("machines/lastHeard", map[string]any{"host": box.member.Host})
 	answer("control/setFolderDetection", map[string]any{"enabled": true, "paths": []string{" ~/src ", "", "~/work"}})
 	answer("machines/lendSignIn", map[string]any{"host": box.member.Host, "from": home.member.Host, "runtime": "claude", "allowed": true})
-	answer("machines/lendGit", map[string]any{"host": box.member.Host, "from": home.member.Host, "server": "github.com", "allowed": true})
 	answer("control/status", nil)
 	answer("machines/list", nil)
 	answer("clients/setGrant", map[string]any{"client": member.Client, "grant": "viewer"})

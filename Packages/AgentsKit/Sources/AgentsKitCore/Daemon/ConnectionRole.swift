@@ -55,10 +55,7 @@ public enum ConnectionRole: String, Sendable, Hashable {
         case .control, .device: true
         case .agent: Self.agentMethods.contains(method)
         case .hostApp: Self.hostAppMethods.contains(method)
-        // A Linux host's git, through `agentsd git-credential` (#1122): any process of the
-        // account, as git runs it for every one of them. The daemon answers it only on a
-        // host a Mac lends git access to, and only on its own socket.
-        case .stranger: Self.strangerMethods.contains(method) || method == DaemonAPI.Method.gitCredential
+        case .stranger: Self.strangerMethods.contains(method)
         }
     }
 
