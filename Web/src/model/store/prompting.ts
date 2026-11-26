@@ -79,6 +79,16 @@ export const promptingMethods = {
     }, host);
   },
   /**
+   * Continue on another account (#7459): the same chat on the account the person chose, or a new
+   * session there when the conversation could not move. Answers the id that goes on, or null with
+   * `problem` saying why.
+   */
+  async continueOnAccount(this: Store, host: string, agentID: string, accountID: string): Promise<string | null> {
+    return this.act("agents/continueOnAccount", {
+      agentID: agentID as UUID, accountID, requestID: crypto.randomUUID().toUpperCase() as UUID,
+    }, host);
+  },
+  /**
    * Branch (#342): a new session that carries this one's history so far, the original left alone.
    * Answers its id, or null with `problem` saying why.
    */

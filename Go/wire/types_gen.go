@@ -3732,6 +3732,17 @@ type ContinueInNewSessionRequest struct {
 	RequestID *UUID `json:"requestID,omitzero"`
 }
 
+// agents/continueOnAccount (#7459): a chat whose allowance ran out continues on another account of the same runtime, which the person chose.
+type ContinueOnAccountRequest struct {
+	AgentID UUID `json:"agentID"`
+
+	// The account to continue on: an added or org account's id, or default for the runtime's own sign-in.
+	AccountID string `json:"accountID"`
+
+	// As StartRequest.requestID: a retry answers as the first try did.
+	RequestID *UUID `json:"requestID,omitzero"`
+}
+
 // When a chat paused by a spent allowance carries on by itself (#1859).
 type ContinueWhenBack struct {
 	// When it sends "continue": the provider's reset time, or the app's next check of the runtime.

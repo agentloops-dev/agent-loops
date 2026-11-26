@@ -506,6 +506,38 @@ export function accountChoices(runtimeID: string, profiles: readonly AccountProf
   };
 }
 
+/** An account a chat whose allowance ran out can continue on (#7459), ContinueChoice: what is sent, and "Claude · Personal". */
+export interface ContinueChoice {
+  accountID: string;
+  title: string;
+}
+
+/**
+ * The other accounts a chat whose allowance ran out can continue on (#7459), AccountChoices.continueChoices:
+ * the runtime's own sign-in, then each account. Only one the chat is not on, that the organisation does not
+ * refuse, that is signed in, and whose allowance row, when it has one, says it can be used and is not out.
+ */
+export function continueChoices(runtimeID: string, accountID: string | undefined, profiles: readonly AccountProfile[],
+  policy: OrgPolicy | null | undefined, allowances: RuntimeAllowances | undefined): ContinueChoice[] {
+  if (!allowances) return [];
+  const current = accountID === ownSignInID ? undefined : accountID;
+  const choices = accountChoices(runtimeID, profiles, policy);
+  // No row yet is an account nothing has happened to: nothing says it is out.
+  const usable = (row: RuntimeAllowancesRow | undefined) => row === undefined || (!row.unusable && !("out" in row.state.status));
+  const name = runtimeName(runtimeID);
+  const out: ContinueChoice[] = [];
+  if (current !== undefined && !choices.ownSetBy && usable(ownRow(allowances.rows, runtimeID))) {
+    out.push({ accountID: ownSignInID, title: `${name} · ${defaultAccountName}` });
+  }
+  const rows = accountRows(allowances.rows, runtimeID);
+  for (const account of choices.accounts) {
+    if (account.id === current || account.setBy || !(account.signedIn || isOrgAccount(account))) continue;
+    if (!usable(rows.find((r) => r.accountID === account.id))) continue;
+    out.push({ accountID: account.id, title: `${name} · ${account.name}` });
+  }
+  return out;
+}
+
 const week = 7 * 86400;
 
 /**

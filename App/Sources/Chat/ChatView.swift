@@ -311,7 +311,7 @@ struct ChatView: View {
             allowanceOut: allowanceOut)
     }
 
-    /// The buttons under "Its allowance ran out" (#5919). Nil unless this chat offers them
+    /// The buttons under "Its allowance ran out" (#5919, #7459). Nil unless this chat offers them
     /// and the host can wait. **Continue in new session** is left out when the host is too old.
     private var allowanceOut: AllowanceOutActions? {
         guard let agent, ContinueWhenBackWords.offers(agent),
@@ -324,9 +324,14 @@ struct ChatView: View {
         } else {
             startNew = nil
         }
+        // Each other account that can take it (#7459): the person chooses.
+        let accounts = model.continueChoices(agent).map { choice in
+            AllowanceAccountAction(choice: choice) { [model] in _ = await model.continueOnAccount(id, accountID: choice.accountID) }
+        }
         return AllowanceOutActions(resetsAt: model.runtimeAllowances?.resetsAt(agent.runtimeID),
                                    wait: { [model] in await model.continueWhenBack(id) },
-                                   startNew: startNew)
+                                   startNew: startNew,
+                                   accounts: accounts)
     }
 
     /// Undo These Changes on a turn's card (#3437): not on an archived session, nor on a

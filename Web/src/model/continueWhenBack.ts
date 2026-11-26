@@ -13,6 +13,11 @@ export const continueHelp = "Sends “continue” in this chat when the allowanc
 /** Under the line, beside Continue at (ContinueWhenBackWords.inNewSession, #5919). */
 export const continueInNewSession = "Continue in new session";
 export const continueInNewSessionHelp = "Starts a new session on Auto that reads this one, then archives this chat.";
+/** Under the line, one for each other account of the runtime (AccountWords.continueOn, #7459). */
+export function continueOnAccount(title: string): string {
+  return `Continue on ${title}`;
+}
+export const continueOnAccountHelp = "Carries on this chat on that account.";
 
 /** Whether the chat offers the buttons: paused by a spent allowance, and not waiting yet. */
 export function offersContinue(agent: Agent): boolean {

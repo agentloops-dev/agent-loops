@@ -20,7 +20,7 @@ func TestAgentsRunningGateRefusesAtThePlanLimit(t *testing.T) {
 	})
 	_, window := p.client("Alex's Mac")
 	host := p.host("MACHINE-2").member.Host
-	for _, method := range []string{"agents/start", "agents/fork", "agents/branchFrom", "agents/continueInFolder", "agents/continueInNew", "agents/continueInNewSession"} {
+	for _, method := range []string{"agents/start", "agents/fork", "agents/branchFrom", "agents/continueInFolder", "agents/continueInNew", "agents/continueInNewSession", "agents/continueOnAccount"} {
 		if e := callError(t, window, host, method, map[string]any{}); !strings.Contains(e, refusal.Error()) {
 			t.Fatalf("%s: %s", method, e)
 		}

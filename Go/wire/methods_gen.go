@@ -13,6 +13,7 @@ var CallAgentsCancelContinue = Method[AgentRequest, Agent]{"agents/cancelContinu
 var CallAgentsContinueInFolder = Method[ContinueInFolderRequest, UUID]{"agents/continueInFolder"}
 var CallAgentsContinueInNew = Method[ContinueInNewRequest, UUID]{"agents/continueInNew"}
 var CallAgentsContinueInNewSession = Method[ContinueInNewSessionRequest, UUID]{"agents/continueInNewSession"}
+var CallAgentsContinueOnAccount = Method[ContinueOnAccountRequest, UUID]{"agents/continueOnAccount"}
 var CallAgentsContinueWhenBack = Method[AgentRequest, Agent]{"agents/continueWhenBack"}
 var CallAgentsDelete = Method[AgentRequest, Empty]{"agents/delete"}
 var CallAgentsDiscardDraft = Method[DiscardDraftRequest, Empty]{"agents/discardDraft"}

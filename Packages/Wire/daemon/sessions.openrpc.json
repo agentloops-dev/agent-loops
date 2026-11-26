@@ -370,6 +370,32 @@
       }
     },
     {
+      "name": "agents/continueOnAccount",
+      "description": "Continue on another account (#7459): a chat whose allowance ran out goes on as the same conversation on another account of the same runtime, which the person chose. The runtime's record of the conversation is copied from the old account's folder to the new one's (never a sign-in), the session's account changes, and it is sent on. When the record cannot be found or copied, a new session on that account starts in the same worktree or folder with a prompt that reads this session, and this session is archived. Answered with the session that goes on: this one, or the new one. Refused when the allowance did not run out, for an account of another runtime, the same account, one the organisation refuses, or one whose allowance is out. The same requestID answers as the first try did.",
+      "x-capability": "chat.continue-on-account/1",
+      "tags": [
+        {
+          "name": "web"
+        }
+      ],
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/sessions.schema.json#/definitions/ContinueOnAccountRequest"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/core.schema.json#/definitions/UUID"
+        }
+      }
+    },
+    {
       "name": "agents/continueWhenBack",
       "description": "A chat paused by a spent allowance carries on when the allowance is back (#1859): at the provider's reset time, or the app's next check, or as soon as a turn on that runtime works or the person marks it available. Refused for a chat that is not paused by a spent allowance.",
       "x-capability": "chat.continue-when-back/1",

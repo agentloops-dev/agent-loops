@@ -787,6 +787,28 @@
       ],
       "additionalProperties": false
     },
+    "ContinueOnAccountRequest": {
+      "type": "object",
+      "description": "agents/continueOnAccount (#7459): a chat whose allowance ran out continues on another account of the same runtime, which the person chose.",
+      "properties": {
+        "agentID": {
+          "$ref": "core.schema.json#/definitions/UUID"
+        },
+        "accountID": {
+          "type": "string",
+          "description": "The account to continue on: an added or org account's id, or default for the runtime's own sign-in."
+        },
+        "requestID": {
+          "$ref": "core.schema.json#/definitions/UUID",
+          "description": "As StartRequest.requestID: a retry answers as the first try did."
+        }
+      },
+      "required": [
+        "agentID",
+        "accountID"
+      ],
+      "additionalProperties": false
+    },
     "ContinueWhenBack": {
       "type": "object",
       "description": "When a chat paused by a spent allowance carries on by itself (#1859).",

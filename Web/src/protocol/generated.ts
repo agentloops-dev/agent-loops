@@ -3504,6 +3504,21 @@ export interface ContinueInNewSessionRequest {
   requestID?: UUID;
 }
 
+/**
+ * agents/continueOnAccount (#7459): a chat whose allowance ran out continues on another account of
+ * the same runtime, which the person chose.
+ */
+export interface ContinueOnAccountRequest {
+  agentID: UUID;
+  /**
+   * The account to continue on: an added or org account's id, or default for the runtime's own
+   * sign-in.
+   */
+  accountID: string;
+  /** As StartRequest.requestID: a retry answers as the first try did. */
+  requestID?: UUID;
+}
+
 /** When a chat paused by a spent allowance carries on by itself (#1859). */
 export interface ContinueWhenBack {
   /**
@@ -17854,6 +17869,7 @@ export interface Methods {
   "agents/continueInFolder": { params: ContinueInFolderRequest; result: UUID };
   "agents/continueInNew": { params: ContinueInNewRequest; result: UUID };
   "agents/continueInNewSession": { params: ContinueInNewSessionRequest; result: UUID };
+  "agents/continueOnAccount": { params: ContinueOnAccountRequest; result: UUID };
   "agents/continueWhenBack": { params: AgentRequest; result: Agent };
   "agents/delete": { params: AgentRequest; result: Empty };
   "agents/discardDraft": { params: DiscardDraftRequest; result: Empty };
@@ -18354,6 +18370,7 @@ export const MethodTarget = {
   "agents/continueInFolder": "host",
   "agents/continueInNew": "host",
   "agents/continueInNewSession": "host",
+  "agents/continueOnAccount": "host",
   "agents/continueWhenBack": "host",
   "agents/delete": "host",
   "agents/discardDraft": "host",
@@ -19169,6 +19186,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   ContinueInFolderRequest: { required: ["agentID", "text", "attachments"], optional: ["requestID"] },
   ContinueInNewRequest: { required: ["agentID"], optional: ["accountID", "requestID", "auto"] },
   ContinueInNewSessionRequest: { required: ["agentID"], optional: ["requestID"] },
+  ContinueOnAccountRequest: { required: ["agentID", "accountID"], optional: ["requestID"] },
   ContinueWhenBack: { required: ["at", "resetKnown"], optional: [] },
   ControlAuth: { required: ["id", "nonce", "mac", "kind"], optional: ["epoch", "capabilities", "page", "publicKey"] },
   ControlCapacityBoard: { required: ["copies"], optional: [] },

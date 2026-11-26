@@ -5081,6 +5081,33 @@ final class AppModel {
         return true
     }
 
+    /// The other accounts of the runtime a chat on this Mac whose allowance ran out can
+    /// continue on (#7459). None for a server's chat: no client has a server's accounts.
+    func continueChoices(_ agent: Agent) -> [ContinueChoice] {
+        guard host(ofAgent: agent.id) == .mac, accountProfilesRead,
+              self.host(agent.host, has: Capability.chatContinueOnAccount1) else { return [] }
+        return AccountChoices(runtimeID: agent.runtimeID, profiles: accountProfiles, policy: policyState?.policy)
+            .continueChoices(from: agent.accountID, allowances: runtimeAllowances)
+    }
+
+    /// **Continue on Claude · Personal** (#7459): the same chat on the account the person chose,
+    /// or a new session there when the conversation could not move. Opens the one that goes on.
+    @discardableResult
+    func continueOnAccount(_ agentID: UUID, accountID: String) async -> Bool {
+        var next: UUID?
+        let went = await attempt(on: host(ofAgent: agentID)) {
+            next = try await self.client(forAgent: agentID).call(
+                DaemonAPI.Method.agentsContinueOnAccount,
+                DaemonAPI.ContinueOnAccountRequest(agentID: agentID, accountID: accountID, requestID: UUID()),
+                returning: UUID.self)
+        }
+        guard went, let next else { return false }
+        let host = host(ofAgent: agentID)
+        if host == .mac { await refreshAgents() } else { await refreshServer(host) }
+        selection = next
+        return true
+    }
+
     /// Carry on when the allowance is back, or no longer (#1859).
     func continueWhenBack(_ agentID: UUID) async { await waitForAllowance(agentID, DaemonAPI.Method.agentsContinueWhenBack) }
     func cancelContinue(_ agentID: UUID) async { await waitForAllowance(agentID, DaemonAPI.Method.agentsCancelContinue) }

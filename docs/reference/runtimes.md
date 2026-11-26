@@ -123,12 +123,23 @@ keeps its sign-in:
 - **Choose it** when you start a session: the **Account** menu is beside the runtime menu,
   on all three, when the runtime has more than one account. Under each choice is why it
   cannot be used or that its allowance is out (#2265). A branch, **Continue in New** and
-  a helper the session starts keep its account. A started session's runtime, over its
+  a helper the session starts keep its account; only **Continue on**, when its allowance ran
+  out, changes it, and only when you choose it. A started session's runtime, over its
   prompt, names the account, such as **Claude · Work**, on all three (#2259). A session on
   the runtime's own sign-in shows the runtime's name only.
 - **Its allowance is its own.** The **Runtimes** page shows a row for each account, under
   its runtime ("Claude · Work"). One account running out does not put the runtime, or
   another account, out. The app never changes a session to another account by itself.
+  When a chat's allowance runs out, you can choose another account of its runtime for it:
+  under **Its allowance ran out**, **Continue on Claude · Personal** goes on as the same
+  conversation on that account (#7459). The app moves the runtime's record of that one
+  conversation from the old account's folder to the new one's: for Claude,
+  `projects/<folder>/<id>.jsonl` and the folder beside it, `todos/<id>-*.json`,
+  `file-history/<id>`, `session-env/<id>` and `debug/<id>.txt`; for Codex,
+  `sessions/<year>/<month>/<day>/rollout-*-<id>.jsonl` and its archived copy. These are the
+  files **Delete** erases. It never copies a sign-in, a token, settings or another
+  conversation. When it cannot find the record, it starts a new session on that account that
+  reads the chat, as **Continue in new session** does.
 - **Remove it** to stop the sessions that use it, sign it out where the runtime can, and
   delete its folder. Every client asks first, and says how many sessions it stops and that
   this cannot be undone (#2264).
