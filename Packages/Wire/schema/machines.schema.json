@@ -1277,6 +1277,164 @@
         "olderVersion"
       ]
     },
+    "ControlMove": {
+      "type": "object",
+      "description": "One move of the control plane to another machine (#6612, epic #6608), as v1/moves/<id>.json keeps it: at most 20, for 90 days. At most one runs at a time.",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "from": {
+          "type": "string",
+          "description": "The copy that moves: its id."
+        },
+        "to": {
+          "$ref": "#/definitions/MachineRef"
+        },
+        "toName": {
+          "type": "string",
+          "description": "The machine's name when the move started."
+        },
+        "phase": {
+          "$ref": "#/definitions/ControlMovePhase"
+        },
+        "failedPhase": {
+          "$ref": "#/definitions/ControlMovePhase",
+          "description": "With failed: the step that failed."
+        },
+        "address": {
+          "type": "string",
+          "description": "Where the new copy answers, once it said so."
+        },
+        "forwardingUntil": {
+          "$ref": "core.schema.json#/definitions/WireDate",
+          "description": "With forwarding: until when the old copy sends members to the new one (30 days at most)."
+        },
+        "startedAt": {
+          "$ref": "core.schema.json#/definitions/WireDate"
+        },
+        "updatedAt": {
+          "$ref": "core.schema.json#/definitions/WireDate"
+        },
+        "error": {
+          "type": "string",
+          "description": "With failed: what went wrong, in words. The old copy serves again."
+        },
+        "by": {
+          "type": "string",
+          "description": "The person who started it."
+        }
+      },
+      "required": [
+        "id",
+        "from",
+        "to",
+        "toName",
+        "phase",
+        "startedAt",
+        "updatedAt",
+        "by"
+      ],
+      "additionalProperties": false
+    },
+    "ControlMovePhase": {
+      "type": "string",
+      "description": "Where a move stands (#6612), in this order: checking, control/eligible's checks; receiving, the new machine is given the control key, sealed to its own key, and starts a copy that is empty; frozen, the old copy changes no record; copying, the store goes to the new copy; forwarding, the new copy took over and the old one sends members to it (30 days at most); done, the new copy took over at the old address. failed: a step failed, and the old copy serves again.",
+      "enum": [
+        "checking",
+        "copying",
+        "receiving",
+        "frozen",
+        "forwarding",
+        "done",
+        "failed"
+      ]
+    },
+    "ControlMoveRequest": {
+      "type": "object",
+      "description": "control/move (#6612): the machine to move the control plane to.",
+      "properties": {
+        "machine": {
+          "$ref": "#/definitions/MachineRef"
+        }
+      },
+      "required": [
+        "machine"
+      ],
+      "additionalProperties": false
+    },
+    "ControlMoveResult": {
+      "type": "object",
+      "description": "control/move's answer: the move, started. control/moveChanged says each step after.",
+      "properties": {
+        "move": {
+          "$ref": "#/definitions/ControlMove"
+        }
+      },
+      "required": [
+        "move"
+      ],
+      "additionalProperties": false
+    },
+    "ControlMoves": {
+      "type": "object",
+      "description": "control/moves/list (#6612): the newest moves first, at most 20.",
+      "properties": {
+        "moves": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ControlMove"
+          }
+        }
+      },
+      "required": [
+        "moves"
+      ],
+      "additionalProperties": false
+    },
+    "ControlReceive": {
+      "type": "object",
+      "description": "control/receive's answer: where the machine's copy answers now, empty and receiving, and its certificate's pin when it has its own.",
+      "properties": {
+        "url": {
+          "type": "string"
+        },
+        "pin": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "additionalProperties": false
+    },
+    "ControlReceiveRequest": {
+      "type": "object",
+      "description": "control/receive (#6612): the control plane asks a machine with the control role to start its copy empty, to receive a move. The control key is sealed to the machine's own key, with the move, the machine and the control key's public half as its associated data.",
+      "properties": {
+        "move": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string",
+          "description": "The address that clients reach the machine at, as control/eligible found it."
+        },
+        "controlKey": {
+          "$ref": "core.schema.json#/definitions/Base64",
+          "description": "The control key's public half (X9.63)."
+        },
+        "key": {
+          "$ref": "org.schema.json#/definitions/SealedEnvelope"
+        }
+      },
+      "required": [
+        "move",
+        "url",
+        "controlKey",
+        "key"
+      ],
+      "additionalProperties": false
+    },
     "DaemonStatus": {
       "type": "object",
       "properties": {

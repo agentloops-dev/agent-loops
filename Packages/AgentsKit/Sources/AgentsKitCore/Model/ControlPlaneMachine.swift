@@ -8,6 +8,25 @@ public enum ControlPlaneMachine {
     /// What the row and the page call a machine that only runs the control plane.
     public static let title = "Control plane"
 
+    /// What tells one control-only machine from the others (#7362): nil when it is the only one;
+    /// else its name when no other control-only machine has the same name, else its id.
+    public static func label(_ row: DaemonAPI.ControlMachine?, among rows: [DaemonAPI.ControlMachine]) -> String? {
+        guard let row, controlOnly(row) else { return nil }
+        let others = rows.filter { controlOnly($0) && $0.id != row.id }
+        guard !others.isEmpty else { return nil }
+        let name = row.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !name.isEmpty, name != title, !others.contains(where: { $0.name.trimmingCharacters(in: .whitespacesAndNewlines) == name }) {
+            return name
+        }
+        return row.id.rawValue
+    }
+
+    /// The row's and the page's title: "Control plane" for the only control-only machine, else
+    /// "Control plane · <label>" (#7362).
+    public static func title(_ row: DaemonAPI.ControlMachine?, among rows: [DaemonAPI.ControlMachine]) -> String {
+        label(row, among: rows).map { "\(title) \u{00B7} \($0)" } ?? title
+    }
+
     /// How often the control plane looks at itself, and so how often its page reads again.
     public static let lookSeconds = 15
 
@@ -41,6 +60,14 @@ public enum ControlPlaneMachine {
     /// The highest level of the copies: the one the window's strip says.
     public static func worst(_ copies: [DaemonAPI.ControlCapacityCopy]) -> DaemonAPI.ControlCapacityCopy? {
         copies.max { rank($0.level) < rank($1.level) || (rank($0.level) == rank($1.level) && $0.at < $1.at) }
+    }
+
+    /// The copy the window's strip names: the highest level, near or full only. None while the
+    /// window cannot reach the control plane (#7363): the level is then the last one known, not
+    /// now, and the strip "Can't reach the control plane" says how old the window's data is.
+    public static func warning(_ copies: [DaemonAPI.ControlCapacityCopy], controlAway: Bool) -> DaemonAPI.ControlCapacityCopy? {
+        guard !controlAway else { return nil }
+        return worst(copies).flatMap { $0.level == .ok ? nil : $0 }
     }
 
     static func rank(_ level: DaemonAPI.CapacityLevel) -> Int {
@@ -85,6 +112,16 @@ public enum ControlPlaneMachine {
 
     /// The page's and the strip's sentence: "The control plane is near capacity: its disk is
     /// busy." The control plane's own reason, which says why, with a capital and a full stop.
+    /// With a label (several control-only machines, #7362), it names the machine: "The control
+    /// plane on box-2 is near capacity: its disk is busy.", or "box-2: …" for a reason in other words.
+    public static func sentence(_ look: DaemonAPI.ControlCapacityCopy, on label: String?) -> String {
+        let words = sentence(look)
+        guard let label, !label.isEmpty else { return words }
+        let lead = "The control plane"
+        if words.hasPrefix(lead) { return lead + " on " + label + words.dropFirst(lead.count) }
+        return label + ": " + words
+    }
+
     public static func sentence(_ look: DaemonAPI.ControlCapacityCopy) -> String {
         let reason = look.reason.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let first = reason.first else {
