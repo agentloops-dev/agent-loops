@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/acp"
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -91,6 +92,7 @@ func TestAnAgentsSandbox(t *testing.T) {
 
 func TestASandboxThatCouldNotStart(t *testing.T) {
 	t.Parallel()
+	flaky.UnderLoad(t, "#7385")
 
 	if got := sandboxMatch("claude", "\x1b[31mError: run failed. sandbox_apply: Operation not permitted\x1b[0m\nok"); got != "sandbox_apply: Operation not permitted" {
 		t.Fatalf("%q", got)

@@ -59,9 +59,10 @@ type Daemon struct {
 	// erasures is the queue of runtime copies of deleted agents to erase (#1001).
 	erasures eraser
 
-	// Tunneler opens tunnels through the control plane, to a host that lends a sign-in;
-	// nil when this host has no control plane.
-	Tunneler Tunneler
+	// tunneler opens tunnels through the control plane, to a host that lends a sign-in;
+	// empty when this host has no control plane. main sets it after a gate kept over the
+	// restart may be open (#7369), so it is read with no lock held (SetTunneler).
+	tunneler atomic.Pointer[tunnelerOf]
 
 	// browser is the machine's browser (#3533): one Chromium, started on first use.
 	browser *browser.Machine
@@ -86,7 +87,9 @@ type Daemon struct {
 	unknown map[string]int
 	lives   map[wire.UUID]*live
 	relays  map[string]*relay
-	sent    map[wire.UUID]bool
+	// relaysFileMu orders the writes of the kept lent sign-ins (relay.go, #7369).
+	relaysFileMu sync.Mutex
+	sent         map[wire.UUID]bool
 	// watches is each watched agent folder's inotify, and interests who watches it.
 	watches   map[string]*folderWatch
 	interests map[string][]interest
@@ -108,6 +111,7 @@ type Daemon struct {
 	secretProxyState
 	lockState
 	lockRecords
+	setupScriptsState
 	selfUpdateState
 	quitState
 	processBook
@@ -210,6 +214,9 @@ type Daemon struct {
 	// DiskOverride lets the root's disk-free-override say each volume's free space
 	// (#195, #4851): an unreleased build on a scratch root, as RaiseByHand.
 	DiskOverride bool
+	// ReceiveControl starts this machine's copy of the control plane empty, with the key
+	// given, for control/receive (#6612); nil runs controlsetup.Receive. Tests set it.
+	ReceiveControl func(key []byte, url string) (string, string, error)
 	// HostKey keeps this machine's private key: control-host-key in the root unless the
 	// command sets the platform's store (controllink.HostKeyFor, the Keychain on a Mac).
 	HostKey controllink.HostKeyStore
@@ -311,6 +318,8 @@ func newWith(ctx context.Context, root string, opts startOptions) (*Daemon, erro
 	d.loadEvents()
 	d.loadRequests()
 	d.beginMCPApprovals()
+	// A sign-in lent to this machine before the restart, before the pick-ups ask for it (#7369).
+	d.reopenRelays()
 	d.recover()
 	// A session archived or deleted while the host was not running loses its secrets (#3548).
 	d.sweepSessionSecrets()
@@ -512,6 +521,7 @@ func (d *Daemon) Shutdown() {
 	d.stopFolderWatches()
 	d.stopPins()
 	d.stopSignInRelays()
+	d.stopRelayGates()
 	d.stopModelRelay()
 	// The last chance for chat lines the disk refused: they live only in memory (#3245).
 	d.writeHeld()

@@ -51,7 +51,9 @@ const CapConsole1 = "console/1"
 const CapControlConnectAnother1 = "control.connect-another/1"
 const CapControlEligible1 = "control.eligible/1"
 const CapControlLocal1 = "control.local/1"
+const CapControlMove1 = "control.move/1"
 const CapControlPlaneMove1 = "control.plane-move/1"
+const CapControlReceive1 = "control.receive/1"
 const CapControlRotate1 = "control.rotate/1"
 const CapControl1 = "control/1"
 const CapCost1 = "cost/1"
@@ -113,6 +115,7 @@ const CapHostLock1 = "host.lock/1"
 const CapHostLock2 = "host.lock/2"
 const CapHostLock3 = "host.lock/3"
 const CapHostLock4 = "host.lock/4"
+const CapHostMachineSetup1 = "host.machine-setup/1"
 const CapHostOrgRoutes1 = "host.org-routes/1"
 const CapHostOrgRoutes2 = "host.org-routes/2"
 const CapHostPolicyLayers1 = "host.policy-layers/1"
@@ -371,6 +374,7 @@ var HostCapabilities = pairs([][2]string{
 	{"connectors/codespaces", "connectors.setup/1"},
 	{"connectors/setup", "connectors.setup/1"},
 	{"connectors/setup/skip", "connectors.setup/1"},
+	{"control/receive", "control.receive/1"},
 	{"cost/setLimits", "cost/1"},
 	{"cost/state", "cost/1"},
 	{"credentials/offer", "credentials/1"},
@@ -634,7 +638,9 @@ var HostCapabilities = pairs([][2]string{
 	{"sessions/list", "sessions/1"},
 	{"settings/passThrough", "host.policy/1"},
 	{"settings/userPart", "host.user-settings/4"},
+	{"setup/approve", "host.machine-setup/1"},
 	{"setup/projects", "machine.setup/1"},
+	{"setup/scripts", "host.machine-setup/1"},
 	{"shell/attach", "shell/1"},
 	{"shell/close", "shell/1"},
 	{"shell/detach", "shell/1"},
@@ -864,6 +870,8 @@ var ControlCapabilities = pairs([][2]string{
 	{"control/connectAnother", "control.connect-another/1"},
 	{"control/connectReport", "control.connect-another/1"},
 	{"control/eligible", "control.eligible/1"},
+	{"control/move", "control.move/1"},
+	{"control/moves/list", "control.move/1"},
 	{"control/ping", "control/1"},
 	{"control/planeMove", "control.plane-move/1"},
 	{"control/planeMoveReport", "control.plane-move/1"},
@@ -953,6 +961,7 @@ var ControlCapabilities = pairs([][2]string{
 	{"machines/link", "machines/1"},
 	{"machines/list", "machines/2"},
 	{"machines/listKept", "machines/2"},
+	{"machines/previewStart", "auto-machine/1"},
 	{"machines/projectFolders", "sessions.project/1"},
 	{"machines/projectSessions", "sessions.project/1"},
 	{"machines/remove", "machines/1"},
@@ -1106,6 +1115,7 @@ var ControlCapabilities = pairs([][2]string{
 	{"control/lockChanged", "lock/1"},
 	{"control/lockJoinDecided", "lock-join/1"},
 	{"control/lockJoinRequested", "lock-join/1"},
+	{"control/moveChanged", "control.move/1"},
 	{"control/moved", "control/1"},
 	{"control/notice", "org-identity/1"},
 	{"control/orgRoutesChanged", "org-routes/2"},
@@ -1165,6 +1175,7 @@ var ControlNotifications = set([]string{
 	"control/lockChanged",
 	"control/lockJoinDecided",
 	"control/lockJoinRequested",
+	"control/moveChanged",
 	"control/moved",
 	"control/notice",
 	"control/orgRoutesChanged",

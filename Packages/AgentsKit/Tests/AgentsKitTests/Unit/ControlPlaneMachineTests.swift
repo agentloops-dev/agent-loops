@@ -69,6 +69,15 @@ struct ControlPlaneMachineTests {
         #expect(ControlPlaneMachine.worst([]) == nil)
     }
 
+    @Test func theStripSaysNothingWhileTheControlPlaneIsAway() {
+        let ok = look("a", machine: "m", level: .ok)
+        let full = look("b", machine: "n", level: .full)
+        #expect(ControlPlaneMachine.warning([ok, full], controlAway: false)?.copy == "b")
+        #expect(ControlPlaneMachine.warning([ok], controlAway: false) == nil)
+        // #7363: the last level is not now while the window cannot reach the control plane.
+        #expect(ControlPlaneMachine.warning([ok, full], controlAway: true) == nil)
+    }
+
     @Test func thePageHasEachFigure() throws {
         let figures = ControlPlaneMachine.summary(look("a", machine: "m"))
         #expect(figures.map(\.label) == ["Capacity", "Load per core", "Memory pressure", "I/O pressure"])
@@ -77,5 +86,27 @@ struct ControlPlaneMachineTests {
         try #require(sections.map(\.title) == ["Memory", "Process", "Store"])
         #expect(sections[1].figures.map(\.value) == ["87", "42"])
         #expect(!ControlPlaneMachine.bytes(0).contains("Zero"))
+    }
+
+    /// Two control-only machines have different titles and sentences; one keeps "Control plane" (#7362).
+    @Test func severalControlOnlyMachinesAreNamedApart() throws {
+        let one = try row("control", roles: ["control"])
+        var two = try row("h-2", roles: ["control"])
+        let both = try row("mac", roles: ["agents", "control"])
+        #expect(ControlPlaneMachine.title(one, among: [one, both]) == "Control plane")
+        #expect(ControlPlaneMachine.label(one, among: [one, both]) == nil)
+        #expect(ControlPlaneMachine.title(one, among: [one, two]) == "Control plane · control")
+        #expect(ControlPlaneMachine.title(two, among: [one, two]) == "Control plane · h-2")
+        // The same name on both: the id tells them apart.
+        var first = one
+        first.name = "eu-1"
+        two.name = "eu-1"
+        #expect(ControlPlaneMachine.label(first, among: [first, two]) == "control")
+        two.name = "eu-2"
+        #expect(ControlPlaneMachine.label(two, among: [first, two]) == "eu-2")
+        let near = look("a", machine: "h-2")
+        #expect(ControlPlaneMachine.sentence(near, on: "eu-2") == "The control plane on eu-2 is near capacity: its disk is busy.")
+        #expect(ControlPlaneMachine.sentence(near, on: nil) == "The control plane is near capacity: its disk is busy.")
+        #expect(ControlPlaneMachine.sentence(look("a", machine: "h-2", reason: "disk is busy"), on: "eu-2") == "eu-2: Disk is busy.")
     }
 }

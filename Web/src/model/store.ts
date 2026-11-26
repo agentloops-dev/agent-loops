@@ -1,7 +1,8 @@
 // What the page holds and what each notification means: the Store class, in slices under ./store (#5384).
 import { sendPreferencesWith } from "./preferences";
 import { computed, signal, type ReadonlySignal } from "@preact/signals";
-import type { BrowserFrame, ControlMachine, JSONValue, RuntimeAccount, RuntimeStatus, UUID, AutoMappings, AutoSettings, BusEvent, CostState, ListRequest, SandboxChoice, PolicySetBy, RuntimeAllowances, MachineJoinStatus, KeptDelivered, KeptList, UsageHistory, TimeHistory, VelocityHistory, CycleTimeHistory, CapReached, ChannelLinkDecided, ChannelLinkRequest, ConnectReport, JoinDecided, JoinRequest, SecretsLeft, SignInDecided, PolicyView, SignInRequest, CatalogRequest, BudgetRequest, ClientPermissionSettings, LineageNode, LineageSessionIssue, PlaneMoveReport, WebRemoteStatus } from "../protocol/generated";
+import type { BrowserFrame, ControlMachine, JSONValue, RuntimeAccount, RuntimeStatus, UUID, AutoMappings, AutoSettings, BusEvent, CostState, ListRequest, SandboxChoice, PolicySetBy, RuntimeAllowances, MachineJoinStatus, KeptDelivered, KeptList, UsageHistory, TimeHistory, VelocityHistory, CycleTimeHistory, CapReached, ChannelLinkDecided, ChannelLinkRequest, ConnectReport, JoinDecided, JoinRequest, SecretsLeft, SignInDecided, PolicyView, SignInRequest, CatalogRequest, BudgetRequest, ClientPermissionSettings, LineageNode, LineageSessionIssue, PlaneMoveReport, WebRemoteStatus, ControlMove } from "../protocol/generated";
+import { takeMove } from "./controlMove";
 import { type Link } from "../wire/link";
 import type { FolderGoneAsk } from "./missingFolder";
 import { describe } from "./errors";
@@ -91,6 +92,11 @@ export class Store extends Work {
       // slow link gets fewer frames, not a backlog.
       if (method === "browser/frame" && host) {
         void link.call("browser/ack", { ack: (params as BrowserFrame).ack }, host).catch(() => {});
+      }
+      if (method === "control/moveChanged") {
+        // A move of the control plane changed its step (#6614).
+        if (params) takeMove(params as ControlMove);
+        return;
       }
       if (method === "control/providersChanged") {
         this.providers.take(params);

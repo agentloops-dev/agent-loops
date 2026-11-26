@@ -146,7 +146,7 @@ func TestTheInstallScriptFallsBackToTheReleases(t *testing.T) {
 			if tc.tampered {
 				sums = hexSum("another") + "  " + name + "\n"
 			}
-			releases := fakeReleaseDownloads(name, sums, tarball)
+			releases := fakeReleaseDownloads(name, sums, tarball, releaseSig(t, "current", sums))
 			defer releases.Close()
 			// The control plane: no server folder, and no release files of its own.
 			control := controlWithNoServerFolder()
@@ -157,7 +157,7 @@ func TestTheInstallScriptFallsBackToTheReleases(t *testing.T) {
 			address := strings.ReplaceAll(strings.ReplaceAll(control.URL, ":", "%3A"), "/", "%2F")
 			code := "agents-control:2:h:-:key:secret:" + address + ":-:test"
 			cmd := exec.Command("sh", "-s", "--", code, "box")
-			cmd.Stdin = strings.NewReader(InstallScript)
+			cmd.Stdin = strings.NewReader(installScriptForTest())
 			cmd.Env = []string{"PATH=" + bin + ":" + os.Getenv("PATH"), "HOME=" + home, "TMPDIR=" + dir,
 				"AGENTS_RELEASE_DOWNLOADS=" + releases.URL}
 			out, err := cmd.CombinedOutput()
@@ -178,13 +178,19 @@ func TestTheInstallScriptFallsBackToTheReleases(t *testing.T) {
 	}
 }
 
-// fakeReleaseDownloads serves the release's SHA256SUMS and tarball, as the release
+// fakeReleaseDownloads serves the release's SHA256SUMS, its signature ("" has none) and tarball, as the release
 // downloads do.
-func fakeReleaseDownloads(name, sums, tarball string) *httptest.Server {
+func fakeReleaseDownloads(name, sums, tarball, sig string) *httptest.Server {
 	var asked []string
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		asked = append(asked, r.URL.Path)
 		switch r.URL.Path {
+		case "/v0.12.0/SHA256SUMS.sig":
+			if sig == "" {
+				http.NotFound(w, r)
+				return
+			}
+			_, _ = w.Write([]byte(sig))
 		case "/v0.12.0/SHA256SUMS":
 			_, _ = w.Write([]byte(sums))
 		case "/v0.12.0/" + name:

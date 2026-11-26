@@ -809,10 +809,11 @@
     },
     "CapacityReason": {
       "type": "string",
-      "description": "What put a machine near or at capacity (#6596): cpu (its load per core) or memory (critical memory pressure). It stays while the level waits to fall. Absent at ok.",
+      "description": "What put a machine near or at capacity (#6596): cpu (its load per core), memory (critical memory pressure) or disk (disk pressure, #7300). It stays while the level waits to fall. Absent at ok.",
       "enum": [
         "cpu",
-        "memory"
+        "memory",
+        "disk"
       ]
     },
     "CapacityReport": {
@@ -1275,6 +1276,164 @@
         "bothRoles",
         "olderVersion"
       ]
+    },
+    "ControlMove": {
+      "type": "object",
+      "description": "One move of the control plane to another machine (#6612, epic #6608), as v1/moves/<id>.json keeps it: at most 20, for 90 days. At most one runs at a time.",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "from": {
+          "type": "string",
+          "description": "The copy that moves: its id."
+        },
+        "to": {
+          "$ref": "#/definitions/MachineRef"
+        },
+        "toName": {
+          "type": "string",
+          "description": "The machine's name when the move started."
+        },
+        "phase": {
+          "$ref": "#/definitions/ControlMovePhase"
+        },
+        "failedPhase": {
+          "$ref": "#/definitions/ControlMovePhase",
+          "description": "With failed: the step that failed."
+        },
+        "address": {
+          "type": "string",
+          "description": "Where the new copy answers, once it said so."
+        },
+        "forwardingUntil": {
+          "$ref": "core.schema.json#/definitions/WireDate",
+          "description": "With forwarding: until when the old copy sends members to the new one (30 days at most)."
+        },
+        "startedAt": {
+          "$ref": "core.schema.json#/definitions/WireDate"
+        },
+        "updatedAt": {
+          "$ref": "core.schema.json#/definitions/WireDate"
+        },
+        "error": {
+          "type": "string",
+          "description": "With failed: what went wrong, in words. The old copy serves again."
+        },
+        "by": {
+          "type": "string",
+          "description": "The person who started it."
+        }
+      },
+      "required": [
+        "id",
+        "from",
+        "to",
+        "toName",
+        "phase",
+        "startedAt",
+        "updatedAt",
+        "by"
+      ],
+      "additionalProperties": false
+    },
+    "ControlMovePhase": {
+      "type": "string",
+      "description": "Where a move stands (#6612), in this order: checking, control/eligible's checks; receiving, the new machine is given the control key, sealed to its own key, and starts a copy that is empty; frozen, the old copy changes no record; copying, the store goes to the new copy; forwarding, the new copy took over and the old one sends members to it (30 days at most); done, the new copy took over at the old address. failed: a step failed, and the old copy serves again.",
+      "enum": [
+        "checking",
+        "copying",
+        "receiving",
+        "frozen",
+        "forwarding",
+        "done",
+        "failed"
+      ]
+    },
+    "ControlMoveRequest": {
+      "type": "object",
+      "description": "control/move (#6612): the machine to move the control plane to.",
+      "properties": {
+        "machine": {
+          "$ref": "#/definitions/MachineRef"
+        }
+      },
+      "required": [
+        "machine"
+      ],
+      "additionalProperties": false
+    },
+    "ControlMoveResult": {
+      "type": "object",
+      "description": "control/move's answer: the move, started. control/moveChanged says each step after.",
+      "properties": {
+        "move": {
+          "$ref": "#/definitions/ControlMove"
+        }
+      },
+      "required": [
+        "move"
+      ],
+      "additionalProperties": false
+    },
+    "ControlMoves": {
+      "type": "object",
+      "description": "control/moves/list (#6612): the newest moves first, at most 20.",
+      "properties": {
+        "moves": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ControlMove"
+          }
+        }
+      },
+      "required": [
+        "moves"
+      ],
+      "additionalProperties": false
+    },
+    "ControlReceive": {
+      "type": "object",
+      "description": "control/receive's answer: where the machine's copy answers now, empty and receiving, and its certificate's pin when it has its own.",
+      "properties": {
+        "url": {
+          "type": "string"
+        },
+        "pin": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "additionalProperties": false
+    },
+    "ControlReceiveRequest": {
+      "type": "object",
+      "description": "control/receive (#6612): the control plane asks a machine with the control role to start its copy empty, to receive a move. The control key is sealed to the machine's own key, with the move, the machine and the control key's public half as its associated data.",
+      "properties": {
+        "move": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string",
+          "description": "The address that clients reach the machine at, as control/eligible found it."
+        },
+        "controlKey": {
+          "$ref": "core.schema.json#/definitions/Base64",
+          "description": "The control key's public half (X9.63)."
+        },
+        "key": {
+          "$ref": "org.schema.json#/definitions/SealedEnvelope"
+        }
+      },
+      "required": [
+        "move",
+        "url",
+        "controlKey",
+        "key"
+      ],
+      "additionalProperties": false
     },
     "DaemonStatus": {
       "type": "object",
@@ -2752,6 +2911,14 @@
         "code": {
           "type": "string",
           "description": "The digits the host shows for its join token (controllink.TokenCode), said with the compare step: the control plane compares them with the ones it made (#5359)."
+        },
+        "hash": {
+          "type": "string",
+          "description": "The SHA-256, in lower-case hexadecimal, of the script that the root or user step runs (#7167)."
+        },
+        "warning": {
+          "type": "boolean",
+          "description": "The step is done with a warning in its detail, such as a provider that cannot run root set-up (#7167)."
         }
       },
       "required": [
@@ -2817,6 +2984,14 @@
         },
         "slower": {
           "type": "boolean"
+        },
+        "hash": {
+          "type": "string",
+          "description": "The SHA-256, in lower-case hexadecimal, of the script that the root or user step runs (#7167)."
+        },
+        "warning": {
+          "type": "boolean",
+          "description": "The step is done with a warning in its detail, such as a provider that cannot run root set-up (#7167)."
         }
       },
       "required": [
@@ -2827,7 +3002,7 @@
     },
     "MachineSetupStepID": {
       "type": "string",
-      "description": "The eight steps, in order: create machine, join machine, install Agents, compare digits, install runtimes, send projects, sign in to runtimes, smoke session.",
+      "description": "The steps: create machine, join machine, install Agents, compare digits, install runtimes, send projects, sign in to runtimes, smoke session (#5353), and root set-up and your set-up, each only when its script was sent (#7167). The control plane reads a set-up by step id: a client that does not know an id shows it as its name.",
       "enum": [
         "create",
         "join",
@@ -2836,7 +3011,9 @@
         "runtimes",
         "projects",
         "signIn",
-        "smoke"
+        "smoke",
+        "root",
+        "user"
       ]
     },
     "MachineSetupWork": {
@@ -5312,6 +5489,97 @@
       "required": [
         "runtimeID",
         "providerID"
+      ],
+      "additionalProperties": false
+    },
+    "SetupApprove": {
+      "type": "object",
+      "description": "setup/approve (#7167): a client of the person's lock approves the text of one of this machine's set-up scripts as it is now, for machines as they are made (scope made) or for one machine (m:<id>). approval is a setup.script record whose subject is script and whose content is the script's hash and size; empty content takes the approval of that scope away. The machine keeps the text and the approval only when the record checks against its lock, its number is not lower than the last of its scope, and the file is that text.",
+      "properties": {
+        "script": {
+          "type": "string",
+          "enum": [
+            "root",
+            "setup"
+          ]
+        },
+        "approval": {
+          "$ref": "org.schema.json#/definitions/LockRecord"
+        }
+      },
+      "required": [
+        "script",
+        "approval"
+      ],
+      "additionalProperties": false
+    },
+    "SetupScript": {
+      "type": "object",
+      "description": "One set-up script on this machine (#7167): root (root.sh) or setup (setup.sh) in ~/.agents/machine-setup/. present: the file is there. text, hash and size are the file as it is now (hash: SHA-256 in lower-case hexadecimal); problem says why they are absent from a file that is there (over its limit, or unreadable). approvedText and approvedHash are the text a client approved last, and approvals the records in force for it, one a scope. changed: the file is not the approved text, so it is not used until a client approves it. nextSeq is the number to sign the next approval with.",
+      "properties": {
+        "name": {
+          "type": "string",
+          "enum": [
+            "root",
+            "setup"
+          ]
+        },
+        "present": {
+          "type": "boolean"
+        },
+        "text": {
+          "type": "string"
+        },
+        "hash": {
+          "type": "string"
+        },
+        "size": {
+          "type": "integer"
+        },
+        "problem": {
+          "type": "string"
+        },
+        "approvedText": {
+          "type": "string"
+        },
+        "approvedHash": {
+          "type": "string"
+        },
+        "approvals": {
+          "type": "array",
+          "items": {
+            "$ref": "org.schema.json#/definitions/LockRecord"
+          }
+        },
+        "changed": {
+          "type": "boolean"
+        },
+        "nextSeq": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "name",
+        "present",
+        "approvals",
+        "changed",
+        "nextSeq"
+      ],
+      "additionalProperties": false
+    },
+    "SetupScripts": {
+      "type": "object",
+      "description": "setup/scripts (#7167): this machine's two set-up scripts, root then setup, as a client reads them to approve one.",
+      "properties": {
+        "scripts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/SetupScript"
+          }
+        }
+      },
+      "required": [
+        "scripts"
       ],
       "additionalProperties": false
     },

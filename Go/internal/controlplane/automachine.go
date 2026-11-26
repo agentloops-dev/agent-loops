@@ -287,7 +287,8 @@ func (s *Service) runtimeReadyOn(host, runtime string) bool {
 		return false
 	}
 	for _, r := range list {
-		if r.Runtime.ID == runtime && r.Availability.Available != nil {
+		// Auto (#5876) is ready where any runtime is.
+		if (r.Runtime.ID == runtime || runtime == "auto") && r.Availability.Available != nil {
 			return true
 		}
 	}

@@ -319,7 +319,7 @@ func toolsBrief(browser, screen, bot, github bool) string {
 		"- agents-secret NAME, a command on your PATH: the value of one of my secrets that does not ask before use, for your own command, " +
 			"as in NAME=\"$(agents-secret NAME)\" your-command; never print it. agentsd records each read. " +
 			"A secret with Ask before use is refused: use the tool that puts it where it goes for you.",
-		"- list_machines, then start_session with machine: work on another of my machines. bring_back " +
+		"- list_machines, then start_session with machine (or machine auto, to let the control plane pick as New Session's Auto does): work on another of my machines. bring_back " +
 			"brings its branch back here. move_session moves a session there with its unpushed work. " +
 			"start_machine, stop_machine, make_machine and delete_machine control the machines.",
 	}

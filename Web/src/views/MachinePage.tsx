@@ -27,6 +27,7 @@ import { isInstalled, machineRuntimeLine, offersMachineSignIn, offersUpdate, sig
 import { forCleanup, pageLine, tally, worktreesIntro } from "../model/worktrees";
 import { failedStep, foldedLine, setupChip } from "../model/machineSetup";
 import { MachineSetupSection } from "./MachineSetup";
+import { ControlMoveSection, showsControlMove } from "./ControlMove";
 
 const disksHelp = "Each disk its agents write to. Low and almost full are the lines set in Folder Settings ▸ Disk Space.";
 
@@ -85,6 +86,8 @@ export function MachinePage({ store, host }: { store: Store; host: string }) {
           onClick={() => { chooseSettingsMachine(host); go({ nav: "settings" }); }}>Settings…</button>
       </div>
       {setup && <MachineSetupSection store={store} row={machine} setup={setup} />}
+      {/* Make This the Control Plane…, on a machine that does not run it, for an admin (#6614). */}
+      {showsControlMove(store) && !machine.roles?.includes("control") && <ControlMoveSection store={store} machine={machine} />}
       <MachineSessionsSection store={store} host={host} name={name} online={answers} />
       <MachineLabels store={store} host={host} machine={machine} />
       {!answers ? <p class="hint">{name} is offline, so it can’t say how it is doing now.</p>

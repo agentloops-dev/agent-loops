@@ -12,6 +12,7 @@ struct ControlPlanePage: View {
     let host: MachineRef
 
     private var row: DaemonAPI.ControlMachine? { model.controlPlaneHosts?.first { $0.id == host } }
+    private var title: String { ControlPlaneMachine.title(row, among: model.controlPlaneHosts ?? []) }
 
     var body: some View {
         let look = model.controlPlaneLook(host)
@@ -19,8 +20,8 @@ struct ControlPlanePage: View {
             VStack(alignment: .leading, spacing: 18) {
                 HStack(alignment: .firstTextBaseline, spacing: 16) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(ControlPlaneMachine.title).appText(.reading)
-                        Text(ControlPlanePage.meta(row)).appText(.supporting).foregroundStyle(.secondary)
+                        Text(title).appText(.reading)
+                        Text(ControlPlanePage.meta(row, among: model.controlPlaneHosts ?? [])).appText(.supporting).foregroundStyle(.secondary)
                     }
                     Spacer(minLength: 0)
                     ControlCapacityFreshness()
@@ -30,19 +31,22 @@ struct ControlPlanePage: View {
             .padding(24)
             .frame(maxWidth: .infinity, alignment: .topLeading)
         }
-        .navigationTitle(ControlPlaneMachine.title)
+        .navigationTitle(title)
         .task(id: host) { await ControlCapacityFigures.follow(model) }
     }
 
     /// "control.agentloops.dev · Linux · Admin view": where the control plane is, and what it runs on.
-    static func meta(_ row: DaemonAPI.ControlMachine?) -> String {
+    /// With several control-only machines (#7362), the window's endpoint is no one machine's
+    /// address, so it is left out, and so is a name that the title says already.
+    static func meta(_ row: DaemonAPI.ControlMachine?, among rows: [DaemonAPI.ControlMachine]) -> String {
         var parts: [String] = []
-        if case .remote(let membership) = ControlConfig.endpoint, let url = membership.url.flatMap(URL.init(string:)),
+        let label = ControlPlaneMachine.label(row, among: rows)
+        if label == nil, case .remote(let membership) = ControlConfig.endpoint, let url = membership.url.flatMap(URL.init(string:)),
            let address = url.host() {
             parts.append(address)
         }
         if let row {
-            if !row.name.isEmpty, row.name != ControlPlaneMachine.title { parts.append(row.name) }
+            if !row.name.isEmpty, row.name != ControlPlaneMachine.title, row.name != label { parts.append(row.name) }
             if !row.platform.isEmpty { parts.append(row.platform) }
         }
         parts.append("Admin view")
@@ -180,12 +184,14 @@ struct ControlPlaneRow: View {
     var body: some View {
         let look = model.controlPlaneLook(host)
         let line = ControlPlaneMachine.level(look)
+        let rows = model.controlPlaneHosts ?? []
+        let row = rows.first { $0.id == host }
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             MachineIconView(symbol: MachineIcon.symbol(isThisMac: false, row: nil),
                             icon: look == nil ? .stopped : MachineIcon.of(.online, diskLow: false, capacity: look?.level))
                 .frame(width: 16)
             VStack(alignment: .leading, spacing: 2) {
-                Text(ControlPlaneMachine.title).foregroundStyle(.primary).lineLimit(1)
+                Text(ControlPlaneMachine.title(row, among: rows)).foregroundStyle(.primary).lineLimit(1)
                 Text(look == nil ? ControlPlaneMachine.noReading : line)
                     .appText(.fine)
                     .foregroundStyle(.secondary)
@@ -193,7 +199,7 @@ struct ControlPlaneRow: View {
             }
             Spacer(minLength: 4)
         }
-        .help(look.map(ControlPlaneMachine.sentence) ?? ControlPlaneMachine.noReadingDetail)
+        .help(look.map { ControlPlaneMachine.sentence($0, on: ControlPlaneMachine.label(row, among: rows)) } ?? ControlPlaneMachine.noReadingDetail)
         .accessibilityElement(children: .contain)
         .accessibilityValue(look == nil ? ControlPlaneMachine.noReading : line)
         .contextMenu {

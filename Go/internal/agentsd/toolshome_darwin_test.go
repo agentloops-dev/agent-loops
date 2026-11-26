@@ -54,7 +54,7 @@ func (noTunnels) OpenTunnel(context.Context, string) (controllink.Conn, error) {
 func TestAMacHostWantsNoKey(t *testing.T) {
 	d, _ := start(t, t.TempDir())
 	defer d.Shutdown()
-	d.Tunneler = noTunnels{}
+	d.SetTunneler(noTunnels{})
 	t.Setenv("HOME", t.TempDir()) // no ~/.claude/.credentials.json, no ~/.codex/auth.json
 	for _, id := range []string{"claude", "codex"} {
 		if err := d.needsSignIn(id); err != nil {

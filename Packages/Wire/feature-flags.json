@@ -14,6 +14,12 @@
       "issue": 6591
     },
     {
+      "name": "control-plane-move",
+      "title": "Make This the Control Plane",
+      "about": "For admins on the Mac and the web page: Make This the Control Plane… on a machine's page, with its checks, and a strip with the move's steps.",
+      "issue": 6614
+    },
+    {
       "name": "dashboard",
       "title": "Dashboard",
       "about": "The Dashboard on the Mac: each work item with its sessions. The window opens to it.",
