@@ -460,6 +460,15 @@ type AgentMachinesHost struct {
 	Name string `json:"name"`
 
 	State string `json:"state"`
+
+	// The machine's capacity level as it last pushed it (#5875), so an agent does not start heavy work on a full machine. Absent before its first push.
+	Capacity *CapacityLevel `json:"capacity,omitzero"`
+
+	// Its 5-minute load per core when it last pushed.
+	LoadPerCore5 *float64 `json:"loadPerCore5,omitzero"`
+
+	// When the control plane last heard its capacity. A figure older than 2 minutes is no figure (Auto's rule).
+	CapacityAt *Date `json:"capacityAt,omitzero"`
 }
 
 type AgentMachinesMachine struct {
