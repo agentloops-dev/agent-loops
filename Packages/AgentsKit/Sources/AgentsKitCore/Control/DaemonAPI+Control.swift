@@ -13,6 +13,13 @@ public extension DaemonAPI.Method {
     static let hostsRemove = "machines/remove"
     /// Try Again on a machine's set-up (#5357).
     static let hostsRetrySetup = "machines/retrySetup"
+    /// `Empty` → `SetupRootCommand`, on the machine whose scripts they are (#7159): the line that
+    /// runs its approved root.sh as root on another machine, by hand.
+    static let setupRootCommand = "setup/rootCommand"
+    /// `Empty` → `SetupRootLog`, on the machine root.sh ran on (#7159): its root.log, for Show Log.
+    static let setupRootLog = "setup/rootLog"
+    /// `SetupRootAgain` → `Empty`, on the machine root.sh ran on (#7159): read its result again.
+    static let setupRootAgain = "setup/rootAgain"
     /// `{host, from, runtime, allowed}`: whether `host` may use `from`'s sign-in for a
     /// runtime, relayed through the control plane (058, T091). An operator's, after the
     /// window asked the person.
@@ -256,6 +263,26 @@ public extension DaemonAPI {
     }
 
     /// One step of a machine's set-up (#5357), as `MachineSetupStep` on the wire.
+    /// `setup/rootCommand` (#7159): the line to run as root, and the hash of the root.sh it runs.
+    struct SetupRootCommand: Codable, Sendable, Hashable {
+        public var command: String
+        public var hash: String
+        public init(command: String, hash: String) { self.command = command; self.hash = hash }
+    }
+
+    /// `setup/rootLog` (#7159): the end of root.log, and whether it is longer.
+    struct SetupRootLog: Codable, Sendable, Hashable {
+        public var text: String
+        public var cut: Bool
+        public init(text: String, cut: Bool) { self.text = text; self.cut = cut }
+    }
+
+    /// `setup/rootAgain` (#7159): with `rest`, the steps after Root set-up run too.
+    struct SetupRootAgain: Codable, Sendable, Hashable {
+        public var rest: Bool
+        public init(rest: Bool) { self.rest = rest }
+    }
+
     struct MachineSetupStep: Codable, Sendable, Hashable, Identifiable {
         public enum State: String, Codable, Sendable {
             case waiting, running, done, failed

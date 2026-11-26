@@ -681,6 +681,69 @@
       }
     },
     {
+      "name": "setup/rootAgain",
+      "x-capability": "machine.root-setup/1",
+      "description": "A client or the control plane asks this machine to read root.sh's result again (#7159): Try Again after Root set-up failed (rest), or Check after the person ran the copied root command (setup/rootCommand). It reports the Root set-up step from what /var/lib/agents-setup holds, waiting for a run that has begun, and answers at once.",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/machines.schema.json#/definitions/SetupRootAgain"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/core.schema.json#/definitions/Empty"
+        }
+      }
+    },
+    {
+      "name": "setup/rootCommand",
+      "x-capability": "machine.root-setup/1",
+      "description": "The command that runs this machine's approved root.sh as root on another machine, by hand (#7159): for a person's own server, or a made machine whose root.sh failed. It refuses with setupScriptChanged when root.sh is not the text a client approved for made machines.",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/core.schema.json#/definitions/Empty"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/machines.schema.json#/definitions/SetupRootCommand"
+        }
+      }
+    },
+    {
+      "name": "setup/rootLog",
+      "x-capability": "machine.root-setup/1",
+      "description": "This machine's root.log (#7159), for Show Log on a Root set-up: its end, at most 64 KiB.",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/core.schema.json#/definitions/Empty"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/machines.schema.json#/definitions/SetupRootLog"
+        }
+      }
+    },
+    {
       "name": "setup/scripts",
       "x-capability": "host.machine-setup/1",
       "description": "This machine's two set-up scripts, as a client reads them to approve one (#7167): each file's text and hash now, the text approved last and its approvals, and the number to sign the next one with.",
