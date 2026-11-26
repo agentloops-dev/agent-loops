@@ -9273,6 +9273,9 @@ type MachineAnnounce struct {
 	MachineID string `json:"machineID"`
 
 	Implementation *string `json:"implementation,omitzero"`
+
+	// What the machine does (#6609, #7314): agents, control or both, from its install. Absent means agents. A machine with control alone runs no agents: it keeps a link for the store copy and the handover, and the control plane opens no client's channel to it.
+	Roles []string `json:"roles,omitzero"`
 }
 
 // machines/botKey through machine/machines (#3950): one of the person's machines gives the bot's key, sealed, to another of theirs (copy), or tells it to forget it (drop). Exactly one of them.

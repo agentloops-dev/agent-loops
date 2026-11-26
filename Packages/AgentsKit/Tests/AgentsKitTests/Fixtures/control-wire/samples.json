@@ -31,7 +31,10 @@
     "platform": "platform",
     "version": "version",
     "machineID": "machineID",
-    "implementation": "implementation"
+    "implementation": "implementation",
+    "roles": [
+      "control"
+    ]
   },
   "Admitted": {
     "client": "6F9619FF-8B86-D011-B42D-00C04FC964FF",

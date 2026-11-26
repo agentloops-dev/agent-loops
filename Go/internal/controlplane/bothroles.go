@@ -26,6 +26,33 @@ func (s *Service) refuseBothRoles(machineID string, publicKey []byte) error {
 	return fail(notPermitted, "%s", machine.BothRolesRefused)
 }
 
+// refuseControlOnlyJoin refuses a machine that joins with the control role alone (#7314)
+// from a machine that runs this control plane already: it has its record (#6609), and a
+// second would show one machine twice. The same join again, with the key it enrolled with,
+// answers as it did.
+func (s *Service) refuseControlOnlyJoin(machineID string, publicKey []byte) error {
+	if s.cfg.Hosted || machineID == "" {
+		return nil
+	}
+	copyHere := machineID == s.cfg.MachineID
+	for _, h := range s.records.Machines() {
+		if len(publicKey) > 0 && bytes.Equal(h.PublicKey, publicKey) {
+			return nil
+		}
+		// A copy's own record has no key, or runs agents too; a machine that joined with the
+		// control role alone has its key, and may join again with a new one.
+		if h.HasRole(records.RoleControl) && h.MachineID != nil && *h.MachineID == machineID &&
+			(len(h.PublicKey) == 0 || h.HasRole(records.RoleAgents)) {
+			copyHere = true
+		}
+	}
+	if !copyHere {
+		return nil
+	}
+	s.log("refused a control-only machine: it runs this control plane already (#7314)")
+	return fail(invalidParams, "This machine runs this control plane already. Join a machine that runs no control plane.")
+}
+
 // runsControl says whether that machine runs a copy of this control plane: this copy's own,
 // or one whose record has the control role. A hosted copy's machine is no customer's.
 func (s *Service) runsControl(machineID string) bool {

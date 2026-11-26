@@ -348,7 +348,7 @@ func (r *Records) Clients() []ClientRecord {
 }
 
 // Hosts is every host that runs agents, by id. A machine with only the control role
-// (#6609) is not one: nothing dials in with it. Machines has both.
+// (#6609) is not one: it takes no agent work, though it may link (#7314). Machines has both.
 func (r *Records) Hosts() []MachineRecord { return r.machines(false) }
 
 // Machines is every machine, by id, also one that only runs the control plane.

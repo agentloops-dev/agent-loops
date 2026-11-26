@@ -297,3 +297,35 @@ func TestAPoolMachineStopsAfterItsProjectsAndAClaimGoesOn(t *testing.T) {
 		t.Fatal("a host that stopped said a step")
 	}
 }
+
+// #7314: a control-only machine marks its host before it joins, so it enrols with the
+// control role alone, and asks its host for no runtime, project or session.
+func TestAControlOnlyMachineJoinsAndInstallsNoAgents(t *testing.T) {
+	o, l := options(t)
+	private := controllink.NewPrivateKey()
+	public, _ := controllink.PublicKey(private)
+	_, secret := controllink.MakeCodeSecret(private)
+	o.Join = (&controllink.Code{Host: true, ControlKey: public, Secret: secret, URL: "https://cp.example", Name: "cp"}).Text()
+	o.ControlOnly, o.Smoke = true, true
+	started := 0
+	deps := fakeHost(t, l, &started)
+	deps.Call = func(method string, _ any) (json.RawMessage, error) {
+		t.Fatalf("a control-only machine asked its host %s", method)
+		return nil, nil
+	}
+	if err := Run(context.Background(), o, deps); err != nil {
+		t.Fatal(err)
+	}
+	if !controllink.ControlOnly(l.Root) || started != 1 {
+		t.Fatalf("control only %v, started %d", controllink.ControlOnly(l.Root), started)
+	}
+	rs := reports(t, l)
+	for _, step := range []wire.MachineSetupStepID{wire.MachineSetupStepIDRuntimes, wire.MachineSetupStepIDProjects} {
+		if r := lastOf(rs, step); r == nil || r.State != wire.MachineSetupStateDone || *r.Detail != controlOnlyStep {
+			t.Fatalf("step %s = %+v", step, r)
+		}
+	}
+	if lastOf(rs, wire.MachineSetupStepIDSmoke) != nil {
+		t.Fatal("a control-only machine ran a smoke session")
+	}
+}
