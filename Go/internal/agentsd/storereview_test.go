@@ -3,13 +3,14 @@ package agentsd
 import (
 	"fmt"
 	"os"
-	"runtime"
+	goruntime "runtime"
 	"strings"
 	"syscall"
 	"testing"
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
+	"github.com/agentloops-dev/agent-loops/Go/internal/storesizes"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -64,7 +65,7 @@ func TestStoreReviewAtRealisticCounts(t *testing.T) {
 	t.Logf("next hourly sweep: %s", cost(d.sweepHourly))
 	t.Logf("trimConversations alone: %s", cost(d.trimConversations))
 	t.Logf("measureStores alone: %s", cost(d.measureStores))
-	limit := int64(500)
+	limit := int64(storesizes.MostPage)
 	var page wire.StoreSizes
 	read := cost(func() {
 		var err error
@@ -90,14 +91,14 @@ func TestStoreReviewAtRealisticCounts(t *testing.T) {
 // allocated.
 func cost(f func()) string {
 	var before, after syscall.Rusage
-	var m0, m1 runtime.MemStats
-	runtime.ReadMemStats(&m0)
+	var m0, m1 goruntime.MemStats
+	goruntime.ReadMemStats(&m0)
 	_ = syscall.Getrusage(syscall.RUSAGE_SELF, &before)
 	start := time.Now()
 	f()
 	wall := time.Since(start)
 	_ = syscall.Getrusage(syscall.RUSAGE_SELF, &after)
-	runtime.ReadMemStats(&m1)
+	goruntime.ReadMemStats(&m1)
 	cpu := time.Duration(after.Utime.Nano()-before.Utime.Nano()) + time.Duration(after.Stime.Nano()-before.Stime.Nano())
 	return fmt.Sprintf("wall %v, cpu %v, alloc %d MB", wall.Round(time.Millisecond), cpu.Round(time.Millisecond),
 		(m1.TotalAlloc-m0.TotalAlloc)>>20)
