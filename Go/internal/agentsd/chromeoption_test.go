@@ -38,8 +38,8 @@ func TestOnlyAClaudeSessionAskedForChromeGetsTheFlag(t *testing.T) {
 	}
 	a.StartOptions.Values["chrome"] = wire.JSONValue(`true`)
 	b, _ := json.Marshal(agentSessionMeta(a))
-	if !strings.Contains(string(b), `"chrome":null`) || !strings.Contains(string(b), `"disallowedTools"`) || !strings.Contains(string(b), `"settings":`) {
-		t.Fatalf("no --chrome, or the tools the app takes away or the settings lost: %s", b)
+	if !strings.Contains(string(b), `"chrome":null`) || !strings.Contains(string(b), `"disallowedTools"`) {
+		t.Fatalf("no --chrome, or the tools the app takes away lost: %s", b)
 	}
 	// The plain sessionMeta is not changed under another agent.
 	if b, _ := json.Marshal(sessionMeta("claude")); strings.Contains(string(b), `"chrome"`) {

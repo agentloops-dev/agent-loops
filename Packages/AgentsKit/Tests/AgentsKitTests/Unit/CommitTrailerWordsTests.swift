@@ -13,10 +13,17 @@ struct CommitTrailerWordsTests {
     }
 
     @Test func everyTrailerIsOnByDefaultButCost() {
-        #expect(CommitTrailerWords.trailers.count == 10)
+        #expect(CommitTrailerWords.trailers.count == 11)
         #expect(CommitTrailerWords.trailers.filter { !$0.isOnByDefault }.map(\.key) == ["Cost"])
         #expect(CommitTrailerWords.trailers(.spend).map(\.key) == ["Cost", "Tokens", "Duration"])
-        #expect(CommitTrailerWords.trailers.last?.key == "Co-authored-by")
+        #expect(CommitTrailerWords.trailers.prefix(3).map(\.key) == ["Managed-by", "Runtime", "Model"])
+    }
+
+    /// #7174: Co-authored-by is the runtime's own line, and Made-by is gone, so neither has a switch.
+    @Test func theRuntimesCoAuthorAndMadeByHaveNoSwitch() {
+        let keys = CommitTrailerWords.trailers.map(\.key)
+        #expect(!keys.contains("Co-authored-by"))
+        #expect(!keys.contains("Made-by"))
     }
 
     @Test func aRuleNoLayerSetsHasItsDefault() throws {
@@ -29,12 +36,12 @@ struct CommitTrailerWordsTests {
     }
 
     @Test func onlyTheTightValueAboveCapsYourSwitch() throws {
-        let madeBy = try trailer("Made-by"), tokens = try trailer("Tokens")
-        let required = DaemonAPI.EffectiveRule(rule: madeBy.rule, value: .bool(true), words: "On", decides: folder,
-                                               cap: .bool(true), capLine: "This folder (agent-loops): Made-by is required")
-        #expect(CommitTrailerWords.isCapped(madeBy, required))
-        let offAbove = DaemonAPI.EffectiveRule(rule: madeBy.rule, value: .bool(false), words: "Off", decides: folder, cap: .bool(false))
-        #expect(!CommitTrailerWords.isCapped(madeBy, offAbove))
+        let runtime = try trailer("Runtime"), tokens = try trailer("Tokens")
+        let required = DaemonAPI.EffectiveRule(rule: runtime.rule, value: .bool(true), words: "On", decides: folder,
+                                               cap: .bool(true), capLine: "This folder (agent-loops): Runtime is required")
+        #expect(CommitTrailerWords.isCapped(runtime, required))
+        let offAbove = DaemonAPI.EffectiveRule(rule: runtime.rule, value: .bool(false), words: "Off", decides: folder, cap: .bool(false))
+        #expect(!CommitTrailerWords.isCapped(runtime, offAbove))
         let keptOut = DaemonAPI.EffectiveRule(rule: tokens.rule, value: .bool(false), words: "Off", decides: folder, cap: .bool(false))
         #expect(CommitTrailerWords.isCapped(tokens, keptOut))
         #expect(!CommitTrailerWords.isCapped(tokens, nil))
@@ -51,10 +58,10 @@ struct CommitTrailerWordsTests {
 
     @Test func thePreviewHasTheTrailersThatAreOnInTheBlocksOrder() {
         let lines = CommitTrailerWords.preview { $0.isOnByDefault }
-        #expect(lines.count == 9)
-        #expect(lines.first == "Made-by: claude-code:claude-opus-5-5")
+        #expect(lines.count == 10)
+        #expect(Array(lines.prefix(3)) == ["Managed-by: Agent Loops <noreply@agentloops.dev>", "Runtime: claude-code", "Model: opus-5-5"])
         #expect(!lines.contains { $0.hasPrefix("Cost:") })
-        #expect(lines.last?.hasPrefix("Co-authored-by: ") == true)
+        #expect(lines.last == "Duration: 47m")
     }
 
     @Test func thePreviewIsTheSquashBlockInTheDaemonsFormat() {
@@ -83,14 +90,14 @@ struct CommitTrailerWordsTests {
 
     /// #6534: this repo sets Cost on, so its commits get Cost while the pane says Off.
     @Test func aFolderLineSaysWhatItsRuleChanges() throws {
-        let cost = try trailer("Cost"), madeBy = try trailer("Made-by"), tokens = try trailer("Tokens")
+        let cost = try trailer("Cost"), runtime = try trailer("Runtime"), tokens = try trailer("Tokens")
         let outside = DaemonAPI.EffectivePolicy(rules: [
             DaemonAPI.EffectiveRule(rule: cost.rule, value: .bool(false), words: "Off"),
-            DaemonAPI.EffectiveRule(rule: madeBy.rule, value: .bool(true), words: "On", decides: you),
+            DaemonAPI.EffectiveRule(rule: runtime.rule, value: .bool(true), words: "On", decides: you),
         ])
         let inFolder = DaemonAPI.EffectivePolicy(folder: "/src/agents", rules: [
             DaemonAPI.EffectiveRule(rule: cost.rule, value: .bool(true), words: "On", decides: folder),
-            DaemonAPI.EffectiveRule(rule: madeBy.rule, value: .bool(true), words: "On", decides: folder),
+            DaemonAPI.EffectiveRule(rule: runtime.rule, value: .bool(true), words: "On", decides: folder),
             DaemonAPI.EffectiveRule(rule: tokens.rule, value: .bool(false), words: "Off", decides: folder),
         ])
         let change = CommitTrailerWords.folderChange(folder: "/src/agents", name: "Agents", inFolder: inFolder, outside: outside)
