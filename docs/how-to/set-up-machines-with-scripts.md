@@ -101,8 +101,8 @@ change there must be in its image (its configuration's container).
 No provider makes your own server, so Agent Loops can't be root there. On the machine's page,
 **Set Up as Root…** shows a command: your approved `root.sh` in base64, run with `sudo`. Run it
 on that machine, as root or with `sudo`, then press **Check**: Root set-up reads its result
-there. Where your user there has `sudo`, agents there can become root too (the spec's
-[threat model](https://github.com/agentloops-dev/agent-loops/issues/7151#issuecomment-7153155639)).
+there. Where your user there has `sudo`, agents there can become root too (epic #7151, the
+spec's threat model).
 
 ## See also
 
