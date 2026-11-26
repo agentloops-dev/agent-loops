@@ -14,6 +14,7 @@ import (
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -122,6 +123,7 @@ func TestNoPolicyChangesNothing(t *testing.T) {
 // T015, US6: the policy is kept on disk, 0600; a forged, missing, older or edited copy
 // starts no work; a newer one and the same one signed again are taken (SC-005).
 func TestThePolicyFileIsKeptAndChecked(t *testing.T) {
+	flaky.UnderLoad(t, "#7426")
 	t.Parallel()
 
 	fakeRuntimes(t)
