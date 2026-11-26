@@ -3,6 +3,7 @@ package agentsd
 import (
 	"bytes"
 	"encoding/base64"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -92,6 +93,53 @@ func TestForgeImageReadsAGitHubAttachment(t *testing.T) {
 	asked := web.requests()
 	if len(asked) != 2 || asked[0] != "https://github.com/user-attachments/assets/abc auth=Bearer ghu_secret" || asked[1] != signed {
 		t.Fatalf("asked %q", asked)
+	}
+}
+
+// #7130: a public repo's attachment (gh --attach) redirects to GitHub's own S3 bucket with a
+// signed URL; it is read there with no token. A redirect to another bucket, to a look-alike of
+// GitHub's bucket or to S3 itself is still refused, with no request made to it.
+func TestForgeImageReadsAGitHubAttachmentFromItsS3Bucket(t *testing.T) {
+	t.Parallel()
+
+	const bucket = "https://github-production-user-asset-6210df.s3.amazonaws.com"
+	signed := bucket + "/1142830/718231100-abc.png?X-Amz-Signature=signed"
+	others := []string{
+		"https://other-bucket.s3.amazonaws.com/1/abc.png",
+		"https://github-production-user-asset-6210df.s3.amazonaws.com.evil.example/1/abc.png",
+		"https://evil-github-production-user-asset-6210df.s3.amazonaws.com/1/abc.png",
+		"https://s3.amazonaws.com/github-production-user-asset-6210df/1/abc.png",
+		"http://github-production-user-asset-6210df.s3.amazonaws.com/1/abc.png",
+		"https://github-production-user-asset-6210df.s3.amazonaws.com:8443/1/abc.png",
+	}
+	answers := map[string]func() *http.Response{
+		"https://github.com/user-attachments/assets/abc": redirectTo(signed),
+		signed: imageAnswer("binary/octet-stream", pngBytes),
+	}
+	for i, o := range others {
+		answers[fmt.Sprintf("https://github.com/user-attachments/assets/other%d", i)] = redirectTo(o)
+		answers[o] = imageAnswer("image/png", pngBytes)
+	}
+	c, web := imageDaemon(t, answers)
+	var image wire.ForgeImage
+	mustUnmarshal(t, c.call(t, 1, "forge/image", wire.ForgeImageRequest{URL: "https://github.com/user-attachments/assets/abc"}), &image)
+	if image.MimeType != "image/png" || !bytes.Equal(image.Data, pngBytes) {
+		t.Fatalf("image: %s, %d bytes", image.MimeType, len(image.Data))
+	}
+	asked := web.requests()
+	if len(asked) != 2 || asked[0] != "https://github.com/user-attachments/assets/abc auth=Bearer ghu_secret" || asked[1] != signed {
+		t.Fatalf("asked %q", asked)
+	}
+	for i, o := range others {
+		from := fmt.Sprintf("https://github.com/user-attachments/assets/other%d", i)
+		if msg := c.callErr(t, 10+i, "forge/image", wire.ForgeImageRequest{URL: from}); msg == "" {
+			t.Fatalf("%s: no error", o)
+		}
+	}
+	for _, a := range web.requests()[2:] {
+		if !strings.HasPrefix(a, "https://github.com/") {
+			t.Fatalf("asked a host off the list: %q", a)
+		}
 	}
 }
 
