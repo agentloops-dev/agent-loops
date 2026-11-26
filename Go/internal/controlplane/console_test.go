@@ -235,3 +235,33 @@ func TestConsoleLiveIsEveryRunningAgent(t *testing.T) {
 		t.Fatal(e)
 	}
 }
+
+// With two copies, an admin connected to one hears the other's change of level (#7361), as it
+// hears its notice: the strip and the rows do not wait for Machines to open.
+func TestAnAdminHearsAnotherCopysCapacityChange(t *testing.T) {
+	t.Parallel()
+	st, key := store.NewMemory(), controllink.NewPrivateKey()
+	a, b := startCopyWith(t, st, key, nil), startCopyWith(t, st, key, nil)
+	a.waitFor(func() bool { return len(a.s.mesh.peers()) == 1 && len(b.s.mesh.peers()) == 1 }, "the copies linked")
+	_, admin := a.client("Owner's window")
+	call(t, admin, "", "control/status", nil) // a window's first call: it then hears notices
+	want := wire.ControlCapacityCopy{Copy: b.s.copyID, Level: wire.CapacityLevelFull, Reason: "the control plane is at capacity: its memory is short", LoadPerCore: 3.1, At: wire.DateOf(time.Now())}
+	b.s.capacityChangedAdmins(want)
+	deadline := time.After(5 * time.Second)
+	for {
+		select {
+		case n := <-admin.Notes:
+			if n.Method != wire.NotifyControlCapacityChanged.Name {
+				continue
+			}
+			var got wire.ControlCapacityCopy
+			must(t, json.Unmarshal(n.Params, &got))
+			if got.Copy != want.Copy || got.Level != want.Level || got.Reason != want.Reason {
+				t.Fatalf("got %+v, want %+v", got, want)
+			}
+			return
+		case <-deadline:
+			t.Fatal("the admin at copy a did not hear copy b's change of level")
+		}
+	}
+}
