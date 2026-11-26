@@ -7,6 +7,27 @@
   },
   "methods": [
     {
+      "name": "control/receive",
+      "x-capability": "control.receive/1",
+      "description": "Asked by the control plane on the channel 0 of a machine with the control role, for control/move (#6612): open the control key sealed to this machine, keep it for the machine's own copy, and start that copy empty, to receive the store. The copy's store before is kept beside it. Not a window's method.",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "schema/machines.schema.json#/definitions/ControlReceiveRequest"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema/machines.schema.json#/definitions/ControlReceive"
+        }
+      }
+    },
+    {
       "name": "daemon/lockReset",
       "x-capability": "host.lock/4",
       "description": "agentsd lock reset (#3493, specs/3399-machine-lock D4): this machine forgets the lock it pinned, the invite and the request to join, and asks the control plane for its person's lock again, which it then pins on first use. Only on daemon.sock, from this machine's own account: never on a channel the control plane opened, nor on the window's local socket.",

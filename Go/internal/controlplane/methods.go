@@ -88,6 +88,8 @@ var own = methodSet(
 	"control/connectAnother",
 	"control/connectReport",
 	"control/eligible",
+	"control/move",
+	"control/moves/list",
 	"control/planeMove",
 	"control/planeMoveReport",
 	"control/restart",
@@ -523,6 +525,8 @@ func (m *Methods) Handle(method string, params json.RawMessage, from Caller) (an
 		return m.planeMoveMethod(method, params, from)
 	case "control/eligible":
 		return m.controlEligible(ctx, params, from)
+	case "control/move", "control/moves/list":
+		return m.controlMoveMethod(ctx, method, params, from)
 	case "control/rotate":
 		return wire.Empty{}, m.s.rotate(ctx, from)
 	case "control/restart", "control/retryWeb", "control/setWeb":

@@ -189,6 +189,8 @@ type Service struct {
 	// The id of the machine record this copy runs on (#6609).
 	controlMachine atomic.Pointer[string]
 	controlMu      sync.Mutex
+	// moving is the move of the control plane that runs, if any (#6612).
+	moving moveState
 	// dialMachine is set by tests; nil opens a TCP connection (control/eligible, #6611).
 	dialMachine func(ctx context.Context, address string) error
 	// lookupMachine is set by tests; nil asks DNS for the domain a machine's control role
