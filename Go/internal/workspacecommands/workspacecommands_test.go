@@ -720,7 +720,10 @@ func TestDockerWithAnImageMakesAndDeletesLabelledContainers(t *testing.T) {
 	if at(answer, "structuredContent.firstBootRuns") != true {
 		t.Errorf("%v", answer)
 	}
-	if want := `docker run -d --name 'build-2' --label agents.workspace 'agents-devbox:latest' && docker exec 'build-2' sh -c 'curl -fsSL https://x/install.sh | sh'`; !r.has(want) {
+	// With no root.sh, ${rootBoot} is empty, and nothing is copied in (#7159).
+	if want := `docker run -d --name 'build-2' --label agents.workspace 'agents-devbox:latest' && ` +
+		`{ [ -z '' ] || { docker cp '' 'build-2':/tmp/agents-root-boot.sh && docker exec -d -u root 'build-2' sh /tmp/agents-root-boot.sh; }; } && ` +
+		`docker exec 'build-2' sh -c 'curl -fsSL https://x/install.sh | sh'`; !r.has(want) {
 		t.Errorf("%q", r.all())
 	}
 	call(t, s, "workspace_delete", `{"id":"build-2"}`)

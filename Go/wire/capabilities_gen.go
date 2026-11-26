@@ -158,6 +158,7 @@ const CapMac1 = "mac/1"
 const CapMachineAccounts1 = "machine.accounts/1"
 const CapMachineAccounts2 = "machine.accounts/2"
 const CapMachineAgentSecrets1 = "machine.agent-secrets/1"
+const CapMachineRootSetup1 = "machine.root-setup/1"
 const CapMachineSetup1 = "machine.setup/1"
 const CapMachineUsage1 = "machine.usage/1"
 const CapMachine1 = "machine/1"
@@ -643,6 +644,9 @@ var HostCapabilities = pairs([][2]string{
 	{"settings/userPart", "host.user-settings/4"},
 	{"setup/approve", "host.machine-setup/1"},
 	{"setup/projects", "machine.setup/1"},
+	{"setup/rootAgain", "machine.root-setup/1"},
+	{"setup/rootCommand", "machine.root-setup/1"},
+	{"setup/rootLog", "machine.root-setup/1"},
 	{"setup/scripts", "host.machine-setup/1"},
 	{"shell/attach", "shell/1"},
 	{"shell/close", "shell/1"},

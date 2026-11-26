@@ -159,6 +159,7 @@ public enum Capability {
     public static let machineAccounts1 = "machine.accounts/1"
     public static let machineAccounts2 = "machine.accounts/2"
     public static let machineAgentSecrets1 = "machine.agent-secrets/1"
+    public static let machineRootSetup1 = "machine.root-setup/1"
     public static let machineSetup1 = "machine.setup/1"
     public static let machineUsage1 = "machine.usage/1"
     public static let machine1 = "machine/1"
@@ -644,6 +645,9 @@ public enum Capability {
         "settings/userPart": "host.user-settings/4",
         "setup/approve": "host.machine-setup/1",
         "setup/projects": "machine.setup/1",
+        "setup/rootAgain": "machine.root-setup/1",
+        "setup/rootCommand": "machine.root-setup/1",
+        "setup/rootLog": "machine.root-setup/1",
         "setup/scripts": "host.machine-setup/1",
         "shell/attach": "shell/1",
         "shell/close": "shell/1",

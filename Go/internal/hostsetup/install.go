@@ -185,6 +185,23 @@ func Run(ctx context.Context, o Options, d Deps) error {
 	}
 
 	// 5 and 6, together.
+	pool, first := runtimesAndProjects(ctx, o, d, l.Logs, rep, say, failed)
+	if first != nil || !o.Smoke || pool {
+		// A pool signs in to nothing: steps 7 and 8 are the claim's (#6896).
+		return first
+	}
+	// 7: Sign in to runtimes: a client's work, which this step waits on.
+	if err := SignIn(ctx, o, d, rep, say); err != nil {
+		return err
+	}
+	// 8: Smoke session.
+	return Smoke(ctx, o, d, rep, say)
+}
+
+// runtimesAndProjects is steps 5 and 6, together: whether the machine is a pool's, and the first
+// error of the two. A step that failed does not stop the other.
+func runtimesAndProjects(ctx context.Context, o Options, d Deps, logs string, rep *Reporter, say func(string, ...any),
+	failed func(wire.MachineSetupStepID, error) error) (bool, error) {
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	var first error
@@ -207,33 +224,46 @@ func Run(ctx context.Context, o Options, d Deps) error {
 	go func() {
 		defer wg.Done()
 		var err error
-		if pool, err = prepareProjects(ctx, &mine, d, l.Logs, rep, say); err != nil {
+		if pool, err = prepareProjects(ctx, &mine, d, logs, rep, say); err != nil {
 			keep(failed(wire.MachineSetupStepIDProjects, err))
 		}
 	}()
 	wg.Wait()
-	if first != nil || !o.Smoke || pool {
-		// A pool signs in to nothing: steps 7 and 8 are the claim's (#6896).
-		return first
-	}
-	// 7: Sign in to runtimes: a client's work, which this step waits on.
-	if err := SignIn(ctx, o, d, rep, say); err != nil {
-		return err
-	}
-	// 8: Smoke session.
-	return Smoke(ctx, o, d, rep, say)
+	return pool, first
 }
 
 // controlOnlyStep is what steps 5 and 6 say on a control-only machine.
 const controlOnlyStep = "None: this machine runs the control plane and no agents"
 
-// Continue runs the set-up from step from (projects, sign-in or smoke) to the end, inside the
-// host, on a machine that a person claimed from a warm pool (#6896). root is the host's root.
+// Continue runs the set-up from step from (root, projects, sign-in or smoke) to the end, inside the
+// host: on a machine that a person claimed from a warm pool (#6896), or after Try Again on a
+// failed Root set-up (#7159). root is the host's root.
 func Continue(ctx context.Context, o Options, d Deps, root string, from wire.MachineSetupStepID) error {
 	d.defaults()
 	rep := moreReports(ctx, root)
 	say := func(string, ...any) {}
 	switch from {
+	case wire.MachineSetupStepIDRoot:
+		// Try Again on a failed Root set-up (#7159): root.sh's result read again, then 5 and 6
+		// and the rest.
+		if d.Running == nil {
+			// Inside the host: it is running.
+			d.Running = func(string) bool { return true }
+		}
+		if err := rootSetup(ctx, d, Layout{Root: root}, rep); err != nil {
+			return err
+		}
+		failed := func(step wire.MachineSetupStepID, err error) error {
+			rep.Say(step, wire.MachineSetupStateFailed, "", err.Error())
+			return fmt.Errorf("%s: %w", step, err)
+		}
+		if _, err := runtimesAndProjects(ctx, o, d, filepath.Join(root, "logs"), rep, say, failed); err != nil {
+			return err
+		}
+		if !o.Smoke {
+			return nil
+		}
+		return Continue(ctx, o, d, root, wire.MachineSetupStepIDSignIn)
 	case wire.MachineSetupStepIDProjects:
 		if _, err := prepareProjects(ctx, &o, d, filepath.Join(root, "logs"), rep, say); err != nil {
 			rep.Say(wire.MachineSetupStepIDProjects, wire.MachineSetupStateFailed, "", err.Error())

@@ -15627,6 +15627,30 @@ type SetupApprove struct {
 	Approval LockRecord `json:"approval"`
 }
 
+// setup/rootAgain (#7159): read root.sh's result on this machine again.
+type SetupRootAgain struct {
+	// Then run the steps after Root set-up too, as Try Again does after it failed.
+	Rest bool `json:"rest"`
+}
+
+// setup/rootCommand (#7159): the command a person runs as root on a machine that cannot run root.sh by itself, such as their own server or a made machine whose root.sh failed. It runs the root.sh that a client approved for made machines, once, and leaves its result where Root set-up reads it.
+type SetupRootCommand struct {
+	// One line to paste in a terminal there: the script in base64, run with sudo.
+	Command string `json:"command"`
+
+	// The hash of the root.sh it runs.
+	Hash string `json:"hash"`
+}
+
+// setup/rootLog (#7159): this machine's root.log, from its last root.sh run, for Show Log.
+type SetupRootLog struct {
+	// The end of root.log, at most 64 KiB; empty when there is none.
+	Text string `json:"text"`
+
+	// The log is longer, and text is only its end.
+	Cut bool `json:"cut"`
+}
+
 // One set-up script on this machine (#7167): root (root.sh) or setup (setup.sh) in ~/.agents/machine-setup/. present: the file is there. text, hash and size are the file as it is now (hash: SHA-256 in lower-case hexadecimal); problem says why they are absent from a file that is there (over its limit, or unreadable). approvedText and approvedHash are the text a client approved last, and approvals the records in force for it, one a scope. changed: the file is not the approved text, so it is not used until a client approves it. nextSeq is the number to sign the next approval with.
 type SetupScript struct {
 	Name string `json:"name"`
