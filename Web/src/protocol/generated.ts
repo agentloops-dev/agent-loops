@@ -15011,6 +15011,32 @@ export interface SetupApprove {
   approval: LockRecord;
 }
 
+/** setup/rootAgain (#7159): read root.sh's result on this machine again. */
+export interface SetupRootAgain {
+  /** Then run the steps after Root set-up too, as Try Again does after it failed. */
+  rest: boolean;
+}
+
+/**
+ * setup/rootCommand (#7159): the command a person runs as root on a machine that cannot run root.sh
+ * by itself, such as their own server or a made machine whose root.sh failed. It runs the root.sh
+ * that a client approved for made machines, once, and leaves its result where Root set-up reads it.
+ */
+export interface SetupRootCommand {
+  /** One line to paste in a terminal there: the script in base64, run with sudo. */
+  command: string;
+  /** The hash of the root.sh it runs. */
+  hash: string;
+}
+
+/** setup/rootLog (#7159): this machine's root.log, from its last root.sh run, for Show Log. */
+export interface SetupRootLog {
+  /** The end of root.log, at most 64 KiB; empty when there is none. */
+  text: string;
+  /** The log is longer, and text is only its end. */
+  cut: boolean;
+}
+
 /**
  * One set-up script on this machine (#7167): root (root.sh) or setup (setup.sh) in
  * ~/.agents/machine-setup/. present: the file is there. text, hash and size are the file as it is
@@ -19964,6 +19990,9 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   SetYourPolicyRequest: { required: ["rules", "revision"], optional: [] },
   SettleUntrustedYourPolicyRequest: { required: ["file", "revision", "sign"], optional: [] },
   SetupApprove: { required: ["script", "approval"], optional: [] },
+  SetupRootAgain: { required: ["rest"], optional: [] },
+  SetupRootCommand: { required: ["command", "hash"], optional: [] },
+  SetupRootLog: { required: ["text", "cut"], optional: [] },
   SetupScript: { required: ["name", "present", "approvals", "changed", "nextSeq"], optional: ["text", "hash", "size", "problem", "approvedText", "approvedHash"] },
   SetupScriptApproval: { required: ["hash", "size"], optional: [] },
   SetupScripts: { required: ["scripts"], optional: [] },
