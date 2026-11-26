@@ -39,14 +39,17 @@ public extension DaemonAPI {
         public var address: String?
         public var memoryBytes: Int64?
         public var diskFreeBytes: Int64?
+        /// About how long a move there keeps the control plane frozen, in seconds (#7395).
+        public var frozenSeconds: Int64?
 
         public init(ok: Bool, reasons: [ControlEligibleReason], address: String? = nil,
-                    memoryBytes: Int64? = nil, diskFreeBytes: Int64? = nil) {
+                    memoryBytes: Int64? = nil, diskFreeBytes: Int64? = nil, frozenSeconds: Int64? = nil) {
             self.ok = ok
             self.reasons = reasons
             self.address = address
             self.memoryBytes = memoryBytes
             self.diskFreeBytes = diskFreeBytes
+            self.frozenSeconds = frozenSeconds
         }
     }
 
@@ -64,6 +67,9 @@ public extension DaemonAPI {
         public var phase: ControlMovePhase
         public var failedPhase: ControlMovePhase?
         public var address: String?
+        /// With copying: the records copied so far, and the total (#7395).
+        public var copied: Int64?
+        public var total: Int64?
         public var forwardingUntil: Date?
         public var startedAt: Date
         public var updatedAt: Date
@@ -71,7 +77,8 @@ public extension DaemonAPI {
         public var by: String
 
         public init(id: String, from: String, to: MachineRef, toName: String, phase: ControlMovePhase,
-                    failedPhase: ControlMovePhase? = nil, address: String? = nil, forwardingUntil: Date? = nil,
+                    failedPhase: ControlMovePhase? = nil, address: String? = nil, copied: Int64? = nil,
+                    total: Int64? = nil, forwardingUntil: Date? = nil,
                     startedAt: Date, updatedAt: Date, error: String? = nil, by: String) {
             self.id = id
             self.from = from
@@ -80,6 +87,8 @@ public extension DaemonAPI {
             self.phase = phase
             self.failedPhase = failedPhase
             self.address = address
+            self.copied = copied
+            self.total = total
             self.forwardingUntil = forwardingUntil
             self.startedAt = startedAt
             self.updatedAt = updatedAt
@@ -206,6 +215,9 @@ public enum ControlMoveWords {
         case .done, .forwarding:
             return "\(move.toName) is the control plane."
         default:
+            if move.phase == .copying, let copied = move.copied, let total = move.total, total > 0 {
+                return "Moving the control plane to \(move.toName): \(doing(move.phase)), \(copied.formatted()) of \(total.formatted()) records."
+            }
             return "Moving the control plane to \(move.toName): \(doing(move.phase))."
         }
     }
@@ -229,8 +241,9 @@ public enum ControlMoveWords {
     /// The confirmation's title.
     public static func question(_ name: String) -> String { "Make \(name) the control plane?" }
 
-    /// What the confirmation says happens. `now` is where clients reach the control plane today.
-    public static func happens(name: String, address: String?, now: String?) -> [String] {
+    /// What the confirmation says happens. `now` is where clients reach the control plane today;
+    /// `frozenSeconds` is control/eligible's time for the store's size (#7395).
+    public static func happens(name: String, address: String?, now: String?, frozenSeconds: Int64? = nil) -> [String] {
         var lines = [
             "The store and the control key move to \(name). The key is sealed to that machine.",
             "Every window, phone, browser and machine reconnects by itself. Nobody pairs again.",
@@ -240,8 +253,23 @@ public enum ControlMoveWords {
         } else if let address {
             lines.append("The address stays \(address).")
         }
-        lines.append("Agents keep working. For about a minute, screens can’t reach machines.")
+        lines.append(frozen(frozenSeconds))
         return lines
+    }
+
+    /// How long the control plane is frozen, and what that means (#7395).
+    static func frozen(_ seconds: Int64?) -> String {
+        let when = seconds.map { "For \(about($0))" } ?? "While the store copies"
+        return "Agents keep working. \(when), the control plane is frozen: it refuses changes, and screens can’t reach machines."
+    }
+
+    /// "about 10 seconds", "about 40 seconds", "about a minute", "about 5 minutes".
+    static func about(_ seconds: Int64) -> String {
+        if seconds < 60 {
+            return "about \(max(1, (seconds + 9) / 10) * 10) seconds"
+        }
+        let minutes = (seconds + 30) / 60
+        return minutes == 1 ? "about a minute" : "about \(minutes) minutes"
     }
 
     static func trimmed(_ error: String) -> String {

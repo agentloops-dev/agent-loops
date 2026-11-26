@@ -3834,6 +3834,9 @@ type ControlEligible struct {
 
 	// The free space on its fullest disk, as it said it (#7313). Absent when it did not say.
 	DiskFreeBytes *int64 `json:"diskFreeBytes,omitzero"`
+
+	// About how long a move to the machine keeps the control plane frozen, in seconds, from the store's size and the copy's batches (#7395). Changes are refused while it is frozen. Absent from a control plane before #7395.
+	FrozenSeconds *int64 `json:"frozenSeconds,omitzero"`
 }
 
 // One reason a machine cannot take the control role (#6611), with its words for the person.
@@ -3971,6 +3974,12 @@ type ControlMove struct {
 
 	// Where the new copy answers, once it said so.
 	Address *string `json:"address,omitzero"`
+
+	// With copying: the records copied so far (#7395). control/moveChanged says it every few seconds during the copy.
+	Copied *int64 `json:"copied,omitzero"`
+
+	// With copying: the records the copy takes (#7395).
+	Total *int64 `json:"total,omitzero"`
 
 	// With forwarding: until when the old copy sends members to the new one (30 days at most).
 	ForwardingUntil *Date `json:"forwardingUntil,omitzero"`

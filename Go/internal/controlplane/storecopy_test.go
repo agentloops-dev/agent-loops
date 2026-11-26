@@ -132,3 +132,25 @@ func (w *wrongBulk) createAll(ctx context.Context, batch []storeRecord) error {
 	}
 	return nil
 }
+
+// A copy says how it stands (#7395): 0 as it starts, then after each batch, to the total.
+func TestCopyStoreTellsItsProgress(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	from := store.NewMemory()
+	for i := range 2*copyBatchRecords + 1 {
+		_, err := from.Put(ctx, fmt.Sprintf("v1/a/%05d", i), []byte("small"), store.Absent)
+		must(t, err)
+	}
+	_, err := from.Put(ctx, "v1/leases/x", []byte("left out"), store.Absent)
+	must(t, err)
+	var heard [][2]int
+	_, _, err = copyStoreReporting(ctx, from, &countingBulk{Store: store.NewMemory()}, copySkipped, func(copied, total int) {
+		heard = append(heard, [2]int{copied, total})
+	})
+	must(t, err)
+	want := [][2]int{{0, 2001}, {1000, 2001}, {2000, 2001}, {2001, 2001}}
+	if !slices.Equal(heard, want) {
+		t.Fatal(heard)
+	}
+}

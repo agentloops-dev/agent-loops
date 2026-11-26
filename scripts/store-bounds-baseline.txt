@@ -1,14 +1,1 @@
 # Stores with no declared kind and bounds yet (#6669). It may only shrink: scripts/check-store-bounds.py.
-1 Go/internal/controllink/hostkey.go os.WriteFile
-1 Go/internal/controllink/keys.go os.OpenFile
-2 Go/internal/controllink/membership.go os.WriteFile
-1 Go/internal/controllink/personkey.go os.WriteFile
-1 Go/internal/controllink/personkeypin.go os.WriteFile
-1 Go/internal/controlplane/kms/rotate.go os.OpenFile
-2 Go/internal/controlplane/machine.go os.WriteFile
-1 Go/internal/mac/signin/certs.go os.WriteFile
-2 Go/internal/workspacecommands/digitalocean.go os.WriteFile
-1 Packages/AgentsKit/Sources/AgentsKitCore/Control/ControlMembership.swift write(to:)
-1 Packages/AgentsKit/Sources/AgentsKitCore/Model/MachineLock.swift createFile
-1 Web/src/wire/keys.ts indexedDB.open
-1 Web/src/wire/signIn.ts indexedDB.open

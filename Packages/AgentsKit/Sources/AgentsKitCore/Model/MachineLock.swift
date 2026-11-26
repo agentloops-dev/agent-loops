@@ -251,6 +251,8 @@ public enum MachineLock {
     public static let version = 1
     public static let mostEntries = 4096
     public static let mostBody = 4096
+    /// The largest lock-invite.json `keepInvite` writes: Go's `controllink.LockInviteMostBytes` (#7351).
+    public static let inviteMostBytes = 4 << 10
     public static let nonceSize = 16
     static let domain = Data("agents-lock/1\n".utf8)
     static let commitDomain = Data("agents-lock-join/1\n".utf8)
@@ -529,8 +531,13 @@ public enum MachineLock {
     public static func keepInvite(_ invite: Data, pin: Pin, in locations: StoreLocations) throws {
         struct File: Encodable { let key: Data, person: String, count: Int, head: Data }
         let data = try JSONEncoder().encode(File(key: invite, person: pin.person, count: pin.count, head: pin.head))
+        // Go's controllink.LockInviteMostBytes: a larger invite is refused, and the one before stays (#7351).
+        guard data.count <= inviteMostBytes else {
+            throw Failure.invalid("The lock's invite is \(data.count) bytes, more than the \(inviteMostBytes) this machine keeps, so it is not kept.")
+        }
         let file = locations.lockInvite
         let made = file.deletingLastPathComponent().appendingPathComponent(".\(file.lastPathComponent).tmp")
+        // store-bounds: kind=secret; count=1; size=4KiB; age=until-deleted; applied=on write (refused), agentsd drops it once spent, expired or not this lock's
         guard FileManager.default.createFile(atPath: made.path, contents: data, attributes: [.posixPermissions: 0o600]) else {
             throw CocoaError(.fileWriteUnknown)
         }

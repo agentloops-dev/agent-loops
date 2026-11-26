@@ -84,8 +84,13 @@ these states, in this order:
   the new one, for 30 days at most. Agent Loops changes no DNS record. **done:** the same
   address.
 
-The call answers once the checks pass. `control/moveChanged` tells the admins each step, and
-`control/moves/list` gives the newest 20 moves (`v1/moves/`, kept 90 days). A client reads the
+The call answers once the checks pass. `control/moveChanged` tells the admins each step, and,
+during the copy, the records copied and the total every 2 s at most (#7395); only the admins
+hear those counts, and the store keeps the steps. `control/eligible` says about how long a move
+keeps the control plane frozen (`frozenSeconds`), from the store's size and the measures above
+on a link of 50 ms a call and 10 MiB/s, so the confirmation says it; while it is frozen it
+refuses every change. `control/moves/list` gives the newest 20 moves (`v1/moves/`, kept 90
+days). A client reads the
 list when it connects, and then each step from `control/moveChanged`. The list writes nothing;
 each write of a move deletes the moves past those bounds. A step that fails
 before the new copy takes over leaves the old copy serving, and the move says which step failed
