@@ -43,6 +43,9 @@ It takes nothing. It returns:
   made again at each start (#1701). After a Start that the control plane made, its ssh
   start takes the key it is offered and pins it again. At any other time, a changed key is
   refused.
+- `addresses` is optional: the workspace's public addresses, IPv4 then IPv6, as the
+  provider's own record has them (#7466). At most 8 are read, each at most 64 characters.
+  `list_machines` and `make_machine` give them to an agent.
 - `cost` is optional, and is shown as given.
 - `idleTimeoutMinutes` is optional: the provider stops the workspace by itself after this
   many minutes with no use, as GitHub stops a codespace (#4803). The machine's page says so.

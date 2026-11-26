@@ -277,15 +277,15 @@ func TestDockerWithNoSSHLineLeavesAnUnlabelledContainerWithoutOne(t *testing.T) 
 func TestDoctlListsByTagAndReachesTheDropletByItsAddress(t *testing.T) {
 	r := &recorder{answer: func(line string) (int, string) {
 		if strings.HasPrefix(line, "doctl compute droplet list") {
-			return 0, "4101  devbox  off  203.0.113.7\n4102  build  active  203.0.113.8\n"
+			return 0, "4101  devbox  off  203.0.113.7\n4102  build  active  203.0.113.8  2001:db8::8\n"
 		}
 		return 0, ""
 	}}
 	s := server(t, `{"preset":"doctl","tag":"agents"}`, quick, r.run)
 	same(t, at(call(t, s, "workspaces_list", ""), "structuredContent.workspaces"), `[
-		{"id":"4101","name":"devbox","state":"stopped","ssh":"root@203.0.113.7","tunnel":false},
-		{"id":"4102","name":"build","state":"running","ssh":"root@203.0.113.8","tunnel":false}]`)
-	if got := r.all()[0]; got != "doctl compute droplet list --tag-name 'agents' --format ID,Name,Status,PublicIPv4 --no-header" {
+		{"id":"4101","name":"devbox","state":"stopped","ssh":"root@203.0.113.7","addresses":["203.0.113.7"],"tunnel":false},
+		{"id":"4102","name":"build","state":"running","ssh":"root@203.0.113.8","addresses":["203.0.113.8","2001:db8::8"],"tunnel":false}]`)
+	if got := r.all()[0]; got != "doctl compute droplet list --tag-name 'agents' --format ID,Name,Status,PublicIPv4,PublicIPv6 --no-header" {
 		t.Error(got)
 	}
 }

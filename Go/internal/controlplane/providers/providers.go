@@ -673,7 +673,7 @@ func (p *Providers) forAgent(person string) AgentMachines {
 		}
 		workspaces := []AgentWorkspace{}
 		for _, w := range summary.Workspaces {
-			aw := AgentWorkspace{ID: w.ID, Name: w.Name, State: w.State, Cost: w.Cost, Reason: w.Reason}
+			aw := AgentWorkspace{ID: w.ID, Name: w.Name, State: w.State, Cost: w.Cost, Reason: w.Reason, Addresses: w.Addresses}
 			for _, h := range hosts {
 				if w.Host != nil && *w.Host != "" && h.ID == string(*w.Host) {
 					aw.Host = &h.Name

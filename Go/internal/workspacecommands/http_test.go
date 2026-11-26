@@ -115,7 +115,8 @@ func fakeDigitalOcean(t *testing.T) (*fakeAPI, string) {
 			droplets = append(droplets, map[string]any{"id": json.Number(id), "name": "devbox-" + id, "status": status,
 				"networks": map[string]any{"v4": []any{
 					map[string]any{"ip_address": "10.0.0.5", "type": "private"},
-					map[string]any{"ip_address": "203.0.113.7", "type": "public"}}}})
+					map[string]any{"ip_address": "203.0.113.7", "type": "public"}},
+					"v6": []any{map[string]any{"ip_address": "2001:db8::7", "type": "public"}}}})
 		}
 		return map[string]any{"droplets": droplets, "meta": map[string]any{"total": len(droplets)}}
 	}
@@ -162,6 +163,10 @@ func TestDigitalOceanListsByTagWithTheTokenInAHeaderOnly(t *testing.T) {
 	w := all[0]
 	if w.ID != "3164494" || w.Name != "devbox-3164494" || w.State != Stopped || *w.SSH() != "agents@203.0.113.7" {
 		t.Errorf("%+v %s", w, *w.SSH())
+	}
+	// Its public addresses, from the droplet's own record, for an agent (#7466).
+	if got := w.JSON()["addresses"]; fmt.Sprint(got) != "[203.0.113.7 2001:db8::7]" {
+		t.Errorf("addresses %v", got)
 	}
 	if got := f.requests()[0]; got != "GET /v2/droplets?per_page=200&tag_name=agents+team" {
 		t.Errorf("%s", got)

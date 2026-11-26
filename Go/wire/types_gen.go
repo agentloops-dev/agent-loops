@@ -492,6 +492,9 @@ type AgentMachinesMachine struct {
 
 	// Why it failed, on a make that failed (#4706).
 	Reason *string `json:"reason,omitzero"`
+
+	// Its public addresses, IPv4 then IPv6, from the provider's own record (#7466).
+	Addresses []string `json:"addresses,omitzero"`
 }
 
 type AgentMachinesProvider struct {
@@ -9672,6 +9675,9 @@ type MachineInfo struct {
 	State string `json:"state"`
 
 	SSH *string `json:"ssh,omitzero"`
+
+	// Its public addresses, IPv4 then IPv6, from the provider's own record (#7466): an agent reaches root@<address> with the Agent Loops ssh key.
+	Addresses []string `json:"addresses,omitzero"`
 
 	Tunnel *bool `json:"tunnel,omitzero"`
 

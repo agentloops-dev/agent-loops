@@ -322,7 +322,8 @@ func toolsBrief(browser, screen, bot, github bool) string {
 			"A secret with Ask before use is refused: use the tool that puts it where it goes for you.",
 		"- list_machines, then start_session with machine (or machine auto, to let the control plane pick as New Session's Auto does): work on another of my machines. bring_back " +
 			"brings its branch back here. move_session moves a session there with its unpushed work. " +
-			"start_machine, stop_machine, make_machine and delete_machine control the machines.",
+			"start_machine, stop_machine, make_machine and delete_machine control the machines. " +
+			"list_machines and make_machine give a made machine's public addresses, for ssh with the Agent Loops key.",
 	}
 	if github {
 		lines = append(lines, "- set_ci_secret, set_ci_variable and set_environment_gate: set up a GitHub repository's CI. "+

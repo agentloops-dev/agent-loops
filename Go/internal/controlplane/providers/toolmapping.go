@@ -41,6 +41,8 @@ type Listing struct {
 	Name  string
 	State string
 	SSH   string
+	// Addresses is where its public addresses are: an array of text (#7466); "" for none.
+	Addresses string
 	// "" for none.
 	Tunnel        string
 	HostKeyRenews string
@@ -61,8 +63,8 @@ var ContractMapping = ToolMapping{
 	Create: &Call{Tool: "workspace_create", Arguments: map[string]any{
 		"name": "{name}", "options": "{options}", "firstBoot": "{firstBoot}", "rootBoot": "{rootBoot}"}},
 	Delete: &Call{Tool: "workspace_delete", Arguments: map[string]any{"id": "{id}"}},
-	Listing: Listing{Items: "workspaces", ID: "id", Name: "name", State: "state", SSH: "ssh", Tunnel: "tunnel",
-		HostKeyRenews: "hostKeyRenews", Cost: "cost", IdleTimeout: "idleTimeoutMinutes", States: map[string]string{}},
+	Listing: Listing{Items: "workspaces", ID: "id", Name: "name", State: "state", SSH: "ssh", Addresses: "addresses",
+		Tunnel: "tunnel", HostKeyRenews: "hostKeyRenews", Cost: "cost", IdleTimeout: "idleTimeoutMinutes", States: map[string]string{}},
 	Native: true,
 }
 
@@ -222,6 +224,9 @@ func (m ToolMapping) Workspace(item any) *MachineInfo {
 		ssh, _ := pathText(m.Listing.SSH, item)
 		w.SSH = optional(ssh)
 	}
+	if m.Listing.Addresses != "" {
+		w.Addresses = addresses(pathValue(m.Listing.Addresses, item))
+	}
 	if m.Listing.Tunnel != "" {
 		if b, ok := boolean(pathValue(m.Listing.Tunnel, item)); ok {
 			w.Tunnel = &b
@@ -246,6 +251,28 @@ func (m ToolMapping) Workspace(item any) *MachineInfo {
 		}
 	}
 	return w
+}
+
+// addresses is a list's text items, at most eight of them, each at most 64 runes: a
+// machine's public addresses (#7466). Nil for anything else.
+func addresses(v any) []string {
+	a, ok := arr(v)
+	if !ok {
+		return nil
+	}
+	var out []string
+	for _, item := range a {
+		text, ok := item.(string)
+		text = strings.TrimSpace(text)
+		if !ok || text == "" || utf8.RuneCountInString(text) > 64 {
+			continue
+		}
+		out = append(out, text)
+		if len(out) == 8 {
+			break
+		}
+	}
+	return out
 }
 
 // pathValue is ToolMapping.value(_:in:): the value at a path of dotted keys, [n] indexes

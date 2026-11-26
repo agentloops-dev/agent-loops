@@ -562,6 +562,8 @@ export interface AgentMachinesMachine {
   cost?: string;
   /** Why it failed, on a make that failed (#4706). */
   reason?: string;
+  /** Its public addresses, IPv4 then IPv6, from the provider's own record (#7466). */
+  addresses?: string[];
 }
 
 export interface AgentMachinesProvider {
@@ -9230,6 +9232,11 @@ export interface MachineInfo {
   name: string;
   state: string;
   ssh?: string;
+  /**
+   * Its public addresses, IPv4 then IPv6, from the provider's own record (#7466): an agent reaches
+   * root@<address> with the Agent Loops ssh key.
+   */
+  addresses?: string[];
   tunnel?: boolean;
   /**
    * Its ssh host key is made again at each start, as a Google Cloud workstation's is (#1701): after
@@ -18894,7 +18901,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   AgentConfigFiles: { required: ["files"], optional: ["updated"] },
   AgentMachines: { required: ["providers"], optional: ["hosts"] },
   AgentMachinesHost: { required: ["name", "state"], optional: ["capacity", "loadPerCore5", "capacityAt", "platform"] },
-  AgentMachinesMachine: { required: ["id", "name", "state"], optional: ["host", "hostState", "cost", "reason"] },
+  AgentMachinesMachine: { required: ["id", "name", "state"], optional: ["host", "hostState", "cost", "reason", "addresses"] },
   AgentMachinesProvider: { required: ["id", "name", "canMake", "canDelete", "workspaces"], optional: ["options"] },
   AgentRemovedNotification: { required: ["agentID"], optional: [] },
   AgentRequest: { required: ["agentID"], optional: [] },
@@ -19552,7 +19559,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   MachineForgeList: { required: ["machine", "machineName", "list"], optional: [] },
   MachineHello: { required: ["version", "platform", "machineID"], optional: ["host", "name", "implementation", "capabilities", "maturity", "control"] },
   MachineHelloAnswer: { required: [], optional: ["capabilities"] },
-  MachineInfo: { required: ["id", "name", "state"], optional: ["ssh", "tunnel", "hostKeyRenews", "cost", "idleTimeoutMinutes", "host", "reason", "joining", "notJoined", "setup"] },
+  MachineInfo: { required: ["id", "name", "state"], optional: ["ssh", "addresses", "tunnel", "hostKeyRenews", "cost", "idleTimeoutMinutes", "host", "reason", "joining", "notJoined", "setup"] },
   MachineInstall: { required: ["destination"], optional: ["name", "key", "trust", "tunnel", "provider", "workspace"] },
   MachineJoinAsk: { required: ["name", "platform", "publicKey"], optional: ["version", "machineID", "person"] },
   MachineJoinDecision: { required: ["result"], optional: ["host", "controlKey", "name"] },
