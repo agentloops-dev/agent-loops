@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/machinelock"
+	"github.com/agentloops-dev/agent-loops/Go/internal/workspacecommands"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -189,4 +190,45 @@ func lockMemberOf(t *testing.T, s *machinelock.State, k *ecdsa.PrivateKey) machi
 		t.Fatal("not a member")
 	}
 	return m
+}
+
+// #7154: a make fills in rootBoot only from the root.sh that a client approved for made machines:
+// none with no file, a stopped make while it is not the approved text, and none, with why, with no lock.
+func TestAMakeRunsOnlyTheApprovedRootScript(t *testing.T) {
+	t.Parallel()
+	d, phone, _, state, _ := senderWith(t, "echo setup\n")
+	if lines, sent, err := d.rootBootForMake(); lines != "" || sent != nil || err != nil {
+		t.Fatalf("with no root.sh: %q %+v %v", lines, sent, err)
+	}
+	const text = "#!/bin/bash\napt-get install -y gh\n"
+	root := filepath.Join(d.PersonalHome, ".agents", "machine-setup", "root.sh")
+	must(t, os.WriteFile(root, []byte(text), 0o600))
+	if _, _, err := d.rootBootForMake(); codeOf(err) != wire.FailureSetupScriptChanged {
+		t.Fatalf("a root.sh no client approved was sent: %v", err)
+	}
+	if _, err := d.approveSetupScript(wire.SetupApprove{Script: "root", Approval: approvalOf(t, phone, state, "root", "made", 1, text)}); err != nil {
+		t.Fatal(err)
+	}
+	lines, sent, err := d.rootBootForMake()
+	if err != nil || sent == nil || sent.Hash != scriptHash(text) || lines != workspacecommands.RootBoot([]byte(text)) {
+		t.Fatalf("%q %+v %v", lines, sent, err)
+	}
+	must(t, os.WriteFile(root, []byte(text+"apt-get install -y jq\n"), 0o600))
+	if _, _, err := d.rootBootForMake(); codeOf(err) != wire.FailureSetupScriptChanged {
+		t.Fatalf("a changed root.sh was sent: %v", err)
+	}
+}
+
+func TestAMakeWithNoLockSendsNoRootScriptAndSaysWhy(t *testing.T) {
+	t.Parallel()
+	d, _, _ := joinedMachine(t)
+	t.Cleanup(d.Shutdown)
+	d.PersonalHome = t.TempDir()
+	folder := filepath.Join(d.PersonalHome, ".agents", "machine-setup")
+	must(t, os.MkdirAll(folder, 0o700))
+	must(t, os.WriteFile(filepath.Join(folder, "root.sh"), []byte("apt-get install -y gh\n"), 0o600))
+	lines, sent, err := d.rootBootForMake()
+	if err != nil || lines != "" || sent == nil || !strings.Contains(sent.Problem, "needs your machine lock") {
+		t.Fatalf("%q %+v %v", lines, sent, err)
+	}
 }

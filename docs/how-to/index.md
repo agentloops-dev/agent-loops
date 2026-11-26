@@ -29,6 +29,8 @@ something particular done.
 - [Send a folder to a server](send-a-folder-to-a-machine.md): a repository on this Mac,
   with its unpushed branches and uncommitted changes, made a folder on the server, and
   the server's work brought back.
+- [Set up new machines with your scripts](set-up-machines-with-scripts.md): your `root.sh`
+  installs packages as root on each new machine's first boot.
 - [Start machines from Agent Loops](start-machines-from-agents.md): let the control plane
   start and stop the machines your servers run on, and press Start on a stopped one.
 - [Add a machine provider](add-a-machine-provider.md): a preset, or your own commands.

@@ -262,20 +262,25 @@ public extension DaemonAPI {
             case needsYou = "needs-you"
         }
 
-        /// `create`, `join`, `install`, `compare`, `runtimes`, `projects`, `signIn` or `smoke`.
+        /// `create`, `join`, `install`, `compare`, `root`, `runtimes`, `user`, `projects`, `signIn` or `smoke`.
         public var id: String
         public var state: State
         public var startedAt: Date?
         public var endedAt: Date?
-        /// One line of what it is doing or did.
+        /// One line of what it is doing or did; for a failed Root set-up, root.log's last lines (#7154).
         public var detail: String?
         /// Why it failed, in the words of the provider or the machine.
         public var error: String?
         public var fromPool: Bool?
         public var slower: Bool?
+        /// The script that the root or user step ran (#7167).
+        public var hash: String?
+        /// Done with a warning in its detail, such as a provider that can't run root set-up (#7154).
+        public var warning: Bool?
 
         public init(id: String, state: State, startedAt: Date? = nil, endedAt: Date? = nil, detail: String? = nil,
-                    error: String? = nil, fromPool: Bool? = nil, slower: Bool? = nil) {
+                    error: String? = nil, fromPool: Bool? = nil, slower: Bool? = nil, hash: String? = nil,
+                    warning: Bool? = nil) {
             self.id = id
             self.state = state
             self.startedAt = startedAt
@@ -284,6 +289,8 @@ public extension DaemonAPI {
             self.error = error
             self.fromPool = fromPool
             self.slower = slower
+            self.hash = hash
+            self.warning = warning
         }
     }
 

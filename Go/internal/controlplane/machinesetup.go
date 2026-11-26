@@ -264,15 +264,7 @@ func (st *storedSetup) report(r wire.MachineSetupReport, now time.Time) (time.Du
 	if r.Error != nil {
 		problem = *r.Error
 	}
-	if r.FromPool != nil && *r.FromPool {
-		step.FromPool = true
-	}
-	if r.Hash != nil {
-		step.Hash = *r.Hash
-	}
-	if r.Warning != nil {
-		step.Warning = *r.Warning
-	}
+	step.mark(r)
 	if step.State == r.State {
 		// Said again, as a progress line. One with no words (the host says steps 1 and 2 are
 		// done when it has joined) keeps the words the step has.
@@ -314,11 +306,41 @@ func (st *storedSetup) report(r wire.MachineSetupReport, now time.Time) (time.Du
 	} else {
 		step.Ended = nil
 	}
+	if r.State == wire.MachineSetupStateDone {
+		st.endWarned(now)
+	}
 	if st.allDone() {
 		t := now
 		st.Ready = &t
 	}
 	return took, finished, nil
+}
+
+// mark takes what a report says of the step beside its state: from a pool, the script's hash and
+// a warning.
+func (step *storedSetupStep) mark(r wire.MachineSetupReport) {
+	if r.FromPool != nil && *r.FromPool {
+		step.FromPool = true
+	}
+	if r.Hash != nil {
+		step.Hash = *r.Hash
+	}
+	if r.Warning != nil {
+		step.Warning = *r.Warning
+	}
+}
+
+// endWarned ends each waiting step that the control plane said with a warning, as soon as the
+// steps it waits for are done: a Root set-up that the provider cannot run, or with no lock
+// (#7154). Nothing on the machine says it, because root.sh never runs there.
+func (st *storedSetup) endWarned(now time.Time) {
+	for i := range st.Steps {
+		s := &st.Steps[i]
+		if s.State == wire.MachineSetupStateWaiting && s.Warning && st.canStart(s.ID) && !st.failed() {
+			t := now
+			s.State, s.Started, s.Ended = wire.MachineSetupStateDone, &t, &t
+		}
+	}
 }
 
 // compared is a done compare step as the control plane judges it (#5359): the digits the

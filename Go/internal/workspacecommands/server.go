@@ -168,6 +168,7 @@ func NewServer(config Config, timing Timing, run Runner, version string) *Server
 					{Name: "name", Kind: "string", Description: "The new machine's name.", MaxLength: 128},
 					{Name: "options", Kind: "object", Description: "The choices, as workspace_options describes them."},
 					{Name: "firstBoot", Kind: "string", Description: "A command to run on its first boot.", MaxLength: 8192},
+					{Name: "rootBoot", Kind: "string", Description: "Shell lines to run as root on its first boot, beside firstBoot: the person's root.sh.", MaxLength: RootBootMost},
 				}, Required: []string{"name"}})
 	}
 	if config.Making.CanDelete() {
@@ -267,10 +268,12 @@ func (s *Server) call(tool Tool, arguments any) (any, error) {
 		name, _ := args["name"].(string)
 		options, _ := args["options"].(map[string]any)
 		firstBoot, _ := args["firstBoot"].(string)
+		rootBoot, _ := args["rootBoot"].(string)
 		var w Workspace
 		var said []string
-		if w, said, err = p.Create(name, options, firstBoot); err == nil {
-			result = map[string]any{"workspace": w.JSON(), "firstBootRuns": p.Config.Making.FirstBootRuns()}
+		if w, said, err = p.CreateRooted(name, options, firstBoot, rootBoot); err == nil {
+			result = map[string]any{"workspace": w.JSON(), "firstBootRuns": p.Config.Making.FirstBootRuns(),
+				"rootBootRuns": p.Config.Making.RootBootRuns()}
 			if len(said) > 0 {
 				lines := make([]any, len(said))
 				for i, line := range said {
