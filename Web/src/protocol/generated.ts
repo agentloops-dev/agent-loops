@@ -17647,6 +17647,8 @@ export interface Methods {
   "control/capacity": { params: Empty; result: ControlCapacityBoard };
   "control/connectAnother": { params: ConnectAnotherRequest; result: Empty };
   "control/eligible": { params: ControlEligibleRequest; result: ControlEligible };
+  "control/move": { params: ControlMoveRequest; result: ControlMoveResult };
+  "control/moves/list": { params: Empty; result: ControlMoves };
   "control/planeMove": { params: PlaneMoveAsk; result: Empty };
   "control/restart": { params: Empty; result: Empty };
   "control/retryWeb": { params: Empty; result: WebRemoteStatus };
@@ -18144,6 +18146,8 @@ export const MethodTarget = {
   "control/capacity": "control",
   "control/connectAnother": "control",
   "control/eligible": "control",
+  "control/move": "control",
+  "control/moves/list": "control",
   "control/planeMove": "control",
   "control/restart": "control",
   "control/retryWeb": "control",
@@ -18558,6 +18562,7 @@ export interface Notifications {
   "control/lockChanged": LockHead;
   "control/lockJoinDecided": LockJoinDecided;
   "control/lockJoinRequested": LockJoinRequest;
+  "control/moveChanged": ControlMove;
   "control/orgRoutesChanged": Empty;
   "control/peopleChanged": PeopleChanged;
   "control/planeMoveReported": PlaneMoveReport;
