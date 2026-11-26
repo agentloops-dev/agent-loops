@@ -293,7 +293,7 @@ public extension DaemonAPI {
         public var error: String?
         public var fromPool: Bool?
         public var slower: Bool?
-        /// The script that the root or user step ran (#7167).
+        /// The script that root set-up or your set-up ran (#7167, #7155): its SHA-256 in hexadecimal.
         public var hash: String?
         /// Done with a warning in its detail, such as a provider that can't run root set-up (#7154).
         public var warning: Bool?

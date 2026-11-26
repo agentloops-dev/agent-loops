@@ -344,6 +344,13 @@ func (d *Daemon) botKeyAsk(ctx context.Context, host string, step any) error {
 	case wire.ConnectionBotDrop:
 		r.Drop, method = &s, wire.CallConnectionsBotDrop.Name
 	}
+	return d.askPeerSigned(ctx, *ask, host, "the agents' bot", wire.CallMachinesBotKey.Name, r, method, step)
+}
+
+// askPeerSigned asks the control plane, through machine/machines with relay and its params, to
+// give host step as method, as this machine signed it for host (#3492, D7). The answer's code is
+// the control plane's or that machine's.
+func (d *Daemon) askPeerSigned(ctx context.Context, ask askControl, host, agent, relay string, relayParams any, method string, step any) error {
 	signer, err := d.machineSigner()
 	if err != nil {
 		return err
@@ -356,12 +363,12 @@ func (d *Daemon) botKeyAsk(ctx context.Context, host string, step any) error {
 	if err != nil {
 		return err
 	}
-	p, _ := json.Marshal(r)
-	call := wire.MachineWorkspaceCall{Agent: "the agents' bot", Method: wire.CallMachinesBotKey.Name, Params: p,
+	p, _ := json.Marshal(relayParams)
+	call := wire.MachineWorkspaceCall{Agent: agent, Method: relay, Params: p,
 		Deliver: &wire.LockDelivery{Method: method, Params: string(b), Lock: sig}}
 	ctx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
-	_, err = (*ask)(ctx, "machine/machines", call)
+	_, err = ask(ctx, "machine/machines", call)
 	var refused *controllink.AskError
 	if errors.As(err, &refused) {
 		return &Error{Code: refused.Code, Message: refused.Message}

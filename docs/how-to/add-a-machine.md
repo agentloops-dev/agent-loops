@@ -128,6 +128,16 @@ changes. When you remove the server, the tunnel closes.
 What the control plane passes to ssh, and how each common `~/.ssh/config` option fares, is in
 [ssh options](../reference/ssh-options.md).
 
+### Send it your setup.sh
+
+Your own set-up, the tools and sign-ins you want on each machine, can go in `~/.agents/machine-setup/setup.sh` on this Mac. It needs your machine lock, and it is behind the early feature **Machine scripts** in Settings.
+
+1. On the machine's page, under **Your scripts**, press **Send Set-up…**.
+2. Read the script, then press **Approve and Send**. This Mac's lock key approves that text for that machine only.
+3. The machine runs it as its user, in its home folder, with `bash -e`, `AGENTS_SETUP=1`, `AGENTS_MACHINE` and `AGENTS_FROM_POOL`, for up to 10 minutes. It shows as the step **Your set-up**.
+
+A machine that a provider made, or that you claimed from a warm pool, gets it by itself when you approved it for new machines. **Run Again** runs the copy the machine has again, so write it to be safe to run again. When you change the file, the row says *changed on This Mac*: send it again. While a machine is offline, the send waits for it. Scripts are not secret: keep tokens in Secrets, not in a script.
+
 ### Choose its folders
 
 Nothing on the server becomes a folder by itself (#656). Once it joins, Add a Machine lists each

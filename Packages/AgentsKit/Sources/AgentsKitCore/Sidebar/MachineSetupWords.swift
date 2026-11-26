@@ -80,13 +80,14 @@ public enum MachineSetupWords {
     /// The chip in the page's header: *Setting up · 7 of 8*, *Ready · 3 min 42 s*, or *Set-up failed · 6 of 8*.
     public static func chip(_ setup: DaemonAPI.MachineSetup, now: Date = Date()) -> String {
         let total = setup.steps.count
-        if isReady(setup) {
-            let end = setup.readyAt ?? setup.steps.compactMap(\.endedAt).max() ?? now
-            return "Ready · \(duration(end.timeIntervalSince(setup.startedAt)))"
-        }
+        // A failed step first: Run Again of your set-up can fail on a machine that was ready (#7155).
         if let failed = failedStep(setup) {
             let at = (setup.steps.firstIndex { $0.id == failed.id } ?? 0) + 1
             return "Set-up failed · step \(at) of \(total)"
+        }
+        if isReady(setup) {
+            let end = setup.readyAt ?? setup.steps.compactMap(\.endedAt).max() ?? now
+            return "Ready · \(duration(end.timeIntervalSince(setup.startedAt)))"
         }
         return "Setting up · \(position(setup)) of \(total)"
     }

@@ -114,6 +114,7 @@ type Daemon struct {
 	lockState
 	lockRecords
 	setupScriptsState
+	userSetupState
 	selfUpdateState
 	quitState
 	processBook

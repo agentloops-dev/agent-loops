@@ -99,6 +99,7 @@ func (b poolsBackend) Bind(person, provider, workspace string, stopWhenIdle *int
 		return "", err
 	}
 	b.s.setupChanged(context.Background(), host.ID)
+	b.s.setupWanted(context.Background(), host.ID)
 	return host.ID, nil
 }
 
