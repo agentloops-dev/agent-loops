@@ -17,7 +17,7 @@ and it never closes. Do steps 1 to 4 as "Standing epics", below, says. Never do 
 
 ## Starting a lead
 
-Start lead in Work, Alex, or the release (for the bug lane) starts the lead with one
+Autopilot (when it is on for the folder, #5897), Start lead in Work, Alex, or the release (for the bug lane) starts the lead with one
 session in the epic's folder, with the Lead persona (`.agents/personas/lead.md`). Its
 title is `#<epic>: <epic title> lead`, its labels `#<epic>` and `lead`, no worktree, and
 its prompt is this one:
@@ -25,6 +25,11 @@ its prompt is this one:
 > #<epic>: <epic title>
 >
 > Lead this epic: <epic URL>
+
+A lead that Autopilot starts has the same title, labels and prompt. When Autopilot starts
+it again because the epic is open and the lead before it ended, stopped or was archived
+(#5901), the prompt names that lead, and this lead reads it first (`read_session`) to
+take up where it stopped.
 
 Only one lead per epic: if a session labelled `#<epic>` and `lead` is not archived, do
 not start a second one.
