@@ -88,6 +88,8 @@ var own = methodSet(
 	"control/connectAnother",
 	"control/connectReport",
 	"control/eligible",
+	"control/move",
+	"control/moves/list",
 	"control/planeMove",
 	"control/planeMoveReport",
 	"control/restart",
@@ -523,6 +525,8 @@ func (m *Methods) Handle(method string, params json.RawMessage, from Caller) (an
 		return m.planeMoveMethod(method, params, from)
 	case "control/eligible":
 		return m.controlEligible(ctx, params, from)
+	case "control/move", "control/moves/list":
+		return m.controlMoveMethod(ctx, method, params, from)
 	case "control/rotate":
 		return wire.Empty{}, m.s.rotate(ctx, from)
 	case "control/restart", "control/retryWeb", "control/setWeb":
@@ -538,7 +542,7 @@ func (m *Methods) Handle(method string, params json.RawMessage, from Caller) (an
 	case "machines/retrySetup":
 		return m.retryMachineSetup(ctx, params, from)
 	case "machines/deletePreview":
-		return m.deletePreview(params, from)
+		return m.deletePreview(ctx, params, from)
 	case "machines/lastHeard":
 		return m.machineLastHeard(params)
 	case "machines/versions":
@@ -886,9 +890,27 @@ func (m *Methods) ownMachine(params json.RawMessage, from Caller) (string, error
 }
 
 // refuseControlOnly refuses a machine that only runs the control plane (#6609): it is not
-// removed, forgotten or given a provider's action. Moving it is a control move (#6612).
+// changed or given a provider's action. Its removal is refuseControlCopy's (#7346).
 func (m *Methods) refuseControlOnly(host string) error {
 	if h := m.records.Host(host); h != nil && h.ControlOnly() {
+		return fail(invalidParams, "%s", h.ControlOnlyRefusal())
+	}
+	return nil
+}
+
+// refuseControlCopy refuses to remove a machine that only runs the control plane while a
+// copy of it runs there (#7346): moving that is a control move (#6612). A control-only
+// machine that runs no copy, such as one that joined by mistake, is removed as any other.
+func (m *Methods) refuseControlCopy(ctx context.Context, host string) error {
+	h := m.records.Host(host)
+	if h == nil || !h.ControlOnly() {
+		return nil
+	}
+	runs, err := m.s.runsCopy(ctx, host)
+	if err != nil {
+		return err
+	}
+	if runs {
 		return fail(invalidParams, "%s", h.ControlOnlyRefusal())
 	}
 	return nil
@@ -914,7 +936,7 @@ func (m *Methods) retryMachineSetup(ctx context.Context, params json.RawMessage,
 
 // deletePreview is machines/deletePreview, Delete's question (#3979): the worktrees on the
 // machine with work not pushed.
-func (m *Methods) deletePreview(params json.RawMessage, from Caller) (any, error) {
+func (m *Methods) deletePreview(ctx context.Context, params json.RawMessage, from Caller) (any, error) {
 	request, err := require[wire.MachineRequest](params, "MachineRequest")
 	if err != nil {
 		return nil, err
@@ -927,7 +949,7 @@ func (m *Methods) deletePreview(params json.RawMessage, from Caller) (any, error
 	if h == nil {
 		return nil, fail(noSuchHost, "No machine is called %s.", host)
 	}
-	if err := m.refuseControlOnly(host); err != nil {
+	if err := m.refuseControlCopy(ctx, host); err != nil {
 		return nil, err
 	}
 	return m.unpushedOn(*h, from), nil
@@ -1086,7 +1108,7 @@ func (m *Methods) removeHost(ctx context.Context, host string, from Caller) (boo
 
 // removeHostIf is removeHost for a machine that still passes still, when there is one.
 func (m *Methods) removeHostIf(ctx context.Context, host string, from Caller, still func(records.MachineRecord) bool) (bool, error) {
-	if err := m.refuseControlOnly(host); err != nil {
+	if err := m.refuseControlCopy(ctx, host); err != nil {
 		return false, err
 	}
 	owner, name := m.s.ownerOf(host), host

@@ -51,7 +51,9 @@ const CapConsole1 = "console/1"
 const CapControlConnectAnother1 = "control.connect-another/1"
 const CapControlEligible1 = "control.eligible/1"
 const CapControlLocal1 = "control.local/1"
+const CapControlMove1 = "control.move/1"
 const CapControlPlaneMove1 = "control.plane-move/1"
+const CapControlReceive1 = "control.receive/1"
 const CapControlRotate1 = "control.rotate/1"
 const CapControl1 = "control/1"
 const CapCost1 = "cost/1"
@@ -369,6 +371,7 @@ var HostCapabilities = pairs([][2]string{
 	{"connectors/codespaces", "connectors.setup/1"},
 	{"connectors/setup", "connectors.setup/1"},
 	{"connectors/setup/skip", "connectors.setup/1"},
+	{"control/receive", "control.receive/1"},
 	{"cost/setLimits", "cost/1"},
 	{"cost/state", "cost/1"},
 	{"credentials/offer", "credentials/1"},
@@ -862,6 +865,8 @@ var ControlCapabilities = pairs([][2]string{
 	{"control/connectAnother", "control.connect-another/1"},
 	{"control/connectReport", "control.connect-another/1"},
 	{"control/eligible", "control.eligible/1"},
+	{"control/move", "control.move/1"},
+	{"control/moves/list", "control.move/1"},
 	{"control/ping", "control/1"},
 	{"control/planeMove", "control.plane-move/1"},
 	{"control/planeMoveReport", "control.plane-move/1"},
@@ -1105,6 +1110,7 @@ var ControlCapabilities = pairs([][2]string{
 	{"control/lockChanged", "lock/1"},
 	{"control/lockJoinDecided", "lock-join/1"},
 	{"control/lockJoinRequested", "lock-join/1"},
+	{"control/moveChanged", "control.move/1"},
 	{"control/moved", "control/1"},
 	{"control/notice", "org-identity/1"},
 	{"control/orgRoutesChanged", "org-routes/2"},
@@ -1164,6 +1170,7 @@ var ControlNotifications = set([]string{
 	"control/lockChanged",
 	"control/lockJoinDecided",
 	"control/lockJoinRequested",
+	"control/moveChanged",
 	"control/moved",
 	"control/notice",
 	"control/orgRoutesChanged",

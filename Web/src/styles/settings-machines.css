@@ -105,3 +105,14 @@ dialog.sheet:has(.account-details) { width: min(600px, calc(100vw - 32px)); max-
 .machine-session-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .machine-session-branch { display: none; }
 @media (min-width: 900px) { .machine-session-branch { display: inline; } }
+
+/* Settings ▸ Machines ▸ Image Hosts (#7140): the list with Remove, and how fresh it is. */
+.image-hosts-head { display: flex; align-items: baseline; gap: 8px; max-width: 420px; }
+.image-hosts-fresh { margin-left: auto; display: inline-flex; gap: 6px; align-items: center; }
+.image-hosts-list { max-width: 420px; border: 1px solid var(--paper-rule); border-radius: 10px; background: var(--paper-raised); margin: 8px 0 10px; }
+.image-hosts .image-hosts-list .setting { max-width: none; border-bottom: none; padding: 6px 10px; }
+.image-hosts .image-hosts-row + .image-hosts-row { border-top: 1px solid var(--paper-rule); }
+.image-hosts-host { display: flex; flex-direction: column; min-width: 0; overflow-wrap: anywhere; }
+.image-hosts-remove { color: var(--tint-failure); }
+.image-hosts-empty { padding: 22px 14px; margin: 0; text-align: center; color: var(--paper-secondary); }
+.image-hosts-empty b { color: var(--paper-ink); }
