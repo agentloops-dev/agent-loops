@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/controlplane/web"
+	"github.com/agentloops-dev/agent-loops/Go/internal/execfile"
 	"github.com/agentloops-dev/agent-loops/Go/internal/machine"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
@@ -303,7 +304,7 @@ func place(executable string, l Layout) error {
 	}
 	tmp := l.Binary() + ".new"
 	// store-bounds: not a store: the release's program, one copy beside agentsd
-	if err := os.WriteFile(tmp, data, 0o700); err != nil { //nolint:gosec // G306: a program must run
+	if err := execfile.Write(tmp, data, 0o700); err != nil {
 		return err
 	}
 	return os.Rename(tmp, l.Binary())

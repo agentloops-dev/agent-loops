@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -64,6 +65,7 @@ func TestAllowancesOnAServer(t *testing.T) {
 // starts one login shell a minute at most, and reads an account's sign-in file only when it
 // changed (#2251).
 func TestAllowancesLocateOnceAndReadSignInOnce(t *testing.T) {
+	flaky.UnderLoad(t, "#7441")
 	personalHomeFor(t, t.TempDir())
 	t.Setenv("CLAUDE_CONFIG_DIR", "")
 	var shells, located atomic.Int64

@@ -44,6 +44,11 @@ var readyMadeGitBase = "https://github.com"
 // than read into memory.
 const readyMadeMaxBytes = 4 << 20
 
+// readyMadeCopyMost bounds ready-made-copy.json, the one fetched copy (#7349): the files of
+// readyMadeMaxBytes, with room for JSON's escapes. A larger copy is refused, and the one
+// before stays.
+const readyMadeCopyMost = 2 * readyMadeMaxBytes
+
 // readyMadeRetry is how long after a failed fetch the next is tried.
 const readyMadeRetry = 10 * time.Minute
 
@@ -153,10 +158,14 @@ func saveReadyMade(home string, set *readyMadeSet) error {
 	if err != nil {
 		return err
 	}
+	if len(data) > readyMadeCopyMost {
+		return fmt.Errorf("the ready-made copy is %d bytes, at most %d: %w", len(data), readyMadeCopyMost, store.ErrLimit)
+	}
 	path := readyMadeCopyPath(home)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
+	// store-bounds: kind=document; size=8MiB; count=1; age=until-deleted; applied=on write (a larger copy is refused, each fetch replaces it) (#7349)
 	return store.WriteAtomically(path, data, 0o644)
 }
 

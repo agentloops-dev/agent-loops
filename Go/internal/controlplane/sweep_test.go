@@ -3,6 +3,7 @@ package controlplane
 // StoreHousekeepingTests' sweep cases, ported, and the kept host lists (#962).
 
 import (
+	"fmt"
 	"context"
 	"encoding/json"
 	"os"
@@ -316,6 +317,54 @@ func TestTheSweepCatchesUpWithinTheHour(t *testing.T) {
 	// 51 expired, 10 a round: 6 rounds, the last one not full.
 	if err != nil || report.events != 51 || rounds != 6 || pauses != 5 || len(left) != 1 || left[0].Key != "v1/events/"+kept+"/0.json" {
 		t.Fatalf("%+v rounds %d pauses %d left %v %v", report, rounds, pauses, left, err)
+	}
+}
+
+// #7403: the rounds of one hour do not list the store again for what they did not reach.
+// A step runs only while deletions are left for it, and not again once it has found all it
+// could delete, so each list is taken once in the hour, but by a step still catching up.
+func TestTheRoundsOfAnHourListEachStepOnce(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	s := &listCounter{Store: store.NewMemory()}
+	now := time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC)
+	put := func(key string) {
+		if _, err := s.Put(ctx, key, []byte("{}"), store.Absent); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for n := range 51 {
+		put("v1/events/2000-01-01/" + itoa(n) + ".json")
+	}
+	for n := range 25 {
+		put(meshEventsPrefix + "2000-01-01/" + itoa(n) + ".json")
+	}
+	for n := range 3 {
+		put(fmt.Sprintf("v1/runs/run-%d.json", n))
+	}
+	report, rounds, err := sweepRounds(ctx, records.New(s), func() time.Time { return now }, 10, &eventSweep{},
+		0, func(time.Duration) bool { return true })
+	// 51 events, 10 a round, then the 25 mesh events: 1 with the last events, 10, 6.
+	if err != nil || report.events != 76 || rounds != 8 {
+		t.Fatalf("%+v rounds %d %v", report, rounds, err)
+	}
+	lists := map[string]int{}
+	for _, prefix := range s.lists {
+		lists[prefix]++
+	}
+	for prefix, n := range lists {
+		// The steps that catch up list again in each of their rounds, and two steps list
+		// the buses.
+		want := map[string]int{"v1/events/2000-01-01/": 6, meshEventsPrefix: 3, busPrefix: 2}[prefix]
+		if want == 0 {
+			want = 1
+		}
+		if n != want {
+			t.Errorf("%s listed %d times, want %d", prefix, n, want)
+		}
+	}
+	if left, _ := s.Store.List(ctx, "v1/runs/"); len(left) != 3 {
+		t.Fatalf("runs: %v", left)
 	}
 }
 

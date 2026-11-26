@@ -47,13 +47,21 @@ public struct SessionLabel: Codable, Hashable, Sendable {
 /// The one label policy used before any agent record is changed. It works on copies,
 /// so a refused request cannot partly alter a session.
 public enum SessionLabelPolicy {
+    /// Plain labels: links (`#12`, `ENG-4`, `P#12`) and the finished words (`merged`, `closed`,
+    /// `archived`, only three) are not counted in it (#7241), so a lane that joins several issues
+    /// still links its PR and shows it merged.
     public static let maximumCount = 5
+    /// Links to issues and pull requests, a bound of their own.
+    public static let maximumLinks = 20
     public static let maximumLength = 24
 
     public enum Refusal: Error, LocalizedError, Equatable, Sendable {
         case empty
         case tooLong
-        case tooMany
+        /// Five plain labels already: the ones it has.
+        case tooMany([String])
+        /// Twenty links already: the ones it has.
+        case tooManyLinks([String])
         case conflictingChange(String)
         case ownedByPerson(String)
 
@@ -61,12 +69,52 @@ public enum SessionLabelPolicy {
             switch self {
             case .empty: return "A label needs at least one non-space character."
             case .tooLong: return "A label can be at most 24 characters."
-            case .tooMany: return "A session can have at most five labels."
+            case .tooMany(let has):
+                return "A session can have at most five labels, apart from links (#12, P#12) and merged, closed or archived. It has \(has.joined(separator: ", "))."
+            case .tooManyLinks(let has):
+                return "A session can have at most \(maximumLinks) links to issues and pull requests (#12, P#12). It has \(has.joined(separator: ", "))."
             case .conflictingChange(let value):
                 return "The label \(value) cannot be added and removed in the same change."
             case .ownedByPerson(let value):
                 return "The label \(value) belongs to the person, so an agent cannot change it."
             }
+        }
+    }
+
+    /// Why one more label like `value` does not fit beside `existing`, or nil when it does:
+    /// each kind has its own bound, and the finished words have none.
+    public static func roomRefusal(for value: String, existing: [String]) -> Refusal? {
+        let kind = SessionLabel.kind(of: value)
+        let same = existing.filter { counted(SessionLabel.kind(of: $0)) == counted(kind) }
+        switch counted(kind) {
+        case .link: return same.count >= maximumLinks ? .tooManyLinks(same) : nil
+        case .plain: return same.count >= maximumCount ? .tooMany(same) : nil
+        case .finished: return nil
+        }
+    }
+
+    /// Whether the field still takes a label of some kind that is bounded.
+    public static func hasRoom(existing: [String]) -> Bool {
+        roomRefusal(for: "label", existing: existing) == nil || roomRefusal(for: "#1", existing: existing) == nil
+    }
+
+    /// The labels a whole set holds that its bounds refuse, if any (a start's labels).
+    public static func refusal(of labels: [String]) -> Refusal? {
+        var kept: [String] = []
+        for value in labels {
+            if let refusal = roomRefusal(for: value, existing: kept) { return refusal }
+            kept.append(value)
+        }
+        return nil
+    }
+
+    private enum Counted { case plain, link, finished }
+
+    private static func counted(_ kind: SessionLabel.Kind) -> Counted {
+        switch kind {
+        case .issue, .pullRequest: .link
+        case .finished: .finished
+        case .plain: .plain
         }
     }
 
@@ -97,8 +145,8 @@ public enum SessionLabelPolicy {
         var seen = Set(existing.map(key))
         var result: [String] = []
         for value in typed {
-            guard existing.count + result.count < maximumCount,
-                  let value = try? cleaned(value),
+            guard let value = try? cleaned(value),
+                  roomRefusal(for: value, existing: existing + result) == nil,
                   seen.insert(key(value)).inserted else { continue }
             result.append(value)
         }
@@ -133,7 +181,7 @@ public enum SessionLabelPolicy {
                 if actor == .person { result[index].owner = .person }
                 continue
             }
-            guard result.count < maximumCount else { throw Refusal.tooMany }
+            if let refusal = roomRefusal(for: value, existing: result.map(\.value)) { throw refusal }
             let canonical = folderLabels.first(where: { $0.normalizedValue == key(value) })?.value ?? value
             result.append(SessionLabel(value: canonical, owner: actor, addedAt: date))
         }

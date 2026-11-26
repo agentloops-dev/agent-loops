@@ -2,6 +2,7 @@ package agentsd
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -207,13 +208,66 @@ func TestLabels(t *testing.T) {
 	if e := c.callError(t, 3, "agents/setLabels", map[string]any{"agentID": id, "add": []string{strings.Repeat("a", 25)}}); e.Message != "A label can be at most 24 characters." {
 		t.Fatal(e.Message)
 	}
-	if e := c.callError(t, 4, "agents/setLabels", map[string]any{"agentID": id, "add": []string{"a", "b", "c", "d"}}); e.Message != "A session can have at most five labels." {
+	if e := c.callError(t, 4, "agents/setLabels", map[string]any{"agentID": id, "add": []string{"a", "b", "c", "d"}}); e.Message != "A session can have at most five labels, apart from links (#12, P#12) and merged, closed or archived. It has bug, Release, a, b, c." {
 		t.Fatal(e.Message)
 	}
 	var words []string
 	mustUnmarshal(t, c.call(t, 5, "agents/labelVocabulary", map[string]any{"folder": store.FolderURL(folder)}), &words)
 	if strings.Join(words, ",") != "Release,bug" {
 		t.Fatal(words)
+	}
+}
+
+// A lane that joins five issues can still add lane, its PR and merged (#7241); links have a
+// bound of their own, and each refusal says which labels it counted.
+func TestLinkLabelsHaveARoomOfTheirOwn(t *testing.T) {
+	t.Parallel()
+
+	five := []string{"#1", "#2", "#3", "#4", "#5"}
+	got, err := changeLabelsAs(wire.SessionLabelOwnerAgent, nil, five, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err = changeLabelsAs(wire.SessionLabelOwnerAgent, got, []string{"lane", "P#9", "merged", "a", "b", "c", "d", "ENG-4"}, nil, nil)
+	if err != nil || len(got) != 13 {
+		t.Fatalf("%v %+v", err, got)
+	}
+	if _, err := changeLabelsAs(wire.SessionLabelOwnerAgent, got, []string{"e"}, nil, nil); err == nil ||
+		err.(*Error).Message != "A session can have at most five labels, apart from links (#12, P#12) and merged, closed or archived. It has lane, a, b, c, d." {
+		t.Fatal(err)
+	}
+	var many []string
+	for i := range linkLabelCount {
+		many = append(many, fmt.Sprintf("#%d", 100+i))
+	}
+	links, err := changeLabelsAs(wire.SessionLabelOwnerAgent, nil, many, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := changeLabelsAs(wire.SessionLabelOwnerAgent, links, []string{"P#1"}, nil, nil); err == nil ||
+		!strings.HasPrefix(err.(*Error).Message, "A session can have at most 20 links to issues and pull requests (#12, P#12). It has #100, #101,") {
+		t.Fatal(err)
+	}
+	if _, err := changeLabelsAs(wire.SessionLabelOwnerAgent, links, []string{"closed", "archived", "merged", "x"}, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A start's labels are held to the same bounds: six plain labels on a start are refused, as
+// a sixth add is, and nothing starts.
+func TestAStartsLabelsAreBounded(t *testing.T) {
+	t.Parallel()
+
+	fakeRuntimes(t)
+	d, c := start(t, t.TempDir())
+	defer d.Shutdown()
+	e := c.callError(t, 1, "agents/start", map[string]any{"runtimeID": "claude", "cwd": "file://" + t.TempDir(), "prompt": "hi",
+		"labels": []string{"a", "b", "c", "d", "e", "f"}})
+	if !strings.HasPrefix(e.Message, "A session can have at most five labels") {
+		t.Fatal(e.Message)
+	}
+	if n := len(d.Store.Agents()); n != 0 {
+		t.Fatalf("%d sessions", n)
 	}
 }
 

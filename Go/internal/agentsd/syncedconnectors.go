@@ -125,7 +125,7 @@ func (d *Daemon) markSyncedLocked(held, coming json.RawMessage) error {
 		}
 		// No mark is evicted to make room: a delivery of too many is refused whole.
 		if len(synced) >= approvalsMost || len(key)+1 > approvalMostBytes {
-			return Invalid("This machine keeps at most %d connectors of your settings.", approvalsMost)
+			return Invalid("This machine keeps at most %d connectors from your settings, so the new ones were not added. Remove one in Settings ▸ You ▸ Connectors, then try again.", approvalsMost)
 		}
 		synced[key], changed = "1", true
 		if raw, ok := was[name]; ok {

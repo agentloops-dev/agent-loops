@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
+	"github.com/agentloops-dev/agent-loops/Go/internal/execfile"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -353,7 +354,7 @@ func placeBinary(exe string, l Layout) (string, error) {
 	}
 	tmp := filepath.Join(l.Bin, target+".tmp")
 	// store-bounds: not a store: an install of the host's program
-	if err := os.WriteFile(tmp, data, 0o700); err != nil {
+	if err := execfile.Write(tmp, data, 0o700); err != nil {
 		return "", err
 	}
 	if err := os.Rename(tmp, filepath.Join(l.Bin, target)); err != nil {

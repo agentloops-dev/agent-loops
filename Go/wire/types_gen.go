@@ -472,6 +472,9 @@ type AgentMachinesHost struct {
 
 	// When the control plane last heard its capacity. A figure older than 2 minutes is no figure (Auto's rule).
 	CapacityAt *Date `json:"capacityAt,omitzero"`
+
+	// The machine's platform as it announced it (macOS 15, Linux), so Autopilot (#5900) sends a linux-ok issue to a Linux machine. Absent when it did not say.
+	Platform *string `json:"platform,omitzero"`
 }
 
 type AgentMachinesMachine struct {
@@ -3834,6 +3837,9 @@ type ControlEligible struct {
 
 	// The free space on its fullest disk, as it said it (#7313). Absent when it did not say.
 	DiskFreeBytes *int64 `json:"diskFreeBytes,omitzero"`
+
+	// About how long a move to the machine keeps the control plane frozen, in seconds, from the store's size and the copy's batches (#7395). Changes are refused while it is frozen. Absent from a control plane before #7395.
+	FrozenSeconds *int64 `json:"frozenSeconds,omitzero"`
 }
 
 // One reason a machine cannot take the control role (#6611), with its words for the person.
@@ -3971,6 +3977,12 @@ type ControlMove struct {
 
 	// Where the new copy answers, once it said so.
 	Address *string `json:"address,omitzero"`
+
+	// With copying: the records copied so far (#7395). control/moveChanged says it every few seconds during the copy.
+	Copied *int64 `json:"copied,omitzero"`
+
+	// With copying: the records the copy takes (#7395).
+	Total *int64 `json:"total,omitzero"`
 
 	// With forwarding: until when the old copy sends members to the new one (30 days at most).
 	ForwardingUntil *Date `json:"forwardingUntil,omitzero"`
@@ -16515,6 +16527,14 @@ type StopBackgroundRequest struct {
 	ItemID string `json:"itemID"`
 }
 
+// What happens to a store over its limit (#7408), by its declaration: refuse, a new write is refused until it is within its limit again; write, the next write removes what is past the limit; hourly or daily, the sweep removes what is past the limit each hour or each day.
+type StoreAtLimit string
+
+const StoreAtLimitRefuse StoreAtLimit = "refuse"
+const StoreAtLimitWrite StoreAtLimit = "write"
+const StoreAtLimitHourly StoreAtLimit = "hourly"
+const StoreAtLimitDaily StoreAtLimit = "daily"
+
 type StoreNotes struct {
 	Notes []string `json:"notes"`
 }
@@ -16570,6 +16590,9 @@ type StoreSize struct {
 
 	// When this store's measurement ended.
 	MeasuredAt *Date `json:"measuredAt,omitzero"`
+
+	// What happens to the store when it is over its limit (#7408). Absent from a host too old to say.
+	AtLimit *StoreAtLimit `json:"atLimit,omitzero"`
 }
 
 // over: past a limit, whatever the measurement's age. stale: older than twice the cadence (2 h on a machine, 12 h on the control plane). unavailable: not measured, or with no measure that a limit can be compared with; why says which.
@@ -17176,6 +17199,9 @@ type TurnsPage struct {
 	OpenStart int64 `json:"openStart"`
 
 	FirstPrompt *int64 `json:"firstPrompt,omitzero"`
+
+	// When the 90-day or size trim took the start of this chat (#7405): the line every client shows where its start was, once it shows the first turn kept. Absent when nothing was removed.
+	StartRemoved *string `json:"startRemoved,omitzero"`
 }
 
 type TurnsRequest struct {

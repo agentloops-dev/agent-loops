@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net"
 	"net/netip"
 	"slices"
@@ -45,6 +46,7 @@ type eligibleFacts struct {
 	// level is the last one it pushed, for when usage has none.
 	level        wire.CapacityLevel
 	storeBytes   int64
+	storeRecords int64
 	planeVersion string
 }
 
@@ -160,7 +162,8 @@ func (m *Methods) controlEligible(ctx context.Context, params json.RawMessage, f
 // eligibleAnswer is control/eligible's answer: the reasons, and what the screen shows of the
 // machine (#7313): where it was reached, its memory and the free space on its fullest disk.
 func eligibleAnswer(f eligibleFacts, reasons []wire.ControlEligibleReason) wire.ControlEligible {
-	out := wire.ControlEligible{Ok: len(reasons) == 0, Reasons: reasons}
+	out := wire.ControlEligible{Ok: len(reasons) == 0, Reasons: reasons,
+		FrozenSeconds: new(frozenSeconds(f.storeRecords, f.storeBytes))}
 	if f.address != "" {
 		out.Address = new(f.address)
 	}
@@ -178,7 +181,7 @@ func eligibleAnswer(f eligibleFacts, reasons []wire.ControlEligibleReason) wire.
 // eligibleFacts reads what control/eligible judges h by.
 func (s *Service) eligibleFacts(ctx context.Context, h records.MachineRecord, allowSleep bool) eligibleFacts {
 	f := eligibleFacts{record: h, singleUser: !s.isTeam(), allowSleep: allowSleep, planeVersion: s.cfg.Version}
-	_, f.storeBytes = s.metrics.storeSize()
+	f.storeRecords, f.storeBytes = s.metrics.storeSize()
 	if n, ok := s.capacityOf(h.ID); ok {
 		f.level = n.level
 	}
@@ -382,3 +385,32 @@ func (r *Router) UplinkAddress(host string) (string, bool) {
 	}
 	return "", true
 }
+
+// The measures that a move's frozen time is judged by (#7395), from #7394's: the copy sends
+// copyBatchRecords records or copyBatchBytes bytes a call and checks sumsBatchKeys keys a
+// call, about 2 calls for 1,000 records, so 5,000 records over a link of 50 ms a call are
+// frozen for under a second and 40,000 for about 3 s. On top: each record's read from this
+// copy's store, the bytes over the link, and the take-over.
+const (
+	// frozenFixed is the freeze, the new copy's take-over and the first reconnects.
+	frozenFixed = 5 * time.Second
+	// frozenCall is one call's round trip over the handover session: #7394's slow link.
+	frozenCall = 50 * time.Millisecond
+	// frozenRead is one record's read from this copy's store.
+	frozenRead = 100 * time.Microsecond
+	// frozenBytesPerSecond is the link's speed, 10 MiB/s.
+	frozenBytesPerSecond = 10 << 20
+)
+
+// frozenSeconds is about how long a move keeps the control plane frozen, for a store of
+// that many records and bytes: the calls of the copy and its check, each record's read, and
+// the bytes over the link, whole seconds rounded up.
+func frozenSeconds(records, bytes int64) int64 {
+	records, bytes = max(records, 0), max(bytes, 0)
+	calls := ceilDiv(records, copyBatchRecords) + ceilDiv(bytes, copyBatchBytes) + ceilDiv(records, sumsBatchKeys)
+	took := (frozenFixed + time.Duration(calls)*frozenCall + time.Duration(records)*frozenRead).Seconds() +
+		float64(bytes)/frozenBytesPerSecond
+	return int64(math.Ceil(took))
+}
+
+func ceilDiv(n, d int64) int64 { return (n + d - 1) / d }

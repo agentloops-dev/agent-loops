@@ -19,6 +19,7 @@ import (
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/redact"
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/internal/hostsetup"
+	"github.com/agentloops-dev/agent-loops/Go/internal/sizewords"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
 
@@ -218,7 +219,7 @@ func boundAppToolArguments(args map[string]json.RawMessage) map[string]json.RawM
 // cutAppToolRecord is in place of a record of app-tools.jsonl that is over the record limit
 // (a restored one): head is the first of its bytes, size all of them.
 func cutAppToolRecord(head store.LineHead, size int64) ([]byte, error) {
-	answer := fmt.Sprintf("A call of %d MB was too large to keep", size>>20)
+	answer := fmt.Sprintf("A call of %s was too large to keep", sizewords.Of(size))
 	call := appToolCall{At: head.At, Answer: &answer}
 	// No value of an older record is needed to say that it is cut.
 	_ = json.Unmarshal(head.Values["method"], &call.Method)
