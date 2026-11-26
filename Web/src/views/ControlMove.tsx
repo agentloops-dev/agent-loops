@@ -91,7 +91,7 @@ export function ControlMoveSection({ store, machine }: { store: Store; machine: 
             : !failure && <p class="hint">{words.checking}</p>}
         </>
       )}
-      {asking && <ControlMoveDialog store={store} machine={machine} address={answer?.address} close={() => setAsking(false)} />}
+      {asking && <ControlMoveDialog store={store} machine={machine} address={answer?.address} frozenSeconds={answer?.frozenSeconds} close={() => setAsking(false)} />}
     </section>
   );
 }
@@ -112,8 +112,8 @@ export function MoveSteps({ move }: { move: Move }) {
 const spoken = { done: "done", current: "under way", failed: "failed", todo: "to do" } as const;
 
 /** The confirmation: what happens, then Cancel and Make Control Plane. A refusal stays in it. */
-function ControlMoveDialog({ store, machine, address, close }: {
-  store: Store; machine: ControlMachine; address: string | undefined; close: () => void;
+function ControlMoveDialog({ store, machine, address, frozenSeconds, close }: {
+  store: Store; machine: ControlMachine; address: string | undefined; frozenSeconds: number | undefined; close: () => void;
 }) {
   const [starting, setStarting] = useState(false);
   const [refused, setRefused] = useState<string | null>(null);
@@ -132,7 +132,7 @@ function ControlMoveDialog({ store, machine, address, close }: {
   return (
     <Modal label={question(machine.name)} close={close}>
       <h2>{question(machine.name)}</h2>
-      <ul class="control-move-happens">{happens(machine.name, address, location.host).map((line) => <li key={line}>{line}</li>)}</ul>
+      <ul class="control-move-happens">{happens(machine.name, address, location.host, frozenSeconds).map((line) => <li key={line}>{line}</li>)}</ul>
       {refused && <p class="failure small" role="alert">{refused}</p>}
       <div class="sheet-actions">
         <button type="button" onClick={close}>Cancel</button>
