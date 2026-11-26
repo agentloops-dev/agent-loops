@@ -31,6 +31,7 @@ start of a prompt: `loops fix the test` starts a session with the prompt "fix th
 | `loops -r <id or title> ["<prompt>"]` | Continues one session. Also `--resume`. |
 | `loops sessions list [--all]` | The 20 sessions here with the most recent activity. `--all` shows all of them, also the archived ones. |
 | `loops auth login '<code>'` | Pairs this terminal with a control plane, with a client code from **Settings ▸ Control plane ▸ Clients ▸ Pair a Mac…**. When you have a machine lock, it then asks to join it, shows six digits, and waits until you approve it on another device (below). |
+| `loops auth login` | With no code, on a Mac where Agent Loops runs (#6875): asks Agent Loops on this Mac to pair this terminal (`clients/pairTerminal` on agentsd's socket), and waits until a person clicks **Approve** in **Needs you** in the Mac window. The window makes the code and puts the terminal's key in the machine lock, so it does not ask to join. Any command with no pairing does the same, except print mode with `--on-ask=fail`. On Linux, or with no Agent Loops running, it says to use a code. |
 | `loops auth logout` | Deletes the pairing and the machine lock key here, and removes this terminal from the control plane's clients. When the control plane does not answer, it deletes them here only. |
 | `loops auth status` | The profile, the pairing, this machine, and the folder of the directory here. |
 | `loops folders add [dir]` | Adds this directory, or `dir`, as a folder of this machine. |

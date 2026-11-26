@@ -34,12 +34,21 @@ func PairClient(ctx context.Context, code *Code, name string) (*ClientMembership
 // PairClientAs is PairClient as another kind of client: "iPhone" or "iPad" for a walk's
 // stand-in for a device (#1507).
 func PairClientAs(ctx context.Context, code *Code, name, kind string) (*ClientMembership, error) {
+	return PairClientWithID(ctx, code, NewClientID(), name, kind)
+}
+
+// NewClientID is an id a client pairs with: a client that must name itself before it pairs
+// (loops on a Mac, #6875) makes it first.
+func NewClientID() string { return strings.ToUpper(newRef()) }
+
+// PairClientWithID is PairClientAs with the id the client asks for. The control plane may
+// give another; the membership has the one it gave.
+func PairClientWithID(ctx context.Context, code *Code, id, name, kind string) (*ClientMembership, error) {
 	if code.Host {
 		return nil, errors.New("that is a host code")
 	}
 	private := NewPrivateKey()
 	pub, _ := PublicKey(private)
-	id := strings.ToUpper(newRef())
 	l, _, err := Join(ctx, code.URL, code.Pin, Credentials{Identity: "p:" + code.ID(), Key: CodeKey(code.Secret), Kind: "mac", ControlKey: code.ControlKey})
 	if err != nil {
 		return nil, err

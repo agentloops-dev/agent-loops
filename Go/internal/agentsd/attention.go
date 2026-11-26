@@ -347,6 +347,9 @@ func secretUseWanted(u wire.RequestSecretUse) string {
 	if u.Use == wire.SecretUseTerminal {
 		return "Wants to print " + u.Name + " for " + u.Place + ". " + terminalCaveat
 	}
+	if u.Use == wire.SecretUsePairing {
+		return pairingWanted(u)
+	}
 	if u.Use == wire.SecretUseScreen && u.App != nil {
 		return "Wants to use the screen on " + u.Place + " to drive " + *u.App
 	}
@@ -362,7 +365,7 @@ func secretUseWanted(u wire.RequestSecretUse) string {
 // secretUseAnswers is NeedRequest.SecretUse.actions: the row's answers, as the banner's
 // buttons. A session's own secret has no Always Approve: it is the same as for this session.
 func secretUseAnswers(u wire.RequestSecretUse) []wire.QuickAnswer {
-	if personChange(u.Use) {
+	if personChange(u.Use) || u.Use == wire.SecretUsePairing {
 		return []wire.QuickAnswer{{Kind: wire.QuickAnswerKindChoice, ID: secretUseOnce, Title: "Approve"},
 			{Kind: wire.QuickAnswerKindChoice, ID: secretUseDeny, Title: "Deny", IsDestructive: true}}
 	}
@@ -544,7 +547,7 @@ func (c *needsCollector) addSecretUsesLocked() {
 		if r.Deferred != nil {
 			continue // in Later until it comes back (#4233)
 		}
-		if u != nil && u.Use == wire.SecretUseTerminal && r.AskedBy == nil {
+		if u != nil && (u.Use == wire.SecretUseTerminal || u.Use == wire.SecretUsePairing) && r.AskedBy == nil {
 			// A terminal's (#4179): no session, so the banner names the terminal.
 			id := wire.NeedID{Request: &r.ID}
 			raised := c.seenLocked(id)

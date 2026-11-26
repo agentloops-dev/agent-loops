@@ -55,7 +55,11 @@ plane on this Mac is an option for a person who wants nothing remote.
    - registers two login items with macOS, the control plane and this Mac's host, and
      starts them;
    - joins this Mac's host to the control plane;
-   - pairs the window with the control plane.
+   - pairs the window with the control plane;
+   - links the `loops` command to `~/.local/bin/loops`, with no administrator password. It
+     does not edit your shell's files. When the link fails, set-up continues, and you can
+     install it later in **Settings ▸ Machines ▸ This Mac ▸ Command line** (see
+     [Start or continue a session from a terminal](use-loops-in-a-terminal.md)).
 
    You copy and paste no code, and you can type at once. A line shows under the box only
    when a step is slow or fails.
