@@ -107,6 +107,8 @@ func (s *Store) writeRevisions() {
 	}
 	b, err := json.MarshalIndent(f, "", "  ")
 	if err == nil {
+		// Each removal is an id, a revision and a time; noteRemoved holds them to the count and age.
+		// store-bounds: kind=log; count=2_000; age=7d; applied=on each removal (the oldest go first) (#7350)
 		err = WriteAtomically(s.Loc.Revisions(), b, 0o644)
 	}
 	if err != nil {

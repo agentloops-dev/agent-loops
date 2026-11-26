@@ -204,9 +204,17 @@ func (d *Daemon) readAlive() *daemonAlive {
 	return &a
 }
 
+// aliveMost bounds alive.json (#7350): the agents a stop cut off and a start has to pick up are
+// about 60 bytes each. A larger one is not written, and the one before stays.
+const aliveMost = 1 << 20
+
 func (d *Daemon) writeAlive(a daemonAlive) {
 	b, err := diskjson.Marshal(a)
+	if err == nil && len(b) > aliveMost {
+		err = fmt.Errorf("%d bytes, at most %d: %w", len(b), aliveMost, store.ErrLimit)
+	}
 	if err == nil {
+		// store-bounds: kind=key-value; size=1MiB; count=1; age=until-deleted; applied=on write (a larger one is refused) (#7350)
 		err = store.WriteAtomically(d.alivePath(), b, 0o644)
 	}
 	if err != nil {
