@@ -128,6 +128,11 @@
 .next-on-hold { margin-top: 16px; }
 .next-on-hold .section-head { margin: 0 16px 2px; }
 .next-on-hold > p { margin: 0 16px 6px; }
+.next-rows > li, .next-on-hold li { display: flex; align-items: center; }
+.next-rows > li > a, .next-on-hold li > a { flex: 1; min-width: 0; }
+.next-autopilot-cell { flex: none; display: inline-flex; gap: 8px; align-items: center; padding: 0 16px; max-width: 16em; }
+.next-autopilot { margin: 0; padding: 6px 16px; color: var(--paper-secondary); font-size: 0.85em; }
+.next-autopilot.paused { color: var(--paper-ink); font-weight: 600; }
 .next-number { font-variant-numeric: tabular-nums; }
 @media (max-width: 600px) {
   .next-trailing { margin-left: 0; }

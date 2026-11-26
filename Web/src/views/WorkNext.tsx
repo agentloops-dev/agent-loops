@@ -5,7 +5,7 @@
 // issue's page finds the page as it was left.
 import { signal } from "@preact/signals";
 import { useEffect } from "preact/hooks";
-import type { ForgeNext, ForgeNextRequest, ForgeNextRow } from "../protocol/generated";
+import type { URLString, AutopilotStatus, ForgeNext, ForgeNextRequest, ForgeNextRow } from "../protocol/generated";
 import { fromWireDate, toWireDate } from "../protocol/dates";
 import type { Store } from "../model/store";
 import { describe } from "../model/errors";
@@ -13,8 +13,8 @@ import { forgeHosts } from "../model/workLists";
 import { keepWork, keptWorkRead } from "../model/workCache";
 import { choiceFrom, rememberEach, remembered } from "../model/workRemembered";
 import {
-  allEpics, emptyLine, emptyTitle, epicChoices, epicNode, itemNumber, nextFolders, nextLevelTitle, nextLevels, nextProblem,
-  nextQuery, noMachine, noProject, noProjectTitle, onHoldLine, onHoldTitle, parseNextQuery, placeHelp, reasonsWords, splitNext,
+  allEpics, autopilotCell, autopilotStrip, emptyLine, emptyTitle, epicChoices, epicNode, itemNumber, nextFolders, nextLevelTitle, nextLevels, nextProblem,
+  nextQuery, noMachine, noProject, noProjectTitle, onHoldLine, onHoldTitle, parseNextQuery, placeHelp, reasonsWords, resumeHelp, resumeTitle, splitNext, startsNext,
   type NextChoice, type NextLevel,
 } from "../model/workNext";
 import { go, replace, route, routeHash } from "../route";
@@ -42,7 +42,35 @@ const asked = signal(0);
 const readAt = signal<number | undefined>(undefined);
 /** What is on screen came from this device's copy (#4930), until the machine answers. */
 const fromDevice = signal(false);
+/** Autopilot's status for the project (#5905), and the folder it came from, which Resume writes to. */
+const autopilot = signal<{ status: AutopilotStatus; host: string; folder: string } | null>(null);
 let read: string | undefined;
+
+/** autopilot/status on the project's folders: the one with Autopilot on, else the first that answers. A machine that is
+ * older than Autopilot, or that fails, has no strip: Next does not depend on it. */
+async function askAutopilot(store: Store, folders: readonly { host: string; folder: string }[]) {
+  let first: { status: AutopilotStatus; host: string; folder: string } | null = null;
+  for (const f of folders) {
+    try {
+      const status: AutopilotStatus = await store.link.call("autopilot/status", { folder: f.folder as URLString }, f.host);
+      if (status.mode !== "off") return { status, ...f };
+      first ??= { status, ...f };
+    } catch { /* no strip from this folder */ }
+  }
+  return first;
+}
+
+async function resume(store: Store, ref: string) {
+  const a = autopilot.value;
+  if (!a) return;
+  try {
+    const status: AutopilotStatus = await store.link.call("autopilot/resume", { folder: a.folder as URLString, ref }, a.host);
+    autopilot.value = { ...a, status };
+  } catch (e) {
+    problem.value = describe(e);
+  }
+  asked.value++;
+}
 
 /** forge/next on the first of the project's folders that answers: they read the same repos, so one is enough. */
 async function ask(store: Store, folders: readonly { host: string; folder: string }[], params: Omit<ForgeNextRequest, "folder">):
@@ -92,6 +120,8 @@ async function load(store: Store) {
     if (c.level === "epic" && rows.got) epics.value = rows.got;
     // Every folder failed: what is on screen stays, with its time in the footer.
     if (!rows.got) return;
+    autopilot.value = await askAutopilot(store, folders);
+    if (read !== key) return;
     next.value = rows.got;
     readAt.value = fromWireDate(rows.got.readAt).getTime();
     fromDevice.value = false;
@@ -134,6 +164,9 @@ export function WorkNext({ store }: { store: Store }) {
   const { ready, onHold } = splitNext(next.value);
   const errors = [...problem.value ? problem.value.split("\n") : [], ...(next.value?.errors ?? []).map((e) => e.message)];
   const n = next.value;
+  const ap = autopilot.value?.status ?? null;
+  const strip = autopilotStrip(ap, Date.now());
+  const starts = startsNext(ap, ready);
   // The read's state, the count and Last update are in the footer, as on every Work page (#5971); no strip.
   const footer = hosts.length === 0 || projects.length === 0 ? { kind: "none" as const }
     : pageFooterState(n !== null, reading.value, fromDevice.value, errors);
@@ -158,6 +191,7 @@ export function WorkNext({ store }: { store: Store }) {
         </span>
         <RefreshButton busy={reading.value} onClick={refresh} />
       </div>
+      {strip && <p class={`next-autopilot${strip.paused ? " paused" : ""}`} role="status">{strip.text}</p>}
       {hosts.length === 0 ? <EmptyState kind="issue" title={noMachine} />
         : projects.length === 0 ? <EmptyState kind="issue" title={noProjectTitle} line={noProject} />
         : (
@@ -167,14 +201,14 @@ export function WorkNext({ store }: { store: Store }) {
               : (
                 <>
                   {ready.length > 0 && <ul class="work-rows next-rows" aria-label={c.level === "epic" ? "Epics in order" : "Ready, in order"}>
-                    {ready.map((r) => <NextRowView key={r.item.node.ref} row={r} />)}
+                    {ready.map((r) => <NextRowView key={r.item.node.ref} row={r} ap={ap} starts={starts} resume={(ref) => void resume(store, ref)} />)}
                   </ul>}
                   {onHold.length > 0 && (
                     <section class="next-on-hold" aria-label={onHoldTitle}>
                       <h3 class="section-head">{onHoldTitle} <span class="quiet small">{onHold.length}</span></h3>
                       <p class="quiet small">{onHoldLine}</p>
                       <ul class="work-rows next-rows">
-                        {onHold.map((r) => <NextRowView key={r.item.node.ref} row={r} />)}
+                        {onHold.map((r) => <NextRowView key={r.item.node.ref} row={r} ap={ap} starts={starts} resume={(ref) => void resume(store, ref)} />)}
                       </ul>
                     </section>
                   )}
@@ -190,9 +224,10 @@ export function WorkNext({ store }: { store: Store }) {
 
 /** A row: its place (none when on hold), the state icon, the title, the priority chip and at most three labels; under it
  * the number and the reasons for its place. A link to the item's page, as a Work row is. */
-function NextRowView({ row }: { row: ForgeNextRow }) {
+function NextRowView({ row, ap, starts, resume }: { row: ForgeNextRow; ap: AutopilotStatus | null; starts: string | undefined; resume: (ref: string) => void }) {
   const item = row.item;
   const to = { nav: "work" as const, section: item.node.kind, item: item.node.ref };
+  const cell = autopilotCell(ap, row, item.node.ref === starts);
   const labels = item.labels.filter((l) => !/^priority:/i.test(l.name));
   return (
     <li data-ref={item.node.ref} class={row.onHold ? "on-hold" : undefined}>
@@ -218,6 +253,12 @@ function NextRowView({ row }: { row: ForgeNextRow }) {
           </span>
         </span>
       </a>
+      {cell && (
+        <span class="next-autopilot-cell" data-state={cell.resume ? "paused" : undefined}>
+          {cell.words && <span class="quiet small" title="Autopilot">{cell.words}</span>}
+          {cell.resume !== null && <button type="button" class="next-resume" title={resumeHelp} onClick={() => resume(cell.resume!)}>{resumeTitle}</button>}
+        </span>
+      )}
     </li>
   );
 }

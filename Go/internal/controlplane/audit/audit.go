@@ -82,6 +82,7 @@ var hostActions = map[string]string{
 	"cost/setLimits":              "Changed the cost limits",
 	"wake/set":                    "Changed the wake settings",
 	"autopilot/set":               "Chose what Autopilot starts in a folder",
+	"autopilot/resume":            "Resumed a paused item of Autopilot",
 	"folders/setDiskSpace":        "Changed a folder's disk space",
 	"folders/setHelperLimits":     "Changed a folder's helper limits",
 	"folders/setPRCostComment":    "Changed what a folder's merged pull requests say of their cost",

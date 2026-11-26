@@ -333,6 +333,7 @@ public enum Capability {
         "auto/preview": "auto/1",
         "auto/set": "auto/1",
         "auto/state": "auto/1",
+        "autopilot/resume": "autopilot/1",
         "autopilot/set": "autopilot/1",
         "autopilot/status": "autopilot/1",
         "backups/configure": "backups/1",

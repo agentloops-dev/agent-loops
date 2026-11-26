@@ -152,6 +152,7 @@ each issue or epic: `kind` (`lead` or `lane`), `state` (`started`, `waiting` or 
 waits for one of `limit running`, `limit open-prs`, `capacity near`, `capacity full`, `on hold`,
 `blocked by #n` or `mode high`, or is paused for `paused: main red` or `paused: over budget`. The daemon keeps
 the rows in `autopilot-status.json`, a bounded small file (the newest 100 rows of each folder, 90 days). With the mode off there are no rows.
+`autopilot/resume { folder, ref }` drops a paused row, raises `autopilot.resumed` with the reason it cleared and wakes the loop (#5905); a `ref` that is not paused is left as it is.
 
 ## Files
 

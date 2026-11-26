@@ -1336,6 +1336,13 @@ type AutopilotRequest struct {
 	Folder URL `json:"folder"`
 }
 
+type AutopilotResumeRequest struct {
+	Folder URL `json:"folder"`
+
+	// The paused issue or epic, as autopilot/status names it.
+	Ref string `json:"ref"`
+}
+
 type AutopilotRow struct {
 	// The issue or epic, as the forge names it (#123).
 	Ref string `json:"ref"`

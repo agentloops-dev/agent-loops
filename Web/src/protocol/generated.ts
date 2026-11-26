@@ -1275,6 +1275,12 @@ export interface AutopilotRequest {
   folder: URLString;
 }
 
+export interface AutopilotResumeRequest {
+  folder: URLString;
+  /** The paused issue or epic, as autopilot/status names it. */
+  ref: string;
+}
+
 export interface AutopilotRow {
   /** The issue or epic, as the forge names it (#123). */
   ref: string;
@@ -17798,6 +17804,8 @@ export interface Methods {
   "auto/preview": { params: AutoPreviewRequest; result: AutoPreview };
   "auto/set": { params: AutoSettings; result: AutoSettings };
   "auto/state": { params: Empty; result: AutoSettings };
+  "autopilot/resume": { params: AutopilotResumeRequest; result: AutopilotStatus };
+  "autopilot/status": { params: AutopilotRequest; result: AutopilotStatus };
   "backups/configure": { params: BackupSettings; result: BackupState };
   "backups/make": { params: BackupMakeRequest; result: BackupState };
   "backups/restore": { params: BackupRestoreRequest; result: BackupRestoreResult };
@@ -18297,6 +18305,8 @@ export const MethodTarget = {
   "auto/preview": "host",
   "auto/set": "host",
   "auto/state": "host",
+  "autopilot/resume": "host",
+  "autopilot/status": "host",
   "backups/configure": "host",
   "backups/make": "host",
   "backups/restore": "host",
@@ -18900,6 +18910,7 @@ export const Shapes: Record<string, { required: readonly string[]; optional: rea
   AutoSettings: { required: ["order", "excluded", "overrides"], optional: ["setBy"] },
   AutoSkip: { required: ["runtimeID", "reason"], optional: [] },
   AutopilotRequest: { required: ["folder"], optional: [] },
+  AutopilotResumeRequest: { required: ["folder", "ref"], optional: [] },
   AutopilotRow: { required: ["ref", "kind", "state", "reason", "since"], optional: ["session"] },
   AutopilotSetRequest: { required: ["folder", "mode"], optional: [] },
   AutopilotStatus: { required: ["mode", "rows"], optional: ["lastRunAt"] },
