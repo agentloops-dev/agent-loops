@@ -9,6 +9,7 @@ import (
 	"sync"
 	"syscall"
 	"testing"
+	"time"
 )
 
 // TestTheProgramsAgentsdWritesRunAtOnceWhileOthersFork writes each program that agentsd
@@ -39,7 +40,8 @@ func TestTheProgramsAgentsdWritesRunAtOnceWhileOthersFork(t *testing.T) {
 
 	stop := make(chan struct{})
 	var forks sync.WaitGroup
-	for range 4 {
+	// Many forks at once keep the window open often enough to hit it in a few seconds.
+	for range max(8, 2*goruntime.GOMAXPROCS(0)) {
 		forks.Go(func() {
 			for {
 				select {
@@ -56,7 +58,8 @@ func TestTheProgramsAgentsdWritesRunAtOnceWhileOthersFork(t *testing.T) {
 
 	for _, w := range writers {
 		root := t.TempDir()
-		for i := range 50 {
+		end := time.Now().Add(2 * time.Second)
+		for i := 0; time.Now().Before(end); i++ {
 			path, err := w.write(filepath.Join(root, strconv.Itoa(i)))
 			if err != nil {
 				t.Fatalf("%s %d: %v", w.name, i, err)
