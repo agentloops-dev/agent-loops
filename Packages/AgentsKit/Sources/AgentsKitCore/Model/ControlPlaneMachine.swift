@@ -103,17 +103,36 @@ public enum ControlPlaneMachine {
     /// the load, and before the first look, "No capacity reading yet".
     public static func rowLine(_ look: DaemonAPI.ControlCapacityCopy?) -> String {
         guard let look else { return noReading }
-        var parts = [level(look)]
-        switch look.level {
-        case .ok:
-            parts.append(CapacityWords.load(look.loadPerCore))
-        case .near, .full:
-            // Only the pressures that are there: 0.0% says nothing.
-            if look.pressureIOFullAvg60 >= 0.05 { parts.append("I/O pressure \(percent(look.pressureIOFullAvg60))") }
-            if look.pressureMemoryFullAvg60 >= 0.05 { parts.append("Memory pressure \(percent(look.pressureMemoryFullAvg60))") }
-            parts.append(CapacityWords.load(look.loadPerCore))
+        return ([level(look)] + figures(look)).joined(separator: " \u{00B7} ")
+    }
+
+    /// The row's line when the whole line does not fit (#7366): the level and its main figure
+    /// in short words only, "Near capacity · I/O 16.7%" or "OK · Load 1.4"; the help text has
+    /// the whole line.
+    public static func shortRowLine(_ look: DaemonAPI.ControlCapacityCopy?) -> String {
+        guard let look else { return noReading }
+        return ([level(look)] + figures(look, short: true).prefix(1)).joined(separator: " \u{00B7} ")
+    }
+
+    /// The row's help text (#7366): the whole line, then the reason as a sentence when the level
+    /// is near or full.
+    public static func rowHelp(_ look: DaemonAPI.ControlCapacityCopy?) -> String {
+        guard let look else { return noReadingDetail }
+        let line = rowLine(look)
+        return look.level == .ok ? line : line + "\n" + sentence(look)
+    }
+
+    /// The figures after the level, the main one first: at OK the load; near or full, the
+    /// pressures that are there (0.0% says nothing), then the load.
+    private static func figures(_ look: DaemonAPI.ControlCapacityCopy, short: Bool = false) -> [String] {
+        let pressure = short ? "" : " pressure"
+        var parts: [String] = []
+        if look.level != .ok {
+            if look.pressureIOFullAvg60 >= 0.05 { parts.append("I/O\(pressure) \(percent(look.pressureIOFullAvg60))") }
+            if look.pressureMemoryFullAvg60 >= 0.05 { parts.append("Memory\(pressure) \(percent(look.pressureMemoryFullAvg60))") }
         }
-        return parts.joined(separator: " \u{00B7} ")
+        parts.append(short ? "Load \(String(format: "%.1f", look.loadPerCore))" : CapacityWords.load(look.loadPerCore))
+        return parts
     }
 
     /// Under a machine that also runs agents, while its control plane is near or full: "Control
