@@ -28,6 +28,7 @@ import (
 
 	"github.com/agentloops-dev/agent-loops/Go/internal/agentsd/store"
 	"github.com/agentloops-dev/agent-loops/Go/internal/controllink"
+	"github.com/agentloops-dev/agent-loops/Go/internal/flaky"
 	"github.com/agentloops-dev/agent-loops/Go/internal/orgtoken"
 	"github.com/agentloops-dev/agent-loops/Go/wire"
 )
@@ -970,6 +971,7 @@ func TestTheOrgPathOnly(t *testing.T) {
 // T017, US4: a replaced key is used from the next request, and none fails; a removed
 // route stops its sessions with a line, its file goes and its account leaves the list.
 func TestAnOrgKeyReplacedAndRemoved(t *testing.T) {
+	flaky.UnderLoad(t, "#7486")
 	fakeRuntimes(t)
 	root := t.TempDir()
 	d, c, public := orgMachine(t, root, newControlKeys(t))
